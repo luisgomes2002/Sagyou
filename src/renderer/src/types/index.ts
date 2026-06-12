@@ -28,7 +28,55 @@ export interface Task {
   tags: string[]
   sprintId?: string
   images?: TaskImage[]
+  timeSpent?: number
   order: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface Goal {
+  id: string
+  title: string
+  current: number
+  target: number
+  unit: string
+  color: string
+  projectId?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface Habit {
+  id: string
+  name: string
+  color: string
+  completions: string[]
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ShoppingItem {
+  id: string
+  name: string
+  qty: number
+  price?: number
+  done: boolean
+  link?: string
+}
+
+export type Currency = 'BRL' | 'USD' | 'JPY'
+
+export const CURRENCY_CONFIG: Record<Currency, { symbol: string; decimals: number; label: string }> = {
+  BRL: { symbol: 'R$', decimals: 2, label: 'Real' },
+  USD: { symbol: '$',  decimals: 2, label: 'Dólar' },
+  JPY: { symbol: '¥',  decimals: 0, label: 'Iene' },
+}
+
+export interface ShoppingList {
+  id: string
+  name: string
+  currency: Currency
+  items: ShoppingItem[]
   createdAt: string
   updatedAt: string
 }
@@ -40,6 +88,10 @@ export interface Backup {
   tasks: Task[]
   sprints?: Sprint[]
   tombstones?: Tombstone[]
+  notes?: StickyNote[]
+  goals?: Goal[]
+  habits?: Habit[]
+  lists?: ShoppingList[]
 }
 
 export interface AITaskInput {
@@ -78,6 +130,29 @@ export interface Tombstone {
   type: 'project' | 'task' | 'sprint'
   deletedAt: string
 }
+
+export interface StickyNote {
+  id: string
+  projectId: string
+  content: string
+  color: string
+  x: number
+  y: number
+  width: number
+  height: number
+  taskId?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export const NOTE_COLORS = [
+  '#fef08a',
+  '#fda4af',
+  '#93c5fd',
+  '#86efac',
+  '#d8b4fe',
+  '#fdba74'
+] as const
 
 export const PROJECT_COLORS = [
   '#6366f1',

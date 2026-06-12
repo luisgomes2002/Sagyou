@@ -1,8 +1,11 @@
+import { useEffect, useState } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { format, isPast, parseISO } from 'date-fns'
 import type { Task } from '../types'
 import { PRIORITY_CONFIG } from '../types'
+import { useKanbanStore } from '../store/kanban'
+import { formatDuration } from '../utils/time'
 
 interface Props {
   task: Task
@@ -26,8 +29,33 @@ export function TaskCard({ task, onEdit, onDelete, onView, onComplete, overlay =
     opacity: isDragging ? 0.3 : 1
   }
 
+  const activeTimer = useKanbanStore((s) => s.activeTimer)
+  const startTimer = useKanbanStore((s) => s.startTimer)
+  const stopTimer = useKanbanStore((s) => s.stopTimer)
+  const isLinkedToCanvas = useKanbanStore((s) => s.notes.some((n) => n.taskId === task.id))
+
+  const isRunning = activeTimer?.taskId === task.id
+  const [, setTick] = useState(0)
+
+  // Re-render every second while this task's timer is running
+  useEffect(() => {
+    if (!isRunning) return
+    const id = setInterval(() => setTick((n) => n + 1), 1000)
+    return () => clearInterval(id)
+  }, [isRunning])
+
+  const sessionSeconds = isRunning ? Math.floor((Date.now() - activeTimer!.startedAt) / 1000) : 0
+  const totalSeconds = (task.timeSpent ?? 0) + sessionSeconds
+  const showTime = totalSeconds > 0
+
   const priority = PRIORITY_CONFIG[task.priority]
   const isOverdue = task.dueDate && isPast(parseISO(task.dueDate))
+
+  const handleTimerToggle = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (isRunning) stopTimer()
+    else startTimer(task.id)
+  }
 
   return (
     <div
@@ -52,7 +80,33 @@ export function TaskCard({ task, onEdit, onDelete, onView, onComplete, overlay =
           </svg>
         </div>
 
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+        <div
+          className={`flex items-center gap-1 transition-opacity shrink-0 ${isRunning ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+        >
+          {/* Timer toggle */}
+          {!overlay && (
+            <button
+              onClick={handleTimerToggle}
+              className={`p-1 rounded transition-colors ${
+                isRunning
+                  ? 'text-[#22c55e] bg-[#22c55e]/10 hover:bg-[#22c55e]/20'
+                  : 'text-[#8892a4] hover:text-[#22c55e] hover:bg-[#22c55e]/10'
+              }`}
+              title={isRunning ? 'Pausar timer' : 'Iniciar timer'}
+            >
+              {isRunning ? (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                  <rect x="6" y="4" width="4" height="16" rx="1" />
+                  <rect x="14" y="4" width="4" height="16" rx="1" />
+                </svg>
+              ) : (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                  <polygon points="5,3 19,12 5,21" />
+                </svg>
+              )}
+            </button>
+          )}
+
           {onComplete && (
             <button
               onClick={(e) => { e.stopPropagation(); onComplete(task) }}
@@ -113,12 +167,34 @@ export function TaskCard({ task, onEdit, onDelete, onView, onComplete, overlay =
         </div>
       )}
 
-      {/* footer: priority + due date + images */}
+      {/* footer: priority + canvas + time + images + date */}
       <div className="flex items-center justify-between gap-2 mt-1">
-        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${priority.bg} ${priority.color}`}>
-          {priority.label}
-        </span>
+        <div className="flex items-center gap-1.5">
+          <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${priority.bg} ${priority.color}`}>
+            {priority.label}
+          </span>
+          {isLinkedToCanvas && (
+            <span className="flex items-center text-[#6366f1]/70" title="Vinculada ao Canvas">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+              </svg>
+            </span>
+          )}
+        </div>
+
         <div className="flex items-center gap-2">
+          {showTime && (
+            <span
+              className={`flex items-center gap-0.5 text-[10px] tabular-nums font-mono ${isRunning ? 'text-[#22c55e]' : 'text-[#8892a4]'}`}
+              title="Tempo gasto"
+            >
+              {isRunning && (
+                <span className="w-1.5 h-1.5 rounded-full bg-[#22c55e] animate-pulse shrink-0" />
+              )}
+              {formatDuration(totalSeconds)}
+            </span>
+          )}
           {task.images && task.images.length > 0 && (
             <span className="flex items-center gap-0.5 text-[10px] text-[#8892a4]">
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

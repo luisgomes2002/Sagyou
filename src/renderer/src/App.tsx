@@ -5,7 +5,11 @@ import type { Task, Column, Project, Priority, TaskImage } from './types'
 import { TitleBar } from './components/TitleBar'
 import { Sidebar } from './components/Sidebar'
 import { Board } from './components/Board'
+import { CanvasView } from './components/CanvasView'
 import { DoneView } from './components/DoneView'
+import { GoalView } from './components/GoalView'
+import { HabitView } from './components/HabitView'
+import { ShoppingView } from './components/ShoppingView'
 import { SprintBadge } from './components/SprintBadge'
 import { TaskModal } from './components/TaskModal'
 import { ProjectModal } from './components/ProjectModal'
@@ -18,6 +22,7 @@ interface TaskModalState {
   open: boolean
   task?: Task
   columnId?: string
+  defaultTitle?: string
 }
 
 interface ProjectModalState {
@@ -71,7 +76,7 @@ export default function App() {
   const [viewTask, setViewTask] = useState<Task | null>(null)
   const [projectModal, setProjectModal] = useState<ProjectModalState>({ open: false })
   const [columnModal, setColumnModal] = useState<ColumnModalState>({ open: false })
-  const [activeView, setActiveView] = useState<'board' | 'done'>('board')
+  const [activeView, setActiveView] = useState<'board' | 'canvas' | 'done' | 'goals' | 'habits' | 'shopping'>('board')
   const [confirm, setConfirm] = useState<ConfirmState>({
     open: false,
     title: '',
@@ -159,6 +164,13 @@ export default function App() {
   const handleViewTask = (task: Task) => setViewTask(task)
   const handleAddTask = (columnId: string) => setTaskModal({ open: true, columnId })
   const handleEditTask = (task: Task) => setTaskModal({ open: true, task })
+  const handleCreateTaskFromCanvas = (title: string) => {
+    const firstCol = activeProject?.columns
+      .slice()
+      .sort((a, b) => a.order - b.order)
+      .find((c) => c.name.toLowerCase() !== 'done')
+    setTaskModal({ open: true, columnId: firstCol?.id, defaultTitle: title })
+  }
 
   const handleSaveTask = (data: {
     title: string
@@ -263,7 +275,7 @@ export default function App() {
           projects={projects}
           activeProjectId={activeProjectId}
           activeView={activeView}
-          onSelectProject={(id) => { setActiveProject(id); setActiveView('board'); setSprintFilter(null) }}
+          onSelectProject={(id) => { setActiveProject(id); if (activeView === 'done' || activeView === 'goals' || activeView === 'habits' || activeView === 'shopping') setActiveView('board'); setSprintFilter(null) }}
           onChangeView={setActiveView}
           onNewProject={handleNewProject}
           onEditProject={handleEditProject}
@@ -274,7 +286,13 @@ export default function App() {
         />
 
         <main className="flex-1 flex flex-col overflow-hidden">
-          {activeView === 'done' ? (
+          {activeView === 'shopping' ? (
+            <ShoppingView />
+          ) : activeView === 'habits' ? (
+            <HabitView />
+          ) : activeView === 'goals' ? (
+            <GoalView projects={projects} />
+          ) : activeView === 'done' ? (
             <>
               <div className="flex items-center gap-3 px-6 py-4 border-b border-[#2a2d42] shrink-0">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5">
@@ -299,46 +317,80 @@ export default function App() {
               />
             </>
           ) : activeProject ? (
-            <>
+            <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
               <div className="flex items-center gap-3 px-6 py-4 border-b border-[#2a2d42] shrink-0">
                 <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: activeProject.color }} />
                 <h1 className="text-base font-semibold text-[#e2e8f0]">{activeProject.name}</h1>
                 {activeProject.description && (
-                  <span className="text-sm text-[#8892a4] truncate">{activeProject.description}</span>
+                  <span className="text-sm text-[#8892a4] truncate max-w-[200px]">{activeProject.description}</span>
                 )}
+                <div className="flex items-center gap-1 ml-4 p-0.5 rounded-lg bg-[#1e2235] border border-[#2a2d42]">
+                  <button
+                    onClick={() => setActiveView('board')}
+                    className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                      activeView === 'board'
+                        ? 'bg-[#2a2d42] text-[#e2e8f0]'
+                        : 'text-[#8892a4] hover:text-[#e2e8f0]'
+                    }`}
+                  >
+                    Board
+                  </button>
+                  <button
+                    onClick={() => setActiveView('canvas')}
+                    className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                      activeView === 'canvas'
+                        ? 'bg-[#2a2d42] text-[#e2e8f0]'
+                        : 'text-[#8892a4] hover:text-[#e2e8f0]'
+                    }`}
+                  >
+                    Canvas
+                  </button>
+                </div>
                 <div className="ml-auto flex items-center gap-3">
-                  <SprintBadge
-                    projectId={activeProject.id}
-                    sprints={activeProjectSprints}
-                    sprintFilter={sprintFilter}
-                    onSetFilter={setSprintFilter}
-                    onCreateSprints={createSprints}
-                    onCloseSprint={closeSprint}
-                    onDeleteSprint={deleteSprint}
-                  />
-                  <span className="text-xs text-[#8892a4]">
-                    {projectTasks.filter((t) => {
-                      const col = activeProject.columns.find((c) => c.id === t.columnId)
-                      return col && col.name.toLowerCase() !== 'done'
-                    }).length} tasks
-                  </span>
+                  {activeView === 'board' && (
+                    <>
+                      <SprintBadge
+                        projectId={activeProject.id}
+                        sprints={activeProjectSprints}
+                        sprintFilter={sprintFilter}
+                        onSetFilter={setSprintFilter}
+                        onCreateSprints={createSprints}
+                        onCloseSprint={closeSprint}
+                        onDeleteSprint={deleteSprint}
+                      />
+                      <span className="text-xs text-[#8892a4]">
+                        {projectTasks.filter((t) => {
+                          const col = activeProject.columns.find((c) => c.id === t.columnId)
+                          return col && col.name.toLowerCase() !== 'done'
+                        }).length} tasks
+                      </span>
+                    </>
+                  )}
                 </div>
               </div>
-              <div className="flex-1 overflow-hidden">
-                <Board
-                  project={activeProject}
-                  tasks={projectTasks}
-                  onAddTask={handleAddTask}
-                  onEditTask={handleEditTask}
-                  onDeleteTask={handleDeleteTask}
-                  onViewTask={handleViewTask}
-                  onCompleteTask={handleCompleteTask}
-                  onEditColumn={handleEditColumn}
-                  onDeleteColumn={handleDeleteColumn}
-                  onAddColumn={handleAddColumn}
-                />
+              <div className="flex-1 min-h-0 overflow-hidden relative">
+                {activeView === 'canvas' ? (
+                  <CanvasView
+                    project={activeProject}
+                    tasks={projectTasks}
+                    onCreateTask={handleCreateTaskFromCanvas}
+                  />
+                ) : (
+                  <Board
+                    project={activeProject}
+                    tasks={projectTasks}
+                    onAddTask={handleAddTask}
+                    onEditTask={handleEditTask}
+                    onDeleteTask={handleDeleteTask}
+                    onViewTask={handleViewTask}
+                    onCompleteTask={handleCompleteTask}
+                    onEditColumn={handleEditColumn}
+                    onDeleteColumn={handleDeleteColumn}
+                    onAddColumn={handleAddColumn}
+                  />
+                )}
               </div>
-            </>
+            </div>
           ) : (
             <div className="flex flex-col items-center justify-center flex-1 gap-4">
               <div className="w-16 h-16 rounded-2xl bg-[#1e2235] border border-[#2a2d42] flex items-center justify-center">
@@ -368,6 +420,7 @@ export default function App() {
         columns={(activeProject?.columns ?? []).filter((c) => c.name.toLowerCase() !== 'done')}
         sprints={activeProjectSprints}
         defaultColumnId={taskModal.columnId}
+        defaultTitle={taskModal.defaultTitle}
         onSave={handleSaveTask}
         onClose={() => setTaskModal({ open: false })}
       />

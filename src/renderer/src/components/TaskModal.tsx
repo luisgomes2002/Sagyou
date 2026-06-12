@@ -9,6 +9,7 @@ interface Props {
   columns: Column[]
   sprints: Sprint[]
   defaultColumnId?: string
+  defaultTitle?: string
   onSave: (data: {
     title: string
     description: string
@@ -22,7 +23,7 @@ interface Props {
   onClose: () => void
 }
 
-export function TaskModal({ open, task, columns, sprints, defaultColumnId, onSave, onClose }: Props) {
+export function TaskModal({ open, task, columns, sprints, defaultColumnId, defaultTitle, onSave, onClose }: Props) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [priority, setPriority] = useState<Priority>('medium')
@@ -38,7 +39,7 @@ export function TaskModal({ open, task, columns, sprints, defaultColumnId, onSav
 
   useEffect(() => {
     if (open) {
-      setTitle(task?.title ?? '')
+      setTitle(task?.title ?? defaultTitle ?? '')
       setDescription(task?.description ?? '')
       setPriority(task?.priority ?? 'medium')
       setDueDate(task?.dueDate ?? '')
@@ -48,7 +49,7 @@ export function TaskModal({ open, task, columns, sprints, defaultColumnId, onSav
       setSprintId(task ? (task.sprintId ?? '') : (activeSprint?.id ?? ''))
       setImages(task?.images ?? [])
     }
-  }, [open, task, defaultColumnId, columns])
+  }, [open, task, defaultTitle, defaultColumnId, columns])
 
   if (!open) return null
 

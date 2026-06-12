@@ -1,18 +1,28 @@
 import { create } from 'zustand'
 import { v4 as uuidv4 } from 'uuid'
-import type { Project, Task, Column, Sprint, Tombstone, Backup, AIJson, Priority, TaskImage } from '../types'
+import type { Project, Task, Column, Sprint, Tombstone, Backup, AIJson, Priority, TaskImage, StickyNote, Goal, Habit, ShoppingList, ShoppingItem, Currency } from '../types'
 import { DEFAULT_COLUMN_NAMES } from '../types'
 import { ElectronStorage } from '../services/ElectronStorage'
 
 const storage = new ElectronStorage()
+
+interface ActiveTimer {
+  taskId: string
+  startedAt: number
+}
 
 interface KanbanState {
   projects: Project[]
   tasks: Task[]
   sprints: Sprint[]
   tombstones: Tombstone[]
+  notes: StickyNote[]
+  goals: Goal[]
+  habits: Habit[]
+  lists: ShoppingList[]
   activeProjectId: string | null
   sprintFilter: string | null
+  activeTimer: ActiveTimer | null
   isLoaded: boolean
 }
 
@@ -48,6 +58,35 @@ interface KanbanActions {
   closeSprint: (sprintId: string) => void
   deleteSprint: (sprintId: string) => void
   setTaskSprint: (taskId: string, sprintId: string | null) => void
+
+  addTimeSpent: (taskId: string, seconds: number) => void
+  startTimer: (taskId: string) => void
+  stopTimer: () => void
+
+  createNote: (
+    projectId: string,
+    data?: Partial<Pick<StickyNote, 'content' | 'color' | 'x' | 'y' | 'width' | 'height'>>
+  ) => string
+  updateNote: (id: string, updates: Partial<Pick<StickyNote, 'content' | 'color' | 'x' | 'y' | 'width' | 'height' | 'taskId'>>) => void
+  deleteNote: (id: string) => void
+
+  createGoal: (data: Pick<Goal, 'title' | 'target' | 'unit' | 'color'> & { projectId?: string }) => string
+  updateGoal: (id: string, updates: Partial<Pick<Goal, 'title' | 'target' | 'current' | 'unit' | 'color' | 'projectId'>>) => void
+  deleteGoal: (id: string) => void
+  incrementGoal: (id: string, amount: number) => void
+
+  createHabit: (data: Pick<Habit, 'name' | 'color'>) => string
+  deleteHabit: (id: string) => void
+  toggleHabit: (id: string, isoDate: string) => void
+
+  createList: (name: string, currency?: Currency) => string
+  updateList: (id: string, name: string) => void
+  setListCurrency: (id: string, currency: Currency) => void
+  deleteList: (id: string) => void
+  addItem: (listId: string, data: Pick<ShoppingItem, 'name' | 'qty'> & { price?: number; link?: string }) => string
+  updateItem: (listId: string, itemId: string, updates: Partial<Pick<ShoppingItem, 'name' | 'qty' | 'price' | 'done' | 'link'>>) => void
+  deleteItem: (listId: string, itemId: string) => void
+  toggleItem: (listId: string, itemId: string) => void
 
   exportBackup: () => Promise<boolean>
   importBackup: () => Promise<boolean>
@@ -96,6 +135,26 @@ function mergeSprints(local: Sprint[], remote: Sprint[], tombstones: Map<string,
   return merged.map(({ updatedAt: _u, ...s }) => s as Sprint)
 }
 
+// Habits union completions from both sides so check-ins from any device are preserved
+function mergeHabits(local: Habit[], remote: Habit[], tombstones: Map<string, Tombstone>): Habit[] {
+  const map = new Map<string, Habit>()
+  for (const h of local) {
+    if (!isDeleted(tombstones, h.id, h.updatedAt)) map.set(h.id, h)
+  }
+  for (const h of remote) {
+    if (isDeleted(tombstones, h.id, h.updatedAt)) continue
+    const ex = map.get(h.id)
+    if (!ex) {
+      map.set(h.id, h)
+    } else {
+      const newer = h.updatedAt > ex.updatedAt ? h : ex
+      const completions = [...new Set([...ex.completions, ...h.completions])]
+      map.set(h.id, { ...newer, completions })
+    }
+  }
+  return Array.from(map.values())
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 
 export const useKanbanStore = create<KanbanStore>((set, get) => ({
@@ -103,13 +162,18 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
   tasks: [],
   sprints: [],
   tombstones: [],
+  notes: [],
+  goals: [],
+  habits: [],
+  lists: [],
   activeProjectId: null,
   sprintFilter: null,
+  activeTimer: null,
   isLoaded: false,
 
   _persist: async () => {
-    const { projects, tasks, sprints, tombstones } = get()
-    await storage.save({ projects, tasks, sprints, tombstones })
+    const { projects, tasks, sprints, tombstones, notes, goals, habits, lists } = get()
+    await storage.save({ projects, tasks, sprints, tombstones, notes, goals, habits, lists })
   },
 
   loadData: async () => {
@@ -120,6 +184,10 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
       tasks: data.tasks || [],
       sprints: data.sprints || [],
       tombstones: data.tombstones || [],
+      notes: data.notes || [],
+      goals: data.goals || [],
+      habits: data.habits || [],
+      lists: (data.lists || []).map((l) => ({ currency: 'BRL' as const, ...l })),
       isLoaded: true,
       activeProjectId: projects[0]?.id ?? null
     })
@@ -331,15 +399,233 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
     get()._persist()
   },
 
+  addTimeSpent: (taskId, seconds) => {
+    if (seconds <= 0) return
+    set((s) => ({
+      tasks: s.tasks.map((t) =>
+        t.id === taskId
+          ? { ...t, timeSpent: (t.timeSpent ?? 0) + seconds, updatedAt: new Date().toISOString() }
+          : t
+      )
+    }))
+    get()._persist()
+  },
+
+  startTimer: (taskId) => {
+    const { activeTimer } = get()
+    if (activeTimer) {
+      const elapsed = Math.floor((Date.now() - activeTimer.startedAt) / 1000)
+      get().addTimeSpent(activeTimer.taskId, elapsed)
+    }
+    set({ activeTimer: { taskId, startedAt: Date.now() } })
+  },
+
+  stopTimer: () => {
+    const { activeTimer } = get()
+    if (!activeTimer) return
+    const elapsed = Math.floor((Date.now() - activeTimer.startedAt) / 1000)
+    get().addTimeSpent(activeTimer.taskId, elapsed)
+    set({ activeTimer: null })
+  },
+
+  createNote: (projectId, data = {}) => {
+    const now = new Date().toISOString()
+    const id = uuidv4()
+    const note: StickyNote = {
+      id,
+      projectId,
+      content: data.content ?? '',
+      color: data.color ?? '#fef08a',
+      x: data.x ?? 100,
+      y: data.y ?? 100,
+      width: data.width ?? 200,
+      height: data.height ?? 150,
+      createdAt: now,
+      updatedAt: now
+    }
+    set((s) => ({ notes: [...s.notes, note] }))
+    get()._persist()
+    return id
+  },
+
+  updateNote: (id, updates) => {
+    set((s) => ({
+      notes: s.notes.map((n) =>
+        n.id === id ? { ...n, ...updates, updatedAt: new Date().toISOString() } : n
+      )
+    }))
+    get()._persist()
+  },
+
+  deleteNote: (id) => {
+    set((s) => ({ notes: s.notes.filter((n) => n.id !== id) }))
+    get()._persist()
+  },
+
+  createGoal: (data) => {
+    const now = new Date().toISOString()
+    const id = uuidv4()
+    const goal: Goal = {
+      id,
+      title: data.title,
+      current: 0,
+      target: data.target,
+      unit: data.unit,
+      color: data.color,
+      projectId: data.projectId,
+      createdAt: now,
+      updatedAt: now
+    }
+    set((s) => ({ goals: [...s.goals, goal] }))
+    get()._persist()
+    return id
+  },
+
+  updateGoal: (id, updates) => {
+    set((s) => ({
+      goals: s.goals.map((g) =>
+        g.id === id ? { ...g, ...updates, updatedAt: new Date().toISOString() } : g
+      )
+    }))
+    get()._persist()
+  },
+
+  deleteGoal: (id) => {
+    set((s) => ({ goals: s.goals.filter((g) => g.id !== id) }))
+    get()._persist()
+  },
+
+  incrementGoal: (id, amount) => {
+    set((s) => ({
+      goals: s.goals.map((g) =>
+        g.id === id
+          ? { ...g, current: Math.max(0, Math.min(g.target, g.current + amount)), updatedAt: new Date().toISOString() }
+          : g
+      )
+    }))
+    get()._persist()
+  },
+
+  createHabit: (data) => {
+    const now = new Date().toISOString()
+    const id = uuidv4()
+    const habit: Habit = { id, name: data.name, color: data.color, completions: [], createdAt: now, updatedAt: now }
+    set((s) => ({ habits: [...s.habits, habit] }))
+    get()._persist()
+    return id
+  },
+
+  deleteHabit: (id) => {
+    set((s) => ({ habits: s.habits.filter((h) => h.id !== id) }))
+    get()._persist()
+  },
+
+  toggleHabit: (id, isoDate) => {
+    set((s) => ({
+      habits: s.habits.map((h) => {
+        if (h.id !== id) return h
+        const completions = h.completions.includes(isoDate)
+          ? h.completions.filter((d) => d !== isoDate)
+          : [...h.completions, isoDate]
+        return { ...h, completions, updatedAt: new Date().toISOString() }
+      })
+    }))
+    get()._persist()
+  },
+
+  createList: (name, currency = 'BRL') => {
+    const now = new Date().toISOString()
+    const id = uuidv4()
+    set((s) => ({ lists: [...s.lists, { id, name, currency, items: [], createdAt: now, updatedAt: now }] }))
+    get()._persist()
+    return id
+  },
+
+  updateList: (id, name) => {
+    set((s) => ({
+      lists: s.lists.map((l) =>
+        l.id === id ? { ...l, name, updatedAt: new Date().toISOString() } : l
+      )
+    }))
+    get()._persist()
+  },
+
+  setListCurrency: (id, currency) => {
+    set((s) => ({
+      lists: s.lists.map((l) =>
+        l.id === id ? { ...l, currency, updatedAt: new Date().toISOString() } : l
+      )
+    }))
+    get()._persist()
+  },
+
+  deleteList: (id) => {
+    set((s) => ({ lists: s.lists.filter((l) => l.id !== id) }))
+    get()._persist()
+  },
+
+  addItem: (listId, data) => {
+    const now = new Date().toISOString()
+    const itemId = uuidv4()
+    const item: ShoppingItem = { id: itemId, name: data.name, qty: data.qty, price: data.price, done: false, link: data.link }
+    set((s) => ({
+      lists: s.lists.map((l) =>
+        l.id === listId ? { ...l, items: [...l.items, item], updatedAt: now } : l
+      )
+    }))
+    get()._persist()
+    return itemId
+  },
+
+  updateItem: (listId, itemId, updates) => {
+    const now = new Date().toISOString()
+    set((s) => ({
+      lists: s.lists.map((l) =>
+        l.id === listId
+          ? { ...l, items: l.items.map((i) => i.id === itemId ? { ...i, ...updates } : i), updatedAt: now }
+          : l
+      )
+    }))
+    get()._persist()
+  },
+
+  deleteItem: (listId, itemId) => {
+    const now = new Date().toISOString()
+    set((s) => ({
+      lists: s.lists.map((l) =>
+        l.id === listId
+          ? { ...l, items: l.items.filter((i) => i.id !== itemId), updatedAt: now }
+          : l
+      )
+    }))
+    get()._persist()
+  },
+
+  toggleItem: (listId, itemId) => {
+    const now = new Date().toISOString()
+    set((s) => ({
+      lists: s.lists.map((l) =>
+        l.id === listId
+          ? { ...l, items: l.items.map((i) => i.id === itemId ? { ...i, done: !i.done } : i), updatedAt: now }
+          : l
+      )
+    }))
+    get()._persist()
+  },
+
   exportBackup: async () => {
-    const { projects, tasks, sprints, tombstones } = get()
+    const { projects, tasks, sprints, tombstones, notes, goals, habits, lists } = get()
     const backup: Backup = {
       version: 2,
       exportedAt: new Date().toISOString(),
       projects,
       tasks,
       sprints,
-      tombstones
+      tombstones,
+      notes,
+      goals,
+      habits,
+      lists
     }
     const result = await storage.exportBackup(backup)
     return result.success
@@ -363,12 +649,16 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
     const projects = mergeEntities(local.projects, backup.projects || [], tombstoneMap)
     const tasks = mergeEntities(local.tasks, backup.tasks || [], tombstoneMap)
     const sprints = mergeSprints(local.sprints, backup.sprints || [], tombstoneMap)
+    const notes = mergeEntities(local.notes, backup.notes || [], tombstoneMap)
+    const goals = mergeEntities(local.goals, backup.goals || [], tombstoneMap)
+    const habits = mergeHabits(local.habits, backup.habits || [], tombstoneMap)
+    const lists = mergeEntities(local.lists, (backup.lists || []).map((l) => ({ currency: 'BRL' as const, ...l })), tombstoneMap)
 
     const activeProjectId = projects.find((p) => p.id === local.activeProjectId)
       ? local.activeProjectId
       : (projects[0]?.id ?? null)
 
-    set({ projects, tasks, sprints, tombstones: mergedTombstones, activeProjectId })
+    set({ projects, tasks, sprints, tombstones: mergedTombstones, notes, goals, habits, lists, activeProjectId })
     await get()._persist()
     return true
   },
