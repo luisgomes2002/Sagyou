@@ -1,24 +1,55 @@
-import { useRef, useState, useCallback, useEffect } from 'react'
+import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
 import type { Project, Task } from '../types'
 import { NOTE_COLORS } from '../types'
 import { useKanbanStore } from '../store/kanban'
 import { StickyNoteCard } from './StickyNoteCard'
+import { ConfirmDialog } from './ConfirmDialog'
 
 const MIN_SCALE = 0.2
 const MAX_SCALE = 3
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v))
 
+interface Point {
+  x: number
+  y: number
+}
+
+// Point on the border of a rectangle (centered at c, size w×h) in the direction of `toward`
+function borderPoint(c: Point, w: number, h: number, toward: Point): Point {
+  const dx = toward.x - c.x
+  const dy = toward.y - c.y
+  if (dx === 0 && dy === 0) return { x: c.x, y: c.y }
+  const sx = dx !== 0 ? w / 2 / Math.abs(dx) : Infinity
+  const sy = dy !== 0 ? h / 2 / Math.abs(dy) : Infinity
+  const s = Math.min(sx, sy)
+  return { x: c.x + dx * s, y: c.y + dy * s }
+}
+
 interface Props {
   project: Project
   tasks: Task[]
-  onCreateTask: (title: string) => void
+  onCreateTask: (title: string, noteId: string) => void
 }
 
 export function CanvasView({ project, tasks, onCreateTask }: Props) {
-  const notes = useKanbanStore((s) => s.notes.filter((n) => n.projectId === project.id))
+  const allNotes = useKanbanStore((s) => s.notes)
+  const notes = useMemo(() => allNotes.filter((n) => n.projectId === project.id), [allNotes, project.id])
   const createNote = useKanbanStore((s) => s.createNote)
   const updateNote = useKanbanStore((s) => s.updateNote)
   const deleteNote = useKanbanStore((s) => s.deleteNote)
+  const connectNotes = useKanbanStore((s) => s.connectNotes)
+  const disconnectNotes = useKanbanStore((s) => s.disconnectNotes)
+
+  const noteById = useMemo(() => new Map(notes.map((n) => [n.id, n])), [notes])
+
+  // Live positions during note drag — so connection lines follow smoothly
+  const [livePositions, setLivePositions] = useState<Record<string, Point>>({})
+  // Active connection being drawn from a note's anchor toward the cursor
+  const [connectFrom, setConnectFrom] = useState<string | null>(null)
+  const [connectCursor, setConnectCursor] = useState<Point | null>(null)
+  const connectFromRef = useRef<string | null>(null)
+  // Note pending deletion (shows confirmation popup)
+  const [noteToDelete, setNoteToDelete] = useState<string | null>(null)
 
   const [offset, setOffset] = useState({ x: 0, y: 0 })
   const [scale, setScale] = useState(1)
@@ -79,6 +110,60 @@ export function CanvasView({ project, tasks, onCreateTask }: Props) {
     }
   }, [])
 
+  // Track live positions while a note is dragged (for connection lines)
+  const handleNoteDragMove = useCallback((id: string, x: number, y: number) => {
+    setLivePositions((prev) => ({ ...prev, [id]: { x, y } }))
+  }, [])
+  const handleNoteDragEnd = useCallback((id: string) => {
+    setLivePositions((prev) => {
+      if (!(id in prev)) return prev
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
+  }, [])
+
+  const startConnect = useCallback((id: string) => {
+    connectFromRef.current = id
+    setConnectFrom(id)
+    setConnectCursor(null)
+  }, [])
+
+  // Drive the in-progress connection: follow cursor, resolve target on release
+  useEffect(() => {
+    if (!connectFrom) return
+    const onMove = (e: MouseEvent) => {
+      const el = containerRef.current
+      if (!el) return
+      const rect = el.getBoundingClientRect()
+      setConnectCursor({
+        x: (e.clientX - rect.left - offsetRef.current.x) / scaleRef.current,
+        y: (e.clientY - rect.top - offsetRef.current.y) / scaleRef.current
+      })
+    }
+    const onUp = (e: MouseEvent) => {
+      const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null
+      const targetEl = el?.closest('[data-note-id]') as HTMLElement | null
+      const targetId = targetEl?.dataset.noteId
+      const fromId = connectFromRef.current
+      if (fromId && targetId && targetId !== fromId) connectNotes(fromId, targetId)
+      connectFromRef.current = null
+      setConnectFrom(null)
+      setConnectCursor(null)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+  }, [connectFrom, connectNotes])
+
+  const posOf = useCallback(
+    (n: { id: string; x: number; y: number }): Point => livePositions[n.id] ?? { x: n.x, y: n.y },
+    [livePositions]
+  )
+
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) return
     if ((e.target as HTMLElement).closest('[data-note]')) return
@@ -113,7 +198,7 @@ export function CanvasView({ project, tasks, onCreateTask }: Props) {
         backgroundImage: 'radial-gradient(circle, #2a2d42 1px, transparent 1px)',
         backgroundSize: `${dotSpacing}px ${dotSpacing}px`,
         backgroundPosition: `${offset.x % dotSpacing}px ${offset.y % dotSpacing}px`,
-        cursor: isPanning ? 'grabbing' : 'default'
+        cursor: connectFrom ? 'crosshair' : isPanning ? 'grabbing' : 'default'
       }}
       onMouseDown={handleMouseDown}
       onDoubleClick={handleDoubleClick}
@@ -123,6 +208,89 @@ export function CanvasView({ project, tasks, onCreateTask }: Props) {
         className="absolute top-0 left-0 origin-top-left"
         style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})` }}
       >
+        {/* Connection layer (behind notes) */}
+        <svg
+          className="absolute top-0 left-0"
+          width={1}
+          height={1}
+          style={{ overflow: 'visible', pointerEvents: 'none' }}
+        >
+          <defs>
+            <marker
+              id="note-arrow"
+              viewBox="0 0 10 10"
+              refX={8}
+              refY={5}
+              markerWidth={6}
+              markerHeight={6}
+              orient="auto-start-reverse"
+            >
+              <path d="M0,0 L10,5 L0,10 z" fill="#818cf8" />
+            </marker>
+          </defs>
+
+          {notes.flatMap((from) =>
+            (from.connections ?? []).map((toId) => {
+              const to = noteById.get(toId)
+              if (!to) return null
+              const f = posOf(from)
+              const t = posOf(to)
+              const fc = { x: f.x + from.width / 2, y: f.y + from.height / 2 }
+              const tc = { x: t.x + to.width / 2, y: t.y + to.height / 2 }
+              const start = borderPoint(fc, from.width, from.height, tc)
+              const end = borderPoint(tc, to.width, to.height, fc)
+              return (
+                <g key={`${from.id}->${toId}`} className="group/conn">
+                  <line
+                    x1={start.x}
+                    y1={start.y}
+                    x2={end.x}
+                    y2={end.y}
+                    className="stroke-[#6366f1] group-hover/conn:stroke-[#818cf8]"
+                    strokeWidth={2}
+                    markerEnd="url(#note-arrow)"
+                    style={{ pointerEvents: 'none' }}
+                  />
+                  <line
+                    x1={start.x}
+                    y1={start.y}
+                    x2={end.x}
+                    y2={end.y}
+                    stroke="transparent"
+                    strokeWidth={14}
+                    style={{ pointerEvents: 'stroke', cursor: 'pointer' }}
+                    onClick={() => disconnectNotes(from.id, toId)}
+                  >
+                    <title>Clique para remover a conexão</title>
+                  </line>
+                </g>
+              )
+            })
+          )}
+
+          {/* In-progress connection line */}
+          {connectFrom && connectCursor && (() => {
+            const from = noteById.get(connectFrom)
+            if (!from) return null
+            const f = posOf(from)
+            const fc = { x: f.x + from.width / 2, y: f.y + from.height / 2 }
+            const start = borderPoint(fc, from.width, from.height, connectCursor)
+            return (
+              <line
+                x1={start.x}
+                y1={start.y}
+                x2={connectCursor.x}
+                y2={connectCursor.y}
+                stroke="#818cf8"
+                strokeWidth={2}
+                strokeDasharray="6 4"
+                markerEnd="url(#note-arrow)"
+                style={{ pointerEvents: 'none' }}
+              />
+            )
+          })()}
+        </svg>
+
         {notes.map((note) => (
           <StickyNoteCard
             key={note.id}
@@ -131,8 +299,11 @@ export function CanvasView({ project, tasks, onCreateTask }: Props) {
             tasks={tasks}
             columns={project.columns}
             onUpdate={(updates) => updateNote(note.id, updates)}
-            onDelete={() => deleteNote(note.id)}
-            onCreateTask={onCreateTask}
+            onDelete={() => setNoteToDelete(note.id)}
+            onCreateTask={(title) => onCreateTask(title, note.id)}
+            onStartConnect={() => startConnect(note.id)}
+            onDragMove={handleNoteDragMove}
+            onDragEnd={handleNoteDragEnd}
           />
         ))}
       </div>
@@ -214,6 +385,16 @@ export function CanvasView({ project, tasks, onCreateTask }: Props) {
           </svg>
         </button>
       </div>
+
+      {/* Delete confirmation */}
+      <ConfirmDialog
+        open={noteToDelete !== null}
+        title="Deletar nota"
+        message="Tem certeza que deseja deletar esta nota? As conexões ligadas a ela também serão removidas."
+        confirmLabel="Deletar"
+        onConfirm={() => { if (noteToDelete) deleteNote(noteToDelete); setNoteToDelete(null) }}
+        onCancel={() => setNoteToDelete(null)}
+      />
     </div>
   )
 }

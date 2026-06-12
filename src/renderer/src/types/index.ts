@@ -141,6 +141,7 @@ export interface StickyNote {
   width: number
   height: number
   taskId?: string
+  connections?: string[]
   createdAt: string
   updatedAt: string
 }

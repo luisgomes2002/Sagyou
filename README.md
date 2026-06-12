@@ -1,34 +1,58 @@
-# electron-kanban
+# Sagyou
 
-An Electron application with React and TypeScript
+Kanban pessoal offline construído com Electron, React e TypeScript.
 
-## Recommended IDE Setup
+## Funcionalidades
 
-- [VSCode](https://code.visualstudio.com/) + [ESLint](https://marketplace.visualstudio.com/items?itemName=dbaeumer.vscode-eslint) + [Prettier](https://marketplace.visualstudio.com/items?itemName=esbenp.prettier-vscode)
+- **Kanban** — quadros com colunas customizáveis, sprints e prioridades
+- **Habitos** — rastreamento diário de hábitos com histórico e streak
+- **Metas** — acompanhamento de objetivos pessoais
+- **Lista de compras** — listas com suporte a múltiplas moedas (BRL, USD, JPY)
+- **Canvas** — notas adesivas livres em tela infinita
+- **Relatórios** — visão geral de produtividade
+- **Upcoming** — tarefas com data de vencimento próxima
+- **Busca** — pesquisa rápida em todos os dados
+- **Backup** — exportação e importação de dados em JSON
+- 100% offline — dados armazenados localmente
 
-## Project Setup
+## Setup
 
-### Install
+### Instalar dependências
 
 ```bash
-$ npm install
+npm install
 ```
 
-### Development
+### Desenvolvimento
 
 ```bash
-$ npm run dev
+npm run dev
+```
+
+### Testes
+
+```bash
+npm test
 ```
 
 ### Build
 
 ```bash
-# For windows
-$ npm run build:win
+# Windows
+npm run build:win
 
-# For macOS
-$ npm run build:mac
+# macOS
+npm run build:mac
 
-# For Linux
-$ npm run build:linux
+# Linux
+npm run build:linux
 ```
+
+## Tecnologias
+
+- [Electron](https://www.electronjs.org/) + [electron-vite](https://electron-vite.org/)
+- [React](https://react.dev/) + [TypeScript](https://www.typescriptlang.org/)
+- [Zustand](https://zustand-demo.pmnd.rs/) — gerenciamento de estado
+- [dnd kit](https://dndkit.com/) — drag and drop
+- [Tailwind CSS](https://tailwindcss.com/) — estilização
+- [Vitest](https://vitest.dev/) — testes

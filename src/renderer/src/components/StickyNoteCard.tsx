@@ -10,9 +10,12 @@ interface Props {
   onUpdate: (updates: Partial<Pick<StickyNote, 'content' | 'color' | 'x' | 'y' | 'width' | 'height' | 'taskId'>>) => void
   onDelete: () => void
   onCreateTask: (title: string) => void
+  onStartConnect: () => void
+  onDragMove: (id: string, x: number, y: number) => void
+  onDragEnd: (id: string) => void
 }
 
-export function StickyNoteCard({ note, scale, tasks, columns, onUpdate, onDelete, onCreateTask }: Props) {
+export function StickyNoteCard({ note, scale, tasks, columns, onUpdate, onDelete, onCreateTask, onStartConnect, onDragMove, onDragEnd }: Props) {
   const [localPos, setLocalPos] = useState({ x: note.x, y: note.y })
   const [content, setContent] = useState(note.content)
   const [isEditing, setIsEditing] = useState(note.content === '')
@@ -74,16 +77,18 @@ export function StickyNoteCard({ note, scale, tasks, columns, onUpdate, onDelete
       const newPos = { x: startNoteX + dx, y: startNoteY + dy }
       currentPosRef.current = newPos
       setLocalPos(newPos)
+      onDragMove(note.id, newPos.x, newPos.y)
     }
     const onUp = () => {
       isDraggingRef.current = false
       onUpdate(currentPosRef.current)
+      onDragEnd(note.id)
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
     }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
-  }, [onUpdate])
+  }, [onUpdate, onDragMove, onDragEnd, note.id])
 
   const handleSaveContent = useCallback(() => {
     setIsEditing(false)
@@ -122,6 +127,7 @@ export function StickyNoteCard({ note, scale, tasks, columns, onUpdate, onDelete
   return (
     <div
       data-note="true"
+      data-note-id={note.id}
       className="group absolute"
       style={{
         left: localPos.x,
@@ -293,6 +299,18 @@ export function StickyNoteCard({ note, scale, tasks, columns, onUpdate, onDelete
           )}
         </div>
       </div>
+
+      {/* Connection anchor — drag to another note to create a step link */}
+      <button
+        data-connect-anchor="true"
+        onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); onStartConnect() }}
+        onClick={(e) => e.stopPropagation()}
+        onDoubleClick={(e) => e.stopPropagation()}
+        className="absolute left-1/2 -translate-x-1/2 -bottom-3 w-5 h-5 rounded-full bg-[#6366f1] border-2 border-[#0d0f18] shadow-md opacity-0 group-hover:opacity-100 transition-all hover:scale-125 cursor-crosshair z-10"
+        title="Arraste até outra nota para conectar"
+      >
+        <span className="block w-1.5 h-1.5 rounded-full bg-white mx-auto" />
+      </button>
 
       {/* Link dropdown — outside card, inside note container (avoids overflow clipping) */}
       {showLinkDropdown && (

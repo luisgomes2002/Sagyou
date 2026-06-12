@@ -3,12 +3,21 @@ import Decimal from 'decimal.js'
 import type { ShoppingItem, ShoppingList, Currency } from '../types'
 import { CURRENCY_CONFIG } from '../types'
 import { useKanbanStore } from '../store/kanban'
+import { ConfirmDialog } from './ConfirmDialog'
+
+const CURRENCY_LOCALE: Record<Currency, string> = {
+  BRL: 'pt-BR',
+  USD: 'en-US',
+  JPY: 'ja-JP',
+}
 
 function formatCurrency(value: Decimal, currency: Currency): string {
   const { symbol, decimals } = CURRENCY_CONFIG[currency]
-  const formatted = value.toFixed(decimals)
-  const display = currency === 'BRL' ? formatted.replace('.', ',') : formatted
-  return `${symbol} ${display}`
+  const formatted = value.toNumber().toLocaleString(CURRENCY_LOCALE[currency], {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  })
+  return `${symbol} ${formatted}`
 }
 
 function itemTotal(item: ShoppingItem): Decimal {
@@ -32,7 +41,7 @@ interface SidebarProps {
   lists: ShoppingList[]
   activeId: string | null
   onSelect: (id: string) => void
-  onCreate: (name: string) => void
+  onCreate: (name: string, currency: Currency) => void
   onRename: (id: string, name: string) => void
   onDelete: (id: string) => void
 }
@@ -40,13 +49,15 @@ interface SidebarProps {
 function ListSidebar({ lists, activeId, onSelect, onCreate, onRename, onDelete }: SidebarProps) {
   const [showNew, setShowNew] = useState(false)
   const [newName, setNewName] = useState('')
+  const [newCurrency, setNewCurrency] = useState<Currency>('BRL')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
 
   const handleCreate = () => {
     if (!newName.trim()) return
-    onCreate(newName.trim())
+    onCreate(newName.trim(), newCurrency)
     setNewName('')
+    setNewCurrency('BRL')
     setShowNew(false)
   }
 
@@ -143,11 +154,26 @@ function ListSidebar({ lists, activeId, onSelect, onCreate, onRename, onDelete }
               onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleCreate()
-                if (e.key === 'Escape') { setShowNew(false); setNewName('') }
+                if (e.key === 'Escape') { setShowNew(false); setNewName(''); setNewCurrency('BRL') }
               }}
               placeholder="Nome da lista..."
               className="w-full text-xs px-2.5 py-2 rounded bg-[#0d0f18] border border-[#2a2d42] text-[#e2e8f0] placeholder-[#8892a4] focus:outline-none focus:border-[#f97316] transition-colors"
             />
+            <div className="flex items-center p-0.5 rounded-lg bg-[#0d0f18] border border-[#2a2d42]">
+              {(['BRL', 'USD', 'JPY'] as Currency[]).map((c) => (
+                <button
+                  key={c}
+                  onClick={() => setNewCurrency(c)}
+                  className={`flex-1 py-1 rounded-md text-[10px] font-medium transition-colors ${
+                    newCurrency === c
+                      ? 'bg-[#f97316] text-white'
+                      : 'text-[#8892a4] hover:text-[#e2e8f0]'
+                  }`}
+                >
+                  {CURRENCY_CONFIG[c].symbol} {c}
+                </button>
+              ))}
+            </div>
             <div className="flex gap-2">
               <button
                 onClick={handleCreate}
@@ -157,7 +183,7 @@ function ListSidebar({ lists, activeId, onSelect, onCreate, onRename, onDelete }
                 Criar
               </button>
               <button
-                onClick={() => { setShowNew(false); setNewName('') }}
+                onClick={() => { setShowNew(false); setNewName(''); setNewCurrency('BRL') }}
                 className="flex-1 px-3 py-2 rounded border border-[#2a2d42] text-[#8892a4] text-xs font-medium hover:bg-[#1e2235] transition-colors"
               >
                 Cancelar
@@ -286,7 +312,7 @@ function ItemRow({ item, currency, onUpdate, onDelete, onToggle }: ItemRowProps)
 
       <td className="py-1.5 pr-2 w-28">
         <div className="flex items-center gap-1">
-          <span className="text-[10px] text-[#3a3e58] select-none">R$</span>
+          <span className="text-[10px] text-[#3a3e58] select-none">{CURRENCY_CONFIG[currency].symbol}</span>
           <input
             type="text"
             inputMode="decimal"
@@ -352,10 +378,11 @@ function ItemRow({ item, currency, onUpdate, onDelete, onToggle }: ItemRowProps)
 // ── AddItemRow ────────────────────────────────────────────────────────────────
 
 interface AddItemRowProps {
+  currency: Currency
   onAdd: (data: { name: string; qty: number; price?: number; link?: string }) => void
 }
 
-function AddItemRow({ onAdd }: AddItemRowProps) {
+function AddItemRow({ currency, onAdd }: AddItemRowProps) {
   const [name, setName] = useState('')
   const [qty, setQty] = useState('1')
   const [price, setPrice] = useState('')
@@ -417,7 +444,7 @@ function AddItemRow({ onAdd }: AddItemRowProps) {
       </td>
       <td className="py-1.5 pr-2 w-28">
         <div className="flex items-center gap-1">
-          <span className="text-[10px] text-[#3a3e58] select-none">R$</span>
+          <span className="text-[10px] text-[#3a3e58] select-none">{CURRENCY_CONFIG[currency].symbol}</span>
           <input
             type="text"
             inputMode="decimal"
@@ -461,7 +488,6 @@ export function ShoppingView() {
   const lists = useKanbanStore((s) => s.lists)
   const createList = useKanbanStore((s) => s.createList)
   const updateList = useKanbanStore((s) => s.updateList)
-  const setListCurrency = useKanbanStore((s) => s.setListCurrency)
   const deleteList = useKanbanStore((s) => s.deleteList)
   const addItem = useKanbanStore((s) => s.addItem)
   const updateItem = useKanbanStore((s) => s.updateItem)
@@ -469,6 +495,9 @@ export function ShoppingView() {
   const toggleItem = useKanbanStore((s) => s.toggleItem)
 
   const [activeListId, setActiveListId] = useState<string | null>(null)
+  const [confirm, setConfirm] = useState<{ open: boolean; title: string; message: string; onConfirm: () => void }>({
+    open: false, title: '', message: '', onConfirm: () => {}
+  })
 
   useEffect(() => {
     if (!activeListId && lists.length > 0) {
@@ -490,9 +519,29 @@ export function ShoppingView() {
   const totalPrice = items.reduce((acc, i) => acc.plus(itemTotal(i)), new Decimal(0))
   const donePrice = items.filter((i) => i.done).reduce((acc, i) => acc.plus(itemTotal(i)), new Decimal(0))
 
-  const handleCreateList = (name: string) => {
-    const id = createList(name)
+  const handleCreateList = (name: string, currency: Currency) => {
+    const id = createList(name, currency)
     setActiveListId(id)
+  }
+
+  const handleDeleteList = (id: string) => {
+    const list = lists.find((l) => l.id === id)
+    setConfirm({
+      open: true,
+      title: 'Deletar lista',
+      message: `Deletar "${list?.name}"? Todos os itens serão removidos.`,
+      onConfirm: () => { deleteList(id); setConfirm((c) => ({ ...c, open: false })) }
+    })
+  }
+
+  const handleDeleteItem = (itemId: string) => {
+    const item = items.find((i) => i.id === itemId)
+    setConfirm({
+      open: true,
+      title: 'Remover item',
+      message: `Remover "${item?.name}" da lista?`,
+      onConfirm: () => { deleteItem(activeListId!, itemId); setConfirm((c) => ({ ...c, open: false })) }
+    })
   }
 
   return (
@@ -505,7 +554,7 @@ export function ShoppingView() {
           onSelect={setActiveListId}
           onCreate={handleCreateList}
           onRename={updateList}
-          onDelete={deleteList}
+          onDelete={handleDeleteList}
         />
       </div>
 
@@ -534,22 +583,9 @@ export function ShoppingView() {
                 <span className="text-xs text-[#8892a4]">
                   {totalItems} {totalItems === 1 ? 'item' : 'itens'}
                 </span>
-                {/* Currency selector */}
-                <div className="flex items-center p-0.5 rounded-lg bg-[#0d0f18] border border-[#2a2d42]">
-                  {(['BRL', 'USD', 'JPY'] as Currency[]).map((c) => (
-                    <button
-                      key={c}
-                      onClick={() => setListCurrency(activeListId!, c)}
-                      className={`px-2 py-0.5 rounded-md text-[10px] font-medium transition-colors ${
-                        currency === c
-                          ? 'bg-[#f97316] text-white'
-                          : 'text-[#8892a4] hover:text-[#e2e8f0]'
-                      }`}
-                    >
-                      {CURRENCY_CONFIG[c].symbol} {c}
-                    </button>
-                  ))}
-                </div>
+                <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-[#f97316]/15 text-[#f97316]">
+                  {CURRENCY_CONFIG[currency].symbol} {currency}
+                </span>
               </div>
               {totalItems > 0 && (
                 <div className="flex items-center gap-4">
@@ -592,11 +628,11 @@ export function ShoppingView() {
                       item={item}
                       currency={currency}
                       onUpdate={(updates) => updateItem(activeListId!, item.id, updates)}
-                      onDelete={() => deleteItem(activeListId!, item.id)}
+                      onDelete={() => handleDeleteItem(item.id)}
                       onToggle={() => toggleItem(activeListId!, item.id)}
                     />
                   ))}
-                  <AddItemRow onAdd={(data) => addItem(activeListId!, data)} />
+                  <AddItemRow currency={currency} onAdd={(data) => addItem(activeListId!, data)} />
                 </tbody>
               </table>
             </div>
@@ -643,6 +679,15 @@ export function ShoppingView() {
           </>
         )}
       </div>
+
+      <ConfirmDialog
+        open={confirm.open}
+        title={confirm.title}
+        message={confirm.message}
+        confirmLabel="Deletar"
+        onConfirm={confirm.onConfirm}
+        onCancel={() => setConfirm((c) => ({ ...c, open: false }))}
+      />
     </div>
   )
 }

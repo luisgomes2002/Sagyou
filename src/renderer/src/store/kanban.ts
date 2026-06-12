@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { v4 as uuidv4 } from 'uuid'
-import type { Project, Task, Column, Sprint, Tombstone, Backup, AIJson, Priority, TaskImage, StickyNote, Goal, Habit, ShoppingList, ShoppingItem, Currency } from '../types'
+import type { Project, Task, Column, Sprint, Tombstone, Backup, AIJson, Priority, StickyNote, Goal, Habit, ShoppingList, ShoppingItem, Currency } from '../types'
 import { DEFAULT_COLUMN_NAMES } from '../types'
 import { ElectronStorage } from '../services/ElectronStorage'
 
@@ -45,7 +45,7 @@ interface KanbanActions {
   createTask: (
     data: Pick<Task, 'projectId' | 'columnId' | 'title'> &
       Partial<Pick<Task, 'description' | 'priority' | 'dueDate' | 'tags' | 'sprintId' | 'images'>>
-  ) => void
+  ) => string
   updateTask: (
     id: string,
     updates: Partial<Pick<Task, 'title' | 'description' | 'priority' | 'dueDate' | 'tags' | 'columnId' | 'sprintId' | 'images'>>
@@ -69,6 +69,8 @@ interface KanbanActions {
   ) => string
   updateNote: (id: string, updates: Partial<Pick<StickyNote, 'content' | 'color' | 'x' | 'y' | 'width' | 'height' | 'taskId'>>) => void
   deleteNote: (id: string) => void
+  connectNotes: (fromId: string, toId: string) => void
+  disconnectNotes: (fromId: string, toId: string) => void
 
   createGoal: (data: Pick<Goal, 'title' | 'target' | 'unit' | 'color'> & { projectId?: string }) => string
   updateGoal: (id: string, updates: Partial<Pick<Goal, 'title' | 'target' | 'current' | 'unit' | 'color' | 'projectId'>>) => void
@@ -187,7 +189,7 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
       notes: data.notes || [],
       goals: data.goals || [],
       habits: data.habits || [],
-      lists: (data.lists || []).map((l) => ({ currency: 'BRL' as const, ...l })),
+      lists: (data.lists || []).map((l) => ({ ...l, currency: (l.currency || 'BRL') as Currency })),
       isLoaded: true,
       activeProjectId: projects[0]?.id ?? null
     })
@@ -313,6 +315,7 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
     }
     set((s) => ({ tasks: [...s.tasks, task] }))
     get()._persist()
+    return task.id
   },
 
   updateTask: (id, updates) => {
@@ -440,6 +443,7 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
       y: data.y ?? 100,
       width: data.width ?? 200,
       height: data.height ?? 150,
+      connections: [],
       createdAt: now,
       updatedAt: now
     }
@@ -458,7 +462,41 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
   },
 
   deleteNote: (id) => {
-    set((s) => ({ notes: s.notes.filter((n) => n.id !== id) }))
+    const now = new Date().toISOString()
+    set((s) => ({
+      notes: s.notes
+        .filter((n) => n.id !== id)
+        .map((n) =>
+          n.connections?.includes(id)
+            ? { ...n, connections: n.connections.filter((c) => c !== id), updatedAt: now }
+            : n
+        )
+    }))
+    get()._persist()
+  },
+
+  connectNotes: (fromId, toId) => {
+    if (fromId === toId) return
+    set((s) => ({
+      notes: s.notes.map((n) => {
+        if (n.id !== fromId) return n
+        const conns = n.connections ?? []
+        if (conns.includes(toId)) return n
+        return { ...n, connections: [...conns, toId], updatedAt: new Date().toISOString() }
+      })
+    }))
+    get()._persist()
+  },
+
+  disconnectNotes: (fromId, toId) => {
+    set((s) => ({
+      notes: s.notes.map((n) => {
+        if (n.id !== fromId) return n
+        const conns = n.connections ?? []
+        if (!conns.includes(toId)) return n
+        return { ...n, connections: conns.filter((c) => c !== toId), updatedAt: new Date().toISOString() }
+      })
+    }))
     get()._persist()
   },
 
@@ -652,7 +690,7 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
     const notes = mergeEntities(local.notes, backup.notes || [], tombstoneMap)
     const goals = mergeEntities(local.goals, backup.goals || [], tombstoneMap)
     const habits = mergeHabits(local.habits, backup.habits || [], tombstoneMap)
-    const lists = mergeEntities(local.lists, (backup.lists || []).map((l) => ({ currency: 'BRL' as const, ...l })), tombstoneMap)
+    const lists = mergeEntities(local.lists, (backup.lists || []).map((l) => ({ ...l, currency: (l.currency || 'BRL') as Currency })), tombstoneMap)
 
     const activeProjectId = projects.find((p) => p.id === local.activeProjectId)
       ? local.activeProjectId

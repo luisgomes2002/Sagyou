@@ -1,8 +1,9 @@
 import { app } from 'electron'
 import { join } from 'path'
 import { readFileSync, writeFileSync, existsSync } from 'fs'
+import { is } from '@electron-toolkit/utils'
 
-const dataPath = join(app.getPath('userData'), 'kanban-data.json')
+const dataPath = join(app.getPath('userData'), is.dev ? 'kanban-data.dev.json' : 'kanban-data.json')
 
 export function loadData(): { projects: unknown[]; tasks: unknown[] } {
   if (!existsSync(dataPath)) return { projects: [], tasks: [] }

@@ -10,6 +10,9 @@ import { DoneView } from './components/DoneView'
 import { GoalView } from './components/GoalView'
 import { HabitView } from './components/HabitView'
 import { ShoppingView } from './components/ShoppingView'
+import { UpcomingView } from './components/UpcomingView'
+import { ReportsView } from './components/ReportsView'
+import { SearchModal } from './components/SearchModal'
 import { SprintBadge } from './components/SprintBadge'
 import { TaskModal } from './components/TaskModal'
 import { ProjectModal } from './components/ProjectModal'
@@ -23,6 +26,7 @@ interface TaskModalState {
   task?: Task
   columnId?: string
   defaultTitle?: string
+  linkNoteId?: string
 }
 
 interface ProjectModalState {
@@ -63,6 +67,7 @@ export default function App() {
     updateTask,
     deleteTask,
     moveTask,
+    updateNote,
     createSprints,
     closeSprint,
     deleteSprint,
@@ -76,7 +81,8 @@ export default function App() {
   const [viewTask, setViewTask] = useState<Task | null>(null)
   const [projectModal, setProjectModal] = useState<ProjectModalState>({ open: false })
   const [columnModal, setColumnModal] = useState<ColumnModalState>({ open: false })
-  const [activeView, setActiveView] = useState<'board' | 'canvas' | 'done' | 'goals' | 'habits' | 'shopping'>('board')
+  const [activeView, setActiveView] = useState<'board' | 'canvas' | 'done' | 'goals' | 'habits' | 'shopping' | 'upcoming' | 'reports'>('board')
+  const [searchOpen, setSearchOpen] = useState(false)
   const [confirm, setConfirm] = useState<ConfirmState>({
     open: false,
     title: '',
@@ -85,6 +91,17 @@ export default function App() {
   })
 
   useEffect(() => { loadData() }, [loadData])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault()
+        setSearchOpen((v) => !v)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   const addToast = useCallback((message: string, type: ToastMessage['type'] = 'success') => {
     setToasts((prev) => [...prev, { id: uuidv4(), message, type }])
@@ -162,14 +179,27 @@ export default function App() {
 
   // --- Task handlers ---
   const handleViewTask = (task: Task) => setViewTask(task)
+
+  const handleSearchSelectTask = (task: Task) => {
+    setActiveProject(task.projectId)
+    setActiveView('board')
+    setSprintFilter(null)
+    setViewTask(task)
+  }
+
+  const handleSearchSelectNote = (note: { projectId: string }) => {
+    setActiveProject(note.projectId)
+    setActiveView('canvas')
+    setSprintFilter(null)
+  }
   const handleAddTask = (columnId: string) => setTaskModal({ open: true, columnId })
   const handleEditTask = (task: Task) => setTaskModal({ open: true, task })
-  const handleCreateTaskFromCanvas = (title: string) => {
+  const handleCreateTaskFromCanvas = (title: string, noteId: string) => {
     const firstCol = activeProject?.columns
       .slice()
       .sort((a, b) => a.order - b.order)
       .find((c) => c.name.toLowerCase() !== 'done')
-    setTaskModal({ open: true, columnId: firstCol?.id, defaultTitle: title })
+    setTaskModal({ open: true, columnId: firstCol?.id, defaultTitle: title, linkNoteId: noteId })
   }
 
   const handleSaveTask = (data: {
@@ -187,7 +217,8 @@ export default function App() {
       updateTask(taskModal.task.id, { ...rest, sprintId: sprintId || undefined })
       addToast('Task atualizada')
     } else if (activeProjectId) {
-      createTask({ ...rest, projectId: activeProjectId, sprintId: sprintId || undefined })
+      const newTaskId = createTask({ ...rest, projectId: activeProjectId, sprintId: sprintId || undefined })
+      if (taskModal.linkNoteId) updateNote(taskModal.linkNoteId, { taskId: newTaskId })
       addToast('Task criada')
     }
     setTaskModal({ open: false })
@@ -275,8 +306,9 @@ export default function App() {
           projects={projects}
           activeProjectId={activeProjectId}
           activeView={activeView}
-          onSelectProject={(id) => { setActiveProject(id); if (activeView === 'done' || activeView === 'goals' || activeView === 'habits' || activeView === 'shopping') setActiveView('board'); setSprintFilter(null) }}
+          onSelectProject={(id) => { setActiveProject(id); if (activeView !== 'board' && activeView !== 'canvas') setActiveView('board'); setSprintFilter(null) }}
           onChangeView={setActiveView}
+          onOpenSearch={() => setSearchOpen(true)}
           onNewProject={handleNewProject}
           onEditProject={handleEditProject}
           onDeleteProject={handleDeleteProject}
@@ -286,7 +318,15 @@ export default function App() {
         />
 
         <main className="flex-1 flex flex-col overflow-hidden">
-          {activeView === 'shopping' ? (
+          {activeView === 'reports' ? (
+            <ReportsView projects={projects} tasks={tasks} />
+          ) : activeView === 'upcoming' ? (
+            <UpcomingView
+              projects={projects}
+              tasks={tasks}
+              onViewTask={handleViewTask}
+            />
+          ) : activeView === 'shopping' ? (
             <ShoppingView />
           ) : activeView === 'habits' ? (
             <HabitView />
@@ -457,6 +497,13 @@ export default function App() {
       />
 
       <ToastContainer toasts={toasts} onRemove={removeToast} />
+
+      <SearchModal
+        open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        onSelectTask={handleSearchSelectTask}
+        onSelectNote={handleSearchSelectNote}
+      />
     </div>
   )
 }

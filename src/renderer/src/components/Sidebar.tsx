@@ -2,12 +2,15 @@ import { useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import type { Project } from '../types'
 
+type ActiveView = 'board' | 'canvas' | 'done' | 'goals' | 'habits' | 'shopping' | 'upcoming' | 'reports'
+
 interface Props {
   projects: Project[]
   activeProjectId: string | null
-  activeView: 'board' | 'canvas' | 'done' | 'goals' | 'habits' | 'shopping'
+  activeView: ActiveView
   onSelectProject: (id: string) => void
-  onChangeView: (view: 'board' | 'canvas' | 'done' | 'goals' | 'habits' | 'shopping') => void
+  onChangeView: (view: ActiveView) => void
+  onOpenSearch: () => void
   onNewProject: () => void
   onEditProject: (project: Project) => void
   onDeleteProject: (project: Project) => void
@@ -22,6 +25,7 @@ export function Sidebar({
   activeView,
   onSelectProject,
   onChangeView,
+  onOpenSearch,
   onNewProject,
   onEditProject,
   onDeleteProject,
@@ -147,6 +151,21 @@ export function Sidebar({
         </div>
       </div>
 
+      {/* Search */}
+      <button
+        onClick={onOpenSearch}
+        className="flex items-center gap-2 mx-3 my-2 px-3 py-1.5 rounded-md bg-[#0d0f18] border border-[#2a2d42] text-[#8892a4] text-xs hover:border-[#6366f1]/50 hover:text-[#e2e8f0] transition-colors w-[calc(100%-1.5rem)]"
+      >
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="11" cy="11" r="8" />
+          <line x1="21" y1="21" x2="16.65" y2="16.65" />
+        </svg>
+        <span className="flex-1 text-left">Buscar...</span>
+        <kbd className="text-[9px] px-1 py-0.5 rounded bg-[#1e2235] border border-[#2a2d42] font-sans">
+          Ctrl K
+        </kbd>
+      </button>
+
       {/* view nav */}
       <div className="grid grid-cols-2 gap-1 px-3 py-2 border-b border-[#2a2d42]">
         <button
@@ -160,6 +179,7 @@ export function Sidebar({
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <rect x="3" y="3" width="7" height="18" rx="1" />
             <rect x="14" y="3" width="7" height="11" rx="1" />
+            <rect x="14" y="18" width="7" height="3" rx="1" />
           </svg>
           Board
         </button>
@@ -172,11 +192,25 @@ export function Sidebar({
           }`}
         >
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <rect x="3" y="3" width="18" height="18" rx="2" />
-            <circle cx="8.5" cy="8.5" r="1.5" />
-            <polyline points="21 15 16 10 5 21" />
+            <path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
           </svg>
           Canvas
+        </button>
+        <button
+          onClick={() => onChangeView('upcoming')}
+          className={`flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
+            activeView === 'upcoming'
+              ? 'bg-[#6366f1]/15 text-[#a5b4fc]'
+              : 'text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#1e2235]'
+          }`}
+        >
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="3" y="4" width="18" height="18" rx="2" />
+            <line x1="16" y1="2" x2="16" y2="6" />
+            <line x1="8" y1="2" x2="8" y2="6" />
+            <line x1="3" y1="10" x2="21" y2="10" />
+          </svg>
+          Próximas
         </button>
         <button
           onClick={() => onChangeView('done')}
@@ -233,6 +267,21 @@ export function Sidebar({
             <path d="M16 10a4 4 0 0 1-8 0" />
           </svg>
           Compras
+        </button>
+        <button
+          onClick={() => onChangeView('reports')}
+          className={`flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
+            activeView === 'reports'
+              ? 'bg-[#6366f1]/15 text-[#a5b4fc]'
+              : 'text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#1e2235]'
+          }`}
+        >
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <line x1="18" y1="20" x2="18" y2="10" />
+            <line x1="12" y1="20" x2="12" y2="4" />
+            <line x1="6" y1="20" x2="6" y2="14" />
+          </svg>
+          Relatórios
         </button>
       </div>
 

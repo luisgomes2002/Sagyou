@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { Goal, Project } from '../types'
 import { PROJECT_COLORS } from '../types'
 import { useKanbanStore } from '../store/kanban'
+import { ConfirmDialog } from './ConfirmDialog'
 
 interface Props {
   projects: Project[]
@@ -340,6 +341,7 @@ export function GoalView({ projects }: Props) {
   const incrementGoal = useKanbanStore((s) => s.incrementGoal)
 
   const [modal, setModal] = useState<ModalState>({ open: false })
+  const [confirm, setConfirm] = useState<{ open: boolean; id: string | null }>({ open: false, id: null })
 
   const projectMap = Object.fromEntries(projects.map((p) => [p.id, p.name]))
 
@@ -416,7 +418,7 @@ export function GoalView({ projects }: Props) {
                   goal={goal}
                   projectName={goal.projectId ? projectMap[goal.projectId] : undefined}
                   onEdit={() => setModal({ open: true, goal })}
-                  onDelete={() => deleteGoal(goal.id)}
+                  onDelete={() => setConfirm({ open: true, id: goal.id })}
                   onIncrement={(amount) => incrementGoal(goal.id, amount)}
                   onSetCurrent={(value) => updateGoal(goal.id, { current: value })}
                 />
@@ -434,6 +436,15 @@ export function GoalView({ projects }: Props) {
           onClose={() => setModal({ open: false })}
         />
       )}
+
+      <ConfirmDialog
+        open={confirm.open}
+        title="Deletar meta"
+        message="Tem certeza que deseja deletar esta meta?"
+        confirmLabel="Deletar"
+        onConfirm={() => { if (confirm.id) deleteGoal(confirm.id); setConfirm({ open: false, id: null }) }}
+        onCancel={() => setConfirm({ open: false, id: null })}
+      />
     </>
   )
 }

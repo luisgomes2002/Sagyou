@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { Habit } from '../types'
 import { PROJECT_COLORS } from '../types'
 import { useKanbanStore } from '../store/kanban'
+import { ConfirmDialog } from './ConfirmDialog'
 
 // ── Date utilities ────────────────────────────────────────────────────────────
 
@@ -54,7 +55,7 @@ interface ModalProps {
 
 function HabitModal({ onSave, onClose }: ModalProps) {
   const [name, setName] = useState('')
-  const [color, setColor] = useState(PROJECT_COLORS[0])
+  const [color, setColor] = useState<string>(PROJECT_COLORS[0])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -301,6 +302,7 @@ export function HabitView() {
   const toggleHabit = useKanbanStore((s) => s.toggleHabit)
 
   const [showModal, setShowModal] = useState(false)
+  const [confirm, setConfirm] = useState<{ open: boolean; id: string | null }>({ open: false, id: null })
 
   const today = getToday()
   const now = new Date()
@@ -412,7 +414,7 @@ export function HabitView() {
                   year={viewYear}
                   month={viewMonth}
                   onToggle={(date) => toggleHabit(habit.id, date)}
-                  onDelete={() => deleteHabit(habit.id)}
+                  onDelete={() => setConfirm({ open: true, id: habit.id })}
                 />
               ))}
             </div>
@@ -423,6 +425,15 @@ export function HabitView() {
       {showModal && (
         <HabitModal onSave={handleSave} onClose={() => setShowModal(false)} />
       )}
+
+      <ConfirmDialog
+        open={confirm.open}
+        title="Deletar hábito"
+        message="Tem certeza? O histórico de conclusões será perdido."
+        confirmLabel="Deletar"
+        onConfirm={() => { if (confirm.id) deleteHabit(confirm.id); setConfirm({ open: false, id: null }) }}
+        onCancel={() => setConfirm({ open: false, id: null })}
+      />
     </>
   )
 }

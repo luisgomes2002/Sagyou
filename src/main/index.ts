@@ -24,10 +24,10 @@ function createWindow(): void {
     }
   })
 
-  mainWindow.on('ready-to-show', () => mainWindow.show())
+  mainWindow.on('ready-to-show', () => mainWindow!.show())
 
-  mainWindow.on('maximize', () => mainWindow.webContents.send('window:maximized-change', true))
-  mainWindow.on('unmaximize', () => mainWindow.webContents.send('window:maximized-change', false))
+  mainWindow.on('maximize', () => mainWindow!.webContents.send('window:maximized-change', true))
+  mainWindow.on('unmaximize', () => mainWindow!.webContents.send('window:maximized-change', false))
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
