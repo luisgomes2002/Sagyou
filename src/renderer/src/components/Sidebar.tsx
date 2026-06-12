@@ -38,7 +38,57 @@ export function Sidebar({
   const [projectMenuPos, setProjectMenuPos] = useState({ top: 0, right: 0 })
   const [showJsonExample, setShowJsonExample] = useState(false)
   const [jsonExamplePos, setJsonExamplePos] = useState({ top: 0, left: 0 })
+  const [jsonCopied, setJsonCopied] = useState(false)
   const jsonInfoRef = useRef<HTMLButtonElement>(null)
+
+  const JSON_COPY_TEXT = `{
+  "tasks": [
+    {
+      "title": "Implementar login",
+      "description": "Tela de autenticação com JWT.",
+      "priority": "high",
+      "dueDate": "2026-07-15",
+      "tags": ["auth", "frontend"],
+      "column": "In Progress",
+      "sprint": "Sprint 1"
+    },
+    {
+      "title": "Criar testes unitários",
+      "priority": "medium",
+      "tags": ["testes"],
+      "column": "Backlog"
+    }
+  ]
+}
+
+Campos:
+- priority — low · medium · high · urgent
+- column — nome exato da coluna no projeto (ex: "In Progress")
+- sprint — nome exato da sprint (ex: "Sprint 1"). Opcional.
+- dueDate — formato YYYY-MM-DD. Opcional.
+- tags — use as tags relevantes para o contexto. Tags disponíveis por área:
+
+  Dev: frontend, backend, bug, feat, refactor, api, design, mobile, devops, testes, docs, deploy, auth, security, performance, infra, ipc, store, utils, dnd, memoization, correctness, idempotency, query-optimization, redis, jwt, reports, heatmap, due-date, tags, sprints
+
+  Estudo: estudo, leitura, revisão, resumo, prova, pesquisa, aula, curso, faculdade, idioma, exercício-mental, flashcard, vocabulário, gramática, prática, escrita, listening, tradução
+
+  Trabalho: reunião, relatório, prazo, cliente, apresentação, email, planejamento, meta, entrega, revisão, feedback, onboarding, contrato, proposta, sprint, retrospectiva
+
+  Saúde: exercício, academia, dieta, médico, sono, saúde mental, hidratação, corrida, alongamento, meditação, consulta, exame, suplemento, descanso
+
+  Casa & Vida: compras, casa, limpeza, contas, família, social, lazer, viagem, alimentação, pet, manutenção, organização, decoração, mudança, vizinhança
+
+  Finanças: investimento, gasto, economia, imposto, assinatura, renda extra, orçamento, dívida, cartão, poupança, declaração, recibo, transferência
+
+  Pessoal: hábito, rotina, projeto pessoal, criatividade, foco, urgente, importante, ideia, meta pessoal, lembrete, reflexão, diário, gratidão, planejamento semanal
+
+Gere tarefas para cada parte desse projeto, não deixe as tarefas muito granuladas e se o assunto de uma para outra for muito diferente separe em arquivos json diferentes, por exemplo na área de desenvolvimento tem a parte de testes, refatoração e nova feature, cada uma dessas é um arquivo separado.`
+
+  const handleCopyJson = () => {
+    navigator.clipboard.writeText(JSON_COPY_TEXT)
+    setJsonCopied(true)
+    setTimeout(() => setJsonCopied(false), 2000)
+  }
 
   const handleToggleJsonExample = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -336,14 +386,38 @@ export function Sidebar({
           >
             <div className="flex items-center justify-between px-4 py-3 border-b border-[#2a2d42]">
               <span className="text-xs font-semibold text-[#6366f1] uppercase tracking-wider">Formato esperado — JSON</span>
-              <button
-                onClick={() => setShowJsonExample(false)}
-                className="text-[#8892a4] hover:text-[#e2e8f0] transition-colors"
-              >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleCopyJson}
+                  className="flex items-center gap-1 text-[10px] text-[#8892a4] hover:text-[#e2e8f0] transition-colors"
+                  title="Copiar tudo"
+                >
+                  {jsonCopied ? (
+                    <>
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                      <span className="text-[#6366f1]">Copiado</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                      </svg>
+                      <span>Copiar tudo</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={() => setShowJsonExample(false)}
+                  className="text-[#8892a4] hover:text-[#e2e8f0] transition-colors"
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
             </div>
             <div className="p-4">
               <pre className="text-[11px] text-[#a5b4fc] leading-relaxed font-mono bg-[#13151f] rounded-lg p-3 border border-[#2a2d42] overflow-x-auto">{`{
@@ -377,6 +451,9 @@ export function Sidebar({
                 </p>
                 <p className="text-[10px] text-[#8892a4]">
                   <span className="text-[#e2e8f0]">dueDate</span> — formato <span className="text-[#a5b4fc]">YYYY-MM-DD</span>. Opcional.
+                </p>
+                <p className="text-[10px] text-[#8892a4]">
+                  <span className="text-[#e2e8f0]">tags</span> — incluídas no "Copiar tudo" por área (Dev, Estudo, Trabalho, Saúde, Casa & Vida, Finanças, Pessoal)
                 </p>
               </div>
             </div>

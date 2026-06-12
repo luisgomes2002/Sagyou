@@ -12,6 +12,7 @@ Kanban pessoal offline construído com Electron, React e TypeScript.
 - **Relatórios** — visão geral de produtividade
 - **Upcoming** — tarefas com data de vencimento próxima
 - **Busca** — pesquisa rápida em todos os dados
+- **Importação via IA** — cole JSON gerado por um LLM; o sidebar tem "Copiar tudo" que copia um prompt pronto com schema e todas as tags por categoria (Dev, Estudo, Trabalho, Saúde, Casa & Vida, Finanças, Pessoal)
 - **Backup** — exportação e importação de dados em JSON
 - 100% offline — dados armazenados localmente
 

@@ -178,30 +178,30 @@ export const DEFAULT_COLUMN_NAMES = ['Backlog', 'In Progress', 'Review', 'Done']
 export const DEFAULT_TAGS: { label: string; tags: string[] }[] = [
   {
     label: 'Dev',
-    tags: ['frontend', 'backend', 'bug', 'feat', 'refactor', 'api', 'design', 'mobile', 'devops', 'testes', 'docs', 'deploy']
+    tags: ['frontend', 'backend', 'bug', 'feat', 'refactor', 'api', 'design', 'mobile', 'devops', 'testes', 'docs', 'deploy', 'auth', 'security', 'performance', 'infra', 'ipc', 'store', 'utils', 'dnd', 'memoization', 'correctness', 'idempotency', 'query-optimization', 'redis', 'jwt', 'reports', 'heatmap', 'due-date', 'tags', 'sprints']
   },
   {
     label: 'Estudo',
-    tags: ['estudo', 'leitura', 'revisão', 'resumo', 'prova', 'pesquisa', 'aula', 'curso', 'faculdade', 'idioma']
+    tags: ['estudo', 'leitura', 'revisão', 'resumo', 'prova', 'pesquisa', 'aula', 'curso', 'faculdade', 'idioma', 'exercício-mental', 'flashcard', 'vocabulário', 'gramática', 'prática', 'escrita', 'listening', 'tradução']
   },
   {
     label: 'Trabalho',
-    tags: ['reunião', 'relatório', 'prazo', 'cliente', 'apresentação', 'email', 'planejamento', 'meta']
+    tags: ['reunião', 'relatório', 'prazo', 'cliente', 'apresentação', 'email', 'planejamento', 'meta', 'entrega', 'revisão', 'feedback', 'onboarding', 'contrato', 'proposta', 'sprint', 'retrospectiva']
   },
   {
     label: 'Saúde',
-    tags: ['exercício', 'academia', 'dieta', 'médico', 'sono', 'saúde mental', 'hidratação', 'corrida']
+    tags: ['exercício', 'academia', 'dieta', 'médico', 'sono', 'saúde mental', 'hidratação', 'corrida', 'alongamento', 'meditação', 'consulta', 'exame', 'suplemento', 'descanso']
   },
   {
     label: 'Casa & Vida',
-    tags: ['compras', 'casa', 'limpeza', 'contas', 'família', 'social', 'lazer', 'viagem', 'alimentação', 'pet']
+    tags: ['compras', 'casa', 'limpeza', 'contas', 'família', 'social', 'lazer', 'viagem', 'alimentação', 'pet', 'manutenção', 'organização', 'decoração', 'mudança', 'vizinhança']
   },
   {
     label: 'Finanças',
-    tags: ['investimento', 'gasto', 'economia', 'imposto', 'assinatura', 'renda extra']
+    tags: ['investimento', 'gasto', 'economia', 'imposto', 'assinatura', 'renda extra', 'orçamento', 'dívida', 'cartão', 'poupança', 'declaração', 'recibo', 'transferência']
   },
   {
     label: 'Pessoal',
-    tags: ['hábito', 'rotina', 'projeto pessoal', 'criatividade', 'foco', 'urgente', 'importante', 'ideia']
+    tags: ['hábito', 'rotina', 'projeto pessoal', 'criatividade', 'foco', 'urgente', 'importante', 'ideia', 'meta pessoal', 'lembrete', 'reflexão', 'diário', 'gratidão', 'planejamento semanal']
   }
 ]

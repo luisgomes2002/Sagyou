@@ -72,7 +72,7 @@ Soft deletes use a `Tombstone[]` array. On `importBackup`, a three-way merge (`m
 
 ### Types
 
-All domain types are in `src/renderer/src/types/index.ts`. Notable constants exported alongside types: `PROJECT_COLORS` (`as const` tuple — use `useState<string>` when storing a selected color), `NOTE_COLORS`, `CURRENCY_CONFIG`, `DEFAULT_COLUMN_NAMES`.
+All domain types are in `src/renderer/src/types/index.ts`. Notable constants exported alongside types: `PROJECT_COLORS` (`as const` tuple — use `useState<string>` when storing a selected color), `NOTE_COLORS`, `CURRENCY_CONFIG`, `DEFAULT_COLUMN_NAMES`, `DEFAULT_TAGS` (categorized tag list used in tag pickers and the AI import prompt template; categories: Dev, Estudo, Trabalho, Saúde, Casa & Vida, Finanças, Pessoal).
 
 ## Testing
 
