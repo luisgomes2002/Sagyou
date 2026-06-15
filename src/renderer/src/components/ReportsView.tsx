@@ -1,7 +1,161 @@
 import { useMemo } from 'react'
-import { startOfWeek, endOfWeek, subWeeks, parseISO, isWithinInterval, format } from 'date-fns'
+import { startOfWeek, endOfWeek, subWeeks, addDays, parseISO, isWithinInterval, format } from 'date-fns'
 import type { Project, Task } from '../types'
 import { PRIORITY_CONFIG } from '../types'
+
+const MONTH_ABBR = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
+
+const HEATMAP_COLORS = ['#161b2c', '#312e81', '#4338ca', '#6366f1', '#a5b4fc']
+
+function heatColor(count: number): string {
+  if (count === 0) return HEATMAP_COLORS[0]
+  if (count === 1) return HEATMAP_COLORS[1]
+  if (count <= 3) return HEATMAP_COLORS[2]
+  if (count <= 6) return HEATMAP_COLORS[3]
+  return HEATMAP_COLORS[4]
+}
+
+function ActivityHeatmap({ doneTasks }: { doneTasks: Task[] }) {
+  const CELL = 11
+  const GAP = 3
+  const DAY_LABEL_W = 22
+
+  const today = useMemo(() => new Date(), [])
+
+  const countMap = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const t of doneTasks) {
+      const d = (t.completedAt ?? t.updatedAt)?.slice(0, 10)
+      if (d) map.set(d, (map.get(d) ?? 0) + 1)
+    }
+    return map
+  }, [doneTasks])
+
+  const { weeks, monthLabels, total } = useMemo(() => {
+    const startDate = startOfWeek(subWeeks(today, 51), { weekStartsOn: 0 })
+    const todayStr = format(today, 'yyyy-MM-dd')
+    const weeks: Array<Array<{ date: Date; iso: string; future: boolean }>> = []
+    let cur = new Date(startDate)
+
+    while (cur <= today || weeks.length === 0 || weeks[weeks.length - 1].length < 7) {
+      if (weeks.length === 0 || weeks[weeks.length - 1].length === 7) weeks.push([])
+      const iso = format(cur, 'yyyy-MM-dd')
+      weeks[weeks.length - 1].push({ date: new Date(cur), iso, future: iso > todayStr })
+      cur = addDays(cur, 1)
+      if (weeks.length > 53) break
+    }
+
+    // Pad last week to 7 days
+    while (weeks[weeks.length - 1].length < 7) {
+      const last = weeks[weeks.length - 1][weeks[weeks.length - 1].length - 1]
+      const next = addDays(last.date, 1)
+      const iso = format(next, 'yyyy-MM-dd')
+      weeks[weeks.length - 1].push({ date: next, iso, future: true })
+    }
+
+    // Month labels: first week of each month
+    const monthLabels: Array<{ col: number; label: string }> = []
+    let lastMonth = -1
+    weeks.forEach((_week, col) => {
+      const m = weeks[col][0].date.getMonth()
+      if (m !== lastMonth) {
+        monthLabels.push({ col, label: MONTH_ABBR[m] })
+        lastMonth = m
+      }
+    })
+
+    const startStr = format(startDate, 'yyyy-MM-dd')
+    let total = 0
+    countMap.forEach((v, k) => { if (k >= startStr && k <= todayStr) total += v })
+
+    return { weeks, monthLabels, total }
+  }, [today, countMap])
+
+  const dayLabels = ['', 'Seg', '', 'Qua', '', 'Sex', '']
+
+  return (
+    <div className="rounded-lg bg-[#1e2235] border border-[#2a2d42] p-4">
+      <div className="flex items-baseline justify-between mb-2">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-[#8892a4]">
+          Atividade — últimos 12 meses
+        </p>
+        <span className="text-[11px] text-[#8892a4]">{total} concluídas</span>
+      </div>
+
+      <div className="overflow-x-auto">
+        <div style={{ display: 'inline-block' }}>
+          {/* Month labels */}
+          <div style={{ display: 'flex', gap: GAP, paddingLeft: DAY_LABEL_W + 4, marginBottom: 4 }}>
+            {weeks.map((_week, wi) => {
+              const label = monthLabels.find((m) => m.col === wi)
+              return (
+                <div
+                  key={wi}
+                  style={{
+                    width: CELL,
+                    fontSize: 9,
+                    color: '#8892a4',
+                    whiteSpace: 'nowrap',
+                    overflow: 'visible',
+                    lineHeight: 1,
+                  }}
+                >
+                  {label?.label ?? ''}
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Grid */}
+          <div style={{ display: 'flex', gap: GAP }}>
+            {/* Day labels */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: GAP, width: DAY_LABEL_W, alignItems: 'flex-end', paddingRight: 4 }}>
+              {dayLabels.map((label, i) => (
+                <div
+                  key={i}
+                  style={{ height: CELL, fontSize: 9, color: '#4a5068', lineHeight: `${CELL}px`, whiteSpace: 'nowrap' }}
+                >
+                  {label}
+                </div>
+              ))}
+            </div>
+
+            {/* Week columns */}
+            {weeks.map((week, wi) => (
+              <div key={wi} style={{ display: 'flex', flexDirection: 'column', gap: GAP }}>
+                {week.map(({ iso, future }, di) => {
+                  const count = future ? 0 : (countMap.get(iso) ?? 0)
+                  return (
+                    <div
+                      key={di}
+                      title={future ? undefined : `${iso}: ${count} task${count !== 1 ? 's' : ''} concluída${count !== 1 ? 's' : ''}`}
+                      style={{
+                        width: CELL,
+                        height: CELL,
+                        borderRadius: 2,
+                        backgroundColor: future ? 'transparent' : heatColor(count),
+                        cursor: count > 0 ? 'default' : undefined,
+                      }}
+                    />
+                  )
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Legend */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10, justifyContent: 'flex-end' }}>
+        <span style={{ fontSize: 9, color: '#4a5068' }}>Menos</span>
+        {HEATMAP_COLORS.map((c, i) => (
+          <div key={i} style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: c }} />
+        ))}
+        <span style={{ fontSize: 9, color: '#4a5068' }}>Mais</span>
+      </div>
+    </div>
+  )
+}
 
 interface Props {
   projects: Project[]
@@ -140,6 +294,9 @@ export function ReportsView({ projects, tasks }: Props) {
             color="#f472b6"
           />
         </div>
+
+        {/* Activity heatmap */}
+        <ActivityHeatmap doneTasks={doneTasks} />
 
         {/* Weekly bar chart */}
         <div className="rounded-lg bg-[#1e2235] border border-[#2a2d42] p-4">

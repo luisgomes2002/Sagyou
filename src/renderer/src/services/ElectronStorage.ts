@@ -2,7 +2,7 @@ import type { IStorageAdapter } from './StorageAdapter'
 import type { Project, Task, Sprint, Tombstone, Backup, AIJson, StickyNote, Goal, Habit, FinancialTable } from '../types'
 
 export class ElectronStorage implements IStorageAdapter {
-  async load(): Promise<{ projects: Project[]; tasks: Task[]; sprints: Sprint[]; tombstones: Tombstone[]; notes: StickyNote[]; goals: Goal[]; habits: Habit[]; lists: FinancialTable[] }> {
+  async load() {
     const data = await window.electronAPI.store.load() as Record<string, unknown>
     return {
       projects: (data.projects || []) as Project[],
@@ -12,11 +12,12 @@ export class ElectronStorage implements IStorageAdapter {
       notes: (data.notes || []) as StickyNote[],
       goals: (data.goals || []) as Goal[],
       habits: (data.habits || []) as Habit[],
-      lists: (data.lists || []) as FinancialTable[]
+      lists: (data.lists || []) as FinancialTable[],
+      activeTimer: (data.activeTimer ?? null) as { taskId: string; startedAt: number } | null
     }
   }
 
-  async save(data: { projects: Project[]; tasks: Task[]; sprints: Sprint[]; tombstones: Tombstone[]; notes: StickyNote[]; goals: Goal[]; habits: Habit[]; lists: FinancialTable[] }): Promise<void> {
+  async save(data: Parameters<IStorageAdapter['save']>[0]): Promise<void> {
     await window.electronAPI.store.save(data)
   }
 

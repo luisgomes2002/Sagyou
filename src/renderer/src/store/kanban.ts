@@ -35,6 +35,7 @@ interface KanbanActions {
 
   createProject: (name: string, description?: string, color?: string) => string
   updateProject: (id: string, updates: Partial<Pick<Project, 'name' | 'description' | 'color'>>) => void
+  moveProject: (id: string, direction: 'up' | 'down') => void
   deleteProject: (id: string) => void
 
   createColumn: (projectId: string, name: string, color?: string) => void
@@ -55,7 +56,9 @@ interface KanbanActions {
 
   createSprint: (projectId: string, name: string) => string
   createSprints: (projectId: string, names: string[]) => void
+  updateSprint: (sprintId: string, name: string) => boolean
   closeSprint: (sprintId: string) => void
+  reopenSprint: (sprintId: string) => void
   deleteSprint: (sprintId: string) => void
   setTaskSprint: (taskId: string, sprintId: string | null) => void
 
@@ -65,9 +68,9 @@ interface KanbanActions {
 
   createNote: (
     projectId: string,
-    data?: Partial<Pick<StickyNote, 'content' | 'color' | 'x' | 'y' | 'width' | 'height'>>
+    data?: Partial<Pick<StickyNote, 'content' | 'color' | 'x' | 'y' | 'width' | 'height' | 'type'>>
   ) => string
-  updateNote: (id: string, updates: Partial<Pick<StickyNote, 'content' | 'color' | 'x' | 'y' | 'width' | 'height' | 'taskId'>>) => void
+  updateNote: (id: string, updates: Partial<Pick<StickyNote, 'content' | 'color' | 'x' | 'y' | 'width' | 'height' | 'taskId' | 'fontSize' | 'completedAt'>>) => void
   deleteNote: (id: string) => void
   connectNotes: (fromId: string, toId: string) => void
   disconnectNotes: (fromId: string, toId: string) => void
@@ -79,6 +82,7 @@ interface KanbanActions {
   deleteGoalEntry: (goalId: string, entryId: string) => void
 
   createHabit: (data: Pick<Habit, 'name' | 'color'>) => string
+  updateHabit: (id: string, updates: Partial<Pick<Habit, 'name' | 'color'>>) => void
   deleteHabit: (id: string) => void
   toggleHabit: (id: string, isoDate: string) => void
 
@@ -182,16 +186,34 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
   isLoaded: false,
 
   _persist: async () => {
-    const { projects, tasks, sprints, tombstones, notes, goals, habits, lists } = get()
-    await storage.save({ projects, tasks, sprints, tombstones, notes, goals, habits, lists })
+    const { projects, tasks, sprints, tombstones, notes, goals, habits, lists, activeTimer } = get()
+    await storage.save({ projects, tasks, sprints, tombstones, notes, goals, habits, lists, activeTimer })
   },
 
   loadData: async () => {
     const data = await storage.load()
-    const projects = data.projects || []
+    const projects = (data.projects || []).map((p: Project, i: number) => ({
+      ...p,
+      order: p.order ?? i
+    }))
+
+    // If a timer was running when the app was last closed, commit its elapsed time
+    const savedTimer = data.activeTimer as ActiveTimer | null | undefined
+    let tasks: Task[] = data.tasks || []
+    if (savedTimer?.taskId) {
+      const elapsed = Math.floor((Date.now() - savedTimer.startedAt) / 1000)
+      if (elapsed > 0) {
+        tasks = tasks.map((t) =>
+          t.id === savedTimer.taskId
+            ? { ...t, timeSpent: (t.timeSpent ?? 0) + elapsed, updatedAt: new Date().toISOString() }
+            : t
+        )
+      }
+    }
+
     set({
       projects,
-      tasks: data.tasks || [],
+      tasks,
       sprints: data.sprints || [],
       tombstones: data.tombstones || [],
       notes: data.notes || [],
@@ -208,8 +230,14 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
       habits: data.habits || [],
       lists: (data.lists || []).map((l) => ({ ...l, transactions: l.transactions ?? [], goals: l.goals ?? [], currency: (l.currency || 'BRL') as Currency })),
       isLoaded: true,
-      activeProjectId: projects[0]?.id ?? null
+      activeProjectId: projects[0]?.id ?? null,
+      activeTimer: null
     })
+
+    // Persist the committed elapsed time so it's durable
+    if (savedTimer?.taskId) {
+      await get()._persist()
+    }
   },
 
   setActiveProject: (id) => set({ activeProjectId: id }),
@@ -221,8 +249,11 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
     const columns: Column[] = DEFAULT_COLUMN_NAMES.map((colName, i) => ({
       id: uuidv4(), name: colName, order: i
     }))
-    const project: Project = { id, name, description, color, columns, createdAt: now, updatedAt: now }
-    set((s) => ({ projects: [...s.projects, project], activeProjectId: id }))
+    const project: Project = { id, name, description, color, columns, order: undefined, createdAt: now, updatedAt: now }
+    set((s) => {
+      const maxOrder = s.projects.reduce((m, p) => Math.max(m, p.order ?? 0), -1)
+      return { projects: [...s.projects, { ...project, order: maxOrder + 1 }], activeProjectId: id }
+    })
     get()._persist()
     return id
   },
@@ -233,6 +264,25 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
         p.id === id ? { ...p, ...updates, updatedAt: new Date().toISOString() } : p
       )
     }))
+    get()._persist()
+  },
+
+  moveProject: (id, direction) => {
+    set((s) => {
+      const sorted = [...s.projects].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+      const idx = sorted.findIndex((p) => p.id === id)
+      const swapIdx = direction === 'up' ? idx - 1 : idx + 1
+      if (idx === -1 || swapIdx < 0 || swapIdx >= sorted.length) return s
+      const aOrder = sorted[idx].order ?? idx
+      const bOrder = sorted[swapIdx].order ?? swapIdx
+      return {
+        projects: s.projects.map((p) => {
+          if (p.id === sorted[idx].id) return { ...p, order: bOrder }
+          if (p.id === sorted[swapIdx].id) return { ...p, order: aOrder }
+          return p
+        })
+      }
+    })
     get()._persist()
   },
 
@@ -337,9 +387,18 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
 
   updateTask: (id, updates) => {
     set((s) => ({
-      tasks: s.tasks.map((t) =>
-        t.id === id ? { ...t, ...updates, updatedAt: new Date().toISOString() } : t
-      )
+      tasks: s.tasks.map((t) => {
+        if (t.id !== id) return t
+        const now = new Date().toISOString()
+        const next = { ...t, ...updates, updatedAt: now }
+        if (updates.columnId !== undefined) {
+          const project = s.projects.find((p) => p.id === t.projectId)
+          const col = project?.columns.find((c) => c.id === updates.columnId)
+          const isDone = col?.name.toLowerCase() === 'done'
+          next.completedAt = isDone ? (t.completedAt ?? now) : undefined
+        }
+        return next
+      })
     }))
     get()._persist()
   },
@@ -357,11 +416,20 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
     set((s) => {
       const task = s.tasks.find((t) => t.id === taskId)
       if (!task) return s
+      const now = new Date().toISOString()
+      const project = s.projects.find((p) => p.id === task.projectId)
+      const newCol = project?.columns.find((c) => c.id === newColumnId)
+      const isDone = newCol?.name.toLowerCase() === 'done'
       const otherTasks = s.tasks.filter((t) => t.id !== taskId)
       const columnTasks = otherTasks
         .filter((t) => t.columnId === newColumnId && t.projectId === task.projectId)
         .sort((a, b) => a.order - b.order)
-      const updatedTask: Task = { ...task, columnId: newColumnId, updatedAt: new Date().toISOString() }
+      const updatedTask: Task = {
+        ...task,
+        columnId: newColumnId,
+        updatedAt: now,
+        completedAt: isDone ? (task.completedAt ?? now) : undefined
+      }
       columnTasks.splice(newIndex, 0, updatedTask)
       const reordered = columnTasks.map((t, i) => ({ ...t, order: i }))
       const untouched = otherTasks.filter(
@@ -373,8 +441,12 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
   },
 
   createSprint: (projectId, name) => {
+    const existing = get().sprints.find(
+      (s) => s.projectId === projectId && s.name.toLowerCase() === name.trim().toLowerCase()
+    )
+    if (existing) return existing.id
     const id = uuidv4()
-    const sprint: Sprint = { id, projectId, name, createdAt: new Date().toISOString() }
+    const sprint: Sprint = { id, projectId, name: name.trim(), createdAt: new Date().toISOString() }
     set((s) => ({ sprints: [...s.sprints, sprint] }))
     get()._persist()
     return id
@@ -382,12 +454,34 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
 
   createSprints: (projectId, names) => {
     const now = new Date().toISOString()
+    const existingNames = new Set(
+      get().sprints
+        .filter((s) => s.projectId === projectId)
+        .map((s) => s.name.toLowerCase())
+    )
     const newSprints: Sprint[] = names
       .map((n) => n.trim())
-      .filter(Boolean)
+      .filter((n) => n && !existingNames.has(n.toLowerCase()))
       .map((name) => ({ id: uuidv4(), projectId, name, createdAt: now }))
+    if (newSprints.length === 0) return
     set((s) => ({ sprints: [...s.sprints, ...newSprints] }))
     get()._persist()
+  },
+
+  updateSprint: (sprintId, name) => {
+    const trimmed = name.trim()
+    const sprints = get().sprints
+    const sprint = sprints.find((s) => s.id === sprintId)
+    if (!sprint || sprint.closedAt || !trimmed) return false
+    const duplicate = sprints.some(
+      (s) => s.id !== sprintId && s.projectId === sprint.projectId && s.name.toLowerCase() === trimmed.toLowerCase()
+    )
+    if (duplicate) return false
+    set((s) => ({
+      sprints: s.sprints.map((sp) => sp.id === sprintId ? { ...sp, name: trimmed } : sp)
+    }))
+    get()._persist()
+    return true
   },
 
   closeSprint: (sprintId) => {
@@ -395,6 +489,17 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
       sprints: s.sprints.map((sp) =>
         sp.id === sprintId ? { ...sp, closedAt: new Date().toISOString() } : sp
       )
+    }))
+    get()._persist()
+  },
+
+  reopenSprint: (sprintId) => {
+    set((s) => ({
+      sprints: s.sprints.map((sp) => {
+        if (sp.id !== sprintId) return sp
+        const { closedAt: _, ...rest } = sp
+        return rest as typeof sp
+      })
     }))
     get()._persist()
   },
@@ -460,6 +565,7 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
       y: data.y ?? 100,
       width: data.width ?? 200,
       height: data.height ?? 150,
+      type: data.type,
       connections: [],
       createdAt: now,
       updatedAt: now
@@ -578,6 +684,15 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
     set((s) => ({ habits: [...s.habits, habit] }))
     get()._persist()
     return id
+  },
+
+  updateHabit: (id, updates) => {
+    set((s) => ({
+      habits: s.habits.map((h) =>
+        h.id === id ? { ...h, ...updates, updatedAt: new Date().toISOString() } : h
+      )
+    }))
+    get()._persist()
   },
 
   deleteHabit: (id) => {

@@ -146,6 +146,11 @@ function DoneTaskRow({
         <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${priority.bg} ${priority.color}`}>
           {priority.label}
         </span>
+        {task.completedAt && (
+          <span className="text-[10px] text-[#22c55e]/70" title="Concluída em">
+            ✓ {format(parseISO(task.completedAt), 'dd/MM/yy')}
+          </span>
+        )}
         {task.dueDate && (
           <span className="text-[10px] text-[#8892a4]">
             {format(parseISO(task.dueDate), 'dd/MM')}

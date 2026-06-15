@@ -71,6 +71,12 @@ function formatDateBR(iso: string): string {
   return `${d}/${m}/${y}`
 }
 
+function formatAmountInput(value: number, currency: Currency): string {
+  const { decimals } = CURRENCY_CONFIG[currency]
+  const fixed = value.toFixed(decimals)
+  return currency === 'USD' ? fixed : fixed.replace('.', ',')
+}
+
 const FINANCIAL_CATEGORIES = [
   // Despesas
   'Alimentação',
@@ -362,13 +368,13 @@ interface ItemRowProps {
 function ItemRow({ item, currency, onUpdate, onDelete, onToggle }: ItemRowProps) {
   const [name, setName] = useState(item.name)
   const [qty, setQty] = useState(item.qty.toString())
-  const [price, setPrice] = useState(item.price != null ? item.price.toString() : '')
+  const [price, setPrice] = useState(() => item.price != null ? formatAmountInput(item.price, currency) : '')
   const [link, setLink] = useState(item.link ?? '')
 
   useEffect(() => {
     setName(item.name)
     setQty(item.qty.toString())
-    setPrice(item.price != null ? item.price.toString() : '')
+    setPrice(item.price != null ? formatAmountInput(item.price, currency) : '')
     setLink(item.link ?? '')
   }, [item.id])
 
@@ -398,7 +404,7 @@ function ItemRow({ item, currency, onUpdate, onDelete, onToggle }: ItemRowProps)
       const n = d.toDecimalPlaces(2).toNumber()
       if (n !== item.price) onUpdate({ price: n })
     } else {
-      setPrice(item.price != null ? item.price.toString() : '')
+      setPrice(item.price != null ? formatAmountInput(item.price, currency) : '')
     }
   }
 
@@ -1370,6 +1376,70 @@ function FinancialGoalCard({
   )
 }
 
+// ── CategoryInput ─────────────────────────────────────────────────────────────
+
+function CategoryInput({
+  value,
+  onChange,
+  onCommit,
+  onKeyDown,
+  placeholder,
+  className
+}: {
+  value: string
+  onChange: (v: string) => void
+  onCommit?: () => void
+  onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void
+  placeholder?: string
+  className?: string
+}) {
+  const [open, setOpen] = useState(false)
+
+  const filtered = value.trim()
+    ? FINANCIAL_CATEGORIES.filter((c) => c.toLowerCase().includes(value.toLowerCase()))
+    : FINANCIAL_CATEGORIES
+
+  const select = (cat: string) => {
+    onChange(cat)
+    setOpen(false)
+    onCommit?.()
+  }
+
+  return (
+    <div className="relative">
+      <input
+        value={value}
+        onChange={(e) => { onChange(e.target.value); setOpen(true) }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => { setOpen(false); onCommit?.() }}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') setOpen(false)
+          onKeyDown?.(e)
+        }}
+        placeholder={placeholder}
+        className={className}
+      />
+      {open && filtered.length > 0 && (
+        <div className="absolute left-0 top-full mt-0.5 z-50 w-44 max-h-52 overflow-y-auto rounded-lg border border-[#2a2d42] bg-[#0d0f18] shadow-xl py-1">
+          {filtered.map((cat) => (
+            <button
+              key={cat}
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => select(cat)}
+              className={`w-full text-left px-3 py-1.5 text-xs transition-colors hover:bg-[#1e2235] ${
+                value === cat ? 'text-[#a5b4fc]' : 'text-[#8892a4] hover:text-[#e2e8f0]'
+              }`}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── AddTransactionRow ─────────────────────────────────────────────────────────
 
 interface AddTransactionRowProps {
@@ -1443,10 +1513,9 @@ function AddTransactionRow({ currency, onAdd }: AddTransactionRowProps) {
         />
       </td>
       <td className="py-1.5 pr-2 w-28">
-        <input
-          list="fin-categories"
+        <CategoryInput
           value={category}
-          onChange={(e) => setCategory(e.target.value)}
+          onChange={setCategory}
           onKeyDown={onKey}
           placeholder="Categoria"
           className="w-full bg-transparent text-xs text-[#8892a4] placeholder-[#3a3e58] focus:outline-none"
@@ -1514,14 +1583,14 @@ function TransactionRow({ tx, currency, onUpdate, onDelete }: TransactionRowProp
   const [editDate, setEditDate] = useState(tx.date)
   const [editDesc, setEditDesc] = useState(tx.description)
   const [editCat, setEditCat] = useState(tx.category ?? '')
-  const [editAmount, setEditAmount] = useState(tx.amount.toString())
+  const [editAmount, setEditAmount] = useState(() => formatAmountInput(tx.amount, currency))
   const [dateEditing, setDateEditing] = useState(false)
 
   useEffect(() => {
     setEditDate(tx.date)
     setEditDesc(tx.description)
     setEditCat(tx.category ?? '')
-    setEditAmount(tx.amount.toString())
+    setEditAmount(formatAmountInput(tx.amount, currency))
   }, [tx.id])
 
   const blur = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -1548,7 +1617,7 @@ function TransactionRow({ tx, currency, onUpdate, onDelete }: TransactionRowProp
       const n = d.toDecimalPlaces(2).toNumber()
       if (n !== tx.amount) onUpdate({ amount: n })
     } else {
-      setEditAmount(tx.amount.toString())
+      setEditAmount(formatAmountInput(tx.amount, currency))
     }
   }
 
@@ -1610,11 +1679,10 @@ function TransactionRow({ tx, currency, onUpdate, onDelete }: TransactionRowProp
         </div>
       </td>
       <td className="py-2 pr-2 w-28">
-        <input
-          list="fin-categories"
+        <CategoryInput
           value={editCat}
-          onChange={(e) => setEditCat(e.target.value)}
-          onBlur={commitCat}
+          onChange={setEditCat}
+          onCommit={commitCat}
           onKeyDown={blur}
           placeholder="—"
           className="w-full bg-transparent text-xs text-[#8892a4] placeholder-[#3a3e58] focus:outline-none focus:bg-[#0d0f18] focus:px-1 rounded transition-all"
@@ -2238,12 +2306,7 @@ function FinanceTab({
           </select>
         </div>
 
-        <datalist id="fin-categories">
-          {FINANCIAL_CATEGORIES.map((c) => (
-            <option key={c} value={c} />
-          ))}
-        </datalist>
-        <table className="w-full">
+<table className="w-full">
           <thead className="sticky top-0 bg-[#13151f] z-10">
             <tr className="border-b border-[#2a2d42]">
               <th className="pl-4 pr-2 py-2 w-28 text-left text-[10px] font-semibold uppercase tracking-wider text-[#8892a4]">

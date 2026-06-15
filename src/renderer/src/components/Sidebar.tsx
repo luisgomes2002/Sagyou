@@ -13,6 +13,7 @@ interface Props {
   onOpenSearch: () => void
   onNewProject: () => void
   onEditProject: (project: Project) => void
+  onMoveProject: (id: string, direction: 'up' | 'down') => void
   onDeleteProject: (project: Project) => void
   onExportBackup: () => void
   onImportBackup: () => void
@@ -28,6 +29,7 @@ export function Sidebar({
   onOpenSearch,
   onNewProject,
   onEditProject,
+  onMoveProject,
   onDeleteProject,
   onExportBackup,
   onImportBackup,
@@ -343,7 +345,7 @@ Gere tarefas para cada parte desse projeto, não deixe as tarefas muito granulad
         {projects.length === 0 && (
           <p className="px-4 text-xs text-[#8892a4] italic">Nenhum projeto ainda</p>
         )}
-        {projects.map((project) => (
+        {[...projects].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)).map((project) => (
           <div key={project.id} className="relative group">
             <button
               onClick={() => onSelectProject(project.id)}
@@ -470,22 +472,42 @@ Gere tarefas para cada parte desse projeto, não deixe as tarefas muito granulad
             className="fixed z-50 w-36 rounded-lg border border-[#2a2d42] bg-[#13151f] shadow-xl py-1"
             style={{ top: projectMenuPos.top, right: projectMenuPos.right }}
           >
-            {projects.filter((p) => p.id === projectMenuId).map((project) => (
-              <div key={project.id}>
-                <button
-                  className="w-full text-left px-3 py-2 text-sm text-[#e2e8f0] hover:bg-[#1e2235] transition-colors"
-                  onClick={() => { setProjectMenuId(null); onEditProject(project) }}
-                >
-                  Editar
-                </button>
-                <button
-                  className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-red-400/10 transition-colors"
-                  onClick={() => { setProjectMenuId(null); onDeleteProject(project) }}
-                >
-                  Deletar
-                </button>
-              </div>
-            ))}
+            {(() => {
+              const sorted = [...projects].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+              const project = sorted.find((p) => p.id === projectMenuId)
+              if (!project) return null
+              const idx = sorted.findIndex((p) => p.id === projectMenuId)
+              return (
+                <div>
+                  <button
+                    className="w-full text-left px-3 py-2 text-sm text-[#e2e8f0] hover:bg-[#1e2235] transition-colors"
+                    onClick={() => { setProjectMenuId(null); onEditProject(project) }}
+                  >
+                    Editar
+                  </button>
+                  <button
+                    disabled={idx === 0}
+                    className="w-full text-left px-3 py-2 text-sm text-[#e2e8f0] hover:bg-[#1e2235] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                    onClick={() => { onMoveProject(project.id, 'up'); setProjectMenuId(null) }}
+                  >
+                    ↑ Mover para cima
+                  </button>
+                  <button
+                    disabled={idx === sorted.length - 1}
+                    className="w-full text-left px-3 py-2 text-sm text-[#e2e8f0] hover:bg-[#1e2235] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                    onClick={() => { onMoveProject(project.id, 'down'); setProjectMenuId(null) }}
+                  >
+                    ↓ Mover para baixo
+                  </button>
+                  <button
+                    className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-red-400/10 transition-colors"
+                    onClick={() => { setProjectMenuId(null); onDeleteProject(project) }}
+                  >
+                    Deletar
+                  </button>
+                </div>
+              )
+            })()}
           </div>
         </>,
         document.body

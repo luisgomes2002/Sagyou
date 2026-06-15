@@ -49,13 +49,14 @@ const WEEK_DAYS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S']
 // ── HabitModal ────────────────────────────────────────────────────────────────
 
 interface ModalProps {
+  habit?: Habit
   onSave: (data: { name: string; color: string }) => void
   onClose: () => void
 }
 
-function HabitModal({ onSave, onClose }: ModalProps) {
-  const [name, setName] = useState('')
-  const [color, setColor] = useState<string>(PROJECT_COLORS[0])
+function HabitModal({ habit, onSave, onClose }: ModalProps) {
+  const [name, setName] = useState(habit?.name ?? '')
+  const [color, setColor] = useState<string>(habit?.color ?? PROJECT_COLORS[0])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -68,7 +69,7 @@ function HabitModal({ onSave, onClose }: ModalProps) {
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       <div className="relative z-10 w-full max-w-xs mx-4 rounded-xl border border-[#2a2d42] bg-[#13151f] shadow-2xl">
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#2a2d42]">
-          <h2 className="text-sm font-semibold text-[#e2e8f0]">Novo hábito</h2>
+          <h2 className="text-sm font-semibold text-[#e2e8f0]">{habit ? 'Editar hábito' : 'Novo hábito'}</h2>
           <button
             onClick={onClose}
             className="p-1 rounded text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#1e2235] transition-colors"
@@ -94,7 +95,7 @@ function HabitModal({ onSave, onClose }: ModalProps) {
 
           <div>
             <label className="block text-xs font-medium text-[#8892a4] mb-2">Cor</label>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               {PROJECT_COLORS.map((c) => (
                 <button
                   key={c}
@@ -123,7 +124,7 @@ function HabitModal({ onSave, onClose }: ModalProps) {
               disabled={!name.trim()}
               className="px-4 py-2 text-sm rounded-lg bg-[#6366f1] text-white font-medium hover:bg-[#5254c5] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
-              Criar hábito
+              {habit ? 'Salvar' : 'Criar hábito'}
             </button>
           </div>
         </form>
@@ -198,10 +199,11 @@ interface CardProps {
   year: number
   month: number
   onToggle: (date: string) => void
+  onEdit: () => void
   onDelete: () => void
 }
 
-function HabitCard({ habit, today, year, month, onToggle, onDelete }: CardProps) {
+function HabitCard({ habit, today, year, month, onToggle, onEdit, onDelete }: CardProps) {
   const [menuOpen, setMenuOpen] = useState(false)
 
   const completionSet = new Set(habit.completions)
@@ -232,6 +234,12 @@ function HabitCard({ habit, today, year, month, onToggle, onDelete }: CardProps)
             <>
               <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
               <div className="absolute right-0 top-7 z-20 w-32 rounded-lg border border-[#2a2d42] bg-[#13151f] shadow-xl py-1">
+                <button
+                  className="w-full text-left px-3 py-2 text-sm text-[#e2e8f0] hover:bg-[#1e2235] transition-colors"
+                  onClick={() => { setMenuOpen(false); onEdit() }}
+                >
+                  Editar
+                </button>
                 <button
                   className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-red-400/10 transition-colors"
                   onClick={() => { setMenuOpen(false); onDelete() }}
@@ -298,10 +306,12 @@ function HabitCard({ habit, today, year, month, onToggle, onDelete }: CardProps)
 export function HabitView() {
   const habits = useKanbanStore((s) => s.habits)
   const createHabit = useKanbanStore((s) => s.createHabit)
+  const updateHabit = useKanbanStore((s) => s.updateHabit)
   const deleteHabit = useKanbanStore((s) => s.deleteHabit)
   const toggleHabit = useKanbanStore((s) => s.toggleHabit)
 
   const [showModal, setShowModal] = useState(false)
+  const [editingHabit, setEditingHabit] = useState<Habit | null>(null)
   const [confirm, setConfirm] = useState<{ open: boolean; id: string | null }>({ open: false, id: null })
 
   const today = getToday()
@@ -326,6 +336,11 @@ export function HabitView() {
   const handleSave = (data: { name: string; color: string }) => {
     createHabit(data)
     setShowModal(false)
+  }
+
+  const handleEditSave = (data: { name: string; color: string }) => {
+    if (editingHabit) updateHabit(editingHabit.id, data)
+    setEditingHabit(null)
   }
 
   return (
@@ -414,6 +429,7 @@ export function HabitView() {
                   year={viewYear}
                   month={viewMonth}
                   onToggle={(date) => toggleHabit(habit.id, date)}
+                  onEdit={() => setEditingHabit(habit)}
                   onDelete={() => setConfirm({ open: true, id: habit.id })}
                 />
               ))}
@@ -424,6 +440,10 @@ export function HabitView() {
 
       {showModal && (
         <HabitModal onSave={handleSave} onClose={() => setShowModal(false)} />
+      )}
+
+      {editingHabit && (
+        <HabitModal habit={editingHabit} onSave={handleEditSave} onClose={() => setEditingHabit(null)} />
       )}
 
       <ConfirmDialog

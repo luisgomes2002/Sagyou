@@ -11,6 +11,7 @@ export interface Project {
   description?: string
   color: string
   columns: Column[]
+  order?: number
   createdAt: string
   updatedAt: string
 }
@@ -32,6 +33,7 @@ export interface Task {
   order: number
   createdAt: string
   updatedAt: string
+  completedAt?: string
 }
 
 export interface GoalEntry {
@@ -175,6 +177,9 @@ export interface StickyNote {
   connections?: string[]
   createdAt: string
   updatedAt: string
+  fontSize?: number
+  type?: 'note' | 'text'
+  completedAt?: string
 }
 
 export const NOTE_COLORS = [
@@ -183,7 +188,13 @@ export const NOTE_COLORS = [
   '#93c5fd',
   '#86efac',
   '#d8b4fe',
-  '#fdba74'
+  '#fdba74',
+  '#a5f3fc',
+  '#99f6e4',
+  '#fca5a5',
+  '#f9a8d4',
+  '#bef264',
+  '#c7d2fe'
 ] as const
 
 export const PROJECT_COLORS = [
@@ -194,7 +205,11 @@ export const PROJECT_COLORS = [
   '#f97316',
   '#eab308',
   '#22c55e',
-  '#06b6d4'
+  '#06b6d4',
+  '#14b8a6',
+  '#84cc16',
+  '#f43f5e',
+  '#d946ef'
 ] as const
 
 export const PRIORITY_CONFIG: Record<Priority, { label: string; color: string; bg: string }> = {
@@ -209,7 +224,7 @@ export const DEFAULT_COLUMN_NAMES = ['Backlog', 'In Progress', 'Review', 'Done']
 export const DEFAULT_TAGS: { label: string; tags: string[] }[] = [
   {
     label: 'Dev',
-    tags: ['frontend', 'backend', 'bug', 'feat', 'refactor', 'api', 'design', 'mobile', 'devops', 'testes', 'docs', 'deploy', 'auth', 'security', 'performance', 'infra', 'ipc', 'store', 'utils', 'dnd', 'memoization', 'correctness', 'idempotency', 'query-optimization', 'redis', 'jwt', 'reports', 'heatmap', 'due-date', 'tags', 'sprints']
+    tags: ['frontend', 'backend', 'bug', 'feat', 'refactor', 'api', 'design', 'mobile', 'devops', 'testes', 'docs', 'deploy', 'delivery', 'auth', 'security', 'performance', 'infra', 'ipc', 'store', 'utils', 'dnd', 'memoization', 'correctness', 'idempotency', 'query-optimization', 'redis', 'jwt', 'reports', 'heatmap', 'due-date', 'tags', 'sprints']
   },
   {
     label: 'Estudo',

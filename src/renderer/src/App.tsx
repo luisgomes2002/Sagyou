@@ -59,6 +59,7 @@ export default function App() {
     setSprintFilter,
     createProject,
     updateProject,
+    moveProject,
     deleteProject,
     createColumn,
     updateColumn,
@@ -69,7 +70,9 @@ export default function App() {
     moveTask,
     updateNote,
     createSprints,
+    updateSprint,
     closeSprint,
+    reopenSprint,
     deleteSprint,
     exportBackup,
     importBackup,
@@ -151,13 +154,13 @@ export default function App() {
   const handleAddColumn = () => setColumnModal({ open: true })
   const handleEditColumn = (column: Column) => setColumnModal({ open: true, column })
 
-  const handleSaveColumn = (name: string) => {
+  const handleSaveColumn = (name: string, color: string | undefined) => {
     if (!activeProjectId) return
     if (columnModal.column) {
-      updateColumn(activeProjectId, columnModal.column.id, { name })
+      updateColumn(activeProjectId, columnModal.column.id, { name, color })
       addToast('Coluna renomeada')
     } else {
-      createColumn(activeProjectId, name)
+      createColumn(activeProjectId, name, color)
       addToast('Coluna criada')
     }
     setColumnModal({ open: false })
@@ -311,6 +314,7 @@ export default function App() {
           onOpenSearch={() => setSearchOpen(true)}
           onNewProject={handleNewProject}
           onEditProject={handleEditProject}
+          onMoveProject={moveProject}
           onDeleteProject={handleDeleteProject}
           onExportBackup={handleExportBackup}
           onImportBackup={handleImportBackup}
@@ -395,7 +399,9 @@ export default function App() {
                         sprintFilter={sprintFilter}
                         onSetFilter={setSprintFilter}
                         onCreateSprints={createSprints}
+                        onRenameSprint={updateSprint}
                         onCloseSprint={closeSprint}
+                        onReopenSprint={reopenSprint}
                         onDeleteSprint={deleteSprint}
                       />
                       <span className="text-xs text-[#8892a4]">

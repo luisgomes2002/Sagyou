@@ -187,10 +187,15 @@ export function TaskCard({ task, onEdit, onDelete, onView, onComplete, overlay =
           {showTime && (
             <span
               className={`flex items-center gap-0.5 text-[10px] tabular-nums font-mono ${isRunning ? 'text-[#22c55e]' : 'text-[#8892a4]'}`}
-              title="Tempo gasto"
+              title={isRunning ? 'Cronômetro em andamento' : 'Cronômetro pausado'}
             >
-              {isRunning && (
+              {isRunning ? (
                 <span className="w-1.5 h-1.5 rounded-full bg-[#22c55e] animate-pulse shrink-0" />
+              ) : (
+                <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor" className="shrink-0 opacity-60">
+                  <rect x="6" y="4" width="4" height="16" rx="1" />
+                  <rect x="14" y="4" width="4" height="16" rx="1" />
+                </svg>
               )}
               {formatDuration(totalSeconds)}
             </span>

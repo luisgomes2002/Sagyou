@@ -168,6 +168,14 @@ export function TaskViewModal({ open, task, columns, onEdit, onClose }: Props) {
               <p className="text-[10px] uppercase tracking-wider text-[#8892a4] mb-1">Criada em</p>
               <p className="text-sm text-[#e2e8f0]">{format(parseISO(task.createdAt), 'dd/MM/yyyy')}</p>
             </div>
+            {task.completedAt && (
+              <div className="col-span-2">
+                <p className="text-[10px] uppercase tracking-wider text-[#8892a4] mb-1">Concluída em</p>
+                <p className="text-sm font-medium text-[#22c55e]">
+                  {format(parseISO(task.completedAt), 'dd/MM/yyyy HH:mm')}
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Time tracking */}
@@ -185,12 +193,20 @@ export function TaskViewModal({ open, task, columns, onEdit, onClose }: Props) {
                   <p className={`text-base font-semibold tabular-nums font-mono ${isRunning ? 'text-[#22c55e]' : 'text-[#e2e8f0]'}`}>
                     {totalSeconds > 0 ? formatDuration(totalSeconds) : '—'}
                   </p>
-                  {isRunning && (
+                  {isRunning ? (
                     <p className="text-[10px] text-[#22c55e]/70 flex items-center gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-[#22c55e] animate-pulse inline-block" />
                       Em andamento
                     </p>
-                  )}
+                  ) : task.timeSpent ? (
+                    <p className="text-[10px] text-[#8892a4] flex items-center gap-1">
+                      <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor" className="opacity-60">
+                        <rect x="6" y="4" width="4" height="16" rx="1" />
+                        <rect x="14" y="4" width="4" height="16" rx="1" />
+                      </svg>
+                      Pausado
+                    </p>
+                  ) : null}
                 </div>
               </div>
               <button
@@ -214,7 +230,7 @@ export function TaskViewModal({ open, task, columns, onEdit, onClose }: Props) {
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
                       <polygon points="5,3 19,12 5,21" />
                     </svg>
-                    Iniciar
+                    {task.timeSpent ? 'Retomar' : 'Iniciar'}
                   </>
                 )}
               </button>

@@ -55,6 +55,7 @@ export function CanvasView({ project, tasks, onCreateTask }: Props) {
   const [scale, setScale] = useState(1)
   const [selectedColor, setSelectedColor] = useState<string>(NOTE_COLORS[0])
   const [isPanning, setIsPanning] = useState(false)
+  const [mode, setMode] = useState<'note' | 'text'>('note')
 
   const containerRef = useRef<HTMLDivElement>(null)
   const scaleRef = useRef(scale)
@@ -179,9 +180,13 @@ export function CanvasView({ project, tasks, onCreateTask }: Props) {
     if ((e.target as HTMLElement).closest('[data-note]')) return
     const rect = containerRef.current!.getBoundingClientRect()
     const x = (e.clientX - rect.left - offsetRef.current.x) / scaleRef.current - 100
-    const y = (e.clientY - rect.top - offsetRef.current.y) / scaleRef.current - 75
-    createNote(project.id, { color: selectedColor, x, y })
-  }, [selectedColor, createNote, project.id])
+    const y = (e.clientY - rect.top - offsetRef.current.y) / scaleRef.current - 30
+    if (mode === 'text') {
+      createNote(project.id, { type: 'text', color: 'transparent', x, y, width: 480, height: 60 })
+    } else {
+      createNote(project.id, { color: selectedColor, x, y: y - 45 })
+    }
+  }, [selectedColor, mode, createNote, project.id])
 
   const handleZoomIn = () => setScale((s) => clamp(s * 1.25, MIN_SCALE, MAX_SCALE))
   const handleZoomOut = () => setScale((s) => clamp(s / 1.25, MIN_SCALE, MAX_SCALE))
@@ -314,27 +319,58 @@ export function CanvasView({ project, tasks, onCreateTask }: Props) {
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#4a5068" strokeWidth="1.5">
             <path d="M12 5v14M5 12h14" />
           </svg>
-          <p className="text-[#4a5068] text-sm">Duplo clique para criar uma nota</p>
+          <p className="text-[#4a5068] text-sm">
+            {mode === 'text' ? 'Duplo clique para inserir texto' : 'Duplo clique para criar uma nota'}
+          </p>
         </div>
       )}
 
       {/* Floating toolbar */}
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#1a1d2e]/95 border border-[#2a2d42] shadow-2xl backdrop-blur-sm pointer-events-auto">
-        {/* Color swatches */}
-        {NOTE_COLORS.map((color) => (
-          <button
-            key={color}
-            onClick={() => setSelectedColor(color)}
-            className="w-5 h-5 rounded-full transition-transform hover:scale-110 shrink-0"
-            style={{
-              backgroundColor: color,
-              boxShadow: selectedColor === color
-                ? `0 0 0 2px #0d0f18, 0 0 0 3.5px ${color}`
-                : '0 0 0 1px rgba(255,255,255,0.1)'
-            }}
-            title={color}
-          />
-        ))}
+
+        {/* Mode: sticky note */}
+        <button
+          onClick={() => setMode('note')}
+          className={`p-1.5 rounded-lg transition-colors ${mode === 'note' ? 'bg-[#6366f1]/20 text-[#818cf8]' : 'text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#2a2d42]'}`}
+          title="Modo nota (duplo clique)"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+          </svg>
+        </button>
+
+        {/* Mode: text */}
+        <button
+          onClick={() => setMode('text')}
+          className={`px-2 py-1 rounded-lg text-[11px] font-bold transition-colors ${mode === 'text' ? 'bg-[#6366f1]/20 text-[#818cf8]' : 'text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#2a2d42]'}`}
+          title="Modo texto (duplo clique)"
+        >
+          Aa
+        </button>
+
+        {/* Color swatches — only in note mode */}
+        {mode === 'note' && (
+          <>
+            <div className="w-px h-4 bg-[#2a2d42] mx-0.5 shrink-0" />
+            <div className="grid grid-cols-6 gap-1">
+              {NOTE_COLORS.map((color) => (
+                <button
+                  key={color}
+                  onClick={() => setSelectedColor(color)}
+                  className="w-4 h-4 rounded-full transition-transform hover:scale-110 shrink-0"
+                  style={{
+                    backgroundColor: color,
+                    boxShadow: selectedColor === color
+                      ? `0 0 0 2px #0d0f18, 0 0 0 3.5px ${color}`
+                      : '0 0 0 1px rgba(255,255,255,0.1)'
+                  }}
+                  title={color}
+                />
+              ))}
+            </div>
+          </>
+        )}
 
         <div className="w-px h-4 bg-[#2a2d42] mx-0.5 shrink-0" />
 

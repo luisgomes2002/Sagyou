@@ -74,6 +74,15 @@ Soft deletes use a `Tombstone[]` array. On `importBackup`, a three-way merge (`m
 
 All domain types are in `src/renderer/src/types/index.ts`. Notable constants exported alongside types: `PROJECT_COLORS` (`as const` tuple — use `useState<string>` when storing a selected color), `NOTE_COLORS`, `CURRENCY_CONFIG`, `DEFAULT_COLUMN_NAMES`, `DEFAULT_TAGS` (categorized tag list used in tag pickers and the AI import prompt template; categories: Dev, Estudo, Trabalho, Saúde, Casa & Vida, Finanças, Pessoal).
 
+## Data / Schema safety
+
+The app persists state as JSON in `kanban-data.json` on the user's machine. There is **production data in the wild** — users have real tasks, habits, goals, and financial records stored in this format.
+
+- **Never remove or rename fields** on existing types without a migration or backward-compatible fallback (e.g. optional field with a default on load).
+- **Never change the shape of persisted arrays or objects** in a breaking way (reordering, nesting, type changes).
+- Adding new optional fields is safe — the store hydrates with `??` defaults and missing keys are silently ignored.
+- **Always warn explicitly** before making any change that could corrupt or lose existing data on load (e.g. changing a field from `string` to `string[]`, removing a required field, changing an ID scheme). Flag it with: _"⚠️ Breaking schema change — existing data may be affected."_
+
 ## Testing
 
 Tests run in jsdom via Vitest. `ElectronStorage` is always vi-mocked — tests call `useKanbanStore.getState()` directly to exercise store actions. Test files live in `src/renderer/src/__tests__/` under `store/`, `integration/`, `services/`, and `utils/`.

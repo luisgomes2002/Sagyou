@@ -7,7 +7,9 @@ interface Props {
   sprintFilter: string | null
   onSetFilter: (sprintId: string | null) => void
   onCreateSprints: (projectId: string, names: string[]) => void
+  onRenameSprint: (sprintId: string, name: string) => boolean
   onCloseSprint: (sprintId: string) => void
+  onReopenSprint: (sprintId: string) => void
   onDeleteSprint: (sprintId: string) => void
 }
 
@@ -17,13 +19,19 @@ export function SprintBadge({
   sprintFilter,
   onSetFilter,
   onCreateSprints,
+  onRenameSprint,
   onCloseSprint,
+  onReopenSprint,
   onDeleteSprint
 }: Props) {
   const [open, setOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [batchText, setBatchText] = useState('')
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+  const [renameError, setRenameError] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const renameInputRef = useRef<HTMLInputElement>(null)
 
   const projectSprints = sprints.filter((s) => s.projectId === projectId)
   const activeSprint = projectSprints.find((s) => !s.closedAt)
@@ -34,6 +42,10 @@ export function SprintBadge({
     if (creating && textareaRef.current) textareaRef.current.focus()
   }, [creating])
 
+  useEffect(() => {
+    if (renamingId && renameInputRef.current) renameInputRef.current.focus()
+  }, [renamingId])
+
   const handleCreateBatch = () => {
     const names = batchText.split('\n').map((n) => n.trim()).filter(Boolean)
     if (names.length === 0) return
@@ -42,7 +54,32 @@ export function SprintBadge({
     setCreating(false)
   }
 
-  const batchCount = batchText.split('\n').filter((n) => n.trim()).length
+  const startRename = (sprint: Sprint) => {
+    setRenameValue(sprint.name)
+    setRenamingId(sprint.id)
+    setRenameError(false)
+  }
+
+  const commitRename = () => {
+    if (!renamingId) return
+    if (!renameValue.trim()) { cancelRename(); return }
+    const ok = onRenameSprint(renamingId, renameValue)
+    if (!ok) { setRenameError(true); return }
+    setRenamingId(null)
+    setRenameError(false)
+  }
+
+  const cancelRename = () => {
+    setRenamingId(null)
+    setRenameValue('')
+    setRenameError(false)
+  }
+
+  const existingNames = new Set(projectSprints.map((s) => s.name.toLowerCase()))
+  const batchLines = batchText.split('\n').map((n) => n.trim()).filter(Boolean)
+  const batchCount = batchLines.length
+  const newCount = batchLines.filter((n) => !existingNames.has(n.toLowerCase())).length
+  const dupCount = batchCount - newCount
 
   const buttonLabel = selectedSprint
     ? selectedSprint.name
@@ -73,7 +110,7 @@ export function SprintBadge({
 
       {open && (
         <>
-          <div className="fixed inset-0 z-10" onClick={() => { setOpen(false); setCreating(false); setBatchText('') }} />
+          <div className="fixed inset-0 z-10" onClick={() => { setOpen(false); setCreating(false); setBatchText(''); cancelRename() }} />
           <div className="absolute right-0 top-9 z-20 w-64 rounded-lg border border-[#2a2d42] bg-[#0d0f18] shadow-xl py-1">
 
             {/* ── Filtro ── */}
@@ -140,10 +177,10 @@ export function SprintBadge({
                 <div className="flex gap-2 mt-2">
                   <button
                     onClick={handleCreateBatch}
-                    disabled={batchCount === 0}
+                    disabled={newCount === 0}
                     className="flex-1 py-1.5 rounded-md bg-[#6366f1] text-xs text-white disabled:opacity-40 hover:bg-[#5254c5] transition-colors"
                   >
-                    {batchCount > 0 ? `Criar ${batchCount} sprint${batchCount > 1 ? 's' : ''}` : 'Criar'}
+                    {newCount > 0 ? `Criar ${newCount} sprint${newCount > 1 ? 's' : ''}` : 'Criar'}
                   </button>
                   <button
                     onClick={() => { setCreating(false); setBatchText('') }}
@@ -152,6 +189,11 @@ export function SprintBadge({
                     ✕
                   </button>
                 </div>
+                {dupCount > 0 && (
+                  <p className="text-[10px] text-[#f97316] mt-1.5">
+                    {dupCount} nome{dupCount > 1 ? 's' : ''} já existe{dupCount === 1 ? '' : 'm'} neste projeto e {dupCount > 1 ? 'serão ignorados' : 'será ignorado'}.
+                  </p>
+                )}
               </div>
             )}
 
@@ -162,35 +204,82 @@ export function SprintBadge({
                 <p className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#8892a4]">
                   Gerenciar
                 </p>
+
                 {activeSprint && (
-                  <div className="flex items-center justify-between px-3 py-1.5">
-                    <div className="flex items-center gap-2 min-w-0">
+                  <div className="flex items-center justify-between px-3 py-1.5 group/row">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
                       <div className="w-1.5 h-1.5 rounded-full bg-[#6366f1] shrink-0" />
-                      <span className="text-xs text-[#e2e8f0] truncate">{activeSprint.name}</span>
-                      <span className="text-[9px] text-[#6366f1] shrink-0">ativa</span>
+                      {renamingId === activeSprint.id ? (
+                        <div className="flex-1 min-w-0">
+                          <input
+                            ref={renameInputRef}
+                            value={renameValue}
+                            onChange={(e) => { setRenameValue(e.target.value); setRenameError(false) }}
+                            onBlur={commitRename}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') commitRename()
+                              if (e.key === 'Escape') cancelRename()
+                            }}
+                            className={`w-full bg-[#13151f] text-xs text-[#e2e8f0] rounded px-1.5 py-0.5 focus:outline-none border ${
+                              renameError ? 'border-red-500' : 'border-[#6366f1]'
+                            }`}
+                          />
+                          {renameError && (
+                            <p className="text-[9px] text-red-400 mt-0.5">Nome já existe</p>
+                          )}
+                        </div>
+                      ) : (
+                        <>
+                          <span className="text-xs text-[#e2e8f0] truncate">{activeSprint.name}</span>
+                          <span className="text-[9px] text-[#6366f1] shrink-0">ativa</span>
+                          <button
+                            onClick={() => startRename(activeSprint)}
+                            className="opacity-0 group-hover/row:opacity-100 transition-opacity p-0.5 rounded hover:bg-[#1e2235] text-[#8892a4] hover:text-[#e2e8f0] shrink-0"
+                            title="Renomear sprint"
+                          >
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                            </svg>
+                          </button>
+                        </>
+                      )}
                     </div>
-                    <button
-                      onClick={() => { onCloseSprint(activeSprint.id); setOpen(false) }}
-                      className="text-[10px] px-1.5 py-0.5 rounded bg-[#2a2d42] text-[#8892a4] hover:text-[#e2e8f0] transition-colors shrink-0 ml-2"
-                    >
-                      Encerrar
-                    </button>
+                    {renamingId !== activeSprint.id && (
+                      <button
+                        onClick={() => { onCloseSprint(activeSprint.id); setOpen(false) }}
+                        className="text-[10px] px-1.5 py-0.5 rounded bg-[#2a2d42] text-[#8892a4] hover:text-[#e2e8f0] transition-colors shrink-0 ml-2"
+                      >
+                        Encerrar
+                      </button>
+                    )}
                   </div>
                 )}
+
                 {closedSprints.map((s) => (
                   <div key={s.id} className="flex items-center justify-between px-3 py-1.5 group">
                     <div className="flex items-center gap-2 min-w-0">
                       <div className="w-1.5 h-1.5 rounded-full bg-[#2a2d42] shrink-0" />
                       <span className="text-xs text-[#8892a4] truncate">{s.name}</span>
                     </div>
-                    <button
-                      onClick={() => onDeleteSprint(s.id)}
-                      className="opacity-0 group-hover:opacity-100 text-[#8892a4] hover:text-red-400 transition-all shrink-0 ml-2"
-                    >
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                      </svg>
-                    </button>
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all shrink-0 ml-2">
+                      <button
+                        onClick={() => onReopenSprint(s.id)}
+                        className="text-[10px] px-1.5 py-0.5 rounded bg-[#2a2d42] text-[#8892a4] hover:text-[#6366f1] hover:bg-[#6366f1]/10 transition-colors"
+                        title="Reabrir sprint"
+                      >
+                        Reabrir
+                      </button>
+                      <button
+                        onClick={() => onDeleteSprint(s.id)}
+                        className="text-[#8892a4] hover:text-red-400 transition-colors p-0.5"
+                        title="Deletar sprint"
+                      >
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                 ))}
               </>
