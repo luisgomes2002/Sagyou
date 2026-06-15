@@ -97,6 +97,8 @@ export interface FinancialGoal {
   targetAmount: number
   targetMonth: number
   targetYear: number
+  completedAt?: string
+  completionNote?: string
 }
 
 export interface FinancialTable {

@@ -10,20 +10,24 @@ const MONTH_NAMES = [
   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
 ]
 
-const CURRENCY_LOCALE: Record<Currency, string> = {
-  BRL: 'pt-BR',
-  USD: 'en-US',
-  JPY: 'ja-JP',
-}
-
 function formatCurrency(value: Decimal | number, currency: Currency): string {
   const { symbol, decimals } = CURRENCY_CONFIG[currency]
   const num = value instanceof Decimal ? value.toNumber() : value
-  const formatted = num.toLocaleString(CURRENCY_LOCALE[currency], {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  })
-  return `${symbol} ${formatted}`
+  const abs = Math.abs(num)
+  const fixed = abs.toFixed(decimals)
+  const [intPart, decPart] = fixed.split('.')
+
+  let formatted: string
+  if (currency === 'USD') {
+    const intFormatted = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+    formatted = decPart !== undefined ? `${intFormatted}.${decPart}` : intFormatted
+  } else {
+    // BRL and JPY: dot as thousands separator, comma as decimal
+    const intFormatted = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+    formatted = decPart !== undefined ? `${intFormatted},${decPart}` : intFormatted
+  }
+
+  return `${num < 0 ? '-' : ''}${symbol} ${formatted}`
 }
 
 function itemTotal(item: ShoppingItem): Decimal {
@@ -45,6 +49,12 @@ function todayISO(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
+function formatDateBR(iso: string): string {
+  if (!iso) return ''
+  const [y, m, d] = iso.split('-')
+  return `${d}/${m}/${y}`
+}
+
 const FINANCIAL_CATEGORIES = [
   // Despesas
   'Alimentação', 'Moradia', 'Transporte', 'Saúde', 'Educação',
@@ -52,7 +62,7 @@ const FINANCIAL_CATEGORIES = [
   'Taxa', 'Família', 'Viagem', 'Intercâmbio', 'Investimentos', 'Pet',
   // Receitas
   'Salário', 'Freelance', 'Trabalho', 'Aluguel Recebido',
-  'Dividendos', 'Reembolso', 'Bônus', 'Venda', 'Pensão', 'Outros',
+  'Dividendos', 'Reembolso', 'Bônus', 'Venda', 'Rendimento Mensal', 'Outros',
 ]
 
 const CAT_COLORS = [
@@ -719,28 +729,136 @@ function GoalModal({ open, goal, onSave, onClose }: GoalModalProps) {
   )
 }
 
+// ── CompleteGoalModal ─────────────────────────────────────────────────────────
+
+interface CompleteGoalModalProps {
+  open: boolean
+  goalName: string
+  onConfirm: (date: string, note?: string) => void
+  onClose: () => void
+}
+
+function CompleteGoalModal({ open, goalName, onConfirm, onClose }: CompleteGoalModalProps) {
+  const [date, setDate] = useState(todayISO)
+  const [dateEditing, setDateEditing] = useState(false)
+  const [note, setNote] = useState('')
+
+  useEffect(() => {
+    if (open) {
+      setDate(todayISO())
+      setNote('')
+      setDateEditing(false)
+    }
+  }, [open])
+
+  if (!open) return null
+
+  const handleSubmit = () => {
+    onConfirm(date, note.trim() || undefined)
+    onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="fixed inset-0 bg-black/60" onClick={onClose} />
+      <div className="relative z-10 w-80 rounded-xl border border-[#2a2d42] bg-[#13151f] shadow-2xl p-5">
+        <h3 className="text-sm font-semibold text-[#e2e8f0] mb-1">Finalizar objetivo</h3>
+        <p className="text-[11px] text-[#8892a4] mb-4 truncate">{goalName}</p>
+        <div className="flex flex-col gap-3">
+          <div>
+            <label className="text-[10px] font-semibold uppercase tracking-wider text-[#8892a4] block mb-1">Data de conclusão</label>
+            {dateEditing ? (
+              <input
+                autoFocus
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                onBlur={() => setDateEditing(false)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === 'Escape') setDateEditing(false) }}
+                className="w-full px-3 py-2 rounded-lg bg-[#0d0f18] border border-[#6366f1] text-sm text-[#e2e8f0] focus:outline-none"
+              />
+            ) : (
+              <button
+                onClick={() => setDateEditing(true)}
+                className="w-full text-left px-3 py-2 rounded-lg bg-[#0d0f18] border border-[#2a2d42] text-sm text-[#e2e8f0] hover:border-[#6366f1] transition-colors"
+              >
+                {formatDateBR(date)}
+              </button>
+            )}
+          </div>
+          <div>
+            <label className="text-[10px] font-semibold uppercase tracking-wider text-[#8892a4] block mb-1">Descrição (opcional)</label>
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && e.ctrlKey) handleSubmit() }}
+              placeholder="Ex: meta atingida antes do prazo"
+              rows={3}
+              className="w-full px-3 py-2 rounded-lg bg-[#0d0f18] border border-[#2a2d42] text-sm text-[#e2e8f0] placeholder-[#8892a4] focus:outline-none focus:border-[#6366f1] transition-colors resize-none"
+            />
+          </div>
+        </div>
+        <div className="flex gap-2 mt-5">
+          <button
+            onClick={handleSubmit}
+            className="flex-1 py-2 rounded-lg bg-[#22c55e] text-sm text-white font-medium hover:bg-[#16a34a] transition-colors"
+          >
+            Finalizar
+          </button>
+          <button
+            onClick={onClose}
+            className="flex-1 py-2 rounded-lg border border-[#2a2d42] text-sm text-[#8892a4] hover:bg-[#1e2235] transition-colors"
+          >
+            Cancelar
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── FinancialGoalCard ─────────────────────────────────────────────────────────
 
 interface FinancialGoalCardProps {
   goal: FinancialGoal
+  transactions: FinancialTransaction[]
   accBalance: number
   currency: Currency
   onEdit: () => void
   onDelete: () => void
+  onComplete: (date: string, note?: string) => void
+  onRevert: () => void
 }
 
-function FinancialGoalCard({ goal, accBalance, currency, onEdit, onDelete }: FinancialGoalCardProps) {
+function FinancialGoalCard({ goal, transactions, accBalance, currency, onEdit, onDelete, onComplete, onRevert }: FinancialGoalCardProps) {
   const now = new Date()
-  const progress = goal.targetAmount > 0 ? Math.min(Math.max(accBalance / goal.targetAmount, 0), 1) : 0
-  const percent = Math.round(progress * 100)
-  const achieved = accBalance >= goal.targetAmount
-  const savedAmount = Math.min(Math.max(accBalance, 0), goal.targetAmount)
-  const remaining = Math.max(goal.targetAmount - accBalance, 0)
+  const [completeModalOpen, setCompleteModalOpen] = useState(false)
 
   const monthsLeft = Math.max(
     (goal.targetYear - now.getFullYear()) * 12 + (goal.targetMonth - (now.getMonth() + 1)),
     0
   )
+
+  // For past-deadline goals use the balance at the deadline month so that
+  // spending after the deadline doesn't un-achieve a completed goal.
+  const deadlinePast = monthsLeft === 0 &&
+    (goal.targetYear < now.getFullYear() ||
+      (goal.targetYear === now.getFullYear() && goal.targetMonth < now.getMonth() + 1))
+  const deadlineKey = `${goal.targetYear}-${String(goal.targetMonth).padStart(2, '0')}`
+  const effectiveBalance = deadlinePast
+    ? transactions
+        .filter((t) => t.date.slice(0, 7) <= deadlineKey)
+        .reduce((s, t) => (t.type === 'income' ? s + t.amount : s - t.amount), 0)
+    : accBalance
+
+  const manuallyCompleted = !!goal.completedAt
+  const balanceAchieved = effectiveBalance >= goal.targetAmount
+  const achieved = manuallyCompleted || balanceAchieved
+  const progress = manuallyCompleted ? 1 : (goal.targetAmount > 0 ? Math.min(Math.max(effectiveBalance / goal.targetAmount, 0), 1) : 0)
+  const percent = Math.round(progress * 100)
+  const savedAmount = Math.min(Math.max(effectiveBalance, 0), goal.targetAmount)
+  const remaining = achieved ? 0 : Math.max(goal.targetAmount - effectiveBalance, 0)
+
   const isOverdue = !achieved && monthsLeft === 0
   const isUrgent = !achieved && monthsLeft > 0 && monthsLeft <= 2
   const monthlyNeeded = monthsLeft > 0 && !achieved ? remaining / monthsLeft : 0
@@ -797,7 +915,15 @@ function FinancialGoalCard({ goal, accBalance, currency, onEdit, onDelete }: Fin
                 Prazo: {MONTH_NAMES[goal.targetMonth - 1]} {goal.targetYear}
               </p>
             </div>
-            {achieved && (
+            {manuallyCompleted && (
+              <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#22c55e]/15 text-[#22c55e] text-[10px] font-semibold shrink-0">
+                <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+                Concluído
+              </span>
+            )}
+            {!manuallyCompleted && balanceAchieved && (
               <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#22c55e]/15 text-[#22c55e] text-[10px] font-semibold shrink-0">
                 <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5">
                   <polyline points="20 6 9 17 4 12" />
@@ -843,11 +969,21 @@ function FinancialGoalCard({ goal, accBalance, currency, onEdit, onDelete }: Fin
               </p>
             </div>
           )}
-          {achieved && (
+          {manuallyCompleted && (
+            <div className="mt-2.5 pt-2.5 border-t border-[#22c55e]/20">
+              <p className="text-[10px] text-[#22c55e]/70 leading-relaxed">
+                Concluído em <span className="text-[#4ade80] font-semibold">{formatDateBR(goal.completedAt!)}</span>
+              </p>
+              {goal.completionNote && (
+                <p className="text-[10px] text-[#8892a4] mt-0.5 leading-relaxed">{goal.completionNote}</p>
+              )}
+            </div>
+          )}
+          {!manuallyCompleted && balanceAchieved && (
             <div className="mt-2.5 pt-2.5 border-t border-[#22c55e]/20">
               <p className="text-[10px] text-[#22c55e]/60 leading-relaxed">
                 Saldo excede a meta em{' '}
-                <span className="text-[#4ade80] font-semibold">{formatCurrency(accBalance - goal.targetAmount, currency)}</span>
+                <span className="text-[#4ade80] font-semibold">{formatCurrency(effectiveBalance - goal.targetAmount, currency)}</span>
               </p>
             </div>
           )}
@@ -875,6 +1011,29 @@ function FinancialGoalCard({ goal, accBalance, currency, onEdit, onDelete }: Fin
           </svg>
           Editar
         </button>
+        {!manuallyCompleted && (
+          <button
+            onClick={() => setCompleteModalOpen(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-medium text-[#8892a4] hover:text-[#22c55e] hover:bg-[#22c55e]/10 transition-colors"
+          >
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+            Finalizar
+          </button>
+        )}
+        {manuallyCompleted && (
+          <button
+            onClick={onRevert}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-medium text-[#8892a4] hover:text-orange-400 hover:bg-orange-400/10 transition-colors"
+          >
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+              <path d="M3 3v5h5" />
+            </svg>
+            Reverter
+          </button>
+        )}
         <button
           onClick={onDelete}
           className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-medium text-[#8892a4] hover:text-red-400 hover:bg-red-400/10 transition-colors"
@@ -886,6 +1045,13 @@ function FinancialGoalCard({ goal, accBalance, currency, onEdit, onDelete }: Fin
           Deletar
         </button>
       </div>
+
+      <CompleteGoalModal
+        open={completeModalOpen}
+        goalName={goal.name}
+        onConfirm={(date, note) => { onComplete(date, note) }}
+        onClose={() => setCompleteModalOpen(false)}
+      />
     </div>
   )
 }
@@ -903,6 +1069,7 @@ function AddTransactionRow({ currency, onAdd }: AddTransactionRowProps) {
   const [type, setType] = useState<'income' | 'expense'>('expense')
   const [amount, setAmount] = useState('')
   const [date, setDate] = useState(todayISO)
+  const [dateEditing, setDateEditing] = useState(false)
   const descRef = useRef<HTMLInputElement>(null)
 
   const submit = () => {
@@ -930,12 +1097,24 @@ function AddTransactionRow({ currency, onAdd }: AddTransactionRowProps) {
   return (
     <tr className="border-b border-[#1a1d2e] hover:bg-[#1a1c2c] transition-colors">
       <td className="pl-4 pr-2 py-1.5 w-28">
-        <input
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-          className="w-full bg-transparent text-xs text-[#8892a4] focus:outline-none"
-        />
+        {dateEditing ? (
+          <input
+            autoFocus
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            onBlur={() => setDateEditing(false)}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === 'Escape') setDateEditing(false) }}
+            className="w-full bg-transparent text-xs text-[#8892a4] focus:outline-none"
+          />
+        ) : (
+          <button
+            onClick={() => setDateEditing(true)}
+            className="w-full text-left text-xs text-[#8892a4] tabular-nums hover:text-[#e2e8f0] transition-colors"
+          >
+            {formatDateBR(date)}
+          </button>
+        )}
       </td>
       <td className="py-1.5 pr-2">
         <input
@@ -1012,6 +1191,7 @@ function TransactionRow({ tx, currency, onUpdate, onDelete }: TransactionRowProp
   const [editDesc, setEditDesc] = useState(tx.description)
   const [editCat, setEditCat] = useState(tx.category ?? '')
   const [editAmount, setEditAmount] = useState(tx.amount.toString())
+  const [dateEditing, setDateEditing] = useState(false)
 
   useEffect(() => {
     setEditDate(tx.date)
@@ -1051,14 +1231,24 @@ function TransactionRow({ tx, currency, onUpdate, onDelete }: TransactionRowProp
   return (
     <tr className="group border-b border-[#1a1d2e] hover:bg-[#1a1c2c] transition-colors">
       <td className="pl-4 pr-2 py-2 w-28">
-        <input
-          type="date"
-          value={editDate}
-          onChange={(e) => setEditDate(e.target.value)}
-          onBlur={commitDate}
-          onKeyDown={blur}
-          className="w-full bg-transparent text-xs text-[#8892a4] tabular-nums focus:outline-none focus:bg-[#0d0f18] focus:px-1 rounded transition-all"
-        />
+        {dateEditing ? (
+          <input
+            autoFocus
+            type="date"
+            value={editDate}
+            onChange={(e) => setEditDate(e.target.value)}
+            onBlur={() => { commitDate(); setDateEditing(false) }}
+            onKeyDown={(e) => { blur(e); if (e.key === 'Enter' || e.key === 'Escape') setDateEditing(false) }}
+            className="w-full bg-transparent text-xs text-[#8892a4] tabular-nums focus:outline-none focus:bg-[#0d0f18] focus:px-1 rounded transition-all"
+          />
+        ) : (
+          <button
+            onClick={() => setDateEditing(true)}
+            className="w-full text-left text-xs text-[#8892a4] tabular-nums hover:text-[#e2e8f0] transition-colors"
+          >
+            {formatDateBR(editDate)}
+          </button>
+        )}
       </td>
       <td className="py-2 pr-2">
         <div className="flex items-center gap-1.5 min-w-0">
@@ -1093,17 +1283,15 @@ function TransactionRow({ tx, currency, onUpdate, onDelete }: TransactionRowProp
         />
       </td>
       <td className="py-2 pr-2 w-20 text-center">
-        <button
-          onClick={() => onUpdate({ type: tx.type === 'income' ? 'expense' : 'income' })}
-          title="Clique para alternar tipo"
-          className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors ${
+        <span
+          className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
             tx.type === 'income'
-              ? 'bg-[#22c55e]/15 text-[#4ade80] hover:bg-[#22c55e]/25'
-              : 'bg-red-500/15 text-red-400 hover:bg-red-500/25'
+              ? 'bg-[#22c55e]/15 text-[#4ade80]'
+              : 'bg-red-500/15 text-red-400'
           }`}
         >
           {tx.type === 'income' ? '↑ Entrada' : '↓ Saída'}
-        </button>
+        </span>
       </td>
       <td className="py-2 pr-2 w-32 text-right">
         <div className="flex items-center justify-end gap-1">
@@ -1135,6 +1323,151 @@ function TransactionRow({ tx, currency, onUpdate, onDelete }: TransactionRowProp
   )
 }
 
+// ── GoalHistoryModal ─────────────────────────────────────────────────────────
+
+interface GoalHistoryModalProps {
+  open: boolean
+  goals: FinancialGoal[]
+  transactions: FinancialTransaction[]
+  accBalance: number
+  currency: Currency
+  onRevert: (goalId: string) => void
+  onClose: () => void
+}
+
+function GoalHistoryModal({ open, goals, transactions, accBalance, currency, onRevert, onClose }: GoalHistoryModalProps) {
+  if (!open || goals.length === 0) return null
+  const now = new Date()
+
+  const withStatus = goals.map((goal) => {
+    const monthsLeft = Math.max(
+      (goal.targetYear - now.getFullYear()) * 12 + (goal.targetMonth - (now.getMonth() + 1)),
+      0
+    )
+    const deadlinePast = monthsLeft === 0 && (
+      goal.targetYear < now.getFullYear() ||
+      (goal.targetYear === now.getFullYear() && goal.targetMonth < now.getMonth() + 1)
+    )
+    const dk = `${goal.targetYear}-${String(goal.targetMonth).padStart(2, '0')}`
+    const effectiveBalance = deadlinePast
+      ? transactions.filter((t) => t.date.slice(0, 7) <= dk).reduce((s, t) => (t.type === 'income' ? s + t.amount : s - t.amount), 0)
+      : accBalance
+    const progress = goal.targetAmount > 0 ? Math.min(Math.max(effectiveBalance / goal.targetAmount, 0), 1) : 0
+
+    type StatusKey = 'concluded' | 'achieved' | 'overdue' | 'urgent' | 'active'
+    let status: StatusKey
+    if (goal.completedAt) status = 'concluded'
+    else if (effectiveBalance >= goal.targetAmount) status = 'achieved'
+    else if (monthsLeft === 0) status = 'overdue'
+    else if (monthsLeft <= 2) status = 'urgent'
+    else status = 'active'
+
+    return { goal, status, progress, monthsLeft }
+  }).sort((a, b) => {
+    const order: Record<string, number> = { active: 0, urgent: 1, overdue: 2, achieved: 3, concluded: 4 }
+    if (order[a.status] !== order[b.status]) return order[a.status] - order[b.status]
+    return (b.goal.targetYear * 12 + b.goal.targetMonth) - (a.goal.targetYear * 12 + a.goal.targetMonth)
+  })
+
+  const statusCfg: Record<string, { label: string; bg: string; text: string }> = {
+    concluded: { label: 'Concluído',    bg: 'bg-[#22c55e]/15',    text: 'text-[#4ade80]' },
+    achieved:  { label: 'Alcançado',    bg: 'bg-[#22c55e]/15',    text: 'text-[#22c55e]' },
+    overdue:   { label: 'Vencido',      bg: 'bg-red-500/15',      text: 'text-red-400' },
+    urgent:    { label: 'Urgente',      bg: 'bg-orange-500/15',   text: 'text-orange-400' },
+    active:    { label: 'Em andamento', bg: 'bg-[#6366f1]/15',    text: 'text-[#a5b4fc]' },
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="fixed inset-0 bg-black/60" onClick={onClose} />
+      <div className="relative z-10 w-[580px] max-h-[75vh] rounded-xl border border-[#2a2d42] bg-[#13151f] shadow-2xl flex flex-col">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#2a2d42] shrink-0">
+          <div className="flex items-center gap-2">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2">
+              <circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" />
+            </svg>
+            <h3 className="text-sm font-semibold text-[#e2e8f0]">Todos os Objetivos</h3>
+            <span className="text-[10px] text-[#8892a4]">({goals.length})</span>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1 rounded text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#2a2d42] transition-colors"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto divide-y divide-[#1a1d2e]">
+          {withStatus.map(({ goal, status, progress }) => {
+            const cfg = statusCfg[status]
+            return (
+              <div key={goal.id} className="flex items-center gap-4 px-5 py-3 hover:bg-[#1a1c2c] transition-colors">
+                {/* Mini progress ring */}
+                <div className="relative shrink-0 w-9 h-9">
+                  <svg width="36" height="36" viewBox="0 0 36 36">
+                    <circle cx="18" cy="18" r="13" fill="none" stroke="#2a2d42" strokeWidth="3" />
+                    <circle
+                      cx="18" cy="18" r="13"
+                      fill="none"
+                      stroke={status === 'overdue' ? '#ef4444' : status === 'urgent' ? '#fb923c' : '#22c55e'}
+                      strokeWidth="3"
+                      strokeLinecap="round"
+                      strokeDasharray={`${progress * 2 * Math.PI * 13} ${2 * Math.PI * 13}`}
+                      transform="rotate(-90 18 18)"
+                    />
+                  </svg>
+                  <span className="absolute inset-0 flex items-center justify-center text-[8px] font-bold text-[#e2e8f0]">
+                    {Math.round(progress * 100)}%
+                  </span>
+                </div>
+
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${cfg.bg} ${cfg.text}`}>
+                      {cfg.label}
+                    </span>
+                    <span className="text-xs font-medium text-[#e2e8f0] truncate">{goal.name}</span>
+                  </div>
+                  <p className="text-[10px] text-[#8892a4]">
+                    Prazo: {MONTH_NAMES[goal.targetMonth - 1]} {goal.targetYear}
+                    {goal.completedAt && (
+                      <span className="text-[#4ade80]"> · Concluído em {formatDateBR(goal.completedAt)}</span>
+                    )}
+                  </p>
+                  {goal.completionNote && (
+                    <p className="text-[10px] text-[#8892a4]/60 mt-0.5 truncate">{goal.completionNote}</p>
+                  )}
+                </div>
+
+                <div className="text-right shrink-0 flex flex-col items-end gap-1.5">
+                  <p className="text-xs font-bold text-[#e2e8f0] tabular-nums">{formatCurrency(goal.targetAmount, currency)}</p>
+                  <p className="text-[10px] text-[#8892a4]">
+                    {MONTH_NAMES[goal.targetMonth - 1].slice(0, 3)} {goal.targetYear}
+                  </p>
+                  {status === 'concluded' && (
+                    <button
+                      onClick={() => onRevert(goal.id)}
+                      className="flex items-center gap-1 text-[9px] font-medium text-[#8892a4] hover:text-orange-400 transition-colors"
+                    >
+                      <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                        <path d="M3 3v5h5" />
+                      </svg>
+                      Reverter
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── FinanceTab ────────────────────────────────────────────────────────────────
 
 interface FinanceTabProps {
@@ -1163,6 +1496,7 @@ function FinanceTab({
   const [deleteGoalConfirm, setDeleteGoalConfirm] = useState<{ open: boolean; goalId: string; name: string }>({
     open: false, goalId: '', name: ''
   })
+  const [historyOpen, setHistoryOpen] = useState(false)
 
   const prevMonth = () => {
     setActiveMonth((m) => {
@@ -1188,6 +1522,20 @@ function FinanceTab({
   const monthBalance = monthIncome - monthExpense
 
   const accBalance = list.transactions.reduce((s, t) => t.type === 'income' ? s + t.amount : s - t.amount, 0)
+
+  const visibleGoals = list.goals.filter((goal) => {
+    // Hide concluded/achieved goals whose deadline is before the active month
+    const deadlineBeforeActiveMonth =
+      goal.targetYear < activeMonth.year ||
+      (goal.targetYear === activeMonth.year && goal.targetMonth < activeMonth.month)
+    if (!deadlineBeforeActiveMonth) return true
+    if (goal.completedAt) return false
+    const dk = `${goal.targetYear}-${String(goal.targetMonth).padStart(2, '0')}`
+    const bal = list.transactions
+      .filter((t) => t.date.slice(0, 7) <= dk)
+      .reduce((s, t) => (t.type === 'income' ? s + t.amount : s - t.amount), 0)
+    return bal < goal.targetAmount
+  })
 
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
@@ -1255,19 +1603,32 @@ function FinanceTab({
               <p className="text-xs font-semibold text-[#e2e8f0]">Objetivos Financeiros</p>
               {list.goals.length > 0 && (
                 <span className="text-[10px] text-[#8892a4]">
-                  ({list.goals.filter((g) => accBalance >= g.targetAmount).length}/{list.goals.length} alcançados)
+                  ({visibleGoals.length} ativo{visibleGoals.length !== 1 ? 's' : ''} · {list.goals.length} total)
                 </span>
               )}
             </div>
-            <button
-              onClick={() => setGoalModal({ open: true })}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-medium text-[#6366f1] border border-[#6366f1]/30 hover:bg-[#6366f1]/10 transition-colors"
-            >
-              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-              Novo objetivo
-            </button>
+            <div className="flex items-center gap-2">
+              {list.goals.length > 0 && (
+                <button
+                  onClick={() => setHistoryOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-medium text-[#8892a4] border border-[#2a2d42] hover:bg-[#1e2235] transition-colors"
+                >
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+                  </svg>
+                  Ver todos
+                </button>
+              )}
+              <button
+                onClick={() => setGoalModal({ open: true })}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-medium text-[#6366f1] border border-[#6366f1]/30 hover:bg-[#6366f1]/10 transition-colors"
+              >
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+                Novo objetivo
+              </button>
+            </div>
           </div>
 
           {list.goals.length === 0 ? (
@@ -1288,16 +1649,37 @@ function FinanceTab({
                 Criar primeiro objetivo
               </button>
             </div>
+          ) : visibleGoals.length === 0 ? (
+            <div className="flex flex-col items-center gap-3 py-8 rounded-xl border border-dashed border-[#22c55e]/20 bg-[#22c55e]/5">
+              <div className="w-12 h-12 rounded-full bg-[#22c55e]/10 flex items-center justify-center">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="1.5">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              </div>
+              <div className="text-center">
+                <p className="text-xs font-medium text-[#4ade80]">Todos os objetivos concluídos</p>
+                <p className="text-[10px] text-[#22c55e]/50 mt-0.5">Nenhum objetivo ativo no momento</p>
+              </div>
+              <button
+                onClick={() => setHistoryOpen(true)}
+                className="px-3 py-1.5 rounded-lg bg-[#22c55e]/15 text-[10px] font-medium text-[#4ade80] hover:bg-[#22c55e]/25 transition-colors"
+              >
+                Ver histórico
+              </button>
+            </div>
           ) : (
             <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
-              {list.goals.map((goal) => (
+              {visibleGoals.map((goal) => (
                 <FinancialGoalCard
                   key={goal.id}
                   goal={goal}
+                  transactions={list.transactions}
                   accBalance={accBalance}
                   currency={currency}
                   onEdit={() => setGoalModal({ open: true, goal })}
                   onDelete={() => setDeleteGoalConfirm({ open: true, goalId: goal.id, name: goal.name })}
+                  onComplete={(date, note) => onUpdateGoal(goal.id, { completedAt: date, completionNote: note })}
+                  onRevert={() => onUpdateGoal(goal.id, { completedAt: undefined, completionNote: undefined })}
                 />
               ))}
             </div>
@@ -1367,6 +1749,16 @@ function FinanceTab({
           setDeleteGoalConfirm((s) => ({ ...s, open: false }))
         }}
         onCancel={() => setDeleteGoalConfirm((s) => ({ ...s, open: false }))}
+      />
+
+      <GoalHistoryModal
+        open={historyOpen}
+        goals={list.goals}
+        transactions={list.transactions}
+        accBalance={accBalance}
+        currency={currency}
+        onRevert={(goalId) => onUpdateGoal(goalId, { completedAt: undefined, completionNote: undefined })}
+        onClose={() => setHistoryOpen(false)}
       />
     </div>
   )

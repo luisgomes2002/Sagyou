@@ -1,6 +1,6 @@
 {
   "name": "sagyou",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Sagyou — Kanban pessoal offline",
   "main": "./out/main/index.js",
   "author": "gomesluis.dev@gmail.com",
