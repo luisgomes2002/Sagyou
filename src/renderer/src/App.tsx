@@ -74,6 +74,7 @@ export default function App() {
     closeSprint,
     reopenSprint,
     deleteSprint,
+    habits,
     exportBackup,
     importBackup,
     importAIJson
@@ -323,7 +324,7 @@ export default function App() {
 
         <main className="flex-1 flex flex-col overflow-hidden">
           {activeView === 'reports' ? (
-            <ReportsView projects={projects} tasks={tasks} />
+            <ReportsView projects={projects} tasks={tasks} sprints={sprints} habits={habits} />
           ) : activeView === 'upcoming' ? (
             <UpcomingView
               projects={projects}

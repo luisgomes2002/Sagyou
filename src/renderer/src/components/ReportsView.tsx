@@ -1,7 +1,8 @@
 import { useMemo } from 'react'
 import { startOfWeek, endOfWeek, subWeeks, addDays, parseISO, isWithinInterval, format } from 'date-fns'
-import type { Project, Task } from '../types'
+import type { Project, Task, Sprint, Habit } from '../types'
 import { PRIORITY_CONFIG } from '../types'
+import { computeSprintVelocity } from '../utils/reports'
 
 const MONTH_ABBR = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
 
@@ -160,6 +161,8 @@ function ActivityHeatmap({ doneTasks }: { doneTasks: Task[] }) {
 interface Props {
   projects: Project[]
   tasks: Task[]
+  sprints: Sprint[]
+  habits: Habit[]
 }
 
 const PRIORITY_COLORS = {
@@ -199,7 +202,7 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
   )
 }
 
-export function ReportsView({ projects, tasks }: Props) {
+export function ReportsView({ projects, tasks, sprints, habits }: Props) {
   const projectMap = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects])
 
   const doneTasks = useMemo(() => tasks.filter((t) => isDoneCol(t, projects)), [tasks, projects])
@@ -256,6 +259,78 @@ export function ReportsView({ projects, tasks }: Props) {
 
   const maxLoad = Math.max(...projectLoad.map((p) => p.count), 1)
 
+  // Top 10 tags by active task count
+  const tagData = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const t of activeTasks) {
+      for (const tag of t.tags) map.set(tag, (map.get(tag) ?? 0) + 1)
+    }
+    return Array.from(map.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([tag, count]) => ({ tag, count }))
+  }, [activeTasks])
+
+  const maxTag = Math.max(...tagData.map((t) => t.count), 1)
+
+  // Sprint velocity — last 8 sprints ordered by createdAt
+  const sprintVelocity = useMemo(
+    () => computeSprintVelocity(sprints, doneTasks),
+    [sprints, doneTasks]
+  )
+
+  const maxVelocity = Math.max(...sprintVelocity.map((s) => s.count), 1)
+  const avgVelocity = sprintVelocity.length > 0
+    ? (sprintVelocity.reduce((s, x) => s + x.count, 0) / sprintVelocity.length).toFixed(1)
+    : '0'
+
+  // Overdue and upcoming tasks
+  const dueDateData = useMemo(() => {
+    const now = new Date()
+    const todayStr = format(now, 'yyyy-MM-dd')
+    const in7Str = format(addDays(now, 7), 'yyyy-MM-dd')
+
+    const overdue: Array<{ task: Task; project: Project | undefined }> = []
+    const upcoming: Array<{ task: Task; project: Project | undefined }> = []
+
+    for (const t of activeTasks) {
+      if (!t.dueDate) continue
+      const project = projectMap.get(t.projectId)
+      if (t.dueDate < todayStr) overdue.push({ task: t, project })
+      else if (t.dueDate <= in7Str) upcoming.push({ task: t, project })
+    }
+
+    const list = [...overdue, ...upcoming].sort((a, b) =>
+      a.task.dueDate!.localeCompare(b.task.dueDate!)
+    )
+
+    return { overdue, upcoming, list, todayStr }
+  }, [activeTasks, projectMap])
+
+  // Habit summary — streak + current month rate
+  const habitSummary = useMemo(() => {
+    const now = new Date()
+    const todayStr = format(now, 'yyyy-MM-dd')
+    const yearMonth = format(now, 'yyyy-MM')
+    const dayOfMonth = now.getDate()
+
+    return habits.map((habit) => {
+      const set = new Set(habit.completions)
+      let streak = 0
+      // start from today if done, otherwise yesterday — same logic as HabitView
+      let cur = set.has(todayStr)
+        ? todayStr
+        : format(addDays(parseISO(todayStr), -1), 'yyyy-MM-dd')
+      while (set.has(cur)) {
+        streak++
+        cur = format(addDays(parseISO(cur), -1), 'yyyy-MM-dd')
+      }
+      const monthDone = habit.completions.filter((d) => d.startsWith(yearMonth) && d <= todayStr).length
+      const rate = Math.round((monthDone / dayOfMonth) * 100)
+      return { habit, streak, rate, monthDone }
+    }).sort((a, b) => b.streak - a.streak || b.rate - a.rate)
+  }, [habits])
+
   // Priority breakdown of active tasks
   const priorityCounts = useMemo(() => {
     const c = { urgent: 0, high: 0, medium: 0, low: 0 }
@@ -295,6 +370,52 @@ export function ReportsView({ projects, tasks }: Props) {
           />
         </div>
 
+        {/* Due date alerts */}
+        {(dueDateData.overdue.length > 0 || dueDateData.upcoming.length > 0) && (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-lg bg-[#1e2235] border border-red-500/30 p-4">
+                <p className="text-[11px] text-[#8892a4] mb-1.5">Vencidas</p>
+                <p className="text-2xl font-bold text-red-400">{dueDateData.overdue.length}</p>
+                <p className="text-[10px] text-[#4a5068] mt-0.5">tasks atrasadas</p>
+              </div>
+              <div className="rounded-lg bg-[#1e2235] border border-yellow-500/30 p-4">
+                <p className="text-[11px] text-[#8892a4] mb-1.5">Vencem em 7 dias</p>
+                <p className="text-2xl font-bold text-yellow-400">{dueDateData.upcoming.length}</p>
+                <p className="text-[10px] text-[#4a5068] mt-0.5">tasks próximas</p>
+              </div>
+            </div>
+            <div className="rounded-lg bg-[#1e2235] border border-[#2a2d42] divide-y divide-[#2a2d42] overflow-hidden">
+              {dueDateData.list.map(({ task, project }) => {
+                const isOverdue = task.dueDate! < dueDateData.todayStr
+                return (
+                  <div key={task.id} className="flex items-center gap-3 px-4 py-2.5">
+                    <div
+                      className="w-1 self-stretch rounded-full shrink-0"
+                      style={{ backgroundColor: isOverdue ? '#f87171' : '#facc15' }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-[#e2e8f0] truncate">{task.title}</p>
+                      {project && (
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: project.color }} />
+                          <p className="text-[10px] text-[#4a5068] truncate">{project.name}</p>
+                        </div>
+                      )}
+                    </div>
+                    <span
+                      className="text-[11px] font-mono tabular-nums shrink-0"
+                      style={{ color: isOverdue ? '#f87171' : '#facc15' }}
+                    >
+                      {format(parseISO(task.dueDate!), 'dd/MM')}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Activity heatmap */}
         <ActivityHeatmap doneTasks={doneTasks} />
 
@@ -326,6 +447,102 @@ export function ReportsView({ projects, tasks }: Props) {
           </div>
         </div>
 
+        {/* Sprint velocity chart */}
+        {sprintVelocity.length > 0 && (
+          <div className="rounded-lg bg-[#1e2235] border border-[#2a2d42] p-4">
+            <div className="flex items-baseline justify-between mb-4">
+              <SectionTitle>Velocidade por sprint</SectionTitle>
+              <span className="text-[11px] text-[#8892a4]">média {avgVelocity}/sprint</span>
+            </div>
+            <div className="flex items-end gap-1.5 h-28">
+              {sprintVelocity.map(({ sprint, count, active }) => (
+                <div key={sprint.id} className="flex-1 flex flex-col items-center gap-1 min-w-0">
+                  {count > 0 && (
+                    <span className="text-[9px] text-[#8892a4] tabular-nums">{count}</span>
+                  )}
+                  <div className="w-full flex items-end" style={{ height: 80 }}>
+                    <div
+                      className="w-full rounded-t-sm transition-all"
+                      style={{
+                        height: `${Math.max((count / maxVelocity) * 80, count > 0 ? 6 : 3)}px`,
+                        backgroundColor: active ? '#818cf8' : count > 0 ? '#6366f1' : 'transparent',
+                        border: active
+                          ? '1.5px dashed #6366f1'
+                          : count === 0
+                          ? '1px solid #2a2d42'
+                          : 'none',
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                  </div>
+                  <span
+                    className="text-[9px] truncate w-full text-center"
+                    style={{ color: active ? '#a5b4fc' : '#4a5068' }}
+                    title={sprint.name}
+                  >
+                    {sprint.name}
+                  </span>
+                  {active && (
+                    <span className="text-[8px] text-[#6366f1] font-semibold leading-none">●</span>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center gap-3 mt-3 justify-end">
+              <span className="flex items-center gap-1 text-[9px] text-[#4a5068]">
+                <span className="inline-block w-3 h-2 rounded-sm bg-[#6366f1]" />
+                encerrada
+              </span>
+              <span className="flex items-center gap-1 text-[9px] text-[#4a5068]">
+                <span
+                  className="inline-block w-3 h-2 rounded-sm"
+                  style={{ background: '#818cf8', border: '1.5px dashed #6366f1', boxSizing: 'border-box' }}
+                />
+                em andamento
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Habit summary */}
+        {habitSummary.length > 0 && (
+          <div className="rounded-lg bg-[#1e2235] border border-[#2a2d42] p-4">
+            <SectionTitle>Hábitos — mês atual</SectionTitle>
+            <div className="space-y-3">
+              {habitSummary.map(({ habit, streak, rate, monthDone }) => (
+                <div key={habit.id} className="flex items-center gap-3">
+                  <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: habit.color }} />
+                  <span className="text-xs text-[#8892a4] w-28 truncate shrink-0">{habit.name}</span>
+                  <div className="flex-1 h-2 bg-[#0d0f18] rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{ width: `${rate}%`, backgroundColor: habit.color }}
+                    />
+                  </div>
+                  <span className="text-[10px] text-[#8892a4] w-8 text-right shrink-0 tabular-nums">
+                    {rate}%
+                  </span>
+                  <div
+                    className="flex items-center gap-1 shrink-0 w-12 justify-end"
+                    title={`${monthDone} dias este mês`}
+                  >
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" strokeWidth="2"
+                      stroke={streak > 0 ? habit.color : '#4a5068'}>
+                      <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+                    </svg>
+                    <span
+                      className="text-[10px] font-semibold tabular-nums"
+                      style={{ color: streak > 0 ? habit.color : '#4a5068' }}
+                    >
+                      {streak}d
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Priority breakdown */}
         <div className="rounded-lg bg-[#1e2235] border border-[#2a2d42] p-4">
           <SectionTitle>Tasks ativas por prioridade</SectionTitle>
@@ -353,6 +570,27 @@ export function ReportsView({ projects, tasks }: Props) {
             })}
           </div>
         </div>
+
+        {/* Top tags */}
+        {tagData.length > 0 && (
+          <div className="rounded-lg bg-[#1e2235] border border-[#2a2d42] p-4">
+            <SectionTitle>Tasks ativas por tag</SectionTitle>
+            <div className="space-y-3">
+              {tagData.map(({ tag, count }) => (
+                <div key={tag} className="flex items-center gap-3">
+                  <span className="text-[10px] text-[#8892a4] w-24 truncate shrink-0">{tag}</span>
+                  <div className="flex-1 h-2 bg-[#0d0f18] rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{ width: `${(count / maxTag) * 100}%`, backgroundColor: '#6366f1' }}
+                    />
+                  </div>
+                  <span className="text-xs text-[#8892a4] w-4 text-right shrink-0 tabular-nums">{count}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Time per project */}
         {projectTime.length > 0 && (
