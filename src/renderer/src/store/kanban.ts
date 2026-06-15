@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { v4 as uuidv4 } from 'uuid'
-import type { Project, Task, Column, Sprint, Tombstone, Backup, AIJson, Priority, StickyNote, Goal, Habit, ShoppingList, ShoppingItem, Currency } from '../types'
+import type { Project, Task, Column, Sprint, Tombstone, Backup, AIJson, Priority, StickyNote, Goal, GoalEntry, Habit, FinancialTable, FinancialTransaction, FinancialGoal, ShoppingItem, Currency } from '../types'
 import { DEFAULT_COLUMN_NAMES } from '../types'
 import { ElectronStorage } from '../services/ElectronStorage'
 
@@ -19,7 +19,7 @@ interface KanbanState {
   notes: StickyNote[]
   goals: Goal[]
   habits: Habit[]
-  lists: ShoppingList[]
+  lists: FinancialTable[]
   activeProjectId: string | null
   sprintFilter: string | null
   activeTimer: ActiveTimer | null
@@ -73,9 +73,10 @@ interface KanbanActions {
   disconnectNotes: (fromId: string, toId: string) => void
 
   createGoal: (data: Pick<Goal, 'title' | 'target' | 'unit' | 'color'> & { projectId?: string }) => string
-  updateGoal: (id: string, updates: Partial<Pick<Goal, 'title' | 'target' | 'current' | 'unit' | 'color' | 'projectId'>>) => void
+  updateGoal: (id: string, updates: Partial<Pick<Goal, 'title' | 'target' | 'unit' | 'color' | 'projectId'>>) => void
   deleteGoal: (id: string) => void
-  incrementGoal: (id: string, amount: number) => void
+  addGoalEntry: (goalId: string, data: Pick<GoalEntry, 'date' | 'value'> & { label?: string }) => void
+  deleteGoalEntry: (goalId: string, entryId: string) => void
 
   createHabit: (data: Pick<Habit, 'name' | 'color'>) => string
   deleteHabit: (id: string) => void
@@ -89,6 +90,13 @@ interface KanbanActions {
   updateItem: (listId: string, itemId: string, updates: Partial<Pick<ShoppingItem, 'name' | 'qty' | 'price' | 'done' | 'link'>>) => void
   deleteItem: (listId: string, itemId: string) => void
   toggleItem: (listId: string, itemId: string) => void
+
+  addTransaction: (listId: string, data: Omit<FinancialTransaction, 'id'>) => string
+  updateTransaction: (listId: string, txId: string, updates: Partial<Omit<FinancialTransaction, 'id'>>) => void
+  deleteTransaction: (listId: string, txId: string) => void
+  addFinancialGoal: (listId: string, data: Omit<FinancialGoal, 'id'>) => string
+  updateFinancialGoal: (listId: string, goalId: string, updates: Partial<Omit<FinancialGoal, 'id'>>) => void
+  deleteFinancialGoal: (listId: string, goalId: string) => void
 
   exportBackup: () => Promise<boolean>
   importBackup: () => Promise<boolean>
@@ -187,9 +195,18 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
       sprints: data.sprints || [],
       tombstones: data.tombstones || [],
       notes: data.notes || [],
-      goals: data.goals || [],
+      goals: (data.goals || []).map((g: Goal & { current?: number }) => {
+        if (Array.isArray(g.entries)) return g as Goal
+        const entries: GoalEntry[] = []
+        if (typeof g.current === 'number' && g.current > 0) {
+          entries.push({ id: uuidv4(), date: g.createdAt.slice(0, 10), value: g.current, createdAt: g.createdAt })
+        }
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { current: _c, ...rest } = g
+        return { ...rest, entries } as Goal
+      }),
       habits: data.habits || [],
-      lists: (data.lists || []).map((l) => ({ ...l, currency: (l.currency || 'BRL') as Currency })),
+      lists: (data.lists || []).map((l) => ({ ...l, transactions: l.transactions ?? [], goals: l.goals ?? [], currency: (l.currency || 'BRL') as Currency })),
       isLoaded: true,
       activeProjectId: projects[0]?.id ?? null
     })
@@ -506,7 +523,7 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
     const goal: Goal = {
       id,
       title: data.title,
-      current: 0,
+      entries: [],
       target: data.target,
       unit: data.unit,
       color: data.color,
@@ -533,12 +550,22 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
     get()._persist()
   },
 
-  incrementGoal: (id, amount) => {
+  addGoalEntry: (goalId, data) => {
+    const now = new Date().toISOString()
+    const entry: GoalEntry = { id: uuidv4(), date: data.date, label: data.label, value: data.value, createdAt: now }
     set((s) => ({
       goals: s.goals.map((g) =>
-        g.id === id
-          ? { ...g, current: Math.max(0, Math.min(g.target, g.current + amount)), updatedAt: new Date().toISOString() }
-          : g
+        g.id === goalId ? { ...g, entries: [...g.entries, entry], updatedAt: now } : g
+      )
+    }))
+    get()._persist()
+  },
+
+  deleteGoalEntry: (goalId, entryId) => {
+    const now = new Date().toISOString()
+    set((s) => ({
+      goals: s.goals.map((g) =>
+        g.id === goalId ? { ...g, entries: g.entries.filter((e) => e.id !== entryId), updatedAt: now } : g
       )
     }))
     get()._persist()
@@ -574,7 +601,7 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
   createList: (name, currency = 'BRL') => {
     const now = new Date().toISOString()
     const id = uuidv4()
-    set((s) => ({ lists: [...s.lists, { id, name, currency, items: [], createdAt: now, updatedAt: now }] }))
+    set((s) => ({ lists: [...s.lists, { id, name, currency, items: [], transactions: [], goals: [], createdAt: now, updatedAt: now }] }))
     get()._persist()
     return id
   },
@@ -629,23 +656,137 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
 
   deleteItem: (listId, itemId) => {
     const now = new Date().toISOString()
+    const list = get().lists.find((l) => l.id === listId)
+    const item = list?.items.find((i) => i.id === itemId)
+    const linkedTxId = item?.done ? item.linkedTransactionId : undefined
     set((s) => ({
-      lists: s.lists.map((l) =>
-        l.id === listId
-          ? { ...l, items: l.items.filter((i) => i.id !== itemId), updatedAt: now }
-          : l
-      )
+      lists: s.lists.map((l) => {
+        if (l.id !== listId) return l
+        return {
+          ...l,
+          items: l.items.filter((i) => i.id !== itemId),
+          transactions: linkedTxId ? l.transactions.filter((t) => t.id !== linkedTxId) : l.transactions,
+          updatedAt: now
+        }
+      })
     }))
     get()._persist()
   },
 
   toggleItem: (listId, itemId) => {
     const now = new Date().toISOString()
+    const list = get().lists.find((l) => l.id === listId)
+    const item = list?.items.find((i) => i.id === itemId)
+    if (!item) return
+
+    if (!item.done) {
+      const txId = uuidv4()
+      const amount = item.price != null ? item.qty * item.price : 0
+      const tx: FinancialTransaction = {
+        id: txId,
+        description: item.name,
+        amount,
+        type: 'expense',
+        date: now.slice(0, 10),
+        fromShopping: true
+      }
+      set((s) => ({
+        lists: s.lists.map((l) =>
+          l.id !== listId ? l : {
+            ...l,
+            updatedAt: now,
+            items: l.items.map((i) => i.id === itemId ? { ...i, done: true, linkedTransactionId: txId } : i),
+            transactions: [...l.transactions, tx]
+          }
+        )
+      }))
+    } else {
+      const linkedTxId = item.linkedTransactionId
+      set((s) => ({
+        lists: s.lists.map((l) =>
+          l.id !== listId ? l : {
+            ...l,
+            updatedAt: now,
+            items: l.items.map((i) => i.id === itemId ? { ...i, done: false, linkedTransactionId: undefined } : i),
+            transactions: linkedTxId ? l.transactions.filter((t) => t.id !== linkedTxId) : l.transactions
+          }
+        )
+      }))
+    }
+    get()._persist()
+  },
+
+  addTransaction: (listId, data) => {
+    const txId = uuidv4()
+    const tx: FinancialTransaction = { id: txId, ...data }
     set((s) => ({
       lists: s.lists.map((l) =>
-        l.id === listId
-          ? { ...l, items: l.items.map((i) => i.id === itemId ? { ...i, done: !i.done } : i), updatedAt: now }
-          : l
+        l.id !== listId ? l : { ...l, transactions: [...l.transactions, tx], updatedAt: new Date().toISOString() }
+      )
+    }))
+    get()._persist()
+    return txId
+  },
+
+  updateTransaction: (listId, txId, updates) => {
+    set((s) => ({
+      lists: s.lists.map((l) =>
+        l.id !== listId ? l : {
+          ...l,
+          transactions: l.transactions.map((t) => t.id === txId ? { ...t, ...updates } : t),
+          updatedAt: new Date().toISOString()
+        }
+      )
+    }))
+    get()._persist()
+  },
+
+  deleteTransaction: (listId, txId) => {
+    set((s) => ({
+      lists: s.lists.map((l) =>
+        l.id !== listId ? l : {
+          ...l,
+          transactions: l.transactions.filter((t) => t.id !== txId),
+          updatedAt: new Date().toISOString()
+        }
+      )
+    }))
+    get()._persist()
+  },
+
+  addFinancialGoal: (listId, data) => {
+    const goalId = uuidv4()
+    const goal: FinancialGoal = { id: goalId, ...data }
+    set((s) => ({
+      lists: s.lists.map((l) =>
+        l.id !== listId ? l : { ...l, goals: [...l.goals, goal], updatedAt: new Date().toISOString() }
+      )
+    }))
+    get()._persist()
+    return goalId
+  },
+
+  updateFinancialGoal: (listId, goalId, updates) => {
+    set((s) => ({
+      lists: s.lists.map((l) =>
+        l.id !== listId ? l : {
+          ...l,
+          goals: l.goals.map((g) => g.id === goalId ? { ...g, ...updates } : g),
+          updatedAt: new Date().toISOString()
+        }
+      )
+    }))
+    get()._persist()
+  },
+
+  deleteFinancialGoal: (listId, goalId) => {
+    set((s) => ({
+      lists: s.lists.map((l) =>
+        l.id !== listId ? l : {
+          ...l,
+          goals: l.goals.filter((g) => g.id !== goalId),
+          updatedAt: new Date().toISOString()
+        }
       )
     }))
     get()._persist()
@@ -690,7 +831,7 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
     const notes = mergeEntities(local.notes, backup.notes || [], tombstoneMap)
     const goals = mergeEntities(local.goals, backup.goals || [], tombstoneMap)
     const habits = mergeHabits(local.habits, backup.habits || [], tombstoneMap)
-    const lists = mergeEntities(local.lists, (backup.lists || []).map((l) => ({ ...l, currency: (l.currency || 'BRL') as Currency })), tombstoneMap)
+    const lists = mergeEntities(local.lists, (backup.lists || []).map((l) => ({ ...l, transactions: l.transactions ?? [], goals: l.goals ?? [], currency: (l.currency || 'BRL') as Currency })), tombstoneMap)
 
     const activeProjectId = projects.find((p) => p.id === local.activeProjectId)
       ? local.activeProjectId

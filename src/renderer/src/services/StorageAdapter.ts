@@ -1,8 +1,8 @@
-import type { Project, Task, Sprint, Tombstone, Backup, AIJson, StickyNote, Goal, Habit, ShoppingList } from '../types'
+import type { Project, Task, Sprint, Tombstone, Backup, AIJson, StickyNote, Goal, Habit, FinancialTable } from '../types'
 
 export interface IStorageAdapter {
-  load(): Promise<{ projects: Project[]; tasks: Task[]; sprints: Sprint[]; tombstones: Tombstone[]; notes: StickyNote[]; goals: Goal[]; habits: Habit[]; lists: ShoppingList[] }>
-  save(data: { projects: Project[]; tasks: Task[]; sprints: Sprint[]; tombstones: Tombstone[]; notes: StickyNote[]; goals: Goal[]; habits: Habit[]; lists: ShoppingList[] }): Promise<void>
+  load(): Promise<{ projects: Project[]; tasks: Task[]; sprints: Sprint[]; tombstones: Tombstone[]; notes: StickyNote[]; goals: Goal[]; habits: Habit[]; lists: FinancialTable[] }>
+  save(data: { projects: Project[]; tasks: Task[]; sprints: Sprint[]; tombstones: Tombstone[]; notes: StickyNote[]; goals: Goal[]; habits: Habit[]; lists: FinancialTable[] }): Promise<void>
   exportBackup(backup: Backup): Promise<{ success: boolean; cancelled?: boolean }>
   importBackup(): Promise<{ success: boolean; cancelled?: boolean; data?: Backup; error?: string }>
   importAIJson(): Promise<{ success: boolean; cancelled?: boolean; data?: AIJson; error?: string }>

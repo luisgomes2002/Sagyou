@@ -1,11 +1,11 @@
 import type { IStorageAdapter } from './StorageAdapter'
-import type { Project, Task, Sprint, Tombstone, Backup, AIJson, StickyNote, Goal, Habit, ShoppingList } from '../types'
+import type { Project, Task, Sprint, Tombstone, Backup, AIJson, StickyNote, Goal, Habit, FinancialTable } from '../types'
 
 const STORAGE_KEY = 'kanban-data'
 
 // Web implementation — swap ElectronStorage for this when migrating to browser
 export class WebStorage implements IStorageAdapter {
-  async load(): Promise<{ projects: Project[]; tasks: Task[]; sprints: Sprint[]; tombstones: Tombstone[]; notes: StickyNote[]; goals: Goal[]; habits: Habit[]; lists: ShoppingList[] }> {
+  async load(): Promise<{ projects: Project[]; tasks: Task[]; sprints: Sprint[]; tombstones: Tombstone[]; notes: StickyNote[]; goals: Goal[]; habits: Habit[]; lists: FinancialTable[] }> {
     try {
       const raw = localStorage.getItem(STORAGE_KEY)
       if (!raw) return { projects: [], tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: [] }
@@ -25,7 +25,7 @@ export class WebStorage implements IStorageAdapter {
     }
   }
 
-  async save(data: { projects: Project[]; tasks: Task[]; sprints: Sprint[]; tombstones: Tombstone[]; notes: StickyNote[]; goals: Goal[]; habits: Habit[]; lists: ShoppingList[] }): Promise<void> {
+  async save(data: { projects: Project[]; tasks: Task[]; sprints: Sprint[]; tombstones: Tombstone[]; notes: StickyNote[]; goals: Goal[]; habits: Habit[]; lists: FinancialTable[] }): Promise<void> {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
   }
 

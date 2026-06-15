@@ -1,8 +1,8 @@
 import type { IStorageAdapter } from './StorageAdapter'
-import type { Project, Task, Sprint, Tombstone, Backup, AIJson, StickyNote, Goal, Habit, ShoppingList } from '../types'
+import type { Project, Task, Sprint, Tombstone, Backup, AIJson, StickyNote, Goal, Habit, FinancialTable } from '../types'
 
 export class ElectronStorage implements IStorageAdapter {
-  async load(): Promise<{ projects: Project[]; tasks: Task[]; sprints: Sprint[]; tombstones: Tombstone[]; notes: StickyNote[]; goals: Goal[]; habits: Habit[]; lists: ShoppingList[] }> {
+  async load(): Promise<{ projects: Project[]; tasks: Task[]; sprints: Sprint[]; tombstones: Tombstone[]; notes: StickyNote[]; goals: Goal[]; habits: Habit[]; lists: FinancialTable[] }> {
     const data = await window.electronAPI.store.load() as Record<string, unknown>
     return {
       projects: (data.projects || []) as Project[],
@@ -12,11 +12,11 @@ export class ElectronStorage implements IStorageAdapter {
       notes: (data.notes || []) as StickyNote[],
       goals: (data.goals || []) as Goal[],
       habits: (data.habits || []) as Habit[],
-      lists: (data.lists || []) as ShoppingList[]
+      lists: (data.lists || []) as FinancialTable[]
     }
   }
 
-  async save(data: { projects: Project[]; tasks: Task[]; sprints: Sprint[]; tombstones: Tombstone[]; notes: StickyNote[]; goals: Goal[]; habits: Habit[]; lists: ShoppingList[] }): Promise<void> {
+  async save(data: { projects: Project[]; tasks: Task[]; sprints: Sprint[]; tombstones: Tombstone[]; notes: StickyNote[]; goals: Goal[]; habits: Habit[]; lists: FinancialTable[] }): Promise<void> {
     await window.electronAPI.store.save(data)
   }
 

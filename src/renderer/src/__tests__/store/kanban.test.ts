@@ -359,29 +359,43 @@ describe('note actions', () => {
 describe('goal actions', () => {
   beforeEach(resetStore)
 
-  it('createGoal adds a goal starting at 0', () => {
+  it('createGoal adds a goal with empty entries', () => {
     const id = useKanbanStore.getState().createGoal({ title: 'Run 100km', target: 100, unit: 'km', color: '#22c55e' })
     const goal = useKanbanStore.getState().goals.find((g) => g.id === id)!
-    expect(goal.current).toBe(0)
+    expect(goal.entries).toEqual([])
     expect(goal.target).toBe(100)
   })
 
-  it('incrementGoal increases current and clamps at target', () => {
-    const id = useKanbanStore.getState().createGoal({ title: 'Books', target: 10, unit: 'books', color: '#fff' })
-    useKanbanStore.getState().incrementGoal(id, 5)
-    expect(useKanbanStore.getState().goals.find((g) => g.id === id)!.current).toBe(5)
-    useKanbanStore.getState().incrementGoal(id, 100)
-    expect(useKanbanStore.getState().goals.find((g) => g.id === id)!.current).toBe(10)
+  it('addGoalEntry adds an entry and accumulates current', () => {
+    const id = useKanbanStore.getState().createGoal({ title: 'Books', target: 10, unit: 'livros', color: '#fff' })
+    useKanbanStore.getState().addGoalEntry(id, { date: '2026-06-01', label: 'Dom Casmurro', value: 1 })
+    useKanbanStore.getState().addGoalEntry(id, { date: '2026-06-05', value: 2.5 })
+    const goal = useKanbanStore.getState().goals.find((g) => g.id === id)!
+    expect(goal.entries).toHaveLength(2)
+    const total = goal.entries.reduce((s, e) => s + e.value, 0)
+    expect(total).toBeCloseTo(3.5)
+    expect(goal.entries[0].label).toBe('Dom Casmurro')
+    expect(goal.entries[1].label).toBeUndefined()
   })
 
-  it('incrementGoal with negative amount decrements but clamps at 0', () => {
+  it('addGoalEntry accepts floating-point values', () => {
+    const id = useKanbanStore.getState().createGoal({ title: 'Corrida', target: 10, unit: 'km', color: '#fff' })
+    useKanbanStore.getState().addGoalEntry(id, { date: '2026-06-14', value: 2.3 })
+    useKanbanStore.getState().addGoalEntry(id, { date: '2026-06-15', value: 3.7 })
+    const goal = useKanbanStore.getState().goals.find((g) => g.id === id)!
+    const total = goal.entries.reduce((s, e) => s + e.value, 0)
+    expect(total).toBeCloseTo(6)
+  })
+
+  it('deleteGoalEntry removes an entry', () => {
     const id = useKanbanStore.getState().createGoal({ title: 'G', target: 10, unit: 'x', color: '#fff' })
-    useKanbanStore.getState().incrementGoal(id, 3)
-    useKanbanStore.getState().incrementGoal(id, -10)
-    expect(useKanbanStore.getState().goals.find((g) => g.id === id)!.current).toBe(0)
+    useKanbanStore.getState().addGoalEntry(id, { date: '2026-06-01', value: 3 })
+    const entryId = useKanbanStore.getState().goals.find((g) => g.id === id)!.entries[0].id
+    useKanbanStore.getState().deleteGoalEntry(id, entryId)
+    expect(useKanbanStore.getState().goals.find((g) => g.id === id)!.entries).toHaveLength(0)
   })
 
-  it('updateGoal changes fields', () => {
+  it('updateGoal changes metadata fields', () => {
     const id = useKanbanStore.getState().createGoal({ title: 'Old', target: 5, unit: 'x', color: '#fff' })
     useKanbanStore.getState().updateGoal(id, { title: 'New', target: 20 })
     const g = useKanbanStore.getState().goals.find((g) => g.id === id)!
@@ -433,12 +447,14 @@ describe('habit actions', () => {
 describe('shopping list actions', () => {
   beforeEach(resetStore)
 
-  it('createList adds a list with default BRL currency', () => {
+  it('createList adds a list with default BRL currency and empty financial fields', () => {
     const id = useKanbanStore.getState().createList('Supermercado')
     const list = useKanbanStore.getState().lists.find((l) => l.id === id)!
     expect(list.name).toBe('Supermercado')
     expect(list.currency).toBe('BRL')
     expect(list.items).toEqual([])
+    expect(list.transactions).toEqual([])
+    expect(list.goals).toEqual([])
   })
 
   it('createList respects provided currency', () => {
@@ -469,13 +485,28 @@ describe('shopping list actions', () => {
     expect(item.done).toBe(false)
   })
 
-  it('toggleItem flips done state', () => {
+  it('toggleItem marks done and creates a linked transaction', () => {
+    const listId = useKanbanStore.getState().createList('Cart')
+    const itemId = useKanbanStore.getState().addItem(listId, { name: 'Milk', qty: 2, price: 3.5 })
+    useKanbanStore.getState().toggleItem(listId, itemId)
+    const list = useKanbanStore.getState().lists.find((l) => l.id === listId)!
+    expect(list.items[0].done).toBe(true)
+    expect(list.items[0].linkedTransactionId).toBeDefined()
+    expect(list.transactions).toHaveLength(1)
+    expect(list.transactions[0].type).toBe('expense')
+    expect(list.transactions[0].amount).toBeCloseTo(7)
+    expect(list.transactions[0].fromShopping).toBe(true)
+  })
+
+  it('toggleItem unmarks done and removes the linked transaction', () => {
     const listId = useKanbanStore.getState().createList('Cart')
     const itemId = useKanbanStore.getState().addItem(listId, { name: 'Milk', qty: 1 })
     useKanbanStore.getState().toggleItem(listId, itemId)
-    expect(useKanbanStore.getState().lists.find((l) => l.id === listId)!.items[0].done).toBe(true)
     useKanbanStore.getState().toggleItem(listId, itemId)
-    expect(useKanbanStore.getState().lists.find((l) => l.id === listId)!.items[0].done).toBe(false)
+    const list = useKanbanStore.getState().lists.find((l) => l.id === listId)!
+    expect(list.items[0].done).toBe(false)
+    expect(list.items[0].linkedTransactionId).toBeUndefined()
+    expect(list.transactions).toHaveLength(0)
   })
 
   it('updateItem changes fields', () => {

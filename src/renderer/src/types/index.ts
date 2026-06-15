@@ -34,10 +34,18 @@ export interface Task {
   updatedAt: string
 }
 
+export interface GoalEntry {
+  id: string
+  date: string
+  label?: string
+  value: number
+  createdAt: string
+}
+
 export interface Goal {
   id: string
   title: string
-  current: number
+  entries: GoalEntry[]
   target: number
   unit: string
   color: string
@@ -62,6 +70,7 @@ export interface ShoppingItem {
   price?: number
   done: boolean
   link?: string
+  linkedTransactionId?: string
 }
 
 export type Currency = 'BRL' | 'USD' | 'JPY'
@@ -72,11 +81,31 @@ export const CURRENCY_CONFIG: Record<Currency, { symbol: string; decimals: numbe
   JPY: { symbol: '¥',  decimals: 0, label: 'Iene' },
 }
 
-export interface ShoppingList {
+export interface FinancialTransaction {
+  id: string
+  description: string
+  amount: number
+  type: 'income' | 'expense'
+  date: string
+  category?: string
+  fromShopping?: boolean
+}
+
+export interface FinancialGoal {
+  id: string
+  name: string
+  targetAmount: number
+  targetMonth: number
+  targetYear: number
+}
+
+export interface FinancialTable {
   id: string
   name: string
   currency: Currency
   items: ShoppingItem[]
+  transactions: FinancialTransaction[]
+  goals: FinancialGoal[]
   createdAt: string
   updatedAt: string
 }
@@ -91,7 +120,7 @@ export interface Backup {
   notes?: StickyNote[]
   goals?: Goal[]
   habits?: Habit[]
-  lists?: ShoppingList[]
+  lists?: FinancialTable[]
 }
 
 export interface AITaskInput {

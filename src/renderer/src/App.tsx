@@ -9,7 +9,7 @@ import { CanvasView } from './components/CanvasView'
 import { DoneView } from './components/DoneView'
 import { GoalView } from './components/GoalView'
 import { HabitView } from './components/HabitView'
-import { ShoppingView } from './components/ShoppingView'
+import { FinancialView } from './components/FinancialView'
 import { UpcomingView } from './components/UpcomingView'
 import { ReportsView } from './components/ReportsView'
 import { SearchModal } from './components/SearchModal'
@@ -81,7 +81,7 @@ export default function App() {
   const [viewTask, setViewTask] = useState<Task | null>(null)
   const [projectModal, setProjectModal] = useState<ProjectModalState>({ open: false })
   const [columnModal, setColumnModal] = useState<ColumnModalState>({ open: false })
-  const [activeView, setActiveView] = useState<'board' | 'canvas' | 'done' | 'goals' | 'habits' | 'shopping' | 'upcoming' | 'reports'>('board')
+  const [activeView, setActiveView] = useState<'board' | 'canvas' | 'done' | 'goals' | 'habits' | 'financial' | 'upcoming' | 'reports'>('board')
   const [searchOpen, setSearchOpen] = useState(false)
   const [confirm, setConfirm] = useState<ConfirmState>({
     open: false,
@@ -326,8 +326,8 @@ export default function App() {
               tasks={tasks}
               onViewTask={handleViewTask}
             />
-          ) : activeView === 'shopping' ? (
-            <ShoppingView />
+          ) : activeView === 'financial' ? (
+            <FinancialView />
           ) : activeView === 'habits' ? (
             <HabitView />
           ) : activeView === 'goals' ? (

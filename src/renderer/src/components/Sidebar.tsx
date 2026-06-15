@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import type { Project } from '../types'
 
-type ActiveView = 'board' | 'canvas' | 'done' | 'goals' | 'habits' | 'shopping' | 'upcoming' | 'reports'
+type ActiveView = 'board' | 'canvas' | 'done' | 'goals' | 'habits' | 'financial' | 'upcoming' | 'reports'
 
 interface Props {
   projects: Project[]
@@ -304,19 +304,19 @@ Gere tarefas para cada parte desse projeto, não deixe as tarefas muito granulad
           Hábitos
         </button>
         <button
-          onClick={() => onChangeView('shopping')}
+          onClick={() => onChangeView('financial')}
           className={`flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
-            activeView === 'shopping'
-              ? 'bg-[#f97316]/15 text-[#fb923c]'
+            activeView === 'financial'
+              ? 'bg-[#6366f1]/15 text-[#a5b4fc]'
               : 'text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#1e2235]'
           }`}
         >
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" />
-            <line x1="3" y1="6" x2="21" y2="6" />
-            <path d="M16 10a4 4 0 0 1-8 0" />
+            <rect x="2" y="3" width="20" height="14" rx="2" />
+            <line x1="8" y1="21" x2="16" y2="21" />
+            <line x1="12" y1="17" x2="12" y2="21" />
           </svg>
-          Compras
+          Financeiro
         </button>
         <button
           onClick={() => onChangeView('reports')}
