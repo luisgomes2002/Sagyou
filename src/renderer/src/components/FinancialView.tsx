@@ -1,13 +1,29 @@
 import { useEffect, useRef, useState } from 'react'
 import Decimal from 'decimal.js'
-import type { ShoppingItem, FinancialTable, FinancialTransaction, FinancialGoal, Currency } from '../types'
+import type {
+  ShoppingItem,
+  FinancialTable,
+  FinancialTransaction,
+  FinancialGoal,
+  Currency
+} from '../types'
 import { CURRENCY_CONFIG } from '../types'
 import { useKanbanStore } from '../store/kanban'
 import { ConfirmDialog } from './ConfirmDialog'
 
 const MONTH_NAMES = [
-  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+  'Janeiro',
+  'Fevereiro',
+  'Março',
+  'Abril',
+  'Maio',
+  'Junho',
+  'Julho',
+  'Agosto',
+  'Setembro',
+  'Outubro',
+  'Novembro',
+  'Dezembro'
 ]
 
 function formatCurrency(value: Decimal | number, currency: Currency): string {
@@ -57,18 +73,64 @@ function formatDateBR(iso: string): string {
 
 const FINANCIAL_CATEGORIES = [
   // Despesas
-  'Alimentação', 'Moradia', 'Transporte', 'Saúde', 'Educação',
-  'Lazer', 'Vestuário', 'Serviços', 'Assinaturas', 'Impostos',
-  'Taxa', 'Família', 'Viagem', 'Intercâmbio', 'Investimentos', 'Pet',
+  'Alimentação',
+  'Moradia',
+  'Transporte',
+  'Saúde',
+  'Educação',
+  'Lazer',
+  'Vestuário',
+  'Serviços',
+  'Assinaturas',
+  'Impostos',
+  'Taxa',
+  'Família',
+  'Viagem',
+  'Intercâmbio',
+  'Investimentos',
+  'Pet',
+  // Tech / Negócio
+  'AI',
+  'ADS',
+  'Servidor',
+  'Marketing',
+  'Segurança Cloud',
+  'Domínio',
+  'AI Programação',
+  'AI Tokens',
+  'Canva',
+  'Streaming',
+  'Contador',
+  'Advogado',
   // Receitas
-  'Salário', 'Freelance', 'Trabalho', 'Aluguel Recebido',
-  'Dividendos', 'Reembolso', 'Bônus', 'Venda', 'Rendimento Mensal', 'Outros',
+  'Salário',
+  'Freelance',
+  'Trabalho',
+  'Aluguel Recebido',
+  'Dividendos',
+  'Reembolso',
+  'Bônus',
+  'Venda',
+  'Rendimento Mensal',
+  'Outros'
 ]
 
 const CAT_COLORS = [
-  '#818cf8', '#a78bfa', '#c084fc', '#f472b6', '#fb923c',
-  '#facc15', '#4ade80', '#22d3ee', '#60a5fa', '#f87171',
-  '#34d399', '#a3e635', '#e879f9', '#38bdf8', '#fbbf24',
+  '#818cf8',
+  '#a78bfa',
+  '#c084fc',
+  '#f472b6',
+  '#fb923c',
+  '#facc15',
+  '#4ade80',
+  '#22d3ee',
+  '#60a5fa',
+  '#f87171',
+  '#34d399',
+  '#a3e635',
+  '#e879f9',
+  '#38bdf8',
+  '#fbbf24'
 ]
 
 // ── TableSidebar ──────────────────────────────────────────────────────────────
@@ -144,31 +206,60 @@ function TableSidebar({ lists, activeId, onSelect, onCreate, onRename, onDelete 
                 />
               ) : (
                 <>
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={activeId === list.id ? '#a5b4fc' : '#8892a4'} strokeWidth="2">
+                  <svg
+                    width="11"
+                    height="11"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke={activeId === list.id ? '#a5b4fc' : '#8892a4'}
+                    strokeWidth="2"
+                  >
                     <rect x="2" y="3" width="20" height="14" rx="2" />
                     <line x1="8" y1="21" x2="16" y2="21" />
                     <line x1="12" y1="17" x2="12" y2="21" />
                   </svg>
-                  <span className={`flex-1 text-xs truncate ${activeId === list.id ? 'text-[#a5b4fc] font-medium' : 'text-[#8892a4]'}`}>
+                  <span
+                    className={`flex-1 text-xs truncate ${activeId === list.id ? 'text-[#a5b4fc] font-medium' : 'text-[#8892a4]'}`}
+                  >
                     {list.name}
                   </span>
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <span className="text-[9px] text-[#8892a4]">{done}/{list.items.length}</span>
+                    <span className="text-[9px] text-[#8892a4]">
+                      {done}/{list.items.length}
+                    </span>
                     <button
                       onClick={(e) => startEdit(list, e)}
                       className="p-0.5 rounded text-[#8892a4] hover:text-[#e2e8f0] transition-colors"
                     >
-                      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <svg
+                        width="9"
+                        height="9"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
                         <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
                         <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
                       </svg>
                     </button>
                     <button
-                      onClick={(e) => { e.stopPropagation(); onDelete(list.id) }}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onDelete(list.id)
+                      }}
                       className="p-0.5 rounded text-[#8892a4] hover:text-red-400 transition-colors"
                     >
-                      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                      <svg
+                        width="9"
+                        height="9"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
                       </svg>
                     </button>
                   </div>
@@ -188,7 +279,11 @@ function TableSidebar({ lists, activeId, onSelect, onCreate, onRename, onDelete 
               onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleCreate()
-                if (e.key === 'Escape') { setShowNew(false); setNewName(''); setNewCurrency('BRL') }
+                if (e.key === 'Escape') {
+                  setShowNew(false)
+                  setNewName('')
+                  setNewCurrency('BRL')
+                }
               }}
               placeholder="Nome da tabela..."
               className="w-full text-xs px-2.5 py-2 rounded bg-[#0d0f18] border border-[#2a2d42] text-[#e2e8f0] placeholder-[#8892a4] focus:outline-none focus:border-[#6366f1] transition-colors"
@@ -199,7 +294,9 @@ function TableSidebar({ lists, activeId, onSelect, onCreate, onRename, onDelete 
                   key={c}
                   onClick={() => setNewCurrency(c)}
                   className={`flex-1 py-1 rounded-md text-[10px] font-medium transition-colors ${
-                    newCurrency === c ? 'bg-[#6366f1] text-white' : 'text-[#8892a4] hover:text-[#e2e8f0]'
+                    newCurrency === c
+                      ? 'bg-[#6366f1] text-white'
+                      : 'text-[#8892a4] hover:text-[#e2e8f0]'
                   }`}
                 >
                   {CURRENCY_CONFIG[c].symbol} {c}
@@ -215,7 +312,11 @@ function TableSidebar({ lists, activeId, onSelect, onCreate, onRename, onDelete 
                 Criar
               </button>
               <button
-                onClick={() => { setShowNew(false); setNewName(''); setNewCurrency('BRL') }}
+                onClick={() => {
+                  setShowNew(false)
+                  setNewName('')
+                  setNewCurrency('BRL')
+                }}
                 className="flex-1 px-3 py-2 rounded border border-[#2a2d42] text-[#8892a4] text-xs font-medium hover:bg-[#1e2235] transition-colors"
               >
                 Cancelar
@@ -227,8 +328,16 @@ function TableSidebar({ lists, activeId, onSelect, onCreate, onRename, onDelete 
             onClick={() => setShowNew(true)}
             className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium text-[#6366f1] border border-[#6366f1]/30 hover:bg-[#6366f1]/10 transition-colors"
           >
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+            <svg
+              width="11"
+              height="11"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+            >
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
             </svg>
             Nova tabela
           </button>
@@ -243,7 +352,9 @@ function TableSidebar({ lists, activeId, onSelect, onCreate, onRename, onDelete 
 interface ItemRowProps {
   item: ShoppingItem
   currency: Currency
-  onUpdate: (updates: Partial<Pick<ShoppingItem, 'name' | 'qty' | 'price' | 'done' | 'link'>>) => void
+  onUpdate: (
+    updates: Partial<Pick<ShoppingItem, 'name' | 'qty' | 'price' | 'done' | 'link'>>
+  ) => void
   onDelete: () => void
   onToggle: () => void
 }
@@ -301,17 +412,30 @@ function ItemRow({ item, currency, onUpdate, onDelete, onToggle }: ItemRowProps)
   }
 
   return (
-    <tr className={`group border-b border-[#1a1d2e] transition-colors ${item.done ? 'opacity-60' : 'hover:bg-[#1a1c2c]'}`}>
+    <tr
+      className={`group border-b border-[#1a1d2e] transition-colors ${item.done ? 'opacity-60' : 'hover:bg-[#1a1c2c]'}`}
+    >
       <td className="pl-4 pr-2 py-2">
         <button
           onClick={onToggle}
-          title={item.done ? 'Desmarcar (remove lançamento em Finanças)' : 'Marcar como comprado (lança em Finanças)'}
+          title={
+            item.done
+              ? 'Desmarcar (remove lançamento em Finanças)'
+              : 'Marcar como comprado (lança em Finanças)'
+          }
           className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
             item.done ? 'bg-[#22c55e] border-[#22c55e]' : 'border-[#3a3e58] hover:border-[#6366f1]'
           }`}
         >
           {item.done && (
-            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
+            <svg
+              width="9"
+              height="9"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="white"
+              strokeWidth="3"
+            >
               <polyline points="20 6 9 17 4 12" />
             </svg>
           )}
@@ -347,7 +471,9 @@ function ItemRow({ item, currency, onUpdate, onDelete, onToggle }: ItemRowProps)
       </td>
       <td className="py-1.5 pr-2 w-28">
         <div className="flex items-center gap-1">
-          <span className="text-[10px] text-[#3a3e58] select-none">{CURRENCY_CONFIG[currency].symbol}</span>
+          <span className="text-[10px] text-[#3a3e58] select-none">
+            {CURRENCY_CONFIG[currency].symbol}
+          </span>
           <input
             type="text"
             inputMode="decimal"
@@ -377,7 +503,14 @@ function ItemRow({ item, currency, onUpdate, onDelete, onToggle }: ItemRowProps)
               title={item.link}
               className="shrink-0 text-[#6366f1] hover:text-[#a5b4fc] transition-colors"
             >
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                width="10"
+                height="10"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
                 <polyline points="15 3 21 3 21 9" />
                 <line x1="10" y1="14" x2="21" y2="3" />
@@ -388,7 +521,9 @@ function ItemRow({ item, currency, onUpdate, onDelete, onToggle }: ItemRowProps)
       </td>
       <td className="py-1.5 pr-2 w-24 text-right">
         {total.greaterThan(0) ? (
-          <span className="text-sm tabular-nums text-[#e2e8f0]">{formatCurrency(total, currency)}</span>
+          <span className="text-sm tabular-nums text-[#e2e8f0]">
+            {formatCurrency(total, currency)}
+          </span>
         ) : (
           <span className="text-sm text-[#2a2d42]">—</span>
         )}
@@ -398,8 +533,16 @@ function ItemRow({ item, currency, onUpdate, onDelete, onToggle }: ItemRowProps)
           onClick={onDelete}
           className="p-1 rounded text-[#2a2d42] hover:text-red-400 hover:bg-red-400/10 opacity-0 group-hover:opacity-100 transition-all"
         >
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+          <svg
+            width="11"
+            height="11"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
           </svg>
         </button>
       </td>
@@ -426,9 +569,10 @@ function AddItemRow({ currency, onAdd }: AddItemRowProps) {
     onAdd({
       name: name.trim(),
       qty: qtyDecimal !== null && qtyDecimal.greaterThan(0) ? qtyDecimal.toNumber() : 1,
-      price: priceDecimal !== null && priceDecimal.greaterThanOrEqualTo(0)
-        ? priceDecimal.toDecimalPlaces(2).toNumber()
-        : undefined,
+      price:
+        priceDecimal !== null && priceDecimal.greaterThanOrEqualTo(0)
+          ? priceDecimal.toDecimalPlaces(2).toNumber()
+          : undefined,
       link: link.trim() || undefined
     })
     setName('')
@@ -446,8 +590,16 @@ function AddItemRow({ currency, onAdd }: AddItemRowProps) {
     <tr className="border-b border-[#1a1d2e] hover:bg-[#1a1c2c] transition-colors">
       <td className="pl-4 pr-2 py-2">
         <div className="w-4 h-4 rounded border border-dashed border-[#2a2d42] flex items-center justify-center">
-          <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#2a2d42" strokeWidth="3">
-            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+          <svg
+            width="8"
+            height="8"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#2a2d42"
+            strokeWidth="3"
+          >
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
           </svg>
         </div>
       </td>
@@ -474,7 +626,9 @@ function AddItemRow({ currency, onAdd }: AddItemRowProps) {
       </td>
       <td className="py-1.5 pr-2 w-28">
         <div className="flex items-center gap-1">
-          <span className="text-[10px] text-[#3a3e58] select-none">{CURRENCY_CONFIG[currency].symbol}</span>
+          <span className="text-[10px] text-[#3a3e58] select-none">
+            {CURRENCY_CONFIG[currency].symbol}
+          </span>
           <input
             type="text"
             inputMode="decimal"
@@ -503,8 +657,16 @@ function AddItemRow({ currency, onAdd }: AddItemRowProps) {
           disabled={!name.trim()}
           className="p-1 rounded text-[#6366f1] hover:bg-[#6366f1]/10 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
         >
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+          <svg
+            width="11"
+            height="11"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+          >
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
           </svg>
         </button>
       </td>
@@ -514,7 +676,10 @@ function AddItemRow({ currency, onAdd }: AddItemRowProps) {
 
 interface ShoppingTabProps {
   list: FinancialTable
-  onUpdate: (itemId: string, updates: Partial<Pick<ShoppingItem, 'name' | 'qty' | 'price' | 'done' | 'link'>>) => void
+  onUpdate: (
+    itemId: string,
+    updates: Partial<Pick<ShoppingItem, 'name' | 'qty' | 'price' | 'done' | 'link'>>
+  ) => void
   onDelete: (itemId: string) => void
   onToggle: (itemId: string) => void
   onAdd: (data: { name: string; qty: number; price?: number; link?: string }) => void
@@ -527,7 +692,9 @@ function ShoppingTab({ list, onUpdate, onDelete, onToggle, onAdd }: ShoppingTabP
   const doneItems = items.filter((i) => i.done).length
   const percent = totalItems > 0 ? Math.round((doneItems / totalItems) * 100) : 0
   const totalPrice = items.reduce((acc, i) => acc.plus(itemTotal(i)), new Decimal(0))
-  const donePrice = items.filter((i) => i.done).reduce((acc, i) => acc.plus(itemTotal(i)), new Decimal(0))
+  const donePrice = items
+    .filter((i) => i.done)
+    .reduce((acc, i) => acc.plus(itemTotal(i)), new Decimal(0))
 
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
@@ -537,15 +704,23 @@ function ShoppingTab({ list, onUpdate, onDelete, onToggle, onAdd }: ShoppingTabP
             <div className="w-32 h-1.5 rounded-full bg-[#2a2d42] overflow-hidden">
               <div
                 className="h-full rounded-full transition-all duration-300"
-                style={{ width: `${percent}%`, backgroundColor: percent === 100 ? '#22c55e' : '#6366f1' }}
+                style={{
+                  width: `${percent}%`,
+                  backgroundColor: percent === 100 ? '#22c55e' : '#6366f1'
+                }}
               />
             </div>
-            <span className="text-xs tabular-nums" style={{ color: percent === 100 ? '#22c55e' : '#6366f1' }}>
+            <span
+              className="text-xs tabular-nums"
+              style={{ color: percent === 100 ? '#22c55e' : '#6366f1' }}
+            >
               {percent}%
             </span>
           </div>
           {totalPrice.greaterThan(0) && (
-            <span className="text-sm font-bold text-[#e2e8f0] tabular-nums">{formatCurrency(totalPrice, currency)}</span>
+            <span className="text-sm font-bold text-[#e2e8f0] tabular-nums">
+              {formatCurrency(totalPrice, currency)}
+            </span>
           )}
         </div>
       )}
@@ -555,11 +730,21 @@ function ShoppingTab({ list, onUpdate, onDelete, onToggle, onAdd }: ShoppingTabP
           <thead className="sticky top-0 bg-[#13151f] z-10">
             <tr className="border-b border-[#2a2d42]">
               <th className="pl-4 pr-2 py-2 w-9" />
-              <th className="py-2 pr-2 text-left text-[10px] font-semibold uppercase tracking-wider text-[#8892a4]">Item</th>
-              <th className="py-2 pr-2 w-16 text-center text-[10px] font-semibold uppercase tracking-wider text-[#8892a4]">Qtd</th>
-              <th className="py-2 pr-2 w-28 text-left text-[10px] font-semibold uppercase tracking-wider text-[#8892a4]">Preço/un</th>
-              <th className="py-2 pr-2 w-28 text-left text-[10px] font-semibold uppercase tracking-wider text-[#8892a4]">Link</th>
-              <th className="py-2 pr-2 w-24 text-right text-[10px] font-semibold uppercase tracking-wider text-[#8892a4]">Total</th>
+              <th className="py-2 pr-2 text-left text-[10px] font-semibold uppercase tracking-wider text-[#8892a4]">
+                Item
+              </th>
+              <th className="py-2 pr-2 w-16 text-center text-[10px] font-semibold uppercase tracking-wider text-[#8892a4]">
+                Qtd
+              </th>
+              <th className="py-2 pr-2 w-28 text-left text-[10px] font-semibold uppercase tracking-wider text-[#8892a4]">
+                Preço/un
+              </th>
+              <th className="py-2 pr-2 w-28 text-left text-[10px] font-semibold uppercase tracking-wider text-[#8892a4]">
+                Link
+              </th>
+              <th className="py-2 pr-2 w-24 text-right text-[10px] font-semibold uppercase tracking-wider text-[#8892a4]">
+                Total
+              </th>
               <th className="py-2 pr-3 w-9" />
             </tr>
           </thead>
@@ -589,7 +774,10 @@ function ShoppingTab({ list, onUpdate, onDelete, onToggle, onAdd }: ShoppingTabP
               <div className="flex-1 max-w-48 h-2 rounded-full bg-[#2a2d42] overflow-hidden">
                 <div
                   className="h-full rounded-full transition-all duration-300"
-                  style={{ width: `${percent}%`, backgroundColor: percent === 100 ? '#22c55e' : '#6366f1' }}
+                  style={{
+                    width: `${percent}%`,
+                    backgroundColor: percent === 100 ? '#22c55e' : '#6366f1'
+                  }}
                 />
               </div>
               <span
@@ -603,13 +791,21 @@ function ShoppingTab({ list, onUpdate, onDelete, onToggle, onAdd }: ShoppingTabP
               <div className="flex items-end gap-6 shrink-0">
                 {donePrice.greaterThan(0) && donePrice.lessThan(totalPrice) && (
                   <div className="text-right">
-                    <p className="text-[10px] text-[#8892a4] uppercase tracking-wider mb-0.5">Gasto</p>
-                    <p className="text-sm font-semibold text-[#22c55e] tabular-nums">{formatCurrency(donePrice, currency)}</p>
+                    <p className="text-[10px] text-[#8892a4] uppercase tracking-wider mb-0.5">
+                      Gasto
+                    </p>
+                    <p className="text-sm font-semibold text-[#22c55e] tabular-nums">
+                      {formatCurrency(donePrice, currency)}
+                    </p>
                   </div>
                 )}
                 <div className="text-right">
-                  <p className="text-[10px] text-[#8892a4] uppercase tracking-wider mb-0.5">Total</p>
-                  <p className="text-base font-bold text-[#e2e8f0] tabular-nums">{formatCurrency(totalPrice, currency)}</p>
+                  <p className="text-[10px] text-[#8892a4] uppercase tracking-wider mb-0.5">
+                    Total
+                  </p>
+                  <p className="text-base font-bold text-[#e2e8f0] tabular-nums">
+                    {formatCurrency(totalPrice, currency)}
+                  </p>
                 </div>
               </div>
             )}
@@ -648,7 +844,11 @@ function GoalModal({ open, goal, onSave, onClose }: GoalModalProps) {
   if (!open) return null
 
   const amount = parseDecimalInput(targetAmount)
-  const valid = name.trim().length > 0 && amount !== null && amount.greaterThan(0) && targetYear >= now.getFullYear()
+  const valid =
+    name.trim().length > 0 &&
+    amount !== null &&
+    amount.greaterThan(0) &&
+    targetYear >= now.getFullYear()
 
   const handleSubmit = () => {
     if (!valid || !amount) return
@@ -665,7 +865,9 @@ function GoalModal({ open, goal, onSave, onClose }: GoalModalProps) {
         </h3>
         <div className="flex flex-col gap-3">
           <div>
-            <label className="text-[10px] font-semibold uppercase tracking-wider text-[#8892a4] block mb-1">Nome</label>
+            <label className="text-[10px] font-semibold uppercase tracking-wider text-[#8892a4] block mb-1">
+              Nome
+            </label>
             <input
               autoFocus
               value={name}
@@ -676,7 +878,9 @@ function GoalModal({ open, goal, onSave, onClose }: GoalModalProps) {
             />
           </div>
           <div>
-            <label className="text-[10px] font-semibold uppercase tracking-wider text-[#8892a4] block mb-1">Valor necessário</label>
+            <label className="text-[10px] font-semibold uppercase tracking-wider text-[#8892a4] block mb-1">
+              Valor necessário
+            </label>
             <input
               type="text"
               inputMode="decimal"
@@ -688,7 +892,9 @@ function GoalModal({ open, goal, onSave, onClose }: GoalModalProps) {
             />
           </div>
           <div>
-            <label className="text-[10px] font-semibold uppercase tracking-wider text-[#8892a4] block mb-1">Prazo</label>
+            <label className="text-[10px] font-semibold uppercase tracking-wider text-[#8892a4] block mb-1">
+              Prazo
+            </label>
             <div className="flex gap-2">
               <select
                 value={targetMonth}
@@ -696,7 +902,9 @@ function GoalModal({ open, goal, onSave, onClose }: GoalModalProps) {
                 className="flex-1 px-2 py-2 rounded-lg bg-[#0d0f18] border border-[#2a2d42] text-sm text-[#e2e8f0] focus:outline-none focus:border-[#6366f1] transition-colors"
               >
                 {MONTH_NAMES.map((m, i) => (
-                  <option key={i + 1} value={i + 1}>{m}</option>
+                  <option key={i + 1} value={i + 1}>
+                    {m}
+                  </option>
                 ))}
               </select>
               <input
@@ -766,7 +974,9 @@ function CompleteGoalModal({ open, goalName, onConfirm, onClose }: CompleteGoalM
         <p className="text-[11px] text-[#8892a4] mb-4 truncate">{goalName}</p>
         <div className="flex flex-col gap-3">
           <div>
-            <label className="text-[10px] font-semibold uppercase tracking-wider text-[#8892a4] block mb-1">Data de conclusão</label>
+            <label className="text-[10px] font-semibold uppercase tracking-wider text-[#8892a4] block mb-1">
+              Data de conclusão
+            </label>
             {dateEditing ? (
               <input
                 autoFocus
@@ -774,7 +984,9 @@ function CompleteGoalModal({ open, goalName, onConfirm, onClose }: CompleteGoalM
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
                 onBlur={() => setDateEditing(false)}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === 'Escape') setDateEditing(false) }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === 'Escape') setDateEditing(false)
+                }}
                 className="w-full px-3 py-2 rounded-lg bg-[#0d0f18] border border-[#6366f1] text-sm text-[#e2e8f0] focus:outline-none"
               />
             ) : (
@@ -787,11 +999,15 @@ function CompleteGoalModal({ open, goalName, onConfirm, onClose }: CompleteGoalM
             )}
           </div>
           <div>
-            <label className="text-[10px] font-semibold uppercase tracking-wider text-[#8892a4] block mb-1">Descrição (opcional)</label>
+            <label className="text-[10px] font-semibold uppercase tracking-wider text-[#8892a4] block mb-1">
+              Descrição (opcional)
+            </label>
             <textarea
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && e.ctrlKey) handleSubmit() }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && e.ctrlKey) handleSubmit()
+              }}
               placeholder="Ex: meta atingida antes do prazo"
               rows={3}
               className="w-full px-3 py-2 rounded-lg bg-[#0d0f18] border border-[#2a2d42] text-sm text-[#e2e8f0] placeholder-[#8892a4] focus:outline-none focus:border-[#6366f1] transition-colors resize-none"
@@ -830,7 +1046,16 @@ interface FinancialGoalCardProps {
   onRevert: () => void
 }
 
-function FinancialGoalCard({ goal, transactions, accBalance, currency, onEdit, onDelete, onComplete, onRevert }: FinancialGoalCardProps) {
+function FinancialGoalCard({
+  goal,
+  transactions,
+  accBalance,
+  currency,
+  onEdit,
+  onDelete,
+  onComplete,
+  onRevert
+}: FinancialGoalCardProps) {
   const now = new Date()
   const [completeModalOpen, setCompleteModalOpen] = useState(false)
 
@@ -841,7 +1066,8 @@ function FinancialGoalCard({ goal, transactions, accBalance, currency, onEdit, o
 
   // For past-deadline goals use the balance at the deadline month so that
   // spending after the deadline doesn't un-achieve a completed goal.
-  const deadlinePast = monthsLeft === 0 &&
+  const deadlinePast =
+    monthsLeft === 0 &&
     (goal.targetYear < now.getFullYear() ||
       (goal.targetYear === now.getFullYear() && goal.targetMonth < now.getMonth() + 1))
   const deadlineKey = `${goal.targetYear}-${String(goal.targetMonth).padStart(2, '0')}`
@@ -854,7 +1080,11 @@ function FinancialGoalCard({ goal, transactions, accBalance, currency, onEdit, o
   const manuallyCompleted = !!goal.completedAt
   const balanceAchieved = effectiveBalance >= goal.targetAmount
   const achieved = manuallyCompleted || balanceAchieved
-  const progress = manuallyCompleted ? 1 : (goal.targetAmount > 0 ? Math.min(Math.max(effectiveBalance / goal.targetAmount, 0), 1) : 0)
+  const progress = manuallyCompleted
+    ? 1
+    : goal.targetAmount > 0
+      ? Math.min(Math.max(effectiveBalance / goal.targetAmount, 0), 1)
+      : 0
   const percent = Math.round(progress * 100)
   const savedAmount = Math.min(Math.max(effectiveBalance, 0), goal.targetAmount)
   const remaining = achieved ? 0 : Math.max(goal.targetAmount - effectiveBalance, 0)
@@ -874,8 +1104,8 @@ function FinancialGoalCard({ goal, transactions, accBalance, currency, onEdit, o
         achieved
           ? 'border-[#22c55e]/25 bg-[#22c55e]/5'
           : isOverdue
-          ? 'border-red-500/25 bg-red-500/5'
-          : 'border-[#2a2d42] bg-[#1e2235] hover:border-[#3a3e58]'
+            ? 'border-red-500/25 bg-red-500/5'
+            : 'border-[#2a2d42] bg-[#1e2235] hover:border-[#3a3e58]'
       }`}
     >
       <div className="flex items-start gap-4">
@@ -884,22 +1114,37 @@ function FinancialGoalCard({ goal, transactions, accBalance, currency, onEdit, o
           <svg width="76" height="76" viewBox="0 0 76 76">
             <circle cx="38" cy="38" r={R} fill="none" stroke="#2a2d42" strokeWidth="5" />
             <circle
-              cx="38" cy="38" r={R}
+              cx="38"
+              cy="38"
+              r={R}
               fill="none"
               stroke={ringColor}
               strokeWidth="5"
               strokeLinecap="round"
               strokeDasharray={`${progress * circ} ${circ}`}
               transform="rotate(-90 38 38)"
-              style={{ transition: 'stroke-dasharray 0.6s ease', filter: achieved ? `drop-shadow(0 0 4px ${ringGlow}60)` : 'none' }}
+              style={{
+                transition: 'stroke-dasharray 0.6s ease',
+                filter: achieved ? `drop-shadow(0 0 4px ${ringGlow}60)` : 'none'
+              }}
             />
           </svg>
           <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none gap-0.5">
-            <span className="text-sm font-bold leading-none tabular-nums" style={{ color: ringColor }}>
+            <span
+              className="text-sm font-bold leading-none tabular-nums"
+              style={{ color: ringColor }}
+            >
               {percent}%
             </span>
             {achieved && (
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={ringColor} strokeWidth="3">
+              <svg
+                width="10"
+                height="10"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke={ringColor}
+                strokeWidth="3"
+              >
                 <polyline points="20 6 9 17 4 12" />
               </svg>
             )}
@@ -910,14 +1155,23 @@ function FinancialGoalCard({ goal, transactions, accBalance, currency, onEdit, o
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2 mb-3">
             <div className="min-w-0">
-              <h4 className="text-sm font-semibold text-[#e2e8f0] leading-snug truncate">{goal.name}</h4>
+              <h4 className="text-sm font-semibold text-[#e2e8f0] leading-snug truncate">
+                {goal.name}
+              </h4>
               <p className="text-[10px] text-[#8892a4] mt-0.5">
                 Prazo: {MONTH_NAMES[goal.targetMonth - 1]} {goal.targetYear}
               </p>
             </div>
             {manuallyCompleted && (
               <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#22c55e]/15 text-[#22c55e] text-[10px] font-semibold shrink-0">
-                <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5">
+                <svg
+                  width="8"
+                  height="8"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="3.5"
+                >
                   <polyline points="20 6 9 17 4 12" />
                 </svg>
                 Concluído
@@ -925,7 +1179,14 @@ function FinancialGoalCard({ goal, transactions, accBalance, currency, onEdit, o
             )}
             {!manuallyCompleted && balanceAchieved && (
               <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#22c55e]/15 text-[#22c55e] text-[10px] font-semibold shrink-0">
-                <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5">
+                <svg
+                  width="8"
+                  height="8"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="3.5"
+                >
                   <polyline points="20 6 9 17 4 12" />
                 </svg>
                 Alcançado
@@ -946,16 +1207,28 @@ function FinancialGoalCard({ goal, transactions, accBalance, currency, onEdit, o
           {/* Stats grid */}
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <p className="text-[9px] font-semibold uppercase tracking-wider text-[#8892a4] mb-0.5">Acumulado</p>
-              <p className="text-xs font-bold text-[#4ade80] tabular-nums">{formatCurrency(savedAmount, currency)}</p>
+              <p className="text-[9px] font-semibold uppercase tracking-wider text-[#8892a4] mb-0.5">
+                Acumulado
+              </p>
+              <p className="text-xs font-bold text-[#4ade80] tabular-nums">
+                {formatCurrency(savedAmount, currency)}
+              </p>
             </div>
             <div>
-              <p className="text-[9px] font-semibold uppercase tracking-wider text-[#8892a4] mb-0.5">Faltam</p>
-              <p className="text-xs font-bold text-[#e2e8f0] tabular-nums">{formatCurrency(remaining, currency)}</p>
+              <p className="text-[9px] font-semibold uppercase tracking-wider text-[#8892a4] mb-0.5">
+                Faltam
+              </p>
+              <p className="text-xs font-bold text-[#e2e8f0] tabular-nums">
+                {formatCurrency(remaining, currency)}
+              </p>
             </div>
             <div>
-              <p className="text-[9px] font-semibold uppercase tracking-wider text-[#8892a4] mb-0.5">Meta total</p>
-              <p className="text-xs font-bold text-[#e2e8f0] tabular-nums">{formatCurrency(goal.targetAmount, currency)}</p>
+              <p className="text-[9px] font-semibold uppercase tracking-wider text-[#8892a4] mb-0.5">
+                Meta total
+              </p>
+              <p className="text-xs font-bold text-[#e2e8f0] tabular-nums">
+                {formatCurrency(goal.targetAmount, currency)}
+              </p>
             </div>
           </div>
 
@@ -964,18 +1237,25 @@ function FinancialGoalCard({ goal, transactions, accBalance, currency, onEdit, o
             <div className="mt-2.5 pt-2.5 border-t border-[#2a2d42]">
               <p className="text-[10px] text-[#8892a4] leading-relaxed">
                 Economizar{' '}
-                <span className="text-[#a5b4fc] font-semibold">{formatCurrency(monthlyNeeded, currency)}/mês</span>
-                {' '}para atingir no prazo
+                <span className="text-[#a5b4fc] font-semibold">
+                  {formatCurrency(monthlyNeeded, currency)}/mês
+                </span>{' '}
+                para atingir no prazo
               </p>
             </div>
           )}
           {manuallyCompleted && (
             <div className="mt-2.5 pt-2.5 border-t border-[#22c55e]/20">
               <p className="text-[10px] text-[#22c55e]/70 leading-relaxed">
-                Concluído em <span className="text-[#4ade80] font-semibold">{formatDateBR(goal.completedAt!)}</span>
+                Concluído em{' '}
+                <span className="text-[#4ade80] font-semibold">
+                  {formatDateBR(goal.completedAt!)}
+                </span>
               </p>
               {goal.completionNote && (
-                <p className="text-[10px] text-[#8892a4] mt-0.5 leading-relaxed">{goal.completionNote}</p>
+                <p className="text-[10px] text-[#8892a4] mt-0.5 leading-relaxed">
+                  {goal.completionNote}
+                </p>
               )}
             </div>
           )}
@@ -983,7 +1263,9 @@ function FinancialGoalCard({ goal, transactions, accBalance, currency, onEdit, o
             <div className="mt-2.5 pt-2.5 border-t border-[#22c55e]/20">
               <p className="text-[10px] text-[#22c55e]/60 leading-relaxed">
                 Saldo excede a meta em{' '}
-                <span className="text-[#4ade80] font-semibold">{formatCurrency(effectiveBalance - goal.targetAmount, currency)}</span>
+                <span className="text-[#4ade80] font-semibold">
+                  {formatCurrency(effectiveBalance - goal.targetAmount, currency)}
+                </span>
               </p>
             </div>
           )}
@@ -991,8 +1273,10 @@ function FinancialGoalCard({ goal, transactions, accBalance, currency, onEdit, o
             <div className="mt-2.5 pt-2.5 border-t border-red-500/20">
               <p className="text-[10px] text-red-400/60 leading-relaxed">
                 Faltam{' '}
-                <span className="text-red-400 font-semibold">{formatCurrency(remaining, currency)}</span>
-                {' '}para concluir esta meta
+                <span className="text-red-400 font-semibold">
+                  {formatCurrency(remaining, currency)}
+                </span>{' '}
+                para concluir esta meta
               </p>
             </div>
           )}
@@ -1005,7 +1289,14 @@ function FinancialGoalCard({ goal, transactions, accBalance, currency, onEdit, o
           onClick={onEdit}
           className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-medium text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#2a2d42] transition-colors"
         >
-          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg
+            width="9"
+            height="9"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
             <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
             <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
           </svg>
@@ -1016,7 +1307,14 @@ function FinancialGoalCard({ goal, transactions, accBalance, currency, onEdit, o
             onClick={() => setCompleteModalOpen(true)}
             className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-medium text-[#8892a4] hover:text-[#22c55e] hover:bg-[#22c55e]/10 transition-colors"
           >
-            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <svg
+              width="9"
+              height="9"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+            >
               <polyline points="20 6 9 17 4 12" />
             </svg>
             Finalizar
@@ -1027,7 +1325,14 @@ function FinancialGoalCard({ goal, transactions, accBalance, currency, onEdit, o
             onClick={onRevert}
             className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-medium text-[#8892a4] hover:text-orange-400 hover:bg-orange-400/10 transition-colors"
           >
-            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="9"
+              height="9"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
               <path d="M3 3v5h5" />
             </svg>
@@ -1038,7 +1343,14 @@ function FinancialGoalCard({ goal, transactions, accBalance, currency, onEdit, o
           onClick={onDelete}
           className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-medium text-[#8892a4] hover:text-red-400 hover:bg-red-400/10 transition-colors"
         >
-          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg
+            width="9"
+            height="9"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
             <polyline points="3 6 5 6 21 6" />
             <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
           </svg>
@@ -1049,7 +1361,9 @@ function FinancialGoalCard({ goal, transactions, accBalance, currency, onEdit, o
       <CompleteGoalModal
         open={completeModalOpen}
         goalName={goal.name}
-        onConfirm={(date, note) => { onComplete(date, note) }}
+        onConfirm={(date, note) => {
+          onComplete(date, note)
+        }}
         onClose={() => setCompleteModalOpen(false)}
       />
     </div>
@@ -1104,7 +1418,9 @@ function AddTransactionRow({ currency, onAdd }: AddTransactionRowProps) {
             value={date}
             onChange={(e) => setDate(e.target.value)}
             onBlur={() => setDateEditing(false)}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === 'Escape') setDateEditing(false) }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === 'Escape') setDateEditing(false)
+            }}
             className="w-full bg-transparent text-xs text-[#8892a4] focus:outline-none"
           />
         ) : (
@@ -1140,9 +1456,7 @@ function AddTransactionRow({ currency, onAdd }: AddTransactionRowProps) {
         <button
           onClick={() => setType(type === 'income' ? 'expense' : 'income')}
           className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors ${
-            type === 'income'
-              ? 'bg-[#22c55e]/15 text-[#4ade80]'
-              : 'bg-red-500/15 text-red-400'
+            type === 'income' ? 'bg-[#22c55e]/15 text-[#4ade80]' : 'bg-red-500/15 text-red-400'
           }`}
         >
           {type === 'income' ? '↑ Entrada' : '↓ Saída'}
@@ -1150,7 +1464,9 @@ function AddTransactionRow({ currency, onAdd }: AddTransactionRowProps) {
       </td>
       <td className="py-1.5 pr-2 w-32">
         <div className="flex items-center gap-1">
-          <span className="text-[10px] text-[#3a3e58] select-none">{CURRENCY_CONFIG[currency].symbol}</span>
+          <span className="text-[10px] text-[#3a3e58] select-none">
+            {CURRENCY_CONFIG[currency].symbol}
+          </span>
           <input
             type="text"
             inputMode="decimal"
@@ -1168,8 +1484,16 @@ function AddTransactionRow({ currency, onAdd }: AddTransactionRowProps) {
           disabled={!description.trim() || !parseDecimalInput(amount)?.greaterThan(0)}
           className="p-1 rounded text-[#6366f1] hover:bg-[#6366f1]/10 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
         >
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+          <svg
+            width="11"
+            height="11"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+          >
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
           </svg>
         </button>
       </td>
@@ -1237,8 +1561,14 @@ function TransactionRow({ tx, currency, onUpdate, onDelete }: TransactionRowProp
             type="date"
             value={editDate}
             onChange={(e) => setEditDate(e.target.value)}
-            onBlur={() => { commitDate(); setDateEditing(false) }}
-            onKeyDown={(e) => { blur(e); if (e.key === 'Enter' || e.key === 'Escape') setDateEditing(false) }}
+            onBlur={() => {
+              commitDate()
+              setDateEditing(false)
+            }}
+            onKeyDown={(e) => {
+              blur(e)
+              if (e.key === 'Enter' || e.key === 'Escape') setDateEditing(false)
+            }}
             className="w-full bg-transparent text-xs text-[#8892a4] tabular-nums focus:outline-none focus:bg-[#0d0f18] focus:px-1 rounded transition-all"
           />
         ) : (
@@ -1253,7 +1583,15 @@ function TransactionRow({ tx, currency, onUpdate, onDelete }: TransactionRowProp
       <td className="py-2 pr-2">
         <div className="flex items-center gap-1.5 min-w-0">
           {tx.fromShopping && (
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2" className="shrink-0 opacity-60">
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#6366f1"
+              strokeWidth="2"
+              className="shrink-0 opacity-60"
+            >
               <title>Gerado por compra</title>
               <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" />
               <line x1="3" y1="6" x2="21" y2="6" />
@@ -1285,9 +1623,7 @@ function TransactionRow({ tx, currency, onUpdate, onDelete }: TransactionRowProp
       <td className="py-2 pr-2 w-20 text-center">
         <span
           className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
-            tx.type === 'income'
-              ? 'bg-[#22c55e]/15 text-[#4ade80]'
-              : 'bg-red-500/15 text-red-400'
+            tx.type === 'income' ? 'bg-[#22c55e]/15 text-[#4ade80]' : 'bg-red-500/15 text-red-400'
           }`}
         >
           {tx.type === 'income' ? '↑ Entrada' : '↓ Saída'}
@@ -1295,7 +1631,9 @@ function TransactionRow({ tx, currency, onUpdate, onDelete }: TransactionRowProp
       </td>
       <td className="py-2 pr-2 w-32 text-right">
         <div className="flex items-center justify-end gap-1">
-          <span className="text-[10px] text-[#3a3e58] select-none">{CURRENCY_CONFIG[currency].symbol}</span>
+          <span className="text-[10px] text-[#3a3e58] select-none">
+            {CURRENCY_CONFIG[currency].symbol}
+          </span>
           <input
             type="text"
             inputMode="decimal"
@@ -1314,8 +1652,16 @@ function TransactionRow({ tx, currency, onUpdate, onDelete }: TransactionRowProp
           onClick={onDelete}
           className="p-1 rounded text-[#2a2d42] hover:text-red-400 hover:bg-red-400/10 opacity-0 group-hover:opacity-100 transition-all"
         >
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+          <svg
+            width="11"
+            height="11"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
           </svg>
         </button>
       </td>
@@ -1335,46 +1681,67 @@ interface GoalHistoryModalProps {
   onClose: () => void
 }
 
-function GoalHistoryModal({ open, goals, transactions, accBalance, currency, onRevert, onClose }: GoalHistoryModalProps) {
+function GoalHistoryModal({
+  open,
+  goals,
+  transactions,
+  accBalance,
+  currency,
+  onRevert,
+  onClose
+}: GoalHistoryModalProps) {
   if (!open || goals.length === 0) return null
   const now = new Date()
 
-  const withStatus = goals.map((goal) => {
-    const monthsLeft = Math.max(
-      (goal.targetYear - now.getFullYear()) * 12 + (goal.targetMonth - (now.getMonth() + 1)),
-      0
-    )
-    const deadlinePast = monthsLeft === 0 && (
-      goal.targetYear < now.getFullYear() ||
-      (goal.targetYear === now.getFullYear() && goal.targetMonth < now.getMonth() + 1)
-    )
-    const dk = `${goal.targetYear}-${String(goal.targetMonth).padStart(2, '0')}`
-    const effectiveBalance = deadlinePast
-      ? transactions.filter((t) => t.date.slice(0, 7) <= dk).reduce((s, t) => (t.type === 'income' ? s + t.amount : s - t.amount), 0)
-      : accBalance
-    const progress = goal.targetAmount > 0 ? Math.min(Math.max(effectiveBalance / goal.targetAmount, 0), 1) : 0
+  const withStatus = goals
+    .map((goal) => {
+      const monthsLeft = Math.max(
+        (goal.targetYear - now.getFullYear()) * 12 + (goal.targetMonth - (now.getMonth() + 1)),
+        0
+      )
+      const deadlinePast =
+        monthsLeft === 0 &&
+        (goal.targetYear < now.getFullYear() ||
+          (goal.targetYear === now.getFullYear() && goal.targetMonth < now.getMonth() + 1))
+      const dk = `${goal.targetYear}-${String(goal.targetMonth).padStart(2, '0')}`
+      const effectiveBalance = deadlinePast
+        ? transactions
+            .filter((t) => t.date.slice(0, 7) <= dk)
+            .reduce((s, t) => (t.type === 'income' ? s + t.amount : s - t.amount), 0)
+        : accBalance
+      const progress =
+        goal.targetAmount > 0 ? Math.min(Math.max(effectiveBalance / goal.targetAmount, 0), 1) : 0
 
-    type StatusKey = 'concluded' | 'achieved' | 'overdue' | 'urgent' | 'active'
-    let status: StatusKey
-    if (goal.completedAt) status = 'concluded'
-    else if (effectiveBalance >= goal.targetAmount) status = 'achieved'
-    else if (monthsLeft === 0) status = 'overdue'
-    else if (monthsLeft <= 2) status = 'urgent'
-    else status = 'active'
+      type StatusKey = 'concluded' | 'achieved' | 'overdue' | 'urgent' | 'active'
+      let status: StatusKey
+      if (goal.completedAt) status = 'concluded'
+      else if (effectiveBalance >= goal.targetAmount) status = 'achieved'
+      else if (monthsLeft === 0) status = 'overdue'
+      else if (monthsLeft <= 2) status = 'urgent'
+      else status = 'active'
 
-    return { goal, status, progress, monthsLeft }
-  }).sort((a, b) => {
-    const order: Record<string, number> = { active: 0, urgent: 1, overdue: 2, achieved: 3, concluded: 4 }
-    if (order[a.status] !== order[b.status]) return order[a.status] - order[b.status]
-    return (b.goal.targetYear * 12 + b.goal.targetMonth) - (a.goal.targetYear * 12 + a.goal.targetMonth)
-  })
+      return { goal, status, progress, monthsLeft }
+    })
+    .sort((a, b) => {
+      const order: Record<string, number> = {
+        active: 0,
+        urgent: 1,
+        overdue: 2,
+        achieved: 3,
+        concluded: 4
+      }
+      if (order[a.status] !== order[b.status]) return order[a.status] - order[b.status]
+      return (
+        b.goal.targetYear * 12 + b.goal.targetMonth - (a.goal.targetYear * 12 + a.goal.targetMonth)
+      )
+    })
 
   const statusCfg: Record<string, { label: string; bg: string; text: string }> = {
-    concluded: { label: 'Concluído',    bg: 'bg-[#22c55e]/15',    text: 'text-[#4ade80]' },
-    achieved:  { label: 'Alcançado',    bg: 'bg-[#22c55e]/15',    text: 'text-[#22c55e]' },
-    overdue:   { label: 'Vencido',      bg: 'bg-red-500/15',      text: 'text-red-400' },
-    urgent:    { label: 'Urgente',      bg: 'bg-orange-500/15',   text: 'text-orange-400' },
-    active:    { label: 'Em andamento', bg: 'bg-[#6366f1]/15',    text: 'text-[#a5b4fc]' },
+    concluded: { label: 'Concluído', bg: 'bg-[#22c55e]/15', text: 'text-[#4ade80]' },
+    achieved: { label: 'Alcançado', bg: 'bg-[#22c55e]/15', text: 'text-[#22c55e]' },
+    overdue: { label: 'Vencido', bg: 'bg-red-500/15', text: 'text-red-400' },
+    urgent: { label: 'Urgente', bg: 'bg-orange-500/15', text: 'text-orange-400' },
+    active: { label: 'Em andamento', bg: 'bg-[#6366f1]/15', text: 'text-[#a5b4fc]' }
   }
 
   return (
@@ -1383,8 +1750,17 @@ function GoalHistoryModal({ open, goals, transactions, accBalance, currency, onR
       <div className="relative z-10 w-[580px] max-h-[75vh] rounded-xl border border-[#2a2d42] bg-[#13151f] shadow-2xl flex flex-col">
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#2a2d42] shrink-0">
           <div className="flex items-center gap-2">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2">
-              <circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" />
+            <svg
+              width="13"
+              height="13"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#6366f1"
+              strokeWidth="2"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <circle cx="12" cy="12" r="6" />
+              <circle cx="12" cy="12" r="2" />
             </svg>
             <h3 className="text-sm font-semibold text-[#e2e8f0]">Todos os Objetivos</h3>
             <span className="text-[10px] text-[#8892a4]">({goals.length})</span>
@@ -1393,8 +1769,16 @@ function GoalHistoryModal({ open, goals, transactions, accBalance, currency, onR
             onClick={onClose}
             className="p-1 rounded text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#2a2d42] transition-colors"
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
           </button>
         </div>
@@ -1403,15 +1787,26 @@ function GoalHistoryModal({ open, goals, transactions, accBalance, currency, onR
           {withStatus.map(({ goal, status, progress }) => {
             const cfg = statusCfg[status]
             return (
-              <div key={goal.id} className="flex items-center gap-4 px-5 py-3 hover:bg-[#1a1c2c] transition-colors">
+              <div
+                key={goal.id}
+                className="flex items-center gap-4 px-5 py-3 hover:bg-[#1a1c2c] transition-colors"
+              >
                 {/* Mini progress ring */}
                 <div className="relative shrink-0 w-9 h-9">
                   <svg width="36" height="36" viewBox="0 0 36 36">
                     <circle cx="18" cy="18" r="13" fill="none" stroke="#2a2d42" strokeWidth="3" />
                     <circle
-                      cx="18" cy="18" r="13"
+                      cx="18"
+                      cy="18"
+                      r="13"
                       fill="none"
-                      stroke={status === 'overdue' ? '#ef4444' : status === 'urgent' ? '#fb923c' : '#22c55e'}
+                      stroke={
+                        status === 'overdue'
+                          ? '#ef4444'
+                          : status === 'urgent'
+                            ? '#fb923c'
+                            : '#22c55e'
+                      }
                       strokeWidth="3"
                       strokeLinecap="round"
                       strokeDasharray={`${progress * 2 * Math.PI * 13} ${2 * Math.PI * 13}`}
@@ -1425,7 +1820,9 @@ function GoalHistoryModal({ open, goals, transactions, accBalance, currency, onR
 
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5 mb-0.5">
-                    <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${cfg.bg} ${cfg.text}`}>
+                    <span
+                      className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${cfg.bg} ${cfg.text}`}
+                    >
                       {cfg.label}
                     </span>
                     <span className="text-xs font-medium text-[#e2e8f0] truncate">{goal.name}</span>
@@ -1433,16 +1830,23 @@ function GoalHistoryModal({ open, goals, transactions, accBalance, currency, onR
                   <p className="text-[10px] text-[#8892a4]">
                     Prazo: {MONTH_NAMES[goal.targetMonth - 1]} {goal.targetYear}
                     {goal.completedAt && (
-                      <span className="text-[#4ade80]"> · Concluído em {formatDateBR(goal.completedAt)}</span>
+                      <span className="text-[#4ade80]">
+                        {' '}
+                        · Concluído em {formatDateBR(goal.completedAt)}
+                      </span>
                     )}
                   </p>
                   {goal.completionNote && (
-                    <p className="text-[10px] text-[#8892a4]/60 mt-0.5 truncate">{goal.completionNote}</p>
+                    <p className="text-[10px] text-[#8892a4]/60 mt-0.5 truncate">
+                      {goal.completionNote}
+                    </p>
                   )}
                 </div>
 
                 <div className="text-right shrink-0 flex flex-col items-end gap-1.5">
-                  <p className="text-xs font-bold text-[#e2e8f0] tabular-nums">{formatCurrency(goal.targetAmount, currency)}</p>
+                  <p className="text-xs font-bold text-[#e2e8f0] tabular-nums">
+                    {formatCurrency(goal.targetAmount, currency)}
+                  </p>
                   <p className="text-[10px] text-[#8892a4]">
                     {MONTH_NAMES[goal.targetMonth - 1].slice(0, 3)} {goal.targetYear}
                   </p>
@@ -1451,7 +1855,14 @@ function GoalHistoryModal({ open, goals, transactions, accBalance, currency, onR
                       onClick={() => onRevert(goal.id)}
                       className="flex items-center gap-1 text-[9px] font-medium text-[#8892a4] hover:text-orange-400 transition-colors"
                     >
-                      <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <svg
+                        width="8"
+                        height="8"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
                         <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
                         <path d="M3 3v5h5" />
                       </svg>
@@ -1491,14 +1902,27 @@ function FinanceTab({
 }: FinanceTabProps) {
   const currency = list.currency
   const now = new Date()
-  const [activeMonth, setActiveMonth] = useState({ year: now.getFullYear(), month: now.getMonth() + 1 })
-  const [goalModal, setGoalModal] = useState<{ open: boolean; goal?: FinancialGoal }>({ open: false })
-  const [deleteGoalConfirm, setDeleteGoalConfirm] = useState<{ open: boolean; goalId: string; name: string }>({
-    open: false, goalId: '', name: ''
+  const [activeMonth, setActiveMonth] = useState({
+    year: now.getFullYear(),
+    month: now.getMonth() + 1
+  })
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null)
+  const [goalModal, setGoalModal] = useState<{ open: boolean; goal?: FinancialGoal }>({
+    open: false
+  })
+  const [deleteGoalConfirm, setDeleteGoalConfirm] = useState<{
+    open: boolean
+    goalId: string
+    name: string
+  }>({
+    open: false,
+    goalId: '',
+    name: ''
   })
   const [historyOpen, setHistoryOpen] = useState(false)
 
   const prevMonth = () => {
+    setCategoryFilter(null)
     setActiveMonth((m) => {
       if (m.month === 1) return { year: m.year - 1, month: 12 }
       return { ...m, month: m.month - 1 }
@@ -1506,22 +1930,32 @@ function FinanceTab({
   }
 
   const nextMonth = () => {
+    setCategoryFilter(null)
     setActiveMonth((m) => {
       if (m.month === 12) return { year: m.year + 1, month: 1 }
       return { ...m, month: m.month + 1 }
     })
   }
 
-  const monthTxs = list.transactions.filter((t) => {
-    const [y, m] = t.date.split('-').map(Number)
-    return y === activeMonth.year && m === activeMonth.month
-  }).sort((a, b) => b.date.localeCompare(a.date))
+  const monthTxs = list.transactions
+    .filter((t) => {
+      const [y, m] = t.date.split('-').map(Number)
+      if (y !== activeMonth.year || m !== activeMonth.month) return false
+      if (categoryFilter && (t.category ?? '') !== categoryFilter) return false
+      return true
+    })
+    .sort((a, b) => b.date.localeCompare(a.date))
 
   const monthIncome = monthTxs.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0)
-  const monthExpense = monthTxs.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0)
+  const monthExpense = monthTxs
+    .filter((t) => t.type === 'expense')
+    .reduce((s, t) => s + t.amount, 0)
   const monthBalance = monthIncome - monthExpense
 
-  const accBalance = list.transactions.reduce((s, t) => t.type === 'income' ? s + t.amount : s - t.amount, 0)
+  const accBalance = list.transactions.reduce(
+    (s, t) => (t.type === 'income' ? s + t.amount : s - t.amount),
+    0
+  )
 
   const visibleGoals = list.goals.filter((goal) => {
     // Hide concluded/achieved goals whose deadline is before the active month
@@ -1546,7 +1980,14 @@ function FinanceTab({
             onClick={prevMonth}
             className="p-1 rounded text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#1e2235] transition-colors"
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+            >
               <polyline points="15 18 9 12 15 6" />
             </svg>
           </button>
@@ -1557,7 +1998,14 @@ function FinanceTab({
             onClick={nextMonth}
             className="p-1 rounded text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#1e2235] transition-colors"
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+            >
               <polyline points="9 18 15 12 9 6" />
             </svg>
           </button>
@@ -1572,22 +2020,38 @@ function FinanceTab({
         {/* Summary cards */}
         <div className="grid grid-cols-4 gap-3 px-5 py-4 border-b border-[#2a2d42]">
           <div className="rounded-lg bg-[#1e2235] border border-[#2a2d42] p-3">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-[#8892a4] mb-1">Entradas</p>
-            <p className="text-sm font-bold text-[#4ade80] tabular-nums">{formatCurrency(monthIncome, currency)}</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-[#8892a4] mb-1">
+              Entradas
+            </p>
+            <p className="text-sm font-bold text-[#4ade80] tabular-nums">
+              {formatCurrency(monthIncome, currency)}
+            </p>
           </div>
           <div className="rounded-lg bg-[#1e2235] border border-[#2a2d42] p-3">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-[#8892a4] mb-1">Saídas</p>
-            <p className="text-sm font-bold text-red-400 tabular-nums">{formatCurrency(monthExpense, currency)}</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-[#8892a4] mb-1">
+              Saídas
+            </p>
+            <p className="text-sm font-bold text-red-400 tabular-nums">
+              {formatCurrency(monthExpense, currency)}
+            </p>
           </div>
           <div className="rounded-lg bg-[#1e2235] border border-[#2a2d42] p-3">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-[#8892a4] mb-1">Saldo do Mês</p>
-            <p className={`text-sm font-bold tabular-nums ${monthBalance >= 0 ? 'text-[#e2e8f0]' : 'text-red-400'}`}>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-[#8892a4] mb-1">
+              Saldo do Mês
+            </p>
+            <p
+              className={`text-sm font-bold tabular-nums ${monthBalance >= 0 ? 'text-[#e2e8f0]' : 'text-red-400'}`}
+            >
               {formatCurrency(monthBalance, currency)}
             </p>
           </div>
           <div className="rounded-lg bg-[#6366f1]/10 border border-[#6366f1]/30 p-3">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-[#a5b4fc] mb-1">Saldo Acumulado</p>
-            <p className={`text-sm font-bold tabular-nums ${accBalance >= 0 ? 'text-[#a5b4fc]' : 'text-red-400'}`}>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-[#a5b4fc] mb-1">
+              Saldo Acumulado
+            </p>
+            <p
+              className={`text-sm font-bold tabular-nums ${accBalance >= 0 ? 'text-[#a5b4fc]' : 'text-red-400'}`}
+            >
               {formatCurrency(accBalance, currency)}
             </p>
           </div>
@@ -1597,13 +2061,23 @@ function FinanceTab({
         <div className="px-5 pt-4 pb-5 border-b border-[#2a2d42]">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2">
-                <circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" />
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#6366f1"
+                strokeWidth="2"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <circle cx="12" cy="12" r="6" />
+                <circle cx="12" cy="12" r="2" />
               </svg>
               <p className="text-xs font-semibold text-[#e2e8f0]">Objetivos Financeiros</p>
               {list.goals.length > 0 && (
                 <span className="text-[10px] text-[#8892a4]">
-                  ({visibleGoals.length} ativo{visibleGoals.length !== 1 ? 's' : ''} · {list.goals.length} total)
+                  ({visibleGoals.length} ativo{visibleGoals.length !== 1 ? 's' : ''} ·{' '}
+                  {list.goals.length} total)
                 </span>
               )}
             </div>
@@ -1613,8 +2087,17 @@ function FinanceTab({
                   onClick={() => setHistoryOpen(true)}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-medium text-[#8892a4] border border-[#2a2d42] hover:bg-[#1e2235] transition-colors"
                 >
-                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+                  <svg
+                    width="9"
+                    height="9"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="12" y1="8" x2="12" y2="12" />
+                    <line x1="12" y1="16" x2="12.01" y2="16" />
                   </svg>
                   Ver todos
                 </button>
@@ -1623,8 +2106,16 @@ function FinanceTab({
                 onClick={() => setGoalModal({ open: true })}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-medium text-[#6366f1] border border-[#6366f1]/30 hover:bg-[#6366f1]/10 transition-colors"
               >
-                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                <svg
+                  width="9"
+                  height="9"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                >
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
                 </svg>
                 Novo objetivo
               </button>
@@ -1634,13 +2125,24 @@ function FinanceTab({
           {list.goals.length === 0 ? (
             <div className="flex flex-col items-center gap-3 py-8 rounded-xl border border-dashed border-[#2a2d42]">
               <div className="w-12 h-12 rounded-full bg-[#1e2235] flex items-center justify-center">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3a3e58" strokeWidth="1.5">
-                  <circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" />
+                <svg
+                  width="22"
+                  height="22"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#3a3e58"
+                  strokeWidth="1.5"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <circle cx="12" cy="12" r="6" />
+                  <circle cx="12" cy="12" r="2" />
                 </svg>
               </div>
               <div className="text-center">
                 <p className="text-xs font-medium text-[#8892a4]">Nenhum objetivo criado</p>
-                <p className="text-[10px] text-[#3a3e58] mt-0.5">Defina metas de economia com prazo e valor alvo</p>
+                <p className="text-[10px] text-[#3a3e58] mt-0.5">
+                  Defina metas de economia com prazo e valor alvo
+                </p>
               </div>
               <button
                 onClick={() => setGoalModal({ open: true })}
@@ -1652,13 +2154,22 @@ function FinanceTab({
           ) : visibleGoals.length === 0 ? (
             <div className="flex flex-col items-center gap-3 py-8 rounded-xl border border-dashed border-[#22c55e]/20 bg-[#22c55e]/5">
               <div className="w-12 h-12 rounded-full bg-[#22c55e]/10 flex items-center justify-center">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="1.5">
+                <svg
+                  width="22"
+                  height="22"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#22c55e"
+                  strokeWidth="1.5"
+                >
                   <polyline points="20 6 9 17 4 12" />
                 </svg>
               </div>
               <div className="text-center">
                 <p className="text-xs font-medium text-[#4ade80]">Todos os objetivos concluídos</p>
-                <p className="text-[10px] text-[#22c55e]/50 mt-0.5">Nenhum objetivo ativo no momento</p>
+                <p className="text-[10px] text-[#22c55e]/50 mt-0.5">
+                  Nenhum objetivo ativo no momento
+                </p>
               </div>
               <button
                 onClick={() => setHistoryOpen(true)}
@@ -1677,9 +2188,15 @@ function FinanceTab({
                   accBalance={accBalance}
                   currency={currency}
                   onEdit={() => setGoalModal({ open: true, goal })}
-                  onDelete={() => setDeleteGoalConfirm({ open: true, goalId: goal.id, name: goal.name })}
-                  onComplete={(date, note) => onUpdateGoal(goal.id, { completedAt: date, completionNote: note })}
-                  onRevert={() => onUpdateGoal(goal.id, { completedAt: undefined, completionNote: undefined })}
+                  onDelete={() =>
+                    setDeleteGoalConfirm({ open: true, goalId: goal.id, name: goal.name })
+                  }
+                  onComplete={(date, note) =>
+                    onUpdateGoal(goal.id, { completedAt: date, completionNote: note })
+                  }
+                  onRevert={() =>
+                    onUpdateGoal(goal.id, { completedAt: undefined, completionNote: undefined })
+                  }
                 />
               ))}
             </div>
@@ -1693,17 +2210,57 @@ function FinanceTab({
             <span className="ml-2 text-[#8892a4] font-normal">({monthTxs.length})</span>
           </p>
         </div>
+
+        {/* Category tag chips — scrollable */}
+        <div className="px-5 pb-3">
+          <select
+            value={categoryFilter ?? ''}
+            onChange={(e) => setCategoryFilter(e.target.value || null)}
+            className="
+      w-full
+      bg-[#1e2235]
+      border border-[#2a2d42]
+      text-[#e2e8f0]
+      rounded-lg
+      px-3 py-2
+      text-sm
+      focus:outline-none
+      focus:border-[#6366f1]
+    "
+          >
+            <option value="">Todos</option>
+
+            {FINANCIAL_CATEGORIES.map((cat) => (
+              <option key={cat} value={cat}>
+                {cat}
+              </option>
+            ))}
+          </select>
+        </div>
+
         <datalist id="fin-categories">
-          {FINANCIAL_CATEGORIES.map((c) => <option key={c} value={c} />)}
+          {FINANCIAL_CATEGORIES.map((c) => (
+            <option key={c} value={c} />
+          ))}
         </datalist>
         <table className="w-full">
           <thead className="sticky top-0 bg-[#13151f] z-10">
             <tr className="border-b border-[#2a2d42]">
-              <th className="pl-4 pr-2 py-2 w-28 text-left text-[10px] font-semibold uppercase tracking-wider text-[#8892a4]">Data</th>
-              <th className="py-2 pr-2 text-left text-[10px] font-semibold uppercase tracking-wider text-[#8892a4]">Descrição</th>
-              <th className="py-2 pr-2 w-28 text-left text-[10px] font-semibold uppercase tracking-wider text-[#8892a4]">Categoria</th>
-              <th className="py-2 pr-2 w-20 text-center text-[10px] font-semibold uppercase tracking-wider text-[#8892a4]">Tipo</th>
-              <th className="py-2 pr-2 w-32 text-right text-[10px] font-semibold uppercase tracking-wider text-[#8892a4]">Valor</th>
+              <th className="pl-4 pr-2 py-2 w-28 text-left text-[10px] font-semibold uppercase tracking-wider text-[#8892a4]">
+                Data
+              </th>
+              <th className="py-2 pr-2 text-left text-[10px] font-semibold uppercase tracking-wider text-[#8892a4]">
+                Descrição
+              </th>
+              <th className="py-2 pr-2 w-28 text-left text-[10px] font-semibold uppercase tracking-wider text-[#8892a4]">
+                Categoria
+              </th>
+              <th className="py-2 pr-2 w-20 text-center text-[10px] font-semibold uppercase tracking-wider text-[#8892a4]">
+                Tipo
+              </th>
+              <th className="py-2 pr-2 w-32 text-right text-[10px] font-semibold uppercase tracking-wider text-[#8892a4]">
+                Valor
+              </th>
               <th className="py-2 pr-3 w-9" />
             </tr>
           </thead>
@@ -1757,7 +2314,9 @@ function FinanceTab({
         transactions={list.transactions}
         accBalance={accBalance}
         currency={currency}
-        onRevert={(goalId) => onUpdateGoal(goalId, { completedAt: undefined, completionNote: undefined })}
+        onRevert={(goalId) =>
+          onUpdateGoal(goalId, { completedAt: undefined, completionNote: undefined })
+        }
         onClose={() => setHistoryOpen(false)}
       />
     </div>
@@ -1772,7 +2331,10 @@ function AnalyticsTab({ list }: { list: FinancialTable }) {
   const [selectedYear, setSelectedYear] = useState<string>('all')
   const [catView, setCatView] = useState<'expense' | 'income'>('expense')
 
-  const filtered = selectedYear === 'all' ? transactions : transactions.filter((t) => t.date.startsWith(selectedYear))
+  const filtered =
+    selectedYear === 'all'
+      ? transactions
+      : transactions.filter((t) => t.date.startsWith(selectedYear))
   const expenses = filtered.filter((t) => t.type === 'expense')
   const incomes = filtered.filter((t) => t.type === 'income')
   const totalExpense = expenses.reduce((s, t) => s + t.amount, 0)
@@ -1811,12 +2373,14 @@ function AnalyticsTab({ list }: { list: FinancialTable }) {
   const maxMonthBar = Math.max(...monthEntries.map((m) => Math.max(m.income, m.expense)), 1)
   const avgMonthlyExpense = monthEntries.length > 0 ? totalExpense / monthEntries.length : 0
 
-  const bestMonth = monthEntries.length > 1
-    ? monthEntries.reduce((best, m) => m.balance > best.balance ? m : best)
-    : null
-  const worstMonth = monthEntries.length > 1
-    ? monthEntries.reduce((worst, m) => m.balance < worst.balance ? m : worst)
-    : null
+  const bestMonth =
+    monthEntries.length > 1
+      ? monthEntries.reduce((best, m) => (m.balance > best.balance ? m : best))
+      : null
+  const worstMonth =
+    monthEntries.length > 1
+      ? monthEntries.reduce((worst, m) => (m.balance < worst.balance ? m : worst))
+      : null
 
   const topExpCat = expCatEntries[0]
   const topIncCat = incCatEntries[0]
@@ -1866,72 +2430,107 @@ function AnalyticsTab({ list }: { list: FinancialTable }) {
       {/* Overview cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="rounded-lg bg-[#1e2235] border border-[#2a2d42] p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#8892a4] mb-1">Total Entradas</p>
-          <p className="text-sm font-bold text-[#4ade80] tabular-nums">{formatCurrency(totalIncome, currency)}</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#8892a4] mb-1">
+            Total Entradas
+          </p>
+          <p className="text-sm font-bold text-[#4ade80] tabular-nums">
+            {formatCurrency(totalIncome, currency)}
+          </p>
         </div>
         <div className="rounded-lg bg-[#1e2235] border border-[#2a2d42] p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#8892a4] mb-1">Total Saídas</p>
-          <p className="text-sm font-bold text-red-400 tabular-nums">{formatCurrency(totalExpense, currency)}</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#8892a4] mb-1">
+            Total Saídas
+          </p>
+          <p className="text-sm font-bold text-red-400 tabular-nums">
+            {formatCurrency(totalExpense, currency)}
+          </p>
         </div>
         <div className="rounded-lg bg-[#1e2235] border border-[#2a2d42] p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#8892a4] mb-1">Saldo Geral</p>
-          <p className={`text-sm font-bold tabular-nums ${totalBalance >= 0 ? 'text-[#e2e8f0]' : 'text-red-400'}`}>
-            {totalBalance >= 0 ? '+' : ''}{formatCurrency(totalBalance, currency)}
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#8892a4] mb-1">
+            Saldo Geral
+          </p>
+          <p
+            className={`text-sm font-bold tabular-nums ${totalBalance >= 0 ? 'text-[#e2e8f0]' : 'text-red-400'}`}
+          >
+            {totalBalance >= 0 ? '+' : ''}
+            {formatCurrency(totalBalance, currency)}
           </p>
         </div>
         <div className="rounded-lg bg-[#6366f1]/10 border border-[#6366f1]/30 p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#a5b4fc] mb-1">Média/Mês Gastos</p>
-          <p className="text-sm font-bold text-[#a5b4fc] tabular-nums">{formatCurrency(avgMonthlyExpense, currency)}</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#a5b4fc] mb-1">
+            Média/Mês Gastos
+          </p>
+          <p className="text-sm font-bold text-[#a5b4fc] tabular-nums">
+            {formatCurrency(avgMonthlyExpense, currency)}
+          </p>
         </div>
       </div>
 
       {/* Highlights: 2×2 grid */}
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-lg border border-[#22c55e]/25 bg-[#22c55e]/5 p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#22c55e]/60 mb-1.5">Melhor Mês</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#22c55e]/60 mb-1.5">
+            Melhor Mês
+          </p>
           {bestMonth ? (
             <>
               <p className="text-sm font-bold text-[#4ade80]">{monthLabel(bestMonth.key)}</p>
               <p className="text-xs tabular-nums text-[#4ade80]/70 mt-0.5">
-                {bestMonth.balance >= 0 ? '+' : ''}{formatCurrency(bestMonth.balance, currency)}
+                {bestMonth.balance >= 0 ? '+' : ''}
+                {formatCurrency(bestMonth.balance, currency)}
               </p>
             </>
-          ) : <p className="text-xs text-[#4a5068]">Dados insuficientes</p>}
+          ) : (
+            <p className="text-xs text-[#4a5068]">Dados insuficientes</p>
+          )}
         </div>
         <div className="rounded-lg border border-[#6366f1]/25 bg-[#6366f1]/5 p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#a5b4fc]/60 mb-1.5">Maior Gasto</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#a5b4fc]/60 mb-1.5">
+            Maior Gasto
+          </p>
           {topExpCat ? (
             <>
               <p className="text-sm font-bold text-[#a5b4fc] truncate">{topExpCat[0]}</p>
               <p className="text-xs tabular-nums text-[#a5b4fc]/70 mt-0.5">
                 {formatCurrency(topExpCat[1], currency)}
-                {totalExpense > 0 ? ` · ${Math.round(topExpCat[1] / totalExpense * 100)}%` : ''}
+                {totalExpense > 0 ? ` · ${Math.round((topExpCat[1] / totalExpense) * 100)}%` : ''}
               </p>
             </>
-          ) : <p className="text-xs text-[#4a5068]">—</p>}
+          ) : (
+            <p className="text-xs text-[#4a5068]">—</p>
+          )}
         </div>
         <div className="rounded-lg border border-red-500/25 bg-red-500/5 p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-red-400/60 mb-1.5">Pior Mês</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-red-400/60 mb-1.5">
+            Pior Mês
+          </p>
           {worstMonth ? (
             <>
               <p className="text-sm font-bold text-red-400">{monthLabel(worstMonth.key)}</p>
               <p className="text-xs tabular-nums text-red-400/70 mt-0.5">
-                {worstMonth.balance >= 0 ? '+' : ''}{formatCurrency(worstMonth.balance, currency)}
+                {worstMonth.balance >= 0 ? '+' : ''}
+                {formatCurrency(worstMonth.balance, currency)}
               </p>
             </>
-          ) : <p className="text-xs text-[#4a5068]">Dados insuficientes</p>}
+          ) : (
+            <p className="text-xs text-[#4a5068]">Dados insuficientes</p>
+          )}
         </div>
         <div className="rounded-lg border border-[#22c55e]/25 bg-[#22c55e]/5 p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#22c55e]/60 mb-1.5">Maior Ganho</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#22c55e]/60 mb-1.5">
+            Maior Ganho
+          </p>
           {topIncCat ? (
             <>
               <p className="text-sm font-bold text-[#4ade80] truncate">{topIncCat[0]}</p>
               <p className="text-xs tabular-nums text-[#4ade80]/70 mt-0.5">
                 {formatCurrency(topIncCat[1], currency)}
-                {totalIncome > 0 ? ` · ${Math.round(topIncCat[1] / totalIncome * 100)}%` : ''}
+                {totalIncome > 0 ? ` · ${Math.round((topIncCat[1] / totalIncome) * 100)}%` : ''}
               </p>
             </>
-          ) : <p className="text-xs text-[#4a5068]">—</p>}
+          ) : (
+            <p className="text-xs text-[#4a5068]">—</p>
+          )}
         </div>
       </div>
 
@@ -1971,10 +2570,12 @@ function AnalyticsTab({ list }: { list: FinancialTable }) {
           <div className="space-y-2.5">
             {activeCatEntries.map(([cat, amount], i) => {
               const color = CAT_COLORS[i % CAT_COLORS.length]
-              const pct = activeTotal > 0 ? Math.round(amount / activeTotal * 100) : 0
+              const pct = activeTotal > 0 ? Math.round((amount / activeTotal) * 100) : 0
               return (
                 <div key={cat} className="flex items-center gap-3">
-                  <span className="text-[10px] font-bold text-[#4a5068] w-5 shrink-0 text-right">#{i + 1}</span>
+                  <span className="text-[10px] font-bold text-[#4a5068] w-5 shrink-0 text-right">
+                    #{i + 1}
+                  </span>
                   <span className="text-xs text-[#8892a4] w-28 truncate shrink-0">{cat}</span>
                   <div className="flex-1 h-2 rounded-full bg-[#0d0f18] overflow-hidden">
                     <div
@@ -1982,7 +2583,9 @@ function AnalyticsTab({ list }: { list: FinancialTable }) {
                       style={{ width: `${(amount / activeMax) * 100}%`, backgroundColor: color }}
                     />
                   </div>
-                  <span className="text-xs tabular-nums text-[#e2e8f0] w-24 text-right shrink-0 font-medium">{formatCurrency(amount, currency)}</span>
+                  <span className="text-xs tabular-nums text-[#e2e8f0] w-24 text-right shrink-0 font-medium">
+                    {formatCurrency(amount, currency)}
+                  </span>
                   <span className="text-[10px] text-[#8892a4] w-8 text-right shrink-0">{pct}%</span>
                 </div>
               )
@@ -2006,38 +2609,57 @@ function AnalyticsTab({ list }: { list: FinancialTable }) {
                     isBest
                       ? 'border-[#22c55e]/25 bg-[#22c55e]/5'
                       : isWorst
-                      ? 'border-red-500/25 bg-red-500/5'
-                      : 'border-[#2a2d42] bg-[#1e2235]'
+                        ? 'border-red-500/25 bg-red-500/5'
+                        : 'border-[#2a2d42] bg-[#1e2235]'
                   }`}
                 >
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-medium text-[#e2e8f0]">{monthLabel(m.key)}</span>
+                      <span className="text-xs font-medium text-[#e2e8f0]">
+                        {monthLabel(m.key)}
+                      </span>
                       {isBest && (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#22c55e]/15 text-[#4ade80] font-semibold">Melhor</span>
+                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#22c55e]/15 text-[#4ade80] font-semibold">
+                          Melhor
+                        </span>
                       )}
                       {isWorst && (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-400 font-semibold">Pior</span>
+                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-400 font-semibold">
+                          Pior
+                        </span>
                       )}
                     </div>
-                    <span className={`text-xs font-bold tabular-nums ${m.balance >= 0 ? 'text-[#4ade80]' : 'text-red-400'}`}>
-                      {m.balance >= 0 ? '+' : ''}{formatCurrency(m.balance, currency)}
+                    <span
+                      className={`text-xs font-bold tabular-nums ${m.balance >= 0 ? 'text-[#4ade80]' : 'text-red-400'}`}
+                    >
+                      {m.balance >= 0 ? '+' : ''}
+                      {formatCurrency(m.balance, currency)}
                     </span>
                   </div>
                   <div className="space-y-1.5">
                     <div className="flex items-center gap-2">
                       <span className="text-[9px] text-[#4ade80] w-12 shrink-0">Entradas</span>
                       <div className="flex-1 h-1.5 rounded-full bg-[#0d0f18] overflow-hidden">
-                        <div className="h-full rounded-full bg-[#22c55e]" style={{ width: `${(m.income / maxMonthBar) * 100}%` }} />
+                        <div
+                          className="h-full rounded-full bg-[#22c55e]"
+                          style={{ width: `${(m.income / maxMonthBar) * 100}%` }}
+                        />
                       </div>
-                      <span className="text-[9px] tabular-nums text-[#4ade80] w-24 text-right shrink-0">{formatCurrency(m.income, currency)}</span>
+                      <span className="text-[9px] tabular-nums text-[#4ade80] w-24 text-right shrink-0">
+                        {formatCurrency(m.income, currency)}
+                      </span>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-[9px] text-red-400 w-12 shrink-0">Saídas</span>
                       <div className="flex-1 h-1.5 rounded-full bg-[#0d0f18] overflow-hidden">
-                        <div className="h-full rounded-full bg-red-500" style={{ width: `${(m.expense / maxMonthBar) * 100}%` }} />
+                        <div
+                          className="h-full rounded-full bg-red-500"
+                          style={{ width: `${(m.expense / maxMonthBar) * 100}%` }}
+                        />
                       </div>
-                      <span className="text-[9px] tabular-nums text-red-400 w-24 text-right shrink-0">{formatCurrency(m.expense, currency)}</span>
+                      <span className="text-[9px] tabular-nums text-red-400 w-24 text-right shrink-0">
+                        {formatCurrency(m.expense, currency)}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -2070,8 +2692,16 @@ export function FinancialView() {
 
   const [activeListId, setActiveListId] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'shopping' | 'finance' | 'analytics'>('shopping')
-  const [confirm, setConfirm] = useState<{ open: boolean; title: string; message: string; onConfirm: () => void }>({
-    open: false, title: '', message: '', onConfirm: () => {}
+  const [confirm, setConfirm] = useState<{
+    open: boolean
+    title: string
+    message: string
+    onConfirm: () => void
+  }>({
+    open: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
   })
 
   useEffect(() => {
@@ -2098,7 +2728,10 @@ export function FinancialView() {
       open: true,
       title: 'Deletar tabela',
       message: `Deletar "${list?.name}"? Todos os itens e transações serão removidos.`,
-      onConfirm: () => { deleteList(id); setConfirm((c) => ({ ...c, open: false })) }
+      onConfirm: () => {
+        deleteList(id)
+        setConfirm((c) => ({ ...c, open: false }))
+      }
     })
   }
 
@@ -2108,7 +2741,10 @@ export function FinancialView() {
       open: true,
       title: 'Remover item',
       message: `Remover "${item?.name}" da lista?`,
-      onConfirm: () => { deleteItem(activeListId!, itemId); setConfirm((c) => ({ ...c, open: false })) }
+      onConfirm: () => {
+        deleteItem(activeListId!, itemId)
+        setConfirm((c) => ({ ...c, open: false }))
+      }
     })
   }
 
@@ -2117,7 +2753,10 @@ export function FinancialView() {
       open: true,
       title: 'Remover transação',
       message: 'Remover esta transação?',
-      onConfirm: () => { deleteTransaction(activeListId!, txId); setConfirm((c) => ({ ...c, open: false })) }
+      onConfirm: () => {
+        deleteTransaction(activeListId!, txId)
+        setConfirm((c) => ({ ...c, open: false }))
+      }
     })
   }
 
@@ -2140,7 +2779,14 @@ export function FinancialView() {
         {!activeList ? (
           <div className="flex flex-col items-center justify-center flex-1 gap-4">
             <div className="w-16 h-16 rounded-2xl bg-[#1e2235] border border-[#2a2d42] flex items-center justify-center">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#8892a4" strokeWidth="1.5">
+              <svg
+                width="28"
+                height="28"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#8892a4"
+                strokeWidth="1.5"
+              >
                 <rect x="2" y="3" width="20" height="14" rx="2" />
                 <line x1="8" y1="21" x2="16" y2="21" />
                 <line x1="12" y1="17" x2="12" y2="21" />
@@ -2166,10 +2812,19 @@ export function FinancialView() {
                 <button
                   onClick={() => setActiveTab('shopping')}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                    activeTab === 'shopping' ? 'bg-[#2a2d42] text-[#e2e8f0]' : 'text-[#8892a4] hover:text-[#e2e8f0]'
+                    activeTab === 'shopping'
+                      ? 'bg-[#2a2d42] text-[#e2e8f0]'
+                      : 'text-[#8892a4] hover:text-[#e2e8f0]'
                   }`}
                 >
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg
+                    width="10"
+                    height="10"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
                     <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" />
                     <line x1="3" y1="6" x2="21" y2="6" />
                     <path d="M16 10a4 4 0 0 1-8 0" />
@@ -2179,10 +2834,19 @@ export function FinancialView() {
                 <button
                   onClick={() => setActiveTab('finance')}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                    activeTab === 'finance' ? 'bg-[#2a2d42] text-[#e2e8f0]' : 'text-[#8892a4] hover:text-[#e2e8f0]'
+                    activeTab === 'finance'
+                      ? 'bg-[#2a2d42] text-[#e2e8f0]'
+                      : 'text-[#8892a4] hover:text-[#e2e8f0]'
                   }`}
                 >
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg
+                    width="10"
+                    height="10"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
                     <line x1="18" y1="20" x2="18" y2="10" />
                     <line x1="12" y1="20" x2="12" y2="4" />
                     <line x1="6" y1="20" x2="6" y2="14" />
@@ -2192,10 +2856,19 @@ export function FinancialView() {
                 <button
                   onClick={() => setActiveTab('analytics')}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                    activeTab === 'analytics' ? 'bg-[#2a2d42] text-[#e2e8f0]' : 'text-[#8892a4] hover:text-[#e2e8f0]'
+                    activeTab === 'analytics'
+                      ? 'bg-[#2a2d42] text-[#e2e8f0]'
+                      : 'text-[#8892a4] hover:text-[#e2e8f0]'
                   }`}
                 >
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg
+                    width="10"
+                    height="10"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
                     <path d="M21.21 15.89A10 10 0 1 1 8 2.83" />
                     <path d="M22 12A10 10 0 0 0 12 2v10z" />
                   </svg>
@@ -2217,16 +2890,18 @@ export function FinancialView() {
               <FinanceTab
                 list={activeList}
                 onAddTransaction={(data) => addTransaction(activeListId!, data)}
-                onUpdateTransaction={(txId, updates) => updateTransaction(activeListId!, txId, updates)}
+                onUpdateTransaction={(txId, updates) =>
+                  updateTransaction(activeListId!, txId, updates)
+                }
                 onDeleteTransaction={handleDeleteTransaction}
                 onAddGoal={(data) => addFinancialGoal(activeListId!, data)}
-                onUpdateGoal={(goalId, updates) => updateFinancialGoal(activeListId!, goalId, updates)}
+                onUpdateGoal={(goalId, updates) =>
+                  updateFinancialGoal(activeListId!, goalId, updates)
+                }
                 onDeleteGoal={(goalId) => deleteFinancialGoal(activeListId!, goalId)}
               />
             )}
-            {activeTab === 'analytics' && (
-              <AnalyticsTab list={activeList} />
-            )}
+            {activeTab === 'analytics' && <AnalyticsTab list={activeList} />}
           </>
         )}
       </div>

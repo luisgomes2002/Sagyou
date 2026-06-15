@@ -229,7 +229,7 @@ export const DEFAULT_TAGS: { label: string; tags: string[] }[] = [
   },
   {
     label: 'Finanças',
-    tags: ['investimento', 'gasto', 'economia', 'imposto', 'assinatura', 'renda extra', 'orçamento', 'dívida', 'cartão', 'poupança', 'declaração', 'recibo', 'transferência']
+    tags: ['investimento', 'gasto', 'economia', 'imposto', 'assinatura', 'renda extra', 'orçamento', 'dívida', 'cartão', 'poupança', 'declaração', 'recibo', 'transferência', 'AI', 'ADS', 'servidor', 'marketing', 'segurança cloud', 'domínio', 'AI programação', 'AI tokens', 'canva', 'streaming', 'contador', 'advogado']
   },
   {
     label: 'Pessoal',
