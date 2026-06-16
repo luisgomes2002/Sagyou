@@ -109,67 +109,6 @@ interface KanbanActions {
 
 export type KanbanStore = KanbanState & KanbanActions
 
-// ── Merge helpers ─────────────────────────────────────────────────────────────
-
-function mergeTombstones(a: Tombstone[], b: Tombstone[]): Tombstone[] {
-  const map = new Map<string, Tombstone>()
-  for (const t of [...a, ...b]) {
-    const ex = map.get(t.id)
-    if (!ex || t.deletedAt > ex.deletedAt) map.set(t.id, t)
-  }
-  return Array.from(map.values())
-}
-
-function isDeleted(tombstones: Map<string, Tombstone>, id: string, updatedAt: string): boolean {
-  const t = tombstones.get(id)
-  return !!t && t.deletedAt > updatedAt
-}
-
-function mergeEntities<T extends { id: string; updatedAt: string }>(
-  local: T[],
-  remote: T[],
-  tombstones: Map<string, Tombstone>
-): T[] {
-  const map = new Map<string, T>()
-  for (const item of local) {
-    if (!isDeleted(tombstones, item.id, item.updatedAt)) map.set(item.id, item)
-  }
-  for (const item of remote) {
-    if (isDeleted(tombstones, item.id, item.updatedAt)) continue
-    const ex = map.get(item.id)
-    if (!ex || item.updatedAt > ex.updatedAt) map.set(item.id, item)
-  }
-  return Array.from(map.values())
-}
-
-// Sprints don't have updatedAt — use createdAt as fallback
-function mergeSprints(local: Sprint[], remote: Sprint[], tombstones: Map<string, Tombstone>): Sprint[] {
-  const toEntity = (s: Sprint) => ({ ...s, updatedAt: s.closedAt ?? s.createdAt })
-  const merged = mergeEntities(local.map(toEntity), remote.map(toEntity), tombstones)
-  return merged.map(({ updatedAt: _u, ...s }) => s as Sprint)
-}
-
-// Habits union completions from both sides so check-ins from any device are preserved
-function mergeHabits(local: Habit[], remote: Habit[], tombstones: Map<string, Tombstone>): Habit[] {
-  const map = new Map<string, Habit>()
-  for (const h of local) {
-    if (!isDeleted(tombstones, h.id, h.updatedAt)) map.set(h.id, h)
-  }
-  for (const h of remote) {
-    if (isDeleted(tombstones, h.id, h.updatedAt)) continue
-    const ex = map.get(h.id)
-    if (!ex) {
-      map.set(h.id, h)
-    } else {
-      const newer = h.updatedAt > ex.updatedAt ? h : ex
-      const completions = [...new Set([...ex.completions, ...h.completions])]
-      map.set(h.id, { ...newer, completions })
-    }
-  }
-  return Array.from(map.values())
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
 
 export const useKanbanStore = create<KanbanStore>((set, get) => ({
   projects: [],
