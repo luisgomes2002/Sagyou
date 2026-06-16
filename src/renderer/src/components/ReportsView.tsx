@@ -1,10 +1,31 @@
 import { useMemo } from 'react'
-import { startOfWeek, endOfWeek, subWeeks, addDays, parseISO, isWithinInterval, format } from 'date-fns'
+import {
+  startOfWeek,
+  endOfWeek,
+  subWeeks,
+  addDays,
+  parseISO,
+  isWithinInterval,
+  format
+} from 'date-fns'
 import type { Project, Task, Sprint, Habit } from '../types'
 import { PRIORITY_CONFIG } from '../types'
 import { computeSprintVelocity } from '../utils/reports'
 
-const MONTH_ABBR = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
+const MONTH_ABBR = [
+  'Jan',
+  'Fev',
+  'Mar',
+  'Abr',
+  'Mai',
+  'Jun',
+  'Jul',
+  'Ago',
+  'Set',
+  'Out',
+  'Nov',
+  'Dez'
+]
 
 const HEATMAP_COLORS = ['#161b2c', '#312e81', '#4338ca', '#6366f1', '#a5b4fc']
 
@@ -46,7 +67,6 @@ function ActivityHeatmap({ doneTasks }: { doneTasks: Task[] }) {
       if (weeks.length > 53) break
     }
 
-    // Pad last week to 7 days
     while (weeks[weeks.length - 1].length < 7) {
       const last = weeks[weeks.length - 1][weeks[weeks.length - 1].length - 1]
       const next = addDays(last.date, 1)
@@ -54,7 +74,6 @@ function ActivityHeatmap({ doneTasks }: { doneTasks: Task[] }) {
       weeks[weeks.length - 1].push({ date: next, iso, future: true })
     }
 
-    // Month labels: first week of each month
     const monthLabels: Array<{ col: number; label: string }> = []
     let lastMonth = -1
     weeks.forEach((_week, col) => {
@@ -67,7 +86,9 @@ function ActivityHeatmap({ doneTasks }: { doneTasks: Task[] }) {
 
     const startStr = format(startDate, 'yyyy-MM-dd')
     let total = 0
-    countMap.forEach((v, k) => { if (k >= startStr && k <= todayStr) total += v })
+    countMap.forEach((v, k) => {
+      if (k >= startStr && k <= todayStr) total += v
+    })
 
     return { weeks, monthLabels, total }
   }, [today, countMap])
@@ -85,7 +106,6 @@ function ActivityHeatmap({ doneTasks }: { doneTasks: Task[] }) {
 
       <div className="overflow-x-auto">
         <div style={{ display: 'inline-block' }}>
-          {/* Month labels */}
           <div style={{ display: 'flex', gap: GAP, paddingLeft: DAY_LABEL_W + 4, marginBottom: 4 }}>
             {weeks.map((_week, wi) => {
               const label = monthLabels.find((m) => m.col === wi)
@@ -98,7 +118,7 @@ function ActivityHeatmap({ doneTasks }: { doneTasks: Task[] }) {
                     color: '#8892a4',
                     whiteSpace: 'nowrap',
                     overflow: 'visible',
-                    lineHeight: 1,
+                    lineHeight: 1
                   }}
                 >
                   {label?.label ?? ''}
@@ -107,21 +127,33 @@ function ActivityHeatmap({ doneTasks }: { doneTasks: Task[] }) {
             })}
           </div>
 
-          {/* Grid */}
           <div style={{ display: 'flex', gap: GAP }}>
-            {/* Day labels */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: GAP, width: DAY_LABEL_W, alignItems: 'flex-end', paddingRight: 4 }}>
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: GAP,
+                width: DAY_LABEL_W,
+                alignItems: 'flex-end',
+                paddingRight: 4
+              }}
+            >
               {dayLabels.map((label, i) => (
                 <div
                   key={i}
-                  style={{ height: CELL, fontSize: 9, color: '#4a5068', lineHeight: `${CELL}px`, whiteSpace: 'nowrap' }}
+                  style={{
+                    height: CELL,
+                    fontSize: 9,
+                    color: '#4a5068',
+                    lineHeight: `${CELL}px`,
+                    whiteSpace: 'nowrap'
+                  }}
                 >
                   {label}
                 </div>
               ))}
             </div>
 
-            {/* Week columns */}
             {weeks.map((week, wi) => (
               <div key={wi} style={{ display: 'flex', flexDirection: 'column', gap: GAP }}>
                 {week.map(({ iso, future }, di) => {
@@ -129,13 +161,17 @@ function ActivityHeatmap({ doneTasks }: { doneTasks: Task[] }) {
                   return (
                     <div
                       key={di}
-                      title={future ? undefined : `${iso}: ${count} task${count !== 1 ? 's' : ''} concluída${count !== 1 ? 's' : ''}`}
+                      title={
+                        future
+                          ? undefined
+                          : `${iso}: ${count} task${count !== 1 ? 's' : ''} concluída${count !== 1 ? 's' : ''}`
+                      }
                       style={{
                         width: CELL,
                         height: CELL,
                         borderRadius: 2,
                         backgroundColor: future ? 'transparent' : heatColor(count),
-                        cursor: count > 0 ? 'default' : undefined,
+                        cursor: count > 0 ? 'default' : undefined
                       }}
                     />
                   )
@@ -146,8 +182,15 @@ function ActivityHeatmap({ doneTasks }: { doneTasks: Task[] }) {
         </div>
       </div>
 
-      {/* Legend */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10, justifyContent: 'flex-end' }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          marginTop: 10,
+          justifyContent: 'flex-end'
+        }}
+      >
         <span style={{ fontSize: 9, color: '#4a5068' }}>Menos</span>
         {HEATMAP_COLORS.map((c, i) => (
           <div key={i} style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: c }} />
@@ -157,6 +200,112 @@ function ActivityHeatmap({ doneTasks }: { doneTasks: Task[] }) {
     </div>
   )
 }
+
+// ── SVG chart helpers ──────────────────────────────────────────────────────────
+
+const VW = 400
+const VH = 90
+const ML = 30 // left margin (Y labels)
+const MR = 10 // right margin
+const MT = 8 // top margin
+const MB = 22 // bottom margin (X labels)
+const CW = VW - ML - MR
+const CH = VH - MT - MB
+
+function f(n: number): string {
+  return n.toFixed(1)
+}
+
+function buildSmoothPath(pts: { x: number; y: number }[]): string {
+  if (!pts.length) return ''
+  let d = `M ${f(pts[0].x)} ${f(pts[0].y)}`
+  for (let i = 1; i < pts.length; i++) {
+    const cpx = f((pts[i - 1].x + pts[i].x) / 2)
+    d += ` C ${cpx} ${f(pts[i - 1].y)} ${cpx} ${f(pts[i].y)} ${f(pts[i].x)} ${f(pts[i].y)}`
+  }
+  return d
+}
+
+function WeeklyAreaChart({ data, max }: { data: { label: string; count: number }[]; max: number }) {
+  const safeMax = Math.max(max, 1)
+  const bottom = MT + CH
+  const pts = data.map((d, i) => ({
+    x: ML + (data.length > 1 ? (i / (data.length - 1)) * CW : CW / 2),
+    y: MT + (1 - d.count / safeMax) * CH,
+    label: d.label,
+    count: d.count
+  }))
+
+  const linePath = buildSmoothPath(pts)
+  const areaPath =
+    pts.length > 0
+      ? `${linePath} L ${f(pts[pts.length - 1].x)} ${f(bottom)} L ${f(pts[0].x)} ${f(bottom)} Z`
+      : ''
+
+  const gridVals = Array.from(new Set([0, Math.round(safeMax / 2), safeMax]))
+
+  return (
+    <svg width="100%" viewBox={`0 0 ${VW} ${VH}`}>
+      <defs>
+        <linearGradient id="weekly-grad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#6366f1" stopOpacity={0.4} />
+          <stop offset="100%" stopColor="#6366f1" stopOpacity={0.02} />
+        </linearGradient>
+      </defs>
+
+      {/* Grid lines + Y labels */}
+      {gridVals.map((v) => {
+        const y = MT + (1 - v / safeMax) * CH
+        return (
+          <g key={v}>
+            <line x1={ML} y1={y} x2={ML + CW} y2={y} stroke="#2a2d42" strokeWidth={0.5} />
+            <text
+              x={ML - 4}
+              y={y}
+              textAnchor="end"
+              fontSize={3}
+              fill="#8892a4"
+              dominantBaseline="middle"
+            >
+              {v}
+            </text>
+          </g>
+        )
+      })}
+
+      {/* Area fill */}
+      <path d={areaPath} fill="url(#weekly-grad)" />
+
+      {/* Line */}
+      <path
+        d={linePath}
+        fill="none"
+        stroke="#6366f1"
+        strokeWidth={0.8}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+
+      {/* Baseline */}
+      <line x1={ML} y1={bottom} x2={ML + CW} y2={bottom} stroke="#2a2d42" strokeWidth={0.5} />
+
+      {/* Data points + X labels */}
+      {pts.map((pt, i) => (
+        <g key={i}>
+          <circle cx={pt.x} cy={pt.y} r={1.2} fill="#6366f1" stroke="#1e2235" strokeWidth={0.5} />
+          <text x={pt.x} y={VH - 5} textAnchor="middle" fontSize={3} fill="#8892a4">
+            {pt.label}
+          </text>
+          <circle cx={pt.x} cy={pt.y} r={8} fill="transparent">
+            <title>{`${pt.label}: ${pt.count} task${pt.count !== 1 ? 's' : ''} concluída${pt.count !== 1 ? 's' : ''}`}</title>
+          </circle>
+        </g>
+      ))}
+    </svg>
+  )
+}
+
+// ── Component ──────────────────────────────────────────────────────────────────
 
 interface Props {
   projects: Project[]
@@ -169,7 +318,7 @@ const PRIORITY_COLORS = {
   urgent: '#f87171',
   high: '#fb923c',
   medium: '#facc15',
-  low: '#38bdf8',
+  low: '#38bdf8'
 }
 
 function formatTime(seconds: number): string {
@@ -186,11 +335,33 @@ function isDoneCol(task: Task, projects: Project[]): boolean {
   return p?.columns.find((c) => c.id === task.columnId)?.name.toLowerCase() === 'done'
 }
 
-function StatCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color: string }) {
+function StatCard({
+  label,
+  value,
+  sub,
+  color,
+  delta
+}: {
+  label: string
+  value: string
+  sub?: string
+  color: string
+  delta?: number
+}) {
   return (
     <div className="rounded-lg bg-[#1e2235] border border-[#2a2d42] p-4">
       <p className="text-[11px] text-[#8892a4] mb-1.5">{label}</p>
-      <p className="text-2xl font-bold" style={{ color }}>{value}</p>
+      <p className="text-2xl font-bold" style={{ color }}>
+        {value}
+      </p>
+      {delta !== undefined && delta !== 0 && (
+        <p
+          className="text-[10px] mt-0.5 tabular-nums"
+          style={{ color: delta > 0 ? '#4ade80' : '#f87171' }}
+        >
+          {delta > 0 ? '↑' : '↓'} {Math.abs(delta)} vs sem. ant.
+        </p>
+      )}
       {sub && <p className="text-[10px] text-[#4a5068] mt-0.5">{sub}</p>}
     </div>
   )
@@ -198,7 +369,9 @@ function StatCard({ label, value, sub, color }: { label: string; value: string; 
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
-    <p className="text-[10px] font-semibold uppercase tracking-wider text-[#8892a4] mb-3">{children}</p>
+    <p className="text-[10px] font-semibold uppercase tracking-wider text-[#8892a4] mb-3">
+      {children}
+    </p>
   )
 }
 
@@ -219,59 +392,21 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
       const start = startOfWeek(weekAnchor, { weekStartsOn: 1 })
       const end = endOfWeek(weekAnchor, { weekStartsOn: 1 })
       const count = doneTasks.filter((t) => {
-        try { return isWithinInterval(parseISO(t.updatedAt), { start, end }) }
-        catch { return false }
+        try {
+          return isWithinInterval(parseISO(t.updatedAt), { start, end })
+        } catch {
+          return false
+        }
       }).length
       return { label: format(start, 'dd/MM'), count }
     })
   }, [doneTasks])
 
   const maxWeekly = Math.max(...weeklyData.map((w) => w.count), 1)
-  const totalWeeklyDone = weeklyData.reduce((s, w) => s + w.count, 0)
-  const avgPerWeek = (totalWeeklyDone / 8).toFixed(1)
+  const avgPerWeek = (weeklyData.reduce((s, w) => s + w.count, 0) / 8).toFixed(1)
 
-  // Time per project — top 6
-  const projectTime = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const t of tasks) {
-      if (!t.timeSpent) continue
-      map.set(t.projectId, (map.get(t.projectId) ?? 0) + t.timeSpent)
-    }
-    return Array.from(map.entries())
-      .map(([id, secs]) => ({ project: projectMap.get(id), secs }))
-      .filter((x): x is { project: Project; secs: number } => !!x.project)
-      .sort((a, b) => b.secs - a.secs)
-      .slice(0, 6)
-  }, [tasks, projectMap])
-
-  const maxTime = Math.max(...projectTime.map((p) => p.secs), 1)
-
-  // Active tasks per project — for workload view
-  const projectLoad = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const t of activeTasks) map.set(t.projectId, (map.get(t.projectId) ?? 0) + 1)
-    return Array.from(map.entries())
-      .map(([id, count]) => ({ project: projectMap.get(id), count }))
-      .filter((x): x is { project: Project; count: number } => !!x.project)
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 6)
-  }, [activeTasks, projectMap])
-
-  const maxLoad = Math.max(...projectLoad.map((p) => p.count), 1)
-
-  // Top 10 tags by active task count
-  const tagData = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const t of activeTasks) {
-      for (const tag of t.tags) map.set(tag, (map.get(tag) ?? 0) + 1)
-    }
-    return Array.from(map.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10)
-      .map(([tag, count]) => ({ tag, count }))
-  }, [activeTasks])
-
-  const maxTag = Math.max(...tagData.map((t) => t.count), 1)
+  // Delta: current week vs previous week
+  const weeklyDelta = weeklyData[7].count - weeklyData[6].count
 
   // Sprint velocity — last 8 sprints ordered by createdAt
   const sprintVelocity = useMemo(
@@ -280,9 +415,10 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
   )
 
   const maxVelocity = Math.max(...sprintVelocity.map((s) => s.count), 1)
-  const avgVelocity = sprintVelocity.length > 0
-    ? (sprintVelocity.reduce((s, x) => s + x.count, 0) / sprintVelocity.length).toFixed(1)
-    : '0'
+  const avgVelocity =
+    sprintVelocity.length > 0
+      ? (sprintVelocity.reduce((s, x) => s + x.count, 0) / sprintVelocity.length).toFixed(1)
+      : '0'
 
   // Overdue and upcoming tasks
   const dueDateData = useMemo(() => {
@@ -314,36 +450,90 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
     const yearMonth = format(now, 'yyyy-MM')
     const dayOfMonth = now.getDate()
 
-    return habits.map((habit) => {
-      const set = new Set(habit.completions)
-      let streak = 0
-      // start from today if done, otherwise yesterday — same logic as HabitView
-      let cur = set.has(todayStr)
-        ? todayStr
-        : format(addDays(parseISO(todayStr), -1), 'yyyy-MM-dd')
-      while (set.has(cur)) {
-        streak++
-        cur = format(addDays(parseISO(cur), -1), 'yyyy-MM-dd')
-      }
-      const monthDone = habit.completions.filter((d) => d.startsWith(yearMonth) && d <= todayStr).length
-      const rate = Math.round((monthDone / dayOfMonth) * 100)
-      return { habit, streak, rate, monthDone }
-    }).sort((a, b) => b.streak - a.streak || b.rate - a.rate)
+    return habits
+      .map((habit) => {
+        const set = new Set(habit.completions)
+        let streak = 0
+        let cur = set.has(todayStr)
+          ? todayStr
+          : format(addDays(parseISO(todayStr), -1), 'yyyy-MM-dd')
+        while (set.has(cur)) {
+          streak++
+          cur = format(addDays(parseISO(cur), -1), 'yyyy-MM-dd')
+        }
+        const monthDone = habit.completions.filter(
+          (d) => d.startsWith(yearMonth) && d <= todayStr
+        ).length
+        const rate = Math.round((monthDone / dayOfMonth) * 100)
+        return { habit, streak, rate, monthDone }
+      })
+      .sort((a, b) => b.streak - a.streak || b.rate - a.rate)
   }, [habits])
 
-  // Priority breakdown of active tasks
+  // Last 14 days for habit mini-calendar
+  const last14 = useMemo(() => {
+    const today = new Date()
+    return Array.from({ length: 14 }, (_, i) => format(addDays(today, -(13 - i)), 'yyyy-MM-dd'))
+  }, [])
+
+  // Priority breakdown
   const priorityCounts = useMemo(() => {
     const c = { urgent: 0, high: 0, medium: 0, low: 0 }
     for (const t of activeTasks) c[t.priority]++
     return c
   }, [activeTasks])
 
+  // Top 10 tags by active task count
+  const tagData = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const t of activeTasks) {
+      for (const tag of t.tags) map.set(tag, (map.get(tag) ?? 0) + 1)
+    }
+    return Array.from(map.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([tag, count]) => ({ tag, count }))
+  }, [activeTasks])
+
+  const maxTag = Math.max(...tagData.map((t) => t.count), 1)
+  const totalTagCount = tagData.reduce((s, t) => s + t.count, 0)
+
+  // Combined project view: active tasks + time tracked
+  const projectCombined = useMemo(() => {
+    const timeMap = new Map<string, number>()
+    for (const t of tasks) {
+      if (t.timeSpent) timeMap.set(t.projectId, (timeMap.get(t.projectId) ?? 0) + t.timeSpent)
+    }
+    const loadMap = new Map<string, number>()
+    for (const t of activeTasks) loadMap.set(t.projectId, (loadMap.get(t.projectId) ?? 0) + 1)
+
+    const allIds = new Set([...timeMap.keys(), ...loadMap.keys()])
+    return Array.from(allIds)
+      .map((id) => ({
+        project: projectMap.get(id),
+        time: timeMap.get(id) ?? 0,
+        load: loadMap.get(id) ?? 0
+      }))
+      .filter((x): x is { project: Project; time: number; load: number } => !!x.project)
+      .sort((a, b) => b.load - a.load || b.time - a.time)
+      .slice(0, 6)
+  }, [tasks, activeTasks, projectMap])
+
+  const maxLoad = Math.max(...projectCombined.map((p) => p.load), 1)
+  const maxTime = Math.max(...projectCombined.map((p) => p.time), 1)
   const maxPriority = Math.max(...Object.values(priorityCounts), 1)
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <div className="flex items-center gap-3 px-6 py-4 border-b border-[#2a2d42] shrink-0">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#a5b4fc" strokeWidth="2">
+        <svg
+          width="15"
+          height="15"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="#a5b4fc"
+          strokeWidth="2"
+        >
           <line x1="18" y1="20" x2="18" y2="10" />
           <line x1="12" y1="20" x2="12" y2="4" />
           <line x1="6" y1="20" x2="6" y2="14" />
@@ -352,10 +542,15 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
-        {/* Stats */}
+        {/* Stat cards with delta */}
         <div className="grid grid-cols-2 gap-3">
           <StatCard label="Tasks ativas" value={activeTasks.length.toString()} color="#a5b4fc" />
-          <StatCard label="Concluídas" value={doneTasks.length.toString()} color="#4ade80" />
+          <StatCard
+            label="Concluídas"
+            value={doneTasks.length.toString()}
+            color="#4ade80"
+            delta={weeklyDelta}
+          />
           <StatCard
             label="Taxa de conclusão"
             value={`${completionRate}%`}
@@ -365,7 +560,11 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
           <StatCard
             label="Tempo registrado"
             value={totalTime > 0 ? formatTime(totalTime) : '—'}
-            sub={totalTime > 0 ? `em ${tasks.filter((t) => t.timeSpent).length} tasks` : 'inicie timers nas tasks'}
+            sub={
+              totalTime > 0
+                ? `em ${tasks.filter((t) => t.timeSpent).length} tasks`
+                : 'inicie timers nas tasks'
+            }
             color="#f472b6"
           />
         </div>
@@ -398,7 +597,10 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
                       <p className="text-xs text-[#e2e8f0] truncate">{task.title}</p>
                       {project && (
                         <div className="flex items-center gap-1.5 mt-0.5">
-                          <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: project.color }} />
+                          <div
+                            className="w-1.5 h-1.5 rounded-full shrink-0"
+                            style={{ backgroundColor: project.color }}
+                          />
                           <p className="text-[10px] text-[#4a5068] truncate">{project.name}</p>
                         </div>
                       )}
@@ -416,38 +618,19 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
           </div>
         )}
 
-        {/* Activity heatmap */}
+        {/* Activity heatmap — unchanged */}
         <ActivityHeatmap doneTasks={doneTasks} />
 
-        {/* Weekly bar chart */}
+        {/* Area chart — Concluídas por semana */}
         <div className="rounded-lg bg-[#1e2235] border border-[#2a2d42] p-4">
-          <div className="flex items-baseline justify-between mb-4">
+          <div className="flex items-baseline justify-between mb-2">
             <SectionTitle>Concluídas por semana</SectionTitle>
             <span className="text-[11px] text-[#8892a4]">média {avgPerWeek}/sem</span>
           </div>
-          <div className="flex items-end gap-1.5 h-28">
-            {weeklyData.map((w, i) => (
-              <div key={i} className="flex-1 flex flex-col items-center gap-1 min-w-0">
-                {w.count > 0 && (
-                  <span className="text-[9px] text-[#8892a4] tabular-nums">{w.count}</span>
-                )}
-                <div className="w-full flex items-end" style={{ height: 80 }}>
-                  <div
-                    className="w-full rounded-t-sm transition-all"
-                    style={{
-                      height: `${Math.max((w.count / maxWeekly) * 80, w.count > 0 ? 6 : 3)}px`,
-                      backgroundColor: w.count > 0 ? '#6366f1' : '#1e2235',
-                      border: w.count === 0 ? '1px solid #2a2d42' : 'none',
-                    }}
-                  />
-                </div>
-                <span className="text-[9px] text-[#4a5068] truncate w-full text-center">{w.label}</span>
-              </div>
-            ))}
-          </div>
+          <WeeklyAreaChart data={weeklyData} max={maxWeekly} />
         </div>
 
-        {/* Sprint velocity chart */}
+        {/* Bar chart — Velocidade por sprint */}
         {sprintVelocity.length > 0 && (
           <div className="rounded-lg bg-[#1e2235] border border-[#2a2d42] p-4">
             <div className="flex items-baseline justify-between mb-4">
@@ -455,38 +638,56 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
               <span className="text-[11px] text-[#8892a4]">média {avgVelocity}/sprint</span>
             </div>
             <div className="flex items-end gap-1.5 h-28">
-              {sprintVelocity.map(({ sprint, count, active }) => (
-                <div key={sprint.id} className="flex-1 flex flex-col items-center gap-1 min-w-0">
-                  {count > 0 && (
-                    <span className="text-[9px] text-[#8892a4] tabular-nums">{count}</span>
-                  )}
-                  <div className="w-full flex items-end" style={{ height: 80 }}>
-                    <div
-                      className="w-full rounded-t-sm transition-all"
-                      style={{
-                        height: `${Math.max((count / maxVelocity) * 80, count > 0 ? 6 : 3)}px`,
-                        backgroundColor: active ? '#818cf8' : count > 0 ? '#6366f1' : 'transparent',
-                        border: active
-                          ? '1.5px dashed #6366f1'
-                          : count === 0
-                          ? '1px solid #2a2d42'
-                          : 'none',
-                        boxSizing: 'border-box',
-                      }}
-                    />
-                  </div>
-                  <span
-                    className="text-[9px] truncate w-full text-center"
-                    style={{ color: active ? '#a5b4fc' : '#4a5068' }}
-                    title={sprint.name}
+              {sprintVelocity.map(({ sprint, count, active }) => {
+                const project = projectMap.get(sprint.projectId)
+                return (
+                  <div
+                    key={sprint.id}
+                    className="flex-1 flex flex-col items-center gap-1 min-w-0"
+                    title={project ? `${sprint.name} · ${project.name}` : sprint.name}
                   >
-                    {sprint.name}
-                  </span>
-                  {active && (
-                    <span className="text-[8px] text-[#6366f1] font-semibold leading-none">●</span>
-                  )}
-                </div>
-              ))}
+                    {count > 0 && (
+                      <span className="text-[9px] text-[#8892a4] tabular-nums">{count}</span>
+                    )}
+                    <div className="w-full flex items-end" style={{ height: 80 }}>
+                      <div
+                        className="w-full rounded-t-sm transition-all"
+                        style={{
+                          height: `${Math.max((count / maxVelocity) * 80, count > 0 ? 6 : 3)}px`,
+                          backgroundColor: active
+                            ? '#818cf8'
+                            : count > 0
+                              ? '#6366f1'
+                              : 'transparent',
+                          border: active
+                            ? '1.5px dashed #6366f1'
+                            : count === 0
+                              ? '1px solid #2a2d42'
+                              : 'none',
+                          boxSizing: 'border-box'
+                        }}
+                      />
+                    </div>
+                    <span
+                      className="text-[9px] truncate w-full text-center"
+                      style={{ color: active ? '#a5b4fc' : '#4a5068' }}
+                    >
+                      {sprint.name}
+                    </span>
+                    {project && (
+                      <div
+                        className="w-1.5 h-1.5 rounded-full shrink-0"
+                        style={{ backgroundColor: project.color }}
+                      />
+                    )}
+                    {active && (
+                      <span className="text-[8px] text-[#6366f1] font-semibold leading-none">
+                        ●
+                      </span>
+                    )}
+                  </div>
+                )
+              })}
             </div>
             <div className="flex items-center gap-3 mt-3 justify-end">
               <span className="flex items-center gap-1 text-[9px] text-[#4a5068]">
@@ -496,7 +697,11 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
               <span className="flex items-center gap-1 text-[9px] text-[#4a5068]">
                 <span
                   className="inline-block w-3 h-2 rounded-sm"
-                  style={{ background: '#818cf8', border: '1.5px dashed #6366f1', boxSizing: 'border-box' }}
+                  style={{
+                    background: '#818cf8',
+                    border: '1.5px dashed #6366f1',
+                    boxSizing: 'border-box'
+                  }}
                 />
                 em andamento
               </span>
@@ -504,46 +709,7 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
           </div>
         )}
 
-        {/* Habit summary */}
-        {habitSummary.length > 0 && (
-          <div className="rounded-lg bg-[#1e2235] border border-[#2a2d42] p-4">
-            <SectionTitle>Hábitos — mês atual</SectionTitle>
-            <div className="space-y-3">
-              {habitSummary.map(({ habit, streak, rate, monthDone }) => (
-                <div key={habit.id} className="flex items-center gap-3">
-                  <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: habit.color }} />
-                  <span className="text-xs text-[#8892a4] w-28 truncate shrink-0">{habit.name}</span>
-                  <div className="flex-1 h-2 bg-[#0d0f18] rounded-full overflow-hidden">
-                    <div
-                      className="h-full rounded-full transition-all"
-                      style={{ width: `${rate}%`, backgroundColor: habit.color }}
-                    />
-                  </div>
-                  <span className="text-[10px] text-[#8892a4] w-8 text-right shrink-0 tabular-nums">
-                    {rate}%
-                  </span>
-                  <div
-                    className="flex items-center gap-1 shrink-0 w-12 justify-end"
-                    title={`${monthDone} dias este mês`}
-                  >
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" strokeWidth="2"
-                      stroke={streak > 0 ? habit.color : '#4a5068'}>
-                      <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
-                    </svg>
-                    <span
-                      className="text-[10px] font-semibold tabular-nums"
-                      style={{ color: streak > 0 ? habit.color : '#4a5068' }}
-                    >
-                      {streak}d
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Priority breakdown */}
+        {/* Priority — horizontal bars */}
         <div className="rounded-lg bg-[#1e2235] border border-[#2a2d42] p-4">
           <SectionTitle>Tasks ativas por prioridade</SectionTitle>
           <div className="space-y-3">
@@ -571,47 +737,25 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
           </div>
         </div>
 
-        {/* Top tags */}
+        {/* Tags with percentage */}
         {tagData.length > 0 && (
           <div className="rounded-lg bg-[#1e2235] border border-[#2a2d42] p-4">
             <SectionTitle>Tasks ativas por tag</SectionTitle>
-            <div className="space-y-3">
+            <div className="space-y-2.5">
               {tagData.map(({ tag, count }) => (
                 <div key={tag} className="flex items-center gap-3">
                   <span className="text-[10px] text-[#8892a4] w-24 truncate shrink-0">{tag}</span>
-                  <div className="flex-1 h-2 bg-[#0d0f18] rounded-full overflow-hidden">
+                  <div className="flex-1 h-1.5 bg-[#0d0f18] rounded-full overflow-hidden">
                     <div
                       className="h-full rounded-full transition-all"
                       style={{ width: `${(count / maxTag) * 100}%`, backgroundColor: '#6366f1' }}
                     />
                   </div>
-                  <span className="text-xs text-[#8892a4] w-4 text-right shrink-0 tabular-nums">{count}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Time per project */}
-        {projectTime.length > 0 && (
-          <div className="rounded-lg bg-[#1e2235] border border-[#2a2d42] p-4">
-            <SectionTitle>Tempo registrado por projeto</SectionTitle>
-            <div className="space-y-3">
-              {projectTime.map(({ project, secs }) => (
-                <div key={project.id} className="flex items-center gap-3">
-                  <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: project.color }} />
-                  <span className="text-xs text-[#8892a4] w-24 truncate shrink-0">{project.name}</span>
-                  <div className="flex-1 h-2 bg-[#0d0f18] rounded-full overflow-hidden">
-                    <div
-                      className="h-full rounded-full transition-all"
-                      style={{
-                        width: `${(secs / maxTime) * 100}%`,
-                        backgroundColor: project.color,
-                      }}
-                    />
-                  </div>
-                  <span className="text-xs text-[#8892a4] w-10 text-right shrink-0 tabular-nums font-mono">
-                    {formatTime(secs)}
+                  <span className="text-[10px] text-[#8892a4] w-5 text-right shrink-0 tabular-nums">
+                    {count}
+                  </span>
+                  <span className="text-[10px] text-[#848899] w-7 text-right shrink-0 tabular-nums">
+                    {totalTagCount > 0 ? `${Math.round((count / totalTagCount) * 100)}%` : '—'}
                   </span>
                 </div>
               ))}
@@ -619,26 +763,122 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
           </div>
         )}
 
-        {/* Workload per project */}
-        {projectLoad.length > 0 && (
+        {/* Combined projects: tasks abertas + tempo */}
+        {projectCombined.length > 0 && (
           <div className="rounded-lg bg-[#1e2235] border border-[#2a2d42] p-4">
-            <SectionTitle>Tasks abertas por projeto</SectionTitle>
-            <div className="space-y-3">
-              {projectLoad.map(({ project, count }) => (
-                <div key={project.id} className="flex items-center gap-3">
-                  <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: project.color }} />
-                  <span className="text-xs text-[#8892a4] w-24 truncate shrink-0">{project.name}</span>
-                  <div className="flex-1 h-2 bg-[#0d0f18] rounded-full overflow-hidden">
+            <SectionTitle>Projetos</SectionTitle>
+            {/* Column headers */}
+            <div className="flex items-center gap-2 mb-2 pl-[calc(8px+80px+8px)]">
+              <span className="flex-1 text-center text-[12px] text-[#848899] uppercase tracking-wider">
+                Tasks abertas
+              </span>
+              <span className="w-5" />
+              <span className="flex-1 text-center text-[12px] text-[#4a5068] uppercase tracking-wider">
+                Tempo
+              </span>
+              <span className="w-10" />
+            </div>
+            <div className="space-y-2.5">
+              {projectCombined.map(({ project, time, load }) => (
+                <div key={project.id} className="flex items-center gap-2">
+                  <div
+                    className="w-2 h-2 rounded-full shrink-0"
+                    style={{ backgroundColor: project.color }}
+                  />
+                  <span className="text-[10px] text-[#c4cad6] w-20 truncate shrink-0">
+                    {project.name}
+                  </span>
+                  <div className="flex-1 h-1.5 bg-[#0d0f18] rounded-full overflow-hidden">
                     <div
                       className="h-full rounded-full transition-all"
                       style={{
-                        width: `${(count / maxLoad) * 100}%`,
+                        width: `${(load / maxLoad) * 100}%`,
                         backgroundColor: project.color,
-                        opacity: 0.7,
+                        opacity: 0.7
                       }}
                     />
                   </div>
-                  <span className="text-xs text-[#8892a4] w-4 text-right shrink-0 tabular-nums">{count}</span>
+                  <span className="text-[10px] text-[#8892a4] w-5 text-right shrink-0 tabular-nums">
+                    {load > 0 ? load : '—'}
+                  </span>
+                  <div className="flex-1 h-1.5 bg-[#0d0f18] rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{
+                        width: `${(time / maxTime) * 100}%`,
+                        backgroundColor: project.color
+                      }}
+                    />
+                  </div>
+                  <span className="text-[10px] text-[#8892a4] w-10 text-right shrink-0 tabular-nums font-mono">
+                    {time > 0 ? formatTime(time) : '—'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Habits with mini 14-day calendar */}
+        {habitSummary.length > 0 && (
+          <div className="rounded-lg bg-[#1e2235] border border-[#2a2d42] p-4">
+            <SectionTitle>Hábitos — mês atual</SectionTitle>
+            <div className="space-y-4">
+              {habitSummary.map(({ habit, streak, rate, monthDone }) => (
+                <div key={habit.id}>
+                  <div className="flex items-center gap-3 mb-1.5">
+                    <div
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{ backgroundColor: habit.color }}
+                    />
+                    <span className="text-xs text-[#8892a4] w-28 truncate shrink-0">
+                      {habit.name}
+                    </span>
+                    <div className="flex-1 h-2 bg-[#0d0f18] rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all"
+                        style={{ width: `${rate}%`, backgroundColor: habit.color }}
+                      />
+                    </div>
+                    <span className="text-[10px] text-[#8892a4] w-8 text-right shrink-0 tabular-nums">
+                      {rate}%
+                    </span>
+                    <div
+                      className="flex items-center gap-1 shrink-0 w-12 justify-end"
+                      title={`${monthDone} dias este mês`}
+                    >
+                      <svg
+                        width="10"
+                        height="10"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        strokeWidth="2"
+                        stroke={streak > 0 ? habit.color : '#4a5068'}
+                      >
+                        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+                      </svg>
+                      <span
+                        className="text-[10px] font-semibold tabular-nums"
+                        style={{ color: streak > 0 ? habit.color : '#4a5068' }}
+                      >
+                        {streak}d
+                      </span>
+                    </div>
+                  </div>
+                  {/* Mini 14-day dot calendar */}
+                  <div className="flex gap-1 pl-[calc(8px+112px+12px)]">
+                    {last14.map((d) => (
+                      <div
+                        key={d}
+                        className="w-2 h-2 rounded-full shrink-0"
+                        style={{
+                          backgroundColor: habit.completions.includes(d) ? habit.color : '#1a1e30',
+                          border: habit.completions.includes(d) ? 'none' : '1px solid #2a2d42'
+                        }}
+                        title={d}
+                      />
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>

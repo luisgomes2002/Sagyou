@@ -43,7 +43,7 @@ The app is a frameless Electron window split into three processes:
 
 Storage is injected via `IStorageAdapter` (`services/StorageAdapter.ts`). In production, `ElectronStorage` is used (calls `window.electronAPI`). In tests, `ElectronStorage` is vi-mocked in `__tests__/setup.ts`.
 
-Soft deletes use a `Tombstone[]` array. On `importBackup`, a three-way merge (`mergeEntities`) reconciles local vs. remote data using tombstones to avoid resurrection of deleted records.
+Soft deletes use a `Tombstone[]` array. On `importBackup`, all local state is replaced wholesale by the backup file — no merge. The helper functions `mergeEntities`, `mergeSprints`, `mergeHabits`, and `mergeTombstones` remain in `store/kanban.ts` but are unused.
 
 ### Views
 

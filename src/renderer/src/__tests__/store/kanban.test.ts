@@ -14,7 +14,15 @@ vi.mock('../../services/ElectronStorage', () => {
 })
 
 import { useKanbanStore } from '../../store/kanban'
+import { ElectronStorage } from '../../services/ElectronStorage'
 import { DEFAULT_COLUMN_NAMES } from '../../types'
+
+function getStorageMock() {
+  return vi.mocked(ElectronStorage).mock.instances[0] as unknown as {
+    importBackup: ReturnType<typeof vi.fn>
+    exportBackup: ReturnType<typeof vi.fn>
+  }
+}
 
 function resetStore() {
   useKanbanStore.setState({
@@ -529,5 +537,139 @@ describe('shopping list actions', () => {
     const id = useKanbanStore.getState().createList('To remove')
     useKanbanStore.getState().deleteList(id)
     expect(useKanbanStore.getState().lists).toHaveLength(0)
+  })
+})
+
+// ── importBackup ──────────────────────────────────────────────────────────────
+
+describe('importBackup', () => {
+  beforeEach(resetStore)
+
+  it('returns false and leaves state unchanged when cancelled', async () => {
+    const pid = useKanbanStore.getState().createProject('Local project')
+    getStorageMock().importBackup.mockResolvedValueOnce({ success: false, cancelled: true })
+
+    const result = await useKanbanStore.getState().importBackup()
+
+    expect(result).toBe(false)
+    expect(useKanbanStore.getState().projects).toHaveLength(1)
+    expect(useKanbanStore.getState().projects[0].id).toBe(pid)
+  })
+
+  it('replaces all local state with backup data', async () => {
+    useKanbanStore.getState().createProject('Local project')
+    useKanbanStore.getState().createHabit({ name: 'Local habit', color: '#fff' })
+
+    const backup = {
+      version: 2,
+      exportedAt: new Date().toISOString(),
+      projects: [{ id: 'bp1', name: 'Backup project', color: '#ff0000', columns: [], order: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }],
+      tasks: [{ id: 'bt1', projectId: 'bp1', columnId: 'c1', title: 'Backup task', order: 0, priority: 'medium', tags: [], images: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }],
+      sprints: [],
+      tombstones: [],
+      notes: [],
+      goals: [],
+      habits: [{ id: 'bh1', name: 'Backup habit', color: '#0f0', completions: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }],
+      lists: []
+    }
+    getStorageMock().importBackup.mockResolvedValueOnce({ success: true, data: backup })
+
+    const result = await useKanbanStore.getState().importBackup()
+
+    expect(result).toBe(true)
+    const state = useKanbanStore.getState()
+    expect(state.projects).toHaveLength(1)
+    expect(state.projects[0].id).toBe('bp1')
+    expect(state.tasks).toHaveLength(1)
+    expect(state.tasks[0].id).toBe('bt1')
+    expect(state.habits).toHaveLength(1)
+    expect(state.habits[0].id).toBe('bh1')
+  })
+
+  it('sets activeProjectId to the first backup project', async () => {
+    useKanbanStore.getState().createProject('Local')
+
+    const backup = {
+      version: 2,
+      exportedAt: new Date().toISOString(),
+      projects: [
+        { id: 'first', name: 'First', color: '#fff', columns: [], order: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+        { id: 'second', name: 'Second', color: '#000', columns: [], order: 1, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+      ],
+      tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: []
+    }
+    getStorageMock().importBackup.mockResolvedValueOnce({ success: true, data: backup })
+
+    await useKanbanStore.getState().importBackup()
+
+    expect(useKanbanStore.getState().activeProjectId).toBe('first')
+  })
+
+  it('sets activeProjectId to null when backup has no projects', async () => {
+    useKanbanStore.getState().createProject('Local')
+
+    const backup = { version: 2, exportedAt: new Date().toISOString(), projects: [], tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: [] }
+    getStorageMock().importBackup.mockResolvedValueOnce({ success: true, data: backup })
+
+    await useKanbanStore.getState().importBackup()
+
+    expect(useKanbanStore.getState().activeProjectId).toBeNull()
+  })
+
+  it('clears any running timer on restore', async () => {
+    const pid = useKanbanStore.getState().createProject('P')
+    const col = useKanbanStore.getState().projects[0].columns[0]
+    const tid = useKanbanStore.getState().createTask({ projectId: pid, columnId: col.id, title: 'T' })
+    useKanbanStore.getState().startTimer(tid)
+    expect(useKanbanStore.getState().activeTimer).not.toBeNull()
+
+    const backup = { version: 2, exportedAt: new Date().toISOString(), projects: [], tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: [] }
+    getStorageMock().importBackup.mockResolvedValueOnce({ success: true, data: backup })
+
+    await useKanbanStore.getState().importBackup()
+
+    expect(useKanbanStore.getState().activeTimer).toBeNull()
+  })
+
+  it('applies defaults for missing optional fields in backup lists', async () => {
+    const backup = {
+      version: 2,
+      exportedAt: new Date().toISOString(),
+      projects: [],
+      tasks: [],
+      sprints: [],
+      tombstones: [],
+      notes: [],
+      goals: [],
+      habits: [],
+      lists: [{ id: 'l1', name: 'Old list', items: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }]
+    }
+    getStorageMock().importBackup.mockResolvedValueOnce({ success: true, data: backup })
+
+    await useKanbanStore.getState().importBackup()
+
+    const list = useKanbanStore.getState().lists[0]
+    expect(list.transactions).toEqual([])
+    expect(list.goals).toEqual([])
+    expect(list.currency).toBe('BRL')
+  })
+
+  it('assigns order to backup projects that are missing it', async () => {
+    const backup = {
+      version: 2,
+      exportedAt: new Date().toISOString(),
+      projects: [
+        { id: 'p1', name: 'A', color: '#fff', columns: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+        { id: 'p2', name: 'B', color: '#000', columns: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+      ],
+      tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: []
+    }
+    getStorageMock().importBackup.mockResolvedValueOnce({ success: true, data: backup })
+
+    await useKanbanStore.getState().importBackup()
+
+    const projects = useKanbanStore.getState().projects
+    expect(projects[0].order).toBe(0)
+    expect(projects[1].order).toBe(1)
   })
 })

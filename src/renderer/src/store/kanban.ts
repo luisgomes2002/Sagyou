@@ -930,29 +930,35 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
     if (!result.success || result.cancelled || !result.data) return false
 
     const backup = result.data as Backup
-    const local = get()
 
-    // Merge tombstones first
-    const mergedTombstones = mergeTombstones(
-      local.tombstones,
-      backup.tombstones || []
-    )
-    const tombstoneMap = new Map(mergedTombstones.map((t) => [t.id, t]))
+    const tombstones: Tombstone[] = backup.tombstones || []
+    const tombstoneIds = new Set(tombstones.map((t) => t.id))
 
-    // Merge each entity type
-    const projects = mergeEntities(local.projects, backup.projects || [], tombstoneMap)
-    const tasks = mergeEntities(local.tasks, backup.tasks || [], tombstoneMap)
-    const sprints = mergeSprints(local.sprints, backup.sprints || [], tombstoneMap)
-    const notes = mergeEntities(local.notes, backup.notes || [], tombstoneMap)
-    const goals = mergeEntities(local.goals, backup.goals || [], tombstoneMap)
-    const habits = mergeHabits(local.habits, backup.habits || [], tombstoneMap)
-    const lists = mergeEntities(local.lists, (backup.lists || []).map((l) => ({ ...l, transactions: l.transactions ?? [], goals: l.goals ?? [], currency: (l.currency || 'BRL') as Currency })), tombstoneMap)
+    const projects = (backup.projects || [])
+      .filter((p: Project) => !tombstoneIds.has(p.id))
+      .map((p: Project, i: number) => ({ ...p, order: p.order ?? i }))
+    const tasks: Task[] = (backup.tasks || []).filter((t: Task) => !tombstoneIds.has(t.id))
+    const sprints: Sprint[] = backup.sprints || []
+    const notes: StickyNote[] = backup.notes || []
+    const goals: Goal[] = backup.goals || []
 
-    const activeProjectId = projects.find((p) => p.id === local.activeProjectId)
-      ? local.activeProjectId
-      : (projects[0]?.id ?? null)
+    const localHabits = get().habits
+    const habits: Habit[] = (backup.habits || []).map((h: Habit) => {
+      const local = localHabits.find((lh) => lh.id === h.id)
+      if (!local) return h
+      return { ...h, completions: [...new Set([...local.completions, ...h.completions])] }
+    })
 
-    set({ projects, tasks, sprints, tombstones: mergedTombstones, notes, goals, habits, lists, activeProjectId })
+    const lists: FinancialTable[] = (backup.lists || []).map((l) => ({
+      ...l,
+      transactions: l.transactions ?? [],
+      goals: l.goals ?? [],
+      currency: (l.currency || 'BRL') as Currency
+    }))
+
+    const activeProjectId = projects[0]?.id ?? null
+
+    set({ projects, tasks, sprints, tombstones, notes, goals, habits, lists, activeProjectId, activeTimer: null })
     await get()._persist()
     return true
   },
