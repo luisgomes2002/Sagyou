@@ -57,3 +57,16 @@ npm run build:linux
 - [dnd kit](https://dndkit.com/) — drag and drop
 - [Tailwind CSS](https://tailwindcss.com/) — estilização
 - [Vitest](https://vitest.dev/) — testes
+
+
+<img width="1920" height="1080" alt="Screenshot from 2026-06-16 16-50-17" src="https://github.com/user-attachments/assets/30fd8017-a4e6-4921-8068-676272ead630" />
+<img width="1920" height="1080" alt="Screenshot from 2026-06-16 16-49-06" src="https://github.com/user-attachments/assets/9167dc07-f098-4b53-9241-175d772fdf14" />
+<img width="1920" height="1080" alt="Screenshot from 2026-06-16 16-49-01" src="https://github.com/user-attachments/assets/05ac6c2e-d5dd-4c82-9d29-855afa538827" />
+<img width="1920" height="1080" alt="Screenshot from 2026-06-16 16-48-47" src="https://github.com/user-attachments/assets/79510096-8e0d-4844-a3a2-9260913d2e0a" />
+<img width="1920" height="1080" alt="Screenshot from 2026-06-16 16-48-31" src="https://github.com/user-attachments/assets/679efc5c-fd4e-4e76-8bf0-3175ef91a22d" />
+<img width="1920" height="1080" alt="Screenshot from 2026-06-16 16-47-23" src="https://github.com/user-attachments/assets/7b1bd2c3-f4c9-4faf-a25a-3b5d9fd2949c" />
+<img width="1920" height="1080" alt="Screenshot from 2026-06-16 16-47-13" src="https://github.com/user-attachments/assets/c86a7a34-9271-4798-bcb0-54ab6f50d4ed" />
+<img width="1920" height="1080" alt="Screenshot from 2026-06-16 16-44-02" src="https://github.com/user-attachments/assets/2eb079f9-896c-4853-a1ab-ca13ec3b5721" />
+<img width="1920" height="1080" alt="Screenshot from 2026-06-16 16-43-50" src="https://github.com/user-attachments/assets/07afcbc4-6625-415b-bb2a-af5499f485d7" />
+<img width="1920" height="1080" alt="Screenshot from 2026-06-16 16-43-20" src="https://github.com/user-attachments/assets/eb3a5c35-829f-480a-b1d7-7dbc7e84de14" />
+<img width="1920" height="1080" alt="Screenshot from 2026-06-16 16-42-58" src="https://github.com/user-attachments/assets/5bec424d-d8fc-4157-9770-10fb08a85803" />
