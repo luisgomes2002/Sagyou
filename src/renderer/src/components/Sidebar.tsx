@@ -72,7 +72,7 @@ Campos:
 - dueDate — formato YYYY-MM-DD. Opcional.
 - tags — use as tags relevantes para o contexto. Tags disponíveis por área:
 
-  Dev: frontend, backend, bug, feat, refactor, api, design, mobile, devops, testes, docs, deploy, auth, security, performance, infra, ipc, store, utils, dnd, memoization, correctness, idempotency, query-optimization, redis, jwt, reports, heatmap, due-date, tags, sprints
+  Dev: frontend, backend, bug, fix, feat, refactor, api, design, mobile, devops, testes, docs, deploy, auth, security, performance, infra, ipc, store, utils, dnd, memoization, correctness, idempotency, query-optimization, redis, jwt, reports, heatmap, due-date, tags, sprints
 
   Estudo: estudo, leitura, revisão, resumo, prova, pesquisa, aula, curso, faculdade, idioma, exercício-mental, flashcard, vocabulário, gramática, prática, escrita, listening, tradução
 
