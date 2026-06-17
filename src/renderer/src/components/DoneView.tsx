@@ -1,6 +1,8 @@
+import { useMemo } from 'react'
 import { format, parseISO } from 'date-fns'
 import type { Project, Task, Sprint } from '../types'
 import { PRIORITY_CONFIG } from '../types'
+import { isDoneColumn } from '../utils/columns'
 
 interface Props {
   projects: Project[]
@@ -12,23 +14,24 @@ interface Props {
   onDeleteTask: (task: Task) => void
 }
 
-const isDoneColumn = (name: string) => name.toLowerCase() === 'done'
-
 export function DoneView({ projects, tasks, sprints, sprintFilter, onViewTask, onRestoreTask, onDeleteTask }: Props) {
-  const projectsWithDone = projects
-    .map((project) => {
-      const doneColIds = new Set(
-        project.columns.filter((c) => isDoneColumn(c.name)).map((c) => c.id)
-      )
-      let doneTasks = tasks.filter(
-        (t) => t.projectId === project.id && doneColIds.has(t.columnId)
-      )
-      if (sprintFilter !== null) {
-        doneTasks = doneTasks.filter((t) => t.sprintId === sprintFilter)
-      }
-      return { project, doneTasks }
-    })
-    .filter(({ doneTasks }) => doneTasks.length > 0)
+  const projectsWithDone = useMemo(() =>
+    projects
+      .map((project) => {
+        const doneColIds = new Set(
+          project.columns.filter(isDoneColumn).map((c) => c.id)
+        )
+        let doneTasks = tasks.filter(
+          (t) => t.projectId === project.id && doneColIds.has(t.columnId)
+        )
+        if (sprintFilter !== null) {
+          doneTasks = doneTasks.filter((t) => t.sprintId === sprintFilter)
+        }
+        return { project, doneTasks }
+      })
+      .filter(({ doneTasks }) => doneTasks.length > 0),
+    [projects, tasks, sprintFilter]
+  )
 
   if (projectsWithDone.length === 0) {
     return (

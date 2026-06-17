@@ -1,7 +1,8 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 import { useKanbanStore } from './store/kanban'
 import type { Task, Column, Project, Priority, TaskImage } from './types'
+import { isDoneColumn, isTaskDone } from './utils/columns'
 import { TitleBar } from './components/TitleBar'
 import { Sidebar } from './components/Sidebar'
 import { Board } from './components/Board'
@@ -12,6 +13,9 @@ import { HabitView } from './components/HabitView'
 import { FinancialView } from './components/FinancialView'
 import { UpcomingView } from './components/UpcomingView'
 import { ReportsView } from './components/ReportsView'
+import { FilesView } from './components/FilesView'
+import { ExcelExportModal } from './components/ExcelExportModal'
+import { ProjectLinksDropdown } from './components/ProjectLinksDropdown'
 import { SearchModal } from './components/SearchModal'
 import { SprintBadge } from './components/SprintBadge'
 import { TaskModal } from './components/TaskModal'
@@ -75,6 +79,9 @@ export default function App() {
     reopenSprint,
     deleteSprint,
     habits,
+    goals,
+    notes,
+    lists,
     exportBackup,
     importBackup,
     importAIJson
@@ -85,8 +92,11 @@ export default function App() {
   const [viewTask, setViewTask] = useState<Task | null>(null)
   const [projectModal, setProjectModal] = useState<ProjectModalState>({ open: false })
   const [columnModal, setColumnModal] = useState<ColumnModalState>({ open: false })
-  const [activeView, setActiveView] = useState<'board' | 'canvas' | 'done' | 'goals' | 'habits' | 'financial' | 'upcoming' | 'reports'>('board')
+  const [activeView, setActiveView] = useState<'board' | 'canvas' | 'done' | 'goals' | 'habits' | 'financial' | 'upcoming' | 'reports' | 'files'>('board')
   const [searchOpen, setSearchOpen] = useState(false)
+  const [excelExportOpen, setExcelExportOpen] = useState(false)
+  // session-only: maps projectId → active linkId (not persisted — each machine picks its own)
+  const [activeLinkIds, setActiveLinkIds] = useState<Record<string, string>>({})
   const [confirm, setConfirm] = useState<ConfirmState>({
     open: false,
     title: '',
@@ -115,21 +125,52 @@ export default function App() {
     setToasts((prev) => prev.filter((t) => t.id !== id))
   }, [])
 
-  const activeProject = projects.find((p) => p.id === activeProjectId) ?? null
-  const activeProjectSprints = sprints.filter((s) => s.projectId === activeProjectId)
-  const projectTasks = tasks.filter((t) => {
-    if (t.projectId !== activeProjectId) return false
-    if (sprintFilter !== null) return t.sprintId === sprintFilter
-    return true
-  })
+  const activeProject = useMemo(
+    () => projects.find((p) => p.id === activeProjectId) ?? null,
+    [projects, activeProjectId]
+  )
+
+  const activeProjectSprints = useMemo(
+    () => sprints.filter((s) => s.projectId === activeProjectId),
+    [sprints, activeProjectId]
+  )
+
+  const projectTasks = useMemo(() =>
+    tasks.filter((t) => {
+      if (t.projectId !== activeProjectId) return false
+      if (sprintFilter !== null) return t.sprintId === sprintFilter
+      return true
+    }),
+    [tasks, activeProjectId, sprintFilter]
+  )
+
+  // Per-project: done column + first active column (pre-sorted), shared by complete/restore handlers
+  const projectColumnInfo = useMemo(() => {
+    const map = new Map<string, { doneCol: Column | undefined; firstCol: Column | undefined }>()
+    for (const p of projects) {
+      const sorted = [...p.columns].sort((a, b) => a.order - b.order)
+      map.set(p.id, {
+        doneCol: sorted.find(isDoneColumn),
+        firstCol: sorted.find((c) => !isDoneColumn(c))
+      })
+    }
+    return map
+  }, [projects])
+
+  // Task count per column — O(1) lookup for move-to-end positioning
+  const columnTaskCount = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const t of tasks) map.set(t.columnId, (map.get(t.columnId) ?? 0) + 1)
+    return map
+  }, [tasks])
 
   // --- Project handlers ---
   const handleNewProject = () => setProjectModal({ open: true })
   const handleEditProject = (project: Project) => setProjectModal({ open: true, project })
 
-  const handleSaveProject = (name: string, description: string, color: string) => {
+  const handleSaveProject = (name: string, description: string, color: string, links: import('./types').ProjectLink[]) => {
     if (projectModal.project) {
-      updateProject(projectModal.project.id, { name, description, color })
+      updateProject(projectModal.project.id, { name, description, color, links })
       addToast('Projeto atualizado')
     } else {
       createProject(name, description, color)
@@ -202,7 +243,7 @@ export default function App() {
     const firstCol = activeProject?.columns
       .slice()
       .sort((a, b) => a.order - b.order)
-      .find((c) => c.name.toLowerCase() !== 'done')
+      .find((c) => !isDoneColumn(c))
     setTaskModal({ open: true, columnId: firstCol?.id, defaultTitle: title, linkNoteId: noteId })
   }
 
@@ -242,24 +283,16 @@ export default function App() {
   }
 
   const handleCompleteTask = (task: Task) => {
-    const project = projects.find((p) => p.id === task.projectId)
-    if (!project) return
-    const doneCol = project.columns.find((c) => c.name.toLowerCase() === 'done')
+    const { doneCol } = projectColumnInfo.get(task.projectId) ?? {}
     if (!doneCol) { addToast('Coluna "Done" não encontrada', 'error'); return }
-    const doneTaskCount = tasks.filter((t) => t.columnId === doneCol.id).length
-    moveTask(task.id, doneCol.id, doneTaskCount)
+    moveTask(task.id, doneCol.id, columnTaskCount.get(doneCol.id) ?? 0)
     addToast('Task concluída')
   }
 
   const handleRestoreTask = (task: Task) => {
-    const project = projects.find((p) => p.id === task.projectId)
-    if (!project) return
-    const firstCol = project.columns
-      .sort((a, b) => a.order - b.order)
-      .find((c) => c.name.toLowerCase() !== 'done')
+    const { firstCol } = projectColumnInfo.get(task.projectId) ?? {}
     if (!firstCol) return
-    const colTaskCount = tasks.filter((t) => t.columnId === firstCol.id).length
-    moveTask(task.id, firstCol.id, colTaskCount)
+    moveTask(task.id, firstCol.id, columnTaskCount.get(firstCol.id) ?? 0)
     addToast('Task restaurada')
   }
 
@@ -310,7 +343,7 @@ export default function App() {
           projects={projects}
           activeProjectId={activeProjectId}
           activeView={activeView}
-          onSelectProject={(id) => { setActiveProject(id); if (activeView !== 'board' && activeView !== 'canvas') setActiveView('board'); setSprintFilter(null) }}
+          onSelectProject={(id) => { setActiveProject(id); if (activeView !== 'board' && activeView !== 'canvas' && activeView !== 'files') setActiveView('board'); setSprintFilter(null) }}
           onChangeView={setActiveView}
           onOpenSearch={() => setSearchOpen(true)}
           onNewProject={handleNewProject}
@@ -320,6 +353,7 @@ export default function App() {
           onExportBackup={handleExportBackup}
           onImportBackup={handleImportBackup}
           onImportAI={handleImportAI}
+          onExportExcel={() => setExcelExportOpen(true)}
         />
 
         <main className="flex-1 flex flex-col overflow-hidden">
@@ -345,10 +379,7 @@ export default function App() {
                 </svg>
                 <h1 className="text-base font-semibold text-[#e2e8f0]">Concluídas</h1>
                 <span className="text-xs text-[#8892a4]">
-                  {tasks.filter((t) => {
-                    const proj = projects.find((p) => p.id === t.projectId)
-                    return proj?.columns.some((c) => c.id === t.columnId && c.name.toLowerCase() === 'done')
-                  }).length} tasks
+                  {tasks.filter((t) => isTaskDone(t, projects)).length} tasks
                 </span>
               </div>
               <DoneView
@@ -390,8 +421,25 @@ export default function App() {
                   >
                     Canvas
                   </button>
+                  <button
+                    onClick={() => setActiveView('files')}
+                    className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                      activeView === 'files'
+                        ? 'bg-[#2a2d42] text-[#e2e8f0]'
+                        : 'text-[#8892a4] hover:text-[#e2e8f0]'
+                    }`}
+                  >
+                    Arquivos
+                  </button>
                 </div>
                 <div className="ml-auto flex items-center gap-3">
+                  {(activeProject.links?.length ?? 0) > 0 && (
+                    <ProjectLinksDropdown
+                      links={activeProject.links ?? []}
+                      activeLinkId={activeLinkIds[activeProject.id] ?? null}
+                      onSelect={(linkId) => setActiveLinkIds((prev) => ({ ...prev, [activeProject.id]: linkId }))}
+                    />
+                  )}
                   {activeView === 'board' && (
                     <>
                       <SprintBadge
@@ -408,7 +456,7 @@ export default function App() {
                       <span className="text-xs text-[#8892a4]">
                         {projectTasks.filter((t) => {
                           const col = activeProject.columns.find((c) => c.id === t.columnId)
-                          return col && col.name.toLowerCase() !== 'done'
+                          return col && !isDoneColumn(col)
                         }).length} tasks
                       </span>
                     </>
@@ -422,6 +470,8 @@ export default function App() {
                     tasks={projectTasks}
                     onCreateTask={handleCreateTaskFromCanvas}
                   />
+                ) : activeView === 'files' ? (
+                  <FilesView activeProjectId={activeProjectId} />
                 ) : (
                   <Board
                     project={activeProject}
@@ -464,7 +514,7 @@ export default function App() {
       <TaskModal
         open={taskModal.open}
         task={taskModal.task}
-        columns={(activeProject?.columns ?? []).filter((c) => c.name.toLowerCase() !== 'done')}
+        columns={(activeProject?.columns ?? []).filter((c) => !isDoneColumn(c))}
         sprints={activeProjectSprints}
         defaultColumnId={taskModal.columnId}
         defaultTitle={taskModal.defaultTitle}
@@ -511,6 +561,20 @@ export default function App() {
         onSelectTask={handleSearchSelectTask}
         onSelectNote={handleSearchSelectNote}
       />
+
+      {excelExportOpen && (
+        <ExcelExportModal
+          projects={projects}
+          tasks={tasks}
+          sprints={sprints}
+          habits={habits}
+          goals={goals}
+          notes={notes}
+          lists={lists}
+          onClose={() => setExcelExportOpen(false)}
+          onToast={(msg) => addToast(msg)}
+        />
+      )}
     </div>
   )
 }

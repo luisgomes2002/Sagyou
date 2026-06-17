@@ -1,14 +1,35 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import type { FinancialTable, FinancialTransaction } from '../../types'
 import { MONTH_NAMES, CAT_COLORS, formatCurrency } from './shared'
+
+const MONTH_ABBR = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
 
 export function AnalyticsTab({ list }: { list: FinancialTable }) {
   const { currency, transactions } = list
   const allYears = [...new Set(transactions.map((t) => t.date.slice(0, 4)))].sort().reverse()
   const [selectedYear, setSelectedYear] = useState<string>('all')
+  const [selectedMonth, setSelectedMonth] = useState<string>('all')
   const [catView, setCatView] = useState<'expense' | 'income'>('expense')
 
-  const filtered = selectedYear === 'all' ? transactions : transactions.filter((t) => t.date.startsWith(selectedYear))
+  const handleYearSelect = (year: string) => {
+    setSelectedYear(year)
+    setSelectedMonth('all')
+  }
+
+  const availableMonths = useMemo(() => {
+    if (selectedYear === 'all') return []
+    return [...new Set(
+      transactions
+        .filter((t) => t.date.startsWith(selectedYear))
+        .map((t) => t.date.slice(5, 7))
+    )].sort()
+  }, [transactions, selectedYear])
+
+  const filtered = useMemo(() => {
+    if (selectedYear === 'all') return transactions
+    const prefix = selectedMonth === 'all' ? selectedYear : `${selectedYear}-${selectedMonth}`
+    return transactions.filter((t) => t.date.startsWith(prefix))
+  }, [transactions, selectedYear, selectedMonth])
   const expenses = filtered.filter((t) => t.type === 'expense')
   const incomes = filtered.filter((t) => t.type === 'income')
   const totalExpense = expenses.reduce((s, t) => s + t.amount, 0)
@@ -69,26 +90,53 @@ export function AnalyticsTab({ list }: { list: FinancialTable }) {
   return (
     <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6">
       {/* Year filter */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <button
-          onClick={() => setSelectedYear('all')}
-          className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-            selectedYear === 'all' ? 'bg-[#6366f1]/15 text-[#a5b4fc]' : 'text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#1e2235]'
-          }`}
-        >
-          Todos
-        </button>
-        {allYears.map((y) => (
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
-            key={y}
-            onClick={() => setSelectedYear(y)}
+            onClick={() => handleYearSelect('all')}
             className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-              selectedYear === y ? 'bg-[#6366f1]/15 text-[#a5b4fc]' : 'text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#1e2235]'
+              selectedYear === 'all' ? 'bg-[#6366f1]/15 text-[#a5b4fc]' : 'text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#1e2235]'
             }`}
           >
-            {y}
+            Todos
           </button>
-        ))}
+          {allYears.map((y) => (
+            <button
+              key={y}
+              onClick={() => handleYearSelect(y)}
+              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                selectedYear === y ? 'bg-[#6366f1]/15 text-[#a5b4fc]' : 'text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#1e2235]'
+              }`}
+            >
+              {y}
+            </button>
+          ))}
+        </div>
+
+        {/* Month filter — visible only when a year is selected */}
+        {selectedYear !== 'all' && availableMonths.length > 1 && (
+          <div className="flex items-center gap-1.5 flex-wrap pl-0.5">
+            <button
+              onClick={() => setSelectedMonth('all')}
+              className={`px-2.5 py-0.5 rounded-full text-[10px] font-medium transition-colors ${
+                selectedMonth === 'all' ? 'bg-[#2a2d42] text-[#e2e8f0]' : 'text-[#4a5068] hover:text-[#8892a4] hover:bg-[#1e2235]'
+              }`}
+            >
+              Todos os meses
+            </button>
+            {availableMonths.map((m) => (
+              <button
+                key={m}
+                onClick={() => setSelectedMonth(m)}
+                className={`px-2.5 py-0.5 rounded-full text-[10px] font-medium transition-colors ${
+                  selectedMonth === m ? 'bg-[#2a2d42] text-[#e2e8f0]' : 'text-[#4a5068] hover:text-[#8892a4] hover:bg-[#1e2235]'
+                }`}
+              >
+                {MONTH_ABBR[Number(m) - 1]}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Overview cards */}

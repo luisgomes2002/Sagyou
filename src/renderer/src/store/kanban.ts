@@ -1,10 +1,12 @@
 import { create } from 'zustand'
 import { v4 as uuidv4 } from 'uuid'
-import type { Project, Task, Column, Sprint, Tombstone, Backup, AIJson, Priority, StickyNote, Goal, GoalEntry, Habit, FinancialTable, FinancialTransaction, FinancialGoal, ShoppingItem, Currency } from '../types'
+import type { Project, Task, Column, Sprint, Tombstone, Backup, AIJson, Priority, StickyNote, Goal, GoalEntry, Habit, FinancialTable, FinancialTransaction, FinancialGoal, ShoppingItem, Currency, StoredFile } from '../types'
 import { DEFAULT_COLUMN_NAMES } from '../types'
 import { ElectronStorage } from '../services/ElectronStorage'
+import { isDoneColumn } from '../utils/columns'
 
 const storage = new ElectronStorage()
+let _persistTimer: ReturnType<typeof setTimeout> | null = null
 
 interface ActiveTimer {
   taskId: string
@@ -23,18 +25,20 @@ interface KanbanState {
   activeProjectId: string | null
   sprintFilter: string | null
   activeTimer: ActiveTimer | null
+  files: StoredFile[]
   isLoaded: boolean
 }
 
 interface KanbanActions {
   loadData: () => Promise<void>
-  _persist: () => Promise<void>
+  _persist: () => void
+  _flushPersist: () => Promise<void>
 
   setActiveProject: (id: string | null) => void
   setSprintFilter: (sprintId: string | null) => void
 
   createProject: (name: string, description?: string, color?: string) => string
-  updateProject: (id: string, updates: Partial<Pick<Project, 'name' | 'description' | 'color'>>) => void
+  updateProject: (id: string, updates: Partial<Pick<Project, 'name' | 'description' | 'color' | 'links'>>) => void
   moveProject: (id: string, direction: 'up' | 'down') => void
   deleteProject: (id: string) => void
 
@@ -105,6 +109,9 @@ interface KanbanActions {
   exportBackup: () => Promise<boolean>
   importBackup: () => Promise<boolean>
   importAIJson: (projectId: string) => Promise<number>
+
+  addFiles: (files: StoredFile[]) => void
+  removeFile: (id: string) => void
 }
 
 export type KanbanStore = KanbanState & KanbanActions
@@ -122,11 +129,17 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
   activeProjectId: null,
   sprintFilter: null,
   activeTimer: null,
+  files: [],
   isLoaded: false,
 
-  _persist: async () => {
-    const { projects, tasks, sprints, tombstones, notes, goals, habits, lists, activeTimer } = get()
-    await storage.save({ projects, tasks, sprints, tombstones, notes, goals, habits, lists, activeTimer })
+  _flushPersist: async () => {
+    const { projects, tasks, sprints, tombstones, notes, goals, habits, lists, activeTimer, files } = get()
+    await storage.save({ projects, tasks, sprints, tombstones, notes, goals, habits, lists, activeTimer, files })
+  },
+
+  _persist: () => {
+    if (_persistTimer !== null) clearTimeout(_persistTimer)
+    _persistTimer = setTimeout(() => { get()._flushPersist() }, 300)
   },
 
   loadData: async () => {
@@ -168,6 +181,7 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
       }),
       habits: data.habits || [],
       lists: (data.lists || []).map((l) => ({ ...l, transactions: l.transactions ?? [], goals: l.goals ?? [], currency: (l.currency || 'BRL') as Currency })),
+      files: data.files || [],
       isLoaded: true,
       activeProjectId: projects[0]?.id ?? null,
       activeTimer: null
@@ -175,7 +189,7 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
 
     // Persist the committed elapsed time so it's durable
     if (savedTimer?.taskId) {
-      await get()._persist()
+      await get()._flushPersist()
     }
   },
 
@@ -333,12 +347,16 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
         if (updates.columnId !== undefined) {
           const project = s.projects.find((p) => p.id === t.projectId)
           const col = project?.columns.find((c) => c.id === updates.columnId)
-          const isDone = col?.name.toLowerCase() === 'done'
+          const isDone = isDoneColumn(col)
           next.completedAt = isDone ? (t.completedAt ?? now) : undefined
         }
         return next
       })
     }))
+    const s = get()
+    if (s.activeTimer?.taskId === id && s.tasks.find((t) => t.id === id)?.completedAt) {
+      s.stopTimer()
+    }
     get()._persist()
   },
 
@@ -358,7 +376,7 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
       const now = new Date().toISOString()
       const project = s.projects.find((p) => p.id === task.projectId)
       const newCol = project?.columns.find((c) => c.id === newColumnId)
-      const isDone = newCol?.name.toLowerCase() === 'done'
+      const isDone = isDoneColumn(newCol)
       const otherTasks = s.tasks.filter((t) => t.id !== taskId)
       const columnTasks = otherTasks
         .filter((t) => t.columnId === newColumnId && t.projectId === task.projectId)
@@ -376,6 +394,10 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
       )
       return { tasks: [...untouched, ...reordered] }
     })
+    const s = get()
+    if (s.activeTimer?.taskId === taskId && s.tasks.find((t) => t.id === taskId)?.completedAt) {
+      s.stopTimer()
+    }
     get()._persist()
   },
 
@@ -427,7 +449,8 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
     set((s) => ({
       sprints: s.sprints.map((sp) =>
         sp.id === sprintId ? { ...sp, closedAt: new Date().toISOString() } : sp
-      )
+      ),
+      sprintFilter: s.sprintFilter === sprintId ? null : s.sprintFilter
     }))
     get()._persist()
   },
@@ -897,8 +920,9 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
 
     const activeProjectId = projects[0]?.id ?? null
 
-    set({ projects, tasks, sprints, tombstones, notes, goals, habits, lists, activeProjectId, activeTimer: null })
-    await get()._persist()
+    const files = get().files  // preserve local files — backup doesn't carry file bytes
+    set({ projects, tasks, sprints, tombstones, notes, goals, habits, lists, files, activeProjectId, activeTimer: null })
+    await get()._flushPersist()
     return true
   },
 
@@ -950,7 +974,17 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
     })
 
     set((s) => ({ tasks: [...s.tasks, ...newTasks] }))
-    await get()._persist()
+    await get()._flushPersist()
     return newTasks.length
+  },
+
+  addFiles: (files) => {
+    set((s) => ({ files: [...s.files, ...files] }))
+    get()._persist()
+  },
+
+  removeFile: (id) => {
+    set((s) => ({ files: s.files.filter((f) => f.id !== id) }))
+    get()._persist()
   }
 }))

@@ -1,8 +1,9 @@
-import type { Project, Task, Sprint, Tombstone, Backup, AIJson, StickyNote, Goal, Habit, FinancialTable } from '../types'
+import type { Project, Task, Sprint, Tombstone, Backup, AIJson, StickyNote, Goal, Habit, FinancialTable, StoredFile } from '../types'
 
 type SaveData = {
   projects: Project[]; tasks: Task[]; sprints: Sprint[]; tombstones: Tombstone[]
   notes: StickyNote[]; goals: Goal[]; habits: Habit[]; lists: FinancialTable[]
+  files: StoredFile[]
   activeTimer?: { taskId: string; startedAt: number } | null
 }
 

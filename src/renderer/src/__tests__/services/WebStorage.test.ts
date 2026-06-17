@@ -57,7 +57,8 @@ describe('WebStorage', () => {
         notes: [],
         goals: [],
         habits: [],
-        lists: []
+        lists: [],
+        files: []
       }
       await storage.save(payload)
       const loaded = await storage.load()
@@ -65,8 +66,8 @@ describe('WebStorage', () => {
     })
 
     it('overwrites previous data on each save', async () => {
-      await storage.save({ projects: [{ id: 'old', name: 'Old', color: '', columns: [], createdAt: '', updatedAt: '' }], tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: [] })
-      await storage.save({ projects: [{ id: 'new', name: 'New', color: '', columns: [], createdAt: '', updatedAt: '' }], tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: [] })
+      await storage.save({ projects: [{ id: 'old', name: 'Old', color: '', columns: [], createdAt: '', updatedAt: '' }], tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: [], files: [] })
+      await storage.save({ projects: [{ id: 'new', name: 'New', color: '', columns: [], createdAt: '', updatedAt: '' }], tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: [], files: [] })
       const data = await storage.load()
       expect(data.projects).toHaveLength(1)
       expect(data.projects[0].id).toBe('new')
