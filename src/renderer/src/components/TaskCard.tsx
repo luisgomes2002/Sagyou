@@ -211,7 +211,7 @@ export function TaskCard({ task, onEdit, onDelete, onView, onComplete, overlay =
           )}
           {task.dueDate && (
             <span className={`text-[10px] ${isOverdue ? 'text-red-400' : 'text-[#8892a4]'}`}>
-              {format(parseISO(task.dueDate), 'dd MMM')}
+              {format(parseISO(task.dueDate), 'dd/MM')}
             </span>
           )}
         </div>

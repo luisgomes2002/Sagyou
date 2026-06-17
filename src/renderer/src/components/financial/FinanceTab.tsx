@@ -8,6 +8,10 @@ import { AddTransactionRow, TransactionRow } from './TransactionRow'
 
 interface FinanceTabProps {
   list: FinancialTable
+  activeMonth: { year: number; month: number }
+  onMonthChange: (month: { year: number; month: number }) => void
+  categoryFilter: string | null
+  onCategoryFilterChange: (cat: string | null) => void
   onAddTransaction: (data: Omit<FinancialTransaction, 'id'>) => void
   onUpdateTransaction: (txId: string, updates: Partial<Omit<FinancialTransaction, 'id'>>) => void
   onDeleteTransaction: (txId: string) => void
@@ -18,6 +22,10 @@ interface FinanceTabProps {
 
 export function FinanceTab({
   list,
+  activeMonth,
+  onMonthChange,
+  categoryFilter,
+  onCategoryFilterChange,
   onAddTransaction,
   onUpdateTransaction,
   onDeleteTransaction,
@@ -27,8 +35,6 @@ export function FinanceTab({
 }: FinanceTabProps) {
   const currency = list.currency
   const now = new Date()
-  const [activeMonth, setActiveMonth] = useState({ year: now.getFullYear(), month: now.getMonth() + 1 })
-  const [categoryFilter, setCategoryFilter] = useState<string | null>(null)
   const [goalModal, setGoalModal] = useState<{ open: boolean; goal?: FinancialGoal }>({ open: false })
   const [deleteGoalConfirm, setDeleteGoalConfirm] = useState<{ open: boolean; goalId: string; name: string }>({
     open: false, goalId: '', name: ''
@@ -36,13 +42,17 @@ export function FinanceTab({
   const [historyOpen, setHistoryOpen] = useState(false)
 
   const prevMonth = () => {
-    setCategoryFilter(null)
-    setActiveMonth((m) => m.month === 1 ? { year: m.year - 1, month: 12 } : { ...m, month: m.month - 1 })
+    onCategoryFilterChange(null)
+    onMonthChange(activeMonth.month === 1
+      ? { year: activeMonth.year - 1, month: 12 }
+      : { ...activeMonth, month: activeMonth.month - 1 })
   }
 
   const nextMonth = () => {
-    setCategoryFilter(null)
-    setActiveMonth((m) => m.month === 12 ? { year: m.year + 1, month: 1 } : { ...m, month: m.month + 1 })
+    onCategoryFilterChange(null)
+    onMonthChange(activeMonth.month === 12
+      ? { year: activeMonth.year + 1, month: 1 }
+      : { ...activeMonth, month: activeMonth.month + 1 })
   }
 
   const monthTxs = list.transactions
@@ -95,7 +105,7 @@ export function FinanceTab({
             </svg>
           </button>
           <button
-            onClick={() => setActiveMonth({ year: now.getFullYear(), month: now.getMonth() + 1 })}
+            onClick={() => onMonthChange({ year: now.getFullYear(), month: now.getMonth() + 1 })}
             className="ml-1 text-[10px] text-[#8892a4] hover:text-[#6366f1] transition-colors"
           >
             Hoje
@@ -235,7 +245,7 @@ export function FinanceTab({
         <div className="px-5 pb-3">
           <select
             value={categoryFilter ?? ''}
-            onChange={(e) => setCategoryFilter(e.target.value || null)}
+            onChange={(e) => onCategoryFilterChange(e.target.value || null)}
             className="w-full bg-[#1e2235] border border-[#2a2d42] text-[#e2e8f0] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#6366f1]"
           >
             <option value="">Todos</option>

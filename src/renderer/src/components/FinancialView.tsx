@@ -8,6 +8,29 @@ import { ShoppingTab } from './financial/ShoppingTab'
 import { FinanceTab } from './financial/FinanceTab'
 import { AnalyticsTab } from './financial/AnalyticsTab'
 
+type ActiveTab = 'shopping' | 'finance' | 'analytics'
+
+interface TableViewState {
+  activeTab: ActiveTab
+  financeMonth: { year: number; month: number }
+  financeCategoryFilter: string | null
+  analyticsYear: string
+  analyticsMonth: string
+  analyticsCatView: 'expense' | 'income'
+}
+
+function makeDefaultState(): TableViewState {
+  const now = new Date()
+  return {
+    activeTab: 'shopping',
+    financeMonth: { year: now.getFullYear(), month: now.getMonth() + 1 },
+    financeCategoryFilter: null,
+    analyticsYear: 'all',
+    analyticsMonth: 'all',
+    analyticsCatView: 'expense'
+  }
+}
+
 export function FinancialView() {
   const lists = useKanbanStore((s) => s.lists)
   const createList = useKanbanStore((s) => s.createList)
@@ -25,7 +48,7 @@ export function FinancialView() {
   const deleteFinancialGoal = useKanbanStore((s) => s.deleteFinancialGoal)
 
   const [activeListId, setActiveListId] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'shopping' | 'finance' | 'analytics'>('shopping')
+  const [tableStates, setTableStates] = useState<Record<string, TableViewState>>({})
   const [confirm, setConfirm] = useState<{
     open: boolean
     title: string
@@ -45,6 +68,18 @@ export function FinancialView() {
 
   const activeList = lists.find((l) => l.id === activeListId) ?? null
   const currency: Currency = activeList?.currency ?? 'BRL'
+
+  const ts: TableViewState = activeListId
+    ? (tableStates[activeListId] ?? makeDefaultState())
+    : makeDefaultState()
+
+  const updateTs = (patch: Partial<TableViewState>) => {
+    if (!activeListId) return
+    setTableStates((prev) => ({
+      ...prev,
+      [activeListId]: { ...(prev[activeListId] ?? makeDefaultState()), ...patch }
+    }))
+  }
 
   const handleCreateList = (name: string, cur: Currency) => {
     const id = createList(name, cur)
@@ -128,9 +163,9 @@ export function FinancialView() {
               </div>
               <div className="flex items-center p-0.5 rounded-lg bg-[#1e2235] border border-[#2a2d42]">
                 <button
-                  onClick={() => setActiveTab('shopping')}
+                  onClick={() => updateTs({ activeTab: 'shopping' })}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                    activeTab === 'shopping' ? 'bg-[#2a2d42] text-[#e2e8f0]' : 'text-[#8892a4] hover:text-[#e2e8f0]'
+                    ts.activeTab === 'shopping' ? 'bg-[#2a2d42] text-[#e2e8f0]' : 'text-[#8892a4] hover:text-[#e2e8f0]'
                   }`}
                 >
                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -141,9 +176,9 @@ export function FinancialView() {
                   Compras
                 </button>
                 <button
-                  onClick={() => setActiveTab('finance')}
+                  onClick={() => updateTs({ activeTab: 'finance' })}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                    activeTab === 'finance' ? 'bg-[#2a2d42] text-[#e2e8f0]' : 'text-[#8892a4] hover:text-[#e2e8f0]'
+                    ts.activeTab === 'finance' ? 'bg-[#2a2d42] text-[#e2e8f0]' : 'text-[#8892a4] hover:text-[#e2e8f0]'
                   }`}
                 >
                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -154,9 +189,9 @@ export function FinancialView() {
                   Finanças
                 </button>
                 <button
-                  onClick={() => setActiveTab('analytics')}
+                  onClick={() => updateTs({ activeTab: 'analytics' })}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                    activeTab === 'analytics' ? 'bg-[#2a2d42] text-[#e2e8f0]' : 'text-[#8892a4] hover:text-[#e2e8f0]'
+                    ts.activeTab === 'analytics' ? 'bg-[#2a2d42] text-[#e2e8f0]' : 'text-[#8892a4] hover:text-[#e2e8f0]'
                   }`}
                 >
                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -168,7 +203,7 @@ export function FinancialView() {
               </div>
             </div>
 
-            {activeTab === 'shopping' && (
+            {ts.activeTab === 'shopping' && (
               <ShoppingTab
                 list={activeList}
                 onUpdate={(itemId, updates) => updateItem(activeListId!, itemId, updates)}
@@ -177,9 +212,13 @@ export function FinancialView() {
                 onAdd={(data) => addItem(activeListId!, data)}
               />
             )}
-            {activeTab === 'finance' && (
+            {ts.activeTab === 'finance' && (
               <FinanceTab
                 list={activeList}
+                activeMonth={ts.financeMonth}
+                onMonthChange={(m) => updateTs({ financeMonth: m })}
+                categoryFilter={ts.financeCategoryFilter}
+                onCategoryFilterChange={(c) => updateTs({ financeCategoryFilter: c })}
                 onAddTransaction={(data) => addTransaction(activeListId!, data)}
                 onUpdateTransaction={(txId, updates) => updateTransaction(activeListId!, txId, updates)}
                 onDeleteTransaction={handleDeleteTransaction}
@@ -188,7 +227,17 @@ export function FinancialView() {
                 onDeleteGoal={(goalId) => deleteFinancialGoal(activeListId!, goalId)}
               />
             )}
-            {activeTab === 'analytics' && <AnalyticsTab list={activeList} />}
+            {ts.activeTab === 'analytics' && (
+              <AnalyticsTab
+                list={activeList}
+                selectedYear={ts.analyticsYear}
+                onYearChange={(y) => updateTs({ analyticsYear: y, analyticsMonth: 'all' })}
+                selectedMonth={ts.analyticsMonth}
+                onMonthChange={(m) => updateTs({ analyticsMonth: m })}
+                catView={ts.analyticsCatView}
+                onCatViewChange={(v) => updateTs({ analyticsCatView: v })}
+              />
+            )}
           </>
         )}
       </div>

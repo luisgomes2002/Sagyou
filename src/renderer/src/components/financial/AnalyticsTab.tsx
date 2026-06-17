@@ -1,19 +1,25 @@
-import { useState, useMemo } from 'react'
+import { useMemo } from 'react'
 import type { FinancialTable, FinancialTransaction } from '../../types'
 import { MONTH_NAMES, CAT_COLORS, formatCurrency } from './shared'
 
 const MONTH_ABBR = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
 
-export function AnalyticsTab({ list }: { list: FinancialTable }) {
+interface AnalyticsTabProps {
+  list: FinancialTable
+  selectedYear: string
+  onYearChange: (year: string) => void
+  selectedMonth: string
+  onMonthChange: (month: string) => void
+  catView: 'expense' | 'income'
+  onCatViewChange: (view: 'expense' | 'income') => void
+}
+
+export function AnalyticsTab({ list, selectedYear, onYearChange, selectedMonth, onMonthChange, catView, onCatViewChange }: AnalyticsTabProps) {
   const { currency, transactions } = list
   const allYears = [...new Set(transactions.map((t) => t.date.slice(0, 4)))].sort().reverse()
-  const [selectedYear, setSelectedYear] = useState<string>('all')
-  const [selectedMonth, setSelectedMonth] = useState<string>('all')
-  const [catView, setCatView] = useState<'expense' | 'income'>('expense')
 
   const handleYearSelect = (year: string) => {
-    setSelectedYear(year)
-    setSelectedMonth('all')
+    onYearChange(year)
   }
 
   const availableMonths = useMemo(() => {
@@ -117,7 +123,7 @@ export function AnalyticsTab({ list }: { list: FinancialTable }) {
         {selectedYear !== 'all' && availableMonths.length > 1 && (
           <div className="flex items-center gap-1.5 flex-wrap pl-0.5">
             <button
-              onClick={() => setSelectedMonth('all')}
+              onClick={() => onMonthChange('all')}
               className={`px-2.5 py-0.5 rounded-full text-[10px] font-medium transition-colors ${
                 selectedMonth === 'all' ? 'bg-[#2a2d42] text-[#e2e8f0]' : 'text-[#4a5068] hover:text-[#8892a4] hover:bg-[#1e2235]'
               }`}
@@ -127,7 +133,7 @@ export function AnalyticsTab({ list }: { list: FinancialTable }) {
             {availableMonths.map((m) => (
               <button
                 key={m}
-                onClick={() => setSelectedMonth(m)}
+                onClick={() => onMonthChange(m)}
                 className={`px-2.5 py-0.5 rounded-full text-[10px] font-medium transition-colors ${
                   selectedMonth === m ? 'bg-[#2a2d42] text-[#e2e8f0]' : 'text-[#4a5068] hover:text-[#8892a4] hover:bg-[#1e2235]'
                 }`}
@@ -219,7 +225,7 @@ export function AnalyticsTab({ list }: { list: FinancialTable }) {
           <p className="text-xs font-semibold text-[#e2e8f0]">Ranking por Categoria</p>
           <div className="flex items-center p-0.5 rounded-lg bg-[#1e2235] border border-[#2a2d42]">
             <button
-              onClick={() => setCatView('expense')}
+              onClick={() => onCatViewChange('expense')}
               className={`px-3 py-1 rounded-md text-[10px] font-medium transition-colors ${
                 catView === 'expense' ? 'bg-[#2a2d42] text-red-400' : 'text-[#8892a4] hover:text-[#e2e8f0]'
               }`}
@@ -227,7 +233,7 @@ export function AnalyticsTab({ list }: { list: FinancialTable }) {
               ↓ Gastos
             </button>
             <button
-              onClick={() => setCatView('income')}
+              onClick={() => onCatViewChange('income')}
               className={`px-3 py-1 rounded-md text-[10px] font-medium transition-colors ${
                 catView === 'income' ? 'bg-[#2a2d42] text-[#4ade80]' : 'text-[#8892a4] hover:text-[#e2e8f0]'
               }`}

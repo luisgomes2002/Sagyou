@@ -114,7 +114,7 @@ export function SprintBadge({
           <div className="absolute right-0 top-9 z-20 w-64 rounded-lg border border-[#2a2d42] bg-[#0d0f18] shadow-xl py-1">
 
             {/* ── Filtro ── */}
-            {projectSprints.length > 0 && (
+            {activeSprints.length > 0 && (
               <>
                 <p className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#8892a4]">
                   Filtrar por sprint
@@ -130,7 +130,7 @@ export function SprintBadge({
                   >
                     Todas
                   </button>
-                  {projectSprints.map((s) => (
+                  {activeSprints.map((s) => (
                     <button
                       key={s.id}
                       onClick={() => { onSetFilter(s.id); setOpen(false) }}
@@ -140,7 +140,7 @@ export function SprintBadge({
                           : 'bg-[#1e2235] text-[#8892a4] border-[#2a2d42] hover:text-[#e2e8f0]'
                       }`}
                     >
-                      <span className={`w-1 h-1 rounded-full ${s.closedAt ? 'bg-[#8892a4]' : 'bg-[#6366f1]'}`} />
+                      <span className="w-1 h-1 rounded-full bg-[#6366f1]" />
                       {s.name}
                     </button>
                   ))}

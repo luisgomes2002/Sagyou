@@ -95,8 +95,8 @@ export default function App() {
   const [activeView, setActiveView] = useState<'board' | 'canvas' | 'done' | 'goals' | 'habits' | 'financial' | 'upcoming' | 'reports' | 'files'>('board')
   const [searchOpen, setSearchOpen] = useState(false)
   const [excelExportOpen, setExcelExportOpen] = useState(false)
-  // session-only: maps projectId → active linkId (not persisted — each machine picks its own)
-  const [activeLinkIds, setActiveLinkIds] = useState<Record<string, string>>({})
+  // session-only: maps projectId → active linkIds (not persisted — each machine picks its own)
+  const [activeLinkIds, setActiveLinkIds] = useState<Record<string, string[]>>({})
   const [confirm, setConfirm] = useState<ConfirmState>({
     open: false,
     title: '',
@@ -436,8 +436,14 @@ export default function App() {
                   {(activeProject.links?.length ?? 0) > 0 && (
                     <ProjectLinksDropdown
                       links={activeProject.links ?? []}
-                      activeLinkId={activeLinkIds[activeProject.id] ?? null}
-                      onSelect={(linkId) => setActiveLinkIds((prev) => ({ ...prev, [activeProject.id]: linkId }))}
+                      activeLinkIds={activeLinkIds[activeProject.id] ?? []}
+                      onSelect={(linkId) => setActiveLinkIds((prev) => {
+                        const current = prev[activeProject.id] ?? []
+                        const next = current.includes(linkId)
+                          ? current.filter((id) => id !== linkId)
+                          : [...current, linkId]
+                        return { ...prev, [activeProject.id]: next }
+                      })}
                     />
                   )}
                   {activeView === 'board' && (

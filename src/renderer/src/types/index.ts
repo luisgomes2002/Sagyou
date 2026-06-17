@@ -240,7 +240,7 @@ export const DEFAULT_COLUMN_NAMES = ['Backlog', 'In Progress', 'Review', 'Done']
 export const DEFAULT_TAGS: { label: string; tags: string[] }[] = [
   {
     label: 'Dev',
-    tags: ['frontend', 'backend', 'bug', 'feat', 'refactor', 'api', 'design', 'mobile', 'devops', 'testes', 'docs', 'deploy', 'delivery', 'auth', 'security', 'performance', 'infra', 'ipc', 'store', 'utils', 'dnd', 'memoization', 'correctness', 'idempotency', 'query-optimization', 'redis', 'jwt', 'reports', 'heatmap', 'due-date', 'tags', 'sprints']
+    tags: ['frontend', 'backend', 'bug', 'fix', 'feat', 'refactor', 'api', 'design', 'mobile', 'devops', 'testes', 'docs', 'deploy', 'delivery', 'auth', 'security', 'performance', 'infra', 'ipc', 'store', 'utils', 'dnd', 'memoization', 'correctness', 'idempotency', 'query-optimization', 'redis', 'jwt', 'reports', 'heatmap', 'due-date', 'tags', 'sprints']
   },
   {
     label: 'Estudo',

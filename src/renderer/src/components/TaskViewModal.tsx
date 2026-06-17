@@ -63,7 +63,7 @@ export function TaskViewModal({ open, task, columns, onEdit, onClose }: Props) {
     lines.push('')
     const meta: string[] = []
     meta.push(`Prioridade: ${priority.label}`)
-    if (task.dueDate) meta.push(`Vencimento: ${format(parseISO(task.dueDate), 'yyyy-MM-dd')}`)
+    if (task.dueDate) meta.push(`Vencimento: ${format(parseISO(task.dueDate), 'dd/MM/yyyy')}`)
     if (columnName) meta.push(`Coluna: ${columnName}`)
     lines.push(meta.join(' | '))
     if (task.tags.length > 0) lines.push(`Tags: ${task.tags.join(', ')}`)
