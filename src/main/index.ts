@@ -1,6 +1,7 @@
 import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
-import { join } from 'path'
-import { readFileSync, writeFileSync } from 'fs'
+import { join, extname, basename } from 'path'
+import { readFileSync, writeFileSync, copyFileSync, mkdirSync, existsSync, unlinkSync, statSync } from 'fs'
+import { randomUUID } from 'crypto'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { loadData, saveData } from './store'
 import icon from '../../resources/icon.png?asset'
@@ -44,6 +45,9 @@ function createWindow(): void {
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.sagyou')
 
+  const filesDir = join(app.getPath('userData'), 'files')
+  if (!existsSync(filesDir)) mkdirSync(filesDir)
+
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
@@ -84,6 +88,82 @@ app.whenReady().then(() => {
       return { success: true, data: JSON.parse(content) }
     } catch {
       return { success: false, error: 'Arquivo inválido' }
+    }
+  })
+
+  ipcMain.handle('files:upload', async () => {
+    const { filePaths, canceled } = await dialog.showOpenDialog({
+      title: 'Selecionar arquivos',
+      properties: ['openFile', 'multiSelections']
+    })
+    if (canceled || filePaths.length === 0) return []
+    const results: { id: string; name: string; ext: string; size: number; createdAt: string }[] = []
+    for (const filePath of filePaths) {
+      try {
+        const id = randomUUID()
+        const ext = extname(filePath)
+        const name = basename(filePath)
+        const size = statSync(filePath).size
+        copyFileSync(filePath, join(filesDir, `${id}${ext}`))
+        results.push({ id, name, ext, size, createdAt: new Date().toISOString() })
+      } catch {
+        // skip files that can't be copied
+      }
+    }
+    return results
+  })
+
+  ipcMain.handle('files:delete', (_, id: string, ext: string) => {
+    try {
+      const filePath = join(filesDir, `${id}${ext}`)
+      if (existsSync(filePath)) unlinkSync(filePath)
+      return { success: true }
+    } catch {
+      return { success: false }
+    }
+  })
+
+  ipcMain.handle('files:open', async (_, id: string, ext: string) => {
+    const filePath = join(filesDir, `${id}${ext}`)
+    const error = await shell.openPath(filePath)
+    return { success: !error, error: error || undefined }
+  })
+
+  ipcMain.handle('files:openInBrowser', async (_, id: string, ext: string) => {
+    const filePath = join(filesDir, `${id}${ext}`)
+    try {
+      await shell.openExternal(`file://${filePath}`)
+      return { success: true }
+    } catch (e) {
+      return { success: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle('files:download', async (_, id: string, name: string, ext: string) => {
+    const { filePath: dest, canceled } = await dialog.showSaveDialog({
+      defaultPath: name,
+      filters: [{ name: 'Todos os arquivos', extensions: ['*'] }]
+    })
+    if (canceled || !dest) return { success: false, cancelled: true }
+    try {
+      copyFileSync(join(filesDir, `${id}${ext}`), dest)
+      return { success: true }
+    } catch {
+      return { success: false, error: 'Erro ao salvar arquivo' }
+    }
+  })
+
+  ipcMain.handle('excel:export', async (_, buffer: Buffer, filename: string) => {
+    const { filePath, canceled } = await dialog.showSaveDialog({
+      defaultPath: filename,
+      filters: [{ name: 'Excel', extensions: ['xlsx'] }]
+    })
+    if (canceled || !filePath) return { success: false, cancelled: true }
+    try {
+      writeFileSync(filePath, Buffer.from(buffer))
+      return { success: true }
+    } catch {
+      return { success: false, error: 'Erro ao salvar arquivo' }
     }
   })
 

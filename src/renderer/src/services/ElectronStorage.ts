@@ -1,5 +1,5 @@
 import type { IStorageAdapter } from './StorageAdapter'
-import type { Project, Task, Sprint, Tombstone, Backup, AIJson, StickyNote, Goal, Habit, FinancialTable } from '../types'
+import type { Project, Task, Sprint, Tombstone, Backup, AIJson, StickyNote, Goal, Habit, FinancialTable, StoredFile } from '../types'
 
 export class ElectronStorage implements IStorageAdapter {
   async load() {
@@ -13,7 +13,8 @@ export class ElectronStorage implements IStorageAdapter {
       goals: (data.goals || []) as Goal[],
       habits: (data.habits || []) as Habit[],
       lists: (data.lists || []) as FinancialTable[],
-      activeTimer: (data.activeTimer ?? null) as { taskId: string; startedAt: number } | null
+      activeTimer: (data.activeTimer ?? null) as { taskId: string; startedAt: number } | null,
+      files: (data.files || []) as StoredFile[]
     }
   }
 

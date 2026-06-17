@@ -11,6 +11,7 @@ import {
 import type { Project, Task, Sprint, Habit } from '../types'
 import { PRIORITY_CONFIG } from '../types'
 import { computeSprintVelocity } from '../utils/reports'
+import { isDoneColumn } from '../utils/columns'
 
 const MONTH_ABBR = [
   'Jan',
@@ -330,11 +331,6 @@ function formatTime(seconds: number): string {
   return `${m}m`
 }
 
-function isDoneCol(task: Task, projects: Project[]): boolean {
-  const p = projects.find((pr) => pr.id === task.projectId)
-  return p?.columns.find((c) => c.id === task.columnId)?.name.toLowerCase() === 'done'
-}
-
 function StatCard({
   label,
   value,
@@ -378,8 +374,19 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 export function ReportsView({ projects, tasks, sprints, habits }: Props) {
   const projectMap = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects])
 
-  const doneTasks = useMemo(() => tasks.filter((t) => isDoneCol(t, projects)), [tasks, projects])
-  const activeTasks = useMemo(() => tasks.filter((t) => !isDoneCol(t, projects)), [tasks, projects])
+  const columnMap = useMemo(
+    () => new Map(projects.flatMap((p) => p.columns.map((c) => [c.id, c]))),
+    [projects]
+  )
+
+  const doneTasks = useMemo(
+    () => tasks.filter((t) => isDoneColumn(columnMap.get(t.columnId))),
+    [tasks, columnMap]
+  )
+  const activeTasks = useMemo(
+    () => tasks.filter((t) => !isDoneColumn(columnMap.get(t.columnId))),
+    [tasks, columnMap]
+  )
 
   const totalTime = useMemo(() => tasks.reduce((s, t) => s + (t.timeSpent ?? 0), 0), [tasks])
   const completionRate = tasks.length > 0 ? Math.round((doneTasks.length / tasks.length) * 100) : 0

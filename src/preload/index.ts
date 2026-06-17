@@ -27,6 +27,22 @@ const api = {
   ai: {
     import: (): Promise<{ success: boolean; cancelled?: boolean; data?: unknown; error?: string }> =>
       ipcRenderer.invoke('ai:import')
+  },
+  files: {
+    upload: (): Promise<{ id: string; name: string; ext: string; size: number; createdAt: string }[]> =>
+      ipcRenderer.invoke('files:upload'),
+    delete: (id: string, ext: string): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke('files:delete', id, ext),
+    open: (id: string, ext: string): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('files:open', id, ext),
+    openInBrowser: (id: string, ext: string): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('files:openInBrowser', id, ext),
+    download: (id: string, name: string, ext: string): Promise<{ success: boolean; cancelled?: boolean; error?: string }> =>
+      ipcRenderer.invoke('files:download', id, name, ext)
+  },
+  excel: {
+    export: (buffer: ArrayBuffer, filename: string): Promise<{ success: boolean; cancelled?: boolean; error?: string }> =>
+      ipcRenderer.invoke('excel:export', buffer, filename)
   }
 }
 

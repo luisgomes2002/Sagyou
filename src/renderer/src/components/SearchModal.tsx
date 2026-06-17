@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { useKanbanStore } from '../store/kanban'
 import type { Task, StickyNote } from '../types'
+import { isDoneColumn } from '../utils/columns'
 import { PRIORITY_CONFIG } from '../types'
 
 interface Props {
@@ -20,6 +21,11 @@ export function SearchModal({ open, onClose, onSelectTask, onSelectNote }: Props
   const notes = useKanbanStore((s) => s.notes)
 
   const projectMap = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects])
+
+  const columnMap = useMemo(
+    () => new Map(projects.flatMap((p) => p.columns.map((c) => [c.id, c]))),
+    [projects]
+  )
 
   useEffect(() => {
     if (open) {
@@ -94,8 +100,8 @@ export function SearchModal({ open, onClose, onSelectTask, onSelectNote }: Props
               </p>
               {matchedTasks.map((task) => {
                 const project = projectMap.get(task.projectId)
-                const col = project?.columns.find((c) => c.id === task.columnId)
-                const isDone = col?.name.toLowerCase() === 'done'
+                const col = columnMap.get(task.columnId)
+                const isDone = isDoneColumn(col)
                 return (
                   <button
                     key={task.id}

@@ -247,6 +247,13 @@ describe('sprint actions', () => {
     useKanbanStore.getState().deleteSprint(sprintId)
     expect(useKanbanStore.getState().sprintFilter).toBeNull()
   })
+
+  it('closeSprint clears sprintFilter when the closed sprint was selected', () => {
+    const sprintId = useKanbanStore.getState().createSprint(projectId, 'Active')
+    useKanbanStore.getState().setSprintFilter(sprintId)
+    useKanbanStore.getState().closeSprint(sprintId)
+    expect(useKanbanStore.getState().sprintFilter).toBeNull()
+  })
 })
 
 // ── Timer ─────────────────────────────────────────────────────────────────────
@@ -294,6 +301,28 @@ describe('timer actions', () => {
     const spent = useKanbanStore.getState().tasks.find((t) => t.id === taskId)!.timeSpent ?? 0
     expect(spent).toBeGreaterThanOrEqual(4)
     expect(useKanbanStore.getState().activeTimer?.taskId).toBe(taskId2)
+  })
+
+  it('updateTask stops timer when task is moved to done column', () => {
+    const doneColumnId = useKanbanStore.getState().projects[0].columns.find((c) => c.name.toLowerCase() === 'done')!.id
+    useKanbanStore.getState().startTimer(taskId)
+    useKanbanStore.getState().updateTask(taskId, { columnId: doneColumnId })
+    expect(useKanbanStore.getState().activeTimer).toBeNull()
+  })
+
+  it('moveTask stops timer when task is dragged to done column', () => {
+    const doneColumnId = useKanbanStore.getState().projects[0].columns.find((c) => c.name.toLowerCase() === 'done')!.id
+    useKanbanStore.getState().startTimer(taskId)
+    useKanbanStore.getState().moveTask(taskId, doneColumnId, 0)
+    expect(useKanbanStore.getState().activeTimer).toBeNull()
+  })
+
+  it('updateTask does not stop timer when another task is marked done', () => {
+    const taskId2 = useKanbanStore.getState().createTask({ projectId, columnId, title: 'Other task' })
+    const doneColumnId = useKanbanStore.getState().projects[0].columns.find((c) => c.name.toLowerCase() === 'done')!.id
+    useKanbanStore.getState().startTimer(taskId)
+    useKanbanStore.getState().updateTask(taskId2, { columnId: doneColumnId })
+    expect(useKanbanStore.getState().activeTimer?.taskId).toBe(taskId)
   })
 })
 

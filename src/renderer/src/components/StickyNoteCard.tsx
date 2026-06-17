@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect, useCallback } from 'react'
 import { format, parseISO } from 'date-fns'
 import type { StickyNote, Task, Column } from '../types'
+import { isDoneColumn } from '../utils/columns'
 import { PRIORITY_CONFIG, NOTE_COLORS } from '../types'
 
 function toHtml(raw: string): string {
@@ -165,7 +166,7 @@ export function StickyNoteCard({ note, scale, tasks, columns, onUpdate, onDelete
   const linkedColumn = linkedTask ? columns.find((c) => c.id === linkedTask.columnId) : null
   const filteredTasks = tasks.filter((t) => t.title.toLowerCase().includes(linkSearch.toLowerCase()))
   const tasksByColumn = columns
-    .filter((c) => c.name.toLowerCase() !== 'done')
+    .filter((c) => !isDoneColumn(c))
     .sort((a, b) => a.order - b.order)
     .map((col) => ({
       column: col,

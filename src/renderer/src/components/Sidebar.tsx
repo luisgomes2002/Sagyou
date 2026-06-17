@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import type { Project } from '../types'
 
-type ActiveView = 'board' | 'canvas' | 'done' | 'goals' | 'habits' | 'financial' | 'upcoming' | 'reports'
+type ActiveView = 'board' | 'canvas' | 'done' | 'goals' | 'habits' | 'financial' | 'upcoming' | 'reports' | 'files'
 
 interface Props {
   projects: Project[]
@@ -18,6 +18,7 @@ interface Props {
   onExportBackup: () => void
   onImportBackup: () => void
   onImportAI: () => void
+  onExportExcel: () => void
 }
 
 export function Sidebar({
@@ -33,7 +34,8 @@ export function Sidebar({
   onDeleteProject,
   onExportBackup,
   onImportBackup,
-  onImportAI
+  onImportAI,
+  onExportExcel
 }: Props) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [projectMenuId, setProjectMenuId] = useState<string | null>(null)
@@ -158,6 +160,18 @@ Gere tarefas para cada parte desse projeto, não deixe as tarefas muito granulad
                     <line x1="12" y1="15" x2="12" y2="3" />
                   </svg>
                   Exportar backup
+                </button>
+                <button
+                  className="w-full text-left px-3 py-2 text-sm text-[#4ade80] hover:bg-[#1e2235] transition-colors flex items-center gap-2"
+                  onClick={() => { setMenuOpen(false); onExportExcel() }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                    <line x1="16" y1="13" x2="8" y2="13" />
+                    <line x1="16" y1="17" x2="8" y2="17" />
+                  </svg>
+                  Exportar Excel
                 </button>
                 <button
                   className="w-full text-left px-3 py-2 text-sm text-[#e2e8f0] hover:bg-[#1e2235] transition-colors flex items-center gap-2"

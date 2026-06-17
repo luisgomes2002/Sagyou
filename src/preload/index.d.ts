@@ -22,6 +22,16 @@ declare global {
       ai: {
         import: () => Promise<{ success: boolean; cancelled?: boolean; data?: unknown; error?: string }>
       }
+      files: {
+        upload: () => Promise<{ id: string; name: string; ext: string; size: number; createdAt: string }[]>
+        delete: (id: string, ext: string) => Promise<{ success: boolean }>
+        open: (id: string, ext: string) => Promise<{ success: boolean; error?: string }>
+        openInBrowser: (id: string, ext: string) => Promise<{ success: boolean; error?: string }>
+        download: (id: string, name: string, ext: string) => Promise<{ success: boolean; cancelled?: boolean; error?: string }>
+      }
+      excel: {
+        export: (buffer: ArrayBuffer, filename: string) => Promise<{ success: boolean; cancelled?: boolean; error?: string }>
+      }
     }
   }
 }

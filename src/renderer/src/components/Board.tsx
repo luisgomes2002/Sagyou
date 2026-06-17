@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import {
   DndContext,
   DragEndEvent,
@@ -16,6 +16,7 @@ import {
   arrayMove
 } from '@dnd-kit/sortable'
 import type { Column as ColumnType, Task, Project } from '../types'
+import { isDoneColumn } from '../utils/columns'
 import { Column } from './Column'
 import { TaskCard } from './TaskCard'
 import { useKanbanStore } from '../store/kanban'
@@ -55,11 +56,27 @@ export function Board({
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   )
 
-  const visibleColumns = [...project.columns]
-    .sort((a, b) => a.order - b.order)
-    .filter((c) => c.name.toLowerCase() !== 'done')
+  const visibleColumns = useMemo(
+    () => [...project.columns].sort((a, b) => a.order - b.order).filter((c) => !isDoneColumn(c)),
+    [project.columns]
+  )
 
-  const hiddenColumns = project.columns.filter((c) => c.name.toLowerCase() === 'done')
+  const hiddenColumns = useMemo(
+    () => project.columns.filter(isDoneColumn),
+    [project.columns]
+  )
+
+  const columnTasksMap = useMemo(() => {
+    const map = new Map<string, Task[]>()
+    for (const t of tasks) {
+      if (t.projectId !== project.id) continue
+      const arr = map.get(t.columnId) ?? []
+      arr.push(t)
+      map.set(t.columnId, arr)
+    }
+    map.forEach((arr) => arr.sort((a, b) => a.order - b.order))
+    return map
+  }, [tasks, project.id])
 
   const handleDragStart = (event: DragStartEvent) => {
     const type = event.active.data.current?.type
@@ -80,19 +97,14 @@ export function Board({
 
     const overTask = tasks.find((t) => t.id === over.id)
     if (overTask && overTask.columnId !== draggedTask.columnId) {
-      const columnTasks = tasks
-        .filter((t) => t.columnId === overTask.columnId && t.projectId === project.id)
-        .sort((a, b) => a.order - b.order)
+      const columnTasks = columnTasksMap.get(overTask.columnId) ?? []
       const newIndex = columnTasks.findIndex((t) => t.id === overTask.id)
       moveTask(draggedTask.id, overTask.columnId, newIndex >= 0 ? newIndex : 0)
     }
 
     const overColumn = visibleColumns.find((c) => c.id === over.id)
     if (overColumn && draggedTask.columnId !== overColumn.id) {
-      const columnTasks = tasks.filter(
-        (t) => t.columnId === overColumn.id && t.projectId === project.id
-      )
-      moveTask(draggedTask.id, overColumn.id, columnTasks.length)
+      moveTask(draggedTask.id, overColumn.id, (columnTasksMap.get(overColumn.id) ?? []).length)
     }
   }
 
@@ -116,9 +128,7 @@ export function Board({
 
     const overTask = tasks.find((t) => t.id === over.id)
     if (overTask && overTask.columnId === draggedTask.columnId) {
-      const columnTasks = tasks
-        .filter((t) => t.columnId === draggedTask.columnId && t.projectId === project.id)
-        .sort((a, b) => a.order - b.order)
+      const columnTasks = columnTasksMap.get(draggedTask.columnId) ?? []
       const newIndex = columnTasks.findIndex((t) => t.id === over.id)
       if (newIndex >= 0) {
         moveTask(draggedTask.id, draggedTask.columnId, newIndex)

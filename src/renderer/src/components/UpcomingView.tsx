@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import type { Project, Task } from '../types'
 import { PRIORITY_CONFIG } from '../types'
+import { isDoneColumn } from '../utils/columns'
 
 interface Props {
   projects: Project[]
@@ -32,11 +33,6 @@ function getGroup(dueDate: string): Group {
   return 'later'
 }
 
-function isDone(task: Task, projects: Project[]) {
-  const p = projects.find((pr) => pr.id === task.projectId)
-  return p?.columns.find((c) => c.id === task.columnId)?.name.toLowerCase() === 'done'
-}
-
 function formatDate(iso: string): string {
   const [, m, d] = iso.split('-')
   return `${d}/${m}`
@@ -45,14 +41,19 @@ function formatDate(iso: string): string {
 export function UpcomingView({ projects, tasks, onViewTask }: Props) {
   const projectMap = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects])
 
+  const columnMap = useMemo(
+    () => new Map(projects.flatMap((p) => p.columns.map((c) => [c.id, c]))),
+    [projects]
+  )
+
   const grouped = useMemo(() => {
     const result: Record<Group, Task[]> = { overdue: [], today: [], tomorrow: [], week: [], later: [] }
     for (const task of tasks) {
-      if (!task.dueDate || isDone(task, projects)) continue
+      if (!task.dueDate || isDoneColumn(columnMap.get(task.columnId))) continue
       result[getGroup(task.dueDate)].push(task)
     }
     return result
-  }, [tasks, projects])
+  }, [tasks, columnMap])
 
   const total = GROUP_ORDER.reduce((s, g) => s + grouped[g].length, 0)
 
@@ -102,7 +103,7 @@ export function UpcomingView({ projects, tasks, onViewTask }: Props) {
                       .sort((a, b) => (a.dueDate ?? '').localeCompare(b.dueDate ?? ''))
                       .map((task) => {
                         const project = projectMap.get(task.projectId)
-                        const col = project?.columns.find((c) => c.id === task.columnId)
+                        const col = columnMap.get(task.columnId)
                         const pcfg = PRIORITY_CONFIG[task.priority]
                         return (
                           <button

@@ -5,12 +5,19 @@ export interface Column {
   color?: string
 }
 
+export interface ProjectLink {
+  id: string
+  label: string
+  url: string
+}
+
 export interface Project {
   id: string
   name: string
   description?: string
   color: string
   columns: Column[]
+  links?: ProjectLink[]
   order?: number
   createdAt: string
   updatedAt: string
@@ -140,6 +147,15 @@ export interface AITaskInput {
 export interface AIJson {
   projectName?: string
   tasks: AITaskInput[]
+}
+
+export interface StoredFile {
+  id: string
+  name: string      // original filename with extension
+  ext: string       // e.g. '.pdf', '.docx'
+  size: number      // bytes
+  createdAt: string
+  projectId?: string
 }
 
 export interface TaskImage {
