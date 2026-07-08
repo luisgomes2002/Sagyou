@@ -12,6 +12,10 @@ import type { Project, Task, Sprint, Habit } from '../types'
 import { PRIORITY_CONFIG } from '../types'
 import { computeSprintVelocity } from '../utils/reports'
 import { isDoneColumn } from '../utils/columns'
+import { HEATMAP_COLORS, heatColor, buildCountMap, buildHeatmapGrid } from '../utils/heatmap'
+import { computeHabitSummary } from '../utils/habits'
+import { computeDueDateData } from '../utils/dueDates'
+import { computeTagData } from '../utils/tags'
 
 const MONTH_ABBR = [
   'Jan',
@@ -28,16 +32,6 @@ const MONTH_ABBR = [
   'Dez'
 ]
 
-const HEATMAP_COLORS = ['#161b2c', '#312e81', '#4338ca', '#6366f1', '#a5b4fc']
-
-function heatColor(count: number): string {
-  if (count === 0) return HEATMAP_COLORS[0]
-  if (count === 1) return HEATMAP_COLORS[1]
-  if (count <= 3) return HEATMAP_COLORS[2]
-  if (count <= 6) return HEATMAP_COLORS[3]
-  return HEATMAP_COLORS[4]
-}
-
 function ActivityHeatmap({ doneTasks }: { doneTasks: Task[] }) {
   const CELL = 11
   const GAP = 3
@@ -45,35 +39,10 @@ function ActivityHeatmap({ doneTasks }: { doneTasks: Task[] }) {
 
   const today = useMemo(() => new Date(), [])
 
-  const countMap = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const t of doneTasks) {
-      const d = (t.completedAt ?? t.updatedAt)?.slice(0, 10)
-      if (d) map.set(d, (map.get(d) ?? 0) + 1)
-    }
-    return map
-  }, [doneTasks])
+  const countMap = useMemo(() => buildCountMap(doneTasks), [doneTasks])
 
   const { weeks, monthLabels, total } = useMemo(() => {
-    const startDate = startOfWeek(subWeeks(today, 51), { weekStartsOn: 0 })
-    const todayStr = format(today, 'yyyy-MM-dd')
-    const weeks: Array<Array<{ date: Date; iso: string; future: boolean }>> = []
-    let cur = new Date(startDate)
-
-    while (cur <= today || weeks.length === 0 || weeks[weeks.length - 1].length < 7) {
-      if (weeks.length === 0 || weeks[weeks.length - 1].length === 7) weeks.push([])
-      const iso = format(cur, 'yyyy-MM-dd')
-      weeks[weeks.length - 1].push({ date: new Date(cur), iso, future: iso > todayStr })
-      cur = addDays(cur, 1)
-      if (weeks.length > 53) break
-    }
-
-    while (weeks[weeks.length - 1].length < 7) {
-      const last = weeks[weeks.length - 1][weeks[weeks.length - 1].length - 1]
-      const next = addDays(last.date, 1)
-      const iso = format(next, 'yyyy-MM-dd')
-      weeks[weeks.length - 1].push({ date: next, iso, future: true })
-    }
+    const { weeks, startStr, todayStr } = buildHeatmapGrid(today)
 
     const monthLabels: Array<{ col: number; label: string }> = []
     let lastMonth = -1
@@ -85,7 +54,6 @@ function ActivityHeatmap({ doneTasks }: { doneTasks: Task[] }) {
       }
     })
 
-    const startStr = format(startDate, 'yyyy-MM-dd')
     let total = 0
     countMap.forEach((v, k) => {
       if (k >= startStr && k <= todayStr) total += v
@@ -428,54 +396,16 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
       : '0'
 
   // Overdue and upcoming tasks
-  const dueDateData = useMemo(() => {
-    const now = new Date()
-    const todayStr = format(now, 'yyyy-MM-dd')
-    const in7Str = format(addDays(now, 7), 'yyyy-MM-dd')
-
-    const overdue: Array<{ task: Task; project: Project | undefined }> = []
-    const upcoming: Array<{ task: Task; project: Project | undefined }> = []
-
-    for (const t of activeTasks) {
-      if (!t.dueDate) continue
-      const project = projectMap.get(t.projectId)
-      if (t.dueDate < todayStr) overdue.push({ task: t, project })
-      else if (t.dueDate <= in7Str) upcoming.push({ task: t, project })
-    }
-
-    const list = [...overdue, ...upcoming].sort((a, b) =>
-      a.task.dueDate!.localeCompare(b.task.dueDate!)
-    )
-
-    return { overdue, upcoming, list, todayStr }
-  }, [activeTasks, projectMap])
+  const dueDateData = useMemo(
+    () => computeDueDateData(activeTasks, projectMap, new Date()),
+    [activeTasks, projectMap]
+  )
 
   // Habit summary — streak + current month rate
-  const habitSummary = useMemo(() => {
-    const now = new Date()
-    const todayStr = format(now, 'yyyy-MM-dd')
-    const yearMonth = format(now, 'yyyy-MM')
-    const dayOfMonth = now.getDate()
-
-    return habits
-      .map((habit) => {
-        const set = new Set(habit.completions)
-        let streak = 0
-        let cur = set.has(todayStr)
-          ? todayStr
-          : format(addDays(parseISO(todayStr), -1), 'yyyy-MM-dd')
-        while (set.has(cur)) {
-          streak++
-          cur = format(addDays(parseISO(cur), -1), 'yyyy-MM-dd')
-        }
-        const monthDone = habit.completions.filter(
-          (d) => d.startsWith(yearMonth) && d <= todayStr
-        ).length
-        const rate = Math.round((monthDone / dayOfMonth) * 100)
-        return { habit, streak, rate, monthDone }
-      })
-      .sort((a, b) => b.streak - a.streak || b.rate - a.rate)
-  }, [habits])
+  const habitSummary = useMemo(
+    () => computeHabitSummary(habits, new Date()),
+    [habits]
+  )
 
   // Last 14 days for habit mini-calendar
   const last14 = useMemo(() => {
@@ -491,16 +421,7 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
   }, [activeTasks])
 
   // Top 10 tags by active task count
-  const tagData = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const t of activeTasks) {
-      for (const tag of t.tags) map.set(tag, (map.get(tag) ?? 0) + 1)
-    }
-    return Array.from(map.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10)
-      .map(([tag, count]) => ({ tag, count }))
-  }, [activeTasks])
+  const tagData = useMemo(() => computeTagData(activeTasks), [activeTasks])
 
   const maxTag = Math.max(...tagData.map((t) => t.count), 1)
   const totalTagCount = tagData.reduce((s, t) => s + t.count, 0)
