@@ -19,16 +19,7 @@ function makeHabit(overrides: Partial<Habit> & { id: string }): Habit {
 // Use local midnight (year, month-1, day) to avoid UTC timezone offset issues
 const TODAY = new Date(2025, 5, 17) // 2025-06-17
 
-// Helpers to generate date strings relative to TODAY
-function daysAgo(n: number): string {
-  const d = new Date(2025, 5, 17 - n)
-  return d.toISOString().slice(0, 10).replace(
-    /\d{4}-\d{2}-\d{2}/,
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-  )
-}
-
-// Simpler: just define key dates as constants
+// Key dates as constants
 const D0 = '2025-06-17' // today
 const D1 = '2025-06-16' // yesterday
 const D2 = '2025-06-15'
@@ -117,10 +108,10 @@ describe('computeHabitSummary — monthly rate', () => {
   // today = 2025-06-17, dayOfMonth = 17
 
   it('rate is 100% when every day of the month so far is completed', () => {
-    const completions = Array.from({ length: 17 }, (_, i) => {
-      const d = new Date(2025, 5, i + 1)
-      return `2025-06-${String(i + 1).padStart(2, '0')}`
-    })
+    const completions = Array.from(
+      { length: 17 },
+      (_, i) => `2025-06-${String(i + 1).padStart(2, '0')}`
+    )
     const habit = makeHabit({ id: 'h1', completions })
     const [entry] = computeHabitSummary([habit], TODAY)
     expect(entry.monthDone).toBe(17)
