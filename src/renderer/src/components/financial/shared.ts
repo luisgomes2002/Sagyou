@@ -11,7 +11,7 @@ export const FINANCIAL_CATEGORIES = [
   // Despesas
   'Alimentação', 'Moradia', 'Transporte', 'Saúde', 'Educação', 'Lazer',
   'Vestuário', 'Serviços', 'Assinaturas', 'Impostos', 'Taxa', 'Família',
-  'Viagem', 'Intercâmbio', 'Investimentos', 'Pet',
+  'Viagem', 'Intercâmbio', 'Investimentos', 'Pet', 'Cartão', 'Empréstimo',
   // Tech / Negócio
   'AI', 'ADS', 'Servidor', 'Marketing', 'Segurança Cloud', 'Domínio',
   'AI Programação', 'AI Tokens', 'Canva', 'Streaming', 'Contador', 'Advogado',
