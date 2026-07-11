@@ -76,7 +76,8 @@ export interface ShoppingItem {
   id: string
   name: string
   qty: number
-  price?: number
+  /** Unit price as a canonical decimal string (e.g. "1500.5"). Migrated from number on load. */
+  price?: string
   done: boolean
   link?: string
   linkedTransactionId?: string
@@ -93,7 +94,8 @@ export const CURRENCY_CONFIG: Record<Currency, { symbol: string; decimals: numbe
 export interface FinancialTransaction {
   id: string
   description: string
-  amount: number
+  /** Amount as a canonical decimal string (e.g. "1500.5"). Migrated from number on load. */
+  amount: string
   type: 'income' | 'expense'
   date: string
   category?: string
@@ -103,7 +105,8 @@ export interface FinancialTransaction {
 export interface FinancialGoal {
   id: string
   name: string
-  targetAmount: number
+  /** Target amount as a canonical decimal string (e.g. "70000"). Migrated from number on load. */
+  targetAmount: string
   targetMonth: number
   targetYear: number
   completedAt?: string

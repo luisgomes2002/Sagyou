@@ -86,7 +86,7 @@ export function AddTransactionRow({ currency, onAdd }: AddTransactionRowProps) {
       description: description.trim(),
       category: category.trim() || undefined,
       type,
-      amount: amountDecimal.toNumber(),
+      amount: amountDecimal.toDecimalPlaces(2).toString(),
       date
     })
     setDescription('')
@@ -225,8 +225,8 @@ export function TransactionRow({ tx, currency, onUpdate, onDelete }: Transaction
   const commitAmount = () => {
     const d = parseDecimalInput(editAmount)
     if (d !== null && d.greaterThan(0)) {
-      const n = d.toDecimalPlaces(2).toNumber()
-      if (n !== tx.amount) onUpdate({ amount: n })
+      const s = d.toDecimalPlaces(2).toString()
+      if (s !== tx.amount) onUpdate({ amount: s })
     } else {
       setEditAmount(formatAmountInput(tx.amount, currency))
     }

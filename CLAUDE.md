@@ -27,7 +27,7 @@ The app is a frameless Electron window split into three processes:
 
 **Main** (`src/main/`)
 - `index.ts` — creates the BrowserWindow, registers IPC handlers for `window:*`, `store:*`, `backup:*`, `ai:*`
-- `store.ts` — reads/writes `kanban-data.json` in `app.getPath('userData')` using plain `fs`
+- `store.ts` — persists state to a **SQLite database** (`better-sqlite3`) at `app.getPath('userData')/kanban.db` (`kanban-dev.db` in dev). Opened in WAL mode with foreign keys on. Each save is a full replace inside a transaction (`persistAll` deletes children→parents, then re-inserts). One-time `migrateFromJson()` runs on first boot: if the legacy `kanban-data.json` exists and the DB is empty, it imports it and renames the file to `.migrated`. The `kanban-data.json` format now only survives as the backup/export shape (produced in the renderer), **not** as the storage format.
 
 **Preload** (`src/preload/index.ts`)
 - Bridges IPC to the renderer via `contextBridge`, exposing `window.electronAPI` (typed in `index.d.ts`)
@@ -39,9 +39,11 @@ The app is a frameless Electron window split into three processes:
 
 ### State layer
 
-`store/kanban.ts` exports `useKanbanStore` (Zustand). Every mutation calls `_persist()` internally, which serializes the full state and calls `storage.save()`.
+`store/kanban.ts` exports `useKanbanStore` (Zustand). Every mutation calls `_persist()` internally, which serializes the full state and calls `storage.save()` — the payload is sent over IPC and written to SQLite by the main process (see Main above).
 
 Storage is injected via `IStorageAdapter` (`services/StorageAdapter.ts`). In production, `ElectronStorage` is used (calls `window.electronAPI`). In tests, `ElectronStorage` is vi-mocked in `__tests__/setup.ts`.
+
+`loadData` and `importBackup` normalize every incoming `FinancialTable` through `normalizeList` — this fills missing arrays, defaults the currency, and **migrates monetary fields from legacy `number` to canonical decimal string** (see Data / Schema safety). Do the same for any new load path.
 
 Soft deletes use a `Tombstone[]` array. On `importBackup`, all local state is replaced wholesale by the backup file — no merge. The helper functions `mergeEntities`, `mergeSprints`, `mergeHabits`, and `mergeTombstones` remain in `store/kanban.ts` but are unused.
 
@@ -76,12 +78,20 @@ All domain types are in `src/renderer/src/types/index.ts`. Notable constants exp
 
 ## Data / Schema safety
 
-The app persists state as JSON in `kanban-data.json` on the user's machine. There is **production data in the wild** — users have real tasks, habits, goals, and financial records stored in this format.
+The app persists state to a **SQLite database** (`kanban.db`) in `app.getPath('userData')`. There is **production data in the wild** — users have real tasks, habits, goals, and financial records stored on their machines.
 
 - **Never remove or rename fields** on existing types without a migration or backward-compatible fallback (e.g. optional field with a default on load).
 - **Never change the shape of persisted arrays or objects** in a breaking way (reordering, nesting, type changes).
 - Adding new optional fields is safe — the store hydrates with `??` defaults and missing keys are silently ignored.
 - **Always warn explicitly** before making any change that could corrupt or lose existing data on load (e.g. changing a field from `string` to `string[]`, removing a required field, changing an ID scheme). Flag it with: _"⚠️ Breaking schema change — existing data may be affected."_
+
+### Monetary fields are decimal strings
+
+`FinancialTransaction.amount`, `FinancialGoal.targetAmount`, and `ShoppingItem.price` are stored **in memory and in backups/JSON as canonical decimal strings** (e.g. `"1500.5"`), not numbers. All money arithmetic goes through `decimal.js` — use the `D()` helper and `Decimal` methods (`.plus/.minus/.times/.div`) in `components/financial/shared.ts`; only convert to `number` for display geometry (bar widths, percentages). `qty` stays a `number` (it's a quantity, not currency).
+
+- On load, `normalizeList` migrates any legacy `number` values to canonical string via `moneyStr` — old data and old backups keep working.
+- The SQLite columns for these fields are `TEXT` (`price`, `amount`, `target_amount`), storing decimal strings on disk. `qty` stays `REAL`. On insert, `moneyText()` in `main/store.ts` coerces number-or-string to a string.
+- `migrateMoneyColumnsToText()` in `main/store.ts` upgrades existing databases: it detects the legacy `REAL` columns via `PRAGMA table_info` and rebuilds those three tables as `TEXT` (create `_new`, `CAST` copy, drop, rename — inside a transaction with foreign keys toggled off). Idempotent: skips tables already `TEXT`.
 
 ## Testing
 

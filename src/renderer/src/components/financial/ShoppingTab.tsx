@@ -48,8 +48,8 @@ function ItemRow({ item, currency, onUpdate, onDelete, onToggle }: ItemRowProps)
     if (price.trim() === '' || price.trim().replace(',', '.') === '') {
       if (item.price != null) onUpdate({ price: undefined })
     } else if (d !== null && d.greaterThanOrEqualTo(0)) {
-      const n = d.toDecimalPlaces(2).toNumber()
-      if (n !== item.price) onUpdate({ price: n })
+      const s = d.toDecimalPlaces(2).toString()
+      if (s !== item.price) onUpdate({ price: s })
     } else {
       setPrice(item.price != null ? formatAmountInput(item.price, currency) : '')
     }
@@ -174,7 +174,7 @@ function ItemRow({ item, currency, onUpdate, onDelete, onToggle }: ItemRowProps)
 
 interface AddItemRowProps {
   currency: Currency
-  onAdd: (data: { name: string; qty: number; price?: number; link?: string }) => void
+  onAdd: (data: { name: string; qty: number; price?: string; link?: string }) => void
 }
 
 function AddItemRow({ currency, onAdd }: AddItemRowProps) {
@@ -192,7 +192,7 @@ function AddItemRow({ currency, onAdd }: AddItemRowProps) {
       name: name.trim(),
       qty: qtyDecimal !== null && qtyDecimal.greaterThan(0) ? qtyDecimal.toNumber() : 1,
       price: priceDecimal !== null && priceDecimal.greaterThanOrEqualTo(0)
-        ? priceDecimal.toDecimalPlaces(2).toNumber()
+        ? priceDecimal.toDecimalPlaces(2).toString()
         : undefined,
       link: link.trim() || undefined
     })
@@ -284,7 +284,7 @@ interface ShoppingTabProps {
   onUpdate: (itemId: string, updates: Partial<Pick<ShoppingItem, 'name' | 'qty' | 'price' | 'done' | 'link'>>) => void
   onDelete: (itemId: string) => void
   onToggle: (itemId: string) => void
-  onAdd: (data: { name: string; qty: number; price?: number; link?: string }) => void
+  onAdd: (data: { name: string; qty: number; price?: string; link?: string }) => void
 }
 
 export function ShoppingTab({ list, onUpdate, onDelete, onToggle, onAdd }: ShoppingTabProps) {

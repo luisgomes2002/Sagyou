@@ -36,9 +36,11 @@ interface Goal {
   color: string; projectId?: string; createdAt: string; updatedAt: string
 }
 interface Habit { id: string; name: string; color: string; completions: string[]; createdAt: string; updatedAt: string }
-interface ShoppingItem { id: string; name: string; qty: number; price?: number; done: boolean; link?: string; linkedTransactionId?: string }
-interface FinancialTransaction { id: string; description: string; amount: number; type: 'income' | 'expense'; date: string; category?: string; fromShopping?: boolean }
-interface FinancialGoal { id: string; name: string; targetAmount: number; targetMonth: number; targetYear: number; completedAt?: string; completionNote?: string }
+// Monetary fields accept number (legacy JSON) or string (current renderer schema);
+// they are coerced to canonical decimal strings via moneyText() on insert.
+interface ShoppingItem { id: string; name: string; qty: number; price?: number | string; done: boolean; link?: string; linkedTransactionId?: string }
+interface FinancialTransaction { id: string; description: string; amount: number | string; type: 'income' | 'expense'; date: string; category?: string; fromShopping?: boolean }
+interface FinancialGoal { id: string; name: string; targetAmount: number | string; targetMonth: number; targetYear: number; completedAt?: string; completionNote?: string }
 interface FinancialTable {
   id: string; name: string; currency: string
   items: ShoppingItem[]; transactions: FinancialTransaction[]; goals: FinancialGoal[]
@@ -72,8 +74,101 @@ function getDb(): Database.Database {
   _db.pragma('journal_mode = WAL')
   _db.pragma('foreign_keys = ON')
   initSchema(_db)
+  migrateMoneyColumnsToText(_db)
   migrateFromJson(_db)
   return _db
+}
+
+// Coerce a monetary value (legacy number or current string) to a canonical
+// decimal string for storage in the TEXT columns.
+function moneyText(v: unknown): string {
+  if (typeof v === 'number' && isFinite(v)) return String(v)
+  if (typeof v === 'string' && v.trim() !== '') return v
+  return '0'
+}
+
+// One-time migration for existing DBs: the money columns (price, amount,
+// target_amount) were originally declared REAL. Rebuild those tables with TEXT
+// columns so amounts are stored as decimal strings on disk, matching the
+// in-memory schema. Idempotent — skips tables already migrated to TEXT.
+function migrateMoneyColumnsToText(db: Database.Database): void {
+  const columnType = (table: string, col: string): string | null => {
+    const info = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string; type: string }[]
+    const c = info.find((r) => r.name === col)
+    return c ? String(c.type).toUpperCase() : null
+  }
+
+  const rebuilds = [
+    {
+      table: 'shopping_items',
+      column: 'price',
+      createNew: `CREATE TABLE shopping_items_new (
+        id TEXT PRIMARY KEY,
+        table_id TEXT NOT NULL REFERENCES financial_tables(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        qty REAL NOT NULL,
+        price TEXT,
+        done INTEGER NOT NULL DEFAULT 0,
+        link TEXT,
+        linked_transaction_id TEXT
+      )`,
+      copy: `INSERT INTO shopping_items_new (id,table_id,name,qty,price,done,link,linked_transaction_id)
+        SELECT id,table_id,name,qty,
+          CASE WHEN price IS NULL THEN NULL ELSE CAST(price AS TEXT) END,
+          done,link,linked_transaction_id FROM shopping_items`
+    },
+    {
+      table: 'transactions',
+      column: 'amount',
+      createNew: `CREATE TABLE transactions_new (
+        id TEXT PRIMARY KEY,
+        table_id TEXT NOT NULL REFERENCES financial_tables(id) ON DELETE CASCADE,
+        description TEXT NOT NULL,
+        amount TEXT NOT NULL,
+        type TEXT NOT NULL,
+        date TEXT NOT NULL,
+        category TEXT,
+        from_shopping INTEGER DEFAULT 0
+      )`,
+      copy: `INSERT INTO transactions_new (id,table_id,description,amount,type,date,category,from_shopping)
+        SELECT id,table_id,description,CAST(amount AS TEXT),type,date,category,from_shopping FROM transactions`
+    },
+    {
+      table: 'financial_goals',
+      column: 'target_amount',
+      createNew: `CREATE TABLE financial_goals_new (
+        id TEXT PRIMARY KEY,
+        table_id TEXT NOT NULL REFERENCES financial_tables(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        target_amount TEXT NOT NULL,
+        target_month INTEGER NOT NULL,
+        target_year INTEGER NOT NULL,
+        completed_at TEXT,
+        completion_note TEXT
+      )`,
+      copy: `INSERT INTO financial_goals_new (id,table_id,name,target_amount,target_month,target_year,completed_at,completion_note)
+        SELECT id,table_id,name,CAST(target_amount AS TEXT),target_month,target_year,completed_at,completion_note FROM financial_goals`
+    }
+  ]
+
+  const pending = rebuilds.filter((r) => columnType(r.table, r.column) === 'REAL')
+  if (pending.length === 0) return
+
+  // foreign_keys cannot be toggled inside a transaction; disable around the rebuild.
+  db.pragma('foreign_keys = OFF')
+  try {
+    db.transaction(() => {
+      for (const r of pending) {
+        db.exec(r.createNew)
+        db.exec(r.copy)
+        db.exec(`DROP TABLE ${r.table}`)
+        db.exec(`ALTER TABLE ${r.table}_new RENAME TO ${r.table}`)
+      }
+    })()
+    console.log(`[store] Migrated money columns to TEXT: ${pending.map((r) => r.table).join(', ')}`)
+  } finally {
+    db.pragma('foreign_keys = ON')
+  }
 }
 
 // ── Schema ───────────────────────────────────────────────────────────────────
@@ -205,7 +300,7 @@ function initSchema(db: Database.Database): void {
       table_id TEXT NOT NULL REFERENCES financial_tables(id) ON DELETE CASCADE,
       name TEXT NOT NULL,
       qty REAL NOT NULL,
-      price REAL,
+      price TEXT,
       done INTEGER NOT NULL DEFAULT 0,
       link TEXT,
       linked_transaction_id TEXT
@@ -214,7 +309,7 @@ function initSchema(db: Database.Database): void {
       id TEXT PRIMARY KEY,
       table_id TEXT NOT NULL REFERENCES financial_tables(id) ON DELETE CASCADE,
       description TEXT NOT NULL,
-      amount REAL NOT NULL,
+      amount TEXT NOT NULL,
       type TEXT NOT NULL,
       date TEXT NOT NULL,
       category TEXT,
@@ -224,7 +319,7 @@ function initSchema(db: Database.Database): void {
       id TEXT PRIMARY KEY,
       table_id TEXT NOT NULL REFERENCES financial_tables(id) ON DELETE CASCADE,
       name TEXT NOT NULL,
-      target_amount REAL NOT NULL,
+      target_amount TEXT NOT NULL,
       target_month INTEGER NOT NULL,
       target_year INTEGER NOT NULL,
       completed_at TEXT,
@@ -348,9 +443,9 @@ function persistAll(db: Database.Database, data: SaveData): void {
 
   for (const ft of data.lists ?? []) {
     ins.ftable.run(ft.id, ft.name, ft.currency, ft.createdAt, ft.updatedAt)
-    for (const i of ft.items ?? []) ins.item.run(i.id, ft.id, i.name, i.qty, i.price ?? null, i.done ? 1 : 0, i.link ?? null, i.linkedTransactionId ?? null)
-    for (const tx of ft.transactions ?? []) ins.tx.run(tx.id, ft.id, tx.description, tx.amount, tx.type, tx.date, tx.category ?? null, tx.fromShopping ? 1 : 0)
-    for (const fg of ft.goals ?? []) ins.fg.run(fg.id, ft.id, fg.name, fg.targetAmount, fg.targetMonth, fg.targetYear, fg.completedAt ?? null, fg.completionNote ?? null)
+    for (const i of ft.items ?? []) ins.item.run(i.id, ft.id, i.name, i.qty, i.price != null ? moneyText(i.price) : null, i.done ? 1 : 0, i.link ?? null, i.linkedTransactionId ?? null)
+    for (const tx of ft.transactions ?? []) ins.tx.run(tx.id, ft.id, tx.description, moneyText(tx.amount), tx.type, tx.date, tx.category ?? null, tx.fromShopping ? 1 : 0)
+    for (const fg of ft.goals ?? []) ins.fg.run(fg.id, ft.id, fg.name, moneyText(fg.targetAmount), fg.targetMonth, fg.targetYear, fg.completedAt ?? null, fg.completionNote ?? null)
   }
 
   for (const f of data.files ?? []) ins.file.run(f.id, f.name, f.ext, f.size, f.createdAt, f.projectId ?? null)
@@ -431,17 +526,17 @@ export function loadData(): SaveData {
     id: ft.id, name: ft.name, currency: ft.currency, createdAt: ft.created_at, updatedAt: ft.updated_at,
     items: (db.prepare('SELECT * FROM shopping_items WHERE table_id=?').all(ft.id) as any[]).map((i) => ({
       id: i.id, name: i.name, qty: i.qty, done: i.done === 1,
-      ...(i.price != null ? { price: i.price } : {}),
+      ...(i.price != null ? { price: String(i.price) } : {}),
       ...(i.link != null ? { link: i.link } : {}),
       ...(i.linked_transaction_id != null ? { linkedTransactionId: i.linked_transaction_id } : {}),
     })),
     transactions: (db.prepare('SELECT * FROM transactions WHERE table_id=?').all(ft.id) as any[]).map((tx) => ({
-      id: tx.id, description: tx.description, amount: tx.amount, type: tx.type, date: tx.date,
+      id: tx.id, description: tx.description, amount: String(tx.amount), type: tx.type, date: tx.date,
       ...(tx.category != null ? { category: tx.category } : {}),
       ...(tx.from_shopping ? { fromShopping: true } : {}),
     })),
     goals: (db.prepare('SELECT * FROM financial_goals WHERE table_id=?').all(ft.id) as any[]).map((fg) => ({
-      id: fg.id, name: fg.name, targetAmount: fg.target_amount, targetMonth: fg.target_month, targetYear: fg.target_year,
+      id: fg.id, name: fg.name, targetAmount: String(fg.target_amount), targetMonth: fg.target_month, targetYear: fg.target_year,
       ...(fg.completed_at != null ? { completedAt: fg.completed_at } : {}),
       ...(fg.completion_note != null ? { completionNote: fg.completion_note } : {}),
     })),

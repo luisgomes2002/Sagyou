@@ -513,25 +513,25 @@ describe('shopping list actions', () => {
 
   it('addItem adds item with done:false', () => {
     const listId = useKanbanStore.getState().createList('Cart')
-    const itemId = useKanbanStore.getState().addItem(listId, { name: 'Apple', qty: 3, price: 1.5 })
+    const itemId = useKanbanStore.getState().addItem(listId, { name: 'Apple', qty: 3, price: '1.5' })
     const list = useKanbanStore.getState().lists.find((l) => l.id === listId)!
     const item = list.items.find((i) => i.id === itemId)!
     expect(item.name).toBe('Apple')
     expect(item.qty).toBe(3)
-    expect(item.price).toBe(1.5)
+    expect(item.price).toBe('1.5')
     expect(item.done).toBe(false)
   })
 
   it('toggleItem marks done and creates a linked transaction', () => {
     const listId = useKanbanStore.getState().createList('Cart')
-    const itemId = useKanbanStore.getState().addItem(listId, { name: 'Milk', qty: 2, price: 3.5 })
+    const itemId = useKanbanStore.getState().addItem(listId, { name: 'Milk', qty: 2, price: '3.5' })
     useKanbanStore.getState().toggleItem(listId, itemId)
     const list = useKanbanStore.getState().lists.find((l) => l.id === listId)!
     expect(list.items[0].done).toBe(true)
     expect(list.items[0].linkedTransactionId).toBeDefined()
     expect(list.transactions).toHaveLength(1)
     expect(list.transactions[0].type).toBe('expense')
-    expect(list.transactions[0].amount).toBeCloseTo(7)
+    expect(list.transactions[0].amount).toBe('7')
     expect(list.transactions[0].fromShopping).toBe(true)
   })
 
@@ -549,10 +549,10 @@ describe('shopping list actions', () => {
   it('updateItem changes fields', () => {
     const listId = useKanbanStore.getState().createList('Cart')
     const itemId = useKanbanStore.getState().addItem(listId, { name: 'Bread', qty: 1 })
-    useKanbanStore.getState().updateItem(listId, itemId, { qty: 5, price: 3.0 })
+    useKanbanStore.getState().updateItem(listId, itemId, { qty: 5, price: '3.0' })
     const item = useKanbanStore.getState().lists.find((l) => l.id === listId)!.items[0]
     expect(item.qty).toBe(5)
-    expect(item.price).toBe(3.0)
+    expect(item.price).toBe('3.0')
   })
 
   it('deleteItem removes the item', () => {

@@ -1,11 +1,12 @@
+import Decimal from 'decimal.js'
 import type { FinancialGoal, FinancialTransaction, Currency } from '../../types'
-import { MONTH_NAMES, formatCurrency, formatDateBR } from './shared'
+import { MONTH_NAMES, formatCurrency, formatDateBR, D } from './shared'
 
 interface GoalHistoryModalProps {
   open: boolean
   goals: FinancialGoal[]
   transactions: FinancialTransaction[]
-  accBalance: number
+  accBalance: Decimal
   currency: Currency
   onRevert: (goalId: string) => void
   onClose: () => void
@@ -26,18 +27,19 @@ export function GoalHistoryModal({ open, goals, transactions, accBalance, curren
         (goal.targetYear < now.getFullYear() ||
           (goal.targetYear === now.getFullYear() && goal.targetMonth < now.getMonth() + 1))
       const dk = `${goal.targetYear}-${String(goal.targetMonth).padStart(2, '0')}`
+      const target = D(goal.targetAmount)
       const effectiveBalance = deadlinePast
         ? transactions
             .filter((t) => t.date.slice(0, 7) <= dk)
-            .reduce((s, t) => (t.type === 'income' ? s + t.amount : s - t.amount), 0)
+            .reduce((s, t) => (t.type === 'income' ? s.plus(t.amount) : s.minus(t.amount)), new Decimal(0))
         : accBalance
       const progress =
-        goal.targetAmount > 0 ? Math.min(Math.max(effectiveBalance / goal.targetAmount, 0), 1) : 0
+        target.greaterThan(0) ? Math.min(Math.max(effectiveBalance.div(target).toNumber(), 0), 1) : 0
 
       type StatusKey = 'concluded' | 'achieved' | 'overdue' | 'urgent' | 'active'
       let status: StatusKey
       if (goal.completedAt) status = 'concluded'
-      else if (effectiveBalance >= goal.targetAmount) status = 'achieved'
+      else if (effectiveBalance.greaterThanOrEqualTo(target)) status = 'achieved'
       else if (monthsLeft === 0) status = 'overdue'
       else if (monthsLeft <= 2) status = 'urgent'
       else status = 'active'

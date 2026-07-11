@@ -1,7 +1,8 @@
 import { useState } from 'react'
+import Decimal from 'decimal.js'
 import type { FinancialTable, FinancialTransaction, FinancialGoal } from '../../types'
 import { ConfirmDialog } from '../ConfirmDialog'
-import { MONTH_NAMES, FINANCIAL_CATEGORIES, formatCurrency } from './shared'
+import { MONTH_NAMES, FINANCIAL_CATEGORIES, formatCurrency, D } from './shared'
 import { GoalModal, FinancialGoalCard } from './FinancialGoalCard'
 import { GoalHistoryModal } from './GoalHistoryModal'
 import { AddTransactionRow, TransactionRow } from './TransactionRow'
@@ -64,13 +65,13 @@ export function FinanceTab({
     })
     .sort((a, b) => b.date.localeCompare(a.date))
 
-  const monthIncome = monthTxs.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0)
-  const monthExpense = monthTxs.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0)
-  const monthBalance = monthIncome - monthExpense
+  const monthIncome = monthTxs.filter((t) => t.type === 'income').reduce((s, t) => s.plus(t.amount), new Decimal(0))
+  const monthExpense = monthTxs.filter((t) => t.type === 'expense').reduce((s, t) => s.plus(t.amount), new Decimal(0))
+  const monthBalance = monthIncome.minus(monthExpense)
 
   const accBalance = list.transactions.reduce(
-    (s, t) => (t.type === 'income' ? s + t.amount : s - t.amount),
-    0
+    (s, t) => (t.type === 'income' ? s.plus(t.amount) : s.minus(t.amount)),
+    new Decimal(0)
   )
 
   const visibleGoals = list.goals.filter((goal) => {
@@ -82,8 +83,8 @@ export function FinanceTab({
     const dk = `${goal.targetYear}-${String(goal.targetMonth).padStart(2, '0')}`
     const bal = list.transactions
       .filter((t) => t.date.slice(0, 7) <= dk)
-      .reduce((s, t) => (t.type === 'income' ? s + t.amount : s - t.amount), 0)
-    return bal < goal.targetAmount
+      .reduce((s, t) => (t.type === 'income' ? s.plus(t.amount) : s.minus(t.amount)), new Decimal(0))
+    return bal.lessThan(D(goal.targetAmount))
   })
 
   return (
@@ -124,13 +125,13 @@ export function FinanceTab({
           </div>
           <div className="rounded-lg bg-[#1e2235] border border-[#2a2d42] p-3">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-[#8892a4] mb-1">Saldo do Mês</p>
-            <p className={`text-sm font-bold tabular-nums ${monthBalance >= 0 ? 'text-[#e2e8f0]' : 'text-red-400'}`}>
+            <p className={`text-sm font-bold tabular-nums ${monthBalance.gte(0) ? 'text-[#e2e8f0]' : 'text-red-400'}`}>
               {formatCurrency(monthBalance, currency)}
             </p>
           </div>
           <div className="rounded-lg bg-[#6366f1]/10 border border-[#6366f1]/30 p-3">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-[#a5b4fc] mb-1">Saldo Acumulado</p>
-            <p className={`text-sm font-bold tabular-nums ${accBalance >= 0 ? 'text-[#a5b4fc]' : 'text-red-400'}`}>
+            <p className={`text-sm font-bold tabular-nums ${accBalance.gte(0) ? 'text-[#a5b4fc]' : 'text-red-400'}`}>
               {formatCurrency(accBalance, currency)}
             </p>
           </div>
