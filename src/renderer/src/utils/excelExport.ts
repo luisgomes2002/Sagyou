@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx'
+import Decimal from 'decimal.js'
 import type { Project, Task, Habit, Goal, FinancialTable, Sprint, StickyNote } from '../types'
 import { CURRENCY_CONFIG } from '../types'
 
@@ -125,9 +126,9 @@ export function buildWorkbook(
         Lista: list.name,
         Nome: item.name,
         Quantidade: item.qty,
-        Preço: item.price ?? '',
+        Preço: item.price != null ? Number(item.price) : '',
         Moeda: cfg.label,
-        'Total': item.price != null ? item.price * item.qty : '',
+        'Total': item.price != null ? new Decimal(item.price).times(item.qty).toNumber() : '',
         Concluído: item.done ? 'Sim' : 'Não',
         Link: item.link ?? '',
       }))
@@ -141,7 +142,7 @@ export function buildWorkbook(
       const cfg = CURRENCY_CONFIG[list.currency]
       const rows = list.transactions.map((tx) => ({
         Descrição: tx.description,
-        Valor: tx.amount,
+        Valor: Number(tx.amount),
         Moeda: cfg.label,
         Tipo: tx.type === 'income' ? 'Receita' : 'Despesa',
         Data: tx.date,
@@ -157,7 +158,7 @@ export function buildWorkbook(
       list.goals.map((fg) => ({
         Lista: list.name,
         Nome: fg.name,
-        'Valor alvo': fg.targetAmount,
+        'Valor alvo': Number(fg.targetAmount),
         Moeda: CURRENCY_CONFIG[list.currency].label,
         'Mês/Ano': `${String(fg.targetMonth).padStart(2, '0')}/${fg.targetYear}`,
         Status: fg.completedAt ? 'Concluída' : 'Em andamento',

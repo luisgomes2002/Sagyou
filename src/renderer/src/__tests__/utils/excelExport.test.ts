@@ -119,16 +119,16 @@ const LIST: FinancialTable = {
   name: 'Pessoal',
   currency: 'BRL',
   items: [
-    { id: 'i1', name: 'Teclado', qty: 1, price: 350, done: false, link: 'https://loja.com/teclado' },
-    { id: 'i2', name: 'Mouse',   qty: 2, price: 120, done: true },
+    { id: 'i1', name: 'Teclado', qty: 1, price: '350', done: false, link: 'https://loja.com/teclado' },
+    { id: 'i2', name: 'Mouse',   qty: 2, price: '120', done: true },
   ],
   transactions: [
-    { id: 'tx1', description: 'Salário', amount: 5000, type: 'income',  date: '2026-06-05', category: 'trabalho' },
-    { id: 'tx2', description: 'Aluguel', amount: 1500, type: 'expense', date: '2026-06-10' },
+    { id: 'tx1', description: 'Salário', amount: '5000', type: 'income',  date: '2026-06-05', category: 'trabalho' },
+    { id: 'tx2', description: 'Aluguel', amount: '1500', type: 'expense', date: '2026-06-10' },
   ],
   goals: [
-    { id: 'fg1', name: 'Viagem JP', targetAmount: 10000, targetMonth: 12, targetYear: 2026 },
-    { id: 'fg2', name: 'Notebook',  targetAmount: 5000,  targetMonth: 3,  targetYear: 2027,
+    { id: 'fg1', name: 'Viagem JP', targetAmount: '10000', targetMonth: 12, targetYear: 2026 },
+    { id: 'fg2', name: 'Notebook',  targetAmount: '5000',  targetMonth: 3,  targetYear: 2027,
       completedAt: '2026-06-15', completionNote: 'Comprado!' },
   ],
   createdAt: '2026-01-01T00:00:00.000Z',
@@ -490,7 +490,7 @@ describe('buildWorkbook — Itens de compra sheet', () => {
 
   it('combines items from multiple lists into one sheet', () => {
     const list2: FinancialTable = { ...LIST, id: 'fl2', name: 'Trabalho', items: [
-      { id: 'i4', name: 'Cadeira', qty: 1, price: 800, done: false }
+      { id: 'i4', name: 'Cadeira', qty: 1, price: '800', done: false }
     ] }
     const wb = build(['shopping'], { lists: [LIST, list2] })
     expect(sheetRows(wb, 'Itens de compra')).toHaveLength(3)
@@ -609,7 +609,7 @@ describe('buildWorkbook — Metas financeiras sheet', () => {
 
   it('combines goals from multiple lists into one sheet', () => {
     const list2: FinancialTable = { ...LIST, id: 'fl2', name: 'Trabalho', goals: [
-      { id: 'fg3', name: 'Curso', targetAmount: 500, targetMonth: 8, targetYear: 2026 }
+      { id: 'fg3', name: 'Curso', targetAmount: '500', targetMonth: 8, targetYear: 2026 }
     ] }
     const wb = build(['financialGoals'], { lists: [LIST, list2] })
     expect(sheetRows(wb, 'Metas financeiras')).toHaveLength(3)

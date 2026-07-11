@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { v4 as uuidv4 } from 'uuid'
+import Decimal from 'decimal.js'
 import type { Project, Task, Column, Sprint, Tombstone, Backup, AIJson, Priority, StickyNote, Goal, GoalEntry, Habit, FinancialTable, FinancialTransaction, FinancialGoal, ShoppingItem, Currency, StoredFile } from '../types'
 import { DEFAULT_COLUMN_NAMES } from '../types'
 import { ElectronStorage } from '../services/ElectronStorage'
@@ -7,6 +8,37 @@ import { isDoneColumn } from '../utils/columns'
 
 const storage = new ElectronStorage()
 let _persistTimer: ReturnType<typeof setTimeout> | null = null
+
+// Coerce a persisted monetary value to a canonical decimal string.
+// Migrates legacy `number` amounts (production data) to string on load.
+function moneyStr(v: unknown): string {
+  if (typeof v === 'number' && isFinite(v)) return new Decimal(v).toString()
+  if (typeof v === 'string' && v.trim() !== '') {
+    try {
+      const d = new Decimal(v)
+      // Canonicalize (e.g. "70000.0" → "70000", "1500.50" → "1500.5").
+      return d.isNaN() || !d.isFinite() ? '0' : d.toString()
+    } catch {
+      return '0'
+    }
+  }
+  return '0'
+}
+
+// Normalize a persisted financial table: fill missing arrays, default currency,
+// and migrate monetary fields (amount, price, targetAmount) from number → string.
+function normalizeList(l: FinancialTable): FinancialTable {
+  return {
+    ...l,
+    currency: (l.currency || 'BRL') as Currency,
+    items: (l.items ?? []).map((i) => ({
+      ...i,
+      price: i.price === null || i.price === undefined ? undefined : moneyStr(i.price)
+    })),
+    transactions: (l.transactions ?? []).map((t) => ({ ...t, amount: moneyStr(t.amount) })),
+    goals: (l.goals ?? []).map((g) => ({ ...g, targetAmount: moneyStr(g.targetAmount) }))
+  }
+}
 
 interface ActiveTimer {
   taskId: string
@@ -94,7 +126,7 @@ interface KanbanActions {
   updateList: (id: string, name: string) => void
   setListCurrency: (id: string, currency: Currency) => void
   deleteList: (id: string) => void
-  addItem: (listId: string, data: Pick<ShoppingItem, 'name' | 'qty'> & { price?: number; link?: string }) => string
+  addItem: (listId: string, data: Pick<ShoppingItem, 'name' | 'qty'> & { price?: string; link?: string }) => string
   updateItem: (listId: string, itemId: string, updates: Partial<Pick<ShoppingItem, 'name' | 'qty' | 'price' | 'done' | 'link'>>) => void
   deleteItem: (listId: string, itemId: string) => void
   toggleItem: (listId: string, itemId: string) => void
@@ -180,7 +212,7 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
         return { ...rest, entries } as Goal
       }),
       habits: data.habits || [],
-      lists: (data.lists || []).map((l) => ({ ...l, transactions: l.transactions ?? [], goals: l.goals ?? [], currency: (l.currency || 'BRL') as Currency })),
+      lists: (data.lists || []).map(normalizeList),
       files: data.files || [],
       isLoaded: true,
       activeProjectId: projects[0]?.id ?? null,
@@ -758,7 +790,7 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
 
     if (!item.done) {
       const txId = uuidv4()
-      const amount = item.price != null ? item.qty * item.price : 0
+      const amount = item.price != null ? new Decimal(item.qty).times(item.price).toString() : '0'
       const tx: FinancialTransaction = {
         id: txId,
         description: item.name,
@@ -911,12 +943,7 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
       return { ...h, completions: [...new Set([...local.completions, ...h.completions])] }
     })
 
-    const lists: FinancialTable[] = (backup.lists || []).map((l) => ({
-      ...l,
-      transactions: l.transactions ?? [],
-      goals: l.goals ?? [],
-      currency: (l.currency || 'BRL') as Currency
-    }))
+    const lists: FinancialTable[] = (backup.lists || []).map(normalizeList)
 
     const activeProjectId = projects[0]?.id ?? null
 

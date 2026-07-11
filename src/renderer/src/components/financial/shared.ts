@@ -26,9 +26,20 @@ export const CAT_COLORS = [
   '#e879f9', '#38bdf8', '#fbbf24'
 ]
 
-export function formatCurrency(value: Decimal | number, currency: Currency): string {
+// Safe Decimal constructor — treats null/undefined/'' as 0.
+export function D(value: Decimal.Value | null | undefined): Decimal {
+  if (value === null || value === undefined || value === '') return new Decimal(0)
+  try {
+    const d = new Decimal(value)
+    return d.isNaN() || !d.isFinite() ? new Decimal(0) : d
+  } catch {
+    return new Decimal(0)
+  }
+}
+
+export function formatCurrency(value: Decimal | number | string, currency: Currency): string {
   const { symbol, decimals } = CURRENCY_CONFIG[currency]
-  const num = value instanceof Decimal ? value.toNumber() : value
+  const num = value instanceof Decimal ? value.toNumber() : typeof value === 'string' ? D(value).toNumber() : value
   const abs = Math.abs(num)
   const fixed = abs.toFixed(decimals)
   const [intPart, decPart] = fixed.split('.')
@@ -47,7 +58,7 @@ export function formatCurrency(value: Decimal | number, currency: Currency): str
 }
 
 export function itemTotal(item: ShoppingItem): Decimal {
-  return new Decimal(item.qty).times(item.price ?? 0)
+  return new Decimal(item.qty).times(D(item.price))
 }
 
 export function parseDecimalInput(raw: string): Decimal | null {
@@ -71,8 +82,8 @@ export function formatDateBR(iso: string): string {
   return `${d}/${m}/${y}`
 }
 
-export function formatAmountInput(value: number, currency: Currency): string {
+export function formatAmountInput(value: number | string, currency: Currency): string {
   const { decimals } = CURRENCY_CONFIG[currency]
-  const fixed = value.toFixed(decimals)
+  const fixed = D(value).toFixed(decimals)
   return currency === 'USD' ? fixed : fixed.replace('.', ',')
 }

@@ -233,9 +233,9 @@ describe('shopping list end-to-end flow', () => {
   it('creates list → adds items → checks off items → calculates total correctly', () => {
     const listId = useKanbanStore.getState().createList('Feira', 'BRL')
 
-    const i1 = useKanbanStore.getState().addItem(listId, { name: 'Arroz', qty: 2, price: 5.0 })
-    const i2 = useKanbanStore.getState().addItem(listId, { name: 'Feijão', qty: 1, price: 4.5 })
-    const i3 = useKanbanStore.getState().addItem(listId, { name: 'Azeite', qty: 1, price: 18.0 })
+    const i1 = useKanbanStore.getState().addItem(listId, { name: 'Arroz', qty: 2, price: '5.0' })
+    const i2 = useKanbanStore.getState().addItem(listId, { name: 'Feijão', qty: 1, price: '4.5' })
+    const i3 = useKanbanStore.getState().addItem(listId, { name: 'Azeite', qty: 1, price: '18.0' })
 
     useKanbanStore.getState().toggleItem(listId, i1)
     useKanbanStore.getState().toggleItem(listId, i2)
@@ -244,7 +244,7 @@ describe('shopping list end-to-end flow', () => {
     const checkedItems = list.items.filter((i) => i.done)
     expect(checkedItems).toHaveLength(2)
 
-    const total = list.items.reduce((sum, i) => sum + (i.price ?? 0) * i.qty, 0)
+    const total = list.items.reduce((sum, i) => sum + Number(i.price ?? 0) * i.qty, 0)
     expect(total).toBeCloseTo(32.5) // 2×5.0 + 1×4.5 + 1×18.0
 
     // Delete one item

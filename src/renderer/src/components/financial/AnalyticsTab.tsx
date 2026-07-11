@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import Decimal from 'decimal.js'
 import type { FinancialTable, FinancialTransaction } from '../../types'
 import { MONTH_NAMES, CAT_COLORS, formatCurrency } from './shared'
 
@@ -38,17 +39,22 @@ export function AnalyticsTab({ list, selectedYear, onYearChange, selectedMonth, 
   }, [transactions, selectedYear, selectedMonth])
   const expenses = filtered.filter((t) => t.type === 'expense')
   const incomes = filtered.filter((t) => t.type === 'income')
-  const totalExpense = expenses.reduce((s, t) => s + t.amount, 0)
-  const totalIncome = incomes.reduce((s, t) => s + t.amount, 0)
-  const totalBalance = totalIncome - totalExpense
+  // Sums accumulated with Decimal for precision; converted to number only for display/geometry.
+  const totalExpenseD = expenses.reduce((s, t) => s.plus(t.amount), new Decimal(0))
+  const totalIncomeD = incomes.reduce((s, t) => s.plus(t.amount), new Decimal(0))
+  const totalExpense = totalExpenseD.toNumber()
+  const totalIncome = totalIncomeD.toNumber()
+  const totalBalance = totalIncomeD.minus(totalExpenseD).toNumber()
 
-  const buildCatEntries = (txs: FinancialTransaction[]) => {
-    const map: Record<string, number> = {}
+  const buildCatEntries = (txs: FinancialTransaction[]): [string, number][] => {
+    const map: Record<string, Decimal> = {}
     for (const t of txs) {
       const cat = t.category || 'Sem categoria'
-      map[cat] = (map[cat] ?? 0) + t.amount
+      map[cat] = (map[cat] ?? new Decimal(0)).plus(t.amount)
     }
-    return Object.entries(map).sort((a, b) => b[1] - a[1])
+    return Object.entries(map)
+      .map(([k, v]) => [k, v.toNumber()] as [string, number])
+      .sort((a, b) => b[1] - a[1])
   }
 
   const expCatEntries = buildCatEntries(expenses)
@@ -57,22 +63,27 @@ export function AnalyticsTab({ list, selectedYear, onYearChange, selectedMonth, 
   const activeTotal = catView === 'expense' ? totalExpense : totalIncome
   const activeMax = activeCatEntries[0]?.[1] ?? 1
 
-  const byMonth: Record<string, { income: number; expense: number; balance: number }> = {}
+  const byMonthD: Record<string, { income: Decimal; expense: Decimal }> = {}
   for (const t of filtered) {
     const key = t.date.slice(0, 7)
-    if (!byMonth[key]) byMonth[key] = { income: 0, expense: 0, balance: 0 }
-    if (t.type === 'income') byMonth[key].income += t.amount
-    else byMonth[key].expense += t.amount
+    if (!byMonthD[key]) byMonthD[key] = { income: new Decimal(0), expense: new Decimal(0) }
+    if (t.type === 'income') byMonthD[key].income = byMonthD[key].income.plus(t.amount)
+    else byMonthD[key].expense = byMonthD[key].expense.plus(t.amount)
   }
-  for (const k of Object.keys(byMonth)) {
-    byMonth[k].balance = byMonth[k].income - byMonth[k].expense
+  const byMonth: Record<string, { income: number; expense: number; balance: number }> = {}
+  for (const k of Object.keys(byMonthD)) {
+    byMonth[k] = {
+      income: byMonthD[k].income.toNumber(),
+      expense: byMonthD[k].expense.toNumber(),
+      balance: byMonthD[k].income.minus(byMonthD[k].expense).toNumber()
+    }
   }
   const monthEntries = Object.entries(byMonth)
     .map(([key, data]) => ({ key, ...data }))
     .sort((a, b) => a.key.localeCompare(b.key))
 
   const maxMonthBar = Math.max(...monthEntries.map((m) => Math.max(m.income, m.expense)), 1)
-  const avgMonthlyExpense = monthEntries.length > 0 ? totalExpense / monthEntries.length : 0
+  const avgMonthlyExpense = monthEntries.length > 0 ? totalExpenseD.div(monthEntries.length).toNumber() : 0
 
   const bestMonth = monthEntries.length > 1 ? monthEntries.reduce((best, m) => (m.balance > best.balance ? m : best)) : null
   const worstMonth = monthEntries.length > 1 ? monthEntries.reduce((worst, m) => (m.balance < worst.balance ? m : worst)) : null

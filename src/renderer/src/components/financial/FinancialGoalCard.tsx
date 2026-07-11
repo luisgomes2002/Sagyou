@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
+import Decimal from 'decimal.js'
 import type { FinancialGoal, FinancialTransaction, Currency } from '../../types'
-import { MONTH_NAMES, formatCurrency, todayISO, formatDateBR } from './shared'
+import { MONTH_NAMES, formatCurrency, todayISO, formatDateBR, D, parseDecimalInput } from './shared'
 
 // ── GoalModal ─────────────────────────────────────────────────────────────────
 
@@ -21,7 +22,7 @@ export function GoalModal({ open, goal, onSave, onClose }: GoalModalProps) {
   useEffect(() => {
     if (open) {
       setName(goal?.name ?? '')
-      setTargetAmount(goal?.targetAmount.toString() ?? '')
+      setTargetAmount(goal?.targetAmount ?? '')
       setTargetMonth(goal?.targetMonth ?? now.getMonth() + 1)
       setTargetYear(goal?.targetYear ?? now.getFullYear())
     }
@@ -29,22 +30,13 @@ export function GoalModal({ open, goal, onSave, onClose }: GoalModalProps) {
 
   if (!open) return null
 
-  const amount = (() => {
-    const normalized = targetAmount.trim().replace(',', '.')
-    if (normalized === '') return null
-    try {
-      const n = parseFloat(normalized)
-      return isNaN(n) ? null : n
-    } catch {
-      return null
-    }
-  })()
+  const amount = parseDecimalInput(targetAmount)
 
-  const valid = name.trim().length > 0 && amount !== null && amount > 0 && targetYear >= now.getFullYear()
+  const valid = name.trim().length > 0 && amount !== null && amount.greaterThan(0) && targetYear >= now.getFullYear()
 
   const handleSubmit = () => {
     if (!valid || amount === null) return
-    onSave({ name: name.trim(), targetAmount: amount, targetMonth, targetYear })
+    onSave({ name: name.trim(), targetAmount: amount.toDecimalPlaces(2).toString(), targetMonth, targetYear })
     onClose()
   }
 
@@ -214,7 +206,7 @@ export function CompleteGoalModal({ open, goalName, onConfirm, onClose }: Comple
 interface FinancialGoalCardProps {
   goal: FinancialGoal
   transactions: FinancialTransaction[]
-  accBalance: number
+  accBalance: Decimal
   currency: Currency
   onEdit: () => void
   onDelete: () => void
@@ -236,27 +228,28 @@ export function FinancialGoalCard({ goal, transactions, accBalance, currency, on
     (goal.targetYear < now.getFullYear() ||
       (goal.targetYear === now.getFullYear() && goal.targetMonth < now.getMonth() + 1))
   const deadlineKey = `${goal.targetYear}-${String(goal.targetMonth).padStart(2, '0')}`
+  const target = D(goal.targetAmount)
   const effectiveBalance = deadlinePast
     ? transactions
         .filter((t) => t.date.slice(0, 7) <= deadlineKey)
-        .reduce((s, t) => (t.type === 'income' ? s + t.amount : s - t.amount), 0)
+        .reduce((s, t) => (t.type === 'income' ? s.plus(t.amount) : s.minus(t.amount)), new Decimal(0))
     : accBalance
 
   const manuallyCompleted = !!goal.completedAt
-  const balanceAchieved = effectiveBalance >= goal.targetAmount
+  const balanceAchieved = effectiveBalance.greaterThanOrEqualTo(target)
   const achieved = manuallyCompleted || balanceAchieved
   const progress = manuallyCompleted
     ? 1
-    : goal.targetAmount > 0
-      ? Math.min(Math.max(effectiveBalance / goal.targetAmount, 0), 1)
+    : target.greaterThan(0)
+      ? Math.min(Math.max(effectiveBalance.div(target).toNumber(), 0), 1)
       : 0
   const percent = Math.round(progress * 100)
-  const savedAmount = Math.min(Math.max(effectiveBalance, 0), goal.targetAmount)
-  const remaining = achieved ? 0 : Math.max(goal.targetAmount - effectiveBalance, 0)
+  const savedAmount = Decimal.min(Decimal.max(effectiveBalance, 0), target)
+  const remaining = achieved ? new Decimal(0) : Decimal.max(target.minus(effectiveBalance), 0)
 
   const isOverdue = !achieved && monthsLeft === 0
   const isUrgent = !achieved && monthsLeft > 0 && monthsLeft <= 2
-  const monthlyNeeded = monthsLeft > 0 && !achieved ? remaining / monthsLeft : 0
+  const monthlyNeeded = monthsLeft > 0 && !achieved ? remaining.div(monthsLeft) : new Decimal(0)
 
   const R = 30
   const circ = 2 * Math.PI * R
@@ -359,7 +352,7 @@ export function FinancialGoalCard({ goal, transactions, accBalance, currency, on
           {!manuallyCompleted && balanceAchieved && (
             <div className="mt-2.5 pt-2.5 border-t border-[#22c55e]/20">
               <p className="text-[10px] text-[#22c55e]/60 leading-relaxed">
-                Saldo excede a meta em <span className="text-[#4ade80] font-semibold">{formatCurrency(effectiveBalance - goal.targetAmount, currency)}</span>
+                Saldo excede a meta em <span className="text-[#4ade80] font-semibold">{formatCurrency(effectiveBalance.minus(target), currency)}</span>
               </p>
             </div>
           )}
