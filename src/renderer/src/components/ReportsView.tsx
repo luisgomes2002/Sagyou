@@ -407,10 +407,10 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
     [habits]
   )
 
-  // Last 14 days for habit mini-calendar
-  const last14 = useMemo(() => {
+  // Last 30 days for habit mini-calendar
+  const last30 = useMemo(() => {
     const today = new Date()
-    return Array.from({ length: 14 }, (_, i) => format(addDays(today, -(13 - i)), 'yyyy-MM-dd'))
+    return Array.from({ length: 30 }, (_, i) => format(addDays(today, -(29 - i)), 'yyyy-MM-dd'))
   }, [])
 
   // Priority breakdown
@@ -793,9 +793,9 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
                       </span>
                     </div>
                   </div>
-                  {/* Mini 14-day dot calendar */}
-                  <div className="flex gap-1 pl-[calc(8px+112px+12px)]">
-                    {last14.map((d) => (
+                  {/* Mini 30-day dot calendar */}
+                  <div className="flex flex-wrap gap-1 pl-[calc(8px+112px+12px)]">
+                    {last30.map((d) => (
                       <div
                         key={d}
                         className="w-2 h-2 rounded-full shrink-0"
