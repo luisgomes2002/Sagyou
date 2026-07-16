@@ -14,7 +14,9 @@ interface CodePath { id: string; label?: string; path: string }
 interface Project {
   id: string; name: string; description?: string; color: string
   columns: Column[]; links?: ProjectLink[]
-  codePaths?: CodePath[]; activeCodePathId?: string
+  // activeCodePathIds is the selection; activeCodePathId is the legacy singular
+  // form, still read so pre-multi-select databases and backups keep working.
+  codePaths?: CodePath[]; activeCodePathIds?: string[]; activeCodePathId?: string
   order?: number
   createdAt: string; updatedAt: string
 }
@@ -422,8 +424,9 @@ function persistAll(db: Database.Database, data: SaveData): void {
     ins.project.run(p.id, p.name, p.description ?? null, p.color, p.order ?? null, p.createdAt, p.updatedAt)
     for (const c of p.columns ?? []) ins.column.run(c.id, p.id, c.name, c.order, c.color ?? null)
     for (const l of p.links ?? []) ins.link.run(l.id, p.id, l.label, l.url)
+    const active = new Set(p.activeCodePathIds ?? (p.activeCodePathId ? [p.activeCodePathId] : []))
     for (const cp of p.codePaths ?? [])
-      ins.codePath.run(cp.id, p.id, cp.label ?? null, cp.path, cp.id === p.activeCodePathId ? 1 : 0)
+      ins.codePath.run(cp.id, p.id, cp.label ?? null, cp.path, active.has(cp.id) ? 1 : 0)
   }
 
   for (const t of data.tasks ?? []) {
@@ -490,8 +493,10 @@ export function loadData(): SaveData {
         path: c.path,
         ...(c.label != null ? { label: c.label } : {})
       }))
-      const active = rows.find((c) => c.active)
-      return active ? { codePaths, activeCodePathId: active.id } : { codePaths }
+      const activeCodePathIds = rows.filter((c) => c.active).map((c) => c.id as string)
+      if (!activeCodePathIds.length) return { codePaths }
+      // activeCodePathId mirrors the first selection for older readers.
+      return { codePaths, activeCodePathIds, activeCodePathId: activeCodePathIds[0] }
     })(),
     ...(p.ord != null ? { order: p.ord } : {}),
     createdAt: p.created_at, updatedAt: p.updated_at,

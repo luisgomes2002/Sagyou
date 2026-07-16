@@ -53,10 +53,68 @@
 | **Upcoming** | Tarefas com data de vencimento próxima |
 | **Busca** | Pesquisa rápida em todos os dados |
 | **Assistente de IA** | Chat com acesso aos seus dados via ferramentas — funciona com qualquer provedor compatível com a API da OpenAI (local ou hospedado). Ações que alteram dados pedem aprovação antes de rodar |
-| **Agente de código** | Aponte um projeto para um diretório e peça alterações no código — executado por `aider` ou `codex` |
+| **Agente de código** | Aponte um projeto para um diretório e peça alterações no código — executado por `aider` ou `codex` ([instalação separada](#agente-de-código-requer-instalação)) |
 | **Importação via IA** | Cole JSON gerado por um LLM — o sidebar tem "Copiar tudo" para gerar um prompt pronto com schema e tags |
 | **Exportação para Excel** | Exporte projetos, tarefas, hábitos, metas e dados financeiros em `.xlsx` |
 | **Backup** | Exportação e restauração de dados em JSON |
+
+---
+
+## Assistente de IA
+
+O assistente é **opcional** e vem desligado — nada é enviado a lugar nenhum até você configurar um provedor.
+
+### Configuração
+
+Abra a view **Assistente IA** e clique na engrenagem. Preencha:
+
+| Campo | Exemplo |
+|---|---|
+| **Base URL** | `https://api.openai.com/v1` — ou `http://localhost:11434/v1` (Ollama), `http://localhost:1234/v1` (LM Studio) |
+| **API Key** | `sk-...` — deixe qualquer valor se o provedor local não exigir |
+| **Model** | clique no botão ao lado do campo para listar os modelos do endpoint e escolher um |
+
+Serve qualquer provedor compatível com a API da OpenAI. A configuração fica em `ai-config.json` (veja [Dados](#dados)) e a chave **não** é enviada para o renderer.
+
+### Uso
+
+Converse normalmente — o assistente tem ferramentas para ler seus dados (tarefas, hábitos, metas, finanças) e responde com base neles em vez de adivinhar.
+
+Ações que **alteram** dados (criar tarefas, concluir, iniciar cronômetro, criar/atribuir sprint) pedem sua aprovação antes de rodar. O botão no topo liga o **modo automático**, que executa sem perguntar — use com cuidado.
+
+### Acesso ao código (opcional)
+
+Abra o projeto para edição e, em **Caminhos de código**, clique em **Adicionar pasta**. A partir daí o assistente lê o código-fonte para responder perguntas sobre ele — listar arquivos, ler e buscar. O acesso é **somente leitura** e confinado ao diretório escolhido.
+
+O projeto precisa estar salvo antes (a seção fica desabilitada em projetos novos). A **primeira pasta adicionada já fica marcada automaticamente** — não há nada a fazer no caso simples.
+
+Dá para marcar **mais de uma pasta** (útil para front-end e back-end em repositórios separados, por exemplo): clique na linha da pasta para marcar/desmarcar. As marcadas ganham o selo **Ativo**, e o cabeçalho do Assistente IA mostra o que está em uso. As ferramentas de leitura cobrem todas as pastas marcadas de uma vez.
+
+> O **agente de código** é a exceção: ele roda em uma pasta só. Se você tiver várias marcadas, ele pede para você escolher qual antes de rodar.
+
+### Agente de código (requer instalação)
+
+> ⚠️ Para **alterar** código, o Sagyou chama uma CLI externa que você precisa instalar por conta própria. Sem isso, essa função não funciona — o resto do assistente funciona normalmente.
+
+Instale **um** dos dois:
+
+```bash
+# Aider (padrão)
+python -m pip install aider-install && aider-install
+# ou: pipx install aider-chat
+
+# Codex CLI
+npm install -g @openai/codex
+```
+
+Confirme que está no `PATH` — o app chama o comando pelo nome:
+
+```bash
+aider --version
+codex --version
+```
+
+O agente roda no diretório do caminho de código ativo, usando a mesma Base URL / API Key / Model configurados acima, e a saída aparece ao vivo no app. Ele roda de forma autônoma depois que você aprova o início (o Aider é chamado com `--yes-always`), então aponte para um repositório com Git e commits em dia — assim dá para revisar o diff e reverter se não gostar.
 
 ---
 

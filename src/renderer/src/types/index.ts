@@ -27,7 +27,18 @@ export interface Project {
   links?: ProjectLink[]
   /** Local code paths for this project (the AI's working directories). */
   codePaths?: CodePath[]
-  /** The selected code path (persisted across sessions). */
+  /**
+   * The selected code paths — the AI reads across all of them. Source of truth
+   * for the selection; persisted across sessions.
+   */
+  activeCodePathIds?: string[]
+  /**
+   * @deprecated Legacy single-selection field. Superseded by
+   * `activeCodePathIds`, but kept written and in sync with its first entry so
+   * older app versions (and old backups) keep working. Read
+   * `activeCodePathIds`; never write this directly — the store keeps both in
+   * step.
+   */
   activeCodePathId?: string
   order?: number
   createdAt: string
