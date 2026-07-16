@@ -55,16 +55,46 @@ function resolveTask(args: Record<string, unknown>): Task | undefined {
   return undefined
 }
 
-/** Resolve the active code path of the (active) project, or an error. */
-function activeCodePath(args: Record<string, unknown>): { path?: string; error?: string } {
+/** A selected code root: the folder the code tools may reach into. */
+interface Root {
+  id: string
+  /** Display name for the model — the folder's label, falling back to its path. */
+  nome: string
+  path: string
+}
+
+/**
+ * The code roots selected on the (active) project. A project can have several
+ * selected at once, so every code tool works across a list; `pastaId` narrows
+ * it to one.
+ */
+function activeRoots(args: Record<string, unknown>): { roots: Root[]; error?: string } {
   const { projects, activeProjectId } = useKanbanStore.getState()
   const projectId = (typeof args.projectId === 'string' && args.projectId) || activeProjectId
   const project = projects.find((p) => p.id === projectId)
-  if (!project) return { error: 'Projeto não encontrado' }
-  const path = project.codePaths?.find((c) => c.id === project.activeCodePathId)?.path
-  if (!path) return { error: 'Nenhum path de código selecionado neste projeto' }
-  return { path }
+  if (!project) return { roots: [], error: 'Projeto não encontrado' }
+  const active = project.activeCodePathIds ?? []
+  const roots: Root[] = (project.codePaths ?? [])
+    .filter((c) => active.includes(c.id))
+    .map((c) => ({ id: c.id, nome: c.label ?? c.path, path: c.path }))
+  if (!roots.length) return { roots: [], error: 'Nenhuma pasta de código marcada neste projeto' }
+
+  const pastaId = typeof args.pastaId === 'string' ? args.pastaId : ''
+  if (!pastaId) return { roots }
+  const one = roots.find((r) => r.id === pastaId || r.nome === pastaId)
+  if (!one) {
+    return { roots: [], error: `Pasta "${pastaId}" não encontrada. Disponíveis: ${roots.map((r) => r.nome).join(', ')}` }
+  }
+  return { roots: [one] }
 }
+
+/** The `pastaId` parameter, shared by the code tools. */
+const PASTA_PARAM = {
+  pastaId: {
+    type: 'string',
+    description: 'Restringe a uma pasta de código (id ou nome de ler_projetos). Omita para usar todas as marcadas.'
+  }
+} as const
 
 // --- Registry: name -> tool. This is the map the task asks for. ---
 const REGISTRY: Record<string, AITool> = {
@@ -81,7 +111,10 @@ const REGISTRY: Record<string, AITool> = {
         nome: p.name,
         colunas: [...p.columns].sort((a, b) => a.order - b.order).map((c) => c.name),
         totalTasks: tasks.filter((t) => t.projectId === p.id).length,
-        pathAtivo: p.codePaths?.find((c) => c.id === p.activeCodePathId)?.path ?? null
+        // The code roots the tools may reach into (several can be selected).
+        pastasAtivas: (p.codePaths ?? [])
+          .filter((c) => (p.activeCodePathIds ?? []).includes(c.id))
+          .map((c) => ({ id: c.id, nome: c.label ?? c.path, path: c.path }))
       }))
       return JSON.stringify({ projetos })
     }
@@ -406,13 +439,15 @@ const REGISTRY: Record<string, AITool> = {
     definition: fn(
       'rodar_agente_codigo',
       'Dispara um agente de código externo (Aider/Codex) no diretório do projeto para ' +
-        'implementar uma tarefa de código. Requer um path de código selecionado no projeto. ' +
-        'O agente escreve arquivos e roda comandos, por isso passa por aprovação.',
+        'implementar uma tarefa de código. Roda em UMA pasta: se o projeto tiver várias ' +
+        'marcadas, informe pastaId. O agente escreve arquivos e roda comandos, por isso ' +
+        'passa por aprovação.',
       {
         type: 'object',
         properties: {
           task: { type: 'string', description: 'O que o agente deve fazer no código' },
           agent: { type: 'string', enum: ['aider', 'codex'], description: 'Agente (padrão: aider)' },
+          ...PASTA_PARAM,
           projectId: { type: 'string', description: 'ID do projeto (opcional; usa o ativo)' }
         },
         required: ['task'],
@@ -420,14 +455,17 @@ const REGISTRY: Record<string, AITool> = {
       }
     ),
     run: (args) => {
-      const { projects, activeProjectId } = useKanbanStore.getState()
-      const projectId = (typeof args.projectId === 'string' && args.projectId) || activeProjectId
-      const project = projects.find((p) => p.id === projectId)
-      if (!project) return JSON.stringify({ error: 'Projeto não encontrado' })
-      const path = project.codePaths?.find((c) => c.id === project.activeCodePathId)?.path
-      if (!path) {
-        return JSON.stringify({ error: 'Nenhum path de código selecionado neste projeto' })
+      const { roots, error } = activeRoots(args)
+      if (error) return JSON.stringify({ error })
+      // The agent is a child process with a single cwd — it cannot span roots,
+      // and guessing which one to edit risks writing to the wrong repo.
+      if (roots.length > 1) {
+        return JSON.stringify({
+          error: `O agente roda em uma pasta só, e ${roots.length} estão marcadas. Repita com pastaId.`,
+          pastas: roots.map((r) => ({ id: r.id, nome: r.nome }))
+        })
       }
+      const path = roots[0].path
       const task = typeof args.task === 'string' ? args.task.trim() : ''
       if (!task) return JSON.stringify({ error: 'Tarefa vazia' })
       const agent = args.agent === 'codex' ? 'codex' : 'aider'
@@ -449,32 +487,42 @@ const REGISTRY: Record<string, AITool> = {
     definition: fn(
       'listar_arquivos',
       'Lista os arquivos do código do projeto (recursivo; ignora node_modules/.git/dist). ' +
-        'Use para descobrir a estrutura antes de ler arquivos. Requer path de código no projeto.',
+        'Use para descobrir a estrutura antes de ler arquivos. Cobre todas as pastas de ' +
+        'código marcadas no projeto.',
       {
         type: 'object',
         properties: {
           subpasta: { type: 'string', description: 'Subpasta relativa (opcional, ex: src/renderer)' },
+          ...PASTA_PARAM,
           projectId: { type: 'string', description: 'ID do projeto (opcional; usa o ativo)' }
         },
         additionalProperties: false
       }
     ),
     run: async (args) => {
-      const { path, error } = activeCodePath(args)
-      if (!path) return JSON.stringify({ error })
+      const { roots, error } = activeRoots(args)
+      if (error) return JSON.stringify({ error })
       const sub = typeof args.subpasta === 'string' ? args.subpasta : '.'
-      return JSON.stringify(await window.electronAPI.ai.code.list(path, sub))
+      const pastas = await Promise.all(
+        roots.map(async (r) => ({
+          pasta: r.nome,
+          ...(await window.electronAPI.ai.code.list(r.path, sub))
+        }))
+      )
+      return JSON.stringify({ pastas })
     }
   },
 
   ler_arquivo: {
     definition: fn(
       'ler_arquivo',
-      'Lê um arquivo do código do projeto pelo caminho relativo (ex: src/main/store.ts).',
+      'Lê um arquivo do código do projeto pelo caminho relativo (ex: src/main/store.ts). ' +
+        'Procura em todas as pastas marcadas; use pastaId se o mesmo caminho existir em mais de uma.',
       {
         type: 'object',
         properties: {
           caminho: { type: 'string', description: 'Caminho relativo do arquivo' },
+          ...PASTA_PARAM,
           projectId: { type: 'string', description: 'ID do projeto (opcional; usa o ativo)' }
         },
         required: ['caminho'],
@@ -482,22 +530,40 @@ const REGISTRY: Record<string, AITool> = {
       }
     ),
     run: async (args) => {
-      const { path, error } = activeCodePath(args)
-      if (!path) return JSON.stringify({ error })
+      const { roots, error } = activeRoots(args)
+      if (error) return JSON.stringify({ error })
       const rel = typeof args.caminho === 'string' ? args.caminho : ''
       if (!rel) return JSON.stringify({ error: 'Caminho vazio' })
-      return JSON.stringify(await window.electronAPI.ai.code.read(path, rel))
+
+      const reads = await Promise.all(
+        roots.map(async (r) => ({ root: r, res: await window.electronAPI.ai.code.read(r.path, rel) }))
+      )
+      const hits = reads.filter((h) => !('error' in h.res && h.res.error))
+      // Reading the wrong file silently would be worse than asking: when the
+      // path is ambiguous across roots, make the model pick.
+      if (hits.length > 1) {
+        return JSON.stringify({
+          error: `"${rel}" existe em mais de uma pasta: ${hits.map((h) => h.root.nome).join(', ')}. Repita com pastaId.`,
+          pastas: hits.map((h) => ({ id: h.root.id, nome: h.root.nome }))
+        })
+      }
+      if (!hits.length) {
+        return JSON.stringify(reads[0]?.res ?? { error: 'Arquivo não encontrado' })
+      }
+      return JSON.stringify({ pasta: hits[0].root.nome, ...hits[0].res })
     }
   },
 
   buscar_no_codigo: {
     definition: fn(
       'buscar_no_codigo',
-      'Busca um termo/texto no código do projeto (grep). Retorna arquivos e linhas que casam.',
+      'Busca um termo/texto no código do projeto (grep). Retorna arquivos e linhas que casam, ' +
+        'em todas as pastas de código marcadas.',
       {
         type: 'object',
         properties: {
           termo: { type: 'string', description: 'Texto a buscar' },
+          ...PASTA_PARAM,
           projectId: { type: 'string', description: 'ID do projeto (opcional; usa o ativo)' }
         },
         required: ['termo'],
@@ -505,11 +571,17 @@ const REGISTRY: Record<string, AITool> = {
       }
     ),
     run: async (args) => {
-      const { path, error } = activeCodePath(args)
-      if (!path) return JSON.stringify({ error })
+      const { roots, error } = activeRoots(args)
+      if (error) return JSON.stringify({ error })
       const termo = typeof args.termo === 'string' ? args.termo : ''
       if (!termo) return JSON.stringify({ error: 'Termo vazio' })
-      return JSON.stringify(await window.electronAPI.ai.code.search(path, termo))
+      const pastas = await Promise.all(
+        roots.map(async (r) => ({
+          pasta: r.nome,
+          ...(await window.electronAPI.ai.code.search(r.path, termo))
+        }))
+      )
+      return JSON.stringify({ pastas })
     }
   }
 }

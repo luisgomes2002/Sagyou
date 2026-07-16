@@ -96,7 +96,8 @@ Soft deletes use a `Tombstone[]` array. On `importBackup`, all local state is re
 - `ai/tools.ts` — a single `REGISTRY` object is the source of truth: each entry pairs an OpenAI-format `definition` (sent to the model) with a `run` handler executed against the Zustand store. `TOOL_DEFS` and the dispatcher are derived from it, so **adding a tool means adding one entry** and nothing else. Tools are in Portuguese (`ler_tasks`, `criar_tasks`, `ler_financeiro`, …).
 - Tools marked `write: true` mutate state (`criar_tasks`, `concluir_task`, `iniciar_cronometro`, `criar_sprints`, `atribuir_sprint`, `rodar_agente_codigo`). `isWriteTool()` gates them behind user approval — `AIView` asks before running them unless the user turns on automatic mode. **Keep `write: true` on any new mutating tool**; it is the only thing standing between the model and the user's data.
 - `ai/agent.ts` — the loop. `runAgent` iterates model→tools→model, capped at `MAX_STEPS` (default 6) so a misbehaving model can't spin forever. Every call goes through the main process rather than the renderer.
-- The assistant can read a project's source when the project has a code path set: `listar_arquivos`, `ler_arquivo`, `buscar_no_codigo` map to the `ai:code:*` handlers, which confine every path to the selected root. `rodar_agente_codigo` is separate and heavier — it spawns an external CLI agent (`aider` or `codex`, expected on PATH) to actually modify code, streaming output back over `ai:code-agent:output`.
+- The assistant can read a project's source when the project has code paths selected: `listar_arquivos`, `ler_arquivo`, `buscar_no_codigo` map to the `ai:code:*` handlers, which confine every path to the given root. A project can have **several roots selected at once**, so these tools take an optional `pastaId` to narrow to one and otherwise fan out across all of them (`activeRoots()` in `tools.ts` resolves the list). `ler_arquivo` errors instead of guessing when the same relative path exists under more than one root.
+- `rodar_agente_codigo` is separate and heavier — it spawns an external CLI agent (`aider` or `codex`, expected on PATH) to actually modify code, streaming output back over `ai:code-agent:output`. It is a child process with a **single cwd**, so unlike the read tools it cannot span roots: with more than one selected it returns an error asking for `pastaId` rather than picking one.
 
 ### Types
 
@@ -120,6 +121,12 @@ Treat these with the same care as the DB — the same "production data in the wi
 - **Never remove or rename fields** on existing types without a migration or backward-compatible fallback (e.g. optional field with a default on load).
 - **Never change the shape of persisted arrays or objects** in a breaking way (reordering, nesting, type changes).
 - Adding new optional fields is safe — the store hydrates with `??` defaults and missing keys are silently ignored.
+
+### Code path selection is a two-field pair
+
+`Project.activeCodePathIds: string[]` is the source of truth for which code paths the AI reads. An **empty selection is a legitimate state** (the AI reads no code) — never backfill it from the remaining paths, e.g. on remove. Auto-selecting a folder the user didn't pick silently hands the assistant a directory to read. The legacy singular `Project.activeCodePathId` is **still written**, mirroring `activeCodePathIds[0]`, so older app versions and old backups keep resolving a selection. Go through `activeIds()` / `withActive()` in `store/kanban.ts` — never set either field by hand, or the two drift apart. `normalizeProject` on load migrates legacy singular data and drops ids whose code path no longer exists.
+
+The `project_code_paths` SQLite table needed no migration: `active` was already a per-row flag, so multiple selected rows just means multiple `1`s. `persistAll` writes every selected id; the loader collects all `active` rows.
 - **Always warn explicitly** before making any change that could corrupt or lose existing data on load (e.g. changing a field from `string` to `string[]`, removing a required field, changing an ID scheme). Flag it with: _"⚠️ Breaking schema change — existing data may be affected."_
 
 ### Monetary fields are decimal strings
@@ -132,6 +139,6 @@ Treat these with the same care as the DB — the same "production data in the wi
 
 ## Testing
 
-Tests run in jsdom via Vitest. `ElectronStorage` is always vi-mocked — tests call `useKanbanStore.getState()` directly to exercise store actions. Test files live in `src/renderer/src/__tests__/` under `store/`, `integration/`, `services/`, `utils/`, and `ai/` (the agent loop and the tool registry, with the provider stubbed).
+Tests run in jsdom via Vitest. `ElectronStorage` is vi-mocked per test file (a `vi.mock('../../services/ElectronStorage', …)` factory at the top, before the store import — `setup.ts` only loads jest-dom) — tests call `useKanbanStore.getState()` directly to exercise store actions. Test files live in `src/renderer/src/__tests__/` under `store/`, `integration/`, `services/`, `utils/`, and `ai/` (the agent loop and the tool registry, with the provider stubbed).
 
 The `coverage/` directory is generated output — do not commit it.

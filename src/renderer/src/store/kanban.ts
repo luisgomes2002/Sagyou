@@ -25,6 +25,31 @@ function moneyStr(v: unknown): string {
   return '0'
 }
 
+// --- Code path selection -----------------------------------------------------
+// `activeCodePathIds` is the source of truth; the legacy singular
+// `activeCodePathId` is kept in sync with its first entry so older app versions
+// and old backups keep reading the selection. Always go through these two.
+
+/** The selected code path ids, migrating legacy single-selection data. */
+function activeIds(p: Project): string[] {
+  if (Array.isArray(p.activeCodePathIds)) return p.activeCodePathIds
+  return p.activeCodePathId ? [p.activeCodePathId] : []
+}
+
+/** Both selection fields for a spread, kept consistent. */
+function withActive(ids: string[]): Pick<Project, 'activeCodePathIds' | 'activeCodePathId'> {
+  return { activeCodePathIds: ids, activeCodePathId: ids[0] }
+}
+
+// Normalize a persisted project: migrate the code path selection to the array
+// form and drop ids whose path no longer exists (a stale id would silently
+// select nothing).
+function normalizeProject(p: Project, i: number): Project {
+  const known = new Set((p.codePaths ?? []).map((c) => c.id))
+  const ids = activeIds(p).filter((id) => known.has(id))
+  return { ...p, order: p.order ?? i, ...withActive(ids) }
+}
+
 // Normalize a persisted financial table: fill missing arrays, default currency,
 // and migrate monetary fields (amount, price, targetAmount) from number → string.
 function normalizeList(l: FinancialTable): FinancialTable {
@@ -76,7 +101,10 @@ interface KanbanActions {
 
   addCodePath: (projectId: string, path: string, label?: string) => string
   removeCodePath: (projectId: string, codePathId: string) => void
+  /** Replaces the whole selection with a single path (or clears it). */
   setActiveCodePath: (projectId: string, codePathId: string | null) => void
+  /** Adds/removes one path from the selection, leaving the others alone. */
+  toggleCodePath: (projectId: string, codePathId: string) => void
 
   createColumn: (projectId: string, name: string, color?: string) => void
   updateColumn: (projectId: string, columnId: string, updates: Partial<Pick<Column, 'name' | 'color'>>) => void
@@ -181,10 +209,7 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
 
   loadData: async () => {
     const data = await storage.load()
-    const projects = (data.projects || []).map((p: Project, i: number) => ({
-      ...p,
-      order: p.order ?? i
-    }))
+    const projects = (data.projects || []).map(normalizeProject)
 
     // If a timer was running when the app was last closed, commit its elapsed time
     const savedTimer = data.activeTimer as ActiveTimer | null | undefined
@@ -263,11 +288,12 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
       projects: s.projects.map((p) => {
         if (p.id !== projectId) return p
         const codePaths = [...(p.codePaths ?? []), { id, path, label }]
+        // First path added becomes the selection; later ones are opt-in.
+        const active = activeIds(p)
         return {
           ...p,
           codePaths,
-          // First path becomes the active selection.
-          activeCodePathId: p.activeCodePathId ?? id,
+          ...withActive(active.length ? active : [id]),
           updatedAt: new Date().toISOString()
         }
       })
@@ -281,9 +307,12 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
       projects: s.projects.map((p) => {
         if (p.id !== projectId) return p
         const codePaths = (p.codePaths ?? []).filter((c) => c.id !== codePathId)
-        const activeCodePathId =
-          p.activeCodePathId === codePathId ? codePaths[0]?.id : p.activeCodePathId
-        return { ...p, codePaths, activeCodePathId, updatedAt: new Date().toISOString() }
+        // Only drop the removed path. Never backfill from the survivors: an
+        // empty selection is a deliberate user state (AI reads no code), and
+        // auto-selecting a folder they never picked would silently hand the
+        // assistant a directory to read.
+        const active = activeIds(p).filter((cid) => cid !== codePathId)
+        return { ...p, codePaths, ...withActive(active), updatedAt: new Date().toISOString() }
       })
     }))
     get()._persist()
@@ -293,9 +322,23 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
     set((s) => ({
       projects: s.projects.map((p) =>
         p.id === projectId
-          ? { ...p, activeCodePathId: codePathId ?? undefined, updatedAt: new Date().toISOString() }
+          ? { ...p, ...withActive(codePathId ? [codePathId] : []), updatedAt: new Date().toISOString() }
           : p
       )
+    }))
+    get()._persist()
+  },
+
+  toggleCodePath: (projectId, codePathId) => {
+    set((s) => ({
+      projects: s.projects.map((p) => {
+        if (p.id !== projectId) return p
+        const active = activeIds(p)
+        const next = active.includes(codePathId)
+          ? active.filter((cid) => cid !== codePathId)
+          : [...active, codePathId]
+        return { ...p, ...withActive(next), updatedAt: new Date().toISOString() }
+      })
     }))
     get()._persist()
   },
@@ -987,7 +1030,7 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
 
     const projects = (backup.projects || [])
       .filter((p: Project) => !tombstoneIds.has(p.id))
-      .map((p: Project, i: number) => ({ ...p, order: p.order ?? i }))
+      .map(normalizeProject)
     const tasks: Task[] = (backup.tasks || []).filter((t: Task) => !tombstoneIds.has(t.id))
     const sprints: Sprint[] = backup.sprints || []
     const notes: StickyNote[] = backup.notes || []

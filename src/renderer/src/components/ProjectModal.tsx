@@ -23,10 +23,10 @@ export function ProjectModal({ open, project, onSave, onClose }: Props) {
   // current project fresh and mutate it immediately as the user edits.
   const liveProject = useKanbanStore((s) => s.projects.find((p) => p.id === project?.id))
   const codePaths = liveProject?.codePaths ?? []
-  const activeCodePathId = liveProject?.activeCodePathId
+  const activeCodePathIds = liveProject?.activeCodePathIds ?? []
   const addCodePath = useKanbanStore((s) => s.addCodePath)
   const removeCodePath = useKanbanStore((s) => s.removeCodePath)
-  const setActiveCodePath = useKanbanStore((s) => s.setActiveCodePath)
+  const toggleCodePath = useKanbanStore((s) => s.toggleCodePath)
 
   const handleAddCodePath = async (): Promise<void> => {
     if (!project) return
@@ -204,6 +204,11 @@ export function ProjectModal({ open, project, onSave, onClose }: Props) {
                 Caminhos de código
                 <span className="ml-1.5 text-[#4a5068] font-normal">pastas no PC onde a IA trabalha</span>
               </label>
+              {project && codePaths.length > 0 && (
+                <p className="text-[11px] text-[#4a5068] mb-2">
+                  A IA lê as pastas marcadas. Marque quantas quiser.
+                </p>
+              )}
 
               {!project ? (
                 <p className="text-[11px] text-[#4a5068] italic">
@@ -214,30 +219,46 @@ export function ProjectModal({ open, project, onSave, onClose }: Props) {
                   {codePaths.length > 0 && (
                     <div className="space-y-1.5 mb-3">
                       {codePaths.map((cp) => {
-                        const active = cp.id === activeCodePathId
+                        const active = activeCodePathIds.includes(cp.id)
                         return (
                           <div
                             key={cp.id}
-                            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#0d0f18] border border-[#2a2d42] group"
+                            className={`flex items-center gap-2 px-3 py-2 rounded-lg border group transition-colors ${
+                              active
+                                ? 'bg-[#6366f1]/10 border-[#6366f1]/50'
+                                : 'bg-[#0d0f18] border-[#2a2d42]'
+                            }`}
                           >
+                            {/* Whole row toggles, so the hit target isn't a tiny box. */}
                             <button
                               type="button"
-                              onClick={() => setActiveCodePath(project.id, cp.id)}
-                              title={active ? 'Caminho ativo' : 'Definir como ativo'}
-                              className="shrink-0"
+                              onClick={() => toggleCodePath(project.id, cp.id)}
+                              title={active ? 'A IA lê esta pasta — clique para desmarcar' : 'Marcar para a IA ler esta pasta'}
+                              className="flex items-center gap-2.5 flex-1 min-w-0 text-left"
                             >
                               <span
-                                className={`block w-3.5 h-3.5 rounded-full border-2 ${
+                                className={`shrink-0 flex items-center justify-center w-4 h-4 rounded border-2 ${
                                   active ? 'border-[#6366f1] bg-[#6366f1]' : 'border-[#4a5068]'
                                 }`}
-                              />
-                            </button>
-                            <div className="flex-1 min-w-0">
-                              {cp.label && (
-                                <p className="text-xs text-[#e2e8f0] font-medium truncate">{cp.label}</p>
+                              >
+                                {active && (
+                                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="4">
+                                    <polyline points="20 6 9 17 4 12" />
+                                  </svg>
+                                )}
+                              </span>
+                              <span className="flex-1 min-w-0">
+                                {cp.label && (
+                                  <span className="block text-xs text-[#e2e8f0] font-medium truncate">{cp.label}</span>
+                                )}
+                                <span className="block text-[11px] text-[#4a5068] truncate">{cp.path}</span>
+                              </span>
+                              {active && (
+                                <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#6366f1]/20 text-[#a5b4fc]">
+                                  Ativo
+                                </span>
                               )}
-                              <p className="text-[11px] text-[#4a5068] truncate">{cp.path}</p>
-                            </div>
+                            </button>
                             <button
                               type="button"
                               onClick={() => removeCodePath(project.id, cp.id)}

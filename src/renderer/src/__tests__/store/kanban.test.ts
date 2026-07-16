@@ -817,15 +817,156 @@ describe('code path actions', () => {
     expect(id1).not.toBe(id2)
   })
 
-  it('removeCodePath reselects when the active path is removed', () => {
+  it('removeCodePath deselects the removed path without promoting another', () => {
     const id1 = useKanbanStore.getState().addCodePath(pid, 'C:/a')
     const id2 = useKanbanStore.getState().addCodePath(pid, 'C:/b')
-    useKanbanStore.getState().removeCodePath(pid, id1) // id1 was active
+    useKanbanStore.getState().removeCodePath(pid, id1) // id1 was selected
     expect(project().codePaths!.map((c) => c.id)).toEqual([id2])
-    expect(project().activeCodePathId).toBe(id2)
+    // id2 must NOT be auto-selected: the user never picked it, and selecting it
+    // would silently give the AI a folder to read.
+    expect(project().activeCodePathIds).toEqual([])
+    expect(project().activeCodePathId).toBeUndefined()
 
     useKanbanStore.getState().removeCodePath(pid, id2)
     expect(project().codePaths).toHaveLength(0)
     expect(project().activeCodePathId).toBeUndefined()
+  })
+
+  it('deleting an unselected path leaves an empty selection empty', () => {
+    const id1 = useKanbanStore.getState().addCodePath(pid, 'C:/a')
+    const id2 = useKanbanStore.getState().addCodePath(pid, 'C:/b')
+    useKanbanStore.getState().toggleCodePath(pid, id1) // user turns code access off
+    expect(project().activeCodePathIds).toEqual([])
+    useKanbanStore.getState().removeCodePath(pid, id2) // delete an unrelated path
+    expect(project().activeCodePathIds).toEqual([])
+  })
+
+  it('toggleCodePath selects several paths at once', () => {
+    const id1 = useKanbanStore.getState().addCodePath(pid, 'C:/a')
+    const id2 = useKanbanStore.getState().addCodePath(pid, 'C:/b')
+    const id3 = useKanbanStore.getState().addCodePath(pid, 'C:/c')
+    expect(project().activeCodePathIds).toEqual([id1])
+
+    useKanbanStore.getState().toggleCodePath(pid, id3)
+    expect(project().activeCodePathIds).toEqual([id1, id3])
+
+    useKanbanStore.getState().toggleCodePath(pid, id1)
+    expect(project().activeCodePathIds).toEqual([id3])
+    expect(id2).not.toBe(id3)
+  })
+
+  it('toggleCodePath can clear the selection entirely', () => {
+    const id1 = useKanbanStore.getState().addCodePath(pid, 'C:/a')
+    useKanbanStore.getState().toggleCodePath(pid, id1)
+    expect(project().activeCodePathIds).toEqual([])
+    expect(project().activeCodePathId).toBeUndefined()
+  })
+
+  it('keeps the legacy activeCodePathId in sync with the first selection', () => {
+    const id1 = useKanbanStore.getState().addCodePath(pid, 'C:/a')
+    const id2 = useKanbanStore.getState().addCodePath(pid, 'C:/b')
+    useKanbanStore.getState().toggleCodePath(pid, id2)
+    // Old app versions read the singular field; it must point at a real path.
+    expect(project().activeCodePathIds).toEqual([id1, id2])
+    expect(project().activeCodePathId).toBe(id1)
+
+    // Removing the first selection promotes the next one already selected.
+    useKanbanStore.getState().removeCodePath(pid, id1)
+    expect(project().activeCodePathIds).toEqual([id2])
+    expect(project().activeCodePathId).toBe(id2)
+  })
+
+  it('exportBackup carries the multi selection and the legacy mirror', async () => {
+    const id1 = useKanbanStore.getState().addCodePath(pid, 'C:/a', 'a')
+    const id2 = useKanbanStore.getState().addCodePath(pid, 'C:/b', 'b')
+    useKanbanStore.getState().toggleCodePath(pid, id2)
+
+    await useKanbanStore.getState().exportBackup()
+
+    const storage = vi.mocked(ElectronStorage).mock.instances[0] as unknown as {
+      exportBackup: ReturnType<typeof vi.fn>
+    }
+    const backup = storage.exportBackup.mock.calls.at(-1)![0]
+    const p = backup.projects.find((x: { id: string }) => x.id === pid)!
+    expect(p.activeCodePathIds).toEqual([id1, id2])
+    // Older versions restoring this backup read the singular field.
+    expect(p.activeCodePathId).toBe(id1)
+  })
+
+  it('importBackup migrates a legacy single activeCodePathId', async () => {
+    const storage = vi.mocked(ElectronStorage).mock.instances[0] as unknown as {
+      importBackup: ReturnType<typeof vi.fn>
+    }
+    storage.importBackup.mockResolvedValueOnce({
+      success: true,
+      data: {
+        version: 3,
+        exportedAt: '2024-01-01T00:00:00.000Z',
+        projects: [{
+          id: 'p-old', name: 'Antigo', color: '#fff', columns: [],
+          codePaths: [{ id: 'cp1', path: 'C:/a' }, { id: 'cp2', path: 'C:/b' }],
+          activeCodePathId: 'cp2', // backup written before multi-select existed
+          createdAt: '2024-01-01T00:00:00.000Z', updatedAt: '2024-01-01T00:00:00.000Z'
+        }],
+        tasks: []
+      }
+    })
+
+    await useKanbanStore.getState().importBackup()
+
+    const p = useKanbanStore.getState().projects.find((x) => x.id === 'p-old')!
+    expect(p.activeCodePathIds).toEqual(['cp2'])
+  })
+
+  it('loadData migrates a legacy single activeCodePathId to the array form', async () => {
+    const legacy = {
+      id: 'p-legacy',
+      name: 'Legado',
+      color: '#fff',
+      columns: [],
+      codePaths: [{ id: 'cp1', path: 'C:/a' }, { id: 'cp2', path: 'C:/b' }],
+      activeCodePathId: 'cp2', // written by a pre-multi-select version
+      createdAt: '2024-01-01T00:00:00.000Z',
+      updatedAt: '2024-01-01T00:00:00.000Z'
+    }
+    const storage = vi.mocked(ElectronStorage).mock.instances[0] as unknown as {
+      load: ReturnType<typeof vi.fn>
+    }
+    storage.load.mockResolvedValueOnce({
+      projects: [legacy], tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: []
+    })
+    await useKanbanStore.getState().loadData()
+    const p = useKanbanStore.getState().projects.find((x) => x.id === 'p-legacy')!
+    expect(p.activeCodePathIds).toEqual(['cp2'])
+  })
+
+  it('loadData drops selected ids whose code path no longer exists', async () => {
+    const stale = {
+      id: 'p-stale',
+      name: 'Stale',
+      color: '#fff',
+      columns: [],
+      codePaths: [{ id: 'cp1', path: 'C:/a' }],
+      activeCodePathIds: ['cp1', 'ghost'],
+      createdAt: '2024-01-01T00:00:00.000Z',
+      updatedAt: '2024-01-01T00:00:00.000Z'
+    }
+    const storage = vi.mocked(ElectronStorage).mock.instances[0] as unknown as {
+      load: ReturnType<typeof vi.fn>
+    }
+    storage.load.mockResolvedValueOnce({
+      projects: [stale], tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: []
+    })
+    await useKanbanStore.getState().loadData()
+    const p = useKanbanStore.getState().projects.find((x) => x.id === 'p-stale')!
+    expect(p.activeCodePathIds).toEqual(['cp1'])
+  })
+
+  it('removeCodePath only drops the removed path from a multi selection', () => {
+    const id1 = useKanbanStore.getState().addCodePath(pid, 'C:/a')
+    const id2 = useKanbanStore.getState().addCodePath(pid, 'C:/b')
+    useKanbanStore.getState().toggleCodePath(pid, id2)
+    useKanbanStore.getState().removeCodePath(pid, id2)
+    expect(project().activeCodePathIds).toEqual([id1])
   })
 })

@@ -109,6 +109,11 @@ export function AIView({ projects }: { projects: Project[] }) {
   const importTasksFromAIChat = useKanbanStore((s) => s.importTasksFromAIChat)
 
   const activeProject = projects.find((p) => p.id === activeProjectId) ?? null
+  // Surfaced in the header so the code tools' reach is visible without opening
+  // the project modal.
+  const activeCodePaths = (activeProject?.codePaths ?? []).filter((c) =>
+    (activeProject?.activeCodePathIds ?? []).includes(c.id)
+  )
 
   const [config, setConfig] = useState<AIConfig>(DEFAULT_CONFIG)
   const [showConfig, setShowConfig] = useState(false)
@@ -448,6 +453,21 @@ export function AIView({ projects }: { projects: Project[] }) {
             <span className="text-xs text-[#8892a4]">
               {activeProject ? activeProject.name : 'Nenhum projeto selecionado'}
             </span>
+            {activeCodePaths.length > 0 && (
+              <span
+                title={`A IA lê o código em:\n${activeCodePaths.map((c) => c.path).join('\n')}`}
+                className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#6366f1]/10 text-[11px] text-[#a5b4fc] max-w-[280px]"
+              >
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0">
+                  <polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" />
+                </svg>
+                <span className="truncate">
+                  {activeCodePaths.length === 1
+                    ? (activeCodePaths[0].label ?? activeCodePaths[0].path)
+                    : `${activeCodePaths.length} pastas`}
+                </span>
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <button
