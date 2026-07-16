@@ -1,0 +1,45 @@
+{
+  "tasks": [
+    {
+      "title": "Implementar o loop de tool-calling no AIView",
+      "description": "While loop no renderer: chama ai.chat com tools; se vier tool_calls, executa cada ferramenta contra o store e devolve o resultado (role: tool); repete até o modelo parar de chamar ferramentas.",
+      "priority": "high",
+      "dueDate": "2026-07-25",
+      "tags": ["feat", "frontend", "store"],
+      "column": "Backlog",
+      "sprint": "Sprint 2"
+    },
+    {
+      "title": "Criar registry de ferramentas (runTool) e definições no formato OpenAI",
+      "description": "Mapa nome->função executada contra o useKanbanStore, e a lista de tool definitions enviada ao modelo em cada turno.",
+      "priority": "high",
+      "tags": ["feat", "store", "api"],
+      "column": "Backlog",
+      "sprint": "Sprint 2"
+    },
+    {
+      "title": "Ferramentas de leitura (financeiro, tasks, projetos, metas)",
+      "description": "ler_financeiro (transações/metas filtradas por período), ler_tasks, ler_projetos, ler_metas/habitos, devolvendo fatias resumidas para não estourar o contexto.",
+      "priority": "high",
+      "tags": ["feat", "store", "reports"],
+      "column": "Backlog",
+      "sprint": "Sprint 2"
+    },
+    {
+      "title": "Ferramentas de escrita: criar/concluir task, cronômetro e sprints",
+      "description": "criar_tasks (importTasksFromAIChat), concluir_task (moveTask para Done, que já pausa o timer), iniciar_cronometro (startTimer), criar_sprints e atribuir_sprint.",
+      "priority": "high",
+      "tags": ["feat", "store", "sprints"],
+      "column": "Backlog",
+      "sprint": "Sprint 2"
+    },
+    {
+      "title": "Checkpoint de aprovação para ações de escrita",
+      "description": "Toda ferramenta que escreve pausa o loop e mostra um card de confirmação (reutilizando/expandindo o modal de checkboxes); só aplica após o OK do usuário.",
+      "priority": "high",
+      "tags": ["feat", "frontend", "security"],
+      "column": "Backlog",
+      "sprint": "Sprint 2"
+    }
+  ]
+}

@@ -12,6 +12,8 @@ vi.mock('../../services/ElectronStorage', () => ({
     this.exportBackup = vi.fn().mockResolvedValue({ success: true })
     this.importBackup = vi.fn().mockResolvedValue({ success: false, cancelled: true })
     this.importAIJson = vi.fn().mockResolvedValue({ success: false, cancelled: true })
+    this.loadConversations = vi.fn().mockResolvedValue([])
+    this.saveConversations = vi.fn().mockResolvedValue(undefined)
   })
 }))
 

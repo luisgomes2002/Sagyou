@@ -14,6 +14,7 @@ import { FinancialView } from './components/FinancialView'
 import { UpcomingView } from './components/UpcomingView'
 import { ReportsView } from './components/ReportsView'
 import { FilesView } from './components/FilesView'
+import { AIView } from './components/AIView'
 import { ExcelExportModal } from './components/ExcelExportModal'
 import { ProjectLinksDropdown } from './components/ProjectLinksDropdown'
 import { SearchModal } from './components/SearchModal'
@@ -92,7 +93,7 @@ export default function App() {
   const [viewTask, setViewTask] = useState<Task | null>(null)
   const [projectModal, setProjectModal] = useState<ProjectModalState>({ open: false })
   const [columnModal, setColumnModal] = useState<ColumnModalState>({ open: false })
-  const [activeView, setActiveView] = useState<'board' | 'canvas' | 'done' | 'goals' | 'habits' | 'financial' | 'upcoming' | 'reports' | 'files'>('board')
+  const [activeView, setActiveView] = useState<'board' | 'canvas' | 'done' | 'goals' | 'habits' | 'financial' | 'upcoming' | 'reports' | 'files' | 'ai'>('board')
   const [searchOpen, setSearchOpen] = useState(false)
   const [excelExportOpen, setExcelExportOpen] = useState(false)
   // session-only: maps projectId → active linkIds (not persisted — each machine picks its own)
@@ -103,8 +104,21 @@ export default function App() {
     message: '',
     onConfirm: () => {}
   })
+  // Global indicator: is the external code agent (Aider/Codex) running?
+  const [codeAgentRunning, setCodeAgentRunning] = useState(false)
 
   useEffect(() => { loadData() }, [loadData])
+
+  // Track the code agent across all views (App never unmounts, unlike AIView).
+  useEffect(() => {
+    window.electronAPI.ai.codeAgent.status().then((s) => setCodeAgentRunning(s.running))
+    const offOutput = window.electronAPI.ai.codeAgent.onOutput(() => setCodeAgentRunning(true))
+    const offExit = window.electronAPI.ai.codeAgent.onExit(() => setCodeAgentRunning(false))
+    return () => {
+      offOutput()
+      offExit()
+    }
+  }, [])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -343,7 +357,7 @@ export default function App() {
           projects={projects}
           activeProjectId={activeProjectId}
           activeView={activeView}
-          onSelectProject={(id) => { setActiveProject(id); if (activeView !== 'board' && activeView !== 'canvas' && activeView !== 'files') setActiveView('board'); setSprintFilter(null) }}
+          onSelectProject={(id) => { setActiveProject(id); if (activeView !== 'board' && activeView !== 'canvas' && activeView !== 'files' && activeView !== 'ai') setActiveView('board'); setSprintFilter(null) }}
           onChangeView={setActiveView}
           onOpenSearch={() => setSearchOpen(true)}
           onNewProject={handleNewProject}
@@ -367,6 +381,8 @@ export default function App() {
             />
           ) : activeView === 'financial' ? (
             <FinancialView />
+          ) : activeView === 'ai' ? (
+            <AIView projects={projects} />
           ) : activeView === 'habits' ? (
             <HabitView />
           ) : activeView === 'goals' ? (
@@ -580,6 +596,23 @@ export default function App() {
           onClose={() => setExcelExportOpen(false)}
           onToast={(msg) => addToast(msg)}
         />
+      )}
+
+      {/* Global indicator: code agent running in the background (visible on any view) */}
+      {codeAgentRunning && (
+        <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg bg-[#13151f] border border-amber-500/40 shadow-2xl">
+          <span className="relative flex w-2.5 h-2.5">
+            <span className="absolute inline-flex w-full h-full rounded-full bg-amber-400 opacity-60 animate-ping" />
+            <span className="relative inline-flex w-2.5 h-2.5 rounded-full bg-amber-400" />
+          </span>
+          <span className="text-xs font-medium text-amber-300">Agente de código rodando</span>
+          <button
+            onClick={() => window.electronAPI.ai.codeAgent.stop()}
+            className="ml-1 px-2 py-0.5 rounded text-[11px] text-red-400 hover:text-red-300 hover:bg-red-400/10 transition-colors"
+          >
+            Parar
+          </button>
+        </div>
       )}
     </div>
   )

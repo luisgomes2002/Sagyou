@@ -1,0 +1,20 @@
+{
+  "tasks": [
+    {
+      "title": "Campo path próprio no projeto e persistência da seleção",
+      "description": "Guardar o caminho do projeto no PC num campo dedicado (não no url do link) e persistir a seleção de path para a IA saber o diretório entre sessões.",
+      "priority": "low",
+      "tags": ["feat", "store", "infra"],
+      "column": "Backlog",
+      "sprint": "Sprint 4"
+    },
+    {
+      "title": "Orquestrar um harness de código externo no diretório do projeto",
+      "description": "Disparar um agente open-source (Aider/Codex CLI) via child_process no main, no path selecionado, apontado ao DeepSeek, com aprovação obrigatória antes de escrever arquivos ou rodar comandos.",
+      "priority": "low",
+      "tags": ["feat", "infra", "security"],
+      "column": "Backlog",
+      "sprint": "Sprint 4"
+    }
+  ]
+}
