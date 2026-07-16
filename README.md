@@ -43,15 +43,19 @@
 
 | | |
 |---|---|
-| **Kanban** | Quadros com colunas customizáveis, sprints e prioridades |
+| **Kanban** | Quadros com colunas customizáveis, sprints, prioridades e cronômetro por tarefa |
 | **Hábitos** | Rastreamento diário com histórico e streak |
 | **Metas** | Acompanhamento de objetivos pessoais |
-| **Lista de compras** | Listas com suporte a múltiplas moedas (BRL, USD, JPY) |
+| **Financeiro** | Transações, metas financeiras e análises, com listas de compras em múltiplas moedas (BRL, USD, JPY) |
 | **Canvas** | Notas adesivas livres em tela infinita |
+| **Arquivos** | Anexos por projeto, guardados localmente |
 | **Relatórios** | Visão geral de produtividade |
 | **Upcoming** | Tarefas com data de vencimento próxima |
 | **Busca** | Pesquisa rápida em todos os dados |
+| **Assistente de IA** | Chat com acesso aos seus dados via ferramentas — funciona com qualquer provedor compatível com a API da OpenAI (local ou hospedado). Ações que alteram dados pedem aprovação antes de rodar |
+| **Agente de código** | Aponte um projeto para um diretório e peça alterações no código — executado por `aider` ou `codex` |
 | **Importação via IA** | Cole JSON gerado por um LLM — o sidebar tem "Copiar tudo" para gerar um prompt pronto com schema e tags |
+| **Exportação para Excel** | Exporte projetos, tarefas, hábitos, metas e dados financeiros em `.xlsx` |
 | **Backup** | Exportação e restauração de dados em JSON |
 
 ---
@@ -61,8 +65,11 @@
 - [Electron](https://www.electronjs.org/) + [electron-vite](https://electron-vite.org/)
 - [React](https://react.dev/) + [TypeScript](https://www.typescriptlang.org/)
 - [Zustand](https://zustand-demo.pmnd.rs/) — gerenciamento de estado
+- [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) — armazenamento local em SQLite
+- [decimal.js](https://mikemcl.github.io/decimal.js/) — aritmética monetária exata
 - [dnd kit](https://dndkit.com/) — drag and drop
 - [Tailwind CSS](https://tailwindcss.com/) — estilização
+- [SheetJS](https://sheetjs.com/) — exportação para Excel
 - [Vitest](https://vitest.dev/) — testes
 
 ---
@@ -84,3 +91,18 @@ npm run build:win    # Windows
 npm run build:mac    # macOS
 npm run build:linux  # Linux
 ```
+
+---
+
+## Dados
+
+Tudo fica na sua máquina, no diretório de dados do app (`userData`):
+
+| Arquivo | Conteúdo |
+|---|---|
+| `kanban.db` | banco SQLite com projetos, tarefas, hábitos, metas e finanças |
+| `files/` | anexos enviados |
+| `ai-config.json` | configuração do provedor de IA (inclui a chave de API) |
+| `ai-conversations.json` | histórico do chat |
+
+O assistente de IA é opcional e desligado até você configurar um provedor. Se você apontar para um provedor hospedado, os dados enviados no chat saem da máquina — use um modelo local se preferir manter tudo offline.
