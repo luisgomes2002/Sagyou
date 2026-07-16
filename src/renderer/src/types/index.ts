@@ -11,6 +11,13 @@ export interface ProjectLink {
   url: string
 }
 
+/** A local filesystem path to the project's code on the PC. */
+export interface CodePath {
+  id: string
+  label?: string
+  path: string
+}
+
 export interface Project {
   id: string
   name: string
@@ -18,6 +25,10 @@ export interface Project {
   color: string
   columns: Column[]
   links?: ProjectLink[]
+  /** Local code paths for this project (the AI's working directories). */
+  codePaths?: CodePath[]
+  /** The selected code path (persisted across sessions). */
+  activeCodePathId?: string
   order?: number
   createdAt: string
   updatedAt: string
@@ -124,6 +135,21 @@ export interface FinancialTable {
   updatedAt: string
 }
 
+export interface AIMessage {
+  // 'status' is the agent's display-only trace, kept in the transcript and
+  // persisted alongside real turns (see AIView's ChatMessage).
+  role: 'user' | 'assistant' | 'status'
+  content: string
+}
+
+export interface AIConversation {
+  id: string
+  title: string
+  createdAt: string
+  updatedAt: string
+  messages: AIMessage[]
+}
+
 export interface Backup {
   version: number
   exportedAt: string
@@ -135,6 +161,9 @@ export interface Backup {
   goals?: Goal[]
   habits?: Habit[]
   lists?: FinancialTable[]
+  // Added in version 3. Absent in older backups — importing one of those must
+  // leave the local history untouched rather than wiping it.
+  conversations?: AIConversation[]
 }
 
 export interface AITaskInput {
@@ -270,3 +299,43 @@ export const DEFAULT_TAGS: { label: string; tags: string[] }[] = [
     tags: ['hábito', 'rotina', 'projeto pessoal', 'criatividade', 'foco', 'urgente', 'importante', 'ideia', 'meta pessoal', 'lembrete', 'reflexão', 'diário', 'gratidão', 'planejamento semanal']
   }
 ]
+
+// Tag list per area, derived from DEFAULT_TAGS so the prompt stays in sync.
+const AI_TAG_LINES = DEFAULT_TAGS.map((g) => `  ${g.label}: ${g.tags.join(', ')}`).join('\n\n')
+
+/**
+ * Shared task-JSON template. Describes the exact `{ "tasks": [...] }` shape the
+ * app imports. Used both as the copyable example in the Sidebar and as the
+ * instruction sent to the model by the AI view's "Gerar Tasks". Tags are
+ * generated from DEFAULT_TAGS so there is a single source of truth.
+ */
+export const AI_TASK_PROMPT_TEMPLATE = `{
+  "tasks": [
+    {
+      "title": "Implementar login",
+      "description": "Tela de autenticação com JWT.",
+      "priority": "high",
+      "dueDate": "2026-07-15",
+      "tags": ["auth", "frontend"],
+      "column": "In Progress",
+      "sprint": "Sprint 1"
+    },
+    {
+      "title": "Criar testes unitários",
+      "priority": "medium",
+      "tags": ["testes"],
+      "column": "Backlog"
+    }
+  ]
+}
+
+Campos:
+- priority — low · medium · high · urgent
+- column — nome exato da coluna no projeto (ex: "In Progress")
+- sprint — nome exato da sprint (ex: "Sprint 1"). Opcional.
+- dueDate — formato YYYY-MM-DD. Opcional.
+- tags — use as tags relevantes para o contexto. Tags disponíveis por área:
+
+${AI_TAG_LINES}
+
+Gere tarefas para cada parte desse projeto, não deixe as tarefas muito granuladas e se o assunto de uma para outra for muito diferente separe em arquivos json diferentes, por exemplo na área de desenvolvimento tem a parte de testes, refatoração e nova feature, cada uma dessas é um arquivo separado.`

@@ -1,6 +1,6 @@
 {
   "name": "sagyou",
-  "version": "2.0.5",
+  "version": "3.0.0",
   "description": "Sagyou — Kanban pessoal offline",
   "main": "./out/main/index.js",
   "author": "gomesluis.dev@gmail.com",
@@ -34,7 +34,10 @@
     "date-fns": "^4.4.0",
     "decimal.js": "^10.6.0",
     "electron-store": "^11.0.2",
+    "openai": "^6.47.0",
     "playwright-core": "^1.60.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "uuid": "^14.0.0",
     "xlsx": "^0.18.5",
     "zustand": "^5.0.14"

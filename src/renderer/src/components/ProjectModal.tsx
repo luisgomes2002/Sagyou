@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 import type { Project, ProjectLink } from '../types'
 import { PROJECT_COLORS } from '../types'
+import { useKanbanStore } from '../store/kanban'
 
 interface Props {
   open: boolean
@@ -17,6 +18,23 @@ export function ProjectModal({ open, project, onSave, onClose }: Props) {
   const [links, setLinks] = useState<ProjectLink[]>([])
   const [newLabel, setNewLabel] = useState('')
   const [newUrl, setNewUrl] = useState('')
+
+  // Code paths are managed live via the store (not draft/saved), so we read the
+  // current project fresh and mutate it immediately as the user edits.
+  const liveProject = useKanbanStore((s) => s.projects.find((p) => p.id === project?.id))
+  const codePaths = liveProject?.codePaths ?? []
+  const activeCodePathId = liveProject?.activeCodePathId
+  const addCodePath = useKanbanStore((s) => s.addCodePath)
+  const removeCodePath = useKanbanStore((s) => s.removeCodePath)
+  const setActiveCodePath = useKanbanStore((s) => s.setActiveCodePath)
+
+  const handleAddCodePath = async (): Promise<void> => {
+    if (!project) return
+    const { path } = await window.electronAPI.ai.pickDirectory()
+    if (!path) return
+    const label = path.split(/[\\/]/).filter(Boolean).pop()
+    addCodePath(project.id, path, label)
+  }
 
   useEffect(() => {
     if (open) {
@@ -178,6 +196,75 @@ export function ProjectModal({ open, project, onSave, onClose }: Props) {
                   </button>
                 </div>
               </div>
+            </div>
+
+            {/* Code paths section (for the AI code agent) */}
+            <div>
+              <label className="block text-xs font-medium text-[#8892a4] mb-2">
+                Caminhos de código
+                <span className="ml-1.5 text-[#4a5068] font-normal">pastas no PC onde a IA trabalha</span>
+              </label>
+
+              {!project ? (
+                <p className="text-[11px] text-[#4a5068] italic">
+                  Salve o projeto primeiro para adicionar caminhos de código.
+                </p>
+              ) : (
+                <>
+                  {codePaths.length > 0 && (
+                    <div className="space-y-1.5 mb-3">
+                      {codePaths.map((cp) => {
+                        const active = cp.id === activeCodePathId
+                        return (
+                          <div
+                            key={cp.id}
+                            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#0d0f18] border border-[#2a2d42] group"
+                          >
+                            <button
+                              type="button"
+                              onClick={() => setActiveCodePath(project.id, cp.id)}
+                              title={active ? 'Caminho ativo' : 'Definir como ativo'}
+                              className="shrink-0"
+                            >
+                              <span
+                                className={`block w-3.5 h-3.5 rounded-full border-2 ${
+                                  active ? 'border-[#6366f1] bg-[#6366f1]' : 'border-[#4a5068]'
+                                }`}
+                              />
+                            </button>
+                            <div className="flex-1 min-w-0">
+                              {cp.label && (
+                                <p className="text-xs text-[#e2e8f0] font-medium truncate">{cp.label}</p>
+                              )}
+                              <p className="text-[11px] text-[#4a5068] truncate">{cp.path}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => removeCodePath(project.id, cp.id)}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-[#8892a4] hover:text-red-400"
+                            >
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                              </svg>
+                            </button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={handleAddCodePath}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-dashed border-[#6366f1]/40 text-[#a5b4fc] text-xs hover:border-[#6366f1] hover:bg-[#6366f1]/10 transition-colors"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                    </svg>
+                    Adicionar pasta
+                  </button>
+                </>
+              )}
             </div>
           </div>
 

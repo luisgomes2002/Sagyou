@@ -1,7 +1,8 @@
 import type { IStorageAdapter } from './StorageAdapter'
-import type { Project, Task, Sprint, Tombstone, Backup, AIJson, StickyNote, Goal, Habit, FinancialTable, StoredFile } from '../types'
+import type { Project, Task, Sprint, Tombstone, Backup, AIJson, StickyNote, Goal, Habit, FinancialTable, StoredFile, AIConversation } from '../types'
 
 const STORAGE_KEY = 'kanban-data'
+const CONVERSATIONS_KEY = 'ai-conversations'
 
 // Web implementation — swap ElectronStorage for this when migrating to browser
 export class WebStorage implements IStorageAdapter {
@@ -89,5 +90,18 @@ export class WebStorage implements IStorageAdapter {
       input.oncancel = () => resolve({ success: false, cancelled: true })
       input.click()
     })
+  }
+
+  async loadConversations(): Promise<AIConversation[]> {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(CONVERSATIONS_KEY) || '[]')
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  }
+
+  async saveConversations(list: AIConversation[]): Promise<void> {
+    localStorage.setItem(CONVERSATIONS_KEY, JSON.stringify(list))
   }
 }

@@ -10,9 +10,12 @@ type Priority = 'low' | 'medium' | 'high' | 'urgent'
 
 interface Column { id: string; name: string; order: number; color?: string }
 interface ProjectLink { id: string; label: string; url: string }
+interface CodePath { id: string; label?: string; path: string }
 interface Project {
   id: string; name: string; description?: string; color: string
-  columns: Column[]; links?: ProjectLink[]; order?: number
+  columns: Column[]; links?: ProjectLink[]
+  codePaths?: CodePath[]; activeCodePathId?: string
+  order?: number
   createdAt: string; updatedAt: string
 }
 interface TaskImage { id: string; name: string; dataUrl: string; size: number; addedAt: string }
@@ -197,6 +200,13 @@ function initSchema(db: Database.Database): void {
       label TEXT NOT NULL,
       url TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS project_code_paths (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      label TEXT,
+      path TEXT NOT NULL,
+      active INTEGER NOT NULL DEFAULT 0
+    );
     CREATE TABLE IF NOT EXISTS tasks (
       id TEXT PRIMARY KEY,
       project_id TEXT NOT NULL,
@@ -379,6 +389,7 @@ function persistAll(db: Database.Database, data: SaveData): void {
     DELETE FROM task_tags;
     DELETE FROM tasks;
     DELETE FROM project_links;
+    DELETE FROM project_code_paths;
     DELETE FROM project_columns;
     DELETE FROM projects;
   `)
@@ -387,6 +398,7 @@ function persistAll(db: Database.Database, data: SaveData): void {
     project: db.prepare('INSERT INTO projects (id,name,description,color,ord,created_at,updated_at) VALUES (?,?,?,?,?,?,?)'),
     column:  db.prepare('INSERT INTO project_columns (id,project_id,name,ord,color) VALUES (?,?,?,?,?)'),
     link:    db.prepare('INSERT INTO project_links (id,project_id,label,url) VALUES (?,?,?,?)'),
+    codePath: db.prepare('INSERT INTO project_code_paths (id,project_id,label,path,active) VALUES (?,?,?,?,?)'),
     task:    db.prepare('INSERT INTO tasks (id,project_id,column_id,title,description,priority,due_date,sprint_id,time_spent,ord,created_at,updated_at,completed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'),
     tag:     db.prepare('INSERT OR IGNORE INTO task_tags (task_id,tag) VALUES (?,?)'),
     image:   db.prepare('INSERT INTO task_images (id,task_id,name,data_url,size,added_at) VALUES (?,?,?,?,?,?)'),
@@ -410,6 +422,8 @@ function persistAll(db: Database.Database, data: SaveData): void {
     ins.project.run(p.id, p.name, p.description ?? null, p.color, p.order ?? null, p.createdAt, p.updatedAt)
     for (const c of p.columns ?? []) ins.column.run(c.id, p.id, c.name, c.order, c.color ?? null)
     for (const l of p.links ?? []) ins.link.run(l.id, p.id, l.label, l.url)
+    for (const cp of p.codePaths ?? [])
+      ins.codePath.run(cp.id, p.id, cp.label ?? null, cp.path, cp.id === p.activeCodePathId ? 1 : 0)
   }
 
   for (const t of data.tasks ?? []) {
@@ -467,6 +481,17 @@ export function loadData(): SaveData {
       const ls = (db.prepare('SELECT * FROM project_links WHERE project_id=?').all(p.id) as any[])
         .map((l) => ({ id: l.id, label: l.label, url: l.url }))
       return ls.length ? { links: ls } : {}
+    })(),
+    ...(() => {
+      const rows = db.prepare('SELECT * FROM project_code_paths WHERE project_id=?').all(p.id) as any[]
+      if (!rows.length) return {}
+      const codePaths = rows.map((c) => ({
+        id: c.id,
+        path: c.path,
+        ...(c.label != null ? { label: c.label } : {})
+      }))
+      const active = rows.find((c) => c.active)
+      return active ? { codePaths, activeCodePathId: active.id } : { codePaths }
     })(),
     ...(p.ord != null ? { order: p.ord } : {}),
     createdAt: p.created_at, updatedAt: p.updated_at,

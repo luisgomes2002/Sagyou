@@ -1,5 +1,5 @@
 import type { IStorageAdapter } from './StorageAdapter'
-import type { Project, Task, Sprint, Tombstone, Backup, AIJson, StickyNote, Goal, Habit, FinancialTable, StoredFile } from '../types'
+import type { Project, Task, Sprint, Tombstone, Backup, AIJson, StickyNote, Goal, Habit, FinancialTable, StoredFile, AIConversation } from '../types'
 
 export class ElectronStorage implements IStorageAdapter {
   async load() {
@@ -44,5 +44,13 @@ export class ElectronStorage implements IStorageAdapter {
   }> {
     const result = await window.electronAPI.ai.import()
     return result as { success: boolean; cancelled?: boolean; data?: AIJson; error?: string }
+  }
+
+  async loadConversations(): Promise<AIConversation[]> {
+    return window.electronAPI.ai.conversations.all()
+  }
+
+  async saveConversations(list: AIConversation[]): Promise<void> {
+    await window.electronAPI.ai.conversations.replace(list)
   }
 }

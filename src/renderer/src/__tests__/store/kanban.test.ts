@@ -9,6 +9,8 @@ vi.mock('../../services/ElectronStorage', () => {
       this.exportBackup = vi.fn().mockResolvedValue({ success: true })
       this.importBackup = vi.fn().mockResolvedValue({ success: false, cancelled: true })
       this.importAIJson = vi.fn().mockResolvedValue({ success: false, cancelled: true })
+      this.loadConversations = vi.fn().mockResolvedValue([])
+      this.saveConversations = vi.fn().mockResolvedValue(undefined)
     })
   }
 })
@@ -21,6 +23,8 @@ function getStorageMock() {
   return vi.mocked(ElectronStorage).mock.instances[0] as unknown as {
     importBackup: ReturnType<typeof vi.fn>
     exportBackup: ReturnType<typeof vi.fn>
+    loadConversations: ReturnType<typeof vi.fn>
+    saveConversations: ReturnType<typeof vi.fn>
   }
 }
 
@@ -569,6 +573,81 @@ describe('shopping list actions', () => {
   })
 })
 
+// ── AI chat history in backups ────────────────────────────────────────────────
+
+describe('backups carry AI chat history', () => {
+  beforeEach(resetStore)
+
+  const conversation = {
+    id: 'c1',
+    title: 'Planejar sprint',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-02T00:00:00.000Z',
+    messages: [
+      { role: 'user' as const, content: 'oi' },
+      // Display-only agent trace — must survive a round-trip like any other line.
+      { role: 'status' as const, content: 'Lendo src/App.tsx' },
+      { role: 'assistant' as const, content: 'olá' }
+    ]
+  }
+
+  it('exportBackup includes the stored conversations at version 3', async () => {
+    const storage = getStorageMock()
+    storage.loadConversations.mockResolvedValueOnce([conversation])
+
+    await useKanbanStore.getState().exportBackup()
+
+    const backup = storage.exportBackup.mock.calls[0][0]
+    expect(backup.version).toBe(3)
+    expect(backup.conversations).toEqual([conversation])
+  })
+
+  it('exportBackup still succeeds when the history cannot be read', async () => {
+    const storage = getStorageMock()
+    storage.loadConversations.mockRejectedValueOnce(new Error('disk on fire'))
+
+    const result = await useKanbanStore.getState().exportBackup()
+
+    expect(result).toBe(true)
+    expect(storage.exportBackup.mock.calls.at(-1)![0].conversations).toEqual([])
+  })
+
+  it('importBackup restores conversations from a v3 backup', async () => {
+    const storage = getStorageMock()
+    storage.importBackup.mockResolvedValueOnce({
+      success: true,
+      data: {
+        version: 3,
+        exportedAt: new Date().toISOString(),
+        projects: [], tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: [],
+        conversations: [conversation]
+      }
+    })
+
+    await useKanbanStore.getState().importBackup()
+
+    expect(storage.saveConversations).toHaveBeenCalledWith([conversation])
+  })
+
+  it('importBackup leaves local history alone for a v2 backup', async () => {
+    const storage = getStorageMock()
+    storage.saveConversations.mockClear()
+    storage.importBackup.mockResolvedValueOnce({
+      success: true,
+      data: {
+        version: 2,
+        exportedAt: new Date().toISOString(),
+        projects: [], tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: []
+      }
+    })
+
+    const result = await useKanbanStore.getState().importBackup()
+
+    expect(result).toBe(true)
+    expect(storage.saveConversations).not.toHaveBeenCalled()
+  })
+})
+
 // ── importBackup ──────────────────────────────────────────────────────────────
 
 describe('importBackup', () => {
@@ -700,5 +779,53 @@ describe('importBackup', () => {
     const projects = useKanbanStore.getState().projects
     expect(projects[0].order).toBe(0)
     expect(projects[1].order).toBe(1)
+  })
+})
+
+// ── Code paths ─────────────────────────────────────────────────────────────────
+
+describe('code path actions', () => {
+  let pid: string
+
+  beforeEach(() => {
+    resetStore()
+    pid = useKanbanStore.getState().createProject('P')
+  })
+
+  const project = () => useKanbanStore.getState().projects.find((p) => p.id === pid)!
+
+  it('addCodePath adds a path and selects the first one as active', () => {
+    const id1 = useKanbanStore.getState().addCodePath(pid, 'C:/proj', 'main')
+    expect(project().codePaths).toHaveLength(1)
+    expect(project().codePaths![0]).toMatchObject({ id: id1, path: 'C:/proj', label: 'main' })
+    expect(project().activeCodePathId).toBe(id1)
+
+    const id2 = useKanbanStore.getState().addCodePath(pid, 'C:/other')
+    // Second path does not steal the active selection.
+    expect(project().activeCodePathId).toBe(id1)
+    expect(project().codePaths!.map((c) => c.id)).toEqual([id1, id2])
+  })
+
+  it('setActiveCodePath changes the persisted selection', () => {
+    const id1 = useKanbanStore.getState().addCodePath(pid, 'C:/a')
+    const id2 = useKanbanStore.getState().addCodePath(pid, 'C:/b')
+    useKanbanStore.getState().setActiveCodePath(pid, id2)
+    expect(project().activeCodePathId).toBe(id2)
+    useKanbanStore.getState().setActiveCodePath(pid, null)
+    expect(project().activeCodePathId).toBeUndefined()
+    // sanity: ids are distinct
+    expect(id1).not.toBe(id2)
+  })
+
+  it('removeCodePath reselects when the active path is removed', () => {
+    const id1 = useKanbanStore.getState().addCodePath(pid, 'C:/a')
+    const id2 = useKanbanStore.getState().addCodePath(pid, 'C:/b')
+    useKanbanStore.getState().removeCodePath(pid, id1) // id1 was active
+    expect(project().codePaths!.map((c) => c.id)).toEqual([id2])
+    expect(project().activeCodePathId).toBe(id2)
+
+    useKanbanStore.getState().removeCodePath(pid, id2)
+    expect(project().codePaths).toHaveLength(0)
+    expect(project().activeCodePathId).toBeUndefined()
   })
 })

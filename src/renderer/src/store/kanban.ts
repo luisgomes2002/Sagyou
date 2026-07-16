@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { v4 as uuidv4 } from 'uuid'
 import Decimal from 'decimal.js'
-import type { Project, Task, Column, Sprint, Tombstone, Backup, AIJson, Priority, StickyNote, Goal, GoalEntry, Habit, FinancialTable, FinancialTransaction, FinancialGoal, ShoppingItem, Currency, StoredFile } from '../types'
+import type { Project, Task, Column, Sprint, Tombstone, Backup, AIJson, Priority, StickyNote, Goal, GoalEntry, Habit, FinancialTable, FinancialTransaction, FinancialGoal, ShoppingItem, Currency, StoredFile, AIConversation } from '../types'
 import { DEFAULT_COLUMN_NAMES } from '../types'
 import { ElectronStorage } from '../services/ElectronStorage'
 import { isDoneColumn } from '../utils/columns'
@@ -74,6 +74,10 @@ interface KanbanActions {
   moveProject: (id: string, direction: 'up' | 'down') => void
   deleteProject: (id: string) => void
 
+  addCodePath: (projectId: string, path: string, label?: string) => string
+  removeCodePath: (projectId: string, codePathId: string) => void
+  setActiveCodePath: (projectId: string, codePathId: string | null) => void
+
   createColumn: (projectId: string, name: string, color?: string) => void
   updateColumn: (projectId: string, columnId: string, updates: Partial<Pick<Column, 'name' | 'color'>>) => void
   deleteColumn: (projectId: string, columnId: string) => void
@@ -141,6 +145,7 @@ interface KanbanActions {
   exportBackup: () => Promise<boolean>
   importBackup: () => Promise<boolean>
   importAIJson: (projectId: string) => Promise<number>
+  importTasksFromAIChat: (projectId: string, tasks: AIJson['tasks']) => number
 
   addFiles: (files: StoredFile[]) => void
   removeFile: (id: string) => void
@@ -247,6 +252,49 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
     set((s) => ({
       projects: s.projects.map((p) =>
         p.id === id ? { ...p, ...updates, updatedAt: new Date().toISOString() } : p
+      )
+    }))
+    get()._persist()
+  },
+
+  addCodePath: (projectId, path, label) => {
+    const id = uuidv4()
+    set((s) => ({
+      projects: s.projects.map((p) => {
+        if (p.id !== projectId) return p
+        const codePaths = [...(p.codePaths ?? []), { id, path, label }]
+        return {
+          ...p,
+          codePaths,
+          // First path becomes the active selection.
+          activeCodePathId: p.activeCodePathId ?? id,
+          updatedAt: new Date().toISOString()
+        }
+      })
+    }))
+    get()._persist()
+    return id
+  },
+
+  removeCodePath: (projectId, codePathId) => {
+    set((s) => ({
+      projects: s.projects.map((p) => {
+        if (p.id !== projectId) return p
+        const codePaths = (p.codePaths ?? []).filter((c) => c.id !== codePathId)
+        const activeCodePathId =
+          p.activeCodePathId === codePathId ? codePaths[0]?.id : p.activeCodePathId
+        return { ...p, codePaths, activeCodePathId, updatedAt: new Date().toISOString() }
+      })
+    }))
+    get()._persist()
+  },
+
+  setActiveCodePath: (projectId, codePathId) => {
+    set((s) => ({
+      projects: s.projects.map((p) =>
+        p.id === projectId
+          ? { ...p, activeCodePathId: codePathId ?? undefined, updatedAt: new Date().toISOString() }
+          : p
       )
     }))
     get()._persist()
@@ -903,8 +951,16 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
 
   exportBackup: async () => {
     const { projects, tasks, sprints, tombstones, notes, goals, habits, lists } = get()
+    // Chat history isn't part of the store — read it straight from storage.
+    // A failure here shouldn't cost the user the rest of the backup.
+    let conversations: AIConversation[] = []
+    try {
+      conversations = await storage.loadConversations()
+    } catch {
+      conversations = []
+    }
     const backup: Backup = {
-      version: 2,
+      version: 3,
       exportedAt: new Date().toISOString(),
       projects,
       tasks,
@@ -913,7 +969,8 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
       notes,
       goals,
       habits,
-      lists
+      lists,
+      conversations
     }
     const result = await storage.exportBackup(backup)
     return result.success
@@ -950,6 +1007,16 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
     const files = get().files  // preserve local files — backup doesn't carry file bytes
     set({ projects, tasks, sprints, tombstones, notes, goals, habits, lists, files, activeProjectId, activeTimer: null })
     await get()._flushPersist()
+
+    // Only touch the chat history when the backup actually carries it: a v2
+    // file has no `conversations` key and must leave local history alone.
+    if (Array.isArray(backup.conversations)) {
+      try {
+        await storage.saveConversations(backup.conversations)
+      } catch {
+        // History is secondary — a failure here doesn't undo the import above.
+      }
+    }
     return true
   },
 
@@ -960,7 +1027,15 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
     const aiJson = result.data as AIJson
     if (!Array.isArray(aiJson.tasks) || aiJson.tasks.length === 0) return 0
 
-    const { projects, tasks } = get()
+    return get().importTasksFromAIChat(projectId, aiJson.tasks)
+  },
+
+  // Create tasks directly from an AI-produced task list (no file dialog).
+  // Shares the column/sprint-matching logic used by importAIJson.
+  importTasksFromAIChat: (projectId, inputs) => {
+    if (!Array.isArray(inputs) || inputs.length === 0) return 0
+
+    const { projects, tasks, sprints } = get()
     const project = projects.find((p) => p.id === projectId)
     if (!project) return 0
 
@@ -970,10 +1045,9 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
       columnTaskCounts[t.columnId] = (columnTaskCounts[t.columnId] ?? 0) + 1
     }
 
-    const { sprints } = get()
     const projectSprints = sprints.filter((s) => s.projectId === projectId)
 
-    const newTasks: Task[] = aiJson.tasks.map((input) => {
+    const newTasks: Task[] = inputs.map((input) => {
       const col =
         project.columns.find((c) => c.name.toLowerCase() === (input.column ?? '').toLowerCase())
         ?? project.columns[0]
@@ -1001,7 +1075,7 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
     })
 
     set((s) => ({ tasks: [...s.tasks, ...newTasks] }))
-    await get()._flushPersist()
+    get()._persist()
     return newTasks.length
   },
 

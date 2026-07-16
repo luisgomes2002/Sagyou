@@ -1,0 +1,20 @@
+{
+  "tasks": [
+    {
+      "title": "Testes do loop de agente (tool-calling)",
+      "description": "Mockar ai.chat retornando tool_calls e verificar a execução das ferramentas, a devolução dos resultados e a parada correta do loop.",
+      "priority": "medium",
+      "tags": ["testes", "correctness"],
+      "column": "Backlog",
+      "sprint": "Sprint 3"
+    },
+    {
+      "title": "Testes das ferramentas de escrita no store",
+      "description": "Cobrir concluir_task pausando o cronômetro, criar_sprints, atribuir_sprint e importTasksFromAIChat (casamento de coluna/sprint por nome).",
+      "priority": "medium",
+      "tags": ["testes", "store"],
+      "column": "Backlog",
+      "sprint": "Sprint 3"
+    }
+  ]
+}
