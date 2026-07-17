@@ -11,7 +11,7 @@ import {
 } from 'fs'
 import { readFile } from 'fs/promises'
 import { randomUUID } from 'crypto'
-import { spawn, type ChildProcess } from 'child_process'
+import { spawn, execSync, type ChildProcess } from 'child_process'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import OpenAI from 'openai'
 import { loadData, saveData } from './store'
@@ -86,16 +86,27 @@ function appendAgentLog(chunk: string): void {
 // aider.exe; npm installs codex.cmd). Returns the full path, or null. POSIX
 // resolves via PATH natively, so pass through.
 function resolveExecutable(cmd: string): string | null {
-  if (process.platform !== 'win32') return cmd
-  const exts = ['.exe', '.cmd', '.bat', '']
-  for (const dir of (process.env.PATH || '').split(';')) {
-    if (!dir) continue
-    for (const ext of exts) {
-      const full = join(dir, cmd + ext)
-      if (existsSync(full)) return full
+  if (process.platform === 'win32') {
+    const exts = ['.exe', '.cmd', '.bat', '']
+    for (const dir of (process.env.PATH || '').split(';')) {
+      if (!dir) continue
+      for (const ext of exts) {
+        const full = join(dir, cmd + ext)
+        if (existsSync(full)) return full
+      }
     }
+    return null
   }
-  return null
+
+  // POSIX (linux/macOS): use `which` to locate the binary, falling back to the
+  // plain command name so spawn can try the PATH itself.
+  try {
+    const absolute = execSync(`which ${cmd}`, { encoding: 'utf-8' }).trim()
+    if (absolute) return absolute
+  } catch {
+    // `which` prints nothing and exits non‑zero when not found.
+  }
+  return cmd
 }
 
 // Kill the running code agent (and its child tree on Windows, since a shell
