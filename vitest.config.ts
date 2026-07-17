@@ -7,6 +7,10 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: true,
+    // Habits, goals and reports key off the LOCAL calendar day, so a suite run
+    // in UTC can't tell a local-date bug from a correct one. Pin a non-UTC zone
+    // (UTC-3, no DST) to keep those tests meaningful on any machine.
+    env: { TZ: 'America/Sao_Paulo' },
     setupFiles: ['./src/renderer/src/__tests__/setup.ts'],
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
     coverage: {
