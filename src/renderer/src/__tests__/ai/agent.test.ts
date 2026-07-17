@@ -21,6 +21,13 @@ import {
   MAX_RETRIES,
   RETRY_BASE_MS,
   pruneSupersededResults,
+  compactOldResults,
+  windowHistory,
+  trimContext,
+  KEEP_RECENT_STEPS,
+  COMPACT_MIN_CHARS,
+  HISTORY_BUDGET_CHARS,
+  KEEP_RECENT_TURNS,
   type ApiMessage
 } from '../../ai/agent'
 import { runTool } from '../../ai/tools'
@@ -420,10 +427,10 @@ describe('runAgent (tool-calling loop)', () => {
     const result = await runAgent(cfg, user, approveNone)
 
     expect(result).toBe('CAP')
-    // 6 tool iterations + 1 final tools-disabled call.
-    expect(chat).toHaveBeenCalledTimes(7)
-    expect(reqAt(chat, 6).tools).toBeUndefined()
-    expect(runTool).toHaveBeenCalledTimes(6)
+    // MAX_STEPS tool iterations + 1 final tools-disabled call.
+    expect(chat).toHaveBeenCalledTimes(MAX_STEPS + 1)
+    expect(reqAt(chat, MAX_STEPS).tools).toBeUndefined()
+    expect(runTool).toHaveBeenCalledTimes(MAX_STEPS)
   })
 
   /** A model that always calls a tool, so the run only ends at the cap. */
@@ -952,5 +959,291 @@ describe('runAgent (streaming tool calls)', () => {
     // The retry composes its own calls; the failed attempt's would sit there
     // claiming work that is not happening.
     expect(seen.at(-1)).toEqual([])
+  })
+})
+
+// ── compactOldResults ──────────────────────────────────────────────────────────
+
+/**
+ * The fix for the run that climbs from 6k to 60k prompt tokens in six steps: a
+ * ler_arquivo result (12–23k tokens) lands in msgs and is resent in full on
+ * every later step, though the model read it once and moved on. Measured on the
+ * real spend log, this was >1M tokens/minute — mean prompt 28k vs completion
+ * 617, a 45:1 ratio of resend to work. Safe because it leaves a pointer the
+ * model can act on, not a hole.
+ */
+describe('compactOldResults', () => {
+  const big = (tag: string): string =>
+    JSON.stringify({ content: tag, filler: 'x'.repeat(COMPACT_MIN_CHARS) })
+
+  /** A run of N read steps, each reading one big file, then a final answer. */
+  const run = (n: number, tool = 'ler_arquivo'): ApiMessage[] => {
+    const msgs: ApiMessage[] = [{ role: 'user', content: 'analise' }]
+    for (let i = 0; i < n; i++) {
+      msgs.push({
+        role: 'assistant',
+        content: '',
+        tool_calls: [
+          { id: `c${i}`, type: 'function', function: { name: tool, arguments: `{"caminho":"f${i}.ts"}` } }
+        ]
+      })
+      msgs.push({ role: 'tool', tool_call_id: `c${i}`, content: big(`arquivo ${i}`) })
+    }
+    msgs.push({ role: 'assistant', content: 'pronto' })
+    return msgs
+  }
+
+  it('compacts a bulky read from an old step, leaving a re-readable pointer', async () => {
+    const out = compactOldResults(run(6))
+
+    // The oldest read is gone as text …
+    const first = out.find((m) => m.tool_call_id === 'c0')!
+    expect(first.content).not.toContain('x'.repeat(COMPACT_MIN_CHARS))
+    // … but the pointer says what it was and that it can be fetched again.
+    expect(first.content).toContain('ler_arquivo')
+    expect(first.content).toContain('f0.ts')
+    expect(first.content).toMatch(/de novo|Chame/i)
+  })
+
+  it('keeps the last KEEP_RECENT_STEPS steps in full — the working set', async () => {
+    const msgs = run(6)
+    const out = compactOldResults(msgs)
+
+    // The results of the last few steps are what the model is actively using;
+    // compacting them would just make it re-read.
+    for (let i = 6 - KEEP_RECENT_STEPS; i < 6; i++) {
+      const kept = out.find((m) => m.tool_call_id === `c${i}`)!
+      expect(kept.content).toContain('x'.repeat(COMPACT_MIN_CHARS))
+    }
+  })
+
+  it('leaves a short run entirely alone', async () => {
+    // Nothing is "old" yet — every result is part of the recent context.
+    const msgs = run(KEEP_RECENT_STEPS)
+    expect(compactOldResults(msgs)).toEqual(msgs)
+  })
+
+  it('never compacts a write tool’s result — that is an audit line, not a read', async () => {
+    // 'escrever_*' is what this file's isWriteTool mock counts as a write.
+    const msgs = run(6, 'escrever_arquivo')
+    const out = compactOldResults(msgs)
+
+    // Every result survives verbatim; a write says what happened and can't be
+    // "fetched again".
+    for (let i = 0; i < 6; i++) {
+      expect(out.find((m) => m.tool_call_id === `c${i}`)!.content).toContain(
+        'x'.repeat(COMPACT_MIN_CHARS)
+      )
+    }
+  })
+
+  it('leaves small results alone — the pointer would cost as much as the text', async () => {
+    const msgs: ApiMessage[] = [{ role: 'user', content: 'x' }]
+    for (let i = 0; i < 6; i++) {
+      msgs.push({ role: 'assistant', content: '', tool_calls: [{ id: `c${i}`, type: 'function', function: { name: 'ler_habitos', arguments: '{}' } }] })
+      msgs.push({ role: 'tool', tool_call_id: `c${i}`, content: '{"ok":1}' })
+    }
+
+    expect(compactOldResults(msgs)).toEqual(msgs)
+  })
+
+  it('touches only tool results, never the conversation', async () => {
+    const msgs: ApiMessage[] = [
+      { role: 'system', content: 's'.repeat(COMPACT_MIN_CHARS) },
+      { role: 'user', content: 'u'.repeat(COMPACT_MIN_CHARS) },
+      ...run(6).slice(1)
+    ]
+    const out = compactOldResults(msgs)
+
+    expect(out[0]).toEqual(msgs[0]) // system untouched
+    expect(out[1]).toEqual(msgs[1]) // user untouched
+  })
+
+  it('keeps every tool message present — the API needs one per tool_call id', async () => {
+    const msgs = run(6)
+    const out = compactOldResults(msgs)
+
+    expect(out.filter((m) => m.role === 'tool')).toHaveLength(6)
+    expect(out.length).toBe(msgs.length)
+  })
+
+  it('measurably shrinks the payload of a long run', async () => {
+    const msgs = run(6)
+    const before = JSON.stringify(msgs).length
+    const after = JSON.stringify(compactOldResults(msgs)).length
+
+    // Three old 2k+ results collapsed to pointers is a real cut, not a rounding.
+    expect(after).toBeLessThan(before * 0.7)
+  })
+})
+
+// ── windowHistory ───────────────────────────────────────────────────────────
+
+/**
+ * The "Eixo 2" fix: prune/compact shrink the tool traffic a single run
+ * accumulates, but the *conversation itself* is resent in full every step — a
+ * long chat re-ships its whole back-and-forth on each of a run's steps. This
+ * drops the oldest turns once they outgrow a budget, leaving a marker, and never
+ * touches the live run's tool sequence (dropping mid-sequence is a 400, and the
+ * boundary is findable because persisted turns carry no tool plumbing).
+ */
+describe('windowHistory', () => {
+  /** A conversation turn, alternating user/assistant, padded to `chars`. */
+  const turn = (i: number, chars = 100): ApiMessage => ({
+    role: i % 2 === 0 ? 'user' : 'assistant',
+    content: `turno ${i} ` + 'z'.repeat(chars)
+  })
+
+  /** N turns behind a system prompt — no tool traffic yet. */
+  const chat = (n: number, chars = 100): ApiMessage[] => [
+    { role: 'system', content: 'prompt' },
+    ...Array.from({ length: n }, (_, i) => turn(i, chars))
+  ]
+
+  const marker = (out: ApiMessage[]): ApiMessage | undefined =>
+    out.find((m) => typeof m.content === 'string' && m.content.includes('omitida'))
+
+  it('leaves a short chat untouched — nothing is old yet', () => {
+    const msgs = chat(KEEP_RECENT_TURNS - 1)
+    expect(windowHistory(msgs)).toBe(msgs) // same reference: no work done
+  })
+
+  it('leaves a chat under budget untouched however many turns', () => {
+    // 20 tiny turns are far under HISTORY_BUDGET_CHARS, so none is dropped.
+    const msgs = chat(20, 50)
+    expect(windowHistory(msgs)).toBe(msgs)
+  })
+
+  it('drops the oldest turns once the history outgrows the budget', () => {
+    // Turns of ~1k chars, enough of them to blow HISTORY_BUDGET_CHARS.
+    const n = Math.ceil((HISTORY_BUDGET_CHARS / 1000) * 3)
+    const msgs = chat(n, 1000)
+    const out = windowHistory(msgs)
+
+    expect(out.length).toBeLessThan(msgs.length) // something was dropped
+    expect(marker(out)).toBeDefined()
+    // The kept turns' text is within budget-plus-one (the turn that tipped it).
+    const keptChars = out
+      .filter((m) => typeof m.content === 'string' && m.content.startsWith('turno'))
+      .reduce((s, m) => s + (m.content as string).length, 0)
+    expect(keptChars).toBeLessThan(HISTORY_BUDGET_CHARS + 1100)
+  })
+
+  it('keeps the system prompt at the front and the most recent turns verbatim', () => {
+    const msgs = chat(40, 1000)
+    const out = windowHistory(msgs)
+
+    expect(out[0]).toEqual({ role: 'system', content: 'prompt' })
+    // The final KEEP_RECENT_TURNS turns survive exactly, in order, at the tail.
+    expect(out.slice(-KEEP_RECENT_TURNS)).toEqual(msgs.slice(-KEEP_RECENT_TURNS))
+  })
+
+  it('the marker counts exactly how many turns were dropped', () => {
+    const msgs = chat(40, 1000)
+    const out = windowHistory(msgs)
+
+    const keptTurns = out.filter(
+      (m) => typeof m.content === 'string' && m.content.startsWith('turno')
+    ).length
+    const dropped = 40 - keptTurns
+    expect(marker(out)!.content).toContain(`[${dropped} `)
+  })
+
+  it('keeps at least KEEP_RECENT_TURNS even when they blow the budget alone', () => {
+    // Each recent turn is bigger than the whole budget; they must survive anyway.
+    const msgs = chat(20, HISTORY_BUDGET_CHARS)
+    const out = windowHistory(msgs)
+
+    const keptTurns = out.filter(
+      (m) => typeof m.content === 'string' && m.content.startsWith('turno')
+    ).length
+    expect(keptTurns).toBeGreaterThanOrEqual(KEEP_RECENT_TURNS)
+  })
+
+  it('never touches the live run — its tool sequence survives verbatim and in order', () => {
+    const msgs: ApiMessage[] = [
+      ...chat(40, 1000),
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [
+          { id: 'c0', type: 'function', function: { name: 'ler_arquivo', arguments: '{}' } }
+        ]
+      },
+      { role: 'tool', tool_call_id: 'c0', content: 'resultado' },
+      { role: 'assistant', content: 'resposta final' }
+    ]
+    const out = windowHistory(msgs)
+
+    // The run's three trailing messages are untouched and still adjacent.
+    expect(out.slice(-3)).toEqual(msgs.slice(-3))
+    // Pairing is intact: every tool_call id still has its tool message.
+    expect(out.some((m) => m.tool_call_id === 'c0')).toBe(true)
+  })
+
+  it('measures text, not image bytes — a short turn with a huge image is not force-dropped', () => {
+    // One turn carries a data URL longer than the whole budget, but its *text*
+    // is tiny; counting the base64 would wrongly force every other turn out.
+    const withImage: ApiMessage = {
+      role: 'user',
+      content: [
+        { type: 'text', text: 'o que é isto?' },
+        { type: 'image_url', image_url: { url: 'data:image/png;base64,' + 'A'.repeat(HISTORY_BUDGET_CHARS * 2) } }
+      ]
+    }
+    const msgs: ApiMessage[] = [{ role: 'system', content: 'p' }, withImage, turn(1, 50), turn(2, 50)]
+
+    // Tiny by text, so nothing is dropped — the image turn survives whole.
+    const out = windowHistory(msgs)
+    expect(out).toBe(msgs)
+    expect(marker(out)).toBeUndefined()
+  })
+})
+
+describe('trimContext', () => {
+  it('applies both passes: dedupe identical, then compact old bulky', async () => {
+    const big = (t: string): string => JSON.stringify({ x: t, pad: 'y'.repeat(COMPACT_MIN_CHARS) })
+    const msgs: ApiMessage[] = [{ role: 'user', content: 'vai' }]
+    // Same file read twice early (superseded), plus other reads, over many steps.
+    const reads = ['a.ts', 'a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts']
+    reads.forEach((f, i) => {
+      msgs.push({ role: 'assistant', content: '', tool_calls: [{ id: `c${i}`, type: 'function', function: { name: 'ler_arquivo', arguments: `{"caminho":"${f}"}` } }] })
+      msgs.push({ role: 'tool', tool_call_id: `c${i}`, content: big(`v${i}`) })
+    })
+    msgs.push({ role: 'assistant', content: 'fim' })
+
+    const out = trimContext(msgs)
+    const size = (id: string): number => String(out.find((m) => m.tool_call_id === id)!.content).length
+
+    // The superseded duplicate read (c0, same args as c1) is deduped …
+    expect(size('c0')).toBeLessThan(COMPACT_MIN_CHARS)
+    // … recent reads stay whole.
+    expect(size('c5')).toBeGreaterThanOrEqual(COMPACT_MIN_CHARS)
+  })
+
+  it('windows long conversation history AND compacts old tool results together', () => {
+    // A long back-and-forth (Eixo 2) followed by a file-reading run (Eixo 1).
+    const msgs: ApiMessage[] = [{ role: 'system', content: 'prompt' }]
+    for (let i = 0; i < 40; i++) {
+      msgs.push({ role: i % 2 === 0 ? 'user' : 'assistant', content: `turno ${i} ` + 'z'.repeat(1000) })
+    }
+    const big = (t: string): string => JSON.stringify({ x: t, pad: 'y'.repeat(COMPACT_MIN_CHARS) })
+    for (let i = 0; i < 6; i++) {
+      msgs.push({ role: 'assistant', content: '', tool_calls: [{ id: `c${i}`, type: 'function', function: { name: 'ler_arquivo', arguments: `{"caminho":"f${i}.ts"}` } }] })
+      msgs.push({ role: 'tool', tool_call_id: `c${i}`, content: big(`v${i}`) })
+    }
+    msgs.push({ role: 'assistant', content: 'fim' })
+
+    const out = trimContext(msgs)
+
+    // Old conversation turns were windowed out …
+    expect(out.some((m) => typeof m.content === 'string' && m.content.includes('omitida'))).toBe(true)
+    expect(out.filter((m) => typeof m.content === 'string' && m.content.startsWith('turno')).length).toBeLessThan(40)
+    // … and an old bulky read was compacted, while the newest stays whole.
+    const size = (id: string): number => String(out.find((m) => m.tool_call_id === id)!.content).length
+    expect(size('c0')).toBeLessThan(COMPACT_MIN_CHARS)
+    expect(size('c5')).toBeGreaterThanOrEqual(COMPACT_MIN_CHARS)
+    // Tool pairing survived the whole pass — every result still present.
+    expect(out.filter((m) => m.role === 'tool')).toHaveLength(6)
   })
 })

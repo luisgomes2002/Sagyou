@@ -850,8 +850,17 @@ export function AIView({ projects }: { projects: Project[] }) {
                 title={`A IA lê o código em:\n${activeCodePaths.map((c) => c.path).join('\n')}`}
                 className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#6366f1]/10 text-[11px] text-[#a5b4fc] max-w-[280px]"
               >
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0">
-                  <polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" />
+                <svg
+                  width="10"
+                  height="10"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  className="shrink-0"
+                >
+                  <polyline points="16 18 22 12 16 6" />
+                  <polyline points="8 6 2 12 8 18" />
                 </svg>
                 <span className="truncate">
                   {activeCodePaths.length === 1
@@ -897,7 +906,9 @@ export function AIView({ projects }: { projects: Project[] }) {
                   {totalTokens > 0 ? (
                     <>
                       {formatTokens(totalTokens)} tokens
-                      {cost !== null && <span className="text-[#a5b4fc]">· {formatCost(cost)}</span>}
+                      {cost !== null && (
+                        <span className="text-[#a5b4fc]">· {formatCost(cost)}</span>
+                      )}
                     </>
                   ) : (
                     'Gastos'
@@ -1283,10 +1294,10 @@ export function AIView({ projects }: { projects: Project[] }) {
                 />
               </label>
               <p className="text-[11px] text-[#4a5068] pt-5 leading-relaxed">
-                Quantas rodadas de ferramentas o assistente pode encadear numa resposta — cada
-                rodada é uma chamada paga ao modelo. Em branco usa o padrão: <b>{MAX_STEPS}</b> no
-                modo manual e <b>{AUTO_MAX_STEPS}</b> no automático. Um valor definido vale para os
-                dois modos (máx. {MAX_STEPS_LIMIT}).
+                Quantas rodadas de ferramentas o assistente pode encadear numa resposta, cada rodada
+                é uma chamada paga ao modelo. Em branco usa o padrão: <b>{MAX_STEPS}</b> no modo
+                manual e <b>{AUTO_MAX_STEPS}</b> no automático. Um valor definido vale para os dois
+                modos (máx. {MAX_STEPS_LIMIT}).
               </p>
             </div>
 
@@ -1313,7 +1324,7 @@ export function AIView({ projects }: { projects: Project[] }) {
               </label>
               <p className="text-[11px] text-[#4a5068] pt-5 leading-relaxed">
                 Quanto esperar o modelo <b>começar</b> a responder antes de desistir. Não corta
-                respostas longas — vale só até a primeira resposta chegar. Em branco usa{' '}
+                respostas longas, vale só até a primeira resposta chegar. Em branco usa{' '}
                 {DEFAULT_TIMEOUT_MS / 1000}s (mín. {MIN_TIMEOUT_MS / 1000}s, máx.{' '}
                 {MAX_TIMEOUT_MS / 1000}s). Um timeout é tratado como falha temporária e entra no
                 retry.
@@ -1324,9 +1335,9 @@ export function AIView({ projects }: { projects: Project[] }) {
               {priceField('Preço entrada (US$ / 1M tokens)', 'inputPricePer1M')}
               {priceField('Preço saída (US$ / 1M tokens)', 'outputPricePer1M')}
               <p className="text-[11px] text-[#4a5068] pt-5 leading-relaxed">
-                Preços do seu provider, para estimar o custo da conversa. O app não tem como
-                saber sozinho — ele fala com qualquer endpoint compatível com OpenAI, inclusive
-                modelos locais (custo zero). Deixe em branco e o header mostra só os tokens.
+                Preços do seu provider, para estimar o custo da conversa. O app não tem como saber
+                sozinho — ele fala com qualquer endpoint compatível com OpenAI, inclusive modelos
+                locais (custo zero). Deixe em branco e o header mostra só os tokens.
               </p>
             </div>
 
@@ -1350,8 +1361,8 @@ export function AIView({ projects }: { projects: Project[] }) {
 
               {templates.length === 0 && !editingTemplate && (
                 <p className="text-[11px] text-[#4a5068] italic">
-                  Só o template padrão. Crie um para adaptar o Gerar Tasks a uma área — Dev,
-                  Estudo, Marketing…
+                  Só o template padrão. Crie um para adaptar o Gerar Tasks a uma área — Dev, Estudo,
+                  Marketing…
                 </p>
               )}
 
@@ -1653,7 +1664,14 @@ export function AIView({ projects }: { projects: Project[] }) {
                     aria-label="Remover imagem"
                     className="absolute -top-1.5 -right-1.5 w-5 h-5 flex items-center justify-center rounded-full bg-[#1e2235] border border-[#2a2d42] text-[#8892a4] opacity-0 group-hover:opacity-100 hover:text-red-400 transition-opacity"
                   >
-                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                    <svg
+                      width="9"
+                      height="9"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="3"
+                    >
                       <line x1="18" y1="6" x2="6" y2="18" />
                       <line x1="6" y1="6" x2="18" y2="18" />
                     </svg>
@@ -1708,7 +1726,9 @@ export function AIView({ projects }: { projects: Project[] }) {
             <div className="flex flex-col gap-2">
               <button
                 onClick={handleSend}
-                disabled={!configReady || busy || (input.trim() === '' && pendingImages.length === 0)}
+                disabled={
+                  !configReady || busy || (input.trim() === '' && pendingImages.length === 0)
+                }
                 className="px-3 py-1.5 rounded-lg bg-[#1e2235] border border-[#2a2d42] text-sm text-[#e2e8f0] font-medium hover:bg-[#2a2d42] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
                 Enviar
