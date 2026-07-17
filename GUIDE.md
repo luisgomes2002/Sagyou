@@ -191,6 +191,16 @@ Não "simplifique" nenhuma destas sem ler o comentário que as acompanha:
   os dois, uma resposta virou 12 requisições HTTP.
 - **A store da execução da IA é separada (`store/aiRun.ts`)** — a execução
   sobrevive à `AIView` ser desmontada. Não a mova para dentro do componente.
+- **`trimContext(msgs)` no `agent.ts`** — cada passo reenvia todo o `msgs`, então
+  o loop manda uma **cópia** aparada, em três passadas: `windowHistory` (descarta
+  os turnos de conversa mais antigos além de um orçamento, deixando um marcador),
+  `pruneSupersededResults` (tira leitura idêntica repetida) e `compactOldResults`
+  (troca resultado grande de passo antigo por um ponteiro relegível, mantendo os
+  últimos 3 passos inteiros). É o que segura o gasto (era 25k tokens/passo).
+  `windowHistory` só mexe na conversa persistida, nunca na sequência de tools do
+  run atual — soltar mensagem no meio de um tool-call quebra o pareamento (400).
+  Nenhuma passada apara resultado de `write`, nem o `msgs` original. Não
+  "simplifique" para reenviar tudo.
 - **O diff do agente captura a base *antes* de rodar** (`captureBase`) — depois
   não dá para separar o que o agente fez do que o usuário já tinha em andamento.
 

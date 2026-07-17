@@ -157,14 +157,24 @@ export function backoffDelay(attempt: number): number {
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
-/** Default safety cap on loop iterations, so a misbehaving model can't spin forever. */
-export const MAX_STEPS = 6
+/**
+ * Default safety cap on loop iterations, so a misbehaving model can't spin
+ * forever. Raised from 6 once `trimContext` made each step cheap (bulky results
+ * no longer resent in full) — a manual investigation can now go deep without the
+ * old ceiling, and each write still pauses for approval.
+ */
+export const MAX_STEPS = 40
 
 /** Default cap in automatic mode, where the agent chains actions on its own. */
-export const AUTO_MAX_STEPS = 40
+export const AUTO_MAX_STEPS = 100
 
-/** Nothing may raise the cap past this — every step is a paid model call. */
-export const MAX_STEPS_LIMIT = 50
+/**
+ * Nothing may raise the cap past this — every step is a paid model call. Set to
+ * the automatic default: `resolveMaxSteps` clamps to it, so a lower value here
+ * would silently cap AUTO_MAX_STEPS below its stated number (`runAgent`
+ * re-resolves and would floor 100 down to this).
+ */
+export const MAX_STEPS_LIMIT = 100
 
 /**
  * How many tool rounds a run gets.
@@ -364,9 +374,9 @@ const ELIDE_MIN_CHARS = 400
  *   `criar_tasks` calls are two different events, not a repeated question.
  * - **The last result for any given call is always kept**, however duplicated.
  *
- * This does not touch the case of a single large result resent across many
- * steps — nothing can, safely: the model may still need it. That one is fixed
- * at the source, by `ler_tasks` returning a filtered slice instead of a board.
+ * This does not touch a single large result resent across many steps — that is
+ * `compactOldResults`' job, which is safe because it leaves a re-readable
+ * pointer; here nothing is recoverable, so it only fires on an exact duplicate.
  */
 export function pruneSupersededResults(msgs: ApiMessage[]): ApiMessage[] {
   // tool_call_id -> what was asked, so a result can be compared to a later one.
@@ -397,6 +407,166 @@ export function pruneSupersededResults(msgs: ApiMessage[]): ApiMessage[] {
   return out
 }
 
+/** Tool-calling steps kept with their results in full. Older ones get compacted. */
+export const KEEP_RECENT_STEPS = 3
+
+/**
+ * A result below this is cheap to keep, and the pointer would cost nearly as
+ * much as the text. Only the bulky ones — file reads, big searches — are worth
+ * compacting. ~2000 chars ≈ 550 tokens.
+ */
+export const COMPACT_MIN_CHARS = 2000
+
+/** A short, re-readable stand-in for a bulky result from an earlier step. */
+function compactedNote(name: string, args: string, chars: number): string {
+  // Keep enough of the args to say *what* was read — for ler_arquivo that's the
+  // path — so the model can decide whether to call again, without the body.
+  const hint = args.length > 120 ? args.slice(0, 120) + '…' : args
+  return JSON.stringify({
+    compactado: `Resultado de ${name}(${hint}) omitido para poupar contexto ` +
+      `(${chars} caracteres). Chame a ferramenta de novo se precisar do conteúdo.`
+  })
+}
+
+/**
+ * Replace the body of bulky tool results from **older** steps with a pointer.
+ *
+ * This is the fix for the run that climbs from 6k to 60k prompt tokens in six
+ * steps: a `ler_arquivo` result is 12–23k tokens, it lands in `msgs`, and
+ * **every later step resends it in full** even though the model read it once and
+ * moved on. Measured on the real spend log, this is where >1M tokens/minute came
+ * from — mean prompt 28k against mean completion 617, a 45:1 ratio of resend to
+ * work.
+ *
+ * Safe where `pruneSupersededResults` had to stay narrow, because it does not
+ * throw the information away — it leaves a note saying what was read and how big
+ * it was, and the model can call the tool again if it genuinely needs the body
+ * (rare, and one cheap call versus resending the file on every step). Rules:
+ * - **Only results older than the last `KEEP_RECENT_STEPS` steps.** The recent
+ *   context is what the model is actively working from; compacting it would make
+ *   it re-read constantly, trading a saving for a worse bill.
+ * - **Only bulky results** (`COMPACT_MIN_CHARS`). Small ones cost nothing to keep.
+ * - **Never a write tool's result.** It reports what happened — an audit line,
+ *   not a re-fetchable read.
+ * - **The message stays, only its content shrinks** — the API needs one `tool`
+ *   message per `tool_call` id.
+ */
+export function compactOldResults(msgs: ApiMessage[]): ApiMessage[] {
+  // Where each tool-calling step begins (an assistant turn requesting tools).
+  const stepStarts: number[] = []
+  const call = new Map<string, { name: string; args: string }>()
+  msgs.forEach((m, i) => {
+    if (m.role === 'assistant' && m.tool_calls?.length) stepStarts.push(i)
+    for (const c of m.tool_calls ?? []) {
+      call.set(c.id, { name: c.function.name, args: c.function.arguments ?? '' })
+    }
+  })
+
+  // Keep everything from the last KEEP_RECENT_STEPS steps onward verbatim.
+  if (stepStarts.length <= KEEP_RECENT_STEPS) return msgs
+  const cutoff = stepStarts[stepStarts.length - KEEP_RECENT_STEPS]
+
+  const out = [...msgs]
+  for (let i = 0; i < cutoff; i++) {
+    const m = out[i]
+    if (m.role !== 'tool' || !m.tool_call_id) continue
+    if (typeof m.content !== 'string' || m.content.length < COMPACT_MIN_CHARS) continue
+    const c = call.get(m.tool_call_id)
+    if (!c || isWriteTool(c.name)) continue
+    out[i] = { ...m, content: compactedNote(c.name, c.args, m.content.length) }
+  }
+  return out
+}
+
+/**
+ * How much conversation history (in chars) is resent to the model before the
+ * oldest turns start being dropped — see windowHistory. A char proxy, since the
+ * renderer has no tokenizer; at ~4 chars/token this is ~3k tokens of history.
+ * A tuning knob, not an invariant: it only bites on genuinely long chats.
+ */
+export const HISTORY_BUDGET_CHARS = 12_000
+
+/**
+ * However tight the budget, always keep at least this many of the most recent
+ * conversation messages. Dropping the immediate back-and-forth would sever the
+ * thread the user is in the middle of, which no saving is worth.
+ */
+export const KEEP_RECENT_TURNS = 6
+
+/** Left where dropped turns were, so a jump in the thread reads as elision, not amnesia. */
+function omittedNote(n: number): ApiMessage {
+  return {
+    role: 'user',
+    content: `[${n} mensagem(ns) anterior(es) desta conversa omitida(s) para poupar contexto.]`
+  }
+}
+
+/**
+ * Drop the oldest conversation turns once the history outgrows a budget, so a
+ * long chat doesn't resend its entire back-and-forth on every step.
+ *
+ * This is the "Eixo 2" fix. `pruneSupersededResults`/`compactOldResults` shrink
+ * the *tool* traffic a single run accumulates; this shrinks the *conversation*
+ * itself, which `send()` resends in full every step — a 40-turn chat re-ships 40
+ * turns on each of a run's steps, unbounded, before this.
+ *
+ * Only the persisted conversation region is touched — everything from the
+ * current run's first tool call onward is left intact. Two reasons, and both
+ * matter: that sequence is prune/compact's domain, and dropping a message inside
+ * a tool-call sequence breaks the API's tool_call↔tool pairing (a 400). What
+ * makes the boundary findable is that **persisted turns carry no tool plumbing**
+ * — assistant turns from earlier answers are text only — so the first message
+ * with `tool_calls` (or a `tool` result) marks where the live run begins.
+ *
+ * Rules:
+ * - **System messages are always kept** (the prompt), grouped to the front.
+ * - **The most recent turns are kept whole** up to HISTORY_BUDGET_CHARS, and at
+ *   least KEEP_RECENT_TURNS of them regardless — the thread in progress.
+ * - **Older turns are dropped** and replaced by a single marker, so the model
+ *   sees context was elided rather than silently changing subject.
+ * - **Measured on text** (`contentText`): an image's data-url chars wildly
+ *   overstate its token cost (vision tokens are ~fixed per tile), and image
+ *   resend is a bounded, separately-documented cost — not this pass's job.
+ */
+export function windowHistory(msgs: ApiMessage[]): ApiMessage[] {
+  const runStart = msgs.findIndex((m) => (m.tool_calls?.length ?? 0) > 0 || m.role === 'tool')
+  const end = runStart === -1 ? msgs.length : runStart
+
+  // Split the history region into pinned system messages and droppable turns.
+  const system: ApiMessage[] = []
+  const turns: ApiMessage[] = []
+  for (let i = 0; i < end; i++) {
+    if (msgs[i].role === 'system') system.push(msgs[i])
+    else turns.push(msgs[i])
+  }
+
+  // Walk newest-first, keeping turns until the budget is spent — but never fewer
+  // than KEEP_RECENT_TURNS, however big they are.
+  let used = 0
+  let keepFrom = turns.length
+  for (let k = turns.length - 1; k >= 0; k--) {
+    const size = contentText(turns[k].content).length
+    const withinRecent = turns.length - 1 - k < KEEP_RECENT_TURNS
+    if (!withinRecent && used + size > HISTORY_BUDGET_CHARS) break
+    used += size
+    keepFrom = k
+  }
+
+  if (keepFrom === 0) return msgs // everything fits — nothing dropped
+  return [...system, omittedNote(keepFrom), ...turns.slice(keepFrom), ...msgs.slice(end)]
+}
+
+/**
+ * The full context-trimming pass sent to the model: window the conversation,
+ * then dedupe identical reads, then compact old bulky ones. Each pass owns a
+ * different region — windowHistory the persisted turns, the other two the live
+ * run's tool traffic — so their order is independent, but this reads as the
+ * cheapest-first: drop whole turns, then shrink what's left.
+ */
+export function trimContext(msgs: ApiMessage[]): ApiMessage[] {
+  return compactOldResults(pruneSupersededResults(windowHistory(msgs)))
+}
+
 /**
  * The tool-calling loop: call the model with tools; while it returns
  * tool_calls, run each against the store and feed the results back; stop when
@@ -421,7 +591,7 @@ export async function runAgent(
     if (opts.shouldAbort?.()) return 'Execução interrompida.'
     // Prune a copy, not `msgs` itself: the run keeps its full history, and only
     // what goes over the wire is trimmed.
-    const assistant = await callModelResilient(cfg, pruneSupersededResults(msgs), TOOL_DEFS, opts)
+    const assistant = await callModelResilient(cfg, trimContext(msgs), TOOL_DEFS, opts)
     msgs.push(assistant)
     const calls = assistant.tool_calls
     if (!calls || calls.length === 0) return contentText(assistant.content)
@@ -473,6 +643,6 @@ export async function runAgent(
   }
 
   // Safety cap reached — force a final text answer with tools disabled.
-  const final = await callModelResilient(cfg, pruneSupersededResults(msgs), undefined, opts)
+  const final = await callModelResilient(cfg, trimContext(msgs), undefined, opts)
   return contentText(final.content) || 'Parei após várias etapas. Pode reformular o pedido?'
 }
