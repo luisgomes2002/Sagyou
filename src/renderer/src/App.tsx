@@ -15,6 +15,7 @@ import { UpcomingView } from './components/UpcomingView'
 import { ReportsView } from './components/ReportsView'
 import { FilesView } from './components/FilesView'
 import { AIView } from './components/AIView'
+import { AiRunHost } from './components/AiRunHost'
 import { ExcelExportModal } from './components/ExcelExportModal'
 import { ProjectLinksDropdown } from './components/ProjectLinksDropdown'
 import { SearchModal } from './components/SearchModal'
@@ -351,6 +352,12 @@ export default function App() {
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-[#0d0f18]">
       <TitleBar />
+
+      {/* Outside the view switch on purpose: the agent's run has to survive the
+          user navigating away from AIView, which unmounts it. Owns the chat's
+          autosave and the approval card, so a background run can still be
+          answered instead of parking forever. */}
+      <AiRunHost activeView={activeView} onOpenAI={() => setActiveView('ai')} />
 
       <div className="flex flex-1 overflow-hidden">
         <Sidebar

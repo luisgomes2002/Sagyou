@@ -1,0 +1,13 @@
+# Aider, neste repositório.
+#
+# `read` carrega o arquivo como somente-leitura em toda sessão do aider aberta
+# aqui — inclusive as que o próprio app dispara (rodar_agente_codigo). É o que
+# faz o GUIDE.md valer alguma coisa: sem isso o aider não lê nada por conta
+# própria, e o guia seria um arquivo que ninguém abre.
+#
+# Custo: o aider mantém o arquivo no contexto e o reenvia a cada passo, ~2.3k
+# tokens por passo. É a razão de o GUIDE.md ser curto e de o detalhe ficar no
+# CLAUDE.md, que se lê sob demanda. Se ele engordar, isto vira caro — mantenha-o
+# magro.
+read:
+  - GUIDE.md
