@@ -62,6 +62,41 @@ function clampLimit(v: unknown): number {
 }
 
 /**
+ * Cap on the sibling projects named back when a search found nothing here.
+ *
+ * Bounded for the same reason everything else is: the hint is resent on every
+ * later step of the run. Six projects is a real board today, so this is a
+ * ceiling against growth rather than something a user meets.
+ */
+const OTHER_PROJECTS_MAX = 20
+
+/** Which slice of the board `ler_tasks` returns. */
+export type TaskState = 'abertas' | 'concluidas' | 'todas'
+
+/**
+ * Which tasks to return, defaulting to the open ones.
+ *
+ * ⚠️ **The default is 'abertas', and that is a cost decision.** Measured on real
+ * data, 185 of 413 tasks (45%) were already done — dead weight that every later
+ * step of a run pays for again. A question about open work is the common case;
+ * one about finished work has to ask.
+ *
+ * The boolean `concluida` was the old parameter and is still accepted, never
+ * rejected: an old transcript or a cached schema will keep sending it, and a
+ * hard error there costs a paid step to say "wrong argument". Same tolerance as
+ * `rodar_agente_codigo` ignoring a leftover `agent`. Anything unrecognised
+ * (a typo, a hand-edited string) falls back to the default rather than erroring
+ * — the model gets a smaller answer, never a broken one.
+ */
+export function resolveTaskState(args: Record<string, unknown>): TaskState {
+  const raw = args.estado
+  if (raw === 'concluidas' || raw === 'todas' || raw === 'abertas') return raw
+  // Legacy: concluida:true meant "only done", false meant "only open".
+  if (typeof args.concluida === 'boolean') return args.concluida ? 'concluidas' : 'abertas'
+  return 'abertas'
+}
+
+/**
  * Casefold and strip accents.
  *
  * The app is Portuguese: without this, a model searching "habito" misses
@@ -367,10 +402,17 @@ const REGISTRY: Record<string, AITool> = {
       'ler_tasks',
       'Lista as tasks de um projeto (título, coluna, prioridade, tags, se concluída). ' +
         'Sem projectId, usa o projeto ativo. ' +
-        'Use os filtros (busca, tag, coluna, concluida) sempre que a pergunta for sobre um ' +
-        'assunto específico: um projeto grande devolve centenas de tasks, e a lista inteira é ' +
-        'reenviada ao modelo a cada passo seguinte. "busca" casa com o título, ignorando ' +
-        'acentos e maiúsculas. A resposta traz "total" (quantas casaram) e "truncado".',
+        '⚠️ Por padrão devolve SÓ AS TASKS ABERTAS — quase metade de um quadro real já foi ' +
+        'concluída, e esse histórico é reenviado ao modelo a cada passo seguinte. Para ' +
+        'perguntas sobre trabalho JÁ FEITO ("o que concluí?", "quantas terminei essa semana?") ' +
+        'passe estado="concluidas"; para contar o quadro inteiro, estado="todas". ' +
+        'Use os filtros (busca, tag, coluna) sempre que a pergunta for sobre um assunto ' +
+        'específico. "busca" casa com o título, ignorando acentos e maiúsculas. A resposta traz ' +
+        '"total" (quantas casaram), "truncado" e "concluidas_ocultas" (quantas ficaram de fora ' +
+        'pelo estado pedido) — some "concluidas_ocultas" ao "total" antes de afirmar o tamanho ' +
+        'do quadro. ⚠️ Olha UM projeto só (o projectId pedido, ou o ativo). Se nada casou e a ' +
+        'resposta trouxer "outros_projetos", a task pode estar num deles: repita com aquele ' +
+        'projectId antes de dizer que não existe.',
       {
         type: 'object',
         properties: {
@@ -378,7 +420,13 @@ const REGISTRY: Record<string, AITool> = {
           busca: { type: 'string', description: 'Texto no título (opcional, ignora acentos)' },
           tag: { type: 'string', description: 'Só tasks com esta tag (opcional)' },
           coluna: { type: 'string', description: 'Só tasks nesta coluna, pelo nome (opcional)' },
-          concluida: { type: 'boolean', description: 'Filtra por concluída ou não (opcional)' },
+          estado: {
+            type: 'string',
+            enum: ['abertas', 'concluidas', 'todas'],
+            description:
+              'Quais tasks devolver (opcional, padrão "abertas"). Use "concluidas" para ' +
+              'perguntas sobre o que já foi feito e "todas" para contar o quadro inteiro.'
+          },
           limit: {
             type: 'number',
             description: `Máximo de tasks a devolver (opcional, padrão ${DEFAULT_TASK_LIMIT})`
@@ -397,16 +445,34 @@ const REGISTRY: Record<string, AITool> = {
       const busca = typeof args.busca === 'string' ? normalize(args.busca.trim()) : ''
       const tag = typeof args.tag === 'string' ? normalize(args.tag.trim()) : ''
       const coluna = typeof args.coluna === 'string' ? normalize(args.coluna.trim()) : ''
-      const concluida = typeof args.concluida === 'boolean' ? args.concluida : null
+      const estado = resolveTaskState(args)
 
-      const matched = tasks.filter((t) => {
+      // Everything the question matched, *before* the state filter. This is what
+      // makes `concluidas_ocultas` truthful: the model has to be able to tell
+      // "3 abertas" from "3 tasks", or it answers the wrong board size with
+      // total confidence — the same failure `total`/`truncado` guard against.
+      const subject = tasks.filter((t) => {
         if (t.projectId !== project.id) return false
         if (busca && !normalize(t.title).includes(busca)) return false
         if (tag && !t.tags.some((x) => normalize(x) === tag)) return false
         if (coluna && normalize(colName(t.columnId)) !== coluna) return false
-        if (concluida !== null && !!t.completedAt !== concluida) return false
         return true
       })
+
+      const matched =
+        estado === 'todas' ? subject : subject.filter((t) => !!t.completedAt === (estado === 'concluidas'))
+
+      // ⚠️ The scope is ONE project — args.projectId, or the active one. When
+      // nothing here matched the question at all, the likeliest explanation is
+      // that it lives in another project, and staying quiet makes the model
+      // answer "essa task não existe" about a task that does. Same class of
+      // silent lie as `concluidas_ocultas`, different axis.
+      //
+      // Only on an empty subject: when something matched, the other projects
+      // are noise that every later step of the run would pay for again. Ids and
+      // names rather than a bare count, so the model can retry immediately
+      // instead of spending a paid step on `ler_projetos` to learn them.
+      const others = projects.filter((p) => p.id !== project.id)
 
       // Bounded by default. The cap sits above any real project here, so today
       // it changes nothing — it's there so a project that grows to thousands
@@ -422,12 +488,25 @@ const REGISTRY: Record<string, AITool> = {
       }))
       return JSON.stringify({
         projeto: project.name,
+        // Stated back, not assumed: the model asked for nothing and got a
+        // filtered view, so the reply has to say which view it is.
+        estado,
         // `total` vs the array's length is how the model knows it's seeing a
         // slice — without it, a truncated list reads as the whole board and it
         // would answer "you have 50 tasks" when there are 300.
         total: matched.length,
         truncado: matched.length > list.length,
-        tasks: list
+        // How many the *state* filter dropped, on top of `truncado`'s slicing.
+        // Without this the default view is a silent lie about the board's size.
+        concluidas_ocultas: subject.length - matched.length,
+        tasks: list,
+        ...(subject.length === 0 &&
+          others.length > 0 && {
+            outros_projetos: others.slice(0, OTHER_PROJECTS_MAX).map((p) => ({
+              id: p.id,
+              nome: p.name
+            }))
+          })
       })
     }
   },

@@ -179,10 +179,10 @@ export function AiRunHost({
                     setAutoApprove(true)
                     resolveApproval(new Set(pendingApproval.writes.map((w) => w.id)))
                   }}
-                  title="Aprova estas ações e liga o modo automático (não pergunta mais nesta sessão)"
+                  title="A IA trabalhará sem interrupção nesta conversa — como o modo always allow do Claude Code"
                   className="px-3 py-1.5 rounded-lg text-xs text-amber-400 border border-amber-500/30 hover:bg-amber-500/10 transition-colors"
                 >
-                  Aprovar tudo e continuar
+                  Sempre permitir
                 </button>
                 <button
                   onClick={() => resolveApproval(pendingApproval.selected)}

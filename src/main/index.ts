@@ -7,8 +7,11 @@ import {
   mkdirSync,
   existsSync,
   unlinkSync,
-  statSync
+  statSync,
+  accessSync,
+  constants
 } from 'fs'
+import { homedir } from 'os'
 import { readFile } from 'fs/promises'
 import { randomUUID } from 'crypto'
 import { spawn, type ChildProcess } from 'child_process'
@@ -158,18 +161,89 @@ export function detectAgentHint(output: string): AgentHint | null {
   return null
 }
 
-// On Windows, spawn without a shell won't append .exe/.cmd, so `spawn('codex')`
-// fails even when installed. Resolve to the real file on PATH (npm installs
-// codex.cmd). Returns the full path, or null. POSIX resolves via PATH natively,
-// so pass through.
-function resolveExecutable(cmd: string): string | null {
-  if (process.platform !== 'win32') return cmd
-  const exts = ['.exe', '.cmd', '.bat', '']
-  for (const dir of (process.env.PATH || '').split(';')) {
+/**
+ * Directories to look in when the agent isn't on PATH — node version managers
+ * and custom npm prefixes, which is where a global CLI installed without sudo
+ * actually lands.
+ *
+ * ⚠️ These are a **fallback, never a first choice** — see `resolveExecutable`.
+ */
+export function fallbackBinDirs(): string[] {
+  // ⚠️ The one opt-out, and it exists for a specific hazard. `handlers.test.ts`
+  // proves the "not installed" path by emptying PATH — but codex is genuinely
+  // installed on a dev machine, and these dirs are exactly where it lives
+  // (`~/.npm-global/bin` here, `/usr/local/bin` on a Mac). Without this the test
+  // would spawn the real codex, which waits on stdin and never exits, poisoning
+  // every test after it — the failure the PATH-replacement guard exists to stop.
+  // Set only by tests; unset in the app, where the fallback is the whole point.
+  if (process.env.SAGYOU_DISABLE_BIN_FALLBACK) return []
+  const home = homedir()
+  const dirs = [
+    process.env.NVM_BIN, // nvm's currently-active version
+    join(home, '.npm-global/bin'), // the `npm config set prefix` convention
+    join(home, '.local/bin'),
+    join(home, '.local/share/npm/bin'),
+    join(home, '.volta/bin'),
+    join(home, '.bun/bin')
+  ]
+  if (process.platform === 'darwin') dirs.push('/opt/homebrew/bin', '/usr/local/bin')
+  return dirs.filter((d): d is string => Boolean(d))
+}
+
+/**
+ * Absolute path to `cmd`, or null if it can't be found.
+ *
+ * Two different failures, one fix:
+ *   • **Windows** — spawn without a shell won't append .exe/.cmd, so
+ *     `spawn('codex')` fails even when installed (npm installs codex.cmd).
+ *   • **POSIX** — spawn *does* resolve via PATH, but only the PATH this process
+ *     was handed, and a GUI-launched Electron app doesn't get the user's shell
+ *     PATH. Measured on Ubuntu 24.04 + GNOME/Wayland: apps started from the
+ *     launcher inherit the systemd user manager's PATH, which has no
+ *     `~/.npm-global/bin` — that lives in `~/.bashrc`, read only by interactive
+ *     shells. So `codex --version` works in a terminal while the app reports it
+ *     "não encontrado", which is a lie about the cause and sends the user off
+ *     reinstalling something that is already there.
+ *
+ * ⚠️ **PATH is searched first and `extraDirs` only if that finds nothing.** The
+ * order is load-bearing for the tests, not a preference: `handlers.test.ts`
+ * *replaces* PATH with a dir holding only a stub, precisely so a real codex on
+ * the dev machine can't be spawned (it waits on stdin and never exits, poisoning
+ * every later test). A fallback dir consulted first — or consulted at all when
+ * PATH already matched — would walk straight around that guard and find the real
+ * binary. `extraDirs` is injectable for the same reason.
+ *
+ * Deliberately not `npm prefix -g`: it would be authoritative, but it costs a
+ * subprocess on every run and needs npm on PATH — the very thing that is missing
+ * in the case this exists to fix.
+ */
+export function resolveExecutable(
+  cmd: string,
+  extraDirs: string[] = fallbackBinDirs()
+): string | null {
+  const win = process.platform === 'win32'
+  // '' last: on Windows a bare `codex` (extensionless) is only a match if no
+  // real wrapper exists; on POSIX it is the only form there is.
+  const exts = win ? ['.exe', '.cmd', '.bat', ''] : ['']
+  const pathDirs = (process.env.PATH || '').split(win ? ';' : ':')
+  const runnable = (full: string): boolean => {
+    if (!existsSync(full)) return false
+    // On POSIX, existing is not enough — a non-executable file of the right name
+    // would be picked here and then fail at spawn with EACCES, which reports as
+    // a different problem than the one it is.
+    if (win) return true
+    try {
+      accessSync(full, constants.X_OK)
+      return true
+    } catch {
+      return false
+    }
+  }
+  for (const dir of [...pathDirs, ...extraDirs]) {
     if (!dir) continue
     for (const ext of exts) {
       const full = join(dir, cmd + ext)
-      if (existsSync(full)) return full
+      if (runnable(full)) return full
     }
   }
   return null
@@ -506,6 +580,16 @@ interface StoredConversation {
     content: string
     /** Chat-image ids; the bytes live under chat-images/. Absent on old files. */
     imageIds?: string[]
+    /** Status lines: whether the tool finished. See ChatMessage.done. */
+    done?: boolean
+    /**
+     * Status lines: the step that produced the line and the cap it ran under,
+     * rendered as a "3/40" badge. Both stored, so an old transcript keeps the
+     * cap *that* run had rather than being relabelled against today's setting.
+     * Absent on old files and on lines that aren't a step (retries, warnings).
+     */
+    step?: number
+    maxSteps?: number
   }[]
   /** Tokens billed across this conversation's whole life. Absent on old files. */
   usage?: TokenUsage
@@ -1011,12 +1095,21 @@ app.whenReady().then(() => {
       codeAgentBase = await captureBase(dir)
       const { cmd, args, stdinData } = buildAgentCommand(task, dir, files)
 
-      // Resolve to a real .exe when possible and spawn it directly (safe, no
-      // shell). Fall back to a shell only on Windows for .cmd/.bat wrappers.
+      // Spawn the resolved absolute path directly (safe, no shell) whenever we
+      // have one. A shell is used only on Windows, and only for the .cmd/.bat
+      // wrappers that need one; on POSIX every match is directly executable.
+      //
+      // ⚠️ Passing the resolved path matters on POSIX too, not just Windows: it
+      // is what lets the agent be found in a node-version-manager or custom-npm
+      // -prefix dir that this process's PATH doesn't carry. Handing `cmd` back
+      // to spawn would re-do the PATH lookup that already failed.
       const resolved = resolveExecutable(cmd)
       const isExe = resolved !== null && /\.exe$/i.test(resolved)
-      const spawnCmd = isExe && resolved ? resolved : cmd
       const useShell = process.platform === 'win32' && !isExe
+      // `null` stays as the bare name so spawn fails with ENOENT and the error
+      // handler reports "not installed" — which, having searched the fallback
+      // dirs too, is now a claim we can actually stand behind.
+      const spawnCmd = resolved && !useShell ? resolved : cmd
 
       const send = (channel: string, data: unknown): void =>
         mainWindow?.webContents.send(channel, data)

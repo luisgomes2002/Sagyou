@@ -26,6 +26,7 @@ import { ProjectModal } from './components/ProjectModal'
 import { ColumnModal } from './components/ColumnModal'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { TaskViewModal } from './components/TaskViewModal'
+import { buildTaskPrompt } from './utils/taskPrompt'
 import { ToastContainer, type ToastMessage } from './components/Toast'
 
 interface TaskModalState {
@@ -144,6 +145,10 @@ export default function App() {
     message: '',
     onConfirm: () => {}
   })
+  // Composer text waiting to be handed to the AI view. Set when a task is sent
+  // over from the board; AIView is unmounted until the switch below lands, so
+  // the text is parked here rather than pushed into a component that isn't there.
+  const [aiPrefill, setAiPrefill] = useState<string | null>(null)
   // Global indicator: is the external code agent (codex) running?
   const [codeAgentRunning, setCodeAgentRunning] = useState(false)
 
@@ -431,7 +436,11 @@ export default function App() {
           ) : activeView === 'financial' ? (
             <FinancialView />
           ) : activeView === 'ai' ? (
-            <AIView projects={projects} />
+            <AIView
+              projects={projects}
+              prefill={aiPrefill}
+              onPrefillConsumed={() => setAiPrefill(null)}
+            />
           ) : activeView === 'habits' ? (
             <HabitView />
           ) : activeView === 'goals' ? (
@@ -621,6 +630,12 @@ export default function App() {
         task={viewTask}
         columns={viewTask ? (projects.find((p) => p.id === viewTask.projectId)?.columns ?? []) : []}
         onEdit={(task) => { setViewTask(null); handleEditTask(task) }}
+        onSendToAI={(task) => {
+          const project = projects.find((p) => p.id === task.projectId)
+          const column = project?.columns.find((c) => c.id === task.columnId)
+          setAiPrefill(buildTaskPrompt(task, project?.name ?? '', column?.name ?? ''))
+          setActiveView('ai')
+        }}
         onClose={() => setViewTask(null)}
       />
 

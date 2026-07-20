@@ -1916,8 +1916,133 @@ describe('ler_tasks — filters', () => {
 
     // Through the real path — completion is a move into the Done column.
     await call('concluir_task', { titulo: 'Estudar japonês' })
+    expect((await call('ler_tasks', { projectId: pid, estado: 'concluidas' })).total).toBe(1)
+    expect((await call('ler_tasks', { projectId: pid, estado: 'abertas' })).total).toBe(3)
+    expect((await call('ler_tasks', { projectId: pid, estado: 'todas' })).total).toBe(4)
+  })
+
+  // ── the default excludes finished work ─────────────────────────────────────
+  //
+  // Measured on real data, 185 of 413 tasks (45%) were already done. That
+  // history is resent on every later step of a run, so the default stopped
+  // carrying it. The risk this creates is answering the wrong board size, which
+  // is what `concluidas_ocultas` exists to prevent — hence the tests below.
+
+  it('leaves finished tasks out by default', async () => {
+    seed()
+    await call('concluir_task', { titulo: 'Estudar japonês' })
+
+    const res = await call('ler_tasks', {})
+    expect(res.estado).toBe('abertas')
+    expect(res.total).toBe(3)
+    expect((res.tasks as { concluida: boolean }[]).every((t) => !t.concluida)).toBe(true)
+  })
+
+  it('says how many it hid, so the default is not a silent lie about the board', async () => {
+    seed()
+    await call('concluir_task', { titulo: 'Estudar japonês' })
+    await call('concluir_task', { titulo: 'Corrigir bug no login' })
+
+    // The whole point: total + concluidas_ocultas is the real board size, so a
+    // model that reports "you have 2 tasks" had everything it needed not to.
+    const res = await call('ler_tasks', {})
+    expect(res.total).toBe(2)
+    expect(res.concluidas_ocultas).toBe(2)
+    expect((res.total as number) + (res.concluidas_ocultas as number)).toBe(4)
+
+    // Nothing is hidden once the full board is asked for.
+    const all = await call('ler_tasks', { estado: 'todas' })
+    expect(all.total).toBe(4)
+    expect(all.concluidas_ocultas).toBe(0)
+  })
+
+  it('counts what the other filters matched, not the whole project', async () => {
+    seed()
+    await call('concluir_task', { titulo: 'Revisão de código' })
+
+    // 'revis' matches two Dev tasks, one of them now done. The hidden count is
+    // about the *subject*, or it would report unrelated finished tasks.
+    const res = await call('ler_tasks', { busca: 'revis' })
+    expect(res.total).toBe(1)
+    expect(res.concluidas_ocultas).toBe(1)
+  })
+
+  it('still honours the retired concluida flag from an old transcript', async () => {
+    const pid = seed()
+    await call('concluir_task', { titulo: 'Estudar japonês' })
+
+    // A cached schema or an old conversation keeps sending the boolean. It must
+    // translate, not error: a hard failure costs a paid step to say "wrong arg".
     expect((await call('ler_tasks', { projectId: pid, concluida: true })).total).toBe(1)
     expect((await call('ler_tasks', { projectId: pid, concluida: false })).total).toBe(3)
+    // …and the new parameter wins when both arrive.
+    expect((await call('ler_tasks', { projectId: pid, estado: 'todas', concluida: true })).total).toBe(4)
+  })
+
+  // ── the search is scoped to one project ────────────────────────────────────
+  //
+  // `ler_tasks` reads the requested project, or the active one — never all of
+  // them. An empty result therefore means "not in THIS project", and reporting
+  // it as "doesn't exist" is the same class of silent lie as hiding the
+  // finished tasks, on a different axis.
+
+  it('names the sibling projects when nothing here matched', async () => {
+    const pid = seed()
+    // createProject switches the active project, so the target is named
+    // explicitly rather than relying on which one happens to be open.
+    st().createProject('Outro')
+    st().createProject('Terceiro')
+
+    const res = await call('ler_tasks', { projectId: pid, busca: 'nada com esse nome' })
+    const outros = res.outros_projetos as { id: string; nome: string }[]
+
+    expect(res.total).toBe(0)
+    expect(outros.map((p) => p.nome).sort()).toEqual(['Outro', 'Terceiro'])
+    // Ids, not just a count: the model can retry straight away instead of
+    // spending a paid step on ler_projetos to learn them.
+    expect(outros.every((p) => typeof p.id === 'string' && p.id.length > 0)).toBe(true)
+  })
+
+  it('stays quiet about siblings when the question was answered', async () => {
+    const pid = seed()
+    st().createProject('Outro')
+
+    // A hit needs no disambiguation, and the hint would be resent on every
+    // later step of the run for nothing.
+    const res = await call('ler_tasks', { projectId: pid, busca: 'bug' })
+    expect(res.total).toBe(1)
+    expect(res).not.toHaveProperty('outros_projetos')
+  })
+
+  it('stays quiet when there is no other project to point at', async () => {
+    seed()
+    const res = await call('ler_tasks', { busca: 'nada com esse nome' })
+    expect(res.total).toBe(0)
+    expect(res).not.toHaveProperty('outros_projetos')
+  })
+
+  it('blames the state filter, not the siblings, when the match was hidden', async () => {
+    const pid = seed()
+    await call('concluir_task', { projectId: pid, titulo: 'Corrigir bug no login' })
+    st().createProject('Outro')
+
+    // The task IS here, just finished. Pointing at other projects would send
+    // the model hunting through them for something it already found.
+    const res = await call('ler_tasks', { projectId: pid, busca: 'bug' })
+    expect(res.total).toBe(0)
+    expect(res.concluidas_ocultas).toBe(1)
+    expect(res).not.toHaveProperty('outros_projetos')
+  })
+
+  it('falls back to the default state on a nonsense estado', async () => {
+    seed()
+    await call('concluir_task', { titulo: 'Estudar japonês' })
+
+    for (const estado of ['TODAS', 'open', '', 42, null]) {
+      const res = await call('ler_tasks', { estado })
+      expect(res.estado).toBe('abertas')
+      expect(res.total).toBe(3)
+    }
   })
 
   it('combines filters rather than picking one', async () => {

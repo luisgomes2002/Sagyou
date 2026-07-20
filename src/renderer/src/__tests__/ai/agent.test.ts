@@ -436,6 +436,89 @@ describe('runAgent (tool-calling loop)', () => {
     expect(runTool).toHaveBeenCalledTimes(MAX_STEPS)
   })
 
+  it('numbers each status line with the step and the run\'s own cap', async () => {
+    let n = 0
+    const chat = vi.fn((req: { tools?: unknown }) => {
+      const i = n++
+      return req.tools && i < 2
+        ? Promise.resolve({
+            success: true,
+            message: {
+              role: 'assistant',
+              content: 'olhando',
+              tool_calls: [toolCall('c' + i, 'ler_x', JSON.stringify({ i }))]
+            }
+          })
+        : Promise.resolve({ success: true, message: { role: 'assistant', content: 'pronto' } })
+    }) as ChatMock
+    installChat(chat)
+    const onStatus = vi.fn()
+
+    await runAgent(cfg, user, approveNone, { maxSteps: 7, onStatus })
+
+    // The denominator is the *resolved* cap for this run, not the constant —
+    // maxSteps is a user setting, so a badge against the default would lie.
+    const progress = onStatus.mock.calls.map((c) => c[2])
+    expect(progress.every((p) => p?.maxSteps === 7)).toBe(true)
+    // 1-based, and the remark plus the tool line of one step share its number:
+    // they are the same round, and numbering them apart would overstate spend.
+    expect(progress.map((p) => p?.step)).toEqual([1, 1, 2, 2])
+  })
+
+  it('leaves a retry notice unnumbered — it is the same step, not a new one', async () => {
+    vi.useFakeTimers() // the backoff must not make the suite actually sleep
+    makeChat(
+      { success: false, error: '503', status: 503 },
+      { success: true, message: { role: 'assistant', content: 'ok' } }
+    )
+    const onStatus = vi.fn()
+
+    const p = runAgent(cfg, user, approveNone, { maxSteps: 7, onStatus })
+    await vi.runAllTimersAsync()
+    await p
+    vi.useRealTimers()
+
+    const retry = onStatus.mock.calls.find((c) => /Tentando de novo/i.test(c[0] as string))
+    expect(retry).toBeDefined()
+    expect(retry?.[2]).toBeUndefined()
+  })
+
+  it('announces that it stopped for lack of steps, not because it finished', async () => {
+    let n = 0
+    const chat = vi.fn((req: { tools?: unknown }) => {
+      const i = n++
+      return req.tools
+        ? Promise.resolve({
+            success: true,
+            message: { role: 'assistant', content: '', tool_calls: [toolCall('c' + i, 'ler_x', JSON.stringify({ i }))] }
+          })
+        : Promise.resolve({ success: true, message: { role: 'assistant', content: 'resumo parcial' } })
+    }) as ChatMock
+    installChat(chat)
+    const onStatus = vi.fn()
+
+    await runAgent(cfg, user, approveNone, { maxSteps: 3, onStatus })
+
+    // The forced answer reads like any other, so the transcript must carry the
+    // reason the run ended — otherwise a truncated task looks like a done one.
+    const said = onStatus.mock.calls.map((c) => c[0]).join('\n')
+    expect(said).toMatch(/limite de 3 passos/i)
+    expect(said).toMatch(/incompleta/i)
+  })
+
+  it('stays quiet about the cap on a run that concluded on its own', async () => {
+    // The counterpart of the test above: a healthy run returns from inside the
+    // loop, so the warning must not fire — a false one would teach the user to
+    // ignore it exactly when it matters.
+    makeChat({ success: true, message: { role: 'assistant', content: 'pronto' } })
+    const onStatus = vi.fn()
+
+    await runAgent(cfg, user, approveNone, { maxSteps: 3, onStatus })
+
+    const said = onStatus.mock.calls.map((c) => c[0]).join('\n')
+    expect(said).not.toMatch(/limite de/i)
+  })
+
   /** A model that always calls a tool, so the run only ends at the cap. */
   const alwaysToolCalling = (): ChatMock => {
     let n = 0

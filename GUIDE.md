@@ -146,6 +146,14 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
 5. **Ferramenta de IA que escreve leva `write: true`** em `ai/tools.ts`. É a
    única coisa entre o modelo e os dados do usuário: sem isso a ação roda sem
    aprovação. Ferramenta nova que muta estado **tem** que marcar.
+6. **Ferramenta de leitura que devolve menos do que existe tem que dizer isso.**
+   Tudo o que uma tool retorna é reenviado ao modelo a cada passo seguinte da
+   execução, então elas cortam: `ler_tasks` esconde as concluídas por padrão
+   (45% do quadro real), `ai:code:list`/`:read` paginam. Toda redução vem com o
+   número do que ficou de fora (`total`, `truncado`, `concluidas_ocultas`,
+   `outros_projetos`, `nextOffset`) — sem ele o modelo afirma com confiança que
+   o quadro tem 228 tasks quando tem 413, ou que uma task não existe quando ela
+   está em outro projeto. A resposta errada custa mais que os tokens salvos.
 
 ## Segurança — o que já está resolvido
 
@@ -185,7 +193,10 @@ isso. Sessão efêmera sem cookie, sandbox, sem node. A orquestração do
   máquina, e o handler roda o que achar no PATH. **Substitua** o `PATH` por um
   diretório só com o seu stub — não basta pôr na frente. E o stub não pode chamar
   nada por nome (o PATH só tem ele): resolva helpers como `cat` para caminho
-  absoluto antes de estreitar o PATH.
+  absoluto antes de estreitar o PATH. **Só substituir o PATH já não basta**:
+  `resolveExecutable` também varre `~/.npm-global/bin` & cia., onde o codex real
+  mora — teste que precisa do caminho "não encontrado" precisa também de
+  `SAGYOU_DISABLE_BIN_FALLBACK=1`.
 - `vitest.config.ts` fixa `TZ=America/Sao_Paulo`: bug de data local não pode se
   esconder atrás de um teste rodando em UTC.
 
@@ -210,6 +221,11 @@ Não "simplifique" nenhuma destas sem ler o comentário que as acompanha:
   de hoje e apresentaria as edições posteriores do usuário como trabalho do
   agente. Por isso `CodeDiff` recebe `onRefresh` opcional — uma run passada não
   tem o que recarregar.
+- ⚠️ **"Está no PATH" não é o PATH do usuário.** App Electron aberto pelo ícone
+  herda o PATH do systemd user manager, não o do shell — então um codex em
+  `~/.npm-global/bin` (dir que só o `~/.bashrc` acrescenta) fica invisível e o
+  painel mente dizendo "não encontrado". `resolveExecutable` varre o PATH e
+  **depois** `fallbackBinDirs()`, e passa o **caminho absoluto** ao `spawn`.
 - **O agente é spawnado headless**: stdin é um pipe só para entregar o prompt e é
   fechado em seguida, nunca um terminal. A permissão de escrita do codex é
   **por plataforma** (`sandboxArgs`): no Unix
