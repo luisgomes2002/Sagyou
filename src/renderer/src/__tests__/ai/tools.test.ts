@@ -25,6 +25,7 @@ vi.mock('../../services/ElectronStorage', () => {
 })
 
 import { useKanbanStore } from '../../store/kanban'
+import { useAiRunStore } from '../../store/aiRun'
 import {
   runTool,
   isWriteTool,
@@ -53,8 +54,10 @@ function resetStore(): void {
 }
 
 const st = (): ReturnType<typeof useKanbanStore.getState> => useKanbanStore.getState()
-const call = async (name: string, args: Record<string, unknown>): Promise<{ [k: string]: unknown }> =>
-  JSON.parse(await runTool(name, args))
+const call = async (
+  name: string,
+  args: Record<string, unknown>
+): Promise<{ [k: string]: unknown }> => JSON.parse(await runTool(name, args))
 
 // ── concluir_task ──────────────────────────────────────────────────────────────
 
@@ -375,7 +378,9 @@ describe('buscar_na_web', () => {
   beforeEach(() => {
     resetStore()
     fetchWeb = vi.fn(async () => ({ content: 'olá', url: 'https://x.dev/', truncated: false }))
-    ;(window as unknown as { electronAPI: unknown }).electronAPI = { ai: { web: { fetch: fetchWeb } } }
+    ;(window as unknown as { electronAPI: unknown }).electronAPI = {
+      ai: { web: { fetch: fetchWeb } }
+    }
   })
 
   it('passes the URL to main and returns the page text', async () => {
@@ -441,7 +446,7 @@ describe('rodar_agente_codigo', () => {
 
   it('is gated behind approval — it writes files and runs commands', () => {
     expect(isWriteTool('rodar_agente_codigo')).toBe(true)
-    expect(describeToolCall('rodar_agente_codigo', { agent: 'aider', task: 'x' })).toContain('⚠️')
+    expect(describeToolCall('rodar_agente_codigo', { task: 'x' })).toContain('⚠️')
   })
 
   it('launches the agent in the selected folder', async () => {
@@ -449,12 +454,23 @@ describe('rodar_agente_codigo', () => {
 
     const res = await call('rodar_agente_codigo', { task: '  corrigir o bug  ' })
 
-    expect(api.codeAgent.run).toHaveBeenCalledWith({
-      path: '/src/web',
-      task: 'corrigir o bug',
-      agent: 'aider'
-    })
-    expect(res).toMatchObject({ status: 'solicitado', agente: 'aider', diretorio: '/src/web' })
+    expect(api.codeAgent.run).toHaveBeenCalledWith(
+      expect.objectContaining({ path: '/src/web', task: 'corrigir o bug' })
+    )
+    expect(res).toMatchObject({ status: 'solicitado', agente: 'codex', diretorio: '/src/web' })
+  })
+
+  // Without this the run is archived under no conversation, and the panel's run
+  // picker — which lists by convId — can never show it again.
+  it('tags the run with the chat that started it', async () => {
+    projectWithRoots('web')
+    useAiRunStore.setState({ runningConvId: 'conv-1', conversationId: 'conv-2' })
+
+    await call('rodar_agente_codigo', { task: 'x' })
+
+    // runningConvId, not conversationId: the run belongs to the chat that
+    // started it, not to whichever one the user happens to be looking at.
+    expect(api.codeAgent.run).toHaveBeenCalledWith(expect.objectContaining({ convId: 'conv-1' }))
   })
 
   it('reports the request without claiming it succeeded', async () => {
@@ -466,10 +482,13 @@ describe('rodar_agente_codigo', () => {
     expect(res.aviso).toContain('Não afirme sucesso')
   })
 
-  it('honours the codex agent', async () => {
+  // codex is the only agent, so the tool takes no agent argument at all. A model
+  // that still sends one (an old transcript, a stale schema) must not break the call.
+  it('ignores a leftover agent argument instead of failing on it', async () => {
     projectWithRoots('web')
-    await call('rodar_agente_codigo', { task: 'x', agent: 'codex' })
-    expect(api.codeAgent.run).toHaveBeenCalledWith(expect.objectContaining({ agent: 'codex' }))
+    const res = await call('rodar_agente_codigo', { task: 'x', agent: 'outro' })
+    expect(res).toMatchObject({ status: 'solicitado', agente: 'codex' })
+    expect(api.codeAgent.run).toHaveBeenCalledWith(expect.not.objectContaining({ agent: 'outro' }))
   })
 
   it('refuses to pick between folders — it writes, and the wrong repo is costly', async () => {
@@ -556,7 +575,12 @@ describe('ler_financeiro', () => {
 
   it('files an uncategorised transaction under "sem categoria"', async () => {
     const lid = st().createList('Casa')
-    st().addTransaction(lid, { description: 'X', amount: '10', type: 'expense', date: '2026-07-01' })
+    st().addTransaction(lid, {
+      description: 'X',
+      amount: '10',
+      type: 'expense',
+      date: '2026-07-01'
+    })
     const t = table(await call('ler_financeiro', {}))
     expect(t.porCategoria).toEqual({ 'sem categoria': { receita: '0', despesa: '10' } })
   })
@@ -632,7 +656,12 @@ describe('ler_metas', () => {
   beforeEach(resetStore)
 
   it('sums the entries into the current value and a percentage', async () => {
-    const id = st().createGoal({ title: 'Correr', target: 100, unit: 'km', color: PROJECT_COLORS[0] })
+    const id = st().createGoal({
+      title: 'Correr',
+      target: 100,
+      unit: 'km',
+      color: PROJECT_COLORS[0]
+    })
     st().addGoalEntry(id, { date: '2026-07-01', value: 10 })
     st().addGoalEntry(id, { date: '2026-07-05', value: 20 })
 
@@ -735,7 +764,8 @@ describe('ler_habitos', () => {
   it('rates the month against the days elapsed, not the whole month', async () => {
     freeze() // the 16th
     const id = st().createHabit({ name: 'Ler', color: PROJECT_COLORS[0] })
-    for (const d of ['2026-07-01', '2026-07-02', '2026-07-03', '2026-07-04']) st().toggleHabit(id, d)
+    for (const d of ['2026-07-01', '2026-07-02', '2026-07-03', '2026-07-04'])
+      st().toggleHabit(id, d)
     // Last month's completions must not count towards this month.
     st().toggleHabit(id, '2026-06-20')
 
@@ -905,7 +935,9 @@ describe('atualizar_task', () => {
 
   it('rejects a priority outside the allowed set', async () => {
     const tid = seed()
-    expect((await call('atualizar_task', { taskId: tid, prioridade: 'altíssima' })).error).toBeTruthy()
+    expect(
+      (await call('atualizar_task', { taskId: tid, prioridade: 'altíssima' })).error
+    ).toBeTruthy()
     expect(task(tid).priority).toBe('low')
   })
 
@@ -922,7 +954,9 @@ describe('atualizar_task', () => {
     const tid = seed()
     expect((await call('atualizar_task', { taskId: tid, dueDate: '2028-02-29' })).ok).toBe(true)
     expect(task(tid).dueDate).toBe('2028-02-29')
-    expect((await call('atualizar_task', { taskId: tid, dueDate: '2027-02-29' })).error).toBeTruthy()
+    expect(
+      (await call('atualizar_task', { taskId: tid, dueDate: '2027-02-29' })).error
+    ).toBeTruthy()
     expect(task(tid).dueDate).toBe('2028-02-29')
   })
 
@@ -943,7 +977,9 @@ describe('atualizar_task', () => {
 
   it('returns an error when the task is not found', async () => {
     st().createProject('P')
-    expect((await call('atualizar_task', { taskId: 'nope', prioridade: 'high' })).error).toBeTruthy()
+    expect(
+      (await call('atualizar_task', { taskId: 'nope', prioridade: 'high' })).error
+    ).toBeTruthy()
   })
 
   it('is gated behind approval and spells out the fields it will change', () => {
@@ -972,7 +1008,9 @@ describe('mover_task', () => {
   const seed = (): { pid: string; tid: string; col: (name: string) => string } => {
     const pid = st().createProject('P')
     const col = (name: string): string =>
-      st().projects.find((p) => p.id === pid)!.columns.find((c) => c.name === name)!.id
+      st()
+        .projects.find((p) => p.id === pid)!
+        .columns.find((c) => c.name === name)!.id
     const tid = st().createTask({ projectId: pid, columnId: col('Backlog'), title: 'T' })
     return { pid, tid, col }
   }
@@ -1042,7 +1080,9 @@ describe('mover_task', () => {
     const other = st().createProject('Other')
     st().createColumn(other, 'Etc')
     // The column really does exist — just on the wrong project.
-    const foreign = st().projects.find((p) => p.id === other)!.columns.find((c) => c.name === 'Etc')
+    const foreign = st()
+      .projects.find((p) => p.id === other)!
+      .columns.find((c) => c.name === 'Etc')
     expect(foreign).toBeTruthy()
 
     // Moving there would point the task at a column its own board can't render.
@@ -1101,9 +1141,7 @@ describe('deletar_task', () => {
     expect(res.ok).toBe(true)
     expect(st().tasks).toHaveLength(0)
     // The tombstone is what stops a backup import from resurrecting it.
-    expect(st().tombstones).toEqual([
-      expect.objectContaining({ id: tid, type: 'task' })
-    ])
+    expect(st().tombstones).toEqual([expect.objectContaining({ id: tid, type: 'task' })])
   })
 
   it('finds the task by exact title (case-insensitive)', async () => {
@@ -1256,7 +1294,9 @@ describe('criar_nota', () => {
 describe('criar_transacao', () => {
   beforeEach(resetStore)
 
-  const txs = (listId: string): NonNullable<ReturnType<typeof st>['lists'][number]>['transactions'] =>
+  const txs = (
+    listId: string
+  ): NonNullable<ReturnType<typeof st>['lists'][number]>['transactions'] =>
     st().lists.find((l) => l.id === listId)!.transactions
 
   it('records an expense as a positive canonical decimal string', async () => {
@@ -1304,7 +1344,9 @@ describe('criar_transacao', () => {
 
     // Decimal('1.500') is 1.5 — silently turning R$ 1.500 into R$ 1,50.
     for (const valor of ['1.500', '1,500', '1.500,50', '1,500.50', 'R$ 1500', 'muito']) {
-      expect((await call('criar_transacao', { descricao: 'X', valor, tipo: 'despesa' })).error).toBeTruthy()
+      expect(
+        (await call('criar_transacao', { descricao: 'X', valor, tipo: 'despesa' })).error
+      ).toBeTruthy()
     }
     expect(txs(lid)).toHaveLength(0)
   })
@@ -1312,17 +1354,41 @@ describe('criar_transacao', () => {
   it('rejects a non-positive or non-finite amount', async () => {
     const lid = st().createList('Casa')
     for (const valor of [0, -50, Infinity, NaN]) {
-      expect((await call('criar_transacao', { descricao: 'X', valor, tipo: 'despesa' })).error).toBeTruthy()
+      expect(
+        (await call('criar_transacao', { descricao: 'X', valor, tipo: 'despesa' })).error
+      ).toBeTruthy()
     }
     expect(txs(lid)).toHaveLength(0)
   })
 
   it('rejects a bad type, blank description and unreal date', async () => {
     const lid = st().createList('Casa')
-    expect((await call('criar_transacao', { descricao: 'X', valor: 1, tipo: 'saida' })).error).toBeTruthy()
-    expect((await call('criar_transacao', { descricao: ' ', valor: 1, tipo: 'despesa' })).error).toBeTruthy()
-    expect((await call('criar_transacao', { descricao: 'X', valor: 1, tipo: 'despesa', data: '10/07/2026' })).error).toBeTruthy()
-    expect((await call('criar_transacao', { descricao: 'X', valor: 1, tipo: 'despesa', data: '2026-02-31' })).error).toBeTruthy()
+    expect(
+      (await call('criar_transacao', { descricao: 'X', valor: 1, tipo: 'saida' })).error
+    ).toBeTruthy()
+    expect(
+      (await call('criar_transacao', { descricao: ' ', valor: 1, tipo: 'despesa' })).error
+    ).toBeTruthy()
+    expect(
+      (
+        await call('criar_transacao', {
+          descricao: 'X',
+          valor: 1,
+          tipo: 'despesa',
+          data: '10/07/2026'
+        })
+      ).error
+    ).toBeTruthy()
+    expect(
+      (
+        await call('criar_transacao', {
+          descricao: 'X',
+          valor: 1,
+          tipo: 'despesa',
+          data: '2026-02-31'
+        })
+      ).error
+    ).toBeTruthy()
     expect(txs(lid)).toHaveLength(0)
   })
 
@@ -1340,7 +1406,9 @@ describe('criar_transacao', () => {
 
   it('uses the only table when none is named', async () => {
     const lid = st().createList('Casa')
-    expect((await call('criar_transacao', { descricao: 'X', valor: 10, tipo: 'despesa' })).ok).toBe(true)
+    expect((await call('criar_transacao', { descricao: 'X', valor: 10, tipo: 'despesa' })).ok).toBe(
+      true
+    )
     expect(txs(lid)).toHaveLength(1)
   })
 
@@ -1368,15 +1436,30 @@ describe('criar_transacao', () => {
   })
 
   it('errors on an unknown table and when none exists', async () => {
-    expect((await call('criar_transacao', { descricao: 'X', valor: 1, tipo: 'despesa' })).error).toBeTruthy()
+    expect(
+      (await call('criar_transacao', { descricao: 'X', valor: 1, tipo: 'despesa' })).error
+    ).toBeTruthy()
     st().createList('Casa')
-    expect((await call('criar_transacao', { descricao: 'X', valor: 1, tipo: 'despesa', tabela: 'Nada' })).error).toBeTruthy()
+    expect(
+      (await call('criar_transacao', { descricao: 'X', valor: 1, tipo: 'despesa', tabela: 'Nada' }))
+        .error
+    ).toBeTruthy()
   })
 
   it('lands in the totals ler_financeiro reports', async () => {
     st().createList('Casa')
-    await call('criar_transacao', { descricao: 'Salário', valor: 5000, tipo: 'receita', data: '2026-07-01' })
-    await call('criar_transacao', { descricao: 'Mercado', valor: 150.5, tipo: 'despesa', data: '2026-07-02' })
+    await call('criar_transacao', {
+      descricao: 'Salário',
+      valor: 5000,
+      tipo: 'receita',
+      data: '2026-07-01'
+    })
+    await call('criar_transacao', {
+      descricao: 'Mercado',
+      valor: 150.5,
+      tipo: 'despesa',
+      data: '2026-07-02'
+    })
 
     const res = await call('ler_financeiro', {})
     const tabela = (res.tabelas as { receitas: string; despesas: string; saldo: string }[])[0]
@@ -1510,7 +1593,13 @@ describe('criar_meta', () => {
   it('creates the goal at zero progress', async () => {
     const res = await call('criar_meta', { titulo: ' Correr ', alvo: 100, unidade: ' km ' })
 
-    expect(res).toMatchObject({ ok: true, titulo: 'Correr', alvo: 100, unidade: 'km', progresso: 0 })
+    expect(res).toMatchObject({
+      ok: true,
+      titulo: 'Correr',
+      alvo: 100,
+      unidade: 'km',
+      progresso: 0
+    })
     expect(goal(res.metaId)).toMatchObject({ title: 'Correr', target: 100, unit: 'km' })
     // Progress comes from entries, and a new goal has none.
     expect(goal(res.metaId).entries).toEqual([])
@@ -1561,7 +1650,12 @@ describe('atualizar_meta', () => {
 
   /** A goal with 30 of 100 km already logged across two entries. */
   const seed = (): string => {
-    const id = st().createGoal({ title: 'Correr', target: 100, unit: 'km', color: PROJECT_COLORS[0] })
+    const id = st().createGoal({
+      title: 'Correr',
+      target: 100,
+      unit: 'km',
+      color: PROJECT_COLORS[0]
+    })
     st().addGoalEntry(id, { date: '2026-07-01', value: 10 })
     st().addGoalEntry(id, { date: '2026-07-02', value: 20 })
     return id
@@ -1755,7 +1849,10 @@ describe('importTasksFromAIChat (via criar_tasks)', () => {
 
   it('criar_tasks tool delegates to importTasksFromAIChat', async () => {
     const pid = st().createProject('P')
-    const res = await call('criar_tasks', { projectId: pid, tasks: [{ title: 'A' }, { title: 'B' }] })
+    const res = await call('criar_tasks', {
+      projectId: pid,
+      tasks: [{ title: 'A' }, { title: 'B' }]
+    })
     expect(res.criadas).toBe(2)
     expect(st().tasks.filter((t) => t.projectId === pid)).toHaveLength(2)
   })
@@ -1846,7 +1943,8 @@ describe('ler_tasks — filters', () => {
   it('bounds the result even when the model asks for everything', async () => {
     const pid = st().createProject('P')
     const col = st().projects[0].columns[0].id
-    for (let i = 0; i < 620; i++) st().createTask({ projectId: pid, columnId: col, title: `Task ${i}` })
+    for (let i = 0; i < 620; i++)
+      st().createTask({ projectId: pid, columnId: col, title: `Task ${i}` })
 
     // A hand-picked limit is a suggestion from the model, not an instruction.
     const res = await call('ler_tasks', { limit: 10_000 })

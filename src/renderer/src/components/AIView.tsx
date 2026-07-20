@@ -9,6 +9,7 @@ import {
   MAX_STEPS,
   AUTO_MAX_STEPS,
   MAX_STEPS_LIMIT,
+  resolveMaxSteps,
   DEFAULT_TIMEOUT_MS,
   MIN_TIMEOUT_MS,
   MAX_TIMEOUT_MS,
@@ -17,9 +18,11 @@ import {
 } from '../ai/agent'
 import { describeToolActivity } from '../ai/tools'
 import { toScaledDataUrl, imageFilesFrom } from '../utils/images'
+import { estimateAutoRun } from '../utils/spend'
 import { ChatMarkdown } from './ChatMarkdown'
 import { CodeDiff, type CodeAgentDiff } from './CodeDiff'
 import { AgentTerminal } from './AgentTerminal'
+import { AgentRunPicker, type AgentRunMeta } from './AgentRunPicker'
 import { ConfirmDialog } from './ConfirmDialog'
 
 // Config is persisted via ai:config in the main process (see effects below);
@@ -235,6 +238,46 @@ export function AIView({ projects }: { projects: Project[] }) {
   /** What the last agent run changed. Null until asked for. */
   const [agentDiff, setAgentDiff] = useState<CodeAgentDiff | null>(null)
   const [showDiff, setShowDiff] = useState(true)
+  // The raw log is the *secondary* view now: what the user wants while an agent
+  // works is which files changed, not every file it read. The log stays one
+  // click away for when a run goes wrong.
+  const [showLog, setShowLog] = useState(false)
+  /**
+   * Archived runs of the open conversation, and which one the panel is showing.
+   *
+   * `selectedRunId === null` means the live run — the panel's normal state. A
+   * selected run replaces both the log and the diff with the snapshot frozen
+   * when that agent exited; nothing about it is re-derived, because a diff
+   * recomputed today would attribute the user's own later edits to the agent.
+   */
+  /**
+   * Whether the agent panel is expanded.
+   *
+   * Closing **collapses to a one-line bar rather than hiding the panel**: a hard
+   * close would strand the run history, which is only reachable from this
+   * header — the user would have no way back short of starting another run.
+   */
+  const [agentPanelOpen, setAgentPanelOpen] = useState(true)
+  const [pastRuns, setPastRuns] = useState<AgentRunMeta[]>([])
+  /** The picked run *and* the chat it was picked in — see `selectedRunId`. */
+  const [selection, setSelection] = useState<{ convId: string; id: string } | null>(null)
+  /** The fetched snapshot. Carries its own id so it can be matched, not assumed. */
+  const [snapshot, setSnapshot] = useState<{
+    id: string
+    log: string
+    diff: CodeAgentDiff | null
+  } | null>(null)
+  /**
+   * A recognised environment failure from the last run, with its fix. Shown in
+   * the panel itself: this is the case where the agent exits 0 having changed
+   * nothing, so the user has no reason to go open the log and look for it.
+   */
+  const [agentHint, setAgentHint] = useState<{
+    title: string
+    detail: string
+    command?: string
+  } | null>(null)
+  const [hintCopied, setHintCopied] = useState(false)
 
   // Persisted conversation history
   const [conversations, setConversations] = useState<
@@ -260,6 +303,8 @@ export function AIView({ projects }: { projects: Project[] }) {
   // debounced autosave refreshes the list and must not undo the filter.
   const historyQueryRef = useRef('')
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; title: string } | null>(null)
+  /** The "you are about to authorise N paid calls" gate — see the Auto button. */
+  const [confirmAuto, setConfirmAuto] = useState(false)
   /** The chat being renamed in the history list, and the name so far. */
   const [renaming, setRenaming] = useState<{ id: string; value: string } | null>(null)
 
@@ -291,6 +336,28 @@ export function AIView({ projects }: { projects: Project[] }) {
   const activeTemplateBody = activeTemplate?.body ?? AI_TASK_PROMPT_TEMPLATE
   const totalTokens = usage.promptTokens + usage.completionTokens
   const cost = estimateCost(usage, config)
+
+  /**
+   * What the user is agreeing to when they turn automatic mode on.
+   *
+   * Leads with the step cap, which is the fact that is always true and always
+   * knowable. The money line only appears when there is a real sample to draw
+   * it from — with no priced calls logged, any figure here would be invented,
+   * and this dialog exists precisely to inform a spending decision.
+   */
+  const autoSteps = resolveMaxSteps(config.maxSteps, true)
+  const autoEstimate = estimateAutoRun(spend?.total, autoSteps)
+  const autoWarning =
+    `O assistente vai encadear até ${autoSteps} rodadas sem pedir aprovação, ` +
+    'incluindo ações que gravam dados. Cada rodada é uma chamada paga ao modelo ' +
+    'e reenvia todo o histórico da conversa.' +
+    (autoEstimate
+      ? `\n\nPelas suas ${autoEstimate.sample} chamadas já cobradas, a média é ` +
+        `${formatCost(autoEstimate.perCall)} por chamada — cerca de ` +
+        `${formatCost(autoEstimate.total)} numa execução cheia. Conte com mais: ` +
+        'as últimas rodadas custam acima da média, porque carregam todo o ' +
+        'histórico acumulado até ali.'
+      : '')
 
   /** Persist which conversation is open, so entering the view reopens it. */
   const rememberConversation = (id: string | null): void =>
@@ -418,6 +485,15 @@ export function AIView({ projects }: { projects: Project[] }) {
     el.style.height = `${Math.min(el.scrollHeight + borders, COMPOSER_MAX_PX)}px`
   }, [input])
 
+  /**
+   * The archived runs of whichever chat is open. Declared above the listeners
+   * below, which call it — a `const` used before its line is a TDZ trap waiting
+   * for someone to move a call into render.
+   */
+  const refreshRuns = async (id: string | null): Promise<void> => {
+    setPastRuns(id ? await window.electronAPI.ai.codeAgent.runs(id) : [])
+  }
+
   /** Ask main what the last run changed. Cheap and idempotent — it's derived. */
   const loadDiff = async (): Promise<void> => {
     setAgentDiff(await window.electronAPI.ai.codeAgent.diff())
@@ -438,12 +514,17 @@ export function AIView({ projects }: { projects: Project[] }) {
       // Replace rather than append: this IS the log, tail and all. Appending
       // would double every line for a user who never left.
       if (s.log) setAgentLog(s.log)
+      setAgentHint(s.hint)
       // A run may have finished while this view didn't exist; its diff is still
       // there to be asked for.
       if (s.log && !s.running) void loadDiff()
     })
     const offOutput = window.electronAPI.ai.codeAgent.onOutput((chunk) => {
       setAgentRunning(true)
+      // A new run reopens the panel: output arriving into a bar the user
+      // collapsed an hour ago is output nobody sees. Closing is about the run
+      // they were done with, not the next one.
+      setAgentPanelOpen(true)
       setAgentLog((l) => (l + chunk).slice(-8000)) // cap to keep the panel light
     })
     const offExit = window.electronAPI.ai.codeAgent.onExit((code) => {
@@ -453,13 +534,90 @@ export function AIView({ projects }: { projects: Project[] }) {
       // again later is free and a run that finished while this view was closed
       // is not lost.
       void loadDiff()
+      // The exit event carries only a status code, and this failure exits 0 —
+      // so the diagnosis is fetched rather than inferred from it.
+      void window.electronAPI.ai.codeAgent.status().then((s) => setAgentHint(s.hint))
+    })
+    // The run has become history. A separate event from 'exit' on purpose: the
+    // archive takes a `git diff` to write, and the panel must not wait on that
+    // to stop saying "rodando". So exit flips the UI and this fills the picker
+    // when the row actually exists — no sleeping on a guessed delay.
+    // Read from the store rather than closing over `conversationId`: this effect
+    // binds once (deps `[]`) so it isn't torn down on every chat switch, which
+    // means the value captured here would be whichever chat was open at mount.
+    const offArchived = window.electronAPI.ai.codeAgent.onArchived(() => {
+      void refreshRuns(useAiRunStore.getState().conversationId)
     })
     return () => {
       cancelled = true
       offOutput()
       offExit()
+      offArchived()
     }
   }, [])
+
+  useEffect(() => {
+    void refreshRuns(conversationId)
+  }, [conversationId])
+
+  /**
+   * The selected run, **derived** rather than reset by an effect.
+   *
+   * A selection is stored with the chat it was made in, so switching chats drops
+   * it on the next render instead of needing a `setSelectedRunId(null)` on a
+   * conversation change — which is a cascading render, and worse, one frame in
+   * which another chat's snapshot is on screen under this chat's panel.
+   */
+  const selectedRunId = selection?.convId === conversationId ? selection.id : null
+
+  // Fetch the snapshot behind the selected row. Only now — the list is metadata
+  // precisely so opening the panel doesn't drag every run's log and diff along.
+  useEffect(() => {
+    if (!selectedRunId) return
+    let cancelled = false
+    void window.electronAPI.ai.codeAgent.runGet(selectedRunId).then((snap) => {
+      if (cancelled) return
+      // Gone (pruned, or the file was removed): fall back to the live run rather
+      // than showing an empty panel that looks like a run that did nothing.
+      if (!snap) {
+        setSelection(null)
+        void refreshRuns(conversationId)
+        return
+      }
+      setSnapshot({ id: snap.id, log: snap.log, diff: snap.diff })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [selectedRunId])
+
+  /**
+   * What the panel is actually showing.
+   *
+   * A selected past run replaces both halves at once — log and diff always
+   * describe the same run, or the user reads one against the other and draws a
+   * false conclusion. `running` is false for a snapshot no matter what the agent
+   * is doing now: the spinner and "Parar" belong to the live run only.
+   *
+   * The snapshot is matched against the selection by id rather than assumed to
+   * belong to it: while a newly picked run is still being fetched, the previous
+   * one is still in state, and showing it under the new row's label would
+   * misattribute a diff — the one mistake this whole feature exists to avoid.
+   */
+  const viewingPast = snapshot !== null && snapshot.id === selectedRunId
+  const shownLog = viewingPast ? snapshot.log : agentLog
+  const shownDiff = viewingPast ? snapshot.diff : agentDiff
+
+  // Keep the changes panel live while the agent writes. The diff is derived in
+  // main from a base captured before the spawn, so re-asking is cheap and
+  // idempotent — and it's the only view that answers "what is it doing to my
+  // code" without making the user read a redrawing spinner. codex leaves the
+  // tree dirty, so the base-to-worktree diff shows the work mid-run.
+  useEffect(() => {
+    if (!agentRunning) return
+    const id = setInterval(() => void loadDiff(), 2000)
+    return () => clearInterval(id)
+  }, [agentRunning])
 
   /**
    * Reload the history list. Always goes through search so an autosave landing
@@ -851,8 +1009,17 @@ export function AIView({ projects }: { projects: Project[] }) {
                 title={`A IA lê o código em:\n${activeCodePaths.map((c) => c.path).join('\n')}`}
                 className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#6366f1]/10 text-[11px] text-[#a5b4fc] max-w-[280px]"
               >
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0">
-                  <polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" />
+                <svg
+                  width="10"
+                  height="10"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  className="shrink-0"
+                >
+                  <polyline points="16 18 22 12 16 6" />
+                  <polyline points="8 6 2 12 8 18" />
                 </svg>
                 <span className="truncate">
                   {activeCodePaths.length === 1
@@ -898,7 +1065,9 @@ export function AIView({ projects }: { projects: Project[] }) {
                   {totalTokens > 0 ? (
                     <>
                       {formatTokens(totalTokens)} tokens
-                      {cost !== null && <span className="text-[#a5b4fc]">· {formatCost(cost)}</span>}
+                      {cost !== null && (
+                        <span className="text-[#a5b4fc]">· {formatCost(cost)}</span>
+                      )}
                     </>
                   ) : (
                     'Gastos'
@@ -1007,7 +1176,14 @@ export function AIView({ projects }: { projects: Project[] }) {
             )}
 
             <button
-              onClick={() => setAuto(!autoApprove)}
+              onClick={() => {
+                // Turning it OFF needs no ceremony — it only ever adds
+                // approvals back. Turning it ON is the spend decision, and the
+                // one moment the user can still say no.
+                if (autoApprove) return setAuto(false)
+                refreshSpend()
+                setConfirmAuto(true)
+              }}
               title={
                 autoApprove
                   ? 'Modo automático LIGADO — ações rodam sem aprovação. Clique para exigir aprovação.'
@@ -1325,9 +1501,9 @@ export function AIView({ projects }: { projects: Project[] }) {
               {priceField('Preço entrada (US$ / 1M tokens)', 'inputPricePer1M')}
               {priceField('Preço saída (US$ / 1M tokens)', 'outputPricePer1M')}
               <p className="text-[11px] text-[#4a5068] pt-5 leading-relaxed">
-                Preços do seu provider, para estimar o custo da conversa. O app não tem como
-                saber sozinho — ele fala com qualquer endpoint compatível com OpenAI, inclusive
-                modelos locais (custo zero). Deixe em branco e o header mostra só os tokens.
+                Preços do seu provider, para estimar o custo da conversa. O app não tem como saber
+                sozinho — ele fala com qualquer endpoint compatível com OpenAI, inclusive modelos
+                locais (custo zero). Deixe em branco e o header mostra só os tokens.
               </p>
             </div>
 
@@ -1351,8 +1527,8 @@ export function AIView({ projects }: { projects: Project[] }) {
 
               {templates.length === 0 && !editingTemplate && (
                 <p className="text-[11px] text-[#4a5068] italic">
-                  Só o template padrão. Crie um para adaptar o Gerar Tasks a uma área — Dev,
-                  Estudo, Marketing…
+                  Só o template padrão. Crie um para adaptar o Gerar Tasks a uma área — Dev, Estudo,
+                  Marketing…
                 </p>
               )}
 
@@ -1557,17 +1733,34 @@ export function AIView({ projects }: { projects: Project[] }) {
           </div>
         )}
 
-        {/* External code agent output */}
-        {agentLog && (
+        {/* External code agent output. Shown for a live/just-finished run, and
+            also when this chat has runs to reopen — otherwise the history is
+            only reachable while output happens to be on screen, which is the
+            case where nobody needs it. */}
+        {(agentLog || pastRuns.length > 0) && (
           <div className="border-t border-[#2a2d42] bg-[#0d0f18] shrink-0">
             <div className="flex items-center justify-between px-6 py-1.5">
               <span className="flex items-center gap-2 text-[11px] font-medium text-[#8892a4]">
                 {agentRunning && (
                   <span className="w-2 h-2 rounded-full bg-[#22c55e] animate-pulse" />
                 )}
-                Agente de código {agentRunning ? '(rodando)' : '(encerrado)'}
+                Agente de código{' '}
+                {viewingPast ? '(run anterior)' : agentRunning ? '(rodando)' : '(encerrado)'}
               </span>
               <div className="flex items-center gap-3">
+                <AgentRunPicker
+                  runs={pastRuns}
+                  selectedId={selectedRunId}
+                  live={agentLog !== ''}
+                  onSelect={(id) => {
+                    // Tagged with the chat, so leaving it drops the selection
+                    // by derivation instead of by a reset effect.
+                    setSelection(id && conversationId ? { convId: conversationId, id } : null)
+                    // Picking a run is asking to see it — a selection that
+                    // landed behind a collapsed panel would look like a no-op.
+                    setAgentPanelOpen(true)
+                  }}
+                />
                 {agentRunning && (
                   <button
                     onClick={() => window.electronAPI.ai.codeAgent.stop()}
@@ -1576,19 +1769,113 @@ export function AIView({ projects }: { projects: Project[] }) {
                     Parar
                   </button>
                 )}
+                {/* Clears the live buffer only. Hidden while a snapshot is up:
+                    there it would look like it deletes the archived run, and
+                    the archive is the thing the user came here to keep. */}
+                {!viewingPast && agentPanelOpen && (
+                  <button
+                    onClick={() => setAgentLog('')}
+                    className="text-[11px] text-[#8892a4] hover:text-[#e2e8f0]"
+                  >
+                    Limpar
+                  </button>
+                )}
+                {/* Collapses the panel; it does not discard anything. The header
+                    stays so the run picker — the only way back to the history —
+                    is still reachable. */}
                 <button
-                  onClick={() => setAgentLog('')}
-                  className="text-[11px] text-[#8892a4] hover:text-[#e2e8f0]"
+                  onClick={() => setAgentPanelOpen((v) => !v)}
+                  title={agentPanelOpen ? 'Fechar o painel do agente' : 'Abrir o painel do agente'}
+                  aria-label={
+                    agentPanelOpen ? 'Fechar o painel do agente' : 'Abrir o painel do agente'
+                  }
+                  className="text-[#8892a4] hover:text-[#e2e8f0] transition-colors"
                 >
-                  Limpar
+                  {agentPanelOpen ? (
+                    <svg
+                      width="13"
+                      height="13"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                    >
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  ) : (
+                    <svg
+                      width="13"
+                      height="13"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                    >
+                      <polyline points="18 15 12 9 6 15" />
+                    </svg>
+                  )}
                 </button>
               </div>
             </div>
-            <AgentTerminal log={agentLog} running={agentRunning} />
+            {/* Above the diff, because it explains why the diff is empty. The
+                failure it reports exits 0 and prints its cause only in the raw
+                log, which sits behind a toggle — so without this the user is
+                told the run finished and left to wonder why nothing changed. */}
+            {agentPanelOpen && agentHint && !agentRunning && !viewingPast && (
+              <div className="px-6 pb-3">
+                <div className="rounded-lg border border-[#7c4a2d] bg-[#1a1108] p-3">
+                  <div className="flex items-start gap-2">
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="#f0a868"
+                      strokeWidth="2"
+                      className="mt-0.5 shrink-0"
+                    >
+                      <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                      <line x1="12" y1="9" x2="12" y2="13" />
+                      <line x1="12" y1="17" x2="12.01" y2="17" />
+                    </svg>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[12px] font-semibold text-[#f0a868]">{agentHint.title}</p>
+                      <p className="mt-1 text-[11px] leading-relaxed text-[#c9a68a]">
+                        {agentHint.detail}
+                      </p>
+                      {agentHint.command && (
+                        <div className="mt-2 flex items-center gap-2">
+                          <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap rounded bg-[#0d0f18] px-2 py-1.5 font-mono text-[10.5px] text-[#e2e8f0]">
+                            {agentHint.command}
+                          </code>
+                          {/* Copy, not run: this needs sudo and it loosens the
+                              user's kernel hardening. Handing it over to run
+                              themselves is the only honest option — the app must
+                              not make that call for them. */}
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(agentHint.command ?? '')
+                              setHintCopied(true)
+                              setTimeout(() => setHintCopied(false), 2000)
+                            }}
+                            className="shrink-0 rounded px-2 py-1.5 text-[10.5px] font-medium text-[#f0a868] transition-colors hover:bg-[#2a1a0d]"
+                          >
+                            {hintCopied ? 'copiado' : 'copiar'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
-            {/* The changes themselves, so they can be reviewed here rather than
-                in an editor. Only once the agent has stopped writing them. */}
-            {!agentRunning && agentDiff && (
+            {/* The changes come first and stay visible *while* the agent runs —
+                they're the answer to "what is it doing", and the raw log isn't:
+                a redrawing status line shows one step at a time and keeps no
+                history of it. */}
+            {agentPanelOpen && shownDiff && (
               <div className="px-6 pb-3">
                 <button
                   onClick={() => setShowDiff((v) => !v)}
@@ -1606,9 +1893,52 @@ export function AIView({ projects }: { projects: Project[] }) {
                     <polyline points="9 18 15 12 9 6" />
                   </svg>
                   Mudanças
+                  {viewingPast && (
+                    // Said plainly, because it is the one thing that could
+                    // mislead here: this diff is what the agent changed *then*,
+                    // not what the folder looks like now.
+                    <span className="font-normal text-[10px] text-[#6b7280]">
+                      · snapshot de quando a run terminou
+                    </span>
+                  )}
                 </button>
-                {showDiff && <CodeDiff diff={agentDiff} onRefresh={() => void loadDiff()} />}
+                {showDiff && (
+                  <CodeDiff
+                    diff={shownDiff}
+                    running={!viewingPast && agentRunning}
+                    // A snapshot has nothing to refresh — re-deriving it would
+                    // show today's tree as the agent's work.
+                    onRefresh={viewingPast ? undefined : () => void loadDiff()}
+                  />
+                )}
               </div>
+            )}
+
+            {/* The raw log, behind a toggle: it's the debugging view (why did it
+                fail, what did it read), not the one to watch a run through. */}
+            {agentPanelOpen && (
+              <div className="px-6 pb-3">
+                <button
+                  onClick={() => setShowLog((v) => !v)}
+                  className="flex items-center gap-1.5 mb-1.5 text-[11px] font-medium text-[#8892a4] hover:text-[#e2e8f0] transition-colors"
+                >
+                  <svg
+                    width="9"
+                    height="9"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="3"
+                    className={`transition-transform ${showLog ? 'rotate-90' : ''}`}
+                  >
+                    <polyline points="9 18 15 12 9 6" />
+                  </svg>
+                  Log completo
+                </button>
+              </div>
+            )}
+            {agentPanelOpen && showLog && (
+              <AgentTerminal log={shownLog} running={!viewingPast && agentRunning} />
             )}
           </div>
         )}
@@ -1652,7 +1982,14 @@ export function AIView({ projects }: { projects: Project[] }) {
                     aria-label="Remover imagem"
                     className="absolute -top-1.5 -right-1.5 w-5 h-5 flex items-center justify-center rounded-full bg-[#1e2235] border border-[#2a2d42] text-[#8892a4] opacity-0 group-hover:opacity-100 hover:text-red-400 transition-opacity"
                   >
-                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                    <svg
+                      width="9"
+                      height="9"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="3"
+                    >
                       <line x1="18" y1="6" x2="6" y2="18" />
                       <line x1="6" y1="6" x2="18" y2="18" />
                     </svg>
@@ -1707,7 +2044,9 @@ export function AIView({ projects }: { projects: Project[] }) {
             <div className="flex flex-col gap-2">
               <button
                 onClick={handleSend}
-                disabled={!configReady || busy || (input.trim() === '' && pendingImages.length === 0)}
+                disabled={
+                  !configReady || busy || (input.trim() === '' && pendingImages.length === 0)
+                }
                 className="px-3 py-1.5 rounded-lg bg-[#1e2235] border border-[#2a2d42] text-sm text-[#e2e8f0] font-medium hover:bg-[#2a2d42] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
                 Enviar
@@ -1871,6 +2210,17 @@ export function AIView({ projects }: { projects: Project[] }) {
         confirmLabel="Apagar"
         onConfirm={confirmDeleteConversation}
         onCancel={() => setConfirmDelete(null)}
+      />
+      <ConfirmDialog
+        open={confirmAuto}
+        title="Ligar o modo automático"
+        message={autoWarning}
+        confirmLabel="Ligar automático"
+        onConfirm={() => {
+          setAuto(true)
+          setConfirmAuto(false)
+        }}
+        onCancel={() => setConfirmAuto(false)}
       />
     </>
   )

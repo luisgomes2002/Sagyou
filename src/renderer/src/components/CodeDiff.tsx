@@ -30,10 +30,18 @@ export interface CodeAgentDiff {
 
 export function CodeDiff({
   diff,
-  onRefresh
+  onRefresh,
+  running = false
 }: {
   diff: CodeAgentDiff
-  onRefresh: () => void
+  /**
+   * Recompute the diff. Omitted for an archived run, whose diff was frozen when
+   * the agent exited — recomputing there would measure today's tree and present
+   * the user's own later edits as the agent's work.
+   */
+  onRefresh?: () => void
+  /** The agent is still working — an empty diff means "not yet", not "never". */
+  running?: boolean
 }): React.JSX.Element {
   if (diff.error) {
     return (
@@ -47,16 +55,22 @@ export function CodeDiff({
     return (
       <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-[#0d0f18] border border-[#2a2d42]">
         {/* "It changed nothing" is an answer, and a common one — an agent that
-            only read the code, or gave up. Silence here reads as a bug. */}
+            only read the code, or gave up. Silence here reads as a bug. But
+            mid-run it is not that answer yet: the same empty diff means the
+            agent is still reading, and saying "changed nothing" there is false. */}
         <p className="text-[11px] text-[#4a5068] italic">
-          O agente não alterou nenhum arquivo.
+          {running
+            ? 'Nenhuma alteração ainda — o agente está trabalhando.'
+            : 'O agente não alterou nenhum arquivo.'}
         </p>
-        <button
-          onClick={onRefresh}
-          className="text-[10px] text-[#8892a4] hover:text-[#e2e8f0] transition-colors"
-        >
-          Recarregar
-        </button>
+        {onRefresh && (
+          <button
+            onClick={onRefresh}
+            className="text-[10px] text-[#8892a4] hover:text-[#e2e8f0] transition-colors"
+          >
+            Recarregar
+          </button>
+        )}
       </div>
     )
   }
@@ -75,13 +89,15 @@ export function CodeDiff({
         </span>
         <span className="text-[11px] text-emerald-400">+{totalAdded}</span>
         <span className="text-[11px] text-red-400">−{totalRemoved}</span>
-        <button
-          onClick={onRefresh}
-          title="Recalcular o diff"
-          className="ml-auto text-[10px] text-[#8892a4] hover:text-[#e2e8f0] transition-colors"
-        >
-          Recarregar
-        </button>
+        {onRefresh && (
+          <button
+            onClick={onRefresh}
+            title="Recalcular o diff"
+            className="ml-auto text-[10px] text-[#8892a4] hover:text-[#e2e8f0] transition-colors"
+          >
+            Recarregar
+          </button>
+        )}
       </div>
 
       <div className="max-h-[420px] overflow-auto">

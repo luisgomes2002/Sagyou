@@ -59,6 +59,25 @@ describe('parseAnsi', () => {
     expect(flat('one\rtwo\nthree')).toBe('two\nthree')
   })
 
+  it('applies an erase-in-line code instead of leaving the erased text behind', () => {
+    // What a redrawing agent actually emits: erase the line, then rewrite it.
+    // Dropping the \x1b[2K used to leave both states stacked on one line.
+    expect(flat('lendo arquivo A\x1b[2K\rlendo arquivo B')).toBe('lendo arquivo B')
+    expect(flat('velho\x1b[Knovo')).toBe('novo')
+  })
+
+  it('keeps the colour of a redraw that re-emits it after the \\r', () => {
+    // The overwrite is applied to the parsed line, not to the raw bytes, so the
+    // escape after the \r is still an escape and not counted as text.
+    expect(parseAnsi('a\r\x1b[32mok')).toEqual([{ text: 'ok', fg: '#4ade80' }])
+  })
+
+  it('does not let a redraw on one line erase the lines above it', () => {
+    expect(flat('feito 1\nfeito 2\nprogresso 10%\rprogresso 90%')).toBe(
+      'feito 1\nfeito 2\nprogresso 90%'
+    )
+  })
+
   it('ignores unknown SGR codes (256-colour) rather than printing them', () => {
     // 38;5;213 is a 256-colour foreground we don't model; text must survive plain
     expect(parseAnsi('\x1b[38;5;213mhi\x1b[0m')).toEqual([{ text: 'hi' }])

@@ -10,7 +10,7 @@
     },
     {
       "title": "Orquestrar um harness de código externo no diretório do projeto",
-      "description": "Disparar um agente open-source (Aider/Codex CLI) via child_process no main, no path selecionado, apontado ao DeepSeek, com aprovação obrigatória antes de escrever arquivos ou rodar comandos.",
+      "description": "Disparar o agente open-source Codex CLI via child_process no main, no path selecionado, apontado ao DeepSeek, com aprovação obrigatória antes de escrever arquivos ou rodar comandos.",
       "priority": "low",
       "tags": ["feat", "infra", "security"],
       "column": "Backlog",

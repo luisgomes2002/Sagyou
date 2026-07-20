@@ -1,5 +1,6 @@
 import Decimal from 'decimal.js'
 import { useKanbanStore } from '../store/kanban'
+import { useAiRunStore } from '../store/aiRun'
 import { D, FINANCIAL_CATEGORIES } from '../components/financial/shared'
 import { computeHabitSummary, todayISO } from '../utils/habits'
 import { isDoneColumn } from '../utils/columns'
@@ -320,7 +321,10 @@ function activeRoots(args: Record<string, unknown>): { roots: Root[]; error?: st
   if (!pastaId) return { roots }
   const one = roots.find((r) => r.id === pastaId || r.nome === pastaId)
   if (!one) {
-    return { roots: [], error: `Pasta "${pastaId}" não encontrada. Disponíveis: ${roots.map((r) => r.nome).join(', ')}` }
+    return {
+      roots: [],
+      error: `Pasta "${pastaId}" não encontrada. Disponíveis: ${roots.map((r) => r.nome).join(', ')}`
+    }
   }
   return { roots: [one] }
 }
@@ -329,7 +333,8 @@ function activeRoots(args: Record<string, unknown>): { roots: Root[]; error?: st
 const PASTA_PARAM = {
   pastaId: {
     type: 'string',
-    description: 'Restringe a uma pasta de código (id ou nome de ler_projetos). Omita para usar todas as marcadas.'
+    description:
+      'Restringe a uma pasta de código (id ou nome de ler_projetos). Omita para usar todas as marcadas.'
   }
 } as const
 
@@ -600,7 +605,10 @@ const REGISTRY: Record<string, AITool> = {
 
       let cor: string | undefined
       if (args.cor !== undefined) {
-        if (typeof args.cor !== 'string' || !(PROJECT_COLORS as readonly string[]).includes(args.cor)) {
+        if (
+          typeof args.cor !== 'string' ||
+          !(PROJECT_COLORS as readonly string[]).includes(args.cor)
+        ) {
           return JSON.stringify({ error: 'Cor inválida', disponiveis: PROJECT_COLORS })
         }
         cor = args.cor
@@ -903,15 +911,19 @@ const REGISTRY: Record<string, AITool> = {
 
   criar_sprints: {
     write: true,
-    definition: fn('criar_sprints', 'Cria uma ou mais sprints no projeto. Sem projectId, usa o ativo.', {
-      type: 'object',
-      properties: {
-        projectId: { type: 'string', description: 'ID do projeto (opcional)' },
-        nomes: { type: 'array', items: { type: 'string' }, description: 'Nomes das sprints' }
-      },
-      required: ['nomes'],
-      additionalProperties: false
-    }),
+    definition: fn(
+      'criar_sprints',
+      'Cria uma ou mais sprints no projeto. Sem projectId, usa o ativo.',
+      {
+        type: 'object',
+        properties: {
+          projectId: { type: 'string', description: 'ID do projeto (opcional)' },
+          nomes: { type: 'array', items: { type: 'string' }, description: 'Nomes das sprints' }
+        },
+        required: ['nomes'],
+        additionalProperties: false
+      }
+    ),
     run: (args) => {
       const state = useKanbanStore.getState()
       const projectId =
@@ -994,7 +1006,10 @@ const REGISTRY: Record<string, AITool> = {
 
       let cor: string = PROJECT_COLORS[0]
       if (args.cor !== undefined) {
-        if (typeof args.cor !== 'string' || !(PROJECT_COLORS as readonly string[]).includes(args.cor)) {
+        if (
+          typeof args.cor !== 'string' ||
+          !(PROJECT_COLORS as readonly string[]).includes(args.cor)
+        ) {
           return JSON.stringify({ error: 'Cor inválida', disponiveis: PROJECT_COLORS })
         }
         cor = args.cor
@@ -1020,7 +1035,13 @@ const REGISTRY: Record<string, AITool> = {
         projectId = args.projectId
       }
 
-      const metaId = state.createGoal({ title: titulo, target: alvo, unit: unidade, color: cor, projectId })
+      const metaId = state.createGoal({
+        title: titulo,
+        target: alvo,
+        unit: unidade,
+        color: cor,
+        projectId
+      })
       return JSON.stringify({ ok: true, metaId, titulo, alvo, unidade, progresso: 0 })
     }
   },
@@ -1082,7 +1103,10 @@ const REGISTRY: Record<string, AITool> = {
       }
 
       if (args.cor !== undefined) {
-        if (typeof args.cor !== 'string' || !(PROJECT_COLORS as readonly string[]).includes(args.cor)) {
+        if (
+          typeof args.cor !== 'string' ||
+          !(PROJECT_COLORS as readonly string[]).includes(args.cor)
+        ) {
           return JSON.stringify({ error: 'Cor inválida', disponiveis: PROJECT_COLORS })
         }
         updates.color = args.cor
@@ -1203,7 +1227,10 @@ const REGISTRY: Record<string, AITool> = {
 
       let cor: string | undefined
       if (args.cor !== undefined) {
-        if (typeof args.cor !== 'string' || !(NOTE_COLORS as readonly string[]).includes(args.cor)) {
+        if (
+          typeof args.cor !== 'string' ||
+          !(NOTE_COLORS as readonly string[]).includes(args.cor)
+        ) {
           return JSON.stringify({ error: 'Cor inválida', disponiveis: NOTE_COLORS })
         }
         cor = args.cor
@@ -1311,7 +1338,7 @@ const REGISTRY: Record<string, AITool> = {
     write: true,
     definition: fn(
       'rodar_agente_codigo',
-      'Dispara um agente de código externo (Aider/Codex) no diretório do projeto para ' +
+      'Dispara o agente de código externo (Codex) no diretório do projeto para ' +
         'implementar uma tarefa de código. Roda em UMA pasta: se o projeto tiver várias ' +
         'marcadas, informe pastaId. O agente escreve arquivos e roda comandos, por isso ' +
         'passa por aprovação. IMPORTANTE: quando você já souber quais arquivos mudar (ache-os ' +
@@ -1329,7 +1356,6 @@ const REGISTRY: Record<string, AITool> = {
               '"src/renderer/src/components/AIView.tsx"). Opcional, mas fortemente recomendado: ' +
               'evita o passo lento de descoberta do agente.'
           },
-          agent: { type: 'string', enum: ['aider', 'codex'], description: 'Agente (padrão: aider)' },
           ...PASTA_PARAM,
           projectId: { type: 'string', description: 'ID do projeto (opcional; usa o ativo)' }
         },
@@ -1351,20 +1377,28 @@ const REGISTRY: Record<string, AITool> = {
       const path = roots[0].path
       const task = typeof args.task === 'string' ? args.task.trim() : ''
       if (!task) return JSON.stringify({ error: 'Tarefa vazia' })
-      const agent = args.agent === 'codex' ? 'codex' : 'aider'
       // Pinning the target files lets the agent edit them directly instead of
-      // rediscovering them via its repo map (slow, and a UI string is invisible
-      // there anyway). Main confines each path to the root; here we just pass the
-      // clean list through.
+      // hunting for them with its own grep/read tools first. Main confines each
+      // path to the root; here we just pass the clean list through.
       const files = Array.isArray(args.arquivos)
         ? args.arquivos.filter((f): f is string => typeof f === 'string' && f.trim() !== '')
         : undefined
       // Fire-and-forget; the real outcome streams to the UI panel. Report the
       // request honestly — do NOT claim guaranteed success.
-      void window.electronAPI.ai.codeAgent.run({ path, task, agent, files })
+      // Which chat this run belongs to, so its log and diff can be reopened from
+      // there later. `runningConvId` and not `conversationId`: a run belongs to
+      // the chat that started it, not to whichever one the user is looking at
+      // when the agent finishes.
+      const { runningConvId } = useAiRunStore.getState()
+      void window.electronAPI.ai.codeAgent.run({
+        path,
+        task,
+        files,
+        convId: runningConvId ?? undefined
+      })
       return JSON.stringify({
         status: 'solicitado',
-        agente: agent,
+        agente: 'codex',
         diretorio: path,
         arquivos: files && files.length ? files : undefined,
         aviso:
@@ -1385,10 +1419,14 @@ const REGISTRY: Record<string, AITool> = {
       {
         type: 'object',
         properties: {
-          subpasta: { type: 'string', description: 'Subpasta relativa (opcional, ex: src/renderer)' },
+          subpasta: {
+            type: 'string',
+            description: 'Subpasta relativa (opcional, ex: src/renderer)'
+          },
           inicio: {
             type: 'number',
-            description: 'Posição de onde começar a listar; use o "nextOffset" da chamada anterior para paginar (opcional, padrão 0)'
+            description:
+              'Posição de onde começar a listar; use o "nextOffset" da chamada anterior para paginar (opcional, padrão 0)'
           },
           max_arquivos: {
             type: 'number',
@@ -1429,11 +1467,13 @@ const REGISTRY: Record<string, AITool> = {
           caminho: { type: 'string', description: 'Caminho relativo do arquivo' },
           inicio: {
             type: 'number',
-            description: 'Posição (em caracteres) de onde começar a ler; use o "nextOffset" da leitura anterior para paginar (opcional, padrão 0)'
+            description:
+              'Posição (em caracteres) de onde começar a ler; use o "nextOffset" da leitura anterior para paginar (opcional, padrão 0)'
           },
           max_chars: {
             type: 'number',
-            description: 'Máximo de caracteres a devolver nesta leitura (opcional, padrão 20000, teto 60000)'
+            description:
+              'Máximo de caracteres a devolver nesta leitura (opcional, padrão 20000, teto 60000)'
           },
           ...PASTA_PARAM,
           projectId: { type: 'string', description: 'ID do projeto (opcional; usa o ativo)' }
@@ -1661,7 +1701,7 @@ export function describeToolActivity(name: string, args: Record<string, unknown>
       return sprint ? `Atribuindo a sprint "${sprint}"` : 'Atribuindo uma sprint'
     }
     case 'rodar_agente_codigo':
-      return `Rodando o agente de código (${str(args.agent) || 'aider'})`
+      return 'Rodando o agente de código (codex)'
     default:
       return name
   }
@@ -1728,7 +1768,9 @@ export function describeToolCall(name: string, args: Record<string, unknown>): s
       if (args.unidade !== undefined) campos.push(`unidade → ${args.unidade || '(vazia)'}`)
       if (args.cor !== undefined) campos.push('nova cor')
       if (args.projectId !== undefined) {
-        campos.push(String(args.projectId).trim() === '' ? 'desvincular do projeto' : 'novo projeto')
+        campos.push(
+          String(args.projectId).trim() === '' ? 'desvincular do projeto' : 'novo projeto'
+        )
       }
       const alvoMeta = (args.titulo ?? args.metaId ?? '?') as string
       return `Atualizar meta ${alvoMeta}: ${campos.join('; ') || '(nada)'}`
@@ -1738,7 +1780,7 @@ export function describeToolCall(name: string, args: Record<string, unknown>): s
     case 'atribuir_sprint':
       return `Atribuir sprint "${args.sprint ?? '?'}" à task ${alvo}`
     case 'rodar_agente_codigo':
-      return `⚠️ Rodar agente de código (${args.agent ?? 'aider'}) no projeto: ${args.task ?? ''}`
+      return `⚠️ Rodar agente de código (codex) no projeto: ${args.task ?? ''}`
     default:
       return name
   }

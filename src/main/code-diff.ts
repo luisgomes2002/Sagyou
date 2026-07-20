@@ -130,9 +130,8 @@ function parseNumstat(out: string): DiffFile[] {
 /**
  * Everything that changed since `base`.
  *
- * Covers both agents by construction: aider commits as it goes, `codex exec`
- * leaves the tree dirty, and a diff from a base commit to the working tree
- * spans commits and uncommitted edits alike.
+ * `codex exec` leaves the tree dirty, and a diff from a base commit to the
+ * working tree spans commits and uncommitted edits alike.
  *
  * Untracked files are the exception — `git diff` cannot see them, so they are
  * fetched one at a time with `--no-index`, which synthesises a proper "new

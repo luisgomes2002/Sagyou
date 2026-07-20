@@ -9,6 +9,32 @@ interface PromptTemplate {
   updatedAt: string
 }
 
+/** A finished code-agent run, as listed in the run picker. */
+interface AgentRunMeta {
+  id: string
+  convId: string | null
+  /** codex is the only agent. Kept on the row so the picker can state it. */
+  agent: 'codex'
+  dir: string
+  task: string
+  startedAt: number
+  endedAt: number
+  exitCode: number
+  fileCount: number
+}
+
+/** An archived run, log and diff frozen at the moment the agent exited. */
+interface AgentRunSnapshot extends AgentRunMeta {
+  log: string
+  diff: {
+    patch: string
+    files: { path: string; added: number; removed: number }[]
+    truncated: boolean
+    omittedNewFiles: string[]
+    error?: string
+  } | null
+}
+
 /** Totals for a slice of the usage log. `unpricedCalls` are calls with no price. */
 interface UsageBucket {
   calls: number
@@ -42,12 +68,20 @@ const api = {
   backup: {
     export: (backup: unknown): Promise<{ success: boolean; cancelled?: boolean }> =>
       ipcRenderer.invoke('backup:export', backup),
-    import: (): Promise<{ success: boolean; cancelled?: boolean; data?: unknown; error?: string }> =>
-      ipcRenderer.invoke('backup:import')
+    import: (): Promise<{
+      success: boolean
+      cancelled?: boolean
+      data?: unknown
+      error?: string
+    }> => ipcRenderer.invoke('backup:import')
   },
   ai: {
-    import: (): Promise<{ success: boolean; cancelled?: boolean; data?: unknown; error?: string }> =>
-      ipcRenderer.invoke('ai:import'),
+    import: (): Promise<{
+      success: boolean
+      cancelled?: boolean
+      data?: unknown
+      error?: string
+    }> => ipcRenderer.invoke('ai:import'),
     config: {
       get: (): Promise<{
         baseUrl: string
@@ -160,19 +194,26 @@ const api = {
         .invoke('ai:chat:stream', { ...request, streamId })
         .finally(() => ipcRenderer.removeListener('ai:chat:delta', handler))
     },
-    // External code agent (Aider/Codex) spawned in the project directory.
+    // External code agent (Codex) spawned in the project directory.
     // Launch only after user approval — it writes files and runs commands.
     codeAgent: {
       run: (request: {
         path: string
         task: string
-        agent?: 'aider' | 'codex'
         files?: string[]
+        convId?: string
       }): Promise<{ success: boolean; agent?: string; dir?: string; error?: string }> =>
         ipcRenderer.invoke('ai:code-agent:run', request),
       stop: (): Promise<void> => ipcRenderer.invoke('ai:code-agent:stop'),
-      status: (): Promise<{ running: boolean; log: string }> =>
-        ipcRenderer.invoke('ai:code-agent:status'),
+      status: (): Promise<{
+        running: boolean
+        log: string
+        hint: {
+          title: string
+          detail: string
+          command?: string
+        } | null
+      }> => ipcRenderer.invoke('ai:code-agent:status'),
       // What the last run changed. Derived on demand, so a panel that wasn't
       // mounted when the agent finished can still ask.
       diff: (): Promise<{
@@ -182,10 +223,23 @@ const api = {
         omittedNewFiles: string[]
         error?: string
       }> => ipcRenderer.invoke('ai:code-agent:diff'),
+      // Past runs of a conversation. The index only — a row's log and diff are
+      // fetched by runGet when the user actually opens it.
+      runs: (convId: string): Promise<AgentRunMeta[]> =>
+        ipcRenderer.invoke('ai:code-agent:runs', convId),
+      runGet: (id: string): Promise<AgentRunSnapshot | null> =>
+        ipcRenderer.invoke('ai:code-agent:run-get', id),
       onOutput: (cb: (chunk: string) => void) => {
         const handler = (_: Electron.IpcRendererEvent, chunk: string): void => cb(chunk)
         ipcRenderer.on('ai:code-agent:output', handler)
         return () => ipcRenderer.removeListener('ai:code-agent:output', handler)
+      },
+      // Fires once a finished run has been written to the archive — later than
+      // onExit, which doesn't wait for the diff that snapshot needs.
+      onArchived: (cb: (id: string) => void) => {
+        const handler = (_: Electron.IpcRendererEvent, id: string): void => cb(id)
+        ipcRenderer.on('ai:code-agent:archived', handler)
+        return () => ipcRenderer.removeListener('ai:code-agent:archived', handler)
       },
       onExit: (cb: (code: number) => void) => {
         const handler = (_: Electron.IpcRendererEvent, code: number): void => cb(code)
@@ -194,8 +248,7 @@ const api = {
       }
     },
     // Native folder picker for choosing a project's code directory.
-    pickDirectory: (): Promise<{ path: string | null }> =>
-      ipcRenderer.invoke('ai:pick-directory'),
+    pickDirectory: (): Promise<{ path: string | null }> => ipcRenderer.invoke('ai:pick-directory'),
     // Read-only source access, confined to `root` (a project's code path).
     code: {
       list: (
@@ -239,9 +292,8 @@ const api = {
       fetch: (
         url: string,
         render?: boolean
-      ): Promise<
-        { content: string; url: string; truncated: boolean } | { error: string }
-      > => ipcRenderer.invoke('ai:web:fetch', url, render)
+      ): Promise<{ content: string; url: string; truncated: boolean } | { error: string }> =>
+        ipcRenderer.invoke('ai:web:fetch', url, render)
     },
     // Images pasted into the chat: stored as files by the main process, which
     // hands back an id. The transcript keeps ids, never the bytes.
@@ -255,17 +307,18 @@ const api = {
     // User-written prompt templates for Gerar Tasks (ai-templates.json).
     templates: {
       list: (): Promise<PromptTemplate[]> => ipcRenderer.invoke('ai:templates:list'),
-      save: (
-        input: { id?: string; name: string; body: string }
-      ): Promise<{ template: PromptTemplate } | { error: string }> =>
+      save: (input: {
+        id?: string
+        name: string
+        body: string
+      }): Promise<{ template: PromptTemplate } | { error: string }> =>
         ipcRenderer.invoke('ai:templates:save', input),
       delete: (id: string): Promise<void> => ipcRenderer.invoke('ai:templates:delete', id)
     },
     // Persisted chat history (ai-conversations.json in userData).
     conversations: {
-      list: (): Promise<
-        { id: string; title: string; createdAt: string; updatedAt: string }[]
-      > => ipcRenderer.invoke('ai:conversations:list'),
+      list: (): Promise<{ id: string; title: string; createdAt: string; updatedAt: string }[]> =>
+        ipcRenderer.invoke('ai:conversations:list'),
       // Filters by title or by anything said in the chat; '' returns everything.
       search: (
         term: string
@@ -321,19 +374,27 @@ const api = {
     }
   },
   files: {
-    upload: (): Promise<{ id: string; name: string; ext: string; size: number; createdAt: string }[]> =>
-      ipcRenderer.invoke('files:upload'),
+    upload: (): Promise<
+      { id: string; name: string; ext: string; size: number; createdAt: string }[]
+    > => ipcRenderer.invoke('files:upload'),
     delete: (id: string, ext: string): Promise<{ success: boolean }> =>
       ipcRenderer.invoke('files:delete', id, ext),
     open: (id: string, ext: string): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('files:open', id, ext),
     openInBrowser: (id: string, ext: string): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('files:openInBrowser', id, ext),
-    download: (id: string, name: string, ext: string): Promise<{ success: boolean; cancelled?: boolean; error?: string }> =>
+    download: (
+      id: string,
+      name: string,
+      ext: string
+    ): Promise<{ success: boolean; cancelled?: boolean; error?: string }> =>
       ipcRenderer.invoke('files:download', id, name, ext)
   },
   excel: {
-    export: (buffer: ArrayBuffer, filename: string): Promise<{ success: boolean; cancelled?: boolean; error?: string }> =>
+    export: (
+      buffer: ArrayBuffer,
+      filename: string
+    ): Promise<{ success: boolean; cancelled?: boolean; error?: string }> =>
       ipcRenderer.invoke('excel:export', buffer, filename)
   }
 }

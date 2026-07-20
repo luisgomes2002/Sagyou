@@ -157,10 +157,25 @@ export function backoffDelay(attempt: number): number {
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
-/** Default safety cap on loop iterations, so a misbehaving model can't spin forever. */
-export const MAX_STEPS = 6
+/**
+ * Default safety cap on loop iterations, so a misbehaving model can't spin forever.
+ *
+ * Manual mode, so every write still stops for approval — the cost of a long run
+ * here is bounded by a human saying yes to each step, not by this number alone.
+ */
+export const MAX_STEPS = 15
 
-/** Default cap in automatic mode, where the agent chains actions on its own. */
+/**
+ * Default cap in automatic mode, where the agent chains actions on its own.
+ *
+ * ⚠️ **40 is a deliberate choice, not an accident** — it was briefly lowered to
+ * 15 as a cost measure and raised back on request. Keep the cost shape in mind
+ * before touching it: every step is a paid call that resends the whole
+ * accumulated history, so the *last* steps of a long run are far more expensive
+ * than the first, and the total grows worse than linearly in this number.
+ * That is why turning automatic mode on quotes an estimate first
+ * (`estimateAutoRun`, priced off the user's own logged calls).
+ */
 export const AUTO_MAX_STEPS = 40
 
 /** Nothing may raise the cap past this — every step is a paid model call. */

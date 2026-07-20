@@ -144,7 +144,7 @@ export default function App() {
     message: '',
     onConfirm: () => {}
   })
-  // Global indicator: is the external code agent (Aider/Codex) running?
+  // Global indicator: is the external code agent (codex) running?
   const [codeAgentRunning, setCodeAgentRunning] = useState(false)
 
   useEffect(() => { loadData() }, [loadData])
