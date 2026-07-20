@@ -167,6 +167,7 @@ const api = {
         path: string
         task: string
         agent?: 'aider' | 'codex'
+        files?: string[]
       }): Promise<{ success: boolean; agent?: string; dir?: string; error?: string }> =>
         ipcRenderer.invoke('ai:code-agent:run', request),
       stop: (): Promise<void> => ipcRenderer.invoke('ai:code-agent:stop'),
@@ -199,14 +200,30 @@ const api = {
     code: {
       list: (
         root: string,
-        sub?: string
-      ): Promise<{ files?: string[]; truncated?: boolean; error?: string }> =>
-        ipcRenderer.invoke('ai:code:list', root, sub),
+        sub?: string,
+        offset?: number,
+        limit?: number
+      ): Promise<{
+        files?: string[]
+        truncated?: boolean
+        offset?: number
+        total?: number
+        nextOffset?: number
+        error?: string
+      }> => ipcRenderer.invoke('ai:code:list', root, sub, offset, limit),
       read: (
         root: string,
-        rel: string
-      ): Promise<{ content?: string; truncated?: boolean; error?: string }> =>
-        ipcRenderer.invoke('ai:code:read', root, rel),
+        rel: string,
+        offset?: number,
+        maxChars?: number
+      ): Promise<{
+        content?: string
+        truncated?: boolean
+        offset?: number
+        total?: number
+        nextOffset?: number
+        error?: string
+      }> => ipcRenderer.invoke('ai:code:read', root, rel, offset, maxChars),
       search: (
         root: string,
         term: string
@@ -220,10 +237,11 @@ const api = {
     // and vetted there). Resolves with the text or with a reason it didn't.
     web: {
       fetch: (
-        url: string
+        url: string,
+        render?: boolean
       ): Promise<
         { content: string; url: string; truncated: boolean } | { error: string }
-      > => ipcRenderer.invoke('ai:web:fetch', url)
+      > => ipcRenderer.invoke('ai:web:fetch', url, render)
     },
     // Images pasted into the chat: stored as files by the main process, which
     // hands back an id. The transcript keeps ids, never the bytes.

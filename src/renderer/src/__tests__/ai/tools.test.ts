@@ -167,11 +167,11 @@ describe('code tools — root resolution', () => {
 
     await call('listar_arquivos', { pastaId: ids[1] })
     expect(api.code.list).toHaveBeenCalledTimes(1)
-    expect(api.code.list).toHaveBeenCalledWith('/src/api', '.')
+    expect(api.code.list).toHaveBeenCalledWith('/src/api', '.', undefined, undefined)
 
     api.code.list.mockClear()
     await call('listar_arquivos', { pastaId: 'web' })
-    expect(api.code.list).toHaveBeenCalledWith('/src/web', '.')
+    expect(api.code.list).toHaveBeenCalledWith('/src/web', '.', undefined, undefined)
   })
 
   it('errors with the available folders when pastaId is unknown', async () => {
@@ -208,10 +208,29 @@ describe('listar_arquivos', () => {
   it('passes the subfolder through, defaulting to the root', async () => {
     projectWithRoots('web')
     await call('listar_arquivos', {})
-    expect(api.code.list).toHaveBeenCalledWith('/src/web', '.')
+    expect(api.code.list).toHaveBeenCalledWith('/src/web', '.', undefined, undefined)
 
     await call('listar_arquivos', { subpasta: 'src/renderer' })
-    expect(api.code.list).toHaveBeenCalledWith('/src/web', 'src/renderer')
+    expect(api.code.list).toHaveBeenCalledWith('/src/web', 'src/renderer', undefined, undefined)
+  })
+
+  it('forwards inicio/max_arquivos for paging and passes the paging fields back', async () => {
+    projectWithRoots('web')
+    api.code.list.mockResolvedValue({
+      files: ['b.ts'],
+      total: 500,
+      offset: 200,
+      truncated: true,
+      nextOffset: 201
+    })
+
+    const res = await call('listar_arquivos', { inicio: 200, max_arquivos: 1 })
+
+    expect(api.code.list).toHaveBeenCalledWith('/src/web', '.', 200, 1)
+    expect((res.pastas as { total: number; nextOffset: number }[])[0]).toMatchObject({
+      total: 500,
+      nextOffset: 201
+    })
   })
 
   it('passes the main process’s truncation flag on rather than hiding it', async () => {
@@ -239,8 +258,24 @@ describe('ler_arquivo', () => {
 
     const res = await call('ler_arquivo', { caminho: 'src/a.ts' })
 
-    expect(api.code.read).toHaveBeenCalledWith('/src/web', 'src/a.ts')
+    expect(api.code.read).toHaveBeenCalledWith('/src/web', 'src/a.ts', undefined, undefined)
     expect(res).toMatchObject({ pasta: 'web', content: 'export const a = 1' })
+  })
+
+  it('forwards inicio/max_chars for paging and passes the paging fields back', async () => {
+    projectWithRoots('web')
+    api.code.read.mockResolvedValue({
+      content: 'tail',
+      truncated: true,
+      offset: 20000,
+      total: 60000,
+      nextOffset: 24000
+    })
+
+    const res = await call('ler_arquivo', { caminho: 'big.ts', inicio: 20000, max_chars: 4000 })
+
+    expect(api.code.read).toHaveBeenCalledWith('/src/web', 'big.ts', 20000, 4000)
+    expect(res).toMatchObject({ pasta: 'web', truncated: true, nextOffset: 24000, total: 60000 })
   })
 
   it('finds the file in whichever folder has it', async () => {
@@ -346,8 +381,14 @@ describe('buscar_na_web', () => {
   it('passes the URL to main and returns the page text', async () => {
     const res = await call('buscar_na_web', { url: 'https://x.dev' })
 
-    expect(fetchWeb).toHaveBeenCalledWith('https://x.dev')
+    // render defaults to false — a plain fetch unless the model asks for JS.
+    expect(fetchWeb).toHaveBeenCalledWith('https://x.dev', false)
     expect(res).toEqual({ content: 'olá', url: 'https://x.dev/', truncated: false })
+  })
+
+  it('asks main to render with a headless browser when renderizar_js is set', async () => {
+    await call('buscar_na_web', { url: 'https://spa.dev', renderizar_js: true })
+    expect(fetchWeb).toHaveBeenCalledWith('https://spa.dev', true)
   })
 
   it('reports the URL it landed on, not the one it aimed at', async () => {

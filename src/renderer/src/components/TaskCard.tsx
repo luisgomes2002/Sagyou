@@ -62,7 +62,7 @@ export function TaskCard({ task, onEdit, onDelete, onView, onComplete, overlay =
       ref={overlay ? undefined : setNodeRef}
       style={overlay ? undefined : style}
       onClick={() => !overlay && onView?.(task)}
-      className={`group rounded-lg border border-[#2a2d42] bg-[#1e2235] p-3 select-none transition-colors hover:bg-[#242840] hover:border-[#3a3e58] ${overlay ? 'drag-overlay' : 'cursor-pointer'}`}
+      className={`group rounded-lg border border-[#2a2d42] bg-[#1e2235] p-3 select-none transition-colors hover:bg-[#242840] hover:border-[#3a3e58] ${overlay ? 'drag-overlay' : 'cursor-pointer cv-card'}`}
     >
       {/* drag handle + actions */}
       <div className="flex items-start justify-between gap-2 mb-2">

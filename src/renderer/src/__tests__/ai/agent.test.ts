@@ -18,6 +18,7 @@ import {
   MAX_STEPS,
   AUTO_MAX_STEPS,
   MAX_STEPS_LIMIT,
+  READ_REPEAT_LIMIT,
   MAX_RETRIES,
   RETRY_BASE_MS,
   pruneSupersededResults,
@@ -407,14 +408,17 @@ describe('runAgent (tool-calling loop)', () => {
 
   it('stops after MAX_STEPS and forces a final answer with tools disabled', async () => {
     let n = 0
-    const chat = vi.fn((req: { tools?: unknown }) =>
-      req.tools
+    // Unique args per call so the repeated-read brake doesn't fire — this test
+    // is about the step cap, not the loop-detection brake.
+    const chat = vi.fn((req: { tools?: unknown }) => {
+      const i = n++
+      return req.tools
         ? Promise.resolve({
             success: true,
-            message: { role: 'assistant', content: '', tool_calls: [toolCall('c' + n++, 'ler_x')] }
+            message: { role: 'assistant', content: '', tool_calls: [toolCall('c' + i, 'ler_x', JSON.stringify({ i }))] }
           })
         : Promise.resolve({ success: true, message: { role: 'assistant', content: 'CAP' } })
-    ) as ChatMock
+    }) as ChatMock
     installChat(chat)
 
     const result = await runAgent(cfg, user, approveNone)
@@ -429,14 +433,17 @@ describe('runAgent (tool-calling loop)', () => {
   /** A model that always calls a tool, so the run only ends at the cap. */
   const alwaysToolCalling = (): ChatMock => {
     let n = 0
-    const chat = vi.fn((req: { tools?: unknown }) =>
-      req.tools
+    // Unique args per call, or the repeated-read brake would stop the tool long
+    // before the step cap these tests are exercising.
+    const chat = vi.fn((req: { tools?: unknown }) => {
+      const i = n++
+      return req.tools
         ? Promise.resolve({
             success: true,
-            message: { role: 'assistant', content: '', tool_calls: [toolCall('c' + n++, 'ler_x')] }
+            message: { role: 'assistant', content: '', tool_calls: [toolCall('c' + i, 'ler_x', JSON.stringify({ i }))] }
           })
         : Promise.resolve({ success: true, message: { role: 'assistant', content: 'CAP' } })
-    ) as ChatMock
+    }) as ChatMock
     installChat(chat)
     return chat
   }
@@ -596,6 +603,101 @@ describe('runAgent (tool-calling loop)', () => {
     const msgs = reqAt(chat, 1).messages
     const r = msgs.find((m: { tool_call_id?: string }) => m.tool_call_id === 'c1')
     expect(JSON.parse(r.content)).toEqual({ error: 'Argumentos inválidos (JSON)' })
+  })
+
+  // ── soft brake on a repeated read (loop detection) ─────────────────────────
+  //
+  // A model that keeps making the identical read call is looping. The brake
+  // stops running it on the READ_REPEAT_LIMIT-th try and feeds back a nudge, so
+  // the run can conclude instead of burning every step re-fetching the same
+  // answer — complementary to maxSteps, not a replacement.
+
+  it('stops re-running a read the model keeps repeating and lets it conclude', async () => {
+    // Model asks for the same read every step, until it sees the brake nudge —
+    // then it answers, the way a real model is meant to.
+    let n = 0
+    const chat = vi.fn((req: { tools?: unknown; messages: { role: string; content: string }[] }) => {
+      const last = req.messages[req.messages.length - 1]
+      if (last?.role === 'tool' && last.content.includes('Não repita')) {
+        return Promise.resolve({ success: true, message: { role: 'assistant', content: 'CONCLUÍDO' } })
+      }
+      return Promise.resolve({
+        success: true,
+        message: { role: 'assistant', content: '', tool_calls: [toolCall('c' + n++, 'ler_x')] }
+      })
+    }) as ChatMock
+    installChat(chat)
+
+    const result = await runAgent(cfg, user, approveNone)
+
+    expect(result).toBe('CONCLUÍDO')
+    // Ran twice; the third identical call was braked, not executed.
+    expect(runTool).toHaveBeenCalledTimes(READ_REPEAT_LIMIT - 1)
+    // The run ended well short of MAX_STEPS: 2 reads + 1 braked step + 1 answer.
+    expect(chat).toHaveBeenCalledTimes(4)
+  })
+
+  it('feeds the brake back as an ordinary tool result the model can read', async () => {
+    let n = 0
+    const chat = vi.fn((req: { tools?: unknown; messages: { role: string; content: string }[] }) => {
+      const last = req.messages[req.messages.length - 1]
+      if (last?.role === 'tool' && last.content.includes('Não repita')) {
+        return Promise.resolve({ success: true, message: { role: 'assistant', content: 'FIM' } })
+      }
+      return Promise.resolve({
+        success: true,
+        message: { role: 'assistant', content: '', tool_calls: [toolCall('c' + n++, 'ler_x')] }
+      })
+    }) as ChatMock
+    installChat(chat)
+
+    await runAgent(cfg, user, approveNone)
+
+    // The braked step's tool message carries the nudge, addressed to the call id.
+    const braked = reqAt(chat, 3).messages.find(
+      (m: { tool_call_id?: string }) => m.tool_call_id === 'c2'
+    )
+    expect(JSON.parse(braked.content).error).toContain('Não repita')
+  })
+
+  it('does not brake different reads that only share a name', async () => {
+    // Same tool, different args each time — legitimate exploration, never braked.
+    let n = 0
+    const chat = vi.fn((req: { tools?: unknown }) => {
+      const i = n++
+      return req.tools && i < 4
+        ? Promise.resolve({
+            success: true,
+            message: { role: 'assistant', content: '', tool_calls: [toolCall('c' + i, 'ler_x', JSON.stringify({ i }))] }
+          })
+        : Promise.resolve({ success: true, message: { role: 'assistant', content: 'DONE' } })
+    }) as ChatMock
+    installChat(chat)
+
+    await runAgent(cfg, user, approveNone)
+
+    // All four distinct reads executed — none looked like a repeat.
+    expect(runTool).toHaveBeenCalledTimes(4)
+  })
+
+  it('never brakes a write, however often it repeats', async () => {
+    // Repeated identical writes are distinct events, not a loop — rule 1.
+    let n = 0
+    const chat = vi.fn((req: { tools?: unknown }) =>
+      req.tools
+        ? Promise.resolve({
+            success: true,
+            message: { role: 'assistant', content: '', tool_calls: [toolCall('w' + n++, 'escrever_x')] }
+          })
+        : Promise.resolve({ success: true, message: { role: 'assistant', content: 'CAP' } })
+    ) as ChatMock
+    installChat(chat)
+    const approveAll = vi.fn(async (writes: { id: string }[]) => new Set(writes.map((w) => w.id)))
+
+    await runAgent(cfg, user, approveAll)
+
+    // Executed on every step up to the cap — the brake left it alone.
+    expect(runTool).toHaveBeenCalledTimes(MAX_STEPS)
   })
 })
 

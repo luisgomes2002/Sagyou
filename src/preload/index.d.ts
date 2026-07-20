@@ -196,7 +196,7 @@ declare global {
           set: (config: AIConfig) => Promise<void>
         }
         usage: { summary: () => Promise<UsageSummary> }
-        web: { fetch: (url: string) => Promise<WebFetchResult> }
+        web: { fetch: (url: string, render?: boolean) => Promise<WebFetchResult> }
         images: {
           save: (dataUrl: string) => Promise<{ id: string } | { error: string }>
           get: (id: string) => Promise<{ dataUrl: string } | { error: string }>
@@ -224,6 +224,7 @@ declare global {
             path: string
             task: string
             agent?: 'aider' | 'codex'
+            files?: string[]
           }) => Promise<{ success: boolean; agent?: string; dir?: string; error?: string }>
           stop: () => Promise<void>
           /** `log` is the buffered output, so a remounted panel can catch up. */
@@ -237,12 +238,30 @@ declare global {
         code: {
           list: (
             root: string,
-            sub?: string
-          ) => Promise<{ files?: string[]; truncated?: boolean; error?: string }>
+            sub?: string,
+            offset?: number,
+            limit?: number
+          ) => Promise<{
+            files?: string[]
+            truncated?: boolean
+            offset?: number
+            total?: number
+            nextOffset?: number
+            error?: string
+          }>
           read: (
             root: string,
-            rel: string
-          ) => Promise<{ content?: string; truncated?: boolean; error?: string }>
+            rel: string,
+            offset?: number,
+            maxChars?: number
+          ) => Promise<{
+            content?: string
+            truncated?: boolean
+            offset?: number
+            total?: number
+            nextOffset?: number
+            error?: string
+          }>
           search: (
             root: string,
             term: string

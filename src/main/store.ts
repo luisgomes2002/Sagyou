@@ -368,7 +368,163 @@ function migrateFromJson(db: Database.Database): void {
   }
 }
 
-// ── Write (full replace inside a transaction) ─────────────────────────────────
+// ── Write (granular diff vs. last snapshot; full rewrite on the first save) ──
+
+// The last full state persisted this session, kept in memory so the next save
+// can be a granular diff instead of wiping all 17 tables and reinserting. Null
+// until the first save (or after a failed one), where a full rewrite runs and
+// sets it; from then on each save only touches the entities that actually
+// changed — a renamed task is one row rewritten, not a flush of the whole DB.
+let lastSnapshot: SaveData | null = null
+
+// Prepared statements plus one writer per top-level entity (row + its children),
+// shared by the full rewrite and the granular diff. Every child table has
+// ON DELETE CASCADE, so deleting a parent row clears its children and "changed"
+// is just delete-then-write — no per-child diffing needed. Same set of INSERTs
+// persistAll always used; the delete-by-id and timer helpers are what the diff
+// adds. better-sqlite3 caches compiled statements by SQL, so re-preparing per
+// save is as cheap as the old inline `ins` object was.
+function prepareWrite(db: Database.Database) {
+  const ins = {
+    project: db.prepare('INSERT INTO projects (id,name,description,color,ord,created_at,updated_at) VALUES (?,?,?,?,?,?,?)'),
+    column:  db.prepare('INSERT INTO project_columns (id,project_id,name,ord,color) VALUES (?,?,?,?,?)'),
+    link:    db.prepare('INSERT INTO project_links (id,project_id,label,url) VALUES (?,?,?,?)'),
+    codePath: db.prepare('INSERT INTO project_code_paths (id,project_id,label,path,active) VALUES (?,?,?,?,?)'),
+    task:    db.prepare('INSERT INTO tasks (id,project_id,column_id,title,description,priority,due_date,sprint_id,time_spent,ord,created_at,updated_at,completed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'),
+    tag:     db.prepare('INSERT OR IGNORE INTO task_tags (task_id,tag) VALUES (?,?)'),
+    image:   db.prepare('INSERT INTO task_images (id,task_id,name,data_url,size,added_at) VALUES (?,?,?,?,?,?)'),
+    sprint:  db.prepare('INSERT INTO sprints (id,project_id,name,created_at,closed_at) VALUES (?,?,?,?,?)'),
+    tomb:    db.prepare('INSERT INTO tombstones (id,type,deleted_at) VALUES (?,?,?)'),
+    note:    db.prepare('INSERT INTO notes (id,project_id,content,color,x,y,width,height,task_id,font_size,type,completed_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'),
+    conn:    db.prepare('INSERT OR IGNORE INTO note_connections (note_id,connected_note_id) VALUES (?,?)'),
+    goal:    db.prepare('INSERT INTO goals (id,title,target,unit,color,project_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)'),
+    entry:   db.prepare('INSERT INTO goal_entries (id,goal_id,date,label,value,created_at) VALUES (?,?,?,?,?,?)'),
+    habit:   db.prepare('INSERT INTO habits (id,name,color,created_at,updated_at) VALUES (?,?,?,?,?)'),
+    compl:   db.prepare('INSERT OR IGNORE INTO habit_completions (habit_id,date) VALUES (?,?)'),
+    ftable:  db.prepare('INSERT INTO financial_tables (id,name,currency,created_at,updated_at) VALUES (?,?,?,?,?)'),
+    item:    db.prepare('INSERT INTO shopping_items (id,table_id,name,qty,price,done,link,linked_transaction_id) VALUES (?,?,?,?,?,?,?,?)'),
+    tx:      db.prepare('INSERT INTO transactions (id,table_id,description,amount,type,date,category,from_shopping) VALUES (?,?,?,?,?,?,?,?)'),
+    fg:      db.prepare('INSERT INTO financial_goals (id,table_id,name,target_amount,target_month,target_year,completed_at,completion_note) VALUES (?,?,?,?,?,?,?,?)'),
+    file:    db.prepare('INSERT INTO files (id,name,ext,size,created_at,project_id) VALUES (?,?,?,?,?,?)'),
+    setting: db.prepare('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)'),
+  }
+
+  // Delete a top-level row by id; its children go with it via ON DELETE CASCADE.
+  const del = {
+    project: db.prepare('DELETE FROM projects WHERE id=?'),
+    task:    db.prepare('DELETE FROM tasks WHERE id=?'),
+    sprint:  db.prepare('DELETE FROM sprints WHERE id=?'),
+    tomb:    db.prepare('DELETE FROM tombstones WHERE id=?'),
+    note:    db.prepare('DELETE FROM notes WHERE id=?'),
+    goal:    db.prepare('DELETE FROM goals WHERE id=?'),
+    habit:   db.prepare('DELETE FROM habits WHERE id=?'),
+    ftable:  db.prepare('DELETE FROM financial_tables WHERE id=?'),
+    file:    db.prepare('DELETE FROM files WHERE id=?'),
+    setting: db.prepare('DELETE FROM settings WHERE key=?'),
+  }
+
+  const insert = {
+    project: (p: Project): void => {
+      ins.project.run(p.id, p.name, p.description ?? null, p.color, p.order ?? null, p.createdAt, p.updatedAt)
+      for (const c of p.columns ?? []) ins.column.run(c.id, p.id, c.name, c.order, c.color ?? null)
+      for (const l of p.links ?? []) ins.link.run(l.id, p.id, l.label, l.url)
+      const active = new Set(p.activeCodePathIds ?? (p.activeCodePathId ? [p.activeCodePathId] : []))
+      for (const cp of p.codePaths ?? [])
+        ins.codePath.run(cp.id, p.id, cp.label ?? null, cp.path, active.has(cp.id) ? 1 : 0)
+    },
+    task: (t: Task): void => {
+      ins.task.run(t.id, t.projectId, t.columnId, t.title, t.description ?? null, t.priority,
+        t.dueDate ?? null, t.sprintId ?? null, t.timeSpent ?? null, t.order,
+        t.createdAt, t.updatedAt, t.completedAt ?? null)
+      for (const tag of t.tags ?? []) ins.tag.run(t.id, tag)
+      for (const img of t.images ?? []) ins.image.run(img.id, t.id, img.name, img.dataUrl, img.size, img.addedAt)
+    },
+    sprint: (s: Sprint): void => {
+      ins.sprint.run(s.id, s.projectId, s.name, s.createdAt, s.closedAt ?? null)
+    },
+    tombstone: (t: Tombstone): void => {
+      ins.tomb.run(t.id, t.type, t.deletedAt)
+    },
+    note: (n: StickyNote): void => {
+      ins.note.run(n.id, n.projectId, n.content, n.color, n.x, n.y, n.width, n.height,
+        n.taskId ?? null, n.fontSize ?? null, n.type ?? null, n.completedAt ?? null,
+        n.createdAt, n.updatedAt)
+      for (const c of n.connections ?? []) ins.conn.run(n.id, c)
+    },
+    goal: (g: Goal): void => {
+      ins.goal.run(g.id, g.title, g.target, g.unit, g.color, g.projectId ?? null, g.createdAt, g.updatedAt)
+      for (const e of g.entries ?? []) ins.entry.run(e.id, g.id, e.date, e.label ?? null, e.value, e.createdAt)
+    },
+    habit: (h: Habit): void => {
+      ins.habit.run(h.id, h.name, h.color, h.createdAt, h.updatedAt)
+      for (const d of h.completions ?? []) ins.compl.run(h.id, d)
+    },
+    ftable: (ft: FinancialTable): void => {
+      ins.ftable.run(ft.id, ft.name, ft.currency, ft.createdAt, ft.updatedAt)
+      for (const i of ft.items ?? []) ins.item.run(i.id, ft.id, i.name, i.qty, i.price != null ? moneyText(i.price) : null, i.done ? 1 : 0, i.link ?? null, i.linkedTransactionId ?? null)
+      for (const tx of ft.transactions ?? []) ins.tx.run(tx.id, ft.id, tx.description, moneyText(tx.amount), tx.type, tx.date, tx.category ?? null, tx.fromShopping ? 1 : 0)
+      for (const fg of ft.goals ?? []) ins.fg.run(fg.id, ft.id, fg.name, moneyText(fg.targetAmount), fg.targetMonth, fg.targetYear, fg.completedAt ?? null, fg.completionNote ?? null)
+    },
+    file: (f: StoredFile): void => {
+      ins.file.run(f.id, f.name, f.ext, f.size, f.createdAt, f.projectId ?? null)
+    },
+  }
+
+  const setTimer = (v: unknown): void => { ins.setting.run('activeTimer', JSON.stringify(v)) }
+  const clearTimer = (): void => { del.setting.run('activeTimer') }
+
+  return { insert, del, setTimer, clearTimer }
+}
+
+/**
+ * Upsert changed/new entities and delete removed ones, comparing each by a
+ * stable JSON string.
+ *
+ * Safe by construction: a JSON mismatch that isn't a real change (reordered
+ * keys, say) costs only a redundant-but-correct rewrite, while two genuinely
+ * different states never serialize identically — so a real change is never
+ * missed. The failure mode is a wasted write, never silent data loss.
+ */
+export function diffEntities<T extends { id: string }>(
+  prev: T[] | undefined,
+  next: T[] | undefined,
+  del: { run: (id: string) => unknown },
+  write: (e: T) => void
+): void {
+  const prevJson = new Map<string, string>()
+  for (const e of prev ?? []) prevJson.set(e.id, JSON.stringify(e))
+  const liveIds = new Set<string>()
+  for (const e of next ?? []) {
+    liveIds.add(e.id)
+    const before = prevJson.get(e.id)
+    if (before === JSON.stringify(e)) continue // unchanged — skip entirely
+    if (before !== undefined) del.run(e.id) // changed: drop old row + children (cascade)
+    write(e) // insert (new) or reinsert (changed)
+  }
+  for (const e of prev ?? []) if (!liveIds.has(e.id)) del.run(e.id) // removed
+}
+
+// Persist only what changed against the last snapshot, entity by entity. Order
+// doesn't matter for FKs — no top-level table references another (tasks carry
+// project_id/column_id/sprint_id as plain TEXT), so each collection is independent.
+function persistDiff(db: Database.Database, prev: SaveData, next: SaveData): void {
+  const w = prepareWrite(db)
+  diffEntities(prev.projects, next.projects, w.del.project, w.insert.project)
+  diffEntities(prev.tasks, next.tasks, w.del.task, w.insert.task)
+  diffEntities(prev.sprints, next.sprints, w.del.sprint, w.insert.sprint)
+  diffEntities(prev.tombstones, next.tombstones, w.del.tomb, w.insert.tombstone)
+  diffEntities(prev.notes, next.notes, w.del.note, w.insert.note)
+  diffEntities(prev.goals, next.goals, w.del.goal, w.insert.goal)
+  diffEntities(prev.habits, next.habits, w.del.habit, w.insert.habit)
+  diffEntities(prev.lists, next.lists, w.del.ftable, w.insert.ftable)
+  diffEntities(prev.files, next.files, w.del.file, w.insert.file)
+  // activeTimer lives in settings; mirror persistAll — set when present, and
+  // clear when it goes away, so a stopped timer doesn't linger to the next boot.
+  if (JSON.stringify(prev.activeTimer ?? null) !== JSON.stringify(next.activeTimer ?? null)) {
+    if (next.activeTimer) w.setTimer(next.activeTimer)
+    else w.clearTimer()
+  }
+}
 
 function persistAll(db: Database.Database, data: SaveData): void {
   // Delete in FK-safe order (children before parents)
@@ -396,97 +552,69 @@ function persistAll(db: Database.Database, data: SaveData): void {
     DELETE FROM projects;
   `)
 
-  const ins = {
-    project: db.prepare('INSERT INTO projects (id,name,description,color,ord,created_at,updated_at) VALUES (?,?,?,?,?,?,?)'),
-    column:  db.prepare('INSERT INTO project_columns (id,project_id,name,ord,color) VALUES (?,?,?,?,?)'),
-    link:    db.prepare('INSERT INTO project_links (id,project_id,label,url) VALUES (?,?,?,?)'),
-    codePath: db.prepare('INSERT INTO project_code_paths (id,project_id,label,path,active) VALUES (?,?,?,?,?)'),
-    task:    db.prepare('INSERT INTO tasks (id,project_id,column_id,title,description,priority,due_date,sprint_id,time_spent,ord,created_at,updated_at,completed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'),
-    tag:     db.prepare('INSERT OR IGNORE INTO task_tags (task_id,tag) VALUES (?,?)'),
-    image:   db.prepare('INSERT INTO task_images (id,task_id,name,data_url,size,added_at) VALUES (?,?,?,?,?,?)'),
-    sprint:  db.prepare('INSERT INTO sprints (id,project_id,name,created_at,closed_at) VALUES (?,?,?,?,?)'),
-    tomb:    db.prepare('INSERT INTO tombstones (id,type,deleted_at) VALUES (?,?,?)'),
-    note:    db.prepare('INSERT INTO notes (id,project_id,content,color,x,y,width,height,task_id,font_size,type,completed_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'),
-    conn:    db.prepare('INSERT OR IGNORE INTO note_connections (note_id,connected_note_id) VALUES (?,?)'),
-    goal:    db.prepare('INSERT INTO goals (id,title,target,unit,color,project_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)'),
-    entry:   db.prepare('INSERT INTO goal_entries (id,goal_id,date,label,value,created_at) VALUES (?,?,?,?,?,?)'),
-    habit:   db.prepare('INSERT INTO habits (id,name,color,created_at,updated_at) VALUES (?,?,?,?,?)'),
-    compl:   db.prepare('INSERT OR IGNORE INTO habit_completions (habit_id,date) VALUES (?,?)'),
-    ftable:  db.prepare('INSERT INTO financial_tables (id,name,currency,created_at,updated_at) VALUES (?,?,?,?,?)'),
-    item:    db.prepare('INSERT INTO shopping_items (id,table_id,name,qty,price,done,link,linked_transaction_id) VALUES (?,?,?,?,?,?,?,?)'),
-    tx:      db.prepare('INSERT INTO transactions (id,table_id,description,amount,type,date,category,from_shopping) VALUES (?,?,?,?,?,?,?,?)'),
-    fg:      db.prepare('INSERT INTO financial_goals (id,table_id,name,target_amount,target_month,target_year,completed_at,completion_note) VALUES (?,?,?,?,?,?,?,?)'),
-    file:    db.prepare('INSERT INTO files (id,name,ext,size,created_at,project_id) VALUES (?,?,?,?,?,?)'),
-    setting: db.prepare('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)'),
-  }
-
-  for (const p of data.projects ?? []) {
-    ins.project.run(p.id, p.name, p.description ?? null, p.color, p.order ?? null, p.createdAt, p.updatedAt)
-    for (const c of p.columns ?? []) ins.column.run(c.id, p.id, c.name, c.order, c.color ?? null)
-    for (const l of p.links ?? []) ins.link.run(l.id, p.id, l.label, l.url)
-    const active = new Set(p.activeCodePathIds ?? (p.activeCodePathId ? [p.activeCodePathId] : []))
-    for (const cp of p.codePaths ?? [])
-      ins.codePath.run(cp.id, p.id, cp.label ?? null, cp.path, active.has(cp.id) ? 1 : 0)
-  }
-
-  for (const t of data.tasks ?? []) {
-    ins.task.run(t.id, t.projectId, t.columnId, t.title, t.description ?? null, t.priority,
-      t.dueDate ?? null, t.sprintId ?? null, t.timeSpent ?? null, t.order,
-      t.createdAt, t.updatedAt, t.completedAt ?? null)
-    for (const tag of t.tags ?? []) ins.tag.run(t.id, tag)
-    for (const img of t.images ?? []) ins.image.run(img.id, t.id, img.name, img.dataUrl, img.size, img.addedAt)
-  }
-
-  for (const s of data.sprints ?? []) ins.sprint.run(s.id, s.projectId, s.name, s.createdAt, s.closedAt ?? null)
-
-  for (const t of data.tombstones ?? []) ins.tomb.run(t.id, t.type, t.deletedAt)
-
-  for (const n of data.notes ?? []) {
-    ins.note.run(n.id, n.projectId, n.content, n.color, n.x, n.y, n.width, n.height,
-      n.taskId ?? null, n.fontSize ?? null, n.type ?? null, n.completedAt ?? null,
-      n.createdAt, n.updatedAt)
-    for (const c of n.connections ?? []) ins.conn.run(n.id, c)
-  }
-
-  for (const g of data.goals ?? []) {
-    ins.goal.run(g.id, g.title, g.target, g.unit, g.color, g.projectId ?? null, g.createdAt, g.updatedAt)
-    for (const e of g.entries ?? []) ins.entry.run(e.id, g.id, e.date, e.label ?? null, e.value, e.createdAt)
-  }
-
-  for (const h of data.habits ?? []) {
-    ins.habit.run(h.id, h.name, h.color, h.createdAt, h.updatedAt)
-    for (const d of h.completions ?? []) ins.compl.run(h.id, d)
-  }
-
-  for (const ft of data.lists ?? []) {
-    ins.ftable.run(ft.id, ft.name, ft.currency, ft.createdAt, ft.updatedAt)
-    for (const i of ft.items ?? []) ins.item.run(i.id, ft.id, i.name, i.qty, i.price != null ? moneyText(i.price) : null, i.done ? 1 : 0, i.link ?? null, i.linkedTransactionId ?? null)
-    for (const tx of ft.transactions ?? []) ins.tx.run(tx.id, ft.id, tx.description, moneyText(tx.amount), tx.type, tx.date, tx.category ?? null, tx.fromShopping ? 1 : 0)
-    for (const fg of ft.goals ?? []) ins.fg.run(fg.id, ft.id, fg.name, moneyText(fg.targetAmount), fg.targetMonth, fg.targetYear, fg.completedAt ?? null, fg.completionNote ?? null)
-  }
-
-  for (const f of data.files ?? []) ins.file.run(f.id, f.name, f.ext, f.size, f.createdAt, f.projectId ?? null)
-
-  if (data.activeTimer) ins.setting.run('activeTimer', JSON.stringify(data.activeTimer))
+  const w = prepareWrite(db)
+  for (const p of data.projects ?? []) w.insert.project(p)
+  for (const t of data.tasks ?? []) w.insert.task(t)
+  for (const s of data.sprints ?? []) w.insert.sprint(s)
+  for (const t of data.tombstones ?? []) w.insert.tombstone(t)
+  for (const n of data.notes ?? []) w.insert.note(n)
+  for (const g of data.goals ?? []) w.insert.goal(g)
+  for (const h of data.habits ?? []) w.insert.habit(h)
+  for (const ft of data.lists ?? []) w.insert.ftable(ft)
+  for (const f of data.files ?? []) w.insert.file(f)
+  if (data.activeTimer) w.setTimer(data.activeTimer)
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
+/**
+ * Bucket rows by a foreign-key column, preserving row order within each bucket.
+ *
+ * This is what keeps loadData off the N+1 path: instead of one child query per
+ * parent (hundreds of round-trips to SQLite for a real board — tasks alone fire
+ * two each), every child table is read once and grouped here in memory. Row
+ * order is preserved, so a `SELECT ... ORDER BY ord` still lands ordered inside
+ * its bucket.
+ */
+export function groupByKey<T extends Record<string, any>>(rows: T[], key: string): Map<any, T[]> {
+  const m = new Map<any, T[]>()
+  for (const r of rows) {
+    const bucket = m.get(r[key])
+    if (bucket) bucket.push(r)
+    else m.set(r[key], [r])
+  }
+  return m
+}
+
 export function loadData(): SaveData {
   const db = getDb()
 
-  const projects = (db.prepare('SELECT * FROM projects ORDER BY ord').all() as any[]).map((p) => ({
+  // Read every child table once and group by parent id, rather than per-parent.
+  const all = (sql: string): any[] => db.prepare(sql).all() as any[]
+  const columnsByProject = groupByKey(all('SELECT * FROM project_columns ORDER BY ord'), 'project_id')
+  const linksByProject = groupByKey(all('SELECT * FROM project_links'), 'project_id')
+  const codePathsByProject = groupByKey(all('SELECT * FROM project_code_paths'), 'project_id')
+  const tagsByTask = groupByKey(all('SELECT * FROM task_tags'), 'task_id')
+  const imagesByTask = groupByKey(all('SELECT * FROM task_images'), 'task_id')
+  const connsByNote = groupByKey(all('SELECT * FROM note_connections'), 'note_id')
+  const entriesByGoal = groupByKey(all('SELECT * FROM goal_entries'), 'goal_id')
+  const complByHabit = groupByKey(all('SELECT * FROM habit_completions'), 'habit_id')
+  const itemsByTable = groupByKey(all('SELECT * FROM shopping_items'), 'table_id')
+  const txByTable = groupByKey(all('SELECT * FROM transactions'), 'table_id')
+  const fgByTable = groupByKey(all('SELECT * FROM financial_goals'), 'table_id')
+
+  const projects = (all('SELECT * FROM projects ORDER BY ord')).map((p) => ({
     id: p.id, name: p.name, color: p.color,
     ...(p.description != null ? { description: p.description } : {}),
-    columns: (db.prepare('SELECT * FROM project_columns WHERE project_id=? ORDER BY ord').all(p.id) as any[])
+    columns: (columnsByProject.get(p.id) ?? [])
       .map((c) => ({ id: c.id, name: c.name, order: c.ord, ...(c.color != null ? { color: c.color } : {}) })),
     ...(() => {
-      const ls = (db.prepare('SELECT * FROM project_links WHERE project_id=?').all(p.id) as any[])
+      const ls = (linksByProject.get(p.id) ?? [])
         .map((l) => ({ id: l.id, label: l.label, url: l.url }))
       return ls.length ? { links: ls } : {}
     })(),
     ...(() => {
-      const rows = db.prepare('SELECT * FROM project_code_paths WHERE project_id=?').all(p.id) as any[]
+      const rows = codePathsByProject.get(p.id) ?? []
       if (!rows.length) return {}
       const codePaths = rows.map((c) => ({
         id: c.id,
@@ -502,9 +630,9 @@ export function loadData(): SaveData {
     createdAt: p.created_at, updatedAt: p.updated_at,
   }))
 
-  const tasks = (db.prepare('SELECT * FROM tasks').all() as any[]).map((t) => ({
+  const tasks = (all('SELECT * FROM tasks')).map((t) => ({
     id: t.id, projectId: t.project_id, columnId: t.column_id, title: t.title, priority: t.priority,
-    tags: (db.prepare('SELECT tag FROM task_tags WHERE task_id=?').all(t.id) as any[]).map((r) => r.tag),
+    tags: (tagsByTask.get(t.id) ?? []).map((r) => r.tag),
     order: t.ord, createdAt: t.created_at, updatedAt: t.updated_at,
     ...(t.description != null ? { description: t.description } : {}),
     ...(t.due_date != null ? { dueDate: t.due_date } : {}),
@@ -512,19 +640,19 @@ export function loadData(): SaveData {
     ...(t.time_spent != null ? { timeSpent: t.time_spent } : {}),
     ...(t.completed_at != null ? { completedAt: t.completed_at } : {}),
     ...(() => {
-      const imgs = (db.prepare('SELECT * FROM task_images WHERE task_id=?').all(t.id) as any[])
+      const imgs = (imagesByTask.get(t.id) ?? [])
         .map((i) => ({ id: i.id, name: i.name, dataUrl: i.data_url, size: i.size, addedAt: i.added_at }))
       return imgs.length ? { images: imgs } : {}
     })(),
   }))
 
-  const sprints = (db.prepare('SELECT * FROM sprints').all() as any[])
+  const sprints = (all('SELECT * FROM sprints'))
     .map((s) => ({ id: s.id, projectId: s.project_id, name: s.name, createdAt: s.created_at, ...(s.closed_at != null ? { closedAt: s.closed_at } : {}) }))
 
-  const tombstones = (db.prepare('SELECT * FROM tombstones').all() as any[])
+  const tombstones = (all('SELECT * FROM tombstones'))
     .map((t) => ({ id: t.id, type: t.type, deletedAt: t.deleted_at }))
 
-  const notes = (db.prepare('SELECT * FROM notes').all() as any[]).map((n) => ({
+  const notes = (all('SELECT * FROM notes')).map((n) => ({
     id: n.id, projectId: n.project_id, content: n.content, color: n.color,
     x: n.x, y: n.y, width: n.width, height: n.height,
     createdAt: n.created_at, updatedAt: n.updated_at,
@@ -533,39 +661,38 @@ export function loadData(): SaveData {
     ...(n.type != null ? { type: n.type } : {}),
     ...(n.completed_at != null ? { completedAt: n.completed_at } : {}),
     ...(() => {
-      const cs = (db.prepare('SELECT connected_note_id FROM note_connections WHERE note_id=?').all(n.id) as any[])
-        .map((r) => r.connected_note_id)
+      const cs = (connsByNote.get(n.id) ?? []).map((r) => r.connected_note_id)
       return cs.length ? { connections: cs } : {}
     })(),
   }))
 
-  const goals = (db.prepare('SELECT * FROM goals').all() as any[]).map((g) => ({
+  const goals = (all('SELECT * FROM goals')).map((g) => ({
     id: g.id, title: g.title, target: g.target, unit: g.unit, color: g.color,
     createdAt: g.created_at, updatedAt: g.updated_at,
     ...(g.project_id != null ? { projectId: g.project_id } : {}),
-    entries: (db.prepare('SELECT * FROM goal_entries WHERE goal_id=?').all(g.id) as any[])
+    entries: (entriesByGoal.get(g.id) ?? [])
       .map((e) => ({ id: e.id, date: e.date, value: e.value, createdAt: e.created_at, ...(e.label != null ? { label: e.label } : {}) })),
   }))
 
-  const habits = (db.prepare('SELECT * FROM habits').all() as any[]).map((h) => ({
+  const habits = (all('SELECT * FROM habits')).map((h) => ({
     id: h.id, name: h.name, color: h.color, createdAt: h.created_at, updatedAt: h.updated_at,
-    completions: (db.prepare('SELECT date FROM habit_completions WHERE habit_id=?').all(h.id) as any[]).map((r) => r.date),
+    completions: (complByHabit.get(h.id) ?? []).map((r) => r.date),
   }))
 
-  const lists = (db.prepare('SELECT * FROM financial_tables').all() as any[]).map((ft) => ({
+  const lists = (all('SELECT * FROM financial_tables')).map((ft) => ({
     id: ft.id, name: ft.name, currency: ft.currency, createdAt: ft.created_at, updatedAt: ft.updated_at,
-    items: (db.prepare('SELECT * FROM shopping_items WHERE table_id=?').all(ft.id) as any[]).map((i) => ({
+    items: (itemsByTable.get(ft.id) ?? []).map((i) => ({
       id: i.id, name: i.name, qty: i.qty, done: i.done === 1,
       ...(i.price != null ? { price: String(i.price) } : {}),
       ...(i.link != null ? { link: i.link } : {}),
       ...(i.linked_transaction_id != null ? { linkedTransactionId: i.linked_transaction_id } : {}),
     })),
-    transactions: (db.prepare('SELECT * FROM transactions WHERE table_id=?').all(ft.id) as any[]).map((tx) => ({
+    transactions: (txByTable.get(ft.id) ?? []).map((tx) => ({
       id: tx.id, description: tx.description, amount: String(tx.amount), type: tx.type, date: tx.date,
       ...(tx.category != null ? { category: tx.category } : {}),
       ...(tx.from_shopping ? { fromShopping: true } : {}),
     })),
-    goals: (db.prepare('SELECT * FROM financial_goals WHERE table_id=?').all(ft.id) as any[]).map((fg) => ({
+    goals: (fgByTable.get(ft.id) ?? []).map((fg) => ({
       id: fg.id, name: fg.name, targetAmount: String(fg.target_amount), targetMonth: fg.target_month, targetYear: fg.target_year,
       ...(fg.completed_at != null ? { completedAt: fg.completed_at } : {}),
       ...(fg.completion_note != null ? { completionNote: fg.completion_note } : {}),
@@ -585,5 +712,17 @@ export function loadData(): SaveData {
 
 export function saveData(data: unknown): void {
   const db = getDb()
-  db.transaction(() => persistAll(db, data as SaveData))()
+  const next = data as SaveData
+  const prev = lastSnapshot
+  // First save of the session (or after a failed one) has nothing to diff
+  // against, so it rewrites everything; every save after that only touches what
+  // changed since the last snapshot.
+  db.transaction(() => {
+    if (prev) persistDiff(db, prev, next)
+    else persistAll(db, next)
+  })()
+  // Reached only if the transaction committed. On a throw it rolls back and this
+  // line is skipped, so the snapshot keeps matching what's actually on disk —
+  // the next save then re-diffs (or rewrites) from a truthful base.
+  lastSnapshot = structuredClone(next)
 }

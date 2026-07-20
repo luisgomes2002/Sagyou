@@ -98,8 +98,12 @@ export function createRateLimiter(opts: {
   }
 }
 
-/** The process-wide limiter. Shared on purpose: the limit is per machine. */
-const defaultLimiter = createRateLimiter()
+/**
+ * The process-wide limiter. Shared on purpose: the limit is per machine, and
+ * the headless render path (web-render.ts) draws from the *same* instance, so a
+ * mix of plain fetches and JS renders is paced together, not one bucket each.
+ */
+export const defaultLimiter = createRateLimiter()
 
 /** Bytes read before giving up, even if the chars cap hasn't been reached. */
 const MAX_BYTES = 5 * 1024 * 1024

@@ -2,7 +2,6 @@ import { useState, useMemo } from 'react'
 import {
   DndContext,
   DragEndEvent,
-  DragOverEvent,
   DragOverlay,
   DragStartEvent,
   PointerSensor,
@@ -20,6 +19,10 @@ import { isDoneColumn } from '../utils/columns'
 import { Column } from './Column'
 import { TaskCard } from './TaskCard'
 import { useKanbanStore } from '../store/kanban'
+
+// Shared reference for columns with no tasks, so an empty column always gets the
+// same array identity across renders instead of a fresh `[]`.
+const EMPTY_TASKS: Task[] = []
 
 interface Props {
   project: Project
@@ -87,27 +90,12 @@ export function Board({
     }
   }
 
-  const handleDragOver = (event: DragOverEvent) => {
-    const { active, over } = event
-    if (!over || active.id === over.id) return
-    if (active.data.current?.type === 'column') return
-
-    const draggedTask = tasks.find((t) => t.id === active.id)
-    if (!draggedTask) return
-
-    const overTask = tasks.find((t) => t.id === over.id)
-    if (overTask && overTask.columnId !== draggedTask.columnId) {
-      const columnTasks = columnTasksMap.get(overTask.columnId) ?? []
-      const newIndex = columnTasks.findIndex((t) => t.id === overTask.id)
-      moveTask(draggedTask.id, overTask.columnId, newIndex >= 0 ? newIndex : 0)
-    }
-
-    const overColumn = visibleColumns.find((c) => c.id === over.id)
-    if (overColumn && draggedTask.columnId !== overColumn.id) {
-      moveTask(draggedTask.id, overColumn.id, (columnTasksMap.get(overColumn.id) ?? []).length)
-    }
-  }
-
+  // Nothing mutates during the drag — not the store, not local state. The
+  // DragOverlay follows the cursor for feedback, and dnd-kit animates same-column
+  // shifting via transforms. Reordering state inside onDragOver is what froze the
+  // board: each move shifts the layout under the cursor, which fires another
+  // onDragOver, which moves again — an oscillation loop at column borders. So the
+  // move is computed once, on drop, from what sits under the cursor.
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
     setActiveTask(null)
@@ -126,14 +114,30 @@ export function Board({
     const draggedTask = tasks.find((t) => t.id === active.id)
     if (!draggedTask) return
 
+    // Resolve the drop target: either a task (drop at its slot) or a column
+    // droppable (append to its end).
     const overTask = tasks.find((t) => t.id === over.id)
-    if (overTask && overTask.columnId === draggedTask.columnId) {
-      const columnTasks = columnTasksMap.get(draggedTask.columnId) ?? []
-      const newIndex = columnTasks.findIndex((t) => t.id === over.id)
-      if (newIndex >= 0) {
-        moveTask(draggedTask.id, draggedTask.columnId, newIndex)
-      }
+    const overColumn = visibleColumns.find((c) => c.id === over.id)
+    let targetColumnId: string
+    let newIndex: number
+    if (overTask) {
+      targetColumnId = overTask.columnId
+      const columnTasks = columnTasksMap.get(targetColumnId) ?? EMPTY_TASKS
+      newIndex = columnTasks.findIndex((t) => t.id === over.id)
+      if (newIndex < 0) newIndex = columnTasks.length
+    } else if (overColumn) {
+      targetColumnId = overColumn.id
+      newIndex = (columnTasksMap.get(targetColumnId) ?? EMPTY_TASKS).length
+    } else {
+      return
     }
+
+    // Skip a redundant write (and its updatedAt churn) when nothing actually moved.
+    const origColumn = columnTasksMap.get(draggedTask.columnId) ?? EMPTY_TASKS
+    const origIndex = origColumn.findIndex((t) => t.id === active.id)
+    if (draggedTask.columnId === targetColumnId && origIndex === newIndex) return
+
+    moveTask(draggedTask.id, targetColumnId, newIndex)
   }
 
   return (
@@ -141,7 +145,6 @@ export function Board({
       sensors={sensors}
       collisionDetection={closestCorners}
       onDragStart={handleDragStart}
-      onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
     >
       <div className="flex gap-4 p-6 overflow-x-auto h-full items-start">
@@ -150,7 +153,7 @@ export function Board({
             <Column
               key={col.id}
               column={col}
-              tasks={tasks.filter((t) => t.columnId === col.id)}
+              tasks={columnTasksMap.get(col.id) ?? EMPTY_TASKS}
               project={project}
               onAddTask={onAddTask}
               onEditTask={onEditTask}
@@ -186,7 +189,7 @@ export function Board({
               <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: activeColumn.color || project.color }} />
               <span className="text-sm font-medium text-[#e2e8f0]">{activeColumn.name}</span>
               <span className="text-xs text-[#8892a4] bg-[#2a2d42] px-1.5 py-0.5 rounded-full">
-                {tasks.filter((t) => t.columnId === activeColumn.id).length}
+                {(columnTasksMap.get(activeColumn.id) ?? EMPTY_TASKS).length}
               </span>
             </div>
           </div>
