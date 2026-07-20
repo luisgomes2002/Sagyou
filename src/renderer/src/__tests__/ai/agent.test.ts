@@ -190,10 +190,14 @@ describe('resolveMaxSteps', () => {
   })
 
   it('lets a configured value win in BOTH modes', () => {
+    // 23 on purpose: it matches neither default, so this cannot pass by
+    // accidentally agreeing with the fallback it is meant to override.
+    expect(MAX_STEPS).not.toBe(23)
+    expect(AUTO_MAX_STEPS).not.toBe(23)
     // The point of the setting: more steps without giving up approval.
-    expect(resolveMaxSteps(15, false)).toBe(15)
-    // And a deliberate value is not silently overridden by auto's 40.
-    expect(resolveMaxSteps(15, true)).toBe(15)
+    expect(resolveMaxSteps(23, false)).toBe(23)
+    // And a deliberate value is not silently overridden by automatic's default.
+    expect(resolveMaxSteps(23, true)).toBe(23)
   })
 
   it('caps at the limit, however it was set', () => {
@@ -424,10 +428,12 @@ describe('runAgent (tool-calling loop)', () => {
     const result = await runAgent(cfg, user, approveNone)
 
     expect(result).toBe('CAP')
-    // 6 tool iterations + 1 final tools-disabled call.
-    expect(chat).toHaveBeenCalledTimes(7)
-    expect(reqAt(chat, 6).tools).toBeUndefined()
-    expect(runTool).toHaveBeenCalledTimes(6)
+    // MAX_STEPS tool iterations + 1 final tools-disabled call. Off the constant,
+    // not a literal: this pins the cap's *shape*, and retuning the default is a
+    // product decision that must not read as a broken test.
+    expect(chat).toHaveBeenCalledTimes(MAX_STEPS + 1)
+    expect(reqAt(chat, MAX_STEPS).tools).toBeUndefined()
+    expect(runTool).toHaveBeenCalledTimes(MAX_STEPS)
   })
 
   /** A model that always calls a tool, so the run only ends at the cap. */

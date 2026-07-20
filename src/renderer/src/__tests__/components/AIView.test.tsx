@@ -74,6 +74,11 @@ function installApi(): void {
       codeAgent: {
         onOutput: vi.fn(() => vi.fn()),
         onExit: vi.fn(() => vi.fn()),
+        // Fires when a finished run has been archived; the picker listens
+        // for it rather than guessing when the snapshot exists.
+        onArchived: vi.fn(() => vi.fn()),
+        runs: vi.fn(async () => []),
+        runGet: vi.fn(async () => null),
         // The panel asks for the buffered log on mount — it may have missed the
         // stream entirely while this view was unmounted.
         status: vi.fn(async () => ({ running: false, log: '' })),
@@ -484,6 +489,26 @@ describe('AIView — automatic mode', () => {
 
   const writes: PendingCall[] = [{ id: 'w1', name: 'criar_tasks', args: { tasks: [] } }]
 
+  /**
+   * The toggle no longer flips the mode — it opens the cost gate, and the mode
+   * only changes if the user confirms there. Every test that wants automatic
+   * mode on goes through the dialog, exactly like a user does.
+   */
+  const turnAutoOn = async (): Promise<void> => {
+    await userEvent.click(await screen.findByText('Auto'))
+    await userEvent.click(await screen.findByText('Ligar automático'))
+  }
+
+  it('asks before switching on, and stays off if the gate is refused', async () => {
+    renderAI(<AIView projects={[]} />)
+    await userEvent.click(await screen.findByText('Auto'))
+    // The cap is the fact always worth stating, so it is always in the message.
+    expect(await screen.findByText(new RegExp(`${AUTO_MAX_STEPS} rodadas`))).toBeInTheDocument()
+
+    await userEvent.click(screen.getByText('Cancelar'))
+    expect(screen.queryByText('Auto: ON')).not.toBeInTheDocument()
+  })
+
   it('is off by default, and says so', async () => {
     renderAI(<AIView projects={[]} />)
     expect(await screen.findByText('Auto')).toBeInTheDocument()
@@ -498,7 +523,7 @@ describe('AIView — automatic mode', () => {
       return 'ok'
     })
     renderAI(<AIView projects={[]} />)
-    await userEvent.click(await screen.findByText('Auto'))
+    await turnAutoOn()
     expect(screen.getByText('Auto: ON')).toBeInTheDocument()
 
     const box = screen.getByPlaceholderText(/Descreva o projeto/)
@@ -534,7 +559,7 @@ describe('AIView — automatic mode', () => {
   it('raises the step cap in automatic mode', async () => {
     vi.mocked(runAgent).mockResolvedValue('ok')
     renderAI(<AIView projects={[]} />)
-    await userEvent.click(await screen.findByText('Auto'))
+    await turnAutoOn()
     const box = screen.getByPlaceholderText(/Descreva o projeto/)
     await userEvent.type(box, 'oi{Enter}')
 

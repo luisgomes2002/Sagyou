@@ -113,7 +113,7 @@ describe('diffSince', () => {
     expect(res.files).toEqual([{ path: 'a.txt', added: 1, removed: 0 }])
   })
 
-  it('sees changes the agent committed — which is what aider does', async () => {
+  it('sees changes that were committed, not only uncommitted ones', async () => {
     const snap = (await captureBase(dir))!
 
     await write(dir, 'a.txt', 'linha um\nlinha dois\nDO AGENTE\n')
@@ -121,7 +121,7 @@ describe('diffSince', () => {
     await realGit(dir, ['commit', '-qm', 'agente'])
 
     // A diff from a base commit to the working tree spans commits and dirt
-    // alike, so one query covers both agents.
+    // alike, so one query covers either case.
     expect((await diffSince(snap)).patch).toContain('+DO AGENTE')
   })
 

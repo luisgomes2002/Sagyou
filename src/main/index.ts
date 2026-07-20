@@ -1,5 +1,5 @@
 import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
-import { join, extname, basename, resolve, sep } from 'path'
+import { join, extname, basename, resolve, relative, sep } from 'path'
 import {
   readFileSync,
   writeFileSync,
@@ -24,6 +24,16 @@ import { renderWeb } from './web-render'
 import { captureBase, diffSince, type AgentBase } from './code-diff'
 import { decodeDataUrl, mimeForExt, isImageFileName } from './chat-images'
 import {
+  diffFileCount,
+  isRunId,
+  normalizeRuns,
+  pruneRuns,
+  runsForConv,
+  taskLabel,
+  type AgentRunMeta,
+  type AgentRunSnapshot
+} from './agent-runs'
+import {
   saveTemplate,
   removeTemplate,
   normalizeTemplates,
@@ -34,7 +44,7 @@ import icon from '../../resources/icon.png?asset'
 
 let mainWindow: BrowserWindow | null = null
 
-// A single external code agent (Aider/Codex) at a time, spawned in the
+// A single external code agent (codex) at a time, spawned in the
 // selected project directory. Only launched after explicit user approval in
 // the renderer, since it can write files and run commands.
 let codeAgentProc: ChildProcess | null = null
@@ -69,6 +79,23 @@ let codeAgentLog = ''
 let codeAgentBase: AgentBase | null = null
 
 /**
+ * Identity of the run in flight, so its output can be archived under the
+ * conversation that asked for it.
+ *
+ * Set at spawn and consumed once by `archiveAgentRun` — nulled there, because
+ * both exit paths ('error' and 'close') can fire for one run and a run must not
+ * be archived twice. Null between runs.
+ */
+let codeAgentRun: {
+  id: string
+  convId: string | null
+  agent: 'codex'
+  dir: string
+  task: string
+  startedAt: number
+} | null = null
+
+/**
  * Cap on the buffer above, matching the panel's own cap in AIView.
  *
  * Equal on purpose: leaving the view and coming back should show exactly what
@@ -82,10 +109,59 @@ function appendAgentLog(chunk: string): void {
   codeAgentLog = (codeAgentLog + chunk).slice(-MAX_AGENT_LOG)
 }
 
-// On Windows, spawn without a shell won't append .exe/.cmd, so `spawn('aider')`
-// fails even when installed. Resolve to the real file on PATH (pip installs
-// aider.exe; npm installs codex.cmd). Returns the full path, or null. POSIX
-// resolves via PATH natively, so pass through.
+/**
+ * A known environment failure, recognised from the agent's own output, with the
+ * fix spelled out. Structured rather than a log line because the log is behind a
+ * toggle in the panel — a message the user has to go looking for does not reach
+ * the user who doesn't know anything is wrong.
+ */
+export interface AgentHint {
+  title: string
+  detail: string
+  /** A shell command that fixes it, offered for the user to run themselves. */
+  command?: string
+}
+
+/** Set for the current run when its output matched a known failure. */
+let codeAgentHint: AgentHint | null = null
+
+/**
+ * Recognise failures that leave the agent reporting success while doing nothing.
+ *
+ * The case that motivated it: codex's Linux sandbox is bubblewrap, which needs
+ * unprivileged user namespaces, and Ubuntu 23.10+ blocks those by AppArmor
+ * (`kernel.apparmor_restrict_unprivileged_userns=1`, the default on 24.04).
+ * codex then cannot run a single command — not even reading a file — writes
+ * nothing, explains itself in prose, and **exits 0**. From the app's side that
+ * is indistinguishable from an agent that decided no change was needed, so
+ * without this the user is told the run finished and left to wonder why their
+ * code is untouched.
+ *
+ * Pure and string-only so it can be tested without spawning anything.
+ */
+export function detectAgentHint(output: string): AgentHint | null {
+  const sandboxBroken =
+    /needs access to create user namespaces/i.test(output) ||
+    /bwrap:/i.test(output) ||
+    /Failed RTM_NEWADDR/i.test(output)
+  if (sandboxBroken) {
+    return {
+      title: 'O sandbox do codex não conseguiu iniciar — nada foi alterado.',
+      detail:
+        'O codex isola a execução com bubblewrap, que precisa de user namespaces ' +
+        'sem privilégio. O Ubuntu 23.10+ (e derivados) bloqueia isso por AppArmor, ' +
+        'então o codex não conseguiu nem ler os arquivos. Ele terminou com sucesso ' +
+        'mesmo assim, mas não escreveu nada.',
+      command: 'sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0'
+    }
+  }
+  return null
+}
+
+// On Windows, spawn without a shell won't append .exe/.cmd, so `spawn('codex')`
+// fails even when installed. Resolve to the real file on PATH (npm installs
+// codex.cmd). Returns the full path, or null. POSIX resolves via PATH natively,
+// so pass through.
 function resolveExecutable(cmd: string): string | null {
   if (process.platform !== 'win32') return cmd
   const exts = ['.exe', '.cmd', '.bat', '']
@@ -136,19 +212,24 @@ function guideIn(dir: string): string | null {
   }
 }
 
+/**
+ * The command that runs the external code agent.
+ *
+ * codex is the only agent, and there is deliberately no second code path.
+ * ⚠️ Note this means the app's own AI config does not influence code editing
+ * at all: codex authenticates and picks its model by itself.
+ */
 function buildAgentCommand(
-  agent: 'aider' | 'codex',
   task: string,
-  cfg: AIConfig,
   dir: string,
   files: string[]
-): { cmd: string; args: string[]; taskFile: string | null; stdinData: string | null } {
+): { cmd: string; args: string[]; stdinData: string } {
   // The hook: hand the repo's own guide to the agent before it touches code.
   // Relative to the agent's cwd, which is `dir` — so the path is the same
   // string for every repo and nothing leaks about the machine's layout.
   const guide = guideIn(dir)
 
-  if (agent === 'codex') {
+  {
     // Codex CLI reads the OpenAI-compatible endpoint from the env set below.
     //
     // It has no --read: it finds AGENTS.md by itself (and truncates a project
@@ -156,8 +237,15 @@ function buildAgentCommand(
     // the one channel codex exec has — and only when the repo actually has one.
     // Codex has no --file either; when the caller pinned files, naming them in
     // the prompt spares codex the same blind discovery.
+    // Relative, as the sentence promises. `files` arrives absolute (confineToRoot
+    // resolves it), so joining it raw contradicted the prompt in the same breath
+    // — and put the machine's home directory into the model's context for no
+    // reason, the same leak the guide path above is careful to avoid. codex runs
+    // with cwd = dir, so a relative path is also the one it can actually use.
     const focus = files.length
-      ? `Edite estes arquivos (caminhos relativos à raiz): ${files.join(', ')}.\n\n`
+      ? `Edite estes arquivos (caminhos relativos à raiz): ${files
+          .map((f) => relative(dir, f) || f)
+          .join(', ')}.\n\n`
       : ''
     const prompt = guide
       ? `Antes de alterar qualquer código, leia o ${guide} deste repositório e siga as regras dele.\n\n${focus}${task}`
@@ -178,7 +266,7 @@ function buildAgentCommand(
     //     can write on Windows. This is not "safe vs unsafe": Windows offers no OS
     //     confinement either way, and the app already gates rodar_agente_codigo
     //     behind explicit user approval before spawning. So the real choice is
-    //     "writes" vs "can't write". aider is unaffected — it writes fine on Windows.
+    //     "writes" vs "can't write".
     const sandboxArgs =
       process.platform === 'win32'
         ? ['--dangerously-bypass-approvals-and-sandbox']
@@ -191,57 +279,12 @@ function buildAgentCommand(
         // Read the prompt from stdin (`-`), never as a command-line argument. On
         // Windows codex is a .cmd, so it runs through cmd.exe (shell: true), which
         // word-splits a bare multi-word prompt into separate args ("Antes de …" →
-        // codex sees `de` as an unexpected argument). This is codex's counterpart
-        // to aider's --message-file: untrusted, multi-line text stays off the
-        // command line entirely. `stdinData` below is what gets piped in.
+        // codex sees `de` as an unexpected argument). Untrusted, multi-line text
+        // stays off the command line entirely; `stdinData` is what gets piped in.
         '-'
       ],
-      taskFile: null,
       stdinData: prompt
     }
-  }
-  // Aider (default). The task goes in a temp file (--message-file) so untrusted
-  // text never lands on the command line (which may be shell-interpreted on
-  // Windows). `--yes-always` keeps it autonomous after the approved launch.
-  const taskFile = join(app.getPath('temp'), `sagyou-task-${randomUUID()}.txt`)
-  writeFileSync(taskFile, task, 'utf-8')
-  return {
-    cmd: 'aider',
-    args: [
-      '--model',
-      `openai/${cfg.model}`,
-      '--yes-always',
-      // We spawn aider with piped stdio and no console/TTY. On Windows its input
-      // layer (prompt_toolkit) then fails at startup — "Can't initialize prompt
-      // toolkit: No Windows console found" — which leaves aider's confirm/apply
-      // flow in a degraded state where it reports edits as applied but never
-      // writes the files. `--no-fancy-input` skips prompt_toolkit entirely and
-      // `--no-pretty` drops the terminal control codes that a piped, console-
-      // less stdout can't render. Both are the correct shape for a headless,
-      // non-interactive spawn; `--yes-always` already answers every prompt.
-      '--no-fancy-input',
-      '--no-pretty',
-      // No update check on a headless run: it only adds latency and noise to the
-      // panel, and can print an interactive-looking notice.
-      '--no-check-update',
-      // When the caller pinned the files to edit, hand them straight to aider and
-      // switch the repo map off (`--map-tokens 0`): there's nothing left to
-      // discover, and building/ranking a map of the whole tree every run is the
-      // slow part — a UI string isn't even visible in it. Without pinned files we
-      // keep the map so aider can still find things on its own.
-      ...(files.length ? ['--map-tokens', '0', ...files.flatMap((f) => ['--file', f])] : []),
-      // Read-only, so aider keeps it in context but never edits it. This is
-      // belt and braces with the repo's own .aider.conf.yml (which only applies
-      // when aider is launched from the repo): the flag is what makes a guide
-      // work in *any* repo the app points at, config file or not. Naming the
-      // same file twice is harmless — aider takes it once.
-      ...(guide ? ['--read', guide] : []),
-      '--message-file',
-      taskFile
-    ],
-    taskFile,
-    // Aider reads its task from --message-file, not stdin; stdin stays closed.
-    stdinData: null
   }
 }
 
@@ -287,7 +330,9 @@ function errorStatus(e: unknown): number | undefined {
 }
 
 /** The provider's usage block, normalised. Absent when it didn't report one. */
-function toUsage(raw: { prompt_tokens?: number; completion_tokens?: number } | undefined | null): TokenUsage | undefined {
+function toUsage(
+  raw: { prompt_tokens?: number; completion_tokens?: number } | undefined | null
+): TokenUsage | undefined {
   if (!raw) return undefined
   const promptTokens = typeof raw.prompt_tokens === 'number' ? raw.prompt_tokens : 0
   const completionTokens = typeof raw.completion_tokens === 'number' ? raw.completion_tokens : 0
@@ -345,6 +390,93 @@ function chatImagePath(id: unknown): string | null {
   const full = join(chatImagesDir(), id)
   // The id arrives from the renderer; belt and braces on top of the name check.
   return full.startsWith(chatImagesDir() + sep) ? full : null
+}
+
+// --- Past agent runs (files under userData/agent-runs) ---
+//
+// See agent-runs.ts for why a run is a frozen snapshot and why the payload is
+// out here rather than on the conversation.
+
+const agentRunsDir = (): string => join(app.getPath('userData'), 'agent-runs')
+const agentRunsIndexPath = (): string => join(agentRunsDir(), 'index.json')
+
+/** Resolve a run id to its payload path, or null if it isn't one of ours. */
+function agentRunPath(id: unknown): string | null {
+  if (!isRunId(id)) return null
+  const full = join(agentRunsDir(), `${id}.json`)
+  // The id arrives from the renderer; belt and braces on top of the name check.
+  return full.startsWith(agentRunsDir() + sep) ? full : null
+}
+
+function loadRunIndex(): AgentRunMeta[] {
+  try {
+    if (!existsSync(agentRunsIndexPath())) return []
+    return normalizeRuns(JSON.parse(readFileSync(agentRunsIndexPath(), 'utf-8')))
+  } catch {
+    return []
+  }
+}
+
+function saveRunIndex(runs: AgentRunMeta[]): void {
+  if (!existsSync(agentRunsDir())) mkdirSync(agentRunsDir(), { recursive: true })
+  writeFileSync(agentRunsIndexPath(), JSON.stringify(runs), 'utf-8')
+}
+
+/**
+ * Freeze a finished run: its log and the diff as computed right now.
+ *
+ * Called once, from the agent's exit path, because *now* is the only moment the
+ * diff means "what the agent did" — every later edit the user makes would be
+ * folded into it. Best-effort throughout: a run that can't be archived must
+ * never break the run itself, which already did the work the user asked for.
+ */
+async function archiveAgentRun(exitCode: number): Promise<void> {
+  const run = codeAgentRun
+  if (!run) return
+  codeAgentRun = null
+  try {
+    const diff = codeAgentBase ? await diffSince(codeAgentBase) : null
+    const snapshot: AgentRunSnapshot = {
+      id: run.id,
+      convId: run.convId,
+      agent: run.agent,
+      dir: run.dir,
+      task: run.task,
+      startedAt: run.startedAt,
+      endedAt: Date.now(),
+      exitCode,
+      fileCount: diffFileCount(diff),
+      log: codeAgentLog,
+      diff
+    }
+    const path = agentRunPath(run.id)
+    if (!path) return
+    if (!existsSync(agentRunsDir())) mkdirSync(agentRunsDir(), { recursive: true })
+    writeFileSync(path, JSON.stringify(snapshot), 'utf-8')
+
+    // Index last, so a row never points at a payload that was never written.
+    // Pruning deletes the dropped payloads too — forgetting a run in the index
+    // without unlinking its file leaks that disk for good.
+    const { log: _log, diff: _diff, ...meta } = snapshot
+    const { keep, drop } = pruneRuns([meta, ...loadRunIndex().filter((r) => r.id !== meta.id)])
+    saveRunIndex(keep)
+    // Announced separately from 'exit', which fires before this: the archive
+    // costs a `git diff`, and the panel must not stay on "rodando" waiting for
+    // it. This is what tells the run picker its new row exists.
+    mainWindow?.webContents.send('ai:code-agent:archived', meta.id)
+    for (const gone of drop) {
+      const p = agentRunPath(gone.id)
+      if (p && existsSync(p)) {
+        try {
+          unlinkSync(p)
+        } catch {
+          /* a payload we can't delete is not worth failing the archive over */
+        }
+      }
+    }
+  } catch {
+    /* archiving is a convenience; the run itself already happened */
+  }
 }
 
 // --- Gerar Tasks templates (persisted to ai-templates.json in userData) ---
@@ -605,7 +737,11 @@ app.whenReady().then(() => {
       const apiKey = request.apiKey || config.apiKey
       const model = request.model || config.model
       if (!baseURL || !model) {
-        return { success: false, error: 'Configuração de IA incompleta (Base URL / Model)', status: 400 }
+        return {
+          success: false,
+          error: 'Configuração de IA incompleta (Base URL / Model)',
+          status: 400
+        }
       }
       try {
         const client = getOpenAIClient(baseURL, apiKey)
@@ -614,7 +750,10 @@ app.whenReady().then(() => {
           messages: request.messages,
           ...(request.tools && request.tools.length > 0 ? { tools: request.tools } : {})
         } as unknown as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming
-        const completion = await client.chat.completions.create(body, requestOptions(config.timeoutMs))
+        const completion = await client.chat.completions.create(
+          body,
+          requestOptions(config.timeoutMs)
+        )
         const message = completion.choices[0]?.message
         if (!message) return { success: false, error: 'Resposta vazia do modelo' }
         const usage = toUsage(completion.usage)
@@ -660,7 +799,11 @@ app.whenReady().then(() => {
       const apiKey = request.apiKey || config.apiKey
       const model = request.model || config.model
       if (!baseURL || !model) {
-        return { success: false, error: 'Configuração de IA incompleta (Base URL / Model)', status: 400 }
+        return {
+          success: false,
+          error: 'Configuração de IA incompleta (Base URL / Model)',
+          status: 400
+        }
       }
       try {
         const client = getOpenAIClient(baseURL, apiKey)
@@ -709,7 +852,11 @@ app.whenReady().then(() => {
         // back the raw SSE bytes as a web stream.)
         //
         // Tolerance is the point here; the ~20 lines below are the price.
-        const toolCalls: { id: string; type: 'function'; function: { name: string; arguments: string } }[] = []
+        const toolCalls: {
+          id: string
+          type: 'function'
+          function: { name: string; arguments: string }
+        }[] = []
 
         for await (const chunk of stream) {
           // The usage chunk arrives last and carries no choices, so read it
@@ -720,7 +867,10 @@ app.whenReady().then(() => {
           if (delta.content) {
             content += delta.content
             if (!event.sender.isDestroyed()) {
-              event.sender.send('ai:chat:delta', { streamId: request.streamId, delta: delta.content })
+              event.sender.send('ai:chat:delta', {
+                streamId: request.streamId,
+                delta: delta.content
+              })
             }
           }
           for (const tc of delta.tool_calls ?? []) {
@@ -804,7 +954,13 @@ app.whenReady().then(() => {
     'ai:code-agent:run',
     async (
       _,
-      request: { path: string; task: string; agent?: 'aider' | 'codex'; files?: string[] }
+      request: {
+        path: string
+        task: string
+        files?: string[]
+        /** The chat that asked, so the run can be reopened from it later. */
+        convId?: string
+      }
     ) => {
       if (codeAgentProc) return { success: false, error: 'Já existe um agente de código rodando' }
       const dir = request.path
@@ -818,27 +974,42 @@ app.whenReady().then(() => {
       // be `../../etc`), and drop anything that escapes or doesn't exist rather
       // than handing the agent a bogus target. An empty/all-invalid list falls
       // back to the discovery path, so this can only speed things up, never break.
-      const files = Array.isArray(request.files)
-        ? request.files
-            .filter((f) => typeof f === 'string' && f.trim() !== '')
-            .map((f) => confineToRoot(dir, f))
-            .filter((f): f is string => f !== null && existsSync(f) && statSync(f).isFile())
+      // Kept alongside the accepted list so the banner below can name what was
+      // dropped. A silently discarded path is the failure mode worth surfacing:
+      // it doesn't error, it just costs the user the slow discovery path.
+      const requestedFiles = Array.isArray(request.files)
+        ? request.files.filter((f): f is string => typeof f === 'string' && f.trim() !== '')
         : []
+      const files = requestedFiles
+        .map((f) => confineToRoot(dir, f))
+        .filter((f): f is string => f !== null && existsSync(f) && statSync(f).isFile())
+      const droppedFiles = requestedFiles.filter((f) => {
+        const abs = confineToRoot(dir, f)
+        return abs === null || !existsSync(abs) || !statSync(abs).isFile()
+      })
       const cfg = loadAIConfig()
       if (!cfg.baseUrl || !cfg.model) {
-        return { success: false, error: 'Configuração de IA incompleta (Base URL / Model)', status: 400 }
+        return {
+          success: false,
+          error: 'Configuração de IA incompleta (Base URL / Model)',
+          status: 400
+        }
       }
-      const agent = request.agent === 'codex' ? 'codex' : 'aider'
+      // codex is the only agent — see buildAgentCommand.
+      const agent = 'codex' as const
       // A new run starts a new log. Only reached once the request is known good
       // (a rejected one never spawns), so a failed start can't wipe the output
       // of the run before it — which is what the user would still be reading.
       codeAgentLog = ''
+      // Same reasoning as the log: a diagnosis carried over from the previous run
+      // is worse than none. Cleared only once the request is known good.
+      codeAgentHint = null
       // Snapshot the tree BEFORE the agent touches it — after the fact there is
       // no way to tell its work from what the user already had in progress.
       // Null here just means "no diff for this run" (not a git repo); it must
       // never stop the run, which is what the user actually asked for.
       codeAgentBase = await captureBase(dir)
-      const { cmd, args, taskFile, stdinData } = buildAgentCommand(agent, task, cfg, dir, files)
+      const { cmd, args, stdinData } = buildAgentCommand(task, dir, files)
 
       // Resolve to a real .exe when possible and spawn it directly (safe, no
       // shell). Fall back to a shell only on Windows for .cmd/.bat wrappers.
@@ -854,20 +1025,49 @@ app.whenReady().then(() => {
         appendAgentLog(chunk)
         send('ai:code-agent:output', chunk)
       }
-      const cleanup = (): void => {
-        if (taskFile) {
-          try {
-            unlinkSync(taskFile)
-          } catch {
-            /* best effort */
-          }
-        }
-      }
 
+      // Which path this run takes, stated before the agent says anything. The
+      // fast path (pinned files, named in the prompt) and the slow one (no
+      // files, so codex discovers them itself with its own grep/read tools)
+      // differ by minutes on a one-line change, and until now they looked
+      // identical from the panel: a path the
+      // model got wrong is dropped in silence and degrades to discovery. The
+      // model also chooses whether to send `arquivos` at all, so "did it?" is
+      // exactly the question this answers. The model line says whose model it is:
+      // codex authenticates and picks it by itself, so the app's configured
+      // provider has no bearing on a code run and nobody should read it as if it did.
+      emit(`[sagyou] agente: ${agent} · modelo: próprio do codex (não usa a config do app)\n`)
+      emit(
+        files.length
+          ? `[sagyou] ${files.length} arquivo(s) fixado(s) — caminho rápido, sem descoberta:\n` +
+              files.map((f) => `  · ${relative(dir, f) || f}\n`).join('')
+          : '[sagyou] nenhum arquivo fixado — o codex vai localizar os arquivos com as próprias ferramentas.\n'
+      )
+      if (droppedFiles.length) {
+        emit(
+          `[sagyou] ${droppedFiles.length} caminho(s) descartado(s) (fora da raiz ou inexistente):\n` +
+            droppedFiles.map((f) => `  · ${f}\n`).join('') +
+            (files.length ? '' : `[sagyou] por isso este run caiu na descoberta.\n`)
+        )
+      }
+      emit('\n')
       return new Promise<{ success: boolean; agent?: string; dir?: string; error?: string }>(
         (resolve) => {
           let settled = false
           let child: ChildProcess
+          // Wall clock, taken as late as possible: what's being compared is the
+          // agent's own run, not our banner or the base capture before it.
+          const startedAt = Date.now()
+          // Identity for the archive written when this run exits. Set here, next
+          // to the clock, so it describes the run that actually spawns.
+          codeAgentRun = {
+            id: randomUUID(),
+            convId: typeof request.convId === 'string' && request.convId ? request.convId : null,
+            agent,
+            dir,
+            task: taskLabel(task),
+            startedAt
+          }
           try {
             child = spawn(spawnCmd, args, {
               cwd: dir,
@@ -876,30 +1076,16 @@ app.whenReady().then(() => {
               // from stdin via `-`, keeping the multi-word prompt off a shell-
               // parsed command line), otherwise 'ignore'. A closed stdin turns any
               // stray confirmation into an immediate EOF instead of a process that
-              // hangs "running" forever — aider needs no input (--yes-always /
-              // --message-file), so it stays closed.
+              // hangs "running" forever.
               stdio: [stdinData !== null ? 'pipe' : 'ignore', 'pipe', 'pipe'],
               env: {
                 ...process.env,
                 OPENAI_API_BASE: cfg.baseUrl,
                 OPENAI_BASE_URL: cfg.baseUrl,
-                OPENAI_API_KEY: cfg.apiKey || 'not-needed',
-                // Force UTF-8 I/O in the child. aider is Python, and on a Windows
-                // console whose codepage is cp1252 it hits a UnicodeDecodeError
-                // when it prints box-drawing/emoji/accented text — the "Terminal
-                // does not support pretty output" warning is that failure. It also
-                // fed our panel mojibake for Portuguese accents (`não` → `nÃ£o`),
-                // since the child was emitting cp1252 while we decode UTF-8.
-                // PYTHONUTF8=1 puts CPython in UTF-8 mode regardless of the
-                // console codepage; PYTHONIOENCODING is the belt-and-braces for
-                // any tool that reads it directly. No-op for codex (a native
-                // binary that already speaks UTF-8), harmless to set for both.
-                PYTHONUTF8: '1',
-                PYTHONIOENCODING: 'utf-8'
+                OPENAI_API_KEY: cfg.apiKey || 'not-needed'
               }
             })
           } catch (e) {
-            cleanup()
             resolve({ success: false, error: e instanceof Error ? e.message : 'Falha ao iniciar' })
             return
           }
@@ -922,8 +1108,21 @@ app.whenReady().then(() => {
           // to the next chunk.
           child.stdout?.setEncoding('utf8')
           child.stderr?.setEncoding('utf8')
-          child.stdout?.on('data', (d: string) => emit(d))
-          child.stderr?.on('data', (d: string) => emit(d))
+          // Watched for a known failure as it streams. Kept in its own rolling
+          // window rather than read off codeAgentLog, which is capped to the
+          // panel's tail: the sandbox warning is the *first* thing codex prints,
+          // so on a chatty run it would have scrolled out of the buffer before
+          // anyone looked. A window (not a per-chunk test) because a marker can
+          // straddle two 'data' events.
+          let recent = ''
+          const watch = (d: string): void => {
+            emit(d)
+            if (codeAgentHint) return
+            recent = (recent + d).slice(-4000)
+            codeAgentHint = detectAgentHint(recent)
+          }
+          child.stdout?.on('data', watch)
+          child.stderr?.on('data', watch)
           // 'spawn' fires only when the process actually started.
           child.once('spawn', () => {
             if (!settled) {
@@ -938,11 +1137,11 @@ app.whenReady().then(() => {
               : e.message
             emit(`\n[erro ao iniciar ${cmd}: ${msg}]\n`)
             codeAgentProc = null
-            cleanup()
-            // Buffered too: "aider isn't installed" is the single most useful
+            // Buffered too: "codex isn't installed" is the single most useful
             // line the panel can show, and it is exactly the one that fires
             // instantly — usually before the user has looked at the panel at all.
             appendAgentLog(`[agente encerrado — código -1]\n`)
+            void archiveAgentRun(-1)
             send('ai:code-agent:exit', -1)
             if (!settled) {
               settled = true
@@ -951,11 +1150,31 @@ app.whenReady().then(() => {
           })
           child.on('close', (code) => {
             codeAgentProc = null
-            cleanup()
+            // How long the run took. Goes through `emit` (streams *and* buffers)
+            // rather than appendAgentLog, so it shows live and still survives an
+            // unmounted panel — the exit line below can't carry it, since the
+            // renderer writes its own copy of that line on the event. Without
+            // this the panel had no clock at all, which makes "how long did that
+            // take?" unanswerable except by stopwatch.
+            const secs = ((Date.now() - startedAt) / 1000).toFixed(1)
+            emit(`\n[sagyou] duração: ${secs}s\n`)
+            // Also in the log, not only in the card: someone reading the raw
+            // output (or pasting it into an issue) should get the diagnosis in
+            // the same place as the symptom.
+            if (codeAgentHint) {
+              emit(
+                `[sagyou] ${codeAgentHint.title}\n` +
+                  `[sagyou] ${codeAgentHint.detail}\n` +
+                  (codeAgentHint.command ? `[sagyou] correção: ${codeAgentHint.command}\n` : '')
+              )
+            }
             // The panel appends this line itself when it's mounted to hear the
             // event; buffering it is what tells a user who was away that the
             // run is over rather than still going.
             appendAgentLog(`\n[agente encerrado — código ${code ?? 0}]\n`)
+            // Freeze log + diff now: this is the only moment the diff means
+            // "what the agent did" rather than "what the tree looks like today".
+            void archiveAgentRun(code ?? 0)
             send('ai:code-agent:exit', code ?? 0)
           })
         }
@@ -970,7 +1189,11 @@ app.whenReady().then(() => {
   // `log` is how a panel that wasn't mounted catches up — see codeAgentLog.
   ipcMain.handle('ai:code-agent:status', () => ({
     running: codeAgentProc !== null,
-    log: codeAgentLog
+    log: codeAgentLog,
+    // Null unless the run hit a recognised environment failure. Carried here
+    // rather than on the exit event so a panel mounted after the fact still
+    // sees it — the same reason `log` is here.
+    hint: codeAgentHint
   }))
 
   /**
@@ -989,6 +1212,27 @@ app.whenReady().then(() => {
       }
     }
     return diffSince(codeAgentBase)
+  })
+
+  /**
+   * Past runs of one conversation, newest first. Index only — the logs and
+   * diffs stay on disk until a row is actually opened.
+   */
+  ipcMain.handle('ai:code-agent:runs', (_, convId: string) => runsForConv(loadRunIndex(), convId))
+
+  /**
+   * One archived run, log and diff included. Frozen at the moment the agent
+   * exited: re-deriving the diff today would fold in everything the user has
+   * changed since and present it as the agent's work.
+   */
+  ipcMain.handle('ai:code-agent:run-get', async (_, id: string) => {
+    const path = agentRunPath(id)
+    if (!path || !existsSync(path)) return null
+    try {
+      return JSON.parse(await readFile(path, 'utf-8')) as AgentRunSnapshot
+    } catch {
+      return null
+    }
   })
 
   ipcMain.handle('ai:pick-directory', async () => {
@@ -1037,43 +1281,46 @@ app.whenReady().then(() => {
     }
   )
 
-  ipcMain.handle('ai:code:read', (_, root: string, rel: string, offset?: number, maxChars?: number) => {
-    const full = confineToRoot(root, rel)
-    if (!full || !existsSync(full) || !statSync(full).isFile()) {
-      return { error: 'Arquivo inválido ou fora do projeto' }
+  ipcMain.handle(
+    'ai:code:read',
+    (_, root: string, rel: string, offset?: number, maxChars?: number) => {
+      const full = confineToRoot(root, rel)
+      if (!full || !existsSync(full) || !statSync(full).isFile()) {
+        return { error: 'Arquivo inválido ou fora do projeto' }
+      }
+      try {
+        const content = readFileSync(full, 'utf-8')
+        const total = content.length
+        // A file result is resent to the model on every later step, so a 60k-char
+        // file (~15k tokens) was a per-step tax for a question that usually needs
+        // a fraction of it. Default to one CODE_READ_PAGE window; `maxChars` can
+        // raise it up to CODE_READ_MAX, and `offset` pages through the rest.
+        const CODE_READ_PAGE = 20000
+        const CODE_READ_MAX = 60000
+        let page = CODE_READ_PAGE
+        if (typeof maxChars === 'number' && Number.isFinite(maxChars) && maxChars >= 1) {
+          page = Math.min(Math.floor(maxChars), CODE_READ_MAX)
+        }
+        let start = 0
+        if (typeof offset === 'number' && Number.isFinite(offset) && offset > 0) {
+          start = Math.min(Math.floor(offset), total)
+        }
+        const slice = content.slice(start, start + page)
+        const end = start + slice.length
+        const truncated = end < total
+        return {
+          content: slice,
+          truncated,
+          offset: start,
+          total,
+          // Where a follow-up read should resume; absent once the file is exhausted.
+          ...(truncated ? { nextOffset: end } : {})
+        }
+      } catch (e) {
+        return { error: e instanceof Error ? e.message : 'Falha ao ler o arquivo' }
+      }
     }
-    try {
-      const content = readFileSync(full, 'utf-8')
-      const total = content.length
-      // A file result is resent to the model on every later step, so a 60k-char
-      // file (~15k tokens) was a per-step tax for a question that usually needs
-      // a fraction of it. Default to one CODE_READ_PAGE window; `maxChars` can
-      // raise it up to CODE_READ_MAX, and `offset` pages through the rest.
-      const CODE_READ_PAGE = 20000
-      const CODE_READ_MAX = 60000
-      let page = CODE_READ_PAGE
-      if (typeof maxChars === 'number' && Number.isFinite(maxChars) && maxChars >= 1) {
-        page = Math.min(Math.floor(maxChars), CODE_READ_MAX)
-      }
-      let start = 0
-      if (typeof offset === 'number' && Number.isFinite(offset) && offset > 0) {
-        start = Math.min(Math.floor(offset), total)
-      }
-      const slice = content.slice(start, start + page)
-      const end = start + slice.length
-      const truncated = end < total
-      return {
-        content: slice,
-        truncated,
-        offset: start,
-        total,
-        // Where a follow-up read should resume; absent once the file is exhausted.
-        ...(truncated ? { nextOffset: end } : {})
-      }
-    } catch (e) {
-      return { error: e instanceof Error ? e.message : 'Falha ao ler o arquivo' }
-    }
-  })
+  )
 
   ipcMain.handle('ai:code:search', async (_, root: string, term: string) => {
     if (!root || !existsSync(root)) return { error: 'Diretório inválido' }
@@ -1184,8 +1431,9 @@ app.whenReady().then(() => {
     searchConversations(loadConversations(), typeof term === 'string' ? term : '')
   )
 
-  ipcMain.handle('ai:conversations:get', (_, id: string) =>
-    loadConversations().find((c) => c.id === id) ?? null
+  ipcMain.handle(
+    'ai:conversations:get',
+    (_, id: string) => loadConversations().find((c) => c.id === id) ?? null
   )
 
   ipcMain.handle(
@@ -1236,7 +1484,8 @@ app.whenReady().then(() => {
    * holds the transcript of what's on screen.
    */
   ipcMain.handle('ai:conversations:rename', (_, id: string, title: string) => {
-    if (typeof id !== 'string' || typeof title !== 'string') return { error: 'Argumentos inválidos' }
+    if (typeof id !== 'string' || typeof title !== 'string')
+      return { error: 'Argumentos inválidos' }
     const name = title.trim()
     if (!name) return { error: 'O nome não pode ficar vazio' }
     // A title is a one-line label in a narrow dropdown; the rest is not shown

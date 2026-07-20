@@ -22,7 +22,10 @@ export function ConfirmDialog({
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onCancel} />
       <div className="relative z-10 w-full max-w-sm mx-4 rounded-xl border border-[#2a2d42] bg-[#13151f] shadow-2xl p-6">
         <h3 className="text-base font-semibold text-[#e2e8f0] mb-2">{title}</h3>
-        <p className="text-sm text-[#8892a4] mb-6 leading-relaxed">{message}</p>
+        {/* whitespace-pre-line so a message can use blank lines to separate what
+            the action does from what it costs. A single-line message is
+            unaffected — nothing else here wraps on newlines. */}
+        <p className="text-sm text-[#8892a4] mb-6 leading-relaxed whitespace-pre-line">{message}</p>
         <div className="flex justify-end gap-3">
           <button
             onClick={onCancel}

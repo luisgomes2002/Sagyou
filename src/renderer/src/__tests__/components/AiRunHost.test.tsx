@@ -54,6 +54,11 @@ function installApi(): void {
       codeAgent: {
         onOutput: vi.fn(() => vi.fn()),
         onExit: vi.fn(() => vi.fn()),
+        // Fires when a finished run has been archived; the picker listens
+        // for it rather than guessing when the snapshot exists.
+        onArchived: vi.fn(() => vi.fn()),
+        runs: vi.fn(async () => []),
+        runGet: vi.fn(async () => null),
         // The panel asks for the buffered log on mount — it may have missed the
         // stream entirely while this view was unmounted.
         status: vi.fn(async () => ({ running: false, log: '' })),

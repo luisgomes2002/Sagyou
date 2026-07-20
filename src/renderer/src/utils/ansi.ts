@@ -1,4 +1,4 @@
-// Turns a raw agent log (aider / codex, streamed over ai:code-agent:output) into
+// Turns a raw agent log (codex, streamed over ai:code-agent:output) into
 // styled segments the terminal panel can render. It exists because the log is a
 // *pipe*, not a console: whatever ANSI the agent emits arrives as literal bytes,
 // so without this the panel showed `[36mProcessing[0m` as text. It also strips
@@ -40,24 +40,16 @@ const FG: Record<number, string> = {
   97: '#f8fafc'
 }
 
-// A terminal's carriage return means "back to column 0" — the next write
-// overwrites. For a scrollback view the faithful result is: within each physical
-// line, only the text after the last \r survives. This is what stops aider's and
-// codex's spinner/progress lines from piling up into a wall.
-function collapseCarriageReturns(input: string): string {
-  if (!input.includes('\r')) return input
-  return input
-    .split('\n')
-    .map((line) => {
-      const i = line.lastIndexOf('\r')
-      return i === -1 ? line : line.slice(i + 1)
-    })
-    .join('\n')
-}
-
-export function parseAnsi(input: string): AnsiSegment[] {
-  const text = collapseCarriageReturns(input)
-  const segments: AnsiSegment[] = []
+export function parseAnsi(text: string): AnsiSegment[] {
+  // Lines, not one flat buffer: a terminal's \r ("back to column 0") and its
+  // erase-line codes only ever affect the line being written, so the model has
+  // to know where that line starts. Doing it as a pre-pass over the raw string —
+  // as this used to — cannot, because the escape bytes are still in the way: a
+  // redraw that re-emits its colour (`\r\x1b[32mok`) had the colour counted as
+  // text width, and an `\x1b[2K` clear was dropped instead of applied, leaving
+  // the erased text on screen. Only the last write to a line survives, which is
+  // what stops codex's spinners from piling up into a wall.
+  const lines: AnsiSegment[][] = [[]]
 
   let fg: string | undefined
   let bold = false
@@ -65,14 +57,35 @@ export function parseAnsi(input: string): AnsiSegment[] {
   let buf = ''
   const flush = (): void => {
     if (buf) {
-      segments.push({ text: buf, ...(fg && { fg }), ...(bold && { bold }), ...(dim && { dim }) })
+      lines[lines.length - 1].push({
+        text: buf,
+        ...(fg && { fg }),
+        ...(bold && { bold }),
+        ...(dim && { dim })
+      })
       buf = ''
     }
+  }
+  /** \r and the erase-in-line codes: the current line is rewritten from scratch. */
+  const clearLine = (): void => {
+    buf = ''
+    lines[lines.length - 1] = []
   }
 
   let i = 0
   while (i < text.length) {
     const ch = text[i]
+    if (ch === '\n') {
+      flush()
+      lines.push([])
+      i++
+      continue
+    }
+    if (ch === '\r') {
+      clearLine()
+      i++
+      continue
+    }
     if (ch !== '\x1b') {
       buf += ch
       i++
@@ -103,8 +116,14 @@ export function parseAnsi(input: string): AnsiSegment[] {
           else if (FG[code]) fg = FG[code]
           // everything else (backgrounds, 256/truecolour) is intentionally ignored
         }
+      } else if (final === 'K') {
+        // Erase in line. We only model a scrollback of finished lines, so all
+        // three variants (0 = to end, 1 = to start, 2 = whole line) collapse to
+        // "this line is being rewritten" — the redraw that follows is what the
+        // user is meant to read.
+        clearLine()
       }
-      // any non-'m' CSI (cursor move, erase, ?25l …) is dropped entirely
+      // any other CSI (cursor move, ?25l …) is dropped entirely
       i = j + 1
     } else if (next === ']') {
       // OSC: runs until BEL (\x07) or ST (ESC \). Window-title sets and the like.
@@ -118,5 +137,5 @@ export function parseAnsi(input: string): AnsiSegment[] {
     }
   }
   flush()
-  return segments
+  return lines.flatMap((line, i) => (i === 0 ? line : [{ text: '\n' }, ...line]))
 }

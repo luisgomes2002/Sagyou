@@ -12,8 +12,18 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest'
 import http from 'http'
 import { mkdtemp, mkdir, writeFile, rm } from 'fs/promises'
+import { existsSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+
+/**
+ * `cat` by absolute path, resolved once.
+ *
+ * The agent stubs below run with PATH narrowed to a directory holding only the
+ * stub itself (see the spawn note there), so a bare `cat` is not found and the
+ * script dies with exit 127 having echoed nothing.
+ */
+const CAT = ['/bin/cat', '/usr/bin/cat'].find((p) => existsSync(p)) ?? 'cat'
 
 /** channel -> handler, filled in when the module registers them. */
 const handlers = new Map<string, (event: unknown, ...args: never[]) => unknown>()
@@ -798,8 +808,11 @@ describe('ai:code-agent output survives the panel', () => {
   let binDir: string
   const oldPath = process.env.PATH
 
-  const fakeAider = (body: string): Promise<void> =>
-    writeFile(join(binDir, 'aider'), `#!/bin/sh\n${body}\n`, { mode: 0o755 })
+  // codex is the only agent now, so the stub stands in for it. It must drain
+  // stdin: the handler pipes the prompt in (codex reads it via `-`) and a stub
+  // that never reads would leave the write to EPIPE.
+  const fakeAgent = (body: string): Promise<void> =>
+    writeFile(join(binDir, 'codex'), `#!/bin/sh\n${body}\n${CAT} >/dev/null\n`, { mode: 0o755 })
 
   beforeAll(async () => {
     dir = await mkdtemp(join(tmpdir(), 'agent-cwd-'))
@@ -810,7 +823,7 @@ describe('ai:code-agent output survives the panel', () => {
     // and never exits, poisoning every test after it. The only agent reachable
     // from here is the script below; `codex` resolves to nothing, on purpose.
     process.env.PATH = binDir
-    await fakeAider('echo "LINHA_UM"\necho "LINHA_DOIS"\nexit 0')
+    await fakeAgent('echo "LINHA_UM"\necho "LINHA_DOIS"\nexit 0')
   })
 
   afterAll(async () => {
@@ -843,8 +856,7 @@ describe('ai:code-agent output survives the panel', () => {
   it('keeps what the agent printed, for a panel that was not there to hear it', async () => {
     const res = await invoke<{ success: boolean }>('ai:code-agent:run', {
       path: dir,
-      task: 'revisar o código',
-      agent: 'aider'
+      task: 'revisar o código'
     })
     expect(res.success).toBe(true)
     await settle()
@@ -857,7 +869,7 @@ describe('ai:code-agent output survives the panel', () => {
   })
 
   it('records that the run is over, not merely that it went quiet', async () => {
-    await invoke('ai:code-agent:run', { path: dir, task: 't', agent: 'aider' })
+    await invoke('ai:code-agent:run', { path: dir, task: 't' })
     await settle()
 
     // A returning user has to be able to tell "finished" from "still working".
@@ -867,9 +879,9 @@ describe('ai:code-agent output survives the panel', () => {
   })
 
   it('starts a new log per run, instead of stacking reviews together', async () => {
-    await invoke('ai:code-agent:run', { path: dir, task: 'primeira', agent: 'aider' })
+    await invoke('ai:code-agent:run', { path: dir, task: 'primeira' })
     await settle()
-    await invoke('ai:code-agent:run', { path: dir, task: 'segunda', agent: 'aider' })
+    await invoke('ai:code-agent:run', { path: dir, task: 'segunda' })
     await settle()
 
     const { log } = await status()
@@ -879,12 +891,12 @@ describe('ai:code-agent output survives the panel', () => {
   })
 
   it('does not wipe the last run when a bad request is refused', async () => {
-    await invoke('ai:code-agent:run', { path: dir, task: 'boa', agent: 'aider' })
+    await invoke('ai:code-agent:run', { path: dir, task: 'boa' })
     await settle()
 
     // Refused before anything spawns — the user may still be reading the panel.
     expect(
-      await invoke('ai:code-agent:run', { path: dir, task: '  ', agent: 'aider' })
+      await invoke('ai:code-agent:run', { path: dir, task: '  ' })
     ).toMatchObject({ success: false })
     expect(
       await invoke('ai:code-agent:run', { path: join(dir, 'nao-existe'), task: 't' })
@@ -895,25 +907,146 @@ describe('ai:code-agent output survives the panel', () => {
 
   it('keeps the "not installed" line, the one nobody is ever watching for', async () => {
     // Fires instantly, usually before the user has looked at the panel — and it
-    // is the most useful line the panel can show. (`codex` is not on the PATH
-    // this suite runs with.)
+    // is the most useful line the panel can show. codex is the only agent now,
+    // so the stub has to be taken off PATH to reach the not-found path at all.
+    const withStub = process.env.PATH
+    const empty = await mkdtemp(join(tmpdir(), 'agent-none-'))
+    process.env.PATH = empty
     const res = await invoke<{ success: boolean }>('ai:code-agent:run', {
       path: dir,
-      task: 't',
-      agent: 'codex'
+      task: 't'
     })
+    process.env.PATH = withStub
+    await rm(empty, { recursive: true, force: true })
     expect(res.success).toBe(false)
 
     const { log } = await status()
     expect(log).toMatch(/não encontrado|erro ao iniciar/)
   })
 
+  // The banner: which path a run took. Pinned files (aider gets --file +
+  // --map-tokens 0) and discovery (aider maps the whole tree) differ by minutes
+  // on a one-line change, and from the panel they used to look identical — a
+  // path the model got wrong is dropped in silence and quietly degrades to the
+  // slow path. These pin that the panel can tell them apart.
+  it('says when files were pinned, and names them', async () => {
+    await writeFile(join(dir, 'alvo.ts'), 'export const x = 1\n')
+
+    await invoke('ai:code-agent:run', {
+      path: dir,
+      task: 't',
+      files: ['alvo.ts']
+    })
+    await settle()
+
+    const { log } = await status()
+    expect(log).toContain('1 arquivo(s) fixado(s)')
+    expect(log).toContain('alvo.ts')
+    expect(log).not.toContain('nenhum arquivo fixado')
+  })
+
+  it('says when nothing was pinned, since that is the slow path', async () => {
+    await invoke('ai:code-agent:run', { path: dir, task: 't' })
+    await settle()
+
+    const { log } = await status()
+    expect(log).toContain('nenhum arquivo fixado')
+    expect(log).toContain('próprias ferramentas')
+  })
+
+  it('names a dropped path instead of degrading to discovery in silence', async () => {
+    await invoke('ai:code-agent:run', {
+      path: dir,
+      task: 't',
+      // Escapes the root, and does not exist: both are dropped by the handler.
+      files: ['../fora.ts', 'nao-existe.ts']
+    })
+    await settle()
+
+    const { log } = await status()
+    expect(log).toContain('2 caminho(s) descartado(s)')
+    expect(log).toContain('nao-existe.ts')
+    // The consequence, not just the fact — this is why the run was slow.
+    expect(log).toContain('caiu na descoberta')
+  })
+
+  it('says the app config does not pick the model, because codex picks its own', async () => {
+    await invoke('ai:config:set', { baseUrl, apiKey: 'k', model: 'modelo-xyz' })
+    await invoke('ai:code-agent:run', { path: dir, task: 't' })
+    await settle()
+
+    // codex authenticates and chooses its model by itself, so naming the app's
+    // configured model here would state a falsehood about what just ran.
+    const { log } = await status()
+    expect(log).toContain('não usa a config do app')
+    expect(log).not.toContain('modelo-xyz')
+  })
+
+  it('reports how long the run took, since the panel has no other clock', async () => {
+    await invoke('ai:code-agent:run', { path: dir, task: 't' })
+    await settle()
+
+    // Comparing two agents (or two models) is the reason this exists, and it
+    // was impossible from the panel: the exit line carries only a status code.
+    expect((await status()).log).toMatch(/\[sagyou\] duração: \d+\.\d+s/)
+  })
+
+  // The failure that motivated the hint: codex's Linux sandbox (bubblewrap) can't
+  // create user namespaces on Ubuntu 23.10+, so it reads nothing, writes nothing,
+  // and exits 0. Nothing about that run looks wrong from the outside.
+  it('recognises the broken-sandbox run that exits 0 having done nothing', async () => {
+    await fakeAgent(
+      'echo "warning: Codex\'s Linux sandbox uses bubblewrap and needs access to create user namespaces."\n' +
+        'echo "bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted"\n' +
+        'exit 0'
+    )
+    await invoke('ai:code-agent:run', { path: dir, task: 't' })
+    await settle()
+
+    const s = await invoke<{ log: string; hint: { title: string; command?: string } | null }>(
+      'ai:code-agent:status'
+    )
+    // Structured, for the panel — the log is behind a toggle, so a log-only
+    // message never reaches the user who doesn't know to go looking.
+    expect(s.hint).not.toBeNull()
+    expect(s.hint?.command).toContain('apparmor_restrict_unprivileged_userns=0')
+    // And in the log too, so a pasted transcript carries the diagnosis.
+    expect(s.log).toContain('sandbox do codex')
+  })
+
+  it('leaves hint null for an ordinary run, and clears it on the next one', async () => {
+    await fakeAgent('echo "warning: bwrap: Failed RTM_NEWADDR"\nexit 0')
+    await invoke('ai:code-agent:run', { path: dir, task: 't' })
+    await settle()
+    expect((await invoke<{ hint: unknown }>('ai:code-agent:status')).hint).not.toBeNull()
+
+    // A diagnosis carried over from the previous run is worse than none: it
+    // would blame a healthy run for a problem it didn't have.
+    await fakeAgent('echo "tudo certo"\nexit 0')
+    await invoke('ai:code-agent:run', { path: dir, task: 't' })
+    await settle()
+    expect((await invoke<{ hint: unknown }>('ai:code-agent:status')).hint).toBeNull()
+
+    await fakeAgent('echo "LINHA_UM"\necho "LINHA_DOIS"\nexit 0') // restore for later tests
+  })
+
+  it('detects a marker split across two chunks', async () => {
+    // Real output arrives in arbitrarily sized pieces; a per-chunk test would
+    // miss a marker that straddles the boundary.
+    await fakeAgent('printf "bwrap: loopback: Failed RTM_"\nsleep 0.1\nprintf "NEWADDR denied\\n"\nexit 0')
+    await invoke('ai:code-agent:run', { path: dir, task: 't' })
+    await settle()
+
+    expect((await invoke<{ hint: unknown }>('ai:code-agent:status')).hint).not.toBeNull()
+    await fakeAgent('echo "LINHA_UM"\necho "LINHA_DOIS"\nexit 0')
+  })
+
   it('keeps only the tail of a chatty agent', async () => {
     // ~1000 lines x ~15 chars comfortably overruns the 8000-char cap; 400 did
     // not, and the test passed for the wrong reason.
-    await fakeAider('i=0\nwhile [ $i -lt 1000 ]; do echo "enchimento-$i"; i=$((i+1)); done')
+    await fakeAgent('i=0\nwhile [ $i -lt 1000 ]; do echo "enchimento-$i"; i=$((i+1)); done')
 
-    await invoke('ai:code-agent:run', { path: dir, task: 't', agent: 'aider' })
+    await invoke('ai:code-agent:run', { path: dir, task: 't' })
     await settle()
 
     // An unbounded buffer of a long agent run is a leak that grows for as long
@@ -942,14 +1075,12 @@ describe('the guide is given to the agent', () => {
 
   beforeAll(async () => {
     binDir = await mkdtemp(join(tmpdir(), 'guide-bin-'))
-    // PATH replaced, not prepended: the real aider/codex are installed on a dev
-    // machine and the handler runs whatever it finds.
+    // PATH replaced, not prepended: the real codex is installed on a dev machine
+    // and the handler runs whatever it finds.
     process.env.PATH = binDir
-    for (const name of ['aider', 'codex']) {
-      // `cat` echoes stdin: codex's prompt arrives there (via `-`), not in argv.
-      // With aider stdin is closed, so cat reads EOF and prints nothing.
-      await writeFile(join(binDir, name), '#!/bin/sh\necho "ARGV: $@"\ncat\n', { mode: 0o755 })
-    }
+    // `cat` echoes stdin, which is where codex's prompt arrives (via `-`), not
+    // in argv — so the assertions below can see the prompt the handler built.
+    await writeFile(join(binDir, 'codex'), `#!/bin/sh\necho "ARGV: $@"\n${CAT}\n`, { mode: 0o755 })
 
     withGuide = await mkdtemp(join(tmpdir(), 'guide-yes-'))
     await writeFile(join(withGuide, 'GUIDE.md'), '# guia do projeto\n')
@@ -963,9 +1094,9 @@ describe('the guide is given to the agent', () => {
     await rm(without, { recursive: true, force: true })
   })
 
-  const argv = async (path: string, agent: 'aider' | 'codex'): Promise<string> => {
+  const argv = async (path: string): Promise<string> => {
     await invoke('ai:config:set', { baseUrl, apiKey: 'k', model: 'm' })
-    await invoke('ai:code-agent:run', { path, task: 'faça algo', agent })
+    await invoke('ai:code-agent:run', { path, task: 'faça algo' })
     for (let i = 0; i < 100; i++) {
       const s = await invoke<{ running: boolean; log: string }>('ai:code-agent:status')
       if (!s.running) return s.log
@@ -978,15 +1109,35 @@ describe('the guide is given to the agent', () => {
     await invoke('ai:code-agent:stop')
   })
 
-  it('gives aider the guide as a read-only file', async () => {
-    expect(await argv(withGuide, 'aider')).toContain('--read GUIDE.md')
-  })
-
   it('asks codex to read it, since codex exec has no --read', async () => {
-    const log = await argv(withGuide, 'codex')
+    const log = await argv(withGuide)
 
     expect(log).toMatch(/leia o GUIDE\.md/i)
     expect(log).toContain('faça algo') // the task itself still gets through
+  })
+
+  it('names pinned files to codex relatively, as the sentence promises', async () => {
+    await writeFile(join(withGuide, 'alvo.ts'), 'export const x = 1\n')
+    await invoke('ai:config:set', { baseUrl, apiKey: 'k', model: 'm' })
+    await invoke('ai:code-agent:run', {
+      path: withGuide,
+      task: 'faça algo',
+      files: ['alvo.ts']
+    })
+    for (let i = 0; i < 100; i++) {
+      const s = await invoke<{ running: boolean; log: string }>('ai:code-agent:status')
+      if (!s.running) {
+        // `files` reaches buildAgentCommand absolute (confineToRoot resolves
+        // it), so joining it raw said "caminhos relativos à raiz" and then gave
+        // an absolute path — contradicting itself and leaking the machine's home
+        // directory into the model's context.
+        expect(s.log).toContain('caminhos relativos à raiz): alvo.ts')
+        expect(s.log).not.toContain(`${withGuide}/alvo.ts`)
+        return
+      }
+      await new Promise((r) => setTimeout(r, 20))
+    }
+    throw new Error('the agent never exited')
   })
 
   it('does NOT hand our guide to a repo that has none', async () => {
@@ -994,11 +1145,11 @@ describe('the guide is given to the agent', () => {
     // points, which may be any repo on the machine. Briefing it on Sagyou's
     // rules while it edits someone else's code is worse than briefing it on
     // nothing.
-    expect(await argv(without, 'aider')).not.toContain('--read')
+    expect(await argv(without)).not.toContain('leia o')
   })
 
   it('leaves the codex prompt alone when the repo has no guide', async () => {
-    const log = await argv(without, 'codex')
+    const log = await argv(without)
 
     expect(log).not.toMatch(/leia o GUIDE\.md/i)
     expect(log).toContain('faça algo')
@@ -1008,9 +1159,9 @@ describe('the guide is given to the agent', () => {
     // The agent's cwd is the repo, so 'GUIDE.md' resolves there. An absolute
     // path would work here and be wrong everywhere else — and would put the
     // user's directory layout into the agent's prompt.
-    const log = await argv(withGuide, 'aider')
+    const log = await argv(withGuide)
 
-    expect(log).toContain('--read GUIDE.md')
-    expect(log).not.toContain(withGuide) // no absolute path in the argv
+    expect(log).toContain('leia o GUIDE.md')
+    expect(log).not.toContain(withGuide) // no absolute path in the prompt
   })
 })

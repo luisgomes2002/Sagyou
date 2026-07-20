@@ -97,9 +97,7 @@ interface UsageSummary {
 }
 
 /** A page fetched for the assistant, or why it wasn't. */
-type WebFetchResult =
-  | { content: string; url: string; truncated: boolean }
-  | { error: string }
+type WebFetchResult = { content: string; url: string; truncated: boolean } | { error: string }
 
 /** A user-written prompt template for Gerar Tasks. */
 interface PromptTemplate {
@@ -144,6 +142,18 @@ interface AIStoredMessage {
   imageIds?: string[]
 }
 
+/**
+ * A recognised environment failure that left the agent reporting success while
+ * changing nothing, paired with the fix. Surfaced in the panel rather than only
+ * in the log, which sits behind a toggle.
+ */
+interface AgentHint {
+  title: string
+  detail: string
+  /** A shell command that fixes it, for the user to run themselves. */
+  command?: string
+}
+
 interface CodeAgentDiff {
   /** Unified diff. Empty means the agent changed nothing. */
   patch: string
@@ -153,6 +163,28 @@ interface CodeAgentDiff {
   omittedNewFiles: string[]
   /** Set when no diff could be produced (not a repo, base gone, git failed). */
   error?: string
+}
+
+/** A finished code-agent run, as listed in the run picker. */
+interface AgentRunMeta {
+  id: string
+  /** The chat that started it. Null for a run with no chat behind it. */
+  convId: string | null
+  /** codex is the only agent. Kept on the row so the picker can state it. */
+  agent: 'codex'
+  dir: string
+  task: string
+  startedAt: number
+  endedAt: number
+  exitCode: number
+  fileCount: number
+}
+
+/** An archived run: metadata plus the output frozen when the agent exited. */
+interface AgentRunSnapshot extends AgentRunMeta {
+  log: string
+  /** Null when the run had no diff to take (not a git repo). */
+  diff: CodeAgentDiff | null
 }
 
 interface AIConversationMeta {
@@ -187,10 +219,20 @@ declare global {
       }
       backup: {
         export: (backup: unknown) => Promise<{ success: boolean; cancelled?: boolean }>
-        import: () => Promise<{ success: boolean; cancelled?: boolean; data?: unknown; error?: string }>
+        import: () => Promise<{
+          success: boolean
+          cancelled?: boolean
+          data?: unknown
+          error?: string
+        }>
       }
       ai: {
-        import: () => Promise<{ success: boolean; cancelled?: boolean; data?: unknown; error?: string }>
+        import: () => Promise<{
+          success: boolean
+          cancelled?: boolean
+          data?: unknown
+          error?: string
+        }>
         config: {
           get: () => Promise<AIConfig>
           set: (config: AIConfig) => Promise<void>
@@ -223,16 +265,31 @@ declare global {
           run: (request: {
             path: string
             task: string
-            agent?: 'aider' | 'codex'
             files?: string[]
+            /** The chat that asked, so the run can be reopened from it later. */
+            convId?: string
           }) => Promise<{ success: boolean; agent?: string; dir?: string; error?: string }>
           stop: () => Promise<void>
-          /** `log` is the buffered output, so a remounted panel can catch up. */
-          status: () => Promise<{ running: boolean; log: string }>
+          /**
+           * `log` is the buffered output, so a remounted panel can catch up.
+           * `hint` is a recognised environment failure (with its fix) for a run
+           * that reported success while doing nothing — null when there wasn't one.
+           */
+          status: () => Promise<{ running: boolean; log: string; hint: AgentHint | null }>
           /** What the last run changed, measured from a base taken before it started. */
           diff: () => Promise<CodeAgentDiff>
+          /** Past runs of one conversation, newest first. Metadata only. */
+          runs: (convId: string) => Promise<AgentRunMeta[]>
+          /**
+           * One archived run. Its diff is a snapshot taken when the agent
+           * exited — never re-derived, or the user's later edits would be shown
+           * as the agent's work.
+           */
+          runGet: (id: string) => Promise<AgentRunSnapshot | null>
           onOutput: (cb: (chunk: string) => void) => () => void
           onExit: (cb: (code: number) => void) => () => void
+          /** A finished run has been archived and can now be listed. */
+          onArchived: (cb: (id: string) => void) => () => void
         }
         pickDirectory: () => Promise<{ path: string | null }>
         code: {
@@ -288,14 +345,23 @@ declare global {
         }
       }
       files: {
-        upload: () => Promise<{ id: string; name: string; ext: string; size: number; createdAt: string }[]>
+        upload: () => Promise<
+          { id: string; name: string; ext: string; size: number; createdAt: string }[]
+        >
         delete: (id: string, ext: string) => Promise<{ success: boolean }>
         open: (id: string, ext: string) => Promise<{ success: boolean; error?: string }>
         openInBrowser: (id: string, ext: string) => Promise<{ success: boolean; error?: string }>
-        download: (id: string, name: string, ext: string) => Promise<{ success: boolean; cancelled?: boolean; error?: string }>
+        download: (
+          id: string,
+          name: string,
+          ext: string
+        ) => Promise<{ success: boolean; cancelled?: boolean; error?: string }>
       }
       excel: {
-        export: (buffer: ArrayBuffer, filename: string) => Promise<{ success: boolean; cancelled?: boolean; error?: string }>
+        export: (
+          buffer: ArrayBuffer,
+          filename: string
+        ) => Promise<{ success: boolean; cancelled?: boolean; error?: string }>
       }
     }
   }

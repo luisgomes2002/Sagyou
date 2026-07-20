@@ -145,7 +145,7 @@ export function GoalView({ projects }: Props) {
               </svg>
             </div>
             <div className="text-center">
-              <p className="text-[#e2e8f0] font-semibold mb-1.5">Nenhuma meta criada</p>
+              <p className="text-[#e2e8f0] font-semibold mb-1.5">voce ainda nao criaou nenhhuma meta</p>
               <p className="text-sm text-[#8892a4] max-w-xs leading-relaxed">
                 Crie metas e registre cada progresso com data e descrição — livros lidos, km corridos, horas estudadas.
               </p>

@@ -1,10 +1,10 @@
-// The live output of the external code agent (aider / codex), rendered as a
+// The live output of the external code agent (codex), rendered as a
 // terminal rather than a <pre>: the log is a pipe, so the ANSI the agent emits
 // is literal bytes that parseAnsi turns into colour (and strips the cursor codes
 // a <div> would otherwise show as garbage). Styled to read like a CLI session —
 // dark inset, monospace, a title bar — because that's what the output *is*.
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { parseAnsi } from '../utils/ansi'
 
 export function AgentTerminal({
@@ -19,6 +19,7 @@ export function AgentTerminal({
   // the chat transcript uses, so reading back through the log isn't yanked down
   // by every new chunk.
   const stick = useRef(true)
+  const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     const el = bodyRef.current
@@ -33,6 +34,15 @@ export function AgentTerminal({
 
   const segments = parseAnsi(log)
 
+  // Copy what's on screen, not the raw pipe: the segments are already ANSI-free
+  // and have \r / erase-in-line resolved, so pasting into an issue gives the
+  // rendered session instead of a string full of escape bytes.
+  const handleCopy = (): void => {
+    navigator.clipboard.writeText(segments.map((s) => s.text).join(''))
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
   return (
     <div className="mx-6 mb-2 rounded-lg overflow-hidden border border-[#1c2030] bg-[#05070e] shadow-inner">
       {/* Terminal chrome: traffic lights + a mono label, like a CLI window. */}
@@ -43,6 +53,43 @@ export function AgentTerminal({
         <span className="ml-2 text-[10px] font-mono text-[#6b7280] tracking-wide">
           agent — {running ? 'running' : 'idle'}
         </span>
+        <button
+          onClick={handleCopy}
+          disabled={!log}
+          title="Copiar log"
+          className="ml-auto flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono text-[#6b7280] hover:text-[#c9d1e3] hover:bg-[#1c2030] disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-[#6b7280] transition-colors"
+        >
+          {copied ? (
+            <>
+              <svg
+                width="11"
+                height="11"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+              >
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              copiado
+            </>
+          ) : (
+            <>
+              <svg
+                width="11"
+                height="11"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+              copiar
+            </>
+          )}
+        </button>
       </div>
       <div
         ref={bodyRef}

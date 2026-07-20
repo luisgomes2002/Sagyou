@@ -1,6 +1,6 @@
 # GUIDE.md — contexto para agentes de código
 
-Orientação para um agente (Aider, Codex, …) que vai **mexer** neste projeto.
+Orientação para um agente (Codex, …) que vai **mexer** neste projeto.
 A ideia é que você não precise descobrir tudo sozinho antes da primeira linha.
 
 > **`CLAUDE.md` é a fonte da verdade sobre arquitetura.** Este arquivo é o mapa;
@@ -181,9 +181,11 @@ isso. Sessão efêmera sem cookie, sandbox, sem node. A orquestração do
 - Os testes do main usam **coisas reais** — servidor HTTP local, repositório git
   de verdade, processo filho de verdade. Prefira isso a stub: quase todo bug
   desta área é um detalhe de como a coisa real se comporta.
-- ⚠️ Testando o agente de código: `aider` e `codex` podem estar **instalados de
-  verdade** na máquina, e o handler roda o que achar no PATH. **Substitua** o
-  `PATH` por um diretório só com o seu stub — não basta pôr na frente.
+- ⚠️ Testando o agente de código: o `codex` pode estar **instalado de verdade** na
+  máquina, e o handler roda o que achar no PATH. **Substitua** o `PATH` por um
+  diretório só com o seu stub — não basta pôr na frente. E o stub não pode chamar
+  nada por nome (o PATH só tem ele): resolva helpers como `cat` para caminho
+  absoluto antes de estreitar o PATH.
 - `vitest.config.ts` fixa `TZ=America/Sao_Paulo`: bug de data local não pode se
   esconder atrás de um teste rodando em UTC.
 
@@ -201,11 +203,16 @@ Não "simplifique" nenhuma destas sem ler o comentário que as acompanha:
   sobrevive à `AIView` ser desmontada. Não a mova para dentro do componente.
 - **O diff do agente captura a base *antes* de rodar** (`captureBase`) — depois
   não dá para separar o que o agente fez do que o usuário já tinha em andamento.
-- **O agente é spawnado headless**: sem stdin (`stdio: ['ignore', …]`) e o aider com
-  `--no-fancy-input --no-pretty --no-check-update`. Sem isso, no Windows o
-  prompt_toolkit do aider morre ("No Windows console found") e ele passa a
-  *reportar edições como aplicadas sem escrever os arquivos*. Não reverta. O
-  permissão de escrita do codex é **por plataforma** (`sandboxArgs`): no Unix
+- **Runs antigas são snapshots congelados** (`agent-runs.ts`): o log e o diff são
+  gravados uma vez, quando o agente sai, em `userData/agent-runs/` (payload em
+  arquivo, só ids no índice — `ai-conversations.json` é reescrito inteiro a cada
+  autosave). ⚠️ **Nunca recalcule o diff de uma run arquivada**: mediria a árvore
+  de hoje e apresentaria as edições posteriores do usuário como trabalho do
+  agente. Por isso `CodeDiff` recebe `onRefresh` opcional — uma run passada não
+  tem o que recarregar.
+- **O agente é spawnado headless**: stdin é um pipe só para entregar o prompt e é
+  fechado em seguida, nunca um terminal. A permissão de escrita do codex é
+  **por plataforma** (`sandboxArgs`): no Unix
   `--sandbox workspace-write` (sandbox de SO real — Seatbelt/Landlock); no
   **Windows** `--dangerously-bypass-approvals-and-sandbox`, porque lá não há
   backend de sandbox e `workspace-write` cai pra read-only (codex lê, diz que
@@ -215,22 +222,57 @@ Não "simplifique" nenhuma destas sem ler o comentário que as acompanha:
   a rejeita (exit 2), e não tem `--full-auto`. **O prompt do
   codex vai por stdin (`codex exec … -`), nunca como argv**: no Windows ele roda
   via `cmd.exe` (`shell: true`), que quebra um prompt multi-palavra em vários args
-  (`Antes de …` → `unexpected argument 'de'`). É o equivalente do `--message-file`
-  do aider. `buildAgentCommand` devolve `stdinData`; o handler abre o stdin só
-  quando há dado (o aider mantém fechado).
-- **I/O do filho forçada a UTF-8**: env com `PYTHONUTF8=1`/`PYTHONIOENCODING=utf-8`
-  (senão, no Windows cp1252, o aider dá `UnicodeDecodeError` → "does not support
-  pretty output", e acentos viram mojibake); e `stdout/stderr.setEncoding('utf8')`
-  em vez de `d.toString()` por chunk, pra não partir char multi-byte na fronteira.
+  (`Antes de …` → `unexpected argument 'de'`). `buildAgentCommand` devolve
+  `stdinData`; o handler abre o stdin só quando há dado.
+- ⚠️ **O agente não commita nada** — o painel de Mudanças existe pra o *usuário*
+  revisar e commitar. Escrever no histórico git dele não é nosso papel. O
+  `captureBase` roda antes do spawn e o diff vai da base à worktree, então nada se
+  perde deixando a árvore suja (que é o que o `codex exec` faz).
+- **I/O do filho forçada a UTF-8**: `stdout/stderr.setEncoding('utf8')` em vez de
+  `d.toString()` por chunk, pra não partir char multi-byte na fronteira entre dois
+  eventos `data` (vira glifo de replacement).
 - **O log é renderizado como terminal** (`AgentTerminal.tsx` + `utils/ansi.ts`): é um
-  pipe, então `parseAnsi` colore o SGR e **remove** os códigos de cursor/erase/OSC
-  (senão apareceriam como lixo) e colapsa overwrite de `\r`. Puro e testado
-  (`utils/ansi.test.ts`); o componente não. Aider ainda é `--no-pretty`, então o ANSI
-  serve mais ao codex.
-- **`rodar_agente_codigo` aceita `arquivos` (caminhos relativos)** → viram `--file`
-  do aider + `--map-tokens 0`. É o que o torna rápido: sem eles, o aider descobre
-  o arquivo pelo repo map (lento, e string de UI é invisível lá). Main confina
-  cada caminho à raiz (`confineToRoot`) e descarta os inválidos.
+  pipe, então `parseAnsi` colore o SGR, **remove** cursor/OSC (senão viram lixo) e
+  **aplica** `\r` e erase-in-line (`\x1b[K`) por linha — o parser monta linha a
+  linha, não faz pré-passe no texto cru: com os escapes ainda no meio, um redraw
+  que reemite a cor (`\r\x1b[32mok`) contava a cor como texto e um `\x1b[2K` era
+  descartado em vez de aplicado, deixando o texto apagado na tela. Puro e testado
+  (`utils/ansi.test.ts`); o componente não.
+- **O painel lidera pelo diff, não pelo log**: "Mudanças" fica visível *durante* a
+  execução (poll de 2s; o diff é derivado em main de uma base anterior ao spawn,
+  então repetir é barato) e o log cru vai pra trás de "Log completo". Diff vazio
+  com agente rodando diz "ainda não", não "não alterou nada" — são fatos opostos.
+- **`rodar_agente_codigo` aceita `arquivos` (caminhos relativos)** → são nomeados no
+  prompt do codex (ele não tem `--file`), pra focar a busca dele. Main confina cada
+  caminho à raiz (`confineToRoot`) e descarta os inválidos.
+- **O run abre com um banner dizendo qual caminho pegou**: quantos arquivos foram
+  fixados (e quais), ou que nenhum foi e o agente vai descobrir; mais os caminhos
+  descartados e o fato de serem a causa do fallback. Antes os dois caminhos eram
+  indistinguíveis no painel, e `arquivos` é opcional — não dava pra saber se o
+  modelo mandou. O banner também **nomeia o modelo**: o codex usa o login e o
+  backend dele (não recebe `--model`; o env `OPENAI_*` não o redireciona), então a
+  config de IA do app **não tem influência nenhuma** sobre um run de código — e
+  ninguém deve ler o painel como se tivesse. O run fecha com
+  `[sagyou] duração: N.Ns` (via `emit`, então transmite e
+  fica no buffer; o relógio começa logo antes do `spawn`) — antes o painel não
+  tinha relógio nenhum, só o código de saída.
+- ⚠️ **No Linux o `--sandbox workspace-write` do codex pode falhar inteiro e sair
+  com código 0**: o sandbox usa bubblewrap, que precisa de user namespaces sem
+  privilégio, e o Ubuntu 23.10+ bloqueia isso via AppArmor
+  (`kernel.apparmor_restrict_unprivileged_userns=1`). Sintoma: `bwrap: loopback:
+  Failed RTM_NEWADDR: Operation not permitted`, nada lido, nada escrito, exit 0 —
+  irmã Linux da falha do Windows. Quem distingue é o diff, não o código de saída.
+  **É detectado e explicado** (`detectAgentHint`): a saída do filho passa por uma
+  janela rolante de 4000 chars (própria, não o `codeAgentLog`, que é só a cauda — e
+  esse aviso é a primeira coisa que o codex imprime), e o resultado vai pro renderer
+  via `ai:code-agent:status` (`hint`), **não pelo evento de saída**, que só carrega
+  o código — e aqui ele é 0. O `AIView` mostra um card acima do diff (explica por que
+  o diff está vazio) e a dica também entra no log. ⚠️ O card **oferece o comando para
+  copiar, nunca para executar** (precisa de sudo e afrouxa o hardening do kernel), e
+  o app não troca de sandbox nem de agente por conta própria.
+- **Arquivos fixados são citados ao codex em caminho relativo** (`relative(dir, f)`):
+  `files` chega absoluto do `confineToRoot`, então o prompt dizia "caminhos
+  relativos à raiz" e entregava um absoluto — além de vazar o home da máquina.
 
 ## Antes de terminar
 
