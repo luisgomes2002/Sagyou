@@ -20,6 +20,7 @@ import { getOpenAIClient, requestOptions } from './openai-client'
 import { confineToRoot, walkFiles } from './code-files'
 import { searchConversations } from './conversation-search'
 import { fetchWeb } from './web-fetch'
+import { renderWeb } from './web-render'
 import { captureBase, diffSince, type AgentBase } from './code-diff'
 import { decodeDataUrl, mimeForExt, isImageFileName } from './chat-images'
 import {
@@ -139,8 +140,9 @@ function buildAgentCommand(
   agent: 'aider' | 'codex',
   task: string,
   cfg: AIConfig,
-  dir: string
-): { cmd: string; args: string[]; taskFile: string | null } {
+  dir: string,
+  files: string[]
+): { cmd: string; args: string[]; taskFile: string | null; stdinData: string | null } {
   // The hook: hand the repo's own guide to the agent before it touches code.
   // Relative to the agent's cwd, which is `dir` — so the path is the same
   // string for every repo and nothing leaks about the machine's layout.
@@ -152,10 +154,51 @@ function buildAgentCommand(
     // It has no --read: it finds AGENTS.md by itself (and truncates a project
     // doc past its budget, silently). So the guide is asked for in the prompt —
     // the one channel codex exec has — and only when the repo actually has one.
+    // Codex has no --file either; when the caller pinned files, naming them in
+    // the prompt spares codex the same blind discovery.
+    const focus = files.length
+      ? `Edite estes arquivos (caminhos relativos à raiz): ${files.join(', ')}.\n\n`
+      : ''
     const prompt = guide
-      ? `Antes de alterar qualquer código, leia o ${guide} deste repositório e siga as regras dele.\n\n${task}`
-      : task
-    return { cmd: 'codex', args: ['exec', prompt], taskFile: null }
+      ? `Antes de alterar qualquer código, leia o ${guide} deste repositório e siga as regras dele.\n\n${focus}${task}`
+      : `${focus}${task}`
+    // `codex exec` is already non-interactive — it never prompts for approval, so
+    // there is no --ask-for-approval here (that flag is top-level only and `exec`
+    // rejects it with exit 2). What it still needs is write permission, and how it
+    // gets it is platform-split:
+    //   • Unix — `--sandbox workspace-write`: codex's sandbox is OS-level (Seatbelt
+    //     on macOS, Landlock on Linux), so this genuinely confines writes to the
+    //     workspace while letting it edit the project (the whole point). read-only
+    //     would let it plan edits it can never apply; danger-full-access is wider.
+    //   • Windows — `--dangerously-bypass-approvals-and-sandbox`: Windows has no
+    //     sandbox backend, so `--sandbox workspace-write` is silently downgraded to
+    //     read-only — codex then reads the code, reports success, and writes nothing
+    //     (verified in the wild and in a reproduction). `exec` exposes no --full-auto
+    //     or approval flag, only -s and this bypass, so it is the *only* way codex
+    //     can write on Windows. This is not "safe vs unsafe": Windows offers no OS
+    //     confinement either way, and the app already gates rodar_agente_codigo
+    //     behind explicit user approval before spawning. So the real choice is
+    //     "writes" vs "can't write". aider is unaffected — it writes fine on Windows.
+    const sandboxArgs =
+      process.platform === 'win32'
+        ? ['--dangerously-bypass-approvals-and-sandbox']
+        : ['--sandbox', 'workspace-write']
+    return {
+      cmd: 'codex',
+      args: [
+        'exec',
+        ...sandboxArgs,
+        // Read the prompt from stdin (`-`), never as a command-line argument. On
+        // Windows codex is a .cmd, so it runs through cmd.exe (shell: true), which
+        // word-splits a bare multi-word prompt into separate args ("Antes de …" →
+        // codex sees `de` as an unexpected argument). This is codex's counterpart
+        // to aider's --message-file: untrusted, multi-line text stays off the
+        // command line entirely. `stdinData` below is what gets piped in.
+        '-'
+      ],
+      taskFile: null,
+      stdinData: prompt
+    }
   }
   // Aider (default). The task goes in a temp file (--message-file) so untrusted
   // text never lands on the command line (which may be shell-interpreted on
@@ -168,6 +211,25 @@ function buildAgentCommand(
       '--model',
       `openai/${cfg.model}`,
       '--yes-always',
+      // We spawn aider with piped stdio and no console/TTY. On Windows its input
+      // layer (prompt_toolkit) then fails at startup — "Can't initialize prompt
+      // toolkit: No Windows console found" — which leaves aider's confirm/apply
+      // flow in a degraded state where it reports edits as applied but never
+      // writes the files. `--no-fancy-input` skips prompt_toolkit entirely and
+      // `--no-pretty` drops the terminal control codes that a piped, console-
+      // less stdout can't render. Both are the correct shape for a headless,
+      // non-interactive spawn; `--yes-always` already answers every prompt.
+      '--no-fancy-input',
+      '--no-pretty',
+      // No update check on a headless run: it only adds latency and noise to the
+      // panel, and can print an interactive-looking notice.
+      '--no-check-update',
+      // When the caller pinned the files to edit, hand them straight to aider and
+      // switch the repo map off (`--map-tokens 0`): there's nothing left to
+      // discover, and building/ranking a map of the whole tree every run is the
+      // slow part — a UI string isn't even visible in it. Without pinned files we
+      // keep the map so aider can still find things on its own.
+      ...(files.length ? ['--map-tokens', '0', ...files.flatMap((f) => ['--file', f])] : []),
       // Read-only, so aider keeps it in context but never edits it. This is
       // belt and braces with the repo's own .aider.conf.yml (which only applies
       // when aider is launched from the repo): the flag is what makes a guide
@@ -177,7 +239,9 @@ function buildAgentCommand(
       '--message-file',
       taskFile
     ],
-    taskFile
+    taskFile,
+    // Aider reads its task from --message-file, not stdin; stdin stays closed.
+    stdinData: null
   }
 }
 
@@ -738,7 +802,10 @@ app.whenReady().then(() => {
   // commands). Output is streamed back via 'ai:code-agent:output'.
   ipcMain.handle(
     'ai:code-agent:run',
-    async (_, request: { path: string; task: string; agent?: 'aider' | 'codex' }) => {
+    async (
+      _,
+      request: { path: string; task: string; agent?: 'aider' | 'codex'; files?: string[] }
+    ) => {
       if (codeAgentProc) return { success: false, error: 'Já existe um agente de código rodando' }
       const dir = request.path
       if (!dir || !existsSync(dir) || !statSync(dir).isDirectory()) {
@@ -746,6 +813,17 @@ app.whenReady().then(() => {
       }
       const task = typeof request.task === 'string' ? request.task.trim() : ''
       if (!task) return { success: false, error: 'Tarefa vazia' }
+      // Files the caller pinned so the agent skips discovery. Confine each to the
+      // root (same barrier as the read tools — a path is the model's, so it may
+      // be `../../etc`), and drop anything that escapes or doesn't exist rather
+      // than handing the agent a bogus target. An empty/all-invalid list falls
+      // back to the discovery path, so this can only speed things up, never break.
+      const files = Array.isArray(request.files)
+        ? request.files
+            .filter((f) => typeof f === 'string' && f.trim() !== '')
+            .map((f) => confineToRoot(dir, f))
+            .filter((f): f is string => f !== null && existsSync(f) && statSync(f).isFile())
+        : []
       const cfg = loadAIConfig()
       if (!cfg.baseUrl || !cfg.model) {
         return { success: false, error: 'Configuração de IA incompleta (Base URL / Model)', status: 400 }
@@ -760,7 +838,7 @@ app.whenReady().then(() => {
       // Null here just means "no diff for this run" (not a git repo); it must
       // never stop the run, which is what the user actually asked for.
       codeAgentBase = await captureBase(dir)
-      const { cmd, args, taskFile } = buildAgentCommand(agent, task, cfg, dir)
+      const { cmd, args, taskFile, stdinData } = buildAgentCommand(agent, task, cfg, dir, files)
 
       // Resolve to a real .exe when possible and spawn it directly (safe, no
       // shell). Fall back to a shell only on Windows for .cmd/.bat wrappers.
@@ -794,11 +872,30 @@ app.whenReady().then(() => {
             child = spawn(spawnCmd, args, {
               cwd: dir,
               shell: useShell,
+              // stdin: a pipe only when we have a prompt to feed (codex reads it
+              // from stdin via `-`, keeping the multi-word prompt off a shell-
+              // parsed command line), otherwise 'ignore'. A closed stdin turns any
+              // stray confirmation into an immediate EOF instead of a process that
+              // hangs "running" forever — aider needs no input (--yes-always /
+              // --message-file), so it stays closed.
+              stdio: [stdinData !== null ? 'pipe' : 'ignore', 'pipe', 'pipe'],
               env: {
                 ...process.env,
                 OPENAI_API_BASE: cfg.baseUrl,
                 OPENAI_BASE_URL: cfg.baseUrl,
-                OPENAI_API_KEY: cfg.apiKey || 'not-needed'
+                OPENAI_API_KEY: cfg.apiKey || 'not-needed',
+                // Force UTF-8 I/O in the child. aider is Python, and on a Windows
+                // console whose codepage is cp1252 it hits a UnicodeDecodeError
+                // when it prints box-drawing/emoji/accented text — the "Terminal
+                // does not support pretty output" warning is that failure. It also
+                // fed our panel mojibake for Portuguese accents (`não` → `nÃ£o`),
+                // since the child was emitting cp1252 while we decode UTF-8.
+                // PYTHONUTF8=1 puts CPython in UTF-8 mode regardless of the
+                // console codepage; PYTHONIOENCODING is the belt-and-braces for
+                // any tool that reads it directly. No-op for codex (a native
+                // binary that already speaks UTF-8), harmless to set for both.
+                PYTHONUTF8: '1',
+                PYTHONIOENCODING: 'utf-8'
               }
             })
           } catch (e) {
@@ -807,8 +904,26 @@ app.whenReady().then(() => {
             return
           }
           codeAgentProc = child
-          child.stdout?.on('data', (d: Buffer) => emit(d.toString()))
-          child.stderr?.on('data', (d: Buffer) => emit(d.toString()))
+          // Feed the prompt over stdin (codex `-`), then close it so the agent
+          // sees EOF and starts. Guard the write: a spawn failure leaves stdin
+          // unwritable, and that must surface as the 'error' event below, not an
+          // unhandled throw here.
+          if (stdinData !== null && child.stdin) {
+            child.stdin.on('error', () => {
+              /* the 'error'/'close' handlers below report the real failure */
+            })
+            child.stdin.write(stdinData)
+            child.stdin.end()
+          }
+          // Decode as UTF-8 through the stream, not with a per-chunk d.toString():
+          // an accented char (or a box-drawing glyph) whose bytes straddle two
+          // 'data' events would otherwise be split mid-character and land as a
+          // replacement glyph. setEncoding buffers the partial byte and joins it
+          // to the next chunk.
+          child.stdout?.setEncoding('utf8')
+          child.stderr?.setEncoding('utf8')
+          child.stdout?.on('data', (d: string) => emit(d))
+          child.stderr?.on('data', (d: string) => emit(d))
           // 'spawn' fires only when the process actually started.
           child.once('spawn', () => {
             if (!settled) {
@@ -884,22 +999,77 @@ app.whenReady().then(() => {
 
   // --- Read-only code access (for the assistant to analyze source) ---
   // Every path is confined to `root`; nothing outside it can be read.
-  ipcMain.handle('ai:code:list', async (_, root: string, sub?: string) => {
-    if (!root || !existsSync(root)) return { error: 'Diretório inválido' }
-    return walkFiles(root, sub || '.', 400)
-  })
+  ipcMain.handle(
+    'ai:code:list',
+    async (_, root: string, sub?: string, offset?: number, limit?: number) => {
+      if (!root || !existsSync(root)) return { error: 'Diretório inválido' }
+      // A listing is resent to the model on every later step, and a project with
+      // several roots fans out — hundreds of paths per step. So walk up to a
+      // ceiling to know a real `total`, then return one CODE_LIST_PAGE window;
+      // `limit` can raise it to CODE_LIST_MAX (the old flat cap) and `offset`
+      // pages through the rest. Same shape as ai:code:read.
+      const CODE_LIST_WALK = 2000
+      const CODE_LIST_PAGE = 200
+      const CODE_LIST_MAX = 400
+      const { files, truncated: walkTruncated } = await walkFiles(root, sub || '.', CODE_LIST_WALK)
+      const total = files.length
+      let page = CODE_LIST_PAGE
+      if (typeof limit === 'number' && Number.isFinite(limit) && limit >= 1) {
+        page = Math.min(Math.floor(limit), CODE_LIST_MAX)
+      }
+      let start = 0
+      if (typeof offset === 'number' && Number.isFinite(offset) && offset > 0) {
+        start = Math.min(Math.floor(offset), total)
+      }
+      const slice = files.slice(start, start + page)
+      const end = start + slice.length
+      const morePages = end < total
+      return {
+        files: slice,
+        total,
+        offset: start,
+        // True when there is more than this page shows — either more to page
+        // through (nextOffset) or the walk itself hit its ceiling (narrow with
+        // subpasta). Mirrors ler_arquivo's boolean "there's more".
+        truncated: morePages || walkTruncated,
+        ...(morePages ? { nextOffset: end } : {})
+      }
+    }
+  )
 
-  ipcMain.handle('ai:code:read', (_, root: string, rel: string) => {
+  ipcMain.handle('ai:code:read', (_, root: string, rel: string, offset?: number, maxChars?: number) => {
     const full = confineToRoot(root, rel)
     if (!full || !existsSync(full) || !statSync(full).isFile()) {
       return { error: 'Arquivo inválido ou fora do projeto' }
     }
     try {
-      let content = readFileSync(full, 'utf-8')
-      const MAX = 60000
-      const truncated = content.length > MAX
-      if (truncated) content = content.slice(0, MAX)
-      return { content, truncated }
+      const content = readFileSync(full, 'utf-8')
+      const total = content.length
+      // A file result is resent to the model on every later step, so a 60k-char
+      // file (~15k tokens) was a per-step tax for a question that usually needs
+      // a fraction of it. Default to one CODE_READ_PAGE window; `maxChars` can
+      // raise it up to CODE_READ_MAX, and `offset` pages through the rest.
+      const CODE_READ_PAGE = 20000
+      const CODE_READ_MAX = 60000
+      let page = CODE_READ_PAGE
+      if (typeof maxChars === 'number' && Number.isFinite(maxChars) && maxChars >= 1) {
+        page = Math.min(Math.floor(maxChars), CODE_READ_MAX)
+      }
+      let start = 0
+      if (typeof offset === 'number' && Number.isFinite(offset) && offset > 0) {
+        start = Math.min(Math.floor(offset), total)
+      }
+      const slice = content.slice(start, start + page)
+      const end = start + slice.length
+      const truncated = end < total
+      return {
+        content: slice,
+        truncated,
+        offset: start,
+        total,
+        // Where a follow-up read should resume; absent once the file is exhausted.
+        ...(truncated ? { nextOffset: end } : {})
+      }
     } catch (e) {
       return { error: e instanceof Error ? e.message : 'Falha ao ler o arquivo' }
     }
@@ -937,8 +1107,12 @@ app.whenReady().then(() => {
   // Fetch a page for the assistant. The URL comes from the model, so it is
   // untrusted input — ./web-fetch does the vetting (http(s) only, no local or
   // private addresses, re-checked on every redirect), caps the read and bounds
-  // the wait.
-  ipcMain.handle('ai:web:fetch', (_, url: string) => fetchWeb(url))
+  // the wait. With `render`, ./web-render loads it in a headless browser instead
+  // (for SPA pages that need JS), applying the SAME policy to every request the
+  // page makes — see web-render.ts for the guard and its residual risks.
+  ipcMain.handle('ai:web:fetch', (_, url: string, render?: boolean) =>
+    render ? renderWeb(url) : fetchWeb(url)
+  )
 
   // Store a pasted image and hand back its id. The renderer has already
   // downscaled it; this checks the bytes are really an image before writing.

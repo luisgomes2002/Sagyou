@@ -1,11 +1,10 @@
 import { useMemo } from 'react'
 import {
   startOfWeek,
-  endOfWeek,
   subWeeks,
   addDays,
   parseISO,
-  isWithinInterval,
+  differenceInCalendarWeeks,
   format
 } from 'date-fns'
 import type { Project, Task, Sprint, Habit } from '../types'
@@ -359,22 +358,23 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
   const totalTime = useMemo(() => tasks.reduce((s, t) => s + (t.timeSpent ?? 0), 0), [tasks])
   const completionRate = tasks.length > 0 ? Math.round((doneTasks.length / tasks.length) * 100) : 0
 
-  // Tasks completed per week — last 8 weeks
+  // Tasks completed per week — last 8 weeks. Single pass: bucket each done task
+  // into its week by calendar-week distance from the earliest week's Monday,
+  // instead of re-scanning (and re-parsing) the whole list once per week.
   const weeklyData = useMemo(() => {
     const now = new Date()
-    return Array.from({ length: 8 }, (_, i) => {
-      const weekAnchor = subWeeks(now, 7 - i)
-      const start = startOfWeek(weekAnchor, { weekStartsOn: 1 })
-      const end = endOfWeek(weekAnchor, { weekStartsOn: 1 })
-      const count = doneTasks.filter((t) => {
-        try {
-          return isWithinInterval(parseISO(t.updatedAt), { start, end })
-        } catch {
-          return false
-        }
-      }).length
-      return { label: format(start, 'dd/MM'), count }
+    const weeks = Array.from({ length: 8 }, (_, i) => {
+      const start = startOfWeek(subWeeks(now, 7 - i), { weekStartsOn: 1 })
+      return { start, label: format(start, 'dd/MM'), count: 0 }
     })
+    const firstWeekStart = weeks[0].start
+    for (const t of doneTasks) {
+      const d = parseISO(t.updatedAt)
+      if (isNaN(d.getTime())) continue
+      const idx = differenceInCalendarWeeks(d, firstWeekStart, { weekStartsOn: 1 })
+      if (idx >= 0 && idx < 8) weeks[idx].count++
+    }
+    return weeks.map(({ label, count }) => ({ label, count }))
   }, [doneTasks])
 
   const maxWeekly = Math.max(...weeklyData.map((w) => w.count), 1)
@@ -426,14 +426,18 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
   const maxTag = Math.max(...tagData.map((t) => t.count), 1)
   const totalTagCount = tagData.reduce((s, t) => s + t.count, 0)
 
-  // Combined project view: active tasks + time tracked
+  // Combined project view: active tasks + time tracked. One pass over tasks
+  // builds both maps (time from every task, load from non-done ones) rather
+  // than scanning `tasks` and `activeTasks` separately.
   const projectCombined = useMemo(() => {
     const timeMap = new Map<string, number>()
+    const loadMap = new Map<string, number>()
     for (const t of tasks) {
       if (t.timeSpent) timeMap.set(t.projectId, (timeMap.get(t.projectId) ?? 0) + t.timeSpent)
+      if (!isDoneColumn(columnMap.get(t.columnId))) {
+        loadMap.set(t.projectId, (loadMap.get(t.projectId) ?? 0) + 1)
+      }
     }
-    const loadMap = new Map<string, number>()
-    for (const t of activeTasks) loadMap.set(t.projectId, (loadMap.get(t.projectId) ?? 0) + 1)
 
     const allIds = new Set([...timeMap.keys(), ...loadMap.keys()])
     return Array.from(allIds)
@@ -445,7 +449,7 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
       .filter((x): x is { project: Project; time: number; load: number } => !!x.project)
       .sort((a, b) => b.load - a.load || b.time - a.time)
       .slice(0, 6)
-  }, [tasks, activeTasks, projectMap])
+  }, [tasks, columnMap, projectMap])
 
   const maxLoad = Math.max(...projectCombined.map((p) => p.load), 1)
   const maxTime = Math.max(...projectCombined.map((p) => p.time), 1)
@@ -516,7 +520,7 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
               {dueDateData.list.map(({ task, project }) => {
                 const isOverdue = task.dueDate! < dueDateData.todayStr
                 return (
-                  <div key={task.id} className="flex items-center gap-3 px-4 py-2.5">
+                  <div key={task.id} className="cv-row flex items-center gap-3 px-4 py-2.5">
                     <div
                       className="w-1 self-stretch rounded-full shrink-0"
                       style={{ backgroundColor: isOverdue ? '#f87171' : '#facc15' }}
@@ -753,7 +757,7 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
             <SectionTitle>Hábitos — mês atual</SectionTitle>
             <div className="space-y-4">
               {habitSummary.map(({ habit, streak, rate, monthDone }) => (
-                <div key={habit.id}>
+                <div key={habit.id} className="cv-row">
                   <div className="flex items-center gap-3 mb-1.5">
                     <div
                       className="w-2 h-2 rounded-full shrink-0"

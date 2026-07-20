@@ -161,6 +161,14 @@ existe, com testes, e não deve ser afrouxado:
 - o parser (`new URL()`) é o único sanitizador — **não** acrescente limpeza de
   string na frente dele, e não decodifique entidades HTML.
 
+`main/web-render.ts` é o irmão que **executa JavaScript** (páginas SPA), via
+`ai:web:fetch` com `render`. Um navegador é uma superfície SSRF muito maior:
+ele carrega todo sub-recurso, e **nenhum** passa pela checagem de redirect do
+`web-fetch`. Por isso **toda requisição** (documento e sub-recursos) passa pela
+mesma política `checkUrl` via `session.webRequest.onBeforeRequest` — mantenha
+isso. Sessão efêmera sem cookie, sandbox, sem node. A orquestração do
+`BrowserWindow` **não roda no vitest** (precisa do Electron) — verifique no app.
+
 `main/code-files.ts` confina todo acesso a arquivo dentro da raiz escolhida
 (`confineToRoot`) — é a única barreira entre o assistente e o resto do disco.
 
@@ -193,6 +201,36 @@ Não "simplifique" nenhuma destas sem ler o comentário que as acompanha:
   sobrevive à `AIView` ser desmontada. Não a mova para dentro do componente.
 - **O diff do agente captura a base *antes* de rodar** (`captureBase`) — depois
   não dá para separar o que o agente fez do que o usuário já tinha em andamento.
+- **O agente é spawnado headless**: sem stdin (`stdio: ['ignore', …]`) e o aider com
+  `--no-fancy-input --no-pretty --no-check-update`. Sem isso, no Windows o
+  prompt_toolkit do aider morre ("No Windows console found") e ele passa a
+  *reportar edições como aplicadas sem escrever os arquivos*. Não reverta. O
+  permissão de escrita do codex é **por plataforma** (`sandboxArgs`): no Unix
+  `--sandbox workspace-write` (sandbox de SO real — Seatbelt/Landlock); no
+  **Windows** `--dangerously-bypass-approvals-and-sandbox`, porque lá não há
+  backend de sandbox e `workspace-write` cai pra read-only (codex lê, diz que
+  aplicou, e **não escreve nada** — verificado). ⚠️ Mantenha o branch
+  `process.platform === 'win32'`: o bypass no Unix jogaria fora o sandbox real.
+  Sem `--ask-for-approval` aqui: é flag top-level, o `exec` já é não-interativo e
+  a rejeita (exit 2), e não tem `--full-auto`. **O prompt do
+  codex vai por stdin (`codex exec … -`), nunca como argv**: no Windows ele roda
+  via `cmd.exe` (`shell: true`), que quebra um prompt multi-palavra em vários args
+  (`Antes de …` → `unexpected argument 'de'`). É o equivalente do `--message-file`
+  do aider. `buildAgentCommand` devolve `stdinData`; o handler abre o stdin só
+  quando há dado (o aider mantém fechado).
+- **I/O do filho forçada a UTF-8**: env com `PYTHONUTF8=1`/`PYTHONIOENCODING=utf-8`
+  (senão, no Windows cp1252, o aider dá `UnicodeDecodeError` → "does not support
+  pretty output", e acentos viram mojibake); e `stdout/stderr.setEncoding('utf8')`
+  em vez de `d.toString()` por chunk, pra não partir char multi-byte na fronteira.
+- **O log é renderizado como terminal** (`AgentTerminal.tsx` + `utils/ansi.ts`): é um
+  pipe, então `parseAnsi` colore o SGR e **remove** os códigos de cursor/erase/OSC
+  (senão apareceriam como lixo) e colapsa overwrite de `\r`. Puro e testado
+  (`utils/ansi.test.ts`); o componente não. Aider ainda é `--no-pretty`, então o ANSI
+  serve mais ao codex.
+- **`rodar_agente_codigo` aceita `arquivos` (caminhos relativos)** → viram `--file`
+  do aider + `--map-tokens 0`. É o que o torna rápido: sem eles, o aider descobre
+  o arquivo pelo repo map (lento, e string de UI é invisível lá). Main confina
+  cada caminho à raiz (`confineToRoot`) e descarta os inválidos.
 
 ## Antes de terminar
 

@@ -19,6 +19,7 @@ import { describeToolActivity } from '../ai/tools'
 import { toScaledDataUrl, imageFilesFrom } from '../utils/images'
 import { ChatMarkdown } from './ChatMarkdown'
 import { CodeDiff, type CodeAgentDiff } from './CodeDiff'
+import { AgentTerminal } from './AgentTerminal'
 import { ConfirmDialog } from './ConfirmDialog'
 
 // Config is persisted via ai:config in the main process (see effects below);
@@ -1446,7 +1447,7 @@ export function AIView({ projects }: { projects: Project[] }) {
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
               <div>
-                <p className="text-[#e2e8f0] font-medium mb-1">Converse com o modelo</p>
+                <p className="text-[#e2e8f0] font-medium mb-1">Converse com o modelo alterado</p>
                 <p className="text-sm text-[#8892a4]">
                   Descreva o projeto e use <b>Gerar Tasks</b> para criar tarefas.
                 </p>
@@ -1583,9 +1584,7 @@ export function AIView({ projects }: { projects: Project[] }) {
                 </button>
               </div>
             </div>
-            <pre className="max-h-40 overflow-y-auto px-6 pb-2 text-[11px] leading-relaxed font-mono text-[#a5b4fc] whitespace-pre-wrap break-words">
-              {agentLog}
-            </pre>
+            <AgentTerminal log={agentLog} running={agentRunning} />
 
             {/* The changes themselves, so they can be reviewed here rather than
                 in an editor. Only once the agent has stopped writing them. */}

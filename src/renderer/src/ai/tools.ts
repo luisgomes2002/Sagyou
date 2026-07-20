@@ -1314,11 +1314,21 @@ const REGISTRY: Record<string, AITool> = {
       'Dispara um agente de código externo (Aider/Codex) no diretório do projeto para ' +
         'implementar uma tarefa de código. Roda em UMA pasta: se o projeto tiver várias ' +
         'marcadas, informe pastaId. O agente escreve arquivos e roda comandos, por isso ' +
-        'passa por aprovação.',
+        'passa por aprovação. IMPORTANTE: quando você já souber quais arquivos mudar (ache-os ' +
+        'antes com buscar_no_codigo/ler_arquivo), passe-os em "arquivos" — o agente edita ' +
+        'direto, sem gastar rodadas caras redescobrindo o arquivo sozinho.',
       {
         type: 'object',
         properties: {
           task: { type: 'string', description: 'O que o agente deve fazer no código' },
+          arquivos: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'Caminhos relativos à pasta do projeto dos arquivos a editar (ex.: ' +
+              '"src/renderer/src/components/AIView.tsx"). Opcional, mas fortemente recomendado: ' +
+              'evita o passo lento de descoberta do agente.'
+          },
           agent: { type: 'string', enum: ['aider', 'codex'], description: 'Agente (padrão: aider)' },
           ...PASTA_PARAM,
           projectId: { type: 'string', description: 'ID do projeto (opcional; usa o ativo)' }
@@ -1342,13 +1352,21 @@ const REGISTRY: Record<string, AITool> = {
       const task = typeof args.task === 'string' ? args.task.trim() : ''
       if (!task) return JSON.stringify({ error: 'Tarefa vazia' })
       const agent = args.agent === 'codex' ? 'codex' : 'aider'
+      // Pinning the target files lets the agent edit them directly instead of
+      // rediscovering them via its repo map (slow, and a UI string is invisible
+      // there anyway). Main confines each path to the root; here we just pass the
+      // clean list through.
+      const files = Array.isArray(args.arquivos)
+        ? args.arquivos.filter((f): f is string => typeof f === 'string' && f.trim() !== '')
+        : undefined
       // Fire-and-forget; the real outcome streams to the UI panel. Report the
       // request honestly — do NOT claim guaranteed success.
-      void window.electronAPI.ai.codeAgent.run({ path, task, agent })
+      void window.electronAPI.ai.codeAgent.run({ path, task, agent, files })
       return JSON.stringify({
         status: 'solicitado',
         agente: agent,
         diretorio: path,
+        arquivos: files && files.length ? files : undefined,
         aviso:
           'Pedido enviado. Não afirme sucesso: acompanhe o painel de saída. Se o agente não ' +
           'estiver instalado, aparecerá um erro lá.'
@@ -1361,11 +1379,21 @@ const REGISTRY: Record<string, AITool> = {
       'listar_arquivos',
       'Lista os arquivos do código do projeto (recursivo; ignora node_modules/.git/dist). ' +
         'Use para descobrir a estrutura antes de ler arquivos. Cobre todas as pastas de ' +
-        'código marcadas no projeto.',
+        'código marcadas no projeto. Devolve no máximo ~200 caminhos por pasta de cada vez; ' +
+        'se "truncated" for verdadeiro, use "inicio" = "nextOffset" para continuar, ou ' +
+        '"subpasta" para restringir a uma parte da árvore.',
       {
         type: 'object',
         properties: {
           subpasta: { type: 'string', description: 'Subpasta relativa (opcional, ex: src/renderer)' },
+          inicio: {
+            type: 'number',
+            description: 'Posição de onde começar a listar; use o "nextOffset" da chamada anterior para paginar (opcional, padrão 0)'
+          },
+          max_arquivos: {
+            type: 'number',
+            description: 'Máximo de caminhos a devolver por pasta (opcional, padrão 200, teto 400)'
+          },
           ...PASTA_PARAM,
           projectId: { type: 'string', description: 'ID do projeto (opcional; usa o ativo)' }
         },
@@ -1376,10 +1404,12 @@ const REGISTRY: Record<string, AITool> = {
       const { roots, error } = activeRoots(args)
       if (error) return JSON.stringify({ error })
       const sub = typeof args.subpasta === 'string' ? args.subpasta : '.'
+      const inicio = typeof args.inicio === 'number' ? args.inicio : undefined
+      const maxArquivos = typeof args.max_arquivos === 'number' ? args.max_arquivos : undefined
       const pastas = await Promise.all(
         roots.map(async (r) => ({
           pasta: r.nome,
-          ...(await window.electronAPI.ai.code.list(r.path, sub))
+          ...(await window.electronAPI.ai.code.list(r.path, sub, inicio, maxArquivos))
         }))
       )
       return JSON.stringify({ pastas })
@@ -1390,11 +1420,21 @@ const REGISTRY: Record<string, AITool> = {
     definition: fn(
       'ler_arquivo',
       'Lê um arquivo do código do projeto pelo caminho relativo (ex: src/main/store.ts). ' +
-        'Procura em todas as pastas marcadas; use pastaId se o mesmo caminho existir em mais de uma.',
+        'Procura em todas as pastas marcadas; use pastaId se o mesmo caminho existir em mais de uma. ' +
+        'Devolve no máximo ~20 mil caracteres por vez; se "truncated" for verdadeiro, releia com ' +
+        '"inicio" = "nextOffset" para continuar de onde parou.',
       {
         type: 'object',
         properties: {
           caminho: { type: 'string', description: 'Caminho relativo do arquivo' },
+          inicio: {
+            type: 'number',
+            description: 'Posição (em caracteres) de onde começar a ler; use o "nextOffset" da leitura anterior para paginar (opcional, padrão 0)'
+          },
+          max_chars: {
+            type: 'number',
+            description: 'Máximo de caracteres a devolver nesta leitura (opcional, padrão 20000, teto 60000)'
+          },
           ...PASTA_PARAM,
           projectId: { type: 'string', description: 'ID do projeto (opcional; usa o ativo)' }
         },
@@ -1407,9 +1447,14 @@ const REGISTRY: Record<string, AITool> = {
       if (error) return JSON.stringify({ error })
       const rel = typeof args.caminho === 'string' ? args.caminho : ''
       if (!rel) return JSON.stringify({ error: 'Caminho vazio' })
+      const inicio = typeof args.inicio === 'number' ? args.inicio : undefined
+      const maxChars = typeof args.max_chars === 'number' ? args.max_chars : undefined
 
       const reads = await Promise.all(
-        roots.map(async (r) => ({ root: r, res: await window.electronAPI.ai.code.read(r.path, rel) }))
+        roots.map(async (r) => ({
+          root: r,
+          res: await window.electronAPI.ai.code.read(r.path, rel, inicio, maxChars)
+        }))
       )
       const hits = reads.filter((h) => !('error' in h.res && h.res.error))
       // Reading the wrong file silently would be worse than asking: when the
@@ -1467,11 +1512,19 @@ const REGISTRY: Record<string, AITool> = {
     definition: fn(
       'buscar_na_web',
       'Lê o texto de uma página web pela URL. Use para consultar documentação ou uma ' +
-        'referência que não esteja no app nem no código do projeto.',
+        'referência que não esteja no app nem no código do projeto. Se a página for uma SPA ' +
+        'que renderiza por JavaScript (o texto vier vazio ou só o esqueleto), repita com ' +
+        'renderizar_js=true para carregá-la num navegador de verdade.',
       {
         type: 'object',
         properties: {
-          url: { type: 'string', description: 'URL completa da página (http:// ou https://)' }
+          url: { type: 'string', description: 'URL completa da página (http:// ou https://)' },
+          renderizar_js: {
+            type: 'boolean',
+            description:
+              'Renderiza a página num navegador headless (executa JavaScript). Mais lento; ' +
+              'use só quando o fetch simples devolver pouco ou nenhum texto (opcional, padrão false)'
+          }
         },
         required: ['url'],
         additionalProperties: false
@@ -1480,10 +1533,11 @@ const REGISTRY: Record<string, AITool> = {
     run: async (args) => {
       const url = typeof args.url === 'string' ? args.url.trim() : ''
       if (!url) return JSON.stringify({ error: 'URL vazia' })
+      const render = args.renderizar_js === true
       // Shape is `{ content, url, truncated }` or `{ error }`; `url` is the
       // final one after redirects, so the model is told where it actually
       // landed rather than where it aimed.
-      return JSON.stringify(await window.electronAPI.ai.web.fetch(url))
+      return JSON.stringify(await window.electronAPI.ai.web.fetch(url, render))
     }
   }
 }

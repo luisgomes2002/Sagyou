@@ -1,16 +1,10 @@
 import { useState } from 'react'
 import * as XLSX from 'xlsx'
-import type { Project, Task, Habit, Goal, FinancialTable, Sprint, StickyNote } from '../types'
+import { useShallow } from 'zustand/react/shallow'
 import { buildWorkbook, type ExportKey } from '../utils/excelExport'
+import { useKanbanStore } from '../store/kanban'
 
 interface Props {
-  projects: Project[]
-  tasks: Task[]
-  sprints: Sprint[]
-  habits: Habit[]
-  goals: Goal[]
-  notes: StickyNote[]
-  lists: FinancialTable[]
   onClose: () => void
   onToast?: (msg: string) => void
 }
@@ -29,7 +23,18 @@ const OPTIONS: { key: DataKey; label: string; description: string }[] = [
   { key: 'financialGoals', label: 'Metas financeiras',   description: 'Lista, nome, valor alvo, mês/ano, status' },
 ]
 
-export function ExcelExportModal({ projects, tasks, sprints, habits, goals, notes, lists, onClose, onToast }: Props) {
+export function ExcelExportModal({ onClose, onToast }: Props) {
+  const { projects, tasks, sprints, habits, goals, notes, lists } = useKanbanStore(
+    useShallow((s) => ({
+      projects: s.projects,
+      tasks: s.tasks,
+      sprints: s.sprints,
+      habits: s.habits,
+      goals: s.goals,
+      notes: s.notes,
+      lists: s.lists
+    }))
+  )
   const [selected, setSelected] = useState<Set<DataKey>>(
     new Set(['projects', 'tasks', 'sprints', 'habits', 'goals', 'notes', 'shopping', 'transactions', 'financialGoals'])
   )

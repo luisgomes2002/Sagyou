@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { v4 as uuidv4 } from 'uuid'
+import { useShallow } from 'zustand/react/shallow'
 import { useKanbanStore } from './store/kanban'
 import type { Task, Column, Project, Priority, TaskImage } from './types'
 import { isDoneColumn, isTaskDone } from './utils/columns'
@@ -53,6 +54,14 @@ interface ConfirmState {
 }
 
 export default function App() {
+  // Subscribe with useShallow to only the slices this root component actually
+  // reads. Without a selector, useKanbanStore() subscribes to the whole state
+  // object and re-renders App (and therefore the entire tree) on EVERY mutation
+  // to any domain — financial lists, canvas notes, the running timer, files.
+  // Actions are stable references, so listing them here costs no extra renders;
+  // only the state fields drive re-renders. Note `goals`/`notes`/`lists` are
+  // deliberately absent — they now belong to ExcelExportModal, which reads them
+  // straight from the store, so mutating them never touches the kanban root.
   const {
     projects,
     tasks,
@@ -60,6 +69,7 @@ export default function App() {
     activeProjectId,
     sprintFilter,
     isLoaded,
+    habits,
     loadData,
     setActiveProject,
     setSprintFilter,
@@ -80,14 +90,43 @@ export default function App() {
     closeSprint,
     reopenSprint,
     deleteSprint,
-    habits,
-    goals,
-    notes,
-    lists,
     exportBackup,
     importBackup,
     importAIJson
-  } = useKanbanStore()
+  } = useKanbanStore(
+    useShallow((s) => ({
+      projects: s.projects,
+      tasks: s.tasks,
+      sprints: s.sprints,
+      activeProjectId: s.activeProjectId,
+      sprintFilter: s.sprintFilter,
+      isLoaded: s.isLoaded,
+      habits: s.habits,
+      loadData: s.loadData,
+      setActiveProject: s.setActiveProject,
+      setSprintFilter: s.setSprintFilter,
+      createProject: s.createProject,
+      updateProject: s.updateProject,
+      moveProject: s.moveProject,
+      deleteProject: s.deleteProject,
+      createColumn: s.createColumn,
+      updateColumn: s.updateColumn,
+      deleteColumn: s.deleteColumn,
+      createTask: s.createTask,
+      updateTask: s.updateTask,
+      deleteTask: s.deleteTask,
+      moveTask: s.moveTask,
+      updateNote: s.updateNote,
+      createSprints: s.createSprints,
+      updateSprint: s.updateSprint,
+      closeSprint: s.closeSprint,
+      reopenSprint: s.reopenSprint,
+      deleteSprint: s.deleteSprint,
+      exportBackup: s.exportBackup,
+      importBackup: s.importBackup,
+      importAIJson: s.importAIJson
+    }))
+  )
 
   const [toasts, setToasts] = useState<ToastMessage[]>([])
   const [taskModal, setTaskModal] = useState<TaskModalState>({ open: false })
@@ -172,12 +211,15 @@ export default function App() {
     return map
   }, [projects])
 
-  // Task count per column — O(1) lookup for move-to-end positioning
-  const columnTaskCount = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const t of tasks) map.set(t.columnId, (map.get(t.columnId) ?? 0) + 1)
-    return map
-  }, [tasks])
+  // Count tasks in a single column, on demand, for move-to-end positioning.
+  // Computed at call time (complete/restore) rather than as a whole-map memo
+  // that rebuilt on every task mutation only to be read on the occasional click.
+  // Keyed on the globally-unique columnId, so it stays correct for any project's
+  // task (restore is triggered from DoneView across every project).
+  const countTasksInColumn = useCallback(
+    (columnId: string) => tasks.reduce((n, t) => (t.columnId === columnId ? n + 1 : n), 0),
+    [tasks]
+  )
 
   // --- Project handlers ---
   const handleNewProject = () => setProjectModal({ open: true })
@@ -300,14 +342,14 @@ export default function App() {
   const handleCompleteTask = (task: Task) => {
     const { doneCol } = projectColumnInfo.get(task.projectId) ?? {}
     if (!doneCol) { addToast('Coluna "Done" não encontrada', 'error'); return }
-    moveTask(task.id, doneCol.id, columnTaskCount.get(doneCol.id) ?? 0)
+    moveTask(task.id, doneCol.id, countTasksInColumn(doneCol.id))
     addToast('Task concluída')
   }
 
   const handleRestoreTask = (task: Task) => {
     const { firstCol } = projectColumnInfo.get(task.projectId) ?? {}
     if (!firstCol) return
-    moveTask(task.id, firstCol.id, columnTaskCount.get(firstCol.id) ?? 0)
+    moveTask(task.id, firstCol.id, countTasksInColumn(firstCol.id))
     addToast('Task restaurada')
   }
 
@@ -593,13 +635,6 @@ export default function App() {
 
       {excelExportOpen && (
         <ExcelExportModal
-          projects={projects}
-          tasks={tasks}
-          sprints={sprints}
-          habits={habits}
-          goals={goals}
-          notes={notes}
-          lists={lists}
           onClose={() => setExcelExportOpen(false)}
           onToast={(msg) => addToast(msg)}
         />

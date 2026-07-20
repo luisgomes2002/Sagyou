@@ -133,7 +133,7 @@ function DoneTaskRow({
 
   return (
     <div
-      className="group flex items-center gap-3 px-4 py-2.5 rounded-lg bg-[#13151f] border border-[#2a2d42] hover:border-[#3a3e58] transition-colors cursor-pointer"
+      className="cv-row group flex items-center gap-3 px-4 py-2.5 rounded-lg bg-[#13151f] border border-[#2a2d42] hover:border-[#3a3e58] transition-colors cursor-pointer"
       onClick={onView}
     >
       {/* done check */}

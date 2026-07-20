@@ -167,6 +167,15 @@ export const AUTO_MAX_STEPS = 40
 export const MAX_STEPS_LIMIT = 50
 
 /**
+ * How many times the model may make the *same read call* (identical tool name
+ * and arguments) in one run before the loop stops actually running it. On the
+ * Nth try the tool is skipped and a nudge is fed back instead — a soft brake on
+ * a model that has started looping, complementary to maxSteps (which caps how
+ * many steps run; this cuts a stuck run short before it burns them all).
+ */
+export const READ_REPEAT_LIMIT = 3
+
+/**
  * How many tool rounds a run gets.
  *
  * The step cap and the approval mode are separate concerns that used to be
@@ -398,6 +407,23 @@ export function pruneSupersededResults(msgs: ApiMessage[]): ApiMessage[] {
 }
 
 /**
+ * Count this read call by its signature (tool name + arguments) and return the
+ * running tally for the run. Reads only: a repeated write is a distinct event,
+ * not a loop — the same line pruneSupersededResults draws. Arguments are
+ * canonicalised through JSON.stringify so "same call" ignores key spacing.
+ */
+function bumpReadRepeat(
+  counts: Map<string, number>,
+  name: string,
+  args: Record<string, unknown>
+): number {
+  const sig = `${name}:${JSON.stringify(args)}`
+  const n = (counts.get(sig) ?? 0) + 1
+  counts.set(sig, n)
+  return n
+}
+
+/**
  * The tool-calling loop: call the model with tools; while it returns
  * tool_calls, run each against the store and feed the results back; stop when
  * it answers with plain text (or after MAX_STEPS as a safety cap).
@@ -416,6 +442,9 @@ export async function runAgent(
   const maxSteps = resolveMaxSteps(opts.maxSteps ?? MAX_STEPS, false)
   const msgs: ApiMessage[] = [{ role: 'system', content: SYSTEM_PROMPT }, ...conversation]
   const { onStream, onStatus, onToolEnd } = opts
+  // Tracks how often each read call (tool + args) has been made this run, so the
+  // brake below can stop one the model keeps repeating instead of re-running it.
+  const readRepeats = new Map<string, number>()
 
   for (let step = 0; step < maxSteps; step++) {
     if (opts.shouldAbort?.()) return 'Execução interrompida.'
@@ -460,6 +489,18 @@ export async function runAgent(
         result = JSON.stringify({ error: parseError })
       } else if (isWriteTool(call.function.name) && !approved.has(call.id)) {
         result = JSON.stringify({ error: 'Ação recusada pelo usuário' })
+      } else if (
+        !isWriteTool(call.function.name) &&
+        bumpReadRepeat(readRepeats, call.function.name, args) >= READ_REPEAT_LIMIT
+      ) {
+        // Soft brake: the model is looping on the same read (same tool + args).
+        // Don't run it again — hand back a nudge to conclude with what it has.
+        // Complements maxSteps: it ends a stuck run early instead of letting it
+        // burn every remaining step re-fetching an answer it already holds. The
+        // nudge goes back as an ordinary tool result, so no work is discarded.
+        result = JSON.stringify({
+          error: `Você já fez esta chamada ${READ_REPEAT_LIMIT}x com os mesmos argumentos e obteve o mesmo resultado. Não repita — responda com o que já tem.`
+        })
       } else {
         onStatus?.(describeToolActivity(call.function.name, args), 'tool')
         try {

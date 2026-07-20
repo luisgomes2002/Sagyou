@@ -525,8 +525,33 @@ describe('ai:code:* handlers', () => {
 
   describe('ai:code:list', () => {
     it('lists the files under the root', async () => {
-      const res = await invoke<{ files: string[] }>('ai:code:list', root, '.')
+      const res = await invoke<{ files: string[]; total: number; truncated: boolean }>(
+        'ai:code:list',
+        root,
+        '.'
+      )
       expect(res.files).toEqual(['bin.dat', 'src/a.ts', 'src/b.ts'])
+      // The whole listing fits under the default page: total is exact, no more.
+      expect(res).toMatchObject({ total: 3, offset: 0, truncated: false })
+    })
+
+    it('pages the listing: a small limit returns one window and points at the rest', async () => {
+      type Page = {
+        files: string[]
+        total: number
+        offset: number
+        truncated: boolean
+        nextOffset?: number
+      }
+      const first = await invoke<Page>('ai:code:list', root, '.', 0, 2)
+      expect(first.files).toEqual(['bin.dat', 'src/a.ts'])
+      expect(first).toMatchObject({ total: 3, offset: 0, truncated: true, nextOffset: 2 })
+
+      // Resume from nextOffset for the tail; nothing left, so no nextOffset.
+      const second = await invoke<Page>('ai:code:list', root, '.', first.nextOffset, 2)
+      expect(second.files).toEqual(['src/b.ts'])
+      expect(second).toMatchObject({ total: 3, offset: 2, truncated: false })
+      expect(second.nextOffset).toBeUndefined()
     })
 
     it('rejects a directory that does not exist', async () => {
@@ -570,12 +595,56 @@ describe('ai:code:* handlers', () => {
       expect(await invoke('ai:code:read', root, 'src')).toMatchObject({ error: expect.any(String) })
     })
 
-    it('truncates a huge file instead of shipping it whole', async () => {
+    it('pages a huge file instead of shipping it whole', async () => {
+      // A file result is resent on every later step, so a bare read returns one
+      // 20000-char window and points at the rest via nextOffset — not the whole
+      // 70000-char file, which was a per-step token tax.
       const big = join(root, 'big.txt')
       await writeFile(big, 'a'.repeat(70000))
-      const res = await invoke<{ content: string; truncated: boolean }>('ai:code:read', root, 'big.txt')
+      const res = await invoke<{
+        content: string
+        truncated: boolean
+        offset: number
+        total: number
+        nextOffset?: number
+      }>('ai:code:read', root, 'big.txt')
       expect(res.truncated).toBe(true)
+      expect(res.content).toHaveLength(20000)
+      expect(res).toMatchObject({ offset: 0, total: 70000, nextOffset: 20000 })
+      await rm(big)
+    })
+
+    it('resumes from nextOffset and drops it once the file is exhausted', async () => {
+      const big = join(root, 'big.txt')
+      await writeFile(big, 'a'.repeat(70000))
+      // Resume at 20000 asking for the rest in one large window (raised via
+      // maxChars up to the 60000 ceiling): reads to the end, no more nextOffset.
+      const res = await invoke<{
+        content: string
+        truncated: boolean
+        offset: number
+        total: number
+        nextOffset?: number
+      }>('ai:code:read', root, 'big.txt', 20000, 60000)
+      expect(res.content).toHaveLength(50000)
+      expect(res.truncated).toBe(false)
+      expect(res.offset).toBe(20000)
+      expect(res.nextOffset).toBeUndefined()
+      await rm(big)
+    })
+
+    it('caps a single read at 60000 chars even when maxChars asks for more', async () => {
+      const big = join(root, 'big.txt')
+      await writeFile(big, 'a'.repeat(80000))
+      const res = await invoke<{ content: string; truncated: boolean }>(
+        'ai:code:read',
+        root,
+        'big.txt',
+        0,
+        1_000_000
+      )
       expect(res.content).toHaveLength(60000)
+      expect(res.truncated).toBe(true)
       await rm(big)
     })
   })
@@ -861,8 +930,9 @@ describe('ai:code-agent output survives the panel', () => {
 /**
  * Handing the repo's guide to the agent before it touches code.
  *
- * The stub agents echo their own argv, so what's asserted is what the real
- * handler really spawned — not what a mock was told.
+ * The stub agents echo their own argv AND their stdin, so what's asserted is
+ * what the real handler really spawned — not what a mock was told. Codex reads
+ * its prompt from stdin (`-`), not argv, so the stdin echo is what carries it.
  */
 describe('the guide is given to the agent', () => {
   let withGuide: string
@@ -876,7 +946,9 @@ describe('the guide is given to the agent', () => {
     // machine and the handler runs whatever it finds.
     process.env.PATH = binDir
     for (const name of ['aider', 'codex']) {
-      await writeFile(join(binDir, name), '#!/bin/sh\necho "ARGV: $@"\n', { mode: 0o755 })
+      // `cat` echoes stdin: codex's prompt arrives there (via `-`), not in argv.
+      // With aider stdin is closed, so cat reads EOF and prints nothing.
+      await writeFile(join(binDir, name), '#!/bin/sh\necho "ARGV: $@"\ncat\n', { mode: 0o755 })
     }
 
     withGuide = await mkdtemp(join(tmpdir(), 'guide-yes-'))

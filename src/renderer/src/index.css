@@ -45,3 +45,21 @@ body {
   transform: rotate(2deg) scale(1.02);
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
 }
+
+/*
+ * Off-screen render skipping for long lists (Board cards, DoneView rows,
+ * Reports rows). content-visibility: auto lets the browser skip layout/paint
+ * for items scrolled out of view — fewer live DOM render trees — WITHOUT
+ * unmounting them, so @dnd-kit sortables stay in the DOM and measurable.
+ * `contain-intrinsic-size: auto <fallback>` remembers each item's real size
+ * once painted, so the fallback is only used pre-first-paint and the
+ * scrollbar doesn't jump. Not applied to the drag overlay (single, on-screen).
+ */
+.cv-card {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 96px;
+}
+.cv-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 44px;
+}
