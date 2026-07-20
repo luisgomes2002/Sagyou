@@ -25,7 +25,7 @@ import { useAiRunStore } from '../../store/aiRun'
 import { useKanbanStore } from '../../store/kanban'
 import { AI_TASK_PROMPT_TEMPLATE } from '../../types'
 import type { Project } from '../../types'
-import { runAgent, callModel, MAX_STEPS, AUTO_MAX_STEPS } from '../../ai/agent'
+import { runAgent, callModel, MAX_STEPS, AUTO_MAX_STEPS, LOW_STEPS_WARNING } from '../../ai/agent'
 import type { RunAgentOptions, AIConfig, PendingCall } from '../../ai/agent'
 
 type UsageSummary = Awaited<ReturnType<typeof window.electronAPI.ai.usage.summary>>
@@ -243,7 +243,7 @@ describe('AIView — reopening the last chat', () => {
 
   it('starts blank when nothing was open', async () => {
     renderAI(<AIView projects={[]} />)
-    expect(await screen.findByText(/Converse com o modelo alterado/)).toBeInTheDocument()
+    expect(await screen.findByText(/Converse com o modelo/)).toBeInTheDocument()
     expect(window.electronAPI.ai.conversations.get).not.toHaveBeenCalled()
   })
 
@@ -309,7 +309,7 @@ describe('AIView — reopening the last chat', () => {
 
     renderAI(<AIView projects={[]} />)
 
-    expect(await screen.findByText(/Converse com o modelo alterado/)).toBeInTheDocument()
+    expect(await screen.findByText(/Converse com o modelo/)).toBeInTheDocument()
     const set = vi.mocked(window.electronAPI.ai.config.set)
     await waitFor(() =>
       expect(set).toHaveBeenCalledWith(expect.objectContaining({ lastConversationId: undefined }))
@@ -511,8 +511,23 @@ describe('AIView — automatic mode', () => {
 
   it('is off by default, and says so', async () => {
     renderAI(<AIView projects={[]} />)
-    expect(await screen.findByText('Auto')).toBeInTheDocument()
+    const auto = await screen.findByText('Auto')
+    expect(auto).toHaveAttribute(
+      'title',
+      'Modo autônomo DESLIGADO — cada ação pede sua aprovação. Clique para não perguntar mais.'
+    )
     expect(screen.queryByText('Auto: ON')).not.toBeInTheDocument()
+  })
+
+  it('updates the Auto tooltip when autonomous mode is on', async () => {
+    renderAI(<AIView projects={[]} />)
+    await turnAutoOn()
+
+    expect(
+      screen.getByTitle(
+        'Modo autônomo LIGADO — a IA trabalha sem interrupção. Clique para voltar a pedir aprovação.'
+      )
+    ).toHaveTextContent('Auto: ON')
   })
 
   it('approves without asking once switched on', async () => {
@@ -536,7 +551,7 @@ describe('AIView — automatic mode', () => {
     expect(screen.queryByText(/Aprovar ações da IA/)).not.toBeInTheDocument()
   })
 
-  it('"Aprovar tudo e continuar" approves and latches automatic mode on', async () => {
+  it('"Sempre permitir" approves and latches automatic mode on', async () => {
     let decision!: Promise<Set<string>>
     vi.mocked(runAgent).mockImplementation(async (_c, _m, onApprove) => {
       decision = onApprove(writes)
@@ -549,7 +564,7 @@ describe('AIView — automatic mode', () => {
     await userEvent.type(box, 'oi{Enter}')
     await screen.findByText(/Aprovar ações da IA/)
 
-    await userEvent.click(screen.getByText('Aprovar tudo e continuar'))
+    await userEvent.click(screen.getByText('Sempre permitir'))
 
     expect(await decision).toEqual(new Set(['w1']))
     // It is a mode switch, not a one-off: the user must be able to see that.
@@ -2032,6 +2047,25 @@ describe('AIView — max steps setting', () => {
     )
   })
 
+  it('warns when the configured cap is low enough to cut a task short', async () => {
+    storedConfig = { ...storedConfig, maxSteps: LOW_STEPS_WARNING - 1 }
+    renderAI(<AIView projects={[]} />)
+    await userEvent.click(screen.getByText('Configuração'))
+
+    expect(await screen.findByText(/podem não ser concluídas/i)).toBeInTheDocument()
+  })
+
+  it('does not warn at the default, or the warning becomes noise', async () => {
+    storedConfig = { ...storedConfig, maxSteps: undefined }
+    renderAI(<AIView projects={[]} />)
+    await userEvent.click(screen.getByText('Configuração'))
+    // Wait for the panel itself, so the absence below is a real absence and not
+    // just an unrendered panel.
+    await screen.findByPlaceholderText(new RegExp(`${MAX_STEPS}/${AUTO_MAX_STEPS}`))
+
+    expect(screen.queryByText(/podem não ser concluídas/i)).not.toBeInTheDocument()
+  })
+
   it('clearing the field goes back to the default, not to zero', async () => {
     storedConfig = { ...storedConfig, maxSteps: 15 }
     renderAI(<AIView projects={[]} />)
@@ -2098,6 +2132,32 @@ describe('AIView — tool call progress', () => {
     await act(async () => finish('pronto'))
     expect(screen.getByText('pronto')).toBeInTheDocument()
     expect(statusIcons()).toEqual({ running: 0, done: 1 })
+  })
+
+  it('badges a status line with its step, and leaves unnumbered lines bare', async () => {
+    let opts: RunAgentOptions = {}
+    let finish: (v: string) => void = () => {}
+    vi.mocked(runAgent).mockImplementation(
+      (_cfg, _conv, _approve, o = {}) =>
+        new Promise((resolve) => {
+          opts = o
+          finish = resolve
+        })
+    )
+
+    renderAI(<AIView projects={[]} />)
+    const box = screen.getByPlaceholderText(/Descreva o projeto/)
+    await waitFor(() => expect(box).not.toBeDisabled())
+    await userEvent.type(box, 'oi{Enter}')
+
+    act(() => opts.onStatus?.('Lendo src/App.tsx', 'tool', { step: 3, maxSteps: 40 }))
+    expect(screen.getByText('3/40')).toBeInTheDocument()
+
+    // A line with no step (a retry notice, the cap warning) must not invent one.
+    act(() => opts.onStatus?.('Tentando de novo', 'remark'))
+    await act(async () => finish('pronto'))
+    expect(screen.getByText('Tentando de novo')).toBeInTheDocument()
+    expect(screen.getAllByText(/^\d+\/\d+$/)).toHaveLength(1)
   })
 
   it('does not leave a tool line spinning when the turn fails', async () => {
@@ -2261,5 +2321,89 @@ describe('AIView — renaming a chat', () => {
     await userEvent.type(box, 'algo{Enter}')
 
     expect(await screen.findByText(/Conversa não encontrada/)).toBeInTheDocument()
+  })
+})
+
+// ── handing a board task to the assistant ─────────────────────────────────────
+//
+// The board's "Pedir para a IA" button parks a composer text in App and switches
+// view. AIView is unmounted until that switch lands, so it reads the text on
+// arrival — and starts a fresh chat for it.
+
+describe('AIView — task handoff (prefill)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('drops the handed-over text into the composer and focuses it', async () => {
+    renderAI(<AIView projects={[]} prefill={'Task "Corrigir login" (id: t-1)\n\n'} />)
+
+    const box = await screen.findByPlaceholderText(/descreva|pergunta/i)
+    await waitFor(() => expect((box as HTMLTextAreaElement).value).toContain('Corrigir login'))
+    expect((box as HTMLTextAreaElement).value).toContain('id: t-1')
+  })
+
+  it('tells the parent it was taken, so it cannot be applied twice', async () => {
+    const onPrefillConsumed = vi.fn()
+    renderAI(<AIView projects={[]} prefill="algo" onPrefillConsumed={onPrefillConsumed} />)
+
+    await waitFor(() => expect(onPrefillConsumed).toHaveBeenCalledTimes(1))
+  })
+
+  /**
+   * Verified in the real app before this existed: the briefing landed in
+   * whatever chat happened to be open — an 8.1k-token conversation about
+   * something else. Every step of a run resends the whole history, so that
+   * context is billed again on each of up to AUTO_MAX_STEPS steps, and the model
+   * reads a code task through an unrelated conversation.
+   */
+  it('starts a new chat rather than appending to whatever was open', async () => {
+    useAiRunStore.setState({
+      messages: [
+        { role: 'user', content: 'quanto rende meu FGTS?' },
+        { role: 'assistant', content: 'R$ 3.120' }
+      ],
+      conversationId: 'conv-fgts'
+    })
+
+    renderAI(<AIView projects={[]} prefill={'Task "Corrigir login" (id: t-1)'} />)
+
+    await waitFor(() => expect(useAiRunStore.getState().messages).toEqual([]))
+    // Not asserted as null: AiRunHost's autosave effect runs in the same commit,
+    // just after this one, and `ensureConversationId` reads the store as it is
+    // *now* — already reset — so the blank chat is handed a fresh id on the way
+    // out. A new id is the point; the old one no longer being current is what
+    // matters, and the FGTS transcript stays on disk under its own.
+    expect(useAiRunStore.getState().conversationId).not.toBe('conv-fgts')
+    expect(screen.queryByText(/FGTS/)).toBeNull()
+  })
+
+  it('leaves an already-blank chat alone instead of dropping its id', async () => {
+    useAiRunStore.setState({ messages: [], conversationId: 'conv-vazia' })
+
+    renderAI(<AIView projects={[]} prefill="algo" />)
+
+    await waitFor(() => expect(screen.getByPlaceholderText(/descreva|pergunta/i)).toBeTruthy())
+    expect(useAiRunStore.getState().conversationId).toBe('conv-vazia')
+  })
+
+  it('appends to a half-written message instead of destroying it', async () => {
+    const { rerender } = renderAI(<AIView projects={[]} prefill={null} />)
+
+    const box = (await screen.findByPlaceholderText(
+      /descreva|pergunta/i
+    )) as HTMLTextAreaElement
+    fireEvent.change(box, { target: { value: 'anotação minha' } })
+
+    rerender(
+      <>
+        <AIView projects={[]} prefill={'Task "X" (id: t-9)'} />
+        <AiRunHost activeView="ai" onOpenAI={() => {}} />
+      </>
+    )
+
+    await waitFor(() => expect(box.value).toContain('Task "X"'))
+    // The user's own words survive the handoff.
+    expect(box.value).toContain('anotação minha')
   })
 })

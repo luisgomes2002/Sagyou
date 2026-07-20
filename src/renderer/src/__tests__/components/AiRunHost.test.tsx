@@ -400,6 +400,23 @@ describe('approval from another view', () => {
     expect(await screen.findByText('Criar 1 task(s)')).toBeInTheDocument()
   })
 
+  it('offers to always allow this conversation from the Board', async () => {
+    const { decision } = runAskingApproval()
+
+    render(<App />)
+    await startRun()
+    await leaveAIView()
+
+    const allow = await screen.findByRole('button', { name: 'Sempre permitir' })
+    expect(allow).toHaveAttribute(
+      'title',
+      'A IA trabalhará sem interrupção nesta conversa — como o modo always allow do Claude Code'
+    )
+
+    await userEvent.click(allow)
+    expect(await decision()).toEqual(new Set(['w1']))
+  })
+
   it('Escape from another view cancels: approve nothing, and answer the loop', async () => {
     const { decision } = runAskingApproval()
 

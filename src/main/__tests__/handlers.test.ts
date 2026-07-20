@@ -912,10 +912,19 @@ describe('ai:code-agent output survives the panel', () => {
     const withStub = process.env.PATH
     const empty = await mkdtemp(join(tmpdir(), 'agent-none-'))
     process.env.PATH = empty
+    // ⚠️ Emptying PATH is no longer enough. resolveExecutable also searches the
+    // node-version-manager / npm-prefix dirs (that is the point of it — a
+    // GUI-launched app doesn't get the user's shell PATH), and codex really is
+    // installed in one of them on a dev machine: ~/.npm-global/bin here,
+    // /usr/local/bin on a Mac. Reaching the real binary would spawn something
+    // that waits on stdin and never exits, poisoning every later test — the
+    // same trap the PATH replacement above exists to avoid.
+    process.env.SAGYOU_DISABLE_BIN_FALLBACK = '1'
     const res = await invoke<{ success: boolean }>('ai:code-agent:run', {
       path: dir,
       task: 't'
     })
+    delete process.env.SAGYOU_DISABLE_BIN_FALLBACK
     process.env.PATH = withStub
     await rm(empty, { recursive: true, force: true })
     expect(res.success).toBe(false)
@@ -1163,5 +1172,86 @@ describe('the guide is given to the agent', () => {
 
     expect(log).toContain('leia o GUIDE.md')
     expect(log).not.toContain(withGuide) // no absolute path in the prompt
+  })
+})
+
+/**
+ * Finding the agent when PATH doesn't have it.
+ *
+ * The bug: a GUI-launched Electron app inherits the systemd user manager's
+ * PATH, not the shell's. `npm config set prefix ~/.npm-global` puts codex in a
+ * dir that only ~/.bashrc adds — so `codex --version` works in a terminal while
+ * the app insists it isn't installed.
+ */
+describe('resolveExecutable', () => {
+  const oldPath = process.env.PATH
+  let onPath: string
+  let elsewhere: string
+
+  beforeAll(async () => {
+    onPath = await mkdtemp(join(tmpdir(), 'res-path-'))
+    elsewhere = await mkdtemp(join(tmpdir(), 'res-extra-'))
+  })
+
+  afterAll(async () => {
+    process.env.PATH = oldPath
+    await rm(onPath, { recursive: true, force: true })
+    await rm(elsewhere, { recursive: true, force: true })
+  })
+
+  const load = async (): Promise<typeof import('../index')> => import('../index')
+
+  it('finds an agent that is only in a fallback dir, not on PATH', async () => {
+    const { resolveExecutable } = await load()
+    await writeFile(join(elsewhere, 'codex'), '#!/bin/sh\n', { mode: 0o755 })
+    process.env.PATH = onPath // deliberately empty of codex
+
+    // The whole point: PATH says no, the npm-prefix dir says yes.
+    expect(resolveExecutable('codex', [elsewhere])).toBe(join(elsewhere, 'codex'))
+  })
+
+  it('prefers PATH over the fallback dirs', async () => {
+    const { resolveExecutable } = await load()
+    await writeFile(join(onPath, 'codex'), '#!/bin/sh\n', { mode: 0o755 })
+    await writeFile(join(elsewhere, 'codex'), '#!/bin/sh\n', { mode: 0o755 })
+    process.env.PATH = onPath
+
+    // ⚠️ Load-bearing for the suite, not a preference. handlers.test.ts narrows
+    // PATH to a dir holding only a stub so the real codex can never spawn (it
+    // waits on stdin forever). A fallback dir that won over PATH would walk
+    // straight around that guard.
+    expect(resolveExecutable('codex', [elsewhere])).toBe(join(onPath, 'codex'))
+  })
+
+  it('skips a match that exists but cannot be executed', async () => {
+    const { resolveExecutable } = await load()
+    // A same-named file without the executable bit: taking it would defer the
+    // failure to spawn, which reports EACCES — a different problem than the one
+    // it is, sending the user to reinstall something already installed.
+    await writeFile(join(onPath, 'naoexec'), 'x', { mode: 0o644 })
+    await writeFile(join(elsewhere, 'naoexec'), '#!/bin/sh\n', { mode: 0o755 })
+    process.env.PATH = onPath
+
+    expect(resolveExecutable('naoexec', [elsewhere])).toBe(join(elsewhere, 'naoexec'))
+  })
+
+  it('returns null when nothing anywhere matches', async () => {
+    const { resolveExecutable } = await load()
+    process.env.PATH = onPath
+
+    // null is what makes the handler fall back to the bare name and let spawn
+    // raise ENOENT, so "não encontrado" is reported — now truthfully.
+    expect(resolveExecutable('nao-existe-mesmo', [elsewhere])).toBeNull()
+  })
+
+  it('drops every fallback dir when the test opt-out is set', async () => {
+    const { fallbackBinDirs } = await load()
+
+    process.env.SAGYOU_DISABLE_BIN_FALLBACK = '1'
+    expect(fallbackBinDirs()).toEqual([])
+    delete process.env.SAGYOU_DISABLE_BIN_FALLBACK
+    // Without it, the search is real — otherwise the opt-out would be silently
+    // disabling the feature in the app as well.
+    expect(fallbackBinDirs().length).toBeGreaterThan(0)
   })
 })

@@ -163,23 +163,51 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
  * Manual mode, so every write still stops for approval — the cost of a long run
  * here is bounded by a human saying yes to each step, not by this number alone.
  */
-export const MAX_STEPS = 15
+export const MAX_STEPS = 40
 
 /**
  * Default cap in automatic mode, where the agent chains actions on its own.
  *
- * ⚠️ **40 is a deliberate choice, not an accident** — it was briefly lowered to
- * 15 as a cost measure and raised back on request. Keep the cost shape in mind
- * before touching it: every step is a paid call that resends the whole
- * accumulated history, so the *last* steps of a long run are far more expensive
- * than the first, and the total grows worse than linearly in this number.
- * That is why turning automatic mode on quotes an estimate first
- * (`estimateAutoRun`, priced off the user's own logged calls).
+ * ⚠️ **100 is a deliberate choice, not an accident** — the pair has been moved
+ * twice on request (15/40 originally, briefly 15/15 as a cost measure, now
+ * 40/100). Keep the cost shape in mind before touching it: every step is a paid
+ * call that resends the whole accumulated history, so the *last* steps of a long
+ * run are far more expensive than the first, and the total grows worse than
+ * linearly in this number. That is why turning automatic mode on quotes an
+ * estimate first (`estimateAutoRun`, priced off the user's own logged calls).
  */
-export const AUTO_MAX_STEPS = 40
+export const AUTO_MAX_STEPS = 100
 
-/** Nothing may raise the cap past this — every step is a paid model call. */
-export const MAX_STEPS_LIMIT = 50
+/**
+ * Nothing may raise the cap past this — every step is a paid model call.
+ *
+ * Must stay >= AUTO_MAX_STEPS: resolveMaxSteps clamps to this, so a limit below
+ * the automatic default would silently cap automatic runs at the limit and make
+ * the documented default a lie.
+ */
+export const MAX_STEPS_LIMIT = 100
+
+/**
+ * Below this, a hand-set step cap is likely to cut a real task short, so the
+ * settings panel warns rather than silently accepting it.
+ *
+ * Calibrated on what an implementation run actually spends before it does any
+ * work: orienting in a codebase costs several steps on its own (list the tree,
+ * search, then read — and a file over CODE_READ_PAGE takes more than one read
+ * to page through). A cap in the single digits is therefore often exhausted
+ * during the *reading*, and the run ends having understood the task without
+ * having started it. It's a warning and not a floor: a low cap is legitimate
+ * for a cheap question, and the user may well mean it.
+ */
+export const LOW_STEPS_WARNING = 10
+
+/** Which step of the run a status line belongs to, for a "3/40" badge. */
+export interface StepProgress {
+  /** 1-based, so the first step reads "1/40" and not "0/40". */
+  step: number
+  /** This run's resolved cap — not the constant, which the user can override. */
+  maxSteps: number
+}
 
 /**
  * How many times the model may make the *same read call* (identical tool name
@@ -229,8 +257,14 @@ export interface RunAgentOptions {
    *
    * `kind` says which of the two it is, so a caller can render a tool line as
    * running until the matching onToolEnd arrives.
+   *
+   * `progress` carries which step the line belongs to, for a "3/40" badge. It
+   * is **absent on lines that are not a step of the run** — a retry notice
+   * (the same step being attempted again) and the cap warning after the loop.
+   * Numbering those would overstate how much budget was spent. Several tool
+   * lines in one step deliberately share a number: they ran in the same round.
    */
-  onStatus?: (text: string, kind?: 'remark' | 'tool') => void
+  onStatus?: (text: string, kind?: 'remark' | 'tool', progress?: StepProgress) => void
   /**
    * Called with the tools the model is composing *right now*, as their names
    * arrive — before the message is finished and before any of them runs.
@@ -462,6 +496,8 @@ export async function runAgent(
   const readRepeats = new Map<string, number>()
 
   for (let step = 0; step < maxSteps; step++) {
+    // 1-based for display: the badge on the first step should read "1/40".
+    const progress: StepProgress = { step: step + 1, maxSteps }
     if (opts.shouldAbort?.()) return 'Execução interrompida.'
     // Prune a copy, not `msgs` itself: the run keeps its full history, and only
     // what goes over the wire is trimmed.
@@ -475,7 +511,7 @@ export async function runAgent(
     // streamed copy is about to be cleared for the next step.
     const remark = contentText(assistant.content).trim()
     if (remark) {
-      onStatus?.(remark, 'remark')
+      onStatus?.(remark, 'remark', progress)
       // Hand off from the typing bubble to the status line now, not at the top
       // of the next step — the tools in between can take a while, and the text
       // would sit on screen twice.
@@ -517,7 +553,7 @@ export async function runAgent(
           error: `Você já fez esta chamada ${READ_REPEAT_LIMIT}x com os mesmos argumentos e obteve o mesmo resultado. Não repita — responda com o que já tem.`
         })
       } else {
-        onStatus?.(describeToolActivity(call.function.name, args), 'tool')
+        onStatus?.(describeToolActivity(call.function.name, args), 'tool', progress)
         try {
           result = await runTool(call.function.name, args)
         } finally {
@@ -529,6 +565,24 @@ export async function runAgent(
   }
 
   // Safety cap reached — force a final text answer with tools disabled.
+  //
+  // ⚠️ Say so *before* that answer lands. The forced reply reads exactly like a
+  // normal one: the model summarises what it has and gives no sign it was cut
+  // off mid-task. Without this line the two outcomes are indistinguishable in
+  // the transcript, so a run that stopped halfway through implementing
+  // something is read as a finished job — the user acts on a partial result
+  // believing it is the whole one. A run that *concluded* never reaches here
+  // (it returns from inside the loop), so this cannot fire on a healthy run.
+  onStatus?.(
+    `Limite de ${maxSteps} passos atingido — a tarefa pode estar incompleta. ` +
+      'O assistente vai resumir só o que deu tempo de fazer. Para ir mais longe, ' +
+      `aumente "Passos máximos" nas configurações (máx. ${MAX_STEPS_LIMIT}).`,
+    'remark'
+  )
   const final = await callModelResilient(cfg, pruneSupersededResults(msgs), undefined, opts)
-  return contentText(final.content) || 'Parei após várias etapas. Pode reformular o pedido?'
+  return (
+    contentText(final.content) ||
+    `Parei ao atingir o limite de ${maxSteps} passos, sem conseguir concluir. ` +
+      'Tente dividir o pedido em partes menores ou aumentar "Passos máximos" nas configurações.'
+  )
 }

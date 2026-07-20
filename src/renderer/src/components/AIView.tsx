@@ -9,6 +9,7 @@ import {
   MAX_STEPS,
   AUTO_MAX_STEPS,
   MAX_STEPS_LIMIT,
+  LOW_STEPS_WARNING,
   resolveMaxSteps,
   DEFAULT_TIMEOUT_MS,
   MIN_TIMEOUT_MS,
@@ -146,7 +147,20 @@ function statusState(m: ChatMessage, busy: boolean): StatusState {
  * spins while it runs and settles into a check, so a slow call reads as
  * progress rather than a frozen chat.
  */
-function StatusLine({ text, state }: { text: string; state: StatusState }): React.JSX.Element {
+function StatusLine({
+  text,
+  state,
+  step,
+  maxSteps
+}: {
+  text: string
+  state: StatusState
+  step?: number
+  maxSteps?: number
+}): React.JSX.Element {
+  // Both or neither: a "3/" with no denominator says nothing about how much
+  // budget is left, which is the only reason the badge exists.
+  const badge = step !== undefined && maxSteps !== undefined ? `${step}/${maxSteps}` : null
   return (
     <div
       className={`flex items-start gap-2 px-1 ${
@@ -172,6 +186,14 @@ function StatusLine({ text, state }: { text: string; state: StatusState }): Reac
       ) : (
         <span className="mt-[5px] w-1.5 h-1.5 rounded-full shrink-0 bg-[#3a3e58]" />
       )}
+      {badge && (
+        <span
+          title={`Passo ${step} de ${maxSteps} desta execução`}
+          className="mt-[1px] shrink-0 px-1.5 py-[1px] rounded text-[10px] font-medium tabular-nums bg-[#1e2235] border border-[#2a2d42] text-[#8892a4]"
+        >
+          {badge}
+        </span>
+      )}
       <p className="text-xs leading-relaxed whitespace-pre-wrap break-words">{text}</p>
     </div>
   )
@@ -181,7 +203,17 @@ function StatusLine({ text, state }: { text: string; state: StatusState }): Reac
 // Component
 // ---------------------------------------------------------------------------
 
-export function AIView({ projects }: { projects: Project[] }) {
+export function AIView({
+  projects,
+  prefill,
+  onPrefillConsumed
+}: {
+  projects: Project[]
+  /** Composer text handed in from another view (e.g. a board task). */
+  prefill?: string | null
+  /** Called once `prefill` has been taken, so it can't be applied twice. */
+  onPrefillConsumed?: () => void
+}) {
   const activeProjectId = useKanbanStore((s) => s.activeProjectId)
   const importTasksFromAIChat = useKanbanStore((s) => s.importTasksFromAIChat)
 
@@ -753,6 +785,48 @@ export function AIView({ projects }: { projects: Project[] }) {
   }
 
   /**
+   * Take a composer text handed over from another view (a board task).
+   *
+   * The handoff has to survive a view switch, and AIView is unmounted whenever
+   * another view is active — so the text is parked in App and read here on
+   * arrival. Consumed on use (like `jumpToEnd`) rather than latched: leaving the
+   * AI view and coming back must not retype a task the user already sent or
+   * deliberately cleared.
+   *
+   * ⚠️ **It starts a new conversation**, and that is a cost decision as much as
+   * a relevance one. Verified in the real app: the handoff used to land in
+   * whatever chat was last open — a task briefing dropped into an 8.1k-token
+   * conversation about something else entirely. Every step of a run resends the
+   * whole history, so that unrelated context would be paid for again on each of
+   * up to AUTO_MAX_STEPS steps, and the model would read a code task through a
+   * financial conversation. `handleNewConversation` is the same path the "Nova"
+   * button takes, so a run in flight is parked and spared rather than killed.
+   *
+   * Only when the open chat has something in it: a blank chat is already new,
+   * and resetting one would drop the id of a conversation the user just opened.
+   *
+   * ⚠️ The composer text is appended, never replaced, when the box isn't empty —
+   * a half-written message is the user's, and overwriting it loses work nothing
+   * can recover.
+   */
+  useEffect(() => {
+    if (!prefill) return
+    if (messages.length > 0) handleNewConversation()
+    setInput((cur) => (cur.trim() ? `${cur.replace(/\s+$/, '')}\n\n${prefill}` : prefill))
+    onPrefillConsumed?.()
+    // The cursor belongs after the context, where the instruction gets written.
+    requestAnimationFrame(() => {
+      const el = inputRef.current
+      if (!el) return
+      el.focus()
+      el.setSelectionRange(el.value.length, el.value.length)
+    })
+    // handleNewConversation is stable enough for this: it is recreated each
+    // render but only ever called on a fresh `prefill`, which is the trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefill, onPrefillConsumed])
+
+  /**
    * Take pasted or dropped images: downscale, hand the bytes to the main
    * process, and keep only the id — the transcript never carries base64.
    */
@@ -1186,8 +1260,8 @@ export function AIView({ projects }: { projects: Project[] }) {
               }}
               title={
                 autoApprove
-                  ? 'Modo automático LIGADO — ações rodam sem aprovação. Clique para exigir aprovação.'
-                  : 'Aprovar cada ação. Clique para ligar o modo automático (roda sem perguntar).'
+                  ? 'Modo autônomo LIGADO — a IA trabalha sem interrupção. Clique para voltar a pedir aprovação.'
+                  : 'Modo autônomo DESLIGADO — cada ação pede sua aprovação. Clique para não perguntar mais.'
               }
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                 autoApprove
@@ -1459,12 +1533,37 @@ export function AIView({ projects }: { projects: Project[] }) {
                   className="px-2.5 py-1.5 rounded-md bg-[#0d0f18] border border-[#2a2d42] text-sm text-[#e2e8f0] placeholder:text-[#4a5068] focus:outline-none focus:border-[#6366f1]"
                 />
               </label>
-              <p className="text-[11px] text-[#4a5068] pt-5 leading-relaxed">
-                Quantas rodadas de ferramentas o assistente pode encadear numa resposta — cada
-                rodada é uma chamada paga ao modelo. Em branco usa o padrão: <b>{MAX_STEPS}</b> no
-                modo manual e <b>{AUTO_MAX_STEPS}</b> no automático. Um valor definido vale para os
-                dois modos (máx. {MAX_STEPS_LIMIT}).
-              </p>
+              <div className="pt-5">
+                <p className="text-[11px] text-[#4a5068] leading-relaxed">
+                  Quantas rodadas de ferramentas o assistente pode encadear numa resposta — cada
+                  rodada é uma chamada paga ao modelo. Em branco usa o padrão: <b>{MAX_STEPS}</b> no
+                  modo manual e <b>{AUTO_MAX_STEPS}</b> no automático. Um valor definido vale para os
+                  dois modos (máx. {MAX_STEPS_LIMIT}).
+                </p>
+                {config.maxSteps !== undefined && config.maxSteps < LOW_STEPS_WARNING && (
+                  <p className="mt-2 flex items-start gap-1.5 text-[11px] text-amber-400/90 leading-relaxed">
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      className="shrink-0 mt-0.5"
+                    >
+                      <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                      <line x1="12" y1="9" x2="12" y2="13" />
+                      <line x1="12" y1="17" x2="12.01" y2="17" />
+                    </svg>
+                    <span>
+                      Com apenas {config.maxSteps} passo{config.maxSteps === 1 ? '' : 's'}, tarefas
+                      maiores podem não ser concluídas — ler e pesquisar o código já consome vários
+                      passos antes de qualquer alteração. O assistente para no limite e responde com
+                      o que tiver feito até ali.
+                    </span>
+                  </p>
+                )}
+              </div>
             </div>
 
             <div className="mt-3 flex items-start gap-3">
@@ -1623,7 +1722,7 @@ export function AIView({ projects }: { projects: Project[] }) {
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
               <div>
-                <p className="text-[#e2e8f0] font-medium mb-1">Converse com o modelo alterado</p>
+                <p className="text-[#e2e8f0] font-medium mb-1">Converse com o modelo</p>
                 <p className="text-sm text-[#8892a4]">
                   Descreva o projeto e use <b>Gerar Tasks</b> para criar tarefas.
                 </p>
@@ -1632,7 +1731,13 @@ export function AIView({ projects }: { projects: Project[] }) {
           ) : (
             messages.map((m, i) =>
               m.role === 'status' ? (
-                <StatusLine key={i} text={m.content} state={statusState(m, runningHere)} />
+                <StatusLine
+                  key={i}
+                  text={m.content}
+                  state={statusState(m, runningHere)}
+                  step={m.step}
+                  maxSteps={m.maxSteps}
+                />
               ) : (
                 <div
                   key={i}

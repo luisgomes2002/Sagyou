@@ -42,6 +42,18 @@ export interface ChatMessage {
    * flight, so they have nothing to wait for.
    */
   done?: boolean
+  /**
+   * Status lines only: which step of the run produced this line, 1-based, and
+   * the cap it ran under — rendered as a "3/40" badge.
+   *
+   * Both are stored, rather than deriving the denominator at render time, so an
+   * old transcript keeps showing the cap *that run* actually had. `maxSteps` is
+   * a user setting: reading today's value would silently relabel a finished
+   * run's steps against a limit it never ran under. Optional and additive —
+   * lines saved before this existed simply have no badge.
+   */
+  step?: number
+  maxSteps?: number
 }
 
 /**
@@ -270,11 +282,17 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
         onUsage: (u) => get().addUsage(u),
         // Status lines land in the transcript as they happen, so append to the
         // latest state rather than to the `next` snapshot taken above.
-        onStatus: (text, kind) =>
+        onStatus: (text, kind, progress) =>
           set((s) =>
             routeRun(s, (prev) => [
               ...prev,
-              { role: 'status', content: text, ...(kind === 'tool' && { done: false }) }
+              {
+                role: 'status',
+                content: text,
+                ...(kind === 'tool' && { done: false }),
+                // Absent on lines that aren't a step (retries, the cap warning).
+                ...(progress && { step: progress.step, maxSteps: progress.maxSteps })
+              }
             ])
           ),
         // Tools run one at a time, so this always closes the last status line.

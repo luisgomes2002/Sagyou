@@ -11,10 +11,12 @@ interface Props {
   task: Task | null
   columns: Column[]
   onEdit: (task: Task) => void
+  /** Hand the task to the assistant. Absent = the button isn't offered. */
+  onSendToAI?: (task: Task) => void
   onClose: () => void
 }
 
-export function TaskViewModal({ open, task, columns, onEdit, onClose }: Props) {
+export function TaskViewModal({ open, task, columns, onEdit, onSendToAI, onClose }: Props) {
   const [copied, setCopied] = useState(false)
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
   const [, setTick] = useState(0)
@@ -94,6 +96,18 @@ export function TaskViewModal({ open, task, columns, onEdit, onClose }: Props) {
             )}
           </div>
           <div className="flex items-center gap-1">
+            {onSendToAI && (
+              <button
+                onClick={() => { onClose(); onSendToAI(task) }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[#6366f1]/15 text-[#a5b4fc] border border-[#6366f1]/30 hover:bg-[#6366f1]/25 transition-colors"
+                title="Abrir no chat da IA com o contexto desta task"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                </svg>
+                Pedir para a IA
+              </button>
+            )}
             <button
               onClick={handleCopy}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
