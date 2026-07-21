@@ -1,5 +1,6 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
 import type { RunMetricInput, RunMetricsSummary } from '../main/run-metrics'
+import type { AiMemory, MemoryInput, MemorySummary, MemoryConflict } from '../main/memory'
 
 /** Persisted AI provider config (stored in the main process, not the renderer). */
 interface AIConfig {
@@ -163,6 +164,14 @@ interface AgentHint {
   command?: string
 }
 
+/** Live progress of a code-agent run: the step and the running token total. */
+interface AgentProgress {
+  step: number
+  maxSteps: number
+  promptTokens: number
+  completionTokens: number
+}
+
 interface CodeAgentDiff {
   /** Unified diff. Empty means the agent changed nothing. */
   patch: string
@@ -187,6 +196,8 @@ interface AgentRunMeta {
   endedAt: number
   exitCode: number
   fileCount: number
+  /** Tokens billed across the run. Absent on old rows / no-usage providers. */
+  tokens?: { promptTokens: number; completionTokens: number }
 }
 
 /** An archived run: metadata plus the output frozen when the agent exited. */
@@ -251,6 +262,27 @@ declare global {
           append: (input: RunMetricInput) => Promise<void>
           summary: () => Promise<RunMetricsSummary>
         }
+        memory: {
+          list: (opts?: {
+            projectId?: string | null
+            includeArchived?: boolean
+          }) => Promise<AiMemory[]>
+          save: (
+            input: MemoryInput & { id?: string }
+          ) => Promise<{ memory: AiMemory; redacted: boolean } | { error: string }>
+          delete: (id: string) => Promise<void>
+          replace: (list: AiMemory[]) => Promise<void>
+          touch: (ids: string[]) => Promise<void>
+          prune: () => Promise<{ archived: number }>
+          summary: () => Promise<MemorySummary>
+          conflicts: () => Promise<MemoryConflict[]>
+          briefing: (projectId?: string | null) => Promise<{ text: string; archived: number }>
+          handoff: (input: {
+            projectId?: string | null
+            title: string
+            body: string
+          }) => Promise<{ ok: true } | { error: string }>
+        }
         web: { fetch: (url: string, render?: boolean) => Promise<WebFetchResult> }
         images: {
           save: (dataUrl: string) => Promise<{ id: string } | { error: string }>
@@ -281,6 +313,8 @@ declare global {
             files?: string[]
             /** The chat that asked, so the run can be reopened from it later. */
             convId?: string
+            /** The project whose memory to brief the agent with. */
+            projectId?: string | null
           }) => Promise<{ success: boolean; agent?: string; dir?: string; error?: string }>
           stop: () => Promise<void>
           /** Answer an approval card the native agent's loop is parked on. */
@@ -291,7 +325,14 @@ declare global {
            * `hint` is a recognised environment failure (with its fix) for a run
            * that reported success while doing nothing — null when there wasn't one.
            */
-          status: () => Promise<{ running: boolean; log: string; model?: string; hint: AgentHint | null }>
+          status: () => Promise<{
+            running: boolean
+            log: string
+            model?: string
+            hint: AgentHint | null
+            /** Live step + running token total, so a late-mounting panel catches up. */
+            progress?: AgentProgress
+          }>
           /** What the last run changed, measured from a base taken before it started. */
           diff: () => Promise<CodeAgentDiff>
           /** Past runs of one conversation, newest first. Metadata only. */
@@ -306,6 +347,8 @@ declare global {
           onExit: (cb: (code: number) => void) => () => void
           /** A finished run has been archived and can now be listed. */
           onArchived: (cb: (id: string) => void) => () => void
+          /** Live progress during a run (step + running token total). */
+          onProgress: (cb: (p: AgentProgress) => void) => () => void
           /** A tool call being run, then its result summary (native agent). */
           onToolEvent: (
             cb: (ev: {
@@ -317,8 +360,25 @@ declare global {
           ) => () => void
           /** The loop needs approval for a write/command before it runs. */
           onApproveRequest: (
-            cb: (req: { id: string; name: string; args: Record<string, unknown>; resumo: string }) => void
+            cb: (req: {
+              id: string
+              name: string
+              args: Record<string, unknown>
+              resumo: string
+              /** File contents to be written (capped), for the card's preview. */
+              conteudo?: string
+              /** Full shell command to be run, for the card's preview. */
+              comando?: string
+              /** old→new line diff for a write (over an existing file), for colouring. */
+              diff?: { kind: 'add' | 'del' | 'ctx' | 'meta'; text: string }[]
+              /** The diff was longer than the cap and cut. */
+              diffTruncated?: boolean
+              /** Overwrite/command — the card warns (old bytes lost / arbitrary effect). */
+              irreversivel?: boolean
+            }) => void
           ) => () => void
+          /** A recognised environment failure hit mid-run (sandbox couldn't start, …). */
+          onHint: (cb: (hint: AgentHint) => void) => () => void
         }
         jail: {
           status: (refresh?: boolean) => Promise<{

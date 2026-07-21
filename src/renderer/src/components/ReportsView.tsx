@@ -67,7 +67,7 @@ function ActivityHeatmap({ doneTasks }: { doneTasks: Task[] }) {
     <div className="rounded-lg bg-[#1e2235] border border-[#2a2d42] p-4">
       <div className="flex items-baseline justify-between mb-2">
         <p className="text-[10px] font-semibold uppercase tracking-wider text-[#8892a4]">
-          Atividade — últimos 12 meses
+          Atividade: últimos 12 meses
         </p>
         <span className="text-[11px] text-[#8892a4]">{total} concluídas</span>
       </div>
@@ -491,7 +491,7 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
           />
           <StatCard
             label="Tempo registrado"
-            value={totalTime > 0 ? formatTime(totalTime) : '—'}
+            value={totalTime > 0 ? formatTime(totalTime) : '-'}
             sub={
               totalTime > 0
                 ? `em ${tasks.filter((t) => t.timeSpent).length} tasks`
@@ -687,7 +687,7 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
                     {count}
                   </span>
                   <span className="text-[10px] text-[#848899] w-7 text-right shrink-0 tabular-nums">
-                    {totalTagCount > 0 ? `${Math.round((count / totalTagCount) * 100)}%` : '—'}
+                    {totalTagCount > 0 ? `${Math.round((count / totalTagCount) * 100)}%` : '-'}
                   </span>
                 </div>
               ))}
@@ -731,7 +731,7 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
                     />
                   </div>
                   <span className="text-[10px] text-[#8892a4] w-5 text-right shrink-0 tabular-nums">
-                    {load > 0 ? load : '—'}
+                    {load > 0 ? load : '-'}
                   </span>
                   <div className="flex-1 h-1.5 bg-[#0d0f18] rounded-full overflow-hidden">
                     <div
@@ -743,7 +743,7 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
                     />
                   </div>
                   <span className="text-[10px] text-[#8892a4] w-10 text-right shrink-0 tabular-nums font-mono">
-                    {time > 0 ? formatTime(time) : '—'}
+                    {time > 0 ? formatTime(time) : '-'}
                   </span>
                 </div>
               ))}

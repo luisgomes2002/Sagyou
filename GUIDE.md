@@ -180,6 +180,17 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    antigo. A escolha é feita uma vez em `runAgent` (`rcfg`) e vale para todas as
    chamadas daquela execução.
 
+9. 🔴 **A tabela `memory` é satélite, fora do `persistAll`.** Memórias do assistente
+   (decisões, tradeoffs, gotchas, handoffs) ficam em SQLite mas nunca passam pelo
+   store Zustand — `access_count`/`last_accessed_at` são bumpados a cada leitura, e
+   isso via `persistAll` reescreveria as 17 tabelas por bump. As ferramentas são
+   `salvar_memoria` (write, gated), `buscar_memoria`, `buscar_conversas` e
+   `verificar_memorias`. A sanitização de segredos (`scrubSecrets`) roda em todo
+   save — memória é reenviada ao modelo a cada passo, então uma chave vazada seria
+   permanente. Decay arquiva (nunca hard-deleta); memória pinada nunca decai.
+   Handoff automático (`writeHandoff`) grava um breadcrumb por projeto ao fim de
+   cada run, sem chamada LLM. Compartilhada entre chat e code-agent.
+
 ## Segurança — o que já está resolvido
 
 `main/web-fetch.ts` busca páginas cuja URL **vem do modelo**, ou seja, não é
@@ -274,6 +285,13 @@ Não "simplifique" nenhuma destas sem ler o comentário que as acompanha:
   `linux-x86_64` e `macos-aarch64` existem upstream; instala em `~/.local/bin` com
   **sha256 verificado**. A detecção só roda com o sandbox **ligado**. Lógica pura testada
   em `ai-jail.test.ts`.
+  ⚠️ **ai-jail + bwrap no PATH não prova que o sandbox roda** (Ubuntu 23.10+ restringe os
+  user namespaces que o bwrap precisa): no Linux, achados os dois, `detectAiJail` faz um
+  **smoke test** (`sandboxSmokeTest`: `ai-jail --rw-map <tmp> -- sh -c 'true'`) e vira
+  `available:false` se não iniciar — o gate recusa em vez de rodar sem confinar. Falha de
+  namespace (`looksLikeUserNsBlock`) dá o `reason` com o fix `sudo sysctl -w
+  kernel.apparmor_restrict_unprivileged_userns=0` (mostrado, nunca rodado); `bubblewrap`
+  fica `true` (está instalado, só não cria o namespace). O erro do gate mostra `jail.reason`.
 - **Config separada**: `AIConfig.codeAgent {baseUrl,apiKey,model}` — campo vazio cai
   pro provedor do chat (`resolveCodeAgentConfig`). O painel mostra o **modelo real**
   (banner `modelo: X @ Y`, `status.model`, header), não mais "próprio do codex". Os
@@ -294,10 +312,19 @@ Não "simplifique" nenhuma destas sem ler o comentário que as acompanha:
   Main confina cada um à raiz (`confineToRoot`) e descarta os inválidos; o run abre
   com um banner do modelo e de quais arquivos foram indicados, e fecha com
   `[sagyou] duração: N.Ns`.
-- 📎 **Restos do codex, dormentes**: `resolveExecutable`/`detectAgentHint` continuam
-  em `index.ts` com testes, mas **não ligados a nada** — podem ser removidos depois.
-  `AgentRunMeta.agent` agora é texto livre com o nome do modelo (linhas antigas leem
-  como `"codex"`).
+- 🛡️ **`detectAgentHint` ligado ao agente nativo**: o `CommandRunner` do run passa a
+  saída (stdout+stderr) de todo comando que falha por `detectAgentHint` — é o único
+  ponto com a saída completa (o painel só recebe o resumo de uma linha, sem o marcador
+  `bwrap:`). Casando `bwrap:` / `needs access to create user namespaces`, seta
+  `codeAgentHint` **uma vez** e **empurra `ai:code-agent:hint`** pro card aparecer no
+  meio do run (não só no fim). O smoke test do ai-jail pega o caso comum antes de
+  começar; isso cobre o que escapa (detecção em cache, ou o comando do próprio agente
+  chamando bwrap/containers com o sandbox off). Checado **antes** de
+  `looksLikeSandboxBlock` (que também casa `bwrap:`), pra não rotular uma falha de
+  namespace — sandbox que não *iniciou* — como tentativa de sair do projeto.
+- 📎 **Resto do codex, dormente**: `resolveExecutable` continua em `index.ts` com teste,
+  mas **não ligado a nada** — pode ser removido depois. `AgentRunMeta.agent` agora é
+  texto livre com o nome do modelo (linhas antigas leem como `"codex"`).
 - ⚠️ **No Linux o `--sandbox workspace-write` do codex pode falhar inteiro e sair
   com código 0**: o sandbox usa bubblewrap, que precisa de user namespaces sem
   privilégio, e o Ubuntu 23.10+ bloqueia isso via AppArmor

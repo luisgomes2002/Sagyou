@@ -21,6 +21,8 @@ export interface AgentRunMeta {
   endedAt: number
   exitCode: number
   fileCount: number
+  /** Tokens billed across the run. Absent on old rows / no-usage providers. */
+  tokens?: { promptTokens: number; completionTokens: number }
 }
 
 /** "hoje 14:32" / "ontem 19:44" / "12/03 08:15" — a row has to be scannable. */
@@ -40,8 +42,17 @@ function fileLabel(n: number): string {
   return n === 1 ? '1 arquivo' : `${n} arquivos`
 }
 
+/** "47.2k", "1.2M" — matches AIView's formatTokens; a row has to be scannable. */
+function tokenLabel(t?: { promptTokens: number; completionTokens: number }): string {
+  if (!t) return ''
+  const n = t.promptTokens + t.completionTokens
+  if (n <= 0) return ''
+  const short = n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
+  return ` · ${short} tok`
+}
+
 function rowLabel(run: AgentRunMeta): string {
-  return `${whenLabel(run.startedAt)} · ${run.agent} · ${fileLabel(run.fileCount)}`
+  return `${whenLabel(run.startedAt)} · ${run.agent} · ${fileLabel(run.fileCount)}${tokenLabel(run.tokens)}`
 }
 
 export function AgentRunPicker({

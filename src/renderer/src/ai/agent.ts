@@ -317,6 +317,12 @@ export function resolveMaxSteps(configured: unknown, autoApprove: boolean): numb
 }
 
 export interface RunAgentOptions {
+  /**
+   * The active project, used to fetch the memory briefing injected at run start
+   * (this project's memories + the globals). Absent = globals only. Best-effort:
+   * a missing memory bridge (older preload, tests) just means no briefing.
+   */
+  projectId?: string | null
   /** Max loop iterations before forcing a final answer (default MAX_STEPS). */
   maxSteps?: number
   /** Checked between iterations; if it returns true, the loop stops early. */
@@ -716,7 +722,27 @@ export async function runAgent(
   // to `modelComplex` (when configured), the rest stays on the cheaper `model`.
   // Every call this run makes uses `rcfg`, so the whole loop runs on one model.
   const rcfg: AIConfig = { ...cfg, model: routeModel(lastUserText(conversation), cfg) }
-  const msgs: ApiMessage[] = [{ role: 'system', content: SYSTEM_PROMPT }, ...conversation]
+  // Prepend the memory briefing (this project's memories + globals) to the system
+  // prompt. Best-effort and guarded: a briefing failure — or an absent bridge in
+  // tests/older preload — leaves the prompt exactly as it was. Reading the
+  // briefing is decay-neutral (see formatMemoriesForPrompt); only buscar_memoria
+  // touches memories.
+  let systemContent = SYSTEM_PROMPT
+  try {
+    const brief = await window.electronAPI?.ai?.memory?.briefing?.(opts.projectId ?? null)
+    if (brief?.text) systemContent = `${SYSTEM_PROMPT}\n\n${brief.text}`
+    // The briefing call also runs the lazy decay pass. Surface it only when it
+    // actually retired something — rare, so it's a signal, not noise.
+    if (brief?.archived) {
+      opts.onStatus?.(
+        `${brief.archived} memória(s) arquivada(s) por inatividade.`,
+        'remark'
+      )
+    }
+  } catch {
+    /* memory is best-effort; a briefing failure never blocks the run */
+  }
+  const msgs: ApiMessage[] = [{ role: 'system', content: systemContent }, ...conversation]
   const { onStream, onStatus, onToolEnd } = opts
   // Run-scoped brake state. Each counter/list lives for one run only, so a
   // brake never carries over into the next answer.

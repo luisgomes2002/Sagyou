@@ -175,6 +175,32 @@ export interface Backup {
   // Added in version 3. Absent in older backups — importing one of those must
   // leave the local history untouched rather than wiping it.
   conversations?: AIConversation[]
+  // Added in version 4. Same rule: absent = leave local memory alone.
+  memories?: AiMemory[]
+}
+
+/** The type of a durable AI memory. Mirrors MemoryType in main/memory.ts. */
+export type MemoryType = 'decisao' | 'tradeoff' | 'gotcha' | 'fato' | 'handoff'
+
+/**
+ * A durable fact the assistant carries across conversations. Renderer-side
+ * mirror of AiMemory in main/memory.ts (the store's source of truth) — the two
+ * are kept in step by hand, like store.ts mirrors these types the other way.
+ */
+export interface AiMemory {
+  id: string
+  projectId: string | null
+  type: MemoryType
+  title: string
+  body: string
+  tags: string[]
+  pinned: boolean
+  source: 'modelo' | 'usuario'
+  createdAt: string
+  updatedAt: string
+  lastAccessedAt: string
+  accessCount: number
+  archivedAt: string | null
 }
 
 export interface AITaskInput {

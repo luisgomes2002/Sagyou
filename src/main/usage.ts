@@ -52,6 +52,31 @@ export const MAX_USAGE_ENTRIES = 5000
 /** How many recent calls the summary carries back to the UI. */
 const RECENT_LIMIT = 30
 
+/** Compact token count for display: "999", "47.2k", "1.2M". Display only. */
+export function formatTokens(n: number): string {
+  if (!Number.isFinite(n) || n < 0) return '0'
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`
+  return String(Math.round(n))
+}
+
+/**
+ * The end-of-run token/cost/efficiency block for the agent log. Pure, so the
+ * exact wording is pinned by a test. `cost` absent (prices unset) drops the
+ * money line; `steps` of 0 drops the efficiency line rather than dividing by it.
+ */
+export function formatRunSummary(usage: TokenUsage, steps: number, cost: number | undefined): string {
+  const total = usage.promptTokens + usage.completionTokens
+  const lines = [
+    `Tokens: ${formatTokens(usage.promptTokens)} prompt | ${formatTokens(usage.completionTokens)} completion | ${formatTokens(total)} total`
+  ]
+  if (typeof cost === 'number') lines.push(`Custo estimado: ~$${cost.toFixed(2)} USD`)
+  if (steps > 0) {
+    lines.push(`Eficiência: ${steps} passo(s), ${formatTokens(Math.round(total / steps))} tokens/passo`)
+  }
+  return lines.join('\n')
+}
+
 /**
  * What a call cost at the given prices, or undefined when they aren't both set.
  * Pricing with only one would charge half the tokens at zero. Mirrors

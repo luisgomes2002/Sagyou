@@ -15,8 +15,11 @@ import {
   captureBase,
   diffSince,
   realGit,
+  lineDiff,
   MAX_DIFF_CHARS,
   MAX_NEW_FILES,
+  MAX_APPROVAL_DIFF_LINES,
+  MAX_DIFFABLE_LINES,
   type GitRunner
 } from '../code-diff'
 
@@ -254,5 +257,50 @@ describe('diffSince', () => {
     // Args arrive as a list, never spliced into one string.
     expect(calls.every((a) => Array.isArray(a))).toBe(true)
     expect(calls.flat().join(' ')).not.toContain('&&')
+  })
+})
+
+describe('lineDiff — the approval-card write diff', () => {
+  it('marks changed lines add/del and keeps surrounding context', () => {
+    const { lines, skipped } = lineDiff('a\nb\nc', 'a\nB\nc')
+    expect(skipped).toBe(false)
+    const dels = lines.filter((l) => l.kind === 'del').map((l) => l.text)
+    const adds = lines.filter((l) => l.kind === 'add').map((l) => l.text)
+    expect(dels).toContain('b')
+    expect(adds).toContain('B')
+    // Unchanged neighbours are shown as context.
+    expect(lines.some((l) => l.kind === 'ctx' && l.text === 'a')).toBe(true)
+  })
+
+  it('renders a brand-new file (empty old) as all additions', () => {
+    const { lines } = lineDiff('', 'x\ny')
+    expect(lines.every((l) => l.kind === 'add')).toBe(true)
+    expect(lines.map((l) => l.text)).toEqual(['x', 'y'])
+  })
+
+  it('collapses long unchanged runs to a marker so the change stays visible', () => {
+    const big = Array.from({ length: 100 }, (_, i) => `line${i}`).join('\n')
+    const changed = big + '\nEXTRA'
+    const { lines } = lineDiff(big, changed)
+    expect(lines.some((l) => l.kind === 'meta' && /inalterada/.test(l.text))).toBe(true)
+    expect(lines.some((l) => l.kind === 'add' && l.text === 'EXTRA')).toBe(true)
+    // The 100 context lines did not survive verbatim.
+    expect(lines.length).toBeLessThan(50)
+  })
+
+  it('skips the diff when a side is too large to review', () => {
+    const huge = Array.from({ length: MAX_DIFFABLE_LINES + 1 }, (_, i) => `l${i}`).join('\n')
+    const { skipped, lines } = lineDiff('a', huge)
+    expect(skipped).toBe(true)
+    expect(lines).toEqual([])
+  })
+
+  it('truncates a diff longer than the cap', () => {
+    // Two disjoint files → every line is add or del, none collapsible.
+    const oldT = Array.from({ length: MAX_APPROVAL_DIFF_LINES }, (_, i) => `old${i}`).join('\n')
+    const newT = Array.from({ length: MAX_APPROVAL_DIFF_LINES }, (_, i) => `new${i}`).join('\n')
+    const { lines, truncated } = lineDiff(oldT, newT)
+    expect(truncated).toBe(true)
+    expect(lines.length).toBe(MAX_APPROVAL_DIFF_LINES)
   })
 })

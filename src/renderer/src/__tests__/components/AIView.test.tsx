@@ -80,6 +80,10 @@ function installApi(): void {
         // Native agent: a tool step, and the per-action approval card.
         onToolEvent: vi.fn(() => vi.fn()),
         onApproveRequest: vi.fn(() => vi.fn()),
+        // A recognised environment failure (e.g. the sandbox couldn't start).
+        onHint: vi.fn(() => vi.fn()),
+        // Live step + token counter pushed each step.
+        onProgress: vi.fn(() => vi.fn()),
         approve: vi.fn(),
         runs: vi.fn(async () => []),
         runGet: vi.fn(async () => null),

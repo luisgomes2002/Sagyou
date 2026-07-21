@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 import { useKanbanStore } from '../store/kanban'
 import { useAiRunStore, toApiMessages, type ChatMessage } from '../store/aiRun'
 import { PRIORITY_CONFIG, AI_TASK_PROMPT_TEMPLATE } from '../types'
@@ -26,6 +26,16 @@ import { AgentTerminal } from './AgentTerminal'
 import { AgentRunPicker, type AgentRunMeta } from './AgentRunPicker'
 import { SandboxOnboarding, type JailStatus } from './SandboxOnboarding'
 import { ConfirmDialog } from './ConfirmDialog'
+
+// Colouring for the approval card's write diff — same language as CodeDiff so a
+// diff reads the same whether reviewed before or after the write.
+const DIFF_LINE_CLASS: Record<'add' | 'del' | 'ctx' | 'meta', string> = {
+  add: 'bg-emerald-500/10 text-emerald-300',
+  del: 'bg-red-500/10 text-red-300',
+  ctx: 'text-[#8892a4]',
+  meta: 'text-[#4a5068] bg-[#0d0f18]'
+}
+const DIFF_MARK: Record<'add' | 'del' | 'ctx' | 'meta', string> = { add: '+', del: '-', ctx: ' ', meta: '' }
 
 // Config is persisted via ai:config in the main process (see effects below);
 // AIConfig and the tool-calling loop live in ../ai/agent.
@@ -284,12 +294,24 @@ export function AIView({
   const [agentRunning, setAgentRunning] = useState(false)
   /** The real model the running agent is using (native agent), for the panel. */
   const [agentModel, setAgentModel] = useState('')
+  /** Live step + running token total of the current run, for the panel counter. */
+  const [agentProgress, setAgentProgress] = useState<{
+    step: number
+    maxSteps: number
+    promptTokens: number
+    completionTokens: number
+  } | null>(null)
   /** A write/command the loop is parked on, awaiting the user's OK. Null = none. */
   const [agentApproval, setAgentApproval] = useState<{
     id: string
     name: string
     args: Record<string, unknown>
     resumo: string
+    conteudo?: string
+    comando?: string
+    diff?: { kind: 'add' | 'del' | 'ctx' | 'meta'; text: string }[]
+    diffTruncated?: boolean
+    irreversivel?: boolean
   } | null>(null)
   /** ai-jail sandbox status (merged with config). Null until first fetched. */
   const [jailStatus, setJailStatus] = useState<
@@ -595,11 +617,14 @@ export function AIView({
     window.electronAPI.ai.codeAgent.status().then((s) => {
       if (cancelled) return
       setAgentRunning(s.running)
+      if (s.running) setShowLog(true)
       setAgentModel(s.model ?? '')
       // Replace rather than append: this IS the log, tail and all. Appending
       // would double every line for a user who never left.
       if (s.log) setAgentLog(s.log)
       setAgentHint(s.hint)
+      // Catch up the live counter for a panel that mounted mid-run.
+      setAgentProgress(s.running ? (s.progress ?? null) : null)
       // A run may have finished while this view didn't exist; its diff is still
       // there to be asked for.
       if (s.log && !s.running) void loadDiff()
@@ -610,6 +635,7 @@ export function AIView({
       // collapsed an hour ago is output nobody sees. Closing is about the run
       // they were done with, not the next one.
       setAgentPanelOpen(true)
+      setShowLog(true)
       setAgentLog((l) => (l + chunk).slice(-8000)) // cap to keep the panel light
     })
     // The loop is parked on a write/command: raise the card (and reopen the
@@ -617,9 +643,21 @@ export function AIView({
     const offApprove = window.electronAPI.ai.codeAgent.onApproveRequest((req) => {
       setAgentPanelOpen(true)
       setAgentApproval(req)
+      // Record the action in the log as soon as the card appears — before the
+      // user answers — so the transcript shows what was asked even if it is
+      // declined (the [tool] line is only emitted once the action actually runs).
+      setAgentLog((l) => (l + `\n[aguardando aprovação] ${req.resumo}\n`).slice(-8000))
+    })
+    // Live counter: the running step and token total, pushed each step.
+    const offProgress = window.electronAPI.ai.codeAgent.onProgress((p) => {
+      setAgentRunning(true)
+      setAgentProgress(p)
     })
     const offExit = window.electronAPI.ai.codeAgent.onExit((code) => {
       setAgentRunning(false)
+      // The final token summary is already in the log; the live counter belongs
+      // to the run that just ended, so clear it.
+      setAgentProgress(null)
       // A run that ended can't have a pending approval — clear any stale card.
       setAgentApproval(null)
       setAgentLog((l) => l + `\n[agente encerrado — código ${code}]\n`)
@@ -641,12 +679,21 @@ export function AIView({
     const offArchived = window.electronAPI.ai.codeAgent.onArchived(() => {
       void refreshRuns(useAiRunStore.getState().conversationId)
     })
+    // A recognised environment failure (e.g. the sandbox couldn't start) arrives
+    // mid-run, so the card can go up while the agent still churns — the user can
+    // stop it early instead of watching every command fail to the step cap.
+    const offHint = window.electronAPI.ai.codeAgent.onHint((hint) => {
+      setAgentPanelOpen(true)
+      setAgentHint(hint)
+    })
     return () => {
       cancelled = true
       offOutput()
       offApprove()
+      offProgress()
       offExit()
       offArchived()
+      offHint()
     }
   }, [])
 
@@ -709,7 +756,15 @@ export function AIView({
   // tree dirty, so the base-to-worktree diff shows the work mid-run.
   useEffect(() => {
     if (!agentRunning) return
-    const id = setInterval(() => void loadDiff(), 2000)
+    const id = setInterval(() => {
+      void loadDiff()
+      // Reconcile the hint with main every tick: a new run reset main's copy to
+      // null, so this clears a stale card left over from the previous run, and
+      // it's a backstop for the pushed onHint (which fires the instant a failure
+      // is seen). setState in a timer callback, not the effect body — so it
+      // doesn't hit react-hooks/set-state-in-effect.
+      void window.electronAPI.ai.codeAgent.status().then((s) => setAgentHint(s.hint))
+    }, 2000)
     return () => clearInterval(id)
   }, [agentRunning])
 
@@ -980,21 +1035,52 @@ export function AIView({
   }
 
   /**
-   * Escape closes the topmost thing that's open — one layer per press.
+   * Answer the code-agent's parked write/command. Logs the outcome — a refusal
+   * is recorded too, so the transcript shows what was declined — then resolves
+   * the loop's promise (via approve) and clears the card. Shared by the card
+   * buttons and the Enter/Esc shortcuts so all three stay in step.
+   */
+  const answerAgentApproval = useCallback(
+    (approved: boolean): void => {
+      if (!agentApproval) return
+      void window.electronAPI.ai.codeAgent.approve(agentApproval.id, approved)
+      setAgentLog((l) =>
+        (l + `\n[${approved ? 'aprovado' : 'recusado'}] ${agentApproval.resumo}\n`).slice(-8000)
+      )
+      setAgentApproval(null)
+    },
+    [agentApproval]
+  )
+
+  /**
+   * Keyboard: Esc closes the topmost open thing (one layer per press); Enter
+   * approves a parked code-agent action.
    *
    * Bound to the document rather than to each overlay so it works wherever the
    * focus happens to be (the composer, a dropdown's search box, nothing at
    * all). The order mirrors what's stacked on screen, so Escape never reaches
    * past a dialog to dismiss something behind it.
    *
-   * The approval card is drawn by AiRunHost, not here — but the ordering below
-   * is the reason this view keeps answering it while it's open: the host binds
-   * Escape only when the AI view is closed, so exactly one listener acts.
+   * Two approval cards exist: the chat write card (pendingApproval) is drawn by
+   * AiRunHost — the ordering below is why this view keeps answering it while
+   * open (the host binds Escape only when the AI view is closed, so exactly one
+   * listener acts) — and the code-agent action card (agentApproval), drawn here.
    */
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
+      // Enter approves the code-agent card — but never while the user is typing
+      // (composer, search boxes), where Enter already means something.
+      if (e.key === 'Enter' && agentApproval) {
+        const el = e.target as HTMLElement | null
+        if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return
+        e.preventDefault()
+        return answerAgentApproval(true)
+      }
       if (e.key !== 'Escape') return
       if (confirmDelete) return setConfirmDelete(null)
+      // Code-agent action card: Esc refuses. Same reasoning as pendingApproval —
+      // the loop awaits this promise, so hiding it unanswered hangs the run.
+      if (agentApproval) return answerAgentApproval(false)
       if (pendingApproval) {
         // NOT just a close: the agent loop is awaiting this promise, so hiding
         // the card without answering leaves the run hanging forever. Escape is
@@ -1014,6 +1100,8 @@ export function AIView({
     return () => document.removeEventListener('keydown', onKey)
   }, [
     confirmDelete,
+    agentApproval,
+    answerAgentApproval,
     pendingApproval,
     proposed,
     showSpend,
@@ -1829,12 +1917,19 @@ export function AIView({
                 </label>
                 {jailStatus && !jailStatus.available && (
                   <p className="mt-1 text-[11px] text-[#8892a4]">
-                    ai-jail não instalado.{' '}
+                    {/* When the kernel blocks the namespaces, ai-jail IS installed —
+                        saying "não instalado" here would send the user to reinstall
+                        instead of running the sysctl the onboarding now shows. */}
+                    {/apparmor_restrict_unprivileged_userns/.test(jailStatus.reason ?? '')
+                      ? 'Sandbox indisponível.'
+                      : 'ai-jail não instalado.'}{' '}
                     <button
                       onClick={() => setShowOnboarding(true)}
                       className="text-[#a5b4fc] hover:underline"
                     >
-                      Instalar ai-jail
+                      {/apparmor_restrict_unprivileged_userns/.test(jailStatus.reason ?? '')
+                        ? 'Como resolver'
+                        : 'Instalar ai-jail'}
                     </button>
                     {jailStatus.reason ? ` — ${jailStatus.reason}` : ''}
                   </p>
@@ -2098,6 +2193,13 @@ export function AIView({
                 {agentRunning && agentModel && (
                   <span className="text-[10px] font-normal text-[#6b7280]">· {agentModel}</span>
                 )}
+                {/* Live counter: step and running token total. */}
+                {agentRunning && agentProgress && agentProgress.step > 0 && (
+                  <span className="text-[10px] font-normal text-[#6b7280]">
+                    · Passo {agentProgress.step}/{agentProgress.maxSteps} ·{' '}
+                    {formatTokens(agentProgress.promptTokens + agentProgress.completionTokens)} tokens
+                  </span>
+                )}
               </span>
               <div className="flex items-center gap-3">
                 <AgentRunPicker
@@ -2177,42 +2279,94 @@ export function AIView({
                 on the promise resolved by codeAgent.approve). */}
             {agentPanelOpen && agentApproval && (
               <div className="px-6 pb-3 pt-3">
-                <div className="rounded-lg border border-[#4f46e5] bg-[#141527] p-3">
-                  <p className="text-[12px] font-semibold text-[#a5b4fc]">
+                <div
+                  className={`rounded-lg border p-3 ${
+                    agentApproval.irreversivel
+                      ? 'border-red-500/60 bg-[#1a0f12]'
+                      : 'border-[#4f46e5] bg-[#141527]'
+                  }`}
+                >
+                  <p
+                    className={`text-[12px] font-semibold ${
+                      agentApproval.irreversivel ? 'text-red-300' : 'text-[#a5b4fc]'
+                    }`}
+                  >
                     O agente quer{' '}
                     {agentApproval.name === 'executar_comando' ? 'executar um comando' : 'escrever um arquivo'}
+                    {agentApproval.irreversivel && ' (sobrescreve o conteúdo atual)'}
                   </p>
                   <p className="mt-1 break-words font-mono text-[11px] leading-relaxed text-[#e2e8f0]">
                     {agentApproval.resumo}
                   </p>
+                  {/* Preview the actual payload so the user reviews before OKing —
+                      a coloured diff when overwriting, the file contents for a new
+                      file, the full command for a command. Blind approval is the
+                      opposite of what a safety gate is for. */}
+                  {agentApproval.name === 'executar_comando' && agentApproval.comando && (
+                    <>
+                      <pre className="mt-2 max-h-[180px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-[#2a2d42] bg-[#0b0c1a] p-2.5 font-mono text-[11px] leading-relaxed text-[#f8fafc]">
+                        {agentApproval.comando}
+                      </pre>
+                      <p className="mt-1 text-[10px] italic text-[#8892a4]">
+                        Executa na pasta do projeto, com efeitos reais no seu sistema.
+                      </p>
+                    </>
+                  )}
+                  {agentApproval.name === 'escrever_arquivo' &&
+                    (agentApproval.diff && agentApproval.diff.length > 0 ? (
+                      <>
+                        <div className="mt-2 max-h-[320px] overflow-auto rounded-md border border-[#2a2d42] bg-[#0d0f18] py-1">
+                          {agentApproval.diff.map((line, i) => (
+                            <div
+                              key={i}
+                              className={`flex px-2.5 font-mono text-[11px] leading-[1.6] ${DIFF_LINE_CLASS[line.kind]}`}
+                            >
+                              <span className="w-3 shrink-0 select-none opacity-60">{DIFF_MARK[line.kind]}</span>
+                              <span className="whitespace-pre-wrap break-all">{line.text || ' '}</span>
+                            </div>
+                          ))}
+                        </div>
+                        {agentApproval.diffTruncated && (
+                          <p className="mt-1 text-[10px] italic text-[#8892a4]">
+                            diff truncado — o arquivo completo será escrito mesmo assim
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <pre className="mt-2 max-h-[280px] overflow-auto whitespace-pre rounded-md border border-[#2a2d42] bg-[#0b0c1a] p-2.5 font-mono text-[11px] leading-relaxed text-[#e2e8f0]">
+                          {agentApproval.conteudo || '(arquivo vazio)'}
+                        </pre>
+                        {(agentApproval.conteudo?.length ?? 0) >= 3000 && (
+                          <p className="mt-1 text-[10px] italic text-[#8892a4]">
+                            prévia truncada em 3000 caracteres — o arquivo completo será escrito
+                          </p>
+                        )}
+                      </>
+                    ))}
                   <div className="mt-2.5 flex items-center gap-2">
                     <button
-                      onClick={() => {
-                        void window.electronAPI.ai.codeAgent.approve(agentApproval.id, true)
-                        setAgentApproval(null)
-                      }}
+                      onClick={() => answerAgentApproval(true)}
                       className="rounded-md bg-[#4f46e5] px-3 py-1.5 text-[11px] font-medium text-white hover:bg-[#4338ca]"
                     >
-                      Aprovar
+                      Aprovar <span className="ml-1 opacity-60">↵</span>
                     </button>
                     <button
-                      onClick={() => {
-                        void window.electronAPI.ai.codeAgent.approve(agentApproval.id, false)
-                        setAgentApproval(null)
-                      }}
+                      onClick={() => answerAgentApproval(false)}
                       className="rounded-md border border-[#2a2d42] px-3 py-1.5 text-[11px] font-medium text-[#8892a4] hover:text-[#e2e8f0]"
                     >
-                      Recusar
+                      Recusar <span className="ml-1 opacity-60">Esc</span>
                     </button>
                   </div>
                 </div>
               </div>
             )}
-            {/* Above the diff, because it explains why the diff is empty. The
-                failure it reports exits 0 and prints its cause only in the raw
-                log, which sits behind a toggle — so without this the user is
-                told the run finished and left to wonder why nothing changed. */}
-            {agentPanelOpen && agentHint && !agentRunning && !viewingPast && (
+            {/* Above the diff, because it explains why it's empty: a bwrap/
+                sandbox failure prints its cause only in the raw log (behind a
+                toggle), so without this the user watches commands fail with no
+                idea why. Shown mid-run too (pushed via onHint) so they can stop
+                early rather than wait out every failing step. */}
+            {agentPanelOpen && agentHint && !viewingPast && (
               <div className="px-6 pb-3">
                 <div className="rounded-lg border border-[#7c4a2d] bg-[#1a1108] p-3">
                   <div className="flex items-start gap-2">

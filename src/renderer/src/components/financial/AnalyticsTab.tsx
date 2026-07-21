@@ -202,7 +202,7 @@ export function AnalyticsTab({ list, selectedYear, onYearChange, selectedMonth, 
                 {formatCurrency(topExpCat[1], currency)}{totalExpense > 0 ? ` · ${Math.round((topExpCat[1] / totalExpense) * 100)}%` : ''}
               </p>
             </>
-          ) : <p className="text-xs text-[#4a5068]">—</p>}
+          ) : <p className="text-xs text-[#4a5068]">-</p>}
         </div>
         <div className="rounded-lg border border-red-500/25 bg-red-500/5 p-3">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-red-400/60 mb-1.5">Pior Mês</p>
@@ -226,7 +226,7 @@ export function AnalyticsTab({ list, selectedYear, onYearChange, selectedMonth, 
                 {formatCurrency(topIncCat[1], currency)}{totalIncome > 0 ? ` · ${Math.round((topIncCat[1] / totalIncome) * 100)}%` : ''}
               </p>
             </>
-          ) : <p className="text-xs text-[#4a5068]">—</p>}
+          ) : <p className="text-xs text-[#4a5068]">-</p>}
         </div>
       </div>
 

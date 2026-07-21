@@ -45,6 +45,9 @@ export interface AgentRunMeta {
   exitCode: number
   /** Files the diff touched — the one number worth showing before opening it. */
   fileCount: number
+  /** Tokens billed across the run (prompt + completion). Absent on old rows and
+   *  on runs whose provider reported no usage. */
+  tokens?: { promptTokens: number; completionTokens: number }
 }
 
 /** A run as reopened: the metadata plus the frozen output. */
@@ -98,10 +101,22 @@ export function normalizeRuns(raw: unknown): AgentRunMeta[] {
       startedAt: Number(m.startedAt) || 0,
       endedAt: Number(m.endedAt) || 0,
       exitCode: Number.isFinite(Number(m.exitCode)) ? Number(m.exitCode) : 0,
-      fileCount: Number(m.fileCount) || 0
+      fileCount: Number(m.fileCount) || 0,
+      ...readTokens(m.tokens)
     })
   }
   return out
+}
+
+/** Accept a stored `tokens` object only when both fields are finite; otherwise
+ *  leave it off (old rows, or a hand-edited file, read back as "unknown"). */
+function readTokens(raw: unknown): { tokens?: { promptTokens: number; completionTokens: number } } {
+  if (!raw || typeof raw !== 'object') return {}
+  const t = raw as Record<string, unknown>
+  const p = Number(t.promptTokens)
+  const c = Number(t.completionTokens)
+  if (!Number.isFinite(p) || !Number.isFinite(c)) return {}
+  return { tokens: { promptTokens: p, completionTokens: c } }
 }
 
 /** Newest first — the order the picker shows and the order pruning trusts. */

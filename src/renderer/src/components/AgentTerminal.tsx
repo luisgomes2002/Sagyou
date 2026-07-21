@@ -51,7 +51,7 @@ export function AgentTerminal({
         <span className="w-2.5 h-2.5 rounded-full bg-[#febc2e]" />
         <span className="w-2.5 h-2.5 rounded-full bg-[#28c840]" />
         <span className="ml-2 text-[10px] font-mono text-[#6b7280] tracking-wide">
-          agent — {running ? 'running' : 'idle'}
+          agent: {running ? 'running' : 'idle'}
         </span>
         <button
           onClick={handleCopy}

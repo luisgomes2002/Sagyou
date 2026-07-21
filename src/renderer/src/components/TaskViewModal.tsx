@@ -175,7 +175,7 @@ export function TaskViewModal({ open, task, columns, onEdit, onSendToAI, onClose
                   {isOverdue && <span className="ml-1.5 text-[10px] font-normal">vencida</span>}
                 </p>
               ) : (
-                <p className="text-sm text-[#8892a4]">—</p>
+                <p className="text-sm text-[#8892a4]">-</p>
               )}
             </div>
             <div>
@@ -205,7 +205,7 @@ export function TaskViewModal({ open, task, columns, onEdit, onSendToAI, onClose
                 </div>
                 <div>
                   <p className={`text-base font-semibold tabular-nums font-mono ${isRunning ? 'text-[#22c55e]' : 'text-[#e2e8f0]'}`}>
-                    {totalSeconds > 0 ? formatDuration(totalSeconds) : '—'}
+                    {totalSeconds > 0 ? formatDuration(totalSeconds) : '-'}
                   </p>
                   {isRunning ? (
                     <p className="text-[10px] text-[#22c55e]/70 flex items-center gap-1">
@@ -303,7 +303,7 @@ export function TaskViewModal({ open, task, columns, onEdit, onSendToAI, onClose
 
           {/* copy preview */}
           <div className="rounded-lg bg-[#0d0f18] border border-[#2a2d42] p-3">
-            <p className="text-[9px] uppercase tracking-wider text-[#8892a4]/60 mb-2">Preview — o que será copiado</p>
+            <p className="text-[9px] uppercase tracking-wider text-[#8892a4]/60 mb-2">Preview: o que será copiado</p>
             <pre className="text-[11px] text-[#8892a4] leading-relaxed whitespace-pre-wrap font-mono">{buildCopyText()}</pre>
           </div>
         </div>

@@ -96,6 +96,21 @@ describe('normalizeRuns', () => {
     expect(r.fileCount).toBe(0)
     expect(r.convId).toBeNull()
   })
+
+  it('carries a valid tokens object through', () => {
+    const [r] = normalizeRuns([
+      { id: uuid(1), tokens: { promptTokens: 1200, completionTokens: 300 } }
+    ])
+    expect(r.tokens).toEqual({ promptTokens: 1200, completionTokens: 300 })
+  })
+
+  it('drops tokens that are absent or malformed (old rows / hand-edits)', () => {
+    expect(normalizeRuns([{ id: uuid(1) }])[0].tokens).toBeUndefined()
+    expect(normalizeRuns([{ id: uuid(1), tokens: 'x' }])[0].tokens).toBeUndefined()
+    expect(
+      normalizeRuns([{ id: uuid(1), tokens: { promptTokens: 'oops' } }])[0].tokens
+    ).toBeUndefined()
+  })
 })
 
 describe('sortRuns', () => {

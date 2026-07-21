@@ -11,7 +11,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest'
 import http from 'http'
-import { mkdtemp, mkdir, writeFile, rm } from 'fs/promises'
+import { mkdtemp, mkdir, writeFile, readFile, rm } from 'fs/promises'
 import { existsSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -27,6 +27,8 @@ const handlers = new Map<string, (event: unknown, ...args: never[]) => unknown>(
 const winSent = vi.hoisted(() => [] as { channel: string; payload: unknown }[])
 
 let userData: string
+/** The main module, captured on import so its pure exports can be tested. */
+let mainModule: typeof import('../index')
 
 vi.mock('electron', () => ({
   app: {
@@ -105,8 +107,9 @@ beforeAll(async () => {
   await new Promise<void>((r) => server.listen(0, r))
   baseUrl = `http://127.0.0.1:${(server.address() as { port: number }).port}/v1`
 
-  // Importing the module runs whenReady() and registers everything.
-  await import('../index')
+  // Importing the module runs whenReady() and registers everything. Kept so its
+  // pure exports (detectAgentHint) can be exercised directly too.
+  mainModule = await import('../index')
   await new Promise((r) => setImmediate(r))
 })
 
@@ -853,6 +856,31 @@ describe('native code agent', () => {
     expect(log).toContain('pronto: nada a fazer')
   })
 
+  it('accumulates tokens and reports them in the log summary and status', async () => {
+    reply = (_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(
+        JSON.stringify({
+          choices: [{ message: { role: 'assistant', content: 'feito' } }],
+          usage: { prompt_tokens: 1200, completion_tokens: 300 }
+        })
+      )
+    }
+
+    await invoke('ai:code-agent:run', { path: dir, task: 'x' })
+    const { log } = await waitDone()
+    // The end-of-run summary block, with tokens totalled (1200 + 300 = 1500).
+    expect(log).toContain('Tokens: 1.2k prompt | 300 completion | 1.5k total')
+    expect(log).toContain('Eficiência: 1 passo(s)')
+
+    // The accumulated total is also readable off status (for a late-mount panel).
+    const s = await invoke<{ progress?: { promptTokens: number; completionTokens: number } }>(
+      'ai:code-agent:status'
+    )
+    expect(s.progress?.promptTokens).toBe(1200)
+    expect(s.progress?.completionTokens).toBe(300)
+  })
+
   it('parks on a write, and writes only after the user approves', async () => {
     let call = 0
     reply = (_req, res) => {
@@ -951,6 +979,122 @@ describe('native code agent', () => {
     expect(existsSync(join(dir, 'nao.ts'))).toBe(false)
   })
 
+  it('carries a diff and the irreversible flag when overwriting an existing file', async () => {
+    // a.ts already exists (beforeEach: `export const a = 1`). Overwriting it must
+    // reach the card as a coloured diff, not a blind "5 bytes" line.
+    let call = 0
+    reply = (_req, res) => {
+      call++
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      if (call === 1) {
+        res.end(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  role: 'assistant',
+                  content: '',
+                  tool_calls: [
+                    {
+                      id: 'w1',
+                      type: 'function',
+                      function: {
+                        name: 'escrever_arquivo',
+                        arguments: JSON.stringify({ caminho: 'a.ts', conteudo: 'export const a = 2\n' })
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          })
+        )
+      } else {
+        res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'feito' } }] }))
+      }
+    }
+
+    await invoke('ai:code-agent:run', { path: dir, task: 'mude a para 2' })
+
+    let req:
+      | { id: string; irreversivel?: boolean; diff?: { kind: string; text: string }[] }
+      | undefined
+    for (let i = 0; i < 100 && !req; i++) {
+      req = firstSent('ai:code-agent:approve-request') as typeof req
+      if (!req) await new Promise((r) => setTimeout(r, 20))
+    }
+    expect(req?.irreversivel).toBe(true)
+    // The diff shows the old line removed and the new line added.
+    const dels = (req?.diff ?? []).filter((l) => l.kind === 'del').map((l) => l.text)
+    const adds = (req?.diff ?? []).filter((l) => l.kind === 'add').map((l) => l.text)
+    expect(dels).toContain('export const a = 1')
+    expect(adds).toContain('export const a = 2')
+
+    await invoke('ai:code-agent:approve-response', req!.id, true)
+    await waitDone()
+    expect(await readFile(join(dir, 'a.ts'), 'utf-8')).toBe('export const a = 2\n')
+  })
+
+  it('raises the sandbox hint when a command fails with a bwrap error', async () => {
+    // The model runs a command that fails the way a broken sandbox does. Sandbox
+    // is off here (beforeEach), so this exercises the plain-runner detection path.
+    let call = 0
+    reply = (_req, res) => {
+      call++
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      if (call === 1) {
+        res.end(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  role: 'assistant',
+                  content: '',
+                  tool_calls: [
+                    {
+                      id: 'c1',
+                      type: 'function',
+                      function: {
+                        name: 'executar_comando',
+                        arguments: JSON.stringify({
+                          comando: 'echo "bwrap: needs access to create user namespaces" 1>&2; exit 1'
+                        })
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          })
+        )
+      } else {
+        res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'não deu' } }] }))
+      }
+    }
+
+    await invoke('ai:code-agent:run', { path: dir, task: 'rode o comando' })
+
+    // executar_comando needs approval — approve it so the command actually runs.
+    let approvalId: string | undefined
+    for (let i = 0; i < 100 && !approvalId; i++) {
+      const req = firstSent('ai:code-agent:approve-request') as { id: string } | undefined
+      if (req) approvalId = req.id
+      else await new Promise((r) => setTimeout(r, 20))
+    }
+    expect(approvalId).toBeTruthy()
+    await invoke('ai:code-agent:approve-response', approvalId, true)
+
+    await waitDone()
+
+    // The card was pushed mid-run, and the same hint rides on status() for a
+    // panel that mounts after the fact.
+    const fix = 'sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0'
+    const hint = firstSent('ai:code-agent:hint') as { command?: string } | undefined
+    expect(hint?.command).toBe(fix)
+    const s = await invoke<{ hint: { command?: string } | null }>('ai:code-agent:status')
+    expect(s.hint?.command).toBe(fix)
+  })
+
   it('blocks the run when the sandbox is required but ai-jail is unavailable', async () => {
     // Sandbox left ON (no sandboxEnabled:false), and ai-jail isn't installed in
     // CI — so the gate must refuse the run rather than run it unconfined.
@@ -968,6 +1112,18 @@ describe('native code agent', () => {
     expect(typeof s.available).toBe('boolean')
     expect(typeof s.enabled).toBe('boolean')
     expect(s.wslCommand).toBe('wsl --install')
+  })
+})
+
+describe('detectAgentHint', () => {
+  it('recognises a bwrap / user-namespace failure and offers the sysctl fix', () => {
+    const fromBwrap = mainModule.detectAgentHint('bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted')
+    expect(fromBwrap?.command).toBe('sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0')
+    expect(mainModule.detectAgentHint('needs access to create user namespaces')).not.toBeNull()
+  })
+  it('returns null for ordinary command output', () => {
+    expect(mainModule.detectAgentHint('npm test: 3 passing, 0 failing')).toBeNull()
+    expect(mainModule.detectAgentHint('Error: ENOENT no such file')).toBeNull()
   })
 })
 /**

@@ -14,6 +14,7 @@ type ActiveView =
   | 'reports'
   | 'files'
   | 'ai'
+  | 'memory'
 
 interface Props {
   projects: Project[]
@@ -452,6 +453,20 @@ export function Sidebar({
         >
           IA
         </button>
+        <button
+          onClick={() => onChangeView('memory')}
+          className={`flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
+            activeView === 'memory'
+              ? 'bg-[#6366f1]/15 text-[#a5b4fc]'
+              : 'text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#1e2235]'
+          }`}
+        >
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M12 2a5 5 0 0 0-5 5v1a4 4 0 0 0-2 7 4 4 0 0 0 4 5 3 3 0 0 0 3-3V7a5 5 0 0 0 0 0Z" />
+            <path d="M12 2a5 5 0 0 1 5 5v1a4 4 0 0 1 2 7 4 4 0 0 1-4 5 3 3 0 0 1-3-3" />
+          </svg>
+          Memória
+        </button>
       </div>
 
       {/* project list */}
@@ -517,7 +532,7 @@ export function Sidebar({
             >
               <div className="flex items-center justify-between px-4 py-3 border-b border-[#2a2d42]">
                 <span className="text-xs font-semibold text-[#6366f1] uppercase tracking-wider">
-                  Formato esperado — JSON
+                  Formato esperado: JSON
                 </span>
                 <div className="flex items-center gap-2">
                   <button
@@ -596,26 +611,26 @@ export function Sidebar({
 }`}</pre>
                 <div className="mt-3 space-y-1.5">
                   <p className="text-[10px] text-[#8892a4]">
-                    <span className="text-[#e2e8f0]">priority</span> —{' '}
+                    <span className="text-[#e2e8f0]">priority</span>:{' '}
                     <span className="text-[#a5b4fc]">low</span> ·{' '}
                     <span className="text-[#a5b4fc]">medium</span> ·{' '}
                     <span className="text-[#a5b4fc]">high</span> ·{' '}
                     <span className="text-[#a5b4fc]">urgent</span>
                   </p>
                   <p className="text-[10px] text-[#8892a4]">
-                    <span className="text-[#e2e8f0]">column</span> — nome exato da coluna no projeto
+                    <span className="text-[#e2e8f0]">column</span>: nome exato da coluna no projeto
                     (ex: <span className="text-[#a5b4fc]">"In Progress"</span>)
                   </p>
                   <p className="text-[10px] text-[#8892a4]">
-                    <span className="text-[#e2e8f0]">sprint</span> — nome exato da sprint (ex:{' '}
+                    <span className="text-[#e2e8f0]">sprint</span>: nome exato da sprint (ex:{' '}
                     <span className="text-[#a5b4fc]">"Sprint 1"</span>). Opcional.
                   </p>
                   <p className="text-[10px] text-[#8892a4]">
-                    <span className="text-[#e2e8f0]">dueDate</span> — formato{' '}
+                    <span className="text-[#e2e8f0]">dueDate</span>: formato{' '}
                     <span className="text-[#a5b4fc]">YYYY-MM-DD</span>. Opcional.
                   </p>
                   <p className="text-[10px] text-[#8892a4]">
-                    <span className="text-[#e2e8f0]">tags</span> — incluídas no "Copiar tudo" por
+                    <span className="text-[#e2e8f0]">tags</span>: incluídas no "Copiar tudo" por
                     área (Dev, Estudo, Trabalho, Saúde, Casa & Vida, Finanças, Pessoal)
                   </p>
                 </div>

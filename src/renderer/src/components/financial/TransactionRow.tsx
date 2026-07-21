@@ -281,7 +281,7 @@ export function TransactionRow({ tx, currency, onUpdate, onDelete }: Transaction
           onChange={setEditCat}
           onCommit={commitCat}
           onKeyDown={blur}
-          placeholder="—"
+          placeholder="-"
           className="w-full bg-transparent text-xs text-[#8892a4] placeholder-[#3a3e58] focus:outline-none focus:bg-[#0d0f18] focus:px-1 rounded transition-all"
         />
       </td>

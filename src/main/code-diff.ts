@@ -16,6 +16,104 @@ export const MAX_DIFF_CHARS = 200_000
 /** New files whose contents are shown before the rest are merely listed. */
 export const MAX_NEW_FILES = 40
 
+// ---------------------------------------------------------------------------
+// In-memory line diff — for the approval card, NOT git.
+//
+// The approval card needs "old file on disk vs. the bytes the agent wants to
+// write", a diff between two strings that git can't give (nothing is committed
+// yet). Separate from the git machinery above and pure, so it's tested on its
+// own. Best-effort by design: an LCS good enough to review a write, bounded so
+// a huge file neither blows the O(n·m) table nor floods the IPC payload.
+// ---------------------------------------------------------------------------
+
+/** One line of the write diff. Mirrors the renderer's LineKind. */
+export type DiffLineKind = 'add' | 'del' | 'ctx' | 'meta'
+export interface DiffLineItem {
+  kind: DiffLineKind
+  text: string
+}
+
+/** Longest write-diff shown on the card (lines) — the rest is truncated. */
+export const MAX_APPROVAL_DIFF_LINES = 400
+/** Past this many lines a side, skip the diff (fall back to a plain preview):
+ *  the LCS table is O(n·m) and a file that big isn't reviewable line-by-line. */
+export const MAX_DIFFABLE_LINES = 1500
+/** Unchanged lines kept around each change; longer runs collapse to a marker. */
+const DIFF_CONTEXT = 3
+
+/**
+ * A line-level diff between two strings via LCS, with the far-from-change
+ * context collapsed to a `⋯ N linha(s)` marker and the whole thing capped.
+ * `skipped` means one side was too large to diff; `truncated` means the diff was
+ * longer than MAX_APPROVAL_DIFF_LINES and cut.
+ */
+export function lineDiff(
+  oldText: string,
+  newText: string
+): { lines: DiffLineItem[]; truncated: boolean; skipped: boolean } {
+  const a = oldText.length ? oldText.split('\n') : []
+  const b = newText.length ? newText.split('\n') : []
+  if (a.length > MAX_DIFFABLE_LINES || b.length > MAX_DIFFABLE_LINES) {
+    return { lines: [], truncated: false, skipped: true }
+  }
+
+  const n = a.length
+  const m = b.length
+  // LCS lengths in a flat (n+1)·(m+1) table, filled bottom-up.
+  const dp = new Int32Array((n + 1) * (m + 1))
+  const at = (i: number, j: number): number => i * (m + 1) + j
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[at(i, j)] = a[i] === b[j] ? dp[at(i + 1, j + 1)] + 1 : Math.max(dp[at(i + 1, j)], dp[at(i, j + 1)])
+    }
+  }
+
+  // Backtrack into add/del/ctx.
+  const raw: DiffLineItem[] = []
+  let i = 0
+  let j = 0
+  while (i < n && j < m) {
+    if (a[i] === b[j]) {
+      raw.push({ kind: 'ctx', text: a[i] })
+      i++
+      j++
+    } else if (dp[at(i + 1, j)] >= dp[at(i, j + 1)]) {
+      raw.push({ kind: 'del', text: a[i] })
+      i++
+    } else {
+      raw.push({ kind: 'add', text: b[j] })
+      j++
+    }
+  }
+  while (i < n) raw.push({ kind: 'del', text: a[i++] })
+  while (j < m) raw.push({ kind: 'add', text: b[j++] })
+
+  // Collapse runs of context that sit far from any change.
+  const changed = raw.map((l) => l.kind !== 'ctx')
+  const near = raw.map((_, k) => {
+    for (let p = Math.max(0, k - DIFF_CONTEXT); p <= Math.min(raw.length - 1, k + DIFF_CONTEXT); p++) {
+      if (changed[p]) return true
+    }
+    return false
+  })
+  const collapsed: DiffLineItem[] = []
+  let k = 0
+  while (k < raw.length) {
+    if (near[k]) {
+      collapsed.push(raw[k])
+      k++
+      continue
+    }
+    let end = k
+    while (end < raw.length && !near[end]) end++
+    collapsed.push({ kind: 'meta', text: `⋯ ${end - k} linha(s) inalterada(s)` })
+    k = end
+  }
+
+  const truncated = collapsed.length > MAX_APPROVAL_DIFF_LINES
+  return { lines: truncated ? collapsed.slice(0, MAX_APPROVAL_DIFF_LINES) : collapsed, truncated, skipped: false }
+}
+
 export interface GitResult {
   code: number
   stdout: string
