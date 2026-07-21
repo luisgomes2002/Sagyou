@@ -17,7 +17,34 @@ import { randomUUID } from 'crypto'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import OpenAI from 'openai'
 import { loadData, saveData } from './store'
-import { appendEntry, newEntry, summarize, type TokenUsage, type UsageLogEntry } from './usage'
+import {
+  listMemories,
+  memoriesForContext,
+  getMemory,
+  upsertMemory,
+  touchMemories,
+  archiveMemories,
+  deleteMemory,
+  replaceMemories
+} from './store'
+import {
+  buildMemory,
+  selectStale,
+  summarizeMemories,
+  findConflicts,
+  formatMemoriesForPrompt,
+  handoffId,
+  type MemoryInput
+} from './memory'
+import {
+  appendEntry,
+  newEntry,
+  summarize,
+  costAt,
+  formatRunSummary,
+  type TokenUsage,
+  type UsageLogEntry
+} from './usage'
 import {
   appendRunMetric,
   newRunMetric,
@@ -30,10 +57,13 @@ import { confineToRoot, walkFiles, detectSymbols, extractSymbol, extractLines } 
 import {
   runCodeAgent,
   buildSystemPrompt,
+  codeToolsFor,
+  inlineFilesBlock,
   readProjectGuide,
   dirTree,
   defaultCommandRunner,
   CODE_AGENT_MAX_STEPS,
+  type InlinedFile,
   type AgentMessage,
   type CommandRunner,
   type ToolDef as CodeToolDef,
@@ -54,7 +84,7 @@ import {
 import { searchConversations } from './conversation-search'
 import { fetchWeb } from './web-fetch'
 import { renderWeb } from './web-render'
-import { captureBase, diffSince, type AgentBase } from './code-diff'
+import { captureBase, diffSince, lineDiff, type AgentBase, type DiffLineItem } from './code-diff'
 import { decodeDataUrl, mimeForExt, isImageFileName } from './chat-images'
 import {
   diffFileCount,
@@ -164,6 +194,12 @@ let codeAgentRunning = false
 let codeAgentAbort = false
 /** The model actually in use this run, surfaced to the panel (task 11). */
 let codeAgentModel = ''
+/** Tokens accumulated across this run's model calls, for the live counter, the
+ *  end-of-run summary, and the archived run. Reset when a run starts. */
+let codeAgentUsage: TokenUsage = { promptTokens: 0, completionTokens: 0 }
+/** The step the run is on and its cap, for the panel's "Passo X/Y" counter. */
+let codeAgentStep = 0
+let codeAgentMaxSteps = 0
 
 /**
  * Approvals the loop is waiting on, keyed by a request id sent to the renderer.
@@ -173,18 +209,63 @@ let codeAgentModel = ''
  */
 const pendingApprovals = new Map<string, (approved: boolean) => void>()
 
-/** Human summary of a write/command action, shown on the approval card. */
-function describeCodeAction(name: string, args: Record<string, unknown>): string {
+/** Longest content preview shipped to the approval card — enough to judge the
+ *  write without inlining a whole file into the IPC payload every step. */
+const APPROVAL_PREVIEW_CHARS = 3000
+
+/**
+ * Human summary of a write/command action, shown on the approval card, plus the
+ * payload the card previews so the user can review before approving instead of
+ * OKing blind. `conteudo` is capped at APPROVAL_PREVIEW_CHARS; `comando` is the
+ * full command (short by nature). `.resumo` is the one-line label the log uses.
+ *
+ * `opts.oldContent` is the file's current bytes on disk (null = the file is new
+ * or was unreadable), passed in rather than read here so this stays pure/sync
+ * and testable: given it, `diff` is old→new for the card to colour. `irreversivel`
+ * flags an overwrite so the card can warn (the old bytes are gone once written).
+ * A command is NOT flagged — most are harmless (npm test) and reddening every
+ * one is alarm fatigue; the card shows the full command instead.
+ */
+function describeCodeAction(
+  name: string,
+  args: Record<string, unknown>,
+  opts?: { oldContent?: string | null }
+): {
+  resumo: string
+  conteudo?: string
+  comando?: string
+  diff?: DiffLineItem[]
+  diffTruncated?: boolean
+  irreversivel?: boolean
+} {
   if (name === 'escrever_arquivo') {
     const caminho = typeof args.caminho === 'string' ? args.caminho : '?'
-    const bytes = typeof args.conteudo === 'string' ? Buffer.byteLength(args.conteudo, 'utf-8') : 0
-    return `Escrever arquivo ${caminho} (${bytes} bytes)`
+    const conteudo = typeof args.conteudo === 'string' ? args.conteudo : ''
+    const bytes = Buffer.byteLength(conteudo, 'utf-8')
+    const existing = opts?.oldContent ?? null
+    const overwrite = existing !== null
+    let diff: DiffLineItem[] | undefined
+    let diffTruncated: boolean | undefined
+    if (overwrite) {
+      const d = lineDiff(existing, conteudo)
+      if (!d.skipped && d.lines.length) {
+        diff = d.lines
+        diffTruncated = d.truncated
+      }
+    }
+    return {
+      resumo: `${overwrite ? 'Sobrescrever' : 'Criar'} arquivo ${caminho} (${bytes} bytes)`,
+      conteudo: conteudo.slice(0, APPROVAL_PREVIEW_CHARS),
+      diff,
+      diffTruncated,
+      irreversivel: overwrite
+    }
   }
   if (name === 'executar_comando') {
     const comando = typeof args.comando === 'string' ? args.comando : '?'
-    return `Executar comando: ${comando}`
+    return { resumo: `Executar comando: ${comando}`, comando }
   }
-  return name
+  return { resumo: name }
 }
 
 /** Stop the running agent: abort the loop and deny any parked approval. */
@@ -231,16 +312,19 @@ async function callCodeModel(
 }
 
 /**
- * Recognise failures that leave the agent reporting success while doing nothing.
+ * Recognise a bubblewrap failure that leaves the agent's commands running
+ * nothing — the sandbox couldn't even start, so the command did nothing whatever
+ * the agent intended.
  *
- * The case that motivated it: codex's Linux sandbox is bubblewrap, which needs
- * unprivileged user namespaces, and Ubuntu 23.10+ blocks those by AppArmor
- * (`kernel.apparmor_restrict_unprivileged_userns=1`, the default on 24.04).
- * codex then cannot run a single command — not even reading a file — writes
- * nothing, explains itself in prose, and **exits 0**. From the app's side that
- * is indistinguishable from an agent that decided no change was needed, so
- * without this the user is told the run finished and left to wonder why their
- * code is untouched.
+ * The case: ai-jail confines the code agent's shell commands with bubblewrap,
+ * which needs unprivileged user namespaces, and Ubuntu 23.10+ blocks those by
+ * AppArmor (`kernel.apparmor_restrict_unprivileged_userns=1`, the default on
+ * 24.04). The command then fails with `bwrap: … Operation not permitted` /
+ * `needs access to create user namespaces` — opaque unless named. detectAiJail's
+ * smoke test catches this before a run starts when the sandbox is active, but the
+ * marker can still surface mid-run (a cached detection, or the agent's own
+ * command invoking bwrap/containers with the sandbox off), so the runner watches
+ * for it too and raises the panel hint card with the one-line fix.
  *
  * Pure and string-only so it can be tested without spawning anything.
  */
@@ -251,12 +335,12 @@ export function detectAgentHint(output: string): AgentHint | null {
     /Failed RTM_NEWADDR/i.test(output)
   if (sandboxBroken) {
     return {
-      title: 'O sandbox do codex não conseguiu iniciar — nada foi alterado.',
+      title: 'O sandbox (ai-jail) não conseguiu iniciar — os comandos falharam.',
       detail:
-        'O codex isola a execução com bubblewrap, que precisa de user namespaces ' +
+        'O ai-jail isola os comandos com bubblewrap, que precisa de user namespaces ' +
         'sem privilégio. O Ubuntu 23.10+ (e derivados) bloqueia isso por AppArmor, ' +
-        'então o codex não conseguiu nem ler os arquivos. Ele terminou com sucesso ' +
-        'mesmo assim, mas não escreveu nada.',
+        'então o comando não chegou a rodar. Rode o comando abaixo e tente de novo — ' +
+        'ou desative o Sandbox nas configurações (por sua conta e risco).',
       command: 'sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0'
     }
   }
@@ -353,9 +437,10 @@ export function resolveExecutable(
 
 // NOTE: the external-codex path (buildAgentCommand / spawn / sandbox flags /
 // killCodeAgent) was removed when the native code agent (./code-agent) replaced
-// it. Two pure helpers (resolveExecutable, detectAgentHint) are kept above with
-// their unit tests; they are no longer wired into anything and can be deleted in
-// a follow-up once the native agent is confirmed in the wild.
+// it. `detectAgentHint` above is wired into the native run handler's command
+// runner (a bwrap failure raises the panel hint card). `resolveExecutable` is
+// the last dormant codex helper — kept with its unit test, deletable in a
+// follow-up once the native agent is confirmed in the wild.
 
 // --- AI config (persisted to ai-config.json in userData, not the DB) ---
 interface AIConfig {
@@ -533,6 +618,19 @@ function loadUsageLog(): UsageLogEntry[] {
   }
 }
 
+/**
+ * Lazy decay pass: archive cold/overflowing memories and return how many. Used
+ * by both the explicit `ai:memory:prune` and the run-start briefing, so the two
+ * can't drift. Global (not per-project) — a cold page is cold regardless of the
+ * project a run happens to be about.
+ */
+function runMemoryPrune(): number {
+  const now = Date.now()
+  const stale = selectStale(listMemories({ includeArchived: false }), now)
+  archiveMemories(stale, new Date(now).toISOString())
+  return stale.length
+}
+
 /** Record one billed call. Never throws: losing the log must not fail the chat. */
 function appendUsage(model: string, usage: TokenUsage, cfg: AIConfig): void {
   try {
@@ -636,6 +734,8 @@ async function archiveAgentRun(exitCode: number): Promise<void> {
       endedAt: Date.now(),
       exitCode,
       fileCount: diffFileCount(diff),
+      // Frozen with the run so the picker can show what a past run cost.
+      tokens: { ...codeAgentUsage },
       log: codeAgentLog,
       diff
     }
@@ -958,6 +1058,85 @@ app.whenReady().then(() => {
   ipcMain.handle('ai:run-metrics:append', (_, input: RunMetricInput) => appendRunMetricIO(input))
   ipcMain.handle('ai:run-metrics:summary', () => summarizeRunMetrics(loadRunMetrics()))
 
+  // --- AI memory (durable facts across conversations; kanban.db, outside
+  // persistAll — see store.ts). save scrubs secrets in buildMemory; prune
+  // archives cold pages (never hard-deletes); delete is the explicit user act.
+  ipcMain.handle(
+    'ai:memory:list',
+    (_, opts?: { projectId?: string | null; includeArchived?: boolean }) => {
+      if (opts?.includeArchived) return listMemories({ projectId: opts.projectId, includeArchived: true })
+      if (opts && 'projectId' in opts) return memoriesForContext(opts.projectId ?? null)
+      return listMemories()
+    }
+  )
+
+  ipcMain.handle('ai:memory:save', (_, input: MemoryInput & { id?: string }) => {
+    const existing = input.id ? getMemory(input.id) : null
+    const res = buildMemory(existing, input, randomUUID(), new Date().toISOString())
+    if ('error' in res) return res
+    upsertMemory(res.memory)
+    return { memory: res.memory, redacted: res.redacted }
+  })
+
+  ipcMain.handle('ai:memory:delete', (_, id: string) => deleteMemory(id))
+
+  // Wholesale replace from a backup import (projects are imported first, so FK
+  // scoping holds; see replaceMemories).
+  ipcMain.handle('ai:memory:replace', (_, list: unknown) =>
+    replaceMemories(Array.isArray(list) ? list : [])
+  )
+
+  ipcMain.handle('ai:memory:touch', (_, ids: string[]) =>
+    touchMemories(Array.isArray(ids) ? ids : [], new Date().toISOString())
+  )
+
+  // Lazy decay pass: archive stale/overflowing pages, return how many.
+  ipcMain.handle('ai:memory:prune', () => ({ archived: runMemoryPrune() }))
+
+  // Automatic per-run handoff: one memory per project (deterministic id), upserted
+  // at each run's end so a later session opens knowing where this one left off.
+  // Writing it keeps it warm — lastAccessedAt = now, but access_count is NOT
+  // bumped, so its TTL stays at the base and it decays ~45d after the last run on
+  // this project (i.e. when the project goes quiet), instead of ballooning.
+  ipcMain.handle(
+    'ai:memory:handoff',
+    (_, input: { projectId?: string | null; title: string; body: string }) => {
+      const projectId = typeof input?.projectId === 'string' ? input.projectId : null
+      const id = handoffId(projectId)
+      const now = new Date().toISOString()
+      const res = buildMemory(
+        getMemory(id),
+        { type: 'handoff', title: input?.title, body: input?.body, projectId, source: 'modelo' },
+        id,
+        now
+      )
+      if ('error' in res) return res
+      res.memory.lastAccessedAt = now // writing is accessing; don't inflate the count
+      upsertMemory(res.memory)
+      return { ok: true }
+    }
+  )
+
+  ipcMain.handle('ai:memory:summary', () => summarizeMemories(listMemories({ includeArchived: true })))
+
+  ipcMain.handle('ai:memory:conflicts', () => findConflicts(listMemories()))
+
+  // The run-start briefing block for a project (its memories + the globals),
+  // preformatted so the chat and the code agent share one format. Reading the
+  // briefing is decay-neutral (no touch), but run start is where the lazy decay
+  // pass fires: archive cold pages first, then brief on the survivors. `archived`
+  // rides back so the chat can note it. Prune is guarded — a decay failure must
+  // not cost the run its briefing.
+  ipcMain.handle('ai:memory:briefing', (_, projectId?: string | null) => {
+    let archived = 0
+    try {
+      archived = runMemoryPrune()
+    } catch {
+      /* decay is best-effort; a failure here still leaves a valid briefing */
+    }
+    return { text: formatMemoriesForPrompt(memoriesForContext(projectId ?? null)), archived }
+  })
+
   // Proxy an OpenAI-compatible chat/completions call. baseURL + apiKey come
   // from the renderer when provided, falling back to the stored config.
   ipcMain.handle(
@@ -1200,6 +1379,8 @@ app.whenReady().then(() => {
         files?: string[]
         /** The chat that asked, so the run can be reopened from it later. */
         convId?: string
+        /** The project whose memory to brief the agent with (shared with the chat). */
+        projectId?: string | null
       }
     ) => {
       if (codeAgentRunning) return { success: false, error: 'Já existe um agente de código rodando' }
@@ -1253,8 +1434,10 @@ app.whenReady().then(() => {
         return {
           success: false,
           error:
-            'O sandbox (ai-jail) está ativo, mas não está instalado/disponível. ' +
-            'Instale o ai-jail na tela do Assistente, ou desative o Sandbox nas configurações do Agente de Código.',
+            (jail?.reason
+              ? `O sandbox (ai-jail) está ativo, mas não pôde ser usado: ${jail.reason} `
+              : 'O sandbox (ai-jail) está ativo, mas não está instalado/disponível. ') +
+            'Instale/ajuste o ai-jail na tela do Assistente, ou desative o Sandbox nas configurações do Agente de Código.',
           status: 400
         }
       }
@@ -1266,12 +1449,24 @@ app.whenReady().then(() => {
       codeAgentAbort = false
       codeAgentRunning = true
       codeAgentModel = caCfg.model
+      codeAgentUsage = { promptTokens: 0, completionTokens: 0 }
+      codeAgentStep = 0
+      codeAgentMaxSteps = CODE_AGENT_MAX_STEPS
       // Snapshot the tree BEFORE the agent touches it — after the fact there is
       // no way to tell its work from what the user already had in progress.
       codeAgentBase = await captureBase(dir)
 
       const send = (channel: string, data: unknown): void =>
         mainWindow?.webContents.send(channel, data)
+      // Push the live progress (step + running token total) to the panel's
+      // counter. Cheap and idempotent; fired on each step and each usage report.
+      const pushProgress = (): void =>
+        send('ai:code-agent:progress', {
+          step: codeAgentStep,
+          maxSteps: codeAgentMaxSteps,
+          promptTokens: codeAgentUsage.promptTokens,
+          completionTokens: codeAgentUsage.completionTokens
+        })
       // Stream it and keep it: the panel may not be mounted to hear this.
       const emit = (chunk: string): void => {
         appendAgentLog(chunk)
@@ -1306,7 +1501,8 @@ app.whenReady().then(() => {
       )
       emit(
         rel.length
-          ? `[sagyou] ${rel.length} arquivo(s) indicado(s):\n` + rel.map((f) => `  · ${f}\n`).join('')
+          ? `[sagyou] ${rel.length} arquivo(s) indicado(s) — busca desativada, conteúdo já no contexto:\n` +
+              rel.map((f) => `  · ${f}\n`).join('')
           : '[sagyou] nenhum arquivo indicado — o agente vai localizá-los com buscar_no_codigo.\n'
       )
       if (droppedFiles.length) {
@@ -1315,42 +1511,118 @@ app.whenReady().then(() => {
             droppedFiles.map((f) => `  · ${f}\n`).join('')
         )
       }
+
+      // When files are pinned, inline their contents (numbered) into the prompt
+      // so the agent edits from context instead of spending a read step per file
+      // — and the discovery tools are dropped below (codeToolsFor). Files too big
+      // to inline are named so the agent (and the log) knows to page them.
+      let fileContents = ''
+      if (files.length) {
+        const inlined: InlinedFile[] = []
+        for (const abs of files) {
+          try {
+            inlined.push({ path: relative(dir, abs) || abs, content: await readFile(abs, 'utf-8') })
+          } catch {
+            /* unreadable pinned file — the agent can still ler_arquivo it on demand */
+          }
+        }
+        const block = inlineFilesBlock(inlined)
+        fileContents = block.text
+        if (block.omitted.length) {
+          emit(
+            `[sagyou] ${block.omitted.length} arquivo(s) grande(s) só parcialmente no contexto ` +
+              `(o agente lê o resto sob demanda):\n` +
+              block.omitted.map((f) => `  · ${f}\n`).join('')
+          )
+        }
+      }
       emit('\n')
 
       // Assemble the system prompt: GUIDE.md/AGENTS.md if the repo has one, a
       // compact file tree, and the pinned files. Best-effort — a missing guide
       // or an unreadable tree just leaves that section out.
       const [tree, guide] = [await dirTree(dir), readProjectGuide(dir)]
-      const systemPrompt = buildSystemPrompt({ tree, guide, files: rel })
+      // Brief the agent with this project's memory (shared with the chat), so a
+      // code run benefits from decisions/gotchas recorded in conversation.
+      // Best-effort: a memory failure must never abort a run the user asked for.
+      let memories = ''
+      try {
+        memories = formatMemoriesForPrompt(
+          memoriesForContext(typeof request.projectId === 'string' ? request.projectId : null)
+        )
+      } catch {
+        /* memory is best-effort; briefing failure leaves the prompt as-is */
+      }
+      const systemPrompt = buildSystemPrompt({ tree, guide, files: rel, fileContents, memories })
 
       // Approval round-trip: the loop parks here, the renderer shows a card and
       // answers through ai:code-agent:approve-response. A stopped run denies all.
-      const approve = (call: { name: string; args: Record<string, unknown> }): Promise<boolean> =>
-        new Promise((resolveApproval) => {
+      // For a write, read the file's current bytes first (confined to the root,
+      // same barrier as everything else) so describeCodeAction can diff old→new
+      // — the read is async and off the loop's hot path, so it's done up front,
+      // then the promise only holds the pending resolver.
+      const approve = async (call: { name: string; args: Record<string, unknown> }): Promise<boolean> => {
+        if (codeAgentAbort) return false
+        let oldContent: string | null = null
+        if (call.name === 'escrever_arquivo' && typeof call.args.caminho === 'string') {
+          const abs = confineToRoot(dir, call.args.caminho)
+          if (abs && existsSync(abs) && statSync(abs).isFile()) {
+            try {
+              oldContent = await readFile(abs, 'utf-8')
+            } catch {
+              /* unreadable — treat as a new file; the diff is just skipped */
+            }
+          }
+        }
+        const desc = describeCodeAction(call.name, call.args, { oldContent })
+        return new Promise<boolean>((resolveApproval) => {
           if (codeAgentAbort) return resolveApproval(false)
           const id = randomUUID()
           pendingApprovals.set(id, resolveApproval)
-          send('ai:code-agent:approve-request', {
-            id,
-            name: call.name,
-            args: call.args,
-            resumo: describeCodeAction(call.name, call.args)
-          })
+          send('ai:code-agent:approve-request', { id, name: call.name, args: call.args, ...desc })
         })
+      }
 
       // The command runner: wrap every shell command with ai-jail when the
       // sandbox is active, and decorate the output when a failure looks like the
       // sandbox blocking an escape. Otherwise it's the plain runner.
       const jailBin = jail?.path ?? null
+      // Raise the panel hint card the first time a command's output shows a
+      // bwrap/user-namespace failure. The runner is the one place with the full
+      // stdout/stderr — the panel only gets the one-line tool summary, which
+      // never carries these markers. `send` pushes it so the card can appear
+      // mid-run; the exit fetch and status poll pick it up as well.
+      const noteEnvHint = (output: string): void => {
+        if (codeAgentHint) return
+        const hint = detectAgentHint(output)
+        if (hint) {
+          codeAgentHint = hint
+          send('ai:code-agent:hint', hint)
+        }
+      }
       const runner: CommandRunner = async (command, o) => {
-        if (!sandboxActive || !jailBin) return defaultCommandRunner(command, o)
+        // Sandbox off: no ai-jail wrapping, but still watch for a bwrap failure
+        // the agent's own command may trigger (e.g. it runs a container tool).
+        if (!sandboxActive || !jailBin) {
+          const out = await defaultCommandRunner(command, o)
+          if (out.code !== 0) noteEnvHint(`${out.stdout}\n${out.stderr}`)
+          return out
+        }
         // Windows runs the command through WSL (jail.viaWsl); Linux/macOS wrap it
         // in a native shell. Both confine writes to the project via ai-jail.
         const out = jail?.viaWsl
           ? await runSandboxedWsl(jailBin, o.cwd, command, o.timeoutMs)
           : await defaultCommandRunner(wrapCommand(jailBin, o.cwd, command), o)
-        if (out.code !== 0 && looksLikeSandboxBlock(`${out.stdout}\n${out.stderr}`)) {
-          out.stderr = `⛔ ai-jail bloqueou este comando — tentou acessar fora do projeto.\n${out.stderr}`
+        if (out.code !== 0) {
+          const combined = `${out.stdout}\n${out.stderr}`
+          // A user-namespace failure means the sandbox couldn't even START — the
+          // command ran nothing. That is NOT an escape attempt, so surface the
+          // actionable hint and skip the "tried to leave the project" note that
+          // `looksLikeSandboxBlock` (which also matches `bwrap:`) would add.
+          if (detectAgentHint(combined)) noteEnvHint(combined)
+          else if (looksLikeSandboxBlock(combined)) {
+            out.stderr = `⛔ ai-jail bloqueou este comando — tentou acessar fora do projeto.\n${out.stderr}`
+          }
         }
         return out
       }
@@ -1363,18 +1635,42 @@ app.whenReady().then(() => {
           const result = await runCodeAgent(systemPrompt, task, { root: dir, run: runner }, {
             callModel: (messages, tools) => callCodeModel(caCfg, messages, tools),
             approve,
+            // Pinned files → drop the discovery tools (grep/list): the agent was
+            // handed the targets and their contents, so re-finding them is pure
+            // waste of the step budget.
+            tools: codeToolsFor({ pinnedFiles: files.length > 0 }),
             maxSteps: CODE_AGENT_MAX_STEPS,
             shouldAbort: () => codeAgentAbort,
+            onStep: (step, max) => {
+              codeAgentStep = step
+              codeAgentMaxSteps = max
+              pushProgress()
+            },
             onText: (text) => emit(`\n${text}\n`),
             onToolCall: (name, args) => {
-              emit(`\n[tool] ${describeCodeAction(name, args) || name}\n`)
+              emit(`\n[tool] ${describeCodeAction(name, args).resumo || name}\n`)
               send('ai:code-agent:tool', { phase: 'call', name, args })
             },
             onToolResult: (name, summary) => {
               emit(`[resultado] ${summary}\n`)
               send('ai:code-agent:tool', { phase: 'result', name, summary })
             },
-            onUsage: (usage) => appendUsage(caCfg.model, usage, cfg)
+            // A transient model failure is being retried — say so, or a multi-
+            // second backoff reads as a hang.
+            onRetry: (attempt, max, waitMs, reason) =>
+              emit(
+                `\n[sagyou] tentativa ${attempt}/${max} de contato com o modelo falhou ` +
+                  `(${reason}); retentando em ${Math.round(waitMs / 1000)}s...\n`
+              ),
+            // Accumulate for the live counter + the end summary + the archive,
+            // AND log the spend (process-wide, per-call) — the two are separate
+            // ledgers with different lifetimes.
+            onUsage: (usage) => {
+              codeAgentUsage.promptTokens += usage.promptTokens
+              codeAgentUsage.completionTokens += usage.completionTokens
+              pushProgress()
+              appendUsage(caCfg.model, usage, cfg)
+            }
           })
           if (result.stopped) exitCode = codeAgentAbort ? -2 : 1
         } catch (e) {
@@ -1382,6 +1678,12 @@ app.whenReady().then(() => {
           emit(`\n[erro no agente: ${e instanceof Error ? e.message : 'falha'}]\n`)
         } finally {
           codeAgentRunning = false
+          // Token/cost/efficiency summary — shown on success or error, so a run
+          // that spent money before failing still reports what it cost. Only
+          // when something was billed (a run that never reached the model is 0).
+          if (codeAgentUsage.promptTokens || codeAgentUsage.completionTokens) {
+            emit(`\n${formatRunSummary(codeAgentUsage, codeAgentStep, costAt(codeAgentUsage, cfg))}\n`)
+          }
           const secs = ((Date.now() - startedAt) / 1000).toFixed(1)
           emit(`\n[sagyou] duração: ${secs}s\n`)
           appendAgentLog(`\n[agente encerrado — código ${exitCode}]\n`)
@@ -1419,7 +1721,15 @@ app.whenReady().then(() => {
     // Null unless the run hit a recognised environment failure. Carried here
     // rather than on the exit event so a panel mounted after the fact still
     // sees it — the same reason `log` is here.
-    hint: codeAgentHint
+    hint: codeAgentHint,
+    // Live progress, so a panel mounted mid-run shows the counter at once
+    // instead of waiting for the next pushed step — same reason `log` is here.
+    progress: {
+      step: codeAgentStep,
+      maxSteps: codeAgentMaxSteps,
+      promptTokens: codeAgentUsage.promptTokens,
+      completionTokens: codeAgentUsage.completionTokens
+    }
   }))
 
   /**

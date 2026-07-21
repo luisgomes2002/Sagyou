@@ -99,6 +99,52 @@ describe('SYSTEM_PROMPT (loaded from system-prompt.md)', () => {
   // mean re-pasting the whole text into this file on every edit — re-creating in
   // the test the string literal the .md exists to get rid of. The checks above
   // catch the pipeline breaking; the wording is meant to change.
+
+  it('prepends the memory briefing when the bridge returns one', async () => {
+    const chat = makeChat({ success: true, message: { role: 'assistant', content: 'ok' } })
+    const briefing = vi.fn(async () => ({ text: '## Memória\n- [fato] X' }))
+    ;(window as unknown as { electronAPI: { ai: Record<string, unknown> } }).electronAPI.ai.memory =
+      { briefing }
+
+    await runAgent(cfg, user, approveNone, { projectId: 'p1' })
+
+    expect(briefing).toHaveBeenCalledWith('p1')
+    const [system] = reqAt(chat, 0).messages
+    expect(system.content.startsWith(SYSTEM_PROMPT)).toBe(true)
+    expect(system.content).toContain('## Memória\n- [fato] X')
+  })
+
+  it('leaves the prompt untouched when the briefing fails', async () => {
+    const chat = makeChat({ success: true, message: { role: 'assistant', content: 'ok' } })
+    ;(window as unknown as { electronAPI: { ai: Record<string, unknown> } }).electronAPI.ai.memory =
+      { briefing: vi.fn(async () => { throw new Error('boom') }) }
+
+    await runAgent(cfg, user, approveNone, { projectId: 'p1' })
+
+    expect(reqAt(chat, 0).messages[0].content).toBe(SYSTEM_PROMPT)
+  })
+
+  it('notes the decay pass only when it archived something', async () => {
+    makeChat({ success: true, message: { role: 'assistant', content: 'ok' } })
+    ;(window as unknown as { electronAPI: { ai: Record<string, unknown> } }).electronAPI.ai.memory =
+      { briefing: vi.fn(async () => ({ text: '', archived: 3 })) }
+    const onStatus = vi.fn()
+
+    await runAgent(cfg, user, approveNone, { projectId: 'p1', onStatus })
+
+    expect(onStatus).toHaveBeenCalledWith(expect.stringContaining('3 memória'), 'remark')
+  })
+
+  it('stays silent when the decay pass archived nothing', async () => {
+    makeChat({ success: true, message: { role: 'assistant', content: 'ok' } })
+    ;(window as unknown as { electronAPI: { ai: Record<string, unknown> } }).electronAPI.ai.memory =
+      { briefing: vi.fn(async () => ({ text: '', archived: 0 })) }
+    const onStatus = vi.fn()
+
+    await runAgent(cfg, user, approveNone, { projectId: 'p1', onStatus })
+
+    expect(onStatus).not.toHaveBeenCalledWith(expect.stringContaining('arquivada'), 'remark')
+  })
 })
 
 describe('routeModel', () => {

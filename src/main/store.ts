@@ -3,6 +3,7 @@ import { join } from 'path'
 import { existsSync, readFileSync, renameSync } from 'fs'
 import { is } from '@electron-toolkit/utils'
 import Database from 'better-sqlite3'
+import { normalizeMemory, type AiMemory } from './memory'
 
 // ── Inline types (mirrors src/renderer/src/types/index.ts) ──────────────────
 
@@ -349,6 +350,27 @@ function initSchema(db: Database.Database): void {
       key TEXT PRIMARY KEY,
       value TEXT
     );
+    -- AI memory: durable facts the assistant carries across conversations. A
+    -- satellite table written OUTSIDE persistAll (see the Memory section below):
+    -- the access counters are bumped on every read, and routing that through the
+    -- store's full-replace save would rewrite the whole DB per touch. FK to
+    -- projects so deleting a project drops its memories; project_id NULL = global.
+    CREATE TABLE IF NOT EXISTS memory (
+      id TEXT PRIMARY KEY,
+      project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+      type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      tags TEXT NOT NULL DEFAULT '[]',
+      pinned INTEGER NOT NULL DEFAULT 0,
+      source TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      last_accessed_at TEXT NOT NULL,
+      access_count INTEGER NOT NULL DEFAULT 0,
+      archived_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_memory_project ON memory(project_id) WHERE archived_at IS NULL;
   `)
 }
 
@@ -725,4 +747,157 @@ export function saveData(data: unknown): void {
   // line is skipped, so the snapshot keeps matching what's actually on disk —
   // the next save then re-diffs (or rewrites) from a truthful base.
   lastSnapshot = structuredClone(next)
+}
+
+// ── Memory (satellite table; deliberately OUTSIDE persistAll) ────────────────
+//
+// These read/write the `memory` table directly and never touch lastSnapshot or
+// the SaveData graph. The reason is the touch path: `access_count` is bumped on
+// every read, and routing that through saveData's full-replace would rewrite
+// all 17 tables per bump. So memory gets its own targeted statements — an
+// UPDATE by id for a touch, not a flush. Pure rules (validation, decay, lint)
+// live in ./memory; this is only the SQL.
+
+function memRowToMemory(r: Record<string, unknown>): AiMemory {
+  let tags: string[] = []
+  try {
+    const parsed = JSON.parse(String(r.tags ?? '[]'))
+    if (Array.isArray(parsed)) tags = parsed.filter((t): t is string => typeof t === 'string')
+  } catch {
+    /* malformed tags degrade to none rather than throwing on load */
+  }
+  return {
+    id: String(r.id),
+    projectId: r.project_id == null ? null : String(r.project_id),
+    type: r.type as AiMemory['type'],
+    title: String(r.title),
+    body: String(r.body),
+    tags,
+    pinned: r.pinned === 1,
+    source: r.source as AiMemory['source'],
+    createdAt: String(r.created_at),
+    updatedAt: String(r.updated_at),
+    lastAccessedAt: String(r.last_accessed_at),
+    accessCount: typeof r.access_count === 'number' ? r.access_count : 0,
+    archivedAt: r.archived_at == null ? null : String(r.archived_at)
+  }
+}
+
+export interface ListMemoriesOpts {
+  projectId?: string | null
+  includeArchived?: boolean
+}
+
+/** All memories, newest-touched first, pinned on top. Active only unless asked. */
+export function listMemories(opts: ListMemoriesOpts = {}): AiMemory[] {
+  const db = getDb()
+  const where: string[] = []
+  const params: unknown[] = []
+  if (!opts.includeArchived) where.push('archived_at IS NULL')
+  if (opts.projectId !== undefined) {
+    if (opts.projectId === null) where.push('project_id IS NULL')
+    else {
+      where.push('project_id = ?')
+      params.push(opts.projectId)
+    }
+  }
+  const sql =
+    'SELECT * FROM memory' +
+    (where.length ? ' WHERE ' + where.join(' AND ') : '') +
+    ' ORDER BY pinned DESC, last_accessed_at DESC'
+  return (db.prepare(sql).all(...params) as Record<string, unknown>[]).map(memRowToMemory)
+}
+
+/** The briefing set for a run: this project's active memories plus the globals. */
+export function memoriesForContext(projectId: string | null): AiMemory[] {
+  const project = projectId ? listMemories({ projectId }) : []
+  const global = listMemories({ projectId: null })
+  return [...project, ...global]
+}
+
+export function getMemory(id: string): AiMemory | null {
+  const r = getDb().prepare('SELECT * FROM memory WHERE id=?').get(id) as
+    | Record<string, unknown>
+    | undefined
+  return r ? memRowToMemory(r) : null
+}
+
+/** Insert or replace a memory row from a fully-formed AiMemory (built in ./memory). */
+export function upsertMemory(m: AiMemory): void {
+  getDb()
+    .prepare(
+      `INSERT INTO memory
+         (id,project_id,type,title,body,tags,pinned,source,created_at,updated_at,last_accessed_at,access_count,archived_at)
+       VALUES (@id,@project_id,@type,@title,@body,@tags,@pinned,@source,@created_at,@updated_at,@last_accessed_at,@access_count,@archived_at)
+       ON CONFLICT(id) DO UPDATE SET
+         project_id=@project_id, type=@type, title=@title, body=@body, tags=@tags,
+         pinned=@pinned, source=@source, updated_at=@updated_at,
+         last_accessed_at=@last_accessed_at, access_count=@access_count, archived_at=@archived_at`
+    )
+    .run({
+      id: m.id,
+      project_id: m.projectId,
+      type: m.type,
+      title: m.title,
+      body: m.body,
+      tags: JSON.stringify(m.tags),
+      pinned: m.pinned ? 1 : 0,
+      source: m.source,
+      created_at: m.createdAt,
+      updated_at: m.updatedAt,
+      last_accessed_at: m.lastAccessedAt,
+      access_count: m.accessCount,
+      archived_at: m.archivedAt
+    })
+}
+
+/** Bump last-accessed + count for the given ids — the cheap write decay reads. */
+export function touchMemories(ids: string[], nowIso: string): void {
+  if (!ids.length) return
+  const db = getDb()
+  const stmt = db.prepare(
+    'UPDATE memory SET last_accessed_at=?, access_count=access_count+1 WHERE id=? AND archived_at IS NULL'
+  )
+  db.transaction((list: string[]) => {
+    for (const id of list) stmt.run(nowIso, id)
+  })(ids)
+}
+
+/** Retire memories by setting archived_at (never a hard delete — reversible). */
+export function archiveMemories(ids: string[], nowIso: string): void {
+  if (!ids.length) return
+  const db = getDb()
+  const stmt = db.prepare('UPDATE memory SET archived_at=?, updated_at=? WHERE id=? AND archived_at IS NULL')
+  db.transaction((list: string[]) => {
+    for (const id of list) stmt.run(nowIso, nowIso, id)
+  })(ids)
+}
+
+/** Hard delete one memory (the explicit user action; decay uses archive instead). */
+export function deleteMemory(id: string): void {
+  getDb().prepare('DELETE FROM memory WHERE id=?').run(id)
+}
+
+/**
+ * Wholesale-replace the memory table from a backup (like conversations on
+ * import). FK-safe: a memory whose `project_id` no longer resolves is stored as
+ * global (null) rather than dropped or left to violate the foreign key — the
+ * projects are imported before this runs, so a valid backup keeps its scoping,
+ * and a memory orphaned by a partial restore survives as a global fact.
+ */
+export function replaceMemories(memories: AiMemory[]): void {
+  const db = getDb()
+  const now = new Date().toISOString()
+  const projectIds = new Set(
+    (db.prepare('SELECT id FROM projects').all() as { id: string }[]).map((r) => r.id)
+  )
+  db.transaction(() => {
+    db.prepare('DELETE FROM memory').run()
+    for (const raw of memories ?? []) {
+      if (!raw || typeof raw.id !== 'string') continue
+      const m = normalizeMemory(raw, now)
+      if (m.projectId && !projectIds.has(m.projectId)) m.projectId = null
+      upsertMemory(m)
+    }
+  })()
 }

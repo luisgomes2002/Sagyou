@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
   costAt,
+  formatTokens,
+  formatRunSummary,
   newEntry,
   appendEntry,
   bucket,
@@ -24,6 +26,40 @@ const entry = (
   completionTokens: 100,
   cost: 0.01,
   ...over
+})
+
+describe('formatTokens', () => {
+  it('renders k/M above a thousand and a plain integer below', () => {
+    expect(formatTokens(999)).toBe('999')
+    expect(formatTokens(47_200)).toBe('47.2k')
+    expect(formatTokens(60_000)).toBe('60.0k')
+    expect(formatTokens(1_200_000)).toBe('1.2M')
+  })
+
+  it('degrades garbage to 0 rather than "NaNk"', () => {
+    expect(formatTokens(NaN)).toBe('0')
+    expect(formatTokens(-5)).toBe('0')
+  })
+})
+
+describe('formatRunSummary', () => {
+  it('carries tokens, cost, and efficiency when all are available', () => {
+    const s = formatRunSummary({ promptTokens: 47_200, completionTokens: 12_800 }, 18, 0.18)
+    expect(s).toContain('Tokens: 47.2k prompt | 12.8k completion | 60.0k total')
+    expect(s).toContain('Custo estimado: ~$0.18 USD')
+    expect(s).toContain('Eficiência: 18 passo(s), 3.3k tokens/passo')
+  })
+
+  it('drops the cost line when prices are unset', () => {
+    const s = formatRunSummary({ promptTokens: 1000, completionTokens: 500 }, 2, undefined)
+    expect(s).not.toContain('Custo')
+    expect(s).toContain('Tokens')
+  })
+
+  it('drops the efficiency line rather than dividing by zero steps', () => {
+    const s = formatRunSummary({ promptTokens: 1000, completionTokens: 500 }, 0, 0.01)
+    expect(s).not.toContain('Eficiência')
+  })
 })
 
 describe('costAt', () => {

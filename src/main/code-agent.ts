@@ -153,6 +153,21 @@ export const CODE_AGENT_TOOLS: ToolDef[] = [
   )
 ]
 
+/** Discovery tools — dropped from the set when the caller pins target files. */
+const DISCOVERY_TOOLS = new Set(['listar_arquivos', 'buscar_no_codigo'])
+
+/**
+ * The tool set for a run. When the caller has pinned the target files, drop the
+ * discovery tools: the agent's biggest waste is spending its step budget on
+ * grep/list to re-find files it was already handed (and whose contents are now
+ * inlined in the prompt). `ler_arquivo` stays — a pinned file may be larger than
+ * the inlined preview, so paging the rest with `inicio` is still legitimate.
+ */
+export function codeToolsFor(opts: { pinnedFiles: boolean }): ToolDef[] {
+  if (!opts.pinnedFiles) return CODE_AGENT_TOOLS
+  return CODE_AGENT_TOOLS.filter((t) => !DISCOVERY_TOOLS.has(t.function.name))
+}
+
 /** Tools that mutate the disk / run code — gated behind per-action approval. */
 const APPROVAL_TOOLS = new Set(['escrever_arquivo', 'executar_comando'])
 
@@ -360,16 +375,85 @@ Regras de comportamento:
 - Não faça commit nem mexa no histórico do git — isso é do usuário.
 - Ao terminar, responda em texto (sem chamar ferramentas) com um resumo curto do que mudou.`
 
+/** One pinned file's contents, to be inlined into the system prompt. */
+export interface InlinedFile {
+  path: string
+  content: string
+}
+
+/** Cap on a single inlined file. A bigger file is truncated with a note and the
+ *  agent pages the rest with ler_arquivo(inicio) — the whole prompt is resent
+ *  every step, so an unbounded paste would tax the entire run. */
+export const INLINE_FILE_CHAR_CAP = 12000
+/** Cap on the total inlined across all pinned files, for the same reason. */
+export const INLINE_TOTAL_CHAR_CAP = 40000
+
+/**
+ * Render pinned files as a numbered, capped block for the system prompt, so the
+ * agent edits from context instead of spending a read step per file. Lines are
+ * 1-based (matching an editor) so the model can reason about line ranges. A file
+ * past the per-file cap — or once the total budget is spent — is truncated or
+ * omitted and named in `omitted`, so the caller can tell the agent (and the log)
+ * to read those on demand.
+ */
+export function inlineFilesBlock(files: InlinedFile[]): { text: string; omitted: string[] } {
+  const parts: string[] = []
+  const omitted: string[] = []
+  let budget = INLINE_TOTAL_CHAR_CAP
+  for (const f of files) {
+    const cap = Math.min(INLINE_FILE_CHAR_CAP, budget)
+    if (cap <= 0) {
+      omitted.push(f.path)
+      continue
+    }
+    const truncated = f.content.length > cap
+    const slice = truncated ? f.content.slice(0, cap) : f.content
+    budget -= slice.length
+    if (truncated) omitted.push(f.path)
+    const numbered = slice
+      .split('\n')
+      .map((line, i) => `${String(i + 1).padStart(4)}  ${line}`)
+      .join('\n')
+    parts.push(
+      `### ${f.path}${truncated ? ' (parcial — use ler_arquivo com "inicio" para o resto)' : ''}\n${numbered}`
+    )
+  }
+  return { text: parts.join('\n\n'), omitted }
+}
+
 /** Escape nothing — this is prompt text; just splice the pieces together. */
-export function buildSystemPrompt(opts: { tree?: string; guide?: string; files?: string[] }): string {
+export function buildSystemPrompt(opts: {
+  tree?: string
+  guide?: string
+  files?: string[]
+  /** Pre-rendered numbered contents of the pinned files (see inlineFilesBlock).
+   *  When present, discovery is off and the agent edits from context. */
+  fileContents?: string
+  /** Preformatted memory briefing (see formatMemoriesForPrompt), shared with the chat. */
+  memories?: string
+}): string {
   const parts: string[] = [BEHAVIOR]
+  if (opts.memories && opts.memories.trim()) {
+    parts.push(opts.memories.trim())
+  }
   if (opts.guide && opts.guide.trim()) {
     parts.push(`## GUIA DO PROJETO (GUIDE.md / AGENTS.md)\n\n${opts.guide.trim()}`)
   }
   if (opts.tree && opts.tree.trim()) {
     parts.push(`## ESTRUTURA DE ARQUIVOS\n\n${opts.tree.trim()}`)
   }
-  if (opts.files && opts.files.length) {
+  if (opts.fileContents && opts.fileContents.trim()) {
+    // Pinned + inlined: the files are already here with line numbers and the
+    // discovery tools are off, so tell the agent plainly not to re-fetch them.
+    parts.push(
+      `## ARQUIVOS INDICADOS (JÁ NO CONTEXTO)\n\n` +
+        `Estes são os arquivos a editar; o conteúdo abaixo já vem com números de linha. ` +
+        `NÃO gaste passos relendo nem buscando — edite direto a partir daqui. ` +
+        `As ferramentas de busca (listar_arquivos, buscar_no_codigo) estão desativadas nesta run. ` +
+        `Se um arquivo estiver marcado "parcial", use ler_arquivo com "inicio" para ver o resto.\n\n` +
+        opts.fileContents.trim()
+    )
+  } else if (opts.files && opts.files.length) {
     parts.push(
       `## ARQUIVOS INDICADOS PARA ESTA TAREFA\n\n` +
         `Comece por estes (edite-os se fizer sentido):\n` +
@@ -404,8 +488,13 @@ export async function dirTree(root: string, cap = 400): Promise<string> {
 // The loop (task 4).
 // ---------------------------------------------------------------------------
 
-/** Safety cap on model→tools rounds, so a stuck agent can't spin forever. */
-export const CODE_AGENT_MAX_STEPS = 30
+/** Safety cap on model→tools rounds, so a stuck agent can't spin forever.
+ *  ⚠️ Each step resends the whole accumulated history, so cost grows worse than
+ *  linearly in this number — it's a circuit breaker, not a budget. Raised to 40
+ *  as a safety net alongside pinned-file inlining (which cuts the redescovery
+ *  waste that used to exhaust it); the real fix is spending fewer steps, not a
+ *  higher ceiling. */
+export const CODE_AGENT_MAX_STEPS = 40
 
 /** Everything the loop needs from the outside, all injectable for tests. */
 export interface RunAgentDeps {
@@ -426,6 +515,17 @@ export interface RunAgentDeps {
   /** Checked between steps; true stops the run. */
   shouldAbort?: () => boolean
   maxSteps?: number
+  /** Tool set to offer the model. Defaults to CODE_AGENT_TOOLS; a pinned-file
+   *  run passes the reduced set from codeToolsFor (no discovery tools). */
+  tools?: ToolDef[]
+  /** A transient model-call failure is being retried: attempt (1-based), the
+   *  max, the backoff in ms, and why. For the panel's "retentando em Ns…" line. */
+  onRetry?: (attempt: number, max: number, waitMs: number, reason: string) => void
+  /** Backoff sleep, injectable so tests don't wait real seconds. Defaults to real. */
+  sleep?: (ms: number) => Promise<void>
+  /** The current step is beginning: step (1-based) of maxSteps. Drives the
+   *  panel's live "Passo X/Y" counter alongside the running token total. */
+  onStep?: (step: number, maxSteps: number) => void
 }
 
 export interface RunAgentResult {
@@ -435,6 +535,70 @@ export interface RunAgentResult {
   steps: number
   /** True when the step cap or an abort ended it before a final answer. */
   stopped: boolean
+}
+
+// ---------------------------------------------------------------------------
+// Resilient model calls.
+//
+// A run holds all its progress in `msgs`, so a single transient failure — a
+// provider 5xx, a dropped socket, a request timeout — must NOT throw the whole
+// run away and make the user re-send from zero. The model call (and only the
+// model call — never a tool, which would double a write) retries with
+// exponential backoff. A permanent failure (a 4xx like a bad key) fails fast
+// instead: retrying it only delays the real message by three backoffs. Mirrors
+// ai/agent.ts's callModelResilient on the chat side.
+// ---------------------------------------------------------------------------
+
+/** Retries a failed model call gets before the run gives up. */
+export const CODE_AGENT_MAX_RETRIES = 3
+/** First backoff step; each retry doubles it → 2s, 4s, 8s. */
+export const CODE_AGENT_RETRY_BASE_MS = 2000
+
+/**
+ * Whether a failed model call is worth retrying. Transient conditions requalify
+ * (429 rate limit, 408 request timeout, the provider's own 5xx); a permanent
+ * 4xx does not. No status = the call never reached a response (DNS, refused,
+ * dropped socket) — the classic transient case, so it retries.
+ */
+export function isRetryableStatus(status: number | undefined): boolean {
+  if (status === undefined) return true
+  if (status === 408 || status === 429) return true
+  return status >= 500 && status < 600
+}
+
+/** The HTTP status a thrown model error carries, if any (the OpenAI SDK sets it). */
+function statusOf(err: unknown): number | undefined {
+  const s = (err as { status?: unknown } | null)?.status
+  return typeof s === 'number' ? s : undefined
+}
+
+const realSleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * One model round-trip with retry + exponential backoff. Throws only when the
+ * failure is permanent, the run was stopped, or the retries are spent — the
+ * caller turns that into a graceful pause, not a crash.
+ */
+async function callModelWithRetry(
+  deps: RunAgentDeps,
+  msgs: AgentMessage[],
+  tools: ToolDef[]
+): Promise<{ message: AgentMessage; usage?: TokenUsage }> {
+  const sleep = deps.sleep ?? realSleep
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await deps.callModel(msgs, tools)
+    } catch (err) {
+      const status = statusOf(err)
+      if (attempt >= CODE_AGENT_MAX_RETRIES || !isRetryableStatus(status) || deps.shouldAbort?.()) {
+        throw err
+      }
+      const waitMs = CODE_AGENT_RETRY_BASE_MS * 2 ** attempt
+      const reason = err instanceof Error ? err.message : 'falha de conexão'
+      deps.onRetry?.(attempt + 1, CODE_AGENT_MAX_RETRIES, waitMs, reason)
+      await sleep(waitMs)
+    }
+  }
 }
 
 /**
@@ -449,6 +613,7 @@ export async function runCodeAgent(
   deps: RunAgentDeps
 ): Promise<RunAgentResult> {
   const maxSteps = deps.maxSteps && deps.maxSteps > 0 ? Math.floor(deps.maxSteps) : CODE_AGENT_MAX_STEPS
+  const tools = deps.tools ?? CODE_AGENT_TOOLS
   const msgs: AgentMessage[] = [
     { role: 'system', content: systemPrompt },
     { role: 'user', content: task }
@@ -456,8 +621,23 @@ export async function runCodeAgent(
 
   for (let step = 0; step < maxSteps; step++) {
     if (deps.shouldAbort?.()) return { answer: 'Execução interrompida.', steps: step, stopped: true }
+    deps.onStep?.(step + 1, maxSteps)
 
-    const { message, usage } = await deps.callModel(msgs, CODE_AGENT_TOOLS)
+    let message: AgentMessage
+    let usage: TokenUsage | undefined
+    try {
+      ;({ message, usage } = await callModelWithRetry(deps, msgs, tools))
+    } catch (err) {
+      // Retries spent or a permanent failure: pause gracefully instead of
+      // crashing the run with "code 1". The files written so far are on disk and
+      // in the diff; the note says what happened and that nothing after it ran.
+      const reason = err instanceof Error ? err.message : 'falha de conexão'
+      const note =
+        `Conexão com o modelo falhou (${reason}). O agente pausou após ${step} passo(s) — ` +
+        `as mudanças já feitas estão no diff. Reenvie a tarefa para continuar.`
+      deps.onText?.(note)
+      return { answer: note, steps: step, stopped: true }
+    }
     if (usage) deps.onUsage?.(usage)
     // Normalise: some providers omit content on a tool-only turn.
     const assistant: AgentMessage = {
@@ -504,7 +684,7 @@ export async function runCodeAgent(
   // Step cap hit: force one last text answer with tools disabled, so a run that
   // ran out of budget still summarises what it managed instead of ending mute.
   try {
-    const { message, usage } = await deps.callModel(msgs, [])
+    const { message, usage } = await callModelWithRetry(deps, msgs, [])
     if (usage) deps.onUsage?.(usage)
     if (message.content?.trim()) deps.onText?.(message.content)
     return { answer: message.content ?? '', steps: maxSteps, stopped: true }

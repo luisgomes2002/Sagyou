@@ -1386,6 +1386,203 @@ describe('criar_nota', () => {
   })
 })
 
+// ── salvar_memoria ───────────────────────────────────────────────────────────
+//
+// The store lives in the main process; here the bridge (window.electronAPI.ai.
+// memory.save) is stubbed. What's under test is how the tool maps its Portuguese
+// args to the store shape, resolves project vs. global scope, and reports back —
+// the secret-scrubbing itself is covered in main/memory.test.ts.
+
+describe('salvar_memoria', () => {
+  let saveMock: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    resetStore()
+    saveMock = vi.fn(async (input: Record<string, unknown>) => ({
+      memory: { ...input, id: 'mem-1' },
+      redacted: false
+    }))
+    ;(window as unknown as { electronAPI: unknown }).electronAPI = {
+      ai: { memory: { save: saveMock } }
+    }
+  })
+
+  it('saves a project-scoped memory, mapping args to the store shape', async () => {
+    const pid = st().createProject('P')
+
+    const res = await call('salvar_memoria', {
+      tipo: 'gotcha',
+      titulo: 'amount é string',
+      corpo: 'decimal, não number',
+      tags: ['dev']
+    })
+
+    expect(res).toMatchObject({ ok: true, memoriaId: 'mem-1', tipo: 'gotcha', escopo: 'projeto' })
+    expect(saveMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'gotcha',
+        title: 'amount é string',
+        body: 'decimal, não number',
+        tags: ['dev'],
+        projectId: pid,
+        pinned: false,
+        source: 'modelo'
+      })
+    )
+  })
+
+  it('scopes to global when asked, with no project', async () => {
+    st().createProject('P') // active, but global should ignore it
+    const res = await call('salvar_memoria', { tipo: 'fato', titulo: 'x', corpo: 'y', global: true })
+    expect(res.escopo).toBe('global')
+    expect(saveMock).toHaveBeenCalledWith(expect.objectContaining({ projectId: null }))
+  })
+
+  it('falls back to fato on an unknown type and requires title+body', async () => {
+    st().createProject('P')
+    await call('salvar_memoria', { tipo: 'bogus', titulo: 't', corpo: 'c' })
+    expect(saveMock).toHaveBeenCalledWith(expect.objectContaining({ type: 'fato' }))
+
+    saveMock.mockClear()
+    const blank = await call('salvar_memoria', { tipo: 'fato', titulo: '  ', corpo: '' })
+    expect(blank.error).toBeTruthy()
+    expect(saveMock).not.toHaveBeenCalled() // rejected before touching the store
+  })
+
+  it('surfaces the scrubber warning when the main process redacted something', async () => {
+    st().createProject('P')
+    saveMock.mockResolvedValueOnce({ memory: { id: 'm2' }, redacted: true })
+    const res = await call('salvar_memoria', { tipo: 'fato', titulo: 'config', corpo: 'a chave' })
+    expect(String(res.aviso)).toMatch(/segredos/i)
+  })
+
+  it('passes a save error back to the model', async () => {
+    st().createProject('P')
+    saveMock.mockResolvedValueOnce({ error: 'memória vazia' })
+    const res = await call('salvar_memoria', { tipo: 'fato', titulo: 'x', corpo: 'y' })
+    expect(res.error).toBe('memória vazia')
+  })
+
+  it('is gated behind approval and shows scope + type on the card', () => {
+    expect(isWriteTool('salvar_memoria')).toBe(true)
+    expect(TOOL_DEFS.some((d) => d.function.name === 'salvar_memoria')).toBe(true)
+    const card = describeToolCall('salvar_memoria', {
+      tipo: 'decisao',
+      titulo: 'Usar SQLite',
+      global: false
+    })
+    expect(card).toContain('projeto')
+    expect(card).toContain('Usar SQLite')
+    expect(describeToolActivity('salvar_memoria', { titulo: 'Usar SQLite' })).toContain('Usar SQLite')
+  })
+})
+
+// ── buscar_memoria / buscar_conversas (read tools) ───────────────────────────
+
+describe('buscar_memoria', () => {
+  let listMock: ReturnType<typeof vi.fn>
+  let touchMock: ReturnType<typeof vi.fn>
+
+  const rows = [
+    { id: 'a', type: 'gotcha', title: 'amount é string', body: 'decimal', tags: ['db'], pinned: false, projectId: 'p', archivedAt: null },
+    { id: 'b', type: 'fato', title: 'Prefere hábito diário', body: 'sempre', tags: [], pinned: true, projectId: null, archivedAt: null }
+  ]
+
+  beforeEach(() => {
+    resetStore()
+    listMock = vi.fn(async () => rows)
+    touchMock = vi.fn(async () => undefined)
+    ;(window as unknown as { electronAPI: unknown }).electronAPI = {
+      ai: { memory: { list: listMock, touch: touchMock } }
+    }
+  })
+
+  it('lists everything with no term and touches what it returned', async () => {
+    st().createProject('P')
+    const res = await call('buscar_memoria', {})
+    expect(res.total).toBe(2)
+    expect((res.memorias as unknown[]).length).toBe(2)
+    expect(touchMock).toHaveBeenCalledWith(['a', 'b']) // explicit retrieval bumps access
+  })
+
+  it('filters by term across title/body/tags, accent-insensitive', async () => {
+    st().createProject('P')
+    const res = await call('buscar_memoria', { termo: 'habito' }) // matches "hábito"
+    expect(res.total).toBe(1)
+    expect((res.memorias as { titulo: string }[])[0].titulo).toBe('Prefere hábito diário')
+    expect(touchMock).toHaveBeenCalledWith(['b'])
+  })
+
+  it('reports scope and is not a write tool', async () => {
+    st().createProject('P')
+    const res = await call('buscar_memoria', { termo: 'amount' })
+    expect((res.memorias as { escopo: string }[])[0].escopo).toBe('projeto')
+    expect(isWriteTool('buscar_memoria')).toBe(false)
+    expect(TOOL_DEFS.some((d) => d.function.name === 'buscar_memoria')).toBe(true)
+  })
+})
+
+describe('buscar_conversas', () => {
+  let searchMock: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    resetStore()
+    searchMock = vi.fn(async () => [
+      { id: 'c1', title: 'Sobre o financeiro', createdAt: 'x', updatedAt: 'y', snippet: '...decimal...' }
+    ])
+    ;(window as unknown as { electronAPI: unknown }).electronAPI = {
+      ai: { conversations: { search: searchMock } }
+    }
+  })
+
+  it('searches conversations and maps the result', async () => {
+    const res = await call('buscar_conversas', { termo: 'decimal' })
+    expect(searchMock).toHaveBeenCalledWith('decimal')
+    expect(res.total).toBe(1)
+    expect((res.conversas as { titulo: string; trecho: string }[])[0]).toMatchObject({
+      titulo: 'Sobre o financeiro',
+      trecho: '...decimal...'
+    })
+  })
+
+  it('requires a term and is a read tool', async () => {
+    expect((await call('buscar_conversas', {})).error).toBeTruthy()
+    expect(searchMock).not.toHaveBeenCalled()
+    expect(isWriteTool('buscar_conversas')).toBe(false)
+  })
+})
+
+describe('verificar_memorias', () => {
+  beforeEach(resetStore)
+
+  it('reports no contradictions cleanly', async () => {
+    ;(window as unknown as { electronAPI: unknown }).electronAPI = {
+      ai: { memory: { conflicts: vi.fn(async () => []), list: vi.fn(async () => []) } }
+    }
+    const res = await call('verificar_memorias', {})
+    expect(res).toMatchObject({ total: 0 })
+    expect((res.conflitos as unknown[]).length).toBe(0)
+  })
+
+  it('pairs each conflict with both memories bodies', async () => {
+    const conflicts = [{ a: 'a', b: 'b', title: 'Campo amount' }]
+    const list = [
+      { id: 'a', type: 'gotcha', title: 'Campo amount', body: 'usa number', tags: [], pinned: false, projectId: 'p', archivedAt: null },
+      { id: 'b', type: 'gotcha', title: 'Campo amount', body: 'usa decimal string', tags: [], pinned: false, projectId: 'p', archivedAt: null }
+    ]
+    ;(window as unknown as { electronAPI: unknown }).electronAPI = {
+      ai: { memory: { conflicts: vi.fn(async () => conflicts), list: vi.fn(async () => list) } }
+    }
+    const res = await call('verificar_memorias', {})
+    expect(res.total).toBe(1)
+    const par = (res.conflitos as { titulo: string; a: { corpo: string }; b: { corpo: string } }[])[0]
+    expect(par.titulo).toBe('Campo amount')
+    expect(par.a.corpo).toBe('usa number')
+    expect(par.b.corpo).toBe('usa decimal string')
+    expect(isWriteTool('verificar_memorias')).toBe(false)
+  })
+})
+
 // ── criar_transacao ──────────────────────────────────────────────────────────
 
 describe('criar_transacao', () => {
@@ -2234,7 +2431,11 @@ describe('describeToolActivity — before the arguments arrive', () => {
       'criar_meta',
       'atualizar_meta',
       'criar_sprints',
-      'atribuir_sprint'
+      'atribuir_sprint',
+      'salvar_memoria',
+      'buscar_memoria',
+      'buscar_conversas',
+      'verificar_memorias'
     ]) {
       const text = describeToolActivity(name, {})
       expect(text).not.toContain('?')

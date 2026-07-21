@@ -49,6 +49,13 @@ export interface JailStatus {
 }
 
 /**
+ * The kernel tweak that lets bubblewrap create the unprivileged user namespaces
+ * the sandbox needs. Shown, never run: it weakens the kernel's AppArmor
+ * hardening, so that call is the user's to make (mirrors main/ai-jail.ts).
+ */
+const APPARMOR_FIX_COMMAND = 'sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0'
+
+/**
  * First-run dialog for the ai-jail sandbox.
  *
  * The code agent runs shell commands with no OS confinement of its own, so the
@@ -76,6 +83,14 @@ export function SandboxOnboarding({
   const [copied, setCopied] = useState(false)
 
   const isWindows = status.platform === 'win32'
+  // Linux (native): ai-jail + bwrap are installed, but the kernel blocks the
+  // unprivileged user namespaces bwrap needs (Ubuntu 23.10+). detectAiJail's
+  // smoke test flips `available` off and puts the sysctl fix in `reason` — so
+  // reinstalling won't help, and the button below is hidden in favour of the fix.
+  const isAppArmorBlock =
+    !isWindows &&
+    !status.available &&
+    /apparmor_restrict_unprivileged_userns/.test(status.reason ?? '')
 
   useEffect(() => {
     // Stream install progress into the bar.
@@ -127,8 +142,8 @@ export function SandboxOnboarding({
 
         <div className="mt-4 rounded-lg border border-[#2a2d42] bg-[#0d0f18] p-3">
           <p className="text-[11px] leading-relaxed text-[#8892a4]">
-            É <b className="text-[#e2e8f0]">obrigatório por padrão</b> para proteger você de comandos
-            acidentais ou maliciosos do agente. Projeto:{' '}
+            É <b className="text-[#e2e8f0]">obrigatório por padrão</b> para proteger você de
+            comandos acidentais ou maliciosos do agente. Projeto:{' '}
             <a
               href="https://github.com/akitaonrails/ai-jail"
               target="_blank"
@@ -163,13 +178,38 @@ export function SandboxOnboarding({
             <p className="mt-1 text-[11px] leading-relaxed text-[#8892a4]">
               Abra o terminal do Ubuntu (WSL) e rode:
             </p>
-            <CommandBlock text={status.wslAiJailCommands} onCopy={setCopied} copied={copied} multiline />
+            <CommandBlock
+              text={status.wslAiJailCommands}
+              onCopy={setCopied}
+              copied={copied}
+              multiline
+            />
             <p className="mt-2 text-[10.5px] leading-relaxed text-[#4a5068]">
               No Ubuntu 24.04 pode ser preciso liberar os namespaces:{' '}
-              <code className="text-[#8892a4]">
-                sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-              </code>
-              . Feito isso, feche e reabra esta tela — o sandbox passa a ficar ativo.
+              <code className="text-[#8892a4]">{APPARMOR_FIX_COMMAND}</code>. Feito isso, feche e
+              reabra esta tela — o sandbox passa a ficar ativo.
+            </p>
+          </div>
+        )}
+
+        {/* Linux (native): ai-jail is installed but the sandbox can't start —
+            the kernel restricts the user namespaces bwrap needs. Reinstalling
+            won't fix it; the fix is a one-line sysctl (shown, not run). */}
+        {isAppArmorBlock && (
+          <div className="mt-4 rounded-lg border border-[#7c4a2d] bg-[#1a1108] p-3">
+            <p className="text-[12px] font-semibold text-[#f0a868]">
+              Libere os namespaces do kernel
+            </p>
+            <p className="mt-1 text-[11px] leading-relaxed text-[#c9a68a]">
+              O ai-jail e o bubblewrap estão instalados, mas o kernel bloqueia os{' '}
+              <i>user namespaces</i> não privilegiados que o sandbox precisa (padrão no Ubuntu
+              23.10+). Rode o comando abaixo e reabra esta tela — o sandbox passa a ficar ativo.
+            </p>
+            <CommandBlock text={APPARMOR_FIX_COMMAND} onCopy={setCopied} copied={copied} />
+            <p className="mt-2 text-[10.5px] leading-relaxed text-[#4a5068]">
+              Isso reduz o endurecimento do kernel (AppArmor) — rode por sua conta. Como
+              alternativa, crie um perfil AppArmor para o binário ou desative o Sandbox nas
+              configurações (por sua conta e risco).
             </p>
           </div>
         )}
@@ -197,9 +237,10 @@ export function SandboxOnboarding({
           >
             Depois
           </button>
-          {/* On Windows the app can't install for the user — the button would only
-              fail — so it's hidden there in favour of the WSL2 instructions. */}
-          {!isWindows && (
+          {/* On Windows the app can't install for the user, and in the AppArmor
+              case ai-jail is already installed (the fix is the sysctl, not a
+              reinstall) — so the button is hidden in both, favouring the steps. */}
+          {!isWindows && !isAppArmorBlock && (
             <button
               onClick={install}
               disabled={installing || !status.installable}
@@ -211,8 +252,9 @@ export function SandboxOnboarding({
         </div>
 
         <p className="mt-3 text-[10.5px] leading-relaxed text-[#4a5068]">
-          Se escolher “Depois”, o agente de código fica bloqueado até o ai-jail ser instalado — ou
-          até você desativar o Sandbox nas configurações (por sua conta e risco).
+          Se escolher “Depois”, o agente de código fica bloqueado até{' '}
+          {isAppArmorBlock ? 'o sandbox conseguir iniciar' : 'o ai-jail ser instalado'} — ou até
+          você desativar o Sandbox nas configurações (por sua conta e risco).
         </p>
       </div>
     </div>

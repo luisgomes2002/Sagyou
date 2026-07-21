@@ -1356,6 +1356,208 @@ const REGISTRY: Record<string, AITool> = {
     }
   },
 
+  buscar_memoria: {
+    definition: fn(
+      'buscar_memoria',
+      'Consulta as suas memórias duráveis (do projeto ativo + as globais). Sem "termo", ' +
+        'lista todas; com "termo", filtra por título, corpo ou tags (sem diferenciar acento/maiúscula). ' +
+        'Use para recuperar o conteúdo de uma memória que aparece só como título no briefing.',
+      {
+        type: 'object',
+        properties: {
+          termo: { type: 'string', description: 'Texto a procurar (opcional)' },
+          incluir_arquivadas: {
+            type: 'boolean',
+            description: 'true = inclui memórias arquivadas por inatividade (opcional)'
+          }
+        },
+        additionalProperties: false
+      }
+    ),
+    run: async (args) => {
+      const termo = typeof args.termo === 'string' ? args.termo.trim() : ''
+      const projectId = useKanbanStore.getState().activeProjectId
+      const all = await window.electronAPI.ai.memory.list({
+        projectId: projectId ?? null,
+        includeArchived: args.incluir_arquivadas === true
+      })
+      const q = normalize(termo)
+      const matched = q
+        ? all.filter((m) => normalize(`${m.title} ${m.body} ${m.tags.join(' ')}`).includes(q))
+        : all
+      const LIMIT = 30
+      const top = matched.slice(0, LIMIT)
+      // Explicit retrieval is what keeps a memory warm — the bulk briefing is
+      // decay-neutral, so this is the only place access is bumped.
+      if (top.length) void window.electronAPI.ai.memory.touch(top.map((m) => m.id))
+      return JSON.stringify({
+        total: matched.length,
+        truncado: matched.length > top.length,
+        memorias: top.map((m) => ({
+          id: m.id,
+          tipo: m.type,
+          titulo: m.title,
+          corpo: m.body,
+          tags: m.tags,
+          escopo: m.projectId ? 'projeto' : 'global',
+          fixada: m.pinned,
+          ...(m.archivedAt ? { arquivada: true } : {})
+        }))
+      })
+    }
+  },
+
+  buscar_conversas: {
+    definition: fn(
+      'buscar_conversas',
+      'Procura em conversas anteriores com este usuário por título ou por qualquer coisa dita ' +
+        'no chat (sem diferenciar acento). Devolve os chats que batem, com um trecho. Use para ' +
+        'lembrar o que já foi discutido antes.',
+      {
+        type: 'object',
+        properties: {
+          termo: { type: 'string', description: 'Texto a procurar nas conversas' }
+        },
+        required: ['termo'],
+        additionalProperties: false
+      }
+    ),
+    run: async (args) => {
+      const termo = typeof args.termo === 'string' ? args.termo.trim() : ''
+      if (!termo) return JSON.stringify({ error: 'Informe o termo a buscar' })
+      const res = await window.electronAPI.ai.conversations.search(termo)
+      const LIMIT = 20
+      return JSON.stringify({
+        total: res.length,
+        truncado: res.length > LIMIT,
+        conversas: res.slice(0, LIMIT).map((c) => ({
+          id: c.id,
+          titulo: c.title,
+          quando: c.updatedAt,
+          ...(c.snippet ? { trecho: c.snippet } : {})
+        }))
+      })
+    }
+  },
+
+  verificar_memorias: {
+    definition: fn(
+      'verificar_memorias',
+      'Audita suas memórias em busca de contradições — pares que falam do mesmo assunto ' +
+        '(mesmo título) com conteúdos diferentes, sinal de que uma pode estar desatualizada. ' +
+        'Use quando suspeitar que suas memórias se contradizem ou quando o usuário pedir para revisá-las.',
+      NO_PARAMS
+    ),
+    run: async () => {
+      const conflicts = await window.electronAPI.ai.memory.conflicts()
+      if (!conflicts.length) {
+        return JSON.stringify({ ok: true, total: 0, conflitos: [], mensagem: 'Nenhuma contradição aparente.' })
+      }
+      const all = await window.electronAPI.ai.memory.list({})
+      const byId = new Map(all.map((m) => [m.id, m]))
+      const fmt = (id: string): Record<string, unknown> => {
+        const m = byId.get(id)
+        return m
+          ? {
+              id: m.id,
+              tipo: m.type,
+              corpo: m.body,
+              escopo: m.projectId ? 'projeto' : 'global',
+              fixada: m.pinned
+            }
+          : { id, ausente: true }
+      }
+      return JSON.stringify({
+        total: conflicts.length,
+        conflitos: conflicts.map((c) => ({ titulo: c.title, a: fmt(c.a), b: fmt(c.b) })),
+        aviso:
+          'Cada par fala do mesmo assunto com conteúdos diferentes. Considere atualizar a ' +
+          'memória correta e reescrever/apagar a desatualizada.'
+      })
+    }
+  },
+
+  salvar_memoria: {
+    write: true,
+    definition: fn(
+      'salvar_memoria',
+      'Guarda um fato durável para você lembrar em conversas futuras — uma decisão tomada, ' +
+        'um trade-off/ponto crítico, uma armadilha (gotcha) ou um fato geral. Use quando você ou ' +
+        'o usuário fixar algo que valha a pena não reaprender depois. Uma memória por chamada. ' +
+        'Por padrão fica ligada ao projeto ativo; use global=true para fatos sobre o próprio ' +
+        'usuário (preferências, estilo). NUNCA salve segredos (chaves de API, senhas, tokens) — ' +
+        'eles são removidos automaticamente, mas nem os coloque.',
+      {
+        type: 'object',
+        properties: {
+          tipo: {
+            type: 'string',
+            enum: ['decisao', 'tradeoff', 'gotcha', 'fato'],
+            description:
+              'decisao = uma decisão tomada; tradeoff = um trade-off/ponto crítico; ' +
+              'gotcha = uma armadilha; fato = um fato geral durável'
+          },
+          titulo: { type: 'string', description: 'Assunto curto da memória' },
+          corpo: { type: 'string', description: 'O fato em si, explicado' },
+          tags: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Rótulos opcionais para agrupar/buscar'
+          },
+          global: {
+            type: 'boolean',
+            description: 'true = fato sobre o usuário, sem vínculo com projeto (opcional)'
+          },
+          fixar: {
+            type: 'boolean',
+            description: 'true = nunca expira por inatividade (opcional; use com parcimônia)'
+          }
+        },
+        required: ['tipo', 'titulo', 'corpo'],
+        additionalProperties: false
+      }
+    ),
+    run: async (args) => {
+      const tipos = ['decisao', 'tradeoff', 'gotcha', 'fato']
+      const tipo = tipos.includes(String(args.tipo)) ? String(args.tipo) : 'fato'
+      const titulo = typeof args.titulo === 'string' ? args.titulo.trim() : ''
+      const corpo = typeof args.corpo === 'string' ? args.corpo.trim() : ''
+      if (!titulo && !corpo) return JSON.stringify({ error: 'Informe título e corpo da memória' })
+
+      const global = args.global === true
+      const projectId = global
+        ? null
+        : (typeof args.projectId === 'string' && args.projectId) ||
+          useKanbanStore.getState().activeProjectId ||
+          null
+      const tags = Array.isArray(args.tags)
+        ? args.tags.filter((t): t is string => typeof t === 'string')
+        : undefined
+
+      const res = await window.electronAPI.ai.memory.save({
+        type: tipo,
+        title: titulo,
+        body: corpo,
+        tags,
+        projectId,
+        pinned: args.fixar === true,
+        source: 'modelo'
+      })
+      if ('error' in res) return JSON.stringify({ error: res.error })
+      return JSON.stringify({
+        ok: true,
+        memoriaId: res.memory.id,
+        tipo,
+        escopo: projectId ? 'projeto' : 'global',
+        // If the scrubber touched anything, say so — the model (and the approval
+        // card) shouldn't believe it stored something it didn't.
+        ...(res.redacted
+          ? { aviso: 'Trechos que pareciam segredos foram removidos antes de salvar.' }
+          : {})
+      })
+    }
+  },
+
   criar_transacao: {
     write: true,
     definition: fn(
@@ -1452,7 +1654,7 @@ const REGISTRY: Record<string, AITool> = {
     write: true,
     definition: fn(
       'rodar_agente_codigo',
-      'Dispara o agente de código externo (Codex) no diretório do projeto para ' +
+      'Dispara o agente de código no diretório do projeto para ' +
         'implementar uma tarefa de código. Roda em UMA pasta: se o projeto tiver várias ' +
         'marcadas, informe pastaId. O agente escreve arquivos e roda comandos, por isso ' +
         'passa por aprovação. IMPORTANTE: quando você já souber quais arquivos mudar (ache-os ' +
@@ -1507,11 +1709,17 @@ const REGISTRY: Record<string, AITool> = {
       // search of it is now potentially stale — drop the cache.
       clearCodeSearchCache()
       const { runningConvId } = useAiRunStore.getState()
+      // Same project the read tools resolved to — so the code agent is briefed
+      // with this project's memory (shared with the chat).
+      const projectId =
+        (typeof args.projectId === 'string' && args.projectId) ||
+        useKanbanStore.getState().activeProjectId
       void window.electronAPI.ai.codeAgent.run({
         path,
         task,
         files,
-        convId: runningConvId ?? undefined
+        convId: runningConvId ?? undefined,
+        projectId
       })
       return JSON.stringify({
         status: 'solicitado',
@@ -1816,6 +2024,16 @@ export function describeToolActivity(name: string, args: Record<string, unknown>
       const url = str(args.url)
       return url ? `Lendo ${url}` : 'Lendo uma página web'
     }
+    case 'buscar_memoria': {
+      const termo = str(args.termo)
+      return termo ? `Buscando "${termo}" na memória` : 'Consultando a memória'
+    }
+    case 'buscar_conversas': {
+      const termo = str(args.termo)
+      return termo ? `Buscando "${termo}" nas conversas` : 'Buscando nas conversas'
+    }
+    case 'verificar_memorias':
+      return 'Verificando contradições na memória'
     case 'criar_projeto': {
       const nome = str(args.nome)
       return nome ? `Criando o projeto ${nome}` : 'Criando um projeto'
@@ -1852,6 +2070,10 @@ export function describeToolActivity(name: string, args: Record<string, unknown>
     }
     case 'criar_nota':
       return `Criando uma nota no canvas`
+    case 'salvar_memoria': {
+      const titulo = str(args.titulo)
+      return titulo ? `Salvando na memória: ${titulo}` : 'Salvando na memória'
+    }
     case 'criar_transacao': {
       // Defaulting the type to 'despesa' would announce the wrong direction for
       // money before the model has said which it is.
@@ -1876,7 +2098,7 @@ export function describeToolActivity(name: string, args: Record<string, unknown>
       return sprint ? `Atribuindo a sprint "${sprint}"` : 'Atribuindo uma sprint'
     }
     case 'rodar_agente_codigo':
-      return 'Rodando o agente de código (codex)'
+      return 'Rodando o agente de código'
     default:
       return name
   }
@@ -1924,6 +2146,12 @@ export function describeToolCall(name: string, args: Record<string, unknown>): s
       const texto = String(args.conteudo ?? '')
       return `Criar nota: "${texto.length > 60 ? `${texto.slice(0, 60)}…` : texto}"`
     }
+    case 'salvar_memoria': {
+      const titulo = String(args.titulo ?? '')
+      const escopo = args.global === true ? 'global' : 'projeto'
+      const t = titulo.length > 60 ? `${titulo.slice(0, 60)}…` : titulo
+      return `Salvar memória (${escopo}, ${args.tipo ?? 'fato'}): "${t}"`
+    }
     // Money: the amount and where it lands have to be on the card itself.
     case 'criar_transacao': {
       const tipo = args.tipo === 'receita' ? 'Receita' : 'Despesa'
@@ -1955,7 +2183,7 @@ export function describeToolCall(name: string, args: Record<string, unknown>): s
     case 'atribuir_sprint':
       return `Atribuir sprint "${args.sprint ?? '?'}" à task ${alvo}`
     case 'rodar_agente_codigo':
-      return `⚠️ Rodar agente de código (codex) no projeto: ${args.task ?? ''}`
+      return `⚠️ Rodar agente de código no projeto: ${args.task ?? ''}`
     default:
       return name
   }

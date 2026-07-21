@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { v4 as uuidv4 } from 'uuid'
 import { runAgent, resolveMaxSteps } from '../ai/agent'
+import { useKanbanStore } from './kanban'
 import type { AIConfig, PendingCall, TokenUsage, ContentPart } from '../ai/agent'
 
 // ---------------------------------------------------------------------------
@@ -125,6 +126,40 @@ function routeUsage(s: AiRunState, u: TokenUsage): Partial<AiRunState> | AiRunSt
   const p = s.parked[id]
   if (!p) return s
   return { parked: { ...s.parked, [id]: { ...p, usage: add(p.usage) } } }
+}
+
+/** The abort reply runAgent returns — never worth a handoff. */
+const HANDOFF_SKIP = 'Execução interrompida.'
+
+/**
+ * Leave a per-project handoff breadcrumb after a run, so a later session opens
+ * knowing where this one left off — the automatic sibling of salvar_memoria.
+ *
+ * Deliberately NOT an LLM summary (that would cost a call, against the token
+ * budget the whole feature is built around): it's the last question plus a
+ * trimmed final answer. One memory per project, upserted each run (main gives it
+ * a deterministic id), so it never floods — it's always "the last exchange",
+ * and it decays when the project goes quiet. Skipped for an aborted/empty reply.
+ * Fully guarded: a handoff failure — or an absent bridge — must never touch the run.
+ */
+export async function writeHandoff(question: string, reply: string): Promise<void> {
+  try {
+    const api = window.electronAPI?.ai?.memory
+    if (!api?.handoff) return
+    const answer = (reply ?? '').trim()
+    if (!answer || answer === HANDOFF_SKIP) return
+    const { activeProjectId, projects } = useKanbanStore.getState()
+    const name = projects.find((p) => p.id === activeProjectId)?.name
+    const q = (question ?? '').trim().slice(0, 200)
+    const a = answer.length > 600 ? `${answer.slice(0, 600)}…` : answer
+    await api.handoff({
+      projectId: activeProjectId,
+      title: name ? `Última sessão — ${name}` : 'Última sessão',
+      body: (q ? `Perguntou: "${q}". ` : '') + `Conclusão: ${a}`
+    })
+  } catch {
+    /* a breadcrumb is a convenience; its failure must never affect the run */
+  }
 }
 
 /**
@@ -277,6 +312,8 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
     set({ runningConvId: convId })
     try {
       const reply = await runAgent(config, toApiMessages(next, imageData), get().requestApproval, {
+        // Scope the memory briefing to the active project (plus globals).
+        projectId: useKanbanStore.getState().activeProjectId,
         maxSteps: resolveMaxSteps(config.maxSteps, get().autoApprove),
         shouldAbort: () => get().abortRequested,
         onStream: (t) => set({ streaming: t }),
@@ -314,6 +351,8 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
           )
       })
       set((s) => routeRun(s, (prev) => [...prev, { role: 'assistant', content: reply }]))
+      // Leave a breadcrumb for the next session (best-effort; see writeHandoff).
+      void writeHandoff(text, reply)
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Falha ao contatar o modelo'
       // The banner belongs to the chat that failed. If the user has moved on,

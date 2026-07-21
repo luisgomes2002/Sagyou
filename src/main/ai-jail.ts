@@ -123,6 +123,63 @@ export function looksLikeSandboxBlock(output: string): boolean {
   )
 }
 
+/**
+ * Whether a bwrap failure is the restricted-user-namespaces case: Ubuntu 23.10+
+ * defaults `kernel.apparmor_restrict_unprivileged_userns=1`, which blocks the
+ * unprivileged user namespaces bubblewrap needs. The symptom is a `bwrap:` line
+ * with "Permission denied"/"Operation not permitted" while creating the
+ * namespace — distinct from a sandbox that ran and *denied a file*, which is the
+ * sandbox working as intended.
+ */
+export function looksLikeUserNsBlock(output: string): boolean {
+  return (
+    /bwrap:/i.test(output) &&
+    /(permission denied|operation not permitted|creating new namespace failed|user namespaces?|setting up uid map|clone)/i.test(
+      output
+    )
+  )
+}
+
+/**
+ * The fix for the restricted-user-namespaces case, surfaced to the user. It
+ * weakens the kernel's AppArmor hardening, so — like the codex hint — we only
+ * ever *show* the command, never run it.
+ */
+export const APPARMOR_USERNS_REASON =
+  'ai-jail e bubblewrap estão instalados, mas o kernel bloqueia os user namespaces não privilegiados que o sandbox precisa ' +
+  '(padrão no Ubuntu 23.10+). Rode: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0'
+
+/**
+ * Smoke-test the sandbox: run a trivial command *through* ai-jail and confirm it
+ * actually confines rather than merely responding to `--version`. Having ai-jail
+ * + bwrap on PATH is not proof the sandbox runs (see `looksLikeUserNsBlock`), and
+ * a sandbox that can't start is worse than knowing it can't — the run handler
+ * refuses to start when the sandbox is required but unavailable, so this turning
+ * `available` false is the point.
+ *
+ * `ai-jail --rw-map <tmp> -- /bin/sh -c 'true'`: a no-op that succeeds iff the
+ * namespace can be created. Uses the injected `exec` (with the ABSOLUTE binary
+ * path), so it is driven from tests without a real bwrap.
+ */
+export async function sandboxSmokeTest(
+  exec: Exec,
+  aiJailBin: string
+): Promise<{ ok: boolean; reason?: string }> {
+  try {
+    const { code, stdout, stderr } = await exec(aiJailBin, ['--rw-map', tmpdir(), '--', '/bin/sh', '-c', 'true'])
+    if (code === 0) return { ok: true }
+    const out = `${stdout}\n${stderr}`
+    if (looksLikeUserNsBlock(out)) return { ok: false, reason: APPARMOR_USERNS_REASON }
+    const detail = (stderr.trim() || stdout.trim()).slice(0, 300)
+    return {
+      ok: false,
+      reason: `ai-jail está instalado, mas o teste do sandbox falhou (código ${code}).${detail ? ` ${detail}` : ''}`
+    }
+  } catch (e) {
+    return { ok: false, reason: `Falha ao testar o sandbox do ai-jail: ${e instanceof Error ? e.message : 'erro'}` }
+  }
+}
+
 /** `~/.local/bin` — the user-writable install target (no sudo). */
 export function localBinDir(): string {
   return join(homedir(), '.local', 'bin')
@@ -255,6 +312,16 @@ export async function detectAiJail(exec: Exec = defaultExec): Promise<JailStatus
     base.bubblewrap = await which(exec, 'bwrap')
     if (base.available && !base.bubblewrap) {
       base.reason = 'ai-jail está instalado, mas o bubblewrap (bwrap) não — instale-o pelo gerenciador de pacotes.'
+    } else if (base.available && base.bubblewrap && base.path) {
+      // Both are present, but that doesn't prove the sandbox can start — Ubuntu
+      // 23.10+ restricts the user namespaces bwrap needs. Actually run something
+      // through it; a namespace failure flips `available` off so the run handler
+      // refuses rather than running a command it can't confine.
+      const smoke = await sandboxSmokeTest(exec, base.path)
+      if (!smoke.ok) {
+        base.available = false
+        base.reason = smoke.reason
+      }
     }
   } else if (platform === 'win32') {
     base.wsl2 = await hasWsl2(exec)

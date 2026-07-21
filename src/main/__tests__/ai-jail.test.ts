@@ -11,6 +11,9 @@ import {
   winToWslPath,
   wslJailArgv,
   looksLikeSandboxBlock,
+  looksLikeUserNsBlock,
+  sandboxSmokeTest,
+  APPARMOR_USERNS_REASON,
   parseVersion,
   candidatePaths,
   detectAiJail,
@@ -101,6 +104,50 @@ describe('looksLikeSandboxBlock', () => {
   })
 })
 
+describe('looksLikeUserNsBlock', () => {
+  it('recognises the restricted-user-namespaces failure', () => {
+    expect(looksLikeUserNsBlock('bwrap: setting up uid map: Permission denied')).toBe(true)
+    expect(looksLikeUserNsBlock('bwrap: Creating new namespace failed: Operation not permitted')).toBe(true)
+    expect(looksLikeUserNsBlock('bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted')).toBe(true)
+  })
+  it('does not claim a plain error, nor a sandbox that denied a file, as the userns block', () => {
+    expect(looksLikeUserNsBlock('cat: /etc/foo: Permission denied')).toBe(false) // no bwrap: marker
+    expect(looksLikeUserNsBlock('bwrap: execvp npm: No such file or directory')).toBe(false)
+  })
+})
+
+describe('sandboxSmokeTest', () => {
+  it('runs a no-op through ai-jail and passes when it exits 0', async () => {
+    const exec: Exec = vi.fn(async (cmd, args) => {
+      expect(cmd).toBe('/bin/ai-jail')
+      expect(args).toContain('--rw-map')
+      expect(args.slice(-3)).toEqual(['/bin/sh', '-c', 'true'])
+      return { code: 0, stdout: '', stderr: '' }
+    })
+    expect(await sandboxSmokeTest(exec, '/bin/ai-jail')).toEqual({ ok: true })
+  })
+
+  it('flags the AppArmor/userns block with the sysctl fix', async () => {
+    const exec: Exec = async () => ({
+      code: 1,
+      stdout: '',
+      stderr: 'bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted'
+    })
+    const r = await sandboxSmokeTest(exec, '/bin/ai-jail')
+    expect(r.ok).toBe(false)
+    expect(r.reason).toBe(APPARMOR_USERNS_REASON)
+    expect(r.reason).toMatch(/apparmor_restrict_unprivileged_userns=0/)
+  })
+
+  it('reports a generic failure (with detail) for a non-namespace error', async () => {
+    const exec: Exec = async () => ({ code: 2, stdout: '', stderr: 'ai-jail: unknown flag' })
+    const r = await sandboxSmokeTest(exec, '/bin/ai-jail')
+    expect(r.ok).toBe(false)
+    expect(r.reason).toMatch(/código 2/)
+    expect(r.reason).toMatch(/unknown flag/)
+  })
+})
+
 describe('parseVersion / candidatePaths', () => {
   it('pulls a semver out of --version output', () => {
     expect(parseVersion('ai-jail 1.15.0')).toBe('1.15.0')
@@ -132,6 +179,35 @@ describe('detectAiJail', () => {
     const s = await detectAiJail(exec)
     expect(s.available).toBe(false)
     expect(s.path).toBeNull()
+  })
+
+  it('stays available on Linux when ai-jail, bwrap and the sandbox smoke test all pass', async () => {
+    if (process.platform !== 'linux') return // the smoke test runs in the Linux branch only
+    const exec: Exec = async (cmd, args) => {
+      if (cmd === 'ai-jail' && args[0] === '--version') return { code: 0, stdout: 'ai-jail 1.15.0', stderr: '' }
+      if (args.join(' ').includes('command -v bwrap')) return { code: 0, stdout: '/usr/bin/bwrap', stderr: '' }
+      if (args.includes('--rw-map')) return { code: 0, stdout: '', stderr: '' } // smoke test no-op
+      return { code: 1, stdout: '', stderr: '' }
+    }
+    const s = await detectAiJail(exec)
+    expect(s.available).toBe(true)
+    expect(s.bubblewrap).toBe(true)
+    expect(s.reason).toBeUndefined()
+  })
+
+  it('flips available off on Linux when the sandbox can not start (AppArmor userns block)', async () => {
+    if (process.platform !== 'linux') return
+    const exec: Exec = async (cmd, args) => {
+      if (cmd === 'ai-jail' && args[0] === '--version') return { code: 0, stdout: 'ai-jail 1.15.0', stderr: '' }
+      if (args.join(' ').includes('command -v bwrap')) return { code: 0, stdout: '/usr/bin/bwrap', stderr: '' }
+      if (args.includes('--rw-map'))
+        return { code: 1, stdout: '', stderr: 'bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted' }
+      return { code: 1, stdout: '', stderr: '' }
+    }
+    const s = await detectAiJail(exec)
+    expect(s.available).toBe(false)
+    expect(s.bubblewrap).toBe(true) // bwrap IS installed; it just can't create the namespace
+    expect(s.reason).toMatch(/apparmor_restrict_unprivileged_userns=0/)
   })
 
   it('finds ai-jail INSIDE WSL on Windows (viaWsl, WSL path)', async () => {

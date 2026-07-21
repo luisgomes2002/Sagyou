@@ -50,6 +50,7 @@
 | **Canvas** | Notas adesivas livres em tela infinita |
 | **Arquivos** | Anexos por projeto, guardados localmente |
 | **Relatórios** | Visão geral de produtividade |
+| **Memória** | Assistente lembra decisões, tradeoffs e contexto entre conversas — você e o modelo gravam fatos que persistem |
 | **Upcoming** | Tarefas com data de vencimento próxima |
 | **Busca** | Pesquisa rápida em todos os dados |
 | **Assistente de IA** | Chat com acesso aos seus dados via ferramentas — funciona com qualquer provedor compatível com a API da OpenAI (local ou hospedado). Ações que alteram dados pedem aprovação antes de rodar |
@@ -79,6 +80,8 @@ Serve qualquer provedor compatível com a API da OpenAI. A configuração fica e
 ### Uso
 
 Converse normalmente — o assistente tem ferramentas para ler seus dados (tarefas, hábitos, metas, finanças) e responde com base neles em vez de adivinhar.
+
+O assistente também tem **memória entre conversas**: ele grava decisões, tradeoffs e fatos que você fixar, e os recupera em conversas futuras. Use `salvar_memoria` para registrar algo que não vale a pena reaprender depois. Memórias com dados sensíveis (chaves, senhas) são automaticamente sanitizadas antes de gravar.
 
 Ações que **alteram** dados (criar tarefas, concluir, iniciar cronômetro, criar/atribuir sprint) pedem sua aprovação antes de rodar. O botão no topo liga o **modo automático**, que executa sem perguntar — use com cuidado.
 
@@ -154,7 +157,7 @@ Tudo fica na sua máquina, no diretório de dados do app (`userData`):
 
 | Arquivo | Conteúdo |
 |---|---|
-| `kanban.db` | banco SQLite com projetos, tarefas, hábitos, metas e finanças |
+| `kanban.db` | banco SQLite com projetos, tarefas, hábitos, metas, finanças e memórias do assistente |
 | `files/` | anexos enviados |
 | `ai-config.json` | configuração do provedor de IA (inclui a chave de API) |
 | `ai-conversations.json` | histórico do chat |

@@ -11,6 +11,8 @@ vi.mock('../../services/ElectronStorage', () => {
       this.importAIJson = vi.fn().mockResolvedValue({ success: false, cancelled: true })
       this.loadConversations = vi.fn().mockResolvedValue([])
       this.saveConversations = vi.fn().mockResolvedValue(undefined)
+      this.loadMemories = vi.fn().mockResolvedValue([])
+      this.replaceMemories = vi.fn().mockResolvedValue(undefined)
     })
   }
 })
@@ -25,6 +27,8 @@ function getStorageMock() {
     exportBackup: ReturnType<typeof vi.fn>
     loadConversations: ReturnType<typeof vi.fn>
     saveConversations: ReturnType<typeof vi.fn>
+    loadMemories: ReturnType<typeof vi.fn>
+    replaceMemories: ReturnType<typeof vi.fn>
   }
 }
 
@@ -591,15 +595,64 @@ describe('backups carry AI chat history', () => {
     ]
   }
 
-  it('exportBackup includes the stored conversations at version 3', async () => {
+  it('exportBackup includes the stored conversations and memories at version 4', async () => {
     const storage = getStorageMock()
     storage.loadConversations.mockResolvedValueOnce([conversation])
+    const memory = { id: 'm1', projectId: null, type: 'fato', title: 't', body: 'b', tags: [], pinned: false, source: 'modelo', createdAt: 'x', updatedAt: 'x', lastAccessedAt: 'x', accessCount: 0, archivedAt: null }
+    storage.loadMemories.mockResolvedValueOnce([memory])
 
     await useKanbanStore.getState().exportBackup()
 
     const backup = storage.exportBackup.mock.calls[0][0]
-    expect(backup.version).toBe(3)
+    expect(backup.version).toBe(4)
     expect(backup.conversations).toEqual([conversation])
+    expect(backup.memories).toEqual([memory])
+  })
+
+  it('exportBackup still succeeds when memory cannot be read', async () => {
+    const storage = getStorageMock()
+    storage.loadMemories.mockRejectedValueOnce(new Error('db locked'))
+
+    const result = await useKanbanStore.getState().exportBackup()
+
+    expect(result).toBe(true)
+    expect(storage.exportBackup.mock.calls.at(-1)![0].memories).toEqual([])
+  })
+
+  it('importBackup restores memories from a v4 backup', async () => {
+    const storage = getStorageMock()
+    const memory = { id: 'm1', projectId: null, type: 'fato', title: 't', body: 'b', tags: [], pinned: false, source: 'modelo', createdAt: 'x', updatedAt: 'x', lastAccessedAt: 'x', accessCount: 0, archivedAt: null }
+    storage.importBackup.mockResolvedValueOnce({
+      success: true,
+      data: {
+        version: 4,
+        exportedAt: new Date().toISOString(),
+        projects: [], tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: [],
+        memories: [memory]
+      }
+    })
+
+    await useKanbanStore.getState().importBackup()
+
+    expect(storage.replaceMemories).toHaveBeenCalledWith([memory])
+  })
+
+  it('importBackup leaves local memory alone for a backup without the key', async () => {
+    const storage = getStorageMock()
+    storage.replaceMemories.mockClear()
+    storage.importBackup.mockResolvedValueOnce({
+      success: true,
+      data: {
+        version: 3,
+        exportedAt: new Date().toISOString(),
+        projects: [], tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: [],
+        conversations: []
+      }
+    })
+
+    await useKanbanStore.getState().importBackup()
+
+    expect(storage.replaceMemories).not.toHaveBeenCalled()
   })
 
   it('exportBackup still succeeds when the history cannot be read', async () => {

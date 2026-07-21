@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 // Type-only: erased at build, so no main-process code is pulled into the preload.
 import type { RunMetricInput, RunMetricsSummary } from '../main/run-metrics'
+import type { AiMemory, MemoryInput, MemorySummary, MemoryConflict } from '../main/memory'
 
 /** A user-written prompt template for Gerar Tasks. */
 interface PromptTemplate {
@@ -131,6 +132,35 @@ const api = {
         ipcRenderer.invoke('ai:run-metrics:append', input),
       summary: (): Promise<RunMetricsSummary> => ipcRenderer.invoke('ai:run-metrics:summary')
     },
+    // Durable memory: facts the assistant carries across chats (kanban.db,
+    // outside persistAll). save scrubs secrets; prune archives cold pages.
+    memory: {
+      list: (opts?: {
+        projectId?: string | null
+        includeArchived?: boolean
+      }): Promise<AiMemory[]> => ipcRenderer.invoke('ai:memory:list', opts),
+      save: (
+        input: MemoryInput & { id?: string }
+      ): Promise<{ memory: AiMemory; redacted: boolean } | { error: string }> =>
+        ipcRenderer.invoke('ai:memory:save', input),
+      delete: (id: string): Promise<void> => ipcRenderer.invoke('ai:memory:delete', id),
+      // Wholesale replace, for backup import.
+      replace: (list: AiMemory[]): Promise<void> => ipcRenderer.invoke('ai:memory:replace', list),
+      touch: (ids: string[]): Promise<void> => ipcRenderer.invoke('ai:memory:touch', ids),
+      prune: (): Promise<{ archived: number }> => ipcRenderer.invoke('ai:memory:prune'),
+      summary: (): Promise<MemorySummary> => ipcRenderer.invoke('ai:memory:summary'),
+      conflicts: (): Promise<MemoryConflict[]> => ipcRenderer.invoke('ai:memory:conflicts'),
+      // The run-start briefing text for a project (its memories + globals).
+      // `archived` = how many cold pages the lazy decay pass just retired.
+      briefing: (projectId?: string | null): Promise<{ text: string; archived: number }> =>
+        ipcRenderer.invoke('ai:memory:briefing', projectId),
+      // Upsert the per-project handoff breadcrumb (one per project, replaced each run).
+      handoff: (input: {
+        projectId?: string | null
+        title: string
+        body: string
+      }): Promise<{ ok: true } | { error: string }> => ipcRenderer.invoke('ai:memory:handoff', input)
+    },
     // Lists the provider's models (GET /models) through the main process.
     models: (request: {
       baseUrl?: string
@@ -211,6 +241,7 @@ const api = {
         task: string
         files?: string[]
         convId?: string
+        projectId?: string | null
       }): Promise<{ success: boolean; agent?: string; dir?: string; error?: string }> =>
         ipcRenderer.invoke('ai:code-agent:run', request),
       stop: (): Promise<void> => ipcRenderer.invoke('ai:code-agent:stop'),
@@ -227,6 +258,13 @@ const api = {
           detail: string
           command?: string
         } | null
+        // Live step + running token total, so a panel mounted mid-run catches up.
+        progress?: {
+          step: number
+          maxSteps: number
+          promptTokens: number
+          completionTokens: number
+        }
       }> => ipcRenderer.invoke('ai:code-agent:status'),
       // What the last run changed. Derived on demand, so a panel that wasn't
       // mounted when the agent finished can still ask.
@@ -255,6 +293,15 @@ const api = {
         ipcRenderer.on('ai:code-agent:archived', handler)
         return () => ipcRenderer.removeListener('ai:code-agent:archived', handler)
       },
+      // Live progress during a run: the step and the running token total, for
+      // the panel's "Passo X/Y · Zk tokens" counter.
+      onProgress: (
+        cb: (p: { step: number; maxSteps: number; promptTokens: number; completionTokens: number }) => void
+      ) => {
+        const handler = (_: Electron.IpcRendererEvent, p: Parameters<typeof cb>[0]): void => cb(p)
+        ipcRenderer.on('ai:code-agent:progress', handler)
+        return () => ipcRenderer.removeListener('ai:code-agent:progress', handler)
+      },
       onExit: (cb: (code: number) => void) => {
         const handler = (_: Electron.IpcRendererEvent, code: number): void => cb(code)
         ipcRenderer.on('ai:code-agent:exit', handler)
@@ -271,11 +318,29 @@ const api = {
       },
       // The loop is parked on a write/command and needs the user's OK (task 9).
       onApproveRequest: (
-        cb: (req: { id: string; name: string; args: Record<string, unknown>; resumo: string }) => void
+        cb: (req: {
+          id: string
+          name: string
+          args: Record<string, unknown>
+          resumo: string
+          conteudo?: string
+          comando?: string
+          diff?: { kind: 'add' | 'del' | 'ctx' | 'meta'; text: string }[]
+          diffTruncated?: boolean
+          irreversivel?: boolean
+        }) => void
       ) => {
         const handler = (_: Electron.IpcRendererEvent, req: Parameters<typeof cb>[0]): void => cb(req)
         ipcRenderer.on('ai:code-agent:approve-request', handler)
         return () => ipcRenderer.removeListener('ai:code-agent:approve-request', handler)
+      },
+      // A recognised environment failure hit mid-run (e.g. the sandbox couldn't
+      // start) — pushed so the panel's hint card can appear without waiting for
+      // the run to exit. `status().hint` carries the same value for a late mount.
+      onHint: (cb: (hint: { title: string; detail: string; command?: string }) => void) => {
+        const handler = (_: Electron.IpcRendererEvent, hint: Parameters<typeof cb>[0]): void => cb(hint)
+        ipcRenderer.on('ai:code-agent:hint', handler)
+        return () => ipcRenderer.removeListener('ai:code-agent:hint', handler)
       }
     },
     // The ai-jail sandbox for the code agent (see main/ai-jail.ts).

@@ -1,4 +1,4 @@
-import type { Project, Task, Sprint, Tombstone, Backup, AIJson, StickyNote, Goal, Habit, FinancialTable, StoredFile, AIConversation } from '../types'
+import type { Project, Task, Sprint, Tombstone, Backup, AIJson, StickyNote, Goal, Habit, FinancialTable, StoredFile, AIConversation, AiMemory } from '../types'
 
 type SaveData = {
   projects: Project[]; tasks: Task[]; sprints: Sprint[]; tombstones: Tombstone[]
@@ -17,4 +17,8 @@ export interface IStorageAdapter {
   // so backup export/import reaches it through these.
   loadConversations(): Promise<AIConversation[]>
   saveConversations(list: AIConversation[]): Promise<void>
+  // AI memory lives in the DB but outside the Zustand store, so backup
+  // export/import reaches it through these (like conversations above).
+  loadMemories(): Promise<AiMemory[]>
+  replaceMemories(list: AiMemory[]): Promise<void>
 }

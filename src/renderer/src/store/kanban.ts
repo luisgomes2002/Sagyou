@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { v4 as uuidv4 } from 'uuid'
 import Decimal from 'decimal.js'
-import type { Project, Task, Column, Sprint, Tombstone, Backup, AIJson, Priority, StickyNote, Goal, GoalEntry, Habit, FinancialTable, FinancialTransaction, FinancialGoal, ShoppingItem, Currency, StoredFile, AIConversation } from '../types'
+import type { Project, Task, Column, Sprint, Tombstone, Backup, AIJson, Priority, StickyNote, Goal, GoalEntry, Habit, FinancialTable, FinancialTransaction, FinancialGoal, ShoppingItem, Currency, StoredFile, AIConversation, AiMemory } from '../types'
 import { DEFAULT_COLUMN_NAMES } from '../types'
 import { ElectronStorage } from '../services/ElectronStorage'
 import { isDoneColumn } from '../utils/columns'
@@ -1002,8 +1002,16 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
     } catch {
       conversations = []
     }
+    // AI memory rides along like chat history — same store-external treatment,
+    // same "a failure here shouldn't cost the rest of the backup" guard.
+    let memories: AiMemory[] = []
+    try {
+      memories = await storage.loadMemories()
+    } catch {
+      memories = []
+    }
     const backup: Backup = {
-      version: 3,
+      version: 4,
       exportedAt: new Date().toISOString(),
       projects,
       tasks,
@@ -1013,7 +1021,8 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
       goals,
       habits,
       lists,
-      conversations
+      conversations,
+      memories
     }
     const result = await storage.exportBackup(backup)
     return result.success
@@ -1058,6 +1067,16 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
         await storage.saveConversations(backup.conversations)
       } catch {
         // History is secondary — a failure here doesn't undo the import above.
+      }
+    }
+    // Same rule for memory (v4+): absent key = leave local memory untouched.
+    // Written after the store flush above, so projects exist when a memory's
+    // FK is checked (see replaceMemories).
+    if (Array.isArray(backup.memories)) {
+      try {
+        await storage.replaceMemories(backup.memories)
+      } catch {
+        // Memory is secondary — a failure here doesn't undo the import above.
       }
     }
     return true

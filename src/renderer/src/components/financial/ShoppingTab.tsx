@@ -116,7 +116,7 @@ function ItemRow({ item, currency, onUpdate, onDelete, onToggle }: ItemRowProps)
             type="text"
             inputMode="decimal"
             value={price}
-            placeholder="—"
+            placeholder="-"
             onChange={(e) => setPrice(e.target.value)}
             onBlur={commitPrice}
             onKeyDown={blur}
@@ -154,7 +154,7 @@ function ItemRow({ item, currency, onUpdate, onDelete, onToggle }: ItemRowProps)
         {total.greaterThan(0) ? (
           <span className="text-sm tabular-nums text-[#e2e8f0]">{formatCurrency(total, currency)}</span>
         ) : (
-          <span className="text-sm text-[#2a2d42]">—</span>
+          <span className="text-sm text-[#2a2d42]">-</span>
         )}
       </td>
       <td className="py-1.5 pr-3 w-9 text-center">
@@ -245,7 +245,7 @@ function AddItemRow({ currency, onAdd }: AddItemRowProps) {
             type="text"
             inputMode="decimal"
             value={price}
-            placeholder="—"
+            placeholder="-"
             onChange={(e) => setPrice(e.target.value)}
             onKeyDown={onKey}
             className="w-full bg-transparent text-sm text-[#8892a4] placeholder-[#3a3e58] focus:outline-none"
