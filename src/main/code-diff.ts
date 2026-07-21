@@ -228,7 +228,7 @@ function parseNumstat(out: string): DiffFile[] {
 /**
  * Everything that changed since `base`.
  *
- * `codex exec` leaves the tree dirty, and a diff from a base commit to the
+ * The agent leaves the tree dirty, and a diff from a base commit to the
  * working tree spans commits and uncommitted edits alike.
  *
  * Untracked files are the exception — `git diff` cannot see them, so they are

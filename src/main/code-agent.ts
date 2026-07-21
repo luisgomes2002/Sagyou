@@ -1,13 +1,11 @@
 // Native code agent — a tool-calling loop that reads, writes and runs commands
 // in a project's code folder, driven by an OpenAI-compatible provider.
 //
-// This replaces the external `codex` CLI (see the run handler in index.ts). The
-// trade is deliberate and worth stating: codex ran the model's edits inside an
-// OS-level sandbox (Seatbelt/macOS, Landlock/Linux) and authenticated itself.
-// This loop has NEITHER — so the only barriers between the model and the disk
-// are (1) `confineToRoot`, which pins every path to the project folder, and
-// (2) per-action approval, asked before any write or command runs. Both are
-// load-bearing; neither is optional.
+// The agent runs in-process with no OS-level sandbox of its own, so the only
+// barriers between the model and the disk are (1) `confineToRoot`, which pins
+// every path to the project folder, and (2) per-action approval, asked before
+// any write or command runs. Both are load-bearing; neither is optional.
+// Shell commands are further confined by ai-jail (see ./ai-jail.ts).
 //
 // No Electron in here on purpose: the model call, the approval prompt and the
 // command runner are all injected (RunAgentDeps), so the loop and the tool

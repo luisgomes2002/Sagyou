@@ -1,6 +1,6 @@
 # GUIDE.md — contexto para agentes de código
 
-Orientação para um agente (Codex, …) que vai **mexer** neste projeto.
+Orientação para um agente de código que vai **mexer** neste projeto.
 A ideia é que você não precise descobrir tudo sozinho antes da primeira linha.
 
 > **`CLAUDE.md` é a fonte da verdade sobre arquitetura.** Este arquivo é o mapa;
@@ -254,12 +254,11 @@ Não "simplifique" nenhuma destas sem ler o comentário que as acompanha:
   de hoje e apresentaria as edições posteriores do usuário como trabalho do
   agente. Por isso `CodeDiff` recebe `onRefresh` opcional — uma run passada não
   tem o que recarregar.
-- ⚠️ **O agente de código é NATIVO agora (`main/code-agent.ts`), não o `codex`.**
-  É um loop de tool-calling que roda em main com o provedor do app. O `codex` tinha
-  **sandbox de SO** (Seatbelt/Landlock) e login próprio; o nativo **não tem**, então
-  as únicas barreiras entre o modelo e o disco são (1) `confineToRoot` (todo caminho
-  preso à pasta do projeto) e (2) **aprovação por ação** antes de qualquer escrita ou
-  comando. As duas são carga, não enfeite.
+- ⚠️ **O agente de código é NATIVO (`main/code-agent.ts`).** É um loop de
+  tool-calling que roda em main com o provedor do app. As únicas barreiras entre
+  o modelo e o disco são (1) `confineToRoot` (todo caminho preso à pasta do
+  projeto) e (2) **aprovação por ação** antes de qualquer escrita ou comando. As
+  duas são carga, não enfeite.
 - **5 ferramentas**: `listar_arquivos`, `ler_arquivo`, `buscar_no_codigo` (leitura,
   rodam direto), `escrever_arquivo`, `executar_comando` (`needsApproval` → passam por
   card). A aprovação é um **ida-e-volta de IPC**: o loop manda `ai:code-agent:approve-request`
@@ -294,7 +293,7 @@ Não "simplifique" nenhuma destas sem ler o comentário que as acompanha:
   fica `true` (está instalado, só não cria o namespace). O erro do gate mostra `jail.reason`.
 - **Config separada**: `AIConfig.codeAgent {baseUrl,apiKey,model}` — campo vazio cai
   pro provedor do chat (`resolveCodeAgentConfig`). O painel mostra o **modelo real**
-  (banner `modelo: X @ Y`, `status.model`, header), não mais "próprio do codex". Os
+  (banner `modelo: X @ Y`, `status.model`, header). Os
   passos aparecem no log como `[tool] …` / `[resultado] …` e em eventos
   `ai:code-agent:tool`.
 - ⚠️ **O agente não commita nada** — o painel de Mudanças existe pra o *usuário*
@@ -322,24 +321,10 @@ Não "simplifique" nenhuma destas sem ler o comentário que as acompanha:
   chamando bwrap/containers com o sandbox off). Checado **antes** de
   `looksLikeSandboxBlock` (que também casa `bwrap:`), pra não rotular uma falha de
   namespace — sandbox que não *iniciou* — como tentativa de sair do projeto.
-- 📎 **Resto do codex, dormente**: `resolveExecutable` continua em `index.ts` com teste,
+- 📎 **`resolveExecutable`** continua em `index.ts` com teste,
   mas **não ligado a nada** — pode ser removido depois. `AgentRunMeta.agent` agora é
   texto livre com o nome do modelo (linhas antigas leem como `"codex"`).
-- ⚠️ **No Linux o `--sandbox workspace-write` do codex pode falhar inteiro e sair
-  com código 0**: o sandbox usa bubblewrap, que precisa de user namespaces sem
-  privilégio, e o Ubuntu 23.10+ bloqueia isso via AppArmor
-  (`kernel.apparmor_restrict_unprivileged_userns=1`). Sintoma: `bwrap: loopback:
-  Failed RTM_NEWADDR: Operation not permitted`, nada lido, nada escrito, exit 0 —
-  irmã Linux da falha do Windows. Quem distingue é o diff, não o código de saída.
-  **É detectado e explicado** (`detectAgentHint`): a saída do filho passa por uma
-  janela rolante de 4000 chars (própria, não o `codeAgentLog`, que é só a cauda — e
-  esse aviso é a primeira coisa que o codex imprime), e o resultado vai pro renderer
-  via `ai:code-agent:status` (`hint`), **não pelo evento de saída**, que só carrega
-  o código — e aqui ele é 0. O `AIView` mostra um card acima do diff (explica por que
-  o diff está vazio) e a dica também entra no log. ⚠️ O card **oferece o comando para
-  copiar, nunca para executar** (precisa de sudo e afrouxa o hardening do kernel), e
-  o app não troca de sandbox nem de agente por conta própria.
-- **Arquivos fixados são citados ao codex em caminho relativo** (`relative(dir, f)`):
+- **Arquivos fixados são citados em caminho relativo** (`relative(dir, f)`):
   `files` chega absoluto do `confineToRoot`, então o prompt dizia "caminhos
   relativos à raiz" e entregava um absoluto — além de vazar o home da máquina.
 

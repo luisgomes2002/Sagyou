@@ -186,7 +186,7 @@ let codeAgentHint: AgentHint | null = null
 
 // --- Native code agent (the loop in ./code-agent) ---
 //
-// Unlike the old codex path there is no child process: the loop runs in-process
+// The loop runs in-process — there is no child process:
 // and its tools reach the disk directly, so what stands in for "kill the child"
 // is an abort flag the loop checks between steps, plus rejecting any approval
 // the loop is parked on.
@@ -356,12 +356,13 @@ export function detectAgentHint(output: string): AgentHint | null {
  */
 export function fallbackBinDirs(): string[] {
   // ⚠️ The one opt-out, and it exists for a specific hazard. `handlers.test.ts`
-  // proves the "not installed" path by emptying PATH — but codex is genuinely
-  // installed on a dev machine, and these dirs are exactly where it lives
-  // (`~/.npm-global/bin` here, `/usr/local/bin` on a Mac). Without this the test
-  // would spawn the real codex, which waits on stdin and never exits, poisoning
-  // every test after it — the failure the PATH-replacement guard exists to stop.
-  // Set only by tests; unset in the app, where the fallback is the whole point.
+  // proves the "not installed" path by emptying PATH — but the agent binary is
+  // genuinely installed on a dev machine, and these dirs are exactly where it
+  // lives (`~/.npm-global/bin` here, `/usr/local/bin` on a Mac). Without this
+  // the test would spawn the real binary, which waits on stdin and never exits,
+  // poisoning every test after it — the failure the PATH-replacement guard
+  // exists to stop. Set only by tests; unset in the app, where the fallback is
+  // the whole point.
   if (process.env.SAGYOU_DISABLE_BIN_FALLBACK) return []
   const home = homedir()
   const dirs = [
@@ -381,19 +382,19 @@ export function fallbackBinDirs(): string[] {
  *
  * Two different failures, one fix:
  *   • **Windows** — spawn without a shell won't append .exe/.cmd, so
- *     `spawn('codex')` fails even when installed (npm installs codex.cmd).
+ *     `spawn('binary')` fails even when installed (npm installs a .cmd wrapper).
  *   • **POSIX** — spawn *does* resolve via PATH, but only the PATH this process
  *     was handed, and a GUI-launched Electron app doesn't get the user's shell
  *     PATH. Measured on Ubuntu 24.04 + GNOME/Wayland: apps started from the
  *     launcher inherit the systemd user manager's PATH, which has no
  *     `~/.npm-global/bin` — that lives in `~/.bashrc`, read only by interactive
- *     shells. So `codex --version` works in a terminal while the app reports it
+ *     shells. So `binary --version` works in a terminal while the app reports it
  *     "não encontrado", which is a lie about the cause and sends the user off
  *     reinstalling something that is already there.
  *
  * ⚠️ **PATH is searched first and `extraDirs` only if that finds nothing.** The
  * order is load-bearing for the tests, not a preference: `handlers.test.ts`
- * *replaces* PATH with a dir holding only a stub, precisely so a real codex on
+ * *replaces* PATH with a dir holding only a stub, precisely so a real binary on
  * the dev machine can't be spawned (it waits on stdin and never exits, poisoning
  * every later test). A fallback dir consulted first — or consulted at all when
  * PATH already matched — would walk straight around that guard and find the real
@@ -408,7 +409,7 @@ export function resolveExecutable(
   extraDirs: string[] = fallbackBinDirs()
 ): string | null {
   const win = process.platform === 'win32'
-  // '' last: on Windows a bare `codex` (extensionless) is only a match if no
+  // '' last: on Windows a bare name (extensionless) is only a match if no
   // real wrapper exists; on POSIX it is the only form there is.
   const exts = win ? ['.exe', '.cmd', '.bat', ''] : ['']
   const pathDirs = (process.env.PATH || '').split(win ? ';' : ':')
@@ -435,12 +436,11 @@ export function resolveExecutable(
   return null
 }
 
-// NOTE: the external-codex path (buildAgentCommand / spawn / sandbox flags /
+// NOTE: the external-agent path (buildAgentCommand / spawn / sandbox flags /
 // killCodeAgent) was removed when the native code agent (./code-agent) replaced
 // it. `detectAgentHint` above is wired into the native run handler's command
 // runner (a bwrap failure raises the panel hint card). `resolveExecutable` is
-// the last dormant codex helper — kept with its unit test, deletable in a
-// follow-up once the native agent is confirmed in the wild.
+// a dormant helper — kept with its unit test, deletable in a follow-up.
 
 // --- AI config (persisted to ai-config.json in userData, not the DB) ---
 interface AIConfig {
@@ -1475,7 +1475,7 @@ app.whenReady().then(() => {
 
       const startedAt = Date.now()
       // Identity for the archive written when this run finishes. `agent` carries
-      // the real model now (the panel and picker show it), not a fixed "codex".
+      // the real model now (the panel and picker show it).
       codeAgentRun = {
         id: randomUUID(),
         convId: typeof request.convId === 'string' && request.convId ? request.convId : null,
@@ -1627,7 +1627,7 @@ app.whenReady().then(() => {
         return out
       }
 
-      // Fire-and-forget from the renderer's side (same contract as codex): return
+      // Fire-and-forget from the renderer's side: return
       // success once the run has started; the outcome streams to the panel.
       void (async (): Promise<void> => {
         let exitCode = 0

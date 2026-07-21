@@ -54,7 +54,7 @@
 | **Upcoming** | Tarefas com data de vencimento próxima |
 | **Busca** | Pesquisa rápida em todos os dados |
 | **Assistente de IA** | Chat com acesso aos seus dados via ferramentas — funciona com qualquer provedor compatível com a API da OpenAI (local ou hospedado). Ações que alteram dados pedem aprovação antes de rodar |
-| **Agente de código** | Aponte um projeto para um diretório e peça alterações no código — executado pelo `codex` ([instalação separada](#agente-de-código-requer-instalação)) |
+| **Agente de código** | Aponte um projeto para um diretório e peça alterações no código — edita arquivos e roda comandos com aprovação por ação |
 | **Importação via IA** | Cole JSON gerado por um LLM — o sidebar tem "Copiar tudo" para gerar um prompt pronto com schema e tags |
 | **Exportação para Excel** | Exporte projetos, tarefas, hábitos, metas e dados financeiros em `.xlsx` |
 | **Backup** | Exportação e restauração de dados em JSON |
@@ -95,25 +95,13 @@ Dá para marcar **mais de uma pasta** (útil para front-end e back-end em reposi
 
 > O **agente de código** é a exceção: ele roda em uma pasta só. Se você tiver várias marcadas, ele pede para você escolher qual antes de rodar.
 
-### Agente de código (requer instalação)
+### Agente de código
 
-> ⚠️ Para **alterar** código, o Sagyou chama uma CLI externa que você precisa instalar por conta própria. Sem isso, essa função não funciona — o resto do assistente funciona normalmente.
+Para **alterar** código, use o agente de código nativo — ele roda com o mesmo provedor de IA configurado acima (ou um separado, em **Modelo p/ código** nas configurações) e edita arquivos no diretório do caminho de código ativo.
 
-Instale a **Codex CLI**:
+Cada ação de escrita ou comando passa por aprovação antes de rodar. O agente não faz commit — as mudanças aparecem no painel de diff para você revisar e commitar por conta própria. A saída aparece ao vivo no app.
 
-```bash
-npm install -g @openai/codex
-```
-
-Confirme que está no `PATH` — o app chama o comando pelo nome:
-
-```bash
-codex --version
-```
-
-O agente roda no diretório do caminho de código ativo e a saída aparece ao vivo no app. Ele roda de forma autônoma depois que você aprova o início, então aponte para um repositório com Git e commits em dia — assim dá para revisar o diff e reverter se não gostar.
-
-> ⚠️ O codex **não usa** a Base URL / API Key / Model configurados acima: ele se autentica e escolhe o modelo por conta própria (`codex login`). A configuração de IA do app vale para o assistente de chat, não para o agente de código.
+> O agente usa a mesma Base URL / API Key / Model do chat, ou um provedor separado se você configurar um em **Modelo p/ código**. Aponte para um repositório com Git e commits em dia — assim dá para revisar o diff e reverter se não gostar.
 
 ---
 
