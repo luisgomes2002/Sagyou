@@ -19,9 +19,12 @@ import {
   AUTO_MAX_STEPS,
   MAX_STEPS_LIMIT,
   READ_REPEAT_LIMIT,
+  BLIND_FILE_READ_LIMIT,
   MAX_RETRIES,
   RETRY_BASE_MS,
   pruneSupersededResults,
+  summarizeRunCost,
+  routeModel,
   type ApiMessage
 } from '../../ai/agent'
 import { runTool } from '../../ai/tools'
@@ -96,6 +99,39 @@ describe('SYSTEM_PROMPT (loaded from system-prompt.md)', () => {
   // mean re-pasting the whole text into this file on every edit — re-creating in
   // the test the string literal the .md exists to get rid of. The checks above
   // catch the pipeline breaking; the wording is meant to change.
+})
+
+describe('routeModel', () => {
+  const base = { baseUrl: 'http://x', apiKey: 'k', model: 'flash' }
+
+  it('always uses the single model when no modelComplex is set', () => {
+    expect(routeModel('investigar um bug no código', base)).toBe('flash')
+  })
+
+  it('routes a code/analysis task to modelComplex', () => {
+    const c = { ...base, modelComplex: 'pro' }
+    expect(routeModel('preciso refatorar a arquitetura', c)).toBe('pro')
+    expect(routeModel('tem um BUG aqui?', c)).toBe('pro')
+    // Accent-insensitive: "código"/"exceção" match the ASCII stems.
+    expect(routeModel('o código lança uma exceção', c)).toBe('pro')
+  })
+
+  it('keeps a plain task on the cheaper model', () => {
+    const c = { ...base, modelComplex: 'pro' }
+    expect(routeModel('quantas tasks eu concluí essa semana?', c)).toBe('flash')
+    expect(routeModel('marca o hábito de correr como feito', c)).toBe('flash')
+  })
+
+  it('is applied by runAgent to the model that actually gets called', async () => {
+    const chat = makeChat({ success: true, message: { role: 'assistant', content: 'ok' } })
+    await runAgent(
+      { ...cfg, modelComplex: 'pro' },
+      [{ role: 'user', content: 'como funciona esse código?' }],
+      approveNone
+    )
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((reqAt(chat, 0) as any).model).toBe('pro')
+  })
 })
 
 describe('runAgent — token usage', () => {
@@ -787,6 +823,253 @@ describe('runAgent (tool-calling loop)', () => {
 
     // Executed on every step up to the cap — the brake left it alone.
     expect(runTool).toHaveBeenCalledTimes(MAX_STEPS)
+  })
+
+  // ── blind whole-file re-read brake (Task 5) ────────────────────────────────
+  //
+  // ler_arquivo on the same path with no targeting arg is the model re-fetching
+  // a file it already has. The brake fires on the BLIND_FILE_READ_LIMIT-th such
+  // read (2), tighter than the exact-repeat brake, and nudges toward a scope.
+
+  it('brakes a second blind read of the same file and nudges toward a scope', async () => {
+    let n = 0
+    const chat = vi.fn(
+      (req: { messages: { role: string; content: string; tool_call_id?: string }[] }) => {
+        const last = req.messages[req.messages.length - 1]
+        if (typeof last?.content === 'string' && last.content.includes('inteiro nesta execução')) {
+          return Promise.resolve({ success: true, message: { role: 'assistant', content: 'PRONTO' } })
+        }
+        return Promise.resolve({
+          success: true,
+          message: {
+            role: 'assistant',
+            content: '',
+            tool_calls: [toolCall(`c${n++}`, 'ler_arquivo', JSON.stringify({ caminho: 'store/kanban.ts' }))]
+          }
+        })
+      }
+    ) as ChatMock
+    installChat(chat)
+
+    const result = await runAgent(cfg, user, approveNone)
+
+    expect(result).toBe('PRONTO')
+    // First blind read ran; the second was braked before executing.
+    expect(runTool).toHaveBeenCalledTimes(BLIND_FILE_READ_LIMIT - 1)
+    const braked = reqAt(chat, 2).messages.find(
+      (m: { tool_call_id?: string }) => m.tool_call_id === 'c1'
+    )
+    expect(JSON.parse(braked.content).error).toContain('inteiro nesta execução')
+  })
+
+  it('does not brake a re-read of the same file when it is scoped', async () => {
+    // Blind read, then a symbol read of the same file: legitimate narrowing,
+    // never braked. The symbol read carries a targeting arg, so it doesn't count.
+    let n = 0
+    const args = [
+      JSON.stringify({ caminho: 'store/kanban.ts' }),
+      JSON.stringify({ caminho: 'store/kanban.ts', simbolo: 'exportBackup' })
+    ]
+    const chat = vi.fn((req: { tools?: unknown }) => {
+      if (n < args.length && req.tools) {
+        return Promise.resolve({
+          success: true,
+          message: {
+            role: 'assistant',
+            content: '',
+            tool_calls: [toolCall(`c${n}`, 'ler_arquivo', args[n++])]
+          }
+        })
+      }
+      return Promise.resolve({ success: true, message: { role: 'assistant', content: 'FIM' } })
+    }) as ChatMock
+    installChat(chat)
+
+    await runAgent(cfg, user, approveNone)
+
+    // Both reads executed — the scoped one was never counted as a blind repeat.
+    expect(runTool).toHaveBeenCalledTimes(2)
+  })
+
+  // ── fuzzy-duplicate search warning (Task 4) ────────────────────────────────
+
+  it('warns on a fuzzy-duplicate search but still runs it', async () => {
+    let n = 0
+    const terms = ['backup', 'exportBackup']
+    const chat = vi.fn((req: { tools?: unknown }) => {
+      if (n < terms.length && req.tools) {
+        return Promise.resolve({
+          success: true,
+          message: {
+            role: 'assistant',
+            content: '',
+            tool_calls: [toolCall(`c${n}`, 'buscar_no_codigo', JSON.stringify({ termo: terms[n++] }))]
+          }
+        })
+      }
+      return Promise.resolve({ success: true, message: { role: 'assistant', content: 'FIM' } })
+    }) as ChatMock
+    installChat(chat)
+
+    await runAgent(cfg, user, approveNone)
+
+    // Both searches ran — a fuzzy dup only warns, never blocks.
+    expect(runTool).toHaveBeenCalledTimes(2)
+    // The second search's result, resent on the next call, carries the nudge.
+    const second = reqAt(chat, 2).messages.find(
+      (m: { tool_call_id?: string }) => m.tool_call_id === 'c1'
+    )
+    expect(JSON.parse(second.content).aviso).toContain('backup')
+    // The first search has no earlier term to duplicate, so no warning.
+    const first = reqAt(chat, 2).messages.find(
+      (m: { tool_call_id?: string }) => m.tool_call_id === 'c0'
+    )
+    expect(JSON.parse(first.content).aviso).toBeUndefined()
+  })
+})
+
+describe('summarizeRunCost', () => {
+  const base = { baseUrl: '', apiKey: '', model: 'm' }
+
+  it('returns null when the provider billed nothing', () => {
+    expect(summarizeRunCost(base, [{ step: 1, prompt: 0, completion: 0, tools: [] }])).toBeNull()
+  })
+
+  it('totals billed calls and ranks the costliest first', () => {
+    const s = summarizeRunCost(base, [
+      { step: 1, prompt: 100, completion: 10, tools: ['ler_tasks'] },
+      { step: 2, prompt: 900, completion: 50, tools: ['ler_arquivo'] },
+      { step: 3, prompt: 0, completion: 0, tools: [] } // unbilled — dropped
+    ])
+    expect(s).toMatchObject({
+      calls: 2,
+      promptTokens: 1000,
+      completionTokens: 60,
+      totalTokens: 1060,
+      costUsd: null
+    })
+    expect(s?.top[0].step).toBe(2)
+  })
+
+  it('estimates a dollar cost only when both prices are set', () => {
+    const priced = { ...base, inputPricePer1M: 1, outputPricePer1M: 2 }
+    const s = summarizeRunCost(priced, [
+      { step: 1, prompt: 1_000_000, completion: 1_000_000, tools: [] }
+    ])
+    // 1M prompt × $1 + 1M output × $2 = $3.
+    expect(s?.costUsd).toBeCloseTo(3)
+    // With only one price set, no estimate is invented.
+    const half = summarizeRunCost({ ...base, inputPricePer1M: 1 }, [
+      { step: 1, prompt: 100, completion: 100, tools: [] }
+    ])
+    expect(half?.costUsd).toBeNull()
+  })
+})
+
+describe('runAgent — run metrics (Task 8)', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  /** The shape the agent sends to ai.runMetrics.append. */
+  interface MetricArg {
+    model: string
+    steps: number
+    totalTokens: number
+    redundantSearches: number
+    repeatedReads: number
+    hitStepCap: boolean
+  }
+  type AppendMock = ReturnType<typeof vi.fn<(m: MetricArg) => Promise<void>>>
+
+  function installWithMetrics(chat: ChatMock, append: AppendMock): void {
+    ;(window as unknown as { electronAPI: unknown }).electronAPI = {
+      ai: { chat, runMetrics: { append } }
+    }
+  }
+
+  it('reports steps, tokens and the waste counters to the metrics bridge', async () => {
+    // Two blind reads of the same file: the second is braked (repeatedReads 1),
+    // then the model answers. Every call reports usage, so tokens are non-zero.
+    let n = 0
+    const usage = { promptTokens: 10, completionTokens: 5 }
+    const chat = vi.fn(
+      (req: { messages: { content: string }[] }) => {
+        const last = req.messages[req.messages.length - 1]
+        if (typeof last?.content === 'string' && last.content.includes('inteiro nesta execução')) {
+          return Promise.resolve({ success: true, message: { role: 'assistant', content: 'FIM' }, usage })
+        }
+        return Promise.resolve({
+          success: true,
+          message: {
+            role: 'assistant',
+            content: '',
+            tool_calls: [toolCall(`c${n++}`, 'ler_arquivo', JSON.stringify({ caminho: 'k.ts' }))]
+          },
+          usage
+        })
+      }
+    ) as ChatMock
+    const append: AppendMock = vi.fn(async () => {})
+    installWithMetrics(chat, append)
+
+    await runAgent(cfg, user, approveNone)
+
+    expect(append).toHaveBeenCalledTimes(1)
+    const m = append.mock.calls[0][0]
+    expect(m).toMatchObject({ model: 'm', repeatedReads: 1, redundantSearches: 0, hitStepCap: false })
+    expect(m.steps).toBeGreaterThan(0)
+    expect(m.totalTokens).toBeGreaterThan(0)
+  })
+
+  it('does not record a run that never completed a step', async () => {
+    const chat = makeChat({ success: true, message: { role: 'assistant', content: 'ok' } })
+    const append: AppendMock = vi.fn(async () => {})
+    installWithMetrics(chat, append)
+
+    // shouldAbort fires before any model round completes.
+    await runAgent(cfg, user, approveNone, { shouldAbort: () => true })
+
+    expect(append).not.toHaveBeenCalled()
+  })
+
+  it('carries each step token cost on its status lines', async () => {
+    const usage = { promptTokens: 100, completionTokens: 20 }
+    makeChat(
+      {
+        success: true,
+        message: { role: 'assistant', content: 'vendo', tool_calls: [toolCall('c1', 'ler_x')] },
+        usage
+      },
+      { success: true, message: { role: 'assistant', content: 'FIM' }, usage }
+    )
+    const seen: { step?: number; tokens?: number }[] = []
+    await runAgent(cfg, user, approveNone, {
+      onStatus: (_t, _k, progress) => progress && seen.push({ step: progress.step, tokens: progress.tokens })
+    })
+
+    // Step 1's lines (the remark and the tool) both carry that call's 120 tokens.
+    const step1 = seen.filter((s) => s.step === 1)
+    expect(step1.length).toBeGreaterThan(0)
+    expect(step1.every((s) => s.tokens === 120)).toBe(true)
+  })
+
+  it('leaves the token badge off when the provider reports no usage', async () => {
+    makeChat(
+      { success: true, message: { role: 'assistant', content: '', tool_calls: [toolCall('c1', 'ler_x')] } },
+      { success: true, message: { role: 'assistant', content: 'FIM' } }
+    )
+    const seen: (number | undefined)[] = []
+    await runAgent(cfg, user, approveNone, {
+      onStatus: (_t, _k, progress) => progress && seen.push(progress.tokens)
+    })
+    expect(seen.every((t) => t === undefined)).toBe(true)
+  })
+
+  it('runs fine when the metrics bridge is absent (older preload)', async () => {
+    // window.electronAPI.ai.runMetrics is undefined — the guarded call is a no-op.
+    // makeChat installs the bridge (chat only) as a side effect; no runMetrics.
+    makeChat({ success: true, message: { role: 'assistant', content: 'ok' } })
+
+    await expect(runAgent(cfg, user, approveNone)).resolves.toBe('ok')
   })
 })
 

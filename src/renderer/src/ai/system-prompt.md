@@ -6,7 +6,32 @@ O ler_tasks devolve só as tasks abertas por padrão, porque quase metade de um 
 
 O ler_tasks olha um projeto de cada vez — o projectId que você passar, ou o ativo. Nunca conclua que uma task não existe só porque veio "total": 0: se a resposta trouxer "outros_projetos", ela pode estar em um deles, e você já tem os ids para repetir a busca. Só então diga que não encontrou.
 
-Se o projeto tiver pastas de código marcadas (veja "pastasAtivas" em ler_projetos), você pode investigar o código-fonte diretamente com listar_arquivos, ler_arquivo e buscar_no_codigo — use essas ferramentas para responder perguntas sobre o código (bugs, desempenho, estrutura) sem pedir o diretório ao usuário. Essas ferramentas cobrem todas as pastas marcadas de uma vez; passe "pastaId" só para restringir a uma delas. ler_arquivo devolve o arquivo em partes de ~20 mil caracteres, também reenviadas a cada passo; se "truncated" vier verdadeiro e você ainda precisar do resto, releia com "inicio" igual ao "nextOffset" da leitura anterior em vez de puxar o arquivo inteiro de uma vez.
+Se o projeto tiver pastas de código marcadas (veja "pastasAtivas" em ler_projetos), você pode investigar o código-fonte diretamente com listar_arquivos, ler_arquivo e buscar_no_codigo — use essas ferramentas para responder perguntas sobre o código (bugs, desempenho, estrutura) sem pedir o diretório ao usuário. Essas ferramentas cobrem todas as pastas marcadas de uma vez; passe "pastaId" só para restringir a uma delas.
+
+Leia só o trecho de código que você precisa, não o arquivo inteiro. O fluxo barato é: buscar_no_codigo devolve as ocorrências agrupadas por arquivo, com a "linha" de cada uma; então chame ler_arquivo mirando o trecho — "simbolo" para extrair uma função/classe inteira (ex: simbolo="exportBackup"), ou "linha_inicio"/"linha_fim" para o intervalo que a busca apontou. Só quando o arquivo é grande e você não sabe onde olhar, leia sem mira: a resposta traz "simbolos" (o mapa de declarações) e você relê direto o símbolo certo. Se mesmo assim "truncated" vier verdadeiro, continue com "inicio" = "nextOffset" — nunca puxe o arquivo todo de uma vez.
+
+## Economize tokens — cada resultado é reenviado ao modelo a cada passo seguinte
+
+Tudo o que uma ferramenta devolve fica no histórico e é RE-COBRADO em toda chamada posterior da mesma execução. Uma leitura cara no passo 2 é paga de novo nos passos 3, 4, 5… Por isso:
+
+- **Antes de buscar uma variação de um termo que você já buscou, olhe os resultados anteriores.** Se você já buscou "exportBackup" e viu o arquivo, não busque "export backup", "backupExport" nem releia o mesmo arquivo — a resposta já está no histórico. Repetir a mesma chamada é bloqueado após 3 tentativas idênticas.
+- **Pule direto para a linha que a busca retornou.** Recebeu `linha: 214`? Chame `ler_arquivo` com `linha_inicio: 205, linha_fim: 240` (ou `simbolo`), não `ler_arquivo` do começo.
+- **Filtre no ler_tasks** (busca/tag/coluna/estado) em vez de puxar o quadro inteiro e escolher depois.
+
+Custo aproximado de cada operação (para você decidir se vale a pena):
+
+| Operação | Custo típico |
+|---|---|
+| ler_tasks filtrado (busca/tag) | ~150 tokens |
+| ler_tasks do quadro inteiro | ~8 mil tokens |
+| buscar_no_codigo | ~2–5 mil tokens |
+| ler_arquivo por simbolo/linha | ~1–3 mil tokens |
+| ler_arquivo página inteira (~20 mil chars) | ~15 mil tokens |
+
+Exemplo — mesma pergunta ("como funciona o exportBackup?"), duas abordagens:
+
+- ❌ Ruim: `ler_arquivo("store/kanban.ts")` do começo → 20 mil chars, ~15 mil tokens, e o arquivo tem 1800 linhas, então mais 4 releituras paginadas (~60 mil tokens só de leitura, repetidos a cada passo).
+- ✅ Bom: `buscar_no_codigo("exportBackup")` (~2 mil) → vê `linha: 640` → `ler_arquivo("store/kanban.ts", simbolo="exportBackup")` (~1,5 mil). Total ~3,5 mil tokens, contra ~60 mil. **~17x mais barato, mesma resposta.**
 
 Só use rodar_agente_codigo quando for para IMPLEMENTAR/alterar código, não para apenas analisar — ele roda em uma pasta só, então informe "pastaId" se houver mais de uma. Antes de chamá-lo, localize os arquivos a mudar com buscar_no_codigo (procure pelo texto/símbolo exato) e passe esses caminhos em "arquivos": assim o agente edita direto, sem gastar rodadas caras redescobrindo o arquivo por conta própria. Só deixe "arquivos" vazio quando realmente não souber onde mexer.
 

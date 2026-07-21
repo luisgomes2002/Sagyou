@@ -7,7 +7,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { mkdtemp, mkdir, writeFile, rm } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join, resolve, sep } from 'path'
-import { confineToRoot, walkFiles } from '../code-files'
+import { confineToRoot, walkFiles, detectSymbols, extractSymbol, extractLines } from '../code-files'
 
 let root: string
 
@@ -103,5 +103,89 @@ describe('walkFiles', () => {
     await Promise.race([walk, timer])
     expect(ticked).toBe(true)
     await walk
+  })
+})
+
+// Sample module used across the scoped-reading tests below.
+const SAMPLE = [
+  "import x from 'y'", // 1
+  '', // 2
+  'export function exportBackup(data: string) {', // 3
+  '  const out = serialize(data)', // 4
+  '  return out', // 5
+  '}', // 6
+  '', // 7
+  'const PI = 3.14', // 8
+  '', // 9
+  'export class Store {', // 10
+  '  save() {', // 11
+  '    return true', // 12
+  '  }', // 13
+  '}', // 14
+  '', // 15
+  'type Money = string' // 16
+].join('\n')
+
+describe('detectSymbols', () => {
+  it('maps top-level and exported declarations to their line and kind', () => {
+    expect(detectSymbols(SAMPLE)).toEqual([
+      { nome: 'exportBackup', linha: 3, tipo: 'function' },
+      { nome: 'PI', linha: 8, tipo: 'const' },
+      { nome: 'Store', linha: 10, tipo: 'class' },
+      { nome: 'Money', linha: 16, tipo: 'type' }
+    ])
+  })
+
+  it('honours the cap so a huge file cannot flood the map', () => {
+    const big = Array.from({ length: 50 }, (_, i) => `const v${i} = ${i}`).join('\n')
+    expect(detectSymbols(big, 10)).toHaveLength(10)
+  })
+})
+
+describe('extractSymbol', () => {
+  it('returns a function body via brace matching, with 1-based bounds', () => {
+    const r = extractSymbol(SAMPLE, 'exportBackup')
+    expect(r).toEqual({
+      content: 'export function exportBackup(data: string) {\n  const out = serialize(data)\n  return out\n}',
+      linhaInicio: 3,
+      linhaFim: 6
+    })
+  })
+
+  it('returns a class including its methods', () => {
+    const r = extractSymbol(SAMPLE, 'Store')
+    expect(r?.linhaInicio).toBe(10)
+    expect(r?.linhaFim).toBe(14)
+  })
+
+  it('ends a block-less statement at the semicolon', () => {
+    const r = extractSymbol('const PI = 3.14;\nconst E = 2.7;', 'PI')
+    expect(r).toEqual({ content: 'const PI = 3.14;', linhaInicio: 1, linhaFim: 1 })
+  })
+
+  it('returns null when the name is not a declaration', () => {
+    // A bare call site must not match — only declaration-looking lines do.
+    expect(extractSymbol('foo()\nbar()', 'foo')).toBeNull()
+    expect(extractSymbol(SAMPLE, 'inexistente')).toBeNull()
+  })
+})
+
+describe('extractLines', () => {
+  it('returns an inclusive 1-based range', () => {
+    expect(extractLines(SAMPLE, 3, 6)).toEqual({
+      content: 'export function exportBackup(data: string) {\n  const out = serialize(data)\n  return out\n}',
+      linhaInicio: 3,
+      linhaFim: 6
+    })
+  })
+
+  it('defaults the start to line 1 and the end to the last line', () => {
+    expect(extractLines('a\nb\nc', undefined, 2)).toMatchObject({ linhaInicio: 1, linhaFim: 2 })
+    expect(extractLines('a\nb\nc', 2).content).toBe('b\nc')
+  })
+
+  it('clamps out-of-range bounds instead of returning empty', () => {
+    const r = extractLines('a\nb\nc', 2, 999)
+    expect(r).toEqual({ content: 'b\nc', linhaInicio: 2, linhaFim: 3 })
   })
 })

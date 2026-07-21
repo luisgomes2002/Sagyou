@@ -31,8 +31,12 @@ export interface AgentRunMeta {
   id: string
   /** The conversation that started the run. Null for a run with no chat behind it. */
   convId: string | null
-  /** codex is the only agent. Kept on the row so the picker can state it. */
-  agent: 'codex'
+  /**
+   * What ran the agent — the model name for the native agent (e.g. "gpt-4o"),
+   * or "codex" for runs archived by the old external-agent path. Free text so
+   * the picker can state whichever it was; old rows without it read as "codex".
+   */
+  agent: string
   dir: string
   /** The task as asked, trimmed for the row's tooltip. */
   task: string
@@ -86,9 +90,9 @@ export function normalizeRuns(raw: unknown): AgentRunMeta[] {
     out.push({
       id: m.id,
       convId: typeof m.convId === 'string' && m.convId ? m.convId : null,
-      // codex is the only agent, so an archived row reads back as codex
-      // whatever the file happens to say.
-      agent: 'codex',
+      // The model that ran it, preserved; an old row (or a hand-edited one with
+      // no agent) reads back as "codex" so the picker always has something to show.
+      agent: typeof m.agent === 'string' && m.agent.trim() ? m.agent : 'codex',
       dir: typeof m.dir === 'string' ? m.dir : '',
       task: taskLabel(m.task),
       startedAt: Number(m.startedAt) || 0,

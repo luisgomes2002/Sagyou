@@ -31,7 +31,8 @@ import {
   isWriteTool,
   TOOL_DEFS,
   describeToolCall,
-  describeToolActivity
+  describeToolActivity,
+  clearCodeSearchCache
 } from '../../ai/tools'
 import { PROJECT_COLORS, NOTE_COLORS } from '../../types'
 
@@ -281,6 +282,46 @@ describe('ler_arquivo', () => {
     expect(res).toMatchObject({ pasta: 'web', truncated: true, nextOffset: 24000, total: 60000 })
   })
 
+  it('passes a symbol scope through as the 5th argument', async () => {
+    projectWithRoots('web')
+    api.code.read.mockResolvedValue({
+      content: 'export function exportBackup() {}',
+      simbolo: 'exportBackup',
+      linhaInicio: 12,
+      linhaFim: 14,
+      truncated: false
+    })
+
+    const res = await call('ler_arquivo', { caminho: 'store/kanban.ts', simbolo: 'exportBackup' })
+
+    expect(api.code.read).toHaveBeenCalledWith('/src/web', 'store/kanban.ts', undefined, undefined, {
+      symbol: 'exportBackup',
+      lineStart: undefined,
+      lineEnd: undefined
+    })
+    expect(res).toMatchObject({ pasta: 'web', simbolo: 'exportBackup', linhaInicio: 12 })
+  })
+
+  it('passes a line range through as the 5th argument', async () => {
+    projectWithRoots('web')
+    api.code.read.mockResolvedValue({ content: 'x', linhaInicio: 5, linhaFim: 20 })
+
+    await call('ler_arquivo', { caminho: 'a.ts', linha_inicio: 5, linha_fim: 20 })
+
+    expect(api.code.read).toHaveBeenCalledWith('/src/web', 'a.ts', undefined, undefined, {
+      symbol: undefined,
+      lineStart: 5,
+      lineEnd: 20
+    })
+  })
+
+  it('does not send a scope when none was asked for (plain reads keep 4 args)', async () => {
+    projectWithRoots('web')
+    api.code.read.mockResolvedValue({ content: 'x' })
+    await call('ler_arquivo', { caminho: 'a.ts' })
+    expect(api.code.read).toHaveBeenCalledWith('/src/web', 'a.ts', undefined, undefined)
+  })
+
   it('finds the file in whichever folder has it', async () => {
     projectWithRoots('web', 'api')
     api.code.read.mockImplementation(async (path: string) =>
@@ -336,12 +377,21 @@ describe('buscar_no_codigo', () => {
   beforeEach(() => {
     resetStore()
     api = installCodeApi()
+    // The cache is module state that outlives a test — clear it so results from
+    // one test can't answer another's search.
+    clearCodeSearchCache()
   })
 
-  it('searches every selected folder and labels the hits', async () => {
+  it('searches every selected folder and groups hits by file', async () => {
     projectWithRoots('web', 'api')
     api.code.search.mockImplementation(async (path: string) => ({
-      matches: path === '/src/web' ? [{ file: 'App.tsx', line: 3, text: 'const x' }] : [],
+      matches:
+        path === '/src/web'
+          ? [
+              { file: 'App.tsx', line: 3, text: 'const x' },
+              { file: 'App.tsx', line: 9, text: 'const x2' }
+            ]
+          : [],
       truncated: false
     }))
 
@@ -349,9 +399,23 @@ describe('buscar_no_codigo', () => {
 
     expect(api.code.search).toHaveBeenCalledWith('/src/web', 'const x')
     expect(api.code.search).toHaveBeenCalledWith('/src/api', 'const x')
+    // One entry per file, its lines nested — the path isn't repeated per hit.
     expect(res.pastas).toEqual([
-      { pasta: 'web', matches: [{ file: 'App.tsx', line: 3, text: 'const x' }], truncated: false },
-      { pasta: 'api', matches: [], truncated: false }
+      {
+        pasta: 'web',
+        arquivos: [
+          {
+            arquivo: 'App.tsx',
+            ocorrencias: [
+              { linha: 3, texto: 'const x' },
+              { linha: 9, texto: 'const x2' }
+            ]
+          }
+        ],
+        total: 2,
+        truncado: false
+      },
+      { pasta: 'api', arquivos: [], total: 0, truncado: false }
     ])
   })
 
@@ -364,6 +428,39 @@ describe('buscar_no_codigo', () => {
 
   it('is a read tool, so it never asks for approval', () => {
     expect(isWriteTool('buscar_no_codigo')).toBe(false)
+  })
+
+  it('caches a repeated search over the same roots and term', async () => {
+    projectWithRoots('web')
+    api.code.search.mockResolvedValue({ matches: [{ file: 'a.ts', line: 1, text: 'x' }], truncated: false })
+
+    const first = await call('buscar_no_codigo', { termo: 'backup' })
+    const second = await call('buscar_no_codigo', { termo: 'backup' })
+
+    // The disk was hit once; the second call answered from the cache.
+    expect(api.code.search).toHaveBeenCalledTimes(1)
+    expect(second).toEqual(first)
+  })
+
+  it('does not let the cache answer a different term', async () => {
+    projectWithRoots('web')
+    api.code.search.mockResolvedValue({ matches: [], truncated: false })
+
+    await call('buscar_no_codigo', { termo: 'backup' })
+    await call('buscar_no_codigo', { termo: 'restore' })
+
+    expect(api.code.search).toHaveBeenCalledTimes(2)
+  })
+
+  it('re-runs the search once the cache is cleared (files may have changed)', async () => {
+    projectWithRoots('web')
+    api.code.search.mockResolvedValue({ matches: [], truncated: false })
+
+    await call('buscar_no_codigo', { termo: 'backup' })
+    clearCodeSearchCache()
+    await call('buscar_no_codigo', { termo: 'backup' })
+
+    expect(api.code.search).toHaveBeenCalledTimes(2)
   })
 })
 

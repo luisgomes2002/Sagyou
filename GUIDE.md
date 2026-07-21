@@ -142,7 +142,10 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
 4. **Nem tudo está no banco.** Em `app.getPath('userData')`: `kanban.db`,
    `files/` (os blobs dos anexos — a tabela só guarda metadados),
    `ai-config.json`, `ai-conversations.json`, `ai-usage-log.json`,
-   `chat-images/`. Apagar um lado sem o outro deixa órfão.
+   `ai-run-metrics.json` (uma linha por execução do agente — modelo, passos,
+   tokens, buscas redundantes, releituras — regras puras em `main/run-metrics.ts`,
+   enviadas pelo `runAgent` no `finally`, best-effort), `chat-images/`. Apagar um
+   lado sem o outro deixa órfão.
 5. **Ferramenta de IA que escreve leva `write: true`** em `ai/tools.ts`. É a
    única coisa entre o modelo e os dados do usuário: sem isso a ação roda sem
    aprovação. Ferramenta nova que muta estado **tem** que marcar.
@@ -154,6 +157,28 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    `outros_projetos`, `nextOffset`) — sem ele o modelo afirma com confiança que
    o quadro tem 228 tasks quando tem 413, ou que uma task não existe quando ela
    está em outro projeto. A resposta errada custa mais que os tokens salvos.
+7. **Leitura de código por escopo, não por arquivo inteiro.** `ler_arquivo` aceita
+   `simbolo` (extrai uma função/classe via `extractSymbol` em `code-files.ts`) ou
+   `linha_inicio`/`linha_fim` (`extractLines`) — ~1-3k chars em vez de janelas de
+   20k paginadas. Tudo regex/best-effort de propósito (sem AST). É o 5º arg
+   `scope` de `ai:code:read`, que ganha da paginação por char; a 1ª página de um
+   arquivo grande traz `simbolos` (o mapa de declarações) só quando `truncated`.
+   `buscar_no_codigo` agrupa por arquivo (`arquivo` + `ocorrencias`), então o
+   modelo leva a `linha` direto para o `ler_arquivo` mirado. O prompt
+   (`system-prompt.md`) tem tabela de custo e exemplo bom-vs-ruim guiando isso.
+   Leitura **cega** de arquivo grande (sem escopo/`inicio`/`max_chars`, `total >
+   CODE_READ_PAGE`) devolve só ~100 linhas + `simbolos` + `dica`, não a janela de
+   20k. `buscar_no_codigo` tem cache de 30s por (raízes+termo), limpo quando o
+   agente de código roda. Freios de releitura (`ler_arquivo` cego 2×, busca fuzzy
+   substring que avisa mas não bloqueia) e o log de custo por execução vivem em
+   `agent.ts` (estado **por execução**), **não** em `tools.ts` (global entre
+   conversas).
+8. **Roteamento de modelo é opcional e por execução.** `AIConfig.modelComplex`,
+   quando definido, faz `routeModel(cfg, texto)` mandar tarefas de código/análise
+   (palavras como código, bug, refatorar, arquitetura, investigar) para o modelo
+   pesado; o resto fica no `model` barato. Ausente = um modelo só, comportamento
+   antigo. A escolha é feita uma vez em `runAgent` (`rcfg`) e vale para todas as
+   chamadas daquela execução.
 
 ## Segurança — o que já está resolvido
 
@@ -189,14 +214,11 @@ isso. Sessão efêmera sem cookie, sandbox, sem node. A orquestração do
 - Os testes do main usam **coisas reais** — servidor HTTP local, repositório git
   de verdade, processo filho de verdade. Prefira isso a stub: quase todo bug
   desta área é um detalhe de como a coisa real se comporta.
-- ⚠️ Testando o agente de código: o `codex` pode estar **instalado de verdade** na
-  máquina, e o handler roda o que achar no PATH. **Substitua** o `PATH` por um
-  diretório só com o seu stub — não basta pôr na frente. E o stub não pode chamar
-  nada por nome (o PATH só tem ele): resolva helpers como `cat` para caminho
-  absoluto antes de estreitar o PATH. **Só substituir o PATH já não basta**:
-  `resolveExecutable` também varre `~/.npm-global/bin` & cia., onde o codex real
-  mora — teste que precisa do caminho "não encontrado" precisa também de
-  `SAGYOU_DISABLE_BIN_FALLBACK=1`.
+- Testando o **agente de código nativo** (`main/code-agent.ts`): o loop é puro e
+  injetável (`callModel`, o runner de comando e a aprovação vêm de fora), então o
+  núcleo é testado contra um dir temporário + provedor stub em `code-agent.test.ts`.
+  A cola de IPC (handler `ai:code-agent:run`, streaming, o ida-e-volta de
+  aprovação) é testada em `handlers.test.ts` contra o servidor HTTP local.
 - `vitest.config.ts` fixa `TZ=America/Sao_Paulo`: bug de data local não pode se
   esconder atrás de um teste rodando em UTC.
 
@@ -221,57 +243,61 @@ Não "simplifique" nenhuma destas sem ler o comentário que as acompanha:
   de hoje e apresentaria as edições posteriores do usuário como trabalho do
   agente. Por isso `CodeDiff` recebe `onRefresh` opcional — uma run passada não
   tem o que recarregar.
-- ⚠️ **"Está no PATH" não é o PATH do usuário.** App Electron aberto pelo ícone
-  herda o PATH do systemd user manager, não o do shell — então um codex em
-  `~/.npm-global/bin` (dir que só o `~/.bashrc` acrescenta) fica invisível e o
-  painel mente dizendo "não encontrado". `resolveExecutable` varre o PATH e
-  **depois** `fallbackBinDirs()`, e passa o **caminho absoluto** ao `spawn`.
-- **O agente é spawnado headless**: stdin é um pipe só para entregar o prompt e é
-  fechado em seguida, nunca um terminal. A permissão de escrita do codex é
-  **por plataforma** (`sandboxArgs`): no Unix
-  `--sandbox workspace-write` (sandbox de SO real — Seatbelt/Landlock); no
-  **Windows** `--dangerously-bypass-approvals-and-sandbox`, porque lá não há
-  backend de sandbox e `workspace-write` cai pra read-only (codex lê, diz que
-  aplicou, e **não escreve nada** — verificado). ⚠️ Mantenha o branch
-  `process.platform === 'win32'`: o bypass no Unix jogaria fora o sandbox real.
-  Sem `--ask-for-approval` aqui: é flag top-level, o `exec` já é não-interativo e
-  a rejeita (exit 2), e não tem `--full-auto`. **O prompt do
-  codex vai por stdin (`codex exec … -`), nunca como argv**: no Windows ele roda
-  via `cmd.exe` (`shell: true`), que quebra um prompt multi-palavra em vários args
-  (`Antes de …` → `unexpected argument 'de'`). `buildAgentCommand` devolve
-  `stdinData`; o handler abre o stdin só quando há dado.
+- ⚠️ **O agente de código é NATIVO agora (`main/code-agent.ts`), não o `codex`.**
+  É um loop de tool-calling que roda em main com o provedor do app. O `codex` tinha
+  **sandbox de SO** (Seatbelt/Landlock) e login próprio; o nativo **não tem**, então
+  as únicas barreiras entre o modelo e o disco são (1) `confineToRoot` (todo caminho
+  preso à pasta do projeto) e (2) **aprovação por ação** antes de qualquer escrita ou
+  comando. As duas são carga, não enfeite.
+- **5 ferramentas**: `listar_arquivos`, `ler_arquivo`, `buscar_no_codigo` (leitura,
+  rodam direto), `escrever_arquivo`, `executar_comando` (`needsApproval` → passam por
+  card). A aprovação é um **ida-e-volta de IPC**: o loop manda `ai:code-agent:approve-request`
+  e para numa promise em `pendingApprovals`; o renderer mostra o card e responde por
+  `ai:code-agent:approve-response`. `stopCodeAgent()` aborta o loop **e** nega toda
+  aprovação parada — não há mais processo filho pra matar. `executar_comando` usa
+  `exec` async (não `execSync`, que travaria o event loop do main), com timeout e
+  saída limitada.
+- 🛡️ **Sandbox obrigatório (`main/ai-jail.ts`)**: a aprovação cobre a *intenção*, o
+  ai-jail cobre o *alcance* — confina os comandos à pasta do projeto (bubblewrap no
+  Linux, sandbox-exec no macOS). `sandboxEnabled` ausente = **ligado**; só `false`
+  explícito roda sem confinar. O handler `ai:code-agent:run` **recusa iniciar** quando
+  o sandbox é exigido mas o ai-jail não está disponível (`getJailStatus`); o usuário
+  instala (onboarding) ou desmarca o Sandbox. Ativo, o runner embrulha cada comando com
+  `wrapCommand` → `ai-jail --rw-map <dir> -- /bin/sh -c '<cmd>'` (⚠️ **não existe
+  `--workdir`** — o confinamento é por mounts). ⚠️ **Windows roda o sandbox *dentro do
+  WSL2*** (não há build nativo): a detecção procura o ai-jail dentro do WSL (`wsl -e
+  bash -lc 'command -v ai-jail…'`, `viaWsl:true`) e os comandos vão por `runSandboxedWsl`
+  → `wsl -e <ai-jail> --rw-map <wsl-path> -- bash -c 'cd … && <cmd>'` (**argv**, sem
+  aspas atravessando cmd.exe→wsl→bash; `winToWslPath` traduz `C:\proj`→`/mnt/c/proj`) —
+  ou seja, o comando roda no Linux do WSL. Onboarding em 2 passos (`wsl --install` →
+  instalar ai-jail dentro do WSL, ambos oferecidos pra rodar à mão). Só binários
+  `linux-x86_64` e `macos-aarch64` existem upstream; instala em `~/.local/bin` com
+  **sha256 verificado**. A detecção só roda com o sandbox **ligado**. Lógica pura testada
+  em `ai-jail.test.ts`.
+- **Config separada**: `AIConfig.codeAgent {baseUrl,apiKey,model}` — campo vazio cai
+  pro provedor do chat (`resolveCodeAgentConfig`). O painel mostra o **modelo real**
+  (banner `modelo: X @ Y`, `status.model`, header), não mais "próprio do codex". Os
+  passos aparecem no log como `[tool] …` / `[resultado] …` e em eventos
+  `ai:code-agent:tool`.
 - ⚠️ **O agente não commita nada** — o painel de Mudanças existe pra o *usuário*
-  revisar e commitar. Escrever no histórico git dele não é nosso papel. O
-  `captureBase` roda antes do spawn e o diff vai da base à worktree, então nada se
-  perde deixando a árvore suja (que é o que o `codex exec` faz).
-- **I/O do filho forçada a UTF-8**: `stdout/stderr.setEncoding('utf8')` em vez de
-  `d.toString()` por chunk, pra não partir char multi-byte na fronteira entre dois
-  eventos `data` (vira glifo de replacement).
-- **O log é renderizado como terminal** (`AgentTerminal.tsx` + `utils/ansi.ts`): é um
-  pipe, então `parseAnsi` colore o SGR, **remove** cursor/OSC (senão viram lixo) e
-  **aplica** `\r` e erase-in-line (`\x1b[K`) por linha — o parser monta linha a
-  linha, não faz pré-passe no texto cru: com os escapes ainda no meio, um redraw
-  que reemite a cor (`\r\x1b[32mok`) contava a cor como texto e um `\x1b[2K` era
-  descartado em vez de aplicado, deixando o texto apagado na tela. Puro e testado
-  (`utils/ansi.test.ts`); o componente não.
+  revisar e commitar. `captureBase` roda **antes do loop** e o diff vai da base à
+  worktree, então nada se perde deixando a árvore suja.
+- **O log é renderizado como terminal** (`AgentTerminal.tsx` + `utils/ansi.ts`):
+  `parseAnsi` colore o SGR, **remove** cursor/OSC e **aplica** `\r`/erase-in-line por
+  linha (não faz pré-passe no texto cru). Puro e testado (`utils/ansi.test.ts`).
 - **O painel lidera pelo diff, não pelo log**: "Mudanças" fica visível *durante* a
-  execução (poll de 2s; o diff é derivado em main de uma base anterior ao spawn,
-  então repetir é barato) e o log cru vai pra trás de "Log completo". Diff vazio
-  com agente rodando diz "ainda não", não "não alterou nada" — são fatos opostos.
-- **`rodar_agente_codigo` aceita `arquivos` (caminhos relativos)** → são nomeados no
-  prompt do codex (ele não tem `--file`), pra focar a busca dele. Main confina cada
-  caminho à raiz (`confineToRoot`) e descarta os inválidos.
-- **O run abre com um banner dizendo qual caminho pegou**: quantos arquivos foram
-  fixados (e quais), ou que nenhum foi e o agente vai descobrir; mais os caminhos
-  descartados e o fato de serem a causa do fallback. Antes os dois caminhos eram
-  indistinguíveis no painel, e `arquivos` é opcional — não dava pra saber se o
-  modelo mandou. O banner também **nomeia o modelo**: o codex usa o login e o
-  backend dele (não recebe `--model`; o env `OPENAI_*` não o redireciona), então a
-  config de IA do app **não tem influência nenhuma** sobre um run de código — e
-  ninguém deve ler o painel como se tivesse. O run fecha com
-  `[sagyou] duração: N.Ns` (via `emit`, então transmite e
-  fica no buffer; o relógio começa logo antes do `spawn`) — antes o painel não
-  tinha relógio nenhum, só o código de saída.
+  execução (poll de 2s; derivado em main de uma base anterior ao run) e o log cru vai
+  pra trás de "Log completo". Diff vazio com agente rodando diz "ainda não", não "não
+  alterou nada" — fatos opostos.
+- **`rodar_agente_codigo` aceita `arquivos` (caminhos relativos)** → viram a seção
+  "arquivos indicados" do system prompt (`buildSystemPrompt`), pra focar o agente.
+  Main confina cada um à raiz (`confineToRoot`) e descarta os inválidos; o run abre
+  com um banner do modelo e de quais arquivos foram indicados, e fecha com
+  `[sagyou] duração: N.Ns`.
+- 📎 **Restos do codex, dormentes**: `resolveExecutable`/`detectAgentHint` continuam
+  em `index.ts` com testes, mas **não ligados a nada** — podem ser removidos depois.
+  `AgentRunMeta.agent` agora é texto livre com o nome do modelo (linhas antigas leem
+  como `"codex"`).
 - ⚠️ **No Linux o `--sandbox workspace-write` do codex pode falhar inteiro e sair
   com código 0**: o sandbox usa bubblewrap, que precisa de user namespaces sem
   privilégio, e o Ubuntu 23.10+ bloqueia isso via AppArmor

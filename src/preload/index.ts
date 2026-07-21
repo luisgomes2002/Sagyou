@@ -1,4 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
+// Type-only: erased at build, so no main-process code is pulled into the preload.
+import type { RunMetricInput, RunMetricsSummary } from '../main/run-metrics'
 
 /** A user-written prompt template for Gerar Tasks. */
 interface PromptTemplate {
@@ -122,6 +124,13 @@ const api = {
         }[]
       }> => ipcRenderer.invoke('ai:usage:summary')
     },
+    // Per-run efficiency metrics, aggregated by the main process for comparing
+    // models over time (ai-run-metrics.json). append is best-effort bookkeeping.
+    runMetrics: {
+      append: (input: RunMetricInput): Promise<void> =>
+        ipcRenderer.invoke('ai:run-metrics:append', input),
+      summary: (): Promise<RunMetricsSummary> => ipcRenderer.invoke('ai:run-metrics:summary')
+    },
     // Lists the provider's models (GET /models) through the main process.
     models: (request: {
       baseUrl?: string
@@ -205,9 +214,14 @@ const api = {
       }): Promise<{ success: boolean; agent?: string; dir?: string; error?: string }> =>
         ipcRenderer.invoke('ai:code-agent:run', request),
       stop: (): Promise<void> => ipcRenderer.invoke('ai:code-agent:stop'),
+      // Answer an approval card the loop is parked on (native agent).
+      approve: (id: string, approved: boolean): Promise<void> =>
+        ipcRenderer.invoke('ai:code-agent:approve-response', id, approved),
       status: (): Promise<{
         running: boolean
         log: string
+        // The real model in use this run (native agent), for the panel to show.
+        model?: string
         hint: {
           title: string
           detail: string
@@ -245,6 +259,52 @@ const api = {
         const handler = (_: Electron.IpcRendererEvent, code: number): void => cb(code)
         ipcRenderer.on('ai:code-agent:exit', handler)
         return () => ipcRenderer.removeListener('ai:code-agent:exit', handler)
+      },
+      // Structured tool events (native agent): a tool call being run, then its
+      // result summary — so the panel can show the run's steps live (task 6/11).
+      onToolEvent: (
+        cb: (ev: { phase: 'call' | 'result'; name: string; args?: Record<string, unknown>; summary?: string }) => void
+      ) => {
+        const handler = (_: Electron.IpcRendererEvent, ev: Parameters<typeof cb>[0]): void => cb(ev)
+        ipcRenderer.on('ai:code-agent:tool', handler)
+        return () => ipcRenderer.removeListener('ai:code-agent:tool', handler)
+      },
+      // The loop is parked on a write/command and needs the user's OK (task 9).
+      onApproveRequest: (
+        cb: (req: { id: string; name: string; args: Record<string, unknown>; resumo: string }) => void
+      ) => {
+        const handler = (_: Electron.IpcRendererEvent, req: Parameters<typeof cb>[0]): void => cb(req)
+        ipcRenderer.on('ai:code-agent:approve-request', handler)
+        return () => ipcRenderer.removeListener('ai:code-agent:approve-request', handler)
+      }
+    },
+    // The ai-jail sandbox for the code agent (see main/ai-jail.ts).
+    jail: {
+      // Current status merged with config. `refresh` re-runs detection.
+      status: (
+        refresh?: boolean
+      ): Promise<{
+        available: boolean
+        version: string | null
+        path: string | null
+        platform: string
+        installable: boolean
+        bubblewrap?: boolean
+        wsl2?: boolean
+        viaWsl?: boolean
+        reason?: string
+        enabled: boolean
+        onboardingDismissed: boolean
+        wslCommand: string
+        wslAiJailCommands: string
+      }> => ipcRenderer.invoke('ai:jail:status', refresh),
+      install: (): Promise<{ success: boolean; version?: string; path?: string; error?: string }> =>
+        ipcRenderer.invoke('ai:jail:install'),
+      dismissOnboarding: (): Promise<void> => ipcRenderer.invoke('ai:jail:dismiss-onboarding'),
+      onProgress: (cb: (p: { phase: string; fraction: number | null }) => void) => {
+        const handler = (_: Electron.IpcRendererEvent, p: Parameters<typeof cb>[0]): void => cb(p)
+        ipcRenderer.on('ai:jail:progress', handler)
+        return () => ipcRenderer.removeListener('ai:jail:progress', handler)
       }
     },
     // Native folder picker for choosing a project's code directory.
@@ -268,15 +328,24 @@ const api = {
         root: string,
         rel: string,
         offset?: number,
-        maxChars?: number
+        maxChars?: number,
+        scope?: { symbol?: string; lineStart?: number; lineEnd?: number }
       ): Promise<{
         content?: string
         truncated?: boolean
         offset?: number
         total?: number
         nextOffset?: number
+        // Set in scoped reads (a symbol or a line range): the 1-based bounds of
+        // the returned slice, and the symbol name when one was requested.
+        simbolo?: string
+        linhaInicio?: number
+        linhaFim?: number
+        // A map of the file's declarations — present on a big file's first page,
+        // or when a requested symbol wasn't found, so the model can jump to one.
+        simbolos?: { nome: string; linha: number; tipo: string }[]
         error?: string
-      }> => ipcRenderer.invoke('ai:code:read', root, rel, offset, maxChars),
+      }> => ipcRenderer.invoke('ai:code:read', root, rel, offset, maxChars, scope),
       search: (
         root: string,
         term: string

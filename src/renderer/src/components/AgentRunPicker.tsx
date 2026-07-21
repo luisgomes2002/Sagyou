@@ -13,7 +13,8 @@ import { useEffect, useRef, useState } from 'react'
 export interface AgentRunMeta {
   id: string
   convId: string | null
-  agent: 'codex'
+  /** The model that ran it (native agent), or "codex" for old runs. */
+  agent: string
   dir: string
   task: string
   startedAt: number

@@ -54,6 +54,8 @@ export interface ChatMessage {
    */
   step?: number
   maxSteps?: number
+  /** Tokens this step's model call billed, for the trace. Absent = unknown/older line. */
+  tokens?: number
 }
 
 /**
@@ -291,7 +293,11 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
                 content: text,
                 ...(kind === 'tool' && { done: false }),
                 // Absent on lines that aren't a step (retries, the cap warning).
-                ...(progress && { step: progress.step, maxSteps: progress.maxSteps })
+                ...(progress && {
+                  step: progress.step,
+                  maxSteps: progress.maxSteps,
+                  ...(progress.tokens !== undefined && { tokens: progress.tokens })
+                })
               }
             ])
           ),
