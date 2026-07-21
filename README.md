@@ -151,3 +151,10 @@ Tudo fica na sua máquina, no diretório de dados do app (`userData`):
 | `ai-conversations.json` | histórico do chat |
 
 O assistente de IA é opcional e desligado até você configurar um provedor. Se você apontar para um provedor hospedado, os dados enviados no chat saem da máquina — use um modelo local se preferir manter tudo offline.
+
+---
+
+## Agradecimentos
+
+- [AI Jail](https://github.com/akitaonrails/ai-jail) por [Fabio Akita](https://github.com/akitaonrails) — sandbox multi-OS obrigatório que confina os comandos do agente de código ao diretório do projeto. O Sagyou baixa e executa o binário como processo separado (fork+exec); não há código linkado, portanto a licença do Sagyou não é afetada.
+- [AI Memory](https://github.com/akitaonrails/ai-memory) por [Fabio Akita](https://github.com/akitaonrails) — sistema de memória durável para agentes de IA com indexação e busca, que inspirou a arquitetura de memória do Sagyou.
