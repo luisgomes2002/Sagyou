@@ -75,7 +75,7 @@ function shQuote(s: string): string {
  * project writable, and ai-jail confines/masks everything else by default. The
  * model's command is free-form shell, so it goes through an inner `sh -c`;
  * `aiJailBin` is the ABSOLUTE path from detection, because the app's PATH may
- * not include `~/.local/bin` (the same gap documented for codex).
+ * not include `~/.local/bin`.
  *
  * ⚠️ There is no `--workdir` flag (the task's original assumption). Confinement
  * is expressed as mounts; `--rw-map <projectDir>` is the read-write project root.
@@ -142,8 +142,8 @@ export function looksLikeUserNsBlock(output: string): boolean {
 
 /**
  * The fix for the restricted-user-namespaces case, surfaced to the user. It
- * weakens the kernel's AppArmor hardening, so — like the codex hint — we only
- * ever *show* the command, never run it.
+ * weakens the kernel's AppArmor hardening, so we only ever *show* the command,
+ * never run it.
  */
 export const APPARMOR_USERNS_REASON =
   'ai-jail e bubblewrap estão instalados, mas o kernel bloqueia os user namespaces não privilegiados que o sandbox precisa ' +
@@ -187,8 +187,7 @@ export function localBinDir(): string {
 
 /**
  * Where `ai-jail` might live, in the order we try. PATH first (a bare name),
- * then the dirs a GUI-launched app's PATH tends to miss — the same list-then-
- * absolute-path approach `resolveExecutable` uses for codex.
+ * then the dirs a GUI-launched app's PATH tends to miss.
  */
 export function candidatePaths(): string[] {
   return [

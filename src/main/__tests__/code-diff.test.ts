@@ -128,7 +128,7 @@ describe('diffSince', () => {
     expect((await diffSince(snap)).patch).toContain('+DO AGENTE')
   })
 
-  it('sees changes the agent left uncommitted — which is what codex exec does', async () => {
+  it('sees changes the agent left uncommitted', async () => {
     const snap = (await captureBase(dir))!
     await write(dir, 'a.txt', 'linha um\nlinha dois\nSEM COMMIT\n')
 

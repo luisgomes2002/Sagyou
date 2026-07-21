@@ -79,7 +79,7 @@ describe('normalizeRuns', () => {
     expect(r.agent).toBe('gpt-4o')
   })
 
-  it('falls back to codex for a row with no agent (old external-agent runs)', () => {
+  it('falls back to "codex" for a row with no agent (old external-agent runs)', () => {
     const [r] = normalizeRuns([{ id: uuid(1) }])
     expect(r.agent).toBe('codex')
   })
