@@ -67,13 +67,50 @@ O assistente é **opcional** e vem desligado — nada é enviado a lugar nenhum 
 
 ### Configuração
 
-Abra a view **Assistente IA** e clique na engrenagem. Preencha:
+Abra a view **Assistente IA** e clique na engrenagem. A configuração tem sete grupos de campos:
 
-| Campo | Exemplo |
+**1. Provedor**
+
+| Campo | Descrição |
 |---|---|
-| **Base URL** | `https://api.openai.com/v1` — ou `http://localhost:11434/v1` (Ollama), `http://localhost:1234/v1` (LM Studio) |
+| **Base URL** | Endpoint da API — ex.: `https://api.openai.com/v1`, `http://localhost:11434/v1` (Ollama), `http://localhost:1234/v1` (LM Studio) |
 | **API Key** | `sk-...` — deixe qualquer valor se o provedor local não exigir |
-| **Model** | clique no botão ao lado do campo para listar os modelos do endpoint e escolher um |
+| **Model** | Dropdown com os modelos disponíveis no endpoint; use o botão ao lado para carregar a lista |
+
+**2. Modelo p/ código (opcional)**
+
+Dropdown extra que, quando preenchido, roteia perguntas de código (análise, bugs, refatoração) para um modelo diferente do usado no chat geral. Vazio = mesmo modelo para tudo.
+
+**3. Passos máximos**
+
+Quantas rodadas de ferramentas o assistente pode encadear numa execução. O padrão muda conforme o modo: **10 passos no manual** (você aprova cada ação) e **30 no automático**. Aumentar o limite permite tarefas mais longas, mas consome mais tokens.
+
+**4. Timeout (segundos)**
+
+Tempo máximo de espera para o modelo começar a responder cada chamada. Evita que uma conexão lenta trave o app indefinidamente.
+
+**5. Preços (opcional)**
+
+| Campo | Descrição |
+|---|---|
+| **Input (por 1M tokens)** | Custo de entrada para estimar o gasto da conversa |
+| **Output (por 1M tokens)** | Custo de saída para estimar o gasto da conversa |
+
+Os valores informados são usados no rodapé do chat para exibir o custo estimado da sessão. Deixar em branco desabilita o cálculo.
+
+**6. Agente de Código**
+
+Provider separado para o agente de código nativo. Cada campo em branco herda o valor do provedor principal.
+
+| Campo | Descrição |
+|---|---|
+| **Base URL** | Endpoint exclusivo para o agente (vazio = usa o do chat) |
+| **API Key** | Chave exclusiva (vazio = usa a do chat) |
+| **Model** | Modelo exclusivo (vazio = usa o do chat) |
+
+**7. Sandbox (ai-jail)**
+
+Toggle que exige o binário [AI Jail](https://github.com/akitaonrails/ai-jail) instalado. Ligado, todo comando do agente de código é confinado à pasta do projeto (bubblewrap no Linux, sandbox-exec no macOS). Desmarcar roda comandos sem confinamento — o app exibe um aviso antes de permitir.
 
 Serve qualquer provedor compatível com a API da OpenAI. A configuração fica em `ai-config.json` (veja [Dados](#dados)) e a chave **não** é enviada para o renderer.
 
