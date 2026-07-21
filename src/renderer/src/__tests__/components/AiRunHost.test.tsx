@@ -57,12 +57,30 @@ function installApi(): void {
         // Fires when a finished run has been archived; the picker listens
         // for it rather than guessing when the snapshot exists.
         onArchived: vi.fn(() => vi.fn()),
+        onToolEvent: vi.fn(() => vi.fn()),
+        onApproveRequest: vi.fn(() => vi.fn()),
+        approve: vi.fn(),
         runs: vi.fn(async () => []),
         runGet: vi.fn(async () => null),
         // The panel asks for the buffered log on mount — it may have missed the
         // stream entirely while this view was unmounted.
         status: vi.fn(async () => ({ running: false, log: '' })),
         stop: vi.fn()
+      },
+      jail: {
+        status: vi.fn(async () => ({
+          available: true,
+          version: '1.15.0',
+          path: '/usr/local/bin/ai-jail',
+          platform: 'linux',
+          installable: true,
+          enabled: true,
+          onboardingDismissed: true,
+          wslCommand: 'wsl --install'
+        })),
+        install: vi.fn(async () => ({ success: true })),
+        dismissOnboarding: vi.fn(),
+        onProgress: vi.fn(() => vi.fn())
       }
     }
   }

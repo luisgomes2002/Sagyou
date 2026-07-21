@@ -12,6 +12,13 @@ export interface AIConfig {
   apiKey: string
   model: string
   /**
+   * Optional heavier model for code/analysis work. When set, a run whose
+   * triggering message looks like a code task (see routeModel) uses this model,
+   * and everything else stays on the cheaper `model`. Absent = one model for
+   * everything, unchanged from before.
+   */
+  modelComplex?: string
+  /**
    * User-set cap on tool rounds per answer. Undefined (the default) keeps the
    * per-mode defaults below — see resolveMaxSteps.
    */
@@ -32,6 +39,16 @@ export interface AIConfig {
   lastConversationId?: string
   /** Template picked for Gerar Tasks. Absent = the built-in default. */
   taskTemplateId?: string
+  /**
+   * A separate provider for the native code agent. Any field left empty falls
+   * back to the chat config above, so a user sets only what differs. Absent =
+   * the code agent uses the chat provider.
+   */
+  codeAgent?: { baseUrl?: string; apiKey?: string; model?: string }
+  /** Whether the ai-jail sandbox is required for the agent's shell commands (absent = on). */
+  sandboxEnabled?: boolean
+  /** Whether the sandbox onboarding has been answered (so it doesn't reappear). */
+  sandboxOnboardingDismissed?: boolean
 }
 
 /** Tokens billed by a model call, as the provider reported them. */
@@ -201,12 +218,60 @@ export const MAX_STEPS_LIMIT = 100
  */
 export const LOW_STEPS_WARNING = 10
 
+/**
+ * Words that mark a message as a code / deep-analysis task, worth routing to the
+ * heavier `modelComplex`. Matched against accent-stripped, lowercased text, so
+ * only ASCII stems belong here (see routeModel). Kept deliberately close to the
+ * user's own list — over-matching would send cheap questions to the pricey model
+ * and quietly raise the bill this whole feature exists to lower.
+ */
+export const COMPLEX_TASK_PATTERN =
+  /\b(codigo|bug|refator|arquitetura|investig|implement|depura|debug|stacktrace|stack trace|excecao|traceback|algoritmo)\w*/
+
+/** Lowercase and strip accents, so "código"/"refatorar" match ASCII stems. */
+function normalizeForRoute(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+}
+
+/**
+ * Which model a run should use, given the message that triggered it.
+ *
+ * With no `modelComplex` configured this is always `cfg.model` — the previous
+ * single-model behaviour, unchanged. When one is set, a message that reads like
+ * a code or analysis task (COMPLEX_TASK_PATTERN) goes to it and everything else
+ * stays on the cheaper `model`. Routing is per-run, decided once from the last
+ * user turn, so a follow-up question is re-classified on its own words.
+ */
+export function routeModel(userText: string, cfg: AIConfig): string {
+  const complex = cfg.modelComplex?.trim()
+  if (!complex) return cfg.model
+  return COMPLEX_TASK_PATTERN.test(normalizeForRoute(userText)) ? complex : cfg.model
+}
+
+/** The text of the last user turn in a conversation — what routeModel weighs. */
+function lastUserText(conversation: ApiMessage[]): string {
+  for (let i = conversation.length - 1; i >= 0; i--) {
+    if (conversation[i].role === 'user') return contentText(conversation[i].content)
+  }
+  return ''
+}
+
 /** Which step of the run a status line belongs to, for a "3/40" badge. */
 export interface StepProgress {
   /** 1-based, so the first step reads "1/40" and not "0/40". */
   step: number
   /** This run's resolved cap — not the constant, which the user can override. */
   maxSteps: number
+  /**
+   * Tokens this step's model call billed (prompt + completion), so the trace can
+   * show what each step cost. Absent when the provider reported no usage — the
+   * step still ran, its cost is just unknown. Known only after the call returns,
+   * so it's filled in before the step's status lines are emitted.
+   */
+  tokens?: number
 }
 
 /**
@@ -217,6 +282,19 @@ export interface StepProgress {
  * many steps run; this cuts a stuck run short before it burns them all).
  */
 export const READ_REPEAT_LIMIT = 3
+
+/**
+ * How many times the model may read the *same file* blindly — ler_arquivo on a
+ * path with no targeting argument (simbolo / linha_inicio / linha_fim / inicio)
+ * — before the loop stops running it. Tighter than READ_REPEAT_LIMIT because a
+ * second blind read of a whole file is almost always the model re-fetching what
+ * it already has; the nudge points it at the surgical args instead. Scoped and
+ * paged reads of the same file are never counted here — those are legitimate.
+ */
+export const BLIND_FILE_READ_LIMIT = 2
+
+/** How many recent buscar_no_codigo terms a run remembers for fuzzy-dup detection. */
+export const SEARCH_HISTORY_MAX = 5
 
 /**
  * How many tool rounds a run gets.
@@ -472,6 +550,151 @@ function bumpReadRepeat(
   return n
 }
 
+/** Increment a counter keyed by `key` and return the new tally. */
+function bumpCount(counts: Map<string, number>, key: string): number {
+  const n = (counts.get(key) ?? 0) + 1
+  counts.set(key, n)
+  return n
+}
+
+/**
+ * Signature for a "blind" whole-file read — ler_arquivo on a path with no
+ * targeting argument. Returns null for any other tool, or for a scoped/paged
+ * read (simbolo, a line range, or an offset), which are legitimate and must
+ * never be braked. Includes pastaId so the same relative path under two roots
+ * isn't conflated.
+ */
+function blindFileReadSignature(name: string, args: Record<string, unknown>): string | null {
+  if (name !== 'ler_arquivo') return null
+  const caminho = typeof args.caminho === 'string' ? args.caminho.trim() : ''
+  if (!caminho) return null
+  const targeted =
+    (typeof args.simbolo === 'string' && args.simbolo.trim() !== '') ||
+    typeof args.linha_inicio === 'number' ||
+    typeof args.linha_fim === 'number' ||
+    typeof args.inicio === 'number'
+  if (targeted) return null
+  const pasta = typeof args.pastaId === 'string' ? args.pastaId : ''
+  return `ler_arquivo:${pasta}:${caminho}`
+}
+
+/** A search term, normalised for fuzzy comparison. */
+function normalizeSearchTerm(t: unknown): string {
+  return typeof t === 'string' ? t.trim().toLowerCase() : ''
+}
+
+/**
+ * Register a buscar_no_codigo term against the run's recent history and, if a
+ * prior term already covers it (one is a substring of the other), return a
+ * warning to hand back alongside the results. The search still runs — this only
+ * nudges the model to reuse what it already fetched instead of re-searching a
+ * variation. Exact repeats are left to the READ_REPEAT brake.
+ */
+function fuzzySearchWarning(history: string[], args: Record<string, unknown>): string | null {
+  const term = normalizeSearchTerm(args.termo)
+  if (!term) return null
+  let warning: string | null = null
+  for (const prev of history) {
+    if (prev === term) continue
+    if (prev.includes(term) || term.includes(prev)) {
+      warning =
+        `Você já buscou por "${prev}" nesta execução — os resultados anteriores ` +
+        `provavelmente já cobrem "${term}". Prefira reusá-los a repetir a busca.`
+      break
+    }
+  }
+  history.push(term)
+  while (history.length > SEARCH_HISTORY_MAX) history.shift()
+  return warning
+}
+
+/** Merge an `aviso` field into a tool-result JSON string, best-effort. */
+function withAviso(result: string, aviso: string): string {
+  try {
+    const parsed = JSON.parse(result)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return JSON.stringify({ ...parsed, aviso })
+    }
+  } catch {
+    // Not a JSON object — leave the result untouched.
+  }
+  return result
+}
+
+/** One model call's billed tokens plus the tools its step went on to run. */
+export interface StepCost {
+  step: number
+  prompt: number
+  completion: number
+  tools: string[]
+}
+
+/** A run's cost, rolled up from its per-call records. */
+export interface RunCostSummary {
+  /** Model calls that actually billed (a call the provider left unpriced is dropped). */
+  calls: number
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
+  /** USD estimate, or null when either price is unset (mirrors the app's rule). */
+  costUsd: number | null
+  /** The costliest calls first (up to 3), for spotting where the tokens went. */
+  top: StepCost[]
+}
+
+/**
+ * Roll a run's per-call records into a summary, or null when the provider
+ * reported no usage at all (there is nothing to show).
+ *
+ * ⚠️ A call's figure is the whole accumulated prompt, not one tool's share:
+ * tokens are billed per call, and this cannot attribute them to a single tool.
+ * `top[i].tools` names what that step went on to run, so a costly step is
+ * recognisable even though the cost isn't the tool's alone.
+ */
+export function summarizeRunCost(cfg: AIConfig, records: StepCost[]): RunCostSummary | null {
+  const priced = records.filter((r) => r.prompt > 0 || r.completion > 0)
+  if (priced.length === 0) return null
+  const promptTokens = priced.reduce((s, r) => s + r.prompt, 0)
+  const completionTokens = priced.reduce((s, r) => s + r.completion, 0)
+  const costUsd =
+    typeof cfg.inputPricePer1M === 'number' && typeof cfg.outputPricePer1M === 'number'
+      ? (promptTokens / 1e6) * cfg.inputPricePer1M + (completionTokens / 1e6) * cfg.outputPricePer1M
+      : null
+  const top = [...priced]
+    .sort((a, b) => b.prompt + b.completion - (a.prompt + a.completion))
+    .slice(0, 3)
+  return {
+    calls: priced.length,
+    promptTokens,
+    completionTokens,
+    totalTokens: promptTokens + completionTokens,
+    costUsd,
+    top
+  }
+}
+
+/**
+ * Log a run's cost breakdown to the console — a diagnostic to spot waste in
+ * production. The model is what chooses to filter and scope, and this shows
+ * whether it did. Silent when there was nothing billed.
+ */
+function logRunCost(cfg: AIConfig, records: StepCost[]): void {
+  const s = summarizeRunCost(cfg, records)
+  if (!s) return
+  const lines = s.top.map((r) => {
+    const what = r.tools.length ? r.tools.join(', ') : '(resposta final)'
+    return `    passo ${r.step}: ${r.prompt + r.completion} tokens (prompt ${r.prompt} + saída ${r.completion}) — ${what}`
+  })
+  console.info(
+    `[agente] custo da execução: ${s.calls} chamada(s), ${s.totalTokens} tokens ` +
+      `(prompt ${s.promptTokens} + saída ${s.completionTokens})` +
+      (s.costUsd != null ? `, ~$${s.costUsd.toFixed(4)}` : '') +
+      '\n  ⚠️ estimativa: tokens são por chamada (histórico acumulado), não por ferramenta.' +
+      '\n  chamadas mais caras:\n' +
+      lines.join('\n')
+  )
+}
+
 /**
  * The tool-calling loop: call the model with tools; while it returns
  * tool_calls, run each against the store and feed the results back; stop when
@@ -489,100 +712,199 @@ export async function runAgent(
   // Clamped, not trusted: this number now comes from a setting the user can
   // hand-edit in ai-config.json, and each step is a paid model call.
   const maxSteps = resolveMaxSteps(opts.maxSteps ?? MAX_STEPS, false)
+  // Pick the model once, from the message that started the run: a code task goes
+  // to `modelComplex` (when configured), the rest stays on the cheaper `model`.
+  // Every call this run makes uses `rcfg`, so the whole loop runs on one model.
+  const rcfg: AIConfig = { ...cfg, model: routeModel(lastUserText(conversation), cfg) }
   const msgs: ApiMessage[] = [{ role: 'system', content: SYSTEM_PROMPT }, ...conversation]
   const { onStream, onStatus, onToolEnd } = opts
-  // Tracks how often each read call (tool + args) has been made this run, so the
-  // brake below can stop one the model keeps repeating instead of re-running it.
+  // Run-scoped brake state. Each counter/list lives for one run only, so a
+  // brake never carries over into the next answer.
+  //  - readRepeats: how often each exact read call (tool + args) was made.
+  //  - blindFileReads: how often each file was read *whole* (ler_arquivo, no scope).
+  //  - searchTerms: recent buscar_no_codigo terms, for fuzzy-dup warnings.
   const readRepeats = new Map<string, number>()
+  const blindFileReads = new Map<string, number>()
+  const searchTerms: string[] = []
 
-  for (let step = 0; step < maxSteps; step++) {
-    // 1-based for display: the badge on the first step should read "1/40".
-    const progress: StepProgress = { step: step + 1, maxSteps }
-    if (opts.shouldAbort?.()) return 'Execução interrompida.'
-    // Prune a copy, not `msgs` itself: the run keeps its full history, and only
-    // what goes over the wire is trimmed.
-    const assistant = await callModelResilient(cfg, pruneSupersededResults(msgs), TOOL_DEFS, opts)
-    msgs.push(assistant)
-    const calls = assistant.tool_calls
-    if (!calls || calls.length === 0) return contentText(assistant.content)
-
-    // This step calls tools, so its text is only a remark on the way to the
-    // real answer ("deixa eu ver as tasks…"). Keep it as a status line — the
-    // streamed copy is about to be cleared for the next step.
-    const remark = contentText(assistant.content).trim()
-    if (remark) {
-      onStatus?.(remark, 'remark', progress)
-      // Hand off from the typing bubble to the status line now, not at the top
-      // of the next step — the tools in between can take a while, and the text
-      // would sit on screen twice.
-      onStream?.('')
+  // A read call's brake, or null to let it run. Computed once per read (its
+  // counters increment as a side effect), never for a write. Two brakes:
+  // the exact-repeat one (same tool + args, READ_REPEAT_LIMIT) and the blind
+  // whole-file one (same file re-read without a scope, BLIND_FILE_READ_LIMIT).
+  const readBrake = (name: string, args: Record<string, unknown>): string | null => {
+    if (bumpReadRepeat(readRepeats, name, args) >= READ_REPEAT_LIMIT) {
+      // The model is looping on the same read. Hand back a nudge to conclude
+      // with what it has instead of burning steps re-fetching the same answer.
+      return JSON.stringify({
+        error: `Você já fez esta chamada ${READ_REPEAT_LIMIT}x com os mesmos argumentos e obteve o mesmo resultado. Não repita — responda com o que já tem.`
+      })
     }
+    const blindSig = blindFileReadSignature(name, args)
+    if (blindSig && bumpCount(blindFileReads, blindSig) >= BLIND_FILE_READ_LIMIT) {
+      const caminho = typeof args.caminho === 'string' ? args.caminho : 'esse arquivo'
+      return JSON.stringify({
+        error: `Você já leu "${caminho}" inteiro nesta execução. Se precisa de um trecho específico, use "simbolo", "linha_inicio"/"linha_fim" ou "inicio" — não releia o arquivo todo.`
+      })
+    }
+    return null
+  }
 
-    // Parse args once; a tool result must be returned for every tool_call.
-    const parsed = calls.map((call) => {
-      try {
-        const args = call.function.arguments ? JSON.parse(call.function.arguments) : {}
-        return { call, args: args as Record<string, unknown>, parseError: null as string | null }
-      } catch {
-        return { call, args: {} as Record<string, unknown>, parseError: 'Argumentos inválidos (JSON)' }
+  // Per-run cost accounting for the end-of-run log. onUsage still reaches the
+  // caller; this wrapper also records each call so logRunCost can break it down.
+  const costRecords: StepCost[] = []
+  // The wrapper fills in the record for the call in flight — the one just pushed
+  // before the call, so it is always the last. Reporting through a fresh record
+  // per call sidesteps the flow-narrowing a mutable local would trip on. Retries
+  // don't double-count: callModelResilient reports usage once, on success only.
+  const runOpts: RunAgentOptions = {
+    ...opts,
+    onUsage: (u) => {
+      const rec = costRecords[costRecords.length - 1]
+      if (rec) {
+        rec.prompt = u.promptTokens
+        rec.completion = u.completionTokens
       }
-    })
-
-    // Gate write tools behind approval; reads run without asking.
-    const writes = parsed
-      .filter((p) => !p.parseError && isWriteTool(p.call.function.name))
-      .map((p) => ({ id: p.call.id, name: p.call.function.name, args: p.args }))
-    const approved = writes.length > 0 ? await onApprove(writes) : new Set<string>()
-
-    for (const { call, args, parseError } of parsed) {
-      let result: string
-      if (parseError) {
-        result = JSON.stringify({ error: parseError })
-      } else if (isWriteTool(call.function.name) && !approved.has(call.id)) {
-        result = JSON.stringify({ error: 'Ação recusada pelo usuário' })
-      } else if (
-        !isWriteTool(call.function.name) &&
-        bumpReadRepeat(readRepeats, call.function.name, args) >= READ_REPEAT_LIMIT
-      ) {
-        // Soft brake: the model is looping on the same read (same tool + args).
-        // Don't run it again — hand back a nudge to conclude with what it has.
-        // Complements maxSteps: it ends a stuck run early instead of letting it
-        // burn every remaining step re-fetching an answer it already holds. The
-        // nudge goes back as an ordinary tool result, so no work is discarded.
-        result = JSON.stringify({
-          error: `Você já fez esta chamada ${READ_REPEAT_LIMIT}x com os mesmos argumentos e obteve o mesmo resultado. Não repita — responda com o que já tem.`
-        })
-      } else {
-        onStatus?.(describeToolActivity(call.function.name, args), 'tool', progress)
-        try {
-          result = await runTool(call.function.name, args)
-        } finally {
-          onToolEnd?.()
-        }
-      }
-      msgs.push({ role: 'tool', tool_call_id: call.id, content: result })
+      opts.onUsage?.(u)
     }
   }
 
-  // Safety cap reached — force a final text answer with tools disabled.
-  //
-  // ⚠️ Say so *before* that answer lands. The forced reply reads exactly like a
-  // normal one: the model summarises what it has and gives no sign it was cut
-  // off mid-task. Without this line the two outcomes are indistinguishable in
-  // the transcript, so a run that stopped halfway through implementing
-  // something is read as a finished job — the user acts on a partial result
-  // believing it is the whole one. A run that *concluded* never reaches here
-  // (it returns from inside the loop), so this cannot fire on a healthy run.
-  onStatus?.(
-    `Limite de ${maxSteps} passos atingido — a tarefa pode estar incompleta. ` +
-      'O assistente vai resumir só o que deu tempo de fazer. Para ir mais longe, ' +
-      `aumente "Passos máximos" nas configurações (máx. ${MAX_STEPS_LIMIT}).`,
-    'remark'
-  )
-  const final = await callModelResilient(cfg, pruneSupersededResults(msgs), undefined, opts)
-  return (
-    contentText(final.content) ||
-    `Parei ao atingir o limite de ${maxSteps} passos, sem conseguir concluir. ` +
-      'Tente dividir o pedido em partes menores ou aumentar "Passos máximos" nas configurações.'
-  )
+  // Per-run efficiency counters, sent to the main process at the end (Task 8).
+  // steps counts completed model rounds; the two waste signals count how often
+  // the run's own brakes/warnings fired.
+  let stepsRun = 0
+  let redundantSearches = 0
+  let repeatedReads = 0
+  let hitStepCap = false
+
+  try {
+    for (let step = 0; step < maxSteps; step++) {
+      // 1-based for display: the badge on the first step should read "1/40".
+      const progress: StepProgress = { step: step + 1, maxSteps }
+      if (opts.shouldAbort?.()) return 'Execução interrompida.'
+      // Open this step's cost record *before* the call, so onUsage (firing
+      // during it) fills this one; its tools are appended as they run below.
+      const cost: StepCost = { step: step + 1, prompt: 0, completion: 0, tools: [] }
+      costRecords.push(cost)
+      // Prune a copy, not `msgs` itself: the run keeps its full history, and only
+      // what goes over the wire is trimmed.
+      const assistant = await callModelResilient(rcfg, pruneSupersededResults(msgs), TOOL_DEFS, runOpts)
+      msgs.push(assistant)
+      // Count a step only once its model call came back — a thrown call is not a
+      // completed round, and shouldn't inflate the efficiency average.
+      stepsRun++
+      // The call is done, so its cost is known: attach it to this step's badge.
+      // Only when billed — a 0 would read as "free" rather than "unknown".
+      if (cost.prompt + cost.completion > 0) progress.tokens = cost.prompt + cost.completion
+      const calls = assistant.tool_calls
+      if (!calls || calls.length === 0) return contentText(assistant.content)
+
+      // This step calls tools, so its text is only a remark on the way to the
+      // real answer ("deixa eu ver as tasks…"). Keep it as a status line — the
+      // streamed copy is about to be cleared for the next step.
+      const remark = contentText(assistant.content).trim()
+      if (remark) {
+        onStatus?.(remark, 'remark', progress)
+        // Hand off from the typing bubble to the status line now, not at the top
+        // of the next step — the tools in between can take a while, and the text
+        // would sit on screen twice.
+        onStream?.('')
+      }
+
+      // Parse args once; a tool result must be returned for every tool_call.
+      const parsed = calls.map((call) => {
+        try {
+          const args = call.function.arguments ? JSON.parse(call.function.arguments) : {}
+          return { call, args: args as Record<string, unknown>, parseError: null as string | null }
+        } catch {
+          return { call, args: {} as Record<string, unknown>, parseError: 'Argumentos inválidos (JSON)' }
+        }
+      })
+
+      // Gate write tools behind approval; reads run without asking.
+      const writes = parsed
+        .filter((p) => !p.parseError && isWriteTool(p.call.function.name))
+        .map((p) => ({ id: p.call.id, name: p.call.function.name, args: p.args }))
+      const approved = writes.length > 0 ? await onApprove(writes) : new Set<string>()
+
+      for (const { call, args, parseError } of parsed) {
+        const name = call.function.name
+        const isWrite = isWriteTool(name)
+        // Read brakes increment run-scoped counters, so compute once per read
+        // (whether or not it fires) and never for a write.
+        const brake = !parseError && !isWrite ? readBrake(name, args) : null
+        let result: string
+        if (parseError) {
+          result = JSON.stringify({ error: parseError })
+        } else if (isWrite && !approved.has(call.id)) {
+          result = JSON.stringify({ error: 'Ação recusada pelo usuário' })
+        } else if (brake) {
+          result = brake
+          repeatedReads++
+        } else {
+          cost.tools.push(name)
+          onStatus?.(describeToolActivity(name, args), 'tool', progress)
+          try {
+            result = await runTool(name, args)
+          } finally {
+            onToolEnd?.()
+          }
+          // A fuzzy-duplicate search still runs, but carries a nudge to reuse
+          // the earlier results instead of re-searching a variation.
+          if (name === 'buscar_no_codigo') {
+            const warn = fuzzySearchWarning(searchTerms, args)
+            if (warn) {
+              result = withAviso(result, warn)
+              redundantSearches++
+            }
+          }
+        }
+        msgs.push({ role: 'tool', tool_call_id: call.id, content: result })
+      }
+    }
+
+    // Safety cap reached — force a final text answer with tools disabled.
+    //
+    // ⚠️ Say so *before* that answer lands. The forced reply reads exactly like a
+    // normal one: the model summarises what it has and gives no sign it was cut
+    // off mid-task. Without this line the two outcomes are indistinguishable in
+    // the transcript, so a run that stopped halfway through implementing
+    // something is read as a finished job — the user acts on a partial result
+    // believing it is the whole one. A run that *concluded* never reaches here
+    // (it returns from inside the loop), so this cannot fire on a healthy run.
+    hitStepCap = true
+    onStatus?.(
+      `Limite de ${maxSteps} passos atingido — a tarefa pode estar incompleta. ` +
+        'O assistente vai resumir só o que deu tempo de fazer. Para ir mais longe, ' +
+        `aumente "Passos máximos" nas configurações (máx. ${MAX_STEPS_LIMIT}).`,
+      'remark'
+    )
+    costRecords.push({ step: maxSteps + 1, prompt: 0, completion: 0, tools: [] })
+    const final = await callModelResilient(rcfg, pruneSupersededResults(msgs), undefined, runOpts)
+    return (
+      contentText(final.content) ||
+      `Parei ao atingir o limite de ${maxSteps} passos, sem conseguir concluir. ` +
+        'Tente dividir o pedido em partes menores ou aumentar "Passos máximos" nas configurações.'
+    )
+  } finally {
+    logRunCost(rcfg, costRecords)
+    // Best-effort per-run metric for the efficiency log (main persists it).
+    // Guarded and fire-and-forget: a bookkeeping failure — or an absent bridge
+    // in tests — must never touch the run. Only recorded once a round completed.
+    if (stepsRun > 0) {
+      const s = summarizeRunCost(rcfg, costRecords)
+      void window.electronAPI?.ai?.runMetrics
+        ?.append?.({
+          model: rcfg.model,
+          steps: stepsRun,
+          calls: s?.calls ?? 0,
+          promptTokens: s?.promptTokens ?? 0,
+          completionTokens: s?.completionTokens ?? 0,
+          totalTokens: s?.totalTokens ?? 0,
+          redundantSearches,
+          repeatedReads,
+          hitStepCap
+        })
+        ?.catch(() => {})
+    }
+  }
 }

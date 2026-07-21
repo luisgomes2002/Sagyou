@@ -16,17 +16,15 @@ import { existsSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 
-/**
- * `cat` by absolute path, resolved once.
- *
- * The agent stubs below run with PATH narrowed to a directory holding only the
- * stub itself (see the spawn note there), so a bare `cat` is not found and the
- * script dies with exit 127 having echoed nothing.
- */
-const CAT = ['/bin/cat', '/usr/bin/cat'].find((p) => existsSync(p)) ?? 'cat'
-
 /** channel -> handler, filled in when the module registers them. */
 const handlers = new Map<string, (event: unknown, ...args: never[]) => unknown>()
+
+/**
+ * main -> renderer sends (mainWindow.webContents.send), captured so the native
+ * code-agent tests can read its streamed output and answer its approval cards.
+ * Hoisted so the electron mock factory below can push into it.
+ */
+const winSent = vi.hoisted(() => [] as { channel: string; payload: unknown }[])
 
 let userData: string
 
@@ -43,7 +41,11 @@ vi.mock('electron', () => ({
     on: vi.fn()
   },
   BrowserWindow: class {
-    webContents = { setWindowOpenHandler: vi.fn(), send: vi.fn(), isDestroyed: () => false }
+    webContents = {
+      setWindowOpenHandler: vi.fn(),
+      send: (channel: string, payload: unknown) => winSent.push({ channel, payload }),
+      isDestroyed: () => false
+    }
     on = vi.fn()
     loadURL = vi.fn()
     loadFile = vi.fn()
@@ -793,388 +795,181 @@ describe('ai:conversations:rename', () => {
 // -----------------------------------------------------------------------------
 
 /**
- * The code agent's output outliving whoever was watching.
+ * The native code agent (the loop in ../code-agent), driven end to end through
+ * the real `ai:code-agent:run` handler against the stand-in provider.
  *
- * The agent is a child process that runs for minutes (a code review is the
- * point), and the user is meant to keep working meanwhile. But its output is a
- * live stream, and the only thing accumulating it was a panel inside AIView —
- * unmounted the moment another view is active. Everything printed while the
- * user was elsewhere went nowhere, and an agent that finished while they were
- * away left nothing at all. Main buffers it now, because main owns the process.
+ * The old external-codex tests were removed with the codex spawn path; the loop
+ * itself is unit-tested in code-agent.test.ts. What these cover is the IPC glue
+ * the unit tests can't: the run handler streaming to the panel, the real model
+ * in the banner, and the per-action approval round-trip.
  */
-describe('ai:code-agent output survives the panel', () => {
+describe('native code agent', () => {
   let dir: string
-  /** Holds the stand-in agent. PATH is narrowed to this — see beforeAll. */
-  let binDir: string
-  const oldPath = process.env.PATH
-
-  // codex is the only agent now, so the stub stands in for it. It must drain
-  // stdin: the handler pipes the prompt in (codex reads it via `-`) and a stub
-  // that never reads would leave the write to EPIPE.
-  const fakeAgent = (body: string): Promise<void> =>
-    writeFile(join(binDir, 'codex'), `#!/bin/sh\n${body}\n${CAT} >/dev/null\n`, { mode: 0o755 })
-
-  beforeAll(async () => {
-    dir = await mkdtemp(join(tmpdir(), 'agent-cwd-'))
-    binDir = await mkdtemp(join(tmpdir(), 'agent-bin-'))
-    // PATH is *replaced*, not prepended. Both aider and codex are really
-    // installed on a dev machine, and the handler spawns whatever it finds:
-    // prepending let a test fire the real codex, which sits waiting on stdin
-    // and never exits, poisoning every test after it. The only agent reachable
-    // from here is the script below; `codex` resolves to nothing, on purpose.
-    process.env.PATH = binDir
-    await fakeAgent('echo "LINHA_UM"\necho "LINHA_DOIS"\nexit 0')
-  })
-
-  afterAll(async () => {
-    process.env.PATH = oldPath
-    await rm(dir, { recursive: true, force: true })
-    await rm(binDir, { recursive: true, force: true })
-  })
-
-  const status = (): Promise<{ running: boolean; log: string }> =>
-    invoke('ai:code-agent:status')
-
-  /** Wait for the agent to exit, so the buffer is complete. */
-  const settle = async (): Promise<void> => {
-    for (let i = 0; i < 100; i++) {
-      if (!(await status()).running) return
-      await new Promise((r) => setTimeout(r, 20))
-    }
-    throw new Error('the agent never exited')
-  }
 
   beforeEach(async () => {
-    await invoke('ai:config:set', { baseUrl, apiKey: 'k', model: 'm' })
+    dir = await mkdtemp(join(tmpdir(), 'sagyou-agent-run-'))
+    await writeFile(join(dir, 'a.ts'), 'export const a = 1\n')
+    winSent.length = 0
+    // Point both chat and code-agent at the stand-in server. Sandbox off: ai-jail
+    // isn't installed in CI, and the run would otherwise be blocked by the gate.
+    await invoke('ai:config:set', { baseUrl, apiKey: 'k', model: 'meu-modelo', sandboxEnabled: false })
   })
-
-  // Never leave a child running into the next test.
   afterEach(async () => {
     await invoke('ai:code-agent:stop')
+    await rm(dir, { recursive: true, force: true })
   })
 
-  it('keeps what the agent printed, for a panel that was not there to hear it', async () => {
-    const res = await invoke<{ success: boolean }>('ai:code-agent:run', {
-      path: dir,
-      task: 'revisar o código'
-    })
-    expect(res.success).toBe(true)
-    await settle()
-
-    // Nobody was listening to ai:code-agent:output — which is exactly the case
-    // when the user is on the Board — and the output is still here.
-    const { log } = await status()
-    expect(log).toContain('LINHA_UM')
-    expect(log).toContain('LINHA_DOIS')
-  })
-
-  it('records that the run is over, not merely that it went quiet', async () => {
-    await invoke('ai:code-agent:run', { path: dir, task: 't' })
-    await settle()
-
-    // A returning user has to be able to tell "finished" from "still working".
-    const { running, log } = await status()
-    expect(running).toBe(false)
-    expect(log).toContain('agente encerrado')
-  })
-
-  it('starts a new log per run, instead of stacking reviews together', async () => {
-    await invoke('ai:code-agent:run', { path: dir, task: 'primeira' })
-    await settle()
-    await invoke('ai:code-agent:run', { path: dir, task: 'segunda' })
-    await settle()
-
-    const { log } = await status()
-    // Two runs, one panel: the old output prepended to the new would read as
-    // one very confusing review.
-    expect(log.match(/LINHA_UM/g)).toHaveLength(1)
-  })
-
-  it('does not wipe the last run when a bad request is refused', async () => {
-    await invoke('ai:code-agent:run', { path: dir, task: 'boa' })
-    await settle()
-
-    // Refused before anything spawns — the user may still be reading the panel.
-    expect(
-      await invoke('ai:code-agent:run', { path: dir, task: '  ' })
-    ).toMatchObject({ success: false })
-    expect(
-      await invoke('ai:code-agent:run', { path: join(dir, 'nao-existe'), task: 't' })
-    ).toMatchObject({ success: false })
-
-    expect((await status()).log).toContain('LINHA_UM')
-  })
-
-  it('keeps the "not installed" line, the one nobody is ever watching for', async () => {
-    // Fires instantly, usually before the user has looked at the panel — and it
-    // is the most useful line the panel can show. codex is the only agent now,
-    // so the stub has to be taken off PATH to reach the not-found path at all.
-    const withStub = process.env.PATH
-    const empty = await mkdtemp(join(tmpdir(), 'agent-none-'))
-    process.env.PATH = empty
-    // ⚠️ Emptying PATH is no longer enough. resolveExecutable also searches the
-    // node-version-manager / npm-prefix dirs (that is the point of it — a
-    // GUI-launched app doesn't get the user's shell PATH), and codex really is
-    // installed in one of them on a dev machine: ~/.npm-global/bin here,
-    // /usr/local/bin on a Mac. Reaching the real binary would spawn something
-    // that waits on stdin and never exits, poisoning every later test — the
-    // same trap the PATH replacement above exists to avoid.
-    process.env.SAGYOU_DISABLE_BIN_FALLBACK = '1'
-    const res = await invoke<{ success: boolean }>('ai:code-agent:run', {
-      path: dir,
-      task: 't'
-    })
-    delete process.env.SAGYOU_DISABLE_BIN_FALLBACK
-    process.env.PATH = withStub
-    await rm(empty, { recursive: true, force: true })
-    expect(res.success).toBe(false)
-
-    const { log } = await status()
-    expect(log).toMatch(/não encontrado|erro ao iniciar/)
-  })
-
-  // The banner: which path a run took. Pinned files (aider gets --file +
-  // --map-tokens 0) and discovery (aider maps the whole tree) differ by minutes
-  // on a one-line change, and from the panel they used to look identical — a
-  // path the model got wrong is dropped in silence and quietly degrades to the
-  // slow path. These pin that the panel can tell them apart.
-  it('says when files were pinned, and names them', async () => {
-    await writeFile(join(dir, 'alvo.ts'), 'export const x = 1\n')
-
-    await invoke('ai:code-agent:run', {
-      path: dir,
-      task: 't',
-      files: ['alvo.ts']
-    })
-    await settle()
-
-    const { log } = await status()
-    expect(log).toContain('1 arquivo(s) fixado(s)')
-    expect(log).toContain('alvo.ts')
-    expect(log).not.toContain('nenhum arquivo fixado')
-  })
-
-  it('says when nothing was pinned, since that is the slow path', async () => {
-    await invoke('ai:code-agent:run', { path: dir, task: 't' })
-    await settle()
-
-    const { log } = await status()
-    expect(log).toContain('nenhum arquivo fixado')
-    expect(log).toContain('próprias ferramentas')
-  })
-
-  it('names a dropped path instead of degrading to discovery in silence', async () => {
-    await invoke('ai:code-agent:run', {
-      path: dir,
-      task: 't',
-      // Escapes the root, and does not exist: both are dropped by the handler.
-      files: ['../fora.ts', 'nao-existe.ts']
-    })
-    await settle()
-
-    const { log } = await status()
-    expect(log).toContain('2 caminho(s) descartado(s)')
-    expect(log).toContain('nao-existe.ts')
-    // The consequence, not just the fact — this is why the run was slow.
-    expect(log).toContain('caiu na descoberta')
-  })
-
-  it('says the app config does not pick the model, because codex picks its own', async () => {
-    await invoke('ai:config:set', { baseUrl, apiKey: 'k', model: 'modelo-xyz' })
-    await invoke('ai:code-agent:run', { path: dir, task: 't' })
-    await settle()
-
-    // codex authenticates and chooses its model by itself, so naming the app's
-    // configured model here would state a falsehood about what just ran.
-    const { log } = await status()
-    expect(log).toContain('não usa a config do app')
-    expect(log).not.toContain('modelo-xyz')
-  })
-
-  it('reports how long the run took, since the panel has no other clock', async () => {
-    await invoke('ai:code-agent:run', { path: dir, task: 't' })
-    await settle()
-
-    // Comparing two agents (or two models) is the reason this exists, and it
-    // was impossible from the panel: the exit line carries only a status code.
-    expect((await status()).log).toMatch(/\[sagyou\] duração: \d+\.\d+s/)
-  })
-
-  // The failure that motivated the hint: codex's Linux sandbox (bubblewrap) can't
-  // create user namespaces on Ubuntu 23.10+, so it reads nothing, writes nothing,
-  // and exits 0. Nothing about that run looks wrong from the outside.
-  it('recognises the broken-sandbox run that exits 0 having done nothing', async () => {
-    await fakeAgent(
-      'echo "warning: Codex\'s Linux sandbox uses bubblewrap and needs access to create user namespaces."\n' +
-        'echo "bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted"\n' +
-        'exit 0'
-    )
-    await invoke('ai:code-agent:run', { path: dir, task: 't' })
-    await settle()
-
-    const s = await invoke<{ log: string; hint: { title: string; command?: string } | null }>(
-      'ai:code-agent:status'
-    )
-    // Structured, for the panel — the log is behind a toggle, so a log-only
-    // message never reaches the user who doesn't know to go looking.
-    expect(s.hint).not.toBeNull()
-    expect(s.hint?.command).toContain('apparmor_restrict_unprivileged_userns=0')
-    // And in the log too, so a pasted transcript carries the diagnosis.
-    expect(s.log).toContain('sandbox do codex')
-  })
-
-  it('leaves hint null for an ordinary run, and clears it on the next one', async () => {
-    await fakeAgent('echo "warning: bwrap: Failed RTM_NEWADDR"\nexit 0')
-    await invoke('ai:code-agent:run', { path: dir, task: 't' })
-    await settle()
-    expect((await invoke<{ hint: unknown }>('ai:code-agent:status')).hint).not.toBeNull()
-
-    // A diagnosis carried over from the previous run is worse than none: it
-    // would blame a healthy run for a problem it didn't have.
-    await fakeAgent('echo "tudo certo"\nexit 0')
-    await invoke('ai:code-agent:run', { path: dir, task: 't' })
-    await settle()
-    expect((await invoke<{ hint: unknown }>('ai:code-agent:status')).hint).toBeNull()
-
-    await fakeAgent('echo "LINHA_UM"\necho "LINHA_DOIS"\nexit 0') // restore for later tests
-  })
-
-  it('detects a marker split across two chunks', async () => {
-    // Real output arrives in arbitrarily sized pieces; a per-chunk test would
-    // miss a marker that straddles the boundary.
-    await fakeAgent('printf "bwrap: loopback: Failed RTM_"\nsleep 0.1\nprintf "NEWADDR denied\\n"\nexit 0')
-    await invoke('ai:code-agent:run', { path: dir, task: 't' })
-    await settle()
-
-    expect((await invoke<{ hint: unknown }>('ai:code-agent:status')).hint).not.toBeNull()
-    await fakeAgent('echo "LINHA_UM"\necho "LINHA_DOIS"\nexit 0')
-  })
-
-  it('keeps only the tail of a chatty agent', async () => {
-    // ~1000 lines x ~15 chars comfortably overruns the 8000-char cap; 400 did
-    // not, and the test passed for the wrong reason.
-    await fakeAgent('i=0\nwhile [ $i -lt 1000 ]; do echo "enchimento-$i"; i=$((i+1)); done')
-
-    await invoke('ai:code-agent:run', { path: dir, task: 't' })
-    await settle()
-
-    // An unbounded buffer of a long agent run is a leak that grows for as long
-    // as the app is open.
-    const { log } = await status()
-    expect(log.length).toBeLessThanOrEqual(8000)
-    expect(log).toContain('enchimento-999') // the newest survives
-    expect(log).not.toContain('enchimento-0\n') // the oldest is gone
-  })
-})
-
-// -----------------------------------------------------------------------------
-
-/**
- * Handing the repo's guide to the agent before it touches code.
- *
- * The stub agents echo their own argv AND their stdin, so what's asserted is
- * what the real handler really spawned — not what a mock was told. Codex reads
- * its prompt from stdin (`-`), not argv, so the stdin echo is what carries it.
- */
-describe('the guide is given to the agent', () => {
-  let withGuide: string
-  let without: string
-  let binDir: string
-  const oldPath = process.env.PATH
-
-  beforeAll(async () => {
-    binDir = await mkdtemp(join(tmpdir(), 'guide-bin-'))
-    // PATH replaced, not prepended: the real codex is installed on a dev machine
-    // and the handler runs whatever it finds.
-    process.env.PATH = binDir
-    // `cat` echoes stdin, which is where codex's prompt arrives (via `-`), not
-    // in argv — so the assertions below can see the prompt the handler built.
-    await writeFile(join(binDir, 'codex'), `#!/bin/sh\necho "ARGV: $@"\n${CAT}\n`, { mode: 0o755 })
-
-    withGuide = await mkdtemp(join(tmpdir(), 'guide-yes-'))
-    await writeFile(join(withGuide, 'GUIDE.md'), '# guia do projeto\n')
-    without = await mkdtemp(join(tmpdir(), 'guide-no-'))
-  })
-
-  afterAll(async () => {
-    process.env.PATH = oldPath
-    await rm(binDir, { recursive: true, force: true })
-    await rm(withGuide, { recursive: true, force: true })
-    await rm(without, { recursive: true, force: true })
-  })
-
-  const argv = async (path: string): Promise<string> => {
-    await invoke('ai:config:set', { baseUrl, apiKey: 'k', model: 'm' })
-    await invoke('ai:code-agent:run', { path, task: 'faça algo' })
+  /** Wait until the running agent reports it has stopped (or time out). */
+  const waitDone = async (): Promise<{ log: string }> => {
     for (let i = 0; i < 100; i++) {
       const s = await invoke<{ running: boolean; log: string }>('ai:code-agent:status')
-      if (!s.running) return s.log
+      if (!s.running) return s
       await new Promise((r) => setTimeout(r, 20))
     }
-    throw new Error('the agent never exited')
+    throw new Error('agent did not finish')
   }
 
-  afterEach(async () => {
-    await invoke('ai:code-agent:stop')
-  })
+  /** The payload of the first main→renderer send on `channel`, if any. */
+  const firstSent = (channel: string): unknown =>
+    winSent.find((s) => s.channel === channel)?.payload
 
-  it('asks codex to read it, since codex exec has no --read', async () => {
-    const log = await argv(withGuide)
-
-    expect(log).toMatch(/leia o GUIDE\.md/i)
-    expect(log).toContain('faça algo') // the task itself still gets through
-  })
-
-  it('names pinned files to codex relatively, as the sentence promises', async () => {
-    await writeFile(join(withGuide, 'alvo.ts'), 'export const x = 1\n')
-    await invoke('ai:config:set', { baseUrl, apiKey: 'k', model: 'm' })
-    await invoke('ai:code-agent:run', {
-      path: withGuide,
-      task: 'faça algo',
-      files: ['alvo.ts']
-    })
-    for (let i = 0; i < 100; i++) {
-      const s = await invoke<{ running: boolean; log: string }>('ai:code-agent:status')
-      if (!s.running) {
-        // `files` reaches buildAgentCommand absolute (confineToRoot resolves
-        // it), so joining it raw said "caminhos relativos à raiz" and then gave
-        // an absolute path — contradicting itself and leaking the machine's home
-        // directory into the model's context.
-        expect(s.log).toContain('caminhos relativos à raiz): alvo.ts')
-        expect(s.log).not.toContain(`${withGuide}/alvo.ts`)
-        return
-      }
-      await new Promise((r) => setTimeout(r, 20))
+  it('runs the loop, banners the real model, and finishes', async () => {
+    // The model answers with plain text — no tools — so the loop ends at once.
+    reply = (_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'pronto: nada a fazer' } }] }))
     }
-    throw new Error('the agent never exited')
+
+    const res = await invoke<{ success: boolean; agent?: string }>('ai:code-agent:run', {
+      path: dir,
+      task: 'não faça nada'
+    })
+    expect(res.success).toBe(true)
+    // The banner names the REAL model (task 11), not "próprio do codex".
+    expect(res.agent).toBe('meu-modelo')
+
+    const { log } = await waitDone()
+    expect(log).toContain('modelo: meu-modelo')
+    expect(log).toContain('pronto: nada a fazer')
   })
 
-  it('does NOT hand our guide to a repo that has none', async () => {
-    // The bug this exists for: the agent runs wherever the project's code path
-    // points, which may be any repo on the machine. Briefing it on Sagyou's
-    // rules while it edits someone else's code is worse than briefing it on
-    // nothing.
-    expect(await argv(without)).not.toContain('leia o')
+  it('parks on a write, and writes only after the user approves', async () => {
+    let call = 0
+    reply = (_req, res) => {
+      call++
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      if (call === 1) {
+        // First turn: ask to write a file.
+        res.end(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  role: 'assistant',
+                  content: '',
+                  tool_calls: [
+                    {
+                      id: 'w1',
+                      type: 'function',
+                      function: {
+                        name: 'escrever_arquivo',
+                        arguments: JSON.stringify({ caminho: 'novo.ts', conteudo: 'export const b = 2\n' })
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          })
+        )
+      } else {
+        // After the tool result comes back, finish.
+        res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'feito' } }] }))
+      }
+    }
+
+    await invoke('ai:code-agent:run', { path: dir, task: 'crie novo.ts' })
+
+    // The loop parks on the approval; answer it once the card is sent.
+    let approvalId: string | undefined
+    for (let i = 0; i < 100 && !approvalId; i++) {
+      const req = firstSent('ai:code-agent:approve-request') as { id: string } | undefined
+      if (req) approvalId = req.id
+      else await new Promise((r) => setTimeout(r, 20))
+    }
+    expect(approvalId).toBeTruthy()
+    await invoke('ai:code-agent:approve-response', approvalId, true)
+
+    await waitDone()
+    // The write ran only because it was approved.
+    expect(existsSync(join(dir, 'novo.ts'))).toBe(true)
   })
 
-  it('leaves the codex prompt alone when the repo has no guide', async () => {
-    const log = await argv(without)
+  it('does not write when the user denies', async () => {
+    reply = (_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                role: 'assistant',
+                content: '',
+                tool_calls: [
+                  {
+                    id: 'w1',
+                    type: 'function',
+                    function: {
+                      name: 'escrever_arquivo',
+                      arguments: JSON.stringify({ caminho: 'nao.ts', conteudo: 'x' })
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        })
+      )
+    }
 
-    expect(log).not.toMatch(/leia o GUIDE\.md/i)
-    expect(log).toContain('faça algo')
+    await invoke('ai:code-agent:run', { path: dir, task: 'tente escrever' })
+
+    let approvalId: string | undefined
+    for (let i = 0; i < 100 && !approvalId; i++) {
+      const req = firstSent('ai:code-agent:approve-request') as { id: string } | undefined
+      if (req) approvalId = req.id
+      else await new Promise((r) => setTimeout(r, 20))
+    }
+    // Deny it, then keep answering "feito" so the loop can conclude.
+    reply = (_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'ok, não escrevi' } }] }))
+    }
+    await invoke('ai:code-agent:approve-response', approvalId, false)
+
+    await waitDone()
+    expect(existsSync(join(dir, 'nao.ts'))).toBe(false)
   })
 
-  it('names the guide by a path relative to the repo, not this machine', async () => {
-    // The agent's cwd is the repo, so 'GUIDE.md' resolves there. An absolute
-    // path would work here and be wrong everywhere else — and would put the
-    // user's directory layout into the agent's prompt.
-    const log = await argv(withGuide)
+  it('blocks the run when the sandbox is required but ai-jail is unavailable', async () => {
+    // Sandbox left ON (no sandboxEnabled:false), and ai-jail isn't installed in
+    // CI — so the gate must refuse the run rather than run it unconfined.
+    await invoke('ai:config:set', { baseUrl, apiKey: 'k', model: 'meu-modelo' })
+    const res = await invoke<{ success: boolean; error?: string }>('ai:code-agent:run', {
+      path: dir,
+      task: 'x'
+    })
+    expect(res.success).toBe(false)
+    expect(res.error).toMatch(/sandbox/i)
+  })
 
-    expect(log).toContain('leia o GUIDE.md')
-    expect(log).not.toContain(withGuide) // no absolute path in the prompt
+  it('ai:jail:status reports availability merged with config', async () => {
+    const s = await invoke<{ available: boolean; enabled: boolean; wslCommand: string }>('ai:jail:status')
+    expect(typeof s.available).toBe('boolean')
+    expect(typeof s.enabled).toBe('boolean')
+    expect(s.wslCommand).toBe('wsl --install')
   })
 })
-
 /**
  * Finding the agent when PATH doesn't have it.
  *

@@ -14,13 +14,43 @@ import {
 import { homedir } from 'os'
 import { readFile } from 'fs/promises'
 import { randomUUID } from 'crypto'
-import { spawn, type ChildProcess } from 'child_process'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import OpenAI from 'openai'
 import { loadData, saveData } from './store'
 import { appendEntry, newEntry, summarize, type TokenUsage, type UsageLogEntry } from './usage'
+import {
+  appendRunMetric,
+  newRunMetric,
+  summarizeRunMetrics,
+  type RunMetric,
+  type RunMetricInput
+} from './run-metrics'
 import { getOpenAIClient, requestOptions } from './openai-client'
-import { confineToRoot, walkFiles } from './code-files'
+import { confineToRoot, walkFiles, detectSymbols, extractSymbol, extractLines } from './code-files'
+import {
+  runCodeAgent,
+  buildSystemPrompt,
+  readProjectGuide,
+  dirTree,
+  defaultCommandRunner,
+  CODE_AGENT_MAX_STEPS,
+  type AgentMessage,
+  type CommandRunner,
+  type ToolDef as CodeToolDef,
+  type ToolCall as CodeToolCall
+} from './code-agent'
+import {
+  detectAiJail,
+  installAiJail,
+  wrapCommand,
+  runSandboxedWsl,
+  looksLikeSandboxBlock,
+  defaultExec,
+  WSL_INSTALL_COMMAND,
+  WSL_AI_JAIL_INSTALL_COMMANDS,
+  type JailStatus,
+  type InstallDeps
+} from './ai-jail'
 import { searchConversations } from './conversation-search'
 import { fetchWeb } from './web-fetch'
 import { renderWeb } from './web-render'
@@ -46,11 +76,6 @@ import {
 import icon from '../../resources/icon.png?asset'
 
 let mainWindow: BrowserWindow | null = null
-
-// A single external code agent (codex) at a time, spawned in the
-// selected project directory. Only launched after explicit user approval in
-// the renderer, since it can write files and run commands.
-let codeAgentProc: ChildProcess | null = null
 
 /**
  * What the code agent has printed so far, kept on this side.
@@ -92,7 +117,8 @@ let codeAgentBase: AgentBase | null = null
 let codeAgentRun: {
   id: string
   convId: string | null
-  agent: 'codex'
+  /** The model the run used — shown by the panel and the run picker. */
+  agent: string
   dir: string
   task: string
   startedAt: number
@@ -127,6 +153,82 @@ export interface AgentHint {
 
 /** Set for the current run when its output matched a known failure. */
 let codeAgentHint: AgentHint | null = null
+
+// --- Native code agent (the loop in ./code-agent) ---
+//
+// Unlike the old codex path there is no child process: the loop runs in-process
+// and its tools reach the disk directly, so what stands in for "kill the child"
+// is an abort flag the loop checks between steps, plus rejecting any approval
+// the loop is parked on.
+let codeAgentRunning = false
+let codeAgentAbort = false
+/** The model actually in use this run, surfaced to the panel (task 11). */
+let codeAgentModel = ''
+
+/**
+ * Approvals the loop is waiting on, keyed by a request id sent to the renderer.
+ * The renderer answers through `ai:code-agent:approve-response`, which resolves
+ * the matching promise. Stopping the run rejects them all as denied — a loop
+ * parked on a card the user will never see again must not hang forever.
+ */
+const pendingApprovals = new Map<string, (approved: boolean) => void>()
+
+/** Human summary of a write/command action, shown on the approval card. */
+function describeCodeAction(name: string, args: Record<string, unknown>): string {
+  if (name === 'escrever_arquivo') {
+    const caminho = typeof args.caminho === 'string' ? args.caminho : '?'
+    const bytes = typeof args.conteudo === 'string' ? Buffer.byteLength(args.conteudo, 'utf-8') : 0
+    return `Escrever arquivo ${caminho} (${bytes} bytes)`
+  }
+  if (name === 'executar_comando') {
+    const comando = typeof args.comando === 'string' ? args.comando : '?'
+    return `Executar comando: ${comando}`
+  }
+  return name
+}
+
+/** Stop the running agent: abort the loop and deny any parked approval. */
+function stopCodeAgent(): void {
+  codeAgentAbort = true
+  for (const resolve of pendingApprovals.values()) resolve(false)
+  pendingApprovals.clear()
+}
+
+/**
+ * One round-trip to the provider for the code agent. Non-streaming on purpose:
+ * assembling tool_calls from an SSE stream is the fiddly part the chat path
+ * already carries, and the code agent gains reliability (and simpler code) by
+ * taking the whole message at once — the panel still shows each tool_call the
+ * instant this returns.
+ */
+async function callCodeModel(
+  cfg: { baseUrl: string; apiKey: string; model: string },
+  messages: AgentMessage[],
+  tools: CodeToolDef[]
+): Promise<{ message: AgentMessage; usage?: TokenUsage }> {
+  const client = getOpenAIClient(cfg.baseUrl, cfg.apiKey)
+  const res = await client.chat.completions.create(
+    {
+      model: cfg.model,
+      // The wire shape matches OpenAI's; our AgentMessage is a strict subset.
+      messages: messages as unknown as Parameters<typeof client.chat.completions.create>[0]['messages'],
+      ...(tools.length
+        ? { tools: tools as unknown as Parameters<typeof client.chat.completions.create>[0]['tools'], tool_choice: 'auto' as const }
+        : {})
+    },
+    requestOptions(loadAIConfig().timeoutMs)
+  )
+  const m = res.choices?.[0]?.message
+  const toolCalls = (m?.tool_calls ?? []).filter((c) => c.type === 'function') as unknown as CodeToolCall[]
+  return {
+    message: {
+      role: 'assistant',
+      content: typeof m?.content === 'string' ? m.content : '',
+      ...(toolCalls.length ? { tool_calls: toolCalls } : {})
+    },
+    usage: toUsage(res.usage)
+  }
+}
 
 /**
  * Recognise failures that leave the agent reporting success while doing nothing.
@@ -249,124 +351,24 @@ export function resolveExecutable(
   return null
 }
 
-// Kill the running code agent (and its child tree on Windows, since a shell
-// wrapper won't propagate the kill to the real agent process).
-function killCodeAgent(): void {
-  const proc = codeAgentProc
-  if (!proc) return
-  codeAgentProc = null
-  if (process.platform === 'win32' && proc.pid) {
-    try {
-      spawn('taskkill', ['/pid', String(proc.pid), '/T', '/F'])
-    } catch {
-      proc.kill()
-    }
-  } else {
-    proc.kill()
-  }
-}
-
-/** The context file an agent should read first, if the target repo has one. */
-export const GUIDE_FILE = 'GUIDE.md'
-
-/**
- * Whether `dir` carries a guide for agents working in it.
- *
- * ⚠️ Checked against the **target directory**, never this repo. The agent runs
- * wherever the project's code path points, which may be any repo on the
- * machine; injecting Sagyou's own GUIDE.md there would brief the agent on this
- * app's rules while it edits something else entirely. A repo without a guide
- * simply gets none — that is the honest answer, not a reason to substitute ours.
- */
-function guideIn(dir: string): string | null {
-  try {
-    return existsSync(join(dir, GUIDE_FILE)) ? GUIDE_FILE : null
-  } catch {
-    return null
-  }
-}
-
-/**
- * The command that runs the external code agent.
- *
- * codex is the only agent, and there is deliberately no second code path.
- * ⚠️ Note this means the app's own AI config does not influence code editing
- * at all: codex authenticates and picks its model by itself.
- */
-function buildAgentCommand(
-  task: string,
-  dir: string,
-  files: string[]
-): { cmd: string; args: string[]; stdinData: string } {
-  // The hook: hand the repo's own guide to the agent before it touches code.
-  // Relative to the agent's cwd, which is `dir` — so the path is the same
-  // string for every repo and nothing leaks about the machine's layout.
-  const guide = guideIn(dir)
-
-  {
-    // Codex CLI reads the OpenAI-compatible endpoint from the env set below.
-    //
-    // It has no --read: it finds AGENTS.md by itself (and truncates a project
-    // doc past its budget, silently). So the guide is asked for in the prompt —
-    // the one channel codex exec has — and only when the repo actually has one.
-    // Codex has no --file either; when the caller pinned files, naming them in
-    // the prompt spares codex the same blind discovery.
-    // Relative, as the sentence promises. `files` arrives absolute (confineToRoot
-    // resolves it), so joining it raw contradicted the prompt in the same breath
-    // — and put the machine's home directory into the model's context for no
-    // reason, the same leak the guide path above is careful to avoid. codex runs
-    // with cwd = dir, so a relative path is also the one it can actually use.
-    const focus = files.length
-      ? `Edite estes arquivos (caminhos relativos à raiz): ${files
-          .map((f) => relative(dir, f) || f)
-          .join(', ')}.\n\n`
-      : ''
-    const prompt = guide
-      ? `Antes de alterar qualquer código, leia o ${guide} deste repositório e siga as regras dele.\n\n${focus}${task}`
-      : `${focus}${task}`
-    // `codex exec` is already non-interactive — it never prompts for approval, so
-    // there is no --ask-for-approval here (that flag is top-level only and `exec`
-    // rejects it with exit 2). What it still needs is write permission, and how it
-    // gets it is platform-split:
-    //   • Unix — `--sandbox workspace-write`: codex's sandbox is OS-level (Seatbelt
-    //     on macOS, Landlock on Linux), so this genuinely confines writes to the
-    //     workspace while letting it edit the project (the whole point). read-only
-    //     would let it plan edits it can never apply; danger-full-access is wider.
-    //   • Windows — `--dangerously-bypass-approvals-and-sandbox`: Windows has no
-    //     sandbox backend, so `--sandbox workspace-write` is silently downgraded to
-    //     read-only — codex then reads the code, reports success, and writes nothing
-    //     (verified in the wild and in a reproduction). `exec` exposes no --full-auto
-    //     or approval flag, only -s and this bypass, so it is the *only* way codex
-    //     can write on Windows. This is not "safe vs unsafe": Windows offers no OS
-    //     confinement either way, and the app already gates rodar_agente_codigo
-    //     behind explicit user approval before spawning. So the real choice is
-    //     "writes" vs "can't write".
-    const sandboxArgs =
-      process.platform === 'win32'
-        ? ['--dangerously-bypass-approvals-and-sandbox']
-        : ['--sandbox', 'workspace-write']
-    return {
-      cmd: 'codex',
-      args: [
-        'exec',
-        ...sandboxArgs,
-        // Read the prompt from stdin (`-`), never as a command-line argument. On
-        // Windows codex is a .cmd, so it runs through cmd.exe (shell: true), which
-        // word-splits a bare multi-word prompt into separate args ("Antes de …" →
-        // codex sees `de` as an unexpected argument). Untrusted, multi-line text
-        // stays off the command line entirely; `stdinData` is what gets piped in.
-        '-'
-      ],
-      stdinData: prompt
-    }
-  }
-}
+// NOTE: the external-codex path (buildAgentCommand / spawn / sandbox flags /
+// killCodeAgent) was removed when the native code agent (./code-agent) replaced
+// it. Two pure helpers (resolveExecutable, detectAgentHint) are kept above with
+// their unit tests; they are no longer wired into anything and can be deleted in
+// a follow-up once the native agent is confirmed in the wild.
 
 // --- AI config (persisted to ai-config.json in userData, not the DB) ---
 interface AIConfig {
   baseUrl: string
   apiKey: string
   model: string
+  /**
+   * Optional heavier model for code/analysis tasks. When set, runAgent routes a
+   * message that looks like one (see routeModel in ../renderer/src/ai/agent) to
+   * this model and leaves the cheaper `model` for everything else. Absent means
+   * "one model for everything", the previous behaviour.
+   */
+  modelComplex?: string
   /** Optional cap on the agent's tool rounds; absent means the per-mode default. */
   maxSteps?: number
   /**
@@ -387,9 +389,48 @@ interface AIConfig {
    * ride the ai:config plumbing instead of earning a file of its own.
    */
   lastConversationId?: string
+  /**
+   * A separate provider for the native code agent (the loop in ./code-agent).
+   * Any field left empty falls back to the chat config above — so a user who
+   * wants one model for chat and a stronger one for editing sets only what
+   * differs, and a user who wants the same for both sets nothing here.
+   */
+  codeAgent?: {
+    baseUrl?: string
+    apiKey?: string
+    model?: string
+  }
+  /**
+   * Whether the ai-jail sandbox is required for the code agent's shell commands.
+   * **Absent means enabled** (mandatory by default) — so a fresh install is
+   * safe-by-default and only an explicit `false` (the user unticked the box,
+   * accepting the risk) runs commands unsandboxed. See ./ai-jail.
+   */
+  sandboxEnabled?: boolean
+  /**
+   * Set once the user has answered the sandbox onboarding (installed it, or
+   * clicked "Depois"), so the modal doesn't reappear every time the AI view
+   * opens. A machine that already had ai-jail skips onboarding regardless.
+   */
+  sandboxOnboardingDismissed?: boolean
 }
 
 const DEFAULT_AI_CONFIG: AIConfig = { baseUrl: '', apiKey: '', model: '' }
+
+/**
+ * The provider the code agent should use: its own fields where set, the chat
+ * config where not. Kept here (not in the renderer) because the loop runs in
+ * main — the renderer only edits the config, it never runs the agent.
+ */
+function resolveCodeAgentConfig(cfg: AIConfig): { baseUrl: string; apiKey: string; model: string } {
+  const ca = cfg.codeAgent ?? {}
+  const pick = (a: string | undefined, b: string): string => (a && a.trim() ? a.trim() : b)
+  return {
+    baseUrl: pick(ca.baseUrl, cfg.baseUrl),
+    apiKey: pick(ca.apiKey, cfg.apiKey),
+    model: pick(ca.model, cfg.model)
+  }
+}
 const aiConfigPath = (): string => join(app.getPath('userData'), 'ai-config.json')
 
 /**
@@ -426,6 +467,54 @@ function saveAIConfig(config: AIConfig): void {
   writeFileSync(aiConfigPath(), JSON.stringify(config, null, 2), 'utf-8')
 }
 
+// --- ai-jail sandbox (see ./ai-jail) ---
+//
+// Detection is cached: it spawns `ai-jail --version` across a few candidate
+// paths, which is cheap but not free, and the answer only changes when the user
+// installs it. `refresh` re-runs it (after an install, or when the UI asks).
+let jailStatusCache: JailStatus | null = null
+async function getJailStatus(refresh = false): Promise<JailStatus> {
+  if (!jailStatusCache || refresh) jailStatusCache = await detectAiJail(defaultExec)
+  return jailStatusCache
+}
+
+/** Whether the sandbox is required for this run (default on; explicit false = off). */
+function sandboxRequired(cfg: AIConfig): boolean {
+  return cfg.sandboxEnabled !== false
+}
+
+/** Fetch a small text file (the .sha256 sidecar) for the installer. */
+async function fetchText(url: string): Promise<string> {
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`HTTP ${res.status} ao buscar ${url}`)
+  return res.text()
+}
+
+/**
+ * Download `url` into `dest`, reporting byte progress. Buffered in memory then
+ * written once — the asset is a few MB, and this keeps a partial file off disk
+ * if the transfer fails midway (the caller checksums it before installing).
+ */
+async function downloadTo(
+  url: string,
+  dest: string,
+  onBytes: (received: number, total: number | null) => void
+): Promise<number> {
+  const res = await fetch(url)
+  if (!res.ok || !res.body) throw new Error(`HTTP ${res.status} ao baixar ${url}`)
+  const total = Number(res.headers.get('content-length')) || null
+  let received = 0
+  const chunks: Buffer[] = []
+  for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+    const buf = Buffer.from(chunk)
+    chunks.push(buf)
+    received += buf.length
+    onBytes(received, total)
+  }
+  writeFileSync(dest, Buffer.concat(chunks))
+  return received
+}
+
 // --- AI usage log (persisted to ai-usage-log.json in userData) ---
 //
 // Written here rather than in the renderer because every model call funnels
@@ -451,6 +540,33 @@ function appendUsage(model: string, usage: TokenUsage, cfg: AIConfig): void {
     writeFileSync(aiUsagePath(), JSON.stringify(next), 'utf-8')
   } catch {
     /* the log is bookkeeping; a failure here must not break the answer */
+  }
+}
+
+// --- AI run metrics (persisted to ai-run-metrics.json in userData) ---
+//
+// Per-run efficiency, sent up by the renderer's agent loop (which is the only
+// place that can count redundant searches and repeated reads). Rules live in
+// ./run-metrics (no Electron, so testable); this only does the file IO.
+
+const aiRunMetricsPath = (): string => join(app.getPath('userData'), 'ai-run-metrics.json')
+
+function loadRunMetrics(): RunMetric[] {
+  try {
+    const data = JSON.parse(readFileSync(aiRunMetricsPath(), 'utf-8'))
+    return Array.isArray(data) ? data : []
+  } catch {
+    return []
+  }
+}
+
+/** Record one finished run. Never throws: metrics are bookkeeping, not the answer. */
+function appendRunMetricIO(input: RunMetricInput): void {
+  try {
+    const next = appendRunMetric(loadRunMetrics(), newRunMetric(input))
+    writeFileSync(aiRunMetricsPath(), JSON.stringify(next), 'utf-8')
+  } catch {
+    /* losing a metric must not affect anything the user sees */
   }
 }
 
@@ -800,7 +916,47 @@ app.whenReady().then(() => {
     saveAIConfig(config)
   })
 
+  // ai-jail: current status merged with the user's config, for the toggle and
+  // the onboarding dialog. `refresh` re-runs detection (e.g. after an install).
+  ipcMain.handle('ai:jail:status', async (_, refresh?: boolean) => {
+    const s = await getJailStatus(refresh === true)
+    const cfg = loadAIConfig()
+    return {
+      ...s,
+      enabled: sandboxRequired(cfg),
+      onboardingDismissed: cfg.sandboxOnboardingDismissed === true,
+      wslCommand: WSL_INSTALL_COMMAND,
+      // The commands to install ai-jail inside an existing WSL2 (shown once WSL2
+      // is present but ai-jail isn't).
+      wslAiJailCommands: WSL_AI_JAIL_INSTALL_COMMANDS
+    }
+  })
+
+  // Install ai-jail for this platform, streaming progress. On success the
+  // sandbox is turned on and onboarding is marked done, so the safe path is the
+  // default the moment it can be enforced.
+  ipcMain.handle('ai:jail:install', async () => {
+    const deps: InstallDeps = { exec: defaultExec, download: downloadTo, fetchText }
+    const res = await installAiJail(deps, (p) => mainWindow?.webContents.send('ai:jail:progress', p))
+    if (res.success) {
+      await getJailStatus(true) // refresh the cache off the fresh install
+      const cfg = loadAIConfig()
+      saveAIConfig({ ...cfg, sandboxEnabled: true, sandboxOnboardingDismissed: true })
+    }
+    return res
+  })
+
+  // The user answered onboarding without installing ("Depois"): remember it so
+  // the modal doesn't reappear, but leave the sandbox required (the agent's
+  // command tool stays blocked until ai-jail exists or the box is unticked).
+  ipcMain.handle('ai:jail:dismiss-onboarding', () => {
+    saveAIConfig({ ...loadAIConfig(), sandboxOnboardingDismissed: true })
+  })
+
   ipcMain.handle('ai:usage:summary', () => summarize(loadUsageLog()))
+
+  ipcMain.handle('ai:run-metrics:append', (_, input: RunMetricInput) => appendRunMetricIO(input))
+  ipcMain.handle('ai:run-metrics:summary', () => summarizeRunMetrics(loadRunMetrics()))
 
   // Proxy an OpenAI-compatible chat/completions call. baseURL + apiKey come
   // from the renderer when provided, falling back to the stored config.
@@ -1046,7 +1202,7 @@ app.whenReady().then(() => {
         convId?: string
       }
     ) => {
-      if (codeAgentProc) return { success: false, error: 'Já existe um agente de código rodando' }
+      if (codeAgentRunning) return { success: false, error: 'Já existe um agente de código rodando' }
       const dir = request.path
       if (!dir || !existsSync(dir) || !statSync(dir).isDirectory()) {
         return { success: false, error: 'Diretório do projeto inválido' }
@@ -1079,37 +1235,40 @@ app.whenReady().then(() => {
           status: 400
         }
       }
-      // codex is the only agent — see buildAgentCommand.
-      const agent = 'codex' as const
-      // A new run starts a new log. Only reached once the request is known good
-      // (a rejected one never spawns), so a failed start can't wipe the output
-      // of the run before it — which is what the user would still be reading.
+      // The code agent's provider: its own fields, falling back to the chat's.
+      const caCfg = resolveCodeAgentConfig(cfg)
+
+      // ⚠️ Sandbox gate. The sandbox is mandatory by default; when it's required
+      // but ai-jail isn't available, the run is refused rather than run
+      // unconfined — the agent's shell commands have no other OS-level barrier.
+      // The user's way through is to install ai-jail (onboarding) or untick the
+      // Sandbox box (accepting the risk). On Windows this is the WSL2 case.
+      //
+      // Detection only runs when the sandbox is on: if the user turned it off
+      // there's nothing to enforce, and probing (which spawns `ai-jail`/`wsl`)
+      // would be wasted work — a plain unsandboxed run needs none of it.
+      const sandboxOn = sandboxRequired(cfg)
+      const jail = sandboxOn ? await getJailStatus() : null
+      if (sandboxOn && !jail?.available) {
+        return {
+          success: false,
+          error:
+            'O sandbox (ai-jail) está ativo, mas não está instalado/disponível. ' +
+            'Instale o ai-jail na tela do Assistente, ou desative o Sandbox nas configurações do Agente de Código.',
+          status: 400
+        }
+      }
+
+      // A new run starts a new log/state. Only reached once the request is known
+      // good, so a failed start can't wipe the output of the run before it.
       codeAgentLog = ''
-      // Same reasoning as the log: a diagnosis carried over from the previous run
-      // is worse than none. Cleared only once the request is known good.
       codeAgentHint = null
+      codeAgentAbort = false
+      codeAgentRunning = true
+      codeAgentModel = caCfg.model
       // Snapshot the tree BEFORE the agent touches it — after the fact there is
       // no way to tell its work from what the user already had in progress.
-      // Null here just means "no diff for this run" (not a git repo); it must
-      // never stop the run, which is what the user actually asked for.
       codeAgentBase = await captureBase(dir)
-      const { cmd, args, stdinData } = buildAgentCommand(task, dir, files)
-
-      // Spawn the resolved absolute path directly (safe, no shell) whenever we
-      // have one. A shell is used only on Windows, and only for the .cmd/.bat
-      // wrappers that need one; on POSIX every match is directly executable.
-      //
-      // ⚠️ Passing the resolved path matters on POSIX too, not just Windows: it
-      // is what lets the agent be found in a node-version-manager or custom-npm
-      // -prefix dir that this process's PATH doesn't carry. Handing `cmd` back
-      // to spawn would re-do the PATH lookup that already failed.
-      const resolved = resolveExecutable(cmd)
-      const isExe = resolved !== null && /\.exe$/i.test(resolved)
-      const useShell = process.platform === 'win32' && !isExe
-      // `null` stays as the bare name so spawn fails with ENOENT and the error
-      // handler reports "not installed" — which, having searched the fallback
-      // dirs too, is now a claim we can actually stand behind.
-      const spawnCmd = resolved && !useShell ? resolved : cmd
 
       const send = (channel: string, data: unknown): void =>
         mainWindow?.webContents.send(channel, data)
@@ -1119,170 +1278,144 @@ app.whenReady().then(() => {
         send('ai:code-agent:output', chunk)
       }
 
-      // Which path this run takes, stated before the agent says anything. The
-      // fast path (pinned files, named in the prompt) and the slow one (no
-      // files, so codex discovers them itself with its own grep/read tools)
-      // differ by minutes on a one-line change, and until now they looked
-      // identical from the panel: a path the
-      // model got wrong is dropped in silence and degrades to discovery. The
-      // model also chooses whether to send `arquivos` at all, so "did it?" is
-      // exactly the question this answers. The model line says whose model it is:
-      // codex authenticates and picks it by itself, so the app's configured
-      // provider has no bearing on a code run and nobody should read it as if it did.
-      emit(`[sagyou] agente: ${agent} · modelo: próprio do codex (não usa a config do app)\n`)
+      const startedAt = Date.now()
+      // Identity for the archive written when this run finishes. `agent` carries
+      // the real model now (the panel and picker show it), not a fixed "codex".
+      codeAgentRun = {
+        id: randomUUID(),
+        convId: typeof request.convId === 'string' && request.convId ? request.convId : null,
+        agent: caCfg.model || 'nativo',
+        dir,
+        task: taskLabel(task),
+        startedAt
+      }
+
+      // Opening banner: the REAL model in use (task 11), and which files were
+      // pinned vs left for the agent to discover with buscar_no_codigo.
+      const rel = files.map((f) => relative(dir, f) || f)
+      emit(`[sagyou] agente nativo · modelo: ${caCfg.model} @ ${caCfg.baseUrl}\n`)
+      // Say plainly whether the shell is confined. `sandboxOn && jail.available`
+      // is the only combination that wraps commands (the gate above refused the
+      // dangerous "required but missing" case), so a false here means the user
+      // deliberately turned the sandbox off.
+      const sandboxActive = sandboxOn && !!jail?.available && !!jail?.path
       emit(
-        files.length
-          ? `[sagyou] ${files.length} arquivo(s) fixado(s) — caminho rápido, sem descoberta:\n` +
-              files.map((f) => `  · ${relative(dir, f) || f}\n`).join('')
-          : '[sagyou] nenhum arquivo fixado — o codex vai localizar os arquivos com as próprias ferramentas.\n'
+        sandboxActive
+          ? `[sagyou] sandbox: ai-jail ATIVO — comandos confinados à pasta do projeto\n`
+          : `[sagyou] ⚠️ sandbox: DESATIVADO — comandos rodam sem confinamento\n`
+      )
+      emit(
+        rel.length
+          ? `[sagyou] ${rel.length} arquivo(s) indicado(s):\n` + rel.map((f) => `  · ${f}\n`).join('')
+          : '[sagyou] nenhum arquivo indicado — o agente vai localizá-los com buscar_no_codigo.\n'
       )
       if (droppedFiles.length) {
         emit(
           `[sagyou] ${droppedFiles.length} caminho(s) descartado(s) (fora da raiz ou inexistente):\n` +
-            droppedFiles.map((f) => `  · ${f}\n`).join('') +
-            (files.length ? '' : `[sagyou] por isso este run caiu na descoberta.\n`)
+            droppedFiles.map((f) => `  · ${f}\n`).join('')
         )
       }
       emit('\n')
-      return new Promise<{ success: boolean; agent?: string; dir?: string; error?: string }>(
-        (resolve) => {
-          let settled = false
-          let child: ChildProcess
-          // Wall clock, taken as late as possible: what's being compared is the
-          // agent's own run, not our banner or the base capture before it.
-          const startedAt = Date.now()
-          // Identity for the archive written when this run exits. Set here, next
-          // to the clock, so it describes the run that actually spawns.
-          codeAgentRun = {
-            id: randomUUID(),
-            convId: typeof request.convId === 'string' && request.convId ? request.convId : null,
-            agent,
-            dir,
-            task: taskLabel(task),
-            startedAt
-          }
-          try {
-            child = spawn(spawnCmd, args, {
-              cwd: dir,
-              shell: useShell,
-              // stdin: a pipe only when we have a prompt to feed (codex reads it
-              // from stdin via `-`, keeping the multi-word prompt off a shell-
-              // parsed command line), otherwise 'ignore'. A closed stdin turns any
-              // stray confirmation into an immediate EOF instead of a process that
-              // hangs "running" forever.
-              stdio: [stdinData !== null ? 'pipe' : 'ignore', 'pipe', 'pipe'],
-              env: {
-                ...process.env,
-                OPENAI_API_BASE: cfg.baseUrl,
-                OPENAI_BASE_URL: cfg.baseUrl,
-                OPENAI_API_KEY: cfg.apiKey || 'not-needed'
-              }
-            })
-          } catch (e) {
-            resolve({ success: false, error: e instanceof Error ? e.message : 'Falha ao iniciar' })
-            return
-          }
-          codeAgentProc = child
-          // Feed the prompt over stdin (codex `-`), then close it so the agent
-          // sees EOF and starts. Guard the write: a spawn failure leaves stdin
-          // unwritable, and that must surface as the 'error' event below, not an
-          // unhandled throw here.
-          if (stdinData !== null && child.stdin) {
-            child.stdin.on('error', () => {
-              /* the 'error'/'close' handlers below report the real failure */
-            })
-            child.stdin.write(stdinData)
-            child.stdin.end()
-          }
-          // Decode as UTF-8 through the stream, not with a per-chunk d.toString():
-          // an accented char (or a box-drawing glyph) whose bytes straddle two
-          // 'data' events would otherwise be split mid-character and land as a
-          // replacement glyph. setEncoding buffers the partial byte and joins it
-          // to the next chunk.
-          child.stdout?.setEncoding('utf8')
-          child.stderr?.setEncoding('utf8')
-          // Watched for a known failure as it streams. Kept in its own rolling
-          // window rather than read off codeAgentLog, which is capped to the
-          // panel's tail: the sandbox warning is the *first* thing codex prints,
-          // so on a chatty run it would have scrolled out of the buffer before
-          // anyone looked. A window (not a per-chunk test) because a marker can
-          // straddle two 'data' events.
-          let recent = ''
-          const watch = (d: string): void => {
-            emit(d)
-            if (codeAgentHint) return
-            recent = (recent + d).slice(-4000)
-            codeAgentHint = detectAgentHint(recent)
-          }
-          child.stdout?.on('data', watch)
-          child.stderr?.on('data', watch)
-          // 'spawn' fires only when the process actually started.
-          child.once('spawn', () => {
-            if (!settled) {
-              settled = true
-              resolve({ success: true, agent, dir })
-            }
+
+      // Assemble the system prompt: GUIDE.md/AGENTS.md if the repo has one, a
+      // compact file tree, and the pinned files. Best-effort — a missing guide
+      // or an unreadable tree just leaves that section out.
+      const [tree, guide] = [await dirTree(dir), readProjectGuide(dir)]
+      const systemPrompt = buildSystemPrompt({ tree, guide, files: rel })
+
+      // Approval round-trip: the loop parks here, the renderer shows a card and
+      // answers through ai:code-agent:approve-response. A stopped run denies all.
+      const approve = (call: { name: string; args: Record<string, unknown> }): Promise<boolean> =>
+        new Promise((resolveApproval) => {
+          if (codeAgentAbort) return resolveApproval(false)
+          const id = randomUUID()
+          pendingApprovals.set(id, resolveApproval)
+          send('ai:code-agent:approve-request', {
+            id,
+            name: call.name,
+            args: call.args,
+            resumo: describeCodeAction(call.name, call.args)
           })
-          child.on('error', (e) => {
-            const notFound = (e as NodeJS.ErrnoException).code === 'ENOENT'
-            const msg = notFound
-              ? `"${cmd}" não encontrado. Instale-o e confirme com "${cmd} --version" no terminal.`
-              : e.message
-            emit(`\n[erro ao iniciar ${cmd}: ${msg}]\n`)
-            codeAgentProc = null
-            // Buffered too: "codex isn't installed" is the single most useful
-            // line the panel can show, and it is exactly the one that fires
-            // instantly — usually before the user has looked at the panel at all.
-            appendAgentLog(`[agente encerrado — código -1]\n`)
-            void archiveAgentRun(-1)
-            send('ai:code-agent:exit', -1)
-            if (!settled) {
-              settled = true
-              resolve({ success: false, error: msg })
-            }
-          })
-          child.on('close', (code) => {
-            codeAgentProc = null
-            // How long the run took. Goes through `emit` (streams *and* buffers)
-            // rather than appendAgentLog, so it shows live and still survives an
-            // unmounted panel — the exit line below can't carry it, since the
-            // renderer writes its own copy of that line on the event. Without
-            // this the panel had no clock at all, which makes "how long did that
-            // take?" unanswerable except by stopwatch.
-            const secs = ((Date.now() - startedAt) / 1000).toFixed(1)
-            emit(`\n[sagyou] duração: ${secs}s\n`)
-            // Also in the log, not only in the card: someone reading the raw
-            // output (or pasting it into an issue) should get the diagnosis in
-            // the same place as the symptom.
-            if (codeAgentHint) {
-              emit(
-                `[sagyou] ${codeAgentHint.title}\n` +
-                  `[sagyou] ${codeAgentHint.detail}\n` +
-                  (codeAgentHint.command ? `[sagyou] correção: ${codeAgentHint.command}\n` : '')
-              )
-            }
-            // The panel appends this line itself when it's mounted to hear the
-            // event; buffering it is what tells a user who was away that the
-            // run is over rather than still going.
-            appendAgentLog(`\n[agente encerrado — código ${code ?? 0}]\n`)
-            // Freeze log + diff now: this is the only moment the diff means
-            // "what the agent did" rather than "what the tree looks like today".
-            void archiveAgentRun(code ?? 0)
-            send('ai:code-agent:exit', code ?? 0)
-          })
+        })
+
+      // The command runner: wrap every shell command with ai-jail when the
+      // sandbox is active, and decorate the output when a failure looks like the
+      // sandbox blocking an escape. Otherwise it's the plain runner.
+      const jailBin = jail?.path ?? null
+      const runner: CommandRunner = async (command, o) => {
+        if (!sandboxActive || !jailBin) return defaultCommandRunner(command, o)
+        // Windows runs the command through WSL (jail.viaWsl); Linux/macOS wrap it
+        // in a native shell. Both confine writes to the project via ai-jail.
+        const out = jail?.viaWsl
+          ? await runSandboxedWsl(jailBin, o.cwd, command, o.timeoutMs)
+          : await defaultCommandRunner(wrapCommand(jailBin, o.cwd, command), o)
+        if (out.code !== 0 && looksLikeSandboxBlock(`${out.stdout}\n${out.stderr}`)) {
+          out.stderr = `⛔ ai-jail bloqueou este comando — tentou acessar fora do projeto.\n${out.stderr}`
         }
-      )
+        return out
+      }
+
+      // Fire-and-forget from the renderer's side (same contract as codex): return
+      // success once the run has started; the outcome streams to the panel.
+      void (async (): Promise<void> => {
+        let exitCode = 0
+        try {
+          const result = await runCodeAgent(systemPrompt, task, { root: dir, run: runner }, {
+            callModel: (messages, tools) => callCodeModel(caCfg, messages, tools),
+            approve,
+            maxSteps: CODE_AGENT_MAX_STEPS,
+            shouldAbort: () => codeAgentAbort,
+            onText: (text) => emit(`\n${text}\n`),
+            onToolCall: (name, args) => {
+              emit(`\n[tool] ${describeCodeAction(name, args) || name}\n`)
+              send('ai:code-agent:tool', { phase: 'call', name, args })
+            },
+            onToolResult: (name, summary) => {
+              emit(`[resultado] ${summary}\n`)
+              send('ai:code-agent:tool', { phase: 'result', name, summary })
+            },
+            onUsage: (usage) => appendUsage(caCfg.model, usage, cfg)
+          })
+          if (result.stopped) exitCode = codeAgentAbort ? -2 : 1
+        } catch (e) {
+          exitCode = 1
+          emit(`\n[erro no agente: ${e instanceof Error ? e.message : 'falha'}]\n`)
+        } finally {
+          codeAgentRunning = false
+          const secs = ((Date.now() - startedAt) / 1000).toFixed(1)
+          emit(`\n[sagyou] duração: ${secs}s\n`)
+          appendAgentLog(`\n[agente encerrado — código ${exitCode}]\n`)
+          // Freeze log + diff now: the only moment the diff means "what the agent
+          // did" rather than "what the tree looks like today".
+          void archiveAgentRun(exitCode)
+          send('ai:code-agent:exit', exitCode)
+        }
+      })()
+
+      return { success: true, agent: caCfg.model, dir }
     }
   )
 
   ipcMain.handle('ai:code-agent:stop', () => {
-    killCodeAgent()
+    stopCodeAgent()
+  })
+
+  // The renderer's answer to an approval card the loop is parked on. Resolving
+  // the pending promise is what lets the run continue (or run the denied path).
+  ipcMain.handle('ai:code-agent:approve-response', (_, id: string, approved: boolean) => {
+    const resolve = pendingApprovals.get(id)
+    if (resolve) {
+      pendingApprovals.delete(id)
+      resolve(approved === true)
+    }
   })
 
   // `log` is how a panel that wasn't mounted catches up — see codeAgentLog.
   ipcMain.handle('ai:code-agent:status', () => ({
-    running: codeAgentProc !== null,
+    running: codeAgentRunning,
     log: codeAgentLog,
+    // The real model in use, so the panel can show it (task 11).
+    model: codeAgentModel,
     // Null unless the run hit a recognised environment failure. Carried here
     // rather than on the exit event so a panel mounted after the fact still
     // sees it — the same reason `log` is here.
@@ -1376,20 +1509,87 @@ app.whenReady().then(() => {
 
   ipcMain.handle(
     'ai:code:read',
-    (_, root: string, rel: string, offset?: number, maxChars?: number) => {
+    (
+      _,
+      root: string,
+      rel: string,
+      offset?: number,
+      maxChars?: number,
+      // Scoped reading: a named symbol or a line range, so a big file can answer
+      // a question about one function without shipping (and re-shipping) all of
+      // it. When set, this wins over the char-window paging below.
+      scope?: { symbol?: string; lineStart?: number; lineEnd?: number }
+    ) => {
       const full = confineToRoot(root, rel)
       if (!full || !existsSync(full) || !statSync(full).isFile()) {
         return { error: 'Arquivo inválido ou fora do projeto' }
       }
+      const CODE_READ_PAGE = 20000
+      const CODE_READ_MAX = 60000
       try {
         const content = readFileSync(full, 'utf-8')
         const total = content.length
+
+        // --- Scoped mode: return just the symbol / line range asked for. ---
+        if (scope && (scope.symbol || scope.lineStart != null || scope.lineEnd != null)) {
+          const cap = (r: { content: string; linhaInicio: number; linhaFim: number }): object => {
+            const truncated = r.content.length > CODE_READ_MAX
+            return {
+              content: truncated ? r.content.slice(0, CODE_READ_MAX) : r.content,
+              linhaInicio: r.linhaInicio,
+              linhaFim: r.linhaFim,
+              truncated,
+              total
+            }
+          }
+          if (scope.symbol) {
+            const found = extractSymbol(content, scope.symbol)
+            if (!found) {
+              // Not a declaration in this file — hand back the symbol map so the
+              // model can pick a real one instead of paging blindly.
+              return { error: `Símbolo "${scope.symbol}" não encontrado`, total, simbolos: detectSymbols(content) }
+            }
+            return { simbolo: scope.symbol, ...cap(found) }
+          }
+          return cap(extractLines(content, scope.lineStart, scope.lineEnd))
+        }
+
+        // --- Big-file guard: a *blind* read (no scope, no offset, no explicit
+        // max_chars) of a file too big to fit one page returns a short head plus
+        // the symbol map and a nudge, instead of a full 20k window resent every
+        // later step. It forces the model onto the surgical tools that already
+        // exist — a named symbol, a line range, or paging with `inicio`. An
+        // explicit `offset` or `max_chars` means the model already knows what it
+        // wants, so those bypass this. (The 5000-line spec threshold was a no-op
+        // here — kanban.ts is ~1k lines — so the real "big" measure is the same
+        // char boundary the paging already uses.) ---
+        const offsetProvided = typeof offset === 'number' && Number.isFinite(offset) && offset > 0
+        const maxCharsProvided = typeof maxChars === 'number' && Number.isFinite(maxChars) && maxChars >= 1
+        if (!offsetProvided && !maxCharsProvided && total > CODE_READ_PAGE) {
+          const PREVIEW_LINES = 100
+          const head = extractLines(content, 1, PREVIEW_LINES)
+          // Cap the head too, in case 100 lines are themselves huge (minified).
+          const preview =
+            head.content.length > CODE_READ_PAGE ? head.content.slice(0, CODE_READ_PAGE) : head.content
+          return {
+            content: preview,
+            truncated: true,
+            offset: 0,
+            total,
+            simbolos: detectSymbols(content),
+            nextOffset: preview.length,
+            dica:
+              `Arquivo grande (${total} chars). Para economizar tokens, mire o trecho: use ` +
+              `"simbolo", "linha_inicio"/"linha_fim", ou pagine com "inicio"=${preview.length}. ` +
+              `Passe "max_chars" para ler uma janela maior de uma vez.`
+          }
+        }
+
+        // --- Char-window paging (unchanged): default 20k, raisable, resumable. ---
         // A file result is resent to the model on every later step, so a 60k-char
         // file (~15k tokens) was a per-step tax for a question that usually needs
         // a fraction of it. Default to one CODE_READ_PAGE window; `maxChars` can
         // raise it up to CODE_READ_MAX, and `offset` pages through the rest.
-        const CODE_READ_PAGE = 20000
-        const CODE_READ_MAX = 60000
         let page = CODE_READ_PAGE
         if (typeof maxChars === 'number' && Number.isFinite(maxChars) && maxChars >= 1) {
           page = Math.min(Math.floor(maxChars), CODE_READ_MAX)
@@ -1406,6 +1606,11 @@ app.whenReady().then(() => {
           truncated,
           offset: start,
           total,
+          // A symbol map, but only when it earns its tokens: on the first page of
+          // a file too big to return whole. For a small file returned in full the
+          // map is redundant (the model already has every line); on a big one it
+          // lets the model re-read just the symbol it needs via `simbolo`.
+          ...(truncated && start === 0 ? { simbolos: detectSymbols(content) } : {}),
           // Where a follow-up read should resume; absent once the file is exhausted.
           ...(truncated ? { nextOffset: end } : {})
         }
@@ -1641,7 +1846,7 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-// Don't leave the external code agent running orphaned when the app closes.
+// Don't leave the code agent's loop running when the app closes.
 app.on('before-quit', () => {
-  killCodeAgent()
+  stopCodeAgent()
 })

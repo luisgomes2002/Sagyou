@@ -24,6 +24,7 @@ import { ChatMarkdown } from './ChatMarkdown'
 import { CodeDiff, type CodeAgentDiff } from './CodeDiff'
 import { AgentTerminal } from './AgentTerminal'
 import { AgentRunPicker, type AgentRunMeta } from './AgentRunPicker'
+import { SandboxOnboarding, type JailStatus } from './SandboxOnboarding'
 import { ConfirmDialog } from './ConfirmDialog'
 
 // Config is persisted via ai:config in the main process (see effects below);
@@ -118,6 +119,7 @@ function formatCost(usd: number): string {
  * the shape lives in the main process, and a second copy here would drift.
  */
 type UsageSummary = Awaited<ReturnType<typeof window.electronAPI.ai.usage.summary>>
+type RunMetricsSummary = Awaited<ReturnType<typeof window.electronAPI.ai.runMetrics.summary>>
 
 /** Taken off the preload API rather than restated — main owns the shape. */
 type PromptTemplate = Awaited<ReturnType<typeof window.electronAPI.ai.templates.list>>[number]
@@ -151,12 +153,14 @@ function StatusLine({
   text,
   state,
   step,
-  maxSteps
+  maxSteps,
+  tokens
 }: {
   text: string
   state: StatusState
   step?: number
   maxSteps?: number
+  tokens?: number
 }): React.JSX.Element {
   // Both or neither: a "3/" with no denominator says nothing about how much
   // budget is left, which is the only reason the badge exists.
@@ -192,6 +196,14 @@ function StatusLine({
           className="mt-[1px] shrink-0 px-1.5 py-[1px] rounded text-[10px] font-medium tabular-nums bg-[#1e2235] border border-[#2a2d42] text-[#8892a4]"
         >
           {badge}
+        </span>
+      )}
+      {tokens !== undefined && tokens > 0 && (
+        <span
+          title="tokens desta chamada do modelo (prompt + resposta). Cresce a cada passo porque o histórico é reenviado."
+          className="mt-[1px] shrink-0 px-1.5 py-[1px] rounded text-[10px] font-medium tabular-nums bg-[#1e2235] border border-[#2a2d42] text-[#6b7280]"
+        >
+          {formatTokens(tokens)} tokens
         </span>
       )}
       <p className="text-xs leading-relaxed whitespace-pre-wrap break-words">{text}</p>
@@ -258,6 +270,9 @@ export function AIView({
   // Spend across every call ever made, from the main process's log. Separate
   // from `usage`, which is only this conversation.
   const [spend, setSpend] = useState<UsageSummary | null>(null)
+  // Per-run efficiency, aggregated by model (ai-run-metrics.json). Shown in the
+  // same panel as spend, so a model's cost and its efficiency sit side by side.
+  const [runMetrics, setRunMetrics] = useState<RunMetricsSummary | null>(null)
   const [showSpend, setShowSpend] = useState(false)
 
   // Confirmation modal state (Gerar Tasks)
@@ -267,6 +282,21 @@ export function AIView({
   // External code-agent output (streamed from the main process)
   const [agentLog, setAgentLog] = useState('')
   const [agentRunning, setAgentRunning] = useState(false)
+  /** The real model the running agent is using (native agent), for the panel. */
+  const [agentModel, setAgentModel] = useState('')
+  /** A write/command the loop is parked on, awaiting the user's OK. Null = none. */
+  const [agentApproval, setAgentApproval] = useState<{
+    id: string
+    name: string
+    args: Record<string, unknown>
+    resumo: string
+  } | null>(null)
+  /** ai-jail sandbox status (merged with config). Null until first fetched. */
+  const [jailStatus, setJailStatus] = useState<
+    Awaited<ReturnType<typeof window.electronAPI.ai.jail.status>> | null
+  >(null)
+  /** Whether the first-run sandbox onboarding modal is showing. */
+  const [showOnboarding, setShowOnboarding] = useState(false)
   /** What the last agent run changed. Null until asked for. */
   const [agentDiff, setAgentDiff] = useState<CodeAgentDiff | null>(null)
   const [showDiff, setShowDiff] = useState(true)
@@ -447,6 +477,8 @@ export function AIView({
           baseUrl: stored.baseUrl || DEFAULT_CONFIG.baseUrl,
           apiKey: stored.apiKey || DEFAULT_CONFIG.apiKey,
           model: stored.model || DEFAULT_CONFIG.model,
+          // Undefined = no separate model = one model for everything (routeModel).
+          modelComplex: stored.modelComplex,
           // Left undefined on purpose when unset — that's what selects the
           // per-mode default in resolveMaxSteps.
           maxSteps: stored.maxSteps,
@@ -455,7 +487,12 @@ export function AIView({
           outputPricePer1M: stored.outputPricePer1M,
           timeoutMs: stored.timeoutMs,
           lastConversationId: stored.lastConversationId,
-          taskTemplateId: stored.taskTemplateId
+          taskTemplateId: stored.taskTemplateId,
+          // Undefined = the code agent falls back to the chat provider.
+          codeAgent: stored.codeAgent,
+          // Undefined = sandbox required (safe default); only explicit false is off.
+          sandboxEnabled: stored.sandboxEnabled,
+          sandboxOnboardingDismissed: stored.sandboxOnboardingDismissed
         })
         // Entering the view puts the user back where they were, at the end of
         // the chat they were reading — not in a blank one.
@@ -531,6 +568,21 @@ export function AIView({
     setAgentDiff(await window.electronAPI.ai.codeAgent.diff())
   }
 
+  /** Refresh ai-jail status; opens onboarding when required-but-unavailable. */
+  const refreshJail = async (redetect = false): Promise<void> => {
+    const s = await window.electronAPI.ai.jail.status(redetect)
+    setJailStatus(s)
+    if (!s.available && s.enabled && !s.onboardingDismissed) setShowOnboarding(true)
+  }
+
+  // Load the sandbox status when the AI view mounts. Onboarding only appears the
+  // first time (until installed or dismissed); a machine that already has
+  // ai-jail reports available and never sees the dialog.
+  useEffect(() => {
+    void refreshJail()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Stream the external code agent's output into the panel.
   //
   // The panel is only alive while this view is: the agent is a child process
@@ -543,6 +595,7 @@ export function AIView({
     window.electronAPI.ai.codeAgent.status().then((s) => {
       if (cancelled) return
       setAgentRunning(s.running)
+      setAgentModel(s.model ?? '')
       // Replace rather than append: this IS the log, tail and all. Appending
       // would double every line for a user who never left.
       if (s.log) setAgentLog(s.log)
@@ -559,8 +612,16 @@ export function AIView({
       setAgentPanelOpen(true)
       setAgentLog((l) => (l + chunk).slice(-8000)) // cap to keep the panel light
     })
+    // The loop is parked on a write/command: raise the card (and reopen the
+    // panel, same reason as onOutput). Answered below via codeAgent.approve.
+    const offApprove = window.electronAPI.ai.codeAgent.onApproveRequest((req) => {
+      setAgentPanelOpen(true)
+      setAgentApproval(req)
+    })
     const offExit = window.electronAPI.ai.codeAgent.onExit((code) => {
       setAgentRunning(false)
+      // A run that ended can't have a pending approval — clear any stale card.
+      setAgentApproval(null)
       setAgentLog((l) => l + `\n[agente encerrado — código ${code}]\n`)
       // The moment there is something to review. Derived in main, so asking
       // again later is free and a run that finished while this view was closed
@@ -583,6 +644,7 @@ export function AIView({
     return () => {
       cancelled = true
       offOutput()
+      offApprove()
       offExit()
       offArchived()
     }
@@ -667,6 +729,8 @@ export function AIView({
 
   const refreshSpend = (): void => {
     window.electronAPI.ai.usage.summary().then(setSpend)
+    // Best-effort: an older preload without the bridge just leaves it null.
+    window.electronAPI.ai.runMetrics?.summary().then(setRunMetrics)
   }
 
   const refreshTemplates = (): void => {
@@ -1060,13 +1124,60 @@ export function AIView({
       <span className="text-[11px] font-medium text-[#8892a4]">{label}</span>
       <input
         type={type}
-        value={config[key]}
+        value={typeof config[key] === 'string' ? (config[key] as string) : ''}
         placeholder={placeholder}
         onChange={(e) => setConfig((c) => ({ ...c, [key]: e.target.value }))}
         className="px-2.5 py-1.5 rounded-md bg-[#0d0f18] border border-[#2a2d42] text-sm text-[#e2e8f0] placeholder:text-[#4a5068] focus:outline-none focus:border-[#6366f1]"
       />
     </label>
   )
+
+  /**
+   * A field of the nested codeAgent config; blank falls back to the chat config.
+   *
+   * `options` turns it into a dropdown that still accepts free text (a `datalist`)
+   * — used for Model: the code agent may point at a *different* endpoint than the
+   * chat, so the chat's loaded model list is a suggestion, not a hard list.
+   */
+  const codeAgentField = (
+    label: string,
+    key: 'baseUrl' | 'apiKey' | 'model',
+    type = 'text',
+    placeholder = 'como o chat',
+    options?: string[]
+  ): React.JSX.Element => {
+    const listId = options ? `codeagent-${key}-list` : undefined
+    return (
+      <label className="flex flex-col gap-1">
+        <span className="text-[11px] font-medium text-[#8892a4]">{label}</span>
+        <input
+          type={type}
+          list={listId}
+          value={config.codeAgent?.[key] ?? ''}
+          placeholder={placeholder}
+          onChange={(e) => {
+            const raw = e.target.value
+            setConfig((c) => {
+              const next = { ...(c.codeAgent ?? {}), [key]: raw }
+              // Drop empty fields so an all-blank block persists as absent (= fallback).
+              const cleaned = Object.fromEntries(
+                Object.entries(next).filter(([, v]) => typeof v === 'string' && v.trim() !== '')
+              )
+              return { ...c, codeAgent: Object.keys(cleaned).length ? cleaned : undefined }
+            })
+          }}
+          className="px-2.5 py-1.5 rounded-md bg-[#0d0f18] border border-[#2a2d42] text-sm text-[#e2e8f0] placeholder:text-[#4a5068] focus:outline-none focus:border-[#6366f1]"
+        />
+        {listId && (
+          <datalist id={listId}>
+            {options?.map((m) => (
+              <option key={m} value={m} />
+            ))}
+          </datalist>
+        )}
+      </label>
+    )
+  }
 
   return (
     <>
@@ -1202,6 +1313,50 @@ export function AIView({
                                   ? '—'
                                   : formatCost(bucket.cost)}
                               </span>
+                            </div>
+                          ))}
+                        </>
+                      )}
+
+                      {runMetrics && runMetrics.byModel.length > 0 && (
+                        <>
+                          <p className="mt-3 mb-1 text-[10px] font-medium text-[#8892a4] uppercase tracking-wide">
+                            Eficiência por modelo
+                          </p>
+                          <p className="mb-1.5 text-[10px] text-[#4a5068] leading-relaxed">
+                            Média por execução do agente ({runMetrics.runs}{' '}
+                            {runMetrics.runs === 1 ? 'execução' : 'execuções'}). Menos tokens/passo é
+                            mais eficiente.
+                          </p>
+                          {runMetrics.byModel.map((m) => (
+                            <div key={m.model} className="mb-1.5">
+                              <div className="flex items-baseline justify-between gap-2">
+                                <span className="text-[11px] text-[#e2e8f0] truncate">{m.model}</span>
+                                <span className="text-[11px] text-[#8892a4] tabular-nums shrink-0">
+                                  {m.runs}× · {formatTokens(Math.round(m.avgTotalTokens))}/exec
+                                </span>
+                              </div>
+                              <div className="flex items-baseline justify-between gap-2 text-[10px] text-[#4a5068] tabular-nums">
+                                <span>
+                                  {m.avgSteps.toFixed(1)} passos ·{' '}
+                                  {formatTokens(Math.round(m.avgTokensPerStep))}/passo
+                                </span>
+                                <span className="shrink-0">
+                                  {m.avgRedundantSearches + m.avgRepeatedReads > 0.05 && (
+                                    <span
+                                      className="text-amber-500/70"
+                                      title="buscas redundantes + releituras freadas, por execução"
+                                    >
+                                      ⚠ {(m.avgRedundantSearches + m.avgRepeatedReads).toFixed(1)}
+                                    </span>
+                                  )}
+                                  {m.cappedRate > 0 && (
+                                    <span className="ml-1.5" title="execuções que bateram o limite de passos">
+                                      cap {Math.round(m.cappedRate * 100)}%
+                                    </span>
+                                  )}
+                                </span>
+                              </div>
                             </div>
                           ))}
                         </>
@@ -1512,7 +1667,35 @@ export function AIView({
                   </button>
                 </div>
               </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-[11px] font-medium text-[#8892a4]">
+                  Modelo p/ código (opcional)
+                </span>
+                <select
+                  value={config.modelComplex ?? ''}
+                  onChange={(e) =>
+                    setConfig((c) => ({ ...c, modelComplex: e.target.value || undefined }))
+                  }
+                  className="px-2.5 py-1.5 rounded-md bg-[#0d0f18] border border-[#2a2d42] text-sm text-[#e2e8f0] focus:outline-none focus:border-[#6366f1]"
+                >
+                  <option value="">Mesmo do principal</option>
+                  {/* The loaded list, plus whatever is stored (may not be listed yet). */}
+                  {config.modelComplex && !models.includes(config.modelComplex) && (
+                    <option value={config.modelComplex}>{config.modelComplex}</option>
+                  )}
+                  {models.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
+            <p className="mt-2 text-[11px] leading-relaxed text-[#6b7280]">
+              Se você escolher um <b>modelo p/ código</b>, pedidos que parecem tarefa de código
+              (código, bug, refatorar, arquitetura, investigar…) rodam nele; o resto usa o modelo
+              principal. Deixe em “mesmo do principal” para usar um modelo só.
+            </p>
             <div className="mt-3 flex items-start gap-3">
               <label className="flex flex-col gap-1 shrink-0 w-40">
                 <span className="text-[11px] font-medium text-[#8892a4]">Passos máximos</span>
@@ -1604,6 +1787,65 @@ export function AIView({
                 sozinho — ele fala com qualquer endpoint compatível com OpenAI, inclusive modelos
                 locais (custo zero). Deixe em branco e o header mostra só os tokens.
               </p>
+            </div>
+
+            <div className="mt-3 pt-3 border-t border-[#2a2d42]">
+              <span className="text-[11px] font-medium text-[#8892a4]">Agente de Código</span>
+              <p className="mt-1 mb-2 text-[11px] leading-relaxed text-[#4a5068]">
+                Provider do agente que edita o código (rodar_agente_codigo). Deixe qualquer campo em
+                branco para usar o mesmo do chat acima — assim você pode apontar o agente para um
+                modelo mais forte sem trocar o do chat.
+              </p>
+              <div className="grid grid-cols-3 gap-3">
+                {codeAgentField('Base URL', 'baseUrl', 'text', config.baseUrl || 'como o chat')}
+                {codeAgentField('API Key', 'apiKey', 'password', config.apiKey ? '••••' : 'como o chat')}
+                {/* Dropdown (dos modelos carregados) que ainda aceita digitar um
+                    modelo de outro endpoint. Carregue os modelos no campo do chat. */}
+                {codeAgentField('Model', 'model', 'text', config.model || 'como o chat', models)}
+              </div>
+
+              {/* Sandbox toggle. Checked = required (default). Greyed when ai-jail
+                  isn't installed, with a way to open onboarding. Unchecking it
+                  runs commands unconfined, so it carries a warning. */}
+              <div className="mt-3">
+                <label
+                  className={`flex items-center gap-2 ${
+                    jailStatus && !jailStatus.available ? 'opacity-50' : ''
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={config.sandboxEnabled !== false}
+                    disabled={!!jailStatus && !jailStatus.available}
+                    onChange={(e) =>
+                      setConfig((c) => ({ ...c, sandboxEnabled: e.target.checked ? undefined : false }))
+                    }
+                    className="accent-[#4f46e5]"
+                  />
+                  <span className="text-[12px] text-[#e2e8f0]">Sandbox (ai-jail)</span>
+                  {jailStatus?.available && jailStatus.version && (
+                    <span className="text-[10px] text-[#4a5068]">v{jailStatus.version}</span>
+                  )}
+                </label>
+                {jailStatus && !jailStatus.available && (
+                  <p className="mt-1 text-[11px] text-[#8892a4]">
+                    ai-jail não instalado.{' '}
+                    <button
+                      onClick={() => setShowOnboarding(true)}
+                      className="text-[#a5b4fc] hover:underline"
+                    >
+                      Instalar ai-jail
+                    </button>
+                    {jailStatus.reason ? ` — ${jailStatus.reason}` : ''}
+                  </p>
+                )}
+                {config.sandboxEnabled === false && (
+                  <p className="mt-1 text-[11px] leading-relaxed text-[#f0a868]">
+                    ⚠️ Desativar o sandbox permite que o agente acesse qualquer arquivo do sistema.
+                    Use por sua conta e risco.
+                  </p>
+                )}
+              </div>
             </div>
 
             <div className="mt-3 pt-3 border-t border-[#2a2d42]">
@@ -1737,6 +1979,7 @@ export function AIView({
                   state={statusState(m, runningHere)}
                   step={m.step}
                   maxSteps={m.maxSteps}
+                  tokens={m.tokens}
                 />
               ) : (
                 <div
@@ -1851,6 +2094,10 @@ export function AIView({
                 )}
                 Agente de código{' '}
                 {viewingPast ? '(run anterior)' : agentRunning ? '(rodando)' : '(encerrado)'}
+                {/* The real model in use (task 11), not "próprio do codex". */}
+                {agentRunning && agentModel && (
+                  <span className="text-[10px] font-normal text-[#6b7280]">· {agentModel}</span>
+                )}
               </span>
               <div className="flex items-center gap-3">
                 <AgentRunPicker
@@ -1923,6 +2170,44 @@ export function AIView({
                 </button>
               </div>
             </div>
+            {/* Per-action approval (native agent): the loop is parked on a write
+                or a command, and nothing runs until the user answers. This is
+                the ONLY barrier — the native agent has no OS sandbox — so it is
+                rendered prominently and blocks by construction (the loop waits
+                on the promise resolved by codeAgent.approve). */}
+            {agentPanelOpen && agentApproval && (
+              <div className="px-6 pb-3 pt-3">
+                <div className="rounded-lg border border-[#4f46e5] bg-[#141527] p-3">
+                  <p className="text-[12px] font-semibold text-[#a5b4fc]">
+                    O agente quer{' '}
+                    {agentApproval.name === 'executar_comando' ? 'executar um comando' : 'escrever um arquivo'}
+                  </p>
+                  <p className="mt-1 break-words font-mono text-[11px] leading-relaxed text-[#e2e8f0]">
+                    {agentApproval.resumo}
+                  </p>
+                  <div className="mt-2.5 flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        void window.electronAPI.ai.codeAgent.approve(agentApproval.id, true)
+                        setAgentApproval(null)
+                      }}
+                      className="rounded-md bg-[#4f46e5] px-3 py-1.5 text-[11px] font-medium text-white hover:bg-[#4338ca]"
+                    >
+                      Aprovar
+                    </button>
+                    <button
+                      onClick={() => {
+                        void window.electronAPI.ai.codeAgent.approve(agentApproval.id, false)
+                        setAgentApproval(null)
+                      }}
+                      className="rounded-md border border-[#2a2d42] px-3 py-1.5 text-[11px] font-medium text-[#8892a4] hover:text-[#e2e8f0]"
+                    >
+                      Recusar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
             {/* Above the diff, because it explains why the diff is empty. The
                 failure it reports exits 0 and prints its cause only in the raw
                 log, which sits behind a toggle — so without this the user is
@@ -2327,6 +2612,13 @@ export function AIView({
         }}
         onCancel={() => setConfirmAuto(false)}
       />
+      {showOnboarding && jailStatus && (
+        <SandboxOnboarding
+          status={jailStatus as JailStatus}
+          onDismiss={() => setShowOnboarding(false)}
+          onInstalled={() => void refreshJail(true)}
+        />
+      )}
     </>
   )
 }

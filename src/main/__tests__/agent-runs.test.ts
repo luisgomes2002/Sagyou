@@ -73,10 +73,14 @@ describe('normalizeRuns', () => {
     expect(out).toHaveLength(1)
   })
 
-  // codex is the only agent, so a row archived under any other name still has
-  // to read back as something the picker can render.
-  it('reads any stored agent name back as codex', () => {
-    const [r] = normalizeRuns([{ id: uuid(1), agent: 'outro' }])
+  // The agent field is now the model that ran (native agent) — preserved as-is.
+  it('preserves the stored agent/model name', () => {
+    const [r] = normalizeRuns([{ id: uuid(1), agent: 'gpt-4o' }])
+    expect(r.agent).toBe('gpt-4o')
+  })
+
+  it('falls back to codex for a row with no agent (old external-agent runs)', () => {
+    const [r] = normalizeRuns([{ id: uuid(1) }])
     expect(r.agent).toBe('codex')
   })
 
@@ -87,7 +91,7 @@ describe('normalizeRuns', () => {
 
   it('defaults a hand-edited file back to something renderable', () => {
     const [r] = normalizeRuns([{ id: uuid(1), agent: 'wat', startedAt: 'x', fileCount: null }])
-    expect(r.agent).toBe('codex')
+    expect(r.agent).toBe('wat')
     expect(r.startedAt).toBe(0)
     expect(r.fileCount).toBe(0)
     expect(r.convId).toBeNull()

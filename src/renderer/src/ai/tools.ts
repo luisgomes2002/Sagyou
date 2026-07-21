@@ -373,6 +373,41 @@ const PASTA_PARAM = {
   }
 } as const
 
+// ---------------------------------------------------------------------------
+// buscar_no_codigo result cache
+//
+// A code grep is resent to the model on every later step of a run, and the
+// model often searches near-duplicate terms across one run (e.g. "backup" then
+// "exportBackup"). This caches a search's result by (roots + normalised term)
+// for a short window, so re-searching the same term returns the same bytes
+// without re-walking the tree.
+//
+// ⚠️ Trade-off: within CODE_SEARCH_TTL_MS a file edited *outside* the app (an
+// editor, git) can return a stale hit. The code agent edits files too, so
+// clearCodeSearchCache() runs whenever a code-agent run is fired. The TTL is
+// deliberately short to bound the staleness the app can't observe.
+// ---------------------------------------------------------------------------
+const CODE_SEARCH_TTL_MS = 30_000
+const CODE_SEARCH_CACHE_MAX = 50
+const codeSearchCache = new Map<string, { at: number; result: string }>()
+
+/** Drop every cached code-search result. Called when files may have changed. */
+export function clearCodeSearchCache(): void {
+  codeSearchCache.clear()
+}
+
+/** Cache key for a search: the (sorted) roots it spans plus the normalised term. */
+function codeSearchKey(roots: Root[], termo: string): string {
+  return (
+    roots
+      .map((r) => r.path)
+      .sort()
+      .join('|') +
+    '::' +
+    termo.trim().toLowerCase()
+  )
+}
+
 // --- Registry: name -> tool. This is the map the task asks for. ---
 const REGISTRY: Record<string, AITool> = {
   ler_projetos: {
@@ -1468,6 +1503,9 @@ const REGISTRY: Record<string, AITool> = {
       // there later. `runningConvId` and not `conversationId`: a run belongs to
       // the chat that started it, not to whichever one the user is looking at
       // when the agent finishes.
+      // The agent is about to edit files under this root, so any cached code
+      // search of it is now potentially stale — drop the cache.
+      clearCodeSearchCache()
       const { runningConvId } = useAiRunStore.getState()
       void window.electronAPI.ai.codeAgent.run({
         path,
@@ -1538,12 +1576,31 @@ const REGISTRY: Record<string, AITool> = {
       'ler_arquivo',
       'Lê um arquivo do código do projeto pelo caminho relativo (ex: src/main/store.ts). ' +
         'Procura em todas as pastas marcadas; use pastaId se o mesmo caminho existir em mais de uma. ' +
-        'Devolve no máximo ~20 mil caracteres por vez; se "truncated" for verdadeiro, releia com ' +
-        '"inicio" = "nextOffset" para continuar de onde parou.',
+        '💡 NÃO leia o arquivo inteiro por reflexo. Para uma função/classe específica, passe ' +
+        '"simbolo" (ex: "exportBackup") e receba só o escopo dela (~1-3 mil chars) em vez de ' +
+        '20 mil. Para um trecho conhecido, use "linha_inicio"/"linha_fim" (ex: a linha que ' +
+        'buscar_no_codigo devolveu). Sem nada disso, devolve até ~20 mil caracteres por vez, e ' +
+        'quando o arquivo é grande a resposta traz "simbolos" (o mapa de declarações) para você ' +
+        'reler direto o símbolo certo; se "truncated" for verdadeiro, releia com "inicio" = ' +
+        '"nextOffset" para continuar.',
       {
         type: 'object',
         properties: {
           caminho: { type: 'string', description: 'Caminho relativo do arquivo' },
+          simbolo: {
+            type: 'string',
+            description:
+              'Nome de uma função/classe/const/interface a extrair — devolve só o escopo dela ' +
+              '(opcional). Preferível a ler o arquivo todo. Se não achar, a resposta traz "simbolos".'
+          },
+          linha_inicio: {
+            type: 'number',
+            description: 'Primeira linha (1-based) de um trecho a ler (opcional; use com linha_fim)'
+          },
+          linha_fim: {
+            type: 'number',
+            description: 'Última linha (1-based) do trecho a ler (opcional; padrão: até o fim)'
+          },
           inicio: {
             type: 'number',
             description:
@@ -1569,10 +1626,20 @@ const REGISTRY: Record<string, AITool> = {
       const inicio = typeof args.inicio === 'number' ? args.inicio : undefined
       const maxChars = typeof args.max_chars === 'number' ? args.max_chars : undefined
 
+      // Scoped read: a named symbol or a line range. Only built when asked, so a
+      // plain read still calls code.read with four args (its existing contract).
+      const simbolo = typeof args.simbolo === 'string' && args.simbolo.trim() !== '' ? args.simbolo.trim() : undefined
+      const lineStart = typeof args.linha_inicio === 'number' ? args.linha_inicio : undefined
+      const lineEnd = typeof args.linha_fim === 'number' ? args.linha_fim : undefined
+      const scope =
+        simbolo || lineStart != null || lineEnd != null ? { symbol: simbolo, lineStart, lineEnd } : undefined
+
       const reads = await Promise.all(
         roots.map(async (r) => ({
           root: r,
-          res: await window.electronAPI.ai.code.read(r.path, rel, inicio, maxChars)
+          res: scope
+            ? await window.electronAPI.ai.code.read(r.path, rel, inicio, maxChars, scope)
+            : await window.electronAPI.ai.code.read(r.path, rel, inicio, maxChars)
         }))
       )
       const hits = reads.filter((h) => !('error' in h.res && h.res.error))
@@ -1594,8 +1661,10 @@ const REGISTRY: Record<string, AITool> = {
   buscar_no_codigo: {
     definition: fn(
       'buscar_no_codigo',
-      'Busca um termo/texto no código do projeto (grep). Retorna arquivos e linhas que casam, ' +
-        'em todas as pastas de código marcadas.',
+      'Busca um termo/texto no código do projeto (grep), em todas as pastas marcadas. As ' +
+        'ocorrências vêm AGRUPADAS por arquivo — cada arquivo traz suas linhas ("linha"/"texto"). ' +
+        'Use a "linha" com ler_arquivo (linha_inicio/linha_fim ou simbolo) para ler só o trecho ' +
+        'certo em vez do arquivo todo.',
       {
         type: 'object',
         properties: {
@@ -1612,13 +1681,38 @@ const REGISTRY: Record<string, AITool> = {
       if (error) return JSON.stringify({ error })
       const termo = typeof args.termo === 'string' ? args.termo : ''
       if (!termo) return JSON.stringify({ error: 'Termo vazio' })
+      // Short-lived cache: a re-search of the same term over the same roots is
+      // common within a run, and the result is resent on every later step.
+      const key = codeSearchKey(roots, termo)
+      const cached = codeSearchCache.get(key)
+      if (cached && Date.now() - cached.at < CODE_SEARCH_TTL_MS) return cached.result
       const pastas = await Promise.all(
-        roots.map(async (r) => ({
-          pasta: r.nome,
-          ...(await window.electronAPI.ai.code.search(r.path, termo))
-        }))
+        roots.map(async (r) => {
+          const res = await window.electronAPI.ai.code.search(r.path, termo)
+          if (res.error) return { pasta: r.nome, error: res.error }
+          // Group by file: the flat list repeats the path on every hit, and a
+          // whole result is resent to the model on each later step of the run.
+          // One entry per file, its lines nested, is smaller and easier to read.
+          const byFile = new Map<string, { linha: number; texto: string }[]>()
+          for (const m of res.matches ?? []) {
+            const arr = byFile.get(m.file) ?? []
+            arr.push({ linha: m.line, texto: m.text })
+            byFile.set(m.file, arr)
+          }
+          return {
+            pasta: r.nome,
+            arquivos: [...byFile].map(([arquivo, ocorrencias]) => ({ arquivo, ocorrencias })),
+            total: (res.matches ?? []).length,
+            truncado: res.truncated === true
+          }
+        })
       )
-      return JSON.stringify({ pastas })
+      const result = JSON.stringify({ pastas })
+      // Bounded: on the rare occasion the run explores dozens of distinct terms,
+      // drop the whole cache rather than grow without limit.
+      if (codeSearchCache.size >= CODE_SEARCH_CACHE_MAX) codeSearchCache.clear()
+      codeSearchCache.set(key, { at: Date.now(), result })
+      return result
     }
   },
 
@@ -1710,6 +1804,8 @@ export function describeToolActivity(name: string, args: Record<string, unknown>
     }
     case 'ler_arquivo': {
       const caminho = str(args.caminho)
+      const simbolo = str(args.simbolo)
+      if (caminho && simbolo) return `Lendo ${simbolo} em ${caminho}`
       return caminho ? `Lendo ${caminho}` : 'Lendo um arquivo'
     }
     case 'buscar_no_codigo': {

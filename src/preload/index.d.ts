@@ -1,10 +1,19 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
+import type { RunMetricInput, RunMetricsSummary } from '../main/run-metrics'
 
 /** Persisted AI provider config (stored in the main process, not the renderer). */
 interface AIConfig {
   baseUrl: string
   apiKey: string
   model: string
+  /** Optional heavier model for code/analysis tasks; absent = one model for all. */
+  modelComplex?: string
+  /** Separate provider for the native code agent; empty fields fall back to the chat config. */
+  codeAgent?: { baseUrl?: string; apiKey?: string; model?: string }
+  /** Whether the ai-jail sandbox is required for the agent's shell commands (absent = on). */
+  sandboxEnabled?: boolean
+  /** Whether the sandbox onboarding has been answered (so it doesn't reappear). */
+  sandboxOnboardingDismissed?: boolean
   /** Optional cap on the agent's tool rounds; absent means the per-mode default. */
   maxSteps?: number
   /** USD per 1M tokens for the configured provider. Absent = cost not shown. */
@@ -238,6 +247,10 @@ declare global {
           set: (config: AIConfig) => Promise<void>
         }
         usage: { summary: () => Promise<UsageSummary> }
+        runMetrics: {
+          append: (input: RunMetricInput) => Promise<void>
+          summary: () => Promise<RunMetricsSummary>
+        }
         web: { fetch: (url: string, render?: boolean) => Promise<WebFetchResult> }
         images: {
           save: (dataUrl: string) => Promise<{ id: string } | { error: string }>
@@ -270,12 +283,15 @@ declare global {
             convId?: string
           }) => Promise<{ success: boolean; agent?: string; dir?: string; error?: string }>
           stop: () => Promise<void>
+          /** Answer an approval card the native agent's loop is parked on. */
+          approve: (id: string, approved: boolean) => Promise<void>
           /**
            * `log` is the buffered output, so a remounted panel can catch up.
+           * `model` is the real model in use this run (native agent).
            * `hint` is a recognised environment failure (with its fix) for a run
            * that reported success while doing nothing — null when there wasn't one.
            */
-          status: () => Promise<{ running: boolean; log: string; hint: AgentHint | null }>
+          status: () => Promise<{ running: boolean; log: string; model?: string; hint: AgentHint | null }>
           /** What the last run changed, measured from a base taken before it started. */
           diff: () => Promise<CodeAgentDiff>
           /** Past runs of one conversation, newest first. Metadata only. */
@@ -290,6 +306,39 @@ declare global {
           onExit: (cb: (code: number) => void) => () => void
           /** A finished run has been archived and can now be listed. */
           onArchived: (cb: (id: string) => void) => () => void
+          /** A tool call being run, then its result summary (native agent). */
+          onToolEvent: (
+            cb: (ev: {
+              phase: 'call' | 'result'
+              name: string
+              args?: Record<string, unknown>
+              summary?: string
+            }) => void
+          ) => () => void
+          /** The loop needs approval for a write/command before it runs. */
+          onApproveRequest: (
+            cb: (req: { id: string; name: string; args: Record<string, unknown>; resumo: string }) => void
+          ) => () => void
+        }
+        jail: {
+          status: (refresh?: boolean) => Promise<{
+            available: boolean
+            version: string | null
+            path: string | null
+            platform: string
+            installable: boolean
+            bubblewrap?: boolean
+            wsl2?: boolean
+            viaWsl?: boolean
+            reason?: string
+            enabled: boolean
+            onboardingDismissed: boolean
+            wslCommand: string
+            wslAiJailCommands: string
+          }>
+          install: () => Promise<{ success: boolean; version?: string; path?: string; error?: string }>
+          dismissOnboarding: () => Promise<void>
+          onProgress: (cb: (p: { phase: string; fraction: number | null }) => void) => () => void
         }
         pickDirectory: () => Promise<{ path: string | null }>
         code: {
@@ -310,13 +359,18 @@ declare global {
             root: string,
             rel: string,
             offset?: number,
-            maxChars?: number
+            maxChars?: number,
+            scope?: { symbol?: string; lineStart?: number; lineEnd?: number }
           ) => Promise<{
             content?: string
             truncated?: boolean
             offset?: number
             total?: number
             nextOffset?: number
+            simbolo?: string
+            linhaInicio?: number
+            linhaFim?: number
+            simbolos?: { nome: string; linha: number; tipo: string }[]
             error?: string
           }>
           search: (
