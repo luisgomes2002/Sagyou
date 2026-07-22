@@ -177,6 +177,28 @@ export interface Backup {
   conversations?: AIConversation[]
   // Added in version 4. Same rule: absent = leave local memory alone.
   memories?: AiMemory[]
+  // Added in version 5: the physical files that used to live only on disk.
+  // `files` is the attachment metadata (was never in the backup before — a
+  // restore preserved local files); `fileBlobs`/`chatImages` carry the actual
+  // bytes as base64. The bytes are injected by the main process at export time
+  // and written back to disk by it at import time — they never reach the
+  // renderer. Same "absent = leave local files untouched" rule as above.
+  files?: StoredFile[]
+  fileBlobs?: BackupFileBlob[]
+  chatImages?: BackupChatImage[]
+}
+
+/** An attachment's bytes, base64-encoded, keyed to its StoredFile id/ext. */
+export interface BackupFileBlob {
+  id: string
+  ext: string
+  base64: string
+}
+
+/** A chat image's bytes, base64-encoded, keyed to its on-disk `<uuid>.<ext>` id. */
+export interface BackupChatImage {
+  id: string
+  base64: string
 }
 
 /** The type of a durable AI memory. Mirrors MemoryType in main/memory.ts. */

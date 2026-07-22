@@ -8,6 +8,7 @@ import {
   existsSync,
   unlinkSync,
   statSync,
+  readdirSync,
   accessSync,
   constants
 } from 'fs'
@@ -86,6 +87,7 @@ import { fetchWeb } from './web-fetch'
 import { renderWeb } from './web-render'
 import { captureBase, diffSince, lineDiff, type AgentBase, type DiffLineItem } from './code-diff'
 import { decodeDataUrl, mimeForExt, isImageFileName } from './chat-images'
+import { safeAttachmentName } from './backup-files'
 import {
   diffFileCount,
   isRunId,
@@ -895,6 +897,47 @@ app.whenReady().then(() => {
     saveData(data)
   })
 
+  // Read every attachment blob named by the backup's file metadata, base64. A
+  // missing blob is skipped (metadata without bytes still restores as a broken
+  // attachment, no worse than before). safeAttachmentName rejects a hand-edited
+  // id/ext even on export — the ids are ours, but the guard is cheap.
+  const collectFileBlobs = (files: unknown): { id: string; ext: string; base64: string }[] => {
+    if (!Array.isArray(files)) return []
+    const out: { id: string; ext: string; base64: string }[] = []
+    for (const f of files) {
+      const id = (f as { id?: unknown })?.id
+      const ext = (f as { ext?: unknown })?.ext ?? ''
+      const name = safeAttachmentName(id, ext)
+      if (!name) continue
+      const full = join(filesDir, name)
+      if (!full.startsWith(filesDir + sep) || !existsSync(full)) continue
+      try {
+        out.push({ id: id as string, ext: ext as string, base64: readFileSync(full).toString('base64') })
+      } catch {
+        /* unreadable blob is skipped, not fatal to the backup */
+      }
+    }
+    return out
+  }
+
+  // Every file in chat-images/ is a chat image (named <uuid>.<ext>); read them
+  // all, filtered by the same guard the read/delete paths use.
+  const collectChatImages = (): { id: string; base64: string }[] => {
+    const dir = chatImagesDir()
+    if (!existsSync(dir)) return []
+    const out: { id: string; base64: string }[] = []
+    for (const id of readdirSync(dir)) {
+      const full = chatImagePath(id)
+      if (!full || !existsSync(full)) continue
+      try {
+        out.push({ id, base64: readFileSync(full).toString('base64') })
+      } catch {
+        /* skip an unreadable image */
+      }
+    }
+    return out
+  }
+
   ipcMain.handle('backup:export', async (_, backup) => {
     const date = new Date().toISOString().split('T')[0]
     const { filePath, canceled } = await dialog.showSaveDialog({
@@ -902,9 +945,52 @@ app.whenReady().then(() => {
       filters: [{ name: 'JSON', extensions: ['json'] }]
     })
     if (canceled || !filePath) return { success: false, cancelled: true }
-    writeFileSync(filePath, JSON.stringify(backup, null, 2), 'utf-8')
+    // Inject the physical bytes here, in main, so they never cross IPC: the
+    // renderer sent structured data + file metadata, and the blobs live on disk.
+    const full = {
+      ...backup,
+      fileBlobs: collectFileBlobs(backup?.files),
+      chatImages: collectChatImages()
+    }
+    writeFileSync(filePath, JSON.stringify(full, null, 2), 'utf-8')
     return { success: true }
   })
+
+  // Restore attachment/chat-image bytes to disk. The id/ext come from an
+  // untrusted backup, so every write goes through safeAttachmentName/
+  // isImageFileName + a startsWith re-check — a traversal id writes nothing.
+  const restoreFileBlobs = (blobs: unknown): void => {
+    if (!Array.isArray(blobs)) return
+    if (!existsSync(filesDir)) mkdirSync(filesDir, { recursive: true })
+    for (const b of blobs) {
+      const name = safeAttachmentName((b as { id?: unknown })?.id, (b as { ext?: unknown })?.ext ?? '')
+      const b64 = (b as { base64?: unknown })?.base64
+      if (!name || typeof b64 !== 'string') continue
+      const full = join(filesDir, name)
+      if (!full.startsWith(filesDir + sep)) continue
+      try {
+        writeFileSync(full, Buffer.from(b64, 'base64'))
+      } catch {
+        /* one bad blob doesn't abort the restore */
+      }
+    }
+  }
+
+  const restoreChatImages = (images: unknown): void => {
+    if (!Array.isArray(images)) return
+    if (!existsSync(chatImagesDir())) mkdirSync(chatImagesDir(), { recursive: true })
+    for (const img of images) {
+      const id = (img as { id?: unknown })?.id
+      const b64 = (img as { base64?: unknown })?.base64
+      const full = chatImagePath(id)
+      if (!full || typeof b64 !== 'string') continue
+      try {
+        writeFileSync(full, Buffer.from(b64, 'base64'))
+      } catch {
+        /* skip a bad image */
+      }
+    }
+  }
 
   ipcMain.handle('backup:import', async () => {
     const { filePaths, canceled } = await dialog.showOpenDialog({
@@ -914,7 +1000,17 @@ app.whenReady().then(() => {
     if (canceled || filePaths.length === 0) return { success: false, cancelled: true }
     try {
       const content = readFileSync(filePaths[0], 'utf-8')
-      return { success: true, data: JSON.parse(content) }
+      const data = JSON.parse(content)
+      // Write the blobs to disk here and strip them from the payload: the
+      // renderer only needs the structured data + file metadata, not megabytes
+      // of base64 crossing IPC. Absent keys (a pre-v5 backup) restore nothing.
+      restoreFileBlobs(data?.fileBlobs)
+      restoreChatImages(data?.chatImages)
+      if (data && typeof data === 'object') {
+        delete data.fileBlobs
+        delete data.chatImages
+      }
+      return { success: true, data }
     } catch {
       return { success: false, error: 'Arquivo inválido' }
     }

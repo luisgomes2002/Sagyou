@@ -93,7 +93,7 @@ src/
     index.ts     # registra TODOS os handlers IPC — comece por aqui
     store.ts     # persistência SQLite (kanban.db)
     web-fetch.ts # busca páginas para a IA (a política de segurança vive aqui)
-    code-files.ts, code-diff.ts, usage.ts, chat-images.ts, …
+    code-files.ts, code-diff.ts, usage.ts, chat-images.ts, backup-files.ts, …
     __tests__/   # precisam de @vitest-environment node
   preload/
     index.ts     # ponte contextBridge -> window.electronAPI

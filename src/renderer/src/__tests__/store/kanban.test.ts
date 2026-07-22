@@ -595,18 +595,58 @@ describe('backups carry AI chat history', () => {
     ]
   }
 
-  it('exportBackup includes the stored conversations and memories at version 4', async () => {
+  it('exportBackup includes conversations, memories and file metadata at version 5', async () => {
     const storage = getStorageMock()
     storage.loadConversations.mockResolvedValueOnce([conversation])
     const memory = { id: 'm1', projectId: null, type: 'fato', title: 't', body: 'b', tags: [], pinned: false, source: 'modelo', createdAt: 'x', updatedAt: 'x', lastAccessedAt: 'x', accessCount: 0, archivedAt: null }
     storage.loadMemories.mockResolvedValueOnce([memory])
+    const file = { id: 'f1', name: 'doc.pdf', ext: '.pdf', size: 10, createdAt: 'x', projectId: 'p1' }
+    useKanbanStore.setState({ files: [file] })
 
     await useKanbanStore.getState().exportBackup()
 
     const backup = storage.exportBackup.mock.calls[0][0]
-    expect(backup.version).toBe(4)
+    expect(backup.version).toBe(5)
     expect(backup.conversations).toEqual([conversation])
     expect(backup.memories).toEqual([memory])
+    // Attachment metadata rides along now; the bytes are attached in main.
+    expect(backup.files).toEqual([file])
+  })
+
+  it('importBackup restores file metadata from a v5 backup', async () => {
+    const storage = getStorageMock()
+    const file = { id: 'f1', name: 'doc.pdf', ext: '.pdf', size: 10, createdAt: 'x', projectId: 'p1' }
+    storage.importBackup.mockResolvedValueOnce({
+      success: true,
+      data: {
+        version: 5,
+        exportedAt: new Date().toISOString(),
+        projects: [], tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: [],
+        files: [file]
+      }
+    })
+
+    await useKanbanStore.getState().importBackup()
+
+    expect(useKanbanStore.getState().files).toEqual([file])
+  })
+
+  it('importBackup leaves local files alone for a pre-v5 backup (no files key)', async () => {
+    const local = { id: 'local', name: 'keep.txt', ext: '.txt', size: 1, createdAt: 'x' }
+    useKanbanStore.setState({ files: [local] })
+    const storage = getStorageMock()
+    storage.importBackup.mockResolvedValueOnce({
+      success: true,
+      data: {
+        version: 4,
+        exportedAt: new Date().toISOString(),
+        projects: [], tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: []
+      }
+    })
+
+    await useKanbanStore.getState().importBackup()
+
+    expect(useKanbanStore.getState().files).toEqual([local])
   })
 
   it('exportBackup still succeeds when memory cannot be read', async () => {
