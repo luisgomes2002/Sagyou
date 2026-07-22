@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { v4 as uuidv4 } from 'uuid'
 import Decimal from 'decimal.js'
-import type { Project, Task, Column, Sprint, Tombstone, Backup, AIJson, Priority, StickyNote, Goal, GoalEntry, Habit, FinancialTable, FinancialTransaction, FinancialGoal, ShoppingItem, Currency, StoredFile, AIConversation, AiMemory } from '../types'
+import type { Project, Task, TaskImage, Column, Sprint, Tombstone, Backup, AIJson, Priority, StickyNote, Goal, GoalEntry, Habit, FinancialTable, FinancialTransaction, FinancialGoal, ShoppingItem, Currency, StoredFile, AIConversation, AiMemory } from '../types'
 import { DEFAULT_COLUMN_NAMES } from '../types'
 import { ElectronStorage } from '../services/ElectronStorage'
 import { isDoneColumn } from '../utils/columns'
@@ -485,6 +485,11 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
 
   deleteTask: (id) => {
     const now = new Date().toISOString()
+    // Delete the task's image files from disk — nothing else references them, so
+    // they'd orphan otherwise (the DB row goes via the task's cascade).
+    const doomed = get().tasks.find((t) => t.id === id)?.images ?? []
+    const blobs = doomed.filter((i) => i.ext).map((i) => ({ id: i.id, ext: i.ext }))
+    if (blobs.length) void window.electronAPI.taskImages.delete(blobs)
     set((s) => ({
       tasks: s.tasks.filter((t) => t.id !== id),
       tombstones: [...s.tombstones, { id, type: 'task', deletedAt: now }]
@@ -1045,7 +1050,27 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
     const projects = (backup.projects || [])
       .filter((p: Project) => !tombstoneIds.has(p.id))
       .map(normalizeProject)
-    const tasks: Task[] = (backup.tasks || []).filter((t: Task) => !tombstoneIds.has(t.id))
+    // Legacy task images carried their bytes inline (`dataUrl`); a v5+ backup has
+    // them as metadata with the bytes already written to disk by backup:import.
+    // Convert any inline image to a disk file so the store only ever holds metadata.
+    const tasks: Task[] = await Promise.all(
+      (backup.tasks || [])
+        .filter((t: Task) => !tombstoneIds.has(t.id))
+        .map(async (t: Task) => {
+          if (!t.images?.some((img) => img.dataUrl)) return t
+          const images: TaskImage[] = []
+          for (const img of t.images) {
+            if (img.dataUrl) {
+              const res = await window.electronAPI.taskImages.save(img.dataUrl)
+              if ('error' in res) continue // undecodable → drop it, no dangling ref
+              images.push({ id: res.id, name: img.name, ext: res.ext, size: res.size, addedAt: img.addedAt })
+            } else {
+              images.push(img)
+            }
+          }
+          return { ...t, images }
+        })
+    )
     const sprints: Sprint[] = backup.sprints || []
     const notes: StickyNote[] = backup.notes || []
     const goals: Goal[] = backup.goals || []

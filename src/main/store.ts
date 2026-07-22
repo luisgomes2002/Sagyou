@@ -1,9 +1,10 @@
 import { app } from 'electron'
 import { join } from 'path'
-import { existsSync, readFileSync, renameSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from 'fs'
 import { is } from '@electron-toolkit/utils'
 import Database from 'better-sqlite3'
 import { normalizeMemory, type AiMemory } from './memory'
+import { decodeDataUrl } from './chat-images'
 
 // ── Inline types (mirrors src/renderer/src/types/index.ts) ──────────────────
 
@@ -21,7 +22,7 @@ interface Project {
   order?: number
   createdAt: string; updatedAt: string
 }
-interface TaskImage { id: string; name: string; dataUrl: string; size: number; addedAt: string }
+interface TaskImage { id: string; name: string; ext: string; size: number; addedAt: string }
 interface Task {
   id: string; projectId: string; columnId: string; title: string; description?: string
   priority: Priority; dueDate?: string; tags: string[]; sprintId?: string
@@ -82,6 +83,7 @@ function getDb(): Database.Database {
   initSchema(_db)
   migrateMoneyColumnsToText(_db)
   migrateMemoryDropProjectFk(_db)
+  migrateTaskImagesToDisk(_db)
   migrateFromJson(_db)
   return _db
 }
@@ -224,6 +226,64 @@ function migrateMemoryDropProjectFk(db: Database.Database): void {
   }
 }
 
+// One-time migration for existing DBs: task images used to store their bytes as
+// base64 in `task_images.data_url`, which bloated the DB (loaded whole into the
+// renderer store, reserialized on every save). Move each blob to a file at
+// task-images/<id><ext> — matching chat images and file attachments — and
+// rebuild the table with an `ext` column and no `data_url`. Idempotent: skips a
+// table already migrated (no `data_url` column). A row whose data_url won't
+// decode is dropped from disk but keeps its metadata row (a broken thumbnail,
+// no worse than the un-writable case), so one bad blob can't abort the boot.
+function migrateTaskImagesToDisk(db: Database.Database): void {
+  const info = db.prepare(`PRAGMA table_info(task_images)`).all() as { name: string }[]
+  if (!info.some((c) => c.name === 'data_url')) return
+
+  const dir = join(app.getPath('userData'), 'task-images')
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+
+  // Write the blobs to disk first (outside the schema transaction — file IO
+  // can't roll back with SQL anyway), collecting the ext each row should carry.
+  const rows = db.prepare('SELECT id, data_url FROM task_images').all() as {
+    id: string
+    data_url: string
+  }[]
+  const extById = new Map<string, string>()
+  for (const r of rows) {
+    const decoded = decodeDataUrl(r.data_url)
+    if ('error' in decoded) continue // undecodable blob → metadata stays, no file
+    const ext = `.${decoded.ext}`
+    try {
+      writeFileSync(join(dir, `${r.id}${ext}`), decoded.bytes)
+      extById.set(r.id, ext)
+    } catch {
+      /* unwritable blob is skipped; the row keeps a blank ext */
+    }
+  }
+
+  db.pragma('foreign_keys = OFF')
+  try {
+    db.transaction(() => {
+      db.exec(`CREATE TABLE task_images_new (
+        id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        ext TEXT NOT NULL DEFAULT '',
+        size INTEGER NOT NULL,
+        added_at TEXT NOT NULL
+      )`)
+      const insert = db.prepare(
+        'INSERT INTO task_images_new (id,task_id,name,ext,size,added_at) SELECT id,task_id,name,?,size,added_at FROM task_images WHERE id=?'
+      )
+      for (const r of rows) insert.run(extById.get(r.id) ?? '', r.id)
+      db.exec(`DROP TABLE task_images`)
+      db.exec(`ALTER TABLE task_images_new RENAME TO task_images`)
+    })()
+    console.log(`[store] Migrated ${extById.size}/${rows.length} task images to disk`)
+  } finally {
+    db.pragma('foreign_keys = ON')
+  }
+}
+
 // ── Schema ───────────────────────────────────────────────────────────────────
 
 function initSchema(db: Database.Database): void {
@@ -277,11 +337,16 @@ function initSchema(db: Database.Database): void {
       tag TEXT NOT NULL,
       PRIMARY KEY (task_id, tag)
     );
+    -- Task images keep only metadata here; the bytes live on disk at
+    -- task-images/<id><ext> (like chat images and file attachments), so a big
+    -- photo no longer bloats the DB that's loaded whole into the renderer store
+    -- and reserialized on every save. migrateTaskImagesToDisk moves legacy
+    -- data_url rows out; a fresh DB starts with ext and no data_url.
     CREATE TABLE IF NOT EXISTS task_images (
       id TEXT PRIMARY KEY,
       task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
       name TEXT NOT NULL,
-      data_url TEXT NOT NULL,
+      ext TEXT NOT NULL DEFAULT '',
       size INTEGER NOT NULL,
       added_at TEXT NOT NULL
     );
@@ -468,7 +533,7 @@ function prepareWrite(db: Database.Database) {
     codePath: db.prepare('INSERT INTO project_code_paths (id,project_id,label,path,active) VALUES (?,?,?,?,?)'),
     task:    db.prepare('INSERT INTO tasks (id,project_id,column_id,title,description,priority,due_date,sprint_id,time_spent,ord,created_at,updated_at,completed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'),
     tag:     db.prepare('INSERT OR IGNORE INTO task_tags (task_id,tag) VALUES (?,?)'),
-    image:   db.prepare('INSERT INTO task_images (id,task_id,name,data_url,size,added_at) VALUES (?,?,?,?,?,?)'),
+    image:   db.prepare('INSERT INTO task_images (id,task_id,name,ext,size,added_at) VALUES (?,?,?,?,?,?)'),
     sprint:  db.prepare('INSERT INTO sprints (id,project_id,name,created_at,closed_at) VALUES (?,?,?,?,?)'),
     tomb:    db.prepare('INSERT INTO tombstones (id,type,deleted_at) VALUES (?,?,?)'),
     note:    db.prepare('INSERT INTO notes (id,project_id,content,color,x,y,width,height,task_id,font_size,type,completed_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'),
@@ -513,7 +578,7 @@ function prepareWrite(db: Database.Database) {
         t.dueDate ?? null, t.sprintId ?? null, t.timeSpent ?? null, t.order,
         t.createdAt, t.updatedAt, t.completedAt ?? null)
       for (const tag of t.tags ?? []) ins.tag.run(t.id, tag)
-      for (const img of t.images ?? []) ins.image.run(img.id, t.id, img.name, img.dataUrl, img.size, img.addedAt)
+      for (const img of t.images ?? []) ins.image.run(img.id, t.id, img.name, img.ext ?? '', img.size, img.addedAt)
     },
     sprint: (s: Sprint): void => {
       ins.sprint.run(s.id, s.projectId, s.name, s.createdAt, s.closedAt ?? null)
@@ -717,7 +782,7 @@ export function loadData(): SaveData {
     ...(t.completed_at != null ? { completedAt: t.completed_at } : {}),
     ...(() => {
       const imgs = (imagesByTask.get(t.id) ?? [])
-        .map((i) => ({ id: i.id, name: i.name, dataUrl: i.data_url, size: i.size, addedAt: i.added_at }))
+        .map((i) => ({ id: i.id, name: i.name, ext: i.ext ?? '', size: i.size, addedAt: i.added_at }))
       return imgs.length ? { images: imgs } : {}
     })(),
   }))

@@ -369,7 +369,10 @@ Regras de comportamento:
 - Mantenha o ESTILO do código ao redor: convenções de nome, indentação, aspas, densidade de comentários. Escreva código que pareça escrito por quem escreveu o resto.
 - Se os arquivos a editar já vierem indicados no prompt, vá direto neles — não gaste passos com busca exploratória. Caso contrário, localize primeiro com buscar_no_codigo/ler_arquivo e só então edite. Nunca adivinhe caminhos.
 - escrever_arquivo grava o arquivo INTEIRO — leia o arquivo antes e reescreva o conteúdo completo já com a alteração, para não apagar o resto.
-- Use executar_comando para rodar testes/build e verificar seu trabalho quando fizer sentido.
+- Antes da primeira escrita, faça um plano curto para si mesmo: qual arquivo, o que muda, o que isso pode quebrar. Pensar antes de editar evita retrabalho — vale mais do que começar rápido.
+- Faça a MENOR mudança que resolve a task. Como escrever_arquivo reescreve o arquivo todo, é tentador reformatar ou "melhorar" o código vizinho — não faça: preserve tudo que não faz parte do pedido.
+- Use executar_comando para rodar testes/build/lint e verificar seu trabalho quando fizer sentido.
+- Se um comando falhar, LEIA a mensagem de erro e conserte a causa antes de seguir. O erro quase sempre aponta o arquivo e a linha. Nunca repita o mesmo comando esperando outro resultado, nem chute uma correção sem ter lido o erro.
 - Não faça commit nem mexa no histórico do git — isso é do usuário.
 - Ao terminar, responda em texto (sem chamar ferramentas) com um resumo curto do que mudou.`
 
@@ -507,11 +510,12 @@ export async function dirTree(root: string, cap = 400): Promise<string> {
 
 /** Safety cap on model→tools rounds, so a stuck agent can't spin forever.
  *  ⚠️ Each step resends the whole accumulated history, so cost grows worse than
- *  linearly in this number — it's a circuit breaker, not a budget. Raised to 40
- *  as a safety net alongside pinned-file inlining (which cuts the redescovery
- *  waste that used to exhaust it); the real fix is spending fewer steps, not a
+ *  linearly in this number — it's a circuit breaker, not a budget. Raised to 60
+ *  to give weaker models room to recover (read error → fix → re-run costs a few
+ *  steps per edit, and a run that succeeds still stops early, so the ceiling only
+ *  bites on a genuinely failing run); the real fix is spending fewer steps, not a
  *  higher ceiling. */
-export const CODE_AGENT_MAX_STEPS = 40
+export const CODE_AGENT_MAX_STEPS = 60
 
 /** Everything the loop needs from the outside, all injectable for tests. */
 export interface RunAgentDeps {

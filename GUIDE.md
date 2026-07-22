@@ -144,7 +144,9 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    `ai-config.json`, `ai-conversations.json`, `ai-usage-log.json`,
    `ai-run-metrics.json` (uma linha por execução do agente — modelo, passos,
    tokens, buscas redundantes, releituras — regras puras em `main/run-metrics.ts`,
-   enviadas pelo `runAgent` no `finally`, best-effort), `chat-images/`. Apagar um
+   enviadas pelo `runAgent` no `finally`, best-effort), `chat-images/`,
+   `task-images/` (bytes das imagens de task — só metadata no DB, downscale JPEG
+   no cliente, `migrateTaskImagesToDisk` migra dados legados). Apagar um
    lado sem o outro deixa órfão.
 5. **Ferramenta de IA que escreve leva `write: true`** em `ai/tools.ts`. É a
    única coisa entre o modelo e os dados do usuário: sem isso a ação roda sem

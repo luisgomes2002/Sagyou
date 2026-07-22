@@ -473,6 +473,13 @@ declare global {
           ext: string
         ) => Promise<{ success: boolean; cancelled?: boolean; error?: string }>
       }
+      taskImages: {
+        save: (
+          dataUrl: string
+        ) => Promise<{ id: string; ext: string; size: number } | { error: string }>
+        get: (id: string, ext: string) => Promise<{ dataUrl: string } | { error: string }>
+        delete: (items: { id: string; ext: string }[]) => Promise<void>
+      }
       excel: {
         export: (
           buffer: ArrayBuffer,

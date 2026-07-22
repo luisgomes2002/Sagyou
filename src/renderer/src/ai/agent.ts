@@ -221,12 +221,14 @@ export const LOW_STEPS_WARNING = 10
 /**
  * Words that mark a message as a code / deep-analysis task, worth routing to the
  * heavier `modelComplex`. Matched against accent-stripped, lowercased text, so
- * only ASCII stems belong here (see routeModel). Kept deliberately close to the
- * user's own list — over-matching would send cheap questions to the pricey model
- * and quietly raise the bill this whole feature exists to lower.
+ * only ASCII stems belong here (see routeModel). Tuned for *balance*, not minimum
+ * spend: a code task answered well by the strong model beats a few cents saved, so
+ * the list leans toward catching real dev work (fix/optimize/tests/lint/typing) —
+ * while still excluding bare, high-frequency words ("erro", "tarefa") that fire on
+ * ordinary kanban chatter and would route trivia to the pricey model for nothing.
  */
 export const COMPLEX_TASK_PATTERN =
-  /\b(codigo|bug|refator|arquitetura|investig|implement|depura|debug|stacktrace|stack trace|excecao|traceback|algoritmo)\w*/
+  /\b(codigo|bug|refator|arquitetura|investig|implement|depura|debug|stacktrace|stack trace|excecao|traceback|algoritmo|corrig|otimiz|desempenho|performance|funcao|metodo|compil|lint|tipagem|typescript|javascript)\w*/
 
 /** Lowercase and strip accents, so "código"/"refatorar" match ASCII stems. */
 function normalizeForRoute(s: string): string {

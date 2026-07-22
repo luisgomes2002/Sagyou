@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, KeyboardEvent } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 import type { Task, Priority, Column, Sprint, TaskImage } from '../types'
 import { PRIORITY_CONFIG, DEFAULT_TAGS } from '../types'
+import { toTaskImageDataUrl } from '../utils/images'
 
 interface Props {
   open: boolean
@@ -33,6 +34,10 @@ export function TaskModal({ open, task, columns, sprints, defaultColumnId, defau
   const [columnId, setColumnId] = useState('')
   const [sprintId, setSprintId] = useState('')
   const [images, setImages] = useState<TaskImage[]>([])
+  // id -> dataUrl for display only. Existing images load their bytes from disk
+  // on open; a newly-added image caches its downscaled dataUrl here (and on the
+  // TaskImage.dataUrl field) until save writes it to disk. The DB never holds bytes.
+  const [imageData, setImageData] = useState<Record<string, string>>({})
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const activeSprint = sprints.find((s) => !s.closedAt)
@@ -48,15 +53,48 @@ export function TaskModal({ open, task, columns, sprints, defaultColumnId, defau
       setColumnId(task?.columnId ?? defaultColumnId ?? columns[0]?.id ?? '')
       setSprintId(task ? (task.sprintId ?? '') : (activeSprint?.id ?? ''))
       setImages(task?.images ?? [])
+      // Load existing images' bytes from disk for the previews. setState only in
+      // the promise callback (matches AIView's loadImagesFor); the fresh map
+      // replaces any previous one, so no synchronous reset is needed.
+      Promise.all(
+        (task?.images ?? []).map(
+          async (img) => [img.id, await window.electronAPI.taskImages.get(img.id, img.ext)] as const
+        )
+      ).then((loaded) => {
+        const next: Record<string, string> = {}
+        for (const [id, res] of loaded) if ('dataUrl' in res) next[id] = res.dataUrl
+        // Merge, not replace: a just-added image (handleFileChange) must survive
+        // this load resolving late. Stale keys from a prior task are unused.
+        setImageData((d) => ({ ...d, ...next }))
+      })
     }
   }, [open, task, defaultTitle, defaultColumnId, columns])
 
   if (!open) return null
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!title.trim()) return
-    onSave({ title: title.trim(), description: description.trim(), priority, dueDate, tags, columnId, sprintId, images })
+    // Persist newly-added images (they carry a dataUrl) to disk now; existing
+    // images already have a file. Writing on save (not on add) keeps cancel clean.
+    const finalImages: TaskImage[] = []
+    for (const img of images) {
+      if (img.dataUrl) {
+        const res = await window.electronAPI.taskImages.save(img.dataUrl)
+        if ('error' in res) continue // couldn't save → drop it, never store a dangling ref
+        finalImages.push({ id: res.id, name: img.name, ext: res.ext, size: res.size, addedAt: img.addedAt })
+      } else {
+        finalImages.push(img)
+      }
+    }
+    // Delete the files of existing images the user removed (the task no longer
+    // references them; nothing else does).
+    const keptIds = new Set(finalImages.map((i) => i.id))
+    const dropped = (task?.images ?? [])
+      .filter((o) => !keptIds.has(o.id))
+      .map((o) => ({ id: o.id, ext: o.ext }))
+    if (dropped.length) await window.electronAPI.taskImages.delete(dropped)
+    onSave({ title: title.trim(), description: description.trim(), priority, dueDate, tags, columnId, sprintId, images: finalImages })
   }
 
   const handleTagKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -78,28 +116,33 @@ export function TaskModal({ open, task, columns, sprints, defaultColumnId, defau
     setTags((prev) => prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag])
   }
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])
-    files.forEach((file) => {
-      const reader = new FileReader()
-      reader.onload = () => {
+    e.target.value = ''
+    for (const file of files) {
+      try {
+        // Downscale here (JPEG 1600px); the bytes hit disk only on save.
+        const dataUrl = await toTaskImageDataUrl(file)
+        const id = uuidv4()
         setImages((prev) => [
           ...prev,
-          {
-            id: uuidv4(),
-            name: file.name,
-            dataUrl: reader.result as string,
-            size: file.size,
-            addedAt: new Date().toISOString()
-          }
+          { id, name: file.name, ext: '', size: file.size, addedAt: new Date().toISOString(), dataUrl }
         ])
+        setImageData((d) => ({ ...d, [id]: dataUrl }))
+      } catch {
+        /* skip an image that can't be read/decoded */
       }
-      reader.readAsDataURL(file)
-    })
-    e.target.value = ''
+    }
   }
 
-  const removeImage = (id: string) => setImages((prev) => prev.filter((img) => img.id !== id))
+  const removeImage = (id: string) => {
+    setImages((prev) => prev.filter((img) => img.id !== id))
+    setImageData((d) => {
+      const next = { ...d }
+      delete next[id]
+      return next
+    })
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -283,7 +326,7 @@ export function TaskModal({ open, task, columns, sprints, defaultColumnId, defau
                 {images.map((img) => (
                   <div key={img.id} className="relative group/img aspect-square rounded-lg overflow-hidden border border-[#2a2d42] bg-[#0d0f18]">
                     <img
-                      src={img.dataUrl}
+                      src={imageData[img.id]}
                       alt={img.name}
                       className="w-full h-full object-cover"
                     />

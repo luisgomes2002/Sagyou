@@ -1063,3 +1063,96 @@ describe('code path actions', () => {
     expect(project().activeCodePathIds).toEqual([id1])
   })
 })
+
+// ── Task images live on disk (metadata only in the store) ─────────────────────
+
+describe('task images: disk storage + cleanup', () => {
+  const taskImages = {
+    save: vi.fn(),
+    get: vi.fn(),
+    delete: vi.fn().mockResolvedValue(undefined)
+  }
+
+  beforeEach(() => {
+    resetStore()
+    taskImages.save.mockReset().mockResolvedValue({ id: 'stored-1', ext: '.jpg', size: 42 })
+    taskImages.get.mockReset()
+    taskImages.delete.mockReset().mockResolvedValue(undefined)
+    ;(window as unknown as { electronAPI: unknown }).electronAPI = { taskImages }
+  })
+
+  it('deleteTask removes the task images from disk', () => {
+    useKanbanStore.setState({
+      tasks: [
+        {
+          id: 't1', projectId: 'p1', columnId: 'c1', title: 'x', priority: 'medium',
+          tags: [], order: 0, createdAt: 'x', updatedAt: 'x',
+          images: [
+            { id: 'i1', name: 'a.jpg', ext: '.jpg', size: 1, addedAt: 'x' },
+            { id: 'i2', name: 'b.png', ext: '.png', size: 2, addedAt: 'x' }
+          ]
+        }
+      ]
+    })
+
+    useKanbanStore.getState().deleteTask('t1')
+
+    expect(taskImages.delete).toHaveBeenCalledWith([
+      { id: 'i1', ext: '.jpg' },
+      { id: 'i2', ext: '.png' }
+    ])
+  })
+
+  it('importBackup converts a legacy inline task image to a disk file', async () => {
+    const storage = getStorageMock()
+    storage.importBackup.mockResolvedValueOnce({
+      success: true,
+      data: {
+        version: 5,
+        exportedAt: new Date().toISOString(),
+        projects: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: [],
+        tasks: [
+          {
+            id: 't1', projectId: 'p1', columnId: 'c1', title: 'x', priority: 'medium',
+            tags: [], order: 0, createdAt: 'x', updatedAt: 'x',
+            images: [{ id: 'old', name: 'a.jpg', size: 9, addedAt: 'x', dataUrl: 'data:image/jpeg;base64,AAAA' }]
+          }
+        ]
+      }
+    })
+
+    await useKanbanStore.getState().importBackup()
+
+    // The inline dataUrl was written to disk, and the store kept metadata only.
+    expect(taskImages.save).toHaveBeenCalledWith('data:image/jpeg;base64,AAAA')
+    const imgs = useKanbanStore.getState().tasks[0].images!
+    expect(imgs).toEqual([{ id: 'stored-1', name: 'a.jpg', ext: '.jpg', size: 42, addedAt: 'x' }])
+    expect(imgs[0]).not.toHaveProperty('dataUrl')
+  })
+
+  it('importBackup leaves a v5 metadata-only task image untouched (bytes handled in main)', async () => {
+    const storage = getStorageMock()
+    storage.importBackup.mockResolvedValueOnce({
+      success: true,
+      data: {
+        version: 5,
+        exportedAt: new Date().toISOString(),
+        projects: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: [],
+        tasks: [
+          {
+            id: 't1', projectId: 'p1', columnId: 'c1', title: 'x', priority: 'medium',
+            tags: [], order: 0, createdAt: 'x', updatedAt: 'x',
+            images: [{ id: 'i1', name: 'a.jpg', ext: '.jpg', size: 9, addedAt: 'x' }]
+          }
+        ]
+      }
+    })
+
+    await useKanbanStore.getState().importBackup()
+
+    expect(taskImages.save).not.toHaveBeenCalled()
+    expect(useKanbanStore.getState().tasks[0].images).toEqual([
+      { id: 'i1', name: 'a.jpg', ext: '.jpg', size: 9, addedAt: 'x' }
+    ])
+  })
+})
