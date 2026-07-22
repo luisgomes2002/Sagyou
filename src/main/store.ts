@@ -81,6 +81,7 @@ function getDb(): Database.Database {
   _db.pragma('foreign_keys = ON')
   initSchema(_db)
   migrateMoneyColumnsToText(_db)
+  migrateMemoryDropProjectFk(_db)
   migrateFromJson(_db)
   return _db
 }
@@ -172,6 +173,52 @@ function migrateMoneyColumnsToText(db: Database.Database): void {
       }
     })()
     console.log(`[store] Migrated money columns to TEXT: ${pending.map((r) => r.table).join(', ')}`)
+  } finally {
+    db.pragma('foreign_keys = ON')
+  }
+}
+
+// One-time migration for existing DBs: the `memory` table originally declared
+// `project_id TEXT REFERENCES projects(id) ON DELETE CASCADE`. That cascade was
+// a data-loss bug — persistAll (first save of a session) and persistDiff (any
+// project edit) delete-and-reinsert the project row, and the cascade hard-deleted
+// every project-scoped memory (pinned included, never archived) while the
+// re-insert path never restored them, since memory is written outside persistAll.
+// Rebuild the table with a plain TEXT project_id (like tasks/notes) so a project
+// re-insert no longer touches memory; a genuinely deleted project just leaves its
+// memories orphaned. Idempotent — skips a table that already has no FK.
+function migrateMemoryDropProjectFk(db: Database.Database): void {
+  const fks = db.prepare(`PRAGMA foreign_key_list(memory)`).all() as { table: string }[]
+  const hasProjectFk = fks.some((r) => r.table === 'projects')
+  if (!hasProjectFk) return
+
+  // foreign_keys cannot be toggled inside a transaction; disable around the rebuild.
+  db.pragma('foreign_keys = OFF')
+  try {
+    db.transaction(() => {
+      db.exec(`CREATE TABLE memory_new (
+        id TEXT PRIMARY KEY,
+        project_id TEXT,
+        type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        tags TEXT NOT NULL DEFAULT '[]',
+        pinned INTEGER NOT NULL DEFAULT 0,
+        source TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        last_accessed_at TEXT NOT NULL,
+        access_count INTEGER NOT NULL DEFAULT 0,
+        archived_at TEXT
+      )`)
+      db.exec(`INSERT INTO memory_new
+        (id,project_id,type,title,body,tags,pinned,source,created_at,updated_at,last_accessed_at,access_count,archived_at)
+        SELECT id,project_id,type,title,body,tags,pinned,source,created_at,updated_at,last_accessed_at,access_count,archived_at FROM memory`)
+      db.exec(`DROP TABLE memory`)
+      db.exec(`ALTER TABLE memory_new RENAME TO memory`)
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_memory_project ON memory(project_id) WHERE archived_at IS NULL`)
+    })()
+    console.log('[store] Migrated memory table: dropped project_id ON DELETE CASCADE')
   } finally {
     db.pragma('foreign_keys = ON')
   }
@@ -353,11 +400,18 @@ function initSchema(db: Database.Database): void {
     -- AI memory: durable facts the assistant carries across conversations. A
     -- satellite table written OUTSIDE persistAll (see the Memory section below):
     -- the access counters are bumped on every read, and routing that through the
-    -- store's full-replace save would rewrite the whole DB per touch. FK to
-    -- projects so deleting a project drops its memories; project_id NULL = global.
+    -- store's full-replace save would rewrite the whole DB per touch.
+    -- project_id is a PLAIN TEXT reference (like tasks/notes), NOT an FK with
+    -- ON DELETE CASCADE. It must not cascade: persistAll (first save of a session)
+    -- and persistDiff (any project edit) delete-and-reinsert the project row, and
+    -- a cascade would hard-delete this satellite's rows on every such save while
+    -- the re-insert path never restores them — silent, unrecoverable data loss
+    -- (pinned included, never archived). project_id NULL = global; a memory whose
+    -- project was deleted survives as an orphan (reads as "projeto removido") and
+    -- decays on its own if unused. migrateMemoryDropProjectFk drops the old FK.
     CREATE TABLE IF NOT EXISTS memory (
       id TEXT PRIMARY KEY,
-      project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+      project_id TEXT,
       type TEXT NOT NULL,
       title TEXT NOT NULL,
       body TEXT NOT NULL,
