@@ -477,7 +477,7 @@ async function callModelResilient(
 }
 
 /** Stand-in left where a superseded tool result used to be. */
-const ELIDED = JSON.stringify({
+export const ELIDED = JSON.stringify({
   elided: 'Resultado substituído por uma chamada idêntica mais recente nesta mesma execução.'
 })
 
@@ -537,6 +537,88 @@ export function pruneSupersededResults(msgs: ApiMessage[]): ApiMessage[] {
     }
   }
   return out
+}
+
+/** One model call's prune measurement (see measurePrunedCall). */
+export interface PrunedCallMeasurement {
+  /** Content chars actually sent this call (after prune). */
+  sentChars: number
+  /** Content chars the current prune removed vs. the un-pruned history. */
+  savedChars: number
+  /** Of what was sent, the chars that are read-tool result bodies still intact —
+   *  the ceiling of what any smarter prune could still remove. */
+  readResultChars: number
+}
+
+/**
+ * Measure-first instrumentation (a diagnostic, not a feature): for one model
+ * call, how much the current `pruneSupersededResults` actually removed, and how
+ * much of what was sent is read-tool result weight. These are the two numbers
+ * that decide whether a smarter prune is worth building — if the current prune
+ * barely fires and read weight is small, the source-level filters already won.
+ *
+ * Pure. `pruned` is `pruneSupersededResults(raw)`: a shallow copy of `raw`, same
+ * length and order, with some tool results blanked — so a changed slot is a
+ * result the prune elided, and the saving is a per-slot content diff (cheap, no
+ * full re-serialisation of the history).
+ */
+export function measurePrunedCall(raw: ApiMessage[], pruned: ApiMessage[]): PrunedCallMeasurement {
+  const contentChars = (m: ApiMessage): number =>
+    typeof m.content === 'string' ? m.content.length : m.content ? JSON.stringify(m.content).length : 0
+
+  let sentChars = 0
+  for (const m of pruned) sentChars += contentChars(m)
+
+  let savedChars = 0
+  const n = Math.min(raw.length, pruned.length)
+  for (let i = 0; i < n; i++) {
+    if (raw[i] !== pruned[i]) savedChars += Math.max(0, contentChars(raw[i]) - contentChars(pruned[i]))
+  }
+
+  const toolName = new Map<string, string>()
+  for (const m of pruned) for (const c of m.tool_calls ?? []) toolName.set(c.id, c.function.name)
+  let readResultChars = 0
+  for (const m of pruned) {
+    if (m.role !== 'tool' || !m.tool_call_id) continue
+    const name = toolName.get(m.tool_call_id)
+    if (!name || isWriteTool(name)) continue
+    if (typeof m.content === 'string' && m.content !== ELIDED) readResultChars += m.content.length
+  }
+
+  return { sentChars, savedChars, readResultChars }
+}
+
+/** Run-scoped running totals of the per-call prune measurements. */
+interface PruneRunTally {
+  calls: number
+  /** Sum of savedChars across every call (reflects the real resend cost saved). */
+  savedTotal: number
+  /** The single largest prompt sent this run — the steady-state per-step cost. */
+  maxSentChars: number
+  /** Read-result weight in that largest prompt. */
+  maxSentReadChars: number
+}
+
+function tallyPrune(acc: PruneRunTally, m: PrunedCallMeasurement): void {
+  acc.calls++
+  acc.savedTotal += m.savedChars
+  if (m.sentChars > acc.maxSentChars) {
+    acc.maxSentChars = m.sentChars
+    acc.maxSentReadChars = m.readResultChars
+  }
+}
+
+/** Log the run's prune measurement to the console (open DevTools to read it),
+ *  next to logRunCost. Silent when nothing ran. */
+function logPruneMeasurement(a: PruneRunTally): void {
+  if (a.calls === 0 || a.maxSentChars === 0) return
+  const pct = (num: number, den: number): number => (den > 0 ? Math.round((num / den) * 100) : 0)
+  console.info(
+    `[agente] prune (medição): ${a.calls} chamada(s); o prune atual removeu ~${a.savedTotal} chars ` +
+      `somados na execução. Maior prompt enviado ~${a.maxSentChars} chars, dos quais ~${a.maxSentReadChars} ` +
+      `(${pct(a.maxSentReadChars, a.maxSentChars)}%) são resultados de leitura — o teto do que um prune mais ` +
+      `esperto poderia remover.`
+  )
 }
 
 /**
@@ -801,6 +883,10 @@ export async function runAgent(
   let redundantSearches = 0
   let repeatedReads = 0
   let hitStepCap = false
+  // Measure-first instrumentation (not a feature): how much the current prune
+  // removes and how much read weight the largest prompt carries — the numbers
+  // that decide whether a smarter prune is worth building. Logged at run end.
+  const pruneTally: PruneRunTally = { calls: 0, savedTotal: 0, maxSentChars: 0, maxSentReadChars: 0 }
 
   try {
     for (let step = 0; step < maxSteps; step++) {
@@ -813,7 +899,9 @@ export async function runAgent(
       costRecords.push(cost)
       // Prune a copy, not `msgs` itself: the run keeps its full history, and only
       // what goes over the wire is trimmed.
-      const assistant = await callModelResilient(rcfg, pruneSupersededResults(msgs), TOOL_DEFS, runOpts)
+      const pruned = pruneSupersededResults(msgs)
+      tallyPrune(pruneTally, measurePrunedCall(msgs, pruned))
+      const assistant = await callModelResilient(rcfg, pruned, TOOL_DEFS, runOpts)
       msgs.push(assistant)
       // Count a step only once its model call came back — a thrown call is not a
       // completed round, and shouldn't inflate the efficiency average.
@@ -905,7 +993,9 @@ export async function runAgent(
       'remark'
     )
     costRecords.push({ step: maxSteps + 1, prompt: 0, completion: 0, tools: [] })
-    const final = await callModelResilient(rcfg, pruneSupersededResults(msgs), undefined, runOpts)
+    const finalPruned = pruneSupersededResults(msgs)
+    tallyPrune(pruneTally, measurePrunedCall(msgs, finalPruned))
+    const final = await callModelResilient(rcfg, finalPruned, undefined, runOpts)
     return (
       contentText(final.content) ||
       `Parei ao atingir o limite de ${maxSteps} passos, sem conseguir concluir. ` +
@@ -913,6 +1003,7 @@ export async function runAgent(
     )
   } finally {
     logRunCost(rcfg, costRecords)
+    logPruneMeasurement(pruneTally)
     // Best-effort per-run metric for the efficiency log (main persists it).
     // Guarded and fire-and-forget: a bookkeeping failure — or an absent bridge
     // in tests — must never touch the run. Only recorded once a round completed.

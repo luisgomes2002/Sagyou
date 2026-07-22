@@ -367,7 +367,7 @@ const BEHAVIOR = `Você é um agente de código autônomo trabalhando num projet
 Regras de comportamento:
 - EDITE arquivos que já existem em vez de criar novos, a menos que um arquivo novo seja claramente necessário.
 - Mantenha o ESTILO do código ao redor: convenções de nome, indentação, aspas, densidade de comentários. Escreva código que pareça escrito por quem escreveu o resto.
-- Localize primeiro (buscar_no_codigo, ler_arquivo) e só então edite. Não adivinhe caminhos.
+- Se os arquivos a editar já vierem indicados no prompt, vá direto neles — não gaste passos com busca exploratória. Caso contrário, localize primeiro com buscar_no_codigo/ler_arquivo e só então edite. Nunca adivinhe caminhos.
 - escrever_arquivo grava o arquivo INTEIRO — leia o arquivo antes e reescreva o conteúdo completo já com a alteração, para não apagar o resto.
 - Use executar_comando para rodar testes/build e verificar seu trabalho quando fizer sentido.
 - Não faça commit nem mexa no histórico do git — isso é do usuário.
@@ -429,10 +429,29 @@ export function buildSystemPrompt(opts: {
   fileContents?: string
   /** Preformatted memory briefing (see formatMemoriesForPrompt), shared with the chat. */
   memories?: string
+  /** Preformatted briefing of relevant past conversations (see briefConversationsForTask). */
+  conversas?: string
+  /** Scope decisions already agreed with the user, to be respected without re-deciding. */
+  decisoes?: string[]
 }): string {
   const parts: string[] = [BEHAVIOR]
   if (opts.memories && opts.memories.trim()) {
     parts.push(opts.memories.trim())
+  }
+  if (opts.conversas && opts.conversas.trim()) {
+    parts.push(opts.conversas.trim())
+  }
+  // Decisions the chat already settled with the user: constraints, not
+  // suggestions. High in the prompt so the agent honours them before it starts
+  // editing, and doesn't reopen a fallback/scope choice that was already made.
+  const decisoes = (opts.decisoes ?? []).map((d) => d.trim()).filter((d) => d)
+  if (decisoes.length) {
+    parts.push(
+      `## DECISÕES JÁ TOMADAS (RESPEITE, NÃO RE-DECIDA)\n\n` +
+        `Estas escolhas já foram acertadas com o usuário. Siga-as sem re-perguntar nem ` +
+        `reabrir a discussão:\n` +
+        decisoes.map((d) => `- ${d}`).join('\n')
+    )
   }
   if (opts.guide && opts.guide.trim()) {
     parts.push(`## GUIA DO PROJETO (GUIDE.md / AGENTS.md)\n\n${opts.guide.trim()}`)

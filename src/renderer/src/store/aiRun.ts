@@ -142,7 +142,11 @@ const HANDOFF_SKIP = 'Execução interrompida.'
  * and it decays when the project goes quiet. Skipped for an aborted/empty reply.
  * Fully guarded: a handoff failure — or an absent bridge — must never touch the run.
  */
-export async function writeHandoff(question: string, reply: string): Promise<void> {
+export async function writeHandoff(
+  question: string,
+  reply: string,
+  convId?: string | null
+): Promise<void> {
   try {
     const api = window.electronAPI?.ai?.memory
     if (!api?.handoff) return
@@ -151,11 +155,19 @@ export async function writeHandoff(question: string, reply: string): Promise<voi
     const { activeProjectId, projects } = useKanbanStore.getState()
     const name = projects.find((p) => p.id === activeProjectId)?.name
     const q = (question ?? '').trim().slice(0, 200)
-    const a = answer.length > 600 ? `${answer.slice(0, 600)}…` : answer
+    // The handoff is a small breadcrumb re-sent in every future prompt, so it's
+    // capped. When it IS cut, point at the full conversation by id: the model
+    // opens it with ler_conversa instead of blind-searching (and re-answering
+    // from scratch, which is what a bare "…" caused). Only when truncated — a
+    // whole short answer needs no pointer.
+    const truncated = answer.length > 600
+    const a = truncated ? `${answer.slice(0, 600)}…` : answer
+    const pointer =
+      truncated && convId ? ` (conversa completa: id=${convId} — use ler_conversa para ler tudo)` : ''
     await api.handoff({
       projectId: activeProjectId,
       title: name ? `Última sessão — ${name}` : 'Última sessão',
-      body: (q ? `Perguntou: "${q}". ` : '') + `Conclusão: ${a}`
+      body: (q ? `Perguntou: "${q}". ` : '') + `Conclusão: ${a}${pointer}`
     })
   } catch {
     /* a breadcrumb is a convenience; its failure must never affect the run */
@@ -352,7 +364,8 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
       })
       set((s) => routeRun(s, (prev) => [...prev, { role: 'assistant', content: reply }]))
       // Leave a breadcrumb for the next session (best-effort; see writeHandoff).
-      void writeHandoff(text, reply)
+      // Pass the run's own convId so a truncated handoff can point back to it.
+      void writeHandoff(text, reply, convId)
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Falha ao contatar o modelo'
       // The banner belongs to the chat that failed. If the user has moved on,

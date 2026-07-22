@@ -531,9 +531,22 @@ export const WSL_INSTALL_COMMAND = 'wsl --install'
  * Commands to install ai-jail INSIDE an already-set-up WSL2 distro (Ubuntu).
  * Shown in onboarding once WSL2 exists but ai-jail doesn't — the sudo/apt steps
  * are interactive, so the user runs them in the WSL terminal themselves.
+ *
+ * ⚠️ Written to survive a paste that goes wrong, because the failure modes are
+ * silent and cryptic otherwise:
+ *  - `curl -fL … -o file` (not `curl … | tar`): `-f` fails on an HTTP error page
+ *    instead of piping HTML into tar (`tar: invalid magic`), and writing to a file
+ *    means a failed download stops the chain rather than a later `mv` reporting
+ *    `can't rename 'ai-jail'` for a file that was never downloaded.
+ *  - the download/extract/chmod is ONE `&&` chain, so any step failing halts the
+ *    rest instead of running the next command against a half-done state.
+ *  - `tar … -C ~/.local/bin ai-jail` extracts straight into place — no separate
+ *    `mv` step to fail on its own.
+ *  - verify with the ABSOLUTE path (`~/.local/bin/ai-jail`), since a fresh login
+ *    shell may not have `~/.local/bin` on PATH yet.
  */
 export const WSL_AI_JAIL_INSTALL_COMMANDS = [
   'sudo apt update && sudo apt install -y bubblewrap',
-  `curl -L ${AI_JAIL_REPO}/releases/download/${AI_JAIL_VERSION}/ai-jail-linux-x86_64.tar.gz | tar xz`,
-  'mkdir -p ~/.local/bin && mv ai-jail ~/.local/bin/ && ai-jail --version'
+  `mkdir -p ~/.local/bin && curl -fL ${AI_JAIL_REPO}/releases/download/${AI_JAIL_VERSION}/ai-jail-linux-x86_64.tar.gz -o /tmp/ai-jail.tar.gz && tar xzf /tmp/ai-jail.tar.gz -C ~/.local/bin ai-jail && chmod +x ~/.local/bin/ai-jail`,
+  '~/.local/bin/ai-jail --version'
 ].join('\n')

@@ -162,6 +162,21 @@ describe('buildSystemPrompt', () => {
     // The plain "start by these" list is replaced by the inlined section.
     expect(p).not.toContain('Comece por estes')
   })
+
+  it('renders the decisions section as constraints when given', () => {
+    const p = buildSystemPrompt({
+      decisoes: ['manter o fallback parseV1', 'não alterar o tipo Project']
+    })
+    expect(p).toContain('DECISÕES JÁ TOMADAS')
+    expect(p).toContain('manter o fallback parseV1')
+    expect(p).toContain('não alterar o tipo Project')
+  })
+
+  it('omits the decisions section when empty or all-blank', () => {
+    expect(buildSystemPrompt({})).not.toContain('DECISÕES JÁ TOMADAS')
+    expect(buildSystemPrompt({ decisoes: [] })).not.toContain('DECISÕES JÁ TOMADAS')
+    expect(buildSystemPrompt({ decisoes: ['   ', ''] })).not.toContain('DECISÕES JÁ TOMADAS')
+  })
 })
 
 describe('readProjectGuide', () => {
