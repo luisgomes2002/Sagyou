@@ -277,6 +277,15 @@ export function selectStale(memories: AiMemory[], now: number): string[] {
 // ── Briefing (the run-start system-prompt block) ─────────────────────────────
 
 /**
+ * A compact id for the briefing: a random-uuid memory shows its first 8 chars
+ * (enough to target one, `buscar_memoria` matches by prefix); a handoff's id is
+ * already short and meaningful (`handoff:global`), so it's kept whole.
+ */
+export function shortMemoryId(id: string): string {
+  return id.includes(':') ? id : id.slice(0, 8)
+}
+
+/**
  * Render active memories as a system-prompt briefing, or '' when there are none.
  *
  * Under `injectMax` it's the full form (type, title, body, tags). Above it, it
@@ -299,7 +308,10 @@ export function formatMemoriesForPrompt(
   const line = (m: AiMemory): string => {
     const pin = m.pinned ? '📌 ' : ''
     const scope = m.projectId ? '' : ' (global)'
-    if (!full) return `- ${pin}[${m.type}] ${m.title}${scope}`
+    // In title-only mode the body isn't shown, so the model must fetch it — the
+    // id lets it target one exactly (titles collide). In full mode the body is
+    // already here, so no id: it would be tokens re-sent every step for nothing.
+    if (!full) return `- [${shortMemoryId(m.id)}] ${pin}[${m.type}] ${m.title}${scope}`
     const tags = m.tags.length ? ` {${m.tags.join(', ')}}` : ''
     const body = m.body ? ` — ${m.body}` : ''
     return `- ${pin}[${m.type}] ${m.title}${scope}${body}${tags}`
@@ -311,7 +323,7 @@ export function formatMemoriesForPrompt(
     'Não os repita de volta ao usuário sem necessidade.'
   const note = full
     ? ''
-    : `\n(mostrando só os títulos de ${active.length} memórias; use buscar_memoria para ler o conteúdo de uma específica)`
+    : `\n(mostrando só os títulos de ${active.length} memórias; use buscar_memoria com o id em [colchetes], ou um termo, para ler o conteúdo de uma específica)`
   return `${header}${note}\n\n${active.map(line).join('\n')}`
 }
 

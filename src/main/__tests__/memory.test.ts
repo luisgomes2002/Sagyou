@@ -10,6 +10,7 @@ import {
   summarizeMemories,
   findConflicts,
   formatMemoriesForPrompt,
+  shortMemoryId,
   handoffId,
   titleKey,
   MEMORY_DECAY_BASE_DAYS,
@@ -233,6 +234,29 @@ describe('formatMemoriesForPrompt', () => {
     expect(text).toContain('mostrando só os títulos')
     expect(text).toContain('buscar_memoria')
     expect(text).not.toContain('corpo 0') // bodies are dropped in index mode
+  })
+
+  it('shows the id in title-only mode so the model can target one, but not in full mode', () => {
+    const idFull = 'b3789488-1111-2222-3333-444455556666'
+    // Title-only mode (cap below count): id prefix appears in brackets.
+    const many: AiMemory[] = [mem({ id: idFull, title: 'DAG' })]
+    for (let i = 0; i < 3; i++) many.push(mem({ id: `x${i}`, title: `t${i}` }))
+    const idx = formatMemoriesForPrompt(many, 2)
+    expect(idx).toContain('[b3789488]')
+    // Full mode (under cap): body is shown, so no id — it would be tokens for nothing.
+    const full = formatMemoriesForPrompt([mem({ id: idFull, title: 'DAG', body: 'corpo' })])
+    expect(full).toContain('corpo')
+    expect(full).not.toContain('b3789488')
+  })
+})
+
+describe('shortMemoryId', () => {
+  it('takes the first 8 chars of a uuid', () => {
+    expect(shortMemoryId('b3789488-1111-2222-3333-444455556666')).toBe('b3789488')
+  })
+  it('keeps a handoff id whole (already short and meaningful)', () => {
+    expect(shortMemoryId('handoff:global')).toBe('handoff:global')
+    expect(shortMemoryId(handoffId('proj-1'))).toBe('handoff:proj-1')
   })
 
   it('excludes archived memories from the briefing', () => {

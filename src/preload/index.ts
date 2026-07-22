@@ -240,6 +240,7 @@ const api = {
         path: string
         task: string
         files?: string[]
+        decisoes?: string[]
         convId?: string
         projectId?: string | null
       }): Promise<{ success: boolean; agent?: string; dir?: string; error?: string }> =>

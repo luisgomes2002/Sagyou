@@ -1552,6 +1552,56 @@ describe('buscar_conversas', () => {
   })
 })
 
+describe('ler_conversa', () => {
+  const setGet = (impl: (id: string) => unknown): void => {
+    ;(window as unknown as { electronAPI: unknown }).electronAPI = {
+      ai: { conversations: { get: vi.fn(async (id: string) => impl(id)) } }
+    }
+  }
+  beforeEach(resetStore)
+
+  it('returns the exchange by id, dropping status lines', async () => {
+    setGet(() => ({
+      id: 'c1',
+      title: 'Sobre memória',
+      updatedAt: 'y',
+      messages: [
+        { role: 'user', content: 'como funciona?' },
+        { role: 'status', content: 'Lendo src/App.tsx' },
+        { role: 'assistant', content: 'funciona assim' }
+      ]
+    }))
+    const res = await call('ler_conversa', { id: 'c1' })
+    const turnos = res.turnos as { autor: string; texto: string }[]
+    expect(turnos).toHaveLength(2) // the status line is gone
+    expect(turnos.map((t) => t.autor)).toEqual(['usuario', 'assistente'])
+    expect(res.truncado).toBe(false)
+  })
+
+  it('caps a huge transcript and flags it truncated', async () => {
+    setGet(() => ({
+      id: 'c1',
+      title: 'Longa',
+      updatedAt: 'y',
+      messages: [
+        { role: 'assistant', content: 'x'.repeat(9000) },
+        { role: 'assistant', content: 'deveria sobrar de fora' }
+      ]
+    }))
+    const res = await call('ler_conversa', { id: 'c1' })
+    expect(res.truncado).toBe(true)
+    expect(JSON.stringify(res.turnos)).not.toContain('deveria sobrar')
+  })
+
+  it('errors on a missing id or an unknown conversation, and is a read tool', async () => {
+    setGet(() => null)
+    expect((await call('ler_conversa', {})).error).toBeTruthy()
+    expect((await call('ler_conversa', { id: 'nope' })).error).toBeTruthy()
+    expect(isWriteTool('ler_conversa')).toBe(false)
+    expect(TOOL_DEFS.some((d) => d.function.name === 'ler_conversa')).toBe(true)
+  })
+})
+
 describe('verificar_memorias', () => {
   beforeEach(resetStore)
 

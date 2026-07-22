@@ -2,7 +2,11 @@
  * @vitest-environment node
  */
 import { describe, it, expect } from 'vitest'
-import { searchConversations, type SearchableConversation } from '../conversation-search'
+import {
+  searchConversations,
+  briefConversationsForTask,
+  type SearchableConversation
+} from '../conversation-search'
 
 const conv = (
   id: string,
@@ -131,3 +135,67 @@ describe('searchConversations', () => {
 function list1(content: string): SearchableConversation[] {
   return [conv('a', 'Sem relação', [{ role: 'assistant', content }])]
 }
+
+describe('briefConversationsForTask', () => {
+  it('surfaces past conversations that share the task’s keywords', () => {
+    const list = [
+      conv('a', 'Backup do kanban', [
+        { role: 'user', content: 'como funciona o exportBackup?' }
+      ]),
+      conv('b', 'Assunto sem relação', [{ role: 'user', content: 'nada a ver' }])
+    ]
+    const brief = briefConversationsForTask(list, 'Corrigir o exportBackup do kanban')
+    expect(brief).toContain('## Conversas anteriores relevantes')
+    expect(brief).toContain('Backup do kanban')
+    expect(brief).not.toContain('Assunto sem relação')
+  })
+
+  it('returns an empty string when nothing matches', () => {
+    const list = [conv('a', 'Outra coisa', [{ role: 'user', content: 'nada a ver' }])]
+    expect(briefConversationsForTask(list, 'implementar decimais nas transações')).toBe('')
+  })
+
+  it('returns an empty string when the task has no searchable keyword', () => {
+    // All tokens are stopwords or too short — nothing to search on.
+    const list = [conv('a', 'Qualquer', [{ role: 'user', content: 'texto qualquer' }])]
+    expect(briefConversationsForTask(list, 'faz o que deve para mim')).toBe('')
+  })
+
+  it('excludes the conversation that fired the run', () => {
+    const list = [
+      conv('self', 'Refatorar timers', [{ role: 'user', content: 'refatorar os timers' }]),
+      conv('other', 'Timers antigos', [{ role: 'assistant', content: 'os timers giram' }])
+    ]
+    const brief = briefConversationsForTask(list, 'refatorar os timers do cronometro', {
+      excludeId: 'self'
+    })
+    expect(brief).toContain('Timers antigos')
+    expect(brief).not.toContain('Refatorar timers')
+  })
+
+  it('ranks a conversation matching more keywords ahead of one matching fewer', () => {
+    const list = [
+      conv('one', 'Sprint', [{ role: 'user', content: 'planejar a sprint' }]),
+      conv('both', 'Sprint financeiro', [
+        { role: 'user', content: 'planejar a sprint do modulo financeiro' }
+      ])
+    ]
+    const brief = briefConversationsForTask(list, 'planejar sprint financeiro')
+    // The two-keyword hit ('sprint' + 'financeiro') must appear before the one-keyword hit.
+    expect(brief.indexOf('Sprint financeiro')).toBeLessThan(brief.indexOf('- [Sprint]'))
+  })
+
+  it('ignores accents when matching the task against history', () => {
+    const list = [conv('a', 'Hábitos', [{ role: 'user', content: 'marcar o hábito de hoje' }])]
+    const brief = briefConversationsForTask(list, 'automatizar os habitos diarios')
+    expect(brief).toContain('Hábitos')
+  })
+
+  it('caps how many conversations it surfaces', () => {
+    const list = Array.from({ length: 10 }, (_, i) =>
+      conv(`c${i}`, `Deploy ${i}`, [{ role: 'user', content: 'sobre deploy' }])
+    )
+    const brief = briefConversationsForTask(list, 'melhorar o deploy', { maxConversations: 3 })
+    expect(brief.match(/- \[/g)).toHaveLength(3)
+  })
+})

@@ -1,17 +1,18 @@
 import { useEffect, useState } from 'react'
 
-/** A copyable command (or command block), for the manual Windows/WSL steps. */
+/**
+ * A copyable command (or command block), for the manual Windows/WSL steps.
+ * Owns its own `copied` flash so several blocks can sit in one step without all
+ * of them lighting up "Copiado" when one is clicked.
+ */
 function CommandBlock({
   text,
-  onCopy,
-  copied,
   multiline
 }: {
   text: string
-  onCopy: (v: boolean) => void
-  copied: boolean
   multiline?: boolean
 }): React.JSX.Element {
+  const [copied, setCopied] = useState(false)
   return (
     <div className="mt-2 flex items-start gap-2">
       <code
@@ -24,8 +25,8 @@ function CommandBlock({
       <button
         onClick={() => {
           navigator.clipboard.writeText(text)
-          onCopy(true)
-          setTimeout(() => onCopy(false), 2000)
+          setCopied(true)
+          setTimeout(() => setCopied(false), 2000)
         }}
         className="shrink-0 rounded px-2 py-1.5 text-[11px] font-medium text-[#a5b4fc] hover:bg-[#1e2235]"
       >
@@ -80,7 +81,6 @@ export function SandboxOnboarding({
   const [installing, setInstalling] = useState(false)
   const [progress, setProgress] = useState<{ phase: string; fraction: number | null } | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [copied, setCopied] = useState(false)
 
   const isWindows = status.platform === 'win32'
   // Linux (native): ai-jail + bwrap are installed, but the kernel blocks the
@@ -164,30 +164,60 @@ export function SandboxOnboarding({
               O ai-jail roda dentro do WSL2. Abra o PowerShell <b>como administrador</b>, rode o
               comando abaixo e <b>reinicie o PC</b>. Depois reabra esta tela para o passo 2.
             </p>
-            <CommandBlock text={status.wslCommand} onCopy={setCopied} copied={copied} />
+            <CommandBlock text={status.wslCommand} />
           </div>
         )}
 
         {/* Windows, step 2: WSL2 exists, ai-jail doesn't. Install it inside WSL —
-            sudo/apt is interactive, so the user runs these in the WSL terminal. */}
+            sudo/apt is interactive, so the user runs these in the WSL terminal.
+            Numbered because two things bite in practice: pasting into the wrong
+            distro (docker-desktop is busybox), and forgetting that the app probes
+            the DEFAULT distro (`wsl -e`), so a perfect install in Ubuntu is invisible
+            until Ubuntu is the default. */}
         {isWindows && status.wsl2 && !status.available && (
           <div className="mt-4 rounded-lg border border-[#2a2d42] bg-[#0d0f18] p-3">
             <p className="text-[12px] font-semibold text-[#a5b4fc]">
               Passo 2: instalar o ai-jail dentro do WSL
             </p>
-            <p className="mt-1 text-[11px] leading-relaxed text-[#8892a4]">
-              Abra o terminal do Ubuntu (WSL) e rode:
+
+            {/* 2.1 — open the right distro */}
+            <p className="mt-2 text-[11px] leading-relaxed text-[#8892a4]">
+              <b className="text-[#a5b4fc]">1.</b> Abra o terminal do <b>Ubuntu</b> (menu Iniciar →
+              Ubuntu).
             </p>
-            <CommandBlock
-              text={status.wslAiJailCommands}
-              onCopy={setCopied}
-              copied={copied}
-              multiline
-            />
-            <p className="mt-2 text-[10.5px] leading-relaxed text-[#4a5068]">
-              No Ubuntu 24.04 pode ser preciso liberar os namespaces:{' '}
-              <code className="text-[#8892a4]">{APPARMOR_FIX_COMMAND}</code>. Feito isso, feche e
-              reabra esta tela — o sandbox passa a ficar ativo.
+            <p className="mt-1 text-[10.5px] leading-relaxed text-[#8a6a3a]">
+              ⚠️ Não use o distro <code className="text-[#c9a68a]">docker-desktop</code>: ele é
+              mínimo (sem <code className="text-[#c9a68a]">sudo</code>/
+              <code className="text-[#c9a68a]">curl</code>/<code className="text-[#c9a68a]">apt</code>)
+              e os comandos falham nele com erros como “sudo: not found” ou “tar: invalid magic”.
+            </p>
+
+            {/* 2.2 — install */}
+            <p className="mt-2 text-[11px] leading-relaxed text-[#8892a4]">
+              <b className="text-[#a5b4fc]">2.</b> Cole e rode os comandos abaixo (instalam o
+              bubblewrap e o ai-jail):
+            </p>
+            <CommandBlock text={status.wslAiJailCommands} multiline />
+
+            {/* 2.3 — make Ubuntu the default so the app can detect it */}
+            <p className="mt-2 text-[11px] leading-relaxed text-[#8892a4]">
+              <b className="text-[#a5b4fc]">3.</b> No <b>PowerShell</b> (não no WSL), defina o Ubuntu
+              como distro padrão. O app procura o sandbox no distro <b>padrão</b>, então sem isto ele
+              não acha o ai-jail mesmo instalado:
+            </p>
+            <CommandBlock text="wsl --set-default Ubuntu" />
+
+            {/* 2.4 — reopen */}
+            <p className="mt-2 text-[11px] leading-relaxed text-[#8892a4]">
+              <b className="text-[#a5b4fc]">4.</b> Feche e reabra esta tela — o sandbox passa a ficar
+              ativo.
+            </p>
+
+            <p className="mt-3 text-[10.5px] leading-relaxed text-[#4a5068]">
+              Observação: o passo de liberar namespaces do AppArmor (
+              <code className="text-[#8892a4]">{APPARMOR_FIX_COMMAND}</code>) só vale no <b>Ubuntu
+              nativo</b>. No WSL2 ele falha com “No such file or directory” — isso é <b>normal</b> e
+              pode ignorar; o kernel do WSL não tem essa restrição.
             </p>
           </div>
         )}
@@ -205,7 +235,7 @@ export function SandboxOnboarding({
               <i>user namespaces</i> não privilegiados que o sandbox precisa (padrão no Ubuntu
               23.10+). Rode o comando abaixo e reabra esta tela — o sandbox passa a ficar ativo.
             </p>
-            <CommandBlock text={APPARMOR_FIX_COMMAND} onCopy={setCopied} copied={copied} />
+            <CommandBlock text={APPARMOR_FIX_COMMAND} />
             <p className="mt-2 text-[10.5px] leading-relaxed text-[#4a5068]">
               Isso reduz o endurecimento do kernel (AppArmor) — rode por sua conta. Como
               alternativa, crie um perfil AppArmor para o binário ou desative o Sandbox nas

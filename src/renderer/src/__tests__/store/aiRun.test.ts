@@ -44,6 +44,29 @@ describe('writeHandoff', () => {
     expect(body.length).toBeLessThan(700)
   })
 
+  it('points a truncated handoff back to its conversation by id', async () => {
+    st().createProject('P')
+    const handoff = installHandoff()
+
+    await writeHandoff('q', 'x'.repeat(1000), 'conv-abc')
+
+    const body = handoff.mock.calls[0][0].body as string
+    expect(body).toContain('…')
+    expect(body).toContain('id=conv-abc')
+    expect(body).toContain('ler_conversa')
+  })
+
+  it('adds no pointer when the answer fit (nothing was cut) or there is no id', async () => {
+    st().createProject('P')
+    const handoff = installHandoff()
+
+    await writeHandoff('q', 'resposta curta', 'conv-abc') // not truncated
+    await writeHandoff('q', 'y'.repeat(1000)) // truncated but no convId
+
+    expect(handoff.mock.calls[0][0].body).not.toContain('id=')
+    expect(handoff.mock.calls[1][0].body).not.toContain('id=')
+  })
+
   it('skips an aborted or empty reply', async () => {
     st().createProject('P')
     const handoff = installHandoff()

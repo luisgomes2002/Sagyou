@@ -1359,12 +1359,17 @@ const REGISTRY: Record<string, AITool> = {
   buscar_memoria: {
     definition: fn(
       'buscar_memoria',
-      'Consulta as suas memórias duráveis (do projeto ativo + as globais). Sem "termo", ' +
-        'lista todas; com "termo", filtra por título, corpo ou tags (sem diferenciar acento/maiúscula). ' +
+      'Consulta as suas memórias duráveis (do projeto ativo + as globais). Sem filtro, ' +
+        'lista todas; com "id" (o código em [colchetes] no briefing), pega aquela memória exata; ' +
+        'com "termo", filtra por título, corpo ou tags (sem diferenciar acento/maiúscula). ' +
         'Use para recuperar o conteúdo de uma memória que aparece só como título no briefing.',
       {
         type: 'object',
         properties: {
+          id: {
+            type: 'string',
+            description: 'Id da memória (o código entre [colchetes] no briefing). Busca exata.'
+          },
           termo: { type: 'string', description: 'Texto a procurar (opcional)' },
           incluir_arquivadas: {
             type: 'boolean',
@@ -1375,16 +1380,21 @@ const REGISTRY: Record<string, AITool> = {
       }
     ),
     run: async (args) => {
+      const id = typeof args.id === 'string' ? args.id.trim() : ''
       const termo = typeof args.termo === 'string' ? args.termo.trim() : ''
       const projectId = useKanbanStore.getState().activeProjectId
       const all = await window.electronAPI.ai.memory.list({
         projectId: projectId ?? null,
         includeArchived: args.incluir_arquivadas === true
       })
+      // An id wins over a term (it's the precise lookup). The briefing shows an
+      // 8-char prefix of a uuid, so match a prefix as well as the full id.
       const q = normalize(termo)
-      const matched = q
-        ? all.filter((m) => normalize(`${m.title} ${m.body} ${m.tags.join(' ')}`).includes(q))
-        : all
+      const matched = id
+        ? all.filter((m) => m.id === id || m.id.startsWith(id))
+        : q
+          ? all.filter((m) => normalize(`${m.title} ${m.body} ${m.tags.join(' ')}`).includes(q))
+          : all
       const LIMIT = 30
       const top = matched.slice(0, LIMIT)
       // Explicit retrieval is what keeps a memory warm — the bulk briefing is
@@ -1436,6 +1446,55 @@ const REGISTRY: Record<string, AITool> = {
           quando: c.updatedAt,
           ...(c.snippet ? { trecho: c.snippet } : {})
         }))
+      })
+    }
+  },
+
+  ler_conversa: {
+    definition: fn(
+      'ler_conversa',
+      'Lê o conteúdo completo de uma conversa anterior pelo id (o "id=..." que um handoff ' +
+        '"Última sessão" traz no fim). Use quando um handoff truncado (terminando em "…") for ' +
+        'relevante e você precisar do que foi de fato discutido — em vez de refazer do zero. ' +
+        'Devolve os turnos (sem as linhas de status), com teto de tamanho.',
+      {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'Id da conversa (ex.: o "id=..." do handoff)' }
+        },
+        required: ['id'],
+        additionalProperties: false
+      }
+    ),
+    run: async (args) => {
+      const id = typeof args.id === 'string' ? args.id.trim() : ''
+      if (!id) return JSON.stringify({ error: 'Informe o id da conversa' })
+      const conv = await window.electronAPI.ai.conversations.get(id)
+      if (!conv) return JSON.stringify({ error: 'Conversa não encontrada' })
+      // Status lines are the agent's own tool trace — noise here; keep the real
+      // exchange (user/assistant). Cap the total: the transcript is resent on
+      // every later step, so a huge one would tax the whole run.
+      const MAX_CHARS = 8000
+      const turns: { autor: string; texto: string }[] = []
+      let used = 0
+      let truncado = false
+      for (const m of conv.messages ?? []) {
+        if (m.role === 'status') continue
+        const texto = typeof m.content === 'string' ? m.content : ''
+        if (!texto.trim()) continue
+        if (used + texto.length > MAX_CHARS) {
+          truncado = true
+          break
+        }
+        used += texto.length
+        turns.push({ autor: m.role === 'user' ? 'usuario' : 'assistente', texto })
+      }
+      return JSON.stringify({
+        id: conv.id,
+        titulo: conv.title,
+        quando: conv.updatedAt,
+        truncado,
+        turnos: turns
       })
     }
   },
@@ -1672,6 +1731,15 @@ const REGISTRY: Record<string, AITool> = {
               '"src/renderer/src/components/AIView.tsx"). Opcional, mas fortemente recomendado: ' +
               'evita o passo lento de descoberta do agente.'
           },
+          decisoes: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'Decisões de escopo já acertadas com o usuário que o agente deve respeitar sem ' +
+              're-perguntar (ex.: "manter o fallback parseV1", "não alterar o tipo Project", ' +
+              '"mexer só na documentação"). Opcional, mas envie quando existirem: evita o agente ' +
+              'reabrir escolhas já feitas e gerar re-trabalho.'
+          },
           ...PASTA_PARAM,
           projectId: { type: 'string', description: 'ID do projeto (opcional; usa o ativo)' }
         },
@@ -1699,6 +1767,11 @@ const REGISTRY: Record<string, AITool> = {
       const files = Array.isArray(args.arquivos)
         ? args.arquivos.filter((f): f is string => typeof f === 'string' && f.trim() !== '')
         : undefined
+      // Scope decisions the chat already settled: passed through to the agent's
+      // system prompt as constraints, so it doesn't reopen a choice already made.
+      const decisoes = Array.isArray(args.decisoes)
+        ? args.decisoes.filter((d): d is string => typeof d === 'string' && d.trim() !== '')
+        : undefined
       // Fire-and-forget; the real outcome streams to the UI panel. Report the
       // request honestly — do NOT claim guaranteed success.
       // Which chat this run belongs to, so its log and diff can be reopened from
@@ -1718,6 +1791,7 @@ const REGISTRY: Record<string, AITool> = {
         path,
         task,
         files,
+        decisoes,
         convId: runningConvId ?? undefined,
         projectId
       })
@@ -1726,6 +1800,7 @@ const REGISTRY: Record<string, AITool> = {
         agente: 'codex',
         diretorio: path,
         arquivos: files && files.length ? files : undefined,
+        decisoes: decisoes && decisoes.length ? decisoes : undefined,
         aviso:
           'Pedido enviado. Não afirme sucesso: acompanhe o painel de saída. Se o agente não ' +
           'estiver instalado, aparecerá um erro lá.'
@@ -2032,6 +2107,8 @@ export function describeToolActivity(name: string, args: Record<string, unknown>
       const termo = str(args.termo)
       return termo ? `Buscando "${termo}" nas conversas` : 'Buscando nas conversas'
     }
+    case 'ler_conversa':
+      return 'Lendo uma conversa anterior'
     case 'verificar_memorias':
       return 'Verificando contradições na memória'
     case 'criar_projeto': {

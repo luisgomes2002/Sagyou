@@ -81,7 +81,7 @@ import {
   type JailStatus,
   type InstallDeps
 } from './ai-jail'
-import { searchConversations } from './conversation-search'
+import { searchConversations, briefConversationsForTask } from './conversation-search'
 import { fetchWeb } from './web-fetch'
 import { renderWeb } from './web-render'
 import { captureBase, diffSince, lineDiff, type AgentBase, type DiffLineItem } from './code-diff'
@@ -1377,6 +1377,8 @@ app.whenReady().then(() => {
         path: string
         task: string
         files?: string[]
+        /** Scope decisions already agreed with the user, honoured without re-deciding. */
+        decisoes?: string[]
         /** The chat that asked, so the run can be reopened from it later. */
         convId?: string
         /** The project whose memory to brief the agent with (shared with the chat). */
@@ -1408,6 +1410,13 @@ app.whenReady().then(() => {
         const abs = confineToRoot(dir, f)
         return abs === null || !existsSync(abs) || !statSync(abs).isFile()
       })
+      // Scope decisions the chat already settled with the user — plain strings,
+      // no path involved, so just clean and pass them into the prompt.
+      const decisoes = Array.isArray(request.decisoes)
+        ? request.decisoes
+            .filter((d): d is string => typeof d === 'string' && d.trim() !== '')
+            .map((d) => d.trim())
+        : []
       const cfg = loadAIConfig()
       if (!cfg.baseUrl || !cfg.model) {
         return {
@@ -1511,6 +1520,12 @@ app.whenReady().then(() => {
             droppedFiles.map((f) => `  · ${f}\n`).join('')
         )
       }
+      if (decisoes.length) {
+        emit(
+          `[sagyou] ${decisoes.length} decisão(ões) já tomada(s) — o agente deve respeitá-las:\n` +
+            decisoes.map((d) => `  · ${d}\n`).join('')
+        )
+      }
 
       // When files are pinned, inline their contents (numbered) into the prompt
       // so the agent edits from context instead of spending a read step per file
@@ -1553,7 +1568,27 @@ app.whenReady().then(() => {
       } catch {
         /* memory is best-effort; briefing failure leaves the prompt as-is */
       }
-      const systemPrompt = buildSystemPrompt({ tree, guide, files: rel, fileContents, memories })
+      // Also brief the agent with past conversations about this same task, so it
+      // reuses decisions/gotchas already discussed. Exclude the chat that fired
+      // the run — it doesn't need its own transcript pasted back. Best-effort,
+      // same as memory: a search failure just omits the section.
+      let conversas = ''
+      try {
+        conversas = briefConversationsForTask(loadConversations(), task, {
+          excludeId: typeof request.convId === 'string' ? request.convId : null
+        })
+      } catch {
+        /* conversation briefing is best-effort; a failure leaves the prompt as-is */
+      }
+      const systemPrompt = buildSystemPrompt({
+        tree,
+        guide,
+        files: rel,
+        fileContents,
+        memories,
+        conversas,
+        decisoes
+      })
 
       // Approval round-trip: the loop parks here, the renderer shows a card and
       // answers through ai:code-agent:approve-response. A stopped run denies all.

@@ -311,6 +311,8 @@ declare global {
             path: string
             task: string
             files?: string[]
+            /** Scope decisions already agreed with the user, honoured without re-deciding. */
+            decisoes?: string[]
             /** The chat that asked, so the run can be reopened from it later. */
             convId?: string
             /** The project whose memory to brief the agent with. */

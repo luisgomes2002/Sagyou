@@ -184,12 +184,16 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    (decisões, tradeoffs, gotchas, handoffs) ficam em SQLite mas nunca passam pelo
    store Zustand — `access_count`/`last_accessed_at` são bumpados a cada leitura, e
    isso via `persistAll` reescreveria as 17 tabelas por bump. As ferramentas são
-   `salvar_memoria` (write, gated), `buscar_memoria`, `buscar_conversas` e
+   `salvar_memoria` (write, gated), `buscar_memoria` (por id ou termo),
+   `buscar_conversas`, `ler_conversa` (transcript completo por id) e
    `verificar_memorias`. A sanitização de segredos (`scrubSecrets`) roda em todo
    save — memória é reenviada ao modelo a cada passo, então uma chave vazada seria
    permanente. Decay arquiva (nunca hard-deleta); memória pinada nunca decai.
    Handoff automático (`writeHandoff`) grava um breadcrumb por projeto ao fim de
-   cada run, sem chamada LLM. Compartilhada entre chat e code-agent.
+   cada run, sem chamada LLM. ⚠️ O corpo é cortado em 600 chars **na gravação**, então
+   `buscar_memoria` não expande um handoff `…`; quando cortado, ele guarda `id=<convId>` e
+   o modelo abre a conversa inteira com `ler_conversa` (senão gasta buscas às cegas e refaz
+   do zero). Compartilhada entre chat e code-agent.
 
 ## Segurança — o que já está resolvido
 
@@ -306,11 +310,21 @@ Não "simplifique" nenhuma destas sem ler o comentário que as acompanha:
   execução (poll de 2s; derivado em main de uma base anterior ao run) e o log cru vai
   pra trás de "Log completo". Diff vazio com agente rodando diz "ainda não", não "não
   alterou nada" — fatos opostos.
-- **`rodar_agente_codigo` aceita `arquivos` (caminhos relativos)** → viram a seção
-  "arquivos indicados" do system prompt (`buildSystemPrompt`), pra focar o agente.
-  Main confina cada um à raiz (`confineToRoot`) e descarta os inválidos; o run abre
-  com um banner do modelo e de quais arquivos foram indicados, e fecha com
-  `[sagyou] duração: N.Ns`.
+- **`rodar_agente_codigo` monta um briefing enxuto** — `arquivos` (caminhos
+  relativos) → seção "arquivos indicados" do system prompt (`buildSystemPrompt`) com
+  descoberta desativada (`codeToolsFor`), e `decisoes` (escolhas já acertadas, ex.
+  "manter fallback X") → seção "DECISÕES JÁ TOMADAS" como restrições. Main confina cada
+  caminho à raiz (`confineToRoot`) e descarta os inválidos; o run abre com um banner do
+  modelo, dos arquivos indicados e das decisões, e fecha com `[sagyou] duração: N.Ns`.
+  O objetivo é o agente editar direto, sem grep exploratório.
+- **O system prompt do agente traz um briefing de memória E de conversas**: além das
+  memórias do projeto (`formatMemoriesForPrompt`), o run handler roda
+  `briefConversationsForTask(loadConversations(), task, {excludeId: convId})`
+  (`conversation-search.ts`, puro/testado) e passa como `conversas` pro
+  `buildSystemPrompt` — reaproveita decisões/armadilhas já discutidas. Busca pelas
+  **palavras-chave da task** (uma frase inteira nunca é substring de mensagem antiga),
+  exclui o chat que disparou o run, e é best-effort/guardado como a memória. No chat, o
+  prompt manda consultar `buscar_conversas`/`buscar_memoria` antes de disparar.
 - 🛡️ **`detectAgentHint` ligado ao agente nativo**: o `CommandRunner` do run passa a
   saída (stdout+stderr) de todo comando que falha por `detectAgentHint` — é o único
   ponto com a saída completa (o painel só recebe o resumo de uma linha, sem o marcador

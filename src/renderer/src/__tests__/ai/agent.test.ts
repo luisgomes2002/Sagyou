@@ -23,6 +23,8 @@ import {
   MAX_RETRIES,
   RETRY_BASE_MS,
   pruneSupersededResults,
+  measurePrunedCall,
+  ELIDED,
   summarizeRunCost,
   routeModel,
   type ApiMessage
@@ -1312,6 +1314,67 @@ describe('pruneSupersededResults', () => {
     ]
 
     expect(pruneSupersededResults(msgs)).toEqual(msgs)
+  })
+})
+
+// ── measurePrunedCall (measure-first instrumentation) ──────────────────────────
+
+describe('measurePrunedCall', () => {
+  const askedFor = (id: string, name: string, args = '{}'): ApiMessage => ({
+    role: 'assistant',
+    content: '',
+    tool_calls: [{ id, type: 'function', function: { name, arguments: args } }]
+  })
+  const answered = (id: string, content: string): ApiMessage => ({
+    role: 'tool',
+    tool_call_id: id,
+    content
+  })
+  const big = (tag: string): string => JSON.stringify({ tag, filler: 'x'.repeat(500) })
+
+  it('reports what the prune removed and the read weight still present', () => {
+    const raw: ApiMessage[] = [
+      { role: 'user', content: 'oi' },
+      askedFor('a', 'ler_tasks'),
+      answered('a', big('antigo')),
+      askedFor('b', 'ler_tasks'),
+      answered('b', big('novo'))
+    ]
+    const pruned = pruneSupersededResults(raw)
+    const m = measurePrunedCall(raw, pruned)
+
+    // The older duplicate was blanked, so savedChars is roughly its body size.
+    expect(m.savedChars).toBeGreaterThan(400)
+    // Read weight left = the surviving 'novo' body (the elided one no longer counts).
+    expect(m.readResultChars).toBe(big('novo').length)
+    expect(m.sentChars).toBeGreaterThan(0)
+  })
+
+  it('reports zero saved when the prune changed nothing', () => {
+    const raw: ApiMessage[] = [
+      askedFor('a', 'ler_tasks', '{"projectId":"p1"}'),
+      answered('a', big('p1')),
+      askedFor('b', 'ler_tasks', '{"projectId":"p2"}'),
+      answered('b', big('p2'))
+    ]
+    const m = measurePrunedCall(raw, pruneSupersededResults(raw))
+    expect(m.savedChars).toBe(0)
+    // Two distinct read results, both intact — the headroom a smarter prune eyes.
+    expect(m.readResultChars).toBe(big('p1').length + big('p2').length)
+  })
+
+  it('does not count a write result or an already-elided one as read weight', () => {
+    const raw: ApiMessage[] = [
+      askedFor('w', 'escrever_tasks', '{"tasks":[]}'),
+      answered('w', big('escreveu')),
+      { role: 'tool', tool_call_id: 'e', content: ELIDED },
+      askedFor('e', 'ler_tasks'),
+      answered('r', big('leu'))
+    ]
+    // 'r' has no matching tool_call here, so only classified results count.
+    const m = measurePrunedCall(raw, raw)
+    expect(m.readResultChars).toBe(0) // write body excluded; ELIDED excluded; 'r' unclassified
+    expect(m.savedChars).toBe(0) // raw === pruned
   })
 })
 
