@@ -189,6 +189,10 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    `verificar_memorias`. A sanitização de segredos (`scrubSecrets`) roda em todo
    save — memória é reenviada ao modelo a cada passo, então uma chave vazada seria
    permanente. Decay arquiva (nunca hard-deleta); memória pinada nunca decai.
+   ⚠️ `memory.project_id` é **TEXT puro, NUNCA FK com `ON DELETE CASCADE`** — o cascade
+   era perda de dados (persistAll/persistDiff deletam-e-reinserem o projeto e apagavam
+   as memórias dele, que não voltam por estarem fora do persistAll); `migrateMemoryDropProjectFk`
+   remove o FK. Projeto apagado deixa memórias órfãs (decaem sozinhas), não as destrói.
    Handoff automático (`writeHandoff`) grava um breadcrumb por projeto ao fim de
    cada run, sem chamada LLM. ⚠️ O corpo é cortado em 600 chars **na gravação**, então
    `buscar_memoria` não expande um handoff `…`; quando cortado, ele guarda `id=<convId>` e
