@@ -1011,7 +1011,7 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
       memories = []
     }
     const backup: Backup = {
-      version: 4,
+      version: 5,
       exportedAt: new Date().toISOString(),
       projects,
       tasks,
@@ -1022,7 +1022,12 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
       habits,
       lists,
       conversations,
-      memories
+      memories,
+      // Attachment metadata (new in v5). The physical bytes (fileBlobs) and the
+      // chat images are attached by the main process at write time — see the
+      // backup:export handler; keeping them out of the renderer avoids shipping
+      // megabytes of base64 over IPC.
+      files: get().files
     }
     const result = await storage.exportBackup(backup)
     return result.success
@@ -1056,7 +1061,10 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
 
     const activeProjectId = projects[0]?.id ?? null
 
-    const files = get().files  // preserve local files — backup doesn't carry file bytes
+    // v5+ carries attachment metadata (and the main process has already written
+    // the blobs to disk during backup:import). A pre-v5 backup has no `files`
+    // key — leave the local attachments untouched rather than wiping them.
+    const files: StoredFile[] = Array.isArray(backup.files) ? backup.files : get().files
     set({ projects, tasks, sprints, tombstones, notes, goals, habits, lists, files, activeProjectId, activeTimer: null })
     await get()._flushPersist()
 
