@@ -525,6 +525,19 @@ const api = {
     ): Promise<{ success: boolean; cancelled?: boolean; error?: string }> =>
       ipcRenderer.invoke('files:download', id, name, ext)
   },
+  // Task images: the renderer downscales and hands over a dataUrl; main stores
+  // the bytes as files under task-images/ and returns id+ext. The DB keeps only
+  // metadata, and the bytes are read back on demand for display.
+  taskImages: {
+    save: (
+      dataUrl: string
+    ): Promise<{ id: string; ext: string; size: number } | { error: string }> =>
+      ipcRenderer.invoke('task:images:save', dataUrl),
+    get: (id: string, ext: string): Promise<{ dataUrl: string } | { error: string }> =>
+      ipcRenderer.invoke('task:images:get', id, ext),
+    delete: (items: { id: string; ext: string }[]): Promise<void> =>
+      ipcRenderer.invoke('task:images:delete', items)
+  },
   excel: {
     export: (
       buffer: ArrayBuffer,

@@ -186,6 +186,9 @@ export interface Backup {
   files?: StoredFile[]
   fileBlobs?: BackupFileBlob[]
   chatImages?: BackupChatImage[]
+  // Task-image bytes (metadata rides on `tasks[].images`). Same main-injects-on-
+  // export / main-writes-and-strips-on-import handling as fileBlobs.
+  taskImages?: BackupFileBlob[]
 }
 
 /** An attachment's bytes, base64-encoded, keyed to its StoredFile id/ext. */
@@ -252,9 +255,13 @@ export interface StoredFile {
 export interface TaskImage {
   id: string
   name: string
-  dataUrl: string
+  ext: string // e.g. '.jpg' — the bytes live on disk at task-images/<id><ext>
   size: number
   addedAt: string
+  // Legacy/transient only: older data (a pre-migration DB row or an old backup)
+  // carried the bytes inline here. It is NEVER persisted now — the store writes
+  // metadata only, and importBackup/migration move any dataUrl to a disk file.
+  dataUrl?: string
 }
 
 export interface Sprint {

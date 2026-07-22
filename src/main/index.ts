@@ -682,6 +682,21 @@ function chatImagePath(id: unknown): string | null {
   return full.startsWith(chatImagesDir() + sep) ? full : null
 }
 
+// --- Task images (files under userData/task-images, named <id><ext>) ---
+//
+// Same on-disk shape as file attachments (files/), so safeAttachmentName guards
+// the id/ext. The bytes were moved off the DB (see migrateTaskImagesToDisk).
+
+const taskImagesDir = (): string => join(app.getPath('userData'), 'task-images')
+
+/** Resolve a task image's id+ext to a path inside task-images/, or null. */
+function taskImagePath(id: unknown, ext: unknown): string | null {
+  const name = safeAttachmentName(id, ext)
+  if (!name) return null
+  const full = join(taskImagesDir(), name)
+  return full.startsWith(taskImagesDir() + sep) ? full : null
+}
+
 // --- Past agent runs (files under userData/agent-runs) ---
 //
 // See agent-runs.ts for why a run is a frozen snapshot and why the payload is
@@ -938,6 +953,29 @@ app.whenReady().then(() => {
     return out
   }
 
+  // Task-image bytes, keyed by the {id, ext} metadata carried on each task. Same
+  // shape and guard as file attachments; walks tasks[].images.
+  const collectTaskImageBlobs = (tasks: unknown): { id: string; ext: string; base64: string }[] => {
+    if (!Array.isArray(tasks)) return []
+    const out: { id: string; ext: string; base64: string }[] = []
+    for (const t of tasks) {
+      const imgs = (t as { images?: unknown })?.images
+      if (!Array.isArray(imgs)) continue
+      for (const img of imgs) {
+        const id = (img as { id?: unknown })?.id
+        const ext = (img as { ext?: unknown })?.ext ?? ''
+        const full = taskImagePath(id, ext)
+        if (!full || !existsSync(full)) continue
+        try {
+          out.push({ id: id as string, ext: ext as string, base64: readFileSync(full).toString('base64') })
+        } catch {
+          /* unreadable blob is skipped */
+        }
+      }
+    }
+    return out
+  }
+
   ipcMain.handle('backup:export', async (_, backup) => {
     const date = new Date().toISOString().split('T')[0]
     const { filePath, canceled } = await dialog.showSaveDialog({
@@ -946,11 +984,12 @@ app.whenReady().then(() => {
     })
     if (canceled || !filePath) return { success: false, cancelled: true }
     // Inject the physical bytes here, in main, so they never cross IPC: the
-    // renderer sent structured data + file metadata, and the blobs live on disk.
+    // renderer sent structured data + file/image metadata, and the blobs live on disk.
     const full = {
       ...backup,
       fileBlobs: collectFileBlobs(backup?.files),
-      chatImages: collectChatImages()
+      chatImages: collectChatImages(),
+      taskImages: collectTaskImageBlobs(backup?.tasks)
     }
     writeFileSync(filePath, JSON.stringify(full, null, 2), 'utf-8')
     return { success: true }
@@ -992,6 +1031,21 @@ app.whenReady().then(() => {
     }
   }
 
+  const restoreTaskImages = (blobs: unknown): void => {
+    if (!Array.isArray(blobs)) return
+    if (!existsSync(taskImagesDir())) mkdirSync(taskImagesDir(), { recursive: true })
+    for (const b of blobs) {
+      const full = taskImagePath((b as { id?: unknown })?.id, (b as { ext?: unknown })?.ext ?? '')
+      const b64 = (b as { base64?: unknown })?.base64
+      if (!full || typeof b64 !== 'string') continue
+      try {
+        writeFileSync(full, Buffer.from(b64, 'base64'))
+      } catch {
+        /* one bad blob doesn't abort the restore */
+      }
+    }
+  }
+
   ipcMain.handle('backup:import', async () => {
     const { filePaths, canceled } = await dialog.showOpenDialog({
       filters: [{ name: 'JSON', extensions: ['json'] }],
@@ -1006,9 +1060,11 @@ app.whenReady().then(() => {
       // of base64 crossing IPC. Absent keys (a pre-v5 backup) restore nothing.
       restoreFileBlobs(data?.fileBlobs)
       restoreChatImages(data?.chatImages)
+      restoreTaskImages(data?.taskImages)
       if (data && typeof data === 'object') {
         delete data.fileBlobs
         delete data.chatImages
+        delete data.taskImages
       }
       return { success: true, data }
     } catch {
@@ -2138,6 +2194,50 @@ app.whenReady().then(() => {
           unlinkSync(full)
         } catch {
           /* already gone, or locked — not worth failing the delete over */
+        }
+      }
+    }
+  })
+
+  // --- Task images (bytes on disk; the DB holds only metadata) ---
+  // The renderer downscales (toTaskImageDataUrl) and hands over a dataUrl; this
+  // checks the bytes are really an image, then writes task-images/<uuid><ext>.
+  ipcMain.handle('task:images:save', (_, dataUrl: string) => {
+    const decoded = decodeDataUrl(dataUrl)
+    if ('error' in decoded) return decoded
+    try {
+      if (!existsSync(taskImagesDir())) mkdirSync(taskImagesDir(), { recursive: true })
+      const id = randomUUID()
+      const ext = `.${decoded.ext}`
+      writeFileSync(join(taskImagesDir(), `${id}${ext}`), decoded.bytes)
+      return { id, ext, size: decoded.bytes.length }
+    } catch (e) {
+      return { error: e instanceof Error ? e.message : 'Falha ao salvar a imagem' }
+    }
+  })
+
+  ipcMain.handle('task:images:get', (_, id: string, ext: string) => {
+    const full = taskImagePath(id, ext)
+    if (!full || !existsSync(full)) return { error: 'Imagem não encontrada' }
+    try {
+      const b64 = readFileSync(full).toString('base64')
+      return { dataUrl: `data:${mimeForExt(ext.replace(/^\./, ''))};base64,${b64}` }
+    } catch {
+      return { error: 'Falha ao ler a imagem' }
+    }
+  })
+
+  // Called when a task (or one of its images) is removed: the file has no other
+  // owner. Items are {id, ext}; a traversal shape resolves to null and is skipped.
+  ipcMain.handle('task:images:delete', (_, items: { id: string; ext: string }[]) => {
+    if (!Array.isArray(items)) return
+    for (const it of items) {
+      const full = taskImagePath(it?.id, it?.ext)
+      if (full && existsSync(full)) {
+        try {
+          unlinkSync(full)
+        } catch {
+          /* already gone or locked — not worth failing over */
         }
       }
     }

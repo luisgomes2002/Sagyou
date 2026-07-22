@@ -19,6 +19,7 @@ interface Props {
 export function TaskViewModal({ open, task, columns, onEdit, onSendToAI, onClose }: Props) {
   const [copied, setCopied] = useState(false)
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
+  const [imageData, setImageData] = useState<Record<string, string>>({})
   const [, setTick] = useState(0)
 
   const activeTimer = useKanbanStore((s) => s.activeTimer)
@@ -44,6 +45,22 @@ export function TaskViewModal({ open, task, columns, onEdit, onSendToAI, onClose
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [open, onClose, lightboxSrc])
+
+  // Load the task's image bytes from disk on demand for display (the DB holds
+  // only metadata). setState only in the promise callback (like AIView's
+  // loadImagesFor) — a fresh map replaces the previous task's, no sync reset.
+  useEffect(() => {
+    if (!open) return
+    Promise.all(
+      (task?.images ?? []).map(
+        async (img) => [img.id, await window.electronAPI.taskImages.get(img.id, img.ext)] as const
+      )
+    ).then((loaded) => {
+      const next: Record<string, string> = {}
+      for (const [id, res] of loaded) if ('dataUrl' in res) next[id] = res.dataUrl
+      setImageData(next)
+    })
+  }, [open, task])
 
   if (!open || !task) return null
 
@@ -275,12 +292,12 @@ export function TaskViewModal({ open, task, columns, onEdit, onSendToAI, onClose
                   <button
                     key={img.id}
                     type="button"
-                    onClick={() => setLightboxSrc(img.dataUrl)}
+                    onClick={() => imageData[img.id] && setLightboxSrc(imageData[img.id])}
                     className="aspect-square rounded-lg overflow-hidden border border-[#2a2d42] hover:border-[#6366f1]/50 transition-colors bg-[#0d0f18] group/img relative"
                     title={img.name}
                   >
                     <img
-                      src={img.dataUrl}
+                      src={imageData[img.id]}
                       alt={img.name}
                       className="w-full h-full object-cover group-hover/img:scale-105 transition-transform duration-200"
                     />

@@ -251,6 +251,11 @@ export function AIView({
   const [models, setModels] = useState<string[]>([])
   const [loadingModels, setLoadingModels] = useState(false)
   const [modelsError, setModelsError] = useState<string | null>(null)
+  // The code agent may point at its own endpoint, so it loads its own model list
+  // (falling back to the chat's when its provider fields are blank).
+  const [codeAgentModels, setCodeAgentModels] = useState<string[]>([])
+  const [loadingCodeAgentModels, setLoadingCodeAgentModels] = useState(false)
+  const [codeAgentModelsError, setCodeAgentModelsError] = useState<string | null>(null)
   // The run itself lives in its own store, above the view switch: this
   // component is unmounted the moment the user looks at anything else, and a
   // run must not die with it. See store/aiRun.ts.
@@ -1011,6 +1016,24 @@ export function AIView({
     }
   }
 
+  // Load the code agent's own model list. Its provider fields fall back to the
+  // chat's when blank (same rule as resolveCodeAgentConfig in main), so an empty
+  // Base URL/API Key here still lists the chat endpoint's models.
+  const handleLoadCodeAgentModels = async (): Promise<void> => {
+    const baseUrl = config.codeAgent?.baseUrl?.trim() || config.baseUrl
+    const apiKey = config.codeAgent?.apiKey?.trim() || config.apiKey
+    if (loadingCodeAgentModels || baseUrl.trim() === '') return
+    setLoadingCodeAgentModels(true)
+    setCodeAgentModelsError(null)
+    try {
+      setCodeAgentModels(await fetchModels({ ...config, baseUrl, apiKey }))
+    } catch (e) {
+      setCodeAgentModelsError(e instanceof Error ? e.message : 'Falha ao carregar modelos')
+    } finally {
+      setLoadingCodeAgentModels(false)
+    }
+  }
+
   // Auto-load the model list the first time the config panel is opened
   useEffect(() => {
     if (showConfig && models.length === 0 && config.baseUrl.trim() !== '') handleLoadModels()
@@ -1223,45 +1246,86 @@ export function AIView({
   /**
    * A field of the nested codeAgent config; blank falls back to the chat config.
    *
-   * `options` turns it into a dropdown that still accepts free text (a `datalist`)
-   * — used for Model: the code agent may point at a *different* endpoint than the
-   * chat, so the chat's loaded model list is a suggestion, not a hard list.
+   * `options` turns it into a strict dropdown (no free typing) — used for Model, so
+   * the user picks from the chat's loaded model list. The empty choice keeps the
+   * "same as chat" fallback, and a stored value not in the list is preserved as its
+   * own option (e.g. a model from a different endpoint set earlier).
    */
   const codeAgentField = (
     label: string,
     key: 'baseUrl' | 'apiKey' | 'model',
     type = 'text',
     placeholder = 'como o chat',
-    options?: string[]
+    options?: string[],
+    loader?: { onLoad: () => void; loading: boolean }
   ): React.JSX.Element => {
-    const listId = options ? `codeagent-${key}-list` : undefined
+    const current = config.codeAgent?.[key] ?? ''
+    const setField = (raw: string): void =>
+      setConfig((c) => {
+        const next = { ...(c.codeAgent ?? {}), [key]: raw }
+        // Drop empty fields so an all-blank block persists as absent (= fallback).
+        const cleaned = Object.fromEntries(
+          Object.entries(next).filter(([, v]) => typeof v === 'string' && v.trim() !== '')
+        )
+        return { ...c, codeAgent: Object.keys(cleaned).length ? cleaned : undefined }
+      })
+    const inputClass =
+      'px-2.5 py-1.5 rounded-md bg-[#0d0f18] border border-[#2a2d42] text-sm text-[#e2e8f0] placeholder:text-[#4a5068] focus:outline-none focus:border-[#6366f1]'
+    const selectEl = options ? (
+      <select
+        value={current}
+        onChange={(e) => setField(e.target.value)}
+        className={`min-w-0 ${loader ? 'flex-1' : ''} ${inputClass}`}
+      >
+        <option value="">{placeholder}</option>
+        {current && !options.includes(current) && <option value={current}>{current}</option>}
+        {options.map((m) => (
+          <option key={m} value={m}>
+            {m}
+          </option>
+        ))}
+      </select>
+    ) : (
+      <input
+        type={type}
+        value={current}
+        placeholder={placeholder}
+        onChange={(e) => setField(e.target.value)}
+        className={inputClass}
+      />
+    )
     return (
       <label className="flex flex-col gap-1">
         <span className="text-[11px] font-medium text-[#8892a4]">{label}</span>
-        <input
-          type={type}
-          list={listId}
-          value={config.codeAgent?.[key] ?? ''}
-          placeholder={placeholder}
-          onChange={(e) => {
-            const raw = e.target.value
-            setConfig((c) => {
-              const next = { ...(c.codeAgent ?? {}), [key]: raw }
-              // Drop empty fields so an all-blank block persists as absent (= fallback).
-              const cleaned = Object.fromEntries(
-                Object.entries(next).filter(([, v]) => typeof v === 'string' && v.trim() !== '')
-              )
-              return { ...c, codeAgent: Object.keys(cleaned).length ? cleaned : undefined }
-            })
-          }}
-          className="px-2.5 py-1.5 rounded-md bg-[#0d0f18] border border-[#2a2d42] text-sm text-[#e2e8f0] placeholder:text-[#4a5068] focus:outline-none focus:border-[#6366f1]"
-        />
-        {listId && (
-          <datalist id={listId}>
-            {options?.map((m) => (
-              <option key={m} value={m} />
-            ))}
-          </datalist>
+        {loader ? (
+          <div className="flex gap-1.5">
+            {selectEl}
+            <button
+              onClick={loader.onLoad}
+              disabled={loader.loading}
+              title="Carregar modelos do endpoint do agente"
+              className="shrink-0 px-2 py-1.5 rounded-md bg-[#1e2235] border border-[#2a2d42] text-[#8892a4] hover:text-[#e2e8f0] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              {loader.loading ? (
+                <div className="w-3.5 h-3.5 rounded-full border-2 border-[#6366f1] border-t-transparent animate-spin" />
+              ) : (
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <polyline points="23 4 23 10 17 10" />
+                  <polyline points="1 20 1 14 7 14" />
+                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                </svg>
+              )}
+            </button>
+          </div>
+        ) : (
+          selectEl
         )}
       </label>
     )
@@ -1710,6 +1774,11 @@ export function AIView({
         {/* Config panel */}
         {showConfig && (
           <div className="px-6 py-4 border-b border-[#2a2d42] bg-[#13151f] shrink-0">
+            <span className="text-[11px] font-medium text-[#8892a4]">Chat</span>
+            <p className="mt-1 mb-2 text-[11px] leading-relaxed text-[#4a5068]">
+              Provider e modelo que o assistente usa para <b>conversar com você</b> no chat — ler seus
+              dados, analisar e responder. É o modelo principal do app.
+            </p>
             <div className="grid grid-cols-3 gap-3">
               {field('Base URL', 'baseUrl', 'text', 'https://api.openai.com/v1')}
               {field('API Key', 'apiKey', 'password', 'sk-...')}
@@ -1757,7 +1826,7 @@ export function AIView({
               </label>
               <label className="flex flex-col gap-1">
                 <span className="text-[11px] font-medium text-[#8892a4]">
-                  Modelo p/ código (opcional)
+                  Modelo do chat para conversar sobre código (opcional)
                 </span>
                 <select
                   value={config.modelComplex ?? ''}
@@ -1780,9 +1849,13 @@ export function AIView({
               </label>
             </div>
             <p className="mt-2 text-[11px] leading-relaxed text-[#6b7280]">
-              Se você escolher um <b>modelo p/ código</b>, pedidos que parecem tarefa de código
-              (código, bug, refatorar, arquitetura, investigar…) rodam nele; o resto usa o modelo
-              principal. Deixe em “mesmo do principal” para usar um modelo só.
+              O <b>modelo principal</b> (acima) responde tudo no chat. Aqui você pode definir um{' '}
+              <b>segundo modelo, mais forte, só para mensagens de código</b>: quando você escreve algo
+              como “tem um bug aqui”, “refatora essa função” ou “otimiza isso”, a resposta usa este
+              modelo; perguntas comuns (“quantas tasks fiz essa semana?”) continuam no principal —
+              assim você só paga o modelo caro quando o assunto é código. Vale para o chat{' '}
+              <b>conversar e analisar</b>; quem de fato <b>edita os arquivos</b> é o Agente de Código
+              (mais abaixo). Deixe em “mesmo do principal” para usar um único modelo em tudo.
             </p>
             <div className="mt-3 flex items-start gap-3">
               <label className="flex flex-col gap-1 shrink-0 w-40">
@@ -1880,17 +1953,32 @@ export function AIView({
             <div className="mt-3 pt-3 border-t border-[#2a2d42]">
               <span className="text-[11px] font-medium text-[#8892a4]">Agente de Código</span>
               <p className="mt-1 mb-2 text-[11px] leading-relaxed text-[#4a5068]">
-                Provider do agente que edita o código (rodar_agente_codigo). Deixe qualquer campo em
-                branco para usar o mesmo do chat acima — assim você pode apontar o agente para um
-                modelo mais forte sem trocar o do chat.
+                Modelo que <b>escreve as alterações nos seus arquivos</b> quando o assistente decide
+                mexer no código — diferente do chat acima, que só conversa e analisa. Tem provider
+                próprio: deixe <b>Base URL</b> e <b>API Key</b> em branco para reaproveitar os do chat
+                e preencha só o <b>Model</b> para apontar o agente a um modelo mais forte (ou a um
+                modelo local, custo zero). Como editar código é a parte pesada, costuma valer um
+                modelo melhor aqui do que no chat.
               </p>
               <div className="grid grid-cols-3 gap-3">
                 {codeAgentField('Base URL', 'baseUrl', 'text', config.baseUrl || 'como o chat')}
                 {codeAgentField('API Key', 'apiKey', 'password', config.apiKey ? '••••' : 'como o chat')}
-                {/* Dropdown (dos modelos carregados) que ainda aceita digitar um
-                    modelo de outro endpoint. Carregue os modelos no campo do chat. */}
-                {codeAgentField('Model', 'model', 'text', config.model || 'como o chat', models)}
+                {/* Dropdown estrito. Usa a lista própria do agente quando carregada
+                    (botão ⟳), senão a do chat. O botão busca no endpoint do agente. */}
+                {codeAgentField(
+                  'Model',
+                  'model',
+                  'text',
+                  config.model || 'como o chat',
+                  codeAgentModels.length ? codeAgentModels : models,
+                  { onLoad: handleLoadCodeAgentModels, loading: loadingCodeAgentModels }
+                )}
               </div>
+              {codeAgentModelsError && (
+                <p className="mt-1.5 text-[11px] text-red-400">
+                  Modelos do agente: {codeAgentModelsError}
+                </p>
+              )}
 
               {/* Sandbox toggle. Checked = required (default). Greyed when ai-jail
                   isn't installed, with a way to open onboarding. Unchecking it

@@ -265,7 +265,7 @@ describe('runCodeAgent — the loop', () => {
   })
 
   it('defaults the cap to CODE_AGENT_MAX_STEPS', () => {
-    expect(CODE_AGENT_MAX_STEPS).toBe(40)
+    expect(CODE_AGENT_MAX_STEPS).toBe(60)
   })
 
   it('announces each step (1-based) with the cap, for the live counter', async () => {
