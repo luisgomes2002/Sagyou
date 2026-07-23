@@ -22,11 +22,12 @@ export function TaskViewModal({ open, task, columns, onEdit, onSendToAI, onClose
   const [imageData, setImageData] = useState<Record<string, string>>({})
   const [, setTick] = useState(0)
 
-  const activeTimer = useKanbanStore((s) => s.activeTimer)
+  const activeTimers = useKanbanStore((s) => s.activeTimers)
   const startTimer = useKanbanStore((s) => s.startTimer)
   const stopTimer = useKanbanStore((s) => s.stopTimer)
 
-  const isRunning = !!task && activeTimer?.taskId === task.id
+  const timer = task ? activeTimers.find((t) => t.taskId === task.id) : undefined
+  const isRunning = !!timer
 
   useEffect(() => {
     if (!isRunning) return
@@ -69,7 +70,7 @@ export function TaskViewModal({ open, task, columns, onEdit, onSendToAI, onClose
   const columnName = columns.find((c) => c.id === task.columnId)?.name ?? ''
   const images = task.images ?? []
 
-  const sessionSeconds = isRunning ? Math.floor((Date.now() - activeTimer!.startedAt) / 1000) : 0
+  const sessionSeconds = timer ? Math.floor((Date.now() - timer.startedAt) / 1000) : 0
   const totalSeconds = (task.timeSpent ?? 0) + sessionSeconds
 
   const buildCopyText = () => {
@@ -241,7 +242,7 @@ export function TaskViewModal({ open, task, columns, onEdit, onSendToAI, onClose
                 </div>
               </div>
               <button
-                onClick={() => isRunning ? stopTimer() : startTimer(task.id)}
+                onClick={() => isRunning ? stopTimer(task.id) : startTimer(task.id)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
                   isRunning
                     ? 'bg-[#22c55e]/15 text-[#22c55e] border-[#22c55e]/30 hover:bg-[#22c55e]/25'

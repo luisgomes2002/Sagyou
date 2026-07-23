@@ -6,6 +6,7 @@ import {
   newEntry,
   appendEntry,
   bucket,
+  cacheHitRate,
   summarize,
   localDay,
   MAX_USAGE_ENTRIES,
@@ -96,6 +97,15 @@ describe('newEntry', () => {
     // Not 0 — that would claim the call was free.
     expect(newEntry('m', usage, {}).cost).toBeUndefined()
   })
+
+  it('carries cachedPromptTokens through when the provider reported one', () => {
+    const e = newEntry('m', { ...usage, cachedPromptTokens: 900_000 }, prices)
+    expect(e.cachedPromptTokens).toBe(900_000)
+  })
+
+  it('leaves cachedPromptTokens absent when the provider reported none', () => {
+    expect(newEntry('m', usage, prices).cachedPromptTokens).toBeUndefined()
+  })
 })
 
 describe('appendEntry', () => {
@@ -137,8 +147,37 @@ describe('bucket', () => {
       promptTokens: 0,
       completionTokens: 0,
       cost: 0,
-      unpricedCalls: 0
+      unpricedCalls: 0,
+      cachedPromptTokens: 0,
+      cacheReportedPromptTokens: 0
     })
+  })
+
+  it('sums cachedPromptTokens and counts only calls that reported one toward the denominator', () => {
+    const b = bucket([
+      entry('2026-07-16', { promptTokens: 10_000, cachedPromptTokens: 9_000 }),
+      entry('2026-07-16', { promptTokens: 5_000 }), // provider reported nothing
+      entry('2026-07-16', { promptTokens: 2_000, cachedPromptTokens: 0 }) // reported an explicit miss
+    ])
+
+    expect(b.cachedPromptTokens).toBe(9_000)
+    // Only the two calls that reported a figure count — the silent one is excluded.
+    expect(b.cacheReportedPromptTokens).toBe(12_000)
+  })
+})
+
+describe('cacheHitRate', () => {
+  it('is null when nothing in the bucket reported a cache figure', () => {
+    const b = bucket([entry('2026-07-16')])
+    expect(cacheHitRate(b)).toBeNull()
+  })
+
+  it('divides cached tokens by the tokens of calls that reported one', () => {
+    const b = bucket([
+      entry('2026-07-16', { promptTokens: 8_000, cachedPromptTokens: 6_000 }),
+      entry('2026-07-16', { promptTokens: 2_000, cachedPromptTokens: 2_000 })
+    ])
+    expect(cacheHitRate(b)).toBeCloseTo(0.8, 10)
   })
 })
 

@@ -4,6 +4,9 @@ type SaveData = {
   projects: Project[]; tasks: Task[]; sprints: Sprint[]; tombstones: Tombstone[]
   notes: StickyNote[]; goals: Goal[]; habits: Habit[]; lists: FinancialTable[]
   files: StoredFile[]
+  activeTimers?: { taskId: string; startedAt: number }[]
+  // Legacy single-timer mirror (activeTimers[0]); kept so an older app version
+  // reading the same DB still resolves one running timer.
   activeTimer?: { taskId: string; startedAt: number } | null
 }
 

@@ -825,6 +825,8 @@ const REGISTRY: Record<string, AITool> = {
       const state = useKanbanStore.getState()
       const task = resolveTask(args)
       if (!task) return JSON.stringify({ error: 'Task não encontrada' })
+      const busy = leaseBlock(task.id)
+      if (busy) return busy
 
       // Only the keys actually present may end up in `updates` — updateTask
       // spreads it over the task, so an undefined value clears the field rather
@@ -900,6 +902,8 @@ const REGISTRY: Record<string, AITool> = {
       const state = useKanbanStore.getState()
       const task = resolveTask(args)
       if (!task) return JSON.stringify({ error: 'Task não encontrada' })
+      const busy = leaseBlock(task.id)
+      if (busy) return busy
       const project = state.projects.find((p) => p.id === task.projectId)
       if (!project) return JSON.stringify({ error: 'Projeto da task não encontrado' })
 
@@ -961,6 +965,8 @@ const REGISTRY: Record<string, AITool> = {
       const state = useKanbanStore.getState()
       const task = resolveTask(args)
       if (!task) return JSON.stringify({ error: 'Task não encontrada' })
+      const busy = leaseBlock(task.id)
+      if (busy) return busy
       const project = state.projects.find((p) => p.id === task.projectId)
       const doneCol = project?.columns.find(isDoneColumn)
       if (!doneCol) return JSON.stringify({ error: 'Coluna "Done" não encontrada no projeto' })
@@ -1781,7 +1787,7 @@ const REGISTRY: Record<string, AITool> = {
       // The agent is about to edit files under this root, so any cached code
       // search of it is now potentially stale — drop the cache.
       clearCodeSearchCache()
-      const { runningConvId } = useAiRunStore.getState()
+      const runningConvId = currentRunConvId()
       // Same project the read tools resolved to — so the code agent is briefed
       // with this project's memory (shared with the chat).
       const projectId =
@@ -2042,9 +2048,49 @@ const REGISTRY: Record<string, AITool> = {
 export const TOOL_DEFS: ToolDef[] = Object.values(REGISTRY).map((t) => t.definition)
 
 /** Dispatch one tool call by name, returning a JSON string result. */
-export async function runTool(name: string, args: Record<string, unknown>): Promise<string> {
+/**
+ * The conversation the tool currently executing belongs to.
+ *
+ * A tool handler is module-global and shared across every run, so with several
+ * runs in flight the store's on-screen `conversationId` is not the one that
+ * asked. `runTool` sets this synchronously right before calling the handler, and
+ * a handler that needs it (rodar_agente_codigo) reads it synchronously at the
+ * top — before any await — so an interleaved run can't overwrite it first.
+ */
+let activeRunConvId: string | null = null
+export function currentRunConvId(): string | null {
+  return activeRunConvId
+}
+
+/**
+ * Cooperative task lease for the multi-agent case: before a work tool mutates a
+ * task, claim it for the running conversation. If another *active* run already
+ * holds it, return a synthetic "someone else has this one" result — the model
+ * reads it and moves on, exactly like the loop's other brakes, rather than two
+ * agents duplicating the same task.
+ *
+ * A no-op outside a run (no owning convId — Gerar Tasks, tests): a single actor
+ * needs no coordination. Returns the block message to return, or null to go on.
+ */
+function leaseBlock(taskId: string): string | null {
+  const convId = currentRunConvId()
+  if (!convId) return null
+  if (useAiRunStore.getState().acquireLease(taskId, convId)) return null
+  return JSON.stringify({
+    error:
+      'Outra IA já está trabalhando nesta task agora. Escolha outra task e, se precisar, volte a esta mais tarde.',
+    lease: 'ocupada'
+  })
+}
+
+export async function runTool(
+  name: string,
+  args: Record<string, unknown>,
+  convId: string | null = null
+): Promise<string> {
   const tool = REGISTRY[name]
   if (!tool) return JSON.stringify({ error: `Ferramenta desconhecida: ${name}` })
+  activeRunConvId = convId
   try {
     return await tool.run(args)
   } catch (e) {

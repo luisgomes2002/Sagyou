@@ -29,12 +29,13 @@ export function TaskCard({ task, onEdit, onDelete, onView, onComplete, overlay =
     opacity: isDragging ? 0.3 : 1
   }
 
-  const activeTimer = useKanbanStore((s) => s.activeTimer)
+  // This task's own timer, if it's one of the several that may be running.
+  const timer = useKanbanStore((s) => s.activeTimers.find((t) => t.taskId === task.id))
   const startTimer = useKanbanStore((s) => s.startTimer)
   const stopTimer = useKanbanStore((s) => s.stopTimer)
   const isLinkedToCanvas = useKanbanStore((s) => s.notes.some((n) => n.taskId === task.id))
 
-  const isRunning = activeTimer?.taskId === task.id
+  const isRunning = !!timer
   const [, setTick] = useState(0)
 
   // Re-render every second while this task's timer is running
@@ -44,7 +45,7 @@ export function TaskCard({ task, onEdit, onDelete, onView, onComplete, overlay =
     return () => clearInterval(id)
   }, [isRunning])
 
-  const sessionSeconds = isRunning ? Math.floor((Date.now() - activeTimer!.startedAt) / 1000) : 0
+  const sessionSeconds = timer ? Math.floor((Date.now() - timer.startedAt) / 1000) : 0
   const totalSeconds = (task.timeSpent ?? 0) + sessionSeconds
   const showTime = totalSeconds > 0
 
@@ -53,7 +54,7 @@ export function TaskCard({ task, onEdit, onDelete, onView, onComplete, overlay =
 
   const handleTimerToggle = (e: React.MouseEvent) => {
     e.stopPropagation()
-    if (isRunning) stopTimer()
+    if (isRunning) stopTimer(task.id)
     else startTimer(task.id)
   }
 

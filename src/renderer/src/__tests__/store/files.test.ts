@@ -41,7 +41,7 @@ function resetStore() {
     files: [],
     activeProjectId: null,
     sprintFilter: null,
-    activeTimer: null,
+    activeTimers: [],
     isLoaded: false,
   })
 }

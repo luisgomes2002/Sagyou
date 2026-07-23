@@ -5,6 +5,14 @@
 export interface TokenUsage {
   promptTokens: number
   completionTokens: number
+  /**
+   * Of `promptTokens`, how many the provider served from its own prompt cache
+   * (DeepSeek's `prompt_cache_hit_tokens`, OpenAI's
+   * `prompt_tokens_details.cached_tokens`). Absent means the provider didn't
+   * report a cache figure at all — unknown, not zero: a provider that stays
+   * silent about caching is not the same as one confirming a 0% hit rate.
+   */
+  cachedPromptTokens?: number
 }
 
 /** USD per 1M tokens, as configured by the user. */
@@ -26,6 +34,8 @@ export interface UsageLogEntry {
    * not free.
    */
   cost?: number
+  /** See TokenUsage.cachedPromptTokens — absent means the provider reported none. */
+  cachedPromptTokens?: number
 }
 
 export interface UsageBucket {
@@ -36,6 +46,15 @@ export interface UsageBucket {
   cost: number
   /** Calls with no price attached. Their spend is unknown, not zero. */
   unpricedCalls: number
+  /** Sum of cachedPromptTokens over calls whose provider reported a cache figure. */
+  cachedPromptTokens: number
+  /**
+   * Of promptTokens, the portion belonging to calls that reported a cache
+   * figure — the denominator for a hit rate. Calls from a provider that never
+   * reports caching contribute 0 here too, so they don't drag the rate down;
+   * see cacheHitRate.
+   */
+  cacheReportedPromptTokens: number
 }
 
 export interface UsageSummary {
@@ -106,7 +125,10 @@ export function newEntry(
     model,
     promptTokens: usage.promptTokens,
     completionTokens: usage.completionTokens,
-    cost: costAt(usage, prices)
+    cost: costAt(usage, prices),
+    ...(typeof usage.cachedPromptTokens === 'number' && {
+      cachedPromptTokens: usage.cachedPromptTokens
+    })
   }
 }
 
@@ -124,10 +146,34 @@ export function bucket(entries: UsageLogEntry[]): UsageBucket {
       cost: acc.cost + (e.cost ?? 0),
       // Counted, never folded in as zero: a total that hides unpriced calls
       // reads as "this is what you spent" when it isn't.
-      unpricedCalls: acc.unpricedCalls + (typeof e.cost === 'number' ? 0 : 1)
+      unpricedCalls: acc.unpricedCalls + (typeof e.cost === 'number' ? 0 : 1),
+      cachedPromptTokens: acc.cachedPromptTokens + (e.cachedPromptTokens ?? 0),
+      // Only calls that actually reported a cache figure count toward the
+      // denominator — an entry from a provider that never reports caching must
+      // not dilute the hit rate as if it were a confirmed miss.
+      cacheReportedPromptTokens:
+        acc.cacheReportedPromptTokens + (typeof e.cachedPromptTokens === 'number' ? e.promptTokens : 0)
     }),
-    { calls: 0, promptTokens: 0, completionTokens: 0, cost: 0, unpricedCalls: 0 }
+    {
+      calls: 0,
+      promptTokens: 0,
+      completionTokens: 0,
+      cost: 0,
+      unpricedCalls: 0,
+      cachedPromptTokens: 0,
+      cacheReportedPromptTokens: 0
+    }
   )
+}
+
+/**
+ * Share of prompt tokens served from cache, over calls that reported a cache
+ * figure at all. Null when nothing in the bucket reported one — "no data",
+ * never "0%".
+ */
+export function cacheHitRate(b: UsageBucket): number | null {
+  if (b.cacheReportedPromptTokens <= 0) return null
+  return b.cachedPromptTokens / b.cacheReportedPromptTokens
 }
 
 /** Spend broken down for the UI. `now` is injectable so the buckets are testable. */

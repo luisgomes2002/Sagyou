@@ -3,12 +3,10 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { RunMetricInput, RunMetricsSummary } from '../main/run-metrics'
 import type { AiMemory, MemoryInput, MemorySummary, MemoryConflict } from '../main/memory'
 
-/** A user-written prompt template for Gerar Tasks. */
-interface PromptTemplate {
-  id: string
+/** A user-written Skill (.md file in userData/skills/). */
+interface Skill {
   name: string
   body: string
-  createdAt: string
   updatedAt: string
 }
 
@@ -95,7 +93,6 @@ const api = {
         outputPricePer1M?: number
         timeoutMs?: number
         lastConversationId?: string
-        taskTemplateId?: string
       }> => ipcRenderer.invoke('ai:config:get'),
       set: (config: {
         baseUrl: string
@@ -106,7 +103,6 @@ const api = {
         outputPricePer1M?: number
         timeoutMs?: number
         lastConversationId?: string
-        taskTemplateId?: string
       }): Promise<void> => ipcRenderer.invoke('ai:config:set', config)
     },
     // Spend tracking: per-call log kept by the main process (ai-usage-log.json).
@@ -439,16 +435,13 @@ const api = {
         ipcRenderer.invoke('ai:images:get', id),
       delete: (ids: string[]): Promise<void> => ipcRenderer.invoke('ai:images:delete', ids)
     },
-    // User-written prompt templates for Gerar Tasks (ai-templates.json).
-    templates: {
-      list: (): Promise<PromptTemplate[]> => ipcRenderer.invoke('ai:templates:list'),
-      save: (input: {
-        id?: string
-        name: string
-        body: string
-      }): Promise<{ template: PromptTemplate } | { error: string }> =>
-        ipcRenderer.invoke('ai:templates:save', input),
-      delete: (id: string): Promise<void> => ipcRenderer.invoke('ai:templates:delete', id)
+    // User-written Skills (.md files in userData/skills/).
+    skills: {
+      list: (): Promise<Skill[]> => ipcRenderer.invoke('ai:skills:list'),
+      save: (input: { name: string; body: string; oldName?: string }): Promise<{ skill: Skill } | { error: string }> =>
+        ipcRenderer.invoke('ai:skills:save', input),
+      delete: (name: string): Promise<void> => ipcRenderer.invoke('ai:skills:delete', name),
+      import: (): Promise<{ skill: Skill } | { error: string }> => ipcRenderer.invoke('ai:skills:import')
     },
     // Persisted chat history (ai-conversations.json in userData).
     conversations: {

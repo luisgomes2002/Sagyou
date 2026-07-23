@@ -47,8 +47,10 @@ export function AiRunHost({
   const conversationId = useAiRunStore((s) => s.conversationId)
   const usage = useAiRunStore((s) => s.usage)
   const parked = useAiRunStore((s) => s.parked)
-  const busy = useAiRunStore((s) => s.busy)
-  const pendingApproval = useAiRunStore((s) => s.pendingApproval)
+  // One or more runs are working somewhere. Was the global `busy`; now derived
+  // from the set of running conversations.
+  const anyRunning = useAiRunStore((s) => s.running.size > 0)
+  const pendingApprovals = useAiRunStore((s) => s.pendingApprovals)
   const ensureConversationId = useAiRunStore((s) => s.ensureConversationId)
   const markSaved = useAiRunStore((s) => s.markSaved)
   const resolveApproval = useAiRunStore((s) => s.resolveApproval)
@@ -56,6 +58,14 @@ export function AiRunHost({
   const setAutoApprove = useAiRunStore((s) => s.setAutoApprove)
 
   const onAIView = activeView === 'ai'
+
+  /**
+   * A conversation's transcript, wherever it lives — on screen or parked — so a
+   * card can be labelled with the chat that raised it. A running chat is always
+   * one or the other.
+   */
+  const messagesOf = (id: string): ChatMessage[] =>
+    id === conversationId ? messages : (parked[id]?.messages ?? [])
 
   // Auto-save the current conversation whenever it changes (debounced). The id
   // is normally minted when the run starts; this also covers a transcript that
@@ -103,17 +113,19 @@ export function AiRunHost({
     if (onAIView) return
     const onKey = (e: KeyboardEvent): void => {
       // Same reading as in the view: cancel means approve nothing, and the card
-      // must be *answered*, not hidden, or the loop waits forever.
-      if (e.key === 'Escape' && pendingApproval) resolveApproval(new Set())
+      // must be *answered*, not hidden, or the loop waits forever. With a queue,
+      // Escape answers the topmost card (the last one raised, drawn on top).
+      const top = pendingApprovals[pendingApprovals.length - 1]
+      if (e.key === 'Escape' && top) resolveApproval(top.convId, new Set())
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [onAIView, pendingApproval, resolveApproval])
+  }, [onAIView, pendingApprovals, resolveApproval])
 
   return (
     <>
       {/* The agent is working somewhere else — a way back, and proof it didn't die. */}
-      {busy && !onAIView && (
+      {anyRunning && !onAIView && (
         <button
           onClick={onOpenAI}
           title="A IA está trabalhando — clique para acompanhar"
@@ -124,76 +136,92 @@ export function AiRunHost({
         </button>
       )}
 
-      {/* Approval card — write actions the agent wants to run */}
-      {pendingApproval && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="w-[520px] max-h-[80vh] flex flex-col rounded-xl bg-[#13151f] border border-[#2a2d42] shadow-2xl">
-            <div className="flex items-center gap-2 px-5 py-4 border-b border-[#2a2d42]">
-              <svg
-                width="15"
-                height="15"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="#fbbf24"
-                strokeWidth="2"
-              >
-                <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                <line x1="12" y1="9" x2="12" y2="13" />
-                <line x1="12" y1="17" x2="12.01" y2="17" />
-              </svg>
-              <h2 className="text-sm font-semibold text-[#e2e8f0]">
-                Aprovar ações da IA ({pendingApproval.selected.size}/{pendingApproval.writes.length})
-              </h2>
-            </div>
+      {/* Approval cards — one per run parked awaiting approval. Several runs can
+          stop at once now, so this is a queue; each card is labelled with the
+          conversation that raised it when there is more than one to tell apart,
+          and each is answered against its own convId. */}
+      {pendingApprovals.length > 0 && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/50 py-6 overflow-y-auto">
+          {pendingApprovals.map((pa) => (
+            <div
+              key={pa.convId}
+              className="w-[520px] max-h-[80vh] flex flex-col rounded-xl bg-[#13151f] border border-[#2a2d42] shadow-2xl"
+            >
+              <div className="flex items-center gap-2 px-5 py-4 border-b border-[#2a2d42]">
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#fbbf24"
+                  strokeWidth="2"
+                >
+                  <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                  <line x1="12" y1="9" x2="12" y2="13" />
+                  <line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+                <h2 className="text-sm font-semibold text-[#e2e8f0]">
+                  Aprovar ações da IA ({pa.selected.size}/{pa.writes.length})
+                </h2>
+              </div>
 
-            <div className="flex-1 overflow-y-auto px-5 py-3 space-y-2">
-              <p className="text-xs text-[#8892a4] mb-1">
-                A IA quer executar as ações abaixo. Marque as que você aprova.
-              </p>
-              {pendingApproval.writes.map((w) => (
-                <label
-                  key={w.id}
-                  className="flex items-start gap-3 p-3 rounded-lg bg-[#0d0f18] border border-[#2a2d42] cursor-pointer hover:border-[#3a3e58]"
-                >
-                  <input
-                    type="checkbox"
-                    checked={pendingApproval.selected.has(w.id)}
-                    onChange={() => toggleApproval(w.id)}
-                    className="mt-0.5 accent-[#6366f1]"
-                  />
-                  <span className="text-sm text-[#e2e8f0]">{describeToolCall(w.name, w.args)}</span>
-                </label>
-              ))}
-            </div>
+              {pendingApprovals.length > 1 && (
+                // Which chat is asking — only worth the line when more than one
+                // card is up and they need telling apart.
+                <p className="px-5 pt-2 text-[11px] text-[#8892a4] truncate">
+                  Conversa: {deriveTitle(messagesOf(pa.convId))}
+                </p>
+              )}
 
-            <div className="flex items-center justify-between px-5 py-3 border-t border-[#2a2d42] gap-2">
-              <button
-                onClick={() => resolveApproval(new Set())}
-                className="px-3 py-1.5 rounded-lg text-sm text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#1e2235] transition-colors shrink-0"
-              >
-                Recusar tudo
-              </button>
-              <div className="flex items-center gap-2">
+              <div className="flex-1 overflow-y-auto px-5 py-3 space-y-2">
+                <p className="text-xs text-[#8892a4] mb-1">
+                  A IA quer executar as ações abaixo. Marque as que você aprova.
+                </p>
+                {pa.writes.map((w) => (
+                  <label
+                    key={w.id}
+                    className="flex items-start gap-3 p-3 rounded-lg bg-[#0d0f18] border border-[#2a2d42] cursor-pointer hover:border-[#3a3e58]"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={pa.selected.has(w.id)}
+                      onChange={() => toggleApproval(pa.convId, w.id)}
+                      className="mt-0.5 accent-[#6366f1]"
+                    />
+                    <span className="text-sm text-[#e2e8f0]">{describeToolCall(w.name, w.args)}</span>
+                  </label>
+                ))}
+              </div>
+
+              <div className="flex items-center justify-between px-5 py-3 border-t border-[#2a2d42] gap-2">
                 <button
-                  onClick={() => {
-                    setAutoApprove(true)
-                    resolveApproval(new Set(pendingApproval.writes.map((w) => w.id)))
-                  }}
-                  title="A IA trabalhará sem interrupção nesta conversa — como o modo always allow do Claude Code"
-                  className="px-3 py-1.5 rounded-lg text-xs text-amber-400 border border-amber-500/30 hover:bg-amber-500/10 transition-colors"
+                  onClick={() => resolveApproval(pa.convId, new Set())}
+                  className="px-3 py-1.5 rounded-lg text-sm text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#1e2235] transition-colors shrink-0"
                 >
-                  Sempre permitir
+                  Recusar tudo
                 </button>
-                <button
-                  onClick={() => resolveApproval(pendingApproval.selected)}
-                  disabled={pendingApproval.selected.size === 0}
-                  className="px-4 py-1.5 rounded-lg bg-[#6366f1] text-sm text-white font-medium hover:bg-[#4f52d4] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                >
-                  Aprovar {pendingApproval.selected.size > 0 ? pendingApproval.selected.size : ''}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      setAutoApprove(pa.convId, true)
+                      resolveApproval(pa.convId, new Set(pa.writes.map((w) => w.id)))
+                    }}
+                    title="A IA trabalhará sem interrupção nesta conversa — como o modo always allow do Claude Code"
+                    className="px-3 py-1.5 rounded-lg text-xs text-amber-400 border border-amber-500/30 hover:bg-amber-500/10 transition-colors"
+                  >
+                    Sempre permitir
+                  </button>
+                  <button
+                    onClick={() => resolveApproval(pa.convId, pa.selected)}
+                    disabled={pa.selected.size === 0}
+                    className="px-4 py-1.5 rounded-lg bg-[#6366f1] text-sm text-white font-medium hover:bg-[#4f52d4] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Aprovar {pa.selected.size > 0 ? pa.selected.size : ''}
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
+          ))}
         </div>
       )}
     </>

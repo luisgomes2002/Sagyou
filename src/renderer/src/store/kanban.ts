@@ -70,6 +70,27 @@ interface ActiveTimer {
   startedAt: number
 }
 
+/**
+ * Coerce whatever the load path hands us into the multi-timer shape.
+ *
+ * Two legacy inputs migrate here: a `number` `activeTimer` never existed, but a
+ * single `{taskId,startedAt}` object (the pre-multi-timer field, still mirrored
+ * in the DB and readable by old app versions) is wrapped into a one-element
+ * array. Anything malformed drops out. See Phase 5 in MULTI_AGENT_PLAN.md.
+ */
+function normalizeTimers(data: {
+  activeTimers?: unknown
+  activeTimer?: unknown
+}): ActiveTimer[] {
+  const valid = (t: unknown): t is ActiveTimer =>
+    !!t &&
+    typeof (t as ActiveTimer).taskId === 'string' &&
+    typeof (t as ActiveTimer).startedAt === 'number'
+  if (Array.isArray(data.activeTimers)) return data.activeTimers.filter(valid)
+  // Legacy single-timer field → wrap it.
+  return valid(data.activeTimer) ? [data.activeTimer] : []
+}
+
 interface KanbanState {
   projects: Project[]
   tasks: Task[]
@@ -81,7 +102,13 @@ interface KanbanState {
   lists: FinancialTable[]
   activeProjectId: string | null
   sprintFilter: string | null
-  activeTimer: ActiveTimer | null
+  /**
+   * Timers running right now, at most one per task (keyed logically by taskId).
+   * Was a single `activeTimer` — now a collection, so a human and several agents
+   * (or several agents) can time different tasks at once. Persisted with a legacy
+   * `activeTimer = activeTimers[0]` mirror for old app versions (see _flushPersist).
+   */
+  activeTimers: ActiveTimer[]
   files: StoredFile[]
   isLoaded: boolean
 }
@@ -132,7 +159,8 @@ interface KanbanActions {
 
   addTimeSpent: (taskId: string, seconds: number) => void
   startTimer: (taskId: string) => void
-  stopTimer: () => void
+  /** Stop the timer of one task, crediting its elapsed time. No-op if it isn't running. */
+  stopTimer: (taskId: string) => void
 
   createNote: (
     projectId: string,
@@ -193,13 +221,18 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
   lists: [],
   activeProjectId: null,
   sprintFilter: null,
-  activeTimer: null,
+  activeTimers: [],
   files: [],
   isLoaded: false,
 
   _flushPersist: async () => {
-    const { projects, tasks, sprints, tombstones, notes, goals, habits, lists, activeTimer, files } = get()
-    await storage.save({ projects, tasks, sprints, tombstones, notes, goals, habits, lists, activeTimer, files })
+    const { projects, tasks, sprints, tombstones, notes, goals, habits, lists, activeTimers, files } = get()
+    await storage.save({
+      projects, tasks, sprints, tombstones, notes, goals, habits, lists, activeTimers, files,
+      // Legacy mirror, like activeCodePathId ⇢ activeCodePathIds[0]: an older app
+      // version (or a tool reading the DB directly) still resolves one timer.
+      activeTimer: activeTimers[0] ?? null
+    })
   },
 
   _persist: () => {
@@ -211,10 +244,11 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
     const data = await storage.load()
     const projects = (data.projects || []).map(normalizeProject)
 
-    // If a timer was running when the app was last closed, commit its elapsed time
-    const savedTimer = data.activeTimer as ActiveTimer | null | undefined
+    // Any timers running when the app was last closed: commit their elapsed time.
+    // Migrates a legacy single `activeTimer` to the array on the way in.
+    const savedTimers = normalizeTimers(data)
     let tasks: Task[] = data.tasks || []
-    if (savedTimer?.taskId) {
+    for (const savedTimer of savedTimers) {
       const elapsed = Math.floor((Date.now() - savedTimer.startedAt) / 1000)
       if (elapsed > 0) {
         tasks = tasks.map((t) =>
@@ -246,11 +280,11 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
       files: data.files || [],
       isLoaded: true,
       activeProjectId: projects[0]?.id ?? null,
-      activeTimer: null
+      activeTimers: []
     })
 
     // Persist the committed elapsed time so it's durable
-    if (savedTimer?.taskId) {
+    if (savedTimers.length > 0) {
       await get()._flushPersist()
     }
   },
@@ -477,8 +511,8 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
       })
     }))
     const s = get()
-    if (s.activeTimer?.taskId === id && s.tasks.find((t) => t.id === id)?.completedAt) {
-      s.stopTimer()
+    if (s.activeTimers.some((t) => t.taskId === id) && s.tasks.find((t) => t.id === id)?.completedAt) {
+      s.stopTimer(id)
     }
     get()._persist()
   },
@@ -523,8 +557,8 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
       return { tasks: [...untouched, ...reordered] }
     })
     const s = get()
-    if (s.activeTimer?.taskId === taskId && s.tasks.find((t) => t.id === taskId)?.completedAt) {
-      s.stopTimer()
+    if (s.activeTimers.some((t) => t.taskId === taskId) && s.tasks.find((t) => t.id === taskId)?.completedAt) {
+      s.stopTimer(taskId)
     }
     get()._persist()
   },
@@ -627,20 +661,21 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
   },
 
   startTimer: (taskId) => {
-    const { activeTimer } = get()
-    if (activeTimer) {
-      const elapsed = Math.floor((Date.now() - activeTimer.startedAt) / 1000)
-      get().addTimeSpent(activeTimer.taskId, elapsed)
-    }
-    set({ activeTimer: { taskId, startedAt: Date.now() } })
+    // At most one timer per task; starting one already running is a no-op (it
+    // must not reset its clock). Other tasks' timers are left running — multiple
+    // timers can tick at once now (human + agents, or several agents).
+    if (get().activeTimers.some((t) => t.taskId === taskId)) return
+    set((s) => ({ activeTimers: [...s.activeTimers, { taskId, startedAt: Date.now() }] }))
   },
 
-  stopTimer: () => {
-    const { activeTimer } = get()
-    if (!activeTimer) return
-    const elapsed = Math.floor((Date.now() - activeTimer.startedAt) / 1000)
-    get().addTimeSpent(activeTimer.taskId, elapsed)
-    set({ activeTimer: null })
+  stopTimer: (taskId) => {
+    const timer = get().activeTimers.find((t) => t.taskId === taskId)
+    if (!timer) return
+    const elapsed = Math.floor((Date.now() - timer.startedAt) / 1000)
+    set((s) => ({ activeTimers: s.activeTimers.filter((t) => t.taskId !== taskId) }))
+    // addTimeSpent persists; keeping the removal in the same tick means the
+    // stopped timer is never re-committed on the next save.
+    get().addTimeSpent(taskId, elapsed)
   },
 
   createNote: (projectId, data = {}) => {
@@ -1090,7 +1125,7 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
     // the blobs to disk during backup:import). A pre-v5 backup has no `files`
     // key — leave the local attachments untouched rather than wiping them.
     const files: StoredFile[] = Array.isArray(backup.files) ? backup.files : get().files
-    set({ projects, tasks, sprints, tombstones, notes, goals, habits, lists, files, activeProjectId, activeTimer: null })
+    set({ projects, tasks, sprints, tombstones, notes, goals, habits, lists, files, activeProjectId, activeTimers: [] })
     await get()._flushPersist()
 
     // Only touch the chat history when the backup actually carries it: a v2

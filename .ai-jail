@@ -7,4 +7,7 @@ command = [
     "-c",
     "true",
 ]
-rw_maps = ["/tmp"]
+rw_maps = [
+    "/tmp",
+    "/mnt/e/-- Backup --/Projects/Sagyou",
+]

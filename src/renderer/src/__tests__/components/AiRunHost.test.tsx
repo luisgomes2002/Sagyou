@@ -50,7 +50,7 @@ function installApi(): void {
         }))
       },
       images: { save: vi.fn(), get: vi.fn(), delete: vi.fn(async () => {}) },
-      templates: { list: vi.fn(async () => []), save: vi.fn(), delete: vi.fn(async () => {}) },
+      skills: { list: vi.fn(async () => []), save: vi.fn(), delete: vi.fn(async () => {}), import: vi.fn() },
       codeAgent: {
         onOutput: vi.fn(() => vi.fn()),
         onExit: vi.fn(() => vi.fn()),
@@ -123,13 +123,17 @@ async function startRun(): Promise<void> {
 beforeEach(() => {
   vi.clearAllMocks()
   installApi()
-  // busy off before reset: reset() spares a run in flight by design, so a
-  // previous test's run would survive into this one. See AIView.test.tsx.
+  // Clear the running set before reset: reset() spares a run in flight by
+  // design, so a previous test's run would survive into this one.
   useAiRunStore.setState({
-    busy: false,
-    abortRequested: false,
+    running: new Set(),
+    abortRequested: new Set(),
+    autoApprove: new Set(),
+    pendingApprovals: [],
+    streaming: {},
+    streamingTools: {},
+    runProjects: {},
     savedTick: 0,
-    runningConvId: null,
     parked: {}
   })
   useAiRunStore.getState().reset()
@@ -311,7 +315,7 @@ describe('a run and the chat it belongs to', () => {
     // Nowhere left to write: every further step would be billed and discarded.
     useAiRunStore.getState().dropConversation(asked)
 
-    expect(useAiRunStore.getState().abortRequested).toBe(true)
+    expect(useAiRunStore.getState().abortRequested.has(asked)).toBe(true)
   })
 })
 
@@ -471,7 +475,7 @@ describe('approval from another view', () => {
 })
 
 describe('a run happening in a chat you are not looking at', () => {
-  it('says so, instead of leaving a dead composer with no explanation', async () => {
+  it('says so, and still lets you work here in parallel', async () => {
     vi.mocked(window.electronAPI.ai.conversations.search).mockResolvedValue([
       { id: 'c-outra', title: 'Outra conversa', updatedAt: new Date().toISOString() }
     ] as never)
@@ -487,20 +491,23 @@ describe('a run happening in a chat you are not looking at', () => {
     await userEvent.click(screen.getByText('Histórico'))
     await userEvent.click(await screen.findByText('Outra conversa'))
 
-    // Sending is blocked here (one run at a time) and the run's own chat is
-    // out of sight, so this is the only thing on screen that accounts for it.
+    // The background run is accounted for …
     expect(await screen.findByText(/trabalhando em outra conversa/)).toBeInTheDocument()
+    // … but this chat's composer is live — N agents can work at once now, so a
+    // run in another conversation must not disable the one on screen.
+    expect(screen.getByPlaceholderText(/Descreva o projeto/)).not.toBeDisabled()
   })
 
-  it('is the way back to it', async () => {
-    vi.mocked(window.electronAPI.ai.conversations.search).mockResolvedValue([
-      { id: 'c-outra', title: 'Outra conversa', updatedAt: new Date().toISOString() }
-    ] as never)
+  it('the running chat is flagged in the history so it can be reopened', async () => {
     vi.mocked(runAgent).mockImplementation(() => new Promise<string>(() => {}))
 
     render(<App />)
     await startRun()
     const asked = useAiRunStore.getState().conversationId!
+    vi.mocked(window.electronAPI.ai.conversations.search).mockResolvedValue([
+      { id: asked, title: 'pergunta', updatedAt: new Date().toISOString() },
+      { id: 'c-outra', title: 'Outra conversa', updatedAt: new Date().toISOString() }
+    ] as never)
     vi.mocked(window.electronAPI.ai.conversations.get).mockImplementation(
       async (id: string) =>
         (id === asked
@@ -510,9 +517,11 @@ describe('a run happening in a chat you are not looking at', () => {
     await userEvent.click(screen.getByText('Histórico'))
     await userEvent.click(await screen.findByText('Outra conversa'))
 
-    await userEvent.click(await screen.findByText(/trabalhando em outra conversa/))
+    // The history marks the running chat with a spinner; reopening it brings its
+    // own progress back on screen.
+    await userEvent.click(screen.getByText('Histórico'))
+    await userEvent.click(await screen.findByText('pergunta'))
 
-    // Back on the running chat: its own progress is on screen again.
     await waitFor(() => expect(screen.getByLabelText('Parar')).toBeInTheDocument())
   })
 })

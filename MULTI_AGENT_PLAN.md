@@ -5,6 +5,27 @@
 > cronômetros simultâneos** e um **painel** onde dá pra ver todos os agentes, abrir o
 > chat de cada um e saber o que cada um está fazendo e em qual projeto.
 
+> **Status de implementação**
+> - ✅ **Fase 1** — `store/aiRun.ts` desingletonizado (`running: Set`, streaming/
+>   auto/abort por `convId`, `runProjects`, `writeConv`/`addUsageConv`, `convId`
+>   threaded ao loop e às tools). N chat-agents rodam em paralelo.
+> - ✅ **Fase 3** — fila de aprovação (`pendingApprovals[]`, um card por run em
+>   `AiRunHost`, Escape resolve o do topo).
+> - ✅ **Fase 4** — leasing cooperativo (`taskLeases` + `acquireLease` + `leaseBlock`
+>   nas tools de escrita de task).
+> - ✅ **Fase 6** — Painel de Agentes (`FleetView.tsx`, aba "Agentes" na Sidebar com
+>   badge de `running.size`). Deriva a lista de `running`/`runProjects`, mostra
+>   projeto, atividade, passo N/max, estado de aprovação e **gasto de tokens por
+>   agente** (`runUsage` — entrada e saída da run atual). Ações: abrir chat, parar.
+> - ✅ **Fase 5** — múltiplos cronômetros simultâneos (`activeTimers: ActiveTimer[]`,
+>   1 por task). Migração no load (legado `activeTimer` → array, commit de tempo em
+>   loop), espelho legado `activeTimer = activeTimers[0]` (settings do DB, não viaja
+>   no backup). `startTimer` adiciona sem parar os outros; `stopTimer(taskId)` credita
+>   só aquele. TaskCard/TaskViewModal atualizados.
+> - ⏳ **Fase 2(a)** — code-agents `Set<projectDir>` (o boolean global já serializa
+>   tudo e elimina a corrida de FS; paralelismo em dirs diferentes exige
+>   desingletonizar o estado de streaming do agente nativo — ver nota abaixo).
+
 ---
 
 ## 1. Correção importante sobre o risco de dados

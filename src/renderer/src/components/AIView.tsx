@@ -1,15 +1,12 @@
 import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 import { useKanbanStore } from '../store/kanban'
-import { useAiRunStore, toApiMessages, type ChatMessage } from '../store/aiRun'
-import { PRIORITY_CONFIG, AI_TASK_PROMPT_TEMPLATE } from '../types'
-import type { AITaskInput, Priority, Project } from '../types'
+import { useAiRunStore, type ChatMessage } from '../store/aiRun'
+import type { Project } from '../types'
 import {
-  callModel,
-  contentText,
   MAX_STEPS,
   AUTO_MAX_STEPS,
-  MAX_STEPS_LIMIT,
   LOW_STEPS_WARNING,
+  MAX_STEPS_LIMIT,
   resolveMaxSteps,
   DEFAULT_TIMEOUT_MS,
   MIN_TIMEOUT_MS,
@@ -19,7 +16,7 @@ import {
 } from '../ai/agent'
 import { describeToolActivity } from '../ai/tools'
 import { toScaledDataUrl, imageFilesFrom } from '../utils/images'
-import { estimateAutoRun } from '../utils/spend'
+import { estimateAutoRun, cacheHitRate } from '../utils/spend'
 import { ChatMarkdown } from './ChatMarkdown'
 import { CodeDiff, type CodeAgentDiff } from './CodeDiff'
 import { AgentTerminal } from './AgentTerminal'
@@ -35,7 +32,12 @@ const DIFF_LINE_CLASS: Record<'add' | 'del' | 'ctx' | 'meta', string> = {
   ctx: 'text-[#8892a4]',
   meta: 'text-[#4a5068] bg-[#0d0f18]'
 }
-const DIFF_MARK: Record<'add' | 'del' | 'ctx' | 'meta', string> = { add: '+', del: '-', ctx: ' ', meta: '' }
+const DIFF_MARK: Record<'add' | 'del' | 'ctx' | 'meta', string> = {
+  add: '+',
+  del: '-',
+  ctx: ' ',
+  meta: ''
+}
 
 // Config is persisted via ai:config in the main process (see effects below);
 // AIConfig and the tool-calling loop live in ../ai/agent.
@@ -58,41 +60,6 @@ async function fetchModels(cfg: AIConfig): Promise<string[]> {
 }
 
 /** Extract the first balanced JSON object from arbitrary model text. */
-function extractTasks(text: string): AITaskInput[] {
-  const start = text.indexOf('{')
-  if (start === -1) throw new Error('Nenhum JSON encontrado na resposta')
-
-  let depth = 0
-  let inStr = false
-  let escaped = false
-  let end = -1
-  for (let i = start; i < text.length; i++) {
-    const ch = text[i]
-    if (inStr) {
-      if (escaped) escaped = false
-      else if (ch === '\\') escaped = true
-      else if (ch === '"') inStr = false
-      continue
-    }
-    if (ch === '"') inStr = true
-    else if (ch === '{') depth++
-    else if (ch === '}') {
-      depth--
-      if (depth === 0) {
-        end = i
-        break
-      }
-    }
-  }
-  if (end === -1) throw new Error('JSON incompleto na resposta')
-
-  const parsed = JSON.parse(text.slice(start, end + 1))
-  if (!parsed || !Array.isArray(parsed.tasks)) throw new Error('JSON sem a lista "tasks"')
-  return parsed.tasks.filter(
-    (t: unknown): t is AITaskInput =>
-      !!t && typeof (t as AITaskInput).title === 'string' && (t as AITaskInput).title.trim() !== ''
-  )
-}
 
 /**
  * Tokens as a compact label: 980 → "980", 4210 → "4.2k".
@@ -132,7 +99,7 @@ type UsageSummary = Awaited<ReturnType<typeof window.electronAPI.ai.usage.summar
 type RunMetricsSummary = Awaited<ReturnType<typeof window.electronAPI.ai.runMetrics.summary>>
 
 /** Taken off the preload API rather than restated — main owns the shape. */
-type PromptTemplate = Awaited<ReturnType<typeof window.electronAPI.ai.templates.list>>[number]
+type SkillItem = Awaited<ReturnType<typeof window.electronAPI.ai.skills.list>>[number]
 
 /**
  * Tallest the composer may grow, in px (~8 lines). Past this it scrolls
@@ -237,7 +204,6 @@ export function AIView({
   onPrefillConsumed?: () => void
 }) {
   const activeProjectId = useKanbanStore((s) => s.activeProjectId)
-  const importTasksFromAIChat = useKanbanStore((s) => s.importTasksFromAIChat)
 
   const activeProject = projects.find((p) => p.id === activeProjectId) ?? null
   // Surfaced in the header so the code tools' reach is visible without opening
@@ -260,22 +226,25 @@ export function AIView({
   // component is unmounted the moment the user looks at anything else, and a
   // run must not die with it. See store/aiRun.ts.
   const messages = useAiRunStore((s) => s.messages)
-  const busy = useAiRunStore((s) => s.busy)
-  const streaming = useAiRunStore((s) => s.streaming)
-  const streamingTools = useAiRunStore((s) => s.streamingTools)
+  const running = useAiRunStore((s) => s.running)
+  const busy = running.size > 0
+  const streamingAll = useAiRunStore((s) => s.streaming)
+  const streamingToolsAll = useAiRunStore((s) => s.streamingTools)
+  const conversationId = useAiRunStore((s) => s.conversationId)
+  const streaming = conversationId ? (streamingAll[conversationId] ?? '') : ''
+  const streamingTools = conversationId ? (streamingToolsAll[conversationId] ?? []) : []
   const error = useAiRunStore((s) => s.error)
   const usage = useAiRunStore((s) => s.usage)
-  const conversationId = useAiRunStore((s) => s.conversationId)
-  const runningConvId = useAiRunStore((s) => s.runningConvId)
-  const pendingApproval = useAiRunStore((s) => s.pendingApproval)
+  const runningConvId = useAiRunStore((s) => {
+    if (s.running.size === 0) return null
+    return [...s.running][0]
+  })
+  const pendingApproval = useAiRunStore((s) => s.pendingApprovals)
   const autoApprove = useAiRunStore((s) => s.autoApprove)
   const savedTick = useAiRunStore((s) => s.savedTick)
-  const setMessages = useAiRunStore((s) => s.setMessages)
-  const setBusy = useAiRunStore((s) => s.setBusy)
   const setError = useAiRunStore((s) => s.setError)
   const openConversation = useAiRunStore((s) => s.openConversation)
   const dropConversation = useAiRunStore((s) => s.dropConversation)
-  const addUsage = useAiRunStore((s) => s.addUsage)
   const setConversationId = useAiRunStore((s) => s.setConversationId)
   const setAuto = useAiRunStore((s) => s.setAutoApprove)
   const resolveApproval = useAiRunStore((s) => s.resolveApproval)
@@ -289,10 +258,6 @@ export function AIView({
   // same panel as spend, so a model's cost and its efficiency sit side by side.
   const [runMetrics, setRunMetrics] = useState<RunMetricsSummary | null>(null)
   const [showSpend, setShowSpend] = useState(false)
-
-  // Confirmation modal state (Gerar Tasks)
-  const [proposed, setProposed] = useState<AITaskInput[] | null>(null)
-  const [selected, setSelected] = useState<Set<number>>(new Set())
 
   // External code-agent output (streamed from the main process)
   const [agentLog, setAgentLog] = useState('')
@@ -319,9 +284,9 @@ export function AIView({
     irreversivel?: boolean
   } | null>(null)
   /** ai-jail sandbox status (merged with config). Null until first fetched. */
-  const [jailStatus, setJailStatus] = useState<
-    Awaited<ReturnType<typeof window.electronAPI.ai.jail.status>> | null
-  >(null)
+  const [jailStatus, setJailStatus] = useState<Awaited<
+    ReturnType<typeof window.electronAPI.ai.jail.status>
+  > | null>(null)
   /** Whether the first-run sandbox onboarding modal is showing. */
   const [showOnboarding, setShowOnboarding] = useState(false)
   /** What the last agent run changed. Null until asked for. */
@@ -374,21 +339,24 @@ export function AIView({
   >([])
   const [showHistory, setShowHistory] = useState(false)
   const [historyQuery, setHistoryQuery] = useState('')
-  // User-written Gerar Tasks templates. The built-in default is not in here —
-  // it stays in code as the fallback, so an empty or broken list still works.
-  const [templates, setTemplates] = useState<PromptTemplate[]>([])
-  const [editingTemplate, setEditingTemplate] = useState<{
+  // User-written Skills (.md files). Use /skill-name in the chat.
+  const [skills, setSkills] = useState<SkillItem[]>([])
+  const [editingSkill, setEditingSkill] = useState<{
     id?: string
     name: string
     body: string
   } | null>(null)
-  const [templateError, setTemplateError] = useState<string | null>(null)
+  const [skillError, setSkillError] = useState<string | null>(null)
   // Images attached to the message being written, and the bytes for every
   // image on screen (id -> dataUrl), loaded from disk on demand.
   const [pendingImages, setPendingImages] = useState<{ id: string; dataUrl: string }[]>([])
   const [imageData, setImageData] = useState<Record<string, string>>({})
   const [dragOver, setDragOver] = useState(false)
   // Mirrors historyQuery for the callers that fire from a stale closure — the
+  /** Formerly held a proposed task prompt from the old template system — kept so references compile. */
+  const [proposed, setProposed] = useState<string | null>(null)
+  /** Count of tasks created by the last agent action. */
+  const [createdCount] = useState<number | null>(null)
   // debounced autosave refreshes the list and must not undo the filter.
   const historyQueryRef = useRef('')
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; title: string } | null>(null)
@@ -418,11 +386,7 @@ export function AIView({
    */
   const runningHere = busy && runningConvId === conversationId
   const toolRunning = runningHere && messages.some((m) => m.done === false)
-  // The template in force. Falls back to the built-in whenever the selection
-  // can't be honoured — no template picked, or the picked one was deleted (in
-  // this window or another) — so Gerar Tasks never breaks over a dangling id.
-  const activeTemplate = templates.find((t) => t.id === config.taskTemplateId) ?? null
-  const activeTemplateBody = activeTemplate?.body ?? AI_TASK_PROMPT_TEMPLATE
+
   const totalTokens = usage.promptTokens + usage.completionTokens
   const cost = estimateCost(usage, config)
 
@@ -514,7 +478,6 @@ export function AIView({
           outputPricePer1M: stored.outputPricePer1M,
           timeoutMs: stored.timeoutMs,
           lastConversationId: stored.lastConversationId,
-          taskTemplateId: stored.taskTemplateId,
           // Undefined = the code agent falls back to the chat provider.
           codeAgent: stored.codeAgent,
           // Undefined = sandbox required (safe default); only explicit false is off.
@@ -793,15 +756,15 @@ export function AIView({
     window.electronAPI.ai.runMetrics?.summary().then(setRunMetrics)
   }
 
-  const refreshTemplates = (): void => {
-    window.electronAPI.ai.templates.list().then(setTemplates)
+  const refreshSkills = (): void => {
+    window.electronAPI.ai.skills.list().then(setSkills)
   }
 
   // Load the conversation list on mount.
   useEffect(() => {
     refreshConversations()
     refreshSpend()
-    refreshTemplates()
+    refreshSkills()
   }, [])
 
   // The autosave itself belongs to AiRunHost, which outlives this view — an
@@ -841,7 +804,11 @@ export function AIView({
    * it was turned on for on a card the user already answered.
    */
   useEffect(() => {
-    if (!useAiRunStore.getState().busy) setAuto(false)
+    const state = useAiRunStore.getState()
+    if (state.running.size === 0) {
+      const convId = state.conversationId
+      if (convId) setAuto(convId, false)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -977,26 +944,36 @@ export function AIView({
     void window.electronAPI.ai.images.delete([id])
   }
 
-  const handleSaveTemplate = async (): Promise<void> => {
-    if (!editingTemplate) return
-    const res = await window.electronAPI.ai.templates.save(editingTemplate)
+  const handleSaveSkill = async (): Promise<void> => {
+    if (!editingSkill) return
+    const res = await window.electronAPI.ai.skills.save(editingSkill)
     if ('error' in res) {
-      setTemplateError(res.error)
+      setSkillError(res.error)
       return
     }
-    setTemplateError(null)
-    setEditingTemplate(null)
-    refreshTemplates()
-    // A template is written to be used: pick it straight away.
-    setConfig((c) => ({ ...c, taskTemplateId: res.template.id }))
+    setSkillError(null)
+    setEditingSkill(null)
+    refreshSkills()
   }
 
-  const handleDeleteTemplate = async (id: string): Promise<void> => {
-    await window.electronAPI.ai.templates.delete(id)
-    refreshTemplates()
-    if (editingTemplate?.id === id) setEditingTemplate(null)
-    // Don't leave the composer pointing at something that no longer exists.
-    if (config.taskTemplateId === id) setConfig((c) => ({ ...c, taskTemplateId: undefined }))
+  const handleDeleteSkill = async (name: string): Promise<void> => {
+    await window.electronAPI.ai.skills.delete(name)
+    refreshSkills()
+    if (editingSkill?.name === name) setEditingSkill(null)
+  }
+
+
+  const handleImportSkill = async (): Promise<void> => {
+    try {
+      const res = await window.electronAPI.ai.skills.import()
+      if ('skill' in res) {
+        refreshSkills()
+      } else {
+        setSkillError(res.error)
+      }
+    } catch (err) {
+      setSkillError(err instanceof Error ? err.message : 'Falha ao importar skill')
+    }
   }
 
   const handleLoadModels = async () => {
@@ -1047,10 +1024,21 @@ export function AIView({
    * approval belong to the run.
    */
   const handleSend = (): void => {
-    const text = input.trim()
-    // An image alone is a fair question ("what is this?"), so a message with
-    // attachments may carry no text.
+    let text = input.trim()
     if ((!text && pendingImages.length === 0) || busy) return
+
+    // /skill-name: replace with skill body
+    if (text.startsWith('/')) {
+      const parts = text.slice(1).trim().split(/\s+/)
+      const skillName = parts[0]
+      const rest = parts.slice(1).join(' ')
+      const skill = skills.find((s) => s.name === skillName)
+      if (skill) {
+        text = skill.body + (rest ? '\n\n' + rest : '')
+      }
+      // If skill not found, send as-is (model might handle it)
+    }
+
     setInput('')
     const imageIds = pendingImages.map((p) => p.id)
     setPendingImages([])
@@ -1095,7 +1083,8 @@ export function AIView({
       // (composer, search boxes), where Enter already means something.
       if (e.key === 'Enter' && agentApproval) {
         const el = e.target as HTMLElement | null
-        if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return
+        if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable))
+          return
         e.preventDefault()
         return answerAgentApproval(true)
       }
@@ -1104,13 +1093,15 @@ export function AIView({
       // Code-agent action card: Esc refuses. Same reasoning as pendingApproval —
       // the loop awaits this promise, so hiding it unanswered hangs the run.
       if (agentApproval) return answerAgentApproval(false)
-      if (pendingApproval) {
+      if (pendingApproval.length > 0) {
         // NOT just a close: the agent loop is awaiting this promise, so hiding
         // the card without answering leaves the run hanging forever. Escape is
         // a cancel, and the safe reading of cancel is "approve nothing".
-        return resolveApproval(new Set())
+        for (const pa of pendingApproval) {
+          resolveApproval(pa.convId, new Set())
+        }
+        return
       }
-      if (proposed) return setProposed(null)
       if (showSpend) return setShowSpend(false)
       // Abandons the edit, keeping the old name. Ahead of showHistory: the box
       // is drawn inside that dropdown, so closing the dropdown first would take
@@ -1133,80 +1124,6 @@ export function AIView({
     showConfig,
     resolveApproval
   ])
-
-  const handleGenerate = async () => {
-    if (busy) return
-    const description = input.trim()
-    if (messages.length === 0 && !description) {
-      setError('Descreva o projeto no chat antes de gerar tasks')
-      return
-    }
-    setError(null)
-    setInput('')
-    // Show a compact marker in the chat; send the full template behind it.
-    const marker: ChatMessage = {
-      role: 'user',
-      content: 'Gerar tasks' + (description ? `: ${description}` : ' a partir da conversa')
-    }
-    const sent = [
-      ...toApiMessages(messages, imageData),
-      {
-        role: 'user' as const,
-        content:
-          activeTemplateBody +
-          '\n\nDescrição do projeto:\n' +
-          (description || '(use a conversa acima como descrição)')
-      }
-    ]
-    setMessages([...messages, marker])
-    setBusy(true)
-    try {
-      const { message, usage } = await callModel(config, sent)
-      if (usage) addUsage(usage)
-      const reply = contentText(message.content)
-      const tasks = extractTasks(reply)
-      if (tasks.length === 0) {
-        setError('O modelo não retornou nenhuma task válida')
-        setMessages([...messages, marker, { role: 'assistant', content: reply }])
-        return
-      }
-      setMessages([
-        ...messages,
-        marker,
-        {
-          role: 'assistant',
-          content: `Gerei ${tasks.length} task(s). Revise e confirme quais criar.`
-        }
-      ])
-      setProposed(tasks)
-      setSelected(new Set(tasks.map((_, i) => i)))
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Falha ao gerar tasks')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const toggleSelected = (i: number) => {
-    setSelected((prev) => {
-      const next = new Set(prev)
-      if (next.has(i)) next.delete(i)
-      else next.add(i)
-      return next
-    })
-  }
-
-  const [createdCount, setCreatedCount] = useState<number | null>(null)
-
-  const handleConfirmCreate = () => {
-    if (!proposed || !activeProject) return
-    const selectedTasks = proposed.filter((_, i) => selected.has(i))
-    const count = importTasksFromAIChat(activeProject.id, selectedTasks)
-    setProposed(null)
-    setSelected(new Set())
-    setCreatedCount(count)
-    setTimeout(() => setCreatedCount(null), 4000)
-  }
 
   /** A USD-per-1M-tokens input. Blank means unset, which hides the cost. */
   const priceField = (
@@ -1427,17 +1344,32 @@ export function AIView({
                             ['Total', spend.total]
                           ] as const
                         ).map(([label, b]) => (
-                          <div key={label} className="flex items-baseline justify-between gap-2">
-                            <span className="text-[11px] text-[#8892a4]">{label}</span>
-                            <span className="text-[11px] text-[#e2e8f0] tabular-nums">
-                              {b.calls} {b.calls === 1 ? 'chamada' : 'chamadas'} ·{' '}
-                              {formatTokens(b.promptTokens + b.completionTokens)} ·{' '}
-                              {b.unpricedCalls === b.calls ? (
-                                <span className="text-[#4a5068]">sem preço</span>
-                              ) : (
-                                <span className="text-[#a5b4fc]">{formatCost(b.cost)}</span>
-                              )}
-                            </span>
+                          <div key={label}>
+                            <div className="flex items-baseline justify-between gap-2">
+                              <span className="text-[11px] text-[#8892a4]">{label}</span>
+                              <span className="text-[11px] text-[#e2e8f0] tabular-nums">
+                                {b.calls} {b.calls === 1 ? 'chamada' : 'chamadas'} ·{' '}
+                                {formatTokens(b.promptTokens + b.completionTokens)} ·{' '}
+                                {b.unpricedCalls === b.calls ? (
+                                  <span className="text-[#4a5068]">sem preço</span>
+                                ) : (
+                                  <span className="text-[#a5b4fc]">{formatCost(b.cost)}</span>
+                                )}
+                              </span>
+                            </div>
+                            {cacheHitRate(b) !== null && (
+                              <div>
+                                <div className="w-full h-1 bg-[#2a2d42] rounded-full mt-0.5">
+                                  <div
+                                    className="h-full bg-green-500 rounded-full"
+                                    style={{ width: `${Math.round(cacheHitRate(b)! * 100)}%` }}
+                                  />
+                                </div>
+                                <span className="text-[10px] text-green-400">
+                                  {Math.round(cacheHitRate(b)! * 100)}% cache
+                                </span>
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -1457,14 +1389,29 @@ export function AIView({
                             Por modelo
                           </p>
                           {spend.byModel.map(({ model, bucket }) => (
-                            <div key={model} className="flex items-baseline justify-between gap-2">
-                              <span className="text-[11px] text-[#e2e8f0] truncate">{model}</span>
-                              <span className="text-[11px] text-[#8892a4] tabular-nums shrink-0">
-                                {bucket.calls}× ·{' '}
-                                {bucket.unpricedCalls === bucket.calls
-                                  ? '—'
-                                  : formatCost(bucket.cost)}
-                              </span>
+                            <div key={model}>
+                              <div className="flex items-baseline justify-between gap-2">
+                                <span className="text-[11px] text-[#e2e8f0] truncate">{model}</span>
+                                <span className="text-[11px] text-[#8892a4] tabular-nums shrink-0">
+                                  {bucket.calls}× ·{' '}
+                                  {bucket.unpricedCalls === bucket.calls
+                                    ? '—'
+                                    : formatCost(bucket.cost)}
+                                </span>
+                              </div>
+                              {cacheHitRate(bucket) !== null && (
+                                <div>
+                                  <div className="w-full h-1 bg-[#2a2d42] rounded-full mt-0.5">
+                                    <div
+                                      className="h-full bg-green-500 rounded-full"
+                                      style={{ width: `${Math.round(cacheHitRate(bucket)! * 100)}%` }}
+                                    />
+                                  </div>
+                                  <span className="text-[10px] text-green-400">
+                                    {Math.round(cacheHitRate(bucket)! * 100)}% cache
+                                  </span>
+                                </div>
+                              )}
                             </div>
                           ))}
                         </>
@@ -1477,13 +1424,15 @@ export function AIView({
                           </p>
                           <p className="mb-1.5 text-[10px] text-[#4a5068] leading-relaxed">
                             Média por execução do agente ({runMetrics.runs}{' '}
-                            {runMetrics.runs === 1 ? 'execução' : 'execuções'}). Menos tokens/passo é
-                            mais eficiente.
+                            {runMetrics.runs === 1 ? 'execução' : 'execuções'}). Menos tokens/passo
+                            é mais eficiente.
                           </p>
                           {runMetrics.byModel.map((m) => (
                             <div key={m.model} className="mb-1.5">
                               <div className="flex items-baseline justify-between gap-2">
-                                <span className="text-[11px] text-[#e2e8f0] truncate">{m.model}</span>
+                                <span className="text-[11px] text-[#e2e8f0] truncate">
+                                  {m.model}
+                                </span>
                                 <span className="text-[11px] text-[#8892a4] tabular-nums shrink-0">
                                   {m.runs}× · {formatTokens(Math.round(m.avgTotalTokens))}/exec
                                 </span>
@@ -1503,7 +1452,10 @@ export function AIView({
                                     </span>
                                   )}
                                   {m.cappedRate > 0 && (
-                                    <span className="ml-1.5" title="execuções que bateram o limite de passos">
+                                    <span
+                                      className="ml-1.5"
+                                      title="execuções que bateram o limite de passos"
+                                    >
                                       cap {Math.round(m.cappedRate * 100)}%
                                     </span>
                                   )}
@@ -1538,6 +1490,9 @@ export function AIView({
                                   {typeof e.cost === 'number' && (
                                     <span className="text-[#a5b4fc]"> {formatCost(e.cost)}</span>
                                   )}
+                                  {typeof e.cachedPromptTokens === 'number' && (
+                                    <span className="text-green-400"> cache</span>
+                                  )}
                                 </span>
                               </div>
                             ))}
@@ -1561,17 +1516,17 @@ export function AIView({
                 // Turning it OFF needs no ceremony — it only ever adds
                 // approvals back. Turning it ON is the spend decision, and the
                 // one moment the user can still say no.
-                if (autoApprove) return setAuto(false)
+                if (autoApprove.has(conversationId)) return setAuto(conversationId, false)
                 refreshSpend()
                 setConfirmAuto(true)
               }}
               title={
-                autoApprove
+                autoApprove.has(conversationId)
                   ? 'Modo autônomo LIGADO — a IA trabalha sem interrupção. Clique para voltar a pedir aprovação.'
                   : 'Modo autônomo DESLIGADO — cada ação pede sua aprovação. Clique para não perguntar mais.'
               }
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                autoApprove
+                autoApprove.has(conversationId)
                   ? 'bg-amber-500/20 text-amber-400'
                   : 'text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#1e2235]'
               }`}
@@ -1586,7 +1541,7 @@ export function AIView({
               >
                 <path d="M13 2 3 14h9l-1 8 10-12h-9z" />
               </svg>
-              {autoApprove ? 'Auto: ON' : 'Auto'}
+              {autoApprove.has(conversationId) ? 'Auto: ON' : 'Auto'}
             </button>
 
             <button
@@ -1776,8 +1731,8 @@ export function AIView({
           <div className="px-6 py-4 border-b border-[#2a2d42] bg-[#13151f] shrink-0">
             <span className="text-[11px] font-medium text-[#8892a4]">Chat</span>
             <p className="mt-1 mb-2 text-[11px] leading-relaxed text-[#4a5068]">
-              Provider e modelo que o assistente usa para <b>conversar com você</b> no chat — ler seus
-              dados, analisar e responder. É o modelo principal do app.
+              Provider e modelo que o assistente usa para <b>conversar com você</b> no chat — ler
+              seus dados, analisar e responder. É o modelo principal do app.
             </p>
             <div className="grid grid-cols-3 gap-3">
               {field('Base URL', 'baseUrl', 'text', 'https://api.openai.com/v1')}
@@ -1850,12 +1805,12 @@ export function AIView({
             </div>
             <p className="mt-2 text-[11px] leading-relaxed text-[#6b7280]">
               O <b>modelo principal</b> (acima) responde tudo no chat. Aqui você pode definir um{' '}
-              <b>segundo modelo, mais forte, só para mensagens de código</b>: quando você escreve algo
-              como “tem um bug aqui”, “refatora essa função” ou “otimiza isso”, a resposta usa este
-              modelo; perguntas comuns (“quantas tasks fiz essa semana?”) continuam no principal —
-              assim você só paga o modelo caro quando o assunto é código. Vale para o chat{' '}
-              <b>conversar e analisar</b>; quem de fato <b>edita os arquivos</b> é o Agente de Código
-              (mais abaixo). Deixe em “mesmo do principal” para usar um único modelo em tudo.
+              <b>segundo modelo, mais forte, só para mensagens de código</b>: quando você escreve
+              algo como “tem um bug aqui”, “refatora essa função” ou “otimiza isso”, a resposta usa
+              este modelo; perguntas comuns (“quantas tasks fiz essa semana?”) continuam no
+              principal — assim você só paga o modelo caro quando o assunto é código. Vale para o
+              chat <b>conversar e analisar</b>; quem de fato <b>edita os arquivos</b> é o Agente de
+              Código (mais abaixo). Deixe em “mesmo do principal” para usar um único modelo em tudo.
             </p>
             <div className="mt-3 flex items-start gap-3">
               <label className="flex flex-col gap-1 shrink-0 w-40">
@@ -1881,8 +1836,8 @@ export function AIView({
                 <p className="text-[11px] text-[#4a5068] leading-relaxed">
                   Quantas rodadas de ferramentas o assistente pode encadear numa resposta — cada
                   rodada é uma chamada paga ao modelo. Em branco usa o padrão: <b>{MAX_STEPS}</b> no
-                  modo manual e <b>{AUTO_MAX_STEPS}</b> no automático. Um valor definido vale para os
-                  dois modos (máx. {MAX_STEPS_LIMIT}).
+                  modo manual e <b>{AUTO_MAX_STEPS}</b> no automático. Um valor definido vale para
+                  os dois modos (máx. {MAX_STEPS_LIMIT}).
                 </p>
                 {config.maxSteps !== undefined && config.maxSteps < LOW_STEPS_WARNING && (
                   <p className="mt-2 flex items-start gap-1.5 text-[11px] text-amber-400/90 leading-relaxed">
@@ -1955,14 +1910,19 @@ export function AIView({
               <p className="mt-1 mb-2 text-[11px] leading-relaxed text-[#4a5068]">
                 Modelo que <b>escreve as alterações nos seus arquivos</b> quando o assistente decide
                 mexer no código — diferente do chat acima, que só conversa e analisa. Tem provider
-                próprio: deixe <b>Base URL</b> e <b>API Key</b> em branco para reaproveitar os do chat
-                e preencha só o <b>Model</b> para apontar o agente a um modelo mais forte (ou a um
-                modelo local, custo zero). Como editar código é a parte pesada, costuma valer um
+                próprio: deixe <b>Base URL</b> e <b>API Key</b> em branco para reaproveitar os do
+                chat e preencha só o <b>Model</b> para apontar o agente a um modelo mais forte (ou a
+                um modelo local, custo zero). Como editar código é a parte pesada, costuma valer um
                 modelo melhor aqui do que no chat.
               </p>
               <div className="grid grid-cols-3 gap-3">
                 {codeAgentField('Base URL', 'baseUrl', 'text', config.baseUrl || 'como o chat')}
-                {codeAgentField('API Key', 'apiKey', 'password', config.apiKey ? '••••' : 'como o chat')}
+                {codeAgentField(
+                  'API Key',
+                  'apiKey',
+                  'password',
+                  config.apiKey ? '••••' : 'como o chat'
+                )}
                 {/* Dropdown estrito. Usa a lista própria do agente quando carregada
                     (botão ⟳), senão a do chat. O botão busca no endpoint do agente. */}
                 {codeAgentField(
@@ -1994,7 +1954,10 @@ export function AIView({
                     checked={config.sandboxEnabled !== false}
                     disabled={!!jailStatus && !jailStatus.available}
                     onChange={(e) =>
-                      setConfig((c) => ({ ...c, sandboxEnabled: e.target.checked ? undefined : false }))
+                      setConfig((c) => ({
+                        ...c,
+                        sandboxEnabled: e.target.checked ? undefined : false
+                      }))
                     }
                     className="accent-[#4f46e5]"
                   />
@@ -2033,49 +1996,49 @@ export function AIView({
 
             <div className="mt-3 pt-3 border-t border-[#2a2d42]">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-[11px] font-medium text-[#8892a4]">
-                  Templates do Gerar Tasks
-                </span>
-                <button
-                  onClick={() => {
-                    setTemplateError(null)
-                    // Start from the built-in: a blank box invites a prompt that
-                    // doesn't ask for the JSON the importer needs.
-                    setEditingTemplate({ name: '', body: AI_TASK_PROMPT_TEMPLATE })
-                  }}
-                  className="text-[11px] text-[#a5b4fc] hover:text-[#e2e8f0]"
-                >
-                  + Novo template
-                </button>
+                <span className="text-[11px] font-medium text-[#8892a4]">Skills</span>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => {
+                      setSkillError(null)
+                      setEditingSkill({ name: '', body: '' })
+                    }}
+                    className="text-[11px] text-[#a5b4fc] hover:text-[#e2e8f0]"
+                  >
+                    + Nova skill
+                  </button>
+                  <button
+                    onClick={handleImportSkill}
+                    className="text-[11px] text-[#a5b4fc] hover:text-[#e2e8f0]"
+                  >
+                    Importar .md
+                  </button>
+                </div>
               </div>
 
-              {templates.length === 0 && !editingTemplate && (
+              {skills.length === 0 && !editingSkill && (
                 <p className="text-[11px] text-[#4a5068] italic">
-                  Só o template padrão. Crie um para adaptar o Gerar Tasks a uma área — Dev, Estudo,
-                  Marketing…
+                  Nenhuma skill ainda. Crie uma para usar com / no chat.
                 </p>
               )}
 
               <div className="space-y-1">
-                {templates.map((t) => (
-                  <div key={t.id} className="flex items-center gap-2">
+                {skills.map((s) => (
+                  <div key={s.name} className="flex items-center gap-2">
                     <span className="flex-1 min-w-0 truncate text-[11px] text-[#e2e8f0]">
-                      {t.name}
-                      {config.taskTemplateId === t.id && (
-                        <span className="ml-1.5 text-[10px] text-[#a5b4fc]">(em uso)</span>
-                      )}
+                      {s.name}
                     </span>
                     <button
                       onClick={() => {
-                        setTemplateError(null)
-                        setEditingTemplate({ id: t.id, name: t.name, body: t.body })
+                        setSkillError(null)
+                        setEditingSkill({ name: s.name, body: s.body })
                       }}
                       className="text-[11px] text-[#8892a4] hover:text-[#e2e8f0]"
                     >
                       Editar
                     </button>
                     <button
-                      onClick={() => handleDeleteTemplate(t.id)}
+                      onClick={() => handleDeleteSkill(s.name)}
                       className="text-[11px] text-[#8892a4] hover:text-red-400"
                     >
                       Apagar
@@ -2084,42 +2047,41 @@ export function AIView({
                 ))}
               </div>
 
-              {editingTemplate && (
+              {editingSkill && (
                 <div className="mt-2 space-y-2">
                   <input
-                    value={editingTemplate.name}
+                    value={editingSkill.name}
                     onChange={(e) =>
-                      setEditingTemplate((t) => (t ? { ...t, name: e.target.value } : t))
+                      setEditingSkill((s) => (s ? { ...s, name: e.target.value } : s))
                     }
-                    placeholder="Nome do template (ex: Dev)"
+                    placeholder="Nome da skill (ex: criar-projeto)"
                     className="w-full px-2.5 py-1.5 rounded-md bg-[#0d0f18] border border-[#2a2d42] text-sm text-[#e2e8f0] placeholder:text-[#4a5068] focus:outline-none focus:border-[#6366f1]"
                   />
                   <textarea
-                    aria-label="Conteúdo do template"
-                    value={editingTemplate.body}
+                    aria-label="Conteúdo da skill"
+                    value={editingSkill.body}
                     onChange={(e) =>
-                      setEditingTemplate((t) => (t ? { ...t, body: e.target.value } : t))
+                      setEditingSkill((s) => (s ? { ...s, body: e.target.value } : s))
                     }
                     rows={8}
                     spellCheck={false}
                     className="w-full resize-y px-2.5 py-1.5 rounded-md bg-[#0d0f18] border border-[#2a2d42] text-[11px] font-mono text-[#e2e8f0] focus:outline-none focus:border-[#6366f1]"
                   />
                   <p className="text-[10px] text-[#4a5068] leading-relaxed">
-                    A descrição do projeto é acrescentada no fim. O template precisa pedir o JSON
-                    com a lista <code>tasks</code> — é o que o importador entende.
+                    O conteúdo da skill é enviado como contexto no chat. Use markdown.
                   </p>
-                  {templateError && <p className="text-[11px] text-red-400">{templateError}</p>}
+                  {skillError && <p className="text-[11px] text-red-400">{skillError}</p>}
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={handleSaveTemplate}
+                      onClick={handleSaveSkill}
                       className="px-3 py-1 rounded-md bg-[#6366f1] text-xs text-white font-medium hover:bg-[#4f52d4]"
                     >
                       Salvar
                     </button>
                     <button
                       onClick={() => {
-                        setEditingTemplate(null)
-                        setTemplateError(null)
+                        setEditingSkill(null)
+                        setSkillError(null)
                       }}
                       className="px-3 py-1 rounded-md text-xs text-[#8892a4] hover:text-[#e2e8f0]"
                     >
@@ -2149,7 +2111,7 @@ export function AIView({
               <div>
                 <p className="text-[#e2e8f0] font-medium mb-1">Converse com o modelo</p>
                 <p className="text-sm text-[#8892a4]">
-                  Descreva o projeto e use <b>Gerar Tasks</b> para criar tarefas.
+                  Converse com o modelo ou use <b>/skill-name</b> no chat.
                 </p>
               </div>
             </div>
@@ -2285,7 +2247,8 @@ export function AIView({
                 {agentRunning && agentProgress && agentProgress.step > 0 && (
                   <span className="text-[10px] font-normal text-[#6b7280]">
                     · Passo {agentProgress.step}/{agentProgress.maxSteps} ·{' '}
-                    {formatTokens(agentProgress.promptTokens + agentProgress.completionTokens)} tokens
+                    {formatTokens(agentProgress.promptTokens + agentProgress.completionTokens)}{' '}
+                    tokens
                   </span>
                 )}
               </span>
@@ -2380,7 +2343,9 @@ export function AIView({
                     }`}
                   >
                     O agente quer{' '}
-                    {agentApproval.name === 'executar_comando' ? 'executar um comando' : 'escrever um arquivo'}
+                    {agentApproval.name === 'executar_comando'
+                      ? 'executar um comando'
+                      : 'escrever um arquivo'}
                     {agentApproval.irreversivel && ' (sobrescreve o conteúdo atual)'}
                   </p>
                   <p className="mt-1 break-words font-mono text-[11px] leading-relaxed text-[#e2e8f0]">
@@ -2409,8 +2374,12 @@ export function AIView({
                               key={i}
                               className={`flex px-2.5 font-mono text-[11px] leading-[1.6] ${DIFF_LINE_CLASS[line.kind]}`}
                             >
-                              <span className="w-3 shrink-0 select-none opacity-60">{DIFF_MARK[line.kind]}</span>
-                              <span className="whitespace-pre-wrap break-all">{line.text || ' '}</span>
+                              <span className="w-3 shrink-0 select-none opacity-60">
+                                {DIFF_MARK[line.kind]}
+                              </span>
+                              <span className="whitespace-pre-wrap break-all">
+                                {line.text || ' '}
+                              </span>
                             </div>
                           ))}
                         </div>
@@ -2683,157 +2652,12 @@ export function AIView({
               >
                 Enviar
               </button>
-              <select
-                value={config.taskTemplateId ?? ''}
-                onChange={(e) =>
-                  setConfig((c) => ({ ...c, taskTemplateId: e.target.value || undefined }))
-                }
-                title="Template usado pelo Gerar Tasks"
-                className="px-2 py-1 rounded-lg bg-[#0d0f18] border border-[#2a2d42] text-[11px] text-[#8892a4] focus:outline-none focus:border-[#6366f1] max-w-[9rem]"
-              >
-                {/* The built-in is always offered and can't be deleted — it is
-                    the floor Gerar Tasks falls back to. */}
-                <option value="">Padrão</option>
-                {templates.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
-              <button
-                onClick={handleGenerate}
-                disabled={!configReady || busy}
-                title={
-                  !activeProject
-                    ? 'Você poderá revisar antes de criar; selecione um projeto para criar as tasks'
-                    : undefined
-                }
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#6366f1]/90 text-sm text-white font-medium hover:bg-[#6366f1] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-              >
-                Gerar Tasks
-              </button>
             </div>
           </div>
         </div>
       </div>
 
       {/* Confirmation modal */}
-      {proposed && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-          onClick={() => setProposed(null)}
-        >
-          <div
-            className="w-[560px] max-h-[80vh] flex flex-col rounded-xl bg-[#13151f] border border-[#2a2d42] shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between px-5 py-4 border-b border-[#2a2d42]">
-              <h2 className="text-sm font-semibold text-[#e2e8f0]">
-                Criar tasks ({selected.size}/{proposed.length})
-              </h2>
-              <button
-                onClick={() => setProposed(null)}
-                className="text-[#8892a4] hover:text-[#e2e8f0]"
-              >
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                  <line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </button>
-            </div>
-
-            {!activeProject && (
-              <p className="px-5 py-2 text-[11px] text-orange-400 bg-orange-400/10 border-b border-orange-400/20">
-                Selecione um projeto para poder criar as tasks.
-              </p>
-            )}
-
-            <div className="flex-1 overflow-y-auto px-5 py-3 space-y-2">
-              {proposed.map((t, i) => {
-                const p = PRIORITY_CONFIG[(t.priority ?? 'medium') as Priority]
-                return (
-                  <label
-                    key={i}
-                    className="flex items-start gap-3 p-3 rounded-lg bg-[#0d0f18] border border-[#2a2d42] cursor-pointer hover:border-[#3a3e58]"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selected.has(i)}
-                      onChange={() => toggleSelected(i)}
-                      className="mt-0.5 accent-[#6366f1]"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm text-[#e2e8f0]">{t.title}</span>
-                        <span
-                          className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${p.bg} ${p.color}`}
-                        >
-                          {p.label}
-                        </span>
-                        {t.column && (
-                          <span className="text-[10px] text-[#8892a4]">→ {t.column}</span>
-                        )}
-                        {t.sprint && <span className="text-[10px] text-[#a5b4fc]">{t.sprint}</span>}
-                      </div>
-                      {t.description && (
-                        <p className="text-xs text-[#8892a4] mt-1">{t.description}</p>
-                      )}
-                      {t.tags && t.tags.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-1.5">
-                          {t.tags.map((tag) => (
-                            <span
-                              key={tag}
-                              className="px-1.5 py-0.5 rounded text-[10px] bg-[#1e2235] text-[#8892a4]"
-                            >
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </label>
-                )
-              })}
-            </div>
-
-            <div className="flex items-center justify-between px-5 py-3 border-t border-[#2a2d42]">
-              <button
-                onClick={() =>
-                  setSelected((prev) =>
-                    prev.size === proposed.length ? new Set() : new Set(proposed.map((_, i) => i))
-                  )
-                }
-                className="text-xs text-[#8892a4] hover:text-[#e2e8f0]"
-              >
-                {selected.size === proposed.length ? 'Desmarcar todas' : 'Selecionar todas'}
-              </button>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setProposed(null)}
-                  className="px-3 py-1.5 rounded-lg text-sm text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#1e2235] transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={handleConfirmCreate}
-                  disabled={!activeProject || selected.size === 0}
-                  className="px-4 py-1.5 rounded-lg bg-[#6366f1] text-sm text-white font-medium hover:bg-[#4f52d4] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                >
-                  Criar {selected.size > 0 ? selected.size : ''} task
-                  {selected.size === 1 ? '' : 's'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       <ConfirmDialog
         open={confirmDelete !== null}
@@ -2849,7 +2673,7 @@ export function AIView({
         message={autoWarning}
         confirmLabel="Ligar automático"
         onConfirm={() => {
-          setAuto(true)
+          if (conversationId) setAuto(conversationId, true)
           setConfirmAuto(false)
         }}
         onCancel={() => setConfirmAuto(false)}

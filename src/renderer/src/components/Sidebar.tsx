@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import type { Project } from '../types'
-import { AI_TASK_PROMPT_TEMPLATE } from '../types'
+import { useAiRunStore } from '../store/aiRun'
 
 type ActiveView =
   | 'board'
@@ -15,6 +15,7 @@ type ActiveView =
   | 'files'
   | 'ai'
   | 'memory'
+  | 'agents'
 
 interface Props {
   projects: Project[]
@@ -49,29 +50,48 @@ export function Sidebar({
   onImportAI,
   onExportExcel
 }: Props) {
+  // Live count of running agents, for the "Agentes" badge. Reads the run store
+  // directly, like MemoryView reads memory — it isn't part of the kanban store.
+  const runningCount = useAiRunStore((s) => s.running.size)
   const [menuOpen, setMenuOpen] = useState(false)
   const [projectMenuId, setProjectMenuId] = useState<string | null>(null)
   const [projectMenuPos, setProjectMenuPos] = useState({ top: 0, right: 0 })
+  const jsonInfoRef = useRef<HTMLButtonElement>(null)
   const [showJsonExample, setShowJsonExample] = useState(false)
   const [jsonExamplePos, setJsonExamplePos] = useState({ top: 0, left: 0 })
   const [jsonCopied, setJsonCopied] = useState(false)
-  const jsonInfoRef = useRef<HTMLButtonElement>(null)
 
+  const JSON_EXAMPLE = `{
+  "tasks": [
+    {
+      "title": "Implementar login",
+      "description": "Tela de autenticação com JWT.",
+      "priority": "high",
+      "dueDate": "2026-07-15",
+      "tags": ["auth", "frontend"],
+      "column": "In Progress",
+      "sprint": "Sprint 1"
+    },
+    {
+      "title": "Criar testes unitários",
+      "priority": "medium",
+      "tags": ["testes"],
+      "column": "Backlog"
+    }
+  ]
+}`
+
+  const handleToggleJsonExample = () => {
+    if (showJsonExample) { setShowJsonExample(false); return }
+    const rect = jsonInfoRef.current?.getBoundingClientRect()
+    if (rect) setJsonExamplePos({ top: rect.bottom + 8, left: Math.max(8, rect.left - 200) })
+    setShowJsonExample(true)
+  }
   const handleCopyJson = () => {
-    navigator.clipboard.writeText(AI_TASK_PROMPT_TEMPLATE)
+    navigator.clipboard.writeText(JSON_EXAMPLE)
     setJsonCopied(true)
     setTimeout(() => setJsonCopied(false), 2000)
   }
-
-  const handleToggleJsonExample = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (!showJsonExample && jsonInfoRef.current) {
-      const rect = jsonInfoRef.current.getBoundingClientRect()
-      setJsonExamplePos({ top: rect.top, left: rect.right + 8 })
-    }
-    setShowJsonExample((v) => !v)
-  }
-
   const handleOpenProjectMenu = (e: React.MouseEvent, projectId: string) => {
     e.stopPropagation()
     if (projectMenuId === projectId) {
@@ -466,6 +486,28 @@ export function Sidebar({
             <path d="M12 2a5 5 0 0 1 5 5v1a4 4 0 0 1 2 7 4 4 0 0 1-4 5 3 3 0 0 1-3-3" />
           </svg>
           Memória
+        </button>
+        <button
+          onClick={() => onChangeView('agents')}
+          className={`relative flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
+            activeView === 'agents'
+              ? 'bg-[#6366f1]/15 text-[#a5b4fc]'
+              : 'text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#1e2235]'
+          }`}
+        >
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="3" y="11" width="18" height="10" rx="2" />
+            <circle cx="12" cy="5" r="2" />
+            <path d="M12 7v4" />
+          </svg>
+          Agentes
+          {runningCount > 0 && (
+            // How many agents are working right now — a live badge, so the panel
+            // is worth opening without opening it.
+            <span className="ml-0.5 min-w-[16px] h-4 px-1 inline-flex items-center justify-center rounded-full bg-[#6366f1] text-[9px] font-semibold text-white tabular-nums">
+              {runningCount}
+            </span>
+          )}
         </button>
       </div>
 

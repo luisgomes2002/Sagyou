@@ -49,7 +49,7 @@ function resetStore(): void {
     files: [],
     activeProjectId: null,
     sprintFilter: null,
-    activeTimer: null,
+    activeTimers: [],
     isLoaded: false
   })
 }
@@ -57,8 +57,67 @@ function resetStore(): void {
 const st = (): ReturnType<typeof useKanbanStore.getState> => useKanbanStore.getState()
 const call = async (
   name: string,
-  args: Record<string, unknown>
-): Promise<{ [k: string]: unknown }> => JSON.parse(await runTool(name, args))
+  args: Record<string, unknown>,
+  convId?: string
+): Promise<{ [k: string]: unknown }> => JSON.parse(await runTool(name, args, convId))
+
+// ── task leasing (multi-agent coordination) ─────────────────────────────────
+
+describe('task leasing across agents', () => {
+  beforeEach(() => {
+    resetStore()
+    useAiRunStore.setState({ running: new Set(), taskLeases: {} })
+  })
+
+  /** A project with one task in its backlog; returns the task id. */
+  const oneTask = (): string => {
+    const pid = st().createProject('P')
+    const col = st().projects.find((p) => p.id === pid)!.columns[0]
+    return st().createTask({ projectId: pid, columnId: col.id, title: 'T' })
+  }
+
+  it('lets one agent work a task and blocks a second live agent on it', async () => {
+    const tid = oneTask()
+    // Two runs live at once.
+    useAiRunStore.setState({ running: new Set(['A', 'B']) })
+
+    // Agent A claims the task by acting on it.
+    const a = await call('atualizar_task', { taskId: tid, prioridade: 'high' }, 'A')
+    expect(a.ok).toBe(true)
+
+    // Agent B is told to pick another — no duplicated work, no error thrown.
+    const b = await call('mover_task', { taskId: tid, coluna: 'Done' }, 'B')
+    expect(b.lease).toBe('ocupada')
+    expect(b.ok).toBeUndefined()
+  })
+
+  it('lets the same agent keep working its own task', async () => {
+    const tid = oneTask()
+    useAiRunStore.setState({ running: new Set(['A']) })
+
+    expect((await call('atualizar_task', { taskId: tid, prioridade: 'high' }, 'A')).ok).toBe(true)
+    // Same run, same task, again — its own lease, so it goes through.
+    expect((await call('atualizar_task', { taskId: tid, prioridade: 'low' }, 'A')).ok).toBe(true)
+  })
+
+  it('takes over a lease left by a run that has ended', async () => {
+    const tid = oneTask()
+    // A holds the lease but is no longer running (its run ended).
+    useAiRunStore.setState({ running: new Set(['B']), taskLeases: { [tid]: 'A' } })
+
+    // B may take it over — a stale lease is not a live claim.
+    expect((await call('mover_task', { taskId: tid, coluna: 'Done' }, 'B')).ok).toBe(true)
+  })
+
+  it('does not lease at all outside a run (no owning conversation)', async () => {
+    const tid = oneTask()
+    useAiRunStore.setState({ taskLeases: { [tid]: 'A' }, running: new Set(['A']) })
+
+    // No convId (Gerar Tasks, a direct call): single actor, so no coordination
+    // and no block even though A holds a live lease.
+    expect((await call('atualizar_task', { taskId: tid, prioridade: 'high' })).ok).toBe(true)
+  })
+})
 
 // ── concluir_task ──────────────────────────────────────────────────────────────
 
@@ -71,7 +130,7 @@ describe('concluir_task', () => {
     const tid = st().createTask({ projectId: pid, columnId: backlog.id, title: 'T' })
 
     st().startTimer(tid)
-    expect(st().activeTimer?.taskId).toBe(tid)
+    expect(st().activeTimers.map((t) => t.taskId)).toEqual([tid])
 
     const res = await call('concluir_task', { taskId: tid })
     expect(res.ok).toBe(true)
@@ -80,7 +139,7 @@ describe('concluir_task', () => {
     const doneCol = st().projects[0].columns.find((c) => c.name === 'Done')!
     expect(task.columnId).toBe(doneCol.id)
     expect(task.completedAt).toBeTruthy()
-    expect(st().activeTimer).toBeNull()
+    expect(st().activeTimers).toEqual([])
   })
 
   it('finds the task by exact title (case-insensitive)', async () => {
@@ -561,12 +620,13 @@ describe('rodar_agente_codigo', () => {
   // picker — which lists by convId — can never show it again.
   it('tags the run with the chat that started it', async () => {
     projectWithRoots('web')
-    useAiRunStore.setState({ runningConvId: 'conv-1', conversationId: 'conv-2' })
 
-    await call('rodar_agente_codigo', { task: 'x' })
+    // The owning chat is threaded through runTool (currentRunConvId), not read
+    // off the store's on-screen conversationId — a run belongs to the chat that
+    // started it, not to whichever one the user happens to be looking at, and
+    // with several runs in flight there is no single "current" chat to read.
+    await call('rodar_agente_codigo', { task: 'x' }, 'conv-1')
 
-    // runningConvId, not conversationId: the run belongs to the chat that
-    // started it, not to whichever one the user happens to be looking at.
     expect(api.codeAgent.run).toHaveBeenCalledWith(expect.objectContaining({ convId: 'conv-1' }))
   })
 
@@ -1169,7 +1229,7 @@ describe('mover_task', () => {
 
     await call('mover_task', { taskId: tid, coluna: 'Done' })
 
-    expect(st().activeTimer).toBeNull()
+    expect(st().activeTimers).toEqual([])
   })
 
   it('refuses a column from another project instead of orphaning the task', async () => {

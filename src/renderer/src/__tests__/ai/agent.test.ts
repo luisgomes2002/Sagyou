@@ -448,7 +448,8 @@ describe('runAgent (tool-calling loop)', () => {
 
     expect(result).toBe('FINAL')
     expect(chat).toHaveBeenCalledTimes(2)
-    expect(runTool).toHaveBeenCalledWith('ler_x', {})
+    // The 3rd arg is the owning convId, threaded to the tool layer; absent here.
+    expect(runTool).toHaveBeenCalledWith('ler_x', {}, undefined)
     expect(approveNone).not.toHaveBeenCalled() // reads are not gated
 
     // First request is prefixed with the system prompt.
@@ -483,9 +484,9 @@ describe('runAgent (tool-calling loop)', () => {
     const writes = (onApprove.mock.calls as any[])[0][0] as Array<{ id: string }>
     expect(writes.map((w) => w.id).sort()).toEqual(['c1', 'c2'])
 
-    // Only the approved write executed.
-    expect(runTool).toHaveBeenCalledWith('escrever_a', {})
-    expect(runTool).not.toHaveBeenCalledWith('escrever_b', {})
+    // Only the approved write executed. (3rd arg is the owning convId, absent here.)
+    expect(runTool).toHaveBeenCalledWith('escrever_a', {}, undefined)
+    expect(runTool).not.toHaveBeenCalledWith('escrever_b', {}, undefined)
 
     const msgs = reqAt(chat, 1).messages
     const r1 = msgs.find((m: { tool_call_id?: string }) => m.tool_call_id === 'c1')

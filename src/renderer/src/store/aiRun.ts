@@ -16,7 +16,7 @@ import type { AIConfig, PendingCall, TokenUsage, ContentPart } from '../ai/agent
 // AIView is one view onto it, free to come and go.
 //
 // What stays in AIView is what the *view* owns: the composer, the history and
-// config panels, the Gerar Tasks review, image attachments.
+// config panels, image attachments.
 // ---------------------------------------------------------------------------
 
 /**
@@ -91,43 +91,6 @@ export function toApiMessages(
 
 export const EMPTY_USAGE: TokenUsage = { promptTokens: 0, completionTokens: 0 }
 
-/**
- * Apply `fn` to the transcript of the chat the loop is running for, wherever it
- * is: on screen, or parked because the user switched away.
- *
- * This is the whole point of `runningConvId`. Every append the loop makes goes
- * through here, so none of them can land in a chat that merely happens to be
- * open. Returning `s` unchanged is the honest answer when the run's chat is
- * gone (deleted mid-run) — there is nowhere to write, and inventing a
- * destination is what the bug did.
- */
-function routeRun(
-  s: AiRunState,
-  fn: (prev: ChatMessage[]) => ChatMessage[]
-): Partial<AiRunState> | AiRunState {
-  const id = s.runningConvId
-  if (!id) return s
-  if (id === s.conversationId) return { messages: fn(s.messages) }
-  const p = s.parked[id]
-  if (!p) return s
-  return { parked: { ...s.parked, [id]: { ...p, messages: fn(p.messages) } } }
-}
-
-/** The same routing, for the token count — billed to the chat that asked. */
-function routeUsage(s: AiRunState, u: TokenUsage): Partial<AiRunState> | AiRunState {
-  const add = (prev: TokenUsage): TokenUsage => ({
-    promptTokens: prev.promptTokens + u.promptTokens,
-    completionTokens: prev.completionTokens + u.completionTokens
-  })
-  const id = s.runningConvId
-  // No run: a direct addUsage (Gerar Tasks) bills the chat on screen.
-  if (!id) return { usage: add(s.usage) }
-  if (id === s.conversationId) return { usage: add(s.usage) }
-  const p = s.parked[id]
-  if (!p) return s
-  return { parked: { ...s.parked, [id]: { ...p, usage: add(p.usage) } } }
-}
-
 /** The abort reply runAgent returns — never worth a handoff. */
 const HANDOFF_SKIP = 'Execução interrompida.'
 
@@ -175,11 +138,14 @@ export async function writeHandoff(
 }
 
 /**
- * The agent loop awaits this, so it is a live continuation rather than UI
- * state: kept out of the store proper because nothing renders it and replacing
- * it must never trigger a render. One run at a time, so one slot is enough.
+ * The agent loops await these, so they are live continuations rather than UI
+ * state: kept out of the store proper because nothing renders them and
+ * replacing one must never trigger a render.
+ *
+ * Keyed by conversation id, not a single slot: several runs can be parked on an
+ * approval at once now, each with its own resolver. See `pendingApprovals`.
  */
-let approvalResolver: ((ids: Set<string>) => void) | null = null
+const approvalResolvers = new Map<string, (ids: Set<string>) => void>()
 
 /** A transcript the user has switched away from. See `parked` below. */
 interface Parked {
@@ -187,22 +153,81 @@ interface Parked {
   usage: TokenUsage
 }
 
+/** A run parked on the approval card, and which conversation it belongs to. */
+export interface PendingApproval {
+  convId: string
+  writes: PendingCall[]
+  selected: Set<string>
+}
+
+/** Immutable Set add/remove — Zustand needs a new reference to notify. */
+const setAdd = (s: Set<string>, v: string): Set<string> => new Set(s).add(v)
+const setDel = (s: Set<string>, v: string): Set<string> => {
+  const n = new Set(s)
+  n.delete(v)
+  return n
+}
+
+/**
+ * Append to the transcript of a specific conversation, wherever it is: on
+ * screen (the chat `conversationId` names), or parked because the user switched
+ * away from it mid-run.
+ *
+ * The convId is the run's own — captured in `send`'s closure — not read from a
+ * single "current run" field, because several runs can be writing at once and
+ * each must reach only its own chat. An empty patch is the honest answer when
+ * the run's chat is gone (deleted mid-run): there is nowhere to write.
+ */
+function writeConv(
+  s: AiRunState,
+  convId: string,
+  fn: (prev: ChatMessage[]) => ChatMessage[]
+): Partial<AiRunState> {
+  if (convId === s.conversationId) return { messages: fn(s.messages) }
+  const p = s.parked[convId]
+  if (!p) return {}
+  return { parked: { ...s.parked, [convId]: { ...p, messages: fn(p.messages) } } }
+}
+
+/** The same routing, for the token count — billed to the chat that asked. */
+function addUsageConv(s: AiRunState, convId: string, u: TokenUsage): Partial<AiRunState> {
+  const add = (prev: TokenUsage): TokenUsage => ({
+    promptTokens: prev.promptTokens + u.promptTokens,
+    completionTokens: prev.completionTokens + u.completionTokens
+  })
+  if (convId === s.conversationId) return { usage: add(s.usage) }
+  const p = s.parked[convId]
+  if (!p) return {}
+  return { parked: { ...s.parked, [convId]: { ...p, usage: add(p.usage) } } }
+}
+
 export interface AiRunState {
   /** The transcript on screen — the chat `conversationId` names, and only that one. */
   messages: ChatMessage[]
-  busy: boolean
-  /** Text of the answer being typed out right now (empty until the first chunk). */
-  streaming: string
   /**
-   * Tools the model is composing this very moment, named before their arguments
-   * have finished arriving.
-   *
-   * Transient — it is not part of the transcript and never reaches disk. The
-   * persistent record of a tool is the 'status' line appended when it actually
-   * runs; this only fills the silence while the model writes the call, which is
-   * otherwise a spinner with nothing to say.
+   * The conversations with a live run right now, by id. Several at once: N chat
+   * agents can work the same project in parallel. `running.has(convId)` is what
+   * blocks a *second* run of the same conversation (reentry) while leaving
+   * every other conversation free — and `running.size > 0` is the old global
+   * "something is working" flag the background indicator keys off.
    */
-  streamingTools: string[]
+  running: Set<string>
+  /**
+   * Text of each run's answer as it types out, keyed by conversation id (empty
+   * until the first chunk). Per-conversation so two runs streaming at once don't
+   * overwrite one another — the view shows `streaming[conversationId]`.
+   */
+  streaming: Record<string, string>
+  /**
+   * Tools each run is composing this very moment, named before their arguments
+   * have finished arriving, keyed by conversation id.
+   *
+   * Transient — not part of the transcript, never reaches disk. The persistent
+   * record of a tool is the 'status' line appended when it actually runs; this
+   * only fills the silence while the model writes the call.
+   */
+  streamingTools: Record<string, string[]>
+  /** Error banner for the chat on screen. Background failures append a status line instead. */
   error: string | null
   /**
    * Tokens billed across this conversation. Summed over every call, because
@@ -212,38 +237,52 @@ export interface AiRunState {
   /** Which chat is on screen. */
   conversationId: string | null
   /**
-   * Which chat the running loop belongs to — the one that asked, which is not
-   * necessarily the one being looked at.
-   *
-   * A run used to write to "the current transcript", so switching chats
-   * mid-run swapped the target out from under it and the answer landed in
-   * whichever chat the user had moved to (and was saved there). The run is
-   * bound to its own conversation instead: `writeRun` routes every append to
-   * this id, on screen or not. Null when nothing is running.
-   */
-  runningConvId: string | null
-  /**
    * Transcripts that are live but not on screen, keyed by conversation id.
    *
    * A chat the user leaves mid-run still has an answer coming, so its
    * transcript can't be dropped and can't be re-read from disk (the file is
-   * behind the run). It waits here: `writeRun` keeps appending, the host keeps
+   * behind the run). It waits here: the loop keeps appending, the host keeps
    * saving it, and re-opening it takes the live copy back rather than the
-   * stale file. Entries are only made when leaving a *running* chat, so this
-   * holds one at most today and empties as chats are re-opened.
+   * stale file. Entries are made when leaving a *running* chat.
    */
   parked: Record<string, Parked>
-  pendingApproval: { writes: PendingCall[]; selected: Set<string> } | null
   /**
-   * Auto-approve mode: when on, write actions run without the card (the agent
-   * chains actions autonomously). Off by default. It is deliberately tied to
-   * the run it was turned on for — AIView clears it on entry when nothing is
-   * in flight, so it can't quietly outlive that run and surrender the approval
-   * gate on the next one.
+   * Which project each active run is working on, by conversation id. Set at the
+   * start of a run and cleared when it ends. Powers the agents panel (FleetView)
+   * — the one place that has to name what every background run is doing.
    */
-  autoApprove: boolean
-  /** Set by the Stop button; the loop reads it between steps. */
-  abortRequested: boolean
+  runProjects: Record<string, string | null>
+  /**
+   * Tokens each *live* run has billed so far, by conversation id — the current
+   * run's own spend, not the conversation's persisted lifetime total (that's
+   * `usage` / `parked[].usage`). Reset when the run starts, cleared when it ends,
+   * so the agents panel can show input/output per working agent.
+   */
+  runUsage: Record<string, TokenUsage>
+  /**
+   * A light cooperative lease: which run is working each task, by task id →
+   * conversation id. When N agents share a project, this is what stops two of
+   * them picking up the same task — a work tool consults it and, if the task is
+   * already leased by *another active run*, backs off with a synthetic result
+   * (the same "brake" pattern the loop already uses) instead of duplicating the
+   * work. Runtime-only, no schema; released when the run ends.
+   */
+  taskLeases: Record<string, string>
+  /**
+   * Runs parked on the approval card — a queue, not a single slot, because with
+   * N agents several can stop for approval at once. Each is labelled with the
+   * conversation it belongs to.
+   */
+  pendingApprovals: PendingApproval[]
+  /**
+   * Auto-approve mode, by conversation id: a run whose id is in here runs write
+   * actions without the card (chaining autonomously). Per-conversation so
+   * "Sempre permitir" on one chat never surrenders the approval gate on another;
+   * a fresh conversation has a fresh id and starts gated.
+   */
+  autoApprove: Set<string>
+  /** Conversations the Stop button has asked to abort; each loop reads its own between steps. */
+  abortRequested: Set<string>
   /**
    * Bumped after each autosave, so a mounted AIView can refresh its history
    * list. The save itself is the host's job (it outlives the view).
@@ -254,11 +293,19 @@ export interface AiRunState {
     config: AIConfig,
     opts: { text: string; imageIds: string[]; imageData: Record<string, string> }
   ) => Promise<void>
-  abort: () => void
-  requestApproval: (writes: PendingCall[]) => Promise<Set<string>>
-  resolveApproval: (ids: Set<string>) => void
-  toggleApproval: (id: string) => void
-  setAutoApprove: (v: boolean) => void
+  /** Ask a run to stop. Defaults to the chat on screen when no id is given. */
+  abort: (convId?: string) => void
+  /**
+   * Claim a task for a run. Returns true if the run may work it (free, or
+   * already this run's); false if another *active* run holds it — the caller
+   * then backs off. A lease held by a run that has ended is stale and gets
+   * taken over.
+   */
+  acquireLease: (taskId: string, convId: string) => boolean
+  requestApproval: (convId: string, writes: PendingCall[]) => Promise<Set<string>>
+  resolveApproval: (convId: string, ids: Set<string>) => void
+  toggleApproval: (convId: string, id: string) => void
+  setAutoApprove: (convId: string, v: boolean) => void
   /**
    * Swap in a whole stored conversation, in one update. Deliberately atomic:
    * the transcript, its id and its usage describe one chat, so setting them
@@ -274,7 +321,8 @@ export interface AiRunState {
    */
   dropConversation: (id: string) => void
   setMessages: (next: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => void
-  setBusy: (v: boolean) => void
+  /** Mark a conversation as running/idle. */
+  setRunning: (convId: string, v: boolean) => void
   setError: (e: string | null) => void
   addUsage: (u: TokenUsage) => void
   setUsage: (u: TokenUsage) => void
@@ -288,147 +336,224 @@ export interface AiRunState {
 
 export const useAiRunStore = create<AiRunState>((set, get) => ({
   messages: [],
-  busy: false,
-  streaming: '',
-  streamingTools: [],
+  running: new Set(),
+  streaming: {},
+  streamingTools: {},
   error: null,
   usage: EMPTY_USAGE,
   conversationId: null,
-  runningConvId: null,
   parked: {},
-  pendingApproval: null,
-  autoApprove: false,
-  abortRequested: false,
+  runProjects: {},
+  runUsage: {},
+  taskLeases: {},
+  pendingApprovals: [],
+  autoApprove: new Set(),
+  abortRequested: new Set(),
   savedTick: 0,
 
   send: async (config, { text, imageIds, imageData }) => {
-    if (get().busy) return
-    const next: ChatMessage[] = [
-      ...get().messages,
-      { role: 'user', content: text, ...(imageIds.length > 0 && { imageIds }) }
-    ]
-    set({
-      messages: next,
-      busy: true,
-      streaming: '',
-      streamingTools: [],
-      error: null,
-      abortRequested: false
-    })
     // Mint the id up front rather than leaving it to the autosave: the run has
     // to know which conversation it belongs to from the start, or a run whose
     // view is closed before the first save has nowhere to land.
     const convId = get().ensureConversationId()
-    // Bind the run to the chat that asked. Everything below writes through
-    // `writeRun`/`addUsage`, which target this id — never "whatever is open".
-    set({ runningConvId: convId })
+    // Reentry guard is per-conversation now, not global: a second run of *this*
+    // chat is blocked, but another chat is free to run in parallel.
+    if (get().running.has(convId)) return
+    const next: ChatMessage[] = [
+      ...get().messages,
+      { role: 'user', content: text, ...(imageIds.length > 0 && { imageIds }) }
+    ]
+    // Scope the memory briefing to the active project; also record which project
+    // this run works on, for the agents panel.
+    const projectId = useKanbanStore.getState().activeProjectId
+    set((s) => ({
+      messages: next,
+      running: setAdd(s.running, convId),
+      streaming: { ...s.streaming, [convId]: '' },
+      streamingTools: { ...s.streamingTools, [convId]: [] },
+      error: null,
+      abortRequested: setDel(s.abortRequested, convId),
+      runProjects: { ...s.runProjects, [convId]: projectId ?? null },
+      runUsage: { ...s.runUsage, [convId]: EMPTY_USAGE }
+    }))
     try {
-      const reply = await runAgent(config, toApiMessages(next, imageData), get().requestApproval, {
-        // Scope the memory briefing to the active project (plus globals).
-        projectId: useKanbanStore.getState().activeProjectId,
-        maxSteps: resolveMaxSteps(config.maxSteps, get().autoApprove),
-        shouldAbort: () => get().abortRequested,
-        onStream: (t) => set({ streaming: t }),
-        onToolStream: (names) => set({ streamingTools: names }),
-        onUsage: (u) => get().addUsage(u),
-        // Status lines land in the transcript as they happen, so append to the
-        // latest state rather than to the `next` snapshot taken above.
-        onStatus: (text, kind, progress) =>
-          set((s) =>
-            routeRun(s, (prev) => [
-              ...prev,
-              {
-                role: 'status',
-                content: text,
-                ...(kind === 'tool' && { done: false }),
-                // Absent on lines that aren't a step (retries, the cap warning).
-                ...(progress && {
-                  step: progress.step,
-                  maxSteps: progress.maxSteps,
-                  ...(progress.tokens !== undefined && { tokens: progress.tokens })
-                })
+      const reply = await runAgent(
+        config,
+        toApiMessages(next, imageData),
+        // Bind approval to this run's own conversation, so its card is labelled
+        // and answered independently of any other run in flight.
+        (writes) => get().requestApproval(convId, writes),
+        {
+          projectId,
+          convId,
+          maxSteps: resolveMaxSteps(config.maxSteps, get().autoApprove.has(convId)),
+          shouldAbort: () => get().abortRequested.has(convId),
+          onStream: (t) => set((s) => ({ streaming: { ...s.streaming, [convId]: t } })),
+          onToolStream: (names) =>
+            set((s) => ({ streamingTools: { ...s.streamingTools, [convId]: names } })),
+          onUsage: (u) =>
+            set((s) => {
+              const prev = s.runUsage[convId] ?? EMPTY_USAGE
+              return {
+                ...addUsageConv(s, convId, u),
+                runUsage: {
+                  ...s.runUsage,
+                  [convId]: {
+                    promptTokens: prev.promptTokens + u.promptTokens,
+                    completionTokens: prev.completionTokens + u.completionTokens
+                  }
+                }
               }
-            ])
-          ),
-        // Tools run one at a time, so this always closes the last status line.
-        onToolEnd: () =>
-          set((s) =>
-            routeRun(s, (prev) => {
-              const i = prev.findLastIndex((m) => m.done === false)
-              if (i === -1) return prev
-              const messages = [...prev]
-              messages[i] = { ...messages[i], done: true }
-              return messages
-            })
-          )
-      })
-      set((s) => routeRun(s, (prev) => [...prev, { role: 'assistant', content: reply }]))
+            }),
+          // Status lines land in the transcript as they happen, routed to this
+          // run's own chat — on screen or parked.
+          onStatus: (text, kind, progress) =>
+            set((s) =>
+              writeConv(s, convId, (prev) => [
+                ...prev,
+                {
+                  role: 'status',
+                  content: text,
+                  ...(kind === 'tool' && { done: false }),
+                  // Absent on lines that aren't a step (retries, the cap warning).
+                  ...(progress && {
+                    step: progress.step,
+                    maxSteps: progress.maxSteps,
+                    ...(progress.tokens !== undefined && { tokens: progress.tokens })
+                  })
+                }
+              ])
+            ),
+          // Tools run one at a time, so this always closes the last status line.
+          onToolEnd: () =>
+            set((s) =>
+              writeConv(s, convId, (prev) => {
+                const i = prev.findLastIndex((m) => m.done === false)
+                if (i === -1) return prev
+                const messages = [...prev]
+                messages[i] = { ...messages[i], done: true }
+                return messages
+              })
+            )
+        }
+      )
+      set((s) => writeConv(s, convId, (prev) => [...prev, { role: 'assistant', content: reply }]))
       // Leave a breadcrumb for the next session (best-effort; see writeHandoff).
       // Pass the run's own convId so a truncated handoff can point back to it.
       void writeHandoff(text, reply, convId)
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Falha ao contatar o modelo'
       // The banner belongs to the chat that failed. If the user has moved on,
-      // showing it here would pin someone else's failure to whatever is open,
-      // and it would be gone by the time they went back to look — so record it
-      // in the run's own transcript instead, where it persists and explains
-      // itself when they return.
+      // showing it in `error` would pin someone else's failure to whatever is
+      // open — so record it in the run's own transcript instead, where it
+      // persists and explains itself when they return.
       set((s) =>
-        s.runningConvId === s.conversationId
+        convId === s.conversationId
           ? { error: msg }
-          : routeRun(s, (prev) => [...prev, { role: 'status', content: `Erro: ${msg}`, done: true }])
+          : writeConv(s, convId, (prev) => [
+              ...prev,
+              { role: 'status', content: `Erro: ${msg}`, done: true }
+            ])
       )
     } finally {
       // A tool that threw leaves its line pending; left that way, the next turn
-      // would revive it as "running" once busy flips back on. Routed like every
-      // other write — the failed run's chat may not be the one on screen.
+      // would revive it as "running". Routed to the run's own chat.
       set((s) =>
-        routeRun(s, (prev) =>
+        writeConv(s, convId, (prev) =>
           prev.some((m) => m.done === false)
             ? prev.map((m) => (m.done === false ? { ...m, done: true } : m))
             : prev
         )
       )
-      // Unbind last: everything above still had to reach the run's chat.
-      set({ streaming: '', streamingTools: [], busy: false, runningConvId: null })
+      // Tear down this run's transient state, leaving every other run's alone.
+      // autoApprove is deliberately NOT cleared: "Sempre permitir" latches the
+      // mode on for this conversation, and a follow-up message keeps it.
+      set((s) => {
+        const streaming = { ...s.streaming }
+        delete streaming[convId]
+        const streamingTools = { ...s.streamingTools }
+        delete streamingTools[convId]
+        const runProjects = { ...s.runProjects }
+        delete runProjects[convId]
+        const runUsage = { ...s.runUsage }
+        delete runUsage[convId]
+        // Release this run's task leases so another agent can pick them up.
+        const taskLeases = Object.fromEntries(
+          Object.entries(s.taskLeases).filter(([, c]) => c !== convId)
+        )
+        return {
+          running: setDel(s.running, convId),
+          abortRequested: setDel(s.abortRequested, convId),
+          streaming,
+          streamingTools,
+          runProjects,
+          runUsage,
+          taskLeases
+        }
+      })
     }
   },
 
-  abort: () => set({ abortRequested: true }),
+  abort: (convId) =>
+    set((s) => {
+      const id = convId ?? s.conversationId
+      if (!id) return s
+      return { abortRequested: setAdd(s.abortRequested, id) }
+    }),
 
-  // Shows the approval card and resolves when the user decides (the agent loop
-  // awaits this). In auto mode it resolves immediately, approving every write.
-  requestApproval: (writes) => {
-    if (get().autoApprove) return Promise.resolve(new Set(writes.map((w) => w.id)))
+  acquireLease: (taskId, convId) => {
+    const s = get()
+    const holder = s.taskLeases[taskId]
+    // Free, ours already, or held by a run that has since ended → grant (and
+    // take over a stale lease). Held by another *live* run → deny.
+    if (holder && holder !== convId && s.running.has(holder)) return false
+    set({ taskLeases: { ...s.taskLeases, [taskId]: convId } })
+    return true
+  },
+
+  // Shows the approval card for this run and resolves when the user decides (the
+  // agent loop awaits this). In auto mode it resolves immediately, approving
+  // every write. A run replaces its own earlier card rather than stacking two.
+  requestApproval: (convId, writes) => {
+    if (get().autoApprove.has(convId)) return Promise.resolve(new Set(writes.map((w) => w.id)))
     return new Promise((resolve) => {
-      approvalResolver = resolve
-      set({ pendingApproval: { writes, selected: new Set(writes.map((w) => w.id)) } })
+      approvalResolvers.set(convId, resolve)
+      set((s) => ({
+        pendingApprovals: [
+          ...s.pendingApprovals.filter((p) => p.convId !== convId),
+          { convId, writes, selected: new Set(writes.map((w) => w.id)) }
+        ]
+      }))
     })
   },
 
-  resolveApproval: (ids) => {
-    approvalResolver?.(ids)
-    approvalResolver = null
-    set({ pendingApproval: null })
+  resolveApproval: (convId, ids) => {
+    approvalResolvers.get(convId)?.(ids)
+    approvalResolvers.delete(convId)
+    set((s) => ({ pendingApprovals: s.pendingApprovals.filter((p) => p.convId !== convId) }))
   },
 
-  toggleApproval: (id) =>
-    set((s) => {
-      if (!s.pendingApproval) return s
-      const selected = new Set(s.pendingApproval.selected)
-      if (selected.has(id)) selected.delete(id)
-      else selected.add(id)
-      return { pendingApproval: { ...s.pendingApproval, selected } }
-    }),
+  toggleApproval: (convId, id) =>
+    set((s) => ({
+      pendingApprovals: s.pendingApprovals.map((p) => {
+        if (p.convId !== convId) return p
+        const selected = new Set(p.selected)
+        if (selected.has(id)) selected.delete(id)
+        else selected.add(id)
+        return { ...p, selected }
+      })
+    })),
 
-  setAutoApprove: (v) => set({ autoApprove: v }),
+  setAutoApprove: (convId, v) =>
+    set((s) => ({ autoApprove: v ? setAdd(s.autoApprove, convId) : setDel(s.autoApprove, convId) })),
+
   openConversation: (conv) =>
     set((s) => {
       const parked = { ...s.parked }
       // Leaving a chat the loop is still writing to: park its transcript so the
       // run keeps a destination. Re-reading it from disk later would lose
       // everything the run appended after the last save.
-      if (s.conversationId && s.conversationId === s.runningConvId && s.conversationId !== conv.id) {
+      if (s.conversationId && s.running.has(s.conversationId) && s.conversationId !== conv.id) {
         parked[s.conversationId] = { messages: s.messages, usage: s.usage }
       }
       // Coming back to one: the parked copy is ahead of the file, so it wins.
@@ -452,21 +577,34 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
       // A run writing into a deleted chat has nowhere to land: stop it rather
       // than pay for steps whose output is discarded. The loop reads
       // abortRequested between steps and unwinds on its own.
-      const killing = s.runningConvId === id
+      const killing = s.running.has(id)
       if (killing) {
-        approvalResolver?.(new Set())
-        approvalResolver = null
+        approvalResolvers.get(id)?.(new Set())
+        approvalResolvers.delete(id)
       }
       return {
         parked,
-        ...(killing && { abortRequested: true, pendingApproval: null })
+        ...(killing && {
+          abortRequested: setAdd(s.abortRequested, id),
+          pendingApprovals: s.pendingApprovals.filter((p) => p.convId !== id),
+          taskLeases: Object.fromEntries(
+            Object.entries(s.taskLeases).filter(([, c]) => c !== id)
+          )
+        })
       }
     }),
   setMessages: (next) =>
     set((s) => ({ messages: typeof next === 'function' ? next(s.messages) : next })),
-  setBusy: (v) => set({ busy: v }),
+  setRunning: (convId, v) =>
+    set((s) => ({ running: v ? setAdd(s.running, convId) : setDel(s.running, convId) })),
   setError: (e) => set({ error: e }),
-  addUsage: (u) => set((s) => routeUsage(s, u)),
+  addUsage: (u) =>
+    set((s) => ({
+      usage: {
+        promptTokens: s.usage.promptTokens + u.promptTokens,
+        completionTokens: s.usage.completionTokens + u.completionTokens
+      }
+    })),
   setUsage: (u) => set({ usage: u }),
   setConversationId: (id) => set({ conversationId: id }),
   ensureConversationId: () => {
@@ -479,21 +617,14 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
   markSaved: () => set((s) => ({ savedTick: s.savedTick + 1 })),
 
   reset: () => {
-    const busy = get().busy
-    // A run in flight is left alone. This used to cancel whatever the loop was
-    // waiting on, because a card raised by a chat you had navigated away from
-    // was unanswerable — but the card is the host's now and shows wherever the
-    // user is, and the run keeps its own transcript, so "Nova" is a request for
-    // a blank chat and nothing more. Cancelling here would kill a run the user
-    // never asked to stop. Same for autoApprove: clearing it mid-run would park
-    // the very run it was turned on for.
-    if (!busy) {
-      approvalResolver?.(new Set())
-      approvalResolver = null
-    }
+    // "Nova" is a request for a blank chat, nothing more. A run in flight in the
+    // chat being left is spared: its transcript is parked so the loop keeps a
+    // destination, and its running/approval/auto state (all keyed by convId)
+    // are left untouched. Cancelling here would kill a run the user never asked
+    // to stop.
     set((s) => {
       const parked = { ...s.parked }
-      if (s.conversationId && s.conversationId === s.runningConvId) {
+      if (s.conversationId && s.running.has(s.conversationId)) {
         parked[s.conversationId] = { messages: s.messages, usage: s.usage }
       }
       return {
@@ -501,10 +632,7 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
         conversationId: null,
         error: null,
         usage: EMPTY_USAGE,
-        streaming: '',
-        streamingTools: [],
-        parked,
-        ...(busy ? {} : { pendingApproval: null, autoApprove: false })
+        parked
       }
     })
   }

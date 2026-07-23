@@ -17,6 +17,7 @@ import { ReportsView } from './components/ReportsView'
 import { FilesView } from './components/FilesView'
 import { AIView } from './components/AIView'
 import { MemoryView } from './components/MemoryView'
+import { FleetView } from './components/FleetView'
 import { AiRunHost } from './components/AiRunHost'
 import { ExcelExportModal } from './components/ExcelExportModal'
 import { ProjectLinksDropdown } from './components/ProjectLinksDropdown'
@@ -135,7 +136,7 @@ export default function App() {
   const [viewTask, setViewTask] = useState<Task | null>(null)
   const [projectModal, setProjectModal] = useState<ProjectModalState>({ open: false })
   const [columnModal, setColumnModal] = useState<ColumnModalState>({ open: false })
-  const [activeView, setActiveView] = useState<'board' | 'canvas' | 'done' | 'goals' | 'habits' | 'financial' | 'upcoming' | 'reports' | 'files' | 'ai' | 'memory'>('board')
+  const [activeView, setActiveView] = useState<'board' | 'canvas' | 'done' | 'goals' | 'habits' | 'financial' | 'upcoming' | 'reports' | 'files' | 'ai' | 'memory' | 'agents'>('board')
   const [searchOpen, setSearchOpen] = useState(false)
   const [excelExportOpen, setExcelExportOpen] = useState(false)
   // session-only: maps projectId → active linkIds (not persisted — each machine picks its own)
@@ -444,6 +445,8 @@ export default function App() {
             />
           ) : activeView === 'memory' ? (
             <MemoryView />
+          ) : activeView === 'agents' ? (
+            <FleetView projects={projects} onOpenChat={() => setActiveView('ai')} />
           ) : activeView === 'habits' ? (
             <HabitView />
           ) : activeView === 'goals' ? (

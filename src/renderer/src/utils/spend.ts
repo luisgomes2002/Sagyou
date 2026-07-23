@@ -53,3 +53,25 @@ export function estimateAutoRun(
   const perCall = bucket.cost / sample
   return { perCall, total: perCall * steps, sample, understates: true }
 }
+
+/** The shape this needs out of a UsageSummary bucket, for a cache hit rate. */
+export interface CacheBucket {
+  cachedPromptTokens: number
+  cacheReportedPromptTokens: number
+}
+
+/**
+ * Share of prompt tokens served from the provider's own cache (DeepSeek's
+ * prompt_cache_hit_tokens, OpenAI's prompt_tokens_details.cached_tokens),
+ * over calls that reported a cache figure at all.
+ *
+ * Null when nothing in the bucket reported one — "no data yet", never "0%".
+ * A provider that never reports caching (or one the user hasn't called since
+ * this was added) must not read as confirmed misses.
+ */
+export function cacheHitRate(b: CacheBucket | null | undefined): number | null {
+  if (!b || !Number.isFinite(b.cacheReportedPromptTokens) || b.cacheReportedPromptTokens <= 0) {
+    return null
+  }
+  return b.cachedPromptTokens / b.cacheReportedPromptTokens
+}
