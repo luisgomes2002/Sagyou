@@ -1516,17 +1516,17 @@ export function AIView({
                 // Turning it OFF needs no ceremony — it only ever adds
                 // approvals back. Turning it ON is the spend decision, and the
                 // one moment the user can still say no.
-                if (autoApprove.has(conversationId)) return setAuto(conversationId, false)
+                if (autoApprove.has(conversationId!)) return setAuto(conversationId!, false)
                 refreshSpend()
                 setConfirmAuto(true)
               }}
               title={
-                autoApprove.has(conversationId)
+                autoApprove.has(conversationId!)
                   ? 'Modo autônomo LIGADO — a IA trabalha sem interrupção. Clique para voltar a pedir aprovação.'
                   : 'Modo autônomo DESLIGADO — cada ação pede sua aprovação. Clique para não perguntar mais.'
               }
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                autoApprove.has(conversationId)
+                autoApprove.has(conversationId!)
                   ? 'bg-amber-500/20 text-amber-400'
                   : 'text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#1e2235]'
               }`}
@@ -1541,7 +1541,7 @@ export function AIView({
               >
                 <path d="M13 2 3 14h9l-1 8 10-12h-9z" />
               </svg>
-              {autoApprove.has(conversationId) ? 'Auto: ON' : 'Auto'}
+              {autoApprove.has(conversationId!) ? 'Auto: ON' : 'Auto'}
             </button>
 
             <button

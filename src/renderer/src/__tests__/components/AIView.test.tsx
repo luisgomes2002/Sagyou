@@ -22,23 +22,10 @@ vi.mock('../../services/ElectronStorage', () => ({
 import { AIView } from '../../components/AIView'
 import { AiRunHost } from '../../components/AiRunHost'
 import { useAiRunStore } from '../../store/aiRun'
-import { useKanbanStore } from '../../store/kanban'
-import type { Project } from '../../types'
 import { runAgent, AUTO_MAX_STEPS } from '../../ai/agent'
 import type { RunAgentOptions, AIConfig, PendingCall } from '../../ai/agent'
 
 type UsageSummary = Awaited<ReturnType<typeof window.electronAPI.ai.usage.summary>>
-
-/** The status line's spinner and check are decorative, so match on class/tag. */
-function statusIcons(): { running: number; done: number } {
-  const lines = Array.from(document.querySelectorAll('p.text-xs')).map(
-    (p) => p.parentElement as HTMLElement
-  )
-  return {
-    running: lines.filter((l) => l.querySelector('span.animate-spin')).length,
-    done: lines.filter((l) => l.querySelector('svg polyline')).length
-  }
-}
 
 let storedConfig: AIConfig = {
   baseUrl: 'http://x',
@@ -1142,4 +1129,3 @@ describe('AIView — pasted images', () => {
     expect(screen.queryByAltText('Anexo')).not.toBeInTheDocument()
   })
 })
-
