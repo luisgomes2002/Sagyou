@@ -891,10 +891,6 @@ export async function runAgent(
   let redundantSearches = 0
   let repeatedReads = 0
   let hitStepCap = false
-  // Measure-first instrumentation (not a feature): how much the current prune
-  // removes and how much read weight the largest prompt carries — the numbers
-  // that decide whether a smarter prune is worth building. Logged at run end.
-  const pruneTally: PruneRunTally = { calls: 0, savedTotal: 0, maxSentChars: 0, maxSentReadChars: 0 }
 
   try {
     for (let step = 0; step < maxSteps; step++) {
@@ -905,10 +901,9 @@ export async function runAgent(
       // during it) fills this one; its tools are appended as they run below.
       const cost: StepCost = { step: step + 1, prompt: 0, completion: 0, tools: [] }
       costRecords.push(cost)
-      // Prune a copy, not `msgs` itself: the run keeps its full history, and only
-      // what goes over the wire is trimmed.
-      const pruned = pruneSupersededResults(msgs)
-      tallyPrune(pruneTally, measurePrunedCall(msgs, pruned))
+      // Pass `msgs` directly — the full prefix is preserved to maximise
+      // DeepSeek cache hits (50x cheaper on cache hit).
+      const pruned = msgs
       const assistant = await callModelResilient(rcfg, pruned, TOOL_DEFS, runOpts)
       msgs.push(assistant)
       // Count a step only once its model call came back — a thrown call is not a
@@ -1001,8 +996,7 @@ export async function runAgent(
       'remark'
     )
     costRecords.push({ step: maxSteps + 1, prompt: 0, completion: 0, tools: [] })
-    const finalPruned = pruneSupersededResults(msgs)
-    tallyPrune(pruneTally, measurePrunedCall(msgs, finalPruned))
+    const finalPruned = msgs
     const final = await callModelResilient(rcfg, finalPruned, undefined, runOpts)
     return (
       contentText(final.content) ||
@@ -1011,7 +1005,6 @@ export async function runAgent(
     )
   } finally {
     logRunCost(rcfg, costRecords)
-    logPruneMeasurement(pruneTally)
     // Best-effort per-run metric for the efficiency log (main persists it).
     // Guarded and fire-and-forget: a bookkeeping failure — or an absent bridge
     // in tests — must never touch the run. Only recorded once a round completed.
