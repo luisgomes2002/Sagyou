@@ -35,7 +35,23 @@ function resetRun(): void {
   })
 }
 
-beforeEach(resetRun)
+beforeEach(() => {
+  resetRun()
+  // Mock the code-agent IPC so that useCodeAgentRuns doesn't crash.
+  if (!window.electronAPI) {
+    // @ts-expect-error partial mock for tests
+    window.electronAPI = {}
+  }
+  window.electronAPI.ai ??= {} as never
+  window.electronAPI.ai.codeAgent = {
+    status: vi.fn().mockResolvedValue({ running: false, runs: [], log: '', hint: null }),
+    stop: vi.fn(),
+    onStarted: vi.fn(() => vi.fn()),
+    onOutput: vi.fn(() => vi.fn()),
+    onProgress: vi.fn(() => vi.fn()),
+    onExit: vi.fn(() => vi.fn())
+  } as never
+})
 
 /** Two agents live at once: A parked, B on screen and mid-tool. */
 function twoAgents(): void {

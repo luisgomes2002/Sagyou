@@ -1,3 +1,4 @@
+/* agente-1: teste concorrência */
 import './index.css'
 
 import { StrictMode } from 'react'

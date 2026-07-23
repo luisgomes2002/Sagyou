@@ -1753,7 +1753,7 @@ const REGISTRY: Record<string, AITool> = {
         additionalProperties: false
       }
     ),
-    run: (args) => {
+    run: async (args) => {
       const { roots, error } = activeRoots(args)
       if (error) return JSON.stringify({ error })
       // The agent is a child process with a single cwd — it cannot span roots,
@@ -1793,7 +1793,7 @@ const REGISTRY: Record<string, AITool> = {
       const projectId =
         (typeof args.projectId === 'string' && args.projectId) ||
         useKanbanStore.getState().activeProjectId
-      void window.electronAPI.ai.codeAgent.run({
+      const result = await window.electronAPI.ai.codeAgent.run({
         path,
         task,
         files,
@@ -1801,10 +1801,17 @@ const REGISTRY: Record<string, AITool> = {
         convId: runningConvId ?? undefined,
         projectId
       })
+      if (!result.success) {
+        return JSON.stringify({
+          status: 'erro',
+          erro: result.error || 'Falha ao iniciar o agente de código'
+        })
+      }
       return JSON.stringify({
         status: 'solicitado',
-        agente: 'codex',
+        agente: result.agent || 'codex',
         diretorio: path,
+        runId: result.runId,
         arquivos: files && files.length ? files : undefined,
         decisoes: decisoes && decisoes.length ? decisoes : undefined,
         aviso:

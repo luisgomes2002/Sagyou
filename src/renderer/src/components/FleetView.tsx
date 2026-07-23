@@ -1,3 +1,4 @@
+import { useState, useEffect, useCallback } from 'react'
 import { useAiRunStore, EMPTY_USAGE, type ChatMessage } from '../store/aiRun'
 import { describeToolActivity } from '../ai/tools'
 import type { Project } from '../types'
@@ -27,6 +28,106 @@ function formatTokens(n: number): string {
   return `${(n / 1_000_000).toFixed(2)}M`
 }
 
+// ---------------------------------------------------------------------------
+// Code-agent state (lives in main process, streamed via IPC)
+// ---------------------------------------------------------------------------
+
+interface CodeAgentRunUI {
+  id: string
+  dir: string
+  task: string
+  model: string
+  startedAt: number
+  log: string
+  hint: { title: string; detail: string; command?: string } | null
+  progress: {
+    step: number
+    maxSteps: number
+    promptTokens: number
+    completionTokens: number
+  } | null
+}
+
+function useCodeAgentRuns(): { runs: CodeAgentRunUI[]; stopAgent: (runId: string) => void } {
+  const [runs, setRuns] = useState<CodeAgentRunUI[]>([])
+
+  useEffect(() => {
+    // 1. Busca o estado inicial
+    window.electronAPI.ai.codeAgent.status().then((s) => {
+      setRuns(
+        s.runs.map((r) => ({
+          id: r.id,
+          dir: r.dir,
+          task: r.task,
+          model: r.model ?? r.agent,
+          startedAt: r.startedAt,
+          log: r.log,
+          hint: r.hint,
+          progress: r.progress ?? null
+        }))
+      )
+    })
+
+    const sync = (): void => {
+      window.electronAPI.ai.codeAgent.status().then((s) => {
+        setRuns(
+          s.runs.map((r) => ({
+            id: r.id,
+            dir: r.dir,
+            task: r.task,
+            model: r.model ?? r.agent,
+            startedAt: r.startedAt,
+            log: r.log,
+            hint: r.hint,
+            progress: r.progress ?? null
+          }))
+        )
+      })
+    }
+
+    // 2. Um novo agente iniciou
+    const offStarted = window.electronAPI.ai.codeAgent.onStarted(
+      (_payload: { runId: string; dir: string }) => {
+        sync()
+      }
+    )
+
+    // 3. Output chegou — atualiza o log do run correspondente
+    const offOutput = window.electronAPI.ai.codeAgent.onOutput(
+      (_payload: { runId: string; chunk: string }) => {
+        sync()
+      }
+    )
+
+    // 4. Progresso mudou
+    const offProgress = window.electronAPI.ai.codeAgent.onProgress(
+      (_p: { runId: string; step: number; maxSteps: number; promptTokens: number; completionTokens: number }) => {
+        sync()
+      }
+    )
+
+    // 5. Agente terminou
+    const offExit = window.electronAPI.ai.codeAgent.onExit(
+      (_payload: { runId: string; code: number }) => {
+        sync()
+      }
+    )
+
+    return () => {
+      offStarted()
+      offOutput()
+      offProgress()
+      offExit()
+    }
+  }, [])
+
+  const stopAgent = useCallback((runId: string) => {
+    window.electronAPI.ai.codeAgent.stop(runId)
+  }, [])
+
+  return { runs, stopAgent }
+}
+
 export function FleetView({
   projects,
   onOpenChat
@@ -47,6 +148,8 @@ export function FleetView({
   const usage = useAiRunStore((s) => s.usage)
   const openConversation = useAiRunStore((s) => s.openConversation)
   const abort = useAiRunStore((s) => s.abort)
+
+  const { runs: codeRuns, stopAgent } = useCodeAgentRuns()
 
   // A running agent's transcript/usage is either the one on screen or parked.
   const messagesOf = (id: string): ChatMessage[] =>
@@ -83,7 +186,20 @@ export function FleetView({
     onOpenChat()
   }
 
-  const agents = [...running]
+  // Chat agents (from the run store)
+  const chatAgents = [...running]
+  // Code agents (from main process)
+  const codeAgents = codeRuns
+
+  const agents = chatAgents.length + codeAgents.length
+
+  /** Best-effort project name for a code-agent's working directory. */
+  const codeAgentProject = (dir: string): string => {
+    const match = projects.find((p) =>
+      p.codePaths?.some((cp) => dir.includes(cp.path))
+    )
+    return match?.name ?? dir.split('/').pop() ?? 'Código'
+  }
 
   return (
     <>
@@ -91,18 +207,21 @@ export function FleetView({
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a5b4fc" strokeWidth="2">
           <rect x="3" y="11" width="18" height="10" rx="2" />
           <circle cx="12" cy="5" r="2" />
-          <path d="M12 7v4" />
+          <path d="M 12 7v4" />
           <line x1="8" y1="16" x2="8" y2="16" />
           <line x1="16" y1="16" x2="16" y2="16" />
         </svg>
         <h1 className="text-base font-semibold text-[#e2e8f0]">Agentes</h1>
         <span className="text-xs text-[#8892a4]">
-          {agents.length} {agents.length === 1 ? 'ativo' : 'ativos'}
+          {agents} {agents === 1 ? 'ativo' : 'ativos'}
+          {chatAgents.length > 0 && codeAgents.length > 0 && (
+            <> · {chatAgents.length} chat{chatAgents.length !== 1 ? 's' : ''} · {codeAgents.length} código</>
+          )}
         </span>
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-4">
-        {agents.length === 0 ? (
+        {chatAgents.length === 0 && codeAgents.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center">
             <div className="w-12 h-12 rounded-full bg-[#1e2235] flex items-center justify-center mb-3">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4a5068" strokeWidth="2">
@@ -119,7 +238,7 @@ export function FleetView({
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {agents.map((id) => {
+            {chatAgents.map((id) => {
               const projectName = projects.find((p) => p.id === runProjects[id])?.name ?? 'Global'
               const tokens = runUsage[id] ?? EMPTY_USAGE
               const progress = progressOf(id)
@@ -182,6 +301,86 @@ export function FleetView({
                     <button
                       onClick={() => abort(id)}
                       title="Parar este agente"
+                      className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-500/30 text-xs text-red-400 hover:bg-red-500/10 transition-colors"
+                    >
+                      <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor">
+                        <rect x="3" y="3" width="18" height="18" rx="3" />
+                      </svg>
+                      Parar
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+
+            {codeAgents.map((run) => {
+              const projectName = codeAgentProject(run.dir)
+              return (
+                <div
+                  key={run.id}
+                  className="flex flex-col rounded-xl bg-[#13151f] border border-[#f97316]/30 p-4 gap-3"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-[#e2e8f0] truncate">
+                        {run.task.slice(0, 60)}
+                      </p>
+                      <p className="text-[11px] text-[#8892a4] truncate">
+                        Projeto: <span className="text-[#a5b4fc]">{projectName}</span>
+                      </p>
+                    </div>
+                    {run.progress && (
+                      <span
+                        title={`Passo ${run.progress.step} de ${run.progress.maxSteps}`}
+                        className="shrink-0 px-1.5 py-[1px] rounded text-[10px] font-medium tabular-nums bg-[#1e2235] border border-[#2a2d42] text-[#8892a4]"
+                      >
+                        {run.progress.step}/{run.progress.maxSteps}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Status line */}
+                  <div className="flex items-center gap-2 min-w-0">
+                    {run.hint ? (
+                      <span className="w-2.5 h-2.5 shrink-0 rounded-full bg-amber-400" />
+                    ) : (
+                      <span className="w-2.5 h-2.5 shrink-0 rounded-full border-[1.5px] border-[#a5b4fc] border-t-transparent animate-spin" />
+                    )}
+                    <p className="text-xs text-[#8892a4] truncate">
+                      {run.hint
+                        ? `⚠️ ${run.hint.title}`
+                        : `Agente de código · ${run.model || 'codex'}`}
+                    </p>
+                  </div>
+
+                  {/* Log preview (last 3 lines) */}
+                  {run.log && (
+                    <div className="rounded-lg bg-black/40 p-2 max-h-16 overflow-hidden">
+                      <pre className="text-[10px] text-[#6b7280] leading-relaxed whitespace-pre-wrap line-clamp-3 font-mono">
+                        {run.log.split('\n').filter(Boolean).slice(-3).join('\n')}
+                      </pre>
+                    </div>
+                  )}
+
+                  {/* Tokens if available */}
+                  {run.progress && (
+                    <div className="flex items-center gap-3 text-[11px] tabular-nums">
+                      <span className="text-[#8892a4]">↑ {run.progress.promptTokens.toLocaleString()} entrada</span>
+                      <span className="text-[#8892a4]">↓ {run.progress.completionTokens.toLocaleString()} saída</span>
+                    </div>
+                  )}
+
+                  {/* Actions row */}
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      onClick={() => onOpenChat()}
+                      className="flex-1 px-3 py-1.5 rounded-lg bg-[#1e2235] border border-[#2a2d42] text-xs text-[#e2e8f0] font-medium hover:bg-[#2a2d42] transition-colors"
+                    >
+                      Abrir IA
+                    </button>
+                    <button
+                      onClick={() => stopAgent(run.id)}
+                      title="Parar este agente de código"
                       className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-500/30 text-xs text-red-400 hover:bg-red-500/10 transition-colors"
                     >
                       <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor">

@@ -53,6 +53,7 @@ function installApi(): void {
       skills: { list: vi.fn(async () => []), save: vi.fn(), delete: vi.fn(async () => {}), import: vi.fn() },
       codeAgent: {
         onOutput: vi.fn(() => vi.fn()),
+        onStarted: vi.fn(() => vi.fn()),
         onExit: vi.fn(() => vi.fn()),
         // Fires when a finished run has been archived; the picker listens
         // for it rather than guessing when the snapshot exists.
