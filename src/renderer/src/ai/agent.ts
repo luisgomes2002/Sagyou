@@ -37,8 +37,7 @@ export interface AIConfig {
   timeoutMs?: number
   /** The conversation to reopen when the AI view is entered. */
   lastConversationId?: string
-  /** Template picked for Gerar Tasks. Absent = the built-in default. */
-  taskTemplateId?: string
+
   /**
    * A separate provider for the native code agent. Any field left empty falls
    * back to the chat config above, so a user sets only what differs. Absent =
@@ -325,6 +324,13 @@ export interface RunAgentOptions {
    * a missing memory bridge (older preload, tests) just means no briefing.
    */
   projectId?: string | null
+  /**
+   * The conversation this run belongs to. Threaded to the tool layer so a tool
+   * that spawns further work (rodar_agente_codigo) can tag it with the chat that
+   * started it — with several runs in flight there is no single "current" chat
+   * to read from the store. Absent = no owning chat (Gerar Tasks, tests).
+   */
+  convId?: string
   /** Max loop iterations before forcing a final answer (default MAX_STEPS). */
   maxSteps?: number
   /** Checked between iterations; if it returns true, the loop stops early. */
@@ -960,7 +966,7 @@ export async function runAgent(
           cost.tools.push(name)
           onStatus?.(describeToolActivity(name, args), 'tool', progress)
           try {
-            result = await runTool(name, args)
+            result = await runTool(name, args, opts.convId)
           } finally {
             onToolEnd?.()
           }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { estimateAutoRun } from '../../utils/spend'
+import { estimateAutoRun, cacheHitRate } from '../../utils/spend'
 
 const bucket = (over: Partial<Parameters<typeof estimateAutoRun>[0] & object> = {}) => ({
   calls: 10,
@@ -49,5 +49,22 @@ describe('estimateAutoRun', () => {
   // a long run costs — the estimate is a floor and the UI has to say so.
   it('always reports that it understates', () => {
     expect(estimateAutoRun(bucket(), 15)?.understates).toBe(true)
+  })
+})
+
+describe('cacheHitRate', () => {
+  it('divides cached tokens by the tokens of calls that reported one', () => {
+    expect(
+      cacheHitRate({ cachedPromptTokens: 8_000, cacheReportedPromptTokens: 10_000 })
+    ).toBeCloseTo(0.8)
+  })
+
+  // Null, never 0: a provider that has never reported a cache figure (or that
+  // the user simply hasn't called since this was added) is "no data", not a
+  // confirmed 0% hit rate.
+  it('returns null when nothing reported a cache figure', () => {
+    expect(cacheHitRate(null)).toBeNull()
+    expect(cacheHitRate(undefined)).toBeNull()
+    expect(cacheHitRate({ cachedPromptTokens: 0, cacheReportedPromptTokens: 0 })).toBeNull()
   })
 })

@@ -255,6 +255,23 @@ Não "simplifique" nenhuma destas sem ler o comentário que as acompanha:
   os dois, uma resposta virou 12 requisições HTTP.
 - **A store da execução da IA é separada (`store/aiRun.ts`)** — a execução
   sobrevive à `AIView` ser desmontada. Não a mova para dentro do componente.
+- **Multi-agente: a store é desingletonizada** — N chat-agents rodam em paralelo
+  (até no mesmo projeto). Os campos por-run são coleções por `convId`
+  (`running: Set`, `streaming`/`streamingTools: Record`, `autoApprove`/
+  `abortRequested: Set`, `pendingApprovals: []` = fila de cards). `send()` captura
+  seu `convId` e escreve via `writeConv`/`addUsageConv` (nunca um "run atual"
+  global); o `convId` é passado ao loop e às tools (`runTool(name,args,convId)` →
+  `currentRunConvId()`). `taskLeases` + `acquireLease` impedem dois agentes de
+  pegar a mesma task (as tools de escrita chamam `leaseBlock`). O painel
+  `FleetView.tsx` (aba "Agentes") lista as runs vivas a partir de `running`/
+  `runProjects` e mostra o gasto de tokens por agente (`runUsage`, zerado ao fim
+  da run). Detalhes e fases em `MULTI_AGENT_PLAN.md`.
+- **Múltiplos cronômetros** (`activeTimers: ActiveTimer[]`, 1 por task) — vários
+  timers correm ao mesmo tempo. `startTimer(taskId)` adiciona sem parar os outros;
+  `stopTimer(taskId)` credita só aquele. Espelho legado `activeTimer =
+  activeTimers[0]` no `settings` do DB (não viaja no backup); `normalizeTimers`
+  migra o objeto único antigo e faz o commit de tempo em loop no load. ⚠️ Mudança
+  de schema — mantenha a coleção **e** o espelho.
 - **O diff do agente captura a base *antes* de rodar** (`captureBase`) — depois
   não dá para separar o que o agente fez do que o usuário já tinha em andamento.
 - **Runs antigas são snapshots congelados** (`agent-runs.ts`): o log e o diff são

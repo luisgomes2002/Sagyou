@@ -32,7 +32,7 @@ function reset() {
     lists: [],
     activeProjectId: null,
     sprintFilter: null,
-    activeTimer: null,
+    activeTimers: [],
     isLoaded: false
   })
 }

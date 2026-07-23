@@ -7,6 +7,7 @@ import {
   mkdirSync,
   existsSync,
   unlinkSync,
+  renameSync,
   statSync,
   readdirSync,
   accessSync,
@@ -99,12 +100,12 @@ import {
   type AgentRunSnapshot
 } from './agent-runs'
 import {
-  saveTemplate,
-  removeTemplate,
-  normalizeTemplates,
-  type PromptTemplate,
-  type SaveInput
-} from './task-templates'
+  listSkills,
+  saveSkill,
+  deleteSkill,
+  importSkill as importSkillDialog,
+  skillsDir
+} from './skills'
 import icon from '../../resources/icon.png?asset'
 
 let mainWindow: BrowserWindow | null = null
@@ -294,15 +295,24 @@ async function callCodeModel(
     {
       model: cfg.model,
       // The wire shape matches OpenAI's; our AgentMessage is a strict subset.
-      messages: messages as unknown as Parameters<typeof client.chat.completions.create>[0]['messages'],
+      messages: messages as unknown as Parameters<
+        typeof client.chat.completions.create
+      >[0]['messages'],
       ...(tools.length
-        ? { tools: tools as unknown as Parameters<typeof client.chat.completions.create>[0]['tools'], tool_choice: 'auto' as const }
+        ? {
+            tools: tools as unknown as Parameters<
+              typeof client.chat.completions.create
+            >[0]['tools'],
+            tool_choice: 'auto' as const
+          }
         : {})
     },
     requestOptions(loadAIConfig().timeoutMs)
   )
   const m = res.choices?.[0]?.message
-  const toolCalls = (m?.tool_calls ?? []).filter((c) => c.type === 'function') as unknown as CodeToolCall[]
+  const toolCalls = (m?.tool_calls ?? []).filter(
+    (c) => c.type === 'function'
+  ) as unknown as CodeToolCall[]
   return {
     message: {
       role: 'assistant',
@@ -786,21 +796,9 @@ async function archiveAgentRun(exitCode: number): Promise<void> {
   }
 }
 
-// --- Gerar Tasks templates (persisted to ai-templates.json in userData) ---
+// --- Skills (.md files in userData/skills/) ---
 
-const aiTemplatesPath = (): string => join(app.getPath('userData'), 'ai-templates.json')
-
-function loadTemplates(): PromptTemplate[] {
-  try {
-    return normalizeTemplates(JSON.parse(readFileSync(aiTemplatesPath(), 'utf-8')))
-  } catch {
-    return []
-  }
-}
-
-function writeTemplates(list: PromptTemplate[]): void {
-  writeFileSync(aiTemplatesPath(), JSON.stringify(list, null, 2), 'utf-8')
-}
+const skillsPath = (): string => skillsDir(app.getPath('userData'))
 
 // --- AI chat history (persisted to ai-conversations.json in userData) ---
 interface StoredConversation {
@@ -894,6 +892,37 @@ app.whenReady().then(() => {
   const filesDir = join(app.getPath('userData'), 'files')
   if (!existsSync(filesDir)) mkdirSync(filesDir)
 
+  // Migrate old ai-templates.json to per-file skills (one .md = one skill).
+  // Templates were a flat JSON array; skills are individual .md files the model
+  // can call with /skill-name.  Run once: after migration the .json is renamed
+  // to .bak so it never runs again.
+  const templatesPath = join(app.getPath('userData'), 'ai-templates.json')
+  if (existsSync(templatesPath)) {
+    try {
+      const raw = readFileSync(templatesPath, 'utf-8')
+      const parsed: unknown = JSON.parse(raw)
+      const entries: { name?: string; body?: string }[] = Array.isArray(parsed) ? parsed : []
+      const dir = skillsDir(app.getPath('userData'))
+      let migrated = 0
+      for (const t of entries) {
+        const name = (t.name ?? '').trim()
+        const body = (t.body ?? '').trim()
+        if (!name || !body) continue
+        const res = saveSkill(dir, { name, body })
+        if ('skill' in res) migrated++
+      }
+      if (migrated > 0)
+        console.log(`[skills] migrated ${migrated} template(s) from ai-templates.json`)
+    } catch (_) {
+      /* best-effort — a corrupt json is silently skipped */
+    }
+    try {
+      renameSync(templatesPath, templatesPath + '.bak')
+    } catch (_) {
+      /* if rename fails (e.g. permissions), leave it — worst case it tries next launch */
+    }
+  }
+
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
@@ -927,7 +956,11 @@ app.whenReady().then(() => {
       const full = join(filesDir, name)
       if (!full.startsWith(filesDir + sep) || !existsSync(full)) continue
       try {
-        out.push({ id: id as string, ext: ext as string, base64: readFileSync(full).toString('base64') })
+        out.push({
+          id: id as string,
+          ext: ext as string,
+          base64: readFileSync(full).toString('base64')
+        })
       } catch {
         /* unreadable blob is skipped, not fatal to the backup */
       }
@@ -967,7 +1000,11 @@ app.whenReady().then(() => {
         const full = taskImagePath(id, ext)
         if (!full || !existsSync(full)) continue
         try {
-          out.push({ id: id as string, ext: ext as string, base64: readFileSync(full).toString('base64') })
+          out.push({
+            id: id as string,
+            ext: ext as string,
+            base64: readFileSync(full).toString('base64')
+          })
         } catch {
           /* unreadable blob is skipped */
         }
@@ -1002,7 +1039,10 @@ app.whenReady().then(() => {
     if (!Array.isArray(blobs)) return
     if (!existsSync(filesDir)) mkdirSync(filesDir, { recursive: true })
     for (const b of blobs) {
-      const name = safeAttachmentName((b as { id?: unknown })?.id, (b as { ext?: unknown })?.ext ?? '')
+      const name = safeAttachmentName(
+        (b as { id?: unknown })?.id,
+        (b as { ext?: unknown })?.ext ?? ''
+      )
       const b64 = (b as { base64?: unknown })?.base64
       if (!name || typeof b64 !== 'string') continue
       const full = join(filesDir, name)
@@ -1189,7 +1229,9 @@ app.whenReady().then(() => {
   // default the moment it can be enforced.
   ipcMain.handle('ai:jail:install', async () => {
     const deps: InstallDeps = { exec: defaultExec, download: downloadTo, fetchText }
-    const res = await installAiJail(deps, (p) => mainWindow?.webContents.send('ai:jail:progress', p))
+    const res = await installAiJail(deps, (p) =>
+      mainWindow?.webContents.send('ai:jail:progress', p)
+    )
     if (res.success) {
       await getJailStatus(true) // refresh the cache off the fresh install
       const cfg = loadAIConfig()
@@ -1216,7 +1258,8 @@ app.whenReady().then(() => {
   ipcMain.handle(
     'ai:memory:list',
     (_, opts?: { projectId?: string | null; includeArchived?: boolean }) => {
-      if (opts?.includeArchived) return listMemories({ projectId: opts.projectId, includeArchived: true })
+      if (opts?.includeArchived)
+        return listMemories({ projectId: opts.projectId, includeArchived: true })
       if (opts && 'projectId' in opts) return memoriesForContext(opts.projectId ?? null)
       return listMemories()
     }
@@ -1269,7 +1312,9 @@ app.whenReady().then(() => {
     }
   )
 
-  ipcMain.handle('ai:memory:summary', () => summarizeMemories(listMemories({ includeArchived: true })))
+  ipcMain.handle('ai:memory:summary', () =>
+    summarizeMemories(listMemories({ includeArchived: true }))
+  )
 
   ipcMain.handle('ai:memory:conflicts', () => findConflicts(listMemories()))
 
@@ -1537,7 +1582,8 @@ app.whenReady().then(() => {
         projectId?: string | null
       }
     ) => {
-      if (codeAgentRunning) return { success: false, error: 'Já existe um agente de código rodando' }
+      if (codeAgentRunning)
+        return { success: false, error: 'Já existe um agente de código rodando' }
       const dir = request.path
       if (!dir || !existsSync(dir) || !statSync(dir).isDirectory()) {
         return { success: false, error: 'Diretório do projeto inválido' }
@@ -1748,7 +1794,10 @@ app.whenReady().then(() => {
       // same barrier as everything else) so describeCodeAction can diff old→new
       // — the read is async and off the loop's hot path, so it's done up front,
       // then the promise only holds the pending resolver.
-      const approve = async (call: { name: string; args: Record<string, unknown> }): Promise<boolean> => {
+      const approve = async (call: {
+        name: string
+        args: Record<string, unknown>
+      }): Promise<boolean> => {
         if (codeAgentAbort) return false
         let oldContent: string | null = null
         if (call.name === 'escrever_arquivo' && typeof call.args.caminho === 'string') {
@@ -1819,46 +1868,51 @@ app.whenReady().then(() => {
       void (async (): Promise<void> => {
         let exitCode = 0
         try {
-          const result = await runCodeAgent(systemPrompt, task, { root: dir, run: runner }, {
-            callModel: (messages, tools) => callCodeModel(caCfg, messages, tools),
-            approve,
-            // Pinned files → drop the discovery tools (grep/list): the agent was
-            // handed the targets and their contents, so re-finding them is pure
-            // waste of the step budget.
-            tools: codeToolsFor({ pinnedFiles: files.length > 0 }),
-            maxSteps: CODE_AGENT_MAX_STEPS,
-            shouldAbort: () => codeAgentAbort,
-            onStep: (step, max) => {
-              codeAgentStep = step
-              codeAgentMaxSteps = max
-              pushProgress()
-            },
-            onText: (text) => emit(`\n${text}\n`),
-            onToolCall: (name, args) => {
-              emit(`\n[tool] ${describeCodeAction(name, args).resumo || name}\n`)
-              send('ai:code-agent:tool', { phase: 'call', name, args })
-            },
-            onToolResult: (name, summary) => {
-              emit(`[resultado] ${summary}\n`)
-              send('ai:code-agent:tool', { phase: 'result', name, summary })
-            },
-            // A transient model failure is being retried — say so, or a multi-
-            // second backoff reads as a hang.
-            onRetry: (attempt, max, waitMs, reason) =>
-              emit(
-                `\n[sagyou] tentativa ${attempt}/${max} de contato com o modelo falhou ` +
-                  `(${reason}); retentando em ${Math.round(waitMs / 1000)}s...\n`
-              ),
-            // Accumulate for the live counter + the end summary + the archive,
-            // AND log the spend (process-wide, per-call) — the two are separate
-            // ledgers with different lifetimes.
-            onUsage: (usage) => {
-              codeAgentUsage.promptTokens += usage.promptTokens
-              codeAgentUsage.completionTokens += usage.completionTokens
-              pushProgress()
-              appendUsage(caCfg.model, usage, cfg)
+          const result = await runCodeAgent(
+            systemPrompt,
+            task,
+            { root: dir, run: runner },
+            {
+              callModel: (messages, tools) => callCodeModel(caCfg, messages, tools),
+              approve,
+              // Pinned files → drop the discovery tools (grep/list): the agent was
+              // handed the targets and their contents, so re-finding them is pure
+              // waste of the step budget.
+              tools: codeToolsFor({ pinnedFiles: files.length > 0 }),
+              maxSteps: CODE_AGENT_MAX_STEPS,
+              shouldAbort: () => codeAgentAbort,
+              onStep: (step, max) => {
+                codeAgentStep = step
+                codeAgentMaxSteps = max
+                pushProgress()
+              },
+              onText: (text) => emit(`\n${text}\n`),
+              onToolCall: (name, args) => {
+                emit(`\n[tool] ${describeCodeAction(name, args).resumo || name}\n`)
+                send('ai:code-agent:tool', { phase: 'call', name, args })
+              },
+              onToolResult: (name, summary) => {
+                emit(`[resultado] ${summary}\n`)
+                send('ai:code-agent:tool', { phase: 'result', name, summary })
+              },
+              // A transient model failure is being retried — say so, or a multi-
+              // second backoff reads as a hang.
+              onRetry: (attempt, max, waitMs, reason) =>
+                emit(
+                  `\n[sagyou] tentativa ${attempt}/${max} de contato com o modelo falhou ` +
+                    `(${reason}); retentando em ${Math.round(waitMs / 1000)}s...\n`
+                ),
+              // Accumulate for the live counter + the end summary + the archive,
+              // AND log the spend (process-wide, per-call) — the two are separate
+              // ledgers with different lifetimes.
+              onUsage: (usage) => {
+                codeAgentUsage.promptTokens += usage.promptTokens
+                codeAgentUsage.completionTokens += usage.completionTokens
+                pushProgress()
+                appendUsage(caCfg.model, usage, cfg)
+              }
             }
-          })
+          )
           if (result.stopped) exitCode = codeAgentAbort ? -2 : 1
         } catch (e) {
           exitCode = 1
@@ -1869,7 +1923,9 @@ app.whenReady().then(() => {
           // that spent money before failing still reports what it cost. Only
           // when something was billed (a run that never reached the model is 0).
           if (codeAgentUsage.promptTokens || codeAgentUsage.completionTokens) {
-            emit(`\n${formatRunSummary(codeAgentUsage, codeAgentStep, costAt(codeAgentUsage, cfg))}\n`)
+            emit(
+              `\n${formatRunSummary(codeAgentUsage, codeAgentStep, costAt(codeAgentUsage, cfg))}\n`
+            )
           }
           const secs = ((Date.now() - startedAt) / 1000).toFixed(1)
           emit(`\n[sagyou] duração: ${secs}s\n`)
@@ -2044,7 +2100,11 @@ app.whenReady().then(() => {
             if (!found) {
               // Not a declaration in this file — hand back the symbol map so the
               // model can pick a real one instead of paging blindly.
-              return { error: `Símbolo "${scope.symbol}" não encontrado`, total, simbolos: detectSymbols(content) }
+              return {
+                error: `Símbolo "${scope.symbol}" não encontrado`,
+                total,
+                simbolos: detectSymbols(content)
+              }
             }
             return { simbolo: scope.symbol, ...cap(found) }
           }
@@ -2061,13 +2121,16 @@ app.whenReady().then(() => {
         // here — kanban.ts is ~1k lines — so the real "big" measure is the same
         // char boundary the paging already uses.) ---
         const offsetProvided = typeof offset === 'number' && Number.isFinite(offset) && offset > 0
-        const maxCharsProvided = typeof maxChars === 'number' && Number.isFinite(maxChars) && maxChars >= 1
+        const maxCharsProvided =
+          typeof maxChars === 'number' && Number.isFinite(maxChars) && maxChars >= 1
         if (!offsetProvided && !maxCharsProvided && total > CODE_READ_PAGE) {
           const PREVIEW_LINES = 100
           const head = extractLines(content, 1, PREVIEW_LINES)
           // Cap the head too, in case 100 lines are themselves huge (minified).
           const preview =
-            head.content.length > CODE_READ_PAGE ? head.content.slice(0, CODE_READ_PAGE) : head.content
+            head.content.length > CODE_READ_PAGE
+              ? head.content.slice(0, CODE_READ_PAGE)
+              : head.content
           return {
             content: preview,
             truncated: true,
@@ -2243,17 +2306,20 @@ app.whenReady().then(() => {
     }
   })
 
-  ipcMain.handle('ai:templates:list', () => loadTemplates())
+  ipcMain.handle('ai:skills:list', () => listSkills(skillsPath()))
 
-  ipcMain.handle('ai:templates:save', (_, input: SaveInput) => {
-    const res = saveTemplate(loadTemplates(), input, new Date().toISOString(), randomUUID)
+  ipcMain.handle('ai:skills:save', (_, input: { name: string; body: string; oldName?: string }) => {
+    const res = saveSkill(skillsPath(), input)
     if ('error' in res) return res
-    writeTemplates(res.list)
-    return { template: res.template }
+    return { skill: res.skill }
   })
 
-  ipcMain.handle('ai:templates:delete', (_, id: string) => {
-    writeTemplates(removeTemplate(loadTemplates(), id))
+  ipcMain.handle('ai:skills:delete', (_, name: string) => {
+    deleteSkill(skillsPath(), name)
+  })
+
+  ipcMain.handle('ai:skills:import', async () => {
+    return importSkillDialog(skillsPath())
   })
 
   // --- AI conversation history ---

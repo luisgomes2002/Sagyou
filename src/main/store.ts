@@ -65,6 +65,9 @@ interface SaveData {
   habits: Habit[]
   lists: FinancialTable[]
   files: StoredFile[]
+  activeTimers?: { taskId: string; startedAt: number }[]
+  // Legacy single-timer mirror; still written so an older app version reading
+  // this DB resolves one timer. New code reads/writes `activeTimers`.
   activeTimer?: { taskId: string; startedAt: number } | null
 }
 
@@ -613,8 +616,29 @@ function prepareWrite(db: Database.Database) {
 
   const setTimer = (v: unknown): void => { ins.setting.run('activeTimer', JSON.stringify(v)) }
   const clearTimer = (): void => { del.setting.run('activeTimer') }
+  const setTimers = (v: unknown): void => { ins.setting.run('activeTimers', JSON.stringify(v)) }
+  const clearTimers = (): void => { del.setting.run('activeTimers') }
 
-  return { insert, del, setTimer, clearTimer }
+  return { insert, del, setTimer, clearTimer, setTimers, clearTimers }
+}
+
+/**
+ * Write the running-timer settings: the `activeTimers` array plus the legacy
+ * `activeTimer` mirror (first, or null). One place so persistAll and persistDiff
+ * agree. An empty array clears both keys, so a stopped timer never lingers to
+ * the next boot.
+ */
+function writeTimers(
+  w: ReturnType<typeof prepareWrite>,
+  timers: { taskId: string; startedAt: number }[] | undefined,
+  legacy: { taskId: string; startedAt: number } | null | undefined
+): void {
+  const list = timers ?? (legacy ? [legacy] : [])
+  if (list.length > 0) w.setTimers(list)
+  else w.clearTimers()
+  const first = list[0] ?? null
+  if (first) w.setTimer(first)
+  else w.clearTimer()
 }
 
 /**
@@ -659,12 +683,13 @@ function persistDiff(db: Database.Database, prev: SaveData, next: SaveData): voi
   diffEntities(prev.habits, next.habits, w.del.habit, w.insert.habit)
   diffEntities(prev.lists, next.lists, w.del.ftable, w.insert.ftable)
   diffEntities(prev.files, next.files, w.del.file, w.insert.file)
-  // activeTimer lives in settings; mirror persistAll — set when present, and
-  // clear when it goes away, so a stopped timer doesn't linger to the next boot.
-  if (JSON.stringify(prev.activeTimer ?? null) !== JSON.stringify(next.activeTimer ?? null)) {
-    if (next.activeTimer) w.setTimer(next.activeTimer)
-    else w.clearTimer()
-  }
+  // Timers live in settings (activeTimers + legacy activeTimer mirror). Rewrite
+  // when either the array or the legacy field changes, so a stopped timer
+  // doesn't linger to the next boot.
+  const timersChanged =
+    JSON.stringify(prev.activeTimers ?? null) !== JSON.stringify(next.activeTimers ?? null) ||
+    JSON.stringify(prev.activeTimer ?? null) !== JSON.stringify(next.activeTimer ?? null)
+  if (timersChanged) writeTimers(w, next.activeTimers, next.activeTimer)
 }
 
 function persistAll(db: Database.Database, data: SaveData): void {
@@ -703,7 +728,9 @@ function persistAll(db: Database.Database, data: SaveData): void {
   for (const h of data.habits ?? []) w.insert.habit(h)
   for (const ft of data.lists ?? []) w.insert.ftable(ft)
   for (const f of data.files ?? []) w.insert.file(f)
-  if (data.activeTimer) w.setTimer(data.activeTimer)
+  // settings aren't cleared by the DELETE above, so writeTimers must clear the
+  // keys when no timer is running, not only set them.
+  writeTimers(w, data.activeTimers, data.activeTimer)
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -845,10 +872,25 @@ export function loadData(): SaveData {
     ...(f.project_id != null ? { projectId: f.project_id } : {}),
   }))
 
-  const timerRow = db.prepare('SELECT value FROM settings WHERE key=?').get('activeTimer') as { value: string } | undefined
-  const activeTimer = timerRow ? JSON.parse(timerRow.value) : null
+  // Prefer the new `activeTimers` array; fall back to the legacy single
+  // `activeTimer` (wrapped) so a DB written by an older app version still
+  // resolves its running timer. The renderer migrates the legacy field too.
+  const getSetting = (key: string): unknown => {
+    const row = db.prepare('SELECT value FROM settings WHERE key=?').get(key) as
+      | { value: string }
+      | undefined
+    return row ? JSON.parse(row.value) : null
+  }
+  const legacyTimer = getSetting('activeTimer')
+  const timersRaw = getSetting('activeTimers')
+  const activeTimers = Array.isArray(timersRaw) ? timersRaw : legacyTimer ? [legacyTimer] : []
 
-  return { projects, tasks, sprints, tombstones, notes, goals, habits, lists, files, activeTimer }
+  return {
+    projects, tasks, sprints, tombstones, notes, goals, habits, lists, files,
+    activeTimers,
+    // Legacy field, still returned for any consumer that reads it directly.
+    activeTimer: legacyTimer ?? activeTimers[0] ?? null
+  }
 }
 
 export function saveData(data: unknown): void {

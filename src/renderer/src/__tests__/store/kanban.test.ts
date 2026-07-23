@@ -44,7 +44,7 @@ function resetStore() {
     lists: [],
     activeProjectId: null,
     sprintFilter: null,
-    activeTimer: null,
+    activeTimers: [],
     isLoaded: false
   })
 }
@@ -291,38 +291,57 @@ describe('timer actions', () => {
     expect(useKanbanStore.getState().tasks.find((t) => t.id === taskId)!.timeSpent).toBeUndefined()
   })
 
-  it('startTimer sets activeTimer', () => {
+  it('startTimer adds a running timer for the task', () => {
     useKanbanStore.getState().startTimer(taskId)
-    expect(useKanbanStore.getState().activeTimer?.taskId).toBe(taskId)
+    expect(useKanbanStore.getState().activeTimers.map((t) => t.taskId)).toEqual([taskId])
   })
 
-  it('stopTimer clears activeTimer and records time', () => {
+  it('stopTimer removes that task\'s timer and records time', () => {
     useKanbanStore.getState().startTimer(taskId)
-    useKanbanStore.getState().stopTimer()
-    expect(useKanbanStore.getState().activeTimer).toBeNull()
+    useKanbanStore.getState().stopTimer(taskId)
+    expect(useKanbanStore.getState().activeTimers).toEqual([])
   })
 
-  it('startTimer saves elapsed time from previous timer before switching', () => {
+  it('runs several timers at once, one per task, without switching', () => {
+    // The Phase 5 change: starting a second timer no longer commits/replaces the
+    // first — both tick in parallel (human + agents, or several agents).
     const taskId2 = useKanbanStore.getState().createTask({ projectId, columnId, title: 'Task 2' })
-    useKanbanStore.setState({ activeTimer: { taskId, startedAt: Date.now() - 5000 } })
+    useKanbanStore.setState({ activeTimers: [{ taskId, startedAt: Date.now() - 5000 }] })
     useKanbanStore.getState().startTimer(taskId2)
-    const spent = useKanbanStore.getState().tasks.find((t) => t.id === taskId)!.timeSpent ?? 0
-    expect(spent).toBeGreaterThanOrEqual(4)
-    expect(useKanbanStore.getState().activeTimer?.taskId).toBe(taskId2)
+
+    // Both are running; the first was not stopped, so no time was credited yet.
+    expect(useKanbanStore.getState().activeTimers.map((t) => t.taskId).sort()).toEqual(
+      [taskId, taskId2].sort()
+    )
+    expect(useKanbanStore.getState().tasks.find((t) => t.id === taskId)!.timeSpent).toBeUndefined()
+
+    // Stopping one credits only that task and leaves the other running.
+    useKanbanStore.getState().stopTimer(taskId)
+    expect(useKanbanStore.getState().tasks.find((t) => t.id === taskId)!.timeSpent).toBeGreaterThanOrEqual(4)
+    expect(useKanbanStore.getState().activeTimers.map((t) => t.taskId)).toEqual([taskId2])
+  })
+
+  it('starting an already-running task is a no-op (does not reset its clock)', () => {
+    useKanbanStore.setState({ activeTimers: [{ taskId, startedAt: Date.now() - 5000 }] })
+    useKanbanStore.getState().startTimer(taskId)
+    // Still one timer, and its startedAt was not reset to now.
+    const timers = useKanbanStore.getState().activeTimers
+    expect(timers).toHaveLength(1)
+    expect(Date.now() - timers[0].startedAt).toBeGreaterThanOrEqual(5000)
   })
 
   it('updateTask stops timer when task is moved to done column', () => {
     const doneColumnId = useKanbanStore.getState().projects[0].columns.find((c) => c.name.toLowerCase() === 'done')!.id
     useKanbanStore.getState().startTimer(taskId)
     useKanbanStore.getState().updateTask(taskId, { columnId: doneColumnId })
-    expect(useKanbanStore.getState().activeTimer).toBeNull()
+    expect(useKanbanStore.getState().activeTimers).toEqual([])
   })
 
   it('moveTask stops timer when task is dragged to done column', () => {
     const doneColumnId = useKanbanStore.getState().projects[0].columns.find((c) => c.name.toLowerCase() === 'done')!.id
     useKanbanStore.getState().startTimer(taskId)
     useKanbanStore.getState().moveTask(taskId, doneColumnId, 0)
-    expect(useKanbanStore.getState().activeTimer).toBeNull()
+    expect(useKanbanStore.getState().activeTimers).toEqual([])
   })
 
   it('updateTask does not stop timer when another task is marked done', () => {
@@ -330,7 +349,7 @@ describe('timer actions', () => {
     const doneColumnId = useKanbanStore.getState().projects[0].columns.find((c) => c.name.toLowerCase() === 'done')!.id
     useKanbanStore.getState().startTimer(taskId)
     useKanbanStore.getState().updateTask(taskId2, { columnId: doneColumnId })
-    expect(useKanbanStore.getState().activeTimer?.taskId).toBe(taskId)
+    expect(useKanbanStore.getState().activeTimers.map((t) => t.taskId)).toEqual([taskId])
   })
 })
 
@@ -822,14 +841,14 @@ describe('importBackup', () => {
     const col = useKanbanStore.getState().projects[0].columns[0]
     const tid = useKanbanStore.getState().createTask({ projectId: pid, columnId: col.id, title: 'T' })
     useKanbanStore.getState().startTimer(tid)
-    expect(useKanbanStore.getState().activeTimer).not.toBeNull()
+    expect(useKanbanStore.getState().activeTimers).toHaveLength(1)
 
     const backup = { version: 2, exportedAt: new Date().toISOString(), projects: [], tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: [] }
     getStorageMock().importBackup.mockResolvedValueOnce({ success: true, data: backup })
 
     await useKanbanStore.getState().importBackup()
 
-    expect(useKanbanStore.getState().activeTimer).toBeNull()
+    expect(useKanbanStore.getState().activeTimers).toEqual([])
   })
 
   it('applies defaults for missing optional fields in backup lists', async () => {
@@ -1061,6 +1080,58 @@ describe('code path actions', () => {
     useKanbanStore.getState().toggleCodePath(pid, id2)
     useKanbanStore.getState().removeCodePath(pid, id2)
     expect(project().activeCodePathIds).toEqual([id1])
+  })
+
+  it('loadData migrates a legacy single activeTimer, committing its elapsed time', async () => {
+    const storage = vi.mocked(ElectronStorage).mock.instances[0] as unknown as {
+      load: ReturnType<typeof vi.fn>
+    }
+    // A DB written by a pre-multi-timer version: only the singular `activeTimer`.
+    storage.load.mockResolvedValueOnce({
+      projects: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: [],
+      tasks: [{ id: 't1', projectId: 'p', columnId: 'c', title: 'T', order: 0, priority: 'medium', tags: [], createdAt: 'x', updatedAt: 'x' }],
+      activeTimer: { taskId: 't1', startedAt: Date.now() - 10_000 }
+    })
+    await useKanbanStore.getState().loadData()
+    // Elapsed time committed to the task, and no timer left running after load.
+    expect(useKanbanStore.getState().tasks.find((t) => t.id === 't1')!.timeSpent).toBeGreaterThanOrEqual(9)
+    expect(useKanbanStore.getState().activeTimers).toEqual([])
+  })
+
+  it('loadData commits every running timer, not just one', async () => {
+    const storage = vi.mocked(ElectronStorage).mock.instances[0] as unknown as {
+      load: ReturnType<typeof vi.fn>
+    }
+    storage.load.mockResolvedValueOnce({
+      projects: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: [],
+      tasks: [
+        { id: 't1', projectId: 'p', columnId: 'c', title: 'A', order: 0, priority: 'medium', tags: [], createdAt: 'x', updatedAt: 'x' },
+        { id: 't2', projectId: 'p', columnId: 'c', title: 'B', order: 1, priority: 'medium', tags: [], createdAt: 'x', updatedAt: 'x' }
+      ],
+      activeTimers: [
+        { taskId: 't1', startedAt: Date.now() - 10_000 },
+        { taskId: 't2', startedAt: Date.now() - 20_000 }
+      ]
+    })
+    await useKanbanStore.getState().loadData()
+    const tasks = useKanbanStore.getState().tasks
+    expect(tasks.find((t) => t.id === 't1')!.timeSpent).toBeGreaterThanOrEqual(9)
+    expect(tasks.find((t) => t.id === 't2')!.timeSpent).toBeGreaterThanOrEqual(19)
+    expect(useKanbanStore.getState().activeTimers).toEqual([])
+  })
+
+  it('_flushPersist writes the legacy activeTimer mirror (activeTimers[0])', async () => {
+    const storage = vi.mocked(ElectronStorage).mock.instances[0] as unknown as {
+      save: ReturnType<typeof vi.fn>
+    }
+    useKanbanStore.setState({
+      activeTimers: [{ taskId: 'a', startedAt: 111 }, { taskId: 'b', startedAt: 222 }]
+    })
+    await useKanbanStore.getState()._flushPersist()
+    const saved = storage.save.mock.calls.at(-1)![0]
+    expect(saved.activeTimers).toEqual([{ taskId: 'a', startedAt: 111 }, { taskId: 'b', startedAt: 222 }])
+    // Old app versions still resolve a single timer from the mirror.
+    expect(saved.activeTimer).toEqual({ taskId: 'a', startedAt: 111 })
   })
 })
 

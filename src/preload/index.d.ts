@@ -24,8 +24,7 @@ interface AIConfig {
   timeoutMs?: number
   /** Conversation to reopen when the AI view is entered. */
   lastConversationId?: string
-  /** Template picked for Gerar Tasks. Absent = the built-in default. */
-  taskTemplateId?: string
+
 }
 
 /** A tool call requested by the model, in the OpenAI/DeepSeek wire format. */
@@ -75,6 +74,13 @@ interface AIChatRequest {
 interface TokenUsage {
   promptTokens: number
   completionTokens: number
+  /**
+   * Of promptTokens, how many the provider served from its own prompt cache
+   * (DeepSeek's prompt_cache_hit_tokens, OpenAI's
+   * prompt_tokens_details.cached_tokens). Absent = the provider didn't report
+   * a cache figure at all — unknown, not a confirmed 0% hit rate.
+   */
+  cachedPromptTokens?: number
 }
 
 /** Totals for a slice of the usage log. */
@@ -86,6 +92,10 @@ interface UsageBucket {
   cost: number
   /** Calls with no price attached; their spend is unknown, not zero. */
   unpricedCalls: number
+  /** Sum of cachedPromptTokens over calls whose provider reported a cache figure. */
+  cachedPromptTokens: number
+  /** Of promptTokens, the portion belonging to calls that reported a cache figure. */
+  cacheReportedPromptTokens: number
 }
 
 /** One logged model call. */
@@ -96,6 +106,8 @@ interface UsageLogEntry {
   completionTokens: number
   /** USD at the prices configured when the call ran. Absent = unknown. */
   cost?: number
+  /** See TokenUsage.cachedPromptTokens. Absent = the provider reported none. */
+  cachedPromptTokens?: number
 }
 
 interface UsageSummary {
@@ -109,12 +121,10 @@ interface UsageSummary {
 /** A page fetched for the assistant, or why it wasn't. */
 type WebFetchResult = { content: string; url: string; truncated: boolean } | { error: string }
 
-/** A user-written prompt template for Gerar Tasks. */
-interface PromptTemplate {
-  id: string
+/** A user-written Skill (.md file in userData/skills/). */
+interface Skill {
   name: string
   body: string
-  createdAt: string
   updatedAt: string
 }
 
@@ -289,14 +299,11 @@ declare global {
           get: (id: string) => Promise<{ dataUrl: string } | { error: string }>
           delete: (ids: string[]) => Promise<void>
         }
-        templates: {
-          list: () => Promise<PromptTemplate[]>
-          save: (input: {
-            id?: string
-            name: string
-            body: string
-          }) => Promise<{ template: PromptTemplate } | { error: string }>
-          delete: (id: string) => Promise<void>
+        skills: {
+          list: () => Promise<Skill[]>
+          save: (input: { name: string; body: string; oldName?: string }) => Promise<{ skill: Skill } | { error: string }>
+          delete: (name: string) => Promise<void>
+          import: () => Promise<{ skill: Skill } | { error: string }>
         }
         models: (request: AIModelsRequest) => Promise<AIModelsResponse>
         chat: (request: AIChatRequest) => Promise<AIChatResponse>
