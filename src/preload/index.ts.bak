@@ -53,7 +53,6 @@ interface CodeRunSummary {
     promptTokens: number
     completionTokens: number
   }
-  autoApprove?: boolean
 }
 
 /** Totals for a slice of the usage log. `unpricedCalls` are calls with no price. */
@@ -175,8 +174,7 @@ const api = {
         projectId?: string | null
         title: string
         body: string
-      }): Promise<{ ok: true } | { error: string }> =>
-        ipcRenderer.invoke('ai:memory:handoff', input)
+      }): Promise<{ ok: true } | { error: string }> => ipcRenderer.invoke('ai:memory:handoff', input)
     },
     // Lists the provider's models (GET /models) through the main process.
     models: (request: {
@@ -260,39 +258,24 @@ const api = {
         decisoes?: string[]
         convId?: string
         projectId?: string | null
-        autoApprove?: boolean
-      }): Promise<{
-        success: boolean
-        agent?: string
-        dir?: string
-        runId?: string
-        error?: string
-      }> => ipcRenderer.invoke('ai:code-agent:run', request),
+      }): Promise<{ success: boolean; agent?: string; dir?: string; runId?: string; error?: string }> =>
+        ipcRenderer.invoke('ai:code-agent:run', request),
       stop: (runId?: string): Promise<void> => ipcRenderer.invoke('ai:code-agent:stop', runId),
       // Answer an approval card the loop is parked on (native agent).
       approve: (id: string, approved: boolean): Promise<void> =>
         ipcRenderer.invoke('ai:code-agent:approve-response', id, approved),
-      setAuto: (runId: string, enabled: boolean): Promise<void> =>
-        ipcRenderer.invoke('ai:code-agent:set-auto', runId, enabled),
       status: (): Promise<{
         running: boolean
         log: string
         model?: string
         hint: { title: string; detail: string; command?: string } | null
-        progress?: {
-          step: number
-          maxSteps: number
-          promptTokens: number
-          completionTokens: number
-        }
+        progress?: { step: number; maxSteps: number; promptTokens: number; completionTokens: number }
         /** All live runs, for multi-agent support. `runs.length > 0` replaces `running`. */
         runs: CodeRunSummary[]
       }> => ipcRenderer.invoke('ai:code-agent:status'),
       // What a run changed. Accepts optional runId to target a specific run;
       // without it uses the first active run's base.
-      diff: (
-        runId?: string
-      ): Promise<{
+      diff: (runId?: string): Promise<{
         patch: string
         files: { path: string; added: number; removed: number }[]
         truncated: boolean
@@ -307,66 +290,42 @@ const api = {
         ipcRenderer.invoke('ai:code-agent:run-get', id),
       // Output carries runId to distinguish concurrent runs.
       onOutput: (cb: (payload: { runId: string; chunk: string }) => void) => {
-        const handler = (
-          _: Electron.IpcRendererEvent,
-          payload: { runId: string; chunk: string }
-        ): void => cb(payload)
+        const handler = (_: Electron.IpcRendererEvent, payload: { runId: string; chunk: string }): void => cb(payload)
         ipcRenderer.on('ai:code-agent:output', handler)
         return () => ipcRenderer.removeListener('ai:code-agent:output', handler)
       },
       // Fires immediately when a run starts — before any output, so the UI can
       // light indicators without waiting for the first chunk.
       onStarted: (cb: (payload: { runId: string; dir: string }) => void) => {
-        const handler = (
-          _: Electron.IpcRendererEvent,
-          payload: { runId: string; dir: string }
-        ): void => cb(payload)
+        const handler = (_: Electron.IpcRendererEvent, payload: { runId: string; dir: string }): void => cb(payload)
         ipcRenderer.on('ai:code-agent:started', handler)
         return () => ipcRenderer.removeListener('ai:code-agent:started', handler)
       },
       // Fires once a finished run has been written to the archive — later than
       // onExit, which doesn't wait for the diff that snapshot needs.
       onArchived: (cb: (payload: { runId: string; id: string }) => void) => {
-        const handler = (
-          _: Electron.IpcRendererEvent,
-          payload: { runId: string; id: string }
-        ): void => cb(payload)
+        const handler = (_: Electron.IpcRendererEvent, payload: { runId: string; id: string }): void => cb(payload)
         ipcRenderer.on('ai:code-agent:archived', handler)
         return () => ipcRenderer.removeListener('ai:code-agent:archived', handler)
       },
       // Live progress during a run: the step and the running token total, for
       // the panel's "Passo X/Y · Zk tokens" counter.
       onProgress: (
-        cb: (p: {
-          runId: string
-          step: number
-          maxSteps: number
-          promptTokens: number
-          completionTokens: number
-        }) => void
+        cb: (p: { runId: string; step: number; maxSteps: number; promptTokens: number; completionTokens: number }) => void
       ) => {
         const handler = (_: Electron.IpcRendererEvent, p: Parameters<typeof cb>[0]): void => cb(p)
         ipcRenderer.on('ai:code-agent:progress', handler)
         return () => ipcRenderer.removeListener('ai:code-agent:progress', handler)
       },
       onExit: (cb: (payload: { runId: string; code: number }) => void) => {
-        const handler = (
-          _: Electron.IpcRendererEvent,
-          payload: { runId: string; code: number }
-        ): void => cb(payload)
+        const handler = (_: Electron.IpcRendererEvent, payload: { runId: string; code: number }): void => cb(payload)
         ipcRenderer.on('ai:code-agent:exit', handler)
         return () => ipcRenderer.removeListener('ai:code-agent:exit', handler)
       },
       // Structured tool events (native agent): a tool call being run, then its
       // result summary — so the panel can show the run's steps live (task 6/11).
       onToolEvent: (
-        cb: (ev: {
-          runId: string
-          phase: 'call' | 'result'
-          name: string
-          args?: Record<string, unknown>
-          summary?: string
-        }) => void
+        cb: (ev: { runId: string; phase: 'call' | 'result'; name: string; args?: Record<string, unknown>; summary?: string }) => void
       ) => {
         const handler = (_: Electron.IpcRendererEvent, ev: Parameters<typeof cb>[0]): void => cb(ev)
         ipcRenderer.on('ai:code-agent:tool', handler)
@@ -387,28 +346,17 @@ const api = {
           irreversivel?: boolean
         }) => void
       ) => {
-        const handler = (_: Electron.IpcRendererEvent, req: Parameters<typeof cb>[0]): void =>
-          cb(req)
+        const handler = (_: Electron.IpcRendererEvent, req: Parameters<typeof cb>[0]): void => cb(req)
         ipcRenderer.on('ai:code-agent:approve-request', handler)
         return () => ipcRenderer.removeListener('ai:code-agent:approve-request', handler)
       },
       // A recognised environment failure hit mid-run (e.g. the sandbox couldn't
       // start) — pushed so the panel's hint card can appear without waiting for
       // the run to exit. `status().hint` carries the same value for a late mount.
-      onHint: (
-        cb: (hint: { runId: string; title: string; detail: string; command?: string }) => void
-      ) => {
-        const handler = (_: Electron.IpcRendererEvent, hint: Parameters<typeof cb>[0]): void =>
-          cb(hint)
+      onHint: (cb: (hint: { runId: string; title: string; detail: string; command?: string }) => void) => {
+        const handler = (_: Electron.IpcRendererEvent, hint: Parameters<typeof cb>[0]): void => cb(hint)
         ipcRenderer.on('ai:code-agent:hint', handler)
         return () => ipcRenderer.removeListener('ai:code-agent:hint', handler)
-      },
-      // Fires when auto-approval is toggled for a run, so the UI can reflect it.
-      onAutoChanged: (cb: (payload: { runId: string; autoApprove: boolean }) => void) => {
-        const handler = (_: Electron.IpcRendererEvent, payload: Parameters<typeof cb>[0]): void =>
-          cb(payload)
-        ipcRenderer.on('ai:code-agent:auto-changed', handler)
-        return () => ipcRenderer.removeListener('ai:code-agent:auto-changed', handler)
       }
     },
     // The ai-jail sandbox for the code agent (see main/ai-jail.ts).
@@ -509,15 +457,10 @@ const api = {
     // User-written Skills (.md files in userData/skills/).
     skills: {
       list: (): Promise<Skill[]> => ipcRenderer.invoke('ai:skills:list'),
-      save: (input: {
-        name: string
-        body: string
-        oldName?: string
-      }): Promise<{ skill: Skill } | { error: string }> =>
+      save: (input: { name: string; body: string; oldName?: string }): Promise<{ skill: Skill } | { error: string }> =>
         ipcRenderer.invoke('ai:skills:save', input),
       delete: (name: string): Promise<void> => ipcRenderer.invoke('ai:skills:delete', name),
-      import: (): Promise<{ skill: Skill } | { error: string }> =>
-        ipcRenderer.invoke('ai:skills:import')
+      import: (): Promise<{ skill: Skill } | { error: string }> => ipcRenderer.invoke('ai:skills:import')
     },
     // Persisted chat history (ai-conversations.json in userData).
     conversations: {

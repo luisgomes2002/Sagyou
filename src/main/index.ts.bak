@@ -141,8 +141,6 @@ interface CodeRunState {
   maxSteps: number
   /** Approvals the loop is waiting on, keyed by request id. */
   pendingApprovals: Map<string, (approved: boolean) => void>
-  /** Whether auto-approval mode is on for this run. */
-  autoApprove: boolean
 }
 
 /** All runs in flight, keyed by run id. */
@@ -1573,8 +1571,6 @@ app.whenReady().then(() => {
         convId?: string
         /** The project whose memory to brief the agent with (shared with the chat). */
         projectId?: string | null
-        /** Start in auto-approval mode — approve() returns true without IPC. */
-        autoApprove?: boolean
       }
     ) => {
       const dir = request.path
@@ -1661,8 +1657,7 @@ app.whenReady().then(() => {
         usage: { promptTokens: 0, completionTokens: 0 },
         step: 0,
         maxSteps: CODE_AGENT_MAX_STEPS,
-        pendingApprovals: new Map(),
-        autoApprove: typeof request.autoApprove === 'boolean' ? request.autoApprove : false
+        pendingApprovals: new Map()
       }
       codeRuns.set(runId, run)
       codeAgentDirs.add(dir)
@@ -1793,7 +1788,6 @@ app.whenReady().then(() => {
         args: Record<string, unknown>
       }): Promise<boolean> => {
         if (run.abort) return false
-        if (run.autoApprove) return true
         let oldContent: string | null = null
         if (call.name === 'escrever_arquivo' && typeof call.args.caminho === 'string') {
           const abs = confineToRoot(dir, call.args.caminho)
@@ -1810,13 +1804,7 @@ app.whenReady().then(() => {
           if (run.abort) return resolveApproval(false)
           const id = randomUUID()
           run.pendingApprovals.set(id, resolveApproval)
-          send('ai:code-agent:approve-request', {
-            runId,
-            id,
-            name: call.name,
-            args: call.args,
-            ...desc
-          })
+          send('ai:code-agent:approve-request', { runId, id, name: call.name, args: call.args, ...desc })
         })
       }
 
@@ -1923,7 +1911,9 @@ app.whenReady().then(() => {
           // that spent money before failing still reports what it cost. Only
           // when something was billed (a run that never reached the model is 0).
           if (run.usage.promptTokens || run.usage.completionTokens) {
-            emit(`\n${formatRunSummary(run.usage, run.step, costAt(run.usage, cfg))}\n`)
+            emit(
+              `\n${formatRunSummary(run.usage, run.step, costAt(run.usage, cfg))}\n`
+            )
           }
           const secs = ((Date.now() - run.startedAt) / 1000).toFixed(1)
           emit(`\n[sagyou] duração: ${secs}s\n`)
@@ -1968,18 +1958,6 @@ app.whenReady().then(() => {
       }
     }
   })
-  // Toggle auto-approval for a running code agent. When on, approve() returns
-  // true without sending IPC — the renderer gets ai:code-agent:auto-changed
-  // so the UI can reflect the new state.
-  ipcMain.handle('ai:code-agent:set-auto', (_, runId: string, enabled: boolean) => {
-    const run = codeRuns.get(runId)
-    if (!run) return
-    run.autoApprove = enabled === true
-    mainWindow?.webContents.send('ai:code-agent:auto-changed', {
-      runId,
-      autoApprove: run.autoApprove
-    })
-  })
 
   // `runs` is an array of run summaries — a panel that wasn't mounted catches
   // up per-run. Keep old fields for backward compat (tests and code read
@@ -2010,7 +1988,6 @@ app.whenReady().then(() => {
         log: r.log,
         model: r.model,
         hint: r.hint,
-        autoApprove: r.autoApprove,
         progress: {
           step: r.step,
           maxSteps: r.maxSteps,
@@ -2051,11 +2028,7 @@ app.whenReady().then(() => {
    * Past runs of one conversation, newest first. Index only — the logs and
    * diffs stay on disk until a row is actually opened.
    */
-  ipcMain.handle('ai:code-agent:runs', (_, convId?: string) =>
-    typeof convId === 'string' && convId
-      ? runsForConv(loadRunIndex(), convId)
-      : sortRuns(loadRunIndex())
-  )
+  ipcMain.handle('ai:code-agent:runs', (_, convId?: string) => typeof convId === 'string' && convId ? runsForConv(loadRunIndex(), convId) : sortRuns(loadRunIndex()))
 
   /**
    * One archived run, log and diff included. Frozen at the moment the agent

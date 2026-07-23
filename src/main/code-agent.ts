@@ -515,7 +515,7 @@ export async function dirTree(root: string, cap = 400): Promise<string> {
  *  steps per edit, and a run that succeeds still stops early, so the ceiling only
  *  bites on a genuinely failing run); the real fix is spending fewer steps, not a
  *  higher ceiling. */
-export const CODE_AGENT_MAX_STEPS = 60
+export const CODE_AGENT_MAX_STEPS = 100
 
 /** Everything the loop needs from the outside, all injectable for tests. */
 export interface RunAgentDeps {
