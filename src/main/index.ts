@@ -14,7 +14,10 @@ import {
   constants
 } from 'fs'
 import { homedir } from 'os'
+import { exec as execCallback } from 'child_process'
+import { promisify } from 'util'
 import { readFile } from 'fs/promises'
+const execAsync = promisify(execCallback)
 import { randomUUID } from 'crypto'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import OpenAI from 'openai'
@@ -143,6 +146,8 @@ interface CodeRunState {
   pendingApprovals: Map<string, (approved: boolean) => void>
   /** Whether auto-approval mode is on for this run. */
   autoApprove: boolean
+  /** Se não-null, o agente roda num git worktree isolado em vez do dir original. */
+  worktreeDir: string | null
 }
 
 /** All runs in flight, keyed by run id. */
@@ -1581,8 +1586,40 @@ app.whenReady().then(() => {
       if (!dir || !existsSync(dir) || !statSync(dir).isDirectory()) {
         return { success: false, error: 'Diretório do projeto inválido' }
       }
-      if (codeAgentDirs.has(dir))
-        return { success: false, error: 'Já existe um agente de código rodando neste diretório' }
+      // Cleanup worktrees órfãos (que sobraram de uma queda do app)
+      try {
+        const { stdout: wtList } = await execAsync(`cd "${dir}" && git worktree list --porcelain 2>nul`)
+        for (const line of wtList.split('\n')) {
+          if (line.startsWith('worktree ') && line.includes('.sagyou-wt-')) {
+            const orphanPath = line.slice(9).trim()
+            if (orphanPath && existsSync(orphanPath)) {
+              await execAsync(`cd "${dir}" && git worktree remove --force "${orphanPath}" 2>nul`).catch(() => {})
+            }
+          }
+        }
+      } catch {
+        // Se não é git ou não há worktrees, ignora
+      }
+
+      // Fase 2(b): se o dir já está ocupado, cria um git worktree isolado
+      const runId = randomUUID()
+      let worktreeDir: string | null = null
+      if (codeAgentDirs.has(dir)) {
+        worktreeDir = join(dir, `.sagyou-wt-${runId}`)
+        try {
+          const { stdout: wtCheck } = await execAsync(`git -C "${dir}" rev-parse --show-toplevel 2>nul || echo not-git`)
+          if (wtCheck.trim() === 'not-git') throw new Error('Not a git repo')
+          await execAsync(`cd "${dir}" && git worktree add --detach "${worktreeDir}" HEAD 2>/dev/null`)
+        } catch {
+          return {
+            success: false,
+            error:
+              'Já existe um agente de código rodando neste diretório e não foi possível criar um worktree. ' +
+              'Finalize o agente atual primeiro ou certifique-se de que o projeto é um repositório git.'
+          }
+        }
+      }
+      const effectiveDir = worktreeDir ?? dir
       const task = typeof request.task === 'string' ? request.task.trim() : ''
       if (!task) return { success: false, error: 'Tarefa vazia' }
       // Files the caller pinned so the agent skips discovery. Confine each to the
@@ -1597,10 +1634,10 @@ app.whenReady().then(() => {
         ? request.files.filter((f): f is string => typeof f === 'string' && f.trim() !== '')
         : []
       const files = requestedFiles
-        .map((f) => confineToRoot(dir, f))
+        .map((f) => confineToRoot(effectiveDir, f))
         .filter((f): f is string => f !== null && existsSync(f) && statSync(f).isFile())
       const droppedFiles = requestedFiles.filter((f) => {
-        const abs = confineToRoot(dir, f)
+        const abs = confineToRoot(effectiveDir, f)
         return abs === null || !existsSync(abs) || !statSync(abs).isFile()
       })
       // Scope decisions the chat already settled with the user — plain strings,
@@ -1645,7 +1682,7 @@ app.whenReady().then(() => {
       }
 
       // Create the run state and register it — a new run starts fresh.
-      const runId = randomUUID()
+      // (runId foi criado acima, antes do worktree)
       const run: CodeRunState = {
         id: runId,
         dir,
@@ -1655,14 +1692,15 @@ app.whenReady().then(() => {
         startedAt: Date.now(),
         abort: false,
         log: '',
-        base: await captureBase(dir),
+        base: await captureBase(effectiveDir),
         hint: null,
         model: caCfg.model,
         usage: { promptTokens: 0, completionTokens: 0 },
         step: 0,
         maxSteps: CODE_AGENT_MAX_STEPS,
         pendingApprovals: new Map(),
-        autoApprove: typeof request.autoApprove === 'boolean' ? request.autoApprove : false
+        autoApprove: typeof request.autoApprove === 'boolean' ? request.autoApprove : false,
+        worktreeDir: worktreeDir
       }
       codeRuns.set(runId, run)
       codeAgentDirs.add(dir)
@@ -1688,7 +1726,7 @@ app.whenReady().then(() => {
 
       // Opening banner: the REAL model in use (task 11), and which files were
       // pinned vs left for the agent to discover with buscar_no_codigo.
-      const rel = files.map((f) => relative(dir, f) || f)
+      const rel = files.map((f) => relative(effectiveDir, f) || f)
       emit(`[sagyou] agente nativo · modelo: ${caCfg.model} @ ${caCfg.baseUrl}\n`)
       // Say plainly whether the shell is confined. `sandboxOn && jail.available`
       // is the only combination that wraps commands (the gate above refused the
@@ -1728,7 +1766,7 @@ app.whenReady().then(() => {
         const inlined: InlinedFile[] = []
         for (const abs of files) {
           try {
-            inlined.push({ path: relative(dir, abs) || abs, content: await readFile(abs, 'utf-8') })
+            inlined.push({ path: relative(effectiveDir, abs) || abs, content: await readFile(abs, 'utf-8') })
           } catch {
             /* unreadable pinned file — the agent can still ler_arquivo it on demand */
           }
@@ -1748,7 +1786,7 @@ app.whenReady().then(() => {
       // Assemble the system prompt: GUIDE.md/AGENTS.md if the repo has one, a
       // compact file tree, and the pinned files. Best-effort — a missing guide
       // or an unreadable tree just leaves that section out.
-      const [tree, guide] = [await dirTree(dir), readProjectGuide(dir)]
+      const [tree, guide] = [await dirTree(effectiveDir), readProjectGuide(effectiveDir)]
       // Brief the agent with this project's memory (shared with the chat), so a
       // code run benefits from decisions/gotchas recorded in conversation.
       // Best-effort: a memory failure must never abort a run the user asked for.
@@ -1796,7 +1834,7 @@ app.whenReady().then(() => {
         if (run.autoApprove) return true
         let oldContent: string | null = null
         if (call.name === 'escrever_arquivo' && typeof call.args.caminho === 'string') {
-          const abs = confineToRoot(dir, call.args.caminho)
+          const abs = confineToRoot(effectiveDir, call.args.caminho)
           if (abs && existsSync(abs) && statSync(abs).isFile()) {
             try {
               oldContent = await readFile(abs, 'utf-8')
@@ -1872,7 +1910,7 @@ app.whenReady().then(() => {
           const result = await runCodeAgent(
             systemPrompt,
             task,
-            { root: dir, run: runner },
+            { root: effectiveDir, run: runner },
             {
               callModel: (messages, tools) => callCodeModel(caCfg, messages, tools),
               approve,
@@ -1942,12 +1980,37 @@ app.whenReady().then(() => {
             promptTokens: run.usage.promptTokens,
             completionTokens: run.usage.completionTokens
           }
+          // Fase 2(b): se usou worktree, mescla de volta e remove
+          if (run.worktreeDir) {
+            try {
+              const { stdout: patch } = await execAsync(`cd "${run.worktreeDir}" && git diff HEAD`)
+              if (patch.trim()) {
+                const fileCount = patch.split('\n').filter(l => l.startsWith('diff --git')).length
+                const tmpPatch = join(dir, '.sagyou-wt-patch.diff')
+                writeFileSync(tmpPatch, patch, 'utf-8')
+                try {
+                  await execAsync(`cd "${dir}" && git apply --whitespace=nowarn --ignore-space-change --ignore-whitespace "${tmpPatch}"`)
+                } finally {
+                  try { unlinkSync(tmpPatch) } catch {}
+                }
+                emit(`\n[worktree] ${fileCount} arquivo(s) mesclado(s) do worktree para o diretório original\n`)
+              }
+            } catch (e) {
+              emit(`\n[aviso] falha ao mesclar worktree: ${e instanceof Error ? e.message : 'erro desconhecido'}\n`)
+            } finally {
+              try {
+                await execAsync(`cd "${dir}" && git worktree remove --force "${run.worktreeDir}" 2>/dev/null`)
+              } catch {
+                // cleanup falhou — não crítico, o worktree fica órfão mas não afeta o app
+              }
+            }
+          }
           codeRuns.delete(runId)
           codeAgentDirs.delete(dir)
         }
       })()
 
-      return { success: true, agent: caCfg.model, dir, runId }
+      return { success: true, agent: caCfg.model, dir, runId, worktreeDir }
     }
   )
 
