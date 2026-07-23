@@ -193,6 +193,20 @@ interface CodeAgentDiff {
   error?: string
 }
 
+/** A live (in-flight) code-agent run summary, as returned by status(). */
+interface CodeRunSummary {
+  id: string
+  dir: string
+  task: string
+  convId: string | null
+  agent: string
+  startedAt: number
+  log: string
+  model?: string
+  hint: AgentHint | null
+  progress?: AgentProgress
+}
+
 /** A finished code-agent run, as listed in the run picker. */
 interface AgentRunMeta {
   id: string
@@ -324,15 +338,16 @@ declare global {
             convId?: string
             /** The project whose memory to brief the agent with. */
             projectId?: string | null
-          }) => Promise<{ success: boolean; agent?: string; dir?: string; error?: string }>
-          stop: () => Promise<void>
+          }) => Promise<{ success: boolean; agent?: string; dir?: string; runId?: string; error?: string }>
+          /** Stop one run by id, or all when omitted. */
+          stop: (runId?: string) => Promise<void>
           /** Answer an approval card the native agent's loop is parked on. */
           approve: (id: string, approved: boolean) => Promise<void>
           /**
-           * `log` is the buffered output, so a remounted panel can catch up.
-           * `model` is the real model in use this run (native agent).
-           * `hint` is a recognised environment failure (with its fix) for a run
-           * that reported success while doing nothing — null when there wasn't one.
+           * `running` is true while any run is active.
+           * `runs` lists every live run for multi-agent support.
+           * Old singleton fields (`log`, `model`, `hint`, `progress`) are
+           * kept for backward compat but carry no data — use `runs` instead.
            */
           status: () => Promise<{
             running: boolean
@@ -341,9 +356,11 @@ declare global {
             hint: AgentHint | null
             /** Live step + running token total, so a late-mounting panel catches up. */
             progress?: AgentProgress
+            /** All live runs. `runs.length > 0` is the canonical "any agent running?" check. */
+            runs: CodeRunSummary[]
           }>
-          /** What the last run changed, measured from a base taken before it started. */
-          diff: () => Promise<CodeAgentDiff>
+          /** What a run changed. Pass `runId` for a specific run; omit for the first active. */
+          diff: (runId?: string) => Promise<CodeAgentDiff>
           /** Past runs of one conversation, newest first. Metadata only. */
           runs: (convId: string) => Promise<AgentRunMeta[]>
           /**
@@ -352,15 +369,19 @@ declare global {
            * as the agent's work.
            */
           runGet: (id: string) => Promise<AgentRunSnapshot | null>
-          onOutput: (cb: (chunk: string) => void) => () => void
-          onExit: (cb: (code: number) => void) => () => void
+          /** Live output stream. Payload carries runId to distinguish concurrent runs. */
+          onOutput: (cb: (payload: { runId: string; chunk: string }) => void) => () => void
+          /** Fires immediately when a run starts — before any output. */
+          onStarted: (cb: (payload: { runId: string; dir: string }) => void) => () => void
+          onExit: (cb: (payload: { runId: string; code: number }) => void) => () => void
           /** A finished run has been archived and can now be listed. */
-          onArchived: (cb: (id: string) => void) => () => void
+          onArchived: (cb: (payload: { runId: string; id: string }) => void) => () => void
           /** Live progress during a run (step + running token total). */
-          onProgress: (cb: (p: AgentProgress) => void) => () => void
+          onProgress: (cb: (p: { runId: string } & AgentProgress) => void) => () => void
           /** A tool call being run, then its result summary (native agent). */
           onToolEvent: (
             cb: (ev: {
+              runId: string
               phase: 'call' | 'result'
               name: string
               args?: Record<string, unknown>
@@ -370,6 +391,7 @@ declare global {
           /** The loop needs approval for a write/command before it runs. */
           onApproveRequest: (
             cb: (req: {
+              runId: string
               id: string
               name: string
               args: Record<string, unknown>
@@ -387,7 +409,7 @@ declare global {
             }) => void
           ) => () => void
           /** A recognised environment failure hit mid-run (sandbox couldn't start, …). */
-          onHint: (cb: (hint: AgentHint) => void) => () => void
+          onHint: (cb: (hint: { runId: string } & AgentHint) => void) => () => void
         }
         jail: {
           status: (refresh?: boolean) => Promise<{

@@ -151,19 +151,26 @@ export default function App() {
   // over from the board; AIView is unmounted until the switch below lands, so
   // the text is parked here rather than pushed into a component that isn't there.
   const [aiPrefill, setAiPrefill] = useState<string | null>(null)
-  // Global indicator: is the external code agent (codex) running?
-  const [codeAgentRunning, setCodeAgentRunning] = useState(false)
+  // Count of live code-agent runs (supports N concurrent agents in different dirs).
+  const [codeAgentRunCount, setCodeAgentRunCount] = useState(0)
+  const codeAgentRunning = codeAgentRunCount > 0
 
   useEffect(() => { loadData() }, [loadData])
 
   // Track the code agent across all views (App never unmounts, unlike AIView).
   useEffect(() => {
-    window.electronAPI.ai.codeAgent.status().then((s) => setCodeAgentRunning(s.running))
-    const offOutput = window.electronAPI.ai.codeAgent.onOutput(() => setCodeAgentRunning(true))
-    const offExit = window.electronAPI.ai.codeAgent.onExit(() => setCodeAgentRunning(false))
+    window.electronAPI.ai.codeAgent.status().then((s) => setCodeAgentRunCount(s.runs.length))
+    // onOutput now receives {runId, chunk} — any activity across any run lights the banner.
+    const offOutput = window.electronAPI.ai.codeAgent.onOutput(() => setCodeAgentRunCount((n) => (n > 0 ? n : 1)))
+    const offStarted = window.electronAPI.ai.codeAgent.onStarted(() => setCodeAgentRunCount((n) => (n > 0 ? n : 1)))
+    // onExit now receives {runId, code} — a run ended, but others may still be active.
+    const offExit = window.electronAPI.ai.codeAgent.onExit(() => {
+      window.electronAPI.ai.codeAgent.status().then((s) => setCodeAgentRunCount(s.runs.length))
+    })
     return () => {
       offOutput()
       offExit()
+      offStarted()
     }
   }, [])
 
@@ -661,14 +668,17 @@ export default function App() {
         />
       )}
 
-      {/* Global indicator: code agent running in the background (visible on any view) */}
+      {/* Global indicator: code agent(s) running in the background (visible on any view) */}
       {codeAgentRunning && (
         <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg bg-[#13151f] border border-amber-500/40 shadow-2xl">
           <span className="relative flex w-2.5 h-2.5">
             <span className="absolute inline-flex w-full h-full rounded-full bg-amber-400 opacity-60 animate-ping" />
             <span className="relative inline-flex w-2.5 h-2.5 rounded-full bg-amber-400" />
           </span>
-          <span className="text-xs font-medium text-amber-300">Agente de código rodando</span>
+          <span className="text-xs font-medium text-amber-300">
+            Agente de código rodando
+            {codeAgentRunCount > 1 ? ` em ${codeAgentRunCount} projetos` : ''}
+          </span>
           <button
             onClick={() => window.electronAPI.ai.codeAgent.stop()}
             className="ml-1 px-2 py-0.5 rounded text-[11px] text-red-400 hover:text-red-300 hover:bg-red-400/10 transition-colors"

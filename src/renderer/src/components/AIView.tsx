@@ -597,7 +597,7 @@ export function AIView({
       // there to be asked for.
       if (s.log && !s.running) void loadDiff()
     })
-    const offOutput = window.electronAPI.ai.codeAgent.onOutput((chunk) => {
+    const offOutput = window.electronAPI.ai.codeAgent.onOutput(({ chunk }) => {
       setAgentRunning(true)
       // A new run reopens the panel: output arriving into a bar the user
       // collapsed an hour ago is output nobody sees. Closing is about the run
@@ -605,6 +605,13 @@ export function AIView({
       setAgentPanelOpen(true)
       setShowLog(true)
       setAgentLog((l) => (l + chunk).slice(-8000)) // cap to keep the panel light
+    })
+    // Acende os indicadores imediatamente — sem esperar o primeiro output.
+    const offStarted = window.electronAPI.ai.codeAgent.onStarted(({ runId }) => {
+      setAgentRunning(true)
+      setAgentPanelOpen(true)
+      setShowLog(true)
+      setAgentLog((l) => l || `[agente iniciado — ${runId.slice(0, 8)}]\n`)
     })
     // The loop is parked on a write/command: raise the card (and reopen the
     // panel, same reason as onOutput). Answered below via codeAgent.approve.
@@ -662,6 +669,7 @@ export function AIView({
       offExit()
       offArchived()
       offHint()
+      offStarted()
     }
   }, [])
 
@@ -1380,6 +1388,7 @@ export function AIView({
                           {spend.total.unpricedCalls === 1 ? '' : 's'} sem preço configurado na
                           época — não {spend.total.unpricedCalls === 1 ? 'entra' : 'entram'} no
                           total.
+
                         </p>
                       )}
 
@@ -1806,11 +1815,11 @@ export function AIView({
             <p className="mt-2 text-[11px] leading-relaxed text-[#6b7280]">
               O <b>modelo principal</b> (acima) responde tudo no chat. Aqui você pode definir um{' '}
               <b>segundo modelo, mais forte, só para mensagens de código</b>: quando você escreve
-              algo como “tem um bug aqui”, “refatora essa função” ou “otimiza isso”, a resposta usa
-              este modelo; perguntas comuns (“quantas tasks fiz essa semana?”) continuam no
+              algo como "tem um bug aqui", "refatora essa função" ou "otimiza isso", a resposta usa
+              este modelo; perguntas comuns ("quantas tasks fiz essa semana?") continuam no
               principal — assim você só paga o modelo caro quando o assunto é código. Vale para o
               chat <b>conversar e analisar</b>; quem de fato <b>edita os arquivos</b> é o Agente de
-              Código (mais abaixo). Deixe em “mesmo do principal” para usar um único modelo em tudo.
+              Código (mais abaixo). Deixe em "mesmo do principal" para usar um único modelo em tudo.
             </p>
             <div className="mt-3 flex items-start gap-3">
               <label className="flex flex-col gap-1 shrink-0 w-40">

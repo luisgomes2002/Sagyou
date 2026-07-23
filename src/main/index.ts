@@ -111,54 +111,58 @@ import icon from '../../resources/icon.png?asset'
 let mainWindow: BrowserWindow | null = null
 
 /**
- * What the code agent has printed so far, kept on this side.
+ * The live state of one code-agent run.
  *
- * The agent is a child process that can run for many minutes — a code review is
- * the whole point of it — and the user is meant to go on using the app while it
- * works. But `ai:code-agent:output` is a live stream to whoever is listening,
- * and the only thing accumulating it was `agentLog` inside AIView, which is
- * unmounted the moment another view is active: every chunk emitted while the
- * user was elsewhere went to a listener that no longer existed, and an agent
- * that finished while they were away left nothing behind at all.
- *
- * So the output is buffered where the process itself lives. The stream stays as
- * it is (a mounted panel still updates live); this is what a returning panel
- * reads back through `ai:code-agent:status`, and it survives the renderer
- * reloading too.
+ * Before N-agent support this was a set of module-level singletons — one run
+ * at a time. Now the app can host multiple concurrent runs in different
+ * directories, each with its own log, base, approval queue, and usage counter.
  */
-let codeAgentLog = ''
-
-/**
- * What the tree looked like when the current agent run started.
- *
- * Captured before the spawn, because `git diff` after the fact cannot tell the
- * agent's work from whatever the user already had in progress — and presenting
- * a user's own half-finished edits as something an AI did to their code is
- * worse than showing no diff at all. Null when the directory isn't a git repo,
- * which is a legitimate state: the diff is simply unavailable.
- */
-let codeAgentBase: AgentBase | null = null
-
-/**
- * Identity of the run in flight, so its output can be archived under the
- * conversation that asked for it.
- *
- * Set at spawn and consumed once by `archiveAgentRun` — nulled there, because
- * both exit paths ('error' and 'close') can fire for one run and a run must not
- * be archived twice. Null between runs.
- */
-let codeAgentRun: {
+interface CodeRunState {
   id: string
-  convId: string | null
-  /** The model the run used — shown by the panel and the run picker. */
-  agent: string
   dir: string
+  convId: string | null
+  /** The real model name this run is using, shown by the panel and picker. */
+  agent: string
   task: string
   startedAt: number
-} | null = null
+  /** Set by stopCodeAgent; the loop checks this between steps. */
+  abort: boolean
+  /** Buffered output, kept so a remounted panel can catch up. */
+  log: string
+  /** What the tree looked like before the agent touched it. */
+  base: AgentBase | null
+  /** A recognised environment failure, surfaced to the panel's hint card. */
+  hint: AgentHint | null
+  model: string
+  /** Tokens accumulated across this run's model calls. */
+  usage: TokenUsage
+  step: number
+  maxSteps: number
+  /** Approvals the loop is waiting on, keyed by request id. */
+  pendingApprovals: Map<string, (approved: boolean) => void>
+}
+
+/** All runs in flight, keyed by run id. */
+const codeRuns = new Map<string, CodeRunState>()
+
+/** Directories that currently have a code agent running — one run per dir. */
+const codeAgentDirs = new Set<string>()
 
 /**
- * Cap on the buffer above, matching the panel's own cap in AIView.
+ * Backward compat: the last finished run's state, kept after the run is cleaned
+ * from codeRuns. Mirrors the old module-level globals (codeAgentLog, codeAgentHint,
+ * etc.) so status() still returns data after a run ends — panels that poll status()
+ * after the exit event can still read the log and hint.
+ */
+let lastRunLog = ''
+let lastRunHint: AgentHint | null = null
+let lastRunModel: string | undefined
+let lastRunProgress:
+  | { step: number; maxSteps: number; promptTokens: number; completionTokens: number }
+  | undefined
+
+/**
+ * Cap on the per-run log buffer, matching the panel's own cap in AIView.
  *
  * Equal on purpose: leaving the view and coming back should show exactly what
  * staying would have shown. A generous main-side buffer would make the panel
@@ -166,9 +170,11 @@ let codeAgentRun: {
  */
 const MAX_AGENT_LOG = 8000
 
-/** Append to the buffer, keeping only the tail the panel can show. */
-function appendAgentLog(chunk: string): void {
-  codeAgentLog = (codeAgentLog + chunk).slice(-MAX_AGENT_LOG)
+/** Append to the run's buffer, keeping only the tail the panel can show. */
+function appendAgentLog(runId: string, chunk: string): void {
+  const run = codeRuns.get(runId)
+  if (!run) return
+  run.log = (run.log + chunk).slice(-MAX_AGENT_LOG)
 }
 
 /**
@@ -183,34 +189,6 @@ export interface AgentHint {
   /** A shell command that fixes it, offered for the user to run themselves. */
   command?: string
 }
-
-/** Set for the current run when its output matched a known failure. */
-let codeAgentHint: AgentHint | null = null
-
-// --- Native code agent (the loop in ./code-agent) ---
-//
-// The loop runs in-process — there is no child process:
-// and its tools reach the disk directly, so what stands in for "kill the child"
-// is an abort flag the loop checks between steps, plus rejecting any approval
-// the loop is parked on.
-let codeAgentRunning = false
-let codeAgentAbort = false
-/** The model actually in use this run, surfaced to the panel (task 11). */
-let codeAgentModel = ''
-/** Tokens accumulated across this run's model calls, for the live counter, the
- *  end-of-run summary, and the archived run. Reset when a run starts. */
-let codeAgentUsage: TokenUsage = { promptTokens: 0, completionTokens: 0 }
-/** The step the run is on and its cap, for the panel's "Passo X/Y" counter. */
-let codeAgentStep = 0
-let codeAgentMaxSteps = 0
-
-/**
- * Approvals the loop is waiting on, keyed by a request id sent to the renderer.
- * The renderer answers through `ai:code-agent:approve-response`, which resolves
- * the matching promise. Stopping the run rejects them all as denied — a loop
- * parked on a card the user will never see again must not hang forever.
- */
-const pendingApprovals = new Map<string, (approved: boolean) => void>()
 
 /** Longest content preview shipped to the approval card — enough to judge the
  *  write without inlining a whole file into the IPC payload every step. */
@@ -271,11 +249,22 @@ function describeCodeAction(
   return { resumo: name }
 }
 
-/** Stop the running agent: abort the loop and deny any parked approval. */
-function stopCodeAgent(): void {
-  codeAgentAbort = true
-  for (const resolve of pendingApprovals.values()) resolve(false)
-  pendingApprovals.clear()
+/** Stop one or all running agents: abort the loop and deny any parked approval. */
+function stopCodeAgent(runId?: string): void {
+  if (runId) {
+    const run = codeRuns.get(runId)
+    if (run) {
+      run.abort = true
+      for (const resolve of run.pendingApprovals.values()) resolve(false)
+      run.pendingApprovals.clear()
+    }
+  } else {
+    for (const run of codeRuns.values()) {
+      run.abort = true
+      for (const resolve of run.pendingApprovals.values()) resolve(false)
+      run.pendingApprovals.clear()
+    }
+  }
 }
 
 /**
@@ -745,12 +734,11 @@ function saveRunIndex(runs: AgentRunMeta[]): void {
  * folded into it. Best-effort throughout: a run that can't be archived must
  * never break the run itself, which already did the work the user asked for.
  */
-async function archiveAgentRun(exitCode: number): Promise<void> {
-  const run = codeAgentRun
+async function archiveAgentRun(runId: string, exitCode: number): Promise<void> {
+  const run = codeRuns.get(runId)
   if (!run) return
-  codeAgentRun = null
   try {
-    const diff = codeAgentBase ? await diffSince(codeAgentBase) : null
+    const diff = run.base ? await diffSince(run.base) : null
     const snapshot: AgentRunSnapshot = {
       id: run.id,
       convId: run.convId,
@@ -762,8 +750,8 @@ async function archiveAgentRun(exitCode: number): Promise<void> {
       exitCode,
       fileCount: diffFileCount(diff),
       // Frozen with the run so the picker can show what a past run cost.
-      tokens: { ...codeAgentUsage },
-      log: codeAgentLog,
+      tokens: { ...run.usage },
+      log: run.log,
       diff
     }
     const path = agentRunPath(run.id)
@@ -780,7 +768,7 @@ async function archiveAgentRun(exitCode: number): Promise<void> {
     // Announced separately from 'exit', which fires before this: the archive
     // costs a `git diff`, and the panel must not stay on "rodando" waiting for
     // it. This is what tells the run picker its new row exists.
-    mainWindow?.webContents.send('ai:code-agent:archived', meta.id)
+    mainWindow?.webContents.send('ai:code-agent:archived', { runId: run.id, id: meta.id })
     for (const gone of drop) {
       const p = agentRunPath(gone.id)
       if (p && existsSync(p)) {
@@ -794,6 +782,8 @@ async function archiveAgentRun(exitCode: number): Promise<void> {
   } catch {
     /* archiving is a convenience; the run itself already happened */
   }
+  // Run state already cleaned from codeRuns in the finally block;
+  // survivors (lastRunLog etc.) persist for status() backward compat.
 }
 
 // --- Skills (.md files in userData/skills/) ---
@@ -1563,7 +1553,7 @@ app.whenReady().then(() => {
     }
   })
 
-  // Launch an external code agent in the project directory. The renderer must
+  // Launch a native code agent in the project directory. The renderer must
   // have obtained user approval before calling this (it writes files / runs
   // commands). Output is streamed back via 'ai:code-agent:output'.
   ipcMain.handle(
@@ -1582,12 +1572,12 @@ app.whenReady().then(() => {
         projectId?: string | null
       }
     ) => {
-      if (codeAgentRunning)
-        return { success: false, error: 'Já existe um agente de código rodando' }
       const dir = request.path
       if (!dir || !existsSync(dir) || !statSync(dir).isDirectory()) {
         return { success: false, error: 'Diretório do projeto inválido' }
       }
+      if (codeAgentDirs.has(dir))
+        return { success: false, error: 'Já existe um agente de código rodando neste diretório' }
       const task = typeof request.task === 'string' ? request.task.trim() : ''
       if (!task) return { success: false, error: 'Tarefa vazia' }
       // Files the caller pinned so the agent skips discovery. Confine each to the
@@ -1649,47 +1639,45 @@ app.whenReady().then(() => {
         }
       }
 
-      // A new run starts a new log/state. Only reached once the request is known
-      // good, so a failed start can't wipe the output of the run before it.
-      codeAgentLog = ''
-      codeAgentHint = null
-      codeAgentAbort = false
-      codeAgentRunning = true
-      codeAgentModel = caCfg.model
-      codeAgentUsage = { promptTokens: 0, completionTokens: 0 }
-      codeAgentStep = 0
-      codeAgentMaxSteps = CODE_AGENT_MAX_STEPS
-      // Snapshot the tree BEFORE the agent touches it — after the fact there is
-      // no way to tell its work from what the user already had in progress.
-      codeAgentBase = await captureBase(dir)
+      // Create the run state and register it — a new run starts fresh.
+      const runId = randomUUID()
+      const run: CodeRunState = {
+        id: runId,
+        dir,
+        convId: typeof request.convId === 'string' && request.convId ? request.convId : null,
+        agent: caCfg.model || 'nativo',
+        task: taskLabel(task),
+        startedAt: Date.now(),
+        abort: false,
+        log: '',
+        base: await captureBase(dir),
+        hint: null,
+        model: caCfg.model,
+        usage: { promptTokens: 0, completionTokens: 0 },
+        step: 0,
+        maxSteps: CODE_AGENT_MAX_STEPS,
+        pendingApprovals: new Map()
+      }
+      codeRuns.set(runId, run)
+      codeAgentDirs.add(dir)
 
       const send = (channel: string, data: unknown): void =>
         mainWindow?.webContents.send(channel, data)
       // Push the live progress (step + running token total) to the panel's
       // counter. Cheap and idempotent; fired on each step and each usage report.
+      send('ai:code-agent:started', { runId, dir })
       const pushProgress = (): void =>
         send('ai:code-agent:progress', {
-          step: codeAgentStep,
-          maxSteps: codeAgentMaxSteps,
-          promptTokens: codeAgentUsage.promptTokens,
-          completionTokens: codeAgentUsage.completionTokens
+          runId,
+          step: run.step,
+          maxSteps: run.maxSteps,
+          promptTokens: run.usage.promptTokens,
+          completionTokens: run.usage.completionTokens
         })
       // Stream it and keep it: the panel may not be mounted to hear this.
       const emit = (chunk: string): void => {
-        appendAgentLog(chunk)
-        send('ai:code-agent:output', chunk)
-      }
-
-      const startedAt = Date.now()
-      // Identity for the archive written when this run finishes. `agent` carries
-      // the real model now (the panel and picker show it).
-      codeAgentRun = {
-        id: randomUUID(),
-        convId: typeof request.convId === 'string' && request.convId ? request.convId : null,
-        agent: caCfg.model || 'nativo',
-        dir,
-        task: taskLabel(task),
-        startedAt
+        appendAgentLog(runId, chunk)
+        send('ai:code-agent:output', { runId, chunk })
       }
 
       // Opening banner: the REAL model in use (task 11), and which files were
@@ -1798,7 +1786,7 @@ app.whenReady().then(() => {
         name: string
         args: Record<string, unknown>
       }): Promise<boolean> => {
-        if (codeAgentAbort) return false
+        if (run.abort) return false
         let oldContent: string | null = null
         if (call.name === 'escrever_arquivo' && typeof call.args.caminho === 'string') {
           const abs = confineToRoot(dir, call.args.caminho)
@@ -1812,10 +1800,10 @@ app.whenReady().then(() => {
         }
         const desc = describeCodeAction(call.name, call.args, { oldContent })
         return new Promise<boolean>((resolveApproval) => {
-          if (codeAgentAbort) return resolveApproval(false)
+          if (run.abort) return resolveApproval(false)
           const id = randomUUID()
-          pendingApprovals.set(id, resolveApproval)
-          send('ai:code-agent:approve-request', { id, name: call.name, args: call.args, ...desc })
+          run.pendingApprovals.set(id, resolveApproval)
+          send('ai:code-agent:approve-request', { runId, id, name: call.name, args: call.args, ...desc })
         })
       }
 
@@ -1829,11 +1817,11 @@ app.whenReady().then(() => {
       // never carries these markers. `send` pushes it so the card can appear
       // mid-run; the exit fetch and status poll pick it up as well.
       const noteEnvHint = (output: string): void => {
-        if (codeAgentHint) return
+        if (run.hint) return
         const hint = detectAgentHint(output)
         if (hint) {
-          codeAgentHint = hint
-          send('ai:code-agent:hint', hint)
+          run.hint = hint
+          send('ai:code-agent:hint', { runId, ...hint })
         }
       }
       const runner: CommandRunner = async (command, o) => {
@@ -1880,20 +1868,20 @@ app.whenReady().then(() => {
               // waste of the step budget.
               tools: codeToolsFor({ pinnedFiles: files.length > 0 }),
               maxSteps: CODE_AGENT_MAX_STEPS,
-              shouldAbort: () => codeAgentAbort,
+              shouldAbort: () => run.abort,
               onStep: (step, max) => {
-                codeAgentStep = step
-                codeAgentMaxSteps = max
+                run.step = step
+                run.maxSteps = max
                 pushProgress()
               },
               onText: (text) => emit(`\n${text}\n`),
               onToolCall: (name, args) => {
                 emit(`\n[tool] ${describeCodeAction(name, args).resumo || name}\n`)
-                send('ai:code-agent:tool', { phase: 'call', name, args })
+                send('ai:code-agent:tool', { runId, phase: 'call', name, args })
               },
               onToolResult: (name, summary) => {
                 emit(`[resultado] ${summary}\n`)
-                send('ai:code-agent:tool', { phase: 'result', name, summary })
+                send('ai:code-agent:tool', { runId, phase: 'result', name, summary })
               },
               // A transient model failure is being retried — say so, or a multi-
               // second backoff reads as a hang.
@@ -1906,82 +1894,124 @@ app.whenReady().then(() => {
               // AND log the spend (process-wide, per-call) — the two are separate
               // ledgers with different lifetimes.
               onUsage: (usage) => {
-                codeAgentUsage.promptTokens += usage.promptTokens
-                codeAgentUsage.completionTokens += usage.completionTokens
+                run.usage.promptTokens += usage.promptTokens
+                run.usage.completionTokens += usage.completionTokens
                 pushProgress()
                 appendUsage(caCfg.model, usage, cfg)
               }
             }
           )
-          if (result.stopped) exitCode = codeAgentAbort ? -2 : 1
+          if (result.stopped) exitCode = run.abort ? -2 : 1
         } catch (e) {
           exitCode = 1
           emit(`\n[erro no agente: ${e instanceof Error ? e.message : 'falha'}]\n`)
         } finally {
-          codeAgentRunning = false
           // Token/cost/efficiency summary — shown on success or error, so a run
           // that spent money before failing still reports what it cost. Only
           // when something was billed (a run that never reached the model is 0).
-          if (codeAgentUsage.promptTokens || codeAgentUsage.completionTokens) {
+          if (run.usage.promptTokens || run.usage.completionTokens) {
             emit(
-              `\n${formatRunSummary(codeAgentUsage, codeAgentStep, costAt(codeAgentUsage, cfg))}\n`
+              `\n${formatRunSummary(run.usage, run.step, costAt(run.usage, cfg))}\n`
             )
           }
-          const secs = ((Date.now() - startedAt) / 1000).toFixed(1)
+          const secs = ((Date.now() - run.startedAt) / 1000).toFixed(1)
           emit(`\n[sagyou] duração: ${secs}s\n`)
-          appendAgentLog(`\n[agente encerrado — código ${exitCode}]\n`)
+          appendAgentLog(runId, `\n[agente encerrado — código ${exitCode}]\n`)
           // Freeze log + diff now: the only moment the diff means "what the agent
           // did" rather than "what the tree looks like today".
-          void archiveAgentRun(exitCode)
-          send('ai:code-agent:exit', exitCode)
+          void archiveAgentRun(runId, exitCode)
+          send('ai:code-agent:exit', { runId, code: exitCode })
+          // Save survivors for backward compat (status() after run ends).
+          lastRunLog = run.log
+          lastRunHint = run.hint
+          lastRunModel = run.model
+          lastRunProgress = {
+            step: run.step,
+            maxSteps: run.maxSteps,
+            promptTokens: run.usage.promptTokens,
+            completionTokens: run.usage.completionTokens
+          }
+          codeRuns.delete(runId)
+          codeAgentDirs.delete(dir)
         }
       })()
 
-      return { success: true, agent: caCfg.model, dir }
+      return { success: true, agent: caCfg.model, dir, runId }
     }
   )
 
-  ipcMain.handle('ai:code-agent:stop', () => {
-    stopCodeAgent()
+  ipcMain.handle('ai:code-agent:stop', (_, runId?: string) => {
+    stopCodeAgent(typeof runId === 'string' ? runId : undefined)
   })
 
   // The renderer's answer to an approval card the loop is parked on. Resolving
   // the pending promise is what lets the run continue (or run the denied path).
+  // UUIDs are unique, so search across all runs' pendingApprovals maps.
   ipcMain.handle('ai:code-agent:approve-response', (_, id: string, approved: boolean) => {
-    const resolve = pendingApprovals.get(id)
-    if (resolve) {
-      pendingApprovals.delete(id)
-      resolve(approved === true)
+    for (const run of codeRuns.values()) {
+      const resolve = run.pendingApprovals.get(id)
+      if (resolve) {
+        run.pendingApprovals.delete(id)
+        resolve(approved === true)
+        return
+      }
     }
   })
 
-  // `log` is how a panel that wasn't mounted catches up — see codeAgentLog.
-  ipcMain.handle('ai:code-agent:status', () => ({
-    running: codeAgentRunning,
-    log: codeAgentLog,
-    // The real model in use, so the panel can show it (task 11).
-    model: codeAgentModel,
-    // Null unless the run hit a recognised environment failure. Carried here
-    // rather than on the exit event so a panel mounted after the fact still
-    // sees it — the same reason `log` is here.
-    hint: codeAgentHint,
-    // Live progress, so a panel mounted mid-run shows the counter at once
-    // instead of waiting for the next pushed step — same reason `log` is here.
-    progress: {
-      step: codeAgentStep,
-      maxSteps: codeAgentMaxSteps,
-      promptTokens: codeAgentUsage.promptTokens,
-      completionTokens: codeAgentUsage.completionTokens
+  // `runs` is an array of run summaries — a panel that wasn't mounted catches
+  // up per-run. Keep old fields for backward compat (tests and code read
+  // `.running` / `.log` / `.hint` directly), sourced from the first active run.
+  ipcMain.handle('ai:code-agent:status', () => {
+    const runs = [...codeRuns.values()]
+    const first = runs[0]
+    return {
+      running: codeAgentDirs.size > 0,
+      log: first?.log ?? lastRunLog,
+      model: first?.model ?? lastRunModel,
+      hint: first?.hint ?? lastRunHint,
+      progress: first
+        ? {
+            step: first.step,
+            maxSteps: first.maxSteps,
+            promptTokens: first.usage.promptTokens,
+            completionTokens: first.usage.completionTokens
+          }
+        : lastRunProgress,
+      runs: runs.map((r) => ({
+        id: r.id,
+        dir: r.dir,
+        task: r.task,
+        convId: r.convId,
+        agent: r.agent,
+        startedAt: r.startedAt,
+        log: r.log,
+        model: r.model,
+        hint: r.hint,
+        progress: {
+          step: r.step,
+          maxSteps: r.maxSteps,
+          promptTokens: r.usage.promptTokens,
+          completionTokens: r.usage.completionTokens
+        }
+      }))
     }
-  }))
+  })
 
   /**
-   * What the last run changed. Computed on demand rather than captured on exit:
-   * it is derived state, so a panel that was unmounted when the agent finished
-   * can still ask for it, and re-reading is free.
+   * What a run changed. If `runId` is given, use that run's base; otherwise
+   * use the first active run's base.
    */
-  ipcMain.handle('ai:code-agent:diff', async () => {
-    if (!codeAgentBase) {
+  ipcMain.handle('ai:code-agent:diff', async (_, runId?: string) => {
+    let base: AgentBase | null = null
+    if (typeof runId === 'string') {
+      base = codeRuns.get(runId)?.base ?? null
+    } else {
+      for (const run of codeRuns.values()) {
+        base = run.base
+        break
+      }
+    }
+    if (!base) {
       return {
         patch: '',
         files: [],
@@ -1990,7 +2020,7 @@ app.whenReady().then(() => {
         error: 'Sem diff: esta pasta não é um repositório git (ou não tem commits ainda).'
       }
     }
-    return diffSince(codeAgentBase)
+    return diffSince(base)
   })
 
   /**
@@ -2453,7 +2483,7 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-// Don't leave the code agent's loop running when the app closes.
+// Don't leave any code agent's loop running when the app closes.
 app.on('before-quit', () => {
   stopCodeAgent()
 })

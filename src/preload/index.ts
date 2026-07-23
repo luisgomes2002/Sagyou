@@ -36,6 +36,25 @@ interface AgentRunSnapshot extends AgentRunMeta {
   } | null
 }
 
+/** A live (in-flight) code-agent run, as returned by status(). */
+interface CodeRunSummary {
+  id: string
+  dir: string
+  task: string
+  convId: string | null
+  agent: string
+  startedAt: number
+  log: string
+  model?: string
+  hint: { title: string; detail: string; command?: string } | null
+  progress?: {
+    step: number
+    maxSteps: number
+    promptTokens: number
+    completionTokens: number
+  }
+}
+
 /** Totals for a slice of the usage log. `unpricedCalls` are calls with no price. */
 interface UsageBucket {
   calls: number
@@ -229,8 +248,8 @@ const api = {
         .invoke('ai:chat:stream', { ...request, streamId })
         .finally(() => ipcRenderer.removeListener('ai:chat:delta', handler))
     },
-    // External code agent (Codex) spawned in the project directory.
-    // Launch only after user approval — it writes files and runs commands.
+    // Native code agent (the loop in ./code-agent). N concurrent runs can be
+    // active in different directories.
     codeAgent: {
       run: (request: {
         path: string
@@ -239,75 +258,74 @@ const api = {
         decisoes?: string[]
         convId?: string
         projectId?: string | null
-      }): Promise<{ success: boolean; agent?: string; dir?: string; error?: string }> =>
+      }): Promise<{ success: boolean; agent?: string; dir?: string; runId?: string; error?: string }> =>
         ipcRenderer.invoke('ai:code-agent:run', request),
-      stop: (): Promise<void> => ipcRenderer.invoke('ai:code-agent:stop'),
+      stop: (runId?: string): Promise<void> => ipcRenderer.invoke('ai:code-agent:stop', runId),
       // Answer an approval card the loop is parked on (native agent).
       approve: (id: string, approved: boolean): Promise<void> =>
         ipcRenderer.invoke('ai:code-agent:approve-response', id, approved),
       status: (): Promise<{
         running: boolean
         log: string
-        // The real model in use this run (native agent), for the panel to show.
         model?: string
-        hint: {
-          title: string
-          detail: string
-          command?: string
-        } | null
-        // Live step + running token total, so a panel mounted mid-run catches up.
-        progress?: {
-          step: number
-          maxSteps: number
-          promptTokens: number
-          completionTokens: number
-        }
+        hint: { title: string; detail: string; command?: string } | null
+        progress?: { step: number; maxSteps: number; promptTokens: number; completionTokens: number }
+        /** All live runs, for multi-agent support. `runs.length > 0` replaces `running`. */
+        runs: CodeRunSummary[]
       }> => ipcRenderer.invoke('ai:code-agent:status'),
-      // What the last run changed. Derived on demand, so a panel that wasn't
-      // mounted when the agent finished can still ask.
-      diff: (): Promise<{
+      // What a run changed. Accepts optional runId to target a specific run;
+      // without it uses the first active run's base.
+      diff: (runId?: string): Promise<{
         patch: string
         files: { path: string; added: number; removed: number }[]
         truncated: boolean
         omittedNewFiles: string[]
         error?: string
-      }> => ipcRenderer.invoke('ai:code-agent:diff'),
+      }> => ipcRenderer.invoke('ai:code-agent:diff', runId),
       // Past runs of a conversation. The index only — a row's log and diff are
       // fetched by runGet when the user actually opens it.
       runs: (convId: string): Promise<AgentRunMeta[]> =>
         ipcRenderer.invoke('ai:code-agent:runs', convId),
       runGet: (id: string): Promise<AgentRunSnapshot | null> =>
         ipcRenderer.invoke('ai:code-agent:run-get', id),
-      onOutput: (cb: (chunk: string) => void) => {
-        const handler = (_: Electron.IpcRendererEvent, chunk: string): void => cb(chunk)
+      // Output carries runId to distinguish concurrent runs.
+      onOutput: (cb: (payload: { runId: string; chunk: string }) => void) => {
+        const handler = (_: Electron.IpcRendererEvent, payload: { runId: string; chunk: string }): void => cb(payload)
         ipcRenderer.on('ai:code-agent:output', handler)
         return () => ipcRenderer.removeListener('ai:code-agent:output', handler)
       },
+      // Fires immediately when a run starts — before any output, so the UI can
+      // light indicators without waiting for the first chunk.
+      onStarted: (cb: (payload: { runId: string; dir: string }) => void) => {
+        const handler = (_: Electron.IpcRendererEvent, payload: { runId: string; dir: string }): void => cb(payload)
+        ipcRenderer.on('ai:code-agent:started', handler)
+        return () => ipcRenderer.removeListener('ai:code-agent:started', handler)
+      },
       // Fires once a finished run has been written to the archive — later than
       // onExit, which doesn't wait for the diff that snapshot needs.
-      onArchived: (cb: (id: string) => void) => {
-        const handler = (_: Electron.IpcRendererEvent, id: string): void => cb(id)
+      onArchived: (cb: (payload: { runId: string; id: string }) => void) => {
+        const handler = (_: Electron.IpcRendererEvent, payload: { runId: string; id: string }): void => cb(payload)
         ipcRenderer.on('ai:code-agent:archived', handler)
         return () => ipcRenderer.removeListener('ai:code-agent:archived', handler)
       },
       // Live progress during a run: the step and the running token total, for
       // the panel's "Passo X/Y · Zk tokens" counter.
       onProgress: (
-        cb: (p: { step: number; maxSteps: number; promptTokens: number; completionTokens: number }) => void
+        cb: (p: { runId: string; step: number; maxSteps: number; promptTokens: number; completionTokens: number }) => void
       ) => {
         const handler = (_: Electron.IpcRendererEvent, p: Parameters<typeof cb>[0]): void => cb(p)
         ipcRenderer.on('ai:code-agent:progress', handler)
         return () => ipcRenderer.removeListener('ai:code-agent:progress', handler)
       },
-      onExit: (cb: (code: number) => void) => {
-        const handler = (_: Electron.IpcRendererEvent, code: number): void => cb(code)
+      onExit: (cb: (payload: { runId: string; code: number }) => void) => {
+        const handler = (_: Electron.IpcRendererEvent, payload: { runId: string; code: number }): void => cb(payload)
         ipcRenderer.on('ai:code-agent:exit', handler)
         return () => ipcRenderer.removeListener('ai:code-agent:exit', handler)
       },
       // Structured tool events (native agent): a tool call being run, then its
       // result summary — so the panel can show the run's steps live (task 6/11).
       onToolEvent: (
-        cb: (ev: { phase: 'call' | 'result'; name: string; args?: Record<string, unknown>; summary?: string }) => void
+        cb: (ev: { runId: string; phase: 'call' | 'result'; name: string; args?: Record<string, unknown>; summary?: string }) => void
       ) => {
         const handler = (_: Electron.IpcRendererEvent, ev: Parameters<typeof cb>[0]): void => cb(ev)
         ipcRenderer.on('ai:code-agent:tool', handler)
@@ -316,6 +334,7 @@ const api = {
       // The loop is parked on a write/command and needs the user's OK (task 9).
       onApproveRequest: (
         cb: (req: {
+          runId: string
           id: string
           name: string
           args: Record<string, unknown>
@@ -334,7 +353,7 @@ const api = {
       // A recognised environment failure hit mid-run (e.g. the sandbox couldn't
       // start) — pushed so the panel's hint card can appear without waiting for
       // the run to exit. `status().hint` carries the same value for a late mount.
-      onHint: (cb: (hint: { title: string; detail: string; command?: string }) => void) => {
+      onHint: (cb: (hint: { runId: string; title: string; detail: string; command?: string }) => void) => {
         const handler = (_: Electron.IpcRendererEvent, hint: Parameters<typeof cb>[0]): void => cb(hint)
         ipcRenderer.on('ai:code-agent:hint', handler)
         return () => ipcRenderer.removeListener('ai:code-agent:hint', handler)
