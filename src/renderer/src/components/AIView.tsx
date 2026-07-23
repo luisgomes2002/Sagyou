@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { useKanbanStore } from '../store/kanban'
 import { useAiRunStore, type ChatMessage } from '../store/aiRun'
 import type { Project } from '../types'
@@ -18,26 +18,7 @@ import { describeToolActivity } from '../ai/tools'
 import { toScaledDataUrl, imageFilesFrom } from '../utils/images'
 import { estimateAutoRun, cacheHitRate } from '../utils/spend'
 import { ChatMarkdown } from './ChatMarkdown'
-import { CodeDiff, type CodeAgentDiff } from './CodeDiff'
-import { AgentTerminal } from './AgentTerminal'
-import { AgentRunPicker, type AgentRunMeta } from './AgentRunPicker'
-import { SandboxOnboarding, type JailStatus } from './SandboxOnboarding'
 import { ConfirmDialog } from './ConfirmDialog'
-
-// Colouring for the approval card's write diff — same language as CodeDiff so a
-// diff reads the same whether reviewed before or after the write.
-const DIFF_LINE_CLASS: Record<'add' | 'del' | 'ctx' | 'meta', string> = {
-  add: 'bg-emerald-500/10 text-emerald-300',
-  del: 'bg-red-500/10 text-red-300',
-  ctx: 'text-[#8892a4]',
-  meta: 'text-[#4a5068] bg-[#0d0f18]'
-}
-const DIFF_MARK: Record<'add' | 'del' | 'ctx' | 'meta', string> = {
-  add: '+',
-  del: '-',
-  ctx: ' ',
-  meta: ''
-}
 
 // Config is persisted via ai:config in the main process (see effects below);
 // AIConfig and the tool-calling loop live in ../ai/agent.
@@ -259,80 +240,6 @@ export function AIView({
   const [runMetrics, setRunMetrics] = useState<RunMetricsSummary | null>(null)
   const [showSpend, setShowSpend] = useState(false)
 
-  // External code-agent output (streamed from the main process)
-  const [agentLog, setAgentLog] = useState('')
-  const [agentRunning, setAgentRunning] = useState(false)
-  /** The real model the running agent is using (native agent), for the panel. */
-  const [agentModel, setAgentModel] = useState('')
-  /** Live step + running token total of the current run, for the panel counter. */
-  const [agentProgress, setAgentProgress] = useState<{
-    step: number
-    maxSteps: number
-    promptTokens: number
-    completionTokens: number
-  } | null>(null)
-  /** A write/command the loop is parked on, awaiting the user's OK. Null = none. */
-  const [agentApproval, setAgentApproval] = useState<{
-    id: string
-    name: string
-    args: Record<string, unknown>
-    resumo: string
-    conteudo?: string
-    comando?: string
-    diff?: { kind: 'add' | 'del' | 'ctx' | 'meta'; text: string }[]
-    diffTruncated?: boolean
-    irreversivel?: boolean
-  } | null>(null)
-  /** ai-jail sandbox status (merged with config). Null until first fetched. */
-  const [jailStatus, setJailStatus] = useState<Awaited<
-    ReturnType<typeof window.electronAPI.ai.jail.status>
-  > | null>(null)
-  /** Whether the first-run sandbox onboarding modal is showing. */
-  const [showOnboarding, setShowOnboarding] = useState(false)
-  /** What the last agent run changed. Null until asked for. */
-  const [agentDiff, setAgentDiff] = useState<CodeAgentDiff | null>(null)
-  const [showDiff, setShowDiff] = useState(true)
-  // The raw log is the *secondary* view now: what the user wants while an agent
-  // works is which files changed, not every file it read. The log stays one
-  // click away for when a run goes wrong.
-  const [showLog, setShowLog] = useState(false)
-  /**
-   * Archived runs of the open conversation, and which one the panel is showing.
-   *
-   * `selectedRunId === null` means the live run — the panel's normal state. A
-   * selected run replaces both the log and the diff with the snapshot frozen
-   * when that agent exited; nothing about it is re-derived, because a diff
-   * recomputed today would attribute the user's own later edits to the agent.
-   */
-  /**
-   * Whether the agent panel is expanded.
-   *
-   * Closing **collapses to a one-line bar rather than hiding the panel**: a hard
-   * close would strand the run history, which is only reachable from this
-   * header — the user would have no way back short of starting another run.
-   */
-  const [agentPanelOpen, setAgentPanelOpen] = useState(true)
-  const [pastRuns, setPastRuns] = useState<AgentRunMeta[]>([])
-  /** The picked run *and* the chat it was picked in — see `selectedRunId`. */
-  const [selection, setSelection] = useState<{ convId: string; id: string } | null>(null)
-  /** The fetched snapshot. Carries its own id so it can be matched, not assumed. */
-  const [snapshot, setSnapshot] = useState<{
-    id: string
-    log: string
-    diff: CodeAgentDiff | null
-  } | null>(null)
-  /**
-   * A recognised environment failure from the last run, with its fix. Shown in
-   * the panel itself: this is the case where the agent exits 0 having changed
-   * nothing, so the user has no reason to go open the log and look for it.
-   */
-  const [agentHint, setAgentHint] = useState<{
-    title: string
-    detail: string
-    command?: string
-  } | null>(null)
-  const [hintCopied, setHintCopied] = useState(false)
-
   // Persisted conversation history
   const [conversations, setConversations] = useState<
     { id: string; title: string; updatedAt: string; snippet?: string }[]
@@ -543,206 +450,6 @@ export function AIView({
     const borders = el.offsetHeight - el.clientHeight
     el.style.height = `${Math.min(el.scrollHeight + borders, COMPOSER_MAX_PX)}px`
   }, [input])
-
-  /**
-   * The archived runs of whichever chat is open. Declared above the listeners
-   * below, which call it — a `const` used before its line is a TDZ trap waiting
-   * for someone to move a call into render.
-   */
-  const refreshRuns = async (id: string | null): Promise<void> => {
-    setPastRuns(id ? await window.electronAPI.ai.codeAgent.runs(id) : [])
-  }
-
-  /** Ask main what the last run changed. Cheap and idempotent — it's derived. */
-  const loadDiff = async (): Promise<void> => {
-    setAgentDiff(await window.electronAPI.ai.codeAgent.diff())
-  }
-
-  /** Refresh ai-jail status; opens onboarding when required-but-unavailable. */
-  const refreshJail = async (redetect = false): Promise<void> => {
-    const s = await window.electronAPI.ai.jail.status(redetect)
-    setJailStatus(s)
-    if (!s.available && s.enabled && !s.onboardingDismissed) setShowOnboarding(true)
-  }
-
-  // Load the sandbox status when the AI view mounts. Onboarding only appears the
-  // first time (until installed or dismissed); a machine that already has
-  // ai-jail reports available and never sees the dialog.
-  useEffect(() => {
-    void refreshJail()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // Stream the external code agent's output into the panel.
-  //
-  // The panel is only alive while this view is: the agent is a child process
-  // that outlives it by design (a code review runs for minutes, and the user is
-  // meant to carry on working). So on mount, catch up from the buffer main kept
-  // — everything below this only hears what arrives from now on, and the run may
-  // have started, printed, and finished while this view didn't exist.
-  useEffect(() => {
-    let cancelled = false
-    window.electronAPI.ai.codeAgent.status().then((s) => {
-      if (cancelled) return
-      setAgentRunning(s.running)
-      if (s.running) setShowLog(true)
-      setAgentModel(s.model ?? '')
-      // Replace rather than append: this IS the log, tail and all. Appending
-      // would double every line for a user who never left.
-      if (s.log) setAgentLog(s.log)
-      setAgentHint(s.hint)
-      // Catch up the live counter for a panel that mounted mid-run.
-      setAgentProgress(s.running ? (s.progress ?? null) : null)
-      // A run may have finished while this view didn't exist; its diff is still
-      // there to be asked for.
-      if (s.log && !s.running) void loadDiff()
-    })
-    const offOutput = window.electronAPI.ai.codeAgent.onOutput(({ chunk }) => {
-      setAgentRunning(true)
-      // A new run reopens the panel: output arriving into a bar the user
-      // collapsed an hour ago is output nobody sees. Closing is about the run
-      // they were done with, not the next one.
-      setAgentPanelOpen(true)
-      setShowLog(true)
-      setAgentLog((l) => (l + chunk).slice(-8000)) // cap to keep the panel light
-    })
-    // Acende os indicadores imediatamente — sem esperar o primeiro output.
-    const offStarted = window.electronAPI.ai.codeAgent.onStarted(({ runId }) => {
-      setAgentRunning(true)
-      setAgentPanelOpen(true)
-      setShowLog(true)
-      setAgentLog((l) => l || `[agente iniciado — ${runId.slice(0, 8)}]\n`)
-    })
-    // The loop is parked on a write/command: raise the card (and reopen the
-    // panel, same reason as onOutput). Answered below via codeAgent.approve.
-    const offApprove = window.electronAPI.ai.codeAgent.onApproveRequest((req) => {
-      setAgentPanelOpen(true)
-      setAgentApproval(req)
-      // Record the action in the log as soon as the card appears — before the
-      // user answers — so the transcript shows what was asked even if it is
-      // declined (the [tool] line is only emitted once the action actually runs).
-      setAgentLog((l) => (l + `\n[aguardando aprovação] ${req.resumo}\n`).slice(-8000))
-    })
-    // Live counter: the running step and token total, pushed each step.
-    const offProgress = window.electronAPI.ai.codeAgent.onProgress((p) => {
-      setAgentRunning(true)
-      setAgentProgress(p)
-    })
-    const offExit = window.electronAPI.ai.codeAgent.onExit((code) => {
-      setAgentRunning(false)
-      // The final token summary is already in the log; the live counter belongs
-      // to the run that just ended, so clear it.
-      setAgentProgress(null)
-      // A run that ended can't have a pending approval — clear any stale card.
-      setAgentApproval(null)
-      setAgentLog((l) => l + `\n[agente encerrado — código ${code}]\n`)
-      // The moment there is something to review. Derived in main, so asking
-      // again later is free and a run that finished while this view was closed
-      // is not lost.
-      void loadDiff()
-      // The exit event carries only a status code, and this failure exits 0 —
-      // so the diagnosis is fetched rather than inferred from it.
-      void window.electronAPI.ai.codeAgent.status().then((s) => setAgentHint(s.hint))
-    })
-    // The run has become history. A separate event from 'exit' on purpose: the
-    // archive takes a `git diff` to write, and the panel must not wait on that
-    // to stop saying "rodando". So exit flips the UI and this fills the picker
-    // when the row actually exists — no sleeping on a guessed delay.
-    // Read from the store rather than closing over `conversationId`: this effect
-    // binds once (deps `[]`) so it isn't torn down on every chat switch, which
-    // means the value captured here would be whichever chat was open at mount.
-    const offArchived = window.electronAPI.ai.codeAgent.onArchived(() => {
-      void refreshRuns(useAiRunStore.getState().conversationId)
-    })
-    // A recognised environment failure (e.g. the sandbox couldn't start) arrives
-    // mid-run, so the card can go up while the agent still churns — the user can
-    // stop it early instead of watching every command fail to the step cap.
-    const offHint = window.electronAPI.ai.codeAgent.onHint((hint) => {
-      setAgentPanelOpen(true)
-      setAgentHint(hint)
-    })
-    return () => {
-      cancelled = true
-      offOutput()
-      offApprove()
-      offProgress()
-      offExit()
-      offArchived()
-      offHint()
-      offStarted()
-    }
-  }, [])
-
-  useEffect(() => {
-    void refreshRuns(conversationId)
-  }, [conversationId])
-
-  /**
-   * The selected run, **derived** rather than reset by an effect.
-   *
-   * A selection is stored with the chat it was made in, so switching chats drops
-   * it on the next render instead of needing a `setSelectedRunId(null)` on a
-   * conversation change — which is a cascading render, and worse, one frame in
-   * which another chat's snapshot is on screen under this chat's panel.
-   */
-  const selectedRunId = selection?.convId === conversationId ? selection.id : null
-
-  // Fetch the snapshot behind the selected row. Only now — the list is metadata
-  // precisely so opening the panel doesn't drag every run's log and diff along.
-  useEffect(() => {
-    if (!selectedRunId) return
-    let cancelled = false
-    void window.electronAPI.ai.codeAgent.runGet(selectedRunId).then((snap) => {
-      if (cancelled) return
-      // Gone (pruned, or the file was removed): fall back to the live run rather
-      // than showing an empty panel that looks like a run that did nothing.
-      if (!snap) {
-        setSelection(null)
-        void refreshRuns(conversationId)
-        return
-      }
-      setSnapshot({ id: snap.id, log: snap.log, diff: snap.diff })
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [selectedRunId])
-
-  /**
-   * What the panel is actually showing.
-   *
-   * A selected past run replaces both halves at once — log and diff always
-   * describe the same run, or the user reads one against the other and draws a
-   * false conclusion. `running` is false for a snapshot no matter what the agent
-   * is doing now: the spinner and "Parar" belong to the live run only.
-   *
-   * The snapshot is matched against the selection by id rather than assumed to
-   * belong to it: while a newly picked run is still being fetched, the previous
-   * one is still in state, and showing it under the new row's label would
-   * misattribute a diff — the one mistake this whole feature exists to avoid.
-   */
-  const viewingPast = snapshot !== null && snapshot.id === selectedRunId
-  const shownLog = viewingPast ? snapshot.log : agentLog
-  const shownDiff = viewingPast ? snapshot.diff : agentDiff
-
-  // Keep the changes panel live while the agent writes. The diff is derived in
-  // main from a base captured before the spawn, so re-asking is cheap and
-  // idempotent — and it's the only view that answers "what is it doing to my
-  // code" without making the user read a redrawing spinner. codex leaves the
-  // tree dirty, so the base-to-worktree diff shows the work mid-run.
-  useEffect(() => {
-    if (!agentRunning) return
-    const id = setInterval(() => {
-      void loadDiff()
-      // Reconcile the hint with main every tick: a new run reset main's copy to
-      // null, so this clears a stale card left over from the previous run, and
-      // it's a backstop for the pushed onHint (which fires the instant a failure
-      // is seen). setState in a timer callback, not the effect body — so it
-      // doesn't hit react-hooks/set-state-in-effect.
-      void window.electronAPI.ai.codeAgent.status().then((s) => setAgentHint(s.hint))
-    }, 2000)
-    return () => clearInterval(id)
-  }, [agentRunning])
 
   /**
    * Reload the history list. Always goes through search so an autosave landing
@@ -1054,53 +761,21 @@ export function AIView({
   }
 
   /**
-   * Answer the code-agent's parked write/command. Logs the outcome — a refusal
-   * is recorded too, so the transcript shows what was declined — then resolves
-   * the loop's promise (via approve) and clears the card. Shared by the card
-   * buttons and the Enter/Esc shortcuts so all three stay in step.
-   */
-  const answerAgentApproval = useCallback(
-    (approved: boolean): void => {
-      if (!agentApproval) return
-      void window.electronAPI.ai.codeAgent.approve(agentApproval.id, approved)
-      setAgentLog((l) =>
-        (l + `\n[${approved ? 'aprovado' : 'recusado'}] ${agentApproval.resumo}\n`).slice(-8000)
-      )
-      setAgentApproval(null)
-    },
-    [agentApproval]
-  )
-
-  /**
-   * Keyboard: Esc closes the topmost open thing (one layer per press); Enter
-   * approves a parked code-agent action.
+   * Keyboard: Esc closes the topmost open thing (one layer per press).
    *
    * Bound to the document rather than to each overlay so it works wherever the
    * focus happens to be (the composer, a dropdown's search box, nothing at
    * all). The order mirrors what's stacked on screen, so Escape never reaches
    * past a dialog to dismiss something behind it.
    *
-   * Two approval cards exist: the chat write card (pendingApproval) is drawn by
-   * AiRunHost — the ordering below is why this view keeps answering it while
-   * open (the host binds Escape only when the AI view is closed, so exactly one
-   * listener acts) — and the code-agent action card (agentApproval), drawn here.
+   * Chat write cards (pendingApproval) are drawn by AiRunHost — the ordering
+   * below is why this view keeps answering them while open (the host binds
+   * Escape only when the AI view is closed, so exactly one listener acts).
    */
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      // Enter approves the code-agent card — but never while the user is typing
-      // (composer, search boxes), where Enter already means something.
-      if (e.key === 'Enter' && agentApproval) {
-        const el = e.target as HTMLElement | null
-        if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable))
-          return
-        e.preventDefault()
-        return answerAgentApproval(true)
-      }
       if (e.key !== 'Escape') return
       if (confirmDelete) return setConfirmDelete(null)
-      // Code-agent action card: Esc refuses. Same reasoning as pendingApproval —
-      // the loop awaits this promise, so hiding it unanswered hangs the run.
-      if (agentApproval) return answerAgentApproval(false)
       if (pendingApproval.length > 0) {
         // NOT just a close: the agent loop is awaiting this promise, so hiding
         // the card without answering leaves the run hanging forever. Escape is
@@ -1122,8 +797,6 @@ export function AIView({
     return () => document.removeEventListener('keydown', onKey)
   }, [
     confirmDelete,
-    agentApproval,
-    answerAgentApproval,
     pendingApproval,
     proposed,
     showSpend,
@@ -1948,59 +1621,6 @@ export function AIView({
                   Modelos do agente: {codeAgentModelsError}
                 </p>
               )}
-
-              {/* Sandbox toggle. Checked = required (default). Greyed when ai-jail
-                  isn't installed, with a way to open onboarding. Unchecking it
-                  runs commands unconfined, so it carries a warning. */}
-              <div className="mt-3">
-                <label
-                  className={`flex items-center gap-2 ${
-                    jailStatus && !jailStatus.available ? 'opacity-50' : ''
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={config.sandboxEnabled !== false}
-                    disabled={!!jailStatus && !jailStatus.available}
-                    onChange={(e) =>
-                      setConfig((c) => ({
-                        ...c,
-                        sandboxEnabled: e.target.checked ? undefined : false
-                      }))
-                    }
-                    className="accent-[#4f46e5]"
-                  />
-                  <span className="text-[12px] text-[#e2e8f0]">Sandbox (ai-jail)</span>
-                  {jailStatus?.available && jailStatus.version && (
-                    <span className="text-[10px] text-[#4a5068]">v{jailStatus.version}</span>
-                  )}
-                </label>
-                {jailStatus && !jailStatus.available && (
-                  <p className="mt-1 text-[11px] text-[#8892a4]">
-                    {/* When the kernel blocks the namespaces, ai-jail IS installed —
-                        saying "não instalado" here would send the user to reinstall
-                        instead of running the sysctl the onboarding now shows. */}
-                    {/apparmor_restrict_unprivileged_userns/.test(jailStatus.reason ?? '')
-                      ? 'Sandbox indisponível.'
-                      : 'ai-jail não instalado.'}{' '}
-                    <button
-                      onClick={() => setShowOnboarding(true)}
-                      className="text-[#a5b4fc] hover:underline"
-                    >
-                      {/apparmor_restrict_unprivileged_userns/.test(jailStatus.reason ?? '')
-                        ? 'Como resolver'
-                        : 'Instalar ai-jail'}
-                    </button>
-                    {jailStatus.reason ? ` — ${jailStatus.reason}` : ''}
-                  </p>
-                )}
-                {config.sandboxEnabled === false && (
-                  <p className="mt-1 text-[11px] leading-relaxed text-[#f0a868]">
-                    ⚠️ Desativar o sandbox permite que o agente acesse qualquer arquivo do sistema.
-                    Use por sua conta e risco.
-                  </p>
-                )}
-              </div>
             </div>
 
             <div className="mt-3 pt-3 border-t border-[#2a2d42]">
@@ -2235,324 +1855,6 @@ export function AIView({
           </div>
         )}
 
-        {/* External code agent output. Shown for a live/just-finished run, and
-            also when this chat has runs to reopen — otherwise the history is
-            only reachable while output happens to be on screen, which is the
-            case where nobody needs it. */}
-        {(agentLog || pastRuns.length > 0) && (
-          <div className="border-t border-[#2a2d42] bg-[#0d0f18] shrink-0">
-            <div className="flex items-center justify-between px-6 py-1.5">
-              <span className="flex items-center gap-2 text-[11px] font-medium text-[#8892a4]">
-                {agentRunning && (
-                  <span className="w-2 h-2 rounded-full bg-[#22c55e] animate-pulse" />
-                )}
-                Agente de código{' '}
-                {viewingPast ? '(run anterior)' : agentRunning ? '(rodando)' : '(encerrado)'}
-                {/* The real model in use (task 11), not "próprio do codex". */}
-                {agentRunning && agentModel && (
-                  <span className="text-[10px] font-normal text-[#6b7280]">· {agentModel}</span>
-                )}
-                {/* Live counter: step and running token total. */}
-                {agentRunning && agentProgress && agentProgress.step > 0 && (
-                  <span className="text-[10px] font-normal text-[#6b7280]">
-                    · Passo {agentProgress.step}/{agentProgress.maxSteps} ·{' '}
-                    {formatTokens(agentProgress.promptTokens + agentProgress.completionTokens)}{' '}
-                    tokens
-                  </span>
-                )}
-              </span>
-              <div className="flex items-center gap-3">
-                <AgentRunPicker
-                  runs={pastRuns}
-                  selectedId={selectedRunId}
-                  live={agentLog !== ''}
-                  onSelect={(id) => {
-                    // Tagged with the chat, so leaving it drops the selection
-                    // by derivation instead of by a reset effect.
-                    setSelection(id && conversationId ? { convId: conversationId, id } : null)
-                    // Picking a run is asking to see it — a selection that
-                    // landed behind a collapsed panel would look like a no-op.
-                    setAgentPanelOpen(true)
-                  }}
-                />
-                {agentRunning && (
-                  <button
-                    onClick={() => window.electronAPI.ai.codeAgent.stop()}
-                    className="text-[11px] text-red-400 hover:text-red-300"
-                  >
-                    Parar
-                  </button>
-                )}
-                {/* Clears the live buffer only. Hidden while a snapshot is up:
-                    there it would look like it deletes the archived run, and
-                    the archive is the thing the user came here to keep. */}
-                {!viewingPast && agentPanelOpen && (
-                  <button
-                    onClick={() => setAgentLog('')}
-                    className="text-[11px] text-[#8892a4] hover:text-[#e2e8f0]"
-                  >
-                    Limpar
-                  </button>
-                )}
-                {/* Collapses the panel; it does not discard anything. The header
-                    stays so the run picker — the only way back to the history —
-                    is still reachable. */}
-                <button
-                  onClick={() => setAgentPanelOpen((v) => !v)}
-                  title={agentPanelOpen ? 'Fechar o painel do agente' : 'Abrir o painel do agente'}
-                  aria-label={
-                    agentPanelOpen ? 'Fechar o painel do agente' : 'Abrir o painel do agente'
-                  }
-                  className="text-[#8892a4] hover:text-[#e2e8f0] transition-colors"
-                >
-                  {agentPanelOpen ? (
-                    <svg
-                      width="13"
-                      height="13"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.5"
-                    >
-                      <line x1="18" y1="6" x2="6" y2="18" />
-                      <line x1="6" y1="6" x2="18" y2="18" />
-                    </svg>
-                  ) : (
-                    <svg
-                      width="13"
-                      height="13"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.5"
-                    >
-                      <polyline points="18 15 12 9 6 15" />
-                    </svg>
-                  )}
-                </button>
-              </div>
-            </div>
-            {/* Per-action approval (native agent): the loop is parked on a write
-                or a command, and nothing runs until the user answers. This is
-                the ONLY barrier — the native agent has no OS sandbox — so it is
-                rendered prominently and blocks by construction (the loop waits
-                on the promise resolved by codeAgent.approve). */}
-            {agentPanelOpen && agentApproval && (
-              <div className="px-6 pb-3 pt-3">
-                <div
-                  className={`rounded-lg border p-3 ${
-                    agentApproval.irreversivel
-                      ? 'border-red-500/60 bg-[#1a0f12]'
-                      : 'border-[#4f46e5] bg-[#141527]'
-                  }`}
-                >
-                  <p
-                    className={`text-[12px] font-semibold ${
-                      agentApproval.irreversivel ? 'text-red-300' : 'text-[#a5b4fc]'
-                    }`}
-                  >
-                    O agente quer{' '}
-                    {agentApproval.name === 'executar_comando'
-                      ? 'executar um comando'
-                      : 'escrever um arquivo'}
-                    {agentApproval.irreversivel && ' (sobrescreve o conteúdo atual)'}
-                  </p>
-                  <p className="mt-1 break-words font-mono text-[11px] leading-relaxed text-[#e2e8f0]">
-                    {agentApproval.resumo}
-                  </p>
-                  {/* Preview the actual payload so the user reviews before OKing —
-                      a coloured diff when overwriting, the file contents for a new
-                      file, the full command for a command. Blind approval is the
-                      opposite of what a safety gate is for. */}
-                  {agentApproval.name === 'executar_comando' && agentApproval.comando && (
-                    <>
-                      <pre className="mt-2 max-h-[180px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-[#2a2d42] bg-[#0b0c1a] p-2.5 font-mono text-[11px] leading-relaxed text-[#f8fafc]">
-                        {agentApproval.comando}
-                      </pre>
-                      <p className="mt-1 text-[10px] italic text-[#8892a4]">
-                        Executa na pasta do projeto, com efeitos reais no seu sistema.
-                      </p>
-                    </>
-                  )}
-                  {agentApproval.name === 'escrever_arquivo' &&
-                    (agentApproval.diff && agentApproval.diff.length > 0 ? (
-                      <>
-                        <div className="mt-2 max-h-[320px] overflow-auto rounded-md border border-[#2a2d42] bg-[#0d0f18] py-1">
-                          {agentApproval.diff.map((line, i) => (
-                            <div
-                              key={i}
-                              className={`flex px-2.5 font-mono text-[11px] leading-[1.6] ${DIFF_LINE_CLASS[line.kind]}`}
-                            >
-                              <span className="w-3 shrink-0 select-none opacity-60">
-                                {DIFF_MARK[line.kind]}
-                              </span>
-                              <span className="whitespace-pre-wrap break-all">
-                                {line.text || ' '}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                        {agentApproval.diffTruncated && (
-                          <p className="mt-1 text-[10px] italic text-[#8892a4]">
-                            diff truncado — o arquivo completo será escrito mesmo assim
-                          </p>
-                        )}
-                      </>
-                    ) : (
-                      <>
-                        <pre className="mt-2 max-h-[280px] overflow-auto whitespace-pre rounded-md border border-[#2a2d42] bg-[#0b0c1a] p-2.5 font-mono text-[11px] leading-relaxed text-[#e2e8f0]">
-                          {agentApproval.conteudo || '(arquivo vazio)'}
-                        </pre>
-                        {(agentApproval.conteudo?.length ?? 0) >= 3000 && (
-                          <p className="mt-1 text-[10px] italic text-[#8892a4]">
-                            prévia truncada em 3000 caracteres — o arquivo completo será escrito
-                          </p>
-                        )}
-                      </>
-                    ))}
-                  <div className="mt-2.5 flex items-center gap-2">
-                    <button
-                      onClick={() => answerAgentApproval(true)}
-                      className="rounded-md bg-[#4f46e5] px-3 py-1.5 text-[11px] font-medium text-white hover:bg-[#4338ca]"
-                    >
-                      Aprovar <span className="ml-1 opacity-60">↵</span>
-                    </button>
-                    <button
-                      onClick={() => answerAgentApproval(false)}
-                      className="rounded-md border border-[#2a2d42] px-3 py-1.5 text-[11px] font-medium text-[#8892a4] hover:text-[#e2e8f0]"
-                    >
-                      Recusar <span className="ml-1 opacity-60">Esc</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-            {/* Above the diff, because it explains why it's empty: a bwrap/
-                sandbox failure prints its cause only in the raw log (behind a
-                toggle), so without this the user watches commands fail with no
-                idea why. Shown mid-run too (pushed via onHint) so they can stop
-                early rather than wait out every failing step. */}
-            {agentPanelOpen && agentHint && !viewingPast && (
-              <div className="px-6 pb-3">
-                <div className="rounded-lg border border-[#7c4a2d] bg-[#1a1108] p-3">
-                  <div className="flex items-start gap-2">
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="#f0a868"
-                      strokeWidth="2"
-                      className="mt-0.5 shrink-0"
-                    >
-                      <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                      <line x1="12" y1="9" x2="12" y2="13" />
-                      <line x1="12" y1="17" x2="12.01" y2="17" />
-                    </svg>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[12px] font-semibold text-[#f0a868]">{agentHint.title}</p>
-                      <p className="mt-1 text-[11px] leading-relaxed text-[#c9a68a]">
-                        {agentHint.detail}
-                      </p>
-                      {agentHint.command && (
-                        <div className="mt-2 flex items-center gap-2">
-                          <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap rounded bg-[#0d0f18] px-2 py-1.5 font-mono text-[10.5px] text-[#e2e8f0]">
-                            {agentHint.command}
-                          </code>
-                          {/* Copy, not run: this needs sudo and it loosens the
-                              user's kernel hardening. Handing it over to run
-                              themselves is the only honest option — the app must
-                              not make that call for them. */}
-                          <button
-                            onClick={() => {
-                              navigator.clipboard.writeText(agentHint.command ?? '')
-                              setHintCopied(true)
-                              setTimeout(() => setHintCopied(false), 2000)
-                            }}
-                            className="shrink-0 rounded px-2 py-1.5 text-[10.5px] font-medium text-[#f0a868] transition-colors hover:bg-[#2a1a0d]"
-                          >
-                            {hintCopied ? 'copiado' : 'copiar'}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* The changes come first and stay visible *while* the agent runs —
-                they're the answer to "what is it doing", and the raw log isn't:
-                a redrawing status line shows one step at a time and keeps no
-                history of it. */}
-            {agentPanelOpen && shownDiff && (
-              <div className="px-6 pb-3">
-                <button
-                  onClick={() => setShowDiff((v) => !v)}
-                  className="flex items-center gap-1.5 mb-1.5 text-[11px] font-medium text-[#8892a4] hover:text-[#e2e8f0] transition-colors"
-                >
-                  <svg
-                    width="9"
-                    height="9"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="3"
-                    className={`transition-transform ${showDiff ? 'rotate-90' : ''}`}
-                  >
-                    <polyline points="9 18 15 12 9 6" />
-                  </svg>
-                  Mudanças
-                  {viewingPast && (
-                    // Said plainly, because it is the one thing that could
-                    // mislead here: this diff is what the agent changed *then*,
-                    // not what the folder looks like now.
-                    <span className="font-normal text-[10px] text-[#6b7280]">
-                      · snapshot de quando a run terminou
-                    </span>
-                  )}
-                </button>
-                {showDiff && (
-                  <CodeDiff
-                    diff={shownDiff}
-                    running={!viewingPast && agentRunning}
-                    // A snapshot has nothing to refresh — re-deriving it would
-                    // show today's tree as the agent's work.
-                    onRefresh={viewingPast ? undefined : () => void loadDiff()}
-                  />
-                )}
-              </div>
-            )}
-
-            {/* The raw log, behind a toggle: it's the debugging view (why did it
-                fail, what did it read), not the one to watch a run through. */}
-            {agentPanelOpen && (
-              <div className="px-6 pb-3">
-                <button
-                  onClick={() => setShowLog((v) => !v)}
-                  className="flex items-center gap-1.5 mb-1.5 text-[11px] font-medium text-[#8892a4] hover:text-[#e2e8f0] transition-colors"
-                >
-                  <svg
-                    width="9"
-                    height="9"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="3"
-                    className={`transition-transform ${showLog ? 'rotate-90' : ''}`}
-                  >
-                    <polyline points="9 18 15 12 9 6" />
-                  </svg>
-                  Log completo
-                </button>
-              </div>
-            )}
-            {agentPanelOpen && showLog && (
-              <AgentTerminal log={shownLog} running={!viewingPast && agentRunning} />
-            )}
-          </div>
-        )}
-
         {/* Composer */}
         <div
           onDragOver={(e) => {
@@ -2666,7 +1968,7 @@ export function AIView({
         </div>
       </div>
 
-      {/* Confirmation modal */}
+      {/* Confirmation modals */}
 
       <ConfirmDialog
         open={confirmDelete !== null}
@@ -2687,13 +1989,6 @@ export function AIView({
         }}
         onCancel={() => setConfirmAuto(false)}
       />
-      {showOnboarding && jailStatus && (
-        <SandboxOnboarding
-          status={jailStatus as JailStatus}
-          onDismiss={() => setShowOnboarding(false)}
-          onInstalled={() => void refreshJail(true)}
-        />
-      )}
     </>
   )
 }

@@ -46,13 +46,13 @@ interface CodeAgentRunUI {
     promptTokens: number
     completionTokens: number
   } | null
+  autoApprove: boolean
 }
 
-function useCodeAgentRuns(): { runs: CodeAgentRunUI[]; stopAgent: (runId: string) => void } {
+function useCodeAgentRuns(): { runs: CodeAgentRunUI[]; stopAgent: (runId: string) => void; setAuto: (runId: string, enabled: boolean) => void } {
   const [runs, setRuns] = useState<CodeAgentRunUI[]>([])
 
-  useEffect(() => {
-    // 1. Busca o estado inicial
+  const sync = useCallback((): void => {
     window.electronAPI.ai.codeAgent.status().then((s) => {
       setRuns(
         s.runs.map((r) => ({
@@ -63,27 +63,16 @@ function useCodeAgentRuns(): { runs: CodeAgentRunUI[]; stopAgent: (runId: string
           startedAt: r.startedAt,
           log: r.log,
           hint: r.hint,
-          progress: r.progress ?? null
+          progress: r.progress ?? null,
+          autoApprove: r.autoApprove ?? false
         }))
       )
     })
+  }, [])
 
-    const sync = (): void => {
-      window.electronAPI.ai.codeAgent.status().then((s) => {
-        setRuns(
-          s.runs.map((r) => ({
-            id: r.id,
-            dir: r.dir,
-            task: r.task,
-            model: r.model ?? r.agent,
-            startedAt: r.startedAt,
-            log: r.log,
-            hint: r.hint,
-            progress: r.progress ?? null
-          }))
-        )
-      })
-    }
+  useEffect(() => {
+    // 1. Busca o estado inicial
+    sync()
 
     // 2. Um novo agente iniciou
     const offStarted = window.electronAPI.ai.codeAgent.onStarted(
@@ -113,19 +102,35 @@ function useCodeAgentRuns(): { runs: CodeAgentRunUI[]; stopAgent: (runId: string
       }
     )
 
+    // 6. Auto-approval toggled for a run
+    const offAutoChanged = window.electronAPI.ai.codeAgent.onAutoChanged(
+      (payload: { runId: string; autoApprove: boolean }) => {
+        setRuns((prev) =>
+          prev.map((r) =>
+            r.id === payload.runId ? { ...r, autoApprove: payload.autoApprove } : r
+          )
+        )
+      }
+    )
+
     return () => {
       offStarted()
       offOutput()
       offProgress()
       offExit()
+      offAutoChanged()
     }
-  }, [])
+  }, [sync])
 
   const stopAgent = useCallback((runId: string) => {
     window.electronAPI.ai.codeAgent.stop(runId)
   }, [])
 
-  return { runs, stopAgent }
+  const setAuto = useCallback((runId: string, enabled: boolean): void => {
+    window.electronAPI.ai.codeAgent.setAuto(runId, enabled).then(() => { sync() })
+  }, [sync])
+
+  return { runs, stopAgent, setAuto }
 }
 
 export function FleetView({
@@ -149,7 +154,7 @@ export function FleetView({
   const openConversation = useAiRunStore((s) => s.openConversation)
   const abort = useAiRunStore((s) => s.abort)
 
-  const { runs: codeRuns, stopAgent } = useCodeAgentRuns()
+  const { runs: codeRuns, stopAgent, setAuto } = useCodeAgentRuns()
 
   // A running agent's transcript/usage is either the one on screen or parked.
   const messagesOf = (id: string): ChatMessage[] =>
@@ -347,6 +352,11 @@ export function FleetView({
                       <span className="w-2.5 h-2.5 shrink-0 rounded-full border-[1.5px] border-[#a5b4fc] border-t-transparent animate-spin" />
                     )}
                     <p className="text-xs text-[#8892a4] truncate">
+                      {run.autoApprove && (
+                        <span className="inline-flex items-center px-1.5 py-px rounded text-[10px] font-medium bg-amber-500/15 text-amber-400 mr-1.5">
+                          Auto
+                        </span>
+                      )}
                       {run.hint
                         ? `⚠️ ${run.hint.title}`
                         : `Agente de código · ${run.model || 'codex'}`}
@@ -377,6 +387,16 @@ export function FleetView({
                       className="flex-1 px-3 py-1.5 rounded-lg bg-[#1e2235] border border-[#2a2d42] text-xs text-[#e2e8f0] font-medium hover:bg-[#2a2d42] transition-colors"
                     >
                       Abrir IA
+                    </button>
+                    <button
+                      onClick={() => setAuto(run.id, !run.autoApprove)}
+                      className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
+                        run.autoApprove
+                          ? 'bg-amber-500/15 border-amber-500/40 text-amber-400'
+                          : 'bg-[#1e2235] border-[#2a2d42] text-[#8892a4] hover:text-[#e2e8f0]'
+                      }`}
+                    >
+                      Auto {run.autoApprove ? '✓' : ''}
                     </button>
                     <button
                       onClick={() => stopAgent(run.id)}

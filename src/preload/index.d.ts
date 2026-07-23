@@ -205,6 +205,7 @@ interface CodeRunSummary {
   model?: string
   hint: AgentHint | null
   progress?: AgentProgress
+  autoApprove?: boolean
 }
 
 /** A finished code-agent run, as listed in the run picker. */
@@ -338,11 +339,13 @@ declare global {
             convId?: string
             /** The project whose memory to brief the agent with. */
             projectId?: string | null
+            autoApprove?: boolean
           }) => Promise<{ success: boolean; agent?: string; dir?: string; runId?: string; error?: string }>
           /** Stop one run by id, or all when omitted. */
           stop: (runId?: string) => Promise<void>
           /** Answer an approval card the native agent's loop is parked on. */
           approve: (id: string, approved: boolean) => Promise<void>
+          setAuto: (runId: string, enabled: boolean) => Promise<void>
           /**
            * `running` is true while any run is active.
            * `runs` lists every live run for multi-agent support.
@@ -362,7 +365,7 @@ declare global {
           /** What a run changed. Pass `runId` for a specific run; omit for the first active. */
           diff: (runId?: string) => Promise<CodeAgentDiff>
           /** Past runs of one conversation, newest first. Metadata only. */
-          runs: (convId: string) => Promise<AgentRunMeta[]>
+          runs: (convId?: string) => Promise<AgentRunMeta[]>
           /**
            * One archived run. Its diff is a snapshot taken when the agent
            * exited — never re-derived, or the user's later edits would be shown
@@ -410,6 +413,7 @@ declare global {
           ) => () => void
           /** A recognised environment failure hit mid-run (sandbox couldn't start, …). */
           onHint: (cb: (hint: { runId: string } & AgentHint) => void) => () => void
+          onAutoChanged: (cb: (payload: { runId: string; autoApprove: boolean }) => void) => () => void
         }
         jail: {
           status: (refresh?: boolean) => Promise<{

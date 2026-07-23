@@ -3,40 +3,50 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import { FleetView } from '../../components/FleetView'
-import { useAiRunStore, EMPTY_USAGE } from '../../store/aiRun'
 import type { Project } from '../../types'
 
-// FleetView is a pure view over the desingletonised run store: it derives the
-// list of agents from `running` + `runProjects` and reads each one's live
-// state. No electronAPI, no agent loop — the store is set directly.
+// FleetView is a pure view over the code-agent state from the main process.
+// The code-agent IPC is mocked; the component fetches status, runs, and
+// listens to events.
 
 const projects = [
-  { id: 'p1', name: 'Projeto Um' },
-  { id: 'p2', name: 'Projeto Dois' }
+  { id: 'p1', name: 'Projeto Um', codePaths: [{ path: '/home/user/projeto-um' }] },
+  { id: 'p2', name: 'Projeto Dois', codePaths: [{ path: '/home/user/projeto-dois' }] }
 ] as Project[]
 
-/** A blank run store, so each test starts with no agents. */
-function resetRun(): void {
-  useAiRunStore.setState({
-    messages: [],
-    running: new Set(),
-    streaming: {},
-    streamingTools: {},
-    error: null,
-    usage: EMPTY_USAGE,
-    conversationId: null,
-    parked: {},
-    runProjects: {},
-    runUsage: {},
-    taskLeases: {},
-    pendingApprovals: [],
-    autoApprove: new Set(),
-    abortRequested: new Set()
-  })
+/** A running code-agent card mock (what status() returns). */
+function makeRun(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'run-1',
+    dir: '/home/user/projeto-um',
+    task: 'Corrigir bug no login',
+    model: 'gpt-4',
+    startedAt: Date.now() - 60_000,
+    log: '[tool] ler_arquivo\n[resultado] App.tsx lido\n',
+    hint: null,
+    progress: { step: 3, maxSteps: 40, promptTokens: 1500, completionTokens: 300 },
+    approval: null,
+    toolEvent: { phase: 'call', name: 'ler_arquivo' },
+    ...overrides
+  }
 }
 
+/** Captured approve-request callback so tests can fire IPC events. */
+let fireApproveRequest: ((req: {
+  runId: string
+  id: string
+  name: string
+  args: Record<string, unknown>
+  resumo: string
+  conteudo?: string
+  comando?: string
+  diff?: { kind: 'add' | 'del' | 'ctx' | 'meta'; text: string }[]
+  diffTruncated?: boolean
+  irreversivel?: boolean
+}) => void) | null = null
+
 beforeEach(() => {
-  resetRun()
+  fireApproveRequest = null
   // Mock the code-agent IPC so that useCodeAgentRuns doesn't crash.
   if (!window.electronAPI) {
     // @ts-expect-error partial mock for tests
@@ -46,104 +56,132 @@ beforeEach(() => {
   window.electronAPI.ai.codeAgent = {
     status: vi.fn().mockResolvedValue({ running: false, runs: [], log: '', hint: null }),
     stop: vi.fn(),
+    setAuto: vi.fn().mockResolvedValue(undefined),
     onStarted: vi.fn(() => vi.fn()),
     onOutput: vi.fn(() => vi.fn()),
     onProgress: vi.fn(() => vi.fn()),
-    onExit: vi.fn(() => vi.fn())
+    onExit: vi.fn(() => vi.fn()),
+    onAutoChanged: vi.fn(() => vi.fn()),
+    onApproveRequest: vi.fn((cb) => {
+      fireApproveRequest = cb
+      return vi.fn()
+    }),
+    onHint: vi.fn(() => vi.fn()),
+    onToolEvent: vi.fn(() => vi.fn()),
+    onArchived: vi.fn(() => vi.fn()),
+    runs: vi.fn().mockResolvedValue([]),
+    runGet: vi.fn().mockResolvedValue(null),
+    approve: vi.fn()
   } as never
 })
 
-/** Two agents live at once: A parked, B on screen and mid-tool. */
-function twoAgents(): void {
-  useAiRunStore.setState({
-    running: new Set(['A', 'B']),
-    conversationId: 'B',
-    messages: [
-      { role: 'user', content: 'tarefa B' },
-      { role: 'status', content: 'Lendo App.tsx', done: false, step: 2, maxSteps: 40 }
-    ],
-    usage: { promptTokens: 500, completionTokens: 100 },
-    parked: {
-      A: { messages: [{ role: 'user', content: 'tarefa A' }], usage: EMPTY_USAGE }
-    },
-    runProjects: { A: 'p1', B: 'p2' },
-    runUsage: {
-      A: { promptTokens: 1500, completionTokens: 300 },
-      B: { promptTokens: 500, completionTokens: 100 }
-    }
+/** Set up one mock code-agent run via the status call. */
+function oneRun(overrides: Record<string, unknown> = {}): void {
+  const run = makeRun(overrides)
+  ;(window.electronAPI.ai.codeAgent.status as ReturnType<typeof vi.fn>).mockResolvedValue({
+    running: true,
+    runs: [run],
+    log: run.log,
+    hint: null
   })
+  ;(window.electronAPI.ai.codeAgent.runs as ReturnType<typeof vi.fn>).mockResolvedValue([])
+}
+
+/** Set up two mock code-agent runs. */
+function twoRuns(): void {
+  const runA = makeRun({ id: 'run-A', task: 'tarefa A', dir: '/home/user/projeto-um' })
+  const runB = makeRun({
+    id: 'run-B',
+    task: 'tarefa B',
+    dir: '/home/user/projeto-dois',
+    toolEvent: { phase: 'result', name: 'escrever_arquivo' }
+  })
+  ;(window.electronAPI.ai.codeAgent.status as ReturnType<typeof vi.fn>).mockResolvedValue({
+    running: true,
+    runs: [runA, runB],
+    log: '',
+    hint: null
+  })
+  ;(window.electronAPI.ai.codeAgent.runs as ReturnType<typeof vi.fn>).mockResolvedValue([])
 }
 
 describe('FleetView', () => {
-  it('says so when nothing is running', () => {
+  it('says so when nothing is running', async () => {
     render(<FleetView projects={projects} onOpenChat={() => {}} />)
-    expect(screen.getByText('Nenhum agente ativo')).toBeInTheDocument()
+    expect(await screen.findByText('Nenhum agente ativo')).toBeInTheDocument()
     expect(screen.getByText('0 ativos')).toBeInTheDocument()
   })
 
-  it('lists one card per running agent, with its project', () => {
-    twoAgents()
+  it('lists one card per running code-agent, with its project', async () => {
+    twoRuns()
     render(<FleetView projects={projects} onOpenChat={() => {}} />)
 
-    expect(screen.getByText('2 ativos')).toBeInTheDocument()
-    // Derived from running + runProjects.
-    expect(screen.getByText('tarefa A')).toBeInTheDocument()
+    expect(await screen.findByText('tarefa A')).toBeInTheDocument()
     expect(screen.getByText('tarefa B')).toBeInTheDocument()
     expect(screen.getByText('Projeto Um')).toBeInTheDocument()
     expect(screen.getByText('Projeto Dois')).toBeInTheDocument()
+    expect(screen.getByText('2 ativos')).toBeInTheDocument()
   })
 
-  it('shows what an agent is doing and its step progress', () => {
-    twoAgents()
+  it('shows what a code-agent is doing and its step progress', async () => {
+    oneRun()
     render(<FleetView projects={projects} onOpenChat={() => {}} />)
 
-    // B's last in-flight status line and its step badge.
-    expect(screen.getByText('Lendo App.tsx')).toBeInTheDocument()
-    expect(screen.getByText('2/40')).toBeInTheDocument()
+    expect(await screen.findByText('3/40')).toBeInTheDocument()
+    // The tool event shows as "[tool] ler_arquivo"
+    expect(screen.getByText(/\[tool\] ler_arquivo/)).toBeInTheDocument()
   })
 
-  it('shows the token spend per agent — input and output', () => {
-    twoAgents()
+  it('shows the token spend per code-agent — input and output', async () => {
+    oneRun()
     render(<FleetView projects={projects} onOpenChat={() => {}} />)
 
-    // A billed 1.5k prompt + 300 completion this run.
-    expect(screen.getByText('↑ 1.5k entrada')).toBeInTheDocument()
+    expect(await screen.findByText('↑ 1,500 entrada')).toBeInTheDocument()
     expect(screen.getByText('↓ 300 saída')).toBeInTheDocument()
-    // B billed 500 + 100.
-    expect(screen.getByText('↑ 500 entrada')).toBeInTheDocument()
-    expect(screen.getByText('↓ 100 saída')).toBeInTheDocument()
   })
 
-  it('flags an agent parked on approval', () => {
-    twoAgents()
-    useAiRunStore.setState({
-      pendingApprovals: [{ convId: 'A', writes: [], selected: new Set() }]
-    })
+  it('flags a code-agent parked on approval', async () => {
+    oneRun()
     render(<FleetView projects={projects} onOpenChat={() => {}} />)
 
-    expect(screen.getByText('Aguardando sua aprovação…')).toBeInTheDocument()
+    // First wait for the run to render.
+    await screen.findByText('Corrigir bug no login')
+
+    // Approval arrives via IPC event, not via status().
+    expect(fireApproveRequest).not.toBeNull()
+    fireApproveRequest!({
+      runId: 'run-1',
+      id: 'ap-1',
+      name: 'escrever_arquivo',
+      args: { caminho: 'src/App.tsx' },
+      resumo: 'src/App.tsx',
+      conteudo: 'console.log("oi")',
+      irreversivel: false
+    })
+
+    expect(await screen.findByText('Aguardando sua aprovação…')).toBeInTheDocument()
+    // The approval card should show the action summary
+    expect(screen.getByText('O agente quer escrever um arquivo')).toBeInTheDocument()
   })
 
-  it('"Abrir chat" opens that agent\'s conversation and switches to the AI view', async () => {
-    twoAgents()
+  it('"Abrir IA" switches to the AI view', async () => {
+    oneRun()
     const onOpenChat = vi.fn()
     render(<FleetView projects={projects} onOpenChat={onOpenChat} />)
 
-    // First card is A (insertion order of the running set).
-    await userEvent.click(screen.getAllByRole('button', { name: 'Abrir chat' })[0])
+    await screen.findByText('Corrigir bug no login')
+    await userEvent.click(screen.getByRole('button', { name: 'Abrir IA' }))
 
-    expect(useAiRunStore.getState().conversationId).toBe('A')
     expect(onOpenChat).toHaveBeenCalled()
   })
 
-  it('"Parar" aborts that agent, not another', async () => {
-    twoAgents()
+  it('"Parar" stops the code-agent', async () => {
+    oneRun()
     render(<FleetView projects={projects} onOpenChat={() => {}} />)
 
-    // Second card is B.
-    await userEvent.click(screen.getAllByRole('button', { name: /Parar/ })[1])
+    await screen.findByText('Corrigir bug no login')
+    await userEvent.click(screen.getByRole('button', { name: /Parar/ }))
 
-    expect(useAiRunStore.getState().abortRequested.has('B')).toBe(true)
-    expect(useAiRunStore.getState().abortRequested.has('A')).toBe(false)
+    expect(window.electronAPI.ai.codeAgent.stop).toHaveBeenCalledWith('run-1')
   })
 })
