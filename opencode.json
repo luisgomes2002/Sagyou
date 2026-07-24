@@ -1,0 +1,16 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": ["GUIDE.md", "CLAUDE.md"],
+  "permission": {
+    "edit": "ask",
+    "bash": { "npm run dev": "allow", "npm run typecheck *": "allow", "npm test *": "allow", "npx vitest run *": "allow", "*": "ask" },
+    "external_directory": {
+      "~/.config/sagyou/**": "deny",
+      "*": "ask"
+    }
+  },
+  "tool_output": {
+    "max_lines": 200,
+    "max_bytes": 16384
+  }
+}

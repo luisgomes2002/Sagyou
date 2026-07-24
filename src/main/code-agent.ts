@@ -234,7 +234,7 @@ export async function runCodeTool(
       case 'listar_arquivos':
         return await listFiles(args, ctx)
       case 'ler_arquivo':
-        return readFileTool(args, ctx)
+        return await readFileTool(args, ctx)
       case 'buscar_no_codigo':
         return await searchCode(args, ctx)
       case 'escrever_arquivo':
@@ -259,14 +259,14 @@ async function listFiles(args: Record<string, unknown>, ctx: ToolContext): Promi
   )
 }
 
-function readFileTool(args: Record<string, unknown>, ctx: ToolContext): ToolResult {
+async function readFileTool(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
   const rel = typeof args.caminho === 'string' ? args.caminho : ''
   if (!rel) return jsonResult({ error: 'Caminho vazio' }, 'caminho vazio')
   const full = confineToRoot(ctx.root, rel)
   if (!full || !existsSync(full) || !statSync(full).isFile()) {
     return jsonResult({ error: 'Arquivo inválido ou fora do projeto' }, `inválido: ${rel}`)
   }
-  const content = readFileSync(full, 'utf-8')
+  const content = await readFile(full, 'utf-8')
   const total = content.length
   const page = clampNum(args.max_chars, READ_LIMIT_DEFAULT, READ_LIMIT_MAX)
   const start =

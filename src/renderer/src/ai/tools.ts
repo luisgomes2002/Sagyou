@@ -1362,6 +1362,39 @@ const REGISTRY: Record<string, AITool> = {
     }
   },
 
+  ler_notas: {
+    definition: fn(
+      'ler_notas',
+      'Lista as notas adesivas do canvas de um projeto: conteúdo, cor, posição e se está vinculada ' +
+        'a alguma task. Sem projectId, usa o projeto ativo.',
+      {
+        type: 'object',
+        properties: {
+          projectId: { type: 'string', description: 'ID do projeto (opcional; usa o ativo)' }
+        },
+        additionalProperties: false
+      }
+    ),
+    run: (args) => {
+      const { projects, notes, activeProjectId } = useKanbanStore.getState()
+      const projectId = (typeof args.projectId === 'string' && args.projectId) || activeProjectId
+      const project = projects.find((p) => p.id === projectId)
+      if (!project) return JSON.stringify({ error: 'Projeto não encontrado' })
+      const list = notes
+        .filter((n) => n.projectId === project.id)
+        .map((n) => ({
+          id: n.id,
+          conteudo: n.content,
+          cor: n.color,
+          posicao: { x: n.x, y: n.y },
+          taskVinculada: n.taskId ?? null,
+          criadaEm: n.createdAt,
+          tipo: n.type ?? 'note'
+        }))
+      return JSON.stringify({ projeto: project.name, total: list.length, notas: list })
+    }
+  },
+
   buscar_memoria: {
     definition: fn(
       'buscar_memoria',
@@ -2198,6 +2231,8 @@ export function describeToolActivity(name: string, args: Record<string, unknown>
       const alvo = str(args.nome) || str(args.habitoId)
       return alvo ? `Marcando o hábito ${alvo} como feito` : 'Marcando um hábito como feito'
     }
+    case 'ler_notas':
+      return 'Consultando as notas do canvas'
     case 'criar_nota':
       return `Criando uma nota no canvas`
     case 'salvar_memoria': {
@@ -2272,6 +2307,8 @@ export function describeToolCall(name: string, args: Record<string, unknown>): s
       return `Iniciar cronômetro: ${alvo}`
     case 'marcar_habito':
       return `Marcar hábito ${args.nome ?? args.habitoId ?? '?'} como feito hoje`
+    case 'ler_notas':
+      return 'Ler notas do canvas'
     case 'criar_nota': {
       const texto = String(args.conteudo ?? '')
       return `Criar nota: "${texto.length > 60 ? `${texto.slice(0, 60)}…` : texto}"`

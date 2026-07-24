@@ -28,6 +28,18 @@ function formatTokens(n: number): string {
   return `${(n / 1_000_000).toFixed(2)}M`
 }
 
+/**
+ * Human-readable summary of what the code-agent wants to do, shown in the
+ * approval card.  Maps the five code-agent tool names to Portuguese phrases.
+ */
+function describeApprovalAction(name: string): string {
+  const map: Record<string, string> = {
+    escrever_arquivo: 'escrever um arquivo',
+    executar_comando: 'executar um comando'
+  }
+  return map[name] ?? name.replace(/_/g, ' ')
+}
+
 // ---------------------------------------------------------------------------
 // Code-agent state (lives in main process, streamed via IPC)
 // ---------------------------------------------------------------------------
@@ -47,25 +59,48 @@ interface CodeAgentRunUI {
     completionTokens: number
   } | null
   autoApprove: boolean
+  /** Pending approval request — shown inline until the user acts on it. */
+  approval: {
+    id: string
+    name: string
+    args: Record<string, unknown>
+    resumo: string
+    conteudo?: string
+    comando?: string
+    diff?: { kind: 'add' | 'del' | 'ctx' | 'meta'; text: string }[]
+    diffTruncated?: boolean
+    irreversivel?: boolean
+  } | null
 }
 
-function useCodeAgentRuns(): { runs: CodeAgentRunUI[]; stopAgent: (runId: string) => void; setAuto: (runId: string, enabled: boolean) => void } {
+function useCodeAgentRuns(): {
+  runs: CodeAgentRunUI[]
+  stopAgent: (runId: string) => void
+  setAuto: (runId: string, enabled: boolean) => void
+  approveAgent: (runId: string, id: string, approved: boolean) => void
+} {
   const [runs, setRuns] = useState<CodeAgentRunUI[]>([])
 
   const sync = useCallback((): void => {
     window.electronAPI.ai.codeAgent.status().then((s) => {
-      setRuns(
-        s.runs.map((r) => ({
-          id: r.id,
-          dir: r.dir,
-          task: r.task,
-          model: r.model ?? r.agent,
-          startedAt: r.startedAt,
-          log: r.log,
-          hint: r.hint,
-          progress: r.progress ?? null,
-          autoApprove: r.autoApprove ?? false
-        }))
+      setRuns((prev) =>
+        s.runs.map((r) => {
+          // Preserve approval state from the live UI — the status call doesn't
+          // carry pending approvals (they live as IPC events, not in the summary).
+          const existing = prev.find((p) => p.id === r.id)
+          return {
+            id: r.id,
+            dir: r.dir,
+            task: r.task,
+            model: r.model ?? r.agent,
+            startedAt: r.startedAt,
+            log: r.log,
+            hint: r.hint,
+            progress: r.progress ?? null,
+            autoApprove: r.autoApprove ?? false,
+            approval: existing?.approval ?? null
+          }
+        })
       )
     })
   }, [])
@@ -113,12 +148,53 @@ function useCodeAgentRuns(): { runs: CodeAgentRunUI[]; stopAgent: (runId: string
       }
     )
 
+    // 7. Approval request — the loop is paused waiting for the user
+    const offApproveRequest = window.electronAPI.ai.codeAgent.onApproveRequest(
+      (req) => {
+        setRuns((prev) =>
+          prev.map((r) =>
+            r.id === req.runId
+              ? {
+                  ...r,
+                  approval: {
+                    id: req.id,
+                    name: req.name,
+                    args: req.args,
+                    resumo: req.resumo,
+                    conteudo: req.conteudo,
+                    comando: req.comando,
+                    diff: req.diff,
+                    diffTruncated: req.diffTruncated,
+                    irreversivel: req.irreversivel
+                  }
+                }
+              : r
+          )
+        )
+      }
+    )
+
+    // 8. Environment hint mid-run (sandbox blocked, etc.)
+    const offHint = window.electronAPI.ai.codeAgent.onHint(
+      (hint) => {
+        setRuns((prev) =>
+          prev.map((r) =>
+            r.id === hint.runId
+              ? { ...r, hint: { title: hint.title, detail: hint.detail, command: hint.command } }
+              : r
+          )
+        )
+      }
+    )
+
     return () => {
       offStarted()
       offOutput()
       offProgress()
       offExit()
       offAutoChanged()
+      offApproveRequest()
+      offHint()
     }
   }, [sync])
 
@@ -130,7 +206,14 @@ function useCodeAgentRuns(): { runs: CodeAgentRunUI[]; stopAgent: (runId: string
     window.electronAPI.ai.codeAgent.setAuto(runId, enabled).then(() => { sync() })
   }, [sync])
 
-  return { runs, stopAgent, setAuto }
+  const approveAgent = useCallback((runId: string, id: string, approved: boolean): void => {
+    window.electronAPI.ai.codeAgent.approve(id, approved)
+    setRuns((prev) =>
+      prev.map((r) => (r.id === runId ? { ...r, approval: null } : r))
+    )
+  }, [])
+
+  return { runs, stopAgent, setAuto, approveAgent }
 }
 
 export function FleetView({
@@ -154,7 +237,7 @@ export function FleetView({
   const openConversation = useAiRunStore((s) => s.openConversation)
   const abort = useAiRunStore((s) => s.abort)
 
-  const { runs: codeRuns, stopAgent, setAuto } = useCodeAgentRuns()
+  const { runs: codeRuns, stopAgent, setAuto, approveAgent } = useCodeAgentRuns()
 
   // A running agent's transcript/usage is either the one on screen or parked.
   const messagesOf = (id: string): ChatMessage[] =>
@@ -320,6 +403,8 @@ export function FleetView({
 
             {codeAgents.map((run) => {
               const projectName = codeAgentProject(run.dir)
+              const hasApproval = run.approval !== null
+              const hasHint = run.hint !== null
               return (
                 <div
                   key={run.id}
@@ -346,7 +431,7 @@ export function FleetView({
 
                   {/* Status line */}
                   <div className="flex items-center gap-2 min-w-0">
-                    {run.hint ? (
+                    {hasApproval || hasHint ? (
                       <span className="w-2.5 h-2.5 shrink-0 rounded-full bg-amber-400" />
                     ) : (
                       <span className="w-2.5 h-2.5 shrink-0 rounded-full border-[1.5px] border-[#a5b4fc] border-t-transparent animate-spin" />
@@ -357,11 +442,83 @@ export function FleetView({
                           Auto
                         </span>
                       )}
-                      {run.hint
-                        ? `⚠️ ${run.hint.title}`
-                        : `Agente de código · ${run.model || 'codex'}`}
+                      {hasApproval
+                        ? 'Aguardando sua aprovação…'
+                        : hasHint
+                          ? `⚠️ ${run.hint!.title}`
+                          : `Agente de código · ${run.model || 'codex'}`}
                     </p>
                   </div>
+
+                  {/* Approval panel — inline diff + approve/reject buttons */}
+                  {hasApproval && run.approval && (
+                    <div className="rounded-lg bg-[#0f111a] border border-amber-500/30 p-3 gap-2 flex flex-col">
+                      <p className="text-xs text-[#e2e8f0] font-medium">
+                        O agente quer {describeApprovalAction(run.approval.name)}
+                      </p>
+
+                      {/* Inline diff preview (if the approval carries one) */}
+                      {run.approval.diff && run.approval.diff.length > 0 && (
+                        <div className="rounded bg-black/50 p-2 max-h-32 overflow-auto font-mono text-[10px] leading-relaxed">
+                          {run.approval.diff.map((d, i) => (
+                            <span
+                              key={i}
+                              className={
+                                d.kind === 'add'
+                                  ? 'text-green-400'
+                                  : d.kind === 'del'
+                                    ? 'text-red-400'
+                                    : d.kind === 'meta'
+                                      ? 'text-[#6b7280]'
+                                      : 'text-[#8892a4]'
+                              }
+                            >
+                              {d.text}
+                            </span>
+                          ))}
+                          {run.approval.diffTruncated && (
+                            <span className="text-[#6b7280] italic ml-1">(diff truncado)</span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Content preview for writes */}
+                      {run.approval.conteudo && (
+                        <pre className="rounded bg-black/50 p-2 max-h-28 overflow-auto text-[10px] text-[#8892a4] leading-relaxed whitespace-pre-wrap font-mono">
+                          {run.approval.conteudo}
+                        </pre>
+                      )}
+
+                      {/* Command preview */}
+                      {run.approval.comando && (
+                        <pre className="rounded bg-black/50 p-2 max-h-20 overflow-auto text-[10px] text-[#a5b4fc] leading-relaxed whitespace-pre-wrap font-mono">
+                          {run.approval.comando}
+                        </pre>
+                      )}
+
+                      {run.approval.irreversivel && (
+                        <p className="text-[10px] text-red-400 font-medium">
+                          ⚠️ Esta ação é irreversível
+                        </p>
+                      )}
+
+                      {/* Approve / Reject buttons */}
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          onClick={() => approveAgent(run.id, run.approval!.id, true)}
+                          className="flex-1 px-3 py-1.5 rounded-lg bg-emerald-600/20 border border-emerald-500/40 text-xs text-emerald-400 font-medium hover:bg-emerald-600/30 transition-colors"
+                        >
+                          Aprovar
+                        </button>
+                        <button
+                          onClick={() => approveAgent(run.id, run.approval!.id, false)}
+                          className="flex-1 px-3 py-1.5 rounded-lg bg-red-600/15 border border-red-500/30 text-xs text-red-400 font-medium hover:bg-red-600/25 transition-colors"
+                        >
+                          Recusar
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Log preview (last 3 lines) */}
                   {run.log && (

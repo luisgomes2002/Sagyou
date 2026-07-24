@@ -1587,6 +1587,28 @@ export function AIView({
               </p>
             </div>
 
+            <div className="mt-3 flex items-start gap-3">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={config.usePromptCaching !== false}
+                  onChange={(e) =>
+                    setConfig((c) => ({ ...c, usePromptCaching: e.target.checked }))
+                  }
+                  className="accent-[#6366f1]"
+                />
+                <span className="text-[11px] font-medium text-[#8892a4]">
+                  Cache de prefixo ativo
+                </span>
+              </label>
+              <p className="text-[11px] text-[#4a5068] pt-0 leading-relaxed">
+                Quando ligado (padrão), mantém o histórico estável para maximizar o cache do
+                provedor (DeepSeek ~50x mais barato, Claude, Gemini). Desligue se o provedor
+                não tiver cache — resultados de leitura repetidos serão podados para economizar
+                tokens.
+              </p>
+            </div>
+
             <div className="mt-3 pt-3 border-t border-[#2a2d42]">
               <span className="text-[11px] font-medium text-[#8892a4]">Agente de Código</span>
               <p className="mt-1 mb-2 text-[11px] leading-relaxed text-[#4a5068]">
