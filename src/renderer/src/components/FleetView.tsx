@@ -1,7 +1,11 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { v4 as uuidv4 } from 'uuid'
 import { useAiRunStore, EMPTY_USAGE, type ChatMessage } from '../store/aiRun'
 import { describeToolActivity } from '../ai/tools'
 import type { Project } from '../types'
+import { CodeDiff, type CodeAgentDiff } from './CodeDiff'
+import { AgentTerminal } from './AgentTerminal'
+import type { AgentRunMeta } from './AgentRunPicker'
 
 // ---------------------------------------------------------------------------
 // Painel de Agentes (FleetView)
@@ -28,16 +32,16 @@ function formatTokens(n: number): string {
   return `${(n / 1_000_000).toFixed(2)}M`
 }
 
-/**
- * Human-readable summary of what the code-agent wants to do, shown in the
- * approval card.  Maps the five code-agent tool names to Portuguese phrases.
- */
-function describeApprovalAction(name: string): string {
-  const map: Record<string, string> = {
-    escrever_arquivo: 'escrever um arquivo',
-    executar_comando: 'executar um comando'
-  }
-  return map[name] ?? name.replace(/_/g, ' ')
+/** What the inline chat needs to know about the session it belongs to. */
+interface ChatSession {
+  id: string
+  dir: string
+  task: string
+  agent: string
+  /** convId that links multiple runs into one conversation. */
+  sessionId: string
+  /** Live runId while a continuation is running. Null when idle. */
+  runId: string | null
 }
 
 // ---------------------------------------------------------------------------
@@ -237,7 +241,83 @@ export function FleetView({
   const openConversation = useAiRunStore((s) => s.openConversation)
   const abort = useAiRunStore((s) => s.abort)
 
-  const { runs: codeRuns, stopAgent, setAuto, approveAgent } = useCodeAgentRuns()
+  const { runs: codeRuns, stopAgent, setAuto } = useCodeAgentRuns()
+
+  // ── Archived runs (finished code agents, last 24h) ──────────────────────────
+  const [archivedRuns, setArchivedRuns] = useState<AgentRunMeta[]>([])
+  const [runCache, setRunCache] = useState<Map<string, { log: string; diff: CodeAgentDiff }>>(new Map())
+  // ── Active agent chat ────────────────────────────────────────────────────────
+  const [chatSession, setChatSession] = useState<ChatSession | null>(null)
+  const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'agent'; text: string; diff?: CodeAgentDiff; log?: string; runId?: string }[]>([])
+  const [chatInput, setChatInput] = useState('')
+  const [chatSending, setChatSending] = useState(false)
+  const chatSessionRef = useRef<ChatSession | null>(null)
+  chatSessionRef.current = chatSession
+
+  // Load archived runs on mount and when codeRuns changes (a run just finished).
+  useEffect(() => {
+    window.electronAPI.ai.codeAgent.runs().then((runs) => setArchivedRuns(runs.sort((a: AgentRunMeta, b: AgentRunMeta) => b.startedAt - a.startedAt)))
+  }, [codeRuns.length])
+
+  // When a run finishes and gets archived while we're in a chat session,
+  // auto-fetch its diff/log and append to the conversation.
+  useEffect(() => {
+    const offArchived = window.electronAPI.ai.codeAgent.onArchived(
+      async (payload) => {
+        const session = chatSessionRef.current
+        if (!session || payload.runId !== session.runId) return
+        try {
+          const snap = await window.electronAPI.ai.codeAgent.runGet(payload.id)
+          if (snap) {
+            const diff = (snap.diff as CodeAgentDiff) ?? { patch: '', files: [], truncated: false, omittedNewFiles: [] }
+            const log = snap.log ?? ''
+            setChatMessages((prev) => {
+              // Don't duplicate if the last agent message already has this run's output.
+              const last = prev[prev.length - 1]
+              if (last && last.role === 'agent' && last.runId === payload.id) return prev
+              return [
+                ...prev,
+                {
+                  role: 'agent' as const,
+                  text: snap.exitCode === 0 ? 'Agente concluiu.' : `Agente encerrou com código ${snap.exitCode}.`,
+                  diff,
+                  log,
+                  runId: payload.id
+                }
+              ]
+            })
+            // Also add to runCache so the CodeDiff in the header can show it
+            setRunCache((prev) => {
+              const next = new Map(prev)
+              next.set(payload.id, { log, diff })
+              return next
+            })
+          }
+        } catch {
+          /* best-effort */
+        }
+        setChatSession((prev) => (prev ? { ...prev, runId: null } : null))
+      }
+    )
+    return () => offArchived()
+  }, [])
+
+  const toggleRun = useCallback(async (id: string): Promise<void> => {
+    if (runCache.has(id)) {
+      setRunCache((prev) => { const next = new Map(prev); next.delete(id); return next })
+      return
+    }
+    const snap = await window.electronAPI.ai.codeAgent.runGet(id)
+    if (!snap) return
+    setRunCache((prev) => {
+      const next = new Map(prev)
+      next.set(id, {
+        log: snap.log ?? '',
+        diff: (snap.diff as CodeAgentDiff) ?? { patch: '', files: [], truncated: false, omittedNewFiles: [] }
+      })
+      return next
+    })
+  }, [runCache])
 
   // A running agent's transcript/usage is either the one on screen or parked.
   const messagesOf = (id: string): ChatMessage[] =>
@@ -299,34 +379,153 @@ export function FleetView({
           <line x1="8" y1="16" x2="8" y2="16" />
           <line x1="16" y1="16" x2="16" y2="16" />
         </svg>
-        <h1 className="text-base font-semibold text-[#e2e8f0]">Agentes</h1>
-        <span className="text-xs text-[#8892a4]">
-          {agents} {agents === 1 ? 'ativo' : 'ativos'}
-          {chatAgents.length > 0 && codeAgents.length > 0 && (
-            <> · {chatAgents.length} chat{chatAgents.length !== 1 ? 's' : ''} · {codeAgents.length} código</>
-          )}
-        </span>
+        {chatSession ? (
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <button
+              onClick={() => { setChatSession(null); setChatMessages([]) }}
+              className="text-[11px] text-[#8892a4] hover:text-[#e2e8f0] shrink-0"
+            >
+              ← Agentes
+            </button>
+            <h1 className="text-base font-semibold text-[#e2e8f0] truncate">
+              {chatSession.task.slice(0, 60)}
+            </h1>
+            <span className="text-xs text-[#8892a4] shrink-0">{chatSession.agent}</span>
+          </div>
+        ) : (
+          <>
+            <h1 className="text-base font-semibold text-[#e2e8f0]">Agentes</h1>
+            <span className="text-xs text-[#8892a4]">
+              {agents} {agents === 1 ? 'ativo' : 'ativos'}
+              {chatAgents.length > 0 && codeAgents.length > 0 && (
+                <> · {chatAgents.length} chat{chatAgents.length !== 1 ? 's' : ''} · {codeAgents.length} código</>
+              )}
+            </span>
+          </>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-4">
-        {chatAgents.length === 0 && codeAgents.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center">
-            <div className="w-12 h-12 rounded-full bg-[#1e2235] flex items-center justify-center mb-3">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4a5068" strokeWidth="2">
-                <rect x="3" y="11" width="18" height="10" rx="2" />
-                <circle cx="12" cy="5" r="2" />
-                <path d="M12 7v4" />
-              </svg>
-            </div>
-            <p className="text-[#e2e8f0] font-medium mb-1">Nenhum agente ativo</p>
-            <p className="text-sm text-[#8892a4] max-w-sm">
-              Comece uma conversa na aba <b>IA</b>. Vários agentes podem trabalhar ao mesmo tempo,
-              inclusive no mesmo projeto — todos aparecem aqui.
-            </p>
+      {chatSession ? (
+        <div className="flex flex-col h-full">
+          {(() => {
+            const data = runCache.get(chatSession.id)
+            return (
+              <div className="mb-4 p-3 rounded-xl bg-[#13151f] border border-[#2a2d42]">
+                <p className="text-xs font-medium text-[#e2e8f0] mb-1">Tarefa original</p>
+                <p className="text-[11px] text-[#8892a4] mb-2">{chatSession.task}</p>
+                {data && <CodeDiff diff={data.diff} />}
+              </div>
+            )
+          })()}
+          <div className="flex-1 space-y-3 mb-3 overflow-y-auto">
+            {chatMessages.map((m, i) => (
+              <div key={i} className={`p-3 rounded-xl ${m.role === 'user' ? 'bg-[#1a1d2e] border border-[#2a2d42] ml-8' : 'bg-[#13151f] border border-[#2a2d42] mr-8'}`}>
+                <p className="text-xs text-[#e2e8f0] whitespace-pre-wrap">{m.text}</p>
+                {m.diff && (
+                  <div className="mt-2"><CodeDiff diff={m.diff} /></div>
+                )}
+                {m.log && (
+                  <details className="group mt-2">
+                    <summary className="text-[10px] text-[#6366f1] cursor-pointer">Log</summary>
+                    <div className="mt-1"><AgentTerminal log={m.log} running={false} /></div>
+                  </details>
+                )}
+              </div>
+            ))}
+            {chatSending && (
+              <div className="mr-8 p-3 rounded-xl bg-[#13151f] border border-[#2a2d42]">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full border-[1.5px] border-[#a5b4fc] border-t-transparent animate-spin" />
+                  <span className="text-xs text-[#8892a4]">Agente trabalhando…</span>
+                </div>
+              </div>
+            )}
           </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {chatAgents.map((id) => {
+          <div className="flex items-center gap-2 shrink-0">
+            <input
+              type="text"
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              onKeyDown={async (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  const msg = chatInput.trim()
+                  if (!msg || chatSending || !chatSession) return
+                  setChatInput('')
+                  setChatSending(true)
+                  setChatMessages((prev) => [...prev, { role: 'user', text: msg }])
+                  try {
+                    const task = `(Continuação da tarefa anterior: "${chatSession.task}")\n\n${msg}`
+                    const result = await window.electronAPI.ai.codeAgent.run({
+                      path: chatSession.dir,
+                      task,
+                      files: undefined,
+                      projectId: undefined,
+                      convId: chatSession.sessionId
+                    })
+                    if (result.runId) {
+                      setChatSession((prev) => (prev ? { ...prev, runId: result.runId ?? null } : prev))
+                    }
+                  } finally {
+                    setChatSending(false)
+                  }
+                }
+              }}
+              placeholder="Digite uma mensagem para o agente de código…"
+              disabled={chatSending}
+              className="flex-1 px-3 py-2 rounded-lg bg-[#0d0f18] border border-[#2a2d42] text-sm text-[#e2e8f0] placeholder:text-[#4a5068] focus:outline-none focus:border-[#6366f1] disabled:opacity-50"
+            />
+            <button
+              onClick={async () => {
+                const msg = chatInput.trim()
+                if (!msg || chatSending || !chatSession) return
+                setChatInput('')
+                setChatSending(true)
+                setChatMessages((prev) => [...prev, { role: 'user', text: msg }])
+                try {
+                  const task = `(Continuação da tarefa anterior: "${chatSession.task}")\n\n${msg}`
+                  const result = await window.electronAPI.ai.codeAgent.run({
+                    path: chatSession.dir,
+                    task,
+                    files: undefined,
+                    projectId: undefined,
+                    convId: chatSession.sessionId
+                  })
+                  if (result.runId) {
+                    setChatSession((prev) => (prev ? { ...prev, runId: result.runId ?? null } : prev))
+                  }
+                } finally {
+                  setChatSending(false)
+                }
+              }}
+              disabled={chatSending}
+              className="px-4 py-2 rounded-lg bg-[#6366f1] text-sm text-white font-medium hover:bg-[#4f52d4] disabled:opacity-40 transition-colors shrink-0"
+            >
+              {chatSending ? '…' : 'Enviar'}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          {chatAgents.length === 0 && codeAgents.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-center">
+              <div className="w-12 h-12 rounded-full bg-[#1e2235] flex items-center justify-center mb-3">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4a5068" strokeWidth="2">
+                  <rect x="3" y="11" width="18" height="10" rx="2" />
+                  <circle cx="12" cy="5" r="2" />
+                  <path d="M 12 7v4" />
+                </svg>
+              </div>
+              <p className="text-[#e2e8f0] font-medium mb-1">Nenhum agente ativo</p>
+              <p className="text-sm text-[#8892a4] max-w-sm">
+                Comece uma conversa na aba <b>IA</b>. Vários agentes podem trabalhar ao mesmo tempo,
+                inclusive no mesmo projeto — todos aparecem aqui.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {chatAgents.map((id) => {
               const projectName = projects.find((p) => p.id === runProjects[id])?.name ?? 'Global'
               const tokens = runUsage[id] ?? EMPTY_USAGE
               const progress = progressOf(id)
@@ -429,96 +628,41 @@ export function FleetView({
                     )}
                   </div>
 
-                  {/* Status line */}
+                  {/* Status line with detailed step info */}
                   <div className="flex items-center gap-2 min-w-0">
-                    {hasApproval || hasHint ? (
-                      <span className="w-2.5 h-2.5 shrink-0 rounded-full bg-amber-400" />
+                    {hasApproval ? (
+                      <span className="w-2.5 h-2.5 shrink-0 rounded-full bg-amber-400 animate-pulse" title="Aguardando aprovação" />
+                    ) : hasHint ? (
+                      <span className="w-2.5 h-2.5 shrink-0 rounded-full bg-amber-400" title={run.hint!.detail} />
+                    ) : run.progress ? (
+                      <span className="w-2.5 h-2.5 shrink-0 rounded-full border-[1.5px] border-[#a5b4fc] border-t-transparent animate-spin" title={`Passo ${run.progress.step}/${run.progress.maxSteps}`} />
                     ) : (
-                      <span className="w-2.5 h-2.5 shrink-0 rounded-full border-[1.5px] border-[#a5b4fc] border-t-transparent animate-spin" />
+                      <span className="w-2.5 h-2.5 shrink-0 rounded-full border-[1.5px] border-[#a5b4fc] border-t-transparent animate-spin" title="Iniciando…" />
                     )}
-                    <p className="text-xs text-[#8892a4] truncate">
+                    <p className="text-xs text-[#8892a4] truncate flex items-center gap-1.5">
                       {run.autoApprove && (
-                        <span className="inline-flex items-center px-1.5 py-px rounded text-[10px] font-medium bg-amber-500/15 text-amber-400 mr-1.5">
+                        <span className="inline-flex items-center px-1.5 py-px rounded text-[10px] font-medium bg-amber-500/15 text-amber-400 shrink-0">
                           Auto
                         </span>
                       )}
-                      {hasApproval
-                        ? 'Aguardando sua aprovação…'
-                        : hasHint
-                          ? `⚠️ ${run.hint!.title}`
-                          : `Agente de código · ${run.model || 'codex'}`}
+                      {hasApproval ? (
+                        <span className="text-amber-400 font-medium">Aguardando sua aprovação</span>
+                      ) : hasHint ? (
+                        <span className="text-amber-400">⚠️ {run.hint!.title}</span>
+                      ) : run.progress ? (
+                        <span className="text-[#a5b4fc]">
+                          {run.model || 'codex'} · passo {run.progress.step}/{run.progress.maxSteps}
+                          {run.progress.promptTokens + run.progress.completionTokens > 0 && (
+                            <span className="text-[#6b7280] ml-1">
+                              · {(run.progress.promptTokens + run.progress.completionTokens).toLocaleString()} tok
+                            </span>
+                          )}
+                        </span>
+                      ) : (
+                        <span>Iniciando…</span>
+                      )}
                     </p>
                   </div>
-
-                  {/* Approval panel — inline diff + approve/reject buttons */}
-                  {hasApproval && run.approval && (
-                    <div className="rounded-lg bg-[#0f111a] border border-amber-500/30 p-3 gap-2 flex flex-col">
-                      <p className="text-xs text-[#e2e8f0] font-medium">
-                        O agente quer {describeApprovalAction(run.approval.name)}
-                      </p>
-
-                      {/* Inline diff preview (if the approval carries one) */}
-                      {run.approval.diff && run.approval.diff.length > 0 && (
-                        <div className="rounded bg-black/50 p-2 max-h-32 overflow-auto font-mono text-[10px] leading-relaxed">
-                          {run.approval.diff.map((d, i) => (
-                            <span
-                              key={i}
-                              className={
-                                d.kind === 'add'
-                                  ? 'text-green-400'
-                                  : d.kind === 'del'
-                                    ? 'text-red-400'
-                                    : d.kind === 'meta'
-                                      ? 'text-[#6b7280]'
-                                      : 'text-[#8892a4]'
-                              }
-                            >
-                              {d.text}
-                            </span>
-                          ))}
-                          {run.approval.diffTruncated && (
-                            <span className="text-[#6b7280] italic ml-1">(diff truncado)</span>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Content preview for writes */}
-                      {run.approval.conteudo && (
-                        <pre className="rounded bg-black/50 p-2 max-h-28 overflow-auto text-[10px] text-[#8892a4] leading-relaxed whitespace-pre-wrap font-mono">
-                          {run.approval.conteudo}
-                        </pre>
-                      )}
-
-                      {/* Command preview */}
-                      {run.approval.comando && (
-                        <pre className="rounded bg-black/50 p-2 max-h-20 overflow-auto text-[10px] text-[#a5b4fc] leading-relaxed whitespace-pre-wrap font-mono">
-                          {run.approval.comando}
-                        </pre>
-                      )}
-
-                      {run.approval.irreversivel && (
-                        <p className="text-[10px] text-red-400 font-medium">
-                          ⚠️ Esta ação é irreversível
-                        </p>
-                      )}
-
-                      {/* Approve / Reject buttons */}
-                      <div className="flex items-center gap-2 pt-1">
-                        <button
-                          onClick={() => approveAgent(run.id, run.approval!.id, true)}
-                          className="flex-1 px-3 py-1.5 rounded-lg bg-emerald-600/20 border border-emerald-500/40 text-xs text-emerald-400 font-medium hover:bg-emerald-600/30 transition-colors"
-                        >
-                          Aprovar
-                        </button>
-                        <button
-                          onClick={() => approveAgent(run.id, run.approval!.id, false)}
-                          className="flex-1 px-3 py-1.5 rounded-lg bg-red-600/15 border border-red-500/30 text-xs text-red-400 font-medium hover:bg-red-600/25 transition-colors"
-                        >
-                          Recusar
-                        </button>
-                      </div>
-                    </div>
-                  )}
 
                   {/* Log preview (last 3 lines) */}
                   {run.log && (
@@ -540,10 +684,22 @@ export function FleetView({
                   {/* Actions row */}
                   <div className="flex items-center gap-2 pt-1">
                     <button
-                      onClick={() => onOpenChat()}
+                      onClick={() => {
+                        setChatSession({
+                          id: run.id,
+                          dir: run.dir,
+                          task: run.task,
+                          agent: run.model || 'codex',
+                          sessionId: uuidv4(),
+                          runId: run.id
+                        })
+                        setChatMessages([])
+                        setChatInput('')
+                        setChatSending(false)
+                      }}
                       className="flex-1 px-3 py-1.5 rounded-lg bg-[#1e2235] border border-[#2a2d42] text-xs text-[#e2e8f0] font-medium hover:bg-[#2a2d42] transition-colors"
                     >
-                      Abrir IA
+                      Abrir chat
                     </button>
                     <button
                       onClick={() => setAuto(run.id, !run.autoApprove)}
@@ -570,6 +726,95 @@ export function FleetView({
               )
             })}
           </div>
+        )}
+
+            {/* ── Archived runs (finished agents) ───────────────────────────── */}
+            {archivedRuns.length > 0 && (
+              <div className="mt-6 pt-4 border-t border-[#2a2d42]">
+                <h2 className="text-xs font-medium text-[#8892a4] mb-3 px-1">
+                  Execuções anteriores (últimas 24h)
+                </h2>
+                <div className="space-y-2">
+                  {archivedRuns.slice(0, 10).map((run) => (
+                    <div
+                      key={run.id}
+                      className={`rounded-xl border p-3 transition-colors ${
+                        runCache.has(run.id)
+                          ? 'bg-[#1a1d2e] border-[#6366f1]'
+                          : 'bg-[#13151f] border-[#2a2d42] hover:border-[#3a3e58]'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`w-2 h-2 rounded-full shrink-0 ${
+                                run.exitCode === 0 ? 'bg-green-500' : 'bg-red-500'
+                              }`}
+                            />
+                            <p className="text-xs font-medium text-[#e2e8f0] truncate">
+                              {run.task.slice(0, 80)}
+                            </p>
+                          </div>
+                          <p className="text-[10px] text-[#8892a4] mt-1">
+                            {run.agent} · {run.fileCount} {run.fileCount === 1 ? 'arquivo' : 'arquivos'}
+                            {run.tokens && ` · ${((run.tokens.promptTokens + run.tokens.completionTokens) / 1000).toFixed(0)}k tok`}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        onClick={async () => {
+                          await window.electronAPI.ai.codeAgent.runRenew(run.id)
+                          setChatSession({
+                            id: run.id,
+                            dir: run.dir,
+                            task: run.task,
+                            agent: run.agent,
+                            sessionId: uuidv4(),
+                            runId: null
+                          })
+                          setChatMessages([])
+                          setChatInput('')
+                          setChatSending(false)
+                        }}
+                        title="Continuar conversando com este agente"
+                            className="px-2.5 py-1.5 rounded-lg bg-[#6366f1]/20 border border-[#6366f1]/40 text-[10px] text-[#a5b4fc] font-medium hover:bg-[#6366f1]/30 transition-colors"
+                          >
+                            Continuar
+                          </button>
+                          <button
+                            onClick={() => toggleRun(run.id)}
+                            title={runCache.has(run.id) ? 'Fechar detalhes' : 'Ver diff e log'}
+                            className="px-2.5 py-1.5 rounded-lg bg-[#1e2235] border border-[#2a2d42] text-[10px] text-[#e2e8f0] hover:bg-[#6366f1] hover:border-[#6366f1] transition-colors"
+                          >
+                            {runCache.has(run.id) ? 'Fechar' : 'Detalhes'}
+                          </button>
+                        </div>
+                      </div>
+
+                      {(() => {
+                        const data = runCache.get(run.id)
+                        if (!data) return null
+                        return (
+                          <div className="mt-3 space-y-3">
+                            <CodeDiff diff={data.diff} />
+                            <details className="group">
+                              <summary className="text-[10px] text-[#6366f1] cursor-pointer hover:text-[#a5b4fc] select-none">
+                                Log completo ({data.log.split('\n').length} linhas)
+                              </summary>
+                              <div className="mt-2">
+                                <AgentTerminal log={data.log} running={false} />
+                              </div>
+                            </details>
+                          </div>
+                        )
+                      })()}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
     </>

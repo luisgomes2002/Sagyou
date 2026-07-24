@@ -127,21 +127,30 @@ export function sortRuns(runs: AgentRunMeta[]): AgentRunMeta[] {
 /**
  * Which runs survive and which are dropped, after adding one.
  *
- * Per-conversation first, so a chatty project can't evict every other chat's
- * history, then a global backstop. Callers delete the `drop` files — an index
- * that forgets a run without deleting its payload leaks disk for good.
+ * Runs older than 24h are dropped first, then per-conversation cap, then a
+ * global backstop. Callers delete the `drop` files — an index that forgets
+ * a run without deleting its payload leaks disk for good.
  */
+export const RUN_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
+
 export function pruneRuns(
   runs: AgentRunMeta[],
   perConv = MAX_RUNS_PER_CONV,
   total = MAX_RUNS_TOTAL
 ): { keep: AgentRunMeta[]; drop: AgentRunMeta[] } {
   const sorted = sortRuns(runs)
+  const now = Date.now()
   const seen = new Map<string, number>()
   const keep: AgentRunMeta[] = []
   const drop: AgentRunMeta[] = []
 
   for (const r of sorted) {
+    // Drop runs older than 24h first. Skip endedAt=0 (tests, legacy) — no
+    // timestamp means no TTL.
+    if (r.endedAt > 0 && now - r.endedAt > RUN_TTL_MS) {
+      drop.push(r)
+      continue
+    }
     const key = r.convId ?? '__none__'
     const n = (seen.get(key) ?? 0) + 1
     seen.set(key, n)

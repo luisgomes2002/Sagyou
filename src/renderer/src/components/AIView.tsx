@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, memo } from 'react'
 import { useKanbanStore } from '../store/kanban'
 import { useAiRunStore, type ChatMessage } from '../store/aiRun'
 import type { Project } from '../types'
@@ -28,16 +28,55 @@ const DEFAULT_CONFIG: AIConfig = {
   model: 'gpt-4o-mini'
 }
 
+/** Map model name → provider base URL, so selecting a model auto-fills the URL. */
+const MODEL_PROVIDER: Record<string, string> = {
+  'deepseek': 'https://api.deepseek.com',
+  'gpt': 'https://api.openai.com',
+  'o1': 'https://api.openai.com',
+  'o3': 'https://api.openai.com',
+  'claude': 'https://api.anthropic.com',
+  'gemini': 'https://generativelanguage.googleapis.com',
+  'llama': 'https://api.llama-api.com',
+  'mistral': 'https://api.mistral.ai',
+  'codestral': 'https://api.mistral.ai',
+  'qwen': 'https://api.qwen.ai'
+}
+
+function providerForModel(model: string): string | null {
+  const key = Object.keys(MODEL_PROVIDER).find((k) => model.startsWith(k))
+  return key ? MODEL_PROVIDER[key] : null
+}
+
+/** Known models across common providers, shown alongside API results. */
+const KNOWN_MODELS = [
+  // DeepSeek
+  'deepseek-v4-flash', 'deepseek-v4-pro',
+  // OpenAI
+  'gpt-4o', 'gpt-4o-mini', 'gpt-4', 'gpt-4-turbo', 'gpt-3.5-turbo', 'o1', 'o1-mini', 'o3-mini',
+  // Anthropic
+  'claude-sonnet-4-20250514', 'claude-3-5-sonnet-latest', 'claude-3-5-haiku-latest', 'claude-opus-4-20250514', 'claude-3-opus-latest', 'claude-3-haiku-20240307',
+  // Google
+  'gemini-2.5-pro-exp-03-25', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash',
+  // Meta
+  'llama-3.3-70b-instruct', 'llama-3.1-8b-instruct',
+  // Mistral
+  'mistral-large-latest', 'mistral-small-latest', 'codestral-latest',
+  // Local / open
+  'qwen2.5-coder-32b-instruct', 'qwen2.5-72b-instruct'
+]
+
 /**
- * List the models the provider exposes (GET /models), proxied through the main
- * process so the dropdown doesn't hit CORS on hosted providers.
+ * List the models the provider exposes (GET /models), merged with KNOWN_MODELS
+ * so the dropdown always shows common options even when the API omits them.
  */
 async function fetchModels(cfg: AIConfig): Promise<string[]> {
-  const res = await window.electronAPI.ai.models({ baseUrl: cfg.baseUrl, apiKey: cfg.apiKey })
-  if (!res.success || !res.models) {
-    throw new Error(res.error || 'Falha ao carregar modelos')
-  }
-  return res.models
+  try {
+    const res = await window.electronAPI.ai.models({ baseUrl: cfg.baseUrl, apiKey: cfg.apiKey })
+    if (res.success && Array.isArray(res.models)) {
+      return [...new Set([...KNOWN_MODELS, ...res.models])]
+    }
+  } catch { /* fall through to known models only */ }
+  return KNOWN_MODELS
 }
 
 /** Extract the first balanced JSON object from arbitrary model text. */
@@ -90,6 +129,62 @@ type SkillItem = Awaited<ReturnType<typeof window.electronAPI.ai.skills.list>>[n
 const COMPOSER_MAX_PX = 200
 
 type StatusState = 'remark' | 'running' | 'done'
+
+/**
+ * A thin memo wrapper around StatusLine so a growing transcript only re-renders
+ * the lines that actually changed. The text identity is the cheapest stable key.
+ */
+const MemoStatusLine = memo(StatusLine)
+
+/**
+ * A chat bubble (user or assistant). Memoized so the visible window re-renders
+ * only the messages that content-wise changed, not every message on every
+ * streaming chunk.
+ */
+const MessageBubble = memo(function MessageBubble({
+  m,
+  index,
+  imageData
+}: {
+  m: ChatMessage
+  index: number
+  imageData: Record<string, string>
+}) {
+  return (
+    <div
+      key={index}
+      className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
+    >
+      <div
+        className={`px-3.5 py-2 rounded-2xl text-sm break-words ${
+          m.role === 'user'
+            ? 'max-w-[75%] whitespace-pre-wrap bg-[#6366f1] text-white rounded-br-sm'
+            : 'max-w-[88%] bg-[#1e2235] text-[#e2e8f0] border border-[#2a2d42] rounded-bl-sm'
+        }`}
+      >
+        {(m.imageIds ?? []).length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-1.5">
+            {(m.imageIds ?? []).map((id) =>
+              imageData[id] ? (
+                <img
+                  key={id}
+                  src={imageData[id]}
+                  alt="Imagem enviada"
+                  className="max-h-40 rounded-md border border-white/10"
+                />
+              ) : (
+                <span key={id} className="text-[10px] italic opacity-60">
+                  [imagem indisponível]
+                </span>
+              )
+            )}
+          </div>
+        )}
+        {m.role === 'user' ? m.content : <ChatMarkdown content={m.content} />}
+      </div>
+    </div>
+  )
+})
 
 /**
  * How a status line should read right now. A tool left at done:false by an
@@ -294,6 +389,36 @@ export function AIView({
   const runningHere = busy && runningConvId === conversationId
   const toolRunning = runningHere && messages.some((m) => m.done === false)
 
+  const MESSAGE_PAGE = 80
+  const [visibleCount, setVisibleCount] = useState(MESSAGE_PAGE)
+  const hasMore = messages.length > visibleCount
+  const hiddenCount = messages.length - visibleCount
+
+  const visibleMessages = useMemo(
+    () => messages.slice(Math.max(0, messages.length - visibleCount)),
+    [messages, visibleCount]
+  )
+
+  // Preserve scroll position when expanding: new messages arrive above, so
+  // the old content shifts down. Compensate scrollTop to keep the user's view.
+  const expandScrollRef = useRef(0)
+  const showMore = useCallback(() => {
+    if (scrollRef.current) {
+      expandScrollRef.current = scrollRef.current.scrollHeight
+    }
+    setVisibleCount((n) => {
+      if (n >= messages.length) return n
+      return Math.min(n + MESSAGE_PAGE, messages.length)
+    })
+  }, [messages.length])
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (!el || !expandScrollRef.current) return
+    const delta = el.scrollHeight - expandScrollRef.current
+    if (delta > 0) el.scrollTop += delta
+    expandScrollRef.current = 0
+  }, [visibleCount])
+
   const totalTokens = usage.promptTokens + usage.completionTokens
   const cost = estimateCost(usage, config)
 
@@ -389,7 +514,8 @@ export function AIView({
           codeAgent: stored.codeAgent,
           // Undefined = sandbox required (safe default); only explicit false is off.
           sandboxEnabled: stored.sandboxEnabled,
-          sandboxOnboardingDismissed: stored.sandboxOnboardingDismissed
+          sandboxOnboardingDismissed: stored.sandboxOnboardingDismissed,
+          reasoningEffort: stored.reasoningEffort
         })
         // Entering the view puts the user back where they were, at the end of
         // the chat they were reading — not in a blank one.
@@ -1424,11 +1550,21 @@ export function AIView({
                 <div className="flex gap-1.5">
                   <select
                     value={config.model}
-                    onChange={(e) => setConfig((c) => ({ ...c, model: e.target.value }))}
+                    onChange={(e) => {
+                      const model = e.target.value
+                      setConfig((c) => {
+                        // Auto-fill base URL when the model maps to a known provider
+                        // and the current URL is empty or matches a different provider.
+                        const url = providerForModel(model)
+                        const currentUrl = c.baseUrl.trim()
+                        const shouldFill = url && (!currentUrl || Object.values(MODEL_PROVIDER).includes(currentUrl) || currentUrl.includes('localhost'))
+                        return { ...c, model, ...(shouldFill ? { baseUrl: url } : {}) }
+                      })
+                    }}
                     className="flex-1 min-w-0 px-2.5 py-1.5 rounded-md bg-[#0d0f18] border border-[#2a2d42] text-sm text-[#e2e8f0] focus:outline-none focus:border-[#6366f1]"
                   >
                     {models.length === 0 && (
-                      <option value={config.model}>{config.model || 'Carregue os modelos…'}</option>
+                      <option value={config.model || ''}>{config.model || 'Carregue os modelos…'}</option>
                     )}
                     {models.map((m) => (
                       <option key={m} value={m}>
@@ -1492,8 +1628,28 @@ export function AIView({
               este modelo; perguntas comuns ("quantas tasks fiz essa semana?") continuam no
               principal — assim você só paga o modelo caro quando o assunto é código. Vale para o
               chat <b>conversar e analisar</b>; quem de fato <b>edita os arquivos</b> é o Agente de
-              Código (mais abaixo). Deixe em "mesmo do principal" para usar um único modelo em tudo.
+              Código (mais abaixo).               Deixe em "mesmo do principal" para usar um único modelo em tudo.
             </p>
+            <label className="flex flex-col gap-1 mt-3">
+              <span className="text-[11px] font-medium text-[#8892a4]">
+                Esforço de raciocínio (DeepSeek)
+              </span>
+              <select
+                value={config.reasoningEffort ?? ''}
+                onChange={(e) =>
+                  setConfig((c) => ({
+                    ...c,
+                    reasoningEffort: (e.target.value || undefined) as 'low' | 'medium' | 'high' | undefined
+                  }))
+                }
+                className="px-2.5 py-1.5 rounded-md bg-[#0d0f18] border border-[#2a2d42] text-sm text-[#e2e8f0] focus:outline-none focus:border-[#6366f1]"
+              >
+                <option value="">Padrão do provedor</option>
+                <option value="low">Baixo</option>
+                <option value="medium">Médio</option>
+                <option value="high">Alto</option>
+              </select>
+            </label>
             <div className="mt-3 flex items-start gap-3">
               <label className="flex flex-col gap-1 shrink-0 w-40">
                 <span className="text-[11px] font-medium text-[#8892a4]">Passos máximos</span>
@@ -1767,52 +1923,37 @@ export function AIView({
               </div>
             </div>
           ) : (
-            messages.map((m, i) =>
-              m.role === 'status' ? (
-                <StatusLine
-                  key={i}
-                  text={m.content}
-                  state={statusState(m, runningHere)}
-                  step={m.step}
-                  maxSteps={m.maxSteps}
-                  tokens={m.tokens}
-                />
-              ) : (
-                <div
-                  key={i}
-                  className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div
-                    className={`px-3.5 py-2 rounded-2xl text-sm break-words ${
-                      m.role === 'user'
-                        ? 'max-w-[75%] whitespace-pre-wrap bg-[#6366f1] text-white rounded-br-sm'
-                        : 'max-w-[88%] bg-[#1e2235] text-[#e2e8f0] border border-[#2a2d42] rounded-bl-sm'
-                    }`}
+            <>
+              {hasMore && (
+                <div className="flex justify-center sticky top-0 z-10 py-1">
+                  <button
+                    onClick={showMore}
+                    className="px-4 py-1.5 rounded-full bg-[#1e2235] border border-[#2a2d42] text-xs text-[#8892a4] hover:text-[#e2e8f0] hover:border-[#3a3e58] transition-colors shadow-lg"
                   >
-                    {(m.imageIds ?? []).length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 mb-1.5">
-                        {(m.imageIds ?? []).map((id) =>
-                          imageData[id] ? (
-                            <img
-                              key={id}
-                              src={imageData[id]}
-                              alt="Imagem enviada"
-                              className="max-h-40 rounded-md border border-white/10"
-                            />
-                          ) : (
-                            // The file is gone; the turn's text still stands.
-                            <span key={id} className="text-[10px] italic opacity-60">
-                              [imagem indisponível]
-                            </span>
-                          )
-                        )}
-                      </div>
-                    )}
-                    {m.role === 'user' ? m.content : <ChatMarkdown content={m.content} />}
-                  </div>
+                    Mostrar {hiddenCount > MESSAGE_PAGE ? `${MESSAGE_PAGE}+` : hiddenCount} mensage{hiddenCount === 1 ? 'm' : 'ns'} anterior{hiddenCount === 1 ? '' : 'es'}
+                  </button>
                 </div>
-              )
-            )
+              )}
+              {visibleMessages.map((m, i) =>
+                m.role === 'status' ? (
+                  <MemoStatusLine
+                    key={messages.length - visibleMessages.length + i}
+                    text={m.content}
+                    state={statusState(m, runningHere)}
+                    step={m.step}
+                    maxSteps={m.maxSteps}
+                    tokens={m.tokens}
+                  />
+                ) : (
+                  <MessageBubble
+                    key={messages.length - visibleMessages.length + i}
+                    m={m}
+                    index={messages.length - visibleMessages.length + i}
+                    imageData={imageData}
+                  />
+                )
+              )}
+            </>
           )}
           {runningHere && (
             <div className="flex flex-col items-start gap-1.5">
