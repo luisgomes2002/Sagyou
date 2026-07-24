@@ -12,14 +12,16 @@ import {
   type AgentRunMeta
 } from '../agent-runs'
 
+const NOW = Date.now()
+
 const run = (over: Partial<AgentRunMeta> = {}): AgentRunMeta => ({
   id: '00000000-0000-4000-8000-000000000000',
   convId: 'c1',
   agent: 'codex',
   dir: '/repo',
   task: 'faz algo',
-  startedAt: 1000,
-  endedAt: 2000,
+  startedAt: NOW - 1000,
+  endedAt: NOW - 500,
   exitCode: 0,
   fileCount: 1,
   ...over

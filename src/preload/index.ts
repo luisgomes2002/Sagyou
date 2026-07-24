@@ -305,6 +305,8 @@ const api = {
         ipcRenderer.invoke('ai:code-agent:runs', convId),
       runGet: (id: string): Promise<AgentRunSnapshot | null> =>
         ipcRenderer.invoke('ai:code-agent:run-get', id),
+      runRenew: (id: string): Promise<void> =>
+        ipcRenderer.invoke('ai:code-agent:run-renew', id),
       // Output carries runId to distinguish concurrent runs.
       onOutput: (cb: (payload: { runId: string; chunk: string }) => void) => {
         const handler = (

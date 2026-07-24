@@ -56,6 +56,12 @@ export interface AIConfig {
    * caching at the cost of breaking prompt cache.
    */
   usePromptCaching?: boolean
+  /**
+   * DeepSeek reasoning_effort parameter. Controls how much reasoning the model
+   * does before answering. One of 'low', 'medium', 'high'. Only sent to the
+   * model when explicitly set; absent = provider default.
+   */
+  reasoningEffort?: 'low' | 'medium' | 'high'
 }
 
 /** Tokens billed by a model call, as the provider reported them. */
@@ -393,6 +399,17 @@ export interface RunAgentOptions {
    * call and the caller adds them up. Silent when the provider reports nothing.
    */
   onUsage?: (usage: TokenUsage) => void
+  /**
+   * Optional tool definitions for this run. When set, these are sent to the
+   * model instead of the default TOOL_DEFS. Used by the code-focused chat to
+   * exclude non-code tools (kanban, finance, etc.).
+   */
+  tools?: ToolDef[]
+  /**
+   * Optional system prompt override. When set, replaces SYSTEM_PROMPT entirely
+   * (the memory briefing is still appended). Used by the code-focused chat.
+   */
+  systemPrompt?: string
 }
 
 /**
@@ -825,10 +842,11 @@ export async function runAgent(
   // tests/older preload — leaves the prompt exactly as it was. Reading the
   // briefing is decay-neutral (see formatMemoriesForPrompt); only buscar_memoria
   // touches memories.
-  let systemContent = SYSTEM_PROMPT
+  const baseSystem = opts.systemPrompt ?? SYSTEM_PROMPT
+  let systemContent = baseSystem
   try {
     const brief = await window.electronAPI?.ai?.memory?.briefing?.(opts.projectId ?? null)
-    if (brief?.text) systemContent = `${SYSTEM_PROMPT}\n\n${brief.text}`
+    if (brief?.text) systemContent = `${baseSystem}\n\n${brief.text}`
     // The briefing call also runs the lazy decay pass. Surface it only when it
     // actually retired something — rare, so it's a signal, not noise.
     if (brief?.archived) {
@@ -840,7 +858,7 @@ export async function runAgent(
   } catch {
     /* memory is best-effort; a briefing failure never blocks the run */
   }
-  const msgs: ApiMessage[] = [{ role: 'system', content: systemContent }, ...conversation]
+  let msgs: ApiMessage[] = [{ role: 'system', content: systemContent }, ...conversation]
   const { onStream, onStatus, onToolEnd } = opts
   // Run-scoped brake state. Each counter/list lives for one run only, so a
   // brake never carries over into the next answer.
@@ -923,7 +941,7 @@ export async function runAgent(
         for (let s = 0; s <= step; s++) tallyPrune(tally, measurePrunedCall(msgs, pruned))
         logPruneMeasurement(tally)
       }
-      const assistant = await callModelResilient(rcfg, pruned, TOOL_DEFS, runOpts)
+      const assistant = await callModelResilient(rcfg, pruned, opts.tools ?? TOOL_DEFS, runOpts)
       msgs.push(assistant)
       // Count a step only once its model call came back — a thrown call is not a
       // completed round, and shouldn't inflate the efficiency average.
@@ -995,6 +1013,45 @@ export async function runAgent(
           }
         }
         msgs.push({ role: 'tool', tool_call_id: call.id, content: result })
+      }
+
+      // Compaction: when the conversation grows beyond a threshold, ask the
+      // model to summarise old turns into a single compact block. This trades
+      // one model call for shrinking every subsequent step's context — worth
+      // it when there are still several steps left.
+      //
+      // Only when prompt caching is disabled: compaction breaks the stable
+      // prefix that DeepSeek / Claude / Gemini cache hits depend on.
+      if (
+        rcfg.usePromptCaching === false &&
+        step < maxSteps - 3 && // only when several steps remain
+        step > 2 && // not too early
+        msgs.length > 8 // enough messages to compact
+      ) {
+        const totalChars = msgs.reduce((s, m) => s + (typeof m.content === 'string' ? m.content.length : 0), 0)
+        if (totalChars > 30000) {
+          const KEEP = 4 // keep the last 2 tool exchanges
+          const head = msgs.slice(0, 1) // system prompt
+          const tail = msgs.slice(-KEEP)
+          const mid = msgs.slice(1, -KEEP)
+          const midText = mid
+            .map((m) => `${m.role}: ${typeof m.content === 'string' ? m.content.slice(0, 500) : '(imagem)'}`)
+            .join('\n\n')
+          const compactPrompt: ApiMessage[] = [
+            { role: 'system', content: `Resuma a conversa abaixo em português, preservando decisões tomadas, arquivos alterados, dados consultados e o que ainda falta fazer. Seja conciso (máx 3000 caracteres). Não invente.` },
+            { role: 'user', content: midText.slice(0, 50000) }
+          ]
+          try {
+            const { message } = await callModel(rcfg, compactPrompt, undefined)
+            const summary = contentText(message.content).trim()
+            if (summary && summary.length < 5000) {
+              msgs = [head[0], { role: 'user', content: `[Resumo de turnos anteriores]\n${summary}` }, ...tail]
+              onStatus?.('📦 Histórico compactado para economizar tokens.', 'remark')
+            }
+          } catch {
+            // compaction failure is non-critical — continue with full history
+          }
+        }
       }
     }
 

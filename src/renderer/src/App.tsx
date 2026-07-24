@@ -153,7 +153,6 @@ export default function App() {
   const [aiPrefill, setAiPrefill] = useState<string | null>(null)
   // Count of live code-agent runs (supports N concurrent agents in different dirs).
   const [codeAgentRunCount, setCodeAgentRunCount] = useState(0)
-  const codeAgentRunning = codeAgentRunCount > 0
 
   useEffect(() => { loadData() }, [loadData])
 
@@ -431,6 +430,7 @@ export default function App() {
           onImportBackup={handleImportBackup}
           onImportAI={handleImportAI}
           onExportExcel={() => setExcelExportOpen(true)}
+          codeAgentRunCount={codeAgentRunCount}
         />
 
         <main className="flex-1 flex flex-col overflow-hidden">
@@ -668,25 +668,7 @@ export default function App() {
         />
       )}
 
-      {/* Global indicator: code agent(s) running in the background (visible on any view) */}
-      {codeAgentRunning && (
-        <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg bg-[#13151f] border border-amber-500/40 shadow-2xl">
-          <span className="relative flex w-2.5 h-2.5">
-            <span className="absolute inline-flex w-full h-full rounded-full bg-amber-400 opacity-60 animate-ping" />
-            <span className="relative inline-flex w-2.5 h-2.5 rounded-full bg-amber-400" />
-          </span>
-          <span className="text-xs font-medium text-amber-300">
-            Agente de código rodando
-            {codeAgentRunCount > 1 ? ` em ${codeAgentRunCount} projetos` : ''}
-          </span>
-          <button
-            onClick={() => window.electronAPI.ai.codeAgent.stop()}
-            className="ml-1 px-2 py-0.5 rounded text-[11px] text-red-400 hover:text-red-300 hover:bg-red-400/10 transition-colors"
-          >
-            Parar
-          </button>
-        </div>
-      )}
+      {/* Code agent indicator movido para o badge da sidebar (Agentes) */}
     </div>
   )
 }

@@ -45,10 +45,10 @@ afterEach(async () => {
 const ctx = (): ToolContext => ({ root })
 
 describe('tool definitions', () => {
-  it('exposes exactly the five tools, each with a JSON schema', () => {
+  it('exposes exactly the seven tools, each with a JSON schema', () => {
     const names = CODE_AGENT_TOOLS.map((t) => t.function.name)
     expect(names.sort()).toEqual(
-      ['buscar_no_codigo', 'escrever_arquivo', 'executar_comando', 'ler_arquivo', 'listar_arquivos'].sort()
+      ['buscar_na_web', 'buscar_no_codigo', 'escrever_arquivo', 'executar_comando', 'ler_arquivo', 'listar_arquivos', 'rodar_subagente'].sort()
     )
     for (const t of CODE_AGENT_TOOLS) {
       expect(t.type).toBe('function')
@@ -404,7 +404,7 @@ describe('codeToolsFor', () => {
     const names = codeToolsFor({ pinnedFiles: true }).map((t) => t.function.name)
     expect(names).not.toContain('buscar_no_codigo')
     expect(names).not.toContain('listar_arquivos')
-    expect(names.sort()).toEqual(['escrever_arquivo', 'executar_comando', 'ler_arquivo'].sort())
+    expect(names.sort()).toEqual(['buscar_na_web', 'escrever_arquivo', 'executar_comando', 'ler_arquivo', 'rodar_subagente'].sort())
   })
 })
 

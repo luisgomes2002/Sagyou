@@ -24,6 +24,11 @@ interface AIConfig {
   timeoutMs?: number
   /** Conversation to reopen when the AI view is entered. */
   lastConversationId?: string
+  /**
+   * DeepSeek reasoning_effort parameter. Controls how much reasoning the model
+   * does before answering. One of 'low', 'medium', 'high'. Only sent when set.
+   */
+  reasoningEffort?: 'low' | 'medium' | 'high'
 
 }
 
@@ -372,6 +377,7 @@ declare global {
            * as the agent's work.
            */
           runGet: (id: string) => Promise<AgentRunSnapshot | null>
+          runRenew: (id: string) => Promise<void>
           /** Live output stream. Payload carries runId to distinguish concurrent runs. */
           onOutput: (cb: (payload: { runId: string; chunk: string }) => void) => () => void
           /** Fires immediately when a run starts — before any output. */

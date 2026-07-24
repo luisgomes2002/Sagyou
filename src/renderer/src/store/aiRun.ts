@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import { v4 as uuidv4 } from 'uuid'
 import { runAgent, resolveMaxSteps } from '../ai/agent'
+import { CODE_TOOL_DEFS } from '../ai/tools'
+import codePromptMd from '../ai/code-prompt.md?raw'
 import { useKanbanStore } from './kanban'
 import type { AIConfig, PendingCall, TokenUsage, ContentPart } from '../ai/agent'
 
@@ -291,7 +293,8 @@ export interface AiRunState {
 
   send: (
     config: AIConfig,
-    opts: { text: string; imageIds: string[]; imageData: Record<string, string> }
+    opts: { text: string; imageIds: string[]; imageData: Record<string, string> },
+    codeMode?: boolean
   ) => Promise<void>
   /** Ask a run to stop. Defaults to the chat on screen when no id is given. */
   abort: (convId?: string) => void
@@ -351,20 +354,13 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
   abortRequested: new Set(),
   savedTick: 0,
 
-  send: async (config, { text, imageIds, imageData }) => {
-    // Mint the id up front rather than leaving it to the autosave: the run has
-    // to know which conversation it belongs to from the start, or a run whose
-    // view is closed before the first save has nowhere to land.
+  send: async (config, { text, imageIds, imageData }, codeMode = false) => {
     const convId = get().ensureConversationId()
-    // Reentry guard is per-conversation now, not global: a second run of *this*
-    // chat is blocked, but another chat is free to run in parallel.
     if (get().running.has(convId)) return
     const next: ChatMessage[] = [
       ...get().messages,
       { role: 'user', content: text, ...(imageIds.length > 0 && { imageIds }) }
     ]
-    // Scope the memory briefing to the active project; also record which project
-    // this run works on, for the agents panel.
     const projectId = useKanbanStore.getState().activeProjectId
     set((s) => ({
       messages: next,
@@ -380,8 +376,6 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
       const reply = await runAgent(
         config,
         toApiMessages(next, imageData),
-        // Bind approval to this run's own conversation, so its card is labelled
-        // and answered independently of any other run in flight.
         (writes) => get().requestApproval(convId, writes),
         {
           projectId,
@@ -405,8 +399,8 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
                 }
               }
             }),
-          // Status lines land in the transcript as they happen, routed to this
-          // run's own chat — on screen or parked.
+          // In code mode: use only code tools + a code-focused system prompt.
+          ...(codeMode ? { tools: CODE_TOOL_DEFS, systemPrompt: codePromptMd.trim() } : {}),
           onStatus: (text, kind, progress) =>
             set((s) =>
               writeConv(s, convId, (prev) => [

@@ -1,5 +1,5 @@
 import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
-import { join, extname, basename, resolve, relative, sep } from 'path'
+import { join, extname, basename, relative, sep } from 'path'
 import {
   readFileSync,
   writeFileSync,
@@ -58,7 +58,7 @@ import {
   type RunMetricInput
 } from './run-metrics'
 import { getOpenAIClient, requestOptions } from './openai-client'
-import { confineToRoot, walkFiles, detectSymbols, extractSymbol, extractLines } from './code-files'
+import { confineToRoot, walkFiles, detectSymbols, extractSymbol, extractLines, searchFiles } from './code-files'
 import {
   runCodeAgent,
   buildSystemPrompt,
@@ -283,7 +283,7 @@ function stopCodeAgent(runId?: string): void {
  * instant this returns.
  */
 async function callCodeModel(
-  cfg: { baseUrl: string; apiKey: string; model: string },
+  cfg: { baseUrl: string; apiKey: string; model: string; reasoningEffort?: string },
   messages: AgentMessage[],
   tools: CodeToolDef[]
 ): Promise<{ message: AgentMessage; usage?: TokenUsage }> {
@@ -302,7 +302,8 @@ async function callCodeModel(
             >[0]['tools'],
             tool_choice: 'auto' as const
           }
-        : {})
+        : {}),
+      ...(cfg.reasoningEffort ? { reasoning_effort: cfg.reasoningEffort as 'low' | 'medium' | 'high' } : {})
     },
     requestOptions(loadAIConfig().timeoutMs)
   )
@@ -507,6 +508,12 @@ interface AIConfig {
    * opens. A machine that already had ai-jail skips onboarding regardless.
    */
   sandboxOnboardingDismissed?: boolean
+  /**
+   * DeepSeek reasoning_effort parameter. Controls how much reasoning the model
+   * does before answering. One of 'low', 'medium', 'high'. Applied to every
+   * model call (chat and code agent) when set.
+   */
+  reasoningEffort?: 'low' | 'medium' | 'high'
 }
 
 const DEFAULT_AI_CONFIG: AIConfig = { baseUrl: '', apiKey: '', model: '' }
@@ -516,13 +523,14 @@ const DEFAULT_AI_CONFIG: AIConfig = { baseUrl: '', apiKey: '', model: '' }
  * config where not. Kept here (not in the renderer) because the loop runs in
  * main — the renderer only edits the config, it never runs the agent.
  */
-function resolveCodeAgentConfig(cfg: AIConfig): { baseUrl: string; apiKey: string; model: string } {
+function resolveCodeAgentConfig(cfg: AIConfig): { baseUrl: string; apiKey: string; model: string; reasoningEffort?: string } {
   const ca = cfg.codeAgent ?? {}
   const pick = (a: string | undefined, b: string): string => (a && a.trim() ? a.trim() : b)
   return {
     baseUrl: pick(ca.baseUrl, cfg.baseUrl),
     apiKey: pick(ca.apiKey, cfg.apiKey),
-    model: pick(ca.model, cfg.model)
+    model: pick(ca.model, cfg.model),
+    reasoningEffort: cfg.reasoningEffort
   }
 }
 const aiConfigPath = (): string => join(app.getPath('userData'), 'ai-config.json')
@@ -1362,7 +1370,8 @@ app.whenReady().then(() => {
         const body = {
           model,
           messages: request.messages,
-          ...(request.tools && request.tools.length > 0 ? { tools: request.tools } : {})
+          ...(request.tools && request.tools.length > 0 ? { tools: request.tools } : {}),
+          ...(config.reasoningEffort ? { reasoning_effort: config.reasoningEffort } : {})
         } as unknown as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming
         const completion = await client.chat.completions.create(
           body,
@@ -1425,7 +1434,8 @@ app.whenReady().then(() => {
           model,
           messages: request.messages,
           stream: true,
-          ...(request.tools && request.tools.length > 0 ? { tools: request.tools } : {})
+          ...(request.tools && request.tools.length > 0 ? { tools: request.tools } : {}),
+          ...(config.reasoningEffort ? { reasoning_effort: config.reasoningEffort } : {})
         } as unknown as OpenAI.Chat.ChatCompletionCreateParamsStreaming
 
         // A streaming provider only reports token usage if asked. Not every
@@ -1790,25 +1800,34 @@ app.whenReady().then(() => {
       // Brief the agent with this project's memory (shared with the chat), so a
       // code run benefits from decisions/gotchas recorded in conversation.
       // Best-effort: a memory failure must never abort a run the user asked for.
+      //
+      // When files are pinned, the scope is already resolved — skip the briefing
+      // to save tokens. The model already knows what to edit from the pinned
+      // files and the task description, so historical context is dead weight.
+      const hasPinnedFiles = Array.isArray(request.files) && request.files.length > 0
       let memories = ''
-      try {
-        memories = formatMemoriesForPrompt(
-          memoriesForContext(typeof request.projectId === 'string' ? request.projectId : null)
-        )
-      } catch {
-        /* memory is best-effort; briefing failure leaves the prompt as-is */
+      if (!hasPinnedFiles) {
+        try {
+          memories = formatMemoriesForPrompt(
+            memoriesForContext(typeof request.projectId === 'string' ? request.projectId : null)
+          )
+        } catch {
+          /* memory is best-effort; briefing failure leaves the prompt as-is */
+        }
       }
       // Also brief the agent with past conversations about this same task, so it
       // reuses decisions/gotchas already discussed. Exclude the chat that fired
       // the run — it doesn't need its own transcript pasted back. Best-effort,
       // same as memory: a search failure just omits the section.
       let conversas = ''
-      try {
-        conversas = briefConversationsForTask(loadConversations(), task, {
-          excludeId: typeof request.convId === 'string' ? request.convId : null
-        })
-      } catch {
-        /* conversation briefing is best-effort; a failure leaves the prompt as-is */
+      if (!hasPinnedFiles) {
+        try {
+          conversas = briefConversationsForTask(loadConversations(), task, {
+            excludeId: typeof request.convId === 'string' ? request.convId : null
+          })
+        } catch {
+          /* conversation briefing is best-effort; a failure leaves the prompt as-is */
+        }
       }
       const systemPrompt = buildSystemPrompt({
         tree,
@@ -2135,6 +2154,21 @@ app.whenReady().then(() => {
     }
   })
 
+  /**
+   * Renew a run's TTL by updating its endedAt to now. Called when the user
+   * continues a conversation with an archived agent — resets the 24h countdown.
+   */
+  ipcMain.handle('ai:code-agent:run-renew', (_, id: string) => {
+    const path = agentRunPath(id)
+    if (!path || !existsSync(path)) return
+    const index = loadRunIndex()
+    const run = index.find((r) => r.id === id)
+    if (run) {
+      run.endedAt = Date.now()
+      saveRunIndex(index)
+    }
+  })
+
   ipcMain.handle('ai:pick-directory', async () => {
     const { filePaths, canceled } = await dialog.showOpenDialog({ properties: ['openDirectory'] })
     if (canceled || filePaths.length === 0) return { path: null }
@@ -2304,30 +2338,8 @@ app.whenReady().then(() => {
   ipcMain.handle('ai:code:search', async (_, root: string, term: string) => {
     if (!root || !existsSync(root)) return { error: 'Diretório inválido' }
     if (!term) return { error: 'Termo vazio' }
-    const { files } = await walkFiles(root, '.', 3000)
-    const matches: { file: string; line: number; text: string }[] = []
-    const CAP = 60
-    const lower = term.toLowerCase()
-    for (const rel of files) {
-      if (matches.length >= CAP) break
-      let content: string
-      try {
-        // Awaited per file: this loop is the expensive half (~640ms sync over a
-        // large tree), and each await lets the main process serve IPC/window
-        // events instead of freezing until the search finishes.
-        content = await readFile(join(resolve(root), rel), 'utf-8')
-      } catch {
-        continue
-      }
-      if (content.includes('\u0000')) continue // skip binaries
-      const lines = content.split('\n')
-      for (let i = 0; i < lines.length && matches.length < CAP; i++) {
-        if (lines[i].toLowerCase().includes(lower)) {
-          matches.push({ file: rel, line: i + 1, text: lines[i].trim().slice(0, 200) })
-        }
-      }
-    }
-    return { matches, truncated: matches.length >= CAP }
+    const result = await searchFiles(root, term)
+    return { matches: result.matches, truncated: result.truncated }
   })
 
   // Fetch a page for the assistant. The URL comes from the model, so it is

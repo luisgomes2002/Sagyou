@@ -31,22 +31,7 @@ function makeRun(overrides: Record<string, unknown> = {}) {
   }
 }
 
-/** Captured approve-request callback so tests can fire IPC events. */
-let fireApproveRequest: ((req: {
-  runId: string
-  id: string
-  name: string
-  args: Record<string, unknown>
-  resumo: string
-  conteudo?: string
-  comando?: string
-  diff?: { kind: 'add' | 'del' | 'ctx' | 'meta'; text: string }[]
-  diffTruncated?: boolean
-  irreversivel?: boolean
-}) => void) | null = null
-
 beforeEach(() => {
-  fireApproveRequest = null
   // Mock the code-agent IPC so that useCodeAgentRuns doesn't crash.
   if (!window.electronAPI) {
     // @ts-expect-error partial mock for tests
@@ -62,10 +47,7 @@ beforeEach(() => {
     onProgress: vi.fn(() => vi.fn()),
     onExit: vi.fn(() => vi.fn()),
     onAutoChanged: vi.fn(() => vi.fn()),
-    onApproveRequest: vi.fn((cb) => {
-      fireApproveRequest = cb
-      return vi.fn()
-    }),
+    onApproveRequest: vi.fn(() => vi.fn()),
     onHint: vi.fn(() => vi.fn()),
     onToolEvent: vi.fn(() => vi.fn()),
     onArchived: vi.fn(() => vi.fn()),
@@ -140,39 +122,23 @@ describe('FleetView', () => {
     expect(screen.getByText('↓ 300 saída')).toBeInTheDocument()
   })
 
-  it('flags a code-agent parked on approval', async () => {
+  it('shows the code-agent model and step progress', async () => {
     oneRun()
     render(<FleetView projects={projects} onOpenChat={() => {}} />)
 
-    // First wait for the run to render.
     await screen.findByText('Corrigir bug no login')
-
-    // Approval arrives via IPC event, not via status().
-    expect(fireApproveRequest).not.toBeNull()
-    fireApproveRequest!({
-      runId: 'run-1',
-      id: 'ap-1',
-      name: 'escrever_arquivo',
-      args: { caminho: 'src/App.tsx' },
-      resumo: 'src/App.tsx',
-      conteudo: 'console.log("oi")',
-      irreversivel: false
-    })
-
-    expect(await screen.findByText('Aguardando sua aprovação…')).toBeInTheDocument()
-    // The approval card should show the action summary
-    expect(screen.getByText('O agente quer escrever um arquivo')).toBeInTheDocument()
+    expect(screen.getByText(/gpt-4/)).toBeInTheDocument()
   })
 
-  it('"Abrir IA" switches to the AI view', async () => {
+  it('"Abrir chat" opens the inline chat view for a running code agent', async () => {
     oneRun()
     const onOpenChat = vi.fn()
     render(<FleetView projects={projects} onOpenChat={onOpenChat} />)
 
     await screen.findByText('Corrigir bug no login')
-    await userEvent.click(screen.getByRole('button', { name: 'Abrir IA' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Abrir chat' }))
 
-    expect(onOpenChat).toHaveBeenCalled()
+    await screen.findByPlaceholderText('Digite uma mensagem para o agente de código…')
   })
 
   it('"Parar" stops the code-agent', async () => {

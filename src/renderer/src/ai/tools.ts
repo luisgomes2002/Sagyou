@@ -50,7 +50,7 @@ const NO_PARAMS = { type: 'object', properties: {}, additionalProperties: false 
  * answers exactly as it always did. Every result is resent on each later step
  * of the run, so an unbounded list is a bill that compounds.
  */
-export const DEFAULT_TASK_LIMIT = 200
+export const DEFAULT_TASK_LIMIT = 100
 
 /** Hard ceiling: a hand-picked `limit` can raise the default, but not past this. */
 const MAX_TASK_LIMIT = 500
@@ -435,33 +435,34 @@ const REGISTRY: Record<string, AITool> = {
   ler_tasks: {
     definition: fn(
       'ler_tasks',
-      'Lista as tasks de um projeto (título, coluna, prioridade, tags, se concluída). ' +
-        'Sem projectId, usa o projeto ativo. ' +
-        '⚠️ Por padrão devolve SÓ AS TASKS ABERTAS — quase metade de um quadro real já foi ' +
-        'concluída, e esse histórico é reenviado ao modelo a cada passo seguinte. Para ' +
-        'perguntas sobre trabalho JÁ FEITO ("o que concluí?", "quantas terminei essa semana?") ' +
-        'passe estado="concluidas"; para contar o quadro inteiro, estado="todas". ' +
-        'Use os filtros (busca, tag, coluna) sempre que a pergunta for sobre um assunto ' +
-        'específico. "busca" casa com o título, ignorando acentos e maiúsculas. A resposta traz ' +
-        '"total" (quantas casaram), "truncado" e "concluidas_ocultas" (quantas ficaram de fora ' +
-        'pelo estado pedido) — some "concluidas_ocultas" ao "total" antes de afirmar o tamanho ' +
-        'do quadro. ⚠️ Olha UM projeto só (o projectId pedido, ou o ativo). Se nada casou e a ' +
-        'resposta trouxer "outros_projetos", a task pode estar num deles: repita com aquele ' +
-        'projectId antes de dizer que não existe.',
+      'Lista as tasks do projeto: título, coluna, prioridade, tags. ' +
+        '⚠️ Só devolve as ABERTAS por padrão — use estado="concluidas" ou "todas" quando precisar. ' +
+        'Filtre com busca/tag/coluna/prioridade/sprint/prazo/criação para economizar tokens. ' +
+        'Sem projectId ou projeto, usa o ativo.',
       {
         type: 'object',
         properties: {
           projectId: { type: 'string', description: 'ID do projeto (opcional)' },
+          projeto: { type: 'string', description: 'Nome do projeto (opcional, alternativa ao projectId)' },
           busca: { type: 'string', description: 'Texto no título (opcional, ignora acentos)' },
           tag: { type: 'string', description: 'Só tasks com esta tag (opcional)' },
           coluna: { type: 'string', description: 'Só tasks nesta coluna, pelo nome (opcional)' },
           estado: {
             type: 'string',
             enum: ['abertas', 'concluidas', 'todas'],
-            description:
-              'Quais tasks devolver (opcional, padrão "abertas"). Use "concluidas" para ' +
-              'perguntas sobre o que já foi feito e "todas" para contar o quadro inteiro.'
+            description: 'Filtro: abertas (padrão), concluidas ou todas'
           },
+          prioridade: {
+            type: 'string',
+            enum: [...PRIORITIES],
+            description: 'Filtra por prioridade (opcional): low, medium, high, urgent'
+          },
+          sprint: { type: 'string', description: 'Nome da sprint (opcional)' },
+          prazo_de: { type: 'string', description: 'Data inicial do prazo YYYY-MM-DD (opcional)' },
+          prazo_ate: { type: 'string', description: 'Data final do prazo YYYY-MM-DD (opcional)' },
+          criada_de: { type: 'string', description: 'Data inicial de criação YYYY-MM-DD (opcional)' },
+          criada_ate: { type: 'string', description: 'Data final de criação YYYY-MM-DD (opcional)' },
+          sem_sprint: { type: 'boolean', description: 'Só tasks sem sprint atribuída (opcional)' },
           limit: {
             type: 'number',
             description: `Máximo de tasks a devolver (opcional, padrão ${DEFAULT_TASK_LIMIT})`
@@ -471,8 +472,12 @@ const REGISTRY: Record<string, AITool> = {
       }
     ),
     run: (args) => {
-      const { projects, tasks, activeProjectId } = useKanbanStore.getState()
-      const projectId = (typeof args.projectId === 'string' && args.projectId) || activeProjectId
+      const { projects, tasks, sprints, activeProjectId } = useKanbanStore.getState()
+      const projetoNome = typeof args.projeto === 'string' ? args.projeto.trim() : ''
+      const byName = projetoNome
+        ? projects.find((p) => p.name.trim().toLowerCase() === projetoNome.toLowerCase())?.id
+        : undefined
+      const projectId = (typeof args.projectId === 'string' && args.projectId) || byName || activeProjectId
       const project = projects.find((p) => p.id === projectId)
       if (!project) return JSON.stringify({ error: 'Projeto não encontrado' })
       const colName = (id: string): string => project.columns.find((c) => c.id === id)?.name ?? '?'
@@ -480,7 +485,20 @@ const REGISTRY: Record<string, AITool> = {
       const busca = typeof args.busca === 'string' ? normalize(args.busca.trim()) : ''
       const tag = typeof args.tag === 'string' ? normalize(args.tag.trim()) : ''
       const coluna = typeof args.coluna === 'string' ? normalize(args.coluna.trim()) : ''
+      const prioridade = typeof args.prioridade === 'string' ? args.prioridade.trim().toLowerCase() : ''
       const estado = resolveTaskState(args)
+      const sprintNome = typeof args.sprint === 'string' ? args.sprint.trim() : ''
+      const projectSprints = sprintNome
+        ? sprints.filter((s) => s.projectId === project.id)
+        : []
+      const sprintId = sprintNome
+        ? projectSprints.find((s) => s.name.trim().toLowerCase() === sprintNome.toLowerCase())?.id
+        : undefined
+      const prazoDe = typeof args.prazo_de === 'string' ? args.prazo_de.trim() : ''
+      const prazoAte = typeof args.prazo_ate === 'string' ? args.prazo_ate.trim() : ''
+      const criadaDe = typeof args.criada_de === 'string' ? args.criada_de.trim() : ''
+      const criadaAte = typeof args.criada_ate === 'string' ? args.criada_ate.trim() : ''
+      const semSprint = args.sem_sprint === true
 
       // Everything the question matched, *before* the state filter. This is what
       // makes `concluidas_ocultas` truthful: the model has to be able to tell
@@ -491,6 +509,13 @@ const REGISTRY: Record<string, AITool> = {
         if (busca && !normalize(t.title).includes(busca)) return false
         if (tag && !t.tags.some((x) => normalize(x) === tag)) return false
         if (coluna && normalize(colName(t.columnId)) !== coluna) return false
+        if (prioridade && t.priority !== prioridade) return false
+        if (sprintId && t.sprintId !== sprintId) return false
+        if (semSprint && t.sprintId) return false
+        if (prazoDe && (!t.dueDate || t.dueDate < prazoDe)) return false
+        if (prazoAte && (!t.dueDate || t.dueDate > prazoAte)) return false
+        if (criadaDe && t.createdAt.slice(0, 10) < criadaDe) return false
+        if (criadaAte && t.createdAt.slice(0, 10) > criadaAte) return false
         return true
       })
 
@@ -1579,21 +1604,16 @@ const REGISTRY: Record<string, AITool> = {
     write: true,
     definition: fn(
       'salvar_memoria',
-      'Guarda um fato durável para você lembrar em conversas futuras — uma decisão tomada, ' +
-        'um trade-off/ponto crítico, uma armadilha (gotcha) ou um fato geral. Use quando você ou ' +
-        'o usuário fixar algo que valha a pena não reaprender depois. Uma memória por chamada. ' +
-        'Por padrão fica ligada ao projeto ativo; use global=true para fatos sobre o próprio ' +
-        'usuário (preferências, estilo). NUNCA salve segredos (chaves de API, senhas, tokens) — ' +
-        'eles são removidos automaticamente, mas nem os coloque.',
+      'Guarda um fato durável entre conversas (decisao/tradeoff/gotcha/fato). ' +
+        'Uma por chamada. Escopo = projeto ativo; use global=true para fatos pessoais. ' +
+        'NUNCA salve segredos — são removidos automaticamente.',
       {
         type: 'object',
         properties: {
           tipo: {
             type: 'string',
             enum: ['decisao', 'tradeoff', 'gotcha', 'fato'],
-            description:
-              'decisao = uma decisão tomada; tradeoff = um trade-off/ponto crítico; ' +
-              'gotcha = uma armadilha; fato = um fato geral durável'
+            description: 'Tipo: decisao, tradeoff, gotcha ou fato'
           },
           titulo: { type: 'string', description: 'Assunto curto da memória' },
           corpo: { type: 'string', description: 'O fato em si, explicado' },
@@ -1752,12 +1772,9 @@ const REGISTRY: Record<string, AITool> = {
     write: true,
     definition: fn(
       'rodar_agente_codigo',
-      'Dispara o agente de código no diretório do projeto para ' +
-        'implementar uma tarefa de código. Roda em UMA pasta: se o projeto tiver várias ' +
-        'marcadas, informe pastaId. O agente escreve arquivos e roda comandos, por isso ' +
-        'passa por aprovação. IMPORTANTE: quando você já souber quais arquivos mudar (ache-os ' +
-        'antes com buscar_no_codigo/ler_arquivo), passe-os em "arquivos" — o agente edita ' +
-        'direto, sem gastar rodadas caras redescobrindo o arquivo sozinho.',
+      'Dispara o agente de código para IMPLEMENTAR (não só analisar). ' +
+        'Roda em UMA pasta — use pastaId se houver várias. ' +
+        'Passe "arquivos" com os caminhos já localizados para evitar descoberta cara.',
       {
         type: 'object',
         properties: {
@@ -1857,7 +1874,7 @@ const REGISTRY: Record<string, AITool> = {
   listar_arquivos: {
     definition: fn(
       'listar_arquivos',
-      'Lista os arquivos do código do projeto (recursivo; ignora node_modules/.git/dist). ' +
+      'Lista os arquivos do projeto (recursivo; ignora node_modules/.git/dist). ' +
         'Use para descobrir a estrutura antes de ler arquivos. Cobre todas as pastas de ' +
         'código marcadas no projeto. Devolve no máximo ~200 caminhos por pasta de cada vez; ' +
         'se "truncated" for verdadeiro, use "inicio" = "nextOffset" para continuar, ou ' +
@@ -1903,15 +1920,10 @@ const REGISTRY: Record<string, AITool> = {
   ler_arquivo: {
     definition: fn(
       'ler_arquivo',
-      'Lê um arquivo do código do projeto pelo caminho relativo (ex: src/main/store.ts). ' +
-        'Procura em todas as pastas marcadas; use pastaId se o mesmo caminho existir em mais de uma. ' +
-        '💡 NÃO leia o arquivo inteiro por reflexo. Para uma função/classe específica, passe ' +
-        '"simbolo" (ex: "exportBackup") e receba só o escopo dela (~1-3 mil chars) em vez de ' +
-        '20 mil. Para um trecho conhecido, use "linha_inicio"/"linha_fim" (ex: a linha que ' +
-        'buscar_no_codigo devolveu). Sem nada disso, devolve até ~20 mil caracteres por vez, e ' +
-        'quando o arquivo é grande a resposta traz "simbolos" (o mapa de declarações) para você ' +
-        'reler direto o símbolo certo; se "truncated" for verdadeiro, releia com "inicio" = ' +
-        '"nextOffset" para continuar.',
+      'Lê um arquivo pelo caminho relativo (ex: src/main/store.ts). ' +
+        '💡 Prefira simbolo (extrai função/classe) ou linha_inicio/linha_fim a ler o arquivo todo. ' +
+        'Quando truncado, use inicio=nextOffset para continuar. ' +
+        'Se o caminho existir em várias pastas, use pastaId.',
       {
         type: 'object',
         properties: {
@@ -2086,6 +2098,22 @@ const REGISTRY: Record<string, AITool> = {
 
 /** Tool definitions sent to the model each turn (derived from the registry). */
 export const TOOL_DEFS: ToolDef[] = Object.values(REGISTRY).map((t) => t.definition)
+
+/** Code-only tool subset — excludes kanban, finance, habits, and other non-code
+ *  tools. Used by the code-focused chat so the model doesn't waste tokens on
+ *  irrelevant tools and isn't distracted by data it shouldn't touch.
+ *  The `run` handler still exists for all tools; this only filters what the
+ *  model *offers* to call. */
+const CODE_TOOL_NAMES = new Set([
+  'ler_projetos',
+  'listar_arquivos', 'ler_arquivo', 'buscar_no_codigo',
+  'rodar_agente_codigo',
+  'buscar_na_web',
+  'buscar_memoria', 'salvar_memoria', 'buscar_conversas', 'ler_conversa', 'verificar_memorias'
+])
+export const CODE_TOOL_DEFS: ToolDef[] = Object.values(REGISTRY)
+  .filter((t) => CODE_TOOL_NAMES.has(t.definition.function.name))
+  .map((t) => t.definition)
 
 /** Dispatch one tool call by name, returning a JSON string result. */
 /**

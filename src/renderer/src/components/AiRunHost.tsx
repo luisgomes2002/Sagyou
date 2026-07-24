@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useAiRunStore } from '../store/aiRun'
 import type { ChatMessage } from '../store/aiRun'
 import { describeToolCall } from '../ai/tools'
@@ -103,6 +103,48 @@ export function AiRunHost({
     return () => clearTimeout(timer)
   }, [parked, markSaved])
 
+  // ── Code agent approval (lives here so it works even when FleetView is not
+  //    mounted — FleetView is a view that unmounts on navigation, and a parked
+  //    code agent never resolves if its approval handler disappears).
+  interface CodeApproval {
+    runId: string
+    id: string
+    name: string
+    resumo: string
+    conteudo?: string
+    comando?: string
+    diff?: { kind: string; text: string }[]
+    diffTruncated?: boolean
+    irreversivel?: boolean
+  }
+
+  const [codeApprovals, setCodeApprovals] = useState<CodeApproval[]>([])
+
+  useEffect(() => {
+    const off = window.electronAPI.ai.codeAgent.onApproveRequest((req) => {
+      setCodeApprovals((prev) => [
+        ...prev.filter((a) => a.runId !== req.runId),
+        {
+          runId: req.runId,
+          id: req.id,
+          name: req.name,
+          resumo: req.resumo,
+          conteudo: req.conteudo,
+          comando: req.comando,
+          diff: req.diff,
+          diffTruncated: req.diffTruncated,
+          irreversivel: req.irreversivel
+        }
+      ])
+    })
+    return () => off()
+  }, [])
+
+  const approveCodeAction = (id: string, approved: boolean): void => {
+    window.electronAPI.ai.codeAgent.approve(id, approved)
+    setCodeApprovals((prev) => prev.filter((a) => a.id !== id))
+  }
+
   /**
    * Escape cancels the approval — but only out here. While the AI view is open
    * it owns Escape, peeling one layer at a time (a confirmation on top of the
@@ -136,12 +178,73 @@ export function AiRunHost({
         </button>
       )}
 
-      {/* Approval cards — one per run parked awaiting approval. Several runs can
+      {/* Code agent approval cards — rendered here (not only in FleetView) so
+          a run doesn't hang forever when the user is on another view. */}
+      {codeApprovals.map((ca) => (
+        <div
+          key={ca.id}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+        >
+          <div className="w-[520px] max-h-[80vh] flex flex-col rounded-xl bg-[#13151f] border border-[#2a2d42] shadow-2xl">
+            <div className="flex items-center gap-2 px-5 py-4 border-b border-[#2a2d42]">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2">
+                <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                <line x1="12" y1="9" x2="12" y2="13" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+              <h2 className="text-sm font-semibold text-[#e2e8f0]">
+                Agente de código — {ca.name === 'escrever_arquivo' ? 'escrever arquivo' : 'executar comando'}
+              </h2>
+            </div>
+            <div className="flex-1 overflow-y-auto px-5 py-3 space-y-3">
+              <p className="text-sm text-[#e2e8f0]">{ca.resumo}</p>
+              {ca.conteudo && (
+                <pre className="text-[11px] font-mono text-[#a5b4fc] bg-[#0d0f18] p-3 rounded-lg max-h-60 overflow-y-auto whitespace-pre-wrap">{ca.conteudo}</pre>
+              )}
+              {ca.comando && (
+                <div className="text-[11px] font-mono text-[#a5b4fc] bg-[#0d0f18] p-3 rounded-lg">{ca.comando}</div>
+              )}
+              {ca.diff && ca.diff.length > 0 && (
+                <div className="bg-[#0d0f18] p-3 rounded-lg max-h-60 overflow-y-auto">
+                  {ca.diff.map((d, i) => (
+                    <div
+                      key={i}
+                      className={`text-[11px] font-mono whitespace-pre-wrap ${
+                        d.kind === 'add' ? 'text-green-400' : d.kind === 'del' ? 'text-red-400' : 'text-[#8892a4]'
+                      }`}
+                    >
+                      {d.text}
+                    </div>
+                  ))}
+                  {ca.diffTruncated && <p className="text-[10px] text-[#4a5068] mt-1">…diff truncado</p>}
+                </div>
+              )}
+              {ca.irreversivel && <p className="text-[11px] text-amber-400">⚠️ Esta ação não pode ser desfeita.</p>}
+            </div>
+            <div className="flex items-center justify-end px-5 py-3 border-t border-[#2a2d42] gap-2">
+              <button
+                onClick={() => approveCodeAction(ca.id, false)}
+                className="px-3 py-1.5 rounded-lg text-sm text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#1e2235] transition-colors"
+              >
+                Recusar
+              </button>
+              <button
+                onClick={() => approveCodeAction(ca.id, true)}
+                className="px-4 py-1.5 rounded-lg bg-[#6366f1] text-sm text-white font-medium hover:bg-[#4f52d4] transition-colors"
+              >
+                Aprovar
+              </button>
+            </div>
+          </div>
+        </div>
+      ))}
+
+      {/* Chat agent approval cards — one per run parked awaiting approval. Several runs can
           stop at once now, so this is a queue; each card is labelled with the
           conversation that raised it when there is more than one to tell apart,
           and each is answered against its own convId. */}
       {pendingApprovals.length > 0 && (
-        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/50 py-6 overflow-y-auto">
+        <div className="fixed inset-0 z-40 flex flex-col items-center justify-center gap-3 bg-black/50 py-6 overflow-y-auto">
           {pendingApprovals.map((pa) => (
             <div
               key={pa.convId}

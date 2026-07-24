@@ -2482,7 +2482,7 @@ describe('ler_tasks — filters', () => {
     expect(res.truncado).toBe(true)
 
     // …and the default caps it too, without being asked.
-    expect(((await call('ler_tasks', {})).tasks as unknown[]).length).toBe(200)
+    expect(((await call('ler_tasks', {})).tasks as unknown[]).length).toBe(100)
   })
 
   it('falls back to the default on a nonsense limit', async () => {

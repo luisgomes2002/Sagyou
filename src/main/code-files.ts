@@ -1,4 +1,5 @@
-import { readdir } from 'fs/promises'
+import { readFile, readdir } from 'fs/promises'
+import { existsSync, readFileSync } from 'fs'
 import type { Dirent } from 'fs'
 import { join, resolve, relative, sep } from 'path'
 
@@ -27,6 +28,45 @@ export const CODE_IGNORE = new Set([
   '.next',
   '.turbo'
 ])
+
+/**
+ * Load and parse .gitignore patterns from root. Returns a list of ignore
+ * patterns that apply to relative paths. Best-effort — unreadable/missing
+ * .gitignore = no extra filtering.
+ */
+function loadGitignore(root: string): string[] {
+  const gitignorePath = join(root, '.gitignore')
+  if (!existsSync(gitignorePath)) return []
+  try {
+    const content = readFileSync(gitignorePath, 'utf-8')
+    return content
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l && !l.startsWith('#') && !l.startsWith('!'))
+      .map((l) => (l.startsWith('/') ? l.slice(1) : l))
+      .map((l) => (l.endsWith('/') ? l.slice(0, -1) : l))
+  } catch {
+    return []
+  }
+}
+
+/** Check if a relative path matches any gitignore pattern (simple prefix match). */
+function matchesGitignore(relPath: string, patterns: string[]): boolean {
+  if (!patterns.length) return false
+  for (const p of patterns) {
+    // Directory wildcard: foo/ matches any path containing foo/ or ending with foo
+    if (p.includes('*')) {
+      const [pre, post] = p.split('*', 2)
+      if (!pre && post) { if (relPath.endsWith(post) || relPath.includes('/' + post)) return true }
+      else if (pre && !post) { if (relPath.startsWith(pre)) return true }
+      else if (pre && post) { if (relPath.startsWith(pre) && relPath.endsWith(post)) return true }
+    } else {
+      // Exact match or path segment match
+      if (relPath === p || relPath.startsWith(p + '/') || relPath.includes('/' + p + '/')) return true
+    }
+  }
+  return false
+}
 
 /**
  * Resolve `rel` under `root`, or null if it escapes.
@@ -59,6 +99,7 @@ export async function walkFiles(root: string, sub: string, cap: number): Promise
   if (!start) return { files, truncated }
 
   const base = resolve(root)
+  const gitignorePatterns = loadGitignore(root)
   const stack = [start]
   while (stack.length && files.length < cap) {
     const dir = stack.pop() as string
@@ -66,8 +107,6 @@ export async function walkFiles(root: string, sub: string, cap: number): Promise
     try {
       entries = await readdir(dir, { withFileTypes: true })
     } catch {
-      // Unreadable or gone between listing and walking — skip it, don't fail
-      // the whole listing over one directory.
       continue
     }
     for (const e of entries) {
@@ -77,13 +116,16 @@ export async function walkFiles(root: string, sub: string, cap: number): Promise
       }
       if (e.isDirectory()) {
         if (CODE_IGNORE.has(e.name) || e.name.startsWith('.')) continue
+        const relPath = relative(base, join(dir, e.name)).replace(/\\/g, '/')
+        if (matchesGitignore(relPath, gitignorePatterns)) continue
         stack.push(join(dir, e.name))
       } else if (e.isFile()) {
-        files.push(relative(base, join(dir, e.name)).replace(/\\/g, '/'))
+        const relPath = relative(base, join(dir, e.name)).replace(/\\/g, '/')
+        if (matchesGitignore(relPath, gitignorePatterns)) continue
+        files.push(relPath)
       }
     }
   }
-  // Anything left on the stack is unvisited work the cap cut off.
   if (stack.length) truncated = true
   return { files: files.sort(), truncated }
 }
@@ -211,6 +253,95 @@ export function extractSymbol(content: string, symbol: string): ScopeResult | nu
     }
   }
   return { content: lines.slice(declLine, end + 1).join('\n'), linhaInicio: declLine + 1, linhaFim: end + 1 }
+}
+
+// ---------------------------------------------------------------------------
+// Shared search — used by both the IPC handler (chat agent) and the native
+// code agent. Extracted so the two don't drift apart.
+// ---------------------------------------------------------------------------
+
+/** One match found by searchFiles. */
+export interface SearchMatch {
+  file: string
+  line: number
+  text: string
+  /** Lines before the match (only when contexto > 0). */
+  antes?: string
+  /** Lines after the match (only when contexto > 0). */
+  depois?: string
+}
+
+/** Result of a searchFiles call. */
+export interface SearchResult {
+  matches: SearchMatch[]
+  truncated: boolean
+}
+
+/** Options for searchFiles. */
+export interface SearchOptions {
+  /** Max matches to return (default 60). */
+  cap?: number
+  /** Lines of context before/after each match (default 0). */
+  contexto?: number
+  /** Glob-like include filter (e.g. "*.ts"). */
+  incluir?: string
+  /** Glob-like exclude filter (e.g. "*.test.ts"). */
+  excluir?: string
+}
+
+/**
+ * Search files under `root` for `termo` (case-insensitive substring).
+ * Shared between the chat agent's IPC handler and the native code agent.
+ */
+export async function searchFiles(
+  root: string,
+  termo: string,
+  opts: SearchOptions = {}
+): Promise<SearchResult> {
+  const { files } = await walkFiles(root, '.', 3000)
+  const cap = opts.cap ?? 60
+  const contexto = opts.contexto ?? 0
+  const incluir = opts.incluir ?? ''
+  const excluir = opts.excluir ?? ''
+
+  const filtered = files.filter((rel) => {
+    if (incluir && !rel.endsWith(incluir.slice(1))) return false
+    if (excluir && rel.endsWith(excluir.slice(1))) return false
+    return true
+  })
+
+  const lower = termo.toLowerCase()
+  const matches: SearchMatch[] = []
+
+  for (const rel of filtered) {
+    if (matches.length >= cap) break
+    let content: string
+    try {
+      content = await readFile(join(resolve(root), rel), 'utf-8')
+    } catch {
+      continue
+    }
+    if (content.includes('\u0000')) continue
+    const lines = content.split('\n')
+    for (let i = 0; i < lines.length && matches.length < cap; i++) {
+      if (lines[i].toLowerCase().includes(lower)) {
+        const m: SearchMatch = {
+          file: rel,
+          line: i + 1,
+          text: lines[i].trim().slice(0, 200)
+        }
+        if (contexto > 0) {
+          const antes = lines.slice(Math.max(0, i - contexto), i)
+          m.antes = antes.map((l) => l.trim()).join('\n')
+          const depois = lines.slice(i + 1, i + 1 + contexto)
+          m.depois = depois.map((l) => l.trim()).join('\n')
+        }
+        matches.push(m)
+      }
+    }
+  }
+
+  return { matches, truncated: matches.length >= cap }
 }
 
 /**

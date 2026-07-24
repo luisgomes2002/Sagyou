@@ -32,6 +32,7 @@ interface Props {
   onImportBackup: () => void
   onImportAI: () => void
   onExportExcel: () => void
+  codeAgentRunCount?: number
 }
 
 export function Sidebar({
@@ -48,7 +49,8 @@ export function Sidebar({
   onExportBackup,
   onImportBackup,
   onImportAI,
-  onExportExcel
+  onExportExcel,
+  codeAgentRunCount = 0
 }: Props) {
   // Live count of running agents, for the "Agentes" badge. Reads the run store
   // directly, like MemoryView reads memory — it isn't part of the kanban store.
@@ -501,11 +503,11 @@ export function Sidebar({
             <path d="M12 7v4" />
           </svg>
           Agentes
-          {runningCount > 0 && (
+          {(runningCount + codeAgentRunCount) > 0 && (
             // How many agents are working right now — a live badge, so the panel
-            // is worth opening without opening it.
+            // is worth opening without opening it. Includes both chat and code agents.
             <span className="ml-0.5 min-w-[16px] h-4 px-1 inline-flex items-center justify-center rounded-full bg-[#6366f1] text-[9px] font-semibold text-white tabular-nums">
-              {runningCount}
+              {runningCount + codeAgentRunCount}
             </span>
           )}
         </button>
