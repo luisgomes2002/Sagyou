@@ -48,6 +48,14 @@ export interface AIConfig {
   sandboxEnabled?: boolean
   /** Whether the sandbox onboarding has been answered (so it doesn't reappear). */
   sandboxOnboardingDismissed?: boolean
+  /**
+   * When true (default), the prompt prefix is kept stable to maximise provider
+   * prompt caching (DeepSeek ~50x cheaper on cache hit, Claude, Gemini). When
+   * false, pruneSupersededResults removes stale read-tool results that a later,
+   * identical call has already replaced — saves tokens on providers without
+   * caching at the cost of breaking prompt cache.
+   */
+  usePromptCaching?: boolean
 }
 
 /** Tokens billed by a model call, as the provider reported them. */
@@ -901,9 +909,20 @@ export async function runAgent(
       // during it) fills this one; its tools are appended as they run below.
       const cost: StepCost = { step: step + 1, prompt: 0, completion: 0, tools: [] }
       costRecords.push(cost)
-      // Pass `msgs` directly — the full prefix is preserved to maximise
-      // DeepSeek cache hits (50x cheaper on cache hit).
-      const pruned = msgs
+      // When prompt caching is active (default), keep the prefix stable so
+      // DeepSeek / Claude / Gemini cache hits aren't broken by pruning old
+      // results. When disabled, prune stale read-tool results to save tokens
+      // on providers without prompt caching.
+      const pruned =
+        rcfg.usePromptCaching !== false
+          ? msgs
+          : pruneSupersededResults(msgs)
+      // Instrument the prune on its first call — diagnostic for DevTools.
+      if (pruned !== msgs && step === 0) {
+        const tally: PruneRunTally = { calls: 0, savedTotal: 0, maxSentChars: 0, maxSentReadChars: 0 }
+        for (let s = 0; s <= step; s++) tallyPrune(tally, measurePrunedCall(msgs, pruned))
+        logPruneMeasurement(tally)
+      }
       const assistant = await callModelResilient(rcfg, pruned, TOOL_DEFS, runOpts)
       msgs.push(assistant)
       // Count a step only once its model call came back — a thrown call is not a
