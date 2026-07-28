@@ -17,7 +17,7 @@ export const FINANCIAL_CATEGORIES = [
   'AI Programação', 'AI Tokens', 'Canva', 'Streaming', 'Contador', 'Advogado',
   // Receitas
   'Salário', 'Freelance', 'Trabalho', 'Aluguel Recebido', 'Dividendos',
-  'Reembolso', 'Bônus', 'Venda', 'Rendimento Mensal', 'Outros'
+  'Reembolso', 'Devolução', 'Bônus', 'Venda', 'Saldo', 'Rendimento Mensal', 'Outros'
 ]
 
 export const CAT_COLORS = [
