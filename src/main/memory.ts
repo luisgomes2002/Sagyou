@@ -8,9 +8,9 @@
 // persistence (the `memory` satellite table, written outside persistAll so a
 // touch doesn't rewrite the whole DB) lives in store.ts.
 
-export type MemoryType = 'decisao' | 'tradeoff' | 'gotcha' | 'fato' | 'handoff'
+export type MemoryType = 'decisao' | 'tradeoff' | 'gotcha' | 'fato' | 'handoff' | 'planejamento'
 
-export const MEMORY_TYPES: MemoryType[] = ['decisao', 'tradeoff', 'gotcha', 'fato', 'handoff']
+export const MEMORY_TYPES: MemoryType[] = ['decisao', 'tradeoff', 'gotcha', 'fato', 'handoff', 'planejamento']
 
 export type MemorySource = 'modelo' | 'usuario'
 

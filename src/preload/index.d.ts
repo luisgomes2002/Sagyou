@@ -313,6 +313,25 @@ declare global {
             body: string
           }) => Promise<{ ok: true } | { error: string }>
         }
+        /** Entity event log: the audit trail for one domain entity. */
+        lineage: {
+          list: (
+            entityType: string,
+            entityId: string
+          ) => Promise<
+            {
+              id: string
+              entityType: string
+              entityId: string
+              action: string
+              summary: string
+              source: string
+              toolName?: string
+              convId?: string
+              timestamp: string
+            }[]
+          >
+        }
         web: { fetch: (url: string, render?: boolean) => Promise<WebFetchResult> }
         images: {
           save: (dataUrl: string) => Promise<{ id: string } | { error: string }>
@@ -384,7 +403,7 @@ declare global {
           onStarted: (cb: (payload: { runId: string; dir: string }) => void) => () => void
           onExit: (cb: (payload: { runId: string; code: number }) => void) => () => void
           /** A finished run has been archived and can now be listed. */
-          onArchived: (cb: (payload: { runId: string; id: string }) => void) => () => void
+          onArchived: (cb: (payload: { runId: string; id: string; convId: string | null }) => void) => () => void
           /** Live progress during a run (step + running token total). */
           onProgress: (cb: (p: { runId: string } & AgentProgress) => void) => () => void
           /** A tool call being run, then its result summary (native agent). */

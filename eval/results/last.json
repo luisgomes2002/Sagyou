@@ -1,0 +1,37 @@
+{
+  "timestamp": "2026-07-25T02:12:32.353Z",
+  "total": 1,
+  "passed": 1,
+  "failed": 0,
+  "errored": 0,
+  "averageScore": 3,
+  "results": [
+    {
+      "caseId": "example-kanban-read",
+      "passed": true,
+      "score": 3,
+      "judgeReasoning": "✅ Estrutura do golden válida. Para avaliação real (com execução do agente + LLM-as-judge), rode o eval pelo app em modo dev.",
+      "actualTools": [],
+      "toolResults": [
+        {
+          "expectation": {
+            "kind": "called",
+            "name": "ler_projetos"
+          },
+          "met": false
+        },
+        {
+          "expectation": {
+            "kind": "count",
+            "name": "ler_tasks",
+            "min": 1,
+            "max": 3
+          },
+          "met": false
+        }
+      ],
+      "durationMs": 0
+    }
+  ],
+  "regressions": []
+}

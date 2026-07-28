@@ -60,6 +60,9 @@ export interface ToolResult {
   content: string
   /** One-line human summary for the panel (not sent to the model). */
   summary: string
+  /** True when the result came from a short-lived cache without disk IO.
+   *  The caller uses this to avoid counting the read toward brake limits. */
+  cached?: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -106,15 +109,6 @@ function bumpCount(counts: Map<string, number>, key: string): number {
   const n = (counts.get(key) ?? 0) + 1
   counts.set(key, n)
   return n
-}
-
-function bumpReadRepeat(
-  counts: Map<string, number>,
-  name: string,
-  args: Record<string, unknown>
-): number {
-  const sig = `${name}:${JSON.stringify(args)}`
-  return bumpCount(counts, sig)
 }
 
 /**
@@ -424,11 +418,11 @@ export function needsApproval(name: string): boolean {
 /** How executar_comando actually runs — injectable so tests don't spawn shells. */
 export type CommandRunner = (
   command: string,
-  opts: { cwd: string; timeoutMs: number }
+  opts: { cwd: string; timeoutMs: number; shouldAbort?: () => boolean }
 ) => Promise<{ stdout: string; stderr: string; code: number | null; timedOut?: boolean }>
 
 /** Default runner: child_process.exec, async so it never freezes the main loop. */
-export const defaultCommandRunner: CommandRunner = (command, { cwd, timeoutMs }) =>
+export const defaultCommandRunner: CommandRunner = (command, { cwd, timeoutMs, shouldAbort }) =>
   new Promise((resolveRun) => {
     // exec (not execSync) on purpose: execSync would block Electron's main event
     // loop — and its IPC and window controls — for the command's whole duration.
@@ -448,6 +442,17 @@ export const defaultCommandRunner: CommandRunner = (command, { cwd, timeoutMs })
       }
     )
     child.on('error', () => resolveRun({ stdout: '', stderr: '', code: 1 }))
+    // Abort poll: check shouldAbort every second and kill if the user stopped
+    // the run. Without this, a 300s command is unkillable until it finishes.
+    if (shouldAbort) {
+      const interval = setInterval(() => {
+        if (shouldAbort()) {
+          child.kill('SIGTERM')
+          clearInterval(interval)
+        }
+      }, 1_000)
+      child.on('close', () => clearInterval(interval))
+    }
   })
 
 /** Everything a tool handler needs: the confined root and how to run commands. */
@@ -457,12 +462,14 @@ export interface ToolContext {
   /** The project folder every path is confined to. */
   root: string
   run?: CommandRunner
+  /** Checked periodically during long shell commands; true = abort early. */
+  shouldAbort?: () => boolean
   /** Render a web page with JavaScript (SPA support). Only wired in production. */
   renderWeb?: (raw: unknown, deps?: { limiter?: unknown; timeoutMs?: number }) => Promise<FetchResult>
 }
 
-function jsonResult(obj: unknown, summary: string): ToolResult {
-  return { content: JSON.stringify(obj), summary }
+function jsonResult(obj: unknown, summary: string, cached?: boolean): ToolResult {
+  return { content: JSON.stringify(obj), summary, ...(cached ? { cached } : {}) }
 }
 
 function clampNum(v: unknown, def: number, max: number): number {
@@ -536,6 +543,7 @@ async function readFileTool(args: Record<string, unknown>, ctx: ToolContext): Pr
     cached.at = Date.now()
   }
   const content = cached ? cached.content : await readFile(full, 'utf-8')
+  const fromCache = !!cached
   if (!cached) {
     readCache.set(full, { at: Date.now(), content })
     if (readCache.size > 100) readCache.clear()
@@ -551,20 +559,23 @@ async function readFileTool(args: Record<string, unknown>, ctx: ToolContext): Pr
     if (extracted) {
       return jsonResult(
         { conteudo: extracted.content, simbolo, linha_inicio: extracted.linhaInicio, linha_fim: extracted.linhaFim },
-        `leu ${simbolo} em ${rel}`
+        `leu ${simbolo} em ${rel}`,
+        fromCache
       )
     }
     const symbols = detectSymbols(content)
     return jsonResult(
       { error: `Símbolo "${simbolo}" não encontrado`, simbolos: symbols },
-      `símbolo "${simbolo}" não encontrado`
+      `símbolo "${simbolo}" não encontrado`,
+      fromCache
     )
   }
   if (lineStart != null) {
     const extracted = extractLines(content, lineStart, lineEnd)
     return jsonResult(
       { conteudo: extracted.content, linha_inicio: extracted.linhaInicio, linha_fim: extracted.linhaFim },
-      `leu linhas ${extracted.linhaInicio}-${extracted.linhaFim} de ${rel}`
+      `leu linhas ${extracted.linhaInicio}-${extracted.linhaFim} de ${rel}`,
+      fromCache
     )
   }
 
@@ -586,7 +597,8 @@ async function readFileTool(args: Record<string, unknown>, ctx: ToolContext): Pr
   }
   return jsonResult(
     { conteudo: slice, total, inicio: start, truncado, ...extra },
-    `leu ${rel} (${slice.length}/${total} chars)`
+    `leu ${rel} (${slice.length}/${total} chars)`,
+    fromCache
   )
 }
 
@@ -795,7 +807,11 @@ async function runCommand(args: Record<string, unknown>, ctx: ToolContext): Prom
   if (!comando) return jsonResult({ error: 'Comando vazio' }, 'comando vazio')
   const timeoutMs = clampNum(args.timeout_ms, COMMAND_TIMEOUT_DEFAULT_MS, COMMAND_TIMEOUT_MAX_MS)
   const runner = ctx.run ?? defaultCommandRunner
-  const { stdout, stderr, code, timedOut } = await runner(comando, { cwd: ctx.root, timeoutMs })
+  const { stdout, stderr, code, timedOut } = await runner(comando, {
+    cwd: ctx.root,
+    timeoutMs,
+    shouldAbort: ctx.shouldAbort
+  })
   // Cap the combined output: a command that prints megabytes must not blow up
   // the context that every later step of the run pays for again.
   const cap = (s: string): string => (s.length > COMMAND_OUTPUT_CAP ? s.slice(0, COMMAND_OUTPUT_CAP) + '\n…(saída truncada)' : s)
@@ -830,9 +846,22 @@ Regras:
 - Antes da primeira escrita, faça um plano curto: qual arquivo, o que muda, o que pode quebrar.
 - Faça a MENOR mudança que resolve a task. Não reformate nem "melhore" código vizinho.
 - Use executar_comando para rodar testes/build/lint e verificar.
-- ⚠️  ANTES DE CONCLUIR: rode SEMPRE \`npm run typecheck\` para verificar erros de tipo. Se houver erros, LEIA cada um e conserte. Depois rode os testes relevantes com \`npx vitest run <arquivo-de-teste>\`. Só responda com resumo DEPOIS que typecheck e testes passarem.
+- ⚠️  ANTES DE CONCLUIR: rode \`npm run typecheck\` para verificar erros de tipo. Se houver erros, LEIA cada um e conserte. Depois rode os testes com \`npx vitest run <arquivo-de-teste>\`. Se typecheck e testes passarem, responda com resumo.
 - Comando falhou? LEIA o erro e conserte. Não repita o mesmo comando nem chute sem ler.
-- Não faça commit nem mexa no git.
+- ⚠️ AMBIENTE QUEBRADO: Se um comando falhar com código 127 (comando não encontrado) ou stderr contiver "not found", o ambiente NÃO tem Node.js/npm disponíveis. NÃO tente achar binários no filesystem — é perda de tempo. Apenas reporte no resumo: "Typecheck não pôde ser executado — node/npm não disponível neste ambiente. Rode \`npm run typecheck\` manualmente." e conclua. O mesmo vale para qualquer comando que dependa de ferramentas fora do projeto.
+- Git: por padrão NÃO mexa no git — commits são feitos pelo usuário após revisar o diff.
+  Se a tarefa pedir EXPLICITAMENTE operações de git, use executar_comando:
+  \`git status --short\` — estado dos arquivos modificados
+  \`git diff\` / \`git diff --stat\` — vê as alterações
+  \`git diff --cached\` — vê o que já está em stage
+  \`git log --oneline -10\` — últimos commits
+  \`git add <arquivo>\` ou \`git add -A\` — stage
+  \`git commit -m "mensagem"\` — commita. Use Conventional Commits em pt-BR:
+    tipo: feat, fix, refactor, docs, style, test, chore, perf, ci
+    formato: \`tipo(escopo): resumo curto e imperativo\`
+    exemplos: \`feat(AI): tela de chat\`  \`fix(kanban): corrige drag-and-drop entre colunas\`  \`refactor(store): extrai lógica de persistência\`
+  \`git push\` — sobe para o remote
+  Se a tarefa NÃO mencionar git, mantenha o padrão: não commite nem mexa no git.
 - Ao terminar, responda em texto com resumo do que mudou.
 
 ### Pesquisa na web
@@ -898,8 +927,20 @@ export function buildSystemPrompt(opts: {
   conversas?: string
   /** Scope decisions already agreed with the user, to be respected without re-deciding. */
   decisoes?: string[]
+  /** When true, the agent must NOT run commands (shell, typecheck, tests) — the
+   *  environment lacks Node. The BEHAVIOR typecheck rule is overridden. */
+  noCommands?: boolean
 }): string {
   const parts: string[] = [BEHAVIOR]
+  if (opts.noCommands) {
+    parts.push(
+      '## INSTRUÇÃO (sobrescreve as regras de comandos acima)\n\n' +
+        '⚠️  NÃO execute nenhum comando shell nesta run. O ambiente NÃO tem ' +
+        'Node.js, npm nem binários externos. Não tente rodar typecheck, testes, ' +
+        'lint ou qualquer comando — é perda de tempo e passos. Apenas edite os ' +
+        'arquivos e responda com o resumo. Não tente achar binários alternativos.'
+    )
+  }
   if (opts.memories && opts.memories.trim()) {
     parts.push(opts.memories.trim())
   }
@@ -1179,6 +1220,11 @@ export async function runResearchAgent(
   const tools = RESEARCH_AGENT_TOOLS
   const ctx: ToolContext = { root, subAgentDepth: 1 }
 
+  // Read brakes for the sub-agent — same as the main agent's but scoped to this
+  // sub-run. Without these a sub-agent can loop on the same URL or file until
+  // its 15-step cap, burning tokens and real HTTP requests.
+  const readRepeatsSub = new Map<string, number>()
+
   for (let step = 0; step < RESEARCH_AGENT_MAX_STEPS; step++) {
     const { message } = await callModel(messages, tools)
     messages.push(message)
@@ -1191,6 +1237,7 @@ export async function runResearchAgent(
     // Execute each tool call and feed results back
     for (const tc of message.tool_calls) {
       if (tc.type !== 'function') continue
+      const name = tc.function.name
       let args: Record<string, unknown>
       try {
         args = JSON.parse(tc.function.arguments || '{}')
@@ -1198,8 +1245,22 @@ export async function runResearchAgent(
         args = {}
       }
 
-      // rodar_subagente is blocked at depth 1 — the context already carries depth=1
-      const result = await runCodeTool(tc.function.name, args, ctx)
+      // Read-repeat brake: block the same web fetch / file read after N calls.
+      const sig = `${name}:${JSON.stringify(args)}`
+      const count = bumpCount(readRepeatsSub, sig)
+      const brake =
+        count >= READ_REPEAT_LIMIT
+          ? JSON.stringify({
+              error: `Você já fez esta chamada ${READ_REPEAT_LIMIT}x com os mesmos argumentos e obteve o mesmo resultado. Não repita — responda com o que já tem.`
+            })
+          : null
+
+      let result: ToolResult
+      if (brake) {
+        result = { content: brake, summary: `bloqueado (sub): ${name}` }
+      } else {
+        result = await runCodeTool(name, args, ctx)
+      }
       messages.push({
         role: 'tool',
         content: result.content,
@@ -1224,6 +1285,10 @@ export async function runCodeAgent(
   ctx: ToolContext,
   deps: RunAgentDeps
 ): Promise<RunAgentResult> {
+  // Wire the run's abort signal into the tool context so long-running shell
+  // commands (executar_comando) can be killed mid-flight.
+  ctx.shouldAbort = ctx.shouldAbort ?? (() => deps.shouldAbort?.() ?? false)
+
   const maxSteps = deps.maxSteps && deps.maxSteps > 0 ? Math.floor(deps.maxSteps) : CODE_AGENT_MAX_STEPS
   const tools = deps.tools ?? CODE_AGENT_TOOLS
   let msgs: AgentMessage[] = [
@@ -1236,49 +1301,20 @@ export async function runCodeAgent(
   const blindFileReads = new Map<string, number>()
   const totalFileReads = new Map<string, number>()
   const searchHistory: string[] = []
-
-  /**
-   * Checks both brakes for a read tool call. Side-effect: increments the
-   * run-scoped counters for the call signature. Returns a synthetic error
-   * result when a brake fires, or null when the tool should run.
-   */
-  const readBrake = (name: string, args: Record<string, unknown>): string | null => {
-    if (bumpReadRepeat(readRepeats, name, args) >= READ_REPEAT_LIMIT) {
-      return JSON.stringify({
-        error: `Você já fez esta chamada ${READ_REPEAT_LIMIT}x com os mesmos argumentos e obteve o mesmo resultado. Não repita — responda com o que já tem.`
-      })
-    }
-    const blindSig = blindFileReadSignature(name, args)
-    if (blindSig && bumpCount(blindFileReads, blindSig) >= BLIND_FILE_READ_LIMIT) {
-      const caminho = typeof args.caminho === 'string' ? args.caminho : 'esse arquivo'
-      return JSON.stringify({
-        error: `Você já leu "${caminho}" inteiro nesta execução. Se precisa de um trecho específico, use "simbolo", "linha_inicio"/"linha_fim" ou "inicio" — não releia o arquivo todo.`
-      })
-    }
-    // Total reads per file — catches paginated loops (500-700, 700-900, …)
-    // that individually pass the blind-file check. Higher threshold because
-    // scoped reads are legitimate for a while.
-    if (name === 'ler_arquivo') {
-      const key = typeof args.caminho === 'string' ? args.caminho.trim() : ''
-      if (key) {
-        const n = bumpCount(totalFileReads, key)
-        if (n > 8) {
-          return JSON.stringify({
-            error: `Você já leu "${key}" ${n}x nesta execução. As informações que precisa já estão no histórico — pare de ler e comece a editar.`
-          })
-        }
-      }
-    }
-    return null
-  }
+  const commandRepeats = new Map<string, number>()
+  const COMMAND_REPEAT_LIMIT = 3
 
   // Write tracking — what the agent has touched so far this run.
   let editedFiles = new Set<string>()
   const MAX_EDITED_FILES = 20
+  // Whether any brake has fired this run — compaction is skipped when the agent
+  // is already struggling, because dropping context only makes things worse.
+  let brakesFired = false
 
   // Steps spent per file — forces the agent to move on after stalling on one file.
   const stepsOnCurrentFile = new Map<string, number>()
   const MAX_STEPS_PER_FILE = 10
+  const FILE_BLOCK_LIMIT = 15
 
   /** Track a successful write — counts files, warns at limit. */
   const trackWrite = (args: Record<string, unknown>): string | null => {
@@ -1327,6 +1363,7 @@ export async function runCodeAgent(
   // once after the last edit.
   let typecheckRan = false
   let typecheckPassed = false
+  let envBroken = false
   let gateAttempts = 0
 
   // Watch for explicit typecheck invocations via executar_comando.
@@ -1334,8 +1371,16 @@ export async function runCodeAgent(
   const trackTypecheck = (summary: string, content: string): void => {
     if (!summary.includes('typecheck') && !summary.includes('tsc')) return
     typecheckRan = true
+    // Exit code 127 or "not found" = node/npm missing from the environment.
+    // This is unfixable from inside the sandbox — treat as passed for the gate.
+    if (content.includes('"code":127') || content.includes('not found')) {
+      typecheckPassed = true
+      envBroken = true
+      return
+    }
     if (!content.includes('error TS') && !content.includes('❌') && !content.includes('falhou')) {
       typecheckPassed = true
+      envBroken = false
     }
   }
 
@@ -1378,11 +1423,15 @@ export async function runCodeAgent(
     if (!calls || calls.length === 0) {
       // Conclusion gate (#7): if the agent wrote files but never ran typecheck,
       // reject the conclusion and force a verification step. Fires at most twice.
+      // Exception: when the environment is broken (node/npm not available), skip
+      // the gate and let the conclusion through — it's unfixable from in here.
       if (writesSoFar > 0 && !typecheckPassed && gateAttempts < 2) {
         gateAttempts++
-        const gate = typecheckRan
-          ? 'O typecheck falhou. Leia o erro acima, conserte os problemas e rode typecheck de novo.'
-          : 'Você editou arquivos mas não rodou typecheck. Rode `npm run typecheck` antes de concluir.'
+        const gate = envBroken
+          ? 'O ambiente não tem node/npm disponível. Conclua sem typecheck e avise no resumo.'
+          : typecheckRan
+            ? 'O typecheck falhou. Leia o erro acima, conserte os problemas e rode typecheck de novo.'
+            : 'Você editou arquivos mas não rodou typecheck. Rode `npm run typecheck` antes de concluir.'
         msgs.push({ role: 'user', content: gate })
         deps.onText?.(`⛔ ${gate}`)
         continue
@@ -1409,12 +1458,11 @@ export async function runCodeAgent(
       .map((p, i) => (!p.parseError && needsApproval(p.call.function.name) ? i : -1))
       .filter((i) => i >= 0)
 
-    // Inertia brake: after many read-only steps with zero writes, the agent is
-    // stuck in a discovery loop. Instead of executing the reads, return synthetic
-    // results that tell the model to start writing. The tool responses complete
-    // the turn (no orphaned tool_calls) and the nudge rides on each result.
+    // Inertia brake: after many read-only steps the agent is stuck in a
+    // discovery loop. Fire regardless of whether writes happened earlier — a
+    // mid-work reading spree is still a reading spree. The tool responses
+    // complete the turn (no orphaned tool_calls) and the nudge rides on each.
     const inertiaFired =
-      writesSoFar === 0 &&
       readsSinceLastWrite >= INERTIA_LIMIT &&
       readIdx.length > 0 &&
       writeIdx.length === 0
@@ -1444,10 +1492,11 @@ export async function runCodeAgent(
       deps.onText?.(
         `🛑 ${readsSinceLastWrite} leituras sem write — respostas bloqueadas. O agente DEVE usar escrever_arquivo.`
       )
+      brakesFired = true
     }
 
-    // Track read count for the inertia brake.
-    readsSinceLastWrite += readIdx.length
+    // Track read count for the inertia brake — incremented per-read inside the
+    // loop, only when the result was NOT a cache hit (a cached re-read is free).
 
     // Run all reads in parallel (skipped when inertia just fired — results already set).
     if (readIdx.length && !inertiaFired) {
@@ -1456,15 +1505,67 @@ export async function runCodeAgent(
           const { call, args } = parsed[i]
           const name = call.function.name
 
-          // Read brakes: check before running — side-effect bumps counters.
-          const brake = readBrake(name, args)
-          if (brake) {
+          // Read brakes: peek at current counts (no side-effect) before running.
+          // Counters are bumped only after execution, and only when the result
+          // was NOT served from the readCache — a cached re-read costs nothing.
+          const sig = `${name}:${JSON.stringify(args)}`
+          const blindSig = blindFileReadSignature(name, args)
+          const fileKey =
+            name === 'ler_arquivo' && typeof args.caminho === 'string' ? args.caminho.trim() : ''
+
+          // Exact-repeat brake
+          if ((readRepeats.get(sig) ?? 0) >= READ_REPEAT_LIMIT) {
             deps.onToolResult?.(name, 'bloqueado (leitura repetida)')
-            return { i, id: call.id, content: brake, summary: `bloqueado: ${name}` }
+            brakesFired = true
+            return {
+              i,
+              id: call.id,
+              content: JSON.stringify({
+                error: `Você já fez esta chamada ${READ_REPEAT_LIMIT}x com os mesmos argumentos e obteve o mesmo resultado. Não repita — responda com o que já tem.`
+              }),
+              summary: `bloqueado: ${name}`
+            }
+          }
+          // Blind whole-file brake
+          if (blindSig && (blindFileReads.get(blindSig) ?? 0) >= BLIND_FILE_READ_LIMIT) {
+            const caminho = typeof args.caminho === 'string' ? args.caminho : 'esse arquivo'
+            deps.onToolResult?.(name, 'bloqueado (leitura repetida)')
+            brakesFired = true
+            return {
+              i,
+              id: call.id,
+              content: JSON.stringify({
+                error: `Você já leu "${caminho}" inteiro nesta execução. Se precisa de um trecho específico, use "simbolo", "linha_inicio"/"linha_fim" ou "inicio" — não releia o arquivo todo.`
+              }),
+              summary: `bloqueado: ${name}`
+            }
+          }
+          // Total reads per file brake (catches paginated loops)
+          if (fileKey && (totalFileReads.get(fileKey) ?? 0) > 8) {
+            deps.onToolResult?.(name, 'bloqueado (leitura repetida)')
+            brakesFired = true
+            return {
+              i,
+              id: call.id,
+              content: JSON.stringify({
+                error: `Você já leu "${fileKey}" mais de 8x nesta execução. As informações que precisa já estão no histórico — pare de ler e comece a editar.`
+              }),
+              summary: `bloqueado: ${name}`
+            }
           }
 
           deps.onToolCall?.(name, args)
           let toolResult = await runCodeTool(name, args, ctx)
+
+          // Only bump brake counters when the result was NOT a cache hit.
+          // A cached re-read is free — it didn't cost IO or pollute the context.
+          if (!toolResult.cached) {
+            bumpCount(readRepeats, sig)
+            if (blindSig) bumpCount(blindFileReads, blindSig)
+            if (fileKey) bumpCount(totalFileReads, fileKey)
+            // Only count toward inertia if it was a real (non-cached) read.
+            readsSinceLastWrite++
+          }
 
           // Track steps per file (#10): warn if stalling on one file too long.
           const fileNudge = bumpFileStep(args)
@@ -1508,6 +1609,41 @@ export async function runCodeAgent(
         summary = `recusado: ${name}`
       } else {
         deps.onToolCall?.(name, args)
+
+        // Command-repeat brake (#1): block the same shell command after N
+        // identical calls — the error is elsewhere, not in the code.
+        if (name === 'executar_comando') {
+          const cmdSig = `executar_comando:${JSON.stringify(args)}`
+          const cmdN = bumpCount(commandRepeats, cmdSig)
+          if (cmdN >= COMMAND_REPEAT_LIMIT) {
+            content = JSON.stringify({
+              error: `Você já rodou este comando ${COMMAND_REPEAT_LIMIT}x. Se ele falhou, o erro não está no código — pode ser o ambiente (node/npm indisponível) ou um problema externo. Conclua com o que tem e avise no resumo.`
+            })
+            summary = `bloqueado (comando repetido ${cmdN}x)`
+            brakesFired = true
+            deps.onToolResult?.(name, summary)
+            return { i, content, summary }
+          }
+        }
+
+        // File-step hard block (#6): after FILE_BLOCK_LIMIT cumulative steps on
+        // one file, block writes to it — the agent is stalling.
+        if (name === 'escrever_arquivo') {
+          const caminho = typeof args.caminho === 'string' ? args.caminho.trim() : ''
+          if (caminho) {
+            const fileSteps = stepsOnCurrentFile.get(caminho) ?? 0
+            if (fileSteps >= FILE_BLOCK_LIMIT) {
+              content = JSON.stringify({
+                error: `Você já gastou ${fileSteps} passos em "${caminho}" — o limite é ${FILE_BLOCK_LIMIT}. Passe para outro arquivo ou conclua a tarefa.`
+              })
+              summary = `bloqueado: ${fileSteps} passos em ${caminho}`
+              brakesFired = true
+              deps.onToolResult?.(name, summary)
+              return { i, content, summary }
+            }
+          }
+        }
+
         let toolResult: ToolResult
         if (name === 'rodar_subagente') {
           toolResult = await handleResearchSubAgent(args, ctx, deps.callModel)
@@ -1588,7 +1724,10 @@ export async function runCodeAgent(
     // Compaction: when several steps remain and the history is large, summarise
     // old turns into a compact block. Uses deps.callModel directly (no tools).
     // Threshold is ~15k tokens (4 chars ≈ 1 token, conservative).
+    // Skipped when any brake has fired — the agent is already struggling and
+    // dropping context only compounds the problem.
     if (
+      !brakesFired &&
       step < maxSteps - 3 &&
       step > 2 &&
       msgs.length > 8

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 import type { Currency } from '../types'
 import { CURRENCY_CONFIG } from '../types'
 import { useKanbanStore } from '../store/kanban'
@@ -140,32 +140,32 @@ export function FinancialView() {
       <div className="flex-1 flex flex-col overflow-hidden">
         {!activeList ? (
           <div className="flex flex-col items-center justify-center flex-1 gap-4">
-            <div className="w-16 h-16 rounded-2xl bg-[#1e2235] border border-[#2a2d42] flex items-center justify-center">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#8892a4" strokeWidth="1.5">
+            <div className="w-16 h-16 rounded-2xl bg-[#2a2a2a] border border-[#3b3b3b] flex items-center justify-center">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#999999" strokeWidth="1.5">
                 <rect x="2" y="3" width="20" height="14" rx="2" />
                 <line x1="8" y1="21" x2="16" y2="21" />
                 <line x1="12" y1="17" x2="12" y2="21" />
               </svg>
             </div>
             <div className="text-center">
-              <p className="text-[#e2e8f0] font-medium mb-1">Nenhuma tabela selecionada</p>
-              <p className="text-sm text-[#8892a4]">Crie uma tabela financeira para começar</p>
+              <p className="text-[#d4d4d4] font-medium mb-1">Nenhuma tabela selecionada</p>
+              <p className="text-sm text-[#999999]">Crie uma tabela financeira para começar</p>
             </div>
           </div>
         ) : (
           <>
-            <div className="flex items-center justify-between px-5 py-3 border-b border-[#2a2d42] shrink-0">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-[#3b3b3b] shrink-0">
               <div className="flex items-center gap-3">
-                <h2 className="text-sm font-semibold text-[#e2e8f0]">{activeList.name}</h2>
-                <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-[#6366f1]/15 text-[#a5b4fc]">
+                <h2 className="text-sm font-semibold text-[#d4d4d4]">{activeList.name}</h2>
+                <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-[#7c3aed]/15 text-[#a080f0]">
                   {CURRENCY_CONFIG[currency].symbol} {currency}
                 </span>
               </div>
-              <div className="flex items-center p-0.5 rounded-lg bg-[#1e2235] border border-[#2a2d42]">
+              <div className="flex items-center p-0.5 rounded-lg bg-[#2a2a2a] border border-[#3b3b3b]">
                 <button
                   onClick={() => updateTs({ activeTab: 'shopping' })}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                    ts.activeTab === 'shopping' ? 'bg-[#2a2d42] text-[#e2e8f0]' : 'text-[#8892a4] hover:text-[#e2e8f0]'
+                    ts.activeTab === 'shopping' ? 'bg-[#3b3b3b] text-[#d4d4d4]' : 'text-[#999999] hover:text-[#d4d4d4]'
                   }`}
                 >
                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -178,7 +178,7 @@ export function FinancialView() {
                 <button
                   onClick={() => updateTs({ activeTab: 'finance' })}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                    ts.activeTab === 'finance' ? 'bg-[#2a2d42] text-[#e2e8f0]' : 'text-[#8892a4] hover:text-[#e2e8f0]'
+                    ts.activeTab === 'finance' ? 'bg-[#3b3b3b] text-[#d4d4d4]' : 'text-[#999999] hover:text-[#d4d4d4]'
                   }`}
                 >
                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -191,7 +191,7 @@ export function FinancialView() {
                 <button
                   onClick={() => updateTs({ activeTab: 'analytics' })}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                    ts.activeTab === 'analytics' ? 'bg-[#2a2d42] text-[#e2e8f0]' : 'text-[#8892a4] hover:text-[#e2e8f0]'
+                    ts.activeTab === 'analytics' ? 'bg-[#3b3b3b] text-[#d4d4d4]' : 'text-[#999999] hover:text-[#d4d4d4]'
                   }`}
                 >
                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

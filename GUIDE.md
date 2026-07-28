@@ -92,8 +92,12 @@ src/
   main/          # janela, IPC, SQLite, spawn de processos
     index.ts     # registra TODOS os handlers IPC — comece por aqui
     store.ts     # persistência SQLite (kanban.db)
+    memory.ts    # memória durável da IA (validação, decay, sanitização de secrets)
+    code-agent.ts # agente de código nativo (loop de tool-calling)
+    ai-jail.ts   # sandbox obrigatório para comandos do agente de código
     web-fetch.ts # busca páginas para a IA (a política de segurança vive aqui)
-    code-files.ts, code-diff.ts, usage.ts, chat-images.ts, backup-files.ts, …
+    web-render.ts # renderização headless de SPAs para a IA
+    code-files.ts, code-diff.ts, skills.ts, usage.ts, chat-images.ts, backup-files.ts, …
     __tests__/   # precisam de @vitest-environment node
   preload/
     index.ts     # ponte contextBridge -> window.electronAPI
@@ -101,7 +105,7 @@ src/
   renderer/src/
     App.tsx      # troca de views; dono do estado dos modais
     store/       # kanban.ts (principal), aiRun.ts (execução da IA)
-    components/  # ~33 componentes; financial/ tem os seus
+    components/  # ~40 componentes; financial/ tem os seus
     ai/          # agent.ts (o loop), tools.ts (registro de ferramentas)
     utils/, types/, services/
     __tests__/   # espelha a estrutura acima
@@ -145,9 +149,12 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    `ai-run-metrics.json` (uma linha por execução do agente — modelo, passos,
    tokens, buscas redundantes, releituras — regras puras em `main/run-metrics.ts`,
    enviadas pelo `runAgent` no `finally`, best-effort), `chat-images/`,
-   `task-images/` (bytes das imagens de task — só metadata no DB, downscale JPEG
-   no cliente, `migrateTaskImagesToDisk` migra dados legados). Apagar um
-   lado sem o outro deixa órfão.
+    `task-images/` (bytes das imagens de task — só metadata no DB, downscale JPEG
+    no cliente, `migrateTaskImagesToDisk` migra dados legados), `skills/`
+    (arquivos `.md` de system prompts — usados via `/skill-name` no chat),
+    `agent-runs/` (execuções arquivadas do agente de código — log + diff congelados).
+    Apagar um
+    lado sem o outro deixa órfão.
 5. **Ferramenta de IA que escreve leva `write: true`** em `ai/tools.ts`. É a
    única coisa entre o modelo e os dados do usuário: sem isso a ação roda sem
    aprovação. Ferramenta nova que muta estado **tem** que marcar.

@@ -1,4 +1,4 @@
-// Picks which code-agent run the panel is showing: the live one, or an archived
+﻿// Picks which code-agent run the panel is showing: the live one, or an archived
 // one belonging to this conversation.
 //
 // A past run is a *snapshot* — its diff was frozen when the agent exited, and
@@ -26,7 +26,7 @@ export interface AgentRunMeta {
 }
 
 /** "hoje 14:32" / "ontem 19:44" / "12/03 08:15" — a row has to be scannable. */
-function whenLabel(ts: number): string {
+export function whenLabel(ts: number): string {
   const d = new Date(ts)
   const time = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
   const day = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
@@ -93,7 +93,7 @@ export function AgentRunPicker({
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10.5px] text-[#8892a4] hover:bg-[#1c2030] hover:text-[#e2e8f0] transition-colors"
+        className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10.5px] text-[#999999] hover:bg-[#232323] hover:text-[#d4d4d4] transition-colors"
         title="Ver o log e as mudanças de uma run anterior"
       >
         {label}
@@ -116,18 +116,18 @@ export function AgentRunPicker({
           right-0 matches the view's other dropdowns and keeps a wide menu inside
           the frame instead of pushing it off the edge. */}
       {open && (
-        <div className="absolute bottom-full right-0 z-40 mb-1 max-h-64 w-72 overflow-y-auto rounded-lg border border-[#2a2d42] bg-[#12141f] py-1 shadow-2xl">
+        <div className="absolute bottom-full right-0 z-40 mb-1 max-h-64 w-72 overflow-y-auto rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] py-1 shadow-2xl">
           {live && (
             <button
               onClick={() => {
                 onSelect(null)
                 setOpen(false)
               }}
-              className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] hover:bg-[#1c2030] ${
-                selectedId === null ? 'text-[#6366f1]' : 'text-[#c9d1e3]'
+              className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] hover:bg-[#232323] ${
+                selectedId === null ? 'text-[#7c3aed]' : 'text-[#d4d4d4]'
               }`}
             >
-              <span className="w-1.5 h-1.5 rounded-full bg-[#22c55e]" />
+              <span className="w-1.5 h-1.5 rounded-full bg-[#20b858]" />
               run atual
             </button>
           )}
@@ -140,13 +140,13 @@ export function AgentRunPicker({
               }}
               // The task is the only thing that tells two same-day runs apart.
               title={run.task || undefined}
-              className={`block w-full px-3 py-1.5 text-left hover:bg-[#1c2030] ${
-                selectedId === run.id ? 'text-[#6366f1]' : 'text-[#c9d1e3]'
+              className={`block w-full px-3 py-1.5 text-left hover:bg-[#232323] ${
+                selectedId === run.id ? 'text-[#7c3aed]' : 'text-[#d4d4d4]'
               }`}
             >
               <span className="block text-[11px]">{rowLabel(run)}</span>
               {run.task && (
-                <span className="block truncate text-[10px] text-[#6b7280]">{run.task}</span>
+                <span className="block truncate text-[10px] text-[#999999]">{run.task}</span>
               )}
             </button>
           ))}

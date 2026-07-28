@@ -283,6 +283,13 @@ export interface AiRunState {
    * a fresh conversation has a fresh id and starts gated.
    */
   autoApprove: Set<string>
+  /**
+   * Planning mode, by conversation id: when on, every user message is prefixed
+   * with a planning-mode instruction that tells the assistant to analyse,
+   * ask scope questions, and plan — but never write or edit code directly.
+   * Per-conversation, toggled via Shift+Tab.
+   */
+  planMode: Set<string>
   /** Conversations the Stop button has asked to abort; each loop reads its own between steps. */
   abortRequested: Set<string>
   /**
@@ -309,6 +316,7 @@ export interface AiRunState {
   resolveApproval: (convId: string, ids: Set<string>) => void
   toggleApproval: (convId: string, id: string) => void
   setAutoApprove: (convId: string, v: boolean) => void
+  setPlanMode: (convId: string, v: boolean) => void
   /**
    * Swap in a whole stored conversation, in one update. Deliberately atomic:
    * the transcript, its id and its usage describe one chat, so setting them
@@ -351,6 +359,7 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
   taskLeases: {},
   pendingApprovals: [],
   autoApprove: new Set(),
+  planMode: new Set(),
   abortRequested: new Set(),
   savedTick: 0,
 
@@ -492,7 +501,15 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
     set((s) => {
       const id = convId ?? s.conversationId
       if (!id) return s
-      return { abortRequested: setAdd(s.abortRequested, id) }
+      // Resolve any parked approval so the loop can unblock and reach
+      // shouldAbort(). Without this, a run stuck on approval never sees the
+      // abort flag because it's parked deep inside await onApprove().
+      approvalResolvers.get(id)?.(new Set())
+      approvalResolvers.delete(id)
+      return {
+        abortRequested: setAdd(s.abortRequested, id),
+        pendingApprovals: s.pendingApprovals.filter((p) => p.convId !== id)
+      }
     }),
 
   acquireLease: (taskId, convId) => {
@@ -540,6 +557,9 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
 
   setAutoApprove: (convId, v) =>
     set((s) => ({ autoApprove: v ? setAdd(s.autoApprove, convId) : setDel(s.autoApprove, convId) })),
+
+  setPlanMode: (convId, v) =>
+    set((s) => ({ planMode: v ? setAdd(s.planMode, convId) : setDel(s.planMode, convId) })),
 
   openConversation: (conv) =>
     set((s) => {

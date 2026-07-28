@@ -1,4 +1,4 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { Column as ColumnType, Task, Project } from '../types'
@@ -60,12 +60,12 @@ export function Column({
       className="flex flex-col w-72 shrink-0"
     >
       {/* header */}
-      <div className="flex items-center justify-between px-3 py-2.5 mb-2 rounded-lg bg-[#181b28] border border-[#2a2d42]">
+      <div className="flex items-center justify-between px-3 py-2.5 mb-2 rounded-lg bg-[#252525] border border-[#3b3b3b]">
         <div className="flex items-center gap-2">
           {/* drag handle */}
           <div
             {...listeners}
-            className="cursor-grab active:cursor-grabbing text-[#3a3e58] hover:text-[#6366f1] transition-colors shrink-0"
+            className="cursor-grab active:cursor-grabbing text-[#555555] hover:text-[#7c3aed] transition-colors shrink-0"
             title="Arrastar coluna"
           >
             <svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor">
@@ -82,8 +82,8 @@ export function Column({
             className="w-2 h-2 rounded-full shrink-0"
             style={{ backgroundColor: column.color || project.color }}
           />
-          <span className="text-sm font-medium text-[#e2e8f0] truncate max-w-[130px]">{column.name}</span>
-          <span className="text-xs text-[#8892a4] bg-[#2a2d42] px-1.5 py-0.5 rounded-full">
+          <span className="text-sm font-medium text-[#d4d4d4] truncate max-w-[130px]">{column.name}</span>
+          <span className="text-xs text-[#999999] bg-[#3b3b3b] px-1.5 py-0.5 rounded-full">
             {tasks.length}
           </span>
         </div>
@@ -91,7 +91,7 @@ export function Column({
         <div className="flex items-center gap-1">
           <button
             onClick={() => onAddTask(column.id)}
-            className="p-1 rounded text-[#8892a4] hover:text-[#6366f1] hover:bg-[#6366f1]/10 transition-colors"
+            className="p-1 rounded text-[#999999] hover:text-[#7c3aed] hover:bg-[#7c3aed]/10 transition-colors"
             title="Adicionar task"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -103,7 +103,7 @@ export function Column({
           <div className="relative">
             <button
               onClick={() => setMenuOpen((v) => !v)}
-              className="p-1 rounded text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#2a2d42] transition-colors"
+              className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#3b3b3b] transition-colors"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <circle cx="12" cy="5" r="1" fill="currentColor" />
@@ -115,15 +115,15 @@ export function Column({
             {menuOpen && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-                <div className="absolute right-0 top-7 z-20 w-36 rounded-lg border border-[#2a2d42] bg-[#13151f] shadow-xl py-1">
+                <div className="absolute right-0 top-7 z-20 w-36 rounded-lg border border-[#3b3b3b] bg-[#232323] shadow-xl py-1">
                   <button
-                    className="w-full text-left px-3 py-2 text-sm text-[#e2e8f0] hover:bg-[#1e2235] transition-colors"
+                    className="w-full text-left px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors"
                     onClick={() => { setMenuOpen(false); onEditColumn(column) }}
                   >
                     Renomear
                   </button>
                   <button
-                    className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-red-400/10 transition-colors"
+                    className="w-full text-left px-3 py-2 text-sm text-[#e04040] hover:bg-[#e04040]/10 transition-colors"
                     onClick={() => { setMenuOpen(false); onDeleteColumn(column) }}
                   >
                     Deletar coluna
@@ -137,7 +137,7 @@ export function Column({
 
       {/* tasks area */}
       <div
-        className={`flex flex-col gap-2 flex-1 min-h-24 rounded-lg p-1.5 transition-colors ${isOver ? 'bg-[#6366f1]/5 border border-[#6366f1]/30' : 'border border-transparent'}`}
+        className={`flex flex-col gap-2 flex-1 min-h-24 rounded-lg p-1.5 transition-colors ${isOver ? 'bg-[#7c3aed]/5 border border-[#7c3aed]/30' : 'border border-transparent'}`}
       >
         <SortableContext items={sorted.map((t) => t.id)} strategy={verticalListSortingStrategy}>
           {sorted.map((task) => (
@@ -148,7 +148,7 @@ export function Column({
         {tasks.length === 0 && (
           <button
             onClick={() => onAddTask(column.id)}
-            className="text-xs text-[#8892a4] border border-dashed border-[#2a2d42] rounded-lg py-4 hover:border-[#6366f1]/50 hover:text-[#6366f1] transition-colors"
+            className="text-xs text-[#999999] border border-dashed border-[#3b3b3b] rounded-lg py-4 hover:border-[#7c3aed]/50 hover:text-[#7c3aed] transition-colors"
           >
             + Add task
           </button>

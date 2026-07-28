@@ -1,4 +1,4 @@
-// Turns a raw agent log (codex, streamed over ai:code-agent:output) into
+﻿// Turns a raw agent log (codex, streamed over ai:code-agent:output) into
 // styled segments the terminal panel can render. It exists because the log is a
 // *pipe*, not a console: whatever ANSI the agent emits arrives as literal bytes,
 // so without this the panel showed `[36mProcessing[0m` as text. It also strips
@@ -24,13 +24,13 @@ export interface AnsiSegment {
 const FG: Record<number, string> = {
   30: '#6b7280', // black → grey (pure black is invisible on the dark panel)
   31: '#f87171', // red
-  32: '#4ade80', // green
+  32: '#46d478', // green
   33: '#fbbf24', // yellow
   34: '#60a5fa', // blue
   35: '#c084fc', // magenta
   36: '#22d3ee', // cyan
   37: '#cbd5e1', // white
-  90: '#8892a4', // bright black (grey)
+  90: '#999999', // bright black (grey)
   91: '#fca5a5',
   92: '#86efac',
   93: '#fde047',

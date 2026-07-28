@@ -1,4 +1,4 @@
-// The live output of the external code agent (codex), rendered as a
+﻿// The live output of the external code agent (codex), rendered as a
 // terminal rather than a <pre>: the log is a pipe, so the ANSI the agent emits
 // is literal bytes that parseAnsi turns into colour (and strips the cursor codes
 // a <div> would otherwise show as garbage). Styled to read like a CLI session —
@@ -44,20 +44,20 @@ export function AgentTerminal({
   }
 
   return (
-    <div className="mx-6 mb-2 rounded-lg overflow-hidden border border-[#1c2030] bg-[#05070e] shadow-inner">
+    <div className="mx-6 mb-2 rounded-lg overflow-hidden border border-[#232323] bg-[#1b1b1b] shadow-inner">
       {/* Terminal chrome: traffic lights + a mono label, like a CLI window. */}
-      <div className="flex items-center gap-2 px-3 py-1.5 bg-[#0b0e18] border-b border-[#1c2030]">
+      <div className="flex items-center gap-2 px-3 py-1.5 bg-[#1b1b1b] border-b border-[#232323]">
         <span className="w-2.5 h-2.5 rounded-full bg-[#ff5f57]" />
         <span className="w-2.5 h-2.5 rounded-full bg-[#febc2e]" />
         <span className="w-2.5 h-2.5 rounded-full bg-[#28c840]" />
-        <span className="ml-2 text-[10px] font-mono text-[#6b7280] tracking-wide">
+        <span className="ml-2 text-[10px] font-mono text-[#999999] tracking-wide">
           agent: {running ? 'running' : 'idle'}
         </span>
         <button
           onClick={handleCopy}
           disabled={!log}
           title="Copiar log"
-          className="ml-auto flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono text-[#6b7280] hover:text-[#c9d1e3] hover:bg-[#1c2030] disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-[#6b7280] transition-colors"
+          className="ml-auto flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono text-[#999999] hover:text-[#d4d4d4] hover:bg-[#232323] disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-[#999999] transition-colors"
         >
           {copied ? (
             <>
@@ -95,7 +95,7 @@ export function AgentTerminal({
         ref={bodyRef}
         onScroll={onScroll}
         style={{ resize: 'vertical', height: '14rem', maxHeight: '60vh' }}
-        className="overflow-y-auto px-4 py-3 font-mono text-[11.5px] leading-[1.55] text-[#c9d1e3] whitespace-pre-wrap break-words"
+        className="overflow-y-auto px-4 py-3 font-mono text-[11.5px] leading-[1.55] text-[#d4d4d4] whitespace-pre-wrap break-words"
       >
         {segments.map((s, i) => (
           <span
@@ -112,7 +112,7 @@ export function AgentTerminal({
         {/* A blinking block cursor while the agent is live, so an idle-looking
             pause reads as "still working" instead of "done". */}
         {running && (
-          <span className="inline-block w-[7px] h-[13px] align-middle bg-[#4ade80] animate-pulse" />
+          <span className="inline-block w-[7px] h-[13px] align-middle bg-[#46d478] animate-pulse" />
         )}
       </div>
     </div>

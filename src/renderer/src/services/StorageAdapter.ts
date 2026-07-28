@@ -1,9 +1,11 @@
-import type { Project, Task, Sprint, Tombstone, Backup, AIJson, StickyNote, Goal, Habit, FinancialTable, StoredFile, AIConversation, AiMemory } from '../types'
+import type { Project, Task, Sprint, Tombstone, Backup, AIJson, StickyNote, Goal, Habit, FinancialTable, StoredFile, AIConversation, AiMemory, TimeBlock, Routine } from '../types'
 
 type SaveData = {
   projects: Project[]; tasks: Task[]; sprints: Sprint[]; tombstones: Tombstone[]
   notes: StickyNote[]; goals: Goal[]; habits: Habit[]; lists: FinancialTable[]
   files: StoredFile[]
+  timeBlocks?: TimeBlock[]
+  routines?: Routine[]
   activeTimers?: { taskId: string; startedAt: number }[]
   // Legacy single-timer mirror (activeTimers[0]); kept so an older app version
   // reading the same DB still resolves one running timer.

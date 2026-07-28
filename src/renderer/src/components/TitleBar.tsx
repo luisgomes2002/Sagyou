@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 
 const platform = window.electron.process.platform
 
@@ -17,7 +17,7 @@ export function TitleBar() {
 
   return (
     <div
-      className="flex items-center shrink-0 h-9 w-full bg-[#0d0f18] border-b border-[#2a2d42] select-none"
+      className="flex items-center shrink-0 h-9 w-full bg-[#1b1b1b] border-b border-[#3b3b3b] select-none"
       style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
     >
       {/* Mac: traffic lights à esquerda */}
@@ -54,14 +54,14 @@ export function TitleBar() {
 
       {/* Logo + título (centro) */}
       <div className="flex-1 flex items-center justify-center gap-2 pointer-events-none">
-        <div className="w-4 h-4 rounded bg-[#6366f1] flex items-center justify-center shrink-0">
+        <div className="w-4 h-4 rounded bg-[#7c3aed] flex items-center justify-center shrink-0">
           <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
             <rect x="3" y="3" width="7" height="18" rx="1" />
             <rect x="14" y="3" width="7" height="11" rx="1" />
             <rect x="14" y="18" width="7" height="3" rx="1" />
           </svg>
         </div>
-        <span className="text-xs font-medium text-[#8892a4]">Sagyou</span>
+        <span className="text-xs font-medium text-[#999999]">Sagyou</span>
       </div>
 
       {/* Windows / Linux: botões à direita */}
@@ -72,7 +72,7 @@ export function TitleBar() {
         >
           <button
             onClick={minimize}
-            className="w-10 h-9 flex items-center justify-center text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#1e2235] transition-colors"
+            className="w-10 h-9 flex items-center justify-center text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors"
             title="Minimizar"
           >
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -81,7 +81,7 @@ export function TitleBar() {
           </button>
           <button
             onClick={maximize}
-            className="w-10 h-9 flex items-center justify-center text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#1e2235] transition-colors"
+            className="w-10 h-9 flex items-center justify-center text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors"
             title={isMaximized ? 'Restaurar' : 'Maximizar'}
           >
             {isMaximized ? (
@@ -97,7 +97,7 @@ export function TitleBar() {
           </button>
           <button
             onClick={close}
-            className="w-10 h-9 flex items-center justify-center text-[#8892a4] hover:text-white hover:bg-red-500 transition-colors"
+            className="w-10 h-9 flex items-center justify-center text-[#999999] hover:text-white hover:bg-[#e04040] transition-colors"
             title="Fechar"
           >
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">

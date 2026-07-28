@@ -21,7 +21,7 @@ const execAsync = promisify(execCallback)
 import { randomUUID } from 'crypto'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import OpenAI from 'openai'
-import { loadData, saveData } from './store'
+import { loadData, saveData, eventsForEntity } from './store'
 import {
   listMemories,
   memoriesForContext,
@@ -229,10 +229,71 @@ function describeCodeAction(
 } {
   if (name === 'escrever_arquivo') {
     const caminho = typeof args.caminho === 'string' ? args.caminho : '?'
-    const conteudo = typeof args.conteudo === 'string' ? args.conteudo : ''
-    const bytes = Buffer.byteLength(conteudo, 'utf-8')
     const existing = opts?.oldContent ?? null
     const overwrite = existing !== null
+
+    // Batch edit mode: several procura→substitui patches in one call.
+    const edicoes = Array.isArray(args.edicoes) ? args.edicoes : []
+    if (edicoes.length > 0) {
+      const verbs = overwrite ? 'Editar' : 'Criar'
+      const plural = edicoes.length !== 1 ? 's' : ''
+      const preview = edicoes
+        .map((e) => `- "${typeof e.procura === 'string' ? String(e.procura).slice(0, 60) : '?'}" → "${typeof e.substitui === 'string' ? String(e.substitui).slice(0, 60) : '?'}"`)
+        .join('\n')
+      let diff: DiffLineItem[] | undefined
+      let diffTruncated: boolean | undefined
+      if (overwrite) {
+        const patched = edicoes.reduce(
+          (text, ed) =>
+            typeof ed.procura === 'string' && typeof ed.substitui === 'string'
+              ? text.replace(ed.procura, ed.substitui)
+              : text,
+          existing
+        )
+        const d = lineDiff(existing, patched)
+        if (!d.skipped && d.lines.length) {
+          diff = d.lines
+          diffTruncated = d.truncated
+        }
+      }
+      return {
+        resumo: `${verbs} arquivo ${caminho} (${edicoes.length} mudança${plural})`,
+        conteudo: preview.slice(0, APPROVAL_PREVIEW_CHARS),
+        diff,
+        diffTruncated,
+        irreversivel: overwrite
+      }
+    }
+
+    // Single patch mode: procura + substitui.
+    const procura = typeof args.procura === 'string' && args.procura ? args.procura : ''
+    const substitui = typeof args.substitui === 'string' ? args.substitui : ''
+    if (procura || substitui) {
+      const verbs = overwrite ? 'Editar' : 'Criar'
+      const qSearch = procura.slice(0, 80)
+      const qReplace = substitui.slice(0, 80)
+      let diff: DiffLineItem[] | undefined
+      let diffTruncated: boolean | undefined
+      if (overwrite) {
+        const patched = existing.replace(procura, substitui)
+        const d = lineDiff(existing, patched)
+        if (!d.skipped && d.lines.length) {
+          diff = d.lines
+          diffTruncated = d.truncated
+        }
+      }
+      return {
+        resumo: `${verbs} arquivo ${caminho}: "${qSearch}" → "${qReplace}"`,
+        conteudo: `"${qSearch}" → "${qReplace}"`.slice(0, APPROVAL_PREVIEW_CHARS),
+        diff,
+        diffTruncated,
+        irreversivel: overwrite
+      }
+    }
+
+    // Full content mode: escreve o arquivo inteiro (existing behaviour).
+    const conteudo = typeof args.conteudo === 'string' ? args.conteudo : ''
+    const bytes = Buffer.byteLength(conteudo, 'utf-8')
     let diff: DiffLineItem[] | undefined
     let diffTruncated: boolean | undefined
     if (overwrite) {
@@ -784,7 +845,7 @@ async function archiveAgentRun(runId: string, exitCode: number): Promise<void> {
     // Announced separately from 'exit', which fires before this: the archive
     // costs a `git diff`, and the panel must not stay on "rodando" waiting for
     // it. This is what tells the run picker its new row exists.
-    mainWindow?.webContents.send('ai:code-agent:archived', { runId: run.id, id: meta.id })
+    mainWindow?.webContents.send('ai:code-agent:archived', { runId: run.id, id: meta.id, convId: run.convId })
     for (const gone of drop) {
       const p = agentRunPath(gone.id)
       if (p && existsSync(p)) {
@@ -1340,6 +1401,12 @@ app.whenReady().then(() => {
     return { text: formatMemoriesForPrompt(memoriesForContext(projectId ?? null)), archived }
   })
 
+  // Entity lineage: query the event log for one entity's history.
+  ipcMain.handle(
+    'ai:lineage:list',
+    (_, entityType: string, entityId: string) => eventsForEntity(entityType, entityId)
+  )
+
   // Proxy an OpenAI-compatible chat/completions call. baseURL + apiKey come
   // from the renderer when provided, falling back to the stored config.
   ipcMain.handle(
@@ -1829,6 +1896,12 @@ app.whenReady().then(() => {
           /* conversation briefing is best-effort; a failure leaves the prompt as-is */
         }
       }
+      // If the user explicitly said Node/commands aren't available, disable the
+      // BEHAVIOR rule that tells the agent to run typecheck — the agent would try,
+      // hit 127, and spiral retrying.
+      const noCommands = decisoes.some((d) =>
+        /n(ã|a)o.*(node|npm|comando|typecheck|teste|rodar|execute|dispon[ií]vel|bin[aá]rio)/i.test(d)
+      )
       const systemPrompt = buildSystemPrompt({
         tree,
         guide,
@@ -1836,7 +1909,8 @@ app.whenReady().then(() => {
         fileContents,
         memories,
         conversas,
-        decisoes
+        decisoes,
+        noCommands
       })
 
       // Approval round-trip: the loop parks here, the renderer shows a card and

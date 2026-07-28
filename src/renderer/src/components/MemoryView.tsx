@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+﻿import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useKanbanStore } from '../store/kanban'
 import type { AiMemory, MemoryType } from '../types'
 
@@ -12,15 +12,17 @@ const TYPE_LABEL: Record<MemoryType, string> = {
   tradeoff: 'Trade-off',
   gotcha: 'Armadilha',
   fato: 'Fato',
-  handoff: 'Sessão'
+  handoff: 'Sessão',
+  planejamento: 'Planejamento'
 }
 
 const TYPE_COLOR: Record<MemoryType, string> = {
-  decisao: '#a5b4fc',
-  tradeoff: '#fbbf24',
-  gotcha: '#f87171',
-  fato: '#94a3b8',
-  handoff: '#4ade80'
+  decisao: '#a080f0',
+  tradeoff: '#f0b820',
+  gotcha: '#ec6a6a',
+  fato: '#999999',
+  handoff: '#46d478',
+  planejamento: '#a080f0'
 }
 
 export function MemoryView(): React.JSX.Element {
@@ -79,24 +81,24 @@ export function MemoryView(): React.JSX.Element {
     <div className="flex-1 overflow-y-auto p-6">
       <div className="max-w-3xl mx-auto">
         <div className="flex items-center justify-between mb-1">
-          <h1 className="text-lg font-semibold text-[#e2e8f0]">Memória do assistente</h1>
+          <h1 className="text-lg font-semibold text-[#d4d4d4]">Memória do assistente</h1>
           <button
             onClick={() => setShowArchived((v) => !v)}
-            className="text-xs px-2.5 py-1 rounded-md text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#1e2235] transition-colors"
+            className="text-xs px-2.5 py-1 rounded-md text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors"
           >
             {showArchived ? 'Ocultar arquivadas' : `Ver arquivadas (${archivedCount})`}
           </button>
         </div>
-        <p className="text-xs text-[#8892a4] mb-5">
+        <p className="text-xs text-[#999999] mb-5">
           {activeCount} memória{activeCount === 1 ? '' : 's'} ativa{activeCount === 1 ? '' : 's'}. O
           assistente grava fatos duráveis aqui e os relê nas próximas conversas. Memórias sem uso
           são arquivadas com o tempo; fixe uma para que nunca expire.
         </p>
 
         {loading ? (
-          <p className="text-sm text-[#8892a4]">Carregando…</p>
+          <p className="text-sm text-[#999999]">Carregando…</p>
         ) : shown.length === 0 ? (
-          <p className="text-sm text-[#8892a4] italic">
+          <p className="text-sm text-[#999999] italic">
             Nenhuma memória ainda. Peça ao assistente para lembrar de algo, ou ela vai gravando
             decisões e armadilhas conforme vocês trabalham.
           </p>
@@ -107,8 +109,8 @@ export function MemoryView(): React.JSX.Element {
                 key={m.id}
                 className={`rounded-lg border p-3 ${
                   m.archivedAt
-                    ? 'border-[#1e2235] bg-transparent opacity-60'
-                    : 'border-[#1e2235] bg-[#161a29]'
+                    ? 'border-[#2a2a2a] bg-transparent opacity-60'
+                    : 'border-[#2a2a2a] bg-[#1b1b1b]'
                 }`}
               >
                 <div className="flex items-start gap-2">
@@ -123,16 +125,16 @@ export function MemoryView(): React.JSX.Element {
                   </span>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
-                      {m.pinned && <span title="Fixada">📌</span>}
-                      <span className="text-sm font-medium text-[#e2e8f0] truncate">{m.title}</span>
+                      {m.pinned && <span title="Fixada" className="text-[11px] text-[#f0b820]">Fixada</span>}
+                      <span className="text-sm font-medium text-[#d4d4d4] truncate">{m.title}</span>
                     </div>
                     {m.body && (
-                      <p className="text-xs text-[#b6c0d4] mt-1 whitespace-pre-wrap">{m.body}</p>
+                      <p className="text-xs text-[#d4d4d4] mt-1 whitespace-pre-wrap">{m.body}</p>
                     )}
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1.5 text-[10px] text-[#8892a4]">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1.5 text-[10px] text-[#999999]">
                       <span>{projectName(m.projectId)}</span>
                       {m.tags.map((t) => (
-                        <span key={t} className="px-1.5 py-0.5 rounded bg-[#1e2235]">
+                        <span key={t} className="px-1.5 py-0.5 rounded bg-[#2a2a2a]">
                           {t}
                         </span>
                       ))}
@@ -143,14 +145,14 @@ export function MemoryView(): React.JSX.Element {
                     {m.archivedAt ? (
                       <button
                         onClick={() => void restore(m)}
-                        className="text-[11px] px-2 py-1 rounded text-[#8892a4] hover:text-[#4ade80] hover:bg-[#1e2235] transition-colors"
+                        className="text-[11px] px-2 py-1 rounded text-[#999999] hover:text-[#46d478] hover:bg-[#2a2a2a] transition-colors"
                       >
                         Restaurar
                       </button>
                     ) : (
                       <button
                         onClick={() => void togglePin(m)}
-                        className="text-[11px] px-2 py-1 rounded text-[#8892a4] hover:text-[#a5b4fc] hover:bg-[#1e2235] transition-colors"
+                        className="text-[11px] px-2 py-1 rounded text-[#999999] hover:text-[#a080f0] hover:bg-[#2a2a2a] transition-colors"
                       >
                         {m.pinned ? 'Desafixar' : 'Fixar'}
                       </button>
@@ -159,13 +161,13 @@ export function MemoryView(): React.JSX.Element {
                       <>
                         <button
                           onClick={() => void remove(m.id)}
-                          className="text-[11px] px-2 py-1 rounded text-[#f87171] hover:bg-[#f87171]/10 transition-colors"
+                          className="text-[11px] px-2 py-1 rounded text-[#ec6a6a] hover:bg-[#ec6a6a]/10 transition-colors"
                         >
                           Confirmar
                         </button>
                         <button
                           onClick={() => setConfirmId(null)}
-                          className="text-[11px] px-2 py-1 rounded text-[#8892a4] hover:bg-[#1e2235] transition-colors"
+                          className="text-[11px] px-2 py-1 rounded text-[#999999] hover:bg-[#2a2a2a] transition-colors"
                         >
                           Cancelar
                         </button>
@@ -173,7 +175,7 @@ export function MemoryView(): React.JSX.Element {
                     ) : (
                       <button
                         onClick={() => setConfirmId(m.id)}
-                        className="text-[11px] px-2 py-1 rounded text-[#8892a4] hover:text-[#f87171] hover:bg-[#1e2235] transition-colors"
+                        className="text-[11px] px-2 py-1 rounded text-[#999999] hover:text-[#ec6a6a] hover:bg-[#2a2a2a] transition-colors"
                       >
                         Apagar
                       </button>

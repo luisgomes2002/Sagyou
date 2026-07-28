@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+﻿import { useState, useMemo } from 'react'
 import {
   DndContext,
   DragEndEvent,
@@ -169,7 +169,7 @@ export function Board({
         {/* add column button */}
         <button
           onClick={onAddColumn}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-dashed border-[#2a2d42] text-sm text-[#8892a4] hover:border-[#6366f1]/50 hover:text-[#6366f1] transition-colors shrink-0 mt-0"
+          className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-dashed border-[#3b3b3b] text-sm text-[#999999] hover:border-[#7c3aed]/50 hover:text-[#7c3aed] transition-colors shrink-0 mt-0"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
             <line x1="12" y1="5" x2="12" y2="19" />
@@ -185,10 +185,10 @@ export function Board({
         )}
         {activeColumn && (
           <div className="flex flex-col w-72 shrink-0 opacity-90 rotate-2">
-            <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-[#181b28] border border-[#6366f1]/50 shadow-2xl">
+            <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-[#252525] border border-[#7c3aed]/50 shadow-2xl">
               <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: activeColumn.color || project.color }} />
-              <span className="text-sm font-medium text-[#e2e8f0]">{activeColumn.name}</span>
-              <span className="text-xs text-[#8892a4] bg-[#2a2d42] px-1.5 py-0.5 rounded-full">
+              <span className="text-sm font-medium text-[#d4d4d4]">{activeColumn.name}</span>
+              <span className="text-xs text-[#999999] bg-[#3b3b3b] px-1.5 py-0.5 rounded-full">
                 {(columnTasksMap.get(activeColumn.id) ?? EMPTY_TASKS).length}
               </span>
             </div>

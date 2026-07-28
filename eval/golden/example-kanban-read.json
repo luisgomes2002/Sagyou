@@ -1,0 +1,28 @@
+{
+  "id": "example-kanban-read",
+  "description": "The agent correctly reads tasks from a project and lists them with priorities.",
+  "messages": [
+    {
+      "role": "system",
+      "content": "Você é um assistente de produtividade. Responda em português."
+    },
+    {
+      "role": "user",
+      "content": "Quantas tasks de alta prioridade tenho no projeto ativo?"
+    }
+  ],
+  "rubric": {
+    "passThreshold": 3,
+    "criteria": [
+      "A resposta menciona o número correto (ou explica que precisa consultar as tasks)",
+      "O assistente usou ler_tasks com filtro de prioridade",
+      "A resposta está em português"
+    ],
+    "tools": [
+      { "kind": "called", "name": "ler_projetos" },
+      { "kind": "count", "name": "ler_tasks", "min": 1, "max": 3 }
+    ]
+  },
+  "tags": ["kanban", "read"],
+  "schemaVersion": "3.6.0"
+}

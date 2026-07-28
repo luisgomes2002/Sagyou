@@ -1,4 +1,4 @@
-import ReactMarkdown from 'react-markdown'
+﻿import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
 /**
@@ -16,27 +16,27 @@ const COMPONENTS: React.ComponentProps<typeof ReactMarkdown>['components'] = {
   ol: ({ children }) => <ol className="list-decimal pl-5 space-y-0.5">{children}</ol>,
   li: ({ children }) => <li className="break-words">{children}</li>,
   a: ({ children, href }) => (
-    <a href={href} className="text-[#a5b4fc] underline break-all">
+    <a href={href} className="text-[#a080f0] underline break-all">
       {children}
     </a>
   ),
   h1: ({ children }) => <h1 className="text-base font-semibold text-white mt-1">{children}</h1>,
   h2: ({ children }) => <h2 className="text-sm font-semibold text-white mt-1">{children}</h2>,
-  h3: ({ children }) => <h3 className="text-sm font-semibold text-[#e2e8f0] mt-1">{children}</h3>,
+  h3: ({ children }) => <h3 className="text-sm font-semibold text-[#d4d4d4] mt-1">{children}</h3>,
   blockquote: ({ children }) => (
-    <blockquote className="border-l-2 border-[#3a3e58] pl-3 text-[#8892a4]">{children}</blockquote>
+    <blockquote className="border-l-2 border-[#555555] pl-3 text-[#999999]">{children}</blockquote>
   ),
-  hr: () => <hr className="border-[#2a2d42]" />,
+  hr: () => <hr className="border-[#3b3b3b]" />,
   code: ({ className, children }) =>
     className ? (
       <code className={`${className} font-mono text-[0.85em]`}>{children}</code>
     ) : (
-      <code className="px-1 py-0.5 rounded bg-[#0d0f18] text-[#a5b4fc] font-mono text-[0.85em]">
+      <code className="px-1 py-0.5 rounded bg-[#1b1b1b] text-[#a080f0] font-mono text-[0.85em]">
         {children}
       </code>
     ),
   pre: ({ children }) => (
-    <pre className="overflow-x-auto p-3 rounded-lg bg-[#0d0f18] border border-[#2a2d42]">
+    <pre className="overflow-x-auto p-3 rounded-lg bg-[#1b1b1b] border border-[#3b3b3b]">
       {children}
     </pre>
   ),
@@ -46,11 +46,11 @@ const COMPONENTS: React.ComponentProps<typeof ReactMarkdown>['components'] = {
     </div>
   ),
   th: ({ children }) => (
-    <th className="border border-[#2a2d42] px-2 py-1 text-left font-semibold bg-[#0d0f18]">
+    <th className="border border-[#3b3b3b] px-2 py-1 text-left font-semibold bg-[#1b1b1b]">
       {children}
     </th>
   ),
-  td: ({ children }) => <td className="border border-[#2a2d42] px-2 py-1 align-top">{children}</td>
+  td: ({ children }) => <td className="border border-[#3b3b3b] px-2 py-1 align-top">{children}</td>
 }
 
 /** Likewise: a new array here would re-run the plugin pipeline every render. */

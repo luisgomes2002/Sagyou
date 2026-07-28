@@ -1,4 +1,4 @@
-import Decimal from 'decimal.js'
+﻿import Decimal from 'decimal.js'
 import { useKanbanStore } from '../store/kanban'
 import { useAiRunStore } from '../store/aiRun'
 import { D, FINANCIAL_CATEGORIES } from '../components/financial/shared'
@@ -6,6 +6,9 @@ import { computeHabitSummary, todayISO } from '../utils/habits'
 import { isDoneColumn } from '../utils/columns'
 import { PRIORITY_CONFIG, PROJECT_COLORS, NOTE_COLORS } from '../types'
 import type { AITaskInput, Task, Priority, Goal, Habit, FinancialTable, StickyNote } from '../types'
+import { isWriteTool as isWriteFromRegistry } from './permission-registry'
+import { validateToolInput } from './validators'
+import glossaryRaw from './glossary.json'
 
 // ---------------------------------------------------------------------------
 // AI tool registry
@@ -410,6 +413,29 @@ function codeSearchKey(roots: Root[], termo: string): string {
 
 // --- Registry: name -> tool. This is the map the task asks for. ---
 const REGISTRY: Record<string, AITool> = {
+  data_de_hoje: {
+    definition: fn(
+      'data_de_hoje',
+      'Retorna a data e hora atual no fuso de Brasília (America/Sao_Paulo). ' +
+        '⚠️ Use esta ferramenta ANTES de qualquer operação que envolva datas — NUNCA adivinhe o dia de hoje. ' +
+        'O retorno inclui o dia da semana por extenso (segunda-feira, etc.) e a data em YYYY-MM-DD.',
+      NO_PARAMS
+    ),
+    run: () => {
+      const now = new Date()
+      const dias = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado']
+      const iso = now.toISOString()
+      const data = iso.slice(0, 10)
+      const hora = iso.slice(11, 16)
+      return JSON.stringify({
+        dia_semana: dias[now.getDay()],
+        data,
+        hora,
+        iso: now.toISOString()
+      })
+    }
+  },
+
   ler_projetos: {
     definition: fn(
       'ler_projetos',
@@ -2093,6 +2119,306 @@ const REGISTRY: Record<string, AITool> = {
       // landed rather than where it aimed.
       return JSON.stringify(await window.electronAPI.ai.web.fetch(url, render))
     }
+  },
+
+  ler_linhagem: {
+    definition: fn(
+      'ler_linhagem',
+      'Consulta o histórico de alterações (event log) de uma entidade específica. ' +
+        'Retorna quando foi criada, atualizada ou removida, e por quem (usuário ou IA). ' +
+        'Use para rastrear a proveniência de uma task, meta, nota ou transação.',
+      {
+        type: 'object',
+        properties: {
+          tipo: {
+            type: 'string',
+            description:
+              'Tipo da entidade: project, task, sprint, note, goal, habit, financial_table, file'
+          },
+          id: { type: 'string', description: 'ID da entidade (ex: id da task, id da meta)' }
+        },
+        required: ['tipo', 'id']
+      }
+    ),
+    run: async (args) => {
+      const tipo = typeof args.tipo === 'string' ? args.tipo : ''
+      const id = typeof args.id === 'string' ? args.id : ''
+      if (!tipo || !id) return JSON.stringify({ error: 'Informe tipo e id da entidade' })
+      const events = await window.electronAPI.ai.lineage.list(tipo, id)
+      return JSON.stringify({ tipo, id, eventos: events, total: events.length })
+    }
+  },
+
+  // ── Planner tools ──────────────────────────────────────────────────────────
+
+  ler_plano: {
+    definition: fn(
+      'ler_plano',
+      'Lê os blocos de tempo (time blocks) do planejamento para um dia ou uma semana. ' +
+        'Também inclui tasks com dueDate no período, hábitos do dia, e transações financeiras do mês ' +
+        '(contas a pagar/receber). Use para ver o que já está agendado antes de criar ou ajustar um plano.',
+      {
+        type: 'object',
+        properties: {
+          data: {
+            type: 'string',
+            description: 'Data YYYY-MM-DD para ler o plano de um dia, ou YYYY-MM-DD/YYYY-MM-DD para uma semana.'
+          }
+        },
+        required: ['data']
+      }
+    ),
+    run: (args) => {
+      const raw = typeof args.data === 'string' ? args.data : ''
+      if (!raw) return JSON.stringify({ error: 'Informe uma data (YYYY-MM-DD) ou intervalo (YYYY-MM-DD/YYYY-MM-DD)' })
+      const parts = raw.split('/')
+      const dateStart = parts[0]
+      const dateEnd = parts[1] ?? parts[0]
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStart) || !/^\d{4}-\d{2}-\d{2}$/.test(dateEnd))
+        return JSON.stringify({ error: 'Formato inválido. Use YYYY-MM-DD ou YYYY-MM-DD/YYYY-MM-DD' })
+
+      const { timeBlocks, tasks, habits, lists } = useKanbanStore.getState()
+
+      const blocks = timeBlocks
+        .filter((tb) => tb.date >= dateStart && tb.date <= dateEnd)
+        .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime))
+
+      const tasksInRange = tasks
+        .filter((t) => t.dueDate && t.dueDate >= dateStart && t.dueDate <= dateEnd)
+
+      const habitsToday = dateStart === dateEnd
+        ? habits
+            .filter((h) => h.completions.includes(dateStart))
+            .map((h) => ({ nome: h.name, cor: h.color }))
+        : undefined
+
+      const today = dateStart.slice(0, 7) // YYYY-MM
+      const monthTransactions: { descricao: string; valor: string; tipo: string; data: string; categoria?: string }[] = []
+      for (const list of lists) {
+        for (const tx of list.transactions) {
+          if (tx.date.startsWith(today)) monthTransactions.push({
+            descricao: tx.description,
+            valor: tx.amount,
+            tipo: tx.type,
+            data: tx.date,
+            ...(tx.category ? { categoria: tx.category } : {})
+          })
+        }
+      }
+
+      const planosPorDia: Record<string, { blocos: unknown[]; tasks: unknown[] }> = {}
+      for (const block of blocks) {
+        const day = (planosPorDia[block.date] ??= { blocos: [], tasks: [] })
+        day.blocos.push({
+          id: block.id, titulo: block.title, inicio: block.startTime, fim: block.endTime,
+          tipo: block.type,
+          ...(block.description ? { descricao: block.description } : {}),
+          ...(block.taskId ? { taskId: block.taskId } : {}),
+          ...(block.habitId ? { habitId: block.habitId } : {}),
+          ...(block.color ? { cor: block.color } : {})
+        })
+      }
+      for (const t of tasksInRange) {
+        const day = (planosPorDia[t.dueDate!] ??= { blocos: [], tasks: [] })
+        day.tasks.push({
+          id: t.id, titulo: t.title, prioridade: t.priority,
+          coluna: t.columnId,
+          ...(t.order ? {} : {})
+        })
+      }
+
+      return JSON.stringify({
+        intervalo: { de: dateStart, ate: dateEnd },
+        planosPorDia,
+        totalBlocos: blocks.length,
+        totalTasksComPrazo: tasksInRange.length,
+        ...(habitsToday ? { habitosConcluidosHoje: habitsToday } : {}),
+        ...(monthTransactions.length ? {
+          transacoesDoMes: monthTransactions.slice(0, 30),
+          totalTransacoesMes: monthTransactions.length,
+          truncado: monthTransactions.length > 30
+        } : {})
+      })
+    }
+  },
+
+  criar_plano: {
+    definition: fn(
+      'criar_plano',
+      'Cria blocos de tempo (time blocks) no planejamento para um dia ou vários dias. ' +
+        'Cada bloco tem título, horário de início e fim, e um tipo: task (tarefa vinculada ao kanban), ' +
+        'routine (rotina recorrente), buffer (tempo morto: deslocamento, almoço, banho), ou custom (genérico). ' +
+        'Use SEMPRE que o usuário pedir para planejar/organizar o dia/semana. ' +
+        '⚠️ Antes de criar, chame ler_plano para ver o que já existe e ler_tasks/ler_habitos/ler_financeiro ' +
+        'para consultar os dados que vão alimentar o plano. ' +
+        '⚠️ Respeite buffers: se o usuário sai do trabalho às 13h, não agende nada para 13h01 — ' +
+        'coloque buffers de deslocamento, banho e almoço antes das tasks.',
+      {
+        type: 'object',
+        properties: {
+          blocos: {
+            type: 'array',
+            description: 'Array de blocos de tempo a criar',
+            items: {
+              type: 'object',
+              properties: {
+                data: { type: 'string', description: 'Data YYYY-MM-DD' },
+                inicio: { type: 'string', description: 'Horário de início HH:MM' },
+                fim: { type: 'string', description: 'Horário de fim HH:MM' },
+                titulo: { type: 'string', description: 'Título do bloco' },
+                descricao: { type: 'string', description: 'Descrição opcional' },
+                tipo: { type: 'string', description: 'task, routine, buffer ou custom', enum: ['task', 'routine', 'buffer', 'custom'] },
+                taskId: { type: 'string', description: 'ID da task do kanban (opcional, só se tipo=task)' },
+                cor: { type: 'string', description: 'Cor hex opcional (ex: #7c3aed)' }
+              },
+              required: ['data', 'inicio', 'fim', 'titulo', 'tipo']
+            }
+          }
+        },
+        required: ['blocos']
+      }
+    ),
+    write: true,
+    run: (args) => {
+      const blocos = Array.isArray(args.blocos) ? args.blocos : []
+      if (!blocos.length) return JSON.stringify({ error: 'Informe ao menos um bloco' })
+
+      const store = useKanbanStore.getState()
+      const criados: string[] = []
+      for (const b of blocos) {
+        const data = typeof b.data === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(b.data) ? b.data : ''
+        const inicio = typeof b.inicio === 'string' && /^\d{2}:\d{2}$/.test(b.inicio) ? b.inicio : ''
+        const fim = typeof b.fim === 'string' && /^\d{2}:\d{2}$/.test(b.fim) ? b.fim : ''
+        const titulo = typeof b.titulo === 'string' ? b.titulo.trim() : ''
+        const tipo = (['task', 'routine', 'buffer', 'custom'] as const).includes(b.tipo as typeof b.tipo & string)
+          ? b.tipo
+          : 'custom'
+        if (!data || !inicio || !fim || !titulo) continue
+        if (fim <= inicio) continue
+        const descricao = typeof b.descricao === 'string' ? b.descricao.trim() : undefined
+        const taskId = typeof b.taskId === 'string' ? b.taskId : undefined
+        const cor = typeof b.cor === 'string' ? b.cor : undefined
+        const existingBlocks = store.timeBlocks.filter((tb) => tb.date === data)
+        const maxOrder = existingBlocks.reduce((m, tb) => Math.max(m, tb.order), -1)
+        const id = store.createTimeBlock({
+          date: data, startTime: inicio, endTime: fim, title: titulo,
+          ...(descricao ? { description: descricao } : {}),
+          ...(taskId ? { taskId } : {}),
+          type: tipo,
+          ...(cor ? { color: cor } : {}),
+          order: maxOrder + 1
+        })
+        criados.push(id)
+      }
+
+      return JSON.stringify({ criado: criados.length, ids: criados, dica: 'Use ler_plano para ver o resultado' })
+    }
+  },
+
+  atualizar_plano: {
+    definition: fn(
+      'atualizar_plano',
+      'Atualiza ou remove blocos de tempo do planejamento. Use para reordenar, mudar horários, ' +
+        'ou remover blocos que o usuário quer ajustar.',
+      {
+        type: 'object',
+        properties: {
+          blocos: {
+            type: 'array',
+            description: 'Array de blocos a atualizar. Cada um precisa do id.',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', description: 'ID do bloco a atualizar' },
+                remover: { type: 'boolean', description: 'Se true, remove o bloco' },
+                inicio: { type: 'string', description: 'Novo horário de início HH:MM' },
+                fim: { type: 'string', description: 'Novo horário de fim HH:MM' },
+                titulo: { type: 'string', description: 'Novo título' },
+                descricao: { type: 'string', description: 'Nova descrição' },
+                cor: { type: 'string', description: 'Nova cor hex' }
+              },
+              required: ['id']
+            }
+          }
+        },
+        required: ['blocos']
+      }
+    ),
+    write: true,
+    run: (args) => {
+      const blocos = Array.isArray(args.blocos) ? args.blocos : []
+      if (!blocos.length) return JSON.stringify({ error: 'Informe ao menos um bloco para atualizar' })
+
+      const store = useKanbanStore.getState()
+      let atualizados = 0
+      let removidos = 0
+      for (const b of blocos) {
+        const id = typeof b.id === 'string' ? b.id : ''
+        if (!id) continue
+        const existing = store.timeBlocks.find((tb) => tb.id === id)
+        if (!existing) continue
+        if (b.remover === true) {
+          store.deleteTimeBlock(id)
+          removidos++
+          continue
+        }
+        const updates: Record<string, unknown> = {}
+        if (typeof b.inicio === 'string' && /^\d{2}:\d{2}$/.test(b.inicio)) updates.startTime = b.inicio
+        if (typeof b.fim === 'string' && /^\d{2}:\d{2}$/.test(b.fim)) updates.endTime = b.fim
+        if (typeof b.titulo === 'string') updates.title = b.titulo.trim()
+        if (typeof b.descricao === 'string') updates.description = b.descricao.trim()
+        if (typeof b.cor === 'string') updates.color = b.cor
+        if (Object.keys(updates).length > 0) {
+          store.updateTimeBlock(id, updates as Parameters<typeof store.updateTimeBlock>[1])
+          atualizados++
+        }
+      }
+
+      return JSON.stringify({ atualizados, removidos })
+    }
+  },
+
+  resolver_termo: {
+    definition: fn(
+      'resolver_termo',
+      'Consulta o glossário de termos do domínio Sagyou. Use quando encontrar um termo ' +
+        'cujo significado exato no contexto deste app você não domina (ex: "sprint", "meta", ' +
+        '"coluna Done", "handoff"). Retorna a definição, as ferramentas relevantes e um exemplo.',
+      {
+        type: 'object',
+        properties: {
+          termo: { type: 'string', description: 'Termo a consultar (ex: "kanban", "handoff", "dueDate")' }
+        },
+        required: ['termo']
+      }
+    ),
+    run: (args) => {
+      const termo = typeof args.termo === 'string' ? args.termo.trim().toLowerCase() : ''
+      if (!termo) return JSON.stringify({ error: 'Informe o termo a consultar' })
+      const glossary = glossaryRaw as { termo: string; definicao: string; contexto: string; ferramentas_relevantes: string[]; exemplo: string }[]
+      // Exact match first, then accent-insensitive substring match
+      const exact = glossary.find((g) => g.termo.toLowerCase() === termo)
+      if (exact) return JSON.stringify({ termo: exact.termo, definicao: exact.definicao, contexto: exact.contexto, ferramentas: exact.ferramentas_relevantes, exemplo: exact.exemplo })
+      // Normalize accents for fuzzy matching
+      const normalized = termo.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      const fuzzy = glossary.filter((g) => {
+        const n = g.termo.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        return n.includes(normalized) || normalized.includes(n)
+      })
+      if (fuzzy.length === 0) {
+        const termos = glossary.map((g) => g.termo).join(', ')
+        return JSON.stringify({ error: `Termo "${args.termo}" não encontrado no glossário.`, termos_disponiveis: termos })
+      }
+      if (fuzzy.length === 1) {
+        const g = fuzzy[0]
+        return JSON.stringify({ termo: g.termo, definicao: g.definicao, contexto: g.contexto, ferramentas: g.ferramentas_relevantes, exemplo: g.exemplo })
+      }
+      return JSON.stringify({
+        ambiguo: true,
+        opcoes: fuzzy.map((g) => ({ termo: g.termo, definicao: g.definicao })),
+        dica: 'Especifique o termo exato dentre as opções acima.'
+      })
+    }
   }
 }
 
@@ -2109,7 +2435,9 @@ const CODE_TOOL_NAMES = new Set([
   'listar_arquivos', 'ler_arquivo', 'buscar_no_codigo',
   'rodar_agente_codigo',
   'buscar_na_web',
-  'buscar_memoria', 'salvar_memoria', 'buscar_conversas', 'ler_conversa', 'verificar_memorias'
+  'buscar_memoria', 'salvar_memoria', 'buscar_conversas', 'ler_conversa', 'verificar_memorias',
+  'ler_linhagem',
+  'resolver_termo'
 ])
 export const CODE_TOOL_DEFS: ToolDef[] = Object.values(REGISTRY)
   .filter((t) => CODE_TOOL_NAMES.has(t.definition.function.name))
@@ -2160,7 +2488,18 @@ export async function runTool(
   if (!tool) return JSON.stringify({ error: `Ferramenta desconhecida: ${name}` })
   activeRunConvId = convId
   try {
-    return await tool.run(args)
+    const result = await tool.run(args)
+    // Validate write-tool outputs: check args against expected shapes and
+    // attach warnings to the result so the approval card can surface them.
+    if (tool.write) {
+      const v = validateToolInput(name, args)
+      if (!v.valid || v.warnings.length > 0) {
+        const parsed = JSON.parse(result)
+        parsed._validation = { valid: v.valid, errors: v.errors, warnings: v.warnings }
+        return JSON.stringify(parsed)
+      }
+    }
+    return result
   } catch (e) {
     return JSON.stringify({ error: e instanceof Error ? e.message : 'Falha na ferramenta' })
   }
@@ -2168,7 +2507,7 @@ export async function runTool(
 
 /** Whether a tool mutates state (used to gate it behind user approval). */
 export function isWriteTool(name: string): boolean {
-  return REGISTRY[name]?.write === true
+  return isWriteFromRegistry(name) || REGISTRY[name]?.write === true
 }
 
 /**
@@ -2185,6 +2524,8 @@ export function describeToolActivity(name: string, args: Record<string, unknown>
   // same restraint covers a model that sends malformed args at execution time.
   const n = (v: unknown): number | null => (Array.isArray(v) ? v.length : null)
   switch (name) {
+    case 'data_de_hoje':
+      return 'Verificando a data de hoje'
     case 'ler_projetos':
       return 'Consultando os projetos'
     case 'ler_tasks':
@@ -2225,6 +2566,10 @@ export function describeToolActivity(name: string, args: Record<string, unknown>
       return 'Lendo uma conversa anterior'
     case 'verificar_memorias':
       return 'Verificando contradições na memória'
+    case 'ler_linhagem':
+      return 'Consultando o histórico da entidade'
+    case 'resolver_termo':
+      return `Consultando o glossário: "${str(args.termo) || '?'}"`
     case 'criar_projeto': {
       const nome = str(args.nome)
       return nome ? `Criando o projeto ${nome}` : 'Criando um projeto'
@@ -2292,6 +2637,16 @@ export function describeToolActivity(name: string, args: Record<string, unknown>
     }
     case 'rodar_agente_codigo':
       return 'Rodando o agente de código'
+    case 'ler_plano': {
+      const data = str(args.data)
+      return data ? `Consultando o plano de ${data}` : 'Consultando o plano'
+    }
+    case 'criar_plano': {
+      const count = n(args.blocos)
+      return count === null ? 'Criando blocos no plano' : `Criando ${count} bloco(s) no plano`
+    }
+    case 'atualizar_plano':
+      return 'Atualizando o plano'
     default:
       return name
   }

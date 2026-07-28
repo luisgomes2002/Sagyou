@@ -43,21 +43,23 @@
 
 | | |
 |---|---|
-| **Kanban** | Quadros com colunas customizáveis, sprints, prioridades e cronômetro por tarefa |
+| **Kanban** | Quadros com colunas customizáveis, sprints, prioridades e múltiplos cronômetros por tarefa |
 | **Hábitos** | Rastreamento diário com histórico e streak |
 | **Metas** | Acompanhamento de objetivos pessoais |
 | **Financeiro** | Transações, metas financeiras e análises, com listas de compras em múltiplas moedas (BRL, USD, JPY) |
-| **Canvas** | Notas adesivas livres em tela infinita |
+| **Canvas** | Notas adesivas livres em tela infinita, com links para tarefas |
 | **Arquivos** | Anexos por projeto, guardados localmente |
 | **Relatórios** | Visão geral de produtividade |
-| **Memória** | Assistente lembra decisões, tradeoffs e contexto entre conversas — você e o modelo gravam fatos que persistem |
+| **Memória** | Assistente lembra decisões, tradeoffs e contexto entre conversas — você e o modelo gravam fatos que persistem. Painel dedicado para listar, fixar e restaurar memórias |
 | **Upcoming** | Tarefas com data de vencimento próxima |
-| **Busca** | Pesquisa rápida em todos os dados |
-| **Assistente de IA** | Chat com acesso aos seus dados via ferramentas — funciona com qualquer provedor compatível com a API da OpenAI (local ou hospedado). Ações que alteram dados pedem aprovação antes de rodar |
-| **Agente de código** | Aponte um projeto para um diretório e peça alterações no código — edita arquivos e roda comandos com aprovação por ação |
+| **Busca** | Pesquisa rápida de tarefas |
+| **Multi-agente** | Vários chats de IA rodando em paralelo — o painel Agentes mostra o que cada um está fazendo, com gasto de tokens por agente |
+| **Skills** | Comandos `/skill-name` no chat que injetam system prompts customizados — crie, edite e importe arquivos `.md` |
+| **Assistente de IA** | Chat com acesso aos seus dados via ferramentas — funciona com qualquer provedor compatível com a API da OpenAI (local ou hospedado). Suporte a imagens (arraste screenshots). Ações que alteram dados pedem aprovação antes de rodar |
+| **Agente de código** | Aponte um projeto para um diretório e peça alterações no código — edita arquivos e roda comandos com aprovação por ação. Sandbox obrigatório (ai-jail) confina comandos ao diretório do projeto |
 | **Importação via IA** | Cole JSON gerado por um LLM — o sidebar tem "Copiar tudo" para gerar um prompt pronto com schema e tags |
 | **Exportação para Excel** | Exporte projetos, tarefas, hábitos, metas e dados financeiros em `.xlsx` |
-| **Backup** | Exportação e restauração de dados em JSON |
+| **Backup** | Exportação e restauração de dados em JSON, incluindo anexos, imagens de chat/tarefas e memórias |
 
 ---
 
@@ -83,7 +85,7 @@ Dropdown extra que, quando preenchido, roteia perguntas de código (análise, bu
 
 **3. Passos máximos**
 
-Quantas rodadas de ferramentas o assistente pode encadear numa execução. O padrão muda conforme o modo: **10 passos no manual** (você aprova cada ação) e **30 no automático**. Aumentar o limite permite tarefas mais longas, mas consome mais tokens.
+Quantas rodadas de ferramentas o assistente pode encadear numa execução. O padrão muda conforme o modo: **40 passos no manual** (você aprova cada ação) e **100 no automático**. Aumentar o limite permite tarefas mais longas, mas consome mais tokens.
 
 **4. Timeout (segundos)**
 
@@ -110,7 +112,7 @@ Provider separado para o agente de código nativo. Cada campo em branco herda o 
 
 **7. Sandbox (ai-jail)**
 
-Toggle que exige o binário [AI Jail](https://github.com/akitaonrails/ai-jail) instalado. Ligado, todo comando do agente de código é confinado à pasta do projeto (bubblewrap no Linux, sandbox-exec no macOS). Desmarcar roda comandos sem confinamento — o app exibe um aviso antes de permitir.
+Toggle que exige o binário [AI Jail](https://github.com/akitaonrails/ai-jail) instalado. Ligado, todo comando do agente de código é confinado à pasta do projeto (bubblewrap no Linux, sandbox-exec no macOS, WSL2 no Windows). Desmarcar roda comandos sem confinamento — o app exibe um aviso antes de permitir.
 
 Serve qualquer provedor compatível com a API da OpenAI. A configuração fica em `ai-config.json` (veja [Dados](#dados)) e a chave **não** é enviada para o renderer.
 
@@ -121,6 +123,27 @@ Converse normalmente — o assistente tem ferramentas para ler seus dados (taref
 O assistente também tem **memória entre conversas**: ele grava decisões, tradeoffs e fatos que você fixar, e os recupera em conversas futuras. Use `salvar_memoria` para registrar algo que não vale a pena reaprender depois. Memórias com dados sensíveis (chaves, senhas) são automaticamente sanitizadas antes de gravar.
 
 Ações que **alteram** dados (criar tarefas, concluir, iniciar cronômetro, criar/atribuir sprint) pedem sua aprovação antes de rodar. O botão no topo liga o **modo automático**, que executa sem perguntar — use com cuidado.
+
+O assistente também suporta **imagens**: arraste ou cole screenshots no chat e o modelo responde sobre elas. As imagens ficam salvas em `chat-images/` e são enviadas ao modelo a cada passo da execução.
+
+### Multi-agente
+
+Você pode abrir **vários chats em paralelo** — cada um roda como um agente independente. O sidebar ganha uma aba **Agentes** com um painel ao vivo que mostra, para cada agente ativo:
+- O projeto em que está trabalhando
+- O que está fazendo no momento (texto sendo gerado ou ferramenta em execução)
+- O passo atual e o total de passos
+- O gasto de tokens acumulado (entrada e saída)
+- Se está parado aguardando aprovação
+
+Ações disponíveis: **Abrir chat** (volta para a conversa) e **Parar** (aborta a execução). Um contador no sidebar mostra quantos agentes estão rodando.
+
+Agentes que trabalham no mesmo projeto usam **leases cooperativas**: uma tarefa já atribuída a um agente não pode ser pega por outro. Se você deletar uma conversa que está rodando, o agente é abortado automaticamente.
+
+### Skills
+
+Skills são arquivos `.md` que você cria e usa como system prompts sob demanda. No chat, digite `/` para ver a lista e selecionar — o conteúdo do arquivo é injetado como instrução extra para o modelo naquela conversa.
+
+Gerencie skills pelo menu de configuração do assistente: criar, editar, importar e excluir. Skills ficam salvas em `skills/` no diretório de dados do app.
 
 ### Acesso ao código (opcional)
 
@@ -134,11 +157,11 @@ Dá para marcar **mais de uma pasta** (útil para front-end e back-end em reposi
 
 ### Agente de código
 
-Para **alterar** código, use o agente de código nativo — ele roda com o mesmo provedor de IA configurado acima (ou um separado, em **Modelo p/ código** nas configurações) e edita arquivos no diretório do caminho de código ativo.
+Para **alterar** código, use o agente de código nativo — ele roda com o provedor configurado na seção **Agente de Código** das configurações (cada campo em branco herda o valor do provedor principal) e edita arquivos no diretório do caminho de código ativo.
 
 Cada ação de escrita ou comando passa por aprovação antes de rodar. O agente não faz commit — as mudanças aparecem no painel de diff para você revisar e commitar por conta própria. A saída aparece ao vivo no app.
 
-> O agente usa a mesma Base URL / API Key / Model do chat, ou um provedor separado se você configurar um em **Modelo p/ código**. Aponte para um repositório com Git e commits em dia — assim dá para revisar o diff e reverter se não gostar.
+> O agente usa a mesma Base URL / API Key / Model do chat, ou um provedor separado se você configurar um na seção **Agente de Código** das configurações. Aponte para um repositório com Git e commits em dia — assim dá para revisar o diff e reverter se não gostar.
 
 ---
 
@@ -153,6 +176,7 @@ Cada ação de escrita ou comando passa por aprovação antes de rodar. O agente
 - [Tailwind CSS](https://tailwindcss.com/) — estilização
 - [SheetJS](https://sheetjs.com/) — exportação para Excel
 - [Vitest](https://vitest.dev/) — testes
+- [OpenAI SDK](https://github.com/openai/openai-node) — cliente para provedores compatíveis
 
 ---
 
@@ -184,8 +208,14 @@ Tudo fica na sua máquina, no diretório de dados do app (`userData`):
 |---|---|
 | `kanban.db` | banco SQLite com projetos, tarefas, hábitos, metas, finanças e memórias do assistente |
 | `files/` | anexos enviados |
+| `chat-images/` | imagens enviadas no chat |
+| `task-images/` | imagens anexadas a tarefas |
 | `ai-config.json` | configuração do provedor de IA (inclui a chave de API) |
 | `ai-conversations.json` | histórico do chat |
+| `ai-usage-log.json` | registro de gastos por chamada (hoje, 30 dias, total, por modelo) |
+| `ai-run-metrics.json` | métricas de eficiência por execução do agente (modelo, passos, tokens, buscas) |
+| `agent-runs/` | arquivo de execuções do agente de código (log + diff congelados) |
+| `skills/` | skills customizadas em `.md` — system prompts sob demanda via `/skill-name` |
 
 O assistente de IA é opcional e desligado até você configurar um provedor. Se você apontar para um provedor hospedado, os dados enviados no chat saem da máquina — use um modelo local se preferir manter tudo offline.
 
@@ -193,5 +223,5 @@ O assistente de IA é opcional e desligado até você configurar um provedor. Se
 
 ## Agradecimentos
 
-- [AI Jail](https://github.com/akitaonrails/ai-jail) por [Fabio Akita](https://github.com/akitaonrails) — sandbox multi-OS obrigatório que confina os comandos do agente de código ao diretório do projeto. O Sagyou baixa e executa o binário como processo separado (fork+exec); não há código linkado, portanto a licença do Sagyou não é afetada.
+- [AI Jail](https://github.com/akitaonrails/ai-jail) por [Fabio Akita](https://github.com/akitaonrails) — sandbox multi-OS obrigatório que confina os comandos do agente de código ao diretório do projeto. No Windows roda via WSL2 (sem build nativo). O Sagyou embrulha cada comando com ai-jail; não há código linkado, portanto a licença do Sagyou não é afetada.
 - [AI Memory](https://github.com/akitaonrails/ai-memory) por [Fabio Akita](https://github.com/akitaonrails) — sistema de memória durável para agentes de IA com indexação e busca, que inspirou a arquitetura de memória do Sagyou.

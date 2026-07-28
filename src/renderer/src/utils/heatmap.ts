@@ -1,7 +1,7 @@
-import { startOfWeek, subWeeks, addDays, format } from 'date-fns'
+﻿import { startOfWeek, subWeeks, addDays, format } from 'date-fns'
 import type { Task } from '../types'
 
-export const HEATMAP_COLORS = ['#161b2c', '#312e81', '#4338ca', '#6366f1', '#a5b4fc'] as const
+export const HEATMAP_COLORS = ['#161b2c', '#312e81', '#4338ca', '#7c3aed', '#a080f0'] as const
 
 export function heatColor(count: number): string {
   if (count === 0) return HEATMAP_COLORS[0]

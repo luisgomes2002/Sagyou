@@ -2,6 +2,7 @@ import { app } from 'electron'
 import { join } from 'path'
 import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from 'fs'
 import { is } from '@electron-toolkit/utils'
+import { randomUUID } from 'crypto'
 import Database from 'better-sqlite3'
 import { normalizeMemory, type AiMemory } from './memory'
 import { decodeDataUrl } from './chat-images'
@@ -55,6 +56,30 @@ interface FinancialTable {
 }
 interface StoredFile { id: string; name: string; ext: string; size: number; createdAt: string; projectId?: string }
 
+interface EntityEvent {
+  id: string
+  entityType: string
+  entityId: string
+  action: 'created' | 'updated' | 'deleted'
+  summary: string
+  source: 'user' | 'ai'
+  toolName?: string
+  convId?: string
+  timestamp: string
+}
+
+interface TimeBlock {
+  id: string; date: string; startTime: string; endTime: string; title: string
+  description?: string; taskId?: string; habitId?: string
+  type: string; color?: string; order: number
+  createdAt: string; updatedAt: string
+}
+interface Routine {
+  id: string; title: string; description?: string; startTime: string; endTime: string
+  daysOfWeek: number[]; color?: string; active: boolean
+  createdAt: string; updatedAt: string
+}
+
 interface SaveData {
   projects: Project[]
   tasks: Task[]
@@ -65,10 +90,14 @@ interface SaveData {
   habits: Habit[]
   lists: FinancialTable[]
   files: StoredFile[]
+  timeBlocks?: TimeBlock[]
+  routines?: Routine[]
   activeTimers?: { taskId: string; startedAt: number }[]
   // Legacy single-timer mirror; still written so an older app version reading
   // this DB resolves one timer. New code reads/writes `activeTimers`.
   activeTimer?: { taskId: string; startedAt: number } | null
+  // Entity events to append (set by the AI tool layer; absent on user saves).
+  entityEvents?: EntityEvent[]
 }
 
 // ── DB paths ─────────────────────────────────────────────────────────────────
@@ -88,6 +117,7 @@ function getDb(): Database.Database {
   migrateMemoryDropProjectFk(_db)
   migrateTaskImagesToDisk(_db)
   migrateFromJson(_db)
+  trimEventLog(_db)
   return _db
 }
 
@@ -493,6 +523,49 @@ function initSchema(db: Database.Database): void {
       archived_at TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_memory_project ON memory(project_id) WHERE archived_at IS NULL;
+    -- Entity event log: append-only audit trail of every mutation. Purely additive
+    -- (no updates, no deletes), so it can serve as a source of truth for lineage
+    -- and reproducibility without touching the existing save path.
+    CREATE TABLE IF NOT EXISTS entity_events (
+      id TEXT PRIMARY KEY,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      action TEXT NOT NULL,
+      summary TEXT NOT NULL DEFAULT '',
+      source TEXT NOT NULL DEFAULT 'user',
+      tool_name TEXT,
+      conv_id TEXT,
+      timestamp TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_entity_events_entity ON entity_events(entity_type, entity_id);
+    CREATE TABLE IF NOT EXISTS time_blocks (
+      id TEXT PRIMARY KEY,
+      date TEXT NOT NULL,
+      start_time TEXT NOT NULL,
+      end_time TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT,
+      task_id TEXT,
+      habit_id TEXT,
+      type TEXT NOT NULL,
+      color TEXT,
+      ord INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_time_blocks_date ON time_blocks(date);
+    CREATE TABLE IF NOT EXISTS routines (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      description TEXT,
+      start_time TEXT NOT NULL,
+      end_time TEXT NOT NULL,
+      days_of_week TEXT NOT NULL,
+      color TEXT,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
   `)
 }
 
@@ -551,6 +624,8 @@ function prepareWrite(db: Database.Database) {
     fg:      db.prepare('INSERT INTO financial_goals (id,table_id,name,target_amount,target_month,target_year,completed_at,completion_note) VALUES (?,?,?,?,?,?,?,?)'),
     file:    db.prepare('INSERT INTO files (id,name,ext,size,created_at,project_id) VALUES (?,?,?,?,?,?)'),
     setting: db.prepare('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)'),
+    timeBlock: db.prepare('INSERT INTO time_blocks (id,date,start_time,end_time,title,description,task_id,habit_id,type,color,ord,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'),
+    routine: db.prepare('INSERT INTO routines (id,title,description,start_time,end_time,days_of_week,color,active,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)'),
   }
 
   // Delete a top-level row by id; its children go with it via ON DELETE CASCADE.
@@ -565,6 +640,8 @@ function prepareWrite(db: Database.Database) {
     ftable:  db.prepare('DELETE FROM financial_tables WHERE id=?'),
     file:    db.prepare('DELETE FROM files WHERE id=?'),
     setting: db.prepare('DELETE FROM settings WHERE key=?'),
+    timeBlock: db.prepare('DELETE FROM time_blocks WHERE id=?'),
+    routine: db.prepare('DELETE FROM routines WHERE id=?'),
   }
 
   const insert = {
@@ -611,6 +688,16 @@ function prepareWrite(db: Database.Database) {
     },
     file: (f: StoredFile): void => {
       ins.file.run(f.id, f.name, f.ext, f.size, f.createdAt, f.projectId ?? null)
+    },
+    timeBlock: (tb: TimeBlock): void => {
+      ins.timeBlock.run(tb.id, tb.date, tb.startTime, tb.endTime, tb.title,
+        tb.description ?? null, tb.taskId ?? null, tb.habitId ?? null, tb.type,
+        tb.color ?? null, tb.order, tb.createdAt, tb.updatedAt)
+    },
+    routine: (r: Routine): void => {
+      ins.routine.run(r.id, r.title, r.description ?? null, r.startTime, r.endTime,
+        JSON.stringify(r.daysOfWeek ?? []), r.color ?? null, r.active ? 1 : 0,
+        r.createdAt, r.updatedAt)
     },
   }
 
@@ -683,6 +770,8 @@ function persistDiff(db: Database.Database, prev: SaveData, next: SaveData): voi
   diffEntities(prev.habits, next.habits, w.del.habit, w.insert.habit)
   diffEntities(prev.lists, next.lists, w.del.ftable, w.insert.ftable)
   diffEntities(prev.files, next.files, w.del.file, w.insert.file)
+  diffEntities(prev.timeBlocks ?? [], next.timeBlocks ?? [], w.del.timeBlock, w.insert.timeBlock)
+  diffEntities(prev.routines ?? [], next.routines ?? [], w.del.routine, w.insert.routine)
   // Timers live in settings (activeTimers + legacy activeTimer mirror). Rewrite
   // when either the array or the legacy field changes, so a stopped timer
   // doesn't linger to the next boot.
@@ -697,6 +786,8 @@ function persistAll(db: Database.Database, data: SaveData): void {
   db.exec(`
     DELETE FROM settings;
     DELETE FROM files;
+    DELETE FROM routines;
+    DELETE FROM time_blocks;
     DELETE FROM financial_goals;
     DELETE FROM transactions;
     DELETE FROM shopping_items;
@@ -728,6 +819,8 @@ function persistAll(db: Database.Database, data: SaveData): void {
   for (const h of data.habits ?? []) w.insert.habit(h)
   for (const ft of data.lists ?? []) w.insert.ftable(ft)
   for (const f of data.files ?? []) w.insert.file(f)
+  for (const tb of data.timeBlocks ?? []) w.insert.timeBlock(tb)
+  for (const r of data.routines ?? []) w.insert.routine(r)
   // settings aren't cleared by the DELETE above, so writeTimers must clear the
   // keys when no timer is running, not only set them.
   writeTimers(w, data.activeTimers, data.activeTimer)
@@ -872,6 +965,30 @@ export function loadData(): SaveData {
     ...(f.project_id != null ? { projectId: f.project_id } : {}),
   }))
 
+  const timeBlocks = (db.prepare('SELECT * FROM time_blocks ORDER BY date, ord').all() as any[]).map((tb) => ({
+    id: tb.id, date: tb.date, startTime: tb.start_time, endTime: tb.end_time,
+    title: tb.title, type: tb.type,
+    ...(tb.description != null ? { description: tb.description } : {}),
+    ...(tb.task_id != null ? { taskId: tb.task_id } : {}),
+    ...(tb.habit_id != null ? { habitId: tb.habit_id } : {}),
+    ...(tb.color != null ? { color: tb.color } : {}),
+    order: tb.ord, createdAt: tb.created_at, updatedAt: tb.updated_at,
+  }))
+
+  const routines = (db.prepare('SELECT * FROM routines').all() as any[]).map((r) => {
+    let days: number[] = []
+    try { const p = JSON.parse(String(r.days_of_week ?? '[]')); if (Array.isArray(p)) days = p.filter((d): d is number => typeof d === 'number') }
+    catch { /* malformed JSON → empty list */ }
+    return {
+      id: r.id, title: r.title, startTime: r.start_time, endTime: r.end_time,
+      daysOfWeek: days,
+      ...(r.description != null ? { description: r.description } : {}),
+      ...(r.color != null ? { color: r.color } : {}),
+      active: r.active === 1,
+      createdAt: r.created_at, updatedAt: r.updated_at,
+    }
+  })
+
   // Prefer the new `activeTimers` array; fall back to the legacy single
   // `activeTimer` (wrapped) so a DB written by an older app version still
   // resolves its running timer. The renderer migrates the legacy field too.
@@ -887,6 +1004,7 @@ export function loadData(): SaveData {
 
   return {
     projects, tasks, sprints, tombstones, notes, goals, habits, lists, files,
+    timeBlocks, routines,
     activeTimers,
     // Legacy field, still returned for any consumer that reads it directly.
     activeTimer: legacyTimer ?? activeTimers[0] ?? null
@@ -897,17 +1015,148 @@ export function saveData(data: unknown): void {
   const db = getDb()
   const next = data as SaveData
   const prev = lastSnapshot
-  // First save of the session (or after a failed one) has nothing to diff
-  // against, so it rewrites everything; every save after that only touches what
-  // changed since the last snapshot.
+  // Events the AI tool layer explicitly asked to log (lineage). These ride
+  // alongside the save payload without altering the existing persist path.
+  const aiEvents = next.entityEvents ?? []
   db.transaction(() => {
     if (prev) persistDiff(db, prev, next)
     else persistAll(db, next)
+    // Generate entity events from the diff between prev and next. The source
+    // is 'user' for auto-generated events (the renderer doesn't tag saves by
+    // origin); AI events ride on `entityEvents` and are appended separately.
+    const now = new Date().toISOString()
+    const autoEvents = diffEvents(prev, next, now)
+    appendEventRows(db, [...autoEvents, ...aiEvents])
   })()
   // Reached only if the transaction committed. On a throw it rolls back and this
   // line is skipped, so the snapshot keeps matching what's actually on disk —
   // the next save then re-diffs (or rewrites) from a truthful base.
   lastSnapshot = structuredClone(next)
+}
+
+// ── Entity Event Log ─────────────────────────────────────────────────────────
+//
+// Purely append-only audit trail. Events are generated automatically from the
+// diff between the last snapshot and the current save (source=user), plus any
+// events the AI tool layer explicitly attaches (source=ai). Never pruned within
+// a session; capped to EVENT_LOG_MAX rows on boot via a lazy DELETE outside the
+// save transaction (so it never blocks the save path).
+
+const EVENT_LOG_MAX = 50_000
+
+type EntityWithTitle = { id: string; title?: string; name?: string; description?: string }
+
+function entityLabel(e: EntityWithTitle | undefined): string {
+  if (!e) return '(removido)'
+  const t = e.title ?? e.name ?? e.description ?? ''
+  return t ? `"${t.slice(0, 60)}"` : `#${e.id.slice(0, 8)}`
+}
+
+function entityTypeLabel(type: string): string {
+  const map: Record<string, string> = {
+    project: 'projeto', task: 'task', sprint: 'sprint', note: 'nota',
+    goal: 'meta', habit: 'hábito', financial_table: 'tabela financeira', file: 'arquivo'
+  }
+  return map[type] ?? type
+}
+
+/**
+ * Compare two snapshots and produce an event for every created, updated, or
+ * deleted top-level entity. Events are stable-ordered within a save batch.
+ */
+function diffEvents(prev: SaveData | null, next: SaveData, timestamp: string): EntityEvent[] {
+  const events: EntityEvent[] = []
+  const emit = (type: string, id: string, action: EntityEvent['action'], label: string): void => {
+    const article = action === 'created' ? 'criado' : action === 'updated' ? 'atualizado' : 'removido'
+    events.push({
+      id: randomUUID(),
+      entityType: type,
+      entityId: id,
+      action,
+      summary: `${entityTypeLabel(type)} ${label} ${article}`,
+      source: 'user',
+      timestamp
+    })
+  }
+
+  // Helper: diff a collection by id, returning creates/updates/deletes.
+  const diff = <T extends { id: string }>(
+    type: string,
+    prevArr: T[] | undefined,
+    nextArr: T[] | undefined
+  ): void => {
+    const prevMap = new Map((prevArr ?? []).map((e) => [e.id, e]))
+    const nextIds = new Set((nextArr ?? []).map((e) => e.id))
+    for (const e of nextArr ?? []) {
+      if (!prevMap.has(e.id)) emit(type, e.id, 'created', entityLabel(e as unknown as EntityWithTitle))
+      else if (JSON.stringify(prevMap.get(e.id)) !== JSON.stringify(e))
+        emit(type, e.id, 'updated', entityLabel(e as unknown as EntityWithTitle))
+    }
+    for (const e of prevArr ?? [])
+      if (!nextIds.has(e.id)) emit(type, e.id, 'deleted', entityLabel(e as unknown as EntityWithTitle))
+  }
+
+  if (prev) {
+    diff('project', prev.projects, next.projects)
+    diff('task', prev.tasks, next.tasks)
+    diff('sprint', prev.sprints, next.sprints)
+    diff('note', prev.notes, next.notes)
+    diff('goal', prev.goals, next.goals)
+    diff('habit', prev.habits, next.habits)
+    diff('financial_table', prev.lists, next.lists)
+    diff('file', prev.files, next.files)
+  } else {
+    for (const e of next.projects ?? []) emit('project', e.id, 'created', entityLabel(e))
+    for (const e of next.tasks ?? []) emit('task', e.id, 'created', entityLabel(e))
+    for (const e of next.sprints ?? []) emit('sprint', e.id, 'created', entityLabel(e))
+    for (const e of next.notes ?? []) emit('note', e.id, 'created', entityLabel(e as unknown as EntityWithTitle))
+    for (const e of next.goals ?? []) emit('goal', e.id, 'created', entityLabel(e))
+    for (const e of next.habits ?? []) emit('habit', e.id, 'created', entityLabel(e))
+    for (const e of next.lists ?? []) emit('financial_table', e.id, 'created', entityLabel(e as unknown as EntityWithTitle))
+    for (const e of next.files ?? []) emit('file', e.id, 'created', entityLabel(e as unknown as EntityWithTitle))
+  }
+  return events
+}
+
+function appendEventRows(db: Database.Database, events: EntityEvent[]): void {
+  if (!events.length) return
+  const stmt = db.prepare(
+    `INSERT INTO entity_events (id, entity_type, entity_id, action, summary, source, tool_name, conv_id, timestamp)
+     VALUES (@id, @entity_type, @entity_id, @action, @summary, @source, @tool_name, @conv_id, @timestamp)`
+  )
+  for (const e of events)
+    stmt.run({
+      id: e.id,
+      entity_type: e.entityType,
+      entity_id: e.entityId,
+      action: e.action,
+      summary: e.summary,
+      source: e.source,
+      tool_name: e.toolName ?? null,
+      conv_id: e.convId ?? null,
+      timestamp: e.timestamp
+    })
+}
+
+/** Query the event log for one entity, newest first. */
+export function eventsForEntity(entityType: string, entityId: string): EntityEvent[] {
+  const db = getDb()
+  return db
+    .prepare(
+      `SELECT * FROM entity_events WHERE entity_type=? AND entity_id=? ORDER BY timestamp DESC LIMIT 200`
+    )
+    .all(entityType, entityId) as EntityEvent[]
+}
+
+/** Lazy cap of the event log — best-effort, outside the save transaction. */
+function trimEventLog(db: Database.Database): void {
+  const { cnt } = db.prepare('SELECT COUNT(*) as cnt FROM entity_events').get() as { cnt: number }
+  if (cnt > EVENT_LOG_MAX) {
+    const excess = cnt - EVENT_LOG_MAX + 1000
+    db.prepare(
+      `DELETE FROM entity_events WHERE id IN (SELECT id FROM entity_events ORDER BY timestamp ASC LIMIT ?)`
+    ).run(excess)
+  }
 }
 
 // ── Memory (satellite table; deliberately OUTSIDE persistAll) ────────────────

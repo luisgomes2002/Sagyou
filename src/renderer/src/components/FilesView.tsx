@@ -1,4 +1,4 @@
-import { useKanbanStore } from '../store/kanban'
+﻿import { useKanbanStore } from '../store/kanban'
 import type { StoredFile } from '../types'
 
 function formatSize(bytes: number): string {
@@ -32,13 +32,13 @@ function fileGroup(ext: string): keyof typeof EXT_GROUPS | 'other' {
 function FileIcon({ ext }: { ext: string }) {
   const group = fileGroup(ext)
   const colors: Record<string, string> = {
-    pdf:   '#f87171',
-    word:  '#60a5fa',
-    excel: '#4ade80',
-    ppt:   '#fb923c',
-    image: '#a78bfa',
-    text:  '#94a3b8',
-    other: '#8892a4',
+    pdf:   '#ec6a6a',
+    word:  '#a080f0',
+    excel: '#46d478',
+    ppt:   '#f08a34',
+    image: '#a080f0',
+    text:  '#999999',
+    other: '#999999',
   }
   const color = colors[group]
 
@@ -81,8 +81,8 @@ function ActionBtn({
       title={title}
       className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium transition-colors opacity-0 group-hover:opacity-100 ${
         danger
-          ? 'text-[#8892a4] hover:text-red-400 hover:bg-red-400/10'
-          : 'text-[#8892a4] hover:text-[#a5b4fc] hover:bg-[#6366f1]/10'
+          ? 'text-[#999999] hover:text-[#e04040] hover:bg-[#e04040]/10'
+          : 'text-[#999999] hover:text-[#a080f0] hover:bg-[#7c3aed]/10'
       }`}
     >
       {children}
@@ -104,19 +104,19 @@ function FileRow({
   onDelete: () => void
 }) {
   return (
-    <div className="group flex items-center gap-3 px-4 py-3 rounded-lg bg-[#13151f] border border-[#2a2d42] hover:border-[#3a3e58] transition-colors">
+    <div className="group flex items-center gap-3 px-4 py-3 rounded-lg bg-[#232323] border border-[#3b3b3b] hover:border-[#555555] transition-colors">
       <div className="shrink-0">
         <FileIcon ext={file.ext} />
       </div>
 
       <div className="flex-1 min-w-0">
-        <p className="text-sm text-[#e2e8f0] truncate">{file.name}</p>
-        <p className="text-[11px] text-[#4a5068] mt-0.5">
+        <p className="text-sm text-[#d4d4d4] truncate">{file.name}</p>
+        <p className="text-[11px] text-[#666666] mt-0.5">
           {formatSize(file.size)} · {formatDate(file.createdAt)}
         </p>
       </div>
 
-      <span className="text-[10px] text-[#4a5068] font-mono shrink-0 uppercase group-hover:hidden">
+      <span className="text-[10px] text-[#666666] font-mono shrink-0 uppercase group-hover:hidden">
         {file.ext.replace('.', '')}
       </span>
 
@@ -149,7 +149,7 @@ function FileRow({
           Baixar
         </ActionBtn>
 
-        <div className="w-px h-4 bg-[#2a2d42] mx-1" />
+        <div className="w-px h-4 bg-[#3b3b3b] mx-1" />
 
         <ActionBtn title="Remover arquivo" onClick={onDelete} danger>
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -200,13 +200,13 @@ export function FilesView({ activeProjectId }: { activeProjectId: string | null 
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Toolbar */}
-      <div className="flex items-center justify-between px-6 py-3 border-b border-[#2a2d42] shrink-0">
-        <span className="text-xs text-[#8892a4]">
+      <div className="flex items-center justify-between px-6 py-3 border-b border-[#3b3b3b] shrink-0">
+        <span className="text-xs text-[#999999]">
           {sorted.length} {sorted.length === 1 ? 'arquivo' : 'arquivos'}
         </span>
         <button
           onClick={handleUpload}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#6366f1]/15 text-[#a5b4fc] text-xs font-medium hover:bg-[#6366f1]/25 transition-colors"
+          className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#7c3aed]/15 text-[#a080f0] text-xs font-medium hover:bg-[#7c3aed]/25 transition-colors"
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -221,18 +221,18 @@ export function FilesView({ activeProjectId }: { activeProjectId: string | null 
       <div className="flex-1 overflow-y-auto px-6 py-4">
         {sorted.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-4">
-            <div className="w-16 h-16 rounded-2xl bg-[#1e2235] border border-[#2a2d42] flex items-center justify-center">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#8892a4" strokeWidth="1.5">
+            <div className="w-16 h-16 rounded-2xl bg-[#2a2a2a] border border-[#3b3b3b] flex items-center justify-center">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#999999" strokeWidth="1.5">
                 <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
               </svg>
             </div>
             <div className="text-center">
-              <p className="text-[#e2e8f0] font-medium mb-1">Nenhum arquivo neste projeto</p>
-              <p className="text-sm text-[#8892a4]">Adicione docs, planilhas e outros arquivos para acesso rápido</p>
+              <p className="text-[#d4d4d4] font-medium mb-1">Nenhum arquivo neste projeto</p>
+              <p className="text-sm text-[#999999]">Adicione docs, planilhas e outros arquivos para acesso rápido</p>
             </div>
             <button
               onClick={handleUpload}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg border border-dashed border-[#6366f1]/40 text-[#a5b4fc] text-sm hover:border-[#6366f1] hover:bg-[#6366f1]/10 transition-colors"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg border border-dashed border-[#7c3aed]/40 text-[#a080f0] text-sm hover:border-[#7c3aed] hover:bg-[#7c3aed]/10 transition-colors"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                 <line x1="12" y1="5" x2="12" y2="19" />

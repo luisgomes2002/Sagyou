@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, memo } from 'react'
+﻿import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, memo } from 'react'
 import { useKanbanStore } from '../store/kanban'
 import { useAiRunStore, type ChatMessage } from '../store/aiRun'
 import type { Project } from '../types'
@@ -19,6 +19,7 @@ import { toScaledDataUrl, imageFilesFrom } from '../utils/images'
 import { estimateAutoRun, cacheHitRate } from '../utils/spend'
 import { ChatMarkdown } from './ChatMarkdown'
 import { ConfirmDialog } from './ConfirmDialog'
+import { SandboxOnboarding, type JailStatus } from './SandboxOnboarding'
 
 // Config is persisted via ai:config in the main process (see effects below);
 // AIConfig and the tool-calling loop live in ../ai/agent.
@@ -158,8 +159,8 @@ const MessageBubble = memo(function MessageBubble({
       <div
         className={`px-3.5 py-2 rounded-2xl text-sm break-words ${
           m.role === 'user'
-            ? 'max-w-[75%] whitespace-pre-wrap bg-[#6366f1] text-white rounded-br-sm'
-            : 'max-w-[88%] bg-[#1e2235] text-[#e2e8f0] border border-[#2a2d42] rounded-bl-sm'
+            ? 'max-w-[75%] whitespace-pre-wrap bg-[#7c3aed] text-white rounded-br-sm'
+            : 'max-w-[88%] bg-[#2a2a2a] text-[#d4d4d4] border border-[#3b3b3b] rounded-bl-sm'
         }`}
       >
         {(m.imageIds ?? []).length > 0 && (
@@ -221,14 +222,14 @@ function StatusLine({
   return (
     <div
       className={`flex items-start gap-2 px-1 ${
-        state === 'running' ? 'text-[#a5b4fc]' : 'text-[#8892a4]'
+        state === 'running' ? 'text-[#a080f0]' : 'text-[#999999]'
       }`}
     >
       {state === 'running' ? (
-        <span className="mt-[3px] w-2.5 h-2.5 shrink-0 rounded-full border-[1.5px] border-[#a5b4fc] border-t-transparent animate-spin" />
+        <span className="mt-[3px] w-2.5 h-2.5 shrink-0 rounded-full border-[1.5px] border-[#a080f0] border-t-transparent animate-spin" />
       ) : state === 'done' ? (
         <svg
-          className="mt-[2px] shrink-0 text-[#4ade80]"
+          className="mt-[2px] shrink-0 text-[#46d478]"
           width="11"
           height="11"
           viewBox="0 0 24 24"
@@ -241,12 +242,12 @@ function StatusLine({
           <polyline points="20 6 9 17 4 12" />
         </svg>
       ) : (
-        <span className="mt-[5px] w-1.5 h-1.5 rounded-full shrink-0 bg-[#3a3e58]" />
+        <span className="mt-[5px] w-1.5 h-1.5 rounded-full shrink-0 bg-[#555555]" />
       )}
       {badge && (
         <span
           title={`Passo ${step} de ${maxSteps} desta execução`}
-          className="mt-[1px] shrink-0 px-1.5 py-[1px] rounded text-[10px] font-medium tabular-nums bg-[#1e2235] border border-[#2a2d42] text-[#8892a4]"
+          className="mt-[1px] shrink-0 px-1.5 py-[1px] rounded text-[10px] font-medium tabular-nums bg-[#2a2a2a] border border-[#3b3b3b] text-[#999999]"
         >
           {badge}
         </span>
@@ -254,7 +255,7 @@ function StatusLine({
       {tokens !== undefined && tokens > 0 && (
         <span
           title="tokens desta chamada do modelo (prompt + resposta). Cresce a cada passo porque o histórico é reenviado."
-          className="mt-[1px] shrink-0 px-1.5 py-[1px] rounded text-[10px] font-medium tabular-nums bg-[#1e2235] border border-[#2a2d42] text-[#6b7280]"
+          className="mt-[1px] shrink-0 px-1.5 py-[1px] rounded text-[10px] font-medium tabular-nums bg-[#2a2a2a] border border-[#3b3b3b] text-[#999999]"
         >
           {formatTokens(tokens)} tokens
         </span>
@@ -307,6 +308,7 @@ export function AIView({
   const streamingAll = useAiRunStore((s) => s.streaming)
   const streamingToolsAll = useAiRunStore((s) => s.streamingTools)
   const conversationId = useAiRunStore((s) => s.conversationId)
+  const busyHere = running.has(conversationId ?? '')
   const streaming = conversationId ? (streamingAll[conversationId] ?? '') : ''
   const streamingTools = conversationId ? (streamingToolsAll[conversationId] ?? []) : []
   const error = useAiRunStore((s) => s.error)
@@ -317,16 +319,20 @@ export function AIView({
   })
   const pendingApproval = useAiRunStore((s) => s.pendingApprovals)
   const autoApprove = useAiRunStore((s) => s.autoApprove)
+  const planMode = useAiRunStore((s) => s.planMode)
   const savedTick = useAiRunStore((s) => s.savedTick)
   const setError = useAiRunStore((s) => s.setError)
   const openConversation = useAiRunStore((s) => s.openConversation)
   const dropConversation = useAiRunStore((s) => s.dropConversation)
   const setConversationId = useAiRunStore((s) => s.setConversationId)
   const setAuto = useAiRunStore((s) => s.setAutoApprove)
+  const setPlan = useAiRunStore((s) => s.setPlanMode)
   const resolveApproval = useAiRunStore((s) => s.resolveApproval)
   const resetRun = useAiRunStore((s) => s.reset)
 
   const [input, setInput] = useState('')
+  // Skill autocomplete: when input starts with /, show matching skills.
+  const [skillMenuOpen, setSkillMenuOpen] = useState(false)
   // Spend across every call ever made, from the main process's log. Separate
   // from `usage`, which is only this conversation.
   const [spend, setSpend] = useState<UsageSummary | null>(null)
@@ -334,6 +340,13 @@ export function AIView({
   // same panel as spend, so a model's cost and its efficiency sit side by side.
   const [runMetrics, setRunMetrics] = useState<RunMetricsSummary | null>(null)
   const [showSpend, setShowSpend] = useState(false)
+
+  // ai-jail sandbox status (merged with config). Null until first fetched.
+  const [jailStatus, setJailStatus] = useState<
+    Awaited<ReturnType<typeof window.electronAPI.ai.jail.status>> | null
+  >(null)
+  /** Whether the first-run sandbox onboarding modal is showing. */
+  const [showOnboarding, setShowOnboarding] = useState(false)
 
   // Persisted conversation history
   const [conversations, setConversations] = useState<
@@ -380,11 +393,11 @@ export function AIView({
   /**
    * A run is going *and it belongs to the chat on screen*.
    *
-   * `busy` is global (one run at a time), so on its own it would spin a
+   * `busy` is global (N runs at once), so on its own it would spin a
    * thinking bubble and offer a "Parar" button at the foot of whatever chat the
    * user opened — for work happening in another one. The transcript's live
-   * furniture keys off this instead; the composer still keys off `busy`,
-   * because the one run is what stops a second from starting.
+   * furniture keys off this instead; the composer keys off `busyHere`,
+   * so the current chat is only blocked when *its own* run is in flight.
    */
   const runningHere = busy && runningConvId === conversationId
   const toolRunning = runningHere && messages.some((m) => m.done === false)
@@ -536,6 +549,22 @@ export function AIView({
       /* persistence failure is non-fatal */
     })
   }, [config])
+
+  /** Refresh ai-jail status; opens onboarding when required-but-unavailable. */
+  const refreshJail = useCallback(
+    async (redetect = false): Promise<void> => {
+      const s = await window.electronAPI.ai.jail.status(redetect)
+      setJailStatus(s)
+      if (!s.available && s.enabled && !s.onboardingDismissed) setShowOnboarding(true)
+    },
+    []
+  )
+
+  // Load the sandbox status when the AI view mounts. Onboarding only appears the
+  // first time ai-jail reports unavailable and the user never sees the dialog.
+  useEffect(() => {
+    void refreshJail()
+  }, [refreshJail])
 
   // Keep the chat scrolled to the latest message. While an answer streams in
   // this fires on every chunk, so only follow along when the user is already at
@@ -858,6 +887,14 @@ export function AIView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showConfig])
 
+  // Skills matching the current /-prefixed input, for autocomplete.
+  const matchedSkills = useMemo(() => {
+    if (!input.startsWith('/')) return []
+    const query = input.slice(1).trim().toLowerCase()
+    if (!query) return skills
+    return skills.filter((s) => s.name.toLowerCase().includes(query))
+  }, [input, skills])
+
   /**
    * Hands the message to the store and returns — the run outlives this view, so
    * nothing here waits on it. What the composer owns (the text, the pending
@@ -866,7 +903,7 @@ export function AIView({
    */
   const handleSend = (): void => {
     let text = input.trim()
-    if ((!text && pendingImages.length === 0) || busy) return
+    if ((!text && pendingImages.length === 0) || busyHere) return
 
     // /skill-name: replace with skill body
     if (text.startsWith('/')) {
@@ -880,7 +917,17 @@ export function AIView({
       // If skill not found, send as-is (model might handle it)
     }
 
+    // When planning mode is on, prepend a planning-mode instruction that tells
+    // the assistant to analyse, ask scope questions, and plan — but never write
+    // or edit code directly.
+    if (planMode.has(conversationId!)) {
+      text =
+        '[Modo: PLANEJAMENTO] Você está no modo de planejamento. Analise, faça perguntas de escopo e planeje a implementação — NÃO escreva nem edite código agora.\n\n' +
+        text
+    }
+
     setInput('')
+    setSkillMenuOpen(false)
     const imageIds = pendingImages.map((p) => p.id)
     setPendingImages([])
     void useAiRunStore.getState().send(config, { text, imageIds, imageData })
@@ -900,6 +947,22 @@ export function AIView({
    */
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
+      // Ctrl+Tab toggles auto-approve on/off for the current conversation.
+      if (e.key === 'Tab' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault()
+        if (conversationId) {
+          setAuto(conversationId, !autoApprove.has(conversationId))
+        }
+        return
+      }
+      // Shift+Tab toggles planning mode on/off for the current conversation.
+      if (e.key === 'Tab' && e.shiftKey) {
+        e.preventDefault()
+        if (conversationId) {
+          setPlan(conversationId, !planMode.has(conversationId))
+        }
+        return
+      }
       if (e.key !== 'Escape') return
       if (confirmDelete) return setConfirmDelete(null)
       if (pendingApproval.length > 0) {
@@ -923,13 +986,18 @@ export function AIView({
     return () => document.removeEventListener('keydown', onKey)
   }, [
     confirmDelete,
+    conversationId,
     pendingApproval,
     proposed,
     showSpend,
     renaming,
     showHistory,
     showConfig,
-    resolveApproval
+    resolveApproval,
+    setAuto,
+    setPlan,
+    autoApprove,
+    planMode
   ])
 
   /** A USD-per-1M-tokens input. Blank means unset, which hides the cost. */
@@ -938,7 +1006,7 @@ export function AIView({
     key: 'inputPricePer1M' | 'outputPricePer1M'
   ): React.JSX.Element => (
     <label className="flex flex-col gap-1 shrink-0 w-44">
-      <span className="text-[11px] font-medium text-[#8892a4]">{label}</span>
+      <span className="text-[11px] font-medium text-[#999999]">{label}</span>
       <input
         type="number"
         min={0}
@@ -949,20 +1017,20 @@ export function AIView({
           const raw = e.target.value.trim()
           setConfig((c) => ({ ...c, [key]: raw === '' ? undefined : Number(raw) }))
         }}
-        className="px-2.5 py-1.5 rounded-md bg-[#0d0f18] border border-[#2a2d42] text-sm text-[#e2e8f0] placeholder:text-[#4a5068] focus:outline-none focus:border-[#6366f1]"
+        className="px-2.5 py-1.5 rounded-md bg-[#1b1b1b] border border-[#3b3b3b] text-sm text-[#d4d4d4] placeholder:text-[#666666] focus:outline-none focus:border-[#7c3aed]"
       />
     </label>
   )
 
   const field = (label: string, key: keyof AIConfig, type = 'text', placeholder = '') => (
     <label className="flex flex-col gap-1">
-      <span className="text-[11px] font-medium text-[#8892a4]">{label}</span>
+      <span className="text-[11px] font-medium text-[#999999]">{label}</span>
       <input
         type={type}
         value={typeof config[key] === 'string' ? (config[key] as string) : ''}
         placeholder={placeholder}
         onChange={(e) => setConfig((c) => ({ ...c, [key]: e.target.value }))}
-        className="px-2.5 py-1.5 rounded-md bg-[#0d0f18] border border-[#2a2d42] text-sm text-[#e2e8f0] placeholder:text-[#4a5068] focus:outline-none focus:border-[#6366f1]"
+        className="px-2.5 py-1.5 rounded-md bg-[#1b1b1b] border border-[#3b3b3b] text-sm text-[#d4d4d4] placeholder:text-[#666666] focus:outline-none focus:border-[#7c3aed]"
       />
     </label>
   )
@@ -994,7 +1062,7 @@ export function AIView({
         return { ...c, codeAgent: Object.keys(cleaned).length ? cleaned : undefined }
       })
     const inputClass =
-      'px-2.5 py-1.5 rounded-md bg-[#0d0f18] border border-[#2a2d42] text-sm text-[#e2e8f0] placeholder:text-[#4a5068] focus:outline-none focus:border-[#6366f1]'
+      'px-2.5 py-1.5 rounded-md bg-[#1b1b1b] border border-[#3b3b3b] text-sm text-[#d4d4d4] placeholder:text-[#666666] focus:outline-none focus:border-[#7c3aed]'
     const selectEl = options ? (
       <select
         value={current}
@@ -1020,7 +1088,7 @@ export function AIView({
     )
     return (
       <label className="flex flex-col gap-1">
-        <span className="text-[11px] font-medium text-[#8892a4]">{label}</span>
+        <span className="text-[11px] font-medium text-[#999999]">{label}</span>
         {loader ? (
           <div className="flex gap-1.5">
             {selectEl}
@@ -1028,10 +1096,10 @@ export function AIView({
               onClick={loader.onLoad}
               disabled={loader.loading}
               title="Carregar modelos do endpoint do agente"
-              className="shrink-0 px-2 py-1.5 rounded-md bg-[#1e2235] border border-[#2a2d42] text-[#8892a4] hover:text-[#e2e8f0] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="shrink-0 px-2 py-1.5 rounded-md bg-[#2a2a2a] border border-[#3b3b3b] text-[#999999] hover:text-[#d4d4d4] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               {loader.loading ? (
-                <div className="w-3.5 h-3.5 rounded-full border-2 border-[#6366f1] border-t-transparent animate-spin" />
+                <div className="w-3.5 h-3.5 rounded-full border-2 border-[#7c3aed] border-t-transparent animate-spin" />
               ) : (
                 <svg
                   width="14"
@@ -1059,16 +1127,16 @@ export function AIView({
     <>
       <div className="flex flex-col h-full overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#2a2d42] shrink-0">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#3b3b3b] shrink-0">
           <div className="flex items-center gap-3">
-            <h1 className="text-base font-semibold text-[#e2e8f0]">Assistente IA</h1>
-            <span className="text-xs text-[#8892a4]">
+            <h1 className="text-base font-semibold text-[#d4d4d4]">Assistente IA</h1>
+            <span className="text-xs text-[#999999]">
               {activeProject ? activeProject.name : 'Nenhum projeto selecionado'}
             </span>
             {activeCodePaths.length > 0 && (
               <span
                 title={`A IA lê o código em:\n${activeCodePaths.map((c) => c.path).join('\n')}`}
-                className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#6366f1]/10 text-[11px] text-[#a5b4fc] max-w-[280px]"
+                className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#7c3aed]/10 text-[11px] text-[#a080f0] max-w-[280px]"
               >
                 <svg
                   width="10"
@@ -1107,8 +1175,8 @@ export function AIView({
                   }
                   className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] tabular-nums transition-colors ${
                     showSpend
-                      ? 'bg-[#6366f1]/20 text-[#a5b4fc]'
-                      : 'bg-[#1e2235] text-[#8892a4] hover:text-[#e2e8f0]'
+                      ? 'bg-[#7c3aed]/20 text-[#a080f0]'
+                      : 'bg-[#2a2a2a] text-[#999999] hover:text-[#d4d4d4]'
                   }`}
                 >
                   <svg
@@ -1127,7 +1195,7 @@ export function AIView({
                     <>
                       {formatTokens(totalTokens)} tokens
                       {cost !== null && (
-                        <span className="text-[#a5b4fc]">· {formatCost(cost)}</span>
+                        <span className="text-[#a080f0]">· {formatCost(cost)}</span>
                       )}
                     </>
                   ) : (
@@ -1138,8 +1206,8 @@ export function AIView({
                 {showSpend && spend && (
                   <>
                     <div className="fixed inset-0 z-30" onClick={() => setShowSpend(false)} />
-                    <div className="absolute right-0 top-full mt-1 z-40 w-80 max-h-[26rem] overflow-y-auto rounded-lg border border-[#2a2d42] bg-[#0d0f18] shadow-2xl p-3">
-                      <p className="text-[11px] font-semibold text-[#e2e8f0] mb-2">
+                    <div className="absolute right-0 top-full mt-1 z-40 w-80 max-h-[26rem] overflow-y-auto rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] shadow-2xl p-3">
+                      <p className="text-[11px] font-semibold text-[#d4d4d4] mb-2">
                         Gastos com o modelo
                       </p>
 
@@ -1153,26 +1221,26 @@ export function AIView({
                         ).map(([label, b]) => (
                           <div key={label}>
                             <div className="flex items-baseline justify-between gap-2">
-                              <span className="text-[11px] text-[#8892a4]">{label}</span>
-                              <span className="text-[11px] text-[#e2e8f0] tabular-nums">
+                              <span className="text-[11px] text-[#999999]">{label}</span>
+                              <span className="text-[11px] text-[#d4d4d4] tabular-nums">
                                 {b.calls} {b.calls === 1 ? 'chamada' : 'chamadas'} ·{' '}
                                 {formatTokens(b.promptTokens + b.completionTokens)} ·{' '}
                                 {b.unpricedCalls === b.calls ? (
-                                  <span className="text-[#4a5068]">sem preço</span>
+                                  <span className="text-[#666666]">sem preço</span>
                                 ) : (
-                                  <span className="text-[#a5b4fc]">{formatCost(b.cost)}</span>
+                                  <span className="text-[#a080f0]">{formatCost(b.cost)}</span>
                                 )}
                               </span>
                             </div>
                             {cacheHitRate(b) !== null && (
                               <div>
-                                <div className="w-full h-1 bg-[#2a2d42] rounded-full mt-0.5">
+                                <div className="w-full h-1 bg-[#3b3b3b] rounded-full mt-0.5">
                                   <div
-                                    className="h-full bg-green-500 rounded-full"
+                                    className="h-full bg-[#46d478] rounded-full"
                                     style={{ width: `${Math.round(cacheHitRate(b)! * 100)}%` }}
                                   />
                                 </div>
-                                <span className="text-[10px] text-green-400">
+                                <span className="text-[10px] text-[#46d478]">
                                   {Math.round(cacheHitRate(b)! * 100)}% cache
                                 </span>
                               </div>
@@ -1182,7 +1250,7 @@ export function AIView({
                       </div>
 
                       {spend.total.unpricedCalls > 0 && (
-                        <p className="mt-2 text-[10px] text-[#4a5068] leading-relaxed">
+                        <p className="mt-2 text-[10px] text-[#666666] leading-relaxed">
                           {spend.total.unpricedCalls} chamada
                           {spend.total.unpricedCalls === 1 ? '' : 's'} sem preço configurado na
                           época — não {spend.total.unpricedCalls === 1 ? 'entra' : 'entram'} no
@@ -1193,14 +1261,14 @@ export function AIView({
 
                       {spend.byModel.length > 0 && (
                         <>
-                          <p className="mt-3 mb-1 text-[10px] font-medium text-[#8892a4] uppercase tracking-wide">
+                          <p className="mt-3 mb-1 text-[10px] font-medium text-[#999999] uppercase tracking-wide">
                             Por modelo
                           </p>
                           {spend.byModel.map(({ model, bucket }) => (
                             <div key={model}>
                               <div className="flex items-baseline justify-between gap-2">
-                                <span className="text-[11px] text-[#e2e8f0] truncate">{model}</span>
-                                <span className="text-[11px] text-[#8892a4] tabular-nums shrink-0">
+                                <span className="text-[11px] text-[#d4d4d4] truncate">{model}</span>
+                                <span className="text-[11px] text-[#999999] tabular-nums shrink-0">
                                   {bucket.calls}× ·{' '}
                                   {bucket.unpricedCalls === bucket.calls
                                     ? '—'
@@ -1209,13 +1277,13 @@ export function AIView({
                               </div>
                               {cacheHitRate(bucket) !== null && (
                                 <div>
-                                  <div className="w-full h-1 bg-[#2a2d42] rounded-full mt-0.5">
+                                  <div className="w-full h-1 bg-[#3b3b3b] rounded-full mt-0.5">
                                     <div
-                                      className="h-full bg-green-500 rounded-full"
+                                      className="h-full bg-[#46d478] rounded-full"
                                       style={{ width: `${Math.round(cacheHitRate(bucket)! * 100)}%` }}
                                     />
                                   </div>
-                                  <span className="text-[10px] text-green-400">
+                                  <span className="text-[10px] text-[#46d478]">
                                     {Math.round(cacheHitRate(bucket)! * 100)}% cache
                                   </span>
                                 </div>
@@ -1227,10 +1295,10 @@ export function AIView({
 
                       {runMetrics && runMetrics.byModel.length > 0 && (
                         <>
-                          <p className="mt-3 mb-1 text-[10px] font-medium text-[#8892a4] uppercase tracking-wide">
+                          <p className="mt-3 mb-1 text-[10px] font-medium text-[#999999] uppercase tracking-wide">
                             Eficiência por modelo
                           </p>
-                          <p className="mb-1.5 text-[10px] text-[#4a5068] leading-relaxed">
+                          <p className="mb-1.5 text-[10px] text-[#666666] leading-relaxed">
                             Média por execução do agente ({runMetrics.runs}{' '}
                             {runMetrics.runs === 1 ? 'execução' : 'execuções'}). Menos tokens/passo
                             é mais eficiente.
@@ -1238,14 +1306,14 @@ export function AIView({
                           {runMetrics.byModel.map((m) => (
                             <div key={m.model} className="mb-1.5">
                               <div className="flex items-baseline justify-between gap-2">
-                                <span className="text-[11px] text-[#e2e8f0] truncate">
+                                <span className="text-[11px] text-[#d4d4d4] truncate">
                                   {m.model}
                                 </span>
-                                <span className="text-[11px] text-[#8892a4] tabular-nums shrink-0">
+                                <span className="text-[11px] text-[#999999] tabular-nums shrink-0">
                                   {m.runs}× · {formatTokens(Math.round(m.avgTotalTokens))}/exec
                                 </span>
                               </div>
-                              <div className="flex items-baseline justify-between gap-2 text-[10px] text-[#4a5068] tabular-nums">
+                              <div className="flex items-baseline justify-between gap-2 text-[10px] text-[#666666] tabular-nums">
                                 <span>
                                   {m.avgSteps.toFixed(1)} passos ·{' '}
                                   {formatTokens(Math.round(m.avgTokensPerStep))}/passo
@@ -1253,10 +1321,10 @@ export function AIView({
                                 <span className="shrink-0">
                                   {m.avgRedundantSearches + m.avgRepeatedReads > 0.05 && (
                                     <span
-                                      className="text-amber-500/70"
+                                      className="text-[#f0b820]/70"
                                       title="buscas redundantes + releituras freadas, por execução"
                                     >
-                                      ⚠ {(m.avgRedundantSearches + m.avgRepeatedReads).toFixed(1)}
+                                      {(m.avgRedundantSearches + m.avgRepeatedReads).toFixed(1)}
                                     </span>
                                   )}
                                   {m.cappedRate > 0 && (
@@ -1276,7 +1344,7 @@ export function AIView({
 
                       {spend.recent.length > 0 && (
                         <>
-                          <p className="mt-3 mb-1 text-[10px] font-medium text-[#8892a4] uppercase tracking-wide">
+                          <p className="mt-3 mb-1 text-[10px] font-medium text-[#999999] uppercase tracking-wide">
                             Últimas chamadas
                           </p>
                           <div className="space-y-0.5">
@@ -1285,7 +1353,7 @@ export function AIView({
                                 key={`${e.at}-${i}`}
                                 className="flex items-baseline justify-between gap-2"
                               >
-                                <span className="text-[10px] text-[#4a5068] tabular-nums shrink-0">
+                                <span className="text-[10px] text-[#666666] tabular-nums shrink-0">
                                   {new Date(e.at).toLocaleString('pt-BR', {
                                     day: '2-digit',
                                     month: '2-digit',
@@ -1293,13 +1361,13 @@ export function AIView({
                                     minute: '2-digit'
                                   })}
                                 </span>
-                                <span className="text-[10px] text-[#8892a4] tabular-nums">
+                                <span className="text-[10px] text-[#999999] tabular-nums">
                                   {formatTokens(e.promptTokens)}→{formatTokens(e.completionTokens)}
                                   {typeof e.cost === 'number' && (
-                                    <span className="text-[#a5b4fc]"> {formatCost(e.cost)}</span>
+                                    <span className="text-[#a080f0]"> {formatCost(e.cost)}</span>
                                   )}
                                   {typeof e.cachedPromptTokens === 'number' && (
-                                    <span className="text-green-400"> cache</span>
+                                    <span className="text-[#46d478]"> cache</span>
                                   )}
                                 </span>
                               </div>
@@ -1309,7 +1377,7 @@ export function AIView({
                       )}
 
                       {spend.total.calls === 0 && (
-                        <p className="text-[11px] text-[#4a5068] italic">
+                        <p className="text-[11px] text-[#666666] italic">
                           Nenhuma chamada registrada ainda.
                         </p>
                       )}
@@ -1318,6 +1386,38 @@ export function AIView({
                 )}
               </div>
             )}
+
+            <button
+              onClick={() => {
+                if (!conversationId) return
+                setPlan(conversationId, !planMode.has(conversationId))
+              }}
+              title={
+                planMode.has(conversationId!)
+                  ? 'Modo planejamento LIGADO — a IA analisa e planeja, sem escrever código. Shift+Tab para desligar.'
+                  : 'Modo planejamento DESLIGADO — a IA pode escrever e editar código. Shift+Tab para ligar.'
+              }
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                planMode.has(conversationId!)
+                  ? 'bg-[#a080f0]/20 text-[#a080f0]'
+                  : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a]'
+              }`}
+            >
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" />
+                <rect x="9" y="3" width="6" height="4" rx="1" />
+                <path d="M9 14h6" />
+                <path d="M9 18h3" />
+              </svg>
+              {planMode.has(conversationId!) ? 'Plano: ON' : 'Plano'}
+            </button>
 
             <button
               onClick={() => {
@@ -1335,8 +1435,8 @@ export function AIView({
               }
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                 autoApprove.has(conversationId!)
-                  ? 'bg-amber-500/20 text-amber-400'
-                  : 'text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#1e2235]'
+                  ? 'bg-[#f0b820]/20 text-[#f0b820]'
+                  : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a]'
               }`}
             >
               <svg
@@ -1354,7 +1454,7 @@ export function AIView({
 
             <button
               onClick={handleNewConversation}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#1e2235] transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors"
             >
               <svg
                 width="12"
@@ -1380,8 +1480,8 @@ export function AIView({
                 }}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                   showHistory
-                    ? 'bg-[#6366f1]/20 text-[#a5b4fc]'
-                    : 'text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#1e2235]'
+                    ? 'bg-[#7c3aed]/20 text-[#a080f0]'
+                    : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a]'
                 }`}
               >
                 <svg
@@ -1402,18 +1502,18 @@ export function AIView({
               {showHistory && (
                 <>
                   <div className="fixed inset-0 z-30" onClick={() => setShowHistory(false)} />
-                  <div className="absolute right-0 top-full mt-1 z-40 w-80 max-h-96 overflow-y-auto rounded-lg border border-[#2a2d42] bg-[#0d0f18] shadow-2xl py-1">
-                    <div className="sticky top-0 bg-[#0d0f18] px-2 pt-1 pb-2 border-b border-[#2a2d42]">
+                  <div className="absolute right-0 top-full mt-1 z-40 w-80 max-h-96 overflow-y-auto rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] shadow-2xl py-1">
+                    <div className="sticky top-0 bg-[#1b1b1b] px-2 pt-1 pb-2 border-b border-[#3b3b3b]">
                       <input
                         autoFocus
                         value={historyQuery}
                         onChange={(e) => setQuery(e.target.value)}
                         placeholder="Buscar por título ou conteúdo…"
-                        className="w-full px-2.5 py-1.5 rounded-md bg-[#13151f] border border-[#2a2d42] text-xs text-[#e2e8f0] placeholder:text-[#4a5068] focus:outline-none focus:border-[#6366f1]"
+                        className="w-full px-2.5 py-1.5 rounded-md bg-[#232323] border border-[#3b3b3b] text-xs text-[#d4d4d4] placeholder:text-[#666666] focus:outline-none focus:border-[#7c3aed]"
                       />
                     </div>
                     {conversations.length === 0 ? (
-                      <p className="px-3 py-3 text-xs text-[#4a5068] italic text-center">
+                      <p className="px-3 py-3 text-xs text-[#666666] italic text-center">
                         {historyQuery.trim()
                           ? `Nada encontrado para "${historyQuery.trim()}"`
                           : 'Nenhuma conversa salva'}
@@ -1424,7 +1524,7 @@ export function AIView({
                           key={c.id}
                           onClick={() => handleLoadConversation(c.id)}
                           className={`group flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors ${
-                            c.id === conversationId ? 'bg-[#6366f1]/10' : 'hover:bg-[#1e2235]'
+                            c.id === conversationId ? 'bg-[#7c3aed]/10' : 'hover:bg-[#2a2a2a]'
                           }`}
                         >
                           <div className="flex-1 min-w-0">
@@ -1443,19 +1543,19 @@ export function AIView({
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter') void commitRename()
                                 }}
-                                className="w-full px-1.5 py-0.5 rounded bg-[#0d0f18] border border-[#6366f1] text-xs text-[#e2e8f0] focus:outline-none"
+                                className="w-full px-1.5 py-0.5 rounded bg-[#1b1b1b] border border-[#7c3aed] text-xs text-[#d4d4d4] focus:outline-none"
                               />
                             ) : (
-                              <p className="text-xs text-[#e2e8f0] truncate">{c.title}</p>
+                              <p className="text-xs text-[#d4d4d4] truncate">{c.title}</p>
                             )}
                             {c.snippet && (
                               // Matched on the body, not the title: show the
                               // line, or the result looks arbitrary.
-                              <p className="text-[10px] text-[#8892a4] truncate italic">
+                              <p className="text-[10px] text-[#999999] truncate italic">
                                 {c.snippet}
                               </p>
                             )}
-                            <p className="text-[10px] text-[#4a5068]">
+                            <p className="text-[10px] text-[#666666]">
                               {new Date(c.updatedAt).toLocaleString('pt-BR')}
                             </p>
                           </div>
@@ -1465,13 +1565,13 @@ export function AIView({
                             // own and it isn't necessarily the one on screen.
                             <span
                               title="A IA está trabalhando nesta conversa"
-                              className="w-3 h-3 shrink-0 rounded-full border-[1.5px] border-[#a5b4fc] border-t-transparent animate-spin"
+                              className="w-3 h-3 shrink-0 rounded-full border-[1.5px] border-[#a080f0] border-t-transparent animate-spin"
                             />
                           )}
                           <button
                             onClick={(e) => startRename(c.id, c.title, e)}
                             title="Renomear conversa"
-                            className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-[#8892a4] hover:text-[#e2e8f0] shrink-0"
+                            className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-[#999999] hover:text-[#d4d4d4] shrink-0"
                           >
                             <svg
                               width="12"
@@ -1488,7 +1588,7 @@ export function AIView({
                           <button
                             onClick={(e) => handleDeleteConversation(c.id, c.title, e)}
                             title="Apagar conversa"
-                            className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-[#8892a4] hover:text-red-400 shrink-0"
+                            className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-[#999999] hover:text-[#e04040] shrink-0"
                           >
                             <svg
                               width="12"
@@ -1514,8 +1614,8 @@ export function AIView({
               onClick={() => setShowConfig((v) => !v)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                 showConfig
-                  ? 'bg-[#6366f1]/20 text-[#a5b4fc]'
-                  : 'text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#1e2235]'
+                  ? 'bg-[#7c3aed]/20 text-[#a080f0]'
+                  : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a]'
               }`}
             >
               <svg
@@ -1536,9 +1636,9 @@ export function AIView({
 
         {/* Config panel */}
         {showConfig && (
-          <div className="px-6 py-4 border-b border-[#2a2d42] bg-[#13151f] shrink-0">
-            <span className="text-[11px] font-medium text-[#8892a4]">Chat</span>
-            <p className="mt-1 mb-2 text-[11px] leading-relaxed text-[#4a5068]">
+          <div className="px-6 py-4 border-b border-[#3b3b3b] bg-[#232323] shrink-0">
+            <span className="text-[11px] font-medium text-[#999999]">Chat</span>
+            <p className="mt-1 mb-2 text-[11px] leading-relaxed text-[#666666]">
               Provider e modelo que o assistente usa para <b>conversar com você</b> no chat — ler
               seus dados, analisar e responder. É o modelo principal do app.
             </p>
@@ -1546,7 +1646,7 @@ export function AIView({
               {field('Base URL', 'baseUrl', 'text', 'https://api.openai.com/v1')}
               {field('API Key', 'apiKey', 'password', 'sk-...')}
               <label className="flex flex-col gap-1">
-                <span className="text-[11px] font-medium text-[#8892a4]">Model</span>
+                <span className="text-[11px] font-medium text-[#999999]">Model</span>
                 <div className="flex gap-1.5">
                   <select
                     value={config.model}
@@ -1561,7 +1661,7 @@ export function AIView({
                         return { ...c, model, ...(shouldFill ? { baseUrl: url } : {}) }
                       })
                     }}
-                    className="flex-1 min-w-0 px-2.5 py-1.5 rounded-md bg-[#0d0f18] border border-[#2a2d42] text-sm text-[#e2e8f0] focus:outline-none focus:border-[#6366f1]"
+                    className="flex-1 min-w-0 px-2.5 py-1.5 rounded-md bg-[#1b1b1b] border border-[#3b3b3b] text-sm text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed]"
                   >
                     {models.length === 0 && (
                       <option value={config.model || ''}>{config.model || 'Carregue os modelos…'}</option>
@@ -1576,10 +1676,10 @@ export function AIView({
                     onClick={handleLoadModels}
                     disabled={loadingModels || config.baseUrl.trim() === ''}
                     title="Carregar modelos do endpoint"
-                    className="shrink-0 px-2 py-1.5 rounded-md bg-[#1e2235] border border-[#2a2d42] text-[#8892a4] hover:text-[#e2e8f0] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    className="shrink-0 px-2 py-1.5 rounded-md bg-[#2a2a2a] border border-[#3b3b3b] text-[#999999] hover:text-[#d4d4d4] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                   >
                     {loadingModels ? (
-                      <div className="w-3.5 h-3.5 rounded-full border-2 border-[#6366f1] border-t-transparent animate-spin" />
+                      <div className="w-3.5 h-3.5 rounded-full border-2 border-[#7c3aed] border-t-transparent animate-spin" />
                     ) : (
                       <svg
                         width="14"
@@ -1598,7 +1698,7 @@ export function AIView({
                 </div>
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-[11px] font-medium text-[#8892a4]">
+                <span className="text-[11px] font-medium text-[#999999]">
                   Modelo do chat para conversar sobre código (opcional)
                 </span>
                 <select
@@ -1606,7 +1706,7 @@ export function AIView({
                   onChange={(e) =>
                     setConfig((c) => ({ ...c, modelComplex: e.target.value || undefined }))
                   }
-                  className="px-2.5 py-1.5 rounded-md bg-[#0d0f18] border border-[#2a2d42] text-sm text-[#e2e8f0] focus:outline-none focus:border-[#6366f1]"
+                  className="px-2.5 py-1.5 rounded-md bg-[#1b1b1b] border border-[#3b3b3b] text-sm text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed]"
                 >
                   <option value="">Mesmo do principal</option>
                   {/* The loaded list, plus whatever is stored (may not be listed yet). */}
@@ -1621,7 +1721,7 @@ export function AIView({
                 </select>
               </label>
             </div>
-            <p className="mt-2 text-[11px] leading-relaxed text-[#6b7280]">
+            <p className="mt-2 text-[11px] leading-relaxed text-[#999999]">
               O <b>modelo principal</b> (acima) responde tudo no chat. Aqui você pode definir um{' '}
               <b>segundo modelo, mais forte, só para mensagens de código</b>: quando você escreve
               algo como "tem um bug aqui", "refatora essa função" ou "otimiza isso", a resposta usa
@@ -1631,7 +1731,7 @@ export function AIView({
               Código (mais abaixo).               Deixe em "mesmo do principal" para usar um único modelo em tudo.
             </p>
             <label className="flex flex-col gap-1 mt-3">
-              <span className="text-[11px] font-medium text-[#8892a4]">
+              <span className="text-[11px] font-medium text-[#999999]">
                 Esforço de raciocínio (DeepSeek)
               </span>
               <select
@@ -1642,7 +1742,7 @@ export function AIView({
                     reasoningEffort: (e.target.value || undefined) as 'low' | 'medium' | 'high' | undefined
                   }))
                 }
-                className="px-2.5 py-1.5 rounded-md bg-[#0d0f18] border border-[#2a2d42] text-sm text-[#e2e8f0] focus:outline-none focus:border-[#6366f1]"
+                className="px-2.5 py-1.5 rounded-md bg-[#1b1b1b] border border-[#3b3b3b] text-sm text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed]"
               >
                 <option value="">Padrão do provedor</option>
                 <option value="low">Baixo</option>
@@ -1652,7 +1752,7 @@ export function AIView({
             </label>
             <div className="mt-3 flex items-start gap-3">
               <label className="flex flex-col gap-1 shrink-0 w-40">
-                <span className="text-[11px] font-medium text-[#8892a4]">Passos máximos</span>
+                <span className="text-[11px] font-medium text-[#999999]">Passos máximos</span>
                 <input
                   type="number"
                   min={1}
@@ -1667,18 +1767,18 @@ export function AIView({
                       maxSteps: raw === '' ? undefined : Number(raw)
                     }))
                   }}
-                  className="px-2.5 py-1.5 rounded-md bg-[#0d0f18] border border-[#2a2d42] text-sm text-[#e2e8f0] placeholder:text-[#4a5068] focus:outline-none focus:border-[#6366f1]"
+                  className="px-2.5 py-1.5 rounded-md bg-[#1b1b1b] border border-[#3b3b3b] text-sm text-[#d4d4d4] placeholder:text-[#666666] focus:outline-none focus:border-[#7c3aed]"
                 />
               </label>
               <div className="pt-5">
-                <p className="text-[11px] text-[#4a5068] leading-relaxed">
+                <p className="text-[11px] text-[#666666] leading-relaxed">
                   Quantas rodadas de ferramentas o assistente pode encadear numa resposta — cada
                   rodada é uma chamada paga ao modelo. Em branco usa o padrão: <b>{MAX_STEPS}</b> no
                   modo manual e <b>{AUTO_MAX_STEPS}</b> no automático. Um valor definido vale para
                   os dois modos (máx. {MAX_STEPS_LIMIT}).
                 </p>
                 {config.maxSteps !== undefined && config.maxSteps < LOW_STEPS_WARNING && (
-                  <p className="mt-2 flex items-start gap-1.5 text-[11px] text-amber-400/90 leading-relaxed">
+                  <p className="mt-2 flex items-start gap-1.5 text-[11px] text-[#f0b820]/90 leading-relaxed">
                     <svg
                       width="12"
                       height="12"
@@ -1705,7 +1805,7 @@ export function AIView({
 
             <div className="mt-3 flex items-start gap-3">
               <label className="flex flex-col gap-1 shrink-0 w-40">
-                <span className="text-[11px] font-medium text-[#8892a4]">Timeout (segundos)</span>
+                <span className="text-[11px] font-medium text-[#999999]">Timeout (segundos)</span>
                 <input
                   type="number"
                   min={MIN_TIMEOUT_MS / 1000}
@@ -1721,10 +1821,10 @@ export function AIView({
                       timeoutMs: raw === '' ? undefined : Math.round(Number(raw) * 1000)
                     }))
                   }}
-                  className="px-2.5 py-1.5 rounded-md bg-[#0d0f18] border border-[#2a2d42] text-sm text-[#e2e8f0] placeholder:text-[#4a5068] focus:outline-none focus:border-[#6366f1]"
+                  className="px-2.5 py-1.5 rounded-md bg-[#1b1b1b] border border-[#3b3b3b] text-sm text-[#d4d4d4] placeholder:text-[#666666] focus:outline-none focus:border-[#7c3aed]"
                 />
               </label>
-              <p className="text-[11px] text-[#4a5068] pt-5 leading-relaxed">
+              <p className="text-[11px] text-[#666666] pt-5 leading-relaxed">
                 Quanto esperar o modelo <b>começar</b> a responder antes de desistir. Não corta
                 respostas longas — vale só até a primeira resposta chegar. Em branco usa{' '}
                 {DEFAULT_TIMEOUT_MS / 1000}s (mín. {MIN_TIMEOUT_MS / 1000}s, máx.{' '}
@@ -1736,7 +1836,7 @@ export function AIView({
             <div className="mt-3 flex items-start gap-3">
               {priceField('Preço entrada (US$ / 1M tokens)', 'inputPricePer1M')}
               {priceField('Preço saída (US$ / 1M tokens)', 'outputPricePer1M')}
-              <p className="text-[11px] text-[#4a5068] pt-5 leading-relaxed">
+              <p className="text-[11px] text-[#666666] pt-5 leading-relaxed">
                 Preços do seu provider, para estimar o custo da conversa. O app não tem como saber
                 sozinho — ele fala com qualquer endpoint compatível com OpenAI, inclusive modelos
                 locais (custo zero). Deixe em branco e o header mostra só os tokens.
@@ -1751,13 +1851,13 @@ export function AIView({
                   onChange={(e) =>
                     setConfig((c) => ({ ...c, usePromptCaching: e.target.checked }))
                   }
-                  className="accent-[#6366f1]"
+                  className="accent-[#7c3aed]"
                 />
-                <span className="text-[11px] font-medium text-[#8892a4]">
+                <span className="text-[11px] font-medium text-[#999999]">
                   Cache de prefixo ativo
                 </span>
               </label>
-              <p className="text-[11px] text-[#4a5068] pt-0 leading-relaxed">
+              <p className="text-[11px] text-[#666666] pt-0 leading-relaxed">
                 Quando ligado (padrão), mantém o histórico estável para maximizar o cache do
                 provedor (DeepSeek ~50x mais barato, Claude, Gemini). Desligue se o provedor
                 não tiver cache — resultados de leitura repetidos serão podados para economizar
@@ -1765,9 +1865,9 @@ export function AIView({
               </p>
             </div>
 
-            <div className="mt-3 pt-3 border-t border-[#2a2d42]">
-              <span className="text-[11px] font-medium text-[#8892a4]">Agente de Código</span>
-              <p className="mt-1 mb-2 text-[11px] leading-relaxed text-[#4a5068]">
+            <div className="mt-3 pt-3 border-t border-[#3b3b3b]">
+              <span className="text-[11px] font-medium text-[#999999]">Agente de Código</span>
+              <p className="mt-1 mb-2 text-[11px] leading-relaxed text-[#666666]">
                 Modelo que <b>escreve as alterações nos seus arquivos</b> quando o assistente decide
                 mexer no código — diferente do chat acima, que só conversa e analisa. Tem provider
                 próprio: deixe <b>Base URL</b> e <b>API Key</b> em branco para reaproveitar os do
@@ -1795,28 +1895,28 @@ export function AIView({
                 )}
               </div>
               {codeAgentModelsError && (
-                <p className="mt-1.5 text-[11px] text-red-400">
+                <p className="mt-1.5 text-[11px] text-[#e04040]">
                   Modelos do agente: {codeAgentModelsError}
                 </p>
               )}
             </div>
 
-            <div className="mt-3 pt-3 border-t border-[#2a2d42]">
+            <div className="mt-3 pt-3 border-t border-[#3b3b3b]">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-[11px] font-medium text-[#8892a4]">Skills</span>
+                <span className="text-[11px] font-medium text-[#999999]">Skills</span>
                 <div className="flex items-center gap-3">
                   <button
                     onClick={() => {
                       setSkillError(null)
                       setEditingSkill({ name: '', body: '' })
                     }}
-                    className="text-[11px] text-[#a5b4fc] hover:text-[#e2e8f0]"
+                    className="text-[11px] text-[#a080f0] hover:text-[#d4d4d4]"
                   >
                     + Nova skill
                   </button>
                   <button
                     onClick={handleImportSkill}
-                    className="text-[11px] text-[#a5b4fc] hover:text-[#e2e8f0]"
+                    className="text-[11px] text-[#a080f0] hover:text-[#d4d4d4]"
                   >
                     Importar .md
                   </button>
@@ -1824,7 +1924,7 @@ export function AIView({
               </div>
 
               {skills.length === 0 && !editingSkill && (
-                <p className="text-[11px] text-[#4a5068] italic">
+                <p className="text-[11px] text-[#666666] italic">
                   Nenhuma skill ainda. Crie uma para usar com / no chat.
                 </p>
               )}
@@ -1832,7 +1932,7 @@ export function AIView({
               <div className="space-y-1">
                 {skills.map((s) => (
                   <div key={s.name} className="flex items-center gap-2">
-                    <span className="flex-1 min-w-0 truncate text-[11px] text-[#e2e8f0]">
+                    <span className="flex-1 min-w-0 truncate text-[11px] text-[#d4d4d4]">
                       {s.name}
                     </span>
                     <button
@@ -1840,13 +1940,13 @@ export function AIView({
                         setSkillError(null)
                         setEditingSkill({ name: s.name, body: s.body })
                       }}
-                      className="text-[11px] text-[#8892a4] hover:text-[#e2e8f0]"
+                      className="text-[11px] text-[#999999] hover:text-[#d4d4d4]"
                     >
                       Editar
                     </button>
                     <button
                       onClick={() => handleDeleteSkill(s.name)}
-                      className="text-[11px] text-[#8892a4] hover:text-red-400"
+                      className="text-[11px] text-[#999999] hover:text-[#e04040]"
                     >
                       Apagar
                     </button>
@@ -1862,7 +1962,7 @@ export function AIView({
                       setEditingSkill((s) => (s ? { ...s, name: e.target.value } : s))
                     }
                     placeholder="Nome da skill (ex: criar-projeto)"
-                    className="w-full px-2.5 py-1.5 rounded-md bg-[#0d0f18] border border-[#2a2d42] text-sm text-[#e2e8f0] placeholder:text-[#4a5068] focus:outline-none focus:border-[#6366f1]"
+                    className="w-full px-2.5 py-1.5 rounded-md bg-[#1b1b1b] border border-[#3b3b3b] text-sm text-[#d4d4d4] placeholder:text-[#666666] focus:outline-none focus:border-[#7c3aed]"
                   />
                   <textarea
                     aria-label="Conteúdo da skill"
@@ -1872,16 +1972,16 @@ export function AIView({
                     }
                     rows={8}
                     spellCheck={false}
-                    className="w-full resize-y px-2.5 py-1.5 rounded-md bg-[#0d0f18] border border-[#2a2d42] text-[11px] font-mono text-[#e2e8f0] focus:outline-none focus:border-[#6366f1]"
+                    className="w-full resize-y px-2.5 py-1.5 rounded-md bg-[#1b1b1b] border border-[#3b3b3b] text-[11px] font-mono text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed]"
                   />
-                  <p className="text-[10px] text-[#4a5068] leading-relaxed">
+                  <p className="text-[10px] text-[#666666] leading-relaxed">
                     O conteúdo da skill é enviado como contexto no chat. Use markdown.
                   </p>
-                  {skillError && <p className="text-[11px] text-red-400">{skillError}</p>}
+                  {skillError && <p className="text-[11px] text-[#e04040]">{skillError}</p>}
                   <div className="flex items-center gap-2">
                     <button
                       onClick={handleSaveSkill}
-                      className="px-3 py-1 rounded-md bg-[#6366f1] text-xs text-white font-medium hover:bg-[#4f52d4]"
+                      className="px-3 py-1 rounded-md bg-[#7c3aed] text-xs text-white font-medium hover:bg-[#6d28d9]"
                     >
                       Salvar
                     </button>
@@ -1890,7 +1990,7 @@ export function AIView({
                         setEditingSkill(null)
                         setSkillError(null)
                       }}
-                      className="px-3 py-1 rounded-md text-xs text-[#8892a4] hover:text-[#e2e8f0]"
+                      className="px-3 py-1 rounded-md text-xs text-[#999999] hover:text-[#d4d4d4]"
                     >
                       Cancelar
                     </button>
@@ -1899,10 +1999,59 @@ export function AIView({
               )}
             </div>
 
+            {/* Sandbox toggle — the ONLY barrier between the native agent and the
+                rest of the disk. Checked = required (default). Greyed when ai-jail
+                isn't installed, with a way to open onboarding. Unchecking it
+                runs shell commands unconfined. */}
+            <div className="mt-4 pt-4 border-t border-[#3b3b3b]">
+              <label
+                className={`flex items-center gap-2 cursor-pointer select-none ${
+                  jailStatus && !jailStatus.available ? 'opacity-50' : ''
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={config.sandboxEnabled !== false}
+                  disabled={!!jailStatus && !jailStatus.available}
+                  onChange={(e) => {
+                    setConfig((c) => ({ ...c, sandboxEnabled: e.target.checked ? undefined : false }))
+                  }}
+                  className="w-3.5 h-3.5 accent-[#7c3aed]"
+                />
+                <span className="text-[12px] text-[#d4d4d4]">Sandbox (ai-jail)</span>
+                {jailStatus?.available && jailStatus.version && (
+                  <span className="text-[10px] text-[#666666]">v{jailStatus.version}</span>
+                )}
+              </label>
+              {jailStatus && !jailStatus.available && (
+                <div className="mt-1.5 text-[11px] text-[#999999]">
+                  {/* When the kernel blocks the namespaces, ai-jail IS installed —
+                      bail the user out without telling them to install it again. */}
+                  {/apparmor_restrict_unprivileged_userns/.test(jailStatus.reason ?? '')
+                    ? 'Sandbox indisponível.'
+                    : 'ai-jail não instalado.'}{' '}
+                  <button
+                    onClick={() => setShowOnboarding(true)}
+                    className="text-[#a080f0] hover:underline"
+                  >
+                    {/apparmor_restrict_unprivileged_userns/.test(jailStatus.reason ?? '')
+                      ? 'Ver detalhes'
+                      : 'Instalar ai-jail'}
+                  </button>
+                  {jailStatus.reason ? ` — ${jailStatus.reason}` : ''}
+                </div>
+              )}
+              {config.sandboxEnabled === false && (
+                <p className="mt-1.5 text-[11px] text-[#f0c210]">
+                  Desativar o sandbox permite que o agente acesse qualquer arquivo do sistema.
+                </p>
+              )}
+            </div>
+
             {modelsError ? (
-              <p className="mt-2 text-[11px] text-red-400">Modelos: {modelsError}</p>
+              <p className="mt-2 text-[11px] text-[#e04040]">Modelos: {modelsError}</p>
             ) : (
-              <p className="mt-2 text-[11px] text-[#4a5068]">
+              <p className="mt-2 text-[11px] text-[#666666]">
                 Endpoint compatível com OpenAI (<code>/chat/completions</code>). Os modelos vêm de{' '}
                 <code>/models</code> — clique em atualizar para listar. A chave é salva localmente
                 neste dispositivo.
@@ -1911,13 +2060,22 @@ export function AIView({
           </div>
         )}
 
+        {/* First-run sandbox onboarding modal */}
+        {showOnboarding && jailStatus && (
+          <SandboxOnboarding
+            status={jailStatus as JailStatus}
+            onDismiss={() => setShowOnboarding(false)}
+            onInstalled={() => void refreshJail(true)}
+          />
+        )}
+
         {/* Chat */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
               <div>
-                <p className="text-[#e2e8f0] font-medium mb-1">Converse com o modelo</p>
-                <p className="text-sm text-[#8892a4]">
+                <p className="text-[#d4d4d4] font-medium mb-1">Converse com o modelo</p>
+                <p className="text-sm text-[#999999]">
                   Converse com o modelo ou use <b>/skill-name</b> no chat.
                 </p>
               </div>
@@ -1928,7 +2086,7 @@ export function AIView({
                 <div className="flex justify-center sticky top-0 z-10 py-1">
                   <button
                     onClick={showMore}
-                    className="px-4 py-1.5 rounded-full bg-[#1e2235] border border-[#2a2d42] text-xs text-[#8892a4] hover:text-[#e2e8f0] hover:border-[#3a3e58] transition-colors shadow-lg"
+                    className="px-4 py-1.5 rounded-full bg-[#2a2a2a] border border-[#3b3b3b] text-xs text-[#999999] hover:text-[#d4d4d4] hover:border-[#555555] transition-colors shadow-lg"
                   >
                     Mostrar {hiddenCount > MESSAGE_PAGE ? `${MESSAGE_PAGE}+` : hiddenCount} mensage{hiddenCount === 1 ? 'm' : 'ns'} anterior{hiddenCount === 1 ? '' : 'es'}
                   </button>
@@ -1960,9 +2118,9 @@ export function AIView({
               {streaming ? (
                 // The answer typing itself out — same bubble as a finished
                 // message, with a caret trailing the text.
-                <div className="max-w-[88%] px-3.5 py-2 rounded-2xl rounded-bl-sm text-sm break-words bg-[#1e2235] text-[#e2e8f0] border border-[#2a2d42]">
+                <div className="max-w-[88%] px-3.5 py-2 rounded-2xl rounded-bl-sm text-sm break-words bg-[#2a2a2a] text-[#d4d4d4] border border-[#3b3b3b]">
                   <ChatMarkdown content={streaming} />
-                  <span className="inline-block w-[2px] h-3.5 ml-0.5 align-[-1px] bg-[#a5b4fc] animate-pulse" />
+                  <span className="inline-block w-[2px] h-3.5 ml-0.5 align-[-1px] bg-[#a080f0] animate-pulse" />
                 </div>
               ) : streamingTools.length > 0 ? (
                 // No text, but the model has told us what it's writing: a tool
@@ -1984,8 +2142,8 @@ export function AIView({
                 // own status line is already spinning, so this would be a second
                 // spinner for the same wait.
                 !toolRunning && (
-                  <div className="px-3.5 py-2 rounded-2xl bg-[#1e2235] border border-[#2a2d42]">
-                    <div className="w-4 h-4 rounded-full border-2 border-[#6366f1] border-t-transparent animate-spin" />
+                  <div className="px-3.5 py-2 rounded-2xl bg-[#2a2a2a] border border-[#3b3b3b]">
+                    <div className="w-4 h-4 rounded-full border-2 border-[#7c3aed] border-t-transparent animate-spin" />
                   </div>
                 )
               )}
@@ -1995,7 +2153,7 @@ export function AIView({
                 onClick={() => useAiRunStore.getState().abort()}
                 title="Parar"
                 aria-label="Parar"
-                className="flex items-center justify-center w-7 h-7 rounded-full bg-[#1e2235] border border-[#2a2d42] text-[#8892a4] hover:text-[#e2e8f0] hover:border-[#3a3e58] transition-colors"
+                className="flex items-center justify-center w-7 h-7 rounded-full bg-[#2a2a2a] border border-[#3b3b3b] text-[#999999] hover:text-[#d4d4d4] hover:border-[#555555] transition-colors"
               >
                 <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor">
                   <rect x="3" y="3" width="18" height="18" rx="3" />
@@ -2007,13 +2165,13 @@ export function AIView({
 
         {/* Banners */}
         {createdCount !== null && (
-          <div className="px-6 py-2 text-xs text-[#4ade80] bg-[#22c55e]/10 border-t border-[#22c55e]/20 shrink-0">
+          <div className="px-6 py-2 text-xs text-[#46d478] bg-[#20b858]/10 border-t border-[#20b858]/20 shrink-0">
             {createdCount} task{createdCount === 1 ? '' : 's'} criada{createdCount === 1 ? '' : 's'}{' '}
             em {activeProject?.name}.
           </div>
         )}
         {error && (
-          <div className="px-6 py-2 text-xs text-red-400 bg-red-400/10 border-t border-red-400/20 shrink-0">
+          <div className="px-6 py-2 text-xs text-[#e04040] bg-[#e04040]/10 border-t border-[#e04040]/20 shrink-0">
             {error}
           </div>
         )}
@@ -2034,11 +2192,11 @@ export function AIView({
             void attachImages(files)
           }}
           className={`px-6 py-3 border-t shrink-0 transition-colors ${
-            dragOver ? 'border-[#6366f1] bg-[#6366f1]/5' : 'border-[#2a2d42]'
+            dragOver ? 'border-[#7c3aed] bg-[#7c3aed]/5' : 'border-[#3b3b3b]'
           }`}
         >
           {!configReady && (
-            <p className="mb-2 text-[11px] text-orange-400">
+            <p className="mb-2 text-[11px] text-[#f08a34]">
               Configure a Base URL e o Model antes de enviar.
             </p>
           )}
@@ -2049,13 +2207,13 @@ export function AIView({
                   <img
                     src={img.dataUrl}
                     alt="Anexo"
-                    className="h-16 w-16 object-cover rounded-md border border-[#2a2d42]"
+                    className="h-16 w-16 object-cover rounded-md border border-[#3b3b3b]"
                   />
                   <button
                     onClick={() => removePendingImage(img.id)}
                     title="Remover"
                     aria-label="Remover imagem"
-                    className="absolute -top-1.5 -right-1.5 w-5 h-5 flex items-center justify-center rounded-full bg-[#1e2235] border border-[#2a2d42] text-[#8892a4] opacity-0 group-hover:opacity-100 hover:text-red-400 transition-opacity"
+                    className="absolute -top-1.5 -right-1.5 w-5 h-5 flex items-center justify-center rounded-full bg-[#2a2a2a] border border-[#3b3b3b] text-[#999999] opacity-0 group-hover:opacity-100 hover:text-[#e04040] transition-opacity"
                   >
                     <svg
                       width="9"
@@ -2080,9 +2238,9 @@ export function AIView({
             // switching chats mid-run is safe.
             <button
               onClick={() => void handleLoadConversation(runningConvId!)}
-              className="flex items-center gap-2 mb-2 px-1 text-xs text-[#8892a4] hover:text-[#e2e8f0] transition-colors"
+              className="flex items-center gap-2 mb-2 px-1 text-xs text-[#999999] hover:text-[#d4d4d4] transition-colors"
             >
-              <span className="w-3 h-3 shrink-0 rounded-full border-[1.5px] border-[#a5b4fc] border-t-transparent animate-spin" />
+              <span className="w-3 h-3 shrink-0 rounded-full border-[1.5px] border-[#a080f0] border-t-transparent animate-spin" />
               A IA está trabalhando em outra conversa — abrir
             </button>
           )}
@@ -2096,38 +2254,119 @@ export function AIView({
                 void attachImages(files)
               }}
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                const v = e.target.value
+                setInput(v)
+                // Skill autocomplete: open when user types /, filter as they type.
+                if (v.startsWith('/')) {
+                  setSkillMenuOpen(true)
+                } else {
+                  setSkillMenuOpen(false)
+                }
+              }}
               onKeyDown={(e) => {
+                // Tab in skill menu: select the first match and close.
+                if (e.key === 'Tab' && skillMenuOpen && matchedSkills.length > 0) {
+                  e.preventDefault()
+                  const skill = matchedSkills[0]
+                  setInput(`/${skill.name} `)
+                  setSkillMenuOpen(false)
+                  return
+                }
+                // Escape closes the skill menu without clearing input.
+                if (e.key === 'Escape' && skillMenuOpen) {
+                  e.preventDefault()
+                  setSkillMenuOpen(false)
+                  return
+                }
                 // Enter sends; Shift+Enter is a newline. Ctrl/Cmd+Enter sends
                 // too — neither sets shiftKey, so they fall out of the same
                 // condition, which is why this reads as one rule rather than
                 // three. Tested, because that is easy to break by "tidying".
-                if (e.key === 'Enter' && !e.shiftKey) {
+                if (e.key === 'Enter' && !e.shiftKey && !skillMenuOpen) {
                   e.preventDefault()
                   handleSend()
                 }
               }}
               placeholder="Descreva o projeto ou faça uma pergunta…"
               rows={2}
-              disabled={!configReady || busy}
+              disabled={!configReady || busyHere}
               // maxHeight repeats the JS cap so the box stays bounded even if a
               // measurement is off; min-h holds the original two-line resting
               // size, which the inline height would otherwise undercut.
               style={{ maxHeight: COMPOSER_MAX_PX }}
-              className="flex-1 resize-none overflow-y-auto min-h-[58px] px-3 py-2 rounded-lg bg-[#0d0f18] border border-[#2a2d42] text-sm text-[#e2e8f0] placeholder:text-[#4a5068] focus:outline-none focus:border-[#6366f1] disabled:opacity-50"
+              className="flex-1 resize-none overflow-y-auto min-h-[58px] px-3 py-2 rounded-lg bg-[#1b1b1b] border border-[#3b3b3b] text-sm text-[#d4d4d4] placeholder:text-[#666666] focus:outline-none focus:border-[#7c3aed] disabled:opacity-50"
             />
             <div className="flex flex-col gap-2">
               <button
                 onClick={handleSend}
                 disabled={
-                  !configReady || busy || (input.trim() === '' && pendingImages.length === 0)
+                  !configReady || busyHere || (input.trim() === '' && pendingImages.length === 0)
                 }
-                className="px-3 py-1.5 rounded-lg bg-[#1e2235] border border-[#2a2d42] text-sm text-[#e2e8f0] font-medium hover:bg-[#2a2d42] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                className="px-3 py-1.5 rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] text-sm text-[#d4d4d4] font-medium hover:bg-[#3b3b3b] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
                 Enviar
               </button>
             </div>
           </div>
+
+          {/* Skill visual chip: shown when input starts with /skill-name */}
+          {input.startsWith('/') && (() => {
+            const parts = input.slice(1).trim().split(/\s+/)
+            const name = parts[0]
+            const skill = skills.find((s) => s.name === name)
+            return (
+              <div className="mt-2 flex items-center gap-2">
+                <span
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium ${
+                    skill
+                      ? 'bg-[#46d478]/15 text-[#46d478] border border-[#46d478]/30'
+                      : 'bg-[#f0b820]/15 text-[#f0b820] border border-[#f0b820]/30'
+                  }`}
+                >
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                    <line x1="16" y1="13" x2="8" y2="13" />
+                    <line x1="16" y1="17" x2="8" y2="17" />
+                    <polyline points="10 9 9 9 8 9" />
+                  </svg>
+                  {skill ? `/${skill.name}` : `/${name}`}
+                </span>
+                {skill ? (
+                  <span className="text-[10px] text-[#46d478]/70">
+                    Skill reconhecida — corpo será enviado ao modelo
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-[#f0b820]/70">
+                    Skill não encontrada — texto enviado como está
+                  </span>
+                )}
+              </div>
+            )
+          })()}
+
+          {/* Skill autocomplete dropdown */}
+          {skillMenuOpen && matchedSkills.length > 0 && (
+            <div className="mt-1 rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] shadow-lg overflow-hidden max-h-48 overflow-y-auto">
+              {matchedSkills.map((skill) => (
+                <button
+                  key={skill.name}
+                  onClick={() => {
+                    setInput(`/${skill.name} `)
+                    setSkillMenuOpen(false)
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm text-[#d4d4d4] hover:bg-[#3b3b3b] transition-colors"
+                >
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0 text-[#999999]">
+                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                  </svg>
+                  <span className="font-medium">/{skill.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
