@@ -48,15 +48,15 @@
 | **Metas** | Acompanhamento de objetivos pessoais |
 | **Financeiro** | Transações, metas financeiras e análises, com listas de compras em múltiplas moedas (BRL, USD, JPY) |
 | **Canvas** | Notas adesivas livres em tela infinita, com links para tarefas |
-| **Arquivos** | Anexos por projeto, guardados localmente |
-| **Relatórios** | Visão geral de produtividade |
-| **Memória** | Assistente lembra decisões, tradeoffs e contexto entre conversas — você e o modelo gravam fatos que persistem. Painel dedicado para listar, fixar e restaurar memórias |
 | **Upcoming** | Tarefas com data de vencimento próxima |
+| **Relatórios** | Visão geral de produtividade |
 | **Busca** | Pesquisa rápida de tarefas |
-| **Multi-agente** | Vários chats de IA rodando em paralelo — o painel Agentes mostra o que cada um está fazendo, com gasto de tokens por agente |
-| **Skills** | Comandos `/skill-name` no chat que injetam system prompts customizados — crie, edite e importe arquivos `.md` |
+| **Arquivos** | Anexos por projeto, guardados localmente |
 | **Assistente de IA** | Chat com acesso aos seus dados via ferramentas — funciona com qualquer provedor compatível com a API da OpenAI (local ou hospedado). Suporte a imagens (arraste screenshots). Ações que alteram dados pedem aprovação antes de rodar |
 | **Agente de código** | Aponte um projeto para um diretório e peça alterações no código — edita arquivos e roda comandos com aprovação por ação. Sandbox obrigatório (ai-jail) confina comandos ao diretório do projeto |
+| **Multi-agente** | Vários chats de IA rodando em paralelo — o painel Agentes mostra o que cada um está fazendo, com gasto de tokens por agente |
+| **Skills** | Comandos `/skill-name` no chat que injetam system prompts customizados — crie, edite e importe arquivos `.md` |
+| **Memória** | Assistente lembra decisões, tradeoffs e contexto entre conversas — você e o modelo gravam fatos que persistem. Painel dedicado para listar, fixar e restaurar memórias |
 | **Importação via IA** | Cole JSON gerado por um LLM — o sidebar tem "Copiar tudo" para gerar um prompt pronto com schema e tags |
 | **Exportação para Excel** | Exporte projetos, tarefas, hábitos, metas e dados financeiros em `.xlsx` |
 | **Backup** | Exportação e restauração de dados em JSON, incluindo anexos, imagens de chat/tarefas e memórias |
