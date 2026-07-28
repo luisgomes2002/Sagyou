@@ -17,6 +17,7 @@ interface Props {
 export function DoneView({ projects, tasks, sprints, sprintFilter, onViewTask, onRestoreTask, onDeleteTask }: Props) {
   const projectsWithDone = useMemo(() =>
     projects
+      .filter((p) => !p.archivedAt)
       .map((project) => {
         const doneColIds = new Set(
           project.columns.filter(isDoneColumn).map((c) => c.id)

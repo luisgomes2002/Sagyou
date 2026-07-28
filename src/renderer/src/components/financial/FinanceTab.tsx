@@ -9,6 +9,7 @@ import { AddTransactionRow, TransactionRow } from './TransactionRow'
 
 interface FinanceTabProps {
   list: FinancialTable
+  allLists: FinancialTable[]
   activeMonth: { year: number; month: number }
   onMonthChange: (month: { year: number; month: number }) => void
   categoryFilter: string | null
@@ -23,6 +24,7 @@ interface FinanceTabProps {
 
 export function FinanceTab({
   list,
+  allLists,
   activeMonth,
   onMonthChange,
   categoryFilter,
@@ -41,6 +43,20 @@ export function FinanceTab({
     open: false, goalId: '', name: ''
   })
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [unlinkConfirm, setUnlinkConfirm] = useState<{
+    open: boolean
+    txId: string
+    desc: string
+  }>({ open: false, txId: '', desc: '' })
+
+  const handleUnlinkRequest = (txId: string, desc: string) => {
+    setUnlinkConfirm({ open: true, txId, desc })
+  }
+
+  const confirmUnlink = () => {
+    onUpdateTransaction(unlinkConfirm.txId, { linkedTransactionId: undefined })
+    setUnlinkConfirm((s) => ({ ...s, open: false }))
+  }
 
   const prevMonth = () => {
     onCategoryFilterChange(null)
@@ -274,8 +290,14 @@ export function FinanceTab({
                 key={tx.id}
                 tx={tx}
                 currency={currency}
+                allLists={allLists}
                 onUpdate={(updates) => onUpdateTransaction(tx.id, updates)}
                 onDelete={() => onDeleteTransaction(tx.id)}
+                onUnlink={
+                  tx.linkedTransactionId
+                    ? () => handleUnlinkRequest(tx.id, tx.description)
+                    : undefined
+                }
               />
             ))}
             {monthTxs.length === 0 && (
@@ -309,6 +331,15 @@ export function FinanceTab({
           setDeleteGoalConfirm((s) => ({ ...s, open: false }))
         }}
         onCancel={() => setDeleteGoalConfirm((s) => ({ ...s, open: false }))}
+      />
+
+      <ConfirmDialog
+        open={unlinkConfirm.open}
+        title="Desvincular transação"
+        message={`Desvincular "${unlinkConfirm.desc}"? A transação relacionada não será afetada.`}
+        confirmLabel="Desvincular"
+        onConfirm={confirmUnlink}
+        onCancel={() => setUnlinkConfirm((s) => ({ ...s, open: false }))}
       />
 
       <GoalHistoryModal

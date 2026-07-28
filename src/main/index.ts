@@ -89,6 +89,7 @@ import {
 import { searchConversations, briefConversationsForTask } from './conversation-search'
 import { fetchWeb } from './web-fetch'
 import { renderWeb } from './web-render'
+import { getExchangeRate } from './financial-exchange'
 import { captureBase, diffSince, lineDiff, type AgentBase, type DiffLineItem } from './code-diff'
 import { decodeDataUrl, mimeForExt, isImageFileName } from './chat-images'
 import { safeAttachmentName } from './backup-files'
@@ -2425,6 +2426,18 @@ app.whenReady().then(() => {
   ipcMain.handle('ai:web:fetch', (_, url: string, render?: boolean) =>
     render ? renderWeb(url) : fetchWeb(url)
   )
+
+  // Exchange rate from AwesomeAPI (primary) or Frankfurter (fallback).
+  // Cached for 24h in userData/financial-rates.json.
+  // Returns { rate: string, date: string, source: 'awesomeapi'|'frankfurter'|'cache'|'identity' }
+  ipcMain.handle('financial:exchange-rate:fetch', async (_, pair: string) => {
+    try {
+      const result = await getExchangeRate(pair)
+      return result
+    } catch (e) {
+      return { error: e instanceof Error ? e.message : 'Falha ao buscar cotação' }
+    }
+  })
 
   // Store a pasted image and hand back its id. The renderer has already
   // downscaled it; this checks the bytes are really an image before writing.

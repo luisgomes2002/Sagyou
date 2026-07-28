@@ -544,6 +544,16 @@ declare global {
           filename: string
         ) => Promise<{ success: boolean; cancelled?: boolean; error?: string }>
       }
+      financial: {
+        fetchExchangeRate: (
+          pair: string
+        ) => Promise<{
+          rate: string
+          date: string
+          source: 'awesomeapi' | 'frankfurter' | 'cache' | 'identity'
+          error?: string
+        }>
+      }
     }
   }
 }

@@ -43,6 +43,8 @@ export interface Project {
   order?: number
   createdAt: string
   updatedAt: string
+  /** ISO date when archived. Undefined = active project. */
+  archivedAt?: string
 }
 
 export type Priority = 'low' | 'medium' | 'high' | 'urgent'
@@ -110,7 +112,7 @@ export type Currency = 'BRL' | 'USD' | 'JPY'
 export const CURRENCY_CONFIG: Record<Currency, { symbol: string; decimals: number; label: string }> = {
   BRL: { symbol: 'R$', decimals: 2, label: 'Real' },
   USD: { symbol: '$',  decimals: 2, label: 'Dólar' },
-  JPY: { symbol: '¥',  decimals: 0, label: 'Iene' },
+  JPY: { symbol: '¥',  decimals: 1, label: 'Iene' },
 }
 
 export interface FinancialTransaction {
@@ -122,6 +124,10 @@ export interface FinancialTransaction {
   date: string
   category?: string
   fromShopping?: boolean
+  /** Id of a transaction in another table that this transaction is part of.
+   *  When set, the consolidated view treats the linked (parent) transaction as
+   *  already accounted for and excludes it from totals to avoid double-counting. */
+  linkedTransactionId?: string
 }
 
 export interface FinancialGoal {
