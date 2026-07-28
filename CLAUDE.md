@@ -30,7 +30,10 @@ npm run build:linux
 The app is a frameless Electron window split into three processes:
 
 **Main** (`src/main/`)
-- `index.ts` — creates the BrowserWindow, registers IPC handlers for `window:*`, `store:*`, `backup:*`, `files:*`, `excel:*`, `ai:*`. Also proxies all AI provider calls (keeps the API key out of the renderer and sidesteps CORS), runs the native code agent, and serves read-only source access to the assistant.
+- `index.ts` — creates the BrowserWindow, registers IPC handlers for `window:*`, `store:*`, `backup:*`, `files:*`, `excel:*`, `ai:*`. Also proxies all AI provider calls (keeps the API key out of the renderer and sidesteps CORS), runs the native code agent, and serves read-only source access to the assistant. Handlers for window, files/images, and backup have been extracted to `main/handlers/`.
+- `handlers/window.ts` — `registerWindowHandlers(ipcMain, getWindow)`. ⚠️ Takes a **getter** `() => mainWindow`, not the value — it's called before `createWindow()` runs, so capturing `mainWindow` directly would be `null`. Handlers for `window:minimize/maximize/close/is-maximized`.
+- `handlers/files.ts` — `registerFilesHandlers(ipcMain, deps)`. File upload/download/delete, Excel export, chat images (`ai:images:*`), and task images (`task:images:*`). Deps include `dialog`, `shell`, and the three image directories.
+- `handlers/backup.ts` — `registerBackupHandlers(ipcMain, deps)`. Backup export/import + `ai:import`. Manages the blob collectors/restorers for file attachments and images during backup.
 - `chat-images.ts` — images pasted/dropped into the chat, stored as **files** under `userData/chat-images/`. **The transcript keeps ids only, never base64**: `ai-conversations.json` is re-read and rewritten whole on every autosave *and* every keystroke of the history search, so inlined screenshots would drag both down permanently. `ChatMessage.imageIds` is additive (old files simply lack it); the bytes load into `imageData` on demand, and a missing file degrades to "[imagem indisponível]" with the turn's text intact.
   - `isImageFileName()` is a **security guard, not a tidiness check**: the id comes back from the renderer to read or delete a file, so it is a path in disguise (`../../ai-config.json`). `decodeDataUrl()` likewise refuses non-image data URLs rather than writing whatever it's handed under an image's name.
   - `utils/images.ts` downscales to `MAX_IMAGE_EDGE` (1024) before saving, kept as PNG — these are screenshots and JPEG artefacts around small text are what make them unreadable to a vision model. **The agent resends the whole conversation every step**, so an image in the history is re-uploaded on each one — up to `AUTO_MAX_STEPS` (100) times in automatic mode, more if the user raises `maxSteps`.
@@ -70,12 +73,12 @@ The app is a frameless Electron window split into three processes:
 
 **Renderer** (`src/renderer/src/`)
 - Single-page React app. Entry point is `main.tsx` → `App.tsx`
-- All state lives in one Zustand store: `store/kanban.ts`
+- All state lives in one Zustand store: `store/kanban.ts` composes the slices in `store/slices/`
 - `App.tsx` owns all modal state and UI event handlers, passing them as props down to views and modals
 
 ### State layer
 
-`store/kanban.ts` exports `useKanbanStore` (Zustand). Every mutation calls `_persist()` internally, which serializes the full state and calls `storage.save()` — the payload is sent over IPC and written to SQLite by the main process (see Main above).
+`store/kanban.ts` exports `useKanbanStore` (Zustand). It composes 9 domain slices from `store/slices/` (projects, tasks, financial, habits, goals, notes, planner, files, backup) plus the core lifecycle (`loadData`, `_persist`, `_flushPersist`). Every mutation calls `_persist()` internally, which serializes the full state and calls `storage.save()` — the payload is sent over IPC and written to SQLite by the main process (see Main above).
 
 Storage is injected via `IStorageAdapter` (`services/StorageAdapter.ts`). In production, `ElectronStorage` is used (calls `window.electronAPI`). `WebStorage` is a parallel `localStorage`-backed implementation kept for an eventual browser build — it is not wired up in the app, but it must keep satisfying `IStorageAdapter`, so a change to that interface means changing both adapters. In tests, `ElectronStorage` is vi-mocked in `__tests__/setup.ts`.
 
@@ -112,6 +115,22 @@ Soft deletes use a `Tombstone[]` array. On `importBackup`, all local state is re
 **The run is not AIView's** — it lives in `store/aiRun.ts`, above the view switch, and `components/AiRunHost.tsx` is mounted by `App` next to that switch. This is load-bearing, not tidiness: `AIView` is unmounted the moment another view is active, and while the run was component state, navigating away silently threw it away — the loop carried on (and carried on billing), but its answer landed on an unmounted component and was never saved, and a run parked on an approval could never be answered, so it held its progress forever. Anything a run owns (transcript, whether it's `running`, streaming text, usage, the open chat's id, the chats it is *running for*, parked transcripts, the approval queue) therefore goes in the store; what the *view* owns (composer, history/config panels, the Gerar Tasks review, attachments, the rename box) stays in `AIView`.
 
 `AiRunHost` owns the two things that must not depend on `AIView` being on screen: the **conversation autosave** (an answer arriving while the user is on the Board still has to be written; its saves bump `savedTick`, which is how a mounted `AIView` knows to refresh its history list) and the **approval card**, rendered there and nowhere else so a background run can be answered instead of parking. Both bind Escape, and exactly one acts: the host binds it only when the AI view is closed, because `AIView` peels one layer at a time (a confirmation stacked on the card must take the press first) and a second listener would reach past that ordering.
+- **The autosave is a `useEffect` único.** Dois efeitos separados
+  (conversa ativa + parked) disputavam o `ai-conversations.json` com
+  load-modify-save intercalados — o último sobrescrevia o primeiro.
+- 🔴 **`saveConversations` escreve em `.tmp` e renomeia.** `writeFileSync` direto
+  corrompia o JSON se o processo crashasse no meio da escrita, deixando o
+  arquivo truncado. O rename é atômico: ou o arquivo original sobrevive, ou o
+  novo está completo.
+- **`loadRunIndex` faz poda lazy de runs expiradas.** Execuções de agente têm
+  TTL de 24h (`agent-runs.ts`), mas a poda só rodava quando um novo agente
+  terminava. Agora `loadRunIndex()` chama `pruneRuns` em toda leitura — runs
+  antigas somem mesmo sem novos agentes.
+- **`pruneConversations` limpa o histórico na inicialização.** Conversas inativas
+  há mais de 14 dias são removidas; se sobrarem mais de 50, as mais antigas vão
+  junto. As imagens (`chat-images/`) das conversas removidas também são apagadas
+  do disco, desde que nenhuma conversa mantida ainda as referencie. Roda uma vez
+  em `app.whenReady()`, antes de `createWindow()`.
 
 **N agents at once (multi-agent).** The run store is **desingletonized** so several chat agents can work in parallel — even the same project. The per-run fields are collections keyed by conversation id: `running: Set<convId>` (was the global `busy`), `streaming` / `streamingTools: Record<convId, …>`, `autoApprove` / `abortRequested: Set<convId>`, `pendingApprovals: PendingApproval[]` (a **queue**, one card per parked run — was a single `pendingApproval`), and `approvalResolvers: Map<convId, resolver>`. `runProjects: Record<convId, projectId>` records what each live run is working on. See `MULTI_AGENT_PLAN.md` for the phased design (this is Phases 1/3/4).
 
@@ -239,7 +258,7 @@ Not everything lives in the DB. Also in `userData`:
 | `chat-images/` | chat image bytes (`<uuid>.<ext>`); the transcript keeps ids only (see `chat-images.ts`) |
 | `task-images/` | **task attachment image bytes** (`<id><ext>`) — the `task_images` table holds only metadata (`id, name, ext, size, added_at`). Moved off the DB (they used to be base64 in `task_images.data_url`, which bloated the store loaded whole into the renderer); the renderer downscales on add (`toTaskImageDataUrl`, JPEG 1600px) and loads bytes on demand for display, exactly like chat images. `migrateTaskImagesToDisk` moves legacy rows out; the bytes ride the backup as `taskImages` |
 | `ai-config.json` | AI provider base URL, API key, model; optional `modelComplex` (chat routing), `codeAgent: {baseUrl,apiKey,model}` (native code agent, empty fields fall back via `resolveCodeAgentConfig`), and the ai-jail sandbox flags `sandboxEnabled` (absent = required) / `sandboxOnboardingDismissed` |
-| `ai-conversations.json` | AI chat history (per chat: `messages`, `usage`, and `titleCustom` — all optional, absent on older files) |
+| `ai-conversations.json` | AI chat history (per chat: `messages`, `usage`, and `titleCustom` — all optional, absent on older files). Pruned on startup: conversations inactive for 14+ days are dropped; if more than 50 remain the oldest go too. Chat images of removed conversations are deleted from `chat-images/` if no kept conversation still references them. |
 | `ai-usage-log.json` | per-call spend log (today / 30 days / total / by model); capped at `MAX_USAGE_ENTRIES` |
 | `ai-run-metrics.json` | one record per agent run (model, steps, tokens, redundant searches, repeated reads, whether it hit the step cap), for comparing model efficiency over time — capped at `MAX_RUN_METRICS` |
 | `agent-runs/` | archived code-agent runs: `index.json` (metadata the picker lists) + one `<id>.json` per run holding its frozen log and diff |

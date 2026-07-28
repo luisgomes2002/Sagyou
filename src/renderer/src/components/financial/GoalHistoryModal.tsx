@@ -1,6 +1,7 @@
 ﻿import Decimal from 'decimal.js'
 import type { FinancialGoal, FinancialTransaction, Currency } from '../../types'
 import { MONTH_NAMES, formatCurrency, formatDateBR, D } from './shared'
+import { ModalBase } from '../ModalBase'
 
 interface GoalHistoryModalProps {
   open: boolean
@@ -61,8 +62,7 @@ export function GoalHistoryModal({ open, goals, transactions, accBalance, curren
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="fixed inset-0 bg-black/60" onClick={onClose} />
+    <ModalBase open={true} onClose={onClose}>
       <div className="relative z-10 w-[580px] max-h-[75vh] rounded-xl border border-[#3b3b3b] bg-[#232323] shadow-2xl flex flex-col">
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#3b3b3b] shrink-0">
           <div className="flex items-center gap-2">
@@ -147,6 +147,6 @@ export function GoalHistoryModal({ open, goals, transactions, accBalance, curren
           })}
         </div>
       </div>
-    </div>
+    </ModalBase>
   )
 }

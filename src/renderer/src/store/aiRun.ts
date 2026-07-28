@@ -4,6 +4,7 @@ import { runAgent, resolveMaxSteps } from '../ai/agent'
 import { CODE_TOOL_DEFS } from '../ai/tools'
 import codePromptMd from '../ai/code-prompt.md?raw'
 import { useKanbanStore } from './kanban'
+import { setAdd, setDel } from '../utils/immutable'
 import type { AIConfig, PendingCall, TokenUsage, ContentPart } from '../ai/agent'
 
 // ---------------------------------------------------------------------------
@@ -160,14 +161,6 @@ export interface PendingApproval {
   convId: string
   writes: PendingCall[]
   selected: Set<string>
-}
-
-/** Immutable Set add/remove — Zustand needs a new reference to notify. */
-const setAdd = (s: Set<string>, v: string): Set<string> => new Set(s).add(v)
-const setDel = (s: Set<string>, v: string): Set<string> => {
-  const n = new Set(s)
-  n.delete(v)
-  return n
 }
 
 /**

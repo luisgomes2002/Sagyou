@@ -1,15 +1,13 @@
 import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
-import { join, extname, basename, relative, sep } from 'path'
+import { join, relative, sep } from 'path'
 import {
   readFileSync,
   writeFileSync,
-  copyFileSync,
   mkdirSync,
   existsSync,
   unlinkSync,
   renameSync,
   statSync,
-  readdirSync,
   accessSync,
   constants
 } from 'fs'
@@ -91,7 +89,7 @@ import { fetchWeb } from './web-fetch'
 import { renderWeb } from './web-render'
 import { getExchangeRate } from './financial-exchange'
 import { captureBase, diffSince, lineDiff, type AgentBase, type DiffLineItem } from './code-diff'
-import { decodeDataUrl, mimeForExt, isImageFileName } from './chat-images'
+import { isImageFileName } from './chat-images'
 import { safeAttachmentName } from './backup-files'
 import {
   diffFileCount,
@@ -111,6 +109,9 @@ import {
   importSkill as importSkillDialog,
   skillsDir
 } from './skills'
+import { registerWindowHandlers } from './handlers/window'
+import { registerFilesHandlers } from './handlers/files'
+import { registerBackupHandlers } from './handlers/backup'
 import icon from '../../resources/icon.png?asset'
 
 let mainWindow: BrowserWindow | null = null
@@ -793,7 +794,22 @@ function agentRunPath(id: unknown): string | null {
 function loadRunIndex(): AgentRunMeta[] {
   try {
     if (!existsSync(agentRunsIndexPath())) return []
-    return normalizeRuns(JSON.parse(readFileSync(agentRunsIndexPath(), 'utf-8')))
+    const raw = JSON.parse(readFileSync(agentRunsIndexPath(), 'utf-8'))
+    const runs = normalizeRuns(raw)
+    // Lazy prune: drop runs past their TTL and payload files, even when no new
+    // run was just archived. Without this, old runs persist forever in the index
+    // until someone happens to fire a new agent.
+    const { keep, drop } = pruneRuns(runs)
+    if (drop.length > 0) {
+      saveRunIndex(keep)
+      for (const gone of drop) {
+        const p = agentRunPath(gone.id)
+        if (p && existsSync(p)) {
+          try { unlinkSync(p) } catch { /* best-effort */ }
+        }
+      }
+    }
+    return keep
   } catch {
     return []
   }
@@ -917,7 +933,84 @@ function loadConversations(): StoredConversation[] {
 }
 
 function saveConversations(list: StoredConversation[]): void {
-  writeFileSync(aiConversationsPath(), JSON.stringify(list), 'utf-8')
+  const path = aiConversationsPath()
+  const tmp = path + '.tmp'
+  writeFileSync(tmp, JSON.stringify(list), 'utf-8')
+  renameSync(tmp, path)
+}
+
+/**
+ * Remove stale conversations, along with their chat-image files.
+ *
+ * Two rules, applied in order:
+ * 1. Conversations last active more than 14 days ago are dropped.
+ * 2. If more than MAX_CONVERSATIONS remain, the oldest ones are dropped.
+ *
+ * Hard delete — there is no archive or undo.  The motivation is a
+ * history that grows unboundedly with every chat, where most of it
+ * is stale and never reopened.
+ */
+const PRUNE_CONVERSATION_TTL_MS = 14 * 24 * 60 * 60 * 1000
+const MAX_CONVERSATIONS = 50
+
+function pruneConversations(): void {
+  const all = loadConversations()
+  if (all.length === 0) return
+
+  // Newest first — both rules keep the most recent chats.
+  const sorted = [...all].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+
+  const cutoff = new Date(Date.now() - PRUNE_CONVERSATION_TTL_MS)
+  const keep: StoredConversation[] = []
+  const prune: StoredConversation[] = []
+
+  for (const c of sorted) {
+    const updated = new Date(c.updatedAt)
+    if (updated >= cutoff && keep.length < MAX_CONVERSATIONS) {
+      keep.push(c)
+    } else {
+      prune.push(c)
+    }
+  }
+
+  if (prune.length === 0) return
+
+  // Collect image ids from pruned conversations that no kept conversation
+  // still references — otherwise we'd delete a shared image.
+  const keptImageIds = new Set(keep.flatMap((c) => c.messages.flatMap((m) => m.imageIds ?? [])))
+  const prunedImageIds = prune.flatMap((c) => c.messages.flatMap((m) => m.imageIds ?? []))
+  const orphanIds = [...new Set(prunedImageIds)].filter((id) => !keptImageIds.has(id))
+  const toDelete = orphanIds
+    .map((id) => chatImagePath(id))
+    .filter((p): p is string => p !== null)
+
+  for (const full of toDelete) {
+    try {
+      if (existsSync(full)) unlinkSync(full)
+    } catch {
+      /* already gone or locked — not worth failing over */
+    }
+  }
+
+  saveConversations(keep)
+  const byAge = prune.filter((c) => new Date(c.updatedAt) < cutoff).length
+  const byCount = prune.length - byAge
+  const parts: string[] = []
+  if (byAge > 0) parts.push(`${byAge} por idade (>14 dias)`)
+  if (byCount > 0) parts.push(`${byCount} por limite (max ${MAX_CONVERSATIONS})`)
+  console.log(
+    `[conversations] pruned ${prune.length} conversation(s) — ${parts.join(', ')}` +
+      (toDelete.length > 0 ? `; ${toDelete.length} image file(s) deleted` : '')
+  )
+}
+
+/**
+ * Serialise writes to `ai-conversations.json` so a save that loaded the file
+ * before another one finished doesn't overwrite the other's changes.
+ */
+let _saveQueue: Promise<void> = Promise.resolve()
+function safeConversationsSave(op: () => void): void {
+  _saveQueue = _saveQueue.then(() => { op() })
 }
 
 function createWindow(): void {
@@ -995,13 +1088,17 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  ipcMain.handle('window:minimize', () => mainWindow?.minimize())
-  ipcMain.handle('window:maximize', () => {
-    if (mainWindow?.isMaximized()) mainWindow.restore()
-    else mainWindow?.maximize()
+  registerWindowHandlers(ipcMain, () => mainWindow)
+  registerFilesHandlers(ipcMain, {
+    mainWindow,
+    dialog,
+    shell,
+    filesDir,
+    chatImagesDir: chatImagesDir(),
+    taskImagesDir: taskImagesDir(),
+    userDataPath: app.getPath('userData'),
+    sep
   })
-  ipcMain.handle('window:close', () => mainWindow?.close())
-  ipcMain.handle('window:is-maximized', () => mainWindow?.isMaximized())
 
   ipcMain.handle('store:load', () => loadData())
 
@@ -1009,265 +1106,14 @@ app.whenReady().then(() => {
     saveData(data)
   })
 
-  // Read every attachment blob named by the backup's file metadata, base64. A
-  // missing blob is skipped (metadata without bytes still restores as a broken
-  // attachment, no worse than before). safeAttachmentName rejects a hand-edited
-  // id/ext even on export — the ids are ours, but the guard is cheap.
-  const collectFileBlobs = (files: unknown): { id: string; ext: string; base64: string }[] => {
-    if (!Array.isArray(files)) return []
-    const out: { id: string; ext: string; base64: string }[] = []
-    for (const f of files) {
-      const id = (f as { id?: unknown })?.id
-      const ext = (f as { ext?: unknown })?.ext ?? ''
-      const name = safeAttachmentName(id, ext)
-      if (!name) continue
-      const full = join(filesDir, name)
-      if (!full.startsWith(filesDir + sep) || !existsSync(full)) continue
-      try {
-        out.push({
-          id: id as string,
-          ext: ext as string,
-          base64: readFileSync(full).toString('base64')
-        })
-      } catch {
-        /* unreadable blob is skipped, not fatal to the backup */
-      }
-    }
-    return out
-  }
-
-  // Every file in chat-images/ is a chat image (named <uuid>.<ext>); read them
-  // all, filtered by the same guard the read/delete paths use.
-  const collectChatImages = (): { id: string; base64: string }[] => {
-    const dir = chatImagesDir()
-    if (!existsSync(dir)) return []
-    const out: { id: string; base64: string }[] = []
-    for (const id of readdirSync(dir)) {
-      const full = chatImagePath(id)
-      if (!full || !existsSync(full)) continue
-      try {
-        out.push({ id, base64: readFileSync(full).toString('base64') })
-      } catch {
-        /* skip an unreadable image */
-      }
-    }
-    return out
-  }
-
-  // Task-image bytes, keyed by the {id, ext} metadata carried on each task. Same
-  // shape and guard as file attachments; walks tasks[].images.
-  const collectTaskImageBlobs = (tasks: unknown): { id: string; ext: string; base64: string }[] => {
-    if (!Array.isArray(tasks)) return []
-    const out: { id: string; ext: string; base64: string }[] = []
-    for (const t of tasks) {
-      const imgs = (t as { images?: unknown })?.images
-      if (!Array.isArray(imgs)) continue
-      for (const img of imgs) {
-        const id = (img as { id?: unknown })?.id
-        const ext = (img as { ext?: unknown })?.ext ?? ''
-        const full = taskImagePath(id, ext)
-        if (!full || !existsSync(full)) continue
-        try {
-          out.push({
-            id: id as string,
-            ext: ext as string,
-            base64: readFileSync(full).toString('base64')
-          })
-        } catch {
-          /* unreadable blob is skipped */
-        }
-      }
-    }
-    return out
-  }
-
-  ipcMain.handle('backup:export', async (_, backup) => {
-    const date = new Date().toISOString().split('T')[0]
-    const { filePath, canceled } = await dialog.showSaveDialog({
-      defaultPath: `kanban-backup-${date}.json`,
-      filters: [{ name: 'JSON', extensions: ['json'] }]
-    })
-    if (canceled || !filePath) return { success: false, cancelled: true }
-    // Inject the physical bytes here, in main, so they never cross IPC: the
-    // renderer sent structured data + file/image metadata, and the blobs live on disk.
-    const full = {
-      ...backup,
-      fileBlobs: collectFileBlobs(backup?.files),
-      chatImages: collectChatImages(),
-      taskImages: collectTaskImageBlobs(backup?.tasks)
-    }
-    writeFileSync(filePath, JSON.stringify(full, null, 2), 'utf-8')
-    return { success: true }
-  })
-
-  // Restore attachment/chat-image bytes to disk. The id/ext come from an
-  // untrusted backup, so every write goes through safeAttachmentName/
-  // isImageFileName + a startsWith re-check — a traversal id writes nothing.
-  const restoreFileBlobs = (blobs: unknown): void => {
-    if (!Array.isArray(blobs)) return
-    if (!existsSync(filesDir)) mkdirSync(filesDir, { recursive: true })
-    for (const b of blobs) {
-      const name = safeAttachmentName(
-        (b as { id?: unknown })?.id,
-        (b as { ext?: unknown })?.ext ?? ''
-      )
-      const b64 = (b as { base64?: unknown })?.base64
-      if (!name || typeof b64 !== 'string') continue
-      const full = join(filesDir, name)
-      if (!full.startsWith(filesDir + sep)) continue
-      try {
-        writeFileSync(full, Buffer.from(b64, 'base64'))
-      } catch {
-        /* one bad blob doesn't abort the restore */
-      }
-    }
-  }
-
-  const restoreChatImages = (images: unknown): void => {
-    if (!Array.isArray(images)) return
-    if (!existsSync(chatImagesDir())) mkdirSync(chatImagesDir(), { recursive: true })
-    for (const img of images) {
-      const id = (img as { id?: unknown })?.id
-      const b64 = (img as { base64?: unknown })?.base64
-      const full = chatImagePath(id)
-      if (!full || typeof b64 !== 'string') continue
-      try {
-        writeFileSync(full, Buffer.from(b64, 'base64'))
-      } catch {
-        /* skip a bad image */
-      }
-    }
-  }
-
-  const restoreTaskImages = (blobs: unknown): void => {
-    if (!Array.isArray(blobs)) return
-    if (!existsSync(taskImagesDir())) mkdirSync(taskImagesDir(), { recursive: true })
-    for (const b of blobs) {
-      const full = taskImagePath((b as { id?: unknown })?.id, (b as { ext?: unknown })?.ext ?? '')
-      const b64 = (b as { base64?: unknown })?.base64
-      if (!full || typeof b64 !== 'string') continue
-      try {
-        writeFileSync(full, Buffer.from(b64, 'base64'))
-      } catch {
-        /* one bad blob doesn't abort the restore */
-      }
-    }
-  }
-
-  ipcMain.handle('backup:import', async () => {
-    const { filePaths, canceled } = await dialog.showOpenDialog({
-      filters: [{ name: 'JSON', extensions: ['json'] }],
-      properties: ['openFile']
-    })
-    if (canceled || filePaths.length === 0) return { success: false, cancelled: true }
-    try {
-      const content = readFileSync(filePaths[0], 'utf-8')
-      const data = JSON.parse(content)
-      // Write the blobs to disk here and strip them from the payload: the
-      // renderer only needs the structured data + file metadata, not megabytes
-      // of base64 crossing IPC. Absent keys (a pre-v5 backup) restore nothing.
-      restoreFileBlobs(data?.fileBlobs)
-      restoreChatImages(data?.chatImages)
-      restoreTaskImages(data?.taskImages)
-      if (data && typeof data === 'object') {
-        delete data.fileBlobs
-        delete data.chatImages
-        delete data.taskImages
-      }
-      return { success: true, data }
-    } catch {
-      return { success: false, error: 'Arquivo inválido' }
-    }
-  })
-
-  ipcMain.handle('files:upload', async () => {
-    const { filePaths, canceled } = await dialog.showOpenDialog({
-      title: 'Selecionar arquivos',
-      properties: ['openFile', 'multiSelections']
-    })
-    if (canceled || filePaths.length === 0) return []
-    const results: { id: string; name: string; ext: string; size: number; createdAt: string }[] = []
-    for (const filePath of filePaths) {
-      try {
-        const id = randomUUID()
-        const ext = extname(filePath)
-        const name = basename(filePath)
-        const size = statSync(filePath).size
-        copyFileSync(filePath, join(filesDir, `${id}${ext}`))
-        results.push({ id, name, ext, size, createdAt: new Date().toISOString() })
-      } catch {
-        // skip files that can't be copied
-      }
-    }
-    return results
-  })
-
-  ipcMain.handle('files:delete', (_, id: string, ext: string) => {
-    try {
-      const filePath = join(filesDir, `${id}${ext}`)
-      if (existsSync(filePath)) unlinkSync(filePath)
-      return { success: true }
-    } catch {
-      return { success: false }
-    }
-  })
-
-  ipcMain.handle('files:open', async (_, id: string, ext: string) => {
-    const filePath = join(filesDir, `${id}${ext}`)
-    const error = await shell.openPath(filePath)
-    return { success: !error, error: error || undefined }
-  })
-
-  ipcMain.handle('files:openInBrowser', async (_, id: string, ext: string) => {
-    const filePath = join(filesDir, `${id}${ext}`)
-    try {
-      await shell.openExternal(`file://${filePath}`)
-      return { success: true }
-    } catch (e) {
-      return { success: false, error: String(e) }
-    }
-  })
-
-  ipcMain.handle('files:download', async (_, id: string, name: string, ext: string) => {
-    const { filePath: dest, canceled } = await dialog.showSaveDialog({
-      defaultPath: name,
-      filters: [{ name: 'Todos os arquivos', extensions: ['*'] }]
-    })
-    if (canceled || !dest) return { success: false, cancelled: true }
-    try {
-      copyFileSync(join(filesDir, `${id}${ext}`), dest)
-      return { success: true }
-    } catch {
-      return { success: false, error: 'Erro ao salvar arquivo' }
-    }
-  })
-
-  ipcMain.handle('excel:export', async (_, buffer: Buffer, filename: string) => {
-    const { filePath, canceled } = await dialog.showSaveDialog({
-      defaultPath: filename,
-      filters: [{ name: 'Excel', extensions: ['xlsx'] }]
-    })
-    if (canceled || !filePath) return { success: false, cancelled: true }
-    try {
-      writeFileSync(filePath, Buffer.from(buffer))
-      return { success: true }
-    } catch {
-      return { success: false, error: 'Erro ao salvar arquivo' }
-    }
-  })
-
-  ipcMain.handle('ai:import', async () => {
-    const { filePaths, canceled } = await dialog.showOpenDialog({
-      filters: [{ name: 'JSON', extensions: ['json'] }],
-      properties: ['openFile']
-    })
-    if (canceled || filePaths.length === 0) return { success: false, cancelled: true }
-    try {
-      const content = readFileSync(filePaths[0], 'utf-8')
-      return { success: true, data: JSON.parse(content) }
-    } catch {
-      return { success: false, error: 'Arquivo inválido' }
-    }
+  registerBackupHandlers(ipcMain, {
+    dialog,
+    filesDir,
+    chatImagesDir: chatImagesDir(),
+    taskImagesDir: taskImagesDir(),
+    sep,
+    chatImagePath,
+    taskImagePath
   })
 
   ipcMain.handle('ai:config:get', () => loadAIConfig())
@@ -2439,93 +2285,6 @@ app.whenReady().then(() => {
     }
   })
 
-  // Store a pasted image and hand back its id. The renderer has already
-  // downscaled it; this checks the bytes are really an image before writing.
-  ipcMain.handle('ai:images:save', (_, dataUrl: string) => {
-    const decoded = decodeDataUrl(dataUrl)
-    if ('error' in decoded) return decoded
-    try {
-      if (!existsSync(chatImagesDir())) mkdirSync(chatImagesDir(), { recursive: true })
-      const id = `${randomUUID()}.${decoded.ext}`
-      writeFileSync(join(chatImagesDir(), id), decoded.bytes)
-      return { id }
-    } catch (e) {
-      return { error: e instanceof Error ? e.message : 'Falha ao salvar a imagem' }
-    }
-  })
-
-  ipcMain.handle('ai:images:get', (_, id: string) => {
-    const full = chatImagePath(id)
-    if (!full || !existsSync(full)) return { error: 'Imagem não encontrada' }
-    try {
-      const ext = id.split('.').pop() ?? ''
-      const b64 = readFileSync(full).toString('base64')
-      return { dataUrl: `data:${mimeForExt(ext)};base64,${b64}` }
-    } catch {
-      return { error: 'Falha ao ler a imagem' }
-    }
-  })
-
-  // Called when a conversation is deleted: the file has no other owner, so
-  // leaving it behind orphans it on disk forever.
-  ipcMain.handle('ai:images:delete', (_, ids: string[]) => {
-    if (!Array.isArray(ids)) return
-    for (const id of ids) {
-      const full = chatImagePath(id)
-      if (full && existsSync(full)) {
-        try {
-          unlinkSync(full)
-        } catch {
-          /* already gone, or locked — not worth failing the delete over */
-        }
-      }
-    }
-  })
-
-  // --- Task images (bytes on disk; the DB holds only metadata) ---
-  // The renderer downscales (toTaskImageDataUrl) and hands over a dataUrl; this
-  // checks the bytes are really an image, then writes task-images/<uuid><ext>.
-  ipcMain.handle('task:images:save', (_, dataUrl: string) => {
-    const decoded = decodeDataUrl(dataUrl)
-    if ('error' in decoded) return decoded
-    try {
-      if (!existsSync(taskImagesDir())) mkdirSync(taskImagesDir(), { recursive: true })
-      const id = randomUUID()
-      const ext = `.${decoded.ext}`
-      writeFileSync(join(taskImagesDir(), `${id}${ext}`), decoded.bytes)
-      return { id, ext, size: decoded.bytes.length }
-    } catch (e) {
-      return { error: e instanceof Error ? e.message : 'Falha ao salvar a imagem' }
-    }
-  })
-
-  ipcMain.handle('task:images:get', (_, id: string, ext: string) => {
-    const full = taskImagePath(id, ext)
-    if (!full || !existsSync(full)) return { error: 'Imagem não encontrada' }
-    try {
-      const b64 = readFileSync(full).toString('base64')
-      return { dataUrl: `data:${mimeForExt(ext.replace(/^\./, ''))};base64,${b64}` }
-    } catch {
-      return { error: 'Falha ao ler a imagem' }
-    }
-  })
-
-  // Called when a task (or one of its images) is removed: the file has no other
-  // owner. Items are {id, ext}; a traversal shape resolves to null and is skipped.
-  ipcMain.handle('task:images:delete', (_, items: { id: string; ext: string }[]) => {
-    if (!Array.isArray(items)) return
-    for (const it of items) {
-      const full = taskImagePath(it?.id, it?.ext)
-      if (full && existsSync(full)) {
-        try {
-          unlinkSync(full)
-        } catch {
-          /* already gone or locked — not worth failing over */
-        }
-      }
-    }
-  })
-
   ipcMain.handle('ai:skills:list', () => listSkills(skillsPath()))
 
   ipcMain.handle('ai:skills:save', (_, input: { name: string; body: string; oldName?: string }) => {
@@ -2572,32 +2331,30 @@ app.whenReady().then(() => {
         usage?: TokenUsage
       }
     ) => {
-      const list = loadConversations()
-      const now = new Date().toISOString()
-      const idx = list.findIndex((c) => c.id === conv.id)
-      if (idx >= 0) {
-        list[idx] = {
-          ...list[idx],
-          // A renamed chat keeps its name. The caller derives a title from the
-          // first message on every save and has no idea the user renamed it, so
-          // honouring `conv.title` here would undo the rename on the next
-          // keystroke of the reply.
-          title: list[idx].titleCustom ? list[idx].title : conv.title,
-          messages: conv.messages,
-          usage: conv.usage,
-          updatedAt: now
+      safeConversationsSave(() => {
+        const list = loadConversations()
+        const now = new Date().toISOString()
+        const idx = list.findIndex((c) => c.id === conv.id)
+        if (idx >= 0) {
+          list[idx] = {
+            ...list[idx],
+            title: list[idx].titleCustom ? list[idx].title : conv.title,
+            messages: conv.messages,
+            usage: conv.usage,
+            updatedAt: now
+          }
+        } else {
+          list.push({
+            id: conv.id,
+            title: conv.title,
+            messages: conv.messages,
+            usage: conv.usage,
+            createdAt: now,
+            updatedAt: now
+          })
         }
-      } else {
-        list.push({
-          id: conv.id,
-          title: conv.title,
-          messages: conv.messages,
-          usage: conv.usage,
-          createdAt: now,
-          updatedAt: now
-        })
-      }
-      saveConversations(list)
+        saveConversations(list)
+      })
     }
   )
 
@@ -2661,6 +2418,8 @@ app.whenReady().then(() => {
       }))
     saveConversations(clean)
   })
+
+  pruneConversations()
 
   createWindow()
 

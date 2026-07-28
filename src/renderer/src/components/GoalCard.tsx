@@ -1,5 +1,6 @@
 ﻿import { useState } from 'react'
 import type { Goal, GoalEntry } from '../types'
+import { todayUTCISO as todayISO } from '../utils/dates'
 
 const fmtNum = (n: number) => parseFloat(n.toFixed(4)).toString()
 
@@ -7,8 +8,6 @@ const fmtDate = (iso: string) => {
   const [y, m, d] = iso.split('-')
   return `${d}/${m}/${y?.slice(-2)}`
 }
-
-const todayISO = () => new Date().toISOString().slice(0, 10)
 
 interface Props {
   goal: Goal
