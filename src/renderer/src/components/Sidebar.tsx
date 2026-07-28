@@ -30,6 +30,8 @@ interface Props {
   onEditProject: (project: Project) => void
   onMoveProject: (id: string, direction: 'up' | 'down') => void
   onDeleteProject: (project: Project) => void
+  onArchiveProject: (id: string) => void
+  onUnarchiveProject: (id: string) => void
   onExportBackup: () => void
   onImportBackup: () => void
   onImportAI: () => void
@@ -55,6 +57,8 @@ export function Sidebar({
   onEditProject,
   onMoveProject,
   onDeleteProject,
+  onArchiveProject,
+  onUnarchiveProject,
   onExportBackup,
   onImportBackup,
   onImportAI,
@@ -64,19 +68,28 @@ export function Sidebar({
   const runningCount = useAiRunStore((s) => s.running.size)
   const [menuOpen, setMenuOpen] = useState(false)
   const [projectMenuId, setProjectMenuId] = useState<string | null>(null)
-  const [projectMenuPos, setProjectMenuPos] = useState({ top: 0, right: 0 })
+  const [projectMenuPos, setProjectMenuPos] = useState<{
+    right: number
+    top?: number
+    bottom?: number
+  }>({ top: 0, right: 0 })
   const jsonInfoRef = useRef<HTMLButtonElement>(null)
   const [showJsonExample, setShowJsonExample] = useState(false)
   const [jsonExamplePos, setJsonExamplePos] = useState({ top: 0, left: 0 })
   const [jsonCopied, setJsonCopied] = useState(false)
 
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({})
+  const [showArchived, setShowArchived] = useState(false)
 
   const toggleSection = (key: string) => {
     setCollapsedSections((prev) => ({ ...prev, [key]: !prev[key] }))
   }
 
   const isCollapsed = (key: string) => collapsedSections[key] ?? false
+
+  const sortedProjects = [...projects].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+  const activeProjects = sortedProjects.filter((p) => !p.archivedAt)
+  const archivedProjects = sortedProjects.filter((p) => p.archivedAt)
 
   const JSON_EXAMPLE = `{
   "tasks": [
@@ -116,7 +129,19 @@ export function Sidebar({
       return
     }
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    setProjectMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right })
+    const project = projects.find((p) => p.id === projectId)
+    const itemCount = project?.archivedAt ? 3 : 5
+    const estimatedHeight = itemCount * 36 + 10
+    const spaceBelow = window.innerHeight - rect.bottom - 4
+    const pos: { right: number; top?: number; bottom?: number } = {
+      right: window.innerWidth - rect.right
+    }
+    if (spaceBelow >= estimatedHeight) {
+      pos.top = rect.bottom + 4
+    } else {
+      pos.bottom = window.innerHeight - rect.top + 4
+    }
+    setProjectMenuPos(pos)
     setProjectMenuId(projectId)
   }
 
@@ -537,51 +562,114 @@ export function Sidebar({
           <SectionHeader label="Projetos" sectionKey="projects" />
           {!isCollapsed('projects') && (
             <div className="px-2 pb-1">
-              {projects.length === 0 && (
+              {activeProjects.length === 0 && archivedProjects.length === 0 && (
                 <p className="px-3 py-1 text-xs text-[#999999] italic">Nenhum projeto ainda</p>
               )}
-              {[...projects]
-                .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-                .map((project) => (
-                  <div key={project.id} className="relative group">
-                    <button
-                      onClick={() => onSelectProject(project.id)}
-                      className={`flex items-center gap-2.5 w-full px-3 py-[5px] rounded text-[13px] transition-colors text-left ${
-                        activeProjectId === project.id
-                          ? 'bg-[#7c3aed]/12 text-[#a080f0]'
-                          : 'text-[#999999] hover:bg-[#2a2a2a] hover:text-[#d4d4d4]'
-                      }`}
-                    >
-                      <div
-                        className="w-2.5 h-2.5 rounded-full shrink-0"
-                        style={{ backgroundColor: project.color }}
-                      />
-                      <span className="truncate flex-1">{project.name}</span>
-                    </button>
-
+              {activeProjects.map((project) => (
+                <div key={project.id} className="relative group">
+                  <button
+                    onClick={() => onSelectProject(project.id)}
+                    className={`flex items-center gap-2.5 w-full px-3 py-[5px] rounded text-[13px] transition-colors text-left ${
+                      activeProjectId === project.id
+                        ? 'bg-[#7c3aed]/12 text-[#a080f0]'
+                        : 'text-[#999999] hover:bg-[#2a2a2a] hover:text-[#d4d4d4]'
+                    }`}
+                  >
                     <div
-                      className={`absolute right-2 top-1/2 -translate-y-1/2 transition-opacity ${projectMenuId === project.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                      className="w-2.5 h-2.5 rounded-full shrink-0"
+                      style={{ backgroundColor: project.color }}
+                    />
+                    <span className="truncate flex-1">{project.name}</span>
+                  </button>
+
+                  <div
+                    className={`absolute right-2 top-1/2 -translate-y-1/2 transition-opacity ${projectMenuId === project.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                  >
+                    <button
+                      onClick={(e) => handleOpenProjectMenu(e, project.id)}
+                      className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#3b3b3b] transition-colors"
                     >
-                      <button
-                        onClick={(e) => handleOpenProjectMenu(e, project.id)}
-                        className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#3b3b3b] transition-colors"
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
                       >
-                        <svg
-                          width="12"
-                          height="12"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                        >
-                          <circle cx="12" cy="5" r="1" fill="currentColor" />
-                          <circle cx="12" cy="12" r="1" fill="currentColor" />
-                          <circle cx="12" cy="19" r="1" fill="currentColor" />
-                        </svg>
-                      </button>
-                    </div>
+                        <circle cx="12" cy="5" r="1" fill="currentColor" />
+                        <circle cx="12" cy="12" r="1" fill="currentColor" />
+                        <circle cx="12" cy="19" r="1" fill="currentColor" />
+                      </svg>
+                    </button>
                   </div>
-                ))}
+                </div>
+              ))}
+
+              {archivedProjects.length > 0 && (
+                <>
+                  <button
+                    onClick={() => setShowArchived((v) => !v)}
+                    className="flex items-center gap-2 w-full px-3 py-[5px] rounded text-xs text-[#666666] hover:text-[#999999] hover:bg-[#2a2a2a] transition-colors mt-1"
+                  >
+                    <svg
+                      width="10"
+                      height="10"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      className={`transition-transform ${showArchived ? 'rotate-90' : ''}`}
+                    >
+                      <polyline points="9 18 15 12 9 6" />
+                    </svg>
+                    <span>
+                      {showArchived ? 'Ocultar arquivados' : `Ver arquivados (${archivedProjects.length})`}
+                    </span>
+                  </button>
+                  {showArchived &&
+                    archivedProjects.map((project) => (
+                      <div key={project.id} className="relative group">
+                        <button
+                          onClick={() => onSelectProject(project.id)}
+                          className={`flex items-center gap-2.5 w-full px-3 py-[5px] rounded text-[13px] transition-colors text-left opacity-60 hover:opacity-90 ${
+                            activeProjectId === project.id
+                              ? 'bg-[#7c3aed]/12 text-[#a080f0]'
+                              : 'text-[#999999] hover:bg-[#2a2a2a] hover:text-[#d4d4d4]'
+                          }`}
+                        >
+                          <div
+                            className="w-2.5 h-2.5 rounded-full shrink-0 opacity-50"
+                            style={{ backgroundColor: project.color }}
+                          />
+                          <span className="truncate flex-1">{project.name}</span>
+                        </button>
+
+                        <div
+                          className={`absolute right-2 top-1/2 -translate-y-1/2 transition-opacity ${projectMenuId === project.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                        >
+                          <button
+                            onClick={(e) => handleOpenProjectMenu(e, project.id)}
+                            className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#3b3b3b] transition-colors"
+                          >
+                            <svg
+                              width="12"
+                              height="12"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                            >
+                              <circle cx="12" cy="5" r="1" fill="currentColor" />
+                              <circle cx="12" cy="12" r="1" fill="currentColor" />
+                              <circle cx="12" cy="19" r="1" fill="currentColor" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                </>
+              )}
             </div>
           )}
         </div>
@@ -713,13 +801,17 @@ export function Sidebar({
             <div className="fixed inset-0 z-50" onClick={() => setProjectMenuId(null)} />
             <div
               className="fixed z-50 w-36 rounded-lg border border-[#3b3b3b] bg-[#232323] shadow-xl py-1"
-              style={{ top: projectMenuPos.top, right: projectMenuPos.right }}
+              style={{
+                top: projectMenuPos.top,
+                bottom: projectMenuPos.bottom,
+                right: projectMenuPos.right
+              }}
             >
               {(() => {
-                const sorted = [...projects].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-                const project = sorted.find((p) => p.id === projectMenuId)
+                const project = projects.find((p) => p.id === projectMenuId)
                 if (!project) return null
-                const idx = sorted.findIndex((p) => p.id === projectMenuId)
+                const isArchived = !!project.archivedAt
+                const idx = sortedProjects.findIndex((p) => p.id === projectMenuId)
                 return (
                   <div>
                     <button
@@ -731,26 +823,51 @@ export function Sidebar({
                     >
                       Editar
                     </button>
-                    <button
-                      disabled={idx === 0}
-                      className="w-full text-left px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                      onClick={() => {
-                        onMoveProject(project.id, 'up')
-                        setProjectMenuId(null)
-                      }}
-                    >
-                      Mover para cima
-                    </button>
-                    <button
-                      disabled={idx === sorted.length - 1}
-                      className="w-full text-left px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                      onClick={() => {
-                        onMoveProject(project.id, 'down')
-                        setProjectMenuId(null)
-                      }}
-                    >
-                      Mover para baixo
-                    </button>
+                    {!isArchived && (
+                      <>
+                        <button
+                          disabled={idx === 0}
+                          className="w-full text-left px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                          onClick={() => {
+                            onMoveProject(project.id, 'up')
+                            setProjectMenuId(null)
+                          }}
+                        >
+                          Mover para cima
+                        </button>
+                        <button
+                          disabled={idx === sortedProjects.length - 1}
+                          className="w-full text-left px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                          onClick={() => {
+                            onMoveProject(project.id, 'down')
+                            setProjectMenuId(null)
+                          }}
+                        >
+                          Mover para baixo
+                        </button>
+                      </>
+                    )}
+                    {!isArchived ? (
+                      <button
+                        className="w-full text-left px-3 py-2 text-sm text-[#e0a040] hover:bg-[#e0a040]/10 transition-colors"
+                        onClick={() => {
+                          setProjectMenuId(null)
+                          onArchiveProject(project.id)
+                        }}
+                      >
+                        Arquivar
+                      </button>
+                    ) : (
+                      <button
+                        className="w-full text-left px-3 py-2 text-sm text-[#46d478] hover:bg-[#46d478]/10 transition-colors"
+                        onClick={() => {
+                          setProjectMenuId(null)
+                          onUnarchiveProject(project.id)
+                        }}
+                      >
+                        Desarquivar
+                      </button>
+                    )}
                     <button
                       className="w-full text-left px-3 py-2 text-sm text-[#e04040] hover:bg-[#e04040]/10 transition-colors"
                       onClick={() => {

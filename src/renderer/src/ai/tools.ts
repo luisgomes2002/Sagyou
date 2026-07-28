@@ -443,7 +443,8 @@ const REGISTRY: Record<string, AITool> = {
       NO_PARAMS
     ),
     run: () => {
-      const { projects, tasks } = useKanbanStore.getState()
+      const { projects: allProjects, tasks } = useKanbanStore.getState()
+      const projects = allProjects.filter((p) => !p.archivedAt)
       const projetos = projects.map((p) => ({
         id: p.id,
         nome: p.name,
@@ -498,7 +499,8 @@ const REGISTRY: Record<string, AITool> = {
       }
     ),
     run: (args) => {
-      const { projects, tasks, sprints, activeProjectId } = useKanbanStore.getState()
+      const { projects: allProjects, tasks, sprints, activeProjectId } = useKanbanStore.getState()
+      const projects = allProjects.filter((p) => !p.archivedAt)
       const projetoNome = typeof args.projeto === 'string' ? args.projeto.trim() : ''
       const byName = projetoNome
         ? projects.find((p) => p.name.trim().toLowerCase() === projetoNome.toLowerCase())?.id

@@ -339,24 +339,31 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 }
 
 export function ReportsView({ projects, tasks, sprints, habits }: Props) {
-  const projectMap = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects])
+  const archivedIds = useMemo(() => new Set(projects.filter((p) => p.archivedAt).map((p) => p.id)), [projects])
+  const activeProjects = useMemo(() => projects.filter((p) => !p.archivedAt), [projects])
+  const projectMap = useMemo(() => new Map(activeProjects.map((p) => [p.id, p])), [activeProjects])
 
   const columnMap = useMemo(
-    () => new Map(projects.flatMap((p) => p.columns.map((c) => [c.id, c]))),
-    [projects]
+    () => new Map(activeProjects.flatMap((p) => p.columns.map((c) => [c.id, c]))),
+    [activeProjects]
+  )
+
+  const activeTasksMemo = useMemo(
+    () => tasks.filter((t) => !archivedIds.has(t.projectId)),
+    [tasks, archivedIds]
   )
 
   const doneTasks = useMemo(
-    () => tasks.filter((t) => isDoneColumn(columnMap.get(t.columnId))),
-    [tasks, columnMap]
+    () => activeTasksMemo.filter((t) => isDoneColumn(columnMap.get(t.columnId))),
+    [activeTasksMemo, columnMap]
   )
   const activeTasks = useMemo(
-    () => tasks.filter((t) => !isDoneColumn(columnMap.get(t.columnId))),
-    [tasks, columnMap]
+    () => activeTasksMemo.filter((t) => !isDoneColumn(columnMap.get(t.columnId))),
+    [activeTasksMemo, columnMap]
   )
 
-  const totalTime = useMemo(() => tasks.reduce((s, t) => s + (t.timeSpent ?? 0), 0), [tasks])
-  const completionRate = tasks.length > 0 ? Math.round((doneTasks.length / tasks.length) * 100) : 0
+  const totalTime = useMemo(() => activeTasksMemo.reduce((s, t) => s + (t.timeSpent ?? 0), 0), [activeTasksMemo])
+  const completionRate = activeTasksMemo.length > 0 ? Math.round((doneTasks.length / activeTasksMemo.length) * 100) : 0
 
   // Tasks completed per week — last 8 weeks. Single pass: bucket each done task
   // into its week by calendar-week distance from the earliest week's Monday,

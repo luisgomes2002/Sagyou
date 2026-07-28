@@ -21,6 +21,7 @@ interface Project {
   // form, still read so pre-multi-select databases and backups keep working.
   codePaths?: CodePath[]; activeCodePathIds?: string[]; activeCodePathId?: string
   order?: number
+  archivedAt?: string
   createdAt: string; updatedAt: string
 }
 interface TaskImage { id: string; name: string; ext: string; size: number; addedAt: string }
@@ -47,7 +48,7 @@ interface Habit { id: string; name: string; color: string; completions: string[]
 // Monetary fields accept number (legacy JSON) or string (current renderer schema);
 // they are coerced to canonical decimal strings via moneyText() on insert.
 interface ShoppingItem { id: string; name: string; qty: number; price?: number | string; done: boolean; link?: string; linkedTransactionId?: string }
-interface FinancialTransaction { id: string; description: string; amount: number | string; type: 'income' | 'expense'; date: string; category?: string; fromShopping?: boolean }
+interface FinancialTransaction { id: string; description: string; amount: number | string; type: 'income' | 'expense'; date: string; category?: string; fromShopping?: boolean; linkedTransactionId?: string }
 interface FinancialGoal { id: string; name: string; targetAmount: number | string; targetMonth: number; targetYear: number; completedAt?: string; completionNote?: string }
 interface FinancialTable {
   id: string; name: string; currency: string
@@ -114,6 +115,8 @@ function getDb(): Database.Database {
   _db.pragma('foreign_keys = ON')
   initSchema(_db)
   migrateMoneyColumnsToText(_db)
+  migrateTransactionsLinkedColumn(_db)
+  migrateProjectsArchivedColumn(_db)
   migrateMemoryDropProjectFk(_db)
   migrateTaskImagesToDisk(_db)
   migrateFromJson(_db)
@@ -170,10 +173,11 @@ function migrateMoneyColumnsToText(db: Database.Database): void {
         type TEXT NOT NULL,
         date TEXT NOT NULL,
         category TEXT,
-        from_shopping INTEGER DEFAULT 0
+        from_shopping INTEGER DEFAULT 0,
+        linked_transaction_id TEXT
       )`,
-      copy: `INSERT INTO transactions_new (id,table_id,description,amount,type,date,category,from_shopping)
-        SELECT id,table_id,description,CAST(amount AS TEXT),type,date,category,from_shopping FROM transactions`
+      copy: `INSERT INTO transactions_new (id,table_id,description,amount,type,date,category,from_shopping,linked_transaction_id)
+        SELECT id,table_id,description,CAST(amount AS TEXT),type,date,category,from_shopping,linked_transaction_id FROM transactions`
     },
     {
       table: 'financial_goals',
@@ -210,6 +214,31 @@ function migrateMoneyColumnsToText(db: Database.Database): void {
     console.log(`[store] Migrated money columns to TEXT: ${pending.map((r) => r.table).join(', ')}`)
   } finally {
     db.pragma('foreign_keys = ON')
+  }
+}
+
+// One-time migration for existing DBs: add linked_transaction_id column to
+// the transactions table. Uses ALTER TABLE ADD COLUMN (safe, idempotent).
+function migrateTransactionsLinkedColumn(db: Database.Database): void {
+  const colExists = (table: string, col: string): boolean => {
+    const info = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]
+    return info.some((r) => r.name === col)
+  }
+  if (!colExists('transactions', 'linked_transaction_id')) {
+    db.prepare('ALTER TABLE transactions ADD COLUMN linked_transaction_id TEXT').run()
+    console.log('[store] Added linked_transaction_id column to transactions')
+  }
+}
+
+// One-time migration for existing DBs: add archived_at column to projects table.
+function migrateProjectsArchivedColumn(db: Database.Database): void {
+  const colExists = (table: string, col: string): boolean => {
+    const info = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]
+    return info.some((r) => r.name === col)
+  }
+  if (!colExists('projects', 'archived_at')) {
+    db.prepare('ALTER TABLE projects ADD COLUMN archived_at TEXT').run()
+    console.log('[store] Added archived_at column to projects')
   }
 }
 
@@ -328,7 +357,8 @@ function initSchema(db: Database.Database): void {
       color TEXT NOT NULL,
       ord INTEGER,
       created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
+      updated_at TEXT NOT NULL,
+      archived_at TEXT
     );
     CREATE TABLE IF NOT EXISTS project_columns (
       id TEXT PRIMARY KEY,
@@ -471,7 +501,8 @@ function initSchema(db: Database.Database): void {
       type TEXT NOT NULL,
       date TEXT NOT NULL,
       category TEXT,
-      from_shopping INTEGER DEFAULT 0
+      from_shopping INTEGER DEFAULT 0,
+      linked_transaction_id TEXT
     );
     CREATE TABLE IF NOT EXISTS financial_goals (
       id TEXT PRIMARY KEY,
@@ -603,7 +634,7 @@ let lastSnapshot: SaveData | null = null
 // save is as cheap as the old inline `ins` object was.
 function prepareWrite(db: Database.Database) {
   const ins = {
-    project: db.prepare('INSERT INTO projects (id,name,description,color,ord,created_at,updated_at) VALUES (?,?,?,?,?,?,?)'),
+    project: db.prepare('INSERT INTO projects (id,name,description,color,ord,created_at,updated_at,archived_at) VALUES (?,?,?,?,?,?,?,?)'),
     column:  db.prepare('INSERT INTO project_columns (id,project_id,name,ord,color) VALUES (?,?,?,?,?)'),
     link:    db.prepare('INSERT INTO project_links (id,project_id,label,url) VALUES (?,?,?,?)'),
     codePath: db.prepare('INSERT INTO project_code_paths (id,project_id,label,path,active) VALUES (?,?,?,?,?)'),
@@ -620,7 +651,7 @@ function prepareWrite(db: Database.Database) {
     compl:   db.prepare('INSERT OR IGNORE INTO habit_completions (habit_id,date) VALUES (?,?)'),
     ftable:  db.prepare('INSERT INTO financial_tables (id,name,currency,created_at,updated_at) VALUES (?,?,?,?,?)'),
     item:    db.prepare('INSERT INTO shopping_items (id,table_id,name,qty,price,done,link,linked_transaction_id) VALUES (?,?,?,?,?,?,?,?)'),
-    tx:      db.prepare('INSERT INTO transactions (id,table_id,description,amount,type,date,category,from_shopping) VALUES (?,?,?,?,?,?,?,?)'),
+     tx:      db.prepare('INSERT INTO transactions (id,table_id,description,amount,type,date,category,from_shopping,linked_transaction_id) VALUES (?,?,?,?,?,?,?,?,?)'),
     fg:      db.prepare('INSERT INTO financial_goals (id,table_id,name,target_amount,target_month,target_year,completed_at,completion_note) VALUES (?,?,?,?,?,?,?,?)'),
     file:    db.prepare('INSERT INTO files (id,name,ext,size,created_at,project_id) VALUES (?,?,?,?,?,?)'),
     setting: db.prepare('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)'),
@@ -646,7 +677,7 @@ function prepareWrite(db: Database.Database) {
 
   const insert = {
     project: (p: Project): void => {
-      ins.project.run(p.id, p.name, p.description ?? null, p.color, p.order ?? null, p.createdAt, p.updatedAt)
+      ins.project.run(p.id, p.name, p.description ?? null, p.color, p.order ?? null, p.createdAt, p.updatedAt, p.archivedAt ?? null)
       for (const c of p.columns ?? []) ins.column.run(c.id, p.id, c.name, c.order, c.color ?? null)
       for (const l of p.links ?? []) ins.link.run(l.id, p.id, l.label, l.url)
       const active = new Set(p.activeCodePathIds ?? (p.activeCodePathId ? [p.activeCodePathId] : []))
@@ -683,7 +714,7 @@ function prepareWrite(db: Database.Database) {
     ftable: (ft: FinancialTable): void => {
       ins.ftable.run(ft.id, ft.name, ft.currency, ft.createdAt, ft.updatedAt)
       for (const i of ft.items ?? []) ins.item.run(i.id, ft.id, i.name, i.qty, i.price != null ? moneyText(i.price) : null, i.done ? 1 : 0, i.link ?? null, i.linkedTransactionId ?? null)
-      for (const tx of ft.transactions ?? []) ins.tx.run(tx.id, ft.id, tx.description, moneyText(tx.amount), tx.type, tx.date, tx.category ?? null, tx.fromShopping ? 1 : 0)
+      for (const tx of ft.transactions ?? []) ins.tx.run(tx.id, ft.id, tx.description, moneyText(tx.amount), tx.type, tx.date, tx.category ?? null, tx.fromShopping ? 1 : 0, tx.linkedTransactionId ?? null)
       for (const fg of ft.goals ?? []) ins.fg.run(fg.id, ft.id, fg.name, moneyText(fg.targetAmount), fg.targetMonth, fg.targetYear, fg.completedAt ?? null, fg.completionNote ?? null)
     },
     file: (f: StoredFile): void => {
@@ -888,6 +919,7 @@ export function loadData(): SaveData {
       return { codePaths, activeCodePathIds, activeCodePathId: activeCodePathIds[0] }
     })(),
     ...(p.ord != null ? { order: p.ord } : {}),
+    ...(p.archived_at != null ? { archivedAt: String(p.archived_at) } : {}),
     createdAt: p.created_at, updatedAt: p.updated_at,
   }))
 
@@ -952,6 +984,7 @@ export function loadData(): SaveData {
       id: tx.id, description: tx.description, amount: String(tx.amount), type: tx.type, date: tx.date,
       ...(tx.category != null ? { category: tx.category } : {}),
       ...(tx.from_shopping ? { fromShopping: true } : {}),
+      ...(tx.linked_transaction_id != null ? { linkedTransactionId: tx.linked_transaction_id } : {}),
     })),
     goals: (fgByTable.get(ft.id) ?? []).map((fg) => ({
       id: fg.id, name: fg.name, targetAmount: String(fg.target_amount), targetMonth: fg.target_month, targetYear: fg.target_year,

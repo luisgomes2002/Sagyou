@@ -7,8 +7,9 @@ import { TableSidebar } from './financial/TableSidebar'
 import { ShoppingTab } from './financial/ShoppingTab'
 import { FinanceTab } from './financial/FinanceTab'
 import { AnalyticsTab } from './financial/AnalyticsTab'
+import { ConsolidatedTab } from './financial/ConsolidatedTab'
 
-type ActiveTab = 'shopping' | 'finance' | 'analytics'
+type ActiveTab = 'shopping' | 'finance' | 'analytics' | 'consolidated'
 
 interface TableViewState {
   activeTab: ActiveTab
@@ -49,6 +50,12 @@ export function FinancialView() {
 
   const [activeListId, setActiveListId] = useState<string | null>(null)
   const [tableStates, setTableStates] = useState<Record<string, TableViewState>>({})
+  const [consolidatedMonth, setConsolidatedMonth] = useState<{ year: number; month: number }>(() => {
+    const n = new Date()
+    return { year: n.getFullYear(), month: n.getMonth() + 1 }
+  })
+  const [consolidatedCategoryFilter, setConsolidatedCategoryFilter] = useState<string | null>(null)
+
   const [confirm, setConfirm] = useState<{
     open: boolean
     title: string
@@ -156,10 +163,27 @@ export function FinancialView() {
           <>
             <div className="flex items-center justify-between px-5 py-3 border-b border-[#3b3b3b] shrink-0">
               <div className="flex items-center gap-3">
-                <h2 className="text-sm font-semibold text-[#d4d4d4]">{activeList.name}</h2>
-                <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-[#7c3aed]/15 text-[#a080f0]">
-                  {CURRENCY_CONFIG[currency].symbol} {currency}
-                </span>
+                {ts.activeTab === 'consolidated' ? (
+                  <>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#a080f0" strokeWidth="2">
+                      <rect x="3" y="3" width="7" height="7" rx="1" />
+                      <rect x="14" y="3" width="7" height="7" rx="1" />
+                      <rect x="3" y="14" width="7" height="7" rx="1" />
+                      <rect x="14" y="14" width="7" height="7" rx="1" />
+                    </svg>
+                    <h2 className="text-sm font-semibold text-[#d4d4d4]">Consolidado</h2>
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-[#7c3aed]/15 text-[#a080f0]">
+                      {lists.length} tabela{lists.length !== 1 ? 's' : ''}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <h2 className="text-sm font-semibold text-[#d4d4d4]">{activeList.name}</h2>
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-[#7c3aed]/15 text-[#a080f0]">
+                      {CURRENCY_CONFIG[currency].symbol} {currency}
+                    </span>
+                  </>
+                )}
               </div>
               <div className="flex items-center p-0.5 rounded-lg bg-[#2a2a2a] border border-[#3b3b3b]">
                 <button
@@ -200,6 +224,20 @@ export function FinancialView() {
                   </svg>
                   Análise
                 </button>
+                <button
+                  onClick={() => updateTs({ activeTab: 'consolidated' })}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                    ts.activeTab === 'consolidated' ? 'bg-[#3b3b3b] text-[#d4d4d4]' : 'text-[#999999] hover:text-[#d4d4d4]'
+                  }`}
+                >
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="3" y="3" width="7" height="7" rx="1" />
+                    <rect x="14" y="3" width="7" height="7" rx="1" />
+                    <rect x="3" y="14" width="7" height="7" rx="1" />
+                    <rect x="14" y="14" width="7" height="7" rx="1" />
+                  </svg>
+                  Consolidado
+                </button>
               </div>
             </div>
 
@@ -215,6 +253,7 @@ export function FinancialView() {
             {ts.activeTab === 'finance' && (
               <FinanceTab
                 list={activeList}
+                allLists={lists}
                 activeMonth={ts.financeMonth}
                 onMonthChange={(m) => updateTs({ financeMonth: m })}
                 categoryFilter={ts.financeCategoryFilter}
@@ -236,6 +275,18 @@ export function FinancialView() {
                 onMonthChange={(m) => updateTs({ analyticsMonth: m })}
                 catView={ts.analyticsCatView}
                 onCatViewChange={(v) => updateTs({ analyticsCatView: v })}
+              />
+            )}
+            {ts.activeTab === 'consolidated' && (
+              <ConsolidatedTab
+                lists={lists}
+                activeMonth={consolidatedMonth}
+                onMonthChange={setConsolidatedMonth}
+                categoryFilter={consolidatedCategoryFilter}
+                onCategoryFilterChange={setConsolidatedCategoryFilter}
+                onLinkTransaction={(sourceListId, sourceTxId, targetTxId) =>
+                  updateTransaction(sourceListId, sourceTxId, { linkedTransactionId: targetTxId || undefined })
+                }
               />
             )}
           </>

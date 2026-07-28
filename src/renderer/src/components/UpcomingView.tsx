@@ -47,13 +47,15 @@ export function UpcomingView({ projects, tasks, onViewTask }: Props) {
   )
 
   const grouped = useMemo(() => {
+    const archivedIds = new Set(projects.filter((p) => p.archivedAt).map((p) => p.id))
     const result: Record<Group, Task[]> = { overdue: [], today: [], tomorrow: [], week: [], later: [] }
     for (const task of tasks) {
       if (!task.dueDate || isDoneColumn(columnMap.get(task.columnId))) continue
+      if (archivedIds.has(task.projectId)) continue
       result[getGroup(task.dueDate)].push(task)
     }
     return result
-  }, [tasks, columnMap])
+  }, [tasks, columnMap, projects])
 
   const total = GROUP_ORDER.reduce((s, g) => s + grouped[g].length, 0)
 

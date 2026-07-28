@@ -124,9 +124,11 @@ interface KanbanActions {
   setSprintFilter: (sprintId: string | null) => void
 
   createProject: (name: string, description?: string, color?: string) => string
-  updateProject: (id: string, updates: Partial<Pick<Project, 'name' | 'description' | 'color' | 'links'>>) => void
+  updateProject: (id: string, updates: Partial<Pick<Project, 'name' | 'description' | 'color' | 'links' | 'archivedAt'>>) => void
   moveProject: (id: string, direction: 'up' | 'down') => void
   deleteProject: (id: string) => void
+  archiveProject: (id: string) => void
+  unarchiveProject: (id: string) => void
 
   addCodePath: (projectId: string, path: string, label?: string) => string
   removeCodePath: (projectId: string, codePathId: string) => void
@@ -424,6 +426,28 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
       tasks: s.tasks.filter((t) => t.projectId !== id),
       tombstones: [...s.tombstones, ...newTombstones],
       activeProjectId: s.activeProjectId === id ? (remaining[0]?.id ?? null) : s.activeProjectId
+    }))
+    get()._persist()
+  },
+
+  archiveProject: (id) => {
+    const now = new Date().toISOString()
+    set((s) => ({
+      projects: s.projects.map((p) =>
+        p.id === id ? { ...p, archivedAt: now, updatedAt: now } : p
+      ),
+      activeProjectId: s.activeProjectId === id
+        ? (s.projects.find((p) => p.id !== id && !p.archivedAt)?.id ?? null)
+        : s.activeProjectId
+    }))
+    get()._persist()
+  },
+
+  unarchiveProject: (id) => {
+    set((s) => ({
+      projects: s.projects.map((p) =>
+        p.id === id ? { ...p, archivedAt: undefined, updatedAt: new Date().toISOString() } : p
+      )
     }))
     get()._persist()
   },

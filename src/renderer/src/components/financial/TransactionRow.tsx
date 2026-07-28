@@ -1,5 +1,5 @@
-﻿import { useEffect, useRef, useState } from 'react'
-import type { FinancialTransaction, Currency } from '../../types'
+﻿import { useEffect, useMemo, useRef, useState } from 'react'
+import type { FinancialTransaction, FinancialTable, Currency } from '../../types'
 import { CURRENCY_CONFIG } from '../../types'
 import { FINANCIAL_CATEGORIES, parseDecimalInput, todayISO, formatDateBR, formatAmountInput } from './shared'
 
@@ -116,8 +116,14 @@ export function AddTransactionRow({ currency, onAdd }: AddTransactionRowProps) {
         ) : (
           <button
             onClick={() => setDateEditing(true)}
-            className="w-full text-left text-xs text-[#999999] tabular-nums hover:text-[#d4d4d4] transition-colors"
+            className="inline-flex items-center gap-1 text-xs text-[#999999] tabular-nums bg-[#2a2a2a] px-1.5 py-0.5 rounded hover:text-[#d4d4d4] transition-colors"
           >
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="opacity-50">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+              <line x1="16" y1="2" x2="16" y2="6" />
+              <line x1="8" y1="2" x2="8" y2="6" />
+              <line x1="3" y1="10" x2="21" y2="10" />
+            </svg>
             {formatDateBR(date)}
           </button>
         )}
@@ -186,11 +192,20 @@ export function AddTransactionRow({ currency, onAdd }: AddTransactionRowProps) {
 interface TransactionRowProps {
   tx: FinancialTransaction
   currency: Currency
+  allLists: FinancialTable[]
   onUpdate: (updates: Partial<Omit<FinancialTransaction, 'id'>>) => void
   onDelete: () => void
+  onUnlink?: () => void
 }
 
-export function TransactionRow({ tx, currency, onUpdate, onDelete }: TransactionRowProps) {
+export function TransactionRow({
+  tx,
+  currency,
+  allLists,
+  onUpdate,
+  onDelete,
+  onUnlink
+}: TransactionRowProps) {
   const [editDate, setEditDate] = useState(tx.date)
   const [editDesc, setEditDesc] = useState(tx.description)
   const [editCat, setEditCat] = useState(tx.category ?? '')
@@ -203,6 +218,27 @@ export function TransactionRow({ tx, currency, onUpdate, onDelete }: Transaction
     setEditCat(tx.category ?? '')
     setEditAmount(formatAmountInput(tx.amount, currency))
   }, [tx.id])
+
+  const linkedParent = useMemo(() => {
+    if (!tx.linkedTransactionId) return null
+    for (const list of allLists) {
+      const parent = list.transactions.find((t) => t.id === tx.linkedTransactionId)
+      if (parent) return { ...parent, tableName: list.name, tableCurrency: list.currency }
+    }
+    return null
+  }, [tx.linkedTransactionId, allLists])
+
+  const linkedChildren = useMemo(() => {
+    const children: (FinancialTransaction & { tableName: string; tableCurrency: Currency })[] = []
+    for (const list of allLists) {
+      for (const t of list.transactions) {
+        if (t.linkedTransactionId === tx.id) {
+          children.push({ ...t, tableName: list.name, tableCurrency: list.currency })
+        }
+      }
+    }
+    return children
+  }, [tx.id, allLists])
 
   const blur = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
@@ -248,8 +284,14 @@ export function TransactionRow({ tx, currency, onUpdate, onDelete }: Transaction
         ) : (
           <button
             onClick={() => setDateEditing(true)}
-            className="w-full text-left text-xs text-[#999999] tabular-nums hover:text-[#d4d4d4] transition-colors"
+            className="inline-flex items-center gap-1 text-xs text-[#999999] tabular-nums bg-[#2a2a2a] px-1.5 py-0.5 rounded hover:text-[#d4d4d4] transition-colors"
           >
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="opacity-50">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+              <line x1="16" y1="2" x2="16" y2="6" />
+              <line x1="8" y1="2" x2="8" y2="6" />
+              <line x1="3" y1="10" x2="21" y2="10" />
+            </svg>
             {formatDateBR(editDate)}
           </button>
         )}
@@ -263,6 +305,57 @@ export function TransactionRow({ tx, currency, onUpdate, onDelete }: Transaction
               <line x1="3" y1="6" x2="21" y2="6" />
               <path d="M16 10a4 4 0 0 1-8 0" />
             </svg>
+          )}
+          {linkedParent && (
+            <span
+              className="shrink-0 inline-flex items-center gap-0.5 text-[10px] text-[#a080f0] max-w-[180px] group/link"
+              title={`Vinculado a: ${linkedParent.description} (${linkedParent.tableName} — ${formatDateBR(linkedParent.date)})`}
+            >
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+              </svg>
+              <span className="truncate">
+                {linkedParent.description.length > 25
+                  ? linkedParent.description.slice(0, 25) + '…'
+                  : linkedParent.description}
+              </span>
+              <span className="text-[#a080f0]/60 shrink-0">
+                · {formatDateBR(linkedParent.date)}
+              </span>
+              {onUnlink && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onUnlink() }}
+                  className="p-0.5 rounded text-[#a080f0] hover:text-[#e04040] hover:bg-[#e04040]/10 opacity-0 group-hover/link:opacity-100 transition-all shrink-0 ml-0.5"
+                  title="Desvincular"
+                >
+                  <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              )}
+            </span>
+          )}
+          {linkedChildren.length > 0 && (
+            <span
+              className="shrink-0 inline-flex items-center gap-0.5 text-[10px] text-[#a080f0] bg-[#a080f0]/10 px-1.5 py-0.5 rounded max-w-[180px]"
+              title={linkedChildren
+                .map((c) => `${c.description} (${formatDateBR(c.date)}) — ${c.tableName}`)
+                .join('\n')}
+            >
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+              </svg>
+              <span className="truncate">
+                {linkedChildren.length === 1
+                  ? `${linkedChildren[0].description.length > 20
+                      ? linkedChildren[0].description.slice(0, 20) + '…'
+                      : linkedChildren[0].description} · ${formatDateBR(linkedChildren[0].date)}`
+                  : `${linkedChildren.length} vinculadas`}
+              </span>
+            </span>
           )}
           <input
             value={editDesc}

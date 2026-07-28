@@ -634,6 +634,16 @@ const api = {
       filename: string
     ): Promise<{ success: boolean; cancelled?: boolean; error?: string }> =>
       ipcRenderer.invoke('excel:export', buffer, filename)
+  },
+  financial: {
+    fetchExchangeRate: (
+      pair: string
+    ): Promise<{
+      rate: string
+      date: string
+      source: 'awesomeapi' | 'frankfurter' | 'cache' | 'identity'
+      error?: string
+    }> => ipcRenderer.invoke('financial:exchange-rate:fetch', pair)
   }
 }
 

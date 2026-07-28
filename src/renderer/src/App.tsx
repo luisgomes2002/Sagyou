@@ -82,6 +82,8 @@ export default function App() {
     updateProject,
     moveProject,
     deleteProject,
+    archiveProject,
+    unarchiveProject,
     createColumn,
     updateColumn,
     deleteColumn,
@@ -114,6 +116,8 @@ export default function App() {
       updateProject: s.updateProject,
       moveProject: s.moveProject,
       deleteProject: s.deleteProject,
+      archiveProject: s.archiveProject,
+      unarchiveProject: s.unarchiveProject,
       createColumn: s.createColumn,
       updateColumn: s.updateColumn,
       deleteColumn: s.deleteColumn,
@@ -476,6 +480,8 @@ export default function App() {
           onEditProject={handleEditProject}
           onMoveProject={moveProject}
           onDeleteProject={handleDeleteProject}
+          onArchiveProject={archiveProject}
+          onUnarchiveProject={unarchiveProject}
           onExportBackup={handleExportBackup}
           onImportBackup={handleImportBackup}
           onImportAI={handleImportAI}
