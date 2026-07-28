@@ -326,7 +326,9 @@ export const PROJECT_COLORS = [
   '#14b8a6',
   '#84cc16',
   '#f43f5e',
-  '#d946ef'
+  '#d946ef',
+  '#ffffff',
+  '#000000'
 ] as const
 
 export const PRIORITY_CONFIG: Record<Priority, { label: string; color: string; bg: string }> = {
