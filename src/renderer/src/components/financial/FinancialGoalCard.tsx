@@ -2,6 +2,7 @@
 import Decimal from 'decimal.js'
 import type { FinancialGoal, FinancialTransaction, Currency } from '../../types'
 import { MONTH_NAMES, formatCurrency, todayISO, formatDateBR, D, parseDecimalInput } from './shared'
+import { ModalBase } from '../ModalBase'
 
 // ── GoalModal ─────────────────────────────────────────────────────────────────
 
@@ -41,8 +42,7 @@ export function GoalModal({ open, goal, onSave, onClose }: GoalModalProps) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="fixed inset-0 bg-black/60" onClick={onClose} />
+    <ModalBase open={open} onClose={onClose}>
       <div className="relative z-10 w-80 rounded-xl border border-[#3b3b3b] bg-[#232323] shadow-2xl p-5">
         <h3 className="text-sm font-semibold text-[#d4d4d4] mb-4">
           {goal ? 'Editar meta' : 'Nova meta financeira'}
@@ -109,7 +109,7 @@ export function GoalModal({ open, goal, onSave, onClose }: GoalModalProps) {
           </button>
         </div>
       </div>
-    </div>
+    </ModalBase>
   )
 }
 
@@ -143,8 +143,7 @@ export function CompleteGoalModal({ open, goalName, onConfirm, onClose }: Comple
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="fixed inset-0 bg-black/60" onClick={onClose} />
+    <ModalBase open={open} onClose={onClose}>
       <div className="relative z-10 w-80 rounded-xl border border-[#3b3b3b] bg-[#232323] shadow-2xl p-5">
         <h3 className="text-sm font-semibold text-[#d4d4d4] mb-1">Finalizar objetivo</h3>
         <p className="text-[11px] text-[#999999] mb-4 truncate">{goalName}</p>
@@ -197,7 +196,7 @@ export function CompleteGoalModal({ open, goalName, onConfirm, onClose }: Comple
           </button>
         </div>
       </div>
-    </div>
+    </ModalBase>
   )
 }
 

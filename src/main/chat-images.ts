@@ -1,3 +1,6 @@
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 // Images pasted into the chat. No Electron here, so the parsing rules are
 // testable on their own; index.ts owns the directory.
 //
@@ -68,4 +71,66 @@ export function mimeForExt(ext: string): string {
  */
 export function isImageFileName(name: unknown): name is string {
   return typeof name === 'string' && /^[0-9a-f-]{36}\.[a-z]{3,4}$/i.test(name)
+}
+
+// --- Shared helpers for chat + task image handlers ---
+
+/**
+ * Decode a data URL and write the bytes to disk inside `dir`. The caller
+ * provides a `makeId` function that receives the decoded image and returns the
+ * object to send back to the renderer (the "id" field is always the filename).
+ *
+ * Used by both `ai:images:save` and `task:images:save`, which differ only in
+ * their naming convention and return shape.
+ */
+export function saveImageToDir(
+  dir: string,
+  dataUrl: string,
+  makeId: (decoded: DecodedImage) => { id: string; [k: string]: unknown }
+): { error: string } | { id: string; [k: string]: unknown } {
+  const decoded = decodeDataUrl(dataUrl)
+  if ('error' in decoded) return decoded
+  try {
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+    const meta = makeId(decoded)
+    writeFileSync(join(dir, meta.id), decoded.bytes)
+    return meta
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : 'Falha ao salvar a imagem' }
+  }
+}
+
+/**
+ * Read a file back as a base64 data URL.
+ *
+ * `fullPath` must already be validated (the caller's path-resolver handles
+ * the security check). `ext` is the bare extension (no dot).
+ */
+export function readImageAsDataUrl(
+  fullPath: string | null,
+  ext: string
+): { error: string } | { dataUrl: string } {
+  if (!fullPath || !existsSync(fullPath)) return { error: 'Imagem não encontrada' }
+  try {
+    const b64 = readFileSync(fullPath).toString('base64')
+    return { dataUrl: `data:${mimeForExt(ext)};base64,${b64}` }
+  } catch {
+    return { error: 'Falha ao ler a imagem' }
+  }
+}
+
+/**
+ * Delete files from disk whose resolved paths are non-null and exist.
+ * Best-effort: a missing or locked file is silently skipped.
+ */
+export function deleteImageFiles(paths: Iterable<string | null>): void {
+  for (const full of paths) {
+    if (full && existsSync(full)) {
+      try {
+        unlinkSync(full)
+      } catch {
+        /* already gone or locked — not worth failing over */
+      }
+    }
+  }
 }

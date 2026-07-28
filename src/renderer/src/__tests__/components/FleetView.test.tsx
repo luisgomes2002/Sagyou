@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
-import { FleetView } from '../../components/FleetView'
+import { FleetView } from '../../components/ai/FleetView'
 import type { Project } from '../../types'
 
 // FleetView is a pure view over the code-agent state from the main process.

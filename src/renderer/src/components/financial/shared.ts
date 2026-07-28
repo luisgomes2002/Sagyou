@@ -1,6 +1,9 @@
 ﻿import Decimal from 'decimal.js'
 import type { ShoppingItem, Currency } from '../../types'
 import { CURRENCY_CONFIG } from '../../types'
+import { D, moneyStr } from '../../utils/money'
+export { D, moneyStr }
+export { todayUTCISO as todayISO, formatDateBR } from '../../utils/dates'
 
 export const MONTH_NAMES = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -25,17 +28,6 @@ export const CAT_COLORS = [
   '#60c080', '#48c0d0', '#68a8d8', '#d48888', '#50c0a0', '#a0c868',
   '#e890ac', '#60b8d4', '#e8b848'
 ]
-
-// Safe Decimal constructor — treats null/undefined/'' as 0.
-export function D(value: Decimal.Value | null | undefined): Decimal {
-  if (value === null || value === undefined || value === '') return new Decimal(0)
-  try {
-    const d = new Decimal(value)
-    return d.isNaN() || !d.isFinite() ? new Decimal(0) : d
-  } catch {
-    return new Decimal(0)
-  }
-}
 
 export function formatCurrency(value: Decimal | number | string, currency: Currency): string {
   const { symbol, decimals } = CURRENCY_CONFIG[currency]
@@ -70,16 +62,6 @@ export function parseDecimalInput(raw: string): Decimal | null {
   } catch {
     return null
   }
-}
-
-export function todayISO(): string {
-  return new Date().toISOString().slice(0, 10)
-}
-
-export function formatDateBR(iso: string): string {
-  if (!iso) return ''
-  const [y, m, d] = iso.split('-')
-  return `${d}/${m}/${y}`
 }
 
 export function formatAmountInput(value: number | string, currency: Currency): string {

@@ -1,22 +1,13 @@
 import { addDays, format } from 'date-fns'
 import type { Habit } from '../types'
 
+export { todayLocalISO as todayISO } from './dates'
+
 export interface HabitSummaryEntry {
   habit: Habit
   streak: number
   rate: number
   monthDone: number
-}
-
-/**
- * The day `now` falls on, as the YYYY-MM-DD string Habit.completions stores.
- *
- * Built from the LOCAL date parts, matching HabitView's checkbox. Using
- * toISOString() here would hand back the UTC day, so marking a habit at 21:00
- * in Brazil would tick tomorrow's box.
- */
-export function todayISO(now: Date = new Date()): string {
-  return format(now, 'yyyy-MM-dd')
 }
 
 export function computeHabitSummary(habits: Habit[], today: Date): HabitSummaryEntry[] {

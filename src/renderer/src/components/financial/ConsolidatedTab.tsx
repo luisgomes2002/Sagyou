@@ -4,6 +4,7 @@ import type { FinancialTable, FinancialTransaction, Currency } from '../../types
 import { CURRENCY_CONFIG } from '../../types'
 import { MONTH_NAMES, FINANCIAL_CATEGORIES, formatCurrency, formatDateBR, D } from './shared'
 import { ConfirmDialog } from '../ConfirmDialog'
+import { EmptyState } from '../EmptyState'
 
 interface ConsolidatedTabProps {
   lists: FinancialTable[]
@@ -282,16 +283,16 @@ export function ConsolidatedTab({
 
   if (lists.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center flex-1 gap-4">
-        <div className="w-16 h-16 rounded-2xl bg-[#2a2a2a] border border-[#3b3b3b] flex items-center justify-center">
+      <EmptyState
+        icon={
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#999999" strokeWidth="1.5">
             <rect x="2" y="3" width="20" height="14" rx="2" />
             <line x1="8" y1="21" x2="16" y2="21" />
             <line x1="12" y1="17" x2="12" y2="21" />
           </svg>
-        </div>
-        <p className="text-sm text-[#999999]">Nenhuma tabela financeira criada</p>
-      </div>
+        }
+        title="Nenhuma tabela financeira criada"
+      />
     )
   }
 

@@ -67,6 +67,12 @@ export interface Task {
   completedAt?: string
 }
 
+/** A running timer — at most one per task. */
+export interface ActiveTimer {
+  taskId: string
+  startedAt: number
+}
+
 export interface GoalEntry {
   id: string
   date: string

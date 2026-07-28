@@ -59,7 +59,7 @@ qualquer coisa persistida.
 | Runtime | Electron 39 — três processos: `main`, `preload`, `renderer` |
 | UI | React 19 + TypeScript + Tailwind CSS 4 |
 | Build | electron-vite (Vite); electron-builder para distribuir |
-| Estado | Zustand — `store/kanban.ts` é a store do app inteiro |
+| Estado | Zustand — `store/kanban.ts` compõe os slices em `store/slices/` |
 | Banco | SQLite via `better-sqlite3`, no processo main |
 | Dinheiro | `decimal.js` — **nunca** `number` (veja abaixo) |
 | Testes | Vitest + Testing Library, jsdom por padrão |
@@ -90,7 +90,11 @@ são seus, mas **não adicione novos**.
 ```
 src/
   main/          # janela, IPC, SQLite, spawn de processos
-    index.ts     # registra TODOS os handlers IPC — comece por aqui
+    index.ts     # cria a janela, orquestra os handlers, proxy das chamadas de IA
+    handlers/    # handlers IPC por domínio (extraídos de index.ts)
+      window.ts  # window:minimize/maximize/close/is-maximized
+      files.ts   # files:*, excel:export, ai:images:*, task:images:*
+      backup.ts  # backup:export/import, ai:import + coletores de blob
     store.ts     # persistência SQLite (kanban.db)
     memory.ts    # memória durável da IA (validação, decay, sanitização de secrets)
     code-agent.ts # agente de código nativo (loop de tool-calling)
@@ -104,10 +108,33 @@ src/
     index.d.ts   # tipagem da ponte (mantenha em sincronia com index.ts)
   renderer/src/
     App.tsx      # troca de views; dono do estado dos modais
-    store/       # kanban.ts (principal), aiRun.ts (execução da IA)
-    components/  # ~40 componentes; financial/ tem os seus
-    ai/          # agent.ts (o loop), tools.ts (registro de ferramentas)
-    utils/, types/, services/
+    store/
+      kanban.ts  # compõe os slices abaixo; core (loadData, _persist, _flushPersist)
+      slices/    # slices Zustand por domínio (extraídos de kanban.ts)
+        projects.ts  # projetos + colunas + codePaths
+        tasks.ts     # tasks + sprints + timers
+        financial.ts # listas + items + transações + metas financeiras
+        habits.ts, goals.ts, notes.ts, planner.ts, files.ts, backup.ts
+      aiRun.ts   # execução da IA (store separada, sobrevive à troca de view)
+    components/
+      modals/     # ~9 modais (GoalModal, TaskModal, ProjectModal, …)
+      views/      # ~11 views (Board, GoalView, HabitView, …)
+      ai/         # componentes de IA (AIView, FleetView, AiRunHost, …)
+      layout/     # Sidebar, TitleBar, Toast
+      financial/  # componentes financeiros
+      (raiz)      # componentes compartilhados (ModalBase, CancelButton, EmptyState, …)
+    ai/
+      tools.ts    # infraestrutura: REGISTRY, TOOL_DEFS, runTool, describeTool*
+      tools/
+        helpers.ts  # funções helper + constantes (fn, resolveTask, PRIORITIES, …)
+        entries.ts  # 31 definições de ferramentas (definição + run)
+      agent.ts    # o loop (runAgent)
+      system-prompt.md, code-prompt.md, validators.ts, permission-registry.ts, glossary.json
+    utils/
+      dates.ts    # todayLocalISO, todayUTCISO, formatDateBR
+      money.ts    # moneyStr (coerção canônica), D (Decimal seguro)
+      immutable.ts # setAdd, setDel (Set imutável para Zustand)
+    types/, services/
     __tests__/   # espelha a estrutura acima
 ```
 
@@ -262,6 +289,11 @@ Não "simplifique" nenhuma destas sem ler o comentário que as acompanha:
   os dois, uma resposta virou 12 requisições HTTP.
 - **A store da execução da IA é separada (`store/aiRun.ts`)** — a execução
   sobrevive à `AIView` ser desmontada. Não a mova para dentro do componente.
+- **`ai/tools.ts` está fatiado** — as helpers e constantes (`fn`, `resolveTask`,
+  `PRIORITIES`, …) vivem em `ai/tools/helpers.ts` e as 31 definições do REGISTRY
+  em `ai/tools/entries.ts`. `tools.ts` só tem a infraestrutura (REGISTRY,
+  TOOL_DEFS, runTool, describeTool*). Adicionar uma ferramenta = adicionar em
+  `entries.ts` e pronto.
 - **Multi-agente: a store é desingletonizada** — N chat-agents rodam em paralelo
   (até no mesmo projeto). Os campos por-run são coleções por `convId`
   (`running: Set`, `streaming`/`streamingTools: Record`, `autoApprove`/
@@ -371,6 +403,27 @@ Não "simplifique" nenhuma destas sem ler o comentário que as acompanha:
 - **Arquivos fixados são citados em caminho relativo** (`relative(dir, f)`):
   `files` chega absoluto do `confineToRoot`, então o prompt dizia "caminhos
   relativos à raiz" e entregava um absoluto — além de vazar o home da máquina.
+- **Handlers em `main/handlers/` recebem dependências via injeção.**
+  `registerWindowHandlers` recebe `() => mainWindow` (getter, não o valor)
+  porque é chamado antes de `createWindow()` — capturar `mainWindow` na
+  chamada pegaria `null`. Handlers novos devem seguir o mesmo padrão: receber
+  getters ou valores que não dependam de estado ainda não inicializado.
+- **O autosave do `AiRunHost` é um `useEffect` único.** Dois efeitos separados
+  (conversa ativa + parked) disputavam o `ai-conversations.json` com
+  load-modify-save intercalados — o último sobrescrevia o primeiro.
+- 🔴 **`saveConversations` escreve em `.tmp` e renomeia.** `writeFileSync` direto
+  corrompia o JSON se o processo crashasse no meio da escrita, deixando o
+  arquivo truncado. O rename é atômico: ou o arquivo original sobrevive, ou o
+  novo está completo.
+- **`loadRunIndex` faz poda lazy de runs expiradas.** Execuções de agente têm
+  TTL de 24h (`agent-runs.ts`), mas a poda só rodava quando um novo agente
+  terminava. Agora `loadRunIndex()` chama `pruneRuns` em toda leitura — runs
+  antigas somem mesmo sem novos agentes.
+- **`pruneConversations` limpa o histórico na inicialização.** Conversas inativas
+  há mais de 14 dias são removidas; se sobrarem mais de 50, as mais antigas vão
+  junto. As imagens (`chat-images/`) das conversas removidas também são apagadas
+  do disco, desde que nenhuma conversa mantida ainda as referencie. Roda uma vez
+  em `app.whenReady()`, antes de `createWindow()`.
 
 ## Antes de terminar
 

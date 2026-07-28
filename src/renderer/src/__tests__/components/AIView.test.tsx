@@ -19,8 +19,8 @@ vi.mock('../../services/ElectronStorage', () => ({
   }
 }))
 
-import { AIView } from '../../components/AIView'
-import { AiRunHost } from '../../components/AiRunHost'
+import { AIView } from '../../components/ai/AIView'
+import { AiRunHost } from '../../components/ai/AiRunHost'
 import { useAiRunStore } from '../../store/aiRun'
 import { runAgent, AUTO_MAX_STEPS } from '../../ai/agent'
 import type { RunAgentOptions, AIConfig, PendingCall } from '../../ai/agent'
