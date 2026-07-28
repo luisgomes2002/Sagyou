@@ -858,6 +858,19 @@ export async function runAgent(
   } catch {
     /* memory is best-effort; a briefing failure never blocks the run */
   }
+  // Append a hint about the glossary when running in full app (bridge present).
+  // In tests the bridge is absent, so the base system prompt stays verbatim and
+  // can be compared for exact equality.
+  if (window.electronAPI?.ai?.lineage) {
+    systemContent = `${systemContent}\n\nDICA: Consulte \`resolver_termo\` antes de criar ou modificar entidades cujo significado exato no contexto do Sagyou você não domina completamente (ex: "sprint", "meta", "coluna Done", "handoff"). O glossário tem ~20 termos com definições e exemplos.`
+  }
+  // Inject the current date so the model never guesses the day wrong. Formatted
+  // in pt-BR with the weekday so it can reason about "amanhã"/"próxima semana".
+  const now = new Date()
+  const diasSemana = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado']
+  const hoje = `${diasSemana[now.getDay()]}, ${now.toISOString().slice(0, 10)}`
+  const horaLocal = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+  systemContent = `${systemContent}\n\nHOJE: ${hoje} — ${horaLocal} (horário de Brasília)`
   let msgs: ApiMessage[] = [{ role: 'system', content: systemContent }, ...conversation]
   const { onStream, onStatus, onToolEnd } = opts
   // Run-scoped brake state. Each counter/list lives for one run only, so a

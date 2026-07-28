@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+﻿import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import type { ProjectLink } from '../types'
 
@@ -57,8 +57,8 @@ export function ProjectLinksDropdown({ links, activeLinkIds, onSelect }: Props) 
         onClick={handleOpen}
         className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs transition-colors border ${
           hasActive
-            ? 'border-[#6366f1]/40 bg-[#6366f1]/10 text-[#a5b4fc]'
-            : 'border-[#2a2d42] bg-[#1e2235] text-[#8892a4] hover:text-[#e2e8f0]'
+            ? 'border-[#7c3aed]/40 bg-[#7c3aed]/10 text-[#a080f0]'
+            : 'border-[#3b3b3b] bg-[#2a2a2a] text-[#999999] hover:text-[#d4d4d4]'
         }`}
         title="Links do projeto"
       >
@@ -76,14 +76,14 @@ export function ProjectLinksDropdown({ links, activeLinkIds, onSelect }: Props) 
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div
-            className="fixed z-50 w-72 rounded-xl border border-[#2a2d42] bg-[#0d0f18] shadow-2xl py-1"
+            className="fixed z-50 w-72 rounded-xl border border-[#3b3b3b] bg-[#1b1b1b] shadow-2xl py-1"
             style={{ top: menuPos.top, left: menuPos.left }}
           >
-            <p className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-[#4a5068]">
+            <p className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-[#666666]">
               Links ativos desta sessão
             </p>
             {links.length === 0 && (
-              <p className="px-3 pb-3 text-xs text-[#8892a4] italic">Nenhum link cadastrado</p>
+              <p className="px-3 pb-3 text-xs text-[#999999] italic">Nenhum link cadastrado</p>
             )}
             {links.map((link) => {
               const isActive = activeLinkIds.includes(link.id)
@@ -92,11 +92,11 @@ export function ProjectLinksDropdown({ links, activeLinkIds, onSelect }: Props) 
                   key={link.id}
                   onClick={() => onSelect(link.id)}
                   className={`w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors group ${
-                    isActive ? 'bg-[#6366f1]/10' : 'hover:bg-[#1e2235]'
+                    isActive ? 'bg-[#7c3aed]/10' : 'hover:bg-[#2a2a2a]'
                   }`}
                 >
                   <div className={`w-3.5 h-3.5 rounded flex items-center justify-center shrink-0 border-2 transition-colors ${
-                    isActive ? 'border-[#6366f1] bg-[#6366f1]' : 'border-[#4a5068]'
+                    isActive ? 'border-[#7c3aed] bg-[#7c3aed]' : 'border-[#666666]'
                   }`}>
                     {isActive && (
                       <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5">
@@ -105,10 +105,10 @@ export function ProjectLinksDropdown({ links, activeLinkIds, onSelect }: Props) 
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className={`text-xs font-medium truncate ${isActive ? 'text-[#a5b4fc]' : 'text-[#e2e8f0]'}`}>
+                    <p className={`text-xs font-medium truncate ${isActive ? 'text-[#a080f0]' : 'text-[#d4d4d4]'}`}>
                       {link.label}
                     </p>
-                    <p className="text-[11px] text-[#4a5068] truncate">{link.url}</p>
+                    <p className="text-[11px] text-[#666666] truncate">{link.url}</p>
                   </div>
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     {isUrl(link.url) && (
@@ -117,7 +117,7 @@ export function ProjectLinksDropdown({ links, activeLinkIds, onSelect }: Props) 
                         target="_blank"
                         rel="noreferrer"
                         onClick={(e) => e.stopPropagation()}
-                        className="p-1 rounded text-[#8892a4] hover:text-[#a5b4fc]"
+                        className="p-1 rounded text-[#999999] hover:text-[#a080f0]"
                         title="Abrir"
                       >
                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -129,11 +129,11 @@ export function ProjectLinksDropdown({ links, activeLinkIds, onSelect }: Props) 
                     )}
                     <button
                       onClick={(e) => handleCopy(e, link.url, link.id)}
-                      className="p-1 rounded text-[#8892a4] hover:text-[#a5b4fc]"
+                      className="p-1 rounded text-[#999999] hover:text-[#a080f0]"
                       title="Copiar"
                     >
                       {copied === link.id ? (
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#46d478" strokeWidth="2.5">
                           <polyline points="20 6 9 17 4 12" />
                         </svg>
                       ) : (
@@ -149,14 +149,14 @@ export function ProjectLinksDropdown({ links, activeLinkIds, onSelect }: Props) 
             })}
             {activeLinks.length > 0 && (
               <>
-                <div className="border-t border-[#2a2d42] my-1" />
+                <div className="border-t border-[#3b3b3b] my-1" />
                 <button
                   onClick={() => {
                     navigator.clipboard.writeText(activeLinks.map((l) => l.url).join('\n'))
                     setCopied('__all__')
                     setTimeout(() => { setCopied(null); setOpen(false) }, 1200)
                   }}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#a5b4fc] hover:bg-[#1e2235] transition-colors"
+                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#a080f0] hover:bg-[#2a2a2a] transition-colors"
                 >
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <rect x="9" y="9" width="13" height="13" rx="2" />

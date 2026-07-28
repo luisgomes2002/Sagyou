@@ -303,8 +303,8 @@ const api = {
       },
       // Fires once a finished run has been written to the archive — later than
       // onExit, which doesn't wait for the diff that snapshot needs.
-      onArchived: (cb: (payload: { runId: string; id: string }) => void) => {
-        const handler = (_: Electron.IpcRendererEvent, payload: { runId: string; id: string }): void => cb(payload)
+      onArchived: (cb: (payload: { runId: string; id: string; convId: string | null }) => void) => {
+        const handler = (_: Electron.IpcRendererEvent, payload: { runId: string; id: string; convId: string | null }): void => cb(payload)
         ipcRenderer.on('ai:code-agent:archived', handler)
         return () => ipcRenderer.removeListener('ai:code-agent:archived', handler)
       },

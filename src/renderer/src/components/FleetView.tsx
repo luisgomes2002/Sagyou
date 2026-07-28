@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+﻿import { useState, useEffect, useCallback, useRef } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 import { useAiRunStore, EMPTY_USAGE, type ChatMessage } from '../store/aiRun'
 import { describeToolActivity } from '../ai/tools'
@@ -6,6 +6,7 @@ import type { Project } from '../types'
 import { CodeDiff, type CodeAgentDiff } from './CodeDiff'
 import { AgentTerminal } from './AgentTerminal'
 import type { AgentRunMeta } from './AgentRunPicker'
+import { whenLabel } from './AgentRunPicker'
 
 // ---------------------------------------------------------------------------
 // Painel de Agentes (FleetView)
@@ -53,6 +54,7 @@ interface CodeAgentRunUI {
   dir: string
   task: string
   model: string
+  convId: string | null
   startedAt: number
   log: string
   hint: { title: string; detail: string; command?: string } | null
@@ -63,8 +65,8 @@ interface CodeAgentRunUI {
     completionTokens: number
   } | null
   autoApprove: boolean
-  /** Pending approval request — shown inline until the user acts on it. */
-  approval: {
+  /** Pending approval requests — shown inline until the user acts on them. */
+  approvals: {
     id: string
     name: string
     args: Record<string, unknown>
@@ -74,7 +76,7 @@ interface CodeAgentRunUI {
     diff?: { kind: 'add' | 'del' | 'ctx' | 'meta'; text: string }[]
     diffTruncated?: boolean
     irreversivel?: boolean
-  } | null
+  }[]
 }
 
 function useCodeAgentRuns(): {
@@ -89,7 +91,7 @@ function useCodeAgentRuns(): {
     window.electronAPI.ai.codeAgent.status().then((s) => {
       setRuns((prev) =>
         s.runs.map((r) => {
-          // Preserve approval state from the live UI — the status call doesn't
+          // Preserve approvals state from the live UI — the status call doesn't
           // carry pending approvals (they live as IPC events, not in the summary).
           const existing = prev.find((p) => p.id === r.id)
           return {
@@ -97,12 +99,13 @@ function useCodeAgentRuns(): {
             dir: r.dir,
             task: r.task,
             model: r.model ?? r.agent,
+            convId: r.convId ?? null,
             startedAt: r.startedAt,
             log: r.log,
             hint: r.hint,
             progress: r.progress ?? null,
             autoApprove: r.autoApprove ?? false,
-            approval: existing?.approval ?? null
+            approvals: existing?.approvals ?? []
           }
         })
       )
@@ -137,6 +140,11 @@ function useCodeAgentRuns(): {
     // 5. Agente terminou
     const offExit = window.electronAPI.ai.codeAgent.onExit(
       (_payload: { runId: string; code: number }) => {
+        setRuns((prev) =>
+          prev.map((r) =>
+            r.id === _payload.runId ? { ...r, approvals: [] } : r
+          )
+        )
         sync()
       }
     )
@@ -160,17 +168,20 @@ function useCodeAgentRuns(): {
             r.id === req.runId
               ? {
                   ...r,
-                  approval: {
-                    id: req.id,
-                    name: req.name,
-                    args: req.args,
-                    resumo: req.resumo,
-                    conteudo: req.conteudo,
-                    comando: req.comando,
-                    diff: req.diff,
-                    diffTruncated: req.diffTruncated,
-                    irreversivel: req.irreversivel
-                  }
+                  approvals: [
+                    ...(r.approvals ?? []).filter((a) => a.id !== req.id),
+                    {
+                      id: req.id,
+                      name: req.name,
+                      args: req.args,
+                      resumo: req.resumo,
+                      conteudo: req.conteudo,
+                      comando: req.comando,
+                      diff: req.diff,
+                      diffTruncated: req.diffTruncated,
+                      irreversivel: req.irreversivel
+                    }
+                  ]
                 }
               : r
           )
@@ -213,7 +224,9 @@ function useCodeAgentRuns(): {
   const approveAgent = useCallback((runId: string, id: string, approved: boolean): void => {
     window.electronAPI.ai.codeAgent.approve(id, approved)
     setRuns((prev) =>
-      prev.map((r) => (r.id === runId ? { ...r, approval: null } : r))
+      prev.map((r) =>
+        r.id === runId ? { ...r, approvals: (r.approvals ?? []).filter((a) => a.id !== id) } : r
+      )
     )
   }, [])
 
@@ -259,13 +272,20 @@ export function FleetView({
     window.electronAPI.ai.codeAgent.runs().then((runs) => setArchivedRuns(runs.sort((a: AgentRunMeta, b: AgentRunMeta) => b.startedAt - a.startedAt)))
   }, [codeRuns.length])
 
-  // When a run finishes and gets archived while we're in a chat session,
-  // auto-fetch its diff/log and append to the conversation.
+  // When a run finishes and gets archived, auto-fetch its diff/log and append
+  // to the conversation. Also link the session by convId so future runs with the
+  // same convId accumulate in the same inline chat.
   useEffect(() => {
     const offArchived = window.electronAPI.ai.codeAgent.onArchived(
       async (payload) => {
         const session = chatSessionRef.current
-        if (!session || payload.runId !== session.runId) return
+        // If the archived run's convId matches the current session's sessionId,
+        // accumulate its results. Also link the session by runId for backward compat.
+        const matchesSession =
+          session &&
+          (payload.runId === session.runId ||
+            (payload.convId && payload.convId === session.sessionId))
+        if (!matchesSession) return
         try {
           const snap = await window.electronAPI.ai.codeAgent.runGet(payload.id)
           if (snap) {
@@ -302,6 +322,26 @@ export function FleetView({
     return () => offArchived()
   }, [])
 
+  // Auto-save the inline chat to the conversation so the history persists.
+  // Converts FleetView's chatMessages format to the standard ChatMessage format,
+  // keeping diff/log in the run archive (already persisted there).
+  useEffect(() => {
+    if (!chatSession || chatMessages.length === 0 || !chatSession.sessionId) return
+    const timer = setTimeout(() => {
+      const msgs = chatMessages.map((m) => ({
+        role: m.role === 'user' ? 'user' as const : 'assistant' as const,
+        content: m.text
+      }))
+      const title = chatSession.task.slice(0, 60) || 'Agente de código'
+      window.electronAPI.ai.conversations
+        .save({ id: chatSession.sessionId, title, messages: msgs, usage: undefined })
+        .catch(() => {
+          /* best-effort persistence */
+        })
+    }, 600)
+    return () => clearTimeout(timer)
+  }, [chatMessages, chatSession])
+
   const toggleRun = useCallback(async (id: string): Promise<void> => {
     if (runCache.has(id)) {
       setRunCache((prev) => { const next = new Map(prev); next.delete(id); return next })
@@ -318,6 +358,71 @@ export function FleetView({
       return next
     })
   }, [runCache])
+
+  /**
+   * Load the full conversation history (chat messages + archived code-agent runs)
+   * for a given convId, merging them into chatMessages in chronological order.
+   * This keeps everything — user messages, agent results, diffs, logs — in one
+   * consolidated inline chat, keyed by convId.
+   */
+  const loadChatSessionHistory = useCallback(
+    async (convId: string): Promise<void> => {
+      try {
+        // 1. Chat conversation (text messages between user and agent)
+        const conv = await window.electronAPI.ai.conversations.get(convId)
+        const textMsgs: { role: 'user' | 'agent'; text: string; ts: number }[] = []
+        if (conv) {
+          let lastUser = ''
+          for (const m of conv.messages) {
+            if (m.role === 'user') {
+              lastUser = m.content
+            } else if (m.role === 'assistant' && lastUser) {
+              textMsgs.push({ role: 'user', text: lastUser, ts: 0 })
+              textMsgs.push({ role: 'agent', text: m.content, ts: 0 })
+              lastUser = ''
+            }
+          }
+          if (lastUser && !textMsgs.some((x) => x.text === lastUser)) {
+            textMsgs.push({ role: 'user', text: lastUser, ts: 0 })
+          }
+        }
+
+        // 2. Archived code-agent runs for this conversation
+        const pastRuns = await window.electronAPI.ai.codeAgent.runs(convId)
+        const runCacheNext = new Map<string, { log: string; diff: CodeAgentDiff }>()
+        const agentMsgs: { role: 'agent'; text: string; diff?: CodeAgentDiff; log?: string; runId: string; ts: number }[] = []
+
+        for (const r of pastRuns) {
+          const snap = await window.electronAPI.ai.codeAgent.runGet(r.id)
+          if (!snap) continue
+          const diff = (snap.diff as CodeAgentDiff) ?? { patch: '', files: [], truncated: false, omittedNewFiles: [] }
+          const log = snap.log ?? ''
+          runCacheNext.set(r.id, { log, diff })
+          agentMsgs.push({
+            role: 'agent',
+            text: snap.exitCode === 0 ? 'Agente concluiu.' : `Agente encerrou com código ${snap.exitCode}.`,
+            diff,
+            log,
+            runId: r.id,
+            ts: r.endedAt
+          })
+        }
+
+        setRunCache((prev) => {
+          const next = new Map(prev)
+          for (const [k, v] of runCacheNext) next.set(k, v)
+          return next
+        })
+
+        // 3. Merge: sort by timestamp, agent results go after their context
+        agentMsgs.sort((a, b) => a.ts - b.ts)
+        setChatMessages([...textMsgs, ...agentMsgs])
+      } catch {
+        /* history loading is best-effort; the inline chat still works without it */
+      }
+    },
+    []
+  )
 
   // A running agent's transcript/usage is either the one on screen or parked.
   const messagesOf = (id: string): ChatMessage[] =>
@@ -371,8 +476,8 @@ export function FleetView({
 
   return (
     <>
-      <div className="flex items-center gap-3 px-6 py-4 border-b border-[#2a2d42] shrink-0">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a5b4fc" strokeWidth="2">
+      <div className="flex items-center gap-3 px-6 py-4 border-b border-[#3b3b3b] shrink-0">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a080f0" strokeWidth="2">
           <rect x="3" y="11" width="18" height="10" rx="2" />
           <circle cx="12" cy="5" r="2" />
           <path d="M 12 7v4" />
@@ -383,19 +488,19 @@ export function FleetView({
           <div className="flex items-center gap-2 flex-1 min-w-0">
             <button
               onClick={() => { setChatSession(null); setChatMessages([]) }}
-              className="text-[11px] text-[#8892a4] hover:text-[#e2e8f0] shrink-0"
+              className="text-[11px] text-[#999999] hover:text-[#d4d4d4] shrink-0"
             >
               ← Agentes
             </button>
-            <h1 className="text-base font-semibold text-[#e2e8f0] truncate">
+            <h1 className="text-base font-semibold text-[#d4d4d4] truncate">
               {chatSession.task.slice(0, 60)}
             </h1>
-            <span className="text-xs text-[#8892a4] shrink-0">{chatSession.agent}</span>
+            <span className="text-xs text-[#999999] shrink-0">{chatSession.agent}</span>
           </div>
         ) : (
           <>
-            <h1 className="text-base font-semibold text-[#e2e8f0]">Agentes</h1>
-            <span className="text-xs text-[#8892a4]">
+            <h1 className="text-base font-semibold text-[#d4d4d4]">Agentes</h1>
+            <span className="text-xs text-[#999999]">
               {agents} {agents === 1 ? 'ativo' : 'ativos'}
               {chatAgents.length > 0 && codeAgents.length > 0 && (
                 <> · {chatAgents.length} chat{chatAgents.length !== 1 ? 's' : ''} · {codeAgents.length} código</>
@@ -411,33 +516,33 @@ export function FleetView({
           {(() => {
             const data = runCache.get(chatSession.id)
             return (
-              <div className="mb-4 p-3 rounded-xl bg-[#13151f] border border-[#2a2d42]">
-                <p className="text-xs font-medium text-[#e2e8f0] mb-1">Tarefa original</p>
-                <p className="text-[11px] text-[#8892a4] mb-2">{chatSession.task}</p>
+              <div className="mb-4 p-3 rounded-xl bg-[#232323] border border-[#3b3b3b]">
+                <p className="text-xs font-medium text-[#d4d4d4] mb-1">Tarefa original</p>
+                <p className="text-[11px] text-[#999999] mb-2">{chatSession.task}</p>
                 {data && <CodeDiff diff={data.diff} />}
               </div>
             )
           })()}
           <div className="flex-1 space-y-3 mb-3 overflow-y-auto">
             {chatMessages.map((m, i) => (
-              <div key={i} className={`p-3 rounded-xl ${m.role === 'user' ? 'bg-[#1a1d2e] border border-[#2a2d42] ml-8' : 'bg-[#13151f] border border-[#2a2d42] mr-8'}`}>
-                <p className="text-xs text-[#e2e8f0] whitespace-pre-wrap">{m.text}</p>
+              <div key={i} className={`p-3 rounded-xl ${m.role === 'user' ? 'bg-[#3b3b3b] border border-[#3b3b3b] ml-8' : 'bg-[#232323] border border-[#3b3b3b] mr-8'}`}>
+                <p className="text-xs text-[#d4d4d4] whitespace-pre-wrap">{m.text}</p>
                 {m.diff && (
                   <div className="mt-2"><CodeDiff diff={m.diff} /></div>
                 )}
                 {m.log && (
                   <details className="group mt-2">
-                    <summary className="text-[10px] text-[#6366f1] cursor-pointer">Log</summary>
+                    <summary className="text-[10px] text-[#7c3aed] cursor-pointer">Log</summary>
                     <div className="mt-1"><AgentTerminal log={m.log} running={false} /></div>
                   </details>
                 )}
               </div>
             ))}
             {chatSending && (
-              <div className="mr-8 p-3 rounded-xl bg-[#13151f] border border-[#2a2d42]">
+              <div className="mr-8 p-3 rounded-xl bg-[#232323] border border-[#3b3b3b]">
                 <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full border-[1.5px] border-[#a5b4fc] border-t-transparent animate-spin" />
-                  <span className="text-xs text-[#8892a4]">Agente trabalhando…</span>
+                  <span className="w-2 h-2 rounded-full border-[1.5px] border-[#a080f0] border-t-transparent animate-spin" />
+                  <span className="text-xs text-[#999999]">Agente trabalhando…</span>
                 </div>
               </div>
             )}
@@ -474,7 +579,7 @@ export function FleetView({
               }}
               placeholder="Digite uma mensagem para o agente de código…"
               disabled={chatSending}
-              className="flex-1 px-3 py-2 rounded-lg bg-[#0d0f18] border border-[#2a2d42] text-sm text-[#e2e8f0] placeholder:text-[#4a5068] focus:outline-none focus:border-[#6366f1] disabled:opacity-50"
+              className="flex-1 px-3 py-2 rounded-lg bg-[#1b1b1b] border border-[#3b3b3b] text-sm text-[#d4d4d4] placeholder:text-[#666666] focus:outline-none focus:border-[#7c3aed] disabled:opacity-50"
             />
             <button
               onClick={async () => {
@@ -500,7 +605,7 @@ export function FleetView({
                 }
               }}
               disabled={chatSending}
-              className="px-4 py-2 rounded-lg bg-[#6366f1] text-sm text-white font-medium hover:bg-[#4f52d4] disabled:opacity-40 transition-colors shrink-0"
+              className="px-4 py-2 rounded-lg bg-[#7c3aed] text-sm text-white font-medium hover:bg-[#6d28d9] disabled:opacity-40 transition-colors shrink-0"
             >
               {chatSending ? '…' : 'Enviar'}
             </button>
@@ -510,15 +615,15 @@ export function FleetView({
         <>
           {chatAgents.length === 0 && codeAgents.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center">
-              <div className="w-12 h-12 rounded-full bg-[#1e2235] flex items-center justify-center mb-3">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4a5068" strokeWidth="2">
+              <div className="w-12 h-12 rounded-full bg-[#2a2a2a] flex items-center justify-center mb-3">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#666666" strokeWidth="2">
                   <rect x="3" y="11" width="18" height="10" rx="2" />
                   <circle cx="12" cy="5" r="2" />
                   <path d="M 12 7v4" />
                 </svg>
               </div>
-              <p className="text-[#e2e8f0] font-medium mb-1">Nenhum agente ativo</p>
-              <p className="text-sm text-[#8892a4] max-w-sm">
+              <p className="text-[#d4d4d4] font-medium mb-1">Nenhum agente ativo</p>
+              <p className="text-sm text-[#999999] max-w-sm">
                 Comece uma conversa na aba <b>IA</b>. Vários agentes podem trabalhar ao mesmo tempo,
                 inclusive no mesmo projeto — todos aparecem aqui.
               </p>
@@ -533,21 +638,21 @@ export function FleetView({
               return (
                 <div
                   key={id}
-                  className="flex flex-col rounded-xl bg-[#13151f] border border-[#2a2d42] p-4 gap-3"
+                  className="flex flex-col rounded-xl bg-[#232323] border border-[#3b3b3b] p-4 gap-3"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="text-sm font-medium text-[#e2e8f0] truncate">
+                      <p className="text-sm font-medium text-[#d4d4d4] truncate">
                         {deriveTitle(messagesOf(id))}
                       </p>
-                      <p className="text-[11px] text-[#8892a4] truncate">
-                        Projeto: <span className="text-[#a5b4fc]">{projectName}</span>
+                      <p className="text-[11px] text-[#999999] truncate">
+                        Projeto: <span className="text-[#a080f0]">{projectName}</span>
                       </p>
                     </div>
                     {progress && (
                       <span
                         title={`Passo ${progress.step} de ${progress.maxSteps}`}
-                        className="shrink-0 px-1.5 py-[1px] rounded text-[10px] font-medium tabular-nums bg-[#1e2235] border border-[#2a2d42] text-[#8892a4]"
+                        className="shrink-0 px-1.5 py-[1px] rounded text-[10px] font-medium tabular-nums bg-[#2a2a2a] border border-[#3b3b3b] text-[#999999]"
                       >
                         {progress.step}/{progress.maxSteps}
                       </span>
@@ -556,24 +661,24 @@ export function FleetView({
 
                   <div className="flex items-center gap-2 min-w-0">
                     {awaiting ? (
-                      <span className="w-2.5 h-2.5 shrink-0 rounded-full bg-amber-400" />
+                      <span className="w-2.5 h-2.5 shrink-0 rounded-full bg-[#f0b820]" />
                     ) : (
-                      <span className="w-2.5 h-2.5 shrink-0 rounded-full border-[1.5px] border-[#a5b4fc] border-t-transparent animate-spin" />
+                      <span className="w-2.5 h-2.5 shrink-0 rounded-full border-[1.5px] border-[#a080f0] border-t-transparent animate-spin" />
                     )}
-                    <p className="text-xs text-[#8892a4] truncate">
+                    <p className="text-xs text-[#999999] truncate">
                       {awaiting ? 'Aguardando sua aprovação…' : activityOf(id)}
                     </p>
                   </div>
 
                   {/* Gasto de tokens desta run: entrada e saída, como pedido. */}
                   <div className="flex items-center gap-3 text-[11px] tabular-nums">
-                    <span className="text-[#8892a4]" title="tokens de entrada (prompt) desta execução">
+                    <span className="text-[#999999]" title="tokens de entrada (prompt) desta execução">
                       ↑ {formatTokens(tokens.promptTokens)} entrada
                     </span>
-                    <span className="text-[#8892a4]" title="tokens de saída (resposta) desta execução">
+                    <span className="text-[#999999]" title="tokens de saída (resposta) desta execução">
                       ↓ {formatTokens(tokens.completionTokens)} saída
                     </span>
-                    <span className="text-[#6b7280]">
+                    <span className="text-[#999999]">
                       = {formatTokens(tokens.promptTokens + tokens.completionTokens)} total
                     </span>
                   </div>
@@ -581,14 +686,14 @@ export function FleetView({
                   <div className="flex items-center gap-2 pt-1">
                     <button
                       onClick={() => openAgent(id)}
-                      className="flex-1 px-3 py-1.5 rounded-lg bg-[#1e2235] border border-[#2a2d42] text-xs text-[#e2e8f0] font-medium hover:bg-[#2a2d42] transition-colors"
+                      className="flex-1 px-3 py-1.5 rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] text-xs text-[#d4d4d4] font-medium hover:bg-[#3b3b3b] transition-colors"
                     >
                       Abrir chat
                     </button>
                     <button
                       onClick={() => abort(id)}
                       title="Parar este agente"
-                      className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-500/30 text-xs text-red-400 hover:bg-red-500/10 transition-colors"
+                      className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#e04040]/30 text-xs text-[#e04040] hover:bg-[#e04040]/10 transition-colors"
                     >
                       <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor">
                         <rect x="3" y="3" width="18" height="18" rx="3" />
@@ -602,26 +707,26 @@ export function FleetView({
 
             {codeAgents.map((run) => {
               const projectName = codeAgentProject(run.dir)
-              const hasApproval = run.approval !== null
+              const hasApproval = run.approvals.length > 0
               const hasHint = run.hint !== null
               return (
                 <div
                   key={run.id}
-                  className="flex flex-col rounded-xl bg-[#13151f] border border-[#f97316]/30 p-4 gap-3"
+                  className="flex flex-col rounded-xl bg-[#232323] border border-[#f06c10]/30 p-4 gap-3"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="text-sm font-medium text-[#e2e8f0] truncate">
+                      <p className="text-sm font-medium text-[#d4d4d4] truncate">
                         {run.task.slice(0, 60)}
                       </p>
-                      <p className="text-[11px] text-[#8892a4] truncate">
-                        Projeto: <span className="text-[#a5b4fc]">{projectName}</span>
+                      <p className="text-[11px] text-[#999999] truncate">
+                        Projeto: <span className="text-[#a080f0]">{projectName}</span>
                       </p>
                     </div>
                     {run.progress && (
                       <span
                         title={`Passo ${run.progress.step} de ${run.progress.maxSteps}`}
-                        className="shrink-0 px-1.5 py-[1px] rounded text-[10px] font-medium tabular-nums bg-[#1e2235] border border-[#2a2d42] text-[#8892a4]"
+                        className="shrink-0 px-1.5 py-[1px] rounded text-[10px] font-medium tabular-nums bg-[#2a2a2a] border border-[#3b3b3b] text-[#999999]"
                       >
                         {run.progress.step}/{run.progress.maxSteps}
                       </span>
@@ -631,29 +736,31 @@ export function FleetView({
                   {/* Status line with detailed step info */}
                   <div className="flex items-center gap-2 min-w-0">
                     {hasApproval ? (
-                      <span className="w-2.5 h-2.5 shrink-0 rounded-full bg-amber-400 animate-pulse" title="Aguardando aprovação" />
+                      <span className="w-2.5 h-2.5 shrink-0 rounded-full bg-[#f0b820] animate-pulse" title="Aguardando aprovação" />
                     ) : hasHint ? (
-                      <span className="w-2.5 h-2.5 shrink-0 rounded-full bg-amber-400" title={run.hint!.detail} />
+                      <span className="w-2.5 h-2.5 shrink-0 rounded-full bg-[#f0b820]" title={run.hint!.detail} />
                     ) : run.progress ? (
-                      <span className="w-2.5 h-2.5 shrink-0 rounded-full border-[1.5px] border-[#a5b4fc] border-t-transparent animate-spin" title={`Passo ${run.progress.step}/${run.progress.maxSteps}`} />
+                      <span className="w-2.5 h-2.5 shrink-0 rounded-full border-[1.5px] border-[#a080f0] border-t-transparent animate-spin" title={`Passo ${run.progress.step}/${run.progress.maxSteps}`} />
                     ) : (
-                      <span className="w-2.5 h-2.5 shrink-0 rounded-full border-[1.5px] border-[#a5b4fc] border-t-transparent animate-spin" title="Iniciando…" />
+                      <span className="w-2.5 h-2.5 shrink-0 rounded-full border-[1.5px] border-[#a080f0] border-t-transparent animate-spin" title="Iniciando…" />
                     )}
-                    <p className="text-xs text-[#8892a4] truncate flex items-center gap-1.5">
+                    <p className="text-xs text-[#999999] truncate flex items-center gap-1.5">
                       {run.autoApprove && (
-                        <span className="inline-flex items-center px-1.5 py-px rounded text-[10px] font-medium bg-amber-500/15 text-amber-400 shrink-0">
+                        <span className="inline-flex items-center px-1.5 py-px rounded text-[10px] font-medium bg-[#f0b820]/15 text-[#f0b820] shrink-0">
                           Auto
                         </span>
                       )}
                       {hasApproval ? (
-                        <span className="text-amber-400 font-medium">Aguardando sua aprovação</span>
+                        <span className="text-[#f0b820] font-medium">
+                          Aguardando sua aprovação ({run.approvals.length})
+                        </span>
                       ) : hasHint ? (
-                        <span className="text-amber-400">⚠️ {run.hint!.title}</span>
+                        <span className="text-[#f0b820]">{run.hint!.title}</span>
                       ) : run.progress ? (
-                        <span className="text-[#a5b4fc]">
+                        <span className="text-[#a080f0]">
                           {run.model || 'codex'} · passo {run.progress.step}/{run.progress.maxSteps}
                           {run.progress.promptTokens + run.progress.completionTokens > 0 && (
-                            <span className="text-[#6b7280] ml-1">
+                            <span className="text-[#999999] ml-1">
                               · {(run.progress.promptTokens + run.progress.completionTokens).toLocaleString()} tok
                             </span>
                           )}
@@ -667,7 +774,7 @@ export function FleetView({
                   {/* Log preview (last 3 lines) */}
                   {run.log && (
                     <div className="rounded-lg bg-black/40 p-2 max-h-16 overflow-hidden">
-                      <pre className="text-[10px] text-[#6b7280] leading-relaxed whitespace-pre-wrap line-clamp-3 font-mono">
+                      <pre className="text-[10px] text-[#999999] leading-relaxed whitespace-pre-wrap line-clamp-3 font-mono">
                         {run.log.split('\n').filter(Boolean).slice(-3).join('\n')}
                       </pre>
                     </div>
@@ -676,8 +783,8 @@ export function FleetView({
                   {/* Tokens if available */}
                   {run.progress && (
                     <div className="flex items-center gap-3 text-[11px] tabular-nums">
-                      <span className="text-[#8892a4]">↑ {run.progress.promptTokens.toLocaleString()} entrada</span>
-                      <span className="text-[#8892a4]">↓ {run.progress.completionTokens.toLocaleString()} saída</span>
+                      <span className="text-[#999999]">↑ {run.progress.promptTokens.toLocaleString()} entrada</span>
+                      <span className="text-[#999999]">↓ {run.progress.completionTokens.toLocaleString()} saída</span>
                     </div>
                   )}
 
@@ -685,19 +792,26 @@ export function FleetView({
                   <div className="flex items-center gap-2 pt-1">
                     <button
                       onClick={() => {
-                        setChatSession({
-                          id: run.id,
-                          dir: run.dir,
-                          task: run.task,
-                          agent: run.model || 'codex',
-                          sessionId: uuidv4(),
-                          runId: run.id
-                        })
-                        setChatMessages([])
-                        setChatInput('')
-                        setChatSending(false)
+                        void (async () => {
+                          const sid = run.convId || uuidv4()
+                          setChatSession({
+                            id: run.id,
+                            dir: run.dir,
+                            task: run.task,
+                            agent: run.model || 'codex',
+                            sessionId: sid,
+                            runId: run.id
+                          })
+                          setChatMessages([])
+                          setChatInput('')
+                          setChatSending(false)
+                          // Load past context if this is a real convId
+                          if (run.convId) {
+                            await loadChatSessionHistory(sid)
+                          }
+                        })()
                       }}
-                      className="flex-1 px-3 py-1.5 rounded-lg bg-[#1e2235] border border-[#2a2d42] text-xs text-[#e2e8f0] font-medium hover:bg-[#2a2d42] transition-colors"
+                      className="flex-1 px-3 py-1.5 rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] text-xs text-[#d4d4d4] font-medium hover:bg-[#3b3b3b] transition-colors"
                     >
                       Abrir chat
                     </button>
@@ -705,16 +819,16 @@ export function FleetView({
                       onClick={() => setAuto(run.id, !run.autoApprove)}
                       className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
                         run.autoApprove
-                          ? 'bg-amber-500/15 border-amber-500/40 text-amber-400'
-                          : 'bg-[#1e2235] border-[#2a2d42] text-[#8892a4] hover:text-[#e2e8f0]'
+                          ? 'bg-[#f0b820]/15 border-[#f0b820]/40 text-[#f0b820]'
+                          : 'bg-[#2a2a2a] border-[#3b3b3b] text-[#999999] hover:text-[#d4d4d4]'
                       }`}
                     >
-                      Auto {run.autoApprove ? '✓' : ''}
+                      Auto {run.autoApprove ? 'Sim' : ''}
                     </button>
                     <button
                       onClick={() => stopAgent(run.id)}
                       title="Parar este agente de código"
-                      className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-500/30 text-xs text-red-400 hover:bg-red-500/10 transition-colors"
+                      className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#e04040]/30 text-xs text-[#e04040] hover:bg-[#e04040]/10 transition-colors"
                     >
                       <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor">
                         <rect x="3" y="3" width="18" height="18" rx="3" />
@@ -730,8 +844,8 @@ export function FleetView({
 
             {/* ── Archived runs (finished agents) ───────────────────────────── */}
             {archivedRuns.length > 0 && (
-              <div className="mt-6 pt-4 border-t border-[#2a2d42]">
-                <h2 className="text-xs font-medium text-[#8892a4] mb-3 px-1">
+              <div className="mt-6 pt-4 border-t border-[#3b3b3b]">
+                <h2 className="text-xs font-medium text-[#999999] mb-3 px-1">
                   Execuções anteriores (últimas 24h)
                 </h2>
                 <div className="space-y-2">
@@ -740,8 +854,8 @@ export function FleetView({
                       key={run.id}
                       className={`rounded-xl border p-3 transition-colors ${
                         runCache.has(run.id)
-                          ? 'bg-[#1a1d2e] border-[#6366f1]'
-                          : 'bg-[#13151f] border-[#2a2d42] hover:border-[#3a3e58]'
+                          ? 'bg-[#3b3b3b] border-[#7c3aed]'
+                          : 'bg-[#232323] border-[#3b3b3b] hover:border-[#555555]'
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2">
@@ -749,43 +863,49 @@ export function FleetView({
                           <div className="flex items-center gap-2">
                             <span
                               className={`w-2 h-2 rounded-full shrink-0 ${
-                                run.exitCode === 0 ? 'bg-green-500' : 'bg-red-500'
+                                run.exitCode === 0 ? 'bg-[#46d478]' : 'bg-[#e04040]'
                               }`}
                             />
-                            <p className="text-xs font-medium text-[#e2e8f0] truncate">
+                            <p className="text-xs font-medium text-[#d4d4d4] truncate">
                               {run.task.slice(0, 80)}
                             </p>
                           </div>
-                          <p className="text-[10px] text-[#8892a4] mt-1">
+                          <p className="text-[10px] text-[#999999] mt-1">
                             {run.agent} · {run.fileCount} {run.fileCount === 1 ? 'arquivo' : 'arquivos'}
                             {run.tokens && ` · ${((run.tokens.promptTokens + run.tokens.completionTokens) / 1000).toFixed(0)}k tok`}
+                            {run.endedAt && ` · ${whenLabel(run.endedAt)}`}
                           </p>
                         </div>
                         <div className="flex items-center gap-1.5 shrink-0">
                       <button
                         onClick={async () => {
                           await window.electronAPI.ai.codeAgent.runRenew(run.id)
+                          const sid = run.convId || uuidv4()
                           setChatSession({
                             id: run.id,
                             dir: run.dir,
                             task: run.task,
                             agent: run.agent,
-                            sessionId: uuidv4(),
+                            sessionId: sid,
                             runId: null
                           })
                           setChatMessages([])
                           setChatInput('')
                           setChatSending(false)
+                          // Load past context if this is a real convId
+                          if (run.convId) {
+                            await loadChatSessionHistory(sid)
+                          }
                         }}
                         title="Continuar conversando com este agente"
-                            className="px-2.5 py-1.5 rounded-lg bg-[#6366f1]/20 border border-[#6366f1]/40 text-[10px] text-[#a5b4fc] font-medium hover:bg-[#6366f1]/30 transition-colors"
+                            className="px-2.5 py-1.5 rounded-lg bg-[#7c3aed]/20 border border-[#7c3aed]/40 text-[10px] text-[#a080f0] font-medium hover:bg-[#7c3aed]/30 transition-colors"
                           >
                             Continuar
                           </button>
                           <button
                             onClick={() => toggleRun(run.id)}
                             title={runCache.has(run.id) ? 'Fechar detalhes' : 'Ver diff e log'}
-                            className="px-2.5 py-1.5 rounded-lg bg-[#1e2235] border border-[#2a2d42] text-[10px] text-[#e2e8f0] hover:bg-[#6366f1] hover:border-[#6366f1] transition-colors"
+                            className="px-2.5 py-1.5 rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] text-[10px] text-[#d4d4d4] hover:bg-[#7c3aed] hover:border-[#7c3aed] transition-colors"
                           >
                             {runCache.has(run.id) ? 'Fechar' : 'Detalhes'}
                           </button>
@@ -799,7 +919,7 @@ export function FleetView({
                           <div className="mt-3 space-y-3">
                             <CodeDiff diff={data.diff} />
                             <details className="group">
-                              <summary className="text-[10px] text-[#6366f1] cursor-pointer hover:text-[#a5b4fc] select-none">
+                              <summary className="text-[10px] text-[#7c3aed] cursor-pointer hover:text-[#a080f0] select-none">
                                 Log completo ({data.log.split('\n').length} linhas)
                               </summary>
                               <div className="mt-2">

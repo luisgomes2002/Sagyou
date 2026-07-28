@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 
 export interface ToastMessage {
   id: string
@@ -34,9 +34,9 @@ function ToastItem({ toast, onRemove }: { toast: ToastMessage; onRemove: (id: st
   }, [toast.id, onRemove])
 
   const colors = {
-    success: 'border-emerald-500/30 bg-emerald-500/15 text-emerald-400',
-    error: 'border-red-500/30 bg-red-500/15 text-red-400',
-    info: 'border-[#6366f1]/30 bg-[#6366f1]/15 text-[#a5b4fc]'
+    success: 'border-[#46d478]/30 bg-[#46d478]/15 text-[#46d478]',
+    error: 'border-[#e04040]/30 bg-[#e04040]/15 text-[#e04040]',
+    info: 'border-[#7c3aed]/30 bg-[#7c3aed]/15 text-[#a080f0]'
   }
 
   return (

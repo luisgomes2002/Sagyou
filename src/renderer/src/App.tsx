@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react'
+﻿import { useEffect, useState, useCallback, useMemo } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 import { useShallow } from 'zustand/react/shallow'
 import { useKanbanStore } from './store/kanban'
@@ -13,6 +13,7 @@ import { GoalView } from './components/GoalView'
 import { HabitView } from './components/HabitView'
 import { FinancialView } from './components/FinancialView'
 import { UpcomingView } from './components/UpcomingView'
+import { PlanView } from './components/PlanView'
 import { ReportsView } from './components/ReportsView'
 import { FilesView } from './components/FilesView'
 import { AIView } from './components/AIView'
@@ -30,6 +31,7 @@ import { ConfirmDialog } from './components/ConfirmDialog'
 import { TaskViewModal } from './components/TaskViewModal'
 import { buildTaskPrompt } from './utils/taskPrompt'
 import { ToastContainer, type ToastMessage } from './components/Toast'
+import { HomeView } from './components/HomeView'
 
 interface TaskModalState {
   open: boolean
@@ -136,7 +138,22 @@ export default function App() {
   const [viewTask, setViewTask] = useState<Task | null>(null)
   const [projectModal, setProjectModal] = useState<ProjectModalState>({ open: false })
   const [columnModal, setColumnModal] = useState<ColumnModalState>({ open: false })
-  const [activeView, setActiveView] = useState<'board' | 'canvas' | 'done' | 'goals' | 'habits' | 'financial' | 'upcoming' | 'reports' | 'files' | 'ai' | 'memory' | 'agents'>('board')
+  const [activeView, setActiveView] = useState<
+    | 'home'
+    | 'board'
+    | 'canvas'
+    | 'done'
+    | 'goals'
+    | 'habits'
+    | 'financial'
+    | 'upcoming'
+    | 'reports'
+    | 'files'
+    | 'ai'
+    | 'memory'
+    | 'agents'
+    | 'planejamento'
+  >('home')
   const [searchOpen, setSearchOpen] = useState(false)
   const [excelExportOpen, setExcelExportOpen] = useState(false)
   // session-only: maps projectId → active linkIds (not persisted — each machine picks its own)
@@ -154,14 +171,20 @@ export default function App() {
   // Count of live code-agent runs (supports N concurrent agents in different dirs).
   const [codeAgentRunCount, setCodeAgentRunCount] = useState(0)
 
-  useEffect(() => { loadData() }, [loadData])
+  useEffect(() => {
+    loadData()
+  }, [loadData])
 
   // Track the code agent across all views (App never unmounts, unlike AIView).
   useEffect(() => {
     window.electronAPI.ai.codeAgent.status().then((s) => setCodeAgentRunCount(s.runs.length))
     // onOutput now receives {runId, chunk} — any activity across any run lights the banner.
-    const offOutput = window.electronAPI.ai.codeAgent.onOutput(() => setCodeAgentRunCount((n) => (n > 0 ? n : 1)))
-    const offStarted = window.electronAPI.ai.codeAgent.onStarted(() => setCodeAgentRunCount((n) => (n > 0 ? n : 1)))
+    const offOutput = window.electronAPI.ai.codeAgent.onOutput(() =>
+      setCodeAgentRunCount((n) => (n > 0 ? n : 1))
+    )
+    const offStarted = window.electronAPI.ai.codeAgent.onStarted(() =>
+      setCodeAgentRunCount((n) => (n > 0 ? n : 1))
+    )
     // onExit now receives {runId, code} — a run ended, but others may still be active.
     const offExit = window.electronAPI.ai.codeAgent.onExit(() => {
       window.electronAPI.ai.codeAgent.status().then((s) => setCodeAgentRunCount(s.runs.length))
@@ -202,12 +225,13 @@ export default function App() {
     [sprints, activeProjectId]
   )
 
-  const projectTasks = useMemo(() =>
-    tasks.filter((t) => {
-      if (t.projectId !== activeProjectId) return false
-      if (sprintFilter !== null) return t.sprintId === sprintFilter
-      return true
-    }),
+  const projectTasks = useMemo(
+    () =>
+      tasks.filter((t) => {
+        if (t.projectId !== activeProjectId) return false
+        if (sprintFilter !== null) return t.sprintId === sprintFilter
+        return true
+      }),
     [tasks, activeProjectId, sprintFilter]
   )
 
@@ -238,7 +262,12 @@ export default function App() {
   const handleNewProject = () => setProjectModal({ open: true })
   const handleEditProject = (project: Project) => setProjectModal({ open: true, project })
 
-  const handleSaveProject = (name: string, description: string, color: string, links: import('./types').ProjectLink[]) => {
+  const handleSaveProject = (
+    name: string,
+    description: string,
+    color: string,
+    links: import('./types').ProjectLink[]
+  ) => {
     if (projectModal.project) {
       updateProject(projectModal.project.id, { name, description, color, links })
       addToast('Projeto atualizado')
@@ -332,7 +361,11 @@ export default function App() {
       updateTask(taskModal.task.id, { ...rest, sprintId: sprintId || undefined })
       addToast('Task atualizada')
     } else if (activeProjectId) {
-      const newTaskId = createTask({ ...rest, projectId: activeProjectId, sprintId: sprintId || undefined })
+      const newTaskId = createTask({
+        ...rest,
+        projectId: activeProjectId,
+        sprintId: sprintId || undefined
+      })
       if (taskModal.linkNoteId) updateNote(taskModal.linkNoteId, { taskId: newTaskId })
       addToast('Task criada')
     }
@@ -354,7 +387,10 @@ export default function App() {
 
   const handleCompleteTask = (task: Task) => {
     const { doneCol } = projectColumnInfo.get(task.projectId) ?? {}
-    if (!doneCol) { addToast('Coluna "Done" não encontrada', 'error'); return }
+    if (!doneCol) {
+      addToast('Coluna "Done" não encontrada', 'error')
+      return
+    }
     moveTask(task.id, doneCol.id, countTasksInColumn(doneCol.id))
     addToast('Task concluída')
   }
@@ -376,7 +412,8 @@ export default function App() {
     setConfirm({
       open: true,
       title: 'Importar backup',
-      message: 'Isso vai substituir TODOS os dados atuais pelo backup. Esta ação não pode ser desfeita.',
+      message:
+        'Isso vai substituir TODOS os dados atuais pelo backup. Esta ação não pode ser desfeita.',
       onConfirm: async () => {
         setConfirm((c) => ({ ...c, open: false }))
         const ok = await importBackup()
@@ -387,7 +424,10 @@ export default function App() {
   }
 
   const handleImportAI = async () => {
-    if (!activeProjectId) { addToast('Selecione um projeto primeiro', 'error'); return }
+    if (!activeProjectId) {
+      addToast('Selecione um projeto primeiro', 'error')
+      return
+    }
     const count = await importAIJson(activeProjectId)
     if (count > 0) {
       addToast(`${count} task${count > 1 ? 's' : ''} importada${count > 1 ? 's' : ''} com sucesso`)
@@ -398,14 +438,14 @@ export default function App() {
 
   if (!isLoaded) {
     return (
-      <div className="flex items-center justify-center h-screen bg-[#0d0f18]">
-        <div className="w-6 h-6 rounded-full border-2 border-[#6366f1] border-t-transparent animate-spin" />
+      <div className="flex items-center justify-center h-screen bg-[#1b1b1b]">
+        <div className="w-6 h-6 rounded-full border-2 border-[#7c3aed] border-t-transparent animate-spin" />
       </div>
     )
   }
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-[#0d0f18]">
+    <div className="flex flex-col h-screen overflow-hidden bg-[#1b1b1b]">
       <TitleBar />
 
       {/* Outside the view switch on purpose: the agent's run has to survive the
@@ -419,7 +459,17 @@ export default function App() {
           projects={projects}
           activeProjectId={activeProjectId}
           activeView={activeView}
-          onSelectProject={(id) => { setActiveProject(id); if (activeView !== 'board' && activeView !== 'canvas' && activeView !== 'files' && activeView !== 'ai') setActiveView('board'); setSprintFilter(null) }}
+          onSelectProject={(id) => {
+            setActiveProject(id)
+            if (
+              activeView !== 'board' &&
+              activeView !== 'canvas' &&
+              activeView !== 'files' &&
+              activeView !== 'ai'
+            )
+              setActiveView('board')
+            setSprintFilter(null)
+          }}
           onChangeView={setActiveView}
           onOpenSearch={() => setSearchOpen(true)}
           onNewProject={handleNewProject}
@@ -434,14 +484,17 @@ export default function App() {
         />
 
         <main className="flex-1 flex flex-col overflow-hidden">
-          {activeView === 'reports' ? (
+          {activeView === 'home' ? (
+            <HomeView
+              projects={projects}
+              onNavigate={(view) => setActiveView(view as typeof activeView)}
+            />
+          ) : activeView === 'reports' ? (
             <ReportsView projects={projects} tasks={tasks} sprints={sprints} habits={habits} />
           ) : activeView === 'upcoming' ? (
-            <UpcomingView
-              projects={projects}
-              tasks={tasks}
-              onViewTask={handleViewTask}
-            />
+            <UpcomingView projects={projects} tasks={tasks} onViewTask={handleViewTask} />
+          ) : activeView === 'planejamento' ? (
+            <PlanView />
           ) : activeView === 'financial' ? (
             <FinancialView />
           ) : activeView === 'ai' ? (
@@ -460,12 +513,19 @@ export default function App() {
             <GoalView projects={projects} />
           ) : activeView === 'done' ? (
             <>
-              <div className="flex items-center gap-3 px-6 py-4 border-b border-[#2a2d42] shrink-0">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5">
+              <div className="flex items-center gap-3 px-6 py-4 border-b border-[#3b3b3b] shrink-0">
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#20b858"
+                  strokeWidth="2.5"
+                >
                   <polyline points="20 6 9 17 4 12" />
                 </svg>
-                <h1 className="text-base font-semibold text-[#e2e8f0]">Concluídas</h1>
-                <span className="text-xs text-[#8892a4]">
+                <h1 className="text-base font-semibold text-[#d4d4d4]">Concluídas</h1>
+                <span className="text-xs text-[#999999]">
                   {tasks.filter((t) => isTaskDone(t, projects)).length} tasks
                 </span>
               </div>
@@ -481,19 +541,24 @@ export default function App() {
             </>
           ) : activeProject ? (
             <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
-              <div className="flex items-center gap-3 px-6 py-4 border-b border-[#2a2d42] shrink-0">
-                <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: activeProject.color }} />
-                <h1 className="text-base font-semibold text-[#e2e8f0]">{activeProject.name}</h1>
+              <div className="flex items-center gap-3 px-6 py-4 border-b border-[#3b3b3b] shrink-0">
+                <div
+                  className="w-3 h-3 rounded-full shrink-0"
+                  style={{ backgroundColor: activeProject.color }}
+                />
+                <h1 className="text-base font-semibold text-[#d4d4d4]">{activeProject.name}</h1>
                 {activeProject.description && (
-                  <span className="text-sm text-[#8892a4] truncate max-w-[200px]">{activeProject.description}</span>
+                  <span className="text-sm text-[#999999] truncate max-w-[200px]">
+                    {activeProject.description}
+                  </span>
                 )}
-                <div className="flex items-center gap-1 ml-4 p-0.5 rounded-lg bg-[#1e2235] border border-[#2a2d42]">
+                <div className="flex items-center gap-1 ml-4 p-0.5 rounded-lg bg-[#2a2a2a] border border-[#3b3b3b]">
                   <button
                     onClick={() => setActiveView('board')}
                     className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
                       activeView === 'board'
-                        ? 'bg-[#2a2d42] text-[#e2e8f0]'
-                        : 'text-[#8892a4] hover:text-[#e2e8f0]'
+                        ? 'bg-[#3b3b3b] text-[#d4d4d4]'
+                        : 'text-[#999999] hover:text-[#d4d4d4]'
                     }`}
                   >
                     Board
@@ -502,8 +567,8 @@ export default function App() {
                     onClick={() => setActiveView('canvas')}
                     className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
                       activeView === 'canvas'
-                        ? 'bg-[#2a2d42] text-[#e2e8f0]'
-                        : 'text-[#8892a4] hover:text-[#e2e8f0]'
+                        ? 'bg-[#3b3b3b] text-[#d4d4d4]'
+                        : 'text-[#999999] hover:text-[#d4d4d4]'
                     }`}
                   >
                     Canvas
@@ -512,8 +577,8 @@ export default function App() {
                     onClick={() => setActiveView('files')}
                     className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
                       activeView === 'files'
-                        ? 'bg-[#2a2d42] text-[#e2e8f0]'
-                        : 'text-[#8892a4] hover:text-[#e2e8f0]'
+                        ? 'bg-[#3b3b3b] text-[#d4d4d4]'
+                        : 'text-[#999999] hover:text-[#d4d4d4]'
                     }`}
                   >
                     Arquivos
@@ -524,13 +589,15 @@ export default function App() {
                     <ProjectLinksDropdown
                       links={activeProject.links ?? []}
                       activeLinkIds={activeLinkIds[activeProject.id] ?? []}
-                      onSelect={(linkId) => setActiveLinkIds((prev) => {
-                        const current = prev[activeProject.id] ?? []
-                        const next = current.includes(linkId)
-                          ? current.filter((id) => id !== linkId)
-                          : [...current, linkId]
-                        return { ...prev, [activeProject.id]: next }
-                      })}
+                      onSelect={(linkId) =>
+                        setActiveLinkIds((prev) => {
+                          const current = prev[activeProject.id] ?? []
+                          const next = current.includes(linkId)
+                            ? current.filter((id) => id !== linkId)
+                            : [...current, linkId]
+                          return { ...prev, [activeProject.id]: next }
+                        })
+                      }
                     />
                   )}
                   {activeView === 'board' && (
@@ -546,11 +613,14 @@ export default function App() {
                         onReopenSprint={reopenSprint}
                         onDeleteSprint={deleteSprint}
                       />
-                      <span className="text-xs text-[#8892a4]">
-                        {projectTasks.filter((t) => {
-                          const col = activeProject.columns.find((c) => c.id === t.columnId)
-                          return col && !isDoneColumn(col)
-                        }).length} tasks
+                      <span className="text-xs text-[#999999]">
+                        {
+                          projectTasks.filter((t) => {
+                            const col = activeProject.columns.find((c) => c.id === t.columnId)
+                            return col && !isDoneColumn(col)
+                          }).length
+                        }{' '}
+                        tasks
                       </span>
                     </>
                   )}
@@ -583,19 +653,26 @@ export default function App() {
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center flex-1 gap-4">
-              <div className="w-16 h-16 rounded-2xl bg-[#1e2235] border border-[#2a2d42] flex items-center justify-center">
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#8892a4" strokeWidth="1.5">
+              <div className="w-16 h-16 rounded-2xl bg-[#2a2a2a] border border-[#3b3b3b] flex items-center justify-center">
+                <svg
+                  width="28"
+                  height="28"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#999999"
+                  strokeWidth="1.5"
+                >
                   <rect x="3" y="3" width="7" height="18" rx="1" />
                   <rect x="14" y="3" width="7" height="11" rx="1" />
                 </svg>
               </div>
               <div className="text-center">
-                <p className="text-[#e2e8f0] font-medium mb-1">Nenhum projeto</p>
-                <p className="text-sm text-[#8892a4]">Crie um projeto para começar</p>
+                <p className="text-[#d4d4d4] font-medium mb-1">Nenhum projeto</p>
+                <p className="text-sm text-[#999999]">Crie um projeto para começar</p>
               </div>
               <button
                 onClick={handleNewProject}
-                className="px-4 py-2 rounded-lg bg-[#6366f1] text-sm text-white font-medium hover:bg-[#5254c5] transition-colors"
+                className="px-4 py-2 rounded-lg bg-[#7c3aed] text-sm text-white font-medium hover:bg-[#6d28d9] transition-colors"
               >
                 Criar projeto
               </button>
@@ -642,7 +719,10 @@ export default function App() {
         open={viewTask !== null}
         task={viewTask}
         columns={viewTask ? (projects.find((p) => p.id === viewTask.projectId)?.columns ?? []) : []}
-        onEdit={(task) => { setViewTask(null); handleEditTask(task) }}
+        onEdit={(task) => {
+          setViewTask(null)
+          handleEditTask(task)
+        }}
         onSendToAI={(task) => {
           const project = projects.find((p) => p.id === task.projectId)
           const column = project?.columns.find((c) => c.id === task.columnId)

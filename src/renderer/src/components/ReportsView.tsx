@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+﻿import { useMemo } from 'react'
 import {
   startOfWeek,
   subWeeks,
@@ -64,12 +64,12 @@ function ActivityHeatmap({ doneTasks }: { doneTasks: Task[] }) {
   const dayLabels = ['', 'Seg', '', 'Qua', '', 'Sex', '']
 
   return (
-    <div className="rounded-lg bg-[#1e2235] border border-[#2a2d42] p-4">
+    <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4">
       <div className="flex items-baseline justify-between mb-2">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-[#8892a4]">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-[#999999]">
           Atividade: últimos 12 meses
         </p>
-        <span className="text-[11px] text-[#8892a4]">{total} concluídas</span>
+        <span className="text-[11px] text-[#999999]">{total} concluídas</span>
       </div>
 
       <div className="overflow-x-auto">
@@ -83,7 +83,7 @@ function ActivityHeatmap({ doneTasks }: { doneTasks: Task[] }) {
                   style={{
                     width: CELL,
                     fontSize: 9,
-                    color: '#8892a4',
+                    color: '#999999',
                     whiteSpace: 'nowrap',
                     overflow: 'visible',
                     lineHeight: 1
@@ -112,7 +112,7 @@ function ActivityHeatmap({ doneTasks }: { doneTasks: Task[] }) {
                   style={{
                     height: CELL,
                     fontSize: 9,
-                    color: '#4a5068',
+                    color: '#666666',
                     lineHeight: `${CELL}px`,
                     whiteSpace: 'nowrap'
                   }}
@@ -159,11 +159,11 @@ function ActivityHeatmap({ doneTasks }: { doneTasks: Task[] }) {
           justifyContent: 'flex-end'
         }}
       >
-        <span style={{ fontSize: 9, color: '#4a5068' }}>Menos</span>
+        <span style={{ fontSize: 9, color: '#666666' }}>Menos</span>
         {HEATMAP_COLORS.map((c, i) => (
           <div key={i} style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: c }} />
         ))}
-        <span style={{ fontSize: 9, color: '#4a5068' }}>Mais</span>
+        <span style={{ fontSize: 9, color: '#666666' }}>Mais</span>
       </div>
     </div>
   )
@@ -216,8 +216,8 @@ function WeeklyAreaChart({ data, max }: { data: { label: string; count: number }
     <svg width="100%" viewBox={`0 0 ${VW} ${VH}`}>
       <defs>
         <linearGradient id="weekly-grad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#6366f1" stopOpacity={0.4} />
-          <stop offset="100%" stopColor="#6366f1" stopOpacity={0.02} />
+          <stop offset="0%" stopColor="#7c3aed" stopOpacity={0.4} />
+          <stop offset="100%" stopColor="#7c3aed" stopOpacity={0.02} />
         </linearGradient>
       </defs>
 
@@ -226,13 +226,13 @@ function WeeklyAreaChart({ data, max }: { data: { label: string; count: number }
         const y = MT + (1 - v / safeMax) * CH
         return (
           <g key={v}>
-            <line x1={ML} y1={y} x2={ML + CW} y2={y} stroke="#2a2d42" strokeWidth={0.5} />
+            <line x1={ML} y1={y} x2={ML + CW} y2={y} stroke="#3b3b3b" strokeWidth={0.5} />
             <text
               x={ML - 4}
               y={y}
               textAnchor="end"
               fontSize={3}
-              fill="#8892a4"
+              fill="#999999"
               dominantBaseline="middle"
             >
               {v}
@@ -248,20 +248,20 @@ function WeeklyAreaChart({ data, max }: { data: { label: string; count: number }
       <path
         d={linePath}
         fill="none"
-        stroke="#6366f1"
+        stroke="#7c3aed"
         strokeWidth={0.8}
         strokeLinecap="round"
         strokeLinejoin="round"
       />
 
       {/* Baseline */}
-      <line x1={ML} y1={bottom} x2={ML + CW} y2={bottom} stroke="#2a2d42" strokeWidth={0.5} />
+      <line x1={ML} y1={bottom} x2={ML + CW} y2={bottom} stroke="#3b3b3b" strokeWidth={0.5} />
 
       {/* Data points + X labels */}
       {pts.map((pt, i) => (
         <g key={i}>
-          <circle cx={pt.x} cy={pt.y} r={1.2} fill="#6366f1" stroke="#1e2235" strokeWidth={0.5} />
-          <text x={pt.x} y={VH - 5} textAnchor="middle" fontSize={3} fill="#8892a4">
+          <circle cx={pt.x} cy={pt.y} r={1.2} fill="#7c3aed" stroke="#2a2a2a" strokeWidth={0.5} />
+          <text x={pt.x} y={VH - 5} textAnchor="middle" fontSize={3} fill="#999999">
             {pt.label}
           </text>
           <circle cx={pt.x} cy={pt.y} r={8} fill="transparent">
@@ -283,10 +283,10 @@ interface Props {
 }
 
 const PRIORITY_COLORS = {
-  urgent: '#f87171',
-  high: '#fb923c',
-  medium: '#facc15',
-  low: '#38bdf8'
+  urgent: '#ec6a6a',
+  high: '#f08a34',
+  medium: '#f0c210',
+  low: '#34b4ec'
 }
 
 function formatTime(seconds: number): string {
@@ -312,27 +312,27 @@ function StatCard({
   delta?: number
 }) {
   return (
-    <div className="rounded-lg bg-[#1e2235] border border-[#2a2d42] p-4">
-      <p className="text-[11px] text-[#8892a4] mb-1.5">{label}</p>
+    <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4">
+      <p className="text-[11px] text-[#999999] mb-1.5">{label}</p>
       <p className="text-2xl font-bold" style={{ color }}>
         {value}
       </p>
       {delta !== undefined && delta !== 0 && (
         <p
           className="text-[10px] mt-0.5 tabular-nums"
-          style={{ color: delta > 0 ? '#4ade80' : '#f87171' }}
+          style={{ color: delta > 0 ? '#46d478' : '#ec6a6a' }}
         >
           {delta > 0 ? '↑' : '↓'} {Math.abs(delta)} vs sem. ant.
         </p>
       )}
-      {sub && <p className="text-[10px] text-[#4a5068] mt-0.5">{sub}</p>}
+      {sub && <p className="text-[10px] text-[#666666] mt-0.5">{sub}</p>}
     </div>
   )
 }
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
-    <p className="text-[10px] font-semibold uppercase tracking-wider text-[#8892a4] mb-3">
+    <p className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-3">
       {children}
     </p>
   )
@@ -457,37 +457,37 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      <div className="flex items-center gap-3 px-6 py-4 border-b border-[#2a2d42] shrink-0">
+      <div className="flex items-center gap-3 px-6 py-4 border-b border-[#3b3b3b] shrink-0">
         <svg
           width="15"
           height="15"
           viewBox="0 0 24 24"
           fill="none"
-          stroke="#a5b4fc"
+          stroke="#a080f0"
           strokeWidth="2"
         >
           <line x1="18" y1="20" x2="18" y2="10" />
           <line x1="12" y1="20" x2="12" y2="4" />
           <line x1="6" y1="20" x2="6" y2="14" />
         </svg>
-        <h1 className="text-base font-semibold text-[#e2e8f0]">Relatórios</h1>
+        <h1 className="text-base font-semibold text-[#d4d4d4]">Relatórios</h1>
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
         {/* Stat cards with delta */}
         <div className="grid grid-cols-2 gap-3">
-          <StatCard label="Tasks ativas" value={activeTasks.length.toString()} color="#a5b4fc" />
+          <StatCard label="Tasks ativas" value={activeTasks.length.toString()} color="#a080f0" />
           <StatCard
             label="Concluídas"
             value={doneTasks.length.toString()}
-            color="#4ade80"
+            color="#46d478"
             delta={weeklyDelta}
           />
           <StatCard
             label="Taxa de conclusão"
             value={`${completionRate}%`}
             sub={`${tasks.length} total`}
-            color="#fb923c"
+            color="#f08a34"
           />
           <StatCard
             label="Tempo registrado"
@@ -497,7 +497,7 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
                 ? `em ${tasks.filter((t) => t.timeSpent).length} tasks`
                 : 'inicie timers nas tasks'
             }
-            color="#f472b6"
+            color="#e890ac"
           />
         </div>
 
@@ -505,41 +505,41 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
         {(dueDateData.overdue.length > 0 || dueDateData.upcoming.length > 0) && (
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-lg bg-[#1e2235] border border-red-500/30 p-4">
-                <p className="text-[11px] text-[#8892a4] mb-1.5">Vencidas</p>
-                <p className="text-2xl font-bold text-red-400">{dueDateData.overdue.length}</p>
-                <p className="text-[10px] text-[#4a5068] mt-0.5">tasks atrasadas</p>
+              <div className="rounded-lg bg-[#2a2a2a] border border-[#e04040]/30 p-4">
+                <p className="text-[11px] text-[#999999] mb-1.5">Vencidas</p>
+                <p className="text-2xl font-bold text-[#e04040]">{dueDateData.overdue.length}</p>
+                <p className="text-[10px] text-[#666666] mt-0.5">tasks atrasadas</p>
               </div>
-              <div className="rounded-lg bg-[#1e2235] border border-yellow-500/30 p-4">
-                <p className="text-[11px] text-[#8892a4] mb-1.5">Vencem em 7 dias</p>
-                <p className="text-2xl font-bold text-yellow-400">{dueDateData.upcoming.length}</p>
-                <p className="text-[10px] text-[#4a5068] mt-0.5">tasks próximas</p>
+              <div className="rounded-lg bg-[#2a2a2a] border border-[#f0c210]/30 p-4">
+                <p className="text-[11px] text-[#999999] mb-1.5">Vencem em 7 dias</p>
+                <p className="text-2xl font-bold text-[#f0c210]">{dueDateData.upcoming.length}</p>
+                <p className="text-[10px] text-[#666666] mt-0.5">tasks próximas</p>
               </div>
             </div>
-            <div className="rounded-lg bg-[#1e2235] border border-[#2a2d42] divide-y divide-[#2a2d42] overflow-hidden">
+            <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] divide-y divide-[#3b3b3b] overflow-hidden">
               {dueDateData.list.map(({ task, project }) => {
                 const isOverdue = task.dueDate! < dueDateData.todayStr
                 return (
                   <div key={task.id} className="cv-row flex items-center gap-3 px-4 py-2.5">
                     <div
                       className="w-1 self-stretch rounded-full shrink-0"
-                      style={{ backgroundColor: isOverdue ? '#f87171' : '#facc15' }}
+                      style={{ backgroundColor: isOverdue ? '#ec6a6a' : '#f0c210' }}
                     />
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs text-[#e2e8f0] truncate">{task.title}</p>
+                      <p className="text-xs text-[#d4d4d4] truncate">{task.title}</p>
                       {project && (
                         <div className="flex items-center gap-1.5 mt-0.5">
                           <div
                             className="w-1.5 h-1.5 rounded-full shrink-0"
                             style={{ backgroundColor: project.color }}
                           />
-                          <p className="text-[10px] text-[#4a5068] truncate">{project.name}</p>
+                          <p className="text-[10px] text-[#666666] truncate">{project.name}</p>
                         </div>
                       )}
                     </div>
                     <span
                       className="text-[11px] font-mono tabular-nums shrink-0"
-                      style={{ color: isOverdue ? '#f87171' : '#facc15' }}
+                      style={{ color: isOverdue ? '#ec6a6a' : '#f0c210' }}
                     >
                       {format(parseISO(task.dueDate!), 'dd/MM')}
                     </span>
@@ -554,20 +554,20 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
         <ActivityHeatmap doneTasks={doneTasks} />
 
         {/* Area chart — Concluídas por semana */}
-        <div className="rounded-lg bg-[#1e2235] border border-[#2a2d42] p-4">
+        <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4">
           <div className="flex items-baseline justify-between mb-2">
             <SectionTitle>Concluídas por semana</SectionTitle>
-            <span className="text-[11px] text-[#8892a4]">média {avgPerWeek}/sem</span>
+            <span className="text-[11px] text-[#999999]">média {avgPerWeek}/sem</span>
           </div>
           <WeeklyAreaChart data={weeklyData} max={maxWeekly} />
         </div>
 
         {/* Bar chart — Velocidade por sprint */}
         {sprintVelocity.length > 0 && (
-          <div className="rounded-lg bg-[#1e2235] border border-[#2a2d42] p-4">
+          <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4">
             <div className="flex items-baseline justify-between mb-4">
               <SectionTitle>Velocidade por sprint</SectionTitle>
-              <span className="text-[11px] text-[#8892a4]">média {avgVelocity}/sprint</span>
+              <span className="text-[11px] text-[#999999]">média {avgVelocity}/sprint</span>
             </div>
             <div className="flex items-end gap-1.5 h-28">
               {sprintVelocity.map(({ sprint, count, active }) => {
@@ -579,7 +579,7 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
                     title={project ? `${sprint.name} · ${project.name}` : sprint.name}
                   >
                     {count > 0 && (
-                      <span className="text-[9px] text-[#8892a4] tabular-nums">{count}</span>
+                      <span className="text-[9px] text-[#999999] tabular-nums">{count}</span>
                     )}
                     <div className="w-full flex items-end" style={{ height: 80 }}>
                       <div
@@ -587,14 +587,14 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
                         style={{
                           height: `${Math.max((count / maxVelocity) * 80, count > 0 ? 6 : 3)}px`,
                           backgroundColor: active
-                            ? '#818cf8'
+                            ? '#a080f0'
                             : count > 0
-                              ? '#6366f1'
+                              ? '#7c3aed'
                               : 'transparent',
                           border: active
-                            ? '1.5px dashed #6366f1'
+                            ? '1.5px dashed #7c3aed'
                             : count === 0
-                              ? '1px solid #2a2d42'
+                              ? '1px solid #3b3b3b'
                               : 'none',
                           boxSizing: 'border-box'
                         }}
@@ -602,7 +602,7 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
                     </div>
                     <span
                       className="text-[9px] truncate w-full text-center"
-                      style={{ color: active ? '#a5b4fc' : '#4a5068' }}
+                      style={{ color: active ? '#a080f0' : '#666666' }}
                     >
                       {sprint.name}
                     </span>
@@ -613,7 +613,7 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
                       />
                     )}
                     {active && (
-                      <span className="text-[8px] text-[#6366f1] font-semibold leading-none">
+                      <span className="text-[8px] text-[#7c3aed] font-semibold leading-none">
                         ●
                       </span>
                     )}
@@ -622,16 +622,16 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
               })}
             </div>
             <div className="flex items-center gap-3 mt-3 justify-end">
-              <span className="flex items-center gap-1 text-[9px] text-[#4a5068]">
-                <span className="inline-block w-3 h-2 rounded-sm bg-[#6366f1]" />
+              <span className="flex items-center gap-1 text-[9px] text-[#666666]">
+                <span className="inline-block w-3 h-2 rounded-sm bg-[#7c3aed]" />
                 encerrada
               </span>
-              <span className="flex items-center gap-1 text-[9px] text-[#4a5068]">
+              <span className="flex items-center gap-1 text-[9px] text-[#666666]">
                 <span
                   className="inline-block w-3 h-2 rounded-sm"
                   style={{
-                    background: '#818cf8',
-                    border: '1.5px dashed #6366f1',
+                    background: '#a080f0',
+                    border: '1.5px dashed #7c3aed',
                     boxSizing: 'border-box'
                   }}
                 />
@@ -642,7 +642,7 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
         )}
 
         {/* Priority — horizontal bars */}
-        <div className="rounded-lg bg-[#1e2235] border border-[#2a2d42] p-4">
+        <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4">
           <SectionTitle>Tasks ativas por prioridade</SectionTitle>
           <div className="space-y-3">
             {(['urgent', 'high', 'medium', 'low'] as const).map((p) => {
@@ -654,13 +654,13 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
                   <span className={`text-[10px] font-semibold w-14 shrink-0 ${cfg.color}`}>
                     {cfg.label}
                   </span>
-                  <div className="flex-1 h-2 bg-[#0d0f18] rounded-full overflow-hidden">
+                  <div className="flex-1 h-2 bg-[#1b1b1b] rounded-full overflow-hidden">
                     <div
                       className="h-full rounded-full transition-all"
                       style={{ width: `${pct}%`, backgroundColor: PRIORITY_COLORS[p] }}
                     />
                   </div>
-                  <span className="text-xs text-[#8892a4] w-4 text-right shrink-0 tabular-nums">
+                  <span className="text-xs text-[#999999] w-4 text-right shrink-0 tabular-nums">
                     {count}
                   </span>
                 </div>
@@ -671,22 +671,22 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
 
         {/* Tags with percentage */}
         {tagData.length > 0 && (
-          <div className="rounded-lg bg-[#1e2235] border border-[#2a2d42] p-4">
+          <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4">
             <SectionTitle>Tasks ativas por tag</SectionTitle>
             <div className="space-y-2.5">
               {tagData.map(({ tag, count }) => (
                 <div key={tag} className="flex items-center gap-3">
-                  <span className="text-[10px] text-[#8892a4] w-24 truncate shrink-0">{tag}</span>
-                  <div className="flex-1 h-1.5 bg-[#0d0f18] rounded-full overflow-hidden">
+                  <span className="text-[10px] text-[#999999] w-24 truncate shrink-0">{tag}</span>
+                  <div className="flex-1 h-1.5 bg-[#1b1b1b] rounded-full overflow-hidden">
                     <div
                       className="h-full rounded-full transition-all"
-                      style={{ width: `${(count / maxTag) * 100}%`, backgroundColor: '#6366f1' }}
+                      style={{ width: `${(count / maxTag) * 100}%`, backgroundColor: '#7c3aed' }}
                     />
                   </div>
-                  <span className="text-[10px] text-[#8892a4] w-5 text-right shrink-0 tabular-nums">
+                  <span className="text-[10px] text-[#999999] w-5 text-right shrink-0 tabular-nums">
                     {count}
                   </span>
-                  <span className="text-[10px] text-[#848899] w-7 text-right shrink-0 tabular-nums">
+                  <span className="text-[10px] text-[#999999] w-7 text-right shrink-0 tabular-nums">
                     {totalTagCount > 0 ? `${Math.round((count / totalTagCount) * 100)}%` : '-'}
                   </span>
                 </div>
@@ -697,15 +697,15 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
 
         {/* Combined projects: tasks abertas + tempo */}
         {projectCombined.length > 0 && (
-          <div className="rounded-lg bg-[#1e2235] border border-[#2a2d42] p-4">
+          <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4">
             <SectionTitle>Projetos</SectionTitle>
             {/* Column headers */}
             <div className="flex items-center gap-2 mb-2 pl-[calc(8px+80px+8px)]">
-              <span className="flex-1 text-center text-[12px] text-[#848899] uppercase tracking-wider">
+              <span className="flex-1 text-center text-[12px] text-[#999999] uppercase tracking-wider">
                 Tasks abertas
               </span>
               <span className="w-5" />
-              <span className="flex-1 text-center text-[12px] text-[#4a5068] uppercase tracking-wider">
+              <span className="flex-1 text-center text-[12px] text-[#666666] uppercase tracking-wider">
                 Tempo
               </span>
               <span className="w-10" />
@@ -717,10 +717,10 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
                     className="w-2 h-2 rounded-full shrink-0"
                     style={{ backgroundColor: project.color }}
                   />
-                  <span className="text-[10px] text-[#c4cad6] w-20 truncate shrink-0">
+                  <span className="text-[10px] text-[#a0a0a0] w-20 truncate shrink-0">
                     {project.name}
                   </span>
-                  <div className="flex-1 h-1.5 bg-[#0d0f18] rounded-full overflow-hidden">
+                  <div className="flex-1 h-1.5 bg-[#1b1b1b] rounded-full overflow-hidden">
                     <div
                       className="h-full rounded-full transition-all"
                       style={{
@@ -730,10 +730,10 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
                       }}
                     />
                   </div>
-                  <span className="text-[10px] text-[#8892a4] w-5 text-right shrink-0 tabular-nums">
+                  <span className="text-[10px] text-[#999999] w-5 text-right shrink-0 tabular-nums">
                     {load > 0 ? load : '-'}
                   </span>
-                  <div className="flex-1 h-1.5 bg-[#0d0f18] rounded-full overflow-hidden">
+                  <div className="flex-1 h-1.5 bg-[#1b1b1b] rounded-full overflow-hidden">
                     <div
                       className="h-full rounded-full transition-all"
                       style={{
@@ -742,7 +742,7 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
                       }}
                     />
                   </div>
-                  <span className="text-[10px] text-[#8892a4] w-10 text-right shrink-0 tabular-nums font-mono">
+                  <span className="text-[10px] text-[#999999] w-10 text-right shrink-0 tabular-nums font-mono">
                     {time > 0 ? formatTime(time) : '-'}
                   </span>
                 </div>
@@ -753,7 +753,7 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
 
         {/* Habits with mini 14-day calendar */}
         {habitSummary.length > 0 && (
-          <div className="rounded-lg bg-[#1e2235] border border-[#2a2d42] p-4">
+          <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4">
             <SectionTitle>Hábitos — mês atual</SectionTitle>
             <div className="space-y-4">
               {habitSummary.map(({ habit, streak, rate, monthDone }) => (
@@ -763,16 +763,16 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
                       className="w-2 h-2 rounded-full shrink-0"
                       style={{ backgroundColor: habit.color }}
                     />
-                    <span className="text-xs text-[#8892a4] w-28 truncate shrink-0">
+                    <span className="text-xs text-[#999999] w-28 truncate shrink-0">
                       {habit.name}
                     </span>
-                    <div className="flex-1 h-2 bg-[#0d0f18] rounded-full overflow-hidden">
+                    <div className="flex-1 h-2 bg-[#1b1b1b] rounded-full overflow-hidden">
                       <div
                         className="h-full rounded-full transition-all"
                         style={{ width: `${rate}%`, backgroundColor: habit.color }}
                       />
                     </div>
-                    <span className="text-[10px] text-[#8892a4] w-8 text-right shrink-0 tabular-nums">
+                    <span className="text-[10px] text-[#999999] w-8 text-right shrink-0 tabular-nums">
                       {rate}%
                     </span>
                     <div
@@ -785,13 +785,13 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
                         viewBox="0 0 24 24"
                         fill="none"
                         strokeWidth="2"
-                        stroke={streak > 0 ? habit.color : '#4a5068'}
+                        stroke={streak > 0 ? habit.color : '#666666'}
                       >
                         <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
                       </svg>
                       <span
                         className="text-[10px] font-semibold tabular-nums"
-                        style={{ color: streak > 0 ? habit.color : '#4a5068' }}
+                        style={{ color: streak > 0 ? habit.color : '#666666' }}
                       >
                         {streak}d
                       </span>
@@ -804,8 +804,8 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
                         key={d}
                         className="w-2 h-2 rounded-full shrink-0"
                         style={{
-                          backgroundColor: habit.completions.includes(d) ? habit.color : '#1a1e30',
-                          border: habit.completions.includes(d) ? 'none' : '1px solid #2a2d42'
+                          backgroundColor: habit.completions.includes(d) ? habit.color : '#2a2a2a',
+                          border: habit.completions.includes(d) ? 'none' : '1px solid #3b3b3b'
                         }}
                         title={d}
                       />

@@ -1,5 +1,5 @@
 import type { IStorageAdapter } from './StorageAdapter'
-import type { Project, Task, Sprint, Tombstone, Backup, AIJson, StickyNote, Goal, Habit, FinancialTable, StoredFile, AIConversation, AiMemory } from '../types'
+import type { Project, Task, Sprint, Tombstone, Backup, AIJson, StickyNote, Goal, Habit, FinancialTable, StoredFile, AIConversation, AiMemory, TimeBlock, Routine } from '../types'
 
 export class ElectronStorage implements IStorageAdapter {
   async load() {
@@ -16,7 +16,9 @@ export class ElectronStorage implements IStorageAdapter {
       activeTimers: (data.activeTimers ?? undefined) as { taskId: string; startedAt: number }[] | undefined,
       // Legacy single-timer field, migrated to the array by the store's loader.
       activeTimer: (data.activeTimer ?? null) as { taskId: string; startedAt: number } | null,
-      files: (data.files || []) as StoredFile[]
+      files: (data.files || []) as StoredFile[],
+      timeBlocks: (data.timeBlocks || []) as TimeBlock[],
+      routines: (data.routines || []) as Routine[]
     }
   }
 

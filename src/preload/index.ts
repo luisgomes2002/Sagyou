@@ -178,6 +178,25 @@ const api = {
       }): Promise<{ ok: true } | { error: string }> =>
         ipcRenderer.invoke('ai:memory:handoff', input)
     },
+    // Entity lineage: the event log for one entity (audit trail).
+    lineage: {
+      list: (
+        entityType: string,
+        entityId: string
+      ): Promise<
+        {
+          id: string
+          entityType: string
+          entityId: string
+          action: string
+          summary: string
+          source: string
+          toolName?: string
+          convId?: string
+          timestamp: string
+        }[]
+      > => ipcRenderer.invoke('ai:lineage:list', entityType, entityId)
+    },
     // Lists the provider's models (GET /models) through the main process.
     models: (request: {
       baseUrl?: string
@@ -328,10 +347,10 @@ const api = {
       },
       // Fires once a finished run has been written to the archive — later than
       // onExit, which doesn't wait for the diff that snapshot needs.
-      onArchived: (cb: (payload: { runId: string; id: string }) => void) => {
+      onArchived: (cb: (payload: { runId: string; id: string; convId: string | null }) => void) => {
         const handler = (
           _: Electron.IpcRendererEvent,
-          payload: { runId: string; id: string }
+          payload: { runId: string; id: string; convId: string | null }
         ): void => cb(payload)
         ipcRenderer.on('ai:code-agent:archived', handler)
         return () => ipcRenderer.removeListener('ai:code-agent:archived', handler)

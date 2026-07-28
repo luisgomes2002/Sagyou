@@ -1,0 +1,149 @@
+[
+  {
+    "termo": "kanban",
+    "definicao": "Quadro de tarefas organizado em colunas. Cada projeto tem seu próprio kanban com colunas como 'Backlog', 'Em andamento', 'Done'.",
+    "contexto": "Gerenciamento de tarefas visuais.",
+    "ferramentas_relevantes": ["ler_projetos", "ler_tasks", "criar_tasks", "mover_task", "concluir_task"],
+    "exemplo": "Um projeto 'App Mobile' tem colunas: Backlog (10 tasks), Em andamento (3), Done (45)."
+  },
+  {
+    "termo": "coluna",
+    "definicao": "Uma etapa do kanban onde tasks residem. Cada coluna tem nome, ordem e cor opcional. Mover uma task para Done a conclui automaticamente.",
+    "contexto": "Fluxo de trabalho no kanban.",
+    "ferramentas_relevantes": ["mover_task", "ler_projetos"],
+    "exemplo": "Colunas típicas: 'Backlog' → 'Em andamento' → 'Revisão' → 'Done'."
+  },
+  {
+    "termo": "task",
+    "definicao": "Uma tarefa no kanban. Tem título, prioridade (low/medium/high/urgent), descrição, prazo (dueDate), tags, sprint, tempo gasto (timeSpent) e anexos (images).",
+    "contexto": "Unidade de trabalho no sistema.",
+    "ferramentas_relevantes": ["ler_tasks", "criar_tasks", "atualizar_task", "mover_task", "concluir_task", "deletar_task", "iniciar_cronometro"],
+    "exemplo": "Task 'Corrigir bug de login' com prioridade high, prazo 2026-08-01, tag 'bug'."
+  },
+  {
+    "termo": "prioridade",
+    "definicao": "Nível de urgência de uma task: low (baixa), medium (média), high (alta), urgent (urgente).",
+    "contexto": "Classificação de tasks.",
+    "ferramentas_relevantes": ["criar_tasks", "atualizar_task", "ler_tasks"],
+    "exemplo": "Use 'high' para tasks com prazo próximo ou bloqueantes. Padrão: 'medium'."
+  },
+  {
+    "termo": "sprint",
+    "definicao": "Um ciclo de trabalho com nome e data de criação. Tasks podem ser atribuídas a uma sprint. Sprints podem ser fechadas (closedAt).",
+    "contexto": "Planejamento de trabalho em ciclos.",
+    "ferramentas_relevantes": ["criar_sprints", "atribuir_sprint", "ler_tasks"],
+    "exemplo": "Sprint 'Sprint 12 — Autenticação' com 8 tasks atribuídas."
+  },
+  {
+    "termo": "meta",
+    "definicao": "Uma meta de progresso (Goal) com valor alvo (target), unidade (ex: 'páginas', 'horas', '%') e entradas de progresso. O progresso é preenchido pelo usuário, não pela IA.",
+    "contexto": "Acompanhamento de metas quantitativas.",
+    "ferramentas_relevantes": ["criar_meta", "atualizar_meta", "ler_metas"],
+    "exemplo": "Meta 'Ler 12 livros' com target 12, unidade 'livros', progresso atual 7 (58%)."
+  },
+  {
+    "termo": "habito",
+    "definicao": "Um hábito diário com nome, cor, e registro de dias concluídos (completions). Marcar um hábito como feito hoje é uma ação de escrita.",
+    "contexto": "Rastreador de hábitos diários.",
+    "ferramentas_relevantes": ["marcar_habito", "ler_habitos"],
+    "exemplo": "Hábito 'Meditar' com streak de 12 dias. Marcado hoje: sim."
+  },
+  {
+    "termo": "nota",
+    "definicao": "Uma nota sticky no canvas do projeto. Tem conteúdo (texto), cor, posição (x,y) e tamanho. Pode ser vinculada a uma task.",
+    "contexto": "Canvas de notas livre.",
+    "ferramentas_relevantes": ["criar_nota", "ler_notas"],
+    "exemplo": "Nota 'Lembrar de revisar a API de auth' na cor amarela, posição (200, 300)."
+  },
+  {
+    "termo": "tabela financeira",
+    "definicao": "Uma tabela com nome e moeda que agrupa transações, itens de compras e metas financeiras. Um usuário pode ter várias tabelas (ex: 'Pessoal', 'Freela').",
+    "contexto": "Organização financeira.",
+    "ferramentas_relevantes": ["criar_transacao", "ler_financeiro"],
+    "exemplo": "Tabela 'Pessoal' em BRL com 45 transações e 3 metas."
+  },
+  {
+    "termo": "transação",
+    "definicao": "Uma movimentação financeira: descrição, valor (decimal string, NUNCA number), tipo (receita/despesa), data, categoria opcional. O valor é sempre positivo — o tipo define se é entrada ou saída.",
+    "contexto": "Registro financeiro.",
+    "ferramentas_relevantes": ["criar_transacao", "ler_financeiro"],
+    "exemplo": "Transação 'Salário' de R$ 5000.00, tipo 'receita', data 2026-07-15."
+  },
+  {
+    "termo": "memória",
+    "definicao": "Um fato duradouro que o assistente carrega entre conversas. Tipos: decisao (decisão tomada), tradeoff (escolha com custo conhecido), gotcha (armadilha), fato (informação objetiva). Memórias decaem com o tempo se não forem acessadas; memórias pinadas nunca decaem.",
+    "contexto": "Persistência de conhecimento do assistente.",
+    "ferramentas_relevantes": ["buscar_memoria", "salvar_memoria", "verificar_memorias"],
+    "exemplo": "Memória tipo 'decisao': 'O app usa decimal.js para dinheiro, nunca number — R$ 1.500 vira 1.5 se tratado como float.'"
+  },
+  {
+    "termo": "handoff",
+    "definicao": "Um resumo automático da última conversa em cada projeto, salvo ao fim de cada execução. Serve como continuidade entre sessões. O texto é truncado em 600 chars e aponta para a conversa completa via ler_conversa.",
+    "contexto": "Continuidade entre sessões do assistente.",
+    "ferramentas_relevantes": ["buscar_memoria", "buscar_conversas", "ler_conversa"],
+    "exemplo": "Handoff do projeto 'App Mobile': 'O usuário pediu para corrigir o bug de login. A causa é um token expirado... (conversa completa: id=abc123 — use ler_conversa)'"
+  },
+  {
+    "termo": "projeto",
+    "definicao": "Um espaço de trabalho com kanban, canvas de notas, código-fonte (opcional) e memórias. Cada projeto tem suas próprias colunas, tasks, sprints, notas e metas.",
+    "contexto": "Organização de alto nível.",
+    "ferramentas_relevantes": ["ler_projetos", "criar_projeto"],
+    "exemplo": "Projeto 'Sagyou' com 3 colunas, 12 tasks, 5 notas no canvas, código em ~/Projects/Sagyou."
+  },
+  {
+    "termo": "agente de código",
+    "definicao": "Um loop autônomo (rodar_agente_codigo) que lê, edita e executa comandos shell no código-fonte do projeto. Aprovação humana é necessária para cada escrita ou comando. O código é confinado à raiz do projeto e os comandos são sandboxed via ai-jail.",
+    "contexto": "Assistente de código autônomo.",
+    "ferramentas_relevantes": ["rodar_agente_codigo"],
+    "exemplo": "O agente de código edita 3 arquivos, roda typecheck, e mostra o diff para revisão."
+  },
+  {
+    "termo": "cronômetro",
+    "definicao": "Timer por task que rastreia tempo gasto. Vários timers podem rodar ao mesmo tempo (um por task). Iniciar um timer não para os outros. Mover uma task para Done para o timer dela automaticamente.",
+    "contexto": "Rastreamento de tempo.",
+    "ferramentas_relevantes": ["iniciar_cronometro", "concluir_task"],
+    "exemplo": "Timer rodando na task 'Refatorar store' — 23 minutos acumulados. Outra task 'Escrever testes' também com timer ativo."
+  },
+  {
+    "termo": "dueDate",
+    "definicao": "Prazo de uma task no formato YYYY-MM-DD (ex: '2026-08-15'). Campo opcional. Use para tasks com data de entrega.",
+    "contexto": "Campo de task.",
+    "ferramentas_relevantes": ["criar_tasks", "atualizar_task"],
+    "exemplo": "Task 'Entregar relatório' com dueDate '2026-07-31'."
+  },
+  {
+    "termo": "tags",
+    "definicao": "Etiquetas de uma task para categorização. Array de strings (ex: ['bug', 'frontend']). Ao atualizar, o array substitui (não faz merge). Use as tags do sistema: Dev, Estudo, Trabalho, Saúde, Casa & Vida, Finanças, Pessoal.",
+    "contexto": "Campo de task.",
+    "ferramentas_relevantes": ["criar_tasks", "atualizar_task", "ler_tasks"],
+    "exemplo": "Tags: ['bug', 'auth', 'urgent']. Buscar por tag: ler_tasks com tag='bug'."
+  },
+  {
+    "termo": "receita",
+    "definicao": "Entrada de dinheiro em uma transação financeira (tipo='receita'). O valor é sempre positivo; o tipo define a direção.",
+    "contexto": "Transação financeira.",
+    "ferramentas_relevantes": ["criar_transacao", "ler_financeiro"],
+    "exemplo": "Receita 'Freelance site' de R$ 2500.00."
+  },
+  {
+    "termo": "despesa",
+    "definicao": "Saída de dinheiro em uma transação financeira (tipo='despesa'). O valor é sempre positivo; o tipo define a direção.",
+    "contexto": "Transação financeira.",
+    "ferramentas_relevantes": ["criar_transacao", "ler_financeiro"],
+    "exemplo": "Despesa 'Aluguel' de R$ 1800.00."
+  },
+  {
+    "termo": "valor decimal",
+    "definicao": "No Sagyou, dinheiro é armazenado como string decimal (ex: '1500.50'), NUNCA como number. Todo cálculo usa decimal.js. Converter para number causa perda de precisão — R$ 1.500 vira 1.5. O campo `amount` nas transações e `targetAmount` nas metas financeiras são strings.",
+    "contexto": "Regra de integridade de dados financeiros.",
+    "ferramentas_relevantes": ["criar_transacao", "ler_financeiro"],
+    "exemplo": "Correto: amount='1500.50'. ERRADO: amount=1500.5 (perde precisão)."
+  },
+  {
+    "termo": "coluna Done",
+    "definicao": "A coluna de conclusão do kanban. Uma task movida para cá ganha completedAt e seu cronômetro para. Mover uma task para fora de Done remove completedAt (reabre a task). ler_tasks por padrão esconde tasks em Done (use estado='todas' ou estado='concluidas').",
+    "contexto": "Ciclo de vida da task.",
+    "ferramentas_relevantes": ["mover_task", "concluir_task", "ler_tasks"],
+    "exemplo": "10 tasks concluídas este mês na coluna Done. ler_tasks com estado='concluidas' para vê-las."
+  }
+]

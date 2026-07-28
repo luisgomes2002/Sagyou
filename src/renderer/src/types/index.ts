@@ -1,4 +1,4 @@
-export interface Column {
+﻿export interface Column {
   id: string
   name: string
   order: number
@@ -189,6 +189,9 @@ export interface Backup {
   // Task-image bytes (metadata rides on `tasks[].images`). Same main-injects-on-
   // export / main-writes-and-strips-on-import handling as fileBlobs.
   taskImages?: BackupFileBlob[]
+  // Added in version 6 (addition only, no breaking changes)
+  timeBlocks?: TimeBlock[]
+  routines?: Routine[]
 }
 
 /** An attachment's bytes, base64-encoded, keyed to its StoredFile id/ext. */
@@ -205,7 +208,7 @@ export interface BackupChatImage {
 }
 
 /** The type of a durable AI memory. Mirrors MemoryType in main/memory.ts. */
-export type MemoryType = 'decisao' | 'tradeoff' | 'gotcha' | 'fato' | 'handoff'
+export type MemoryType = 'decisao' | 'tradeoff' | 'gotcha' | 'fato' | 'handoff' | 'planejamento'
 
 /**
  * A durable fact the assistant carries across conversations. Renderer-side
@@ -312,13 +315,13 @@ export const NOTE_COLORS = [
 ] as const
 
 export const PROJECT_COLORS = [
-  '#6366f1',
+  '#7c3aed',
   '#8b5cf6',
   '#ec4899',
-  '#ef4444',
+  '#e04040',
   '#f97316',
   '#eab308',
-  '#22c55e',
+  '#20b858',
   '#06b6d4',
   '#14b8a6',
   '#84cc16',
@@ -327,10 +330,10 @@ export const PROJECT_COLORS = [
 ] as const
 
 export const PRIORITY_CONFIG: Record<Priority, { label: string; color: string; bg: string }> = {
-  low: { label: 'Low', color: 'text-sky-400', bg: 'bg-sky-400/15' },
-  medium: { label: 'Medium', color: 'text-yellow-400', bg: 'bg-yellow-400/15' },
-  high: { label: 'High', color: 'text-orange-400', bg: 'bg-orange-400/15' },
-  urgent: { label: 'Urgent', color: 'text-red-400', bg: 'bg-red-400/15' }
+  low: { label: 'Low', color: 'text-[#34b4ec]', bg: 'bg-[#34b4ec]/15' },
+  medium: { label: 'Medium', color: 'text-[#f0c210]', bg: 'bg-[#f0c210]/15' },
+  high: { label: 'High', color: 'text-[#f08a34]', bg: 'bg-[#f08a34]/15' },
+  urgent: { label: 'Urgent', color: 'text-[#e04040]', bg: 'bg-[#e04040]/15' }
 }
 
 export const DEFAULT_COLUMN_NAMES = ['Backlog', 'In Progress', 'Review', 'Done']
@@ -365,4 +368,71 @@ export const DEFAULT_TAGS: { label: string; tags: string[] }[] = [
     tags: ['hábito', 'rotina', 'projeto pessoal', 'criatividade', 'foco', 'urgente', 'importante', 'ideia', 'meta pessoal', 'lembrete', 'reflexão', 'diário', 'gratidão', 'planejamento semanal']
   }
 ]
+
+// ── Planner (time blocks & routines) ───────────────────────────────────────
+
+export type TimeBlockType = 'task' | 'routine' | 'buffer' | 'custom'
+
+export interface TimeBlock {
+  id: string
+  date: string // YYYY-MM-DD
+  startTime: string // HH:MM
+  endTime: string // HH:MM
+  title: string
+  description?: string
+  taskId?: string // optional link to a kanban task
+  habitId?: string // optional link to a habit
+  type: TimeBlockType
+  color?: string
+  order: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface Routine {
+  id: string
+  title: string
+  description?: string
+  startTime: string // HH:MM
+  endTime: string // HH:MM
+  daysOfWeek: number[] // 0=Sun, 1=Mon, …, 6=Sat
+  color?: string
+  active: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export const TIME_BLOCK_COLORS = [
+  '#7c3aed',
+  '#8b5cf6',
+  '#ec4899',
+  '#e04040',
+  '#f97316',
+  '#eab308',
+  '#20b858',
+  '#06b6d4',
+  '#14b8a6',
+  '#84cc16',
+  '#f43f5e',
+  '#d946ef'
+] as const
+
+// ── Entity Event Log (data lineage) ──────────────────────────────────────────
+
+/** One mutation recorded in the append-only event log. */
+export interface EntityEvent {
+  id: string
+  entityType: 'project' | 'task' | 'sprint' | 'note' | 'goal' | 'habit' | 'financial_table' | 'file'
+  entityId: string
+  action: 'created' | 'updated' | 'deleted'
+  /** Human-readable summary (e.g. "task 'Corrigir bug' moved to Done"). */
+  summary: string
+  /** Who or what triggered the change. */
+  source: 'user' | 'ai'
+  /** AI tool name when source=ai. */
+  toolName?: string
+  /** Conversation id when source=ai. */
+  convId?: string
+  timestamp: string
+}
 

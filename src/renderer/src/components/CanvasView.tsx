@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
+﻿import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
 import type { Project, Task } from '../types'
 import { NOTE_COLORS } from '../types'
 import { useKanbanStore } from '../store/kanban'
@@ -199,8 +199,8 @@ export function CanvasView({ project, tasks, onCreateTask }: Props) {
       ref={containerRef}
       className="absolute inset-0 overflow-hidden select-none"
       style={{
-        backgroundColor: '#0d0f18',
-        backgroundImage: 'radial-gradient(circle, #2a2d42 1px, transparent 1px)',
+        backgroundColor: '#1b1b1b',
+        backgroundImage: 'radial-gradient(circle, #3b3b3b 1px, transparent 1px)',
         backgroundSize: `${dotSpacing}px ${dotSpacing}px`,
         backgroundPosition: `${offset.x % dotSpacing}px ${offset.y % dotSpacing}px`,
         cursor: connectFrom ? 'crosshair' : isPanning ? 'grabbing' : 'default'
@@ -230,7 +230,7 @@ export function CanvasView({ project, tasks, onCreateTask }: Props) {
               markerHeight={6}
               orient="auto-start-reverse"
             >
-              <path d="M0,0 L10,5 L0,10 z" fill="#818cf8" />
+              <path d="M0,0 L10,5 L0,10 z" fill="#a080f0" />
             </marker>
           </defs>
 
@@ -251,7 +251,7 @@ export function CanvasView({ project, tasks, onCreateTask }: Props) {
                     y1={start.y}
                     x2={end.x}
                     y2={end.y}
-                    className="stroke-[#6366f1] group-hover/conn:stroke-[#818cf8]"
+                    className="stroke-[#7c3aed] group-hover/conn:stroke-[#a080f0]"
                     strokeWidth={2}
                     markerEnd="url(#note-arrow)"
                     style={{ pointerEvents: 'none' }}
@@ -286,7 +286,7 @@ export function CanvasView({ project, tasks, onCreateTask }: Props) {
                 y1={start.y}
                 x2={connectCursor.x}
                 y2={connectCursor.y}
-                stroke="#818cf8"
+                stroke="#a080f0"
                 strokeWidth={2}
                 strokeDasharray="6 4"
                 markerEnd="url(#note-arrow)"
@@ -316,22 +316,22 @@ export function CanvasView({ project, tasks, onCreateTask }: Props) {
       {/* Empty state */}
       {notes.length === 0 && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 pointer-events-none">
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#4a5068" strokeWidth="1.5">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#666666" strokeWidth="1.5">
             <path d="M12 5v14M5 12h14" />
           </svg>
-          <p className="text-[#4a5068] text-sm">
+          <p className="text-[#666666] text-sm">
             {mode === 'text' ? 'Duplo clique para inserir texto' : 'Duplo clique para criar uma nota'}
           </p>
         </div>
       )}
 
       {/* Floating toolbar */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#1a1d2e]/95 border border-[#2a2d42] shadow-2xl backdrop-blur-sm pointer-events-auto">
+      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#3b3b3b]/95 border border-[#3b3b3b] shadow-2xl backdrop-blur-sm pointer-events-auto">
 
         {/* Mode: sticky note */}
         <button
           onClick={() => setMode('note')}
-          className={`p-1.5 rounded-lg transition-colors ${mode === 'note' ? 'bg-[#6366f1]/20 text-[#818cf8]' : 'text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#2a2d42]'}`}
+          className={`p-1.5 rounded-lg transition-colors ${mode === 'note' ? 'bg-[#7c3aed]/20 text-[#a080f0]' : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#3b3b3b]'}`}
           title="Modo nota (duplo clique)"
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -343,7 +343,7 @@ export function CanvasView({ project, tasks, onCreateTask }: Props) {
         {/* Mode: text */}
         <button
           onClick={() => setMode('text')}
-          className={`px-2 py-1 rounded-lg text-[11px] font-bold transition-colors ${mode === 'text' ? 'bg-[#6366f1]/20 text-[#818cf8]' : 'text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#2a2d42]'}`}
+          className={`px-2 py-1 rounded-lg text-[11px] font-bold transition-colors ${mode === 'text' ? 'bg-[#7c3aed]/20 text-[#a080f0]' : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#3b3b3b]'}`}
           title="Modo texto (duplo clique)"
         >
           Aa
@@ -352,7 +352,7 @@ export function CanvasView({ project, tasks, onCreateTask }: Props) {
         {/* Color swatches — only in note mode */}
         {mode === 'note' && (
           <>
-            <div className="w-px h-4 bg-[#2a2d42] mx-0.5 shrink-0" />
+            <div className="w-px h-4 bg-[#3b3b3b] mx-0.5 shrink-0" />
             <div className="grid grid-cols-6 gap-1">
               {NOTE_COLORS.map((color) => (
                 <button
@@ -362,7 +362,7 @@ export function CanvasView({ project, tasks, onCreateTask }: Props) {
                   style={{
                     backgroundColor: color,
                     boxShadow: selectedColor === color
-                      ? `0 0 0 2px #0d0f18, 0 0 0 3.5px ${color}`
+                      ? `0 0 0 2px #1b1b1b, 0 0 0 3.5px ${color}`
                       : '0 0 0 1px rgba(255,255,255,0.1)'
                   }}
                   title={color}
@@ -372,12 +372,12 @@ export function CanvasView({ project, tasks, onCreateTask }: Props) {
           </>
         )}
 
-        <div className="w-px h-4 bg-[#2a2d42] mx-0.5 shrink-0" />
+        <div className="w-px h-4 bg-[#3b3b3b] mx-0.5 shrink-0" />
 
         {/* Zoom out */}
         <button
           onClick={handleZoomOut}
-          className="p-1.5 rounded-lg text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#2a2d42] transition-colors"
+          className="p-1.5 rounded-lg text-[#999999] hover:text-[#d4d4d4] hover:bg-[#3b3b3b] transition-colors"
           title="Diminuir zoom (scroll)"
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -387,14 +387,14 @@ export function CanvasView({ project, tasks, onCreateTask }: Props) {
           </svg>
         </button>
 
-        <span className="text-[11px] text-[#8892a4] w-10 text-center tabular-nums font-mono shrink-0">
+        <span className="text-[11px] text-[#999999] w-10 text-center tabular-nums font-mono shrink-0">
           {Math.round(scale * 100)}%
         </span>
 
         {/* Zoom in */}
         <button
           onClick={handleZoomIn}
-          className="p-1.5 rounded-lg text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#2a2d42] transition-colors"
+          className="p-1.5 rounded-lg text-[#999999] hover:text-[#d4d4d4] hover:bg-[#3b3b3b] transition-colors"
           title="Aumentar zoom (scroll)"
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -405,12 +405,12 @@ export function CanvasView({ project, tasks, onCreateTask }: Props) {
           </svg>
         </button>
 
-        <div className="w-px h-4 bg-[#2a2d42] mx-0.5 shrink-0" />
+        <div className="w-px h-4 bg-[#3b3b3b] mx-0.5 shrink-0" />
 
         {/* Reset / center view */}
         <button
           onClick={handleResetView}
-          className="p-1.5 rounded-lg text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#2a2d42] transition-colors"
+          className="p-1.5 rounded-lg text-[#999999] hover:text-[#d4d4d4] hover:bg-[#3b3b3b] transition-colors"
           title="Centralizar (100%)"
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

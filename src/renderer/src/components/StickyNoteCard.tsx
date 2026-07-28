@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useCallback } from 'react'
+﻿import { useRef, useState, useEffect, useCallback } from 'react'
 import { format, parseISO } from 'date-fns'
 import type { StickyNote, Task, Column } from '../types'
 import { isDoneColumn } from '../utils/columns'
@@ -52,7 +52,7 @@ export function StickyNoteCard({ note, scale, tasks, columns, onUpdate, onDelete
 
   const isTextElement = note.type === 'text'
   const fontSize = note.fontSize ?? DEFAULT_FONT_SIZE
-  const TEXT = isTextElement ? '#e2e8f0' : '#1e293b'
+  const TEXT = isTextElement ? '#d4d4d4' : '#2a2a2a'
 
   const isDraggingRef = useRef(false)
   const currentPosRef = useRef({ x: note.x, y: note.y })
@@ -194,7 +194,7 @@ export function StickyNoteCard({ note, scale, tasks, columns, onUpdate, onDelete
           style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}
           onMouseDown={handleDragStart}
         >
-          <svg width="10" height="6" viewBox="0 0 12 8" fill="#e2e8f0" opacity={0.3}>
+          <svg width="10" height="6" viewBox="0 0 12 8" fill="#d4d4d4" opacity={0.3}>
             <circle cx="1.5" cy="1.5" r="1.5" /><circle cx="6" cy="1.5" r="1.5" /><circle cx="10.5" cy="1.5" r="1.5" />
             <circle cx="1.5" cy="6.5" r="1.5" /><circle cx="6" cy="6.5" r="1.5" /><circle cx="10.5" cy="6.5" r="1.5" />
           </svg>
@@ -205,7 +205,7 @@ export function StickyNoteCard({ note, scale, tasks, columns, onUpdate, onDelete
               className="p-0.5 rounded hover:bg-white/10"
               title="Deletar"
             >
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#e2e8f0" strokeWidth="2.5" opacity={0.4}>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#d4d4d4" strokeWidth="2.5" opacity={0.4}>
                 <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
               </svg>
             </button>
@@ -216,19 +216,19 @@ export function StickyNoteCard({ note, scale, tasks, columns, onUpdate, onDelete
         {isEditing && (
           <div
             className="flex items-center gap-px px-1.5 py-1 rounded border mb-0.5"
-            style={{ backgroundColor: '#1e2235', borderColor: '#2a2d42' }}
+            style={{ backgroundColor: '#2a2a2a', borderColor: '#3b3b3b' }}
             onMouseDown={(e) => e.preventDefault()}
           >
-            <button onClick={() => execFormat('bold')} className="w-6 h-6 rounded flex items-center justify-center text-[11px] font-bold text-[#e2e8f0] hover:bg-white/10" style={{ fontFamily: 'Georgia, serif' }} title="Negrito">B</button>
-            <button onClick={() => execFormat('italic')} className="w-6 h-6 rounded flex items-center justify-center text-[11px] italic text-[#e2e8f0] hover:bg-white/10" style={{ fontFamily: 'Georgia, serif' }} title="Itálico">I</button>
-            <button onClick={() => execFormat('underline')} className="w-6 h-6 rounded flex items-center justify-center text-[11px] underline text-[#e2e8f0] hover:bg-white/10" title="Sublinhado">U</button>
-            <button onClick={() => execFormat('strikeThrough')} className="w-6 h-6 rounded flex items-center justify-center text-[11px] line-through text-[#e2e8f0] hover:bg-white/10" title="Riscado">S</button>
+            <button onClick={() => execFormat('bold')} className="w-6 h-6 rounded flex items-center justify-center text-[11px] font-bold text-[#d4d4d4] hover:bg-white/10" style={{ fontFamily: 'Georgia, serif' }} title="Negrito">B</button>
+            <button onClick={() => execFormat('italic')} className="w-6 h-6 rounded flex items-center justify-center text-[11px] italic text-[#d4d4d4] hover:bg-white/10" style={{ fontFamily: 'Georgia, serif' }} title="Itálico">I</button>
+            <button onClick={() => execFormat('underline')} className="w-6 h-6 rounded flex items-center justify-center text-[11px] underline text-[#d4d4d4] hover:bg-white/10" title="Sublinhado">U</button>
+            <button onClick={() => execFormat('strikeThrough')} className="w-6 h-6 rounded flex items-center justify-center text-[11px] line-through text-[#d4d4d4] hover:bg-white/10" title="Riscado">S</button>
             <div className="w-px h-3.5 mx-1 bg-white/15 shrink-0" />
-            <button onClick={() => changeFontSize(-1)} disabled={fontSize <= FONT_SIZES[0]} className="w-5 h-6 rounded text-[11px] font-bold text-[#e2e8f0] hover:bg-white/10 disabled:opacity-30">−</button>
-            <span className="text-[10px] text-[#8892a4] w-7 text-center tabular-nums">{fontSize}</span>
-            <button onClick={() => changeFontSize(1)} disabled={fontSize >= FONT_SIZES[FONT_SIZES.length - 1]} className="w-5 h-6 rounded text-[11px] font-bold text-[#e2e8f0] hover:bg-white/10 disabled:opacity-30">+</button>
+            <button onClick={() => changeFontSize(-1)} disabled={fontSize <= FONT_SIZES[0]} className="w-5 h-6 rounded text-[11px] font-bold text-[#d4d4d4] hover:bg-white/10 disabled:opacity-30">−</button>
+            <span className="text-[10px] text-[#999999] w-7 text-center tabular-nums">{fontSize}</span>
+            <button onClick={() => changeFontSize(1)} disabled={fontSize >= FONT_SIZES[FONT_SIZES.length - 1]} className="w-5 h-6 rounded text-[11px] font-bold text-[#d4d4d4] hover:bg-white/10 disabled:opacity-30">+</button>
             <div className="flex-1" />
-            <button onClick={handleSaveContent} className="px-2 h-6 rounded text-[10px] text-[#8892a4] hover:bg-white/10" title="Salvar (Ctrl+Enter)">OK</button>
+            <button onClick={handleSaveContent} className="px-2 h-6 rounded text-[10px] text-[#999999] hover:bg-white/10" title="Salvar (Ctrl+Enter)">OK</button>
           </div>
         )}
 
@@ -245,13 +245,13 @@ export function StickyNoteCard({ note, scale, tasks, columns, onUpdate, onDelete
               onKeyDown={handleEditorKeyDown}
               onMouseDown={(e) => e.stopPropagation()}
               className="outline-none leading-tight break-words"
-              style={{ color: '#e2e8f0', fontSize, caretColor: '#e2e8f0', minWidth: 80, wordBreak: 'break-word' }}
+              style={{ color: '#d4d4d4', fontSize, caretColor: '#d4d4d4', minWidth: 80, wordBreak: 'break-word' }}
             />
           ) : (
             <div
               className="leading-tight break-words select-none"
               style={{
-                color: isCompleted ? '#8892a4' : '#e2e8f0',
+                color: isCompleted ? '#999999' : '#d4d4d4',
                 fontSize,
                 wordBreak: 'break-word',
                 textDecoration: isCompleted ? 'line-through' : undefined,
@@ -271,7 +271,7 @@ export function StickyNoteCard({ note, scale, tasks, columns, onUpdate, onDelete
           onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); onStartConnect() }}
           onClick={(e) => e.stopPropagation()}
           onDoubleClick={(e) => e.stopPropagation()}
-          className="absolute left-1/2 -translate-x-1/2 -bottom-3 w-5 h-5 rounded-full bg-[#6366f1] border-2 border-[#0d0f18] shadow-md opacity-0 group-hover:opacity-100 transition-all hover:scale-125 cursor-crosshair z-10"
+          className="absolute left-1/2 -translate-x-1/2 -bottom-3 w-5 h-5 rounded-full bg-[#7c3aed] border-2 border-[#1b1b1b] shadow-md opacity-0 group-hover:opacity-100 transition-all hover:scale-125 cursor-crosshair z-10"
           title="Arraste até outra nota para conectar"
         >
           <span className="block w-1.5 h-1.5 rounded-full bg-white mx-auto" />
@@ -325,7 +325,7 @@ export function StickyNoteCard({ note, scale, tasks, columns, onUpdate, onDelete
               title={isCompleted ? 'Reabrir nota' : 'Marcar como concluída'}
             >
               {isCompleted ? (
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#2e7a48" strokeWidth="2.5">
                   <circle cx="12" cy="12" r="9" />
                   <polyline points="9 12 11 14 15 10" />
                 </svg>
@@ -355,7 +355,7 @@ export function StickyNoteCard({ note, scale, tasks, columns, onUpdate, onDelete
               {showColorPicker && (
                 <div
                   className="absolute right-0 top-full mt-1 z-30 p-3 rounded-xl grid grid-cols-4 gap-3"
-                  style={{ backgroundColor: '#1a1d2e', border: '1px solid #2a2d42', boxShadow: '0 6px 20px rgba(0,0,0,0.55)' }}
+                  style={{ backgroundColor: '#3b3b3b', border: '1px solid #3b3b3b', boxShadow: '0 6px 20px rgba(0,0,0,0.55)' }}
                   onMouseDown={(e) => e.stopPropagation()}
                 >
                   {NOTE_COLORS.map((c) => (
@@ -365,7 +365,7 @@ export function StickyNoteCard({ note, scale, tasks, columns, onUpdate, onDelete
                       className="w-9 h-9 rounded-full transition-transform hover:scale-110"
                       style={{
                         backgroundColor: c,
-                        boxShadow: note.color === c ? `0 0 0 2px #1a1d2e, 0 0 0 4px ${c}` : '0 0 0 1px rgba(0,0,0,0.2)'
+                        boxShadow: note.color === c ? `0 0 0 2px #3b3b3b, 0 0 0 4px ${c}` : '0 0 0 1px rgba(0,0,0,0.2)'
                       }}
                     />
                   ))}
@@ -451,10 +451,10 @@ export function StickyNoteCard({ note, scale, tasks, columns, onUpdate, onDelete
           {isCompleted && (
             <div className="flex items-center justify-between px-2.5 py-1.5" style={{ backgroundColor: 'rgba(34,197,94,0.12)', borderBottom: hasLinkedContent ? `1px solid ${TEXT}12` : undefined }}>
               <div className="flex items-center gap-1.5">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#20b858" strokeWidth="2.5">
                   <circle cx="12" cy="12" r="9" /><polyline points="9 12 11 14 15 10" />
                 </svg>
-                <span className="text-[10px]" style={{ color: '#22c55e' }}>
+                <span className="text-[10px]" style={{ color: '#20b858' }}>
                   Concluída em {format(parseISO(note.completedAt!), 'dd/MM/yyyy HH:mm')}
                 </span>
               </div>
@@ -539,7 +539,7 @@ export function StickyNoteCard({ note, scale, tasks, columns, onUpdate, onDelete
         onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); onStartConnect() }}
         onClick={(e) => e.stopPropagation()}
         onDoubleClick={(e) => e.stopPropagation()}
-        className="absolute left-1/2 -translate-x-1/2 -bottom-3 w-5 h-5 rounded-full bg-[#6366f1] border-2 border-[#0d0f18] shadow-md opacity-0 group-hover:opacity-100 transition-all hover:scale-125 cursor-crosshair z-10"
+        className="absolute left-1/2 -translate-x-1/2 -bottom-3 w-5 h-5 rounded-full bg-[#7c3aed] border-2 border-[#1b1b1b] shadow-md opacity-0 group-hover:opacity-100 transition-all hover:scale-125 cursor-crosshair z-10"
         title="Arraste até outra nota para conectar"
       >
         <span className="block w-1.5 h-1.5 rounded-full bg-white mx-auto" />
@@ -550,10 +550,10 @@ export function StickyNoteCard({ note, scale, tasks, columns, onUpdate, onDelete
         <div
           ref={dropdownRef}
           className="absolute left-0 right-0 rounded-lg border overflow-hidden"
-          style={{ top: 'calc(100% + 4px)', backgroundColor: '#13151f', borderColor: '#2a2d42', boxShadow: '0 8px 24px rgba(0,0,0,0.5)', zIndex: 10 }}
+          style={{ top: 'calc(100% + 4px)', backgroundColor: '#232323', borderColor: '#3b3b3b', boxShadow: '0 8px 24px rgba(0,0,0,0.5)', zIndex: 10 }}
           onMouseDown={(e) => e.stopPropagation()}
         >
-          <div className="p-2 border-b" style={{ borderColor: '#2a2d42' }}>
+          <div className="p-2 border-b" style={{ borderColor: '#3b3b3b' }}>
             <input
               ref={searchInputRef}
               type="text"
@@ -561,18 +561,18 @@ export function StickyNoteCard({ note, scale, tasks, columns, onUpdate, onDelete
               onChange={(e) => setLinkSearch(e.target.value)}
               placeholder="Buscar task..."
               onKeyDown={(e) => { if (e.key === 'Escape') setShowLinkDropdown(false) }}
-              className="w-full px-2 py-1 rounded text-[11px] outline-none placeholder-[#8892a4]"
-              style={{ backgroundColor: '#0d0f18', border: '1px solid #2a2d42', color: '#e2e8f0' }}
+              className="w-full px-2 py-1 rounded text-[11px] outline-none placeholder-[#999999]"
+              style={{ backgroundColor: '#1b1b1b', border: '1px solid #3b3b3b', color: '#d4d4d4' }}
             />
           </div>
           <div className="overflow-y-auto" style={{ maxHeight: 180 }}>
             {tasksByColumn.length === 0 ? (
-              <p className="px-3 py-3 text-center text-[11px]" style={{ color: '#8892a4' }}>
+              <p className="px-3 py-3 text-center text-[11px]" style={{ color: '#999999' }}>
                 {linkSearch ? 'Nenhum resultado' : 'Nenhuma task no projeto'}
               </p>
             ) : tasksByColumn.map(({ column, tasks: colTasks }) => (
               <div key={column.id}>
-                <div className="px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wider sticky top-0" style={{ color: '#8892a4', backgroundColor: '#0d0f18cc' }}>
+                <div className="px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wider sticky top-0" style={{ color: '#999999', backgroundColor: '#1b1b1bcc' }}>
                   {column.name}
                 </div>
                 {colTasks.map((task) => (
@@ -584,7 +584,7 @@ export function StickyNoteCard({ note, scale, tasks, columns, onUpdate, onDelete
                     <span className={`shrink-0 text-[8px] font-bold px-1 py-px rounded ${PRIORITY_CONFIG[task.priority].bg} ${PRIORITY_CONFIG[task.priority].color}`}>
                       {PRIORITY_CONFIG[task.priority].label[0]}
                     </span>
-                    <span className="text-[11px] text-[#e2e8f0] truncate">{task.title}</span>
+                    <span className="text-[11px] text-[#d4d4d4] truncate">{task.title}</span>
                   </button>
                 ))}
               </div>

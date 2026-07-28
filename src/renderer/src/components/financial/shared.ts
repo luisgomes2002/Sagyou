@@ -1,4 +1,4 @@
-import Decimal from 'decimal.js'
+﻿import Decimal from 'decimal.js'
 import type { ShoppingItem, Currency } from '../../types'
 import { CURRENCY_CONFIG } from '../../types'
 
@@ -21,9 +21,9 @@ export const FINANCIAL_CATEGORIES = [
 ]
 
 export const CAT_COLORS = [
-  '#818cf8', '#a78bfa', '#c084fc', '#f472b6', '#fb923c', '#facc15',
-  '#4ade80', '#22d3ee', '#60a5fa', '#f87171', '#34d399', '#a3e635',
-  '#e879f9', '#38bdf8', '#fbbf24'
+  '#a080f0', '#c098e0', '#e098d4', '#eca8c0', '#ecb060', '#e8b810',
+  '#60c080', '#48c0d0', '#68a8d8', '#d48888', '#50c0a0', '#a0c868',
+  '#e890ac', '#60b8d4', '#e8b848'
 ]
 
 // Safe Decimal constructor — treats null/undefined/'' as 0.

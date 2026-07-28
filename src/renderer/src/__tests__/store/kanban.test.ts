@@ -67,7 +67,7 @@ describe('project actions', () => {
 
   it('createProject uses default color when none is provided', () => {
     useKanbanStore.getState().createProject('No Color')
-    expect(useKanbanStore.getState().projects[0].color).toBe('#6366f1')
+    expect(useKanbanStore.getState().projects[0].color).toBe('#7c3aed')
   })
 
   it('updateProject changes name and color', () => {
@@ -625,7 +625,7 @@ describe('backups carry AI chat history', () => {
     await useKanbanStore.getState().exportBackup()
 
     const backup = storage.exportBackup.mock.calls[0][0]
-    expect(backup.version).toBe(5)
+    expect(backup.version).toBe(6)
     expect(backup.conversations).toEqual([conversation])
     expect(backup.memories).toEqual([memory])
     // Attachment metadata rides along now; the bytes are attached in main.

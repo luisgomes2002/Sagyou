@@ -1,13 +1,13 @@
-// The code agent's changes, rendered so they can be reviewed here instead of in
+﻿// The code agent's changes, rendered so they can be reviewed here instead of in
 // an editor.
 
 import { parseDiff, type LineKind } from '../utils/diff'
 
 const LINE_STYLE: Record<LineKind, string> = {
-  add: 'bg-emerald-500/10 text-emerald-300',
-  del: 'bg-red-500/10 text-red-300',
-  ctx: 'text-[#8892a4]',
-  meta: 'text-[#4a5068] bg-[#0d0f18]'
+  add: 'bg-[#46d478]/10 text-[#46d478]',
+  del: 'bg-[#e04040]/10 text-[#e04040]',
+  ctx: 'text-[#999999]',
+  meta: 'text-[#666666] bg-[#1b1b1b]'
 }
 
 const MARK: Record<LineKind, string> = { add: '+', del: '-', ctx: ' ', meta: '' }
@@ -45,20 +45,20 @@ export function CodeDiff({
 }): React.JSX.Element {
   if (diff.error) {
     return (
-      <div className="px-3 py-2 rounded-lg bg-[#0d0f18] border border-[#2a2d42]">
-        <p className="text-[11px] text-[#8892a4]">{diff.error}</p>
+      <div className="px-3 py-2 rounded-lg bg-[#1b1b1b] border border-[#3b3b3b]">
+        <p className="text-[11px] text-[#999999]">{diff.error}</p>
       </div>
     )
   }
 
   if (diff.patch === '' && diff.files.length === 0) {
     return (
-      <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-[#0d0f18] border border-[#2a2d42]">
+      <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-[#1b1b1b] border border-[#3b3b3b]">
         {/* "It changed nothing" is an answer, and a common one — an agent that
             only read the code, or gave up. Silence here reads as a bug. But
             mid-run it is not that answer yet: the same empty diff means the
             agent is still reading, and saying "changed nothing" there is false. */}
-        <p className="text-[11px] text-[#4a5068] italic">
+        <p className="text-[11px] text-[#666666] italic">
           {running
             ? 'Nenhuma alteração ainda — o agente está trabalhando.'
             : 'O agente não alterou nenhum arquivo.'}
@@ -66,7 +66,7 @@ export function CodeDiff({
         {onRefresh && (
           <button
             onClick={onRefresh}
-            className="text-[10px] text-[#8892a4] hover:text-[#e2e8f0] transition-colors"
+            className="text-[10px] text-[#999999] hover:text-[#d4d4d4] transition-colors"
           >
             Recarregar
           </button>
@@ -82,18 +82,18 @@ export function CodeDiff({
     diff.files.find((f) => f.path === path)
 
   return (
-    <div className="rounded-lg bg-[#0d0f18] border border-[#2a2d42] overflow-hidden">
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-[#2a2d42]">
-        <span className="text-[11px] font-medium text-[#e2e8f0]">
+    <div className="rounded-lg bg-[#1b1b1b] border border-[#3b3b3b] overflow-hidden">
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-[#3b3b3b]">
+        <span className="text-[11px] font-medium text-[#d4d4d4]">
           {diff.files.length} arquivo{diff.files.length === 1 ? '' : 's'}
         </span>
-        <span className="text-[11px] text-emerald-400">+{totalAdded}</span>
-        <span className="text-[11px] text-red-400">−{totalRemoved}</span>
+        <span className="text-[11px] text-[#46d478]">+{totalAdded}</span>
+        <span className="text-[11px] text-[#e04040]">−{totalRemoved}</span>
         {onRefresh && (
           <button
             onClick={onRefresh}
             title="Recalcular o diff"
-            className="ml-auto text-[10px] text-[#8892a4] hover:text-[#e2e8f0] transition-colors"
+            className="ml-auto text-[10px] text-[#999999] hover:text-[#d4d4d4] transition-colors"
           >
             Recarregar
           </button>
@@ -104,13 +104,13 @@ export function CodeDiff({
         {files.map((file) => {
           const stat = statOf(file.path)
           return (
-            <div key={file.path} className="border-b border-[#2a2d42] last:border-b-0">
-              <div className="sticky top-0 flex items-center gap-2 px-3 py-1.5 bg-[#13151f] border-b border-[#2a2d42]">
-                <span className="text-[11px] font-mono text-[#e2e8f0] truncate">{file.path}</span>
+            <div key={file.path} className="border-b border-[#3b3b3b] last:border-b-0">
+              <div className="sticky top-0 flex items-center gap-2 px-3 py-1.5 bg-[#232323] border-b border-[#3b3b3b]">
+                <span className="text-[11px] font-mono text-[#d4d4d4] truncate">{file.path}</span>
                 {stat && (
                   <span className="ml-auto shrink-0 text-[10px]">
-                    <span className="text-emerald-400">+{stat.added}</span>{' '}
-                    <span className="text-red-400">−{stat.removed}</span>
+                    <span className="text-[#46d478]">+{stat.added}</span>{' '}
+                    <span className="text-[#e04040]">−{stat.removed}</span>
                   </span>
                 )}
               </div>
@@ -133,15 +133,15 @@ export function CodeDiff({
       </div>
 
       {(diff.truncated || diff.omittedNewFiles.length > 0) && (
-        <div className="px-3 py-2 border-t border-[#2a2d42] space-y-1">
+        <div className="px-3 py-2 border-t border-[#3b3b3b] space-y-1">
           {diff.truncated && (
-            <p className="text-[10px] text-amber-400/80">
+            <p className="text-[10px] text-[#f0b820]/80">
               Diff muito grande — mostrando só o começo. Veja o resto no editor.
             </p>
           )}
           {diff.omittedNewFiles.length > 0 && (
             // Named, not silently dropped: "and N more" is information.
-            <p className="text-[10px] text-amber-400/80">
+            <p className="text-[10px] text-[#f0b820]/80">
               +{diff.omittedNewFiles.length} arquivo(s) novo(s) não mostrado(s):{' '}
               {diff.omittedNewFiles.slice(0, 5).join(', ')}
               {diff.omittedNewFiles.length > 5 ? '…' : ''}

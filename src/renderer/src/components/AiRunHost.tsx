@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 import { useAiRunStore } from '../store/aiRun'
 import type { ChatMessage } from '../store/aiRun'
 import { describeToolCall } from '../ai/tools'
@@ -56,6 +56,7 @@ export function AiRunHost({
   const resolveApproval = useAiRunStore((s) => s.resolveApproval)
   const toggleApproval = useAiRunStore((s) => s.toggleApproval)
   const setAutoApprove = useAiRunStore((s) => s.setAutoApprove)
+  const autoApprove = useAiRunStore((s) => s.autoApprove)
 
   const onAIView = activeView === 'ai'
 
@@ -123,7 +124,7 @@ export function AiRunHost({
   useEffect(() => {
     const off = window.electronAPI.ai.codeAgent.onApproveRequest((req) => {
       setCodeApprovals((prev) => [
-        ...prev.filter((a) => a.runId !== req.runId),
+        ...prev.filter((a) => a.id !== req.id),
         {
           runId: req.runId,
           id: req.id,
@@ -137,7 +138,13 @@ export function AiRunHost({
         }
       ])
     })
-    return () => off()
+    const offExit = window.electronAPI.ai.codeAgent.onExit((payload) => {
+      setCodeApprovals((prev) => prev.filter((a) => a.runId !== payload.runId))
+    })
+    return () => {
+      off()
+      offExit()
+    }
   }, [])
 
   const approveCodeAction = (id: string, approved: boolean): void => {
@@ -146,23 +153,28 @@ export function AiRunHost({
   }
 
   /**
-   * Escape cancels the approval — but only out here. While the AI view is open
-   * it owns Escape, peeling one layer at a time (a confirmation on top of the
-   * card must take the press first); a second listener would reach past that
-   * ordering and answer the card anyway.
+   * Global keyboard shortcuts that work from any view.
+   * Ctrl+Tab toggles auto-approve for the current conversation.
+   * Escape cancels the approval card — only when the AI view is closed
+   * (AIView owns Escape otherwise, peeling one layer at a time).
    */
   useEffect(() => {
-    if (onAIView) return
     const onKey = (e: KeyboardEvent): void => {
-      // Same reading as in the view: cancel means approve nothing, and the card
-      // must be *answered*, not hidden, or the loop waits forever. With a queue,
-      // Escape answers the topmost card (the last one raised, drawn on top).
+      // Ctrl+Tab toggles auto-approve globally, from any view.
+      if (e.key === 'Tab' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault()
+        if (conversationId) {
+          setAutoApprove(conversationId, !autoApprove.has(conversationId))
+        }
+        return
+      }
+      if (onAIView) return
       const top = pendingApprovals[pendingApprovals.length - 1]
       if (e.key === 'Escape' && top) resolveApproval(top.convId, new Set())
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [onAIView, pendingApprovals, resolveApproval])
+  }, [onAIView, conversationId, pendingApprovals, resolveApproval, setAutoApprove, autoApprove])
 
   return (
     <>
@@ -171,10 +183,10 @@ export function AiRunHost({
         <button
           onClick={onOpenAI}
           title="A IA está trabalhando — clique para acompanhar"
-          className="fixed bottom-4 right-4 z-40 flex items-center gap-2 px-3 py-2 rounded-full bg-[#13151f] border border-[#2a2d42] shadow-lg hover:border-[#6366f1] transition-colors"
+          className="fixed bottom-4 right-4 z-40 flex items-center gap-2 px-3 py-2 rounded-full bg-[#232323] border border-[#3b3b3b] shadow-lg hover:border-[#7c3aed] transition-colors"
         >
-          <span className="w-3 h-3 shrink-0 rounded-full border-[1.5px] border-[#a5b4fc] border-t-transparent animate-spin" />
-          <span className="text-xs text-[#e2e8f0]">IA trabalhando…</span>
+          <span className="w-3 h-3 shrink-0 rounded-full border-[1.5px] border-[#a080f0] border-t-transparent animate-spin" />
+          <span className="text-xs text-[#d4d4d4]">IA trabalhando…</span>
         </button>
       )}
 
@@ -185,52 +197,52 @@ export function AiRunHost({
           key={ca.id}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
         >
-          <div className="w-[520px] max-h-[80vh] flex flex-col rounded-xl bg-[#13151f] border border-[#2a2d42] shadow-2xl">
-            <div className="flex items-center gap-2 px-5 py-4 border-b border-[#2a2d42]">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2">
+          <div className="w-[520px] max-h-[80vh] flex flex-col rounded-xl bg-[#232323] border border-[#3b3b3b] shadow-2xl">
+            <div className="flex items-center gap-2 px-5 py-4 border-b border-[#3b3b3b]">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#f0b820" strokeWidth="2">
                 <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
                 <line x1="12" y1="9" x2="12" y2="13" />
                 <line x1="12" y1="17" x2="12.01" y2="17" />
               </svg>
-              <h2 className="text-sm font-semibold text-[#e2e8f0]">
+              <h2 className="text-sm font-semibold text-[#d4d4d4]">
                 Agente de código — {ca.name === 'escrever_arquivo' ? 'escrever arquivo' : 'executar comando'}
               </h2>
             </div>
             <div className="flex-1 overflow-y-auto px-5 py-3 space-y-3">
-              <p className="text-sm text-[#e2e8f0]">{ca.resumo}</p>
+              <p className="text-sm text-[#d4d4d4]">{ca.resumo}</p>
               {ca.conteudo && (
-                <pre className="text-[11px] font-mono text-[#a5b4fc] bg-[#0d0f18] p-3 rounded-lg max-h-60 overflow-y-auto whitespace-pre-wrap">{ca.conteudo}</pre>
+                <pre className="text-[11px] font-mono text-[#a080f0] bg-[#1b1b1b] p-3 rounded-lg max-h-60 overflow-y-auto whitespace-pre-wrap">{ca.conteudo}</pre>
               )}
               {ca.comando && (
-                <div className="text-[11px] font-mono text-[#a5b4fc] bg-[#0d0f18] p-3 rounded-lg">{ca.comando}</div>
+                <div className="text-[11px] font-mono text-[#a080f0] bg-[#1b1b1b] p-3 rounded-lg">{ca.comando}</div>
               )}
               {ca.diff && ca.diff.length > 0 && (
-                <div className="bg-[#0d0f18] p-3 rounded-lg max-h-60 overflow-y-auto">
+                <div className="bg-[#1b1b1b] p-3 rounded-lg max-h-60 overflow-y-auto">
                   {ca.diff.map((d, i) => (
                     <div
                       key={i}
                       className={`text-[11px] font-mono whitespace-pre-wrap ${
-                        d.kind === 'add' ? 'text-green-400' : d.kind === 'del' ? 'text-red-400' : 'text-[#8892a4]'
+                        d.kind === 'add' ? 'text-[#46d478]' : d.kind === 'del' ? 'text-[#e04040]' : 'text-[#999999]'
                       }`}
                     >
                       {d.text}
                     </div>
                   ))}
-                  {ca.diffTruncated && <p className="text-[10px] text-[#4a5068] mt-1">…diff truncado</p>}
+                  {ca.diffTruncated && <p className="text-[10px] text-[#666666] mt-1">…diff truncado</p>}
                 </div>
               )}
-              {ca.irreversivel && <p className="text-[11px] text-amber-400">⚠️ Esta ação não pode ser desfeita.</p>}
+              {ca.irreversivel && <p className="text-[11px] text-[#f0b820]">Esta acao nao pode ser desfeita.</p>}
             </div>
-            <div className="flex items-center justify-end px-5 py-3 border-t border-[#2a2d42] gap-2">
+            <div className="flex items-center justify-end px-5 py-3 border-t border-[#3b3b3b] gap-2">
               <button
                 onClick={() => approveCodeAction(ca.id, false)}
-                className="px-3 py-1.5 rounded-lg text-sm text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#1e2235] transition-colors"
+                className="px-3 py-1.5 rounded-lg text-sm text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors"
               >
                 Recusar
               </button>
               <button
                 onClick={() => approveCodeAction(ca.id, true)}
-                className="px-4 py-1.5 rounded-lg bg-[#6366f1] text-sm text-white font-medium hover:bg-[#4f52d4] transition-colors"
+                className="px-4 py-1.5 rounded-lg bg-[#7c3aed] text-sm text-white font-medium hover:bg-[#6d28d9] transition-colors"
               >
                 Aprovar
               </button>
@@ -248,22 +260,22 @@ export function AiRunHost({
           {pendingApprovals.map((pa) => (
             <div
               key={pa.convId}
-              className="w-[520px] max-h-[80vh] flex flex-col rounded-xl bg-[#13151f] border border-[#2a2d42] shadow-2xl"
+              className="w-[520px] max-h-[80vh] flex flex-col rounded-xl bg-[#232323] border border-[#3b3b3b] shadow-2xl"
             >
-              <div className="flex items-center gap-2 px-5 py-4 border-b border-[#2a2d42]">
+              <div className="flex items-center gap-2 px-5 py-4 border-b border-[#3b3b3b]">
                 <svg
                   width="15"
                   height="15"
                   viewBox="0 0 24 24"
                   fill="none"
-                  stroke="#fbbf24"
+                  stroke="#f0b820"
                   strokeWidth="2"
                 >
                   <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
                   <line x1="12" y1="9" x2="12" y2="13" />
                   <line x1="12" y1="17" x2="12.01" y2="17" />
                 </svg>
-                <h2 className="text-sm font-semibold text-[#e2e8f0]">
+                <h2 className="text-sm font-semibold text-[#d4d4d4]">
                   Aprovar ações da IA ({pa.selected.size}/{pa.writes.length})
                 </h2>
               </div>
@@ -271,35 +283,35 @@ export function AiRunHost({
               {pendingApprovals.length > 1 && (
                 // Which chat is asking — only worth the line when more than one
                 // card is up and they need telling apart.
-                <p className="px-5 pt-2 text-[11px] text-[#8892a4] truncate">
+                <p className="px-5 pt-2 text-[11px] text-[#999999] truncate">
                   Conversa: {deriveTitle(messagesOf(pa.convId))}
                 </p>
               )}
 
               <div className="flex-1 overflow-y-auto px-5 py-3 space-y-2">
-                <p className="text-xs text-[#8892a4] mb-1">
+                <p className="text-xs text-[#999999] mb-1">
                   A IA quer executar as ações abaixo. Marque as que você aprova.
                 </p>
                 {pa.writes.map((w) => (
                   <label
                     key={w.id}
-                    className="flex items-start gap-3 p-3 rounded-lg bg-[#0d0f18] border border-[#2a2d42] cursor-pointer hover:border-[#3a3e58]"
+                    className="flex items-start gap-3 p-3 rounded-lg bg-[#1b1b1b] border border-[#3b3b3b] cursor-pointer hover:border-[#555555]"
                   >
                     <input
                       type="checkbox"
                       checked={pa.selected.has(w.id)}
                       onChange={() => toggleApproval(pa.convId, w.id)}
-                      className="mt-0.5 accent-[#6366f1]"
+                      className="mt-0.5 accent-[#7c3aed]"
                     />
-                    <span className="text-sm text-[#e2e8f0]">{describeToolCall(w.name, w.args)}</span>
+                    <span className="text-sm text-[#d4d4d4]">{describeToolCall(w.name, w.args)}</span>
                   </label>
                 ))}
               </div>
 
-              <div className="flex items-center justify-between px-5 py-3 border-t border-[#2a2d42] gap-2">
+              <div className="flex items-center justify-between px-5 py-3 border-t border-[#3b3b3b] gap-2">
                 <button
                   onClick={() => resolveApproval(pa.convId, new Set())}
-                  className="px-3 py-1.5 rounded-lg text-sm text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#1e2235] transition-colors shrink-0"
+                  className="px-3 py-1.5 rounded-lg text-sm text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors shrink-0"
                 >
                   Recusar tudo
                 </button>
@@ -310,14 +322,14 @@ export function AiRunHost({
                       resolveApproval(pa.convId, new Set(pa.writes.map((w) => w.id)))
                     }}
                     title="A IA trabalhará sem interrupção nesta conversa — como o modo always allow do Claude Code"
-                    className="px-3 py-1.5 rounded-lg text-xs text-amber-400 border border-amber-500/30 hover:bg-amber-500/10 transition-colors"
+                    className="px-3 py-1.5 rounded-lg text-xs text-[#f0b820] border border-[#f0b820]/30 hover:bg-[#f0b820]/10 transition-colors"
                   >
                     Sempre permitir
                   </button>
                   <button
                     onClick={() => resolveApproval(pa.convId, pa.selected)}
                     disabled={pa.selected.size === 0}
-                    className="px-4 py-1.5 rounded-lg bg-[#6366f1] text-sm text-white font-medium hover:bg-[#4f52d4] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    className="px-4 py-1.5 rounded-lg bg-[#7c3aed] text-sm text-white font-medium hover:bg-[#6d28d9] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                   >
                     Aprovar {pa.selected.size > 0 ? pa.selected.size : ''}
                   </button>

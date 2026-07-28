@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+﻿import { useEffect, useRef, useState } from 'react'
 import type { FinancialTransaction, Currency } from '../../types'
 import { CURRENCY_CONFIG } from '../../types'
 import { FINANCIAL_CATEGORIES, parseDecimalInput, todayISO, formatDateBR, formatAmountInput } from './shared'
@@ -42,15 +42,15 @@ export function CategoryInput({ value, onChange, onCommit, onKeyDown, placeholde
         className={className}
       />
       {open && filtered.length > 0 && (
-        <div className="absolute left-0 top-full mt-0.5 z-50 w-44 max-h-52 overflow-y-auto rounded-lg border border-[#2a2d42] bg-[#0d0f18] shadow-xl py-1">
+        <div className="absolute left-0 top-full mt-0.5 z-50 w-44 max-h-52 overflow-y-auto rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] shadow-xl py-1">
           {filtered.map((cat) => (
             <button
               key={cat}
               type="button"
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => select(cat)}
-              className={`w-full text-left px-3 py-1.5 text-xs transition-colors hover:bg-[#1e2235] ${
-                value === cat ? 'text-[#a5b4fc]' : 'text-[#8892a4] hover:text-[#e2e8f0]'
+              className={`w-full text-left px-3 py-1.5 text-xs transition-colors hover:bg-[#2a2a2a] ${
+                value === cat ? 'text-[#a080f0]' : 'text-[#999999] hover:text-[#d4d4d4]'
               }`}
             >
               {cat}
@@ -101,7 +101,7 @@ export function AddTransactionRow({ currency, onAdd }: AddTransactionRowProps) {
   }
 
   return (
-    <tr className="border-b border-[#1a1d2e] hover:bg-[#1a1c2c] transition-colors">
+    <tr className="border-b border-[#3b3b3b] hover:bg-[#2a2a2a] transition-colors">
       <td className="pl-4 pr-2 py-1.5 w-28">
         {dateEditing ? (
           <input
@@ -111,12 +111,12 @@ export function AddTransactionRow({ currency, onAdd }: AddTransactionRowProps) {
             onChange={(e) => setDate(e.target.value)}
             onBlur={() => setDateEditing(false)}
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === 'Escape') setDateEditing(false) }}
-            className="w-full bg-transparent text-xs text-[#8892a4] focus:outline-none"
+            className="w-full bg-transparent text-xs text-[#999999] focus:outline-none"
           />
         ) : (
           <button
             onClick={() => setDateEditing(true)}
-            className="w-full text-left text-xs text-[#8892a4] tabular-nums hover:text-[#e2e8f0] transition-colors"
+            className="w-full text-left text-xs text-[#999999] tabular-nums hover:text-[#d4d4d4] transition-colors"
           >
             {formatDateBR(date)}
           </button>
@@ -129,7 +129,7 @@ export function AddTransactionRow({ currency, onAdd }: AddTransactionRowProps) {
           onChange={(e) => setDescription(e.target.value)}
           onKeyDown={onKey}
           placeholder="Descrição..."
-          className="w-full bg-transparent text-sm text-[#e2e8f0] placeholder-[#3a3e58] focus:outline-none"
+          className="w-full bg-transparent text-sm text-[#d4d4d4] placeholder-[#555555] focus:outline-none"
         />
       </td>
       <td className="py-1.5 pr-2 w-28">
@@ -138,14 +138,14 @@ export function AddTransactionRow({ currency, onAdd }: AddTransactionRowProps) {
           onChange={setCategory}
           onKeyDown={onKey}
           placeholder="Categoria"
-          className="w-full bg-transparent text-xs text-[#8892a4] placeholder-[#3a3e58] focus:outline-none"
+          className="w-full bg-transparent text-xs text-[#999999] placeholder-[#555555] focus:outline-none"
         />
       </td>
       <td className="py-1.5 pr-2 w-20 text-center">
         <button
           onClick={() => setType(type === 'income' ? 'expense' : 'income')}
           className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors ${
-            type === 'income' ? 'bg-[#22c55e]/15 text-[#4ade80]' : 'bg-red-500/15 text-red-400'
+            type === 'income' ? 'bg-[#20b858]/15 text-[#46d478]' : 'bg-[#e04040]/15 text-[#e04040]'
           }`}
         >
           {type === 'income' ? '↑ Entrada' : '↓ Saída'}
@@ -153,7 +153,7 @@ export function AddTransactionRow({ currency, onAdd }: AddTransactionRowProps) {
       </td>
       <td className="py-1.5 pr-2 w-32">
         <div className="flex items-center gap-1">
-          <span className="text-[10px] text-[#3a3e58] select-none">{CURRENCY_CONFIG[currency].symbol}</span>
+          <span className="text-[10px] text-[#555555] select-none">{CURRENCY_CONFIG[currency].symbol}</span>
           <input
             type="text"
             inputMode="decimal"
@@ -161,7 +161,7 @@ export function AddTransactionRow({ currency, onAdd }: AddTransactionRowProps) {
             placeholder="0"
             onChange={(e) => setAmount(e.target.value)}
             onKeyDown={onKey}
-            className="w-full bg-transparent text-sm text-[#8892a4] placeholder-[#3a3e58] focus:outline-none"
+            className="w-full bg-transparent text-sm text-[#999999] placeholder-[#555555] focus:outline-none"
           />
         </div>
       </td>
@@ -169,7 +169,7 @@ export function AddTransactionRow({ currency, onAdd }: AddTransactionRowProps) {
         <button
           onClick={submit}
           disabled={!description.trim() || !parseDecimalInput(amount)?.greaterThan(0)}
-          className="p-1 rounded text-[#6366f1] hover:bg-[#6366f1]/10 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+          className="p-1 rounded text-[#7c3aed] hover:bg-[#7c3aed]/10 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
         >
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
             <line x1="12" y1="5" x2="12" y2="19" />
@@ -233,7 +233,7 @@ export function TransactionRow({ tx, currency, onUpdate, onDelete }: Transaction
   }
 
   return (
-    <tr className="group border-b border-[#1a1d2e] hover:bg-[#1a1c2c] transition-colors">
+    <tr className="group border-b border-[#3b3b3b] hover:bg-[#2a2a2a] transition-colors">
       <td className="pl-4 pr-2 py-2 w-28">
         {dateEditing ? (
           <input
@@ -243,12 +243,12 @@ export function TransactionRow({ tx, currency, onUpdate, onDelete }: Transaction
             onChange={(e) => setEditDate(e.target.value)}
             onBlur={() => { commitDate(); setDateEditing(false) }}
             onKeyDown={(e) => { blur(e); if (e.key === 'Enter' || e.key === 'Escape') setDateEditing(false) }}
-            className="w-full bg-transparent text-xs text-[#8892a4] tabular-nums focus:outline-none focus:bg-[#0d0f18] focus:px-1 rounded transition-all"
+            className="w-full bg-transparent text-xs text-[#999999] tabular-nums focus:outline-none focus:bg-[#1b1b1b] focus:px-1 rounded transition-all"
           />
         ) : (
           <button
             onClick={() => setDateEditing(true)}
-            className="w-full text-left text-xs text-[#8892a4] tabular-nums hover:text-[#e2e8f0] transition-colors"
+            className="w-full text-left text-xs text-[#999999] tabular-nums hover:text-[#d4d4d4] transition-colors"
           >
             {formatDateBR(editDate)}
           </button>
@@ -257,7 +257,7 @@ export function TransactionRow({ tx, currency, onUpdate, onDelete }: Transaction
       <td className="py-2 pr-2">
         <div className="flex items-center gap-1.5 min-w-0">
           {tx.fromShopping && (
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2" className="shrink-0 opacity-60">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2" className="shrink-0 opacity-60">
               <title>Gerado por compra</title>
               <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" />
               <line x1="3" y1="6" x2="21" y2="6" />
@@ -269,8 +269,8 @@ export function TransactionRow({ tx, currency, onUpdate, onDelete }: Transaction
             onChange={(e) => setEditDesc(e.target.value)}
             onBlur={commitDesc}
             onKeyDown={blur}
-            className={`flex-1 min-w-0 bg-transparent text-sm focus:outline-none focus:bg-[#0d0f18] focus:px-1.5 rounded transition-all ${
-              tx.fromShopping ? 'text-[#a5b4fc]' : 'text-[#e2e8f0]'
+            className={`flex-1 min-w-0 bg-transparent text-sm focus:outline-none focus:bg-[#1b1b1b] focus:px-1.5 rounded transition-all ${
+              tx.fromShopping ? 'text-[#a080f0]' : 'text-[#d4d4d4]'
             }`}
           />
         </div>
@@ -282,19 +282,19 @@ export function TransactionRow({ tx, currency, onUpdate, onDelete }: Transaction
           onCommit={commitCat}
           onKeyDown={blur}
           placeholder="-"
-          className="w-full bg-transparent text-xs text-[#8892a4] placeholder-[#3a3e58] focus:outline-none focus:bg-[#0d0f18] focus:px-1 rounded transition-all"
+          className="w-full bg-transparent text-xs text-[#999999] placeholder-[#555555] focus:outline-none focus:bg-[#1b1b1b] focus:px-1 rounded transition-all"
         />
       </td>
       <td className="py-2 pr-2 w-20 text-center">
         <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
-          tx.type === 'income' ? 'bg-[#22c55e]/15 text-[#4ade80]' : 'bg-red-500/15 text-red-400'
+          tx.type === 'income' ? 'bg-[#20b858]/15 text-[#46d478]' : 'bg-[#e04040]/15 text-[#e04040]'
         }`}>
           {tx.type === 'income' ? '↑ Entrada' : '↓ Saída'}
         </span>
       </td>
       <td className="py-2 pr-2 w-32 text-right">
         <div className="flex items-center justify-end gap-1">
-          <span className="text-[10px] text-[#3a3e58] select-none">{CURRENCY_CONFIG[currency].symbol}</span>
+          <span className="text-[10px] text-[#555555] select-none">{CURRENCY_CONFIG[currency].symbol}</span>
           <input
             type="text"
             inputMode="decimal"
@@ -302,8 +302,8 @@ export function TransactionRow({ tx, currency, onUpdate, onDelete }: Transaction
             onChange={(e) => setEditAmount(e.target.value)}
             onBlur={commitAmount}
             onKeyDown={blur}
-            className={`w-20 bg-transparent text-sm tabular-nums font-medium text-right focus:outline-none focus:bg-[#0d0f18] focus:px-1 rounded transition-all ${
-              tx.type === 'income' ? 'text-[#4ade80]' : 'text-[#e2e8f0]'
+            className={`w-20 bg-transparent text-sm tabular-nums font-medium text-right focus:outline-none focus:bg-[#1b1b1b] focus:px-1 rounded transition-all ${
+              tx.type === 'income' ? 'text-[#46d478]' : 'text-[#d4d4d4]'
             }`}
           />
         </div>
@@ -311,7 +311,7 @@ export function TransactionRow({ tx, currency, onUpdate, onDelete }: Transaction
       <td className="py-2 pr-3 w-9 text-center">
         <button
           onClick={onDelete}
-          className="p-1 rounded text-[#2a2d42] hover:text-red-400 hover:bg-red-400/10 opacity-0 group-hover:opacity-100 transition-all"
+          className="p-1 rounded text-[#3b3b3b] hover:text-[#e04040] hover:bg-[#e04040]/10 opacity-0 group-hover:opacity-100 transition-all"
         >
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <line x1="18" y1="6" x2="6" y2="18" />

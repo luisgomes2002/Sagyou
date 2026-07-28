@@ -1,4 +1,4 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 import type { Goal, Project } from '../types'
 import { useKanbanStore } from '../store/kanban'
 import { ConfirmDialog } from './ConfirmDialog'
@@ -72,18 +72,18 @@ export function GoalView({ projects }: Props) {
   return (
     <>
       <div className="flex flex-col h-full overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#2a2d42] shrink-0">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#3b3b3b] shrink-0">
           <div className="flex items-center gap-3">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2">
               <circle cx="12" cy="12" r="10" />
               <circle cx="12" cy="12" r="6" />
               <circle cx="12" cy="12" r="2" />
             </svg>
-            <h1 className="text-base font-semibold text-[#e2e8f0]">Metas</h1>
+            <h1 className="text-base font-semibold text-[#d4d4d4]">Metas</h1>
           </div>
           <button
             onClick={() => setModal({ open: true })}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#6366f1] text-sm text-white font-medium hover:bg-[#5254c5] transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#7c3aed] text-sm text-white font-medium hover:bg-[#6d28d9] transition-colors"
           >
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
@@ -93,35 +93,35 @@ export function GoalView({ projects }: Props) {
         </div>
 
         {goals.length > 0 && (
-          <div className="px-6 py-3 border-b border-[#2a2d42] bg-[#0f1120] shrink-0">
+          <div className="px-6 py-3 border-b border-[#3b3b3b] bg-[#232323] shrink-0">
             <div className="flex items-center gap-4 mb-2">
               <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-[#22c55e]" />
-                <span className="text-[11px] text-[#8892a4]">{completedCount} concluída{completedCount !== 1 ? 's' : ''}</span>
+                <span className="w-2 h-2 rounded-full bg-[#20b858]" />
+                <span className="text-[11px] text-[#999999]">{completedCount} concluída{completedCount !== 1 ? 's' : ''}</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-[#6366f1]" />
-                <span className="text-[11px] text-[#8892a4]">{activeCount} em progresso</span>
+                <span className="w-2 h-2 rounded-full bg-[#7c3aed]" />
+                <span className="text-[11px] text-[#999999]">{activeCount} em progresso</span>
               </div>
-              <span className="text-[11px] font-semibold text-[#a5b4fc] ml-auto tabular-nums">{overallPct}% médio</span>
+              <span className="text-[11px] font-semibold text-[#a080f0] ml-auto tabular-nums">{overallPct}% médio</span>
             </div>
-            <div className="h-1.5 rounded-full bg-[#2a2d42] overflow-hidden">
+            <div className="h-1.5 rounded-full bg-[#3b3b3b] overflow-hidden">
               <div
                 className="h-full rounded-full transition-all duration-500"
-                style={{ width: `${overallPct}%`, backgroundColor: overallPct === 100 ? '#22c55e' : '#6366f1' }}
+                style={{ width: `${overallPct}%`, backgroundColor: overallPct === 100 ? '#20b858' : '#7c3aed' }}
               />
             </div>
           </div>
         )}
 
         {goals.length > 0 && (
-          <div className="flex items-center gap-1 px-6 py-2 border-b border-[#2a2d42] bg-[#0f1120] shrink-0">
+          <div className="flex items-center gap-1 px-6 py-2 border-b border-[#3b3b3b] bg-[#232323] shrink-0">
             {(['all', 'active', 'done'] as FilterType[]).map((f) => (
               <button
                 key={f}
                 onClick={() => setFilter(f)}
                 className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
-                  filter === f ? 'bg-[#2a2d42] text-[#e2e8f0]' : 'text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#1e2235]'
+                  filter === f ? 'bg-[#3b3b3b] text-[#d4d4d4]' : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a]'
                 }`}
               >
                 {filterLabels[f]}
@@ -133,26 +133,26 @@ export function GoalView({ projects }: Props) {
         {goals.length === 0 ? (
           <div className="flex flex-col items-center justify-center flex-1 gap-5">
             <div className="relative">
-              <div className="w-20 h-20 rounded-full bg-[#1e2235] border border-[#2a2d42] flex items-center justify-center">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#3a3e58" strokeWidth="1.5">
+              <div className="w-20 h-20 rounded-full bg-[#2a2a2a] border border-[#3b3b3b] flex items-center justify-center">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#555555" strokeWidth="1.5">
                   <circle cx="12" cy="12" r="10" />
                   <circle cx="12" cy="12" r="6" />
                   <circle cx="12" cy="12" r="2" />
                 </svg>
               </div>
               <svg className="absolute inset-0 -m-2 opacity-20" width="88" height="88" viewBox="0 0 88 88">
-                <circle cx="44" cy="44" r="40" fill="none" stroke="#6366f1" strokeWidth="1" strokeDasharray="4 6" />
+                <circle cx="44" cy="44" r="40" fill="none" stroke="#7c3aed" strokeWidth="1" strokeDasharray="4 6" />
               </svg>
             </div>
             <div className="text-center">
-              <p className="text-[#e2e8f0] font-semibold mb-1.5">Você ainda não criou nenhuma meta</p>
-              <p className="text-sm text-[#8892a4] max-w-xs leading-relaxed">
+              <p className="text-[#d4d4d4] font-semibold mb-1.5">Você ainda não criou nenhuma meta</p>
+              <p className="text-sm text-[#999999] max-w-xs leading-relaxed">
                 Crie metas e registre cada progresso com data e descrição — livros lidos, km corridos, horas estudadas.
               </p>
             </div>
             <button
               onClick={() => setModal({ open: true })}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#6366f1] text-sm text-white font-medium hover:bg-[#5254c5] transition-colors"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#7c3aed] text-sm text-white font-medium hover:bg-[#6d28d9] transition-colors"
             >
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                 <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
@@ -162,7 +162,7 @@ export function GoalView({ projects }: Props) {
           </div>
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center flex-1 gap-2">
-            <p className="text-sm text-[#8892a4]">
+            <p className="text-sm text-[#999999]">
               Nenhuma meta {filter === 'active' ? 'em progresso' : 'concluída'}
             </p>
           </div>

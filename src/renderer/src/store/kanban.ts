@@ -1,7 +1,7 @@
-import { create } from 'zustand'
+﻿import { create } from 'zustand'
 import { v4 as uuidv4 } from 'uuid'
 import Decimal from 'decimal.js'
-import type { Project, Task, TaskImage, Column, Sprint, Tombstone, Backup, AIJson, Priority, StickyNote, Goal, GoalEntry, Habit, FinancialTable, FinancialTransaction, FinancialGoal, ShoppingItem, Currency, StoredFile, AIConversation, AiMemory } from '../types'
+import type { Project, Task, TaskImage, Column, Sprint, Tombstone, Backup, AIJson, Priority, StickyNote, Goal, GoalEntry, Habit, FinancialTable, FinancialTransaction, FinancialGoal, ShoppingItem, Currency, StoredFile, AIConversation, AiMemory, TimeBlock, Routine } from '../types'
 import { DEFAULT_COLUMN_NAMES } from '../types'
 import { ElectronStorage } from '../services/ElectronStorage'
 import { isDoneColumn } from '../utils/columns'
@@ -110,6 +110,8 @@ interface KanbanState {
    */
   activeTimers: ActiveTimer[]
   files: StoredFile[]
+  timeBlocks: TimeBlock[]
+  routines: Routine[]
   isLoaded: boolean
 }
 
@@ -205,6 +207,15 @@ interface KanbanActions {
 
   addFiles: (files: StoredFile[]) => void
   removeFile: (id: string) => void
+
+  createTimeBlock: (data: Omit<TimeBlock, 'id' | 'createdAt' | 'updatedAt'>) => string
+  updateTimeBlock: (id: string, updates: Partial<Pick<TimeBlock, 'title' | 'description' | 'startTime' | 'endTime' | 'taskId' | 'habitId' | 'color' | 'order'>>) => void
+  deleteTimeBlock: (id: string) => void
+  setTimeBlocks: (blocks: TimeBlock[]) => void
+
+  createRoutine: (data: Omit<Routine, 'id' | 'createdAt' | 'updatedAt'>) => string
+  updateRoutine: (id: string, updates: Partial<Pick<Routine, 'title' | 'description' | 'startTime' | 'endTime' | 'daysOfWeek' | 'color' | 'active'>>) => void
+  deleteRoutine: (id: string) => void
 }
 
 export type KanbanStore = KanbanState & KanbanActions
@@ -223,12 +234,14 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
   sprintFilter: null,
   activeTimers: [],
   files: [],
+  timeBlocks: [],
+  routines: [],
   isLoaded: false,
 
   _flushPersist: async () => {
-    const { projects, tasks, sprints, tombstones, notes, goals, habits, lists, activeTimers, files } = get()
+    const { projects, tasks, sprints, tombstones, notes, goals, habits, lists, activeTimers, files, timeBlocks, routines } = get()
     await storage.save({
-      projects, tasks, sprints, tombstones, notes, goals, habits, lists, activeTimers, files,
+      projects, tasks, sprints, tombstones, notes, goals, habits, lists, activeTimers, files, timeBlocks, routines,
       // Legacy mirror, like activeCodePathId ⇢ activeCodePathIds[0]: an older app
       // version (or a tool reading the DB directly) still resolves one timer.
       activeTimer: activeTimers[0] ?? null
@@ -278,6 +291,8 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
       habits: data.habits || [],
       lists: (data.lists || []).map(normalizeList),
       files: data.files || [],
+      timeBlocks: data.timeBlocks || [],
+      routines: data.routines || [],
       isLoaded: true,
       activeProjectId: projects[0]?.id ?? null,
       activeTimers: []
@@ -292,7 +307,7 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
   setActiveProject: (id) => set({ activeProjectId: id }),
   setSprintFilter: (sprintId) => set({ sprintFilter: sprintId }),
 
-  createProject: (name, description, color = '#6366f1') => {
+  createProject: (name, description, color = '#7c3aed') => {
     const now = new Date().toISOString()
     const id = uuidv4()
     const columns: Column[] = DEFAULT_COLUMN_NAMES.map((colName, i) => ({
@@ -1051,7 +1066,7 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
       memories = []
     }
     const backup: Backup = {
-      version: 5,
+      version: 6,
       exportedAt: new Date().toISOString(),
       projects,
       tasks,
@@ -1067,7 +1082,9 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
       // chat images are attached by the main process at write time — see the
       // backup:export handler; keeping them out of the renderer avoids shipping
       // megabytes of base64 over IPC.
-      files: get().files
+      files: get().files,
+      timeBlocks: get().timeBlocks,
+      routines: get().routines,
     }
     const result = await storage.exportBackup(backup)
     return result.success
@@ -1125,7 +1142,9 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
     // the blobs to disk during backup:import). A pre-v5 backup has no `files`
     // key — leave the local attachments untouched rather than wiping them.
     const files: StoredFile[] = Array.isArray(backup.files) ? backup.files : get().files
-    set({ projects, tasks, sprints, tombstones, notes, goals, habits, lists, files, activeProjectId, activeTimers: [] })
+    const timeBlocks: TimeBlock[] = Array.isArray(backup.timeBlocks) ? backup.timeBlocks : get().timeBlocks
+    const routines: Routine[] = Array.isArray(backup.routines) ? backup.routines : get().routines
+    set({ projects, tasks, sprints, tombstones, notes, goals, habits, lists, files, timeBlocks, routines, activeProjectId, activeTimers: [] })
     await get()._flushPersist()
 
     // Only touch the chat history when the backup actually carries it: a v2
@@ -1216,6 +1235,59 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
 
   removeFile: (id) => {
     set((s) => ({ files: s.files.filter((f) => f.id !== id) }))
+    get()._persist()
+  },
+
+  createTimeBlock: (data) => {
+    const now = new Date().toISOString()
+    const id = uuidv4()
+    const block: TimeBlock = { ...data, id, createdAt: now, updatedAt: now }
+    set((s) => ({ timeBlocks: [...s.timeBlocks, block] }))
+    get()._persist()
+    return id
+  },
+
+  updateTimeBlock: (id, updates) => {
+    const now = new Date().toISOString()
+    set((s) => ({
+      timeBlocks: s.timeBlocks.map((tb) =>
+        tb.id === id ? { ...tb, ...updates, updatedAt: now } : tb
+      )
+    }))
+    get()._persist()
+  },
+
+  deleteTimeBlock: (id) => {
+    set((s) => ({ timeBlocks: s.timeBlocks.filter((tb) => tb.id !== id) }))
+    get()._persist()
+  },
+
+  setTimeBlocks: (blocks) => {
+    set({ timeBlocks: blocks })
+    get()._persist()
+  },
+
+  createRoutine: (data) => {
+    const now = new Date().toISOString()
+    const id = uuidv4()
+    const routine: Routine = { ...data, id, createdAt: now, updatedAt: now }
+    set((s) => ({ routines: [...s.routines, routine] }))
+    get()._persist()
+    return id
+  },
+
+  updateRoutine: (id, updates) => {
+    const now = new Date().toISOString()
+    set((s) => ({
+      routines: s.routines.map((r) =>
+        r.id === id ? { ...r, ...updates, updatedAt: now } : r
+      )
+    }))
+    get()._persist()
+  },
+
+  deleteRoutine: (id) => {
+    set((s) => ({ routines: s.routines.filter((r) => r.id !== id) }))
     get()._persist()
   }
 }))

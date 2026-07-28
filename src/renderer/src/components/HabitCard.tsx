@@ -1,4 +1,4 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 import type { Habit } from '../types'
 
 const WEEK_DAYS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S']
@@ -48,7 +48,7 @@ function HabitCalendar({ habit, today, year, month, onToggle }: CalendarProps) {
     <div className="mt-3">
       <div className="grid grid-cols-7 gap-px mb-1">
         {WEEK_DAYS.map((d, i) => (
-          <div key={i} className="text-[9px] text-center text-[#8892a4] font-medium select-none">{d}</div>
+          <div key={i} className="text-[9px] text-center text-[#999999] font-medium select-none">{d}</div>
         ))}
       </div>
       <div className="grid grid-cols-7 gap-px">
@@ -69,9 +69,9 @@ function HabitCalendar({ habit, today, year, month, onToggle }: CalendarProps) {
                 isFuture ? 'cursor-default opacity-15' : 'cursor-pointer hover:opacity-80 active:scale-90'
               }`}
               style={{
-                backgroundColor: done ? habit.color : '#2a2d42',
+                backgroundColor: done ? habit.color : '#3b3b3b',
                 opacity: isFuture ? 0.15 : done ? 1 : 0.45,
-                color: done ? 'rgba(0,0,0,0.55)' : '#8892a4',
+                color: done ? 'rgba(0,0,0,0.55)' : '#999999',
                 ...(isToday && !isFuture
                   ? { outline: `2px solid ${habit.color}`, outlineOffset: '1px', opacity: done ? 1 : 0.7 }
                   : {})
@@ -105,16 +105,16 @@ export function HabitCard({ habit, today, year, month, onToggle, onEdit, onDelet
   const totalDone = habit.completions.length
 
   return (
-    <div className="group rounded-xl border border-[#2a2d42] bg-[#1e2235] p-4 hover:border-[#3a3e58] transition-colors">
+    <div className="group rounded-xl border border-[#3b3b3b] bg-[#2a2a2a] p-4 hover:border-[#555555] transition-colors">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 min-w-0">
           <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: habit.color }} />
-          <span className="text-sm font-medium text-[#e2e8f0] truncate">{habit.name}</span>
+          <span className="text-sm font-medium text-[#d4d4d4] truncate">{habit.name}</span>
         </div>
         <div className="relative">
           <button
             onClick={() => setMenuOpen((v) => !v)}
-            className="p-1 rounded text-[#3a3e58] hover:text-[#8892a4] hover:bg-[#2a2d42] transition-colors opacity-0 group-hover:opacity-100"
+            className="p-1 rounded text-[#555555] hover:text-[#999999] hover:bg-[#3b3b3b] transition-colors opacity-0 group-hover:opacity-100"
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="5" r="1" fill="currentColor" />
@@ -125,15 +125,15 @@ export function HabitCard({ habit, today, year, month, onToggle, onEdit, onDelet
           {menuOpen && (
             <>
               <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-              <div className="absolute right-0 top-7 z-20 w-32 rounded-lg border border-[#2a2d42] bg-[#13151f] shadow-xl py-1">
+              <div className="absolute right-0 top-7 z-20 w-32 rounded-lg border border-[#3b3b3b] bg-[#232323] shadow-xl py-1">
                 <button
-                  className="w-full text-left px-3 py-2 text-sm text-[#e2e8f0] hover:bg-[#1e2235] transition-colors"
+                  className="w-full text-left px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors"
                   onClick={() => { setMenuOpen(false); onEdit() }}
                 >
                   Editar
                 </button>
                 <button
-                  className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-red-400/10 transition-colors"
+                  className="w-full text-left px-3 py-2 text-sm text-[#e04040] hover:bg-[#e04040]/10 transition-colors"
                   onClick={() => { setMenuOpen(false); onDelete() }}
                 >
                   Deletar
@@ -149,14 +149,14 @@ export function HabitCard({ habit, today, year, month, onToggle, onEdit, onDelet
       <div className="flex items-center justify-between mt-3">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={streak > 0 ? habit.color : '#8892a4'} strokeWidth="2">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={streak > 0 ? habit.color : '#999999'} strokeWidth="2">
               <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
             </svg>
-            <span className="text-xs font-semibold tabular-nums" style={{ color: streak > 0 ? habit.color : '#8892a4' }}>
+            <span className="text-xs font-semibold tabular-nums" style={{ color: streak > 0 ? habit.color : '#999999' }}>
               {streak}d
             </span>
           </div>
-          <span className="text-[10px] text-[#8892a4]">{totalDone} total</span>
+          <span className="text-[10px] text-[#999999]">{totalDone} total</span>
         </div>
 
         <button
@@ -165,7 +165,7 @@ export function HabitCard({ habit, today, year, month, onToggle, onEdit, onDelet
           style={
             isDoneToday
               ? { backgroundColor: `${habit.color}18`, borderColor: `${habit.color}40`, color: habit.color }
-              : { backgroundColor: 'transparent', borderColor: '#2a2d42', color: '#8892a4' }
+              : { backgroundColor: 'transparent', borderColor: '#3b3b3b', color: '#999999' }
           }
         >
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={isDoneToday ? 3 : 2}>

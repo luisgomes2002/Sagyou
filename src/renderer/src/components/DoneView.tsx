@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+﻿import { useMemo } from 'react'
 import { format, parseISO } from 'date-fns'
 import type { Project, Task, Sprint } from '../types'
 import { PRIORITY_CONFIG } from '../types'
@@ -36,14 +36,14 @@ export function DoneView({ projects, tasks, sprints, sprintFilter, onViewTask, o
   if (projectsWithDone.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center flex-1 gap-4">
-        <div className="w-16 h-16 rounded-2xl bg-[#1e2235] border border-[#2a2d42] flex items-center justify-center">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#8892a4" strokeWidth="1.5">
+        <div className="w-16 h-16 rounded-2xl bg-[#2a2a2a] border border-[#3b3b3b] flex items-center justify-center">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#999999" strokeWidth="1.5">
             <polyline points="20 6 9 17 4 12" />
           </svg>
         </div>
         <div className="text-center">
-          <p className="text-[#e2e8f0] font-medium mb-1">Nenhuma task concluída</p>
-          <p className="text-sm text-[#8892a4]">Tasks movidas para "Done" aparecem aqui</p>
+          <p className="text-[#d4d4d4] font-medium mb-1">Nenhuma task concluída</p>
+          <p className="text-sm text-[#999999]">Tasks movidas para "Done" aparecem aqui</p>
         </div>
       </div>
     )
@@ -75,8 +75,8 @@ export function DoneView({ projects, tasks, sprints, sprintFilter, onViewTask, o
             {/* Project header */}
             <div className="flex items-center gap-3 mb-4">
               <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: project.color }} />
-              <h2 className="text-base font-semibold text-[#e2e8f0]">{project.name}</h2>
-              <span className="text-xs text-[#8892a4] bg-[#1e2235] px-2 py-0.5 rounded-full">
+              <h2 className="text-base font-semibold text-[#d4d4d4]">{project.name}</h2>
+              <span className="text-xs text-[#999999] bg-[#2a2a2a] px-2 py-0.5 rounded-full">
                 {doneTasks.length} concluída{doneTasks.length !== 1 ? 's' : ''}
               </span>
             </div>
@@ -87,8 +87,8 @@ export function DoneView({ projects, tasks, sprints, sprintFilter, onViewTask, o
                   {/* Sprint sub-header — only for named sprints */}
                   {sprint && (
                     <div className="flex items-center gap-2 mb-2 ml-0.5">
-                      <div className={`w-1.5 h-1.5 rounded-full ${sprint.closedAt ? 'bg-[#8892a4]' : 'bg-[#6366f1]'}`} />
-                      <span className="text-xs font-medium text-[#8892a4]">
+                      <div className={`w-1.5 h-1.5 rounded-full ${sprint.closedAt ? 'bg-[#999999]' : 'bg-[#7c3aed]'}`} />
+                      <span className="text-xs font-medium text-[#999999]">
                         {sprint.name}
                         {sprint.closedAt && (
                           <span className="ml-1.5 text-[10px] opacity-60">encerrada</span>
@@ -133,34 +133,34 @@ function DoneTaskRow({
 
   return (
     <div
-      className="cv-row group flex items-center gap-3 px-4 py-2.5 rounded-lg bg-[#13151f] border border-[#2a2d42] hover:border-[#3a3e58] transition-colors cursor-pointer"
+      className="cv-row group flex items-center gap-3 px-4 py-2.5 rounded-lg bg-[#232323] border border-[#3b3b3b] hover:border-[#555555] transition-colors cursor-pointer"
       onClick={onView}
     >
       {/* done check */}
-      <div className="w-4 h-4 rounded-full border-2 border-[#22c55e] flex items-center justify-center shrink-0">
-        <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="3">
+      <div className="w-4 h-4 rounded-full border-2 border-[#20b858] flex items-center justify-center shrink-0">
+        <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#20b858" strokeWidth="3">
           <polyline points="20 6 9 17 4 12" />
         </svg>
       </div>
 
-      <p className="flex-1 text-sm text-[#8892a4] line-through truncate">{task.title}</p>
+      <p className="flex-1 text-sm text-[#999999] line-through truncate">{task.title}</p>
 
       <div className="flex items-center gap-2 shrink-0">
         <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${priority.bg} ${priority.color}`}>
           {priority.label}
         </span>
         {task.completedAt && (
-          <span className="text-[10px] text-[#22c55e]/70" title="Concluída em">
-            ✓ {format(parseISO(task.completedAt), 'dd/MM/yy')}
+          <span className="text-[10px] text-[#20b858]/70" title="Concluída em">
+            {format(parseISO(task.completedAt), 'dd/MM/yy')}
           </span>
         )}
         {task.dueDate && (
-          <span className="text-[10px] text-[#8892a4]">
+          <span className="text-[10px] text-[#999999]">
             {format(parseISO(task.dueDate), 'dd/MM')}
           </span>
         )}
         {task.tags.slice(0, 2).map((tag) => (
-          <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded bg-[#2a2d42] text-[#8892a4]">
+          <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded bg-[#3b3b3b] text-[#999999]">
             {tag}
           </span>
         ))}
@@ -170,7 +170,7 @@ function DoneTaskRow({
       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
         <button
           onClick={(e) => { e.stopPropagation(); onRestore() }}
-          className="p-1 rounded text-[#8892a4] hover:text-[#6366f1] hover:bg-[#6366f1]/10 transition-colors"
+          className="p-1 rounded text-[#999999] hover:text-[#7c3aed] hover:bg-[#7c3aed]/10 transition-colors"
           title="Restaurar task"
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -180,7 +180,7 @@ function DoneTaskRow({
         </button>
         <button
           onClick={(e) => { e.stopPropagation(); onDelete() }}
-          className="p-1 rounded text-[#8892a4] hover:text-red-400 hover:bg-red-400/10 transition-colors"
+          className="p-1 rounded text-[#999999] hover:text-[#e04040] hover:bg-[#e04040]/10 transition-colors"
           title="Deletar"
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
