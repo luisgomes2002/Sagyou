@@ -47,13 +47,14 @@ export const registryEntries: Record<string, AITool> = {
     run: () => {
       const now = new Date()
       const dias = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado']
-      const iso = now.toISOString()
-      const data = iso.slice(0, 10)
-      const hora = iso.slice(11, 16)
+      const pad = (n: number) => String(n).padStart(2, '0')
+      const data = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+      const hora = `${pad(now.getHours())}:${pad(now.getMinutes())}`
       return JSON.stringify({
         dia_semana: dias[now.getDay()],
         data,
         hora,
+        fuso: 'America/Sao_Paulo (UTC-3)',
         iso: now.toISOString()
       })
     }
@@ -86,36 +87,35 @@ export const registryEntries: Record<string, AITool> = {
     definition: fn(
       'ler_tasks',
       'Lista as tasks do projeto: título, coluna, prioridade, tags. ' +
-        '⚠️ Só devolve as ABERTAS por padrão — use estado="concluidas" ou "todas" quando precisar. ' +
-        'Filtre com busca/tag/coluna/prioridade/sprint/prazo/criação para economizar tokens. ' +
-        'Sem projectId ou projeto, usa o ativo.',
+        'Apenas ABERTAS por padrão — use estado="concluidas" ou "todas" quando precisar. ' +
+        'Filtre com busca/tag/coluna/prioridade/sprint/prazo para economizar tokens.',
       {
         type: 'object',
         properties: {
-          projectId: { type: 'string', description: 'ID do projeto (opcional)' },
-          projeto: { type: 'string', description: 'Nome do projeto (opcional, alternativa ao projectId)' },
-          busca: { type: 'string', description: 'Texto no título (opcional, ignora acentos)' },
-          tag: { type: 'string', description: 'Só tasks com esta tag (opcional)' },
-          coluna: { type: 'string', description: 'Só tasks nesta coluna, pelo nome (opcional)' },
+          projectId: { type: 'string', description: 'ID do projeto' },
+          projeto: { type: 'string', description: 'Nome do projeto (alternativa ao projectId)' },
+          busca: { type: 'string', description: 'Busca por título' },
+          tag: { type: 'string', description: 'Filtra por tag' },
+          coluna: { type: 'string', description: 'Filtra por nome da coluna' },
           estado: {
             type: 'string',
             enum: ['abertas', 'concluidas', 'todas'],
-            description: 'Filtro: abertas (padrão), concluidas ou todas'
+            description: 'abertas (padrão), concluidas ou todas'
           },
           prioridade: {
             type: 'string',
             enum: [...PRIORITIES],
-            description: 'Filtra por prioridade (opcional): low, medium, high, urgent'
+            description: 'low, medium, high, urgent'
           },
-          sprint: { type: 'string', description: 'Nome da sprint (opcional)' },
-          prazo_de: { type: 'string', description: 'Data inicial do prazo YYYY-MM-DD (opcional)' },
-          prazo_ate: { type: 'string', description: 'Data final do prazo YYYY-MM-DD (opcional)' },
-          criada_de: { type: 'string', description: 'Data inicial de criação YYYY-MM-DD (opcional)' },
-          criada_ate: { type: 'string', description: 'Data final de criação YYYY-MM-DD (opcional)' },
-          sem_sprint: { type: 'boolean', description: 'Só tasks sem sprint atribuída (opcional)' },
+          sprint: { type: 'string', description: 'Nome da sprint' },
+          prazo_de: { type: 'string', description: 'YYYY-MM-DD' },
+          prazo_ate: { type: 'string', description: 'YYYY-MM-DD' },
+          criada_de: { type: 'string', description: 'YYYY-MM-DD' },
+          criada_ate: { type: 'string', description: 'YYYY-MM-DD' },
+          sem_sprint: { type: 'boolean', description: 'Só tasks sem sprint' },
           limit: {
             type: 'number',
-            description: `Máximo de tasks a devolver (opcional, padrão ${DEFAULT_TASK_LIMIT})`
+            description: `Máx. tasks (padrão ${DEFAULT_TASK_LIMIT})`
           }
         },
         additionalProperties: false
@@ -231,9 +231,9 @@ export const registryEntries: Record<string, AITool> = {
       {
         type: 'object',
         properties: {
-          tabela: { type: 'string', description: 'Nome ou ID da tabela financeira (opcional)' },
-          de: { type: 'string', description: 'Data inicial YYYY-MM-DD (opcional)' },
-          ate: { type: 'string', description: 'Data final YYYY-MM-DD (opcional)' }
+          tabela: { type: 'string', description: 'Nome ou ID da tabela financeira' },
+          de: { type: 'string', description: 'Data inicial YYYY-MM-DD' },
+          ate: { type: 'string', description: 'Data final YYYY-MM-DD' }
         },
         additionalProperties: false
       }
@@ -248,7 +248,10 @@ export const registryEntries: Record<string, AITool> = {
       const tabelas = lists
         .filter((l) => !filtro || l.name.toLowerCase() === filtro || l.id === args.tabela)
         .map((l) => {
-          const txs = l.transactions.filter((t) => inPeriod(t.date))
+          const linkedIds = new Set(
+            l.transactions.filter((t) => t.linkedTransactionId).map((t) => t.linkedTransactionId!)
+          )
+          const txs = l.transactions.filter((t) => inPeriod(t.date) && !linkedIds.has(t.id))
           let receitas = D(0)
           let despesas = D(0)
           const porCategoria: Record<string, { receita: string; despesa: string }> = {}
@@ -354,20 +357,16 @@ export const registryEntries: Record<string, AITool> = {
     write: true,
     definition: fn(
       'criar_projeto',
-      'Cria um projeto kanban novo, já com as colunas padrão (Backlog, In Progress, Review, Done). ' +
-        'O projeto criado vira o ATIVO: as chamadas seguintes sem projectId passam a usar ele, ' +
-        'então crie o projeto antes de criar as tasks dele. Se já existir um projeto com esse ' +
-        'nome, a chamada falha e devolve o id do existente — use esse id em vez de criar um ' +
-        'projeto repetido.',
+      'Cria um projeto com colunas padrao (Backlog, In Progress, Review, Done). O projeto criado vira o ativo. Se ja existir com esse nome, devolve o existente.',
       {
         type: 'object',
         properties: {
           nome: { type: 'string', description: 'Nome do projeto' },
-          descricao: { type: 'string', description: 'Descrição do projeto (opcional)' },
+          descricao: { type: 'string', description: 'Descrição do projeto' },
           cor: {
             type: 'string',
             enum: [...PROJECT_COLORS],
-            description: 'Cor do projeto (opcional)'
+            description: 'Cor do projeto'
           }
         },
         required: ['nome'],
@@ -429,14 +428,14 @@ export const registryEntries: Record<string, AITool> = {
     write: true,
     definition: fn(
       'criar_tasks',
-      'Cria uma ou mais tasks no projeto (mesma estrutura do import). Sem projectId, usa o ativo.',
+      'Cria uma ou mais tasks no projeto. Sem projectId, usa o ativo.',
       {
         type: 'object',
         properties: {
-          projectId: { type: 'string', description: 'ID do projeto (opcional)' },
+          projectId: { type: 'string', description: 'ID do projeto' },
           tasks: {
             type: 'array',
-            description: 'Lista de tasks a criar',
+            description: 'Tasks a criar',
             items: {
               type: 'object',
               properties: {
@@ -445,8 +444,8 @@ export const registryEntries: Record<string, AITool> = {
                 priority: { type: 'string', enum: ['low', 'medium', 'high', 'urgent'] },
                 dueDate: { type: 'string', description: 'YYYY-MM-DD' },
                 tags: { type: 'array', items: { type: 'string' } },
-                column: { type: 'string', description: 'Nome exato da coluna' },
-                sprint: { type: 'string', description: 'Nome exato da sprint' }
+                column: { type: 'string', description: 'Nome da coluna' },
+                sprint: { type: 'string', description: 'Nome da sprint' }
               },
               required: ['title'],
               additionalProperties: false
@@ -474,24 +473,22 @@ export const registryEntries: Record<string, AITool> = {
     write: true,
     definition: fn(
       'atualizar_task',
-      'Edita uma task que já existe: prioridade, descrição, tags ou prazo. Só altera os campos ' +
-        'que você mandar — os demais ficam como estão. Para esvaziar um campo, mande "" ' +
-        '(descricao, dueDate) ou [] (tags). Não muda a coluna nem a sprint da task: use ' +
-        'concluir_task e atribuir_sprint para isso. Identifique por taskId ou titulo.',
+      'Edita prioridade, descrição, tags ou prazo de uma task. Só altera os campos ' +
+        'enviados. "" (descricao/dueDate) ou [] (tags) limpam o campo. ' +
+        'Identifique por taskId ou titulo.',
       {
         type: 'object',
         properties: {
           taskId: { type: 'string', description: 'ID da task' },
           titulo: { type: 'string', description: 'Título exato da task' },
-          projectId: { type: 'string', description: 'ID do projeto (opcional)' },
+          projectId: { type: 'string', description: 'ID do projeto' },
           prioridade: { type: 'string', enum: PRIORITIES },
-          descricao: { type: 'string', description: 'Nova descrição; "" apaga a atual' },
-          dueDate: { type: 'string', description: 'Prazo em YYYY-MM-DD; "" remove o prazo' },
+          descricao: { type: 'string', description: 'Nova descrição; "" apaga' },
+          dueDate: { type: 'string', description: 'YYYY-MM-DD; "" remove o prazo' },
           tags: {
             type: 'array',
             items: { type: 'string' },
-            description:
-              'Substitui a lista inteira de tags — repita as que devem continuar. [] limpa todas.'
+            description: 'Substitui a lista de tags; [] limpa'
           }
         },
         additionalProperties: false
@@ -558,17 +555,15 @@ export const registryEntries: Record<string, AITool> = {
     write: true,
     definition: fn(
       'mover_task',
-      'Move uma task para outra coluna (pelo nome da coluna), sem necessariamente concluí-la. ' +
-        'A task vai para o fim da coluna de destino. Mover para a coluna Done conclui a task ' +
-        '(prefira concluir_task para isso) e tirá-la de Done reabre a task. Não muda o projeto ' +
-        'da task. Identifique a task por taskId ou titulo.',
+      'Move uma task para outra coluna. Coluna Done = conclui; sair de Done = reabre. ' +
+        'Identifique por taskId (prefira) ou titulo.',
       {
         type: 'object',
         properties: {
           taskId: { type: 'string', description: 'ID da task' },
           titulo: { type: 'string', description: 'Título exato da task' },
           coluna: { type: 'string', description: 'Nome exato da coluna de destino' },
-          projectId: { type: 'string', description: 'ID do projeto (opcional)' }
+          projectId: { type: 'string', description: 'ID do projeto' }
         },
         required: ['coluna'],
         additionalProperties: false
@@ -632,7 +627,7 @@ export const registryEntries: Record<string, AITool> = {
         properties: {
           taskId: { type: 'string', description: 'ID da task' },
           titulo: { type: 'string', description: 'Título exato da task' },
-          projectId: { type: 'string', description: 'ID do projeto (opcional)' }
+          projectId: { type: 'string', description: 'ID do projeto' }
         },
         additionalProperties: false
       }
@@ -666,7 +661,7 @@ export const registryEntries: Record<string, AITool> = {
         properties: {
           taskId: { type: 'string', description: 'ID da task' },
           titulo: { type: 'string', description: 'Título exato da task' },
-          projectId: { type: 'string', description: 'ID do projeto (opcional)' }
+          projectId: { type: 'string', description: 'ID do projeto' }
         },
         additionalProperties: false
       }
@@ -691,7 +686,7 @@ export const registryEntries: Record<string, AITool> = {
         properties: {
           taskId: { type: 'string', description: 'ID da task' },
           titulo: { type: 'string', description: 'Título exato da task' },
-          projectId: { type: 'string', description: 'ID do projeto (opcional)' }
+          projectId: { type: 'string', description: 'ID do projeto' }
         },
         additionalProperties: false
       }
@@ -713,7 +708,7 @@ export const registryEntries: Record<string, AITool> = {
       {
         type: 'object',
         properties: {
-          projectId: { type: 'string', description: 'ID do projeto (opcional)' },
+          projectId: { type: 'string', description: 'ID do projeto' },
           nomes: { type: 'array', items: { type: 'string' }, description: 'Nomes das sprints' }
         },
         required: ['nomes'],
@@ -746,7 +741,7 @@ export const registryEntries: Record<string, AITool> = {
           taskId: { type: 'string', description: 'ID da task' },
           titulo: { type: 'string', description: 'Título exato da task' },
           sprint: { type: 'string', description: 'Nome exato da sprint' },
-          projectId: { type: 'string', description: 'ID do projeto (opcional)' }
+          projectId: { type: 'string', description: 'ID do projeto' }
         },
         required: ['sprint'],
         additionalProperties: false
@@ -783,8 +778,8 @@ export const registryEntries: Record<string, AITool> = {
           titulo: { type: 'string', description: 'Nome da meta' },
           alvo: { type: 'number', description: 'Valor alvo, maior que zero' },
           unidade: { type: 'string', description: 'Unidade do alvo (ex.: km, páginas). Opcional.' },
-          cor: { type: 'string', enum: [...PROJECT_COLORS], description: 'Cor da meta (opcional)' },
-          projectId: { type: 'string', description: 'Projeto ao qual vincular (opcional)' }
+          cor: { type: 'string', enum: [...PROJECT_COLORS], description: 'Cor da meta' },
+          projectId: { type: 'string', description: 'Projeto ao qual vincular' }
         },
         required: ['titulo', 'alvo'],
         additionalProperties: false
@@ -1002,8 +997,8 @@ export const registryEntries: Record<string, AITool> = {
         type: 'object',
         properties: {
           conteudo: { type: 'string', description: 'Texto da nota' },
-          cor: { type: 'string', enum: [...NOTE_COLORS], description: 'Cor da nota (opcional)' },
-          projectId: { type: 'string', description: 'ID do projeto (opcional)' }
+          cor: { type: 'string', enum: [...NOTE_COLORS], description: 'Cor da nota' },
+          projectId: { type: 'string', description: 'ID do projeto' }
         },
         required: ['conteudo'],
         additionalProperties: false
@@ -1046,7 +1041,7 @@ export const registryEntries: Record<string, AITool> = {
       {
         type: 'object',
         properties: {
-          projectId: { type: 'string', description: 'ID do projeto (opcional; usa o ativo)' }
+          projectId: { type: 'string', description: 'ID do projeto; usa o ativo' }
         },
         additionalProperties: false
       }
@@ -1085,10 +1080,10 @@ export const registryEntries: Record<string, AITool> = {
             type: 'string',
             description: 'Id da memória (o código entre [colchetes] no briefing). Busca exata.'
           },
-          termo: { type: 'string', description: 'Texto a procurar (opcional)' },
+          termo: { type: 'string', description: 'Texto a procurar' },
           incluir_arquivadas: {
             type: 'boolean',
-            description: 'true = inclui memórias arquivadas por inatividade (opcional)'
+            description: 'true = inclui memórias arquivadas'
           }
         },
         additionalProperties: false
@@ -1275,7 +1270,7 @@ export const registryEntries: Record<string, AITool> = {
           },
           global: {
             type: 'boolean',
-            description: 'true = fato sobre o usuário, sem vínculo com projeto (opcional)'
+            description: 'true = fato sobre o usuário, sem vínculo com projeto'
           },
           fixar: {
             type: 'boolean',
@@ -1344,7 +1339,7 @@ export const registryEntries: Record<string, AITool> = {
           data: { type: 'string', description: 'Data YYYY-MM-DD (opcional, padrão hoje)' },
           categoria: {
             type: 'string',
-            description: `Categoria (opcional). Prefira uma existente: ${FINANCIAL_CATEGORIES.join(', ')}`
+            description: `Categoria. Prefira uma existente: ${FINANCIAL_CATEGORIES.join(', ')}`
           },
           tabela: { type: 'string', description: 'Nome ou ID da tabela financeira' }
         },
@@ -1423,9 +1418,7 @@ export const registryEntries: Record<string, AITool> = {
     write: true,
     definition: fn(
       'rodar_agente_codigo',
-      'Dispara o agente de código para IMPLEMENTAR (não só analisar). ' +
-        'Roda em UMA pasta — use pastaId se houver várias. ' +
-        'Passe "arquivos" com os caminhos já localizados para evitar descoberta cara.',
+      'Dispara o agente de código para implementar. Roda em uma pasta. Passe "arquivos" com os caminhos a editar.',
       {
         type: 'object',
         properties: {
@@ -1434,21 +1427,16 @@ export const registryEntries: Record<string, AITool> = {
             type: 'array',
             items: { type: 'string' },
             description:
-              'Caminhos relativos à pasta do projeto dos arquivos a editar (ex.: ' +
-              '"src/renderer/src/components/AIView.tsx"). Opcional, mas fortemente recomendado: ' +
-              'evita o passo lento de descoberta do agente.'
+              'Caminhos relativos dos arquivos a editar. Evita o passo de descoberta.'
           },
           decisoes: {
             type: 'array',
             items: { type: 'string' },
             description:
-              'Decisões de escopo já acertadas com o usuário que o agente deve respeitar sem ' +
-              're-perguntar (ex.: "manter o fallback parseV1", "não alterar o tipo Project", ' +
-              '"mexer só na documentação"). Opcional, mas envie quando existirem: evita o agente ' +
-              'reabrir escolhas já feitas e gerar re-trabalho.'
+              'Decisões de escopo já acertadas que o agente deve respeitar (ex.: "manter o fallback X").'
           },
           ...PASTA_PARAM,
-          projectId: { type: 'string', description: 'ID do projeto (opcional; usa o ativo)' }
+          projectId: { type: 'string', description: 'ID do projeto; usa o ativo' }
         },
         required: ['task'],
         additionalProperties: false
@@ -1526,28 +1514,24 @@ export const registryEntries: Record<string, AITool> = {
     definition: fn(
       'listar_arquivos',
       'Lista os arquivos do projeto (recursivo; ignora node_modules/.git/dist). ' +
-        'Use para descobrir a estrutura antes de ler arquivos. Cobre todas as pastas de ' +
-        'código marcadas no projeto. Devolve no máximo ~200 caminhos por pasta de cada vez; ' +
-        'se "truncated" for verdadeiro, use "inicio" = "nextOffset" para continuar, ou ' +
-        '"subpasta" para restringir a uma parte da árvore.',
+        'Pagina com inicio=nextOffset; restrinja com subpasta.',
       {
         type: 'object',
         properties: {
           subpasta: {
             type: 'string',
-            description: 'Subpasta relativa (opcional, ex: src/renderer)'
+            description: 'Subpasta relativa (ex: src/renderer)'
           },
           inicio: {
             type: 'number',
-            description:
-              'Posição de onde começar a listar; use o "nextOffset" da chamada anterior para paginar (opcional, padrão 0)'
+            description: 'Posição para paginar (padrão 0)'
           },
           max_arquivos: {
             type: 'number',
-            description: 'Máximo de caminhos a devolver por pasta (opcional, padrão 200, teto 400)'
+            description: 'Máx. caminhos (padrão 200, teto 400)'
           },
           ...PASTA_PARAM,
-          projectId: { type: 'string', description: 'ID do projeto (opcional; usa o ativo)' }
+          projectId: { type: 'string', description: 'ID do projeto; usa o ativo' }
         },
         additionalProperties: false
       }
@@ -1571,10 +1555,9 @@ export const registryEntries: Record<string, AITool> = {
   ler_arquivo: {
     definition: fn(
       'ler_arquivo',
-      'Lê um arquivo pelo caminho relativo (ex: src/main/store.ts). ' +
-        '💡 Prefira simbolo (extrai função/classe) ou linha_inicio/linha_fim a ler o arquivo todo. ' +
-        'Quando truncado, use inicio=nextOffset para continuar. ' +
-        'Se o caminho existir em várias pastas, use pastaId.',
+      'Lê um arquivo pelo caminho relativo. ' +
+        'Prefira simbolo (extrai função/classe) ou linha_inicio/linha_fim a ler o arquivo todo. ' +
+        'Quando truncado, use inicio=nextOffset para continuar.',
       {
         type: 'object',
         properties: {
@@ -1582,29 +1565,26 @@ export const registryEntries: Record<string, AITool> = {
           simbolo: {
             type: 'string',
             description:
-              'Nome de uma função/classe/const/interface a extrair — devolve só o escopo dela ' +
-              '(opcional). Preferível a ler o arquivo todo. Se não achar, a resposta traz "simbolos".'
+              'Extrai uma função/classe/const/interface pelo nome. Se não achar, retorna "simbolos".'
           },
           linha_inicio: {
             type: 'number',
-            description: 'Primeira linha (1-based) de um trecho a ler (opcional; use com linha_fim)'
+            description: 'Primeira linha (1-based) do trecho a ler'
           },
           linha_fim: {
             type: 'number',
-            description: 'Última linha (1-based) do trecho a ler (opcional; padrão: até o fim)'
+            description: 'Última linha (1-based) do trecho'
           },
           inicio: {
             type: 'number',
-            description:
-              'Posição (em caracteres) de onde começar a ler; use o "nextOffset" da leitura anterior para paginar (opcional, padrão 0)'
+            description: 'Posição em caracteres para paginar (padrão 0)'
           },
           max_chars: {
             type: 'number',
-            description:
-              'Máximo de caracteres a devolver nesta leitura (opcional, padrão 20000, teto 60000)'
+            description: 'Máximo de caracteres (padrão 20000, teto 60000)'
           },
           ...PASTA_PARAM,
-          projectId: { type: 'string', description: 'ID do projeto (opcional; usa o ativo)' }
+          projectId: { type: 'string', description: 'ID do projeto; usa o ativo se omitido' }
         },
         required: ['caminho'],
         additionalProperties: false
@@ -1662,7 +1642,7 @@ export const registryEntries: Record<string, AITool> = {
         properties: {
           termo: { type: 'string', description: 'Texto a buscar' },
           ...PASTA_PARAM,
-          projectId: { type: 'string', description: 'ID do projeto (opcional; usa o ativo)' }
+          projectId: { type: 'string', description: 'ID do projeto; usa o ativo' }
         },
         required: ['termo'],
         additionalProperties: false
@@ -1870,31 +1850,25 @@ export const registryEntries: Record<string, AITool> = {
   criar_plano: {
     definition: fn(
       'criar_plano',
-      'Cria blocos de tempo (time blocks) no planejamento para um dia ou vários dias. ' +
-        'Cada bloco tem título, horário de início e fim, e um tipo: task (tarefa vinculada ao kanban), ' +
-        'routine (rotina recorrente), buffer (tempo morto: deslocamento, almoço, banho), ou custom (genérico). ' +
-        'Use SEMPRE que o usuário pedir para planejar/organizar o dia/semana. ' +
-        '⚠️ Antes de criar, chame ler_plano para ver o que já existe e ler_tasks/ler_habitos/ler_financeiro ' +
-        'para consultar os dados que vão alimentar o plano. ' +
-        '⚠️ Respeite buffers: se o usuário sai do trabalho às 13h, não agende nada para 13h01 — ' +
-        'coloque buffers de deslocamento, banho e almoço antes das tasks.',
+      'Cria blocos de tempo no planejamento. Cada bloco tem data, horário de início/fim, título e ' +
+        'tipo: task (vinculada ao kanban), routine, buffer (deslocamento/banho/almoço) ou custom.',
       {
         type: 'object',
         properties: {
           blocos: {
             type: 'array',
-            description: 'Array de blocos de tempo a criar',
+            description: 'Blocos de tempo a criar',
             items: {
               type: 'object',
               properties: {
-                data: { type: 'string', description: 'Data YYYY-MM-DD' },
-                inicio: { type: 'string', description: 'Horário de início HH:MM' },
-                fim: { type: 'string', description: 'Horário de fim HH:MM' },
+                data: { type: 'string', description: 'YYYY-MM-DD' },
+                inicio: { type: 'string', description: 'HH:MM' },
+                fim: { type: 'string', description: 'HH:MM' },
                 titulo: { type: 'string', description: 'Título do bloco' },
-                descricao: { type: 'string', description: 'Descrição opcional' },
-                tipo: { type: 'string', description: 'task, routine, buffer ou custom', enum: ['task', 'routine', 'buffer', 'custom'] },
-                taskId: { type: 'string', description: 'ID da task do kanban (opcional, só se tipo=task)' },
-                cor: { type: 'string', description: 'Cor hex opcional (ex: #7c3aed)' }
+                descricao: { type: 'string', description: 'Descrição' },
+                tipo: { type: 'string', enum: ['task', 'routine', 'buffer', 'custom'] },
+                taskId: { type: 'string', description: 'ID da task (só se tipo=task)' },
+                cor: { type: 'string', description: 'Cor hex (ex: #7c3aed)' }
               },
               required: ['data', 'inicio', 'fim', 'titulo', 'tipo']
             }
@@ -2043,6 +2017,47 @@ export const registryEntries: Record<string, AITool> = {
         opcoes: fuzzy.map((g) => ({ termo: g.termo, definicao: g.definicao })),
         dica: 'Especifique o termo exato dentre as opções acima.'
       })
+    }
+  },
+
+  ler_documento: {
+    definition: fn(
+      'ler_documento',
+      'Lê o conteúdo de um arquivo (PDF, DOCX, XLSX, CSV, TXT, MD, JSON, HTML, XML, YAML, RTF, ODT, ODS) ' +
+        'que foi carregado nos anexos do projeto via FilesView. Extrai o texto e retorna — útil para ' +
+        'buscar informações em documentos de referência salvos no projeto.',
+      {
+        type: 'object',
+        properties: {
+          fileId: {
+            type: 'string',
+            description: 'ID do arquivo (obtido da lista de anexos do projeto). Prefira este campo.'
+          },
+          projectId: {
+            type: 'string',
+            description: 'Projeto alvo. Padrão: projeto ativo.'
+          }
+        },
+        required: ['fileId']
+      }
+    ),
+    run: async (args) => {
+      const fileId = typeof args.fileId === 'string' ? args.fileId.trim() : ''
+      if (!fileId) return JSON.stringify({ error: 'Informe o fileId do arquivo a ler' })
+
+      try {
+        const api = window.electronAPI?.ai?.projectFile
+        if (!api?.read) return JSON.stringify({ error: 'Leitura de documentos não disponível' })
+        const result = await api.read(fileId)
+        if ('error' in result) return JSON.stringify({ error: result.error })
+        return JSON.stringify({
+          texto: result.text,
+          truncado: result.truncated,
+          ...(result.size !== undefined && { tamanho_bytes: result.size })
+        })
+      } catch (e) {
+        return JSON.stringify({ error: e instanceof Error ? e.message : 'Falha ao ler o documento' })
+      }
     }
   }
 }

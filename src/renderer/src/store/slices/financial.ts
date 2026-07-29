@@ -6,6 +6,8 @@ import type {
   FinancialTransaction,
   FinancialGoal,
   ShoppingItem,
+  YieldSource,
+  YieldEntry,
   Currency
 } from '../../types'
 
@@ -40,6 +42,12 @@ export interface FinancialSlice {
     updates: Partial<Omit<FinancialGoal, 'id'>>
   ) => void
   deleteFinancialGoal: (listId: string, goalId: string) => void
+  addYieldSource: (listId: string, name: string) => string
+  updateYieldSource: (listId: string, sourceId: string, name: string) => void
+  deleteYieldSource: (listId: string, sourceId: string) => void
+  addYieldEntry: (listId: string, data: Omit<YieldEntry, 'id'>) => string
+  updateYieldEntry: (listId: string, entryId: string, updates: Partial<Omit<YieldEntry, 'id'>>) => void
+  deleteYieldEntry: (listId: string, entryId: string) => void
 }
 
 export const createFinancialSlice: StateCreator<
@@ -56,7 +64,7 @@ export const createFinancialSlice: StateCreator<
     set((s) => ({
       lists: [
         ...s.lists,
-        { id, name, currency, items: [], transactions: [], goals: [], createdAt: now, updatedAt: now }
+        { id, name, currency, items: [], transactions: [], goals: [], yieldSources: [], yieldEntries: [], createdAt: now, updatedAt: now }
       ]
     }))
     get()._persist()
@@ -89,11 +97,20 @@ export const createFinancialSlice: StateCreator<
   addItem: (listId, data) => {
     const now = new Date().toISOString()
     const itemId = uuidv4()
+    let price: string | undefined = undefined
+    if (typeof data.price === 'string' && data.price.trim() !== '') {
+      try {
+        const d = new Decimal(data.price.trim())
+        if (!d.isNaN() && d.isFinite()) price = d.toDecimalPlaces(2).toString()
+      } catch {
+        /* invalid price => store as undefined */
+      }
+    }
     const item: ShoppingItem = {
       id: itemId,
       name: data.name,
       qty: data.qty,
-      price: data.price,
+      price,
       done: false,
       link: data.link
     }
@@ -109,15 +126,39 @@ export const createFinancialSlice: StateCreator<
   updateItem: (listId, itemId, updates) => {
     const now = new Date().toISOString()
     set((s) => ({
-      lists: s.lists.map((l) =>
-        l.id === listId
-          ? {
-              ...l,
-              items: l.items.map((i) => (i.id === itemId ? { ...i, ...updates } : i)),
-              updatedAt: now
+      lists: s.lists.map((l) => {
+        if (l.id !== listId) return l
+        const item = l.items.find((i) => i.id === itemId)
+        if (!item) return l
+        const newItem = { ...item, ...updates }
+        let transactions = l.transactions
+        if (item.done && item.linkedTransactionId) {
+          const newQty = 'qty' in updates && updates.qty !== undefined ? updates.qty : item.qty
+          const newPrice =
+            'price' in updates ? (updates.price as string | undefined) : item.price
+          const newName = 'name' in updates && updates.name !== undefined ? updates.name : item.name
+          if (updates.qty !== undefined || 'price' in updates || updates.name !== undefined) {
+            const amount =
+              newPrice != null
+                ? new Decimal(newQty).times(newPrice).toString()
+                : undefined
+            const txUpdates: Partial<FinancialTransaction> = {}
+            if (amount !== undefined) txUpdates.amount = amount
+            if (newName !== undefined) txUpdates.description = newName
+            if (Object.keys(txUpdates).length > 0) {
+              transactions = l.transactions.map((t) =>
+                t.id === item.linkedTransactionId ? { ...t, ...txUpdates } : t
+              )
             }
-          : l
-      )
+          }
+        }
+        return {
+          ...l,
+          items: l.items.map((i) => (i.id === itemId ? newItem : i)),
+          transactions,
+          updatedAt: now
+        }
+      })
     }))
     get()._persist()
   },
@@ -144,20 +185,41 @@ export const createFinancialSlice: StateCreator<
   },
 
   toggleItem: (listId, itemId) => {
-    const now = new Date().toISOString()
+    // todayLocalISO: the user's wall-clock day, so a toggle after 21:00 BRT
+    // still lands on today — matching the AI criar_transacao tool which also
+    // uses local date. (The former UTC-based toISOString() landed on tomorrow.)
+    const d = new Date()
+    const local = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
     const list = get().lists.find((l) => l.id === listId)
     const item = list?.items.find((i) => i.id === itemId)
     if (!item) return
 
     if (!item.done) {
+      if (item.price == null) {
+        set((s) => ({
+          lists: s.lists.map((l) =>
+            l.id !== listId
+              ? l
+              : {
+                  ...l,
+                  updatedAt: local,
+                  items: l.items.map((i) =>
+                    i.id === itemId ? { ...i, done: true, linkedTransactionId: undefined } : i
+                  )
+                }
+          )
+        }))
+        get()._persist()
+        return
+      }
       const txId = uuidv4()
-      const amount = item.price != null ? new Decimal(item.qty).times(item.price).toString() : '0'
+      const amount = new Decimal(item.qty).times(item.price).toString()
       const tx: FinancialTransaction = {
         id: txId,
         description: item.name,
         amount,
         type: 'expense',
-        date: now.slice(0, 10),
+        date: local,
         fromShopping: true
       }
       set((s) => ({
@@ -166,7 +228,7 @@ export const createFinancialSlice: StateCreator<
             ? l
             : {
                 ...l,
-                updatedAt: now,
+                updatedAt: local,
                 items: l.items.map((i) =>
                   i.id === itemId ? { ...i, done: true, linkedTransactionId: txId } : i
                 ),
@@ -182,7 +244,7 @@ export const createFinancialSlice: StateCreator<
             ? l
             : {
                 ...l,
-                updatedAt: now,
+                updatedAt: local,
                 items: l.items.map((i) =>
                   i.id === itemId ? { ...i, done: false, linkedTransactionId: undefined } : i
                 ),
@@ -281,6 +343,103 @@ export const createFinancialSlice: StateCreator<
               goals: l.goals.filter((g) => g.id !== goalId),
               updatedAt: new Date().toISOString()
             }
+      )
+    }))
+    get()._persist()
+  },
+
+  addYieldSource: (listId, name) => {
+    const now = new Date().toISOString()
+    const sourceId = uuidv4()
+    const source: YieldSource = { id: sourceId, name: name.trim(), createdAt: now }
+    set((s) => ({
+      lists: s.lists.map((l) =>
+        l.id === listId
+          ? { ...l, yieldSources: [...(l.yieldSources ?? []), source], updatedAt: now }
+          : l
+      )
+    }))
+    get()._persist()
+    return sourceId
+  },
+
+  updateYieldSource: (listId, sourceId, name) => {
+    const now = new Date().toISOString()
+    set((s) => ({
+      lists: s.lists.map((l) =>
+        l.id === listId
+          ? {
+              ...l,
+              yieldSources: (l.yieldSources ?? []).map((s) =>
+                s.id === sourceId ? { ...s, name: name.trim() } : s
+              ),
+              updatedAt: now
+            }
+          : l
+      )
+    }))
+    get()._persist()
+  },
+
+  deleteYieldSource: (listId, sourceId) => {
+    const now = new Date().toISOString()
+    set((s) => ({
+      lists: s.lists.map((l) =>
+        l.id === listId
+          ? {
+              ...l,
+              yieldSources: (l.yieldSources ?? []).filter((s) => s.id !== sourceId),
+              yieldEntries: (l.yieldEntries ?? []).filter((e) => e.sourceId !== sourceId),
+              updatedAt: now
+            }
+          : l
+      )
+    }))
+    get()._persist()
+  },
+
+  addYieldEntry: (listId, data) => {
+    const entryId = uuidv4()
+    const now = new Date().toISOString()
+    const entry: YieldEntry = { id: entryId, ...data, createdAt: data.createdAt ?? now }
+    set((s) => ({
+      lists: s.lists.map((l) =>
+        l.id === listId
+          ? { ...l, yieldEntries: [...(l.yieldEntries ?? []), entry], updatedAt: new Date().toISOString() }
+          : l
+      )
+    }))
+    get()._persist()
+    return entryId
+  },
+
+  updateYieldEntry: (listId, entryId, updates) => {
+    set((s) => ({
+      lists: s.lists.map((l) =>
+        l.id === listId
+          ? {
+              ...l,
+              yieldEntries: (l.yieldEntries ?? []).map((e) =>
+                e.id === entryId ? { ...e, ...updates } : e
+              ),
+              updatedAt: new Date().toISOString()
+            }
+          : l
+      )
+    }))
+    get()._persist()
+  },
+
+  deleteYieldEntry: (listId, entryId) => {
+    set((s) => ({
+      lists: s.lists.map((l) =>
+        l.id === listId
+          ? {
+              ...l,
+              yieldEntries: (l.yieldEntries ?? []).filter((e) => e.id !== entryId),
+              updatedAt: new Date().toISOString()
+            }
+          : l
       )
     }))
     get()._persist()

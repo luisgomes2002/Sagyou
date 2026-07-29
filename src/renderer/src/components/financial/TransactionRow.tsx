@@ -1,7 +1,7 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FinancialTransaction, FinancialTable, Currency } from '../../types'
 import { CURRENCY_CONFIG } from '../../types'
-import { FINANCIAL_CATEGORIES, parseDecimalInput, todayISO, formatDateBR, formatAmountInput } from './shared'
+import { FINANCIAL_CATEGORIES, parseDecimalInput, todayISO, formatDateBR, formatAmountInput, formatCurrency, YIELD_SUMMARY_CATEGORY } from './shared'
 
 // ── CategoryInput ─────────────────────────────────────────────────────────────
 
@@ -82,9 +82,10 @@ export function AddTransactionRow({ currency, onAdd }: AddTransactionRowProps) {
     if (!description.trim()) return
     const amountDecimal = parseDecimalInput(amount)
     if (amountDecimal === null || amountDecimal.lessThanOrEqualTo(0)) return
+    const cat = category.trim()
     onAdd({
       description: description.trim(),
-      category: category.trim() || undefined,
+      category: cat && cat !== YIELD_SUMMARY_CATEGORY ? cat : undefined,
       type,
       amount: amountDecimal.toDecimalPlaces(2).toString(),
       date
@@ -194,8 +195,9 @@ interface TransactionRowProps {
   currency: Currency
   allLists: FinancialTable[]
   onUpdate: (updates: Partial<Omit<FinancialTransaction, 'id'>>) => void
-  onDelete: () => void
+  onDelete?: () => void
   onUnlink?: () => void
+  readOnly?: boolean
 }
 
 export function TransactionRow({
@@ -204,7 +206,8 @@ export function TransactionRow({
   allLists,
   onUpdate,
   onDelete,
-  onUnlink
+  onUnlink,
+  readOnly
 }: TransactionRowProps) {
   const [editDate, setEditDate] = useState(tx.date)
   const [editDesc, setEditDesc] = useState(tx.description)
@@ -256,7 +259,9 @@ export function TransactionRow({
   }
   const commitCat = () => {
     const v = editCat.trim()
-    if (v !== (tx.category ?? '')) onUpdate({ category: v || undefined })
+    const clean = v && v !== YIELD_SUMMARY_CATEGORY ? v : ''
+    if (clean !== (tx.category ?? '')) onUpdate({ category: clean || undefined })
+    if (clean !== v) setEditCat(clean)
   }
   const commitAmount = () => {
     const d = parseDecimalInput(editAmount)
@@ -271,7 +276,9 @@ export function TransactionRow({
   return (
     <tr className="group border-b border-[#3b3b3b] hover:bg-[#2a2a2a] transition-colors">
       <td className="pl-4 pr-2 py-2 w-28">
-        {dateEditing ? (
+        {readOnly ? (
+          <span className="text-xs text-[#999999] tabular-nums">{formatDateBR(tx.date)}</span>
+        ) : dateEditing ? (
           <input
             autoFocus
             type="date"
@@ -357,26 +364,36 @@ export function TransactionRow({
               </span>
             </span>
           )}
-          <input
-            value={editDesc}
-            onChange={(e) => setEditDesc(e.target.value)}
-            onBlur={commitDesc}
-            onKeyDown={blur}
-            className={`flex-1 min-w-0 bg-transparent text-sm focus:outline-none focus:bg-[#1b1b1b] focus:px-1.5 rounded transition-all ${
-              tx.fromShopping ? 'text-[#a080f0]' : 'text-[#d4d4d4]'
-            }`}
-          />
+          {readOnly ? (
+            <span className={`text-sm ${tx.fromShopping ? 'text-[#a080f0]' : 'text-[#d4d4d4]'}`}>
+              {tx.description}
+            </span>
+          ) : (
+            <input
+              value={editDesc}
+              onChange={(e) => setEditDesc(e.target.value)}
+              onBlur={commitDesc}
+              onKeyDown={blur}
+              className={`flex-1 min-w-0 bg-transparent text-sm focus:outline-none focus:bg-[#1b1b1b] focus:px-1.5 rounded transition-all ${
+                tx.fromShopping ? 'text-[#a080f0]' : 'text-[#d4d4d4]'
+              }`}
+            />
+          )}
         </div>
       </td>
       <td className="py-2 pr-2 w-28">
-        <CategoryInput
-          value={editCat}
-          onChange={setEditCat}
-          onCommit={commitCat}
-          onKeyDown={blur}
-          placeholder="-"
-          className="w-full bg-transparent text-xs text-[#999999] placeholder-[#555555] focus:outline-none focus:bg-[#1b1b1b] focus:px-1 rounded transition-all"
-        />
+        {readOnly ? (
+          <span className="text-xs text-[#999999]">{tx.category || '-'}</span>
+        ) : (
+          <CategoryInput
+            value={editCat}
+            onChange={setEditCat}
+            onCommit={commitCat}
+            onKeyDown={blur}
+            placeholder="-"
+            className="w-full bg-transparent text-xs text-[#999999] placeholder-[#555555] focus:outline-none focus:bg-[#1b1b1b] focus:px-1 rounded transition-all"
+          />
+        )}
       </td>
       <td className="py-2 pr-2 w-20 text-center">
         <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
@@ -386,31 +403,39 @@ export function TransactionRow({
         </span>
       </td>
       <td className="py-2 pr-2 w-32 text-right">
-        <div className="flex items-center justify-end gap-1">
-          <span className="text-[10px] text-[#555555] select-none">{CURRENCY_CONFIG[currency].symbol}</span>
-          <input
-            type="text"
-            inputMode="decimal"
-            value={editAmount}
-            onChange={(e) => setEditAmount(e.target.value)}
-            onBlur={commitAmount}
-            onKeyDown={blur}
-            className={`w-20 bg-transparent text-sm tabular-nums font-medium text-right focus:outline-none focus:bg-[#1b1b1b] focus:px-1 rounded transition-all ${
-              tx.type === 'income' ? 'text-[#46d478]' : 'text-[#d4d4d4]'
-            }`}
-          />
-        </div>
+        {readOnly ? (
+          <span className={`text-sm tabular-nums font-medium ${tx.type === 'income' ? 'text-[#46d478]' : 'text-[#d4d4d4]'}`}>
+            {formatCurrency(tx.amount, currency)}
+          </span>
+        ) : (
+          <div className="flex items-center justify-end gap-1">
+            <span className="text-[10px] text-[#555555] select-none">{CURRENCY_CONFIG[currency].symbol}</span>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={editAmount}
+              onChange={(e) => setEditAmount(e.target.value)}
+              onBlur={commitAmount}
+              onKeyDown={blur}
+              className={`w-20 bg-transparent text-sm tabular-nums font-medium text-right focus:outline-none focus:bg-[#1b1b1b] focus:px-1 rounded transition-all ${
+                tx.type === 'income' ? 'text-[#46d478]' : 'text-[#d4d4d4]'
+              }`}
+            />
+          </div>
+        )}
       </td>
       <td className="py-2 pr-3 w-9 text-center">
-        <button
-          onClick={onDelete}
-          className="p-1 rounded text-[#3b3b3b] hover:text-[#e04040] hover:bg-[#e04040]/10 opacity-0 group-hover:opacity-100 transition-all"
-        >
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
-        </button>
+        {onDelete && (
+          <button
+            onClick={onDelete}
+            className="p-1 rounded text-[#3b3b3b] hover:text-[#e04040] hover:bg-[#e04040]/10 opacity-0 group-hover:opacity-100 transition-all"
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        )}
       </td>
     </tr>
   )

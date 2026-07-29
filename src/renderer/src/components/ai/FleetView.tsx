@@ -1,6 +1,6 @@
 ﻿import { useState, useEffect, useCallback, useRef } from 'react'
 import { v4 as uuidv4 } from 'uuid'
-import { useAiRunStore, EMPTY_USAGE, type ChatMessage } from '../../store/aiRun'
+import { useAiRunStore, EMPTY_USAGE, type ChatMessage, type TokenUsage } from '../../store/aiRun'
 import { describeToolActivity } from '../../ai/tools'
 import type { Project } from '../../types'
 import { CodeDiff, type CodeAgentDiff } from './CodeDiff'
@@ -427,7 +427,7 @@ export function FleetView({
   // A running agent's transcript/usage is either the one on screen or parked.
   const messagesOf = (id: string): ChatMessage[] =>
     id === conversationId ? messages : (parked[id]?.messages ?? [])
-  const usageOf = (id: string): { promptTokens: number; completionTokens: number } =>
+  const usageOf = (id: string): TokenUsage =>
     id === conversationId ? usage : (parked[id]?.usage ?? EMPTY_USAGE)
 
   /** What the agent is doing right now, best-effort from its live state. */
@@ -670,7 +670,7 @@ export function FleetView({
                     </p>
                   </div>
 
-                  {/* Gasto de tokens desta run: entrada e saída, como pedido. */}
+                  {/* Gasto de tokens desta run: entrada, saída e raciocínio. */}
                   <div className="flex items-center gap-3 text-[11px] tabular-nums">
                     <span className="text-[#999999]" title="tokens de entrada (prompt) desta execução">
                       ↑ {formatTokens(tokens.promptTokens)} entrada
@@ -678,8 +678,19 @@ export function FleetView({
                     <span className="text-[#999999]" title="tokens de saída (resposta) desta execução">
                       ↓ {formatTokens(tokens.completionTokens)} saída
                     </span>
+                    {typeof tokens.reasoningTokens === 'number' && tokens.reasoningTokens > 0 && (
+                      <span
+                        className="text-[#a080f0]"
+                        title="tokens de raciocínio interno do modelo (DeepSeek reasoning)"
+                      >
+                        🧠 {formatTokens(tokens.reasoningTokens)} rac.
+                      </span>
+                    )}
                     <span className="text-[#999999]">
-                      = {formatTokens(tokens.promptTokens + tokens.completionTokens)} total
+                      = {formatTokens(
+                        tokens.promptTokens + tokens.completionTokens + (tokens.reasoningTokens ?? 0)
+                      )}{' '}
+                      total
                     </span>
                   </div>
 
@@ -872,7 +883,7 @@ export function FleetView({
                           </div>
                           <p className="text-[10px] text-[#999999] mt-1">
                             {run.agent} · {run.fileCount} {run.fileCount === 1 ? 'arquivo' : 'arquivos'}
-                            {run.tokens && ` · ${((run.tokens.promptTokens + run.tokens.completionTokens) / 1000).toFixed(0)}k tok`}
+                            {run.tokens && ` · ${((run.tokens.promptTokens + run.tokens.completionTokens + (run.tokens.reasoningTokens ?? 0)) / 1000).toFixed(0)}k tok`}
                             {run.endedAt && ` · ${whenLabel(run.endedAt)}`}
                           </p>
                         </div>

@@ -15,7 +15,7 @@ import {
   type TokenUsage
 } from '../../ai/agent'
 import { describeToolActivity } from '../../ai/tools'
-import { toScaledDataUrl, imageFilesFrom } from '../../utils/images'
+import { toScaledDataUrl, imageFilesFrom, documentFilesFrom } from '../../utils/images'
 import { estimateAutoRun, cacheHitRate } from '../../utils/spend'
 import { ChatMarkdown } from './ChatMarkdown'
 import { ConfirmDialog } from '../ConfirmDialog'
@@ -103,7 +103,8 @@ function estimateCost(usage: TokenUsage, cfg: AIConfig): number | null {
   const { inputPricePer1M: inP, outputPricePer1M: outP } = cfg
   if (typeof inP !== 'number' || typeof outP !== 'number') return null
   if (!Number.isFinite(inP) || !Number.isFinite(outP)) return null
-  return (usage.promptTokens / 1e6) * inP + (usage.completionTokens / 1e6) * outP
+  const outputTokens = usage.completionTokens + (usage.reasoningTokens ?? 0)
+  return (usage.promptTokens / 1e6) * inP + (outputTokens / 1e6) * outP
 }
 
 /** Small costs need more decimals than large ones to say anything at all. */
@@ -366,6 +367,11 @@ export function AIView({
   // image on screen (id -> dataUrl), loaded from disk on demand.
   const [pendingImages, setPendingImages] = useState<{ id: string; dataUrl: string }[]>([])
   const [imageData, setImageData] = useState<Record<string, string>>({})
+  // Documents attached to the message being composed (PDF, DOCX, etc.).
+  // The bytes have been parsed on the main process; only the text is kept here.
+  const [pendingDocuments, setPendingDocuments] = useState<
+    { id: string; name: string; ext: string; text: string; truncated: boolean }[]
+  >([])
   const [dragOver, setDragOver] = useState(false)
   // Mirrors historyQuery for the callers that fire from a stale closure — the
   /** Formerly held a proposed task prompt from the old template system — kept so references compile. */
@@ -432,7 +438,8 @@ export function AIView({
     expandScrollRef.current = 0
   }, [visibleCount])
 
-  const totalTokens = usage.promptTokens + usage.completionTokens
+  const totalTokens = usage.promptTokens + usage.completionTokens + (usage.reasoningTokens ?? 0)
+  const reasoningTokens = usage.reasoningTokens
   const cost = estimateCost(usage, config)
 
   /**
@@ -694,6 +701,10 @@ export function AIView({
       void window.electronAPI.ai.images.delete(pendingImages.map((p) => p.id))
       setPendingImages([])
     }
+    if (pendingDocuments.length > 0) {
+      void window.electronAPI.ai.documents.delete(pendingDocuments.map((d) => d.id))
+      setPendingDocuments([])
+    }
   }
 
   const handleDeleteConversation = (id: string, title: string, e: React.MouseEvent): void => {
@@ -734,8 +745,10 @@ export function AIView({
     // Take the image files with it: nothing else references them, so leaving
     // them behind orphans them on disk forever.
     const conv = await window.electronAPI.ai.conversations.get(id)
-    const ids = [...new Set((conv?.messages ?? []).flatMap((m) => m.imageIds ?? []))]
-    if (ids.length > 0) await window.electronAPI.ai.images.delete(ids)
+    const imageIds = [...new Set((conv?.messages ?? []).flatMap((m) => m.imageIds ?? []))]
+    if (imageIds.length > 0) await window.electronAPI.ai.images.delete(imageIds)
+    const docIds = [...new Set((conv?.messages ?? []).flatMap((m) => m.documentIds ?? []))]
+    if (docIds.length > 0) await window.electronAPI.ai.documents.delete(docIds)
     await window.electronAPI.ai.conversations.delete(id)
     // Let the run store forget it too: it may be parked, or be the very chat
     // the loop is writing into, and the file is gone either way.
@@ -812,6 +825,38 @@ export function AIView({
     setPendingImages((p) => p.filter((img) => img.id !== id))
     // The file is orphaned the moment it leaves the draft — it was never sent.
     void window.electronAPI.ai.images.delete([id])
+  }
+
+  /**
+   * Take pasted or dropped documents (PDF, DOCX, CSV, etc.): send the raw
+   * bytes to the main process, which saves the file and parses it. The parsed
+   * text stays in memory — it'll be prepended to the message on send.
+   */
+  const attachDocuments = async (files: File[]): Promise<void> => {
+    for (const file of files) {
+      try {
+        const ext = file.name.split('.').pop()?.toLowerCase()
+        if (!ext) {
+          setError('Extensão de arquivo não reconhecida')
+          continue
+        }
+        const arrayBuffer = await file.arrayBuffer()
+        const data = Array.from(new Uint8Array(arrayBuffer))
+        const res = await window.electronAPI.ai.documents.save(file.name, '.' + ext, data)
+        if ('error' in res) {
+          setError(res.error)
+          continue
+        }
+        setPendingDocuments((p) => [...p, { id: res.id, name: res.name, ext: res.ext, text: res.text, truncated: res.truncated }])
+      } catch {
+        setError('Não consegui ler esse arquivo')
+      }
+    }
+  }
+
+  const removePendingDocument = (id: string): void => {
+    setPendingDocuments((p) => p.filter((d) => d.id !== id))
+    void window.electronAPI.ai.documents.delete([id])
   }
 
   const handleSaveSkill = async (): Promise<void> => {
@@ -903,7 +948,17 @@ export function AIView({
    */
   const handleSend = (): void => {
     let text = input.trim()
-    if ((!text && pendingImages.length === 0) || busyHere) return
+    if ((!text && pendingImages.length === 0 && pendingDocuments.length === 0) || busyHere) return
+
+    // Prepend parsed document text to the message body so the model reads it
+    // inline — no tool call consumed.
+    if (pendingDocuments.length > 0) {
+      const docBlocks = pendingDocuments.map((d) => {
+        const truncated = d.truncated ? ' (texto truncado)' : ''
+        return `[Documento: ${d.name}${truncated}]\n${d.text}`
+      })
+      text = docBlocks.join('\n\n---\n\n') + (text ? '\n\n---\n\n' + text : '')
+    }
 
     // /skill-name: replace with skill body
     if (text.startsWith('/')) {
@@ -929,8 +984,10 @@ export function AIView({
     setInput('')
     setSkillMenuOpen(false)
     const imageIds = pendingImages.map((p) => p.id)
+    const documentIds = pendingDocuments.map((d) => d.id)
     setPendingImages([])
-    void useAiRunStore.getState().send(config, { text, imageIds, imageData })
+    setPendingDocuments([])
+    void useAiRunStore.getState().send(config, { text, imageIds, imageData, documentIds })
   }
 
   /**
@@ -1170,6 +1227,9 @@ export function AIView({
                     totalTokens > 0
                       ? `Entrada: ${usage.promptTokens.toLocaleString('pt-BR')} tokens\n` +
                         `Saída: ${usage.completionTokens.toLocaleString('pt-BR')} tokens\n` +
+                        (reasoningTokens
+                          ? `Raciocínio: ${reasoningTokens.toLocaleString('pt-BR')} tokens\n`
+                          : '') +
                         'Soma de todas as chamadas desta conversa. Clique para ver os gastos.'
                       : 'Ver o histórico de chamadas e gastos'
                   }
@@ -1194,6 +1254,11 @@ export function AIView({
                   {totalTokens > 0 ? (
                     <>
                       {formatTokens(totalTokens)} tokens
+                      {reasoningTokens ? (
+                        <span className="text-[#a080f0]">
+                          {' '}+{formatTokens(reasoningTokens)} rac.
+                        </span>
+                      ) : null}
                       {cost !== null && (
                         <span className="text-[#a080f0]">· {formatCost(cost)}</span>
                       )}
@@ -2185,11 +2250,13 @@ export function AIView({
           }}
           onDragLeave={() => setDragOver(false)}
           onDrop={(e) => {
-            const files = imageFilesFrom(e.dataTransfer)
-            if (files.length === 0) return
+            const images = imageFilesFrom(e.dataTransfer)
+            const docs = documentFilesFrom(e.dataTransfer)
+            if (images.length === 0 && docs.length === 0) return
             e.preventDefault()
             setDragOver(false)
-            void attachImages(files)
+            if (images.length > 0) void attachImages(images)
+            if (docs.length > 0) void attachDocuments(docs)
           }}
           className={`px-6 py-3 border-t shrink-0 transition-colors ${
             dragOver ? 'border-[#7c3aed] bg-[#7c3aed]/5' : 'border-[#3b3b3b]'
@@ -2231,6 +2298,37 @@ export function AIView({
               ))}
             </div>
           )}
+          {pendingDocuments.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-2">
+              {pendingDocuments.map((doc) => (
+                <div key={doc.id} className="relative group flex items-center gap-2 px-2 py-1 rounded-md border border-[#3b3b3b] bg-[#1b1b1b] text-xs">
+                  <span className="text-[#7c3aed] font-medium">{doc.ext.replace('.', '').toUpperCase()}</span>
+                  <span className="text-[#999999] max-w-[160px] truncate">{doc.name}</span>
+                  {doc.truncated && (
+                    <span className="text-[#f08a34]" title="O texto do documento foi truncado">(cortado)</span>
+                  )}
+                  <button
+                    onClick={() => removePendingDocument(doc.id)}
+                    title="Remover"
+                    aria-label="Remover documento"
+                    className="ml-1 w-5 h-5 flex items-center justify-center rounded-full bg-[#2a2a2a] border border-[#3b3b3b] text-[#999999] opacity-0 group-hover:opacity-100 hover:text-[#e04040] transition-opacity"
+                  >
+                    <svg
+                      width="9"
+                      height="9"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="3"
+                    >
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           {busy && !runningHere && (
             // The composer is disabled because a run is going — in a chat the
             // user can't see. Without this the send button is simply dead, with
@@ -2248,10 +2346,15 @@ export function AIView({
             <textarea
               ref={inputRef}
               onPaste={(e) => {
-                const files = imageFilesFrom(e.clipboardData)
-                if (files.length === 0) return // let ordinary text paste through
-                e.preventDefault()
-                void attachImages(files)
+                const images = imageFilesFrom(e.clipboardData)
+                const docs = documentFilesFrom(e.clipboardData)
+                if (images.length > 0 || docs.length > 0) {
+                  e.preventDefault()
+                  if (images.length > 0) void attachImages(images)
+                  if (docs.length > 0) void attachDocuments(docs)
+                  return
+                }
+                // otherwise let ordinary text paste through
               }}
               value={input}
               onChange={(e) => {
@@ -2301,7 +2404,7 @@ export function AIView({
               <button
                 onClick={handleSend}
                 disabled={
-                  !configReady || busyHere || (input.trim() === '' && pendingImages.length === 0)
+                  !configReady || busyHere || (input.trim() === '' && pendingImages.length === 0 && pendingDocuments.length === 0)
                 }
                 className="px-3 py-1.5 rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] text-sm text-[#d4d4d4] font-medium hover:bg-[#3b3b3b] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >

@@ -10,6 +10,12 @@ import {
   deleteImageFiles,
   decodeDataUrl
 } from '../chat-images'
+import {
+  isChatFileName,
+  saveAndParseChatFile,
+  deleteChatFiles
+} from '../chat-files'
+import { isDocumentExt, parseDocument } from '../document-parser'
 import type { BrowserWindow, Dialog, Shell } from 'electron'
 
 interface Deps {
@@ -18,6 +24,7 @@ interface Deps {
   shell: Shell
   filesDir: string
   chatImagesDir: string
+  chatFilesDir: string
   taskImagesDir: string
   userDataPath: string
   sep: string
@@ -27,7 +34,7 @@ export function registerFilesHandlers(
   ipcMain: IpcMain,
   deps: Deps
 ): void {
-  const { dialog: dlg, shell: sh, filesDir, chatImagesDir, taskImagesDir, userDataPath: _, sep } = deps
+  const { dialog: dlg, shell: sh, filesDir, chatImagesDir, chatFilesDir, taskImagesDir, userDataPath: _, sep } = deps
 
   // --- File attachments ---
 
@@ -165,5 +172,67 @@ export function registerFilesHandlers(
   ipcMain.handle('task:images:delete', (_, items: { id: string; ext: string }[]) => {
     if (!Array.isArray(items)) return
     deleteImageFiles(items.map((it) => taskImagePath(it?.id, it?.ext)))
+  })
+
+  // --- Chat documents ---
+
+  const chatFilePath = (id: unknown): string | null => {
+    if (!isChatFileName(id)) return null
+    const full = join(chatFilesDir, id)
+    return full.startsWith(chatFilesDir + sep) ? full : null
+  }
+
+  ipcMain.handle('ai:documents:save', async (_, name: string, ext: string, data: number[]) => {
+    if (typeof name !== 'string' || typeof ext !== 'string' || !Array.isArray(data)) {
+      return { error: 'Dados inválidos' }
+    }
+    if (!isDocumentExt(ext)) {
+      return { error: `Tipo de arquivo não suportado: ${ext}` }
+    }
+    const result = await saveAndParseChatFile(
+      chatFilesDir,
+      name,
+      ext,
+      new Uint8Array(data),
+      () => `${randomUUID()}${ext}`
+    )
+    return result
+  })
+
+  ipcMain.handle('ai:documents:delete', (_, ids: string[]) => {
+    if (!Array.isArray(ids)) return
+    deleteChatFiles(ids.map((id) => chatFilePath(id)))
+  })
+
+  // --- Project file reading (for the ler_documento tool) ---
+
+  ipcMain.handle('ai:project-file:read', async (_, fileId: string) => {
+    if (typeof fileId !== 'string' || fileId.length === 0) {
+      return { error: 'ID do arquivo inválido' }
+    }
+    // Walk the filesDir to find the file with this id (files are named <id><ext>).
+    let filePath: string | null = null
+    let ext = ''
+    try {
+      const { readdirSync } = await import('fs')
+      const entries = readdirSync(filesDir)
+      for (const entry of entries) {
+        if (entry.startsWith(fileId)) {
+          ext = extname(entry)
+          filePath = join(filesDir, entry)
+          break
+        }
+      }
+    } catch {
+      return { error: 'Não foi possível acessar os arquivos do projeto' }
+    }
+    if (!filePath || !existsSync(filePath)) {
+      return { error: 'Arquivo não encontrado' }
+    }
+    if (!isDocumentExt(ext)) {
+      return { error: `Tipo de arquivo não suportado: ${ext}. A leitura é compatível com PDF, DOCX, XLSX, CSV, TXT, MD, JSON, HTML, XML, YAML, RTF, ODT e ODS.` }
+    }
+    const result = await parseDocument(filePath, ext)
+    return result
   })
 }

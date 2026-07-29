@@ -50,9 +50,12 @@ interface Habit { id: string; name: string; color: string; completions: string[]
 interface ShoppingItem { id: string; name: string; qty: number; price?: number | string; done: boolean; link?: string; linkedTransactionId?: string }
 interface FinancialTransaction { id: string; description: string; amount: number | string; type: 'income' | 'expense'; date: string; category?: string; fromShopping?: boolean; linkedTransactionId?: string }
 interface FinancialGoal { id: string; name: string; targetAmount: number | string; targetMonth: number; targetYear: number; completedAt?: string; completionNote?: string }
+interface YieldSource { id: string; name: string; createdAt: string }
+interface YieldEntry { id: string; sourceId: string; date: string; amount: number | string; createdAt: string }
 interface FinancialTable {
   id: string; name: string; currency: string
   items: ShoppingItem[]; transactions: FinancialTransaction[]; goals: FinancialGoal[]
+  yieldSources?: YieldSource[]; yieldEntries?: YieldEntry[]
   createdAt: string; updatedAt: string
 }
 interface StoredFile { id: string; name: string; ext: string; size: number; createdAt: string; projectId?: string }
@@ -128,7 +131,12 @@ function getDb(): Database.Database {
 // decimal string for storage in the TEXT columns.
 function moneyText(v: unknown): string {
   if (typeof v === 'number' && isFinite(v)) return String(v)
-  if (typeof v === 'string' && v.trim() !== '') return v
+  if (typeof v === 'string') {
+    const trimmed = v.trim()
+    if (trimmed === '') return '0'
+    const n = Number(trimmed)
+    return isFinite(n) ? String(n) : '0'
+  }
   return '0'
 }
 
@@ -194,6 +202,19 @@ function migrateMoneyColumnsToText(db: Database.Database): void {
       )`,
       copy: `INSERT INTO financial_goals_new (id,table_id,name,target_amount,target_month,target_year,completed_at,completion_note)
         SELECT id,table_id,name,CAST(target_amount AS TEXT),target_month,target_year,completed_at,completion_note FROM financial_goals`
+    },
+    {
+      table: 'yield_entries',
+      column: 'amount',
+      createNew: `CREATE TABLE yield_entries_new (
+        id TEXT PRIMARY KEY,
+        source_id TEXT NOT NULL REFERENCES yield_sources(id) ON DELETE CASCADE,
+        date TEXT NOT NULL,
+        amount TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )`,
+      copy: `INSERT INTO yield_entries_new (id,source_id,date,amount,created_at)
+        SELECT id,source_id,date,CAST(amount AS TEXT),created_at FROM yield_entries`
     }
   ]
 
@@ -514,6 +535,19 @@ function initSchema(db: Database.Database): void {
       completed_at TEXT,
       completion_note TEXT
     );
+    CREATE TABLE IF NOT EXISTS yield_sources (
+      id TEXT PRIMARY KEY,
+      table_id TEXT NOT NULL REFERENCES financial_tables(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS yield_entries (
+      id TEXT PRIMARY KEY,
+      source_id TEXT NOT NULL REFERENCES yield_sources(id) ON DELETE CASCADE,
+      date TEXT NOT NULL,
+      amount TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS files (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -653,6 +687,8 @@ function prepareWrite(db: Database.Database) {
     item:    db.prepare('INSERT INTO shopping_items (id,table_id,name,qty,price,done,link,linked_transaction_id) VALUES (?,?,?,?,?,?,?,?)'),
      tx:      db.prepare('INSERT INTO transactions (id,table_id,description,amount,type,date,category,from_shopping,linked_transaction_id) VALUES (?,?,?,?,?,?,?,?,?)'),
     fg:      db.prepare('INSERT INTO financial_goals (id,table_id,name,target_amount,target_month,target_year,completed_at,completion_note) VALUES (?,?,?,?,?,?,?,?)'),
+    ysrc:    db.prepare('INSERT INTO yield_sources (id,table_id,name,created_at) VALUES (?,?,?,?)'),
+    yentry:  db.prepare('INSERT INTO yield_entries (id,source_id,date,amount,created_at) VALUES (?,?,?,?,?)'),
     file:    db.prepare('INSERT INTO files (id,name,ext,size,created_at,project_id) VALUES (?,?,?,?,?,?)'),
     setting: db.prepare('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)'),
     timeBlock: db.prepare('INSERT INTO time_blocks (id,date,start_time,end_time,title,description,task_id,habit_id,type,color,ord,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'),
@@ -716,6 +752,8 @@ function prepareWrite(db: Database.Database) {
       for (const i of ft.items ?? []) ins.item.run(i.id, ft.id, i.name, i.qty, i.price != null ? moneyText(i.price) : null, i.done ? 1 : 0, i.link ?? null, i.linkedTransactionId ?? null)
       for (const tx of ft.transactions ?? []) ins.tx.run(tx.id, ft.id, tx.description, moneyText(tx.amount), tx.type, tx.date, tx.category ?? null, tx.fromShopping ? 1 : 0, tx.linkedTransactionId ?? null)
       for (const fg of ft.goals ?? []) ins.fg.run(fg.id, ft.id, fg.name, moneyText(fg.targetAmount), fg.targetMonth, fg.targetYear, fg.completedAt ?? null, fg.completionNote ?? null)
+      for (const ys of ft.yieldSources ?? []) ins.ysrc.run(ys.id, ft.id, ys.name, ys.createdAt)
+      for (const ye of ft.yieldEntries ?? []) ins.yentry.run(ye.id, ye.sourceId, ye.date, moneyText(ye.amount), ye.createdAt)
     },
     file: (f: StoredFile): void => {
       ins.file.run(f.id, f.name, f.ext, f.size, f.createdAt, f.projectId ?? null)
@@ -819,6 +857,8 @@ function persistAll(db: Database.Database, data: SaveData): void {
     DELETE FROM files;
     DELETE FROM routines;
     DELETE FROM time_blocks;
+    DELETE FROM yield_entries;
+    DELETE FROM yield_sources;
     DELETE FROM financial_goals;
     DELETE FROM transactions;
     DELETE FROM shopping_items;
@@ -894,6 +934,8 @@ export function loadData(): SaveData {
   const itemsByTable = groupByKey(all('SELECT * FROM shopping_items'), 'table_id')
   const txByTable = groupByKey(all('SELECT * FROM transactions'), 'table_id')
   const fgByTable = groupByKey(all('SELECT * FROM financial_goals'), 'table_id')
+  const ysrcByTable = groupByKey(all('SELECT * FROM yield_sources'), 'table_id')
+  const yentryBySource = groupByKey(all('SELECT * FROM yield_entries'), 'source_id')
 
   const projects = (all('SELECT * FROM projects ORDER BY ord')).map((p) => ({
     id: p.id, name: p.name, color: p.color,
@@ -991,6 +1033,19 @@ export function loadData(): SaveData {
       ...(fg.completed_at != null ? { completedAt: fg.completed_at } : {}),
       ...(fg.completion_note != null ? { completionNote: fg.completion_note } : {}),
     })),
+    yieldSources: (ysrcByTable.get(ft.id) ?? []).map((ys) => ({
+      id: ys.id, name: ys.name, createdAt: ys.created_at,
+    })),
+    yieldEntries: (() => {
+      const sources = ysrcByTable.get(ft.id) ?? []
+      const entries: YieldEntry[] = []
+      for (const src of sources) {
+        for (const ye of (yentryBySource.get(src.id) ?? [])) {
+          entries.push({ id: ye.id, sourceId: ye.source_id, date: ye.date, amount: String(ye.amount), createdAt: ye.created_at })
+        }
+      }
+      return entries
+    })(),
   }))
 
   const files = (db.prepare('SELECT * FROM files').all() as any[]).map((f) => ({

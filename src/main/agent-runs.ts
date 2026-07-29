@@ -47,7 +47,7 @@ export interface AgentRunMeta {
   fileCount: number
   /** Tokens billed across the run (prompt + completion). Absent on old rows and
    *  on runs whose provider reported no usage. */
-  tokens?: { promptTokens: number; completionTokens: number }
+  tokens?: { promptTokens: number; completionTokens: number; reasoningTokens?: number }
 }
 
 /** A run as reopened: the metadata plus the frozen output. */
@@ -110,13 +110,15 @@ export function normalizeRuns(raw: unknown): AgentRunMeta[] {
 
 /** Accept a stored `tokens` object only when both fields are finite; otherwise
  *  leave it off (old rows, or a hand-edited file, read back as "unknown"). */
-function readTokens(raw: unknown): { tokens?: { promptTokens: number; completionTokens: number } } {
+function readTokens(raw: unknown): { tokens?: { promptTokens: number; completionTokens: number; reasoningTokens?: number } } {
   if (!raw || typeof raw !== 'object') return {}
   const t = raw as Record<string, unknown>
   const p = Number(t.promptTokens)
   const c = Number(t.completionTokens)
   if (!Number.isFinite(p) || !Number.isFinite(c)) return {}
-  return { tokens: { promptTokens: p, completionTokens: c } }
+  const r = Number(t.reasoningTokens)
+  const rt = Number.isFinite(r) ? r : undefined
+  return { tokens: { promptTokens: p, completionTokens: c, ...(rt !== undefined ? { reasoningTokens: rt } : {}) } }
 }
 
 /** Newest first — the order the picker shows and the order pruning trusts. */

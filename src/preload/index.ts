@@ -168,7 +168,7 @@ const api = {
       conflicts: (): Promise<MemoryConflict[]> => ipcRenderer.invoke('ai:memory:conflicts'),
       // The run-start briefing text for a project (its memories + globals).
       // `archived` = how many cold pages the lazy decay pass just retired.
-      briefing: (projectId?: string | null): Promise<{ text: string; archived: number }> =>
+      briefing: (projectId?: string | null): Promise<{ text: string; count: number; archived: number }> =>
         ipcRenderer.invoke('ai:memory:briefing', projectId),
       // Upsert the per-project handoff breadcrumb (one per project, replaced each run).
       handoff: (input: {
@@ -527,6 +527,27 @@ const api = {
         ipcRenderer.invoke('ai:images:get', id),
       delete: (ids: string[]): Promise<void> => ipcRenderer.invoke('ai:images:delete', ids)
     },
+    // Documents attached to the chat: the renderer sends raw bytes; main saves,
+    // parses, and returns the extracted text so it can be sent inline in the user
+    // message — no tool call consumed.
+    documents: {
+      save: (
+        name: string,
+        ext: string,
+        data: number[]
+      ): Promise<
+        | { id: string; name: string; ext: string; size: number; text: string; truncated: boolean }
+        | { error: string }
+      > => ipcRenderer.invoke('ai:documents:save', name, ext, data),
+      delete: (ids: string[]): Promise<void> => ipcRenderer.invoke('ai:documents:delete', ids)
+    },
+    // Read a project file (uploaded via FilesView) and return its parsed text.
+    projectFile: {
+      read: (
+        fileId: string
+      ): Promise<{ text: string; truncated: boolean; size?: number } | { error: string }> =>
+        ipcRenderer.invoke('ai:project-file:read', fileId)
+    },
     // User-written Skills (.md files in userData/skills/).
     skills: {
       list: (): Promise<Skill[]> => ipcRenderer.invoke('ai:skills:list'),
@@ -561,6 +582,7 @@ const api = {
           role: 'user' | 'assistant' | 'status'
           content: string
           imageIds?: string[]
+          documentIds?: string[]
         }[]
         usage?: { promptTokens: number; completionTokens: number }
       } | null> => ipcRenderer.invoke('ai:conversations:get', id),
@@ -574,6 +596,7 @@ const api = {
           role: 'user' | 'assistant' | 'status'
           content: string
           imageIds?: string[]
+          documentIds?: string[]
         }[]
         usage?: { promptTokens: number; completionTokens: number }
       }): Promise<void> => ipcRenderer.invoke('ai:conversations:save', conv),

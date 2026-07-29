@@ -9,8 +9,9 @@ import { ShoppingTab } from '../financial/ShoppingTab'
 import { FinanceTab } from '../financial/FinanceTab'
 import { AnalyticsTab } from '../financial/AnalyticsTab'
 import { ConsolidatedTab } from '../financial/ConsolidatedTab'
+import { YieldsTab } from '../financial/YieldsTab'
 
-type ActiveTab = 'shopping' | 'finance' | 'analytics' | 'consolidated'
+type ActiveTab = 'shopping' | 'finance' | 'analytics' | 'consolidated' | 'yields'
 
 interface TableViewState {
   activeTab: ActiveTab
@@ -19,6 +20,7 @@ interface TableViewState {
   analyticsYear: string
   analyticsMonth: string
   analyticsCatView: 'expense' | 'income'
+  yieldMonth: { year: number; month: number }
 }
 
 function makeDefaultState(): TableViewState {
@@ -29,7 +31,8 @@ function makeDefaultState(): TableViewState {
     financeCategoryFilter: null,
     analyticsYear: 'all',
     analyticsMonth: 'all',
-    analyticsCatView: 'expense'
+    analyticsCatView: 'expense',
+    yieldMonth: { year: now.getFullYear(), month: now.getMonth() + 1 }
   }
 }
 
@@ -48,6 +51,12 @@ export function FinancialView() {
   const addFinancialGoal = useKanbanStore((s) => s.addFinancialGoal)
   const updateFinancialGoal = useKanbanStore((s) => s.updateFinancialGoal)
   const deleteFinancialGoal = useKanbanStore((s) => s.deleteFinancialGoal)
+  const addYieldSource = useKanbanStore((s) => s.addYieldSource)
+  const updateYieldSource = useKanbanStore((s) => s.updateYieldSource)
+  const deleteYieldSource = useKanbanStore((s) => s.deleteYieldSource)
+  const addYieldEntry = useKanbanStore((s) => s.addYieldEntry)
+  const updateYieldEntry = useKanbanStore((s) => s.updateYieldEntry)
+  const deleteYieldEntry = useKanbanStore((s) => s.deleteYieldEntry)
 
   const [activeListId, setActiveListId] = useState<string | null>(null)
   const [tableStates, setTableStates] = useState<Record<string, TableViewState>>({})
@@ -96,10 +105,15 @@ export function FinancialView() {
 
   const handleDeleteList = (id: string) => {
     const list = lists.find((l) => l.id === id)
+    const hasYields = (list?.yieldSources?.length ?? 0) > 0
+    const linkedToThis = lists
+      .filter((l) => l.id !== id)
+      .flatMap((l) => l.transactions.filter((t) => t.linkedTransactionId && list?.transactions.some((lt) => lt.id === t.linkedTransactionId)))
+    const hasCrossLinks = linkedToThis.length > 0
     setConfirm({
       open: true,
       title: 'Deletar tabela',
-      message: `Deletar "${list?.name}"? Todos os itens e transações serão removidos.`,
+      message: `Deletar "${list?.name}"? Todos os itens, transações, metas${hasYields ? ', rendimentos' : ''} e dados de compras serão removidos.${hasCrossLinks ? ` ${linkedToThis.length} transação(ões) em outras tabelas ficarão desvinculadas.` : ''}`,
       onConfirm: () => {
         deleteList(id)
         setConfirm((c) => ({ ...c, open: false }))
@@ -109,10 +123,11 @@ export function FinancialView() {
 
   const handleDeleteItem = (itemId: string) => {
     const item = activeList?.items.find((i) => i.id === itemId)
+    const hasLinkedTx = item?.done && item.linkedTransactionId
     setConfirm({
       open: true,
       title: 'Remover item',
-      message: `Remover "${item?.name}" da lista?`,
+      message: `Remover "${item?.name}" da lista?${hasLinkedTx ? ' A transação financeira vinculada também será removida.' : ''}`,
       onConfirm: () => {
         deleteItem(activeListId!, itemId)
         setConfirm((c) => ({ ...c, open: false }))
@@ -224,6 +239,18 @@ export function FinancialView() {
                   Análise
                 </button>
                 <button
+                  onClick={() => updateTs({ activeTab: 'yields' })}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                    ts.activeTab === 'yields' ? 'bg-[#3b3b3b] text-[#d4d4d4]' : 'text-[#999999] hover:text-[#d4d4d4]'
+                  }`}
+                >
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="22,7 13.5,15.5 8.5,10.5 2,17" />
+                    <polyline points="16,7 22,7 22,13" />
+                  </svg>
+                  Rendimentos
+                </button>
+                <button
                   onClick={() => updateTs({ activeTab: 'consolidated' })}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
                     ts.activeTab === 'consolidated' ? 'bg-[#3b3b3b] text-[#d4d4d4]' : 'text-[#999999] hover:text-[#d4d4d4]'
@@ -286,6 +313,22 @@ export function FinancialView() {
                 onLinkTransaction={(sourceListId, sourceTxId, targetTxId) =>
                   updateTransaction(sourceListId, sourceTxId, { linkedTransactionId: targetTxId || undefined })
                 }
+              />
+            )}
+            {ts.activeTab === 'yields' && (
+              <YieldsTab
+                list={activeList}
+                activeMonth={ts.yieldMonth}
+                onMonthChange={(m) => updateTs({ yieldMonth: m })}
+                onAddSource={(name) => addYieldSource(activeListId!, name)}
+                onUpdateSource={(sourceId, name) => updateYieldSource(activeListId!, sourceId, name)}
+                onDeleteSource={(sourceId) => deleteYieldSource(activeListId!, sourceId)}
+                onAddEntry={(data) => addYieldEntry(activeListId!, data)}
+                onUpdateEntry={(entryId, updates) => updateYieldEntry(activeListId!, entryId, updates)}
+                onDeleteEntry={(entryId) => deleteYieldEntry(activeListId!, entryId)}
+                onAddTransaction={(data) => addTransaction(activeListId!, data)}
+                onUpdateTransaction={(txId, updates) => updateTransaction(activeListId!, txId, updates)}
+                onDeleteTransaction={(txId) => deleteTransaction(activeListId!, txId)}
               />
             )}
           </>

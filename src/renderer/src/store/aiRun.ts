@@ -1,11 +1,12 @@
 import { create } from 'zustand'
 import { v4 as uuidv4 } from 'uuid'
-import { runAgent, resolveMaxSteps } from '../ai/agent'
-import { CODE_TOOL_DEFS } from '../ai/tools'
+import { runAgent, resolveMaxSteps, callModel, contentText } from '../ai/agent'
+import { CODE_TOOL_DEFS, routeTools } from '../ai/tools'
 import codePromptMd from '../ai/code-prompt.md?raw'
 import { useKanbanStore } from './kanban'
 import { setAdd, setDel } from '../utils/immutable'
-import type { AIConfig, PendingCall, TokenUsage, ContentPart } from '../ai/agent'
+import type { AIConfig, PendingCall, TokenUsage, ContentPart, ApiMessage } from '../ai/agent'
+export type { TokenUsage }
 
 // ---------------------------------------------------------------------------
 // The agent run
@@ -40,6 +41,12 @@ export interface ChatMessage {
    * every keystroke of the history search.
    */
   imageIds?: string[]
+  /**
+   * Chat-document ids. The bytes live as files under userData/chat-files/.
+   * The parsed text is inlined in `content` at send time; these ids are kept
+   * so the files can be cleaned up when the conversation is deleted.
+   */
+  documentIds?: string[]
   /**
    * Status lines only: false while the tool is running, true once it returns.
    * Absent on the model's own remarks — those describe an intent, not work in
@@ -141,6 +148,58 @@ export async function writeHandoff(
 }
 
 /**
+ * Like writeHandoff, but generates the handoff body via an LLM call that
+ * summarises the full conversation into 2-3 pt-BR sentences (decisions, what
+ * was done, next steps). Costs one extra model call per run — only used when
+ * `config.handoffSummarize` is explicitly true.
+ */
+export async function writeHandoffSummarized(
+  config: AIConfig,
+  conversation: ChatMessage[]
+): Promise<void> {
+  try {
+    const api = window.electronAPI?.ai?.memory
+    if (!api?.handoff) return
+
+    // Build a summary prompt from the conversation (drop status lines —
+    // they're the agent's own tool trace and carry no decisions).
+    const turns = conversation
+      .filter((m) => m.role !== 'status')
+      .map((m) => `${m.role}: ${typeof m.content === 'string' ? m.content : ''}`)
+      .join('\n\n')
+
+    if (!turns.trim()) return
+
+    const summaryPrompt: ApiMessage[] = [
+      {
+        role: 'system',
+        content:
+          'Resuma esta conversa em 2-3 frases em português: o que foi decidido, ' +
+          'o que foi feito, e quais os próximos passos. Seja conciso (máx 300 tokens). ' +
+          'Não invente.'
+      },
+      { role: 'user', content: turns.slice(0, 20_000) }
+    ]
+
+    const { message } = await callModel(config, summaryPrompt, undefined)
+    const summary = contentText(message.content).trim().slice(0, 600)
+
+    if (!summary) return
+
+    const { activeProjectId, projects } = useKanbanStore.getState()
+    const name = projects.find((p) => p.id === activeProjectId)?.name
+
+    await api.handoff({
+      projectId: activeProjectId,
+      title: name ? `Última sessão — ${name}` : 'Última sessão',
+      body: summary
+    })
+  } catch {
+    /* a breadcrumb is a convenience; its failure must never affect the run */
+  }
+}
+
+/**
  * The agent loops await these, so they are live continuations rather than UI
  * state: kept out of the store proper because nothing renders them and
  * replacing one must never trigger a render.
@@ -188,7 +247,11 @@ function writeConv(
 function addUsageConv(s: AiRunState, convId: string, u: TokenUsage): Partial<AiRunState> {
   const add = (prev: TokenUsage): TokenUsage => ({
     promptTokens: prev.promptTokens + u.promptTokens,
-    completionTokens: prev.completionTokens + u.completionTokens
+    completionTokens: prev.completionTokens + u.completionTokens,
+    reasoningTokens:
+      typeof u.reasoningTokens === 'number' && typeof prev.reasoningTokens === 'number'
+        ? prev.reasoningTokens + u.reasoningTokens
+        : u.reasoningTokens ?? prev.reasoningTokens
   })
   if (convId === s.conversationId) return { usage: add(s.usage) }
   const p = s.parked[convId]
@@ -293,7 +356,7 @@ export interface AiRunState {
 
   send: (
     config: AIConfig,
-    opts: { text: string; imageIds: string[]; imageData: Record<string, string> },
+    opts: { text: string; imageIds: string[]; imageData: Record<string, string>; documentIds?: string[] },
     codeMode?: boolean
   ) => Promise<void>
   /** Ask a run to stop. Defaults to the chat on screen when no id is given. */
@@ -356,12 +419,17 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
   abortRequested: new Set(),
   savedTick: 0,
 
-  send: async (config, { text, imageIds, imageData }, codeMode = false) => {
+  send: async (config, { text, imageIds, imageData, documentIds }, codeMode = false) => {
     const convId = get().ensureConversationId()
     if (get().running.has(convId)) return
     const next: ChatMessage[] = [
       ...get().messages,
-      { role: 'user', content: text, ...(imageIds.length > 0 && { imageIds }) }
+      {
+        role: 'user',
+        content: text,
+        ...(imageIds.length > 0 && { imageIds }),
+        ...(documentIds && documentIds.length > 0 && { documentIds })
+      }
     ]
     const projectId = useKanbanStore.getState().activeProjectId
     set((s) => ({
@@ -396,13 +464,23 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
                   ...s.runUsage,
                   [convId]: {
                     promptTokens: prev.promptTokens + u.promptTokens,
-                    completionTokens: prev.completionTokens + u.completionTokens
+                    completionTokens: prev.completionTokens + u.completionTokens,
+                    reasoningTokens:
+                      typeof u.reasoningTokens === 'number' && typeof prev.reasoningTokens === 'number'
+                        ? prev.reasoningTokens + u.reasoningTokens
+                        : u.reasoningTokens ?? prev.reasoningTokens
                   }
                 }
               }
             }),
           // In code mode: use only code tools + a code-focused system prompt.
-          ...(codeMode ? { tools: CODE_TOOL_DEFS, systemPrompt: codePromptMd.trim() } : {}),
+          // In chat mode: route tools by the user's message — code questions
+          // get CODE tools (~2.1k tokens), kanban questions get KANBAN tools
+          // (~6.7k), saving 25-75% of the fixed tool-definition cost per call.
+          ...(codeMode
+            ? { tools: CODE_TOOL_DEFS, systemPrompt: codePromptMd.trim() }
+            : { tools: routeTools(text) }
+          ),
           onStatus: (text, kind, progress) =>
             set((s) =>
               writeConv(s, convId, (prev) => [
@@ -434,9 +512,14 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
         }
       )
       set((s) => writeConv(s, convId, (prev) => [...prev, { role: 'assistant', content: reply }]))
-      // Leave a breadcrumb for the next session (best-effort; see writeHandoff).
-      // Pass the run's own convId so a truncated handoff can point back to it.
-      void writeHandoff(text, reply, convId)
+      // Leave a breadcrumb for the next session (best-effort). When
+      // handoffSummarize is enabled, do an extra LLM call to produce a concise
+      // summary of the full conversation; otherwise use the raw last exchange.
+      if (config.handoffSummarize) {
+        void writeHandoffSummarized(config, next)
+      } else {
+        void writeHandoff(text, reply, convId)
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Falha ao contatar o modelo'
       // The banner belongs to the chat that failed. If the user has moved on,

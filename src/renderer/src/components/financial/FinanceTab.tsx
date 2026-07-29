@@ -285,21 +285,25 @@ export function FinanceTab({
           </thead>
           <tbody>
             <AddTransactionRow currency={currency} onAdd={onAddTransaction} />
-            {monthTxs.map((tx) => (
-              <TransactionRow
-                key={tx.id}
-                tx={tx}
-                currency={currency}
-                allLists={allLists}
-                onUpdate={(updates) => onUpdateTransaction(tx.id, updates)}
-                onDelete={() => onDeleteTransaction(tx.id)}
-                onUnlink={
-                  tx.linkedTransactionId
-                    ? () => handleUnlinkRequest(tx.id, tx.description)
-                    : undefined
-                }
-              />
-            ))}
+            {monthTxs.map((tx) => {
+              const isYieldSummary = tx.description.startsWith('Rendimentos ')
+              return (
+                <TransactionRow
+                  key={tx.id}
+                  tx={tx}
+                  currency={currency}
+                  allLists={allLists}
+                  onUpdate={(updates) => onUpdateTransaction(tx.id, updates)}
+                  onDelete={isYieldSummary ? undefined : () => onDeleteTransaction(tx.id)}
+                  readOnly={isYieldSummary || undefined}
+                  onUnlink={
+                    tx.linkedTransactionId
+                      ? () => handleUnlinkRequest(tx.id, tx.description)
+                      : undefined
+                  }
+                />
+              )
+            })}
             {monthTxs.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-4 py-6 text-center text-xs text-[#999999] italic">

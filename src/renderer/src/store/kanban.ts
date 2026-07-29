@@ -46,6 +46,7 @@ function normalizeProject(p: Project, i: number): Project {
   return { ...p, order: p.order ?? i, ...withActive(ids) }
 }
 
+// Keep in sync with the identical normalizeList in src/renderer/src/store/slices/backup.ts.
 function normalizeList(l: FinancialTable): FinancialTable {
   return {
     ...l,
@@ -55,7 +56,9 @@ function normalizeList(l: FinancialTable): FinancialTable {
       price: i.price === null || i.price === undefined ? undefined : moneyStr(i.price)
     })),
     transactions: (l.transactions ?? []).map((t) => ({ ...t, amount: moneyStr(t.amount) })),
-    goals: (l.goals ?? []).map((g) => ({ ...g, targetAmount: moneyStr(g.targetAmount) }))
+    goals: (l.goals ?? []).map((g) => ({ ...g, targetAmount: moneyStr(g.targetAmount) })),
+    yieldSources: (l.yieldSources ?? []).map((s) => ({ ...s })),
+    yieldEntries: (l.yieldEntries ?? []).map((e) => ({ ...e, amount: moneyStr(e.amount) }))
   }
 }
 

@@ -52,7 +52,7 @@
 | **Relatórios** | Visão geral de produtividade |
 | **Busca** | Pesquisa rápida de tarefas |
 | **Arquivos** | Anexos por projeto, guardados localmente |
-| **Assistente de IA** | Chat com acesso aos seus dados via ferramentas — funciona com qualquer provedor compatível com a API da OpenAI (local ou hospedado). Suporte a imagens (arraste screenshots). Ações que alteram dados pedem aprovação antes de rodar |
+| **Assistente de IA** | Chat com acesso aos seus dados via ferramentas — funciona com qualquer provedor compatível com a API da OpenAI (local ou hospedado). Suporte a imagens (arraste screenshots) e documentos (PDF, DOCX, XLSX, CSV, etc.) — o texto é extraído e enviado inline. Ações que alteram dados pedem aprovação antes de rodar |
 | **Agente de código** | Aponte um projeto para um diretório e peça alterações no código — edita arquivos e roda comandos com aprovação por ação. Sandbox obrigatório (ai-jail) confina comandos ao diretório do projeto |
 | **Multi-agente** | Vários chats de IA rodando em paralelo — o painel Agentes mostra o que cada um está fazendo, com gasto de tokens por agente |
 | **Skills** | Comandos `/skill-name` no chat que injetam system prompts customizados — crie, edite e importe arquivos `.md` |
@@ -126,6 +126,8 @@ Ações que **alteram** dados (criar tarefas, concluir, iniciar cronômetro, cri
 
 O assistente também suporta **imagens**: arraste ou cole screenshots no chat e o modelo responde sobre elas. As imagens ficam salvas em `chat-images/` e são enviadas ao modelo a cada passo da execução.
 
+O assistente também lê **documentos**: arraste ou cole PDF, DOCX, XLSX, CSV, TXT, MD e outros formatos no chat. O texto é extraído na hora e incluído na mensagem — o modelo lê o conteúdo como parte da conversa. Para documentos salvos nos anexos do projeto (via FilesView), use a ferramenta `ler_documento` — útil para referências de longo prazo como políticas, relatórios ou notas de reunião. Os arquivos ficam em `chat-files/` e são limpos quando a conversa é deletada.
+
 ### Multi-agente
 
 Você pode abrir **vários chats em paralelo** — cada um roda como um agente independente. O sidebar ganha uma aba **Agentes** com um painel ao vivo que mostra, para cada agente ativo:
@@ -174,7 +176,9 @@ Cada ação de escrita ou comando passa por aprovação antes de rodar. O agente
 - [decimal.js](https://mikemcl.github.io/decimal.js/) — aritmética monetária exata
 - [dnd kit](https://dndkit.com/) — drag and drop
 - [Tailwind CSS](https://tailwindcss.com/) — estilização
-- [SheetJS](https://sheetjs.com/) — exportação para Excel
+- [SheetJS](https://sheetjs.com/) — exportação para Excel e leitura de XLSX/ODS
+- [pdfjs-dist](https://github.com/mozilla/pdf.js) — extração de texto de PDF
+- [mammoth.js](https://github.com/mwilliamson/mammoth.js) — extração de texto de DOCX/ODT
 - [Vitest](https://vitest.dev/) — testes
 - [OpenAI SDK](https://github.com/openai/openai-node) — cliente para provedores compatíveis
 
@@ -209,6 +213,7 @@ Tudo fica na sua máquina, no diretório de dados do app (`userData`):
 | `kanban.db` | banco SQLite com projetos, tarefas, hábitos, metas, finanças e memórias do assistente |
 | `files/` | anexos enviados |
 | `chat-images/` | imagens enviadas no chat |
+| `chat-files/` | documentos enviados no chat (PDF, DOCX, etc.) |
 | `task-images/` | imagens anexadas a tarefas |
 | `ai-config.json` | configuração do provedor de IA (inclui a chave de API) |
 | `ai-conversations.json` | histórico do chat |
