@@ -1020,6 +1020,16 @@ export async function dirTree(root: string, cap = 400): Promise<string> {
  *  higher ceiling. */
 export const CODE_AGENT_MAX_STEPS = 100
 
+/**
+ * How many steps between progressive summarisation passes. Longer than the
+ * chat agent (8) because the code agent reads/writes large files and needs
+ * more context to stay coherent. Still keeps per-step cost bounded.
+ */
+const SUMMARIZE_INTERVAL = 10
+
+/** How many recent messages to keep intact after summarisation (≈ 3 exchanges). */
+const KEEP_RECENT = 6
+
 /** Everything the loop needs from the outside, all injectable for tests. */
 export interface RunAgentDeps {
   /** One round-trip to the model with the tools attached. */
@@ -1279,6 +1289,44 @@ export async function runResearchAgent(
   return message.content || 'Sub-agente atingiu o limite de passos sem produzir resposta.'
 }
 
+/**
+ * Ask the model to summarise conversation history into a compact block,
+ * preserving decisions, file changes, current state, and next steps.
+ * Called periodically so the per-step cost stays bounded instead of
+ * growing with every message read/written.
+ */
+async function summarizeHistory(
+  deps: RunAgentDeps,
+  midMsgs: AgentMessage[],
+  previousSummary: string
+): Promise<string> {
+  const prefix = previousSummary
+    ? `Resumo anterior:\n${previousSummary}\n\n---\n\nNovos turnos:\n\n`
+    : ''
+  const midText = midMsgs
+    .map((m) => {
+      const content = typeof m.content === 'string' ? m.content : '(n/a)'
+      const cap = m.role === 'tool' ? 300 : 500
+      return `${m.role}: ${content.slice(0, cap)}`
+    })
+    .join('\n\n')
+  const prompt: AgentMessage[] = [
+    {
+      role: 'system',
+      content:
+        'Resuma o historico de conversa abaixo (max 500 tokens). Inclua: decisoes tomadas, ' +
+        'arquivos alterados, estado atual da tarefa, e o que falta fazer. Seja conciso.'
+    },
+    { role: 'user', content: `${prefix}${midText.slice(0, 40_000)}` }
+  ]
+  try {
+    const { message } = await deps.callModel(prompt, [])
+    return (message.content ?? '').trim().slice(0, 3_000)
+  } catch {
+    return previousSummary
+  }
+}
+
 export async function runCodeAgent(
   systemPrompt: string,
   task: string,
@@ -1365,6 +1413,11 @@ export async function runCodeAgent(
   let typecheckPassed = false
   let envBroken = false
   let gateAttempts = 0
+
+  // Progressive summarisation state — compresses the middle of the history
+  // every SUMMARIZE_INTERVAL steps, keeping per-step cost bounded.
+  let rollingSummary = ''
+  let lastSummaryStep = 0
 
   // Watch for explicit typecheck invocations via executar_comando.
   // When the agent runs typecheck manually and it passes, clear the gate.
@@ -1799,10 +1852,67 @@ export async function runCodeAgent(
           }
         } catch {
           // compaction failure is non-critical
+          }
+        }
+      }
+
+      // Progressive summarisation: every SUMMARIZE_INTERVAL steps compress
+      // the middle of the history into a rolling summary. This keeps the
+      // per-step token cost bounded — same pattern as the chat agent.
+      //
+      // Only when the agent isn't already struggling (brakesFired) and when
+      // enough history has been built.
+      if (
+        !brakesFired &&
+        step > 4 &&
+        step < maxSteps - 3 &&
+        (step - lastSummaryStep) >= SUMMARIZE_INTERVAL
+      ) {
+        try {
+          // Safe cut: no tool orphan in the tail.
+          let cut = Math.max(2, msgs.length - KEEP_RECENT)
+          const tailTcIds = new Set<string>()
+          for (let i = cut; i < msgs.length; i++) {
+            if (msgs[i].role === 'tool' && msgs[i].tool_call_id) {
+              tailTcIds.add(msgs[i].tool_call_id!)
+            }
+          }
+          for (let i = cut - 1; i >= 2 && tailTcIds.size > 0; i--) {
+            for (const tc of msgs[i].tool_calls ?? []) {
+              tailTcIds.delete(tc.id)
+            }
+            if (tailTcIds.size === 0) {
+              cut = i
+              break
+            }
+          }
+          const mid = msgs.slice(2, cut)
+          const tail = msgs.slice(cut)
+          if (mid.length > 0) {
+            const summary = await summarizeHistory(deps, mid, rollingSummary)
+            rollingSummary = summary
+            const extras: string[] = []
+            if (editedFiles.size > 0) {
+              extras.push(`Arquivos ja modificados: ${[...editedFiles].join(', ')}`)
+            }
+            if (editLog.length > 0) {
+              extras.push(`Log: ${editLog.slice(-5).join('; ')}`)
+            }
+            const prefix = extras.length > 0 ? `${extras.join('\n')}\n\n` : ''
+            msgs = [
+              msgs[0],
+              msgs[1],
+              { role: 'user', content: `${prefix}[RESUMO DO HISTORICO ANTERIOR]\n${summary}` },
+              ...tail
+            ]
+            lastSummaryStep = step
+            deps.onText?.('📦 Histórico sumarizado (economia de tokens).')
+          }
+        } catch {
+          // summarisation failure is non-critical
         }
       }
     }
-  }
 
   // Step cap hit: force one last text answer with tools disabled, so a run that
   // ran out of budget still summarises what it managed instead of ending mute.

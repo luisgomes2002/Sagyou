@@ -149,7 +149,8 @@ describe('bucket', () => {
       cost: 0,
       unpricedCalls: 0,
       cachedPromptTokens: 0,
-      cacheReportedPromptTokens: 0
+      cacheReportedPromptTokens: 0,
+      reasoningTokens: 0
     })
   })
 

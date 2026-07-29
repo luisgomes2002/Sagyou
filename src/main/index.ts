@@ -1,3 +1,8 @@
+process.env.LANG = 'pt_BR.UTF-8'
+process.env.LC_ALL = 'pt_BR.UTF-8'
+process.env.LC_TIME = 'pt_BR.UTF-8'
+process.env.LANGUAGE = 'pt_BR:pt'
+
 import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
 import { join, relative, sep } from 'path'
 import {
@@ -611,13 +616,34 @@ function errorStatus(e: unknown): number | undefined {
 
 /** The provider's usage block, normalised. Absent when it didn't report one. */
 function toUsage(
-  raw: { prompt_tokens?: number; completion_tokens?: number } | undefined | null
+  raw: {
+    prompt_tokens?: number
+    completion_tokens?: number
+    prompt_cache_hit_tokens?: number // DeepSeek
+    prompt_tokens_details?: { cached_tokens?: number } // OpenAI
+    completion_tokens_details?: { reasoning_tokens?: number } // DeepSeek reasoning
+    reasoning_tokens?: number // some providers at top level
+  } | undefined | null
 ): TokenUsage | undefined {
   if (!raw) return undefined
   const promptTokens = typeof raw.prompt_tokens === 'number' ? raw.prompt_tokens : 0
   const completionTokens = typeof raw.completion_tokens === 'number' ? raw.completion_tokens : 0
   if (promptTokens === 0 && completionTokens === 0) return undefined
-  return { promptTokens, completionTokens }
+  const cachedPromptTokens =
+    typeof raw.prompt_cache_hit_tokens === 'number'
+      ? raw.prompt_cache_hit_tokens
+      : typeof raw.prompt_tokens_details?.cached_tokens === 'number'
+        ? raw.prompt_tokens_details?.cached_tokens
+        : undefined
+  // DeepSeek returns reasoning tokens nested in completion_tokens_details;
+  // some providers put them at top level. Either is fine.
+  const reasoningTokens =
+    typeof raw.completion_tokens_details?.reasoning_tokens === 'number'
+      ? raw.completion_tokens_details.reasoning_tokens
+      : typeof raw.reasoning_tokens === 'number'
+        ? raw.reasoning_tokens
+        : undefined
+  return { promptTokens, completionTokens, cachedPromptTokens, reasoningTokens }
 }
 
 function loadAIConfig(): AIConfig {
@@ -751,6 +777,10 @@ function appendRunMetricIO(input: RunMetricInput): void {
 // --- Chat images (files under userData/chat-images) ---
 
 const chatImagesDir = (): string => join(app.getPath('userData'), 'chat-images')
+
+// --- Chat documents (files under userData/chat-files) ---
+
+const chatFilesDir = (): string => join(app.getPath('userData'), 'chat-files')
 
 /** Resolve an image id to a path, or null if it isn't one of ours. */
 function chatImagePath(id: unknown): string | null {
@@ -992,6 +1022,25 @@ function pruneConversations(): void {
     }
   }
 
+  // Same for chat document files.
+  const keptDocIds = new Set(keep.flatMap((c) => c.messages.flatMap((m) => (m as { documentIds?: string[] }).documentIds ?? [])))
+  const prunedDocIds = prune.flatMap((c) => c.messages.flatMap((m) => (m as { documentIds?: string[] }).documentIds ?? []))
+  const orphanDocIds = [...new Set(prunedDocIds)].filter((id) => !keptDocIds.has(id))
+  const docFilesDir = chatFilesDir()
+  const toDeleteDocs = orphanDocIds.map((id) => {
+    if (!/^[0-9a-f-]{36}\.[a-z0-9]{2,5}$/i.test(id)) return null
+    const full = join(docFilesDir, id)
+    return full.startsWith(docFilesDir + sep) ? full : null
+  }).filter((p): p is string => p !== null)
+
+  for (const full of toDeleteDocs) {
+    try {
+      if (existsSync(full)) unlinkSync(full)
+    } catch {
+      /* already gone or locked */
+    }
+  }
+
   saveConversations(keep)
   const byAge = prune.filter((c) => new Date(c.updatedAt) < cutoff).length
   const byCount = prune.length - byAge
@@ -1000,7 +1049,8 @@ function pruneConversations(): void {
   if (byCount > 0) parts.push(`${byCount} por limite (max ${MAX_CONVERSATIONS})`)
   console.log(
     `[conversations] pruned ${prune.length} conversation(s) — ${parts.join(', ')}` +
-      (toDelete.length > 0 ? `; ${toDelete.length} image file(s) deleted` : '')
+      (toDelete.length > 0 ? `; ${toDelete.length} image file(s) deleted` : '') +
+      (toDeleteDocs.length > 0 ? `; ${toDeleteDocs.length} document file(s) deleted` : '')
   )
 }
 
@@ -1046,6 +1096,8 @@ function createWindow(): void {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
 }
+
+app.commandLine.appendSwitch('lang', 'pt-BR')
 
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.sagyou')
@@ -1095,6 +1147,7 @@ app.whenReady().then(() => {
     shell,
     filesDir,
     chatImagesDir: chatImagesDir(),
+    chatFilesDir: chatFilesDir(),
     taskImagesDir: taskImagesDir(),
     userDataPath: app.getPath('userData'),
     sep
@@ -1245,7 +1298,12 @@ app.whenReady().then(() => {
     } catch {
       /* decay is best-effort; a failure here still leaves a valid briefing */
     }
-    return { text: formatMemoriesForPrompt(memoriesForContext(projectId ?? null)), archived }
+    const memories = memoriesForContext(projectId ?? null)
+    return {
+      text: formatMemoriesForPrompt(memories),
+      count: memories.filter((m) => !m.archivedAt).length,
+      archived
+    }
   })
 
   // Entity lineage: query the event log for one entity's history.
@@ -1707,10 +1765,14 @@ app.whenReady().then(() => {
       }
       emit('\n')
 
-      // Assemble the system prompt: GUIDE.md/AGENTS.md if the repo has one, a
-      // compact file tree, and the pinned files. Best-effort — a missing guide
-      // or an unreadable tree just leaves that section out.
-      const [tree, guide] = [await dirTree(effectiveDir), readProjectGuide(effectiveDir)]
+      // Assemble the system prompt: GUIDE.md/AGENTS.md if the repo has one (capped
+      // at 3000 chars — the full file can be 27k and is re-sent every step), a
+      // compact file tree, and the pinned files.
+      const rawGuide = readProjectGuide(effectiveDir)
+      const guide = rawGuide.length > 3000
+        ? rawGuide.slice(0, 3000) + '\n\n…(primeiros 3000 caracteres; use ler_arquivo para o resto)'
+        : rawGuide
+      const [tree] = [await dirTree(effectiveDir)]
       // Brief the agent with this project's memory (shared with the chat), so a
       // code run benefits from decisions/gotchas recorded in conversation.
       // Best-effort: a memory failure must never abort a run the user asked for.
@@ -1723,7 +1785,8 @@ app.whenReady().then(() => {
       if (!hasPinnedFiles) {
         try {
           memories = formatMemoriesForPrompt(
-            memoriesForContext(typeof request.projectId === 'string' ? request.projectId : null)
+            memoriesForContext(typeof request.projectId === 'string' ? request.projectId : null),
+            5 // injectMax: show full body for ≤5, title-only above
           )
         } catch {
           /* memory is best-effort; briefing failure leaves the prompt as-is */

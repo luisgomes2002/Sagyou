@@ -147,6 +147,22 @@ export interface FinancialGoal {
   completionNote?: string
 }
 
+export interface YieldSource {
+  id: string
+  name: string
+  createdAt: string
+}
+
+export interface YieldEntry {
+  id: string
+  sourceId: string
+  /** YYYY-MM-DD */
+  date: string
+  /** Yield amount as a canonical decimal string. Always positive. */
+  amount: string
+  createdAt: string
+}
+
 export interface FinancialTable {
   id: string
   name: string
@@ -154,6 +170,8 @@ export interface FinancialTable {
   items: ShoppingItem[]
   transactions: FinancialTransaction[]
   goals: FinancialGoal[]
+  yieldSources?: YieldSource[]
+  yieldEntries?: YieldEntry[]
   createdAt: string
   updatedAt: string
 }

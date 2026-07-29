@@ -6,9 +6,11 @@ import Decimal from 'decimal.js'
  */
 export function moneyStr(v: unknown): string {
   if (typeof v === 'number' && isFinite(v)) return new Decimal(v).toString()
-  if (typeof v === 'string' && v.trim() !== '') {
+  if (typeof v === 'string') {
+    const trimmed = v.trim()
+    if (trimmed === '') return '0'
     try {
-      const d = new Decimal(v)
+      const d = new Decimal(trimmed)
       return d.isNaN() || !d.isFinite() ? '0' : d.toString()
     } catch {
       return '0'

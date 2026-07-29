@@ -41,3 +41,18 @@ export function formatDateShort(iso: string): string {
   const [, m, d] = iso.split('-')
   return `${d}/${m}`
 }
+
+/**
+ * Parse a Brazilian date string (dd/mm/yyyy) to ISO (yyyy-MM-dd).
+ * Returns null on invalid input.
+ */
+export function parseDateBR(raw: string): string | null {
+  const trimmed = raw.trim()
+  const match = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (!match) return null
+  const d = parseInt(match[1], 10)
+  const m = parseInt(match[2], 10)
+  const y = parseInt(match[3], 10)
+  if (m < 1 || m > 12 || d < 1 || d > 31) return null
+  return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+}

@@ -79,12 +79,13 @@ describe('toggleItem financial link', () => {
     expect(list.items[0].linkedTransactionId).toBe(tx.id)
   })
 
-  it('marking done without price creates an expense transaction with amount 0', () => {
+  it('marking done without price marks the item as done without creating a transaction', () => {
     const itemId = useKanbanStore.getState().addItem(listId, { name: 'Unknown item', qty: 1 })
     useKanbanStore.getState().toggleItem(listId, itemId)
     const list = useKanbanStore.getState().lists.find((l) => l.id === listId)!
-    expect(list.transactions).toHaveLength(1)
-    expect(list.transactions[0].amount).toBe('0')
+    expect(list.items[0].done).toBe(true)
+    expect(list.items[0].linkedTransactionId).toBeUndefined()
+    expect(list.transactions).toHaveLength(0)
   })
 
   it('unmarking done removes the linked transaction', () => {
@@ -133,6 +134,104 @@ describe('deleteItem financial link', () => {
     const itemId = useKanbanStore.getState().addItem(listId, { name: 'Bread', qty: 1 })
     useKanbanStore.getState().deleteItem(listId, itemId)
     expect(useKanbanStore.getState().lists.find((l) => l.id === listId)!.transactions).toHaveLength(0)
+  })
+})
+
+// ── updateItem keeps linked transaction in sync ──────────────────────────────
+
+describe('updateItem linked transaction sync', () => {
+  let listId: string
+
+  beforeEach(() => {
+    resetStore()
+    listId = useKanbanStore.getState().createList('Cart')
+  })
+
+  it('updating a done item qty updates the linked transaction amount', () => {
+    const itemId = useKanbanStore.getState().addItem(listId, { name: 'Rice', qty: 2, price: '500' })
+    useKanbanStore.getState().toggleItem(listId, itemId)
+    useKanbanStore.getState().updateItem(listId, itemId, { qty: 5 })
+    const list = useKanbanStore.getState().lists.find((l) => l.id === listId)!
+    expect(list.transactions[0].amount).toBe('2500')
+  })
+
+  it('updating a done item price updates the linked transaction amount', () => {
+    const itemId = useKanbanStore.getState().addItem(listId, { name: 'Rice', qty: 2, price: '500' })
+    useKanbanStore.getState().toggleItem(listId, itemId)
+    useKanbanStore.getState().updateItem(listId, itemId, { price: '800' })
+    const list = useKanbanStore.getState().lists.find((l) => l.id === listId)!
+    expect(list.transactions[0].amount).toBe('1600')
+  })
+
+  it('updating a done item name updates the linked transaction description', () => {
+    const itemId = useKanbanStore.getState().addItem(listId, { name: 'Old Name', qty: 1, price: '100' })
+    useKanbanStore.getState().toggleItem(listId, itemId)
+    useKanbanStore.getState().updateItem(listId, itemId, { name: 'New Name' })
+    const list = useKanbanStore.getState().lists.find((l) => l.id === listId)!
+    expect(list.transactions[0].description).toBe('New Name')
+  })
+
+  it('updating both qty and price updates the linked transaction amount', () => {
+    const itemId = useKanbanStore.getState().addItem(listId, { name: 'Rice', qty: 2, price: '500' })
+    useKanbanStore.getState().toggleItem(listId, itemId)
+    useKanbanStore.getState().updateItem(listId, itemId, { qty: 3, price: '700' })
+    const list = useKanbanStore.getState().lists.find((l) => l.id === listId)!
+    expect(list.transactions[0].amount).toBe('2100')
+  })
+
+  it('updating an undone item does not affect transactions', () => {
+    const itemId = useKanbanStore.getState().addItem(listId, { name: 'Rice', qty: 2, price: '500' })
+    useKanbanStore.getState().addTransaction(listId, {
+      description: 'Extra', amount: '50', type: 'expense', date: '2026-04-01'
+    })
+    useKanbanStore.getState().updateItem(listId, itemId, { qty: 10 })
+    const list = useKanbanStore.getState().lists.find((l) => l.id === listId)!
+    expect(list.transactions).toHaveLength(1)
+    expect(list.transactions[0].amount).toBe('50')
+  })
+
+  it('updating a done item without a linked transaction does not touch transactions', () => {
+    const itemId = useKanbanStore.getState().addItem(listId, { name: 'No Price', qty: 1 })
+    useKanbanStore.getState().toggleItem(listId, itemId)
+    useKanbanStore.getState().addTransaction(listId, {
+      description: 'Manual', amount: '50', type: 'expense', date: '2026-04-01'
+    })
+    useKanbanStore.getState().updateItem(listId, itemId, { qty: 5 })
+    const list = useKanbanStore.getState().lists.find((l) => l.id === listId)!
+    expect(list.transactions).toHaveLength(1)
+    expect(list.transactions[0].description).toBe('Manual')
+  })
+})
+
+// ── addItem price validation ──────────────────────────────────────────────────
+
+describe('addItem price validation', () => {
+  let listId: string
+
+  beforeEach(() => {
+    resetStore()
+    listId = useKanbanStore.getState().createList('Cart')
+  })
+
+  it('addItem with valid price string stores it canonicalized', () => {
+    const itemId = useKanbanStore.getState().addItem(listId, { name: 'Item', qty: 1, price: '1500.50' })
+    const list = useKanbanStore.getState().lists.find((l) => l.id === listId)!
+    const item = list.items.find((i) => i.id === itemId)!
+    expect(item.price).toBe('1500.5')
+  })
+
+  it('addItem with garbage price stores undefined', () => {
+    const itemId = useKanbanStore.getState().addItem(listId, { name: 'Item', qty: 1, price: 'abc' })
+    const list = useKanbanStore.getState().lists.find((l) => l.id === listId)!
+    const item = list.items.find((i) => i.id === itemId)!
+    expect(item.price).toBeUndefined()
+  })
+
+  it('addItem with empty price string stores undefined', () => {
+    const itemId = useKanbanStore.getState().addItem(listId, { name: 'Item', qty: 1, price: '   ' })
+    const list = useKanbanStore.getState().lists.find((l) => l.id === listId)!
+    const item = list.items.find((i) => i.id === itemId)!
+    expect(item.price).toBeUndefined()
   })
 })
 

@@ -357,7 +357,11 @@ export const registryEntries: Record<string, AITool> = {
     write: true,
     definition: fn(
       'criar_projeto',
-      'Cria um projeto com colunas padrao (Backlog, In Progress, Review, Done). O projeto criado vira o ativo. Se ja existir com esse nome, devolve o existente.',
+      'Cria um projeto kanban novo, já com as colunas padrão (Backlog, In Progress, Review, Done). ' +
+        'O projeto criado vira o ATIVO: as chamadas seguintes sem projectId passam a usar ele, ' +
+        'então crie o projeto antes de criar as tasks dele. Se já existir um projeto com esse ' +
+        'nome, a chamada falha e devolve o id do existente — use esse id em vez de criar um ' +
+        'projeto repetido.',
       {
         type: 'object',
         properties: {
@@ -555,8 +559,10 @@ export const registryEntries: Record<string, AITool> = {
     write: true,
     definition: fn(
       'mover_task',
-      'Move uma task para outra coluna. Coluna Done = conclui; sair de Done = reabre. ' +
-        'Identifique por taskId (prefira) ou titulo.',
+      'Move uma task para outra coluna (pelo nome da coluna), sem necessariamente concluí-la. ' +
+        'A task vai para o fim da coluna de destino. Mover para a coluna Done conclui a task ' +
+        '(prefira concluir_task para isso) e tirá-la de Done reabre a task. Não muda o projeto ' +
+        'da task. Identifique a task por taskId ou titulo.',
       {
         type: 'object',
         properties: {

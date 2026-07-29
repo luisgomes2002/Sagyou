@@ -79,13 +79,10 @@ interface AIChatRequest {
 interface TokenUsage {
   promptTokens: number
   completionTokens: number
-  /**
-   * Of promptTokens, how many the provider served from its own prompt cache
-   * (DeepSeek's prompt_cache_hit_tokens, OpenAI's
-   * prompt_tokens_details.cached_tokens). Absent = the provider didn't report
-   * a cache figure at all — unknown, not a confirmed 0% hit rate.
-   */
+  /** See TokenUsage.cachedPromptTokens — absent = the provider reported none. */
   cachedPromptTokens?: number
+  /** Tokens the model spent on internal reasoning (DeepSeek). Billed but invisible. */
+  reasoningTokens?: number
 }
 
 /** Totals for a slice of the usage log. */
@@ -101,6 +98,8 @@ interface UsageBucket {
   cachedPromptTokens: number
   /** Of promptTokens, the portion belonging to calls that reported a cache figure. */
   cacheReportedPromptTokens: number
+  /** Sum of reasoningTokens over every call. */
+  reasoningTokens?: number
 }
 
 /** One logged model call. */
@@ -113,6 +112,8 @@ interface UsageLogEntry {
   cost?: number
   /** See TokenUsage.cachedPromptTokens. Absent = the provider reported none. */
   cachedPromptTokens?: number
+  /** See TokenUsage.reasoningTokens. Absent = the provider reported none. */
+  reasoningTokens?: number
 }
 
 interface UsageSummary {
@@ -165,6 +166,8 @@ interface AIStoredMessage {
   content: string
   /** Chat-image ids; the bytes live as files under chat-images/. */
   imageIds?: string[]
+  /** Chat-document ids; the bytes live as files under chat-files/. */
+  documentIds?: string[]
 }
 
 /**
@@ -306,7 +309,7 @@ declare global {
           prune: () => Promise<{ archived: number }>
           summary: () => Promise<MemorySummary>
           conflicts: () => Promise<MemoryConflict[]>
-          briefing: (projectId?: string | null) => Promise<{ text: string; archived: number }>
+          briefing: (projectId?: string | null) => Promise<{ text: string; count: number; archived: number }>
           handoff: (input: {
             projectId?: string | null
             title: string
@@ -337,6 +340,24 @@ declare global {
           save: (dataUrl: string) => Promise<{ id: string } | { error: string }>
           get: (id: string) => Promise<{ dataUrl: string } | { error: string }>
           delete: (ids: string[]) => Promise<void>
+        }
+        /** Documents attached to the chat: saved, parsed, and sent inline. */
+        documents: {
+          save: (
+            name: string,
+            ext: string,
+            data: number[]
+          ) => Promise<
+            | { id: string; name: string; ext: string; size: number; text: string; truncated: boolean }
+            | { error: string }
+          >
+          delete: (ids: string[]) => Promise<void>
+        }
+        /** Read and parse a project file (uploaded via FilesView). */
+        projectFile: {
+          read: (
+            fileId: string
+          ) => Promise<{ text: string; truncated: boolean; size?: number } | { error: string }>
         }
         skills: {
           list: () => Promise<Skill[]>

@@ -41,6 +41,60 @@ export const CODE_TOOL_DEFS: ToolDef[] = Object.values(REGISTRY)
   .filter((t) => CODE_TOOL_NAMES.has(t.definition.function.name))
   .map((t) => t.definition)
 
+/** Kanban-only tool subset — excludes code-reading tools (listar_arquivos,
+ *  ler_arquivo, buscar_no_codigo). The model can manage tasks, habits, finances,
+ *  goals, notes, planner, and memory, but cannot read/write project source code.
+ *  ~6.7k tokens instead of ~8.9k (saves ~2.2k per call). */
+const KANBAN_TOOL_NAMES = new Set([
+  'data_de_hoje',
+  'ler_projetos',
+  'ler_tasks', 'criar_tasks', 'atualizar_task', 'mover_task', 'concluir_task', 'deletar_task',
+  'iniciar_cronometro',
+  'ler_financeiro', 'criar_transacao',
+  'ler_metas', 'criar_meta', 'atualizar_meta',
+  'ler_habitos', 'marcar_habito',
+  'ler_notas', 'criar_nota',
+  'criar_projeto',
+  'criar_sprints', 'atribuir_sprint',
+  'ler_plano', 'criar_plano', 'atualizar_plano',
+  'ler_documento',
+  'buscar_memoria', 'salvar_memoria', 'buscar_conversas', 'ler_conversa', 'verificar_memorias',
+  'ler_linhagem',
+  'resolver_termo',
+  'buscar_na_web',
+  'rodar_agente_codigo'
+])
+
+export const KANBAN_TOOL_DEFS: ToolDef[] = Object.values(REGISTRY)
+  .filter((t) => KANBAN_TOOL_NAMES.has(t.definition.function.name))
+  .map((t) => t.definition)
+
+/**
+ * Choose which tool set to send based on the user's message.
+ *
+ * A code question (code, arquivo, bug, refatorar, backup, etc.) gets only
+ * CODE tools (~2.1k tokens instead of ~8.9k). A kanban/finance/habit
+ * question gets only KANBAN tools (~6.7k). An ambiguous question gets all
+ * tools as a safe fallback.
+ *
+ * The checklist is run once per run, from the first user message. A run that
+ * starts in one domain and needs tools from the other must wait for the next
+ * turn — the fallback covers exactly that case.
+ */
+export function routeTools(userText: string): ToolDef[] {
+  const t = userText
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+
+  const codeWords = /\b(codigo|arquivo|funcao|bug|refator|implement|backup|back-end|backend|front-end|frontend|api|component|modulo|typescript|javascript|css|html|teste|typecheck|lint|build|deploy|git|commit|branch|merge|diff|log|compil|execut|script|roda|rode|rodar agente|agente de codigo|sandbox|electron|react|zustand|sqlite|ipc|handler|preload|renderer|main process)\w*/
+  const kanbanWords = /\b(task|projeto|coluna|kanban|quadro|sprint|scrum|habito|meta|objetivo|financeiro|transacao|gasto|receita|despesa|orcamento|compras?|lista de compras|supermercado|nota|canvas|cronometro|timer|plano|planej|saldo|conta|fatura|boleto|pagar|pagamento|renda|ganhos?|gastos|economia|orçamento|dia|semana|mes\b|hoje|amanha|rotina|lembrete)\w*/
+
+  if (codeWords.test(t)) return CODE_TOOL_DEFS
+  if (kanbanWords.test(t)) return KANBAN_TOOL_DEFS
+  return TOOL_DEFS
+}
+
 /** Dispatch one tool call by name, returning a JSON string result. */
 /**
  * The conversation the tool currently executing belongs to.
@@ -245,6 +299,10 @@ export function describeToolActivity(name: string, args: Record<string, unknown>
     }
     case 'atualizar_plano':
       return 'Atualizando o plano'
+    case 'ler_documento': {
+      const fileId = str(args.fileId)
+      return fileId ? `Lendo o documento ${fileId}` : 'Lendo um documento do projeto'
+    }
     default:
       return name
   }

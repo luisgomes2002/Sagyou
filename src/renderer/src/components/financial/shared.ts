@@ -3,7 +3,7 @@ import type { ShoppingItem, Currency } from '../../types'
 import { CURRENCY_CONFIG } from '../../types'
 import { D, moneyStr } from '../../utils/money'
 export { D, moneyStr }
-export { todayUTCISO as todayISO, formatDateBR } from '../../utils/dates'
+export { todayLocalISO as todayISO, formatDateBR } from '../../utils/dates'
 
 export const MONTH_NAMES = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -11,17 +11,16 @@ export const MONTH_NAMES = [
 ]
 
 export const FINANCIAL_CATEGORIES = [
-  // Despesas
-  'Alimentação', 'Moradia', 'Transporte', 'Saúde', 'Educação', 'Lazer',
-  'Vestuário', 'Serviços', 'Assinaturas', 'Impostos', 'Taxa', 'Família',
-  'Viagem', 'Intercâmbio', 'Investimentos', 'Pet', 'Cartão', 'Empréstimo',
-  // Tech / Negócio
-  'AI', 'ADS', 'Servidor', 'Marketing', 'Segurança Cloud', 'Domínio',
-  'AI Programação', 'AI Tokens', 'Canva', 'Streaming', 'Contador', 'Advogado',
-  // Receitas
-  'Salário', 'Freelance', 'Trabalho', 'Aluguel Recebido', 'Dividendos',
-  'Reembolso', 'Devolução', 'Bônus', 'Venda', 'Saldo', 'Rendimento Mensal', 'Outros'
+  'ADS', 'AI', 'AI Programação', 'AI Tokens', 'Advogado', 'Alimentação',
+  'Aluguel Recebido', 'Assinaturas', 'Bônus', 'Canva', 'Cartão', 'Contador',
+  'Delivery', 'Devolução', 'Dividendos', 'Domínio', 'Educação', 'Empréstimo',
+  'Família', 'Freelance', 'Impostos', 'Intercâmbio', 'Investimentos', 'Lazer',
+  'Marketing', 'Moradia', 'Outros', 'Pet', 'Reembolso',
+  'Salário', 'Saldo', 'Saúde', 'Segurança Cloud', 'Serviços', 'Servidor',
+  'Streaming', 'Taxa', 'Trabalho', 'Transporte', 'Venda', 'Vestuário', 'Viagem'
 ]
+
+export const YIELD_SUMMARY_CATEGORY = 'Rendimento Mensal'
 
 export const CAT_COLORS = [
   '#a080f0', '#c098e0', '#e098d4', '#eca8c0', '#ecb060', '#e8b810',
@@ -54,7 +53,7 @@ export function itemTotal(item: ShoppingItem): Decimal {
 }
 
 export function parseDecimalInput(raw: string): Decimal | null {
-  const normalized = raw.trim().replace(',', '.')
+  const normalized = raw.trim().replace(/\./g, '').replace(',', '.')
   if (normalized === '') return null
   try {
     const d = new Decimal(normalized)

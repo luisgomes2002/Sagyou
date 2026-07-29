@@ -151,10 +151,10 @@ export function ConsolidatedTab({
     const deduped = monthTxs.filter((t) => !linkedIds.has(t.id))
     const income = deduped
       .filter((t) => t.type === 'income')
-      .reduce((s, t) => s.plus(t.amount), new Decimal(0))
+      .reduce((s, t) => s.plus(D(t.amount)), new Decimal(0))
     const expense = deduped
       .filter((t) => t.type === 'expense')
-      .reduce((s, t) => s.plus(t.amount), new Decimal(0))
+      .reduce((s, t) => s.plus(D(t.amount)), new Decimal(0))
     return { netIncome: income, netExpense: expense, linkedCount: monthTxs.length - deduped.length }
   }, [monthTxs])
 
@@ -210,20 +210,24 @@ export function ConsolidatedTab({
 
   const convertedIncome = useMemo(() => {
     let total = new Decimal(0)
+    let missed = 0
     for (const g of byCurrency) {
       const c = convertAmount(g.income, g.currency)
       if (c !== null) total = total.plus(c)
+      else missed++
     }
-    return total
+    return { total, missed }
   }, [byCurrency, refCurrency, rates])
 
   const convertedExpense = useMemo(() => {
     let total = new Decimal(0)
+    let missed = 0
     for (const g of byCurrency) {
       const c = convertAmount(g.expense, g.currency)
       if (c !== null) total = total.plus(c)
+      else missed++
     }
-    return total
+    return { total, missed }
   }, [byCurrency, refCurrency, rates])
 
   const convertedAccumulated = useMemo(() => {
@@ -387,6 +391,11 @@ export function ConsolidatedTab({
         })()}
 
         {/* Summary cards */}
+        {(convertedIncome.missed > 0 || convertedExpense.missed > 0) && (
+          <div className="px-5 py-1.5 border-b border-[#f08a34]/20 bg-[#f08a34]/5 text-[10px] text-[#f08a34]">
+            Cotações indisponíveis para {convertedIncome.missed + convertedExpense.missed} moeda(s). Os totais convertidos podem estar incompletos.
+          </div>
+        )}
         <div className="grid grid-cols-4 gap-3 px-5 py-4 border-b border-[#3b3b3b]">
           <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-1">
@@ -394,7 +403,7 @@ export function ConsolidatedTab({
             </p>
             <p className="text-sm font-bold text-[#46d478] tabular-nums">
               {showConverted
-                ? formatCurrency(convertedIncome, refCurrency)
+                ? formatCurrency(convertedIncome.total, refCurrency)
                 : formatCurrency(netIncome, singleCurrency)}
             </p>
           </div>
@@ -404,7 +413,7 @@ export function ConsolidatedTab({
             </p>
             <p className="text-sm font-bold text-[#e04040] tabular-nums">
               {showConverted
-                ? formatCurrency(convertedExpense, refCurrency)
+                ? formatCurrency(convertedExpense.total, refCurrency)
                 : formatCurrency(netExpense, singleCurrency)}
             </p>
           </div>

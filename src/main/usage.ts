@@ -5,14 +5,14 @@
 export interface TokenUsage {
   promptTokens: number
   completionTokens: number
-  /**
-   * Of `promptTokens`, how many the provider served from its own prompt cache
-   * (DeepSeek's `prompt_cache_hit_tokens`, OpenAI's
-   * `prompt_tokens_details.cached_tokens`). Absent means the provider didn't
-   * report a cache figure at all — unknown, not zero: a provider that stays
-   * silent about caching is not the same as one confirming a 0% hit rate.
-   */
   cachedPromptTokens?: number
+  /**
+   * Tokens the model spent on internal reasoning before producing the visible
+   * answer (DeepSeek's completion_tokens_details.reasoning_tokens). These are
+   * billed just like regular completion tokens but are not part of the visible
+   * output. Absent = the provider didn't report them.
+   */
+  reasoningTokens?: number
 }
 
 /** USD per 1M tokens, as configured by the user. */
@@ -36,6 +36,8 @@ export interface UsageLogEntry {
   cost?: number
   /** See TokenUsage.cachedPromptTokens — absent means the provider reported none. */
   cachedPromptTokens?: number
+  /** See TokenUsage.reasoningTokens — absent means the provider reported none. */
+  reasoningTokens?: number
 }
 
 export interface UsageBucket {
@@ -55,6 +57,8 @@ export interface UsageBucket {
    * see cacheHitRate.
    */
   cacheReportedPromptTokens: number
+  /** Sum of reasoningTokens over every call. These are billed but invisible. */
+  reasoningTokens?: number
 }
 
 export interface UsageSummary {
@@ -128,6 +132,9 @@ export function newEntry(
     cost: costAt(usage, prices),
     ...(typeof usage.cachedPromptTokens === 'number' && {
       cachedPromptTokens: usage.cachedPromptTokens
+    }),
+    ...(typeof usage.reasoningTokens === 'number' && {
+      reasoningTokens: usage.reasoningTokens
     })
   }
 }
@@ -152,7 +159,8 @@ export function bucket(entries: UsageLogEntry[]): UsageBucket {
       // denominator — an entry from a provider that never reports caching must
       // not dilute the hit rate as if it were a confirmed miss.
       cacheReportedPromptTokens:
-        acc.cacheReportedPromptTokens + (typeof e.cachedPromptTokens === 'number' ? e.promptTokens : 0)
+        acc.cacheReportedPromptTokens + (typeof e.cachedPromptTokens === 'number' ? e.promptTokens : 0),
+      reasoningTokens: (acc.reasoningTokens ?? 0) + (e.reasoningTokens ?? 0)
     }),
     {
       calls: 0,
@@ -161,7 +169,8 @@ export function bucket(entries: UsageLogEntry[]): UsageBucket {
       cost: 0,
       unpricedCalls: 0,
       cachedPromptTokens: 0,
-      cacheReportedPromptTokens: 0
+      cacheReportedPromptTokens: 0,
+      reasoningTokens: 0
     }
   )
 }

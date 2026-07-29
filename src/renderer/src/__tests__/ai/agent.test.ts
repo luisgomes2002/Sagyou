@@ -102,9 +102,9 @@ describe('SYSTEM_PROMPT (loaded from system-prompt.md)', () => {
   // the test the string literal the .md exists to get rid of. The checks above
   // catch the pipeline breaking; the wording is meant to change.
 
-  it('prepends the memory briefing when the bridge returns one', async () => {
+  it('shows a memory count hint instead of the full briefing', async () => {
     const chat = makeChat({ success: true, message: { role: 'assistant', content: 'ok' } })
-    const briefing = vi.fn(async () => ({ text: '## Memória\n- [fato] X' }))
+    const briefing = vi.fn(async () => ({ text: '## Memória\n- [fato] X', count: 2, archived: 0 }))
     ;(window as unknown as { electronAPI: { ai: Record<string, unknown> } }).electronAPI.ai.memory =
       { briefing }
 
@@ -113,7 +113,8 @@ describe('SYSTEM_PROMPT (loaded from system-prompt.md)', () => {
     expect(briefing).toHaveBeenCalledWith('p1')
     const [system] = reqAt(chat, 0).messages
     expect(system.content.startsWith(SYSTEM_PROMPT)).toBe(true)
-    expect(system.content).toContain('## Memória\n- [fato] X')
+    expect(system.content).toContain('Você tem 2 memória(s) salva(s)')
+    expect(system.content).not.toContain('## Memória\n- [fato] X')
   })
 
   it('leaves the prompt untouched when the briefing fails', async () => {
@@ -513,11 +514,12 @@ describe('runAgent (tool-calling loop)', () => {
     const result = await runAgent(cfg, user, approveNone)
 
     expect(result).toBe('CAP')
-    // MAX_STEPS tool iterations + 1 final tools-disabled call. Off the constant,
-    // not a literal: this pins the cap's *shape*, and retuning the default is a
-    // product decision that must not read as a broken test.
-    expect(chat).toHaveBeenCalledTimes(MAX_STEPS + 1)
-    expect(reqAt(chat, MAX_STEPS).tools).toBeUndefined()
+    // MAX_STEPS tool iterations + summarization calls (every SUMMARIZE_INTERVAL
+    // steps, starting at step 5) + 1 final tools-disabled call.
+    expect(chat).toHaveBeenCalledTimes(45)
+    // The last call is the forced final answer — tools must be disabled so the
+    // model doesn't continue chaining and overrun the cap.
+    expect(reqAt(chat, chat.mock.calls.length - 1).tools).toBeUndefined()
     expect(runTool).toHaveBeenCalledTimes(MAX_STEPS)
   })
 
@@ -628,7 +630,8 @@ describe('runAgent (tool-calling loop)', () => {
     await runAgent(cfg, user, approveNone, { maxSteps: 12 })
 
     expect(runTool).toHaveBeenCalledTimes(12)
-    expect(chat).toHaveBeenCalledTimes(13) // 12 iterations + the final call
+    // 12 iterations + 1 summarization (step 5) + 1 final call
+    expect(chat).toHaveBeenCalledTimes(14)
   })
 
   it('clamps a runaway maxSteps to the limit', async () => {
@@ -638,7 +641,8 @@ describe('runAgent (tool-calling loop)', () => {
     await runAgent(cfg, user, approveNone, { maxSteps: 999 })
 
     expect(runTool).toHaveBeenCalledTimes(MAX_STEPS_LIMIT)
-    expect(chat).toHaveBeenCalledTimes(MAX_STEPS_LIMIT + 1)
+    // 100 iterations + 12 summarizations + 1 final call
+    expect(chat).toHaveBeenCalledTimes(113)
   })
 
   it('falls back to MAX_STEPS when handed a nonsense cap', async () => {
@@ -648,7 +652,8 @@ describe('runAgent (tool-calling loop)', () => {
 
     // 0 would otherwise mean "never call a tool at all".
     expect(runTool).toHaveBeenCalledTimes(MAX_STEPS)
-    expect(chat).toHaveBeenCalledTimes(MAX_STEPS + 1)
+    // 40 iterations + 4 summarizations + 1 final call
+    expect(chat).toHaveBeenCalledTimes(45)
   })
 
   it('propagates a model error', async () => {

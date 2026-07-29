@@ -131,6 +131,8 @@ const LIST: FinancialTable = {
     { id: 'fg2', name: 'Notebook',  targetAmount: '5000',  targetMonth: 3,  targetYear: 2027,
       completedAt: '2026-06-15', completionNote: 'Comprado!' },
   ],
+  yieldSources: [],
+  yieldEntries: [],
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-06-17T00:00:00.000Z',
 }

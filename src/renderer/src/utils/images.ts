@@ -81,3 +81,39 @@ export function imageFilesFrom(data: DataTransfer | null): File[] {
   if (!data) return []
   return Array.from(data.files).filter((f) => f.type.startsWith('image/'))
 }
+
+/** Document types the AI chat can parse (by MIME or extension). */
+const DOCUMENT_MIMES = new Set([
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.oasis.opendocument.text',
+  'application/vnd.oasis.opendocument.spreadsheet',
+  'text/csv',
+  'text/plain',
+  'text/markdown',
+  'text/x-markdown',
+  'application/json',
+  'application/xml',
+  'text/xml',
+  'text/html',
+  'text/yaml',
+  'application/rtf'
+])
+
+const DOCUMENT_EXTS = new Set([
+  '.pdf', '.docx', '.xlsx', '.csv', '.txt', '.md', '.json',
+  '.xml', '.html', '.htm', '.yml', '.yaml', '.log', '.rtf',
+  '.odt', '.ods'
+])
+
+/** The document files among a paste or a drop, ignoring images and other files. */
+export function documentFilesFrom(data: DataTransfer | null): File[] {
+  if (!data) return []
+  return Array.from(data.files).filter((f) => {
+    if (DOCUMENT_MIMES.has(f.type)) return true
+    const ext = f.name.split('.').pop()?.toLowerCase()
+    if (ext) return DOCUMENT_EXTS.has('.' + ext)
+    return false
+  })
+}
