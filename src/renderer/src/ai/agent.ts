@@ -231,6 +231,9 @@ export const AUTO_MAX_STEPS = 100
  */
 export const MAX_STEPS_LIMIT = 100
 
+/** A model can emit many tool calls in one completion; bound their combined context. */
+export const MAX_TOOL_CALLS_PER_STEP = 8
+
 /**
  * Below this, a hand-set step cap is likely to cut a real task short, so the
  * settings panel warns rather than silently accepting it.
@@ -857,7 +860,8 @@ function logRunCost(cfg: AIConfig, records: StepCost[]): void {
 async function summarizeHistory(
   cfg: AIConfig,
   midMsgs: ApiMessage[],
-  previousSummary: string
+  previousSummary: string,
+  opts: RunAgentOptions
 ): Promise<string> {
   const prefix = previousSummary
     ? `Resumo anterior:\n${previousSummary}\n\n---\n\nNovos turnos a incorporar:\n\n`
@@ -882,7 +886,12 @@ async function summarizeHistory(
     { role: 'user', content: `${prefix}${midText.slice(0, 40_000)}` }
   ]
   try {
-    const { message } = await callModel(cfg, prompt, undefined)
+    const message = await callModelResilient(cfg, prompt, undefined, {
+      ...opts,
+      // The compact checkpoint is internal bookkeeping, not assistant prose.
+      onStream: undefined,
+      onToolStream: undefined
+    })
     return contentText(message.content).trim().slice(0, 3_000)
   } catch {
     // Summarisation failure is non-critical — the previous summary (or full
@@ -1015,9 +1024,13 @@ export async function runAgent(
   let redundantSearches = 0
   let repeatedReads = 0
   let hitStepCap = false
+  // This is deliberately separate from stepsRun: the user-facing budget is
+  // every model call, including compaction and the forced finale.
+  let modelCalls = 0
 
   try {
-    for (let step = 0; step < maxSteps; step++) {
+    // Reserve one call for a useful text finale when tools consume the budget.
+    for (let step = 0; modelCalls < maxSteps - 1; step++) {
       // 1-based for display: the badge on the first step should read "1/40".
       const progress: StepProgress = { step: step + 1, maxSteps }
       if (opts.shouldAbort?.()) return 'Execução interrompida.'
@@ -1025,6 +1038,7 @@ export async function runAgent(
       // during it) fills this one; its tools are appended as they run below.
       const cost: StepCost = { step: step + 1, prompt: 0, completion: 0, tools: [] }
       costRecords.push(cost)
+      modelCalls++
       // When prompt caching is active (default), keep the prefix stable so
       // DeepSeek / Claude / Gemini cache hits aren't broken by pruning old
       // results. When disabled, prune stale read-tool results to save tokens
@@ -1074,18 +1088,23 @@ export async function runAgent(
 
       // Gate write tools behind approval; reads run without asking.
       const writes = parsed
+        .slice(0, MAX_TOOL_CALLS_PER_STEP)
         .filter((p) => !p.parseError && isWriteTool(p.call.function.name))
         .map((p) => ({ id: p.call.id, name: p.call.function.name, args: p.args }))
       const approved = writes.length > 0 ? await onApprove(writes) : new Set<string>()
 
-      for (const { call, args, parseError } of parsed) {
+      for (const [callIndex, { call, args, parseError }] of parsed.entries()) {
         const name = call.function.name
         const isWrite = isWriteTool(name)
         // Read brakes increment run-scoped counters, so compute once per read
         // (whether or not it fires) and never for a write.
         const brake = !parseError && !isWrite ? readBrake(name, args) : null
         let result: string
-        if (parseError) {
+        if (callIndex >= MAX_TOOL_CALLS_PER_STEP) {
+          result = JSON.stringify({
+            error: `Máximo de ${MAX_TOOL_CALLS_PER_STEP} ferramentas por rodada atingido. Use os resultados já obtidos e continue na próxima rodada.`
+          })
+        } else if (parseError) {
           result = JSON.stringify({ error: parseError })
         } else if (isWrite && !approved.has(call.id)) {
           result = JSON.stringify({ error: 'Ação recusada pelo usuário' })
@@ -1126,7 +1145,7 @@ export async function runAgent(
       // Gemini still cache positions 0-1 on every call.
       if (
         step > 4 &&
-        step < maxSteps - 3 &&
+        modelCalls < maxSteps - 1 &&
         (step - lastSummaryStep) >= SUMMARIZE_INTERVAL
       ) {
         try {
@@ -1154,7 +1173,9 @@ export async function runAgent(
           const mid = msgs.slice(2, cut)
           const tail = msgs.slice(cut)
           if (mid.length > 0) {
-            const summary = await summarizeHistory(rcfg, mid, rollingSummary)
+            costRecords.push({ step: modelCalls + 1, prompt: 0, completion: 0, tools: ['compactar_historico'] })
+            modelCalls++
+            const summary = await summarizeHistory(rcfg, mid, rollingSummary, runOpts)
             rollingSummary = summary
             msgs = [
               msgs[0],
@@ -1182,14 +1203,18 @@ export async function runAgent(
     // (it returns from inside the loop), so this cannot fire on a healthy run.
     hitStepCap = true
     onStatus?.(
-      `Limite de ${maxSteps} passos atingido — a tarefa pode estar incompleta. ` +
+      `Limite de ${maxSteps} chamadas ao modelo atingido — a tarefa pode estar incompleta. ` +
         'O assistente vai resumir só o que deu tempo de fazer. Para ir mais longe, ' +
         `aumente "Passos máximos" nas configurações (máx. ${MAX_STEPS_LIMIT}).`,
       'remark'
     )
-    costRecords.push({ step: maxSteps + 1, prompt: 0, completion: 0, tools: [] })
-    const finalPruned = msgs
-    const final = await callModelResilient(rcfg, finalPruned, undefined, runOpts)
+    if (modelCalls >= maxSteps) {
+      return `Parei ao atingir o limite de ${maxSteps} chamadas ao modelo, sem conseguir concluir. ` +
+        'Tente dividir o pedido em partes menores ou aumentar "Passos máximos" nas configurações.'
+    }
+    costRecords.push({ step: modelCalls + 1, prompt: 0, completion: 0, tools: [] })
+    modelCalls++
+    const final = await callModelResilient(rcfg, msgs, undefined, runOpts)
     return (
       contentText(final.content) ||
       `Parei ao atingir o limite de ${maxSteps} passos, sem conseguir concluir. ` +

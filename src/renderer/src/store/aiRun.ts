@@ -83,21 +83,49 @@ export function toApiMessages(
   messages: ChatMessage[],
   imageData: Record<string, string>
 ): { role: 'user' | 'assistant'; content: string | ContentPart[] }[] {
-  return messages
-    .filter((m) => m.role !== 'status')
-    .map((m) => {
-      const role = m.role as 'user' | 'assistant'
-      const urls = (m.imageIds ?? []).map((id) => imageData[id]).filter(Boolean)
-      if (urls.length === 0) return { role, content: m.content }
-      return {
-        role,
-        content: [
-          { type: 'text' as const, text: m.content },
-          ...urls.map((url) => ({ type: 'image_url' as const, image_url: { url } }))
-        ]
-      }
-    })
+  // A saved conversation is useful evidence, but it must not become an
+  // unbounded tax on every later question. Keep a small, recent working set;
+  // runAgent compacts tool-heavy turns while it works, and the durable handoff
+  // / memory tools retain older decisions on demand.
+  const source = messages.filter((m) => m.role !== 'status')
+  const kept: ChatMessage[] = []
+  let chars = 0
+  for (let i = source.length - 1; i >= 0 && kept.length < MAX_CONTEXT_MESSAGES; i--) {
+    const message = source[i]
+    if (chars + message.content.length > MAX_CONTEXT_CHARS && kept.length > 0) break
+    kept.unshift(message)
+    chars += message.content.length
+  }
+  const omitted = kept.length < source.length
+  const imageIds = new Set<string>()
+  for (let i = kept.length - 1; i >= 0 && imageIds.size < MAX_CONTEXT_IMAGES; i--) {
+    for (const id of kept[i].imageIds ?? []) {
+      if (imageIds.size >= MAX_CONTEXT_IMAGES) break
+      if (imageData[id]) imageIds.add(id)
+    }
+  }
+
+  return kept.map((m, index) => {
+    const role = m.role as 'user' | 'assistant'
+    const urls = (m.imageIds ?? []).filter((id) => imageIds.has(id)).map((id) => imageData[id])
+    const prefix = omitted && index === 0 ? '[Trechos antigos da conversa foram omitidos por orçamento de contexto.]\n\n' : ''
+    const omittedImages = (m.imageIds ?? []).some((id) => !imageIds.has(id))
+    const text = prefix + m.content + (omittedImages ? '\n\n[Imagem anterior não reenviada.]' : '')
+    if (urls.length === 0) return { role, content: text }
+    return {
+      role,
+      content: [
+        { type: 'text' as const, text },
+        ...urls.map((url) => ({ type: 'image_url' as const, image_url: { url } }))
+      ]
+    }
+  })
 }
+
+/** Bounded initial context: progressive compaction covers the rest of a run. */
+export const MAX_CONTEXT_MESSAGES = 12
+export const MAX_CONTEXT_CHARS = 24_000
+export const MAX_CONTEXT_IMAGES = 1
 
 export const EMPTY_USAGE: TokenUsage = { promptTokens: 0, completionTokens: 0 }
 

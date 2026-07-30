@@ -514,13 +514,12 @@ describe('runAgent (tool-calling loop)', () => {
     const result = await runAgent(cfg, user, approveNone)
 
     expect(result).toBe('CAP')
-    // MAX_STEPS tool iterations + summarization calls (every SUMMARIZE_INTERVAL
-    // steps, starting at step 5) + 1 final tools-disabled call.
-    expect(chat).toHaveBeenCalledTimes(45)
+    // The configured budget counts normal calls, compaction and the forced finale.
+    expect(chat).toHaveBeenCalledTimes(MAX_STEPS)
     // The last call is the forced final answer — tools must be disabled so the
     // model doesn't continue chaining and overrun the cap.
     expect(reqAt(chat, chat.mock.calls.length - 1).tools).toBeUndefined()
-    expect(runTool).toHaveBeenCalledTimes(MAX_STEPS)
+    expect(runTool).toHaveBeenCalledTimes(35)
   })
 
   it('numbers each status line with the step and the run\'s own cap', async () => {
@@ -589,7 +588,7 @@ describe('runAgent (tool-calling loop)', () => {
     // The forced answer reads like any other, so the transcript must carry the
     // reason the run ended — otherwise a truncated task looks like a done one.
     const said = onStatus.mock.calls.map((c) => c[0]).join('\n')
-    expect(said).toMatch(/limite de 3 passos/i)
+    expect(said).toMatch(/limite de 3 chamadas ao modelo/i)
     expect(said).toMatch(/incompleta/i)
   })
 
@@ -629,9 +628,8 @@ describe('runAgent (tool-calling loop)', () => {
 
     await runAgent(cfg, user, approveNone, { maxSteps: 12 })
 
-    expect(runTool).toHaveBeenCalledTimes(12)
-    // 12 iterations + 1 summarization (step 5) + 1 final call
-    expect(chat).toHaveBeenCalledTimes(14)
+    expect(runTool).toHaveBeenCalledTimes(10)
+    expect(chat).toHaveBeenCalledTimes(12)
   })
 
   it('clamps a runaway maxSteps to the limit', async () => {
@@ -640,9 +638,8 @@ describe('runAgent (tool-calling loop)', () => {
     // Each step is a paid model call, so a hand-edited 999 must not be honoured.
     await runAgent(cfg, user, approveNone, { maxSteps: 999 })
 
-    expect(runTool).toHaveBeenCalledTimes(MAX_STEPS_LIMIT)
-    // 100 iterations + 12 summarizations + 1 final call
-    expect(chat).toHaveBeenCalledTimes(113)
+    expect(runTool).toHaveBeenCalledTimes(89)
+    expect(chat).toHaveBeenCalledTimes(MAX_STEPS_LIMIT)
   })
 
   it('falls back to MAX_STEPS when handed a nonsense cap', async () => {
@@ -651,9 +648,8 @@ describe('runAgent (tool-calling loop)', () => {
     await runAgent(cfg, user, approveNone, { maxSteps: 0 })
 
     // 0 would otherwise mean "never call a tool at all".
-    expect(runTool).toHaveBeenCalledTimes(MAX_STEPS)
-    // 40 iterations + 4 summarizations + 1 final call
-    expect(chat).toHaveBeenCalledTimes(45)
+    expect(runTool).toHaveBeenCalledTimes(35)
+    expect(chat).toHaveBeenCalledTimes(MAX_STEPS)
   })
 
   it('propagates a model error', async () => {
@@ -875,8 +871,8 @@ describe('runAgent (tool-calling loop)', () => {
 
     await runAgent(cfg, user, approveAll)
 
-    // Executed on every step up to the cap — the brake left it alone.
-    expect(runTool).toHaveBeenCalledTimes(MAX_STEPS)
+    // Writes are never braked; compaction simply consumes part of the call budget.
+    expect(runTool).toHaveBeenCalledTimes(35)
   })
 
   // ── blind whole-file re-read brake (Task 5) ────────────────────────────────

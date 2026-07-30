@@ -44,6 +44,17 @@ const NODE_COLOR: Record<GraphNodeType, string> = {
 
 export const GRAPH_NODE_COLORS = NODE_COLOR
 
+// Explicit links carry the user's intent, while structural links only provide
+// context. Keeping their forces distinct lets related ideas form clusters
+// without collapsing every task around its project node.
+const EXPLICIT_LINK_DISTANCE = 72
+const STRUCTURAL_LINK_DISTANCE = 115
+const EXPLICIT_LINK_STRENGTH = 0.5
+const STRUCTURAL_LINK_STRENGTH = 0.3
+const NODE_REPULSION = -280
+const CENTER_STRENGTH = 0.08
+const COLLISION_PADDING = 12
+
 function computeRadius(baseRadius: number, connectionCount: number): number {
   return Math.min(30, baseRadius + Math.log2(connectionCount + 1) * 3)
 }
@@ -238,35 +249,28 @@ export function createLiveSimulation(
   nodes: GraphNode[],
   edges: GraphEdge[]
 ): Simulation<GraphNode, GraphEdge> {
-  const nodeMap = new Map(nodes.map((n) => [n.id, n]))
-
   return forceSimulation<GraphNode>(nodes)
     .force(
       'link',
       forceLink<GraphNode, GraphEdge>(edges)
         .id((d) => d.id)
-        .distance((e) => {
-          const tgtId = typeof e.target === 'string' ? e.target : (e.target as GraphNode).id
-          const tgt = nodeMap.get(tgtId)
-          const count = tgt?.connectionCount ?? 0
-          return e.type === 'explicit' ? 70 : 80 + Math.max(0, 100 - count * 3)
-        })
-        .strength((e) => {
-          const srcId = typeof e.source === 'string' ? e.source : (e.source as GraphNode).id
-          const tgtId = typeof e.target === 'string' ? e.target : (e.target as GraphNode).id
-          const src = nodeMap.get(srcId)
-          const tgt = nodeMap.get(tgtId)
-          const maxCount = Math.max(src?.connectionCount ?? 0, tgt?.connectionCount ?? 0)
-          return 0.15 + Math.min(maxCount * 0.04, 0.65)
-        })
+        .distance((edge) =>
+          edge.type === 'explicit' ? EXPLICIT_LINK_DISTANCE : STRUCTURAL_LINK_DISTANCE
+        )
+        .strength((edge) =>
+          edge.type === 'explicit' ? EXPLICIT_LINK_STRENGTH : STRUCTURAL_LINK_STRENGTH
+        )
     )
-    .force('charge', forceManyBody<GraphNode>().strength((d) => -(d.radius * 25 + 50)))
-    .force('center', forceCenter().strength(0.25))
+    // Degree-dependent attraction and repulsion made project hubs fight
+    // themselves: the more tasks a project had, the tighter and more volatile
+    // its cluster became. A bounded charge keeps all areas readable.
+    .force('charge', forceManyBody<GraphNode>().strength(NODE_REPULSION))
+    .force('center', forceCenter().strength(CENTER_STRENGTH))
     .force(
       'collide',
-      forceCollide<GraphNode>().radius((d) => d.radius + 6)
+      forceCollide<GraphNode>().radius((d) => d.radius + COLLISION_PADDING)
     )
-    .alphaDecay(0.015)
-    .alphaMin(0.001)
-    .velocityDecay(0.4)
+    .alphaDecay(0.045)
+    .alphaMin(0.01)
+    .velocityDecay(0.65)
 }
