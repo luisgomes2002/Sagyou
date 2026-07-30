@@ -320,8 +320,11 @@ export interface StickyNote {
   y: number
   width: number
   height: number
+  /** @deprecated Use taskIds. Kept for backward compatibility with old data. */
   taskId?: string
+  taskIds?: string[]
   connections?: string[]
+  goalIds?: string[]
   createdAt: string
   updatedAt: string
   fontSize?: number

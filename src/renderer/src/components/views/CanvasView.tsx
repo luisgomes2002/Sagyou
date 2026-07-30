@@ -4,6 +4,7 @@ import { NOTE_COLORS } from '../../types'
 import { useKanbanStore } from '../../store/kanban'
 import { StickyNoteCard } from '../StickyNoteCard'
 import { ConfirmDialog } from '../ConfirmDialog'
+import { NoteModal } from '../modals/NoteModal'
 
 const MIN_SCALE = 0.2
 const MAX_SCALE = 3
@@ -31,7 +32,8 @@ interface Props {
   onCreateTask: (title: string, noteId: string) => void
 }
 
-export function CanvasView({ project, tasks, onCreateTask }: Props) {
+export function CanvasView(props: Props) {
+  const { project, tasks } = props
   const allNotes = useKanbanStore((s) => s.notes)
   const notes = useMemo(() => allNotes.filter((n) => n.projectId === project.id), [allNotes, project.id])
   const createNote = useKanbanStore((s) => s.createNote)
@@ -50,6 +52,11 @@ export function CanvasView({ project, tasks, onCreateTask }: Props) {
   const connectFromRef = useRef<string | null>(null)
   // Note pending deletion (shows confirmation popup)
   const [noteToDelete, setNoteToDelete] = useState<string | null>(null)
+  // Note being edited in the modal
+  const [noteModalId, setNoteModalId] = useState<string | null>(null)
+  const noteModalIdRef = useRef(noteModalId)
+  noteModalIdRef.current = noteModalId
+  const noteInModal = noteModalId ? noteById.get(noteModalId) ?? null : null
 
   const [offset, setOffset] = useState({ x: 0, y: 0 })
   const [scale, setScale] = useState(1)
@@ -166,6 +173,7 @@ export function CanvasView({ project, tasks, onCreateTask }: Props) {
   )
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (noteModalIdRef.current) return
     if (e.button !== 0) return
     if ((e.target as HTMLElement).closest('[data-note]')) return
     isPanningRef.current = true
@@ -177,6 +185,7 @@ export function CanvasView({ project, tasks, onCreateTask }: Props) {
   }, [])
 
   const handleDoubleClick = useCallback((e: React.MouseEvent) => {
+    if (noteModalIdRef.current) return
     if ((e.target as HTMLElement).closest('[data-note]')) return
     const rect = containerRef.current!.getBoundingClientRect()
     const x = (e.clientX - rect.left - offsetRef.current.x) / scaleRef.current - 100
@@ -302,13 +311,12 @@ export function CanvasView({ project, tasks, onCreateTask }: Props) {
             note={note}
             scale={scale}
             tasks={tasks}
-            columns={project.columns}
             onUpdate={(updates) => updateNote(note.id, updates)}
             onDelete={() => setNoteToDelete(note.id)}
-            onCreateTask={(title) => onCreateTask(title, note.id)}
             onStartConnect={() => startConnect(note.id)}
             onDragMove={handleNoteDragMove}
             onDragEnd={handleNoteDragEnd}
+            onOpenModal={() => setNoteModalId(note.id)}
           />
         ))}
       </div>
@@ -421,6 +429,18 @@ export function CanvasView({ project, tasks, onCreateTask }: Props) {
           </svg>
         </button>
       </div>
+
+      {/* Note edit modal */}
+      {noteInModal && (
+        <NoteModal
+          note={noteInModal}
+          onSave={({ content, color, taskIds, connections, goalIds, completedAt }) => {
+            updateNote(noteInModal.id, { content, color, taskIds, connections, goalIds, completedAt })
+            setNoteModalId(null)
+          }}
+          onClose={() => setNoteModalId(null)}
+        />
+      )}
 
       {/* Delete confirmation */}
       <ConfirmDialog

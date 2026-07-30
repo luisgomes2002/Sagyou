@@ -8,7 +8,7 @@ export interface NotesSlice {
     projectId: string,
     data?: Partial<Pick<StickyNote, 'content' | 'color' | 'x' | 'y' | 'width' | 'height' | 'type'>>
   ) => string
-  updateNote: (id: string, updates: Partial<Pick<StickyNote, 'content' | 'color' | 'x' | 'y' | 'width' | 'height' | 'taskId' | 'fontSize' | 'completedAt'>>) => void
+  updateNote: (id: string, updates: Partial<Pick<StickyNote, 'content' | 'color' | 'x' | 'y' | 'width' | 'height' | 'taskId' | 'taskIds' | 'connections' | 'goalIds' | 'fontSize' | 'completedAt'>>) => void
   deleteNote: (id: string) => void
   connectNotes: (fromId: string, toId: string) => void
   disconnectNotes: (fromId: string, toId: string) => void

@@ -18,6 +18,7 @@ type ActiveView =
   | 'memory'
   | 'agents'
   | 'planejamento'
+  | 'graph'
 
 interface Props {
   projects: Project[]
@@ -193,15 +194,6 @@ export function Sidebar({
       )
     },
     {
-      view: 'canvas',
-      label: 'Canvas',
-      icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-          <path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
-        </svg>
-      )
-    },
-    {
       view: 'upcoming',
       label: 'Próximas',
       icon: (
@@ -281,6 +273,42 @@ export function Sidebar({
           <line x1="18" y1="20" x2="18" y2="10" />
           <line x1="12" y1="20" x2="12" y2="4" />
           <line x1="6" y1="20" x2="6" y2="14" />
+        </svg>
+      )
+    },
+    {
+      view: 'canvas',
+      label: 'Canvas',
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+        </svg>
+      )
+    },
+    {
+      view: 'files',
+      label: 'Arquivos',
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+          <polyline points="14 2 14 8 20 8" />
+        </svg>
+      )
+    },
+    {
+      view: 'graph',
+      label: 'Grafo',
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <circle cx="12" cy="12" r="3" />
+          <circle cx="4" cy="7" r="2" />
+          <circle cx="20" cy="7" r="2" />
+          <circle cx="4" cy="17" r="2" />
+          <circle cx="20" cy="17" r="2" />
+          <line x1="7" y1="7" x2="9" y2="12" />
+          <line x1="17" y1="7" x2="15" y2="12" />
+          <line x1="7" y1="17" x2="9" y2="12" />
+          <line x1="17" y1="17" x2="15" y2="12" />
         </svg>
       )
     }
