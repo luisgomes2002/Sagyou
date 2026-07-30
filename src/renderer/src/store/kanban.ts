@@ -2,7 +2,14 @@
 import type { StateCreator } from 'zustand'
 import { v4 as uuidv4 } from 'uuid'
 import type {
-  Project, Task, Goal, GoalEntry, FinancialTable, ActiveTimer, Currency, StickyNote
+  Project,
+  Task,
+  Goal,
+  GoalEntry,
+  FinancialTable,
+  ActiveTimer,
+  Currency,
+  StickyNote
 } from '../types'
 import { moneyStr } from '../utils/money'
 import { ElectronStorage } from '../services/ElectronStorage'
@@ -65,16 +72,19 @@ function normalizeList(l: FinancialTable): FinancialTable {
       price: i.price === null || i.price === undefined ? undefined : moneyStr(i.price)
     })),
     transactions: (l.transactions ?? []).map((t) => ({ ...t, amount: moneyStr(t.amount) })),
+    actualBalance: l.actualBalance == null ? undefined : moneyStr(l.actualBalance),
+    budgets: (l.budgets ?? []).map((b) => ({ ...b, limit: moneyStr(b.limit) })),
+    recurringTransactions: (l.recurringTransactions ?? []).map((r) => ({
+      ...r,
+      amount: moneyStr(r.amount)
+    })),
     goals: (l.goals ?? []).map((g) => ({ ...g, targetAmount: moneyStr(g.targetAmount) })),
     yieldSources: (l.yieldSources ?? []).map((s) => ({ ...s })),
     yieldEntries: (l.yieldEntries ?? []).map((e) => ({ ...e, amount: moneyStr(e.amount) }))
   }
 }
 
-function normalizeTimers(data: {
-  activeTimers?: unknown
-  activeTimer?: unknown
-}): ActiveTimer[] {
+function normalizeTimers(data: { activeTimers?: unknown; activeTimer?: unknown }): ActiveTimer[] {
   const valid = (t: unknown): t is ActiveTimer =>
     !!t &&
     typeof (t as ActiveTimer).taskId === 'string' &&
@@ -98,28 +108,56 @@ interface CoreActions {
 type CoreSlice = CoreState & CoreActions
 
 export type KanbanStore = CoreSlice &
-  HabitsSlice & GoalsSlice & NotesSlice & PlannerSlice & FilesSlice &
-  ProjectsSlice & TasksSlice & FinancialSlice & BackupSlice
+  HabitsSlice &
+  GoalsSlice &
+  NotesSlice &
+  PlannerSlice &
+  FilesSlice &
+  ProjectsSlice &
+  TasksSlice &
+  FinancialSlice &
+  BackupSlice
 
-const createCoreSlice: StateCreator<
-  KanbanStore,
-  [],
-  [],
-  CoreSlice
-> = (set, get) => ({
+const createCoreSlice: StateCreator<KanbanStore, [], [], CoreSlice> = (set, get) => ({
   isLoaded: false,
 
   _flushPersist: async () => {
-    const { projects, tasks, sprints, tombstones, notes, goals, habits, lists, activeTimers, files, timeBlocks, routines } = get()
+    const {
+      projects,
+      tasks,
+      sprints,
+      tombstones,
+      notes,
+      goals,
+      habits,
+      lists,
+      activeTimers,
+      files,
+      timeBlocks,
+      routines
+    } = get()
     await storage.save({
-      projects, tasks, sprints, tombstones, notes, goals, habits, lists, activeTimers, files, timeBlocks, routines,
+      projects,
+      tasks,
+      sprints,
+      tombstones,
+      notes,
+      goals,
+      habits,
+      lists,
+      activeTimers,
+      files,
+      timeBlocks,
+      routines,
       activeTimer: activeTimers[0] ?? null
     })
   },
 
   _persist: () => {
     if (_persistTimer !== null) clearTimeout(_persistTimer)
-    _persistTimer = setTimeout(() => { get()._flushPersist() }, 300)
+    _persistTimer = setTimeout(() => {
+      get()._flushPersist()
+    }, 300)
   },
 
   loadData: async () => {
@@ -149,7 +187,12 @@ const createCoreSlice: StateCreator<
         if (Array.isArray(g.entries)) return g as Goal
         const entries: GoalEntry[] = []
         if (typeof g.current === 'number' && g.current > 0) {
-          entries.push({ id: uuidv4(), date: g.createdAt.slice(0, 10), value: g.current, createdAt: g.createdAt })
+          entries.push({
+            id: uuidv4(),
+            date: g.createdAt.slice(0, 10),
+            value: g.current,
+            createdAt: g.createdAt
+          })
         }
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { current: _c, ...rest } = g

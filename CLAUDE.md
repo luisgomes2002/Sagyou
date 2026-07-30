@@ -270,6 +270,9 @@ Not everything lives in the DB. Also in `userData`:
 
 Treat these with the same care as the DB — the same "production data in the wild" caveat applies.
 
+The consolidated financial view must keep native totals separate by currency; a cross-currency equivalent is a live display-only calculation, never a persisted or historical total.
+Financial-table planning settings (provider, actual balance, budgets, recurring transactions) are optional metadata; money inside them uses the same canonical decimal strings as transactions.
+
 ### The backup bundles the physical files (v5)
 
 A backup is still a **single `.json`** (`backup:export`/`backup:import`), but as of **version 5** it carries the binaries that used to live only on disk, base64-encoded: `Backup.fileBlobs` (attachment bytes, keyed by `<id><ext>`), `Backup.chatImages` (chat-image bytes, `<uuid>.<ext>`) and `Backup.taskImages` (task-image bytes, same `{id,ext,base64}` shape as `fileBlobs`, keyed by the metadata on `tasks[].images`), plus `Backup.files` — the attachment **metadata**, which was never in the backup before (a restore used to *preserve* local files because the backup had none). Task-image **metadata** rides on `tasks[].images` (its bytes moved off the DB to `task-images/` — see the userData table); a **legacy** backup with a task image's bytes inline as `dataUrl` is converted to a disk file on import (`importBackup`), the one place that still handles the pre-disk shape.

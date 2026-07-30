@@ -16,6 +16,19 @@ export interface FinancialSlice {
   createList: (name: string, currency?: Currency) => string
   updateList: (id: string, name: string) => void
   setListCurrency: (id: string, currency: Currency) => void
+  updateFinancialSettings: (
+    id: string,
+    settings: Partial<
+      Pick<
+        FinancialTable,
+        | 'provider'
+        | 'actualBalance'
+        | 'actualBalanceUpdatedAt'
+        | 'budgets'
+        | 'recurringTransactions'
+      >
+    >
+  ) => void
   deleteList: (id: string) => void
   addItem: (
     listId: string,
@@ -46,7 +59,11 @@ export interface FinancialSlice {
   updateYieldSource: (listId: string, sourceId: string, name: string) => void
   deleteYieldSource: (listId: string, sourceId: string) => void
   addYieldEntry: (listId: string, data: Omit<YieldEntry, 'id'>) => string
-  updateYieldEntry: (listId: string, entryId: string, updates: Partial<Omit<YieldEntry, 'id'>>) => void
+  updateYieldEntry: (
+    listId: string,
+    entryId: string,
+    updates: Partial<Omit<YieldEntry, 'id'>>
+  ) => void
   deleteYieldEntry: (listId: string, entryId: string) => void
 }
 
@@ -64,7 +81,18 @@ export const createFinancialSlice: StateCreator<
     set((s) => ({
       lists: [
         ...s.lists,
-        { id, name, currency, items: [], transactions: [], goals: [], yieldSources: [], yieldEntries: [], createdAt: now, updatedAt: now }
+        {
+          id,
+          name,
+          currency,
+          items: [],
+          transactions: [],
+          goals: [],
+          yieldSources: [],
+          yieldEntries: [],
+          createdAt: now,
+          updatedAt: now
+        }
       ]
     }))
     get()._persist()
@@ -84,6 +112,15 @@ export const createFinancialSlice: StateCreator<
     set((s) => ({
       lists: s.lists.map((l) =>
         l.id === id ? { ...l, currency, updatedAt: new Date().toISOString() } : l
+      )
+    }))
+    get()._persist()
+  },
+
+  updateFinancialSettings: (id, settings) => {
+    set((s) => ({
+      lists: s.lists.map((l) =>
+        l.id === id ? { ...l, ...settings, updatedAt: new Date().toISOString() } : l
       )
     }))
     get()._persist()
@@ -134,14 +171,11 @@ export const createFinancialSlice: StateCreator<
         let transactions = l.transactions
         if (item.done && item.linkedTransactionId) {
           const newQty = 'qty' in updates && updates.qty !== undefined ? updates.qty : item.qty
-          const newPrice =
-            'price' in updates ? (updates.price as string | undefined) : item.price
+          const newPrice = 'price' in updates ? (updates.price as string | undefined) : item.price
           const newName = 'name' in updates && updates.name !== undefined ? updates.name : item.name
           if (updates.qty !== undefined || 'price' in updates || updates.name !== undefined) {
             const amount =
-              newPrice != null
-                ? new Decimal(newQty).times(newPrice).toString()
-                : undefined
+              newPrice != null ? new Decimal(newQty).times(newPrice).toString() : undefined
             const txUpdates: Partial<FinancialTransaction> = {}
             if (amount !== undefined) txUpdates.amount = amount
             if (newName !== undefined) txUpdates.description = newName
@@ -279,9 +313,7 @@ export const createFinancialSlice: StateCreator<
           ? l
           : {
               ...l,
-              transactions: l.transactions.map((t) =>
-                t.id === txId ? { ...t, ...updates } : t
-              ),
+              transactions: l.transactions.map((t) => (t.id === txId ? { ...t, ...updates } : t)),
               updatedAt: new Date().toISOString()
             }
       )
@@ -405,7 +437,11 @@ export const createFinancialSlice: StateCreator<
     set((s) => ({
       lists: s.lists.map((l) =>
         l.id === listId
-          ? { ...l, yieldEntries: [...(l.yieldEntries ?? []), entry], updatedAt: new Date().toISOString() }
+          ? {
+              ...l,
+              yieldEntries: [...(l.yieldEntries ?? []), entry],
+              updatedAt: new Date().toISOString()
+            }
           : l
       )
     }))

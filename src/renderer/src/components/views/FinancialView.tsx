@@ -60,10 +60,12 @@ export function FinancialView() {
 
   const [activeListId, setActiveListId] = useState<string | null>(null)
   const [tableStates, setTableStates] = useState<Record<string, TableViewState>>({})
-  const [consolidatedMonth, setConsolidatedMonth] = useState<{ year: number; month: number }>(() => {
-    const n = new Date()
-    return { year: n.getFullYear(), month: n.getMonth() + 1 }
-  })
+  const [consolidatedMonth, setConsolidatedMonth] = useState<{ year: number; month: number }>(
+    () => {
+      const n = new Date()
+      return { year: n.getFullYear(), month: n.getMonth() + 1 }
+    }
+  )
   const [consolidatedCategoryFilter, setConsolidatedCategoryFilter] = useState<string | null>(null)
 
   const [confirm, setConfirm] = useState<{
@@ -108,7 +110,13 @@ export function FinancialView() {
     const hasYields = (list?.yieldSources?.length ?? 0) > 0
     const linkedToThis = lists
       .filter((l) => l.id !== id)
-      .flatMap((l) => l.transactions.filter((t) => t.linkedTransactionId && list?.transactions.some((lt) => lt.id === t.linkedTransactionId)))
+      .flatMap((l) =>
+        l.transactions.filter(
+          (t) =>
+            t.linkedTransactionId &&
+            list?.transactions.some((lt) => lt.id === t.linkedTransactionId)
+        )
+      )
     const hasCrossLinks = linkedToThis.length > 0
     setConfirm({
       open: true,
@@ -164,7 +172,14 @@ export function FinancialView() {
         {!activeList ? (
           <EmptyState
             icon={
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#999999" strokeWidth="1.5">
+              <svg
+                width="28"
+                height="28"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#999999"
+                strokeWidth="1.5"
+              >
                 <rect x="2" y="3" width="20" height="14" rx="2" />
                 <line x1="8" y1="21" x2="16" y2="21" />
                 <line x1="12" y1="17" x2="12" y2="21" />
@@ -179,7 +194,14 @@ export function FinancialView() {
               <div className="flex items-center gap-3">
                 {ts.activeTab === 'consolidated' ? (
                   <>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#a080f0" strokeWidth="2">
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="#a080f0"
+                      strokeWidth="2"
+                    >
                       <rect x="3" y="3" width="7" height="7" rx="1" />
                       <rect x="14" y="3" width="7" height="7" rx="1" />
                       <rect x="3" y="14" width="7" height="7" rx="1" />
@@ -203,10 +225,19 @@ export function FinancialView() {
                 <button
                   onClick={() => updateTs({ activeTab: 'shopping' })}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                    ts.activeTab === 'shopping' ? 'bg-[#3b3b3b] text-[#d4d4d4]' : 'text-[#999999] hover:text-[#d4d4d4]'
+                    ts.activeTab === 'shopping'
+                      ? 'bg-[#3b3b3b] text-[#d4d4d4]'
+                      : 'text-[#999999] hover:text-[#d4d4d4]'
                   }`}
                 >
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg
+                    width="10"
+                    height="10"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
                     <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" />
                     <line x1="3" y1="6" x2="21" y2="6" />
                     <path d="M16 10a4 4 0 0 1-8 0" />
@@ -216,10 +247,19 @@ export function FinancialView() {
                 <button
                   onClick={() => updateTs({ activeTab: 'finance' })}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                    ts.activeTab === 'finance' ? 'bg-[#3b3b3b] text-[#d4d4d4]' : 'text-[#999999] hover:text-[#d4d4d4]'
+                    ts.activeTab === 'finance'
+                      ? 'bg-[#3b3b3b] text-[#d4d4d4]'
+                      : 'text-[#999999] hover:text-[#d4d4d4]'
                   }`}
                 >
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg
+                    width="10"
+                    height="10"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
                     <line x1="18" y1="20" x2="18" y2="10" />
                     <line x1="12" y1="20" x2="12" y2="4" />
                     <line x1="6" y1="20" x2="6" y2="14" />
@@ -229,10 +269,19 @@ export function FinancialView() {
                 <button
                   onClick={() => updateTs({ activeTab: 'analytics' })}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                    ts.activeTab === 'analytics' ? 'bg-[#3b3b3b] text-[#d4d4d4]' : 'text-[#999999] hover:text-[#d4d4d4]'
+                    ts.activeTab === 'analytics'
+                      ? 'bg-[#3b3b3b] text-[#d4d4d4]'
+                      : 'text-[#999999] hover:text-[#d4d4d4]'
                   }`}
                 >
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg
+                    width="10"
+                    height="10"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
                     <path d="M21.21 15.89A10 10 0 1 1 8 2.83" />
                     <path d="M22 12A10 10 0 0 0 12 2v10z" />
                   </svg>
@@ -241,10 +290,19 @@ export function FinancialView() {
                 <button
                   onClick={() => updateTs({ activeTab: 'yields' })}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                    ts.activeTab === 'yields' ? 'bg-[#3b3b3b] text-[#d4d4d4]' : 'text-[#999999] hover:text-[#d4d4d4]'
+                    ts.activeTab === 'yields'
+                      ? 'bg-[#3b3b3b] text-[#d4d4d4]'
+                      : 'text-[#999999] hover:text-[#d4d4d4]'
                   }`}
                 >
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg
+                    width="10"
+                    height="10"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
                     <polyline points="22,7 13.5,15.5 8.5,10.5 2,17" />
                     <polyline points="16,7 22,7 22,13" />
                   </svg>
@@ -253,10 +311,19 @@ export function FinancialView() {
                 <button
                   onClick={() => updateTs({ activeTab: 'consolidated' })}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                    ts.activeTab === 'consolidated' ? 'bg-[#3b3b3b] text-[#d4d4d4]' : 'text-[#999999] hover:text-[#d4d4d4]'
+                    ts.activeTab === 'consolidated'
+                      ? 'bg-[#3b3b3b] text-[#d4d4d4]'
+                      : 'text-[#999999] hover:text-[#d4d4d4]'
                   }`}
                 >
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg
+                    width="10"
+                    height="10"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
                     <rect x="3" y="3" width="7" height="7" rx="1" />
                     <rect x="14" y="3" width="7" height="7" rx="1" />
                     <rect x="3" y="14" width="7" height="7" rx="1" />
@@ -285,10 +352,14 @@ export function FinancialView() {
                 categoryFilter={ts.financeCategoryFilter}
                 onCategoryFilterChange={(c) => updateTs({ financeCategoryFilter: c })}
                 onAddTransaction={(data) => addTransaction(activeListId!, data)}
-                onUpdateTransaction={(txId, updates) => updateTransaction(activeListId!, txId, updates)}
+                onUpdateTransaction={(txId, updates) =>
+                  updateTransaction(activeListId!, txId, updates)
+                }
                 onDeleteTransaction={handleDeleteTransaction}
                 onAddGoal={(data) => addFinancialGoal(activeListId!, data)}
-                onUpdateGoal={(goalId, updates) => updateFinancialGoal(activeListId!, goalId, updates)}
+                onUpdateGoal={(goalId, updates) =>
+                  updateFinancialGoal(activeListId!, goalId, updates)
+                }
                 onDeleteGoal={(goalId) => deleteFinancialGoal(activeListId!, goalId)}
               />
             )}
@@ -311,7 +382,9 @@ export function FinancialView() {
                 categoryFilter={consolidatedCategoryFilter}
                 onCategoryFilterChange={setConsolidatedCategoryFilter}
                 onLinkTransaction={(sourceListId, sourceTxId, targetTxId) =>
-                  updateTransaction(sourceListId, sourceTxId, { linkedTransactionId: targetTxId || undefined })
+                  updateTransaction(sourceListId, sourceTxId, {
+                    linkedTransactionId: targetTxId || undefined
+                  })
                 }
               />
             )}
@@ -321,13 +394,19 @@ export function FinancialView() {
                 activeMonth={ts.yieldMonth}
                 onMonthChange={(m) => updateTs({ yieldMonth: m })}
                 onAddSource={(name) => addYieldSource(activeListId!, name)}
-                onUpdateSource={(sourceId, name) => updateYieldSource(activeListId!, sourceId, name)}
+                onUpdateSource={(sourceId, name) =>
+                  updateYieldSource(activeListId!, sourceId, name)
+                }
                 onDeleteSource={(sourceId) => deleteYieldSource(activeListId!, sourceId)}
                 onAddEntry={(data) => addYieldEntry(activeListId!, data)}
-                onUpdateEntry={(entryId, updates) => updateYieldEntry(activeListId!, entryId, updates)}
+                onUpdateEntry={(entryId, updates) =>
+                  updateYieldEntry(activeListId!, entryId, updates)
+                }
                 onDeleteEntry={(entryId) => deleteYieldEntry(activeListId!, entryId)}
                 onAddTransaction={(data) => addTransaction(activeListId!, data)}
-                onUpdateTransaction={(txId, updates) => updateTransaction(activeListId!, txId, updates)}
+                onUpdateTransaction={(txId, updates) =>
+                  updateTransaction(activeListId!, txId, updates)
+                }
                 onDeleteTransaction={(txId) => deleteTransaction(activeListId!, txId)}
               />
             )}

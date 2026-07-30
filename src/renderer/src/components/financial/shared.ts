@@ -6,31 +6,99 @@ export { D, moneyStr }
 export { todayLocalISO as todayISO, formatDateBR } from '../../utils/dates'
 
 export const MONTH_NAMES = [
-  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+  'Janeiro',
+  'Fevereiro',
+  'Março',
+  'Abril',
+  'Maio',
+  'Junho',
+  'Julho',
+  'Agosto',
+  'Setembro',
+  'Outubro',
+  'Novembro',
+  'Dezembro'
 ]
 
 export const FINANCIAL_CATEGORIES = [
-  'ADS', 'AI', 'AI Programação', 'AI Tokens', 'Advogado', 'Alimentação',
-  'Aluguel Recebido', 'Assinaturas', 'Bônus', 'Canva', 'Cartão', 'Contador',
-  'Delivery', 'Devolução', 'Dividendos', 'Domínio', 'Educação', 'Empréstimo',
-  'Família', 'Freelance', 'Impostos', 'Intercâmbio', 'Investimentos', 'Lazer',
-  'Marketing', 'Moradia', 'Outros', 'Pet', 'Reembolso',
-  'Salário', 'Saldo', 'Saúde', 'Segurança Cloud', 'Serviços', 'Servidor',
-  'Streaming', 'Taxa', 'Trabalho', 'Transporte', 'Venda', 'Vestuário', 'Viagem'
+  'ADS',
+  'AI',
+  'AI Programação',
+  'AI Tokens',
+  'Advogado',
+  'Alimentação',
+  'Aluguel Recebido',
+  'Assinaturas',
+  'Bônus',
+  'Canva',
+  'Cartão',
+  'Contador',
+  'Delivery',
+  'Devolução',
+  'Dividendos',
+  'Domínio',
+  'Educação',
+  'Empréstimo',
+  'Família',
+  'Freelance',
+  'Impostos',
+  'Intercâmbio',
+  'Investimentos',
+  'Lazer',
+  'Marketing',
+  'Moradia',
+  'Outros',
+  'Pet',
+  'Reembolso',
+  'Salário',
+  'Saldo',
+  'Saúde',
+  'Segurança Cloud',
+  'Serviços',
+  'Servidor',
+  'Streaming',
+  'Taxa',
+  'Taxa de câmbio / spread cambial',
+  'Taxas de transferência internacional',
+  'Trabalho',
+  'Transferência entre contas',
+  'Transferência entre contas internacionais',
+  'Transferência internacional',
+  'Transporte',
+  'Venda',
+  'Vestuário',
+  'Viagem',
+  'IOF'
 ]
 
 export const YIELD_SUMMARY_CATEGORY = 'Rendimento Mensal'
 
 export const CAT_COLORS = [
-  '#a080f0', '#c098e0', '#e098d4', '#eca8c0', '#ecb060', '#e8b810',
-  '#60c080', '#48c0d0', '#68a8d8', '#d48888', '#50c0a0', '#a0c868',
-  '#e890ac', '#60b8d4', '#e8b848'
+  '#a080f0',
+  '#c098e0',
+  '#e098d4',
+  '#eca8c0',
+  '#ecb060',
+  '#e8b810',
+  '#60c080',
+  '#48c0d0',
+  '#68a8d8',
+  '#d48888',
+  '#50c0a0',
+  '#a0c868',
+  '#e890ac',
+  '#60b8d4',
+  '#e8b848'
 ]
 
 export function formatCurrency(value: Decimal | number | string, currency: Currency): string {
   const { symbol, decimals } = CURRENCY_CONFIG[currency]
-  const num = value instanceof Decimal ? value.toNumber() : typeof value === 'string' ? D(value).toNumber() : value
+  const num =
+    value instanceof Decimal
+      ? value.toNumber()
+      : typeof value === 'string'
+        ? D(value).toNumber()
+        : value
   const abs = Math.abs(num)
   const fixed = abs.toFixed(decimals)
   const [intPart, decPart] = fixed.split('.')

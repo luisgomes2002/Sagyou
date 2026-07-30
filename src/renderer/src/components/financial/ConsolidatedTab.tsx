@@ -12,11 +12,7 @@ interface ConsolidatedTabProps {
   onMonthChange: (month: { year: number; month: number }) => void
   categoryFilter: string | null
   onCategoryFilterChange: (cat: string | null) => void
-  onLinkTransaction: (
-    sourceListId: string,
-    sourceTxId: string,
-    targetTxId: string
-  ) => void
+  onLinkTransaction: (sourceListId: string, sourceTxId: string, targetTxId: string) => void
 }
 
 interface AugmentedTransaction extends FinancialTransaction {
@@ -114,17 +110,23 @@ export function ConsolidatedTab({
           }
         } catch {
           if (cancelled) return
-          result[pair] = { rate: '0', date: '', source: 'cache', loaded: true, error: 'Falha ao buscar' }
+          result[pair] = {
+            rate: '0',
+            date: '',
+            source: 'cache',
+            loaded: true,
+            error: 'Falha ao buscar'
+          }
         }
       }
       setRates(result)
     }
 
     fetchRates()
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [currencies, refCurrency])
-
-  const singleCurrency: Currency = currencies[0] ?? refCurrency
 
   const allTransactions = useMemo(() => {
     const result: AugmentedTransaction[] = []
@@ -146,39 +148,46 @@ export function ConsolidatedTab({
     })
   }, [allTransactions, activeMonth, categoryFilter])
 
-  const { netIncome, netExpense, linkedCount } = useMemo(() => {
-    const linkedIds = new Set(monthTxs.filter((t) => t.linkedTransactionId).map((t) => t.linkedTransactionId!))
-    const deduped = monthTxs.filter((t) => !linkedIds.has(t.id))
-    const income = deduped
-      .filter((t) => t.type === 'income')
-      .reduce((s, t) => s.plus(D(t.amount)), new Decimal(0))
-    const expense = deduped
-      .filter((t) => t.type === 'expense')
-      .reduce((s, t) => s.plus(D(t.amount)), new Decimal(0))
-    return { netIncome: income, netExpense: expense, linkedCount: monthTxs.length - deduped.length }
+  const { linkedCount } = useMemo(() => {
+    const linkedIds = new Set(
+      monthTxs.filter((t) => t.linkedTransactionId).map((t) => t.linkedTransactionId)
+    )
+    return { linkedCount: monthTxs.filter((t) => linkedIds.has(t.id)).length }
   }, [monthTxs])
-
-  const netBalance = netIncome.minus(netExpense)
-
-  const accBalanceAll = useMemo(() => {
-    const linkedIds = new Set(allTransactions.filter((t) => t.linkedTransactionId).map((t) => t.linkedTransactionId!))
-    return allTransactions
-      .filter((t) => !linkedIds.has(t.id))
-      .reduce((s, t) => (t.type === 'income' ? s.plus(t.amount) : s.minus(t.amount)), new Decimal(0))
-  }, [allTransactions])
 
   const byCurrency = useMemo(() => {
-    const map: Record<string, { currency: Currency; income: Decimal; expense: Decimal }> = {}
-    const linkedIds = new Set(monthTxs.filter((t) => t.linkedTransactionId).map((t) => t.linkedTransactionId!))
+    const map: Record<
+      string,
+      { currency: Currency; income: Decimal; expense: Decimal; accumulated: Decimal }
+    > = {}
+    for (const currency of allTableCurrencies) {
+      map[currency] = {
+        currency,
+        income: new Decimal(0),
+        expense: new Decimal(0),
+        accumulated: new Decimal(0)
+      }
+    }
+    const monthLinkedIds = new Set(
+      monthTxs.filter((t) => t.linkedTransactionId).map((t) => t.linkedTransactionId)
+    )
     for (const t of monthTxs) {
-      if (linkedIds.has(t.id)) continue
-      const key = t.tableCurrency
-      if (!map[key]) map[key] = { currency: t.tableCurrency, income: new Decimal(0), expense: new Decimal(0) }
-      if (t.type === 'income') map[key].income = map[key].income.plus(t.amount)
-      else map[key].expense = map[key].expense.plus(t.amount)
+      if (monthLinkedIds.has(t.id)) continue
+      const values = map[t.tableCurrency]
+      if (t.type === 'income') values.income = values.income.plus(t.amount)
+      else values.expense = values.expense.plus(t.amount)
+    }
+    const allLinkedIds = new Set(
+      allTransactions.filter((t) => t.linkedTransactionId).map((t) => t.linkedTransactionId)
+    )
+    for (const t of allTransactions) {
+      if (allLinkedIds.has(t.id)) continue
+      const values = map[t.tableCurrency]
+      values.accumulated =
+        t.type === 'income' ? values.accumulated.plus(t.amount) : values.accumulated.minus(t.amount)
     }
     return Object.values(map).sort((a, b) => a.currency.localeCompare(b.currency))
-  }, [monthTxs])
+  }, [monthTxs, allTransactions, allTableCurrencies])
 
   const convertedTotal = useMemo(() => {
     let total = new Decimal(0)
@@ -231,16 +240,13 @@ export function ConsolidatedTab({
   }, [byCurrency, refCurrency, rates])
 
   const convertedAccumulated = useMemo(() => {
-    const linkedIds = new Set(allTransactions.filter((t) => t.linkedTransactionId).map((t) => t.linkedTransactionId!))
     let total = new Decimal(0)
-    for (const t of allTransactions) {
-      if (linkedIds.has(t.id)) continue
-      const amount = t.type === 'income' ? D(t.amount) : D(t.amount).negated()
-      const c = convertAmount(amount, t.tableCurrency)
-      if (c !== null) total = total.plus(c)
+    for (const values of byCurrency) {
+      const converted = convertAmount(values.accumulated, values.currency)
+      if (converted !== null) total = total.plus(converted)
     }
     return total
-  }, [allTransactions, refCurrency, rates])
+  }, [byCurrency, refCurrency, rates])
 
   const ratesLoaded = useMemo(() => {
     const nonRef = currencies.filter((c) => c !== refCurrency)
@@ -252,10 +258,18 @@ export function ConsolidatedTab({
   }, [currencies, refCurrency, rates])
 
   const perTable = useMemo(() => {
-    const map: Record<string, { name: string; currency: Currency; income: Decimal; expense: Decimal }> = {}
+    const map: Record<
+      string,
+      { name: string; currency: Currency; income: Decimal; expense: Decimal }
+    > = {}
     for (const t of monthTxs) {
       if (!map[t.tableId]) {
-        map[t.tableId] = { name: t.tableName, currency: t.tableCurrency, income: new Decimal(0), expense: new Decimal(0) }
+        map[t.tableId] = {
+          name: t.tableName,
+          currency: t.tableCurrency,
+          income: new Decimal(0),
+          expense: new Decimal(0)
+        }
       }
       if (t.type === 'income') map[t.tableId].income = map[t.tableId].income.plus(t.amount)
       else map[t.tableId].expense = map[t.tableId].expense.plus(t.amount)
@@ -283,13 +297,20 @@ export function ConsolidatedTab({
     )
   }
 
-  const showConverted = allTableCurrencies.length > 1 && ratesLoaded
+  const showEquivalent = allTableCurrencies.length > 1 && ratesLoaded
 
   if (lists.length === 0) {
     return (
       <EmptyState
         icon={
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#999999" strokeWidth="1.5">
+          <svg
+            width="28"
+            height="28"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#999999"
+            strokeWidth="1.5"
+          >
             <rect x="2" y="3" width="20" height="14" rx="2" />
             <line x1="8" y1="21" x2="16" y2="21" />
             <line x1="12" y1="17" x2="12" y2="21" />
@@ -309,7 +330,14 @@ export function ConsolidatedTab({
             onClick={prevMonth}
             className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors"
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+            >
               <polyline points="15 18 9 12 15 6" />
             </svg>
           </button>
@@ -320,14 +348,19 @@ export function ConsolidatedTab({
             onClick={nextMonth}
             className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors"
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+            >
               <polyline points="9 18 15 12 9 6" />
             </svg>
           </button>
           <button
-            onClick={() =>
-              onMonthChange({ year: now.getFullYear(), month: now.getMonth() + 1 })
-            }
+            onClick={() => onMonthChange({ year: now.getFullYear(), month: now.getMonth() + 1 })}
             className="ml-1 text-[10px] text-[#999999] hover:text-[#7c3aed] transition-colors"
           >
             Hoje
@@ -380,9 +413,15 @@ export function ConsolidatedTab({
               <span className="text-[#666666] ml-auto">
                 {(() => {
                   const sources = [...new Set(visibleRates.map((v) => v.r.source))]
-                  const label = sources[0] === 'awesomeapi' ? 'AwesomeAPI' : sources[0] === 'frankfurter' ? 'Frankfurter' : 'cache'
+                  const label =
+                    sources[0] === 'awesomeapi'
+                      ? 'AwesomeAPI'
+                      : sources[0] === 'frankfurter'
+                        ? 'Frankfurter'
+                        : 'cache'
                   const date = visibleRates.find((v) => v.r.date)?.r.date
-                  if (sources[0] === 'cache') return date ? `offline (${formatDateBR(date)})` : 'offline'
+                  if (sources[0] === 'cache')
+                    return date ? `offline (${formatDateBR(date)})` : 'offline'
                   return date ? `${label} · ${formatDateBR(date)}` : label
                 })()}
               </span>
@@ -393,55 +432,92 @@ export function ConsolidatedTab({
         {/* Summary cards */}
         {(convertedIncome.missed > 0 || convertedExpense.missed > 0) && (
           <div className="px-5 py-1.5 border-b border-[#f08a34]/20 bg-[#f08a34]/5 text-[10px] text-[#f08a34]">
-            Cotações indisponíveis para {convertedIncome.missed + convertedExpense.missed} moeda(s). Os totais convertidos podem estar incompletos.
+            Cotações indisponíveis para {convertedIncome.missed + convertedExpense.missed} moeda(s).
+            O equivalente atual pode estar incompleto.
           </div>
         )}
-        <div className="grid grid-cols-4 gap-3 px-5 py-4 border-b border-[#3b3b3b]">
-          <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-1">
-              Entradas
-            </p>
-            <p className="text-sm font-bold text-[#46d478] tabular-nums">
-              {showConverted
-                ? formatCurrency(convertedIncome.total, refCurrency)
-                : formatCurrency(netIncome, singleCurrency)}
-            </p>
+        <div className="px-5 py-4 border-b border-[#3b3b3b]">
+          <div className="flex items-baseline justify-between mb-3">
+            <p className="text-xs font-semibold text-[#d4d4d4]">Totais por moeda</p>
+            <span className="text-[10px] text-[#666666]">
+              A conversão não altera nem é salva nos lançamentos
+            </span>
           </div>
-          <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-1">
-              Saídas
-            </p>
-            <p className="text-sm font-bold text-[#e04040] tabular-nums">
-              {showConverted
-                ? formatCurrency(convertedExpense.total, refCurrency)
-                : formatCurrency(netExpense, singleCurrency)}
-            </p>
-          </div>
-          <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-1">
-              Saldo do Mês
-            </p>
-            <p
-              className={`text-sm font-bold tabular-nums ${(showConverted ? convertedTotal : netBalance).gte(0) ? 'text-[#d4d4d4]' : 'text-[#e04040]'}`}
-            >
-              {showConverted
-                ? formatCurrency(convertedTotal, refCurrency)
-                : formatCurrency(netBalance, singleCurrency)}
-            </p>
-          </div>
-          <div className="rounded-lg bg-[#7c3aed]/10 border border-[#7c3aed]/30 p-3">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-[#a080f0] mb-1">
-              Saldo Acumulado
-            </p>
-            <p
-              className={`text-sm font-bold tabular-nums ${(showConverted ? convertedAccumulated : accBalanceAll).gte(0) ? 'text-[#a080f0]' : 'text-[#e04040]'}`}
-            >
-              {showConverted
-                ? formatCurrency(convertedAccumulated, refCurrency)
-                : formatCurrency(accBalanceAll, singleCurrency)}
-            </p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {byCurrency.map((values) => {
+              const balance = values.income.minus(values.expense)
+              return (
+                <div
+                  key={values.currency}
+                  className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold text-[#d4d4d4]">
+                      {CURRENCY_CONFIG[values.currency].label}
+                    </span>
+                    <span className="text-[10px] font-medium text-[#a080f0]">
+                      {CURRENCY_CONFIG[values.currency].symbol} {values.currency}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[10px]">
+                    <span className="text-[#999999]">Entradas</span>
+                    <span className="text-right tabular-nums text-[#46d478]">
+                      {formatCurrency(values.income, values.currency)}
+                    </span>
+                    <span className="text-[#999999]">Saídas</span>
+                    <span className="text-right tabular-nums text-[#e04040]">
+                      {formatCurrency(values.expense, values.currency)}
+                    </span>
+                    <span className="text-[#999999]">Saldo do mês</span>
+                    <span
+                      className={
+                        'text-right tabular-nums font-semibold ' +
+                        (balance.gte(0) ? 'text-[#d4d4d4]' : 'text-[#e04040]')
+                      }
+                    >
+                      {formatCurrency(balance, values.currency)}
+                    </span>
+                    <span className="text-[#a080f0]">Acumulado</span>
+                    <span
+                      className={
+                        'text-right tabular-nums font-semibold ' +
+                        (values.accumulated.gte(0) ? 'text-[#a080f0]' : 'text-[#e04040]')
+                      }
+                    >
+                      {formatCurrency(values.accumulated, values.currency)}
+                    </span>
+                  </div>
+                </div>
+              )
+            })}
           </div>
         </div>
+
+        {allTableCurrencies.length > 1 && (
+          <div className="px-5 py-3 border-b border-[#3b3b3b] bg-[#7c3aed]/5">
+            {showEquivalent ? (
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-[#a080f0]">
+                    Equivalente atual em {refCurrency}
+                  </p>
+                  <p className="text-sm font-bold tabular-nums text-[#d4d4d4]">
+                    {formatCurrency(convertedAccumulated, refCurrency)}
+                  </p>
+                </div>
+                <p className="text-[10px] text-[#999999]">
+                  Saldo do mês equivalente: {formatCurrency(convertedTotal, refCurrency)}. Calculado
+                  agora pelas cotações exibidas acima; não é salvo.
+                </p>
+              </div>
+            ) : (
+              <p className="text-[10px] text-[#999999]">
+                Buscando cotações para calcular o equivalente atual em {refCurrency}. Os totais por
+                moeda acima continuam completos.
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Per-table cards */}
         {perTable.length > 1 && (
@@ -453,10 +529,7 @@ export function ConsolidatedTab({
               {perTable.map((t) => {
                 const bal = t.income.minus(t.expense)
                 return (
-                  <div
-                    key={t.id}
-                    className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-2.5"
-                  >
+                  <div key={t.id} className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-2.5">
                     <div className="flex items-center gap-1.5 mb-1.5">
                       <span className="text-xs font-medium text-[#d4d4d4] truncate">{t.name}</span>
                       <span className="text-[9px] text-[#a080f0]">
@@ -494,7 +567,8 @@ export function ConsolidatedTab({
           </p>
           {linkedCount > 0 && (
             <span className="text-[10px] text-[#a080f0]">
-              {linkedCount} vinculada{linkedCount !== 1 ? 's' : ''} omitida{linkedCount !== 1 ? 's' : ''} do total
+              {linkedCount} vinculada{linkedCount !== 1 ? 's' : ''} omitida
+              {linkedCount !== 1 ? 's' : ''} do total
             </span>
           )}
         </div>
@@ -553,15 +627,11 @@ export function ConsolidatedTab({
                 ? []
                 : allTransactions
                     .filter(
-                      (t) =>
-                        t.tableId !== tx.tableId &&
-                        !t.linkedTransactionId &&
-                        t.id !== tx.id
+                      (t) => t.tableId !== tx.tableId && !t.linkedTransactionId && t.id !== tx.id
                     )
                     .sort((a, b) => b.date.localeCompare(a.date))
 
-              const canLink =
-                !tx.linkedTransactionId && !isParent && lists.length > 1
+              const canLink = !tx.linkedTransactionId && !isParent && lists.length > 1
 
               return (
                 <React.Fragment key={`${tx.tableId}:${tx.id}`}>
@@ -572,7 +642,15 @@ export function ConsolidatedTab({
                   >
                     <td className="pl-4 pr-2 py-2 w-28">
                       <span className="inline-flex items-center gap-1 text-xs text-[#999999] tabular-nums bg-[#2a2a2a] px-1.5 py-0.5 rounded">
-                        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="opacity-50">
+                        <svg
+                          width="9"
+                          height="9"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          className="opacity-50"
+                        >
                           <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
                           <line x1="16" y1="2" x2="16" y2="6" />
                           <line x1="8" y1="2" x2="8" y2="6" />
@@ -607,7 +685,10 @@ export function ConsolidatedTab({
                                 {parent.description.length > 20
                                   ? parent.description.slice(0, 20) + '…'
                                   : parent.description}
-                                <span className="text-[#a080f0]/60"> · {formatDateBR(parent.date)}</span>
+                                <span className="text-[#a080f0]/60">
+                                  {' '}
+                                  · {formatDateBR(parent.date)}
+                                </span>
                               </span>
                             )}
                             <button
@@ -622,7 +703,14 @@ export function ConsolidatedTab({
                               className="p-0.5 rounded text-[#a080f0] hover:text-[#e04040] hover:bg-[#e04040]/10 opacity-0 group-hover:opacity-100 transition-all shrink-0"
                               title="Desvincular"
                             >
-                              <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                              <svg
+                                width="8"
+                                height="8"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2.5"
+                              >
                                 <line x1="18" y1="6" x2="6" y2="18" />
                                 <line x1="6" y1="6" x2="18" y2="18" />
                               </svg>
@@ -631,7 +719,14 @@ export function ConsolidatedTab({
                         )}
                         <span className="text-sm text-[#d4d4d4] truncate">{tx.description}</span>
                         {isParent && children.length > 0 && (
-                          <span className="text-[9px] text-[#a080f0] bg-[#a080f0]/10 px-1.5 py-0.5 rounded shrink-0" title={children.map((c) => `${c.description} (${formatDateBR(c.date)}) — ${c.tableName}`).join('\n')}>
+                          <span
+                            className="text-[9px] text-[#a080f0] bg-[#a080f0]/10 px-1.5 py-0.5 rounded shrink-0"
+                            title={children
+                              .map(
+                                (c) => `${c.description} (${formatDateBR(c.date)}) — ${c.tableName}`
+                              )
+                              .join('\n')}
+                          >
                             {children.length === 1
                               ? `${children[0].description.slice(0, 20)}${children[0].description.length > 20 ? '…' : ''} · ${formatDateBR(children[0].date)}`
                               : `${children.length} vinculadas`}
@@ -639,9 +734,7 @@ export function ConsolidatedTab({
                         )}
                       </div>
                     </td>
-                    <td className="py-2 pr-2 w-28 text-xs text-[#999999]">
-                      {tx.category || '-'}
-                    </td>
+                    <td className="py-2 pr-2 w-28 text-xs text-[#999999]">{tx.category || '-'}</td>
                     <td className="py-2 pr-2 w-20 text-center">
                       <span
                         className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
@@ -671,9 +764,7 @@ export function ConsolidatedTab({
                       {canLink && (
                         <button
                           onClick={() =>
-                            setLinkingTx(
-                              isLinking ? null : { tableId: tx.tableId, txId: tx.id }
-                            )
+                            setLinkingTx(isLinking ? null : { tableId: tx.tableId, txId: tx.id })
                           }
                           className={`p-1 rounded border transition-colors ${
                             isLinking
@@ -698,7 +789,10 @@ export function ConsolidatedTab({
                     </td>
                   </tr>
                   {isLinking && (
-                    <tr key={`${tx.tableId}:${tx.id}:link`} className="border-b border-[#3b3b3b] bg-[#1b1b1b]/50">
+                    <tr
+                      key={`${tx.tableId}:${tx.id}:link`}
+                      className="border-b border-[#3b3b3b] bg-[#1b1b1b]/50"
+                    >
                       <td colSpan={7} className="px-4 py-2">
                         <div className="flex items-center justify-between">
                           <p className="text-[10px] text-[#999999]">
@@ -734,7 +828,9 @@ export function ConsolidatedTab({
                                 </span>
                                 <span
                                   className={`text-[10px] tabular-nums font-medium shrink-0 ${
-                                    candidate.type === 'income' ? 'text-[#46d478]' : 'text-[#d4d4d4]'
+                                    candidate.type === 'income'
+                                      ? 'text-[#46d478]'
+                                      : 'text-[#d4d4d4]'
                                   }`}
                                 >
                                   {formatCurrency(D(candidate.amount), candidate.tableCurrency)}

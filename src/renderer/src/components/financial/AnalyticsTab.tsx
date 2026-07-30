@@ -2,8 +2,22 @@
 import Decimal from 'decimal.js'
 import type { FinancialTable, FinancialTransaction } from '../../types'
 import { MONTH_NAMES, CAT_COLORS, formatCurrency } from './shared'
+import { FinancialCharts } from './FinancialCharts'
 
-const MONTH_ABBR = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
+const MONTH_ABBR = [
+  'Jan',
+  'Fev',
+  'Mar',
+  'Abr',
+  'Mai',
+  'Jun',
+  'Jul',
+  'Ago',
+  'Set',
+  'Out',
+  'Nov',
+  'Dez'
+]
 
 interface AnalyticsTabProps {
   list: FinancialTable
@@ -15,7 +29,15 @@ interface AnalyticsTabProps {
   onCatViewChange: (view: 'expense' | 'income') => void
 }
 
-export function AnalyticsTab({ list, selectedYear, onYearChange, selectedMonth, onMonthChange, catView, onCatViewChange }: AnalyticsTabProps) {
+export function AnalyticsTab({
+  list,
+  selectedYear,
+  onYearChange,
+  selectedMonth,
+  onMonthChange,
+  catView,
+  onCatViewChange
+}: AnalyticsTabProps) {
   const { currency, transactions } = list
   const allYears = [...new Set(transactions.map((t) => t.date.slice(0, 4)))].sort().reverse()
 
@@ -25,11 +47,11 @@ export function AnalyticsTab({ list, selectedYear, onYearChange, selectedMonth, 
 
   const availableMonths = useMemo(() => {
     if (selectedYear === 'all') return []
-    return [...new Set(
-      transactions
-        .filter((t) => t.date.startsWith(selectedYear))
-        .map((t) => t.date.slice(5, 7))
-    )].sort()
+    return [
+      ...new Set(
+        transactions.filter((t) => t.date.startsWith(selectedYear)).map((t) => t.date.slice(5, 7))
+      )
+    ].sort()
   }, [transactions, selectedYear])
 
   const filtered = useMemo(() => {
@@ -83,13 +105,44 @@ export function AnalyticsTab({ list, selectedYear, onYearChange, selectedMonth, 
     .sort((a, b) => a.key.localeCompare(b.key))
 
   const maxMonthBar = Math.max(...monthEntries.map((m) => Math.max(m.income, m.expense)), 1)
-  const avgMonthlyExpense = monthEntries.length > 0 ? totalExpenseD.div(monthEntries.length).toNumber() : 0
+  const avgMonthlyExpense =
+    monthEntries.length > 0 ? totalExpenseD.div(monthEntries.length).toNumber() : 0
 
-  const bestMonth = monthEntries.length > 1 ? monthEntries.reduce((best, m) => (m.balance > best.balance ? m : best)) : null
-  const worstMonth = monthEntries.length > 1 ? monthEntries.reduce((worst, m) => (m.balance < worst.balance ? m : worst)) : null
+  const bestMonth =
+    monthEntries.length > 1
+      ? monthEntries.reduce((best, m) => (m.balance > best.balance ? m : best))
+      : null
+  const worstMonth =
+    monthEntries.length > 1
+      ? monthEntries.reduce((worst, m) => (m.balance < worst.balance ? m : worst))
+      : null
 
   const topExpCat = expCatEntries[0]
   const topIncCat = incCatEntries[0]
+
+  const chartMonths = useMemo(() => {
+    const allByMonth: Record<string, { income: Decimal; expense: Decimal }> = {}
+    for (const t of transactions) {
+      const key = t.date.slice(0, 7)
+      if (!allByMonth[key]) allByMonth[key] = { income: new Decimal(0), expense: new Decimal(0) }
+      if (t.type === 'income') allByMonth[key].income = allByMonth[key].income.plus(t.amount)
+      else allByMonth[key].expense = allByMonth[key].expense.plus(t.amount)
+    }
+    let accumulated = new Decimal(0)
+    const history = Object.entries(allByMonth)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, values]) => {
+        const income = values.income.toNumber()
+        const expense = values.expense.toNumber()
+        accumulated = accumulated.plus(values.income).minus(values.expense)
+        return { key, income, expense, accumulated: accumulated.toNumber() }
+      })
+    const inSelectedYear =
+      selectedYear === 'all'
+        ? history
+        : history.filter((month) => month.key.startsWith(selectedYear))
+    return inSelectedYear
+  }, [transactions, selectedYear])
 
   function monthLabel(key: string): string {
     const [y, m] = key.split('-')
@@ -112,7 +165,9 @@ export function AnalyticsTab({ list, selectedYear, onYearChange, selectedMonth, 
           <button
             onClick={() => handleYearSelect('all')}
             className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-              selectedYear === 'all' ? 'bg-[#7c3aed]/15 text-[#a080f0]' : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a]'
+              selectedYear === 'all'
+                ? 'bg-[#7c3aed]/15 text-[#a080f0]'
+                : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a]'
             }`}
           >
             Todos
@@ -122,7 +177,9 @@ export function AnalyticsTab({ list, selectedYear, onYearChange, selectedMonth, 
               key={y}
               onClick={() => handleYearSelect(y)}
               className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                selectedYear === y ? 'bg-[#7c3aed]/15 text-[#a080f0]' : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a]'
+                selectedYear === y
+                  ? 'bg-[#7c3aed]/15 text-[#a080f0]'
+                  : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a]'
               }`}
             >
               {y}
@@ -136,7 +193,9 @@ export function AnalyticsTab({ list, selectedYear, onYearChange, selectedMonth, 
             <button
               onClick={() => onMonthChange('all')}
               className={`px-2.5 py-0.5 rounded-full text-[10px] font-medium transition-colors ${
-                selectedMonth === 'all' ? 'bg-[#3b3b3b] text-[#d4d4d4]' : 'text-[#666666] hover:text-[#999999] hover:bg-[#2a2a2a]'
+                selectedMonth === 'all'
+                  ? 'bg-[#3b3b3b] text-[#d4d4d4]'
+                  : 'text-[#666666] hover:text-[#999999] hover:bg-[#2a2a2a]'
               }`}
             >
               Todos os meses
@@ -146,7 +205,9 @@ export function AnalyticsTab({ list, selectedYear, onYearChange, selectedMonth, 
                 key={m}
                 onClick={() => onMonthChange(m)}
                 className={`px-2.5 py-0.5 rounded-full text-[10px] font-medium transition-colors ${
-                  selectedMonth === m ? 'bg-[#3b3b3b] text-[#d4d4d4]' : 'text-[#666666] hover:text-[#999999] hover:bg-[#2a2a2a]'
+                  selectedMonth === m
+                    ? 'bg-[#3b3b3b] text-[#d4d4d4]'
+                    : 'text-[#666666] hover:text-[#999999] hover:bg-[#2a2a2a]'
                 }`}
               >
                 {MONTH_ABBR[Number(m) - 1]}
@@ -159,34 +220,54 @@ export function AnalyticsTab({ list, selectedYear, onYearChange, selectedMonth, 
       {/* Overview cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-1">Total Entradas</p>
-          <p className="text-sm font-bold text-[#46d478] tabular-nums">{formatCurrency(totalIncome, currency)}</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-1">
+            Total Entradas
+          </p>
+          <p className="text-sm font-bold text-[#46d478] tabular-nums">
+            {formatCurrency(totalIncome, currency)}
+          </p>
         </div>
         <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-1">Total Saídas</p>
-          <p className="text-sm font-bold text-[#e04040] tabular-nums">{formatCurrency(totalExpense, currency)}</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-1">
+            Total Saídas
+          </p>
+          <p className="text-sm font-bold text-[#e04040] tabular-nums">
+            {formatCurrency(totalExpense, currency)}
+          </p>
         </div>
         <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-1">Saldo Geral</p>
-          <p className={`text-sm font-bold tabular-nums ${totalBalance >= 0 ? 'text-[#d4d4d4]' : 'text-[#e04040]'}`}>
-            {totalBalance >= 0 ? '+' : ''}{formatCurrency(totalBalance, currency)}
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-1">
+            Saldo Geral
+          </p>
+          <p
+            className={`text-sm font-bold tabular-nums ${totalBalance >= 0 ? 'text-[#d4d4d4]' : 'text-[#e04040]'}`}
+          >
+            {totalBalance >= 0 ? '+' : ''}
+            {formatCurrency(totalBalance, currency)}
           </p>
         </div>
         <div className="rounded-lg bg-[#7c3aed]/10 border border-[#7c3aed]/30 p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#a080f0] mb-1">Média/Mês Gastos</p>
-          <p className="text-sm font-bold text-[#a080f0] tabular-nums">{formatCurrency(avgMonthlyExpense, currency)}</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#a080f0] mb-1">
+            Média/Mês Gastos
+          </p>
+          <p className="text-sm font-bold text-[#a080f0] tabular-nums">
+            {formatCurrency(avgMonthlyExpense, currency)}
+          </p>
         </div>
       </div>
 
       {/* Highlights */}
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-lg border border-[#20b858]/25 bg-[#20b858]/5 p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#20b858]/60 mb-1.5">Melhor Mês</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#20b858]/60 mb-1.5">
+            Melhor Mês
+          </p>
           {bestMonth ? (
             <>
               <p className="text-sm font-bold text-[#46d478]">{monthLabel(bestMonth.key)}</p>
               <p className="text-xs tabular-nums text-[#46d478]/70 mt-0.5">
-                {bestMonth.balance >= 0 ? '+' : ''}{formatCurrency(bestMonth.balance, currency)}
+                {bestMonth.balance >= 0 ? '+' : ''}
+                {formatCurrency(bestMonth.balance, currency)}
               </p>
             </>
           ) : (
@@ -194,23 +275,31 @@ export function AnalyticsTab({ list, selectedYear, onYearChange, selectedMonth, 
           )}
         </div>
         <div className="rounded-lg border border-[#7c3aed]/25 bg-[#7c3aed]/5 p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#a080f0]/60 mb-1.5">Maior Gasto</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#a080f0]/60 mb-1.5">
+            Maior Gasto
+          </p>
           {topExpCat ? (
             <>
               <p className="text-sm font-bold text-[#a080f0] truncate">{topExpCat[0]}</p>
               <p className="text-xs tabular-nums text-[#a080f0]/70 mt-0.5">
-                {formatCurrency(topExpCat[1], currency)}{totalExpense > 0 ? ` · ${Math.round((topExpCat[1] / totalExpense) * 100)}%` : ''}
+                {formatCurrency(topExpCat[1], currency)}
+                {totalExpense > 0 ? ` · ${Math.round((topExpCat[1] / totalExpense) * 100)}%` : ''}
               </p>
             </>
-          ) : <p className="text-xs text-[#666666]">-</p>}
+          ) : (
+            <p className="text-xs text-[#666666]">-</p>
+          )}
         </div>
         <div className="rounded-lg border border-[#e04040]/25 bg-[#e04040]/5 p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#e04040]/60 mb-1.5">Pior Mês</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#e04040]/60 mb-1.5">
+            Pior Mês
+          </p>
           {worstMonth ? (
             <>
               <p className="text-sm font-bold text-[#e04040]">{monthLabel(worstMonth.key)}</p>
               <p className="text-xs tabular-nums text-[#e04040]/70 mt-0.5">
-                {worstMonth.balance >= 0 ? '+' : ''}{formatCurrency(worstMonth.balance, currency)}
+                {worstMonth.balance >= 0 ? '+' : ''}
+                {formatCurrency(worstMonth.balance, currency)}
               </p>
             </>
           ) : (
@@ -218,17 +307,29 @@ export function AnalyticsTab({ list, selectedYear, onYearChange, selectedMonth, 
           )}
         </div>
         <div className="rounded-lg border border-[#20b858]/25 bg-[#20b858]/5 p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#20b858]/60 mb-1.5">Maior Ganho</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#20b858]/60 mb-1.5">
+            Maior Ganho
+          </p>
           {topIncCat ? (
             <>
               <p className="text-sm font-bold text-[#46d478] truncate">{topIncCat[0]}</p>
               <p className="text-xs tabular-nums text-[#46d478]/70 mt-0.5">
-                {formatCurrency(topIncCat[1], currency)}{totalIncome > 0 ? ` · ${Math.round((topIncCat[1] / totalIncome) * 100)}%` : ''}
+                {formatCurrency(topIncCat[1], currency)}
+                {totalIncome > 0 ? ` · ${Math.round((topIncCat[1] / totalIncome) * 100)}%` : ''}
               </p>
             </>
-          ) : <p className="text-xs text-[#666666]">-</p>}
+          ) : (
+            <p className="text-xs text-[#666666]">-</p>
+          )}
         </div>
       </div>
+
+      <FinancialCharts
+        currency={currency}
+        months={chartMonths}
+        categories={activeCatEntries}
+        categoryLabel={catView === 'expense' ? 'gastos' : 'ganhos'}
+      />
 
       {/* Category ranking */}
       <div>
@@ -238,7 +339,9 @@ export function AnalyticsTab({ list, selectedYear, onYearChange, selectedMonth, 
             <button
               onClick={() => onCatViewChange('expense')}
               className={`px-3 py-1 rounded-md text-[10px] font-medium transition-colors ${
-                catView === 'expense' ? 'bg-[#3b3b3b] text-[#e04040]' : 'text-[#999999] hover:text-[#d4d4d4]'
+                catView === 'expense'
+                  ? 'bg-[#3b3b3b] text-[#e04040]'
+                  : 'text-[#999999] hover:text-[#d4d4d4]'
               }`}
             >
               ↓ Gastos
@@ -246,7 +349,9 @@ export function AnalyticsTab({ list, selectedYear, onYearChange, selectedMonth, 
             <button
               onClick={() => onCatViewChange('income')}
               className={`px-3 py-1 rounded-md text-[10px] font-medium transition-colors ${
-                catView === 'income' ? 'bg-[#3b3b3b] text-[#46d478]' : 'text-[#999999] hover:text-[#d4d4d4]'
+                catView === 'income'
+                  ? 'bg-[#3b3b3b] text-[#46d478]'
+                  : 'text-[#999999] hover:text-[#d4d4d4]'
               }`}
             >
               ↑ Ganhos
@@ -265,7 +370,9 @@ export function AnalyticsTab({ list, selectedYear, onYearChange, selectedMonth, 
               const pct = activeTotal > 0 ? Math.round((amount / activeTotal) * 100) : 0
               return (
                 <div key={cat} className="flex items-center gap-3">
-                  <span className="text-[10px] font-bold text-[#666666] w-5 shrink-0 text-right">#{i + 1}</span>
+                  <span className="text-[10px] font-bold text-[#666666] w-5 shrink-0 text-right">
+                    #{i + 1}
+                  </span>
                   <span className="text-xs text-[#999999] w-28 truncate shrink-0">{cat}</span>
                   <div className="flex-1 h-2 rounded-full bg-[#1b1b1b] overflow-hidden">
                     <div
@@ -296,33 +403,60 @@ export function AnalyticsTab({ list, selectedYear, onYearChange, selectedMonth, 
                 <div
                   key={m.key}
                   className={`rounded-lg p-3 border transition-colors ${
-                    isBest ? 'border-[#20b858]/25 bg-[#20b858]/5' : isWorst ? 'border-[#e04040]/25 bg-[#e04040]/5' : 'border-[#3b3b3b] bg-[#2a2a2a]'
+                    isBest
+                      ? 'border-[#20b858]/25 bg-[#20b858]/5'
+                      : isWorst
+                        ? 'border-[#e04040]/25 bg-[#e04040]/5'
+                        : 'border-[#3b3b3b] bg-[#2a2a2a]'
                   }`}
                 >
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-medium text-[#d4d4d4]">{monthLabel(m.key)}</span>
-                      {isBest && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#20b858]/15 text-[#46d478] font-semibold">Melhor</span>}
-                      {isWorst && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#e04040]/15 text-[#e04040] font-semibold">Pior</span>}
+                      <span className="text-xs font-medium text-[#d4d4d4]">
+                        {monthLabel(m.key)}
+                      </span>
+                      {isBest && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#20b858]/15 text-[#46d478] font-semibold">
+                          Melhor
+                        </span>
+                      )}
+                      {isWorst && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#e04040]/15 text-[#e04040] font-semibold">
+                          Pior
+                        </span>
+                      )}
                     </div>
-                    <span className={`text-xs font-bold tabular-nums ${m.balance >= 0 ? 'text-[#46d478]' : 'text-[#e04040]'}`}>
-                      {m.balance >= 0 ? '+' : ''}{formatCurrency(m.balance, currency)}
+                    <span
+                      className={`text-xs font-bold tabular-nums ${m.balance >= 0 ? 'text-[#46d478]' : 'text-[#e04040]'}`}
+                    >
+                      {m.balance >= 0 ? '+' : ''}
+                      {formatCurrency(m.balance, currency)}
                     </span>
                   </div>
                   <div className="space-y-1.5">
                     <div className="flex items-center gap-2">
                       <span className="text-[9px] text-[#46d478] w-12 shrink-0">Entradas</span>
                       <div className="flex-1 h-1.5 rounded-full bg-[#1b1b1b] overflow-hidden">
-                        <div className="h-full rounded-full bg-[#20b858]" style={{ width: `${(m.income / maxMonthBar) * 100}%` }} />
+                        <div
+                          className="h-full rounded-full bg-[#20b858]"
+                          style={{ width: `${(m.income / maxMonthBar) * 100}%` }}
+                        />
                       </div>
-                      <span className="text-[9px] tabular-nums text-[#46d478] w-24 text-right shrink-0">{formatCurrency(m.income, currency)}</span>
+                      <span className="text-[9px] tabular-nums text-[#46d478] w-24 text-right shrink-0">
+                        {formatCurrency(m.income, currency)}
+                      </span>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-[9px] text-[#e04040] w-12 shrink-0">Saídas</span>
                       <div className="flex-1 h-1.5 rounded-full bg-[#1b1b1b] overflow-hidden">
-                        <div className="h-full rounded-full bg-[#e04040]" style={{ width: `${(m.expense / maxMonthBar) * 100}%` }} />
+                        <div
+                          className="h-full rounded-full bg-[#e04040]"
+                          style={{ width: `${(m.expense / maxMonthBar) * 100}%` }}
+                        />
                       </div>
-                      <span className="text-[9px] tabular-nums text-[#e04040] w-24 text-right shrink-0">{formatCurrency(m.expense, currency)}</span>
+                      <span className="text-[9px] tabular-nums text-[#e04040] w-24 text-right shrink-0">
+                        {formatCurrency(m.expense, currency)}
+                      </span>
                     </div>
                   </div>
                 </div>
