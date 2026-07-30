@@ -48,6 +48,7 @@
 | **Metas** | Acompanhamento de objetivos pessoais |
 | **Financeiro** | Transações, metas financeiras e análises, com listas de compras em múltiplas moedas (BRL, USD, JPY) |
 | **Canvas** | Notas adesivas livres em tela infinita, com links para tarefas |
+| **Grafo** | Mapa interativo das conexões entre projetos, tarefas abertas, notas, metas e hábitos; pesquise, arraste nós e abra o item com duplo clique |
 | **Upcoming** | Tarefas com data de vencimento próxima |
 | **Relatórios** | Visão geral de produtividade |
 | **Busca** | Pesquisa rápida de tarefas |
@@ -174,6 +175,7 @@ Cada ação de escrita ou comando passa por aprovação antes de rodar. O agente
 - [Zustand](https://zustand-demo.pmnd.rs/) — gerenciamento de estado
 - [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) — armazenamento local em SQLite
 - [decimal.js](https://mikemcl.github.io/decimal.js/) — aritmética monetária exata
+- [D3 Force](https://d3js.org/d3-force) — simulação e layout da visão de grafo
 - [dnd kit](https://dndkit.com/) — drag and drop
 - [Tailwind CSS](https://tailwindcss.com/) — estilização
 - [SheetJS](https://sheetjs.com/) — exportação para Excel e leitura de XLSX/ODS
