@@ -2,7 +2,7 @@
 import type { StateCreator } from 'zustand'
 import { v4 as uuidv4 } from 'uuid'
 import type {
-  Project, Task, Goal, GoalEntry, FinancialTable, ActiveTimer, Currency
+  Project, Task, Goal, GoalEntry, FinancialTable, ActiveTimer, Currency, StickyNote
 } from '../types'
 import { moneyStr } from '../utils/money'
 import { ElectronStorage } from '../services/ElectronStorage'
@@ -38,6 +38,15 @@ function activeIds(p: Project): string[] {
 
 function withActive(ids: string[]): Pick<Project, 'activeCodePathIds' | 'activeCodePathId'> {
   return { activeCodePathIds: ids, activeCodePathId: ids[0] }
+}
+
+function normalizeNotes(notes: StickyNote[]): StickyNote[] {
+  return notes.map((n) => ({
+    ...n,
+    taskIds: n.taskIds ?? (n.taskId ? [n.taskId] : []),
+    connections: n.connections ?? [],
+    goalIds: n.goalIds ?? []
+  }))
 }
 
 function normalizeProject(p: Project, i: number): Project {
@@ -135,7 +144,7 @@ const createCoreSlice: StateCreator<
       tasks,
       sprints: data.sprints || [],
       tombstones: data.tombstones || [],
-      notes: data.notes || [],
+      notes: normalizeNotes(data.notes || []),
       goals: (data.goals || []).map((g: Goal & { current?: number }) => {
         if (Array.isArray(g.entries)) return g as Goal
         const entries: GoalEntry[] = []

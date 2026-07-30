@@ -36,7 +36,8 @@ interface Tombstone { id: string; type: 'project' | 'task' | 'sprint'; deletedAt
 interface StickyNote {
   id: string; projectId: string; content: string; color: string
   x: number; y: number; width: number; height: number; taskId?: string
-  connections?: string[]; createdAt: string; updatedAt: string
+  taskIds?: string[]; goalIds?: string[]; connections?: string[]
+  createdAt: string; updatedAt: string
   fontSize?: string; type?: 'note' | 'text'; completedAt?: string
 }
 interface GoalEntry { id: string; date: string; label?: string; value: number; createdAt: string }
@@ -122,6 +123,7 @@ function getDb(): Database.Database {
   migrateProjectsArchivedColumn(_db)
   migrateMemoryDropProjectFk(_db)
   migrateTaskImagesToDisk(_db)
+  migrateNotesTaskIdsGoalIds(_db)
   migrateFromJson(_db)
   trimEventLog(_db)
   return _db
@@ -367,6 +369,24 @@ function migrateTaskImagesToDisk(db: Database.Database): void {
   }
 }
 
+// ── migrateNotesTaskIdsGoalIds ────────────────────────────────────────────
+// Adds task_ids and goal_ids TEXT columns to notes (JSON arrays). Idempotent.
+
+function migrateNotesTaskIdsGoalIds(db: Database.Database): void {
+  const colExists = (table: string, col: string): boolean => {
+    const info = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]
+    return info.some((r) => r.name === col)
+  }
+  if (!colExists('notes', 'task_ids')) {
+    db.prepare('ALTER TABLE notes ADD COLUMN task_ids TEXT').run()
+    console.log('[store] Added task_ids column to notes')
+  }
+  if (!colExists('notes', 'goal_ids')) {
+    db.prepare('ALTER TABLE notes ADD COLUMN goal_ids TEXT').run()
+    console.log('[store] Added goal_ids column to notes')
+  }
+}
+
 // ── Schema ───────────────────────────────────────────────────────────────────
 
 function initSchema(db: Database.Database): void {
@@ -467,6 +487,7 @@ function initSchema(db: Database.Database): void {
       connected_note_id TEXT NOT NULL,
       PRIMARY KEY (note_id, connected_note_id)
     );
+    -- v3.x migration moved to migrateNotesTaskIdsGoalIds() for idempotency
     CREATE TABLE IF NOT EXISTS goals (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
@@ -677,7 +698,7 @@ function prepareWrite(db: Database.Database) {
     image:   db.prepare('INSERT INTO task_images (id,task_id,name,ext,size,added_at) VALUES (?,?,?,?,?,?)'),
     sprint:  db.prepare('INSERT INTO sprints (id,project_id,name,created_at,closed_at) VALUES (?,?,?,?,?)'),
     tomb:    db.prepare('INSERT INTO tombstones (id,type,deleted_at) VALUES (?,?,?)'),
-    note:    db.prepare('INSERT INTO notes (id,project_id,content,color,x,y,width,height,task_id,font_size,type,completed_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'),
+    note:    db.prepare('INSERT INTO notes (id,project_id,content,color,x,y,width,height,task_id,task_ids,goal_ids,font_size,type,completed_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'),
     conn:    db.prepare('INSERT OR IGNORE INTO note_connections (note_id,connected_note_id) VALUES (?,?)'),
     goal:    db.prepare('INSERT INTO goals (id,title,target,unit,color,project_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)'),
     entry:   db.prepare('INSERT INTO goal_entries (id,goal_id,date,label,value,created_at) VALUES (?,?,?,?,?,?)'),
@@ -735,7 +756,10 @@ function prepareWrite(db: Database.Database) {
     },
     note: (n: StickyNote): void => {
       ins.note.run(n.id, n.projectId, n.content, n.color, n.x, n.y, n.width, n.height,
-        n.taskId ?? null, n.fontSize ?? null, n.type ?? null, n.completedAt ?? null,
+        n.taskId ?? null,
+        n.taskIds?.length ? JSON.stringify(n.taskIds) : null,
+        n.goalIds?.length ? JSON.stringify(n.goalIds) : null,
+        n.fontSize ?? null, n.type ?? null, n.completedAt ?? null,
         n.createdAt, n.updatedAt)
       for (const c of n.connections ?? []) ins.conn.run(n.id, c)
     },
@@ -992,6 +1016,8 @@ export function loadData(): SaveData {
     x: n.x, y: n.y, width: n.width, height: n.height,
     createdAt: n.created_at, updatedAt: n.updated_at,
     ...(n.task_id != null ? { taskId: n.task_id } : {}),
+    ...(n.task_ids != null ? { taskIds: JSON.parse(n.task_ids) } : {}),
+    ...(n.goal_ids != null ? { goalIds: JSON.parse(n.goal_ids) } : {}),
     ...(n.font_size != null ? { fontSize: n.font_size } : {}),
     ...(n.type != null ? { type: n.type } : {}),
     ...(n.completed_at != null ? { completedAt: n.completed_at } : {}),

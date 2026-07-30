@@ -15,6 +15,8 @@ import { FinancialView } from './components/views/FinancialView'
 import { UpcomingView } from './components/views/UpcomingView'
 import { PlanView } from './components/views/PlanView'
 import { ReportsView } from './components/views/ReportsView'
+import { GraphView } from './components/views/GraphView'
+import type { NavigateTarget } from './utils/graph-layout'
 import { FilesView } from './components/views/FilesView'
 import { AIView } from './components/ai/AIView'
 import { MemoryView } from './components/ai/MemoryView'
@@ -157,6 +159,7 @@ export default function App() {
     | 'memory'
     | 'agents'
     | 'planejamento'
+    | 'graph'
   >('home')
   const [searchOpen, setSearchOpen] = useState(false)
   const [excelExportOpen, setExcelExportOpen] = useState(false)
@@ -515,6 +518,37 @@ export default function App() {
             <FleetView projects={projects} onOpenChat={() => setActiveView('ai')} />
           ) : activeView === 'habits' ? (
             <HabitView />
+          ) : activeView === 'graph' ? (
+            <GraphView
+              onNavigate={(target: NavigateTarget) => {
+                switch (target.type) {
+                  case 'project':
+                    setActiveProject(target.id)
+                    setActiveView('board')
+                    setSprintFilter(null)
+                    break
+                  case 'task': {
+                    setActiveProject(target.projectId)
+                    setActiveView('board')
+                    setSprintFilter(null)
+                    const t = tasks.find((tk) => tk.id === target.id)
+                    if (t) setViewTask(t)
+                    break
+                  }
+                  case 'note':
+                    setActiveProject(target.projectId)
+                    setActiveView('canvas')
+                    setSprintFilter(null)
+                    break
+                  case 'goal':
+                    setActiveView('goals')
+                    break
+                  case 'habit':
+                    setActiveView('habits')
+                    break
+                }
+              }}
+            />
           ) : activeView === 'goals' ? (
             <GoalView projects={projects} />
           ) : activeView === 'done' ? (
@@ -558,38 +592,6 @@ export default function App() {
                     {activeProject.description}
                   </span>
                 )}
-                <div className="flex items-center gap-1 ml-4 p-0.5 rounded-lg bg-[#2a2a2a] border border-[#3b3b3b]">
-                  <button
-                    onClick={() => setActiveView('board')}
-                    className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
-                      activeView === 'board'
-                        ? 'bg-[#3b3b3b] text-[#d4d4d4]'
-                        : 'text-[#999999] hover:text-[#d4d4d4]'
-                    }`}
-                  >
-                    Board
-                  </button>
-                  <button
-                    onClick={() => setActiveView('canvas')}
-                    className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
-                      activeView === 'canvas'
-                        ? 'bg-[#3b3b3b] text-[#d4d4d4]'
-                        : 'text-[#999999] hover:text-[#d4d4d4]'
-                    }`}
-                  >
-                    Canvas
-                  </button>
-                  <button
-                    onClick={() => setActiveView('files')}
-                    className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
-                      activeView === 'files'
-                        ? 'bg-[#3b3b3b] text-[#d4d4d4]'
-                        : 'text-[#999999] hover:text-[#d4d4d4]'
-                    }`}
-                  >
-                    Arquivos
-                  </button>
-                </div>
                 <div className="ml-auto flex items-center gap-3">
                   {(activeProject.links?.length ?? 0) > 0 && (
                     <ProjectLinksDropdown
