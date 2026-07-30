@@ -235,6 +235,8 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    o modelo abre a conversa inteira com `ler_conversa` (senão gasta buscas às cegas e refaz
    do zero). Compartilhada entre chat e code-agent.
 
+10. **Orçamento é por chamada do modelo, não por tool round.** `maxSteps` limita toda chamada bem-sucedida da run — rodadas principais, compactação e resposta final. O contexto de uma conversa reaberta entra limitado (12 mensagens/24k caracteres/1 imagem); ferramentas além de 8 numa rodada recebem resultado sintético. O limite é **por execução**: várias conversas/projetos continuam rodando em paralelo. O subagente de pesquisa exige aprovação, é no máximo 2 por run e seu resumo é cortado antes de voltar ao agente pai.
+
 ## Segurança — o que já está resolvido
 
 `main/web-fetch.ts` busca páginas cuja URL **vem do modelo**, ou seja, não é

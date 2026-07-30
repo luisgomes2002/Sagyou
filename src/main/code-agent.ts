@@ -177,6 +177,12 @@ function fn(name: string, description: string, parameters: Record<string, unknow
 
 /** Max steps for a research sub-agent spawned via pesquisar_agente. */
 export const RESEARCH_AGENT_MAX_STEPS = 15
+/** A parent run may delegate only bounded, independent research. */
+export const MAX_RESEARCH_SUBAGENTS_PER_RUN = 2
+/** Prevent a research report from becoming the next prompt's whole context. */
+export const RESEARCH_RESULT_CHAR_CAP = 6_000
+/** A single completion must not fan out into an unbounded tool payload. */
+export const MAX_TOOL_CALLS_PER_STEP = 8
 
 /** Read-only tools the research sub-agent may call. No writes, no shell. */
 export const RESEARCH_AGENT_TOOLS: ToolDef[] = [
@@ -404,7 +410,7 @@ export function codeToolsFor(opts: { pinnedFiles: boolean }): ToolDef[] {
 }
 
 /** Tools that mutate the disk / run code — gated behind per-action approval. */
-const APPROVAL_TOOLS = new Set(['escrever_arquivo', 'executar_comando'])
+const APPROVAL_TOOLS = new Set(['escrever_arquivo', 'executar_comando', 'rodar_subagente'])
 
 /** Whether a tool must be approved by the user before it runs. */
 export function needsApproval(name: string): boolean {
@@ -459,6 +465,8 @@ export const defaultCommandRunner: CommandRunner = (command, { cwd, timeoutMs, s
 export interface ToolContext {
   /** Nesting depth for sub-agents. Omitted or 0 = top-level agent. */
   subAgentDepth?: number
+  /** Research is useful only when bounded; kept per parent run, never global. */
+  researchAgentsStarted?: number
   /** The project folder every path is confined to. */
   root: string
   run?: CommandRunner
@@ -1174,7 +1182,8 @@ ${tarefa}
 async function handleResearchSubAgent(
   args: Record<string, unknown>,
   ctx: ToolContext,
-  callModel: (messages: AgentMessage[], tools: ToolDef[]) => Promise<{ message: AgentMessage; usage?: TokenUsage }>
+  callModel: (messages: AgentMessage[], tools: ToolDef[]) => Promise<{ message: AgentMessage; usage?: TokenUsage }>,
+  onUsage?: (usage: TokenUsage) => void
 ): Promise<ToolResult> {
   const depth = (ctx.subAgentDepth ?? 0) + 1
   if (depth > 1) {
@@ -1186,6 +1195,14 @@ async function handleResearchSubAgent(
     }
   }
 
+  if ((ctx.researchAgentsStarted ?? 0) >= MAX_RESEARCH_SUBAGENTS_PER_RUN) {
+    return {
+      content: JSON.stringify({ erro: `Limite de ${MAX_RESEARCH_SUBAGENTS_PER_RUN} sub-agentes por execução atingido.` }),
+      summary: 'Sub-agente rejeitado: limite por execução'
+    }
+  }
+  ctx.researchAgentsStarted = (ctx.researchAgentsStarted ?? 0) + 1
+
   const tarefa = typeof args.tarefa === 'string' ? args.tarefa.trim() : ''
   if (!tarefa) {
     return {
@@ -1195,8 +1212,11 @@ async function handleResearchSubAgent(
   }
 
   try {
-    const resultado = await runResearchAgent(tarefa, ctx.root, callModel)
-    return { content: resultado, summary: `Sub-agente concluído: ${tarefa.slice(0, 80)}` }
+    const resultado = await runResearchAgent(tarefa, ctx.root, callModel, onUsage)
+    const content = resultado.length > RESEARCH_RESULT_CHAR_CAP
+      ? resultado.slice(0, RESEARCH_RESULT_CHAR_CAP) + '\n…(resumo do sub-agente truncado)'
+      : resultado
+    return { content, summary: `Sub-agente concluído: ${tarefa.slice(0, 80)}` }
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e)
     return {
@@ -1219,7 +1239,8 @@ async function handleResearchSubAgent(
 export async function runResearchAgent(
   tarefa: string,
   root: string,
-  callModel: (messages: AgentMessage[], tools: ToolDef[]) => Promise<{ message: AgentMessage; usage?: TokenUsage }>
+  callModel: (messages: AgentMessage[], tools: ToolDef[]) => Promise<{ message: AgentMessage; usage?: TokenUsage }>,
+  onUsage?: (usage: TokenUsage) => void
 ): Promise<string> {
   const systemPrompt = buildResearchPrompt(tarefa)
   const messages: AgentMessage[] = [
@@ -1236,7 +1257,8 @@ export async function runResearchAgent(
   const readRepeatsSub = new Map<string, number>()
 
   for (let step = 0; step < RESEARCH_AGENT_MAX_STEPS; step++) {
-    const { message } = await callModel(messages, tools)
+    const { message, usage } = await callModel(messages, tools)
+    if (usage) onUsage?.(usage)
     messages.push(message)
 
     // No tool calls → agent is done
@@ -1285,7 +1307,8 @@ export async function runResearchAgent(
     content:
       'Você atingiu o limite de passos. Resuma suas descobertas em um parágrafo conciso, destacando as informações mais relevantes para a tarefa.'
   })
-  const { message } = await callModel(messages, [])
+  const { message, usage } = await callModel(messages, [])
+  if (usage) onUsage?.(usage)
   return message.content || 'Sub-agente atingiu o limite de passos sem produzir resposta.'
 }
 
@@ -1320,7 +1343,8 @@ async function summarizeHistory(
     { role: 'user', content: `${prefix}${midText.slice(0, 40_000)}` }
   ]
   try {
-    const { message } = await deps.callModel(prompt, [])
+    const { message, usage } = await deps.callModel(prompt, [])
+    if (usage) deps.onUsage?.(usage)
     return (message.content ?? '').trim().slice(0, 3_000)
   } catch {
     return previousSummary
@@ -1699,7 +1723,7 @@ export async function runCodeAgent(
 
         let toolResult: ToolResult
         if (name === 'rodar_subagente') {
-          toolResult = await handleResearchSubAgent(args, ctx, deps.callModel)
+          toolResult = await handleResearchSubAgent(args, ctx, deps.callModel, deps.onUsage)
         } else {
           toolResult = await runCodeTool(name, args, ctx)
         }
@@ -1836,7 +1860,8 @@ export async function runCodeAgent(
           { role: 'user', content: midText.slice(0, 50000) }
         ]
         try {
-          const { message } = await deps.callModel(compactPrompt, [])
+          const { message, usage } = await deps.callModel(compactPrompt, [])
+          if (usage) deps.onUsage?.(usage)
           const summary = (message.content ?? '').trim()
           if (summary && summary.length < 5000) {
             const extras: string[] = []

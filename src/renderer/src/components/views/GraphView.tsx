@@ -5,6 +5,7 @@ import {
   createLiveSimulation,
   GRAPH_NODE_COLORS,
   type GraphNode,
+  type GraphEdge,
   type NavigateTarget
 } from '../../utils/graph-layout'
 import type { Simulation } from 'd3-force'
@@ -14,6 +15,11 @@ interface Props {
 }
 
 type ResolvedEdge = { source: GraphNode; target: GraphNode; type: 'explicit' | 'structural' }
+
+const INITIAL_LAYOUT_TICKS = 100
+const INITIAL_LAYOUT_ALPHA = 0.6
+const DRAG_ALPHA = 0.3
+const IDLE_ALPHA_TARGET = 0.04
 
 export function GraphView({ onNavigate }: Props) {
   const projects = useKanbanStore((s) => s.projects)
@@ -62,10 +68,10 @@ export function GraphView({ onNavigate }: Props) {
   const isPanning = useRef(false)
   const panStart = useRef({ x: 0, y: 0 })
 
-  const simRef = useRef<Simulation<GraphNode, undefined> | null>(null)
+  const simRef = useRef<Simulation<GraphNode, GraphEdge> | null>(null)
   const dragNodeId = useRef<string | null>(null)
 
-  const positionOverrides = useRef<Map<string, { x: number; y: number }>>(new Map())
+  const positionsRef = useRef<Map<string, { x: number; y: number }>>(new Map())
 
   const [tooltip, setTooltip] = useState<{ x: number; y: number; node: GraphNode } | null>(null)
 
@@ -73,14 +79,42 @@ export function GraphView({ onNavigate }: Props) {
   useEffect(() => {
     if (nodes.length === 0) return
 
-    const sim = createLiveSimulation(nodes, edges)
+    // Reuse positions for existing nodes after store updates, avoiding a full
+    // rearrangement when a task or note changes.
+    for (const node of nodes) {
+      const previous = positionsRef.current.get(node.id)
+      if (previous) {
+        node.x = previous.x
+        node.y = previous.y
+        node.vx = 0
+        node.vy = 0
+      }
+    }
+
+    const sim = createLiveSimulation(nodes, edges).stop()
+    // Settle once before showing the graph. Calling tick from the tick event
+    // re-entered the simulation and made the graph continuously accelerate.
+    sim.tick(INITIAL_LAYOUT_TICKS)
+    sim.alpha(INITIAL_LAYOUT_ALPHA).alphaTarget(IDLE_ALPHA_TARGET).restart()
     simRef.current = sim
 
+    const savePositions = () => {
+      positionsRef.current = new Map(
+        nodes
+          .filter((node) => node.x != null && node.y != null)
+          .map((node) => [node.id, { x: node.x!, y: node.y! }])
+      )
+    }
+    savePositions()
+    setSimTick((tick) => tick + 1)
+
     sim.on('tick', () => {
-      setSimTick((t) => t + 1)
+      savePositions()
+      setSimTick((tick) => tick + 1)
     })
 
     return () => {
+      savePositions()
       sim.stop()
       simRef.current = null
     }
@@ -164,8 +198,12 @@ export function GraphView({ onNavigate }: Props) {
       const pos = toGraphCoords(e.clientX, e.clientY)
       const node = nodeMap.get(dragNodeId.current)
       if (node) {
+        node.x = pos.x
+        node.y = pos.y
         node.fx = pos.x
         node.fy = pos.y
+        node.vx = 0
+        node.vy = 0
       }
       setSimTick((t) => t + 1)
       return
@@ -187,7 +225,16 @@ export function GraphView({ onNavigate }: Props) {
         node.fy = null
       }
       dragNodeId.current = null
-      positionOverrides.current = new Map()
+      const sim = simRef.current
+      if (sim) {
+        positionsRef.current = new Map(
+          sim
+            .nodes()
+            .filter((currentNode) => currentNode.x != null && currentNode.y != null)
+            .map((currentNode) => [currentNode.id, { x: currentNode.x!, y: currentNode.y! }])
+        )
+        sim.alpha(0).stop()
+      }
     }
   }, [nodeMap])
 
@@ -201,7 +248,7 @@ export function GraphView({ onNavigate }: Props) {
       node.fx = pos.x
       node.fy = pos.y
       dragNodeId.current = nodeId
-      simRef.current?.alpha(0.3).restart()
+      simRef.current?.alpha(DRAG_ALPHA).restart()
     },
     [toGraphCoords, nodeMap]
   )
