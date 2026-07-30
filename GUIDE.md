@@ -64,6 +64,7 @@ qualquer coisa persistida.
 | Dinheiro | `decimal.js` — **nunca** `number` (veja abaixo) |
 | Testes | Vitest + Testing Library, jsdom por padrão |
 | Drag & drop | dnd-kit |
+| Grafo | d3-force |
 | IA | SDK `openai` (qualquer endpoint compatível), proxiado pelo main |
 
 Idioma: **a UI e os textos são em pt-BR**; código, nomes e comentários em
@@ -118,7 +119,7 @@ src/
       aiRun.ts   # execução da IA (store separada, sobrevive à troca de view)
     components/
       modals/     # ~9 modais (GoalModal, TaskModal, ProjectModal, …)
-      views/      # ~11 views (Board, GoalView, HabitView, …)
+      views/      # views da aplicação (Board, GraphView, GoalView, HabitView, …)
       ai/         # componentes de IA (AIView, FleetView, AiRunHost, …)
       layout/     # Sidebar, TitleBar, Toast
       financial/  # componentes financeiros
@@ -176,6 +177,7 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    `ai-run-metrics.json` (uma linha por execução do agente — modelo, passos,
    tokens, buscas redundantes, releituras — regras puras em `main/run-metrics.ts`,
    enviadas pelo `runAgent` no `finally`, best-effort), `chat-images/`,
+   `chat-files/` (texto extraído dos documentos enviados no chat, limpo com a conversa),
     `task-images/` (bytes das imagens de task — só metadata no DB, downscale JPEG
     no cliente, `migrateTaskImagesToDisk` migra dados legados), `skills/`
     (arquivos `.md` de system prompts — usados via `/skill-name` no chat),
@@ -291,6 +293,9 @@ Não "simplifique" nenhuma destas sem ler o comentário que as acompanha:
   os dois, uma resposta virou 12 requisições HTTP.
 - **A store da execução da IA é separada (`store/aiRun.ts`)** — a execução
   sobrevive à `AIView` ser desmontada. Não a mova para dentro do componente.
+- **O layout do grafo é uma simulação viva** (`GraphView.tsx` + `utils/graph-layout.ts`):
+  o d3-force muta nós, então preserve `positionsRef` ao recriar o grafo e nunca chame
+  `sim.tick()` no evento `tick`. Arrastar fixa só durante o gesto; ao soltar, pare e guarde a posição da sessão.
 - **`ai/tools.ts` está fatiado** — as helpers e constantes (`fn`, `resolveTask`,
   `PRIORITIES`, …) vivem em `ai/tools/helpers.ts` e as 31 definições do REGISTRY
   em `ai/tools/entries.ts`. `tools.ts` só tem a infraestrutura (REGISTRY,
@@ -399,9 +404,6 @@ Não "simplifique" nenhuma destas sem ler o comentário que as acompanha:
   chamando bwrap/containers com o sandbox off). Checado **antes** de
   `looksLikeSandboxBlock` (que também casa `bwrap:`), pra não rotular uma falha de
   namespace — sandbox que não *iniciou* — como tentativa de sair do projeto.
-- 📎 **`resolveExecutable`** continua em `index.ts` com teste,
-  mas **não ligado a nada** — pode ser removido depois. `AgentRunMeta.agent` agora é
-  texto livre com o nome do modelo (linhas antigas leem como `"codex"`).
 - **Arquivos fixados são citados em caminho relativo** (`relative(dir, f)`):
   `files` chega absoluto do `confineToRoot`, então o prompt dizia "caminhos
   relativos à raiz" e entregava um absoluto — além de vazar o home da máquina.
