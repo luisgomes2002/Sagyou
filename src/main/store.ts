@@ -11,55 +11,198 @@ import { decodeDataUrl } from './chat-images'
 
 type Priority = 'low' | 'medium' | 'high' | 'urgent'
 
-interface Column { id: string; name: string; order: number; color?: string }
-interface ProjectLink { id: string; label: string; url: string }
-interface CodePath { id: string; label?: string; path: string }
+interface Column {
+  id: string
+  name: string
+  order: number
+  color?: string
+}
+interface ProjectLink {
+  id: string
+  label: string
+  url: string
+}
+interface CodePath {
+  id: string
+  label?: string
+  path: string
+}
 interface Project {
-  id: string; name: string; description?: string; color: string
-  columns: Column[]; links?: ProjectLink[]
+  id: string
+  name: string
+  description?: string
+  color: string
+  columns: Column[]
+  links?: ProjectLink[]
   // activeCodePathIds is the selection; activeCodePathId is the legacy singular
   // form, still read so pre-multi-select databases and backups keep working.
-  codePaths?: CodePath[]; activeCodePathIds?: string[]; activeCodePathId?: string
+  codePaths?: CodePath[]
+  activeCodePathIds?: string[]
+  activeCodePathId?: string
   order?: number
   archivedAt?: string
-  createdAt: string; updatedAt: string
+  createdAt: string
+  updatedAt: string
 }
-interface TaskImage { id: string; name: string; ext: string; size: number; addedAt: string }
+interface TaskImage {
+  id: string
+  name: string
+  ext: string
+  size: number
+  addedAt: string
+}
 interface Task {
-  id: string; projectId: string; columnId: string; title: string; description?: string
-  priority: Priority; dueDate?: string; tags: string[]; sprintId?: string
-  images?: TaskImage[]; timeSpent?: number; order: number
-  createdAt: string; updatedAt: string; completedAt?: string
+  id: string
+  projectId: string
+  columnId: string
+  title: string
+  description?: string
+  priority: Priority
+  dueDate?: string
+  tags: string[]
+  sprintId?: string
+  images?: TaskImage[]
+  timeSpent?: number
+  order: number
+  createdAt: string
+  updatedAt: string
+  completedAt?: string
 }
-interface Sprint { id: string; projectId: string; name: string; createdAt: string; closedAt?: string }
-interface Tombstone { id: string; type: 'project' | 'task' | 'sprint'; deletedAt: string }
+interface Sprint {
+  id: string
+  projectId: string
+  name: string
+  createdAt: string
+  closedAt?: string
+}
+interface Tombstone {
+  id: string
+  type: 'project' | 'task' | 'sprint'
+  deletedAt: string
+}
 interface StickyNote {
-  id: string; projectId: string; content: string; color: string
-  x: number; y: number; width: number; height: number; taskId?: string
-  taskIds?: string[]; goalIds?: string[]; connections?: string[]
-  createdAt: string; updatedAt: string
-  fontSize?: string; type?: 'note' | 'text'; completedAt?: string
+  id: string
+  projectId: string
+  content: string
+  color: string
+  x: number
+  y: number
+  width: number
+  height: number
+  taskId?: string
+  taskIds?: string[]
+  goalIds?: string[]
+  connections?: string[]
+  createdAt: string
+  updatedAt: string
+  fontSize?: string
+  type?: 'note' | 'text'
+  completedAt?: string
 }
-interface GoalEntry { id: string; date: string; label?: string; value: number; createdAt: string }
+interface GoalEntry {
+  id: string
+  date: string
+  label?: string
+  value: number
+  createdAt: string
+}
 interface Goal {
-  id: string; title: string; entries: GoalEntry[]; target: number; unit: string
-  color: string; projectId?: string; createdAt: string; updatedAt: string
+  id: string
+  title: string
+  entries: GoalEntry[]
+  target: number
+  unit: string
+  color: string
+  projectId?: string
+  createdAt: string
+  updatedAt: string
 }
-interface Habit { id: string; name: string; color: string; completions: string[]; createdAt: string; updatedAt: string }
+interface Habit {
+  id: string
+  name: string
+  color: string
+  completions: string[]
+  createdAt: string
+  updatedAt: string
+}
 // Monetary fields accept number (legacy JSON) or string (current renderer schema);
 // they are coerced to canonical decimal strings via moneyText() on insert.
-interface ShoppingItem { id: string; name: string; qty: number; price?: number | string; done: boolean; link?: string; linkedTransactionId?: string }
-interface FinancialTransaction { id: string; description: string; amount: number | string; type: 'income' | 'expense'; date: string; category?: string; fromShopping?: boolean; linkedTransactionId?: string }
-interface FinancialGoal { id: string; name: string; targetAmount: number | string; targetMonth: number; targetYear: number; completedAt?: string; completionNote?: string }
-interface YieldSource { id: string; name: string; createdAt: string }
-interface YieldEntry { id: string; sourceId: string; date: string; amount: number | string; createdAt: string }
-interface FinancialTable {
-  id: string; name: string; currency: string
-  items: ShoppingItem[]; transactions: FinancialTransaction[]; goals: FinancialGoal[]
-  yieldSources?: YieldSource[]; yieldEntries?: YieldEntry[]
-  createdAt: string; updatedAt: string
+interface ShoppingItem {
+  id: string
+  name: string
+  qty: number
+  price?: number | string
+  done: boolean
+  link?: string
+  linkedTransactionId?: string
 }
-interface StoredFile { id: string; name: string; ext: string; size: number; createdAt: string; projectId?: string }
+interface FinancialTransaction {
+  id: string
+  description: string
+  amount: number | string
+  type: 'income' | 'expense'
+  date: string
+  category?: string
+  fromShopping?: boolean
+  linkedTransactionId?: string
+  source?: string
+}
+interface FinancialGoal {
+  id: string
+  name: string
+  targetAmount: number | string
+  targetMonth: number
+  targetYear: number
+  completedAt?: string
+  completionNote?: string
+}
+interface YieldSource {
+  id: string
+  name: string
+  createdAt: string
+}
+interface YieldEntry {
+  id: string
+  sourceId: string
+  date: string
+  amount: number | string
+  createdAt: string
+}
+interface FinancialTable {
+  id: string
+  name: string
+  currency: string
+  items: ShoppingItem[]
+  transactions: FinancialTransaction[]
+  goals: FinancialGoal[]
+  yieldSources?: YieldSource[]
+  yieldEntries?: YieldEntry[]
+  provider?: string
+  actualBalance?: number | string
+  actualBalanceUpdatedAt?: string
+  budgets?: { category: string; limit: number | string }[]
+  recurringTransactions?: {
+    id: string
+    description: string
+    amount: number | string
+    type: 'income' | 'expense'
+    dayOfMonth: number
+    category?: string
+    source?: string
+    active: boolean
+    lastGeneratedMonth?: string
+  }[]
+  createdAt: string
+  updatedAt: string
+}
+interface StoredFile {
+  id: string
+  name: string
+  ext: string
+  size: number
+  createdAt: string
+  projectId?: string
+}
 
 interface EntityEvent {
   id: string
@@ -74,15 +217,31 @@ interface EntityEvent {
 }
 
 interface TimeBlock {
-  id: string; date: string; startTime: string; endTime: string; title: string
-  description?: string; taskId?: string; habitId?: string
-  type: string; color?: string; order: number
-  createdAt: string; updatedAt: string
+  id: string
+  date: string
+  startTime: string
+  endTime: string
+  title: string
+  description?: string
+  taskId?: string
+  habitId?: string
+  type: string
+  color?: string
+  order: number
+  createdAt: string
+  updatedAt: string
 }
 interface Routine {
-  id: string; title: string; description?: string; startTime: string; endTime: string
-  daysOfWeek: number[]; color?: string; active: boolean
-  createdAt: string; updatedAt: string
+  id: string
+  title: string
+  description?: string
+  startTime: string
+  endTime: string
+  daysOfWeek: number[]
+  color?: string
+  active: boolean
+  createdAt: string
+  updatedAt: string
 }
 
 interface SaveData {
@@ -108,7 +267,10 @@ interface SaveData {
 // ── DB paths ─────────────────────────────────────────────────────────────────
 
 const DB_PATH = join(app.getPath('userData'), is.dev ? 'kanban-dev.db' : 'kanban.db')
-const LEGACY_PATH = join(app.getPath('userData'), is.dev ? 'kanban-data.dev.json' : 'kanban-data.json')
+const LEGACY_PATH = join(
+  app.getPath('userData'),
+  is.dev ? 'kanban-data.dev.json' : 'kanban-data.json'
+)
 
 let _db: Database.Database | null = null
 
@@ -120,6 +282,7 @@ function getDb(): Database.Database {
   initSchema(_db)
   migrateMoneyColumnsToText(_db)
   migrateTransactionsLinkedColumn(_db)
+  migrateFinancialPlanningColumns(_db)
   migrateProjectsArchivedColumn(_db)
   migrateMemoryDropProjectFk(_db)
   migrateTaskImagesToDisk(_db)
@@ -140,6 +303,18 @@ function moneyText(v: unknown): string {
     return isFinite(n) ? String(n) : '0'
   }
   return '0'
+}
+
+function financialMetadata(value: unknown): Record<string, unknown> {
+  if (typeof value !== 'string' || !value) return {}
+  try {
+    const parsed = JSON.parse(value)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {}
+  } catch {
+    return {}
+  }
 }
 
 // One-time migration for existing DBs: the money columns (price, amount,
@@ -253,6 +428,18 @@ function migrateTransactionsLinkedColumn(db: Database.Database): void {
   }
 }
 
+// One-time migration for the optional financial planning metadata and transaction source.
+function migrateFinancialPlanningColumns(db: Database.Database): void {
+  const has = (table: string, column: string): boolean =>
+    (db.prepare('PRAGMA table_info(' + table + ')').all() as { name: string }[]).some(
+      (row) => row.name === column
+    )
+  if (!has('financial_tables', 'metadata'))
+    db.prepare('ALTER TABLE financial_tables ADD COLUMN metadata TEXT').run()
+  if (!has('transactions', 'source'))
+    db.prepare('ALTER TABLE transactions ADD COLUMN source TEXT').run()
+}
+
 // One-time migration for existing DBs: add archived_at column to projects table.
 function migrateProjectsArchivedColumn(db: Database.Database): void {
   const colExists = (table: string, col: string): boolean => {
@@ -303,7 +490,9 @@ function migrateMemoryDropProjectFk(db: Database.Database): void {
         SELECT id,project_id,type,title,body,tags,pinned,source,created_at,updated_at,last_accessed_at,access_count,archived_at FROM memory`)
       db.exec(`DROP TABLE memory`)
       db.exec(`ALTER TABLE memory_new RENAME TO memory`)
-      db.exec(`CREATE INDEX IF NOT EXISTS idx_memory_project ON memory(project_id) WHERE archived_at IS NULL`)
+      db.exec(
+        `CREATE INDEX IF NOT EXISTS idx_memory_project ON memory(project_id) WHERE archived_at IS NULL`
+      )
     })()
     console.log('[store] Migrated memory table: dropped project_id ON DELETE CASCADE')
   } finally {
@@ -523,7 +712,8 @@ function initSchema(db: Database.Database): void {
       name TEXT NOT NULL,
       currency TEXT NOT NULL,
       created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
+      updated_at TEXT NOT NULL,
+      metadata TEXT
     );
     CREATE TABLE IF NOT EXISTS shopping_items (
       id TEXT PRIMARY KEY,
@@ -544,7 +734,8 @@ function initSchema(db: Database.Database): void {
       date TEXT NOT NULL,
       category TEXT,
       from_shopping INTEGER DEFAULT 0,
-      linked_transaction_id TEXT
+      linked_transaction_id TEXT,
+      source TEXT
     );
     CREATE TABLE IF NOT EXISTS financial_goals (
       id TEXT PRIMARY KEY,
@@ -689,64 +880,126 @@ let lastSnapshot: SaveData | null = null
 // save is as cheap as the old inline `ins` object was.
 function prepareWrite(db: Database.Database) {
   const ins = {
-    project: db.prepare('INSERT INTO projects (id,name,description,color,ord,created_at,updated_at,archived_at) VALUES (?,?,?,?,?,?,?,?)'),
-    column:  db.prepare('INSERT INTO project_columns (id,project_id,name,ord,color) VALUES (?,?,?,?,?)'),
-    link:    db.prepare('INSERT INTO project_links (id,project_id,label,url) VALUES (?,?,?,?)'),
-    codePath: db.prepare('INSERT INTO project_code_paths (id,project_id,label,path,active) VALUES (?,?,?,?,?)'),
-    task:    db.prepare('INSERT INTO tasks (id,project_id,column_id,title,description,priority,due_date,sprint_id,time_spent,ord,created_at,updated_at,completed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'),
-    tag:     db.prepare('INSERT OR IGNORE INTO task_tags (task_id,tag) VALUES (?,?)'),
-    image:   db.prepare('INSERT INTO task_images (id,task_id,name,ext,size,added_at) VALUES (?,?,?,?,?,?)'),
-    sprint:  db.prepare('INSERT INTO sprints (id,project_id,name,created_at,closed_at) VALUES (?,?,?,?,?)'),
-    tomb:    db.prepare('INSERT INTO tombstones (id,type,deleted_at) VALUES (?,?,?)'),
-    note:    db.prepare('INSERT INTO notes (id,project_id,content,color,x,y,width,height,task_id,task_ids,goal_ids,font_size,type,completed_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'),
-    conn:    db.prepare('INSERT OR IGNORE INTO note_connections (note_id,connected_note_id) VALUES (?,?)'),
-    goal:    db.prepare('INSERT INTO goals (id,title,target,unit,color,project_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)'),
-    entry:   db.prepare('INSERT INTO goal_entries (id,goal_id,date,label,value,created_at) VALUES (?,?,?,?,?,?)'),
-    habit:   db.prepare('INSERT INTO habits (id,name,color,created_at,updated_at) VALUES (?,?,?,?,?)'),
-    compl:   db.prepare('INSERT OR IGNORE INTO habit_completions (habit_id,date) VALUES (?,?)'),
-    ftable:  db.prepare('INSERT INTO financial_tables (id,name,currency,created_at,updated_at) VALUES (?,?,?,?,?)'),
-    item:    db.prepare('INSERT INTO shopping_items (id,table_id,name,qty,price,done,link,linked_transaction_id) VALUES (?,?,?,?,?,?,?,?)'),
-     tx:      db.prepare('INSERT INTO transactions (id,table_id,description,amount,type,date,category,from_shopping,linked_transaction_id) VALUES (?,?,?,?,?,?,?,?,?)'),
-    fg:      db.prepare('INSERT INTO financial_goals (id,table_id,name,target_amount,target_month,target_year,completed_at,completion_note) VALUES (?,?,?,?,?,?,?,?)'),
-    ysrc:    db.prepare('INSERT INTO yield_sources (id,table_id,name,created_at) VALUES (?,?,?,?)'),
-    yentry:  db.prepare('INSERT INTO yield_entries (id,source_id,date,amount,created_at) VALUES (?,?,?,?,?)'),
-    file:    db.prepare('INSERT INTO files (id,name,ext,size,created_at,project_id) VALUES (?,?,?,?,?,?)'),
+    project: db.prepare(
+      'INSERT INTO projects (id,name,description,color,ord,created_at,updated_at,archived_at) VALUES (?,?,?,?,?,?,?,?)'
+    ),
+    column: db.prepare(
+      'INSERT INTO project_columns (id,project_id,name,ord,color) VALUES (?,?,?,?,?)'
+    ),
+    link: db.prepare('INSERT INTO project_links (id,project_id,label,url) VALUES (?,?,?,?)'),
+    codePath: db.prepare(
+      'INSERT INTO project_code_paths (id,project_id,label,path,active) VALUES (?,?,?,?,?)'
+    ),
+    task: db.prepare(
+      'INSERT INTO tasks (id,project_id,column_id,title,description,priority,due_date,sprint_id,time_spent,ord,created_at,updated_at,completed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'
+    ),
+    tag: db.prepare('INSERT OR IGNORE INTO task_tags (task_id,tag) VALUES (?,?)'),
+    image: db.prepare(
+      'INSERT INTO task_images (id,task_id,name,ext,size,added_at) VALUES (?,?,?,?,?,?)'
+    ),
+    sprint: db.prepare(
+      'INSERT INTO sprints (id,project_id,name,created_at,closed_at) VALUES (?,?,?,?,?)'
+    ),
+    tomb: db.prepare('INSERT INTO tombstones (id,type,deleted_at) VALUES (?,?,?)'),
+    note: db.prepare(
+      'INSERT INTO notes (id,project_id,content,color,x,y,width,height,task_id,task_ids,goal_ids,font_size,type,completed_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+    ),
+    conn: db.prepare(
+      'INSERT OR IGNORE INTO note_connections (note_id,connected_note_id) VALUES (?,?)'
+    ),
+    goal: db.prepare(
+      'INSERT INTO goals (id,title,target,unit,color,project_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)'
+    ),
+    entry: db.prepare(
+      'INSERT INTO goal_entries (id,goal_id,date,label,value,created_at) VALUES (?,?,?,?,?,?)'
+    ),
+    habit: db.prepare(
+      'INSERT INTO habits (id,name,color,created_at,updated_at) VALUES (?,?,?,?,?)'
+    ),
+    compl: db.prepare('INSERT OR IGNORE INTO habit_completions (habit_id,date) VALUES (?,?)'),
+    ftable: db.prepare(
+      'INSERT INTO financial_tables (id,name,currency,created_at,updated_at,metadata) VALUES (?,?,?,?,?,?)'
+    ),
+    item: db.prepare(
+      'INSERT INTO shopping_items (id,table_id,name,qty,price,done,link,linked_transaction_id) VALUES (?,?,?,?,?,?,?,?)'
+    ),
+    tx: db.prepare(
+      'INSERT INTO transactions (id,table_id,description,amount,type,date,category,from_shopping,linked_transaction_id,source) VALUES (?,?,?,?,?,?,?,?,?,?)'
+    ),
+    fg: db.prepare(
+      'INSERT INTO financial_goals (id,table_id,name,target_amount,target_month,target_year,completed_at,completion_note) VALUES (?,?,?,?,?,?,?,?)'
+    ),
+    ysrc: db.prepare('INSERT INTO yield_sources (id,table_id,name,created_at) VALUES (?,?,?,?)'),
+    yentry: db.prepare(
+      'INSERT INTO yield_entries (id,source_id,date,amount,created_at) VALUES (?,?,?,?,?)'
+    ),
+    file: db.prepare(
+      'INSERT INTO files (id,name,ext,size,created_at,project_id) VALUES (?,?,?,?,?,?)'
+    ),
     setting: db.prepare('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)'),
-    timeBlock: db.prepare('INSERT INTO time_blocks (id,date,start_time,end_time,title,description,task_id,habit_id,type,color,ord,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'),
-    routine: db.prepare('INSERT INTO routines (id,title,description,start_time,end_time,days_of_week,color,active,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)'),
+    timeBlock: db.prepare(
+      'INSERT INTO time_blocks (id,date,start_time,end_time,title,description,task_id,habit_id,type,color,ord,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'
+    ),
+    routine: db.prepare(
+      'INSERT INTO routines (id,title,description,start_time,end_time,days_of_week,color,active,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)'
+    )
   }
 
   // Delete a top-level row by id; its children go with it via ON DELETE CASCADE.
   const del = {
     project: db.prepare('DELETE FROM projects WHERE id=?'),
-    task:    db.prepare('DELETE FROM tasks WHERE id=?'),
-    sprint:  db.prepare('DELETE FROM sprints WHERE id=?'),
-    tomb:    db.prepare('DELETE FROM tombstones WHERE id=?'),
-    note:    db.prepare('DELETE FROM notes WHERE id=?'),
-    goal:    db.prepare('DELETE FROM goals WHERE id=?'),
-    habit:   db.prepare('DELETE FROM habits WHERE id=?'),
-    ftable:  db.prepare('DELETE FROM financial_tables WHERE id=?'),
-    file:    db.prepare('DELETE FROM files WHERE id=?'),
+    task: db.prepare('DELETE FROM tasks WHERE id=?'),
+    sprint: db.prepare('DELETE FROM sprints WHERE id=?'),
+    tomb: db.prepare('DELETE FROM tombstones WHERE id=?'),
+    note: db.prepare('DELETE FROM notes WHERE id=?'),
+    goal: db.prepare('DELETE FROM goals WHERE id=?'),
+    habit: db.prepare('DELETE FROM habits WHERE id=?'),
+    ftable: db.prepare('DELETE FROM financial_tables WHERE id=?'),
+    file: db.prepare('DELETE FROM files WHERE id=?'),
     setting: db.prepare('DELETE FROM settings WHERE key=?'),
     timeBlock: db.prepare('DELETE FROM time_blocks WHERE id=?'),
-    routine: db.prepare('DELETE FROM routines WHERE id=?'),
+    routine: db.prepare('DELETE FROM routines WHERE id=?')
   }
 
   const insert = {
     project: (p: Project): void => {
-      ins.project.run(p.id, p.name, p.description ?? null, p.color, p.order ?? null, p.createdAt, p.updatedAt, p.archivedAt ?? null)
+      ins.project.run(
+        p.id,
+        p.name,
+        p.description ?? null,
+        p.color,
+        p.order ?? null,
+        p.createdAt,
+        p.updatedAt,
+        p.archivedAt ?? null
+      )
       for (const c of p.columns ?? []) ins.column.run(c.id, p.id, c.name, c.order, c.color ?? null)
       for (const l of p.links ?? []) ins.link.run(l.id, p.id, l.label, l.url)
-      const active = new Set(p.activeCodePathIds ?? (p.activeCodePathId ? [p.activeCodePathId] : []))
+      const active = new Set(
+        p.activeCodePathIds ?? (p.activeCodePathId ? [p.activeCodePathId] : [])
+      )
       for (const cp of p.codePaths ?? [])
         ins.codePath.run(cp.id, p.id, cp.label ?? null, cp.path, active.has(cp.id) ? 1 : 0)
     },
     task: (t: Task): void => {
-      ins.task.run(t.id, t.projectId, t.columnId, t.title, t.description ?? null, t.priority,
-        t.dueDate ?? null, t.sprintId ?? null, t.timeSpent ?? null, t.order,
-        t.createdAt, t.updatedAt, t.completedAt ?? null)
+      ins.task.run(
+        t.id,
+        t.projectId,
+        t.columnId,
+        t.title,
+        t.description ?? null,
+        t.priority,
+        t.dueDate ?? null,
+        t.sprintId ?? null,
+        t.timeSpent ?? null,
+        t.order,
+        t.createdAt,
+        t.updatedAt,
+        t.completedAt ?? null
+      )
       for (const tag of t.tags ?? []) ins.tag.run(t.id, tag)
-      for (const img of t.images ?? []) ins.image.run(img.id, t.id, img.name, img.ext ?? '', img.size, img.addedAt)
+      for (const img of t.images ?? [])
+        ins.image.run(img.id, t.id, img.name, img.ext ?? '', img.size, img.addedAt)
     },
     sprint: (s: Sprint): void => {
       ins.sprint.run(s.id, s.projectId, s.name, s.createdAt, s.closedAt ?? null)
@@ -755,49 +1008,140 @@ function prepareWrite(db: Database.Database) {
       ins.tomb.run(t.id, t.type, t.deletedAt)
     },
     note: (n: StickyNote): void => {
-      ins.note.run(n.id, n.projectId, n.content, n.color, n.x, n.y, n.width, n.height,
+      ins.note.run(
+        n.id,
+        n.projectId,
+        n.content,
+        n.color,
+        n.x,
+        n.y,
+        n.width,
+        n.height,
         n.taskId ?? null,
         n.taskIds?.length ? JSON.stringify(n.taskIds) : null,
         n.goalIds?.length ? JSON.stringify(n.goalIds) : null,
-        n.fontSize ?? null, n.type ?? null, n.completedAt ?? null,
-        n.createdAt, n.updatedAt)
+        n.fontSize ?? null,
+        n.type ?? null,
+        n.completedAt ?? null,
+        n.createdAt,
+        n.updatedAt
+      )
       for (const c of n.connections ?? []) ins.conn.run(n.id, c)
     },
     goal: (g: Goal): void => {
-      ins.goal.run(g.id, g.title, g.target, g.unit, g.color, g.projectId ?? null, g.createdAt, g.updatedAt)
-      for (const e of g.entries ?? []) ins.entry.run(e.id, g.id, e.date, e.label ?? null, e.value, e.createdAt)
+      ins.goal.run(
+        g.id,
+        g.title,
+        g.target,
+        g.unit,
+        g.color,
+        g.projectId ?? null,
+        g.createdAt,
+        g.updatedAt
+      )
+      for (const e of g.entries ?? [])
+        ins.entry.run(e.id, g.id, e.date, e.label ?? null, e.value, e.createdAt)
     },
     habit: (h: Habit): void => {
       ins.habit.run(h.id, h.name, h.color, h.createdAt, h.updatedAt)
       for (const d of h.completions ?? []) ins.compl.run(h.id, d)
     },
     ftable: (ft: FinancialTable): void => {
-      ins.ftable.run(ft.id, ft.name, ft.currency, ft.createdAt, ft.updatedAt)
-      for (const i of ft.items ?? []) ins.item.run(i.id, ft.id, i.name, i.qty, i.price != null ? moneyText(i.price) : null, i.done ? 1 : 0, i.link ?? null, i.linkedTransactionId ?? null)
-      for (const tx of ft.transactions ?? []) ins.tx.run(tx.id, ft.id, tx.description, moneyText(tx.amount), tx.type, tx.date, tx.category ?? null, tx.fromShopping ? 1 : 0, tx.linkedTransactionId ?? null)
-      for (const fg of ft.goals ?? []) ins.fg.run(fg.id, ft.id, fg.name, moneyText(fg.targetAmount), fg.targetMonth, fg.targetYear, fg.completedAt ?? null, fg.completionNote ?? null)
+      const metadata = JSON.stringify({
+        provider: ft.provider,
+        actualBalance: ft.actualBalance,
+        actualBalanceUpdatedAt: ft.actualBalanceUpdatedAt,
+        budgets: ft.budgets,
+        recurringTransactions: ft.recurringTransactions
+      })
+      ins.ftable.run(ft.id, ft.name, ft.currency, ft.createdAt, ft.updatedAt, metadata)
+      for (const i of ft.items ?? [])
+        ins.item.run(
+          i.id,
+          ft.id,
+          i.name,
+          i.qty,
+          i.price != null ? moneyText(i.price) : null,
+          i.done ? 1 : 0,
+          i.link ?? null,
+          i.linkedTransactionId ?? null
+        )
+      for (const tx of ft.transactions ?? [])
+        ins.tx.run(
+          tx.id,
+          ft.id,
+          tx.description,
+          moneyText(tx.amount),
+          tx.type,
+          tx.date,
+          tx.category ?? null,
+          tx.fromShopping ? 1 : 0,
+          tx.linkedTransactionId ?? null,
+          tx.source ?? null
+        )
+      for (const fg of ft.goals ?? [])
+        ins.fg.run(
+          fg.id,
+          ft.id,
+          fg.name,
+          moneyText(fg.targetAmount),
+          fg.targetMonth,
+          fg.targetYear,
+          fg.completedAt ?? null,
+          fg.completionNote ?? null
+        )
       for (const ys of ft.yieldSources ?? []) ins.ysrc.run(ys.id, ft.id, ys.name, ys.createdAt)
-      for (const ye of ft.yieldEntries ?? []) ins.yentry.run(ye.id, ye.sourceId, ye.date, moneyText(ye.amount), ye.createdAt)
+      for (const ye of ft.yieldEntries ?? [])
+        ins.yentry.run(ye.id, ye.sourceId, ye.date, moneyText(ye.amount), ye.createdAt)
     },
     file: (f: StoredFile): void => {
       ins.file.run(f.id, f.name, f.ext, f.size, f.createdAt, f.projectId ?? null)
     },
     timeBlock: (tb: TimeBlock): void => {
-      ins.timeBlock.run(tb.id, tb.date, tb.startTime, tb.endTime, tb.title,
-        tb.description ?? null, tb.taskId ?? null, tb.habitId ?? null, tb.type,
-        tb.color ?? null, tb.order, tb.createdAt, tb.updatedAt)
+      ins.timeBlock.run(
+        tb.id,
+        tb.date,
+        tb.startTime,
+        tb.endTime,
+        tb.title,
+        tb.description ?? null,
+        tb.taskId ?? null,
+        tb.habitId ?? null,
+        tb.type,
+        tb.color ?? null,
+        tb.order,
+        tb.createdAt,
+        tb.updatedAt
+      )
     },
     routine: (r: Routine): void => {
-      ins.routine.run(r.id, r.title, r.description ?? null, r.startTime, r.endTime,
-        JSON.stringify(r.daysOfWeek ?? []), r.color ?? null, r.active ? 1 : 0,
-        r.createdAt, r.updatedAt)
-    },
+      ins.routine.run(
+        r.id,
+        r.title,
+        r.description ?? null,
+        r.startTime,
+        r.endTime,
+        JSON.stringify(r.daysOfWeek ?? []),
+        r.color ?? null,
+        r.active ? 1 : 0,
+        r.createdAt,
+        r.updatedAt
+      )
+    }
   }
 
-  const setTimer = (v: unknown): void => { ins.setting.run('activeTimer', JSON.stringify(v)) }
-  const clearTimer = (): void => { del.setting.run('activeTimer') }
-  const setTimers = (v: unknown): void => { ins.setting.run('activeTimers', JSON.stringify(v)) }
-  const clearTimers = (): void => { del.setting.run('activeTimers') }
+  const setTimer = (v: unknown): void => {
+    ins.setting.run('activeTimer', JSON.stringify(v))
+  }
+  const clearTimer = (): void => {
+    del.setting.run('activeTimer')
+  }
+  const setTimers = (v: unknown): void => {
+    ins.setting.run('activeTimers', JSON.stringify(v))
+  }
+  const clearTimers = (): void => {
+    del.setting.run('activeTimers')
+  }
 
   return { insert, del, setTimer, clearTimer, setTimers, clearTimers }
 }
@@ -947,7 +1291,10 @@ export function loadData(): SaveData {
 
   // Read every child table once and group by parent id, rather than per-parent.
   const all = (sql: string): any[] => db.prepare(sql).all() as any[]
-  const columnsByProject = groupByKey(all('SELECT * FROM project_columns ORDER BY ord'), 'project_id')
+  const columnsByProject = groupByKey(
+    all('SELECT * FROM project_columns ORDER BY ord'),
+    'project_id'
+  )
   const linksByProject = groupByKey(all('SELECT * FROM project_links'), 'project_id')
   const codePathsByProject = groupByKey(all('SELECT * FROM project_code_paths'), 'project_id')
   const tagsByTask = groupByKey(all('SELECT * FROM task_tags'), 'task_id')
@@ -961,14 +1308,23 @@ export function loadData(): SaveData {
   const ysrcByTable = groupByKey(all('SELECT * FROM yield_sources'), 'table_id')
   const yentryBySource = groupByKey(all('SELECT * FROM yield_entries'), 'source_id')
 
-  const projects = (all('SELECT * FROM projects ORDER BY ord')).map((p) => ({
-    id: p.id, name: p.name, color: p.color,
+  const projects = all('SELECT * FROM projects ORDER BY ord').map((p) => ({
+    id: p.id,
+    name: p.name,
+    color: p.color,
     ...(p.description != null ? { description: p.description } : {}),
-    columns: (columnsByProject.get(p.id) ?? [])
-      .map((c) => ({ id: c.id, name: c.name, order: c.ord, ...(c.color != null ? { color: c.color } : {}) })),
+    columns: (columnsByProject.get(p.id) ?? []).map((c) => ({
+      id: c.id,
+      name: c.name,
+      order: c.ord,
+      ...(c.color != null ? { color: c.color } : {})
+    })),
     ...(() => {
-      const ls = (linksByProject.get(p.id) ?? [])
-        .map((l) => ({ id: l.id, label: l.label, url: l.url }))
+      const ls = (linksByProject.get(p.id) ?? []).map((l) => ({
+        id: l.id,
+        label: l.label,
+        url: l.url
+      }))
       return ls.length ? { links: ls } : {}
     })(),
     ...(() => {
@@ -986,35 +1342,62 @@ export function loadData(): SaveData {
     })(),
     ...(p.ord != null ? { order: p.ord } : {}),
     ...(p.archived_at != null ? { archivedAt: String(p.archived_at) } : {}),
-    createdAt: p.created_at, updatedAt: p.updated_at,
+    createdAt: p.created_at,
+    updatedAt: p.updated_at
   }))
 
-  const tasks = (all('SELECT * FROM tasks')).map((t) => ({
-    id: t.id, projectId: t.project_id, columnId: t.column_id, title: t.title, priority: t.priority,
+  const tasks = all('SELECT * FROM tasks').map((t) => ({
+    id: t.id,
+    projectId: t.project_id,
+    columnId: t.column_id,
+    title: t.title,
+    priority: t.priority,
     tags: (tagsByTask.get(t.id) ?? []).map((r) => r.tag),
-    order: t.ord, createdAt: t.created_at, updatedAt: t.updated_at,
+    order: t.ord,
+    createdAt: t.created_at,
+    updatedAt: t.updated_at,
     ...(t.description != null ? { description: t.description } : {}),
     ...(t.due_date != null ? { dueDate: t.due_date } : {}),
     ...(t.sprint_id != null ? { sprintId: t.sprint_id } : {}),
     ...(t.time_spent != null ? { timeSpent: t.time_spent } : {}),
     ...(t.completed_at != null ? { completedAt: t.completed_at } : {}),
     ...(() => {
-      const imgs = (imagesByTask.get(t.id) ?? [])
-        .map((i) => ({ id: i.id, name: i.name, ext: i.ext ?? '', size: i.size, addedAt: i.added_at }))
+      const imgs = (imagesByTask.get(t.id) ?? []).map((i) => ({
+        id: i.id,
+        name: i.name,
+        ext: i.ext ?? '',
+        size: i.size,
+        addedAt: i.added_at
+      }))
       return imgs.length ? { images: imgs } : {}
-    })(),
+    })()
   }))
 
-  const sprints = (all('SELECT * FROM sprints'))
-    .map((s) => ({ id: s.id, projectId: s.project_id, name: s.name, createdAt: s.created_at, ...(s.closed_at != null ? { closedAt: s.closed_at } : {}) }))
+  const sprints = all('SELECT * FROM sprints').map((s) => ({
+    id: s.id,
+    projectId: s.project_id,
+    name: s.name,
+    createdAt: s.created_at,
+    ...(s.closed_at != null ? { closedAt: s.closed_at } : {})
+  }))
 
-  const tombstones = (all('SELECT * FROM tombstones'))
-    .map((t) => ({ id: t.id, type: t.type, deletedAt: t.deleted_at }))
+  const tombstones = all('SELECT * FROM tombstones').map((t) => ({
+    id: t.id,
+    type: t.type,
+    deletedAt: t.deleted_at
+  }))
 
-  const notes = (all('SELECT * FROM notes')).map((n) => ({
-    id: n.id, projectId: n.project_id, content: n.content, color: n.color,
-    x: n.x, y: n.y, width: n.width, height: n.height,
-    createdAt: n.created_at, updatedAt: n.updated_at,
+  const notes = all('SELECT * FROM notes').map((n) => ({
+    id: n.id,
+    projectId: n.project_id,
+    content: n.content,
+    color: n.color,
+    x: n.x,
+    y: n.y,
+    width: n.width,
+    height: n.height,
+    createdAt: n.created_at,
+    updatedAt: n.updated_at,
     ...(n.task_id != null ? { taskId: n.task_id } : {}),
     ...(n.task_ids != null ? { taskIds: JSON.parse(n.task_ids) } : {}),
     ...(n.goal_ids != null ? { goalIds: JSON.parse(n.goal_ids) } : {}),
@@ -1024,82 +1407,156 @@ export function loadData(): SaveData {
     ...(() => {
       const cs = (connsByNote.get(n.id) ?? []).map((r) => r.connected_note_id)
       return cs.length ? { connections: cs } : {}
-    })(),
+    })()
   }))
 
-  const goals = (all('SELECT * FROM goals')).map((g) => ({
-    id: g.id, title: g.title, target: g.target, unit: g.unit, color: g.color,
-    createdAt: g.created_at, updatedAt: g.updated_at,
+  const goals = all('SELECT * FROM goals').map((g) => ({
+    id: g.id,
+    title: g.title,
+    target: g.target,
+    unit: g.unit,
+    color: g.color,
+    createdAt: g.created_at,
+    updatedAt: g.updated_at,
     ...(g.project_id != null ? { projectId: g.project_id } : {}),
-    entries: (entriesByGoal.get(g.id) ?? [])
-      .map((e) => ({ id: e.id, date: e.date, value: e.value, createdAt: e.created_at, ...(e.label != null ? { label: e.label } : {}) })),
+    entries: (entriesByGoal.get(g.id) ?? []).map((e) => ({
+      id: e.id,
+      date: e.date,
+      value: e.value,
+      createdAt: e.created_at,
+      ...(e.label != null ? { label: e.label } : {})
+    }))
   }))
 
-  const habits = (all('SELECT * FROM habits')).map((h) => ({
-    id: h.id, name: h.name, color: h.color, createdAt: h.created_at, updatedAt: h.updated_at,
-    completions: (complByHabit.get(h.id) ?? []).map((r) => r.date),
+  const habits = all('SELECT * FROM habits').map((h) => ({
+    id: h.id,
+    name: h.name,
+    color: h.color,
+    createdAt: h.created_at,
+    updatedAt: h.updated_at,
+    completions: (complByHabit.get(h.id) ?? []).map((r) => r.date)
   }))
 
-  const lists = (all('SELECT * FROM financial_tables')).map((ft) => ({
-    id: ft.id, name: ft.name, currency: ft.currency, createdAt: ft.created_at, updatedAt: ft.updated_at,
+  const lists = all('SELECT * FROM financial_tables').map((ft) => ({
+    id: ft.id,
+    name: ft.name,
+    currency: ft.currency,
+    createdAt: ft.created_at,
+    updatedAt: ft.updated_at,
+    ...(() => {
+      const meta = financialMetadata(ft.metadata)
+      return {
+        ...(typeof meta.provider === 'string' ? { provider: meta.provider } : {}),
+        ...(meta.actualBalance != null ? { actualBalance: String(meta.actualBalance) } : {}),
+        ...(typeof meta.actualBalanceUpdatedAt === 'string'
+          ? { actualBalanceUpdatedAt: meta.actualBalanceUpdatedAt }
+          : {}),
+        ...(Array.isArray(meta.budgets) ? { budgets: meta.budgets } : {}),
+        ...(Array.isArray(meta.recurringTransactions)
+          ? { recurringTransactions: meta.recurringTransactions }
+          : {})
+      }
+    })(),
     items: (itemsByTable.get(ft.id) ?? []).map((i) => ({
-      id: i.id, name: i.name, qty: i.qty, done: i.done === 1,
+      id: i.id,
+      name: i.name,
+      qty: i.qty,
+      done: i.done === 1,
       ...(i.price != null ? { price: String(i.price) } : {}),
       ...(i.link != null ? { link: i.link } : {}),
-      ...(i.linked_transaction_id != null ? { linkedTransactionId: i.linked_transaction_id } : {}),
+      ...(i.linked_transaction_id != null ? { linkedTransactionId: i.linked_transaction_id } : {})
     })),
     transactions: (txByTable.get(ft.id) ?? []).map((tx) => ({
-      id: tx.id, description: tx.description, amount: String(tx.amount), type: tx.type, date: tx.date,
+      id: tx.id,
+      description: tx.description,
+      amount: String(tx.amount),
+      type: tx.type,
+      date: tx.date,
       ...(tx.category != null ? { category: tx.category } : {}),
       ...(tx.from_shopping ? { fromShopping: true } : {}),
-      ...(tx.linked_transaction_id != null ? { linkedTransactionId: tx.linked_transaction_id } : {}),
+      ...(tx.linked_transaction_id != null
+        ? { linkedTransactionId: tx.linked_transaction_id }
+        : {}),
+      ...(tx.source != null ? { source: tx.source } : {})
     })),
     goals: (fgByTable.get(ft.id) ?? []).map((fg) => ({
-      id: fg.id, name: fg.name, targetAmount: String(fg.target_amount), targetMonth: fg.target_month, targetYear: fg.target_year,
+      id: fg.id,
+      name: fg.name,
+      targetAmount: String(fg.target_amount),
+      targetMonth: fg.target_month,
+      targetYear: fg.target_year,
       ...(fg.completed_at != null ? { completedAt: fg.completed_at } : {}),
-      ...(fg.completion_note != null ? { completionNote: fg.completion_note } : {}),
+      ...(fg.completion_note != null ? { completionNote: fg.completion_note } : {})
     })),
     yieldSources: (ysrcByTable.get(ft.id) ?? []).map((ys) => ({
-      id: ys.id, name: ys.name, createdAt: ys.created_at,
+      id: ys.id,
+      name: ys.name,
+      createdAt: ys.created_at
     })),
     yieldEntries: (() => {
       const sources = ysrcByTable.get(ft.id) ?? []
       const entries: YieldEntry[] = []
       for (const src of sources) {
-        for (const ye of (yentryBySource.get(src.id) ?? [])) {
-          entries.push({ id: ye.id, sourceId: ye.source_id, date: ye.date, amount: String(ye.amount), createdAt: ye.created_at })
+        for (const ye of yentryBySource.get(src.id) ?? []) {
+          entries.push({
+            id: ye.id,
+            sourceId: ye.source_id,
+            date: ye.date,
+            amount: String(ye.amount),
+            createdAt: ye.created_at
+          })
         }
       }
       return entries
-    })(),
+    })()
   }))
 
   const files = (db.prepare('SELECT * FROM files').all() as any[]).map((f) => ({
-    id: f.id, name: f.name, ext: f.ext, size: f.size, createdAt: f.created_at,
-    ...(f.project_id != null ? { projectId: f.project_id } : {}),
+    id: f.id,
+    name: f.name,
+    ext: f.ext,
+    size: f.size,
+    createdAt: f.created_at,
+    ...(f.project_id != null ? { projectId: f.project_id } : {})
   }))
 
-  const timeBlocks = (db.prepare('SELECT * FROM time_blocks ORDER BY date, ord').all() as any[]).map((tb) => ({
-    id: tb.id, date: tb.date, startTime: tb.start_time, endTime: tb.end_time,
-    title: tb.title, type: tb.type,
+  const timeBlocks = (
+    db.prepare('SELECT * FROM time_blocks ORDER BY date, ord').all() as any[]
+  ).map((tb) => ({
+    id: tb.id,
+    date: tb.date,
+    startTime: tb.start_time,
+    endTime: tb.end_time,
+    title: tb.title,
+    type: tb.type,
     ...(tb.description != null ? { description: tb.description } : {}),
     ...(tb.task_id != null ? { taskId: tb.task_id } : {}),
     ...(tb.habit_id != null ? { habitId: tb.habit_id } : {}),
     ...(tb.color != null ? { color: tb.color } : {}),
-    order: tb.ord, createdAt: tb.created_at, updatedAt: tb.updated_at,
+    order: tb.ord,
+    createdAt: tb.created_at,
+    updatedAt: tb.updated_at
   }))
 
   const routines = (db.prepare('SELECT * FROM routines').all() as any[]).map((r) => {
     let days: number[] = []
-    try { const p = JSON.parse(String(r.days_of_week ?? '[]')); if (Array.isArray(p)) days = p.filter((d): d is number => typeof d === 'number') }
-    catch { /* malformed JSON → empty list */ }
+    try {
+      const p = JSON.parse(String(r.days_of_week ?? '[]'))
+      if (Array.isArray(p)) days = p.filter((d): d is number => typeof d === 'number')
+    } catch {
+      /* malformed JSON → empty list */
+    }
     return {
-      id: r.id, title: r.title, startTime: r.start_time, endTime: r.end_time,
+      id: r.id,
+      title: r.title,
+      startTime: r.start_time,
+      endTime: r.end_time,
       daysOfWeek: days,
       ...(r.description != null ? { description: r.description } : {}),
       ...(r.color != null ? { color: r.color } : {}),
       active: r.active === 1,
-      createdAt: r.created_at, updatedAt: r.updated_at,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at
     }
   })
 
@@ -1117,8 +1574,17 @@ export function loadData(): SaveData {
   const activeTimers = Array.isArray(timersRaw) ? timersRaw : legacyTimer ? [legacyTimer] : []
 
   return {
-    projects, tasks, sprints, tombstones, notes, goals, habits, lists, files,
-    timeBlocks, routines,
+    projects,
+    tasks,
+    sprints,
+    tombstones,
+    notes,
+    goals,
+    habits,
+    lists,
+    files,
+    timeBlocks,
+    routines,
     activeTimers,
     // Legacy field, still returned for any consumer that reads it directly.
     activeTimer: legacyTimer ?? activeTimers[0] ?? null
@@ -1168,8 +1634,14 @@ function entityLabel(e: EntityWithTitle | undefined): string {
 
 function entityTypeLabel(type: string): string {
   const map: Record<string, string> = {
-    project: 'projeto', task: 'task', sprint: 'sprint', note: 'nota',
-    goal: 'meta', habit: 'hábito', financial_table: 'tabela financeira', file: 'arquivo'
+    project: 'projeto',
+    task: 'task',
+    sprint: 'sprint',
+    note: 'nota',
+    goal: 'meta',
+    habit: 'hábito',
+    financial_table: 'tabela financeira',
+    file: 'arquivo'
   }
   return map[type] ?? type
 }
@@ -1181,7 +1653,8 @@ function entityTypeLabel(type: string): string {
 function diffEvents(prev: SaveData | null, next: SaveData, timestamp: string): EntityEvent[] {
   const events: EntityEvent[] = []
   const emit = (type: string, id: string, action: EntityEvent['action'], label: string): void => {
-    const article = action === 'created' ? 'criado' : action === 'updated' ? 'atualizado' : 'removido'
+    const article =
+      action === 'created' ? 'criado' : action === 'updated' ? 'atualizado' : 'removido'
     events.push({
       id: randomUUID(),
       entityType: type,
@@ -1202,12 +1675,14 @@ function diffEvents(prev: SaveData | null, next: SaveData, timestamp: string): E
     const prevMap = new Map((prevArr ?? []).map((e) => [e.id, e]))
     const nextIds = new Set((nextArr ?? []).map((e) => e.id))
     for (const e of nextArr ?? []) {
-      if (!prevMap.has(e.id)) emit(type, e.id, 'created', entityLabel(e as unknown as EntityWithTitle))
+      if (!prevMap.has(e.id))
+        emit(type, e.id, 'created', entityLabel(e as unknown as EntityWithTitle))
       else if (JSON.stringify(prevMap.get(e.id)) !== JSON.stringify(e))
         emit(type, e.id, 'updated', entityLabel(e as unknown as EntityWithTitle))
     }
     for (const e of prevArr ?? [])
-      if (!nextIds.has(e.id)) emit(type, e.id, 'deleted', entityLabel(e as unknown as EntityWithTitle))
+      if (!nextIds.has(e.id))
+        emit(type, e.id, 'deleted', entityLabel(e as unknown as EntityWithTitle))
   }
 
   if (prev) {
@@ -1223,11 +1698,14 @@ function diffEvents(prev: SaveData | null, next: SaveData, timestamp: string): E
     for (const e of next.projects ?? []) emit('project', e.id, 'created', entityLabel(e))
     for (const e of next.tasks ?? []) emit('task', e.id, 'created', entityLabel(e))
     for (const e of next.sprints ?? []) emit('sprint', e.id, 'created', entityLabel(e))
-    for (const e of next.notes ?? []) emit('note', e.id, 'created', entityLabel(e as unknown as EntityWithTitle))
+    for (const e of next.notes ?? [])
+      emit('note', e.id, 'created', entityLabel(e as unknown as EntityWithTitle))
     for (const e of next.goals ?? []) emit('goal', e.id, 'created', entityLabel(e))
     for (const e of next.habits ?? []) emit('habit', e.id, 'created', entityLabel(e))
-    for (const e of next.lists ?? []) emit('financial_table', e.id, 'created', entityLabel(e as unknown as EntityWithTitle))
-    for (const e of next.files ?? []) emit('file', e.id, 'created', entityLabel(e as unknown as EntityWithTitle))
+    for (const e of next.lists ?? [])
+      emit('financial_table', e.id, 'created', entityLabel(e as unknown as EntityWithTitle))
+    for (const e of next.files ?? [])
+      emit('file', e.id, 'created', entityLabel(e as unknown as EntityWithTitle))
   }
   return events
 }
@@ -1391,7 +1869,9 @@ export function touchMemories(ids: string[], nowIso: string): void {
 export function archiveMemories(ids: string[], nowIso: string): void {
   if (!ids.length) return
   const db = getDb()
-  const stmt = db.prepare('UPDATE memory SET archived_at=?, updated_at=? WHERE id=? AND archived_at IS NULL')
+  const stmt = db.prepare(
+    'UPDATE memory SET archived_at=?, updated_at=? WHERE id=? AND archived_at IS NULL'
+  )
   db.transaction((list: string[]) => {
     for (const id of list) stmt.run(nowIso, nowIso, id)
   })(ids)

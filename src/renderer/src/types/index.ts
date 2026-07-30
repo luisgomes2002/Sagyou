@@ -115,10 +115,13 @@ export interface ShoppingItem {
 
 export type Currency = 'BRL' | 'USD' | 'JPY'
 
-export const CURRENCY_CONFIG: Record<Currency, { symbol: string; decimals: number; label: string }> = {
+export const CURRENCY_CONFIG: Record<
+  Currency,
+  { symbol: string; decimals: number; label: string }
+> = {
   BRL: { symbol: 'R$', decimals: 2, label: 'Real' },
-  USD: { symbol: '$',  decimals: 2, label: 'Dólar' },
-  JPY: { symbol: '¥',  decimals: 1, label: 'Iene' },
+  USD: { symbol: '$', decimals: 2, label: 'Dólar' },
+  JPY: { symbol: '¥', decimals: 1, label: 'Iene' }
 }
 
 export interface FinancialTransaction {
@@ -134,6 +137,26 @@ export interface FinancialTransaction {
    *  When set, the consolidated view treats the linked (parent) transaction as
    *  already accounted for and excludes it from totals to avoid double-counting. */
   linkedTransactionId?: string
+  /** Bank, card or app used for this transaction. */
+  source?: string
+}
+
+export interface FinancialBudget {
+  category: string
+  /** Monthly spending limit as a canonical decimal string. */
+  limit: string
+}
+
+export interface FinancialRecurringTransaction {
+  id: string
+  description: string
+  amount: string
+  type: 'income' | 'expense'
+  dayOfMonth: number
+  category?: string
+  source?: string
+  active: boolean
+  lastGeneratedMonth?: string
 }
 
 export interface FinancialGoal {
@@ -172,6 +195,13 @@ export interface FinancialTable {
   goals: FinancialGoal[]
   yieldSources?: YieldSource[]
   yieldEntries?: YieldEntry[]
+  /** Optional label for the bank, card or app represented by this table. */
+  provider?: string
+  /** Manually reconciled balance, kept separate from the calculated balance. */
+  actualBalance?: string
+  actualBalanceUpdatedAt?: string
+  budgets?: FinancialBudget[]
+  recurringTransactions?: FinancialRecurringTransaction[]
   createdAt: string
   updatedAt: string
 }
@@ -278,9 +308,9 @@ export interface AIJson {
 
 export interface StoredFile {
   id: string
-  name: string      // original filename with extension
-  ext: string       // e.g. '.pdf', '.docx'
-  size: number      // bytes
+  name: string // original filename with extension
+  ext: string // e.g. '.pdf', '.docx'
+  size: number // bytes
   createdAt: string
   projectId?: string
 }
@@ -376,31 +406,175 @@ export const DEFAULT_COLUMN_NAMES = ['Backlog', 'In Progress', 'Review', 'Done']
 export const DEFAULT_TAGS: { label: string; tags: string[] }[] = [
   {
     label: 'Dev',
-    tags: ['frontend', 'backend', 'bug', 'fix', 'feat', 'refactor', 'api', 'design', 'mobile', 'devops', 'testes', 'docs', 'deploy', 'delivery', 'auth', 'security', 'performance', 'infra', 'ipc', 'store', 'utils', 'dnd', 'memoization', 'correctness', 'idempotency', 'query-optimization', 'redis', 'jwt', 'reports', 'heatmap', 'due-date', 'tags', 'sprints']
+    tags: [
+      'frontend',
+      'backend',
+      'bug',
+      'fix',
+      'feat',
+      'refactor',
+      'api',
+      'design',
+      'mobile',
+      'devops',
+      'testes',
+      'docs',
+      'deploy',
+      'delivery',
+      'auth',
+      'security',
+      'performance',
+      'infra',
+      'ipc',
+      'store',
+      'utils',
+      'dnd',
+      'memoization',
+      'correctness',
+      'idempotency',
+      'query-optimization',
+      'redis',
+      'jwt',
+      'reports',
+      'heatmap',
+      'due-date',
+      'tags',
+      'sprints'
+    ]
   },
   {
     label: 'Estudo',
-    tags: ['estudo', 'leitura', 'revisão', 'resumo', 'prova', 'pesquisa', 'aula', 'curso', 'faculdade', 'idioma', 'exercício-mental', 'flashcard', 'vocabulário', 'gramática', 'prática', 'escrita', 'listening', 'tradução']
+    tags: [
+      'estudo',
+      'leitura',
+      'revisão',
+      'resumo',
+      'prova',
+      'pesquisa',
+      'aula',
+      'curso',
+      'faculdade',
+      'idioma',
+      'exercício-mental',
+      'flashcard',
+      'vocabulário',
+      'gramática',
+      'prática',
+      'escrita',
+      'listening',
+      'tradução'
+    ]
   },
   {
     label: 'Trabalho',
-    tags: ['reunião', 'relatório', 'prazo', 'cliente', 'apresentação', 'email', 'planejamento', 'meta', 'entrega', 'revisão', 'feedback', 'onboarding', 'contrato', 'proposta', 'sprint', 'retrospectiva']
+    tags: [
+      'reunião',
+      'relatório',
+      'prazo',
+      'cliente',
+      'apresentação',
+      'email',
+      'planejamento',
+      'meta',
+      'entrega',
+      'revisão',
+      'feedback',
+      'onboarding',
+      'contrato',
+      'proposta',
+      'sprint',
+      'retrospectiva'
+    ]
   },
   {
     label: 'Saúde',
-    tags: ['exercício', 'academia', 'dieta', 'médico', 'sono', 'saúde mental', 'hidratação', 'corrida', 'alongamento', 'meditação', 'consulta', 'exame', 'suplemento', 'descanso']
+    tags: [
+      'exercício',
+      'academia',
+      'dieta',
+      'médico',
+      'sono',
+      'saúde mental',
+      'hidratação',
+      'corrida',
+      'alongamento',
+      'meditação',
+      'consulta',
+      'exame',
+      'suplemento',
+      'descanso'
+    ]
   },
   {
     label: 'Casa & Vida',
-    tags: ['compras', 'casa', 'limpeza', 'contas', 'família', 'social', 'lazer', 'viagem', 'alimentação', 'pet', 'manutenção', 'organização', 'decoração', 'mudança', 'vizinhança']
+    tags: [
+      'compras',
+      'casa',
+      'limpeza',
+      'contas',
+      'família',
+      'social',
+      'lazer',
+      'viagem',
+      'alimentação',
+      'pet',
+      'manutenção',
+      'organização',
+      'decoração',
+      'mudança',
+      'vizinhança'
+    ]
   },
   {
     label: 'Finanças',
-    tags: ['investimento', 'gasto', 'economia', 'imposto', 'assinatura', 'renda extra', 'orçamento', 'dívida', 'cartão', 'poupança', 'declaração', 'recibo', 'transferência', 'devolução', 'saldo', 'AI', 'ADS', 'servidor', 'marketing', 'segurança cloud', 'domínio', 'AI programação', 'AI tokens', 'canva', 'streaming', 'contador', 'advogado']
+    tags: [
+      'investimento',
+      'gasto',
+      'economia',
+      'imposto',
+      'assinatura',
+      'renda extra',
+      'orçamento',
+      'dívida',
+      'cartão',
+      'poupança',
+      'declaração',
+      'recibo',
+      'transferência',
+      'devolução',
+      'saldo',
+      'AI',
+      'ADS',
+      'servidor',
+      'marketing',
+      'segurança cloud',
+      'domínio',
+      'AI programação',
+      'AI tokens',
+      'canva',
+      'streaming',
+      'contador',
+      'advogado'
+    ]
   },
   {
     label: 'Pessoal',
-    tags: ['hábito', 'rotina', 'projeto pessoal', 'criatividade', 'foco', 'urgente', 'importante', 'ideia', 'meta pessoal', 'lembrete', 'reflexão', 'diário', 'gratidão', 'planejamento semanal']
+    tags: [
+      'hábito',
+      'rotina',
+      'projeto pessoal',
+      'criatividade',
+      'foco',
+      'urgente',
+      'importante',
+      'ideia',
+      'meta pessoal',
+      'lembrete',
+      'reflexão',
+      'diário',
+      'gratidão',
+      'planejamento semanal'
+    ]
   }
 ]
 
@@ -470,4 +644,3 @@ export interface EntityEvent {
   convId?: string
   timestamp: string
 }
-

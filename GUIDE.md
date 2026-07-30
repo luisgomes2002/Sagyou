@@ -165,6 +165,11 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    passa por `decimal.js` (`D()` em `components/financial/shared.ts`). Converta
    para `number` só para largura de barra e porcentagem. `qty` é `number` — é
    quantidade, não dinheiro.
+   **No consolidado, totais nativos nunca somam moedas diferentes**: mostre BRL, USD e JPY
+   separadamente. A equivalência cambial é só uma leitura em tempo real, identificada como tal,
+   e nunca é gravada nem altera os lançamentos.
+   As configurações de planejamento (banco/app, saldo real, orçamentos e recorrências) são
+   opcionais e persistem em metadata da tabela; seus valores monetários também são strings decimais.
 2. **Nunca remova nem renomeie campos** de tipos persistidos sem migração ou
    fallback. Campo novo opcional é seguro; mudar a forma de um array ou objeto
    existente, não.

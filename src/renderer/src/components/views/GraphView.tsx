@@ -233,7 +233,9 @@ export function GraphView({ onNavigate }: Props) {
             .filter((currentNode) => currentNode.x != null && currentNode.y != null)
             .map((currentNode) => [currentNode.id, { x: currentNode.x!, y: currentNode.y! }])
         )
-        sim.alpha(0).stop()
+        // Reheat after releasing the pinned node. Stopping here freezes every
+        // other node too, so the graph only appeared to have physics while held.
+        sim.alpha(DRAG_ALPHA).alphaTarget(IDLE_ALPHA_TARGET).restart()
       }
     }
   }, [nodeMap])
@@ -248,7 +250,7 @@ export function GraphView({ onNavigate }: Props) {
       node.fx = pos.x
       node.fy = pos.y
       dragNodeId.current = nodeId
-      simRef.current?.alpha(DRAG_ALPHA).restart()
+      simRef.current?.alpha(DRAG_ALPHA).alphaTarget(IDLE_ALPHA_TARGET).restart()
     },
     [toGraphCoords, nodeMap]
   )

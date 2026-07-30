@@ -72,7 +72,7 @@ interface AddTransactionRowProps {
 export function AddTransactionRow({ currency, onAdd }: AddTransactionRowProps) {
   const [description, setDescription] = useState('')
   const [category, setCategory] = useState('')
-  const [type, setType] = useState<'income' | 'expense'>('expense')
+  const [type, setType] = useState<'income' | 'expense'>('income')
   const [amount, setAmount] = useState('')
   const [date, setDate] = useState(todayISO)
   const [dateEditing, setDateEditing] = useState(false)
