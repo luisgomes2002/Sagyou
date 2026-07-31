@@ -11,6 +11,7 @@ interface ChartMonth {
 interface FinancialChartsProps {
   currency: Currency
   months: ChartMonth[]
+  balanceMonths: ChartMonth[]
   categories: [string, number][]
   categoryLabel: string
 }
@@ -252,6 +253,7 @@ function CategoryChart({
 export function FinancialCharts({
   currency,
   months,
+  balanceMonths,
   categories,
   categoryLabel
 }: FinancialChartsProps) {
@@ -265,7 +267,7 @@ export function FinancialCharts({
       </div>
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
         <CashflowChart months={months} currency={currency} />
-        <BalanceChart months={months} currency={currency} />
+        <BalanceChart months={balanceMonths} currency={currency} />
       </div>
       <CategoryChart categories={categories} currency={currency} categoryLabel={categoryLabel} />
     </section>

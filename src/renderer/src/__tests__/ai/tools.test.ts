@@ -32,7 +32,9 @@ import {
   TOOL_DEFS,
   describeToolCall,
   describeToolActivity,
-  clearCodeSearchCache
+  clearCodeSearchCache,
+  PLANNER_EDIT_TOOL_DEFS,
+  routeTools
 } from '../../ai/tools'
 import { PROJECT_COLORS, NOTE_COLORS } from '../../types'
 
@@ -46,6 +48,8 @@ function resetStore(): void {
     goals: [],
     habits: [],
     lists: [],
+    timeBlocks: [],
+    routines: [],
     files: [],
     activeProjectId: null,
     sprintFilter: null,
@@ -2569,5 +2573,105 @@ describe('describeToolActivity — before the arguments arrive', () => {
     for (const def of TOOL_DEFS) {
       expect(describeToolActivity(def.function.name, {})).not.toBe(def.function.name)
     }
+  })
+})
+
+describe('ajustar_bloco_e_deslocar_posteriores', () => {
+  const date = '2026-07-31'
+
+  beforeEach(resetStore)
+
+  function addBlock(title: string, startTime: string, endTime: string, order: number): string {
+    return st().createTimeBlock({ date, title, startTime, endTime, type: 'routine', order })
+  }
+
+  it('altera o fim e desloca em lote todos os blocos posteriores', async () => {
+    const workId = addBlock('💼 Trabalho', '07:00', '13:00', 0)
+    const commuteId = addBlock('🚗 Deslocamento → casa', '13:00', '13:20', 1)
+    const lunchId = addBlock('🍽️ Almoço', '13:20', '14:00', 2)
+
+    const res = await call('ajustar_bloco_e_deslocar_posteriores', {
+      data: date,
+      titulo: 'trabalho',
+      novoFim: '13:10'
+    })
+
+    expect(res).toMatchObject({ atualizados: 3, deslocamentoMinutos: 10, posterioresDeslocados: 2 })
+    expect(st().timeBlocks.find((block) => block.id === workId)).toMatchObject({ endTime: '13:10' })
+    expect(st().timeBlocks.find((block) => block.id === commuteId)).toMatchObject({
+      startTime: '13:10',
+      endTime: '13:30'
+    })
+    expect(st().timeBlocks.find((block) => block.id === lunchId)).toMatchObject({
+      startTime: '13:30',
+      endTime: '14:10'
+    })
+  })
+
+  it('aceita aliases de campos comuns do modelo sem criar uma rodada de correção', async () => {
+    const workId = addBlock('💼 Trabalho', '07:00', '13:00', 0)
+    const lunchId = addBlock('Almoço', '13:00', '13:30', 1)
+
+    const res = await call('ajustar_bloco_e_deslocar_posteriores', {
+      date,
+      atividade: 'trabalho',
+      endTime: '13:10'
+    })
+
+    expect(res).toMatchObject({ atualizados: 2, deslocamentoMinutos: 10 })
+    expect(st().timeBlocks.find((block) => block.id === workId)?.endTime).toBe('13:10')
+    expect(st().timeBlocks.find((block) => block.id === lunchId)).toMatchObject({
+      startTime: '13:10',
+      endTime: '13:40'
+    })
+  })
+
+  it('não altera nada quando o título é ambíguo', async () => {
+    const first = addBlock('Trabalho', '07:00', '10:00', 0)
+    const second = addBlock('Trabalho', '12:00', '15:00', 1)
+
+    const res = await call('ajustar_bloco_e_deslocar_posteriores', {
+      data: date,
+      titulo: 'trabalho',
+      novoFim: '10:10'
+    })
+
+    expect(res.error).toBeTruthy()
+    expect(st().timeBlocks.find((block) => block.id === first)?.endTime).toBe('10:00')
+    expect(st().timeBlocks.find((block) => block.id === second)?.endTime).toBe('15:00')
+  })
+
+  it('não altera nada quando um bloco posterior cruzaria a meia-noite', async () => {
+    const workId = addBlock('Trabalho', '20:00', '22:00', 0)
+    const lateId = addBlock('Leitura', '23:30', '23:55', 1)
+
+    const res = await call('ajustar_bloco_e_deslocar_posteriores', {
+      data: date,
+      blocoId: workId,
+      novoFim: '22:10'
+    })
+
+    expect(res.error).toBeTruthy()
+    expect(st().timeBlocks.find((block) => block.id === workId)?.endTime).toBe('22:00')
+    expect(st().timeBlocks.find((block) => block.id === lateId)).toMatchObject({
+      startTime: '23:30',
+      endTime: '23:55'
+    })
+  })
+})
+
+describe('routeTools — ajustes de agenda', () => {
+  it('oferece só as ferramentas mínimas para um deslocamento explícito', () => {
+    const names = routeTools(
+      'No plano de 2026-07-31, faça o Trabalho terminar às 13:10 e empurre as atividades seguintes 10 minutos.'
+    ).map((tool) => tool.function.name)
+
+    expect(names).toEqual(PLANNER_EDIT_TOOL_DEFS.map((tool) => tool.function.name))
+    expect(names).toEqual([
+      'data_de_hoje',
+      'ler_plano',
+      'atualizar_plano',
+      'ajustar_bloco_e_deslocar_posteriores'
+    ])
   })
 })

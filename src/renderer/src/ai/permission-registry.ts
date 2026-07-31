@@ -253,6 +253,13 @@ const REGISTRY: PermissionEntry[] = [
     rationale: 'Dispara o agente de código nativo — um loop autônomo que lê, edita e executa comandos no projeto de código. Fire-and-forget: o chat não espera o resultado.',
     guard: 'Cartão de aprovação + aprovação por ação dentro do agente (escrever_arquivo, executar_comando). confineToRoot + ai-jail. Aprovação humana por ação de escrita/comando. Max steps = 60.',
     since: '2024-10'
+  },
+  {
+    name: 'ajustar_bloco_e_deslocar_posteriores',
+    level: 'write',
+    rationale: 'Altera o fim de um bloco de agenda e move em lote os blocos posteriores do mesmo dia.',
+    guard: 'Cartão de aprovação. Exige data e bloco inequívoco; em empate, horário inválido ou cruzamento de meia-noite não grava nada.',
+    since: '2026-07'
   }
 ]
 

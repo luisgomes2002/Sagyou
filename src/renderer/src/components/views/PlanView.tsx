@@ -2,16 +2,25 @@
 import { useKanbanStore } from '../../store/kanban'
 import type { TimeBlock, Routine } from '../../types'
 import { TIME_BLOCK_COLORS } from '../../types'
+import {
+  addDays,
+  durationInMinutes,
+  formatDay,
+  formatShortDay,
+  formatWeekStart,
+  getVisibleDays,
+  HOUR_HEIGHT,
+  HOURS,
+  layoutOverlappingBlocks,
+  minutesToPixels,
+  MODE_LABELS,
+  todayString,
+  WEEKDAY_SHORT,
+  type PlannerViewMode
+} from '../../utils/planner'
 import { ModalBase } from '../ModalBase'
 import { CancelButton } from '../CancelButton'
 import { ConfirmDialog } from '../ConfirmDialog'
-
-type ViewMode = 'day' | 'week' | 'month'
-
-const MODE_LABELS: Record<ViewMode, string> = { day: 'Dia', week: 'Semana', month: 'Mes' }
-
-const HOURS = Array.from({ length: 18 }, (_, i) => i + 6) // 6h–23h
-const HOUR_HEIGHT = 80
 
 const TYPE_LABELS: Record<TimeBlock['type'], string> = {
   task: 'Task',
@@ -27,47 +36,6 @@ const TYPE_STYLES: Record<TimeBlock['type'], string> = {
   custom: 'border-l-[#999999]'
 }
 
-function fmtDay(iso: string): string {
-  const [y, m, d] = iso.split('-')
-  return `${d}/${m}/${y}`
-}
-
-function fmtDayShort(iso: string): string {
-  const [, m, d] = iso.split('-')
-  return `${d}/${m}`
-}
-
-function formatWeekStart(date: string): string {
-  const d = new Date(date + 'T00:00:00')
-  const day = d.getDay()
-  const diff = d.getDate() - day
-  const monday = new Date(d.setDate(diff))
-  return monday.toISOString().slice(0, 10)
-}
-
-function addDays(date: string, n: number): string {
-  const d = new Date(date + 'T00:00:00')
-  d.setDate(d.getDate() + n)
-  return d.toISOString().slice(0, 10)
-}
-
-function todayStr(): string {
-  return new Date().toISOString().slice(0, 10)
-}
-
-function minToPx(time: string): number {
-  const [h, m] = time.split(':').map(Number)
-  return ((h - 6) * 60 + m) * (HOUR_HEIGHT / 60)
-}
-
-function durationMin(start: string, end: string): number {
-  const [sh, sm] = start.split(':').map(Number)
-  const [eh, em] = end.split(':').map(Number)
-  return (eh * 60 + em) - (sh * 60 + sm)
-}
-
-const WEEKDAY_SHORT = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab']
-
 export function PlanView() {
   const timeBlocks = useKanbanStore((s) => s.timeBlocks)
   const routines = useKanbanStore((s) => s.routines)
@@ -78,8 +46,8 @@ export function PlanView() {
   const updateRoutine = useKanbanStore((s) => s.updateRoutine)
   const deleteRoutine = useKanbanStore((s) => s.deleteRoutine)
 
-  const [viewMode, setViewMode] = useState<ViewMode>('day')
-  const [currentDate, setCurrentDate] = useState(todayStr())
+  const [viewMode, setViewMode] = useState<PlannerViewMode>('day')
+  const [currentDate, setCurrentDate] = useState(todayString())
   const [showRoutines, setShowRoutines] = useState(false)
 
   const [editingBlock, setEditingBlock] = useState<TimeBlock | null>(null)
@@ -95,21 +63,11 @@ export function PlanView() {
     setCurrentDate(d.toISOString().slice(0, 10))
   }
 
-  const goToday = () => setCurrentDate(todayStr())
+  const goToday = () => setCurrentDate(todayString())
 
   const weekStart = formatWeekStart(currentDate)
 
-  const visibleDays: string[] = useMemo(() => {
-    if (viewMode === 'day') return [currentDate]
-    if (viewMode === 'week') return Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
-    // month
-    const [y, m] = currentDate.split('-')
-    const daysInMonth = new Date(parseInt(y), parseInt(m), 0).getDate()
-    return Array.from({ length: daysInMonth }, (_, i) => {
-      const d = i + 1
-      return `${y}-${m}-${String(d).padStart(2, '0')}`
-    })
-  }, [viewMode, currentDate, weekStart])
+  const visibleDays = useMemo(() => getVisibleDays(viewMode, currentDate), [viewMode, currentDate])
 
   const blocksByDay = useMemo(() => {
     const map = new Map<string, TimeBlock[]>()
@@ -129,7 +87,8 @@ export function PlanView() {
     const maxOrder = existing.reduce((m, tb) => Math.max(m, tb.order), -1)
     // pick a color distinct from the last block
     const lastColor = existing[existing.length - 1]?.color
-    const color = TIME_BLOCK_COLORS.find((c) => !lastColor || c !== lastColor) ?? TIME_BLOCK_COLORS[0]
+    const color =
+      TIME_BLOCK_COLORS.find((c) => !lastColor || c !== lastColor) ?? TIME_BLOCK_COLORS[0]
     createTimeBlock({
       date,
       startTime: `${h}:00`,
@@ -142,10 +101,10 @@ export function PlanView() {
   }
 
   const deletingBlock = deletingBlockId
-    ? timeBlocks.find((tb) => tb.id === deletingBlockId) ?? null
+    ? (timeBlocks.find((tb) => tb.id === deletingBlockId) ?? null)
     : null
   const deletingRoutine = deletingRoutineId
-    ? routines.find((r) => r.id === deletingRoutineId) ?? null
+    ? (routines.find((r) => r.id === deletingRoutineId) ?? null)
     : null
 
   return (
@@ -173,9 +132,9 @@ export function PlanView() {
           </button>
           <span className="text-white font-medium ml-2">
             {viewMode === 'day'
-              ? fmtDay(currentDate)
+              ? formatDay(currentDate)
               : viewMode === 'week'
-                ? `${fmtDayShort(weekStart)} – ${fmtDayShort(addDays(weekStart, 6))}`
+                ? `${formatShortDay(weekStart)} – ${formatShortDay(addDays(weekStart, 6))}`
                 : new Date(currentDate + 'T00:00:00').toLocaleDateString('pt-BR', {
                     month: 'long',
                     year: 'numeric'
@@ -183,7 +142,7 @@ export function PlanView() {
           </span>
         </div>
         <div className="flex items-center gap-2">
-          {(['day', 'week', 'month'] as ViewMode[]).map((mode) => (
+          {(['day', 'week', 'month'] as PlannerViewMode[]).map((mode) => (
             <button
               key={mode}
               onClick={() => setViewMode(mode)}
@@ -227,11 +186,7 @@ export function PlanView() {
             onDeleteRequest={setDeletingBlockId}
           />
         ) : (
-          <MonthView
-            days={visibleDays}
-            blocksByDay={blocksByDay}
-            onEditBlock={setEditingBlock}
-          />
+          <MonthView days={visibleDays} blocksByDay={blocksByDay} onEditBlock={setEditingBlock} />
         )}
       </div>
 
@@ -299,57 +254,6 @@ export function PlanView() {
   )
 }
 
-function layoutOverlappingBlocks(blocks: TimeBlock[]): { block: TimeBlock; col: number; cols: number }[] {
-  if (!blocks.length) return []
-
-  const sorted = [...blocks].sort((a, b) => a.startTime.localeCompare(b.startTime))
-  const groups: TimeBlock[][] = []
-
-  for (const block of sorted) {
-    let found = false
-    for (const group of groups) {
-      if (group.some((g) => block.startTime < g.endTime && block.endTime > g.startTime)) {
-        group.push(block)
-        found = true
-        break
-      }
-    }
-    if (!found) groups.push([block])
-  }
-
-  const result: { block: TimeBlock; col: number; cols: number }[] = []
-
-  for (const group of groups) {
-    const sortedGroup = [...group].sort((a, b) => {
-      const cmp = a.startTime.localeCompare(b.startTime)
-      if (cmp !== 0) return cmp
-      return durationMin(b.startTime, b.endTime) - durationMin(a.startTime, a.endTime)
-    })
-
-    const columns: TimeBlock[][] = []
-    for (const block of sortedGroup) {
-      let placed = false
-      for (const col of columns) {
-        const lastInCol = col[col.length - 1]
-        if (block.startTime >= lastInCol.endTime) {
-          col.push(block)
-          placed = true
-          break
-        }
-      }
-      if (!placed) columns.push([block])
-    }
-
-    for (let ci = 0; ci < columns.length; ci++) {
-      for (const block of columns[ci]) {
-        result.push({ block, col: ci, cols: columns.length })
-      }
-    }
-  }
-
-  return result
-}
-
 function DayView({
   date,
   blocks,
@@ -373,7 +277,7 @@ function DayView({
         <div
           key={h}
           className="absolute left-0 right-0 border-t border-white/5 flex items-start"
-          style={{ top: minToPx(`${String(h).padStart(2, '0')}:00`) }}
+          style={{ top: minutesToPixels(`${String(h).padStart(2, '0')}:00`) }}
         >
           <span className="text-[10px] text-[#999999] w-12 text-right pr-2 leading-none pt-0.5 tabular-nums">
             {String(h).padStart(2, '0')}:00
@@ -388,8 +292,8 @@ function DayView({
       {/* Blocks */}
       {laidOut.map((lb) => {
         const { block, col, cols } = lb
-        const top = minToPx(block.startTime)
-        const dur = durationMin(block.startTime, block.endTime)
+        const top = minutesToPixels(block.startTime)
+        const dur = durationInMinutes(block.startTime, block.endTime)
         const height = Math.max(dur * (HOUR_HEIGHT / 60), 36)
         const isShort = dur < 45
         const gapX = 4
@@ -415,12 +319,16 @@ function DayView({
               <div className="min-w-0 flex-1 flex flex-col justify-center h-full">
                 {isShort ? (
                   <span className="text-xs text-[#d4d4d4] block truncate leading-tight">
-                    <span className="text-[10px] text-[#999999] mr-1.5 tabular-nums">{block.startTime}–{block.endTime}</span>
+                    <span className="text-[10px] text-[#999999] mr-1.5 tabular-nums">
+                      {block.startTime}–{block.endTime}
+                    </span>
                     {block.title}
                   </span>
                 ) : (
                   <>
-                    <span className="text-xs text-[#d4d4d4] block truncate leading-tight">{block.title}</span>
+                    <span className="text-xs text-[#d4d4d4] block truncate leading-tight">
+                      {block.title}
+                    </span>
                     <span className="text-[10px] text-[#999999] leading-tight mt-0.5">
                       {block.startTime}–{block.endTime}
                       {block.type !== 'custom' && (
@@ -461,14 +369,18 @@ function WeekView({
   onEditBlock: (block: TimeBlock) => void
   onDeleteRequest: (id: string) => void
 }) {
-  const isToday = (d: string) => d === todayStr()
+  const isToday = (d: string) => d === todayString()
 
   return (
     <div className="flex h-full">
       {/* Hour labels */}
       <div className="w-10 shrink-0 pt-8">
         {HOURS.map((h) => (
-          <div key={h} className="text-[9px] text-[#666666] text-right pr-1" style={{ height: HOUR_HEIGHT }}>
+          <div
+            key={h}
+            className="text-[9px] text-[#666666] text-right pr-1"
+            style={{ height: HOUR_HEIGHT }}
+          >
             {String(h).padStart(2, '0')}h
           </div>
         ))}
@@ -498,8 +410,8 @@ function WeekView({
               {(() => {
                 const laidOut = layoutOverlappingBlocks(blocks)
                 return laidOut.map(({ block, col, cols }) => {
-                  const top = minToPx(block.startTime)
-                  const dur = durationMin(block.startTime, block.endTime)
+                  const top = minutesToPixels(block.startTime)
+                  const dur = durationInMinutes(block.startTime, block.endTime)
                   const height = Math.max(dur * (HOUR_HEIGHT / 60), 4)
                   const pctLeft = cols > 1 ? (col / cols) * 100 : 0
                   const pctWidth = cols > 1 ? 100 / cols - 1 : 100
@@ -554,7 +466,7 @@ function MonthView({
   onEditBlock?: (block: TimeBlock) => void
 }) {
   const firstDayWeekday = new Date(days[0] + 'T00:00:00').getDay()
-  const isToday = (d: string) => d === todayStr()
+  const isToday = (d: string) => d === todayString()
 
   return (
     <div className="p-3">
@@ -618,12 +530,7 @@ function EditTimeBlockModal({
   onClose
 }: {
   block: TimeBlock
-  onSave: (updates: {
-    title: string
-    startTime: string
-    endTime: string
-    color?: string
-  }) => void
+  onSave: (updates: { title: string; startTime: string; endTime: string; color?: string }) => void
   onClose: () => void
 }) {
   const [title, setTitle] = useState(block.title)
@@ -646,8 +553,16 @@ function EditTimeBlockModal({
             onClick={onClose}
             className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
           </button>
         </div>
@@ -762,8 +677,16 @@ function EditRoutineModal({
             onClick={onClose}
             className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
           </button>
         </div>
@@ -970,7 +893,9 @@ function RoutinesPanel({
       )}
 
       {routines.length === 0 && !adding ? (
-        <p className="text-xs text-[#666666]">Nenhuma rotina. Clique "+ Nova" ou peca ao Assistente.</p>
+        <p className="text-xs text-[#666666]">
+          Nenhuma rotina. Clique "+ Nova" ou peca ao Assistente.
+        </p>
       ) : (
         <div className="space-y-1.5">
           {routines.map((r) => (
