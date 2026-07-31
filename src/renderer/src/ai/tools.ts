@@ -69,13 +69,25 @@ export const KANBAN_TOOL_DEFS: ToolDef[] = Object.values(REGISTRY)
   .filter((t) => KANBAN_TOOL_NAMES.has(t.definition.function.name))
   .map((t) => t.definition)
 
+/** Minimal tool set for a mechanical change to blocks already on the calendar. */
+const PLANNER_EDIT_TOOL_NAMES = new Set([
+  'data_de_hoje',
+  'ler_plano',
+  'atualizar_plano',
+  'ajustar_bloco_e_deslocar_posteriores'
+])
+export const PLANNER_EDIT_TOOL_DEFS: ToolDef[] = Object.values(REGISTRY)
+  .filter((t) => PLANNER_EDIT_TOOL_NAMES.has(t.definition.function.name))
+  .map((t) => t.definition)
+
 /**
  * Choose which tool set to send based on the user's message.
  *
  * A code question (code, arquivo, bug, refatorar, backup, etc.) gets only
  * CODE tools (~2.1k tokens instead of ~8.9k). A kanban/finance/habit
- * question gets only KANBAN tools (~6.7k). An ambiguous question gets all
- * tools as a safe fallback.
+ * question gets only KANBAN tools (~6.7k). A mechanical calendar adjustment
+ * gets the four planner-edit tools above. An ambiguous question gets all tools
+ * as a safe fallback.
  *
  * The checklist is run once per run, from the first user message. A run that
  * starts in one domain and needs tools from the other must wait for the next
@@ -88,9 +100,12 @@ export function routeTools(userText: string): ToolDef[] {
     .replace(/\p{Diacritic}/gu, '')
 
   const codeWords = /\b(codigo|arquivo|funcao|bug|refator|implement|backup|back-end|backend|front-end|frontend|api|component|modulo|typescript|javascript|css|html|teste|typecheck|lint|build|deploy|git|commit|branch|merge|diff|log|compil|execut|script|roda|rode|rodar agente|agente de codigo|sandbox|electron|react|zustand|sqlite|ipc|handler|preload|renderer|main process)\w*/
+  const plannerContextWords = /\b(plano|planej|agenda|bloco|rotina|horario|dia|atividad|trabalho)\w*/
+  const plannerEditWords = /\b(ajust|atualiz|alter|mud|remarc|empurr|desloc|adiant|atras|estend|encurt|prolong|reduz|aument|diminu|termin)\w*/
   const kanbanWords = /\b(task|projeto|coluna|kanban|quadro|sprint|scrum|habito|meta|objetivo|financeiro|transacao|gasto|receita|despesa|orcamento|compras?|lista de compras|supermercado|nota|canvas|cronometro|timer|plano|planej|saldo|conta|fatura|boleto|pagar|pagamento|renda|ganhos?|gastos|economia|orçamento|dia|semana|mes\b|hoje|amanha|rotina|lembrete)\w*/
 
   if (codeWords.test(t)) return CODE_TOOL_DEFS
+  if (plannerContextWords.test(t) && plannerEditWords.test(t)) return PLANNER_EDIT_TOOL_DEFS
   if (kanbanWords.test(t)) return KANBAN_TOOL_DEFS
   return TOOL_DEFS
 }
@@ -299,6 +314,8 @@ export function describeToolActivity(name: string, args: Record<string, unknown>
     }
     case 'atualizar_plano':
       return 'Atualizando o plano'
+    case 'ajustar_bloco_e_deslocar_posteriores':
+      return 'Ajustando um bloco e deslocando os posteriores'
     case 'ler_documento': {
       const fileId = str(args.fileId)
       return fileId ? `Lendo o documento ${fileId}` : 'Lendo um documento do projeto'
@@ -388,6 +405,10 @@ export function describeToolCall(name: string, args: Record<string, unknown>): s
       return `Criar sprints: ${Array.isArray(args.nomes) ? args.nomes.join(', ') : ''}`
     case 'atribuir_sprint':
       return `Atribuir sprint "${args.sprint ?? '?'}" à task ${alvo}`
+    case 'ajustar_bloco_e_deslocar_posteriores': {
+      const bloco = args.titulo ?? args.blocoId ?? '?'
+      return `Ajustar "${bloco}" para terminar às ${args.novoFim ?? '?'} e deslocar os blocos posteriores`
+    }
     case 'rodar_agente_codigo':
       return `⚠️ Rodar agente de código no projeto: ${args.task ?? ''}`
     default:

@@ -19,7 +19,9 @@ type ResolvedEdge = { source: GraphNode; target: GraphNode; type: 'explicit' | '
 const INITIAL_LAYOUT_TICKS = 100
 const INITIAL_LAYOUT_ALPHA = 0.6
 const DRAG_ALPHA = 0.3
-const IDLE_ALPHA_TARGET = 0.04
+// Let the graph settle fully after an interaction so it remains readable when
+// zoomed in. Dragging reheats the simulation through DRAG_ALPHA.
+const IDLE_ALPHA_TARGET = 0
 
 export function GraphView({ onNavigate }: Props) {
   const projects = useKanbanStore((s) => s.projects)
@@ -95,6 +97,7 @@ export function GraphView({ onNavigate }: Props) {
     // Settle once before showing the graph. Calling tick from the tick event
     // re-entered the simulation and made the graph continuously accelerate.
     sim.tick(INITIAL_LAYOUT_TICKS)
+    // Start the timer after the first layout pass and let it settle fully.
     sim.alpha(INITIAL_LAYOUT_ALPHA).alphaTarget(IDLE_ALPHA_TARGET).restart()
     simRef.current = sim
 
@@ -109,6 +112,13 @@ export function GraphView({ onNavigate }: Props) {
     setSimTick((tick) => tick + 1)
 
     sim.on('tick', () => {
+      savePositions()
+      setSimTick((tick) => tick + 1)
+    })
+    // Centering is only useful during initial layout. Leaving it on after a
+    // drag shifts every node to compensate for one local movement.
+    sim.on('end', () => {
+      sim.force('center', null)
       savePositions()
       setSimTick((tick) => tick + 1)
     })
@@ -193,28 +203,31 @@ export function GraphView({ onNavigate }: Props) {
     [transform]
   )
 
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (dragNodeId.current) {
-      const pos = toGraphCoords(e.clientX, e.clientY)
-      const node = nodeMap.get(dragNodeId.current)
-      if (node) {
-        node.x = pos.x
-        node.y = pos.y
-        node.fx = pos.x
-        node.fy = pos.y
-        node.vx = 0
-        node.vy = 0
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent) => {
+      if (dragNodeId.current) {
+        const pos = toGraphCoords(e.clientX, e.clientY)
+        const node = nodeMap.get(dragNodeId.current)
+        if (node) {
+          node.x = pos.x
+          node.y = pos.y
+          node.fx = pos.x
+          node.fy = pos.y
+          node.vx = 0
+          node.vy = 0
+        }
+        setSimTick((t) => t + 1)
+        return
       }
-      setSimTick((t) => t + 1)
-      return
-    }
-    if (!isPanning.current) return
-    setTransform((t) => ({
-      ...t,
-      x: e.clientX - panStart.current.x,
-      y: e.clientY - panStart.current.y
-    }))
-  }, [toGraphCoords, nodeMap])
+      if (!isPanning.current) return
+      setTransform((t) => ({
+        ...t,
+        x: e.clientX - panStart.current.x,
+        y: e.clientY - panStart.current.y
+      }))
+    },
+    [toGraphCoords, nodeMap]
+  )
 
   const handleMouseUp = useCallback(() => {
     isPanning.current = false
@@ -233,8 +246,8 @@ export function GraphView({ onNavigate }: Props) {
             .filter((currentNode) => currentNode.x != null && currentNode.y != null)
             .map((currentNode) => [currentNode.id, { x: currentNode.x!, y: currentNode.y! }])
         )
-        // Reheat after releasing the pinned node. Stopping here freezes every
-        // other node too, so the graph only appeared to have physics while held.
+        // The energy decays smoothly to zero, so connected nodes settle without
+        // an abrupt freeze.
         sim.alpha(DRAG_ALPHA).alphaTarget(IDLE_ALPHA_TARGET).restart()
       }
     }
@@ -375,7 +388,14 @@ export function GraphView({ onNavigate }: Props) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-4 bg-[#0d0d0d]">
         <div className="w-16 h-16 rounded-2xl bg-[#2a2a2a] border border-[#3b3b3b] flex items-center justify-center">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#999999" strokeWidth="1.5">
+          <svg
+            width="28"
+            height="28"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#999999"
+            strokeWidth="1.5"
+          >
             <circle cx="12" cy="12" r="3" />
             <circle cx="4" cy="7" r="2" />
             <circle cx="20" cy="7" r="2" />
@@ -401,7 +421,12 @@ export function GraphView({ onNavigate }: Props) {
         <div className="relative flex-1 max-w-xs">
           <svg
             className="absolute left-2.5 top-1/2 -translate-y-1/2"
-            width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#666666" strokeWidth="2"
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#666666"
+            strokeWidth="2"
           >
             <circle cx="11" cy="11" r="8" />
             <line x1="21" y1="21" x2="16.65" y2="16.65" />
@@ -415,11 +440,43 @@ export function GraphView({ onNavigate }: Props) {
           />
         </div>
         <div className="flex items-center gap-3 text-[10px] text-[#666] ml-auto">
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: GRAPH_NODE_COLORS.project }} /> Projeto</span>
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: GRAPH_NODE_COLORS.habit }} /> Hábito</span>
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: GRAPH_NODE_COLORS.task }} /> Task</span>
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: GRAPH_NODE_COLORS.note }} /> Nota</span>
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: GRAPH_NODE_COLORS.goal }} /> Meta</span>
+          <span className="flex items-center gap-1">
+            <span
+              className="w-2 h-2 rounded-full"
+              style={{ backgroundColor: GRAPH_NODE_COLORS.project }}
+            />{' '}
+            Projeto
+          </span>
+          <span className="flex items-center gap-1">
+            <span
+              className="w-2 h-2 rounded-full"
+              style={{ backgroundColor: GRAPH_NODE_COLORS.habit }}
+            />{' '}
+            Hábito
+          </span>
+          <span className="flex items-center gap-1">
+            <span
+              className="w-2 h-2 rounded-full"
+              style={{ backgroundColor: GRAPH_NODE_COLORS.task }}
+            />{' '}
+            Task
+          </span>
+          <span className="flex items-center gap-1">
+            <span
+              className="w-2 h-2 rounded-full"
+              style={{ backgroundColor: GRAPH_NODE_COLORS.note }}
+            />{' '}
+            Nota
+          </span>
+          <span className="flex items-center gap-1">
+            <span
+              className="w-2 h-2 rounded-full"
+              style={{ backgroundColor: GRAPH_NODE_COLORS.goal }}
+            />{' '}
+            Meta
+          </span>
+          <span className="text-[#555]">|</span>
+          <span>Tom mais escuro = concluído</span>
           <span className="text-[#555]">|</span>
           <span>Scroll zoom · Arrastar nó · Pan fundo · Clique destaca · Duplo-clique navega</span>
         </div>
@@ -436,131 +493,152 @@ export function GraphView({ onNavigate }: Props) {
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
         >
-        <defs>
-          <marker
-            id="graph-arrow"
-            viewBox="0 0 10 10" refX="8" refY="5"
-            markerWidth="6" markerHeight="6" orient="auto-start-reverse"
-          >
-            <path d="M 0 0 L 10 5 L 0 10 z" fill="#7c3aed" opacity="0.7" />
-          </marker>
-        </defs>
-        <g transform={`translate(${transform.x},${transform.y}) scale(${transform.scale})`}>
-          {edges.map((e, i) => {
-            const src = typeof e.source === 'string' ? nodeMap.get(e.source) : (e.source as GraphNode)
-            const tgt = typeof e.target === 'string' ? nodeMap.get(e.target) : (e.target as GraphNode)
-            if (!src || !tgt) return null
+          <defs>
+            <marker
+              id="graph-arrow"
+              viewBox="0 0 10 10"
+              refX="8"
+              refY="5"
+              markerWidth="6"
+              markerHeight="6"
+              orient="auto-start-reverse"
+            >
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#7c3aed" opacity="0.7" />
+            </marker>
+          </defs>
+          <g transform={`translate(${transform.x},${transform.y}) scale(${transform.scale})`}>
+            {edges.map((e, i) => {
+              const src =
+                typeof e.source === 'string' ? nodeMap.get(e.source) : (e.source as GraphNode)
+              const tgt =
+                typeof e.target === 'string' ? nodeMap.get(e.target) : (e.target as GraphNode)
+              if (!src || !tgt) return null
 
-            const srcPos = getNodePos(src.id)
-            const tgtPos = getNodePos(tgt.id)
-            if (!srcPos || !tgtPos) return null
+              const srcPos = getNodePos(src.id)
+              const tgtPos = getNodePos(tgt.id)
+              if (!srcPos || !tgtPos) return null
 
-            return (
-              <line
-                key={i}
-                x1={srcPos.x} y1={srcPos.y}
-                x2={tgtPos.x} y2={tgtPos.y}
-                stroke={e.type === 'explicit' ? '#7c3aed' : '#555'}
-                strokeWidth={e.type === 'explicit' ? 1.5 : 0.8}
-                opacity={getEdgeOpacity(src.id, tgt.id)}
-                strokeDasharray={e.type === 'structural' ? '4 3' : undefined}
-                markerEnd={e.type === 'explicit' ? 'url(#graph-arrow)' : undefined}
-              />
-            )
-          })}
-          {nodes.map((n) => {
-            const pos = getNodePos(n.id)
-            if (!pos) return null
-            const opacity = getNodeOpacity(n.id)
-            const labelVisible = showLabel(n, n.id)
-            const isActive =
-              (hoveredNode === n.id || (activeHighlight && opacity === 1)) && transform.scale > 0.3
-
-            return (
-              <g key={n.id}>
-                {isActive && (
-                  <circle
-                    cx={pos.x} cy={pos.y} r={n.radius + 4}
-                    fill="none" stroke={n.color} strokeWidth="1.5" opacity="0.35"
-                  />
-                )}
-                <circle
-                  cx={pos.x} cy={pos.y} r={n.radius}
-                  fill={n.color} opacity={opacity}
-                  className="cursor-grab active:cursor-grabbing"
-                  onMouseDown={(e) => handleNodeMouseDown(e, n.id)}
-                  onClick={() => handleNodeClick(n.id)}
-                  onDoubleClick={() => handleNodeDoubleClick(n)}
-                  onMouseEnter={(e) => {
-                    setHoveredNode(n.id)
-                    setTooltip({ x: e.clientX, y: e.clientY, node: n })
-                  }}
-                  onMouseLeave={() => {
-                    setHoveredNode(null)
-                    setTooltip(null)
-                  }}
-                />
-                {labelVisible && (
-                  <text
-                    x={pos.x} y={pos.y + n.radius + 11}
-                    textAnchor="middle"
-                    className="fill-[#999] text-[9px] select-none"
-                    style={{ pointerEvents: 'none' }}
-                  >
-                    {n.label.length > 25 ? n.label.slice(0, 25) + '…' : n.label}
-                  </text>
-                )}
-              </g>
-            )
-          })}
-        </g>
-      </svg>
-
-      {/* Project sidebar */}
-      <div className="w-40 shrink-0 border-l border-[#232323] bg-[#0d0d0d] flex flex-col overflow-hidden">
-        <div className="px-3 py-2 border-b border-[#232323] text-[10px] font-semibold uppercase tracking-wider text-[#555]">
-          Projetos
-        </div>
-        <div className="flex-1 overflow-y-auto py-1">
-          {projectNodes.length === 0 ? (
-            <p className="px-3 py-2 text-[10px] text-[#555] italic">Nenhum projeto</p>
-          ) : (
-            projectNodes.map((p) => {
-              const pos = getNodePos(p.id)
-              const isHere = pos != null
               return (
-                <button
-                  key={p.id}
-                  onClick={() => focusProject(p.id)}
-                  className={`w-full text-left px-3 py-1.5 text-[11px] transition-colors flex items-center gap-2 ${
-                    hoveredNode === p.id
-                      ? 'text-white bg-white/5'
-                      : 'text-[#888] hover:text-[#ccc] hover:bg-white/[0.03]'
-                  }`}
-                  onMouseEnter={() => setHoveredNode(p.id)}
-                  onMouseLeave={() => setHoveredNode(null)}
-                >
-                  <span
-                    className="w-2 h-2 rounded-full shrink-0"
-                    style={{ backgroundColor: GRAPH_NODE_COLORS.project }}
-                  />
-                  <span className="truncate flex-1">{p.label}</span>
-                  {isHere && <span className="text-[9px] text-[#555]">{p.connectionCount}</span>}
-                </button>
+                <line
+                  key={i}
+                  x1={srcPos.x}
+                  y1={srcPos.y}
+                  x2={tgtPos.x}
+                  y2={tgtPos.y}
+                  stroke={e.type === 'explicit' ? '#7c3aed' : '#555'}
+                  strokeWidth={e.type === 'explicit' ? 1.5 : 0.8}
+                  opacity={getEdgeOpacity(src.id, tgt.id)}
+                  strokeDasharray={e.type === 'structural' ? '4 3' : undefined}
+                  markerEnd={e.type === 'explicit' ? 'url(#graph-arrow)' : undefined}
+                />
               )
-            })
-          )}
+            })}
+            {nodes.map((n) => {
+              const pos = getNodePos(n.id)
+              if (!pos) return null
+              const opacity = getNodeOpacity(n.id)
+              const labelVisible = showLabel(n, n.id)
+              const isActive =
+                (hoveredNode === n.id || (activeHighlight && opacity === 1)) &&
+                transform.scale > 0.3
+
+              return (
+                <g key={n.id}>
+                  {isActive && (
+                    <circle
+                      cx={pos.x}
+                      cy={pos.y}
+                      r={n.radius + 4}
+                      fill="none"
+                      stroke={n.color}
+                      strokeWidth="1.5"
+                      opacity="0.35"
+                    />
+                  )}
+                  <circle
+                    cx={pos.x}
+                    cy={pos.y}
+                    r={n.radius}
+                    fill={n.color}
+                    opacity={opacity}
+                    className="cursor-grab active:cursor-grabbing"
+                    onMouseDown={(e) => handleNodeMouseDown(e, n.id)}
+                    onClick={() => handleNodeClick(n.id)}
+                    onDoubleClick={() => handleNodeDoubleClick(n)}
+                    onMouseEnter={(e) => {
+                      setHoveredNode(n.id)
+                      setTooltip({ x: e.clientX, y: e.clientY, node: n })
+                    }}
+                    onMouseLeave={() => {
+                      setHoveredNode(null)
+                      setTooltip(null)
+                    }}
+                  />
+                  {labelVisible && (
+                    <text
+                      x={pos.x}
+                      y={pos.y + n.radius + 11}
+                      textAnchor="middle"
+                      className="fill-[#999] text-[9px] select-none"
+                      style={{ pointerEvents: 'none' }}
+                    >
+                      {n.label.length > 25 ? n.label.slice(0, 25) + '…' : n.label}
+                    </text>
+                  )}
+                </g>
+              )
+            })}
+          </g>
+        </svg>
+
+        {/* Project sidebar */}
+        <div className="w-40 shrink-0 border-l border-[#232323] bg-[#0d0d0d] flex flex-col overflow-hidden">
+          <div className="px-3 py-2 border-b border-[#232323] text-[10px] font-semibold uppercase tracking-wider text-[#555]">
+            Projetos
+          </div>
+          <div className="flex-1 overflow-y-auto py-1">
+            {projectNodes.length === 0 ? (
+              <p className="px-3 py-2 text-[10px] text-[#555] italic">Nenhum projeto</p>
+            ) : (
+              projectNodes.map((p) => {
+                const pos = getNodePos(p.id)
+                const isHere = pos != null
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => focusProject(p.id)}
+                    className={`w-full text-left px-3 py-1.5 text-[11px] transition-colors flex items-center gap-2 ${
+                      hoveredNode === p.id
+                        ? 'text-white bg-white/5'
+                        : 'text-[#888] hover:text-[#ccc] hover:bg-white/[0.03]'
+                    }`}
+                    onMouseEnter={() => setHoveredNode(p.id)}
+                    onMouseLeave={() => setHoveredNode(null)}
+                  >
+                    <span
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{ backgroundColor: GRAPH_NODE_COLORS.project }}
+                    />
+                    <span className="truncate flex-1">{p.label}</span>
+                    {isHere && <span className="text-[9px] text-[#555]">{p.connectionCount}</span>}
+                  </button>
+                )
+              })
+            )}
+          </div>
         </div>
       </div>
-    </div>
 
-    {tooltip && (
+      {tooltip && (
         <div
           className="fixed z-50 px-2.5 py-1.5 rounded-md bg-[#1a1a1a] border border-[#3b3b3b] text-xs text-[#d4d4d4] shadow-lg pointer-events-none max-w-[260px]"
           style={{ left: tooltip.x + 12, top: tooltip.y - 10 }}
         >
           <div className="flex items-center gap-1.5 mb-0.5">
-            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: tooltip.node.color }} />
+            <span
+              className="w-2 h-2 rounded-full shrink-0"
+              style={{ backgroundColor: tooltip.node.color }}
+            />
             <span className="text-[10px] text-[#666] uppercase">
               {tooltip.node.type === 'project'
                 ? 'Projeto'

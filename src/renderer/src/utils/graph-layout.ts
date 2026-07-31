@@ -9,6 +9,7 @@ import {
   type SimulationLinkDatum
 } from 'd3-force'
 import type { Project, Task, StickyNote, Goal, Habit } from '../types'
+import { isDoneColumn } from './columns'
 
 export type GraphNodeType = 'project' | 'task' | 'note' | 'goal' | 'habit'
 
@@ -21,6 +22,7 @@ export interface GraphNode extends SimulationNodeDatum {
   entityId: string
   projectId?: string
   connectionCount: number
+  completed?: boolean
 }
 
 export interface GraphEdge extends SimulationLinkDatum<GraphNode> {
@@ -35,14 +37,23 @@ export type NavigateTarget =
   | { type: 'habit' }
 
 const NODE_COLOR: Record<GraphNodeType, string> = {
-  project: '#a0a0c0',
-  task: '#888',
-  note: '#6e6e6e',
-  goal: '#a09090',
-  habit: '#7a9b7a'
+  project: '#a78bfa',
+  task: '#60a5fa',
+  note: '#fbbf24',
+  goal: '#f472b6',
+  habit: '#4ade80'
+}
+
+const COMPLETED_NODE_COLOR: Partial<Record<GraphNodeType, string>> = {
+  task: '#3b6f9f',
+  note: '#a87916'
 }
 
 export const GRAPH_NODE_COLORS = NODE_COLOR
+
+function nodeColor(type: GraphNodeType, completed = false): string {
+  return completed ? (COMPLETED_NODE_COLOR[type] ?? NODE_COLOR[type]) : NODE_COLOR[type]
+}
 
 // Explicit links carry the user's intent, while structural links only provide
 // context. Keeping their forces distinct lets related ideas form clusters
@@ -51,7 +62,9 @@ const EXPLICIT_LINK_DISTANCE = 72
 const STRUCTURAL_LINK_DISTANCE = 115
 const EXPLICIT_LINK_STRENGTH = 0.5
 const STRUCTURAL_LINK_STRENGTH = 0.3
-const NODE_REPULSION = -280
+const NODE_REPULSION = -120
+const PROJECT_REPULSION = -1000
+const REPULSION_DISTANCE_MAX = 260
 const CENTER_STRENGTH = 0.08
 const COLLISION_PADDING = 12
 
@@ -67,12 +80,7 @@ export function buildGraph(
   habits: Habit[]
 ): { nodes: GraphNode[]; edges: GraphEdge[] } {
   const activeProjects = projects.filter((p) => !p.archivedAt)
-
-  const doneColumnIds = new Set<string>()
-  for (const p of activeProjects) {
-    const doneCol = p.columns.find((c) => c.name.toLowerCase() === 'done')
-    if (doneCol) doneColumnIds.add(`${p.id}:${doneCol.id}`)
-  }
+  const projectById = new Map(activeProjects.map((project) => [project.id, project]))
 
   const nodeRegistry = new Map<string, GraphNode>()
   const edges: GraphEdge[] = []
@@ -103,15 +111,18 @@ export function buildGraph(
   const taskNodeIds = new Map<string, string>()
   for (const t of tasks) {
     if (!projectNodeIds.has(t.projectId)) continue
-    if (doneColumnIds.has(`${t.projectId}:${t.columnId}`)) continue
+    const project = projectById.get(t.projectId)
+    const completed =
+      !!t.completedAt || isDoneColumn(project?.columns.find((column) => column.id === t.columnId))
     const id = addNode({
       type: 'task',
       label: t.title,
-      color: NODE_COLOR.task,
+      color: nodeColor('task', completed),
       radius: computeRadius(8, 0),
       entityId: t.id,
       projectId: t.projectId,
-      connectionCount: 0
+      connectionCount: 0,
+      completed
     } as GraphNode)
     taskNodeIds.set(t.id, id)
     edges.push({ source: id, target: projectNodeIds.get(t.projectId)!, type: 'structural' })
@@ -120,36 +131,32 @@ export function buildGraph(
   const noteNodeIds = new Map<string, string>()
   for (const n of notes) {
     if (!projectNodeIds.has(n.projectId)) continue
-    if (n.completedAt) continue
     const id = addNode({
       type: 'note',
       label: n.content.replace(/\n/g, ' ').slice(0, 40) || 'Nota',
-      color: NODE_COLOR.note,
+      color: nodeColor('note', !!n.completedAt),
       radius: computeRadius(6, 0),
       entityId: n.id,
       projectId: n.projectId,
-      connectionCount: 0
+      connectionCount: 0,
+      completed: !!n.completedAt
     } as GraphNode)
     noteNodeIds.set(n.id, id)
 
+    // A note always belongs to its project. Task links add context; they must
+    // not replace the project link or a note disappears from its own cluster.
+    edges.push({ source: id, target: projectNodeIds.get(n.projectId)!, type: 'structural' })
+
     if (n.taskIds && n.taskIds.length > 0) {
-      let hasTaskEdge = false
       for (const tid of n.taskIds) {
         if (taskNodeIds.has(tid)) {
           edges.push({ source: id, target: taskNodeIds.get(tid)!, type: 'explicit' })
-          hasTaskEdge = true
         }
       }
-      if (!hasTaskEdge) {
-        edges.push({ source: id, target: projectNodeIds.get(n.projectId)!, type: 'structural' })
-      }
-    } else {
-      edges.push({ source: id, target: projectNodeIds.get(n.projectId)!, type: 'structural' })
     }
   }
 
   for (const n of notes) {
-    if (n.completedAt) continue
     if (!n.connections || n.connections.length === 0) continue
     const sourceId = noteNodeIds.get(n.id)
     if (!sourceId) continue
@@ -168,7 +175,6 @@ export function buildGraph(
   }
 
   for (const n of notes) {
-    if (n.completedAt) continue
     if (!n.goalIds || n.goalIds.length === 0) continue
     const sourceId = noteNodeIds.get(n.id)
     if (!sourceId) continue
@@ -249,28 +255,37 @@ export function createLiveSimulation(
   nodes: GraphNode[],
   edges: GraphEdge[]
 ): Simulation<GraphNode, GraphEdge> {
-  return forceSimulation<GraphNode>(nodes)
-    .force(
-      'link',
-      forceLink<GraphNode, GraphEdge>(edges)
-        .id((d) => d.id)
-        .distance((edge) =>
-          edge.type === 'explicit' ? EXPLICIT_LINK_DISTANCE : STRUCTURAL_LINK_DISTANCE
-        )
-        .strength((edge) =>
-          edge.type === 'explicit' ? EXPLICIT_LINK_STRENGTH : STRUCTURAL_LINK_STRENGTH
-        )
-    )
-    // Degree-dependent attraction and repulsion made project hubs fight
-    // themselves: the more tasks a project had, the tighter and more volatile
-    // its cluster became. A bounded charge keeps all areas readable.
-    .force('charge', forceManyBody<GraphNode>().strength(NODE_REPULSION))
-    .force('center', forceCenter().strength(CENTER_STRENGTH))
-    .force(
-      'collide',
-      forceCollide<GraphNode>().radius((d) => d.radius + COLLISION_PADDING)
-    )
-    .alphaDecay(0.045)
-    .alphaMin(0.01)
-    .velocityDecay(0.65)
+  return (
+    forceSimulation<GraphNode>(nodes)
+      .force(
+        'link',
+        forceLink<GraphNode, GraphEdge>(edges)
+          .id((d) => d.id)
+          .distance((edge) =>
+            edge.type === 'explicit' ? EXPLICIT_LINK_DISTANCE : STRUCTURAL_LINK_DISTANCE
+          )
+          .strength((edge) =>
+            edge.type === 'explicit' ? EXPLICIT_LINK_STRENGTH : STRUCTURAL_LINK_STRENGTH
+          )
+      )
+      // Repulsion is deliberately mild and short-range: projects may stay
+      // close, while collisions still prevent any node overlap.
+      .force(
+        'charge',
+        forceManyBody<GraphNode>()
+          .strength((node) => (node.type === 'project' ? PROJECT_REPULSION : NODE_REPULSION))
+          .distanceMax(REPULSION_DISTANCE_MAX)
+      )
+      .force('center', forceCenter().strength(CENTER_STRENGTH))
+      .force(
+        'collide',
+        forceCollide<GraphNode>().radius((d) => d.radius + COLLISION_PADDING)
+      )
+      // A lower cooling rate leaves enough time for a displaced node to pass
+      // its energy to connected nodes. GraphView reheats this simulation after
+      // a drag, then lets it settle completely for a stable reading.
+      .alphaDecay(0.02)
+      .alphaMin(0.001)
+      .velocityDecay(0.4)
+  )
 }

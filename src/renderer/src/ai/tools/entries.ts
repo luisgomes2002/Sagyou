@@ -1977,6 +1977,147 @@ export const registryEntries: Record<string, AITool> = {
     }
   },
 
+  ajustar_bloco_e_deslocar_posteriores: {
+    definition: fn(
+      'ajustar_bloco_e_deslocar_posteriores',
+      'Para um ajuste mecânico de agenda: muda o horário final de UM bloco e desloca todos os blocos posteriores ' +
+        'do mesmo dia pela diferença. Use diretamente quando o usuário informou data, atividade e novo fim; ' +
+        'não é preciso chamar ler_plano antes. Por segurança, título ambíguo ou horário que atravesse meia-noite ' +
+        'não altera nada.',
+      {
+        type: 'object',
+        properties: {
+          data: { type: 'string', description: 'Data YYYY-MM-DD' },
+          blocoId: { type: 'string', description: 'ID do bloco, se já o tiver' },
+          titulo: { type: 'string', description: 'Título exato do bloco, se não tiver o ID' },
+          novoFim: { type: 'string', description: 'Novo horário final do bloco, HH:MM' }
+        },
+        required: ['data', 'novoFim']
+      }
+    ),
+    write: true,
+    run: (args) => {
+      const firstText = (...keys: string[]): string => {
+        for (const key of keys) {
+          const value = args[key]
+          if (typeof value === 'string' && value.trim()) return value.trim()
+        }
+        return ''
+      }
+      const data = firstText('data', 'date')
+      // These aliases make a malformed tool call recoverable without making the
+      // model spend another round merely to translate an obvious field name.
+      const novoFim = firstText('novoFim', 'fim', 'endTime', 'horarioFim', 'horario_fim')
+      const toMinutes = (time: string): number | null => {
+        const match = /^(\d{2}):(\d{2})$/.exec(time)
+        if (!match) return null
+        const hours = Number(match[1])
+        const minutes = Number(match[2])
+        return hours < 24 && minutes < 60 ? hours * 60 + minutes : null
+      }
+      const toTime = (minutes: number): string =>
+        `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
+
+      if (!isCalendarDate(data)) return JSON.stringify({ error: 'Data inválida. Use YYYY-MM-DD.' })
+      const newEndMinutes = toMinutes(novoFim)
+      if (newEndMinutes === null)
+        return JSON.stringify({ error: 'novoFim inválido. Use HH:MM entre 00:00 e 23:59.' })
+
+      const store = useKanbanStore.getState()
+      const blocks = store.timeBlocks
+        .filter((block) => block.date === data)
+        .sort((a, b) => a.startTime.localeCompare(b.startTime) || a.order - b.order)
+      const byId = firstText('blocoId', 'id')
+      const title = firstText('titulo', 'bloco', 'atividade', 'nome')
+      const candidates = byId
+        ? blocks.filter((block) => block.id === byId)
+        : title
+          ? blocks.filter((block) => {
+              const candidate = normalize(block.title)
+              const query = normalize(title)
+              return candidate === query || candidate.includes(query) || query.includes(candidate)
+            })
+          : []
+
+      if (!byId && !title) return JSON.stringify({ error: 'Informe blocoId ou titulo.' })
+      if (candidates.length === 0)
+        return JSON.stringify({ error: 'Bloco não encontrado nessa data.' })
+      if (candidates.length > 1) {
+        return JSON.stringify({
+          error:
+            'Há mais de um bloco com esse título nessa data. Informe blocoId para não alterar o errado.',
+          candidatos: candidates.map((block) => ({
+            id: block.id,
+            titulo: block.title,
+            inicio: block.startTime,
+            fim: block.endTime
+          }))
+        })
+      }
+
+      const target = candidates[0]
+      const targetStartMinutes = toMinutes(target.startTime)
+      const oldEndMinutes = toMinutes(target.endTime)
+      if (targetStartMinutes === null || oldEndMinutes === null) {
+        return JSON.stringify({
+          error: 'O bloco encontrado tem um horário inválido e não foi alterado.'
+        })
+      }
+      if (newEndMinutes <= targetStartMinutes) {
+        return JSON.stringify({ error: 'O novo fim precisa ser posterior ao início do bloco.' })
+      }
+
+      const offset = newEndMinutes - oldEndMinutes
+      const targetIndex = blocks.findIndex((block) => block.id === target.id)
+      const laterBlocks = blocks.slice(targetIndex + 1)
+      const shifted = laterBlocks.map((block) => {
+        const start = toMinutes(block.startTime)
+        const end = toMinutes(block.endTime)
+        if (start === null || end === null || start + offset < 0 || end + offset >= 24 * 60)
+          return null
+        return { id: block.id, startTime: toTime(start + offset), endTime: toTime(end + offset) }
+      })
+      if (shifted.some((block) => block === null)) {
+        return JSON.stringify({
+          error: 'O deslocamento levaria um bloco para fora do dia; nenhuma alteração foi feita.'
+        })
+      }
+      if (offset === 0) {
+        return JSON.stringify({
+          atualizados: 0,
+          deslocamentoMinutos: 0,
+          bloco: {
+            id: target.id,
+            titulo: target.title,
+            inicio: target.startTime,
+            fim: target.endTime
+          }
+        })
+      }
+
+      const now = new Date().toISOString()
+      const shiftsById = new Map(
+        (shifted as { id: string; startTime: string; endTime: string }[]).map((block) => [
+          block.id,
+          block
+        ])
+      )
+      store.setTimeBlocks(
+        store.timeBlocks.map((block) => {
+          if (block.id === target.id) return { ...block, endTime: novoFim, updatedAt: now }
+          const shift = shiftsById.get(block.id)
+          return shift ? { ...block, ...shift, updatedAt: now } : block
+        })
+      )
+      return JSON.stringify({
+        atualizados: laterBlocks.length + 1,
+        deslocamentoMinutos: offset,
+        bloco: { id: target.id, titulo: target.title, inicio: target.startTime, fim: novoFim },
+        posterioresDeslocados: laterBlocks.length
+      })
+    }
+  },
+
   resolver_termo: {
     definition: fn(
       'resolver_termo',

@@ -128,7 +128,7 @@ src/
       tools.ts    # infraestrutura: REGISTRY, TOOL_DEFS, runTool, describeTool*
       tools/
         helpers.ts  # funções helper + constantes (fn, resolveTask, PRIORITIES, …)
-        entries.ts  # 31 definições de ferramentas (definição + run)
+        entries.ts  # 32 definições de ferramentas (definição + run)
       agent.ts    # o loop (runAgent)
       system-prompt.md, code-prompt.md, validators.ts, permission-registry.ts, glossary.json
     utils/

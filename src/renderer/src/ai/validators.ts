@@ -198,6 +198,24 @@ export function validateSalvarMemoria(args: Record<string, unknown>): Validation
   return issues.length ? fail(issues) : ok()
 }
 
+export function validateAjustarBlocoEDeslocarPosteriores(args: Record<string, unknown>): ValidationResult {
+  const issues: string[] = []
+  const text = (...keys: string[]): string => {
+    for (const key of keys) {
+      const value = args[key]
+      if (isStr(value) && value.trim()) return value.trim()
+    }
+    return ''
+  }
+  const data = text('data', 'date')
+  if (!isCalendarDate(data)) issues.push('data deve ser uma data válida (YYYY-MM-DD)')
+  if (!text('blocoId', 'id', 'titulo', 'bloco', 'atividade', 'nome'))
+    issues.push('blocoId ou titulo é obrigatório')
+  const novoFim = text('novoFim', 'fim', 'endTime', 'horarioFim', 'horario_fim')
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(novoFim)) issues.push('novoFim deve estar em HH:MM')
+  return issues.length ? fail(issues) : ok()
+}
+
 // ── Dispatcher ────────────────────────────────────────────────────────────────
 
 const VALIDATORS: Record<string, (args: Record<string, unknown>) => ValidationResult> = {
@@ -214,7 +232,8 @@ const VALIDATORS: Record<string, (args: Record<string, unknown>) => ValidationRe
   marcar_habito: validateMarcarHabito,
   criar_nota: validateCriarNota,
   criar_transacao: validateCriarTransacao,
-  salvar_memoria: validateSalvarMemoria
+  salvar_memoria: validateSalvarMemoria,
+  ajustar_bloco_e_deslocar_posteriores: validateAjustarBlocoEDeslocarPosteriores
 }
 
 /**

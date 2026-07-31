@@ -137,11 +137,11 @@ export function AnalyticsTab({
         accumulated = accumulated.plus(values.income).minus(values.expense)
         return { key, income, expense, accumulated: accumulated.toNumber() }
       })
-    const inSelectedYear =
+    const cashflow =
       selectedYear === 'all'
         ? history
         : history.filter((month) => month.key.startsWith(selectedYear))
-    return inSelectedYear
+    return { cashflow, balance: history }
   }, [transactions, selectedYear])
 
   function monthLabel(key: string): string {
@@ -326,7 +326,8 @@ export function AnalyticsTab({
 
       <FinancialCharts
         currency={currency}
-        months={chartMonths}
+        months={chartMonths.cashflow}
+        balanceMonths={chartMonths.balance}
         categories={activeCatEntries}
         categoryLabel={catView === 'expense' ? 'gastos' : 'ganhos'}
       />
