@@ -46,7 +46,7 @@
 | **Kanban** | Quadros com colunas customizáveis, sprints, prioridades e múltiplos cronômetros por tarefa |
 | **Hábitos** | Rastreamento diário com histórico e streak |
 | **Metas** | Acompanhamento de objetivos pessoais |
-| **Financeiro** | Transações, metas financeiras e análises, com listas de compras em múltiplas moedas (BRL, USD, JPY) |
+| **Financeiro** | Transações, metas financeiras e análises, com listas de compras em múltiplas moedas (BRL, USD, JPY). Detalhe um lançamento em itens e categorias para que a análise reflita como o dinheiro foi gasto, sem duplicar valores nos totais |
 | **Canvas** | Notas adesivas livres em tela infinita, com links para tarefas |
 | **Grafo** | Mapa interativo das conexões entre projetos, tarefas abertas, notas, metas e hábitos; pesquise, arraste nós e abra o item com duplo clique |
 | **Upcoming** | Tarefas com data de vencimento próxima |
@@ -206,13 +206,21 @@ npm run build:linux  # Linux
 
 ---
 
+## Financeiro
+
+Além do valor, data, categoria e origem de cada lançamento, você pode **detalhar uma transação** em itens. Cada item pode ter descrição, valor, categoria e data de compra próprios — útil, por exemplo, para separar uma fatura de cartão entre mercado, transporte e lazer.
+
+Os itens apenas repartem o valor do lançamento principal: a soma deles não pode ultrapassá-lo e eles não são contabilizados novamente nos totais. Nas análises por categoria, a parcela detalhada aparece nas categorias dos itens; se uma transação de categoria **Cartão** ficar parcialmente detalhada, o restante aparece como **Cartão não detalhado** para deixar claro o que ainda falta classificar.
+
+---
+
 ## Dados
 
 Tudo fica na sua máquina, no diretório de dados do app (`userData`):
 
 | Arquivo | Conteúdo |
 |---|---|
-| `kanban.db` | banco SQLite com projetos, tarefas, hábitos, metas, finanças e memórias do assistente |
+| `kanban.db` | banco SQLite com projetos, tarefas, hábitos, metas, finanças (incluindo detalhes de transações) e memórias do assistente |
 | `files/` | anexos enviados |
 | `chat-images/` | imagens enviadas no chat |
 | `chat-files/` | documentos enviados no chat (PDF, DOCX, etc.) |

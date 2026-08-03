@@ -294,7 +294,14 @@ export const createFinancialSlice: StateCreator<
 
   addTransaction: (listId, data) => {
     const txId = uuidv4()
-    const tx: FinancialTransaction = { id: txId, ...data }
+    const details = data.details ?? []
+    const detailed = details.reduce((total, detail) => total.plus(detail.amount), new Decimal(0))
+    // Details are allocations of the parent amount, never independent expenses.
+    const tx: FinancialTransaction = {
+      id: txId,
+      ...data,
+      ...(detailed.greaterThan(new Decimal(data.amount)) ? { details: [] } : {})
+    }
     set((s) => ({
       lists: s.lists.map((l) =>
         l.id !== listId
@@ -313,7 +320,15 @@ export const createFinancialSlice: StateCreator<
           ? l
           : {
               ...l,
-              transactions: l.transactions.map((t) => (t.id === txId ? { ...t, ...updates } : t)),
+              transactions: l.transactions.map((t) => {
+                if (t.id !== txId) return t
+                const next = { ...t, ...updates }
+                const detailed = (next.details ?? []).reduce(
+                  (total, detail) => total.plus(detail.amount),
+                  new Decimal(0)
+                )
+                return detailed.greaterThan(new Decimal(next.amount)) ? t : next
+              }),
               updatedAt: new Date().toISOString()
             }
       )

@@ -300,7 +300,7 @@ Same **legacy-mirror** pattern as `activeCodePathId`: the persisted payload carr
 
 ### Monetary fields are decimal strings
 
-`FinancialTransaction.amount`, `FinancialGoal.targetAmount`, and `ShoppingItem.price` are stored **in memory and in backups/JSON as canonical decimal strings** (e.g. `"1500.5"`), not numbers. All money arithmetic goes through `decimal.js` — use the `D()` helper and `Decimal` methods (`.plus/.minus/.times/.div`) in `components/financial/shared.ts`; only convert to `number` for display geometry (bar widths, percentages). `qty` stays a `number` (it's a quantity, not currency).
+`FinancialTransaction.amount`, `FinancialTransaction.details[].amount`, `FinancialGoal.targetAmount`, and `ShoppingItem.price` are stored **in memory and in backups/JSON as canonical decimal strings** (e.g. `"1500.5"`), not numbers. All money arithmetic goes through `decimal.js` — use the `D()` helper and `Decimal` methods (`.plus/.minus/.times/.div`) in `components/financial/shared.ts`; only convert to `number` for display geometry (bar widths, percentages). `qty` stays a `number` (it's a quantity, not currency).
 
 - On load, `normalizeList` migrates any legacy `number` values to canonical string via `moneyStr` — old data and old backups keep working.
 - The SQLite columns for these fields are `TEXT` (`price`, `amount`, `target_amount`), storing decimal strings on disk. `qty` stays `REAL`. On insert, `moneyText()` in `main/store.ts` coerces number-or-string to a string.

@@ -1,7 +1,8 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FinancialTransaction, FinancialTable, Currency } from '../../types'
 import { CURRENCY_CONFIG } from '../../types'
-import { FINANCIAL_CATEGORIES, parseDecimalInput, todayISO, formatDateBR, formatAmountInput, formatCurrency, YIELD_SUMMARY_CATEGORY } from './shared'
+import { D, FINANCIAL_CATEGORIES, parseDecimalInput, todayISO, formatDateBR, formatAmountInput, formatCurrency, YIELD_SUMMARY_CATEGORY } from './shared'
+import { TransactionDetails } from './TransactionDetails'
 
 // ── CategoryInput ─────────────────────────────────────────────────────────────
 
@@ -214,6 +215,7 @@ export function TransactionRow({
   const [editCat, setEditCat] = useState(tx.category ?? '')
   const [editAmount, setEditAmount] = useState(() => formatAmountInput(tx.amount, currency))
   const [dateEditing, setDateEditing] = useState(false)
+  const [detailsOpen, setDetailsOpen] = useState((tx.details?.length ?? 0) > 0)
 
   useEffect(() => {
     setEditDate(tx.date)
@@ -266,6 +268,11 @@ export function TransactionRow({
   const commitAmount = () => {
     const d = parseDecimalInput(editAmount)
     if (d !== null && d.greaterThan(0)) {
+      const detailsTotal = (tx.details ?? []).reduce((total, detail) => total.plus(detail.amount), D(0))
+      if (d.lessThan(detailsTotal)) {
+        setEditAmount(formatAmountInput(tx.amount, currency))
+        return
+      }
       const s = d.toDecimalPlaces(2).toString()
       if (s !== tx.amount) onUpdate({ amount: s })
     } else {
@@ -274,7 +281,8 @@ export function TransactionRow({
   }
 
   return (
-    <tr className="group border-b border-[#3b3b3b] hover:bg-[#2a2a2a] transition-colors">
+    <>
+      <tr className="group border-b border-[#3b3b3b] hover:bg-[#2a2a2a] transition-colors">
       <td className="pl-4 pr-2 py-2 w-28">
         {readOnly ? (
           <span className="text-xs text-[#999999] tabular-nums">{formatDateBR(tx.date)}</span>
@@ -364,6 +372,23 @@ export function TransactionRow({
               </span>
             </span>
           )}
+          {!readOnly && (
+            <button
+              type="button"
+              onClick={() => setDetailsOpen((open) => !open)}
+              className="shrink-0 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-[#a080f0] hover:bg-[#7c3aed]/10 transition-colors"
+              title="Detalhar esta transação"
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M4 19V5" />
+                <path d="M8 17V9" />
+                <path d="M12 15v-3" />
+                <path d="M16 13V7" />
+                <path d="M20 11V4" />
+              </svg>
+              {tx.details?.length ? tx.details.length + ' item(ns)' : 'Detalhar'}
+            </button>
+          )}
           {readOnly ? (
             <span className={`text-sm ${tx.fromShopping ? 'text-[#a080f0]' : 'text-[#d4d4d4]'}`}>
               {tx.description}
@@ -437,6 +462,14 @@ export function TransactionRow({
           </button>
         )}
       </td>
-    </tr>
+      </tr>
+      {detailsOpen && !readOnly && (
+        <tr className="border-b border-[#3b3b3b]">
+          <td colSpan={6} className="px-4 py-2.5">
+            <TransactionDetails transaction={tx} currency={currency} onUpdate={onUpdate} />
+          </td>
+        </tr>
+      )}
+    </>
   )
 }

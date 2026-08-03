@@ -170,6 +170,10 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    e nunca é gravada nem altera os lançamentos.
    As configurações de planejamento (banco/app, saldo real, orçamentos e recorrências) são
    opcionais e persistem em metadata da tabela; seus valores monetários também são strings decimais.
+   Itens em `FinancialTransaction.details` repartem o lançamento principal: a soma deles não pode
+   ultrapassar o total e eles nunca entram uma segunda vez nos totais; a análise usa as categorias
+   desses itens. Quando o lançamento pai for `Cartão`, o restante aparece como `Cartão não detalhado`,
+   pois cartão é forma de pagamento, não destino do gasto.
 2. **Nunca remova nem renomeie campos** de tipos persistidos sem migração ou
    fallback. Campo novo opcional é seguro; mudar a forma de um array ou objeto
    existente, não.

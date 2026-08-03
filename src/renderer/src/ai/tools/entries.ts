@@ -25,6 +25,7 @@ import {
   PASTA_PARAM,
   type AITool
 } from './helpers'
+import Decimal from 'decimal.js'
 import { leaseBlock, currentRunConvId } from '../tools'
 
 import { useKanbanStore } from '../../store/kanban'
@@ -46,7 +47,15 @@ export const registryEntries: Record<string, AITool> = {
     ),
     run: () => {
       const now = new Date()
-      const dias = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado']
+      const dias = [
+        'domingo',
+        'segunda-feira',
+        'terça-feira',
+        'quarta-feira',
+        'quinta-feira',
+        'sexta-feira',
+        'sábado'
+      ]
       const pad = (n: number) => String(n).padStart(2, '0')
       const data = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
       const hora = `${pad(now.getHours())}:${pad(now.getMinutes())}`
@@ -128,7 +137,8 @@ export const registryEntries: Record<string, AITool> = {
       const byName = projetoNome
         ? projects.find((p) => p.name.trim().toLowerCase() === projetoNome.toLowerCase())?.id
         : undefined
-      const projectId = (typeof args.projectId === 'string' && args.projectId) || byName || activeProjectId
+      const projectId =
+        (typeof args.projectId === 'string' && args.projectId) || byName || activeProjectId
       const project = projects.find((p) => p.id === projectId)
       if (!project) return JSON.stringify({ error: 'Projeto não encontrado' })
       const colName = (id: string): string => project.columns.find((c) => c.id === id)?.name ?? '?'
@@ -136,12 +146,11 @@ export const registryEntries: Record<string, AITool> = {
       const busca = typeof args.busca === 'string' ? normalize(args.busca.trim()) : ''
       const tag = typeof args.tag === 'string' ? normalize(args.tag.trim()) : ''
       const coluna = typeof args.coluna === 'string' ? normalize(args.coluna.trim()) : ''
-      const prioridade = typeof args.prioridade === 'string' ? args.prioridade.trim().toLowerCase() : ''
+      const prioridade =
+        typeof args.prioridade === 'string' ? args.prioridade.trim().toLowerCase() : ''
       const estado = resolveTaskState(args)
       const sprintNome = typeof args.sprint === 'string' ? args.sprint.trim() : ''
-      const projectSprints = sprintNome
-        ? sprints.filter((s) => s.projectId === project.id)
-        : []
+      const projectSprints = sprintNome ? sprints.filter((s) => s.projectId === project.id) : []
       const sprintId = sprintNome
         ? projectSprints.find((s) => s.name.trim().toLowerCase() === sprintNome.toLowerCase())?.id
         : undefined
@@ -171,7 +180,9 @@ export const registryEntries: Record<string, AITool> = {
       })
 
       const matched =
-        estado === 'todas' ? subject : subject.filter((t) => !!t.completedAt === (estado === 'concluidas'))
+        estado === 'todas'
+          ? subject
+          : subject.filter((t) => !!t.completedAt === (estado === 'concluidas'))
 
       // ⚠️ The scope is ONE project — args.projectId, or the active one. When
       // nothing here matched the question at all, the likeliest explanation is
@@ -255,15 +266,36 @@ export const registryEntries: Record<string, AITool> = {
           let receitas = D(0)
           let despesas = D(0)
           const porCategoria: Record<string, { receita: string; despesa: string }> = {}
+          const addCategory = (
+            type: 'income' | 'expense',
+            category: string | undefined,
+            amount: Decimal
+          ) => {
+            if (amount.lessThanOrEqualTo(0)) return
+            const cat = category || 'sem categoria'
+            const acc = porCategoria[cat] ?? { receita: '0', despesa: '0' }
+            if (type === 'income') acc.receita = D(acc.receita).plus(amount).toString()
+            else acc.despesa = D(acc.despesa).plus(amount).toString()
+            porCategoria[cat] = acc
+          }
           for (const t of txs) {
             const amount = D(t.amount)
             if (t.type === 'income') receitas = receitas.plus(amount)
             else despesas = despesas.plus(amount)
-            const cat = t.category || 'sem categoria'
-            const acc = porCategoria[cat] ?? { receita: '0', despesa: '0' }
-            if (t.type === 'income') acc.receita = D(acc.receita).plus(amount).toString()
-            else acc.despesa = D(acc.despesa).plus(amount).toString()
-            porCategoria[cat] = acc
+            let remaining = amount
+            for (const detail of t.details ?? []) {
+              if (remaining.lessThanOrEqualTo(0)) break
+              const requested = D(detail.amount)
+              if (requested.lessThanOrEqualTo(0)) continue
+              const allocated = requested.lessThan(remaining) ? requested : remaining
+              addCategory(t.type, detail.category, allocated)
+              remaining = remaining.minus(allocated)
+            }
+            addCategory(
+              t.type,
+              t.details?.length && t.category === 'Cartão' ? 'Cartão não detalhado' : t.category,
+              remaining
+            )
           }
           const amostra = [...txs]
             .sort((a, b) => b.date.localeCompare(a.date))
@@ -1220,7 +1252,12 @@ export const registryEntries: Record<string, AITool> = {
     run: async () => {
       const conflicts = await window.electronAPI.ai.memory.conflicts()
       if (!conflicts.length) {
-        return JSON.stringify({ ok: true, total: 0, conflitos: [], mensagem: 'Nenhuma contradição aparente.' })
+        return JSON.stringify({
+          ok: true,
+          total: 0,
+          conflitos: [],
+          mensagem: 'Nenhuma contradição aparente.'
+        })
       }
       const all = await window.electronAPI.ai.memory.list({})
       const byId = new Map(all.map((m) => [m.id, m]))
@@ -1426,8 +1463,7 @@ export const registryEntries: Record<string, AITool> = {
           arquivos: {
             type: 'array',
             items: { type: 'string' },
-            description:
-              'Caminhos relativos dos arquivos a editar. Evita o passo de descoberta.'
+            description: 'Caminhos relativos dos arquivos a editar. Evita o passo de descoberta.'
           },
           decisoes: {
             type: 'array',
@@ -1600,11 +1636,16 @@ export const registryEntries: Record<string, AITool> = {
 
       // Scoped read: a named symbol or a line range. Only built when asked, so a
       // plain read still calls code.read with four args (its existing contract).
-      const simbolo = typeof args.simbolo === 'string' && args.simbolo.trim() !== '' ? args.simbolo.trim() : undefined
+      const simbolo =
+        typeof args.simbolo === 'string' && args.simbolo.trim() !== ''
+          ? args.simbolo.trim()
+          : undefined
       const lineStart = typeof args.linha_inicio === 'number' ? args.linha_inicio : undefined
       const lineEnd = typeof args.linha_fim === 'number' ? args.linha_fim : undefined
       const scope =
-        simbolo || lineStart != null || lineEnd != null ? { symbol: simbolo, lineStart, lineEnd } : undefined
+        simbolo || lineStart != null || lineEnd != null
+          ? { symbol: simbolo, lineStart, lineEnd }
+          : undefined
 
       const reads = await Promise.all(
         roots.map(async (r) => ({
@@ -1767,7 +1808,8 @@ export const registryEntries: Record<string, AITool> = {
         properties: {
           data: {
             type: 'string',
-            description: 'Data YYYY-MM-DD para ler o plano de um dia, ou YYYY-MM-DD/YYYY-MM-DD para uma semana.'
+            description:
+              'Data YYYY-MM-DD para ler o plano de um dia, ou YYYY-MM-DD/YYYY-MM-DD para uma semana.'
           }
         },
         required: ['data']
@@ -1775,12 +1817,17 @@ export const registryEntries: Record<string, AITool> = {
     ),
     run: (args) => {
       const raw = typeof args.data === 'string' ? args.data : ''
-      if (!raw) return JSON.stringify({ error: 'Informe uma data (YYYY-MM-DD) ou intervalo (YYYY-MM-DD/YYYY-MM-DD)' })
+      if (!raw)
+        return JSON.stringify({
+          error: 'Informe uma data (YYYY-MM-DD) ou intervalo (YYYY-MM-DD/YYYY-MM-DD)'
+        })
       const parts = raw.split('/')
       const dateStart = parts[0]
       const dateEnd = parts[1] ?? parts[0]
       if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStart) || !/^\d{4}-\d{2}-\d{2}$/.test(dateEnd))
-        return JSON.stringify({ error: 'Formato inválido. Use YYYY-MM-DD ou YYYY-MM-DD/YYYY-MM-DD' })
+        return JSON.stringify({
+          error: 'Formato inválido. Use YYYY-MM-DD ou YYYY-MM-DD/YYYY-MM-DD'
+        })
 
       const { timeBlocks, tasks, habits, lists } = useKanbanStore.getState()
 
@@ -1788,26 +1835,35 @@ export const registryEntries: Record<string, AITool> = {
         .filter((tb) => tb.date >= dateStart && tb.date <= dateEnd)
         .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime))
 
-      const tasksInRange = tasks
-        .filter((t) => t.dueDate && t.dueDate >= dateStart && t.dueDate <= dateEnd)
+      const tasksInRange = tasks.filter(
+        (t) => t.dueDate && t.dueDate >= dateStart && t.dueDate <= dateEnd
+      )
 
-      const habitsToday = dateStart === dateEnd
-        ? habits
-            .filter((h) => h.completions.includes(dateStart))
-            .map((h) => ({ nome: h.name, cor: h.color }))
-        : undefined
+      const habitsToday =
+        dateStart === dateEnd
+          ? habits
+              .filter((h) => h.completions.includes(dateStart))
+              .map((h) => ({ nome: h.name, cor: h.color }))
+          : undefined
 
       const today = dateStart.slice(0, 7) // YYYY-MM
-      const monthTransactions: { descricao: string; valor: string; tipo: string; data: string; categoria?: string }[] = []
+      const monthTransactions: {
+        descricao: string
+        valor: string
+        tipo: string
+        data: string
+        categoria?: string
+      }[] = []
       for (const list of lists) {
         for (const tx of list.transactions) {
-          if (tx.date.startsWith(today)) monthTransactions.push({
-            descricao: tx.description,
-            valor: tx.amount,
-            tipo: tx.type,
-            data: tx.date,
-            ...(tx.category ? { categoria: tx.category } : {})
-          })
+          if (tx.date.startsWith(today))
+            monthTransactions.push({
+              descricao: tx.description,
+              valor: tx.amount,
+              tipo: tx.type,
+              data: tx.date,
+              ...(tx.category ? { categoria: tx.category } : {})
+            })
         }
       }
 
@@ -1815,7 +1871,10 @@ export const registryEntries: Record<string, AITool> = {
       for (const block of blocks) {
         const day = (planosPorDia[block.date] ??= { blocos: [], tasks: [] })
         day.blocos.push({
-          id: block.id, titulo: block.title, inicio: block.startTime, fim: block.endTime,
+          id: block.id,
+          titulo: block.title,
+          inicio: block.startTime,
+          fim: block.endTime,
           tipo: block.type,
           ...(block.description ? { descricao: block.description } : {}),
           ...(block.taskId ? { taskId: block.taskId } : {}),
@@ -1826,7 +1885,9 @@ export const registryEntries: Record<string, AITool> = {
       for (const t of tasksInRange) {
         const day = (planosPorDia[t.dueDate!] ??= { blocos: [], tasks: [] })
         day.tasks.push({
-          id: t.id, titulo: t.title, prioridade: t.priority,
+          id: t.id,
+          titulo: t.title,
+          prioridade: t.priority,
           coluna: t.columnId,
           ...(t.order ? {} : {})
         })
@@ -1838,11 +1899,13 @@ export const registryEntries: Record<string, AITool> = {
         totalBlocos: blocks.length,
         totalTasksComPrazo: tasksInRange.length,
         ...(habitsToday ? { habitosConcluidosHoje: habitsToday } : {}),
-        ...(monthTransactions.length ? {
-          transacoesDoMes: monthTransactions.slice(0, 30),
-          totalTransacoesMes: monthTransactions.length,
-          truncado: monthTransactions.length > 30
-        } : {})
+        ...(monthTransactions.length
+          ? {
+              transacoesDoMes: monthTransactions.slice(0, 30),
+              totalTransacoesMes: monthTransactions.length,
+              truncado: monthTransactions.length > 30
+            }
+          : {})
       })
     }
   },
@@ -1886,10 +1949,13 @@ export const registryEntries: Record<string, AITool> = {
       const criados: string[] = []
       for (const b of blocos) {
         const data = typeof b.data === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(b.data) ? b.data : ''
-        const inicio = typeof b.inicio === 'string' && /^\d{2}:\d{2}$/.test(b.inicio) ? b.inicio : ''
+        const inicio =
+          typeof b.inicio === 'string' && /^\d{2}:\d{2}$/.test(b.inicio) ? b.inicio : ''
         const fim = typeof b.fim === 'string' && /^\d{2}:\d{2}$/.test(b.fim) ? b.fim : ''
         const titulo = typeof b.titulo === 'string' ? b.titulo.trim() : ''
-        const tipo = (['task', 'routine', 'buffer', 'custom'] as const).includes(b.tipo as typeof b.tipo & string)
+        const tipo = (['task', 'routine', 'buffer', 'custom'] as const).includes(
+          b.tipo as typeof b.tipo & string
+        )
           ? b.tipo
           : 'custom'
         if (!data || !inicio || !fim || !titulo) continue
@@ -1900,7 +1966,10 @@ export const registryEntries: Record<string, AITool> = {
         const existingBlocks = store.timeBlocks.filter((tb) => tb.date === data)
         const maxOrder = existingBlocks.reduce((m, tb) => Math.max(m, tb.order), -1)
         const id = store.createTimeBlock({
-          date: data, startTime: inicio, endTime: fim, title: titulo,
+          date: data,
+          startTime: inicio,
+          endTime: fim,
+          title: titulo,
           ...(descricao ? { description: descricao } : {}),
           ...(taskId ? { taskId } : {}),
           type: tipo,
@@ -1910,7 +1979,11 @@ export const registryEntries: Record<string, AITool> = {
         criados.push(id)
       }
 
-      return JSON.stringify({ criado: criados.length, ids: criados, dica: 'Use ler_plano para ver o resultado' })
+      return JSON.stringify({
+        criado: criados.length,
+        ids: criados,
+        dica: 'Use ler_plano para ver o resultado'
+      })
     }
   },
 
@@ -1946,7 +2019,8 @@ export const registryEntries: Record<string, AITool> = {
     write: true,
     run: (args) => {
       const blocos = Array.isArray(args.blocos) ? args.blocos : []
-      if (!blocos.length) return JSON.stringify({ error: 'Informe ao menos um bloco para atualizar' })
+      if (!blocos.length)
+        return JSON.stringify({ error: 'Informe ao menos um bloco para atualizar' })
 
       const store = useKanbanStore.getState()
       let atualizados = 0
@@ -1962,7 +2036,8 @@ export const registryEntries: Record<string, AITool> = {
           continue
         }
         const updates: Record<string, unknown> = {}
-        if (typeof b.inicio === 'string' && /^\d{2}:\d{2}$/.test(b.inicio)) updates.startTime = b.inicio
+        if (typeof b.inicio === 'string' && /^\d{2}:\d{2}$/.test(b.inicio))
+          updates.startTime = b.inicio
         if (typeof b.fim === 'string' && /^\d{2}:\d{2}$/.test(b.fim)) updates.endTime = b.fim
         if (typeof b.titulo === 'string') updates.title = b.titulo.trim()
         if (typeof b.descricao === 'string') updates.description = b.descricao.trim()
@@ -2127,7 +2202,10 @@ export const registryEntries: Record<string, AITool> = {
       {
         type: 'object',
         properties: {
-          termo: { type: 'string', description: 'Termo a consultar (ex: "kanban", "handoff", "dueDate")' }
+          termo: {
+            type: 'string',
+            description: 'Termo a consultar (ex: "kanban", "handoff", "dueDate")'
+          }
         },
         required: ['termo']
       }
@@ -2135,23 +2213,48 @@ export const registryEntries: Record<string, AITool> = {
     run: (args) => {
       const termo = typeof args.termo === 'string' ? args.termo.trim().toLowerCase() : ''
       if (!termo) return JSON.stringify({ error: 'Informe o termo a consultar' })
-      const glossary = glossaryRaw as { termo: string; definicao: string; contexto: string; ferramentas_relevantes: string[]; exemplo: string }[]
+      const glossary = glossaryRaw as {
+        termo: string
+        definicao: string
+        contexto: string
+        ferramentas_relevantes: string[]
+        exemplo: string
+      }[]
       // Exact match first, then accent-insensitive substring match
       const exact = glossary.find((g) => g.termo.toLowerCase() === termo)
-      if (exact) return JSON.stringify({ termo: exact.termo, definicao: exact.definicao, contexto: exact.contexto, ferramentas: exact.ferramentas_relevantes, exemplo: exact.exemplo })
+      if (exact)
+        return JSON.stringify({
+          termo: exact.termo,
+          definicao: exact.definicao,
+          contexto: exact.contexto,
+          ferramentas: exact.ferramentas_relevantes,
+          exemplo: exact.exemplo
+        })
       // Normalize accents for fuzzy matching
       const normalized = termo.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
       const fuzzy = glossary.filter((g) => {
-        const n = g.termo.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        const n = g.termo
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
         return n.includes(normalized) || normalized.includes(n)
       })
       if (fuzzy.length === 0) {
         const termos = glossary.map((g) => g.termo).join(', ')
-        return JSON.stringify({ error: `Termo "${args.termo}" não encontrado no glossário.`, termos_disponiveis: termos })
+        return JSON.stringify({
+          error: `Termo "${args.termo}" não encontrado no glossário.`,
+          termos_disponiveis: termos
+        })
       }
       if (fuzzy.length === 1) {
         const g = fuzzy[0]
-        return JSON.stringify({ termo: g.termo, definicao: g.definicao, contexto: g.contexto, ferramentas: g.ferramentas_relevantes, exemplo: g.exemplo })
+        return JSON.stringify({
+          termo: g.termo,
+          definicao: g.definicao,
+          contexto: g.contexto,
+          ferramentas: g.ferramentas_relevantes,
+          exemplo: g.exemplo
+        })
       }
       return JSON.stringify({
         ambiguo: true,
@@ -2197,7 +2300,9 @@ export const registryEntries: Record<string, AITool> = {
           ...(result.size !== undefined && { tamanho_bytes: result.size })
         })
       } catch (e) {
-        return JSON.stringify({ error: e instanceof Error ? e.message : 'Falha ao ler o documento' })
+        return JSON.stringify({
+          error: e instanceof Error ? e.message : 'Falha ao ler o documento'
+        })
       }
     }
   }
