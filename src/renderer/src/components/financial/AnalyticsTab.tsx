@@ -70,9 +70,31 @@ export function AnalyticsTab({
 
   const buildCatEntries = (txs: FinancialTransaction[]): [string, number][] => {
     const map: Record<string, Decimal> = {}
+    const add = (category: string | undefined, amount: Decimal) => {
+      if (amount.lessThanOrEqualTo(0)) return
+      const key = category || 'Sem categoria'
+      map[key] = (map[key] ?? new Decimal(0)).plus(amount)
+    }
+
     for (const t of txs) {
-      const cat = t.category || 'Sem categoria'
-      map[cat] = (map[cat] ?? new Decimal(0)).plus(t.amount)
+      // Details only allocate portions of the parent transaction. The parent amount
+      // remains the single source of truth for totals, preventing double-counting.
+      let remaining = new Decimal(t.amount)
+      for (const detail of t.details ?? []) {
+        if (remaining.lessThanOrEqualTo(0)) break
+        const requested = new Decimal(detail.amount)
+        if (requested.lessThanOrEqualTo(0)) continue
+        const allocated = requested.lessThan(remaining) ? requested : remaining
+        add(detail.category, allocated)
+        remaining = remaining.minus(allocated)
+      }
+      // A card bill is a payment method, not a spending destination. When it is
+      // only partly described, keep the unknown share explicit instead of mixing it
+      // with the detailed categories under "Cartão".
+      add(
+        t.details?.length && t.category === 'Cartão' ? 'Cartão não detalhado' : t.category,
+        remaining
+      )
     }
     return Object.entries(map)
       .map(([k, v]) => [k, v.toNumber()] as [string, number])

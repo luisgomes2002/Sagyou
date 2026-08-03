@@ -146,6 +146,14 @@ interface FinancialTransaction {
   fromShopping?: boolean
   linkedTransactionId?: string
   source?: string
+  details?: FinancialTransactionDetail[]
+}
+interface FinancialTransactionDetail {
+  id: string
+  description: string
+  amount: number | string
+  category?: string
+  date?: string
 }
 interface FinancialGoal {
   id: string
@@ -283,6 +291,7 @@ function getDb(): Database.Database {
   migrateMoneyColumnsToText(_db)
   migrateTransactionsLinkedColumn(_db)
   migrateFinancialPlanningColumns(_db)
+  migrateTransactionDetailsColumn(_db)
   migrateProjectsArchivedColumn(_db)
   migrateMemoryDropProjectFk(_db)
   migrateTaskImagesToDisk(_db)
@@ -315,6 +324,38 @@ function financialMetadata(value: unknown): Record<string, unknown> {
   } catch {
     return {}
   }
+}
+
+function transactionDetails(value: unknown): FinancialTransactionDetail[] {
+  const parsed =
+    typeof value === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(value)
+          } catch {
+            return []
+          }
+        })()
+      : value
+  if (!Array.isArray(parsed)) return []
+  return parsed.flatMap((detail) => {
+    if (!detail || typeof detail !== 'object') return []
+    const item = detail as Partial<FinancialTransactionDetail>
+    if (typeof item.id !== 'string' || typeof item.description !== 'string') return []
+    return [
+      {
+        id: item.id,
+        description: item.description,
+        amount: moneyText(item.amount),
+        ...(typeof item.category === 'string' && item.category.trim()
+          ? { category: item.category.trim() }
+          : {}),
+        ...(typeof item.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(item.date)
+          ? { date: item.date }
+          : {})
+      }
+    ]
+  })
 }
 
 // One-time migration for existing DBs: the money columns (price, amount,
@@ -438,6 +479,13 @@ function migrateFinancialPlanningColumns(db: Database.Database): void {
     db.prepare('ALTER TABLE financial_tables ADD COLUMN metadata TEXT').run()
   if (!has('transactions', 'source'))
     db.prepare('ALTER TABLE transactions ADD COLUMN source TEXT').run()
+}
+
+function migrateTransactionDetailsColumn(db: Database.Database): void {
+  const has = (db.prepare('PRAGMA table_info(transactions)').all() as { name: string }[]).some(
+    (row) => row.name === 'details'
+  )
+  if (!has) db.prepare('ALTER TABLE transactions ADD COLUMN details TEXT').run()
 }
 
 // One-time migration for existing DBs: add archived_at column to projects table.
@@ -735,7 +783,8 @@ function initSchema(db: Database.Database): void {
       category TEXT,
       from_shopping INTEGER DEFAULT 0,
       linked_transaction_id TEXT,
-      source TEXT
+      source TEXT,
+      details TEXT
     );
     CREATE TABLE IF NOT EXISTS financial_goals (
       id TEXT PRIMARY KEY,
@@ -924,7 +973,7 @@ function prepareWrite(db: Database.Database) {
       'INSERT INTO shopping_items (id,table_id,name,qty,price,done,link,linked_transaction_id) VALUES (?,?,?,?,?,?,?,?)'
     ),
     tx: db.prepare(
-      'INSERT INTO transactions (id,table_id,description,amount,type,date,category,from_shopping,linked_transaction_id,source) VALUES (?,?,?,?,?,?,?,?,?,?)'
+      'INSERT INTO transactions (id,table_id,description,amount,type,date,category,from_shopping,linked_transaction_id,source,details) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
     ),
     fg: db.prepare(
       'INSERT INTO financial_goals (id,table_id,name,target_amount,target_month,target_year,completed_at,completion_note) VALUES (?,?,?,?,?,?,?,?)'
@@ -1077,7 +1126,8 @@ function prepareWrite(db: Database.Database) {
           tx.category ?? null,
           tx.fromShopping ? 1 : 0,
           tx.linkedTransactionId ?? null,
-          tx.source ?? null
+          tx.source ?? null,
+          JSON.stringify(transactionDetails(tx.details))
         )
       for (const fg of ft.goals ?? [])
         ins.fg.run(
@@ -1477,7 +1527,8 @@ export function loadData(): SaveData {
       ...(tx.linked_transaction_id != null
         ? { linkedTransactionId: tx.linked_transaction_id }
         : {}),
-      ...(tx.source != null ? { source: tx.source } : {})
+      ...(tx.source != null ? { source: tx.source } : {}),
+      ...(transactionDetails(tx.details).length ? { details: transactionDetails(tx.details) } : {})
     })),
     goals: (fgByTable.get(ft.id) ?? []).map((fg) => ({
       id: fg.id,

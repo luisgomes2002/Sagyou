@@ -139,6 +139,18 @@ export interface FinancialTransaction {
   linkedTransactionId?: string
   /** Bank, card or app used for this transaction. */
   source?: string
+  /** Optional breakdown of this transaction. Its amounts partition, but never add to, `amount`. */
+  details?: FinancialTransactionDetail[]
+}
+
+export interface FinancialTransactionDetail {
+  id: string
+  description: string
+  /** Amount as a canonical decimal string. It cannot exceed the parent transaction remainder. */
+  amount: string
+  category?: string
+  /** Optional purchase date (YYYY-MM-DD). The parent transaction date remains the accounting date. */
+  date?: string
 }
 
 export interface FinancialBudget {

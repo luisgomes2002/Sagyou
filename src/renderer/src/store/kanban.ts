@@ -7,11 +7,12 @@ import type {
   Goal,
   GoalEntry,
   FinancialTable,
+  FinancialTransactionDetail,
   ActiveTimer,
   Currency,
   StickyNote
 } from '../types'
-import { moneyStr } from '../utils/money'
+import { D, moneyStr } from '../utils/money'
 import { ElectronStorage } from '../services/ElectronStorage'
 
 import type { HabitsSlice } from './slices/habits'
@@ -71,7 +72,10 @@ function normalizeList(l: FinancialTable): FinancialTable {
       ...i,
       price: i.price === null || i.price === undefined ? undefined : moneyStr(i.price)
     })),
-    transactions: (l.transactions ?? []).map((t) => ({ ...t, amount: moneyStr(t.amount) })),
+    transactions: (l.transactions ?? []).map((t) => {
+      const amount = moneyStr(t.amount)
+      return { ...t, amount, details: normalizeTransactionDetails(t.details, amount) }
+    }),
     actualBalance: l.actualBalance == null ? undefined : moneyStr(l.actualBalance),
     budgets: (l.budgets ?? []).map((b) => ({ ...b, limit: moneyStr(b.limit) })),
     recurringTransactions: (l.recurringTransactions ?? []).map((r) => ({
@@ -82,6 +86,33 @@ function normalizeList(l: FinancialTable): FinancialTable {
     yieldSources: (l.yieldSources ?? []).map((s) => ({ ...s })),
     yieldEntries: (l.yieldEntries ?? []).map((e) => ({ ...e, amount: moneyStr(e.amount) }))
   }
+}
+
+function normalizeTransactionDetails(value: unknown, total: string): FinancialTransactionDetail[] {
+  if (!Array.isArray(value)) return []
+  let remaining = D(total)
+  const details: FinancialTransactionDetail[] = []
+  for (const detail of value) {
+    if (!detail || typeof detail !== 'object' || remaining.lessThanOrEqualTo(0)) continue
+    const item = detail as Partial<FinancialTransactionDetail>
+    if (typeof item.id !== 'string' || typeof item.description !== 'string') continue
+    const requested = D(item.amount)
+    if (requested.lessThanOrEqualTo(0)) continue
+    const amount = requested.lessThan(remaining) ? requested : remaining
+    details.push({
+      id: item.id,
+      description: item.description,
+      amount: amount.toString(),
+      ...(typeof item.category === 'string' && item.category.trim()
+        ? { category: item.category.trim() }
+        : {}),
+      ...(typeof item.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(item.date)
+        ? { date: item.date }
+        : {})
+    })
+    remaining = remaining.minus(amount)
+  }
+  return details
 }
 
 function normalizeTimers(data: { activeTimers?: unknown; activeTimer?: unknown }): ActiveTimer[] {
