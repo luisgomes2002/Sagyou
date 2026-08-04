@@ -19,11 +19,11 @@ A ideia é que você não precise descobrir tudo sozinho antes da primeira linha
 Três marcadores, e só três. Eles valem justamente porque são raros: se tudo
 estiver marcado, nada está.
 
-| Marcador | Significa |
-|---|---|
-| 🔴 **CRÍTICO** | Quebrar isto corrompe dados reais de usuários, ou abre um buraco de segurança. Não há "depois eu arrumo": não existe backup em servidor. |
-| ⚠️ **REGRA** | Uma decisão firme do projeto. Pode contrariá-la se tiver um motivo melhor — mas diga qual, não a desfaça em silêncio. |
-| 🧠 **CONTEXTO** | Por que algo é como é. Não é ordem; é o que evita você "consertar" o que não está quebrado. |
+| Marcador        | Significa                                                                                                                                |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| 🔴 **CRÍTICO**  | Quebrar isto corrompe dados reais de usuários, ou abre um buraco de segurança. Não há "depois eu arrumo": não existe backup em servidor. |
+| ⚠️ **REGRA**    | Uma decisão firme do projeto. Pode contrariá-la se tiver um motivo melhor — mas diga qual, não a desfaça em silêncio.                    |
+| 🧠 **CONTEXTO** | Por que algo é como é. Não é ordem; é o que evita você "consertar" o que não está quebrado.                                              |
 
 ## ⚠️ REGRA — mantenha este arquivo vivo
 
@@ -38,8 +38,8 @@ mudança está em posição de exercê-lo, na hora. Um hook que só reclamasse "
 mexeu em `src/` e não no `GUIDE.md`" dispararia em quase todo commit, e a única
 coisa que ensinaria é a ignorá-lo.
 
-O teste é simples: *alguém, daqui a seis meses, vai desfazer isto achando que é
-bobagem?* Se sim, é regra — documente com o custo junto.
+O teste é simples: _alguém, daqui a seis meses, vai desfazer isto achando que é
+bobagem?_ Se sim, é regra — documente com o custo junto.
 
 ## O que é
 
@@ -54,18 +54,18 @@ qualquer coisa persistida.
 
 ## Stack
 
-| Camada | O quê |
-|---|---|
-| Runtime | Electron 39 — três processos: `main`, `preload`, `renderer` |
-| UI | React 19 + TypeScript + Tailwind CSS 4 |
-| Build | electron-vite (Vite); electron-builder para distribuir |
-| Estado | Zustand — `store/kanban.ts` compõe os slices em `store/slices/` |
-| Banco | SQLite via `better-sqlite3`, no processo main |
-| Dinheiro | `decimal.js` — **nunca** `number` (veja abaixo) |
-| Testes | Vitest + Testing Library, jsdom por padrão |
-| Drag & drop | dnd-kit |
-| Grafo | d3-force |
-| IA | SDK `openai` (qualquer endpoint compatível), proxiado pelo main |
+| Camada      | O quê                                                           |
+| ----------- | --------------------------------------------------------------- |
+| Runtime     | Electron 39 — três processos: `main`, `preload`, `renderer`     |
+| UI          | React 19 + TypeScript + Tailwind CSS 4                          |
+| Build       | electron-vite (Vite); electron-builder para distribuir          |
+| Estado      | Zustand — `store/kanban.ts` compõe os slices em `store/slices/` |
+| Banco       | SQLite via `better-sqlite3`, no processo main                   |
+| Dinheiro    | `decimal.js` — **nunca** `number` (veja abaixo)                 |
+| Testes      | Vitest + Testing Library, jsdom por padrão                      |
+| Drag & drop | dnd-kit                                                         |
+| Grafo       | d3-force                                                        |
+| IA          | SDK `openai` (qualquer endpoint compatível), proxiado pelo main |
 
 Idioma: **a UI e os textos são em pt-BR**; código, nomes e comentários em
 inglês. As ferramentas da IA têm nome em português de propósito (`ler_tasks`,
@@ -174,6 +174,9 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    ultrapassar o total e eles nunca entram uma segunda vez nos totais; a análise usa as categorias
    desses itens. Quando o lançamento pai for `Cartão`, o restante aparece como `Cartão não detalhado`,
    pois cartão é forma de pagamento, não destino do gasto.
+   Um detalhe pode vincular uma transação espelho de outra tabela: a fatura pai continua no
+   consolidado e somente o espelho é omitido. O vínculo legado entre transações mantém a regra
+   inversa, omitindo a transação pai, para preservar dados existentes.
 2. **Nunca remova nem renomeie campos** de tipos persistidos sem migração ou
    fallback. Campo novo opcional é seguro; mudar a forma de um array ou objeto
    existente, não.
@@ -187,12 +190,12 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    tokens, buscas redundantes, releituras — regras puras em `main/run-metrics.ts`,
    enviadas pelo `runAgent` no `finally`, best-effort), `chat-images/`,
    `chat-files/` (texto extraído dos documentos enviados no chat, limpo com a conversa),
-    `task-images/` (bytes das imagens de task — só metadata no DB, downscale JPEG
-    no cliente, `migrateTaskImagesToDisk` migra dados legados), `skills/`
-    (arquivos `.md` de system prompts — usados via `/skill-name` no chat),
-    `agent-runs/` (execuções arquivadas do agente de código — log + diff congelados).
-    Apagar um
-    lado sem o outro deixa órfão.
+   `task-images/` (bytes das imagens de task — só metadata no DB, downscale JPEG
+   no cliente, `migrateTaskImagesToDisk` migra dados legados), `skills/`
+   (arquivos `.md` de system prompts — usados via `/skill-name` no chat),
+   `agent-runs/` (execuções arquivadas do agente de código — log + diff congelados).
+   Apagar um
+   lado sem o outro deixa órfão.
 5. **Ferramenta de IA que escreve leva `write: true`** em `ai/tools.ts`. É a
    única coisa entre o modelo e os dados do usuário: sem isso a ação roda sem
    aprovação. Ferramenta nova que muta estado **tem** que marcar.
@@ -214,7 +217,7 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    modelo leva a `linha` direto para o `ler_arquivo` mirado. O prompt
    (`system-prompt.md`) tem tabela de custo e exemplo bom-vs-ruim guiando isso.
    Leitura **cega** de arquivo grande (sem escopo/`inicio`/`max_chars`, `total >
-   CODE_READ_PAGE`) devolve só ~100 linhas + `simbolos` + `dica`, não a janela de
+CODE_READ_PAGE`) devolve só ~100 linhas + `simbolos` + `dica`, não a janela de
    20k. `buscar_no_codigo` tem cache de 30s por (raízes+termo), limpo quando o
    agente de código roda. Freios de releitura (`ler_arquivo` cego 2×, busca fuzzy
    substring que avisa mas não bloqueia) e o log de custo por execução vivem em
@@ -308,7 +311,7 @@ Não "simplifique" nenhuma destas sem ler o comentário que as acompanha:
 - **`ai/tools.ts` está fatiado** — as helpers e constantes (`fn`, `resolveTask`,
   `PRIORITIES`, …) vivem em `ai/tools/helpers.ts` e as 31 definições do REGISTRY
   em `ai/tools/entries.ts`. `tools.ts` só tem a infraestrutura (REGISTRY,
-  TOOL_DEFS, runTool, describeTool*). Adicionar uma ferramenta = adicionar em
+  TOOL_DEFS, runTool, describeTool\*). Adicionar uma ferramenta = adicionar em
   `entries.ts` e pronto.
 - **Multi-agente: a store é desingletonizada** — N chat-agents rodam em paralelo
   (até no mesmo projeto). Os campos por-run são coleções por `convId`
@@ -324,10 +327,10 @@ Não "simplifique" nenhuma destas sem ler o comentário que as acompanha:
 - **Múltiplos cronômetros** (`activeTimers: ActiveTimer[]`, 1 por task) — vários
   timers correm ao mesmo tempo. `startTimer(taskId)` adiciona sem parar os outros;
   `stopTimer(taskId)` credita só aquele. Espelho legado `activeTimer =
-  activeTimers[0]` no `settings` do DB (não viaja no backup); `normalizeTimers`
+activeTimers[0]` no `settings` do DB (não viaja no backup); `normalizeTimers`
   migra o objeto único antigo e faz o commit de tempo em loop no load. ⚠️ Mudança
   de schema — mantenha a coleção **e** o espelho.
-- **O diff do agente captura a base *antes* de rodar** (`captureBase`) — depois
+- **O diff do agente captura a base _antes_ de rodar** (`captureBase`) — depois
   não dá para separar o que o agente fez do que o usuário já tinha em andamento.
 - **Runs antigas são snapshots congelados** (`agent-runs.ts`): o log e o diff são
   gravados uma vez, quando o agente sai, em `userData/agent-runs/` (payload em
@@ -349,16 +352,16 @@ Não "simplifique" nenhuma destas sem ler o comentário que as acompanha:
   aprovação parada — não há mais processo filho pra matar. `executar_comando` usa
   `exec` async (não `execSync`, que travaria o event loop do main), com timeout e
   saída limitada.
-- 🛡️ **Sandbox obrigatório (`main/ai-jail.ts`)**: a aprovação cobre a *intenção*, o
-  ai-jail cobre o *alcance* — confina os comandos à pasta do projeto (bubblewrap no
+- 🛡️ **Sandbox obrigatório (`main/ai-jail.ts`)**: a aprovação cobre a _intenção_, o
+  ai-jail cobre o _alcance_ — confina os comandos à pasta do projeto (bubblewrap no
   Linux, sandbox-exec no macOS). `sandboxEnabled` ausente = **ligado**; só `false`
   explícito roda sem confinar. O handler `ai:code-agent:run` **recusa iniciar** quando
   o sandbox é exigido mas o ai-jail não está disponível (`getJailStatus`); o usuário
   instala (onboarding) ou desmarca o Sandbox. Ativo, o runner embrulha cada comando com
   `wrapCommand` → `ai-jail --rw-map <dir> -- /bin/sh -c '<cmd>'` (⚠️ **não existe
-  `--workdir`** — o confinamento é por mounts). ⚠️ **Windows roda o sandbox *dentro do
-  WSL2*** (não há build nativo): a detecção procura o ai-jail dentro do WSL (`wsl -e
-  bash -lc 'command -v ai-jail…'`, `viaWsl:true`) e os comandos vão por `runSandboxedWsl`
+  `--workdir`** — o confinamento é por mounts). ⚠️ **Windows roda o sandbox _dentro do
+  WSL2_** (não há build nativo): a detecção procura o ai-jail dentro do WSL (`wsl -e
+bash -lc 'command -v ai-jail…'`, `viaWsl:true`) e os comandos vão por `runSandboxedWsl`
   → `wsl -e <ai-jail> --rw-map <wsl-path> -- bash -c 'cd … && <cmd>'` (**argv**, sem
   aspas atravessando cmd.exe→wsl→bash; `winToWslPath` traduz `C:\proj`→`/mnt/c/proj`) —
   ou seja, o comando roda no Linux do WSL. Onboarding em 2 passos (`wsl --install` →
@@ -371,20 +374,20 @@ Não "simplifique" nenhuma destas sem ler o comentário que as acompanha:
   **smoke test** (`sandboxSmokeTest`: `ai-jail --rw-map <tmp> -- sh -c 'true'`) e vira
   `available:false` se não iniciar — o gate recusa em vez de rodar sem confinar. Falha de
   namespace (`looksLikeUserNsBlock`) dá o `reason` com o fix `sudo sysctl -w
-  kernel.apparmor_restrict_unprivileged_userns=0` (mostrado, nunca rodado); `bubblewrap`
+kernel.apparmor_restrict_unprivileged_userns=0` (mostrado, nunca rodado); `bubblewrap`
   fica `true` (está instalado, só não cria o namespace). O erro do gate mostra `jail.reason`.
 - **Config separada**: `AIConfig.codeAgent {baseUrl,apiKey,model}` — campo vazio cai
   pro provedor do chat (`resolveCodeAgentConfig`). O painel mostra o **modelo real**
   (banner `modelo: X @ Y`, `status.model`, header). Os
   passos aparecem no log como `[tool] …` / `[resultado] …` e em eventos
   `ai:code-agent:tool`.
-- ⚠️ **O agente não commita nada** — o painel de Mudanças existe pra o *usuário*
+- ⚠️ **O agente não commita nada** — o painel de Mudanças existe pra o _usuário_
   revisar e commitar. `captureBase` roda **antes do loop** e o diff vai da base à
   worktree, então nada se perde deixando a árvore suja.
 - **O log é renderizado como terminal** (`AgentTerminal.tsx` + `utils/ansi.ts`):
   `parseAnsi` colore o SGR, **remove** cursor/OSC e **aplica** `\r`/erase-in-line por
   linha (não faz pré-passe no texto cru). Puro e testado (`utils/ansi.test.ts`).
-- **O painel lidera pelo diff, não pelo log**: "Mudanças" fica visível *durante* a
+- **O painel lidera pelo diff, não pelo log**: "Mudanças" fica visível _durante_ a
   execução (poll de 2s; derivado em main de uma base anterior ao run) e o log cru vai
   pra trás de "Log completo". Diff vazio com agente rodando diz "ainda não", não "não
   alterou nada" — fatos opostos.
@@ -412,7 +415,7 @@ Não "simplifique" nenhuma destas sem ler o comentário que as acompanha:
   começar; isso cobre o que escapa (detecção em cache, ou o comando do próprio agente
   chamando bwrap/containers com o sandbox off). Checado **antes** de
   `looksLikeSandboxBlock` (que também casa `bwrap:`), pra não rotular uma falha de
-  namespace — sandbox que não *iniciou* — como tentativa de sair do projeto.
+  namespace — sandbox que não _iniciou_ — como tentativa de sair do projeto.
 - **Arquivos fixados são citados em caminho relativo** (`relative(dir, f)`):
   `files` chega absoluto do `confineToRoot`, então o prompt dizia "caminhos
   relativos à raiz" e entregava um absoluto — além de vazar o home da máquina.

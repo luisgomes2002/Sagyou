@@ -386,6 +386,19 @@ export function FinancialView() {
                     linkedTransactionId: targetTxId || undefined
                   })
                 }
+                onLinkDetail={(targetListId, targetTxId, detailId, sourceTxId) => {
+                  const target = lists
+                    .find((list) => list.id === targetListId)
+                    ?.transactions.find((transaction) => transaction.id === targetTxId)
+                  if (!target) return
+                  updateTransaction(targetListId, targetTxId, {
+                    details: (target.details ?? []).map((detail) =>
+                      detail.id === detailId
+                        ? { ...detail, linkedTransactionId: sourceTxId }
+                        : detail
+                    )
+                  })
+                }}
               />
             )}
             {ts.activeTab === 'yields' && (
