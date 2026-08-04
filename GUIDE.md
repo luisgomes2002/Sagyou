@@ -172,8 +172,8 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    opcionais e persistem em metadata da tabela; seus valores monetários também são strings decimais.
    Itens em `FinancialTransaction.details` repartem o lançamento principal: a soma deles não pode
    ultrapassar o total e eles nunca entram uma segunda vez nos totais; a análise usa as categorias
-   desses itens. Quando o lançamento pai for `Cartão`, o restante aparece como `Cartão não detalhado`,
-   pois cartão é forma de pagamento, não destino do gasto.
+   desses itens. Quando o lançamento pai for `Cartão`, os detalhes são subtraídos e somente o
+   restante aparece em `Cartão`; o rótulo não cria uma segunda categoria.
    Um detalhe pode vincular uma transação espelho de outra tabela: a fatura pai continua no
    consolidado e somente o espelho é omitido. O vínculo legado entre transações mantém a regra
    inversa, omitindo a transação pai, para preservar dados existentes.

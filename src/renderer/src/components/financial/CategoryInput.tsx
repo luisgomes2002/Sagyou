@@ -33,7 +33,7 @@ export function CategoryInput({
   }
 
   return (
-    <div className="relative">
+    <div className="relative min-w-0">
       <input
         value={value}
         onChange={(event) => {
@@ -50,7 +50,7 @@ export function CategoryInput({
           onKeyDown?.(event)
         }}
         placeholder={placeholder}
-        className={className}
+        className={'w-full ' + (className ?? '')}
       />
       {open && filtered.length > 0 && (
         <div className="absolute left-0 top-full mt-0.5 z-50 w-44 max-h-52 overflow-y-auto rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] shadow-xl py-1">

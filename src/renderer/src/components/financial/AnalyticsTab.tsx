@@ -88,11 +88,10 @@ export function AnalyticsTab({
         add(detail.category, allocated)
         remaining = remaining.minus(allocated)
       }
-      // A card bill is a payment method, not a spending destination. When it is
-      // only partly described, keep the unknown share explicit instead of mixing it
-      // with the detailed categories under "Cartão".
+      // Details remain allocated to their own categories; only the undisclosed card balance
+      // is kept under Cartão, avoiding a second category label for the same payment method.
       add(
-        t.details?.length && t.category === 'Cartão' ? 'Cartão não detalhado' : t.category,
+        t.category,
         remaining
       )
     }

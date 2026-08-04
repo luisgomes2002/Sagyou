@@ -85,7 +85,7 @@ describe('AnalyticsTab', () => {
     expect(getAllByText('R$ 1.200,00').length).toBeGreaterThan(0)
   })
 
-  it('separa a parte não detalhada de uma fatura de cartão', () => {
+  it('mantém o restante de uma fatura detalhada na categoria Cartão', () => {
     const detailedList: FinancialTable = {
       ...list,
       transactions: [
@@ -100,7 +100,7 @@ describe('AnalyticsTab', () => {
         }
       ]
     }
-    const { getAllByText, queryByText } = render(
+    const { getAllByText } = render(
       <AnalyticsTab
         list={detailedList}
         selectedYear="2025"
@@ -113,8 +113,7 @@ describe('AnalyticsTab', () => {
     )
 
     expect(getAllByText('Alimentação').length).toBeGreaterThan(0)
-    expect(getAllByText('Cartão não detalhado').length).toBeGreaterThan(0)
-    expect(queryByText('Cartão')).toBeNull()
+    expect(getAllByText('Cartão').length).toBeGreaterThan(0)
     expect(getAllByText('R$ 500,00').length).toBeGreaterThan(0)
   })
 })
