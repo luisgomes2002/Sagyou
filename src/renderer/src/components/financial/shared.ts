@@ -46,6 +46,7 @@ export const FINANCIAL_CATEGORIES = [
   'Impostos',
   'Intercâmbio',
   'Investimentos',
+  'Juros',
   'Lazer',
   'Marketing',
   'Moradia',

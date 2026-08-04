@@ -7,14 +7,32 @@ import type {
   FinancialTransactionDetail
 } from '../../types'
 import { ConfirmDialog } from '../ConfirmDialog'
-import {
-  FINANCIAL_CATEGORIES,
-  formatAmountInput,
-  formatCurrency,
-  formatDateBR,
-  parseDecimalInput,
-  D
-} from './shared'
+import { formatAmountInput, formatCurrency, formatDateBR, parseDecimalInput, D } from './shared'
+import { CategoryInput } from './CategoryInput'
+
+interface DetailCategoryInputProps {
+  value: string
+  onCommit: (value: string) => void
+  className: string
+}
+
+function DetailCategoryInput({
+  value,
+  onCommit,
+  className
+}: DetailCategoryInputProps): React.JSX.Element {
+  const [draft, setDraft] = useState(value)
+
+  return (
+    <CategoryInput
+      value={draft}
+      onChange={setDraft}
+      onCommit={(next) => onCommit(next.trim())}
+      placeholder="Categoria"
+      className={className}
+    />
+  )
+}
 
 interface TransactionDetailsProps {
   transaction: FinancialTransaction
@@ -134,15 +152,9 @@ export function TransactionDetails({
                 className="min-w-0 rounded bg-transparent px-1 py-1 text-xs text-[#999999] hover:bg-[#2a2a2a] focus:bg-[#2a2a2a] focus:outline-none"
                 aria-label={'Data de ' + detail.description}
               />
-              <input
-                list="financial-detail-categories"
-                defaultValue={detail.category ?? ''}
-                onBlur={(event) =>
-                  updateDetail(detail.id, {
-                    category: event.currentTarget.value.trim() || undefined
-                  })
-                }
-                placeholder="Categoria"
+              <DetailCategoryInput
+                value={detail.category ?? ''}
+                onCommit={(value) => updateDetail(detail.id, { category: value || undefined })}
                 className="min-w-0 rounded bg-transparent px-1 py-1 text-xs text-[#999999] hover:bg-[#2a2a2a] focus:bg-[#2a2a2a] focus:outline-none"
               />
               <input
@@ -218,10 +230,9 @@ export function TransactionDetails({
           className="min-w-0 bg-[#2a2a2a] rounded px-2 py-1 text-xs text-[#999999] focus:outline-none"
           aria-label="Data da compra"
         />
-        <input
-          list="financial-detail-categories"
+        <CategoryInput
           value={category}
-          onChange={(event) => setCategory(event.target.value)}
+          onChange={setCategory}
           onKeyDown={(event) => {
             if (event.key === 'Enter') addDetail()
           }}
@@ -247,11 +258,6 @@ export function TransactionDetails({
           Adicionar
         </button>
       </div>
-      <datalist id="financial-detail-categories">
-        {FINANCIAL_CATEGORIES.map((item) => (
-          <option key={item} value={item} />
-        ))}
-      </datalist>
       <ConfirmDialog
         open={unlinkDetailId !== null}
         title="Desvincular item da fatura"

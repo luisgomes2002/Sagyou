@@ -304,28 +304,28 @@ export function FinanceTab({
               </button>
             </div>
           ) : visibleGoals.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 py-8 rounded-xl border border-dashed border-[#20b858]/20 bg-[#20b858]/5">
-              <div className="w-12 h-12 rounded-full bg-[#20b858]/10 flex items-center justify-center">
+            <div className="flex flex-col items-center gap-3 py-8 rounded-xl border border-dashed border-[#4f9f68]/20 bg-[#4f9f68]/5">
+              <div className="w-12 h-12 rounded-full bg-[#4f9f68]/10 flex items-center justify-center">
                 <svg
                   width="22"
                   height="22"
                   viewBox="0 0 24 24"
                   fill="none"
-                  stroke="#20b858"
+                  stroke="#4f9f68"
                   strokeWidth="1.5"
                 >
                   <polyline points="20 6 9 17 4 12" />
                 </svg>
               </div>
               <div className="text-center">
-                <p className="text-xs font-medium text-[#46d478]">Todos os objetivos concluídos</p>
-                <p className="text-[10px] text-[#20b858]/50 mt-0.5">
+                <p className="text-xs font-medium text-[#69b780]">Todos os objetivos concluídos</p>
+                <p className="text-[10px] text-[#69b780]/50 mt-0.5">
                   Nenhum objetivo ativo no momento
                 </p>
               </div>
               <button
                 onClick={() => setHistoryOpen(true)}
-                className="px-3 py-1.5 rounded-lg bg-[#20b858]/15 text-[10px] font-medium text-[#46d478] hover:bg-[#20b858]/25 transition-colors"
+                className="px-3 py-1.5 rounded-lg bg-[#4f9f68]/12 text-[10px] font-medium text-[#69b780] hover:bg-[#4f9f68]/20 transition-colors"
               >
                 Ver histórico
               </button>
