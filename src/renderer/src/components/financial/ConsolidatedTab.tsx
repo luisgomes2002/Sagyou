@@ -13,6 +13,12 @@ interface ConsolidatedTabProps {
   categoryFilter: string | null
   onCategoryFilterChange: (cat: string | null) => void
   onLinkTransaction: (sourceListId: string, sourceTxId: string, targetTxId: string) => void
+  onLinkDetail: (
+    targetListId: string,
+    targetTxId: string,
+    detailId: string,
+    sourceTxId: string
+  ) => void
 }
 
 interface AugmentedTransaction extends FinancialTransaction {
@@ -37,7 +43,8 @@ export function ConsolidatedTab({
   onMonthChange,
   categoryFilter,
   onCategoryFilterChange,
-  onLinkTransaction
+  onLinkTransaction,
+  onLinkDetail
 }: ConsolidatedTabProps) {
   const now = new Date()
   const [rates, setRates] = useState<Record<string, RateInfo>>({})
@@ -139,6 +146,26 @@ export function ConsolidatedTab({
     return result
   }, [lists])
 
+  const detailLinks = useMemo(() => {
+    const links = new Map<
+      string,
+      { detailName: string; parentName: string; tableName: string; date: string }
+    >()
+    for (const transaction of allTransactions) {
+      for (const detail of transaction.details ?? []) {
+        if (detail.linkedTransactionId) {
+          links.set(detail.linkedTransactionId, {
+            detailName: detail.description,
+            parentName: transaction.description,
+            tableName: transaction.tableName,
+            date: detail.date ?? transaction.date
+          })
+        }
+      }
+    }
+    return links
+  }, [allTransactions])
+
   const monthTxs = useMemo(() => {
     return allTransactions.filter((t) => {
       const [y, m] = t.date.split('-').map(Number)
@@ -152,8 +179,10 @@ export function ConsolidatedTab({
     const linkedIds = new Set(
       monthTxs.filter((t) => t.linkedTransactionId).map((t) => t.linkedTransactionId)
     )
-    return { linkedCount: monthTxs.filter((t) => linkedIds.has(t.id)).length }
-  }, [monthTxs])
+    return {
+      linkedCount: monthTxs.filter((t) => linkedIds.has(t.id) || detailLinks.has(t.id)).length
+    }
+  }, [monthTxs, detailLinks])
 
   const byCurrency = useMemo(() => {
     const map: Record<
@@ -172,7 +201,7 @@ export function ConsolidatedTab({
       monthTxs.filter((t) => t.linkedTransactionId).map((t) => t.linkedTransactionId)
     )
     for (const t of monthTxs) {
-      if (monthLinkedIds.has(t.id)) continue
+      if (monthLinkedIds.has(t.id) || detailLinks.has(t.id)) continue
       const values = map[t.tableCurrency]
       if (t.type === 'income') values.income = values.income.plus(t.amount)
       else values.expense = values.expense.plus(t.amount)
@@ -181,13 +210,13 @@ export function ConsolidatedTab({
       allTransactions.filter((t) => t.linkedTransactionId).map((t) => t.linkedTransactionId)
     )
     for (const t of allTransactions) {
-      if (allLinkedIds.has(t.id)) continue
+      if (allLinkedIds.has(t.id) || detailLinks.has(t.id)) continue
       const values = map[t.tableCurrency]
       values.accumulated =
         t.type === 'income' ? values.accumulated.plus(t.amount) : values.accumulated.minus(t.amount)
     }
     return Object.values(map).sort((a, b) => a.currency.localeCompare(b.currency))
-  }, [monthTxs, allTransactions, allTableCurrencies])
+  }, [monthTxs, allTransactions, allTableCurrencies, detailLinks])
 
   const convertedTotal = useMemo(() => {
     let total = new Decimal(0)
@@ -621,6 +650,7 @@ export function ConsolidatedTab({
                 ? allTransactions.find((t) => t.id === tx.linkedTransactionId)
                 : null
               const children = allTransactions.filter((t) => t.linkedTransactionId === tx.id)
+              const detailLink = detailLinks.get(tx.id)
               const isLinking = linkingTx?.tableId === tx.tableId && linkingTx?.txId === tx.id
 
               const linkableTxs = !isLinking
@@ -631,7 +661,8 @@ export function ConsolidatedTab({
                     )
                     .sort((a, b) => b.date.localeCompare(a.date))
 
-              const canLink = !tx.linkedTransactionId && !isParent && lists.length > 1
+              const canLink =
+                !tx.linkedTransactionId && !detailLink && !isParent && lists.length > 1
 
               return (
                 <React.Fragment key={`${tx.tableId}:${tx.id}`}>
@@ -662,13 +693,13 @@ export function ConsolidatedTab({
                     <td className="py-2 pr-2">
                       <div className="flex items-center gap-1.5 min-w-0">
                         {tx.linkedTransactionId && (
-                          <>
+                          <span className="shrink-0 inline-flex items-center gap-1 rounded bg-[#2a2a2a] px-1.5 py-0.5 text-[10px] text-[#999999] max-w-[260px]">
                             <svg
                               width="10"
                               height="10"
                               viewBox="0 0 24 24"
                               fill="none"
-                              stroke="#a080f0"
+                              stroke="currentColor"
                               strokeWidth="2"
                               className="shrink-0"
                             >
@@ -681,13 +712,13 @@ export function ConsolidatedTab({
                               <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
                             </svg>
                             {parent && (
-                              <span className="text-[10px] text-[#a080f0] truncate max-w-[150px]">
+                              <span className="truncate max-w-[190px]">
                                 {parent.description.length > 20
                                   ? parent.description.slice(0, 20) + '…'
                                   : parent.description}
-                                <span className="text-[#a080f0]/60">
+                                <span className="text-[#666666]">
                                   {' '}
-                                  · {formatDateBR(parent.date)}
+                                  · {parent.tableName} · {formatDateBR(parent.date)}
                                 </span>
                               </span>
                             )}
@@ -700,7 +731,7 @@ export function ConsolidatedTab({
                                   desc: tx.description
                                 })
                               }
-                              className="p-0.5 rounded text-[#a080f0] hover:text-[#e04040] hover:bg-[#e04040]/10 opacity-0 group-hover:opacity-100 transition-all shrink-0"
+                              className="p-0.5 rounded text-[#666666] hover:text-[#e04040] hover:bg-[#e04040]/10 opacity-0 group-hover:opacity-100 transition-all shrink-0"
                               title="Desvincular"
                             >
                               <svg
@@ -715,12 +746,24 @@ export function ConsolidatedTab({
                                 <line x1="6" y1="6" x2="18" y2="18" />
                               </svg>
                             </button>
-                          </>
+                          </span>
+                        )}
+                        {detailLink && (
+                          <span
+                            className="shrink-0 inline-flex items-center gap-1 rounded bg-[#2a2a2a] px-1.5 py-0.5 text-[10px] text-[#999999] max-w-[260px]"
+                            title={`Vinculado ao item ${detailLink.detailName} da fatura ${detailLink.parentName} — ${detailLink.tableName}`}
+                          >
+                            <span aria-hidden="true">↔</span>
+                            <span className="truncate">{detailLink.detailName}</span>
+                            <span className="text-[#666666] shrink-0">
+                              · {detailLink.tableName} · {formatDateBR(detailLink.date)}
+                            </span>
+                          </span>
                         )}
                         <span className="text-sm text-[#d4d4d4] truncate">{tx.description}</span>
                         {isParent && children.length > 0 && (
                           <span
-                            className="text-[9px] text-[#a080f0] bg-[#a080f0]/10 px-1.5 py-0.5 rounded shrink-0"
+                            className="text-[10px] text-[#999999] bg-[#2a2a2a] px-1.5 py-0.5 rounded shrink-0"
                             title={children
                               .map(
                                 (c) => `${c.description} (${formatDateBR(c.date)}) — ${c.tableName}`
@@ -812,33 +855,66 @@ export function ConsolidatedTab({
                         ) : (
                           <div className="mt-1 space-y-0.5">
                             {linkableTxs.map((candidate) => (
-                              <button
-                                key={`${candidate.tableId}:${candidate.id}`}
-                                onClick={() => {
-                                  onLinkTransaction(tx.tableId, tx.id, candidate.id)
-                                  setLinkingTx(null)
-                                }}
-                                className="w-full flex items-center gap-2 px-2 py-1 rounded hover:bg-[#2a2a2a] transition-colors text-left"
-                              >
-                                <span className="text-[10px] tabular-nums text-[#999999] w-20 shrink-0">
-                                  {formatDateBR(candidate.date)}
-                                </span>
-                                <span className="text-xs text-[#d4d4d4] truncate flex-1">
-                                  {candidate.description}
-                                </span>
-                                <span
-                                  className={`text-[10px] tabular-nums font-medium shrink-0 ${
-                                    candidate.type === 'income'
-                                      ? 'text-[#46d478]'
-                                      : 'text-[#d4d4d4]'
-                                  }`}
+                              <div key={`${candidate.tableId}:${candidate.id}`}>
+                                <button
+                                  onClick={() => {
+                                    onLinkTransaction(tx.tableId, tx.id, candidate.id)
+                                    setLinkingTx(null)
+                                  }}
+                                  className="w-full flex items-center gap-2 px-2 py-1 rounded hover:bg-[#2a2a2a] transition-colors text-left"
                                 >
-                                  {formatCurrency(D(candidate.amount), candidate.tableCurrency)}
-                                </span>
-                                <span className="text-[9px] text-[#666666] shrink-0 w-16 truncate">
-                                  {candidate.tableName}
-                                </span>
-                              </button>
+                                  <span className="text-[10px] tabular-nums text-[#999999] w-20 shrink-0">
+                                    {formatDateBR(candidate.date)}
+                                  </span>
+                                  <span className="text-xs text-[#d4d4d4] truncate flex-1">
+                                    {candidate.description}
+                                  </span>
+                                  <span
+                                    className={`text-[10px] tabular-nums font-medium shrink-0 ${
+                                      candidate.type === 'income'
+                                        ? 'text-[#46d478]'
+                                        : 'text-[#d4d4d4]'
+                                    }`}
+                                  >
+                                    {formatCurrency(D(candidate.amount), candidate.tableCurrency)}
+                                  </span>
+                                  <span className="text-[9px] text-[#666666] shrink-0 w-16 truncate">
+                                    {candidate.tableName}
+                                  </span>
+                                </button>
+                                {(candidate.details ?? [])
+                                  .filter(
+                                    (detail) =>
+                                      !detail.linkedTransactionId &&
+                                      candidate.tableCurrency === tx.tableCurrency &&
+                                      D(detail.amount).equals(D(tx.amount))
+                                  )
+                                  .map((detail) => (
+                                    <button
+                                      key={detail.id}
+                                      onClick={() => {
+                                        onLinkDetail(
+                                          candidate.tableId,
+                                          candidate.id,
+                                          detail.id,
+                                          tx.id
+                                        )
+                                        setLinkingTx(null)
+                                      }}
+                                      className="ml-20 w-[calc(100%-5rem)] flex items-center gap-2 px-2 py-1 rounded border-l border-[#7c3aed]/40 hover:bg-[#2a2a2a] text-left"
+                                    >
+                                      <span className="text-[10px] text-[#a080f0] shrink-0">
+                                        Item da fatura
+                                      </span>
+                                      <span className="text-xs text-[#d4d4d4] truncate flex-1">
+                                        {detail.description}
+                                      </span>
+                                      <span className="text-[10px] tabular-nums text-[#d4d4d4]">
+                                        {formatCurrency(D(detail.amount), candidate.tableCurrency)}
+                                      </span>
+                                    </button>
+                                  ))}
+                              </div>
                             ))}
                           </div>
                         )}

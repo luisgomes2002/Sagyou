@@ -151,6 +151,8 @@ export interface FinancialTransactionDetail {
   category?: string
   /** Optional purchase date (YYYY-MM-DD). The parent transaction date remains the accounting date. */
   date?: string
+  /** Mirror transaction represented by this invoice item. */
+  linkedTransactionId?: string
 }
 
 export interface FinancialBudget {
@@ -548,6 +550,7 @@ export const DEFAULT_TAGS: { label: string; tags: string[] }[] = [
       'renda extra',
       'orçamento',
       'dívida',
+      'Parcelas',
       'cartão',
       'poupança',
       'declaração',

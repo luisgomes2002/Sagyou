@@ -154,6 +154,7 @@ interface FinancialTransactionDetail {
   amount: number | string
   category?: string
   date?: string
+  linkedTransactionId?: string
 }
 interface FinancialGoal {
   id: string
@@ -352,6 +353,9 @@ function transactionDetails(value: unknown): FinancialTransactionDetail[] {
           : {}),
         ...(typeof item.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(item.date)
           ? { date: item.date }
+          : {}),
+        ...(typeof item.linkedTransactionId === 'string' && item.linkedTransactionId
+          ? { linkedTransactionId: item.linkedTransactionId }
           : {})
       }
     ]

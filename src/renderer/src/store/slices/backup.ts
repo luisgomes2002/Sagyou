@@ -106,6 +106,9 @@ function normalizeTransactionDetails(value: unknown, total: string): FinancialTr
         : {}),
       ...(typeof item.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(item.date)
         ? { date: item.date }
+        : {}),
+      ...(typeof item.linkedTransactionId === 'string' && item.linkedTransactionId
+        ? { linkedTransactionId: item.linkedTransactionId }
         : {})
     })
     remaining = remaining.minus(amount)

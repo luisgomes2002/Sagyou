@@ -1,10 +1,17 @@
 import { useState } from 'react'
 import { v4 as uuidv4 } from 'uuid'
-import type { Currency, FinancialTransaction, FinancialTransactionDetail } from '../../types'
+import type {
+  Currency,
+  FinancialTable,
+  FinancialTransaction,
+  FinancialTransactionDetail
+} from '../../types'
+import { ConfirmDialog } from '../ConfirmDialog'
 import {
   FINANCIAL_CATEGORIES,
   formatAmountInput,
   formatCurrency,
+  formatDateBR,
   parseDecimalInput,
   D
 } from './shared'
@@ -12,14 +19,21 @@ import {
 interface TransactionDetailsProps {
   transaction: FinancialTransaction
   currency: Currency
+  allLists: FinancialTable[]
   onUpdate: (updates: Partial<Omit<FinancialTransaction, 'id'>>) => void
 }
 
-export function TransactionDetails({ transaction, currency, onUpdate }: TransactionDetailsProps) {
+export function TransactionDetails({
+  transaction,
+  currency,
+  allLists,
+  onUpdate
+}: TransactionDetailsProps) {
   const [description, setDescription] = useState('')
   const [category, setCategory] = useState('')
   const [amount, setAmount] = useState('')
   const [date, setDate] = useState(transaction.date)
+  const [unlinkDetailId, setUnlinkDetailId] = useState<string | null>(null)
   const details = transaction.details ?? []
   const detailed = details.reduce((total, detail) => total.plus(detail.amount), D(0))
   const remaining = D(transaction.amount).minus(detailed)
@@ -30,6 +44,15 @@ export function TransactionDetails({ transaction, currency, onUpdate }: Transact
     parsedAmount!.lessThanOrEqualTo(remaining)
 
   const saveDetails = (next: FinancialTransactionDetail[]) => onUpdate({ details: next })
+
+  const linkedTransaction = (id: string | undefined) => {
+    if (!id) return null
+    for (const list of allLists) {
+      const linked = list.transactions.find((item) => item.id === id)
+      if (linked) return { transaction: linked, tableName: list.name }
+    }
+    return null
+  }
 
   const updateDetail = (id: string, updates: Partial<FinancialTransactionDetail>): boolean => {
     const next = details.map((detail) => (detail.id === id ? { ...detail, ...updates } : detail))
@@ -58,7 +81,7 @@ export function TransactionDetails({ transaction, currency, onUpdate }: Transact
   }
 
   return (
-    <div className="ml-5 border-l-2 border-[#7c3aed]/40 bg-[#232323]/50 pl-3 pr-2 py-2 space-y-2">
+    <div className="ml-5 rounded-md bg-[#232323]/50 px-3 py-2 space-y-2">
       <div className="flex items-center justify-between gap-3 text-xs">
         <span className="text-[#999999]">
           Detalhado:{' '}
@@ -69,7 +92,7 @@ export function TransactionDetails({ transaction, currency, onUpdate }: Transact
         <span
           className={
             'tabular-nums font-medium ' +
-            (remaining.lessThan(0) ? 'text-[#e04040]' : 'text-[#a080f0]')
+            (remaining.lessThan(0) ? 'text-[#e04040]' : 'text-[#999999]')
           }
         >
           {remaining.lessThan(0)
@@ -95,7 +118,7 @@ export function TransactionDetails({ transaction, currency, onUpdate }: Transact
                   else event.currentTarget.value = detail.description
                 }}
                 placeholder="Descrição"
-                className="min-w-0 border-b border-[#3b3b3b] bg-transparent px-1 py-1 text-xs text-[#d4d4d4] focus:border-[#7c3aed] focus:outline-none"
+                className="min-w-0 rounded bg-transparent px-1 py-1 text-xs text-[#d4d4d4] hover:bg-[#2a2a2a] focus:bg-[#2a2a2a] focus:outline-none"
               />
               <input
                 type="date"
@@ -108,7 +131,7 @@ export function TransactionDetails({ transaction, currency, onUpdate }: Transact
                         : event.currentTarget.value
                   })
                 }
-                className="min-w-0 border-b border-[#3b3b3b] bg-transparent px-1 py-1 text-xs text-[#999999] focus:border-[#7c3aed] focus:outline-none"
+                className="min-w-0 rounded bg-transparent px-1 py-1 text-xs text-[#999999] hover:bg-[#2a2a2a] focus:bg-[#2a2a2a] focus:outline-none"
                 aria-label={'Data de ' + detail.description}
               />
               <input
@@ -120,7 +143,7 @@ export function TransactionDetails({ transaction, currency, onUpdate }: Transact
                   })
                 }
                 placeholder="Categoria"
-                className="min-w-0 border-b border-[#3b3b3b] bg-transparent px-1 py-1 text-xs text-[#999999] focus:border-[#7c3aed] focus:outline-none"
+                className="min-w-0 rounded bg-transparent px-1 py-1 text-xs text-[#999999] hover:bg-[#2a2a2a] focus:bg-[#2a2a2a] focus:outline-none"
               />
               <input
                 defaultValue={formatAmountInput(detail.amount, currency)}
@@ -135,7 +158,7 @@ export function TransactionDetails({ transaction, currency, onUpdate }: Transact
                     event.currentTarget.value = formatAmountInput(detail.amount, currency)
                   }
                 }}
-                className="min-w-0 border-b border-[#3b3b3b] bg-transparent px-1 py-1 text-right text-xs text-[#d4d4d4] tabular-nums focus:border-[#7c3aed] focus:outline-none"
+                className="min-w-0 rounded bg-transparent px-1 py-1 text-right text-xs text-[#d4d4d4] tabular-nums hover:bg-[#2a2a2a] focus:bg-[#2a2a2a] focus:outline-none"
                 aria-label={'Valor de ' + detail.description}
               />
               <button
@@ -156,6 +179,23 @@ export function TransactionDetails({ transaction, currency, onUpdate }: Transact
                   <line x1="6" y1="6" x2="18" y2="18" />
                 </svg>
               </button>
+              {detail.linkedTransactionId && (
+                <button
+                  type="button"
+                  onClick={() => setUnlinkDetailId(detail.id)}
+                  title="Desvincular lançamento deste item"
+                  className="col-span-5 justify-self-start inline-flex items-center gap-1 rounded bg-[#2a2a2a] px-1.5 py-0.5 text-[10px] text-[#999999] hover:text-[#e04040]"
+                >
+                  <span aria-hidden="true">↔</span>
+                  {(() => {
+                    const linked = linkedTransaction(detail.linkedTransactionId)
+                    return linked
+                      ? `Vinculado a ${linked.transaction.description} · ${linked.tableName} · ${formatDateBR(linked.transaction.date)}`
+                      : 'Vinculado a um lançamento de outra tabela'
+                  })()}
+                  <span className="text-[#666666]">· desvincular</span>
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -169,13 +209,13 @@ export function TransactionDetails({ transaction, currency, onUpdate }: Transact
             if (event.key === 'Enter') addDetail()
           }}
           placeholder="Adicionar item..."
-          className="min-w-0 bg-[#232323] rounded px-2 py-1 text-xs text-[#d4d4d4] placeholder-[#555555] focus:outline-none focus:ring-1 focus:ring-[#7c3aed]"
+          className="min-w-0 bg-[#2a2a2a] rounded px-2 py-1 text-xs text-[#d4d4d4] placeholder-[#555555] focus:outline-none"
         />
         <input
           type="date"
           value={date}
           onChange={(event) => setDate(event.target.value)}
-          className="min-w-0 bg-[#232323] rounded px-2 py-1 text-xs text-[#999999] focus:outline-none focus:ring-1 focus:ring-[#7c3aed]"
+          className="min-w-0 bg-[#2a2a2a] rounded px-2 py-1 text-xs text-[#999999] focus:outline-none"
           aria-label="Data da compra"
         />
         <input
@@ -186,7 +226,7 @@ export function TransactionDetails({ transaction, currency, onUpdate }: Transact
             if (event.key === 'Enter') addDetail()
           }}
           placeholder="Categoria"
-          className="min-w-0 bg-[#232323] rounded px-2 py-1 text-xs text-[#999999] placeholder-[#555555] focus:outline-none focus:ring-1 focus:ring-[#7c3aed]"
+          className="min-w-0 bg-[#2a2a2a] rounded px-2 py-1 text-xs text-[#999999] placeholder-[#555555] focus:outline-none"
         />
         <input
           value={amount}
@@ -196,7 +236,7 @@ export function TransactionDetails({ transaction, currency, onUpdate }: Transact
           }}
           inputMode="decimal"
           placeholder="Valor"
-          className="min-w-0 bg-[#232323] rounded px-2 py-1 text-right text-xs text-[#d4d4d4] placeholder-[#555555] tabular-nums focus:outline-none focus:ring-1 focus:ring-[#7c3aed]"
+          className="min-w-0 bg-[#2a2a2a] rounded px-2 py-1 text-right text-xs text-[#d4d4d4] placeholder-[#555555] tabular-nums focus:outline-none"
         />
         <button
           type="button"
@@ -212,6 +252,17 @@ export function TransactionDetails({ transaction, currency, onUpdate }: Transact
           <option key={item} value={item} />
         ))}
       </datalist>
+      <ConfirmDialog
+        open={unlinkDetailId !== null}
+        title="Desvincular item da fatura"
+        message="Tem certeza que deseja desvincular este item do lançamento da outra tabela? Os dois registros continuarão existindo."
+        confirmLabel="Desvincular"
+        onConfirm={() => {
+          if (unlinkDetailId) updateDetail(unlinkDetailId, { linkedTransactionId: undefined })
+          setUnlinkDetailId(null)
+        }}
+        onCancel={() => setUnlinkDetailId(null)}
+      />
     </div>
   )
 }

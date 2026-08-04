@@ -41,26 +41,26 @@
 
 ## Funcionalidades
 
-| | |
-|---|---|
-| **Kanban** | Quadros com colunas customizáveis, sprints, prioridades e múltiplos cronômetros por tarefa |
-| **Hábitos** | Rastreamento diário com histórico e streak |
-| **Metas** | Acompanhamento de objetivos pessoais |
-| **Financeiro** | Transações, metas financeiras e análises, com listas de compras em múltiplas moedas (BRL, USD, JPY). Detalhe um lançamento em itens e categorias para que a análise reflita como o dinheiro foi gasto, sem duplicar valores nos totais |
-| **Canvas** | Notas adesivas livres em tela infinita, com links para tarefas |
-| **Grafo** | Mapa interativo das conexões entre projetos, tarefas abertas, notas, metas e hábitos; pesquise, arraste nós e abra o item com duplo clique |
-| **Upcoming** | Tarefas com data de vencimento próxima |
-| **Relatórios** | Visão geral de produtividade |
-| **Busca** | Pesquisa rápida de tarefas |
-| **Arquivos** | Anexos por projeto, guardados localmente |
-| **Assistente de IA** | Chat com acesso aos seus dados via ferramentas — funciona com qualquer provedor compatível com a API da OpenAI (local ou hospedado). Suporte a imagens (arraste screenshots) e documentos (PDF, DOCX, XLSX, CSV, etc.) — o texto é extraído e enviado inline. Ações que alteram dados pedem aprovação antes de rodar |
-| **Agente de código** | Aponte um projeto para um diretório e peça alterações no código — edita arquivos e roda comandos com aprovação por ação. Sandbox obrigatório (ai-jail) confina comandos ao diretório do projeto |
-| **Multi-agente** | Vários chats de IA rodando em paralelo — o painel Agentes mostra o que cada um está fazendo, com gasto de tokens por agente |
-| **Skills** | Comandos `/skill-name` no chat que injetam system prompts customizados — crie, edite e importe arquivos `.md` |
-| **Memória** | Assistente lembra decisões, tradeoffs e contexto entre conversas — você e o modelo gravam fatos que persistem. Painel dedicado para listar, fixar e restaurar memórias |
-| **Importação via IA** | Cole JSON gerado por um LLM — o sidebar tem "Copiar tudo" para gerar um prompt pronto com schema e tags |
-| **Exportação para Excel** | Exporte projetos, tarefas, hábitos, metas e dados financeiros em `.xlsx` |
-| **Backup** | Exportação e restauração de dados em JSON, incluindo anexos, imagens de chat/tarefas e memórias |
+|                           |                                                                                                                                                                                                                                                                                                                      |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Kanban**                | Quadros com colunas customizáveis, sprints, prioridades e múltiplos cronômetros por tarefa                                                                                                                                                                                                                           |
+| **Hábitos**               | Rastreamento diário com histórico e streak                                                                                                                                                                                                                                                                           |
+| **Metas**                 | Acompanhamento de objetivos pessoais                                                                                                                                                                                                                                                                                 |
+| **Financeiro**            | Transações, metas financeiras e análises, com listas de compras em múltiplas moedas (BRL, USD, JPY). Detalhe um lançamento em itens e categorias para que a análise reflita como o dinheiro foi gasto, sem duplicar valores nos totais                                                                               |
+| **Canvas**                | Notas adesivas livres em tela infinita, com links para tarefas                                                                                                                                                                                                                                                       |
+| **Grafo**                 | Mapa interativo das conexões entre projetos, tarefas abertas, notas, metas e hábitos; pesquise, arraste nós e abra o item com duplo clique                                                                                                                                                                           |
+| **Upcoming**              | Tarefas com data de vencimento próxima                                                                                                                                                                                                                                                                               |
+| **Relatórios**            | Visão geral de produtividade                                                                                                                                                                                                                                                                                         |
+| **Busca**                 | Pesquisa rápida de tarefas                                                                                                                                                                                                                                                                                           |
+| **Arquivos**              | Anexos por projeto, guardados localmente                                                                                                                                                                                                                                                                             |
+| **Assistente de IA**      | Chat com acesso aos seus dados via ferramentas — funciona com qualquer provedor compatível com a API da OpenAI (local ou hospedado). Suporte a imagens (arraste screenshots) e documentos (PDF, DOCX, XLSX, CSV, etc.) — o texto é extraído e enviado inline. Ações que alteram dados pedem aprovação antes de rodar |
+| **Agente de código**      | Aponte um projeto para um diretório e peça alterações no código — edita arquivos e roda comandos com aprovação por ação. Sandbox obrigatório (ai-jail) confina comandos ao diretório do projeto                                                                                                                      |
+| **Multi-agente**          | Vários chats de IA rodando em paralelo — o painel Agentes mostra o que cada um está fazendo, com gasto de tokens por agente                                                                                                                                                                                          |
+| **Skills**                | Comandos `/skill-name` no chat que injetam system prompts customizados — crie, edite e importe arquivos `.md`                                                                                                                                                                                                        |
+| **Memória**               | Assistente lembra decisões, tradeoffs e contexto entre conversas — você e o modelo gravam fatos que persistem. Painel dedicado para listar, fixar e restaurar memórias                                                                                                                                               |
+| **Importação via IA**     | Cole JSON gerado por um LLM — o sidebar tem "Copiar tudo" para gerar um prompt pronto com schema e tags                                                                                                                                                                                                              |
+| **Exportação para Excel** | Exporte projetos, tarefas, hábitos, metas e dados financeiros em `.xlsx`                                                                                                                                                                                                                                             |
+| **Backup**                | Exportação e restauração de dados em JSON, incluindo anexos, imagens de chat/tarefas e memórias                                                                                                                                                                                                                      |
 
 ---
 
@@ -74,11 +74,11 @@ Abra a view **Assistente IA** e clique na engrenagem. A configuração tem sete 
 
 **1. Provedor**
 
-| Campo | Descrição |
-|---|---|
+| Campo        | Descrição                                                                                                                        |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------- |
 | **Base URL** | Endpoint da API — ex.: `https://api.openai.com/v1`, `http://localhost:11434/v1` (Ollama), `http://localhost:1234/v1` (LM Studio) |
-| **API Key** | `sk-...` — deixe qualquer valor se o provedor local não exigir |
-| **Model** | Dropdown com os modelos disponíveis no endpoint; use o botão ao lado para carregar a lista |
+| **API Key**  | `sk-...` — deixe qualquer valor se o provedor local não exigir                                                                   |
+| **Model**    | Dropdown com os modelos disponíveis no endpoint; use o botão ao lado para carregar a lista                                       |
 
 **2. Modelo p/ código (opcional)**
 
@@ -94,10 +94,10 @@ Tempo máximo de espera para o modelo começar a responder cada chamada. Evita q
 
 **5. Preços (opcional)**
 
-| Campo | Descrição |
-|---|---|
-| **Input (por 1M tokens)** | Custo de entrada para estimar o gasto da conversa |
-| **Output (por 1M tokens)** | Custo de saída para estimar o gasto da conversa |
+| Campo                      | Descrição                                         |
+| -------------------------- | ------------------------------------------------- |
+| **Input (por 1M tokens)**  | Custo de entrada para estimar o gasto da conversa |
+| **Output (por 1M tokens)** | Custo de saída para estimar o gasto da conversa   |
 
 Os valores informados são usados no rodapé do chat para exibir o custo estimado da sessão. Deixar em branco desabilita o cálculo.
 
@@ -105,11 +105,11 @@ Os valores informados são usados no rodapé do chat para exibir o custo estimad
 
 Provider separado para o agente de código nativo. Cada campo em branco herda o valor do provedor principal.
 
-| Campo | Descrição |
-|---|---|
+| Campo        | Descrição                                                |
+| ------------ | -------------------------------------------------------- |
 | **Base URL** | Endpoint exclusivo para o agente (vazio = usa o do chat) |
-| **API Key** | Chave exclusiva (vazio = usa a do chat) |
-| **Model** | Modelo exclusivo (vazio = usa o do chat) |
+| **API Key**  | Chave exclusiva (vazio = usa a do chat)                  |
+| **Model**    | Modelo exclusivo (vazio = usa o do chat)                 |
 
 **7. Sandbox (ai-jail)**
 
@@ -132,6 +132,7 @@ O assistente também lê **documentos**: arraste ou cole PDF, DOCX, XLSX, CSV, T
 ### Multi-agente
 
 Você pode abrir **vários chats em paralelo** — cada um roda como um agente independente. O sidebar ganha uma aba **Agentes** com um painel ao vivo que mostra, para cada agente ativo:
+
 - O projeto em que está trabalhando
 - O que está fazendo no momento (texto sendo gerado ou ferramenta em execução)
 - O passo atual e o total de passos
@@ -208,7 +209,7 @@ npm run build:linux  # Linux
 
 ## Financeiro
 
-Além do valor, data, categoria e origem de cada lançamento, você pode **detalhar uma transação** em itens. Cada item pode ter descrição, valor, categoria e data de compra próprios — útil, por exemplo, para separar uma fatura de cartão entre mercado, transporte e lazer.
+Além do valor, data, categoria e origem de cada lançamento, você pode **detalhar uma transação** em itens. Cada item pode ter descrição, valor, categoria e data de compra próprios — útil, por exemplo, para separar uma fatura de cartão entre mercado, transporte e lazer. No consolidado, um item da fatura também pode ser vinculado ao lançamento espelho de outra tabela: a fatura continua inteira e a cópia não duplica o total.
 
 Os itens apenas repartem o valor do lançamento principal: a soma deles não pode ultrapassá-lo e eles não são contabilizados novamente nos totais. Nas análises por categoria, a parcela detalhada aparece nas categorias dos itens; se uma transação de categoria **Cartão** ficar parcialmente detalhada, o restante aparece como **Cartão não detalhado** para deixar claro o que ainda falta classificar.
 
@@ -218,19 +219,19 @@ Os itens apenas repartem o valor do lançamento principal: a soma deles não pod
 
 Tudo fica na sua máquina, no diretório de dados do app (`userData`):
 
-| Arquivo | Conteúdo |
-|---|---|
-| `kanban.db` | banco SQLite com projetos, tarefas, hábitos, metas, finanças (incluindo detalhes de transações) e memórias do assistente |
-| `files/` | anexos enviados |
-| `chat-images/` | imagens enviadas no chat |
-| `chat-files/` | documentos enviados no chat (PDF, DOCX, etc.) |
-| `task-images/` | imagens anexadas a tarefas |
-| `ai-config.json` | configuração do provedor de IA (inclui a chave de API) |
-| `ai-conversations.json` | histórico do chat |
-| `ai-usage-log.json` | registro de gastos por chamada (hoje, 30 dias, total, por modelo) |
-| `ai-run-metrics.json` | métricas de eficiência por execução do agente (modelo, passos, tokens, buscas) |
-| `agent-runs/` | arquivo de execuções do agente de código (log + diff congelados) |
-| `skills/` | skills customizadas em `.md` — system prompts sob demanda via `/skill-name` |
+| Arquivo                 | Conteúdo                                                                                                                 |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `kanban.db`             | banco SQLite com projetos, tarefas, hábitos, metas, finanças (incluindo detalhes de transações) e memórias do assistente |
+| `files/`                | anexos enviados                                                                                                          |
+| `chat-images/`          | imagens enviadas no chat                                                                                                 |
+| `chat-files/`           | documentos enviados no chat (PDF, DOCX, etc.)                                                                            |
+| `task-images/`          | imagens anexadas a tarefas                                                                                               |
+| `ai-config.json`        | configuração do provedor de IA (inclui a chave de API)                                                                   |
+| `ai-conversations.json` | histórico do chat                                                                                                        |
+| `ai-usage-log.json`     | registro de gastos por chamada (hoje, 30 dias, total, por modelo)                                                        |
+| `ai-run-metrics.json`   | métricas de eficiência por execução do agente (modelo, passos, tokens, buscas)                                           |
+| `agent-runs/`           | arquivo de execuções do agente de código (log + diff congelados)                                                         |
+| `skills/`               | skills customizadas em `.md` — system prompts sob demanda via `/skill-name`                                              |
 
 O assistente de IA é opcional e desligado até você configurar um provedor. Se você apontar para um provedor hospedado, os dados enviados no chat saem da máquina — use um modelo local se preferir manter tudo offline.
 
