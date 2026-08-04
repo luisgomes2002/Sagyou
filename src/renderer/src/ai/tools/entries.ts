@@ -291,11 +291,7 @@ export const registryEntries: Record<string, AITool> = {
               addCategory(t.type, detail.category, allocated)
               remaining = remaining.minus(allocated)
             }
-            addCategory(
-              t.type,
-              t.details?.length && t.category === 'Cartão' ? 'Cartão não detalhado' : t.category,
-              remaining
-            )
+            addCategory(t.type, t.category, remaining)
           }
           const amostra = [...txs]
             .sort((a, b) => b.date.localeCompare(a.date))

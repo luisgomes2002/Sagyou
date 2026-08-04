@@ -52,9 +52,13 @@ export function TransactionDetails({
   const [amount, setAmount] = useState('')
   const [date, setDate] = useState(transaction.date)
   const [unlinkDetailId, setUnlinkDetailId] = useState<string | null>(null)
+  const [deleteDetailId, setDeleteDetailId] = useState<string | null>(null)
   const details = transaction.details ?? []
   const detailed = details.reduce((total, detail) => total.plus(detail.amount), D(0))
   const remaining = D(transaction.amount).minus(detailed)
+  const orderedDetails = [...details].sort(
+    (a, b) => (b.date ?? transaction.date).localeCompare(a.date ?? transaction.date)
+  )
   const parsedAmount = parseDecimalInput(amount)
   const canAdd =
     description.trim().length > 0 &&
@@ -121,12 +125,12 @@ export function TransactionDetails({
         </span>
       </div>
 
-      {details.length > 0 && (
+      {orderedDetails.length > 0 && (
         <div className="space-y-1.5">
-          {details.map((detail) => (
+          {orderedDetails.map((detail) => (
             <div
               key={detail.id + ':' + detail.amount + ':' + detail.description}
-              className="grid grid-cols-[minmax(0,1fr)_6.5rem_7rem_5.5rem_1.4rem] gap-1.5 items-center"
+              className="grid grid-cols-[minmax(0,1fr)_6.5rem_6rem_8rem_1.4rem] gap-2 items-center"
             >
               <input
                 defaultValue={detail.description}
@@ -155,7 +159,7 @@ export function TransactionDetails({
               <DetailCategoryInput
                 value={detail.category ?? ''}
                 onCommit={(value) => updateDetail(detail.id, { category: value || undefined })}
-                className="min-w-0 rounded bg-transparent px-1 py-1 text-xs text-[#999999] hover:bg-[#2a2a2a] focus:bg-[#2a2a2a] focus:outline-none"
+                className="min-w-0 rounded bg-transparent px-1 py-1 pr-3 text-xs text-[#999999] hover:bg-[#2a2a2a] focus:bg-[#2a2a2a] focus:outline-none"
               />
               <input
                 defaultValue={formatAmountInput(detail.amount, currency)}
@@ -175,7 +179,7 @@ export function TransactionDetails({
               />
               <button
                 type="button"
-                onClick={() => saveDetails(details.filter((item) => item.id !== detail.id))}
+                onClick={() => setDeleteDetailId(detail.id)}
                 title="Remover detalhe"
                 className="p-1 text-[#666666] hover:text-[#e04040] transition-colors"
               >
@@ -213,7 +217,7 @@ export function TransactionDetails({
         </div>
       )}
 
-      <div className="grid grid-cols-[minmax(0,1fr)_6.5rem_7rem_5.5rem_auto] gap-1.5 items-center pt-1 border-t border-[#3b3b3b]">
+      <div className="grid grid-cols-[minmax(0,1fr)_6.5rem_6rem_8rem_auto] gap-2 items-center pt-1 border-t border-[#3b3b3b]">
         <input
           value={description}
           onChange={(event) => setDescription(event.target.value)}
@@ -237,7 +241,7 @@ export function TransactionDetails({
             if (event.key === 'Enter') addDetail()
           }}
           placeholder="Categoria"
-          className="min-w-0 bg-[#2a2a2a] rounded px-2 py-1 text-xs text-[#999999] placeholder-[#555555] focus:outline-none"
+          className="min-w-0 bg-[#2a2a2a] rounded px-2 py-1 pr-3 text-xs text-[#999999] placeholder-[#555555] focus:outline-none"
         />
         <input
           value={amount}
@@ -268,6 +272,17 @@ export function TransactionDetails({
           setUnlinkDetailId(null)
         }}
         onCancel={() => setUnlinkDetailId(null)}
+      />
+      <ConfirmDialog
+        open={deleteDetailId !== null}
+        title="Excluir detalhe"
+        message="Tem certeza que deseja excluir este detalhe? Esta ação não pode ser desfeita."
+        confirmLabel="Excluir"
+        onConfirm={() => {
+          if (deleteDetailId) saveDetails(details.filter((item) => item.id !== deleteDetailId))
+          setDeleteDetailId(null)
+        }}
+        onCancel={() => setDeleteDetailId(null)}
       />
     </div>
   )
