@@ -3,7 +3,6 @@ import type { FinancialTransaction, FinancialTable, Currency } from '../../types
 import { CURRENCY_CONFIG } from '../../types'
 import {
   D,
-  FINANCIAL_CATEGORIES,
   parseDecimalInput,
   todayISO,
   formatDateBR,
@@ -12,78 +11,7 @@ import {
   YIELD_SUMMARY_CATEGORY
 } from './shared'
 import { TransactionDetails } from './TransactionDetails'
-
-// ── CategoryInput ─────────────────────────────────────────────────────────────
-
-interface CategoryInputProps {
-  value: string
-  onChange: (v: string) => void
-  onCommit?: () => void
-  onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void
-  placeholder?: string
-  className?: string
-}
-
-export function CategoryInput({
-  value,
-  onChange,
-  onCommit,
-  onKeyDown,
-  placeholder,
-  className
-}: CategoryInputProps) {
-  const [open, setOpen] = useState(false)
-
-  const filtered = value.trim()
-    ? FINANCIAL_CATEGORIES.filter((c) => c.toLowerCase().includes(value.toLowerCase()))
-    : FINANCIAL_CATEGORIES
-
-  const select = (cat: string) => {
-    onChange(cat)
-    setOpen(false)
-    onCommit?.()
-  }
-
-  return (
-    <div className="relative">
-      <input
-        value={value}
-        onChange={(e) => {
-          onChange(e.target.value)
-          setOpen(true)
-        }}
-        onFocus={() => setOpen(true)}
-        onBlur={() => {
-          setOpen(false)
-          onCommit?.()
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') setOpen(false)
-          onKeyDown?.(e)
-        }}
-        placeholder={placeholder}
-        className={className}
-      />
-      {open && filtered.length > 0 && (
-        <div className="absolute left-0 top-full mt-0.5 z-50 w-44 max-h-52 overflow-y-auto rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] shadow-xl py-1">
-          {filtered.map((cat) => (
-            <button
-              key={cat}
-              type="button"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => select(cat)}
-              className={`w-full text-left px-3 py-1.5 text-xs transition-colors hover:bg-[#2a2a2a] ${
-                value === cat ? 'text-[#a080f0]' : 'text-[#999999] hover:text-[#d4d4d4]'
-              }`}
-            >
-              {cat}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
+import { CategoryInput } from './CategoryInput'
 
 // ── AddTransactionRow ─────────────────────────────────────────────────────────
 
@@ -310,8 +238,8 @@ export function TransactionRow({
     if (v && v !== tx.description) onUpdate({ description: v })
     else setEditDesc(tx.description)
   }
-  const commitCat = () => {
-    const v = editCat.trim()
+  const commitCat = (value = editCat) => {
+    const v = value.trim()
     const clean = v && v !== YIELD_SUMMARY_CATEGORY ? v : ''
     if (clean !== (tx.category ?? '')) onUpdate({ category: clean || undefined })
     if (clean !== v) setEditCat(clean)
