@@ -8,10 +8,10 @@ import {
   type SimulationNodeDatum,
   type SimulationLinkDatum
 } from 'd3-force'
-import type { Project, Task, StickyNote, Goal, Habit } from '../types'
+import type { Project, Task, StickyNote, Goal, Habit, StoredFile } from '../types'
 import { isDoneColumn } from './columns'
 
-export type GraphNodeType = 'project' | 'task' | 'note' | 'goal' | 'habit'
+export type GraphNodeType = 'project' | 'task' | 'note' | 'goal' | 'habit' | 'file'
 
 export interface GraphNode extends SimulationNodeDatum {
   id: string
@@ -35,13 +35,15 @@ export type NavigateTarget =
   | { type: 'note'; id: string; projectId: string }
   | { type: 'goal' }
   | { type: 'habit' }
+  | { type: 'file'; projectId?: string }
 
 const NODE_COLOR: Record<GraphNodeType, string> = {
   project: '#a78bfa',
   task: '#60a5fa',
   note: '#fbbf24',
   goal: '#f472b6',
-  habit: '#4ade80'
+  habit: '#4ade80',
+  file: '#fb923c'
 }
 
 const COMPLETED_NODE_COLOR: Partial<Record<GraphNodeType, string>> = {
@@ -77,7 +79,8 @@ export function buildGraph(
   tasks: Task[],
   notes: StickyNote[],
   goals: Goal[],
-  habits: Habit[]
+  habits: Habit[],
+  files: StoredFile[] = []
 ): { nodes: GraphNode[]; edges: GraphEdge[] } {
   const activeProjects = projects.filter((p) => !p.archivedAt)
   const projectById = new Map(activeProjects.map((project) => [project.id, project]))
@@ -106,6 +109,25 @@ export function buildGraph(
         connectionCount: 0
       } as GraphNode)
     )
+  }
+
+  for (const file of files) {
+    const id = addNode({
+      type: 'file',
+      label: file.name,
+      color: NODE_COLOR.file,
+      radius: computeRadius(7, 0),
+      entityId: file.id,
+      projectId: file.projectId,
+      connectionCount: 0
+    } as GraphNode)
+
+    // Files outlive project archival and global files have no project at all.
+    // They still belong in the graph; only active project ownership creates a
+    // structural edge so the archived/global item remains discoverable.
+    if (file.projectId && projectNodeIds.has(file.projectId)) {
+      edges.push({ source: id, target: projectNodeIds.get(file.projectId)!, type: 'structural' })
+    }
   }
 
   const taskNodeIds = new Map<string, string>()
@@ -240,7 +262,8 @@ export function buildGraph(
     task: 8,
     note: 6,
     goal: 12,
-    habit: 10
+    habit: 10,
+    file: 7
   }
 
   for (const n of nodes) {

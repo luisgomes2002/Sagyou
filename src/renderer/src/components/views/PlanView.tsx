@@ -4,6 +4,7 @@ import type { TimeBlock, Routine } from '../../types'
 import { TIME_BLOCK_COLORS } from '../../types'
 import {
   addDays,
+  addMonths,
   durationInMinutes,
   formatDay,
   formatShortDay,
@@ -56,11 +57,9 @@ export function PlanView() {
   const [deletingRoutineId, setDeletingRoutineId] = useState<string | null>(null)
 
   const navigate = (dir: number) => {
-    const d = new Date(currentDate + 'T00:00:00')
-    if (viewMode === 'day') d.setDate(d.getDate() + dir)
-    else if (viewMode === 'week') d.setDate(d.getDate() + dir * 7)
-    else d.setMonth(d.getMonth() + dir)
-    setCurrentDate(d.toISOString().slice(0, 10))
+    if (viewMode === 'day') setCurrentDate(addDays(currentDate, dir))
+    else if (viewMode === 'week') setCurrentDate(addDays(currentDate, dir * 7))
+    else setCurrentDate(addMonths(currentDate, dir))
   }
 
   const goToday = () => setCurrentDate(todayString())

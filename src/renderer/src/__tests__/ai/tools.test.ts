@@ -65,6 +65,23 @@ const call = async (
   convId?: string
 ): Promise<{ [k: string]: unknown }> => JSON.parse(await runTool(name, args, convId))
 
+describe('data_de_hoje', () => {
+  afterEach(() => vi.useRealTimers())
+
+  it('returns the local machine date instead of the UTC calendar day', async () => {
+    vi.useFakeTimers()
+    // The test process is configured as America/Sao_Paulo: 01:30 UTC is
+    // still 22:30 on the previous day locally.
+    vi.setSystemTime(new Date('2026-08-05T01:30:00.000Z'))
+
+    expect(await call('data_de_hoje', {})).toMatchObject({
+      data: '2026-08-04',
+      hora: '22:30',
+      fuso: 'America/Sao_Paulo'
+    })
+  })
+})
+
 // ── task leasing (multi-agent coordination) ─────────────────────────────────
 
 describe('task leasing across agents', () => {
@@ -357,11 +374,17 @@ describe('ler_arquivo', () => {
 
     const res = await call('ler_arquivo', { caminho: 'store/kanban.ts', simbolo: 'exportBackup' })
 
-    expect(api.code.read).toHaveBeenCalledWith('/src/web', 'store/kanban.ts', undefined, undefined, {
-      symbol: 'exportBackup',
-      lineStart: undefined,
-      lineEnd: undefined
-    })
+    expect(api.code.read).toHaveBeenCalledWith(
+      '/src/web',
+      'store/kanban.ts',
+      undefined,
+      undefined,
+      {
+        symbol: 'exportBackup',
+        lineStart: undefined,
+        lineEnd: undefined
+      }
+    )
     expect(res).toMatchObject({ pasta: 'web', simbolo: 'exportBackup', linhaInicio: 12 })
   })
 
@@ -495,7 +518,10 @@ describe('buscar_no_codigo', () => {
 
   it('caches a repeated search over the same roots and term', async () => {
     projectWithRoots('web')
-    api.code.search.mockResolvedValue({ matches: [{ file: 'a.ts', line: 1, text: 'x' }], truncated: false })
+    api.code.search.mockResolvedValue({
+      matches: [{ file: 'a.ts', line: 1, text: 'x' }],
+      truncated: false
+    })
 
     const first = await call('buscar_no_codigo', { termo: 'backup' })
     const second = await call('buscar_no_codigo', { termo: 'backup' })
@@ -1497,7 +1523,12 @@ describe('salvar_memoria', () => {
 
   it('scopes to global when asked, with no project', async () => {
     st().createProject('P') // active, but global should ignore it
-    const res = await call('salvar_memoria', { tipo: 'fato', titulo: 'x', corpo: 'y', global: true })
+    const res = await call('salvar_memoria', {
+      tipo: 'fato',
+      titulo: 'x',
+      corpo: 'y',
+      global: true
+    })
     expect(res.escopo).toBe('global')
     expect(saveMock).toHaveBeenCalledWith(expect.objectContaining({ projectId: null }))
   })
@@ -1537,7 +1568,9 @@ describe('salvar_memoria', () => {
     })
     expect(card).toContain('projeto')
     expect(card).toContain('Usar SQLite')
-    expect(describeToolActivity('salvar_memoria', { titulo: 'Usar SQLite' })).toContain('Usar SQLite')
+    expect(describeToolActivity('salvar_memoria', { titulo: 'Usar SQLite' })).toContain(
+      'Usar SQLite'
+    )
   })
 })
 
@@ -1548,8 +1581,26 @@ describe('buscar_memoria', () => {
   let touchMock: ReturnType<typeof vi.fn>
 
   const rows = [
-    { id: 'a', type: 'gotcha', title: 'amount é string', body: 'decimal', tags: ['db'], pinned: false, projectId: 'p', archivedAt: null },
-    { id: 'b', type: 'fato', title: 'Prefere hábito diário', body: 'sempre', tags: [], pinned: true, projectId: null, archivedAt: null }
+    {
+      id: 'a',
+      type: 'gotcha',
+      title: 'amount é string',
+      body: 'decimal',
+      tags: ['db'],
+      pinned: false,
+      projectId: 'p',
+      archivedAt: null
+    },
+    {
+      id: 'b',
+      type: 'fato',
+      title: 'Prefere hábito diário',
+      body: 'sempre',
+      tags: [],
+      pinned: true,
+      projectId: null,
+      archivedAt: null
+    }
   ]
 
   beforeEach(() => {
@@ -1592,7 +1643,13 @@ describe('buscar_conversas', () => {
   beforeEach(() => {
     resetStore()
     searchMock = vi.fn(async () => [
-      { id: 'c1', title: 'Sobre o financeiro', createdAt: 'x', updatedAt: 'y', snippet: '...decimal...' }
+      {
+        id: 'c1',
+        title: 'Sobre o financeiro',
+        createdAt: 'x',
+        updatedAt: 'y',
+        snippet: '...decimal...'
+      }
     ])
     ;(window as unknown as { electronAPI: unknown }).electronAPI = {
       ai: { conversations: { search: searchMock } }
@@ -1681,15 +1738,35 @@ describe('verificar_memorias', () => {
   it('pairs each conflict with both memories bodies', async () => {
     const conflicts = [{ a: 'a', b: 'b', title: 'Campo amount' }]
     const list = [
-      { id: 'a', type: 'gotcha', title: 'Campo amount', body: 'usa number', tags: [], pinned: false, projectId: 'p', archivedAt: null },
-      { id: 'b', type: 'gotcha', title: 'Campo amount', body: 'usa decimal string', tags: [], pinned: false, projectId: 'p', archivedAt: null }
+      {
+        id: 'a',
+        type: 'gotcha',
+        title: 'Campo amount',
+        body: 'usa number',
+        tags: [],
+        pinned: false,
+        projectId: 'p',
+        archivedAt: null
+      },
+      {
+        id: 'b',
+        type: 'gotcha',
+        title: 'Campo amount',
+        body: 'usa decimal string',
+        tags: [],
+        pinned: false,
+        projectId: 'p',
+        archivedAt: null
+      }
     ]
     ;(window as unknown as { electronAPI: unknown }).electronAPI = {
       ai: { memory: { conflicts: vi.fn(async () => conflicts), list: vi.fn(async () => list) } }
     }
     const res = await call('verificar_memorias', {})
     expect(res.total).toBe(1)
-    const par = (res.conflitos as { titulo: string; a: { corpo: string }; b: { corpo: string } }[])[0]
+    const par = (
+      res.conflitos as { titulo: string; a: { corpo: string }; b: { corpo: string } }[]
+    )[0]
     expect(par.titulo).toBe('Campo amount')
     expect(par.a.corpo).toBe('usa number')
     expect(par.b.corpo).toBe('usa decimal string')
@@ -2384,7 +2461,9 @@ describe('ler_tasks — filters', () => {
     expect((await call('ler_tasks', { projectId: pid, concluida: true })).total).toBe(1)
     expect((await call('ler_tasks', { projectId: pid, concluida: false })).total).toBe(3)
     // …and the new parameter wins when both arrive.
-    expect((await call('ler_tasks', { projectId: pid, estado: 'todas', concluida: true })).total).toBe(4)
+    expect(
+      (await call('ler_tasks', { projectId: pid, estado: 'todas', concluida: true })).total
+    ).toBe(4)
   })
 
   // ── the search is scoped to one project ────────────────────────────────────

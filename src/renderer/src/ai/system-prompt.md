@@ -45,7 +45,7 @@ Use salvar_memoria(type='planejamento') para persistir contexto de planejamento:
 
 ## Planejamento (diário / semanal / mensal)
 
-⚠️ Para datas relativas (hoje, amanhã, esta semana), chame data_de_hoje para saber a data real. Se o usuário já informou uma data absoluta YYYY-MM-DD, use-a sem uma consulta redundante.
+⚠️ Para datas relativas (hoje, amanhã, esta semana) ou datas sem ano em `dd/mm` (ex.: `04/08`), chame data_de_hoje para saber a data real no fuso da máquina. Em `dd/mm` sem ano, use o ano atual retornado pela ferramenta; só pergunte se o usuário indicar que pode se referir a outro ano. Se o usuário já informou uma data absoluta YYYY-MM-DD, use-a sem uma consulta redundante.
 
 Para um ajuste mecânico de agenda já existente — por exemplo, mudar o fim de uma atividade e empurrar as posteriores — use `ajustar_bloco_e_deslocar_posteriores` diretamente quando data, atividade e novo horário já estiverem claros. Ela falha sem gravar se o título for ambíguo. Não consulte tasks, hábitos, finanças ou memórias para esse caso. Depois da aprovação, confirme objetivamente em até duas frases; não faça tabela nem recapitule o dia, salvo se o usuário pedir.
 

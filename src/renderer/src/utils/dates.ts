@@ -3,21 +3,17 @@ import { format } from 'date-fns'
 /**
  * Today as a YYYY-MM-DD string in LOCAL time.
  *
- * Used by: habit tracking, checkboxes, anything where the user's wall-clock day
- * is what matters. After 21:00 in Brazil, UTC-based `todayISO()` would land on
- * tomorrow. Use this everywhere except in financial defaults, where the
- * pre-existing behaviour is UTC (see `todayUTCISO()` below).
+ * Used by anything that displays or creates a calendar date. The local clock is
+ * the source of truth: after 21:00 in Brazil, a UTC date would already be
+ * tomorrow.
  */
 export function todayLocalISO(now: Date = new Date()): string {
   return format(now, 'yyyy-MM-dd')
 }
 
 /**
- * Today as a YYYY-MM-DD string in UTC time.
- *
- * Kept for the financial module, where the pre-existing `todayISO()` used UTC
- * and changing it would shift the default date for transactions after 21:00 in
- * Brazil. New code should prefer `todayLocalISO()`.
+ * Today as a YYYY-MM-DD string in UTC time. Use only where the UTC calendar day
+ * is explicitly required; user-facing dates must use `todayLocalISO()`.
  */
 export function todayUTCISO(): string {
   return new Date().toISOString().slice(0, 10)

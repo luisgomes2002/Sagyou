@@ -546,6 +546,11 @@ export default function App() {
                   case 'habit':
                     setActiveView('habits')
                     break
+                  case 'file':
+                    setActiveProject(target.projectId ?? null)
+                    setActiveView('files')
+                    setSprintFilter(null)
+                    break
                 }
               }}
             />

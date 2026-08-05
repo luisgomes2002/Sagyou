@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { GRAPH_NODE_COLORS, buildGraph } from '../../utils/graph-layout'
-import type { Project, StickyNote, Task } from '../../types'
+import type { Project, StickyNote, StoredFile, Task } from '../../types'
 
 const NOW = '2025-01-01T00:00:00.000Z'
 
@@ -43,6 +43,16 @@ function makeNote(overrides: Partial<StickyNote> & { id: string }): StickyNote {
     height: 150,
     createdAt: NOW,
     updatedAt: NOW,
+    ...overrides
+  }
+}
+
+function makeFile(overrides: Partial<StoredFile> & { id: string }): StoredFile {
+  return {
+    name: 'arquivo.pdf',
+    ext: '.pdf',
+    size: 10,
+    createdAt: NOW,
     ...overrides
   }
 }
@@ -103,5 +113,31 @@ describe('buildGraph', () => {
     expect(completedTaskNode).toMatchObject({ color: '#3b6f9f', completed: true })
     expect(activeNoteNode.color).toBe(GRAPH_NODE_COLORS.note)
     expect(completedNoteNode).toMatchObject({ color: '#a87916', completed: true })
+  })
+
+  it('inclui todos os arquivos e liga os associados ao projeto ativo', () => {
+    const attachedFile = makeFile({ id: 'file-project', projectId: 'project-1' })
+    const globalFile = makeFile({ id: 'file-global', name: 'manual.docx', ext: '.docx' })
+
+    const { nodes, edges } = buildGraph([makeProject()], [], [], [], [], [attachedFile, globalFile])
+    const project = nodes.find((node) => node.entityId === 'project-1')!
+    const attachedNode = nodes.find((node) => node.entityId === attachedFile.id)!
+    const globalNode = nodes.find((node) => node.entityId === globalFile.id)!
+
+    expect(attachedNode).toMatchObject({
+      type: 'file',
+      label: attachedFile.name,
+      projectId: 'project-1',
+      color: GRAPH_NODE_COLORS.file
+    })
+    expect(globalNode).toMatchObject({ type: 'file', label: globalFile.name })
+    expect(edges).toContainEqual({
+      source: attachedNode.id,
+      target: project.id,
+      type: 'structural'
+    })
+    expect(
+      edges.some((edge) => edge.source === globalNode.id || edge.target === globalNode.id)
+    ).toBe(false)
   })
 })

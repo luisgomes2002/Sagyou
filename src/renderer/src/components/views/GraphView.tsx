@@ -29,10 +29,11 @@ export function GraphView({ onNavigate }: Props) {
   const notes = useKanbanStore((s) => s.notes)
   const goals = useKanbanStore((s) => s.goals)
   const habits = useKanbanStore((s) => s.habits)
+  const files = useKanbanStore((s) => s.files)
 
   const { nodes, edges } = useMemo(
-    () => buildGraph(projects, tasks, notes, goals, habits),
-    [projects, tasks, notes, goals, habits]
+    () => buildGraph(projects, tasks, notes, goals, habits, files),
+    [projects, tasks, notes, goals, habits, files]
   )
 
   const nodeMap = useMemo(() => {
@@ -301,6 +302,9 @@ export function GraphView({ onNavigate }: Props) {
         case 'habit':
           onNavigate({ type: 'habit' })
           break
+        case 'file':
+          onNavigate({ type: 'file', projectId: node.projectId })
+          break
       }
     },
     [onNavigate]
@@ -409,7 +413,7 @@ export function GraphView({ onNavigate }: Props) {
         </div>
         <div className="text-center">
           <p className="text-[#d4d4d4] font-medium mb-1">Nenhum dado para exibir</p>
-          <p className="text-sm text-[#999999]">Crie projetos, tasks e notas para ver o grafo</p>
+          <p className="text-sm text-[#999999]">Crie projetos, tasks, notas ou adicione arquivos</p>
         </div>
       </div>
     )
@@ -474,6 +478,13 @@ export function GraphView({ onNavigate }: Props) {
               style={{ backgroundColor: GRAPH_NODE_COLORS.goal }}
             />{' '}
             Meta
+          </span>
+          <span className="flex items-center gap-1">
+            <span
+              className="w-2 h-2 rounded-full"
+              style={{ backgroundColor: GRAPH_NODE_COLORS.file }}
+            />{' '}
+            Arquivo
           </span>
           <span className="text-[#555]">|</span>
           <span>Tom mais escuro = concluído</span>
@@ -648,7 +659,9 @@ export function GraphView({ onNavigate }: Props) {
                     ? 'Nota'
                     : tooltip.node.type === 'goal'
                       ? 'Meta'
-                      : 'Hábito'}
+                      : tooltip.node.type === 'habit'
+                        ? 'Hábito'
+                        : 'Arquivo'}
             </span>
           </div>
           <span>{tooltip.node.label}</span>
