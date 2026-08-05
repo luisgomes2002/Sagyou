@@ -1,4 +1,5 @@
 import type { TimeBlock } from '../types'
+import { todayLocalISO } from './dates'
 
 export type PlannerViewMode = 'day' | 'week' | 'month'
 
@@ -28,20 +29,36 @@ export function formatShortDay(iso: string): string {
   return `${day}/${month}`
 }
 
+function localDateISO(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
+    date.getDate()
+  ).padStart(2, '0')}`
+}
+
+function calendarDate(iso: string): Date {
+  return new Date(`${iso}T00:00:00`)
+}
+
 export function formatWeekStart(date: string): string {
-  const current = new Date(`${date}T00:00:00`)
-  const monday = new Date(current.setDate(current.getDate() - current.getDay()))
-  return monday.toISOString().slice(0, 10)
+  const current = calendarDate(date)
+  current.setDate(current.getDate() - current.getDay())
+  return localDateISO(current)
 }
 
 export function addDays(date: string, days: number): string {
-  const current = new Date(`${date}T00:00:00`)
+  const current = calendarDate(date)
   current.setDate(current.getDate() + days)
-  return current.toISOString().slice(0, 10)
+  return localDateISO(current)
 }
 
-export function todayString(): string {
-  return new Date().toISOString().slice(0, 10)
+export function addMonths(date: string, months: number): string {
+  const current = calendarDate(date)
+  current.setMonth(current.getMonth() + months)
+  return localDateISO(current)
+}
+
+export function todayString(now: Date = new Date()): string {
+  return todayLocalISO(now)
 }
 
 export function minutesToPixels(time: string): number {

@@ -40,13 +40,14 @@ export const registryEntries: Record<string, AITool> = {
   data_de_hoje: {
     definition: fn(
       'data_de_hoje',
-      'Retorna a data e hora atual no fuso de Brasília (America/Sao_Paulo). ' +
+      'Retorna a data e hora atual no fuso configurado na máquina do usuário. ' +
         '⚠️ Use esta ferramenta ANTES de qualquer operação que envolva datas — NUNCA adivinhe o dia de hoje. ' +
         'O retorno inclui o dia da semana por extenso (segunda-feira, etc.) e a data em YYYY-MM-DD.',
       NO_PARAMS
     ),
     run: () => {
       const now = new Date()
+      const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'fuso local da máquina'
       const dias = [
         'domingo',
         'segunda-feira',
@@ -63,7 +64,7 @@ export const registryEntries: Record<string, AITool> = {
         dia_semana: dias[now.getDay()],
         data,
         hora,
-        fuso: 'America/Sao_Paulo (UTC-3)',
+        fuso: timeZone,
         iso: now.toISOString()
       })
     }
