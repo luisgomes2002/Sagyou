@@ -27,6 +27,7 @@ import {
   ELIDED,
   summarizeRunCost,
   routeModel,
+  suggestMaxSteps,
   type ApiMessage
 } from '../../ai/agent'
 import { runTool } from '../../ai/tools'
@@ -120,7 +121,11 @@ describe('SYSTEM_PROMPT (loaded from system-prompt.md)', () => {
   it('leaves the prompt untouched when the briefing fails', async () => {
     const chat = makeChat({ success: true, message: { role: 'assistant', content: 'ok' } })
     ;(window as unknown as { electronAPI: { ai: Record<string, unknown> } }).electronAPI.ai.memory =
-      { briefing: vi.fn(async () => { throw new Error('boom') }) }
+      {
+        briefing: vi.fn(async () => {
+          throw new Error('boom')
+        })
+      }
 
     await runAgent(cfg, user, approveNone, { projectId: 'p1' })
 
@@ -302,6 +307,19 @@ describe('resolveMaxSteps', () => {
   })
 })
 
+describe('suggestMaxSteps', () => {
+  it('uses a small budget for direct reads and narrow changes', () => {
+    expect(suggestMaxSteps('APENAS LEIA e mostre a função formatDuration')).toBe(2)
+    expect(suggestMaxSteps('reduza o font-size do cronômetro no CSS')).toBe(4)
+    expect(suggestMaxSteps('use as cores atuais e refaça toda a página')).toBe(4)
+  })
+
+  it('keeps room for regular and complex implementations', () => {
+    expect(suggestMaxSteps('corrija este bug no componente')).toBe(8)
+    expect(suggestMaxSteps('investigue a arquitetura e a integração')).toBe(15)
+  })
+})
+
 describe('runAgent — retry with backoff', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -418,8 +436,9 @@ describe('runAgent — retry with backoff', () => {
       onDelta?.('Olá!')
       return { success: true, message: { role: 'assistant', content: 'Olá!' } }
     })
-    ;(window as unknown as { electronAPI: { ai: { chat: unknown; chatStream: unknown } } }).electronAPI =
-      { ai: { chat: chat, chatStream: chat } }
+    ;(
+      window as unknown as { electronAPI: { ai: { chat: unknown; chatStream: unknown } } }
+    ).electronAPI = { ai: { chat: chat, chatStream: chat } }
     const streamed: string[] = []
 
     const p = runAgent(cfg, user, approveNone, { onStream: (t) => streamed.push(t) })
@@ -441,7 +460,10 @@ describe('runAgent (tool-calling loop)', () => {
 
   it('runs a read tool, feeds the result back, and stops on a text answer', async () => {
     const chat = makeChat(
-      { success: true, message: { role: 'assistant', content: '', tool_calls: [toolCall('c1', 'ler_x')] } },
+      {
+        success: true,
+        message: { role: 'assistant', content: '', tool_calls: [toolCall('c1', 'ler_x')] }
+      },
       { success: true, message: { role: 'assistant', content: 'FINAL' } }
     )
 
@@ -461,6 +483,30 @@ describe('runAgent (tool-calling loop)', () => {
     const toolMsg = secondMsgs.find((m: { role: string }) => m.role === 'tool')
     expect(toolMsg.tool_call_id).toBe('c1')
     expect(JSON.parse(toolMsg.content)).toEqual({ ran: 'ler_x' })
+  })
+
+  it('stops the chat loop as soon as a code agent was started', async () => {
+    const chat = makeChat({
+      success: true,
+      message: {
+        role: 'assistant',
+        content: '',
+        tool_calls: [toolCall('code-1', 'rodar_agente_codigo', '{"task":"refaça a página"}')]
+      }
+    })
+    vi.mocked(runTool).mockResolvedValueOnce(
+      JSON.stringify({ status: 'solicitado', runId: 'run-1' })
+    )
+
+    const result = await runAgent(cfg, user, approveNone)
+
+    expect(result).toContain('Agente de código iniciado')
+    expect(chat).toHaveBeenCalledTimes(1)
+    expect(runTool).toHaveBeenCalledWith(
+      'rodar_agente_codigo',
+      { task: 'refaça a página' },
+      undefined
+    )
   })
 
   it('gates write tools: approved ones run, denied ones report back to the model', async () => {
@@ -505,7 +551,11 @@ describe('runAgent (tool-calling loop)', () => {
       return req.tools
         ? Promise.resolve({
             success: true,
-            message: { role: 'assistant', content: '', tool_calls: [toolCall('c' + i, 'ler_x', JSON.stringify({ i }))] }
+            message: {
+              role: 'assistant',
+              content: '',
+              tool_calls: [toolCall('c' + i, 'ler_x', JSON.stringify({ i }))]
+            }
           })
         : Promise.resolve({ success: true, message: { role: 'assistant', content: 'CAP' } })
     }) as ChatMock
@@ -522,7 +572,7 @@ describe('runAgent (tool-calling loop)', () => {
     expect(runTool).toHaveBeenCalledTimes(35)
   })
 
-  it('numbers each status line with the step and the run\'s own cap', async () => {
+  it("numbers each status line with the step and the run's own cap", async () => {
     let n = 0
     const chat = vi.fn((req: { tools?: unknown }) => {
       const i = n++
@@ -576,9 +626,16 @@ describe('runAgent (tool-calling loop)', () => {
       return req.tools
         ? Promise.resolve({
             success: true,
-            message: { role: 'assistant', content: '', tool_calls: [toolCall('c' + i, 'ler_x', JSON.stringify({ i }))] }
+            message: {
+              role: 'assistant',
+              content: '',
+              tool_calls: [toolCall('c' + i, 'ler_x', JSON.stringify({ i }))]
+            }
           })
-        : Promise.resolve({ success: true, message: { role: 'assistant', content: 'resumo parcial' } })
+        : Promise.resolve({
+            success: true,
+            message: { role: 'assistant', content: 'resumo parcial' }
+          })
     }) as ChatMock
     installChat(chat)
     const onStatus = vi.fn()
@@ -615,7 +672,11 @@ describe('runAgent (tool-calling loop)', () => {
       return req.tools
         ? Promise.resolve({
             success: true,
-            message: { role: 'assistant', content: '', tool_calls: [toolCall('c' + i, 'ler_x', JSON.stringify({ i }))] }
+            message: {
+              role: 'assistant',
+              content: '',
+              tool_calls: [toolCall('c' + i, 'ler_x', JSON.stringify({ i }))]
+            }
           })
         : Promise.resolve({ success: true, message: { role: 'assistant', content: 'CAP' } })
     }) as ChatMock
@@ -766,7 +827,11 @@ describe('runAgent (tool-calling loop)', () => {
     const chat = makeChat(
       {
         success: true,
-        message: { role: 'assistant', content: '', tool_calls: [toolCall('c1', 'ler_x', 'not json')] }
+        message: {
+          role: 'assistant',
+          content: '',
+          tool_calls: [toolCall('c1', 'ler_x', 'not json')]
+        }
       },
       { success: true, message: { role: 'assistant', content: 'OK' } }
     )
@@ -791,16 +856,21 @@ describe('runAgent (tool-calling loop)', () => {
     // Model asks for the same read every step, until it sees the brake nudge —
     // then it answers, the way a real model is meant to.
     let n = 0
-    const chat = vi.fn((req: { tools?: unknown; messages: { role: string; content: string }[] }) => {
-      const last = req.messages[req.messages.length - 1]
-      if (last?.role === 'tool' && last.content.includes('Não repita')) {
-        return Promise.resolve({ success: true, message: { role: 'assistant', content: 'CONCLUÍDO' } })
+    const chat = vi.fn(
+      (req: { tools?: unknown; messages: { role: string; content: string }[] }) => {
+        const last = req.messages[req.messages.length - 1]
+        if (last?.role === 'tool' && last.content.includes('Não repita')) {
+          return Promise.resolve({
+            success: true,
+            message: { role: 'assistant', content: 'CONCLUÍDO' }
+          })
+        }
+        return Promise.resolve({
+          success: true,
+          message: { role: 'assistant', content: '', tool_calls: [toolCall('c' + n++, 'ler_x')] }
+        })
       }
-      return Promise.resolve({
-        success: true,
-        message: { role: 'assistant', content: '', tool_calls: [toolCall('c' + n++, 'ler_x')] }
-      })
-    }) as ChatMock
+    ) as ChatMock
     installChat(chat)
 
     const result = await runAgent(cfg, user, approveNone)
@@ -814,16 +884,18 @@ describe('runAgent (tool-calling loop)', () => {
 
   it('feeds the brake back as an ordinary tool result the model can read', async () => {
     let n = 0
-    const chat = vi.fn((req: { tools?: unknown; messages: { role: string; content: string }[] }) => {
-      const last = req.messages[req.messages.length - 1]
-      if (last?.role === 'tool' && last.content.includes('Não repita')) {
-        return Promise.resolve({ success: true, message: { role: 'assistant', content: 'FIM' } })
+    const chat = vi.fn(
+      (req: { tools?: unknown; messages: { role: string; content: string }[] }) => {
+        const last = req.messages[req.messages.length - 1]
+        if (last?.role === 'tool' && last.content.includes('Não repita')) {
+          return Promise.resolve({ success: true, message: { role: 'assistant', content: 'FIM' } })
+        }
+        return Promise.resolve({
+          success: true,
+          message: { role: 'assistant', content: '', tool_calls: [toolCall('c' + n++, 'ler_x')] }
+        })
       }
-      return Promise.resolve({
-        success: true,
-        message: { role: 'assistant', content: '', tool_calls: [toolCall('c' + n++, 'ler_x')] }
-      })
-    }) as ChatMock
+    ) as ChatMock
     installChat(chat)
 
     await runAgent(cfg, user, approveNone)
@@ -843,7 +915,11 @@ describe('runAgent (tool-calling loop)', () => {
       return req.tools && i < 4
         ? Promise.resolve({
             success: true,
-            message: { role: 'assistant', content: '', tool_calls: [toolCall('c' + i, 'ler_x', JSON.stringify({ i }))] }
+            message: {
+              role: 'assistant',
+              content: '',
+              tool_calls: [toolCall('c' + i, 'ler_x', JSON.stringify({ i }))]
+            }
           })
         : Promise.resolve({ success: true, message: { role: 'assistant', content: 'DONE' } })
     }) as ChatMock
@@ -862,7 +938,11 @@ describe('runAgent (tool-calling loop)', () => {
       req.tools
         ? Promise.resolve({
             success: true,
-            message: { role: 'assistant', content: '', tool_calls: [toolCall('w' + n++, 'escrever_x')] }
+            message: {
+              role: 'assistant',
+              content: '',
+              tool_calls: [toolCall('w' + n++, 'escrever_x')]
+            }
           })
         : Promise.resolve({ success: true, message: { role: 'assistant', content: 'CAP' } })
     ) as ChatMock
@@ -887,14 +967,19 @@ describe('runAgent (tool-calling loop)', () => {
       (req: { messages: { role: string; content: string; tool_call_id?: string }[] }) => {
         const last = req.messages[req.messages.length - 1]
         if (typeof last?.content === 'string' && last.content.includes('inteiro nesta execução')) {
-          return Promise.resolve({ success: true, message: { role: 'assistant', content: 'PRONTO' } })
+          return Promise.resolve({
+            success: true,
+            message: { role: 'assistant', content: 'PRONTO' }
+          })
         }
         return Promise.resolve({
           success: true,
           message: {
             role: 'assistant',
             content: '',
-            tool_calls: [toolCall(`c${n++}`, 'ler_arquivo', JSON.stringify({ caminho: 'store/kanban.ts' }))]
+            tool_calls: [
+              toolCall(`c${n++}`, 'ler_arquivo', JSON.stringify({ caminho: 'store/kanban.ts' }))
+            ]
           }
         })
       }
@@ -953,7 +1038,9 @@ describe('runAgent (tool-calling loop)', () => {
           message: {
             role: 'assistant',
             content: '',
-            tool_calls: [toolCall(`c${n}`, 'buscar_no_codigo', JSON.stringify({ termo: terms[n++] }))]
+            tool_calls: [
+              toolCall(`c${n}`, 'buscar_no_codigo', JSON.stringify({ termo: terms[n++] }))
+            ]
           }
         })
       }
@@ -1041,23 +1128,25 @@ describe('runAgent — run metrics (Task 8)', () => {
     // then the model answers. Every call reports usage, so tokens are non-zero.
     let n = 0
     const usage = { promptTokens: 10, completionTokens: 5 }
-    const chat = vi.fn(
-      (req: { messages: { content: string }[] }) => {
-        const last = req.messages[req.messages.length - 1]
-        if (typeof last?.content === 'string' && last.content.includes('inteiro nesta execução')) {
-          return Promise.resolve({ success: true, message: { role: 'assistant', content: 'FIM' }, usage })
-        }
+    const chat = vi.fn((req: { messages: { content: string }[] }) => {
+      const last = req.messages[req.messages.length - 1]
+      if (typeof last?.content === 'string' && last.content.includes('inteiro nesta execução')) {
         return Promise.resolve({
           success: true,
-          message: {
-            role: 'assistant',
-            content: '',
-            tool_calls: [toolCall(`c${n++}`, 'ler_arquivo', JSON.stringify({ caminho: 'k.ts' }))]
-          },
+          message: { role: 'assistant', content: 'FIM' },
           usage
         })
       }
-    ) as ChatMock
+      return Promise.resolve({
+        success: true,
+        message: {
+          role: 'assistant',
+          content: '',
+          tool_calls: [toolCall(`c${n++}`, 'ler_arquivo', JSON.stringify({ caminho: 'k.ts' }))]
+        },
+        usage
+      })
+    }) as ChatMock
     const append: AppendMock = vi.fn(async () => {})
     installWithMetrics(chat, append)
 
@@ -1065,7 +1154,12 @@ describe('runAgent — run metrics (Task 8)', () => {
 
     expect(append).toHaveBeenCalledTimes(1)
     const m = append.mock.calls[0][0]
-    expect(m).toMatchObject({ model: 'm', repeatedReads: 1, redundantSearches: 0, hitStepCap: false })
+    expect(m).toMatchObject({
+      model: 'm',
+      repeatedReads: 1,
+      redundantSearches: 0,
+      hitStepCap: false
+    })
     expect(m.steps).toBeGreaterThan(0)
     expect(m.totalTokens).toBeGreaterThan(0)
   })
@@ -1093,7 +1187,8 @@ describe('runAgent — run metrics (Task 8)', () => {
     )
     const seen: { step?: number; tokens?: number }[] = []
     await runAgent(cfg, user, approveNone, {
-      onStatus: (_t, _k, progress) => progress && seen.push({ step: progress.step, tokens: progress.tokens })
+      onStatus: (_t, _k, progress) =>
+        progress && seen.push({ step: progress.step, tokens: progress.tokens })
     })
 
     // Step 1's lines (the remark and the tool) both carry that call's 120 tokens.
@@ -1104,7 +1199,10 @@ describe('runAgent — run metrics (Task 8)', () => {
 
   it('leaves the token badge off when the provider reports no usage', async () => {
     makeChat(
-      { success: true, message: { role: 'assistant', content: '', tool_calls: [toolCall('c1', 'ler_x')] } },
+      {
+        success: true,
+        message: { role: 'assistant', content: '', tool_calls: [toolCall('c1', 'ler_x')] }
+      },
       { success: true, message: { role: 'assistant', content: 'FIM' } }
     )
     const seen: (number | undefined)[] = []
@@ -1134,8 +1232,9 @@ describe('runAgent (streaming)', () => {
       for (const word of (r.message?.content ?? '').match(/\S+\s*/g) ?? []) onDelta(word)
       return r
     }) as unknown as ChatMock
-    ;(window as unknown as { electronAPI: { ai: { chat: unknown; chatStream: unknown } } }).electronAPI =
-      { ai: { chat: vi.fn(), chatStream: mock } }
+    ;(
+      window as unknown as { electronAPI: { ai: { chat: unknown; chatStream: unknown } } }
+    ).electronAPI = { ai: { chat: vi.fn(), chatStream: mock } }
     return mock
   }
 
@@ -1176,8 +1275,9 @@ describe('runAgent (streaming)', () => {
   it('uses the non-streaming call when no onStream is given', async () => {
     const chat = makeChat({ success: true, message: { role: 'assistant', content: 'x' } })
     const stream = vi.fn()
-    ;(window as unknown as { electronAPI: { ai: { chatStream: unknown } } }).electronAPI.ai.chatStream =
-      stream
+    ;(
+      window as unknown as { electronAPI: { ai: { chatStream: unknown } } }
+    ).electronAPI.ai.chatStream = stream
 
     await runAgent(cfg, user, approveNone)
 
@@ -1407,8 +1507,9 @@ describe('runAgent (streaming tool calls)', () => {
         return r
       }
     ) as unknown as ChatMock
-    ;(window as unknown as { electronAPI: { ai: { chat: unknown; chatStream: unknown } } }).electronAPI =
-      { ai: { chat: vi.fn(), chatStream: mock } }
+    ;(
+      window as unknown as { electronAPI: { ai: { chat: unknown; chatStream: unknown } } }
+    ).electronAPI = { ai: { chat: vi.fn(), chatStream: mock } }
     return mock
   }
 
@@ -1420,7 +1521,10 @@ describe('runAgent (streaming tool calls)', () => {
 
   it('announces a tool while the model is still writing the call', async () => {
     makeToolStream(
-      { success: true, message: { role: 'assistant', content: '', tool_calls: [toolCall('c1', 'ler_x')] } },
+      {
+        success: true,
+        message: { role: 'assistant', content: '', tool_calls: [toolCall('c1', 'ler_x')] }
+      },
       { success: true, message: { role: 'assistant', content: 'pronto' } }
     )
     const seen: string[][] = []
@@ -1436,7 +1540,10 @@ describe('runAgent (streaming tool calls)', () => {
 
   it('hands over to the real status lines instead of showing the work twice', async () => {
     makeToolStream(
-      { success: true, message: { role: 'assistant', content: '', tool_calls: [toolCall('c1', 'ler_x')] } },
+      {
+        success: true,
+        message: { role: 'assistant', content: '', tool_calls: [toolCall('c1', 'ler_x')] }
+      },
       { success: true, message: { role: 'assistant', content: 'pronto' } }
     )
     const seen: string[][] = []
@@ -1491,8 +1598,9 @@ describe('runAgent (streaming tool calls)', () => {
         }
       }
     ) as unknown as ChatMock
-    ;(window as unknown as { electronAPI: { ai: { chat: unknown; chatStream: unknown } } }).electronAPI =
-      { ai: { chat: vi.fn(), chatStream: mock } }
+    ;(
+      window as unknown as { electronAPI: { ai: { chat: unknown; chatStream: unknown } } }
+    ).electronAPI = { ai: { chat: vi.fn(), chatStream: mock } }
     const seen: string[][] = []
 
     await runAgent(cfg, user, approveNone, {
@@ -1522,8 +1630,9 @@ describe('runAgent (streaming tool calls)', () => {
         return { success: true, message: { role: 'assistant', content: 'RESPOSTA' } }
       }
     ) as unknown as ChatMock
-    ;(window as unknown as { electronAPI: { ai: { chat: unknown; chatStream: unknown } } }).electronAPI =
-      { ai: { chat: vi.fn(), chatStream: mock } }
+    ;(
+      window as unknown as { electronAPI: { ai: { chat: unknown; chatStream: unknown } } }
+    ).electronAPI = { ai: { chat: vi.fn(), chatStream: mock } }
     const seen: string[][] = []
 
     const p = runAgent(cfg, user, approveNone, {

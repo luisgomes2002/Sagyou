@@ -39,7 +39,12 @@ export function AnalyticsTab({
   onCatViewChange
 }: AnalyticsTabProps) {
   const { currency, transactions } = list
-  const allYears = [...new Set(transactions.map((t) => t.date.slice(0, 4)))].sort().reverse()
+  // Category analyses follow each purchase date; cashflow remains on the parent accounting date.
+  const analysisDates = transactions.flatMap((t) => [
+    t.date,
+    ...(t.details ?? []).flatMap((detail) => detail.date ? [detail.date] : [])
+  ])
+  const allYears = [...new Set(analysisDates.map((date) => date.slice(0, 4)))].sort().reverse()
 
   const handleYearSelect = (year: string) => {
     onYearChange(year)
@@ -49,16 +54,18 @@ export function AnalyticsTab({
     if (selectedYear === 'all') return []
     return [
       ...new Set(
-        transactions.filter((t) => t.date.startsWith(selectedYear)).map((t) => t.date.slice(5, 7))
+        analysisDates.filter((date) => date.startsWith(selectedYear)).map((date) => date.slice(5, 7))
       )
     ].sort()
   }, [transactions, selectedYear])
 
+  const periodPrefix = selectedMonth === 'all' ? selectedYear : `${selectedYear}-${selectedMonth}`
+  const matchesCategoryPeriod = (date: string): boolean =>
+    selectedYear === 'all' || date.startsWith(periodPrefix)
   const filtered = useMemo(() => {
     if (selectedYear === 'all') return transactions
-    const prefix = selectedMonth === 'all' ? selectedYear : `${selectedYear}-${selectedMonth}`
-    return transactions.filter((t) => t.date.startsWith(prefix))
-  }, [transactions, selectedYear, selectedMonth])
+    return transactions.filter((t) => t.date.startsWith(periodPrefix))
+  }, [transactions, selectedYear, periodPrefix])
   const expenses = filtered.filter((t) => t.type === 'expense')
   const incomes = filtered.filter((t) => t.type === 'income')
   // Sums accumulated with Decimal for precision; converted to number only for display/geometry.
@@ -85,25 +92,24 @@ export function AnalyticsTab({
         const requested = new Decimal(detail.amount)
         if (requested.lessThanOrEqualTo(0)) continue
         const allocated = requested.lessThan(remaining) ? requested : remaining
-        add(detail.category, allocated)
+        if (matchesCategoryPeriod(detail.date ?? t.date)) add(detail.category, allocated)
         remaining = remaining.minus(allocated)
       }
       // Details remain allocated to their own categories; only the undisclosed card balance
       // is kept under Cartão, avoiding a second category label for the same payment method.
-      add(
-        t.category,
-        remaining
-      )
+      if (matchesCategoryPeriod(t.date)) add(t.category, remaining)
     }
     return Object.entries(map)
       .map(([k, v]) => [k, v.toNumber()] as [string, number])
       .sort((a, b) => b[1] - a[1])
   }
 
-  const expCatEntries = buildCatEntries(expenses)
-  const incCatEntries = buildCatEntries(incomes)
+  const expCatEntries = buildCatEntries(transactions.filter((t) => t.type === 'expense'))
+  const incCatEntries = buildCatEntries(transactions.filter((t) => t.type === 'income'))
+  const expenseCategoryTotal = expCatEntries.reduce((sum, [, amount]) => sum + amount, 0)
+  const incomeCategoryTotal = incCatEntries.reduce((sum, [, amount]) => sum + amount, 0)
   const activeCatEntries = catView === 'expense' ? expCatEntries : incCatEntries
-  const activeTotal = catView === 'expense' ? totalExpense : totalIncome
+  const activeTotal = catView === 'expense' ? expenseCategoryTotal : incomeCategoryTotal
   const activeMax = activeCatEntries[0]?.[1] ?? 1
 
   const byMonthD: Record<string, { income: Decimal; expense: Decimal }> = {}
@@ -170,7 +176,7 @@ export function AnalyticsTab({
     return `${MONTH_NAMES[Number(m) - 1]} ${y}`
   }
 
-  if (filtered.length === 0) {
+  if (filtered.length === 0 && expCatEntries.length === 0 && incCatEntries.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center flex-1 gap-2 text-[#999999]">
         <p className="text-sm">Sem transações para analisar</p>
@@ -304,7 +310,7 @@ export function AnalyticsTab({
               <p className="text-sm font-bold text-[#a080f0] truncate">{topExpCat[0]}</p>
               <p className="text-xs tabular-nums text-[#a080f0]/70 mt-0.5">
                 {formatCurrency(topExpCat[1], currency)}
-                {totalExpense > 0 ? ` · ${Math.round((topExpCat[1] / totalExpense) * 100)}%` : ''}
+                {expenseCategoryTotal > 0 ? ` · ${Math.round((topExpCat[1] / expenseCategoryTotal) * 100)}%` : ''}
               </p>
             </>
           ) : (
@@ -336,7 +342,7 @@ export function AnalyticsTab({
               <p className="text-sm font-bold text-[#46d478] truncate">{topIncCat[0]}</p>
               <p className="text-xs tabular-nums text-[#46d478]/70 mt-0.5">
                 {formatCurrency(topIncCat[1], currency)}
-                {totalIncome > 0 ? ` · ${Math.round((topIncCat[1] / totalIncome) * 100)}%` : ''}
+                {incomeCategoryTotal > 0 ? ` · ${Math.round((topIncCat[1] / incomeCategoryTotal) * 100)}%` : ''}
               </p>
             </>
           ) : (
@@ -344,6 +350,10 @@ export function AnalyticsTab({
           )}
         </div>
       </div>
+
+      <p className="text-[10px] text-[#999999]">
+        Categorias de itens detalhados usam a data da compra; fluxo de caixa usa a data da fatura.
+      </p>
 
       <FinancialCharts
         currency={currency}

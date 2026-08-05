@@ -17,7 +17,14 @@ import { readFile } from 'fs/promises'
 import { exec } from 'child_process'
 import { dirname } from 'path'
 import { promisify } from 'util'
-import { confineToRoot, walkFiles, extractSymbol, extractLines, detectSymbols, searchFiles } from './code-files'
+import {
+  confineToRoot,
+  walkFiles,
+  extractSymbol,
+  extractLines,
+  detectSymbols,
+  searchFiles
+} from './code-files'
 import { fetchWeb, type FetchResult } from './web-fetch'
 import { renderWeb } from './web-render'
 
@@ -194,7 +201,10 @@ export const RESEARCH_AGENT_TOOLS: ToolDef[] = [
       type: 'object',
       properties: {
         subpasta: { type: 'string', description: 'Subpasta relativa (opcional)' },
-        inicio: { type: 'number', description: 'Posição na lista (opcional, use nextOffset da resposta anterior)' },
+        inicio: {
+          type: 'number',
+          description: 'Posição na lista (opcional, use nextOffset da resposta anterior)'
+        },
         max_arquivos: { type: 'number', description: 'Máximo de arquivos (opcional, teto 400)' }
       },
       additionalProperties: false
@@ -227,9 +237,18 @@ export const RESEARCH_AGENT_TOOLS: ToolDef[] = [
       type: 'object',
       properties: {
         termo: { type: 'string', description: 'Texto a buscar' },
-        incluir: { type: 'string', description: 'Só arquivos que batem este padrão (ex: "*.ts", opcional)' },
-        excluir: { type: 'string', description: 'Exclui arquivos que batem este padrão (ex: "*.test.ts", opcional)' },
-        contexto: { type: 'number', description: 'Linhas de contexto ao redor de cada match (opcional, padrão 0)' }
+        incluir: {
+          type: 'string',
+          description: 'Só arquivos que batem este padrão (ex: "*.ts", opcional)'
+        },
+        excluir: {
+          type: 'string',
+          description: 'Exclui arquivos que batem este padrão (ex: "*.test.ts", opcional)'
+        },
+        contexto: {
+          type: 'number',
+          description: 'Linhas de contexto ao redor de cada match (opcional, padrão 0)'
+        }
       },
       required: ['termo'],
       additionalProperties: false
@@ -247,7 +266,8 @@ export const RESEARCH_AGENT_TOOLS: ToolDef[] = [
         url: { type: 'string', description: 'URL completa da página (http:// ou https://)' },
         renderizar_js: {
           type: 'boolean',
-          description: 'Renderiza a página num navegador headless (executa JavaScript). Mais ' +
+          description:
+            'Renderiza a página num navegador headless (executa JavaScript). Mais ' +
             'lento; use só quando o fetch simples devolver pouco texto (opcional, padrão false)'
         }
       },
@@ -266,7 +286,10 @@ export const CODE_AGENT_TOOLS: ToolDef[] = [
       type: 'object',
       properties: {
         subpasta: { type: 'string', description: 'Subpasta relativa (opcional)' },
-        inicio: { type: 'number', description: 'Posição na lista (opcional, use nextOffset da resposta anterior)' },
+        inicio: {
+          type: 'number',
+          description: 'Posição na lista (opcional, use nextOffset da resposta anterior)'
+        },
         max_arquivos: { type: 'number', description: 'Máximo de arquivos (opcional, teto 400)' }
       },
       additionalProperties: false
@@ -299,9 +322,18 @@ export const CODE_AGENT_TOOLS: ToolDef[] = [
       type: 'object',
       properties: {
         termo: { type: 'string', description: 'Texto a buscar' },
-        incluir: { type: 'string', description: 'Só arquivos que batem este padrão (ex: "*.ts", opcional)' },
-        excluir: { type: 'string', description: 'Exclui arquivos que batem este padrão (ex: "*.test.ts", opcional)' },
-        contexto: { type: 'number', description: 'Linhas de contexto ao redor de cada match (opcional, padrão 0)' }
+        incluir: {
+          type: 'string',
+          description: 'Só arquivos que batem este padrão (ex: "*.ts", opcional)'
+        },
+        excluir: {
+          type: 'string',
+          description: 'Exclui arquivos que batem este padrão (ex: "*.test.ts", opcional)'
+        },
+        contexto: {
+          type: 'number',
+          description: 'Linhas de contexto ao redor de cada match (opcional, padrão 0)'
+        }
       },
       required: ['termo'],
       additionalProperties: false
@@ -319,7 +351,8 @@ export const CODE_AGENT_TOOLS: ToolDef[] = [
         url: { type: 'string', description: 'URL completa da página (http:// ou https://)' },
         renderizar_js: {
           type: 'boolean',
-          description: 'Renderiza a página num navegador headless (executa JavaScript). Mais ' +
+          description:
+            'Renderiza a página num navegador headless (executa JavaScript). Mais ' +
             'lento; use só quando o fetch simples devolver pouco texto (opcional, padrão false)'
         }
       },
@@ -338,9 +371,18 @@ export const CODE_AGENT_TOOLS: ToolDef[] = [
       type: 'object',
       properties: {
         caminho: { type: 'string', description: 'Caminho relativo' },
-        conteudo: { type: 'string', description: 'Conteúdo completo (obrigatório se não usar procura+substitui nem edicoes)' },
-        procura: { type: 'string', description: 'Texto exato a substituir (opcional, use com substitui)' },
-        substitui: { type: 'string', description: 'Novo texto no lugar de procura (opcional, use com procura)' },
+        conteudo: {
+          type: 'string',
+          description: 'Conteúdo completo (obrigatório se não usar procura+substitui nem edicoes)'
+        },
+        procura: {
+          type: 'string',
+          description: 'Texto exato a substituir (opcional, use com substitui)'
+        },
+        substitui: {
+          type: 'string',
+          description: 'Novo texto no lugar de procura (opcional, use com procura)'
+        },
         edicoes: {
           type: 'array',
           items: {
@@ -352,7 +394,8 @@ export const CODE_AGENT_TOOLS: ToolDef[] = [
             required: ['procura', 'substitui'],
             additionalProperties: false
           },
-          description: 'Múltiplas edições procura+substitui no mesmo arquivo em uma chamada (opcional)'
+          description:
+            'Múltiplas edições procura+substitui no mesmo arquivo em uma chamada (opcional)'
         }
       },
       required: ['caminho'],
@@ -361,32 +404,38 @@ export const CODE_AGENT_TOOLS: ToolDef[] = [
   ),
   fn(
     'rodar_subagente',
-      'Dispara um sub-agente de pesquisa (read-only) para consultar documentação, ' +
-        'exemplos ou APIs na web e no código. O sub-agente NÃO pode escrever nem executar comandos — ' +
-        'só ler arquivos, buscar no código e acessar a internet. ' +
-        'Use para pesquisas paralelas: dispare vários de uma vez e aguarde os resultados. ' +
-        '⚠️ Máximo de ' + RESEARCH_AGENT_MAX_STEPS + ' passos por sub-agente. Retorna um resumo em texto.',
-      {
-        type: 'object',
-        properties: {
-          tarefa: {
-            type: 'string',
-            description: 'A pergunta ou tarefa de pesquisa que o sub-agente deve investigar. ' +
-              'Seja específico: inclua o que buscar, onde procurar e o formato esperado da resposta.'
-          }
-        },
-        required: ['tarefa'],
-        additionalProperties: false
-      }
-    ),
-    fn(
-      'executar_comando',
+    'Dispara um sub-agente de pesquisa (read-only) para consultar documentação, ' +
+      'exemplos ou APIs na web e no código. O sub-agente NÃO pode escrever nem executar comandos — ' +
+      'só ler arquivos, buscar no código e acessar a internet. ' +
+      'Use para pesquisas paralelas: dispare vários de uma vez e aguarde os resultados. ' +
+      '⚠️ Máximo de ' +
+      RESEARCH_AGENT_MAX_STEPS +
+      ' passos por sub-agente. Retorna um resumo em texto.',
+    {
+      type: 'object',
+      properties: {
+        tarefa: {
+          type: 'string',
+          description:
+            'A pergunta ou tarefa de pesquisa que o sub-agente deve investigar. ' +
+            'Seja específico: inclua o que buscar, onde procurar e o formato esperado da resposta.'
+        }
+      },
+      required: ['tarefa'],
+      additionalProperties: false
+    }
+  ),
+  fn(
+    'executar_comando',
     'Roda um comando shell na raiz do projeto (requer aprovação). Timeout e saída limitados.',
     {
       type: 'object',
       properties: {
         comando: { type: 'string', description: 'Comando (ex.: "npm test")' },
-        timeout_ms: { type: 'number', description: 'Timeout em ms (opcional, padrão 60000, teto 300000)' }
+        timeout_ms: {
+          type: 'number',
+          description: 'Timeout em ms (opcional, padrão 60000, teto 300000)'
+        }
       },
       required: ['comando'],
       additionalProperties: false
@@ -473,7 +522,10 @@ export interface ToolContext {
   /** Checked periodically during long shell commands; true = abort early. */
   shouldAbort?: () => boolean
   /** Render a web page with JavaScript (SPA support). Only wired in production. */
-  renderWeb?: (raw: unknown, deps?: { limiter?: unknown; timeoutMs?: number }) => Promise<FetchResult>
+  renderWeb?: (
+    raw: unknown,
+    deps?: { limiter?: unknown; timeoutMs?: number }
+  ) => Promise<FetchResult>
 }
 
 function jsonResult(obj: unknown, summary: string, cached?: boolean): ToolResult {
@@ -502,10 +554,19 @@ export async function runCodeTool(
       case 'buscar_na_web': {
         const url = typeof args.url === 'string' ? args.url.trim() : ''
         if (!url) return { content: JSON.stringify({ error: 'URL vazia' }), summary: 'URL vazia' }
-        const render = args.renderizar_js === true || args.render === true || args.renderizar === true
+        const render =
+          args.renderizar_js === true || args.render === true || args.renderizar === true
         const result = render ? await renderWeb(url) : await fetchWeb(url)
-        if ('error' in result) return { content: JSON.stringify({ error: result.error }), summary: result.error }
-        return { content: JSON.stringify({ conteudo: result.content, url: result.url, truncado: result.truncated ?? false }), summary: `${url} (${result.truncated ? 'truncado' : (result.content?.length ?? 0) + ' chars'})` }
+        if ('error' in result)
+          return { content: JSON.stringify({ error: result.error }), summary: result.error }
+        return {
+          content: JSON.stringify({
+            conteudo: result.content,
+            url: result.url,
+            truncado: result.truncated ?? false
+          }),
+          summary: `${url} (${result.truncated ? 'truncado' : (result.content?.length ?? 0) + ' chars'})`
+        }
       }
       case 'escrever_arquivo':
         return writeFileTool(args, ctx)
@@ -525,7 +586,10 @@ async function listFiles(args: Record<string, unknown>, ctx: ToolContext): Promi
   const { files, truncated } = await walkFiles(ctx.root, sub, WALK_CAP)
   const total = files.length
   const pageSize = clampNum(args.max_arquivos, 200, 400)
-  const start = typeof args.inicio === 'number' && args.inicio > 0 ? Math.min(Math.floor(args.inicio), total) : 0
+  const start =
+    typeof args.inicio === 'number' && args.inicio > 0
+      ? Math.min(Math.floor(args.inicio), total)
+      : 0
   const slice = files.slice(start, start + pageSize)
   const end = start + slice.length
   const truncado = truncated || end < total
@@ -559,14 +623,20 @@ async function readFileTool(args: Record<string, unknown>, ctx: ToolContext): Pr
   const total = content.length
 
   // Scoped read: a named symbol or a line range takes priority over paging.
-  const simbolo = typeof args.simbolo === 'string' && args.simbolo.trim() !== '' ? args.simbolo.trim() : undefined
+  const simbolo =
+    typeof args.simbolo === 'string' && args.simbolo.trim() !== '' ? args.simbolo.trim() : undefined
   const lineStart = typeof args.linha_inicio === 'number' ? args.linha_inicio : undefined
   const lineEnd = typeof args.linha_fim === 'number' ? args.linha_fim : undefined
   if (simbolo) {
     const extracted = extractSymbol(content, simbolo)
     if (extracted) {
       return jsonResult(
-        { conteudo: extracted.content, simbolo, linha_inicio: extracted.linhaInicio, linha_fim: extracted.linhaFim },
+        {
+          conteudo: extracted.content,
+          simbolo,
+          linha_inicio: extracted.linhaInicio,
+          linha_fim: extracted.linhaFim
+        },
         `leu ${simbolo} em ${rel}`,
         fromCache
       )
@@ -581,7 +651,11 @@ async function readFileTool(args: Record<string, unknown>, ctx: ToolContext): Pr
   if (lineStart != null) {
     const extracted = extractLines(content, lineStart, lineEnd)
     return jsonResult(
-      { conteudo: extracted.content, linha_inicio: extracted.linhaInicio, linha_fim: extracted.linhaFim },
+      {
+        conteudo: extracted.content,
+        linha_inicio: extracted.linhaInicio,
+        linha_fim: extracted.linhaFim
+      },
       `leu linhas ${extracted.linhaInicio}-${extracted.linhaFim} de ${rel}`,
       fromCache
     )
@@ -601,7 +675,8 @@ async function readFileTool(args: Record<string, unknown>, ctx: ToolContext): Pr
   // the symbol map so the model can re-read just what it needs.
   if (!truncado && total > page && !args.inicio && !args.simbolo && lineStart == null) {
     extra.simbolos = detectSymbols(content)
-    extra.dica = 'Arquivo grande demais para uma página. Use simbolo, linha_inicio/linha_fim ou inicio para ler trechos específicos.'
+    extra.dica =
+      'Arquivo grande demais para uma página. Use simbolo, linha_inicio/linha_fim ou inicio para ler trechos específicos.'
   }
   return jsonResult(
     { conteudo: slice, total, inicio: start, truncado, ...extra },
@@ -636,7 +711,8 @@ async function searchCode(args: Record<string, unknown>, ctx: ToolContext): Prom
 
   const incluir = typeof args.incluir === 'string' ? args.incluir.trim() : ''
   const excluir = typeof args.excluir === 'string' ? args.excluir.trim() : ''
-  const contexto = typeof args.contexto === 'number' && args.contexto > 0 ? Math.floor(args.contexto) : 0
+  const contexto =
+    typeof args.contexto === 'number' && args.contexto > 0 ? Math.floor(args.contexto) : 0
 
   // Try subprocess grep first (much faster than readFile per file), fall
   // back to the async readFile method when grep isn't available or fails.
@@ -664,12 +740,20 @@ async function searchCode(args: Record<string, unknown>, ctx: ToolContext): Prom
 
   // Fallback: use shared searchFiles when grep is unavailable or found nothing.
   if (grepFailed || matches.length === 0) {
-    const result = await searchFiles(ctx.root, termo, { cap: SEARCH_MATCH_CAP, contexto, incluir, excluir })
+    const result = await searchFiles(ctx.root, termo, {
+      cap: SEARCH_MATCH_CAP,
+      contexto,
+      incluir,
+      excluir
+    })
     matches = result.matches.map((m) => ({ file: m.file, line: m.line, text: m.text }))
   }
 
   // Group by file for the model (same format as before).
-  const byFile = new Map<string, { linha: number; texto: string; antes?: string; depois?: string }[]>()
+  const byFile = new Map<
+    string,
+    { linha: number; texto: string; antes?: string; depois?: string }[]
+  >()
   for (const m of matches) {
     const arr = byFile.get(m.file) ?? []
     arr.push({ linha: m.line, texto: m.text })
@@ -683,7 +767,10 @@ async function searchCode(args: Record<string, unknown>, ctx: ToolContext): Prom
 }
 
 /** Find the closest matching line in text, for fuzzy error recovery. */
-function closestMatch(needle: string, haystack: string): { line: number; text: string; score: number } {
+function closestMatch(
+  needle: string,
+  haystack: string
+): { line: number; text: string; score: number } {
   const lines = haystack.split('\n')
   let best = { line: 0, text: '', score: 0 }
   const nLower = needle.toLowerCase()
@@ -703,7 +790,10 @@ function closestMatch(needle: string, haystack: string): { line: number; text: s
 }
 
 /** Compute a simple line diff summary between two texts. */
-function diffSummary(oldText: string, newText: string): { linhasAdicionadas: number; linhasRemovidas: number } {
+function diffSummary(
+  oldText: string,
+  newText: string
+): { linhasAdicionadas: number; linhasRemovidas: number } {
   const oldLines = oldText.split('\n')
   const newLines = newText.split('\n')
   // Count differing lines via simple LCS-like approach (not full)
@@ -713,8 +803,11 @@ function diffSummary(oldText: string, newText: string): { linhasAdicionadas: num
   for (const l of oldLines) oMap.set(l, (oMap.get(l) ?? 0) + 1)
   for (const l of newLines) {
     const n = oMap.get(l)
-    if (n && n > 0) { oMap.set(l, n - 1) }
-    else { added++ }
+    if (n && n > 0) {
+      oMap.set(l, n - 1)
+    } else {
+      added++
+    }
   }
   for (const [, n] of oMap) if (n > 0) removed += n
   return { linhasAdicionadas: added, linhasRemovidas: removed }
@@ -733,19 +826,25 @@ function writeFileTool(args: Record<string, unknown>, ctx: ToolContext): ToolRes
     const lines = content.split('\n')
     const ctxStart = Math.max(0, closest.line - 4)
     const ctxEnd = Math.min(lines.length, closest.line + 3)
-    const snippet = lines.slice(ctxStart, ctxEnd)
+    const snippet = lines
+      .slice(ctxStart, ctxEnd)
       .map((l, i) => `${ctxStart + i + 1}: ${l}`)
       .join('\n')
-    const suggestion = closest.score > 0.5
-      ? `O texto mais próximo está na linha ${closest.line}: "${closest.text}". Contexto:\n${snippet}`
-      : `Trecho ao redor da área esperada:\n${snippet}`
-    return jsonResult({ error: `"${needle}" não encontrado. ${suggestion}` }, 'texto não encontrado')
+    const suggestion =
+      closest.score > 0.5
+        ? `O texto mais próximo está na linha ${closest.line}: "${closest.text}". Contexto:\n${snippet}`
+        : `Trecho ao redor da área esperada:\n${snippet}`
+    return jsonResult(
+      { error: `"${needle}" não encontrado. ${suggestion}` },
+      'texto não encontrado'
+    )
   }
 
   // Batch edit mode: varios [{procura, substitui}] de uma vez (#2, #9).
   const edicoes = Array.isArray(args.edicoes) ? args.edicoes : []
   if (edicoes.length > 0) {
-    if (!existsSync(full)) return jsonResult({ error: 'Arquivo não existe para editar' }, 'arquivo não existe')
+    if (!existsSync(full))
+      return jsonResult({ error: 'Arquivo não existe para editar' }, 'arquivo não existe')
     let content = readFileSync(full, 'utf-8')
     let aplicadas = 0
     for (const ed of edicoes) {
@@ -768,9 +867,12 @@ function writeFileTool(args: Record<string, unknown>, ctx: ToolContext): ToolRes
   const procura = typeof args.procura === 'string' ? args.procura : ''
   const substitui = typeof args.substitui === 'string' ? args.substitui : ''
   if (procura || substitui) {
-    if (!procura) return jsonResult({ error: 'procura é obrigatório com substitui' }, 'procura vazio')
-    if (!substitui) return jsonResult({ error: 'substitui é obrigatório com procura' }, 'substitui vazio')
-    if (!existsSync(full)) return jsonResult({ error: 'Arquivo não existe para fazer patch' }, 'arquivo não existe')
+    if (!procura)
+      return jsonResult({ error: 'procura é obrigatório com substitui' }, 'procura vazio')
+    if (!substitui)
+      return jsonResult({ error: 'substitui é obrigatório com procura' }, 'substitui vazio')
+    if (!existsSync(full))
+      return jsonResult({ error: 'Arquivo não existe para fazer patch' }, 'arquivo não existe')
     const content = readFileSync(full, 'utf-8')
     if (!content.includes(procura)) return failWithContext(procura, content)
     const newContent = content.replace(procura, substitui)
@@ -787,7 +889,10 @@ function writeFileTool(args: Record<string, unknown>, ctx: ToolContext): ToolRes
 
   // Full content mode: escreve o arquivo inteiro.
   if (typeof args.conteudo !== 'string') {
-    return jsonResult({ error: 'Informe conteudo (completo), procura+substitui (patch) ou edicoes (batch)' }, 'conteúdo inválido')
+    return jsonResult(
+      { error: 'Informe conteudo (completo), procura+substitui (patch) ou edicoes (batch)' },
+      'conteúdo inválido'
+    )
   }
   const existed = existsSync(full)
   const oldContent = existed ? readFileSync(full, 'utf-8') : ''
@@ -799,13 +904,22 @@ function writeFileTool(args: Record<string, unknown>, ctx: ToolContext): ToolRes
   const alarm = existed && oldLines > 20 && droppedLines > oldLines * 0.3
   mkdirSync(dirname(full), { recursive: true })
   writeFileSync(full, args.conteudo, 'utf-8')
-  const diff = existed ? diffSummary(oldContent, args.conteudo) : { linhasAdicionadas: args.conteudo.split('\n').length, linhasRemovidas: 0 }
+  const diff = existed
+    ? diffSummary(oldContent, args.conteudo)
+    : { linhasAdicionadas: args.conteudo.split('\n').length, linhasRemovidas: 0 }
   const extra: Record<string, unknown> = {}
   if (alarm) {
     extra.aviso = `⚠️ O novo conteúdo tem ${newLines} linhas, contra ${oldLines} do original (${droppedLines} a menos). Se uma funcionalidade anterior sumiu, você pode ter omitido ela sem querer. Leia o arquivo de novo e use procura+substitui ou edicoes para alterações pontuais.`
   }
   return jsonResult(
-    { ok: true, caminho: rel, criado: !existed, bytes: Buffer.byteLength(args.conteudo, 'utf-8'), ...diff, ...extra },
+    {
+      ok: true,
+      caminho: rel,
+      criado: !existed,
+      bytes: Buffer.byteLength(args.conteudo, 'utf-8'),
+      ...diff,
+      ...extra
+    },
     `${existed ? 'sobrescreveu' : 'criou'} ${rel} (+${diff.linhasAdicionadas} -${diff.linhasRemovidas})${alarm ? ' ⚠️ PERDA DE LINES?' : ''}`
   )
 }
@@ -822,7 +936,8 @@ async function runCommand(args: Record<string, unknown>, ctx: ToolContext): Prom
   })
   // Cap the combined output: a command that prints megabytes must not blow up
   // the context that every later step of the run pays for again.
-  const cap = (s: string): string => (s.length > COMMAND_OUTPUT_CAP ? s.slice(0, COMMAND_OUTPUT_CAP) + '\n…(saída truncada)' : s)
+  const cap = (s: string): string =>
+    s.length > COMMAND_OUTPUT_CAP ? s.slice(0, COMMAND_OUTPUT_CAP) + '\n…(saída truncada)' : s
   return jsonResult(
     {
       comando,
@@ -884,9 +999,9 @@ export interface InlinedFile {
 /** Cap on a single inlined file. A bigger file is truncated with a note and the
  *  agent pages the rest with ler_arquivo(inicio) — the whole prompt is resent
  *  every step, so an unbounded paste would tax the entire run. */
-export const INLINE_FILE_CHAR_CAP = 12000
+export const INLINE_FILE_CHAR_CAP = 6000
 /** Cap on the total inlined across all pinned files, for the same reason. */
-export const INLINE_TOTAL_CHAR_CAP = 40000
+export const INLINE_TOTAL_CHAR_CAP = 12000
 
 /**
  * Render pinned files as a numbered, capped block for the system prompt, so the
@@ -1028,6 +1143,30 @@ export async function dirTree(root: string, cap = 400): Promise<string> {
  *  higher ceiling. */
 export const CODE_AGENT_MAX_STEPS = 100
 
+/** Budget selected by the IPC launcher when the user did not configure one. */
+export function suggestCodeAgentSteps(task: string): number {
+  const text = task
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+  const broadRedesign =
+    /\b(refaca|redesenh|redesign|design.*(pagina|tela)|pagina.*(inteira|toda)|tela.*(inteira|toda)|layout completo)\b/.test(
+      text
+    )
+  if (broadRedesign) return 25
+
+  const narrow = /\b(css|font-size|fonte|cor|label|tag|formatduration|cronometro)\b/.test(text)
+  const change = /\b(corri|implement|adicione|altere|mude|reduz|aument|troque|ajuste)\w*/.test(text)
+  if (narrow && change) return 4
+  if (
+    /\b(arquitetura|migr|refator.*ampl|varios arquivos|multiplos arquivos|integracao|performance|investig|depura|debug)\w*/.test(
+      text
+    )
+  )
+    return 15
+  return change ? 8 : 15
+}
+
 /**
  * How many steps between progressive summarisation passes. Longer than the
  * chat agent (8) because the code agent reads/writes large files and needs
@@ -1041,7 +1180,10 @@ const KEEP_RECENT = 6
 /** Everything the loop needs from the outside, all injectable for tests. */
 export interface RunAgentDeps {
   /** One round-trip to the model with the tools attached. */
-  callModel: (messages: AgentMessage[], tools: ToolDef[]) => Promise<{ message: AgentMessage; usage?: TokenUsage }>
+  callModel: (
+    messages: AgentMessage[],
+    tools: ToolDef[]
+  ) => Promise<{ message: AgentMessage; usage?: TokenUsage }>
   /** Ask the user to approve a write/command. Resolves true to run it. */
   approve: (call: { name: string; args: Record<string, unknown> }) => Promise<boolean>
   /** How executar_comando runs (defaults to a real shell). */
@@ -1182,7 +1324,10 @@ ${tarefa}
 async function handleResearchSubAgent(
   args: Record<string, unknown>,
   ctx: ToolContext,
-  callModel: (messages: AgentMessage[], tools: ToolDef[]) => Promise<{ message: AgentMessage; usage?: TokenUsage }>,
+  callModel: (
+    messages: AgentMessage[],
+    tools: ToolDef[]
+  ) => Promise<{ message: AgentMessage; usage?: TokenUsage }>,
   onUsage?: (usage: TokenUsage) => void
 ): Promise<ToolResult> {
   const depth = (ctx.subAgentDepth ?? 0) + 1
@@ -1197,7 +1342,9 @@ async function handleResearchSubAgent(
 
   if ((ctx.researchAgentsStarted ?? 0) >= MAX_RESEARCH_SUBAGENTS_PER_RUN) {
     return {
-      content: JSON.stringify({ erro: `Limite de ${MAX_RESEARCH_SUBAGENTS_PER_RUN} sub-agentes por execução atingido.` }),
+      content: JSON.stringify({
+        erro: `Limite de ${MAX_RESEARCH_SUBAGENTS_PER_RUN} sub-agentes por execução atingido.`
+      }),
       summary: 'Sub-agente rejeitado: limite por execução'
     }
   }
@@ -1213,9 +1360,10 @@ async function handleResearchSubAgent(
 
   try {
     const resultado = await runResearchAgent(tarefa, ctx.root, callModel, onUsage)
-    const content = resultado.length > RESEARCH_RESULT_CHAR_CAP
-      ? resultado.slice(0, RESEARCH_RESULT_CHAR_CAP) + '\n…(resumo do sub-agente truncado)'
-      : resultado
+    const content =
+      resultado.length > RESEARCH_RESULT_CHAR_CAP
+        ? resultado.slice(0, RESEARCH_RESULT_CHAR_CAP) + '\n…(resumo do sub-agente truncado)'
+        : resultado
     return { content, summary: `Sub-agente concluído: ${tarefa.slice(0, 80)}` }
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e)
@@ -1239,7 +1387,10 @@ async function handleResearchSubAgent(
 export async function runResearchAgent(
   tarefa: string,
   root: string,
-  callModel: (messages: AgentMessage[], tools: ToolDef[]) => Promise<{ message: AgentMessage; usage?: TokenUsage }>,
+  callModel: (
+    messages: AgentMessage[],
+    tools: ToolDef[]
+  ) => Promise<{ message: AgentMessage; usage?: TokenUsage }>,
   onUsage?: (usage: TokenUsage) => void
 ): Promise<string> {
   const systemPrompt = buildResearchPrompt(tarefa)
@@ -1283,7 +1434,10 @@ export async function runResearchAgent(
       const brake =
         count >= READ_REPEAT_LIMIT
           ? JSON.stringify({
-              error: `Você já fez esta chamada ${READ_REPEAT_LIMIT}x com os mesmos argumentos e obteve o mesmo resultado. Não repita — responda com o que já tem.`
+              error:
+                name === 'buscar_no_codigo'
+                  ? 'Esta busca já foi executada nesta execução com os mesmos argumentos. Use o resultado anterior; não repita a busca.'
+                  : `Você já fez esta chamada ${READ_REPEAT_LIMIT}x com os mesmos argumentos e obteve o mesmo resultado. Não repita — responda com o que já tem.`
             })
           : null
 
@@ -1361,7 +1515,8 @@ export async function runCodeAgent(
   // commands (executar_comando) can be killed mid-flight.
   ctx.shouldAbort = ctx.shouldAbort ?? (() => deps.shouldAbort?.() ?? false)
 
-  const maxSteps = deps.maxSteps && deps.maxSteps > 0 ? Math.floor(deps.maxSteps) : CODE_AGENT_MAX_STEPS
+  const maxSteps =
+    deps.maxSteps && deps.maxSteps > 0 ? Math.floor(deps.maxSteps) : CODE_AGENT_MAX_STEPS
   const tools = deps.tools ?? CODE_AGENT_TOOLS
   let msgs: AgentMessage[] = [
     { role: 'system', content: systemPrompt },
@@ -1373,6 +1528,9 @@ export async function runCodeAgent(
   const blindFileReads = new Map<string, number>()
   const totalFileReads = new Map<string, number>()
   const searchHistory: string[] = []
+  // Exact searches must be blocked even when their filesystem result is cached:
+  // the cache saves IO, but re-sending the same result still costs tokens.
+  const seenSearches = new Set<string>()
   const commandRepeats = new Map<string, number>()
   const COMMAND_REPEAT_LIMIT = 3
 
@@ -1466,7 +1624,8 @@ export async function runCodeAgent(
   const editLog: string[] = []
 
   for (let step = 0; step < maxSteps; step++) {
-    if (deps.shouldAbort?.()) return { answer: 'Execução interrompida.', steps: step, stopped: true }
+    if (deps.shouldAbort?.())
+      return { answer: 'Execução interrompida.', steps: step, stopped: true }
     deps.onStep?.(step + 1, maxSteps)
 
     let message: AgentMessage
@@ -1522,7 +1681,11 @@ export async function runCodeAgent(
         const args = call.function.arguments ? JSON.parse(call.function.arguments) : {}
         return { call, args: args as Record<string, unknown>, parseError: null as string | null }
       } catch {
-        return { call, args: {} as Record<string, unknown>, parseError: 'Argumentos inválidos (JSON)' }
+        return {
+          call,
+          args: {} as Record<string, unknown>,
+          parseError: 'Argumentos inválidos (JSON)'
+        }
       }
     })
 
@@ -1540,9 +1703,7 @@ export async function runCodeAgent(
     // mid-work reading spree is still a reading spree. The tool responses
     // complete the turn (no orphaned tool_calls) and the nudge rides on each.
     const inertiaFired =
-      readsSinceLastWrite >= INERTIA_LIMIT &&
-      readIdx.length > 0 &&
-      writeIdx.length === 0
+      readsSinceLastWrite >= INERTIA_LIMIT && readIdx.length > 0 && writeIdx.length === 0
     if (inertiaFired) {
       // Build a specific nudge: name the first file that hasn't been edited yet,
       // or the most recently read file, so the model knows exactly where to start.
@@ -1564,7 +1725,11 @@ export async function runCodeAgent(
       })
       for (const i of readIdx) {
         const name = parsed[i].call.function.name
-        results[i] = { id: parsed[i].call.id, content: nudge, summary: `bloqueado (inércia: ${name})` }
+        results[i] = {
+          id: parsed[i].call.id,
+          content: nudge,
+          summary: `bloqueado (inércia: ${name})`
+        }
       }
       deps.onText?.(
         `🛑 ${readsSinceLastWrite} leituras sem write — respostas bloqueadas. O agente DEVE usar escrever_arquivo.`
@@ -1590,8 +1755,28 @@ export async function runCodeAgent(
           const fileKey =
             name === 'ler_arquivo' && typeof args.caminho === 'string' ? args.caminho.trim() : ''
 
+          // An exact search is redundant even when the result is cached: it would
+          // still be appended to the model context and billed again.
+          if (name === 'buscar_no_codigo' && seenSearches.has(sig)) {
+            deps.onToolResult?.(name, 'bloqueado (busca repetida)')
+            brakesFired = true
+            return {
+              i,
+              id: call.id,
+              content: JSON.stringify({
+                error:
+                  'Esta busca já foi executada nesta execução com os mesmos argumentos. Use o resultado anterior; não repita a busca.'
+              }),
+              summary: `bloqueado: `
+            }
+          }
+          if (name === 'buscar_no_codigo') seenSearches.add(sig)
+
           // Exact-repeat brake
-          if ((readRepeats.get(sig) ?? 0) >= READ_REPEAT_LIMIT) {
+          if (
+            (name === 'buscar_no_codigo' && (readRepeats.get(sig) ?? 0) >= 1) ||
+            (readRepeats.get(sig) ?? 0) >= READ_REPEAT_LIMIT
+          ) {
             deps.onToolResult?.(name, 'bloqueado (leitura repetida)')
             brakesFired = true
             return {
@@ -1662,20 +1847,12 @@ export async function runCodeAgent(
           return { i, id: call.id, content: toolResult.content, summary: toolResult.summary }
         })
       )
-      for (const r of readResults) results[r.i] = { id: r.id, content: r.content, summary: r.summary }
+      for (const r of readResults)
+        results[r.i] = { id: r.id, content: r.content, summary: r.summary }
     }
 
-    // Run writes — parallel when targeting different files (#3), sequential
-    // within the same file (mutations must be ordered). Each needs approval.
-    const writesByFile = new Map<string, number[]>()
-    for (const i of writeIdx) {
-      const p = parsed[i]
-      const key = typeof p.args.caminho === 'string' ? p.args.caminho : `__unknown_${i}`
-      const arr = writesByFile.get(key) ?? []
-      arr.push(i)
-      writesByFile.set(key, arr)
-    }
-
+    // Writes and commands run in the model order. A command often validates a
+    // preceding edit, so parallel approval or execution can validate stale code.
     const runWrite = async (i: number) => {
       const { call, args } = parsed[i]
       const name = call.function.name
@@ -1768,18 +1945,11 @@ export async function runCodeAgent(
       return { i, content, summary }
     }
 
-    // Run each file's writes sequentially, but different files in parallel.
-    const writePromises: Promise<void>[] = []
-    for (const writes of writesByFile.values()) {
-      writePromises.push((async () => {
-        for (const i of writes) {
-          const { content, summary } = await runWrite(i)
-          results[i] = { id: parsed[i].call.id, content, summary }
-        }
-      })())
-      // Don't await here — let different-file writes run in parallel.
+    // One pending approval at a time keeps both the UI and side effects ordered.
+    for (const i of writeIdx) {
+      const { content, summary } = await runWrite(i)
+      results[i] = { id: parsed[i].call.id, content, summary }
     }
-    await Promise.all(writePromises)
 
     // After the first successful write batch, track that the agent has produced
     // code. The conclusion gate will enforce one final typecheck later.
@@ -1789,7 +1959,11 @@ export async function runCodeAgent(
       if (results[i]) continue
       const { call, parseError } = parsed[i]
       if (parseError) {
-        results[i] = { id: call.id, content: JSON.stringify({ error: parseError }), summary: `args inválidos: ${call.function.name}` }
+        results[i] = {
+          id: call.id,
+          content: JSON.stringify({ error: parseError }),
+          summary: `args inválidos: ${call.function.name}`
+        }
       }
     }
 
@@ -1803,13 +1977,11 @@ export async function runCodeAgent(
     // Threshold is ~15k tokens (4 chars ≈ 1 token, conservative).
     // Skipped when any brake has fired — the agent is already struggling and
     // dropping context only compounds the problem.
-    if (
-      !brakesFired &&
-      step < maxSteps - 3 &&
-      step > 2 &&
-      msgs.length > 8
-    ) {
-      const totalChars = msgs.reduce((s, m) => s + (typeof m.content === 'string' ? m.content.length : 0), 0)
+    if (!brakesFired && step < maxSteps - 3 && step > 2 && msgs.length > 8) {
+      const totalChars = msgs.reduce(
+        (s, m) => s + (typeof m.content === 'string' ? m.content.length : 0),
+        0
+      )
       if (totalChars > 60_000) {
         // Walk backwards from the end to find a compact boundary that does NOT
         // split a tool call from its response. A tool message whose parent
@@ -1853,10 +2025,16 @@ export async function runCodeAgent(
         const tail = msgs.slice(tailStart)
         const mid = msgs.slice(1, tailStart)
         const midText = mid
-          .map((m) => `${m.role}: ${typeof m.content === 'string' ? m.content.slice(0, 500) : '(n/a)'}`)
+          .map(
+            (m) => `${m.role}: ${typeof m.content === 'string' ? m.content.slice(0, 500) : '(n/a)'}`
+          )
           .join('\n\n')
         const compactPrompt: AgentMessage[] = [
-          { role: 'system', content: 'Resuma a conversa abaixo em português, preservando decisões, arquivos alterados e o que falta fazer. Máx 3000 caracteres. Seja conciso.' },
+          {
+            role: 'system',
+            content:
+              'Resuma a conversa abaixo em português, preservando decisões, arquivos alterados e o que falta fazer. Máx 3000 caracteres. Seja conciso.'
+          },
           { role: 'user', content: midText.slice(0, 50000) }
         ]
         try {
@@ -1872,72 +2050,76 @@ export async function runCodeAgent(
               extras.push(`Log de edições: ${editLog.slice(-10).join('; ')}`)
             }
             const prefix = extras.length > 0 ? `${extras.join('\n')}\n\n` : ''
-            msgs = [head[0], { role: 'user', content: `${prefix}[Resumo de turnos anteriores]\n${summary}` }, ...tail]
+            msgs = [
+              head[0],
+              { role: 'user', content: `${prefix}[Resumo de turnos anteriores]\n${summary}` },
+              ...tail
+            ]
             deps.onText?.('📦 Histórico compactado para economizar tokens.')
           }
         } catch {
           // compaction failure is non-critical
-          }
-        }
-      }
-
-      // Progressive summarisation: every SUMMARIZE_INTERVAL steps compress
-      // the middle of the history into a rolling summary. This keeps the
-      // per-step token cost bounded — same pattern as the chat agent.
-      //
-      // Only when the agent isn't already struggling (brakesFired) and when
-      // enough history has been built.
-      if (
-        !brakesFired &&
-        step > 4 &&
-        step < maxSteps - 3 &&
-        (step - lastSummaryStep) >= SUMMARIZE_INTERVAL
-      ) {
-        try {
-          // Safe cut: no tool orphan in the tail.
-          let cut = Math.max(2, msgs.length - KEEP_RECENT)
-          const tailTcIds = new Set<string>()
-          for (let i = cut; i < msgs.length; i++) {
-            if (msgs[i].role === 'tool' && msgs[i].tool_call_id) {
-              tailTcIds.add(msgs[i].tool_call_id!)
-            }
-          }
-          for (let i = cut - 1; i >= 2 && tailTcIds.size > 0; i--) {
-            for (const tc of msgs[i].tool_calls ?? []) {
-              tailTcIds.delete(tc.id)
-            }
-            if (tailTcIds.size === 0) {
-              cut = i
-              break
-            }
-          }
-          const mid = msgs.slice(2, cut)
-          const tail = msgs.slice(cut)
-          if (mid.length > 0) {
-            const summary = await summarizeHistory(deps, mid, rollingSummary)
-            rollingSummary = summary
-            const extras: string[] = []
-            if (editedFiles.size > 0) {
-              extras.push(`Arquivos ja modificados: ${[...editedFiles].join(', ')}`)
-            }
-            if (editLog.length > 0) {
-              extras.push(`Log: ${editLog.slice(-5).join('; ')}`)
-            }
-            const prefix = extras.length > 0 ? `${extras.join('\n')}\n\n` : ''
-            msgs = [
-              msgs[0],
-              msgs[1],
-              { role: 'user', content: `${prefix}[RESUMO DO HISTORICO ANTERIOR]\n${summary}` },
-              ...tail
-            ]
-            lastSummaryStep = step
-            deps.onText?.('📦 Histórico sumarizado (economia de tokens).')
-          }
-        } catch {
-          // summarisation failure is non-critical
         }
       }
     }
+
+    // Progressive summarisation: every SUMMARIZE_INTERVAL steps compress
+    // the middle of the history into a rolling summary. This keeps the
+    // per-step token cost bounded — same pattern as the chat agent.
+    //
+    // Only when the agent isn't already struggling (brakesFired) and when
+    // enough history has been built.
+    if (
+      !brakesFired &&
+      step > 4 &&
+      step < maxSteps - 3 &&
+      step - lastSummaryStep >= SUMMARIZE_INTERVAL
+    ) {
+      try {
+        // Safe cut: no tool orphan in the tail.
+        let cut = Math.max(2, msgs.length - KEEP_RECENT)
+        const tailTcIds = new Set<string>()
+        for (let i = cut; i < msgs.length; i++) {
+          if (msgs[i].role === 'tool' && msgs[i].tool_call_id) {
+            tailTcIds.add(msgs[i].tool_call_id!)
+          }
+        }
+        for (let i = cut - 1; i >= 2 && tailTcIds.size > 0; i--) {
+          for (const tc of msgs[i].tool_calls ?? []) {
+            tailTcIds.delete(tc.id)
+          }
+          if (tailTcIds.size === 0) {
+            cut = i
+            break
+          }
+        }
+        const mid = msgs.slice(2, cut)
+        const tail = msgs.slice(cut)
+        if (mid.length > 0) {
+          const summary = await summarizeHistory(deps, mid, rollingSummary)
+          rollingSummary = summary
+          const extras: string[] = []
+          if (editedFiles.size > 0) {
+            extras.push(`Arquivos ja modificados: ${[...editedFiles].join(', ')}`)
+          }
+          if (editLog.length > 0) {
+            extras.push(`Log: ${editLog.slice(-5).join('; ')}`)
+          }
+          const prefix = extras.length > 0 ? `${extras.join('\n')}\n\n` : ''
+          msgs = [
+            msgs[0],
+            msgs[1],
+            { role: 'user', content: `${prefix}[RESUMO DO HISTORICO ANTERIOR]\n${summary}` },
+            ...tail
+          ]
+          lastSummaryStep = step
+          deps.onText?.('📦 Histórico sumarizado (economia de tokens).')
+        }
+      } catch {
+        // summarisation failure is non-critical
+      }
+    }
+  }
 
   // Step cap hit: force one last text answer with tools disabled, so a run that
   // ran out of budget still summarises what it managed instead of ending mute.

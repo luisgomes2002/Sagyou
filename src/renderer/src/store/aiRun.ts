@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { v4 as uuidv4 } from 'uuid'
-import { runAgent, resolveMaxSteps, callModel, contentText } from '../ai/agent'
+import { runAgent, resolveMaxSteps, suggestMaxSteps, callModel, contentText } from '../ai/agent'
 import { CODE_TOOL_DEFS, routeTools } from '../ai/tools'
 import codePromptMd from '../ai/code-prompt.md?raw'
 import { useKanbanStore } from './kanban'
@@ -108,7 +108,10 @@ export function toApiMessages(
   return kept.map((m, index) => {
     const role = m.role as 'user' | 'assistant'
     const urls = (m.imageIds ?? []).filter((id) => imageIds.has(id)).map((id) => imageData[id])
-    const prefix = omitted && index === 0 ? '[Trechos antigos da conversa foram omitidos por orçamento de contexto.]\n\n' : ''
+    const prefix =
+      omitted && index === 0
+        ? '[Trechos antigos da conversa foram omitidos por orçamento de contexto.]\n\n'
+        : ''
     const omittedImages = (m.imageIds ?? []).some((id) => !imageIds.has(id))
     const text = prefix + m.content + (omittedImages ? '\n\n[Imagem anterior não reenviada.]' : '')
     if (urls.length === 0) return { role, content: text }
@@ -164,7 +167,9 @@ export async function writeHandoff(
     const truncated = answer.length > 600
     const a = truncated ? `${answer.slice(0, 600)}…` : answer
     const pointer =
-      truncated && convId ? ` (conversa completa: id=${convId} — use ler_conversa para ler tudo)` : ''
+      truncated && convId
+        ? ` (conversa completa: id=${convId} — use ler_conversa para ler tudo)`
+        : ''
     await api.handoff({
       projectId: activeProjectId,
       title: name ? `Última sessão — ${name}` : 'Última sessão',
@@ -279,7 +284,7 @@ function addUsageConv(s: AiRunState, convId: string, u: TokenUsage): Partial<AiR
     reasoningTokens:
       typeof u.reasoningTokens === 'number' && typeof prev.reasoningTokens === 'number'
         ? prev.reasoningTokens + u.reasoningTokens
-        : u.reasoningTokens ?? prev.reasoningTokens
+        : (u.reasoningTokens ?? prev.reasoningTokens)
   })
   if (convId === s.conversationId) return { usage: add(s.usage) }
   const p = s.parked[convId]
@@ -384,7 +389,12 @@ export interface AiRunState {
 
   send: (
     config: AIConfig,
-    opts: { text: string; imageIds: string[]; imageData: Record<string, string>; documentIds?: string[] },
+    opts: {
+      text: string
+      imageIds: string[]
+      imageData: Record<string, string>
+      documentIds?: string[]
+    },
     codeMode?: boolean
   ) => Promise<void>
   /** Ask a run to stop. Defaults to the chat on screen when no id is given. */
@@ -478,7 +488,10 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
         {
           projectId,
           convId,
-          maxSteps: resolveMaxSteps(config.maxSteps, get().autoApprove.has(convId)),
+          maxSteps:
+            config.maxSteps === undefined
+              ? suggestMaxSteps(text, get().autoApprove.has(convId))
+              : resolveMaxSteps(config.maxSteps, get().autoApprove.has(convId)),
           shouldAbort: () => get().abortRequested.has(convId),
           onStream: (t) => set((s) => ({ streaming: { ...s.streaming, [convId]: t } })),
           onToolStream: (names) =>
@@ -494,9 +507,10 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
                     promptTokens: prev.promptTokens + u.promptTokens,
                     completionTokens: prev.completionTokens + u.completionTokens,
                     reasoningTokens:
-                      typeof u.reasoningTokens === 'number' && typeof prev.reasoningTokens === 'number'
+                      typeof u.reasoningTokens === 'number' &&
+                      typeof prev.reasoningTokens === 'number'
                         ? prev.reasoningTokens + u.reasoningTokens
-                        : u.reasoningTokens ?? prev.reasoningTokens
+                        : (u.reasoningTokens ?? prev.reasoningTokens)
                   }
                 }
               }
@@ -507,8 +521,7 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
           // (~6.7k), saving 25-75% of the fixed tool-definition cost per call.
           ...(codeMode
             ? { tools: CODE_TOOL_DEFS, systemPrompt: codePromptMd.trim() }
-            : { tools: routeTools(text) }
-          ),
+            : { tools: routeTools(text) }),
           onStatus: (text, kind, progress) =>
             set((s) =>
               writeConv(s, convId, (prev) => [
@@ -660,7 +673,9 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
     })),
 
   setAutoApprove: (convId, v) =>
-    set((s) => ({ autoApprove: v ? setAdd(s.autoApprove, convId) : setDel(s.autoApprove, convId) })),
+    set((s) => ({
+      autoApprove: v ? setAdd(s.autoApprove, convId) : setDel(s.autoApprove, convId)
+    })),
 
   setPlanMode: (convId, v) =>
     set((s) => ({ planMode: v ? setAdd(s.planMode, convId) : setDel(s.planMode, convId) })),
@@ -705,9 +720,7 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
         ...(killing && {
           abortRequested: setAdd(s.abortRequested, id),
           pendingApprovals: s.pendingApprovals.filter((p) => p.convId !== id),
-          taskLeases: Object.fromEntries(
-            Object.entries(s.taskLeases).filter(([, c]) => c !== id)
-          )
+          taskLeases: Object.fromEntries(Object.entries(s.taskLeases).filter(([, c]) => c !== id))
         })
       }
     }),

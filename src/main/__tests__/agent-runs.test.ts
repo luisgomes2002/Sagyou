@@ -99,6 +99,11 @@ describe('normalizeRuns', () => {
     expect(r.convId).toBeNull()
   })
 
+  it('keeps a recognized worktree delivery state', () => {
+    const [out] = normalizeRuns([{ id: uuid(1), delivery: 'merge_failed' }])
+    expect(out.delivery).toBe('merge_failed')
+  })
+
   it('carries a valid tokens object through', () => {
     const [r] = normalizeRuns([
       { id: uuid(1), tokens: { promptTokens: 1200, completionTokens: 300 } }

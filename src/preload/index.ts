@@ -21,6 +21,7 @@ interface AgentRunMeta {
   startedAt: number
   endedAt: number
   exitCode: number
+  delivery?: 'applied' | 'merge_failed'
   fileCount: number
 }
 
@@ -54,6 +55,20 @@ interface CodeRunSummary {
     completionTokens: number
   }
   autoApprove?: boolean
+  approvals?: CodeApprovalRequest[]
+}
+
+interface CodeApprovalRequest {
+  runId: string
+  id: string
+  name: string
+  args: Record<string, unknown>
+  resumo: string
+  conteudo?: string
+  comando?: string
+  diff?: { kind: 'add' | 'del' | 'ctx' | 'meta'; text: string }[]
+  diffTruncated?: boolean
+  irreversivel?: boolean
 }
 
 /** Totals for a slice of the usage log. `unpricedCalls` are calls with no price. */
@@ -425,7 +440,7 @@ const api = {
         return () => ipcRenderer.removeListener('ai:code-agent:hint', handler)
       },
       // Fires when auto-approval is toggled for a run, so the UI can reflect it.
-      onAutoChanged: (cb: (payload: { runId: string; autoApprove: boolean }) => void) => {
+      onAutoChanged: (cb: (payload: { runId: string; autoApprove: boolean; resolvedApprovalIds?: string[] }) => void) => {
         const handler = (_: Electron.IpcRendererEvent, payload: Parameters<typeof cb>[0]): void =>
           cb(payload)
         ipcRenderer.on('ai:code-agent:auto-changed', handler)

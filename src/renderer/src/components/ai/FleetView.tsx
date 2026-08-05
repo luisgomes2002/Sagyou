@@ -91,8 +91,7 @@ function useCodeAgentRuns(): {
     window.electronAPI.ai.codeAgent.status().then((s) => {
       setRuns((prev) =>
         s.runs.map((r) => {
-          // Preserve approvals state from the live UI — the status call doesn't
-          // carry pending approvals (they live as IPC events, not in the summary).
+          // Status is the source of truth, so a remount cannot hide a parked approval.
           const existing = prev.find((p) => p.id === r.id)
           return {
             id: r.id,
@@ -105,7 +104,7 @@ function useCodeAgentRuns(): {
             hint: r.hint,
             progress: r.progress ?? null,
             autoApprove: r.autoApprove ?? false,
-            approvals: existing?.approvals ?? []
+            approvals: r.approvals ?? existing?.approvals ?? []
           }
         })
       )
@@ -151,10 +150,16 @@ function useCodeAgentRuns(): {
 
     // 6. Auto-approval toggled for a run
     const offAutoChanged = window.electronAPI.ai.codeAgent.onAutoChanged(
-      (payload: { runId: string; autoApprove: boolean }) => {
+      (payload: { runId: string; autoApprove: boolean; resolvedApprovalIds?: string[] }) => {
         setRuns((prev) =>
           prev.map((r) =>
-            r.id === payload.runId ? { ...r, autoApprove: payload.autoApprove } : r
+            r.id === payload.runId
+              ? {
+                  ...r,
+                  autoApprove: payload.autoApprove,
+                  approvals: (r.approvals ?? []).filter((a) => !payload.resolvedApprovalIds?.includes(a.id))
+                }
+              : r
           )
         )
       }
@@ -254,7 +259,7 @@ export function FleetView({
   const openConversation = useAiRunStore((s) => s.openConversation)
   const abort = useAiRunStore((s) => s.abort)
 
-  const { runs: codeRuns, stopAgent, setAuto } = useCodeAgentRuns()
+  const { runs: codeRuns, stopAgent, setAuto, approveAgent } = useCodeAgentRuns()
 
   // ── Archived runs (finished code agents, last 24h) ──────────────────────────
   const [archivedRuns, setArchivedRuns] = useState<AgentRunMeta[]>([])
@@ -799,6 +804,32 @@ export function FleetView({
                     </div>
                   )}
 
+                  {hasApproval && (
+                    <div className="space-y-2 rounded-lg border border-[#f0b820]/25 bg-[#f0b820]/5 p-2">
+                      {run.approvals.map((approval) => (
+                        <div key={approval.id} className="flex items-center justify-between gap-2 text-[11px]">
+                          <span className="min-w-0 truncate text-[#d4d4d4]" title={approval.resumo}>
+                            {approval.resumo}
+                          </span>
+                          <span className="flex shrink-0 gap-1">
+                            <button
+                              onClick={() => approveAgent(run.id, approval.id, true)}
+                              className="rounded border border-[#72b972]/40 px-2 py-1 text-[#72b972] hover:bg-[#72b972]/10"
+                            >
+                              Aprovar
+                            </button>
+                            <button
+                              onClick={() => approveAgent(run.id, approval.id, false)}
+                              className="rounded border border-[#e04040]/40 px-2 py-1 text-[#e04040] hover:bg-[#e04040]/10"
+                            >
+                              Recusar
+                            </button>
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   {/* Actions row */}
                   <div className="flex items-center gap-2 pt-1">
                     <button
@@ -880,6 +911,11 @@ export function FleetView({
                             <p className="text-xs font-medium text-[#d4d4d4] truncate">
                               {run.task.slice(0, 80)}
                             </p>
+                            {run.delivery === 'merge_failed' && (
+                              <span className="shrink-0 rounded border border-[#e04040]/40 bg-[#e04040]/10 px-1.5 py-px text-[9px] font-medium text-[#e04040]">
+                                Não aplicado
+                              </span>
+                            )}
                           </div>
                           <p className="text-[10px] text-[#999999] mt-1">
                             {run.agent} · {run.fileCount} {run.fileCount === 1 ? 'arquivo' : 'arquivos'}

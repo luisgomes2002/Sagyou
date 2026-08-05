@@ -228,7 +228,7 @@ export function PlanView() {
       <ConfirmDialog
         open={deletingBlockId !== null}
         title="Remover bloco"
-        message={`Remover "${deletingBlock?.title ?? ''}"?\nEsta acao nao pode ser desfeita.`}
+        message={`Remover "${deletingBlock?.title ?? ''}"?\nEsta ação nao pode ser desfeita.`}
         confirmLabel="Remover"
         onConfirm={() => {
           if (deletingBlockId) deleteTimeBlock(deletingBlockId)
@@ -241,7 +241,7 @@ export function PlanView() {
       <ConfirmDialog
         open={deletingRoutineId !== null}
         title="Remover rotina"
-        message={`Remover "${deletingRoutine?.title ?? ''}"?\nEsta acao nao pode ser desfeita.`}
+        message={`Remover "${deletingRoutine?.title ?? ''}"?\nEsta ação nao pode ser desfeita.`}
         confirmLabel="Remover"
         onConfirm={() => {
           if (deletingRoutineId) deleteRoutine(deletingRoutineId)

@@ -3,8 +3,6 @@ import { useKanbanStore } from '../../store/kanban'
 import { useAiRunStore, type ChatMessage } from '../../store/aiRun'
 import type { Project } from '../../types'
 import {
-  MAX_STEPS,
-  AUTO_MAX_STEPS,
   LOW_STEPS_WARNING,
   MAX_STEPS_LIMIT,
   resolveMaxSteps,
@@ -31,16 +29,16 @@ const DEFAULT_CONFIG: AIConfig = {
 
 /** Map model name → provider base URL, so selecting a model auto-fills the URL. */
 const MODEL_PROVIDER: Record<string, string> = {
-  'deepseek': 'https://api.deepseek.com',
-  'gpt': 'https://api.openai.com',
-  'o1': 'https://api.openai.com',
-  'o3': 'https://api.openai.com',
-  'claude': 'https://api.anthropic.com',
-  'gemini': 'https://generativelanguage.googleapis.com',
-  'llama': 'https://api.llama-api.com',
-  'mistral': 'https://api.mistral.ai',
-  'codestral': 'https://api.mistral.ai',
-  'qwen': 'https://api.qwen.ai'
+  deepseek: 'https://api.deepseek.com',
+  gpt: 'https://api.openai.com',
+  o1: 'https://api.openai.com',
+  o3: 'https://api.openai.com',
+  claude: 'https://api.anthropic.com',
+  gemini: 'https://generativelanguage.googleapis.com',
+  llama: 'https://api.llama-api.com',
+  mistral: 'https://api.mistral.ai',
+  codestral: 'https://api.mistral.ai',
+  qwen: 'https://api.qwen.ai'
 }
 
 function providerForModel(model: string): string | null {
@@ -51,19 +49,39 @@ function providerForModel(model: string): string | null {
 /** Known models across common providers, shown alongside API results. */
 const KNOWN_MODELS = [
   // DeepSeek
-  'deepseek-v4-flash', 'deepseek-v4-pro',
+  'deepseek-v4-flash',
+  'deepseek-v4-pro',
   // OpenAI
-  'gpt-4o', 'gpt-4o-mini', 'gpt-4', 'gpt-4-turbo', 'gpt-3.5-turbo', 'o1', 'o1-mini', 'o3-mini',
+  'gpt-4o',
+  'gpt-4o-mini',
+  'gpt-4',
+  'gpt-4-turbo',
+  'gpt-3.5-turbo',
+  'o1',
+  'o1-mini',
+  'o3-mini',
   // Anthropic
-  'claude-sonnet-4-20250514', 'claude-3-5-sonnet-latest', 'claude-3-5-haiku-latest', 'claude-opus-4-20250514', 'claude-3-opus-latest', 'claude-3-haiku-20240307',
+  'claude-sonnet-4-20250514',
+  'claude-3-5-sonnet-latest',
+  'claude-3-5-haiku-latest',
+  'claude-opus-4-20250514',
+  'claude-3-opus-latest',
+  'claude-3-haiku-20240307',
   // Google
-  'gemini-2.5-pro-exp-03-25', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash',
+  'gemini-2.5-pro-exp-03-25',
+  'gemini-2.0-flash',
+  'gemini-1.5-pro',
+  'gemini-1.5-flash',
   // Meta
-  'llama-3.3-70b-instruct', 'llama-3.1-8b-instruct',
+  'llama-3.3-70b-instruct',
+  'llama-3.1-8b-instruct',
   // Mistral
-  'mistral-large-latest', 'mistral-small-latest', 'codestral-latest',
+  'mistral-large-latest',
+  'mistral-small-latest',
+  'codestral-latest',
   // Local / open
-  'qwen2.5-coder-32b-instruct', 'qwen2.5-72b-instruct'
+  'qwen2.5-coder-32b-instruct',
+  'qwen2.5-72b-instruct'
 ]
 
 /**
@@ -76,7 +94,9 @@ async function fetchModels(cfg: AIConfig): Promise<string[]> {
     if (res.success && Array.isArray(res.models)) {
       return [...new Set([...KNOWN_MODELS, ...res.models])]
     }
-  } catch { /* fall through to known models only */ }
+  } catch {
+    /* fall through to known models only */
+  }
   return KNOWN_MODELS
 }
 
@@ -153,10 +173,7 @@ const MessageBubble = memo(function MessageBubble({
   imageData: Record<string, string>
 }) {
   return (
-    <div
-      key={index}
-      className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
-    >
+    <div key={index} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
       <div
         className={`px-3.5 py-2 rounded-2xl text-sm break-words ${
           m.role === 'user'
@@ -343,9 +360,9 @@ export function AIView({
   const [showSpend, setShowSpend] = useState(false)
 
   // ai-jail sandbox status (merged with config). Null until first fetched.
-  const [jailStatus, setJailStatus] = useState<
-    Awaited<ReturnType<typeof window.electronAPI.ai.jail.status>> | null
-  >(null)
+  const [jailStatus, setJailStatus] = useState<Awaited<
+    ReturnType<typeof window.electronAPI.ai.jail.status>
+  > | null>(null)
   /** Whether the first-run sandbox onboarding modal is showing. */
   const [showOnboarding, setShowOnboarding] = useState(false)
 
@@ -450,7 +467,7 @@ export function AIView({
    * it from — with no priced calls logged, any figure here would be invented,
    * and this dialog exists precisely to inform a spending decision.
    */
-  const autoSteps = resolveMaxSteps(config.maxSteps, true)
+  const autoSteps = config.maxSteps === undefined ? 20 : resolveMaxSteps(config.maxSteps, true)
   const autoEstimate = estimateAutoRun(spend?.total, autoSteps)
   const autoWarning =
     `O assistente vai encadear até ${autoSteps} rodadas sem pedir aprovação, ` +
@@ -558,14 +575,11 @@ export function AIView({
   }, [config])
 
   /** Refresh ai-jail status; opens onboarding when required-but-unavailable. */
-  const refreshJail = useCallback(
-    async (redetect = false): Promise<void> => {
-      const s = await window.electronAPI.ai.jail.status(redetect)
-      setJailStatus(s)
-      if (!s.available && s.enabled && !s.onboardingDismissed) setShowOnboarding(true)
-    },
-    []
-  )
+  const refreshJail = useCallback(async (redetect = false): Promise<void> => {
+    const s = await window.electronAPI.ai.jail.status(redetect)
+    setJailStatus(s)
+    if (!s.available && s.enabled && !s.onboardingDismissed) setShowOnboarding(true)
+  }, [])
 
   // Load the sandbox status when the AI view mounts. Onboarding only appears the
   // first time ai-jail reports unavailable and the user never sees the dialog.
@@ -847,7 +861,10 @@ export function AIView({
           setError(res.error)
           continue
         }
-        setPendingDocuments((p) => [...p, { id: res.id, name: res.name, ext: res.ext, text: res.text, truncated: res.truncated }])
+        setPendingDocuments((p) => [
+          ...p,
+          { id: res.id, name: res.name, ext: res.ext, text: res.text, truncated: res.truncated }
+        ])
       } catch {
         setError('Não consegui ler esse arquivo')
       }
@@ -876,7 +893,6 @@ export function AIView({
     refreshSkills()
     if (editingSkill?.name === name) setEditingSkill(null)
   }
-
 
   const handleImportSkill = async (): Promise<void> => {
     try {
@@ -1256,7 +1272,8 @@ export function AIView({
                       {formatTokens(totalTokens)} tokens
                       {reasoningTokens ? (
                         <span className="text-[#a080f0]">
-                          {' '}+{formatTokens(reasoningTokens)} rac.
+                          {' '}
+                          +{formatTokens(reasoningTokens)} rac.
                         </span>
                       ) : null}
                       {cost !== null && (
@@ -1320,7 +1337,6 @@ export function AIView({
                           {spend.total.unpricedCalls === 1 ? '' : 's'} sem preço configurado na
                           época — não {spend.total.unpricedCalls === 1 ? 'entra' : 'entram'} no
                           total.
-
                         </p>
                       )}
 
@@ -1345,7 +1361,9 @@ export function AIView({
                                   <div className="w-full h-1 bg-[#3b3b3b] rounded-full mt-0.5">
                                     <div
                                       className="h-full bg-[#46d478] rounded-full"
-                                      style={{ width: `${Math.round(cacheHitRate(bucket)! * 100)}%` }}
+                                      style={{
+                                        width: `${Math.round(cacheHitRate(bucket)! * 100)}%`
+                                      }}
                                     />
                                   </div>
                                   <span className="text-[10px] text-[#46d478]">
@@ -1722,14 +1740,20 @@ export function AIView({
                         // and the current URL is empty or matches a different provider.
                         const url = providerForModel(model)
                         const currentUrl = c.baseUrl.trim()
-                        const shouldFill = url && (!currentUrl || Object.values(MODEL_PROVIDER).includes(currentUrl) || currentUrl.includes('localhost'))
+                        const shouldFill =
+                          url &&
+                          (!currentUrl ||
+                            Object.values(MODEL_PROVIDER).includes(currentUrl) ||
+                            currentUrl.includes('localhost'))
                         return { ...c, model, ...(shouldFill ? { baseUrl: url } : {}) }
                       })
                     }}
                     className="flex-1 min-w-0 px-2.5 py-1.5 rounded-md bg-[#1b1b1b] border border-[#3b3b3b] text-sm text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed]"
                   >
                     {models.length === 0 && (
-                      <option value={config.model || ''}>{config.model || 'Carregue os modelos…'}</option>
+                      <option value={config.model || ''}>
+                        {config.model || 'Carregue os modelos…'}
+                      </option>
                     )}
                     {models.map((m) => (
                       <option key={m} value={m}>
@@ -1793,7 +1817,7 @@ export function AIView({
               este modelo; perguntas comuns ("quantas tasks fiz essa semana?") continuam no
               principal — assim você só paga o modelo caro quando o assunto é código. Vale para o
               chat <b>conversar e analisar</b>; quem de fato <b>edita os arquivos</b> é o Agente de
-              Código (mais abaixo).               Deixe em "mesmo do principal" para usar um único modelo em tudo.
+              Código (mais abaixo). Deixe em "mesmo do principal" para usar um único modelo em tudo.
             </p>
             <label className="flex flex-col gap-1 mt-3">
               <span className="text-[11px] font-medium text-[#999999]">
@@ -1804,7 +1828,11 @@ export function AIView({
                 onChange={(e) =>
                   setConfig((c) => ({
                     ...c,
-                    reasoningEffort: (e.target.value || undefined) as 'low' | 'medium' | 'high' | undefined
+                    reasoningEffort: (e.target.value || undefined) as
+                      | 'low'
+                      | 'medium'
+                      | 'high'
+                      | undefined
                   }))
                 }
                 className="px-2.5 py-1.5 rounded-md bg-[#1b1b1b] border border-[#3b3b3b] text-sm text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed]"
@@ -1823,7 +1851,7 @@ export function AIView({
                   min={1}
                   max={MAX_STEPS_LIMIT}
                   value={config.maxSteps ?? ''}
-                  placeholder={`Padrão (${MAX_STEPS}/${AUTO_MAX_STEPS})`}
+                  placeholder="Padrão adaptativo (2–20)"
                   onChange={(e) => {
                     const raw = e.target.value.trim()
                     // Empty means "unset" — that's what selects the per-mode default.
@@ -1838,9 +1866,10 @@ export function AIView({
               <div className="pt-5">
                 <p className="text-[11px] text-[#666666] leading-relaxed">
                   Quantas rodadas de ferramentas o assistente pode encadear numa resposta — cada
-                  rodada é uma chamada paga ao modelo. Em branco usa o padrão: <b>{MAX_STEPS}</b> no
-                  modo manual e <b>{AUTO_MAX_STEPS}</b> no automático. Um valor definido vale para
-                  os dois modos (máx. {MAX_STEPS_LIMIT}).
+                  rodada é uma chamada paga ao modelo. Em branco escolhe o orçamento pela tarefa:{' '}
+                  <b>2</b> para leitura pontual, <b>4</b> para ajuste simples, <b>8</b> para
+                  implementação normal e <b>15</b> para tarefa complexa (até <b>20</b> no
+                  automático). Um valor definido vale para os dois modos (máx. {MAX_STEPS_LIMIT}).
                 </p>
                 {config.maxSteps !== undefined && config.maxSteps < LOW_STEPS_WARNING && (
                   <p className="mt-2 flex items-start gap-1.5 text-[11px] text-[#f0b820]/90 leading-relaxed">
@@ -1913,9 +1942,7 @@ export function AIView({
                 <input
                   type="checkbox"
                   checked={config.usePromptCaching !== false}
-                  onChange={(e) =>
-                    setConfig((c) => ({ ...c, usePromptCaching: e.target.checked }))
-                  }
+                  onChange={(e) => setConfig((c) => ({ ...c, usePromptCaching: e.target.checked }))}
                   className="accent-[#7c3aed]"
                 />
                 <span className="text-[11px] font-medium text-[#999999]">
@@ -1924,9 +1951,8 @@ export function AIView({
               </label>
               <p className="text-[11px] text-[#666666] pt-0 leading-relaxed">
                 Quando ligado (padrão), mantém o histórico estável para maximizar o cache do
-                provedor (DeepSeek ~50x mais barato, Claude, Gemini). Desligue se o provedor
-                não tiver cache — resultados de leitura repetidos serão podados para economizar
-                tokens.
+                provedor (DeepSeek ~50x mais barato, Claude, Gemini). Desligue se o provedor não
+                tiver cache — resultados de leitura repetidos serão podados para economizar tokens.
               </p>
             </div>
 
@@ -2079,7 +2105,10 @@ export function AIView({
                   checked={config.sandboxEnabled !== false}
                   disabled={!!jailStatus && !jailStatus.available}
                   onChange={(e) => {
-                    setConfig((c) => ({ ...c, sandboxEnabled: e.target.checked ? undefined : false }))
+                    setConfig((c) => ({
+                      ...c,
+                      sandboxEnabled: e.target.checked ? undefined : false
+                    }))
                   }}
                   className="w-3.5 h-3.5 accent-[#7c3aed]"
                 />
@@ -2153,7 +2182,8 @@ export function AIView({
                     onClick={showMore}
                     className="px-4 py-1.5 rounded-full bg-[#2a2a2a] border border-[#3b3b3b] text-xs text-[#999999] hover:text-[#d4d4d4] hover:border-[#555555] transition-colors shadow-lg"
                   >
-                    Mostrar {hiddenCount > MESSAGE_PAGE ? `${MESSAGE_PAGE}+` : hiddenCount} mensage{hiddenCount === 1 ? 'm' : 'ns'} anterior{hiddenCount === 1 ? '' : 'es'}
+                    Mostrar {hiddenCount > MESSAGE_PAGE ? `${MESSAGE_PAGE}+` : hiddenCount} mensage
+                    {hiddenCount === 1 ? 'm' : 'ns'} anterior{hiddenCount === 1 ? '' : 'es'}
                   </button>
                 </div>
               )}
@@ -2301,11 +2331,18 @@ export function AIView({
           {pendingDocuments.length > 0 && (
             <div className="flex flex-wrap gap-2 mb-2">
               {pendingDocuments.map((doc) => (
-                <div key={doc.id} className="relative group flex items-center gap-2 px-2 py-1 rounded-md border border-[#3b3b3b] bg-[#1b1b1b] text-xs">
-                  <span className="text-[#7c3aed] font-medium">{doc.ext.replace('.', '').toUpperCase()}</span>
+                <div
+                  key={doc.id}
+                  className="relative group flex items-center gap-2 px-2 py-1 rounded-md border border-[#3b3b3b] bg-[#1b1b1b] text-xs"
+                >
+                  <span className="text-[#7c3aed] font-medium">
+                    {doc.ext.replace('.', '').toUpperCase()}
+                  </span>
                   <span className="text-[#999999] max-w-[160px] truncate">{doc.name}</span>
                   {doc.truncated && (
-                    <span className="text-[#f08a34]" title="O texto do documento foi truncado">(cortado)</span>
+                    <span className="text-[#f08a34]" title="O texto do documento foi truncado">
+                      (cortado)
+                    </span>
                   )}
                   <button
                     onClick={() => removePendingDocument(doc.id)}
@@ -2404,7 +2441,11 @@ export function AIView({
               <button
                 onClick={handleSend}
                 disabled={
-                  !configReady || busyHere || (input.trim() === '' && pendingImages.length === 0 && pendingDocuments.length === 0)
+                  !configReady ||
+                  busyHere ||
+                  (input.trim() === '' &&
+                    pendingImages.length === 0 &&
+                    pendingDocuments.length === 0)
                 }
                 className="px-3 py-1.5 rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] text-sm text-[#d4d4d4] font-medium hover:bg-[#3b3b3b] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
@@ -2414,40 +2455,48 @@ export function AIView({
           </div>
 
           {/* Skill visual chip: shown when input starts with /skill-name */}
-          {input.startsWith('/') && (() => {
-            const parts = input.slice(1).trim().split(/\s+/)
-            const name = parts[0]
-            const skill = skills.find((s) => s.name === name)
-            return (
-              <div className="mt-2 flex items-center gap-2">
-                <span
-                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium ${
-                    skill
-                      ? 'bg-[#46d478]/15 text-[#46d478] border border-[#46d478]/30'
-                      : 'bg-[#f0b820]/15 text-[#f0b820] border border-[#f0b820]/30'
-                  }`}
-                >
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-                    <polyline points="14 2 14 8 20 8" />
-                    <line x1="16" y1="13" x2="8" y2="13" />
-                    <line x1="16" y1="17" x2="8" y2="17" />
-                    <polyline points="10 9 9 9 8 9" />
-                  </svg>
-                  {skill ? `/${skill.name}` : `/${name}`}
-                </span>
-                {skill ? (
-                  <span className="text-[10px] text-[#46d478]/70">
-                    Skill reconhecida — corpo será enviado ao modelo
+          {input.startsWith('/') &&
+            (() => {
+              const parts = input.slice(1).trim().split(/\s+/)
+              const name = parts[0]
+              const skill = skills.find((s) => s.name === name)
+              return (
+                <div className="mt-2 flex items-center gap-2">
+                  <span
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium ${
+                      skill
+                        ? 'bg-[#46d478]/15 text-[#46d478] border border-[#46d478]/30'
+                        : 'bg-[#f0b820]/15 text-[#f0b820] border border-[#f0b820]/30'
+                    }`}
+                  >
+                    <svg
+                      width="10"
+                      height="10"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                    >
+                      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                      <polyline points="14 2 14 8 20 8" />
+                      <line x1="16" y1="13" x2="8" y2="13" />
+                      <line x1="16" y1="17" x2="8" y2="17" />
+                      <polyline points="10 9 9 9 8 9" />
+                    </svg>
+                    {skill ? `/${skill.name}` : `/${name}`}
                   </span>
-                ) : (
-                  <span className="text-[10px] text-[#f0b820]/70">
-                    Skill não encontrada — texto enviado como está
-                  </span>
-                )}
-              </div>
-            )
-          })()}
+                  {skill ? (
+                    <span className="text-[10px] text-[#46d478]/70">
+                      Skill reconhecida — corpo será enviado ao modelo
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-[#f0b820]/70">
+                      Skill não encontrada — texto enviado como está
+                    </span>
+                  )}
+                </div>
+              )
+            })()}
 
           {/* Skill autocomplete dropdown */}
           {skillMenuOpen && matchedSkills.length > 0 && (
@@ -2461,7 +2510,15 @@ export function AIView({
                   }}
                   className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm text-[#d4d4d4] hover:bg-[#3b3b3b] transition-colors"
                 >
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0 text-[#999999]">
+                  <svg
+                    width="10"
+                    height="10"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    className="shrink-0 text-[#999999]"
+                  >
                     <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
                     <polyline points="14 2 14 8 20 8" />
                   </svg>

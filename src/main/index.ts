@@ -61,7 +61,14 @@ import {
   type RunMetricInput
 } from './run-metrics'
 import { getOpenAIClient, requestOptions } from './openai-client'
-import { confineToRoot, walkFiles, detectSymbols, extractSymbol, extractLines, searchFiles } from './code-files'
+import {
+  confineToRoot,
+  walkFiles,
+  detectSymbols,
+  extractSymbol,
+  extractLines,
+  searchFiles
+} from './code-files'
 import {
   runCodeAgent,
   buildSystemPrompt,
@@ -70,7 +77,7 @@ import {
   readProjectGuide,
   dirTree,
   defaultCommandRunner,
-  CODE_AGENT_MAX_STEPS,
+  suggestCodeAgentSteps,
   type InlinedFile,
   type AgentMessage,
   type CommandRunner,
@@ -150,11 +157,31 @@ interface CodeRunState {
   step: number
   maxSteps: number
   /** Approvals the loop is waiting on, keyed by request id. */
-  pendingApprovals: Map<string, (approved: boolean) => void>
+  pendingApprovals: Map<string, PendingCodeApproval>
   /** Whether auto-approval mode is on for this run. */
   autoApprove: boolean
   /** Se não-null, o agente roda num git worktree isolado em vez do dir original. */
   worktreeDir: string | null
+  /** The isolated run finished, but its patch could not be applied to the original tree. */
+  worktreeMergeError: string | null
+}
+
+interface CodeApprovalRequest {
+  runId: string
+  id: string
+  name: string
+  args: Record<string, unknown>
+  resumo: string
+  conteudo?: string
+  comando?: string
+  diff?: DiffLineItem[]
+  diffTruncated?: boolean
+  irreversivel?: boolean
+}
+
+interface PendingCodeApproval {
+  resolve: (approved: boolean) => void
+  request: CodeApprovalRequest
 }
 
 /** All runs in flight, keyed by run id. */
@@ -245,7 +272,10 @@ function describeCodeAction(
       const verbs = overwrite ? 'Editar' : 'Criar'
       const plural = edicoes.length !== 1 ? 's' : ''
       const preview = edicoes
-        .map((e) => `- "${typeof e.procura === 'string' ? String(e.procura).slice(0, 60) : '?'}" → "${typeof e.substitui === 'string' ? String(e.substitui).slice(0, 60) : '?'}"`)
+        .map(
+          (e) =>
+            `- "${typeof e.procura === 'string' ? String(e.procura).slice(0, 60) : '?'}" → "${typeof e.substitui === 'string' ? String(e.substitui).slice(0, 60) : '?'}"`
+        )
         .join('\n')
       let diff: DiffLineItem[] | undefined
       let diffTruncated: boolean | undefined
@@ -331,13 +361,13 @@ function stopCodeAgent(runId?: string): void {
     const run = codeRuns.get(runId)
     if (run) {
       run.abort = true
-      for (const resolve of run.pendingApprovals.values()) resolve(false)
+      for (const { resolve } of run.pendingApprovals.values()) resolve(false)
       run.pendingApprovals.clear()
     }
   } else {
     for (const run of codeRuns.values()) {
       run.abort = true
-      for (const resolve of run.pendingApprovals.values()) resolve(false)
+      for (const { resolve } of run.pendingApprovals.values()) resolve(false)
       run.pendingApprovals.clear()
     }
   }
@@ -371,7 +401,9 @@ async function callCodeModel(
             tool_choice: 'auto' as const
           }
         : {}),
-      ...(cfg.reasoningEffort ? { reasoning_effort: cfg.reasoningEffort as 'low' | 'medium' | 'high' } : {})
+      ...(cfg.reasoningEffort
+        ? { reasoning_effort: cfg.reasoningEffort as 'low' | 'medium' | 'high' }
+        : {})
     },
     requestOptions(loadAIConfig().timeoutMs)
   )
@@ -591,7 +623,12 @@ const DEFAULT_AI_CONFIG: AIConfig = { baseUrl: '', apiKey: '', model: '' }
  * config where not. Kept here (not in the renderer) because the loop runs in
  * main — the renderer only edits the config, it never runs the agent.
  */
-function resolveCodeAgentConfig(cfg: AIConfig): { baseUrl: string; apiKey: string; model: string; reasoningEffort?: string } {
+function resolveCodeAgentConfig(cfg: AIConfig): {
+  baseUrl: string
+  apiKey: string
+  model: string
+  reasoningEffort?: string
+} {
   const ca = cfg.codeAgent ?? {}
   const pick = (a: string | undefined, b: string): string => (a && a.trim() ? a.trim() : b)
   return {
@@ -616,14 +653,17 @@ function errorStatus(e: unknown): number | undefined {
 
 /** The provider's usage block, normalised. Absent when it didn't report one. */
 function toUsage(
-  raw: {
-    prompt_tokens?: number
-    completion_tokens?: number
-    prompt_cache_hit_tokens?: number // DeepSeek
-    prompt_tokens_details?: { cached_tokens?: number } // OpenAI
-    completion_tokens_details?: { reasoning_tokens?: number } // DeepSeek reasoning
-    reasoning_tokens?: number // some providers at top level
-  } | undefined | null
+  raw:
+    | {
+        prompt_tokens?: number
+        completion_tokens?: number
+        prompt_cache_hit_tokens?: number // DeepSeek
+        prompt_tokens_details?: { cached_tokens?: number } // OpenAI
+        completion_tokens_details?: { reasoning_tokens?: number } // DeepSeek reasoning
+        reasoning_tokens?: number // some providers at top level
+      }
+    | undefined
+    | null
 ): TokenUsage | undefined {
   if (!raw) return undefined
   const promptTokens = typeof raw.prompt_tokens === 'number' ? raw.prompt_tokens : 0
@@ -835,7 +875,11 @@ function loadRunIndex(): AgentRunMeta[] {
       for (const gone of drop) {
         const p = agentRunPath(gone.id)
         if (p && existsSync(p)) {
-          try { unlinkSync(p) } catch { /* best-effort */ }
+          try {
+            unlinkSync(p)
+          } catch {
+            /* best-effort */
+          }
         }
       }
     }
@@ -872,6 +916,9 @@ async function archiveAgentRun(runId: string, exitCode: number): Promise<void> {
       startedAt: run.startedAt,
       endedAt: Date.now(),
       exitCode,
+      ...(run.worktreeDir
+        ? { delivery: run.worktreeMergeError ? ('merge_failed' as const) : ('applied' as const) }
+        : {}),
       fileCount: diffFileCount(diff),
       // Frozen with the run so the picker can show what a past run cost.
       tokens: { ...run.usage },
@@ -892,7 +939,11 @@ async function archiveAgentRun(runId: string, exitCode: number): Promise<void> {
     // Announced separately from 'exit', which fires before this: the archive
     // costs a `git diff`, and the panel must not stay on "rodando" waiting for
     // it. This is what tells the run picker its new row exists.
-    mainWindow?.webContents.send('ai:code-agent:archived', { runId: run.id, id: meta.id, convId: run.convId })
+    mainWindow?.webContents.send('ai:code-agent:archived', {
+      runId: run.id,
+      id: meta.id,
+      convId: run.convId
+    })
     for (const gone of drop) {
       const p = agentRunPath(gone.id)
       if (p && existsSync(p)) {
@@ -1010,9 +1061,7 @@ function pruneConversations(): void {
   const keptImageIds = new Set(keep.flatMap((c) => c.messages.flatMap((m) => m.imageIds ?? [])))
   const prunedImageIds = prune.flatMap((c) => c.messages.flatMap((m) => m.imageIds ?? []))
   const orphanIds = [...new Set(prunedImageIds)].filter((id) => !keptImageIds.has(id))
-  const toDelete = orphanIds
-    .map((id) => chatImagePath(id))
-    .filter((p): p is string => p !== null)
+  const toDelete = orphanIds.map((id) => chatImagePath(id)).filter((p): p is string => p !== null)
 
   for (const full of toDelete) {
     try {
@@ -1023,15 +1072,23 @@ function pruneConversations(): void {
   }
 
   // Same for chat document files.
-  const keptDocIds = new Set(keep.flatMap((c) => c.messages.flatMap((m) => (m as { documentIds?: string[] }).documentIds ?? [])))
-  const prunedDocIds = prune.flatMap((c) => c.messages.flatMap((m) => (m as { documentIds?: string[] }).documentIds ?? []))
+  const keptDocIds = new Set(
+    keep.flatMap((c) =>
+      c.messages.flatMap((m) => (m as { documentIds?: string[] }).documentIds ?? [])
+    )
+  )
+  const prunedDocIds = prune.flatMap((c) =>
+    c.messages.flatMap((m) => (m as { documentIds?: string[] }).documentIds ?? [])
+  )
   const orphanDocIds = [...new Set(prunedDocIds)].filter((id) => !keptDocIds.has(id))
   const docFilesDir = chatFilesDir()
-  const toDeleteDocs = orphanDocIds.map((id) => {
-    if (!/^[0-9a-f-]{36}\.[a-z0-9]{2,5}$/i.test(id)) return null
-    const full = join(docFilesDir, id)
-    return full.startsWith(docFilesDir + sep) ? full : null
-  }).filter((p): p is string => p !== null)
+  const toDeleteDocs = orphanDocIds
+    .map((id) => {
+      if (!/^[0-9a-f-]{36}\.[a-z0-9]{2,5}$/i.test(id)) return null
+      const full = join(docFilesDir, id)
+      return full.startsWith(docFilesDir + sep) ? full : null
+    })
+    .filter((p): p is string => p !== null)
 
   for (const full of toDeleteDocs) {
     try {
@@ -1060,7 +1117,9 @@ function pruneConversations(): void {
  */
 let _saveQueue: Promise<void> = Promise.resolve()
 function safeConversationsSave(op: () => void): void {
-  _saveQueue = _saveQueue.then(() => { op() })
+  _saveQueue = _saveQueue.then(() => {
+    op()
+  })
 }
 
 function createWindow(): void {
@@ -1307,9 +1366,8 @@ app.whenReady().then(() => {
   })
 
   // Entity lineage: query the event log for one entity's history.
-  ipcMain.handle(
-    'ai:lineage:list',
-    (_, entityType: string, entityId: string) => eventsForEntity(entityType, entityId)
+  ipcMain.handle('ai:lineage:list', (_, entityType: string, entityId: string) =>
+    eventsForEntity(entityType, entityId)
   )
 
   // Proxy an OpenAI-compatible chat/completions call. baseURL + apiKey come
@@ -1570,12 +1628,14 @@ app.whenReady().then(() => {
       }
       // Cleanup worktrees órfãos (que sobraram de uma queda do app)
       try {
-        const { stdout: wtList } = await execAsync(`cd "${dir}" && git worktree list --porcelain 2>nul`)
+        const { stdout: wtList } = await execAsync(`cd "${dir}" && git worktree list --porcelain`)
         for (const line of wtList.split('\n')) {
           if (line.startsWith('worktree ') && line.includes('.sagyou-wt-')) {
             const orphanPath = line.slice(9).trim()
             if (orphanPath && existsSync(orphanPath)) {
-              await execAsync(`cd "${dir}" && git worktree remove --force "${orphanPath}" 2>nul`).catch(() => {})
+              await execAsync(`cd "${dir}" && git worktree remove --force "${orphanPath}"`).catch(
+                () => {}
+              )
             }
           }
         }
@@ -1589,9 +1649,8 @@ app.whenReady().then(() => {
       if (codeAgentDirs.has(dir)) {
         worktreeDir = join(dir, `.sagyou-wt-${runId}`)
         try {
-          const { stdout: wtCheck } = await execAsync(`git -C "${dir}" rev-parse --show-toplevel 2>nul || echo not-git`)
-          if (wtCheck.trim() === 'not-git') throw new Error('Not a git repo')
-          await execAsync(`cd "${dir}" && git worktree add --detach "${worktreeDir}" HEAD 2>/dev/null`)
+          await execAsync(`git -C "${dir}" rev-parse --show-toplevel`)
+          await execAsync(`cd "${dir}" && git worktree add --detach "${worktreeDir}" HEAD`)
         } catch {
           return {
             success: false,
@@ -1679,10 +1738,11 @@ app.whenReady().then(() => {
         model: caCfg.model,
         usage: { promptTokens: 0, completionTokens: 0 },
         step: 0,
-        maxSteps: CODE_AGENT_MAX_STEPS,
+        maxSteps: suggestCodeAgentSteps(task),
         pendingApprovals: new Map(),
         autoApprove: typeof request.autoApprove === 'boolean' ? request.autoApprove : false,
-        worktreeDir: worktreeDir
+        worktreeDir: worktreeDir,
+        worktreeMergeError: null
       }
       codeRuns.set(runId, run)
       codeAgentDirs.add(dir)
@@ -1746,9 +1806,19 @@ app.whenReady().then(() => {
       let fileContents = ''
       if (files.length) {
         const inlined: InlinedFile[] = []
+        // Large files often contain one named function from the task. Inline
+        // that declaration instead of a costly preview from the beginning.
+        const taskSymbols = [...new Set(task.match(/\b[A-Za-z_$][\w$]{2,}\b/g) ?? [])]
         for (const abs of files) {
           try {
-            inlined.push({ path: relative(effectiveDir, abs) || abs, content: await readFile(abs, 'utf-8') })
+            const content = await readFile(abs, 'utf-8')
+            const scoped = taskSymbols
+              .map((symbol) => extractSymbol(content, symbol))
+              .find((result) => result !== null)
+            inlined.push({
+              path: relative(effectiveDir, abs) || abs,
+              content: scoped ? scoped.content : content
+            })
           } catch {
             /* unreadable pinned file — the agent can still ler_arquivo it on demand */
           }
@@ -1769,9 +1839,11 @@ app.whenReady().then(() => {
       // at 3000 chars — the full file can be 27k and is re-sent every step), a
       // compact file tree, and the pinned files.
       const rawGuide = readProjectGuide(effectiveDir)
-      const guide = rawGuide.length > 3000
-        ? rawGuide.slice(0, 3000) + '\n\n…(primeiros 3000 caracteres; use ler_arquivo para o resto)'
-        : rawGuide
+      const guide =
+        rawGuide.length > 3000
+          ? rawGuide.slice(0, 3000) +
+            '\n\n…(primeiros 3000 caracteres; use ler_arquivo para o resto)'
+          : rawGuide
       const [tree] = [await dirTree(effectiveDir)]
       // Brief the agent with this project's memory (shared with the chat), so a
       // code run benefits from decisions/gotchas recorded in conversation.
@@ -1810,7 +1882,9 @@ app.whenReady().then(() => {
       // BEHAVIOR rule that tells the agent to run typecheck — the agent would try,
       // hit 127, and spiral retrying.
       const noCommands = decisoes.some((d) =>
-        /n(ã|a)o.*(node|npm|comando|typecheck|teste|rodar|execute|dispon[ií]vel|bin[aá]rio)/i.test(d)
+        /n(ã|a)o.*(node|npm|comando|typecheck|teste|rodar|execute|dispon[ií]vel|bin[aá]rio)/i.test(
+          d
+        )
       )
       const systemPrompt = buildSystemPrompt({
         tree,
@@ -1850,14 +1924,15 @@ app.whenReady().then(() => {
         return new Promise<boolean>((resolveApproval) => {
           if (run.abort) return resolveApproval(false)
           const id = randomUUID()
-          run.pendingApprovals.set(id, resolveApproval)
-          send('ai:code-agent:approve-request', {
+          const approval: CodeApprovalRequest = {
             runId,
             id,
             name: call.name,
             args: call.args,
             ...desc
-          })
+          }
+          run.pendingApprovals.set(id, { resolve: resolveApproval, request: approval })
+          send('ai:code-agent:approve-request', approval)
         })
       }
 
@@ -1921,7 +1996,7 @@ app.whenReady().then(() => {
               // handed the targets and their contents, so re-finding them is pure
               // waste of the step budget.
               tools: codeToolsFor({ pinnedFiles: files.length > 0 }),
-              maxSteps: CODE_AGENT_MAX_STEPS,
+              maxSteps: run.maxSteps,
               shouldAbort: () => run.abort,
               onStep: (step, max) => {
                 run.step = step
@@ -1960,6 +2035,7 @@ app.whenReady().then(() => {
           exitCode = 1
           emit(`\n[erro no agente: ${e instanceof Error ? e.message : 'falha'}]\n`)
         } finally {
+          let archivedInWorktree = false
           // Token/cost/efficiency summary — shown on success or error, so a run
           // that spent money before failing still reports what it cost. Only
           // when something was billed (a run that never reached the model is 0).
@@ -1968,10 +2044,52 @@ app.whenReady().then(() => {
           }
           const secs = ((Date.now() - run.startedAt) / 1000).toFixed(1)
           emit(`\n[sagyou] duração: ${secs}s\n`)
-          appendAgentLog(runId, `\n[agente encerrado — código ${exitCode}]\n`)
-          // Freeze log + diff now: the only moment the diff means "what the agent
-          // did" rather than "what the tree looks like today".
-          void archiveAgentRun(runId, exitCode)
+          // Fase 2(b): se usou worktree, mescla de volta e remove
+          if (run.worktreeDir) {
+            try {
+              const { stdout: patch } = await execAsync(`cd "${run.worktreeDir}" && git diff HEAD`)
+              if (patch.trim()) {
+                const fileCount = patch.split('\n').filter((l) => l.startsWith('diff --git')).length
+                const tmpPatch = join(dir, '.sagyou-wt-patch.diff')
+                writeFileSync(tmpPatch, patch, 'utf-8')
+                try {
+                  await execAsync(
+                    `cd "${dir}" && git apply --whitespace=nowarn --ignore-space-change --ignore-whitespace "${tmpPatch}"`
+                  )
+                } finally {
+                  try {
+                    unlinkSync(tmpPatch)
+                  } catch {}
+                }
+                emit(
+                  `\n[worktree] ${fileCount} arquivo(s) mesclado(s) do worktree para o diretório original\n`
+                )
+              }
+            } catch (e) {
+              const message = e instanceof Error ? e.message : 'erro desconhecido'
+              run.worktreeMergeError = message
+              emit(`\n[erro] alterações do worktree não foram aplicadas: ${message}\n`)
+            } finally {
+              // The diff base belongs to this worktree, so archive before deleting it.
+              if (run.worktreeMergeError && exitCode === 0) exitCode = 2
+              const terminalStatus = run.worktreeMergeError
+                ? `[agente encerrado — código ${exitCode}; alterações não aplicadas (conflito de merge)]`
+                : `[agente encerrado — código ${exitCode}]`
+              appendAgentLog(runId, `\n${terminalStatus}\n`)
+              await archiveAgentRun(runId, exitCode)
+              archivedInWorktree = true
+              try {
+                await execAsync(`cd "${dir}" && git worktree remove --force "${run.worktreeDir}"`)
+              } catch {
+                // cleanup falhou — não crítico, o worktree fica órfão mas não afeta o app
+              }
+            }
+          }
+          if (!archivedInWorktree) {
+            const terminalStatus = `[agente encerrado — código ${exitCode}]`
+            appendAgentLog(runId, `\n${terminalStatus}\n`)
+            void archiveAgentRun(runId, exitCode)
+          }
           send('ai:code-agent:exit', { runId, code: exitCode })
           // Save survivors for backward compat (status() after run ends).
           lastRunLog = run.log
@@ -1982,31 +2100,6 @@ app.whenReady().then(() => {
             maxSteps: run.maxSteps,
             promptTokens: run.usage.promptTokens,
             completionTokens: run.usage.completionTokens
-          }
-          // Fase 2(b): se usou worktree, mescla de volta e remove
-          if (run.worktreeDir) {
-            try {
-              const { stdout: patch } = await execAsync(`cd "${run.worktreeDir}" && git diff HEAD`)
-              if (patch.trim()) {
-                const fileCount = patch.split('\n').filter(l => l.startsWith('diff --git')).length
-                const tmpPatch = join(dir, '.sagyou-wt-patch.diff')
-                writeFileSync(tmpPatch, patch, 'utf-8')
-                try {
-                  await execAsync(`cd "${dir}" && git apply --whitespace=nowarn --ignore-space-change --ignore-whitespace "${tmpPatch}"`)
-                } finally {
-                  try { unlinkSync(tmpPatch) } catch {}
-                }
-                emit(`\n[worktree] ${fileCount} arquivo(s) mesclado(s) do worktree para o diretório original\n`)
-              }
-            } catch (e) {
-              emit(`\n[aviso] falha ao mesclar worktree: ${e instanceof Error ? e.message : 'erro desconhecido'}\n`)
-            } finally {
-              try {
-                await execAsync(`cd "${dir}" && git worktree remove --force "${run.worktreeDir}" 2>/dev/null`)
-              } catch {
-                // cleanup falhou — não crítico, o worktree fica órfão mas não afeta o app
-              }
-            }
           }
           codeRuns.delete(runId)
           codeAgentDirs.delete(dir)
@@ -2026,10 +2119,10 @@ app.whenReady().then(() => {
   // UUIDs are unique, so search across all runs' pendingApprovals maps.
   ipcMain.handle('ai:code-agent:approve-response', (_, id: string, approved: boolean) => {
     for (const run of codeRuns.values()) {
-      const resolve = run.pendingApprovals.get(id)
-      if (resolve) {
+      const pending = run.pendingApprovals.get(id)
+      if (pending) {
         run.pendingApprovals.delete(id)
-        resolve(approved === true)
+        pending.resolve(approved === true)
         return
       }
     }
@@ -2041,9 +2134,18 @@ app.whenReady().then(() => {
     const run = codeRuns.get(runId)
     if (!run) return
     run.autoApprove = enabled === true
+    const resolvedApprovalIds: string[] = []
+    if (run.autoApprove) {
+      for (const [id, pending] of run.pendingApprovals) {
+        run.pendingApprovals.delete(id)
+        resolvedApprovalIds.push(id)
+        pending.resolve(true)
+      }
+    }
     mainWindow?.webContents.send('ai:code-agent:auto-changed', {
       runId,
-      autoApprove: run.autoApprove
+      autoApprove: run.autoApprove,
+      resolvedApprovalIds
     })
   })
 
@@ -2077,6 +2179,7 @@ app.whenReady().then(() => {
         model: r.model,
         hint: r.hint,
         autoApprove: r.autoApprove,
+        approvals: [...r.pendingApprovals.values()].map((pending) => pending.request),
         progress: {
           step: r.step,
           maxSteps: r.maxSteps,

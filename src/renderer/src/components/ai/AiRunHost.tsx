@@ -80,12 +80,22 @@ export function AiRunHost({
       const saves: Promise<unknown>[] = []
       if (id) {
         saves.push(
-          window.electronAPI.ai.conversations.save({ id, title: deriveTitle(messages), messages, usage })
+          window.electronAPI.ai.conversations.save({
+            id,
+            title: deriveTitle(messages),
+            messages,
+            usage
+          })
         )
       }
       for (const [parkedId, p] of parkedEntries) {
         saves.push(
-          window.electronAPI.ai.conversations.save({ id: parkedId, title: deriveTitle(p.messages), messages: p.messages, usage: p.usage })
+          window.electronAPI.ai.conversations.save({
+            id: parkedId,
+            title: deriveTitle(p.messages),
+            messages: p.messages,
+            usage: p.usage
+          })
         )
       }
       void Promise.all(saves).then(() => markSaved())
@@ -188,22 +198,34 @@ export function AiRunHost({
         >
           <div className="w-[520px] max-h-[80vh] flex flex-col rounded-xl bg-[#232323] border border-[#3b3b3b] shadow-2xl">
             <div className="flex items-center gap-2 px-5 py-4 border-b border-[#3b3b3b]">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#f0b820" strokeWidth="2">
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#f0b820"
+                strokeWidth="2"
+              >
                 <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
                 <line x1="12" y1="9" x2="12" y2="13" />
                 <line x1="12" y1="17" x2="12.01" y2="17" />
               </svg>
               <h2 className="text-sm font-semibold text-[#d4d4d4]">
-                Agente de código — {ca.name === 'escrever_arquivo' ? 'escrever arquivo' : 'executar comando'}
+                Agente de código —{' '}
+                {ca.name === 'escrever_arquivo' ? 'escrever arquivo' : 'executar comando'}
               </h2>
             </div>
             <div className="flex-1 overflow-y-auto px-5 py-3 space-y-3">
               <p className="text-sm text-[#d4d4d4]">{ca.resumo}</p>
               {ca.conteudo && (
-                <pre className="text-[11px] font-mono text-[#a080f0] bg-[#1b1b1b] p-3 rounded-lg max-h-60 overflow-y-auto whitespace-pre-wrap">{ca.conteudo}</pre>
+                <pre className="text-[11px] font-mono text-[#a080f0] bg-[#1b1b1b] p-3 rounded-lg max-h-60 overflow-y-auto whitespace-pre-wrap">
+                  {ca.conteudo}
+                </pre>
               )}
               {ca.comando && (
-                <div className="text-[11px] font-mono text-[#a080f0] bg-[#1b1b1b] p-3 rounded-lg">{ca.comando}</div>
+                <div className="text-[11px] font-mono text-[#a080f0] bg-[#1b1b1b] p-3 rounded-lg">
+                  {ca.comando}
+                </div>
               )}
               {ca.diff && ca.diff.length > 0 && (
                 <div className="bg-[#1b1b1b] p-3 rounded-lg max-h-60 overflow-y-auto">
@@ -211,16 +233,24 @@ export function AiRunHost({
                     <div
                       key={i}
                       className={`text-[11px] font-mono whitespace-pre-wrap ${
-                        d.kind === 'add' ? 'text-[#46d478]' : d.kind === 'del' ? 'text-[#e04040]' : 'text-[#999999]'
+                        d.kind === 'add'
+                          ? 'text-[#46d478]'
+                          : d.kind === 'del'
+                            ? 'text-[#e04040]'
+                            : 'text-[#999999]'
                       }`}
                     >
                       {d.text}
                     </div>
                   ))}
-                  {ca.diffTruncated && <p className="text-[10px] text-[#666666] mt-1">…diff truncado</p>}
+                  {ca.diffTruncated && (
+                    <p className="text-[10px] text-[#666666] mt-1">…diff truncado</p>
+                  )}
                 </div>
               )}
-              {ca.irreversivel && <p className="text-[11px] text-[#f0b820]">Esta acao nao pode ser desfeita.</p>}
+              {ca.irreversivel && (
+                <p className="text-[11px] text-[#f0b820]">Esta ação nao pode ser desfeita.</p>
+              )}
             </div>
             <div className="flex items-center justify-end px-5 py-3 border-t border-[#3b3b3b] gap-2">
               <button
@@ -292,7 +322,9 @@ export function AiRunHost({
                       onChange={() => toggleApproval(pa.convId, w.id)}
                       className="mt-0.5 accent-[#7c3aed]"
                     />
-                    <span className="text-sm text-[#d4d4d4]">{describeToolCall(w.name, w.args)}</span>
+                    <span className="text-sm text-[#d4d4d4]">
+                      {describeToolCall(w.name, w.args)}
+                    </span>
                   </label>
                 ))}
               </div>

@@ -67,6 +67,7 @@ export const FINANCIAL_CATEGORIES = [
   'Parcelamento de Fatura',
   'Pet',
   'Pix no crédito',
+  'Recarga e plano de celular',
   'Reembolso',
   'Salário',
   'Saldo',

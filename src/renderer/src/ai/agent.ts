@@ -283,6 +283,35 @@ export function routeModel(userText: string, cfg: AIConfig): string {
   return COMPLEX_TASK_PATTERN.test(normalizeForRoute(userText)) ? complex : cfg.model
 }
 
+/** Selects a small default budget when the user did not configure a fixed cap. */
+export function suggestMaxSteps(userText: string, autoApprove = false): number {
+  const text = normalizeForRoute(userText)
+  const readOnly =
+    /\b(apenas\s+(leia|ler)|so\s+(leia|ler)|mostre|exiba|qual(is)?\s+(o|a|os|as)?\s*(codigo|func|trecho)|sem\s+alterar)\b/
+  if (readOnly.test(text)) return 2
+
+  const broadRedesign =
+    /\b(refaca|redesenh|redesign|design.*(pagina|tela)|pagina.*(inteira|toda)|tela.*(inteira|toda)|layout completo)\b/.test(
+      text
+    )
+  if (broadRedesign) return 4
+
+  const narrowChange = /\b(css|font-size|fonte|cor|label|tag|formatduration|cronometro)\b/.test(
+    text
+  )
+  const change = /\b(corri|implement|adicione|altere|mude|reduz|aument|troque|ajuste)\w*/.test(text)
+  if (narrowChange && change) return 4
+
+  const complex =
+    /\b(arquitetura|migr|refator.*ampl|varios arquivos|multiplos arquivos|integracao|performance|investig|depura|debug)\w*/.test(
+      text
+    )
+  if (complex) return 15
+  if (change || COMPLEX_TASK_PATTERN.test(text)) return 8
+
+  return autoApprove ? 20 : 15
+}
+
 /** The text of the last user turn in a conversation — what routeModel weighs. */
 function lastUserText(conversation: ApiMessage[]): string {
   for (let i = conversation.length - 1; i >= 0; i--) {
@@ -627,7 +656,11 @@ export interface PrunedCallMeasurement {
  */
 export function measurePrunedCall(raw: ApiMessage[], pruned: ApiMessage[]): PrunedCallMeasurement {
   const contentChars = (m: ApiMessage): number =>
-    typeof m.content === 'string' ? m.content.length : m.content ? JSON.stringify(m.content).length : 0
+    typeof m.content === 'string'
+      ? m.content.length
+      : m.content
+        ? JSON.stringify(m.content).length
+        : 0
 
   let sentChars = 0
   for (const m of pruned) sentChars += contentChars(m)
@@ -635,7 +668,8 @@ export function measurePrunedCall(raw: ApiMessage[], pruned: ApiMessage[]): Prun
   let savedChars = 0
   const n = Math.min(raw.length, pruned.length)
   for (let i = 0; i < n; i++) {
-    if (raw[i] !== pruned[i]) savedChars += Math.max(0, contentChars(raw[i]) - contentChars(pruned[i]))
+    if (raw[i] !== pruned[i])
+      savedChars += Math.max(0, contentChars(raw[i]) - contentChars(pruned[i]))
   }
 
   const toolName = new Map<string, string>()
@@ -940,10 +974,7 @@ export async function runAgent(
     // The briefing call also runs the lazy decay pass. Surface it only when it
     // actually retired something — rare, so it's a signal, not noise.
     if (brief?.archived) {
-      opts.onStatus?.(
-        `${brief.archived} memória(s) arquivada(s) por inatividade.`,
-        'remark'
-      )
+      opts.onStatus?.(`${brief.archived} memória(s) arquivada(s) por inatividade.`, 'remark')
     }
   } catch {
     /* memory is best-effort; a briefing failure never blocks the run */
@@ -968,6 +999,7 @@ export async function runAgent(
   const readRepeats = new Map<string, number>()
   const blindFileReads = new Map<string, number>()
   const searchTerms: string[] = []
+  let codeAgentStarted = false
 
   // Run-scoped progressive summarisation state. A rolling summary compresses
   // the middle of the history every SUMMARIZE_INTERVAL steps, keeping the
@@ -980,7 +1012,15 @@ export async function runAgent(
   // the exact-repeat one (same tool + args, READ_REPEAT_LIMIT) and the blind
   // whole-file one (same file re-read without a scope, BLIND_FILE_READ_LIMIT).
   const readBrake = (name: string, args: Record<string, unknown>): string | null => {
-    if (bumpReadRepeat(readRepeats, name, args) >= READ_REPEAT_LIMIT) {
+    const repeats = bumpReadRepeat(readRepeats, name, args)
+    // An exact code search can only return the same result; stop it on retry.
+    if (name === 'buscar_no_codigo' && repeats >= 2) {
+      return JSON.stringify({
+        error:
+          'Esta busca já foi executada nesta conversa com os mesmos argumentos. Use o resultado anterior; não repita a busca.'
+      })
+    }
+    if (repeats >= READ_REPEAT_LIMIT) {
       // The model is looping on the same read. Hand back a nudge to conclude
       // with what it has instead of burning steps re-fetching the same answer.
       return JSON.stringify({
@@ -1043,13 +1083,15 @@ export async function runAgent(
       // DeepSeek / Claude / Gemini cache hits aren't broken by pruning old
       // results. When disabled, prune stale read-tool results to save tokens
       // on providers without prompt caching.
-      const pruned =
-        rcfg.usePromptCaching !== false
-          ? msgs
-          : pruneSupersededResults(msgs)
+      const pruned = rcfg.usePromptCaching !== false ? msgs : pruneSupersededResults(msgs)
       // Instrument the prune on its first call — diagnostic for DevTools.
       if (pruned !== msgs && step === 0) {
-        const tally: PruneRunTally = { calls: 0, savedTotal: 0, maxSentChars: 0, maxSentReadChars: 0 }
+        const tally: PruneRunTally = {
+          calls: 0,
+          savedTotal: 0,
+          maxSentChars: 0,
+          maxSentReadChars: 0
+        }
         for (let s = 0; s <= step; s++) tallyPrune(tally, measurePrunedCall(msgs, pruned))
         logPruneMeasurement(tally)
       }
@@ -1060,7 +1102,8 @@ export async function runAgent(
       stepsRun++
       // The call is done, so its cost is known: attach it to this step's badge.
       // Only when billed — a 0 would read as "free" rather than "unknown".
-      if (cost.prompt + cost.completion > 0) progress.tokens = cost.prompt + cost.completion + (cost.reasoning ?? 0)
+      if (cost.prompt + cost.completion > 0)
+        progress.tokens = cost.prompt + cost.completion + (cost.reasoning ?? 0)
       const calls = assistant.tool_calls
       if (!calls || calls.length === 0) return contentText(assistant.content)
 
@@ -1082,7 +1125,11 @@ export async function runAgent(
           const args = call.function.arguments ? JSON.parse(call.function.arguments) : {}
           return { call, args: args as Record<string, unknown>, parseError: null as string | null }
         } catch {
-          return { call, args: {} as Record<string, unknown>, parseError: 'Argumentos inválidos (JSON)' }
+          return {
+            call,
+            args: {} as Record<string, unknown>,
+            parseError: 'Argumentos inválidos (JSON)'
+          }
         }
       })
 
@@ -1129,7 +1176,20 @@ export async function runAgent(
             }
           }
         }
+        if (name === 'rodar_agente_codigo') {
+          try {
+            codeAgentStarted = JSON.parse(result).status === 'solicitado'
+          } catch {
+            // A malformed tool result is not a successful delegation.
+          }
+        }
         msgs.push({ role: 'tool', tool_call_id: call.id, content: result })
+      }
+
+      // The code agent now owns the implementation. Continuing this chat loop
+      // would only duplicate discovery and spend tokens while it works.
+      if (codeAgentStarted) {
+        return 'Agente de código iniciado. Acompanhe o painel de saída para ver o progresso e o resultado.'
       }
 
       // Progressive summarisation: every SUMMARIZE_INTERVAL steps compress
@@ -1143,11 +1203,7 @@ export async function runAgent(
       // the system prompt at position 0 is never touched, and the summary
       // message at position 2 changes only every N steps — DeepSeek / Claude /
       // Gemini still cache positions 0-1 on every call.
-      if (
-        step > 4 &&
-        modelCalls < maxSteps - 1 &&
-        (step - lastSummaryStep) >= SUMMARIZE_INTERVAL
-      ) {
+      if (step > 4 && modelCalls < maxSteps - 1 && step - lastSummaryStep >= SUMMARIZE_INTERVAL) {
         try {
           // Find a safe cut point: a `tool` message references the
           // `tool_call_id` of a preceding `assistant`. If the tail starts
@@ -1173,7 +1229,12 @@ export async function runAgent(
           const mid = msgs.slice(2, cut)
           const tail = msgs.slice(cut)
           if (mid.length > 0) {
-            costRecords.push({ step: modelCalls + 1, prompt: 0, completion: 0, tools: ['compactar_historico'] })
+            costRecords.push({
+              step: modelCalls + 1,
+              prompt: 0,
+              completion: 0,
+              tools: ['compactar_historico']
+            })
             modelCalls++
             const summary = await summarizeHistory(rcfg, mid, rollingSummary, runOpts)
             rollingSummary = summary
@@ -1209,8 +1270,10 @@ export async function runAgent(
       'remark'
     )
     if (modelCalls >= maxSteps) {
-      return `Parei ao atingir o limite de ${maxSteps} chamadas ao modelo, sem conseguir concluir. ` +
+      return (
+        `Parei ao atingir o limite de ${maxSteps} chamadas ao modelo, sem conseguir concluir. ` +
         'Tente dividir o pedido em partes menores ou aumentar "Passos máximos" nas configurações.'
+      )
     }
     costRecords.push({ step: modelCalls + 1, prompt: 0, completion: 0, tools: [] })
     modelCalls++
