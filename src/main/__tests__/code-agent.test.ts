@@ -22,6 +22,7 @@ import {
   isRetryableStatus,
   CODE_AGENT_MAX_RETRIES,
   CODE_AGENT_MAX_STEPS,
+  suggestCodeAgentSteps,
   type ToolDef,
   type ToolContext,
   type CommandRunner,
@@ -48,7 +49,15 @@ describe('tool definitions', () => {
   it('exposes exactly the seven tools, each with a JSON schema', () => {
     const names = CODE_AGENT_TOOLS.map((t) => t.function.name)
     expect(names.sort()).toEqual(
-      ['buscar_na_web', 'buscar_no_codigo', 'escrever_arquivo', 'executar_comando', 'ler_arquivo', 'listar_arquivos', 'rodar_subagente'].sort()
+      [
+        'buscar_na_web',
+        'buscar_no_codigo',
+        'escrever_arquivo',
+        'executar_comando',
+        'ler_arquivo',
+        'listar_arquivos',
+        'rodar_subagente'
+      ].sort()
     )
     for (const t of CODE_AGENT_TOOLS) {
       expect(t.type).toBe('function')
@@ -73,19 +82,25 @@ describe('runCodeTool — read tools', () => {
   })
 
   it('reads a file with a char window and reports truncation', async () => {
-    const res = JSON.parse((await runCodeTool('ler_arquivo', { caminho: 'src/a.ts', max_chars: 6 }, ctx())).content)
+    const res = JSON.parse(
+      (await runCodeTool('ler_arquivo', { caminho: 'src/a.ts', max_chars: 6 }, ctx())).content
+    )
     expect(res.conteudo).toBe('export')
     expect(res.truncado).toBe(true)
     expect(res.proximoInicio).toBe(6)
   })
 
   it('refuses a path that escapes the root', async () => {
-    const res = JSON.parse((await runCodeTool('ler_arquivo', { caminho: '../../etc/passwd' }, ctx())).content)
+    const res = JSON.parse(
+      (await runCodeTool('ler_arquivo', { caminho: '../../etc/passwd' }, ctx())).content
+    )
     expect(res.error).toBeTruthy()
   })
 
   it('greps and groups matches by file', async () => {
-    const res = JSON.parse((await runCodeTool('buscar_no_codigo', { termo: 'const' }, ctx())).content)
+    const res = JSON.parse(
+      (await runCodeTool('buscar_no_codigo', { termo: 'const' }, ctx())).content
+    )
     const file = res.arquivos.find((a: { arquivo: string }) => a.arquivo === 'src/a.ts')
     expect(file.ocorrencias.length).toBe(2)
     expect(file.ocorrencias[0]).toMatchObject({ linha: 1 })
@@ -95,7 +110,8 @@ describe('runCodeTool — read tools', () => {
 describe('runCodeTool — write tool', () => {
   it('creates a new file and reports it', async () => {
     const res = JSON.parse(
-      (await runCodeTool('escrever_arquivo', { caminho: 'src/new.ts', conteudo: 'x' }, ctx())).content
+      (await runCodeTool('escrever_arquivo', { caminho: 'src/new.ts', conteudo: 'x' }, ctx()))
+        .content
     )
     expect(res).toMatchObject({ ok: true, criado: true })
     expect(await readFile(join(root, 'src', 'new.ts'), 'utf-8')).toBe('x')
@@ -108,7 +124,8 @@ describe('runCodeTool — write tool', () => {
 
   it('refuses to write outside the root — confinement, not just approval', async () => {
     const res = JSON.parse(
-      (await runCodeTool('escrever_arquivo', { caminho: '../escape.ts', conteudo: 'z' }, ctx())).content
+      (await runCodeTool('escrever_arquivo', { caminho: '../escape.ts', conteudo: 'z' }, ctx()))
+        .content
     )
     expect(res.error).toBeTruthy()
     expect(existsSync(join(root, '..', 'escape.ts'))).toBe(false)
@@ -118,14 +135,18 @@ describe('runCodeTool — write tool', () => {
 describe('runCodeTool — executar_comando', () => {
   it('runs via the injected runner and caps nothing small', async () => {
     const run: CommandRunner = vi.fn(async () => ({ stdout: 'ok\n', stderr: '', code: 0 }))
-    const res = JSON.parse((await runCodeTool('executar_comando', { comando: 'echo ok' }, { root, run })).content)
+    const res = JSON.parse(
+      (await runCodeTool('executar_comando', { comando: 'echo ok' }, { root, run })).content
+    )
     expect(run).toHaveBeenCalledWith('echo ok', { cwd: root, timeoutMs: 60000 })
     expect(res).toMatchObject({ code: 0, stdout: 'ok\n' })
   })
 
   it('reports a timeout as such, not as a plain non-zero exit', async () => {
     const run: CommandRunner = async () => ({ stdout: '', stderr: '', code: null, timedOut: true })
-    const res = JSON.parse((await runCodeTool('executar_comando', { comando: 'sleep 999' }, { root, run })).content)
+    const res = JSON.parse(
+      (await runCodeTool('executar_comando', { comando: 'sleep 999' }, { root, run })).content
+    )
     expect(res.timeout).toBe(true)
   })
 
@@ -193,7 +214,9 @@ describe('readProjectGuide', () => {
 // --- The loop ---
 
 /** A callModel stub that plays scripted assistant turns in order. */
-function scriptedModel(turns: AgentMessage[]): (m: AgentMessage[], t: unknown) => Promise<{ message: AgentMessage }> {
+function scriptedModel(
+  turns: AgentMessage[]
+): (m: AgentMessage[], t: unknown) => Promise<{ message: AgentMessage }> {
   let i = 0
   return async () => ({ message: turns[Math.min(i++, turns.length - 1)] })
 }
@@ -221,7 +244,11 @@ describe('runCodeAgent — the loop', () => {
 
   it('asks approval for a write and does not write when denied', async () => {
     const model = scriptedModel([
-      { role: 'assistant', content: '', tool_calls: [toolCall('c1', 'escrever_arquivo', { caminho: 'x.ts', conteudo: 'q' })] },
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [toolCall('c1', 'escrever_arquivo', { caminho: 'x.ts', conteudo: 'q' })]
+      },
       { role: 'assistant', content: 'ok' }
     ])
     const approve = vi.fn(async () => false)
@@ -232,17 +259,68 @@ describe('runCodeAgent — the loop', () => {
 
   it('writes when the user approves', async () => {
     const model = scriptedModel([
-      { role: 'assistant', content: '', tool_calls: [toolCall('c1', 'escrever_arquivo', { caminho: 'x.ts', conteudo: 'q' })] },
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [toolCall('c1', 'escrever_arquivo', { caminho: 'x.ts', conteudo: 'q' })]
+      },
       { role: 'assistant', content: 'feito' }
     ])
     await runCodeAgent('sys', 'edite', ctx(), { callModel: model, approve: async () => true })
     expect(await readFile(join(root, 'x.ts'), 'utf-8')).toBe('q')
   })
 
+  it('requests and executes mutable actions in model order', async () => {
+    const events: string[] = []
+    const model = scriptedModel([
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [
+          toolCall('c1', 'escrever_arquivo', { caminho: 'x.ts', conteudo: 'q' }),
+          toolCall('c2', 'executar_comando', { comando: 'verificar' })
+        ]
+      },
+      { role: 'assistant', content: 'feito' }
+    ])
+
+    await runCodeAgent(
+      'sys',
+      'edite',
+      {
+        root,
+        run: async (command) => {
+          events.push(`command:${command}`)
+          return { stdout: '', stderr: '', code: 0 }
+        }
+      },
+      {
+        callModel: model,
+        approve: async ({ name }) => {
+          events.push(`approve:${name}`)
+          return true
+        },
+        onToolCall: (name) => events.push(`tool:${name}`)
+      }
+    )
+
+    expect(events).toEqual([
+      'approve:escrever_arquivo',
+      'tool:escrever_arquivo',
+      'approve:executar_comando',
+      'tool:executar_comando',
+      'command:verificar'
+    ])
+  })
+
   it('stops at maxSteps and still forces a final answer', async () => {
     // A model that always calls a tool would loop forever without the cap.
     const model = async (): Promise<{ message: AgentMessage }> => ({
-      message: { role: 'assistant', content: '', tool_calls: [toolCall('c', 'listar_arquivos', {})] }
+      message: {
+        role: 'assistant',
+        content: '',
+        tool_calls: [toolCall('c', 'listar_arquivos', {})]
+      }
     })
     const res = await runCodeAgent('sys', 'x', ctx(), {
       callModel: vi.fn(model),
@@ -266,6 +344,13 @@ describe('runCodeAgent — the loop', () => {
 
   it('defaults the cap to CODE_AGENT_MAX_STEPS', () => {
     expect(CODE_AGENT_MAX_STEPS).toBe(100)
+  })
+
+  it('suggests a tight cap for a narrow edit and more room for complex work', () => {
+    expect(suggestCodeAgentSteps('reduza o font-size do cronômetro')).toBe(4)
+    expect(suggestCodeAgentSteps('corrija o componente')).toBe(8)
+    expect(suggestCodeAgentSteps('investigue a arquitetura da integração')).toBe(15)
+    expect(suggestCodeAgentSteps('use as cores atuais e refaça toda a página')).toBe(25)
   })
 
   it('announces each step (1-based) with the cap, for the live counter', async () => {
@@ -404,7 +489,15 @@ describe('codeToolsFor', () => {
     const names = codeToolsFor({ pinnedFiles: true }).map((t) => t.function.name)
     expect(names).not.toContain('buscar_no_codigo')
     expect(names).not.toContain('listar_arquivos')
-    expect(names.sort()).toEqual(['buscar_na_web', 'escrever_arquivo', 'executar_comando', 'ler_arquivo', 'rodar_subagente'].sort())
+    expect(names.sort()).toEqual(
+      [
+        'buscar_na_web',
+        'escrever_arquivo',
+        'executar_comando',
+        'ler_arquivo',
+        'rodar_subagente'
+      ].sort()
+    )
   })
 })
 

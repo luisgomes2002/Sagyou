@@ -150,4 +150,23 @@ describe('FleetView', () => {
 
     expect(window.electronAPI.ai.codeAgent.stop).toHaveBeenCalledWith('run-1')
   })
+
+  it('restores pending approvals from status and lets the user approve them', async () => {
+    oneRun({
+      approvals: [
+        {
+          id: 'approval-1',
+          name: 'escrever_arquivo',
+          args: {},
+          resumo: 'Editar o cronômetro'
+        }
+      ]
+    })
+    render(<FleetView projects={projects} onOpenChat={() => {}} />)
+
+    expect(await screen.findByText('Aguardando sua aprovação (1)')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Aprovar' }))
+
+    expect(window.electronAPI.ai.codeAgent.approve).toHaveBeenCalledWith('approval-1', true)
+  })
 })

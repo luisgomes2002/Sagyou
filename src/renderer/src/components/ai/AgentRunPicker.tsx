@@ -20,6 +20,7 @@ export interface AgentRunMeta {
   startedAt: number
   endedAt: number
   exitCode: number
+  delivery?: 'applied' | 'merge_failed'
   fileCount: number
   /** Tokens billed across the run. Absent on old rows / no-usage providers. */
   tokens?: { promptTokens: number; completionTokens: number; reasoningTokens?: number }

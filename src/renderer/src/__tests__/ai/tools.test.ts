@@ -34,6 +34,7 @@ import {
   describeToolActivity,
   clearCodeSearchCache,
   PLANNER_EDIT_TOOL_DEFS,
+  DIRECT_CODE_AGENT_TOOL_DEFS,
   routeTools
 } from '../../ai/tools'
 import { PROJECT_COLORS, NOTE_COLORS } from '../../types'
@@ -2736,6 +2737,16 @@ describe('ajustar_bloco_e_deslocar_posteriores', () => {
       startTime: '23:30',
       endTime: '23:55'
     })
+  })
+})
+
+describe('routeTools — redesign visual', () => {
+  it('oferece somente a delegação direta para uma página inteira', () => {
+    const names = routeTools(
+      'Use as cores atuais como base, mas refaça todo o design da página.'
+    ).map((tool) => tool.function.name)
+    expect(names).toEqual(DIRECT_CODE_AGENT_TOOL_DEFS.map((tool) => tool.function.name))
+    expect(names).toEqual(['rodar_agente_codigo'])
   })
 })
 

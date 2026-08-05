@@ -214,6 +214,20 @@ interface CodeRunSummary {
   hint: AgentHint | null
   progress?: AgentProgress
   autoApprove?: boolean
+  approvals?: CodeApprovalRequest[]
+}
+
+interface CodeApprovalRequest {
+  runId: string
+  id: string
+  name: string
+  args: Record<string, unknown>
+  resumo: string
+  conteudo?: string
+  comando?: string
+  diff?: { kind: 'add' | 'del' | 'ctx' | 'meta'; text: string }[]
+  diffTruncated?: boolean
+  irreversivel?: boolean
 }
 
 /** A finished code-agent run, as listed in the run picker. */
@@ -228,6 +242,7 @@ interface AgentRunMeta {
   startedAt: number
   endedAt: number
   exitCode: number
+  delivery?: 'applied' | 'merge_failed'
   fileCount: number
   /** Tokens billed across the run. Absent on old rows / no-usage providers. */
   tokens?: { promptTokens: number; completionTokens: number }
@@ -459,7 +474,7 @@ declare global {
           ) => () => void
           /** A recognised environment failure hit mid-run (sandbox couldn't start, …). */
           onHint: (cb: (hint: { runId: string } & AgentHint) => void) => () => void
-          onAutoChanged: (cb: (payload: { runId: string; autoApprove: boolean }) => void) => () => void
+          onAutoChanged: (cb: (payload: { runId: string; autoApprove: boolean; resolvedApprovalIds?: string[] }) => void) => () => void
         }
         jail: {
           status: (refresh?: boolean) => Promise<{

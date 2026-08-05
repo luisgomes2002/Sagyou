@@ -5,7 +5,12 @@ import { registryEntries } from './tools/entries'
 import type { AITool, ToolDef } from './tools/helpers'
 
 export type { ToolDef, AITool }
-export { clearCodeSearchCache, codeSearchCache, CODE_SEARCH_TTL_MS, CODE_SEARCH_CACHE_MAX } from './tools/helpers'
+export {
+  clearCodeSearchCache,
+  codeSearchCache,
+  CODE_SEARCH_TTL_MS,
+  CODE_SEARCH_CACHE_MAX
+} from './tools/helpers'
 
 // ---------------------------------------------------------------------------
 // AI tool registry
@@ -15,7 +20,6 @@ export { clearCodeSearchCache, codeSearchCache, CODE_SEARCH_TTL_MS, CODE_SEARCH_
 // against the Zustand store. Add a tool by adding one entry to REGISTRY — the
 // definition list and the dispatcher are derived from it.
 // ---------------------------------------------------------------------------
-
 
 // --- Registry: name -> tool. This is the map the task asks for. ---
 const REGISTRY: Record<string, AITool> = registryEntries
@@ -30,15 +34,26 @@ export const TOOL_DEFS: ToolDef[] = Object.values(REGISTRY).map((t) => t.definit
  *  model *offers* to call. */
 const CODE_TOOL_NAMES = new Set([
   'ler_projetos',
-  'listar_arquivos', 'ler_arquivo', 'buscar_no_codigo',
+  'listar_arquivos',
+  'ler_arquivo',
+  'buscar_no_codigo',
   'rodar_agente_codigo',
   'buscar_na_web',
-  'buscar_memoria', 'salvar_memoria', 'buscar_conversas', 'ler_conversa', 'verificar_memorias',
+  'buscar_memoria',
+  'salvar_memoria',
+  'buscar_conversas',
+  'ler_conversa',
+  'verificar_memorias',
   'ler_linhagem',
   'resolver_termo'
 ])
 export const CODE_TOOL_DEFS: ToolDef[] = Object.values(REGISTRY)
   .filter((t) => CODE_TOOL_NAMES.has(t.definition.function.name))
+  .map((t) => t.definition)
+
+/** A clear visual redesign needs no chat-side discovery: start the native agent. */
+export const DIRECT_CODE_AGENT_TOOL_DEFS: ToolDef[] = Object.values(REGISTRY)
+  .filter((t) => t.definition.function.name === 'rodar_agente_codigo')
   .map((t) => t.definition)
 
 /** Kanban-only tool subset — excludes code-reading tools (listar_arquivos,
@@ -48,17 +63,34 @@ export const CODE_TOOL_DEFS: ToolDef[] = Object.values(REGISTRY)
 const KANBAN_TOOL_NAMES = new Set([
   'data_de_hoje',
   'ler_projetos',
-  'ler_tasks', 'criar_tasks', 'atualizar_task', 'mover_task', 'concluir_task', 'deletar_task',
+  'ler_tasks',
+  'criar_tasks',
+  'atualizar_task',
+  'mover_task',
+  'concluir_task',
+  'deletar_task',
   'iniciar_cronometro',
-  'ler_financeiro', 'criar_transacao',
-  'ler_metas', 'criar_meta', 'atualizar_meta',
-  'ler_habitos', 'marcar_habito',
-  'ler_notas', 'criar_nota',
+  'ler_financeiro',
+  'criar_transacao',
+  'ler_metas',
+  'criar_meta',
+  'atualizar_meta',
+  'ler_habitos',
+  'marcar_habito',
+  'ler_notas',
+  'criar_nota',
   'criar_projeto',
-  'criar_sprints', 'atribuir_sprint',
-  'ler_plano', 'criar_plano', 'atualizar_plano',
+  'criar_sprints',
+  'atribuir_sprint',
+  'ler_plano',
+  'criar_plano',
+  'atualizar_plano',
   'ler_documento',
-  'buscar_memoria', 'salvar_memoria', 'buscar_conversas', 'ler_conversa', 'verificar_memorias',
+  'buscar_memoria',
+  'salvar_memoria',
+  'buscar_conversas',
+  'ler_conversa',
+  'verificar_memorias',
   'ler_linhagem',
   'resolver_termo',
   'buscar_na_web',
@@ -99,11 +131,18 @@ export function routeTools(userText: string): ToolDef[] {
     .normalize('NFD')
     .replace(/\p{Diacritic}/gu, '')
 
-  const codeWords = /\b(codigo|arquivo|funcao|bug|refator|implement|backup|back-end|backend|front-end|frontend|api|component|modulo|typescript|javascript|css|html|teste|typecheck|lint|build|deploy|git|commit|branch|merge|diff|log|compil|execut|script|roda|rode|rodar agente|agente de codigo|sandbox|electron|react|zustand|sqlite|ipc|handler|preload|renderer|main process)\w*/
-  const plannerContextWords = /\b(plano|planej|agenda|bloco|rotina|horario|dia|atividad|trabalho)\w*/
-  const plannerEditWords = /\b(ajust|atualiz|alter|mud|remarc|empurr|desloc|adiant|atras|estend|encurt|prolong|reduz|aument|diminu|termin)\w*/
-  const kanbanWords = /\b(task|projeto|coluna|kanban|quadro|sprint|scrum|habito|meta|objetivo|financeiro|transacao|gasto|receita|despesa|orcamento|compras?|lista de compras|supermercado|nota|canvas|cronometro|timer|plano|planej|saldo|conta|fatura|boleto|pagar|pagamento|renda|ganhos?|gastos|economia|orçamento|dia|semana|mes\b|hoje|amanha|rotina|lembrete)\w*/
+  const directVisualImplementation =
+    /\b(refaca|redesenh|redesign|design.*(pagina|tela)|pagina.*(inteira|toda)|tela.*(inteira|toda)|layout completo)\b/
+  const codeWords =
+    /\b(codigo|arquivo|funcao|bug|refator|implement|backup|back-end|backend|front-end|frontend|api|component|modulo|typescript|javascript|css|html|teste|typecheck|lint|build|deploy|git|commit|branch|merge|diff|log|compil|execut|script|roda|rode|rodar agente|agente de codigo|sandbox|electron|react|zustand|sqlite|ipc|handler|preload|renderer|main process|layout|design|pagina|tela|cores?|paleta|ui|ux)\w*/
+  const plannerContextWords =
+    /\b(plano|planej|agenda|bloco|rotina|horario|dia|atividad|trabalho)\w*/
+  const plannerEditWords =
+    /\b(ajust|atualiz|alter|mud|remarc|empurr|desloc|adiant|atras|estend|encurt|prolong|reduz|aument|diminu|termin)\w*/
+  const kanbanWords =
+    /\b(task|projeto|coluna|kanban|quadro|sprint|scrum|habito|meta|objetivo|financeiro|transacao|gasto|receita|despesa|orcamento|compras?|lista de compras|supermercado|nota|canvas|cronometro|timer|plano|planej|saldo|conta|fatura|boleto|pagar|pagamento|renda|ganhos?|gastos|economia|orçamento|dia|semana|mes\b|hoje|amanha|rotina|lembrete)\w*/
 
+  if (directVisualImplementation.test(t)) return DIRECT_CODE_AGENT_TOOL_DEFS
   if (codeWords.test(t)) return CODE_TOOL_DEFS
   if (plannerContextWords.test(t) && plannerEditWords.test(t)) return PLANNER_EDIT_TOOL_DEFS
   if (kanbanWords.test(t)) return KANBAN_TOOL_DEFS

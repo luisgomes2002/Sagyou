@@ -43,6 +43,8 @@ export interface AgentRunMeta {
   startedAt: number
   endedAt: number
   exitCode: number
+  /** Whether an isolated worktree was delivered back to the original tree. */
+  delivery?: 'applied' | 'merge_failed'
   /** Files the diff touched — the one number worth showing before opening it. */
   fileCount: number
   /** Tokens billed across the run (prompt + completion). Absent on old rows and
@@ -101,6 +103,7 @@ export function normalizeRuns(raw: unknown): AgentRunMeta[] {
       startedAt: Number(m.startedAt) || 0,
       endedAt: Number(m.endedAt) || 0,
       exitCode: Number.isFinite(Number(m.exitCode)) ? Number(m.exitCode) : 0,
+      ...((m.delivery === 'applied' || m.delivery === 'merge_failed') ? { delivery: m.delivery } : {}),
       fileCount: Number(m.fileCount) || 0,
       ...readTokens(m.tokens)
     })

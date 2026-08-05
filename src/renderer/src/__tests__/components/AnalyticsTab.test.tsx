@@ -116,4 +116,40 @@ describe('AnalyticsTab', () => {
     expect(getAllByText('Cartão').length).toBeGreaterThan(0)
     expect(getAllByText('R$ 500,00').length).toBeGreaterThan(0)
   })
+
+  it('usa a data do detalhe do cartão nas categorias, não o vencimento da fatura', () => {
+    const cardList: FinancialTable = {
+      ...list,
+      transactions: [{
+        id: 'card-august',
+        description: 'Fatura do cartão',
+        amount: '28.45',
+        type: 'expense',
+        date: '2025-08-05',
+        category: 'Cartão',
+        details: [{
+          id: 'ai-july',
+          description: 'DeepSeek',
+          amount: '28.45',
+          category: 'AI Tokens',
+          date: '2025-07-28'
+        }]
+      }]
+    }
+    const { getAllByText, queryByText } = render(
+      <AnalyticsTab
+        list={cardList}
+        selectedYear="2025"
+        onYearChange={vi.fn()}
+        selectedMonth="07"
+        onMonthChange={vi.fn()}
+        catView="expense"
+        onCatViewChange={vi.fn()}
+      />
+    )
+
+    expect(getAllByText('AI Tokens').length).toBeGreaterThan(0)
+    expect(getAllByText('R$ 28,45').length).toBeGreaterThan(0)
+    expect(queryByText('Cartão')).toBeNull()
+  })
 })
