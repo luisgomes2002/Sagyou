@@ -1188,6 +1188,26 @@ const SUMMARIZE_INTERVAL = 10
 /** How many recent messages to keep intact after summarisation (≈ 3 exchanges). */
 const KEEP_RECENT = 6
 
+/** Return a cut that never splits an assistant's tool calls from their results. */
+export function safeCompactionBoundary(messages: AgentMessage[], proposed: number): number {
+  const upper = Math.min(Math.max(2, proposed), messages.length)
+  for (let cut = upper; cut >= 2; cut--) {
+    const calls = new Map<string, number>()
+    const results = new Map<string, number>()
+    for (const message of messages.slice(cut)) {
+      for (const call of message.tool_calls ?? []) {
+        calls.set(call.id, (calls.get(call.id) ?? 0) + 1)
+      }
+      if (message.role === 'tool' && message.tool_call_id) {
+        results.set(message.tool_call_id, (results.get(message.tool_call_id) ?? 0) + 1)
+      }
+    }
+    const ids = new Set([...calls.keys(), ...results.keys()])
+    if ([...ids].every((id) => calls.get(id) === 1 && results.get(id) === 1)) return cut
+  }
+  return 2
+}
+
 /** Everything the loop needs from the outside, all injectable for tests. */
 export interface RunAgentDeps {
   /** One round-trip to the model with the tools attached. */
@@ -2045,43 +2065,8 @@ export async function runCodeAgent(
         0
       )
       if (totalChars > 60_000) {
-        // Walk backwards from the end to find a compact boundary that does NOT
-        // split a tool call from its response. A tool message whose parent
-        // assistant is not in the tail causes a 400 error from the provider.
-        // We keep enough messages to cover at least a minimal complete turn.
         const MIN_KEEP = 4
-        let tailStart = msgs.length - MIN_KEEP
-        if (tailStart < 2) tailStart = 2
-
-        // Ensure no tool message in the tail has its parent assistant in mid.
-        for (let attempt = 0; attempt < 10; attempt++) {
-          const tail = msgs.slice(tailStart)
-          const tailToolCallIds = new Set<string>()
-          for (const m of tail) {
-            if (m.role === 'assistant' && m.tool_calls) {
-              for (const tc of m.tool_calls) tailToolCallIds.add(tc.id)
-            }
-          }
-          let orphaned = false
-          for (const m of tail) {
-            if (m.role === 'tool' && m.tool_call_id && !tailToolCallIds.has(m.tool_call_id)) {
-              // Find the parent assistant in mid and expand tailStart to include it.
-              for (let j = tailStart - 1; j >= 1; j--) {
-                const candidate = msgs[j]
-                if (
-                  candidate.role === 'assistant' &&
-                  candidate.tool_calls?.some((tc) => tc.id === m.tool_call_id)
-                ) {
-                  tailStart = j
-                  orphaned = true
-                  break
-                }
-              }
-              if (orphaned) break
-            }
-          }
-          if (!orphaned) break
-        }
+        const tailStart = safeCompactionBoundary(msgs, msgs.length - MIN_KEEP)
 
         const head = msgs.slice(0, 1)
         const tail = msgs.slice(tailStart)
@@ -2138,23 +2123,7 @@ export async function runCodeAgent(
       step - lastSummaryStep >= SUMMARIZE_INTERVAL
     ) {
       try {
-        // Safe cut: no tool orphan in the tail.
-        let cut = Math.max(2, msgs.length - KEEP_RECENT)
-        const tailTcIds = new Set<string>()
-        for (let i = cut; i < msgs.length; i++) {
-          if (msgs[i].role === 'tool' && msgs[i].tool_call_id) {
-            tailTcIds.add(msgs[i].tool_call_id!)
-          }
-        }
-        for (let i = cut - 1; i >= 2 && tailTcIds.size > 0; i--) {
-          for (const tc of msgs[i].tool_calls ?? []) {
-            tailTcIds.delete(tc.id)
-          }
-          if (tailTcIds.size === 0) {
-            cut = i
-            break
-          }
-        }
+        const cut = safeCompactionBoundary(msgs, msgs.length - KEEP_RECENT)
         const mid = msgs.slice(2, cut)
         const tail = msgs.slice(cut)
         if (mid.length > 0) {

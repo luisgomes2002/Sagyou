@@ -23,6 +23,7 @@ import {
   CODE_AGENT_MAX_RETRIES,
   CODE_AGENT_MAX_STEPS,
   suggestCodeAgentSteps,
+  safeCompactionBoundary,
   type ToolDef,
   type ToolContext,
   type CommandRunner,
@@ -41,6 +42,36 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await rm(root, { recursive: true, force: true })
+})
+
+describe('safeCompactionBoundary', () => {
+  it('keeps a parallel tool-call turn and all of its results together', () => {
+    const messages: AgentMessage[] = [
+      { role: 'system', content: 's' },
+      { role: 'user', content: 'u' },
+      { role: 'assistant', content: 'old' },
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [toolCall('a', 'listar_arquivos', {}), toolCall('b', 'listar_arquivos', {})]
+      },
+      { role: 'tool', tool_call_id: 'a', content: 'A' },
+      { role: 'tool', tool_call_id: 'b', content: 'B' },
+      { role: 'assistant', content: 'done' }
+    ]
+
+    expect(safeCompactionBoundary(messages, 5)).toBe(3)
+  })
+
+  it('leaves an ordinary text-only boundary unchanged', () => {
+    const messages: AgentMessage[] = [
+      { role: 'system', content: 's' },
+      { role: 'user', content: 'u' },
+      { role: 'assistant', content: 'a' },
+      { role: 'user', content: 'b' }
+    ]
+    expect(safeCompactionBoundary(messages, 3)).toBe(3)
+  })
 })
 
 const ctx = (): ToolContext => ({ root })

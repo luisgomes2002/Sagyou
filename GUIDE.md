@@ -400,6 +400,13 @@ kernel.apparmor_restrict_unprivileged_userns=0` (mostrado, nunca rodado); `bubbl
   árvore original; as seguintes usam worktrees exclusivos. A limpeza nunca remove
   worktrees de runs vivas, entregas aguardam a run direta e são serializadas por
   projeto com patches temporários únicos. Remover uma run não libera as demais.
+  No Windows, comandos Git usam sempre `git -C <dir>` — `cd E:\...` sem `/d`
+  falha quando o app está em `C:`. Caminhos de worktree são reservados antes do
+  `git worktree add` assíncrono, ou o terceiro disparo pode apagar o segundo como órfão.
+  `git init` sem commits também é suportado: `resolveWorktreeBase` usa um
+  `GIT_INDEX_FILE` temporário para criar um commit-objeto sem branch, sem tocar no
+  índice/HEAD do usuário e sem exigir identidade Git. Nunca peça commit inicial só
+  para habilitar paralelismo.
 - **O log é renderizado como terminal** (`AgentTerminal.tsx` + `utils/ansi.ts`):
   `parseAnsi` colore o SGR, **remove** cursor/OSC e **aplica** `\r`/erase-in-line por
   linha (não faz pré-passe no texto cru). Puro e testado (`utils/ansi.test.ts`).

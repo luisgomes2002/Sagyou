@@ -23,6 +23,7 @@ import { readFile } from 'fs/promises'
 const execAsync = promisify(execCallback)
 import { randomUUID } from 'crypto'
 import { CodeRunCoordinator } from './code-run-coordinator'
+import { addDetachedWorktree, resolveWorktreeBase } from './git-worktree'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import OpenAI from 'openai'
 import { loadData, saveData, eventsForEntity } from './store'
@@ -190,6 +191,8 @@ interface PendingCodeApproval {
 
 /** All runs in flight, keyed by run id. */
 const codeRuns = new Map<string, CodeRunState>()
+/** Worktree paths reserved during async creation, before their run is registered. */
+const reservedWorktrees = new Set<string>()
 
 const codeRunCoordinator = new CodeRunCoordinator()
 
@@ -1632,12 +1635,14 @@ app.whenReady().then(() => {
       // Cleanup worktrees órfãos (que sobraram de uma queda do app)
       try {
         const activeWorktrees = new Set(
-          [...codeRuns.values()]
-            .map((run) => run.worktreeDir)
-            .filter((path): path is string => path !== null)
-            .map((path) => resolve(path))
+          [
+            ...[...codeRuns.values()]
+              .map((run) => run.worktreeDir)
+              .filter((path): path is string => path !== null),
+            ...reservedWorktrees
+          ].map((path) => resolve(path))
         )
-        const { stdout: wtList } = await execAsync(`cd "${dir}" && git worktree list --porcelain`)
+        const { stdout: wtList } = await execAsync(`git -C "${dir}" worktree list --porcelain`)
         for (const line of wtList.split('\n')) {
           if (line.startsWith('worktree ') && line.includes('.sagyou-wt-')) {
             const orphanPath = line.slice(9).trim()
@@ -1646,7 +1651,7 @@ app.whenReady().then(() => {
               existsSync(orphanPath) &&
               !activeWorktrees.has(resolve(orphanPath))
             ) {
-              await execAsync(`cd "${dir}" && git worktree remove --force "${orphanPath}"`).catch(
+              await execAsync(`git -C "${dir}" worktree remove --force "${orphanPath}"`).catch(
                 () => {}
               )
             }
@@ -1666,24 +1671,28 @@ app.whenReady().then(() => {
       const releaseFailedStart = async (): Promise<void> => {
         codeRunCoordinator.unregister(dir, runId)
         if (!worktreeDir) return
+        reservedWorktrees.delete(resolve(worktreeDir))
         try {
-          await execAsync(`cd "${dir}" && git worktree remove --force "${worktreeDir}"`)
+          await execAsync(`git -C "${dir}" worktree remove --force "${worktreeDir}"`)
         } catch {
           // A later orphan sweep retries cleanup.
         }
       }
       if (needsWorktree) {
         worktreeDir = join(dir, `.sagyou-wt-${runId}`)
+        reservedWorktrees.add(resolve(worktreeDir))
         try {
           await execAsync(`git -C "${dir}" rev-parse --show-toplevel`)
-          await execAsync(`cd "${dir}" && git worktree add --detach "${worktreeDir}" HEAD`)
-        } catch {
+          const base = await resolveWorktreeBase(dir)
+          await addDetachedWorktree(dir, worktreeDir, base.revision)
+        } catch (error) {
           await releaseFailedStart()
+          const reason = error instanceof Error ? error.message : 'falha desconhecida do Git'
           return {
             success: false,
             error:
               'Já existe um agente de código rodando neste diretório e não foi possível criar um worktree. ' +
-              'Finalize o agente atual primeiro ou certifique-se de que o projeto é um repositório git.'
+              `O Git informou: ${reason}`
           }
         }
       }
@@ -1779,6 +1788,7 @@ app.whenReady().then(() => {
         worktreeMergeError: null
       }
       codeRuns.set(runId, run)
+      if (worktreeDir) reservedWorktrees.delete(resolve(worktreeDir))
 
       const send = (channel: string, data: unknown): void =>
         mainWindow?.webContents.send(channel, data)
@@ -2088,7 +2098,7 @@ app.whenReady().then(() => {
           // Fase 2(b): se usou worktree, mescla de volta e remove
           if (run.worktreeDir) {
             try {
-              const { stdout: patch } = await execAsync(`cd "${run.worktreeDir}" && git diff HEAD`)
+              const { stdout: patch } = await execAsync(`git -C "${run.worktreeDir}" diff HEAD`)
               if (patch.trim()) {
                 const fileCount = patch.split('\n').filter((l) => l.startsWith('diff --git')).length
                 if (codeRunCoordinator.hasDirectRun(dir, runId)) {
@@ -2100,7 +2110,7 @@ app.whenReady().then(() => {
                   writeFileSync(tmpPatch, patch, 'utf-8')
                   try {
                     await execAsync(
-                      `cd "${dir}" && git apply --whitespace=nowarn --ignore-space-change --ignore-whitespace "${tmpPatch}"`
+                      `git -C "${dir}" apply --whitespace=nowarn --ignore-space-change --ignore-whitespace "${tmpPatch}"`
                     )
                   } finally {
                     try {
@@ -2126,10 +2136,11 @@ app.whenReady().then(() => {
               await archiveAgentRun(runId, exitCode)
               archivedInWorktree = true
               try {
-                await execAsync(`cd "${dir}" && git worktree remove --force "${run.worktreeDir}"`)
+                await execAsync(`git -C "${dir}" worktree remove --force "${run.worktreeDir}"`)
               } catch {
                 // cleanup falhou — não crítico, o worktree fica órfão mas não afeta o app
               }
+              reservedWorktrees.delete(resolve(run.worktreeDir))
             }
           }
           if (!archivedInWorktree) {

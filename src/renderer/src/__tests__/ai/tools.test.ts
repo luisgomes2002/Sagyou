@@ -636,6 +636,14 @@ describe('rodar_agente_codigo', () => {
     expect(describeToolCall('rodar_agente_codigo', { task: 'x' })).toContain('⚠️')
   })
 
+  it('tells the model that same-folder agents can run in parallel', () => {
+    const description = TOOL_DEFS.find(
+      (tool) => tool.function.name === 'rodar_agente_codigo'
+    )?.function.description
+    expect(description).toContain('várias execuções simultâneas')
+    expect(description).toContain('worktrees isolados')
+  })
+
   it('launches the agent in the selected folder', async () => {
     projectWithRoots('web')
 
