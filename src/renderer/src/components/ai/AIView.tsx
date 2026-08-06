@@ -18,6 +18,7 @@ import { estimateAutoRun, cacheHitRate } from '../../utils/spend'
 import { ChatMarkdown } from './ChatMarkdown'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { SandboxOnboarding, type JailStatus } from '../modals/SandboxOnboarding'
+import { ModeToggleButton } from './ModeToggleButton'
 
 // Config is persisted via ai:config in the main process (see effects below);
 // AIConfig and the tool-calling loop live in ../ai/agent.
@@ -1470,7 +1471,10 @@ export function AIView({
               </div>
             )}
 
-            <button
+            <ModeToggleButton
+              active={planMode.has(conversationId!)}
+              label="Plano"
+              activeLabel="Plano: ON"
               onClick={() => {
                 if (!conversationId) return
                 setPlan(conversationId, !planMode.has(conversationId))
@@ -1480,29 +1484,27 @@ export function AIView({
                   ? 'Modo planejamento LIGADO — a IA analisa e planeja, sem escrever código. Shift+Tab para desligar.'
                   : 'Modo planejamento DESLIGADO — a IA pode escrever e editar código. Shift+Tab para ligar.'
               }
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                planMode.has(conversationId!)
-                  ? 'bg-[#a080f0]/20 text-[#a080f0]'
-                  : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a]'
-              }`}
-            >
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" />
-                <rect x="9" y="3" width="6" height="4" rx="1" />
-                <path d="M9 14h6" />
-                <path d="M9 18h3" />
-              </svg>
-              {planMode.has(conversationId!) ? 'Plano: ON' : 'Plano'}
-            </button>
+              icon={
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" />
+                  <rect x="9" y="3" width="6" height="4" rx="1" />
+                  <path d="M9 14h6" />
+                  <path d="M9 18h3" />
+                </svg>
+              }
+            />
 
-            <button
+            <ModeToggleButton
+              active={autoApprove.has(conversationId!)}
+              label="Auto"
+              activeLabel="Auto: ON"
               onClick={() => {
                 // Turning it OFF needs no ceremony — it only ever adds
                 // approvals back. Turning it ON is the spend decision, and the
@@ -1516,24 +1518,7 @@ export function AIView({
                   ? 'Modo autônomo LIGADO — a IA trabalha sem interrupção. Clique para voltar a pedir aprovação.'
                   : 'Modo autônomo DESLIGADO — cada ação pede sua aprovação. Clique para não perguntar mais.'
               }
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                autoApprove.has(conversationId!)
-                  ? 'bg-[#f0b820]/20 text-[#f0b820]'
-                  : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a]'
-              }`}
-            >
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path d="M13 2 3 14h9l-1 8 10-12h-9z" />
-              </svg>
-              {autoApprove.has(conversationId!) ? 'Auto: ON' : 'Auto'}
-            </button>
+            />
 
             <button
               onClick={handleNewConversation}

@@ -283,35 +283,6 @@ export function routeModel(userText: string, cfg: AIConfig): string {
   return COMPLEX_TASK_PATTERN.test(normalizeForRoute(userText)) ? complex : cfg.model
 }
 
-/** Selects a small default budget when the user did not configure a fixed cap. */
-export function suggestMaxSteps(userText: string, autoApprove = false): number {
-  const text = normalizeForRoute(userText)
-  const readOnly =
-    /\b(apenas\s+(leia|ler)|so\s+(leia|ler)|mostre|exiba|qual(is)?\s+(o|a|os|as)?\s*(codigo|func|trecho)|sem\s+alterar)\b/
-  if (readOnly.test(text)) return 2
-
-  const broadRedesign =
-    /\b(refaca|redesenh|redesign|design.*(pagina|tela)|pagina.*(inteira|toda)|tela.*(inteira|toda)|layout completo)\b/.test(
-      text
-    )
-  if (broadRedesign) return 4
-
-  const narrowChange = /\b(css|font-size|fonte|cor|label|tag|formatduration|cronometro)\b/.test(
-    text
-  )
-  const change = /\b(corri|implement|adicione|altere|mude|reduz|aument|troque|ajuste)\w*/.test(text)
-  if (narrowChange && change) return 4
-
-  const complex =
-    /\b(arquitetura|migr|refator.*ampl|varios arquivos|multiplos arquivos|integracao|performance|investig|depura|debug)\w*/.test(
-      text
-    )
-  if (complex) return 15
-  if (change || COMPLEX_TASK_PATTERN.test(text)) return 8
-
-  return autoApprove ? 20 : 15
-}
-
 /** The text of the last user turn in a conversation — what routeModel weighs. */
 function lastUserText(conversation: ApiMessage[]): string {
   for (let i = conversation.length - 1; i >= 0; i--) {

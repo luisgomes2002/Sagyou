@@ -143,6 +143,8 @@ Ações disponíveis: **Abrir chat** (volta para a conversa) e **Parar** (aborta
 
 Agentes que trabalham no mesmo projeto usam **leases cooperativas**: uma tarefa já atribuída a um agente não pode ser pega por outro. Se você deletar uma conversa que está rodando, o agente é abortado automaticamente.
 
+Agentes de código também podem trabalhar simultaneamente no mesmo repositório. Cada execução concorrente usa um worktree isolado; a entrega das alterações ao diretório original é ordenada, e conflitos permanecem disponíveis para revisão em vez de apagar o trabalho de outra execução.
+
 ### Skills
 
 Skills são arquivos `.md` que você cria e usa como system prompts sob demanda. No chat, digite `/` para ver a lista e selecionar — o conteúdo do arquivo é injetado como instrução extra para o modelo naquela conversa.
@@ -164,6 +166,10 @@ Dá para marcar **mais de uma pasta** (útil para front-end e back-end em reposi
 Para **alterar** código, use o agente de código nativo — ele roda com o provedor configurado na seção **Agente de Código** das configurações (cada campo em branco herda o valor do provedor principal) e edita arquivos no diretório do caminho de código ativo.
 
 Cada ação de escrita ou comando passa por aprovação antes de rodar. O agente não faz commit — as mudanças aparecem no painel de diff para você revisar e commitar por conta própria. A saída aparece ao vivo no app.
+
+O agente principal não encerra por um número fixo de passos: ele segue até concluir ou até você usar **Parar**. O painel mostra apenas o passo atual; proteções contra leituras, buscas e comandos repetidos continuam evitando loops.
+
+A validação acompanha a stack detectada: projetos Node usam seus scripts, enquanto uma página HTML estática não tenta executar npm. Leituras e reescritas grandes também são compactadas depois de aplicadas para reduzir o gasto das rodadas seguintes.
 
 > O agente usa a mesma Base URL / API Key / Model do chat, ou um provedor separado se você configurar um na seção **Agente de Código** das configurações. Aponte para um repositório com Git e commits em dia — assim dá para revisar o diff e reverter se não gostar.
 

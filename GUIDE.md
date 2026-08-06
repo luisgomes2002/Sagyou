@@ -249,7 +249,7 @@ CODE_READ_PAGE`) devolve só ~100 linhas + `simbolos` + `dica`, não a janela de
    o modelo abre a conversa inteira com `ler_conversa` (senão gasta buscas às cegas e refaz
    do zero). Compartilhada entre chat e code-agent.
 
-10. **Orçamento é por chamada do modelo, não por tool round.** `maxSteps` limita toda chamada bem-sucedida da run — rodadas principais, compactação e resposta final. O contexto de uma conversa reaberta entra limitado (12 mensagens/24k caracteres/1 imagem); ferramentas além de 8 numa rodada recebem resultado sintético. O limite é **por execução**: várias conversas/projetos continuam rodando em paralelo. O subagente de pesquisa exige aprovação, é no máximo 2 por run e seu resumo é cortado antes de voltar ao agente pai.
+10. **Orçamento é por chamada do modelo, não por tool round.** `maxSteps` limita toda chamada bem-sucedida da run — rodadas principais, compactação e resposta final. Sem configuração explícita, o chat usa 40 no manual e 100 no Auto; não reintroduza heurísticas 2/4/8/15 por texto, pois elas encerram orquestrações no momento de disparar agentes. O contexto de uma conversa reaberta entra limitado (12 mensagens/24k caracteres/1 imagem); ferramentas além de 8 numa rodada recebem resultado sintético. O limite é **por execução**: várias conversas/projetos continuam rodando em paralelo. O subagente de pesquisa exige aprovação, é no máximo 2 por run e seu resumo é cortado antes de voltar ao agente pai.
 
 ## Segurança — o que já está resolvido
 
@@ -344,6 +344,11 @@ activeTimers[0]` no `settings` do DB (não viaja no backup); `normalizeTimers`
   o modelo e o disco são (1) `confineToRoot` (todo caminho preso à pasta do
   projeto) e (2) **aprovação por ação** antes de qualquer escrita ou comando. As
   duas são carga, não enfeite.
+- **O agente de código principal não tem teto de passos.** O launcher passa
+  `maxSteps: 0` (a UI mostra apenas o passo atual) e a execução termina ao concluir, ao ser
+  parada pelo usuário ou por um bloqueio real. Não restaure a antiga heurística
+  4/8/15/25: ela encerrava recuperações válidas após patches parciais. Freios de
+  repetição continuam obrigatórios para impedir loops caros.
 - **5 ferramentas**: `listar_arquivos`, `ler_arquivo`, `buscar_no_codigo` (leitura,
   rodam direto), `escrever_arquivo`, `executar_comando` (`needsApproval` → passam por
   card). A aprovação é um **ida-e-volta de IPC**: o loop manda `ai:code-agent:approve-request`
@@ -352,6 +357,12 @@ activeTimers[0]` no `settings` do DB (não viaja no backup); `normalizeTimers`
   aprovação parada — não há mais processo filho pra matar. `executar_comando` usa
   `exec` async (não `execSync`, que travaria o event loop do main), com timeout e
   saída limitada.
+- **Validação segue a stack, não uma receita fixa.** O handler só exige
+  `npm run typecheck` quando existe `package.json` na raiz ativa; HTML estático
+  não tenta npm. Um comando idêntico que falhou é bloqueado na segunda chamada.
+  Depois de uma escrita, leituras grandes e o payload integral de reescrita são
+  reduzidos a recibos no histórico — mantê-los faria o mesmo HTML ser cobrado em
+  toda rodada seguinte.
 - 🛡️ **Sandbox obrigatório (`main/ai-jail.ts`)**: a aprovação cobre a _intenção_, o
   ai-jail cobre o _alcance_ — confina os comandos à pasta do projeto (bubblewrap no
   Linux, sandbox-exec no macOS). `sandboxEnabled` ausente = **ligado**; só `false`
@@ -384,6 +395,11 @@ kernel.apparmor_restrict_unprivileged_userns=0` (mostrado, nunca rodado); `bubbl
 - ⚠️ **O agente não commita nada** — o painel de Mudanças existe pra o _usuário_
   revisar e commitar. `captureBase` roda **antes do loop** e o diff vai da base à
   worktree, então nada se perde deixando a árvore suja.
+- **Agentes de código concorrentes no mesmo projeto são contados por run**, não
+  por um booleano de diretório (`CodeRunCoordinator`). A primeira run pode usar a
+  árvore original; as seguintes usam worktrees exclusivos. A limpeza nunca remove
+  worktrees de runs vivas, entregas aguardam a run direta e são serializadas por
+  projeto com patches temporários únicos. Remover uma run não libera as demais.
 - **O log é renderizado como terminal** (`AgentTerminal.tsx` + `utils/ansi.ts`):
   `parseAnsi` colore o SGR, **remove** cursor/OSC e **aplica** `\r`/erase-in-line por
   linha (não faz pré-passe no texto cru). Puro e testado (`utils/ansi.test.ts`).
@@ -399,13 +415,12 @@ kernel.apparmor_restrict_unprivileged_userns=0` (mostrado, nunca rodado); `bubbl
   modelo, dos arquivos indicados e das decisões, e fecha com `[sagyou] duração: N.Ns`.
   O objetivo é o agente editar direto, sem grep exploratório.
 - **O system prompt do agente traz um briefing de memória E de conversas**: além das
-  memórias do projeto (`formatMemoriesForPrompt`), o run handler roda
-  `briefConversationsForTask(loadConversations(), task, {excludeId: convId})`
-  (`conversation-search.ts`, puro/testado) e passa como `conversas` pro
-  `buildSystemPrompt` — reaproveita decisões/armadilhas já discutidas. Busca pelas
-  **palavras-chave da task** (uma frase inteira nunca é substring de mensagem antiga),
-  exclui o chat que disparou o run, e é best-effort/guardado como a memória. No chat, o
-  prompt manda consultar `buscar_conversas`/`buscar_memoria` antes de disparar.
+  memórias do projeto (`formatMemoriesForPrompt`), o run handler inclui até 6k chars
+  da **conversa atual** (`briefCurrentConversation`: primeiro pedido + cauda recente,
+  sem status) e busca outras conversas relacionadas com `briefConversationsForTask`.
+  Isso é obrigatório também com arquivos pinados: uma resposta curta como “sim” não
+  pode perder o assunto, o arquivo exato ou as restrições originais. O histórico é
+  capped para não voltar a cobrar o chat inteiro em toda rodada.
 - 🛡️ **`detectAgentHint` ligado ao agente nativo**: o `CommandRunner` do run passa a
   saída (stdout+stderr) de todo comando que falha por `detectAgentHint` — é o único
   ponto com a saída completa (o painel só recebe o resumo de uma linha, sem o marcador

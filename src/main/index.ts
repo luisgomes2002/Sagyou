@@ -4,7 +4,7 @@ process.env.LC_TIME = 'pt_BR.UTF-8'
 process.env.LANGUAGE = 'pt_BR:pt'
 
 import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
-import { join, relative, sep } from 'path'
+import { join, relative, resolve, sep } from 'path'
 import {
   readFileSync,
   writeFileSync,
@@ -22,6 +22,7 @@ import { promisify } from 'util'
 import { readFile } from 'fs/promises'
 const execAsync = promisify(execCallback)
 import { randomUUID } from 'crypto'
+import { CodeRunCoordinator } from './code-run-coordinator'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import OpenAI from 'openai'
 import { loadData, saveData, eventsForEntity } from './store'
@@ -77,7 +78,6 @@ import {
   readProjectGuide,
   dirTree,
   defaultCommandRunner,
-  suggestCodeAgentSteps,
   type InlinedFile,
   type AgentMessage,
   type CommandRunner,
@@ -96,7 +96,11 @@ import {
   type JailStatus,
   type InstallDeps
 } from './ai-jail'
-import { searchConversations, briefConversationsForTask } from './conversation-search'
+import {
+  searchConversations,
+  briefConversationsForTask,
+  briefCurrentConversation
+} from './conversation-search'
 import { fetchWeb } from './web-fetch'
 import { renderWeb } from './web-render'
 import { getExchangeRate } from './financial-exchange'
@@ -187,8 +191,7 @@ interface PendingCodeApproval {
 /** All runs in flight, keyed by run id. */
 const codeRuns = new Map<string, CodeRunState>()
 
-/** Directories that currently have a code agent running — one run per dir. */
-const codeAgentDirs = new Set<string>()
+const codeRunCoordinator = new CodeRunCoordinator()
 
 /**
  * Backward compat: the last finished run's state, kept after the run is cleaned
@@ -1628,11 +1631,21 @@ app.whenReady().then(() => {
       }
       // Cleanup worktrees órfãos (que sobraram de uma queda do app)
       try {
+        const activeWorktrees = new Set(
+          [...codeRuns.values()]
+            .map((run) => run.worktreeDir)
+            .filter((path): path is string => path !== null)
+            .map((path) => resolve(path))
+        )
         const { stdout: wtList } = await execAsync(`cd "${dir}" && git worktree list --porcelain`)
         for (const line of wtList.split('\n')) {
           if (line.startsWith('worktree ') && line.includes('.sagyou-wt-')) {
             const orphanPath = line.slice(9).trim()
-            if (orphanPath && existsSync(orphanPath)) {
+            if (
+              orphanPath &&
+              existsSync(orphanPath) &&
+              !activeWorktrees.has(resolve(orphanPath))
+            ) {
               await execAsync(`cd "${dir}" && git worktree remove --force "${orphanPath}"`).catch(
                 () => {}
               )
@@ -1645,13 +1658,27 @@ app.whenReady().then(() => {
 
       // Fase 2(b): se o dir já está ocupado, cria um git worktree isolado
       const runId = randomUUID()
+      const needsWorktree = codeRunCoordinator.hasActive(dir)
+      // Reserve synchronously before the first await below. Two IPC requests can
+      // otherwise both observe an idle directory and write to the original tree.
+      codeRunCoordinator.register(dir, runId, !needsWorktree)
       let worktreeDir: string | null = null
-      if (codeAgentDirs.has(dir)) {
+      const releaseFailedStart = async (): Promise<void> => {
+        codeRunCoordinator.unregister(dir, runId)
+        if (!worktreeDir) return
+        try {
+          await execAsync(`cd "${dir}" && git worktree remove --force "${worktreeDir}"`)
+        } catch {
+          // A later orphan sweep retries cleanup.
+        }
+      }
+      if (needsWorktree) {
         worktreeDir = join(dir, `.sagyou-wt-${runId}`)
         try {
           await execAsync(`git -C "${dir}" rev-parse --show-toplevel`)
           await execAsync(`cd "${dir}" && git worktree add --detach "${worktreeDir}" HEAD`)
         } catch {
+          await releaseFailedStart()
           return {
             success: false,
             error:
@@ -1662,7 +1689,10 @@ app.whenReady().then(() => {
       }
       const effectiveDir = worktreeDir ?? dir
       const task = typeof request.task === 'string' ? request.task.trim() : ''
-      if (!task) return { success: false, error: 'Tarefa vazia' }
+      if (!task) {
+        await releaseFailedStart()
+        return { success: false, error: 'Tarefa vazia' }
+      }
       // Files the caller pinned so the agent skips discovery. Confine each to the
       // root (same barrier as the read tools — a path is the model's, so it may
       // be `../../etc`), and drop anything that escapes or doesn't exist rather
@@ -1690,6 +1720,7 @@ app.whenReady().then(() => {
         : []
       const cfg = loadAIConfig()
       if (!cfg.baseUrl || !cfg.model) {
+        await releaseFailedStart()
         return {
           success: false,
           error: 'Configuração de IA incompleta (Base URL / Model)',
@@ -1711,6 +1742,7 @@ app.whenReady().then(() => {
       const sandboxOn = sandboxRequired(cfg)
       const jail = sandboxOn ? await getJailStatus() : null
       if (sandboxOn && !jail?.available) {
+        await releaseFailedStart()
         return {
           success: false,
           error:
@@ -1738,14 +1770,15 @@ app.whenReady().then(() => {
         model: caCfg.model,
         usage: { promptTokens: 0, completionTokens: 0 },
         step: 0,
-        maxSteps: suggestCodeAgentSteps(task),
+        // Zero means unlimited. The user stops a runaway run explicitly; loop
+        // brakes still block repeated reads/searches/commands.
+        maxSteps: 0,
         pendingApprovals: new Map(),
         autoApprove: typeof request.autoApprove === 'boolean' ? request.autoApprove : false,
         worktreeDir: worktreeDir,
         worktreeMergeError: null
       }
       codeRuns.set(runId, run)
-      codeAgentDirs.add(dir)
 
       const send = (channel: string, data: unknown): void =>
         mainWindow?.webContents.send(channel, data)
@@ -1869,14 +1902,20 @@ app.whenReady().then(() => {
       // the run — it doesn't need its own transcript pasted back. Best-effort,
       // same as memory: a search failure just omits the section.
       let conversas = ''
-      if (!hasPinnedFiles) {
-        try {
-          conversas = briefConversationsForTask(loadConversations(), task, {
-            excludeId: typeof request.convId === 'string' ? request.convId : null
-          })
-        } catch {
-          /* conversation briefing is best-effort; a failure leaves the prompt as-is */
-        }
+      try {
+        const conversationList = loadConversations()
+        const currentConversation = briefCurrentConversation(
+          conversationList,
+          typeof request.convId === 'string' ? request.convId : null
+        )
+        const relatedConversations = hasPinnedFiles
+          ? ''
+          : briefConversationsForTask(conversationList, task, {
+              excludeId: typeof request.convId === 'string' ? request.convId : null
+            })
+        conversas = [currentConversation, relatedConversations].filter(Boolean).join('\n\n')
+      } catch {
+        /* conversation briefing is best-effort; a failure leaves the prompt as-is */
       }
       // If the user explicitly said Node/commands aren't available, disable the
       // BEHAVIOR rule that tells the agent to run typecheck — the agent would try,
@@ -1894,7 +1933,8 @@ app.whenReady().then(() => {
         memories,
         conversas,
         decisoes,
-        noCommands
+        noCommands,
+        nodeProject: existsSync(join(effectiveDir, 'package.json'))
       })
 
       // Approval round-trip: the loop parks here, the renderer shows a card and
@@ -1996,6 +2036,7 @@ app.whenReady().then(() => {
               // handed the targets and their contents, so re-finding them is pure
               // waste of the step budget.
               tools: codeToolsFor({ pinnedFiles: files.length > 0 }),
+              requireTypecheck: existsSync(join(effectiveDir, 'package.json')),
               maxSteps: run.maxSteps,
               shouldAbort: () => run.abort,
               onStep: (step, max) => {
@@ -2050,17 +2091,23 @@ app.whenReady().then(() => {
               const { stdout: patch } = await execAsync(`cd "${run.worktreeDir}" && git diff HEAD`)
               if (patch.trim()) {
                 const fileCount = patch.split('\n').filter((l) => l.startsWith('diff --git')).length
-                const tmpPatch = join(dir, '.sagyou-wt-patch.diff')
-                writeFileSync(tmpPatch, patch, 'utf-8')
-                try {
-                  await execAsync(
-                    `cd "${dir}" && git apply --whitespace=nowarn --ignore-space-change --ignore-whitespace "${tmpPatch}"`
-                  )
-                } finally {
-                  try {
-                    unlinkSync(tmpPatch)
-                  } catch {}
+                if (codeRunCoordinator.hasDirectRun(dir, runId)) {
+                  emit('\n[worktree] aguardando o agente que escreve no diretório original…\n')
+                  await codeRunCoordinator.waitForDirectRun(dir, runId)
                 }
+                await codeRunCoordinator.deliver(dir, async () => {
+                  const tmpPatch = join(dir, `.sagyou-wt-patch-${runId}.diff`)
+                  writeFileSync(tmpPatch, patch, 'utf-8')
+                  try {
+                    await execAsync(
+                      `cd "${dir}" && git apply --whitespace=nowarn --ignore-space-change --ignore-whitespace "${tmpPatch}"`
+                    )
+                  } finally {
+                    try {
+                      unlinkSync(tmpPatch)
+                    } catch {}
+                  }
+                })
                 emit(
                   `\n[worktree] ${fileCount} arquivo(s) mesclado(s) do worktree para o diretório original\n`
                 )
@@ -2102,7 +2149,7 @@ app.whenReady().then(() => {
             completionTokens: run.usage.completionTokens
           }
           codeRuns.delete(runId)
-          codeAgentDirs.delete(dir)
+          codeRunCoordinator.unregister(dir, runId)
         }
       })()
 
@@ -2156,7 +2203,7 @@ app.whenReady().then(() => {
     const runs = [...codeRuns.values()]
     const first = runs[0]
     return {
-      running: codeAgentDirs.size > 0,
+      running: codeRuns.size > 0,
       log: first?.log ?? lastRunLog,
       model: first?.model ?? lastRunModel,
       hint: first?.hint ?? lastRunHint,

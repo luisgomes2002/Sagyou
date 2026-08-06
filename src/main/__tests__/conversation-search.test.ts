@@ -5,6 +5,7 @@ import { describe, it, expect } from 'vitest'
 import {
   searchConversations,
   briefConversationsForTask,
+  briefCurrentConversation,
   type SearchableConversation
 } from '../conversation-search'
 
@@ -197,5 +198,48 @@ describe('briefConversationsForTask', () => {
     )
     const brief = briefConversationsForTask(list, 'melhorar o deploy', { maxConversations: 3 })
     expect(brief.match(/- \[/g)).toHaveLength(3)
+  })
+})
+
+describe('briefCurrentConversation', () => {
+  it('keeps the original request when the latest user reply is only a confirmation', () => {
+    const list = [
+      conv('current', 'Landing page', [
+        {
+          role: 'user',
+          content: 'Crie landing-minimal.html para anunciar a pausa do projeto Murasaki.'
+        },
+        {
+          role: 'assistant',
+          content: 'Posso tentar novamente sem tocar em landing-dark.html.'
+        },
+        { role: 'user', content: 'sim' }
+      ])
+    ]
+
+    const brief = briefCurrentConversation(list, 'current')
+    expect(brief).toContain('CONTEXTO OBRIGATÓRIO')
+    expect(brief).toContain('landing-minimal.html')
+    expect(brief).toContain('projeto Murasaki')
+    expect(brief).toContain('Usuário: sim')
+  })
+
+  it('omits status traces and caps a large transcript', () => {
+    const list = [
+      conv('current', 'Longa', [
+        { role: 'user', content: 'pedido original' },
+        { role: 'status', content: 'Lendo arquivo enorme' },
+        { role: 'assistant', content: 'x'.repeat(10_000) }
+      ])
+    ]
+
+    const brief = briefCurrentConversation(list, 'current')
+    expect(brief).not.toContain('Lendo arquivo enorme')
+    expect(brief.length).toBeLessThan(6400)
+  })
+
+  it('returns empty when the conversation is unavailable', () => {
+    expect(briefCurrentConversation([], 'missing')).toBe('')
+    expect(briefCurrentConversation([], null)).toBe('')
   })
 })

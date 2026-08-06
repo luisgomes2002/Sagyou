@@ -403,7 +403,7 @@ function WeekView({
                 <div
                   key={h}
                   className="border-b border-white/[0.02]"
-                  style={{ height: HOUR_HEIGHT / 2 }}
+                  style={{ height: HOUR_HEIGHT }}
                 />
               ))}
               {(() => {
