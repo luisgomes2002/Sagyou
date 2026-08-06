@@ -114,6 +114,13 @@ describe('FleetView', () => {
     expect(screen.getByText(/\[tool\] ler_arquivo/)).toBeInTheDocument()
   })
 
+  it('shows only the current step for an unlimited agent', async () => {
+    oneRun({ progress: { step: 15, maxSteps: 0, promptTokens: 100, completionTokens: 20 } })
+    render(<FleetView projects={projects} onOpenChat={() => {}} />)
+
+    expect(await screen.findByText('15')).toHaveAttribute('title', 'Passo 15 — sem limite')
+  })
+
   it('shows the token spend per code-agent — input and output', async () => {
     oneRun()
     render(<FleetView projects={projects} onOpenChat={() => {}} />)
@@ -128,6 +135,15 @@ describe('FleetView', () => {
 
     await screen.findByText('Corrigir bug no login')
     expect(screen.getByText(/gpt-4/)).toBeInTheDocument()
+  })
+
+  it('uses the shared gray Auto: ON toggle without a lightning icon', async () => {
+    oneRun({ autoApprove: true })
+    render(<FleetView projects={projects} onOpenChat={() => {}} />)
+
+    const button = await screen.findByRole('button', { name: 'Auto: ON' })
+    expect(button).toHaveClass('bg-[#2a2a2a]', 'text-[#d4d4d4]')
+    expect(button.querySelector('svg')).toBeNull()
   })
 
   it('"Abrir chat" opens the inline chat view for a running code agent', async () => {

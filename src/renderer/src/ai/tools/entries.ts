@@ -238,8 +238,9 @@ export const registryEntries: Record<string, AITool> = {
     definition: fn(
       'ler_financeiro',
       'Resumo financeiro por tabela: totais de receitas/despesas/saldo, gastos por categoria, ' +
-        'metas financeiras e uma amostra das transações. Filtra por período (de/ate, YYYY-MM-DD) ' +
-        'e por tabela. Sem período, considera tudo.',
+        'metas financeiras e uma amostra das transações com seus subitens (por exemplo, as ' +
+        'compras individuais de uma fatura). Filtra por período (de/ate, YYYY-MM-DD) e por ' +
+        'tabela. Sem período, considera tudo.',
       {
         type: 'object',
         properties: {
@@ -302,7 +303,14 @@ export const registryEntries: Record<string, AITool> = {
               descricao: t.description,
               tipo: t.type === 'income' ? 'receita' : 'despesa',
               valor: t.amount,
-              categoria: t.category
+              categoria: t.category,
+              subitens: (t.details ?? []).map((detail) => ({
+                descricao: detail.description,
+                valor: detail.amount,
+                categoria: detail.category,
+                dataCompra: detail.date,
+                vinculado: !!detail.linkedTransactionId
+              }))
             }))
           return {
             nome: l.name,

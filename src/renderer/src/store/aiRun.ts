@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { v4 as uuidv4 } from 'uuid'
-import { runAgent, resolveMaxSteps, suggestMaxSteps, callModel, contentText } from '../ai/agent'
+import { runAgent, resolveMaxSteps, callModel, contentText } from '../ai/agent'
 import { CODE_TOOL_DEFS, routeTools } from '../ai/tools'
 import codePromptMd from '../ai/code-prompt.md?raw'
 import { useKanbanStore } from './kanban'
@@ -488,10 +488,7 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
         {
           projectId,
           convId,
-          maxSteps:
-            config.maxSteps === undefined
-              ? suggestMaxSteps(text, get().autoApprove.has(convId))
-              : resolveMaxSteps(config.maxSteps, get().autoApprove.has(convId)),
+          maxSteps: resolveMaxSteps(config.maxSteps, get().autoApprove.has(convId)),
           shouldAbort: () => get().abortRequested.has(convId),
           onStream: (t) => set((s) => ({ streaming: { ...s.streaming, [convId]: t } })),
           onToolStream: (names) =>

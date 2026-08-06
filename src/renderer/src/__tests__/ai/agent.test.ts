@@ -27,7 +27,6 @@ import {
   ELIDED,
   summarizeRunCost,
   routeModel,
-  suggestMaxSteps,
   type ApiMessage
 } from '../../ai/agent'
 import { runTool } from '../../ai/tools'
@@ -304,19 +303,6 @@ describe('resolveMaxSteps', () => {
 
   it('floors a fractional value', () => {
     expect(resolveMaxSteps(7.9, false)).toBe(7)
-  })
-})
-
-describe('suggestMaxSteps', () => {
-  it('uses a small budget for direct reads and narrow changes', () => {
-    expect(suggestMaxSteps('APENAS LEIA e mostre a função formatDuration')).toBe(2)
-    expect(suggestMaxSteps('reduza o font-size do cronômetro no CSS')).toBe(4)
-    expect(suggestMaxSteps('use as cores atuais e refaça toda a página')).toBe(4)
-  })
-
-  it('keeps room for regular and complex implementations', () => {
-    expect(suggestMaxSteps('corrija este bug no componente')).toBe(8)
-    expect(suggestMaxSteps('investigue a arquitetura e a integração')).toBe(15)
   })
 })
 

@@ -814,6 +814,62 @@ describe('ler_financeiro', () => {
     expect(t.truncado).toBe(true)
   })
 
+  it('exposes the individual purchases nested under an invoice transaction', async () => {
+    const lid = st().createList('Casa')
+    st().addTransaction(lid, {
+      description: 'Fatura do cartão',
+      amount: '350.5',
+      type: 'expense',
+      date: '2026-07-10',
+      category: 'Cartão',
+      details: [
+        {
+          id: 'detail-market',
+          description: 'Mercado',
+          amount: '250.5',
+          category: 'Alimentação',
+          date: '2026-06-22'
+        },
+        {
+          id: 'detail-streaming',
+          description: 'Streaming',
+          amount: '100',
+          category: 'Assinaturas',
+          date: '2026-06-25',
+          linkedTransactionId: 'mirror-tx'
+        }
+      ]
+    })
+
+    const t = table(await call('ler_financeiro', {}))
+    expect(t.amostraTransacoes).toEqual([
+      {
+        data: '2026-07-10',
+        descricao: 'Fatura do cartão',
+        tipo: 'despesa',
+        valor: '350.5',
+        categoria: 'Cartão',
+        subitens: [
+          {
+            descricao: 'Mercado',
+            valor: '250.5',
+            categoria: 'Alimentação',
+            dataCompra: '2026-06-22',
+            vinculado: false
+          },
+          {
+            descricao: 'Streaming',
+            valor: '100',
+            categoria: 'Assinaturas',
+            dataCompra: '2026-06-25',
+            vinculado: true
+          }
+        ]
+      }
+    ])
+    expect(t).toMatchObject({ despesas: '350.5', saldo: '-350.5' })
+  })
+
   it('reports financial goals alongside the totals', async () => {
     const lid = st().createList('Casa')
     st().addFinancialGoal(lid, {
@@ -2746,6 +2802,13 @@ describe('routeTools — redesign visual', () => {
       'Use as cores atuais como base, mas refaça todo o design da página.'
     ).map((tool) => tool.function.name)
     expect(names).toEqual(DIRECT_CODE_AGENT_TOOL_DEFS.map((tool) => tool.function.name))
+    expect(names).toEqual(['rodar_agente_codigo'])
+  })
+
+  it('delega diretamente a criação explícita de uma landing page', () => {
+    const names = routeTools(
+      'preciso que vc cire um landpage em html e css e javascript somente para anunciar uma pausa no projeto murasaki'
+    ).map((tool) => tool.function.name)
     expect(names).toEqual(['rodar_agente_codigo'])
   })
 })

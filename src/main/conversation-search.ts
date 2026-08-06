@@ -14,6 +14,43 @@ export interface SearchableConversation {
   messages: SearchableMessage[]
 }
 
+const CURRENT_CONVERSATION_CHAR_CAP = 6000
+
+/** Compact context for a code-agent continuation fired from this exact chat. */
+export function briefCurrentConversation(
+  list: SearchableConversation[],
+  id: string | null | undefined
+): string {
+  if (!id) return ''
+  const conversation = list.find((item) => item.id === id)
+  const messages = (conversation?.messages ?? []).filter(
+    (message) => message.role !== 'status' && message.content.trim() !== ''
+  )
+  if (messages.length === 0) return ''
+
+  const firstUser = messages.find((message) => message.role === 'user')
+  const recent = messages.slice(-6)
+  const selected = firstUser && !recent.includes(firstUser) ? [firstUser, ...recent] : recent
+  let budget = CURRENT_CONVERSATION_CHAR_CAP
+  const lines: string[] = []
+  for (const message of selected) {
+    if (budget <= 0) break
+    const label = message.role === 'user' ? 'Usuário' : 'Assistente'
+    const prefix = `${label}: `
+    const content = message.content.trim().slice(0, Math.max(0, budget - prefix.length))
+    if (!content) continue
+    lines.push(`${prefix}${content}`)
+    budget -= prefix.length + content.length + 2
+  }
+  if (lines.length === 0) return ''
+  return (
+    '## CONVERSA ATUAL — CONTEXTO OBRIGATÓRIO\n\n' +
+    'Esta execução continua o chat abaixo. Preserve o assunto, os arquivos pedidos e todas as ' +
+    'restrições já definidas; uma confirmação curta como “sim” não substitui o pedido original.\n\n' +
+    lines.join('\n\n')
+  )
+}
+
 export interface ConversationHit {
   id: string
   title: string

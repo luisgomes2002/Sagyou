@@ -132,7 +132,7 @@ export function routeTools(userText: string): ToolDef[] {
     .replace(/\p{Diacritic}/gu, '')
 
   const directVisualImplementation =
-    /\b(refaca|redesenh|redesign|design.*(pagina|tela)|pagina.*(inteira|toda)|tela.*(inteira|toda)|layout completo)\b/
+    /\b(refaca|redesenh|redesign|design.*(pagina|tela)|pagina.*(inteira|toda)|tela.*(inteira|toda)|layout completo|(cri|cir|fac|mont|desenvolv)\w*.*(landing\s*page|landpage|pagina de (anuncio|lancamento)|site institucional))\b/
   const codeWords =
     /\b(codigo|arquivo|funcao|bug|refator|implement|backup|back-end|backend|front-end|frontend|api|component|modulo|typescript|javascript|css|html|teste|typecheck|lint|build|deploy|git|commit|branch|merge|diff|log|compil|execut|script|roda|rode|rodar agente|agente de codigo|sandbox|electron|react|zustand|sqlite|ipc|handler|preload|renderer|main process|layout|design|pagina|tela|cores?|paleta|ui|ux)\w*/
   const plannerContextWords =

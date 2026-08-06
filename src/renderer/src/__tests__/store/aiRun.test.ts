@@ -223,4 +223,30 @@ describe('two agents running at once', () => {
 
     expect(vi.mocked(runAgent)).toHaveBeenCalledTimes(1)
   })
+
+  it('uses the full default chat budget when no fixed cap is configured', async () => {
+    const runs = captureRuns()
+    useAiRunStore.setState({ conversationId: 'A', messages: [] })
+
+    void run().send(cfg, {
+      text: 'crie três landing pages com agentes em paralelo',
+      imageIds: [],
+      imageData: {}
+    })
+
+    expect(runs.get('A')!.opts.maxSteps).toBe(40)
+    runs.get('A')!.resolve('ok')
+    await flush()
+  })
+
+  it('uses the automatic-mode default when Auto is enabled', async () => {
+    const runs = captureRuns()
+    useAiRunStore.setState({ conversationId: 'A', messages: [], autoApprove: new Set(['A']) })
+
+    void run().send(cfg, { text: 'orquestre os agentes', imageIds: [], imageData: {} })
+
+    expect(runs.get('A')!.opts.maxSteps).toBe(100)
+    runs.get('A')!.resolve('ok')
+    await flush()
+  })
 })

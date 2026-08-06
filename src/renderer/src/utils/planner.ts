@@ -15,7 +15,7 @@ export const MODE_LABELS: Record<PlannerViewMode, string> = {
   month: 'Mes'
 }
 
-export const HOURS = Array.from({ length: 18 }, (_, index) => index + 6)
+export const HOURS = Array.from({ length: 24 }, (_, index) => index)
 export const HOUR_HEIGHT = 80
 export const WEEKDAY_SHORT = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab']
 
@@ -63,7 +63,7 @@ export function todayString(now: Date = new Date()): string {
 
 export function minutesToPixels(time: string): number {
   const [hours, minutes] = time.split(':').map(Number)
-  return ((hours - 6) * 60 + minutes) * (HOUR_HEIGHT / 60)
+  return (hours * 60 + minutes) * (HOUR_HEIGHT / 60)
 }
 
 export function durationInMinutes(start: string, end: string): number {

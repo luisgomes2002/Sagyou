@@ -1053,6 +1053,9 @@ export function buildSystemPrompt(opts: {
   /** When true, the agent must NOT run commands (shell, typecheck, tests) — the
    *  environment lacks Node. The BEHAVIOR typecheck rule is overridden. */
   noCommands?: boolean
+  /** Whether this project has a Node package manifest. Non-Node projects must
+   *  not inherit the default npm/typecheck validation recipe. */
+  nodeProject?: boolean
 }): string {
   const parts: string[] = [BEHAVIOR]
   if (opts.noCommands) {
@@ -1062,6 +1065,14 @@ export function buildSystemPrompt(opts: {
         'Node.js, npm nem binários externos. Não tente rodar typecheck, testes, ' +
         'lint ou qualquer comando — é perda de tempo e passos. Apenas edite os ' +
         'arquivos e responda com o resumo. Não tente achar binários alternativos.'
+    )
+  } else if (opts.nodeProject === false) {
+    parts.push(
+      '## VALIDAÇÃO DESTE PROJETO (SOBRESCREVE A RECEITA NPM ACIMA)\n\n' +
+        'Este projeto não tem package.json na raiz. NÃO execute npm, npx, yarn ou pnpm. ' +
+        'Detecte a stack pela árvore antes de escolher qualquer comando. Para HTML/CSS/JS ' +
+        'estático, faça uma verificação simples e proporcional dos arquivos alterados; não ' +
+        'invente typecheck ou build inexistente. Conclua após essa validação.'
     )
   }
   if (opts.memories && opts.memories.trim()) {
@@ -1210,6 +1221,9 @@ export interface RunAgentDeps {
   /** The current step is beginning: step (1-based) of maxSteps. Drives the
    *  panel's live "Passo X/Y" counter alongside the running token total. */
   onStep?: (step: number, maxSteps: number) => void
+  /** Defaults to true for backwards compatibility. Set false when the project
+   *  has no Node manifest, so the conclusion gate does not force npm. */
+  requireTypecheck?: boolean
 }
 
 export interface RunAgentResult {
@@ -1515,8 +1529,12 @@ export async function runCodeAgent(
   // commands (executar_comando) can be killed mid-flight.
   ctx.shouldAbort = ctx.shouldAbort ?? (() => deps.shouldAbort?.() ?? false)
 
-  const maxSteps =
-    deps.maxSteps && deps.maxSteps > 0 ? Math.floor(deps.maxSteps) : CODE_AGENT_MAX_STEPS
+  const unlimited = deps.maxSteps === 0
+  const maxSteps = unlimited
+    ? 0
+    : deps.maxSteps && deps.maxSteps > 0
+      ? Math.floor(deps.maxSteps)
+      : CODE_AGENT_MAX_STEPS
   const tools = deps.tools ?? CODE_AGENT_TOOLS
   let msgs: AgentMessage[] = [
     { role: 'system', content: systemPrompt },
@@ -1532,7 +1550,7 @@ export async function runCodeAgent(
   // the cache saves IO, but re-sending the same result still costs tokens.
   const seenSearches = new Set<string>()
   const commandRepeats = new Map<string, number>()
-  const COMMAND_REPEAT_LIMIT = 3
+  const COMMAND_REPEAT_LIMIT = 2
 
   // Write tracking — what the agent has touched so far this run.
   let editedFiles = new Set<string>()
@@ -1623,7 +1641,7 @@ export async function runCodeAgent(
   // compaction so the model remembers even after history is summarised.
   const editLog: string[] = []
 
-  for (let step = 0; step < maxSteps; step++) {
+  for (let step = 0; unlimited || step < maxSteps; step++) {
     if (deps.shouldAbort?.())
       return { answer: 'Execução interrompida.', steps: step, stopped: true }
     deps.onStep?.(step + 1, maxSteps)
@@ -1661,7 +1679,12 @@ export async function runCodeAgent(
       // reject the conclusion and force a verification step. Fires at most twice.
       // Exception: when the environment is broken (node/npm not available), skip
       // the gate and let the conclusion through — it's unfixable from in here.
-      if (writesSoFar > 0 && !typecheckPassed && gateAttempts < 2) {
+      if (
+        deps.requireTypecheck !== false &&
+        writesSoFar > 0 &&
+        !typecheckPassed &&
+        gateAttempts < 2
+      ) {
         gateAttempts++
         const gate = envBroken
           ? 'O ambiente não tem node/npm disponível. Conclua sem typecheck e avise no resumo.'
@@ -1853,6 +1876,7 @@ export async function runCodeAgent(
 
     // Writes and commands run in the model order. A command often validates a
     // preceding edit, so parallel approval or execution can validate stale code.
+    let successfulWriteThisStep = false
     const runWrite = async (i: number) => {
       const { call, args } = parsed[i]
       const name = call.function.name
@@ -1871,7 +1895,7 @@ export async function runCodeAgent(
           const cmdN = bumpCount(commandRepeats, cmdSig)
           if (cmdN >= COMMAND_REPEAT_LIMIT) {
             content = JSON.stringify({
-              error: `Você já rodou este comando ${COMMAND_REPEAT_LIMIT}x. Se ele falhou, o erro não está no código — pode ser o ambiente (node/npm indisponível) ou um problema externo. Conclua com o que tem e avise no resumo.`
+              error: `Você já tentou este comando ${COMMAND_REPEAT_LIMIT}x; a segunda execução foi bloqueada porque o resultado anterior já está no contexto. Se ele falhou, investigue outra causa ou conclua com o que tem.`
             })
             summary = `bloqueado (comando repetido ${cmdN}x)`
             brakesFired = true
@@ -1909,6 +1933,7 @@ export async function runCodeAgent(
         if (name === 'escrever_arquivo') {
           const ok = !content.includes('"error"') && !content.includes('texto não encontrado')
           if (ok) {
+            successfulWriteThisStep = true
             writesSoFar++
             readsSinceLastWrite = 0
             typecheckPassed = false // revalidate after new edit
@@ -1970,6 +1995,43 @@ export async function runCodeAgent(
     // Push results in original order.
     for (const r of results) {
       msgs.push({ role: 'tool', tool_call_id: r.id, content: r.content })
+    }
+
+    // Once a write succeeds, the large source snapshot and the full replacement
+    // payload have served their purpose. Keeping either in history makes every
+    // later round pay for the same HTML/code again. Preserve the tool-call pairs
+    // (providers require them), but collapse their bulky payloads to receipts.
+    if (successfulWriteThisStep) {
+      const toolNames = new Map<string, string>()
+      for (const m of msgs) {
+        for (const tc of m.tool_calls ?? []) toolNames.set(tc.id, tc.function.name)
+      }
+      for (const m of msgs) {
+        if (
+          m.role === 'tool' &&
+          m.tool_call_id &&
+          toolNames.get(m.tool_call_id) === 'ler_arquivo'
+        ) {
+          if (m.content.length > 1000) {
+            m.content = JSON.stringify({ resumo: 'conteúdo lido anteriormente e já aplicado' })
+          }
+        }
+        if (m.role === 'assistant' && m.tool_calls) {
+          for (const tc of m.tool_calls) {
+            if (tc.function.name !== 'escrever_arquivo' || tc.function.arguments.length <= 1000)
+              continue
+            try {
+              const args = JSON.parse(tc.function.arguments) as Record<string, unknown>
+              tc.function.arguments = JSON.stringify({
+                caminho: args.caminho,
+                modo: 'conteúdo já aplicado'
+              })
+            } catch {
+              tc.function.arguments = JSON.stringify({ modo: 'conteúdo já aplicado' })
+            }
+          }
+        }
+      }
     }
 
     // Compaction: when several steps remain and the history is large, summarise

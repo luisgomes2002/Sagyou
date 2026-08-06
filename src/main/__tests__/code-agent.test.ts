@@ -198,6 +198,13 @@ describe('buildSystemPrompt', () => {
     expect(buildSystemPrompt({ decisoes: [] })).not.toContain('DECISÕES JÁ TOMADAS')
     expect(buildSystemPrompt({ decisoes: ['   ', ''] })).not.toContain('DECISÕES JÁ TOMADAS')
   })
+
+  it('overrides npm validation for a project without package.json', () => {
+    const p = buildSystemPrompt({ nodeProject: false })
+    expect(p).toContain('não tem package.json')
+    expect(p).toContain('NÃO execute npm')
+    expect(p).toContain('HTML/CSS/JS estático')
+  })
 })
 
 describe('readProjectGuide', () => {
@@ -270,6 +277,106 @@ describe('runCodeAgent — the loop', () => {
     expect(await readFile(join(root, 'x.ts'), 'utf-8')).toBe('q')
   })
 
+  it('does not force npm typecheck when validation is non-Node', async () => {
+    const callModel = vi.fn(
+      scriptedModel([
+        {
+          role: 'assistant',
+          content: '',
+          tool_calls: [
+            toolCall('c1', 'escrever_arquivo', { caminho: 'index.html', conteudo: '<p>ok</p>' })
+          ]
+        },
+        { role: 'assistant', content: 'feito' }
+      ])
+    )
+    const run = vi.fn<CommandRunner>()
+    const res = await runCodeAgent(
+      'sys',
+      'edite',
+      { root, run },
+      {
+        callModel,
+        approve: async () => true,
+        requireTypecheck: false
+      }
+    )
+
+    expect(res.answer).toBe('feito')
+    expect(callModel).toHaveBeenCalledTimes(2)
+    expect(run).not.toHaveBeenCalled()
+  })
+
+  it('drops bulky reads and full write payloads after applying a rewrite', async () => {
+    await writeFile(join(root, 'index.html'), '<main>' + 'x'.repeat(5000) + '</main>')
+    const snapshots: AgentMessage[][] = []
+    const turns: AgentMessage[] = [
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [toolCall('r1', 'ler_arquivo', { caminho: 'index.html' })]
+      },
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [
+          toolCall('w1', 'escrever_arquivo', {
+            caminho: 'index.html',
+            conteudo: '<main>' + 'y'.repeat(5000) + '</main>'
+          })
+        ]
+      },
+      { role: 'assistant', content: 'feito' }
+    ]
+    let turn = 0
+    const callModel = async (messages: AgentMessage[]): Promise<{ message: AgentMessage }> => {
+      snapshots.push(structuredClone(messages))
+      return { message: turns[turn++] }
+    }
+
+    await runCodeAgent('sys', 'refaça', ctx(), {
+      callModel,
+      approve: async () => true,
+      requireTypecheck: false
+    })
+
+    const finalContext = JSON.stringify(snapshots.at(-1))
+    expect(finalContext).not.toContain('x'.repeat(1000))
+    expect(finalContext).not.toContain('y'.repeat(1000))
+    expect(finalContext).toContain('conteúdo já aplicado')
+  })
+
+  it('blocks the second identical command instead of executing it twice', async () => {
+    const run = vi.fn<CommandRunner>(async () => ({ stdout: '', stderr: 'falhou', code: 1 }))
+    const model = scriptedModel([
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [toolCall('c1', 'executar_comando', { comando: 'npm run typecheck' })]
+      },
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [toolCall('c2', 'executar_comando', { comando: 'npm run typecheck' })]
+      },
+      { role: 'assistant', content: 'não foi possível validar' }
+    ])
+
+    const res = await runCodeAgent(
+      'sys',
+      'valide',
+      { root, run },
+      {
+        callModel: model,
+        approve: async () => true,
+        requireTypecheck: false
+      }
+    )
+
+    expect(res.answer).toBe('não foi possível validar')
+    expect(run).toHaveBeenCalledTimes(1)
+  })
+
   it('requests and executes mutable actions in model order', async () => {
     const events: string[] = []
     const model = scriptedModel([
@@ -329,6 +436,35 @@ describe('runCodeAgent — the loop', () => {
     })
     expect(res.stopped).toBe(true)
     expect(res.steps).toBe(3)
+  })
+
+  it('keeps running past the former cap when maxSteps is zero', async () => {
+    let calls = 0
+    const model = async (): Promise<{ message: AgentMessage }> => {
+      calls++
+      if (calls > CODE_AGENT_MAX_STEPS) {
+        return { message: { role: 'assistant', content: 'concluído depois do limite antigo' } }
+      }
+      return {
+        message: {
+          role: 'assistant',
+          content: '',
+          tool_calls: [
+            toolCall(`c${calls}`, 'listar_arquivos', { subpasta: `tentativa-${calls}` })
+          ]
+        }
+      }
+    }
+
+    const res = await runCodeAgent('sys', 'continue até concluir', ctx(), {
+      callModel: model,
+      approve: async () => true,
+      maxSteps: 0
+    })
+
+    expect(res.stopped).toBe(false)
+    expect(res.steps).toBe(CODE_AGENT_MAX_STEPS + 1)
+    expect(res.answer).toContain('concluído')
   })
 
   it('honours shouldAbort between steps', async () => {
