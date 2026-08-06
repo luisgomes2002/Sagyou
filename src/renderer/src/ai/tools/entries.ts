@@ -1460,7 +1460,9 @@ export const registryEntries: Record<string, AITool> = {
     write: true,
     definition: fn(
       'rodar_agente_codigo',
-      'Dispara o agente de código para implementar. Roda em uma pasta. Passe "arquivos" com os caminhos a editar.',
+      'Dispara um agente de código para implementar. Aceita várias execuções simultâneas, inclusive ' +
+        'na mesma pasta, usando worktrees isolados. Para variantes paralelas, faça várias chamadas ' +
+        'nesta rodada. Passe "arquivos" com os caminhos a editar.',
       {
         type: 'object',
         properties: {

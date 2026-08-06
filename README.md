@@ -145,6 +145,8 @@ Agentes que trabalham no mesmo projeto usam **leases cooperativas**: uma tarefa 
 
 Agentes de código também podem trabalhar simultaneamente no mesmo repositório. Cada execução concorrente usa um worktree isolado; a entrega das alterações ao diretório original é ordenada, e conflitos permanecem disponíveis para revisão em vez de apagar o trabalho de outra execução.
 
+Um repositório criado apenas com `git init` também funciona: o Sagyou cria internamente uma base temporária para os worktrees sem fazer commit na sua branch, alterar o stage ou exigir configuração de nome e e-mail.
+
 ### Skills
 
 Skills são arquivos `.md` que você cria e usa como system prompts sob demanda. No chat, digite `/` para ver a lista e selecionar — o conteúdo do arquivo é injetado como instrução extra para o modelo naquela conversa.
