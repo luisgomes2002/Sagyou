@@ -23,7 +23,11 @@ export interface AITool {
 }
 
 /** Build a function tool definition. */
-export function fn(name: string, description: string, parameters: Record<string, unknown>): ToolDef {
+export function fn(
+  name: string,
+  description: string,
+  parameters: Record<string, unknown>
+): ToolDef {
   return { type: 'function', function: { name, description, parameters } }
 }
 
@@ -253,30 +257,33 @@ export function parseMoney(v: unknown): Decimal | null {
 }
 
 /**
- * The financial table to write to: by name or id, else the only one there is.
- * Never guesses between several — a transaction in the wrong table is invisible
+ * The financial table to write to within the active profile: by name or id, else the only one there is.
+ * Never crosses profiles or guesses between several — a transaction in the wrong table is invisible
  * where it was meant to go and wrong where it landed.
  */
 export function resolveList(
   args: Record<string, unknown>
 ): { list: FinancialTable } | { error: string; tabelas?: string[] } {
-  const { lists } = useKanbanStore.getState()
-  if (lists.length === 0) return { error: 'Nenhuma tabela financeira existe ainda' }
-  const nomes = lists.map((l) => l.name)
+  const { lists, activeFinancialProfileId } = useKanbanStore.getState()
+  const profileLists = lists.filter((list) => list.profileId === activeFinancialProfileId)
+  if (profileLists.length === 0) return { error: 'Nenhuma tabela financeira existe ainda' }
+  const nomes = profileLists.map((l) => l.name)
   if (args.tabela !== undefined) {
     if (typeof args.tabela !== 'string') return { error: 'tabela deve ser texto' }
     const key = args.tabela.trim().toLowerCase()
-    const found = lists.filter((l) => l.name.trim().toLowerCase() === key || l.id === args.tabela)
+    const found = profileLists.filter(
+      (l) => l.name.trim().toLowerCase() === key || l.id === args.tabela
+    )
     if (found.length === 0) return { error: 'Tabela não encontrada', tabelas: nomes }
     if (found.length > 1) {
       return { error: 'Mais de uma tabela tem esse nome — use o id', tabelas: nomes }
     }
     return { list: found[0] }
   }
-  if (lists.length > 1) {
+  if (profileLists.length > 1) {
     return { error: 'Há mais de uma tabela financeira: informe "tabela"', tabelas: nomes }
   }
-  return { list: lists[0] }
+  return { list: profileLists[0] }
 }
 
 // The size store.createNote gives a note when none is passed. Mirrored here so

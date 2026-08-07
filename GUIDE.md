@@ -165,6 +165,7 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    passa por `decimal.js` (`D()` em `components/financial/shared.ts`). Converta
    para `number` só para largura de barra e porcentagem. `qty` é `number` — é
    quantidade, não dinheiro.
+2. **Perfis financeiros não se misturam.** Cada tabela tem `profileId`; tabelas antigas sem esse campo pertencem a `personal` (`Minhas finanças`). Consolidado, Dashboard, seletores de tabela e leituras financeiras da IA usam somente o perfil ativo. Nunca cruze transações ou vínculos entre perfis.
    **No consolidado, totais nativos nunca somam moedas diferentes**: mostre BRL, USD e JPY
    separadamente. A equivalência cambial é só uma leitura em tempo real, identificada como tal,
    e nunca é gravada nem altera os lançamentos.
@@ -177,13 +178,13 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    Um detalhe pode vincular uma transação espelho de outra tabela: a fatura pai continua no
    consolidado e somente o espelho é omitido. O vínculo legado entre transações mantém a regra
    inversa, omitindo a transação pai, para preservar dados existentes.
-2. **Nunca remova nem renomeie campos** de tipos persistidos sem migração ou
+3. **Nunca remova nem renomeie campos** de tipos persistidos sem migração ou
    fallback. Campo novo opcional é seguro; mudar a forma de um array ou objeto
    existente, não.
-3. **Avise explicitamente** ao propor algo que possa corromper dados no load
+4. **Avise explicitamente** ao propor algo que possa corromper dados no load
    (trocar `string` por `string[]`, mudar esquema de IDs), com:
    `⚠️ Breaking schema change — existing data may be affected.`
-4. **Nem tudo está no banco.** Em `app.getPath('userData')`: `kanban.db`,
+5. **Nem tudo está no banco.** Em `app.getPath('userData')`: `kanban.db`,
    `files/` (os blobs dos anexos — a tabela só guarda metadados),
    `ai-config.json`, `ai-conversations.json`, `ai-usage-log.json`,
    `ai-run-metrics.json` (uma linha por execução do agente — modelo, passos,
@@ -196,10 +197,10 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    `agent-runs/` (execuções arquivadas do agente de código — log + diff congelados).
    Apagar um
    lado sem o outro deixa órfão.
-5. **Ferramenta de IA que escreve leva `write: true`** em `ai/tools.ts`. É a
+6. **Ferramenta de IA que escreve leva `write: true`** em `ai/tools.ts`. É a
    única coisa entre o modelo e os dados do usuário: sem isso a ação roda sem
    aprovação. Ferramenta nova que muta estado **tem** que marcar.
-6. **Ferramenta de leitura que devolve menos do que existe tem que dizer isso.**
+7. **Ferramenta de leitura que devolve menos do que existe tem que dizer isso.**
    Tudo o que uma tool retorna é reenviado ao modelo a cada passo seguinte da
    execução, então elas cortam: `ler_tasks` esconde as concluídas por padrão
    (45% do quadro real), `ai:code:list`/`:read` paginam. Toda redução vem com o
@@ -207,7 +208,7 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    `outros_projetos`, `nextOffset`) — sem ele o modelo afirma com confiança que
    o quadro tem 228 tasks quando tem 413, ou que uma task não existe quando ela
    está em outro projeto. A resposta errada custa mais que os tokens salvos.
-7. **Leitura de código por escopo, não por arquivo inteiro.** `ler_arquivo` aceita
+8. **Leitura de código por escopo, não por arquivo inteiro.** `ler_arquivo` aceita
    `simbolo` (extrai uma função/classe via `extractSymbol` em `code-files.ts`) ou
    `linha_inicio`/`linha_fim` (`extractLines`) — ~1-3k chars em vez de janelas de
    20k paginadas. Tudo regex/best-effort de propósito (sem AST). É o 5º arg
@@ -223,33 +224,33 @@ CODE_READ_PAGE`) devolve só ~100 linhas + `simbolos` + `dica`, não a janela de
    substring que avisa mas não bloqueia) e o log de custo por execução vivem em
    `agent.ts` (estado **por execução**), **não** em `tools.ts` (global entre
    conversas).
-8. **Roteamento de modelo é opcional e por execução.** `AIConfig.modelComplex`,
+9. **Roteamento de modelo é opcional e por execução.** `AIConfig.modelComplex`,
    quando definido, faz `routeModel(cfg, texto)` mandar tarefas de código/análise
    (palavras como código, bug, refatorar, arquitetura, investigar) para o modelo
    pesado; o resto fica no `model` barato. Ausente = um modelo só, comportamento
    antigo. A escolha é feita uma vez em `runAgent` (`rcfg`) e vale para todas as
    chamadas daquela execução.
 
-9. 🔴 **A tabela `memory` é satélite, fora do `persistAll`.** Memórias do assistente
-   (decisões, tradeoffs, gotchas, handoffs) ficam em SQLite mas nunca passam pelo
-   store Zustand — `access_count`/`last_accessed_at` são bumpados a cada leitura, e
-   isso via `persistAll` reescreveria as 17 tabelas por bump. As ferramentas são
-   `salvar_memoria` (write, gated), `buscar_memoria` (por id ou termo),
-   `buscar_conversas`, `ler_conversa` (transcript completo por id) e
-   `verificar_memorias`. A sanitização de segredos (`scrubSecrets`) roda em todo
-   save — memória é reenviada ao modelo a cada passo, então uma chave vazada seria
-   permanente. Decay arquiva (nunca hard-deleta); memória pinada nunca decai.
-   ⚠️ `memory.project_id` é **TEXT puro, NUNCA FK com `ON DELETE CASCADE`** — o cascade
-   era perda de dados (persistAll/persistDiff deletam-e-reinserem o projeto e apagavam
-   as memórias dele, que não voltam por estarem fora do persistAll); `migrateMemoryDropProjectFk`
-   remove o FK. Projeto apagado deixa memórias órfãs (decaem sozinhas), não as destrói.
-   Handoff automático (`writeHandoff`) grava um breadcrumb por projeto ao fim de
-   cada run, sem chamada LLM. ⚠️ O corpo é cortado em 600 chars **na gravação**, então
-   `buscar_memoria` não expande um handoff `…`; quando cortado, ele guarda `id=<convId>` e
-   o modelo abre a conversa inteira com `ler_conversa` (senão gasta buscas às cegas e refaz
-   do zero). Compartilhada entre chat e code-agent.
+10. 🔴 **A tabela `memory` é satélite, fora do `persistAll`.** Memórias do assistente
+    (decisões, tradeoffs, gotchas, handoffs) ficam em SQLite mas nunca passam pelo
+    store Zustand — `access_count`/`last_accessed_at` são bumpados a cada leitura, e
+    isso via `persistAll` reescreveria as 17 tabelas por bump. As ferramentas são
+    `salvar_memoria` (write, gated), `buscar_memoria` (por id ou termo),
+    `buscar_conversas`, `ler_conversa` (transcript completo por id) e
+    `verificar_memorias`. A sanitização de segredos (`scrubSecrets`) roda em todo
+    save — memória é reenviada ao modelo a cada passo, então uma chave vazada seria
+    permanente. Decay arquiva (nunca hard-deleta); memória pinada nunca decai.
+    ⚠️ `memory.project_id` é **TEXT puro, NUNCA FK com `ON DELETE CASCADE`** — o cascade
+    era perda de dados (persistAll/persistDiff deletam-e-reinserem o projeto e apagavam
+    as memórias dele, que não voltam por estarem fora do persistAll); `migrateMemoryDropProjectFk`
+    remove o FK. Projeto apagado deixa memórias órfãs (decaem sozinhas), não as destrói.
+    Handoff automático (`writeHandoff`) grava um breadcrumb por projeto ao fim de
+    cada run, sem chamada LLM. ⚠️ O corpo é cortado em 600 chars **na gravação**, então
+    `buscar_memoria` não expande um handoff `…`; quando cortado, ele guarda `id=<convId>` e
+    o modelo abre a conversa inteira com `ler_conversa` (senão gasta buscas às cegas e refaz
+    do zero). Compartilhada entre chat e code-agent.
 
-10. **Orçamento é por chamada do modelo, não por tool round.** `maxSteps` limita toda chamada bem-sucedida da run — rodadas principais, compactação e resposta final. Sem configuração explícita, o chat usa 40 no manual e 100 no Auto; não reintroduza heurísticas 2/4/8/15 por texto, pois elas encerram orquestrações no momento de disparar agentes. O contexto de uma conversa reaberta entra limitado (12 mensagens/24k caracteres/1 imagem); ferramentas além de 8 numa rodada recebem resultado sintético. O limite é **por execução**: várias conversas/projetos continuam rodando em paralelo. O subagente de pesquisa exige aprovação, é no máximo 2 por run e seu resumo é cortado antes de voltar ao agente pai.
+11. **Orçamento é por chamada do modelo, não por tool round.** `maxSteps` limita toda chamada bem-sucedida da run — rodadas principais, compactação e resposta final. Sem configuração explícita, o chat usa 40 no manual e 100 no Auto; não reintroduza heurísticas 2/4/8/15 por texto, pois elas encerram orquestrações no momento de disparar agentes. O contexto de uma conversa reaberta entra limitado (12 mensagens/24k caracteres/1 imagem); ferramentas além de 8 numa rodada recebem resultado sintético. O limite é **por execução**: várias conversas/projetos continuam rodando em paralelo. O subagente de pesquisa exige aprovação, é no máximo 2 por run e seu resumo é cortado antes de voltar ao agente pai.
 
 ## Segurança — o que já está resolvido
 
@@ -344,6 +345,7 @@ activeTimers[0]` no `settings` do DB (não viaja no backup); `normalizeTimers`
   o modelo e o disco são (1) `confineToRoot` (todo caminho preso à pasta do
   projeto) e (2) **aprovação por ação** antes de qualquer escrita ou comando. As
   duas são carga, não enfeite.
+- **Harnesses externos (Codex, OpenCode, Claude Code).** `AIConfig.codeHarness` escolhe o runtime; `ai:harnesses:status` só detecta o binário/version e nunca inicia uma tarefa. Todo harness externo roda em worktree Git isolado. O modo normal usa argv direto e saída estruturada; `sessao_interativa` usa `node-pty` para manter o TUI do CLI vivo e aceitar mensagens pelo painel. Nos dois modos, o worktree só é entregue após encerrar a execução e aprovar manualmente o patch final — inclusive com auto-approve ligado — e qualquer arquivo fora de `arquivos_permitidos` é recusado antes da aprovação. `stopCodeAgent` encerra o processo filho e recusa esse patch; **Encerrar e revisar diff** não marca abort, para permitir a revisão. O painel só deve mostrar uma modal de aprovação por vez (`slice(0, 1)`), para que pedidos simultâneos não se sobreponham.
 - **O agente de código principal não tem teto de passos.** O launcher passa
   `maxSteps: 0` (a UI mostra apenas o passo atual) e a execução termina ao concluir, ao ser
   parada pelo usuário ou por um bloqueio real. Não restaure a antiga heurística
@@ -354,7 +356,7 @@ activeTimers[0]` no `settings` do DB (não viaja no backup); `normalizeTimers`
   card). A aprovação é um **ida-e-volta de IPC**: o loop manda `ai:code-agent:approve-request`
   e para numa promise em `pendingApprovals`; o renderer mostra o card e responde por
   `ai:code-agent:approve-response`. `stopCodeAgent()` aborta o loop **e** nega toda
-  aprovação parada — não há mais processo filho pra matar. `executar_comando` usa
+  aprovação parada; quando a run usa um harness externo, também encerra seu processo filho. `executar_comando` usa
   `exec` async (não `execSync`, que travaria o event loop do main), com timeout e
   saída limitada.
 - **Validação segue a stack, não uma receita fixa.** O handler só exige

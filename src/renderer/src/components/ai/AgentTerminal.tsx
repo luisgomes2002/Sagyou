@@ -9,10 +9,13 @@ import { parseAnsi } from '../../utils/ansi'
 
 export function AgentTerminal({
   log,
-  running
+  running,
+  compact = false
 }: {
   log: string
   running: boolean
+  /** Removes outer spacing when the terminal is embedded inside an agent card. */
+  compact?: boolean
 }): React.JSX.Element {
   const bodyRef = useRef<HTMLDivElement>(null)
   // Follow the tail only while the user is already at the bottom — the same rule
@@ -44,7 +47,12 @@ export function AgentTerminal({
   }
 
   return (
-    <div className="mx-6 mb-2 rounded-lg overflow-hidden border border-[#232323] bg-[#1b1b1b] shadow-inner">
+    <div
+      className={
+        (compact ? '' : 'mx-6 mb-2 ') +
+        'rounded-lg overflow-hidden border border-[#232323] bg-[#1b1b1b] shadow-inner'
+      }
+    >
       {/* Terminal chrome: traffic lights + a mono label, like a CLI window. */}
       <div className="flex items-center gap-2 px-3 py-1.5 bg-[#1b1b1b] border-b border-[#232323]">
         <span className="w-2.5 h-2.5 rounded-full bg-[#ff5f57]" />

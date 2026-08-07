@@ -44,6 +44,8 @@ interface CodeRunSummary {
   task: string
   convId: string | null
   agent: string
+  allowedWritePaths?: string[]
+  readOnlyRoots?: { id: string; nome: string; path: string }[]
   startedAt: number
   log: string
   model?: string
@@ -56,6 +58,13 @@ interface CodeRunSummary {
   }
   autoApprove?: boolean
   approvals?: CodeApprovalRequest[]
+  questions?: CodeQuestionRequest[]
+}
+
+interface CodeQuestionRequest {
+  runId: string
+  id: string
+  question: string
 }
 
 interface CodeApprovalRequest {
@@ -183,7 +192,9 @@ const api = {
       conflicts: (): Promise<MemoryConflict[]> => ipcRenderer.invoke('ai:memory:conflicts'),
       // The run-start briefing text for a project (its memories + globals).
       // `archived` = how many cold pages the lazy decay pass just retired.
-      briefing: (projectId?: string | null): Promise<{ text: string; count: number; archived: number }> =>
+      briefing: (
+        projectId?: string | null
+      ): Promise<{ text: string; count: number; archived: number }> =>
         ipcRenderer.invoke('ai:memory:briefing', projectId),
       // Upsert the per-project handoff breadcrumb (one per project, replaced each run).
       handoff: (input: {
@@ -291,10 +302,13 @@ const api = {
         path: string
         task: string
         files?: string[]
+        allowedWritePaths?: string[]
+        readOnlyRoots?: { id: string; nome: string; path: string }[]
         decisoes?: string[]
         convId?: string
         projectId?: string | null
         autoApprove?: boolean
+        interactive?: boolean
       }): Promise<{
         success: boolean
         agent?: string
@@ -303,9 +317,18 @@ const api = {
         error?: string
       }> => ipcRenderer.invoke('ai:code-agent:run', request),
       stop: (runId?: string): Promise<void> => ipcRenderer.invoke('ai:code-agent:stop', runId),
+      terminalInput: (
+        runId: string,
+        input: string
+      ): Promise<{ success: boolean; error?: string }> =>
+        ipcRenderer.invoke('ai:code-agent:terminal-input', runId, input),
+      finishInteractive: (runId: string): Promise<{ success: boolean; error?: string }> =>
+        ipcRenderer.invoke('ai:code-agent:finish-interactive', runId),
       // Answer an approval card the loop is parked on (native agent).
       approve: (id: string, approved: boolean): Promise<void> =>
         ipcRenderer.invoke('ai:code-agent:approve-response', id, approved),
+      answerQuestion: (id: string, answer: string): Promise<void> =>
+        ipcRenderer.invoke('ai:code-agent:question-response', id, answer),
       setAuto: (runId: string, enabled: boolean): Promise<void> =>
         ipcRenderer.invoke('ai:code-agent:set-auto', runId, enabled),
       status: (): Promise<{
@@ -339,8 +362,7 @@ const api = {
         ipcRenderer.invoke('ai:code-agent:runs', convId),
       runGet: (id: string): Promise<AgentRunSnapshot | null> =>
         ipcRenderer.invoke('ai:code-agent:run-get', id),
-      runRenew: (id: string): Promise<void> =>
-        ipcRenderer.invoke('ai:code-agent:run-renew', id),
+      runRenew: (id: string): Promise<void> => ipcRenderer.invoke('ai:code-agent:run-renew', id),
       // Output carries runId to distinguish concurrent runs.
       onOutput: (cb: (payload: { runId: string; chunk: string }) => void) => {
         const handler = (
@@ -431,6 +453,12 @@ const api = {
       // A recognised environment failure hit mid-run (e.g. the sandbox couldn't
       // start) — pushed so the panel's hint card can appear without waiting for
       // the run to exit. `status().hint` carries the same value for a late mount.
+      // A question pauses the native loop; automatic mode never answers it.
+      onQuestion: (cb: (req: CodeQuestionRequest) => void) => {
+        const handler = (_: Electron.IpcRendererEvent, req: CodeQuestionRequest): void => cb(req)
+        ipcRenderer.on('ai:code-agent:question', handler)
+        return () => ipcRenderer.removeListener('ai:code-agent:question', handler)
+      },
       onHint: (
         cb: (hint: { runId: string; title: string; detail: string; command?: string }) => void
       ) => {
@@ -440,12 +468,33 @@ const api = {
         return () => ipcRenderer.removeListener('ai:code-agent:hint', handler)
       },
       // Fires when auto-approval is toggled for a run, so the UI can reflect it.
-      onAutoChanged: (cb: (payload: { runId: string; autoApprove: boolean; resolvedApprovalIds?: string[] }) => void) => {
+      onAutoChanged: (
+        cb: (payload: {
+          runId: string
+          autoApprove: boolean
+          resolvedApprovalIds?: string[]
+        }) => void
+      ) => {
         const handler = (_: Electron.IpcRendererEvent, payload: Parameters<typeof cb>[0]): void =>
           cb(payload)
         ipcRenderer.on('ai:code-agent:auto-changed', handler)
         return () => ipcRenderer.removeListener('ai:code-agent:auto-changed', handler)
       }
+    },
+    harnesses: {
+      // Detects local CLIs only; it never starts a code task.
+      status: (
+        refresh?: boolean
+      ): Promise<
+        Array<{
+          id: 'codex' | 'opencode' | 'claude-code'
+          label: string
+          command: string
+          installed: boolean
+          path: string | null
+          version: string | null
+        }>
+      > => ipcRenderer.invoke('ai:harnesses:status', refresh)
     },
     // The ai-jail sandbox for the code agent (see main/ai-jail.ts).
     jail: {

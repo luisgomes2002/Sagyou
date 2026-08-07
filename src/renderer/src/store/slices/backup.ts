@@ -12,6 +12,7 @@ import type {
   Goal,
   Habit,
   FinancialTable,
+  FinancialProfile,
   FinancialTransactionDetail,
   StoredFile,
   TimeBlock,
@@ -22,6 +23,7 @@ import type {
   ActiveTimer,
   Currency
 } from '../../types'
+import { DEFAULT_FINANCIAL_PROFILE_ID } from '../../types'
 import { D, moneyStr } from '../../utils/money'
 
 interface StorageDep {
@@ -65,6 +67,7 @@ function normalizeProject(p: Project, i: number): Project {
 function normalizeList(l: FinancialTable): FinancialTable {
   return {
     ...l,
+    profileId: l.profileId || DEFAULT_FINANCIAL_PROFILE_ID,
     currency: (l.currency || 'BRL') as Currency,
     items: (l.items ?? []).map((i) => ({
       ...i,
@@ -135,6 +138,8 @@ export function createBackupSlice(storage: StorageDep): StateCreator<
     goals: Goal[]
     habits: Habit[]
     lists: FinancialTable[]
+    financialProfiles: FinancialProfile[]
+    activeFinancialProfileId: string
     files: StoredFile[]
     timeBlocks: TimeBlock[]
     routines: Routine[]
@@ -147,7 +152,18 @@ export function createBackupSlice(storage: StorageDep): StateCreator<
 > {
   return (set, get) => ({
     exportBackup: async () => {
-      const { projects, tasks, sprints, tombstones, notes, goals, habits, lists } = get()
+      const {
+        projects,
+        tasks,
+        sprints,
+        tombstones,
+        notes,
+        goals,
+        habits,
+        lists,
+        financialProfiles,
+        activeFinancialProfileId
+      } = get()
       // Chat history isn't part of the store — read it straight from storage.
       // A failure here shouldn't cost the user the rest of the backup.
       let conversations: AIConversation[] = []
@@ -165,7 +181,7 @@ export function createBackupSlice(storage: StorageDep): StateCreator<
         memories = []
       }
       const backup: Backup = {
-        version: 6,
+        version: 7,
         exportedAt: new Date().toISOString(),
         projects,
         tasks,
@@ -175,6 +191,8 @@ export function createBackupSlice(storage: StorageDep): StateCreator<
         goals,
         habits,
         lists,
+        financialProfiles,
+        activeFinancialProfileId,
         conversations,
         memories,
         // Attachment metadata (new in v5). The physical bytes (fileBlobs) and the
@@ -239,7 +257,46 @@ export function createBackupSlice(storage: StorageDep): StateCreator<
         return { ...h, completions: [...new Set([...local.completions, ...h.completions])] }
       })
 
-      const lists: FinancialTable[] = (backup.lists || []).map(normalizeList)
+      const financialProfiles: FinancialProfile[] =
+        Array.isArray(backup.financialProfiles) && backup.financialProfiles.length > 0
+          ? backup.financialProfiles.filter(
+              (profile): profile is FinancialProfile =>
+                !!profile &&
+                typeof profile.id === 'string' &&
+                typeof profile.name === 'string' &&
+                typeof profile.createdAt === 'string' &&
+                typeof profile.updatedAt === 'string'
+            )
+          : [
+              {
+                id: DEFAULT_FINANCIAL_PROFILE_ID,
+                name: 'Minhas finanças',
+                createdAt: '1970-01-01T00:00:00.000Z',
+                updatedAt: '1970-01-01T00:00:00.000Z'
+              }
+            ]
+      const safeFinancialProfiles = financialProfiles.length
+        ? financialProfiles
+        : [
+            {
+              id: DEFAULT_FINANCIAL_PROFILE_ID,
+              name: 'Minhas finanças',
+              createdAt: '1970-01-01T00:00:00.000Z',
+              updatedAt: '1970-01-01T00:00:00.000Z'
+            }
+          ]
+      const financialProfileIds = new Set(safeFinancialProfiles.map((profile) => profile.id))
+      const activeFinancialProfileId =
+        typeof backup.activeFinancialProfileId === 'string' &&
+        financialProfileIds.has(backup.activeFinancialProfileId)
+          ? backup.activeFinancialProfileId
+          : DEFAULT_FINANCIAL_PROFILE_ID
+      const lists: FinancialTable[] = (backup.lists || []).map(normalizeList).map((list) => ({
+        ...list,
+        profileId: financialProfileIds.has(list.profileId ?? '')
+          ? list.profileId
+          : DEFAULT_FINANCIAL_PROFILE_ID
+      }))
 
       const activeProjectId = projects[0]?.id ?? null
 
@@ -260,6 +317,8 @@ export function createBackupSlice(storage: StorageDep): StateCreator<
         goals,
         habits,
         lists,
+        financialProfiles: safeFinancialProfiles,
+        activeFinancialProfileId,
         files,
         timeBlocks,
         routines,

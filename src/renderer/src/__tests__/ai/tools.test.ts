@@ -35,6 +35,7 @@ import {
   clearCodeSearchCache,
   PLANNER_EDIT_TOOL_DEFS,
   DIRECT_CODE_AGENT_TOOL_DEFS,
+  REFERENCE_CODE_TOOL_DEFS,
   routeTools
 } from '../../ai/tools'
 import { PROJECT_COLORS, NOTE_COLORS } from '../../types'
@@ -637,9 +638,8 @@ describe('rodar_agente_codigo', () => {
   })
 
   it('tells the model that same-folder agents can run in parallel', () => {
-    const description = TOOL_DEFS.find(
-      (tool) => tool.function.name === 'rodar_agente_codigo'
-    )?.function.description
+    const description = TOOL_DEFS.find((tool) => tool.function.name === 'rodar_agente_codigo')
+      ?.function.description
     expect(description).toContain('várias execuções simultâneas')
     expect(description).toContain('worktrees isolados')
   })
@@ -2818,6 +2818,15 @@ describe('routeTools — redesign visual', () => {
       'preciso que vc cire um landpage em html e css e javascript somente para anunciar uma pausa no projeto murasaki'
     ).map((tool) => tool.function.name)
     expect(names).toEqual(['rodar_agente_codigo'])
+  })
+  it('permite apenas leitura de referências antes de três agentes paralelos', () => {
+    const names = routeTools(
+      'Crie três landing pages e execute três agentes de código simultaneamente.'
+    ).map((tool) => tool.function.name)
+    expect(names).toEqual(REFERENCE_CODE_TOOL_DEFS.map((tool) => tool.function.name))
+    expect(names).not.toContain('buscar_na_web')
+    expect(names).not.toContain('buscar_memoria')
+    expect(names).not.toContain('ler_tasks')
   })
 })
 

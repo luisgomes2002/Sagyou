@@ -7,11 +7,13 @@ import type {
   Goal,
   GoalEntry,
   FinancialTable,
+  FinancialProfile,
   FinancialTransactionDetail,
   ActiveTimer,
   Currency,
   StickyNote
 } from '../types'
+import { DEFAULT_FINANCIAL_PROFILE_ID } from '../types'
 import { D, moneyStr } from '../utils/money'
 import { ElectronStorage } from '../services/ElectronStorage'
 
@@ -67,6 +69,7 @@ function normalizeProject(p: Project, i: number): Project {
 function normalizeList(l: FinancialTable): FinancialTable {
   return {
     ...l,
+    profileId: l.profileId || DEFAULT_FINANCIAL_PROFILE_ID,
     currency: (l.currency || 'BRL') as Currency,
     items: (l.items ?? []).map((i) => ({
       ...i,
@@ -118,6 +121,37 @@ function normalizeTransactionDetails(value: unknown, total: string): FinancialTr
   return details
 }
 
+function normalizeFinancialProfiles(value: unknown): FinancialProfile[] {
+  if (!Array.isArray(value))
+    return [
+      {
+        id: DEFAULT_FINANCIAL_PROFILE_ID,
+        name: 'Minhas finanças',
+        createdAt: '1970-01-01T00:00:00.000Z',
+        updatedAt: '1970-01-01T00:00:00.000Z'
+      }
+    ]
+  const profiles = value.filter(
+    (profile): profile is FinancialProfile =>
+      !!profile &&
+      typeof profile === 'object' &&
+      typeof (profile as FinancialProfile).id === 'string' &&
+      typeof (profile as FinancialProfile).name === 'string' &&
+      typeof (profile as FinancialProfile).createdAt === 'string' &&
+      typeof (profile as FinancialProfile).updatedAt === 'string'
+  )
+  return profiles.length
+    ? profiles
+    : [
+        {
+          id: DEFAULT_FINANCIAL_PROFILE_ID,
+          name: 'Minhas finanças',
+          createdAt: '1970-01-01T00:00:00.000Z',
+          updatedAt: '1970-01-01T00:00:00.000Z'
+        }
+      ]
+}
+
 function normalizeTimers(data: { activeTimers?: unknown; activeTimer?: unknown }): ActiveTimer[] {
   const valid = (t: unknown): t is ActiveTimer =>
     !!t &&
@@ -165,6 +199,8 @@ const createCoreSlice: StateCreator<KanbanStore, [], [], CoreSlice> = (set, get)
       goals,
       habits,
       lists,
+      financialProfiles,
+      activeFinancialProfileId,
       activeTimers,
       files,
       timeBlocks,
@@ -179,6 +215,8 @@ const createCoreSlice: StateCreator<KanbanStore, [], [], CoreSlice> = (set, get)
       goals,
       habits,
       lists,
+      financialProfiles,
+      activeFinancialProfileId,
       activeTimers,
       files,
       timeBlocks,
@@ -197,6 +235,11 @@ const createCoreSlice: StateCreator<KanbanStore, [], [], CoreSlice> = (set, get)
   loadData: async () => {
     const data = await storage.load()
     const projects = (data.projects || []).map(normalizeProject)
+    const financialProfiles = normalizeFinancialProfiles(data.financialProfiles)
+    const financialProfileIds = new Set(financialProfiles.map((profile) => profile.id))
+    const activeFinancialProfileId = financialProfileIds.has(data.activeFinancialProfileId ?? '')
+      ? data.activeFinancialProfileId!
+      : DEFAULT_FINANCIAL_PROFILE_ID
 
     const savedTimers = normalizeTimers(data)
     let tasks: Task[] = data.tasks || []
@@ -233,7 +276,14 @@ const createCoreSlice: StateCreator<KanbanStore, [], [], CoreSlice> = (set, get)
         return { ...rest, entries } as Goal
       }),
       habits: data.habits || [],
-      lists: (data.lists || []).map(normalizeList),
+      financialProfiles,
+      activeFinancialProfileId,
+      lists: (data.lists || []).map(normalizeList).map((list) => ({
+        ...list,
+        profileId: financialProfileIds.has(list.profileId ?? '')
+          ? list.profileId
+          : DEFAULT_FINANCIAL_PROFILE_ID
+      })),
       files: data.files || [],
       timeBlocks: data.timeBlocks || [],
       routines: data.routines || [],

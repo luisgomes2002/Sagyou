@@ -252,13 +252,14 @@ export const registryEntries: Record<string, AITool> = {
       }
     ),
     run: (args) => {
-      const { lists } = useKanbanStore.getState()
+      const { lists, activeFinancialProfileId } = useKanbanStore.getState()
+      const profileLists = lists.filter((list) => list.profileId === activeFinancialProfileId)
       const filtro = typeof args.tabela === 'string' ? args.tabela.toLowerCase() : null
       const de = typeof args.de === 'string' ? args.de : null
       const ate = typeof args.ate === 'string' ? args.ate : null
       const inPeriod = (date: string): boolean => (!de || date >= de) && (!ate || date <= ate)
 
-      const tabelas = lists
+      const tabelas = profileLists
         .filter((l) => !filtro || l.name.toLowerCase() === filtro || l.id === args.tabela)
         .map((l) => {
           const linkedIds = new Set(
@@ -1472,11 +1473,28 @@ export const registryEntries: Record<string, AITool> = {
             items: { type: 'string' },
             description: 'Caminhos relativos dos arquivos a editar. Evita o passo de descoberta.'
           },
+          arquivos_permitidos: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'Caminhos relativos exatos que esta execução pode criar ou alterar. Use para variantes paralelas: um arquivo por agente.'
+          },
+          referencias: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'IDs ou nomes das pastas de código ativas que este agente deve consultar somente para leitura antes de editar.'
+          },
           decisoes: {
             type: 'array',
             items: { type: 'string' },
             description:
               'Decisões de escopo já acertadas que o agente deve respeitar (ex.: "manter o fallback X").'
+          },
+          sessao_interativa: {
+            type: 'boolean',
+            description:
+              'Somente para Codex, OpenCode ou Claude Code: abre o terminal persistente para o usuário conversar ao vivo. O usuário encerra a sessão antes de revisar o diff.'
           },
           ...PASTA_PARAM,
           projectId: { type: 'string', description: 'ID do projeto; usa o ativo' }
@@ -1497,6 +1515,22 @@ export const registryEntries: Record<string, AITool> = {
         })
       }
       const path = roots[0].path
+      const { roots: allRoots } = activeRoots({ projectId: args.projectId })
+      const requestedReferences = Array.isArray(args.referencias)
+        ? args.referencias.filter((id): id is string => typeof id === 'string' && id.trim() !== '')
+        : []
+      const resolvedReferences = requestedReferences.map((id) => {
+        const ref = allRoots.find((root) => root.id === id || root.nome === id)
+        return ref ? { id: ref.id, nome: ref.nome, path: ref.path } : null
+      })
+      if (resolvedReferences.some((root) => root === null)) {
+        return JSON.stringify({
+          error: 'Uma ou mais referências não são pastas ativas deste projeto.'
+        })
+      }
+      const referencias = resolvedReferences.filter(
+        (root): root is { id: string; nome: string; path: string } => root !== null
+      )
       const task = typeof args.task === 'string' ? args.task.trim() : ''
       if (!task) return JSON.stringify({ error: 'Tarefa vazia' })
       // Pinning the target files lets the agent edit them directly instead of
@@ -1505,8 +1539,14 @@ export const registryEntries: Record<string, AITool> = {
       const files = Array.isArray(args.arquivos)
         ? args.arquivos.filter((f): f is string => typeof f === 'string' && f.trim() !== '')
         : undefined
+      const allowedWritePaths = Array.isArray(args.arquivos_permitidos)
+        ? args.arquivos_permitidos.filter(
+            (f): f is string => typeof f === 'string' && f.trim() !== ''
+          )
+        : undefined
       // Scope decisions the chat already settled: passed through to the agent's
       // system prompt as constraints, so it doesn't reopen a choice already made.
+      const interactive = args.sessao_interativa === true
       const decisoes = Array.isArray(args.decisoes)
         ? args.decisoes.filter((d): d is string => typeof d === 'string' && d.trim() !== '')
         : undefined
@@ -1529,9 +1569,12 @@ export const registryEntries: Record<string, AITool> = {
         path,
         task,
         files,
+        allowedWritePaths,
+        readOnlyRoots: referencias,
         decisoes,
         convId: runningConvId ?? undefined,
-        projectId
+        projectId,
+        interactive
       })
       if (!result.success) {
         return JSON.stringify({
@@ -1545,7 +1588,11 @@ export const registryEntries: Record<string, AITool> = {
         diretorio: path,
         runId: result.runId,
         arquivos: files && files.length ? files : undefined,
+        arquivos_permitidos:
+          allowedWritePaths && allowedWritePaths.length ? allowedWritePaths : undefined,
+        referencias: referencias.length ? referencias.map((root) => root.nome) : undefined,
         decisoes: decisoes && decisoes.length ? decisoes : undefined,
+        sessao_interativa: interactive || undefined,
         aviso:
           'Pedido enviado. Não afirme sucesso: acompanhe o painel de saída. Se o agente não ' +
           'estiver instalado, aparecerá um erro lá.'
@@ -1836,7 +1883,9 @@ export const registryEntries: Record<string, AITool> = {
           error: 'Formato inválido. Use YYYY-MM-DD ou YYYY-MM-DD/YYYY-MM-DD'
         })
 
-      const { timeBlocks, tasks, habits, lists } = useKanbanStore.getState()
+      const { timeBlocks, tasks, habits, lists, activeFinancialProfileId } =
+        useKanbanStore.getState()
+      const profileLists = lists.filter((list) => list.profileId === activeFinancialProfileId)
 
       const blocks = timeBlocks
         .filter((tb) => tb.date >= dateStart && tb.date <= dateEnd)
@@ -1861,7 +1910,7 @@ export const registryEntries: Record<string, AITool> = {
         data: string
         categoria?: string
       }[] = []
-      for (const list of lists) {
+      for (const list of profileLists) {
         for (const tx of list.transactions) {
           if (tx.date.startsWith(today))
             monthTransactions.push({

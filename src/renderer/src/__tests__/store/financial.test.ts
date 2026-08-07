@@ -3,18 +3,16 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 vi.mock('../../services/ElectronStorage', () => {
   return {
     ElectronStorage: vi.fn(function ElectronStorage(this: Record<string, unknown>) {
-      this.load = vi
-        .fn()
-        .mockResolvedValue({
-          projects: [],
-          tasks: [],
-          sprints: [],
-          tombstones: [],
-          notes: [],
-          goals: [],
-          habits: [],
-          lists: []
-        })
+      this.load = vi.fn().mockResolvedValue({
+        projects: [],
+        tasks: [],
+        sprints: [],
+        tombstones: [],
+        notes: [],
+        goals: [],
+        habits: [],
+        lists: []
+      })
       this.save = vi.fn().mockResolvedValue(undefined)
       this.exportBackup = vi.fn().mockResolvedValue({ success: true })
       this.importBackup = vi.fn().mockResolvedValue({ success: false, cancelled: true })
@@ -28,6 +26,7 @@ vi.mock('../../services/ElectronStorage', () => {
 })
 
 import { useKanbanStore } from '../../store/kanban'
+import { DEFAULT_FINANCIAL_PROFILE_ID } from '../../types'
 
 function resetStore() {
   useKanbanStore.setState({
@@ -39,6 +38,15 @@ function resetStore() {
     goals: [],
     habits: [],
     lists: [],
+    financialProfiles: [
+      {
+        id: DEFAULT_FINANCIAL_PROFILE_ID,
+        name: 'Minhas finanças',
+        createdAt: '1970-01-01T00:00:00.000Z',
+        updatedAt: '1970-01-01T00:00:00.000Z'
+      }
+    ],
+    activeFinancialProfileId: DEFAULT_FINANCIAL_PROFILE_ID,
     activeProjectId: null,
     sprintFilter: null,
     activeTimers: [],
@@ -51,12 +59,14 @@ function resetStore() {
 describe('financial table creation', () => {
   beforeEach(resetStore)
 
-  it('createList initializes transactions and goals as empty arrays', () => {
-    const id = useKanbanStore.getState().createList('Pessoal', 'JPY')
-    const list = useKanbanStore.getState().lists.find((l) => l.id === id)!
-    expect(list.currency).toBe('JPY')
-    expect(list.transactions).toEqual([])
-    expect(list.goals).toEqual([])
+  it('creates tables in the selected financial profile', () => {
+    const profileId = useKanbanStore.getState().createFinancialProfile('Finanças dos meus pais')
+    useKanbanStore.getState().setActiveFinancialProfile(profileId)
+    const tableId = useKanbanStore.getState().createList('Casa')
+    expect(useKanbanStore.getState().lists.find((list) => list.id === tableId)?.profileId).toBe(
+      profileId
+    )
+    expect(useKanbanStore.getState().activeFinancialProfileId).toBe(profileId)
   })
 
   it('deleteList removes the table entirely', () => {
@@ -363,30 +373,24 @@ describe('transaction actions', () => {
   })
 
   it('accumulated balance is computed correctly from income and expense', () => {
-    useKanbanStore
-      .getState()
-      .addTransaction(listId, {
-        description: 'Entrada',
-        amount: '10000',
-        type: 'income',
-        date: '2026-01-01'
-      })
-    useKanbanStore
-      .getState()
-      .addTransaction(listId, {
-        description: 'Gasto',
-        amount: '3000',
-        type: 'expense',
-        date: '2026-01-15'
-      })
-    useKanbanStore
-      .getState()
-      .addTransaction(listId, {
-        description: 'Outro gasto',
-        amount: '2000',
-        type: 'expense',
-        date: '2026-02-01'
-      })
+    useKanbanStore.getState().addTransaction(listId, {
+      description: 'Entrada',
+      amount: '10000',
+      type: 'income',
+      date: '2026-01-01'
+    })
+    useKanbanStore.getState().addTransaction(listId, {
+      description: 'Gasto',
+      amount: '3000',
+      type: 'expense',
+      date: '2026-01-15'
+    })
+    useKanbanStore.getState().addTransaction(listId, {
+      description: 'Outro gasto',
+      amount: '2000',
+      type: 'expense',
+      date: '2026-02-01'
+    })
     const txs = useKanbanStore.getState().lists.find((l) => l.id === listId)!.transactions
     const balance = txs.reduce(
       (s, t) => (t.type === 'income' ? s + Number(t.amount) : s - Number(t.amount)),
@@ -467,14 +471,12 @@ describe('financial goal actions', () => {
   })
 
   it('goal progress: partial when balance < target', () => {
-    useKanbanStore
-      .getState()
-      .addTransaction(listId, {
-        description: 'Renda',
-        amount: '35000',
-        type: 'income',
-        date: '2026-04-01'
-      })
+    useKanbanStore.getState().addTransaction(listId, {
+      description: 'Renda',
+      amount: '35000',
+      type: 'income',
+      date: '2026-04-01'
+    })
     useKanbanStore.getState().addFinancialGoal(listId, {
       name: 'Aluguel',
       targetAmount: '70000',
@@ -492,14 +494,12 @@ describe('financial goal actions', () => {
   })
 
   it('goal progress: 100% when balance >= target', () => {
-    useKanbanStore
-      .getState()
-      .addTransaction(listId, {
-        description: 'Renda',
-        amount: '80000',
-        type: 'income',
-        date: '2026-04-01'
-      })
+    useKanbanStore.getState().addTransaction(listId, {
+      description: 'Renda',
+      amount: '80000',
+      type: 'income',
+      date: '2026-04-01'
+    })
     useKanbanStore.getState().addFinancialGoal(listId, {
       name: 'Aluguel',
       targetAmount: '70000',
@@ -517,38 +517,30 @@ describe('financial goal actions', () => {
   })
 
   it('goal progress uses accumulated balance (all months, not just current)', () => {
-    useKanbanStore
-      .getState()
-      .addTransaction(listId, {
-        description: 'Jan',
-        amount: '30000',
-        type: 'income',
-        date: '2026-01-01'
-      })
-    useKanbanStore
-      .getState()
-      .addTransaction(listId, {
-        description: 'Feb',
-        amount: '30000',
-        type: 'income',
-        date: '2026-02-01'
-      })
-    useKanbanStore
-      .getState()
-      .addTransaction(listId, {
-        description: 'Mar',
-        amount: '30000',
-        type: 'income',
-        date: '2026-03-01'
-      })
-    useKanbanStore
-      .getState()
-      .addTransaction(listId, {
-        description: 'Gasto',
-        amount: '10000',
-        type: 'expense',
-        date: '2026-03-15'
-      })
+    useKanbanStore.getState().addTransaction(listId, {
+      description: 'Jan',
+      amount: '30000',
+      type: 'income',
+      date: '2026-01-01'
+    })
+    useKanbanStore.getState().addTransaction(listId, {
+      description: 'Feb',
+      amount: '30000',
+      type: 'income',
+      date: '2026-02-01'
+    })
+    useKanbanStore.getState().addTransaction(listId, {
+      description: 'Mar',
+      amount: '30000',
+      type: 'income',
+      date: '2026-03-01'
+    })
+    useKanbanStore.getState().addTransaction(listId, {
+      description: 'Gasto',
+      amount: '10000',
+      type: 'expense',
+      date: '2026-03-15'
+    })
     useKanbanStore.getState().addFinancialGoal(listId, {
       name: 'Aluguel Agosto',
       targetAmount: '70000',

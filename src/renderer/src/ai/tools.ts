@@ -56,6 +56,18 @@ export const DIRECT_CODE_AGENT_TOOL_DEFS: ToolDef[] = Object.values(REGISTRY)
   .filter((t) => t.definition.function.name === 'rodar_agente_codigo')
   .map((t) => t.definition)
 
+/** Cross-project variant work may read only the stated code references before launch. */
+const REFERENCE_CODE_TOOL_NAMES = new Set([
+  'ler_projetos',
+  'listar_arquivos',
+  'ler_arquivo',
+  'buscar_no_codigo',
+  'rodar_agente_codigo'
+])
+export const REFERENCE_CODE_TOOL_DEFS: ToolDef[] = Object.values(REGISTRY)
+  .filter((t) => REFERENCE_CODE_TOOL_NAMES.has(t.definition.function.name))
+  .map((t) => t.definition)
+
 /** Kanban-only tool subset — excludes code-reading tools (listar_arquivos,
  *  ler_arquivo, buscar_no_codigo). The model can manage tasks, habits, finances,
  *  goals, notes, planner, and memory, but cannot read/write project source code.
@@ -131,6 +143,7 @@ export function routeTools(userText: string): ToolDef[] {
     .normalize('NFD')
     .replace(/\p{Diacritic}/gu, '')
 
+  const parallelCodeAgents = /\b(3|tres|três)\s+agentes?\b|\b(variantes?|landings?)\s+paralel/
   const directVisualImplementation =
     /\b(refaca|redesenh|redesign|design.*(pagina|tela)|pagina.*(inteira|toda)|tela.*(inteira|toda)|layout completo|(cri|cir|fac|mont|desenvolv)\w*.*(landing\s*page|landpage|pagina de (anuncio|lancamento)|site institucional))\b/
   const codeWords =
@@ -142,6 +155,7 @@ export function routeTools(userText: string): ToolDef[] {
   const kanbanWords =
     /\b(task|projeto|coluna|kanban|quadro|sprint|scrum|habito|meta|objetivo|financeiro|transacao|gasto|receita|despesa|orcamento|compras?|lista de compras|supermercado|nota|canvas|cronometro|timer|plano|planej|saldo|conta|fatura|boleto|pagar|pagamento|renda|ganhos?|gastos|economia|orçamento|dia|semana|mes\b|hoje|amanha|rotina|lembrete)\w*/
 
+  if (parallelCodeAgents.test(t)) return REFERENCE_CODE_TOOL_DEFS
   if (directVisualImplementation.test(t)) return DIRECT_CODE_AGENT_TOOL_DEFS
   if (codeWords.test(t)) return CODE_TOOL_DEFS
   if (plannerContextWords.test(t) && plannerEditWords.test(t)) return PLANNER_EDIT_TOOL_DEFS

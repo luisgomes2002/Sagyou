@@ -14,28 +14,56 @@ interface Props {
 }
 
 export function HomeView({ projects, onNavigate }: Props) {
-  const { tasks, sprints, habits, goals, lists } = useKanbanStore(
+  const {
+    tasks,
+    sprints,
+    habits,
+    goals,
+    lists,
+    financialProfiles,
+    activeFinancialProfileId,
+    setActiveFinancialProfile
+  } = useKanbanStore(
     useShallow((s) => ({
       tasks: s.tasks,
       sprints: s.sprints,
       habits: s.habits,
       goals: s.goals,
-      lists: s.lists
+      lists: s.lists,
+      financialProfiles: s.financialProfiles,
+      activeFinancialProfileId: s.activeFinancialProfileId,
+      setActiveFinancialProfile: s.setActiveFinancialProfile
     }))
+  )
+
+  const activeFinancialProfile = financialProfiles.find(
+    (profile) => profile.id === activeFinancialProfileId
+  )
+  const profileLists = useMemo(
+    () => lists.filter((list) => list.profileId === activeFinancialProfileId),
+    [lists, activeFinancialProfileId]
   )
 
   const runningAgentCount = useAiRunStore((s) => s.running.size)
 
   // ── Summary stats ──────────────────────────────────────────────
 
-  const archivedIds = useMemo(() => new Set(projects.filter((p) => p.archivedAt).map((p) => p.id)), [projects])
+  const archivedIds = useMemo(
+    () => new Set(projects.filter((p) => p.archivedAt).map((p) => p.id)),
+    [projects]
+  )
 
   const openTasks = useMemo(
     () => tasks.filter((t) => !isTaskDone(t, projects) && !archivedIds.has(t.projectId)).length,
     [tasks, projects, archivedIds]
   )
   const projectCount = useMemo(
-    () => new Set(tasks.filter((t) => !isTaskDone(t, projects) && !archivedIds.has(t.projectId)).map((t) => t.projectId)).size,
+    () =>
+      new Set(
+        tasks
+          .filter((t) => !isTaskDone(t, projects) && !archivedIds.has(t.projectId))
+          .map((t) => t.projectId)
+      ).size,
     [tasks, projects, archivedIds]
   )
 
@@ -61,7 +89,10 @@ export function HomeView({ projects, onNavigate }: Props) {
         .sort((a, b) => b.percent - a.percent),
     [goals]
   )
-  const completedGoals = useMemo(() => goalsWithProgress.filter((g) => g.percent >= 100).length, [goalsWithProgress])
+  const completedGoals = useMemo(
+    () => goalsWithProgress.filter((g) => g.percent >= 100).length,
+    [goalsWithProgress]
+  )
 
   // ── Financial month summary ────────────────────────────────────
 
@@ -71,11 +102,13 @@ export function HomeView({ projects, onNavigate }: Props) {
   }, [])
 
   // Exchange rates for multi-currency display
-  const [rates, setRates] = useState<Record<string, { rate: string; loaded: boolean; error?: string }>>({})
+  const [rates, setRates] = useState<
+    Record<string, { rate: string; loaded: boolean; error?: string }>
+  >({})
 
   useEffect(() => {
     let cancelled = false
-    const tableCurrencies = [...new Set(lists.map((l) => l.currency))]
+    const tableCurrencies = [...new Set(profileLists.map((l) => l.currency))]
     const nonBrl = tableCurrencies.filter((c) => c !== 'BRL')
     if (nonBrl.length === 0) return
 
@@ -100,23 +133,27 @@ export function HomeView({ projects, onNavigate }: Props) {
     }
 
     fetchRates()
-    return () => { cancelled = true }
-  }, [lists])
+    return () => {
+      cancelled = true
+    }
+  }, [profileLists])
 
   const [financialTableId, setFinancialTableId] = useState<string>('__consolidated__')
 
   const allTransactions = useMemo(() => {
     const txs: (FinancialTransaction & { tableCurrency: Currency; tableId: string })[] = []
-    for (const list of lists) {
+    for (const list of profileLists) {
       for (const tx of list.transactions) {
         txs.push({ ...tx, tableCurrency: list.currency, tableId: list.id })
       }
     }
     return txs
-  }, [lists])
+  }, [profileLists])
 
   const monthTransactions = useMemo(() => {
-    const linkedIds = new Set(allTransactions.filter((t) => t.linkedTransactionId).map((t) => t.linkedTransactionId!))
+    const linkedIds = new Set(
+      allTransactions.filter((t) => t.linkedTransactionId).map((t) => t.linkedTransactionId!)
+    )
     return allTransactions.filter((t) => {
       if (!t.date.startsWith(monthKey)) return false
       if (linkedIds.has(t.id)) return false
@@ -147,24 +184,32 @@ export function HomeView({ projects, onNavigate }: Props) {
   // Accumulated balance (all time, same filter)
   const allFilteredTxs = useMemo(() => {
     if (financialTableId === '__consolidated__') {
-      const linkedIds = new Set(allTransactions.filter((t) => t.linkedTransactionId).map((t) => t.linkedTransactionId!))
+      const linkedIds = new Set(
+        allTransactions.filter((t) => t.linkedTransactionId).map((t) => t.linkedTransactionId!)
+      )
       return allTransactions.filter((t) => !linkedIds.has(t.id))
     }
     return allTransactions.filter((t) => t.tableId === financialTableId)
   }, [allTransactions, financialTableId])
 
   const accIncome = useMemo(
-    () => allFilteredTxs.filter((t) => t.type === 'income').reduce((s, t) => s.plus(D(t.amount)), D('0')),
+    () =>
+      allFilteredTxs
+        .filter((t) => t.type === 'income')
+        .reduce((s, t) => s.plus(D(t.amount)), D('0')),
     [allFilteredTxs]
   )
   const accExpense = useMemo(
-    () => allFilteredTxs.filter((t) => t.type === 'expense').reduce((s, t) => s.plus(D(t.amount)), D('0')),
+    () =>
+      allFilteredTxs
+        .filter((t) => t.type === 'expense')
+        .reduce((s, t) => s.plus(D(t.amount)), D('0')),
     [allFilteredTxs]
   )
   const accBalance = useMemo(() => accIncome.minus(accExpense), [accIncome, accExpense])
 
   // Multi-currency: convert totals to BRL for a unified display
-  const tableCurrencies = useMemo(() => [...new Set(lists.map((l) => l.currency))], [lists])
+  const tableCurrencies = useMemo(() => [...new Set(profileLists.map((l) => l.currency))], [lists])
   const multiCurrency = tableCurrencies.length > 1
   const ratesLoaded = useMemo(() => {
     const nonBrl = tableCurrencies.filter((c) => c !== 'BRL')
@@ -209,7 +254,10 @@ export function HomeView({ projects, onNavigate }: Props) {
       } else {
         const r = rates[`${tx.tableCurrency}-BRL`]
         if (r?.loaded && !r.error) {
-          total = tx.type === 'income' ? total.plus(D(tx.amount).times(r.rate)) : total.minus(D(tx.amount).times(r.rate))
+          total =
+            tx.type === 'income'
+              ? total.plus(D(tx.amount).times(r.rate))
+              : total.minus(D(tx.amount).times(r.rate))
         }
       }
     }
@@ -236,7 +284,9 @@ export function HomeView({ projects, onNavigate }: Props) {
       .filter((s) => !s.closedAt)
       .map((s) => ({
         ...s,
-        openTasks: tasks.filter((t) => t.sprintId === s.id && !isTaskDone(t, projects) && !archivedIds.has(t.projectId)).length
+        openTasks: tasks.filter(
+          (t) => t.sprintId === s.id && !isTaskDone(t, projects) && !archivedIds.has(t.projectId)
+        ).length
       }))
       .filter((s) => s.openTasks > 0)
       .sort((a, b) => b.openTasks - a.openTasks)
@@ -259,36 +309,63 @@ export function HomeView({ projects, onNavigate }: Props) {
 
   const selectedTableCurrency = useMemo(() => {
     if (financialTableId === '__consolidated__') return null
-    return lists.find((l) => l.id === financialTableId)?.currency
-  }, [financialTableId, lists])
+    return profileLists.find((l) => l.id === financialTableId)?.currency
+  }, [financialTableId, profileLists])
 
   const displayCurrency: Currency = useMemo(() => {
     if (selectedTableCurrency) return selectedTableCurrency
     if (multiCurrency && ratesLoaded) return 'BRL'
     return tableCurrencies[0] ?? 'BRL'
   }, [selectedTableCurrency, multiCurrency, ratesLoaded, tableCurrencies])
-  const hasFinancialData = useMemo(() => lists.some((l) => l.transactions.length > 0), [lists])
+  const hasFinancialData = useMemo(
+    () => profileLists.some((l) => l.transactions.length > 0),
+    [profileLists]
+  )
 
   // ── Render ─────────────────────────────────────────────────────
 
   return (
     <div className="flex-1 overflow-y-auto p-6 bg-[#1b1b1b]">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-bold text-[#d4d4d4]">Dashboard</h1>
-        {lists.length > 0 && (
-          <select
-            value={financialTableId}
-            onChange={(e) => setFinancialTableId(e.target.value)}
-            className="bg-[#2a2a2a] border border-[#3b3b3b] text-[#d4d4d4] rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-[#7c3aed]"
-          >
-            <option value="__consolidated__">Consolidado</option>
-            {lists.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.name}
-              </option>
-            ))}
-          </select>
-        )}
+        <div>
+          <h1 className="text-xl font-bold text-[#d4d4d4]">Dashboard</h1>
+          <p className="text-[11px] text-[#999999] mt-0.5">
+            {activeFinancialProfile?.name ?? 'Perfil financeiro'}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {financialProfiles.length > 1 && (
+            <select
+              aria-label="Perfil financeiro do dashboard"
+              value={activeFinancialProfileId}
+              onChange={(e) => {
+                setActiveFinancialProfile(e.target.value)
+                setFinancialTableId('__consolidated__')
+              }}
+              className="bg-[#2a2a2a] border border-[#3b3b3b] text-[#d4d4d4] rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-[#7c3aed]"
+            >
+              {financialProfiles.map((profile) => (
+                <option key={profile.id} value={profile.id}>
+                  {profile.name}
+                </option>
+              ))}
+            </select>
+          )}
+          {profileLists.length > 0 && (
+            <select
+              value={financialTableId}
+              onChange={(e) => setFinancialTableId(e.target.value)}
+              className="bg-[#2a2a2a] border border-[#3b3b3b] text-[#d4d4d4] rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-[#7c3aed]"
+            >
+              <option value="__consolidated__">Consolidado</option>
+              {profileLists.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
       </div>
 
       {/* Stat cards */}
@@ -296,7 +373,14 @@ export function HomeView({ projects, onNavigate }: Props) {
         {/* Tasks abertas */}
         <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4">
           <p className="text-[11px] text-[#999999] mb-1.5 flex items-center gap-1.5">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="11"
+              height="11"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <rect x="3" y="3" width="7" height="18" rx="1" />
               <rect x="14" y="3" width="7" height="11" rx="1" />
               <rect x="14" y="18" width="7" height="3" rx="1" />
@@ -306,13 +390,22 @@ export function HomeView({ projects, onNavigate }: Props) {
           <p className="text-2xl font-bold" style={{ color: '#7c3aed' }}>
             {openTasks}
           </p>
-          <p className="text-[10px] text-[#666666] mt-0.5">em {projectCount} projeto{projectCount !== 1 ? 's' : ''}</p>
+          <p className="text-[10px] text-[#666666] mt-0.5">
+            em {projectCount} projeto{projectCount !== 1 ? 's' : ''}
+          </p>
         </div>
 
         {/* Hábitos hoje */}
         <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4">
           <p className="text-[11px] text-[#999999] mb-1.5 flex items-center gap-1.5">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="11"
+              height="11"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
             </svg>
             Hábitos hoje
@@ -328,7 +421,14 @@ export function HomeView({ projects, onNavigate }: Props) {
         {/* Metas ativas */}
         <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4">
           <p className="text-[11px] text-[#999999] mb-1.5 flex items-center gap-1.5">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="11"
+              height="11"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <circle cx="12" cy="12" r="10" />
               <circle cx="12" cy="12" r="6" />
               <circle cx="12" cy="12" r="2" />
@@ -339,14 +439,23 @@ export function HomeView({ projects, onNavigate }: Props) {
             {goalsWithProgress.length}
           </p>
           <p className="text-[10px] text-[#666666] mt-0.5">
-            {completedGoals > 0 ? `${completedGoals} concluída${completedGoals !== 1 ? 's' : ''}` : 'Nenhuma meta'}
+            {completedGoals > 0
+              ? `${completedGoals} concluída${completedGoals !== 1 ? 's' : ''}`
+              : 'Nenhuma meta'}
           </p>
         </div>
 
         {/* Saldo */}
         <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4">
           <p className="text-[11px] text-[#999999] mb-1.5 flex items-center gap-1.5">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="11"
+              height="11"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <line x1="12" y1="1" x2="12" y2="23" />
               <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
             </svg>
@@ -359,17 +468,32 @@ export function HomeView({ projects, onNavigate }: Props) {
             {formatCurrency(displayAccBalance, displayCurrency)}
           </p>
           <p className="text-[10px] text-[#666666] mt-0.5">
-            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="inline-block mr-0.5 align-[-1px]">
+            <svg
+              width="9"
+              height="9"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              className="inline-block mr-0.5 align-[-1px]"
+            >
               <line x1="12" y1="19" x2="12" y2="5" />
               <polyline points="5 12 12 5 19 12" />
             </svg>
             Receitas {formatCurrency(displayIncome, displayCurrency)} /{' '}
-            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="inline-block mr-0.5 align-[-1px]">
+            <svg
+              width="9"
+              height="9"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              className="inline-block mr-0.5 align-[-1px]"
+            >
               <line x1="12" y1="5" x2="12" y2="19" />
               <polyline points="19 12 12 19 5 12" />
             </svg>
-            Despesas{' '}
-            {formatCurrency(displayExpense.negated(), displayCurrency)}
+            Despesas {formatCurrency(displayExpense.negated(), displayCurrency)}
           </p>
         </div>
       </div>
@@ -379,7 +503,14 @@ export function HomeView({ projects, onNavigate }: Props) {
         {/* Kanban */}
         <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4">
           <h2 className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-3 flex items-center gap-1.5">
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+            >
               <rect x="3" y="3" width="7" height="18" rx="1" />
               <rect x="14" y="3" width="7" height="11" rx="1" />
               <rect x="14" y="18" width="7" height="3" rx="1" />
@@ -392,9 +523,7 @@ export function HomeView({ projects, onNavigate }: Props) {
             <div className="space-y-2">
               {(Object.entries(priorityCounts.counts) as [Priority, number][]).map(([p, count]) => (
                 <div key={p} className="flex items-center gap-2">
-                  <span
-                    className={`text-[11px] w-12 font-medium ${PRIORITY_CONFIG[p].color}`}
-                  >
+                  <span className={`text-[11px] w-12 font-medium ${PRIORITY_CONFIG[p].color}`}>
                     {PRIORITY_CONFIG[p].label}
                   </span>
                   <span className="text-[11px] text-[#d4d4d4] w-5 tabular-nums">{count}</span>
@@ -421,7 +550,14 @@ export function HomeView({ projects, onNavigate }: Props) {
           {activeSprints.length > 0 && (
             <div className="mt-4">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-2 flex items-center gap-1.5">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <svg
+                  width="10"
+                  height="10"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                >
                   <polyline points="1 4 1 10 7 10" />
                   <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
                 </svg>
@@ -444,7 +580,14 @@ export function HomeView({ projects, onNavigate }: Props) {
         {/* Hábitos */}
         <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4">
           <h2 className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-3 flex items-center gap-1.5">
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+            >
               <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
             </svg>
             Hábitos
@@ -458,19 +601,31 @@ export function HomeView({ projects, onNavigate }: Props) {
                 return (
                   <div key={habit.id} className="flex items-center gap-2 text-sm">
                     {doneToday ? (
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#46d478" strokeWidth="2.5">
+                      <svg
+                        width="13"
+                        height="13"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="#46d478"
+                        strokeWidth="2.5"
+                      >
                         <polyline points="20 6 9 17 4 12" />
                       </svg>
                     ) : (
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#666666" strokeWidth="2">
+                      <svg
+                        width="13"
+                        height="13"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="#666666"
+                        strokeWidth="2"
+                      >
                         <circle cx="12" cy="12" r="10" />
                       </svg>
                     )}
                     <span className="text-[#d4d4d4] truncate flex-1">{habit.name}</span>
                     {streak > 0 && (
-                      <span className="text-[11px] text-[#f0b820] shrink-0">
-                        seq. {streak}d
-                      </span>
+                      <span className="text-[11px] text-[#f0b820] shrink-0">seq. {streak}d</span>
                     )}
                     <span className="text-[11px] text-[#999999] w-9 text-right tabular-nums">
                       {rate}%
@@ -488,7 +643,14 @@ export function HomeView({ projects, onNavigate }: Props) {
         {/* Metas */}
         <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4">
           <h2 className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-3 flex items-center gap-1.5">
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+            >
               <circle cx="12" cy="12" r="10" />
               <circle cx="12" cy="12" r="6" />
               <circle cx="12" cy="12" r="2" />
@@ -526,7 +688,14 @@ export function HomeView({ projects, onNavigate }: Props) {
         {/* Financeiro */}
         <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4">
           <h2 className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-3 flex items-center gap-1.5">
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+            >
               <rect x="2" y="3" width="20" height="14" rx="2" />
               <line x1="8" y1="21" x2="16" y2="21" />
               <line x1="12" y1="17" x2="12" y2="21" />
@@ -539,7 +708,14 @@ export function HomeView({ projects, onNavigate }: Props) {
             <>
               <div className="flex items-center justify-between mb-3">
                 <span className="text-xs text-[#d4d4d4] flex items-center gap-1">
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#46d478" strokeWidth="2.5">
+                  <svg
+                    width="10"
+                    height="10"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="#46d478"
+                    strokeWidth="2.5"
+                  >
                     <line x1="12" y1="19" x2="12" y2="5" />
                     <polyline points="5 12 12 5 19 12" />
                   </svg>
@@ -551,7 +727,14 @@ export function HomeView({ projects, onNavigate }: Props) {
               </div>
               <div className="flex items-center justify-between mb-3">
                 <span className="text-xs text-[#d4d4d4] flex items-center gap-1">
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#e04040" strokeWidth="2.5">
+                  <svg
+                    width="10"
+                    height="10"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="#e04040"
+                    strokeWidth="2.5"
+                  >
                     <line x1="12" y1="5" x2="12" y2="19" />
                     <polyline points="19 12 12 19 5 12" />
                   </svg>
@@ -569,12 +752,22 @@ export function HomeView({ projects, onNavigate }: Props) {
                   {topCategories.map(([cat, amount]) => (
                     <div key={cat} className="flex items-center justify-between text-xs mb-1">
                       <span className="text-[#d4d4d4] flex items-center gap-1">
-                        <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0">
+                        <svg
+                          width="8"
+                          height="8"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2.5"
+                          className="shrink-0"
+                        >
                           <polyline points="9 18 15 12 9 6" />
                         </svg>
                         {cat}
                       </span>
-                      <span className="text-[#999999] tabular-nums">{formatCurrency(amount.negated(), displayCurrency)}</span>
+                      <span className="text-[#999999] tabular-nums">
+                        {formatCurrency(amount.negated(), displayCurrency)}
+                      </span>
                     </div>
                   ))}
                 </>
@@ -588,7 +781,14 @@ export function HomeView({ projects, onNavigate }: Props) {
       {runningAgentCount > 0 && (
         <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4">
           <h2 className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-3 flex items-center gap-1.5">
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+            >
               <rect x="3" y="11" width="18" height="10" rx="2" />
               <circle cx="12" cy="5" r="2" />
               <path d="M12 7v4" />
@@ -597,7 +797,8 @@ export function HomeView({ projects, onNavigate }: Props) {
           </h2>
           <div className="flex items-center justify-between">
             <p className="text-sm text-[#d4d4d4]">
-              {runningAgentCount} agente{runningAgentCount !== 1 ? 's' : ''} em execução — ver FleetView
+              {runningAgentCount} agente{runningAgentCount !== 1 ? 's' : ''} em execução — ver
+              FleetView
             </p>
             <button
               onClick={() => onNavigate('agents')}

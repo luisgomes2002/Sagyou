@@ -11,6 +11,8 @@ interface AIConfig {
   modelComplex?: string
   /** Separate provider for the native code agent; empty fields fall back to the chat config. */
   codeAgent?: { baseUrl?: string; apiKey?: string; model?: string }
+  /** Runtime selected to execute code changes. Absent keeps the native Sagyou harness. */
+  codeHarness?: 'sagyou' | 'codex' | 'opencode' | 'claude-code'
   /** Whether the ai-jail sandbox is required for the agent's shell commands (absent = on). */
   sandboxEnabled?: boolean
   /** Whether the sandbox onboarding has been answered (so it doesn't reappear). */
@@ -29,7 +31,6 @@ interface AIConfig {
    * does before answering. One of 'low', 'medium', 'high'. Only sent when set.
    */
   reasoningEffort?: 'low' | 'medium' | 'high'
-
 }
 
 /** A tool call requested by the model, in the OpenAI/DeepSeek wire format. */
@@ -208,6 +209,10 @@ interface CodeRunSummary {
   task: string
   convId: string | null
   agent: string
+  allowedWritePaths?: string[]
+  readOnlyRoots?: { id: string; nome: string; path: string }[]
+  interactive?: boolean
+  finishing?: boolean
   startedAt: number
   log: string
   model?: string
@@ -215,6 +220,13 @@ interface CodeRunSummary {
   progress?: AgentProgress
   autoApprove?: boolean
   approvals?: CodeApprovalRequest[]
+  questions?: CodeQuestionRequest[]
+}
+
+interface CodeQuestionRequest {
+  runId: string
+  id: string
+  question: string
 }
 
 interface CodeApprovalRequest {
@@ -324,7 +336,9 @@ declare global {
           prune: () => Promise<{ archived: number }>
           summary: () => Promise<MemorySummary>
           conflicts: () => Promise<MemoryConflict[]>
-          briefing: (projectId?: string | null) => Promise<{ text: string; count: number; archived: number }>
+          briefing: (
+            projectId?: string | null
+          ) => Promise<{ text: string; count: number; archived: number }>
           handoff: (input: {
             projectId?: string | null
             title: string
@@ -363,7 +377,14 @@ declare global {
             ext: string,
             data: number[]
           ) => Promise<
-            | { id: string; name: string; ext: string; size: number; text: string; truncated: boolean }
+            | {
+                id: string
+                name: string
+                ext: string
+                size: number
+                text: string
+                truncated: boolean
+              }
             | { error: string }
           >
           delete: (ids: string[]) => Promise<void>
@@ -376,7 +397,11 @@ declare global {
         }
         skills: {
           list: () => Promise<Skill[]>
-          save: (input: { name: string; body: string; oldName?: string }) => Promise<{ skill: Skill } | { error: string }>
+          save: (input: {
+            name: string
+            body: string
+            oldName?: string
+          }) => Promise<{ skill: Skill } | { error: string }>
           delete: (name: string) => Promise<void>
           import: () => Promise<{ skill: Skill } | { error: string }>
         }
@@ -393,6 +418,8 @@ declare global {
             path: string
             task: string
             files?: string[]
+            allowedWritePaths?: string[]
+            readOnlyRoots?: { id: string; nome: string; path: string }[]
             /** Scope decisions already agreed with the user, honoured without re-deciding. */
             decisoes?: string[]
             /** The chat that asked, so the run can be reopened from it later. */
@@ -400,11 +427,26 @@ declare global {
             /** The project whose memory to brief the agent with. */
             projectId?: string | null
             autoApprove?: boolean
-          }) => Promise<{ success: boolean; agent?: string; dir?: string; runId?: string; error?: string }>
+            /** Opens an external harness as a persistent terminal. */
+            interactive?: boolean
+          }) => Promise<{
+            success: boolean
+            agent?: string
+            dir?: string
+            runId?: string
+            error?: string
+          }>
           /** Stop one run by id, or all when omitted. */
           stop: (runId?: string) => Promise<void>
+          terminalInput: (
+            runId: string,
+            input: string
+          ) => Promise<{ success: boolean; error?: string }>
+          finishInteractive: (runId: string) => Promise<{ success: boolean; error?: string }>
           /** Answer an approval card the native agent's loop is parked on. */
           approve: (id: string, approved: boolean) => Promise<void>
+          /** Reply to a genuine implementation question, or cancel with an empty string. */
+          answerQuestion: (id: string, answer: string) => Promise<void>
           setAuto: (runId: string, enabled: boolean) => Promise<void>
           /**
            * `running` is true while any run is active.
@@ -439,7 +481,9 @@ declare global {
           onStarted: (cb: (payload: { runId: string; dir: string }) => void) => () => void
           onExit: (cb: (payload: { runId: string; code: number }) => void) => () => void
           /** A finished run has been archived and can now be listed. */
-          onArchived: (cb: (payload: { runId: string; id: string; convId: string | null }) => void) => () => void
+          onArchived: (
+            cb: (payload: { runId: string; id: string; convId: string | null }) => void
+          ) => () => void
           /** Live progress during a run (step + running token total). */
           onProgress: (cb: (p: { runId: string } & AgentProgress) => void) => () => void
           /** A tool call being run, then its result summary (native agent). */
@@ -473,8 +517,29 @@ declare global {
             }) => void
           ) => () => void
           /** A recognised environment failure hit mid-run (sandbox couldn't start, …). */
+          /** The native agent is paused until the user answers this question. */
+          onQuestion: (cb: (req: CodeQuestionRequest) => void) => () => void
           onHint: (cb: (hint: { runId: string } & AgentHint) => void) => () => void
-          onAutoChanged: (cb: (payload: { runId: string; autoApprove: boolean; resolvedApprovalIds?: string[] }) => void) => () => void
+          onAutoChanged: (
+            cb: (payload: {
+              runId: string
+              autoApprove: boolean
+              resolvedApprovalIds?: string[]
+            }) => void
+          ) => () => void
+        }
+        harnesses: {
+          /** Detects local CLIs only; it never starts a code task. */
+          status: (refresh?: boolean) => Promise<
+            Array<{
+              id: 'codex' | 'opencode' | 'claude-code'
+              label: string
+              command: string
+              installed: boolean
+              path: string | null
+              version: string | null
+            }>
+          >
         }
         jail: {
           status: (refresh?: boolean) => Promise<{
@@ -492,7 +557,12 @@ declare global {
             wslCommand: string
             wslAiJailCommands: string
           }>
-          install: () => Promise<{ success: boolean; version?: string; path?: string; error?: string }>
+          install: () => Promise<{
+            success: boolean
+            version?: string
+            path?: string
+            error?: string
+          }>
           dismissOnboarding: () => Promise<void>
           onProgress: (cb: (p: { phase: string; fraction: number | null }) => void) => () => void
         }
@@ -581,9 +651,7 @@ declare global {
         ) => Promise<{ success: boolean; cancelled?: boolean; error?: string }>
       }
       financial: {
-        fetchExchangeRate: (
-          pair: string
-        ) => Promise<{
+        fetchExchangeRate: (pair: string) => Promise<{
           rate: string
           date: string
           source: 'awesomeapi' | 'frankfurter' | 'cache' | 'identity'

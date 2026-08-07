@@ -44,6 +44,11 @@ export interface AIConfig {
    * the code agent uses the chat provider.
    */
   codeAgent?: { baseUrl?: string; apiKey?: string; model?: string }
+  /**
+   * Runtime that executes code changes. External harnesses are persisted now so
+   * their adapters can be added without changing the user's preference shape.
+   */
+  codeHarness?: 'sagyou' | 'codex' | 'opencode' | 'claude-code'
   /** Whether the ai-jail sandbox is required for the agent's shell commands (absent = on). */
   sandboxEnabled?: boolean
   /** Whether the sandbox onboarding has been answered (so it doesn't reappear). */
@@ -777,6 +782,24 @@ function withAviso(result: string, aviso: string): string {
   return result
 }
 
+/** True only when a sliced history keeps complete tool-call exchanges. */
+export function hasCompleteToolTurns(messages: ApiMessage[]): boolean {
+  let pending = new Set<string>()
+  for (const message of messages) {
+    if (message.role === 'assistant') {
+      if (pending.size > 0) return false
+      pending = new Set((message.tool_calls ?? []).map((call) => call.id))
+      continue
+    }
+    if (message.role === 'tool') {
+      if (!message.tool_call_id || !pending.delete(message.tool_call_id)) return false
+      continue
+    }
+    if (pending.size > 0) return false
+  }
+  return pending.size === 0
+}
+
 /** One model call's billed tokens plus the tools its step went on to run. */
 export interface StepCost {
   step: number
@@ -971,6 +994,8 @@ export async function runAgent(
   const blindFileReads = new Map<string, number>()
   const searchTerms: string[] = []
   let codeAgentStarted = false
+  let codeAgentLaunches = 0
+  const codeAgentErrors: string[] = []
 
   // Run-scoped progressive summarisation state. A rolling summary compresses
   // the middle of the history every SUMMARIZE_INTERVAL steps, keeping the
@@ -1149,7 +1174,13 @@ export async function runAgent(
         }
         if (name === 'rodar_agente_codigo') {
           try {
-            codeAgentStarted = JSON.parse(result).status === 'solicitado'
+            const launch = JSON.parse(result) as { status?: string; erro?: unknown }
+            if (launch.status === 'solicitado') {
+              codeAgentStarted = true
+              codeAgentLaunches++
+            } else if (typeof launch.erro === 'string') {
+              codeAgentErrors.push(launch.erro)
+            }
           } catch {
             // A malformed tool result is not a successful delegation.
           }
@@ -1159,8 +1190,14 @@ export async function runAgent(
 
       // The code agent now owns the implementation. Continuing this chat loop
       // would only duplicate discovery and spend tokens while it works.
-      if (codeAgentStarted) {
-        return 'Agente de código iniciado. Acompanhe o painel de saída para ver o progresso e o resultado.'
+      if (codeAgentStarted || codeAgentErrors.length) {
+        const started = codeAgentStarted
+          ? String(codeAgentLaunches) +
+            ' agente(s) de código iniciado(s). Acompanhe o painel de saída.'
+          : 'Nenhum agente de código foi iniciado.'
+        return codeAgentErrors.length
+          ? started + '\nFalha ao iniciar: ' + codeAgentErrors.join('\n')
+          : started
       }
 
       // Progressive summarisation: every SUMMARIZE_INTERVAL steps compress
@@ -1199,7 +1236,7 @@ export async function runAgent(
           }
           const mid = msgs.slice(2, cut)
           const tail = msgs.slice(cut)
-          if (mid.length > 0) {
+          if (mid.length > 0 && hasCompleteToolTurns(tail)) {
             costRecords.push({
               step: modelCalls + 1,
               prompt: 0,

@@ -38,6 +38,10 @@ function makeDefaultState(): TableViewState {
 
 export function FinancialView() {
   const lists = useKanbanStore((s) => s.lists)
+  const financialProfiles = useKanbanStore((s) => s.financialProfiles)
+  const activeFinancialProfileId = useKanbanStore((s) => s.activeFinancialProfileId)
+  const createFinancialProfile = useKanbanStore((s) => s.createFinancialProfile)
+  const setActiveFinancialProfile = useKanbanStore((s) => s.setActiveFinancialProfile)
   const createList = useKanbanStore((s) => s.createList)
   const updateList = useKanbanStore((s) => s.updateList)
   const deleteList = useKanbanStore((s) => s.deleteList)
@@ -58,6 +62,8 @@ export function FinancialView() {
   const updateYieldEntry = useKanbanStore((s) => s.updateYieldEntry)
   const deleteYieldEntry = useKanbanStore((s) => s.deleteYieldEntry)
 
+  const profileLists = lists.filter((list) => list.profileId === activeFinancialProfileId)
+  const activeProfile = financialProfiles.find((profile) => profile.id === activeFinancialProfileId)
   const [activeListId, setActiveListId] = useState<string | null>(null)
   const [tableStates, setTableStates] = useState<Record<string, TableViewState>>({})
   const [consolidatedMonth, setConsolidatedMonth] = useState<{ year: number; month: number }>(
@@ -76,16 +82,16 @@ export function FinancialView() {
   }>({ open: false, title: '', message: '', onConfirm: () => {} })
 
   useEffect(() => {
-    if (!activeListId && lists.length > 0) {
-      setActiveListId(lists[0].id)
+    if (!activeListId && profileLists.length > 0) {
+      setActiveListId(profileLists[0].id)
       return
     }
-    if (activeListId && !lists.find((l) => l.id === activeListId)) {
-      setActiveListId(lists[0]?.id ?? null)
+    if (activeListId && !profileLists.find((l) => l.id === activeListId)) {
+      setActiveListId(profileLists[0]?.id ?? null)
     }
-  }, [lists, activeListId])
+  }, [profileLists, activeListId])
 
-  const activeList = lists.find((l) => l.id === activeListId) ?? null
+  const activeList = profileLists.find((l) => l.id === activeListId) ?? null
   const currency: Currency = activeList?.currency ?? 'BRL'
 
   const ts: TableViewState = activeListId
@@ -101,14 +107,14 @@ export function FinancialView() {
   }
 
   const handleCreateList = (name: string, cur: Currency) => {
-    const id = createList(name, cur)
+    const id = createList(name, cur, activeFinancialProfileId)
     setActiveListId(id)
   }
 
   const handleDeleteList = (id: string) => {
-    const list = lists.find((l) => l.id === id)
+    const list = profileLists.find((l) => l.id === id)
     const hasYields = (list?.yieldSources?.length ?? 0) > 0
-    const linkedToThis = lists
+    const linkedToThis = profileLists
       .filter((l) => l.id !== id)
       .flatMap((l) =>
         l.transactions.filter(
@@ -159,7 +165,20 @@ export function FinancialView() {
     <div className="flex h-full overflow-hidden">
       <div className="w-44 shrink-0">
         <TableSidebar
-          lists={lists}
+          lists={profileLists}
+          profiles={financialProfiles}
+          activeProfileId={activeFinancialProfileId}
+          onSelectProfile={(id) => {
+            setActiveFinancialProfile(id)
+            setActiveListId(null)
+          }}
+          onCreateProfile={(name) => {
+            const id = createFinancialProfile(name)
+            if (id) {
+              setActiveFinancialProfile(id)
+              setActiveListId(null)
+            }
+          }}
           activeId={activeListId}
           onSelect={setActiveListId}
           onCreate={handleCreateList}
@@ -207,9 +226,11 @@ export function FinancialView() {
                       <rect x="3" y="14" width="7" height="7" rx="1" />
                       <rect x="14" y="14" width="7" height="7" rx="1" />
                     </svg>
-                    <h2 className="text-sm font-semibold text-[#d4d4d4]">Consolidado</h2>
+                    <h2 className="text-sm font-semibold text-[#d4d4d4]">
+                      Consolidado · {activeProfile?.name ?? 'Perfil'}
+                    </h2>
                     <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-[#7c3aed]/15 text-[#a080f0]">
-                      {lists.length} tabela{lists.length !== 1 ? 's' : ''}
+                      {profileLists.length} tabela{profileLists.length !== 1 ? 's' : ''}
                     </span>
                   </>
                 ) : (
@@ -346,7 +367,7 @@ export function FinancialView() {
             {ts.activeTab === 'finance' && (
               <FinanceTab
                 list={activeList}
-                allLists={lists}
+                allLists={profileLists}
                 activeMonth={ts.financeMonth}
                 onMonthChange={(m) => updateTs({ financeMonth: m })}
                 categoryFilter={ts.financeCategoryFilter}
@@ -376,7 +397,7 @@ export function FinancialView() {
             )}
             {ts.activeTab === 'consolidated' && (
               <ConsolidatedTab
-                lists={lists}
+                lists={profileLists}
                 activeMonth={consolidatedMonth}
                 onMonthChange={setConsolidatedMonth}
                 categoryFilter={consolidatedCategoryFilter}
@@ -387,7 +408,7 @@ export function FinancialView() {
                   })
                 }
                 onLinkDetail={(targetListId, targetTxId, detailId, sourceTxId) => {
-                  const target = lists
+                  const target = profileLists
                     .find((list) => list.id === targetListId)
                     ?.transactions.find((transaction) => transaction.id === targetTxId)
                   if (!target) return

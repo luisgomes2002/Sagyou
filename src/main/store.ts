@@ -177,10 +177,17 @@ interface YieldEntry {
   amount: number | string
   createdAt: string
 }
+interface FinancialProfile {
+  id: string
+  name: string
+  createdAt: string
+  updatedAt: string
+}
 interface FinancialTable {
   id: string
   name: string
   currency: string
+  profileId?: string
   items: ShoppingItem[]
   transactions: FinancialTransaction[]
   goals: FinancialGoal[]
@@ -262,6 +269,8 @@ interface SaveData {
   goals: Goal[]
   habits: Habit[]
   lists: FinancialTable[]
+  financialProfiles?: FinancialProfile[]
+  activeFinancialProfileId?: string
   files: StoredFile[]
   timeBlocks?: TimeBlock[]
   routines?: Routine[]
@@ -325,6 +334,33 @@ function financialMetadata(value: unknown): Record<string, unknown> {
   } catch {
     return {}
   }
+}
+
+const DEFAULT_FINANCIAL_PROFILE_ID = 'personal'
+
+function defaultFinancialProfiles(): FinancialProfile[] {
+  return [
+    {
+      id: DEFAULT_FINANCIAL_PROFILE_ID,
+      name: 'Minhas finanças',
+      createdAt: '1970-01-01T00:00:00.000Z',
+      updatedAt: '1970-01-01T00:00:00.000Z'
+    }
+  ]
+}
+
+function parseFinancialProfiles(value: unknown): FinancialProfile[] {
+  if (!Array.isArray(value)) return defaultFinancialProfiles()
+  const profiles = value.filter(
+    (profile): profile is FinancialProfile =>
+      !!profile &&
+      typeof profile === 'object' &&
+      typeof (profile as FinancialProfile).id === 'string' &&
+      typeof (profile as FinancialProfile).name === 'string' &&
+      typeof (profile as FinancialProfile).createdAt === 'string' &&
+      typeof (profile as FinancialProfile).updatedAt === 'string'
+  )
+  return profiles.length ? profiles : defaultFinancialProfiles()
 }
 
 function transactionDetails(value: unknown): FinancialTransactionDetail[] {
@@ -1105,7 +1141,8 @@ function prepareWrite(db: Database.Database) {
         actualBalance: ft.actualBalance,
         actualBalanceUpdatedAt: ft.actualBalanceUpdatedAt,
         budgets: ft.budgets,
-        recurringTransactions: ft.recurringTransactions
+        recurringTransactions: ft.recurringTransactions,
+        profileId: ft.profileId
       })
       ins.ftable.run(ft.id, ft.name, ft.currency, ft.createdAt, ft.updatedAt, metadata)
       for (const i of ft.items ?? [])
@@ -1193,11 +1230,14 @@ function prepareWrite(db: Database.Database) {
   const setTimers = (v: unknown): void => {
     ins.setting.run('activeTimers', JSON.stringify(v))
   }
+  const setSetting = (key: string, value: unknown): void => {
+    ins.setting.run(key, JSON.stringify(value))
+  }
   const clearTimers = (): void => {
     del.setting.run('activeTimers')
   }
 
-  return { insert, del, setTimer, clearTimer, setTimers, clearTimers }
+  return { insert, del, setTimer, clearTimer, setTimers, clearTimers, setSetting }
 }
 
 /**
@@ -1206,6 +1246,20 @@ function prepareWrite(db: Database.Database) {
  * agree. An empty array clears both keys, so a stopped timer never lingers to
  * the next boot.
  */
+function writeFinancialProfiles(
+  w: ReturnType<typeof prepareWrite>,
+  profiles: FinancialProfile[] | undefined,
+  activeProfileId: string | undefined
+): void {
+  const normalized = parseFinancialProfiles(profiles)
+  const ids = new Set(normalized.map((profile) => profile.id))
+  w.setSetting('financialProfiles', normalized)
+  w.setSetting(
+    'activeFinancialProfileId',
+    ids.has(activeProfileId ?? '') ? activeProfileId : DEFAULT_FINANCIAL_PROFILE_ID
+  )
+}
+
 function writeTimers(
   w: ReturnType<typeof prepareWrite>,
   timers: { taskId: string; startedAt: number }[] | undefined,
@@ -1260,6 +1314,12 @@ function persistDiff(db: Database.Database, prev: SaveData, next: SaveData): voi
   diffEntities(prev.goals, next.goals, w.del.goal, w.insert.goal)
   diffEntities(prev.habits, next.habits, w.del.habit, w.insert.habit)
   diffEntities(prev.lists, next.lists, w.del.ftable, w.insert.ftable)
+  if (
+    JSON.stringify(prev.financialProfiles ?? []) !== JSON.stringify(next.financialProfiles ?? []) ||
+    prev.activeFinancialProfileId !== next.activeFinancialProfileId
+  ) {
+    writeFinancialProfiles(w, next.financialProfiles, next.activeFinancialProfileId)
+  }
   diffEntities(prev.files, next.files, w.del.file, w.insert.file)
   diffEntities(prev.timeBlocks ?? [], next.timeBlocks ?? [], w.del.timeBlock, w.insert.timeBlock)
   diffEntities(prev.routines ?? [], next.routines ?? [], w.del.routine, w.insert.routine)
@@ -1311,6 +1371,7 @@ function persistAll(db: Database.Database, data: SaveData): void {
   for (const g of data.goals ?? []) w.insert.goal(g)
   for (const h of data.habits ?? []) w.insert.habit(h)
   for (const ft of data.lists ?? []) w.insert.ftable(ft)
+  writeFinancialProfiles(w, data.financialProfiles, data.activeFinancialProfileId)
   for (const f of data.files ?? []) w.insert.file(f)
   for (const tb of data.timeBlocks ?? []) w.insert.timeBlock(tb)
   for (const r of data.routines ?? []) w.insert.routine(r)
@@ -1508,7 +1569,8 @@ export function loadData(): SaveData {
         ...(Array.isArray(meta.budgets) ? { budgets: meta.budgets } : {}),
         ...(Array.isArray(meta.recurringTransactions)
           ? { recurringTransactions: meta.recurringTransactions }
-          : {})
+          : {}),
+        ...(typeof meta.profileId === 'string' ? { profileId: meta.profileId } : {})
       }
     })(),
     items: (itemsByTable.get(ft.id) ?? []).map((i) => ({
@@ -1624,6 +1686,14 @@ export function loadData(): SaveData {
       | undefined
     return row ? JSON.parse(row.value) : null
   }
+  const financialProfiles = parseFinancialProfiles(getSetting('financialProfiles'))
+  const financialProfileIds = new Set(financialProfiles.map((profile) => profile.id))
+  const configuredActiveFinancialProfileId = getSetting('activeFinancialProfileId')
+  const activeFinancialProfileId =
+    typeof configuredActiveFinancialProfileId === 'string' &&
+    financialProfileIds.has(configuredActiveFinancialProfileId)
+      ? configuredActiveFinancialProfileId
+      : DEFAULT_FINANCIAL_PROFILE_ID
   const legacyTimer = getSetting('activeTimer')
   const timersRaw = getSetting('activeTimers')
   const activeTimers = Array.isArray(timersRaw) ? timersRaw : legacyTimer ? [legacyTimer] : []
@@ -1636,7 +1706,14 @@ export function loadData(): SaveData {
     notes,
     goals,
     habits,
-    lists,
+    lists: lists.map((list) => ({
+      ...list,
+      profileId: financialProfileIds.has(list.profileId ?? '')
+        ? list.profileId
+        : DEFAULT_FINANCIAL_PROFILE_ID
+    })),
+    financialProfiles,
+    activeFinancialProfileId,
     files,
     timeBlocks,
     routines,

@@ -1,8 +1,33 @@
-import type { Project, Task, Sprint, Tombstone, Backup, AIJson, StickyNote, Goal, Habit, FinancialTable, StoredFile, AIConversation, AiMemory, TimeBlock, Routine } from '../types'
+import type {
+  Project,
+  Task,
+  Sprint,
+  Tombstone,
+  Backup,
+  AIJson,
+  StickyNote,
+  Goal,
+  Habit,
+  FinancialTable,
+  FinancialProfile,
+  StoredFile,
+  AIConversation,
+  AiMemory,
+  TimeBlock,
+  Routine
+} from '../types'
 
 type SaveData = {
-  projects: Project[]; tasks: Task[]; sprints: Sprint[]; tombstones: Tombstone[]
-  notes: StickyNote[]; goals: Goal[]; habits: Habit[]; lists: FinancialTable[]
+  projects: Project[]
+  tasks: Task[]
+  sprints: Sprint[]
+  tombstones: Tombstone[]
+  notes: StickyNote[]
+  goals: Goal[]
+  habits: Habit[]
+  lists: FinancialTable[]
+  financialProfiles?: FinancialProfile[]
+  activeFinancialProfileId?: string
   files: StoredFile[]
   timeBlocks?: TimeBlock[]
   routines?: Routine[]

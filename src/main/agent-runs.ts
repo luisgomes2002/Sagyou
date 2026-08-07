@@ -38,6 +38,10 @@ export interface AgentRunMeta {
    */
   agent: string
   dir: string
+  /** Exact write allowlist preserved for a follow-up chat turn. */
+  allowedWritePaths?: string[]
+  /** External roots available only to read tools, preserved for a follow-up turn. */
+  readOnlyRoots?: { id: string; nome: string; path: string }[]
   /** The task as asked, trimmed for the row's tooltip. */
   task: string
   startedAt: number
@@ -99,6 +103,19 @@ export function normalizeRuns(raw: unknown): AgentRunMeta[] {
       // no agent) reads back as "codex" so the picker always has something to show.
       agent: typeof m.agent === 'string' && m.agent.trim() ? m.agent : 'codex',
       dir: typeof m.dir === 'string' ? m.dir : '',
+      ...(Array.isArray(m.allowedWritePaths)
+        ? { allowedWritePaths: m.allowedWritePaths.filter((p): p is string => typeof p === 'string' && p !== '') }
+        : {}),
+      ...(Array.isArray(m.readOnlyRoots)
+        ? {
+            readOnlyRoots: m.readOnlyRoots
+              .filter((r): r is { id: string; nome: string; path: string } =>
+                !!r && typeof r === 'object' && typeof (r as Record<string, unknown>).id === 'string' &&
+                typeof (r as Record<string, unknown>).nome === 'string' && typeof (r as Record<string, unknown>).path === 'string'
+              )
+              .map((r) => ({ id: r.id, nome: r.nome, path: r.path }))
+          }
+        : {}),
       task: taskLabel(m.task),
       startedAt: Number(m.startedAt) || 0,
       endedAt: Number(m.endedAt) || 0,

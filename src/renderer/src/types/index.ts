@@ -200,10 +200,21 @@ export interface YieldEntry {
   createdAt: string
 }
 
+export const DEFAULT_FINANCIAL_PROFILE_ID = 'personal'
+
+export interface FinancialProfile {
+  id: string
+  name: string
+  createdAt: string
+  updatedAt: string
+}
+
 export interface FinancialTable {
   id: string
   name: string
   currency: Currency
+  /** Finance profiles are isolated in every consolidated view. Missing legacy values migrate to personal. */
+  profileId?: string
   items: ShoppingItem[]
   transactions: FinancialTransaction[]
   goals: FinancialGoal[]
@@ -246,6 +257,9 @@ export interface Backup {
   goals?: Goal[]
   habits?: Habit[]
   lists?: FinancialTable[]
+  /** Added in version 7. Older backups place all tables in the personal profile. */
+  financialProfiles?: FinancialProfile[]
+  activeFinancialProfileId?: string
   // Added in version 3. Absent in older backups — importing one of those must
   // leave the local history untouched rather than wiping it.
   conversations?: AIConversation[]

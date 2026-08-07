@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid'
 import Decimal from 'decimal.js'
 import type {
   FinancialTable,
+  FinancialProfile,
   FinancialTransaction,
   FinancialGoal,
   ShoppingItem,
@@ -10,10 +11,15 @@ import type {
   YieldEntry,
   Currency
 } from '../../types'
+import { DEFAULT_FINANCIAL_PROFILE_ID } from '../../types'
 
 export interface FinancialSlice {
   lists: FinancialTable[]
-  createList: (name: string, currency?: Currency) => string
+  financialProfiles: FinancialProfile[]
+  activeFinancialProfileId: string
+  createFinancialProfile: (name: string) => string
+  setActiveFinancialProfile: (id: string) => void
+  createList: (name: string, currency?: Currency, profileId?: string) => string
   updateList: (id: string, name: string) => void
   setListCurrency: (id: string, currency: Currency) => void
   updateFinancialSettings: (
@@ -74,10 +80,44 @@ export const createFinancialSlice: StateCreator<
   FinancialSlice
 > = (set, get) => ({
   lists: [],
+  financialProfiles: [
+    {
+      id: DEFAULT_FINANCIAL_PROFILE_ID,
+      name: 'Minhas finanças',
+      createdAt: '1970-01-01T00:00:00.000Z',
+      updatedAt: '1970-01-01T00:00:00.000Z'
+    }
+  ],
+  activeFinancialProfileId: DEFAULT_FINANCIAL_PROFILE_ID,
 
-  createList: (name, currency = 'BRL') => {
+  createFinancialProfile: (name) => {
+    const trimmed = name.trim()
+    if (!trimmed) return ''
     const now = new Date().toISOString()
     const id = uuidv4()
+    set((s) => ({
+      financialProfiles: [
+        ...s.financialProfiles,
+        { id, name: trimmed, createdAt: now, updatedAt: now }
+      ]
+    }))
+    get()._persist()
+    return id
+  },
+
+  setActiveFinancialProfile: (id) => {
+    if (!get().financialProfiles.some((profile) => profile.id === id)) return
+    set({ activeFinancialProfileId: id })
+    get()._persist()
+  },
+
+  createList: (name, currency = 'BRL', profileId) => {
+    const now = new Date().toISOString()
+    const id = uuidv4()
+    const selectedProfile =
+      profileId && get().financialProfiles.some((profile) => profile.id === profileId)
+        ? profileId
+        : get().activeFinancialProfileId
     set((s) => ({
       lists: [
         ...s.lists,
@@ -85,6 +125,7 @@ export const createFinancialSlice: StateCreator<
           id,
           name,
           currency,
+          profileId: selectedProfile,
           items: [],
           transactions: [],
           goals: [],
