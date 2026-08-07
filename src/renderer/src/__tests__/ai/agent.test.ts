@@ -27,6 +27,7 @@ import {
   ELIDED,
   summarizeRunCost,
   routeModel,
+  hasCompleteToolTurns,
   type ApiMessage
 } from '../../ai/agent'
 import { runTool } from '../../ai/tools'
@@ -306,6 +307,26 @@ describe('resolveMaxSteps', () => {
   })
 })
 
+describe('hasCompleteToolTurns', () => {
+  it('rejects a tail with an unanswered or orphaned tool call', () => {
+    expect(
+      hasCompleteToolTurns([
+        { role: 'assistant', content: '', tool_calls: [toolCall('a', 'ler_x')] as never[] }
+      ])
+    ).toBe(false)
+    expect(hasCompleteToolTurns([{ role: 'tool', content: '{}', tool_call_id: 'a' }])).toBe(false)
+  })
+
+  it('accepts a complete assistant and tool exchange', () => {
+    expect(
+      hasCompleteToolTurns([
+        { role: 'assistant', content: '', tool_calls: [toolCall('a', 'ler_x')] as never[] },
+        { role: 'tool', content: '{}', tool_call_id: 'a' }
+      ])
+    ).toBe(true)
+  })
+})
+
 describe('runAgent — retry with backoff', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -486,7 +507,7 @@ describe('runAgent (tool-calling loop)', () => {
 
     const result = await runAgent(cfg, user, approveNone)
 
-    expect(result).toContain('Agente de código iniciado')
+    expect(result).toContain('agente(s) de código iniciado')
     expect(chat).toHaveBeenCalledTimes(1)
     expect(runTool).toHaveBeenCalledWith(
       'rodar_agente_codigo',

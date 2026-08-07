@@ -52,7 +52,12 @@ function installApi(): void {
         get: vi.fn(async () => ({ error: 'Imagem não encontrada' })),
         delete: vi.fn(async () => {})
       },
-      skills: { list: vi.fn(async () => []), save: vi.fn(), delete: vi.fn(async () => {}), import: vi.fn() },
+      skills: {
+        list: vi.fn(async () => []),
+        save: vi.fn(),
+        delete: vi.fn(async () => {}),
+        import: vi.fn()
+      },
       codeAgent: {
         onOutput: vi.fn(() => vi.fn()),
         onStarted: vi.fn(() => vi.fn()),
@@ -63,6 +68,7 @@ function installApi(): void {
         // Native agent: a tool step, and the per-action approval card.
         onToolEvent: vi.fn(() => vi.fn()),
         onApproveRequest: vi.fn(() => vi.fn()),
+        onQuestion: vi.fn(() => vi.fn()),
         // A recognised environment failure (e.g. the sandbox couldn't start).
         onHint: vi.fn(() => vi.fn()),
         // Live step + token counter pushed each step.
@@ -74,6 +80,34 @@ function installApi(): void {
         // stream entirely while this view was unmounted.
         status: vi.fn(async () => ({ running: false, log: '' })),
         stop: vi.fn()
+      },
+      harnesses: {
+        status: vi.fn(async () => [
+          {
+            id: 'codex',
+            label: 'Codex',
+            command: 'codex',
+            installed: true,
+            path: '/usr/local/bin/codex',
+            version: 'codex 1.0.0'
+          },
+          {
+            id: 'opencode',
+            label: 'OpenCode',
+            command: 'opencode',
+            installed: true,
+            path: '/usr/local/bin/opencode',
+            version: 'opencode 1.0.0'
+          },
+          {
+            id: 'claude-code',
+            label: 'Claude Code',
+            command: 'claude',
+            installed: false,
+            path: null,
+            version: null
+          }
+        ])
       },
       jail: {
         // Available so the onboarding modal stays closed in these tests.
@@ -147,7 +181,6 @@ const emptyBucket = {
 }
 /** Counter behind the fake image ids (img-1, img-2…). Reset per test. */
 let savedImageN = 0
-
 
 /** What the history search returns. Reset per test. */
 let storedHistory: { id: string; title: string; updatedAt: string; snippet?: string }[] = []
@@ -652,6 +685,39 @@ describe('AIView — stopping a run', () => {
   })
 })
 
+describe('AIView — harness de código', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    storedConfig = { baseUrl: 'http://x', apiKey: 'k', model: 'm' }
+    installApi()
+    Element.prototype.scrollTo = vi.fn()
+  })
+
+  it('persists the selected harness and explains its isolated execution', async () => {
+    renderAI(<AIView projects={[]} />)
+    await userEvent.click(await screen.findByText('Configuração'))
+
+    expect(await screen.findByText('Harness de execução')).toBeInTheDocument()
+    expect(await screen.findByText('Instalado · codex 1.0.0')).toBeInTheDocument()
+    expect(screen.getByText('EM TESTE')).toBeInTheDocument()
+
+    await userEvent.click(
+      screen.getByRole('button', { name: /Verificar novamente|Verificado agora/ })
+    )
+    expect(await screen.findByText('Verificado agora')).toBeInTheDocument()
+    expect(vi.mocked(window.electronAPI.ai.harnesses.status)).toHaveBeenLastCalledWith(true)
+
+    await userEvent.click(screen.getByRole('button', { name: /Codex/ }))
+
+    expect(await screen.findByText(/vai executar em um worktree isolado/)).toBeInTheDocument()
+    await waitFor(() =>
+      expect(vi.mocked(window.electronAPI.ai.config.set)).toHaveBeenLastCalledWith(
+        expect.objectContaining({ codeHarness: 'codex' })
+      )
+    )
+  })
+})
+
 describe('AIView — composer gating', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -736,7 +802,6 @@ describe('AIView — composer gating', () => {
     await waitFor(() => expect(box).not.toBeDisabled())
   })
 })
-
 
 describe('AIView — keyboard shortcuts', () => {
   beforeEach(() => {
@@ -825,7 +890,6 @@ describe('AIView — keyboard shortcuts', () => {
       await waitFor(() => expect(screen.queryByText(/Aprovar ações da IA/)).not.toBeInTheDocument())
     })
 
-
     it('closes the history, wherever the focus is', async () => {
       renderAI(<AIView projects={[]} />)
       await userEvent.click(screen.getByText('Histórico'))
@@ -868,7 +932,9 @@ describe('AIView — keyboard shortcuts', () => {
 
       esc()
 
-      await waitFor(() => expect(screen.queryByText(/não pode ser desfeita/)).not.toBeInTheDocument())
+      await waitFor(() =>
+        expect(screen.queryByText(/não pode ser desfeita/)).not.toBeInTheDocument()
+      )
       expect(window.electronAPI.ai.conversations.delete).not.toHaveBeenCalled()
     })
 
@@ -882,7 +948,9 @@ describe('AIView — keyboard shortcuts', () => {
       await screen.findByText(/não pode ser desfeita/)
 
       esc()
-      await waitFor(() => expect(screen.queryByText(/não pode ser desfeita/)).not.toBeInTheDocument())
+      await waitFor(() =>
+        expect(screen.queryByText(/não pode ser desfeita/)).not.toBeInTheDocument()
+      )
 
       // …and the config panel underneath is still reachable by a second press.
       await userEvent.click(screen.getByText('Configuração'))
@@ -960,7 +1028,9 @@ describe('AIView — pasted images', () => {
     const box = screen.getByPlaceholderText(/Descreva o projeto/)
     await waitFor(() => expect(box).not.toBeDisabled())
 
-    fireEvent.paste(box, { clipboardData: { files: [], types: ['text/plain'], getData: () => 'oi' } })
+    fireEvent.paste(box, {
+      clipboardData: { files: [], types: ['text/plain'], getData: () => 'oi' }
+    })
 
     expect(window.electronAPI.ai.images.save).not.toHaveBeenCalled()
   })
@@ -996,7 +1066,9 @@ describe('AIView — pasted images', () => {
     // them cope with it for a chat that has no images.
     const last = vi.mocked(runAgent).mock.calls[0][1].at(-1)
     expect(last?.role).toBe('user')
-    expect(typeof last?.content === 'string' && (last.content as string).includes('só texto')).toBe(true)
+    expect(typeof last?.content === 'string' && (last.content as string).includes('só texto')).toBe(
+      true
+    )
   })
 
   it('sends an image with no text at all', async () => {

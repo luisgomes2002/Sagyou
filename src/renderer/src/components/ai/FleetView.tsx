@@ -44,10 +44,14 @@ interface ChatSession {
   dir: string
   task: string
   agent: string
+  allowedWritePaths?: string[]
+  readOnlyRoots?: { id: string; nome: string; path: string }[]
   /** convId that links multiple runs into one conversation. */
   sessionId: string
   /** Live runId while a continuation is running. Null when idle. */
   runId: string | null
+  /** Whether the next continuation opens the external harness terminal. */
+  interactive: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -70,6 +74,20 @@ interface CodeAgentRunUI {
     completionTokens: number
   } | null
   autoApprove: boolean
+  allowedWritePaths?: string[]
+  readOnlyRoots?: { id: string; nome: string; path: string }[]
+  interactive: boolean
+  finishing: boolean
+  /** Questions pause a run until the user supplies an answer. */
+  questions: { id: string; question: string }[]
+  /** Structured activity emitted for every tool call and result. */
+  events: {
+    id: string
+    name: string
+    detail: string
+    phase: 'call' | 'result'
+    at: number
+  }[]
   /** Pending approval requests — shown inline until the user acts on them. */
   approvals: {
     id: string
@@ -89,6 +107,8 @@ function useCodeAgentRuns(): {
   stopAgent: (runId: string) => void
   setAuto: (runId: string, enabled: boolean) => void
   approveAgent: (runId: string, id: string, approved: boolean) => void
+  terminalInput: (runId: string, input: string) => Promise<void>
+  finishInteractive: (runId: string) => Promise<void>
 } {
   const [runs, setRuns] = useState<CodeAgentRunUI[]>([])
 
@@ -109,6 +129,12 @@ function useCodeAgentRuns(): {
             hint: r.hint,
             progress: r.progress ?? null,
             autoApprove: r.autoApprove ?? false,
+            allowedWritePaths: r.allowedWritePaths,
+            readOnlyRoots: r.readOnlyRoots,
+            interactive: r.interactive === true,
+            finishing: r.finishing === true,
+            questions: r.questions ?? existing?.questions ?? [],
+            events: existing?.events ?? [],
             approvals: r.approvals ?? existing?.approvals ?? []
           }
         })
@@ -201,7 +227,53 @@ function useCodeAgentRuns(): {
       )
     })
 
-    // 8. Environment hint mid-run (sandbox blocked, etc.)
+    // 8. Tool events are more useful than raw output for a live UI: they tell
+    // the user what the agent is doing even when the model emits no prose.
+    const offToolEvent = window.electronAPI.ai.codeAgent.onToolEvent((event) => {
+      const detail =
+        event.phase === 'result'
+          ? event.summary || 'Etapa concluída'
+          : describeToolActivity(event.name, event.args ?? {})
+      setRuns((prev) =>
+        prev.map((run) =>
+          run.id === event.runId
+            ? {
+                ...run,
+                events: [
+                  ...run.events.slice(-23),
+                  {
+                    id: `${event.name}-${event.phase}-${Date.now()}-${Math.random()}`,
+                    name: event.name,
+                    detail,
+                    phase: event.phase,
+                    at: Date.now()
+                  }
+                ]
+              }
+            : run
+        )
+      )
+    })
+
+    // 9. Questions also appear on the run card, not only in the modal, so the
+    // user can tell why that agent is paused when several are active.
+    const offQuestion = window.electronAPI.ai.codeAgent.onQuestion((question) => {
+      setRuns((prev) =>
+        prev.map((run) =>
+          run.id === question.runId
+            ? {
+                ...run,
+                questions: [
+                  ...run.questions.filter((pending) => pending.id !== question.id),
+                  { id: question.id, question: question.question }
+                ]
+              }
+            : run
+        )
+      )
+    })
+
+    // 10. Environment hint mid-run (sandbox blocked, etc.)
     const offHint = window.electronAPI.ai.codeAgent.onHint((hint) => {
       setRuns((prev) =>
         prev.map((r) =>
@@ -219,6 +291,8 @@ function useCodeAgentRuns(): {
       offExit()
       offAutoChanged()
       offApproveRequest()
+      offToolEvent()
+      offQuestion()
       offHint()
     }
   }, [sync])
@@ -245,7 +319,20 @@ function useCodeAgentRuns(): {
     )
   }, [])
 
-  return { runs, stopAgent, setAuto, approveAgent }
+  const terminalInput = useCallback(async (runId: string, input: string): Promise<void> => {
+    const result = await window.electronAPI.ai.codeAgent.terminalInput(runId, input)
+    if (!result.success) throw new Error(result.error || 'Não foi possível enviar ao terminal.')
+  }, [])
+
+  const finishInteractive = useCallback(
+    async (runId: string): Promise<void> => {
+      await window.electronAPI.ai.codeAgent.finishInteractive(runId)
+      sync()
+    },
+    [sync]
+  )
+
+  return { runs, stopAgent, setAuto, approveAgent, terminalInput, finishInteractive }
 }
 
 export function FleetView({
@@ -269,7 +356,14 @@ export function FleetView({
   const openConversation = useAiRunStore((s) => s.openConversation)
   const abort = useAiRunStore((s) => s.abort)
 
-  const { runs: codeRuns, stopAgent, setAuto, approveAgent } = useCodeAgentRuns()
+  const {
+    runs: codeRuns,
+    stopAgent,
+    setAuto,
+    approveAgent,
+    terminalInput,
+    finishInteractive
+  } = useCodeAgentRuns()
 
   // ── Archived runs (finished code agents, last 24h) ──────────────────────────
   const [archivedRuns, setArchivedRuns] = useState<AgentRunMeta[]>([])
@@ -588,6 +682,29 @@ export function FleetView({
                 </div>
               )
             })()}
+            {chatSession.runId &&
+              (() => {
+                const liveRun = codeRuns.find((run) => run.id === chatSession.runId)
+                return liveRun?.interactive ? (
+                  <div className="mb-3">
+                    <AgentTerminal log={liveRun.log} running={!liveRun.finishing} />
+                    {liveRun.finishing ? (
+                      <p className="px-1 text-[11px] text-[#999999]">
+                        Encerrando a sessão e preparando o diff para sua aprovação…
+                      </p>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          void finishInteractive(liveRun.id)
+                        }}
+                        className="ml-6 rounded border border-[#f0b820]/40 px-3 py-1.5 text-xs text-[#f0b820] hover:bg-[#f0b820]/10"
+                      >
+                        Encerrar e revisar diff
+                      </button>
+                    )}
+                  </div>
+                ) : null
+              })()}
             <div className="flex-1 space-y-3 mb-3 overflow-y-auto">
               {chatMessages.map((m, i) => (
                 <div
@@ -620,6 +737,26 @@ export function FleetView({
               )}
             </div>
             <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() =>
+                  setChatSession((prev) =>
+                    prev ? { ...prev, interactive: !prev.interactive } : prev
+                  )
+                }
+                disabled={
+                  !!chatSession.runId &&
+                  codeRuns.some((run) => run.id === chatSession.runId && run.interactive)
+                }
+                title="Ative para a próxima continuação abrir um terminal persistente do harness externo."
+                className={
+                  chatSession.interactive
+                    ? 'rounded-lg border border-[#7c3aed] bg-[#7c3aed]/15 px-2 py-2 text-[11px] text-[#c4b5fd]'
+                    : 'rounded-lg border border-[#3b3b3b] px-2 py-2 text-[11px] text-[#999999] hover:text-[#d4d4d4]'
+                }
+              >
+                {chatSession.interactive ? 'Terminal ao vivo' : 'Modo por tarefa'}
+              </button>
               <input
                 type="text"
                 value={chatInput}
@@ -633,13 +770,23 @@ export function FleetView({
                     setChatSending(true)
                     setChatMessages((prev) => [...prev, { role: 'user', text: msg }])
                     try {
+                      const liveInteractive =
+                        chatSession.runId &&
+                        codeRuns.find((run) => run.id === chatSession.runId)?.interactive
+                      if (liveInteractive && chatSession.runId) {
+                        await terminalInput(chatSession.runId, msg + '\r')
+                        return
+                      }
                       const task = `(Continuação da tarefa anterior: "${chatSession.task}")\n\n${msg}`
                       const result = await window.electronAPI.ai.codeAgent.run({
                         path: chatSession.dir,
                         task,
                         files: undefined,
+                        allowedWritePaths: chatSession.allowedWritePaths,
+                        readOnlyRoots: chatSession.readOnlyRoots,
                         projectId: undefined,
-                        convId: chatSession.sessionId
+                        convId: chatSession.sessionId,
+                        interactive: chatSession.interactive
                       })
                       if (result.runId) {
                         setChatSession((prev) =>
@@ -651,7 +798,11 @@ export function FleetView({
                     }
                   }
                 }}
-                placeholder="Digite uma mensagem para o agente de código…"
+                placeholder={
+                  chatSession.interactive
+                    ? 'Enviar ao terminal do agente…'
+                    : 'Digite uma mensagem para o agente de código…'
+                }
                 disabled={chatSending}
                 className="flex-1 px-3 py-2 rounded-lg bg-[#1b1b1b] border border-[#3b3b3b] text-sm text-[#d4d4d4] placeholder:text-[#666666] focus:outline-none focus:border-[#7c3aed] disabled:opacity-50"
               />
@@ -663,13 +814,23 @@ export function FleetView({
                   setChatSending(true)
                   setChatMessages((prev) => [...prev, { role: 'user', text: msg }])
                   try {
+                    const liveInteractive =
+                      chatSession.runId &&
+                      codeRuns.find((run) => run.id === chatSession.runId)?.interactive
+                    if (liveInteractive && chatSession.runId) {
+                      await terminalInput(chatSession.runId, msg + '\r')
+                      return
+                    }
                     const task = `(Continuação da tarefa anterior: "${chatSession.task}")\n\n${msg}`
                     const result = await window.electronAPI.ai.codeAgent.run({
                       path: chatSession.dir,
                       task,
                       files: undefined,
+                      allowedWritePaths: chatSession.allowedWritePaths,
+                      readOnlyRoots: chatSession.readOnlyRoots,
                       projectId: undefined,
-                      convId: chatSession.sessionId
+                      convId: chatSession.sessionId,
+                      interactive: chatSession.interactive
                     })
                     if (result.runId) {
                       setChatSession((prev) =>
@@ -719,6 +880,10 @@ export function FleetView({
                   const tokens = runUsage[id] ?? EMPTY_USAGE
                   const progress = progressOf(id)
                   const awaiting = pendingApprovals.some((p) => p.convId === id)
+                  const recentStatus = messagesOf(id)
+                    .filter((message) => message.role === 'status')
+                    .slice(-4)
+                    .reverse()
                   return (
                     <div
                       key={id}
@@ -757,6 +922,67 @@ export function FleetView({
                           {awaiting ? 'Aguardando sua aprovação…' : activityOf(id)}
                         </p>
                       </div>
+
+                      {progress && (
+                        <div
+                          className="h-1.5 overflow-hidden rounded-full bg-[#151515]"
+                          role="progressbar"
+                          aria-label="Progresso do agente"
+                          aria-valuemin={0}
+                          aria-valuemax={progress.maxSteps || undefined}
+                          aria-valuenow={progress.maxSteps ? progress.step : undefined}
+                        >
+                          <div
+                            className={
+                              progress.maxSteps
+                                ? 'h-full rounded-full bg-[#8b5cf6] transition-all duration-500'
+                                : 'h-full w-1/3 rounded-full bg-[#8b5cf6] animate-pulse'
+                            }
+                            style={
+                              progress.maxSteps
+                                ? {
+                                    width: `${Math.min(
+                                      100,
+                                      (progress.step / progress.maxSteps) * 100
+                                    )}%`
+                                  }
+                                : undefined
+                            }
+                          />
+                        </div>
+                      )}
+
+                      {recentStatus.length > 0 && (
+                        <div className="rounded-lg border border-[#34303d] bg-[#1b1b1b] px-3 py-2">
+                          <div className="mb-1.5 flex items-center justify-between">
+                            <span className="text-[10px] font-medium uppercase tracking-wide text-[#a080f0]">
+                              Atividade recente
+                            </span>
+                            <span className="text-[10px] text-[#666666]">
+                              {recentStatus.length} etapa{recentStatus.length === 1 ? '' : 's'}
+                            </span>
+                          </div>
+                          <div className="space-y-1.5">
+                            {recentStatus.map((status, index) => (
+                              <div key={index} className="flex min-w-0 items-center gap-2">
+                                <span
+                                  className={
+                                    status.done === false
+                                      ? 'h-1.5 w-1.5 shrink-0 rounded-full bg-[#a080f0] animate-pulse'
+                                      : 'h-1.5 w-1.5 shrink-0 rounded-full bg-[#46d478]'
+                                  }
+                                />
+                                <span
+                                  className="truncate text-[11px] text-[#d4d4d4]"
+                                  title={status.content}
+                                >
+                                  {status.content}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
 
                       {/* Gasto de tokens desta run: entrada, saída e raciocínio. */}
                       <div className="flex items-center gap-3 text-[11px] tabular-nums">
@@ -817,6 +1043,7 @@ export function FleetView({
                 {codeAgents.map((run) => {
                   const projectName = codeAgentProject(run.dir)
                   const hasApproval = run.approvals.length > 0
+                  const hasQuestion = run.questions.length > 0
                   const hasHint = run.hint !== null
                   return (
                     <div
@@ -848,7 +1075,12 @@ export function FleetView({
 
                       {/* Status line with detailed step info */}
                       <div className="flex items-center gap-2 min-w-0">
-                        {hasApproval ? (
+                        {hasQuestion ? (
+                          <span
+                            className="w-2.5 h-2.5 shrink-0 rounded-full bg-[#7c3aed] animate-pulse"
+                            title="Aguardando sua resposta"
+                          />
+                        ) : hasApproval ? (
                           <span
                             className="w-2.5 h-2.5 shrink-0 rounded-full bg-[#f0b820] animate-pulse"
                             title="Aguardando aprovação"
@@ -875,7 +1107,11 @@ export function FleetView({
                               Auto
                             </span>
                           )}
-                          {hasApproval ? (
+                          {hasQuestion ? (
+                            <span className="text-[#c4b5fd] font-medium">
+                              Aguardando sua resposta ({run.questions.length})
+                            </span>
+                          ) : hasApproval ? (
                             <span className="text-[#f0b820] font-medium">
                               Aguardando sua aprovação ({run.approvals.length})
                             </span>
@@ -901,6 +1137,77 @@ export function FleetView({
                         </p>
                       </div>
 
+                      {/* Visual progress makes it clear whether the agent is
+                          moving forward, even when it emits no natural language. */}
+                      {run.progress && (
+                        <div
+                          className="h-1.5 overflow-hidden rounded-full bg-[#151515]"
+                          role="progressbar"
+                          aria-label="Progresso da execução"
+                          aria-valuemin={0}
+                          aria-valuemax={run.progress.maxSteps || undefined}
+                          aria-valuenow={run.progress.maxSteps ? run.progress.step : undefined}
+                        >
+                          <div
+                            className={
+                              run.progress.maxSteps
+                                ? 'h-full rounded-full bg-[#8b5cf6] transition-all duration-500'
+                                : 'h-full w-1/3 rounded-full bg-[#8b5cf6] animate-pulse'
+                            }
+                            style={
+                              run.progress.maxSteps
+                                ? {
+                                    width: `${Math.min(
+                                      100,
+                                      (run.progress.step / run.progress.maxSteps) * 100
+                                    )}%`
+                                  }
+                                : undefined
+                            }
+                          />
+                        </div>
+                      )}
+
+                      {/* Structured tool history stays useful when the model does
+                          silent tool calls; the raw terminal is available below. */}
+                      {run.events.length > 0 && (
+                        <div className="rounded-lg border border-[#34303d] bg-[#1b1b1b] px-3 py-2">
+                          <div className="mb-1.5 flex items-center justify-between">
+                            <span className="text-[10px] font-medium uppercase tracking-wide text-[#a080f0]">
+                              Atividade recente
+                            </span>
+                            <span className="text-[10px] tabular-nums text-[#666666]">
+                              {run.events.length} etapa{run.events.length === 1 ? '' : 's'}
+                            </span>
+                          </div>
+                          <div className="space-y-1.5">
+                            {run.events
+                              .slice(-4)
+                              .reverse()
+                              .map((event) => (
+                                <div key={event.id} className="flex min-w-0 items-center gap-2">
+                                  <span
+                                    className={
+                                      event.phase === 'call'
+                                        ? 'h-1.5 w-1.5 shrink-0 rounded-full bg-[#a080f0] animate-pulse'
+                                        : 'h-1.5 w-1.5 shrink-0 rounded-full bg-[#46d478]'
+                                    }
+                                  />
+                                  <span className="shrink-0 text-[10px] text-[#999999]">
+                                    {event.phase === 'call' ? 'fazendo' : 'feito'}
+                                  </span>
+                                  <span
+                                    className="truncate text-[11px] text-[#d4d4d4]"
+                                    title={event.detail}
+                                  >
+                                    {event.detail}
+                                  </span>
+                                </div>
+                              ))}
+                          </div>
+                        </div>
+                      )}
+
                       {/* Log preview (last 3 lines) */}
                       {run.log && (
                         <div className="rounded-lg bg-black/40 p-2 max-h-16 overflow-hidden">
@@ -908,6 +1215,15 @@ export function FleetView({
                             {run.log.split('\n').filter(Boolean).slice(-3).join('\n')}
                           </pre>
                         </div>
+                      )}
+
+                      {run.log && (
+                        <details className="rounded-lg border border-[#303030] bg-black/30">
+                          <summary className="cursor-pointer px-3 py-2 text-[10px] text-[#a080f0] hover:text-[#c4b5fd]">
+                            Terminal completo · {run.log.split('\n').filter(Boolean).length} linhas
+                          </summary>
+                          <AgentTerminal log={run.log} running compact />
+                        </details>
                       )}
 
                       {/* Tokens if available */}
@@ -965,8 +1281,11 @@ export function FleetView({
                                 dir: run.dir,
                                 task: run.task,
                                 agent: run.model || 'codex',
+                                allowedWritePaths: run.allowedWritePaths,
+                                readOnlyRoots: run.readOnlyRoots,
                                 sessionId: sid,
-                                runId: run.id
+                                runId: run.id,
+                                interactive: run.interactive
                               })
                               setChatMessages([])
                               setChatInput('')
@@ -1060,8 +1379,11 @@ export function FleetView({
                                 dir: run.dir,
                                 task: run.task,
                                 agent: run.agent,
+                                allowedWritePaths: run.allowedWritePaths,
+                                readOnlyRoots: run.readOnlyRoots,
                                 sessionId: sid,
-                                runId: null
+                                runId: null,
+                                interactive: false
                               })
                               setChatMessages([])
                               setChatInput('')

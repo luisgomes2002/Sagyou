@@ -48,6 +48,7 @@ beforeEach(() => {
     onExit: vi.fn(() => vi.fn()),
     onAutoChanged: vi.fn(() => vi.fn()),
     onApproveRequest: vi.fn(() => vi.fn()),
+    onQuestion: vi.fn(() => vi.fn()),
     onHint: vi.fn(() => vi.fn()),
     onToolEvent: vi.fn(() => vi.fn()),
     onArchived: vi.fn(() => vi.fn()),
@@ -111,7 +112,40 @@ describe('FleetView', () => {
 
     expect(await screen.findByText('3/40')).toBeInTheDocument()
     // The tool event shows as "[tool] ler_arquivo"
-    expect(screen.getByText(/\[tool\] ler_arquivo/)).toBeInTheDocument()
+    expect(screen.getAllByText(/\[tool\] ler_arquivo/).length).toBeGreaterThan(0)
+  })
+
+  it('turns live tool events into a visible activity timeline', async () => {
+    oneRun()
+    let onToolEvent:
+      | ((event: {
+          runId: string
+          phase: 'call' | 'result'
+          name: string
+          args?: Record<string, unknown>
+          summary?: string
+        }) => void)
+      | undefined
+    ;(window.electronAPI.ai.codeAgent.onToolEvent as ReturnType<typeof vi.fn>).mockImplementation(
+      (callback) => {
+        onToolEvent = callback
+        return vi.fn()
+      }
+    )
+
+    render(<FleetView projects={projects} onOpenChat={() => {}} />)
+    await screen.findByText('Corrigir bug no login')
+    onToolEvent?.({
+      runId: 'run-1',
+      phase: 'call',
+      name: 'ler_arquivo',
+      args: { caminho: 'src/App.tsx' }
+    })
+
+    expect(await screen.findByText('Atividade recente')).toBeInTheDocument()
+    expect(screen.getByText('Lendo src/App.tsx')).toBeInTheDocument()
+    expect(screen.getByRole('progressbar', { name: 'Progresso da execução' })).toBeInTheDocument()
+    expect(screen.getByText(/Terminal completo/)).toBeInTheDocument()
   })
 
   it('shows only the current step for an unlimited agent', async () => {

@@ -15,7 +15,7 @@
 import { readFileSync, writeFileSync, existsSync, statSync, mkdirSync } from 'fs'
 import { readFile } from 'fs/promises'
 import { exec } from 'child_process'
-import { dirname } from 'path'
+import { dirname, relative } from 'path'
 import { promisify } from 'util'
 import {
   confineToRoot,
@@ -201,6 +201,7 @@ export const RESEARCH_AGENT_TOOLS: ToolDef[] = [
       type: 'object',
       properties: {
         subpasta: { type: 'string', description: 'Subpasta relativa (opcional)' },
+        referencia: { type: 'string', description: 'ID de uma referência autorizada, apenas para leitura (opcional)' },
         inicio: {
           type: 'number',
           description: 'Posição na lista (opcional, use nextOffset da resposta anterior)'
@@ -219,6 +220,7 @@ export const RESEARCH_AGENT_TOOLS: ToolDef[] = [
       type: 'object',
       properties: {
         caminho: { type: 'string', description: 'Caminho relativo do arquivo' },
+        referencia: { type: 'string', description: 'ID de uma referência autorizada, apenas para leitura (opcional)' },
         simbolo: { type: 'string', description: 'Nome da função/classe a extrair (opcional)' },
         linha_inicio: { type: 'number', description: 'Primeira linha 1-based (opcional)' },
         linha_fim: { type: 'number', description: 'Última linha 1-based (opcional)' },
@@ -237,6 +239,7 @@ export const RESEARCH_AGENT_TOOLS: ToolDef[] = [
       type: 'object',
       properties: {
         termo: { type: 'string', description: 'Texto a buscar' },
+        referencia: { type: 'string', description: 'ID de uma referência autorizada, apenas para leitura (opcional)' },
         incluir: {
           type: 'string',
           description: 'Só arquivos que batem este padrão (ex: "*.ts", opcional)'
@@ -286,6 +289,7 @@ export const CODE_AGENT_TOOLS: ToolDef[] = [
       type: 'object',
       properties: {
         subpasta: { type: 'string', description: 'Subpasta relativa (opcional)' },
+        referencia: { type: 'string', description: 'ID de uma referência autorizada, apenas para leitura (opcional)' },
         inicio: {
           type: 'number',
           description: 'Posição na lista (opcional, use nextOffset da resposta anterior)'
@@ -304,6 +308,7 @@ export const CODE_AGENT_TOOLS: ToolDef[] = [
       type: 'object',
       properties: {
         caminho: { type: 'string', description: 'Caminho relativo do arquivo' },
+        referencia: { type: 'string', description: 'ID de uma referência autorizada, apenas para leitura (opcional)' },
         simbolo: { type: 'string', description: 'Nome da função/classe a extrair (opcional)' },
         linha_inicio: { type: 'number', description: 'Primeira linha 1-based (opcional)' },
         linha_fim: { type: 'number', description: 'Última linha 1-based (opcional)' },
@@ -322,6 +327,7 @@ export const CODE_AGENT_TOOLS: ToolDef[] = [
       type: 'object',
       properties: {
         termo: { type: 'string', description: 'Texto a buscar' },
+        referencia: { type: 'string', description: 'ID de uma referência autorizada, apenas para leitura (opcional)' },
         incluir: {
           type: 'string',
           description: 'Só arquivos que batem este padrão (ex: "*.ts", opcional)'
@@ -426,6 +432,20 @@ export const CODE_AGENT_TOOLS: ToolDef[] = [
     }
   ),
   fn(
+    'perguntar_usuario',
+    'Faz uma pergunta objetiva ao usuário e pausa a execução até ele responder. ' +
+      'Use somente quando uma decisão indispensável para implementar não estiver clara; ' +
+      'não use para detalhes que o código ou a tarefa já resolvem.',
+    {
+      type: 'object',
+      properties: {
+        pergunta: { type: 'string', description: 'Pergunta curta e concreta para o usuário' }
+      },
+      required: ['pergunta'],
+      additionalProperties: false
+    }
+  ),
+  fn(
     'executar_comando',
     'Roda um comando shell na raiz do projeto (requer aprovação). Timeout e saída limitados.',
     {
@@ -518,6 +538,10 @@ export interface ToolContext {
   researchAgentsStarted?: number
   /** The project folder every path is confined to. */
   root: string
+  /** Extra folders explicitly authorized for read tools only. */
+  readOnlyRoots?: ReadonlyArray<{ id: string; nome: string; path: string }>
+  /** Optional exact relative paths this run may modify. */
+  allowedWritePaths?: ReadonlySet<string>
   run?: CommandRunner
   /** Checked periodically during long shell commands; true = abort early. */
   shouldAbort?: () => boolean
@@ -526,6 +550,16 @@ export interface ToolContext {
     raw: unknown,
     deps?: { limiter?: unknown; timeoutMs?: number }
   ) => Promise<FetchResult>
+}
+
+function readRootFor(args: Record<string, unknown>, ctx: ToolContext): { root: string; nome: string; erro?: string } {
+  const id = typeof args.referencia === "string" ? args.referencia.trim() : ""
+  if (!id) return { root: ctx.root, nome: "projeto" }
+  const reference = ctx.readOnlyRoots?.find((item) => item.id === id)
+  if (!reference) {
+    return { root: ctx.root, nome: "projeto", erro: "Referência não autorizada para esta execução: " + id }
+  }
+  return { root: reference.path, nome: reference.nome }
 }
 
 function jsonResult(obj: unknown, summary: string, cached?: boolean): ToolResult {
@@ -582,8 +616,10 @@ export async function runCodeTool(
 }
 
 async function listFiles(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
+  const target = readRootFor(args, ctx)
+  if (target.erro) return jsonResult({ error: target.erro }, target.erro)
   const sub = typeof args.subpasta === 'string' && args.subpasta.trim() ? args.subpasta : '.'
-  const { files, truncated } = await walkFiles(ctx.root, sub, WALK_CAP)
+  const { files, truncated } = await walkFiles(target.root, sub, WALK_CAP)
   const total = files.length
   const pageSize = clampNum(args.max_arquivos, 200, 400)
   const start =
@@ -602,9 +638,11 @@ async function listFiles(args: Record<string, unknown>, ctx: ToolContext): Promi
 }
 
 async function readFileTool(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
+  const target = readRootFor(args, ctx)
+  if (target.erro) return jsonResult({ error: target.erro }, target.erro)
   const rel = typeof args.caminho === 'string' ? args.caminho : ''
   if (!rel) return jsonResult({ error: 'Caminho vazio' }, 'caminho vazio')
-  const full = confineToRoot(ctx.root, rel)
+  const full = confineToRoot(target.root, rel)
   if (!full || !existsSync(full) || !statSync(full).isFile()) {
     return jsonResult({ error: 'Arquivo inválido ou fora do projeto' }, `inválido: ${rel}`)
   }
@@ -706,6 +744,8 @@ function parseGrepOutput(lines: string[]): { file: string; line: number; text: s
 }
 
 async function searchCode(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
+  const target = readRootFor(args, ctx)
+  if (target.erro) return jsonResult({ error: target.erro }, target.erro)
   const termo = typeof args.termo === 'string' ? args.termo : ''
   if (!termo) return jsonResult({ error: 'Termo vazio' }, 'termo vazio')
 
@@ -725,9 +765,9 @@ async function searchCode(args: Record<string, unknown>, ctx: ToolContext): Prom
     const excludeArg = excluir ? `--exclude="${shellEscape(excluir)}"` : ''
     const contextArg = contexto > 0 ? `-C ${contexto}` : ''
     // -I: skip binary, -n: line numbers, --no-heading: no filename header per group
-    const cmd = `grep -rnI --no-heading ${contextArg} ${includeArg} ${excludeArg} -m ${SEARCH_MATCH_CAP} -- '${escaped}' ${shellEscape(ctx.root)}`
+    const cmd = `grep -rnI --no-heading ${contextArg} ${includeArg} ${excludeArg} -m ${SEARCH_MATCH_CAP} -- '${escaped}' ${shellEscape(target.root)}`
     const { stdout } = await execAsync(cmd, {
-      cwd: ctx.root,
+      cwd: target.root,
       maxBuffer: 2 * 1024 * 1024,
       timeout: 15_000
     })
@@ -740,7 +780,7 @@ async function searchCode(args: Record<string, unknown>, ctx: ToolContext): Prom
 
   // Fallback: use shared searchFiles when grep is unavailable or found nothing.
   if (grepFailed || matches.length === 0) {
-    const result = await searchFiles(ctx.root, termo, {
+    const result = await searchFiles(target.root, termo, {
       cap: SEARCH_MATCH_CAP,
       contexto,
       incluir,
@@ -761,8 +801,8 @@ async function searchCode(args: Record<string, unknown>, ctx: ToolContext): Prom
   }
   const arquivos = [...byFile].map(([arquivo, ocorrencias]) => ({ arquivo, ocorrencias }))
   return jsonResult(
-    { arquivos, total: matches.length, truncado: matches.length >= SEARCH_MATCH_CAP },
-    `"${termo}": ${matches.length} ocorrência(s) em ${arquivos.length} arquivo(s)`
+    { arquivos, total: matches.length, truncado: matches.length >= SEARCH_MATCH_CAP, referencia: target.nome },
+    '"' + termo + '": ' + matches.length + ' ocorrência(s) em ' + arquivos.length + ' arquivo(s) de ' + target.nome
   )
 }
 
@@ -817,7 +857,14 @@ function writeFileTool(args: Record<string, unknown>, ctx: ToolContext): ToolRes
   const rel = typeof args.caminho === 'string' ? args.caminho : ''
   if (!rel) return jsonResult({ error: 'Caminho vazio' }, 'caminho vazio')
   const full = confineToRoot(ctx.root, rel)
-  if (!full) return jsonResult({ error: 'Caminho fora do projeto' }, `fora da raiz: ${rel}`)
+  if (!full) return jsonResult({ error: 'Caminho fora do projeto' }, 'fora da raiz: ' + rel)
+  const canonical = relative(ctx.root, full)
+  if (ctx.allowedWritePaths && !ctx.allowedWritePaths.has(canonical)) {
+    return jsonResult(
+      { error: 'Esta execução só pode alterar: ' + [...ctx.allowedWritePaths].join(', ') },
+      'escrita fora da lista permitida: ' + canonical
+    )
+  }
 
   // Safety helper: when a procura fails, include a context snippet from the file
   // so the model can fix the search text without an extra read step.
@@ -959,6 +1006,8 @@ const BEHAVIOR = `Você é um agente de código autônomo. Sua tarefa: implement
 
 ⚠️  REGRA MAIS IMPORTANTE: Sua função é **implementar com ferramentas**, não só responder com texto. A tarefa que você recebeu descreve O QUE fazer e EM QUAIS arquivos. Você DEVE usar escrever_arquivo para criar ou modificar cada arquivo listado. Uma resposta em texto sem edições NÃO conta como tarefa concluída — você será reavaliado até produzir as mudanças. Se algo não existe no código ainda, é porque VOCÊ precisa criá-lo. Não conclua com "não é necessário implementar" a menos que a tarefa explicitamente peça só análise.
 
+Quando uma decisão indispensável estiver genuinamente indefinida, use **perguntar_usuario** com uma única pergunta curta e concreta e espere a resposta antes de editar. Não pergunte por reflexo: se o pedido, as decisões já tomadas ou o código permitem uma escolha razoável, prossiga. Nunca substitua a pergunta por pesquisa em memórias, conversas, web, tasks ou canvas fora do escopo.
+
 Só responda com texto DEPOIS que todos os arquivos estiverem escritos.
 
 Regras:
@@ -1056,6 +1105,10 @@ export function buildSystemPrompt(opts: {
   /** Whether this project has a Node package manifest. Non-Node projects must
    *  not inherit the default npm/typecheck validation recipe. */
   nodeProject?: boolean
+  /** Exact relative paths this run may write; absent leaves normal project scope. */
+  allowedWritePaths?: string[]
+  /** External folders explicitly available to read tools, never to writes or shell. */
+  readOnlyRoots?: Array<{ id: string; nome: string }>
 }): string {
   const parts: string[] = [BEHAVIOR]
   if (opts.noCommands) {
@@ -1080,6 +1133,22 @@ export function buildSystemPrompt(opts: {
   }
   if (opts.conversas && opts.conversas.trim()) {
     parts.push(opts.conversas.trim())
+  }
+  if (opts.readOnlyRoots && opts.readOnlyRoots.length) {
+    parts.push(
+      "## REFERÊNCIAS SOMENTE DE LEITURA\n\n" +
+        "Antes de editar, consulte as referências necessárias usando listar_arquivos, ler_arquivo ou buscar_no_codigo com o campo referencia. " +
+        "Elas nunca podem ser escritas nem usadas como diretório de comandos:\n" +
+        opts.readOnlyRoots.map((item) => "- " + item.nome + " (referencia: `" + item.id + "`)").join("\n")
+    )
+  }
+  if (opts.allowedWritePaths && opts.allowedWritePaths.length) {
+    parts.push(
+      '## ESCRITAS PERMITIDAS (REGRA TÉCNICA)\n\n' +
+        'Você só pode criar ou alterar estes caminhos: ' +
+        opts.allowedWritePaths.map((path) => '`' + path + '`').join(', ') +
+        '. Não escreva, renomeie nem apague qualquer outro arquivo.'
+    )
   }
   // Decisions the chat already settled with the user: constraints, not
   // suggestions. High in the prompt so the agent honours them before it starts
@@ -1217,6 +1286,8 @@ export interface RunAgentDeps {
   ) => Promise<{ message: AgentMessage; usage?: TokenUsage }>
   /** Ask the user to approve a write/command. Resolves true to run it. */
   approve: (call: { name: string; args: Record<string, unknown> }) => Promise<boolean>
+  /** Park the run until the user answers an essential implementation question. */
+  askUser?: (question: string) => Promise<string | null>
   /** How executar_comando runs (defaults to a real shell). */
   run?: CommandRunner
   /** Announce a tool call as it's about to run (name + args). */
@@ -1789,6 +1860,33 @@ export async function runCodeAgent(
         readIdx.map(async (i) => {
           const { call, args } = parsed[i]
           const name = call.function.name
+
+          // A question deliberately bypasses the read counters and auto-approval:
+          // it is an explicit pause, not a disk action nor an inference the agent
+          // should make on the user's behalf.
+          if (name === 'perguntar_usuario') {
+            const pergunta = typeof args.pergunta === 'string' ? args.pergunta.trim() : ''
+            deps.onToolCall?.(name, args)
+            if (!pergunta) {
+              const summary = 'pergunta inválida (vazia)'
+              deps.onToolResult?.(name, summary)
+              return {
+                i,
+                id: call.id,
+                content: JSON.stringify({ error: 'Informe uma pergunta objetiva para o usuário.' }),
+                summary
+              }
+            }
+            const resposta = deps.askUser ? await deps.askUser(pergunta) : null
+            const summary = resposta === null ? 'pergunta cancelada' : 'resposta recebida'
+            deps.onToolResult?.(name, summary)
+            return {
+              i,
+              id: call.id,
+              content: JSON.stringify({ pergunta, resposta, cancelada: resposta === null }),
+              summary
+            }
+          }
 
           // Read brakes: peek at current counts (no side-effect) before running.
           // Counters are bumped only after execution, and only when the result

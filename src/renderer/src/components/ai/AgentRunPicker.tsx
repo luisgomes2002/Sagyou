@@ -16,6 +16,8 @@ export interface AgentRunMeta {
   /** The model that ran it (native agent), or "codex" for old runs. */
   agent: string
   dir: string
+  allowedWritePaths?: string[]
+  readOnlyRoots?: { id: string; nome: string; path: string }[]
   task: string
   startedAt: number
   endedAt: number

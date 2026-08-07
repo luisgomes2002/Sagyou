@@ -1,9 +1,26 @@
 import type { IStorageAdapter } from './StorageAdapter'
-import type { Project, Task, Sprint, Tombstone, Backup, AIJson, StickyNote, Goal, Habit, FinancialTable, StoredFile, AIConversation, AiMemory, TimeBlock, Routine } from '../types'
+import type {
+  Project,
+  Task,
+  Sprint,
+  Tombstone,
+  Backup,
+  AIJson,
+  StickyNote,
+  Goal,
+  Habit,
+  FinancialTable,
+  FinancialProfile,
+  StoredFile,
+  AIConversation,
+  AiMemory,
+  TimeBlock,
+  Routine
+} from '../types'
 
 export class ElectronStorage implements IStorageAdapter {
   async load() {
-    const data = await window.electronAPI.store.load() as Record<string, unknown>
+    const data = (await window.electronAPI.store.load()) as Record<string, unknown>
     return {
       projects: (data.projects || []) as Project[],
       tasks: (data.tasks || []) as Task[],
@@ -13,7 +30,11 @@ export class ElectronStorage implements IStorageAdapter {
       goals: (data.goals || []) as Goal[],
       habits: (data.habits || []) as Habit[],
       lists: (data.lists || []) as FinancialTable[],
-      activeTimers: (data.activeTimers ?? undefined) as { taskId: string; startedAt: number }[] | undefined,
+      financialProfiles: (data.financialProfiles || []) as FinancialProfile[],
+      activeFinancialProfileId: data.activeFinancialProfileId as string | undefined,
+      activeTimers: (data.activeTimers ?? undefined) as
+        | { taskId: string; startedAt: number }[]
+        | undefined,
       // Legacy single-timer field, migrated to the array by the store's loader.
       activeTimer: (data.activeTimer ?? null) as { taskId: string; startedAt: number } | null,
       files: (data.files || []) as StoredFile[],

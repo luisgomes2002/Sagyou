@@ -12,12 +12,15 @@ import {
   existsSync,
   unlinkSync,
   renameSync,
+  symlinkSync,
+  rmSync,
   statSync,
   accessSync,
   constants
 } from 'fs'
 import { homedir } from 'os'
-import { exec as execCallback } from 'child_process'
+import { exec as execCallback, spawn, type ChildProcess } from 'child_process'
+import { spawn as spawnPty, type IPty } from 'node-pty'
 import { promisify } from 'util'
 import { readFile } from 'fs/promises'
 const execAsync = promisify(execCallback)
@@ -140,6 +143,12 @@ let mainWindow: BrowserWindow | null = null
  * at a time. Now the app can host multiple concurrent runs in different
  * directories, each with its own log, base, approval queue, and usage counter.
  */
+interface ReadOnlyRoot {
+  id: string
+  nome: string
+  path: string
+}
+
 interface CodeRunState {
   id: string
   dir: string
@@ -163,12 +172,26 @@ interface CodeRunState {
   maxSteps: number
   /** Approvals the loop is waiting on, keyed by request id. */
   pendingApprovals: Map<string, PendingCodeApproval>
+  /** Questions the loop is waiting on, keyed by request id. */
+  pendingQuestions: Map<string, PendingCodeQuestion>
   /** Whether auto-approval mode is on for this run. */
   autoApprove: boolean
   /** Se não-null, o agente roda num git worktree isolado em vez do dir original. */
   worktreeDir: string | null
   /** The isolated run finished, but its patch could not be applied to the original tree. */
   worktreeMergeError: string | null
+  /** Child process of an external harness, so Stop can terminate it immediately. */
+  /** Exact relative paths this run may write; absent means the project root. */
+  allowedWritePaths?: string[]
+  /** Read-only references selected for this run; never a write or shell root. */
+  readOnlyRoots: ReadOnlyRoot[]
+  externalChild: ChildProcess | IPty | null
+  /** A real TTY session accepts user input until the user asks to review its diff. */
+  interactive: boolean
+  /** User ended an interactive TTY and asked to prepare the worktree diff. */
+  finishing: boolean
+  /** Isolated OpenCode state prevents SQLite startup locks between parallel runs. */
+  externalStateDir: string | null
 }
 
 interface CodeApprovalRequest {
@@ -187,6 +210,17 @@ interface CodeApprovalRequest {
 interface PendingCodeApproval {
   resolve: (approved: boolean) => void
   request: CodeApprovalRequest
+}
+
+interface CodeQuestionRequest {
+  runId: string
+  id: string
+  question: string
+}
+
+interface PendingCodeQuestion {
+  resolve: (answer: string | null) => void
+  request: CodeQuestionRequest
 }
 
 /** All runs in flight, keyed by run id. */
@@ -367,14 +401,20 @@ function stopCodeAgent(runId?: string): void {
     const run = codeRuns.get(runId)
     if (run) {
       run.abort = true
+      run.externalChild?.kill('SIGTERM')
       for (const { resolve } of run.pendingApprovals.values()) resolve(false)
       run.pendingApprovals.clear()
+      for (const { resolve } of run.pendingQuestions.values()) resolve(null)
+      run.pendingQuestions.clear()
     }
   } else {
     for (const run of codeRuns.values()) {
       run.abort = true
+      run.externalChild?.kill('SIGTERM')
       for (const { resolve } of run.pendingApprovals.values()) resolve(false)
       run.pendingApprovals.clear()
+      for (const { resolve } of run.pendingQuestions.values()) resolve(null)
+      run.pendingQuestions.clear()
     }
   }
 }
@@ -486,6 +526,7 @@ export function fallbackBinDirs(): string[] {
     join(home, '.npm-global/bin'), // the `npm config set prefix` convention
     join(home, '.local/bin'),
     join(home, '.local/share/npm/bin'),
+    join(home, '.opencode/bin'),
     join(home, '.volta/bin'),
     join(home, '.bun/bin')
   ]
@@ -552,11 +593,211 @@ export function resolveExecutable(
   return null
 }
 
-// NOTE: the external-agent path (buildAgentCommand / spawn / sandbox flags /
-// killCodeAgent) was removed when the native code agent (./code-agent) replaced
-// it. `detectAgentHint` above is wired into the native run handler's command
-// runner (a bwrap failure raises the panel hint card). `resolveExecutable` is
-// a dormant helper — kept with its unit test, deletable in a follow-up.
+type ExternalHarnessId = 'codex' | 'opencode' | 'claude-code'
+
+interface HarnessStatus {
+  id: ExternalHarnessId
+  label: string
+  command: string
+  installed: boolean
+  path: string | null
+  version: string | null
+}
+
+const EXTERNAL_HARNESSES: ReadonlyArray<Pick<HarnessStatus, 'id' | 'label' | 'command'>> = [
+  { id: 'codex', label: 'Codex', command: 'codex' },
+  { id: 'opencode', label: 'OpenCode', command: 'opencode' },
+  { id: 'claude-code', label: 'Claude Code', command: 'claude' }
+]
+
+let harnessStatusCache: HarnessStatus[] | null = null
+
+/**
+ * Checks only the local executable and its version. This is intentionally
+ * separate from launching a harness: detection must never start a task, touch
+ * a project, or trigger an external provider login.
+ */
+async function getHarnessStatuses(refresh = false): Promise<HarnessStatus[]> {
+  if (harnessStatusCache && !refresh) return harnessStatusCache
+  harnessStatusCache = await Promise.all(
+    EXTERNAL_HARNESSES.map(async ({ id, label, command }) => {
+      const path = resolveExecutable(command)
+      if (!path) return { id, label, command, installed: false, path: null, version: null }
+      const result = await defaultExec(path, ['--version'])
+      const output = (result.stdout || result.stderr).trim().replace(/\s+/g, ' ')
+      return {
+        id,
+        label,
+        command,
+        installed: true,
+        path,
+        version: output ? output.slice(0, 120) : null
+      }
+    })
+  )
+  return harnessStatusCache
+}
+
+interface ExternalHarnessLaunch {
+  label: string
+  args: string[]
+}
+
+/**
+ * External CLIs run in an isolated worktree. Their flags either make extra
+ * directories writable or differ by harness, so never hand them raw reference
+ * paths. A bounded snapshot gives them real project context without expanding
+ * their filesystem authority.
+ */
+async function readOnlyReferenceBrief(roots: ReadOnlyRoot[]): Promise<string> {
+  const candidates = ['README.md', 'GUIDE.md', 'CLAUDE.md', 'package.json', 'manifest.json']
+  const sections: string[] = []
+  for (const root of roots) {
+    const files: string[] = []
+    for (const name of candidates) {
+      const file = join(root.path, name)
+      if (!existsSync(file) || !statSync(file).isFile()) continue
+      try {
+        const content = await readFile(file, 'utf-8')
+        files.push('### ' + name + '\n' + content.slice(0, 4_000))
+      } catch {
+        /* unreadable references are simply omitted from the bounded briefing */
+      }
+    }
+    sections.push(
+      '## REFERÊNCIA SOMENTE DE LEITURA: ' +
+        root.nome +
+        '\n' +
+        (files.join('\n\n') || 'Sem arquivos-base legíveis.')
+    )
+  }
+  return sections.join('\n\n').slice(0, 18_000)
+}
+
+/** Builds direct argv for each supported local harness. No shell is involved. */
+function buildExternalHarnessLaunch(
+  harness: ExternalHarnessId,
+  task: string,
+  cwd: string
+): ExternalHarnessLaunch {
+  if (harness === 'codex') {
+    return {
+      label: 'Codex',
+      args: ['exec', '--json', '--sandbox', 'workspace-write', '--ephemeral', '--', task]
+    }
+  }
+  if (harness === 'opencode') {
+    return {
+      label: 'OpenCode',
+      args: ['run', '--dir', cwd, '--format', 'json', '--print-logs', '--auto', '--', task]
+    }
+  }
+  return {
+    label: 'Claude Code',
+    args: [
+      '--print',
+      '--output-format',
+      'stream-json',
+      '--permission-mode',
+      'acceptEdits',
+      '--',
+      task
+    ]
+  }
+}
+
+/**
+ * OpenCode keeps its SQLite session database under XDG_DATA_HOME. Sharing that
+ * file makes simultaneous CLI instances wait during bootstrap before they emit
+ * any JSON event. Give each worktree a disposable data home, but link the normal
+ * auth file so the configured provider remains available.
+ */
+function externalHarnessEnv(
+  harness: ExternalHarnessId,
+  runId: string
+): {
+  env: NodeJS.ProcessEnv
+  stateDir: string | null
+} {
+  if (harness !== 'opencode') return { env: process.env, stateDir: null }
+  // When opencode runs inside another opencode (the user launched one manually),
+  // it inherits OPENCODE / OPENCODE_PID through process.env and may try to
+  // attach to the parent instance instead of starting its own — a deadlock.
+  const { OPENCODE: _oc, OPENCODE_PID: _ocPid, ...cleanEnv } = process.env as Record<string, string>
+  const stateDir = join(app.getPath('temp'), 'sagyou-opencode', runId)
+  const opencodeDataDir = join(stateDir, 'opencode')
+  mkdirSync(opencodeDataDir, { recursive: true })
+  const authSource = join(homedir(), '.local', 'share', 'opencode', 'auth.json')
+  const authTarget = join(opencodeDataDir, 'auth.json')
+  if (existsSync(authSource) && !existsSync(authTarget)) {
+    try {
+      symlinkSync(authSource, authTarget, 'file')
+    } catch {
+      // A missing link lets OpenCode report its normal login error.
+    }
+  }
+  return { env: { ...cleanEnv, XDG_DATA_HOME: stateDir }, stateDir }
+}
+
+/** A persistent terminal uses the harness normal TUI in its isolated worktree. */
+function buildInteractiveHarnessLaunch(
+  harness: ExternalHarnessId,
+  task: string,
+  cwd: string
+): ExternalHarnessLaunch {
+  if (harness === 'codex') {
+    return {
+      label: 'Codex',
+      args: ['--cd', cwd, '--sandbox', 'workspace-write', '--ask-for-approval', 'on-request', task]
+    }
+  }
+  if (harness === 'opencode') {
+    return { label: 'OpenCode', args: [cwd, '--prompt', task] }
+  }
+  return { label: 'Claude Code', args: ['--permission-mode', 'manual', task] }
+}
+
+/** Keep external JSONL useful without coupling to private CLI schemas. */
+function formatExternalHarnessEvent(harness: ExternalHarnessId, line: string): string {
+  const raw = line.trim()
+  if (!raw) return ''
+  try {
+    const event = JSON.parse(raw) as Record<string, unknown>
+    const item =
+      event.item && typeof event.item === 'object' ? (event.item as Record<string, unknown>) : null
+    const type = String(event.type ?? event.event ?? item?.type ?? 'evento')
+    const text = [event.message, event.text, event.summary, item?.text, item?.message].find(
+      (value) => typeof value === 'string' && value.trim()
+    )
+    const toolName = item?.name ?? event.name
+    const detail =
+      typeof text === 'string' ? text.replace(/\s+/g, ' ') : toolName ? String(toolName) : type
+    return '[' + harness + '] ' + type + ': ' + detail.slice(0, 700)
+  } catch {
+    return '[' + harness + '] ' + raw.slice(0, 700)
+  }
+}
+
+/** A compact visual preview for the final worktree merge approval. */
+function patchPreview(patch: string): { lines: DiffLineItem[]; truncated: boolean } {
+  const all = patch.split('\n')
+  const limit = 400
+  return {
+    lines: all.slice(0, limit).map((line) => ({
+      kind:
+        line.startsWith('+') && !line.startsWith('+++')
+          ? 'add'
+          : line.startsWith('-') && !line.startsWith('---')
+            ? 'del'
+            : 'ctx',
+      text: line
+    })),
+    truncated: all.length > limit
+  }
+}
+
+// External harnesses use documented structured-output modes. Their edits stay
+// in a worktree until a final explicit approval applies the generated patch.
 
 // --- AI config (persisted to ai-config.json in userData, not the DB) ---
 interface AIConfig {
@@ -601,6 +842,11 @@ interface AIConfig {
     apiKey?: string
     model?: string
   }
+  /**
+   * The persisted code-execution runtime. Absent is deliberately the current
+   * native implementation, so existing ai-config.json files keep working.
+   */
+  codeHarness?: 'sagyou' | 'codex' | 'opencode' | 'claude-code'
   /**
    * Whether the ai-jail sandbox is required for the code agent's shell commands.
    * **Absent means enabled** (mandatory by default) — so a fresh install is
@@ -918,6 +1164,8 @@ async function archiveAgentRun(runId: string, exitCode: number): Promise<void> {
       convId: run.convId,
       agent: run.agent,
       dir: run.dir,
+      allowedWritePaths: run.allowedWritePaths,
+      readOnlyRoots: run.readOnlyRoots,
       task: run.task,
       startedAt: run.startedAt,
       endedAt: Date.now(),
@@ -1239,6 +1487,10 @@ app.whenReady().then(() => {
   ipcMain.handle('ai:config:set', (_, config: AIConfig) => {
     saveAIConfig(config)
   })
+
+  ipcMain.handle('ai:harnesses:status', async (_, refresh?: boolean) =>
+    getHarnessStatuses(refresh === true)
+  )
 
   // ai-jail: current status merged with the user's config, for the toggle and
   // the onboarding dialog. `refresh` re-runs detection (e.g. after an install).
@@ -1618,6 +1870,9 @@ app.whenReady().then(() => {
         path: string
         task: string
         files?: string[]
+        allowedWritePaths?: string[]
+        /** Absolute directories selected by the user for read-only reference. */
+        readOnlyRoots?: ReadOnlyRoot[]
         /** Scope decisions already agreed with the user, honoured without re-deciding. */
         decisoes?: string[]
         /** The chat that asked, so the run can be reopened from it later. */
@@ -1626,11 +1881,35 @@ app.whenReady().then(() => {
         projectId?: string | null
         /** Start in auto-approval mode — approve() returns true without IPC. */
         autoApprove?: boolean
+        /** Opens an external harness as a persistent terminal instead of a batch run. */
+        interactive?: boolean
       }
     ) => {
       const dir = request.path
       if (!dir || !existsSync(dir) || !statSync(dir).isDirectory()) {
         return { success: false, error: 'Diretório do projeto inválido' }
+      }
+      const cfg = loadAIConfig()
+      const harness = cfg.codeHarness ?? 'sagyou'
+      const externalHarness =
+        harness === 'sagyou'
+          ? null
+          : ((await getHarnessStatuses()).find((status) => status.id === harness) ?? null)
+      if (harness !== 'sagyou' && (!externalHarness?.installed || !externalHarness.path)) {
+        const label =
+          harness === 'claude-code' ? 'Claude Code' : harness === 'opencode' ? 'OpenCode' : 'Codex'
+        return {
+          success: false,
+          error:
+            label + ' não foi encontrado nesta máquina. Use Verificar novamente nas configurações.'
+        }
+      }
+      const interactive = request.interactive === true
+      if (interactive && harness === 'sagyou') {
+        return {
+          success: false,
+          error: 'A sessão interativa é disponível somente para Codex, OpenCode ou Claude Code.'
+        }
       }
       // Cleanup worktrees órfãos (que sobraram de uma queda do app)
       try {
@@ -1646,11 +1925,7 @@ app.whenReady().then(() => {
         for (const line of wtList.split('\n')) {
           if (line.startsWith('worktree ') && line.includes('.sagyou-wt-')) {
             const orphanPath = line.slice(9).trim()
-            if (
-              orphanPath &&
-              existsSync(orphanPath) &&
-              !activeWorktrees.has(resolve(orphanPath))
-            ) {
+            if (orphanPath && existsSync(orphanPath) && !activeWorktrees.has(resolve(orphanPath))) {
               await execAsync(`git -C "${dir}" worktree remove --force "${orphanPath}"`).catch(
                 () => {}
               )
@@ -1663,7 +1938,7 @@ app.whenReady().then(() => {
 
       // Fase 2(b): se o dir já está ocupado, cria um git worktree isolado
       const runId = randomUUID()
-      const needsWorktree = codeRunCoordinator.hasActive(dir)
+      const needsWorktree = harness !== 'sagyou' || codeRunCoordinator.hasActive(dir)
       // Reserve synchronously before the first await below. Two IPC requests can
       // otherwise both observe an idle directory and write to the original tree.
       codeRunCoordinator.register(dir, runId, !needsWorktree)
@@ -1720,6 +1995,53 @@ app.whenReady().then(() => {
         const abs = confineToRoot(effectiveDir, f)
         return abs === null || !existsSync(abs) || !statSync(abs).isFile()
       })
+      // Unlike pinned input files, an allowed output may not exist yet. It is
+      // still confined to the root and later enforced by writeFileTool.
+      const requestedAllowedPaths = Array.isArray(request.allowedWritePaths)
+        ? request.allowedWritePaths.filter(
+            (f): f is string => typeof f === 'string' && f.trim() !== ''
+          )
+        : []
+      const allowedWritePaths = requestedAllowedPaths
+        .map((f) => confineToRoot(effectiveDir, f))
+        .filter((f): f is string => f !== null)
+        .map((f) => relative(effectiveDir, f))
+        .filter((f) => f !== '')
+      const requestedReadOnlyRoots = Array.isArray(request.readOnlyRoots)
+        ? request.readOnlyRoots
+        : []
+      const readOnlyRoots = requestedReadOnlyRoots
+        .filter(
+          (item): item is ReadOnlyRoot =>
+            !!item &&
+            typeof item.id === 'string' &&
+            typeof item.nome === 'string' &&
+            typeof item.path === 'string'
+        )
+        .map((item) => ({
+          ...item,
+          id: item.id.trim(),
+          nome: item.nome.trim(),
+          path: resolve(item.path)
+        }))
+        .filter(
+          (item) =>
+            item.id && item.nome && existsSync(item.path) && statSync(item.path).isDirectory()
+        )
+      if (requestedReadOnlyRoots.length !== readOnlyRoots.length) {
+        await releaseFailedStart()
+        return { success: false, error: 'Uma ou mais referências de leitura são inválidas.' }
+      }
+      if (
+        requestedAllowedPaths.length &&
+        allowedWritePaths.length !== requestedAllowedPaths.length
+      ) {
+        await releaseFailedStart()
+        return {
+          success: false,
+          error: 'Um ou mais caminhos permitidos estão fora da raiz do projeto.'
+        }
+      }
       // Scope decisions the chat already settled with the user — plain strings,
       // no path involved, so just clean and pass them into the prompt.
       const decisoes = Array.isArray(request.decisoes)
@@ -1727,8 +2049,7 @@ app.whenReady().then(() => {
             .filter((d): d is string => typeof d === 'string' && d.trim() !== '')
             .map((d) => d.trim())
         : []
-      const cfg = loadAIConfig()
-      if (!cfg.baseUrl || !cfg.model) {
+      if (harness === 'sagyou' && (!cfg.baseUrl || !cfg.model)) {
         await releaseFailedStart()
         return {
           success: false,
@@ -1748,7 +2069,7 @@ app.whenReady().then(() => {
       // Detection only runs when the sandbox is on: if the user turned it off
       // there's nothing to enforce, and probing (which spawns `ai-jail`/`wsl`)
       // would be wasted work — a plain unsandboxed run needs none of it.
-      const sandboxOn = sandboxRequired(cfg)
+      const sandboxOn = harness === 'sagyou' && sandboxRequired(cfg)
       const jail = sandboxOn ? await getJailStatus() : null
       if (sandboxOn && !jail?.available) {
         await releaseFailedStart()
@@ -1769,23 +2090,30 @@ app.whenReady().then(() => {
         id: runId,
         dir,
         convId: typeof request.convId === 'string' && request.convId ? request.convId : null,
-        agent: caCfg.model || 'nativo',
+        agent: harness === 'sagyou' ? caCfg.model || 'nativo' : externalHarness?.label || harness,
         task: taskLabel(task),
         startedAt: Date.now(),
         abort: false,
         log: '',
         base: await captureBase(effectiveDir),
         hint: null,
-        model: caCfg.model,
+        model: harness === 'sagyou' ? caCfg.model : externalHarness?.label || harness,
         usage: { promptTokens: 0, completionTokens: 0 },
         step: 0,
         // Zero means unlimited. The user stops a runaway run explicitly; loop
         // brakes still block repeated reads/searches/commands.
         maxSteps: 0,
         pendingApprovals: new Map(),
+        pendingQuestions: new Map(),
         autoApprove: typeof request.autoApprove === 'boolean' ? request.autoApprove : false,
         worktreeDir: worktreeDir,
-        worktreeMergeError: null
+        worktreeMergeError: null,
+        allowedWritePaths: allowedWritePaths.length ? allowedWritePaths : undefined,
+        readOnlyRoots,
+        externalChild: null,
+        interactive,
+        finishing: false,
+        externalStateDir: null
       }
       codeRuns.set(runId, run)
       if (worktreeDir) reservedWorktrees.delete(resolve(worktreeDir))
@@ -1812,17 +2140,34 @@ app.whenReady().then(() => {
       // Opening banner: the REAL model in use (task 11), and which files were
       // pinned vs left for the agent to discover with buscar_no_codigo.
       const rel = files.map((f) => relative(effectiveDir, f) || f)
-      emit(`[sagyou] agente nativo · modelo: ${caCfg.model} @ ${caCfg.baseUrl}\n`)
+      if (harness === 'sagyou') {
+        emit('[sagyou] agente nativo · modelo: ' + caCfg.model + ' @ ' + caCfg.baseUrl + '\n')
+      } else {
+        emit(
+          '[' +
+            (externalHarness?.command ?? harness) +
+            '] ' +
+            (externalHarness?.label ?? harness) +
+            ' · execução isolada em worktree\n'
+        )
+      }
       // Say plainly whether the shell is confined. `sandboxOn && jail.available`
       // is the only combination that wraps commands (the gate above refused the
       // dangerous "required but missing" case), so a false here means the user
       // deliberately turned the sandbox off.
       const sandboxActive = sandboxOn && !!jail?.available && !!jail?.path
-      emit(
-        sandboxActive
-          ? `[sagyou] sandbox: ai-jail ATIVO — comandos confinados à pasta do projeto\n`
-          : `[sagyou] ⚠️ sandbox: DESATIVADO — comandos rodam sem confinamento\n`
-      )
+      if (harness === 'sagyou')
+        emit(
+          sandboxActive
+            ? `[sagyou] sandbox: ai-jail ATIVO — comandos confinados à pasta do projeto\n`
+            : `[sagyou] ⚠️ sandbox: DESATIVADO — comandos rodam sem confinamento\n`
+        )
+      else
+        emit(
+          '[' +
+            (externalHarness?.command ?? harness) +
+            '] permissões do CLI próprio; alterações ficam no worktree até sua aprovação.\n'
+        )
       emit(
         rel.length
           ? `[sagyou] ${rel.length} arquivo(s) indicado(s) — busca desativada, conteúdo já no contexto:\n` +
@@ -1840,6 +2185,294 @@ app.whenReady().then(() => {
           `[sagyou] ${decisoes.length} decisão(ões) já tomada(s) — o agente deve respeitá-las:\n` +
             decisoes.map((d) => `  · ${d}\n`).join('')
         )
+      }
+
+      if (harness !== 'sagyou' && externalHarness?.path && worktreeDir) {
+        // OpenCode's --auto flag does not cover external_directory permission
+        // (the agent asks and blocks when stdin is closed). Pre-approve it with
+        // a worktree-scoped opencode.json that is removed before the final diff.
+        let injectedOpenCodeConfig = false
+        if (harness === 'opencode') {
+          const cfgPath = join(effectiveDir, 'opencode.json')
+          if (!existsSync(cfgPath)) {
+            writeFileSync(
+              cfgPath,
+              JSON.stringify({ permission: { external_directory: { '*': 'allow' } } }),
+              'utf-8'
+            )
+            injectedOpenCodeConfig = true
+          }
+        }
+        const launch = interactive
+          ? buildInteractiveHarnessLaunch(harness, task, effectiveDir)
+          : buildExternalHarnessLaunch(harness, task, effectiveDir)
+        const referenceBrief = await readOnlyReferenceBrief(readOnlyRoots)
+        const scopedTask = [
+          task,
+          rel.length ? 'Arquivos em foco: ' + rel.join(', ') + '.' : '',
+          decisoes.length ? 'Decisões já tomadas: ' + decisoes.join(' | ') : '',
+          referenceBrief,
+          'Trabalhe somente neste projeto. Ao terminar, explique brevemente o que fez.'
+        ]
+          .filter(Boolean)
+          .join('\n\n')
+        const externalWorktree = worktreeDir
+        const externalRuntime = externalHarnessEnv(harness, runId)
+        run.externalStateDir = externalRuntime.stateDir
+        const externalArgs = interactive
+          ? buildInteractiveHarnessLaunch(harness, scopedTask, effectiveDir).args
+          : buildExternalHarnessLaunch(harness, scopedTask, effectiveDir).args
+        emit(
+          interactive
+            ? '[' +
+                externalHarness.command +
+                '] sessão interativa de ' +
+                launch.label +
+                ' iniciada no worktree. Envie mensagens pelo painel e encerre a sessão para revisar o diff.\n'
+            : '[' +
+                externalHarness.command +
+                '] iniciando ' +
+                launch.label +
+                ' em worktree; o diff final pedirá sua aprovação.\n'
+        )
+
+        let settled = false
+        const finishExternal = async (code: number | null): Promise<void> => {
+          if (settled) return
+          settled = true
+          run.externalChild = null
+          // Remove the injected opencode.json before computing the final diff
+          // so it doesn't pollute the patch as an untracked file.
+          if (injectedOpenCodeConfig && harness === 'opencode' && externalWorktree) {
+            try {
+              unlinkSync(join(externalWorktree, 'opencode.json'))
+            } catch {}
+          }
+          let exitCode = run.abort ? -2 : run.finishing ? 0 : (code ?? 1)
+          try {
+            const { stdout: patch } = await execAsync('git -C "' + externalWorktree + '" diff HEAD')
+            const { stdout: changed } = await execAsync(
+              'git -C "' + externalWorktree + '" diff --name-only HEAD'
+            )
+            const changedPaths = changed
+              .split('\n')
+              .map((path) => path.trim())
+              .filter(Boolean)
+            // New files the harness left untracked — invisible to `git diff HEAD`.
+            // Stage them temporarily with --intent-to-add so `git diff HEAD` sees
+            // them, then reset. The worktree is ephemeral so the index churn is
+            // harmless; what matters is producing a standard-format patch that
+            // `git apply` can ingest.
+            const { stdout: porcelain } = await execAsync(
+              'git -C "' + externalWorktree + '" status --porcelain --untracked-files=all'
+            )
+            const untrackedFiles = porcelain
+              .split('\n')
+              .filter((l) => l.startsWith('?? '))
+              .map((l) => l.slice(3).trim())
+              .filter(Boolean)
+            let untrackedPatch = ''
+            for (const untrackedPath of untrackedFiles) {
+              changedPaths.push(untrackedPath)
+              await execAsync(
+                'git -C "' + externalWorktree + '" add -N "' + untrackedPath + '"'
+              )
+              const { stdout: filePatch } = await execAsync(
+                'git -C "' + externalWorktree + '" diff HEAD -- "' + untrackedPath + '"'
+              )
+              if (filePatch) untrackedPatch += filePatch
+              await execAsync(
+                'git -C "' + externalWorktree + '" reset HEAD -- "' + untrackedPath + '"'
+              )
+            }
+            const fullPatch = patch + untrackedPatch
+            if (
+              run.allowedWritePaths?.length &&
+              changedPaths.some((path) => !run.allowedWritePaths!.includes(path))
+            ) {
+              run.worktreeMergeError = 'o agente alterou arquivo fora do escopo permitido'
+              exitCode = 2
+              emit(
+                '[worktree] alterações fora do escopo permitido não foram apresentadas para aprovação.\n'
+              )
+              return
+            }
+            if (fullPatch.trim() && !run.abort) {
+              const fileCount = fullPatch
+                .split('\n')
+                .filter((line) => line.startsWith('diff --git')).length
+              const preview = patchPreview(fullPatch)
+              const approved = await new Promise<boolean>((resolveApproval) => {
+                const id = randomUUID()
+                const approval: CodeApprovalRequest = {
+                  runId,
+                  id,
+                  name: 'aplicar_alteracoes_externas',
+                  args: { harness: launch.label, arquivos: fileCount },
+                  resumo:
+                    'Aplicar ' + fileCount + ' alteração(ões) do ' + launch.label + ' ao projeto',
+                  conteudo: fullPatch.slice(0, 12000),
+                  diff: preview.lines,
+                  diffTruncated: preview.truncated,
+                  irreversivel: false
+                }
+                run.pendingApprovals.set(id, { resolve: resolveApproval, request: approval })
+                send('ai:code-agent:approve-request', approval)
+              })
+              if (approved && !run.abort) {
+                if (codeRunCoordinator.hasDirectRun(dir, runId)) {
+                  emit('[worktree] aguardando o agente que escreve no diretório original…\n')
+                  await codeRunCoordinator.waitForDirectRun(dir, runId)
+                }
+                await codeRunCoordinator.deliver(dir, async () => {
+                  const tmpPatch = join(dir, '.sagyou-wt-patch-' + runId + '.diff')
+                  writeFileSync(tmpPatch, fullPatch, 'utf-8')
+                  try {
+                    await execAsync(
+                      'git -C "' +
+                        dir +
+                        '" apply --whitespace=nowarn --ignore-space-change --ignore-whitespace "' +
+                        tmpPatch +
+                        '"'
+                    )
+                  } finally {
+                    try {
+                      unlinkSync(tmpPatch)
+                    } catch {}
+                  }
+                })
+                emit('[worktree] ' + fileCount + ' arquivo(s) aplicado(s) após sua aprovação.\n')
+              } else {
+                run.worktreeMergeError = run.abort
+                  ? 'execução interrompida'
+                  : 'alterações não aprovadas pelo usuário'
+                if (exitCode === 0) exitCode = run.abort ? -2 : 2
+                emit('[worktree] alterações não aplicadas ao projeto original.\n')
+              }
+            }
+          } catch (error) {
+            run.worktreeMergeError =
+              error instanceof Error ? error.message : 'erro ao preparar alterações'
+            if (exitCode === 0) exitCode = 2
+            emit(
+              '[erro] alterações do worktree não foram aplicadas: ' + run.worktreeMergeError + '\n'
+            )
+          } finally {
+            const secs = ((Date.now() - run.startedAt) / 1000).toFixed(1)
+            emit('[' + externalHarness.command + '] duração: ' + secs + 's\n')
+            const terminal = run.worktreeMergeError
+              ? '[agente encerrado — código ' + exitCode + '; alterações não aplicadas]'
+              : '[agente encerrado — código ' + exitCode + ']'
+            appendAgentLog(runId, '\n' + terminal + '\n')
+            await archiveAgentRun(runId, exitCode)
+            try {
+              await execAsync(
+                'git -C "' + dir + '" worktree remove --force "' + externalWorktree + '"'
+              )
+            } catch {}
+            reservedWorktrees.delete(resolve(externalWorktree))
+            if (run.externalStateDir) {
+              try {
+                rmSync(run.externalStateDir, { recursive: true, force: true })
+              } catch {}
+            }
+            send('ai:code-agent:exit', { runId, code: exitCode })
+            lastRunLog = run.log
+            lastRunHint = run.hint
+            lastRunModel = run.model
+            lastRunProgress = {
+              step: run.step,
+              maxSteps: run.maxSteps,
+              promptTokens: run.usage.promptTokens,
+              completionTokens: run.usage.completionTokens
+            }
+            codeRuns.delete(runId)
+            codeRunCoordinator.unregister(dir, runId)
+          }
+        }
+
+        const streamLines = (): ((chunk: Buffer) => void) => {
+          let buffer = ''
+          return (chunk: Buffer): void => {
+            buffer += chunk.toString('utf-8')
+            const lines = buffer.split(/\r?\n/)
+            buffer = lines.pop() ?? ''
+            for (const line of lines) {
+              const formatted = formatExternalHarnessEvent(harness, line)
+              if (formatted) emit(formatted + '\n')
+              // External harnesses don't report usage through the native loop.
+              // OpenCode's --format json emits step_finish events that carry the
+              // provider token counts — extract them so the Fleet panel and the
+              // archived run show real numbers instead of zeroes.
+              if (harness === 'opencode') {
+                try {
+                  const event = JSON.parse(line) as Record<string, unknown>
+                  if (event.type === 'step_finish') {
+                    const tokens =
+                      (event.part && typeof event.part === 'object'
+                        ? (event.part as Record<string, unknown>).tokens
+                        : undefined) ?? event.tokens
+                    if (tokens && typeof tokens === 'object') {
+                      const t = tokens as Record<string, unknown>
+                      const input = typeof t.input === 'number' ? t.input : 0
+                      const output = typeof t.output === 'number' ? t.output : 0
+                      if (input > 0 || output > 0) {
+                        run.usage.promptTokens += input
+                        run.usage.completionTokens += output
+                        pushProgress()
+                      }
+                    }
+                  }
+                } catch {
+                  // not JSON — ignore
+                }
+              }
+            }
+          }
+        }
+        try {
+          if (interactive) {
+            const terminal = spawnPty(externalHarness.path, externalArgs, {
+              name: 'xterm-256color',
+              cols: 100,
+              rows: 30,
+              cwd: effectiveDir,
+              env: externalRuntime.env
+            })
+            run.externalChild = terminal
+            terminal.onData((data) => emit(data))
+            terminal.onExit(({ exitCode }) => {
+              void finishExternal(exitCode)
+            })
+          } else {
+            const child = spawn(externalHarness.path, externalArgs, {
+              cwd: effectiveDir,
+              stdio: ['ignore', 'pipe', 'pipe'],
+              windowsHide: true,
+              env: externalRuntime.env
+            })
+            run.externalChild = child
+            child.stdout.on('data', streamLines())
+            child.stderr.on('data', streamLines())
+            child.once('error', (error) => {
+              emit('[erro no ' + launch.label + ': ' + error.message + ']\n')
+              void finishExternal(1)
+            })
+            child.once('close', (code) => {
+              void finishExternal(code)
+            })
+          }
+        } catch (error) {
+          emit(
+            '[erro ao iniciar ' +
+              launch.label +
+              ': ' +
+              (error instanceof Error ? error.message : 'falha') +
+              ']\n'
+          )
+          void finishExternal(1)
+        }
+        return { success: true, agent: launch.label, dir, runId, worktreeDir }
       }
 
       // When files are pinned, inline their contents (numbered) into the prompt
@@ -1944,7 +2577,9 @@ app.whenReady().then(() => {
         conversas,
         decisoes,
         noCommands,
-        nodeProject: existsSync(join(effectiveDir, 'package.json'))
+        nodeProject: existsSync(join(effectiveDir, 'package.json')),
+        allowedWritePaths,
+        readOnlyRoots
       })
 
       // Approval round-trip: the loop parks here, the renderer shows a card and
@@ -1985,6 +2620,18 @@ app.whenReady().then(() => {
           send('ai:code-agent:approve-request', approval)
         })
       }
+
+      // Questions are not approvals: even automatic mode must leave a real
+      // product decision to the user. The run remains parked until an IPC reply,
+      // cancellation, or stop resolves this promise.
+      const askUser = (question: string): Promise<string | null> =>
+        new Promise<string | null>((resolveQuestion) => {
+          if (run.abort) return resolveQuestion(null)
+          const id = randomUUID()
+          const request: CodeQuestionRequest = { runId, id, question }
+          run.pendingQuestions.set(id, { resolve: resolveQuestion, request })
+          send('ai:code-agent:question', request)
+        })
 
       // The command runner: wrap every shell command with ai-jail when the
       // sandbox is active, and decorate the output when a failure looks like the
@@ -2038,10 +2685,16 @@ app.whenReady().then(() => {
           const result = await runCodeAgent(
             systemPrompt,
             task,
-            { root: effectiveDir, run: runner },
+            {
+              root: effectiveDir,
+              run: runner,
+              allowedWritePaths: allowedWritePaths.length ? new Set(allowedWritePaths) : undefined,
+              readOnlyRoots
+            },
             {
               callModel: (messages, tools) => callCodeModel(caCfg, messages, tools),
               approve,
+              askUser,
               // Pinned files → drop the discovery tools (grep/list): the agent was
               // handed the targets and their contents, so re-finding them is pure
               // waste of the step budget.
@@ -2172,6 +2825,33 @@ app.whenReady().then(() => {
     stopCodeAgent(typeof runId === 'string' ? runId : undefined)
   })
 
+  ipcMain.handle('ai:code-agent:terminal-input', (_, runId: string, input: string) => {
+    const run = codeRuns.get(runId)
+    if (!run?.interactive || !run.externalChild || run.finishing) {
+      return { success: false, error: 'Sessão interativa indisponível.' }
+    }
+    if (
+      typeof input !== 'string' ||
+      !input ||
+      input.length > 8_000 ||
+      !('write' in run.externalChild)
+    ) {
+      return { success: false, error: 'Entrada de terminal inválida.' }
+    }
+    run.externalChild.write(input)
+    return { success: true }
+  })
+
+  ipcMain.handle('ai:code-agent:finish-interactive', (_, runId: string) => {
+    const run = codeRuns.get(runId)
+    if (!run?.interactive || !run.externalChild) {
+      return { success: false, error: 'Sessão interativa indisponível.' }
+    }
+    run.finishing = true
+    run.externalChild.kill('SIGTERM')
+    return { success: true }
+  })
+
   // The renderer's answer to an approval card the loop is parked on. Resolving
   // the pending promise is what lets the run continue (or run the denied path).
   // UUIDs are unique, so search across all runs' pendingApprovals maps.
@@ -2185,6 +2865,21 @@ app.whenReady().then(() => {
       }
     }
   })
+  // The renderer's answer to a question card. An empty answer means the user
+  // cancelled it; code-agent.ts returns that fact to the model so it can stop or
+  // choose a safe alternative instead of inventing a response.
+  ipcMain.handle('ai:code-agent:question-response', (_, id: string, answer?: string) => {
+    for (const run of codeRuns.values()) {
+      const pending = run.pendingQuestions.get(id)
+      if (pending) {
+        run.pendingQuestions.delete(id)
+        const normalized = typeof answer === 'string' ? answer.trim() : ''
+        pending.resolve(normalized || null)
+        return
+      }
+    }
+  })
+
   // Toggle auto-approval for a running code agent. When on, approve() returns
   // true without sending IPC — the renderer gets ai:code-agent:auto-changed
   // so the UI can reflect the new state.
@@ -2195,6 +2890,7 @@ app.whenReady().then(() => {
     const resolvedApprovalIds: string[] = []
     if (run.autoApprove) {
       for (const [id, pending] of run.pendingApprovals) {
+        if (pending.request.name === 'aplicar_alteracoes_externas') continue
         run.pendingApprovals.delete(id)
         resolvedApprovalIds.push(id)
         pending.resolve(true)
@@ -2232,12 +2928,17 @@ app.whenReady().then(() => {
         task: r.task,
         convId: r.convId,
         agent: r.agent,
+        allowedWritePaths: r.allowedWritePaths,
+        readOnlyRoots: r.readOnlyRoots,
+        interactive: r.interactive,
+        finishing: r.finishing,
         startedAt: r.startedAt,
         log: r.log,
         model: r.model,
         hint: r.hint,
         autoApprove: r.autoApprove,
         approvals: [...r.pendingApprovals.values()].map((pending) => pending.request),
+        questions: [...r.pendingQuestions.values()].map((pending) => pending.request),
         progress: {
           step: r.step,
           maxSteps: r.maxSteps,

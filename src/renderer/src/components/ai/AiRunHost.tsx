@@ -118,7 +118,15 @@ export function AiRunHost({
     irreversivel?: boolean
   }
 
+  interface CodeQuestion {
+    runId: string
+    id: string
+    question: string
+  }
+
   const [codeApprovals, setCodeApprovals] = useState<CodeApproval[]>([])
+  const [codeQuestions, setCodeQuestions] = useState<CodeQuestion[]>([])
+  const [questionAnswers, setQuestionAnswers] = useState<Record<string, string>>({})
 
   useEffect(() => {
     const off = window.electronAPI.ai.codeAgent.onApproveRequest((req) => {
@@ -137,11 +145,19 @@ export function AiRunHost({
         }
       ])
     })
+    const offQuestion = window.electronAPI.ai.codeAgent.onQuestion((req) => {
+      setCodeQuestions((prev) => [
+        ...prev.filter((question) => question.id !== req.id),
+        { runId: req.runId, id: req.id, question: req.question }
+      ])
+    })
     const offExit = window.electronAPI.ai.codeAgent.onExit((payload) => {
       setCodeApprovals((prev) => prev.filter((a) => a.runId !== payload.runId))
+      setCodeQuestions((prev) => prev.filter((question) => question.runId !== payload.runId))
     })
     return () => {
       off()
+      offQuestion()
       offExit()
     }
   }, [])
@@ -149,6 +165,16 @@ export function AiRunHost({
   const approveCodeAction = (id: string, approved: boolean): void => {
     window.electronAPI.ai.codeAgent.approve(id, approved)
     setCodeApprovals((prev) => prev.filter((a) => a.id !== id))
+  }
+
+  const answerCodeQuestion = (id: string, answer: string): void => {
+    window.electronAPI.ai.codeAgent.answerQuestion(id, answer)
+    setCodeQuestions((prev) => prev.filter((question) => question.id !== id))
+    setQuestionAnswers((prev) => {
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
   }
 
   /**
@@ -189,9 +215,62 @@ export function AiRunHost({
         </button>
       )}
 
+      {/* Questions always come before approvals. Auto mode may clear approval
+          cards, but it never replies to a question on the user's behalf. */}
+      {codeQuestions.length > 0 && (
+        <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center gap-3 bg-black/60 px-4 py-6 overflow-y-auto">
+          {codeQuestions.map((question) => (
+            <div
+              key={question.id}
+              className="w-full max-w-[520px] rounded-xl bg-[#232323] border border-[#4c3a70] shadow-2xl"
+            >
+              <div className="flex items-center gap-2 px-5 py-4 border-b border-[#3b3b3b]">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#7c3aed]/20 text-xs text-[#c4b5fd]">
+                  ?
+                </span>
+                <h2 className="text-sm font-semibold text-[#e7e1f3]">
+                  O agente precisa da sua decisão
+                </h2>
+              </div>
+              <div className="px-5 py-4 space-y-3">
+                <p className="text-sm leading-6 text-[#d4d4d4]">{question.question}</p>
+                <textarea
+                  value={questionAnswers[question.id] ?? ''}
+                  onChange={(event) =>
+                    setQuestionAnswers((prev) => ({ ...prev, [question.id]: event.target.value }))
+                  }
+                  rows={3}
+                  autoFocus={codeQuestions[0]?.id === question.id}
+                  aria-label="Sua resposta para o agente"
+                  placeholder="Digite sua resposta…"
+                  className="w-full resize-y rounded-lg border border-[#4a4a4a] bg-[#1b1b1b] px-3 py-2 text-sm text-[#e5e5e5] outline-none placeholder:text-[#737373] focus:border-[#8b5cf6]"
+                />
+              </div>
+              <div className="flex items-center justify-end gap-2 border-t border-[#3b3b3b] px-5 py-3">
+                <button
+                  onClick={() => answerCodeQuestion(question.id, '')}
+                  className="rounded-lg px-3 py-1.5 text-sm text-[#999999] transition-colors hover:bg-[#2a2a2a] hover:text-[#d4d4d4]"
+                >
+                  Cancelar
+                </button>
+                <button
+                  disabled={!questionAnswers[question.id]?.trim()}
+                  onClick={() =>
+                    answerCodeQuestion(question.id, questionAnswers[question.id] ?? '')
+                  }
+                  className="rounded-lg bg-[#7c3aed] px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-[#6d28d9] disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  Enviar resposta
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Code agent approval cards — rendered here (not only in FleetView) so
           a run doesn't hang forever when the user is on another view. */}
-      {codeApprovals.map((ca) => (
+      {codeApprovals.slice(0, 1).map((ca) => (
         <div
           key={ca.id}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
@@ -212,7 +291,7 @@ export function AiRunHost({
               </svg>
               <h2 className="text-sm font-semibold text-[#d4d4d4]">
                 Agente de código —{' '}
-                {ca.name === 'escrever_arquivo' ? 'escrever arquivo' : 'executar comando'}
+                {ca.name === "escrever_arquivo" ? "escrever arquivo" : ca.name === "aplicar_alteracoes_externas" ? "revisar alterações" : "executar comando"}
               </h2>
             </div>
             <div className="flex-1 overflow-y-auto px-5 py-3 space-y-3">

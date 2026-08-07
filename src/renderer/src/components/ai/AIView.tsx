@@ -28,6 +28,8 @@ const DEFAULT_CONFIG: AIConfig = {
   model: 'gpt-4o-mini'
 }
 
+type HarnessStatus = Awaited<ReturnType<typeof window.electronAPI.ai.harnesses.status>>[number]
+
 /** Map model name → provider base URL, so selecting a model auto-fills the URL. */
 const MODEL_PROVIDER: Record<string, string> = {
   deepseek: 'https://api.deepseek.com',
@@ -364,6 +366,9 @@ export function AIView({
   const [jailStatus, setJailStatus] = useState<Awaited<
     ReturnType<typeof window.electronAPI.ai.jail.status>
   > | null>(null)
+  const [harnessStatuses, setHarnessStatuses] = useState<HarnessStatus[]>([])
+  const [loadingHarnessStatuses, setLoadingHarnessStatuses] = useState(false)
+  const [harnessCheckFeedback, setHarnessCheckFeedback] = useState<string | null>(null)
   /** Whether the first-run sandbox onboarding modal is showing. */
   const [showOnboarding, setShowOnboarding] = useState(false)
 
@@ -550,6 +555,8 @@ export function AIView({
           lastConversationId: stored.lastConversationId,
           // Undefined = the code agent falls back to the chat provider.
           codeAgent: stored.codeAgent,
+          // Older configs predate the harness picker and keep using the native runtime.
+          codeHarness: stored.codeHarness ?? 'sagyou',
           // Undefined = sandbox required (safe default); only explicit false is off.
           sandboxEnabled: stored.sandboxEnabled,
           sandboxOnboardingDismissed: stored.sandboxOnboardingDismissed,
@@ -587,6 +594,25 @@ export function AIView({
   useEffect(() => {
     void refreshJail()
   }, [refreshJail])
+
+  const refreshHarnesses = useCallback(async (refresh = false): Promise<void> => {
+    setLoadingHarnessStatuses(true)
+    setHarnessCheckFeedback(null)
+    try {
+      setHarnessStatuses(await window.electronAPI.ai.harnesses.status(refresh))
+      setHarnessCheckFeedback('Verificado agora')
+    } catch {
+      // A missing/pre-release preload bridge reads as unavailable, never as installed.
+      setHarnessStatuses([])
+      setHarnessCheckFeedback('Falha ao verificar')
+    } finally {
+      setLoadingHarnessStatuses(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (showConfig) void refreshHarnesses()
+  }, [showConfig, refreshHarnesses])
 
   // Keep the chat scrolled to the latest message. While an answer streams in
   // this fires on every chunk, so only follow along when the user is already at
@@ -1704,7 +1730,7 @@ export function AIView({
 
         {/* Config panel */}
         {showConfig && (
-          <div className="px-6 py-4 border-b border-[#3b3b3b] bg-[#232323] shrink-0">
+          <div className="max-h-[70vh] overflow-y-auto overscroll-contain px-6 py-4 border-b border-[#3b3b3b] bg-[#232323] shrink-0">
             <span className="text-[11px] font-medium text-[#999999]">Chat</span>
             <p className="mt-1 mb-2 text-[11px] leading-relaxed text-[#666666]">
               Provider e modelo que o assistente usa para <b>conversar com você</b> no chat — ler
@@ -1951,6 +1977,97 @@ export function AIView({
                 um modelo local, custo zero). Como editar código é a parte pesada, costuma valer um
                 modelo melhor aqui do que no chat.
               </p>
+              <div className="mb-3 rounded-lg border border-[#3b3b3b] bg-[#202020] p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-[11px] font-medium text-[#d4d4d4]">Harness de execução</p>
+                    <p className="mt-0.5 text-[11px] leading-relaxed text-[#777777]">
+                      Define qual runtime executa tarefas que alteram código. A escolha é salva por
+                      dispositivo.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {config.codeHarness === 'sagyou' && (
+                      <span className="rounded-full border border-[#d7a347]/35 bg-[#d7a347]/10 px-2 py-0.5 text-[10px] font-medium text-[#e8bc70]">
+                        EM TESTE
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => void refreshHarnesses(true)}
+                      disabled={loadingHarnessStatuses}
+                      className="text-[10px] text-[#a080f0] hover:text-[#d4d4d4] disabled:cursor-wait disabled:opacity-50"
+                    >
+                      {loadingHarnessStatuses
+                        ? 'Verificando…'
+                        : (harnessCheckFeedback ?? 'Verificar novamente')}
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {(
+                    [
+                      ['sagyou', 'Sagyou'],
+                      ['codex', 'Codex'],
+                      ['opencode', 'OpenCode'],
+                      ['claude-code', 'Claude Code']
+                    ] as const
+                  ).map(([value, label]) => {
+                    const selected = (config.codeHarness ?? 'sagyou') === value
+                    const status =
+                      value === 'sagyou'
+                        ? null
+                        : harnessStatuses.find((harness) => harness.id === value)
+                    const detail =
+                      value === 'sagyou'
+                        ? 'Nativo · em teste'
+                        : loadingHarnessStatuses
+                          ? 'Verificando…'
+                          : status?.installed
+                            ? status.version
+                              ? 'Instalado · ' + status.version
+                              : 'Instalado'
+                            : 'Não encontrado'
+                    return (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setConfig((c) => ({ ...c, codeHarness: value }))}
+                        className={
+                          'rounded-md border px-2.5 py-2 text-left transition-colors ' +
+                          (selected
+                            ? 'border-[#a080f0] bg-[#7c3aed]/15 text-[#e3dcff]'
+                            : 'border-[#3b3b3b] bg-[#181818] text-[#b0b0b0] hover:border-[#666666]')
+                        }
+                        aria-pressed={selected}
+                      >
+                        <span className="block text-[11px] font-medium">{label}</span>
+                        <span className="mt-0.5 block text-[10px] text-[#777777]">{detail}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+                {config.codeHarness && config.codeHarness !== 'sagyou' ? (
+                  <p className="mt-2 text-[11px] leading-relaxed text-[#d7a347]">
+                    {config.codeHarness === 'claude-code'
+                      ? 'Claude Code'
+                      : config.codeHarness === 'opencode'
+                        ? 'OpenCode'
+                        : 'Codex'}{' '}
+                    {loadingHarnessStatuses
+                      ? 'está sendo verificado nesta máquina.'
+                      : harnessStatuses.find((harness) => harness.id === config.codeHarness)
+                            ?.installed
+                        ? 'vai executar em um worktree isolado e pedirá sua aprovação antes de aplicar o diff ao projeto. As credenciais e o modelo são configurados no próprio CLI.'
+                        : 'não foi encontrado nesta máquina. Instale o CLI correspondente e use Verificar novamente.'}
+                  </p>
+                ) : (
+                  <p className="mt-2 text-[11px] leading-relaxed text-[#e8bc70]">
+                    O harness Sagyou está em teste. Use aprovações manuais e confira o diff antes de
+                    aceitar alterações.
+                  </p>
+                )}
+              </div>
               <div className="grid grid-cols-3 gap-3">
                 {codeAgentField('Base URL', 'baseUrl', 'text', config.baseUrl || 'como o chat')}
                 {codeAgentField(

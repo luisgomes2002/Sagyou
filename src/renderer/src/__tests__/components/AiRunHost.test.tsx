@@ -50,7 +50,12 @@ function installApi(): void {
         }))
       },
       images: { save: vi.fn(), get: vi.fn(), delete: vi.fn(async () => {}) },
-      skills: { list: vi.fn(async () => []), save: vi.fn(), delete: vi.fn(async () => {}), import: vi.fn() },
+      skills: {
+        list: vi.fn(async () => []),
+        save: vi.fn(),
+        delete: vi.fn(async () => {}),
+        import: vi.fn()
+      },
       codeAgent: {
         onOutput: vi.fn(() => vi.fn()),
         onStarted: vi.fn(() => vi.fn()),
@@ -60,6 +65,7 @@ function installApi(): void {
         onArchived: vi.fn(() => vi.fn()),
         onToolEvent: vi.fn(() => vi.fn()),
         onApproveRequest: vi.fn(() => vi.fn()),
+        onQuestion: vi.fn(() => vi.fn()),
         // A recognised environment failure (e.g. the sandbox couldn't start).
         onHint: vi.fn(() => vi.fn()),
         // Live step + token counter pushed each step.
@@ -108,11 +114,9 @@ function App(): React.JSX.Element {
   )
 }
 
-const leaveAIView = async (): Promise<void> =>
-  userEvent.click(screen.getByText('ir para o board'))
+const leaveAIView = async (): Promise<void> => userEvent.click(screen.getByText('ir para o board'))
 
-const returnToAIView = async (): Promise<void> =>
-  userEvent.click(screen.getByText('ir para a IA'))
+const returnToAIView = async (): Promise<void> => userEvent.click(screen.getByText('ir para a IA'))
 
 /** Send a message from the composer, leaving the run in flight. */
 async function startRun(): Promise<void> {
@@ -200,8 +204,7 @@ describe('a run and the chat it belongs to', () => {
       .mock.calls.map(([c]) => c)
       .filter(
         (c) =>
-          c.id !== asked &&
-          c.messages.some((m) => m.content === 'a resposta da primeira conversa')
+          c.id !== asked && c.messages.some((m) => m.content === 'a resposta da primeira conversa')
       )
     expect(stray).toEqual([])
   })

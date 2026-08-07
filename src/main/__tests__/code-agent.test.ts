@@ -32,16 +32,20 @@ import {
 } from '../code-agent'
 
 let root: string
+let referenceRoot: string
 
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'sagyou-agent-'))
   await mkdir(join(root, 'src'), { recursive: true })
   await writeFile(join(root, 'src', 'a.ts'), 'export const a = 1\nconst hidden = 2\n')
   await writeFile(join(root, 'README.md'), '# projeto')
+  referenceRoot = await mkdtemp(join(tmpdir(), 'sagyou-agent-reference-'))
+  await writeFile(join(referenceRoot, 'README.md'), '# referência externa')
 })
 
 afterEach(async () => {
   await rm(root, { recursive: true, force: true })
+  await rm(referenceRoot, { recursive: true, force: true })
 })
 
 describe('safeCompactionBoundary', () => {
@@ -77,7 +81,7 @@ describe('safeCompactionBoundary', () => {
 const ctx = (): ToolContext => ({ root })
 
 describe('tool definitions', () => {
-  it('exposes exactly the seven tools, each with a JSON schema', () => {
+  it('exposes exactly the eight tools, each with a JSON schema', () => {
     const names = CODE_AGENT_TOOLS.map((t) => t.function.name)
     expect(names.sort()).toEqual(
       [
@@ -87,6 +91,7 @@ describe('tool definitions', () => {
         'executar_comando',
         'ler_arquivo',
         'listar_arquivos',
+        'perguntar_usuario',
         'rodar_subagente'
       ].sort()
     )
@@ -128,6 +133,21 @@ describe('runCodeTool — read tools', () => {
     expect(res.error).toBeTruthy()
   })
 
+  it('reads an explicitly authorized external reference without widening writes', async () => {
+    const context: ToolContext = {
+      root,
+      readOnlyRoots: [{ id: 'reference', nome: 'Referência', path: referenceRoot }]
+    }
+    const read = JSON.parse(
+      (await runCodeTool('ler_arquivo', { referencia: 'reference', caminho: 'README.md' }, context)).content
+    )
+    const denied = JSON.parse(
+      (await runCodeTool('ler_arquivo', { referencia: 'unknown', caminho: 'README.md' }, context)).content
+    )
+    expect(read.conteudo).toBe('# referência externa')
+    expect(denied.error).toContain('não autorizada')
+  })
+
   it('greps and groups matches by file', async () => {
     const res = JSON.parse(
       (await runCodeTool('buscar_no_codigo', { termo: 'const' }, ctx())).content
@@ -160,6 +180,22 @@ describe('runCodeTool — write tool', () => {
     )
     expect(res.error).toBeTruthy()
     expect(existsSync(join(root, '..', 'escape.ts'))).toBe(false)
+  })
+})
+
+describe('runCodeTool — caminhos permitidos', () => {
+  it('refuses a write outside the run\x27s exact allowlist', async () => {
+    const res = JSON.parse(
+      (
+        await runCodeTool(
+          'escrever_arquivo',
+          { caminho: 'outside.html', conteudo: 'x' },
+          { root, allowedWritePaths: new Set(['landing-sakura.html']) }
+        )
+      ).content
+    )
+    expect(res.error).toContain('landing-sakura.html')
+    expect(existsSync(join(root, 'outside.html'))).toBe(false)
   })
 })
 
@@ -278,6 +314,29 @@ describe('runCodeAgent — the loop', () => {
     expect(res.answer).toBe('Pronto: são 2 arquivos.')
     expect(res.stopped).toBe(false)
     expect(seen).toEqual(['listar_arquivos'])
+  })
+
+  it('parks for an essential question and returns the answer to the model', async () => {
+    const model = scriptedModel([
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [
+          toolCall('q1', 'perguntar_usuario', {
+            pergunta: 'Você prefere manter o tema claro ou escuro?'
+          })
+        ]
+      },
+      { role: 'assistant', content: 'Vou usar o tema escuro.' }
+    ])
+    const askUser = vi.fn(async () => 'Escuro')
+    const res = await runCodeAgent('sys', 'escolha o tema', ctx(), {
+      callModel: model,
+      approve: async () => true,
+      askUser
+    })
+    expect(askUser).toHaveBeenCalledWith('Você prefere manter o tema claro ou escuro?')
+    expect(res.answer).toBe('Vou usar o tema escuro.')
   })
 
   it('asks approval for a write and does not write when denied', async () => {
@@ -480,9 +539,7 @@ describe('runCodeAgent — the loop', () => {
         message: {
           role: 'assistant',
           content: '',
-          tool_calls: [
-            toolCall(`c${calls}`, 'listar_arquivos', { subpasta: `tentativa-${calls}` })
-          ]
+          tool_calls: [toolCall(`c${calls}`, 'listar_arquivos', { subpasta: `tentativa-${calls}` })]
         }
       }
     }
@@ -662,6 +719,7 @@ describe('codeToolsFor', () => {
         'escrever_arquivo',
         'executar_comando',
         'ler_arquivo',
+        'perguntar_usuario',
         'rodar_subagente'
       ].sort()
     )
