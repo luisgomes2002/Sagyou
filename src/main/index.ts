@@ -2274,9 +2274,7 @@ app.whenReady().then(() => {
             let untrackedPatch = ''
             for (const untrackedPath of untrackedFiles) {
               changedPaths.push(untrackedPath)
-              await execAsync(
-                'git -C "' + externalWorktree + '" add -N "' + untrackedPath + '"'
-              )
+              await execAsync('git -C "' + externalWorktree + '" add -N "' + untrackedPath + '"')
               const { stdout: filePatch } = await execAsync(
                 'git -C "' + externalWorktree + '" diff HEAD -- "' + untrackedPath + '"'
               )
