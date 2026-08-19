@@ -610,6 +610,7 @@ export const DEFAULT_TAGS: { label: string; tags: string[] }[] = [
 // ── Planner (time blocks & routines) ───────────────────────────────────────
 
 export type TimeBlockType = 'task' | 'routine' | 'buffer' | 'custom'
+export type TimeBlockBorderStyle = 'solid' | 'dashed'
 
 export interface TimeBlock {
   id: string
@@ -622,6 +623,7 @@ export interface TimeBlock {
   habitId?: string // optional link to a habit
   type: TimeBlockType
   color?: string
+  borderStyle?: TimeBlockBorderStyle
   order: number
   createdAt: string
   updatedAt: string

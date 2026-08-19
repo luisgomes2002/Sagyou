@@ -32,7 +32,7 @@ import { useKanbanStore } from '../../store/kanban'
 import { D, FINANCIAL_CATEGORIES } from '../../components/financial/shared'
 import { computeHabitSummary, todayISO } from '../../utils/habits'
 import { isDoneColumn } from '../../utils/columns'
-import { PROJECT_COLORS, NOTE_COLORS } from '../../types'
+import { PROJECT_COLORS, NOTE_COLORS, TIME_BLOCK_COLORS } from '../../types'
 import type { AITaskInput, Priority, Habit } from '../../types'
 import glossaryRaw from '../glossary.json'
 
@@ -1970,7 +1970,8 @@ export const registryEntries: Record<string, AITool> = {
     definition: fn(
       'criar_plano',
       'Cria blocos de tempo no planejamento. Cada bloco tem data, horário de início/fim, título e ' +
-        'tipo: task (vinculada ao kanban), routine, buffer (deslocamento/banho/almoço) ou custom.',
+        'tipo: task (vinculada ao kanban), routine, buffer (deslocamento/banho/almoço) ou custom. ' +
+        'Escolha obrigatoriamente uma cor para cada bloco, diferenciando atividades quando possível.',
       {
         type: 'object',
         properties: {
@@ -1987,9 +1988,13 @@ export const registryEntries: Record<string, AITool> = {
                 descricao: { type: 'string', description: 'Descrição' },
                 tipo: { type: 'string', enum: ['task', 'routine', 'buffer', 'custom'] },
                 taskId: { type: 'string', description: 'ID da task (só se tipo=task)' },
-                cor: { type: 'string', description: 'Cor hex (ex: #7c3aed)' }
+                cor: {
+                  type: 'string',
+                  enum: [...TIME_BLOCK_COLORS],
+                  description: 'Cor visual obrigatória do fundo e da borda do bloco'
+                }
               },
-              required: ['data', 'inicio', 'fim', 'titulo', 'tipo']
+              required: ['data', 'inicio', 'fim', 'titulo', 'tipo', 'cor']
             }
           }
         },
@@ -2003,6 +2008,7 @@ export const registryEntries: Record<string, AITool> = {
 
       const store = useKanbanStore.getState()
       const criados: string[] = []
+      const ignorados: { titulo: string; data: string; inicio: string; fim: string; motivo: string }[] = []
       for (const b of blocos) {
         const data = typeof b.data === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(b.data) ? b.data : ''
         const inicio =
@@ -2018,7 +2024,32 @@ export const registryEntries: Record<string, AITool> = {
         if (fim <= inicio) continue
         const descricao = typeof b.descricao === 'string' ? b.descricao.trim() : undefined
         const taskId = typeof b.taskId === 'string' ? b.taskId : undefined
-        const cor = typeof b.cor === 'string' ? b.cor : undefined
+        const cor = TIME_BLOCK_COLORS.includes(b.cor as (typeof TIME_BLOCK_COLORS)[number])
+          ? (b.cor as (typeof TIME_BLOCK_COLORS)[number])
+          : undefined
+        if (!cor) continue
+        // A tool call can be repeated when a provider drops its response after
+        // the write has already landed. The planner is an append-only action,
+        // so retrying an identical block must be harmless instead of creating
+        // a second appointment. Title + day + interval are the user-visible
+        // identity; colour and description may legitimately be edited later.
+        const duplicate = store.timeBlocks.some(
+          (tb) =>
+            tb.date === data &&
+            tb.startTime === inicio &&
+            tb.endTime === fim &&
+            tb.title.trim().localeCompare(titulo, undefined, { sensitivity: 'accent' }) === 0
+        )
+        if (duplicate) {
+          ignorados.push({
+            titulo,
+            data,
+            inicio,
+            fim,
+            motivo: 'Já existe um bloco idêntico; não foi duplicado.'
+          })
+          continue
+        }
         const existingBlocks = store.timeBlocks.filter((tb) => tb.date === data)
         const maxOrder = existingBlocks.reduce((m, tb) => Math.max(m, tb.order), -1)
         const id = store.createTimeBlock({
@@ -2029,7 +2060,7 @@ export const registryEntries: Record<string, AITool> = {
           ...(descricao ? { description: descricao } : {}),
           ...(taskId ? { taskId } : {}),
           type: tipo,
-          ...(cor ? { color: cor } : {}),
+          color: cor,
           order: maxOrder + 1
         })
         criados.push(id)
@@ -2038,6 +2069,7 @@ export const registryEntries: Record<string, AITool> = {
       return JSON.stringify({
         criado: criados.length,
         ids: criados,
+        ...(ignorados.length ? { ignorados } : {}),
         dica: 'Use ler_plano para ver o resultado'
       })
     }

@@ -38,7 +38,7 @@ import {
   REFERENCE_CODE_TOOL_DEFS,
   routeTools
 } from '../../ai/tools'
-import { PROJECT_COLORS, NOTE_COLORS } from '../../types'
+import { PROJECT_COLORS, NOTE_COLORS, TIME_BLOCK_COLORS } from '../../types'
 
 function resetStore(): void {
   useKanbanStore.setState({
@@ -59,6 +59,62 @@ function resetStore(): void {
     isLoaded: false
   })
 }
+
+describe('criar_plano', () => {
+  beforeEach(resetStore)
+
+  it('exige que a IA escolha uma cor suportada para cada bloco', () => {
+    const def = TOOL_DEFS.find((tool) => tool.function.name === 'criar_plano')
+    const parameters = def?.function.parameters as {
+      properties?: { blocos?: { items?: { properties?: { cor?: unknown }; required?: string[] } } }
+    }
+
+    expect(parameters.properties?.blocos?.items?.required).toContain('cor')
+    expect(parameters.properties?.blocos?.items?.properties?.cor).toMatchObject({
+      enum: [...TIME_BLOCK_COLORS]
+    })
+  })
+
+  it('persiste a cor escolhida pela IA no bloco', async () => {
+    const result = await call('criar_plano', {
+      blocos: [
+        {
+          data: '2026-08-12',
+          inicio: '09:00',
+          fim: '10:00',
+          titulo: 'Foco',
+          tipo: 'custom',
+          cor: '#06b6d4'
+        }
+      ]
+    })
+
+    expect(result).toMatchObject({ criado: 1 })
+    expect(st().timeBlocks[0]).toMatchObject({ title: 'Foco', color: '#06b6d4' })
+  })
+
+  it('ignora uma repetição idempotente para não duplicar a agenda', async () => {
+    const args = {
+      blocos: [
+        {
+          data: '2026-08-12',
+          inicio: '09:00',
+          fim: '10:00',
+          titulo: 'Foco',
+          tipo: 'custom',
+          cor: '#06b6d4'
+        }
+      ]
+    }
+
+    await call('criar_plano', args)
+    const repeated = await call('criar_plano', args)
+
+    expect(repeated).toMatchObject({ criado: 0 })
+    expect(repeated.ignorados).toHaveLength(1)
+    expect(st().timeBlocks).toHaveLength(1)
+  })
+})
 
 const st = (): ReturnType<typeof useKanbanStore.getState> => useKanbanStore.getState()
 const call = async (
