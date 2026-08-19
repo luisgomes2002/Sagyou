@@ -243,6 +243,7 @@ interface TimeBlock {
   habitId?: string
   type: string
   color?: string
+  borderStyle?: 'solid' | 'dashed'
   order: number
   createdAt: string
   updatedAt: string
@@ -303,6 +304,7 @@ function getDb(): Database.Database {
   migrateFinancialPlanningColumns(_db)
   migrateTransactionDetailsColumn(_db)
   migrateProjectsArchivedColumn(_db)
+  migrateTimeBlockBorderStyleColumn(_db)
   migrateMemoryDropProjectFk(_db)
   migrateTaskImagesToDisk(_db)
   migrateNotesTaskIdsGoalIds(_db)
@@ -538,6 +540,13 @@ function migrateProjectsArchivedColumn(db: Database.Database): void {
     db.prepare('ALTER TABLE projects ADD COLUMN archived_at TEXT').run()
     console.log('[store] Added archived_at column to projects')
   }
+}
+
+function migrateTimeBlockBorderStyleColumn(db: Database.Database): void {
+  const has = (db.prepare('PRAGMA table_info(time_blocks)').all() as { name: string }[]).some(
+    (column) => column.name === 'border_style'
+  )
+  if (!has) db.prepare('ALTER TABLE time_blocks ADD COLUMN border_style TEXT').run()
 }
 
 // One-time migration for existing DBs: the `memory` table originally declared
@@ -915,6 +924,7 @@ function initSchema(db: Database.Database): void {
       habit_id TEXT,
       type TEXT NOT NULL,
       color TEXT,
+      border_style TEXT,
       ord INTEGER NOT NULL,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -1027,7 +1037,7 @@ function prepareWrite(db: Database.Database) {
     ),
     setting: db.prepare('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)'),
     timeBlock: db.prepare(
-      'INSERT INTO time_blocks (id,date,start_time,end_time,title,description,task_id,habit_id,type,color,ord,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'
+      'INSERT INTO time_blocks (id,date,start_time,end_time,title,description,task_id,habit_id,type,color,border_style,ord,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
     ),
     routine: db.prepare(
       'INSERT INTO routines (id,title,description,start_time,end_time,days_of_week,color,active,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)'
@@ -1200,6 +1210,7 @@ function prepareWrite(db: Database.Database) {
         tb.habitId ?? null,
         tb.type,
         tb.color ?? null,
+        tb.borderStyle ?? null,
         tb.order,
         tb.createdAt,
         tb.updatedAt
@@ -1650,6 +1661,9 @@ export function loadData(): SaveData {
     ...(tb.task_id != null ? { taskId: tb.task_id } : {}),
     ...(tb.habit_id != null ? { habitId: tb.habit_id } : {}),
     ...(tb.color != null ? { color: tb.color } : {}),
+    ...(tb.border_style === 'solid' || tb.border_style === 'dashed'
+      ? { borderStyle: tb.border_style }
+      : {}),
     order: tb.ord,
     createdAt: tb.created_at,
     updatedAt: tb.updated_at

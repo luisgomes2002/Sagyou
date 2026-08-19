@@ -993,6 +993,11 @@ export async function runAgent(
   const readRepeats = new Map<string, number>()
   const blindFileReads = new Map<string, number>()
   const searchTerms: string[] = []
+  // Creating a plan is a complete, user-visible operation. Letting the model
+  // keep its tools after a successful creation made a transient/provider retry
+  // look like permission to create the same agenda again and again. We still
+  // ask it for a natural-language confirmation below, but with tools disabled.
+  let plannerCreated = false
   let codeAgentStarted = false
   let codeAgentLaunches = 0
   const codeAgentErrors: string[] = []
@@ -1162,6 +1167,14 @@ export async function runAgent(
           } finally {
             onToolEnd?.()
           }
+          if (name === 'criar_plano') {
+            try {
+              const created = JSON.parse(result) as { criado?: unknown }
+              plannerCreated ||= typeof created.criado === 'number' && created.criado > 0
+            } catch {
+              // A malformed result must not decide whether the run terminates.
+            }
+          }
           // A fuzzy-duplicate search still runs, but carries a nudge to reuse
           // the earlier results instead of re-searching a variation.
           if (name === 'buscar_no_codigo') {
@@ -1198,6 +1211,17 @@ export async function runAgent(
         return codeAgentErrors.length
           ? started + '\nFalha ao iniciar: ' + codeAgentErrors.join('\n')
           : started
+      }
+
+      // A successful planner write is the terminal mutation for this request.
+      // Reserve-one-call above guarantees a tool-free reply is still available,
+      // so a model cannot turn a completed agenda into a long sequence of
+      // additional criar_plano calls.
+      if (plannerCreated) {
+        costRecords.push({ step: modelCalls + 1, prompt: 0, completion: 0, tools: [] })
+        modelCalls++
+        const final = await callModelResilient(rcfg, msgs, undefined, runOpts)
+        return contentText(final.content) || 'Planejamento criado.'
       }
 
       // Progressive summarisation: every SUMMARIZE_INTERVAL steps compress

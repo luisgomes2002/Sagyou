@@ -30,7 +30,7 @@ import {
   hasCompleteToolTurns,
   type ApiMessage
 } from '../../ai/agent'
-import { runTool } from '../../ai/tools'
+import { runTool, isWriteTool } from '../../ai/tools'
 
 interface ChatResponse {
   success: boolean
@@ -547,6 +547,32 @@ describe('runAgent (tool-calling loop)', () => {
     const r2 = msgs.find((m: { tool_call_id?: string }) => m.tool_call_id === 'c2')
     expect(JSON.parse(r1.content)).toEqual({ ran: 'escrever_a' })
     expect(JSON.parse(r2.content)).toEqual({ error: 'Ação recusada pelo usuário' })
+  })
+
+  it('finishes after creating a plan instead of accepting more planner writes', async () => {
+    const chat = makeChat(
+      {
+        success: true,
+        message: {
+          role: 'assistant',
+          content: '',
+          tool_calls: [toolCall('plan-1', 'criar_plano', '{"blocos":[]}')]
+        }
+      },
+      { success: true, message: { role: 'assistant', content: 'Planejamento confirmado.' } }
+    )
+    vi.mocked(isWriteTool).mockImplementation((name) => name === 'criar_plano')
+    vi.mocked(runTool).mockResolvedValueOnce(JSON.stringify({ criado: 1, ids: ['p1'] }))
+
+    try {
+      await expect(runAgent(cfg, user, vi.fn(async () => new Set(['plan-1'])))).resolves.toBe(
+        'Planejamento confirmado.'
+      )
+      expect(chat).toHaveBeenCalledTimes(2)
+      expect(reqAt(chat, 1).tools).toBeUndefined()
+    } finally {
+      vi.mocked(isWriteTool).mockImplementation((name) => name.startsWith('escrever'))
+    }
   })
 
   it('stops after MAX_STEPS and forces a final answer with tools disabled', async () => {

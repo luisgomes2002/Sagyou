@@ -6,11 +6,35 @@ export interface PlannerSlice {
   timeBlocks: TimeBlock[]
   routines: Routine[]
   createTimeBlock: (data: Omit<TimeBlock, 'id' | 'createdAt' | 'updatedAt'>) => string
-  updateTimeBlock: (id: string, updates: Partial<Pick<TimeBlock, 'title' | 'description' | 'startTime' | 'endTime' | 'taskId' | 'habitId' | 'color' | 'order'>>) => void
+  updateTimeBlock: (
+    id: string,
+    updates: Partial<
+      Pick<
+        TimeBlock,
+        | 'title'
+        | 'description'
+        | 'startTime'
+        | 'endTime'
+        | 'taskId'
+        | 'habitId'
+        | 'color'
+        | 'borderStyle'
+        | 'order'
+      >
+    >
+  ) => void
   deleteTimeBlock: (id: string) => void
   setTimeBlocks: (blocks: TimeBlock[]) => void
   createRoutine: (data: Omit<Routine, 'id' | 'createdAt' | 'updatedAt'>) => string
-  updateRoutine: (id: string, updates: Partial<Pick<Routine, 'title' | 'description' | 'startTime' | 'endTime' | 'daysOfWeek' | 'color' | 'active'>>) => void
+  updateRoutine: (
+    id: string,
+    updates: Partial<
+      Pick<
+        Routine,
+        'title' | 'description' | 'startTime' | 'endTime' | 'daysOfWeek' | 'color' | 'active'
+      >
+    >
+  ) => void
   deleteRoutine: (id: string) => void
 }
 
@@ -64,9 +88,7 @@ export const createPlannerSlice: StateCreator<
   updateRoutine: (id, updates) => {
     const now = new Date().toISOString()
     set((s) => ({
-      routines: s.routines.map((r) =>
-        r.id === id ? { ...r, ...updates, updatedAt: now } : r
-      )
+      routines: s.routines.map((r) => (r.id === id ? { ...r, ...updates, updatedAt: now } : r))
     }))
     get()._persist()
   },

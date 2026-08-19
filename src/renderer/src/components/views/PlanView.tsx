@@ -1,6 +1,6 @@
 ﻿import { useState, useMemo } from 'react'
 import { useKanbanStore } from '../../store/kanban'
-import type { TimeBlock, Routine } from '../../types'
+import type { TimeBlock, TimeBlockBorderStyle, Routine } from '../../types'
 import { TIME_BLOCK_COLORS } from '../../types'
 import {
   addDays,
@@ -30,11 +30,8 @@ const TYPE_LABELS: Record<TimeBlock['type'], string> = {
   custom: ''
 }
 
-const TYPE_STYLES: Record<TimeBlock['type'], string> = {
-  task: 'border-l-[#a080f0]',
-  routine: 'border-l-[#46d478]',
-  buffer: 'border-l-[#f0b820] border-dashed',
-  custom: 'border-l-[#999999]'
+function blockBorderStyle(block: TimeBlock): TimeBlockBorderStyle {
+  return block.borderStyle ?? (block.type === 'buffer' ? 'dashed' : 'solid')
 }
 
 export function PlanView() {
@@ -88,7 +85,7 @@ export function PlanView() {
     const lastColor = existing[existing.length - 1]?.color
     const color =
       TIME_BLOCK_COLORS.find((c) => !lastColor || c !== lastColor) ?? TIME_BLOCK_COLORS[0]
-    createTimeBlock({
+    const id = createTimeBlock({
       date,
       startTime: `${h}:00`,
       endTime: `${endH}:00`,
@@ -97,6 +94,8 @@ export function PlanView() {
       color,
       order: maxOrder + 1
     })
+    const created = useKanbanStore.getState().timeBlocks.find((block) => block.id === id)
+    if (created) setEditingBlock(created)
   }
 
   const deletingBlock = deletingBlockId
@@ -304,13 +303,15 @@ function DayView({
             key={block.id}
             className={`absolute rounded-md px-2 border-l-2 cursor-pointer group z-10
               bg-white/[0.06] border-white/10 hover:bg-white/[0.10]
-              ${TYPE_STYLES[block.type as TimeBlock['type']] ?? ''}`}
+              ${blockBorderStyle(block) === 'dashed' ? 'border-dashed' : 'border-solid'}`}
             style={{
               top,
               height,
               left,
               width: colWidth,
-              ...(block.color ? { backgroundColor: `${block.color}15` } : {})
+              ...(block.color
+                ? { backgroundColor: `${block.color}15`, borderLeftColor: block.color }
+                : {})
             }}
             onClick={() => onEditBlock(block)}
           >
@@ -418,7 +419,7 @@ function WeekView({
                     <div
                       key={block.id}
                       className={`absolute rounded px-0.5 py-0.5 text-[9px] leading-tight overflow-hidden cursor-pointer group z-10
-                        ${TYPE_STYLES[block.type as TimeBlock['type']] ?? ''}`}
+                        border-l-2 ${blockBorderStyle(block) === 'dashed' ? 'border-dashed' : 'border-solid'}`}
                       style={{
                         top,
                         height,
@@ -504,7 +505,9 @@ function MonthView({
                   }`}
                   style={{
                     background: block.color ? `${block.color}30` : '#ffffff10',
-                    borderLeft: block.color ? `2px solid ${block.color}` : undefined
+                    borderLeft: block.color
+                      ? `2px ${blockBorderStyle(block)} ${block.color}`
+                      : undefined
                   }}
                   title={`${block.startTime} ${block.title}`}
                   onClick={() => onEditBlock?.(block)}
@@ -529,18 +532,25 @@ function EditTimeBlockModal({
   onClose
 }: {
   block: TimeBlock
-  onSave: (updates: { title: string; startTime: string; endTime: string; color?: string }) => void
+  onSave: (updates: {
+    title: string
+    startTime: string
+    endTime: string
+    color?: string
+    borderStyle: TimeBlockBorderStyle
+  }) => void
   onClose: () => void
 }) {
   const [title, setTitle] = useState(block.title)
   const [startTime, setStartTime] = useState(block.startTime)
   const [endTime, setEndTime] = useState(block.endTime)
   const [color, setColor] = useState(block.color ?? TIME_BLOCK_COLORS[0])
+  const [borderStyle, setBorderStyle] = useState<TimeBlockBorderStyle>(blockBorderStyle(block))
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!title.trim()) return
-    onSave({ title: title.trim(), startTime, endTime, color })
+    onSave({ title: title.trim(), startTime, endTime, color, borderStyle })
   }
 
   return (
@@ -614,6 +624,30 @@ function EditTimeBlockModal({
                     boxShadow: color === c ? `0 0 0 2px #232323, 0 0 0 4px ${c}` : 'none'
                   }}
                 />
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-[#999999] mb-2">Borda</label>
+            <div className="grid grid-cols-2 gap-2">
+              {(['solid', 'dashed'] as const).map((style) => (
+                <button
+                  key={style}
+                  type="button"
+                  onClick={() => setBorderStyle(style)}
+                  className={`px-3 py-2 rounded-lg border text-xs transition-colors ${
+                    borderStyle === style
+                      ? 'border-[#7c3aed] bg-[#7c3aed]/15 text-[#d4d4d4]'
+                      : 'border-[#3b3b3b] bg-[#1b1b1b] text-[#999999] hover:border-[#555555]'
+                  }`}
+                >
+                  <span
+                    className={`block border-t-2 ${style === 'dashed' ? 'border-dashed' : 'border-solid'}`}
+                    style={{ borderColor: color }}
+                  />
+                  <span className="block mt-1">{style === 'solid' ? 'Reta' : 'Pontilhada'}</span>
+                </button>
               ))}
             </div>
           </div>
