@@ -33,6 +33,7 @@ import { loadData, saveData, eventsForEntity } from './store'
 import {
   listMemories,
   memoriesForContext,
+  searchMemories,
   getMemory,
   upsertMemory,
   touchMemories,
@@ -47,6 +48,7 @@ import {
   findConflicts,
   formatMemoriesForPrompt,
   handoffId,
+  MEMORY_TYPES,
   type MemoryInput
 } from './memory'
 import {
@@ -1557,6 +1559,31 @@ app.whenReady().then(() => {
     return { memory: res.memory, redacted: res.redacted }
   })
 
+  // Ranked, bounded recall stays in main so the renderer never pulls the full
+  // corpus into a prompt just to find one relevant page.
+  ipcMain.handle(
+    'ai:memory:search',
+    (
+      _,
+      opts: {
+        projectId?: string | null
+        term?: string
+        type?: string
+        includeArchived?: boolean
+        limit?: number
+      }
+    ) => {
+      const type = MEMORY_TYPES.find((item) => item === opts?.type)
+      return searchMemories({
+        projectId: opts?.projectId ?? null,
+        term: opts?.term,
+        type,
+        includeArchived: opts?.includeArchived === true,
+        limit: opts?.limit
+      })
+    }
+  )
+
   ipcMain.handle('ai:memory:delete', (_, id: string) => deleteMemory(id))
 
   // Wholesale replace from a backup import (projects are imported first, so FK
@@ -1579,13 +1606,28 @@ app.whenReady().then(() => {
   // this project (i.e. when the project goes quiet), instead of ballooning.
   ipcMain.handle(
     'ai:memory:handoff',
-    (_, input: { projectId?: string | null; title: string; body: string }) => {
+    (
+      _,
+      input: {
+        projectId?: string | null
+        title: string
+        body: string
+        sourceConversationId?: string | null
+      }
+    ) => {
       const projectId = typeof input?.projectId === 'string' ? input.projectId : null
       const id = handoffId(projectId)
       const now = new Date().toISOString()
       const res = buildMemory(
         getMemory(id),
-        { type: 'handoff', title: input?.title, body: input?.body, projectId, source: 'modelo' },
+        {
+          type: 'handoff',
+          title: input?.title,
+          body: input?.body,
+          projectId,
+          source: 'modelo',
+          sourceConversationId: input?.sourceConversationId
+        },
         id,
         now
       )

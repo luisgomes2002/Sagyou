@@ -312,6 +312,8 @@ export interface AiMemory {
   tags: string[]
   pinned: boolean
   source: 'modelo' | 'usuario'
+  /** Conversation that supplied this memory's evidence, when it came from a chat. */
+  sourceConversationId: string | null
   createdAt: string
   updatedAt: string
   lastAccessedAt: string

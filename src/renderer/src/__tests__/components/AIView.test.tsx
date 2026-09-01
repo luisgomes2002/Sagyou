@@ -561,6 +561,20 @@ describe('AIView — automatic mode', () => {
     expect(screen.queryByText('Auto: ON')).not.toBeInTheDocument()
   })
 
+  it('turns on automatic mode before the first message', async () => {
+    // A new conversation only receives its id on its first message unless the
+    // user explicitly enables Auto first.
+    useAiRunStore.getState().reset()
+    renderAI(<AIView projects={[]} />)
+
+    await turnAutoOn()
+
+    const state = useAiRunStore.getState()
+    expect(state.conversationId).not.toBeNull()
+    expect(state.autoApprove.has(state.conversationId!)).toBe(true)
+    expect(screen.getByText('Auto: ON')).toBeInTheDocument()
+  })
+
   it('updates the Auto tooltip when autonomous mode is on', async () => {
     renderAI(<AIView projects={[]} />)
     await turnAutoOn()

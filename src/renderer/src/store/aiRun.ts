@@ -173,7 +173,8 @@ export async function writeHandoff(
     await api.handoff({
       projectId: activeProjectId,
       title: name ? `Última sessão — ${name}` : 'Última sessão',
-      body: (q ? `Perguntou: "${q}". ` : '') + `Conclusão: ${a}${pointer}`
+      body: (q ? `Perguntou: "${q}". ` : '') + `Conclusão: ${a}${pointer}`,
+      sourceConversationId: convId
     })
   } catch {
     /* a breadcrumb is a convenience; its failure must never affect the run */

@@ -187,10 +187,12 @@ export function AiRunHost({
     const onKey = (e: KeyboardEvent): void => {
       // Ctrl+Tab toggles auto-approve globally, from any view.
       if (e.key === 'Tab' && (e.ctrlKey || e.metaKey)) {
+        // AIView owns its shortcut while it is open. Otherwise both document
+        // listeners would flip the same flag, leaving it unchanged.
+        if (onAIView) return
         e.preventDefault()
-        if (conversationId) {
-          setAutoApprove(conversationId, !autoApprove.has(conversationId))
-        }
+        const convId = ensureConversationId()
+        setAutoApprove(convId, !autoApprove.has(convId))
         return
       }
       if (onAIView) return
@@ -199,7 +201,14 @@ export function AiRunHost({
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [onAIView, conversationId, pendingApprovals, resolveApproval, setAutoApprove, autoApprove])
+  }, [
+    onAIView,
+    pendingApprovals,
+    resolveApproval,
+    ensureConversationId,
+    setAutoApprove,
+    autoApprove
+  ])
 
   return (
     <>

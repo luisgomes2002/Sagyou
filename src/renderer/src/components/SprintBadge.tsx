@@ -1,5 +1,6 @@
 ﻿import { useState, useRef, useEffect } from 'react'
 import type { Sprint } from '../types'
+import { useDeleteConfirm } from './useDeleteConfirm'
 
 interface Props {
   projectId: string
@@ -32,6 +33,18 @@ export function SprintBadge({
   const [renameError, setRenameError] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
+  const { prompt: promptDelete, confirmDialog } = useDeleteConfirm(
+    (sprintId) => {
+      onDeleteSprint(sprintId)
+      setOpen(false)
+    },
+    {
+      title: 'Apagar sprint',
+      message:
+        'As tasks não serão apagadas, mas ficarão sem sprint. Esta ação não pode ser desfeita.',
+      confirmLabel: 'Apagar'
+    }
+  )
 
   const projectSprints = sprints.filter((s) => s.projectId === projectId)
   const activeSprints = projectSprints.filter((s) => !s.closedAt)
@@ -111,7 +124,7 @@ export function SprintBadge({
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => { setOpen(false); setCreating(false); setBatchText(''); cancelRename() }} />
-          <div className="absolute right-0 top-9 z-20 w-64 rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] shadow-xl py-1">
+          <div className="absolute right-0 top-9 z-20 max-h-[calc(100vh-3rem)] w-64 overflow-y-auto overscroll-contain rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] py-1 shadow-xl">
 
             {/* ── Filtro ── */}
             {activeSprints.length > 0 && (
@@ -246,12 +259,23 @@ export function SprintBadge({
                       )}
                     </div>
                     {renamingId !== s.id && (
-                      <button
-                        onClick={() => { onCloseSprint(s.id); setOpen(false) }}
-                        className="text-[10px] px-1.5 py-0.5 rounded bg-[#3b3b3b] text-[#999999] hover:text-[#d4d4d4] transition-colors shrink-0 ml-2"
-                      >
-                        Encerrar
-                      </button>
+                      <div className="flex items-center gap-1 shrink-0 ml-2">
+                        <button
+                          onClick={() => { onCloseSprint(s.id); setOpen(false) }}
+                          className="text-[10px] px-1.5 py-0.5 rounded bg-[#3b3b3b] text-[#999999] hover:text-[#d4d4d4] transition-colors"
+                        >
+                          Encerrar
+                        </button>
+                        <button
+                          onClick={() => promptDelete(s.id)}
+                          className="text-[#999999] hover:text-[#e04040] transition-colors p-0.5"
+                          title="Apagar sprint"
+                        >
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                          </svg>
+                        </button>
+                      </div>
                     )}
                   </div>
                 ))}
@@ -305,7 +329,7 @@ export function SprintBadge({
                           Reabrir
                         </button>
                         <button
-                          onClick={() => onDeleteSprint(s.id)}
+                          onClick={() => promptDelete(s.id)}
                           className="text-[#999999] hover:text-[#e04040] transition-colors p-0.5"
                           title="Deletar sprint"
                         >
@@ -322,6 +346,7 @@ export function SprintBadge({
           </div>
         </>
       )}
+      {confirmDialog}
     </div>
   )
 }

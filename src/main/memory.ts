@@ -10,7 +10,14 @@
 
 export type MemoryType = 'decisao' | 'tradeoff' | 'gotcha' | 'fato' | 'handoff' | 'planejamento'
 
-export const MEMORY_TYPES: MemoryType[] = ['decisao', 'tradeoff', 'gotcha', 'fato', 'handoff', 'planejamento']
+export const MEMORY_TYPES: MemoryType[] = [
+  'decisao',
+  'tradeoff',
+  'gotcha',
+  'fato',
+  'handoff',
+  'planejamento'
+]
 
 export type MemorySource = 'modelo' | 'usuario'
 
@@ -23,6 +30,8 @@ export interface MemoryInput {
   tags?: string[]
   pinned?: boolean
   source?: string
+  /** Chat that supplied the evidence for this memory. Kept nullable for imports and manual edits. */
+  sourceConversationId?: string | null
 }
 
 /** A stored memory. `archivedAt` is set (not deleted) when decay retires it. */
@@ -35,6 +44,7 @@ export interface AiMemory {
   tags: string[]
   pinned: boolean
   source: MemorySource
+  sourceConversationId: string | null
   createdAt: string
   updatedAt: string
   lastAccessedAt: string // bumped on every read/injection → feeds decay
@@ -173,11 +183,10 @@ export function buildMemory(
   id: string,
   now: string
 ): { memory: AiMemory; redacted: boolean } | { error: string } {
-  const has = <K extends keyof MemoryInput>(k: K): boolean =>
-    input[k] !== undefined
+  const has = <K extends keyof MemoryInput>(k: K): boolean => input[k] !== undefined
 
-  const rawTitle = has('title') ? str(input.title).trim() : existing?.title ?? ''
-  const rawBody = has('body') ? str(input.body).trim() : existing?.body ?? ''
+  const rawTitle = has('title') ? str(input.title).trim() : (existing?.title ?? '')
+  const rawBody = has('body') ? str(input.body).trim() : (existing?.body ?? '')
 
   const t = scrubSecrets(rawTitle)
   const b = scrubSecrets(rawBody)
@@ -186,19 +195,26 @@ export function buildMemory(
 
   if (!title && !body) return { error: 'memória vazia' }
 
-  const projectId =
-    has('projectId') ? (input.projectId == null ? null : str(input.projectId) || null)
-      : existing?.projectId ?? null
+  const projectId = has('projectId')
+    ? input.projectId == null
+      ? null
+      : str(input.projectId) || null
+    : (existing?.projectId ?? null)
 
   const memory: AiMemory = {
     id: existing?.id ?? id,
     projectId,
-    type: has('type') ? coerceType(input.type) : existing?.type ?? 'fato',
+    type: has('type') ? coerceType(input.type) : (existing?.type ?? 'fato'),
     title,
     body,
-    tags: has('tags') ? coerceTags(input.tags) : existing?.tags ?? [],
-    pinned: has('pinned') ? input.pinned === true : existing?.pinned ?? false,
+    tags: has('tags') ? coerceTags(input.tags) : (existing?.tags ?? []),
+    pinned: has('pinned') ? input.pinned === true : (existing?.pinned ?? false),
     source: existing?.source ?? coerceSource(input.source),
+    sourceConversationId: has('sourceConversationId')
+      ? input.sourceConversationId == null
+        ? null
+        : str(input.sourceConversationId) || null
+      : (existing?.sourceConversationId ?? null),
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
     lastAccessedAt: existing?.lastAccessedAt ?? now,
@@ -220,6 +236,8 @@ export function normalizeMemory(raw: Partial<AiMemory> & { id: string }, now: st
     tags: coerceTags(raw.tags),
     pinned: raw.pinned === true,
     source: coerceSource(raw.source),
+    sourceConversationId:
+      raw.sourceConversationId == null ? null : str(raw.sourceConversationId) || null,
     createdAt: str(raw.createdAt) || now,
     updatedAt: str(raw.updatedAt) || now,
     lastAccessedAt: str(raw.lastAccessedAt) || str(raw.createdAt) || now,

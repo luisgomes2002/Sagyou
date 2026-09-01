@@ -33,6 +33,7 @@ import {
   describeToolCall,
   describeToolActivity,
   clearCodeSearchCache,
+  KANBAN_TOOL_DEFS,
   PLANNER_EDIT_TOOL_DEFS,
   DIRECT_CODE_AGENT_TOOL_DEFS,
   REFERENCE_CODE_TOOL_DEFS,
@@ -1654,6 +1655,12 @@ describe('salvar_memoria', () => {
     expect(saveMock).toHaveBeenCalledWith(expect.objectContaining({ projectId: null }))
   })
 
+  it('accepts planning memory instead of silently downgrading it to a fact', async () => {
+    st().createProject('P')
+    await call('salvar_memoria', { tipo: 'planejamento', titulo: 'academia', corpo: 'terca 7h' })
+    expect(saveMock).toHaveBeenCalledWith(expect.objectContaining({ type: 'planejamento' }))
+  })
+
   it('falls back to fato on an unknown type and requires title+body', async () => {
     st().createProject('P')
     await call('salvar_memoria', { tipo: 'bogus', titulo: 't', corpo: 'c' })
@@ -1698,7 +1705,7 @@ describe('salvar_memoria', () => {
 // ── buscar_memoria / buscar_conversas (read tools) ───────────────────────────
 
 describe('buscar_memoria', () => {
-  let listMock: ReturnType<typeof vi.fn>
+  let searchMock: ReturnType<typeof vi.fn>
   let touchMock: ReturnType<typeof vi.fn>
 
   const rows = [
@@ -1726,14 +1733,22 @@ describe('buscar_memoria', () => {
 
   beforeEach(() => {
     resetStore()
-    listMock = vi.fn(async () => rows)
+    searchMock = vi.fn(async (opts: { term?: string }) => {
+      const selected =
+        opts.term === 'habito'
+          ? rows.filter((memory) => memory.id === 'b')
+          : opts.term === 'amount'
+            ? rows.filter((memory) => memory.id === 'a')
+            : rows
+      return selected.map((memory) => ({ memory, snippet: memory.body }))
+    })
     touchMock = vi.fn(async () => undefined)
     ;(window as unknown as { electronAPI: unknown }).electronAPI = {
-      ai: { memory: { list: listMock, touch: touchMock } }
+      ai: { memory: { search: searchMock, touch: touchMock } }
     }
   })
 
-  it('lists everything with no term and touches what it returned', async () => {
+  it('returns a bounded search index and touches what it returned', async () => {
     st().createProject('P')
     const res = await call('buscar_memoria', {})
     expect(res.total).toBe(2)
@@ -2883,6 +2898,15 @@ describe('routeTools — redesign visual', () => {
     expect(names).not.toContain('buscar_na_web')
     expect(names).not.toContain('buscar_memoria')
     expect(names).not.toContain('ler_tasks')
+  })
+
+  it('keeps task reading available when a task mentions a technical subject', () => {
+    const names = routeTools('Existem tasks no quadro sobre o bug de React?').map(
+      (tool) => tool.function.name
+    )
+
+    expect(names).toEqual(KANBAN_TOOL_DEFS.map((tool) => tool.function.name))
+    expect(names).toContain('ler_tasks')
   })
 })
 
