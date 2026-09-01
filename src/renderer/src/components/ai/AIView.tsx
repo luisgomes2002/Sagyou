@@ -346,6 +346,7 @@ export function AIView({
   const openConversation = useAiRunStore((s) => s.openConversation)
   const dropConversation = useAiRunStore((s) => s.dropConversation)
   const setConversationId = useAiRunStore((s) => s.setConversationId)
+  const ensureConversationId = useAiRunStore((s) => s.ensureConversationId)
   const setAuto = useAiRunStore((s) => s.setAutoApprove)
   const setPlan = useAiRunStore((s) => s.setPlanMode)
   const resolveApproval = useAiRunStore((s) => s.resolveApproval)
@@ -1050,9 +1051,8 @@ export function AIView({
       // Ctrl+Tab toggles auto-approve on/off for the current conversation.
       if (e.key === 'Tab' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault()
-        if (conversationId) {
-          setAuto(conversationId, !autoApprove.has(conversationId))
-        }
+        const convId = ensureConversationId()
+        setAuto(convId, !autoApprove.has(convId))
         return
       }
       // Shift+Tab toggles planning mode on/off for the current conversation.
@@ -1094,6 +1094,7 @@ export function AIView({
     showHistory,
     showConfig,
     resolveApproval,
+    ensureConversationId,
     setAuto,
     setPlan,
     autoApprove,
@@ -1535,7 +1536,8 @@ export function AIView({
                 // Turning it OFF needs no ceremony — it only ever adds
                 // approvals back. Turning it ON is the spend decision, and the
                 // one moment the user can still say no.
-                if (autoApprove.has(conversationId!)) return setAuto(conversationId!, false)
+                if (conversationId && autoApprove.has(conversationId))
+                  return setAuto(conversationId, false)
                 refreshSpend()
                 setConfirmAuto(true)
               }}
@@ -2648,7 +2650,10 @@ export function AIView({
         message={autoWarning}
         confirmLabel="Ligar automático"
         onConfirm={() => {
-          if (conversationId) setAuto(conversationId, true)
+          // A blank transcript normally receives its id with the first
+          // message. Auto approval is keyed by that id, so the explicit user
+          // confirmation must mint it before enabling the mode.
+          setAuto(ensureConversationId(), true)
           setConfirmAuto(false)
         }}
         onCancel={() => setConfirmAuto(false)}

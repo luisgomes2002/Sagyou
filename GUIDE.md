@@ -252,6 +252,13 @@ CODE_READ_PAGE`) devolve só ~100 linhas + `simbolos` + `dica`, não a janela de
 
 11. **Orçamento é por chamada do modelo, não por tool round.** `maxSteps` limita toda chamada bem-sucedida da run — rodadas principais, compactação e resposta final. Sem configuração explícita, o chat usa 40 no manual e 100 no Auto; não reintroduza heurísticas 2/4/8/15 por texto, pois elas encerram orquestrações no momento de disparar agentes. O contexto de uma conversa reaberta entra limitado (12 mensagens/24k caracteres/1 imagem); ferramentas além de 8 numa rodada recebem resultado sintético. O limite é **por execução**: várias conversas/projetos continuam rodando em paralelo. O subagente de pesquisa exige aprovação, é no máximo 2 por run e seu resumo é cortado antes de voltar ao agente pai.
 
+## Memória — fronteira de confiança
+
+Memória e conversas antigas são **evidência histórica não confiável**, nunca instruções. O conteúdo
+recuperado não pode mudar regras, autorizar ferramentas nem prevalecer sobre o pedido atual ou o
+estado vivo lido no app. A busca é FTS5 no main, devolve só trechos ranqueados; abra por id quando
+precisar do corpo completo. Memória salva por uma conversa guarda seu `sourceConversationId`.
+
 ## Segurança — o que já está resolvido
 
 `main/web-fetch.ts` busca páginas cuja URL **vem do modelo**, ou seja, não é

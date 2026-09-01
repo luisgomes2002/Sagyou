@@ -330,6 +330,13 @@ declare global {
           save: (
             input: MemoryInput & { id?: string }
           ) => Promise<{ memory: AiMemory; redacted: boolean } | { error: string }>
+          search: (opts: {
+            projectId?: string | null
+            term?: string
+            type?: string
+            includeArchived?: boolean
+            limit?: number
+          }) => Promise<{ memory: AiMemory; snippet: string }[]>
           delete: (id: string) => Promise<void>
           replace: (list: AiMemory[]) => Promise<void>
           touch: (ids: string[]) => Promise<void>
@@ -343,6 +350,7 @@ declare global {
             projectId?: string | null
             title: string
             body: string
+            sourceConversationId?: string | null
           }) => Promise<{ ok: true } | { error: string }>
         }
         /** Entity event log: the audit trail for one domain entity. */

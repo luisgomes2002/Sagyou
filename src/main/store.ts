@@ -4,7 +4,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from '
 import { is } from '@electron-toolkit/utils'
 import { randomUUID } from 'crypto'
 import Database from 'better-sqlite3'
-import { normalizeMemory, type AiMemory } from './memory'
+import { normalizeMemory, type AiMemory, type MemoryType } from './memory'
 import { decodeDataUrl } from './chat-images'
 
 // ── Inline types (mirrors src/renderer/src/types/index.ts) ──────────────────
@@ -306,6 +306,8 @@ function getDb(): Database.Database {
   migrateProjectsArchivedColumn(_db)
   migrateTimeBlockBorderStyleColumn(_db)
   migrateMemoryDropProjectFk(_db)
+  migrateMemoryProvenanceColumn(_db)
+  ensureMemorySearch(_db)
   migrateTaskImagesToDisk(_db)
   migrateNotesTaskIdsGoalIds(_db)
   migrateFromJson(_db)
@@ -595,6 +597,45 @@ function migrateMemoryDropProjectFk(db: Database.Database): void {
   } finally {
     db.pragma('foreign_keys = ON')
   }
+}
+
+/** Additive provenance migration: old memories remain valid, just unlinked. */
+function migrateMemoryProvenanceColumn(db: Database.Database): void {
+  const columns = db.prepare('PRAGMA table_info(memory)').all() as { name: string }[]
+  if (!columns.some((column) => column.name === 'source_conversation_id')) {
+    db.prepare('ALTER TABLE memory ADD COLUMN source_conversation_id TEXT').run()
+  }
+}
+
+/**
+ * Search is derived data, never another source of truth: FTS indexes the
+ * satellite table and is rebuilt on startup, including after the old FK-table
+ * migration above. FTS5 handles accent-insensitive token lookup much better
+ * than pulling every memory into the renderer and doing a substring scan.
+ */
+function ensureMemorySearch(db: Database.Database): void {
+  db.exec(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
+      title, body, tags,
+      content='memory', content_rowid='rowid',
+      tokenize='unicode61 remove_diacritics 2'
+    );
+    CREATE TRIGGER IF NOT EXISTS memory_fts_insert AFTER INSERT ON memory BEGIN
+      INSERT INTO memory_fts(rowid, title, body, tags) VALUES (new.rowid, new.title, new.body, new.tags);
+    END;
+    CREATE TRIGGER IF NOT EXISTS memory_fts_delete AFTER DELETE ON memory BEGIN
+      INSERT INTO memory_fts(memory_fts, rowid, title, body, tags)
+      VALUES ('delete', old.rowid, old.title, old.body, old.tags);
+    END;
+    CREATE TRIGGER IF NOT EXISTS memory_fts_update AFTER UPDATE ON memory BEGIN
+      INSERT INTO memory_fts(memory_fts, rowid, title, body, tags)
+      VALUES ('delete', old.rowid, old.title, old.body, old.tags);
+      INSERT INTO memory_fts(rowid, title, body, tags) VALUES (new.rowid, new.title, new.body, new.tags);
+    END;
+  `)
+  // The table is small (capped at 500 active rows); rebuilding gives existing
+  // installs an index and repairs an interrupted external-content sync safely.
+  db.exec("INSERT INTO memory_fts(memory_fts) VALUES('rebuild')")
 }
 
 // One-time migration for existing DBs: task images used to store their bytes as
@@ -891,6 +932,7 @@ function initSchema(db: Database.Database): void {
       tags TEXT NOT NULL DEFAULT '[]',
       pinned INTEGER NOT NULL DEFAULT 0,
       source TEXT NOT NULL,
+      source_conversation_id TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       last_accessed_at TEXT NOT NULL,
@@ -1923,6 +1965,8 @@ function memRowToMemory(r: Record<string, unknown>): AiMemory {
     tags,
     pinned: r.pinned === 1,
     source: r.source as AiMemory['source'],
+    sourceConversationId:
+      r.source_conversation_id == null ? null : String(r.source_conversation_id),
     createdAt: String(r.created_at),
     updatedAt: String(r.updated_at),
     lastAccessedAt: String(r.last_accessed_at),
@@ -1934,6 +1978,84 @@ function memRowToMemory(r: Record<string, unknown>): AiMemory {
 export interface ListMemoriesOpts {
   projectId?: string | null
   includeArchived?: boolean
+}
+
+export interface SearchMemoriesOpts {
+  projectId: string | null
+  term?: string
+  type?: MemoryType
+  includeArchived?: boolean
+  limit?: number
+}
+
+export interface MemorySearchHit {
+  memory: AiMemory
+  /** Why a concise result was returned; full body comes from exact-id recall. */
+  snippet: string
+}
+
+function memorySnippet(memory: AiMemory, term: string): string {
+  const compact = memory.body.replace(/\s+/g, ' ').trim()
+  const needle = term.trim().toLocaleLowerCase('pt-BR')
+  const at = compact.toLocaleLowerCase('pt-BR').indexOf(needle)
+  if (at < 0) return compact.slice(0, 220) + (compact.length > 220 ? '…' : '')
+  const from = Math.max(0, at - 80)
+  const to = Math.min(compact.length, at + Math.max(needle.length, 1) + 140)
+  return `${from > 0 ? '…' : ''}${compact.slice(from, to)}${to < compact.length ? '…' : ''}`
+}
+
+/**
+ * Ranked project + global recall. FTS is deliberately main-process only: the
+ * renderer gets bounded snippets instead of loading the whole corpus into every
+ * agent run. Exact-id recall still uses getMemory/list for the full body.
+ */
+export function searchMemories(opts: SearchMemoriesOpts): MemorySearchHit[] {
+  const db = getDb()
+  const limit = Math.max(1, Math.min(Math.floor(opts.limit ?? 8), 30))
+  const term = typeof opts.term === 'string' ? opts.term.trim() : ''
+  const where = ['m.archived_at IS NULL']
+  const params: unknown[] = []
+  if (opts.includeArchived) where[0] = '1=1'
+  if (opts.projectId) {
+    where.push('(m.project_id=? OR m.project_id IS NULL)')
+    params.push(opts.projectId)
+  } else where.push('m.project_id IS NULL')
+  if (opts.type) {
+    where.push('m.type=?')
+    params.push(opts.type)
+  }
+
+  if (!term) {
+    const rows = db
+      .prepare(
+        `SELECT m.* FROM memory m WHERE ${where.join(' AND ')}
+         ORDER BY m.pinned DESC, m.last_accessed_at DESC LIMIT ?`
+      )
+      .all(...params, limit) as Record<string, unknown>[]
+    return rows.map((row) => {
+      const memory = memRowToMemory(row)
+      return { memory, snippet: memorySnippet(memory, '') }
+    })
+  }
+
+  const tokens = term
+    .match(/[\p{L}\p{N}]+/gu)
+    ?.map((token) => `\"${token.replace(/\"/g, '')}\"`)
+    .filter(Boolean)
+  if (!tokens?.length) return []
+  const rows = db
+    .prepare(
+      `SELECT m.*, bm25(memory_fts, 8.0, 2.0, 1.0) AS relevance
+       FROM memory_fts
+       JOIN memory m ON m.rowid=memory_fts.rowid
+       WHERE memory_fts MATCH ? AND ${where.join(' AND ')}
+       ORDER BY m.pinned DESC, relevance ASC, m.last_accessed_at DESC LIMIT ?`
+    )
+    .all(tokens.join(' AND '), ...params, limit) as Record<string, unknown>[]
+  return rows.map((row) => {
+    const memory = memRowToMemory(row)
+    return { memory, snippet: memorySnippet(memory, term) }
+  })
 }
 
 /** All memories, newest-touched first, pinned on top. Active only unless asked. */
@@ -1975,11 +2097,11 @@ export function upsertMemory(m: AiMemory): void {
   getDb()
     .prepare(
       `INSERT INTO memory
-         (id,project_id,type,title,body,tags,pinned,source,created_at,updated_at,last_accessed_at,access_count,archived_at)
-       VALUES (@id,@project_id,@type,@title,@body,@tags,@pinned,@source,@created_at,@updated_at,@last_accessed_at,@access_count,@archived_at)
+         (id,project_id,type,title,body,tags,pinned,source,source_conversation_id,created_at,updated_at,last_accessed_at,access_count,archived_at)
+       VALUES (@id,@project_id,@type,@title,@body,@tags,@pinned,@source,@source_conversation_id,@created_at,@updated_at,@last_accessed_at,@access_count,@archived_at)
        ON CONFLICT(id) DO UPDATE SET
          project_id=@project_id, type=@type, title=@title, body=@body, tags=@tags,
-         pinned=@pinned, source=@source, updated_at=@updated_at,
+         pinned=@pinned, source=@source, source_conversation_id=@source_conversation_id, updated_at=@updated_at,
          last_accessed_at=@last_accessed_at, access_count=@access_count, archived_at=@archived_at`
     )
     .run({
@@ -1991,6 +2113,7 @@ export function upsertMemory(m: AiMemory): void {
       tags: JSON.stringify(m.tags),
       pinned: m.pinned ? 1 : 0,
       source: m.source,
+      source_conversation_id: m.sourceConversationId,
       created_at: m.createdAt,
       updated_at: m.updatedAt,
       last_accessed_at: m.lastAccessedAt,
@@ -2003,11 +2126,14 @@ export function upsertMemory(m: AiMemory): void {
 export function touchMemories(ids: string[], nowIso: string): void {
   if (!ids.length) return
   const db = getDb()
+  // A broad query can return several coincidental matches. Count each page at
+  // most once per hour so recall reinforcement reflects use, not query volume.
+  const threshold = new Date(Date.parse(nowIso) - 3_600_000).toISOString()
   const stmt = db.prepare(
-    'UPDATE memory SET last_accessed_at=?, access_count=access_count+1 WHERE id=? AND archived_at IS NULL'
+    'UPDATE memory SET last_accessed_at=?, access_count=access_count+1 WHERE id=? AND archived_at IS NULL AND last_accessed_at<?'
   )
   db.transaction((list: string[]) => {
-    for (const id of list) stmt.run(nowIso, id)
+    for (const id of list) stmt.run(nowIso, id, threshold)
   })(ids)
 }
 

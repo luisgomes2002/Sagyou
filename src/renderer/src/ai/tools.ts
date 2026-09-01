@@ -133,9 +133,11 @@ export const PLANNER_EDIT_TOOL_DEFS: ToolDef[] = Object.values(REGISTRY)
  * gets the four planner-edit tools above. An ambiguous question gets all tools
  * as a safe fallback.
  *
- * The checklist is run once per run, from the first user message. A run that
- * starts in one domain and needs tools from the other must wait for the next
- * turn — the fallback covers exactly that case.
+ * Explicit task questions win over technical keywords: "há uma task para o bug
+ * de React?" must receive `ler_tasks`, not the code-only set merely because
+ * it mentions React/bug. A run that starts in one domain and needs tools from
+ * the other must wait for the next turn — the fallback covers exactly that
+ * case.
  */
 export function routeTools(userText: string): ToolDef[] {
   const t = userText
@@ -148,6 +150,7 @@ export function routeTools(userText: string): ToolDef[] {
     /\b(refaca|redesenh|redesign|design.*(pagina|tela)|pagina.*(inteira|toda)|tela.*(inteira|toda)|layout completo|(cri|cir|fac|mont|desenvolv)\w*.*(landing\s*page|landpage|pagina de (anuncio|lancamento)|site institucional))\b/
   const codeWords =
     /\b(codigo|arquivo|funcao|bug|refator|implement|backup|back-end|backend|front-end|frontend|api|component|modulo|typescript|javascript|css|html|teste|typecheck|lint|build|deploy|git|commit|branch|merge|diff|log|compil|execut|script|roda|rode|rodar agente|agente de codigo|sandbox|electron|react|zustand|sqlite|ipc|handler|preload|renderer|main process|layout|design|pagina|tela|cores?|paleta|ui|ux)\w*/
+  const taskWords = /\b(task|tarefa|quadro|kanban|coluna|sprint)\w*/
   const plannerContextWords =
     /\b(plano|planej|agenda|bloco|rotina|horario|dia|atividad|trabalho)\w*/
   const plannerEditWords =
@@ -157,6 +160,7 @@ export function routeTools(userText: string): ToolDef[] {
 
   if (parallelCodeAgents.test(t)) return REFERENCE_CODE_TOOL_DEFS
   if (directVisualImplementation.test(t)) return DIRECT_CODE_AGENT_TOOL_DEFS
+  if (taskWords.test(t)) return KANBAN_TOOL_DEFS
   if (codeWords.test(t)) return CODE_TOOL_DEFS
   if (plannerContextWords.test(t) && plannerEditWords.test(t)) return PLANNER_EDIT_TOOL_DEFS
   if (kanbanWords.test(t)) return KANBAN_TOOL_DEFS

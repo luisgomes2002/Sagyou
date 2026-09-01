@@ -29,6 +29,7 @@ const mem = (over: Partial<AiMemory> = {}): AiMemory => ({
   tags: [],
   pinned: false,
   source: 'modelo',
+  sourceConversationId: null,
   createdAt: NOW,
   updatedAt: NOW,
   lastAccessedAt: NOW,
@@ -41,7 +42,12 @@ const daysAgo = (n: number): string => new Date(Date.parse(NOW) - n * 86_400_000
 
 describe('buildMemory (create)', () => {
   it('builds a well-formed memory from input, defaulting the type', () => {
-    const res = buildMemory(null, { title: 'usa decimal', body: 'não number', type: 'x' }, 'id1', NOW)
+    const res = buildMemory(
+      null,
+      { title: 'usa decimal', body: 'não number', type: 'x' },
+      'id1',
+      NOW
+    )
     expect('memory' in res).toBe(true)
     if ('error' in res) throw new Error('unexpected error')
     expect(res.memory).toMatchObject({
@@ -70,11 +76,23 @@ describe('buildMemory (create)', () => {
     expect(res.memory.tags).toEqual(['a', 'b'])
     expect(res.memory.pinned).toBe(false) // only an explicit true pins
   })
+
+  it('keeps the conversation that supplied the memory as provenance', () => {
+    const res = buildMemory(null, { title: 'decisao', sourceConversationId: 'conv-1' }, 'id1', NOW)
+    if ('error' in res) throw new Error('unexpected error')
+    expect(res.memory.sourceConversationId).toBe('conv-1')
+  })
 })
 
 describe('buildMemory (edit)', () => {
   it('applies only the keys present, preserving counters and createdAt', () => {
-    const existing = mem({ id: 'm1', title: 'old', body: 'old body', accessCount: 9, createdAt: daysAgo(30) })
+    const existing = mem({
+      id: 'm1',
+      title: 'old',
+      body: 'old body',
+      accessCount: 9,
+      createdAt: daysAgo(30)
+    })
     const res = buildMemory(existing, { title: 'new' }, 'ignored', NOW)
     if ('error' in res) throw new Error('unexpected error')
     expect(res.memory.id).toBe('m1') // keeps its id, ignores the fresh one
@@ -118,7 +136,12 @@ describe('scrubSecrets', () => {
   })
 
   it('is wired into buildMemory so no save can persist a secret', () => {
-    const res = buildMemory(null, { title: 'config', body: 'a chave é sk-abcdef1234567890ABCDEF' }, 'id', NOW)
+    const res = buildMemory(
+      null,
+      { title: 'config', body: 'a chave é sk-abcdef1234567890ABCDEF' },
+      'id',
+      NOW
+    )
     if ('error' in res) throw new Error('unexpected error')
     expect(res.redacted).toBe(true)
     expect(res.memory.body).not.toMatch(/sk-abcdef/)
@@ -218,7 +241,14 @@ describe('formatMemoriesForPrompt', () => {
 
   it('renders the full form under the inject cap, with body, tags, pin and scope', () => {
     const text = formatMemoriesForPrompt([
-      mem({ projectId: 'p', type: 'decisao', title: 'Usar SQLite', body: 'satélite', tags: ['db'], pinned: true }),
+      mem({
+        projectId: 'p',
+        type: 'decisao',
+        title: 'Usar SQLite',
+        body: 'satélite',
+        tags: ['db'],
+        pinned: true
+      }),
       mem({ id: 'g', projectId: null, type: 'fato', title: 'Prefere PT-BR', body: 'sempre' })
     ])
     expect(text).toContain('## Memória')

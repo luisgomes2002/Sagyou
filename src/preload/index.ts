@@ -183,6 +183,14 @@ const api = {
         input: MemoryInput & { id?: string }
       ): Promise<{ memory: AiMemory; redacted: boolean } | { error: string }> =>
         ipcRenderer.invoke('ai:memory:save', input),
+      search: (opts: {
+        projectId?: string | null
+        term?: string
+        type?: string
+        includeArchived?: boolean
+        limit?: number
+      }): Promise<{ memory: AiMemory; snippet: string }[]> =>
+        ipcRenderer.invoke('ai:memory:search', opts),
       delete: (id: string): Promise<void> => ipcRenderer.invoke('ai:memory:delete', id),
       // Wholesale replace, for backup import.
       replace: (list: AiMemory[]): Promise<void> => ipcRenderer.invoke('ai:memory:replace', list),
@@ -201,6 +209,7 @@ const api = {
         projectId?: string | null
         title: string
         body: string
+        sourceConversationId?: string | null
       }): Promise<{ ok: true } | { error: string }> =>
         ipcRenderer.invoke('ai:memory:handoff', input)
     },
