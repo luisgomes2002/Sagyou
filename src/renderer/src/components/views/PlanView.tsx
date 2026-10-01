@@ -1,4 +1,5 @@
 ﻿import { useState, useMemo } from 'react'
+import type { CSSProperties } from 'react'
 import { useKanbanStore } from '../../store/kanban'
 import type { TimeBlock, TimeBlockBorderStyle, Routine } from '../../types'
 import { TIME_BLOCK_COLORS } from '../../types'
@@ -15,6 +16,7 @@ import {
   layoutOverlappingBlocks,
   minutesToPixels,
   MODE_LABELS,
+  timeBlockHeight,
   todayString,
   WEEKDAY_SHORT,
   type PlannerViewMode
@@ -34,6 +36,18 @@ function blockBorderStyle(block: TimeBlock): TimeBlockBorderStyle {
   return block.borderStyle ?? (block.type === 'buffer' ? 'dashed' : 'solid')
 }
 
+function plannerColor(color: string | undefined): string | undefined {
+  return color || undefined
+}
+
+function blockAppearance(block: TimeBlock): CSSProperties {
+  return {
+    backgroundColor: '#2a2a2a',
+    color: '#d4d4d4',
+    border: `1px ${blockBorderStyle(block)} #777777`
+  }
+}
+
 export function PlanView() {
   const timeBlocks = useKanbanStore((s) => s.timeBlocks)
   const routines = useKanbanStore((s) => s.routines)
@@ -49,6 +63,7 @@ export function PlanView() {
   const [showRoutines, setShowRoutines] = useState(false)
 
   const [editingBlock, setEditingBlock] = useState<TimeBlock | null>(null)
+  const [creatingBlock, setCreatingBlock] = useState<{ date: string; hour: number } | null>(null)
   const [editingRoutine, setEditingRoutine] = useState<Routine | null>(null)
   const [deletingBlockId, setDeletingBlockId] = useState<string | null>(null)
   const [deletingRoutineId, setDeletingRoutineId] = useState<string | null>(null)
@@ -77,25 +92,7 @@ export function PlanView() {
   }, [timeBlocks, visibleDays])
 
   const addBlock = (date: string, startHour: number) => {
-    const h = String(startHour).padStart(2, '0')
-    const endH = String(startHour + 1).padStart(2, '0')
-    const existing = blocksByDay.get(date) ?? []
-    const maxOrder = existing.reduce((m, tb) => Math.max(m, tb.order), -1)
-    // pick a color distinct from the last block
-    const lastColor = existing[existing.length - 1]?.color
-    const color =
-      TIME_BLOCK_COLORS.find((c) => !lastColor || c !== lastColor) ?? TIME_BLOCK_COLORS[0]
-    const id = createTimeBlock({
-      date,
-      startTime: `${h}:00`,
-      endTime: `${endH}:00`,
-      title: 'Novo bloco',
-      type: 'custom',
-      color,
-      order: maxOrder + 1
-    })
-    const created = useKanbanStore.getState().timeBlocks.find((block) => block.id === id)
-    if (created) setEditingBlock(created)
+    setCreatingBlock({ date, hour: startHour })
   }
 
   const deletingBlock = deletingBlockId
@@ -200,11 +197,36 @@ export function PlanView() {
       )}
 
       {/* Edit TimeBlock modal */}
+      {creatingBlock && (
+        <EditTimeBlockModal
+          date={creatingBlock.date}
+          hour={creatingBlock.hour}
+          routines={routines}
+          onSave={({ title, startTime, endTime, color, borderStyle, type }) => {
+            const existing = useKanbanStore
+              .getState()
+              .timeBlocks.filter((tb) => tb.date === creatingBlock.date)
+            const order = existing.reduce((max, tb) => Math.max(max, tb.order), -1) + 1
+            createTimeBlock({
+              date: creatingBlock.date,
+              title,
+              startTime,
+              endTime,
+              color,
+              borderStyle,
+              type,
+              order
+            })
+            setCreatingBlock(null)
+          }}
+          onClose={() => setCreatingBlock(null)}
+        />
+      )}
       {editingBlock && (
         <EditTimeBlockModal
           block={editingBlock}
-          onSave={(updates) => {
-            updateTimeBlock(editingBlock.id, updates)
+          onSave={({ title, startTime, endTime, color, borderStyle }) => {
+            updateTimeBlock(editingBlock.id, { title, startTime, endTime, color, borderStyle })
             setEditingBlock(null)
           }}
           onClose={() => setEditingBlock(null)}
@@ -280,7 +302,9 @@ function DayView({
           <span className="text-[10px] text-[#999999] w-12 text-right pr-2 leading-none pt-0.5 tabular-nums">
             {String(h).padStart(2, '0')}:00
           </span>
-          <div
+          <button
+            type="button"
+            aria-label={`Adicionar bloco às ${String(h).padStart(2, '0')}:00`}
             className="flex-1 h-10 cursor-pointer hover:bg-[#2a2a2a]"
             onClick={() => onAdd(date, h)}
           />
@@ -292,7 +316,7 @@ function DayView({
         const { block, col, cols } = lb
         const top = minutesToPixels(block.startTime)
         const dur = durationInMinutes(block.startTime, block.endTime)
-        const height = Math.max(dur * (HOUR_HEIGHT / 60), 36)
+        const height = timeBlockHeight(block.startTime, block.endTime)
         const isShort = dur < 45
         const gapX = 4
         const availWidth = `calc(100% - ${offsetLeft + 8}px)`
@@ -301,33 +325,36 @@ function DayView({
         return (
           <div
             key={block.id}
-            className={`absolute rounded-md px-2 border-l-2 border-[#3b3b3b] cursor-pointer group z-10
-              bg-[#2a2a2a] hover:bg-[#3b3b3b]
-              ${blockBorderStyle(block) === 'dashed' ? 'border-dashed' : 'border-solid'}`}
+            className="absolute rounded-md px-2 cursor-pointer group z-10 hover:brightness-110 overflow-hidden"
             style={{
               top,
               height,
               left,
               width: colWidth,
-              ...(block.color ? { borderLeftColor: block.color } : {})
+              ...blockAppearance(block)
             }}
             onClick={() => onEditBlock(block)}
+            title={`${block.title} (${block.startTime}–${block.endTime})`}
           >
             <div className="flex items-start justify-between gap-1 h-full">
               <div className="min-w-0 flex-1 flex flex-col justify-center h-full">
                 {isShort ? (
-                  <span className="text-xs text-[#d4d4d4] block truncate leading-tight">
-                    <span className="text-[10px] text-[#999999] mr-1.5 tabular-nums">
+                  <span className="text-xs block truncate leading-tight">
+                    <span
+                      className="text-[10px] mr-1.5 tabular-nums font-semibold"
+                      style={{ color: plannerColor(block.color) ?? '#a080f0' }}
+                    >
                       {block.startTime}–{block.endTime}
                     </span>
                     {block.title}
                   </span>
                 ) : (
                   <>
-                    <span className="text-xs text-[#d4d4d4] block truncate leading-tight">
-                      {block.title}
-                    </span>
-                    <span className="text-[10px] text-[#999999] leading-tight mt-0.5">
+                    <span className="text-xs block truncate leading-tight">{block.title}</span>
+                    <span
+                      className="text-[10px] leading-tight mt-0.5 font-medium"
+                      style={{ color: plannerColor(block.color) ?? '#a080f0' }}
+                    >
                       {block.startTime}–{block.endTime}
                       {block.type !== 'custom' && (
                         <span className="ml-1.5 text-[9px] uppercase tracking-wider opacity-60">
@@ -343,7 +370,7 @@ function DayView({
                   e.stopPropagation()
                   onDeleteRequest(block.id)
                 }}
-                className="text-[#666666] hover:text-[#e04040] opacity-0 group-hover:opacity-100 text-xs leading-none shrink-0 self-start mt-0.5"
+                className="opacity-0 group-hover:opacity-100 text-xs leading-none shrink-0 self-start mt-0.5"
                 title="Remover"
               >
                 ×
@@ -410,34 +437,36 @@ function WeekView({
                 return laidOut.map(({ block, col, cols }) => {
                   const top = minutesToPixels(block.startTime)
                   const dur = durationInMinutes(block.startTime, block.endTime)
-                  const height = Math.max(dur * (HOUR_HEIGHT / 60), 4)
+                  const height = timeBlockHeight(block.startTime, block.endTime)
                   const pctLeft = cols > 1 ? (col / cols) * 100 : 0
                   const pctWidth = cols > 1 ? 100 / cols - 1 : 100
                   return (
                     <div
                       key={block.id}
-                      className={`absolute rounded px-0.5 py-0.5 text-[9px] leading-tight overflow-hidden cursor-pointer group z-10
-                        border-l-2 border-[#3b3b3b] ${blockBorderStyle(block) === 'dashed' ? 'border-dashed' : 'border-solid'}`}
+                      className="absolute rounded px-0.5 py-0.5 text-[9px] leading-tight overflow-hidden cursor-pointer group z-10 hover:brightness-110"
                       style={{
                         top,
                         height,
                         left: `${pctLeft}%`,
                         width: `${pctWidth}%`,
                         zIndex: col + 1,
-                        backgroundColor: '#2a2a2a',
-                        ...(block.color ? { borderLeftColor: block.color } : {})
+                        ...blockAppearance(block)
                       }}
                       title={`${block.title} (${block.startTime}–${block.endTime})`}
                       onClick={() => onEditBlock(block)}
                     >
-                      <span className="block truncate text-[#d4d4d4]">{block.title}</span>
-                      <span className="text-[#666666]">{block.startTime}</span>
+                      <span className="block truncate">{block.title}</span>
+                      {dur > 20 && (
+                        <span style={{ color: plannerColor(block.color) ?? '#a080f0' }}>
+                          {block.startTime}
+                        </span>
+                      )}
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
                           onDeleteRequest(block.id)
                         }}
-                        className="absolute top-0 right-0 px-0.5 text-[#666666] hover:text-[#e04040] opacity-0 group-hover:opacity-100 leading-none"
+                        className="absolute top-0 right-0 px-0.5 opacity-0 group-hover:opacity-100 leading-none"
                       >
                         ×
                       </button>
@@ -501,15 +530,15 @@ function MonthView({
                     onEditBlock ? 'cursor-pointer hover:brightness-125' : ''
                   }`}
                   style={{
-                    background: block.color ? `${block.color}30` : '#ffffff10',
-                    borderLeft: block.color
-                      ? `2px ${blockBorderStyle(block)} ${block.color}`
-                      : undefined
+                    ...blockAppearance(block)
                   }}
                   title={`${block.startTime} ${block.title}`}
                   onClick={() => onEditBlock?.(block)}
                 >
-                  {block.startTime} {block.title}
+                  <span style={{ color: plannerColor(block.color) ?? '#a080f0' }}>
+                    {block.startTime}
+                  </span>{' '}
+                  {block.title}
                 </div>
               ))}
               {blocks.length > 3 && (
@@ -525,36 +554,76 @@ function MonthView({
 
 function EditTimeBlockModal({
   block,
+  date,
+  hour,
+  routines = [],
   onSave,
   onClose
 }: {
-  block: TimeBlock
+  block?: TimeBlock
+  date?: string
+  hour?: number
+  routines?: Routine[]
   onSave: (updates: {
     title: string
     startTime: string
     endTime: string
     color?: string
     borderStyle: TimeBlockBorderStyle
+    type: TimeBlock['type']
   }) => void
   onClose: () => void
 }) {
-  const [title, setTitle] = useState(block.title)
-  const [startTime, setStartTime] = useState(block.startTime)
-  const [endTime, setEndTime] = useState(block.endTime)
-  const [color, setColor] = useState(block.color ?? TIME_BLOCK_COLORS[0])
-  const [borderStyle, setBorderStyle] = useState<TimeBlockBorderStyle>(blockBorderStyle(block))
+  const defaultStartTime = `${String(hour ?? 8).padStart(2, '0')}:00`
+  const defaultEndTime = hour === 23 ? '23:59' : `${String((hour ?? 8) + 1).padStart(2, '0')}:00`
+  const [selectedRoutineId, setSelectedRoutineId] = useState('')
+  const [title, setTitle] = useState(block?.title ?? '')
+  const [startTime, setStartTime] = useState(block?.startTime ?? defaultStartTime)
+  const [endTime, setEndTime] = useState(block?.endTime ?? defaultEndTime)
+  const [color, setColor] = useState(block?.color ?? TIME_BLOCK_COLORS[0])
+  const [borderStyle, setBorderStyle] = useState<TimeBlockBorderStyle>(
+    block ? blockBorderStyle(block) : 'solid'
+  )
+  const selectedWeekday = date ? new Date(`${date}T00:00:00`).getDay() : -1
+
+  const selectRoutine = (id: string): void => {
+    setSelectedRoutineId(id)
+    const routine = routines.find((item) => item.id === id)
+    if (routine) {
+      setTitle(routine.title)
+      setStartTime(routine.startTime)
+      setEndTime(routine.endTime)
+      setColor(routine.color ?? TIME_BLOCK_COLORS[0])
+      setBorderStyle(routine.borderStyle ?? 'solid')
+    } else {
+      setTitle('')
+      setStartTime(defaultStartTime)
+      setEndTime(defaultEndTime)
+      setColor(TIME_BLOCK_COLORS[0])
+      setBorderStyle('solid')
+    }
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!title.trim()) return
-    onSave({ title: title.trim(), startTime, endTime, color, borderStyle })
+    if (!title.trim() || !startTime || !endTime || endTime <= startTime) return
+    onSave({
+      title: title.trim(),
+      startTime,
+      endTime,
+      color,
+      borderStyle,
+      type: selectedRoutineId ? 'routine' : (block?.type ?? 'custom')
+    })
   }
 
   return (
     <ModalBase open={true} onClose={onClose}>
       <div className="relative z-10 w-full max-w-xs mx-4 rounded-xl border border-[#3b3b3b] bg-[#232323] shadow-2xl">
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#3b3b3b]">
-          <h2 className="text-sm font-semibold text-[#d4d4d4]">Editar bloco</h2>
+          <h2 className="text-sm font-semibold text-[#d4d4d4]">
+            {block ? 'Editar bloco' : `Novo bloco · ${date?.split('-').reverse().join('/')}`}
+          </h2>
           <button
             onClick={onClose}
             className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors"
@@ -574,8 +643,35 @@ function EditTimeBlockModal({
         </div>
 
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          {!block && (
+            <div>
+              <label
+                htmlFor="block-routine"
+                className="block text-xs font-medium text-[#999999] mb-1.5"
+              >
+                Criar a partir de
+              </label>
+              <select
+                id="block-routine"
+                value={selectedRoutineId}
+                onChange={(e) => selectRoutine(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] text-sm text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed]"
+              >
+                <option value="">Bloco novo</option>
+                {routines
+                  .filter(
+                    (routine) => routine.active && routine.daysOfWeek.includes(selectedWeekday)
+                  )
+                  .map((routine) => (
+                    <option key={routine.id} value={routine.id}>
+                      {routine.title} · {routine.startTime}–{routine.endTime}
+                    </option>
+                  ))}
+              </select>
+            </div>
+          )}
           <div>
-            <label className="block text-xs font-medium text-[#999999] mb-1.5">Titulo *</label>
+            <label className="block text-xs font-medium text-[#999999] mb-1.5">Título *</label>
             <input
               type="text"
               value={title}
@@ -588,9 +684,10 @@ function EditTimeBlockModal({
 
           <div className="flex gap-2">
             <div className="flex-1">
-              <label className="block text-xs font-medium text-[#999999] mb-1.5">Inicio</label>
+              <label className="block text-xs font-medium text-[#999999] mb-1.5">Início</label>
               <input
                 type="time"
+                required
                 value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
                 className="w-full px-3 py-2 rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] text-sm text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed] transition-colors [color-scheme:dark]"
@@ -600,12 +697,16 @@ function EditTimeBlockModal({
               <label className="block text-xs font-medium text-[#999999] mb-1.5">Fim</label>
               <input
                 type="time"
+                required
                 value={endTime}
                 onChange={(e) => setEndTime(e.target.value)}
                 className="w-full px-3 py-2 rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] text-sm text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed] transition-colors [color-scheme:dark]"
               />
             </div>
           </div>
+          {startTime && endTime && endTime <= startTime && (
+            <p className="text-xs text-[#ec6a6a]">O fim precisa ser depois do início.</p>
+          )}
 
           <div>
             <label className="block text-xs font-medium text-[#999999] mb-2">Cor</label>
@@ -617,8 +718,8 @@ function EditTimeBlockModal({
                   onClick={() => setColor(c)}
                   className="w-5 h-5 rounded-full transition-transform hover:scale-110"
                   style={{
-                    backgroundColor: c,
-                    boxShadow: color === c ? `0 0 0 2px #232323, 0 0 0 4px ${c}` : 'none'
+                    backgroundColor: plannerColor(c),
+                    boxShadow: color === c ? '0 0 0 2px #232323, 0 0 0 4px #d4d4d4' : 'none'
                   }}
                 />
               ))}
@@ -653,10 +754,10 @@ function EditTimeBlockModal({
             <CancelButton onClick={onClose}>Cancelar</CancelButton>
             <button
               type="submit"
-              disabled={!title.trim()}
+              disabled={!title.trim() || !startTime || !endTime || endTime <= startTime}
               className="px-4 py-2 text-sm rounded-lg bg-[#7c3aed] text-white font-medium hover:bg-[#6d28d9] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
-              Salvar
+              {block ? 'Salvar' : 'Criar bloco'}
             </button>
           </div>
         </form>
@@ -677,6 +778,7 @@ function EditRoutineModal({
     endTime: string
     daysOfWeek: number[]
     color?: string
+    borderStyle: TimeBlockBorderStyle
   }) => void
   onClose: () => void
 }) {
@@ -685,6 +787,9 @@ function EditRoutineModal({
   const [endTime, setEndTime] = useState(routine.endTime)
   const [selectedDays, setSelectedDays] = useState<number[]>([...routine.daysOfWeek])
   const [color, setColor] = useState(routine.color ?? TIME_BLOCK_COLORS[0])
+  const [borderStyle, setBorderStyle] = useState<TimeBlockBorderStyle>(
+    routine.borderStyle ?? 'solid'
+  )
 
   const toggleDay = (d: number) => {
     setSelectedDays((prev) =>
@@ -695,7 +800,14 @@ function EditRoutineModal({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!title.trim() || selectedDays.length === 0) return
-    onSave({ title: title.trim(), startTime, endTime, daysOfWeek: selectedDays, color })
+    onSave({
+      title: title.trim(),
+      startTime,
+      endTime,
+      daysOfWeek: selectedDays,
+      color,
+      borderStyle
+    })
   }
 
   return (
@@ -785,10 +897,31 @@ function EditRoutineModal({
                   onClick={() => setColor(c)}
                   className="w-5 h-5 rounded-full transition-transform hover:scale-110"
                   style={{
-                    backgroundColor: c,
-                    boxShadow: color === c ? `0 0 0 2px #232323, 0 0 0 4px ${c}` : 'none'
+                    backgroundColor: plannerColor(c),
+                    boxShadow: color === c ? '0 0 0 2px #232323, 0 0 0 4px #d4d4d4' : 'none'
                   }}
                 />
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <span className="block text-xs font-medium text-[#999999] mb-2">Borda</span>
+            <div className="grid grid-cols-2 gap-2">
+              {(['solid', 'dashed'] as const).map((style) => (
+                <button
+                  key={style}
+                  type="button"
+                  aria-pressed={borderStyle === style}
+                  onClick={() => setBorderStyle(style)}
+                  className={`rounded-lg border px-3 py-2 text-xs ${borderStyle === style ? 'border-[#a080f0] bg-[#3b3b3b] text-[#d4d4d4]' : 'border-[#3b3b3b] bg-[#1b1b1b] text-[#999999]'}`}
+                >
+                  <span
+                    className={`block border-t-2 ${style === 'dashed' ? 'border-dashed' : 'border-solid'}`}
+                    style={{ borderColor: style === 'dashed' ? '#b0b0b0' : '#777777' }}
+                  />
+                  <span className="block mt-1">{style === 'solid' ? 'Reta' : 'Pontilhada'}</span>
+                </button>
               ))}
             </div>
           </div>
@@ -827,6 +960,7 @@ function RoutinesPanel({
   const [startTime, setStartTime] = useState('08:00')
   const [endTime, setEndTime] = useState('09:00')
   const [selectedDays, setSelectedDays] = useState<number[]>([])
+  const [borderStyle, setBorderStyle] = useState<TimeBlockBorderStyle>('solid')
 
   const toggleDay = (d: number) => {
     setSelectedDays((prev) =>
@@ -843,12 +977,14 @@ function RoutinesPanel({
       endTime,
       daysOfWeek: selectedDays,
       color: TIME_BLOCK_COLORS[routines.length % TIME_BLOCK_COLORS.length],
+      borderStyle,
       active: true
     })
     setTitle('')
     setStartTime('08:00')
     setEndTime('09:00')
     setSelectedDays([])
+    setBorderStyle('solid')
     setAdding(false)
   }
 
@@ -912,6 +1048,22 @@ function RoutinesPanel({
               ))}
             </div>
           </div>
+          <div>
+            <span className="text-[9px] text-[#999999] block mb-1">Borda</span>
+            <div className="flex gap-2">
+              {(['solid', 'dashed'] as const).map((style) => (
+                <button
+                  key={style}
+                  type="button"
+                  aria-pressed={borderStyle === style}
+                  onClick={() => setBorderStyle(style)}
+                  className={`flex-1 rounded border px-2 py-1 text-[10px] ${borderStyle === style ? 'border-[#a080f0] bg-[#3b3b3b] text-[#d4d4d4]' : 'border-[#555555] text-[#999999]'}`}
+                >
+                  {style === 'solid' ? 'Reta' : 'Pontilhada'}
+                </button>
+              ))}
+            </div>
+          </div>
           <button
             onClick={handleCreate}
             disabled={!title.trim() || selectedDays.length === 0}
@@ -945,7 +1097,7 @@ function RoutinesPanel({
               />
               <div
                 className="w-3 h-3 rounded shrink-0"
-                style={{ background: r.color ?? '#7c3aed' }}
+                style={{ backgroundColor: plannerColor(r.color) ?? '#2a2a2a' }}
               />
               <span className={`flex-1 truncate ${r.active ? 'text-[#d4d4d4]' : 'text-[#999999]'}`}>
                 {r.title}

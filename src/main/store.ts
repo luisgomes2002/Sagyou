@@ -85,6 +85,7 @@ interface StickyNote {
   projectId: string
   content: string
   color: string
+  borderStyle?: 'solid' | 'dashed'
   x: number
   y: number
   width: number
@@ -256,6 +257,7 @@ interface Routine {
   endTime: string
   daysOfWeek: number[]
   color?: string
+  borderStyle?: 'solid' | 'dashed'
   active: boolean
   createdAt: string
   updatedAt: string
@@ -305,6 +307,8 @@ function getDb(): Database.Database {
   migrateTransactionDetailsColumn(_db)
   migrateProjectsArchivedColumn(_db)
   migrateTimeBlockBorderStyleColumn(_db)
+  migrateRoutineBorderStyleColumn(_db)
+  migrateNoteBorderStyleColumn(_db)
   migrateMemoryDropProjectFk(_db)
   migrateMemoryProvenanceColumn(_db)
   ensureMemorySearch(_db)
@@ -549,6 +553,20 @@ function migrateTimeBlockBorderStyleColumn(db: Database.Database): void {
     (column) => column.name === 'border_style'
   )
   if (!has) db.prepare('ALTER TABLE time_blocks ADD COLUMN border_style TEXT').run()
+}
+
+function migrateRoutineBorderStyleColumn(db: Database.Database): void {
+  const has = (db.prepare('PRAGMA table_info(routines)').all() as { name: string }[]).some(
+    (column) => column.name === 'border_style'
+  )
+  if (!has) db.prepare('ALTER TABLE routines ADD COLUMN border_style TEXT').run()
+}
+
+function migrateNoteBorderStyleColumn(db: Database.Database): void {
+  const has = (db.prepare('PRAGMA table_info(notes)').all() as { name: string }[]).some(
+    (column) => column.name === 'border_style'
+  )
+  if (!has) db.prepare('ALTER TABLE notes ADD COLUMN border_style TEXT').run()
 }
 
 // One-time migration for existing DBs: the `memory` table originally declared
@@ -798,6 +816,7 @@ function initSchema(db: Database.Database): void {
       project_id TEXT NOT NULL,
       content TEXT NOT NULL,
       color TEXT NOT NULL,
+      border_style TEXT,
       x REAL NOT NULL,
       y REAL NOT NULL,
       width REAL NOT NULL,
@@ -980,6 +999,7 @@ function initSchema(db: Database.Database): void {
       end_time TEXT NOT NULL,
       days_of_week TEXT NOT NULL,
       color TEXT,
+      border_style TEXT,
       active INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -1043,7 +1063,7 @@ function prepareWrite(db: Database.Database) {
     ),
     tomb: db.prepare('INSERT INTO tombstones (id,type,deleted_at) VALUES (?,?,?)'),
     note: db.prepare(
-      'INSERT INTO notes (id,project_id,content,color,x,y,width,height,task_id,task_ids,goal_ids,font_size,type,completed_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+      'INSERT INTO notes (id,project_id,content,color,border_style,x,y,width,height,task_id,task_ids,goal_ids,font_size,type,completed_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
     ),
     conn: db.prepare(
       'INSERT OR IGNORE INTO note_connections (note_id,connected_note_id) VALUES (?,?)'
@@ -1082,7 +1102,7 @@ function prepareWrite(db: Database.Database) {
       'INSERT INTO time_blocks (id,date,start_time,end_time,title,description,task_id,habit_id,type,color,border_style,ord,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
     ),
     routine: db.prepare(
-      'INSERT INTO routines (id,title,description,start_time,end_time,days_of_week,color,active,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)'
+      'INSERT INTO routines (id,title,description,start_time,end_time,days_of_week,color,border_style,active,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
     )
   }
 
@@ -1154,6 +1174,7 @@ function prepareWrite(db: Database.Database) {
         n.projectId,
         n.content,
         n.color,
+        n.borderStyle ?? null,
         n.x,
         n.y,
         n.width,
@@ -1267,6 +1288,7 @@ function prepareWrite(db: Database.Database) {
         r.endTime,
         JSON.stringify(r.daysOfWeek ?? []),
         r.color ?? null,
+        r.borderStyle ?? null,
         r.active ? 1 : 0,
         r.createdAt,
         r.updatedAt
@@ -1560,6 +1582,9 @@ export function loadData(): SaveData {
     projectId: n.project_id,
     content: n.content,
     color: n.color,
+    ...(n.border_style === 'solid' || n.border_style === 'dashed'
+      ? { borderStyle: n.border_style }
+      : {}),
     x: n.x,
     y: n.y,
     width: n.width,
@@ -1727,6 +1752,9 @@ export function loadData(): SaveData {
       daysOfWeek: days,
       ...(r.description != null ? { description: r.description } : {}),
       ...(r.color != null ? { color: r.color } : {}),
+      ...(r.border_style === 'solid' || r.border_style === 'dashed'
+        ? { borderStyle: r.border_style }
+        : {}),
       active: r.active === 1,
       createdAt: r.created_at,
       updatedAt: r.updated_at

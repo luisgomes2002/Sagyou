@@ -16,7 +16,7 @@ export const MODE_LABELS: Record<PlannerViewMode, string> = {
 }
 
 export const HOURS = Array.from({ length: 24 }, (_, index) => index)
-export const HOUR_HEIGHT = 80
+export const HOUR_HEIGHT = 144
 export const WEEKDAY_SHORT = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab']
 
 export function formatDay(iso: string): string {
@@ -70,6 +70,11 @@ export function durationInMinutes(start: string, end: string): number {
   const [startHours, startMinutes] = start.split(':').map(Number)
   const [endHours, endMinutes] = end.split(':').map(Number)
   return endHours * 60 + endMinutes - (startHours * 60 + startMinutes)
+}
+
+// Leave a visible gap without letting a short block cover the next time slot.
+export function timeBlockHeight(start: string, end: string): number {
+  return Math.max(1, durationInMinutes(start, end) * (HOUR_HEIGHT / 60) - 3)
 }
 
 export function getVisibleDays(mode: PlannerViewMode, currentDate: string): string[] {

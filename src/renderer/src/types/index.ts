@@ -376,6 +376,7 @@ export interface StickyNote {
   projectId: string
   content: string
   color: string
+  borderStyle?: 'solid' | 'dashed'
   x: number
   y: number
   width: number
@@ -639,6 +640,7 @@ export interface Routine {
   endTime: string // HH:MM
   daysOfWeek: number[] // 0=Sun, 1=Mon, …, 6=Sat
   color?: string
+  borderStyle?: TimeBlockBorderStyle
   active: boolean
   createdAt: string
   updatedAt: string

@@ -318,6 +318,8 @@ Não "simplifique" nenhuma destas sem ler o comentário que as acompanha:
 - **O layout do grafo é uma simulação viva** (`GraphView.tsx` + `utils/graph-layout.ts`):
   o d3-force muta nós, então preserve `positionsRef` ao recriar o grafo e nunca chame
   `sim.tick()` no evento `tick`. Arrastar fixa só durante o gesto; ao soltar, pare e guarde a posição da sessão.
+  Projetos arquivados continuam no grafo com seus itens. Blocos `StickyNote.type === 'text'`
+  são apenas conteúdo visual do canvas: não recebem conexões e não entram no grafo.
 - **`ai/tools.ts` está fatiado** — as helpers e constantes (`fn`, `resolveTask`,
   `PRIORITIES`, …) vivem em `ai/tools/helpers.ts` e as 31 definições do REGISTRY
   em `ai/tools/entries.ts`. `tools.ts` só tem a infraestrutura (REGISTRY,

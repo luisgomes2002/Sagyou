@@ -58,6 +58,30 @@ function makeFile(overrides: Partial<StoredFile> & { id: string }): StoredFile {
 }
 
 describe('buildGraph', () => {
+  it('mantém projetos arquivados e seus itens no grafo', () => {
+    const project = { ...makeProject(), archivedAt: NOW }
+    const task = makeTask({ id: 'task-archived' })
+    const { nodes, edges } = buildGraph([project], [task], [], [], [])
+    const projectNode = nodes.find((node) => node.entityId === project.id)!
+    const taskNode = nodes.find((node) => node.entityId === task.id)!
+
+    expect(projectNode).toMatchObject({ type: 'project' })
+    expect(edges).toContainEqual({
+      source: taskNode.id,
+      target: projectNode.id,
+      type: 'structural'
+    })
+  })
+
+  it('ignora textos livres e conexões antigas que apontam para eles', () => {
+    const text = makeNote({ id: 'heading', type: 'text' })
+    const note = makeNote({ id: 'note', connections: [text.id] })
+    const { nodes, edges } = buildGraph([makeProject()], [], [text, note], [], [])
+
+    expect(nodes.some((node) => node.entityId === text.id)).toBe(false)
+    expect(edges.some((edge) => edge.type === 'explicit')).toBe(false)
+  })
+
   it('inclui tasks concluídas no grafo', () => {
     const completedTask = makeTask({
       id: 'task-done',

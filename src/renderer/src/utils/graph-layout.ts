@@ -82,8 +82,7 @@ export function buildGraph(
   habits: Habit[],
   files: StoredFile[] = []
 ): { nodes: GraphNode[]; edges: GraphEdge[] } {
-  const activeProjects = projects.filter((p) => !p.archivedAt)
-  const projectById = new Map(activeProjects.map((project) => [project.id, project]))
+  const projectById = new Map(projects.map((project) => [project.id, project]))
 
   const nodeRegistry = new Map<string, GraphNode>()
   const edges: GraphEdge[] = []
@@ -97,7 +96,7 @@ export function buildGraph(
   }
 
   const projectNodeIds = new Map<string, string>()
-  for (const p of activeProjects) {
+  for (const p of projects) {
     projectNodeIds.set(
       p.id,
       addNode({
@@ -122,9 +121,7 @@ export function buildGraph(
       connectionCount: 0
     } as GraphNode)
 
-    // Files outlive project archival and global files have no project at all.
-    // They still belong in the graph; only active project ownership creates a
-    // structural edge so the archived/global item remains discoverable.
+    // Files without a project stay visible; archived projects retain their edges.
     if (file.projectId && projectNodeIds.has(file.projectId)) {
       edges.push({ source: id, target: projectNodeIds.get(file.projectId)!, type: 'structural' })
     }
@@ -152,6 +149,7 @@ export function buildGraph(
 
   const noteNodeIds = new Map<string, string>()
   for (const n of notes) {
+    if (n.type === 'text') continue
     if (!projectNodeIds.has(n.projectId)) continue
     const id = addNode({
       type: 'note',

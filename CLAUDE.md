@@ -100,7 +100,7 @@ Soft deletes use a `Tombstone[]` array. On `importBackup`, all local state is re
 | View        | Component           | Notes                                                                                                     |
 | ----------- | ------------------- | --------------------------------------------------------------------------------------------------------- |
 | `board`     | `Board.tsx`         | dnd-kit drag-and-drop across columns                                                                      |
-| `canvas`    | `CanvasView.tsx`    | free-form sticky notes with task links                                                                    |
+| `canvas`    | `CanvasView.tsx`    | free-form sticky notes with task links; text blocks are visual-only, have font size and width, cannot connect, and stay out of the graph |
 | `files`     | `FilesView.tsx`     | file attachments, optionally scoped to a project                                                          |
 | `done`      | `DoneView.tsx`      | tasks in any column named "done"                                                                          |
 | `goals`     | `GoalView.tsx`      | progress goals with optional project link                                                                 |

@@ -38,10 +38,7 @@ export function GoalCard({
   const isComplete = current >= goal.target
   const remaining = Math.max(goal.target - current, 0)
   const unitSuffix = goal.unit ? ` ${goal.unit}` : ''
-  const ringColor = isComplete ? '#20b858' : goal.color
-
-  const R = 32
-  const circ = 2 * Math.PI * R
+  const accentColor = isComplete ? '#46d478' : goal.color
 
   const sortedEntries: GoalEntry[] = [...goal.entries].sort((a, b) => {
     if (b.date !== a.date) return b.date.localeCompare(a.date)
@@ -70,145 +67,121 @@ export function GoalCard({
   const unitLabel = goal.unit ? goal.unit.charAt(0).toUpperCase() + goal.unit.slice(1) : 'Qtd'
 
   return (
-    <div className="group rounded-xl border border-[#3b3b3b] bg-[#2a2a2a] overflow-hidden hover:border-[#555555] transition-all duration-200">
-      <div
-        className="h-[3px]"
-        style={{ backgroundColor: ringColor, opacity: isComplete ? 1 : 0.55 }}
-      />
-
-      <div className="p-4">
-        <div className="flex items-start gap-4 mb-4">
-          <div className="relative shrink-0 w-20 h-20">
-            <svg width="80" height="80" viewBox="0 0 80 80">
-              <circle cx="40" cy="40" r={R} fill="none" stroke="#3b3b3b" strokeWidth="5.5" />
-              <circle
-                cx="40"
-                cy="40"
-                r={R}
-                fill="none"
-                stroke={ringColor}
-                strokeWidth="5.5"
-                strokeLinecap="round"
-                strokeDasharray={`${(percent / 100) * circ} ${circ}`}
-                transform="rotate(-90 40 40)"
-                style={{ transition: 'stroke-dasharray 0.5s ease' }}
-              />
-            </svg>
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 pointer-events-none">
-              <span
-                className="text-base font-bold tabular-nums leading-none"
-                style={{ color: ringColor }}
-              >
-                {Math.round(percent)}%
+    <div className="group rounded-xl border border-[#3b3b3b] bg-[#2a2a2a] overflow-hidden hover:border-[#555555] transition-colors duration-200">
+      <div className="p-5">
+        <div className="mb-4">
+          <div className="flex items-start justify-between gap-2 mb-2">
+            <div className="min-w-0">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-[#999999]">
+                Meta
               </span>
-              {isComplete && (
+              <h3 className="text-sm font-semibold text-[#d4d4d4] leading-snug">{goal.title}</h3>
+              {projectName && (
+                <p className="text-[10px] text-[#999999] mt-0.5 truncate">{projectName}</p>
+              )}
+            </div>
+            <div className="relative shrink-0">
+              <button
+                onClick={() => setMenuOpen((v) => !v)}
+                className="p-1 rounded text-[#555555] hover:text-[#999999] hover:bg-[#3b3b3b] transition-colors opacity-0 group-hover:opacity-100"
+              >
                 <svg
-                  width="11"
-                  height="11"
+                  width="12"
+                  height="12"
                   viewBox="0 0 24 24"
                   fill="none"
-                  stroke={ringColor}
-                  strokeWidth="3.5"
+                  stroke="currentColor"
+                  strokeWidth="2"
                 >
-                  <polyline points="20 6 9 17 4 12" />
+                  <circle cx="12" cy="5" r="1" fill="currentColor" />
+                  <circle cx="12" cy="12" r="1" fill="currentColor" />
+                  <circle cx="12" cy="19" r="1" fill="currentColor" />
                 </svg>
+              </button>
+              {menuOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+                  <div className="absolute right-0 top-7 z-20 w-28 rounded-lg border border-[#3b3b3b] bg-[#232323] shadow-xl py-1">
+                    <button
+                      className="w-full text-left px-3 py-2 text-xs text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors"
+                      onClick={() => {
+                        setMenuOpen(false)
+                        onEdit()
+                      }}
+                    >
+                      Editar
+                    </button>
+                    <button
+                      className="w-full text-left px-3 py-2 text-xs text-[#e04040] hover:bg-[#2a2a2a] transition-colors"
+                      onClick={() => {
+                        setMenuOpen(false)
+                        onDelete()
+                      }}
+                    >
+                      Deletar
+                    </button>
+                  </div>
+                </>
               )}
             </div>
           </div>
 
-          <div className="flex-1 min-w-0 pt-0.5">
-            <div className="flex items-start justify-between gap-2 mb-2">
-              <div className="min-w-0">
-                <h3 className="text-sm font-semibold text-[#d4d4d4] leading-snug">{goal.title}</h3>
-                {projectName && (
-                  <p className="text-[10px] text-[#999999] mt-0.5 truncate">{projectName}</p>
-                )}
-              </div>
-              <div className="relative shrink-0">
-                <button
-                  onClick={() => setMenuOpen((v) => !v)}
-                  className="p-1 rounded text-[#555555] hover:text-[#999999] hover:bg-[#3b3b3b] transition-colors opacity-0 group-hover:opacity-100"
-                >
-                  <svg
-                    width="12"
-                    height="12"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  >
-                    <circle cx="12" cy="5" r="1" fill="currentColor" />
-                    <circle cx="12" cy="12" r="1" fill="currentColor" />
-                    <circle cx="12" cy="19" r="1" fill="currentColor" />
-                  </svg>
-                </button>
-                {menuOpen && (
-                  <>
-                    <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-                    <div className="absolute right-0 top-7 z-20 w-28 rounded-lg border border-[#3b3b3b] bg-[#232323] shadow-xl py-1">
-                      <button
-                        className="w-full text-left px-3 py-2 text-xs text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors"
-                        onClick={() => {
-                          setMenuOpen(false)
-                          onEdit()
-                        }}
-                      >
-                        Editar
-                      </button>
-                      <button
-                        className="w-full text-left px-3 py-2 text-xs text-[#e04040] hover:bg-[#2a2a2a] transition-colors"
-                        onClick={() => {
-                          setMenuOpen(false)
-                          onDelete()
-                        }}
-                      >
-                        Deletar
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
+          <div className="flex items-baseline gap-1.5 mt-4 mb-2">
+            <span
+              className="text-3xl font-bold tabular-nums leading-none"
+              style={{ color: accentColor }}
+            >
+              {fmtNum(current)}
+            </span>
+            {goal.unit && <span className="text-sm text-[#999999]">{goal.unit}</span>}
+            <span className="text-xs text-[#555555] mx-0.5">/</span>
+            <span className="text-sm font-medium text-[#999999] tabular-nums">
+              {fmtNum(goal.target)}
+              {unitSuffix}
+            </span>
+          </div>
+          <div
+            className="h-2 rounded-full bg-[#3b3b3b] overflow-hidden mb-2"
+            role="progressbar"
+            aria-label={`Progresso de ${goal.title}`}
+            aria-valuenow={Math.round(percent)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
+            <div
+              className="h-full rounded-full transition-[width] duration-500"
+              style={{ width: `${percent}%`, backgroundColor: accentColor }}
+            />
+          </div>
 
-            <div className="flex items-baseline gap-1.5 mb-1.5">
-              <span
-                className="text-2xl font-bold tabular-nums leading-none"
-                style={{ color: ringColor }}
+          {isComplete ? (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#3b3b3b] text-[#20b858] text-[10px] font-semibold">
+              <svg
+                width="8"
+                height="8"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="3.5"
               >
-                {fmtNum(current)}
-              </span>
-              {goal.unit && <span className="text-sm text-[#999999]">{goal.unit}</span>}
-              <span className="text-xs text-[#555555] mx-0.5">/</span>
-              <span className="text-sm font-medium text-[#999999] tabular-nums">
-                {fmtNum(goal.target)}
-                {unitSuffix}
-              </span>
-            </div>
-
-            {isComplete ? (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#3b3b3b] text-[#20b858] text-[10px] font-semibold">
-                <svg
-                  width="8"
-                  height="8"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="3.5"
-                >
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-                Concluída
-              </span>
-            ) : (
-              <p className="text-[10px] text-[#999999]">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              Concluída
+            </span>
+          ) : (
+            <p className="flex items-center justify-between text-[11px] text-[#999999]">
+              <span>
                 Faltam{' '}
                 <span className="text-[#d4d4d4] font-semibold tabular-nums">
                   {fmtNum(remaining)}
                   {unitSuffix}
                 </span>
-              </p>
-            )}
-          </div>
+              </span>
+              <span className="tabular-nums font-semibold" style={{ color: accentColor }}>
+                {Math.round(percent)}%
+              </span>
+            </p>
+          )}
         </div>
 
         <div className="border-t border-[#3b3b3b] pt-3">
@@ -326,7 +299,7 @@ export function GoalCard({
                   )}
                   <span
                     className="text-xs font-semibold tabular-nums shrink-0"
-                    style={{ color: ringColor }}
+                    style={{ color: accentColor }}
                   >
                     +{fmtNum(entry.value)}
                     {unitSuffix}
