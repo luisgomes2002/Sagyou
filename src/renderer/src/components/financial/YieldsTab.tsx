@@ -250,7 +250,7 @@ export function YieldsTab({
       </div>
 
       {duplicateDialog && (
-        <div className="px-5 py-3 border-b border-[#3b3b3b] bg-[#2a1a1a]">
+        <div className="px-5 py-3 border-b border-[#3b3b3b] bg-[#2a2a2a]">
           <p className="text-xs font-semibold text-[#e04040] mb-1">
             Duplicatas encontradas
           </p>

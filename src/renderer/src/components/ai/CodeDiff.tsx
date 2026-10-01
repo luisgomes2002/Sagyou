@@ -4,8 +4,8 @@
 import { parseDiff, type LineKind } from '../../utils/diff'
 
 const LINE_STYLE: Record<LineKind, string> = {
-  add: 'bg-[#46d478]/10 text-[#46d478]',
-  del: 'bg-[#e04040]/10 text-[#e04040]',
+  add: 'bg-[#2a2a2a] text-[#46d478]',
+  del: 'bg-[#2a2a2a] text-[#e04040]',
   ctx: 'text-[#999999]',
   meta: 'text-[#666666] bg-[#1b1b1b]'
 }
@@ -135,13 +135,13 @@ export function CodeDiff({
       {(diff.truncated || diff.omittedNewFiles.length > 0) && (
         <div className="px-3 py-2 border-t border-[#3b3b3b] space-y-1">
           {diff.truncated && (
-            <p className="text-[10px] text-[#f0b820]/80">
+            <p className="text-[10px] text-[#f0b820]">
               Diff muito grande — mostrando só o começo. Veja o resto no editor.
             </p>
           )}
           {diff.omittedNewFiles.length > 0 && (
             // Named, not silently dropped: "and N more" is information.
-            <p className="text-[10px] text-[#f0b820]/80">
+            <p className="text-[10px] text-[#f0b820]">
               +{diff.omittedNewFiles.length} arquivo(s) novo(s) não mostrado(s):{' '}
               {diff.omittedNewFiles.slice(0, 5).join(', ')}
               {diff.omittedNewFiles.length > 5 ? '…' : ''}

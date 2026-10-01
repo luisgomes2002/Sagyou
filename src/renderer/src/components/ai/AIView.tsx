@@ -1237,7 +1237,7 @@ export function AIView({
             {activeCodePaths.length > 0 && (
               <span
                 title={`A IA lê o código em:\n${activeCodePaths.map((c) => c.path).join('\n')}`}
-                className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#7c3aed]/10 text-[11px] text-[#a080f0] max-w-[280px]"
+                className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#2a2a2a] text-[11px] text-[#a080f0] max-w-[280px]"
               >
                 <svg
                   width="10"
@@ -1279,7 +1279,7 @@ export function AIView({
                   }
                   className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] tabular-nums transition-colors ${
                     showSpend
-                      ? 'bg-[#7c3aed]/20 text-[#a080f0]'
+                      ? 'bg-[#3b3b3b] text-[#a080f0]'
                       : 'bg-[#2a2a2a] text-[#999999] hover:text-[#d4d4d4]'
                   }`}
                 >
@@ -1432,7 +1432,7 @@ export function AIView({
                                 <span className="shrink-0">
                                   {m.avgRedundantSearches + m.avgRepeatedReads > 0.05 && (
                                     <span
-                                      className="text-[#f0b820]/70"
+                                      className="text-[#f0b820]"
                                       title="buscas redundantes + releituras freadas, por execução"
                                     >
                                       {(m.avgRedundantSearches + m.avgRepeatedReads).toFixed(1)}
@@ -1576,7 +1576,7 @@ export function AIView({
                 }}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                   showHistory
-                    ? 'bg-[#7c3aed]/20 text-[#a080f0]'
+                    ? 'bg-[#3b3b3b] text-[#a080f0]'
                     : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a]'
                 }`}
               >
@@ -1620,7 +1620,7 @@ export function AIView({
                           key={c.id}
                           onClick={() => handleLoadConversation(c.id)}
                           className={`group flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors ${
-                            c.id === conversationId ? 'bg-[#7c3aed]/10' : 'hover:bg-[#2a2a2a]'
+                            c.id === conversationId ? 'bg-[#3b3b3b]' : 'hover:bg-[#2a2a2a]'
                           }`}
                         >
                           <div className="flex-1 min-w-0">
@@ -1710,7 +1710,7 @@ export function AIView({
               onClick={() => setShowConfig((v) => !v)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                 showConfig
-                  ? 'bg-[#7c3aed]/20 text-[#a080f0]'
+                  ? 'bg-[#3b3b3b] text-[#a080f0]'
                   : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a]'
               }`}
             >
@@ -1885,7 +1885,7 @@ export function AIView({
                   automático). Um valor definido vale para os dois modos (máx. {MAX_STEPS_LIMIT}).
                 </p>
                 {config.maxSteps !== undefined && config.maxSteps < LOW_STEPS_WARNING && (
-                  <p className="mt-2 flex items-start gap-1.5 text-[11px] text-[#f0b820]/90 leading-relaxed">
+                  <p className="mt-2 flex items-start gap-1.5 text-[11px] text-[#f0b820] leading-relaxed">
                     <svg
                       width="12"
                       height="12"
@@ -1990,7 +1990,7 @@ export function AIView({
                   </div>
                   <div className="flex items-center gap-2">
                     {config.codeHarness === 'sagyou' && (
-                      <span className="rounded-full border border-[#d7a347]/35 bg-[#d7a347]/10 px-2 py-0.5 text-[10px] font-medium text-[#e8bc70]">
+                      <span className="rounded-full border border-[#3b3b3b] bg-[#2a2a2a] px-2 py-0.5 text-[10px] font-medium text-[#e8bc70]">
                         EM TESTE
                       </span>
                     )}
@@ -2038,7 +2038,7 @@ export function AIView({
                         className={
                           'rounded-md border px-2.5 py-2 text-left transition-colors ' +
                           (selected
-                            ? 'border-[#a080f0] bg-[#7c3aed]/15 text-[#e3dcff]'
+                            ? 'border-[#a080f0] bg-[#3b3b3b] text-[#e3dcff]'
                             : 'border-[#3b3b3b] bg-[#181818] text-[#b0b0b0] hover:border-[#666666]')
                         }
                         aria-pressed={selected}
@@ -2364,13 +2364,13 @@ export function AIView({
 
         {/* Banners */}
         {createdCount !== null && (
-          <div className="px-6 py-2 text-xs text-[#46d478] bg-[#20b858]/10 border-t border-[#20b858]/20 shrink-0">
+          <div className="px-6 py-2 text-xs text-[#46d478] bg-[#2a2a2a] border-t border-[#3b3b3b] shrink-0">
             {createdCount} task{createdCount === 1 ? '' : 's'} criada{createdCount === 1 ? '' : 's'}{' '}
             em {activeProject?.name}.
           </div>
         )}
         {error && (
-          <div className="px-6 py-2 text-xs text-[#e04040] bg-[#e04040]/10 border-t border-[#e04040]/20 shrink-0">
+          <div className="px-6 py-2 text-xs text-[#e04040] bg-[#2a2a2a] border-t border-[#3b3b3b] shrink-0">
             {error}
           </div>
         )}
@@ -2393,7 +2393,7 @@ export function AIView({
             if (docs.length > 0) void attachDocuments(docs)
           }}
           className={`px-6 py-3 border-t shrink-0 transition-colors ${
-            dragOver ? 'border-[#7c3aed] bg-[#7c3aed]/5' : 'border-[#3b3b3b]'
+            dragOver ? 'border-[#7c3aed] bg-[#2a2a2a]' : 'border-[#3b3b3b]'
           }`}
         >
           {!configReady && (
@@ -2569,8 +2569,8 @@ export function AIView({
                   <span
                     className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium ${
                       skill
-                        ? 'bg-[#46d478]/15 text-[#46d478] border border-[#46d478]/30'
-                        : 'bg-[#f0b820]/15 text-[#f0b820] border border-[#f0b820]/30'
+                        ? 'bg-[#3b3b3b] text-[#46d478] border border-[#3b3b3b]'
+                        : 'bg-[#3b3b3b] text-[#f0b820] border border-[#3b3b3b]'
                     }`}
                   >
                     <svg
@@ -2590,11 +2590,11 @@ export function AIView({
                     {skill ? `/${skill.name}` : `/${name}`}
                   </span>
                   {skill ? (
-                    <span className="text-[10px] text-[#46d478]/70">
+                    <span className="text-[10px] text-[#46d478]">
                       Skill reconhecida — corpo será enviado ao modelo
                     </span>
                   ) : (
-                    <span className="text-[10px] text-[#f0b820]/70">
+                    <span className="text-[10px] text-[#f0b820]">
                       Skill não encontrada — texto enviado como está
                     </span>
                   )}

@@ -150,7 +150,7 @@ function DoneTaskRow({
           {priority.label}
         </span>
         {task.completedAt && (
-          <span className="text-[10px] text-[#20b858]/70" title="Concluída em">
+          <span className="text-[10px] text-[#20b858]" title="Concluída em">
             {format(parseISO(task.completedAt), 'dd/MM/yy')}
           </span>
         )}
@@ -170,7 +170,7 @@ function DoneTaskRow({
       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
         <button
           onClick={(e) => { e.stopPropagation(); onRestore() }}
-          className="p-1 rounded text-[#999999] hover:text-[#7c3aed] hover:bg-[#7c3aed]/10 transition-colors"
+          className="p-1 rounded text-[#999999] hover:text-[#7c3aed] hover:bg-[#2a2a2a] transition-colors"
           title="Restaurar task"
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -180,7 +180,7 @@ function DoneTaskRow({
         </button>
         <button
           onClick={(e) => { e.stopPropagation(); onDelete() }}
-          className="p-1 rounded text-[#999999] hover:text-[#e04040] hover:bg-[#e04040]/10 transition-colors"
+          className="p-1 rounded text-[#999999] hover:text-[#e04040] hover:bg-[#2a2a2a] transition-colors"
           title="Deletar"
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

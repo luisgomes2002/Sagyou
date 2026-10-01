@@ -234,7 +234,7 @@ export function AiRunHost({
               className="w-full max-w-[520px] rounded-xl bg-[#232323] border border-[#4c3a70] shadow-2xl"
             >
               <div className="flex items-center gap-2 px-5 py-4 border-b border-[#3b3b3b]">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#7c3aed]/20 text-xs text-[#c4b5fd]">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#3b3b3b] text-xs text-[#c4b5fd]">
                   ?
                 </span>
                 <h2 className="text-sm font-semibold text-[#e7e1f3]">
@@ -431,7 +431,7 @@ export function AiRunHost({
                       resolveApproval(pa.convId, new Set(pa.writes.map((w) => w.id)))
                     }}
                     title="A IA trabalhará sem interrupção nesta conversa — como o modo always allow do Claude Code"
-                    className="px-3 py-1.5 rounded-lg text-xs text-[#f0b820] border border-[#f0b820]/30 hover:bg-[#f0b820]/10 transition-colors"
+                    className="px-3 py-1.5 rounded-lg text-xs text-[#f0b820] border border-[#3b3b3b] hover:bg-[#2a2a2a] transition-colors"
                   >
                     Sempre permitir
                   </button>

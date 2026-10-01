@@ -425,10 +425,10 @@ export const PROJECT_COLORS = [
 ] as const
 
 export const PRIORITY_CONFIG: Record<Priority, { label: string; color: string; bg: string }> = {
-  low: { label: 'Low', color: 'text-[#34b4ec]', bg: 'bg-[#34b4ec]/15' },
-  medium: { label: 'Medium', color: 'text-[#f0c210]', bg: 'bg-[#f0c210]/15' },
-  high: { label: 'High', color: 'text-[#f08a34]', bg: 'bg-[#f08a34]/15' },
-  urgent: { label: 'Urgent', color: 'text-[#e04040]', bg: 'bg-[#e04040]/15' }
+  low: { label: 'Low', color: 'text-[#34b4ec]', bg: 'bg-[#3b3b3b]' },
+  medium: { label: 'Medium', color: 'text-[#f0c210]', bg: 'bg-[#3b3b3b]' },
+  high: { label: 'High', color: 'text-[#f08a34]', bg: 'bg-[#3b3b3b]' },
+  urgent: { label: 'Urgent', color: 'text-[#e04040]', bg: 'bg-[#3b3b3b]' }
 }
 
 export const DEFAULT_COLUMN_NAMES = ['Backlog', 'In Progress', 'Review', 'Done']

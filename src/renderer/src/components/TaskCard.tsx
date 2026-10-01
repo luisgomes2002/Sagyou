@@ -90,8 +90,8 @@ export function TaskCard({ task, onEdit, onDelete, onView, onComplete, overlay =
               onClick={handleTimerToggle}
               className={`p-1 rounded transition-colors ${
                 isRunning
-                  ? 'text-[#20b858] bg-[#20b858]/10 hover:bg-[#20b858]/20'
-                  : 'text-[#999999] hover:text-[#20b858] hover:bg-[#20b858]/10'
+                  ? 'text-[#20b858] bg-[#2a2a2a] hover:bg-[#3b3b3b]'
+                  : 'text-[#999999] hover:text-[#20b858] hover:bg-[#2a2a2a]'
               }`}
               title={isRunning ? 'Pausar timer' : 'Iniciar timer'}
             >
@@ -111,7 +111,7 @@ export function TaskCard({ task, onEdit, onDelete, onView, onComplete, overlay =
           {onComplete && (
             <button
               onClick={(e) => { e.stopPropagation(); onComplete(task) }}
-              className="p-1 rounded text-[#999999] hover:text-[#20b858] hover:bg-[#20b858]/10 transition-colors"
+              className="p-1 rounded text-[#999999] hover:text-[#20b858] hover:bg-[#2a2a2a] transition-colors"
               title="Concluir task"
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -131,7 +131,7 @@ export function TaskCard({ task, onEdit, onDelete, onView, onComplete, overlay =
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); onDelete(task) }}
-            className="p-1 rounded text-[#999999] hover:text-[#e04040] hover:bg-[#e04040]/10 transition-colors"
+            className="p-1 rounded text-[#999999] hover:text-[#e04040] hover:bg-[#2a2a2a] transition-colors"
             title="Deletar"
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -175,7 +175,7 @@ export function TaskCard({ task, onEdit, onDelete, onView, onComplete, overlay =
             {priority.label}
           </span>
           {isLinkedToCanvas && (
-            <span className="flex items-center text-[#7c3aed]/70" title="Vinculada ao Canvas">
+            <span className="flex items-center text-[#7c3aed]" title="Vinculada ao Canvas">
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                 <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
                 <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />

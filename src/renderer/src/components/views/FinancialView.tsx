@@ -229,14 +229,14 @@ export function FinancialView() {
                     <h2 className="text-sm font-semibold text-[#d4d4d4]">
                       Consolidado · {activeProfile?.name ?? 'Perfil'}
                     </h2>
-                    <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-[#7c3aed]/15 text-[#a080f0]">
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-[#3b3b3b] text-[#a080f0]">
                       {profileLists.length} tabela{profileLists.length !== 1 ? 's' : ''}
                     </span>
                   </>
                 ) : (
                   <>
                     <h2 className="text-sm font-semibold text-[#d4d4d4]">{activeList.name}</h2>
-                    <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-[#7c3aed]/15 text-[#a080f0]">
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-[#3b3b3b] text-[#a080f0]">
                       {CURRENCY_CONFIG[currency].symbol} {currency}
                     </span>
                   </>

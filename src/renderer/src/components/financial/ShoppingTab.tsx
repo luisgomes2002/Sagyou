@@ -93,7 +93,7 @@ function ItemRow({ item, currency, onUpdate, onDelete, onToggle }: ItemRowProps)
             }`}
           />
           {item.done && item.linkedTransactionId && (
-            <span className="text-[9px] text-[#7c3aed]/70 shrink-0">→ Finanças</span>
+            <span className="text-[9px] text-[#7c3aed] shrink-0">→ Finanças</span>
           )}
         </div>
       </td>
@@ -160,7 +160,7 @@ function ItemRow({ item, currency, onUpdate, onDelete, onToggle }: ItemRowProps)
       <td className="py-1.5 pr-3 w-9 text-center">
         <button
           onClick={onDelete}
-          className="p-1 rounded text-[#3b3b3b] hover:text-[#e04040] hover:bg-[#e04040]/10 opacity-0 group-hover:opacity-100 transition-all"
+          className="p-1 rounded text-[#3b3b3b] hover:text-[#e04040] hover:bg-[#2a2a2a] opacity-0 group-hover:opacity-100 transition-all"
         >
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <line x1="18" y1="6" x2="6" y2="18" />
@@ -267,7 +267,7 @@ function AddItemRow({ currency, onAdd }: AddItemRowProps) {
         <button
           onClick={submit}
           disabled={!name.trim()}
-          className="p-1 rounded text-[#7c3aed] hover:bg-[#7c3aed]/10 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+          className="p-1 rounded text-[#7c3aed] hover:bg-[#2a2a2a] disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
         >
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
             <line x1="12" y1="5" x2="12" y2="19" />

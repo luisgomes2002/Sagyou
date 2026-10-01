@@ -292,15 +292,7 @@ export function FinancialGoalCard({
   const ringColor = achieved ? '#4f9f68' : isOverdue ? '#e04040' : isUrgent ? '#f08a34' : '#7c3aed'
 
   return (
-    <div
-      className={`rounded-xl border p-4 group transition-all duration-200 ${
-        achieved
-          ? 'border-[#4f9f68]/20 bg-[#4f9f68]/5'
-          : isOverdue
-            ? 'border-[#e04040]/25 bg-[#e04040]/5'
-            : 'border-[#3b3b3b] bg-[#2a2a2a] hover:border-[#555555]'
-      }`}
-    >
+    <div className="rounded-xl border border-[#3b3b3b] bg-[#2a2a2a] p-4 group transition-all duration-200 hover:border-[#555555]">
       <div className="flex items-start gap-4">
         <div className="relative shrink-0 w-[76px] h-[76px]">
           <svg width="76" height="76" viewBox="0 0 76 76">
@@ -351,7 +343,7 @@ export function FinancialGoalCard({
               </p>
             </div>
             {manuallyCompleted && (
-              <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#4f9f68]/12 text-[#69b780] text-[10px] font-semibold shrink-0">
+              <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#3b3b3b] text-[#69b780] text-[10px] font-semibold shrink-0">
                 <svg
                   width="8"
                   height="8"
@@ -366,7 +358,7 @@ export function FinancialGoalCard({
               </span>
             )}
             {!manuallyCompleted && balanceAchieved && (
-              <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#4f9f68]/12 text-[#69b780] text-[10px] font-semibold shrink-0">
+              <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#3b3b3b] text-[#69b780] text-[10px] font-semibold shrink-0">
                 <svg
                   width="8"
                   height="8"
@@ -381,12 +373,12 @@ export function FinancialGoalCard({
               </span>
             )}
             {isOverdue && (
-              <span className="px-2 py-0.5 rounded-full bg-[#e04040]/15 text-[#e04040] text-[10px] font-semibold shrink-0">
+              <span className="px-2 py-0.5 rounded-full bg-[#3b3b3b] text-[#e04040] text-[10px] font-semibold shrink-0">
                 Vencido
               </span>
             )}
             {isUrgent && (
-              <span className="px-2 py-0.5 rounded-full bg-[#f08a34]/15 text-[#f08a34] text-[10px] font-semibold shrink-0">
+              <span className="px-2 py-0.5 rounded-full bg-[#3b3b3b] text-[#f08a34] text-[10px] font-semibold shrink-0">
                 {monthsLeft}m restante{monthsLeft !== 1 ? 's' : ''}
               </span>
             )}
@@ -431,8 +423,8 @@ export function FinancialGoalCard({
             </div>
           )}
           {manuallyCompleted && (
-            <div className="mt-2.5 pt-2.5 border-t border-[#4f9f68]/20">
-              <p className="text-[10px] text-[#69b780]/70 leading-relaxed">
+            <div className="mt-2.5 pt-2.5 border-t border-[#3b3b3b]">
+              <p className="text-[10px] text-[#69b780] leading-relaxed">
                 Concluído em{' '}
                 <span className="text-[#69b780] font-semibold">
                   {formatDateBR(goal.completedAt!)}
@@ -446,8 +438,8 @@ export function FinancialGoalCard({
             </div>
           )}
           {!manuallyCompleted && balanceAchieved && (
-            <div className="mt-2.5 pt-2.5 border-t border-[#4f9f68]/20">
-              <p className="text-[10px] text-[#69b780]/60 leading-relaxed">
+            <div className="mt-2.5 pt-2.5 border-t border-[#3b3b3b]">
+              <p className="text-[10px] text-[#69b780] leading-relaxed">
                 Saldo excede a meta em{' '}
                 <span className="text-[#69b780] font-semibold">
                   {formatCurrency(effectiveBalance.minus(target), currency)}
@@ -456,8 +448,8 @@ export function FinancialGoalCard({
             </div>
           )}
           {isOverdue && (
-            <div className="mt-2.5 pt-2.5 border-t border-[#e04040]/20">
-              <p className="text-[10px] text-[#e04040]/60 leading-relaxed">
+            <div className="mt-2.5 pt-2.5 border-t border-[#3b3b3b]">
+              <p className="text-[10px] text-[#e04040] leading-relaxed">
                 Faltam{' '}
                 <span className="text-[#e04040] font-semibold">
                   {formatCurrency(remaining, currency)}
@@ -469,7 +461,7 @@ export function FinancialGoalCard({
         </div>
       </div>
 
-      <div className="flex gap-1 justify-end mt-3 pt-2.5 border-t border-[#3b3b3b]/50 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="flex gap-1 justify-end mt-3 pt-2.5 border-t border-[#3b3b3b] opacity-0 group-hover:opacity-100 transition-opacity">
         <button
           onClick={onEdit}
           className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-medium text-[#999999] hover:text-[#d4d4d4] hover:bg-[#3b3b3b] transition-colors"
@@ -490,7 +482,7 @@ export function FinancialGoalCard({
         {!manuallyCompleted && (
           <button
             onClick={() => setCompleteModalOpen(true)}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-medium text-[#999999] hover:text-[#20b858] hover:bg-[#20b858]/10 transition-colors"
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-medium text-[#999999] hover:text-[#20b858] hover:bg-[#2a2a2a] transition-colors"
           >
             <svg
               width="9"
@@ -508,7 +500,7 @@ export function FinancialGoalCard({
         {manuallyCompleted && (
           <button
             onClick={onRevert}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-medium text-[#999999] hover:text-[#f08a34] hover:bg-[#f08a34]/10 transition-colors"
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-medium text-[#999999] hover:text-[#f08a34] hover:bg-[#2a2a2a] transition-colors"
           >
             <svg
               width="9"
@@ -526,7 +518,7 @@ export function FinancialGoalCard({
         )}
         <button
           onClick={onDelete}
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-medium text-[#999999] hover:text-[#e04040] hover:bg-[#e04040]/10 transition-colors"
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-medium text-[#999999] hover:text-[#e04040] hover:bg-[#2a2a2a] transition-colors"
         >
           <svg
             width="9"

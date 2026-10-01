@@ -111,14 +111,14 @@ export function NoteModal({ note, onSave, onClose }: Props) {
           <button
             type="button"
             onClick={doClose}
-            className="px-3 py-1 rounded-md border border-[#333] text-[11px] text-[#888] hover:text-white hover:bg-white/5"
+            className="px-3 py-1 rounded-md border border-[#333] text-[11px] text-[#888] hover:text-white hover:bg-[#232323]"
           >
             Salvar e fechar
           </button>
           <button
             type="button"
             onClick={onClose}
-            className="ml-auto p-2 rounded text-[#888] hover:text-white hover:bg-white/10"
+            className="ml-auto p-2 rounded text-[#888] hover:text-white hover:bg-[#232323]"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
           </button>
@@ -176,7 +176,7 @@ export function NoteModal({ note, onSave, onClose }: Props) {
         <div className="w-72 shrink-0 border-l border-[#232323] bg-[#0d0d0d] flex flex-col overflow-hidden">
           <div className="px-4 py-3 border-b border-[#232323] flex items-center justify-between">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-[#555]">Conexões</span>
-            <button type="button" onClick={() => setSidebarOpen(false)} className="p-0.5 rounded text-[#555] hover:text-[#999] hover:bg-white/5">
+            <button type="button" onClick={() => setSidebarOpen(false)} className="p-0.5 rounded text-[#555] hover:text-[#999] hover:bg-[#232323]">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6" /></svg>
             </button>
           </div>
@@ -196,7 +196,7 @@ export function NoteModal({ note, onSave, onClose }: Props) {
                     <button
                       type="button"
                       onClick={() => setTaskIds((prev) => prev.filter((id) => id !== t.id))}
-                      className="p-0.5 rounded hover:bg-red-500/20 hover:text-red-400"
+                      className="p-0.5 rounded hover:bg-[#232323] hover:text-red-400"
                     >
                       <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
                     </button>
@@ -207,7 +207,7 @@ export function NoteModal({ note, onSave, onClose }: Props) {
                 <button
                   type="button"
                   onClick={() => { setOpenDropdown(openDropdown === 'task' ? null : 'task'); setDdSearch('') }}
-                  className="w-full flex items-center justify-between px-2 py-1.5 rounded-md border border-[#232323] text-[11px] text-[#666] hover:text-[#999] hover:bg-white/[0.02]"
+                  className="w-full flex items-center justify-between px-2 py-1.5 rounded-md border border-[#232323] text-[11px] text-[#666] hover:text-[#999] hover:bg-[#232323]"
                 >
                   Vincular task... <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9" /></svg>
                 </button>
@@ -230,7 +230,7 @@ export function NoteModal({ note, onSave, onClose }: Props) {
                             key={t.id}
                             type="button"
                             onClick={() => { setTaskIds((prev) => [...prev, t.id]); setOpenDropdown(null) }}
-                            className="w-full text-left px-2.5 py-1.5 flex items-center gap-2 hover:bg-white/5"
+                            className="w-full text-left px-2.5 py-1.5 flex items-center gap-2 hover:bg-[#232323]"
                           >
                             <span className="text-[9px]" style={{ color: PRIORITY_CONFIG[t.priority].color }}>⬤</span>
                             <span className="text-[11px] text-[#ccc] truncate flex-1">{t.title}</span>
@@ -251,13 +251,13 @@ export function NoteModal({ note, onSave, onClose }: Props) {
                 <div key={cn.id} className="flex items-center gap-1.5 px-2 py-1 mt-1 rounded-md bg-[#141414] border border-[#232323]">
                   <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: cn.color }} />
                   <span className="text-[11px] text-[#ccc] truncate flex-1">{cn.content.replace(/<[^>]+>/g, '').slice(0, 25) || 'Nota'}</span>
-                  <button type="button" onClick={() => setConnections((prev) => prev.filter((id) => id !== cn.id))} className="p-0.5 rounded hover:bg-red-500/20 hover:text-red-400">
+                  <button type="button" onClick={() => setConnections((prev) => prev.filter((id) => id !== cn.id))} className="p-0.5 rounded hover:bg-[#232323] hover:text-red-400">
                     <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
                   </button>
                 </div>
               ))}
               <div className="relative mt-1">
-                <button type="button" onClick={() => { setOpenDropdown(openDropdown === 'note' ? null : 'note'); setDdSearch('') }} className="w-full flex items-center justify-between px-2 py-1.5 rounded-md border border-[#232323] text-[11px] text-[#666] hover:text-[#999] hover:bg-white/[0.02]">
+                <button type="button" onClick={() => { setOpenDropdown(openDropdown === 'note' ? null : 'note'); setDdSearch('') }} className="w-full flex items-center justify-between px-2 py-1.5 rounded-md border border-[#232323] text-[11px] text-[#666] hover:text-[#999] hover:bg-[#232323]">
                   Conectar nota... <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9" /></svg>
                 </button>
                 {openDropdown === 'note' && (
@@ -269,7 +269,7 @@ export function NoteModal({ note, onSave, onClose }: Props) {
                       {availNotes.length === 0 ? (
                         <p className="px-3 py-2 text-[11px] text-[#555]">Nenhum resultado</p>
                       ) : availNotes.map((fn) => (
-                        <button key={fn.id} type="button" onClick={() => { setConnections((prev) => [...prev, fn.id]); setOpenDropdown(null) }} className="w-full text-left px-2.5 py-1.5 flex items-center gap-2 hover:bg-white/5">
+                        <button key={fn.id} type="button" onClick={() => { setConnections((prev) => [...prev, fn.id]); setOpenDropdown(null) }} className="w-full text-left px-2.5 py-1.5 flex items-center gap-2 hover:bg-[#232323]">
                           <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: fn.color }} />
                           <span className="text-[11px] text-[#ccc] truncate">{fn.content.replace(/<[^>]+>/g, '').slice(0, 30) || 'Nota'}</span>
                         </button>
@@ -288,13 +288,13 @@ export function NoteModal({ note, onSave, onClose }: Props) {
                   <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: cg.color }} />
                   <span className="text-[11px] text-[#ccc] truncate flex-1">{cg.title}</span>
                   <span className="text-[9px] text-[#555]">{cg.target} {cg.unit}</span>
-                  <button type="button" onClick={() => setGoalIds((prev) => prev.filter((id) => id !== cg.id))} className="p-0.5 rounded hover:bg-red-500/20 hover:text-red-400">
+                  <button type="button" onClick={() => setGoalIds((prev) => prev.filter((id) => id !== cg.id))} className="p-0.5 rounded hover:bg-[#232323] hover:text-red-400">
                     <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
                   </button>
                 </div>
               ))}
               <div className="relative mt-1">
-                <button type="button" onClick={() => { setOpenDropdown(openDropdown === 'goal' ? null : 'goal'); setDdSearch('') }} className="w-full flex items-center justify-between px-2 py-1.5 rounded-md border border-[#232323] text-[11px] text-[#666] hover:text-[#999] hover:bg-white/[0.02]">
+                <button type="button" onClick={() => { setOpenDropdown(openDropdown === 'goal' ? null : 'goal'); setDdSearch('') }} className="w-full flex items-center justify-between px-2 py-1.5 rounded-md border border-[#232323] text-[11px] text-[#666] hover:text-[#999] hover:bg-[#232323]">
                   Vincular meta... <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9" /></svg>
                 </button>
                 {openDropdown === 'goal' && (
@@ -306,7 +306,7 @@ export function NoteModal({ note, onSave, onClose }: Props) {
                       {availGoals.length === 0 ? (
                         <p className="px-3 py-2 text-[11px] text-[#555]">Nenhum resultado</p>
                       ) : availGoals.map((g) => (
-                        <button key={g.id} type="button" onClick={() => { setGoalIds((prev) => [...prev, g.id]); setOpenDropdown(null) }} className="w-full text-left px-2.5 py-1.5 flex items-center gap-2 hover:bg-white/5">
+                        <button key={g.id} type="button" onClick={() => { setGoalIds((prev) => [...prev, g.id]); setOpenDropdown(null) }} className="w-full text-left px-2.5 py-1.5 flex items-center gap-2 hover:bg-[#232323]">
                           <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: g.color }} />
                           <span className="text-[11px] text-[#ccc]">{g.title}</span>
                           <span className="text-[9px] text-[#555]">{g.target} {g.unit}</span>

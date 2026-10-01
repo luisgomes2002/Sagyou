@@ -146,7 +146,7 @@ export function PlanView() {
               onClick={() => setViewMode(mode)}
               className={`px-3 py-1 text-xs rounded-md border transition ${
                 viewMode === mode
-                  ? 'bg-[#a080f0]/20 border-[#a080f0]/40 text-[#a080f0]'
+                  ? 'bg-[#3b3b3b] border-[#3b3b3b] text-[#a080f0]'
                   : 'border-white/10 text-[#999999] hover:text-white'
               }`}
             >
@@ -157,7 +157,7 @@ export function PlanView() {
             onClick={() => setShowRoutines(!showRoutines)}
             className={`px-3 py-1 text-xs rounded-md border transition ${
               showRoutines
-                ? 'bg-[#46d478]/20 border-[#46d478]/40 text-[#46d478]'
+                ? 'bg-[#3b3b3b] border-[#3b3b3b] text-[#46d478]'
                 : 'border-white/10 text-[#999999] hover:text-white'
             }`}
           >
@@ -281,7 +281,7 @@ function DayView({
             {String(h).padStart(2, '0')}:00
           </span>
           <div
-            className="flex-1 h-10 cursor-pointer hover:bg-white/[0.02]"
+            className="flex-1 h-10 cursor-pointer hover:bg-[#2a2a2a]"
             onClick={() => onAdd(date, h)}
           />
         </div>
@@ -301,17 +301,15 @@ function DayView({
         return (
           <div
             key={block.id}
-            className={`absolute rounded-md px-2 border-l-2 cursor-pointer group z-10
-              bg-white/[0.06] border-white/10 hover:bg-white/[0.10]
+            className={`absolute rounded-md px-2 border-l-2 border-[#3b3b3b] cursor-pointer group z-10
+              bg-[#2a2a2a] hover:bg-[#3b3b3b]
               ${blockBorderStyle(block) === 'dashed' ? 'border-dashed' : 'border-solid'}`}
             style={{
               top,
               height,
               left,
               width: colWidth,
-              ...(block.color
-                ? { backgroundColor: `${block.color}15`, borderLeftColor: block.color }
-                : {})
+              ...(block.color ? { borderLeftColor: block.color } : {})
             }}
             onClick={() => onEditBlock(block)}
           >
@@ -393,7 +391,7 @@ function WeekView({
           <div key={day} className="flex-1 min-w-0 border-l border-white/5">
             <div
               className={`text-center py-1.5 text-xs font-medium border-b border-white/5 ${
-                isToday(day) ? 'text-[#a080f0] bg-[#a080f0]/10' : 'text-[#999999]'
+                isToday(day) ? 'text-[#a080f0] bg-[#2a2a2a]' : 'text-[#999999]'
               }`}
             >
               <div className="text-[10px] text-[#999999]">{WEEKDAY_SHORT[d.getDay()]}</div>
@@ -419,16 +417,15 @@ function WeekView({
                     <div
                       key={block.id}
                       className={`absolute rounded px-0.5 py-0.5 text-[9px] leading-tight overflow-hidden cursor-pointer group z-10
-                        border-l-2 ${blockBorderStyle(block) === 'dashed' ? 'border-dashed' : 'border-solid'}`}
+                        border-l-2 border-[#3b3b3b] ${blockBorderStyle(block) === 'dashed' ? 'border-dashed' : 'border-solid'}`}
                       style={{
                         top,
                         height,
                         left: `${pctLeft}%`,
                         width: `${pctWidth}%`,
                         zIndex: col + 1,
-                        ...(block.color
-                          ? { backgroundColor: `${block.color}25`, borderLeftColor: block.color }
-                          : { backgroundColor: '#ffffff15' })
+                        backgroundColor: '#2a2a2a',
+                        ...(block.color ? { borderLeftColor: block.color } : {})
                       }}
                       title={`${block.title} (${block.startTime}–${block.endTime})`}
                       onClick={() => onEditBlock(block)}
@@ -470,7 +467,7 @@ function MonthView({
 
   return (
     <div className="p-3">
-      <div className="grid grid-cols-7 gap-px bg-white/5 rounded-lg overflow-hidden">
+      <div className="grid grid-cols-7 gap-px bg-[#2a2a2a] rounded-lg overflow-hidden">
         {WEEKDAY_SHORT.map((w) => (
           <div key={w} className="text-center py-1.5 text-[10px] text-[#999999] bg-[#1b1b1b]">
             {w}
@@ -638,7 +635,7 @@ function EditTimeBlockModal({
                   onClick={() => setBorderStyle(style)}
                   className={`px-3 py-2 rounded-lg border text-xs transition-colors ${
                     borderStyle === style
-                      ? 'border-[#7c3aed] bg-[#7c3aed]/15 text-[#d4d4d4]'
+                      ? 'border-[#7c3aed] bg-[#3b3b3b] text-[#d4d4d4]'
                       : 'border-[#3b3b3b] bg-[#1b1b1b] text-[#999999] hover:border-[#555555]'
                   }`}
                 >
@@ -768,7 +765,7 @@ function EditRoutineModal({
                   onClick={() => toggleDay(i)}
                   className={`flex-1 text-[10px] py-1 rounded border transition ${
                     selectedDays.includes(i)
-                      ? 'bg-[#a080f0]/20 border-[#a080f0]/40 text-[#a080f0]'
+                      ? 'bg-[#3b3b3b] border-[#3b3b3b] text-[#a080f0]'
                       : 'border-white/10 text-[#999999] hover:text-[#d4d4d4]'
                   }`}
                 >
@@ -868,13 +865,13 @@ function RoutinesPanel({
       </div>
 
       {adding && (
-        <div className="mb-3 p-2 rounded bg-white/[0.04] border border-white/5 space-y-2">
+        <div className="mb-3 p-2 rounded bg-[#2a2a2a] border border-[#3b3b3b] space-y-2">
           <input
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Nome da rotina (ex: Academia)"
-            className="w-full bg-[#1b1b1b] border border-white/10 rounded px-2 py-1 text-xs text-[#d4d4d4] placeholder:text-[#666666] outline-none focus:border-[#a080f0]/50"
+            className="w-full bg-[#1b1b1b] border border-white/10 rounded px-2 py-1 text-xs text-[#d4d4d4] placeholder:text-[#666666] outline-none focus:border-[#a080f0]"
             onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
           />
           <div className="flex gap-2">
@@ -884,7 +881,7 @@ function RoutinesPanel({
                 type="time"
                 value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
-                className="w-full bg-[#1b1b1b] border border-white/10 rounded px-2 py-1 text-xs text-[#d4d4d4] outline-none focus:border-[#a080f0]/50 [color-scheme:dark]"
+                className="w-full bg-[#1b1b1b] border border-white/10 rounded px-2 py-1 text-xs text-[#d4d4d4] outline-none focus:border-[#a080f0] [color-scheme:dark]"
               />
             </div>
             <div className="flex-1">
@@ -893,7 +890,7 @@ function RoutinesPanel({
                 type="time"
                 value={endTime}
                 onChange={(e) => setEndTime(e.target.value)}
-                className="w-full bg-[#1b1b1b] border border-white/10 rounded px-2 py-1 text-xs text-[#d4d4d4] outline-none focus:border-[#a080f0]/50 [color-scheme:dark]"
+                className="w-full bg-[#1b1b1b] border border-white/10 rounded px-2 py-1 text-xs text-[#d4d4d4] outline-none focus:border-[#a080f0] [color-scheme:dark]"
               />
             </div>
           </div>
@@ -906,7 +903,7 @@ function RoutinesPanel({
                   onClick={() => toggleDay(i)}
                   className={`flex-1 text-[10px] py-1 rounded border transition ${
                     selectedDays.includes(i)
-                      ? 'bg-[#a080f0]/20 border-[#a080f0]/40 text-[#a080f0]'
+                      ? 'bg-[#3b3b3b] border-[#3b3b3b] text-[#a080f0]'
                       : 'border-white/10 text-[#999999] hover:text-[#d4d4d4]'
                   }`}
                 >
@@ -918,7 +915,7 @@ function RoutinesPanel({
           <button
             onClick={handleCreate}
             disabled={!title.trim() || selectedDays.length === 0}
-            className="w-full py-1.5 rounded bg-[#a080f0]/20 border border-[#a080f0]/30 text-xs text-[#a080f0] hover:bg-[#a080f0]/30 disabled:opacity-30 disabled:cursor-not-allowed transition"
+            className="w-full py-1.5 rounded bg-[#3b3b3b] border border-[#3b3b3b] text-xs text-[#a080f0] hover:bg-[#4a4a4a] disabled:opacity-30 disabled:cursor-not-allowed transition"
           >
             Criar rotina
           </button>
@@ -934,7 +931,7 @@ function RoutinesPanel({
           {routines.map((r) => (
             <div
               key={r.id}
-              className="flex items-center gap-3 text-xs group cursor-pointer hover:bg-white/[0.03] rounded px-0.5 py-0.5 -mx-0.5"
+              className="flex items-center gap-3 text-xs group cursor-pointer hover:bg-[#2a2a2a] rounded px-0.5 py-0.5 -mx-0.5"
               onClick={() => onEditRoutine(r)}
             >
               <button

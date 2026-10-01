@@ -514,12 +514,12 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
         {(dueDateData.overdue.length > 0 || dueDateData.upcoming.length > 0) && (
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-lg bg-[#2a2a2a] border border-[#e04040]/30 p-4">
+              <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4">
                 <p className="text-[11px] text-[#999999] mb-1.5">Vencidas</p>
                 <p className="text-2xl font-bold text-[#e04040]">{dueDateData.overdue.length}</p>
                 <p className="text-[10px] text-[#666666] mt-0.5">tasks atrasadas</p>
               </div>
-              <div className="rounded-lg bg-[#2a2a2a] border border-[#f0c210]/30 p-4">
+              <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4">
                 <p className="text-[11px] text-[#999999] mb-1.5">Vencem em 7 dias</p>
                 <p className="text-2xl font-bold text-[#f0c210]">{dueDateData.upcoming.length}</p>
                 <p className="text-[10px] text-[#666666] mt-0.5">tasks próximas</p>

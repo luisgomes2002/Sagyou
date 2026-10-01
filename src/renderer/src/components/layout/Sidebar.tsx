@@ -349,15 +349,13 @@ export function Sidebar({
 
   const renderNavItem = (item: NavItem) => {
     const active = isActive(item.view)
-    const accentBg = item.accent === 'green' ? '#20b858/12' : '#7c3aed/12'
-    const accentText = item.accent === 'green' ? '#46d478' : '#a080f0'
     return (
       <button
         key={item.view}
         onClick={() => onChangeView(item.view)}
         className={`flex items-center gap-2.5 w-full px-3 py-[5px] rounded text-[13px] font-normal transition-colors text-left ${
           active
-            ? `bg-[${accentBg}] text-[${accentText}]`
+            ? 'bg-[#3b3b3b] text-[#d4d4d4]'
             : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a]'
         }`}
       >
@@ -540,7 +538,7 @@ export function Sidebar({
       {/* Search */}
       <button
         onClick={onOpenSearch}
-        className="flex items-center gap-2 mx-3 my-2 px-3 py-1.5 rounded-md bg-[#1b1b1b] border border-[#3b3b3b] text-[#999999] text-xs hover:border-[#7c3aed]/40 hover:text-[#d4d4d4] transition-colors w-[calc(100%-1.5rem)]"
+        className="flex items-center gap-2 mx-3 my-2 px-3 py-1.5 rounded-md bg-[#1b1b1b] border border-[#3b3b3b] text-[#999999] text-xs hover:border-[#7c3aed] hover:text-[#d4d4d4] transition-colors w-[calc(100%-1.5rem)]"
       >
         <svg
           width="11"
@@ -599,7 +597,7 @@ export function Sidebar({
                     onClick={() => onSelectProject(project.id)}
                     className={`flex items-center gap-2.5 w-full px-3 py-[5px] rounded text-[13px] transition-colors text-left ${
                       activeProjectId === project.id
-                        ? 'bg-[#7c3aed]/12 text-[#a080f0]'
+                        ? 'bg-[#3b3b3b] text-[#a080f0]'
                         : 'text-[#999999] hover:bg-[#2a2a2a] hover:text-[#d4d4d4]'
                     }`}
                   >
@@ -662,7 +660,7 @@ export function Sidebar({
                           onClick={() => onSelectProject(project.id)}
                           className={`flex items-center gap-2.5 w-full px-3 py-[5px] rounded text-[13px] transition-colors text-left opacity-60 hover:opacity-90 ${
                             activeProjectId === project.id
-                              ? 'bg-[#7c3aed]/12 text-[#a080f0]'
+                              ? 'bg-[#3b3b3b] text-[#a080f0]'
                               : 'text-[#999999] hover:bg-[#2a2a2a] hover:text-[#d4d4d4]'
                           }`}
                         >
@@ -877,7 +875,7 @@ export function Sidebar({
                     )}
                     {!isArchived ? (
                       <button
-                        className="w-full text-left px-3 py-2 text-sm text-[#e0a040] hover:bg-[#e0a040]/10 transition-colors"
+                        className="w-full text-left px-3 py-2 text-sm text-[#e0a040] hover:bg-[#2a2a2a] transition-colors"
                         onClick={() => {
                           setProjectMenuId(null)
                           onArchiveProject(project.id)
@@ -887,7 +885,7 @@ export function Sidebar({
                       </button>
                     ) : (
                       <button
-                        className="w-full text-left px-3 py-2 text-sm text-[#46d478] hover:bg-[#46d478]/10 transition-colors"
+                        className="w-full text-left px-3 py-2 text-sm text-[#46d478] hover:bg-[#2a2a2a] transition-colors"
                         onClick={() => {
                           setProjectMenuId(null)
                           onUnarchiveProject(project.id)
@@ -897,7 +895,7 @@ export function Sidebar({
                       </button>
                     )}
                     <button
-                      className="w-full text-left px-3 py-2 text-sm text-[#e04040] hover:bg-[#e04040]/10 transition-colors"
+                      className="w-full text-left px-3 py-2 text-sm text-[#e04040] hover:bg-[#2a2a2a] transition-colors"
                       onClick={() => {
                         setProjectMenuId(null)
                         onDeleteProject(project)
@@ -917,14 +915,14 @@ export function Sidebar({
       <div className="p-3 border-t border-[#3b3b3b]">
         <button
           onClick={onNewProject}
-          className="w-full flex items-center justify-center gap-2 py-2 rounded text-[13px] text-[#7c3aed] border border-[#7c3aed]/25 hover:bg-[#7c3aed]/8 transition-colors font-normal"
+          className="w-full flex items-center justify-center gap-2 py-2 rounded bg-[#2a2a2a] border border-[#3b3b3b] text-[13px] text-[#d4d4d4] hover:bg-[#3b3b3b] transition-colors font-normal"
         >
           <svg
             width="13"
             height="13"
             viewBox="0 0 24 24"
             fill="none"
-            stroke="currentColor"
+            stroke="#a080f0"
             strokeWidth="2.5"
           >
             <line x1="12" y1="5" x2="12" y2="19" />

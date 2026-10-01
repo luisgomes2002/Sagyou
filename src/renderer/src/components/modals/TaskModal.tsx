@@ -259,7 +259,7 @@ export function TaskModal({ open, task, columns, sprints, defaultColumnId, defau
               {tags.map((tag) => (
                 <span
                   key={tag}
-                  className="flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-[#7c3aed]/20 text-[#a080f0]"
+                  className="flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-[#3b3b3b] text-[#a080f0]"
                 >
                   {tag}
                   <button
@@ -285,7 +285,7 @@ export function TaskModal({ open, task, columns, sprints, defaultColumnId, defau
             <div className="mt-2 space-y-1.5">
               {DEFAULT_TAGS.map((group) => (
                 <div key={group.label} className="flex flex-wrap items-center gap-1">
-                  <span className="text-[9px] font-semibold uppercase tracking-wider text-[#999999]/60 w-14 shrink-0">
+                  <span className="text-[9px] font-semibold uppercase tracking-wider text-[#999999] w-14 shrink-0">
                     {group.label}
                   </span>
                   {group.tags.map((tag) => (
@@ -295,7 +295,7 @@ export function TaskModal({ open, task, columns, sprints, defaultColumnId, defau
                       onClick={() => toggleSuggestedTag(tag)}
                       className={`text-[10px] px-2 py-0.5 rounded transition-colors ${
                         tags.includes(tag)
-                          ? 'bg-[#7c3aed]/30 text-[#a080f0] border border-[#7c3aed]/50'
+                          ? 'bg-[#3b3b3b] text-[#a080f0] border border-[#3b3b3b]'
                           : 'bg-[#2a2a2a] text-[#999999] border border-transparent hover:border-[#3b3b3b] hover:text-[#d4d4d4]'
                       }`}
                     >
@@ -346,7 +346,7 @@ export function TaskModal({ open, task, columns, sprints, defaultColumnId, defau
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-dashed border-[#3b3b3b] text-[#999999] text-xs hover:border-[#7c3aed]/50 hover:text-[#a080f0] hover:bg-[#7c3aed]/5 transition-colors"
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-dashed border-[#3b3b3b] text-[#999999] text-xs hover:border-[#7c3aed] hover:text-[#a080f0] hover:bg-[#2a2a2a] transition-colors"
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />

@@ -103,7 +103,7 @@ export function TransactionDetails({
   }
 
   return (
-    <div className="ml-5 rounded-md bg-[#232323]/50 px-3 py-2 space-y-2">
+    <div className="ml-5 rounded-md bg-[#232323] px-3 py-2 space-y-2">
       <div className="flex items-center justify-between gap-3 text-xs">
         <span className="text-[#999999]">
           Detalhado:{' '}
@@ -257,7 +257,7 @@ export function TransactionDetails({
           type="button"
           onClick={addDetail}
           disabled={!canAdd}
-          className="px-2 py-1 rounded text-xs font-medium text-[#a080f0] hover:bg-[#7c3aed]/10 disabled:opacity-30 disabled:cursor-not-allowed"
+          className="px-2 py-1 rounded text-xs font-medium text-[#a080f0] hover:bg-[#2a2a2a] disabled:opacity-30 disabled:cursor-not-allowed"
         >
           Adicionar
         </button>

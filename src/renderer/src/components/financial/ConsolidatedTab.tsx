@@ -460,7 +460,7 @@ export function ConsolidatedTab({
 
         {/* Summary cards */}
         {(convertedIncome.missed > 0 || convertedExpense.missed > 0) && (
-          <div className="px-5 py-1.5 border-b border-[#f08a34]/20 bg-[#f08a34]/5 text-[10px] text-[#f08a34]">
+          <div className="px-5 py-1.5 border-b border-[#3b3b3b] bg-[#2a2a2a] text-[10px] text-[#f08a34]">
             Cotações indisponíveis para {convertedIncome.missed + convertedExpense.missed} moeda(s).
             O equivalente atual pode estar incompleto.
           </div>
@@ -523,7 +523,7 @@ export function ConsolidatedTab({
         </div>
 
         {allTableCurrencies.length > 1 && (
-          <div className="px-5 py-3 border-b border-[#3b3b3b] bg-[#7c3aed]/5">
+          <div className="px-5 py-3 border-b border-[#3b3b3b] bg-[#2a2a2a]">
             {showEquivalent ? (
               <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
                 <div>
@@ -731,7 +731,7 @@ export function ConsolidatedTab({
                                   desc: tx.description
                                 })
                               }
-                              className="p-0.5 rounded text-[#666666] hover:text-[#e04040] hover:bg-[#e04040]/10 opacity-0 group-hover:opacity-100 transition-all shrink-0"
+                              className="p-0.5 rounded text-[#666666] hover:text-[#e04040] hover:bg-[#2a2a2a] opacity-0 group-hover:opacity-100 transition-all shrink-0"
                               title="Desvincular"
                             >
                               <svg
@@ -782,8 +782,8 @@ export function ConsolidatedTab({
                       <span
                         className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
                           tx.type === 'income'
-                            ? 'bg-[#20b858]/15 text-[#46d478]'
-                            : 'bg-[#e04040]/15 text-[#e04040]'
+                            ? 'bg-[#3b3b3b] text-[#46d478]'
+                            : 'bg-[#3b3b3b] text-[#e04040]'
                         }`}
                       >
                         {tx.type === 'income' ? '↑ Entrada' : '↓ Saída'}
@@ -811,8 +811,8 @@ export function ConsolidatedTab({
                           }
                           className={`p-1 rounded border transition-colors ${
                             isLinking
-                              ? 'border-[#a080f0] text-[#a080f0] bg-[#a080f0]/10'
-                              : 'border-[#3b3b3b] text-[#666666] hover:text-[#a080f0] hover:border-[#a080f0]/50'
+                              ? 'border-[#a080f0] text-[#a080f0] bg-[#2a2a2a]'
+                              : 'border-[#3b3b3b] text-[#666666] hover:text-[#a080f0] hover:border-[#a080f0]'
                           }`}
                           title="Vincular a transação de outra tabela"
                         >
@@ -834,7 +834,7 @@ export function ConsolidatedTab({
                   {isLinking && (
                     <tr
                       key={`${tx.tableId}:${tx.id}:link`}
-                      className="border-b border-[#3b3b3b] bg-[#1b1b1b]/50"
+                      className="border-b border-[#3b3b3b] bg-[#1b1b1b]"
                     >
                       <td colSpan={7} className="px-4 py-2">
                         <div className="flex items-center justify-between">
@@ -901,7 +901,7 @@ export function ConsolidatedTab({
                                         )
                                         setLinkingTx(null)
                                       }}
-                                      className="ml-20 w-[calc(100%-5rem)] flex items-center gap-2 px-2 py-1 rounded border-l border-[#7c3aed]/40 hover:bg-[#2a2a2a] text-left"
+                                      className="ml-20 w-[calc(100%-5rem)] flex items-center gap-2 px-2 py-1 rounded border-l border-[#3b3b3b] hover:bg-[#2a2a2a] text-left"
                                     >
                                       <span className="text-[10px] text-[#a080f0] shrink-0">
                                         Item da fatura

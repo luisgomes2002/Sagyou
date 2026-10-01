@@ -145,6 +145,8 @@ por um handler IPC no main, exposto pelo preload. Capacidade nova = handler em
 
 ## Convenções
 
+- **Visual do renderer:** siga [`UI_DESIGN.md`](UI_DESIGN.md) ao criar cartões, botões, tags e banners. Use superfícies sólidas grafite com borda neutra e cor semântica no conteúdo; evite fundos coloridos de baixa opacidade e grandes blocos fluorescentes. Transparência continua válida quando tem função de interação, como scrims e estados desabilitados.
+
 - **Prettier manda**: aspas simples, **sem ponto e vírgula**, largura 100, sem
   trailing comma (`.prettierrc.yaml`). Não discuta com o formatador.
 - TypeScript estrito; funções exportadas declaram tipo de retorno (o ESLint cobra).

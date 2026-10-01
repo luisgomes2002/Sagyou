@@ -23,6 +23,17 @@ function label(key: string): string {
   return MONTHS[Number(key.slice(5, 7)) - 1]
 }
 
+function axisCurrency(value: number, currency: Currency): string {
+  if (Math.abs(value) < 1000) return formatCurrency(value, currency)
+
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency,
+    notation: 'compact',
+    maximumFractionDigits: 1
+  }).format(value)
+}
+
 function CashflowChart({ months, currency }: Pick<FinancialChartsProps, 'months' | 'currency'>) {
   const max = Math.max(...months.map((m) => Math.max(m.income, m.expense)), 1)
   const width = Math.max(600, months.length * 54)
@@ -117,15 +128,18 @@ function BalanceChart({ months, currency }: Pick<FinancialChartsProps, 'months' 
   const min = Math.min(...values, 0)
   const max = Math.max(...values, 0)
   const range = max - min || 1
-  const width = Math.max(600, months.length * 54)
+  const width = Math.max(600, months.length * 110)
   const height = 180
   const plotHeight = 135
-  const left = 58
+  const left = 96
   const right = 12
   const graphWidth = width - left - right
   const x = (index: number) => left + (graphWidth * index) / Math.max(months.length - 1, 1)
   const y = (value: number) => 12 + ((max - value) / range) * plotHeight
-  const ticks = [...new Set([max, 0, min])].sort((a, b) => b - a)
+  // A small balance around zero can place two labels on the same baseline.
+  const ticks = [...new Set([0, max, min])].filter((tick, index, candidates) =>
+    candidates.slice(0, index).every((other) => Math.abs(y(tick) - y(other)) >= 18)
+  )
   const last = months[months.length - 1]
 
   return (
@@ -159,8 +173,8 @@ function BalanceChart({ months, currency }: Pick<FinancialChartsProps, 'months' 
                 stroke={tick === 0 ? '#666666' : '#3b3b3b'}
                 strokeDasharray={tick === 0 ? '3 3' : undefined}
               />
-              <text x={left - 6} y={y(tick) + 3} textAnchor="end" fill="#999999" fontSize="8">
-                {formatCurrency(tick, currency)}
+              <text x={left - 12} y={y(tick) + 3} textAnchor="end" fill="#b3b3b3" fontSize="10">
+                {axisCurrency(tick, currency)}
               </text>
             </g>
           ))}
@@ -180,6 +194,21 @@ function BalanceChart({ months, currency }: Pick<FinancialChartsProps, 'months' 
                   formatCurrency(month.accumulated, currency)}
               </title>
               <circle cx={x(index)} cy={y(month.accumulated)} r="3" fill="#a080f0" />
+              <text
+                x={x(index) + (index === 0 ? 8 : index === months.length - 1 ? -8 : 0)}
+                y={
+                  y(month.accumulated) < 30 ? y(month.accumulated) + 17 : y(month.accumulated) - 10
+                }
+                textAnchor={index === 0 ? 'start' : index === months.length - 1 ? 'end' : 'middle'}
+                fill="#d4c3ff"
+                fontSize="10"
+                fontWeight="500"
+                stroke="#2a2a2a"
+                strokeWidth="3"
+                paintOrder="stroke"
+              >
+                {formatCurrency(month.accumulated, currency)}
+              </text>
               <text x={x(index)} y="171" textAnchor="middle" fill="#999999" fontSize="9">
                 {label(month.key)}
               </text>

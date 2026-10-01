@@ -83,7 +83,7 @@ export function ExcelExportModal({ onClose, onToast }: Props) {
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#3b3b3b] shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-[#20b858]/15 flex items-center justify-center">
+            <div className="w-7 h-7 rounded-lg bg-[#3b3b3b] flex items-center justify-center">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#46d478" strokeWidth="2">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                 <polyline points="14 2 14 8 20 8" />
@@ -119,7 +119,7 @@ export function ExcelExportModal({ onClose, onToast }: Props) {
                 onClick={() => toggle(opt.key)}
                 className={`w-full flex items-start gap-3 px-3.5 py-2.5 rounded-lg border text-left transition-colors ${
                   isActive
-                    ? 'border-[#7c3aed]/50 bg-[#7c3aed]/10'
+                    ? 'border-[#7c3aed] bg-[#2a2a2a]'
                     : 'border-[#3b3b3b] bg-[#1b1b1b] hover:border-[#555555]'
                 }`}
               >
@@ -156,7 +156,7 @@ export function ExcelExportModal({ onClose, onToast }: Props) {
             <button
               onClick={handleExport}
               disabled={selected.size === 0 || loading}
-              className="px-4 py-1.5 rounded-lg text-sm font-medium bg-[#20b858]/15 text-[#46d478] hover:bg-[#20b858]/25 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+              className="px-4 py-1.5 rounded-lg text-sm font-medium bg-[#3b3b3b] text-[#46d478] hover:bg-[#4a4a4a] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
             >
               {loading ? (
                 <>

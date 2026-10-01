@@ -334,12 +334,12 @@ export function CanvasView(props: Props) {
       )}
 
       {/* Floating toolbar */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#3b3b3b]/95 border border-[#3b3b3b] shadow-2xl backdrop-blur-sm pointer-events-auto">
+      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#3b3b3b] border border-[#3b3b3b] shadow-2xl backdrop-blur-sm pointer-events-auto">
 
         {/* Mode: sticky note */}
         <button
           onClick={() => setMode('note')}
-          className={`p-1.5 rounded-lg transition-colors ${mode === 'note' ? 'bg-[#7c3aed]/20 text-[#a080f0]' : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#3b3b3b]'}`}
+          className={`p-1.5 rounded-lg transition-colors ${mode === 'note' ? 'bg-[#4a4a4a] text-[#a080f0]' : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#4a4a4a]'}`}
           title="Modo nota (duplo clique)"
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -351,7 +351,7 @@ export function CanvasView(props: Props) {
         {/* Mode: text */}
         <button
           onClick={() => setMode('text')}
-          className={`px-2 py-1 rounded-lg text-[11px] font-bold transition-colors ${mode === 'text' ? 'bg-[#7c3aed]/20 text-[#a080f0]' : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#3b3b3b]'}`}
+          className={`px-2 py-1 rounded-lg text-[11px] font-bold transition-colors ${mode === 'text' ? 'bg-[#4a4a4a] text-[#a080f0]' : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#4a4a4a]'}`}
           title="Modo texto (duplo clique)"
         >
           Aa

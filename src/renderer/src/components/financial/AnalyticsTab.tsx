@@ -42,7 +42,7 @@ export function AnalyticsTab({
   // Category analyses follow each purchase date; cashflow remains on the parent accounting date.
   const analysisDates = transactions.flatMap((t) => [
     t.date,
-    ...(t.details ?? []).flatMap((detail) => detail.date ? [detail.date] : [])
+    ...(t.details ?? []).flatMap((detail) => (detail.date ? [detail.date] : []))
   ])
   const allYears = [...new Set(analysisDates.map((date) => date.slice(0, 4)))].sort().reverse()
 
@@ -54,7 +54,9 @@ export function AnalyticsTab({
     if (selectedYear === 'all') return []
     return [
       ...new Set(
-        analysisDates.filter((date) => date.startsWith(selectedYear)).map((date) => date.slice(5, 7))
+        analysisDates
+          .filter((date) => date.startsWith(selectedYear))
+          .map((date) => date.slice(5, 7))
       )
     ].sort()
   }, [transactions, selectedYear])
@@ -193,8 +195,8 @@ export function AnalyticsTab({
             onClick={() => handleYearSelect('all')}
             className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
               selectedYear === 'all'
-                ? 'bg-[#7c3aed]/15 text-[#a080f0]'
-                : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a]'
+                ? 'bg-[#3b3b3b] text-[#d4d4d4]'
+                : 'bg-[#2a2a2a] text-[#b3b3b3] hover:bg-[#383838] hover:text-[#f0f0f0]'
             }`}
           >
             Todos
@@ -205,8 +207,8 @@ export function AnalyticsTab({
               onClick={() => handleYearSelect(y)}
               className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
                 selectedYear === y
-                  ? 'bg-[#7c3aed]/15 text-[#a080f0]'
-                  : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a]'
+                  ? 'bg-[#3b3b3b] text-[#d4d4d4]'
+                  : 'bg-[#2a2a2a] text-[#b3b3b3] hover:bg-[#383838] hover:text-[#f0f0f0]'
               }`}
             >
               {y}
@@ -222,7 +224,7 @@ export function AnalyticsTab({
               className={`px-2.5 py-0.5 rounded-full text-[10px] font-medium transition-colors ${
                 selectedMonth === 'all'
                   ? 'bg-[#3b3b3b] text-[#d4d4d4]'
-                  : 'text-[#666666] hover:text-[#999999] hover:bg-[#2a2a2a]'
+                  : 'bg-[#2a2a2a] text-[#999999] hover:bg-[#383838] hover:text-[#d4d4d4]'
               }`}
             >
               Todos os meses
@@ -234,7 +236,7 @@ export function AnalyticsTab({
                 className={`px-2.5 py-0.5 rounded-full text-[10px] font-medium transition-colors ${
                   selectedMonth === m
                     ? 'bg-[#3b3b3b] text-[#d4d4d4]'
-                    : 'text-[#666666] hover:text-[#999999] hover:bg-[#2a2a2a]'
+                    : 'bg-[#2a2a2a] text-[#999999] hover:bg-[#383838] hover:text-[#d4d4d4]'
                 }`}
               >
                 {MONTH_ABBR[Number(m) - 1]}
@@ -247,7 +249,8 @@ export function AnalyticsTab({
       {/* Overview cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-1">
+          <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-1">
+            <i className="w-1.5 h-1.5 rounded-full bg-[#20b858]" />
             Total Entradas
           </p>
           <p className="text-sm font-bold text-[#46d478] tabular-nums">
@@ -255,26 +258,29 @@ export function AnalyticsTab({
           </p>
         </div>
         <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-1">
+          <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-1">
+            <i className="w-1.5 h-1.5 rounded-full bg-[#e04040]" />
             Total Saídas
           </p>
-          <p className="text-sm font-bold text-[#e04040] tabular-nums">
+          <p className="text-sm font-bold text-[#ec6a6a] tabular-nums">
             {formatCurrency(totalExpense, currency)}
           </p>
         </div>
         <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-1">
+          <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-1">
+            <i className="w-1.5 h-1.5 rounded-full bg-[#a080f0]" />
             Saldo Geral
           </p>
           <p
-            className={`text-sm font-bold tabular-nums ${totalBalance >= 0 ? 'text-[#d4d4d4]' : 'text-[#e04040]'}`}
+            className={`text-sm font-bold tabular-nums ${totalBalance >= 0 ? 'text-[#a080f0]' : 'text-[#ec6a6a]'}`}
           >
             {totalBalance >= 0 ? '+' : ''}
             {formatCurrency(totalBalance, currency)}
           </p>
         </div>
-        <div className="rounded-lg bg-[#7c3aed]/10 border border-[#7c3aed]/30 p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#a080f0] mb-1">
+        <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3">
+          <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-1">
+            <i className="w-1.5 h-1.5 rounded-full bg-[#a080f0]" />
             Média/Mês Gastos
           </p>
           <p className="text-sm font-bold text-[#a080f0] tabular-nums">
@@ -285,68 +291,76 @@ export function AnalyticsTab({
 
       {/* Highlights */}
       <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-lg border border-[#20b858]/25 bg-[#20b858]/5 p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#20b858]/60 mb-1.5">
+        <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3">
+          <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-1.5">
+            <i className="w-1.5 h-1.5 rounded-full bg-[#20b858]" />
             Melhor Mês
           </p>
           {bestMonth ? (
             <>
               <p className="text-sm font-bold text-[#46d478]">{monthLabel(bestMonth.key)}</p>
-              <p className="text-xs tabular-nums text-[#46d478]/70 mt-0.5">
+              <p className="text-xs tabular-nums text-[#d4d4d4] mt-0.5">
                 {bestMonth.balance >= 0 ? '+' : ''}
                 {formatCurrency(bestMonth.balance, currency)}
               </p>
             </>
           ) : (
-            <p className="text-xs text-[#666666]">Dados insuficientes</p>
+            <p className="text-xs text-[#999999]">Dados insuficientes</p>
           )}
         </div>
-        <div className="rounded-lg border border-[#7c3aed]/25 bg-[#7c3aed]/5 p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#a080f0]/60 mb-1.5">
+        <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3">
+          <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-1.5">
+            <i className="w-1.5 h-1.5 rounded-full bg-[#a080f0]" />
             Maior Gasto
           </p>
           {topExpCat ? (
             <>
               <p className="text-sm font-bold text-[#a080f0] truncate">{topExpCat[0]}</p>
-              <p className="text-xs tabular-nums text-[#a080f0]/70 mt-0.5">
+              <p className="text-xs tabular-nums text-[#d4d4d4] mt-0.5">
                 {formatCurrency(topExpCat[1], currency)}
-                {expenseCategoryTotal > 0 ? ` · ${Math.round((topExpCat[1] / expenseCategoryTotal) * 100)}%` : ''}
+                {expenseCategoryTotal > 0
+                  ? ` · ${Math.round((topExpCat[1] / expenseCategoryTotal) * 100)}%`
+                  : ''}
               </p>
             </>
           ) : (
-            <p className="text-xs text-[#666666]">-</p>
+            <p className="text-xs text-[#999999]">-</p>
           )}
         </div>
-        <div className="rounded-lg border border-[#e04040]/25 bg-[#e04040]/5 p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#e04040]/60 mb-1.5">
+        <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3">
+          <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-1.5">
+            <i className="w-1.5 h-1.5 rounded-full bg-[#e04040]" />
             Pior Mês
           </p>
           {worstMonth ? (
             <>
-              <p className="text-sm font-bold text-[#e04040]">{monthLabel(worstMonth.key)}</p>
-              <p className="text-xs tabular-nums text-[#e04040]/70 mt-0.5">
+              <p className="text-sm font-bold text-[#ec6a6a]">{monthLabel(worstMonth.key)}</p>
+              <p className="text-xs tabular-nums text-[#d4d4d4] mt-0.5">
                 {worstMonth.balance >= 0 ? '+' : ''}
                 {formatCurrency(worstMonth.balance, currency)}
               </p>
             </>
           ) : (
-            <p className="text-xs text-[#666666]">Dados insuficientes</p>
+            <p className="text-xs text-[#999999]">Dados insuficientes</p>
           )}
         </div>
-        <div className="rounded-lg border border-[#20b858]/25 bg-[#20b858]/5 p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#20b858]/60 mb-1.5">
+        <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3">
+          <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-1.5">
+            <i className="w-1.5 h-1.5 rounded-full bg-[#20b858]" />
             Maior Ganho
           </p>
           {topIncCat ? (
             <>
               <p className="text-sm font-bold text-[#46d478] truncate">{topIncCat[0]}</p>
-              <p className="text-xs tabular-nums text-[#46d478]/70 mt-0.5">
+              <p className="text-xs tabular-nums text-[#d4d4d4] mt-0.5">
                 {formatCurrency(topIncCat[1], currency)}
-                {incomeCategoryTotal > 0 ? ` · ${Math.round((topIncCat[1] / incomeCategoryTotal) * 100)}%` : ''}
+                {incomeCategoryTotal > 0
+                  ? ` · ${Math.round((topIncCat[1] / incomeCategoryTotal) * 100)}%`
+                  : ''}
               </p>
             </>
           ) : (
-            <p className="text-xs text-[#666666]">-</p>
+            <p className="text-xs text-[#999999]">-</p>
           )}
         </div>
       </div>
@@ -372,7 +386,7 @@ export function AnalyticsTab({
               onClick={() => onCatViewChange('expense')}
               className={`px-3 py-1 rounded-md text-[10px] font-medium transition-colors ${
                 catView === 'expense'
-                  ? 'bg-[#3b3b3b] text-[#e04040]'
+                  ? 'bg-[#3b3b3b] text-[#ec6a6a]'
                   : 'text-[#999999] hover:text-[#d4d4d4]'
               }`}
             >
@@ -432,28 +446,19 @@ export function AnalyticsTab({
               const isBest = bestMonth && m.key === bestMonth.key
               const isWorst = worstMonth && m.key === worstMonth.key
               return (
-                <div
-                  key={m.key}
-                  className={`rounded-lg p-3 border transition-colors ${
-                    isBest
-                      ? 'border-[#20b858]/25 bg-[#20b858]/5'
-                      : isWorst
-                        ? 'border-[#e04040]/25 bg-[#e04040]/5'
-                        : 'border-[#3b3b3b] bg-[#2a2a2a]'
-                  }`}
-                >
+                <div key={m.key} className="rounded-lg p-3 border border-[#3b3b3b] bg-[#2a2a2a]">
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-medium text-[#d4d4d4]">
                         {monthLabel(m.key)}
                       </span>
                       {isBest && (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#20b858]/15 text-[#46d478] font-semibold">
+                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#3b3b3b] text-[#46d478] font-semibold">
                           Melhor
                         </span>
                       )}
                       {isWorst && (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#e04040]/15 text-[#e04040] font-semibold">
+                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#3b3b3b] text-[#ec6a6a] font-semibold">
                           Pior
                         </span>
                       )}

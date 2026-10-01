@@ -91,7 +91,7 @@ export function Column({
         <div className="flex items-center gap-1">
           <button
             onClick={() => onAddTask(column.id)}
-            className="p-1 rounded text-[#999999] hover:text-[#7c3aed] hover:bg-[#7c3aed]/10 transition-colors"
+            className="p-1 rounded text-[#999999] hover:text-[#7c3aed] hover:bg-[#2a2a2a] transition-colors"
             title="Adicionar task"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -123,7 +123,7 @@ export function Column({
                     Renomear
                   </button>
                   <button
-                    className="w-full text-left px-3 py-2 text-sm text-[#e04040] hover:bg-[#e04040]/10 transition-colors"
+                    className="w-full text-left px-3 py-2 text-sm text-[#e04040] hover:bg-[#2a2a2a] transition-colors"
                     onClick={() => { setMenuOpen(false); onDeleteColumn(column) }}
                   >
                     Deletar coluna
@@ -137,7 +137,7 @@ export function Column({
 
       {/* tasks area */}
       <div
-        className={`flex flex-col gap-2 flex-1 min-h-24 rounded-lg p-1.5 transition-colors ${isOver ? 'bg-[#7c3aed]/5 border border-[#7c3aed]/30' : 'border border-transparent'}`}
+        className={`flex flex-col gap-2 flex-1 min-h-24 rounded-lg p-1.5 transition-colors ${isOver ? 'bg-[#2a2a2a] border border-[#7c3aed]' : 'border border-transparent'}`}
       >
         <SortableContext items={sorted.map((t) => t.id)} strategy={verticalListSortingStrategy}>
           {sorted.map((task) => (
@@ -148,7 +148,7 @@ export function Column({
         {tasks.length === 0 && (
           <button
             onClick={() => onAddTask(column.id)}
-            className="text-xs text-[#999999] border border-dashed border-[#3b3b3b] rounded-lg py-4 hover:border-[#7c3aed]/50 hover:text-[#7c3aed] transition-colors"
+            className="text-xs text-[#999999] border border-dashed border-[#3b3b3b] rounded-lg py-4 hover:border-[#7c3aed] hover:text-[#7c3aed] transition-colors"
           >
             + Add task
           </button>
