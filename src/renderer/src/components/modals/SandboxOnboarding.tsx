@@ -158,7 +158,7 @@ export function SandboxOnboarding({
         {/* Windows, step 1: no WSL2 yet. Needs admin + reboot, so we can only
             hand over the command — the app can't run it for the user. */}
         {isWindows && !status.wsl2 && (
-          <div className="mt-4 rounded-lg border border-[#7c4a2d] bg-[#1a1108] p-3">
+          <div className="mt-4 rounded-lg border border-[#3b3b3b] bg-[#2a2a2a] p-3">
             <p className="text-[12px] font-semibold text-[#f0a868]">Passo 1: instalar o WSL2</p>
             <p className="mt-1 text-[11px] leading-relaxed text-[#c9a68a]">
               O ai-jail roda dentro do WSL2. Abra o PowerShell <b>como administrador</b>, rode o
@@ -226,7 +226,7 @@ export function SandboxOnboarding({
             the kernel restricts the user namespaces bwrap needs. Reinstalling
             won't fix it; the fix is a one-line sysctl (shown, not run). */}
         {isAppArmorBlock && (
-          <div className="mt-4 rounded-lg border border-[#7c4a2d] bg-[#1a1108] p-3">
+          <div className="mt-4 rounded-lg border border-[#3b3b3b] bg-[#2a2a2a] p-3">
             <p className="text-[12px] font-semibold text-[#f0a868]">
               Libere os namespaces do kernel
             </p>

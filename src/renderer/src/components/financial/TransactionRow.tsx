@@ -113,7 +113,7 @@ export function AddTransactionRow({ currency, onAdd }: AddTransactionRowProps) {
         <button
           onClick={() => setType(type === 'income' ? 'expense' : 'income')}
           className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors ${
-            type === 'income' ? 'bg-[#20b858]/15 text-[#46d478]' : 'bg-[#e04040]/15 text-[#e04040]'
+            type === 'income' ? 'bg-[#3b3b3b] text-[#46d478]' : 'bg-[#3b3b3b] text-[#e04040]'
           }`}
         >
           {type === 'income' ? '↑ Entrada' : '↓ Saída'}
@@ -139,7 +139,7 @@ export function AddTransactionRow({ currency, onAdd }: AddTransactionRowProps) {
         <button
           onClick={submit}
           disabled={!description.trim() || !parseDecimalInput(amount)?.greaterThan(0)}
-          className="p-1 rounded text-[#7c3aed] hover:bg-[#7c3aed]/10 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+          className="p-1 rounded text-[#7c3aed] hover:bg-[#2a2a2a] disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
         >
           <svg
             width="11"
@@ -355,7 +355,7 @@ export function TransactionRow({
                       e.stopPropagation()
                       onUnlink()
                     }}
-                    className="p-0.5 rounded text-[#666666] hover:text-[#e04040] hover:bg-[#e04040]/10 opacity-0 group-hover/link:opacity-100 transition-all shrink-0 ml-0.5"
+                    className="p-0.5 rounded text-[#666666] hover:text-[#e04040] hover:bg-[#2a2a2a] opacity-0 group-hover/link:opacity-100 transition-all shrink-0 ml-0.5"
                     title="Desvincular"
                   >
                     <svg
@@ -419,7 +419,7 @@ export function TransactionRow({
               <button
                 type="button"
                 onClick={() => setDetailsOpen((open) => !open)}
-                className="shrink-0 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-[#a080f0] hover:bg-[#7c3aed]/10 transition-colors"
+                className="shrink-0 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-[#a080f0] hover:bg-[#2a2a2a] transition-colors"
                 title="Detalhar esta transação"
               >
                 <svg
@@ -474,8 +474,8 @@ export function TransactionRow({
           <span
             className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
               tx.type === 'income'
-                ? 'bg-[#20b858]/15 text-[#46d478]'
-                : 'bg-[#e04040]/15 text-[#e04040]'
+                ? 'bg-[#3b3b3b] text-[#46d478]'
+                : 'bg-[#3b3b3b] text-[#e04040]'
             }`}
           >
             {tx.type === 'income' ? '↑ Entrada' : '↓ Saída'}
@@ -511,7 +511,7 @@ export function TransactionRow({
           {onDelete && (
             <button
               onClick={onDelete}
-              className="p-1 rounded text-[#3b3b3b] hover:text-[#e04040] hover:bg-[#e04040]/10 opacity-0 group-hover:opacity-100 transition-all"
+              className="p-1 rounded text-[#3b3b3b] hover:text-[#e04040] hover:bg-[#2a2a2a] opacity-0 group-hover:opacity-100 transition-all"
             >
               <svg
                 width="11"

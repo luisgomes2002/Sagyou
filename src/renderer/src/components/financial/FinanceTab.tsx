@@ -197,7 +197,7 @@ export function FinanceTab({
               {formatCurrency(monthBalance, currency)}
             </p>
           </div>
-          <div className="rounded-lg bg-[#7c3aed]/10 border border-[#7c3aed]/30 p-3">
+          <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-[#a080f0] mb-1">
               Saldo Acumulado
             </p>
@@ -256,7 +256,7 @@ export function FinanceTab({
               )}
               <button
                 onClick={() => setGoalModal({ open: true })}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-medium text-[#7c3aed] border border-[#7c3aed]/30 hover:bg-[#7c3aed]/10 transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-medium text-[#7c3aed] border border-[#3b3b3b] hover:bg-[#2a2a2a] transition-colors"
               >
                 <svg
                   width="9"
@@ -298,14 +298,14 @@ export function FinanceTab({
               </div>
               <button
                 onClick={() => setGoalModal({ open: true })}
-                className="px-3 py-1.5 rounded-lg bg-[#7c3aed]/15 text-[10px] font-medium text-[#a080f0] hover:bg-[#7c3aed]/25 transition-colors"
+                className="px-3 py-1.5 rounded-lg bg-[#3b3b3b] text-[10px] font-medium text-[#a080f0] hover:bg-[#4a4a4a] transition-colors"
               >
                 Criar primeiro objetivo
               </button>
             </div>
           ) : visibleGoals.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 py-8 rounded-xl border border-dashed border-[#4f9f68]/20 bg-[#4f9f68]/5">
-              <div className="w-12 h-12 rounded-full bg-[#4f9f68]/10 flex items-center justify-center">
+            <div className="flex flex-col items-center gap-3 py-8 rounded-xl border border-dashed border-[#3b3b3b] bg-[#2a2a2a]">
+              <div className="w-12 h-12 rounded-full bg-[#2a2a2a] flex items-center justify-center">
                 <svg
                   width="22"
                   height="22"
@@ -319,13 +319,13 @@ export function FinanceTab({
               </div>
               <div className="text-center">
                 <p className="text-xs font-medium text-[#69b780]">Todos os objetivos concluídos</p>
-                <p className="text-[10px] text-[#69b780]/50 mt-0.5">
+                <p className="text-[10px] text-[#69b780] mt-0.5">
                   Nenhum objetivo ativo no momento
                 </p>
               </div>
               <button
                 onClick={() => setHistoryOpen(true)}
-                className="px-3 py-1.5 rounded-lg bg-[#4f9f68]/12 text-[10px] font-medium text-[#69b780] hover:bg-[#4f9f68]/20 transition-colors"
+                className="px-3 py-1.5 rounded-lg bg-[#3b3b3b] text-[10px] font-medium text-[#69b780] hover:bg-[#4a4a4a] transition-colors"
               >
                 Ver histórico
               </button>

@@ -156,7 +156,7 @@ export function GoalCard({
                         Editar
                       </button>
                       <button
-                        className="w-full text-left px-3 py-2 text-xs text-[#e04040] hover:bg-[#e04040]/10 transition-colors"
+                        className="w-full text-left px-3 py-2 text-xs text-[#e04040] hover:bg-[#2a2a2a] transition-colors"
                         onClick={() => {
                           setMenuOpen(false)
                           onDelete()
@@ -186,7 +186,7 @@ export function GoalCard({
             </div>
 
             {isComplete ? (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#20b858]/15 text-[#20b858] text-[10px] font-semibold">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#3b3b3b] text-[#20b858] text-[10px] font-semibold">
                 <svg
                   width="8"
                   height="8"
@@ -226,8 +226,8 @@ export function GoalCard({
             ) : (
               <button
                 onClick={openAdd}
-                className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-md transition-colors"
-                style={{ color: goal.color, backgroundColor: `${goal.color}15` }}
+                className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-md bg-[#3b3b3b] hover:bg-[#4a4a4a] transition-colors"
+                style={{ color: goal.color }}
               >
                 <svg
                   width="8"

@@ -440,7 +440,7 @@ export function GraphView({ onNavigate }: Props) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar nó..."
-            className="w-full pl-8 pr-3 py-1.5 text-xs rounded-md bg-[#1a1a1a] border border-[#333] text-[#d4d4d4] placeholder-[#666] focus:outline-none focus:border-[#7c3aed]/50"
+            className="w-full pl-8 pr-3 py-1.5 text-xs rounded-md bg-[#1a1a1a] border border-[#333] text-[#d4d4d4] placeholder-[#666] focus:outline-none focus:border-[#7c3aed]"
           />
         </div>
         <div className="flex items-center gap-3 text-[10px] text-[#666] ml-auto">
@@ -620,8 +620,8 @@ export function GraphView({ onNavigate }: Props) {
                     onClick={() => focusProject(p.id)}
                     className={`w-full text-left px-3 py-1.5 text-[11px] transition-colors flex items-center gap-2 ${
                       hoveredNode === p.id
-                        ? 'text-white bg-white/5'
-                        : 'text-[#888] hover:text-[#ccc] hover:bg-white/[0.03]'
+                        ? 'text-white bg-[#3b3b3b]'
+                        : 'text-[#888] hover:text-[#ccc] hover:bg-[#2a2a2a]'
                     }`}
                     onMouseEnter={() => setHoveredNode(p.id)}
                     onMouseLeave={() => setHoveredNode(null)}

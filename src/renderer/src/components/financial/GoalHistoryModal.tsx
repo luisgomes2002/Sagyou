@@ -74,11 +74,11 @@ export function GoalHistoryModal({
     })
 
   const statusCfg: Record<string, { label: string; bg: string; text: string }> = {
-    concluded: { label: 'Concluído', bg: 'bg-[#4f9f68]/12', text: 'text-[#69b780]' },
-    achieved: { label: 'Alcançado', bg: 'bg-[#4f9f68]/12', text: 'text-[#69b780]' },
-    overdue: { label: 'Vencido', bg: 'bg-[#e04040]/15', text: 'text-[#e04040]' },
-    urgent: { label: 'Urgente', bg: 'bg-[#f08a34]/15', text: 'text-[#f08a34]' },
-    active: { label: 'Em andamento', bg: 'bg-[#7c3aed]/15', text: 'text-[#a080f0]' }
+    concluded: { label: 'Concluído', bg: 'bg-[#3b3b3b]', text: 'text-[#69b780]' },
+    achieved: { label: 'Alcançado', bg: 'bg-[#3b3b3b]', text: 'text-[#69b780]' },
+    overdue: { label: 'Vencido', bg: 'bg-[#3b3b3b]', text: 'text-[#e04040]' },
+    urgent: { label: 'Urgente', bg: 'bg-[#3b3b3b]', text: 'text-[#f08a34]' },
+    active: { label: 'Em andamento', bg: 'bg-[#3b3b3b]', text: 'text-[#a080f0]' }
   }
 
   return (
@@ -172,7 +172,7 @@ export function GoalHistoryModal({
                     )}
                   </p>
                   {goal.completionNote && (
-                    <p className="text-[10px] text-[#999999]/60 mt-0.5 truncate">
+                    <p className="text-[10px] text-[#999999] mt-0.5 truncate">
                       {goal.completionNote}
                     </p>
                   )}

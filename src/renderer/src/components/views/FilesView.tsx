@@ -77,8 +77,8 @@ function ActionBtn({
       title={title}
       className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium transition-colors opacity-0 group-hover:opacity-100 ${
         danger
-          ? 'text-[#999999] hover:text-[#e04040] hover:bg-[#e04040]/10'
-          : 'text-[#999999] hover:text-[#a080f0] hover:bg-[#7c3aed]/10'
+          ? 'text-[#999999] hover:text-[#e04040] hover:bg-[#2a2a2a]'
+          : 'text-[#999999] hover:text-[#a080f0] hover:bg-[#2a2a2a]'
       }`}
     >
       {children}
@@ -202,7 +202,7 @@ export function FilesView({ activeProjectId }: { activeProjectId: string | null 
         </span>
         <button
           onClick={handleUpload}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#7c3aed]/15 text-[#a080f0] text-xs font-medium hover:bg-[#7c3aed]/25 transition-colors"
+          className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#3b3b3b] text-[#a080f0] text-xs font-medium hover:bg-[#4a4a4a] transition-colors"
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -228,7 +228,7 @@ export function FilesView({ activeProjectId }: { activeProjectId: string | null 
             </div>
             <button
               onClick={handleUpload}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg border border-dashed border-[#7c3aed]/40 text-[#a080f0] text-sm hover:border-[#7c3aed] hover:bg-[#7c3aed]/10 transition-colors"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg border border-dashed border-[#3b3b3b] text-[#a080f0] text-sm hover:border-[#7c3aed] hover:bg-[#2a2a2a] transition-colors"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                 <line x1="12" y1="5" x2="12" y2="19" />

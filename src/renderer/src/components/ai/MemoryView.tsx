@@ -161,7 +161,7 @@ export function MemoryView(): React.JSX.Element {
                       <>
                         <button
                           onClick={() => void remove(m.id)}
-                          className="text-[11px] px-2 py-1 rounded text-[#ec6a6a] hover:bg-[#ec6a6a]/10 transition-colors"
+                          className="text-[11px] px-2 py-1 rounded text-[#ec6a6a] hover:bg-[#2a2a2a] transition-colors"
                         >
                           Confirmar
                         </button>

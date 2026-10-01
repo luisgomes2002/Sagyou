@@ -697,7 +697,7 @@ export function FleetView({
                         onClick={() => {
                           void finishInteractive(liveRun.id)
                         }}
-                        className="ml-6 rounded border border-[#f0b820]/40 px-3 py-1.5 text-xs text-[#f0b820] hover:bg-[#f0b820]/10"
+                        className="ml-6 rounded border border-[#3b3b3b] px-3 py-1.5 text-xs text-[#f0b820] hover:bg-[#2a2a2a]"
                       >
                         Encerrar e revisar diff
                       </button>
@@ -751,7 +751,7 @@ export function FleetView({
                 title="Ative para a próxima continuação abrir um terminal persistente do harness externo."
                 className={
                   chatSession.interactive
-                    ? 'rounded-lg border border-[#7c3aed] bg-[#7c3aed]/15 px-2 py-2 text-[11px] text-[#c4b5fd]'
+                    ? 'rounded-lg border border-[#7c3aed] bg-[#3b3b3b] px-2 py-2 text-[11px] text-[#c4b5fd]'
                     : 'rounded-lg border border-[#3b3b3b] px-2 py-2 text-[11px] text-[#999999] hover:text-[#d4d4d4]'
                 }
               >
@@ -1028,7 +1028,7 @@ export function FleetView({
                         <button
                           onClick={() => abort(id)}
                           title="Parar este agente"
-                          className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#e04040]/30 text-xs text-[#e04040] hover:bg-[#e04040]/10 transition-colors"
+                          className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#3b3b3b] text-xs text-[#e04040] hover:bg-[#2a2a2a] transition-colors"
                         >
                           <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor">
                             <rect x="3" y="3" width="18" height="18" rx="3" />
@@ -1048,7 +1048,7 @@ export function FleetView({
                   return (
                     <div
                       key={run.id}
-                      className="flex flex-col rounded-xl bg-[#232323] border border-[#f06c10]/30 p-4 gap-3"
+                      className="flex flex-col rounded-xl bg-[#232323] border border-[#3b3b3b] p-4 gap-3"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
@@ -1103,7 +1103,7 @@ export function FleetView({
                         )}
                         <p className="text-xs text-[#999999] truncate flex items-center gap-1.5">
                           {run.autoApprove && (
-                            <span className="inline-flex items-center px-1.5 py-px rounded text-[10px] font-medium bg-[#f0b820]/15 text-[#f0b820] shrink-0">
+                            <span className="inline-flex items-center px-1.5 py-px rounded text-[10px] font-medium bg-[#3b3b3b] text-[#f0b820] shrink-0">
                               Auto
                             </span>
                           )}
@@ -1210,7 +1210,7 @@ export function FleetView({
 
                       {/* Log preview (last 3 lines) */}
                       {run.log && (
-                        <div className="rounded-lg bg-black/40 p-2 max-h-16 overflow-hidden">
+                        <div className="rounded-lg bg-[#1b1b1b] p-2 max-h-16 overflow-hidden">
                           <pre className="text-[10px] text-[#999999] leading-relaxed whitespace-pre-wrap line-clamp-3 font-mono">
                             {run.log.split('\n').filter(Boolean).slice(-3).join('\n')}
                           </pre>
@@ -1218,7 +1218,7 @@ export function FleetView({
                       )}
 
                       {run.log && (
-                        <details className="rounded-lg border border-[#303030] bg-black/30">
+                        <details className="rounded-lg border border-[#303030] bg-[#1b1b1b]">
                           <summary className="cursor-pointer px-3 py-2 text-[10px] text-[#a080f0] hover:text-[#c4b5fd]">
                             Terminal completo · {run.log.split('\n').filter(Boolean).length} linhas
                           </summary>
@@ -1239,7 +1239,7 @@ export function FleetView({
                       )}
 
                       {hasApproval && (
-                        <div className="space-y-2 rounded-lg border border-[#f0b820]/25 bg-[#f0b820]/5 p-2">
+                        <div className="space-y-2 rounded-lg border border-[#3b3b3b] bg-[#2a2a2a] p-2">
                           {run.approvals.map((approval) => (
                             <div
                               key={approval.id}
@@ -1254,13 +1254,13 @@ export function FleetView({
                               <span className="flex shrink-0 gap-1">
                                 <button
                                   onClick={() => approveAgent(run.id, approval.id, true)}
-                                  className="rounded border border-[#72b972]/40 px-2 py-1 text-[#72b972] hover:bg-[#72b972]/10"
+                                  className="rounded border border-[#3b3b3b] px-2 py-1 text-[#72b972] hover:bg-[#2a2a2a]"
                                 >
                                   Aprovar
                                 </button>
                                 <button
                                   onClick={() => approveAgent(run.id, approval.id, false)}
-                                  className="rounded border border-[#e04040]/40 px-2 py-1 text-[#e04040] hover:bg-[#e04040]/10"
+                                  className="rounded border border-[#3b3b3b] px-2 py-1 text-[#e04040] hover:bg-[#2a2a2a]"
                                 >
                                   Recusar
                                 </button>
@@ -1314,7 +1314,7 @@ export function FleetView({
                         <button
                           onClick={() => stopAgent(run.id)}
                           title="Parar este agente de código"
-                          className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#e04040]/30 text-xs text-[#e04040] hover:bg-[#e04040]/10 transition-colors"
+                          className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#3b3b3b] text-xs text-[#e04040] hover:bg-[#2a2a2a] transition-colors"
                         >
                           <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor">
                             <rect x="3" y="3" width="18" height="18" rx="3" />
@@ -1356,7 +1356,7 @@ export function FleetView({
                               {run.task.slice(0, 80)}
                             </p>
                             {run.delivery === 'merge_failed' && (
-                              <span className="shrink-0 rounded border border-[#e04040]/40 bg-[#e04040]/10 px-1.5 py-px text-[9px] font-medium text-[#e04040]">
+                              <span className="shrink-0 rounded border border-[#3b3b3b] bg-[#2a2a2a] px-1.5 py-px text-[9px] font-medium text-[#e04040]">
                                 Não aplicado
                               </span>
                             )}
@@ -1394,7 +1394,7 @@ export function FleetView({
                               }
                             }}
                             title="Continuar conversando com este agente"
-                            className="px-2.5 py-1.5 rounded-lg bg-[#7c3aed]/20 border border-[#7c3aed]/40 text-[10px] text-[#ffffff] font-medium hover:bg-[#7c3aed]/30 transition-colors"
+                            className="px-2.5 py-1.5 rounded-lg bg-[#3b3b3b] border border-[#3b3b3b] text-[10px] text-[#ffffff] font-medium hover:bg-[#4a4a4a] transition-colors"
                           >
                             Continuar
                           </button>

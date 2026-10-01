@@ -108,7 +108,7 @@ export function SprintBadge({
         onClick={() => setOpen((v) => !v)}
         className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors border ${
           isFiltered
-            ? 'bg-[#7c3aed]/15 text-[#a080f0] border-[#7c3aed]/30 hover:bg-[#7c3aed]/25'
+            ? 'bg-[#3b3b3b] text-[#a080f0] border-[#3b3b3b] hover:bg-[#4a4a4a]'
             : 'bg-[#2a2a2a] text-[#999999] border-[#3b3b3b] hover:border-[#555555] hover:text-[#d4d4d4]'
         }`}
       >
@@ -137,7 +137,7 @@ export function SprintBadge({
                     onClick={() => { onSetFilter(null); setOpen(false) }}
                     className={`text-[11px] px-2 py-0.5 rounded-md border transition-colors ${
                       sprintFilter === null
-                        ? 'bg-[#7c3aed]/20 text-[#a080f0] border-[#7c3aed]/40'
+                        ? 'bg-[#3b3b3b] text-[#a080f0] border-[#3b3b3b]'
                         : 'bg-[#2a2a2a] text-[#999999] border-[#3b3b3b] hover:text-[#d4d4d4]'
                     }`}
                   >
@@ -149,7 +149,7 @@ export function SprintBadge({
                       onClick={() => { onSetFilter(s.id); setOpen(false) }}
                       className={`text-[11px] px-2 py-0.5 rounded-md border transition-colors flex items-center gap-1 ${
                         sprintFilter === s.id
-                          ? 'bg-[#7c3aed]/20 text-[#a080f0] border-[#7c3aed]/40'
+                          ? 'bg-[#3b3b3b] text-[#a080f0] border-[#3b3b3b]'
                           : 'bg-[#2a2a2a] text-[#999999] border-[#3b3b3b] hover:text-[#d4d4d4]'
                       }`}
                     >
@@ -323,7 +323,7 @@ export function SprintBadge({
                       <div className="flex items-center gap-1 opacity-0 group-hover/row:opacity-100 transition-all shrink-0 ml-2">
                         <button
                           onClick={() => onReopenSprint(s.id)}
-                          className="text-[10px] px-1.5 py-0.5 rounded bg-[#3b3b3b] text-[#999999] hover:text-[#7c3aed] hover:bg-[#7c3aed]/10 transition-colors"
+                          className="text-[10px] px-1.5 py-0.5 rounded bg-[#3b3b3b] text-[#999999] hover:text-[#7c3aed] hover:bg-[#2a2a2a] transition-colors"
                           title="Reabrir sprint"
                         >
                           Reabrir

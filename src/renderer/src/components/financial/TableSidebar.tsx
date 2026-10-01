@@ -145,7 +145,7 @@ export function TableSidebar({
             <div
               key={list.id}
               className={`group relative flex items-center gap-2 px-3 py-2.5 cursor-pointer transition-colors ${
-                activeId === list.id ? 'bg-[#7c3aed]/10' : 'hover:bg-[#2a2a2a]'
+                activeId === list.id ? 'bg-[#3b3b3b]' : 'hover:bg-[#2a2a2a]'
               }`}
               onClick={() => onSelect(list.id)}
             >
@@ -285,14 +285,14 @@ export function TableSidebar({
         ) : (
           <button
             onClick={() => setShowNew(true)}
-            className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium text-[#7c3aed] border border-[#7c3aed]/30 hover:bg-[#7c3aed]/10 transition-colors"
+            className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] text-xs font-medium text-[#d4d4d4] hover:bg-[#3b3b3b] transition-colors"
           >
             <svg
               width="11"
               height="11"
               viewBox="0 0 24 24"
               fill="none"
-              stroke="currentColor"
+              stroke="#a080f0"
               strokeWidth="2.5"
             >
               <line x1="12" y1="5" x2="12" y2="19" />

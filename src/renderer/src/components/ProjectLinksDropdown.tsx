@@ -57,7 +57,7 @@ export function ProjectLinksDropdown({ links, activeLinkIds, onSelect }: Props) 
         onClick={handleOpen}
         className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs transition-colors border ${
           hasActive
-            ? 'border-[#7c3aed]/40 bg-[#7c3aed]/10 text-[#a080f0]'
+            ? 'border-[#3b3b3b] bg-[#2a2a2a] text-[#a080f0]'
             : 'border-[#3b3b3b] bg-[#2a2a2a] text-[#999999] hover:text-[#d4d4d4]'
         }`}
         title="Links do projeto"
@@ -92,7 +92,7 @@ export function ProjectLinksDropdown({ links, activeLinkIds, onSelect }: Props) 
                   key={link.id}
                   onClick={() => onSelect(link.id)}
                   className={`w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors group ${
-                    isActive ? 'bg-[#7c3aed]/10' : 'hover:bg-[#2a2a2a]'
+                    isActive ? 'bg-[#3b3b3b]' : 'hover:bg-[#2a2a2a]'
                   }`}
                 >
                   <div className={`w-3.5 h-3.5 rounded flex items-center justify-center shrink-0 border-2 transition-colors ${

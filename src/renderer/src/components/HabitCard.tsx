@@ -133,7 +133,7 @@ export function HabitCard({ habit, today, year, month, onToggle, onEdit, onDelet
                   Editar
                 </button>
                 <button
-                  className="w-full text-left px-3 py-2 text-sm text-[#e04040] hover:bg-[#e04040]/10 transition-colors"
+                  className="w-full text-left px-3 py-2 text-sm text-[#e04040] hover:bg-[#2a2a2a] transition-colors"
                   onClick={() => { setMenuOpen(false); onDelete() }}
                 >
                   Deletar

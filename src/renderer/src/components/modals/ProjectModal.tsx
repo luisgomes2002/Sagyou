@@ -189,7 +189,7 @@ export function ProjectModal({ open, project, onSave, onClose }: Props) {
                     type="button"
                     onClick={handleAddLink}
                     disabled={!newLabel.trim() || !newUrl.trim()}
-                    className="px-3 py-2 rounded-lg bg-[#7c3aed]/15 text-[#a080f0] text-sm hover:bg-[#7c3aed]/25 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                    className="px-3 py-2 rounded-lg bg-[#3b3b3b] text-[#a080f0] text-sm hover:bg-[#4a4a4a] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                   >
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                       <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
@@ -226,7 +226,7 @@ export function ProjectModal({ open, project, onSave, onClose }: Props) {
                             key={cp.id}
                             className={`flex items-center gap-2 px-3 py-2 rounded-lg border group transition-colors ${
                               active
-                                ? 'bg-[#7c3aed]/10 border-[#7c3aed]/50'
+                                ? 'bg-[#2a2a2a] border-[#7c3aed]'
                                 : 'bg-[#1b1b1b] border-[#3b3b3b]'
                             }`}
                           >
@@ -255,7 +255,7 @@ export function ProjectModal({ open, project, onSave, onClose }: Props) {
                                 <span className="block text-[11px] text-[#666666] truncate">{cp.path}</span>
                               </span>
                               {active && (
-                                <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#7c3aed]/20 text-[#a080f0]">
+                                <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#3b3b3b] text-[#a080f0]">
                                   Ativo
                                 </span>
                               )}
@@ -278,7 +278,7 @@ export function ProjectModal({ open, project, onSave, onClose }: Props) {
                   <button
                     type="button"
                     onClick={handleAddCodePath}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-dashed border-[#7c3aed]/40 text-[#a080f0] text-xs hover:border-[#7c3aed] hover:bg-[#7c3aed]/10 transition-colors"
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-dashed border-[#3b3b3b] text-[#a080f0] text-xs hover:border-[#7c3aed] hover:bg-[#2a2a2a] transition-colors"
                   >
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
