@@ -7,6 +7,8 @@ vi.mock('../../services/ElectronStorage', () => {
       this.load = vi.fn().mockResolvedValue({ projects: [], tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: [] })
       this.save = vi.fn().mockResolvedValue(undefined)
       this.exportBackup = vi.fn().mockResolvedValue({ success: true })
+      this.autoSaveBackup = vi.fn().mockResolvedValue({ success: true })
+      this.commitBackupBlobs = vi.fn().mockResolvedValue({ success: true })
       this.importBackup = vi.fn().mockResolvedValue({ success: false, cancelled: true })
       this.importAIJson = vi.fn().mockResolvedValue({ success: false, cancelled: true })
       this.loadConversations = vi.fn().mockResolvedValue([])
@@ -25,6 +27,8 @@ function getStorageMock() {
   return vi.mocked(ElectronStorage).mock.instances[0] as unknown as {
     importBackup: ReturnType<typeof vi.fn>
     exportBackup: ReturnType<typeof vi.fn>
+    autoSaveBackup: ReturnType<typeof vi.fn>
+    commitBackupBlobs: ReturnType<typeof vi.fn>
     loadConversations: ReturnType<typeof vi.fn>
     saveConversations: ReturnType<typeof vi.fn>
     loadMemories: ReturnType<typeof vi.fn>
@@ -625,7 +629,7 @@ describe('backups carry AI chat history', () => {
     await useKanbanStore.getState().exportBackup()
 
     const backup = storage.exportBackup.mock.calls[0][0]
-    expect(backup.version).toBe(6)
+    expect(backup.version).toBe(7)
     expect(backup.conversations).toEqual([conversation])
     expect(backup.memories).toEqual([memory])
     // Attachment metadata rides along now; the bytes are attached in main.
@@ -764,6 +768,21 @@ describe('backups carry AI chat history', () => {
 
 describe('importBackup', () => {
   beforeEach(resetStore)
+
+  it('keeps current data and blobs when the pre-import snapshot fails', async () => {
+    const localId = useKanbanStore.getState().createProject('Local')
+    const storage = getStorageMock()
+    storage.commitBackupBlobs.mockClear()
+    storage.importBackup.mockResolvedValueOnce({
+      success: true,
+      data: { version: 7, exportedAt: new Date().toISOString(), projects: [], tasks: [] }
+    })
+    storage.autoSaveBackup.mockResolvedValueOnce({ success: false })
+
+    expect(await useKanbanStore.getState().importBackup()).toBe(false)
+    expect(useKanbanStore.getState().projects[0].id).toBe(localId)
+    expect(storage.commitBackupBlobs).not.toHaveBeenCalled()
+  })
 
   it('returns false and leaves state unchanged when cancelled', async () => {
     const pid = useKanbanStore.getState().createProject('Local project')

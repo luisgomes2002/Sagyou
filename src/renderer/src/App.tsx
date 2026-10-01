@@ -182,6 +182,15 @@ export default function App() {
     loadData()
   }, [loadData])
 
+  useEffect(() => {
+    if (!isLoaded) return
+    // The main process keeps one snapshot per day; retry while the app is open
+    // so a long-running session is covered without a manual export.
+    void exportBackup(true)
+    const timer = setInterval(() => void exportBackup(true), 60 * 60 * 1000)
+    return () => clearInterval(timer)
+  }, [isLoaded, exportBackup])
+
   // Track the code agent across all views (App never unmounts, unlike AIView).
   useEffect(() => {
     window.electronAPI.ai.codeAgent.status().then((s) => setCodeAgentRunCount(s.runs.length))
@@ -415,17 +424,26 @@ export default function App() {
     if (ok) addToast('Backup exportado com sucesso')
   }
 
+  const handleOpenBackupFolder = async () => {
+    const error = await window.electronAPI.backup.openFolder()
+    if (error) addToast('Não foi possível abrir a pasta de backups', 'error')
+  }
+
   const handleImportBackup = () => {
     setConfirm({
       open: true,
       title: 'Importar backup',
       message:
-        'Isso vai substituir TODOS os dados atuais pelo backup. Esta ação não pode ser desfeita.',
+        'Isso vai substituir os dados atuais pelo backup. Um ponto de restauração será salvo antes da importação.',
       onConfirm: async () => {
         setConfirm((c) => ({ ...c, open: false }))
-        const ok = await importBackup()
-        if (ok) addToast('Backup importado com sucesso')
-        else addToast('Importação cancelada', 'info')
+        try {
+          const ok = await importBackup()
+          if (ok) addToast('Backup importado com sucesso')
+          else addToast('Importação cancelada ou sem ponto de restauração', 'info')
+        } catch (error) {
+          addToast(error instanceof Error ? error.message : 'Falha ao importar backup', 'error')
+        }
       }
     })
   }
@@ -486,6 +504,7 @@ export default function App() {
           onArchiveProject={archiveProject}
           onUnarchiveProject={unarchiveProject}
           onExportBackup={handleExportBackup}
+          onOpenBackupFolder={handleOpenBackupFolder}
           onImportBackup={handleImportBackup}
           onImportAI={handleImportAI}
           onExportExcel={() => setExcelExportOpen(true)}

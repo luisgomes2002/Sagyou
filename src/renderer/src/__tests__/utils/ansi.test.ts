@@ -15,7 +15,7 @@ describe('parseAnsi', () => {
 
   it('colours the run between an SGR set and its reset', () => {
     const segs = parseAnsi('\x1b[32mok\x1b[0m done')
-    expect(segs).toEqual([{ text: 'ok', fg: '#4ade80' }, { text: ' done' }])
+    expect(segs).toEqual([{ text: 'ok', fg: '#46d478' }, { text: ' done' }])
   })
 
   it('carries a colour with no explicit reset to the end', () => {
@@ -69,7 +69,7 @@ describe('parseAnsi', () => {
   it('keeps the colour of a redraw that re-emits it after the \\r', () => {
     // The overwrite is applied to the parsed line, not to the raw bytes, so the
     // escape after the \r is still an escape and not counted as text.
-    expect(parseAnsi('a\r\x1b[32mok')).toEqual([{ text: 'ok', fg: '#4ade80' }])
+    expect(parseAnsi('a\r\x1b[32mok')).toEqual([{ text: 'ok', fg: '#46d478' }])
   })
 
   it('does not let a redraw on one line erase the lines above it', () => {

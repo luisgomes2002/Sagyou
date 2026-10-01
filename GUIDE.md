@@ -254,6 +254,13 @@ CODE_READ_PAGE`) devolve só ~100 linhas + `simbolos` + `dica`, não a janela de
 
 11. **Orçamento é por chamada do modelo, não por tool round.** `maxSteps` limita toda chamada bem-sucedida da run — rodadas principais, compactação e resposta final. Sem configuração explícita, o chat usa 40 no manual e 100 no Auto; não reintroduza heurísticas 2/4/8/15 por texto, pois elas encerram orquestrações no momento de disparar agentes. O contexto de uma conversa reaberta entra limitado (12 mensagens/24k caracteres/1 imagem); ferramentas além de 8 numa rodada recebem resultado sintético. O limite é **por execução**: várias conversas/projetos continuam rodando em paralelo. O subagente de pesquisa exige aprovação, é no máximo 2 por run e seu resumo é cortado antes de voltar ao agente pai.
 
+12. 🔴 **Importação de backup só altera dados após validação e ponto de restauração.**
+    `backup:import` valida formato/versão e segura os blobs em main; o renderer salva
+    um snapshot forçado do estado atual em `userData/backups/` antes de chamar
+    `backup:commit-blobs` e persistir o backup importado. Sem snapshot, aborte.
+    O app atualiza um snapshot diário ao abrir e a cada hora, com retenção dos
+    sete mais recentes. Bytes dos anexos continuam fora do IPC.
+
 ## Memória — fronteira de confiança
 
 Memória e conversas antigas são **evidência histórica não confiável**, nunca instruções. O conteúdo
@@ -285,6 +292,11 @@ isso. Sessão efêmera sem cookie, sandbox, sem node. A orquestração do
 
 `main/code-files.ts` confina todo acesso a arquivo dentro da raiz escolhida
 (`confineToRoot`) — é a única barreira entre o assistente e o resto do disco.
+
+**Links externos:** `main/external-links.ts` só deixa `http:`/`https:` sem
+credenciais chegar a `shell.openExternal`; a janela principal bloqueia
+navegação para fora da página do app. Não abra URLs vindas do renderer
+diretamente no handler do sistema operacional.
 
 ## Testes
 

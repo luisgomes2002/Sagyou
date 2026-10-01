@@ -35,6 +35,7 @@ interface Props {
   onUnarchiveProject: (id: string) => void
   onExportBackup: () => void
   onImportBackup: () => void
+  onOpenBackupFolder: () => void
   onImportAI: () => void
   onExportExcel: () => void
   codeAgentRunCount?: number
@@ -62,6 +63,7 @@ export function Sidebar({
   onUnarchiveProject,
   onExportBackup,
   onImportBackup,
+  onOpenBackupFolder,
   onImportAI,
   onExportExcel,
   codeAgentRunCount = 0
@@ -440,6 +442,15 @@ export function Sidebar({
                     <line x1="12" y1="15" x2="12" y2="3" />
                   </svg>
                   Exportar backup
+                </button>
+                <button
+                  className="w-full text-left px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#2a2a2a]"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    onOpenBackupFolder()
+                  }}
+                >
+                  Abrir backups automáticos
                 </button>
                 <button
                   className="w-full text-left px-3 py-2 text-sm text-[#46d478] hover:bg-[#2a2a2a] transition-colors flex items-center gap-2"

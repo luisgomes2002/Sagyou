@@ -286,7 +286,7 @@ describe('AIView — reopening the last chat', () => {
 
   it('starts blank when nothing was open', async () => {
     renderAI(<AIView projects={[]} />)
-    expect(await screen.findByText(/Converse com o modelo/)).toBeInTheDocument()
+    expect(await screen.findByText('Converse com o modelo')).toBeInTheDocument()
     expect(window.electronAPI.ai.conversations.get).not.toHaveBeenCalled()
   })
 
@@ -352,7 +352,7 @@ describe('AIView — reopening the last chat', () => {
 
     renderAI(<AIView projects={[]} />)
 
-    expect(await screen.findByText(/Converse com o modelo/)).toBeInTheDocument()
+    expect(await screen.findByText('Converse com o modelo')).toBeInTheDocument()
     const set = vi.mocked(window.electronAPI.ai.config.set)
     await waitFor(() =>
       expect(set).toHaveBeenCalledWith(expect.objectContaining({ lastConversationId: undefined }))

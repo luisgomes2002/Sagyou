@@ -60,7 +60,7 @@
 | **Memória**               | Assistente lembra decisões, tradeoffs e contexto entre conversas — você e o modelo gravam fatos que persistem. Painel dedicado para listar, fixar e restaurar memórias                                                                                                                                               |
 | **Importação via IA**     | Cole JSON gerado por um LLM — o sidebar tem "Copiar tudo" para gerar um prompt pronto com schema e tags                                                                                                                                                                                                              |
 | **Exportação para Excel** | Exporte projetos, tarefas, hábitos, metas e dados financeiros em `.xlsx`                                                                                                                                                                                                                                             |
-| **Backup**                | Exportação e restauração de dados em JSON, incluindo anexos, imagens de chat/tarefas e memórias                                                                                                                                                                                                                      |
+| **Backup**                | Exportação e restauração de dados em JSON, incluindo anexos, imagens de chat/tarefas e memórias. O app também salva snapshots locais ao abrir e a cada hora em `userData/backups/`, mantendo os sete mais recentes. Abra a pasta pelo menu Backup                                                                 |
 
 ---
 

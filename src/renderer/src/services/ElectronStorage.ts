@@ -51,6 +51,14 @@ export class ElectronStorage implements IStorageAdapter {
     return window.electronAPI.backup.export(backup)
   }
 
+  async autoSaveBackup(backup: Backup, force = false): Promise<{ success: boolean }> {
+    return window.electronAPI.backup.autoSave(backup, force)
+  }
+
+  async commitBackupBlobs(): Promise<{ success: boolean }> {
+    return window.electronAPI.backup.commitBlobs()
+  }
+
   async importBackup(): Promise<{
     success: boolean
     cancelled?: boolean

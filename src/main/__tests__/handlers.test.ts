@@ -32,6 +32,7 @@ let mainModule: typeof import('../index')
 
 vi.mock('electron', () => ({
   app: {
+    commandLine: { appendSwitch: vi.fn() },
     whenReady: () => Promise.resolve(),
     getPath: (name: string) => (name === 'userData' ? userData : tmpdir()),
     on: vi.fn(),
@@ -45,6 +46,8 @@ vi.mock('electron', () => ({
   BrowserWindow: class {
     webContents = {
       setWindowOpenHandler: vi.fn(),
+      on: vi.fn(),
+      getURL: () => 'file:///sagyou/index.html',
       send: (channel: string, payload: unknown) => winSent.push({ channel, payload }),
       isDestroyed: () => false
     }
@@ -54,7 +57,7 @@ vi.mock('electron', () => ({
     show = vi.fn()
     isMaximized = (): boolean => false
   },
-  shell: { openExternal: vi.fn() },
+  shell: { openExternal: vi.fn(), openPath: vi.fn() },
   dialog: { showSaveDialog: vi.fn(), showOpenDialog: vi.fn() }
 }))
 
