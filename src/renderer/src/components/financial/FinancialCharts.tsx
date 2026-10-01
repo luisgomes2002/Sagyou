@@ -1,3 +1,4 @@
+import { useState, type JSX } from 'react'
 import type { Currency } from '../../types'
 import { formatCurrency } from './shared'
 
@@ -20,7 +21,7 @@ const COLORS = ['#a080f0', '#48c0d0', '#e8b848', '#e890ac', '#60c080']
 const MONTHS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
 
 function label(key: string): string {
-  return MONTHS[Number(key.slice(5, 7)) - 1]
+  return `${MONTHS[Number(key.slice(5, 7)) - 1]} ${key.slice(2, 4)}`
 }
 
 function axisCurrency(value: number, currency: Currency): string {
@@ -34,7 +35,10 @@ function axisCurrency(value: number, currency: Currency): string {
   }).format(value)
 }
 
-function CashflowChart({ months, currency }: Pick<FinancialChartsProps, 'months' | 'currency'>) {
+function CashflowChart({
+  months,
+  currency
+}: Pick<FinancialChartsProps, 'months' | 'currency'>): JSX.Element {
   const max = Math.max(...months.map((m) => Math.max(m.income, m.expense)), 1)
   const width = Math.max(600, months.length * 54)
   const height = 180
@@ -123,19 +127,25 @@ function CashflowChart({ months, currency }: Pick<FinancialChartsProps, 'months'
   )
 }
 
-function BalanceChart({ months, currency }: Pick<FinancialChartsProps, 'months' | 'currency'>) {
-  const values = months.map((m) => m.accumulated)
+function BalanceChart({
+  months,
+  currency
+}: Pick<FinancialChartsProps, 'months' | 'currency'>): JSX.Element {
+  const [showAll, setShowAll] = useState(false)
+  const visibleMonths = showAll ? months : months.slice(-12)
+  const values = visibleMonths.map((m) => m.accumulated)
   const min = Math.min(...values, 0)
   const max = Math.max(...values, 0)
   const range = max - min || 1
-  const width = Math.max(600, months.length * 110)
+  const width = Math.max(600, visibleMonths.length * 58)
   const height = 180
   const plotHeight = 135
   const left = 96
   const right = 12
   const graphWidth = width - left - right
-  const x = (index: number) => left + (graphWidth * index) / Math.max(months.length - 1, 1)
-  const y = (value: number) => 12 + ((max - value) / range) * plotHeight
+  const x = (index: number): number =>
+    left + (graphWidth * index) / Math.max(visibleMonths.length - 1, 1)
+  const y = (value: number): number => 12 + ((max - value) / range) * plotHeight
   // A small balance around zero can place two labels on the same baseline.
   const ticks = [...new Set([0, max, min])].filter((tick, index, candidates) =>
     candidates.slice(0, index).every((other) => Math.abs(y(tick) - y(other)) >= 18)
@@ -146,14 +156,25 @@ function BalanceChart({ months, currency }: Pick<FinancialChartsProps, 'months' 
     <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3">
       <div className="flex items-center justify-between mb-2">
         <p className="text-xs font-semibold text-[#d4d4d4]">Evolução do saldo</p>
-        <span
-          className={
-            'text-[10px] tabular-nums font-semibold ' +
-            (last.accumulated >= 0 ? 'text-[#a080f0]' : 'text-[#e04040]')
-          }
-        >
-          {formatCurrency(last.accumulated, currency)}
-        </span>
+        <div className="flex items-center gap-3">
+          {months.length > 12 && (
+            <button
+              type="button"
+              onClick={() => setShowAll((current) => !current)}
+              className="text-[10px] text-[#a080f0] hover:text-[#c4a9ff]"
+            >
+              {showAll ? 'Últimos 12 meses' : 'Ver todo o histórico'}
+            </button>
+          )}
+          <span
+            className={
+              'text-[10px] tabular-nums font-semibold ' +
+              (last.accumulated >= 0 ? 'text-[#a080f0]' : 'text-[#e04040]')
+            }
+          >
+            {formatCurrency(last.accumulated, currency)}
+          </span>
+        </div>
       </div>
       <div className="overflow-x-auto pb-1">
         <svg
@@ -179,36 +200,47 @@ function BalanceChart({ months, currency }: Pick<FinancialChartsProps, 'months' 
             </g>
           ))}
           <polyline
-            points={months.map((m, i) => x(i) + ',' + y(m.accumulated)).join(' ')}
+            points={visibleMonths.map((m, i) => x(i) + ',' + y(m.accumulated)).join(' ')}
             fill="none"
             stroke="#a080f0"
             strokeWidth="2.5"
             strokeLinejoin="round"
             strokeLinecap="round"
           />
-          {months.map((month, index) => (
+          {visibleMonths.map((month, index) => (
             <g key={month.key}>
               <title>
                 {label(month.key) +
                   ': saldo acumulado ' +
                   formatCurrency(month.accumulated, currency)}
               </title>
-              <circle cx={x(index)} cy={y(month.accumulated)} r="3" fill="#a080f0" />
-              <text
-                x={x(index) + (index === 0 ? 8 : index === months.length - 1 ? -8 : 0)}
-                y={
-                  y(month.accumulated) < 30 ? y(month.accumulated) + 17 : y(month.accumulated) - 10
-                }
-                textAnchor={index === 0 ? 'start' : index === months.length - 1 ? 'end' : 'middle'}
-                fill="#d4c3ff"
-                fontSize="10"
-                fontWeight="500"
-                stroke="#2a2a2a"
-                strokeWidth="3"
-                paintOrder="stroke"
-              >
-                {formatCurrency(month.accumulated, currency)}
-              </text>
+              <circle
+                cx={x(index)}
+                cy={y(month.accumulated)}
+                r="4.5"
+                fill="#a080f0"
+                stroke="#e4d7ff"
+                strokeWidth="1.25"
+              />
+              {(index === 0 || index === visibleMonths.length - 1) && (
+                <text
+                  x={x(index) + (index === 0 ? 8 : -8)}
+                  y={
+                    y(month.accumulated) < 30
+                      ? y(month.accumulated) + 17
+                      : y(month.accumulated) - 10
+                  }
+                  textAnchor={index === 0 ? 'start' : 'end'}
+                  fill="#d4c3ff"
+                  fontSize="10"
+                  fontWeight="500"
+                  stroke="#2a2a2a"
+                  strokeWidth="3"
+                  paintOrder="stroke"
+                >
+                  {formatCurrency(month.accumulated, currency)}
+                </text>
+              )}
               <text x={x(index)} y="171" textAnchor="middle" fill="#999999" fontSize="9">
                 {label(month.key)}
               </text>
@@ -224,7 +256,7 @@ function CategoryChart({
   categories,
   currency,
   categoryLabel
-}: Pick<FinancialChartsProps, 'categories' | 'currency' | 'categoryLabel'>) {
+}: Pick<FinancialChartsProps, 'categories' | 'currency' | 'categoryLabel'>): JSX.Element {
   const visible = categories.slice(0, 5)
   const total = categories.reduce((sum, [, amount]) => sum + amount, 0)
   const slices: string[] = []
@@ -285,14 +317,14 @@ export function FinancialCharts({
   balanceMonths,
   categories,
   categoryLabel
-}: FinancialChartsProps) {
+}: FinancialChartsProps): JSX.Element | null {
   if (months.length === 0) return null
 
   return (
     <section className="space-y-3">
       <div className="flex items-baseline justify-between">
         <p className="text-xs font-semibold text-[#d4d4d4]">Gráficos</p>
-        <span className="text-[10px] text-[#666666]">Todo o histórico · {currency}</span>
+        <span className="text-[10px] text-[#666666]">{currency}</span>
       </div>
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
         <CashflowChart months={months} currency={currency} />
