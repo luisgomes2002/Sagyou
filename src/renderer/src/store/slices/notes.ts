@@ -8,7 +8,27 @@ export interface NotesSlice {
     projectId: string,
     data?: Partial<Pick<StickyNote, 'content' | 'color' | 'x' | 'y' | 'width' | 'height' | 'type'>>
   ) => string
-  updateNote: (id: string, updates: Partial<Pick<StickyNote, 'content' | 'color' | 'x' | 'y' | 'width' | 'height' | 'taskId' | 'taskIds' | 'connections' | 'goalIds' | 'fontSize' | 'completedAt'>>) => void
+  updateNote: (
+    id: string,
+    updates: Partial<
+      Pick<
+        StickyNote,
+        | 'content'
+        | 'color'
+        | 'borderStyle'
+        | 'x'
+        | 'y'
+        | 'width'
+        | 'height'
+        | 'taskId'
+        | 'taskIds'
+        | 'connections'
+        | 'goalIds'
+        | 'fontSize'
+        | 'completedAt'
+      >
+    >
+  ) => void
   deleteNote: (id: string) => void
   connectNotes: (fromId: string, toId: string) => void
   disconnectNotes: (fromId: string, toId: string) => void
@@ -47,7 +67,22 @@ export const createNotesSlice: StateCreator<
   updateNote: (id, updates) => {
     set((s) => ({
       notes: s.notes.map((n) =>
-        n.id === id ? { ...n, ...updates, updatedAt: new Date().toISOString() } : n
+        n.id === id
+          ? {
+              ...n,
+              ...updates,
+              ...(n.type === 'text'
+                ? { taskId: undefined, taskIds: [], connections: [], goalIds: [] }
+                : updates.connections
+                  ? {
+                      connections: updates.connections.filter(
+                        (targetId) => s.notes.find((target) => target.id === targetId)?.type !== 'text'
+                      )
+                    }
+                  : {}),
+              updatedAt: new Date().toISOString()
+            }
+          : n
       )
     }))
     get()._persist()
@@ -69,6 +104,9 @@ export const createNotesSlice: StateCreator<
 
   connectNotes: (fromId, toId) => {
     if (fromId === toId) return
+    const source = get().notes.find((n) => n.id === fromId)
+    const target = get().notes.find((n) => n.id === toId)
+    if (!source || !target || source.type === 'text' || target.type === 'text') return
     set((s) => ({
       notes: s.notes.map((n) => {
         if (n.id !== fromId) return n
@@ -86,7 +124,11 @@ export const createNotesSlice: StateCreator<
         if (n.id !== fromId) return n
         const conns = n.connections ?? []
         if (!conns.includes(toId)) return n
-        return { ...n, connections: conns.filter((c) => c !== toId), updatedAt: new Date().toISOString() }
+        return {
+          ...n,
+          connections: conns.filter((c) => c !== toId),
+          updatedAt: new Date().toISOString()
+        }
       })
     }))
     get()._persist()

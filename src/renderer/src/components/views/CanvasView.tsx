@@ -35,7 +35,10 @@ interface Props {
 export function CanvasView(props: Props) {
   const { project, tasks } = props
   const allNotes = useKanbanStore((s) => s.notes)
-  const notes = useMemo(() => allNotes.filter((n) => n.projectId === project.id), [allNotes, project.id])
+  const notes = useMemo(
+    () => allNotes.filter((n) => n.projectId === project.id),
+    [allNotes, project.id]
+  )
   const createNote = useKanbanStore((s) => s.createNote)
   const updateNote = useKanbanStore((s) => s.updateNote)
   const deleteNote = useKanbanStore((s) => s.deleteNote)
@@ -56,7 +59,7 @@ export function CanvasView(props: Props) {
   const [noteModalId, setNoteModalId] = useState<string | null>(null)
   const noteModalIdRef = useRef(noteModalId)
   noteModalIdRef.current = noteModalId
-  const noteInModal = noteModalId ? noteById.get(noteModalId) ?? null : null
+  const noteInModal = noteModalId ? (noteById.get(noteModalId) ?? null) : null
 
   const [offset, setOffset] = useState({ x: 0, y: 0 })
   const [scale, setScale] = useState(1)
@@ -70,8 +73,12 @@ export function CanvasView(props: Props) {
   const panStartRef = useRef({ x: 0, y: 0 })
   const isPanningRef = useRef(false)
 
-  useEffect(() => { scaleRef.current = scale }, [scale])
-  useEffect(() => { offsetRef.current = offset }, [offset])
+  useEffect(() => {
+    scaleRef.current = scale
+  }, [scale])
+  useEffect(() => {
+    offsetRef.current = offset
+  }, [offset])
 
   // Non-passive wheel listener — required because React registers wheel as passive by default
   useEffect(() => {
@@ -154,7 +161,8 @@ export function CanvasView(props: Props) {
       const targetEl = el?.closest('[data-note-id]') as HTMLElement | null
       const targetId = targetEl?.dataset.noteId
       const fromId = connectFromRef.current
-      if (fromId && targetId && targetId !== fromId) connectNotes(fromId, targetId)
+      if (fromId && targetId && targetId !== fromId && noteById.get(targetId)?.type !== 'text')
+        connectNotes(fromId, targetId)
       connectFromRef.current = null
       setConnectFrom(null)
       setConnectCursor(null)
@@ -165,7 +173,7 @@ export function CanvasView(props: Props) {
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
     }
-  }, [connectFrom, connectNotes])
+  }, [connectFrom, connectNotes, noteById])
 
   const posOf = useCallback(
     (n: { id: string; x: number; y: number }): Point => livePositions[n.id] ?? { x: n.x, y: n.y },
@@ -184,22 +192,28 @@ export function CanvasView(props: Props) {
     }
   }, [])
 
-  const handleDoubleClick = useCallback((e: React.MouseEvent) => {
-    if (noteModalIdRef.current) return
-    if ((e.target as HTMLElement).closest('[data-note]')) return
-    const rect = containerRef.current!.getBoundingClientRect()
-    const x = (e.clientX - rect.left - offsetRef.current.x) / scaleRef.current - 100
-    const y = (e.clientY - rect.top - offsetRef.current.y) / scaleRef.current - 30
-    if (mode === 'text') {
-      createNote(project.id, { type: 'text', color: 'transparent', x, y, width: 480, height: 60 })
-    } else {
-      createNote(project.id, { color: selectedColor, x, y: y - 45 })
-    }
-  }, [selectedColor, mode, createNote, project.id])
+  const handleDoubleClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (noteModalIdRef.current) return
+      if ((e.target as HTMLElement).closest('[data-note]')) return
+      const rect = containerRef.current!.getBoundingClientRect()
+      const x = (e.clientX - rect.left - offsetRef.current.x) / scaleRef.current - 100
+      const y = (e.clientY - rect.top - offsetRef.current.y) / scaleRef.current - 30
+      if (mode === 'text') {
+        createNote(project.id, { type: 'text', color: 'transparent', x, y, width: 480, height: 60 })
+      } else {
+        createNote(project.id, { color: selectedColor, x, y: y - 45 })
+      }
+    },
+    [selectedColor, mode, createNote, project.id]
+  )
 
   const handleZoomIn = () => setScale((s) => clamp(s * 1.25, MIN_SCALE, MAX_SCALE))
   const handleZoomOut = () => setScale((s) => clamp(s / 1.25, MIN_SCALE, MAX_SCALE))
-  const handleResetView = () => { setOffset({ x: 0, y: 0 }); setScale(1) }
+  const handleResetView = () => {
+    setOffset({ x: 0, y: 0 })
+    setScale(1)
+  }
 
   const dotSpacing = 24 * scale
 
@@ -244,65 +258,69 @@ export function CanvasView(props: Props) {
           </defs>
 
           {notes.flatMap((from) =>
-            (from.connections ?? []).map((toId) => {
-              const to = noteById.get(toId)
-              if (!to) return null
-              const f = posOf(from)
-              const t = posOf(to)
-              const fc = { x: f.x + from.width / 2, y: f.y + from.height / 2 }
-              const tc = { x: t.x + to.width / 2, y: t.y + to.height / 2 }
-              const start = borderPoint(fc, from.width, from.height, tc)
-              const end = borderPoint(tc, to.width, to.height, fc)
-              return (
-                <g key={`${from.id}->${toId}`} className="group/conn">
-                  <line
-                    x1={start.x}
-                    y1={start.y}
-                    x2={end.x}
-                    y2={end.y}
-                    className="stroke-[#7c3aed] group-hover/conn:stroke-[#a080f0]"
-                    strokeWidth={2}
-                    markerEnd="url(#note-arrow)"
-                    style={{ pointerEvents: 'none' }}
-                  />
-                  <line
-                    x1={start.x}
-                    y1={start.y}
-                    x2={end.x}
-                    y2={end.y}
-                    stroke="transparent"
-                    strokeWidth={14}
-                    style={{ pointerEvents: 'stroke', cursor: 'pointer' }}
-                    onClick={() => disconnectNotes(from.id, toId)}
-                  >
-                    <title>Clique para remover a conexão</title>
-                  </line>
-                </g>
-              )
-            })
+            from.type === 'text'
+              ? []
+              : (from.connections ?? []).map((toId) => {
+                  const to = noteById.get(toId)
+                  if (!to || to.type === 'text') return null
+                  const f = posOf(from)
+                  const t = posOf(to)
+                  const fc = { x: f.x + from.width / 2, y: f.y + from.height / 2 }
+                  const tc = { x: t.x + to.width / 2, y: t.y + to.height / 2 }
+                  const start = borderPoint(fc, from.width, from.height, tc)
+                  const end = borderPoint(tc, to.width, to.height, fc)
+                  return (
+                    <g key={`${from.id}->${toId}`} className="group/conn">
+                      <line
+                        x1={start.x}
+                        y1={start.y}
+                        x2={end.x}
+                        y2={end.y}
+                        className="stroke-[#7c3aed] group-hover/conn:stroke-[#a080f0]"
+                        strokeWidth={2}
+                        markerEnd="url(#note-arrow)"
+                        style={{ pointerEvents: 'none' }}
+                      />
+                      <line
+                        x1={start.x}
+                        y1={start.y}
+                        x2={end.x}
+                        y2={end.y}
+                        stroke="transparent"
+                        strokeWidth={14}
+                        style={{ pointerEvents: 'stroke', cursor: 'pointer' }}
+                        onClick={() => disconnectNotes(from.id, toId)}
+                      >
+                        <title>Clique para remover a conexão</title>
+                      </line>
+                    </g>
+                  )
+                })
           )}
 
           {/* In-progress connection line */}
-          {connectFrom && connectCursor && (() => {
-            const from = noteById.get(connectFrom)
-            if (!from) return null
-            const f = posOf(from)
-            const fc = { x: f.x + from.width / 2, y: f.y + from.height / 2 }
-            const start = borderPoint(fc, from.width, from.height, connectCursor)
-            return (
-              <line
-                x1={start.x}
-                y1={start.y}
-                x2={connectCursor.x}
-                y2={connectCursor.y}
-                stroke="#a080f0"
-                strokeWidth={2}
-                strokeDasharray="6 4"
-                markerEnd="url(#note-arrow)"
-                style={{ pointerEvents: 'none' }}
-              />
-            )
-          })()}
+          {connectFrom &&
+            connectCursor &&
+            (() => {
+              const from = noteById.get(connectFrom)
+              if (!from) return null
+              const f = posOf(from)
+              const fc = { x: f.x + from.width / 2, y: f.y + from.height / 2 }
+              const start = borderPoint(fc, from.width, from.height, connectCursor)
+              return (
+                <line
+                  x1={start.x}
+                  y1={start.y}
+                  x2={connectCursor.x}
+                  y2={connectCursor.y}
+                  stroke="#a080f0"
+                  strokeWidth={2}
+                  strokeDasharray="6 4"
+                  markerEnd="url(#note-arrow)"
+                  style={{ pointerEvents: 'none' }}
+                />
+              )
+            })()}
         </svg>
 
         {notes.map((note) => (
@@ -316,7 +334,7 @@ export function CanvasView(props: Props) {
             onStartConnect={() => startConnect(note.id)}
             onDragMove={handleNoteDragMove}
             onDragEnd={handleNoteDragEnd}
-            onOpenModal={() => setNoteModalId(note.id)}
+            onOpenModal={note.type === 'text' ? undefined : () => setNoteModalId(note.id)}
           />
         ))}
       </div>
@@ -324,25 +342,40 @@ export function CanvasView(props: Props) {
       {/* Empty state */}
       {notes.length === 0 && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 pointer-events-none">
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#666666" strokeWidth="1.5">
+          <svg
+            width="32"
+            height="32"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#666666"
+            strokeWidth="1.5"
+          >
             <path d="M12 5v14M5 12h14" />
           </svg>
           <p className="text-[#666666] text-sm">
-            {mode === 'text' ? 'Duplo clique para inserir texto' : 'Duplo clique para criar uma nota'}
+            {mode === 'text'
+              ? 'Duplo clique para inserir texto'
+              : 'Duplo clique para criar uma nota'}
           </p>
         </div>
       )}
 
       {/* Floating toolbar */}
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#3b3b3b] border border-[#3b3b3b] shadow-2xl backdrop-blur-sm pointer-events-auto">
-
         {/* Mode: sticky note */}
         <button
           onClick={() => setMode('note')}
           className={`p-1.5 rounded-lg transition-colors ${mode === 'note' ? 'bg-[#4a4a4a] text-[#a080f0]' : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#4a4a4a]'}`}
           title="Modo nota (duplo clique)"
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
             <polyline points="14 2 14 8 20 8" />
           </svg>
@@ -369,9 +402,10 @@ export function CanvasView(props: Props) {
                   className="w-4 h-4 rounded-full transition-transform hover:scale-110 shrink-0"
                   style={{
                     backgroundColor: color,
-                    boxShadow: selectedColor === color
-                      ? `0 0 0 2px #1b1b1b, 0 0 0 3.5px ${color}`
-                      : '0 0 0 1px rgba(255,255,255,0.1)'
+                    boxShadow:
+                      selectedColor === color
+                        ? `0 0 0 2px #1b1b1b, 0 0 0 3.5px ${color}`
+                        : '0 0 0 1px rgba(255,255,255,0.1)'
                   }}
                   title={color}
                 />
@@ -388,7 +422,14 @@ export function CanvasView(props: Props) {
           className="p-1.5 rounded-lg text-[#999999] hover:text-[#d4d4d4] hover:bg-[#3b3b3b] transition-colors"
           title="Diminuir zoom (scroll)"
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+          >
             <circle cx="11" cy="11" r="8" />
             <line x1="21" y1="21" x2="16.65" y2="16.65" />
             <line x1="8" y1="11" x2="14" y2="11" />
@@ -405,7 +446,14 @@ export function CanvasView(props: Props) {
           className="p-1.5 rounded-lg text-[#999999] hover:text-[#d4d4d4] hover:bg-[#3b3b3b] transition-colors"
           title="Aumentar zoom (scroll)"
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+          >
             <circle cx="11" cy="11" r="8" />
             <line x1="21" y1="21" x2="16.65" y2="16.65" />
             <line x1="11" y1="8" x2="11" y2="14" />
@@ -421,7 +469,14 @@ export function CanvasView(props: Props) {
           className="p-1.5 rounded-lg text-[#999999] hover:text-[#d4d4d4] hover:bg-[#3b3b3b] transition-colors"
           title="Centralizar (100%)"
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
             <path d="M8 3H5a2 2 0 0 0-2 2v3" />
             <path d="M21 8V5a2 2 0 0 0-2-2h-3" />
             <path d="M3 16v3a2 2 0 0 0 2 2h3" />
@@ -434,8 +489,28 @@ export function CanvasView(props: Props) {
       {noteInModal && (
         <NoteModal
           note={noteInModal}
-          onSave={({ content, color, taskIds, connections, goalIds, completedAt }) => {
-            updateNote(noteInModal.id, { content, color, taskIds, connections, goalIds, completedAt })
+          onSave={({
+            content,
+            color,
+            borderStyle,
+            taskIds,
+            connections,
+            goalIds,
+            completedAt,
+            fontSize,
+            width
+          }) => {
+            updateNote(noteInModal.id, {
+              content,
+              color,
+              borderStyle,
+              taskIds,
+              connections,
+              goalIds,
+              fontSize,
+              width,
+              completedAt
+            })
             setNoteModalId(null)
           }}
           onClose={() => setNoteModalId(null)}
@@ -448,7 +523,10 @@ export function CanvasView(props: Props) {
         title="Deletar nota"
         message="Tem certeza que deseja deletar esta nota? As conexões ligadas a ela também serão removidas."
         confirmLabel="Deletar"
-        onConfirm={() => { if (noteToDelete) deleteNote(noteToDelete); setNoteToDelete(null) }}
+        onConfirm={() => {
+          if (noteToDelete) deleteNote(noteToDelete)
+          setNoteToDelete(null)
+        }}
         onCancel={() => setNoteToDelete(null)}
       />
     </div>

@@ -13,6 +13,8 @@ interface Props {
   onNavigate: (view: string) => void
 }
 
+const HOME_FINANCIAL_TABLE_KEY = 'sagyou-home-financial-table'
+
 export function HomeView({ projects, onNavigate }: Props) {
   const {
     tasks,
@@ -138,7 +140,32 @@ export function HomeView({ projects, onNavigate }: Props) {
     }
   }, [profileLists])
 
-  const [financialTableId, setFinancialTableId] = useState<string>('__consolidated__')
+  const [selectedFinancialTableIds, setSelectedFinancialTableIds] = useState<
+    Record<string, string>
+  >({})
+  const storedFinancialTableId = useMemo(() => {
+    try {
+      return localStorage.getItem(`${HOME_FINANCIAL_TABLE_KEY}:${activeFinancialProfileId}`)
+    } catch {
+      return null
+    }
+  }, [activeFinancialProfileId])
+  const selectedFinancialTableId =
+    selectedFinancialTableIds[activeFinancialProfileId] ??
+    storedFinancialTableId ??
+    '__consolidated__'
+  const financialTableId = profileLists.some((list) => list.id === selectedFinancialTableId)
+    ? selectedFinancialTableId
+    : '__consolidated__'
+
+  const selectFinancialTable = (id: string): void => {
+    setSelectedFinancialTableIds((current) => ({ ...current, [activeFinancialProfileId]: id }))
+    try {
+      localStorage.setItem(`${HOME_FINANCIAL_TABLE_KEY}:${activeFinancialProfileId}`, id)
+    } catch {
+      // The selection still works for this session when browser storage is unavailable.
+    }
+  }
 
   const allTransactions = useMemo(() => {
     const txs: (FinancialTransaction & { tableCurrency: Currency; tableId: string })[] = []
@@ -338,10 +365,7 @@ export function HomeView({ projects, onNavigate }: Props) {
             <select
               aria-label="Perfil financeiro do dashboard"
               value={activeFinancialProfileId}
-              onChange={(e) => {
-                setActiveFinancialProfile(e.target.value)
-                setFinancialTableId('__consolidated__')
-              }}
+              onChange={(e) => setActiveFinancialProfile(e.target.value)}
               className="bg-[#2a2a2a] border border-[#3b3b3b] text-[#d4d4d4] rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-[#7c3aed]"
             >
               {financialProfiles.map((profile) => (
@@ -353,8 +377,9 @@ export function HomeView({ projects, onNavigate }: Props) {
           )}
           {profileLists.length > 0 && (
             <select
+              aria-label="Tabela financeira do dashboard"
               value={financialTableId}
-              onChange={(e) => setFinancialTableId(e.target.value)}
+              onChange={(e) => selectFinancialTable(e.target.value)}
               className="bg-[#2a2a2a] border border-[#3b3b3b] text-[#d4d4d4] rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-[#7c3aed]"
             >
               <option value="__consolidated__">Consolidado</option>

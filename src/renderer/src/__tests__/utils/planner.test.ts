@@ -5,6 +5,7 @@ import {
   durationInMinutes,
   formatWeekStart,
   getVisibleDays,
+  HOUR_HEIGHT,
   layoutOverlappingBlocks,
   minutesToPixels,
   todayString
@@ -44,7 +45,7 @@ describe('planner utilities', () => {
   it('converts times consistently for the calendar grid', () => {
     expect(durationInMinutes('09:15', '10:45')).toBe(90)
     expect(minutesToPixels('00:00')).toBe(0)
-    expect(minutesToPixels('01:30')).toBe(120)
+    expect(minutesToPixels('01:30')).toBe(HOUR_HEIGHT * 1.5)
   })
 
   it('uses the machine-local calendar day instead of UTC', () => {
