@@ -474,7 +474,7 @@ export function AIView({
    * it from — with no priced calls logged, any figure here would be invented,
    * and this dialog exists precisely to inform a spending decision.
    */
-  const autoSteps = config.maxSteps === undefined ? 20 : resolveMaxSteps(config.maxSteps, true)
+  const autoSteps = resolveMaxSteps(config.maxSteps, true)
   const autoEstimate = estimateAutoRun(spend?.total, autoSteps)
   const autoWarning =
     `O assistente vai encadear até ${autoSteps} rodadas sem pedir aprovação, ` +

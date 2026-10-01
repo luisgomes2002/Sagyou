@@ -299,6 +299,9 @@ declare global {
       }
       backup: {
         export: (backup: unknown) => Promise<{ success: boolean; cancelled?: boolean }>
+        autoSave: (backup: unknown, force?: boolean) => Promise<{ success: boolean }>
+        commitBlobs: () => Promise<{ success: boolean }>
+        openFolder: () => Promise<string>
         import: () => Promise<{
           success: boolean
           cancelled?: boolean

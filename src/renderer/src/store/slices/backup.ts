@@ -28,7 +28,14 @@ import { D, moneyStr } from '../../utils/money'
 
 interface StorageDep {
   exportBackup: (backup: Backup) => Promise<{ success: boolean }>
-  importBackup: () => Promise<{ success: boolean; cancelled?: boolean; data?: unknown }>
+  autoSaveBackup: (backup: Backup, force?: boolean) => Promise<{ success: boolean }>
+  commitBackupBlobs: () => Promise<{ success: boolean }>
+  importBackup: () => Promise<{
+    success: boolean
+    cancelled?: boolean
+    data?: unknown
+    error?: string
+  }>
   importAIJson: () => Promise<{ success: boolean; cancelled?: boolean; data?: unknown }>
   loadConversations: () => Promise<AIConversation[]>
   saveConversations: (list: AIConversation[]) => Promise<void>
@@ -120,7 +127,7 @@ function normalizeTransactionDetails(value: unknown, total: string): FinancialTr
 }
 
 export interface BackupSlice {
-  exportBackup: () => Promise<boolean>
+  exportBackup: (automatic?: boolean, force?: boolean) => Promise<boolean>
   importBackup: () => Promise<boolean>
   importAIJson: (projectId: string) => Promise<number>
   importTasksFromAIChat: (projectId: string, tasks: AIJson['tasks']) => number
@@ -151,7 +158,7 @@ export function createBackupSlice(storage: StorageDep): StateCreator<
   BackupSlice
 > {
   return (set, get) => ({
-    exportBackup: async () => {
+    exportBackup: async (automatic = false, force = false) => {
       const {
         projects,
         tasks,
@@ -170,6 +177,7 @@ export function createBackupSlice(storage: StorageDep): StateCreator<
       try {
         conversations = await storage.loadConversations()
       } catch {
+        if (automatic) return false
         conversations = []
       }
       // AI memory rides along like chat history — same store-external treatment,
@@ -178,6 +186,7 @@ export function createBackupSlice(storage: StorageDep): StateCreator<
       try {
         memories = await storage.loadMemories()
       } catch {
+        if (automatic) return false
         memories = []
       }
       const backup: Backup = {
@@ -203,15 +212,21 @@ export function createBackupSlice(storage: StorageDep): StateCreator<
         timeBlocks: get().timeBlocks,
         routines: get().routines
       }
-      const result = await storage.exportBackup(backup)
+      const result = automatic
+        ? await storage.autoSaveBackup(backup, force)
+        : await storage.exportBackup(backup)
       return result.success
     },
 
     importBackup: async () => {
       const result = await storage.importBackup()
+      if (result.error) throw new Error(result.error)
       if (!result.success || result.cancelled || !result.data) return false
 
       const backup = result.data as Backup
+
+      // Save the current data and blobs before changing either side of the store.
+      if (!(await get().exportBackup(true, true))) return false
 
       const tombstones: Tombstone[] = backup.tombstones || []
       const tombstoneIds = new Set(tombstones.map((t) => t.id))
@@ -308,6 +323,7 @@ export function createBackupSlice(storage: StorageDep): StateCreator<
         ? backup.timeBlocks
         : get().timeBlocks
       const routines: Routine[] = Array.isArray(backup.routines) ? backup.routines : get().routines
+      if (!(await storage.commitBackupBlobs()).success) return false
       set({
         projects,
         tasks,

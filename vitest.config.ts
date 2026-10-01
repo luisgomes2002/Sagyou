@@ -7,6 +7,9 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: true,
+    // Keep the full suite reliable on machines with many logical CPUs but
+    // limited memory/process slots (including release runners).
+    maxWorkers: 2,
     // Habits, goals and reports key off the LOCAL calendar day, so a suite run
     // in UTC can't tell a local-date bug from a correct one. Pin a non-UTC zone
     // (UTC-3, no DST) to keep those tests meaningful on any machine.

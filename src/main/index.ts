@@ -134,6 +134,7 @@ import {
 import { registerWindowHandlers } from './handlers/window'
 import { registerFilesHandlers } from './handlers/files'
 import { registerBackupHandlers } from './handlers/backup'
+import { safeExternalUrl } from './external-links'
 import icon from '../../resources/icon.png?asset'
 
 let mainWindow: BrowserWindow | null = null
@@ -1402,8 +1403,12 @@ function createWindow(): void {
   mainWindow.on('unmaximize', () => mainWindow!.webContents.send('window:maximized-change', false))
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
+    const url = safeExternalUrl(details.url)
+    if (url) void shell.openExternal(url).catch(() => {})
     return { action: 'deny' }
+  })
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (url !== mainWindow?.webContents.getURL()) event.preventDefault()
   })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
@@ -1480,9 +1485,15 @@ app.whenReady().then(() => {
     filesDir,
     chatImagesDir: chatImagesDir(),
     taskImagesDir: taskImagesDir(),
+    backupDir: join(app.getPath('userData'), 'backups'),
     sep,
     chatImagePath,
     taskImagePath
+  })
+  ipcMain.handle('backup:open-folder', async () => {
+    const dir = join(app.getPath('userData'), 'backups')
+    mkdirSync(dir, { recursive: true })
+    return shell.openPath(dir)
   })
 
   ipcMain.handle('ai:config:get', () => loadAIConfig())

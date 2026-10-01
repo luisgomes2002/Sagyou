@@ -113,6 +113,10 @@ const api = {
   backup: {
     export: (backup: unknown): Promise<{ success: boolean; cancelled?: boolean }> =>
       ipcRenderer.invoke('backup:export', backup),
+    autoSave: (backup: unknown, force = false): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke('backup:auto-save', backup, force),
+    commitBlobs: (): Promise<{ success: boolean }> => ipcRenderer.invoke('backup:commit-blobs'),
+    openFolder: (): Promise<string> => ipcRenderer.invoke('backup:open-folder'),
     import: (): Promise<{
       success: boolean
       cancelled?: boolean

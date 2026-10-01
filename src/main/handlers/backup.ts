@@ -1,6 +1,16 @@
 import { join } from 'path'
-import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync } from 'fs'
+import {
+  existsSync,
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  unlinkSync,
+  statSync
+} from 'fs'
 import { safeAttachmentName } from '../backup-files'
+import { isValidBackup } from '../backup-validation'
 import type { IpcMain, Dialog } from 'electron'
 
 interface BlobEntry {
@@ -22,21 +32,32 @@ interface BackupDeps {
   sep: string
   chatImagePath: (id: unknown) => string | null
   taskImagePath: (id: unknown, ext: unknown) => string | null
+  backupDir: string
 }
 
-export function registerBackupHandlers(
-  ipcMain: IpcMain,
-  deps: BackupDeps
-): void {
-  const {
-    dialog,
-    filesDir,
-    chatImagesDir,
-    taskImagesDir,
-    sep,
-    chatImagePath,
-    taskImagePath
-  } = deps
+export function registerBackupHandlers(ipcMain: IpcMain, deps: BackupDeps): void {
+  const { dialog, filesDir, chatImagesDir, taskImagesDir, sep, chatImagePath, taskImagePath } = deps
+
+  let pendingBlobs: { fileBlobs?: unknown; chatImages?: unknown; taskImages?: unknown } | null =
+    null
+
+  const fullBackup = (backup: unknown): Record<string, unknown> => ({
+    ...(backup as Record<string, unknown>),
+    fileBlobs: collectFileBlobs((backup as { files?: unknown })?.files),
+    chatImages: collectChatImages(),
+    taskImages: collectTaskImageBlobs((backup as { tasks?: unknown })?.tasks)
+  })
+
+  const writeAtomic = (path: string, content: string): void => {
+    const tmp = `${path}.tmp`
+    try {
+      writeFileSync(tmp, content, 'utf-8')
+      renameSync(tmp, path)
+    } catch (error) {
+      if (existsSync(tmp)) unlinkSync(tmp)
+      throw error
+    }
+  }
 
   const collectFileBlobs = (files: unknown): BlobEntry[] => {
     if (!Array.isArray(files)) return []
@@ -159,17 +180,39 @@ export function registerBackupHandlers(
       filters: [{ name: 'JSON', extensions: ['json'] }]
     })
     if (canceled || !filePath) return { success: false, cancelled: true }
-    const full = {
-      ...backup,
-      fileBlobs: collectFileBlobs(backup?.files),
-      chatImages: collectChatImages(),
-      taskImages: collectTaskImageBlobs(backup?.tasks)
-    }
-    writeFileSync(filePath, JSON.stringify(full, null, 2), 'utf-8')
+    const full = fullBackup(backup)
+    writeAtomic(filePath, JSON.stringify(full, null, 2))
     return { success: true }
   })
 
+  // One local restore point per day, plus forced snapshots just before import.
+  // The latest seven snapshots stay available even when the user never exports manually.
+  ipcMain.handle('backup:auto-save', async (_, backup: unknown, force = false) => {
+    if (!isValidBackup(backup)) return { success: false }
+    try {
+      mkdirSync(deps.backupDir, { recursive: true })
+      const now = new Date()
+      const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+      const name = force
+        ? `sagyou-before-import-${day}-${now.toTimeString().slice(0, 8).replace(/:/g, '-')}-${now.getMilliseconds()}.json`
+        : `sagyou-${day}.json`
+      const path = join(deps.backupDir, name)
+      writeAtomic(path, JSON.stringify(fullBackup(backup)))
+      const snapshots = readdirSync(deps.backupDir)
+        .filter((file) => /^sagyou-(?:before-import-)?\d{4}-\d{2}-\d{2}.*\.json$/.test(file))
+        .sort(
+          (a, b) =>
+            statSync(join(deps.backupDir, b)).mtimeMs - statSync(join(deps.backupDir, a)).mtimeMs
+        )
+      for (const old of snapshots.slice(7)) unlinkSync(join(deps.backupDir, old))
+      return { success: true }
+    } catch {
+      return { success: false }
+    }
+  })
+
   ipcMain.handle('backup:import', async () => {
+    pendingBlobs = null
     const { filePaths, canceled } = await dialog.showOpenDialog({
       filters: [{ name: 'JSON', extensions: ['json'] }],
       properties: ['openFile']
@@ -178,9 +221,12 @@ export function registerBackupHandlers(
     try {
       const content = readFileSync(filePaths[0], 'utf-8')
       const data = JSON.parse(content)
-      restoreFileBlobs(data?.fileBlobs)
-      restoreChatImages(data?.chatImages)
-      restoreTaskImages(data?.taskImages)
+      if (!isValidBackup(data)) return { success: false, error: 'Backup inválido ou incompatível' }
+      pendingBlobs = {
+        fileBlobs: data.fileBlobs,
+        chatImages: data.chatImages,
+        taskImages: data.taskImages
+      }
       if (data && typeof data === 'object') {
         delete data.fileBlobs
         delete data.chatImages
@@ -190,6 +236,16 @@ export function registerBackupHandlers(
     } catch {
       return { success: false, error: 'Arquivo inválido' }
     }
+  })
+
+  ipcMain.handle('backup:commit-blobs', () => {
+    if (!pendingBlobs) return { success: false }
+    const blobs = pendingBlobs
+    pendingBlobs = null
+    restoreFileBlobs(blobs.fileBlobs)
+    restoreChatImages(blobs.chatImages)
+    restoreTaskImages(blobs.taskImages)
+    return { success: true }
   })
 
   ipcMain.handle('ai:import', async () => {
