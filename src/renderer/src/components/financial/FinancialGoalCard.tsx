@@ -1,19 +1,28 @@
 ﻿import { useEffect, useState } from 'react'
 import Decimal from 'decimal.js'
 import type { FinancialGoal, FinancialTransaction, Currency } from '../../types'
-import { MONTH_NAMES, formatCurrency, todayISO, formatDateBR, D, parseDecimalInput } from './shared'
+import {
+  MONTH_NAMES,
+  formatCurrency,
+  formatAmountInput,
+  todayISO,
+  formatDateBR,
+  D,
+  parseDecimalInput
+} from './shared'
 import { ModalBase } from '../ModalBase'
 
 // ── GoalModal ─────────────────────────────────────────────────────────────────
 
 interface GoalModalProps {
   open: boolean
+  currency: Currency
   goal?: FinancialGoal
   onSave: (data: Omit<FinancialGoal, 'id'>) => void
   onClose: () => void
 }
 
-export function GoalModal({ open, goal, onSave, onClose }: GoalModalProps) {
+export function GoalModal({ open, currency, goal, onSave, onClose }: GoalModalProps) {
   const now = new Date()
   const [name, setName] = useState('')
   const [targetAmount, setTargetAmount] = useState('')
@@ -23,15 +32,15 @@ export function GoalModal({ open, goal, onSave, onClose }: GoalModalProps) {
   useEffect(() => {
     if (open) {
       setName(goal?.name ?? '')
-      setTargetAmount(goal?.targetAmount ?? '')
+      setTargetAmount(goal ? formatAmountInput(goal.targetAmount, currency) : '')
       setTargetMonth(goal?.targetMonth ?? now.getMonth() + 1)
       setTargetYear(goal?.targetYear ?? now.getFullYear())
     }
-  }, [open])
+  }, [open, currency])
 
   if (!open) return null
 
-  const amount = parseDecimalInput(targetAmount)
+  const amount = parseDecimalInput(targetAmount, currency)
 
   const valid =
     name.trim().length > 0 &&

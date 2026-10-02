@@ -56,10 +56,10 @@ export function TransactionDetails({
   const details = transaction.details ?? []
   const detailed = details.reduce((total, detail) => total.plus(detail.amount), D(0))
   const remaining = D(transaction.amount).minus(detailed)
-  const orderedDetails = [...details].sort(
-    (a, b) => (b.date ?? transaction.date).localeCompare(a.date ?? transaction.date)
+  const orderedDetails = [...details].sort((a, b) =>
+    (b.date ?? transaction.date).localeCompare(a.date ?? transaction.date)
   )
-  const parsedAmount = parseDecimalInput(amount)
+  const parsedAmount = parseDecimalInput(amount, currency)
   const canAdd =
     description.trim().length > 0 &&
     !!parsedAmount?.greaterThan(0) &&
@@ -165,7 +165,7 @@ export function TransactionDetails({
                 defaultValue={formatAmountInput(detail.amount, currency)}
                 inputMode="decimal"
                 onBlur={(event) => {
-                  const value = parseDecimalInput(event.currentTarget.value)
+                  const value = parseDecimalInput(event.currentTarget.value, currency)
                   if (
                     !value ||
                     !value.greaterThan(0) ||

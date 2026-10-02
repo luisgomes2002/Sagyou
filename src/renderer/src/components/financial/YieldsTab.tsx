@@ -49,7 +49,11 @@ export function YieldsTab({
   const [entryDate, setEntryDate] = useState(todayLocalISO())
   const [entryAmounts, setEntryAmounts] = useState<Record<string, string>>({})
   const [duplicateDialog, setDuplicateDialog] = useState<FinancialTransaction[] | null>(null)
-  const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; sourceId: string; name: string }>({
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    open: boolean
+    sourceId: string
+    name: string
+  }>({
     open: false,
     sourceId: '',
     name: ''
@@ -181,7 +185,7 @@ export function YieldsTab({
         if (existing) onDeleteEntry(existing.id)
         continue
       }
-      const parsed = parseDecimalInput(raw)
+      const parsed = parseDecimalInput(raw, currency)
       if (parsed === null || parsed.lessThanOrEqualTo(0)) continue
 
       const existing = entryByKey.get(`${source.id}|${entryDate}`)
@@ -222,7 +226,14 @@ export function YieldsTab({
             onClick={prevMonth}
             className="p-1 rounded hover:bg-[#3b3b3b] text-[#999999] hover:text-[#d4d4d4] transition-colors"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <polyline points="15,18 9,12 15,6" />
             </svg>
           </button>
@@ -233,7 +244,14 @@ export function YieldsTab({
             onClick={nextMonth}
             className="p-1 rounded hover:bg-[#3b3b3b] text-[#999999] hover:text-[#d4d4d4] transition-colors"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <polyline points="9,18 15,12 9,6" />
             </svg>
           </button>
@@ -245,18 +263,17 @@ export function YieldsTab({
           </button>
         </div>
         <span className="text-xs text-[#999999]">
-          Total: <span className="text-[#46d478] font-medium">{formatCurrency(totalMonth, currency)}</span>
+          Total:{' '}
+          <span className="text-[#46d478] font-medium">{formatCurrency(totalMonth, currency)}</span>
         </span>
       </div>
 
       {duplicateDialog && (
         <div className="px-5 py-3 border-b border-[#3b3b3b] bg-[#2a2a2a]">
-          <p className="text-xs font-semibold text-[#e04040] mb-1">
-            Duplicatas encontradas
-          </p>
+          <p className="text-xs font-semibold text-[#e04040] mb-1">Duplicatas encontradas</p>
           <p className="text-xs text-[#999] mb-3">
-            Há {duplicateDialog.length} transações &ldquo;{summaryDescription}&rdquo;.
-            Escolha qual manter. As outras serão apagadas.
+            Há {duplicateDialog.length} transações &ldquo;{summaryDescription}&rdquo;. Escolha qual
+            manter. As outras serão apagadas.
           </p>
           <div className="space-y-1.5">
             {duplicateDialog.map((dup) => (
@@ -286,10 +303,7 @@ export function YieldsTab({
           </p>
           <div className="space-y-1.5 mb-3">
             {sources.map((source) => (
-              <div
-                key={source.id}
-                className="flex items-center gap-2 group"
-              >
+              <div key={source.id} className="flex items-center gap-2 group">
                 {editingSourceId === source.id ? (
                   <input
                     type="text"
@@ -316,7 +330,9 @@ export function YieldsTab({
                       editar
                     </button>
                     <button
-                      onClick={() => setDeleteConfirm({ open: true, sourceId: source.id, name: source.name })}
+                      onClick={() =>
+                        setDeleteConfirm({ open: true, sourceId: source.id, name: source.name })
+                      }
                       className="text-[10px] text-[#666] hover:text-[#e04040] transition-colors opacity-0 group-hover:opacity-100"
                     >
                       apagar
@@ -356,9 +372,7 @@ export function YieldsTab({
         {sources.length > 0 && (
           <div className="px-5 py-3 border-t border-[#3b3b3b]">
             <div className="flex items-center gap-3 mb-3">
-              <p className="text-xs font-semibold text-[#d4d4d4]">
-                Registrar rendimento
-              </p>
+              <p className="text-xs font-semibold text-[#d4d4d4]">Registrar rendimento</p>
               <input
                 type="date"
                 value={entryDate}
@@ -376,7 +390,9 @@ export function YieldsTab({
                       {source.name}
                     </span>
                     <div className="flex items-center gap-1 flex-1">
-                      <span className="text-xs text-[#666]">{CURRENCY_CONFIG[currency].symbol}</span>
+                      <span className="text-xs text-[#666]">
+                        {CURRENCY_CONFIG[currency].symbol}
+                      </span>
                       <input
                         type="text"
                         inputMode="decimal"
@@ -387,7 +403,15 @@ export function YieldsTab({
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') handleSaveEntries()
                         }}
-                        placeholder={existing ? formatCurrency(existing.amount, currency) : '0,00'}
+                        placeholder={
+                          existing
+                            ? formatCurrency(existing.amount, currency)
+                            : currency === 'JPY'
+                              ? '0'
+                              : currency === 'USD'
+                                ? '0.00'
+                                : '0,00'
+                        }
                         className="flex-1 bg-[#1e1e1e] border border-[#3b3b3b] text-[#d4d4d4] rounded px-2 py-1 text-sm focus:outline-none focus:border-[#7c3aed] placeholder-[#555]"
                       />
                     </div>

@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { HomeView } from '../../components/views/HomeView'
+import type { FinancialTransaction } from '../../types'
 
 const dashboard = vi.hoisted(() => ({
   tasks: [],
@@ -15,7 +16,13 @@ const dashboard = vi.hoisted(() => ({
       currency: 'BRL',
       transactions: []
     },
-    { id: 'table-2', profileId: 'personal', name: 'Reserva', currency: 'BRL', transactions: [] }
+    {
+      id: 'table-2',
+      profileId: 'personal',
+      name: 'Reserva',
+      currency: 'BRL',
+      transactions: [] as FinancialTransaction[]
+    }
   ],
   financialProfiles: [{ id: 'personal', name: 'Minhas finanças' }],
   activeFinancialProfileId: 'personal',
@@ -34,6 +41,12 @@ vi.mock('../../store/aiRun', () => ({
 describe('Tabela financeira da Home', () => {
   beforeEach(() => {
     localStorage.clear()
+  })
+
+  afterEach(() => {
+    dashboard.lists[1].currency = 'BRL'
+    dashboard.lists[1].transactions = []
+    vi.unstubAllGlobals()
   })
 
   it('restaura a última tabela escolhida ao reabrir a Home', () => {
@@ -58,5 +71,31 @@ describe('Tabela financeira da Home', () => {
     expect(screen.getByRole('combobox', { name: 'Tabela financeira do dashboard' })).toHaveValue(
       '__consolidated__'
     )
+  })
+
+  it('exibe o valor nativo da tabela em ienes mesmo com câmbio disponível', async () => {
+    const now = new Date()
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-02`
+    dashboard.lists[1].currency = 'JPY'
+    dashboard.lists[1].transactions = [
+      {
+        id: 'yen-income',
+        description: 'Pagamento',
+        amount: '20015',
+        type: 'income',
+        date: today
+      }
+    ]
+    const fetchExchangeRate = vi.fn().mockResolvedValue({ rate: '0.03' })
+    vi.stubGlobal('electronAPI', { financial: { fetchExchangeRate } })
+
+    render(<HomeView projects={[]} onNavigate={vi.fn()} />)
+    fireEvent.change(screen.getByRole('combobox', { name: 'Tabela financeira do dashboard' }), {
+      target: { value: 'table-2' }
+    })
+
+    await waitFor(() => expect(fetchExchangeRate).toHaveBeenCalledWith('JPY-BRL'))
+    await waitFor(() => expect(screen.getAllByText('¥20.015').length).toBeGreaterThan(0))
+    expect(screen.queryByText('¥600')).not.toBeInTheDocument()
   })
 })

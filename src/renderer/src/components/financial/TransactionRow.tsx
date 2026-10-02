@@ -31,7 +31,7 @@ export function AddTransactionRow({ currency, onAdd }: AddTransactionRowProps) {
 
   const submit = () => {
     if (!description.trim()) return
-    const amountDecimal = parseDecimalInput(amount)
+    const amountDecimal = parseDecimalInput(amount, currency)
     if (amountDecimal === null || amountDecimal.lessThanOrEqualTo(0)) return
     const cat = category.trim()
     onAdd({
@@ -138,7 +138,7 @@ export function AddTransactionRow({ currency, onAdd }: AddTransactionRowProps) {
       <td className="py-1.5 pr-3 w-9 text-center">
         <button
           onClick={submit}
-          disabled={!description.trim() || !parseDecimalInput(amount)?.greaterThan(0)}
+          disabled={!description.trim() || !parseDecimalInput(amount, currency)?.greaterThan(0)}
           className="p-1 rounded text-[#7c3aed] hover:bg-[#2a2a2a] disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
         >
           <svg
@@ -245,7 +245,7 @@ export function TransactionRow({
     if (clean !== v) setEditCat(clean)
   }
   const commitAmount = () => {
-    const d = parseDecimalInput(editAmount)
+    const d = parseDecimalInput(editAmount, currency)
     if (d !== null && d.greaterThan(0)) {
       const detailsTotal = (tx.details ?? []).reduce(
         (total, detail) => total.plus(detail.amount),
@@ -473,9 +473,7 @@ export function TransactionRow({
         <td className="py-2 pr-2 w-20 text-center">
           <span
             className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
-              tx.type === 'income'
-                ? 'bg-[#3b3b3b] text-[#46d478]'
-                : 'bg-[#3b3b3b] text-[#e04040]'
+              tx.type === 'income' ? 'bg-[#3b3b3b] text-[#46d478]' : 'bg-[#3b3b3b] text-[#e04040]'
             }`}
           >
             {tx.type === 'income' ? '↑ Entrada' : '↓ Saída'}
