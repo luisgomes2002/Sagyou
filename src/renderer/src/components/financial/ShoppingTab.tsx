@@ -7,7 +7,9 @@ import { formatCurrency, itemTotal, parseDecimalInput, formatAmountInput } from 
 interface ItemRowProps {
   item: ShoppingItem
   currency: Currency
-  onUpdate: (updates: Partial<Pick<ShoppingItem, 'name' | 'qty' | 'price' | 'done' | 'link'>>) => void
+  onUpdate: (
+    updates: Partial<Pick<ShoppingItem, 'name' | 'qty' | 'price' | 'done' | 'link'>>
+  ) => void
   onDelete: () => void
   onToggle: () => void
 }
@@ -15,7 +17,9 @@ interface ItemRowProps {
 function ItemRow({ item, currency, onUpdate, onDelete, onToggle }: ItemRowProps) {
   const [name, setName] = useState(item.name)
   const [qty, setQty] = useState(item.qty.toString())
-  const [price, setPrice] = useState(() => item.price != null ? formatAmountInput(item.price, currency) : '')
+  const [price, setPrice] = useState(() =>
+    item.price != null ? formatAmountInput(item.price, currency) : ''
+  )
   const [link, setLink] = useState(item.link ?? '')
 
   useEffect(() => {
@@ -44,7 +48,7 @@ function ItemRow({ item, currency, onUpdate, onDelete, onToggle }: ItemRowProps)
   }
 
   const commitPrice = () => {
-    const d = parseDecimalInput(price)
+    const d = parseDecimalInput(price, currency)
     if (price.trim() === '' || price.trim().replace(',', '.') === '') {
       if (item.price != null) onUpdate({ price: undefined })
     } else if (d !== null && d.greaterThanOrEqualTo(0)) {
@@ -65,17 +69,30 @@ function ItemRow({ item, currency, onUpdate, onDelete, onToggle }: ItemRowProps)
   }
 
   return (
-    <tr className={`group border-b border-[#3b3b3b] transition-colors ${item.done ? 'opacity-60' : 'hover:bg-[#2a2a2a]'}`}>
+    <tr
+      className={`group border-b border-[#3b3b3b] transition-colors ${item.done ? 'opacity-60' : 'hover:bg-[#2a2a2a]'}`}
+    >
       <td className="pl-4 pr-2 py-2">
         <button
           onClick={onToggle}
-          title={item.done ? 'Desmarcar (remove lançamento em Finanças)' : 'Marcar como comprado (lança em Finanças)'}
+          title={
+            item.done
+              ? 'Desmarcar (remove lançamento em Finanças)'
+              : 'Marcar como comprado (lança em Finanças)'
+          }
           className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
             item.done ? 'bg-[#20b858] border-[#20b858]' : 'border-[#555555] hover:border-[#7c3aed]'
           }`}
         >
           {item.done && (
-            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
+            <svg
+              width="9"
+              height="9"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="white"
+              strokeWidth="3"
+            >
               <polyline points="20 6 9 17 4 12" />
             </svg>
           )}
@@ -111,7 +128,9 @@ function ItemRow({ item, currency, onUpdate, onDelete, onToggle }: ItemRowProps)
       </td>
       <td className="py-1.5 pr-2 w-28">
         <div className="flex items-center gap-1">
-          <span className="text-[10px] text-[#555555] select-none">{CURRENCY_CONFIG[currency].symbol}</span>
+          <span className="text-[10px] text-[#555555] select-none">
+            {CURRENCY_CONFIG[currency].symbol}
+          </span>
           <input
             type="text"
             inputMode="decimal"
@@ -141,7 +160,14 @@ function ItemRow({ item, currency, onUpdate, onDelete, onToggle }: ItemRowProps)
               title={item.link}
               className="shrink-0 text-[#7c3aed] hover:text-[#a080f0] transition-colors"
             >
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                width="10"
+                height="10"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
                 <polyline points="15 3 21 3 21 9" />
                 <line x1="10" y1="14" x2="21" y2="3" />
@@ -152,7 +178,9 @@ function ItemRow({ item, currency, onUpdate, onDelete, onToggle }: ItemRowProps)
       </td>
       <td className="py-1.5 pr-2 w-24 text-right">
         {total.greaterThan(0) ? (
-          <span className="text-sm tabular-nums text-[#d4d4d4]">{formatCurrency(total, currency)}</span>
+          <span className="text-sm tabular-nums text-[#d4d4d4]">
+            {formatCurrency(total, currency)}
+          </span>
         ) : (
           <span className="text-sm text-[#3b3b3b]">-</span>
         )}
@@ -162,7 +190,14 @@ function ItemRow({ item, currency, onUpdate, onDelete, onToggle }: ItemRowProps)
           onClick={onDelete}
           className="p-1 rounded text-[#3b3b3b] hover:text-[#e04040] hover:bg-[#2a2a2a] opacity-0 group-hover:opacity-100 transition-all"
         >
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg
+            width="11"
+            height="11"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
             <line x1="18" y1="6" x2="6" y2="18" />
             <line x1="6" y1="6" x2="18" y2="18" />
           </svg>
@@ -187,13 +222,14 @@ function AddItemRow({ currency, onAdd }: AddItemRowProps) {
   const submit = () => {
     if (!name.trim()) return
     const qtyDecimal = parseDecimalInput(qty)
-    const priceDecimal = parseDecimalInput(price)
+    const priceDecimal = parseDecimalInput(price, currency)
     onAdd({
       name: name.trim(),
       qty: qtyDecimal !== null && qtyDecimal.greaterThan(0) ? qtyDecimal.toNumber() : 1,
-      price: priceDecimal !== null && priceDecimal.greaterThanOrEqualTo(0)
-        ? priceDecimal.toDecimalPlaces(2).toString()
-        : undefined,
+      price:
+        priceDecimal !== null && priceDecimal.greaterThanOrEqualTo(0)
+          ? priceDecimal.toDecimalPlaces(2).toString()
+          : undefined,
       link: link.trim() || undefined
     })
     setName('')
@@ -211,7 +247,14 @@ function AddItemRow({ currency, onAdd }: AddItemRowProps) {
     <tr className="border-b border-[#3b3b3b] hover:bg-[#2a2a2a] transition-colors">
       <td className="pl-4 pr-2 py-2">
         <div className="w-4 h-4 rounded border border-dashed border-[#3b3b3b] flex items-center justify-center">
-          <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#3b3b3b" strokeWidth="3">
+          <svg
+            width="8"
+            height="8"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#3b3b3b"
+            strokeWidth="3"
+          >
             <line x1="12" y1="5" x2="12" y2="19" />
             <line x1="5" y1="12" x2="19" y2="12" />
           </svg>
@@ -240,7 +283,9 @@ function AddItemRow({ currency, onAdd }: AddItemRowProps) {
       </td>
       <td className="py-1.5 pr-2 w-28">
         <div className="flex items-center gap-1">
-          <span className="text-[10px] text-[#555555] select-none">{CURRENCY_CONFIG[currency].symbol}</span>
+          <span className="text-[10px] text-[#555555] select-none">
+            {CURRENCY_CONFIG[currency].symbol}
+          </span>
           <input
             type="text"
             inputMode="decimal"
@@ -269,7 +314,14 @@ function AddItemRow({ currency, onAdd }: AddItemRowProps) {
           disabled={!name.trim()}
           className="p-1 rounded text-[#7c3aed] hover:bg-[#2a2a2a] disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
         >
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <svg
+            width="11"
+            height="11"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+          >
             <line x1="12" y1="5" x2="12" y2="19" />
             <line x1="5" y1="12" x2="19" y2="12" />
           </svg>
@@ -281,7 +333,10 @@ function AddItemRow({ currency, onAdd }: AddItemRowProps) {
 
 interface ShoppingTabProps {
   list: FinancialTable
-  onUpdate: (itemId: string, updates: Partial<Pick<ShoppingItem, 'name' | 'qty' | 'price' | 'done' | 'link'>>) => void
+  onUpdate: (
+    itemId: string,
+    updates: Partial<Pick<ShoppingItem, 'name' | 'qty' | 'price' | 'done' | 'link'>>
+  ) => void
   onDelete: (itemId: string) => void
   onToggle: (itemId: string) => void
   onAdd: (data: { name: string; qty: number; price?: string; link?: string }) => void
@@ -294,7 +349,9 @@ export function ShoppingTab({ list, onUpdate, onDelete, onToggle, onAdd }: Shopp
   const doneItems = items.filter((i) => i.done).length
   const percent = totalItems > 0 ? Math.round((doneItems / totalItems) * 100) : 0
   const totalPrice = items.reduce((acc, i) => acc.plus(itemTotal(i)), new Decimal(0))
-  const donePrice = items.filter((i) => i.done).reduce((acc, i) => acc.plus(itemTotal(i)), new Decimal(0))
+  const donePrice = items
+    .filter((i) => i.done)
+    .reduce((acc, i) => acc.plus(itemTotal(i)), new Decimal(0))
 
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
@@ -304,10 +361,16 @@ export function ShoppingTab({ list, onUpdate, onDelete, onToggle, onAdd }: Shopp
             <div className="w-32 h-1.5 rounded-full bg-[#3b3b3b] overflow-hidden">
               <div
                 className="h-full rounded-full transition-all duration-300"
-                style={{ width: `${percent}%`, backgroundColor: percent === 100 ? '#20b858' : '#7c3aed' }}
+                style={{
+                  width: `${percent}%`,
+                  backgroundColor: percent === 100 ? '#20b858' : '#7c3aed'
+                }}
               />
             </div>
-            <span className="text-xs tabular-nums" style={{ color: percent === 100 ? '#20b858' : '#7c3aed' }}>
+            <span
+              className="text-xs tabular-nums"
+              style={{ color: percent === 100 ? '#20b858' : '#7c3aed' }}
+            >
               {percent}%
             </span>
           </div>
@@ -324,11 +387,21 @@ export function ShoppingTab({ list, onUpdate, onDelete, onToggle, onAdd }: Shopp
           <thead className="sticky top-0 bg-[#232323] z-10">
             <tr className="border-b border-[#3b3b3b]">
               <th className="pl-4 pr-2 py-2 w-9" />
-              <th className="py-2 pr-2 text-left text-[10px] font-semibold uppercase tracking-wider text-[#999999]">Item</th>
-              <th className="py-2 pr-2 w-16 text-center text-[10px] font-semibold uppercase tracking-wider text-[#999999]">Qtd</th>
-              <th className="py-2 pr-2 w-28 text-left text-[10px] font-semibold uppercase tracking-wider text-[#999999]">Preço/un</th>
-              <th className="py-2 pr-2 w-28 text-left text-[10px] font-semibold uppercase tracking-wider text-[#999999]">Link</th>
-              <th className="py-2 pr-2 w-24 text-right text-[10px] font-semibold uppercase tracking-wider text-[#999999]">Total</th>
+              <th className="py-2 pr-2 text-left text-[10px] font-semibold uppercase tracking-wider text-[#999999]">
+                Item
+              </th>
+              <th className="py-2 pr-2 w-16 text-center text-[10px] font-semibold uppercase tracking-wider text-[#999999]">
+                Qtd
+              </th>
+              <th className="py-2 pr-2 w-28 text-left text-[10px] font-semibold uppercase tracking-wider text-[#999999]">
+                Preço/un
+              </th>
+              <th className="py-2 pr-2 w-28 text-left text-[10px] font-semibold uppercase tracking-wider text-[#999999]">
+                Link
+              </th>
+              <th className="py-2 pr-2 w-24 text-right text-[10px] font-semibold uppercase tracking-wider text-[#999999]">
+                Total
+              </th>
               <th className="py-2 pr-3 w-9" />
             </tr>
           </thead>
@@ -358,10 +431,16 @@ export function ShoppingTab({ list, onUpdate, onDelete, onToggle, onAdd }: Shopp
               <div className="flex-1 max-w-48 h-2 rounded-full bg-[#3b3b3b] overflow-hidden">
                 <div
                   className="h-full rounded-full transition-all duration-300"
-                  style={{ width: `${percent}%`, backgroundColor: percent === 100 ? '#20b858' : '#7c3aed' }}
+                  style={{
+                    width: `${percent}%`,
+                    backgroundColor: percent === 100 ? '#20b858' : '#7c3aed'
+                  }}
                 />
               </div>
-              <span className="text-xs font-medium tabular-nums shrink-0" style={{ color: percent === 100 ? '#20b858' : '#7c3aed' }}>
+              <span
+                className="text-xs font-medium tabular-nums shrink-0"
+                style={{ color: percent === 100 ? '#20b858' : '#7c3aed' }}
+              >
                 {percent}%
               </span>
             </div>
@@ -369,13 +448,21 @@ export function ShoppingTab({ list, onUpdate, onDelete, onToggle, onAdd }: Shopp
               <div className="flex items-end gap-6 shrink-0">
                 {donePrice.greaterThan(0) && donePrice.lessThan(totalPrice) && (
                   <div className="text-right">
-                    <p className="text-[10px] text-[#999999] uppercase tracking-wider mb-0.5">Gasto</p>
-                    <p className="text-sm font-semibold text-[#20b858] tabular-nums">{formatCurrency(donePrice, currency)}</p>
+                    <p className="text-[10px] text-[#999999] uppercase tracking-wider mb-0.5">
+                      Gasto
+                    </p>
+                    <p className="text-sm font-semibold text-[#20b858] tabular-nums">
+                      {formatCurrency(donePrice, currency)}
+                    </p>
                   </div>
                 )}
                 <div className="text-right">
-                  <p className="text-[10px] text-[#999999] uppercase tracking-wider mb-0.5">Total</p>
-                  <p className="text-base font-bold text-[#d4d4d4] tabular-nums">{formatCurrency(totalPrice, currency)}</p>
+                  <p className="text-[10px] text-[#999999] uppercase tracking-wider mb-0.5">
+                    Total
+                  </p>
+                  <p className="text-base font-bold text-[#d4d4d4] tabular-nums">
+                    {formatCurrency(totalPrice, currency)}
+                  </p>
                 </div>
               </div>
             )}

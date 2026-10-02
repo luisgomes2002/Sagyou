@@ -319,6 +319,10 @@ Same **legacy-mirror** pattern as `activeCodePathId`: the persisted payload carr
 
 `FinancialTransaction.amount`, `FinancialTransaction.details[].amount`, `FinancialGoal.targetAmount`, and `ShoppingItem.price` are stored **in memory and in backups/JSON as canonical decimal strings** (e.g. `"1500.5"`), not numbers. All money arithmetic goes through `decimal.js` — use the `D()` helper and `Decimal` methods (`.plus/.minus/.times/.div`) in `components/financial/shared.ts`; only convert to `number` for display geometry (bar widths, percentages). `qty` stays a `number` (it's a quantity, not currency).
 
+Formatting never changes stored amounts. JPY summaries use dot grouping and round to whole yen; existing fractional yen remain visible in edit fields so historical data is not silently changed. Edit fields group thousands (BRL and JPY with dots, USD with commas) and retain any stored fraction beyond the usual currency precision. Yen input treats `1.000` as one thousand; `formatAmountInput` adds a trailing zero to an ambiguous historical fraction such as `1.123` before editing so parsing can round-trip its canonical value. Pass the table currency to `parseDecimalInput` for every monetary edit (including goals, details, shopping prices and yields); quantity inputs keep the local numeric default. `formatAmountInput` and parsing must round-trip canonical values before an unchanged field blurs, or a display-only change can overwrite real money.
+
+On the Home dashboard, selecting an individual financial table displays its native amounts in that table's currency. Exchange-rate conversion to BRL is only for the Consolidado selection; never pair a converted BRL amount with a selected table's currency symbol.
+
 An invoice detail may carry `linkedTransactionId` pointing to its mirror transaction in another
 financial table. This is deliberately different from the legacy transaction-to-transaction link:
 the detail link keeps the whole invoice in consolidated totals and omits the mirror, while the

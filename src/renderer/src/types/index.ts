@@ -121,7 +121,7 @@ export const CURRENCY_CONFIG: Record<
 > = {
   BRL: { symbol: 'R$', decimals: 2, label: 'Real' },
   USD: { symbol: '$', decimals: 2, label: 'Dólar' },
-  JPY: { symbol: '¥', decimals: 1, label: 'Iene' }
+  JPY: { symbol: '¥', decimals: 0, label: 'Iene' }
 }
 
 export interface FinancialTransaction {

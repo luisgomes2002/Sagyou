@@ -235,9 +235,13 @@ export function HomeView({ projects, onNavigate }: Props) {
   )
   const accBalance = useMemo(() => accIncome.minus(accExpense), [accIncome, accExpense])
 
-  // Multi-currency: convert totals to BRL for a unified display
-  const tableCurrencies = useMemo(() => [...new Set(profileLists.map((l) => l.currency))], [lists])
-  const multiCurrency = tableCurrencies.length > 1
+  // A selected table always displays its native amount. Only the consolidated
+  // view can convert different currencies into a single BRL total.
+  const tableCurrencies = useMemo(
+    () => [...new Set(profileLists.map((l) => l.currency))],
+    [profileLists]
+  )
+  const multiCurrency = financialTableId === '__consolidated__' && tableCurrencies.length > 1
   const ratesLoaded = useMemo(() => {
     const nonBrl = tableCurrencies.filter((c) => c !== 'BRL')
     if (nonBrl.length === 0) return false

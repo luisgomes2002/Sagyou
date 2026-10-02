@@ -171,6 +171,8 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    **No consolidado, totais nativos nunca somam moedas diferentes**: mostre BRL, USD e JPY
    separadamente. A equivalência cambial é só uma leitura em tempo real, identificada como tal,
    e nunca é gravada nem altera os lançamentos.
+   Na Home, uma tabela selecionada sempre exibe valores na moeda nativa; conversão cambial
+   só se aplica ao modo Consolidado.
    As configurações de planejamento (banco/app, saldo real, orçamentos e recorrências) são
    opcionais e persistem em metadata da tabela; seus valores monetários também são strings decimais.
    Itens em `FinancialTransaction.details` repartem o lançamento principal: a soma deles não pode
@@ -180,6 +182,11 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    Um detalhe pode vincular uma transação espelho de outra tabela: a fatura pai continua no
    consolidado e somente o espelho é omitido. O vínculo legado entre transações mantém a regra
    inversa, omitindo a transação pai, para preservar dados existentes.
+   A formatação de moeda é só exibição: resumos em JPY usam ponto para milhar
+   e arredondam para ienes inteiros, sem alterar frações já salvas. Campos de edição
+   agrupam milhares (BRL e JPY com ponto, USD com vírgula), mostram frações já
+   salvas e passam a moeda a `parseDecimalInput` para preservar
+   o valor ao editar; quantidade (`qty`) usa o formato numérico local padrão.
 3. **Nunca remova nem renomeie campos** de tipos persistidos sem migração ou
    fallback. Campo novo opcional é seguro; mudar a forma de um array ou objeto
    existente, não.

@@ -435,6 +435,7 @@ export function FinanceTab({
       </div>
 
       <GoalModal
+        currency={currency}
         open={goalModal.open}
         goal={goalModal.goal}
         onSave={(data) => {
