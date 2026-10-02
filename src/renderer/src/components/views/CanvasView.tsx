@@ -84,7 +84,9 @@ export function CanvasView(props: Props) {
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
-    const onWheel = (e: WheelEvent) => {
+    const onWheel = (e: WheelEvent): void => {
+      // The editor lives inside the canvas; let its scrollable areas handle the wheel.
+      if (noteModalIdRef.current) return
       e.preventDefault()
       const rect = el.getBoundingClientRect()
       const mouseX = e.clientX - rect.left
