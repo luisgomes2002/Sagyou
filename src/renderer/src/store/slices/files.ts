@@ -1,5 +1,6 @@
 import type { StateCreator } from 'zustand'
-import type { StoredFile } from '../../types'
+import type { StoredFile, FinancialTable } from '../../types'
+import { applyFinancialTransactionEdit } from '../../utils/financialRecord'
 
 export interface FilesSlice {
   files: StoredFile[]
@@ -8,7 +9,7 @@ export interface FilesSlice {
 }
 
 export const createFilesSlice: StateCreator<
-  FilesSlice & { _persist: () => void },
+  FilesSlice & { lists: FinancialTable[]; _persist: () => void },
   [],
   [],
   FilesSlice
@@ -21,7 +22,22 @@ export const createFilesSlice: StateCreator<
   },
 
   removeFile: (id) => {
-    set((s) => ({ files: s.files.filter((f) => f.id !== id) }))
+    const at = new Date().toISOString()
+    set((s) => ({
+      files: s.files.filter((f) => f.id !== id),
+      lists: s.lists.map((list) => ({
+        ...list,
+        transactions: list.transactions.map((tx) =>
+          tx.receiptFileIds?.includes(id)
+            ? applyFinancialTransactionEdit(
+                tx,
+                { receiptFileIds: tx.receiptFileIds.filter((fileId) => fileId !== id) },
+                at
+              )
+            : tx
+        )
+      }))
+    }))
     get()._persist()
   }
 })

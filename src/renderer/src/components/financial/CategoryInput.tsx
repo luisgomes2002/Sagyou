@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { FINANCIAL_CATEGORIES } from './shared'
+import { useKanbanStore } from '../../store/kanban'
+import { financialCategories } from './shared'
 
 interface CategoryInputProps {
   value: string
@@ -19,12 +20,17 @@ export function CategoryInput({
   className
 }: CategoryInputProps): React.JSX.Element {
   const [open, setOpen] = useState(false)
+  const lists = useKanbanStore((state) => state.lists)
+  const profiles = useKanbanStore((state) => state.financialProfiles)
+  const profileId = useKanbanStore((state) => state.activeFinancialProfileId)
+  const categories = financialCategories(
+    profiles.find((profile) => profile.id === profileId),
+    lists.filter((list) => list.profileId === profileId)
+  )
 
   const filtered = value.trim()
-    ? FINANCIAL_CATEGORIES.filter((category) =>
-        category.toLowerCase().includes(value.toLowerCase())
-      )
-    : FINANCIAL_CATEGORIES
+    ? categories.filter((category) => category.toLowerCase().includes(value.toLowerCase()))
+    : categories
 
   const select = (category: string): void => {
     onChange(category)

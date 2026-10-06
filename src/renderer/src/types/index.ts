@@ -139,8 +139,26 @@ export interface FinancialTransaction {
   linkedTransactionId?: string
   /** Bank, card or app used for this transaction. */
   source?: string
+  /** File ids from the shared Files library; the blob remains in files/ and in backups. */
+  receiptFileIds?: string[]
+  bankReference?: string
+  counterparty?: string
+  createdAt?: string
+  updatedAt?: string
+  reconciledAt?: string
+  audit?: FinancialTransactionAudit[]
+  /** Both sides of one internal currency transfer share this id. */
+  currencyTransferId?: string
+  /** Informational fee, shared by both sides; it is never added to totals. */
+  currencyTransferFee?: string
+  currencyTransferFeeCurrency?: Currency
   /** Optional breakdown of this transaction. Its amounts partition, but never add to, `amount`. */
   details?: FinancialTransactionDetail[]
+}
+
+export interface FinancialTransactionAudit {
+  at: string
+  changes: { field: string; before?: unknown; after?: unknown }[]
 }
 
 export interface FinancialTransactionDetail {
@@ -153,24 +171,6 @@ export interface FinancialTransactionDetail {
   date?: string
   /** Mirror transaction represented by this invoice item. */
   linkedTransactionId?: string
-}
-
-export interface FinancialBudget {
-  category: string
-  /** Monthly spending limit as a canonical decimal string. */
-  limit: string
-}
-
-export interface FinancialRecurringTransaction {
-  id: string
-  description: string
-  amount: string
-  type: 'income' | 'expense'
-  dayOfMonth: number
-  category?: string
-  source?: string
-  active: boolean
-  lastGeneratedMonth?: string
 }
 
 export interface FinancialGoal {
@@ -207,6 +207,8 @@ export interface FinancialProfile {
   name: string
   createdAt: string
   updatedAt: string
+  /** User-defined financial categories shared by tables in this profile. */
+  customCategories?: string[]
 }
 
 export interface FinancialTable {
@@ -225,8 +227,8 @@ export interface FinancialTable {
   /** Manually reconciled balance, kept separate from the calculated balance. */
   actualBalance?: string
   actualBalanceUpdatedAt?: string
-  budgets?: FinancialBudget[]
-  recurringTransactions?: FinancialRecurringTransaction[]
+  /** Preserves unsupported keys from older databases and backups without exposing them as app features. */
+  legacyFinancialMetadata?: Record<string, unknown>
   createdAt: string
   updatedAt: string
 }

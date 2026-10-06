@@ -25,6 +25,7 @@ import type {
 } from '../../types'
 import { DEFAULT_FINANCIAL_PROFILE_ID } from '../../types'
 import { D, moneyStr } from '../../utils/money'
+import { preserveLegacyFinancialMetadata } from '../../utils/financialLegacy'
 
 interface StorageDep {
   exportBackup: (backup: Backup) => Promise<{ success: boolean }>
@@ -72,8 +73,9 @@ function normalizeProject(p: Project, i: number): Project {
 // and migrate monetary fields (amount, price, targetAmount) from number → string.
 // Keep in sync with the identical normalizeList in src/renderer/src/store/kanban.ts.
 function normalizeList(l: FinancialTable): FinancialTable {
+  const table = preserveLegacyFinancialMetadata(l)
   return {
-    ...l,
+    ...table,
     profileId: l.profileId || DEFAULT_FINANCIAL_PROFILE_ID,
     currency: (l.currency || 'BRL') as Currency,
     items: (l.items ?? []).map((i) => ({
@@ -85,11 +87,6 @@ function normalizeList(l: FinancialTable): FinancialTable {
       return { ...t, amount, details: normalizeTransactionDetails(t.details, amount) }
     }),
     actualBalance: l.actualBalance == null ? undefined : moneyStr(l.actualBalance),
-    budgets: (l.budgets ?? []).map((b) => ({ ...b, limit: moneyStr(b.limit) })),
-    recurringTransactions: (l.recurringTransactions ?? []).map((r) => ({
-      ...r,
-      amount: moneyStr(r.amount)
-    })),
     goals: (l.goals ?? []).map((g) => ({ ...g, targetAmount: moneyStr(g.targetAmount) })),
     yieldSources: (l.yieldSources ?? []).map((s) => ({ ...s })),
     yieldEntries: (l.yieldEntries ?? []).map((e) => ({ ...e, amount: moneyStr(e.amount) }))

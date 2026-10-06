@@ -654,6 +654,37 @@ describe('backups carry AI chat history', () => {
     expect(useKanbanStore.getState().files).toEqual([file])
   })
 
+  it('restores a financial receipt link and its record metadata with the file', async () => {
+    const storage = getStorageMock()
+    useKanbanStore.setState({ files: [] })
+    const listId = useKanbanStore.getState().createList('Brasil', 'BRL')
+    const txId = useKanbanStore.getState().addTransaction(listId, {
+      description: 'Pagamento', amount: '100', type: 'expense', date: '2026-10-06'
+    })
+    const file = { id: 'receipt-1', name: 'pix.pdf', ext: '.pdf', size: 10, createdAt: '2026-10-06T12:00:00Z' }
+    useKanbanStore.getState().addFiles([file])
+    useKanbanStore.getState().updateTransaction(listId, txId, {
+      receiptFileIds: [file.id], bankReference: 'E2E-123', counterparty: 'Loja',
+      reconciledAt: '2026-10-06T13:00:00Z'
+    })
+
+    await useKanbanStore.getState().exportBackup()
+    const backup = storage.exportBackup.mock.calls.at(-1)![0]
+    expect(backup.lists[0].transactions[0]).toMatchObject({
+      receiptFileIds: [file.id], bankReference: 'E2E-123', counterparty: 'Loja',
+      reconciledAt: '2026-10-06T13:00:00Z'
+    })
+    useKanbanStore.setState({ lists: [], files: [] })
+    storage.importBackup.mockResolvedValueOnce({ success: true, data: backup })
+
+    expect(await useKanbanStore.getState().importBackup()).toBe(true)
+    expect(useKanbanStore.getState().files).toEqual([file])
+    expect(useKanbanStore.getState().lists[0].transactions[0]).toMatchObject({
+      receiptFileIds: [file.id], bankReference: 'E2E-123', counterparty: 'Loja',
+      reconciledAt: '2026-10-06T13:00:00Z'
+    })
+  })
+
   it('importBackup leaves local files alone for a pre-v5 backup (no files key)', async () => {
     const local = { id: 'local', name: 'keep.txt', ext: '.txt', size: 1, createdAt: 'x' }
     useKanbanStore.setState({ files: [local] })

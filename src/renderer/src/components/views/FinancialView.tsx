@@ -10,8 +10,9 @@ import { FinanceTab } from '../financial/FinanceTab'
 import { AnalyticsTab } from '../financial/AnalyticsTab'
 import { ConsolidatedTab } from '../financial/ConsolidatedTab'
 import { YieldsTab } from '../financial/YieldsTab'
+import { ReceiptsTab } from '../financial/ReceiptsTab'
 
-type ActiveTab = 'shopping' | 'finance' | 'analytics' | 'consolidated' | 'yields'
+type ActiveTab = 'shopping' | 'finance' | 'analytics' | 'consolidated' | 'yields' | 'receipts'
 
 interface TableViewState {
   activeTab: ActiveTab
@@ -38,6 +39,7 @@ function makeDefaultState(): TableViewState {
 
 export function FinancialView() {
   const lists = useKanbanStore((s) => s.lists)
+  const files = useKanbanStore((s) => s.files)
   const financialProfiles = useKanbanStore((s) => s.financialProfiles)
   const activeFinancialProfileId = useKanbanStore((s) => s.activeFinancialProfileId)
   const createFinancialProfile = useKanbanStore((s) => s.createFinancialProfile)
@@ -211,7 +213,7 @@ export function FinancialView() {
           <>
             <div className="flex items-center justify-between px-5 py-3 border-b border-[#3b3b3b] shrink-0">
               <div className="flex items-center gap-3">
-                {ts.activeTab === 'consolidated' ? (
+                {ts.activeTab === 'consolidated' || ts.activeTab === 'receipts' ? (
                   <>
                     <svg
                       width="12"
@@ -227,7 +229,8 @@ export function FinancialView() {
                       <rect x="14" y="14" width="7" height="7" rx="1" />
                     </svg>
                     <h2 className="text-sm font-semibold text-[#d4d4d4]">
-                      Consolidado · {activeProfile?.name ?? 'Perfil'}
+                      {ts.activeTab === 'receipts' ? 'Comprovantes' : 'Consolidado'} ·{' '}
+                      {activeProfile?.name ?? 'Perfil'}
                     </h2>
                     <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-[#3b3b3b] text-[#a080f0]">
                       {profileLists.length} tabela{profileLists.length !== 1 ? 's' : ''}
@@ -330,6 +333,16 @@ export function FinancialView() {
                   Rendimentos
                 </button>
                 <button
+                  onClick={() => updateTs({ activeTab: 'receipts' })}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                    ts.activeTab === 'receipts'
+                      ? 'bg-[#3b3b3b] text-[#d4d4d4]'
+                      : 'text-[#999999] hover:text-[#d4d4d4]'
+                  }`}
+                >
+                  Comprovantes
+                </button>
+                <button
                   onClick={() => updateTs({ activeTab: 'consolidated' })}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
                     ts.activeTab === 'consolidated'
@@ -422,6 +435,7 @@ export function FinancialView() {
                 }}
               />
             )}
+            {ts.activeTab === 'receipts' && <ReceiptsTab lists={profileLists} files={files} />}
             {ts.activeTab === 'yields' && (
               <YieldsTab
                 list={activeList}

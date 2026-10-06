@@ -27,6 +27,8 @@ vi.mock('../../services/ElectronStorage', () => {
 
 import { useKanbanStore } from '../../store/kanban'
 import { DEFAULT_FINANCIAL_PROFILE_ID } from '../../types'
+import { preserveLegacyFinancialMetadata } from '../../utils/financialLegacy'
+import { financialCategories } from '../../components/financial/shared'
 
 function resetStore() {
   useKanbanStore.setState({
@@ -69,10 +71,194 @@ describe('financial table creation', () => {
     expect(useKanbanStore.getState().activeFinancialProfileId).toBe(profileId)
   })
 
+  it('keeps custom categories scoped to the profile and preserves old transactions when removed', () => {
+    const companyId = useKanbanStore.getState().createFinancialProfile('Murasaki')
+    const companyTable = useKanbanStore.getState().createList('Murasaki Japão', 'JPY', companyId)
+    const personalTable = useKanbanStore.getState().createList('Pessoal', 'JPY')
+    useKanbanStore.getState().addFinancialCategory(companyId, 'Canal')
+    useKanbanStore.getState().addFinancialCategory(companyId, 'canal')
+    expect(
+      useKanbanStore.getState().financialProfiles.find((profile) => profile.id === companyId)
+        ?.customCategories
+    ).toEqual(['Canal'])
+    expect(
+      useKanbanStore
+        .getState()
+        .financialProfiles.find((profile) => profile.id === DEFAULT_FINANCIAL_PROFILE_ID)
+        ?.customCategories
+    ).toBeUndefined()
+
+    useKanbanStore.getState().addTransaction(companyTable, {
+      description: 'Câmera',
+      amount: '1000',
+      type: 'expense',
+      date: '2026-10-06',
+      category: 'Canal'
+    })
+    useKanbanStore.getState().removeFinancialCategory(companyId, 'Canal')
+    const state = useKanbanStore.getState()
+    expect(state.lists.find((list) => list.id === companyTable)?.transactions[0].category).toBe(
+      'Canal'
+    )
+    expect(
+      financialCategories(
+        state.financialProfiles.find((profile) => profile.id === companyId),
+        state.lists.filter((list) => list.profileId === companyId)
+      )
+    ).toContain('Canal')
+    expect(
+      financialCategories(
+        state.financialProfiles.find((profile) => profile.id === DEFAULT_FINANCIAL_PROFILE_ID),
+        state.lists.filter((list) => list.id === personalTable)
+      )
+    ).not.toContain('Canal')
+  })
+
   it('deleteList removes the table entirely', () => {
     const id = useKanbanStore.getState().createList('Empresa 1')
     useKanbanStore.getState().deleteList(id)
     expect(useKanbanStore.getState().lists).toHaveLength(0)
+  })
+})
+
+describe('legacy financial metadata', () => {
+  it('retains unsupported old settings without exposing them as active table fields', () => {
+    const old = {
+      id: 'old',
+      name: 'Old',
+      currency: 'BRL',
+      items: [],
+      transactions: [],
+      goals: [],
+      budgets: [{ category: 'Casa', limit: 100 }],
+      recurringTransactions: [{ id: 'monthly', amount: 50 }],
+      createdAt: '2026-01-01',
+      updatedAt: '2026-01-01'
+    }
+    const normalized = preserveLegacyFinancialMetadata(
+      old as unknown as import('../../types').FinancialTable
+    )
+    expect('budgets' in normalized).toBe(false)
+    expect('recurringTransactions' in normalized).toBe(false)
+    expect(normalized.legacyFinancialMetadata).toEqual({
+      budgets: old.budgets,
+      recurringTransactions: old.recurringTransactions
+    })
+  })
+})
+
+describe('financial documentation and currency transfers', () => {
+  beforeEach(resetStore)
+
+  it('keeps old transaction dates unknown and records later edits with previous values', () => {
+    const listId = useKanbanStore.getState().createList('Brasil', 'BRL')
+    const txId = useKanbanStore.getState().addTransaction(listId, {
+      description: 'Pagamento',
+      amount: '100',
+      type: 'expense',
+      date: '2026-10-06'
+    })
+    useKanbanStore.getState().updateTransaction(listId, txId, {
+      bankReference: 'E2E-123',
+      counterparty: 'João',
+      reconciledAt: '2026-10-07T10:00:00Z'
+    })
+    const tx = useKanbanStore.getState().lists.find((list) => list.id === listId)!.transactions[0]
+    expect(tx.createdAt).toBeTruthy()
+    expect(tx.updatedAt).toBeTruthy()
+    expect(tx.audit?.[0].changes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: 'bankReference', after: 'E2E-123' }),
+        expect.objectContaining({ field: 'counterparty', after: 'João' })
+      ])
+    )
+    useKanbanStore.getState().updateTransaction(listId, txId, { counterparty: 'Maria' })
+    expect(
+      useKanbanStore.getState().lists.find((list) => list.id === listId)!.transactions[0].audit?.[1]
+        .changes[0]
+    ).toMatchObject({ field: 'counterparty', before: 'João', after: 'Maria' })
+  })
+
+  it('clears bank reconciliation when a verified bank reference is corrected', () => {
+    const listId = useKanbanStore.getState().createList('Brasil', 'BRL')
+    const txId = useKanbanStore.getState().addTransaction(listId, {
+      description: 'Pagamento',
+      amount: '100',
+      type: 'expense',
+      date: '2026-10-06'
+    })
+    useKanbanStore.getState().updateTransaction(listId, txId, {
+      bankReference: 'E2E-antigo',
+      reconciledAt: '2026-10-07T10:00:00Z'
+    })
+    useKanbanStore.getState().updateTransaction(listId, txId, { bankReference: 'E2E-correto' })
+    const tx = useKanbanStore.getState().lists.find((list) => list.id === listId)!.transactions[0]
+    expect(tx.reconciledAt).toBeUndefined()
+    expect(tx.audit?.at(-1)?.changes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          field: 'bankReference',
+          before: 'E2E-antigo',
+          after: 'E2E-correto'
+        }),
+        expect.objectContaining({
+          field: 'reconciledAt',
+          before: '2026-10-07T10:00:00Z',
+          after: undefined
+        })
+      ])
+    )
+  })
+
+  it('pairs different currencies without using invoice links and clears the pair on deletion', () => {
+    const brl = useKanbanStore.getState().createList('Brasil', 'BRL')
+    const jpy = useKanbanStore.getState().createList('Japão', 'JPY')
+    const out = useKanbanStore.getState().addTransaction(brl, {
+      description: 'Enviar',
+      amount: '100',
+      type: 'expense',
+      date: '2026-10-06'
+    })
+    const incoming = useKanbanStore.getState().addTransaction(jpy, {
+      description: 'Receber',
+      amount: '3000',
+      type: 'income',
+      date: '2026-10-06'
+    })
+    expect(useKanbanStore.getState().linkCurrencyTransfer(brl, out, jpy, incoming)).toBe(true)
+    const first = useKanbanStore.getState().lists.find((list) => list.id === brl)!.transactions[0]
+    const second = useKanbanStore.getState().lists.find((list) => list.id === jpy)!.transactions[0]
+    expect(first.currencyTransferId).toBe(second.currencyTransferId)
+    expect(first.linkedTransactionId).toBeUndefined()
+    useKanbanStore.getState().setCurrencyTransferFee(first.currencyTransferId!, '5', 'BRL')
+    expect(
+      useKanbanStore.getState().lists.find((list) => list.id === jpy)!.transactions[0]
+        .currencyTransferFee
+    ).toBe('5')
+    useKanbanStore.getState().deleteTransaction(brl, out)
+    expect(
+      useKanbanStore.getState().lists.find((list) => list.id === jpy)!.transactions[0]
+        .currencyTransferId
+    ).toBeUndefined()
+  })
+
+  it('refuses pairing transactions from different financial profiles', () => {
+    const brl = useKanbanStore.getState().createList('Brasil', 'BRL')
+    const other = useKanbanStore.getState().createFinancialProfile('Empresa')
+    const jpy = useKanbanStore.getState().createList('Japão', 'JPY', other)
+    const out = useKanbanStore.getState().addTransaction(brl, {
+      description: 'Enviar',
+      amount: '100',
+      type: 'expense',
+      date: '2026-10-06'
+    })
+    const incoming = useKanbanStore.getState().addTransaction(jpy, {
+      description: 'Receber',
+      amount: '3000',
+      type: 'income',
+      date: '2026-10-06'
+    })
+    expect(useKanbanStore.getState().linkCurrencyTransfer(brl, out, jpy, incoming)).toBe(false)
   })
 })
 

@@ -2,7 +2,8 @@
 import Decimal from 'decimal.js'
 import type { FinancialTable, FinancialTransaction, FinancialGoal } from '../../types'
 import { ConfirmDialog } from '../ConfirmDialog'
-import { MONTH_NAMES, FINANCIAL_CATEGORIES, formatCurrency, D } from './shared'
+import { useKanbanStore } from '../../store/kanban'
+import { MONTH_NAMES, financialCategories, formatCurrency, D } from './shared'
 import { GoalModal, FinancialGoalCard } from './FinancialGoalCard'
 import { GoalHistoryModal } from './GoalHistoryModal'
 import { AddTransactionRow, TransactionRow } from './TransactionRow'
@@ -37,6 +38,24 @@ export function FinanceTab({
   onDeleteGoal
 }: FinanceTabProps) {
   const currency = list.currency
+  const profiles = useKanbanStore((state) => state.financialProfiles)
+  const profileId = useKanbanStore((state) => state.activeFinancialProfileId)
+  const addFinancialCategory = useKanbanStore((state) => state.addFinancialCategory)
+  const removeFinancialCategory = useKanbanStore((state) => state.removeFinancialCategory)
+  const profile = profiles.find((item) => item.id === profileId)
+  const categories = financialCategories(profile, allLists)
+  const files = useKanbanStore((state) => state.files)
+  const existingFileIds = new Set(files.map((file) => file.id))
+  const [newCategory, setNewCategory] = useState('')
+  const [showCategories, setShowCategories] = useState(false)
+  const [receiptFilter, setReceiptFilter] = useState<'all' | 'missing' | 'attached'>('all')
+  const saveCategory = (): void => {
+    const name = newCategory.trim()
+    if (!name || categories.some((category) => category.toLowerCase() === name.toLowerCase()))
+      return
+    addFinancialCategory(profileId, name)
+    setNewCategory('')
+  }
   const now = new Date()
   const [goalModal, setGoalModal] = useState<{ open: boolean; goal?: FinancialGoal }>({
     open: false
@@ -93,6 +112,16 @@ export function FinanceTab({
   const monthTxs = categoryFilter
     ? allMonthTxs.filter((t) => (t.category ?? '') === categoryFilter)
     : allMonthTxs
+  const receiptCount = (tx: FinancialTransaction): number =>
+    tx.receiptFileIds?.filter((id) => existingFileIds.has(id)).length ?? 0
+  const receiptEligibleTxs = monthTxs.filter((tx) => !tx.description.startsWith('Rendimentos '))
+  const missingReceipts = receiptEligibleTxs.filter((tx) => receiptCount(tx) === 0).length
+  const visibleTxs = monthTxs.filter(
+    (tx) =>
+      receiptFilter === 'all' ||
+      (!tx.description.startsWith('Rendimentos ') &&
+        (receiptFilter === 'missing' ? receiptCount(tx) === 0 : receiptCount(tx) > 0))
+  )
 
   const monthIncome = monthTxs
     .filter((t) => t.type === 'income')
@@ -359,23 +388,116 @@ export function FinanceTab({
         <div className="px-5 pt-4 pb-2">
           <p className="text-xs font-semibold text-[#d4d4d4] mb-3">
             Transações — {MONTH_NAMES[activeMonth.month - 1]} {activeMonth.year}
-            <span className="ml-2 text-[#999999] font-normal">({monthTxs.length})</span>
+            <span className="ml-2 text-[#999999] font-normal">
+              (
+              {receiptFilter === 'all'
+                ? monthTxs.length
+                : `${visibleTxs.length} de ${monthTxs.length}`}
+              )
+            </span>
           </p>
         </div>
 
         <div className="px-5 pb-3">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs text-[#999999]">Filtrar por etiqueta</span>
+            <button
+              type="button"
+              onClick={() => setShowCategories((open) => !open)}
+              className="text-xs text-[#a080f0] hover:text-white"
+            >
+              {showCategories ? 'Fechar etiquetas' : '+ Gerenciar etiquetas'}
+            </button>
+          </div>
+          {showCategories && (
+            <div className="mb-3 rounded-lg border border-[#3b3b3b] bg-[#232323] p-3">
+              <p className="mb-2 text-xs text-[#d4d4d4]">
+                Etiquetas de {profile?.name ?? 'este perfil'}
+              </p>
+              <div className="flex gap-2">
+                <input
+                  aria-label="Nova etiqueta financeira"
+                  value={newCategory}
+                  onChange={(event) => setNewCategory(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') saveCategory()
+                  }}
+                  placeholder="Ex.: Murasaki Japão"
+                  className="min-w-0 flex-1 rounded border border-[#3b3b3b] bg-[#1b1b1b] px-2 py-1.5 text-xs text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed]"
+                />
+                <button
+                  type="button"
+                  onClick={saveCategory}
+                  disabled={
+                    !newCategory.trim() ||
+                    categories.some(
+                      (category) => category.toLowerCase() === newCategory.trim().toLowerCase()
+                    )
+                  }
+                  className="rounded bg-[#7c3aed] px-3 py-1.5 text-xs text-white disabled:opacity-50"
+                >
+                  Adicionar
+                </button>
+              </div>
+              {(profile?.customCategories?.length ?? 0) > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {profile?.customCategories?.map((category) => (
+                    <span
+                      key={category}
+                      className="inline-flex items-center gap-1 rounded border border-[#3b3b3b] px-2 py-1 text-xs text-[#d4d4d4]"
+                    >
+                      {category}
+                      <button
+                        type="button"
+                        aria-label={`Remover etiqueta ${category}`}
+                        title="Remove da lista; lançamentos existentes permanecem"
+                        onClick={() => removeFinancialCategory(profileId, category)}
+                        className="text-[#999999] hover:text-[#e04040]"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           <select
             value={categoryFilter ?? ''}
             onChange={(e) => onCategoryFilterChange(e.target.value || null)}
             className="w-full bg-[#2a2a2a] border border-[#3b3b3b] text-[#d4d4d4] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#7c3aed]"
           >
             <option value="">Todos</option>
-            {FINANCIAL_CATEGORIES.map((cat) => (
+            {categories.map((cat) => (
               <option key={cat} value={cat}>
                 {cat}
               </option>
             ))}
           </select>
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+            <span className="text-[#999999]">Comprovantes:</span>
+            {(
+              [
+                ['all', 'Todos'],
+                ['missing', `Sem comprovante (${missingReceipts})`],
+                ['attached', `Com comprovante (${receiptEligibleTxs.length - missingReceipts})`]
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setReceiptFilter(value)}
+                className={`rounded border border-[#3b3b3b] px-2.5 py-1 transition-colors ${receiptFilter === value ? 'bg-[#3b3b3b] text-[#d4d4d4]' : 'bg-[#2a2a2a] text-[#999999] hover:bg-[#3b3b3b] hover:text-white'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {receiptFilter !== 'all' && (
+            <p className="mt-2 text-[11px] text-[#999999]">
+              Os saldos acima continuam considerando todas as transações do mês.
+            </p>
+          )}
         </div>
 
         <table className="w-full">
@@ -404,12 +526,13 @@ export function FinanceTab({
               currency={currency}
               onAdd={(data) => onAddTransaction({ ...data, source: data.source ?? list.provider })}
             />
-            {monthTxs.map((tx) => {
+            {visibleTxs.map((tx) => {
               const isYieldSummary = tx.description.startsWith('Rendimentos ')
               return (
                 <TransactionRow
                   key={tx.id}
                   tx={tx}
+                  receiptCount={receiptCount(tx)}
                   currency={currency}
                   allLists={allLists}
                   onUpdate={(updates) => onUpdateTransaction(tx.id, updates)}
@@ -423,10 +546,12 @@ export function FinanceTab({
                 />
               )
             })}
-            {monthTxs.length === 0 && (
+            {visibleTxs.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-4 py-6 text-center text-xs text-[#999999] italic">
-                  Nenhuma transação em {MONTH_NAMES[activeMonth.month - 1]}
+                  {monthTxs.length === 0
+                    ? `Nenhuma transação em ${MONTH_NAMES[activeMonth.month - 1]}`
+                    : 'Nenhuma transação corresponde ao filtro de comprovantes'}
                 </td>
               </tr>
             )}

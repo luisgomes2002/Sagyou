@@ -30,12 +30,12 @@ function build(
   return buildWorkbook(
     new Set(selected) as Set<import('../../utils/excelExport').ExportKey>,
     overrides.projects ?? [],
-    overrides.tasks    ?? [],
-    overrides.sprints  ?? [],
-    overrides.habits   ?? [],
-    overrides.goals    ?? [],
-    overrides.notes    ?? [],
-    overrides.lists    ?? []
+    overrides.tasks ?? [],
+    overrides.sprints ?? [],
+    overrides.habits ?? [],
+    overrides.goals ?? [],
+    overrides.notes ?? [],
+    overrides.lists ?? []
   )
 }
 
@@ -48,11 +48,11 @@ const PROJECT: Project = {
   description: 'App principal',
   columns: [
     { id: 'col-backlog', name: 'Backlog', order: 0 },
-    { id: 'col-done',    name: 'Done',    order: 1 },
+    { id: 'col-done', name: 'Done', order: 1 }
   ],
   links: [{ id: 'l1', label: 'GitHub', url: 'https://github.com' }],
   createdAt: '2026-01-01T00:00:00.000Z',
-  updatedAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z'
 }
 
 const SPRINT: Sprint = {
@@ -60,7 +60,7 @@ const SPRINT: Sprint = {
   projectId: 'p1',
   name: 'Sprint 1',
   createdAt: '2026-05-01T00:00:00.000Z',
-  closedAt: '2026-05-14T00:00:00.000Z',
+  closedAt: '2026-05-14T00:00:00.000Z'
 }
 
 const TASK: Task = {
@@ -76,7 +76,7 @@ const TASK: Task = {
   sprintId: 's1',
   order: 0,
   createdAt: '2026-06-01T10:00:00.000Z',
-  updatedAt: '2026-06-01T10:00:00.000Z',
+  updatedAt: '2026-06-01T10:00:00.000Z'
 }
 
 const HABIT: Habit = {
@@ -85,7 +85,7 @@ const HABIT: Habit = {
   color: '#22c55e',
   completions: ['2026-06-10', '2026-06-15', '2026-06-17'],
   createdAt: '2026-01-01T00:00:00.000Z',
-  updatedAt: '2026-06-17T00:00:00.000Z',
+  updatedAt: '2026-06-17T00:00:00.000Z'
 }
 
 const GOAL: Goal = {
@@ -97,10 +97,10 @@ const GOAL: Goal = {
   projectId: 'p1',
   entries: [
     { id: 'e1', date: '2026-03-01', value: 5, createdAt: '2026-03-01T00:00:00.000Z' },
-    { id: 'e2', date: '2026-06-01', value: 3, createdAt: '2026-06-01T00:00:00.000Z' },
+    { id: 'e2', date: '2026-06-01', value: 3, createdAt: '2026-06-01T00:00:00.000Z' }
   ],
   createdAt: '2026-01-01T00:00:00.000Z',
-  updatedAt: '2026-06-01T00:00:00.000Z',
+  updatedAt: '2026-06-01T00:00:00.000Z'
 }
 
 const NOTE: StickyNote = {
@@ -108,10 +108,13 @@ const NOTE: StickyNote = {
   projectId: 'p1',
   content: 'Lembrar de testar no mobile',
   color: '#fef08a',
-  x: 100, y: 200, width: 200, height: 150,
+  x: 100,
+  y: 200,
+  width: 200,
+  height: 150,
   type: 'note',
   createdAt: '2026-06-10T00:00:00.000Z',
-  updatedAt: '2026-06-10T00:00:00.000Z',
+  updatedAt: '2026-06-10T00:00:00.000Z'
 }
 
 const LIST: FinancialTable = {
@@ -119,22 +122,43 @@ const LIST: FinancialTable = {
   name: 'Pessoal',
   currency: 'BRL',
   items: [
-    { id: 'i1', name: 'Teclado', qty: 1, price: '350', done: false, link: 'https://loja.com/teclado' },
-    { id: 'i2', name: 'Mouse',   qty: 2, price: '120', done: true },
+    {
+      id: 'i1',
+      name: 'Teclado',
+      qty: 1,
+      price: '350',
+      done: false,
+      link: 'https://loja.com/teclado'
+    },
+    { id: 'i2', name: 'Mouse', qty: 2, price: '120', done: true }
   ],
   transactions: [
-    { id: 'tx1', description: 'Salário', amount: '5000', type: 'income',  date: '2026-06-05', category: 'trabalho' },
-    { id: 'tx2', description: 'Aluguel', amount: '1500', type: 'expense', date: '2026-06-10' },
+    {
+      id: 'tx1',
+      description: 'Salário',
+      amount: '5000',
+      type: 'income',
+      date: '2026-06-05',
+      category: 'trabalho'
+    },
+    { id: 'tx2', description: 'Aluguel', amount: '1500', type: 'expense', date: '2026-06-10' }
   ],
   goals: [
     { id: 'fg1', name: 'Viagem JP', targetAmount: '10000', targetMonth: 12, targetYear: 2026 },
-    { id: 'fg2', name: 'Notebook',  targetAmount: '5000',  targetMonth: 3,  targetYear: 2027,
-      completedAt: '2026-06-15', completionNote: 'Comprado!' },
+    {
+      id: 'fg2',
+      name: 'Notebook',
+      targetAmount: '5000',
+      targetMonth: 3,
+      targetYear: 2027,
+      completedAt: '2026-06-15',
+      completionNote: 'Comprado!'
+    }
   ],
   yieldSources: [],
   yieldEntries: [],
   createdAt: '2026-01-01T00:00:00.000Z',
-  updatedAt: '2026-06-17T00:00:00.000Z',
+  updatedAt: '2026-06-17T00:00:00.000Z'
 }
 
 // ── sheet selection ───────────────────────────────────────────────────────────
@@ -146,17 +170,56 @@ describe('buildWorkbook — sheet selection', () => {
 
   it('produces exactly the selected sheets', () => {
     const wb = build(['projects', 'sprints'], { projects: [PROJECT], sprints: [SPRINT] })
-    expect(sheetNames(wb)).toEqual(['Projetos', 'Sprints'])
+    expect(sheetNames(wb)).toEqual([
+      'Projetos',
+      'Colunas',
+      'Links de projetos',
+      'Caminhos de código',
+      'Sprints'
+    ])
   })
 
-  it('produces all 9 sheet groups when all keys are selected', () => {
+  it('includes each selected group and its detail sheets', () => {
     const wb = build(
-      ['projects', 'tasks', 'sprints', 'habits', 'goals', 'notes', 'shopping', 'transactions', 'financialGoals'],
-      { projects: [PROJECT], tasks: [TASK], sprints: [SPRINT], habits: [HABIT], goals: [GOAL], notes: [NOTE], lists: [LIST] }
+      [
+        'projects',
+        'tasks',
+        'sprints',
+        'habits',
+        'goals',
+        'notes',
+        'shopping',
+        'transactions',
+        'financialGoals'
+      ],
+      {
+        projects: [PROJECT],
+        tasks: [TASK],
+        sprints: [SPRINT],
+        habits: [HABIT],
+        goals: [GOAL],
+        notes: [NOTE],
+        lists: [LIST]
+      }
     )
     expect(sheetNames(wb)).toEqual([
-      'Projetos', 'Tarefas', 'Sprints', 'Hábitos', 'Metas', 'Notas',
-      'Itens de compra', 'Pessoal', 'Metas financeiras',
+      'Projetos',
+      'Colunas',
+      'Links de projetos',
+      'Caminhos de código',
+      'Tarefas',
+      'Imagens tarefas',
+      'Sprints',
+      'Hábitos',
+      'Conclusões hábitos',
+      'Metas',
+      'Registros de metas',
+      'Notas',
+      'Itens de compra',
+      'Todas transações',
+      'Detalhes financeiros',
+      'Pessoal',
+      'Metas financeiras'
     ])
   })
 })
@@ -260,7 +323,13 @@ describe('buildWorkbook — Tarefas sheet', () => {
   })
 
   it('leaves blank fields for missing optional data', () => {
-    const minimal: Task = { ...TASK, dueDate: undefined, timeSpent: undefined, sprintId: undefined, description: undefined }
+    const minimal: Task = {
+      ...TASK,
+      dueDate: undefined,
+      timeSpent: undefined,
+      sprintId: undefined,
+      description: undefined
+    }
     const wb = build(['tasks'], { projects: [PROJECT], tasks: [minimal] })
     const [row] = sheetRows(wb, 'Tarefas')
     expect(row['Prazo']).toBe('')
@@ -482,7 +551,7 @@ describe('buildWorkbook — Itens de compra sheet', () => {
   it('leaves Preço and Total blank when price is undefined', () => {
     const noPrice: FinancialTable = {
       ...LIST,
-      items: [{ id: 'i3', name: 'Caderno', qty: 3, done: false }],
+      items: [{ id: 'i3', name: 'Caderno', qty: 3, done: false }]
     }
     const wb = build(['shopping'], { lists: [noPrice] })
     const [row] = sheetRows(wb, 'Itens de compra')
@@ -491,9 +560,12 @@ describe('buildWorkbook — Itens de compra sheet', () => {
   })
 
   it('combines items from multiple lists into one sheet', () => {
-    const list2: FinancialTable = { ...LIST, id: 'fl2', name: 'Trabalho', items: [
-      { id: 'i4', name: 'Cadeira', qty: 1, price: '800', done: false }
-    ] }
+    const list2: FinancialTable = {
+      ...LIST,
+      id: 'fl2',
+      name: 'Trabalho',
+      items: [{ id: 'i4', name: 'Cadeira', qty: 1, price: '800', done: false }]
+    }
     const wb = build(['shopping'], { lists: [LIST, list2] })
     expect(sheetRows(wb, 'Itens de compra')).toHaveLength(3)
   })
@@ -537,11 +609,19 @@ describe('buildWorkbook — Transações sheet', () => {
   it('creates one sheet per list named after the list', () => {
     const list2: FinancialTable = { ...LIST, id: 'fl2', name: 'Empresa', transactions: [] }
     const wb = build(['transactions'], { lists: [LIST, list2] })
-    expect(sheetNames(wb)).toEqual(['Pessoal', 'Empresa'])
+    expect(sheetNames(wb)).toEqual([
+      'Todas transações',
+      'Detalhes financeiros',
+      'Pessoal',
+      'Empresa'
+    ])
   })
 
   it('truncates sheet names longer than 31 characters', () => {
-    const long: FinancialTable = { ...LIST, name: 'Nome muito longo que ultrapassa o limite do Excel definitivamente' }
+    const long: FinancialTable = {
+      ...LIST,
+      name: 'Nome muito longo que ultrapassa o limite do Excel definitivamente'
+    }
     const wb = build(['transactions'], { lists: [long] })
     expect(sheetNames(wb)[0].length).toBeLessThanOrEqual(31)
   })
@@ -556,6 +636,151 @@ describe('buildWorkbook — Transações sheet', () => {
     const jpy: FinancialTable = { ...LIST, currency: 'JPY' }
     const wb = build(['transactions'], { lists: [jpy] })
     expect(sheetRows(wb, 'Pessoal')[0]['Moeda']).toBe('Iene')
+  })
+
+  it('exports transfers from every month with their source and detail links', () => {
+    const transferList: FinancialTable = {
+      ...LIST,
+      transactions: [
+        {
+          id: 'jan',
+          description: 'Transferência para Japão',
+          amount: '1200.55',
+          type: 'expense',
+          date: '2026-01-31',
+          category: 'Transferência internacional',
+          source: 'Banco BR',
+          details: [
+            {
+              id: 'd1',
+              description: 'Taxa',
+              amount: '20.55',
+              category: 'Taxa',
+              linkedTransactionId: 'mirror'
+            }
+          ]
+        },
+        {
+          id: 'feb',
+          description: 'Transferência para Japão',
+          amount: '900',
+          type: 'expense',
+          date: '2026-02-01',
+          category: 'Transferência internacional',
+          linkedTransactionId: 'jan'
+        },
+        {
+          id: 'mar',
+          description: 'Transferência para Japão',
+          amount: '100',
+          type: 'expense',
+          date: '2026-03-10',
+          category: 'Transferência internacional'
+        }
+      ]
+    }
+    const wb = build(['transactions'], { lists: [transferList] })
+    const all = sheetRows(wb, 'Todas transações')
+    expect(all.map((row) => row['Mês'])).toEqual(['2026-01', '2026-02', '2026-03'])
+    expect(sheetRows(wb, 'Pessoal')).toHaveLength(3)
+    expect(all[0]['Origem']).toBe('Banco BR')
+    expect(all[1]['ID da transação vinculada']).toBe('jan')
+    expect(sheetRows(wb, 'Detalhes financeiros')[0]['ID da transação espelho']).toBe('mirror')
+    const encoded = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })
+    const reopened = XLSX.read(encoded, { type: 'buffer' })
+    expect(sheetRows(reopened, 'Todas transações').map((row) => row['Mês'])).toEqual([
+      '2026-01',
+      '2026-02',
+      '2026-03'
+    ])
+  })
+
+  it('keeps same-named tables in separate Excel sheets', () => {
+    const second: FinancialTable = {
+      ...LIST,
+      id: 'fl2',
+      name: 'Pessoal',
+      transactions: [
+        { id: 'other', description: 'Outro mês', amount: '10', type: 'income', date: '2026-07-01' }
+      ]
+    }
+    const wb = build(['transactions'], { lists: [LIST, second] })
+    expect(sheetNames(wb)).toContain('Pessoal (2)')
+    expect(sheetRows(wb, 'Todas transações')).toHaveLength(3)
+  })
+
+  it('exports proof references, audit events and both sides of a currency transfer', () => {
+    const brl: FinancialTable = {
+      ...LIST,
+      id: 'brl',
+      name: 'Brasil',
+      currency: 'BRL',
+      transactions: [
+        {
+          id: 'out',
+          description: 'Envio',
+          amount: '100',
+          type: 'expense',
+          date: '2026-10-06',
+          source: 'Banco',
+          counterparty: 'Minha conta',
+          bankReference: 'E2E-123',
+          receiptFileIds: ['receipt'],
+          reconciledAt: '2026-10-07T10:00:00Z',
+          createdAt: '2026-10-06T09:00:00Z',
+          updatedAt: '2026-10-07T10:00:00Z',
+          currencyTransferId: 'group',
+          currencyTransferFee: '5',
+          currencyTransferFeeCurrency: 'BRL',
+          audit: [
+            {
+              at: '2026-10-07T10:00:00Z',
+              changes: [{ field: 'bankReference', before: undefined, after: 'E2E-123' }]
+            }
+          ]
+        }
+      ]
+    }
+    const jpy: FinancialTable = {
+      ...LIST,
+      id: 'jpy',
+      name: 'Japão',
+      currency: 'JPY',
+      transactions: [
+        {
+          id: 'in',
+          description: 'Recebimento',
+          amount: '3000',
+          type: 'income',
+          date: '2026-10-06',
+          currencyTransferId: 'group',
+          currencyTransferFee: '5',
+          currencyTransferFeeCurrency: 'BRL'
+        }
+      ]
+    }
+    const wb = buildWorkbook(
+      new Set<import('../../utils/excelExport').ExportKey>(['transactions']),
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [brl, jpy],
+      [],
+      [{ id: 'receipt', name: 'comprovante.pdf', ext: '.pdf', size: 10, createdAt: '2026-10-06' }]
+    )
+    const [row] = sheetRows(wb, 'Brasil')
+    expect(row['Comprovantes']).toBe('comprovante.pdf')
+    expect(row['ID bancário/Pix']).toBe('E2E-123')
+    expect(row['Conferido em']).toBe('2026-10-07T10:00:00Z')
+    expect(sheetRows(wb, 'Histórico financeiro')[0]['Campo']).toBe('bankReference')
+    const [transfer] = sheetRows(wb, 'Câmbio entre contas')
+    expect(transfer['ID da saída']).toBe('out')
+    expect(transfer['ID da entrada']).toBe('in')
+    expect(transfer['Taxa efetiva']).toBe('30')
+    expect(transfer['Tarifa']).toBe('5')
   })
 })
 
@@ -610,15 +835,70 @@ describe('buildWorkbook — Metas financeiras sheet', () => {
   })
 
   it('combines goals from multiple lists into one sheet', () => {
-    const list2: FinancialTable = { ...LIST, id: 'fl2', name: 'Trabalho', goals: [
-      { id: 'fg3', name: 'Curso', targetAmount: '500', targetMonth: 8, targetYear: 2026 }
-    ] }
+    const list2: FinancialTable = {
+      ...LIST,
+      id: 'fl2',
+      name: 'Trabalho',
+      goals: [{ id: 'fg3', name: 'Curso', targetAmount: '500', targetMonth: 8, targetYear: 2026 }]
+    }
     const wb = build(['financialGoals'], { lists: [LIST, list2] })
     expect(sheetRows(wb, 'Metas financeiras')).toHaveLength(3)
   })
 
   it('produces empty sheet when all lists have no financial goals', () => {
     const empty: FinancialTable = { ...LIST, goals: [] }
-    expect(sheetRows(build(['financialGoals'], { lists: [empty] }), 'Metas financeiras')).toHaveLength(0)
+    expect(
+      sheetRows(build(['financialGoals'], { lists: [empty] }), 'Metas financeiras')
+    ).toHaveLength(0)
+  })
+})
+
+describe('buildWorkbook — tabelas financeiras e rendimentos', () => {
+  it('exports profile, table, yield sources and entries without unfinished features', () => {
+    const table: FinancialTable = {
+      ...LIST,
+      profileId: 'company',
+      provider: 'Banco BR',
+      actualBalance: '1234.56',
+      legacyFinancialMetadata: {
+        budgets: [{ category: 'Taxa', limit: '250.5' }],
+        recurringTransactions: [{ id: 'rec1', amount: '300' }]
+      },
+      yieldSources: [{ id: 'source1', name: 'Conta', createdAt: '2026-01-01' }],
+      yieldEntries: [
+        {
+          id: 'yield1',
+          sourceId: 'source1',
+          date: '2026-02-02',
+          amount: '12.34',
+          createdAt: '2026-02-02'
+        }
+      ]
+    }
+    const wb = buildWorkbook(
+      new Set<import('../../utils/excelExport').ExportKey>(['financialTables', 'yields']),
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [table],
+      [
+        {
+          id: 'company',
+          name: 'Murasaki',
+          createdAt: '2026-01-01',
+          updatedAt: '2026-01-01',
+          customCategories: ['Taxa']
+        }
+      ]
+    )
+    expect(sheetRows(wb, 'Perfis financeiros')[0]['Categorias personalizadas']).toBe('Taxa')
+    expect(sheetRows(wb, 'Tabelas financeiras')[0]['Perfil']).toBe('Murasaki')
+    expect(wb.SheetNames).not.toContain('Orçamentos')
+    expect(wb.SheetNames).not.toContain('Recorrências')
+    expect(sheetRows(wb, 'Fontes rendimento')[0]['Nome']).toBe('Conta')
+    expect(sheetRows(wb, 'Rendimentos')[0]['Fonte']).toBe('Conta')
   })
 })

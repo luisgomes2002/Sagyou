@@ -1,5 +1,5 @@
 ﻿import Decimal from 'decimal.js'
-import type { ShoppingItem, Currency } from '../../types'
+import type { ShoppingItem, Currency, FinancialProfile, FinancialTable } from '../../types'
 import { CURRENCY_CONFIG } from '../../types'
 import { D, moneyStr } from '../../utils/money'
 export { D, moneyStr }
@@ -91,6 +91,29 @@ export const FINANCIAL_CATEGORIES = [
 ]
 
 export const YIELD_SUMMARY_CATEGORY = 'Rendimento Mensal'
+
+export function financialCategories(
+  profile: FinancialProfile | undefined,
+  lists: FinancialTable[]
+): string[] {
+  const names = [
+    ...FINANCIAL_CATEGORIES,
+    ...(profile?.customCategories ?? []),
+    ...lists.flatMap((list) =>
+      list.transactions.flatMap((transaction) => [
+        transaction.category ?? '',
+        ...(transaction.details ?? []).map((detail) => detail.category ?? '')
+      ])
+    )
+  ]
+  const seen = new Set<string>()
+  return names.filter((name) => {
+    const clean = name.trim().toLowerCase()
+    if (!clean || clean === YIELD_SUMMARY_CATEGORY.toLowerCase() || seen.has(clean)) return false
+    seen.add(clean)
+    return true
+  })
+}
 
 export const CAT_COLORS = [
   '#a080f0',
