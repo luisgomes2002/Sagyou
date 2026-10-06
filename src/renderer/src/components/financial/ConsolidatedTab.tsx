@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react'
 import Decimal from 'decimal.js'
 import type { FinancialTable, FinancialTransaction, Currency } from '../../types'
 import { CURRENCY_CONFIG } from '../../types'
-import { MONTH_NAMES, FINANCIAL_CATEGORIES, formatCurrency, formatDateBR, D } from './shared'
+import { useKanbanStore } from '../../store/kanban'
+import { MONTH_NAMES, financialCategories, formatCurrency, formatDateBR, D } from './shared'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { EmptyState } from '../EmptyState'
 
@@ -46,6 +47,12 @@ export function ConsolidatedTab({
   onLinkTransaction,
   onLinkDetail
 }: ConsolidatedTabProps) {
+  const profiles = useKanbanStore((state) => state.financialProfiles)
+  const profileId = useKanbanStore((state) => state.activeFinancialProfileId)
+  const categories = financialCategories(
+    profiles.find((profile) => profile.id === profileId),
+    lists
+  )
   const now = new Date()
   const [rates, setRates] = useState<Record<string, RateInfo>>({})
   const [linkingTx, setLinkingTx] = useState<{
@@ -246,28 +253,6 @@ export function ConsolidatedTab({
     return null
   }
 
-  const convertedIncome = useMemo(() => {
-    let total = new Decimal(0)
-    let missed = 0
-    for (const g of byCurrency) {
-      const c = convertAmount(g.income, g.currency)
-      if (c !== null) total = total.plus(c)
-      else missed++
-    }
-    return { total, missed }
-  }, [byCurrency, refCurrency, rates])
-
-  const convertedExpense = useMemo(() => {
-    let total = new Decimal(0)
-    let missed = 0
-    for (const g of byCurrency) {
-      const c = convertAmount(g.expense, g.currency)
-      if (c !== null) total = total.plus(c)
-      else missed++
-    }
-    return { total, missed }
-  }, [byCurrency, refCurrency, rates])
-
   const convertedAccumulated = useMemo(() => {
     let total = new Decimal(0)
     for (const values of byCurrency) {
@@ -278,20 +263,29 @@ export function ConsolidatedTab({
   }, [byCurrency, refCurrency, rates])
 
   const ratesLoaded = useMemo(() => {
-    const nonRef = currencies.filter((c) => c !== refCurrency)
+    const nonRef = allTableCurrencies.filter((c) => c !== refCurrency)
     if (nonRef.length === 0) return true
     return nonRef.every((c) => {
       const pair = `${c}-${refCurrency}`
-      return rates[pair]?.loaded
+      return rates[pair]?.loaded && !rates[pair]?.error
     })
-  }, [currencies, refCurrency, rates])
+  }, [allTableCurrencies, refCurrency, rates])
+  const conversionUnavailable = allTableCurrencies.some(
+    (currency) => currency !== refCurrency && rates[`${currency}-${refCurrency}`]?.error
+  )
 
   const perTable = useMemo(() => {
     const map: Record<
       string,
       { name: string; currency: Currency; income: Decimal; expense: Decimal }
     > = {}
+    const linkedIds = new Set(
+      monthTxs
+        .filter((transaction) => transaction.linkedTransactionId)
+        .map((transaction) => transaction.linkedTransactionId)
+    )
     for (const t of monthTxs) {
+      if (linkedIds.has(t.id) || detailLinks.has(t.id)) continue
       if (!map[t.tableId]) {
         map[t.tableId] = {
           name: t.tableName,
@@ -306,7 +300,7 @@ export function ConsolidatedTab({
     return Object.entries(map)
       .map(([id, data]) => ({ id, ...data }))
       .sort((a, b) => a.name.localeCompare(b.name))
-  }, [monthTxs])
+  }, [monthTxs, detailLinks])
 
   const prevMonth = () => {
     onCategoryFilterChange(null)
@@ -459,18 +453,12 @@ export function ConsolidatedTab({
         })()}
 
         {/* Summary cards */}
-        {(convertedIncome.missed > 0 || convertedExpense.missed > 0) && (
-          <div className="px-5 py-1.5 border-b border-[#3b3b3b] bg-[#2a2a2a] text-[10px] text-[#f08a34]">
-            Cotações indisponíveis para {convertedIncome.missed + convertedExpense.missed} moeda(s).
-            O equivalente atual pode estar incompleto.
-          </div>
-        )}
         <div className="px-5 py-4 border-b border-[#3b3b3b]">
-          <div className="flex items-baseline justify-between mb-3">
-            <p className="text-xs font-semibold text-[#d4d4d4]">Totais por moeda</p>
-            <span className="text-[10px] text-[#666666]">
-              A conversão não altera nem é salva nos lançamentos
-            </span>
+          <div className="mb-3">
+            <p className="text-sm font-semibold text-[#d4d4d4]">
+              Resumo de {MONTH_NAMES[activeMonth.month - 1].toLowerCase()}
+            </p>
+            <p className="mt-0.5 text-xs text-[#999999]">Valores na moeda de cada tabela</p>
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {byCurrency.map((values) => {
@@ -478,17 +466,21 @@ export function ConsolidatedTab({
               return (
                 <div
                   key={values.currency}
-                  className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3"
+                  className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4"
                 >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-semibold text-[#d4d4d4]">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-[#d4d4d4]">
                       {CURRENCY_CONFIG[values.currency].label}
                     </span>
-                    <span className="text-[10px] font-medium text-[#a080f0]">
-                      {CURRENCY_CONFIG[values.currency].symbol} {values.currency}
-                    </span>
+                    <span className="text-xs font-medium text-[#999999]">{values.currency}</span>
                   </div>
-                  <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[10px]">
+                  <p className="mt-3 text-xs text-[#999999]">Saldo do mês</p>
+                  <p
+                    className={`mt-0.5 text-xl font-semibold tabular-nums ${balance.gte(0) ? 'text-[#d4d4d4]' : 'text-[#e04040]'}`}
+                  >
+                    {formatCurrency(balance, values.currency)}
+                  </p>
+                  <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
                     <span className="text-[#999999]">Entradas</span>
                     <span className="text-right tabular-nums text-[#46d478]">
                       {formatCurrency(values.income, values.currency)}
@@ -497,20 +489,13 @@ export function ConsolidatedTab({
                     <span className="text-right tabular-nums text-[#e04040]">
                       {formatCurrency(values.expense, values.currency)}
                     </span>
-                    <span className="text-[#999999]">Saldo do mês</span>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between border-t border-[#3b3b3b] pt-3 text-xs">
+                    <span className="text-[#999999]">Saldo acumulado</span>
                     <span
                       className={
-                        'text-right tabular-nums font-semibold ' +
-                        (balance.gte(0) ? 'text-[#d4d4d4]' : 'text-[#e04040]')
-                      }
-                    >
-                      {formatCurrency(balance, values.currency)}
-                    </span>
-                    <span className="text-[#a080f0]">Acumulado</span>
-                    <span
-                      className={
-                        'text-right tabular-nums font-semibold ' +
-                        (values.accumulated.gte(0) ? 'text-[#a080f0]' : 'text-[#e04040]')
+                        'tabular-nums font-semibold ' +
+                        (values.accumulated.gte(0) ? 'text-[#d4d4d4]' : 'text-[#e04040]')
                       }
                     >
                       {formatCurrency(values.accumulated, values.currency)}
@@ -523,60 +508,76 @@ export function ConsolidatedTab({
         </div>
 
         {allTableCurrencies.length > 1 && (
-          <div className="px-5 py-3 border-b border-[#3b3b3b] bg-[#2a2a2a]">
+          <div className="px-5 py-4 border-b border-[#3b3b3b]">
             {showEquivalent ? (
-              <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-[#a080f0]">
-                    Equivalente atual em {refCurrency}
-                  </p>
-                  <p className="text-sm font-bold tabular-nums text-[#d4d4d4]">
-                    {formatCurrency(convertedAccumulated, refCurrency)}
-                  </p>
+              <div className="rounded-lg border border-[#3b3b3b] bg-[#2a2a2a] p-4">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                  <p className="text-sm font-semibold text-[#d4d4d4]">Visão em {refCurrency}</p>
+                  <span className="text-xs text-[#999999]">Pela cotação atual</span>
                 </div>
-                <p className="text-[10px] text-[#999999]">
-                  Saldo do mês equivalente: {formatCurrency(convertedTotal, refCurrency)}. Calculado
-                  agora pelas cotações exibidas acima; não é salvo.
+                <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <p className="text-xs text-[#999999]">Saldo do mês convertido</p>
+                    <p
+                      className={`mt-1 text-lg font-semibold tabular-nums ${convertedTotal.gte(0) ? 'text-[#d4d4d4]' : 'text-[#e04040]'}`}
+                    >
+                      {formatCurrency(convertedTotal, refCurrency)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-[#999999]">Saldo acumulado convertido</p>
+                    <p
+                      className={`mt-1 text-lg font-semibold tabular-nums ${convertedAccumulated.gte(0) ? 'text-[#d4d4d4]' : 'text-[#e04040]'}`}
+                    >
+                      {formatCurrency(convertedAccumulated, refCurrency)}
+                    </p>
+                  </div>
+                </div>
+                <p className="mt-3 text-xs text-[#999999]">
+                  Apenas para comparação. A cotação pode mudar; seus lançamentos mantêm os valores
+                  originais.
                 </p>
               </div>
             ) : (
-              <p className="text-[10px] text-[#999999]">
-                Buscando cotações para calcular o equivalente atual em {refCurrency}. Os totais por
-                moeda acima continuam completos.
-              </p>
+              <div className="rounded-lg border border-[#3b3b3b] bg-[#2a2a2a] p-4">
+                <p className="text-sm font-semibold text-[#d4d4d4]">Visão em {refCurrency}</p>
+                <p className="mt-1 text-xs text-[#999999]">
+                  {conversionUnavailable
+                    ? 'Cotação indisponível. Os saldos por moeda acima continuam completos.'
+                    : 'Buscando cotações para mostrar os saldos convertidos. Os valores por moeda acima já estão completos.'}
+                </p>
+              </div>
             )}
           </div>
         )}
 
-        {/* Per-table cards */}
+        {/* Per-table breakdown stays available without repeating the main summary. */}
         {perTable.length > 1 && (
-          <div className="px-5 py-3 border-b border-[#3b3b3b]">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-2">
-              Por tabela — {MONTH_NAMES[activeMonth.month - 1]}
-            </p>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+          <details className="group border-b border-[#3b3b3b] px-5 py-3">
+            <summary className="cursor-pointer text-xs font-medium text-[#a080f0] hover:text-[#d4d4d4]">
+              Ver saldo por tabela ({perTable.length})
+            </summary>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
               {perTable.map((t) => {
                 const bal = t.income.minus(t.expense)
                 return (
-                  <div key={t.id} className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-2.5">
+                  <div key={t.id} className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3">
                     <div className="flex items-center gap-1.5 mb-1.5">
                       <span className="text-xs font-medium text-[#d4d4d4] truncate">{t.name}</span>
-                      <span className="text-[9px] text-[#a080f0]">
-                        {CURRENCY_CONFIG[t.currency].symbol}
-                      </span>
+                      <span className="text-xs text-[#999999]">{t.currency}</span>
                     </div>
-                    <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
-                      <span className="text-[9px] text-[#999999]">Entradas</span>
-                      <span className="text-[9px] tabular-nums text-[#46d478] text-right">
+                    <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-xs">
+                      <span className="text-[#999999]">Entradas</span>
+                      <span className="tabular-nums text-[#46d478] text-right">
                         {formatCurrency(t.income, t.currency)}
                       </span>
-                      <span className="text-[9px] text-[#999999]">Saídas</span>
-                      <span className="text-[9px] tabular-nums text-[#e04040] text-right">
+                      <span className="text-[#999999]">Saídas</span>
+                      <span className="tabular-nums text-[#e04040] text-right">
                         {formatCurrency(t.expense, t.currency)}
                       </span>
-                      <span className="text-[9px] text-[#999999]">Saldo</span>
+                      <span className="text-[#999999]">Saldo do mês</span>
                       <span
-                        className={`text-[9px] tabular-nums font-medium text-right ${bal.gte(0) ? 'text-[#d4d4d4]' : 'text-[#e04040]'}`}
+                        className={`tabular-nums font-medium text-right ${bal.gte(0) ? 'text-[#d4d4d4]' : 'text-[#e04040]'}`}
                       >
                         {formatCurrency(bal, t.currency)}
                       </span>
@@ -585,7 +586,7 @@ export function ConsolidatedTab({
                 )
               })}
             </div>
-          </div>
+          </details>
         )}
 
         {/* Transactions header */}
@@ -610,7 +611,7 @@ export function ConsolidatedTab({
             className="w-full bg-[#2a2a2a] border border-[#3b3b3b] text-[#d4d4d4] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#7c3aed]"
           >
             <option value="">Todos</option>
-            {FINANCIAL_CATEGORIES.map((cat) => (
+            {categories.map((cat) => (
               <option key={cat} value={cat}>
                 {cat}
               </option>
@@ -758,6 +759,14 @@ export function ConsolidatedTab({
                             <span className="text-[#666666] shrink-0">
                               · {detailLink.tableName} · {formatDateBR(detailLink.date)}
                             </span>
+                          </span>
+                        )}
+                        {tx.currencyTransferId && (
+                          <span
+                            className="shrink-0 rounded bg-[#2a2a2a] px-1.5 py-0.5 text-[10px] text-[#a080f0]"
+                            title="Transferência entre moedas; veja o par na tabela financeira"
+                          >
+                            Câmbio
                           </span>
                         )}
                         <span className="text-sm text-[#d4d4d4] truncate">{tx.description}</span>

@@ -147,6 +147,16 @@ interface FinancialTransaction {
   fromShopping?: boolean
   linkedTransactionId?: string
   source?: string
+  receiptFileIds?: string[]
+  bankReference?: string
+  counterparty?: string
+  createdAt?: string
+  updatedAt?: string
+  reconciledAt?: string
+  audit?: { at: string; changes: { field: string; before?: unknown; after?: unknown }[] }[]
+  currencyTransferId?: string
+  currencyTransferFee?: string
+  currencyTransferFeeCurrency?: string
   details?: FinancialTransactionDetail[]
 }
 interface FinancialTransactionDetail {
@@ -197,18 +207,7 @@ interface FinancialTable {
   provider?: string
   actualBalance?: number | string
   actualBalanceUpdatedAt?: string
-  budgets?: { category: string; limit: number | string }[]
-  recurringTransactions?: {
-    id: string
-    description: string
-    amount: number | string
-    type: 'income' | 'expense'
-    dayOfMonth: number
-    category?: string
-    source?: string
-    active: boolean
-    lastGeneratedMonth?: string
-  }[]
+  legacyFinancialMetadata?: Record<string, unknown>
   createdAt: string
   updatedAt: string
 }
@@ -305,6 +304,7 @@ function getDb(): Database.Database {
   migrateTransactionsLinkedColumn(_db)
   migrateFinancialPlanningColumns(_db)
   migrateTransactionDetailsColumn(_db)
+  migrateTransactionRecordColumn(_db)
   migrateProjectsArchivedColumn(_db)
   migrateTimeBlockBorderStyleColumn(_db)
   migrateRoutineBorderStyleColumn(_db)
@@ -534,6 +534,25 @@ function migrateTransactionDetailsColumn(db: Database.Database): void {
     (row) => row.name === 'details'
   )
   if (!has) db.prepare('ALTER TABLE transactions ADD COLUMN details TEXT').run()
+}
+
+function migrateTransactionRecordColumn(db: Database.Database): void {
+  const has = (db.prepare('PRAGMA table_info(transactions)').all() as { name: string }[]).some(
+    (row) => row.name === 'record_metadata'
+  )
+  if (!has) db.prepare('ALTER TABLE transactions ADD COLUMN record_metadata TEXT').run()
+}
+
+function transactionRecordMetadata(value: unknown): Record<string, unknown> {
+  if (typeof value !== 'string' || !value) return {}
+  try {
+    const parsed = JSON.parse(value)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {}
+  } catch {
+    return {}
+  }
 }
 
 // One-time migration for existing DBs: add archived_at column to projects table.
@@ -893,7 +912,8 @@ function initSchema(db: Database.Database): void {
       from_shopping INTEGER DEFAULT 0,
       linked_transaction_id TEXT,
       source TEXT,
-      details TEXT
+      details TEXT,
+      record_metadata TEXT
     );
     CREATE TABLE IF NOT EXISTS financial_goals (
       id TEXT PRIMARY KEY,
@@ -1085,7 +1105,7 @@ function prepareWrite(db: Database.Database) {
       'INSERT INTO shopping_items (id,table_id,name,qty,price,done,link,linked_transaction_id) VALUES (?,?,?,?,?,?,?,?)'
     ),
     tx: db.prepare(
-      'INSERT INTO transactions (id,table_id,description,amount,type,date,category,from_shopping,linked_transaction_id,source,details) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
+      'INSERT INTO transactions (id,table_id,description,amount,type,date,category,from_shopping,linked_transaction_id,source,details,record_metadata) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)'
     ),
     fg: db.prepare(
       'INSERT INTO financial_goals (id,table_id,name,target_amount,target_month,target_year,completed_at,completion_note) VALUES (?,?,?,?,?,?,?,?)'
@@ -1210,11 +1230,10 @@ function prepareWrite(db: Database.Database) {
     },
     ftable: (ft: FinancialTable): void => {
       const metadata = JSON.stringify({
+        ...ft.legacyFinancialMetadata,
         provider: ft.provider,
         actualBalance: ft.actualBalance,
         actualBalanceUpdatedAt: ft.actualBalanceUpdatedAt,
-        budgets: ft.budgets,
-        recurringTransactions: ft.recurringTransactions,
         profileId: ft.profileId
       })
       ins.ftable.run(ft.id, ft.name, ft.currency, ft.createdAt, ft.updatedAt, metadata)
@@ -1241,7 +1260,19 @@ function prepareWrite(db: Database.Database) {
           tx.fromShopping ? 1 : 0,
           tx.linkedTransactionId ?? null,
           tx.source ?? null,
-          JSON.stringify(transactionDetails(tx.details))
+          JSON.stringify(transactionDetails(tx.details)),
+          JSON.stringify({
+            receiptFileIds: tx.receiptFileIds,
+            bankReference: tx.bankReference,
+            counterparty: tx.counterparty,
+            createdAt: tx.createdAt,
+            updatedAt: tx.updatedAt,
+            reconciledAt: tx.reconciledAt,
+            audit: tx.audit,
+            currencyTransferId: tx.currencyTransferId,
+            currencyTransferFee: tx.currencyTransferFee,
+            currencyTransferFeeCurrency: tx.currencyTransferFeeCurrency
+          })
         )
       for (const fg of ft.goals ?? [])
         ins.fg.run(
@@ -1644,9 +1675,15 @@ export function loadData(): SaveData {
         ...(typeof meta.actualBalanceUpdatedAt === 'string'
           ? { actualBalanceUpdatedAt: meta.actualBalanceUpdatedAt }
           : {}),
-        ...(Array.isArray(meta.budgets) ? { budgets: meta.budgets } : {}),
-        ...(Array.isArray(meta.recurringTransactions)
-          ? { recurringTransactions: meta.recurringTransactions }
+        ...(Array.isArray(meta.budgets) || Array.isArray(meta.recurringTransactions)
+          ? {
+              legacyFinancialMetadata: {
+                ...(Array.isArray(meta.budgets) ? { budgets: meta.budgets } : {}),
+                ...(Array.isArray(meta.recurringTransactions)
+                  ? { recurringTransactions: meta.recurringTransactions }
+                  : {})
+              }
+            }
           : {}),
         ...(typeof meta.profileId === 'string' ? { profileId: meta.profileId } : {})
       }
@@ -1672,6 +1709,33 @@ export function loadData(): SaveData {
         ? { linkedTransactionId: tx.linked_transaction_id }
         : {}),
       ...(tx.source != null ? { source: tx.source } : {}),
+      ...(() => {
+        const meta = transactionRecordMetadata(tx.record_metadata)
+        return {
+          ...(Array.isArray(meta.receiptFileIds)
+            ? {
+                receiptFileIds: meta.receiptFileIds.filter(
+                  (id): id is string => typeof id === 'string'
+                )
+              }
+            : {}),
+          ...(typeof meta.bankReference === 'string' ? { bankReference: meta.bankReference } : {}),
+          ...(typeof meta.counterparty === 'string' ? { counterparty: meta.counterparty } : {}),
+          ...(typeof meta.createdAt === 'string' ? { createdAt: meta.createdAt } : {}),
+          ...(typeof meta.updatedAt === 'string' ? { updatedAt: meta.updatedAt } : {}),
+          ...(typeof meta.reconciledAt === 'string' ? { reconciledAt: meta.reconciledAt } : {}),
+          ...(Array.isArray(meta.audit) ? { audit: meta.audit } : {}),
+          ...(typeof meta.currencyTransferId === 'string'
+            ? { currencyTransferId: meta.currencyTransferId }
+            : {}),
+          ...(typeof meta.currencyTransferFee === 'string'
+            ? { currencyTransferFee: meta.currencyTransferFee }
+            : {}),
+          ...(typeof meta.currencyTransferFeeCurrency === 'string'
+            ? { currencyTransferFeeCurrency: meta.currencyTransferFeeCurrency }
+            : {})
+        }
+      })(),
       ...(transactionDetails(tx.details).length ? { details: transactionDetails(tx.details) } : {})
     })),
     goals: (fgByTable.get(ft.id) ?? []).map((fg) => ({

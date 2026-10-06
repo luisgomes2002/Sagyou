@@ -11,6 +11,7 @@ import {
   YIELD_SUMMARY_CATEGORY
 } from './shared'
 import { TransactionDetails } from './TransactionDetails'
+import { TransactionRecordPanel } from './TransactionRecordPanel'
 import { CategoryInput } from './CategoryInput'
 
 // ── AddTransactionRow ─────────────────────────────────────────────────────────
@@ -162,6 +163,7 @@ export function AddTransactionRow({ currency, onAdd }: AddTransactionRowProps) {
 
 interface TransactionRowProps {
   tx: FinancialTransaction
+  receiptCount: number
   currency: Currency
   allLists: FinancialTable[]
   onUpdate: (updates: Partial<Omit<FinancialTransaction, 'id'>>) => void
@@ -172,6 +174,7 @@ interface TransactionRowProps {
 
 export function TransactionRow({
   tx,
+  receiptCount,
   currency,
   allLists,
   onUpdate,
@@ -184,7 +187,8 @@ export function TransactionRow({
   const [editCat, setEditCat] = useState(tx.category ?? '')
   const [editAmount, setEditAmount] = useState(() => formatAmountInput(tx.amount, currency))
   const [dateEditing, setDateEditing] = useState(false)
-  const [detailsOpen, setDetailsOpen] = useState((tx.details?.length ?? 0) > 0)
+  const [detailsOpen, setDetailsOpen] = useState(false)
+  const [recordOpen, setRecordOpen] = useState(false)
 
   useEffect(() => {
     setEditDate(tx.date)
@@ -439,6 +443,37 @@ export function TransactionRow({
                 {tx.details?.length ? tx.details.length + ' item(ns)' : 'Detalhar'}
               </button>
             )}
+            {!readOnly && (
+              <button
+                type="button"
+                onClick={() => setRecordOpen((open) => !open)}
+                className="shrink-0 inline-flex items-center gap-1 rounded bg-[#2a2a2a] px-1.5 py-0.5 text-[10px] text-[#d4d4d4] hover:bg-[#3b3b3b] transition-colors"
+                title={
+                  receiptCount
+                    ? 'Abrir comprovantes desta transação'
+                    : 'Adicionar comprovante a esta transação'
+                }
+              >
+                <svg
+                  width="10"
+                  height="10"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  className={receiptCount ? 'text-[#46d478]' : 'text-[#e8b810]'}
+                  aria-hidden="true"
+                >
+                  <path d="M8 12.5 15.5 5a3.5 3.5 0 0 1 5 5l-9.5 9.5a5 5 0 0 1-7-7l9-9" />
+                </svg>
+                {receiptCount
+                  ? `${receiptCount} comprovante${receiptCount === 1 ? '' : 's'}`
+                  : 'Sem comprovante'}
+              </button>
+            )}
+            {tx.currencyTransferId && (
+              <span className="shrink-0 text-[10px] text-[#a080f0]">Câmbio</span>
+            )}
             {readOnly ? (
               <span className={`text-sm ${tx.fromShopping ? 'text-[#a080f0]' : 'text-[#d4d4d4]'}`}>
                 {tx.description}
@@ -530,6 +565,19 @@ export function TransactionRow({
         <tr className="border-b border-[#3b3b3b]">
           <td colSpan={6} className="px-4 py-2.5">
             <TransactionDetails
+              transaction={tx}
+              currency={currency}
+              allLists={allLists}
+              onUpdate={onUpdate}
+            />
+          </td>
+        </tr>
+      )}
+      {recordOpen && !readOnly && (
+        <tr className="border-b border-[#3b3b3b]">
+          <td colSpan={6} className="px-4 py-2.5">
+            <TransactionRecordPanel
+              key={`${tx.id}:${tx.currencyTransferId ?? ''}`}
               transaction={tx}
               currency={currency}
               allLists={allLists}

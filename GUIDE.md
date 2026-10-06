@@ -168,13 +168,17 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    para `number` só para largura de barra e porcentagem. `qty` é `number` — é
    quantidade, não dinheiro.
 2. **Perfis financeiros não se misturam.** Cada tabela tem `profileId`; tabelas antigas sem esse campo pertencem a `personal` (`Minhas finanças`). Consolidado, Dashboard, seletores de tabela e leituras financeiras da IA usam somente o perfil ativo. Nunca cruze transações ou vínculos entre perfis.
+   A exportação Excel é global: `Todas transações` inclui todos os perfis, tabelas e meses, sem depender do mês ativo na tela. Valores monetários exportados têm também coluna de texto exato, pois números do Excel podem perder precisão. Abas por tabela precisam de nomes únicos para não ocultar lançamentos.
+   Categorias personalizadas ficam em `FinancialProfile.customCategories` (opcional), compartilhadas só entre tabelas do mesmo perfil. Remover uma sugestão não altera categorias de lançamentos antigos; elas continuam disponíveis nos filtros pelo histórico.
    **No consolidado, totais nativos nunca somam moedas diferentes**: mostre BRL, USD e JPY
    separadamente. A equivalência cambial é só uma leitura em tempo real, identificada como tal,
    e nunca é gravada nem altera os lançamentos.
    Na Home, uma tabela selecionada sempre exibe valores na moeda nativa; conversão cambial
    só se aplica ao modo Consolidado.
-   As configurações de planejamento (banco/app, saldo real, orçamentos e recorrências) são
-   opcionais e persistem em metadata da tabela; seus valores monetários também são strings decimais.
+   Banco/app e saldo real são metadata opcional da tabela. Orçamentos e recorrências não são
+   funcionalidades do app: valores antigos desses campos são preservados em `legacyFinancialMetadata`
+   ao carregar, salvar e importar backup, mas não aparecem no modelo ativo nem no Excel. Não remova
+   essa ponte sem migração explícita, ou um autosave pode apagar dados de versões antigas.
    Itens em `FinancialTransaction.details` repartem o lançamento principal: a soma deles não pode
    ultrapassar o total e eles nunca entram uma segunda vez nos totais; a análise usa as categorias
    desses itens. Quando o lançamento pai for `Cartão`, os detalhes são subtraídos e somente o
@@ -182,6 +186,15 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    Um detalhe pode vincular uma transação espelho de outra tabela: a fatura pai continua no
    consolidado e somente o espelho é omitido. O vínculo legado entre transações mantém a regra
    inversa, omitindo a transação pai, para preservar dados existentes.
+   Comprovantes financeiros referenciam IDs da biblioteca compartilhada de `files/`;
+   o backup inclui metadados e bytes. Excluir um arquivo remove seu ID dos lançamentos.
+   O par de câmbio usa `currencyTransferId` próprio: somente uma saída e uma entrada
+   em moedas e tabelas diferentes do mesmo perfil. Ele não é espelho de fatura e
+   ambas as pontas continuam nos saldos nativos. A taxa é calculada dos valores
+   originais; a tarifa é informativa e não entra nos totais sem lançamento próprio.
+   `createdAt` de lançamentos antigos permanece desconhecido; edições novas recebem
+   `updatedAt` e histórico, e mudanças em dados bancários/valor/data retiram a
+   conferência com o extrato.
    A formatação de moeda é só exibição: resumos em JPY usam ponto para milhar
    e arredondam para ienes inteiros, sem alterar frações já salvas. Campos de edição
    agrupam milhares (BRL e JPY com ponto, USD com vírgula), mostram frações já

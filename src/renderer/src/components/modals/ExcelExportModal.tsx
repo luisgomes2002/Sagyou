@@ -13,35 +13,72 @@ interface Props {
 type DataKey = ExportKey
 
 const OPTIONS: { key: DataKey; label: string; description: string }[] = [
-  { key: 'projects',       label: 'Projetos',           description: 'Nome, descrição, cor, nº de colunas e links' },
-  { key: 'tasks',          label: 'Tarefas',             description: 'Título, projeto, coluna, sprint, prioridade, tags, prazo, tempo gasto' },
-  { key: 'sprints',        label: 'Sprints',             description: 'Nome, projeto, status, data de abertura e fechamento' },
-  { key: 'habits',         label: 'Hábitos',             description: 'Nome, total de conclusões, última conclusão' },
-  { key: 'goals',          label: 'Metas',               description: 'Título, meta, unidade, progresso atual, projeto' },
-  { key: 'notes',          label: 'Notas (canvas)',      description: 'Projeto, tipo, conteúdo, data de criação' },
-  { key: 'shopping',       label: 'Itens de compra',     description: 'Lista, nome, quantidade, preço, total, status' },
-  { key: 'transactions',   label: 'Transações',          description: 'Uma aba por lista — descrição, valor, tipo, data, categoria' },
-  { key: 'financialGoals', label: 'Metas financeiras',   description: 'Lista, nome, valor alvo, mês/ano, status' },
+  {
+    key: 'projects',
+    label: 'Projetos',
+    description: 'Nome, descrição, cor, nº de colunas e links'
+  },
+  {
+    key: 'tasks',
+    label: 'Tarefas',
+    description: 'Título, projeto, coluna, sprint, prioridade, tags, prazo, tempo gasto'
+  },
+  {
+    key: 'sprints',
+    label: 'Sprints',
+    description: 'Nome, projeto, status, data de abertura e fechamento'
+  },
+  { key: 'habits', label: 'Hábitos', description: 'Nome, total de conclusões, última conclusão' },
+  { key: 'goals', label: 'Metas', description: 'Título, meta, unidade, progresso atual, projeto' },
+  {
+    key: 'notes',
+    label: 'Notas (canvas)',
+    description: 'Projeto, tipo, conteúdo, data de criação'
+  },
+  {
+    key: 'shopping',
+    label: 'Itens de compra',
+    description: 'Lista, nome, quantidade, preço, total, status'
+  },
+  {
+    key: 'transactions',
+    label: 'Transações',
+    description: 'Todos os meses, uma aba geral e abas por tabela; inclui detalhes e vínculos'
+  },
+  {
+    key: 'financialGoals',
+    label: 'Metas financeiras',
+    description: 'Lista, nome, valor alvo, mês/ano, status'
+  },
+  {
+    key: 'financialTables',
+    label: 'Perfis e tabelas financeiras',
+    description: 'Perfis, moedas, bancos e saldos informados'
+  },
+  { key: 'yields', label: 'Rendimentos', description: 'Fontes e lançamentos de rendimento' }
 ]
 
-export function ExcelExportModal({ onClose, onToast }: Props) {
-  const { projects, tasks, sprints, habits, goals, notes, lists } = useKanbanStore(
-    useShallow((s) => ({
-      projects: s.projects,
-      tasks: s.tasks,
-      sprints: s.sprints,
-      habits: s.habits,
-      goals: s.goals,
-      notes: s.notes,
-      lists: s.lists
-    }))
-  )
+export function ExcelExportModal({ onClose, onToast }: Props): React.JSX.Element {
+  const { projects, tasks, sprints, habits, goals, notes, lists, financialProfiles, files } =
+    useKanbanStore(
+      useShallow((s) => ({
+        projects: s.projects,
+        tasks: s.tasks,
+        sprints: s.sprints,
+        habits: s.habits,
+        goals: s.goals,
+        notes: s.notes,
+        lists: s.lists,
+        financialProfiles: s.financialProfiles,
+        files: s.files
+      }))
+    )
   const [selected, setSelected] = useState<Set<DataKey>>(
-    new Set(['projects', 'tasks', 'sprints', 'habits', 'goals', 'notes', 'shopping', 'transactions', 'financialGoals'])
+    new Set(OPTIONS.map((option) => option.key))
   )
   const [loading, setLoading] = useState(false)
 
-  const toggle = (key: DataKey) => {
+  const toggle = (key: DataKey): void => {
     setSelected((prev) => {
       const next = new Set(prev)
       if (next.has(key)) next.delete(key)
@@ -50,7 +87,7 @@ export function ExcelExportModal({ onClose, onToast }: Props) {
     })
   }
 
-  const toggleAll = () => {
+  const toggleAll = (): void => {
     if (selected.size === OPTIONS.length) {
       setSelected(new Set())
     } else {
@@ -58,11 +95,22 @@ export function ExcelExportModal({ onClose, onToast }: Props) {
     }
   }
 
-  const handleExport = async () => {
+  const handleExport = async (): Promise<void> => {
     if (selected.size === 0) return
     setLoading(true)
     try {
-      const wb = buildWorkbook(selected, projects, tasks, sprints, habits, goals, notes, lists)
+      const wb = buildWorkbook(
+        selected,
+        projects,
+        tasks,
+        sprints,
+        habits,
+        goals,
+        notes,
+        lists,
+        financialProfiles,
+        files
+      )
       const buffer = XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer
       const date = new Date().toISOString().split('T')[0]
       const result = await window.electronAPI.excel.export(buffer, `sagyou-export-${date}.xlsx`)
@@ -84,7 +132,14 @@ export function ExcelExportModal({ onClose, onToast }: Props) {
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#3b3b3b] shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-7 h-7 rounded-lg bg-[#3b3b3b] flex items-center justify-center">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#46d478" strokeWidth="2">
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#46d478"
+                strokeWidth="2"
+              >
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                 <polyline points="14 2 14 8 20 8" />
                 <line x1="16" y1="13" x2="8" y2="13" />
@@ -93,9 +148,20 @@ export function ExcelExportModal({ onClose, onToast }: Props) {
             </div>
             <h2 className="text-sm font-semibold text-[#d4d4d4]">Exportar para Excel</h2>
           </div>
-          <button onClick={onClose} className="text-[#999999] hover:text-[#d4d4d4] transition-colors">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+          <button
+            onClick={onClose}
+            className="text-[#999999] hover:text-[#d4d4d4] transition-colors"
+          >
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
           </button>
         </div>
@@ -123,11 +189,20 @@ export function ExcelExportModal({ onClose, onToast }: Props) {
                     : 'border-[#3b3b3b] bg-[#1b1b1b] hover:border-[#555555]'
                 }`}
               >
-                <div className={`mt-0.5 w-4 h-4 rounded flex items-center justify-center shrink-0 border transition-colors ${
-                  isActive ? 'bg-[#7c3aed] border-[#7c3aed]' : 'border-[#666666]'
-                }`}>
+                <div
+                  className={`mt-0.5 w-4 h-4 rounded flex items-center justify-center shrink-0 border transition-colors ${
+                    isActive ? 'bg-[#7c3aed] border-[#7c3aed]' : 'border-[#666666]'
+                  }`}
+                >
                   {isActive && (
-                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
+                    <svg
+                      width="9"
+                      height="9"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="white"
+                      strokeWidth="3"
+                    >
                       <polyline points="20 6 9 17 4 12" />
                     </svg>
                   )}
@@ -144,7 +219,9 @@ export function ExcelExportModal({ onClose, onToast }: Props) {
         {/* Footer */}
         <div className="flex items-center justify-between px-5 py-4 border-t border-[#3b3b3b] shrink-0">
           <span className="text-xs text-[#666666]">
-            {selected.size === 0 ? 'Nenhuma planilha selecionada' : `${selected.size} ${selected.size === 1 ? 'planilha' : 'planilhas'}`}
+            {selected.size === 0
+              ? 'Nenhum grupo selecionado'
+              : `${selected.size} ${selected.size === 1 ? 'grupo de dados' : 'grupos de dados'}`}
           </span>
           <div className="flex gap-2">
             <button
@@ -160,14 +237,29 @@ export function ExcelExportModal({ onClose, onToast }: Props) {
             >
               {loading ? (
                 <>
-                  <svg className="animate-spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <svg
+                    className="animate-spin"
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                  >
                     <path d="M21 12a9 9 0 1 1-6.219-8.56" />
                   </svg>
                   Exportando...
                 </>
               ) : (
                 <>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                  >
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                     <polyline points="7 10 12 15 17 10" />
                     <line x1="12" y1="15" x2="12" y2="3" />

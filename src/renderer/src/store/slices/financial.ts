@@ -12,6 +12,7 @@ import type {
   Currency
 } from '../../types'
 import { DEFAULT_FINANCIAL_PROFILE_ID } from '../../types'
+import { applyFinancialTransactionEdit } from '../../utils/financialRecord'
 
 export interface FinancialSlice {
   lists: FinancialTable[]
@@ -19,21 +20,14 @@ export interface FinancialSlice {
   activeFinancialProfileId: string
   createFinancialProfile: (name: string) => string
   setActiveFinancialProfile: (id: string) => void
+  addFinancialCategory: (profileId: string, category: string) => void
+  removeFinancialCategory: (profileId: string, category: string) => void
   createList: (name: string, currency?: Currency, profileId?: string) => string
   updateList: (id: string, name: string) => void
   setListCurrency: (id: string, currency: Currency) => void
   updateFinancialSettings: (
     id: string,
-    settings: Partial<
-      Pick<
-        FinancialTable,
-        | 'provider'
-        | 'actualBalance'
-        | 'actualBalanceUpdatedAt'
-        | 'budgets'
-        | 'recurringTransactions'
-      >
-    >
+    settings: Partial<Pick<FinancialTable, 'provider' | 'actualBalance' | 'actualBalanceUpdatedAt'>>
   ) => void
   deleteList: (id: string) => void
   addItem: (
@@ -54,6 +48,18 @@ export interface FinancialSlice {
     updates: Partial<Omit<FinancialTransaction, 'id'>>
   ) => void
   deleteTransaction: (listId: string, txId: string) => void
+  linkCurrencyTransfer: (
+    fromListId: string,
+    fromTxId: string,
+    toListId: string,
+    toTxId: string
+  ) => boolean
+  unlinkCurrencyTransfer: (groupId: string) => void
+  setCurrencyTransferFee: (
+    groupId: string,
+    fee: string | undefined,
+    currency: Currency | undefined
+  ) => void
   addFinancialGoal: (listId: string, data: Omit<FinancialGoal, 'id'>) => string
   updateFinancialGoal: (
     listId: string,
@@ -108,6 +114,46 @@ export const createFinancialSlice: StateCreator<
   setActiveFinancialProfile: (id) => {
     if (!get().financialProfiles.some((profile) => profile.id === id)) return
     set({ activeFinancialProfileId: id })
+    get()._persist()
+  },
+
+  addFinancialCategory: (profileId, category) => {
+    const trimmed = category.trim()
+    if (!trimmed) return
+    const profile = get().financialProfiles.find((item) => item.id === profileId)
+    if (
+      !profile ||
+      profile.customCategories?.some((item) => item.toLowerCase() === trimmed.toLowerCase())
+    )
+      return
+    set((s) => ({
+      financialProfiles: s.financialProfiles.map((item) =>
+        item.id === profileId
+          ? {
+              ...item,
+              customCategories: [...(item.customCategories ?? []), trimmed],
+              updatedAt: new Date().toISOString()
+            }
+          : item
+      )
+    }))
+    get()._persist()
+  },
+
+  removeFinancialCategory: (profileId, category) => {
+    const profile = get().financialProfiles.find((item) => item.id === profileId)
+    if (!profile?.customCategories?.includes(category)) return
+    set((s) => ({
+      financialProfiles: s.financialProfiles.map((item) =>
+        item.id === profileId
+          ? {
+              ...item,
+              customCategories: (item.customCategories ?? []).filter((value) => value !== category),
+              updatedAt: new Date().toISOString()
+            }
+          : item
+      )
+    }))
     get()._persist()
   },
 
@@ -168,7 +214,33 @@ export const createFinancialSlice: StateCreator<
   },
 
   deleteList: (id) => {
-    set((s) => ({ lists: s.lists.filter((l) => l.id !== id) }))
+    const groups = new Set(
+      get()
+        .lists.find((list) => list.id === id)
+        ?.transactions.map((tx) => tx.currencyTransferId)
+        .filter(Boolean)
+    )
+    const at = new Date().toISOString()
+    set((s) => ({
+      lists: s.lists
+        .filter((l) => l.id !== id)
+        .map((list) => ({
+          ...list,
+          transactions: list.transactions.map((tx) =>
+            tx.currencyTransferId && groups.has(tx.currencyTransferId)
+              ? applyFinancialTransactionEdit(
+                  tx,
+                  {
+                    currencyTransferId: undefined,
+                    currencyTransferFee: undefined,
+                    currencyTransferFeeCurrency: undefined
+                  },
+                  at
+                )
+              : tx
+          )
+        }))
+    }))
     get()._persist()
   },
 
@@ -295,7 +367,8 @@ export const createFinancialSlice: StateCreator<
         amount,
         type: 'expense',
         date: local,
-        fromShopping: true
+        fromShopping: true,
+        createdAt: new Date().toISOString()
       }
       set((s) => ({
         lists: s.lists.map((l) =>
@@ -341,6 +414,7 @@ export const createFinancialSlice: StateCreator<
     const tx: FinancialTransaction = {
       id: txId,
       ...data,
+      createdAt: new Date().toISOString(),
       ...(detailed.greaterThan(new Decimal(data.amount)) ? { details: [] } : {})
     }
     set((s) => ({
@@ -355,39 +429,161 @@ export const createFinancialSlice: StateCreator<
   },
 
   updateTransaction: (listId, txId, updates) => {
+    let changed = false
+    const at = new Date().toISOString()
     set((s) => ({
-      lists: s.lists.map((l) =>
-        l.id !== listId
-          ? l
+      lists: s.lists.map((l) => {
+        if (l.id !== listId) return l
+        const transactions = l.transactions.map((t) => {
+          if (t.id !== txId) return t
+          const next = applyFinancialTransactionEdit(t, updates, at)
+          const detailed = (next.details ?? []).reduce(
+            (total, detail) => total.plus(detail.amount),
+            new Decimal(0)
+          )
+          if (detailed.greaterThan(new Decimal(next.amount))) return t
+          if (next !== t) changed = true
+          return next
+        })
+        return changed ? { ...l, transactions, updatedAt: at } : l
+      })
+    }))
+    if (changed) get()._persist()
+  },
+
+  linkCurrencyTransfer: (fromListId, fromTxId, toListId, toTxId) => {
+    const fromList = get().lists.find((list) => list.id === fromListId)
+    const toList = get().lists.find((list) => list.id === toListId)
+    const from = fromList?.transactions.find((tx) => tx.id === fromTxId)
+    const to = toList?.transactions.find((tx) => tx.id === toTxId)
+    if (
+      !fromList ||
+      !toList ||
+      !from ||
+      !to ||
+      fromList.id === toList.id ||
+      fromList.profileId !== toList.profileId ||
+      fromList.currency === toList.currency ||
+      from.type !== 'expense' ||
+      to.type !== 'income' ||
+      from.currencyTransferId ||
+      to.currencyTransferId ||
+      from.linkedTransactionId ||
+      to.linkedTransactionId ||
+      from.fromShopping ||
+      to.fromShopping ||
+      get().lists.some((list) =>
+        list.transactions.some(
+          (tx) =>
+            tx.linkedTransactionId === from.id ||
+            tx.linkedTransactionId === to.id ||
+            tx.details?.some(
+              (detail) =>
+                detail.linkedTransactionId === from.id || detail.linkedTransactionId === to.id
+            )
+        )
+      )
+    )
+      return false
+    const groupId = uuidv4()
+    const at = new Date().toISOString()
+    set((s) => ({
+      lists: s.lists.map((list) =>
+        list.id !== fromListId && list.id !== toListId
+          ? list
           : {
-              ...l,
-              transactions: l.transactions.map((t) => {
-                if (t.id !== txId) return t
-                const next = { ...t, ...updates }
-                const detailed = (next.details ?? []).reduce(
-                  (total, detail) => total.plus(detail.amount),
-                  new Decimal(0)
-                )
-                return detailed.greaterThan(new Decimal(next.amount)) ? t : next
-              }),
-              updatedAt: new Date().toISOString()
+              ...list,
+              transactions: list.transactions.map((tx) =>
+                tx.id === fromTxId || tx.id === toTxId
+                  ? applyFinancialTransactionEdit(tx, { currencyTransferId: groupId }, at)
+                  : tx
+              ),
+              updatedAt: at
             }
       )
+    }))
+    get()._persist()
+    return true
+  },
+
+  unlinkCurrencyTransfer: (groupId) => {
+    if (!groupId) return
+    const at = new Date().toISOString()
+    set((s) => ({
+      lists: s.lists.map((list) => ({
+        ...list,
+        transactions: list.transactions.map((tx) =>
+          tx.currencyTransferId === groupId
+            ? applyFinancialTransactionEdit(
+                tx,
+                {
+                  currencyTransferId: undefined,
+                  currencyTransferFee: undefined,
+                  currencyTransferFeeCurrency: undefined
+                },
+                at
+              )
+            : tx
+        )
+      }))
+    }))
+    get()._persist()
+  },
+
+  setCurrencyTransferFee: (groupId, fee, currency) => {
+    if (!groupId) return
+    if (fee !== undefined) {
+      try {
+        if (!new Decimal(fee).isFinite() || new Decimal(fee).isNegative()) return
+      } catch {
+        return
+      }
+    }
+    const at = new Date().toISOString()
+    set((s) => ({
+      lists: s.lists.map((list) => ({
+        ...list,
+        transactions: list.transactions.map((tx) =>
+          tx.currencyTransferId === groupId
+            ? applyFinancialTransactionEdit(
+                tx,
+                { currencyTransferFee: fee, currencyTransferFeeCurrency: currency },
+                at
+              )
+            : tx
+        )
+      }))
     }))
     get()._persist()
   },
 
   deleteTransaction: (listId, txId) => {
+    const groupId = get()
+      .lists.find((l) => l.id === listId)
+      ?.transactions.find((tx) => tx.id === txId)?.currencyTransferId
+    const at = new Date().toISOString()
     set((s) => ({
-      lists: s.lists.map((l) =>
-        l.id !== listId
-          ? l
-          : {
-              ...l,
-              transactions: l.transactions.filter((t) => t.id !== txId),
-              updatedAt: new Date().toISOString()
-            }
-      )
+      lists: s.lists.map((l) => {
+        const transactions = l.transactions
+          .filter((t) => l.id !== listId || t.id !== txId)
+          .map((tx) =>
+            groupId && tx.currencyTransferId === groupId
+              ? applyFinancialTransactionEdit(
+                  tx,
+                  {
+                    currencyTransferId: undefined,
+                    currencyTransferFee: undefined,
+                    currencyTransferFeeCurrency: undefined
+                  },
+                  at
+                )
+              : tx
+          )
+        return transactions.length !== l.transactions.length ||
+          transactions.some((tx, index) => tx !== l.transactions[index])
+          ? { ...l, transactions, updatedAt: at }
+          : l
+      })
     }))
     get()._persist()
   },

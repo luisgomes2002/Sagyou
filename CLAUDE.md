@@ -99,21 +99,21 @@ Soft deletes use a `Tombstone[]` array. On `importBackup`, all local state is re
 
 `App.tsx` renders one view at a time based on `activeView` state:
 
-| View        | Component           | Notes                                                                                                     |
-| ----------- | ------------------- | --------------------------------------------------------------------------------------------------------- |
-| `board`     | `Board.tsx`         | dnd-kit drag-and-drop across columns                                                                      |
+| View        | Component           | Notes                                                                                                                                    |
+| ----------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `board`     | `Board.tsx`         | dnd-kit drag-and-drop across columns                                                                                                     |
 | `canvas`    | `CanvasView.tsx`    | free-form sticky notes with task links; text blocks are visual-only, have font size and width, cannot connect, and stay out of the graph |
-| `files`     | `FilesView.tsx`     | file attachments, optionally scoped to a project                                                          |
-| `done`      | `DoneView.tsx`      | tasks in any column named "done"                                                                          |
-| `goals`     | `GoalView.tsx`      | progress goals with optional project link                                                                 |
-| `habits`    | `HabitView.tsx`     | daily habit tracker with streak                                                                           |
-| `financial` | `FinancialView.tsx` | shell over the tabs in `components/financial/` — shopping lists, transactions, financial goals, analytics |
-| `upcoming`  | `UpcomingView.tsx`  | tasks with due dates                                                                                      |
-| `reports`   | `ReportsView.tsx`   | productivity overview                                                                                     |
-| `ai`        | `AIView.tsx`        | chat with the assistant (see AI assistant below)                                                          |
-| `agents`    | `FleetView.tsx`     | live panel of every running chat agent (see AI assistant / multi-agent)                                   |
-| `home`      | `HomeView.tsx`      | landing/dashboard — quick overview and shortcuts                                                          |
-| `memory`    | `MemoryView.tsx`    | AI memory management: list, pin, restore and delete assistant memories                                    |
+| `files`     | `FilesView.tsx`     | file attachments, optionally scoped to a project                                                                                         |
+| `done`      | `DoneView.tsx`      | tasks in any column named "done"                                                                                                         |
+| `goals`     | `GoalView.tsx`      | progress goals with optional project link                                                                                                |
+| `habits`    | `HabitView.tsx`     | daily habit tracker with streak                                                                                                          |
+| `financial` | `FinancialView.tsx` | shell over the tabs in `components/financial/` — shopping lists, transactions, financial goals, analytics                                |
+| `upcoming`  | `UpcomingView.tsx`  | tasks with due dates                                                                                                                     |
+| `reports`   | `ReportsView.tsx`   | productivity overview                                                                                                                    |
+| `ai`        | `AIView.tsx`        | chat with the assistant (see AI assistant below)                                                                                         |
+| `agents`    | `FleetView.tsx`     | live panel of every running chat agent (see AI assistant / multi-agent)                                                                  |
+| `home`      | `HomeView.tsx`      | landing/dashboard — quick overview and shortcuts                                                                                         |
+| `memory`    | `MemoryView.tsx`    | AI memory management: list, pin, restore and delete assistant memories                                                                   |
 
 `conversation-search.ts` backs the history search box (`ai:conversations:search`). It runs in **main**, where the history file is already open — filtering in the renderer would mean shipping every message body over IPC per keystroke. It **strips accents** (a Portuguese app: "habito" must find "hábito"), **skips `status` messages** (the agent's own tool trace, so searching "App.tsx" surfaces chats that _discussed_ it, not every chat that happened to read it), and returns a snippet for body matches so a hit explains itself. An empty term is not a filter — it returns the whole history, which is what the dropdown shows before anything is typed. `refreshConversations()` always goes through search via `historyQueryRef`, or the debounced autosave would drop the user's filter mid-typing.
 
@@ -285,9 +285,11 @@ Not everything lives in the DB. Also in `userData`:
 Treat these with the same care as the DB — the same "production data in the wild" caveat applies.
 
 The consolidated financial view must keep native totals separate by currency; a cross-currency equivalent is a live display-only calculation, never a persisted or historical total.
-Financial-table planning settings (provider, actual balance, budgets, recurring transactions) are optional metadata; money inside them uses the same canonical decimal strings as transactions.
+Provider and actual balance are optional financial-table metadata. Old budgets and recurring transactions are unsupported features; their values survive in `legacyFinancialMetadata` through DB and backup round-trips, but are absent from the active model and Excel export. Do not remove this bridge without an explicit migration or an ordinary save could erase older data.
 
 Financial tables belong to a `FinancialProfile`. `profileId` lives in table metadata, while profiles and the active profile are stored in SQLite `settings`. Missing legacy ids always migrate to the immutable `personal` profile (`Minhas finanças`). Filter every table picker, consolidated total, Dashboard financial summary, and AI financial read by the active profile; never create or retain a cross-profile transaction link.
+Excel export is deliberately global: its `Todas transações` sheet includes every profile, table and month, independent of the visible finance month. Keep exact decimal text alongside numeric money columns, and give per-table sheets unique names so duplicate table labels never hide data.
+Custom finance categories live in optional `FinancialProfile.customCategories`, shared only by that profile's tables. Removing a suggestion does not rewrite historical transaction categories; used categories stay visible in pickers and filters.
 
 ### The backup bundles the physical files (v5)
 
@@ -327,6 +329,23 @@ An invoice detail may carry `linkedTransactionId` pointing to its mirror transac
 financial table. This is deliberately different from the legacy transaction-to-transaction link:
 the detail link keeps the whole invoice in consolidated totals and omits the mirror, while the
 legacy link keeps the child and omits its parent. Detail links require equal amounts and currencies.
+
+Financial documentation stays on `FinancialTransaction`: `receiptFileIds` point to shared `files/`
+blobs (metadata and bytes are already included in v5 backups), while `source`, `bankReference`
+and `counterparty` identify the operation in an external statement. Deleting a library file must
+remove its ID from transaction references. New transactions receive `createdAt`; old records keep
+it absent because their creation time is unknown. `applyFinancialTransactionEdit` appends field
+changes to `audit` and updates `updatedAt`; a change to amount, date, type or bank identity clears
+`reconciledAt` so an old bank reconciliation cannot silently cover a corrected transaction.
+
+Foreign-currency account transfers use `currencyTransferId`, separate from invoice mirrors and
+legacy links. Pair only an expense and an income from different tables/currencies in the same
+financial profile. Both original transactions remain in native cash-flow totals. The effective
+rate is derived from their original decimal-string amounts. `currencyTransferFee` and its currency
+are informational metadata on the pair; charge the fee as an expense transaction if it needs to
+affect balances. The transaction's optional record fields persist in SQLite `record_metadata`,
+added to existing databases by an idempotent migration; Excel includes documentation, audit and
+a transfer-pair sheet.
 
 - On load, `normalizeList` migrates any legacy `number` values to canonical string via `moneyStr` — old data and old backups keep working.
 - The SQLite columns for these fields are `TEXT` (`price`, `amount`, `target_amount`), storing decimal strings on disk. `qty` stays `REAL`. On insert, `moneyText()` in `main/store.ts` coerces number-or-string to a string.
