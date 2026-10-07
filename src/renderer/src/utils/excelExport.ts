@@ -26,6 +26,10 @@ export type ExportKey =
   | 'financialTables'
   | 'yields'
 
+export interface ExcelExportOptions {
+  includeTransactionTableSheets?: boolean
+}
+
 function appendSheet(wb: XLSX.WorkBook, rows: Record<string, unknown>[], name: string): void {
   const base =
     name
@@ -53,7 +57,8 @@ export function buildWorkbook(
   notes: StickyNote[],
   lists: FinancialTable[],
   financialProfiles: FinancialProfile[] = [],
-  files: StoredFile[] = []
+  files: StoredFile[] = [],
+  options: ExcelExportOptions = {}
 ): XLSX.WorkBook {
   const wb = XLSX.utils.book_new()
   const projectMap = Object.fromEntries(projects.map((p) => [p.id, p]))
@@ -377,14 +382,15 @@ export function buildWorkbook(
         return row
       })
       allTransactions.push(...rows)
-      tableSheets.push({ name: list.name, rows })
+      if (options.includeTransactionTableSheets && rows.length > 0)
+        tableSheets.push({ name: list.name, rows })
     }
     appendSheet(
       wb,
       allTransactions.sort((a, b) => String(a.Data).localeCompare(String(b.Data))),
       'Todas transações'
     )
-    appendSheet(wb, allDetails, 'Detalhes financeiros')
+    if (allDetails.length > 0) appendSheet(wb, allDetails, 'Detalhes financeiros')
     if (allAudit.length) appendSheet(wb, allAudit, 'Histórico financeiro')
     if (transferGroups.size)
       appendSheet(

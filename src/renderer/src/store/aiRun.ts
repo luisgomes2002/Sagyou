@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { v4 as uuidv4 } from 'uuid'
 import { runAgent, resolveMaxSteps, callModel, contentText } from '../ai/agent'
 import { CODE_TOOL_DEFS, routeTools } from '../ai/tools'
+import { requiresExplicitApproval } from '../ai/permission-registry'
 import codePromptMd from '../ai/code-prompt.md?raw'
 import { useKanbanStore } from './kanban'
 import { setAdd, setDel } from '../utils/immutable'
@@ -34,6 +35,8 @@ export type { TokenUsage }
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'status'
   content: string
+  /** User feedback on an answer; stored with the conversation for quality review. */
+  feedback?: 'positive' | 'negative'
   /**
    * Chat-image ids. The bytes live as files under userData/chat-images and are
    * loaded into `imageData` on demand — inlining base64 here would land it in
@@ -254,6 +257,8 @@ export interface PendingApproval {
   convId: string
   writes: PendingCall[]
   selected: Set<string>
+  /** An uploaded document is untrusted, so this run never bypasses its card. */
+  documentReview?: boolean
 }
 
 /**
@@ -407,7 +412,11 @@ export interface AiRunState {
    * taken over.
    */
   acquireLease: (taskId: string, convId: string) => boolean
-  requestApproval: (convId: string, writes: PendingCall[]) => Promise<Set<string>>
+  requestApproval: (
+    convId: string,
+    writes: PendingCall[],
+    documentReview?: boolean
+  ) => Promise<Set<string>>
   resolveApproval: (convId: string, ids: Set<string>) => void
   toggleApproval: (convId: string, id: string) => void
   setAutoApprove: (convId: string, v: boolean) => void
@@ -485,7 +494,12 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
       const reply = await runAgent(
         config,
         toApiMessages(next, imageData),
-        (writes) => get().requestApproval(convId, writes),
+        (writes) =>
+          get().requestApproval(
+            convId,
+            writes,
+            next.some((message) => Boolean(message.documentIds?.length))
+          ),
         {
           projectId,
           convId,
@@ -638,16 +652,22 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
   },
 
   // Shows the approval card for this run and resolves when the user decides (the
-  // agent loop awaits this). In auto mode it resolves immediately, approving
-  // every write. A run replaces its own earlier card rather than stacking two.
-  requestApproval: (convId, writes) => {
-    if (get().autoApprove.has(convId)) return Promise.resolve(new Set(writes.map((w) => w.id)))
+  // agent loop awaits this). Auto only bypasses ordinary writes when no chat
+  // document is in context. A run replaces its own earlier card rather than stacking two.
+  requestApproval: (convId, writes, documentReview = false) => {
+    if (
+      get().autoApprove.has(convId) &&
+      !documentReview &&
+      writes.every((w) => !requiresExplicitApproval(w.name))
+    ) {
+      return Promise.resolve(new Set(writes.map((w) => w.id)))
+    }
     return new Promise((resolve) => {
       approvalResolvers.set(convId, resolve)
       set((s) => ({
         pendingApprovals: [
           ...s.pendingApprovals.filter((p) => p.convId !== convId),
-          { convId, writes, selected: new Set(writes.map((w) => w.id)) }
+          { convId, writes, selected: new Set(writes.map((w) => w.id)), documentReview }
         ]
       }))
     })

@@ -128,7 +128,8 @@ src/
       tools.ts    # infraestrutura: REGISTRY, TOOL_DEFS, runTool, describeTool*
       tools/
         helpers.ts  # funções helper + constantes (fn, resolveTask, PRIORITIES, …)
-        entries.ts  # 32 definições de ferramentas (definição + run)
+        entries.ts  # definições de ferramentas (definição + run)
+        read-data.ts # leitura detalhada e paginada dos domínios do app
       agent.ts    # o loop (runAgent)
       system-prompt.md, code-prompt.md, validators.ts, permission-registry.ts, glossary.json
     utils/
@@ -168,13 +169,26 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    para `number` só para largura de barra e porcentagem. `qty` é `number` — é
    quantidade, não dinheiro.
 2. **Perfis financeiros não se misturam.** Cada tabela tem `profileId`; tabelas antigas sem esse campo pertencem a `personal` (`Minhas finanças`). Consolidado, Dashboard, seletores de tabela e leituras financeiras da IA usam somente o perfil ativo. Nunca cruze transações ou vínculos entre perfis.
-   A exportação Excel é global: `Todas transações` inclui todos os perfis, tabelas e meses, sem depender do mês ativo na tela. Valores monetários exportados têm também coluna de texto exato, pois números do Excel podem perder precisão. Abas por tabela precisam de nomes únicos para não ocultar lançamentos.
+   `ler_dados` permite à IA percorrer registros de todas as áreas do app, mas suas entidades financeiras obedecem ao mesmo perfil ativo. Listas são paginadas com total/truncado; um ID lê todos os campos do registro. Anexos expõem metadados, e o conteúdo passa por `ler_documento`; imagens inline legadas não entram no resultado.
+   A exportação Excel é global: `Todas transações` inclui todos os perfis, tabelas e meses, sem depender do mês ativo na tela. Valores monetários exportados têm também coluna de texto exato, pois números do Excel podem perder precisão. Abas de transações por tabela repetem a aba geral: ficam desligadas por padrão, e a opção para incluí-las só cria abas não vazias com nomes únicos. `Detalhes financeiros` só aparece quando há detalhes.
    Categorias personalizadas ficam em `FinancialProfile.customCategories` (opcional), compartilhadas só entre tabelas do mesmo perfil. Remover uma sugestão não altera categorias de lançamentos antigos; elas continuam disponíveis nos filtros pelo histórico.
    **No consolidado, totais nativos nunca somam moedas diferentes**: mostre BRL, USD e JPY
    separadamente. A equivalência cambial é só uma leitura em tempo real, identificada como tal,
    e nunca é gravada nem altera os lançamentos.
    Na Home, uma tabela selecionada sempre exibe valores na moeda nativa; conversão cambial
-   só se aplica ao modo Consolidado.
+   só se aplica ao modo Consolidado. O saldo de abertura na Home acumula lançamentos
+   até o dia local atual, inclusive quando o último registro é de um mês anterior;
+   lançamentos futuros não entram nesse saldo.
+   Nas Finanças, o mês selecionado limita os saldos ao seu último dia: o saldo
+   até hoje para no dia local atual se o mês ainda não acabou, e o projetado
+   inclui lançamentos futuros até o fim do mês selecionado. Metas são avaliadas
+   no mesmo recorte, limitadas ao próprio prazo; alcance apenas futuro aparece
+   como previsão. No Consolidado, preserve a exclusão de transações espelho e
+   a separação por moeda nos dois saldos.
+   O resumo mensal automático de Rendimentos usa o dia 1 para entrar no saldo
+   desde o começo do mês. Na carga e na importação, só resumos antigos com
+   categoria, descrição e data de último dia no formato automático migram;
+   a mudança de data entra no histórico e retira conferência bancária.
    Banco/app e saldo real são metadata opcional da tabela. Orçamentos e recorrências não são
    funcionalidades do app: valores antigos desses campos são preservados em `legacyFinancialMetadata`
    ao carregar, salvar e importar backup, mas não aparecem no modelo ativo nem no Excel. Não remova
@@ -280,6 +294,18 @@ CODE_READ_PAGE`) devolve só ~100 linhas + `simbolos` + `dica`, não a janela de
     `backup:commit-blobs` e persistir o backup importado. Sem snapshot, aborte.
     O app atualiza um snapshot diário ao abrir e a cada hora, com retenção dos
     sete mais recentes. Bytes dos anexos continuam fora do IPC.
+
+13. 🔴 **Conversa citada por memória não pode ser apagada.** `sourceConversationId`
+    de memórias ativas **ou arquivadas** protege o transcript dos limites de 14 dias/50
+    conversas, da exclusão manual e da substituição do histórico no restore de backup.
+    O main decide isso antes de apagar bytes de anexos;
+    remover só o arquivo deixaria handoffs e outras memórias apontando para o vazio.
+14. **Auto não aprova exclusão nem lançamento financeiro.** `deletar_task` e
+    `criar_transacao` sempre passam pelo card de aprovação do chat; as outras
+    escritas continuam podendo rodar no Auto. Uma correção reenviada desliga o
+    Auto daquela conversa para impedir repetição silenciosa de ações anteriores.
+    Execuções cuja conversa contenha documento anexado também pedem aprovação de
+    **todas** as escritas, pois o conteúdo do arquivo não é uma instrução confiável.
 
 ## Memória — fronteira de confiança
 
@@ -503,8 +529,9 @@ kernel.apparmor_restrict_unprivileged_userns=0` (mostrado, nunca rodado); `bubbl
   terminava. Agora `loadRunIndex()` chama `pruneRuns` em toda leitura — runs
   antigas somem mesmo sem novos agentes.
 - **`pruneConversations` limpa o histórico na inicialização.** Conversas inativas
-  há mais de 14 dias são removidas; se sobrarem mais de 50, as mais antigas vão
-  junto. As imagens (`chat-images/`) das conversas removidas também são apagadas
+  há mais de 14 dias são removidas; se sobrarem mais de 50 conversas sem referência
+  de memória, as mais antigas vão junto. Conversas citadas por qualquer memória
+  são preservadas. As imagens (`chat-images/`) das conversas removidas também são apagadas
   do disco, desde que nenhuma conversa mantida ainda as referencie. Roda uma vez
   em `app.whenReady()`, antes de `createWindow()`.
 

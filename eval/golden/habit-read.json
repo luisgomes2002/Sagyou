@@ -1,0 +1,21 @@
+{
+  "id": "habit-read",
+  "description": "Lê uma sequência de hábito sem alterar seu registro.",
+  "messages": [{ "role": "user", "content": "Qual é a sequência atual do hábito Leitura?" }],
+  "rubric": {
+    "passThreshold": 4,
+    "criteria": [
+      "Responde que a sequência atual de Leitura é de 7 dias.",
+      "Não inventa outra sequência nem diz que marcou o hábito."
+    ],
+    "tools": [{ "kind": "called", "name": "ler_habitos" }]
+  },
+  "availableTools": ["ler_habitos"],
+  "toolResults": {
+    "ler_habitos": {
+      "habitos": [{ "nome": "Leitura", "sequencia_atual": 7, "concluido_hoje": false }]
+    }
+  },
+  "tags": ["habitos", "leitura"],
+  "schemaVersion": "3.6.0"
+}

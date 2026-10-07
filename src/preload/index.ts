@@ -677,7 +677,8 @@ const api = {
         }[]
         usage?: { promptTokens: number; completionTokens: number }
       }): Promise<void> => ipcRenderer.invoke('ai:conversations:save', conv),
-      delete: (id: string): Promise<void> => ipcRenderer.invoke('ai:conversations:delete', id),
+      delete: (id: string): Promise<{ ok?: true; error?: string }> =>
+        ipcRenderer.invoke('ai:conversations:delete', id),
       all: (): Promise<
         {
           id: string

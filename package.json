@@ -22,8 +22,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "eval": "npx tsx eval/run.ts",
-    "eval:verbose": "npx tsx eval/run.ts --verbose"
+    "eval": "node --experimental-strip-types eval/live.ts",
+    "eval:verbose": "node --experimental-strip-types eval/live.ts --verbose",
+    "eval:check": "node --experimental-strip-types eval/live.ts --check"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.2",

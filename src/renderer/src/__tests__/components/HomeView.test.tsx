@@ -73,6 +73,33 @@ describe('Tabela financeira da Home', () => {
     )
   })
 
+  it('mostra na abertura o saldo acumulado até hoje mesmo sem registro no mês atual', () => {
+    const year = new Date().getFullYear()
+    dashboard.lists[1].transactions = [
+      {
+        id: 'past-income',
+        description: 'Saldo anterior',
+        amount: '100',
+        type: 'income',
+        date: `${year - 1}-01-01`
+      },
+      {
+        id: 'future-expense',
+        description: 'Pagamento agendado',
+        amount: '40',
+        type: 'expense',
+        date: `${year + 1}-01-01`
+      }
+    ]
+    localStorage.setItem('sagyou-home-financial-table:personal', 'table-2')
+
+    render(<HomeView projects={[]} onNavigate={vi.fn()} />)
+
+    expect(screen.getByText('Saldo até hoje')).toBeInTheDocument()
+    expect(screen.getByText('R$ 100,00')).toBeInTheDocument()
+    expect(screen.queryByText('R$ 60,00')).not.toBeInTheDocument()
+  })
+
   it('exibe o valor nativo da tabela em ienes mesmo com câmbio disponível', async () => {
     const now = new Date()
     const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-02`

@@ -44,7 +44,7 @@ function installApi(): void {
         get: vi.fn(async () => null),
         save: vi.fn(async () => {}),
         rename: vi.fn(async (_id: string, title: string) => ({ title })),
-        delete: vi.fn(async () => {})
+        delete: vi.fn(async () => ({ ok: true }))
       },
       usage: { summary: vi.fn(async () => storedSpend) },
       images: {
@@ -168,6 +168,51 @@ beforeEach(() => {
     parked: {}
   })
   useAiRunStore.getState().reset()
+})
+
+describe('AIView — message actions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    storedConfig = { baseUrl: 'http://x', apiKey: 'k', model: 'm' }
+    storedHistory = []
+    installApi()
+    Element.prototype.scrollTo = vi.fn()
+    useAiRunStore.setState({
+      conversationId: 'c1',
+      messages: [
+        { role: 'user', content: 'Pergunta original' },
+        { role: 'assistant', content: 'Resposta original' }
+      ]
+    })
+  })
+
+  it('copies an answer and saves its feedback in the transcript', async () => {
+    const writeText = vi.fn(async () => {})
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    renderAI(<AIView projects={[]} />)
+
+    await userEvent.click(screen.getAllByTitle('Copiar mensagem')[1])
+    expect(writeText).toHaveBeenCalledWith('Resposta original')
+    await userEvent.click(screen.getByRole('button', { name: 'Resposta útil' }))
+    expect(useAiRunStore.getState().messages[1].feedback).toBe('positive')
+  })
+
+  it('resends an edited question as a new turn with Auto disabled', async () => {
+    vi.mocked(runAgent).mockResolvedValue('Resposta corrigida')
+    useAiRunStore.setState({ autoApprove: new Set(['c1']) })
+    renderAI(<AIView projects={[]} />)
+
+    await userEvent.click(screen.getByTitle('Editar e reenviar'))
+    const box = screen.getByPlaceholderText(/Descreva o projeto/)
+    fireEvent.change(box, { target: { value: 'Pergunta corrigida' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Reenviar' }))
+
+    await waitFor(() => expect(runAgent).toHaveBeenCalled())
+    const state = useAiRunStore.getState()
+    expect(state.autoApprove.has('c1')).toBe(false)
+    expect(state.messages.some((m) => m.content === 'Resposta original')).toBe(true)
+    expect(state.messages.some((m) => m.content.includes('Pergunta corrigida'))).toBe(true)
+  })
 })
 
 const emptyBucket = {
@@ -1201,6 +1246,26 @@ describe('AIView — pasted images', () => {
       expect(window.electronAPI.ai.images.delete).toHaveBeenCalledWith(['img-a', 'img-b'])
     )
     expect(window.electronAPI.ai.conversations.delete).toHaveBeenCalledWith('c1')
+  })
+
+  it('keeps attachments when memory prevents conversation deletion', async () => {
+    storedHistory = [{ id: 'c1', title: 'Com memória', updatedAt: new Date().toISOString() }]
+    vi.mocked(window.electronAPI.ai.conversations.get).mockResolvedValue({
+      id: 'c1',
+      title: 'Com memória',
+      messages: [{ role: 'user', content: 'x', imageIds: ['img-a'] }]
+    } as never)
+    vi.mocked(window.electronAPI.ai.conversations.delete).mockResolvedValue({
+      error: 'Esta conversa é referenciada por uma memória.'
+    })
+
+    renderAI(<AIView projects={[]} />)
+    await userEvent.click(screen.getByText('Histórico'))
+    await userEvent.click(await screen.findByTitle('Apagar conversa'))
+    await userEvent.click(await screen.findByRole('button', { name: 'Apagar' }))
+
+    expect(await screen.findByText(/referenciada por uma memória/)).toBeInTheDocument()
+    expect(window.electronAPI.ai.images.delete).not.toHaveBeenCalled()
   })
 
   it('reports a rejected image instead of attaching nothing silently', async () => {

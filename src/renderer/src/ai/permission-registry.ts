@@ -38,8 +38,10 @@ const REGISTRY: PermissionEntry[] = [
   {
     name: 'ler_tasks',
     level: 'read',
-    rationale: 'Só lista tasks com filtros. A mais chamada do agente — o default exclui tasks concluídas (45% do board real) para economizar tokens.',
-    guard: 'Total + truncado + concluidas_ocultas reportados para que o corte não minta sobre o tamanho real do board.',
+    rationale:
+      'Só lista tasks com filtros. A mais chamada do agente — o default exclui tasks concluídas (45% do board real) para economizar tokens.',
+    guard:
+      'Total + truncado + concluidas_ocultas reportados para que o corte não minta sobre o tamanho real do board.',
     since: '2024-03'
   },
   {
@@ -80,8 +82,10 @@ const REGISTRY: PermissionEntry[] = [
   {
     name: 'ler_arquivo',
     level: 'read',
-    rationale: 'Lê trechos de arquivos de código por caminho, símbolo ou range de linhas. Sem mutação.',
-    guard: 'Confinado por confineToRoot(). Cache de 5s no code-agent. Brake de releitura cega (2x).',
+    rationale:
+      'Lê trechos de arquivos de código por caminho, símbolo ou range de linhas. Sem mutação.',
+    guard:
+      'Confinado por confineToRoot(). Cache de 5s no code-agent. Brake de releitura cega (2x).',
     since: '2024-06'
   },
   {
@@ -95,41 +99,47 @@ const REGISTRY: PermissionEntry[] = [
     name: 'buscar_na_web',
     level: 'read',
     rationale: 'Fetch HTTP de páginas web. A URL vem do modelo e é input não-confiável.',
-    guard: 'Só http/https. IPs privados/loopback/metadata bloqueados. Redirects seguidos à mão com política reaplicada. Rate limit (10/60s). Cap de 8000 chars. Sem cookies/authorization/referer.',
+    guard:
+      'Só http/https. IPs privados/loopback/metadata bloqueados. Redirects seguidos à mão com política reaplicada. Rate limit (10/60s). Cap de 8000 chars. Sem cookies/authorization/referer.',
     since: '2024-06'
   },
   {
     name: 'renderizar_js',
     level: 'read',
     rationale: 'Renderiza páginas SPA em headless browser (via Electron).',
-    guard: 'Mesma política de URL do buscar_na_web aplicada a toda requisição (documento + sub-recursos) via session.webRequest. Sessão efêmera, sem cookies, sandbox on, sem node.',
+    guard:
+      'Mesma política de URL do buscar_na_web aplicada a toda requisição (documento + sub-recursos) via session.webRequest. Sessão efêmera, sem cookies, sandbox on, sem node.',
     since: '2024-09'
   },
   {
     name: 'buscar_memoria',
     level: 'read',
     rationale: 'Busca fatos duráveis na memória do assistente. Leitura pura.',
-    guard: 'Os resultados são reenviados ao modelo a cada passo seguinte — o bump de access_count é deliberadamente separado da leitura (decay-neutral).',
+    guard:
+      'Os resultados são reenviados ao modelo a cada passo seguinte — o bump de access_count é deliberadamente separado da leitura (decay-neutral).',
     since: '2024-10'
   },
   {
     name: 'buscar_conversas',
     level: 'read',
     rationale: 'Busca no histórico de conversas. Acesso somente ao que já foi dito.',
-    guard: 'Retorna snippets, não o corpo inteiro. Status lines (trace de ferramentas) são puladas na busca.',
+    guard:
+      'Retorna snippets, não o corpo inteiro. Status lines (trace de ferramentas) são puladas na busca.',
     since: '2024-10'
   },
   {
     name: 'ler_conversa',
     level: 'read',
     rationale: 'Lê o transcript completo de uma conversa por id.',
-    guard: 'Transcript capado em 8000 chars. Status lines removidas. O conteúdo é reenviado ao modelo a cada passo seguinte.',
+    guard:
+      'Transcript capado em 8000 chars. Status lines removidas. O conteúdo é reenviado ao modelo a cada passo seguinte.',
     since: '2024-10'
   },
   {
     name: 'verificar_memorias',
     level: 'read',
-    rationale: 'Detecta pares de memórias com mesmo título e corpo diferente (sinal de contradição).',
+    rationale:
+      'Detecta pares de memórias com mesmo título e corpo diferente (sinal de contradição).',
     guard: 'É um aviso, nunca um bloqueio. Skips handoffs (compartilham título por design).',
     since: '2024-11'
   },
@@ -145,29 +155,37 @@ const REGISTRY: PermissionEntry[] = [
   {
     name: 'criar_projeto',
     level: 'write',
-    rationale: 'Cria um projeto novo com colunas padrão. Também troca o projeto ativo — side effect significativo que captura as próximas criações.',
-    guard: 'Cartão de aprovação. Recusa nome duplicado (retorna o existente). Nome truncado. Cor validada contra PROJECT_COLORS.',
+    rationale:
+      'Cria um projeto novo com colunas padrão. Também troca o projeto ativo — side effect significativo que captura as próximas criações.',
+    guard:
+      'Cartão de aprovação. Recusa nome duplicado (retorna o existente). Nome truncado. Cor validada contra PROJECT_COLORS.',
     since: '2024-03'
   },
   {
     name: 'criar_tasks',
     level: 'write',
-    rationale: 'Cria tasks em lote — a ferramenta de escrita mais poderosa em volume. Um modelo confiante pode criar dezenas de tasks de uma vez.',
-    guard: 'Cartão de aprovação mostra o nome de cada task. Validação de projectId. Tags truncadas. Prioridade default = medium.',
+    rationale:
+      'Cria tasks em lote — a ferramenta de escrita mais poderosa em volume. Um modelo confiante pode criar dezenas de tasks de uma vez.',
+    guard:
+      'Cartão de aprovação mostra o nome de cada task. Validação de projectId. Tags truncadas. Prioridade default = medium.',
     since: '2024-03'
   },
   {
     name: 'atualizar_task',
     level: 'write',
-    rationale: 'Edita campos de uma task existente: prioridade, descrição, prazo, tags. Pode apagar campos (string vazia limpa descrição; array vazio limpa tags).',
-    guard: 'Cartão de aprovação mostra cada campo alterado. Lease de task (multi-agente). Validação de prioridade contra PRIORITY_CONFIG. Validação de dueDate com isCalendarDate.',
+    rationale:
+      'Edita campos de uma task existente: prioridade, descrição, prazo, tags. Pode apagar campos (string vazia limpa descrição; array vazio limpa tags).',
+    guard:
+      'Cartão de aprovação mostra cada campo alterado. Lease de task (multi-agente). Validação de prioridade contra PRIORITY_CONFIG. Validação de dueDate com isCalendarDate.',
     since: '2024-03'
   },
   {
     name: 'mover_task',
     level: 'write',
-    rationale: 'Move uma task entre colunas. Cruzar a fronteira de Done conclui/reabre a task e pode parar um cronômetro.',
-    guard: 'Cartão de aprovação. Lease de task. Resolve coluna por nome no projeto da task (nunca args.projectId).',
+    rationale:
+      'Move uma task entre colunas. Cruzar a fronteira de Done conclui/reabre a task e pode parar um cronômetro.',
+    guard:
+      'Cartão de aprovação. Lease de task. Resolve coluna por nome no projeto da task (nunca args.projectId).',
     since: '2024-03'
   },
   {
@@ -180,15 +198,19 @@ const REGISTRY: PermissionEntry[] = [
   {
     name: 'deletar_task',
     level: 'destructive',
-    rationale: 'Hard-delete + tombstone. Única ferramenta cujo efeito não tem desfazer — o backup não ressuscita tasks com tombstone.',
-    guard: 'Cartão de aprovação com destaque de PERMANENTE. Erra em título ambíguo em vez de escolher. Lease de task.',
+    rationale:
+      'Hard-delete + tombstone. Única ferramenta cujo efeito não tem desfazer — o backup não ressuscita tasks com tombstone.',
+    guard:
+      'Aprovação explícita mesmo em Auto. Erra em título ambíguo em vez de escolher. Lease de task.',
     since: '2024-03'
   },
   {
     name: 'iniciar_cronometro',
     level: 'write',
-    rationale: 'Inicia o cronômetro de uma task para rastrear tempo gasto. Side effect: o timer corre em background até ser parado.',
-    guard: 'Cartão de aprovação. Não reinicia um timer já rodando. Multi-timer: não para outros timers.',
+    rationale:
+      'Inicia o cronômetro de uma task para rastrear tempo gasto. Side effect: o timer corre em background até ser parado.',
+    guard:
+      'Cartão de aprovação. Não reinicia um timer já rodando. Multi-timer: não para outros timers.',
     since: '2024-06'
   },
   {
@@ -208,57 +230,71 @@ const REGISTRY: PermissionEntry[] = [
   {
     name: 'criar_meta',
     level: 'write',
-    rationale: 'Cria uma meta de progresso (Goal) com target > 0. O target é divisor em GoalView — target 0 quebra a UI.',
-    guard: 'Cartão de aprovação. Valida target > 0. Valida projectId. A meta criada tem 0 entradas — o progresso é preenchido pelo usuário.',
+    rationale:
+      'Cria uma meta de progresso (Goal) com target > 0. O target é divisor em GoalView — target 0 quebra a UI.',
+    guard:
+      'Cartão de aprovação. Valida target > 0. Valida projectId. A meta criada tem 0 entradas — o progresso é preenchido pelo usuário.',
     since: '2024-06'
   },
   {
     name: 'atualizar_meta',
     level: 'write',
-    rationale: 'Edita campos de uma meta existente. Não mexe nas entradas (progresso é do usuário).',
+    rationale:
+      'Edita campos de uma meta existente. Não mexe nas entradas (progresso é do usuário).',
     guard: 'Cartão de aprovação. Erra em título ambíguo. Valida target > 0 se alterado.',
     since: '2024-06'
   },
   {
     name: 'marcar_habito',
     level: 'write',
-    rationale: 'Marca um hábito como concluído hoje. Idempotente — não desmarca se já estiver marcado.',
-    guard: 'Cartão de aprovação. Verifica completions antes de marcar (toggle faria unmark). Data é local (todayISO), não UTC.',
+    rationale:
+      'Marca um hábito como concluído hoje. Idempotente — não desmarca se já estiver marcado.',
+    guard:
+      'Cartão de aprovação. Verifica completions antes de marcar (toggle faria unmark). Data é local (todayISO), não UTC.',
     since: '2024-06'
   },
   {
     name: 'criar_nota',
     level: 'write',
     rationale: 'Cria uma nota sticky no canvas do projeto.',
-    guard: 'Cartão de aprovação. Posicionamento automático (freeNoteSpot) evita stacking. Cor validada contra NOTE_COLORS.',
+    guard:
+      'Cartão de aprovação. Posicionamento automático (freeNoteSpot) evita stacking. Cor validada contra NOTE_COLORS.',
     since: '2024-06'
   },
   {
     name: 'criar_transacao',
     level: 'write',
-    rationale: 'Registra uma transação financeira. Dinheiro real do usuário — erro de valor ou tabela errada tem consequência.',
-    guard: 'Cartão de aprovação. parseMoney rejeita separadores de milhar. amount é decimal string com 2 casas. type define o sinal. Data default é local (todayISO). Erra em tabela ambígua.',
+    rationale:
+      'Registra uma transação financeira. Dinheiro real do usuário — erro de valor ou tabela errada tem consequência.',
+    guard:
+      'Aprovação explícita mesmo em Auto. parseMoney rejeita separadores de milhar. amount é decimal string com 2 casas. type define o sinal. Data default é local (todayISO). Erra em tabela ambígua.',
     since: '2024-06'
   },
   {
     name: 'salvar_memoria',
     level: 'write',
-    rationale: 'Salva um fato duradouro na memória do assistente. A memória é reenviada ao modelo a cada passo — dados errados ou vazamento de segredos são permanentes.',
-    guard: 'Cartão de aprovação. scrubSecrets() sanitiza chaves/tokens antes de persistir. Corpo truncado em 4000 chars. Tipo validado contra enum.',
+    rationale:
+      'Salva um fato duradouro na memória do assistente. A memória é reenviada ao modelo a cada passo — dados errados ou vazamento de segredos são permanentes.',
+    guard:
+      'Cartão de aprovação. scrubSecrets() sanitiza chaves/tokens antes de persistir. Corpo truncado em 4000 chars. Tipo validado contra enum.',
     since: '2024-10'
   },
   {
     name: 'rodar_agente_codigo',
     level: 'write',
-    rationale: 'Dispara o agente de código nativo — um loop autônomo que lê, edita e executa comandos no projeto de código. Fire-and-forget: o chat não espera o resultado.',
-    guard: 'Cartão de aprovação + aprovação por ação dentro do agente (escrever_arquivo, executar_comando). confineToRoot + ai-jail. Aprovação humana por ação de escrita/comando. Max steps = 60.',
+    rationale:
+      'Dispara o agente de código nativo — um loop autônomo que lê, edita e executa comandos no projeto de código. Fire-and-forget: o chat não espera o resultado.',
+    guard:
+      'Cartão de aprovação + aprovação por ação dentro do agente (escrever_arquivo, executar_comando). confineToRoot + ai-jail. Aprovação humana por ação de escrita/comando. Max steps = 60.',
     since: '2024-10'
   },
   {
     name: 'ajustar_bloco_e_deslocar_posteriores',
     level: 'write',
-    rationale: 'Altera o fim de um bloco de agenda e move em lote os blocos posteriores do mesmo dia.',
-    guard: 'Cartão de aprovação. Exige data e bloco inequívoco; em empate, horário inválido ou cruzamento de meia-noite não grava nada.',
+    rationale:
+      'Altera o fim de um bloco de agenda e move em lote os blocos posteriores do mesmo dia.',
+    guard:
+      'Cartão de aprovação. Exige data e bloco inequívoco; em empate, horário inválido ou cruzamento de meia-noite não grava nada.',
     since: '2026-07'
   }
 ]
@@ -276,6 +312,11 @@ export function isWriteTool(name: string): boolean {
 
 export function isDestructive(name: string): boolean {
   return byName.get(name)?.level === 'destructive'
+}
+
+/** Auto may handle ordinary writes, but never hard deletion or money movement. */
+export function requiresExplicitApproval(name: string): boolean {
+  return isDestructive(name) || name === 'criar_transacao'
 }
 
 export function getPermissionLevel(name: string): PermissionLevel {

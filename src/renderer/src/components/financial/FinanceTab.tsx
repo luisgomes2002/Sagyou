@@ -3,10 +3,11 @@ import Decimal from 'decimal.js'
 import type { FinancialTable, FinancialTransaction, FinancialGoal } from '../../types'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { useKanbanStore } from '../../store/kanban'
-import { MONTH_NAMES, financialCategories, formatCurrency, D } from './shared'
+import { MONTH_NAMES, financialCategories, formatCurrency, D, todayISO } from './shared'
 import { GoalModal, FinancialGoalCard } from './FinancialGoalCard'
 import { GoalHistoryModal } from './GoalHistoryModal'
 import { AddTransactionRow, TransactionRow } from './TransactionRow'
+import { MonthJump } from './MonthJump'
 
 interface FinanceTabProps {
   list: FinancialTable
@@ -131,10 +132,15 @@ export function FinanceTab({
     .reduce((s, t) => s.plus(t.amount), new Decimal(0))
   const monthBalance = monthIncome.minus(monthExpense)
 
-  const accBalance = list.transactions.reduce(
-    (s, t) => (t.type === 'income' ? s.plus(t.amount) : s.minus(t.amount)),
-    new Decimal(0)
-  )
+  const today = todayISO()
+  const selectedMonthEnd = `${activeMonth.year}-${String(activeMonth.month).padStart(2, '0')}-31`
+  const currentCutoff = today < selectedMonthEnd ? today : selectedMonthEnd
+  const currentBalance = list.transactions
+    .filter((t) => t.date <= currentCutoff)
+    .reduce((s, t) => (t.type === 'income' ? s.plus(t.amount) : s.minus(t.amount)), new Decimal(0))
+  const projectedBalance = list.transactions
+    .filter((t) => t.date <= selectedMonthEnd)
+    .reduce((s, t) => (t.type === 'income' ? s.plus(t.amount) : s.minus(t.amount)), new Decimal(0))
 
   const visibleGoals = list.goals.filter((goal) => {
     const deadlineBeforeActiveMonth =
@@ -172,9 +178,13 @@ export function FinanceTab({
               <polyline points="15 18 9 12 15 6" />
             </svg>
           </button>
-          <span className="text-sm font-medium text-[#d4d4d4] min-w-32 text-center">
-            {MONTH_NAMES[activeMonth.month - 1]} {activeMonth.year}
-          </span>
+          <MonthJump
+            month={activeMonth}
+            onChange={(month) => {
+              onCategoryFilterChange(null)
+              onMonthChange(month)
+            }}
+          />
           <button
             onClick={nextMonth}
             className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors"
@@ -199,7 +209,7 @@ export function FinanceTab({
         </div>
 
         {/* Summary cards */}
-        <div className="grid grid-cols-4 gap-3 px-5 py-4 border-b border-[#3b3b3b]">
+        <div className="grid grid-cols-2 xl:grid-cols-5 gap-3 px-5 py-4 border-b border-[#3b3b3b]">
           <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-1">
               Entradas
@@ -228,13 +238,27 @@ export function FinanceTab({
           </div>
           <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-[#a080f0] mb-1">
-              Saldo Acumulado
+              {selectedMonthEnd < today ? 'Saldo até o mês' : 'Saldo até hoje'}
             </p>
             <p
-              className={`text-sm font-bold tabular-nums ${accBalance.gte(0) ? 'text-[#a080f0]' : 'text-[#e04040]'}`}
+              className={`text-sm font-bold tabular-nums ${currentBalance.gte(0) ? 'text-[#a080f0]' : 'text-[#e04040]'}`}
             >
-              {formatCurrency(accBalance, currency)}
+              {formatCurrency(currentBalance, currency)}
             </p>
+            <p className="mt-1 text-[10px] text-[#999999]">
+              {selectedMonthEnd < today ? 'Até o mês selecionado' : 'Lançamentos até hoje'}
+            </p>
+          </div>
+          <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-[#a080f0] mb-1">
+              Saldo projetado
+            </p>
+            <p
+              className={`text-sm font-bold tabular-nums ${projectedBalance.gte(0) ? 'text-[#a080f0]' : 'text-[#e04040]'}`}
+            >
+              {formatCurrency(projectedBalance, currency)}
+            </p>
+            <p className="mt-1 text-[10px] text-[#999999]">Até o fim do mês selecionado</p>
           </div>
         </div>
 
@@ -284,15 +308,16 @@ export function FinanceTab({
                 </button>
               )}
               <button
+                type="button"
                 onClick={() => setGoalModal({ open: true })}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-medium text-[#7c3aed] border border-[#3b3b3b] hover:bg-[#2a2a2a] transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] text-[10px] font-medium text-[#d4d4d4] hover:bg-[#3b3b3b] transition-colors"
               >
                 <svg
                   width="9"
                   height="9"
                   viewBox="0 0 24 24"
                   fill="none"
-                  stroke="currentColor"
+                  stroke="#a080f0"
                   strokeWidth="2.5"
                 >
                   <line x1="12" y1="5" x2="12" y2="19" />
@@ -366,7 +391,7 @@ export function FinanceTab({
                   key={goal.id}
                   goal={goal}
                   transactions={list.transactions}
-                  accBalance={accBalance}
+                  activeMonth={activeMonth}
                   currency={currency}
                   onEdit={() => setGoalModal({ open: true, goal })}
                   onDelete={() =>
@@ -495,7 +520,7 @@ export function FinanceTab({
           </div>
           {receiptFilter !== 'all' && (
             <p className="mt-2 text-[11px] text-[#999999]">
-              Os saldos acima continuam considerando todas as transações do mês.
+              O filtro de comprovantes não altera os saldos acima.
             </p>
           )}
         </div>
@@ -595,7 +620,7 @@ export function FinanceTab({
         open={historyOpen}
         goals={list.goals}
         transactions={list.transactions}
-        accBalance={accBalance}
+        activeMonth={activeMonth}
         currency={currency}
         onRevert={(goalId) =>
           onUpdateGoal(goalId, { completedAt: undefined, completionNote: undefined })

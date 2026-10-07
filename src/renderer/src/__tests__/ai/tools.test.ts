@@ -124,6 +124,125 @@ const call = async (
   convId?: string
 ): Promise<{ [k: string]: unknown }> => JSON.parse(await runTool(name, args, convId))
 
+describe('ler_dados', () => {
+  beforeEach(() => {
+    resetStore()
+    useKanbanStore.setState({
+      activeFinancialProfileId: 'personal',
+      financialProfiles: [{ id: 'personal', name: 'Minhas finanças', createdAt: '2026-01-01', updatedAt: '2026-01-01' }]
+    })
+  })
+
+  it('lista todas as áreas e alcança os detalhes de projetos arquivados, tasks e rotinas', async () => {
+    useKanbanStore.setState({
+      projects: [
+        {
+          id: 'p1',
+          name: 'Arquivo',
+          description: 'Projeto antigo',
+          color: '#fff',
+          columns: [],
+          createdAt: '2026-01-01',
+          updatedAt: '2026-01-02',
+          archivedAt: '2026-02-01'
+        }
+      ],
+      tasks: [
+        {
+          id: 't1',
+          projectId: 'p1',
+          columnId: 'c1',
+          title: 'Teste',
+          description: 'Detalhe completo',
+          priority: 'high',
+          tags: ['x'],
+          order: 0,
+          createdAt: '2026-01-01',
+          updatedAt: '2026-01-02'
+        }
+      ],
+      routines: [
+        {
+          id: 'r1',
+          title: 'Caminhar',
+          startTime: '08:00',
+          endTime: '08:30',
+          daysOfWeek: [1, 3],
+          active: true,
+          createdAt: '2026-01-01',
+          updatedAt: '2026-01-02'
+        }
+      ]
+    })
+    expect((await call('ler_dados', {})).areas).toContainEqual({ area: 'rotinas', total: 1 })
+    expect((await call('ler_dados', { area: 'projetos', id: 'p1' })).registro).toMatchObject({
+      archivedAt: '2026-02-01'
+    })
+    expect((await call('ler_dados', { area: 'tasks', id: 't1' })).registro).toMatchObject({
+      description: 'Detalhe completo'
+    })
+    expect((await call('ler_dados', { area: 'rotinas', id: 'r1' })).registro).toMatchObject({
+      daysOfWeek: [1, 3]
+    })
+    expect(isWriteTool('ler_dados')).toBe(false)
+    expect(KANBAN_TOOL_DEFS.some((d) => d.function.name === 'ler_dados')).toBe(true)
+  })
+
+  it('pagina sem esconder o total e permite buscar todas as páginas', async () => {
+    useKanbanStore.setState({
+      habits: Array.from({ length: 3 }, (_, n) => ({
+        id: `h${n}`,
+        name: `Hábito ${n}`,
+        color: '#fff',
+        completions: ['2026-01-01'],
+        createdAt: '2026-01-01',
+        updatedAt: '2026-01-01'
+      }))
+    })
+    const first = await call('ler_dados', { area: 'habitos', limite: 2 })
+    expect(first).toMatchObject({ total: 3, retornados: 2, truncado: true, proximoInicio: 2 })
+    expect(await call('ler_dados', { area: 'habitos', inicio: 2, limite: 2 })).toMatchObject({
+      total: 3,
+      retornados: 1,
+      truncado: false,
+      proximoInicio: null
+    })
+    expect((await call('ler_dados', { area: 'habitos', id: 'h2' })).registro).toMatchObject({
+      completions: ['2026-01-01']
+    })
+  })
+
+  it('preserva a separação dos perfis financeiros até na busca por ID', async () => {
+    const personal = st().createList('Pessoal')
+    const otherProfile = st().createFinancialProfile('Empresa')
+    const business = st().createList('Empresa', 'BRL', otherProfile)
+    const secret = st().addTransaction(business, {
+      description: 'Empresa',
+      amount: '99.01',
+      type: 'income',
+      date: '2026-01-01'
+    })
+    const visible = st().addTransaction(personal, {
+      description: 'Pessoal',
+      amount: '12.345',
+      type: 'expense',
+      date: '2026-01-02',
+      details: [{ id: 'd1', description: 'Parte', amount: '2.345' }]
+    })
+    expect((await call('ler_dados', { area: 'transacoes' })).total).toBe(1)
+    expect((await call('ler_dados', { area: 'transacoes', id: secret })).error).toBeTruthy()
+    expect((await call('ler_dados', { area: 'transacoes', id: visible })).registro).toMatchObject({
+      amount: '12.345',
+      details: [{ amount: '2.345' }]
+    })
+    st().setActiveFinancialProfile(otherProfile)
+    expect((await call('ler_dados', { area: 'transacoes', id: visible })).error).toBeTruthy()
+    expect((await call('ler_dados', { area: 'transacoes', id: secret })).registro).toMatchObject({
+      amount: '99.01'
+    })
+  })
+})
+
 describe('data_de_hoje', () => {
   afterEach(() => vi.useRealTimers())
 

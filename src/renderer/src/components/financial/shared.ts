@@ -2,23 +2,11 @@
 import type { ShoppingItem, Currency, FinancialProfile, FinancialTable } from '../../types'
 import { CURRENCY_CONFIG } from '../../types'
 import { D, moneyStr } from '../../utils/money'
+import { YIELD_SUMMARY_CATEGORY } from '../../utils/yieldSummary'
 export { D, moneyStr }
 export { todayLocalISO as todayISO, formatDateBR } from '../../utils/dates'
-
-export const MONTH_NAMES = [
-  'Janeiro',
-  'Fevereiro',
-  'Março',
-  'Abril',
-  'Maio',
-  'Junho',
-  'Julho',
-  'Agosto',
-  'Setembro',
-  'Outubro',
-  'Novembro',
-  'Dezembro'
-]
+export { MONTH_NAMES } from '../../utils/yieldSummary'
+export { YIELD_SUMMARY_CATEGORY }
 
 export const FINANCIAL_CATEGORIES = [
   'ADS',
@@ -89,8 +77,6 @@ export const FINANCIAL_CATEGORIES = [
   'Viagem',
   'IOF'
 ]
-
-export const YIELD_SUMMARY_CATEGORY = 'Rendimento Mensal'
 
 export function financialCategories(
   profile: FinancialProfile | undefined,

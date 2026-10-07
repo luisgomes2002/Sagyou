@@ -51,6 +51,19 @@ describe('checkTools', () => {
     const { allMet } = checkTools(calls, rubric)
     expect(allMet).toBe(false)
   })
+
+  it('checks relevant tool arguments instead of counting the wrong query', () => {
+    const actual: EvalToolCall[] = [{ name: 'ler_tasks', args: { estado: 'abertas' } }]
+    const expected: EvalRubric = {
+      passThreshold: 4,
+      criteria: ['Deve incluir concluídas'],
+      tools: [{ kind: 'called', name: 'ler_tasks', args: { estado: 'todas' } }]
+    }
+    expect(checkTools(actual, expected).allMet).toBe(false)
+    expect(
+      checkTools([{ name: 'ler_tasks', args: { estado: 'todas' } }], expected).allMet
+    ).toBe(true)
+  })
 })
 
 describe('parseJudgeResponse', () => {
@@ -77,6 +90,12 @@ describe('parseJudgeResponse', () => {
   it('errors on unparseable input', () => {
     const result = parseJudgeResponse('nonsense')
     expect('error' in result).toBe(true)
+  })
+
+  it('rejects an invalid score in malformed JSON too', () => {
+    expect(parseJudgeResponse('malformed "score": 9')).toMatchObject({
+      error: expect.any(String)
+    })
   })
 })
 
@@ -111,5 +130,13 @@ describe('buildSuiteReport', () => {
 
     expect(nextReport.regressions.length).toBe(1)
     expect(nextReport.regressions[0].caseId).toBe('b')
+  })
+
+  it('counts a new execution error as a regression', () => {
+    const before: EvalRunResult = {
+      caseId: 'a', passed: true, score: 4, judgeReasoning: '', actualTools: [], toolResults: [], durationMs: 10
+    }
+    const after: EvalRunResult = { ...before, passed: false, score: 0, error: 'timeout' }
+    expect(buildSuiteReport([after], buildSuiteReport([before])).regressions).toEqual([after])
   })
 })

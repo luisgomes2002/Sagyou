@@ -14,6 +14,7 @@ import {
 } from '../../ai/agent'
 import { describeToolActivity } from '../../ai/tools'
 import { toScaledDataUrl, imageFilesFrom, documentFilesFrom } from '../../utils/images'
+import { formatChatDocumentPrompt } from '../../ai/document-context'
 import { estimateAutoRun, cacheHitRate } from '../../utils/spend'
 import { ChatMarkdown } from './ChatMarkdown'
 import { ConfirmDialog } from '../ConfirmDialog'
@@ -169,11 +170,17 @@ const MemoStatusLine = memo(StatusLine)
 const MessageBubble = memo(function MessageBubble({
   m,
   index,
-  imageData
+  imageData,
+  onCopy,
+  onEdit,
+  onFeedback
 }: {
   m: ChatMessage
   index: number
   imageData: Record<string, string>
+  onCopy: () => void
+  onEdit?: () => void
+  onFeedback?: (feedback: 'positive' | 'negative') => void
 }) {
   return (
     <div key={index} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -203,6 +210,48 @@ const MessageBubble = memo(function MessageBubble({
           </div>
         )}
         {m.role === 'user' ? m.content : <ChatMarkdown content={m.content} />}
+        <div className="flex items-center gap-3 mt-2 text-[11px] opacity-70">
+          <button
+            type="button"
+            onClick={onCopy}
+            className="hover:opacity-100"
+            title="Copiar mensagem"
+          >
+            Copiar
+          </button>
+          {onEdit && (
+            <button
+              type="button"
+              onClick={onEdit}
+              className="hover:opacity-100"
+              title="Editar e reenviar"
+            >
+              Editar
+            </button>
+          )}
+          {onFeedback && (
+            <>
+              <button
+                type="button"
+                onClick={() => onFeedback('positive')}
+                aria-label="Resposta útil"
+                aria-pressed={m.feedback === 'positive'}
+                className={m.feedback === 'positive' ? 'text-[#46d478]' : 'hover:opacity-100'}
+              >
+                Útil
+              </button>
+              <button
+                type="button"
+                onClick={() => onFeedback('negative')}
+                aria-label="Resposta ruim"
+                aria-pressed={m.feedback === 'negative'}
+                className={m.feedback === 'negative' ? 'text-[#f08a34]' : 'hover:opacity-100'}
+              >
+                Ruim
+              </button>
+            </>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -343,6 +392,7 @@ export function AIView({
   const planMode = useAiRunStore((s) => s.planMode)
   const savedTick = useAiRunStore((s) => s.savedTick)
   const setError = useAiRunStore((s) => s.setError)
+  const setMessages = useAiRunStore((s) => s.setMessages)
   const openConversation = useAiRunStore((s) => s.openConversation)
   const dropConversation = useAiRunStore((s) => s.dropConversation)
   const setConversationId = useAiRunStore((s) => s.setConversationId)
@@ -353,6 +403,7 @@ export function AIView({
   const resetRun = useAiRunStore((s) => s.reset)
 
   const [input, setInput] = useState('')
+  const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null)
   // Skill autocomplete: when input starts with /, show matching skills.
   const [skillMenuOpen, setSkillMenuOpen] = useState(false)
   // Spend across every call ever made, from the main process's log. Separate
@@ -441,6 +492,7 @@ export function AIView({
     () => messages.slice(Math.max(0, messages.length - visibleCount)),
     [messages, visibleCount]
   )
+  const lastUserMessageIndex = messages.findLastIndex((m) => m.role === 'user')
 
   // Preserve scroll position when expanding: new messages arrive above, so
   // the old content shifts down. Compensate scrollTop to keep the user's view.
@@ -478,7 +530,7 @@ export function AIView({
   const autoEstimate = estimateAutoRun(spend?.total, autoSteps)
   const autoWarning =
     `O assistente vai encadear até ${autoSteps} rodadas sem pedir aprovação, ` +
-    'incluindo ações que gravam dados. Cada rodada é uma chamada paga ao modelo ' +
+    'incluindo ações comuns que gravam dados. Exclusões e lançamentos financeiros ainda pedirão aprovação. Cada rodada é uma chamada paga ao modelo ' +
     'e reenvia todo o histórico da conversa.' +
     (autoEstimate
       ? `\n\nPelas suas ${autoEstimate.sample} chamadas já cobradas, a média é ` +
@@ -510,6 +562,7 @@ export function AIView({
   }
 
   const handleLoadConversation = async (id: string): Promise<void> => {
+    setEditingMessageIndex(null)
     const conv = await window.electronAPI.ai.conversations.get(id)
     if (conv) {
       openConversation(conv)
@@ -732,6 +785,7 @@ export function AIView({
   }, [])
 
   const handleNewConversation = (): void => {
+    setEditingMessageIndex(null)
     // Clears the transcript, the id, the usage and any card the loop is parked
     // on; the effect above then remembers the blank chat for next entry.
     resetRun()
@@ -784,14 +838,19 @@ export function AIView({
   const confirmDeleteConversation = async (): Promise<void> => {
     if (!confirmDelete) return
     const { id } = confirmDelete
-    // Take the image files with it: nothing else references them, so leaving
-    // them behind orphans them on disk forever.
     const conv = await window.electronAPI.ai.conversations.get(id)
+    // Main checks memory references before deletion. Never delete attachment
+    // bytes first: a rejected deletion must leave the conversation intact.
+    const deleted = await window.electronAPI.ai.conversations.delete(id)
+    if (deleted.error) {
+      setError(deleted.error)
+      setConfirmDelete(null)
+      return
+    }
     const imageIds = [...new Set((conv?.messages ?? []).flatMap((m) => m.imageIds ?? []))]
     if (imageIds.length > 0) await window.electronAPI.ai.images.delete(imageIds)
     const docIds = [...new Set((conv?.messages ?? []).flatMap((m) => m.documentIds ?? []))]
     if (docIds.length > 0) await window.electronAPI.ai.documents.delete(docIds)
-    await window.electronAPI.ai.conversations.delete(id)
     // Let the run store forget it too: it may be parked, or be the very chat
     // the loop is writing into, and the file is gone either way.
     dropConversation(id)
@@ -994,14 +1053,19 @@ export function AIView({
     let text = input.trim()
     if ((!text && pendingImages.length === 0 && pendingDocuments.length === 0) || busyHere) return
 
-    // Prepend parsed document text to the message body so the model reads it
-    // inline — no tool call consumed.
+    if (editingMessageIndex !== null) {
+      // Keep the original turn and its actions visible. A correction is a new
+      // turn, with Auto off, so a previous write cannot silently repeat.
+      if (editingMessageIndex !== lastUserMessageIndex) return
+      setAuto(conversationId!, false)
+      text = `Correção ao meu último pedido (não repita ações já concluídas):\n\n${text}`
+      setEditingMessageIndex(null)
+    }
+
+    // Keep the user's request separate from quoted document data. The text is
+    // still inline, so reading an attachment consumes no extra tool call.
     if (pendingDocuments.length > 0) {
-      const docBlocks = pendingDocuments.map((d) => {
-        const truncated = d.truncated ? ' (texto truncado)' : ''
-        return `[Documento: ${d.name}${truncated}]\n${d.text}`
-      })
-      text = docBlocks.join('\n\n---\n\n') + (text ? '\n\n---\n\n' + text : '')
+      text = formatChatDocumentPrompt(text, pendingDocuments)
     }
 
     // /skill-name: replace with skill body
@@ -1032,6 +1096,32 @@ export function AIView({
     setPendingImages([])
     setPendingDocuments([])
     void useAiRunStore.getState().send(config, { text, imageIds, imageData, documentIds })
+  }
+
+  const copyMessage = async (content: string): Promise<void> => {
+    try {
+      await navigator.clipboard.writeText(content)
+    } catch {
+      setError('Não consegui copiar a mensagem')
+    }
+  }
+
+  const editMessage = (index: number): void => {
+    const message = messages[index]
+    if (!message || message.role !== 'user' || index !== lastUserMessageIndex || busyHere) return
+    setInput(message.content)
+    setEditingMessageIndex(index)
+    inputRef.current?.focus()
+  }
+
+  const rateMessage = (index: number, feedback: 'positive' | 'negative'): void => {
+    setMessages((current) =>
+      current.map((message, i) =>
+        i === index && message.role === 'assistant'
+          ? { ...message, feedback: message.feedback === feedback ? undefined : feedback }
+          : message
+      )
+    )
   }
 
   /**
@@ -2307,6 +2397,21 @@ export function AIView({
                     m={m}
                     index={messages.length - visibleMessages.length + i}
                     imageData={imageData}
+                    onCopy={() => void copyMessage(m.content)}
+                    onEdit={
+                      m.role === 'user' &&
+                      messages.length - visibleMessages.length + i === lastUserMessageIndex &&
+                      !busyHere &&
+                      !(m.imageIds?.length || m.documentIds?.length)
+                        ? () => editMessage(messages.length - visibleMessages.length + i)
+                        : undefined
+                    }
+                    onFeedback={
+                      m.role === 'assistant'
+                        ? (feedback) =>
+                            rateMessage(messages.length - visibleMessages.length + i, feedback)
+                        : undefined
+                    }
                   />
                 )
               )}
@@ -2400,6 +2505,24 @@ export function AIView({
             <p className="mb-2 text-[11px] text-[#f08a34]">
               Configure a Base URL e o Model antes de enviar.
             </p>
+          )}
+          {editingMessageIndex !== null && (
+            <div className="flex items-center justify-between gap-2 mb-2 text-xs text-[#f0b820]">
+              <span>
+                O pedido corrigido será uma nova mensagem. O histórico anterior permanece e novas
+                ações pedirão aprovação.
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingMessageIndex(null)
+                  setInput('')
+                }}
+                className="text-[#d4d4d4] hover:underline"
+              >
+                Cancelar edição
+              </button>
+            </div>
           )}
           {pendingImages.length > 0 && (
             <div className="flex flex-wrap gap-2 mb-2">
@@ -2553,7 +2676,7 @@ export function AIView({
                 }
                 className="px-3 py-1.5 rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] text-sm text-[#d4d4d4] font-medium hover:bg-[#3b3b3b] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
-                Enviar
+                {editingMessageIndex !== null ? 'Reenviar' : 'Enviar'}
               </button>
             </div>
           </div>

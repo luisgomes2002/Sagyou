@@ -1,13 +1,13 @@
 ﻿import Decimal from 'decimal.js'
 import type { FinancialGoal, FinancialTransaction, Currency } from '../../types'
-import { MONTH_NAMES, formatCurrency, formatDateBR, D } from './shared'
+import { MONTH_NAMES, formatCurrency, formatDateBR, D, todayISO } from './shared'
 import { ModalBase } from '../ModalBase'
 
 interface GoalHistoryModalProps {
   open: boolean
   goals: FinancialGoal[]
   transactions: FinancialTransaction[]
-  accBalance: Decimal
+  activeMonth: { year: number; month: number }
   currency: Currency
   onRevert: (goalId: string) => void
   onClose: () => void
@@ -17,43 +17,49 @@ export function GoalHistoryModal({
   open,
   goals,
   transactions,
-  accBalance,
+  activeMonth,
   currency,
   onRevert,
   onClose
 }: GoalHistoryModalProps) {
   if (!open || goals.length === 0) return null
-  const now = new Date()
+  const today = todayISO()
+  const selectedMonthEnd = `${activeMonth.year}-${String(activeMonth.month).padStart(2, '0')}-31`
+  const viewEnd = selectedMonthEnd.slice(0, 7) === today.slice(0, 7) ? today : selectedMonthEnd
 
   const withStatus = goals
     .map((goal) => {
       const monthsLeft = Math.max(
-        (goal.targetYear - now.getFullYear()) * 12 + (goal.targetMonth - (now.getMonth() + 1)),
+        (goal.targetYear - activeMonth.year) * 12 + (goal.targetMonth - activeMonth.month),
         0
       )
-      const deadlinePast =
-        monthsLeft === 0 &&
-        (goal.targetYear < now.getFullYear() ||
-          (goal.targetYear === now.getFullYear() && goal.targetMonth < now.getMonth() + 1))
-      const dk = `${goal.targetYear}-${String(goal.targetMonth).padStart(2, '0')}`
+      const deadlineEnd = `${goal.targetYear}-${String(goal.targetMonth).padStart(2, '0')}-31`
+      const deadlinePast = selectedMonthEnd > deadlineEnd
+      const effectiveCutoff = viewEnd < deadlineEnd ? viewEnd : deadlineEnd
       const target = D(goal.targetAmount)
-      const effectiveBalance = deadlinePast
-        ? transactions
-            .filter((t) => t.date.slice(0, 7) <= dk)
-            .reduce(
-              (s, t) => (t.type === 'income' ? s.plus(t.amount) : s.minus(t.amount)),
-              new Decimal(0)
-            )
-        : accBalance
+      const effectiveBalance = transactions
+        .filter((t) => t.date <= effectiveCutoff)
+        .reduce(
+          (s, t) => (t.type === 'income' ? s.plus(t.amount) : s.minus(t.amount)),
+          new Decimal(0)
+        )
+      const actualCutoff = today < effectiveCutoff ? today : effectiveCutoff
+      const actualBalance = transactions
+        .filter((t) => t.date <= actualCutoff)
+        .reduce(
+          (s, t) => (t.type === 'income' ? s.plus(t.amount) : s.minus(t.amount)),
+          new Decimal(0)
+        )
       const progress = target.greaterThan(0)
         ? Math.min(Math.max(effectiveBalance.div(target).toNumber(), 0), 1)
         : 0
 
-      type StatusKey = 'concluded' | 'achieved' | 'overdue' | 'urgent' | 'active'
+      type StatusKey = 'concluded' | 'achieved' | 'projected' | 'overdue' | 'urgent' | 'active'
       let status: StatusKey
-      if (goal.completedAt) status = 'concluded'
-      else if (effectiveBalance.greaterThanOrEqualTo(target)) status = 'achieved'
-      else if (monthsLeft === 0) status = 'overdue'
+      if (goal.completedAt && goal.completedAt <= viewEnd) status = 'concluded'
+      else if (effectiveBalance.greaterThanOrEqualTo(target))
+        status = actualBalance.lessThan(target) ? 'projected' : 'achieved'
+      else if (deadlinePast) status = 'overdue'
       else if (monthsLeft <= 2) status = 'urgent'
       else status = 'active'
 
@@ -64,8 +70,9 @@ export function GoalHistoryModal({
         active: 0,
         urgent: 1,
         overdue: 2,
-        achieved: 3,
-        concluded: 4
+        projected: 3,
+        achieved: 4,
+        concluded: 5
       }
       if (order[a.status] !== order[b.status]) return order[a.status] - order[b.status]
       return (
@@ -76,6 +83,7 @@ export function GoalHistoryModal({
   const statusCfg: Record<string, { label: string; bg: string; text: string }> = {
     concluded: { label: 'Concluído', bg: 'bg-[#3b3b3b]', text: 'text-[#69b780]' },
     achieved: { label: 'Alcançado', bg: 'bg-[#3b3b3b]', text: 'text-[#69b780]' },
+    projected: { label: 'Previsto atingir', bg: 'bg-[#3b3b3b]', text: 'text-[#69b780]' },
     overdue: { label: 'Vencido', bg: 'bg-[#3b3b3b]', text: 'text-[#e04040]' },
     urgent: { label: 'Urgente', bg: 'bg-[#3b3b3b]', text: 'text-[#f08a34]' },
     active: { label: 'Em andamento', bg: 'bg-[#3b3b3b]', text: 'text-[#a080f0]' }
@@ -164,14 +172,14 @@ export function GoalHistoryModal({
                   </div>
                   <p className="text-[10px] text-[#999999]">
                     Prazo: {MONTH_NAMES[goal.targetMonth - 1]} {goal.targetYear}
-                    {goal.completedAt && (
+                    {goal.completedAt && goal.completedAt <= viewEnd && (
                       <span className="text-[#69b780]">
                         {' '}
                         · Concluído em {formatDateBR(goal.completedAt)}
                       </span>
                     )}
                   </p>
-                  {goal.completionNote && (
+                  {goal.completionNote && goal.completedAt && goal.completedAt <= viewEnd && (
                     <p className="text-[10px] text-[#999999] mt-0.5 truncate">
                       {goal.completionNote}
                     </p>

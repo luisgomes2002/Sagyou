@@ -102,7 +102,10 @@ const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0))
 const cfg = { baseUrl: 'http://x', apiKey: 'k', model: 'm' }
 
 /** Capture each run's resolver and options, keyed by the conversation it runs for. */
-function captureRuns(): Map<string, { resolve: (s: string) => void; opts: Record<string, unknown> }> {
+function captureRuns(): Map<
+  string,
+  { resolve: (s: string) => void; opts: Record<string, unknown> }
+> {
   const runs = new Map<string, { resolve: (s: string) => void; opts: Record<string, unknown> }>()
   vi.mocked(runAgent).mockImplementation(
     (_c, _m, _a, opts = {}) =>
@@ -168,7 +171,10 @@ describe('two agents running at once', () => {
     void run().send(cfg, { text: 'b', imageIds: [], imageData: {} })
 
     // A's call reports usage while B is the chat on screen.
-    ;(runs.get('A')!.opts.onUsage as (u: unknown) => void)({ promptTokens: 100, completionTokens: 20 })
+    ;(runs.get('A')!.opts.onUsage as (u: unknown) => void)({
+      promptTokens: 100,
+      completionTokens: 20
+    })
     await flush()
 
     // It bills A (parked), never the chat merely being looked at.
@@ -180,15 +186,21 @@ describe('two agents running at once', () => {
     await flush()
   })
 
-  it('tracks each live run\'s own token spend, and clears it when the run ends', async () => {
+  it("tracks each live run's own token spend, and clears it when the run ends", async () => {
     const runs = captureRuns()
 
     useAiRunStore.setState({ conversationId: 'A', messages: [] })
     void run().send(cfg, { text: 'a', imageIds: [], imageData: {} })
 
     // The run reports two calls; runUsage accumulates only this run's spend.
-    ;(runs.get('A')!.opts.onUsage as (u: unknown) => void)({ promptTokens: 100, completionTokens: 20 })
-    ;(runs.get('A')!.opts.onUsage as (u: unknown) => void)({ promptTokens: 50, completionTokens: 10 })
+    ;(runs.get('A')!.opts.onUsage as (u: unknown) => void)({
+      promptTokens: 100,
+      completionTokens: 20
+    })
+    ;(runs.get('A')!.opts.onUsage as (u: unknown) => void)({
+      promptTokens: 50,
+      completionTokens: 10
+    })
     await flush()
     expect(run().runUsage['A']).toEqual({ promptTokens: 150, completionTokens: 30 })
 
@@ -248,5 +260,30 @@ describe('two agents running at once', () => {
     expect(runs.get('A')!.opts.maxSteps).toBe(100)
     runs.get('A')!.resolve('ok')
     await flush()
+  })
+
+  it('approves ordinary writes in Auto but asks about deletion and financial entries', async () => {
+    useAiRunStore.setState({ conversationId: 'A', autoApprove: new Set(['A']) })
+    const ordinary = await run().requestApproval('A', [
+      { id: 'task', name: 'criar_tasks', args: {} }
+    ])
+    expect([...ordinary]).toEqual(['task'])
+
+    const pending = run().requestApproval('A', [
+      { id: 'delete', name: 'deletar_task', args: {} },
+      { id: 'money', name: 'criar_transacao', args: {} }
+    ])
+    expect(run().pendingApprovals).toHaveLength(1)
+    run().resolveApproval('A', new Set(['money']))
+    expect([...(await pending)]).toEqual(['money'])
+
+    const documentAction = run().requestApproval(
+      'A',
+      [{ id: 'from-document', name: 'criar_tasks', args: {} }],
+      true
+    )
+    expect(run().pendingApprovals[0].documentReview).toBe(true)
+    run().resolveApproval('A', new Set())
+    expect([...(await documentAction)]).toEqual([])
   })
 })

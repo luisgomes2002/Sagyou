@@ -1,0 +1,80 @@
+{
+  "ler_tasks": {
+    "type": "function",
+    "function": {
+      "name": "ler_tasks",
+      "description": "Lista tasks do projeto ativo. Por padrão só as abertas; use estado=todas para contar também as concluídas. O resultado informa total, truncado e concluidas_ocultas.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "estado": { "type": "string", "enum": ["abertas", "concluidas", "todas"] },
+          "busca": { "type": "string" }
+        }
+      }
+    }
+  },
+  "ler_financeiro": {
+    "type": "function",
+    "function": {
+      "name": "ler_financeiro",
+      "description": "Lê o resumo financeiro do perfil ativo, incluindo receitas, despesas, saldo e moeda.",
+      "parameters": { "type": "object", "properties": {} }
+    }
+  },
+  "ler_habitos": {
+    "type": "function",
+    "function": {
+      "name": "ler_habitos",
+      "description": "Lê os hábitos e seus registros de conclusão.",
+      "parameters": { "type": "object", "properties": {} }
+    }
+  },
+  "ler_plano": {
+    "type": "function",
+    "function": {
+      "name": "ler_plano",
+      "description": "Lê os blocos da agenda no período solicitado.",
+      "parameters": {
+        "type": "object",
+        "properties": { "data": { "type": "string", "description": "Data YYYY-MM-DD" } }
+      }
+    }
+  },
+  "buscar_memoria": {
+    "type": "function",
+    "function": {
+      "name": "buscar_memoria",
+      "description": "Busca decisões e preferências salvas de conversas anteriores por termo.",
+      "parameters": {
+        "type": "object",
+        "properties": { "termo": { "type": "string" } }
+      }
+    }
+  },
+  "deletar_task": {
+    "type": "function",
+    "function": {
+      "name": "deletar_task",
+      "description": "Apaga definitivamente uma task. Só use quando o usuário pedir a exclusão.",
+      "parameters": {
+        "type": "object",
+        "properties": { "titulo": { "type": "string" } },
+        "required": ["titulo"]
+      }
+    }
+  },
+  "criar_transacao": {
+    "type": "function",
+    "function": {
+      "name": "criar_transacao",
+      "description": "Registra uma transação financeira. Só use quando o usuário pedir para registrar.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "valor": { "type": "string" },
+          "tipo": { "type": "string", "enum": ["receita", "despesa"] }
+        }
+      }
+    }
+  }
+}

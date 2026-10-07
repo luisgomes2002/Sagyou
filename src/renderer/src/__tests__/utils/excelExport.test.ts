@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import * as XLSX from 'xlsx'
-import { buildWorkbook } from '../../utils/excelExport'
+import { buildWorkbook, type ExcelExportOptions } from '../../utils/excelExport'
 import type { Project, Task, Habit, Goal, FinancialTable, Sprint, StickyNote } from '../../types'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -25,7 +25,8 @@ function build(
     goals?: Goal[]
     notes?: StickyNote[]
     lists?: FinancialTable[]
-  } = {}
+  } = {},
+  options: ExcelExportOptions = {}
 ): XLSX.WorkBook {
   return buildWorkbook(
     new Set(selected) as Set<import('../../utils/excelExport').ExportKey>,
@@ -35,7 +36,10 @@ function build(
     overrides.habits ?? [],
     overrides.goals ?? [],
     overrides.notes ?? [],
-    overrides.lists ?? []
+    overrides.lists ?? [],
+    [],
+    [],
+    options
   )
 }
 
@@ -217,8 +221,6 @@ describe('buildWorkbook — sheet selection', () => {
       'Notas',
       'Itens de compra',
       'Todas transações',
-      'Detalhes financeiros',
-      'Pessoal',
       'Metas financeiras'
     ])
   })
@@ -580,7 +582,7 @@ describe('buildWorkbook — Itens de compra sheet', () => {
 
 describe('buildWorkbook — Transações sheet', () => {
   function rows() {
-    return sheetRows(build(['transactions'], { lists: [LIST] }), 'Pessoal')
+    return sheetRows(build(['transactions'], { lists: [LIST] }), 'Todas transações')
   }
 
   it('maps description, amount and date', () => {
@@ -606,15 +608,28 @@ describe('buildWorkbook — Transações sheet', () => {
     expect(rows_[1]['Categoria']).toBe('')
   })
 
-  it('creates one sheet per list named after the list', () => {
-    const list2: FinancialTable = { ...LIST, id: 'fl2', name: 'Empresa', transactions: [] }
-    const wb = build(['transactions'], { lists: [LIST, list2] })
-    expect(sheetNames(wb)).toEqual([
-      'Todas transações',
-      'Detalhes financeiros',
-      'Pessoal',
-      'Empresa'
-    ])
+  it('exports all transactions once by default and offers individual table sheets', () => {
+    const list2: FinancialTable = {
+      ...LIST,
+      id: 'fl2',
+      name: 'Empresa',
+      transactions: [
+        { id: 'tx3', description: 'Serviço', amount: '100', type: 'income', date: '2026-07-01' }
+      ]
+    }
+    const empty: FinancialTable = { ...LIST, id: 'fl3', name: 'Vazia', transactions: [] }
+    const wb = build(['transactions'], { lists: [LIST, list2, empty] })
+    expect(sheetNames(wb)).toEqual(['Todas transações'])
+    expect(sheetRows(wb, 'Todas transações')).toHaveLength(3)
+
+    const detailed = build(
+      ['transactions'],
+      { lists: [LIST, list2, empty] },
+      { includeTransactionTableSheets: true }
+    )
+    expect(sheetNames(detailed)).toEqual(['Todas transações', 'Pessoal', 'Empresa'])
+    expect(sheetRows(detailed, 'Pessoal')).toHaveLength(2)
+    expect(sheetRows(detailed, 'Empresa')).toHaveLength(1)
   })
 
   it('truncates sheet names longer than 31 characters', () => {
@@ -622,20 +637,20 @@ describe('buildWorkbook — Transações sheet', () => {
       ...LIST,
       name: 'Nome muito longo que ultrapassa o limite do Excel definitivamente'
     }
-    const wb = build(['transactions'], { lists: [long] })
-    expect(sheetNames(wb)[0].length).toBeLessThanOrEqual(31)
+    const wb = build(['transactions'], { lists: [long] }, { includeTransactionTableSheets: true })
+    expect(sheetNames(wb).at(-1)?.length).toBeLessThanOrEqual(31)
   })
 
   it('handles USD currency', () => {
     const usd: FinancialTable = { ...LIST, currency: 'USD' }
     const wb = build(['transactions'], { lists: [usd] })
-    expect(sheetRows(wb, 'Pessoal')[0]['Moeda']).toBe('Dólar')
+    expect(sheetRows(wb, 'Todas transações')[0]['Moeda']).toBe('Dólar')
   })
 
   it('handles JPY currency', () => {
     const jpy: FinancialTable = { ...LIST, currency: 'JPY' }
     const wb = build(['transactions'], { lists: [jpy] })
-    expect(sheetRows(wb, 'Pessoal')[0]['Moeda']).toBe('Iene')
+    expect(sheetRows(wb, 'Todas transações')[0]['Moeda']).toBe('Iene')
   })
 
   it('exports transfers from every month with their source and detail links', () => {
@@ -682,7 +697,7 @@ describe('buildWorkbook — Transações sheet', () => {
     const wb = build(['transactions'], { lists: [transferList] })
     const all = sheetRows(wb, 'Todas transações')
     expect(all.map((row) => row['Mês'])).toEqual(['2026-01', '2026-02', '2026-03'])
-    expect(sheetRows(wb, 'Pessoal')).toHaveLength(3)
+    expect(all).toHaveLength(3)
     expect(all[0]['Origem']).toBe('Banco BR')
     expect(all[1]['ID da transação vinculada']).toBe('jan')
     expect(sheetRows(wb, 'Detalhes financeiros')[0]['ID da transação espelho']).toBe('mirror')
@@ -704,7 +719,11 @@ describe('buildWorkbook — Transações sheet', () => {
         { id: 'other', description: 'Outro mês', amount: '10', type: 'income', date: '2026-07-01' }
       ]
     }
-    const wb = build(['transactions'], { lists: [LIST, second] })
+    const wb = build(
+      ['transactions'],
+      { lists: [LIST, second] },
+      { includeTransactionTableSheets: true }
+    )
     expect(sheetNames(wb)).toContain('Pessoal (2)')
     expect(sheetRows(wb, 'Todas transações')).toHaveLength(3)
   })
@@ -771,7 +790,9 @@ describe('buildWorkbook — Transações sheet', () => {
       [],
       [{ id: 'receipt', name: 'comprovante.pdf', ext: '.pdf', size: 10, createdAt: '2026-10-06' }]
     )
-    const [row] = sheetRows(wb, 'Brasil')
+    const [row] = sheetRows(wb, 'Todas transações').filter(
+      (item) => item['ID da transação'] === 'out'
+    )
     expect(row['Comprovantes']).toBe('comprovante.pdf')
     expect(row['ID bancário/Pix']).toBe('E2E-123')
     expect(row['Conferido em']).toBe('2026-10-07T10:00:00Z')

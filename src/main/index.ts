@@ -25,6 +25,11 @@ import { promisify } from 'util'
 import { readFile } from 'fs/promises'
 const execAsync = promisify(execCallback)
 import { randomUUID } from 'crypto'
+import {
+  partitionConversations,
+  referencedConversationIds,
+  retainReferencedConversations
+} from './conversation-retention'
 import { CodeRunCoordinator } from './code-run-coordinator'
 import { addDetachedWorktree, resolveWorktreeBase } from './git-worktree'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -1231,6 +1236,7 @@ interface StoredConversation {
   messages: {
     role: 'user' | 'assistant' | 'status'
     content: string
+    feedback?: 'positive' | 'negative'
     /** Chat-image ids; the bytes live under chat-images/. Absent on old files. */
     imageIds?: string[]
     /** Status lines: whether the tool finished. See ChatMessage.done. */
@@ -1284,9 +1290,9 @@ function saveConversations(list: StoredConversation[]): void {
  * 1. Conversations last active more than 14 days ago are dropped.
  * 2. If more than MAX_CONVERSATIONS remain, the oldest ones are dropped.
  *
- * Hard delete — there is no archive or undo.  The motivation is a
- * history that grows unboundedly with every chat, where most of it
- * is stale and never reopened.
+ * Any conversation cited by an active or archived memory is exempt from both
+ * limits. That includes handoffs whose body points back to a full transcript.
+ * Otherwise cleanup would silently destroy the evidence behind a memory.
  */
 const PRUNE_CONVERSATION_TTL_MS = 14 * 24 * 60 * 60 * 1000
 const MAX_CONVERSATIONS = 50
@@ -1294,22 +1300,9 @@ const MAX_CONVERSATIONS = 50
 function pruneConversations(): void {
   const all = loadConversations()
   if (all.length === 0) return
-
-  // Newest first — both rules keep the most recent chats.
-  const sorted = [...all].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-
   const cutoff = new Date(Date.now() - PRUNE_CONVERSATION_TTL_MS)
-  const keep: StoredConversation[] = []
-  const prune: StoredConversation[] = []
-
-  for (const c of sorted) {
-    const updated = new Date(c.updatedAt)
-    if (updated >= cutoff && keep.length < MAX_CONVERSATIONS) {
-      keep.push(c)
-    } else {
-      prune.push(c)
-    }
-  }
+  const referenced = referencedConversationIds(listMemories({ includeArchived: true }))
+  const { keep, prune } = partitionConversations(all, referenced, cutoff, MAX_CONVERSATIONS)
 
   if (prune.length === 0) return
 
@@ -3362,7 +3355,15 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('ai:conversations:delete', (_, id: string) => {
+    if (typeof id !== 'string' || !id) return { error: 'Conversa inválida' }
+    if (referencedConversationIds(listMemories({ includeArchived: true })).has(id)) {
+      return {
+        error:
+          'Esta conversa é referenciada por uma memória. Exclua a memória antes de apagar a conversa.'
+      }
+    }
     saveConversations(loadConversations().filter((c) => c.id !== id))
+    return { ok: true }
   })
 
   // Full history read/write — used by backup export/import, which needs every
@@ -3393,7 +3394,10 @@ app.whenReady().then(() => {
             typeof m.content === 'string'
         )
       }))
-    saveConversations(clean)
+    // Backup import writes conversations before memories. A local memory may
+    // still cite a conversation absent from the backup; keep its evidence.
+    const referenced = referencedConversationIds(listMemories({ includeArchived: true }))
+    saveConversations(retainReferencedConversations(clean, loadConversations(), referenced))
   })
 
   pruneConversations()

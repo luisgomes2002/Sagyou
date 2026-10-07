@@ -208,16 +208,18 @@ export function HomeView({ projects, onNavigate }: Props) {
     [filteredMonthTxs]
   )
 
-  // Accumulated balance (all time, same filter)
+  // The opening balance is current as of the local day, even when the latest
+  // transaction is in another month. Future-dated entries belong in projections.
+  const today = todayISO()
   const allFilteredTxs = useMemo(() => {
     if (financialTableId === '__consolidated__') {
       const linkedIds = new Set(
         allTransactions.filter((t) => t.linkedTransactionId).map((t) => t.linkedTransactionId!)
       )
-      return allTransactions.filter((t) => !linkedIds.has(t.id))
+      return allTransactions.filter((t) => t.date <= today && !linkedIds.has(t.id))
     }
-    return allTransactions.filter((t) => t.tableId === financialTableId)
-  }, [allTransactions, financialTableId])
+    return allTransactions.filter((t) => t.tableId === financialTableId && t.date <= today)
+  }, [allTransactions, financialTableId, today])
 
   const accIncome = useMemo(
     () =>
@@ -488,7 +490,7 @@ export function HomeView({ projects, onNavigate }: Props) {
               <line x1="12" y1="1" x2="12" y2="23" />
               <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
             </svg>
-            Saldo
+            Saldo até hoje
           </p>
           <p
             className="text-2xl font-bold"

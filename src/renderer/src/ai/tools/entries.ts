@@ -35,8 +35,10 @@ import { isDoneColumn } from '../../utils/columns'
 import { PROJECT_COLORS, NOTE_COLORS, TIME_BLOCK_COLORS } from '../../types'
 import type { AITaskInput, Priority, Habit } from '../../types'
 import glossaryRaw from '../glossary.json'
+import { readDataTool } from './read-data'
 
 export const registryEntries: Record<string, AITool> = {
+  ler_dados: readDataTool,
   data_de_hoje: {
     definition: fn(
       'data_de_hoje',
