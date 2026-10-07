@@ -10,9 +10,9 @@
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export type EvalToolExpectation =
-  | { kind: 'called'; name: string }
+  | { kind: 'called'; name: string; args?: Record<string, unknown> }
   | { kind: 'notCalled'; name: string }
-  | { kind: 'count'; name: string; min?: number; max?: number }
+  | { kind: 'count'; name: string; min?: number; max?: number; args?: Record<string, unknown> }
 
 export interface EvalRubric {
   /** 1-5 scale: what a "passing" score minimum is. Default 3. */
@@ -35,6 +35,9 @@ export interface EvalCase {
   tags: string[]
   /** Schema version this golden was recorded against. */
   schemaVersion: string
+  /** Tool names offered in this case; fixtures replace every tool result. */
+  availableTools?: string[]
+  toolResults?: Record<string, unknown>
 }
 
 export interface EvalToolCall {
@@ -49,12 +52,14 @@ export interface EvalRunResult {
   score: number
   /** What the judge said about the answer. */
   judgeReasoning: string
+  answer?: string
   /** Tool calls the agent actually made. */
   actualTools: EvalToolCall[]
   /** Which tool expectations were met/missed. */
   toolResults: { expectation: EvalToolExpectation; met: boolean }[]
   /** How long the run took in ms. */
   durationMs: number
+  usage?: { promptTokens: number; completionTokens: number }
   /** Any error that prevented evaluation. */
   error?: string
 }
@@ -73,25 +78,26 @@ export interface EvalSuiteReport {
 
 // ── Tool-call matching ──────────────────────────────────────────────────────
 
-function toolCalled(actual: EvalToolCall[], name: string): boolean {
-  return actual.some((t) => t.name === name)
+function matchesArgs(actual: EvalToolCall, expected?: Record<string, unknown>): boolean {
+  return !expected || Object.entries(expected).every(([key, value]) => actual.args[key] === value)
 }
 
-function toolCallCount(actual: EvalToolCall[], name: string): number {
-  return actual.filter((t) => t.name === name).length
-}
-
-function checkToolExpectation(
+function toolCallCount(
   actual: EvalToolCall[],
-  exp: EvalToolExpectation
-): boolean {
+  name: string,
+  args?: Record<string, unknown>
+): number {
+  return actual.filter((t) => t.name === name && matchesArgs(t, args)).length
+}
+
+function checkToolExpectation(actual: EvalToolCall[], exp: EvalToolExpectation): boolean {
   switch (exp.kind) {
     case 'called':
-      return toolCalled(actual, exp.name)
+      return toolCallCount(actual, exp.name, exp.args) > 0
     case 'notCalled':
-      return !toolCalled(actual, exp.name)
+      return toolCallCount(actual, exp.name) === 0
     case 'count': {
-      const n = toolCallCount(actual, exp.name)
+      const n = toolCallCount(actual, exp.name, exp.args)
       if (exp.min !== undefined && n < exp.min) return false
       if (exp.max !== undefined && n > exp.max) return false
       return true
@@ -160,7 +166,10 @@ export function parseJudgeResponse(
 ): { score: number; reasoning: string } | { error: string } {
   try {
     // The model might wrap in markdown code fences
-    const cleaned = text.replace(/```(?:json)?\s*/g, '').replace(/```\s*$/, '').trim()
+    const cleaned = text
+      .replace(/```(?:json)?\s*/g, '')
+      .replace(/```\s*$/, '')
+      .trim()
     const parsed = JSON.parse(cleaned)
     if (typeof parsed.score !== 'number' || parsed.score < 1 || parsed.score > 5) {
       return { error: `score inválido: ${parsed.score}` }
@@ -172,7 +181,7 @@ export function parseJudgeResponse(
   } catch {
     // Fallback: try to extract a number
     const match = text.match(/"score"\s*:\s*(\d)/)
-    if (match) {
+    if (match && Number(match[1]) >= 1 && Number(match[1]) <= 5) {
       return { score: Number(match[1]), reasoning: text.slice(0, 500) }
     }
     return { error: 'Não foi possível parsear a resposta do juiz' }
@@ -190,12 +199,13 @@ export function buildSuiteReport(
   const valid = results.filter((r) => !r.error)
   const passed = valid.filter((r) => r.passed)
   const failed = valid.filter((r) => !r.passed)
-  const averageScore =
-    valid.length > 0 ? valid.reduce((s, r) => s + r.score, 0) / valid.length : 0
+  const averageScore = valid.length > 0 ? valid.reduce((s, r) => s + r.score, 0) / valid.length : 0
 
   // A regression is a case that passed before but fails now
   const regressions = previousReport
-    ? failed.filter((r) => previousReport.results.some((pr) => pr.caseId === r.caseId && pr.passed))
+    ? results.filter(
+        (r) => !r.passed && previousReport.results.some((pr) => pr.caseId === r.caseId && pr.passed)
+      )
     : []
 
   return {
@@ -221,7 +231,9 @@ export function formatSuiteDelta(prev: EvalSuiteReport, next: EvalSuiteReport): 
   if (next.regressions.length > 0) {
     lines.push(`⚠️ ${next.regressions.length} regressão(ões):`)
     for (const r of next.regressions) {
-      lines.push(`  - ${r.caseId}: nota ${r.score}/5 (era ${prev.results.find((pr) => pr.caseId === r.caseId)?.score}/5)`)
+      lines.push(
+        `  - ${r.caseId}: nota ${r.score}/5 (era ${prev.results.find((pr) => pr.caseId === r.caseId)?.score}/5)`
+      )
     }
   }
   if (next.errored > 0) {

@@ -239,7 +239,7 @@ export function CompleteGoalModal({ open, goalName, onConfirm, onClose }: Comple
 interface FinancialGoalCardProps {
   goal: FinancialGoal
   transactions: FinancialTransaction[]
-  accBalance: Decimal
+  activeMonth: { year: number; month: number }
   currency: Currency
   onEdit: () => void
   onDelete: () => void
@@ -250,7 +250,7 @@ interface FinancialGoalCardProps {
 export function FinancialGoalCard({
   goal,
   transactions,
-  accBalance,
+  activeMonth,
   currency,
   onEdit,
   onDelete,
@@ -261,28 +261,29 @@ export function FinancialGoalCard({
   const [completeModalOpen, setCompleteModalOpen] = useState(false)
 
   const monthsLeft = Math.max(
-    (goal.targetYear - now.getFullYear()) * 12 + (goal.targetMonth - (now.getMonth() + 1)),
+    (goal.targetYear - activeMonth.year) * 12 + (goal.targetMonth - activeMonth.month),
     0
   )
 
-  const deadlinePast =
-    monthsLeft === 0 &&
-    (goal.targetYear < now.getFullYear() ||
-      (goal.targetYear === now.getFullYear() && goal.targetMonth < now.getMonth() + 1))
-  const deadlineKey = `${goal.targetYear}-${String(goal.targetMonth).padStart(2, '0')}`
+  const today = todayISO(now)
+  const selectedMonthEnd = `${activeMonth.year}-${String(activeMonth.month).padStart(2, '0')}-31`
+  const viewEnd = selectedMonthEnd.slice(0, 7) === today.slice(0, 7) ? today : selectedMonthEnd
+  const deadlineEnd = `${goal.targetYear}-${String(goal.targetMonth).padStart(2, '0')}-31`
+  const deadlinePast = selectedMonthEnd > deadlineEnd
+  const effectiveCutoff = viewEnd < deadlineEnd ? viewEnd : deadlineEnd
   const target = D(goal.targetAmount)
-  const effectiveBalance = deadlinePast
-    ? transactions
-        .filter((t) => t.date.slice(0, 7) <= deadlineKey)
-        .reduce(
-          (s, t) => (t.type === 'income' ? s.plus(t.amount) : s.minus(t.amount)),
-          new Decimal(0)
-        )
-    : accBalance
+  const effectiveBalance = transactions
+    .filter((t) => t.date <= effectiveCutoff)
+    .reduce((s, t) => (t.type === 'income' ? s.plus(t.amount) : s.minus(t.amount)), new Decimal(0))
+  const actualCutoff = today < effectiveCutoff ? today : effectiveCutoff
+  const actualBalance = transactions
+    .filter((t) => t.date <= actualCutoff)
+    .reduce((s, t) => (t.type === 'income' ? s.plus(t.amount) : s.minus(t.amount)), new Decimal(0))
 
-  const manuallyCompleted = !!goal.completedAt
+  const manuallyCompleted = !!goal.completedAt && goal.completedAt <= viewEnd
   const balanceAchieved = effectiveBalance.greaterThanOrEqualTo(target)
   const achieved = manuallyCompleted || balanceAchieved
+  const projectedAchievement = balanceAchieved && actualBalance.lessThan(target)
   const progress = manuallyCompleted
     ? 1
     : target.greaterThan(0)
@@ -292,7 +293,7 @@ export function FinancialGoalCard({
   const savedAmount = Decimal.min(Decimal.max(effectiveBalance, 0), target)
   const remaining = achieved ? new Decimal(0) : Decimal.max(target.minus(effectiveBalance), 0)
 
-  const isOverdue = !achieved && monthsLeft === 0
+  const isOverdue = !achieved && deadlinePast
   const isUrgent = !achieved && monthsLeft > 0 && monthsLeft <= 2
   const monthlyNeeded = monthsLeft > 0 && !achieved ? remaining.div(monthsLeft) : new Decimal(0)
 
@@ -378,7 +379,7 @@ export function FinancialGoalCard({
                 >
                   <polyline points="20 6 9 17 4 12" />
                 </svg>
-                Alcançado
+                {projectedAchievement ? 'Previsto atingir' : 'Alcançado'}
               </span>
             )}
             {isOverdue && (
@@ -449,7 +450,9 @@ export function FinancialGoalCard({
           {!manuallyCompleted && balanceAchieved && (
             <div className="mt-2.5 pt-2.5 border-t border-[#3b3b3b]">
               <p className="text-[10px] text-[#69b780] leading-relaxed">
-                Saldo excede a meta em{' '}
+                {projectedAchievement
+                  ? 'Saldo previsto excede a meta em '
+                  : 'Saldo excede a meta em '}
                 <span className="text-[#69b780] font-semibold">
                   {formatCurrency(effectiveBalance.minus(target), currency)}
                 </span>

@@ -43,7 +43,7 @@ const OPTIONS: { key: DataKey; label: string; description: string }[] = [
   {
     key: 'transactions',
     label: 'Transações',
-    description: 'Todos os meses, uma aba geral e abas por tabela; inclui detalhes e vínculos'
+    description: 'Lançamentos de todos os meses e tabelas na aba geral; detalhes em aba própria'
   },
   {
     key: 'financialGoals',
@@ -55,7 +55,11 @@ const OPTIONS: { key: DataKey; label: string; description: string }[] = [
     label: 'Perfis e tabelas financeiras',
     description: 'Perfis, moedas, bancos e saldos informados'
   },
-  { key: 'yields', label: 'Rendimentos', description: 'Fontes e lançamentos de rendimento' }
+  {
+    key: 'yields',
+    label: 'Rendimentos',
+    description: 'Fontes e registros diários; o resumo mensal está em Transações'
+  }
 ]
 
 export function ExcelExportModal({ onClose, onToast }: Props): React.JSX.Element {
@@ -77,6 +81,7 @@ export function ExcelExportModal({ onClose, onToast }: Props): React.JSX.Element
     new Set(OPTIONS.map((option) => option.key))
   )
   const [loading, setLoading] = useState(false)
+  const [includeTransactionTableSheets, setIncludeTransactionTableSheets] = useState(false)
 
   const toggle = (key: DataKey): void => {
     setSelected((prev) => {
@@ -109,7 +114,8 @@ export function ExcelExportModal({ onClose, onToast }: Props): React.JSX.Element
         notes,
         lists,
         financialProfiles,
-        files
+        files,
+        { includeTransactionTableSheets }
       )
       const buffer = XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer
       const date = new Date().toISOString().split('T')[0]
@@ -214,6 +220,25 @@ export function ExcelExportModal({ onClose, onToast }: Props): React.JSX.Element
               </button>
             )
           })}
+          {selected.has('transactions') && (
+            <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-lg border border-[#3b3b3b] bg-[#2a2a2a] px-3.5 py-3">
+              <input
+                type="checkbox"
+                checked={includeTransactionTableSheets}
+                onChange={(event) => setIncludeTransactionTableSheets(event.target.checked)}
+                className="mt-0.5 accent-[#7c3aed]"
+              />
+              <span>
+                <span className="block text-xs font-medium text-[#d4d4d4]">
+                  Criar também uma aba por tabela financeira
+                </span>
+                <span className="mt-0.5 block text-[11px] text-[#999999]">
+                  Repete os lançamentos da aba “Todas transações” para facilitar a consulta por
+                  tabela.
+                </span>
+              </span>
+            </label>
+          )}
         </div>
 
         {/* Footer */}

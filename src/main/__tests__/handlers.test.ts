@@ -15,6 +15,7 @@ import { mkdtemp, mkdir, writeFile, readFile, rm } from 'fs/promises'
 import { existsSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import { listMemories } from '../store'
 
 /** channel -> handler, filled in when the module registers them. */
 const handlers = new Map<string, (event: unknown, ...args: never[]) => unknown>()
@@ -68,7 +69,11 @@ vi.mock('@electron-toolkit/utils', () => ({
 }))
 
 // better-sqlite3 is a native module and irrelevant here.
-vi.mock('../store', () => ({ loadData: vi.fn(() => ({})), saveData: vi.fn() }))
+vi.mock('../store', () => ({
+  loadData: vi.fn(() => ({})),
+  saveData: vi.fn(),
+  listMemories: vi.fn(() => [])
+}))
 vi.mock('../../../resources/icon.png?asset', () => ({ default: '/icon.png' }))
 
 /** Invoke a channel the way the renderer does. */
@@ -123,6 +128,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   sent.length = 0
+  vi.mocked(listMemories).mockReturnValue([])
 })
 
 describe('main handlers are registered', () => {
@@ -795,6 +801,27 @@ describe('ai:conversations:rename', () => {
     expect(await invoke('ai:conversations:rename', 'r1', null)).toMatchObject({
       error: expect.any(String)
     })
+  })
+})
+
+describe('ai:conversations:delete', () => {
+  it('keeps a conversation cited by memory during deletion and backup replacement', async () => {
+    await invoke('ai:conversations:replace', [])
+    await invoke('ai:conversations:save', {
+      id: 'protected',
+      title: 'Origem',
+      messages: [{ role: 'user', content: 'Contexto da memória' }]
+    })
+    vi.mocked(listMemories).mockReturnValue([
+      { sourceConversationId: 'protected' }
+    ] as unknown as ReturnType<typeof listMemories>)
+
+    expect(await invoke('ai:conversations:delete', 'protected')).toMatchObject({
+      error: expect.any(String)
+    })
+    await invoke('ai:conversations:replace', [])
+    expect(await invoke('ai:conversations:get', 'protected')).toMatchObject({ id: 'protected' })
+    expect(listMemories).toHaveBeenCalledWith({ includeArchived: true })
   })
 })
 

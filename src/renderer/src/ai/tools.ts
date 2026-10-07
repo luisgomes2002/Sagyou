@@ -27,13 +27,13 @@ const REGISTRY: Record<string, AITool> = registryEntries
 /** Tool definitions sent to the model each turn (derived from the registry). */
 export const TOOL_DEFS: ToolDef[] = Object.values(REGISTRY).map((t) => t.definition)
 
-/** Code-only tool subset — excludes kanban, finance, habits, and other non-code
- *  tools. Used by the code-focused chat so the model doesn't waste tokens on
- *  irrelevant tools and isn't distracted by data it shouldn't touch.
+/** Code-focused tool subset. `ler_dados` stays available because questions
+ *  about a project's implementation may depend on its app records too.
  *  The `run` handler still exists for all tools; this only filters what the
  *  model *offers* to call. */
 const CODE_TOOL_NAMES = new Set([
   'ler_projetos',
+  'ler_dados',
   'listar_arquivos',
   'ler_arquivo',
   'buscar_no_codigo',
@@ -75,6 +75,7 @@ export const REFERENCE_CODE_TOOL_DEFS: ToolDef[] = Object.values(REGISTRY)
 const KANBAN_TOOL_NAMES = new Set([
   'data_de_hoje',
   'ler_projetos',
+  'ler_dados',
   'ler_tasks',
   'criar_tasks',
   'atualizar_task',
@@ -252,6 +253,10 @@ export function describeToolActivity(name: string, args: Record<string, unknown>
       return 'Verificando a data de hoje'
     case 'ler_projetos':
       return 'Consultando os projetos'
+    case 'ler_dados': {
+      const area = str(args.area)
+      return area ? `Consultando ${area.replaceAll('_', ' ')}` : 'Consultando os dados do Sagyou'
+    }
     case 'ler_tasks':
       return 'Consultando as tasks'
     case 'ler_financeiro':

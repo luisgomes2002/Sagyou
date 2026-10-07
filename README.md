@@ -123,11 +123,11 @@ Converse normalmente — o assistente tem ferramentas para ler seus dados (taref
 
 O assistente também tem **memória entre conversas**: ele grava decisões, tradeoffs e fatos que você fixar, e os recupera em conversas futuras. Use `salvar_memoria` para registrar algo que não vale a pena reaprender depois. Memórias com dados sensíveis (chaves, senhas) são automaticamente sanitizadas antes de gravar.
 
-Ações que **alteram** dados (criar tarefas, concluir, iniciar cronômetro, criar/atribuir sprint) pedem sua aprovação antes de rodar. O botão no topo liga o **modo automático**, que executa sem perguntar — use com cuidado.
+Ações que **alteram** dados (criar tarefas, concluir, iniciar cronômetro, criar/atribuir sprint) pedem sua aprovação antes de rodar. O botão no topo liga o **modo automático** para ações comuns; apagar tasks e registrar transações financeiras continuam pedindo aprovação. Você pode copiar mensagens, avaliar respostas como úteis ou ruins e editar a última pergunta para reenviá-la como correção. A correção mantém o histórico anterior e desliga o modo automático naquela conversa.
 
 O assistente também suporta **imagens**: arraste ou cole screenshots no chat e o modelo responde sobre elas. As imagens ficam salvas em `chat-images/` e são enviadas ao modelo a cada passo da execução.
 
-O assistente também lê **documentos**: arraste ou cole PDF, DOCX, XLSX, CSV, TXT, MD e outros formatos no chat. O texto é extraído na hora e incluído na mensagem — o modelo lê o conteúdo como parte da conversa. Para documentos salvos nos anexos do projeto (via FilesView), use a ferramenta `ler_documento` — útil para referências de longo prazo como políticas, relatórios ou notas de reunião. Os arquivos ficam em `chat-files/` e são limpos quando a conversa é deletada.
+O assistente também lê **documentos**: arraste ou cole PDF, DOCX, XLSX, CSV, TXT, MD e outros formatos no chat. O texto é extraído na hora e enviado como dados do anexo, separado do seu pedido; instruções escritas no documento não são tratadas como pedidos seus. Quando há documento anexado, qualquer ação que altere dados pede aprovação mesmo no modo automático. Para documentos salvos nos anexos do projeto (via FilesView), use a ferramenta `ler_documento` — útil para referências de longo prazo como políticas, relatórios ou notas de reunião. Os arquivos ficam em `chat-files/` e são limpos quando a conversa é deletada. Uma conversa referenciada por uma memória não pode ser apagada, inclusive pela limpeza automática do histórico; remova a memória primeiro se quiser excluí-la.
 
 ### Multi-agente
 

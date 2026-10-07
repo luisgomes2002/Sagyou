@@ -3,9 +3,17 @@ import Decimal from 'decimal.js'
 import type { FinancialTable, FinancialTransaction, Currency } from '../../types'
 import { CURRENCY_CONFIG } from '../../types'
 import { useKanbanStore } from '../../store/kanban'
-import { MONTH_NAMES, financialCategories, formatCurrency, formatDateBR, D } from './shared'
+import {
+  MONTH_NAMES,
+  financialCategories,
+  formatCurrency,
+  formatDateBR,
+  D,
+  todayISO
+} from './shared'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { EmptyState } from '../EmptyState'
+import { MonthJump } from './MonthJump'
 
 interface ConsolidatedTabProps {
   lists: FinancialTable[]
@@ -54,6 +62,9 @@ export function ConsolidatedTab({
     lists
   )
   const now = new Date()
+  const today = todayISO(now)
+  const selectedMonthEnd = `${activeMonth.year}-${String(activeMonth.month).padStart(2, '0')}-31`
+  const currentCutoff = today < selectedMonthEnd ? today : selectedMonthEnd
   const [rates, setRates] = useState<Record<string, RateInfo>>({})
   const [linkingTx, setLinkingTx] = useState<{
     tableId: string
@@ -194,14 +205,21 @@ export function ConsolidatedTab({
   const byCurrency = useMemo(() => {
     const map: Record<
       string,
-      { currency: Currency; income: Decimal; expense: Decimal; accumulated: Decimal }
+      {
+        currency: Currency
+        income: Decimal
+        expense: Decimal
+        current: Decimal
+        projected: Decimal
+      }
     > = {}
     for (const currency of allTableCurrencies) {
       map[currency] = {
         currency,
         income: new Decimal(0),
         expense: new Decimal(0),
-        accumulated: new Decimal(0)
+        current: new Decimal(0),
+        projected: new Decimal(0)
       }
     }
     const monthLinkedIds = new Set(
@@ -219,11 +237,12 @@ export function ConsolidatedTab({
     for (const t of allTransactions) {
       if (allLinkedIds.has(t.id) || detailLinks.has(t.id)) continue
       const values = map[t.tableCurrency]
-      values.accumulated =
-        t.type === 'income' ? values.accumulated.plus(t.amount) : values.accumulated.minus(t.amount)
+      const amount = t.type === 'income' ? D(t.amount) : D(t.amount).negated()
+      if (t.date <= selectedMonthEnd) values.projected = values.projected.plus(amount)
+      if (t.date <= currentCutoff) values.current = values.current.plus(amount)
     }
     return Object.values(map).sort((a, b) => a.currency.localeCompare(b.currency))
-  }, [monthTxs, allTransactions, allTableCurrencies, detailLinks])
+  }, [monthTxs, allTransactions, allTableCurrencies, detailLinks, currentCutoff, selectedMonthEnd])
 
   const convertedTotal = useMemo(() => {
     let total = new Decimal(0)
@@ -253,13 +272,16 @@ export function ConsolidatedTab({
     return null
   }
 
-  const convertedAccumulated = useMemo(() => {
-    let total = new Decimal(0)
+  const convertedBalances = useMemo(() => {
+    let current = new Decimal(0)
+    let projected = new Decimal(0)
     for (const values of byCurrency) {
-      const converted = convertAmount(values.accumulated, values.currency)
-      if (converted !== null) total = total.plus(converted)
+      const convertedCurrent = convertAmount(values.current, values.currency)
+      const convertedProjected = convertAmount(values.projected, values.currency)
+      if (convertedCurrent !== null) current = current.plus(convertedCurrent)
+      if (convertedProjected !== null) projected = projected.plus(convertedProjected)
     }
-    return total
+    return { current, projected }
   }, [byCurrency, refCurrency, rates])
 
   const ratesLoaded = useMemo(() => {
@@ -364,9 +386,13 @@ export function ConsolidatedTab({
               <polyline points="15 18 9 12 15 6" />
             </svg>
           </button>
-          <span className="text-sm font-medium text-[#d4d4d4] min-w-32 text-center">
-            {MONTH_NAMES[activeMonth.month - 1]} {activeMonth.year}
-          </span>
+          <MonthJump
+            month={activeMonth}
+            onChange={(month) => {
+              onCategoryFilterChange(null)
+              onMonthChange(month)
+            }}
+          />
           <button
             onClick={nextMonth}
             className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors"
@@ -458,7 +484,9 @@ export function ConsolidatedTab({
             <p className="text-sm font-semibold text-[#d4d4d4]">
               Resumo de {MONTH_NAMES[activeMonth.month - 1].toLowerCase()}
             </p>
-            <p className="mt-0.5 text-xs text-[#999999]">Valores na moeda de cada tabela</p>
+            <p className="mt-0.5 text-xs text-[#999999]">
+              Valores na moeda de cada tabela · saldos até o mês selecionado
+            </p>
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {byCurrency.map((values) => {
@@ -490,16 +518,31 @@ export function ConsolidatedTab({
                       {formatCurrency(values.expense, values.currency)}
                     </span>
                   </div>
-                  <div className="mt-3 flex items-center justify-between border-t border-[#3b3b3b] pt-3 text-xs">
-                    <span className="text-[#999999]">Saldo acumulado</span>
-                    <span
-                      className={
-                        'tabular-nums font-semibold ' +
-                        (values.accumulated.gte(0) ? 'text-[#d4d4d4]' : 'text-[#e04040]')
-                      }
-                    >
-                      {formatCurrency(values.accumulated, values.currency)}
-                    </span>
+                  <div className="mt-3 space-y-1.5 border-t border-[#3b3b3b] pt-3 text-xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[#999999]">
+                        {selectedMonthEnd < today ? 'Saldo até o mês' : 'Saldo até hoje'}
+                      </span>
+                      <span
+                        className={
+                          'tabular-nums font-semibold ' +
+                          (values.current.gte(0) ? 'text-[#d4d4d4]' : 'text-[#e04040]')
+                        }
+                      >
+                        {formatCurrency(values.current, values.currency)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[#999999]">Saldo projetado</span>
+                      <span
+                        className={
+                          'tabular-nums font-semibold ' +
+                          (values.projected.gte(0) ? 'text-[#d4d4d4]' : 'text-[#e04040]')
+                        }
+                      >
+                        {formatCurrency(values.projected, values.currency)}
+                      </span>
+                    </div>
                   </div>
                 </div>
               )
@@ -515,7 +558,7 @@ export function ConsolidatedTab({
                   <p className="text-sm font-semibold text-[#d4d4d4]">Visão em {refCurrency}</p>
                   <span className="text-xs text-[#999999]">Pela cotação atual</span>
                 </div>
-                <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                <div className="mt-3 grid gap-4 sm:grid-cols-3">
                   <div>
                     <p className="text-xs text-[#999999]">Saldo do mês convertido</p>
                     <p
@@ -525,11 +568,23 @@ export function ConsolidatedTab({
                     </p>
                   </div>
                   <div>
-                    <p className="text-xs text-[#999999]">Saldo acumulado convertido</p>
+                    <p className="text-xs text-[#999999]">
+                      {selectedMonthEnd < today
+                        ? 'Saldo até o mês convertido'
+                        : 'Saldo até hoje convertido'}
+                    </p>
                     <p
-                      className={`mt-1 text-lg font-semibold tabular-nums ${convertedAccumulated.gte(0) ? 'text-[#d4d4d4]' : 'text-[#e04040]'}`}
+                      className={`mt-1 text-lg font-semibold tabular-nums ${convertedBalances.current.gte(0) ? 'text-[#d4d4d4]' : 'text-[#e04040]'}`}
                     >
-                      {formatCurrency(convertedAccumulated, refCurrency)}
+                      {formatCurrency(convertedBalances.current, refCurrency)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-[#999999]">Saldo projetado convertido</p>
+                    <p
+                      className={`mt-1 text-lg font-semibold tabular-nums ${convertedBalances.projected.gte(0) ? 'text-[#d4d4d4]' : 'text-[#e04040]'}`}
+                    >
+                      {formatCurrency(convertedBalances.projected, refCurrency)}
                     </p>
                   </div>
                 </div>

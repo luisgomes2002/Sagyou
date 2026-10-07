@@ -1,6 +1,7 @@
 import { useState, type JSX } from 'react'
 import type { Currency } from '../../types'
 import { formatCurrency } from './shared'
+import { balanceAxisLabelY, balanceAxisTicks } from './balanceAxis'
 
 interface ChartMonth {
   key: string
@@ -134,22 +135,27 @@ function BalanceChart({
   const [showAll, setShowAll] = useState(false)
   const visibleMonths = showAll ? months : months.slice(-12)
   const values = visibleMonths.map((m) => m.accumulated)
-  const min = Math.min(...values, 0)
-  const max = Math.max(...values, 0)
+  const actualMin = Math.min(...values)
+  const actualMax = Math.max(...values)
+  const min = Math.min(actualMin, 0)
+  const max = Math.max(actualMax, 0)
   const range = max - min || 1
   const width = Math.max(600, visibleMonths.length * 58)
   const height = 180
   const plotHeight = 135
-  const left = 96
+  const left = Math.max(
+    96,
+    Math.max(...[actualMin, actualMax, 0].map((value) => formatCurrency(value, currency).length)) *
+      6 +
+      20
+  )
   const right = 12
   const graphWidth = width - left - right
   const x = (index: number): number =>
     left + (graphWidth * index) / Math.max(visibleMonths.length - 1, 1)
   const y = (value: number): number => 12 + ((max - value) / range) * plotHeight
-  // A small balance around zero can place two labels on the same baseline.
-  const ticks = [...new Set([0, max, min])].filter((tick, index, candidates) =>
-    candidates.slice(0, index).every((other) => Math.abs(y(tick) - y(other)) >= 18)
-  )
+  const ticks = balanceAxisTicks(values, plotHeight)
+  const tickLabelY = balanceAxisLabelY(ticks, y, 12 + plotHeight + 3)
   const last = months[months.length - 1]
 
   return (
@@ -184,7 +190,7 @@ function BalanceChart({
           role="img"
           aria-label="Evolução mensal do saldo"
         >
-          {ticks.map((tick) => (
+          {ticks.map((tick, index) => (
             <g key={tick}>
               <line
                 x1={left}
@@ -194,8 +200,16 @@ function BalanceChart({
                 stroke={tick === 0 ? '#666666' : '#3b3b3b'}
                 strokeDasharray={tick === 0 ? '3 3' : undefined}
               />
-              <text x={left - 12} y={y(tick) + 3} textAnchor="end" fill="#b3b3b3" fontSize="10">
-                {axisCurrency(tick, currency)}
+              <text
+                x={left - 12}
+                y={tickLabelY[index]}
+                textAnchor="end"
+                fill="#b3b3b3"
+                fontSize="10"
+              >
+                {tick === actualMin || tick === actualMax
+                  ? formatCurrency(tick, currency)
+                  : axisCurrency(tick, currency)}
               </text>
             </g>
           ))}
@@ -222,25 +236,6 @@ function BalanceChart({
                 stroke="#e4d7ff"
                 strokeWidth="1.25"
               />
-              {(index === 0 || index === visibleMonths.length - 1) && (
-                <text
-                  x={x(index) + (index === 0 ? 8 : -8)}
-                  y={
-                    y(month.accumulated) < 30
-                      ? y(month.accumulated) + 17
-                      : y(month.accumulated) - 10
-                  }
-                  textAnchor={index === 0 ? 'start' : 'end'}
-                  fill="#d4c3ff"
-                  fontSize="10"
-                  fontWeight="500"
-                  stroke="#2a2a2a"
-                  strokeWidth="3"
-                  paintOrder="stroke"
-                >
-                  {formatCurrency(month.accumulated, currency)}
-                </text>
-              )}
               <text x={x(index)} y="171" textAnchor="middle" fill="#999999" fontSize="9">
                 {label(month.key)}
               </text>

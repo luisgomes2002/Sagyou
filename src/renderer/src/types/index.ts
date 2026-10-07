@@ -238,6 +238,7 @@ export interface AIMessage {
   // persisted alongside real turns (see AIView's ChatMessage).
   role: 'user' | 'assistant' | 'status'
   content: string
+  feedback?: 'positive' | 'negative'
 }
 
 export interface AIConversation {

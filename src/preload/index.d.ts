@@ -165,6 +165,7 @@ interface AIStoredMessage {
   /** 'status' is a display-only trace of the agent's work, never a chat turn. */
   role: 'user' | 'assistant' | 'status'
   content: string
+  feedback?: 'positive' | 'negative'
   /** Chat-image ids; the bytes live as files under chat-images/. */
   imageIds?: string[]
   /** Chat-document ids; the bytes live as files under chat-files/. */
@@ -630,7 +631,7 @@ declare global {
             usage?: TokenUsage
           }) => Promise<void>
           rename: (id: string, title: string) => Promise<{ title?: string; error?: string }>
-          delete: (id: string) => Promise<void>
+          delete: (id: string) => Promise<{ ok?: true; error?: string }>
           all: () => Promise<AIConversation[]>
           replace: (list: AIConversation[]) => Promise<void>
         }

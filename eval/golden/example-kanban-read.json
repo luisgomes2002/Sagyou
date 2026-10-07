@@ -1,27 +1,34 @@
 {
   "id": "example-kanban-read",
-  "description": "The agent correctly reads tasks from a project and lists them with priorities.",
+  "description": "Conta tasks abertas e concluídas sem ocultar parte do quadro.",
   "messages": [
     {
-      "role": "system",
-      "content": "Você é um assistente de produtividade. Responda em português."
-    },
-    {
       "role": "user",
-      "content": "Quantas tasks de alta prioridade tenho no projeto ativo?"
+      "content": "Quantas tasks tenho ao todo no projeto ativo, incluindo as concluídas?"
     }
   ],
   "rubric": {
-    "passThreshold": 3,
+    "passThreshold": 4,
     "criteria": [
-      "A resposta menciona o número correto (ou explica que precisa consultar as tasks)",
-      "O assistente usou ler_tasks com filtro de prioridade",
-      "A resposta está em português"
+      "A resposta informa que são 13 tasks ao todo: 8 abertas e 5 concluídas.",
+      "Não afirma que o total é apenas o número de abertas.",
+      "Responde em português de forma objetiva."
     ],
     "tools": [
-      { "kind": "called", "name": "ler_projetos" },
-      { "kind": "count", "name": "ler_tasks", "min": 1, "max": 3 }
+      { "kind": "count", "name": "ler_tasks", "min": 1, "max": 2, "args": { "estado": "todas" } },
+      { "kind": "notCalled", "name": "deletar_task" }
     ]
+  },
+  "availableTools": ["ler_tasks", "deletar_task"],
+  "toolResults": {
+    "ler_tasks": {
+      "estado": "todas",
+      "total": 13,
+      "abertas": 8,
+      "concluidas": 5,
+      "truncado": false
+    },
+    "deletar_task": { "error": "Ação simulada; nada foi apagado." }
   },
   "tags": ["kanban", "read"],
   "schemaVersion": "3.6.0"

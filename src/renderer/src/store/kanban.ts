@@ -16,6 +16,7 @@ import type {
 import { DEFAULT_FINANCIAL_PROFILE_ID } from '../types'
 import { D, moneyStr } from '../utils/money'
 import { preserveLegacyFinancialMetadata } from '../utils/financialLegacy'
+import { migrateYieldSummaryDates } from '../utils/yieldSummary'
 import { ElectronStorage } from '../services/ElectronStorage'
 
 import type { HabitsSlice } from './slices/habits'
@@ -68,7 +69,7 @@ function normalizeProject(p: Project, i: number): Project {
 
 // Keep in sync with the identical normalizeList in src/renderer/src/store/slices/backup.ts.
 function normalizeList(l: FinancialTable): FinancialTable {
-  const table = preserveLegacyFinancialMetadata(l)
+  const table = migrateYieldSummaryDates(preserveLegacyFinancialMetadata(l))
   return {
     ...table,
     profileId: l.profileId || DEFAULT_FINANCIAL_PROFILE_ID,
@@ -77,7 +78,7 @@ function normalizeList(l: FinancialTable): FinancialTable {
       ...i,
       price: i.price === null || i.price === undefined ? undefined : moneyStr(i.price)
     })),
-    transactions: (l.transactions ?? []).map((t) => {
+    transactions: (table.transactions ?? []).map((t) => {
       const amount = moneyStr(t.amount)
       return { ...t, amount, details: normalizeTransactionDetails(t.details, amount) }
     }),

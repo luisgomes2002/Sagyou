@@ -5,6 +5,7 @@ import { CURRENCY_CONFIG } from '../../types'
 import { MONTH_NAMES, formatCurrency, parseDecimalInput, YIELD_SUMMARY_CATEGORY } from './shared'
 import { todayLocalISO } from '../../utils/dates'
 import { ConfirmDialog } from '../ConfirmDialog'
+import { MonthJump } from './MonthJump'
 
 interface YieldsTabProps {
   list: FinancialTable
@@ -79,10 +80,7 @@ export function YieldsTab({
   const hasMonthEntries = !totalMonth.isZero()
 
   const summaryDescription = `Rendimentos ${MONTH_NAMES[activeMonth.month - 1]} ${activeMonth.year}`
-  const summaryDate = (() => {
-    const lastDay = daysInMonth(activeMonth.year, activeMonth.month)
-    return `${activeMonth.year}-${String(activeMonth.month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
-  })()
+  const summaryDate = `${activeMonth.year}-${String(activeMonth.month).padStart(2, '0')}-01`
 
   const amount = totalMonth.toDecimalPlaces(2).toString()
   const syncedRef = useRef<string | null>(null)
@@ -103,7 +101,10 @@ export function YieldsTab({
       }
 
       if (existing) {
-        if (existing.amount !== amount) {
+        if (
+          existing.amount !== amount ||
+          (existing.category === YIELD_SUMMARY_CATEGORY && existing.date !== summaryDate)
+        ) {
           onUpdateTransaction(existing.id, { amount, date: summaryDate })
         }
       } else {
@@ -237,9 +238,7 @@ export function YieldsTab({
               <polyline points="15,18 9,12 15,6" />
             </svg>
           </button>
-          <span className="text-sm font-semibold text-[#d4d4d4] min-w-[120px] text-center">
-            {MONTH_NAMES[activeMonth.month - 1]} {activeMonth.year}
-          </span>
+          <MonthJump month={activeMonth} onChange={onMonthChange} />
           <button
             onClick={nextMonth}
             className="p-1 rounded hover:bg-[#3b3b3b] text-[#999999] hover:text-[#d4d4d4] transition-colors"

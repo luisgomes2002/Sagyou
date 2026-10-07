@@ -2,6 +2,7 @@
 import { useAiRunStore } from '../../store/aiRun'
 import type { ChatMessage } from '../../store/aiRun'
 import { describeToolCall } from '../../ai/tools'
+import { requiresExplicitApproval } from '../../ai/permission-registry'
 
 // ---------------------------------------------------------------------------
 // The agent run's home outside the AI view.
@@ -300,7 +301,11 @@ export function AiRunHost({
               </svg>
               <h2 className="text-sm font-semibold text-[#d4d4d4]">
                 Agente de código —{' '}
-                {ca.name === "escrever_arquivo" ? "escrever arquivo" : ca.name === "aplicar_alteracoes_externas" ? "revisar alterações" : "executar comando"}
+                {ca.name === 'escrever_arquivo'
+                  ? 'escrever arquivo'
+                  : ca.name === 'aplicar_alteracoes_externas'
+                    ? 'revisar alterações'
+                    : 'executar comando'}
               </h2>
             </div>
             <div className="flex-1 overflow-y-auto px-5 py-3 space-y-3">
@@ -399,6 +404,16 @@ export function AiRunHost({
                 <p className="text-xs text-[#999999] mb-1">
                   A IA quer executar as ações abaixo. Marque as que você aprova.
                 </p>
+                {pa.writes.some((w) => requiresExplicitApproval(w.name)) && (
+                  <p className="text-xs text-[#f0b820]">
+                    Exclusões e lançamentos financeiros exigem sua aprovação mesmo no modo Auto.
+                  </p>
+                )}
+                {pa.documentReview && (
+                  <p className="text-xs text-[#f0b820]">
+                    Esta execução leu um documento anexado. Revise as ações antes de aprovar.
+                  </p>
+                )}
                 {pa.writes.map((w) => (
                   <label
                     key={w.id}
@@ -425,16 +440,18 @@ export function AiRunHost({
                   Recusar tudo
                 </button>
                 <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => {
-                      setAutoApprove(pa.convId, true)
-                      resolveApproval(pa.convId, new Set(pa.writes.map((w) => w.id)))
-                    }}
-                    title="A IA trabalhará sem interrupção nesta conversa — como o modo always allow do Claude Code"
-                    className="px-3 py-1.5 rounded-lg text-xs text-[#f0b820] border border-[#3b3b3b] hover:bg-[#2a2a2a] transition-colors"
-                  >
-                    Sempre permitir
-                  </button>
+                  {!pa.documentReview && !pa.writes.some((w) => requiresExplicitApproval(w.name)) && (
+                    <button
+                      onClick={() => {
+                        setAutoApprove(pa.convId, true)
+                        resolveApproval(pa.convId, new Set(pa.writes.map((w) => w.id)))
+                      }}
+                      title="A IA trabalhará sem interrupção nesta conversa — como o modo always allow do Claude Code"
+                      className="px-3 py-1.5 rounded-lg text-xs text-[#f0b820] border border-[#3b3b3b] hover:bg-[#2a2a2a] transition-colors"
+                    >
+                      Sempre permitir
+                    </button>
+                  )}
                   <button
                     onClick={() => resolveApproval(pa.convId, pa.selected)}
                     disabled={pa.selected.size === 0}
