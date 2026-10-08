@@ -186,6 +186,7 @@ export default function App() {
   const [searchSerial, setSearchSerial] = useState(0)
   const [excelExportOpen, setExcelExportOpen] = useState(false)
   const [securityState, setSecurityState] = useState<'checking' | 'locked' | 'unlocked'>('checking')
+  const [unlockUserName, setUnlockUserName] = useState<string | undefined>()
   // session-only: maps projectId → active linkIds (not persisted — each machine picks its own)
   const [activeLinkIds, setActiveLinkIds] = useState<Record<string, string[]>>({})
   const [confirm, setConfirm] = useState<ConfirmState>({
@@ -229,6 +230,7 @@ export default function App() {
 
   useEffect(() => {
     window.electronAPI.security.status().then((status) => {
+      setUnlockUserName(status.userName)
       setSecurityState(status.enabled ? 'locked' : 'unlocked')
     })
   }, [])
@@ -577,7 +579,9 @@ export default function App() {
   }
 
   if (securityState === 'locked') {
-    return <UnlockScreen onUnlocked={() => setSecurityState('unlocked')} />
+    return (
+      <UnlockScreen userName={unlockUserName} onUnlocked={() => setSecurityState('unlocked')} />
+    )
   }
 
   if (!isLoaded) {

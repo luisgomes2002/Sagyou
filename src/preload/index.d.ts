@@ -303,7 +303,7 @@ declare global {
         onMaximizedChange: (cb: (isMax: boolean) => void) => () => void
       }
       security: {
-        status: () => Promise<{ enabled: boolean }>
+        status: () => Promise<{ enabled: boolean; userName?: string }>
         unlock: (password: string) => Promise<{ success: boolean; error?: string }>
         enable: (password: string) => Promise<{ success: boolean; error?: string }>
         change: (current: string, next: string) => Promise<{ success: boolean; error?: string }>

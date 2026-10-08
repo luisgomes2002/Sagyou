@@ -309,6 +309,7 @@ export function AIView({
           baseUrl: stored.baseUrl || DEFAULT_CONFIG.baseUrl,
           apiKey: stored.apiKey || DEFAULT_CONFIG.apiKey,
           model: stored.model || DEFAULT_CONFIG.model,
+          userName: stored.userName,
           // Undefined = no separate model = one model for everything (routeModel).
           modelComplex: stored.modelComplex,
           // Left undefined on purpose when unset — that's what selects the

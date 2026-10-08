@@ -112,7 +112,8 @@ const api = {
     }
   },
   security: {
-    status: (): Promise<{ enabled: boolean }> => ipcRenderer.invoke('security:status'),
+    status: (): Promise<{ enabled: boolean; userName?: string }> =>
+      ipcRenderer.invoke('security:status'),
     unlock: (password: string): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('security:unlock', password),
     enable: (password: string): Promise<{ success: boolean; error?: string }> =>
