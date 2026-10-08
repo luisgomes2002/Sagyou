@@ -111,6 +111,17 @@ const api = {
       return () => ipcRenderer.removeListener('window:maximized-change', handler)
     }
   },
+  security: {
+    status: (): Promise<{ enabled: boolean }> => ipcRenderer.invoke('security:status'),
+    unlock: (password: string): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('security:unlock', password),
+    enable: (password: string): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('security:enable', password),
+    change: (current: string, next: string): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('security:change', current, next),
+    disable: (current: string): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('security:disable', current)
+  },
   store: {
     load: (): Promise<{ projects: unknown[]; tasks: unknown[] }> =>
       ipcRenderer.invoke('store:load'),

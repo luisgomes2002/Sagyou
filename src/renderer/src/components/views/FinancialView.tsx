@@ -392,6 +392,7 @@ export function FinancialView({
             {ts.activeTab === 'shopping' && (
               <ShoppingTab
                 list={activeList}
+                searchTargetId={searchTarget?.type === 'shopping_item' ? searchTarget.id : undefined}
                 onUpdate={(itemId, updates) => updateItem(activeListId!, itemId, updates)}
                 onDelete={handleDeleteItem}
                 onToggle={(itemId) => toggleItem(activeListId!, itemId)}
@@ -401,6 +402,7 @@ export function FinancialView({
             {ts.activeTab === 'finance' && (
               <FinanceTab
                 list={activeList}
+                searchTarget={searchTarget}
                 allLists={profileLists}
                 activeMonth={ts.financeMonth}
                 onMonthChange={(m) => updateTs({ financeMonth: m })}
@@ -460,6 +462,7 @@ export function FinancialView({
             {ts.activeTab === 'yields' && (
               <YieldsTab
                 list={activeList}
+                searchTargetId={searchTarget?.type === 'yield_source' ? searchTarget.id : undefined}
                 activeMonth={ts.yieldMonth}
                 onMonthChange={(m) => updateTs({ yieldMonth: m })}
                 onAddSource={(name) => addYieldSource(activeListId!, name)}

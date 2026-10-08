@@ -12,6 +12,7 @@ import {
   existsSync,
   unlinkSync,
   renameSync,
+  chmodSync,
   symlinkSync,
   rmSync,
   statSync,
@@ -122,6 +123,12 @@ import { registerBackupHandlers } from './handlers/backup'
 import { registerCodeFilesHandlers } from './handlers/code-files'
 import { registerConversationHandlers } from './handlers/conversations'
 import { safeExternalUrl } from './external-links'
+import {
+  createPasswordConfig,
+  isPasswordConfig,
+  verifyPassword,
+  type PasswordConfig
+} from './security'
 import icon from '../../resources/icon.png?asset'
 
 let mainWindow: BrowserWindow | null = null
@@ -794,6 +801,8 @@ interface AIConfig {
   baseUrl: string
   apiKey: string
   model: string
+  /** Preferred form of address for replies from the assistant. */
+  userName?: string
   /**
    * Optional heavier model for code/analysis tasks. When set, runAgent routes a
    * message that looks like one (see routeModel in ../renderer/src/ai/agent) to
@@ -882,6 +891,31 @@ function resolveCodeAgentConfig(cfg: AIConfig): {
 }
 const aiConfigPath = (): string => join(app.getPath('userData'), 'ai-config.json')
 
+// Password protection is intentionally separate from the data and backup formats:
+// importing a backup must never silently replace the credential that protects this machine.
+const passwordConfigPath = (): string => join(app.getPath('userData'), 'password-security.json')
+let passwordConfig: PasswordConfig | null = null
+let passwordUnlocked = false
+
+function loadPasswordConfig(): PasswordConfig | null {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(passwordConfigPath(), 'utf-8'))
+    return isPasswordConfig(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function savePasswordConfig(config: PasswordConfig): void {
+  writeFileSync(passwordConfigPath(), JSON.stringify(config), { mode: 0o600 })
+  // Existing files retain their old mode unless explicitly corrected.
+  chmodSync(passwordConfigPath(), 0o600)
+}
+
+function passwordStatus(): { enabled: boolean } {
+  return { enabled: passwordConfig !== null }
+}
+
 /**
  * The provider's HTTP status off an SDK error, when there was a response at all.
  * The renderer needs it to tell a transient failure (429/5xx — worth retrying)
@@ -937,7 +971,13 @@ function loadAIConfig(): AIConfig {
 }
 
 function saveAIConfig(config: AIConfig): void {
-  writeFileSync(aiConfigPath(), JSON.stringify(config, null, 2), 'utf-8')
+  const userName =
+    typeof config.userName === 'string' ? config.userName.trim().slice(0, 80) : undefined
+  writeFileSync(
+    aiConfigPath(),
+    JSON.stringify({ ...config, userName: userName || undefined }, null, 2),
+    'utf-8'
+  )
 }
 
 // --- ai-jail sandbox (see ./ai-jail) ---
@@ -1353,6 +1393,8 @@ app.commandLine.appendSwitch('lang', 'pt-BR')
 
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.sagyou')
+  passwordConfig = loadPasswordConfig()
+  passwordUnlocked = passwordConfig === null
 
   const filesDir = join(app.getPath('userData'), 'files')
   if (!existsSync(filesDir)) mkdirSync(filesDir)
@@ -1393,6 +1435,44 @@ app.whenReady().then(() => {
   })
 
   registerWindowHandlers(ipcMain, () => mainWindow)
+  ipcMain.handle('security:status', () => passwordStatus())
+  ipcMain.handle('security:unlock', (_, password: unknown) => {
+    if (!passwordConfig || verifyPassword(passwordConfig, password)) {
+      passwordUnlocked = true
+      return { success: true }
+    }
+    return { success: false, error: 'Senha incorreta.' }
+  })
+  ipcMain.handle('security:enable', (_, password: unknown) => {
+    if (passwordConfig) return { success: false, error: 'A senha já está ativada.' }
+    const next = createPasswordConfig(password)
+    if ('error' in next) return { success: false, error: next.error }
+    savePasswordConfig(next)
+    passwordConfig = next
+    passwordUnlocked = true
+    return { success: true }
+  })
+  ipcMain.handle('security:change', (_, current: unknown, nextPassword: unknown) => {
+    if (!passwordConfig || !verifyPassword(passwordConfig, current))
+      return { success: false, error: 'Senha atual incorreta.' }
+    const next = createPasswordConfig(nextPassword)
+    if ('error' in next) return { success: false, error: next.error }
+    savePasswordConfig(next)
+    passwordConfig = next
+    return { success: true }
+  })
+  ipcMain.handle('security:disable', (_, current: unknown) => {
+    if (!passwordConfig || !verifyPassword(passwordConfig, current))
+      return { success: false, error: 'Senha atual incorreta.' }
+    try {
+      unlinkSync(passwordConfigPath())
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+    passwordConfig = null
+    passwordUnlocked = true
+    return { success: true }
+  })
   registerFilesHandlers(ipcMain, {
     mainWindow,
     dialog,
@@ -1405,7 +1485,10 @@ app.whenReady().then(() => {
     sep
   })
 
-  ipcMain.handle('store:load', () => loadData())
+  ipcMain.handle('store:load', () => {
+    if (!passwordUnlocked) throw new Error('Desbloqueie o Sagyou para acessar os dados.')
+    return loadData()
+  })
 
   ipcMain.handle('store:save', (_, data) => {
     saveData(data)

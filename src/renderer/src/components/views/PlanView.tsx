@@ -24,6 +24,7 @@ import {
 import { ModalBase } from '../ModalBase'
 import { CancelButton } from '../CancelButton'
 import { ConfirmDialog } from '../ConfirmDialog'
+import type { GlobalSearchHit } from '../../../../main/global-search-query'
 
 const TYPE_LABELS: Record<TimeBlock['type'], string> = {
   task: 'Task',
@@ -48,7 +49,7 @@ function blockAppearance(block: TimeBlock): CSSProperties {
   }
 }
 
-export function PlanView() {
+export function PlanView({ searchTarget }: { searchTarget?: GlobalSearchHit | null }) {
   const timeBlocks = useKanbanStore((s) => s.timeBlocks)
   const routines = useKanbanStore((s) => s.routines)
   const createTimeBlock = useKanbanStore((s) => s.createTimeBlock)
@@ -59,12 +60,22 @@ export function PlanView() {
   const deleteRoutine = useKanbanStore((s) => s.deleteRoutine)
 
   const [viewMode, setViewMode] = useState<PlannerViewMode>('day')
-  const [currentDate, setCurrentDate] = useState(todayString())
-  const [showRoutines, setShowRoutines] = useState(false)
+  const [currentDate, setCurrentDate] = useState(
+    searchTarget?.type === 'time_block' ? (searchTarget.date ?? todayString()) : todayString()
+  )
+  const [showRoutines, setShowRoutines] = useState(searchTarget?.type === 'routine')
 
-  const [editingBlock, setEditingBlock] = useState<TimeBlock | null>(null)
+  const [editingBlock, setEditingBlock] = useState<TimeBlock | null>(() =>
+    searchTarget?.type === 'time_block'
+      ? (timeBlocks.find((block) => block.id === searchTarget.id) ?? null)
+      : null
+  )
   const [creatingBlock, setCreatingBlock] = useState<{ date: string; hour: number } | null>(null)
-  const [editingRoutine, setEditingRoutine] = useState<Routine | null>(null)
+  const [editingRoutine, setEditingRoutine] = useState<Routine | null>(() =>
+    searchTarget?.type === 'routine'
+      ? (routines.find((routine) => routine.id === searchTarget.id) ?? null)
+      : null
+  )
   const [deletingBlockId, setDeletingBlockId] = useState<string | null>(null)
   const [deletingRoutineId, setDeletingRoutineId] = useState<string | null>(null)
 

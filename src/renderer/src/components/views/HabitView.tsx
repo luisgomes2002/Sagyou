@@ -5,13 +5,14 @@ import { todayLocalISO } from '../../utils/dates'
 import { HabitModal } from '../modals/HabitModal'
 import { HabitCard } from '../HabitCard'
 import { useDeleteConfirm } from '../useDeleteConfirm'
+import { searchFocusClass, useSearchFocus } from '../../utils/searchFocus'
 
 const MONTHS_PT = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
 ]
 
-export function HabitView() {
+export function HabitView({ searchTargetId }: { searchTargetId?: string | null }) {
   const habits = useKanbanStore((s) => s.habits)
   const createHabit = useKanbanStore((s) => s.createHabit)
   const updateHabit = useKanbanStore((s) => s.updateHabit)
@@ -20,6 +21,7 @@ export function HabitView() {
 
   const [showModal, setShowModal] = useState(false)
   const [editingHabit, setEditingHabit] = useState<Habit | null>(null)
+  const searchRef = useSearchFocus<HTMLDivElement>(!!searchTargetId)
   const { prompt: promptDelete, confirmDialog } = useDeleteConfirm(deleteHabit, {
     title: 'Deletar hábito',
     message: 'Tem certeza? O histórico de conclusões será perdido.'
@@ -131,16 +133,21 @@ export function HabitView() {
           <div className="flex-1 overflow-y-auto p-6">
             <div className="grid grid-cols-2 gap-4">
               {habits.map((habit) => (
-                <HabitCard
+                <div
                   key={habit.id}
-                  habit={habit}
-                  today={today}
-                  year={viewYear}
-                  month={viewMonth}
-                  onToggle={(date) => toggleHabit(habit.id, date)}
-                  onEdit={() => setEditingHabit(habit)}
-                  onDelete={() => promptDelete(habit.id)}
-                />
+                  ref={habit.id === searchTargetId ? searchRef : undefined}
+                  className={searchFocusClass(habit.id === searchTargetId)}
+                >
+                  <HabitCard
+                    habit={habit}
+                    today={today}
+                    year={viewYear}
+                    month={viewMonth}
+                    onToggle={(date) => toggleHabit(habit.id, date)}
+                    onEdit={() => setEditingHabit(habit)}
+                    onDelete={() => promptDelete(habit.id)}
+                  />
+                </div>
               ))}
             </div>
           </div>

@@ -56,7 +56,15 @@ const source: SearchSource = {
     }
   ],
   routines: [{ id: 'r', title: 'Caminhar', active: false, updatedAt: '2026-01-03' }],
-  files: [{ id: 'f', name: 'contrato.pdf', ext: '.pdf', createdAt: '2026-01-03' }],
+  files: [
+    {
+      id: 'f',
+      name: 'contrato.pdf',
+      ext: '.pdf',
+      createdAt: '2026-01-03',
+      content: 'Cláusula de confidencialidade do contrato'
+    }
+  ],
   financialProfiles: [{ id: 'personal', name: 'Minhas finanças', updatedAt: '2026-01-01' }],
   lists: [
     {
@@ -101,6 +109,10 @@ describe('global search documents', () => {
       title: 'Caderno'
     })
     expect(docs.find((d) => d.id === 'r')).toMatchObject({ completed: 1 })
+    expect(docs.find((d) => d.id === 'f')).toMatchObject({
+      type: 'file',
+      content: 'Cláusula de confidencialidade do contrato'
+    })
   })
 
   it('does not index monetary values or propagate a parent name to every child', () => {
@@ -218,6 +230,10 @@ describe('global search synchronization', () => {
     data.tasks = []
     syncGlobalSearchIndex(db, data)
     expect(hits('Entrega revisada')).toEqual([])
+
+    data.files = []
+    syncGlobalSearchIndex(db, data)
+    expect(hits('confidencialidade')).toEqual([])
   })
 
   it('rebuilds from restored records and discards results from the previous backup state', () => {

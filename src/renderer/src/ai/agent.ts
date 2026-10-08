@@ -11,6 +11,8 @@ export interface AIConfig {
   baseUrl: string
   apiKey: string
   model: string
+  /** Preferred form of address for replies from the Sagyou assistant. */
+  userName?: string
   /**
    * Optional heavier model for code/analysis work. When set, a run whose
    * triggering message looks like a code task (see routeModel) uses this model,
@@ -154,6 +156,13 @@ export type ApprovalRequest = (writes: PendingCall[]) => Promise<Set<string>>
  * not documentation. Don't put comments or front-matter in it.
  */
 export const SYSTEM_PROMPT = systemPromptMd.trim()
+
+export function userNamePrompt(name: string | undefined): string {
+  const normalized = name?.trim().slice(0, 80)
+  return normalized
+    ? `\n\nO usuário prefere ser chamado de ${JSON.stringify(normalized)}. Use esse nome naturalmente quando se dirigir a ele.`
+    : ''
+}
 
 // Timeout bounds, for the config UI's placeholder and limits.
 //
@@ -954,7 +963,7 @@ export async function runAgent(
   // tests/older preload — leaves the prompt exactly as it was. Reading the
   // briefing is decay-neutral (see formatMemoriesForPrompt); only buscar_memoria
   // touches memories.
-  const baseSystem = opts.systemPrompt ?? SYSTEM_PROMPT
+  const baseSystem = `${opts.systemPrompt ?? SYSTEM_PROMPT}${userNamePrompt(cfg.userName)}`
   let systemContent = baseSystem
   try {
     const brief = await window.electronAPI?.ai?.memory?.briefing?.(opts.projectId ?? null)

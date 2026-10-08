@@ -12,6 +12,9 @@ files:
 asarUnpack:
   - resources/**
   - '**/*.node'
+extraResources:
+  - from: resources/markitdown/bin
+    to: markitdown
 win:
   executableName: sagyou
 nsis:

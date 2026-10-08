@@ -1,6 +1,7 @@
 ﻿import { useKanbanStore } from '../../store/kanban'
 import type { StoredFile } from '../../types'
 import { formatDateBR } from '../../utils/dates'
+import { searchFocusClass, useSearchFocus } from '../../utils/searchFocus'
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -92,15 +93,22 @@ function FileRow({
   onOpenInBrowser,
   onDownload,
   onDelete,
+  highlighted,
+  searchRef
 }: {
   file: StoredFile
   onOpen: () => void
   onOpenInBrowser: () => void
   onDownload: () => void
   onDelete: () => void
+  highlighted?: boolean
+  searchRef?: React.RefObject<HTMLDivElement | null>
 }) {
   return (
-    <div className="group flex items-center gap-3 px-4 py-3 rounded-lg bg-[#232323] border border-[#3b3b3b] hover:border-[#555555] transition-colors">
+    <div
+      ref={searchRef}
+      className={`group flex items-center gap-3 px-4 py-3 rounded-lg bg-[#232323] border border-[#3b3b3b] hover:border-[#555555] transition-colors ${searchFocusClass(!!highlighted)}`}
+    >
       <div className="shrink-0">
         <FileIcon ext={file.ext} />
       </div>
@@ -158,10 +166,17 @@ function FileRow({
   )
 }
 
-export function FilesView({ activeProjectId }: { activeProjectId: string | null }) {
+export function FilesView({
+  activeProjectId,
+  searchTargetId
+}: {
+  activeProjectId: string | null
+  searchTargetId?: string | null
+}) {
   const files = useKanbanStore((s) => s.files)
   const addFiles = useKanbanStore((s) => s.addFiles)
   const removeFile = useKanbanStore((s) => s.removeFile)
+  const searchRef = useSearchFocus<HTMLDivElement>(!!searchTargetId)
 
   const handleUpload = async () => {
     const results = await window.electronAPI.files.upload()
@@ -243,6 +258,8 @@ export function FilesView({ activeProjectId }: { activeProjectId: string | null 
               <FileRow
                 key={file.id}
                 file={file}
+                highlighted={file.id === searchTargetId}
+                searchRef={file.id === searchTargetId ? searchRef : undefined}
                 onOpen={() => handleOpen(file)}
                 onOpenInBrowser={() => handleOpenInBrowser(file)}
                 onDownload={() => handleDownload(file)}

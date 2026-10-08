@@ -6,6 +6,7 @@ import { cardTextColor } from '../utils/cardColor'
 
 interface Props {
   note: StickyNote
+  highlighted?: boolean
   scale: number
   tasks: Task[]
   onUpdate: (
@@ -34,6 +35,7 @@ interface Props {
 
 export function StickyNoteCard({
   note,
+  highlighted,
   scale,
   tasks,
   onUpdate,
@@ -191,7 +193,7 @@ export function StickyNoteCard({
       <div
         data-note="true"
         data-note-id={note.id}
-        className="group absolute select-none"
+        className={`group absolute select-none ${highlighted ? 'z-20 ring-4 ring-[#a080f0] rounded-lg' : ''}`}
         style={{ left: localPos.x, top: localPos.y, width: localWidth }}
         onDoubleClick={(e) => e.stopPropagation()}
       >
@@ -264,7 +266,7 @@ export function StickyNoteCard({
     <div
       data-note="true"
       data-note-id={note.id}
-      className="group absolute select-none"
+      className={`group absolute select-none ${highlighted ? 'z-20 ring-4 ring-[#a080f0] rounded-lg' : ''}`}
       style={{ left: localPos.x, top: localPos.y, width: note.width }}
       onDoubleClick={(e) => e.stopPropagation()}
     >

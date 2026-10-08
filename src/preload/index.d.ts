@@ -13,6 +13,8 @@ interface AIConfig {
   baseUrl: string
   apiKey: string
   model: string
+  /** Preferred form of address for replies from the assistant. */
+  userName?: string
   /** Optional heavier model for code/analysis tasks; absent = one model for all. */
   modelComplex?: string
   /** Separate provider for the native code agent; empty fields fall back to the chat config. */
@@ -299,6 +301,13 @@ declare global {
         close: () => Promise<void>
         isMaximized: () => Promise<boolean>
         onMaximizedChange: (cb: (isMax: boolean) => void) => () => void
+      }
+      security: {
+        status: () => Promise<{ enabled: boolean }>
+        unlock: (password: string) => Promise<{ success: boolean; error?: string }>
+        enable: (password: string) => Promise<{ success: boolean; error?: string }>
+        change: (current: string, next: string) => Promise<{ success: boolean; error?: string }>
+        disable: (current: string) => Promise<{ success: boolean; error?: string }>
       }
       store: {
         load: () => Promise<{ projects: unknown[]; tasks: unknown[] }>

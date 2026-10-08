@@ -52,13 +52,15 @@ const COMPOSER_MAX_PX = 200
 export function AIView({
   projects,
   prefill,
-  onPrefillConsumed
+  onPrefillConsumed,
+  searchConversationId
 }: {
   projects: Project[]
   /** Composer text handed in from another view (e.g. a board task). */
   prefill?: string | null
   /** Called once `prefill` has been taken, so it can't be applied twice. */
   onPrefillConsumed?: () => void
+  searchConversationId?: string
 }) {
   const activeProjectId = useKanbanStore((s) => s.activeProjectId)
 
@@ -328,7 +330,8 @@ export function AIView({
         })
         // Entering the view puts the user back where they were, at the end of
         // the chat they were reading — not in a blank one.
-        if (stored.lastConversationId) void handleLoadConversation(stored.lastConversationId)
+        const conversationToOpen = searchConversationId ?? stored.lastConversationId
+        if (conversationToOpen) void handleLoadConversation(conversationToOpen)
       })
       .finally(() => {
         if (!cancelled) configLoaded.current = true
@@ -336,7 +339,7 @@ export function AIView({
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [searchConversationId])
 
   // Persist config whenever it changes (after the initial load).
   useEffect(() => {

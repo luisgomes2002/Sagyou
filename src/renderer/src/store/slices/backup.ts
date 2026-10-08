@@ -19,9 +19,10 @@ import type {
   AIConversation,
   AiMemory,
   Priority,
-  ActiveTimer
+  ActiveTimer,
+  FeatureId
 } from '../../types'
-import { DEFAULT_FINANCIAL_PROFILE_ID } from '../../types'
+import { DEFAULT_FINANCIAL_PROFILE_ID, normalizeFeaturePreferences } from '../../types'
 import {
   normalizeFinancialProfiles,
   normalizeFinancialTable,
@@ -67,6 +68,7 @@ export function createBackupSlice(storage: StorageDep): StateCreator<
     lists: FinancialTable[]
     financialProfiles: FinancialProfile[]
     activeFinancialProfileId: string
+    featurePreferences?: FeatureId[]
     files: StoredFile[]
     timeBlocks: TimeBlock[]
     routines: Routine[]
@@ -89,7 +91,8 @@ export function createBackupSlice(storage: StorageDep): StateCreator<
         habits,
         lists,
         financialProfiles,
-        activeFinancialProfileId
+        activeFinancialProfileId,
+        featurePreferences
       } = get()
       // Chat history isn't part of the store — read it straight from storage.
       // A failure here shouldn't cost the user the rest of the backup.
@@ -122,6 +125,7 @@ export function createBackupSlice(storage: StorageDep): StateCreator<
         lists,
         financialProfiles,
         activeFinancialProfileId,
+        featurePreferences,
         conversations,
         memories,
         // Attachment metadata (new in v5). The physical bytes (fileBlobs) and the
@@ -218,6 +222,11 @@ export function createBackupSlice(storage: StorageDep): StateCreator<
         ? backup.timeBlocks
         : get().timeBlocks
       const routines: Routine[] = Array.isArray(backup.routines) ? backup.routines : get().routines
+      // Older backups do not have this preference, so don't reset a choice the
+      // user has already made on this machine.
+      const featurePreferences = Array.isArray(backup.featurePreferences)
+        ? (normalizeFeaturePreferences(backup.featurePreferences) ?? [])
+        : get().featurePreferences
       if (!(await storage.commitBackupBlobs()).success) return false
       set({
         projects,
@@ -233,6 +242,7 @@ export function createBackupSlice(storage: StorageDep): StateCreator<
         files,
         timeBlocks,
         routines,
+        featurePreferences,
         activeProjectId,
         activeTimers: []
       })

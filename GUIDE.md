@@ -149,6 +149,19 @@ por um handler IPC no main, exposto pelo preload. Capacidade nova = handler em
 O índice global FTS5 é derivado: salvamentos sincronizam suas entradas e a
 importação de backup o reconstrói após restaurar store, conversas e memórias.
 Nunca use o índice como fonte dos registros originais.
+O texto extraído de arquivos suportados mora em `file_search_content`, também
+derivado e ligado por `file_id` sem FK: `persistAll` remove e reinsere `files`,
+e um cascade apagaria o cache. Upload e reconstrução usam `document-parser.ts`;
+excluir o arquivo remove o texto e a entrada FTS antes do autosave do renderer.
+O MarkItDown roda como executável PyInstaller incluído no app, nunca como uma
+instalação Python do usuário. `npm run prepare:markitdown` o gera no host da
+plataforma de release, e o `electron-builder` copia somente esse runtime para
+os recursos do app. Não troque por `python` do PATH nem tente gerar Windows ou
+macOS em um host Linux.
+O bloqueio opcional por senha guarda somente um derivado com salt em
+`password-security.json` (permissão 0600), fora do SQLite e dos backups. A tela
+de desbloqueio vem antes de `loadData`; ativar, alterar ou desativar exige o
+fluxo IPC `security:*` — nunca persista senha ou hash junto dos dados do usuário.
 A consulta `search:global` roda no main, usa o perfil financeiro ativo e devolve
 trechos limitados com total; título, tags e conteúdo têm pesos distintos.
 O acesso direto `search:global:get` por tipo e ID aplica o mesmo filtro: registros
@@ -226,7 +239,9 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    o valor ao editar; quantidade (`qty`) usa o formato numérico local padrão.
 3. **Nunca remova nem renomeie campos** de tipos persistidos sem migração ou
    fallback. Campo novo opcional é seguro; mudar a forma de um array ou objeto
-   existente, não.
+   existente, não. Preferências de recursos da sidebar seguem a mesma regra:
+   `featurePreferences` ausente significa primeira configuração (ou backup antigo),
+   e não pode ocultar recursos/dados silenciosamente.
 4. **Avise explicitamente** ao propor algo que possa corromper dados no load
    (trocar `string` por `string[]`, mudar esquema de IDs), com:
    `⚠️ Breaking schema change — existing data may be affected.`

@@ -92,7 +92,15 @@ export interface SearchSource {
     active: boolean
     updatedAt: string
   }[]
-  files: { id: string; name: string; ext: string; projectId?: string; createdAt: string }[]
+  files: {
+    id: string
+    name: string
+    ext: string
+    projectId?: string
+    createdAt: string
+    /** Derived text from the document parser; never part of the persisted file metadata. */
+    content?: string
+  }[]
   financialProfiles?: { id: string; name: string; updatedAt: string }[]
   lists: {
     id: string
@@ -219,7 +227,11 @@ export function buildSearchDocuments(data: SearchSource): SearchDocument[] {
       updatedAt: r.updatedAt
     })
   for (const f of data.files)
-    add('file', f.id, f.name, '', { ...project(f.projectId), state: f.ext, updatedAt: f.createdAt })
+    add('file', f.id, f.name, f.content ?? '', {
+      ...project(f.projectId),
+      state: f.ext,
+      updatedAt: f.createdAt
+    })
   for (const p of data.financialProfiles ?? [])
     add('financial_profile', p.id, p.name, '', { profileId: p.id, updatedAt: p.updatedAt })
   for (const l of data.lists) {
