@@ -34,6 +34,8 @@ import { TaskViewModal } from './components/modals/TaskViewModal'
 import { buildTaskPrompt } from './utils/taskPrompt'
 import { ToastContainer, type ToastMessage } from './components/layout/Toast'
 import { HomeView } from './components/views/HomeView'
+import { GuideView } from './components/views/GuideView'
+import type { GlobalSearchHit } from '../../main/global-search-query'
 
 interface TaskModalState {
   open: boolean
@@ -160,8 +162,11 @@ export default function App() {
     | 'agents'
     | 'planejamento'
     | 'graph'
+    | 'guide'
   >('home')
   const [searchOpen, setSearchOpen] = useState(false)
+  const [financialSearchTarget, setFinancialSearchTarget] = useState<GlobalSearchHit | null>(null)
+  const [financialSearchSerial, setFinancialSearchSerial] = useState(0)
   const [excelExportOpen, setExcelExportOpen] = useState(false)
   // session-only: maps projectId → active linkIds (not persisted — each machine picks its own)
   const [activeLinkIds, setActiveLinkIds] = useState<Record<string, string[]>>({})
@@ -347,10 +352,58 @@ export default function App() {
     setViewTask(task)
   }
 
-  const handleSearchSelectNote = (note: { projectId: string }) => {
-    setActiveProject(note.projectId)
-    setActiveView('canvas')
-    setSprintFilter(null)
+  const handleSearchSelect = (hit: GlobalSearchHit) => {
+    switch (hit.type) {
+      case 'project':
+        setActiveProject(hit.id)
+        setActiveView('board')
+        setSprintFilter(null)
+        break
+      case 'task': {
+        const task = tasks.find((item) => item.id === hit.id)
+        if (task) handleSearchSelectTask(task)
+        break
+      }
+      case 'note':
+        if (hit.projectId) {
+          setActiveProject(hit.projectId)
+          setActiveView('canvas')
+          setSprintFilter(null)
+        }
+        break
+      case 'goal':
+        setActiveView('goals')
+        break
+      case 'habit':
+        setActiveView('habits')
+        break
+      case 'time_block':
+      case 'routine':
+        setActiveView('planejamento')
+        break
+      case 'file':
+        setActiveProject(hit.projectId)
+        setActiveView('files')
+        setSprintFilter(null)
+        break
+      case 'financial_profile':
+      case 'financial_table':
+      case 'shopping_item':
+      case 'transaction':
+      case 'transaction_detail':
+      case 'financial_goal':
+      case 'yield_source':
+        setFinancialSearchTarget(hit)
+        setFinancialSearchSerial((serial) => serial + 1)
+        setActiveView('financial')
+        break
+      case 'conversation':
+        setActiveView('ai')
+        break
+      case 'memory':
+        setActiveView('memory')
+        break
+    }
   }
   const handleAddTask = (columnId: string) => setTaskModal({ open: true, columnId })
   const handleEditTask = (task: Task) => setTaskModal({ open: true, task })
@@ -524,7 +577,12 @@ export default function App() {
           ) : activeView === 'planejamento' ? (
             <PlanView />
           ) : activeView === 'financial' ? (
-            <FinancialView />
+            <FinancialView
+              key={financialSearchSerial}
+              searchTarget={financialSearchTarget}
+            />
+          ) : activeView === 'guide' ? (
+            <GuideView />
           ) : activeView === 'ai' ? (
             <AIView
               projects={projects}
@@ -769,8 +827,7 @@ export default function App() {
       <SearchModal
         open={searchOpen}
         onClose={() => setSearchOpen(false)}
-        onSelectTask={handleSearchSelectTask}
-        onSelectNote={handleSearchSelectNote}
+        onSelect={handleSearchSelect}
       />
 
       {excelExportOpen && (

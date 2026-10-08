@@ -13,20 +13,20 @@ import type {
   Habit,
   FinancialTable,
   FinancialProfile,
-  FinancialTransactionDetail,
   StoredFile,
   TimeBlock,
   Routine,
   AIConversation,
   AiMemory,
   Priority,
-  ActiveTimer,
-  Currency
+  ActiveTimer
 } from '../../types'
 import { DEFAULT_FINANCIAL_PROFILE_ID } from '../../types'
-import { D, moneyStr } from '../../utils/money'
-import { preserveLegacyFinancialMetadata } from '../../utils/financialLegacy'
-import { migrateYieldSummaryDates } from '../../utils/yieldSummary'
+import {
+  normalizeFinancialProfiles,
+  normalizeFinancialTable,
+  normalizeProject
+} from '../normalization'
 
 interface StorageDep {
   exportBackup: (backup: Backup) => Promise<{ success: boolean }>
@@ -43,85 +43,7 @@ interface StorageDep {
   saveConversations: (list: AIConversation[]) => Promise<void>
   loadMemories: () => Promise<AiMemory[]>
   replaceMemories: (list: AiMemory[]) => Promise<void>
-}
-
-// --- Code path selection -----------------------------------------------------
-// `activeCodePathIds` is the source of truth; the legacy singular
-// `activeCodePathId` is kept in sync with its first entry so older app versions
-// and old backups keep reading the selection. Always go through these two.
-
-/** The selected code path ids, migrating legacy single-selection data. */
-function activeIds(p: Project): string[] {
-  if (Array.isArray(p.activeCodePathIds)) return p.activeCodePathIds
-  return p.activeCodePathId ? [p.activeCodePathId] : []
-}
-
-/** Both selection fields for a spread, kept consistent. */
-function withActive(ids: string[]): Pick<Project, 'activeCodePathIds' | 'activeCodePathId'> {
-  return { activeCodePathIds: ids, activeCodePathId: ids[0] }
-}
-
-// Normalize a persisted project: migrate the code path selection to the array
-// form and drop ids whose path no longer exists (a stale id would silently
-// select nothing).
-function normalizeProject(p: Project, i: number): Project {
-  const known = new Set((p.codePaths ?? []).map((c) => c.id))
-  const ids = activeIds(p).filter((id) => known.has(id))
-  return { ...p, order: p.order ?? i, ...withActive(ids) }
-}
-
-// Normalize a persisted financial table: fill missing arrays, default currency,
-// and migrate monetary fields (amount, price, targetAmount) from number → string.
-// Keep in sync with the identical normalizeList in src/renderer/src/store/kanban.ts.
-function normalizeList(l: FinancialTable): FinancialTable {
-  const table = migrateYieldSummaryDates(preserveLegacyFinancialMetadata(l))
-  return {
-    ...table,
-    profileId: l.profileId || DEFAULT_FINANCIAL_PROFILE_ID,
-    currency: (l.currency || 'BRL') as Currency,
-    items: (l.items ?? []).map((i) => ({
-      ...i,
-      price: i.price === null || i.price === undefined ? undefined : moneyStr(i.price)
-    })),
-    transactions: (table.transactions ?? []).map((t) => {
-      const amount = moneyStr(t.amount)
-      return { ...t, amount, details: normalizeTransactionDetails(t.details, amount) }
-    }),
-    actualBalance: l.actualBalance == null ? undefined : moneyStr(l.actualBalance),
-    goals: (l.goals ?? []).map((g) => ({ ...g, targetAmount: moneyStr(g.targetAmount) })),
-    yieldSources: (l.yieldSources ?? []).map((s) => ({ ...s })),
-    yieldEntries: (l.yieldEntries ?? []).map((e) => ({ ...e, amount: moneyStr(e.amount) }))
-  }
-}
-
-function normalizeTransactionDetails(value: unknown, total: string): FinancialTransactionDetail[] {
-  if (!Array.isArray(value)) return []
-  let remaining = D(total)
-  const details: FinancialTransactionDetail[] = []
-  for (const detail of value) {
-    if (!detail || typeof detail !== 'object' || remaining.lessThanOrEqualTo(0)) continue
-    const item = detail as Partial<FinancialTransactionDetail>
-    if (typeof item.id !== 'string' || typeof item.description !== 'string') continue
-    const requested = D(item.amount)
-    if (requested.lessThanOrEqualTo(0)) continue
-    const amount = requested.lessThan(remaining) ? requested : remaining
-    details.push({
-      id: item.id,
-      description: item.description,
-      amount: amount.toString(),
-      ...(typeof item.category === 'string' && item.category.trim()
-        ? { category: item.category.trim() }
-        : {}),
-      ...(typeof item.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(item.date)
-        ? { date: item.date }
-        : {}),
-      ...(typeof item.linkedTransactionId === 'string' && item.linkedTransactionId
-        ? { linkedTransactionId: item.linkedTransactionId }
-        : {})
-    })
-    remaining = remaining.minus(amount)
-  }
-  return details
+  rebuildSearchIndex: () => Promise<void>
 }
 
 export interface BackupSlice {
@@ -270,46 +192,21 @@ export function createBackupSlice(storage: StorageDep): StateCreator<
         return { ...h, completions: [...new Set([...local.completions, ...h.completions])] }
       })
 
-      const financialProfiles: FinancialProfile[] =
-        Array.isArray(backup.financialProfiles) && backup.financialProfiles.length > 0
-          ? backup.financialProfiles.filter(
-              (profile): profile is FinancialProfile =>
-                !!profile &&
-                typeof profile.id === 'string' &&
-                typeof profile.name === 'string' &&
-                typeof profile.createdAt === 'string' &&
-                typeof profile.updatedAt === 'string'
-            )
-          : [
-              {
-                id: DEFAULT_FINANCIAL_PROFILE_ID,
-                name: 'Minhas finanças',
-                createdAt: '1970-01-01T00:00:00.000Z',
-                updatedAt: '1970-01-01T00:00:00.000Z'
-              }
-            ]
-      const safeFinancialProfiles = financialProfiles.length
-        ? financialProfiles
-        : [
-            {
-              id: DEFAULT_FINANCIAL_PROFILE_ID,
-              name: 'Minhas finanças',
-              createdAt: '1970-01-01T00:00:00.000Z',
-              updatedAt: '1970-01-01T00:00:00.000Z'
-            }
-          ]
+      const safeFinancialProfiles = normalizeFinancialProfiles(backup.financialProfiles)
       const financialProfileIds = new Set(safeFinancialProfiles.map((profile) => profile.id))
       const activeFinancialProfileId =
         typeof backup.activeFinancialProfileId === 'string' &&
         financialProfileIds.has(backup.activeFinancialProfileId)
           ? backup.activeFinancialProfileId
           : DEFAULT_FINANCIAL_PROFILE_ID
-      const lists: FinancialTable[] = (backup.lists || []).map(normalizeList).map((list) => ({
-        ...list,
-        profileId: financialProfileIds.has(list.profileId ?? '')
-          ? list.profileId
-          : DEFAULT_FINANCIAL_PROFILE_ID
-      }))
+      const lists: FinancialTable[] = (backup.lists || [])
+        .map(normalizeFinancialTable)
+        .map((list) => ({
+          ...list,
+          profileId: financialProfileIds.has(list.profileId ?? '')
+            ? list.profileId
+            : DEFAULT_FINANCIAL_PROFILE_ID
+        }))
 
       const activeProjectId = projects[0]?.id ?? null
 
@@ -360,6 +257,9 @@ export function createBackupSlice(storage: StorageDep): StateCreator<
           // Memory is secondary — a failure here doesn't undo the import above.
         }
       }
+      // The backup spans three sources (store, conversation JSON, memory). Rebuild
+      // after all of them have settled so no row from the previous state survives.
+      await storage.rebuildSearchIndex()
       return true
     },
 

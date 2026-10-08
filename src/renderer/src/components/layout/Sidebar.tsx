@@ -19,6 +19,7 @@ type ActiveView =
   | 'agents'
   | 'planejamento'
   | 'graph'
+  | 'guide'
 
 interface Props {
   projects: Project[]
@@ -150,7 +151,15 @@ export function Sidebar({
 
   const isActive = (view: ActiveView) => activeView === view
 
-  const SectionHeader = ({ label, sectionKey }: { label: string; sectionKey: string }) => {
+  const SectionHeader = ({
+    label,
+    sectionKey,
+    badge
+  }: {
+    label: string
+    sectionKey: string
+    badge?: string
+  }) => {
     const collapsed = isCollapsed(sectionKey)
     return (
       <button
@@ -169,6 +178,11 @@ export function Sidebar({
           <polyline points="9 18 15 12 9 6" />
         </svg>
         {label}
+        {badge && (
+          <span className="ml-1 rounded border border-[#4a4a4a] px-1 py-px text-[9px] font-medium normal-case tracking-normal text-[#999999]">
+            {badge}
+          </span>
+        )}
       </button>
     )
   }
@@ -315,6 +329,18 @@ export function Sidebar({
       )
     }
   ]
+
+  const guideItem: NavItem = {
+    view: 'guide',
+    label: 'Como funciona',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <circle cx="12" cy="12" r="10" />
+        <path d="M9.5 9a2.5 2.5 0 1 1 4.2 1.8C12.5 11.8 12 12.2 12 14" />
+        <circle cx="12" cy="17.5" r=".75" fill="currentColor" stroke="none" />
+      </svg>
+    )
+  }
 
   const aiItems: NavItem[] = [
     {
@@ -587,7 +613,7 @@ export function Sidebar({
         )}
 
         {/* IA */}
-        <SectionHeader label="IA" sectionKey="ai" />
+        <SectionHeader label="IA" sectionKey="ai" badge="Em teste" />
         {!isCollapsed('ai') && (
           <div className="px-2 pb-1 space-y-0.5">
             {aiItems.map(renderNavItem)}
@@ -924,6 +950,7 @@ export function Sidebar({
 
       {/* new project button */}
       <div className="p-3 border-t border-[#3b3b3b]">
+        <div className="mb-2">{renderNavItem(guideItem)}</div>
         <button
           onClick={onNewProject}
           className="w-full flex items-center justify-center gap-2 py-2 rounded bg-[#2a2a2a] border border-[#3b3b3b] text-[13px] text-[#d4d4d4] hover:bg-[#3b3b3b] transition-colors font-normal"

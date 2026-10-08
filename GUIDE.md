@@ -95,8 +95,9 @@ src/
     handlers/    # handlers IPC por domínio (extraídos de index.ts)
       window.ts  # window:minimize/maximize/close/is-maximized
       files.ts   # files:*, excel:export, ai:images:*, task:images:*
-      backup.ts  # backup:export/import, ai:import + coletores de blob
+      backup.ts, memory.ts, code-files.ts, conversations.ts # IPC por domínio
     store.ts     # persistência SQLite (kanban.db)
+    global-search-index.ts # índice FTS5 derivado; reconstruível dos registros e conversas
     memory.ts    # memória durável da IA (validação, decay, sanitização de secrets)
     code-agent.ts # agente de código nativo (loop de tool-calling)
     ai-jail.ts   # sandbox obrigatório para comandos do agente de código
@@ -110,7 +111,8 @@ src/
   renderer/src/
     App.tsx      # troca de views; dono do estado dos modais
     store/
-      kanban.ts  # compõe os slices abaixo; core (loadData, _persist, _flushPersist)
+      kanban.ts  # compõe os slices; core (loadData, _persist, _flushPersist)
+      normalization.ts # normalização compartilhada por load, backup e projetos
       slices/    # slices Zustand por domínio (extraídos de kanban.ts)
         projects.ts  # projetos + colunas + codePaths
         tasks.ts     # tasks + sprints + timers
@@ -143,6 +145,14 @@ src/
 Uma regra acima de todas: **o renderer nunca toca disco nem rede**. Tudo passa
 por um handler IPC no main, exposto pelo preload. Capacidade nova = handler em
 `main/index.ts` + método em `preload/index.ts` + tipo em `preload/index.d.ts`.
+
+O índice global FTS5 é derivado: salvamentos sincronizam suas entradas e a
+importação de backup o reconstrói após restaurar store, conversas e memórias.
+Nunca use o índice como fonte dos registros originais.
+A consulta `search:global` roda no main, usa o perfil financeiro ativo e devolve
+trechos limitados com total; título, tags e conteúdo têm pesos distintos.
+O acesso direto `search:global:get` por tipo e ID aplica o mesmo filtro: registros
+financeiros sem o ID do perfil ativo não podem ser devolvidos.
 
 ## Convenções
 

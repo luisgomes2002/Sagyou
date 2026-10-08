@@ -2,22 +2,17 @@ import type { StateCreator } from 'zustand'
 import { v4 as uuidv4 } from 'uuid'
 import type { Project, Column, Tombstone } from '../../types'
 import { DEFAULT_COLUMN_NAMES } from '../../types'
-
-function activeIds(p: Project): string[] {
-  if (Array.isArray(p.activeCodePathIds)) return p.activeCodePathIds
-  return p.activeCodePathId ? [p.activeCodePathId] : []
-}
-
-function withActive(ids: string[]): Pick<Project, 'activeCodePathIds' | 'activeCodePathId'> {
-  return { activeCodePathIds: ids, activeCodePathId: ids[0] }
-}
+import { activeCodePathIds, withActiveCodePaths } from '../normalization'
 
 export interface ProjectsSlice {
   projects: Project[]
   activeProjectId: string | null
   setActiveProject: (id: string | null) => void
   createProject: (name: string, description?: string, color?: string) => string
-  updateProject: (id: string, updates: Partial<Pick<Project, 'name' | 'description' | 'color' | 'links' | 'archivedAt'>>) => void
+  updateProject: (
+    id: string,
+    updates: Partial<Pick<Project, 'name' | 'description' | 'color' | 'links' | 'archivedAt'>>
+  ) => void
   moveProject: (id: string, direction: 'up' | 'down') => void
   deleteProject: (id: string) => void
   archiveProject: (id: string) => void
@@ -27,7 +22,11 @@ export interface ProjectsSlice {
   setActiveCodePath: (projectId: string, codePathId: string | null) => void
   toggleCodePath: (projectId: string, codePathId: string) => void
   createColumn: (projectId: string, name: string, color?: string) => void
-  updateColumn: (projectId: string, columnId: string, updates: Partial<Pick<Column, 'name' | 'color'>>) => void
+  updateColumn: (
+    projectId: string,
+    columnId: string,
+    updates: Partial<Pick<Column, 'name' | 'color'>>
+  ) => void
   deleteColumn: (projectId: string, columnId: string) => void
   reorderColumns: (projectId: string, orderedIds: string[]) => void
 }
@@ -36,7 +35,13 @@ export const createProjectsSlice: StateCreator<
   ProjectsSlice & {
     _persist: () => void
     _flushPersist: () => Promise<void>
-    tasks: { id: string; projectId: string; columnId: string; completedAt?: string; images?: { id: string; ext: string }[] }[]
+    tasks: {
+      id: string
+      projectId: string
+      columnId: string
+      completedAt?: string
+      images?: { id: string; ext: string }[]
+    }[]
     tombstones: Tombstone[]
   },
   [],
@@ -52,9 +57,20 @@ export const createProjectsSlice: StateCreator<
     const now = new Date().toISOString()
     const id = uuidv4()
     const columns: Column[] = DEFAULT_COLUMN_NAMES.map((colName, i) => ({
-      id: uuidv4(), name: colName, order: i
+      id: uuidv4(),
+      name: colName,
+      order: i
     }))
-    const project: Project = { id, name, description, color, columns, order: undefined, createdAt: now, updatedAt: now }
+    const project: Project = {
+      id,
+      name,
+      description,
+      color,
+      columns,
+      order: undefined,
+      createdAt: now,
+      updatedAt: now
+    }
     set((s) => {
       const maxOrder = s.projects.reduce((m, p) => Math.max(m, p.order ?? 0), -1)
       return { projects: [...s.projects, { ...project, order: maxOrder + 1 }], activeProjectId: id }
@@ -78,11 +94,11 @@ export const createProjectsSlice: StateCreator<
       projects: s.projects.map((p) => {
         if (p.id !== projectId) return p
         const codePaths = [...(p.codePaths ?? []), { id, path, label }]
-        const active = activeIds(p)
+        const active = activeCodePathIds(p)
         return {
           ...p,
           codePaths,
-          ...withActive(active.length ? active : [id]),
+          ...withActiveCodePaths(active.length ? active : [id]),
           updatedAt: new Date().toISOString()
         }
       })
@@ -96,8 +112,13 @@ export const createProjectsSlice: StateCreator<
       projects: s.projects.map((p) => {
         if (p.id !== projectId) return p
         const codePaths = (p.codePaths ?? []).filter((c) => c.id !== codePathId)
-        const active = activeIds(p).filter((cid) => cid !== codePathId)
-        return { ...p, codePaths, ...withActive(active), updatedAt: new Date().toISOString() }
+        const active = activeCodePathIds(p).filter((cid) => cid !== codePathId)
+        return {
+          ...p,
+          codePaths,
+          ...withActiveCodePaths(active),
+          updatedAt: new Date().toISOString()
+        }
       })
     }))
     get()._persist()
@@ -107,7 +128,11 @@ export const createProjectsSlice: StateCreator<
     set((s) => ({
       projects: s.projects.map((p) =>
         p.id === projectId
-          ? { ...p, ...withActive(codePathId ? [codePathId] : []), updatedAt: new Date().toISOString() }
+          ? {
+              ...p,
+              ...withActiveCodePaths(codePathId ? [codePathId] : []),
+              updatedAt: new Date().toISOString()
+            }
           : p
       )
     }))
@@ -118,11 +143,11 @@ export const createProjectsSlice: StateCreator<
     set((s) => ({
       projects: s.projects.map((p) => {
         if (p.id !== projectId) return p
-        const active = activeIds(p)
+        const active = activeCodePathIds(p)
         const next = active.includes(codePathId)
           ? active.filter((cid) => cid !== codePathId)
           : [...active, codePathId]
-        return { ...p, ...withActive(next), updatedAt: new Date().toISOString() }
+        return { ...p, ...withActiveCodePaths(next), updatedAt: new Date().toISOString() }
       })
     }))
     get()._persist()
@@ -150,7 +175,9 @@ export const createProjectsSlice: StateCreator<
   deleteProject: (id) => {
     const now = new Date().toISOString()
     const remaining = get().projects.filter((p) => p.id !== id)
-    const deletedTaskIds = get().tasks.filter((t) => t.projectId === id).map((t) => t.id)
+    const deletedTaskIds = get()
+      .tasks.filter((t) => t.projectId === id)
+      .map((t) => t.id)
     const newTombstones: Tombstone[] = [
       { id, type: 'project', deletedAt: now },
       ...deletedTaskIds.map((tid) => ({ id: tid, type: 'task' as const, deletedAt: now }))
@@ -170,9 +197,10 @@ export const createProjectsSlice: StateCreator<
       projects: s.projects.map((p) =>
         p.id === id ? { ...p, archivedAt: now, updatedAt: now } : p
       ),
-      activeProjectId: s.activeProjectId === id
-        ? (s.projects.find((p) => p.id !== id && !p.archivedAt)?.id ?? null)
-        : s.activeProjectId
+      activeProjectId:
+        s.activeProjectId === id
+          ? (s.projects.find((p) => p.id !== id && !p.archivedAt)?.id ?? null)
+          : s.activeProjectId
     }))
     get()._persist()
   },
@@ -213,8 +241,8 @@ export const createProjectsSlice: StateCreator<
 
   deleteColumn: (projectId, columnId) => {
     const now = new Date().toISOString()
-    const deletedTaskIds = get().tasks
-      .filter((t) => t.projectId === projectId && t.columnId === columnId)
+    const deletedTaskIds = get()
+      .tasks.filter((t) => t.projectId === projectId && t.columnId === columnId)
       .map((t) => t.id)
     set((s) => ({
       projects: s.projects.map((p) => {
