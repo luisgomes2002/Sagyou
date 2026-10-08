@@ -51,7 +51,7 @@
 | **Grafo**                 | Mapa interativo de projetos, inclusive arquivados, tarefas, notas, metas e hábitos; blocos de texto do canvas não aparecem no grafo                                                                                                                                                                                  |
 | **Upcoming**              | Tarefas com data de vencimento próxima                                                                                                                                                                                                                                                                               |
 | **Relatórios**            | Visão geral de produtividade                                                                                                                                                                                                                                                                                         |
-| **Busca**                 | Pesquisa rápida de tarefas                                                                                                                                                                                                                                                                                           |
+| **Busca**                 | Busca global (Ctrl+K) por área, tipo e projeto, com trechos e resultados adicionais                                                                                                                                                                                                                                                                                           |
 | **Arquivos**              | Anexos por projeto, guardados localmente                                                                                                                                                                                                                                                                             |
 | **Assistente de IA**      | Chat com acesso aos seus dados via ferramentas — funciona com qualquer provedor compatível com a API da OpenAI (local ou hospedado). Suporte a imagens (arraste screenshots) e documentos (PDF, DOCX, XLSX, CSV, etc.) — o texto é extraído e enviado inline. Ações que alteram dados pedem aprovação antes de rodar |
 | **Agente de código**      | Aponte um projeto para um diretório e peça alterações no código — edita arquivos e roda comandos com aprovação por ação. Sandbox obrigatório (ai-jail) confina comandos ao diretório do projeto                                                                                                                      |
@@ -205,6 +205,8 @@ npm run typecheck # verificar tipos
 npm run lint      # ESLint
 ```
 
+Para mudanças na persistência, consulte `GUIDE.md`: a normalização compartilhada da carga e da importação fica em `src/renderer/src/store/normalization.ts`.
+
 ## Build
 
 ```bash
@@ -242,6 +244,8 @@ Tudo fica na sua máquina, no diretório de dados do app (`userData`):
 | `skills/`               | skills customizadas em `.md` — system prompts sob demanda via `/skill-name`                                              |
 
 O assistente de IA é opcional e desligado até você configurar um provedor. Se você apontar para um provedor hospedado, os dados enviados no chat saem da máquina — use um modelo local se preferir manter tudo offline.
+
+O `kanban.db` também guarda um índice local de busca FTS5. Ele é derivado dos registros e do histórico de conversas e pode ser reconstruído sem alterar os dados originais.
 
 ---
 

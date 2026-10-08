@@ -15,6 +15,7 @@ vi.mock('../../services/ElectronStorage', () => {
       this.saveConversations = vi.fn().mockResolvedValue(undefined)
       this.loadMemories = vi.fn().mockResolvedValue([])
       this.replaceMemories = vi.fn().mockResolvedValue(undefined)
+      this.rebuildSearchIndex = vi.fn().mockResolvedValue(undefined)
     })
   }
 })
@@ -25,6 +26,8 @@ import { DEFAULT_COLUMN_NAMES } from '../../types'
 
 function getStorageMock() {
   return vi.mocked(ElectronStorage).mock.instances[0] as unknown as {
+    load: ReturnType<typeof vi.fn>
+    save: ReturnType<typeof vi.fn>
     importBackup: ReturnType<typeof vi.fn>
     exportBackup: ReturnType<typeof vi.fn>
     autoSaveBackup: ReturnType<typeof vi.fn>
@@ -33,6 +36,7 @@ function getStorageMock() {
     saveConversations: ReturnType<typeof vi.fn>
     loadMemories: ReturnType<typeof vi.fn>
     replaceMemories: ReturnType<typeof vi.fn>
+    rebuildSearchIndex: ReturnType<typeof vi.fn>
   }
 }
 
@@ -798,6 +802,76 @@ describe('backups carry AI chat history', () => {
 // ── importBackup ──────────────────────────────────────────────────────────────
 
 describe('importBackup', () => {
+  it('rebuilds search after the restored store, conversations and memories are saved', async () => {
+    resetStore()
+    const storage = getStorageMock()
+    storage.rebuildSearchIndex.mockClear()
+    storage.importBackup.mockResolvedValueOnce({
+      success: true,
+      data: {
+        version: 7,
+        exportedAt: new Date().toISOString(),
+        projects: [],
+        tasks: [],
+        sprints: [],
+        tombstones: [],
+        notes: [],
+        goals: [],
+        habits: [],
+        lists: [],
+        conversations: [],
+        memories: []
+      }
+    })
+
+    expect(await useKanbanStore.getState().importBackup()).toBe(true)
+    expect(storage.rebuildSearchIndex).toHaveBeenCalledOnce()
+    const rebuildOrder = storage.rebuildSearchIndex.mock.invocationCallOrder[0]
+    expect(storage.save.mock.invocationCallOrder.at(-1)).toBeLessThan(rebuildOrder)
+    expect(storage.saveConversations.mock.invocationCallOrder.at(-1)).toBeLessThan(rebuildOrder)
+    expect(storage.replaceMemories.mock.invocationCallOrder.at(-1)).toBeLessThan(rebuildOrder)
+  })
+
+  it('migrates legacy money identically when loading data and importing a backup', async () => {
+    resetStore()
+    const legacyList = {
+      id: 'old-table',
+      name: 'Old table',
+      items: [{ id: 'item', name: 'Item', price: 3.75 }],
+      transactions: [{ id: 'tx', amount: 12.5, details: [{ id: 'part', description: 'Part', amount: 20 }] }],
+      goals: [{ id: 'goal', targetAmount: 100 }],
+      actualBalance: 42.25,
+      budgets: [{ category: 'Casa', limit: 100 }],
+      createdAt: '2026-01-01',
+      updatedAt: '2026-01-01'
+    }
+    const data = {
+      projects: [], tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [],
+      lists: [legacyList]
+    }
+    const storage = getStorageMock()
+    storage.load.mockResolvedValueOnce(data)
+    await useKanbanStore.getState().loadData()
+    const loaded = useKanbanStore.getState().lists[0]
+
+    storage.importBackup.mockResolvedValueOnce({
+      success: true,
+      data: { ...data, version: 2, exportedAt: '2026-01-01' }
+    })
+    expect(await useKanbanStore.getState().importBackup()).toBe(true)
+    const imported = useKanbanStore.getState().lists[0]
+
+    expect(imported).toEqual(loaded)
+    expect(imported).toMatchObject({
+      currency: 'BRL',
+      items: [{ price: '3.75' }],
+      transactions: [{ amount: '12.5', details: [{ amount: '12.5' }] }],
+      goals: [{ targetAmount: '100' }],
+      actualBalance: '42.25',
+      legacyFinancialMetadata: { budgets: legacyList.budgets }
+    })
+  })
+
   beforeEach(resetStore)
 
   it('keeps current data and blobs when the pre-import snapshot fails', async () => {

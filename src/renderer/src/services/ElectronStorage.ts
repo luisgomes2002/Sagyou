@@ -47,6 +47,10 @@ export class ElectronStorage implements IStorageAdapter {
     await window.electronAPI.store.save(data)
   }
 
+  async rebuildSearchIndex(): Promise<void> {
+    await window.electronAPI.store.rebuildSearchIndex()
+  }
+
   async exportBackup(backup: Backup): Promise<{ success: boolean; cancelled?: boolean }> {
     return window.electronAPI.backup.export(backup)
   }

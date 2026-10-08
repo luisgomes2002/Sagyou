@@ -11,6 +11,7 @@ import { AnalyticsTab } from '../financial/AnalyticsTab'
 import { ConsolidatedTab } from '../financial/ConsolidatedTab'
 import { YieldsTab } from '../financial/YieldsTab'
 import { ReceiptsTab } from '../financial/ReceiptsTab'
+import type { GlobalSearchHit } from '../../../../main/global-search-query'
 
 type ActiveTab = 'shopping' | 'finance' | 'analytics' | 'consolidated' | 'yields' | 'receipts'
 
@@ -37,7 +38,11 @@ function makeDefaultState(): TableViewState {
   }
 }
 
-export function FinancialView() {
+export function FinancialView({
+  searchTarget
+}: {
+  searchTarget?: GlobalSearchHit | null
+}): React.JSX.Element {
   const lists = useKanbanStore((s) => s.lists)
   const files = useKanbanStore((s) => s.files)
   const financialProfiles = useKanbanStore((s) => s.financialProfiles)
@@ -66,8 +71,24 @@ export function FinancialView() {
 
   const profileLists = lists.filter((list) => list.profileId === activeFinancialProfileId)
   const activeProfile = financialProfiles.find((profile) => profile.id === activeFinancialProfileId)
-  const [activeListId, setActiveListId] = useState<string | null>(null)
-  const [tableStates, setTableStates] = useState<Record<string, TableViewState>>({})
+  const [activeListId, setActiveListId] = useState<string | null>(searchTarget?.tableId ?? null)
+  const [tableStates, setTableStates] = useState<Record<string, TableViewState>>(() => {
+    if (!searchTarget?.tableId) return {}
+    const activeTab: ActiveTab =
+      searchTarget.type === 'shopping_item'
+        ? 'shopping'
+        : searchTarget.type === 'yield_source'
+          ? 'yields'
+          : 'finance'
+    const state = { ...makeDefaultState(), activeTab }
+    if (searchTarget.date && /^\d{4}-\d{2}/.test(searchTarget.date)) {
+      state.financeMonth = {
+        year: Number(searchTarget.date.slice(0, 4)),
+        month: Number(searchTarget.date.slice(5, 7))
+      }
+    }
+    return { [searchTarget.tableId]: state }
+  })
   const [consolidatedMonth, setConsolidatedMonth] = useState<{ year: number; month: number }>(
     () => {
       const n = new Date()

@@ -15,8 +15,10 @@ interface Props {
 }
 
 type ResolvedEdge = { source: GraphNode; target: GraphNode; type: 'explicit' | 'structural' }
+type ViewportTransform = { x: number; y: number; scale: number }
 
 const INITIAL_LAYOUT_TICKS = 100
+const INITIAL_LAYOUT_FRAME_BUDGET_MS = 8
 const INITIAL_LAYOUT_ALPHA = 0.6
 const DRAG_ALPHA = 0.3
 // Let the graph settle fully after an interaction so it remains readable when
@@ -41,10 +43,35 @@ export function GraphView({ onNavigate }: Props) {
     for (const n of nodes) m.set(n.id, n)
     return m
   }, [nodes])
+  const nodeElementsRef = useRef<Map<string, SVGGElement>>(new Map())
+  const edgeElementsRef = useRef<Map<number, SVGLineElement>>(new Map())
+
+  const paintPositions = useCallback((): void => {
+    for (const node of nodes) {
+      const element = nodeElementsRef.current.get(node.id)
+      if (element && node.x != null && node.y != null) {
+        element.setAttribute('transform', `translate(${node.x},${node.y})`)
+      }
+    }
+    for (let i = 0; i < edges.length; i++) {
+      const element = edgeElementsRef.current.get(i)
+      if (!element) continue
+      const edge = edges[i]
+      const source =
+        typeof edge.source === 'object' ? edge.source : nodeMap.get(String(edge.source))
+      const target =
+        typeof edge.target === 'object' ? edge.target : nodeMap.get(String(edge.target))
+      if (source?.x == null || source.y == null || target?.x == null || target.y == null) continue
+      element.setAttribute('x1', String(source.x))
+      element.setAttribute('y1', String(source.y))
+      element.setAttribute('x2', String(target.x))
+      element.setAttribute('y2', String(target.y))
+    }
+  }, [nodes, edges, nodeMap])
 
   const [simTick, setSimTick] = useState(0)
 
-  // simTick dependency ensures edges resolve after simulation updates positions
+  // d3 resolves link endpoints after the simulation starts; the initial commit refreshes them.
   const resolvedEdges = useMemo((): ResolvedEdge[] => {
     return edges
       .map((e) => {
@@ -59,14 +86,40 @@ export function GraphView({ onNavigate }: Props) {
   }, [edges, nodeMap, simTick])
 
   const svgRef = useRef<SVGSVGElement>(null)
-  const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 })
-  const transformRef = useRef(transform)
-  transformRef.current = transform
+  const viewportRef = useRef<SVGGElement>(null)
+  const transformRef = useRef<ViewportTransform>({ x: 0, y: 0, scale: 1 })
+  const [labelScale, setLabelScale] = useState(1)
+  const wheelCommitTimerRef = useRef<number | null>(null)
+  useEffect(() => {
+    return () => {
+      if (wheelCommitTimerRef.current !== null) clearTimeout(wheelCommitTimerRef.current)
+    }
+  }, [])
+
+  const applyViewportTransform = useCallback((next: ViewportTransform): void => {
+    transformRef.current = next
+    viewportRef.current?.setAttribute(
+      'transform',
+      `translate(${next.x},${next.y}) scale(${next.scale})`
+    )
+  }, [])
+  const syncLabelScale = useCallback((scale: number): void => {
+    setLabelScale((current) => {
+      if (
+        current > 0.3 === scale > 0.3 &&
+        current > 0.6 === scale > 0.6 &&
+        current > 0.8 === scale > 0.8
+      ) {
+        return current
+      }
+      return scale
+    })
+  }, [])
 
   const [hoveredNode, setHoveredNode] = useState<string | null>(null)
   const [highlightedNode, setHighlightedNode] = useState<string | null>(null)
   const [search, setSearch] = useState('')
-  const [initialFit, setInitialFit] = useState(true)
+  const initialFitRef = useRef(true)
 
   const isPanning = useRef(false)
   const panStart = useRef({ x: 0, y: 0 })
@@ -75,6 +128,7 @@ export function GraphView({ onNavigate }: Props) {
   const dragNodeId = useRef<string | null>(null)
 
   const positionsRef = useRef<Map<string, { x: number; y: number }>>(new Map())
+  const initialLayoutCompleteRef = useRef(false)
 
   const [tooltip, setTooltip] = useState<{ x: number; y: number; node: GraphNode } | null>(null)
 
@@ -95,12 +149,8 @@ export function GraphView({ onNavigate }: Props) {
     }
 
     const sim = createLiveSimulation(nodes, edges).stop()
-    // Settle once before showing the graph. Calling tick from the tick event
-    // re-entered the simulation and made the graph continuously accelerate.
-    sim.tick(INITIAL_LAYOUT_TICKS)
-    // Start the timer after the first layout pass and let it settle fully.
-    sim.alpha(INITIAL_LAYOUT_ALPHA).alphaTarget(IDLE_ALPHA_TARGET).restart()
     simRef.current = sim
+    initialLayoutCompleteRef.current = false
 
     const savePositions = () => {
       positionsRef.current = new Map(
@@ -109,31 +159,87 @@ export function GraphView({ onNavigate }: Props) {
           .map((node) => [node.id, { x: node.x!, y: node.y! }])
       )
     }
-    savePositions()
-    setSimTick((tick) => tick + 1)
+    let pendingFrame: number | null = null
+    let simulationTicks = 0
+    let visualFrames = 0
+    let settled = false
+    let initialLayoutMs = 0
+    let remainingLayoutTicks = INITIAL_LAYOUT_TICKS
+    let initialLayoutFrame: number | null = null
+    let hasRenderedInitialLayout = false
+    const renderFrame = (): void => {
+      if (pendingFrame !== null) return
+      pendingFrame = requestAnimationFrame(() => {
+        pendingFrame = null
+        visualFrames += 1
+        paintPositions()
+        if (settled && import.meta.env.DEV) {
+          console.debug('[GraphView] simulation settled', {
+            nodes: nodes.length,
+            edges: edges.length,
+            initialLayoutMs: +initialLayoutMs.toFixed(1),
+            simulationTicks,
+            visualFrames
+          })
+        }
+      })
+    }
+    // Keep each layout chunk within one frame's budget. Running all 100 ticks
+    // in this effect blocks the click that opens a large graph.
+    const runInitialLayout = (): void => {
+      initialLayoutFrame = null
+      const startedAt = performance.now()
+      do {
+        sim.tick(1)
+        remainingLayoutTicks -= 1
+      } while (
+        remainingLayoutTicks > 0 &&
+        performance.now() - startedAt < INITIAL_LAYOUT_FRAME_BUDGET_MS
+      )
+      initialLayoutMs += performance.now() - startedAt
+      if (!hasRenderedInitialLayout) {
+        hasRenderedInitialLayout = true
+        setSimTick((tick) => tick + 1)
+      } else {
+        paintPositions()
+      }
+      if (remainingLayoutTicks > 0) {
+        initialLayoutFrame = requestAnimationFrame(runInitialLayout)
+      } else {
+        initialLayoutCompleteRef.current = true
+        setSimTick((tick) => tick + 1)
+        // Calling tick from the tick event re-enters d3 and accelerates forever.
+        sim.alpha(INITIAL_LAYOUT_ALPHA).alphaTarget(IDLE_ALPHA_TARGET).restart()
+      }
+    }
+    initialLayoutFrame = requestAnimationFrame(runInitialLayout)
 
     sim.on('tick', () => {
-      savePositions()
-      setSimTick((tick) => tick + 1)
+      simulationTicks += 1
+      settled = false
+      renderFrame()
     })
     // Centering is only useful during initial layout. Leaving it on after a
     // drag shifts every node to compensate for one local movement.
     sim.on('end', () => {
       sim.force('center', null)
       savePositions()
-      setSimTick((tick) => tick + 1)
+      settled = true
+      renderFrame()
     })
 
     return () => {
+      if (pendingFrame !== null) cancelAnimationFrame(pendingFrame)
+      if (initialLayoutFrame !== null) cancelAnimationFrame(initialLayoutFrame)
       savePositions()
       sim.stop()
       simRef.current = null
     }
-  }, [nodes, edges])
+  }, [nodes, edges, paintPositions])
 
   // ── Initial fit ──────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!initialFit || nodes.length === 0) return
+    if (!initialFitRef.current || nodes.length === 0 || !initialLayoutCompleteRef.current) return
     // Wait a few ticks for initial spread
     const timer = setTimeout(() => {
       const svg = svgRef.current
@@ -156,15 +262,16 @@ export function GraphView({ onNavigate }: Props) {
       const graphW = maxX - minX || 1
       const graphH = maxY - minY || 1
       const scale = Math.min(w / graphW, h / graphH, 2)
-      setTransform({
+      applyViewportTransform({
         x: (w - graphW * scale) / 2 - minX * scale,
         y: (h - graphH * scale) / 2 - minY * scale,
         scale
       })
-      setInitialFit(false)
+      syncLabelScale(scale)
+      initialFitRef.current = false
     }, 300)
     return () => clearTimeout(timer)
-  }, [nodes, initialFit])
+  }, [nodes, simTick, applyViewportTransform, syncLabelScale])
 
   // ── Coordinate helpers ───────────────────────────────────────────────────
   const toGraphCoords = useCallback((clientX: number, clientY: number) => {
@@ -178,31 +285,44 @@ export function GraphView({ onNavigate }: Props) {
   }, [])
 
   // ── Zoom / Pan ───────────────────────────────────────────────────────────
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault()
-    const delta = e.deltaY > 0 ? 0.9 : 1.1
-    setTransform((t) => {
+  useEffect(() => {
+    const svg = svgRef.current
+    if (!svg) return
+    const handleWheel = (e: WheelEvent): void => {
+      e.preventDefault()
+      initialFitRef.current = false
+      const delta = e.deltaY > 0 ? 0.9 : 1.1
+      const t = transformRef.current
       const newScale = Math.max(0.1, Math.min(3, t.scale * delta))
-      const svg = svgRef.current!
       const rect = svg.getBoundingClientRect()
       const mx = e.clientX - rect.left
       const my = e.clientY - rect.top
-      return {
+      applyViewportTransform({
         x: mx - (mx - t.x) * (newScale / t.scale),
         y: my - (my - t.y) * (newScale / t.scale),
         scale: newScale
-      }
-    })
-  }, [])
+      })
+      if (wheelCommitTimerRef.current !== null) clearTimeout(wheelCommitTimerRef.current)
+      wheelCommitTimerRef.current = window.setTimeout(() => {
+        wheelCommitTimerRef.current = null
+        syncLabelScale(transformRef.current.scale)
+      }, 120)
+    }
+    svg.addEventListener('wheel', handleWheel, { passive: false })
+    return () => svg.removeEventListener('wheel', handleWheel)
+  }, [nodes.length, applyViewportTransform, syncLabelScale])
 
-  const handleMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      if (e.button !== 0) return
-      isPanning.current = true
-      panStart.current = { x: e.clientX - transform.x, y: e.clientY - transform.y }
-    },
-    [transform]
-  )
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0) return
+    isPanning.current = true
+    initialFitRef.current = false
+    if (wheelCommitTimerRef.current !== null) {
+      clearTimeout(wheelCommitTimerRef.current)
+      wheelCommitTimerRef.current = null
+    }
+    const current = transformRef.current
+    panStart.current = { x: e.clientX - current.x, y: e.clientY - current.y }
+  }, [])
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent) => {
@@ -217,17 +337,17 @@ export function GraphView({ onNavigate }: Props) {
           node.vx = 0
           node.vy = 0
         }
-        setSimTick((t) => t + 1)
+        paintPositions()
         return
       }
       if (!isPanning.current) return
-      setTransform((t) => ({
-        ...t,
+      applyViewportTransform({
+        ...transformRef.current,
         x: e.clientX - panStart.current.x,
         y: e.clientY - panStart.current.y
-      }))
+      })
     },
-    [toGraphCoords, nodeMap]
+    [toGraphCoords, nodeMap, paintPositions, applyViewportTransform]
   )
 
   const handleMouseUp = useCallback(() => {
@@ -360,11 +480,11 @@ export function GraphView({ onNavigate }: Props) {
     (node: GraphNode, nodeId: string) => {
       if (node.type === 'project' || node.type === 'goal') return true
       if (hoveredNode === nodeId) return true
-      if (activeHighlight && getNodeOpacity(nodeId) === 1 && transform.scale > 0.6) return true
-      if (node.type === 'habit' && transform.scale > 0.8) return true
+      if (activeHighlight && getNodeOpacity(nodeId) === 1 && labelScale > 0.6) return true
+      if (node.type === 'habit' && labelScale > 0.8) return true
       return false
     },
-    [hoveredNode, activeHighlight, getNodeOpacity, transform.scale]
+    [hoveredNode, activeHighlight, getNodeOpacity, labelScale]
   )
 
   const projectNodes = useMemo(
@@ -378,13 +498,15 @@ export function GraphView({ onNavigate }: Props) {
       if (!pos || !svgRef.current) return
       const w = svgRef.current.clientWidth - 170
       const h = svgRef.current.clientHeight
-      setTransform({
+      initialFitRef.current = false
+      applyViewportTransform({
         x: w / 2 - pos.x * 1.6,
         y: h / 2 - pos.y * 1.6,
         scale: 1.6
       })
+      syncLabelScale(1.6)
     },
-    [getNodePos]
+    [getNodePos, applyViewportTransform, syncLabelScale]
   )
 
   // ── Render ───────────────────────────────────────────────────────────────
@@ -498,7 +620,6 @@ export function GraphView({ onNavigate }: Props) {
           ref={svgRef}
           className="flex-1 cursor-grab active:cursor-grabbing"
           data-sim-tick={simTick || undefined}
-          onWheel={handleWheel}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
@@ -517,7 +638,7 @@ export function GraphView({ onNavigate }: Props) {
               <path d="M 0 0 L 10 5 L 0 10 z" fill="#7c3aed" opacity="0.7" />
             </marker>
           </defs>
-          <g transform={`translate(${transform.x},${transform.y}) scale(${transform.scale})`}>
+          <g ref={viewportRef} transform="translate(0,0) scale(1)">
             {edges.map((e, i) => {
               const src =
                 typeof e.source === 'string' ? nodeMap.get(e.source) : (e.source as GraphNode)
@@ -532,6 +653,10 @@ export function GraphView({ onNavigate }: Props) {
               return (
                 <line
                   key={i}
+                  ref={(element) => {
+                    if (element) edgeElementsRef.current.set(i, element)
+                    else edgeElementsRef.current.delete(i)
+                  }}
                   x1={srcPos.x}
                   y1={srcPos.y}
                   x2={tgtPos.x}
@@ -550,15 +675,21 @@ export function GraphView({ onNavigate }: Props) {
               const opacity = getNodeOpacity(n.id)
               const labelVisible = showLabel(n, n.id)
               const isActive =
-                (hoveredNode === n.id || (activeHighlight && opacity === 1)) &&
-                transform.scale > 0.3
+                (hoveredNode === n.id || (activeHighlight && opacity === 1)) && labelScale > 0.3
 
               return (
-                <g key={n.id}>
+                <g
+                  key={n.id}
+                  ref={(element) => {
+                    if (element) nodeElementsRef.current.set(n.id, element)
+                    else nodeElementsRef.current.delete(n.id)
+                  }}
+                  transform={`translate(${pos.x},${pos.y})`}
+                >
                   {isActive && (
                     <circle
-                      cx={pos.x}
-                      cy={pos.y}
+                      cx={0}
+                      cy={0}
                       r={n.radius + 4}
                       fill="none"
                       stroke={n.color}
@@ -567,8 +698,8 @@ export function GraphView({ onNavigate }: Props) {
                     />
                   )}
                   <circle
-                    cx={pos.x}
-                    cy={pos.y}
+                    cx={0}
+                    cy={0}
                     r={n.radius}
                     fill={n.color}
                     opacity={opacity}
@@ -577,18 +708,20 @@ export function GraphView({ onNavigate }: Props) {
                     onClick={() => handleNodeClick(n.id)}
                     onDoubleClick={() => handleNodeDoubleClick(n)}
                     onMouseEnter={(e) => {
+                      if (isPanning.current) return
                       setHoveredNode(n.id)
                       setTooltip({ x: e.clientX, y: e.clientY, node: n })
                     }}
                     onMouseLeave={() => {
+                      if (isPanning.current) return
                       setHoveredNode(null)
                       setTooltip(null)
                     }}
                   />
                   {labelVisible && (
                     <text
-                      x={pos.x}
-                      y={pos.y + n.radius + 11}
+                      x={0}
+                      y={n.radius + 11}
                       textAnchor="middle"
                       className="fill-[#999] text-[9px] select-none"
                       style={{ pointerEvents: 'none' }}

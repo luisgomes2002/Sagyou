@@ -101,7 +101,11 @@ function parseCsv(buffer: Buffer): ParsedDocument {
 
   let text = lines.join('\n')
   if (text.length > MAX_DOCUMENT_CHARS) text = text.slice(0, MAX_DOCUMENT_CHARS)
-  return { text, truncated: raw.length > MAX_DOCUMENT_CHARS || rows.length > cap, size: buffer.length }
+  return {
+    text,
+    truncated: raw.length > MAX_DOCUMENT_CHARS || rows.length > cap,
+    size: buffer.length
+  }
 }
 
 // ---- XLSX (existing `xlsx` dependency) ----
@@ -132,7 +136,8 @@ async function parsePdf(buffer: Buffer): Promise<ParsedDocument> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.mjs')
   const data = new Uint8Array(buffer)
-  const doc = await pdfjsLib.getDocument({ data, disableAutoFetch: true, disableStream: true }).promise
+  const doc = await pdfjsLib.getDocument({ data, disableAutoFetch: true, disableStream: true })
+    .promise
   const pages: string[] = []
   const maxPages = Math.min(doc.numPages, 100)
   for (let i = 1; i <= maxPages; i++) {
@@ -152,7 +157,11 @@ async function parsePdf(buffer: Buffer): Promise<ParsedDocument> {
     text += `\n\n... mais ${doc.numPages - maxPages} página(s) omitida(s)`
   }
   if (text.length > MAX_DOCUMENT_CHARS) text = text.slice(0, MAX_DOCUMENT_CHARS)
-  return { text, truncated: text.length >= MAX_DOCUMENT_CHARS || doc.numPages > maxPages, size: buffer.length }
+  return {
+    text,
+    truncated: text.length >= MAX_DOCUMENT_CHARS || doc.numPages > maxPages,
+    size: buffer.length
+  }
 }
 
 // ---- DOCX (mammoth) ----
@@ -179,8 +188,7 @@ export async function parseDocument(
   filePath: string,
   ext: string
 ): Promise<ParsedDocument | { error: string }> {
-  const key = ext.toLowerCase()
-  if (!isDocumentExt(key)) {
+  if (!isDocumentExt(ext)) {
     return { error: `Tipo de arquivo não suportado: ${ext}` }
   }
 
@@ -190,31 +198,7 @@ export async function parseDocument(
   } catch {
     return { error: 'Não foi possível ler o arquivo' }
   }
-  if (buffer.length === 0) return { error: 'Arquivo vazio' }
-  if (buffer.length > MAX_DOCUMENT_BYTES) {
-    return { error: `Arquivo grande demais (máx. ${MAX_DOCUMENT_BYTES / 1024 / 1024}MB)` }
-  }
-
-  try {
-    switch (key) {
-      case '.pdf':
-        return await parsePdf(buffer)
-      case '.docx':
-      case '.odt':
-        return await parseDocx(buffer)
-      case '.xlsx':
-      case '.ods':
-        return parseXlsx(buffer)
-      case '.csv':
-        return parseCsv(buffer)
-      case '.rtf':
-        return parseText(buffer)
-      default:
-        return parseText(buffer)
-    }
-  } catch (e) {
-    return { error: e instanceof Error ? e.message : 'Falha ao processar o documento' }
-  }
+  return parseDocumentBuffer(buffer, ext)
 }
 
 /**

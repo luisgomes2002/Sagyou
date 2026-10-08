@@ -18,6 +18,7 @@ vi.mock('../../services/ElectronStorage', () => ({
     this.saveConversations = vi.fn().mockResolvedValue(undefined)
     this.loadMemories = vi.fn().mockResolvedValue([])
     this.replaceMemories = vi.fn().mockResolvedValue(undefined)
+    this.rebuildSearchIndex = vi.fn().mockResolvedValue(undefined)
   })
 }))
 

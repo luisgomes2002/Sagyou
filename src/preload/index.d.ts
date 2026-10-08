@@ -1,6 +1,12 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
 import type { RunMetricInput, RunMetricsSummary } from '../main/run-metrics'
 import type { AiMemory, MemoryInput, MemorySummary, MemoryConflict } from '../main/memory'
+import type {
+  GlobalSearchHit,
+  GlobalSearchLookup,
+  GlobalSearchOptions,
+  GlobalSearchResponse
+} from '../main/global-search-query'
 
 /** Persisted AI provider config (stored in the main process, not the renderer). */
 interface AIConfig {
@@ -297,6 +303,11 @@ declare global {
       store: {
         load: () => Promise<{ projects: unknown[]; tasks: unknown[] }>
         save: (data: unknown) => Promise<void>
+        rebuildSearchIndex: () => Promise<void>
+      }
+      search: {
+        global: (options: GlobalSearchOptions) => Promise<GlobalSearchResponse>
+        get: (options: GlobalSearchLookup) => Promise<GlobalSearchHit | null>
       }
       backup: {
         export: (backup: unknown) => Promise<{ success: boolean; cancelled?: boolean }>

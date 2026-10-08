@@ -6,6 +6,21 @@ import { randomUUID } from 'crypto'
 import Database from 'better-sqlite3'
 import { normalizeMemory, type AiMemory, type MemoryType } from './memory'
 import { decodeDataUrl } from './chat-images'
+import {
+  buildConversationDocuments,
+  buildMemoryDocuments,
+  createGlobalSearchIndex,
+  rebuildGlobalSearchIndex,
+  syncGlobalSearchIndex,
+  syncSupplementalSearchIndex,
+  type SearchConversation
+} from './global-search-index'
+import {
+  getGlobalSearchHit,
+  queryGlobalSearch,
+  type GlobalSearchHit,
+  type GlobalSearchResponse
+} from './global-search-query'
 
 // ── Inline types (mirrors src/renderer/src/types/index.ts) ──────────────────
 
@@ -316,7 +331,96 @@ function getDb(): Database.Database {
   migrateNotesTaskIdsGoalIds(_db)
   migrateFromJson(_db)
   trimEventLog(_db)
+  createGlobalSearchIndex(_db)
+  // FTS is disposable: startup also repairs an index left stale by an older build.
+  rebuildSearchIndexFromDb(_db)
   return _db
+}
+
+function rebuildSearchIndexFromDb(db: Database.Database): void {
+  const source = loadData(db)
+  rebuildGlobalSearchIndex(db, source, [
+    ...buildMemoryDocuments(
+      memoryRows(db),
+      new Set(source.projects.filter((p) => p.archivedAt).map((p) => p.id))
+    ),
+    ...buildConversationDocuments(readSearchConversations())
+  ])
+}
+
+/** Recreate every derived document from the current SQLite and conversation file. */
+export function rebuildSearchIndex(): void {
+  rebuildSearchIndexFromDb(getDb())
+}
+
+function activeProfileIdForSearch(db: Database.Database): string {
+  const setting = (key: string): unknown => {
+    const row = db.prepare('SELECT value FROM settings WHERE key=?').get(key) as
+      | { value: string }
+      | undefined
+    if (!row) return null
+    try {
+      return JSON.parse(row.value)
+    } catch {
+      return null
+    }
+  }
+  const profiles = parseFinancialProfiles(setting('financialProfiles'))
+  const active = setting('activeFinancialProfileId')
+  const profileId = typeof active === 'string' && profiles.some((profile) => profile.id === active)
+    ? active : DEFAULT_FINANCIAL_PROFILE_ID
+  return profileId
+}
+
+export function searchGlobalIndex(options: unknown): GlobalSearchResponse {
+  const db = getDb()
+  return queryGlobalSearch(db, options, activeProfileIdForSearch(db))
+}
+
+export function getGlobalSearchIndexHit(options: unknown): GlobalSearchHit | null {
+  const db = getDb()
+  return getGlobalSearchHit(db, options, activeProfileIdForSearch(db))
+}
+
+function readSearchConversations(): SearchConversation[] {
+  try {
+    const value: unknown = JSON.parse(
+      readFileSync(join(app.getPath('userData'), 'ai-conversations.json'), 'utf-8')
+    )
+    if (!Array.isArray(value)) return []
+    return value.filter(
+      (c): c is SearchConversation =>
+        c &&
+        typeof c.id === 'string' &&
+        typeof c.title === 'string' &&
+        typeof c.updatedAt === 'string' &&
+        Array.isArray(c.messages)
+    )
+  } catch {
+    return []
+  }
+}
+
+function memoryRows(db: Database.Database): AiMemory[] {
+  return (db.prepare('SELECT * FROM memory').all() as Record<string, unknown>[]).map(memRowToMemory)
+}
+
+function syncMemorySearchRows(db: Database.Database, archivedProjects?: Set<string>): void {
+  const archived =
+    archivedProjects ??
+    new Set(
+      (db.prepare('SELECT id FROM projects WHERE archived_at IS NOT NULL').all() as { id: string }[])
+        .map((p) => p.id)
+    )
+  syncSupplementalSearchIndex(db, 'memory', buildMemoryDocuments(memoryRows(db), archived))
+}
+
+/** Conversations live in JSON; their index is repaired from that file on startup. */
+export function syncGlobalSearchConversations(list: SearchConversation[]): void {
+  const db = getDb()
+  db.transaction(() => {
+    syncSupplementalSearchIndex(db, 'conversation', buildConversationDocuments(list))
+  })()
 }
 
 // Coerce a monetary value (legacy number or current string) to a canonical
@@ -1507,8 +1611,8 @@ export function groupByKey<T extends Record<string, any>>(rows: T[], key: string
   return m
 }
 
-export function loadData(): SaveData {
-  const db = getDb()
+export function loadData(existingDb?: Database.Database): SaveData {
+  const db = existingDb ?? getDb()
 
   // Read every child table once and group by parent id, rather than per-parent.
   const all = (sql: string): any[] => db.prepare(sql).all() as any[]
@@ -1887,6 +1991,14 @@ export function saveData(data: unknown): void {
     const now = new Date().toISOString()
     const autoEvents = diffEvents(prev, next, now)
     appendEventRows(db, [...autoEvents, ...aiEvents])
+    syncGlobalSearchIndex(db, next)
+    // Memory belongs to a satellite table. Only a project's archive state
+    // changes its derived filter metadata during a regular app save.
+    const archivedIds = (projects: Project[]): string =>
+      projects.filter((p) => p.archivedAt).map((p) => p.id).sort().join('\0')
+    if (prev && archivedIds(prev.projects) !== archivedIds(next.projects)) {
+      syncMemorySearchRows(db, new Set(next.projects.filter((p) => p.archivedAt).map((p) => p.id)))
+    }
   })()
   // Reached only if the transaction committed. On a throw it rolls back and this
   // line is skipped, so the snapshot keeps matching what's actually on disk —
@@ -2186,7 +2298,15 @@ export function getMemory(id: string): AiMemory | null {
 
 /** Insert or replace a memory row from a fully-formed AiMemory (built in ./memory). */
 export function upsertMemory(m: AiMemory): void {
-  getDb()
+  const db = getDb()
+  db.transaction(() => {
+    writeMemoryRow(db, m)
+    syncMemorySearchRows(db)
+  })()
+}
+
+function writeMemoryRow(db: Database.Database, m: AiMemory): void {
+  db
     .prepare(
       `INSERT INTO memory
          (id,project_id,type,title,body,tags,pinned,source,source_conversation_id,created_at,updated_at,last_accessed_at,access_count,archived_at)
@@ -2238,12 +2358,17 @@ export function archiveMemories(ids: string[], nowIso: string): void {
   )
   db.transaction((list: string[]) => {
     for (const id of list) stmt.run(nowIso, nowIso, id)
+    syncMemorySearchRows(db)
   })(ids)
 }
 
 /** Hard delete one memory (the explicit user action; decay uses archive instead). */
 export function deleteMemory(id: string): void {
-  getDb().prepare('DELETE FROM memory WHERE id=?').run(id)
+  const db = getDb()
+  db.transaction(() => {
+    db.prepare('DELETE FROM memory WHERE id=?').run(id)
+    syncMemorySearchRows(db)
+  })()
 }
 
 /**
@@ -2265,7 +2390,8 @@ export function replaceMemories(memories: AiMemory[]): void {
       if (!raw || typeof raw.id !== 'string') continue
       const m = normalizeMemory(raw, now)
       if (m.projectId && !projectIds.has(m.projectId)) m.projectId = null
-      upsertMemory(m)
+      writeMemoryRow(db, m)
     }
+    syncMemorySearchRows(db)
   })()
 }

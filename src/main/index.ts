@@ -18,6 +18,7 @@ import {
   accessSync,
   constants
 } from 'fs'
+import * as codeFileFs from 'fs'
 import { homedir } from 'os'
 import { exec as execCallback, spawn, type ChildProcess } from 'child_process'
 import { spawn as spawnPty, type IPty } from 'node-pty'
@@ -25,37 +26,26 @@ import { promisify } from 'util'
 import { readFile } from 'fs/promises'
 const execAsync = promisify(execCallback)
 import { randomUUID } from 'crypto'
-import {
-  partitionConversations,
-  referencedConversationIds,
-  retainReferencedConversations
-} from './conversation-retention'
+import { partitionConversations, referencedConversationIds } from './conversation-retention'
+import type { StoredConversation } from './conversation-types'
 import { CodeRunCoordinator } from './code-run-coordinator'
 import { addDetachedWorktree, resolveWorktreeBase } from './git-worktree'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import OpenAI from 'openai'
-import { loadData, saveData, eventsForEntity } from './store'
 import {
-  listMemories,
-  memoriesForContext,
-  searchMemories,
-  getMemory,
-  upsertMemory,
-  touchMemories,
-  archiveMemories,
-  deleteMemory,
-  replaceMemories
+  loadData,
+  saveData,
+  eventsForEntity,
+  rebuildSearchIndex,
+  searchGlobalIndex,
+  getGlobalSearchIndexHit,
+  syncGlobalSearchConversations
 } from './store'
-import {
-  buildMemory,
-  selectStale,
-  summarizeMemories,
-  findConflicts,
-  formatMemoriesForPrompt,
-  handoffId,
-  MEMORY_TYPES,
-  type MemoryInput
-} from './memory'
+import * as memoryStore from './store'
+import { listMemories, memoriesForContext } from './store'
+import { formatMemoriesForPrompt } from './memory'
+import * as memoryRules from './memory'
+import { registerMemoryHandlers } from './handlers/memory'
 import {
   appendEntry,
   newEntry,
@@ -73,14 +63,8 @@ import {
   type RunMetricInput
 } from './run-metrics'
 import { getOpenAIClient, requestOptions } from './openai-client'
-import {
-  confineToRoot,
-  walkFiles,
-  detectSymbols,
-  extractSymbol,
-  extractLines,
-  searchFiles
-} from './code-files'
+import { confineToRoot, extractSymbol } from './code-files'
+import * as codeFiles from './code-files'
 import {
   runCodeAgent,
   buildSystemPrompt,
@@ -107,11 +91,7 @@ import {
   type JailStatus,
   type InstallDeps
 } from './ai-jail'
-import {
-  searchConversations,
-  briefConversationsForTask,
-  briefCurrentConversation
-} from './conversation-search'
+import { briefConversationsForTask, briefCurrentConversation } from './conversation-search'
 import { fetchWeb } from './web-fetch'
 import { renderWeb } from './web-render'
 import { getExchangeRate } from './financial-exchange'
@@ -139,6 +119,8 @@ import {
 import { registerWindowHandlers } from './handlers/window'
 import { registerFilesHandlers } from './handlers/files'
 import { registerBackupHandlers } from './handlers/backup'
+import { registerCodeFilesHandlers } from './handlers/code-files'
+import { registerConversationHandlers } from './handlers/conversations'
 import { safeExternalUrl } from './external-links'
 import icon from '../../resources/icon.png?asset'
 
@@ -1024,19 +1006,6 @@ function loadUsageLog(): UsageLogEntry[] {
   }
 }
 
-/**
- * Lazy decay pass: archive cold/overflowing memories and return how many. Used
- * by both the explicit `ai:memory:prune` and the run-start briefing, so the two
- * can't drift. Global (not per-project) — a cold page is cold regardless of the
- * project a run happens to be about.
- */
-function runMemoryPrune(): number {
-  const now = Date.now()
-  const stale = selectStale(listMemories({ includeArchived: false }), now)
-  archiveMemories(stale, new Date(now).toISOString())
-  return stale.length
-}
-
 /** Record one billed call. Never throws: losing the log must not fail the chat. */
 function appendUsage(model: string, usage: TokenUsage, cfg: AIConfig): void {
   try {
@@ -1228,43 +1197,6 @@ async function archiveAgentRun(runId: string, exitCode: number): Promise<void> {
 const skillsPath = (): string => skillsDir(app.getPath('userData'))
 
 // --- AI chat history (persisted to ai-conversations.json in userData) ---
-interface StoredConversation {
-  id: string
-  title: string
-  createdAt: string
-  updatedAt: string
-  messages: {
-    role: 'user' | 'assistant' | 'status'
-    content: string
-    feedback?: 'positive' | 'negative'
-    /** Chat-image ids; the bytes live under chat-images/. Absent on old files. */
-    imageIds?: string[]
-    /** Status lines: whether the tool finished. See ChatMessage.done. */
-    done?: boolean
-    /**
-     * Status lines: the step that produced the line and the cap it ran under,
-     * rendered as a "3/40" badge. Both stored, so an old transcript keeps the
-     * cap *that* run had rather than being relabelled against today's setting.
-     * Absent on old files and on lines that aren't a step (retries, warnings).
-     */
-    step?: number
-    maxSteps?: number
-  }[]
-  /** Tokens billed across this conversation's whole life. Absent on old files. */
-  usage?: TokenUsage
-  /**
-   * The user named this chat, so `title` is theirs to keep.
-   *
-   * Titles are otherwise derived from the first user message on every autosave,
-   * which would overwrite a rename within the second. The flag lives here and
-   * is enforced in `ai:conversations:save` rather than in the renderer: the
-   * autosave keeps sending its derived title and this side ignores it once the
-   * name is the user's. Absent on old files — an underived title is just a
-   * title, and stays derivable until someone renames it.
-   */
-  titleCustom?: boolean
-}
-
 const aiConversationsPath = (): string => join(app.getPath('userData'), 'ai-conversations.json')
 
 function loadConversations(): StoredConversation[] {
@@ -1281,6 +1213,12 @@ function saveConversations(list: StoredConversation[]): void {
   const tmp = path + '.tmp'
   writeFileSync(tmp, JSON.stringify(list), 'utf-8')
   renameSync(tmp, path)
+  // The JSON file is authoritative; a failed derived update is repaired at next startup.
+  try {
+    syncGlobalSearchConversations(list)
+  } catch (error) {
+    console.error('[search] Conversation index update failed:', error)
+  }
 }
 
 /**
@@ -1472,6 +1410,9 @@ app.whenReady().then(() => {
   ipcMain.handle('store:save', (_, data) => {
     saveData(data)
   })
+  ipcMain.handle('store:rebuild-search-index', () => rebuildSearchIndex())
+  ipcMain.handle('search:global', (_, options: unknown) => searchGlobalIndex(options))
+  ipcMain.handle('search:global:get', (_, options: unknown) => getGlobalSearchIndexHit(options))
 
   registerBackupHandlers(ipcMain, {
     dialog,
@@ -1543,132 +1484,7 @@ app.whenReady().then(() => {
   ipcMain.handle('ai:run-metrics:append', (_, input: RunMetricInput) => appendRunMetricIO(input))
   ipcMain.handle('ai:run-metrics:summary', () => summarizeRunMetrics(loadRunMetrics()))
 
-  // --- AI memory (durable facts across conversations; kanban.db, outside
-  // persistAll — see store.ts). save scrubs secrets in buildMemory; prune
-  // archives cold pages (never hard-deletes); delete is the explicit user act.
-  ipcMain.handle(
-    'ai:memory:list',
-    (_, opts?: { projectId?: string | null; includeArchived?: boolean }) => {
-      if (opts?.includeArchived)
-        return listMemories({ projectId: opts.projectId, includeArchived: true })
-      if (opts && 'projectId' in opts) return memoriesForContext(opts.projectId ?? null)
-      return listMemories()
-    }
-  )
-
-  ipcMain.handle('ai:memory:save', (_, input: MemoryInput & { id?: string }) => {
-    const existing = input.id ? getMemory(input.id) : null
-    const res = buildMemory(existing, input, randomUUID(), new Date().toISOString())
-    if ('error' in res) return res
-    upsertMemory(res.memory)
-    return { memory: res.memory, redacted: res.redacted }
-  })
-
-  // Ranked, bounded recall stays in main so the renderer never pulls the full
-  // corpus into a prompt just to find one relevant page.
-  ipcMain.handle(
-    'ai:memory:search',
-    (
-      _,
-      opts: {
-        projectId?: string | null
-        term?: string
-        type?: string
-        includeArchived?: boolean
-        limit?: number
-      }
-    ) => {
-      const type = MEMORY_TYPES.find((item) => item === opts?.type)
-      return searchMemories({
-        projectId: opts?.projectId ?? null,
-        term: opts?.term,
-        type,
-        includeArchived: opts?.includeArchived === true,
-        limit: opts?.limit
-      })
-    }
-  )
-
-  ipcMain.handle('ai:memory:delete', (_, id: string) => deleteMemory(id))
-
-  // Wholesale replace from a backup import (projects are imported first, so FK
-  // scoping holds; see replaceMemories).
-  ipcMain.handle('ai:memory:replace', (_, list: unknown) =>
-    replaceMemories(Array.isArray(list) ? list : [])
-  )
-
-  ipcMain.handle('ai:memory:touch', (_, ids: string[]) =>
-    touchMemories(Array.isArray(ids) ? ids : [], new Date().toISOString())
-  )
-
-  // Lazy decay pass: archive stale/overflowing pages, return how many.
-  ipcMain.handle('ai:memory:prune', () => ({ archived: runMemoryPrune() }))
-
-  // Automatic per-run handoff: one memory per project (deterministic id), upserted
-  // at each run's end so a later session opens knowing where this one left off.
-  // Writing it keeps it warm — lastAccessedAt = now, but access_count is NOT
-  // bumped, so its TTL stays at the base and it decays ~45d after the last run on
-  // this project (i.e. when the project goes quiet), instead of ballooning.
-  ipcMain.handle(
-    'ai:memory:handoff',
-    (
-      _,
-      input: {
-        projectId?: string | null
-        title: string
-        body: string
-        sourceConversationId?: string | null
-      }
-    ) => {
-      const projectId = typeof input?.projectId === 'string' ? input.projectId : null
-      const id = handoffId(projectId)
-      const now = new Date().toISOString()
-      const res = buildMemory(
-        getMemory(id),
-        {
-          type: 'handoff',
-          title: input?.title,
-          body: input?.body,
-          projectId,
-          source: 'modelo',
-          sourceConversationId: input?.sourceConversationId
-        },
-        id,
-        now
-      )
-      if ('error' in res) return res
-      res.memory.lastAccessedAt = now // writing is accessing; don't inflate the count
-      upsertMemory(res.memory)
-      return { ok: true }
-    }
-  )
-
-  ipcMain.handle('ai:memory:summary', () =>
-    summarizeMemories(listMemories({ includeArchived: true }))
-  )
-
-  ipcMain.handle('ai:memory:conflicts', () => findConflicts(listMemories()))
-
-  // The run-start briefing block for a project (its memories + the globals),
-  // preformatted so the chat and the code agent share one format. Reading the
-  // briefing is decay-neutral (no touch), but run start is where the lazy decay
-  // pass fires: archive cold pages first, then brief on the survivors. `archived`
-  // rides back so the chat can note it. Prune is guarded — a decay failure must
-  // not cost the run its briefing.
-  ipcMain.handle('ai:memory:briefing', (_, projectId?: string | null) => {
-    let archived = 0
-    try {
-      archived = runMemoryPrune()
-    } catch {
-      /* decay is best-effort; a failure here still leaves a valid briefing */
-    }
-    const memories = memoriesForContext(projectId ?? null)
-    return {
-      text: formatMemoriesForPrompt(memories),
-      count: memories.filter((m) => !m.archivedAt).length,
-      archived
-    }
-  })
+  registerMemoryHandlers(ipcMain, { store: memoryStore, memory: memoryRules, newId: randomUUID })
 
   // Entity lineage: query the event log for one entity's history.
   ipcMain.handle('ai:lineage:list', (_, entityType: string, entityId: string) =>
@@ -3066,172 +2882,7 @@ app.whenReady().then(() => {
     return { path: filePaths[0] }
   })
 
-  // --- Read-only code access (for the assistant to analyze source) ---
-  // Every path is confined to `root`; nothing outside it can be read.
-  ipcMain.handle(
-    'ai:code:list',
-    async (_, root: string, sub?: string, offset?: number, limit?: number) => {
-      if (!root || !existsSync(root)) return { error: 'Diretório inválido' }
-      // A listing is resent to the model on every later step, and a project with
-      // several roots fans out — hundreds of paths per step. So walk up to a
-      // ceiling to know a real `total`, then return one CODE_LIST_PAGE window;
-      // `limit` can raise it to CODE_LIST_MAX (the old flat cap) and `offset`
-      // pages through the rest. Same shape as ai:code:read.
-      const CODE_LIST_WALK = 2000
-      const CODE_LIST_PAGE = 200
-      const CODE_LIST_MAX = 400
-      const { files, truncated: walkTruncated } = await walkFiles(root, sub || '.', CODE_LIST_WALK)
-      const total = files.length
-      let page = CODE_LIST_PAGE
-      if (typeof limit === 'number' && Number.isFinite(limit) && limit >= 1) {
-        page = Math.min(Math.floor(limit), CODE_LIST_MAX)
-      }
-      let start = 0
-      if (typeof offset === 'number' && Number.isFinite(offset) && offset > 0) {
-        start = Math.min(Math.floor(offset), total)
-      }
-      const slice = files.slice(start, start + page)
-      const end = start + slice.length
-      const morePages = end < total
-      return {
-        files: slice,
-        total,
-        offset: start,
-        // True when there is more than this page shows — either more to page
-        // through (nextOffset) or the walk itself hit its ceiling (narrow with
-        // subpasta). Mirrors ler_arquivo's boolean "there's more".
-        truncated: morePages || walkTruncated,
-        ...(morePages ? { nextOffset: end } : {})
-      }
-    }
-  )
-
-  ipcMain.handle(
-    'ai:code:read',
-    (
-      _,
-      root: string,
-      rel: string,
-      offset?: number,
-      maxChars?: number,
-      // Scoped reading: a named symbol or a line range, so a big file can answer
-      // a question about one function without shipping (and re-shipping) all of
-      // it. When set, this wins over the char-window paging below.
-      scope?: { symbol?: string; lineStart?: number; lineEnd?: number }
-    ) => {
-      const full = confineToRoot(root, rel)
-      if (!full || !existsSync(full) || !statSync(full).isFile()) {
-        return { error: 'Arquivo inválido ou fora do projeto' }
-      }
-      const CODE_READ_PAGE = 20000
-      const CODE_READ_MAX = 60000
-      try {
-        const content = readFileSync(full, 'utf-8')
-        const total = content.length
-
-        // --- Scoped mode: return just the symbol / line range asked for. ---
-        if (scope && (scope.symbol || scope.lineStart != null || scope.lineEnd != null)) {
-          const cap = (r: { content: string; linhaInicio: number; linhaFim: number }): object => {
-            const truncated = r.content.length > CODE_READ_MAX
-            return {
-              content: truncated ? r.content.slice(0, CODE_READ_MAX) : r.content,
-              linhaInicio: r.linhaInicio,
-              linhaFim: r.linhaFim,
-              truncated,
-              total
-            }
-          }
-          if (scope.symbol) {
-            const found = extractSymbol(content, scope.symbol)
-            if (!found) {
-              // Not a declaration in this file — hand back the symbol map so the
-              // model can pick a real one instead of paging blindly.
-              return {
-                error: `Símbolo "${scope.symbol}" não encontrado`,
-                total,
-                simbolos: detectSymbols(content)
-              }
-            }
-            return { simbolo: scope.symbol, ...cap(found) }
-          }
-          return cap(extractLines(content, scope.lineStart, scope.lineEnd))
-        }
-
-        // --- Big-file guard: a *blind* read (no scope, no offset, no explicit
-        // max_chars) of a file too big to fit one page returns a short head plus
-        // the symbol map and a nudge, instead of a full 20k window resent every
-        // later step. It forces the model onto the surgical tools that already
-        // exist — a named symbol, a line range, or paging with `inicio`. An
-        // explicit `offset` or `max_chars` means the model already knows what it
-        // wants, so those bypass this. (The 5000-line spec threshold was a no-op
-        // here — kanban.ts is ~1k lines — so the real "big" measure is the same
-        // char boundary the paging already uses.) ---
-        const offsetProvided = typeof offset === 'number' && Number.isFinite(offset) && offset > 0
-        const maxCharsProvided =
-          typeof maxChars === 'number' && Number.isFinite(maxChars) && maxChars >= 1
-        if (!offsetProvided && !maxCharsProvided && total > CODE_READ_PAGE) {
-          const PREVIEW_LINES = 100
-          const head = extractLines(content, 1, PREVIEW_LINES)
-          // Cap the head too, in case 100 lines are themselves huge (minified).
-          const preview =
-            head.content.length > CODE_READ_PAGE
-              ? head.content.slice(0, CODE_READ_PAGE)
-              : head.content
-          return {
-            content: preview,
-            truncated: true,
-            offset: 0,
-            total,
-            simbolos: detectSymbols(content),
-            nextOffset: preview.length,
-            dica:
-              `Arquivo grande (${total} chars). Para economizar tokens, mire o trecho: use ` +
-              `"simbolo", "linha_inicio"/"linha_fim", ou pagine com "inicio"=${preview.length}. ` +
-              `Passe "max_chars" para ler uma janela maior de uma vez.`
-          }
-        }
-
-        // --- Char-window paging (unchanged): default 20k, raisable, resumable. ---
-        // A file result is resent to the model on every later step, so a 60k-char
-        // file (~15k tokens) was a per-step tax for a question that usually needs
-        // a fraction of it. Default to one CODE_READ_PAGE window; `maxChars` can
-        // raise it up to CODE_READ_MAX, and `offset` pages through the rest.
-        let page = CODE_READ_PAGE
-        if (typeof maxChars === 'number' && Number.isFinite(maxChars) && maxChars >= 1) {
-          page = Math.min(Math.floor(maxChars), CODE_READ_MAX)
-        }
-        let start = 0
-        if (typeof offset === 'number' && Number.isFinite(offset) && offset > 0) {
-          start = Math.min(Math.floor(offset), total)
-        }
-        const slice = content.slice(start, start + page)
-        const end = start + slice.length
-        const truncated = end < total
-        return {
-          content: slice,
-          truncated,
-          offset: start,
-          total,
-          // A symbol map, but only when it earns its tokens: on the first page of
-          // a file too big to return whole. For a small file returned in full the
-          // map is redundant (the model already has every line); on a big one it
-          // lets the model re-read just the symbol it needs via `simbolo`.
-          ...(truncated && start === 0 ? { simbolos: detectSymbols(content) } : {}),
-          // Where a follow-up read should resume; absent once the file is exhausted.
-          ...(truncated ? { nextOffset: end } : {})
-        }
-      } catch (e) {
-        return { error: e instanceof Error ? e.message : 'Falha ao ler o arquivo' }
-      }
-    }
-  )
-
-  ipcMain.handle('ai:code:search', async (_, root: string, term: string) => {
-    if (!root || !existsSync(root)) return { error: 'Diretório inválido' }
-    if (!term) return { error: 'Termo vazio' }
-    const result = await searchFiles(root, term)
-    return { matches: result.matches, truncated: result.truncated }
-  })
+  registerCodeFilesHandlers(ipcMain, { files: codeFiles, fs: codeFileFs })
 
   // Fetch a page for the assistant. The URL comes from the model, so it is
   // untrusted input — ./web-fetch does the vetting (http(s) only, no local or
@@ -3271,133 +2922,11 @@ app.whenReady().then(() => {
     return importSkillDialog(skillsPath())
   })
 
-  // --- AI conversation history ---
-  ipcMain.handle('ai:conversations:list', () =>
-    loadConversations()
-      .map(({ id, title, createdAt, updatedAt }) => ({ id, title, createdAt, updatedAt }))
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-  )
-
-  // Searching here rather than in the renderer: the file is already read on
-  // this side, and shipping every message body over IPC to filter it there
-  // would move megabytes for a substring test.
-  ipcMain.handle('ai:conversations:search', (_, term: string) =>
-    searchConversations(loadConversations(), typeof term === 'string' ? term : '')
-  )
-
-  ipcMain.handle(
-    'ai:conversations:get',
-    (_, id: string) => loadConversations().find((c) => c.id === id) ?? null
-  )
-
-  ipcMain.handle(
-    'ai:conversations:save',
-    (
-      _,
-      conv: {
-        id: string
-        title: string
-        messages: StoredConversation['messages']
-        usage?: TokenUsage
-      }
-    ) => {
-      safeConversationsSave(() => {
-        const list = loadConversations()
-        const now = new Date().toISOString()
-        const idx = list.findIndex((c) => c.id === conv.id)
-        if (idx >= 0) {
-          list[idx] = {
-            ...list[idx],
-            title: list[idx].titleCustom ? list[idx].title : conv.title,
-            messages: conv.messages,
-            usage: conv.usage,
-            updatedAt: now
-          }
-        } else {
-          list.push({
-            id: conv.id,
-            title: conv.title,
-            messages: conv.messages,
-            usage: conv.usage,
-            createdAt: now,
-            updatedAt: now
-          })
-        }
-        saveConversations(list)
-      })
-    }
-  )
-
-  /**
-   * Name a chat by hand, latching the title against the autosave's derived one.
-   *
-   * Renaming reaches any chat in the history, not just the open one, so it goes
-   * through the file rather than through the run store — the renderer only
-   * holds the transcript of what's on screen.
-   */
-  ipcMain.handle('ai:conversations:rename', (_, id: string, title: string) => {
-    if (typeof id !== 'string' || typeof title !== 'string')
-      return { error: 'Argumentos inválidos' }
-    const name = title.trim()
-    if (!name) return { error: 'O nome não pode ficar vazio' }
-    // A title is a one-line label in a narrow dropdown; the rest is not shown
-    // and would only bloat a file re-read on every autosave and every keystroke
-    // of the search.
-    const clipped = name.slice(0, 120)
-    const list = loadConversations()
-    const idx = list.findIndex((c) => c.id === id)
-    if (idx < 0) return { error: 'Conversa não encontrada' }
-    // updatedAt is deliberately untouched: it orders the history by when the
-    // chat was last *talked to*, and renaming would jump it to the top.
-    list[idx] = { ...list[idx], title: clipped, titleCustom: true }
-    saveConversations(list)
-    return { title: clipped }
-  })
-
-  ipcMain.handle('ai:conversations:delete', (_, id: string) => {
-    if (typeof id !== 'string' || !id) return { error: 'Conversa inválida' }
-    if (referencedConversationIds(listMemories({ includeArchived: true })).has(id)) {
-      return {
-        error:
-          'Esta conversa é referenciada por uma memória. Exclua a memória antes de apagar a conversa.'
-      }
-    }
-    saveConversations(loadConversations().filter((c) => c.id !== id))
-    return { ok: true }
-  })
-
-  // Full history read/write — used by backup export/import, which needs every
-  // conversation with its messages rather than the metadata `list` returns.
-  ipcMain.handle('ai:conversations:all', () => loadConversations())
-
-  ipcMain.handle('ai:conversations:replace', (_, list: StoredConversation[]) => {
-    if (!Array.isArray(list)) return
-    const now = new Date().toISOString()
-    const clean = list
-      .filter((c) => c && typeof c.id === 'string' && Array.isArray(c.messages))
-      .map((c) => ({
-        id: c.id,
-        title: typeof c.title === 'string' ? c.title : 'Conversa',
-        // Carried through, or restoring a backup would quietly un-name every
-        // chat the user had renamed: the title survives the round trip but the
-        // next autosave, seeing no flag, derives over it.
-        ...(c.titleCustom === true && { titleCustom: true }),
-        // Likewise carried: without it an imported chat reports its cost as
-        // unknown, having lost a count it was exported with.
-        ...(c.usage && { usage: c.usage }),
-        createdAt: typeof c.createdAt === 'string' ? c.createdAt : now,
-        updatedAt: typeof c.updatedAt === 'string' ? c.updatedAt : now,
-        messages: c.messages.filter(
-          (m) =>
-            m &&
-            (m.role === 'user' || m.role === 'assistant' || m.role === 'status') &&
-            typeof m.content === 'string'
-        )
-      }))
-    // Backup import writes conversations before memories. A local memory may
-    // still cite a conversation absent from the backup; keep its evidence.
-    const referenced = referencedConversationIds(listMemories({ includeArchived: true }))
-    saveConversations(retainReferencedConversations(clean, loadConversations(), referenced))
+  registerConversationHandlers(ipcMain, {
+    loadConversations,
+    saveConversations,
+    safeConversationsSave,
+    listMemories
   })
 
   pruneConversations()

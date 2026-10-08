@@ -1,23 +1,16 @@
 ﻿import { create } from 'zustand'
 import type { StateCreator } from 'zustand'
 import { v4 as uuidv4 } from 'uuid'
-import type {
-  Project,
-  Task,
-  Goal,
-  GoalEntry,
-  FinancialTable,
-  FinancialProfile,
-  FinancialTransactionDetail,
-  ActiveTimer,
-  Currency,
-  StickyNote
-} from '../types'
+import type { Task, Goal, GoalEntry } from '../types'
 import { DEFAULT_FINANCIAL_PROFILE_ID } from '../types'
-import { D, moneyStr } from '../utils/money'
-import { preserveLegacyFinancialMetadata } from '../utils/financialLegacy'
-import { migrateYieldSummaryDates } from '../utils/yieldSummary'
 import { ElectronStorage } from '../services/ElectronStorage'
+import {
+  normalizeFinancialProfiles,
+  normalizeFinancialTable,
+  normalizeNotes,
+  normalizeProject,
+  normalizeTimers
+} from './normalization'
 
 import type { HabitsSlice } from './slices/habits'
 import { createHabitsSlice } from './slices/habits'
@@ -40,124 +33,6 @@ import { createBackupSlice } from './slices/backup'
 
 const storage = new ElectronStorage()
 let _persistTimer: ReturnType<typeof setTimeout> | null = null
-
-// --- Code path selection helpers (also mirrored in slices/projects.ts) ---
-
-function activeIds(p: Project): string[] {
-  if (Array.isArray(p.activeCodePathIds)) return p.activeCodePathIds
-  return p.activeCodePathId ? [p.activeCodePathId] : []
-}
-
-function withActive(ids: string[]): Pick<Project, 'activeCodePathIds' | 'activeCodePathId'> {
-  return { activeCodePathIds: ids, activeCodePathId: ids[0] }
-}
-
-function normalizeNotes(notes: StickyNote[]): StickyNote[] {
-  return notes.map((n) => ({
-    ...n,
-    taskIds: n.taskIds ?? (n.taskId ? [n.taskId] : []),
-    connections: n.connections ?? [],
-    goalIds: n.goalIds ?? []
-  }))
-}
-
-function normalizeProject(p: Project, i: number): Project {
-  const known = new Set((p.codePaths ?? []).map((c) => c.id))
-  const ids = activeIds(p).filter((id) => known.has(id))
-  return { ...p, order: p.order ?? i, ...withActive(ids) }
-}
-
-// Keep in sync with the identical normalizeList in src/renderer/src/store/slices/backup.ts.
-function normalizeList(l: FinancialTable): FinancialTable {
-  const table = migrateYieldSummaryDates(preserveLegacyFinancialMetadata(l))
-  return {
-    ...table,
-    profileId: l.profileId || DEFAULT_FINANCIAL_PROFILE_ID,
-    currency: (l.currency || 'BRL') as Currency,
-    items: (l.items ?? []).map((i) => ({
-      ...i,
-      price: i.price === null || i.price === undefined ? undefined : moneyStr(i.price)
-    })),
-    transactions: (table.transactions ?? []).map((t) => {
-      const amount = moneyStr(t.amount)
-      return { ...t, amount, details: normalizeTransactionDetails(t.details, amount) }
-    }),
-    actualBalance: l.actualBalance == null ? undefined : moneyStr(l.actualBalance),
-    goals: (l.goals ?? []).map((g) => ({ ...g, targetAmount: moneyStr(g.targetAmount) })),
-    yieldSources: (l.yieldSources ?? []).map((s) => ({ ...s })),
-    yieldEntries: (l.yieldEntries ?? []).map((e) => ({ ...e, amount: moneyStr(e.amount) }))
-  }
-}
-
-function normalizeTransactionDetails(value: unknown, total: string): FinancialTransactionDetail[] {
-  if (!Array.isArray(value)) return []
-  let remaining = D(total)
-  const details: FinancialTransactionDetail[] = []
-  for (const detail of value) {
-    if (!detail || typeof detail !== 'object' || remaining.lessThanOrEqualTo(0)) continue
-    const item = detail as Partial<FinancialTransactionDetail>
-    if (typeof item.id !== 'string' || typeof item.description !== 'string') continue
-    const requested = D(item.amount)
-    if (requested.lessThanOrEqualTo(0)) continue
-    const amount = requested.lessThan(remaining) ? requested : remaining
-    details.push({
-      id: item.id,
-      description: item.description,
-      amount: amount.toString(),
-      ...(typeof item.category === 'string' && item.category.trim()
-        ? { category: item.category.trim() }
-        : {}),
-      ...(typeof item.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(item.date)
-        ? { date: item.date }
-        : {}),
-      ...(typeof item.linkedTransactionId === 'string' && item.linkedTransactionId
-        ? { linkedTransactionId: item.linkedTransactionId }
-        : {})
-    })
-    remaining = remaining.minus(amount)
-  }
-  return details
-}
-
-function normalizeFinancialProfiles(value: unknown): FinancialProfile[] {
-  if (!Array.isArray(value))
-    return [
-      {
-        id: DEFAULT_FINANCIAL_PROFILE_ID,
-        name: 'Minhas finanças',
-        createdAt: '1970-01-01T00:00:00.000Z',
-        updatedAt: '1970-01-01T00:00:00.000Z'
-      }
-    ]
-  const profiles = value.filter(
-    (profile): profile is FinancialProfile =>
-      !!profile &&
-      typeof profile === 'object' &&
-      typeof (profile as FinancialProfile).id === 'string' &&
-      typeof (profile as FinancialProfile).name === 'string' &&
-      typeof (profile as FinancialProfile).createdAt === 'string' &&
-      typeof (profile as FinancialProfile).updatedAt === 'string'
-  )
-  return profiles.length
-    ? profiles
-    : [
-        {
-          id: DEFAULT_FINANCIAL_PROFILE_ID,
-          name: 'Minhas finanças',
-          createdAt: '1970-01-01T00:00:00.000Z',
-          updatedAt: '1970-01-01T00:00:00.000Z'
-        }
-      ]
-}
-
-function normalizeTimers(data: { activeTimers?: unknown; activeTimer?: unknown }): ActiveTimer[] {
-  const valid = (t: unknown): t is ActiveTimer =>
-    !!t &&
-    typeof (t as ActiveTimer).taskId === 'string' &&
-    typeof (t as ActiveTimer).startedAt === 'number'
-  if (Array.isArray(data.activeTimers)) return data.activeTimers.filter(valid)
-  return valid(data.activeTimer) ? [data.activeTimer] : []
-}
 
 // --- Core slice (lifecycle + persistence) ---
 
@@ -276,7 +151,7 @@ const createCoreSlice: StateCreator<KanbanStore, [], [], CoreSlice> = (set, get)
       habits: data.habits || [],
       financialProfiles,
       activeFinancialProfileId,
-      lists: (data.lists || []).map(normalizeList).map((list) => ({
+      lists: (data.lists || []).map(normalizeFinancialTable).map((list) => ({
         ...list,
         profileId: financialProfileIds.has(list.profileId ?? '')
           ? list.profileId

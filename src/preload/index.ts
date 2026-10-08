@@ -2,6 +2,12 @@ import { contextBridge, ipcRenderer } from 'electron'
 // Type-only: erased at build, so no main-process code is pulled into the preload.
 import type { RunMetricInput, RunMetricsSummary } from '../main/run-metrics'
 import type { AiMemory, MemoryInput, MemorySummary, MemoryConflict } from '../main/memory'
+import type {
+  GlobalSearchHit,
+  GlobalSearchLookup,
+  GlobalSearchOptions,
+  GlobalSearchResponse
+} from '../main/global-search-query'
 
 /** A user-written Skill (.md file in userData/skills/). */
 interface Skill {
@@ -108,7 +114,14 @@ const api = {
   store: {
     load: (): Promise<{ projects: unknown[]; tasks: unknown[] }> =>
       ipcRenderer.invoke('store:load'),
-    save: (data: unknown): Promise<void> => ipcRenderer.invoke('store:save', data)
+    save: (data: unknown): Promise<void> => ipcRenderer.invoke('store:save', data),
+    rebuildSearchIndex: (): Promise<void> => ipcRenderer.invoke('store:rebuild-search-index')
+  },
+  search: {
+    global: (options: GlobalSearchOptions): Promise<GlobalSearchResponse> =>
+      ipcRenderer.invoke('search:global', options),
+    get: (options: GlobalSearchLookup): Promise<GlobalSearchHit | null> =>
+      ipcRenderer.invoke('search:global:get', options)
   },
   backup: {
     export: (backup: unknown): Promise<{ success: boolean; cancelled?: boolean }> =>
