@@ -162,6 +162,9 @@ O bloqueio opcional por senha guarda somente um derivado com salt em
 `password-security.json` (permissão 0600), fora do SQLite e dos backups. A tela
 de desbloqueio vem antes de `loadData`; ativar, alterar ou desativar exige o
 fluxo IPC `security:*` — nunca persista senha ou hash junto dos dados do usuário.
+`security:status` pode expor somente o nome de exibição escolhido para a saudação
+antes do desbloqueio; nunca devolva a configuração de IA, sua chave, ou dados do
+app nesse ponto.
 A consulta `search:global` roda no main, usa o perfil financeiro ativo e devolve
 trechos limitados com total; título, tags e conteúdo têm pesos distintos.
 O acesso direto `search:global:get` por tipo e ID aplica o mesmo filtro: registros

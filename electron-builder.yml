@@ -1,5 +1,6 @@
 appId: com.sagyou.app
 productName: Sagyou
+icon: build/icon.png
 directories:
   buildResources: build
 files:

@@ -204,6 +204,21 @@ export function AIConfigPanel({
       </p>
       <div className="mb-3 max-w-sm">
         {field('Como a IA deve chamar você', 'userName', 'text', 'Ex.: Luísa')}
+        {config.userName?.trim() ? (
+          <div className="mt-2 flex items-center gap-2 rounded-lg border border-violet-400/20 bg-violet-400/10 px-3 py-2 text-xs">
+            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-violet-400/20 text-violet-200">
+              ✓
+            </span>
+            <span className="text-[#c4b5fd]">
+              Perfil ativo: <strong>{config.userName.trim()}</strong>
+            </span>
+            <span className="text-[#999999]">A saudação e a IA usarão este nome.</span>
+          </div>
+        ) : (
+          <p className="mt-1.5 text-[11px] text-[#666666]">
+            Deixe em branco para não usar um nome nas respostas e na saudação inicial.
+          </p>
+        )}
       </div>
       <div className="grid grid-cols-3 gap-3">
         {field('Base URL', 'baseUrl', 'text', 'https://api.openai.com/v1')}

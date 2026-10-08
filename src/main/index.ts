@@ -912,8 +912,9 @@ function savePasswordConfig(config: PasswordConfig): void {
   chmodSync(passwordConfigPath(), 0o600)
 }
 
-function passwordStatus(): { enabled: boolean } {
-  return { enabled: passwordConfig !== null }
+function passwordStatus(): { enabled: boolean; userName?: string } {
+  const userName = loadAIConfig().userName?.trim()
+  return { enabled: passwordConfig !== null, userName: userName || undefined }
 }
 
 /**
