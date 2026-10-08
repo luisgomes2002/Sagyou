@@ -9,6 +9,7 @@ import type {
 import { ConfirmDialog } from '../ConfirmDialog'
 import { formatAmountInput, formatCurrency, formatDateBR, parseDecimalInput, D } from './shared'
 import { CategoryInput } from './CategoryInput'
+import { searchFocusClass, useSearchFocus } from '../../utils/searchFocus'
 
 interface DetailCategoryInputProps {
   value: string
@@ -36,6 +37,7 @@ function DetailCategoryInput({
 
 interface TransactionDetailsProps {
   transaction: FinancialTransaction
+  searchDetailId?: string
   currency: Currency
   allLists: FinancialTable[]
   onUpdate: (updates: Partial<Omit<FinancialTransaction, 'id'>>) => void
@@ -43,10 +45,12 @@ interface TransactionDetailsProps {
 
 export function TransactionDetails({
   transaction,
+  searchDetailId,
   currency,
   allLists,
   onUpdate
 }: TransactionDetailsProps) {
+  const searchRef = useSearchFocus<HTMLDivElement>(!!searchDetailId)
   const [description, setDescription] = useState('')
   const [category, setCategory] = useState('')
   const [amount, setAmount] = useState('')
@@ -130,7 +134,10 @@ export function TransactionDetails({
           {orderedDetails.map((detail) => (
             <div
               key={detail.id + ':' + detail.amount + ':' + detail.description}
-              className="grid grid-cols-[minmax(0,1fr)_6.5rem_6rem_8rem_1.4rem] gap-2 items-center"
+              ref={detail.id === searchDetailId ? searchRef : undefined}
+              className={`grid grid-cols-[minmax(0,1fr)_6.5rem_6rem_8rem_1.4rem] gap-2 items-center ${searchFocusClass(
+                detail.id === searchDetailId
+              )}`}
             >
               <input
                 defaultValue={detail.description}

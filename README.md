@@ -237,6 +237,7 @@ Tudo fica na sua máquina, no diretório de dados do app (`userData`):
 | `chat-files/`           | documentos enviados no chat (PDF, DOCX, etc.)                                                                            |
 | `task-images/`          | imagens anexadas a tarefas                                                                                               |
 | `ai-config.json`        | configuração do provedor de IA (inclui a chave de API)                                                                   |
+| `password-security.json` | derivado com salt da senha opcional do app; não contém a senha e não entra em backups                                  |
 | `ai-conversations.json` | histórico do chat                                                                                                        |
 | `ai-usage-log.json`     | registro de gastos por chamada (hoje, 30 dias, total, por modelo)                                                        |
 | `ai-run-metrics.json`   | métricas de eficiência por execução do agente (modelo, passos, tokens, buscas)                                           |
@@ -246,6 +247,8 @@ Tudo fica na sua máquina, no diretório de dados do app (`userData`):
 O assistente de IA é opcional e desligado até você configurar um provedor. Se você apontar para um provedor hospedado, os dados enviados no chat saem da máquina — use um modelo local se preferir manter tudo offline.
 
 O `kanban.db` também guarda um índice local de busca FTS5. Ele é derivado dos registros e do histórico de conversas e pode ser reconstruído sem alterar os dados originais.
+
+Para bloquear o app, abra o menu **Opções** na barra lateral e escolha **Segurança**. Você pode ativar, alterar ou desativar uma senha; quando ativa, ela é solicitada antes de os dados carregarem.
 
 ---
 

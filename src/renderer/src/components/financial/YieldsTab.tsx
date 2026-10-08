@@ -6,9 +6,11 @@ import { MONTH_NAMES, formatCurrency, parseDecimalInput, YIELD_SUMMARY_CATEGORY 
 import { todayLocalISO } from '../../utils/dates'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { MonthJump } from './MonthJump'
+import { searchFocusClass, useSearchFocus } from '../../utils/searchFocus'
 
 interface YieldsTabProps {
   list: FinancialTable
+  searchTargetId?: string
   activeMonth: { year: number; month: number }
   onMonthChange: (month: { year: number; month: number }) => void
   onAddSource: (name: string) => void
@@ -28,6 +30,7 @@ function daysInMonth(year: number, month: number): number {
 
 export function YieldsTab({
   list,
+  searchTargetId,
   activeMonth,
   onMonthChange,
   onAddSource,
@@ -40,6 +43,7 @@ export function YieldsTab({
   onUpdateTransaction,
   onDeleteTransaction
 }: YieldsTabProps) {
+  const searchRef = useSearchFocus<HTMLDivElement>(!!searchTargetId)
   const currency = list.currency
   const sources = list.yieldSources ?? []
   const entries = list.yieldEntries ?? []
@@ -302,7 +306,11 @@ export function YieldsTab({
           </p>
           <div className="space-y-1.5 mb-3">
             {sources.map((source) => (
-              <div key={source.id} className="flex items-center gap-2 group">
+              <div
+                key={source.id}
+                ref={source.id === searchTargetId ? searchRef : undefined}
+                className={`flex items-center gap-2 group ${searchFocusClass(source.id === searchTargetId)}`}
+              >
                 {editingSourceId === source.id ? (
                   <input
                     type="text"

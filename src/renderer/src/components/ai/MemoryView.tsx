@@ -1,6 +1,7 @@
 ﻿import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useKanbanStore } from '../../store/kanban'
 import type { AiMemory, MemoryType } from '../../types'
+import { searchFocusClass } from '../../utils/searchFocus'
 
 // The memory control panel: see, pin, restore and delete the durable facts the
 // assistant accumulated. Reads through window.electronAPI.ai.memory.* (the store
@@ -25,7 +26,7 @@ const TYPE_COLOR: Record<MemoryType, string> = {
   planejamento: '#a080f0'
 }
 
-export function MemoryView(): React.JSX.Element {
+export function MemoryView({ searchTargetId }: { searchTargetId?: string }): React.JSX.Element {
   const projects = useKanbanStore((s) => s.projects)
   const [memories, setMemories] = useState<AiMemory[]>([])
   const [showArchived, setShowArchived] = useState(false)
@@ -52,6 +53,11 @@ export function MemoryView(): React.JSX.Element {
   useEffect(() => {
     refresh()
   }, [refresh])
+
+  useEffect(() => {
+    if (!searchTargetId || loading) return
+    document.getElementById(`memory-search-${searchTargetId}`)?.scrollIntoView?.({ block: 'center' })
+  }, [searchTargetId, loading, showArchived])
 
   const shown = useMemo(
     () => memories.filter((m) => showArchived || !m.archivedAt),
@@ -107,7 +113,8 @@ export function MemoryView(): React.JSX.Element {
             {shown.map((m) => (
               <div
                 key={m.id}
-                className={`rounded-lg border p-3 ${
+                id={m.id === searchTargetId ? `memory-search-${m.id}` : undefined}
+                className={`rounded-lg border p-3 ${searchFocusClass(m.id === searchTargetId)} ${
                   m.archivedAt
                     ? 'border-[#2a2a2a] bg-transparent opacity-60'
                     : 'border-[#2a2a2a] bg-[#1b1b1b]'

@@ -6,6 +6,7 @@ import { randomUUID } from 'crypto'
 import Database from 'better-sqlite3'
 import { normalizeMemory, type AiMemory, type MemoryType } from './memory'
 import { decodeDataUrl } from './chat-images'
+import { isDocumentExt, parseDocument } from './document-parser'
 import {
   buildConversationDocuments,
   buildMemoryDocuments,
@@ -288,6 +289,7 @@ interface SaveData {
   lists: FinancialTable[]
   financialProfiles?: FinancialProfile[]
   activeFinancialProfileId?: string
+  featurePreferences?: string[]
   files: StoredFile[]
   timeBlocks?: TimeBlock[]
   routines?: Routine[]
@@ -334,11 +336,14 @@ function getDb(): Database.Database {
   createGlobalSearchIndex(_db)
   // FTS is disposable: startup also repairs an index left stale by an older build.
   rebuildSearchIndexFromDb(_db)
+  // Document extraction can be slow for large PDFs, so startup gets the last cached
+  // index immediately and refreshes this derived content in the background.
+  void refreshProjectFileSearchContent(_db)
   return _db
 }
 
 function rebuildSearchIndexFromDb(db: Database.Database): void {
-  const source = loadData(db)
+  const source = withFileSearchContent(db, loadData(db))
   rebuildGlobalSearchIndex(db, source, [
     ...buildMemoryDocuments(
       memoryRows(db),
@@ -349,8 +354,80 @@ function rebuildSearchIndexFromDb(db: Database.Database): void {
 }
 
 /** Recreate every derived document from the current SQLite and conversation file. */
-export function rebuildSearchIndex(): void {
-  rebuildSearchIndexFromDb(getDb())
+export async function rebuildSearchIndex(): Promise<void> {
+  const db = getDb()
+  await refreshProjectFileSearchContent(db)
+  rebuildSearchIndexFromDb(db)
+}
+
+interface FileSearchContentRow {
+  file_id: string
+  content: string
+}
+
+function withFileSearchContent(db: Database.Database, source: SaveData): SaveData {
+  const contentByFileId = new Map(
+    (
+      db.prepare('SELECT file_id, content FROM file_search_content').all() as FileSearchContentRow[]
+    ).map((row) => [row.file_id, row.content])
+  )
+  return {
+    ...source,
+    files: source.files.map((file) => ({ ...file, content: contentByFileId.get(file.id) }))
+  }
+}
+
+/**
+ * Derived document text stays outside the file metadata and backups. The ID is
+ * deliberately plain TEXT: persistAll temporarily deletes and reinserts files.
+ */
+export async function indexProjectFileContent(
+  id: string,
+  filePath: string,
+  ext: string
+): Promise<void> {
+  const db = getDb()
+  const parsed = isDocumentExt(ext) ? await parseDocument(filePath, ext) : { error: 'unsupported' }
+  db.transaction(() => {
+    if ('error' in parsed || !parsed.text.trim()) {
+      db.prepare('DELETE FROM file_search_content WHERE file_id=?').run(id)
+    } else {
+      db.prepare(
+        'INSERT OR REPLACE INTO file_search_content (file_id, content, updated_at) VALUES (?, ?, ?)'
+      ).run(id, parsed.text, new Date().toISOString())
+    }
+    const source = loadData(db)
+    if (source.files.some((file) => file.id === id))
+      syncGlobalSearchIndex(db, withFileSearchContent(db, source))
+  })()
+}
+
+/** Remove a deleted file immediately, before the renderer's metadata autosave arrives. */
+export function removeProjectFileSearchContent(id: string): void {
+  const db = getDb()
+  db.transaction(() => {
+    db.prepare('DELETE FROM file_search_content WHERE file_id=?').run(id)
+    db.prepare("DELETE FROM global_search_fts WHERE type='file' AND id=?").run(id)
+  })()
+}
+
+async function refreshProjectFileSearchContent(db: Database.Database): Promise<void> {
+  const source = loadData(db)
+  for (const file of source.files) {
+    const filePath = join(app.getPath('userData'), 'files', `${file.id}${file.ext}`)
+    const parsed = isDocumentExt(file.ext)
+      ? await parseDocument(filePath, file.ext)
+      : { error: 'unsupported' }
+    if ('error' in parsed || !parsed.text.trim()) {
+      db.prepare('DELETE FROM file_search_content WHERE file_id=?').run(file.id)
+    } else {
+      db.prepare(
+        'INSERT OR REPLACE INTO file_search_content (file_id, content, updated_at) VALUES (?, ?, ?)'
+      ).run(file.id, parsed.text, new Date().toISOString())
+    }
+  }
+  db.prepare('DELETE FROM file_search_content WHERE file_id NOT IN (SELECT id FROM files)').run()
+  syncGlobalSearchIndex(db, withFileSearchContent(db, source))
 }
 
 function activeProfileIdForSearch(db: Database.Database): string {
@@ -367,8 +444,10 @@ function activeProfileIdForSearch(db: Database.Database): string {
   }
   const profiles = parseFinancialProfiles(setting('financialProfiles'))
   const active = setting('activeFinancialProfileId')
-  const profileId = typeof active === 'string' && profiles.some((profile) => profile.id === active)
-    ? active : DEFAULT_FINANCIAL_PROFILE_ID
+  const profileId =
+    typeof active === 'string' && profiles.some((profile) => profile.id === active)
+      ? active
+      : DEFAULT_FINANCIAL_PROFILE_ID
   return profileId
 }
 
@@ -409,8 +488,11 @@ function syncMemorySearchRows(db: Database.Database, archivedProjects?: Set<stri
   const archived =
     archivedProjects ??
     new Set(
-      (db.prepare('SELECT id FROM projects WHERE archived_at IS NOT NULL').all() as { id: string }[])
-        .map((p) => p.id)
+      (
+        db.prepare('SELECT id FROM projects WHERE archived_at IS NOT NULL').all() as {
+          id: string
+        }[]
+      ).map((p) => p.id)
     )
   syncSupplementalSearchIndex(db, 'memory', buildMemoryDocuments(memoryRows(db), archived))
 }
@@ -1050,6 +1132,14 @@ function initSchema(db: Database.Database): void {
       created_at TEXT NOT NULL,
       project_id TEXT
     );
+    -- Disposable parser output for global search. No FK: persistAll temporarily
+    -- removes every file row before reinserting it, and a cascade would erase
+    -- extracted text on any full save.
+    CREATE TABLE IF NOT EXISTS file_search_content (
+      file_id TEXT PRIMARY KEY,
+      content TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT
@@ -1530,6 +1620,9 @@ function persistDiff(db: Database.Database, prev: SaveData, next: SaveData): voi
   ) {
     writeFinancialProfiles(w, next.financialProfiles, next.activeFinancialProfileId)
   }
+  if (JSON.stringify(prev.featurePreferences) !== JSON.stringify(next.featurePreferences)) {
+    w.setSetting('featurePreferences', next.featurePreferences ?? [])
+  }
   diffEntities(prev.files, next.files, w.del.file, w.insert.file)
   diffEntities(prev.timeBlocks ?? [], next.timeBlocks ?? [], w.del.timeBlock, w.insert.timeBlock)
   diffEntities(prev.routines ?? [], next.routines ?? [], w.del.routine, w.insert.routine)
@@ -1582,6 +1675,9 @@ function persistAll(db: Database.Database, data: SaveData): void {
   for (const h of data.habits ?? []) w.insert.habit(h)
   for (const ft of data.lists ?? []) w.insert.ftable(ft)
   writeFinancialProfiles(w, data.financialProfiles, data.activeFinancialProfileId)
+  if (data.featurePreferences !== undefined) {
+    w.setSetting('featurePreferences', data.featurePreferences)
+  }
   for (const f of data.files ?? []) w.insert.file(f)
   for (const tb of data.timeBlocks ?? []) w.insert.timeBlock(tb)
   for (const r of data.routines ?? []) w.insert.routine(r)
@@ -1949,6 +2045,7 @@ export function loadData(existingDb?: Database.Database): SaveData {
   const legacyTimer = getSetting('activeTimer')
   const timersRaw = getSetting('activeTimers')
   const activeTimers = Array.isArray(timersRaw) ? timersRaw : legacyTimer ? [legacyTimer] : []
+  const featurePreferences = getSetting('featurePreferences')
 
   return {
     projects,
@@ -1966,6 +2063,9 @@ export function loadData(existingDb?: Database.Database): SaveData {
     })),
     financialProfiles,
     activeFinancialProfileId,
+    featurePreferences: Array.isArray(featurePreferences)
+      ? featurePreferences.filter((feature): feature is string => typeof feature === 'string')
+      : undefined,
     files,
     timeBlocks,
     routines,
@@ -1991,11 +2091,16 @@ export function saveData(data: unknown): void {
     const now = new Date().toISOString()
     const autoEvents = diffEvents(prev, next, now)
     appendEventRows(db, [...autoEvents, ...aiEvents])
-    syncGlobalSearchIndex(db, next)
+    db.prepare('DELETE FROM file_search_content WHERE file_id NOT IN (SELECT id FROM files)').run()
+    syncGlobalSearchIndex(db, withFileSearchContent(db, next))
     // Memory belongs to a satellite table. Only a project's archive state
     // changes its derived filter metadata during a regular app save.
     const archivedIds = (projects: Project[]): string =>
-      projects.filter((p) => p.archivedAt).map((p) => p.id).sort().join('\0')
+      projects
+        .filter((p) => p.archivedAt)
+        .map((p) => p.id)
+        .sort()
+        .join('\0')
     if (prev && archivedIds(prev.projects) !== archivedIds(next.projects)) {
       syncMemorySearchRows(db, new Set(next.projects.filter((p) => p.archivedAt).map((p) => p.id)))
     }
@@ -2306,32 +2411,30 @@ export function upsertMemory(m: AiMemory): void {
 }
 
 function writeMemoryRow(db: Database.Database, m: AiMemory): void {
-  db
-    .prepare(
-      `INSERT INTO memory
+  db.prepare(
+    `INSERT INTO memory
          (id,project_id,type,title,body,tags,pinned,source,source_conversation_id,created_at,updated_at,last_accessed_at,access_count,archived_at)
        VALUES (@id,@project_id,@type,@title,@body,@tags,@pinned,@source,@source_conversation_id,@created_at,@updated_at,@last_accessed_at,@access_count,@archived_at)
        ON CONFLICT(id) DO UPDATE SET
          project_id=@project_id, type=@type, title=@title, body=@body, tags=@tags,
          pinned=@pinned, source=@source, source_conversation_id=@source_conversation_id, updated_at=@updated_at,
          last_accessed_at=@last_accessed_at, access_count=@access_count, archived_at=@archived_at`
-    )
-    .run({
-      id: m.id,
-      project_id: m.projectId,
-      type: m.type,
-      title: m.title,
-      body: m.body,
-      tags: JSON.stringify(m.tags),
-      pinned: m.pinned ? 1 : 0,
-      source: m.source,
-      source_conversation_id: m.sourceConversationId,
-      created_at: m.createdAt,
-      updated_at: m.updatedAt,
-      last_accessed_at: m.lastAccessedAt,
-      access_count: m.accessCount,
-      archived_at: m.archivedAt
-    })
+  ).run({
+    id: m.id,
+    project_id: m.projectId,
+    type: m.type,
+    title: m.title,
+    body: m.body,
+    tags: JSON.stringify(m.tags),
+    pinned: m.pinned ? 1 : 0,
+    source: m.source,
+    source_conversation_id: m.sourceConversationId,
+    created_at: m.createdAt,
+    updated_at: m.updatedAt,
+    last_accessed_at: m.lastAccessedAt,
+    access_count: m.accessCount,
+    archived_at: m.archivedAt
+  })
 }
 
 /** Bump last-accessed + count for the given ids — the cheap write decay reads. */

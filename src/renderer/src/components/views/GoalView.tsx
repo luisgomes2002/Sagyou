@@ -4,9 +4,11 @@ import { useKanbanStore } from '../../store/kanban'
 import { GoalModal } from '../modals/GoalModal'
 import { GoalCard } from '../GoalCard'
 import { useDeleteConfirm } from '../useDeleteConfirm'
+import { searchFocusClass, useSearchFocus } from '../../utils/searchFocus'
 
 interface Props {
   projects: Project[]
+  searchTargetId?: string | null
 }
 
 type FilterType = 'all' | 'active' | 'done'
@@ -16,7 +18,7 @@ interface ModalState {
   goal?: Goal
 }
 
-export function GoalView({ projects }: Props) {
+export function GoalView({ projects, searchTargetId }: Props) {
   const goals = useKanbanStore((s) => s.goals)
   const createGoal = useKanbanStore((s) => s.createGoal)
   const updateGoal = useKanbanStore((s) => s.updateGoal)
@@ -26,6 +28,7 @@ export function GoalView({ projects }: Props) {
 
   const [modal, setModal] = useState<ModalState>({ open: false })
   const [filter, setFilter] = useState<FilterType>('all')
+  const searchRef = useSearchFocus<HTMLDivElement>(!!searchTargetId)
 
   const { prompt: promptDelete, confirmDialog } = useDeleteConfirm(deleteGoal, {
     title: 'Deletar meta',
@@ -174,15 +177,20 @@ export function GoalView({ projects }: Props) {
           <div className="flex-1 overflow-y-auto p-6">
             <div className="grid grid-cols-2 gap-4">
               {filtered.map((goal) => (
-                <GoalCard
+                <div
                   key={goal.id}
-                  goal={goal}
-                  projectName={goal.projectId ? projectMap[goal.projectId] : undefined}
-                  onEdit={() => setModal({ open: true, goal })}
-                  onDelete={() => promptDelete(goal.id)}
-                  onAddEntry={(data) => addGoalEntry(goal.id, data)}
-                  onDeleteEntry={(entryId) => deleteGoalEntry(goal.id, entryId)}
-                />
+                  ref={goal.id === searchTargetId ? searchRef : undefined}
+                  className={searchFocusClass(goal.id === searchTargetId)}
+                >
+                  <GoalCard
+                    goal={goal}
+                    projectName={goal.projectId ? projectMap[goal.projectId] : undefined}
+                    onEdit={() => setModal({ open: true, goal })}
+                    onDelete={() => promptDelete(goal.id)}
+                    onAddEntry={(data) => addGoalEntry(goal.id, data)}
+                    onDeleteEntry={(entryId) => deleteGoalEntry(goal.id, entryId)}
+                  />
+                </div>
               ))}
             </div>
           </div>

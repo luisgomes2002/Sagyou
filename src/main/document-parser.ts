@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { convertWithMarkItDown, hasBundledMarkItDown } from './markitdown'
 
 /**
  * Text extraction from binary document formats.
@@ -46,8 +47,47 @@ const EXT_MIME: Record<string, string> = {
   '.htm': 'text/html',
   '.rtf': 'application/rtf',
   '.odt': 'application/vnd.oasis.opendocument.text',
-  '.ods': 'application/vnd.oasis.opendocument.spreadsheet'
+  '.ods': 'application/vnd.oasis.opendocument.spreadsheet',
+  '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  '.ppt': 'application/vnd.ms-powerpoint',
+  '.xls': 'application/vnd.ms-excel',
+  '.epub': 'application/epub+zip',
+  '.zip': 'application/zip',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.gif': 'image/gif',
+  '.bmp': 'image/bmp',
+  '.webp': 'image/webp',
+  '.tif': 'image/tiff',
+  '.tiff': 'image/tiff',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.m4a': 'audio/mp4',
+  '.ogg': 'audio/ogg',
+  '.flac': 'audio/flac'
 }
+
+const MARKITDOWN_ONLY_EXT = new Set([
+  '.pptx',
+  '.ppt',
+  '.xls',
+  '.epub',
+  '.zip',
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.gif',
+  '.bmp',
+  '.webp',
+  '.tif',
+  '.tiff',
+  '.mp3',
+  '.wav',
+  '.m4a',
+  '.ogg',
+  '.flac'
+])
 
 export function supportedExtensions(): string[] {
   return Object.keys(EXT_MIME)
@@ -198,6 +238,15 @@ export async function parseDocument(
   } catch {
     return { error: 'Não foi possível ler o arquivo' }
   }
+  if (buffer.length === 0) return { error: 'Arquivo vazio' }
+  if (buffer.length > MAX_DOCUMENT_BYTES) {
+    return { error: `Arquivo grande demais (máx. ${MAX_DOCUMENT_BYTES / 1024 / 1024}MB)` }
+  }
+  if (hasBundledMarkItDown()) {
+    const converted = await convertWithMarkItDown(filePath)
+    if ('error' in converted) return converted
+    return { ...converted, size: buffer.length }
+  }
   return parseDocumentBuffer(buffer, ext)
 }
 
@@ -216,6 +265,10 @@ export async function parseDocumentBuffer(
   if (buffer.length === 0) return { error: 'Arquivo vazio' }
   if (buffer.length > MAX_DOCUMENT_BYTES) {
     return { error: `Arquivo grande demais (máx. ${MAX_DOCUMENT_BYTES / 1024 / 1024}MB)` }
+  }
+
+  if (MARKITDOWN_ONLY_EXT.has(key)) {
+    return { error: 'Runtime do MarkItDown não está disponível nesta instalação' }
   }
 
   try {

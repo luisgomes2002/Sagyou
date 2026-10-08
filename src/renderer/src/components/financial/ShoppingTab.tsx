@@ -3,9 +3,11 @@ import Decimal from 'decimal.js'
 import type { ShoppingItem, FinancialTable, Currency } from '../../types'
 import { CURRENCY_CONFIG } from '../../types'
 import { formatCurrency, itemTotal, parseDecimalInput, formatAmountInput } from './shared'
+import { searchFocusClass, useSearchFocus } from '../../utils/searchFocus'
 
 interface ItemRowProps {
   item: ShoppingItem
+  highlighted?: boolean
   currency: Currency
   onUpdate: (
     updates: Partial<Pick<ShoppingItem, 'name' | 'qty' | 'price' | 'done' | 'link'>>
@@ -14,7 +16,8 @@ interface ItemRowProps {
   onToggle: () => void
 }
 
-function ItemRow({ item, currency, onUpdate, onDelete, onToggle }: ItemRowProps) {
+function ItemRow({ item, highlighted, currency, onUpdate, onDelete, onToggle }: ItemRowProps) {
+  const searchRef = useSearchFocus<HTMLTableRowElement>(!!highlighted)
   const [name, setName] = useState(item.name)
   const [qty, setQty] = useState(item.qty.toString())
   const [price, setPrice] = useState(() =>
@@ -70,7 +73,8 @@ function ItemRow({ item, currency, onUpdate, onDelete, onToggle }: ItemRowProps)
 
   return (
     <tr
-      className={`group border-b border-[#3b3b3b] transition-colors ${item.done ? 'opacity-60' : 'hover:bg-[#2a2a2a]'}`}
+      ref={searchRef}
+      className={`group border-b border-[#3b3b3b] transition-colors ${item.done ? 'opacity-60' : 'hover:bg-[#2a2a2a]'} ${searchFocusClass(!!highlighted)}`}
     >
       <td className="pl-4 pr-2 py-2">
         <button
@@ -333,6 +337,7 @@ function AddItemRow({ currency, onAdd }: AddItemRowProps) {
 
 interface ShoppingTabProps {
   list: FinancialTable
+  searchTargetId?: string
   onUpdate: (
     itemId: string,
     updates: Partial<Pick<ShoppingItem, 'name' | 'qty' | 'price' | 'done' | 'link'>>
@@ -342,7 +347,14 @@ interface ShoppingTabProps {
   onAdd: (data: { name: string; qty: number; price?: string; link?: string }) => void
 }
 
-export function ShoppingTab({ list, onUpdate, onDelete, onToggle, onAdd }: ShoppingTabProps) {
+export function ShoppingTab({
+  list,
+  searchTargetId,
+  onUpdate,
+  onDelete,
+  onToggle,
+  onAdd
+}: ShoppingTabProps) {
   const items = list.items
   const currency = list.currency
   const totalItems = items.length
@@ -410,6 +422,7 @@ export function ShoppingTab({ list, onUpdate, onDelete, onToggle, onAdd }: Shopp
               <ItemRow
                 key={item.id}
                 item={item}
+                highlighted={item.id === searchTargetId}
                 currency={currency}
                 onUpdate={(updates) => onUpdate(item.id, updates)}
                 onDelete={() => onDelete(item.id)}

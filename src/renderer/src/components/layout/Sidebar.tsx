@@ -1,6 +1,6 @@
 ﻿import { useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import type { Project } from '../../types'
+import type { FeatureId, Project } from '../../types'
 import { useAiRunStore } from '../../store/aiRun'
 
 type ActiveView =
@@ -20,6 +20,7 @@ type ActiveView =
   | 'planejamento'
   | 'graph'
   | 'guide'
+  | 'settings'
 
 interface Props {
   projects: Project[]
@@ -39,6 +40,7 @@ interface Props {
   onOpenBackupFolder: () => void
   onImportAI: () => void
   onExportExcel: () => void
+  enabledFeatures: FeatureId[]
   codeAgentRunCount?: number
 }
 
@@ -67,6 +69,7 @@ export function Sidebar({
   onOpenBackupFolder,
   onImportAI,
   onExportExcel,
+  enabledFeatures,
   codeAgentRunCount = 0
 }: Props) {
   const runningCount = useAiRunStore((s) => s.running.size)
@@ -116,7 +119,10 @@ export function Sidebar({
 }`
 
   const handleToggleJsonExample = () => {
-    if (showJsonExample) { setShowJsonExample(false); return }
+    if (showJsonExample) {
+      setShowJsonExample(false)
+      return
+    }
     const rect = jsonInfoRef.current?.getBoundingClientRect()
     if (rect) setJsonExamplePos({ top: rect.bottom + 8, left: Math.max(8, rect.left - 200) })
     setShowJsonExample(true)
@@ -150,6 +156,7 @@ export function Sidebar({
   }
 
   const isActive = (view: ActiveView) => activeView === view
+  const hasFeature = (feature: FeatureId) => enabledFeatures.includes(feature)
 
   const SectionHeader = ({
     label,
@@ -192,7 +199,14 @@ export function Sidebar({
       view: 'home',
       label: 'Início',
       icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+        >
           <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
           <polyline points="9 22 9 12 15 12 15 22" />
         </svg>
@@ -202,7 +216,14 @@ export function Sidebar({
       view: 'board',
       label: 'Board',
       icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+        >
           <rect x="3" y="3" width="7" height="18" rx="1" />
           <rect x="14" y="3" width="7" height="11" rx="1" />
           <rect x="14" y="18" width="7" height="3" rx="1" />
@@ -213,7 +234,14 @@ export function Sidebar({
       view: 'upcoming',
       label: 'Próximas',
       icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+        >
           <rect x="3" y="4" width="18" height="18" rx="2" />
           <line x1="16" y1="2" x2="16" y2="6" />
           <line x1="8" y1="2" x2="8" y2="6" />
@@ -226,7 +254,14 @@ export function Sidebar({
       label: 'Concluídas',
       accent: 'green',
       icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+        >
           <polyline points="20 6 9 17 4 12" />
         </svg>
       )
@@ -238,7 +273,14 @@ export function Sidebar({
       view: 'goals',
       label: 'Metas',
       icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+        >
           <circle cx="12" cy="12" r="10" />
           <circle cx="12" cy="12" r="6" />
           <circle cx="12" cy="12" r="2" />
@@ -250,7 +292,14 @@ export function Sidebar({
       label: 'Hábitos',
       accent: 'green',
       icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+        >
           <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
         </svg>
       )
@@ -259,7 +308,14 @@ export function Sidebar({
       view: 'financial',
       label: 'Financeiro',
       icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+        >
           <rect x="2" y="3" width="20" height="14" rx="2" />
           <line x1="8" y1="21" x2="16" y2="21" />
           <line x1="12" y1="17" x2="12" y2="21" />
@@ -270,7 +326,14 @@ export function Sidebar({
       view: 'planejamento',
       label: 'Planejamento',
       icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+        >
           <rect x="3" y="4" width="18" height="18" rx="2" />
           <line x1="16" y1="2" x2="16" y2="6" />
           <line x1="8" y1="2" x2="8" y2="6" />
@@ -285,7 +348,14 @@ export function Sidebar({
       view: 'reports',
       label: 'Relatórios',
       icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+        >
           <line x1="18" y1="20" x2="18" y2="10" />
           <line x1="12" y1="20" x2="12" y2="4" />
           <line x1="6" y1="20" x2="6" y2="14" />
@@ -296,7 +366,14 @@ export function Sidebar({
       view: 'canvas',
       label: 'Canvas',
       icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+        >
           <path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
         </svg>
       )
@@ -305,7 +382,14 @@ export function Sidebar({
       view: 'files',
       label: 'Arquivos',
       icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+        >
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
           <polyline points="14 2 14 8 20 8" />
         </svg>
@@ -315,7 +399,14 @@ export function Sidebar({
       view: 'graph',
       label: 'Grafo',
       icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+        >
           <circle cx="12" cy="12" r="3" />
           <circle cx="4" cy="7" r="2" />
           <circle cx="20" cy="7" r="2" />
@@ -334,7 +425,14 @@ export function Sidebar({
     view: 'guide',
     label: 'Como funciona',
     icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      >
         <circle cx="12" cy="12" r="10" />
         <path d="M9.5 9a2.5 2.5 0 1 1 4.2 1.8C12.5 11.8 12 12.2 12 14" />
         <circle cx="12" cy="17.5" r=".75" fill="currentColor" stroke="none" />
@@ -347,7 +445,14 @@ export function Sidebar({
       view: 'ai',
       label: 'Chat',
       icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+        >
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
         </svg>
       )
@@ -356,7 +461,14 @@ export function Sidebar({
       view: 'memory',
       label: 'Memória',
       icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+        >
           <path d="M12 2a5 5 0 0 0-5 5v1a4 4 0 0 0-2 7 4 4 0 0 0 4 5 3 3 0 0 0 3-3V7a5 5 0 0 0 0 0Z" />
           <path d="M12 2a5 5 0 0 1 5 5v1a4 4 0 0 1 2 7 4 4 0 0 1-4 5 3 3 0 0 1-3-3" />
         </svg>
@@ -366,7 +478,14 @@ export function Sidebar({
       view: 'agents',
       label: 'Agentes',
       icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+        >
           <rect x="3" y="11" width="18" height="10" rx="2" />
           <circle cx="12" cy="5" r="2" />
           <path d="M12 7v4" />
@@ -389,7 +508,7 @@ export function Sidebar({
       >
         {item.icon}
         <span className="flex-1 truncate">{item.label}</span>
-        {item.view === 'agents' && (runningCount + codeAgentRunCount) > 0 && (
+        {item.view === 'agents' && runningCount + codeAgentRunCount > 0 && (
           <span className="min-w-[18px] h-[18px] px-1.5 inline-flex items-center justify-center rounded-full bg-[#7c3aed] text-[10px] font-semibold text-white tabular-nums">
             {runningCount + codeAgentRunCount}
           </span>
@@ -600,7 +719,9 @@ export function Sidebar({
         <SectionHeader label="Navegação" sectionKey="nav" />
         {!isCollapsed('nav') && (
           <div className="px-2 pb-1 space-y-0.5">
-            {navigationItems.map(renderNavItem)}
+            {navigationItems
+              .filter((item) => item.view === 'home' || hasFeature('kanban'))
+              .map(renderNavItem)}
           </div>
         )}
 
@@ -608,134 +729,150 @@ export function Sidebar({
         <SectionHeader label="Ferramentas" sectionKey="tools" />
         {!isCollapsed('tools') && (
           <div className="px-2 pb-1 space-y-0.5">
-            {toolItems.map(renderNavItem)}
+            {toolItems
+              .filter((item) => {
+                const featureByView: Partial<Record<ActiveView, FeatureId>> = {
+                  goals: 'goals',
+                  habits: 'habits',
+                  financial: 'financial',
+                  planejamento: 'planning',
+                  reports: 'reports',
+                  canvas: 'canvas',
+                  files: 'files',
+                  graph: 'graph'
+                }
+                return hasFeature(featureByView[item.view]!)
+              })
+              .map(renderNavItem)}
           </div>
         )}
 
         {/* IA */}
-        <SectionHeader label="IA" sectionKey="ai" badge="Em teste" />
-        {!isCollapsed('ai') && (
-          <div className="px-2 pb-1 space-y-0.5">
-            {aiItems.map(renderNavItem)}
-          </div>
+        {hasFeature('ai') && <SectionHeader label="IA" sectionKey="ai" badge="Em teste" />}
+        {hasFeature('ai') && !isCollapsed('ai') && (
+          <div className="px-2 pb-1 space-y-0.5">{aiItems.map(renderNavItem)}</div>
         )}
 
         {/* project list */}
-        <div className="mt-1">
-          <SectionHeader label="Projetos" sectionKey="projects" />
-          {!isCollapsed('projects') && (
-            <div className="px-2 pb-1">
-              {activeProjects.length === 0 && archivedProjects.length === 0 && (
-                <p className="px-3 py-1 text-xs text-[#999999] italic">Nenhum projeto ainda</p>
-              )}
-              {activeProjects.map((project) => (
-                <div key={project.id} className="relative group">
-                  <button
-                    onClick={() => onSelectProject(project.id)}
-                    className={`flex items-center gap-2.5 w-full px-3 py-[5px] rounded text-[13px] transition-colors text-left ${
-                      activeProjectId === project.id
-                        ? 'bg-[#3b3b3b] text-[#a080f0]'
-                        : 'text-[#999999] hover:bg-[#2a2a2a] hover:text-[#d4d4d4]'
-                    }`}
-                  >
-                    <div
-                      className="w-2.5 h-2.5 rounded-full shrink-0"
-                      style={{ backgroundColor: project.color }}
-                    />
-                    <span className="truncate flex-1">{project.name}</span>
-                  </button>
-
-                  <div
-                    className={`absolute right-2 top-1/2 -translate-y-1/2 transition-opacity ${projectMenuId === project.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
-                  >
+        {hasFeature('kanban') && (
+          <div className="mt-1">
+            <SectionHeader label="Projetos" sectionKey="projects" />
+            {!isCollapsed('projects') && (
+              <div className="px-2 pb-1">
+                {activeProjects.length === 0 && archivedProjects.length === 0 && (
+                  <p className="px-3 py-1 text-xs text-[#999999] italic">Nenhum projeto ainda</p>
+                )}
+                {activeProjects.map((project) => (
+                  <div key={project.id} className="relative group">
                     <button
-                      onClick={(e) => handleOpenProjectMenu(e, project.id)}
-                      className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#3b3b3b] transition-colors"
+                      onClick={() => onSelectProject(project.id)}
+                      className={`flex items-center gap-2.5 w-full px-3 py-[5px] rounded text-[13px] transition-colors text-left ${
+                        activeProjectId === project.id
+                          ? 'bg-[#3b3b3b] text-[#a080f0]'
+                          : 'text-[#999999] hover:bg-[#2a2a2a] hover:text-[#d4d4d4]'
+                      }`}
+                    >
+                      <div
+                        className="w-2.5 h-2.5 rounded-full shrink-0"
+                        style={{ backgroundColor: project.color }}
+                      />
+                      <span className="truncate flex-1">{project.name}</span>
+                    </button>
+
+                    <div
+                      className={`absolute right-2 top-1/2 -translate-y-1/2 transition-opacity ${projectMenuId === project.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                    >
+                      <button
+                        onClick={(e) => handleOpenProjectMenu(e, project.id)}
+                        className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#3b3b3b] transition-colors"
+                      >
+                        <svg
+                          width="12"
+                          height="12"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                        >
+                          <circle cx="12" cy="5" r="1" fill="currentColor" />
+                          <circle cx="12" cy="12" r="1" fill="currentColor" />
+                          <circle cx="12" cy="19" r="1" fill="currentColor" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+
+                {archivedProjects.length > 0 && (
+                  <>
+                    <button
+                      onClick={() => setShowArchived((v) => !v)}
+                      className="flex items-center gap-2 w-full px-3 py-[5px] rounded text-xs text-[#666666] hover:text-[#999999] hover:bg-[#2a2a2a] transition-colors mt-1"
                     >
                       <svg
-                        width="12"
-                        height="12"
+                        width="10"
+                        height="10"
                         viewBox="0 0 24 24"
                         fill="none"
                         stroke="currentColor"
                         strokeWidth="2"
+                        className={`transition-transform ${showArchived ? 'rotate-90' : ''}`}
                       >
-                        <circle cx="12" cy="5" r="1" fill="currentColor" />
-                        <circle cx="12" cy="12" r="1" fill="currentColor" />
-                        <circle cx="12" cy="19" r="1" fill="currentColor" />
+                        <polyline points="9 18 15 12 9 6" />
                       </svg>
+                      <span>
+                        {showArchived
+                          ? 'Ocultar arquivados'
+                          : `Ver arquivados (${archivedProjects.length})`}
+                      </span>
                     </button>
-                  </div>
-                </div>
-              ))}
-
-              {archivedProjects.length > 0 && (
-                <>
-                  <button
-                    onClick={() => setShowArchived((v) => !v)}
-                    className="flex items-center gap-2 w-full px-3 py-[5px] rounded text-xs text-[#666666] hover:text-[#999999] hover:bg-[#2a2a2a] transition-colors mt-1"
-                  >
-                    <svg
-                      width="10"
-                      height="10"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      className={`transition-transform ${showArchived ? 'rotate-90' : ''}`}
-                    >
-                      <polyline points="9 18 15 12 9 6" />
-                    </svg>
-                    <span>
-                      {showArchived ? 'Ocultar arquivados' : `Ver arquivados (${archivedProjects.length})`}
-                    </span>
-                  </button>
-                  {showArchived &&
-                    archivedProjects.map((project) => (
-                      <div key={project.id} className="relative group">
-                        <button
-                          onClick={() => onSelectProject(project.id)}
-                          className={`flex items-center gap-2.5 w-full px-3 py-[5px] rounded text-[13px] transition-colors text-left opacity-60 hover:opacity-90 ${
-                            activeProjectId === project.id
-                              ? 'bg-[#3b3b3b] text-[#a080f0]'
-                              : 'text-[#999999] hover:bg-[#2a2a2a] hover:text-[#d4d4d4]'
-                          }`}
-                        >
-                          <div
-                            className="w-2.5 h-2.5 rounded-full shrink-0 opacity-50"
-                            style={{ backgroundColor: project.color }}
-                          />
-                          <span className="truncate flex-1">{project.name}</span>
-                        </button>
-
-                        <div
-                          className={`absolute right-2 top-1/2 -translate-y-1/2 transition-opacity ${projectMenuId === project.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
-                        >
+                    {showArchived &&
+                      archivedProjects.map((project) => (
+                        <div key={project.id} className="relative group">
                           <button
-                            onClick={(e) => handleOpenProjectMenu(e, project.id)}
-                            className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#3b3b3b] transition-colors"
+                            onClick={() => onSelectProject(project.id)}
+                            className={`flex items-center gap-2.5 w-full px-3 py-[5px] rounded text-[13px] transition-colors text-left opacity-60 hover:opacity-90 ${
+                              activeProjectId === project.id
+                                ? 'bg-[#3b3b3b] text-[#a080f0]'
+                                : 'text-[#999999] hover:bg-[#2a2a2a] hover:text-[#d4d4d4]'
+                            }`}
                           >
-                            <svg
-                              width="12"
-                              height="12"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                            >
-                              <circle cx="12" cy="5" r="1" fill="currentColor" />
-                              <circle cx="12" cy="12" r="1" fill="currentColor" />
-                              <circle cx="12" cy="19" r="1" fill="currentColor" />
-                            </svg>
+                            <div
+                              className="w-2.5 h-2.5 rounded-full shrink-0 opacity-50"
+                              style={{ backgroundColor: project.color }}
+                            />
+                            <span className="truncate flex-1">{project.name}</span>
                           </button>
+
+                          <div
+                            className={`absolute right-2 top-1/2 -translate-y-1/2 transition-opacity ${projectMenuId === project.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                          >
+                            <button
+                              onClick={(e) => handleOpenProjectMenu(e, project.id)}
+                              className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#3b3b3b] transition-colors"
+                            >
+                              <svg
+                                width="12"
+                                height="12"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                              >
+                                <circle cx="12" cy="5" r="1" fill="currentColor" />
+                                <circle cx="12" cy="12" r="1" fill="currentColor" />
+                                <circle cx="12" cy="19" r="1" fill="currentColor" />
+                              </svg>
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                </>
-              )}
-            </div>
-          )}
-        </div>
+                      ))}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* JSON example portal */}
@@ -952,22 +1089,45 @@ export function Sidebar({
       <div className="p-3 border-t border-[#3b3b3b]">
         <div className="mb-2">{renderNavItem(guideItem)}</div>
         <button
-          onClick={onNewProject}
-          className="w-full flex items-center justify-center gap-2 py-2 rounded bg-[#2a2a2a] border border-[#3b3b3b] text-[13px] text-[#d4d4d4] hover:bg-[#3b3b3b] transition-colors font-normal"
+          onClick={() => onChangeView('settings')}
+          className={`mb-2 flex items-center gap-2.5 w-full px-3 py-[6px] rounded text-[13px] transition-colors text-left ${
+            isActive('settings')
+              ? 'bg-[#3b3b3b] text-[#d4d4d4]'
+              : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a]'
+          }`}
         >
           <svg
-            width="13"
-            height="13"
+            width="16"
+            height="16"
             viewBox="0 0 24 24"
             fill="none"
-            stroke="#a080f0"
-            strokeWidth="2.5"
+            stroke="currentColor"
+            strokeWidth="1.8"
           >
-            <line x1="12" y1="5" x2="12" y2="19" />
-            <line x1="5" y1="12" x2="19" y2="12" />
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.12 2.12-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.04 1.56V20.3h-3v-.08a1.7 1.7 0 0 0-1.04-1.56 1.7 1.7 0 0 0-1.88.34l-.06.06-2.12-2.12.06-.06A1.7 1.7 0 0 0 7 15a1.7 1.7 0 0 0-1.56-1.04H5.3v-3h.14A1.7 1.7 0 0 0 7 9.92a1.7 1.7 0 0 0-.34-1.88L6.6 8 8.72 5.88l.06.06a1.7 1.7 0 0 0 1.88.34 1.7 1.7 0 0 0 1.04-1.56V4.64h3v.08a1.7 1.7 0 0 0 1.04 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06L19.8 8l-.06.04a1.7 1.7 0 0 0-.34 1.88 1.7 1.7 0 0 0 1.56 1.04h.14v3h-.14A1.7 1.7 0 0 0 19.4 15Z" />
           </svg>
-          Novo projeto
+          Configurações
         </button>
+        {hasFeature('kanban') && (
+          <button
+            onClick={onNewProject}
+            className="w-full flex items-center justify-center gap-2 py-2 rounded bg-[#2a2a2a] border border-[#3b3b3b] text-[13px] text-[#d4d4d4] hover:bg-[#3b3b3b] transition-colors font-normal"
+          >
+            <svg
+              width="13"
+              height="13"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#a080f0"
+              strokeWidth="2.5"
+            >
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            Novo projeto
+          </button>
+        )}
       </div>
     </aside>
   )

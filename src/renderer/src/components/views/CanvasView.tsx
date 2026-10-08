@@ -30,6 +30,7 @@ interface Props {
   project: Project
   tasks: Task[]
   onCreateTask: (title: string, noteId: string) => void
+  searchTargetId?: string
 }
 
 export function CanvasView(props: Props) {
@@ -68,10 +69,24 @@ export function CanvasView(props: Props) {
   const [mode, setMode] = useState<'note' | 'text'>('note')
 
   const containerRef = useRef<HTMLDivElement>(null)
+  const centeredSearchId = useRef<string | null>(null)
   const scaleRef = useRef(scale)
   const offsetRef = useRef(offset)
   const panStartRef = useRef({ x: 0, y: 0 })
   const isPanningRef = useRef(false)
+
+  useEffect(() => {
+    if (!props.searchTargetId || centeredSearchId.current === props.searchTargetId) return
+    const note = noteById.get(props.searchTargetId)
+    const container = containerRef.current
+    if (!note || !container) return
+    centeredSearchId.current = props.searchTargetId
+    setScale(1)
+    setOffset({
+      x: container.clientWidth / 2 - note.x - note.width / 2,
+      y: container.clientHeight / 2 - note.y - note.height / 2
+    })
+  }, [props.searchTargetId, noteById])
 
   useEffect(() => {
     scaleRef.current = scale
@@ -329,6 +344,7 @@ export function CanvasView(props: Props) {
           <StickyNoteCard
             key={note.id}
             note={note}
+            highlighted={note.id === props.searchTargetId}
             scale={scale}
             tasks={tasks}
             onUpdate={(updates) => updateNote(note.id, updates)}

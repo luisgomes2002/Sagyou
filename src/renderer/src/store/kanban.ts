@@ -1,8 +1,8 @@
 ﻿import { create } from 'zustand'
 import type { StateCreator } from 'zustand'
 import { v4 as uuidv4 } from 'uuid'
-import type { Task, Goal, GoalEntry } from '../types'
-import { DEFAULT_FINANCIAL_PROFILE_ID } from '../types'
+import type { Task, Goal, GoalEntry, FeatureId } from '../types'
+import { DEFAULT_FINANCIAL_PROFILE_ID, normalizeFeaturePreferences } from '../types'
 import { ElectronStorage } from '../services/ElectronStorage'
 import {
   normalizeFinancialProfiles,
@@ -38,12 +38,15 @@ let _persistTimer: ReturnType<typeof setTimeout> | null = null
 
 interface CoreState {
   isLoaded: boolean
+  /** Undefined means this installation has not answered feature onboarding yet. */
+  featurePreferences?: FeatureId[]
 }
 
 interface CoreActions {
   loadData: () => Promise<void>
   _persist: () => void
   _flushPersist: () => Promise<void>
+  setFeaturePreferences: (features: FeatureId[]) => void
 }
 
 type CoreSlice = CoreState & CoreActions
@@ -74,6 +77,7 @@ const createCoreSlice: StateCreator<KanbanStore, [], [], CoreSlice> = (set, get)
       lists,
       financialProfiles,
       activeFinancialProfileId,
+      featurePreferences,
       activeTimers,
       files,
       timeBlocks,
@@ -90,6 +94,7 @@ const createCoreSlice: StateCreator<KanbanStore, [], [], CoreSlice> = (set, get)
       lists,
       financialProfiles,
       activeFinancialProfileId,
+      featurePreferences,
       activeTimers,
       files,
       timeBlocks,
@@ -103,6 +108,11 @@ const createCoreSlice: StateCreator<KanbanStore, [], [], CoreSlice> = (set, get)
     _persistTimer = setTimeout(() => {
       get()._flushPersist()
     }, 300)
+  },
+
+  setFeaturePreferences: (features) => {
+    set({ featurePreferences: normalizeFeaturePreferences(features) ?? [] })
+    get()._persist()
   },
 
   loadData: async () => {
@@ -151,6 +161,7 @@ const createCoreSlice: StateCreator<KanbanStore, [], [], CoreSlice> = (set, get)
       habits: data.habits || [],
       financialProfiles,
       activeFinancialProfileId,
+      featurePreferences: normalizeFeaturePreferences(data.featurePreferences),
       lists: (data.lists || []).map(normalizeFinancialTable).map((list) => ({
         ...list,
         profileId: financialProfileIds.has(list.profileId ?? '')

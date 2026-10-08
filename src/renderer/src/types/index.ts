@@ -49,6 +49,40 @@ export interface Project {
 
 export type Priority = 'low' | 'medium' | 'high' | 'urgent'
 
+/** Optional areas shown in the sidebar. Kept separate from the data they own. */
+export type FeatureId =
+  | 'kanban'
+  | 'goals'
+  | 'habits'
+  | 'financial'
+  | 'planning'
+  | 'reports'
+  | 'canvas'
+  | 'files'
+  | 'graph'
+  | 'ai'
+
+export const ALL_FEATURE_IDS: FeatureId[] = [
+  'kanban',
+  'goals',
+  'habits',
+  'financial',
+  'planning',
+  'reports',
+  'canvas',
+  'files',
+  'graph',
+  'ai'
+]
+
+export function normalizeFeaturePreferences(value: unknown): FeatureId[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const known = new Set<FeatureId>(ALL_FEATURE_IDS)
+  return [
+    ...new Set(value.filter((feature): feature is FeatureId => known.has(feature as FeatureId)))
+  ]
+}
+
 export interface Task {
   id: string
   projectId: string
@@ -263,6 +297,8 @@ export interface Backup {
   /** Added in version 7. Older backups place all tables in the personal profile. */
   financialProfiles?: FinancialProfile[]
   activeFinancialProfileId?: string
+  /** Sidebar choices; absent in older backups so the local preference is retained. */
+  featurePreferences?: FeatureId[]
   // Added in version 3. Absent in older backups — importing one of those must
   // leave the local history untouched rather than wiping it.
   conversations?: AIConversation[]

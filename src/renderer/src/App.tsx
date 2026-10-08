@@ -2,7 +2,15 @@
 import { v4 as uuidv4 } from 'uuid'
 import { useShallow } from 'zustand/react/shallow'
 import { useKanbanStore } from './store/kanban'
-import type { Task, Column, Project, Priority, TaskImage } from './types'
+import {
+  ALL_FEATURE_IDS,
+  type Task,
+  type Column,
+  type Project,
+  type Priority,
+  type TaskImage,
+  type FeatureId
+} from './types'
 import { isDoneColumn, isTaskDone } from './utils/columns'
 import { TitleBar } from './components/layout/TitleBar'
 import { Sidebar } from './components/layout/Sidebar'
@@ -35,6 +43,8 @@ import { buildTaskPrompt } from './utils/taskPrompt'
 import { ToastContainer, type ToastMessage } from './components/layout/Toast'
 import { HomeView } from './components/views/HomeView'
 import { GuideView } from './components/views/GuideView'
+import { SettingsView } from './components/views/SettingsView'
+import { UnlockScreen } from './components/security/UnlockScreen'
 import type { GlobalSearchHit } from '../../main/global-search-query'
 
 interface TaskModalState {
@@ -79,6 +89,8 @@ export default function App() {
     sprintFilter,
     isLoaded,
     habits,
+    featurePreferences,
+    setFeaturePreferences,
     loadData,
     setActiveProject,
     setSprintFilter,
@@ -113,6 +125,8 @@ export default function App() {
       sprintFilter: s.sprintFilter,
       isLoaded: s.isLoaded,
       habits: s.habits,
+      featurePreferences: s.featurePreferences,
+      setFeaturePreferences: s.setFeaturePreferences,
       loadData: s.loadData,
       setActiveProject: s.setActiveProject,
       setSprintFilter: s.setSprintFilter,
@@ -163,11 +177,15 @@ export default function App() {
     | 'planejamento'
     | 'graph'
     | 'guide'
+    | 'settings'
   >('home')
   const [searchOpen, setSearchOpen] = useState(false)
   const [financialSearchTarget, setFinancialSearchTarget] = useState<GlobalSearchHit | null>(null)
   const [financialSearchSerial, setFinancialSearchSerial] = useState(0)
+  const [searchTarget, setSearchTarget] = useState<GlobalSearchHit | null>(null)
+  const [searchSerial, setSearchSerial] = useState(0)
   const [excelExportOpen, setExcelExportOpen] = useState(false)
+  const [securityState, setSecurityState] = useState<'checking' | 'locked' | 'unlocked'>('checking')
   // session-only: maps projectId → active linkIds (not persisted — each machine picks its own)
   const [activeLinkIds, setActiveLinkIds] = useState<Record<string, string[]>>({})
   const [confirm, setConfirm] = useState<ConfirmState>({
@@ -183,9 +201,42 @@ export default function App() {
   // Count of live code-agent runs (supports N concurrent agents in different dirs).
   const [codeAgentRunCount, setCodeAgentRunCount] = useState(0)
 
+  const enabledFeatures = featurePreferences ?? ALL_FEATURE_IDS
+  const saveFeaturePreferences = (features: FeatureId[]) => {
+    setFeaturePreferences(features)
+  }
+
   useEffect(() => {
+    const viewFeatures: Partial<Record<typeof activeView, FeatureId>> = {
+      board: 'kanban',
+      upcoming: 'kanban',
+      done: 'kanban',
+      goals: 'goals',
+      habits: 'habits',
+      financial: 'financial',
+      planejamento: 'planning',
+      reports: 'reports',
+      canvas: 'canvas',
+      files: 'files',
+      graph: 'graph',
+      ai: 'ai',
+      memory: 'ai',
+      agents: 'ai'
+    }
+    const feature = viewFeatures[activeView]
+    if (feature && !enabledFeatures.includes(feature)) setActiveView('home')
+  }, [activeView, enabledFeatures])
+
+  useEffect(() => {
+    window.electronAPI.security.status().then((status) => {
+      setSecurityState(status.enabled ? 'locked' : 'unlocked')
+    })
+  }, [])
+
+  useEffect(() => {
+    if (securityState !== 'unlocked') return
     loadData()
-  }, [loadData])
+  }, [loadData, securityState])
 
   useEffect(() => {
     if (!isLoaded) return
@@ -353,6 +404,9 @@ export default function App() {
   }
 
   const handleSearchSelect = (hit: GlobalSearchHit) => {
+    setSearchTarget(hit)
+    setSearchSerial((serial) => serial + 1)
+    if (hit.projectId) setActiveProject(hit.projectId)
     switch (hit.type) {
       case 'project':
         setActiveProject(hit.id)
@@ -514,6 +568,18 @@ export default function App() {
     }
   }
 
+  if (securityState === 'checking') {
+    return (
+      <div className="flex items-center justify-center h-screen bg-[#1b1b1b]">
+        <div className="w-6 h-6 rounded-full border-2 border-[#7c3aed] border-t-transparent animate-spin" />
+      </div>
+    )
+  }
+
+  if (securityState === 'locked') {
+    return <UnlockScreen onUnlocked={() => setSecurityState('unlocked')} />
+  }
+
   if (!isLoaded) {
     return (
       <div className="flex items-center justify-center h-screen bg-[#1b1b1b]">
@@ -538,6 +604,8 @@ export default function App() {
           activeProjectId={activeProjectId}
           activeView={activeView}
           onSelectProject={(id) => {
+            setSearchTarget(null)
+            setFinancialSearchTarget(null)
             setActiveProject(id)
             if (
               activeView !== 'board' &&
@@ -548,7 +616,11 @@ export default function App() {
               setActiveView('board')
             setSprintFilter(null)
           }}
-          onChangeView={setActiveView}
+          onChangeView={(view) => {
+            setSearchTarget(null)
+            setFinancialSearchTarget(null)
+            setActiveView(view)
+          }}
           onOpenSearch={() => setSearchOpen(true)}
           onNewProject={handleNewProject}
           onEditProject={handleEditProject}
@@ -561,43 +633,69 @@ export default function App() {
           onImportBackup={handleImportBackup}
           onImportAI={handleImportAI}
           onExportExcel={() => setExcelExportOpen(true)}
+          enabledFeatures={enabledFeatures}
           codeAgentRunCount={codeAgentRunCount}
         />
 
         <main className="flex-1 flex flex-col overflow-hidden">
-          {activeView === 'home' ? (
+          {activeView === 'settings' ? (
+            <SettingsView
+              featurePreferences={featurePreferences}
+              onSetFeaturePreferences={saveFeaturePreferences}
+              onToast={addToast}
+            />
+          ) : activeView === 'home' ? (
             <HomeView
               projects={projects}
-              onNavigate={(view) => setActiveView(view as typeof activeView)}
+              onNavigate={(view) => {
+                setSearchTarget(null)
+                setFinancialSearchTarget(null)
+                setActiveView(view as typeof activeView)
+              }}
             />
           ) : activeView === 'reports' ? (
             <ReportsView projects={projects} tasks={tasks} sprints={sprints} habits={habits} />
           ) : activeView === 'upcoming' ? (
             <UpcomingView projects={projects} tasks={tasks} onViewTask={handleViewTask} />
           ) : activeView === 'planejamento' ? (
-            <PlanView />
+            <PlanView key={searchSerial} searchTarget={searchTarget} />
           ) : activeView === 'financial' ? (
-            <FinancialView
-              key={financialSearchSerial}
-              searchTarget={financialSearchTarget}
-            />
+            <FinancialView key={financialSearchSerial} searchTarget={financialSearchTarget} />
           ) : activeView === 'guide' ? (
             <GuideView />
           ) : activeView === 'ai' ? (
             <AIView
+              key={searchSerial}
               projects={projects}
+              searchConversationId={
+                searchTarget?.type === 'conversation' ? searchTarget.id : undefined
+              }
               prefill={aiPrefill}
               onPrefillConsumed={() => setAiPrefill(null)}
             />
           ) : activeView === 'memory' ? (
-            <MemoryView />
+            <MemoryView
+              key={searchSerial}
+              searchTargetId={searchTarget?.type === 'memory' ? searchTarget.id : undefined}
+            />
           ) : activeView === 'agents' ? (
-            <FleetView projects={projects} onOpenChat={() => setActiveView('ai')} />
+            <FleetView
+              projects={projects}
+              onOpenChat={() => {
+                setSearchTarget(null)
+                setActiveView('ai')
+              }}
+            />
           ) : activeView === 'habits' ? (
-            <HabitView />
+            <HabitView
+              key={searchSerial}
+              searchTargetId={searchTarget?.type === 'habit' ? searchTarget.id : undefined}
+            />
           ) : activeView === 'graph' ? (
             <GraphView
               onNavigate={(target: NavigateTarget) => {
+                setSearchTarget(null)
+                setFinancialSearchTarget(null)
                 switch (target.type) {
                   case 'project':
                     setActiveProject(target.id)
@@ -632,7 +730,11 @@ export default function App() {
               }}
             />
           ) : activeView === 'goals' ? (
-            <GoalView projects={projects} />
+            <GoalView
+              key={searchSerial}
+              projects={projects}
+              searchTargetId={searchTarget?.type === 'goal' ? searchTarget.id : undefined}
+            />
           ) : activeView === 'done' ? (
             <>
               <div className="flex items-center gap-3 px-6 py-4 border-b border-[#3b3b3b] shrink-0">
@@ -661,6 +763,12 @@ export default function App() {
                 onDeleteTask={handleDeleteTask}
               />
             </>
+          ) : activeView === 'files' && !activeProject ? (
+            <FilesView
+              key={searchSerial}
+              activeProjectId={null}
+              searchTargetId={searchTarget?.type === 'file' ? searchTarget.id : undefined}
+            />
           ) : activeProject ? (
             <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
               <div className="flex items-center gap-3 px-6 py-4 border-b border-[#3b3b3b] shrink-0">
@@ -719,12 +827,18 @@ export default function App() {
               <div className="flex-1 min-h-0 overflow-hidden relative">
                 {activeView === 'canvas' ? (
                   <CanvasView
+                    key={searchSerial}
                     project={activeProject}
                     tasks={projectTasks}
+                    searchTargetId={searchTarget?.type === 'note' ? searchTarget.id : undefined}
                     onCreateTask={handleCreateTaskFromCanvas}
                   />
                 ) : activeView === 'files' ? (
-                  <FilesView activeProjectId={activeProjectId} />
+                  <FilesView
+                    key={searchSerial}
+                    activeProjectId={activeProjectId}
+                    searchTargetId={searchTarget?.type === 'file' ? searchTarget.id : undefined}
+                  />
                 ) : (
                   <Board
                     project={activeProject}

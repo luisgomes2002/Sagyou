@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { parseDocumentBuffer } from './document-parser'
+import { MAX_DOCUMENT_BYTES, parseDocument } from './document-parser'
 
 /**
  * Documents attached to the chat. Same pattern as chat-images.ts: files on
@@ -50,13 +50,21 @@ export async function saveAndParseChatFile(
   makeId: () => string
 ): Promise<ChatDocumentMeta | { error: string }> {
   const buffer = Buffer.from(data)
-  const parsed = await parseDocumentBuffer(buffer, ext)
-  if ('error' in parsed) return parsed
+  if (buffer.length === 0) return { error: 'Arquivo vazio' }
+  if (buffer.length > MAX_DOCUMENT_BYTES) {
+    return { error: `Arquivo grande demais (máx. ${MAX_DOCUMENT_BYTES / 1024 / 1024}MB)` }
+  }
 
   try {
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
     const id = makeId()
-    writeFileSync(join(dir, id), buffer)
+    const path = join(dir, id)
+    writeFileSync(path, buffer)
+    const parsed = await parseDocument(path, ext)
+    if ('error' in parsed) {
+      unlinkSync(path)
+      return parsed
+    }
     return { id, name, ext, size: buffer.length, text: parsed.text, truncated: parsed.truncated }
   } catch (e) {
     return { error: e instanceof Error ? e.message : 'Falha ao salvar o documento' }

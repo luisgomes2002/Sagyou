@@ -28,6 +28,7 @@ import {
   summarizeRunCost,
   routeModel,
   hasCompleteToolTurns,
+  userNamePrompt,
   type ApiMessage
 } from '../../ai/agent'
 import { runTool, isWriteTool } from '../../ai/tools'
@@ -78,6 +79,18 @@ function toolCall(id: string, name: string, args = '{}'): unknown {
 }
 
 const approveNone = vi.fn(async () => new Set<string>())
+
+describe('userNamePrompt', () => {
+  it('adds the preferred form of address without changing the empty default', () => {
+    expect(userNamePrompt(undefined)).toBe('')
+    expect(userNamePrompt('  Marina  ')).toContain('Marina')
+  })
+
+  it('limits the value persisted in the prompt', () => {
+    expect(userNamePrompt('A'.repeat(100))).toContain('A'.repeat(80))
+    expect(userNamePrompt('A'.repeat(100))).not.toContain('A'.repeat(81))
+  })
+})
 
 describe('SYSTEM_PROMPT (loaded from system-prompt.md)', () => {
   it('reaches the model as the system message', async () => {
@@ -492,6 +505,14 @@ describe('runAgent (tool-calling loop)', () => {
     expect(JSON.parse(toolMsg.content)).toEqual({ ran: 'ler_x' })
   })
 
+  it('tells the assistant how the user prefers to be addressed', async () => {
+    const chat = makeChat({ success: true, message: { role: 'assistant', content: 'Olá' } })
+
+    await runAgent({ ...cfg, userName: 'Marina' }, user, approveNone)
+
+    expect(reqAt(chat, 0).messages[0].content).toContain('Marina')
+  })
+
   it('stops the chat loop as soon as a code agent was started', async () => {
     const chat = makeChat({
       success: true,
@@ -565,9 +586,13 @@ describe('runAgent (tool-calling loop)', () => {
     vi.mocked(runTool).mockResolvedValueOnce(JSON.stringify({ criado: 1, ids: ['p1'] }))
 
     try {
-      await expect(runAgent(cfg, user, vi.fn(async () => new Set(['plan-1'])))).resolves.toBe(
-        'Planejamento confirmado.'
-      )
+      await expect(
+        runAgent(
+          cfg,
+          user,
+          vi.fn(async () => new Set(['plan-1']))
+        )
+      ).resolves.toBe('Planejamento confirmado.')
       expect(chat).toHaveBeenCalledTimes(2)
       expect(reqAt(chat, 1).tools).toBeUndefined()
     } finally {

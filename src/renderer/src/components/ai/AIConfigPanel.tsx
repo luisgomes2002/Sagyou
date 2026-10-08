@@ -202,6 +202,9 @@ export function AIConfigPanel({
         Provider e modelo que o assistente usa para <b>conversar com você</b> no chat — ler seus
         dados, analisar e responder. É o modelo principal do app.
       </p>
+      <div className="mb-3 max-w-sm">
+        {field('Como a IA deve chamar você', 'userName', 'text', 'Ex.: Luísa')}
+      </div>
       <div className="grid grid-cols-3 gap-3">
         {field('Base URL', 'baseUrl', 'text', 'https://api.openai.com/v1')}
         {field('API Key', 'apiKey', 'password', 'sk-...')}

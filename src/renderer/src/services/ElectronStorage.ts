@@ -15,7 +15,8 @@ import type {
   AIConversation,
   AiMemory,
   TimeBlock,
-  Routine
+  Routine,
+  FeatureId
 } from '../types'
 
 export class ElectronStorage implements IStorageAdapter {
@@ -32,6 +33,7 @@ export class ElectronStorage implements IStorageAdapter {
       lists: (data.lists || []) as FinancialTable[],
       financialProfiles: (data.financialProfiles || []) as FinancialProfile[],
       activeFinancialProfileId: data.activeFinancialProfileId as string | undefined,
+      featurePreferences: data.featurePreferences as FeatureId[] | undefined,
       activeTimers: (data.activeTimers ?? undefined) as
         | { taskId: string; startedAt: number }[]
         | undefined,

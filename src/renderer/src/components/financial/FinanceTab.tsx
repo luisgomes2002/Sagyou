@@ -8,9 +8,12 @@ import { GoalModal, FinancialGoalCard } from './FinancialGoalCard'
 import { GoalHistoryModal } from './GoalHistoryModal'
 import { AddTransactionRow, TransactionRow } from './TransactionRow'
 import { MonthJump } from './MonthJump'
+import type { GlobalSearchHit } from '../../../../main/global-search-query'
+import { searchFocusClass, useSearchFocus } from '../../utils/searchFocus'
 
 interface FinanceTabProps {
   list: FinancialTable
+  searchTarget?: GlobalSearchHit | null
   allLists: FinancialTable[]
   activeMonth: { year: number; month: number }
   onMonthChange: (month: { year: number; month: number }) => void
@@ -26,6 +29,7 @@ interface FinanceTabProps {
 
 export function FinanceTab({
   list,
+  searchTarget,
   allLists,
   activeMonth,
   onMonthChange,
@@ -38,6 +42,14 @@ export function FinanceTab({
   onUpdateGoal,
   onDeleteGoal
 }: FinanceTabProps) {
+  const goalRef = useSearchFocus<HTMLDivElement>(searchTarget?.type === 'financial_goal')
+  const targetTransactionId =
+    searchTarget?.type === 'transaction_detail'
+      ? list.transactions.find((tx) => tx.details?.some((detail) => detail.id === searchTarget.id))
+          ?.id
+      : searchTarget?.type === 'transaction'
+        ? searchTarget.id
+        : undefined
   const currency = list.currency
   const profiles = useKanbanStore((state) => state.financialProfiles)
   const profileId = useKanbanStore((state) => state.activeFinancialProfileId)
@@ -387,23 +399,28 @@ export function FinanceTab({
           ) : (
             <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
               {visibleGoals.map((goal) => (
-                <FinancialGoalCard
+                <div
                   key={goal.id}
-                  goal={goal}
-                  transactions={list.transactions}
-                  activeMonth={activeMonth}
-                  currency={currency}
-                  onEdit={() => setGoalModal({ open: true, goal })}
-                  onDelete={() =>
-                    setDeleteGoalConfirm({ open: true, goalId: goal.id, name: goal.name })
-                  }
-                  onComplete={(date, note) =>
-                    onUpdateGoal(goal.id, { completedAt: date, completionNote: note })
-                  }
-                  onRevert={() =>
-                    onUpdateGoal(goal.id, { completedAt: undefined, completionNote: undefined })
-                  }
-                />
+                  ref={goal.id === searchTarget?.id ? goalRef : undefined}
+                  className={searchFocusClass(goal.id === searchTarget?.id)}
+                >
+                  <FinancialGoalCard
+                    goal={goal}
+                    transactions={list.transactions}
+                    activeMonth={activeMonth}
+                    currency={currency}
+                    onEdit={() => setGoalModal({ open: true, goal })}
+                    onDelete={() =>
+                      setDeleteGoalConfirm({ open: true, goalId: goal.id, name: goal.name })
+                    }
+                    onComplete={(date, note) =>
+                      onUpdateGoal(goal.id, { completedAt: date, completionNote: note })
+                    }
+                    onRevert={() =>
+                      onUpdateGoal(goal.id, { completedAt: undefined, completionNote: undefined })
+                    }
+                  />
+                </div>
               ))}
             </div>
           )}
@@ -557,6 +574,7 @@ export function FinanceTab({
                 <TransactionRow
                   key={tx.id}
                   tx={tx}
+                  searchTargetId={tx.id === targetTransactionId ? searchTarget?.id : undefined}
                   receiptCount={receiptCount(tx)}
                   currency={currency}
                   allLists={allLists}

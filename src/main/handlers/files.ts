@@ -16,6 +16,7 @@ import {
   deleteChatFiles
 } from '../chat-files'
 import { isDocumentExt, parseDocument } from '../document-parser'
+import { indexProjectFileContent, removeProjectFileSearchContent } from '../store'
 import type { BrowserWindow, Dialog, Shell } from 'electron'
 
 interface Deps {
@@ -51,7 +52,9 @@ export function registerFilesHandlers(
         const ext = extname(filePath)
         const name = basename(filePath)
         const size = statSync(filePath).size
-        copyFileSync(filePath, join(filesDir, `${id}${ext}`))
+        const destination = join(filesDir, `${id}${ext}`)
+        copyFileSync(filePath, destination)
+        await indexProjectFileContent(id, destination, ext)
         results.push({ id, name, ext, size, createdAt: new Date().toISOString() })
       } catch {
         /* skip files that can't be copied */
@@ -64,6 +67,7 @@ export function registerFilesHandlers(
     try {
       const filePath = join(filesDir, `${id}${ext}`)
       if (existsSync(filePath)) unlinkSync(filePath)
+      removeProjectFileSearchContent(id)
       return { success: true }
     } catch {
       return { success: false }

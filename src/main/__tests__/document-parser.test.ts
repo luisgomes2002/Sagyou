@@ -47,9 +47,12 @@ describe('isDocumentExt', () => {
   it('rejects unsupported extensions', () => {
     expect(isDocumentExt('.exe')).toBe(false)
     expect(isDocumentExt('.bin')).toBe(false)
-    expect(isDocumentExt('.zip')).toBe(false)
+    expect(isDocumentExt('.zip')).toBe(true)
+    expect(isDocumentExt('.pptx')).toBe(true)
+    expect(isDocumentExt('.png')).toBe(true)
+    expect(isDocumentExt('.mp3')).toBe(true)
     expect(isDocumentExt('')).toBe(false)
-    expect(isDocumentExt('.PNG')).toBe(false)
+    expect(isDocumentExt('.PNG')).toBe(true)
   })
 
   it('is case-insensitive', () => {

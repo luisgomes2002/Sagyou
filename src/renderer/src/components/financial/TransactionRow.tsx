@@ -13,6 +13,7 @@ import {
 import { TransactionDetails } from './TransactionDetails'
 import { TransactionRecordPanel } from './TransactionRecordPanel'
 import { CategoryInput } from './CategoryInput'
+import { searchFocusClass, useSearchFocus } from '../../utils/searchFocus'
 
 // ── AddTransactionRow ─────────────────────────────────────────────────────────
 
@@ -163,6 +164,7 @@ export function AddTransactionRow({ currency, onAdd }: AddTransactionRowProps) {
 
 interface TransactionRowProps {
   tx: FinancialTransaction
+  searchTargetId?: string
   receiptCount: number
   currency: Currency
   allLists: FinancialTable[]
@@ -174,6 +176,7 @@ interface TransactionRowProps {
 
 export function TransactionRow({
   tx,
+  searchTargetId,
   receiptCount,
   currency,
   allLists,
@@ -187,8 +190,9 @@ export function TransactionRow({
   const [editCat, setEditCat] = useState(tx.category ?? '')
   const [editAmount, setEditAmount] = useState(() => formatAmountInput(tx.amount, currency))
   const [dateEditing, setDateEditing] = useState(false)
-  const [detailsOpen, setDetailsOpen] = useState(false)
-  const [recordOpen, setRecordOpen] = useState(false)
+  const [detailsOpen, setDetailsOpen] = useState(!!searchTargetId && searchTargetId !== tx.id)
+  const [recordOpen, setRecordOpen] = useState(!!searchTargetId)
+  const searchRef = useSearchFocus<HTMLTableRowElement>(!!searchTargetId)
 
   useEffect(() => {
     setEditDate(tx.date)
@@ -268,7 +272,10 @@ export function TransactionRow({
 
   return (
     <>
-      <tr className="group border-b border-[#3b3b3b] hover:bg-[#2a2a2a] transition-colors">
+      <tr
+        ref={searchRef}
+        className={`group border-b border-[#3b3b3b] hover:bg-[#2a2a2a] transition-colors ${searchFocusClass(!!searchTargetId)}`}
+      >
         <td className="pl-4 pr-2 py-2 w-28">
           {readOnly ? (
             <span className="text-xs text-[#999999] tabular-nums">{formatDateBR(tx.date)}</span>
@@ -566,6 +573,7 @@ export function TransactionRow({
           <td colSpan={6} className="px-4 py-2.5">
             <TransactionDetails
               transaction={tx}
+              searchDetailId={searchTargetId !== tx.id ? searchTargetId : undefined}
               currency={currency}
               allLists={allLists}
               onUpdate={onUpdate}
