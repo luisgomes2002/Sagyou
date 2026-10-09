@@ -6,7 +6,7 @@ export function cardTextColor(color: string): string {
     return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
   })
   const luminance = channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722
-  return luminance > 0.18 ? '#1b1b1b' : '#ffffff'
+  return luminance > 0.18 ? '#0b0b0f' : '#ffffff'
 }
 
 export function pastelCardColor(color: string | undefined): string | undefined {

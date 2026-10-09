@@ -133,11 +133,11 @@ export function ExcelExportModal({ onClose, onToast }: Props): React.JSX.Element
 
   return (
     <ModalBase open={true} onClose={onClose}>
-      <div className="relative z-10 w-[440px] rounded-xl border border-[#3b3b3b] bg-[#232323] shadow-2xl flex flex-col max-h-[90vh]">
+      <div className="relative z-10 w-[440px] rounded-xl border border-[#2b2b31] bg-[#16161a] shadow-2xl flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[#3b3b3b] shrink-0">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#2b2b31] shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-[#3b3b3b] flex items-center justify-center">
+            <div className="w-7 h-7 rounded-lg bg-[#2a2a30] flex items-center justify-center">
               <svg
                 width="13"
                 height="13"
@@ -191,8 +191,8 @@ export function ExcelExportModal({ onClose, onToast }: Props): React.JSX.Element
                 onClick={() => toggle(opt.key)}
                 className={`w-full flex items-start gap-3 px-3.5 py-2.5 rounded-lg border text-left transition-colors ${
                   isActive
-                    ? 'border-[#7c3aed] bg-[#2a2a2a]'
-                    : 'border-[#3b3b3b] bg-[#1b1b1b] hover:border-[#555555]'
+                    ? 'border-[#7c3aed] bg-[#16161a]'
+                    : 'border-[#2b2b31] bg-[#101014] hover:border-[#3b3b42]'
                 }`}
               >
                 <div
@@ -221,7 +221,7 @@ export function ExcelExportModal({ onClose, onToast }: Props): React.JSX.Element
             )
           })}
           {selected.has('transactions') && (
-            <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-lg border border-[#3b3b3b] bg-[#2a2a2a] px-3.5 py-3">
+            <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-lg border border-[#2b2b31] bg-[#16161a] px-3.5 py-3">
               <input
                 type="checkbox"
                 checked={includeTransactionTableSheets}
@@ -242,7 +242,7 @@ export function ExcelExportModal({ onClose, onToast }: Props): React.JSX.Element
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-5 py-4 border-t border-[#3b3b3b] shrink-0">
+        <div className="flex items-center justify-between px-5 py-4 border-t border-[#2b2b31] shrink-0">
           <span className="text-xs text-[#666666]">
             {selected.size === 0
               ? 'Nenhum grupo selecionado'
@@ -251,14 +251,14 @@ export function ExcelExportModal({ onClose, onToast }: Props): React.JSX.Element
           <div className="flex gap-2">
             <button
               onClick={onClose}
-              className="px-4 py-1.5 rounded-lg text-sm text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors"
+              className="px-4 py-1.5 rounded-lg text-sm text-[#999999] hover:text-[#d4d4d4] hover:bg-[#222227] transition-colors"
             >
               Cancelar
             </button>
             <button
               onClick={handleExport}
               disabled={selected.size === 0 || loading}
-              className="px-4 py-1.5 rounded-lg text-sm font-medium bg-[#3b3b3b] text-[#46d478] hover:bg-[#4a4a4a] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+              className="px-4 py-1.5 rounded-lg text-sm font-medium bg-[#2a2a30] text-[#46d478] hover:bg-[#303036] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
             >
               {loading ? (
                 <>

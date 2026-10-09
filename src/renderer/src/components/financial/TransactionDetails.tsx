@@ -107,7 +107,7 @@ export function TransactionDetails({
   }
 
   return (
-    <div className="ml-5 rounded-md bg-[#232323] px-3 py-2 space-y-2">
+    <div className="ml-5 rounded-md bg-[#16161a] px-3 py-2 space-y-2">
       <div className="flex items-center justify-between gap-3 text-xs">
         <span className="text-[#999999]">
           Detalhado:{' '}
@@ -147,7 +147,7 @@ export function TransactionDetails({
                   else event.currentTarget.value = detail.description
                 }}
                 placeholder="Descrição"
-                className="min-w-0 rounded bg-transparent px-1 py-1 text-xs text-[#d4d4d4] hover:bg-[#2a2a2a] focus:bg-[#2a2a2a] focus:outline-none"
+                className="min-w-0 rounded bg-transparent px-1 py-1 text-xs text-[#d4d4d4] hover:bg-[#222227] focus:bg-[#16161a] focus:outline-none"
               />
               <input
                 type="date"
@@ -160,13 +160,13 @@ export function TransactionDetails({
                         : event.currentTarget.value
                   })
                 }
-                className="min-w-0 rounded bg-transparent px-1 py-1 text-xs text-[#999999] hover:bg-[#2a2a2a] focus:bg-[#2a2a2a] focus:outline-none"
+                className="min-w-0 rounded bg-transparent px-1 py-1 text-xs text-[#999999] hover:bg-[#222227] focus:bg-[#16161a] focus:outline-none"
                 aria-label={'Data de ' + detail.description}
               />
               <DetailCategoryInput
                 value={detail.category ?? ''}
                 onCommit={(value) => updateDetail(detail.id, { category: value || undefined })}
-                className="min-w-0 rounded bg-transparent px-1 py-1 pr-3 text-xs text-[#999999] hover:bg-[#2a2a2a] focus:bg-[#2a2a2a] focus:outline-none"
+                className="min-w-0 rounded bg-transparent px-1 py-1 pr-3 text-xs text-[#999999] hover:bg-[#222227] focus:bg-[#16161a] focus:outline-none"
               />
               <input
                 defaultValue={formatAmountInput(detail.amount, currency)}
@@ -181,7 +181,7 @@ export function TransactionDetails({
                     event.currentTarget.value = formatAmountInput(detail.amount, currency)
                   }
                 }}
-                className="min-w-0 rounded bg-transparent px-1 py-1 text-right text-xs text-[#d4d4d4] tabular-nums hover:bg-[#2a2a2a] focus:bg-[#2a2a2a] focus:outline-none"
+                className="min-w-0 rounded bg-transparent px-1 py-1 text-right text-xs text-[#d4d4d4] tabular-nums hover:bg-[#222227] focus:bg-[#16161a] focus:outline-none"
                 aria-label={'Valor de ' + detail.description}
               />
               <button
@@ -207,7 +207,7 @@ export function TransactionDetails({
                   type="button"
                   onClick={() => setUnlinkDetailId(detail.id)}
                   title="Desvincular lançamento deste item"
-                  className="col-span-5 justify-self-start inline-flex items-center gap-1 rounded bg-[#2a2a2a] px-1.5 py-0.5 text-[10px] text-[#999999] hover:text-[#e04040]"
+                  className="col-span-5 justify-self-start inline-flex items-center gap-1 rounded bg-[#16161a] px-1.5 py-0.5 text-[10px] text-[#999999] hover:text-[#e04040]"
                 >
                   <span aria-hidden="true">↔</span>
                   {(() => {
@@ -224,7 +224,7 @@ export function TransactionDetails({
         </div>
       )}
 
-      <div className="grid grid-cols-[minmax(0,1fr)_6.5rem_6rem_8rem_auto] gap-2 items-center pt-1 border-t border-[#3b3b3b]">
+      <div className="grid grid-cols-[minmax(0,1fr)_6.5rem_6rem_8rem_auto] gap-2 items-center pt-1 border-t border-[#2b2b31]">
         <input
           value={description}
           onChange={(event) => setDescription(event.target.value)}
@@ -232,13 +232,13 @@ export function TransactionDetails({
             if (event.key === 'Enter') addDetail()
           }}
           placeholder="Adicionar item..."
-          className="min-w-0 bg-[#2a2a2a] rounded px-2 py-1 text-xs text-[#d4d4d4] placeholder-[#555555] focus:outline-none"
+          className="min-w-0 bg-[#16161a] rounded px-2 py-1 text-xs text-[#d4d4d4] placeholder-[#555555] focus:outline-none"
         />
         <input
           type="date"
           value={date}
           onChange={(event) => setDate(event.target.value)}
-          className="min-w-0 bg-[#2a2a2a] rounded px-2 py-1 text-xs text-[#999999] focus:outline-none"
+          className="min-w-0 bg-[#16161a] rounded px-2 py-1 text-xs text-[#999999] focus:outline-none"
           aria-label="Data da compra"
         />
         <CategoryInput
@@ -248,7 +248,7 @@ export function TransactionDetails({
             if (event.key === 'Enter') addDetail()
           }}
           placeholder="Categoria"
-          className="min-w-0 bg-[#2a2a2a] rounded px-2 py-1 pr-3 text-xs text-[#999999] placeholder-[#555555] focus:outline-none"
+          className="min-w-0 bg-[#16161a] rounded px-2 py-1 pr-3 text-xs text-[#999999] placeholder-[#555555] focus:outline-none"
         />
         <input
           value={amount}
@@ -258,13 +258,13 @@ export function TransactionDetails({
           }}
           inputMode="decimal"
           placeholder="Valor"
-          className="min-w-0 bg-[#2a2a2a] rounded px-2 py-1 text-right text-xs text-[#d4d4d4] placeholder-[#555555] tabular-nums focus:outline-none"
+          className="min-w-0 bg-[#16161a] rounded px-2 py-1 text-right text-xs text-[#d4d4d4] placeholder-[#555555] tabular-nums focus:outline-none"
         />
         <button
           type="button"
           onClick={addDetail}
           disabled={!canAdd}
-          className="px-2 py-1 rounded text-xs font-medium text-[#a080f0] hover:bg-[#2a2a2a] disabled:opacity-30 disabled:cursor-not-allowed"
+          className="px-2 py-1 rounded text-xs font-medium text-[#a080f0] hover:bg-[#222227] disabled:opacity-30 disabled:cursor-not-allowed"
         >
           Adicionar
         </button>

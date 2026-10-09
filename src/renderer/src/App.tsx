@@ -572,7 +572,7 @@ export default function App() {
 
   if (securityState === 'checking') {
     return (
-      <div className="flex items-center justify-center h-screen bg-[#1b1b1b]">
+      <div className="flex items-center justify-center h-screen bg-[#0b0b0f]">
         <div className="w-6 h-6 rounded-full border-2 border-[#7c3aed] border-t-transparent animate-spin" />
       </div>
     )
@@ -586,14 +586,14 @@ export default function App() {
 
   if (!isLoaded) {
     return (
-      <div className="flex items-center justify-center h-screen bg-[#1b1b1b]">
+      <div className="flex items-center justify-center h-screen bg-[#0b0b0f]">
         <div className="w-6 h-6 rounded-full border-2 border-[#7c3aed] border-t-transparent animate-spin" />
       </div>
     )
   }
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-[#1b1b1b]">
+    <div className="flex flex-col h-screen overflow-hidden bg-[#0b0b0f]">
       <TitleBar />
 
       {/* Outside the view switch on purpose: the agent's run has to survive the
@@ -741,7 +741,7 @@ export default function App() {
             />
           ) : activeView === 'done' ? (
             <>
-              <div className="flex items-center gap-3 px-6 py-4 border-b border-[#3b3b3b] shrink-0">
+              <div className="flex items-center gap-3 px-6 py-4 border-b border-[#2b2b31] shrink-0">
                 <svg
                   width="16"
                   height="16"
@@ -775,7 +775,7 @@ export default function App() {
             />
           ) : activeProject ? (
             <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
-              <div className="flex items-center gap-3 px-6 py-4 border-b border-[#3b3b3b] shrink-0">
+              <div className="flex items-center gap-3 px-6 py-4 border-b border-[#2b2b31] shrink-0">
                 <div
                   className="w-3 h-3 rounded-full shrink-0"
                   style={{ backgroundColor: activeProject.color }}
@@ -861,7 +861,7 @@ export default function App() {
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center flex-1 gap-4">
-              <div className="w-16 h-16 rounded-2xl bg-[#2a2a2a] border border-[#3b3b3b] flex items-center justify-center">
+              <div className="w-16 h-16 rounded-2xl bg-[#16161a] border border-[#2b2b31] flex items-center justify-center">
                 <svg
                   width="28"
                   height="28"

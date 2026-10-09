@@ -10,6 +10,6 @@ export function useSearchFocus<T extends HTMLElement>(active: boolean): React.Re
 
 export function searchFocusClass(active: boolean): string {
   return active
-    ? 'relative z-10 rounded-lg ring-2 ring-[#a080f0] ring-offset-2 ring-offset-[#1b1b1b]'
+    ? 'relative z-10 rounded-lg ring-2 ring-[#a080f0] ring-offset-2 ring-offset-[#0b0b0f]'
     : ''
 }

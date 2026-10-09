@@ -62,8 +62,8 @@ export function TableSidebar({
   }
 
   return (
-    <div className="flex flex-col h-full border-r border-[#3b3b3b] bg-[#232323]">
-      <div className="px-3 py-3 border-b border-[#3b3b3b] space-y-2">
+    <div className="flex flex-col h-full border-r border-[#2b2b31] bg-[#16161a]">
+      <div className="px-3 py-3 border-b border-[#2b2b31] space-y-2">
         <div className="flex items-center justify-between gap-2">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-[#999999]">
             Perfil financeiro
@@ -80,7 +80,7 @@ export function TableSidebar({
           aria-label="Perfil financeiro ativo"
           value={activeProfileId}
           onChange={(e) => onSelectProfile(e.target.value)}
-          className="w-full bg-[#1b1b1b] border border-[#3b3b3b] rounded px-2 py-1.5 text-xs text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed]"
+          className="w-full bg-[#101014] border border-[#2b2b31] rounded px-2 py-1.5 text-xs text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed]"
         >
           {profiles.map((profile) => (
             <option key={profile.id} value={profile.id}>
@@ -106,7 +106,7 @@ export function TableSidebar({
                 }
               }}
               placeholder="Ex.: Finanças dos meus pais"
-              className="w-full bg-[#1b1b1b] border border-[#3b3b3b] rounded px-2 py-1.5 text-xs text-[#d4d4d4] placeholder-[#777] focus:outline-none focus:border-[#7c3aed]"
+              className="w-full bg-[#101014] border border-[#2b2b31] rounded px-2 py-1.5 text-xs text-[#d4d4d4] placeholder-[#777] focus:outline-none focus:border-[#7c3aed]"
             />
             <div className="flex gap-1.5">
               <button
@@ -123,7 +123,7 @@ export function TableSidebar({
                   setShowNewProfile(false)
                   setNewProfileName('')
                 }}
-                className="rounded border border-[#3b3b3b] px-2 py-1 text-[10px] text-[#999999] hover:text-white"
+                className="rounded border border-[#2b2b31] px-2 py-1 text-[10px] text-[#999999] hover:text-white"
               >
                 Cancelar
               </button>
@@ -145,7 +145,7 @@ export function TableSidebar({
             <div
               key={list.id}
               className={`group relative flex items-center gap-2 px-3 py-2.5 cursor-pointer transition-colors ${
-                activeId === list.id ? 'bg-[#3b3b3b]' : 'hover:bg-[#2a2a2a]'
+                activeId === list.id ? 'bg-[#2a2a30]' : 'hover:bg-[#222227]'
               }`}
               onClick={() => onSelect(list.id)}
             >
@@ -161,7 +161,7 @@ export function TableSidebar({
                     e.stopPropagation()
                   }}
                   onClick={(e) => e.stopPropagation()}
-                  className="flex-1 text-xs bg-[#1b1b1b] border border-[#7c3aed] rounded px-1.5 py-0.5 text-[#d4d4d4] focus:outline-none"
+                  className="flex-1 text-xs bg-[#101014] border border-[#7c3aed] rounded px-1.5 py-0.5 text-[#d4d4d4] focus:outline-none"
                 />
               ) : (
                 <>
@@ -229,7 +229,7 @@ export function TableSidebar({
         })}
       </div>
 
-      <div className="p-3 border-t border-[#3b3b3b] bg-[#232323]">
+      <div className="p-3 border-t border-[#2b2b31] bg-[#16161a]">
         {showNew ? (
           <div className="flex flex-col gap-2">
             <input
@@ -245,9 +245,9 @@ export function TableSidebar({
                 }
               }}
               placeholder="Nome da tabela..."
-              className="w-full text-xs px-2.5 py-2 rounded bg-[#1b1b1b] border border-[#3b3b3b] text-[#d4d4d4] placeholder-[#999999] focus:outline-none focus:border-[#7c3aed] transition-colors"
+              className="w-full text-xs px-2.5 py-2 rounded bg-[#101014] border border-[#2b2b31] text-[#d4d4d4] placeholder-[#999999] focus:outline-none focus:border-[#7c3aed] transition-colors"
             />
-            <div className="flex items-center p-0.5 rounded-lg bg-[#1b1b1b] border border-[#3b3b3b]">
+            <div className="flex items-center p-0.5 rounded-lg bg-[#101014] border border-[#2b2b31]">
               {(['BRL', 'USD', 'JPY'] as Currency[]).map((c) => (
                 <button
                   key={c}
@@ -276,7 +276,7 @@ export function TableSidebar({
                   setNewName('')
                   setNewCurrency('BRL')
                 }}
-                className="flex-1 px-3 py-2 rounded border border-[#3b3b3b] text-[#999999] text-xs font-medium hover:bg-[#2a2a2a] transition-colors"
+                className="flex-1 px-3 py-2 rounded border border-[#2b2b31] text-[#999999] text-xs font-medium hover:bg-[#222227] transition-colors"
               >
                 Cancelar
               </button>
@@ -285,7 +285,7 @@ export function TableSidebar({
         ) : (
           <button
             onClick={() => setShowNew(true)}
-            className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] text-xs font-medium text-[#d4d4d4] hover:bg-[#3b3b3b] transition-colors"
+            className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[#16161a] border border-[#2b2b31] text-xs font-medium text-[#d4d4d4] hover:bg-[#2a2a30] transition-colors"
           >
             <svg
               width="11"

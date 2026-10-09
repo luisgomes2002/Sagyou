@@ -74,7 +74,7 @@ function ItemRow({ item, highlighted, currency, onUpdate, onDelete, onToggle }: 
   return (
     <tr
       ref={searchRef}
-      className={`group border-b border-[#3b3b3b] transition-colors ${item.done ? 'opacity-60' : 'hover:bg-[#2a2a2a]'} ${searchFocusClass(!!highlighted)}`}
+      className={`group border-b border-[#2b2b31] transition-colors ${item.done ? 'opacity-60' : 'hover:bg-[#222227]'} ${searchFocusClass(!!highlighted)}`}
     >
       <td className="pl-4 pr-2 py-2">
         <button
@@ -85,7 +85,7 @@ function ItemRow({ item, highlighted, currency, onUpdate, onDelete, onToggle }: 
               : 'Marcar como comprado (lança em Finanças)'
           }
           className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
-            item.done ? 'bg-[#20b858] border-[#20b858]' : 'border-[#555555] hover:border-[#7c3aed]'
+            item.done ? 'bg-[#20b858] border-[#20b858]' : 'border-[#3b3b42] hover:border-[#7c3aed]'
           }`}
         >
           {item.done && (
@@ -109,7 +109,7 @@ function ItemRow({ item, highlighted, currency, onUpdate, onDelete, onToggle }: 
             onChange={(e) => setName(e.target.value)}
             onBlur={commitName}
             onKeyDown={blur}
-            className={`flex-1 bg-transparent text-sm focus:outline-none focus:bg-[#1b1b1b] focus:px-1.5 rounded transition-all ${
+            className={`flex-1 bg-transparent text-sm focus:outline-none focus:bg-[#101014] focus:px-1.5 rounded transition-all ${
               item.done ? 'text-[#999999] line-through' : 'text-[#d4d4d4]'
             }`}
           />
@@ -127,7 +127,7 @@ function ItemRow({ item, highlighted, currency, onUpdate, onDelete, onToggle }: 
           onChange={(e) => setQty(e.target.value)}
           onBlur={commitQty}
           onKeyDown={blur}
-          className="w-full bg-transparent text-sm text-center text-[#d4d4d4] focus:outline-none focus:bg-[#1b1b1b] rounded transition-all"
+          className="w-full bg-transparent text-sm text-center text-[#d4d4d4] focus:outline-none focus:bg-[#101014] rounded transition-all"
         />
       </td>
       <td className="py-1.5 pr-2 w-28">
@@ -143,7 +143,7 @@ function ItemRow({ item, highlighted, currency, onUpdate, onDelete, onToggle }: 
             onChange={(e) => setPrice(e.target.value)}
             onBlur={commitPrice}
             onKeyDown={blur}
-            className="w-full bg-transparent text-sm text-[#d4d4d4] placeholder-[#555555] focus:outline-none focus:bg-[#1b1b1b] rounded transition-all"
+            className="w-full bg-transparent text-sm text-[#d4d4d4] placeholder-[#555555] focus:outline-none focus:bg-[#101014] rounded transition-all"
           />
         </div>
       </td>
@@ -156,7 +156,7 @@ function ItemRow({ item, highlighted, currency, onUpdate, onDelete, onToggle }: 
             onChange={(e) => setLink(e.target.value)}
             onBlur={commitLink}
             onKeyDown={blur}
-            className="min-w-0 flex-1 bg-transparent text-xs text-[#7c3aed] placeholder-[#555555] focus:outline-none focus:bg-[#1b1b1b] rounded truncate transition-all"
+            className="min-w-0 flex-1 bg-transparent text-xs text-[#7c3aed] placeholder-[#555555] focus:outline-none focus:bg-[#101014] rounded truncate transition-all"
           />
           {item.link && (
             <button
@@ -186,13 +186,13 @@ function ItemRow({ item, highlighted, currency, onUpdate, onDelete, onToggle }: 
             {formatCurrency(total, currency)}
           </span>
         ) : (
-          <span className="text-sm text-[#3b3b3b]">-</span>
+          <span className="text-sm text-[#666666]">-</span>
         )}
       </td>
       <td className="py-1.5 pr-3 w-9 text-center">
         <button
           onClick={onDelete}
-          className="p-1 rounded text-[#3b3b3b] hover:text-[#e04040] hover:bg-[#2a2a2a] opacity-0 group-hover:opacity-100 transition-all"
+          className="p-1 rounded text-[#666666] hover:text-[#e04040] hover:bg-[#222227] opacity-0 group-hover:opacity-100 transition-all"
         >
           <svg
             width="11"
@@ -248,15 +248,15 @@ function AddItemRow({ currency, onAdd }: AddItemRowProps) {
   }
 
   return (
-    <tr className="border-b border-[#3b3b3b] hover:bg-[#2a2a2a] transition-colors">
+    <tr className="border-b border-[#2b2b31] hover:bg-[#222227] transition-colors">
       <td className="pl-4 pr-2 py-2">
-        <div className="w-4 h-4 rounded border border-dashed border-[#3b3b3b] flex items-center justify-center">
+        <div className="w-4 h-4 rounded border border-dashed border-[#2b2b31] flex items-center justify-center">
           <svg
             width="8"
             height="8"
             viewBox="0 0 24 24"
             fill="none"
-            stroke="#3b3b3b"
+            stroke="#2b2b31"
             strokeWidth="3"
           >
             <line x1="12" y1="5" x2="12" y2="19" />
@@ -316,7 +316,7 @@ function AddItemRow({ currency, onAdd }: AddItemRowProps) {
         <button
           onClick={submit}
           disabled={!name.trim()}
-          className="p-1 rounded text-[#7c3aed] hover:bg-[#2a2a2a] disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+          className="p-1 rounded text-[#7c3aed] hover:bg-[#222227] disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
         >
           <svg
             width="11"
@@ -368,9 +368,9 @@ export function ShoppingTab({
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
       {totalItems > 0 && (
-        <div className="flex items-center justify-end gap-4 px-5 py-2 border-b border-[#3b3b3b] shrink-0">
+        <div className="flex items-center justify-end gap-4 px-5 py-2 border-b border-[#2b2b31] shrink-0">
           <div className="flex items-center gap-2">
-            <div className="w-32 h-1.5 rounded-full bg-[#3b3b3b] overflow-hidden">
+            <div className="w-32 h-1.5 rounded-full bg-[#2a2a30] overflow-hidden">
               <div
                 className="h-full rounded-full transition-all duration-300"
                 style={{
@@ -396,8 +396,8 @@ export function ShoppingTab({
 
       <div className="flex-1 overflow-y-auto">
         <table className="w-full">
-          <thead className="sticky top-0 bg-[#232323] z-10">
-            <tr className="border-b border-[#3b3b3b]">
+          <thead className="sticky top-0 bg-[#16161a] z-10">
+            <tr className="border-b border-[#2b2b31]">
               <th className="pl-4 pr-2 py-2 w-9" />
               <th className="py-2 pr-2 text-left text-[10px] font-semibold uppercase tracking-wider text-[#999999]">
                 Item
@@ -435,13 +435,13 @@ export function ShoppingTab({
       </div>
 
       {totalItems > 0 && (
-        <div className="border-t border-[#3b3b3b] px-5 py-3 shrink-0">
+        <div className="border-t border-[#2b2b31] px-5 py-3 shrink-0">
           <div className="flex items-center justify-between gap-6">
             <div className="flex items-center gap-3 flex-1">
               <span className="text-xs text-[#999999] shrink-0">
                 {doneItems}/{totalItems} {doneItems === 1 ? 'concluído' : 'concluídos'}
               </span>
-              <div className="flex-1 max-w-48 h-2 rounded-full bg-[#3b3b3b] overflow-hidden">
+              <div className="flex-1 max-w-48 h-2 rounded-full bg-[#2a2a30] overflow-hidden">
                 <div
                   className="h-full rounded-full transition-all duration-300"
                   style={{

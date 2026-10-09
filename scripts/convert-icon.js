@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const projectRoot = dirname(__dirname)
 const buildDir = `${projectRoot}/build`
-const logoPath = `${projectRoot}/src/renderer/src/assets/logo256x256.jpeg`
+const logoPath = `${projectRoot}/resources/icon.png`
 
 async function convertIcons() {
   try {
@@ -26,7 +26,7 @@ async function convertIcons() {
 
     for (const size of sizes) {
       const buffer = await sharp(logoPath)
-        .resize(size, size, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 1 } })
+        .resize(size, size, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
         .png()
         .toBuffer()
       images.push(buffer)
@@ -38,7 +38,21 @@ async function convertIcons() {
 
     // Create icon.icns for macOS
     console.log('Creating icon.icns...')
-    await sharp(logoPath).toFile(`${buildDir}/icon.icns`)
+    const icnsSizes = [16, 32, 64, 128, 256, 512, 1024]
+    const icnsTypes = ['icp4', 'icp5', 'icp6', 'ic07', 'ic08', 'ic09', 'ic10']
+    const icnsEntries = await Promise.all(
+      icnsSizes.map(async (size, index) => {
+        const png = await sharp(logoPath).resize(size, size).png().toBuffer()
+        const header = Buffer.alloc(8)
+        header.write(icnsTypes[index], 0, 'ascii')
+        header.writeUInt32BE(png.length + 8, 4)
+        return Buffer.concat([header, png])
+      })
+    )
+    const icnsHeader = Buffer.alloc(8)
+    icnsHeader.write('icns', 0, 'ascii')
+    icnsHeader.writeUInt32BE(8 + icnsEntries.reduce((total, entry) => total + entry.length, 0), 4)
+    await fs.writeFile(`${buildDir}/icon.icns`, Buffer.concat([icnsHeader, ...icnsEntries]))
 
     console.log('✓ Icon conversion complete!')
     console.log('✓ All icon files created successfully in build/')

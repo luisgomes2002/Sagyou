@@ -28,10 +28,10 @@ export function GoalModal({ goal, projects, onSave, onClose }: Props) {
 
   return (
     <ModalBase open={true} onClose={onClose}>
-      <div className="relative z-10 w-full max-w-sm mx-4 rounded-xl border border-[#3b3b3b] bg-[#232323] shadow-2xl">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[#3b3b3b]">
+      <div className="relative z-10 w-full max-w-sm mx-4 rounded-xl border border-[#2b2b31] bg-[#16161a] shadow-2xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#2b2b31]">
           <h2 className="text-sm font-semibold text-[#d4d4d4]">{goal ? 'Editar meta' : 'Nova meta'}</h2>
-          <button onClick={onClose} className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors">
+          <button onClick={onClose} className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#222227] transition-colors">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -47,7 +47,7 @@ export function GoalModal({ goal, projects, onSave, onClose }: Props) {
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Ex: Ler 10 livros, Correr 100km..."
               autoFocus
-              className="w-full px-3 py-2 rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] text-sm text-[#d4d4d4] placeholder-[#999999] focus:outline-none focus:border-[#7c3aed] transition-colors"
+              className="w-full px-3 py-2 rounded-lg border border-[#2b2b31] bg-[#101014] text-sm text-[#d4d4d4] placeholder-[#999999] focus:outline-none focus:border-[#7c3aed] transition-colors"
             />
           </div>
 
@@ -60,7 +60,7 @@ export function GoalModal({ goal, projects, onSave, onClose }: Props) {
                 onChange={(e) => setTarget(e.target.value)}
                 min="0.01"
                 step="any"
-                className="w-full px-3 py-2 rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] text-sm text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed] transition-colors"
+                className="w-full px-3 py-2 rounded-lg border border-[#2b2b31] bg-[#101014] text-sm text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed] transition-colors"
               />
             </div>
             <div>
@@ -70,7 +70,7 @@ export function GoalModal({ goal, projects, onSave, onClose }: Props) {
                 value={unit}
                 onChange={(e) => setUnit(e.target.value)}
                 placeholder="km, livros, horas..."
-                className="w-full px-3 py-2 rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] text-sm text-[#d4d4d4] placeholder-[#999999] focus:outline-none focus:border-[#7c3aed] transition-colors"
+                className="w-full px-3 py-2 rounded-lg border border-[#2b2b31] bg-[#101014] text-sm text-[#d4d4d4] placeholder-[#999999] focus:outline-none focus:border-[#7c3aed] transition-colors"
               />
             </div>
           </div>
@@ -84,7 +84,7 @@ export function GoalModal({ goal, projects, onSave, onClose }: Props) {
                   type="button"
                   onClick={() => setColor(c)}
                   className="w-5 h-5 rounded-full transition-transform hover:scale-110"
-                  style={{ backgroundColor: c, boxShadow: color === c ? `0 0 0 2px #232323, 0 0 0 4px ${c}` : 'none' }}
+                  style={{ backgroundColor: c, boxShadow: color === c ? `0 0 0 2px #16161a, 0 0 0 4px ${c}` : 'none' }}
                 />
               ))}
             </div>
@@ -96,7 +96,7 @@ export function GoalModal({ goal, projects, onSave, onClose }: Props) {
               <select
                 value={projectId}
                 onChange={(e) => setProjectId(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] text-sm text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed] transition-colors"
+                className="w-full px-3 py-2 rounded-lg border border-[#2b2b31] bg-[#101014] text-sm text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed] transition-colors"
               >
                 <option value="">Global</option>
                 {projects.map((p) => (

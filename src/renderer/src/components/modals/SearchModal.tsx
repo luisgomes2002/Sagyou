@@ -213,9 +213,9 @@ export function SearchModal({ open, onClose, onSelect }: Props): React.JSX.Eleme
         aria-modal="true"
         aria-label="Busca global"
         onKeyDownCapture={onDialogKeyDown}
-        className="relative z-10 w-full max-w-2xl mx-4 rounded-xl border border-[#3b3b3b] bg-[#232323] shadow-2xl overflow-hidden"
+        className="relative z-10 w-full max-w-2xl mx-4 rounded-xl border border-[#2b2b31] bg-[#16161a] shadow-2xl overflow-hidden"
       >
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-[#3b3b3b]">
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-[#2b2b31]">
           <svg
             width="16"
             height="16"
@@ -247,11 +247,11 @@ export function SearchModal({ open, onClose, onSelect }: Props): React.JSX.Eleme
             placeholder="Buscar em todo o aplicativo..."
             className="flex-1 min-w-0 bg-transparent text-sm text-[#d4d4d4] placeholder-[#999999] outline-none"
           />
-          <kbd className="text-[10px] text-[#999999] px-1.5 py-0.5 rounded bg-[#1b1b1b] border border-[#3b3b3b] shrink-0">
+          <kbd className="text-[10px] text-[#999999] px-1.5 py-0.5 rounded bg-[#101014] border border-[#2b2b31] shrink-0">
             Esc
           </kbd>
         </div>
-        <div className="flex gap-2 px-4 py-2 border-b border-[#3b3b3b]">
+        <div className="flex gap-2 px-4 py-2 border-b border-[#2b2b31]">
           <label className="sr-only" htmlFor="global-search-type">
             Tipo
           </label>
@@ -263,7 +263,7 @@ export function SearchModal({ open, onClose, onSelect }: Props): React.JSX.Eleme
               setType(event.target.value as GlobalSearchType | '')
               inputRef.current?.focus()
             }}
-            className="min-w-0 max-w-[50%] rounded-md border border-[#3b3b3b] bg-[#2a2a2a] px-2 py-1 text-xs text-[#d4d4d4]"
+            className="min-w-0 max-w-[50%] rounded-md border border-[#2b2b31] bg-[#16161a] px-2 py-1 text-xs text-[#d4d4d4]"
           >
             <option value="">Todos os tipos</option>
             {AREAS.map((area) => (
@@ -287,7 +287,7 @@ export function SearchModal({ open, onClose, onSelect }: Props): React.JSX.Eleme
               setProjectId(event.target.value)
               inputRef.current?.focus()
             }}
-            className="min-w-0 max-w-[50%] rounded-md border border-[#3b3b3b] bg-[#2a2a2a] px-2 py-1 text-xs text-[#d4d4d4]"
+            className="min-w-0 max-w-[50%] rounded-md border border-[#2b2b31] bg-[#16161a] px-2 py-1 text-xs text-[#d4d4d4]"
           >
             <option value="">Todos os projetos</option>
             {projects
@@ -346,7 +346,7 @@ export function SearchModal({ open, onClose, onSelect }: Props): React.JSX.Eleme
                     aria-selected={selected === index}
                     onMouseEnter={() => setSelected(index)}
                     onClick={() => choose(hit)}
-                    className={`block w-full cursor-pointer px-4 py-2.5 text-left border-l-2 ${selected === index ? 'bg-[#3b3b3b] border-[#a080f0]' : 'border-transparent hover:bg-[#2a2a2a]'}`}
+                    className={`block w-full cursor-pointer px-4 py-2.5 text-left border-l-2 ${selected === index ? 'bg-[#2a2a30] border-[#a080f0]' : 'border-transparent hover:bg-[#222227]'}`}
                   >
                     <div className="flex items-center gap-2">
                       <span className="min-w-0 flex-1 truncate text-sm text-[#d4d4d4]">
@@ -368,7 +368,7 @@ export function SearchModal({ open, onClose, onSelect }: Props): React.JSX.Eleme
             </div>
           ))}
           {response && response.total > 0 && (
-            <div className="flex items-center justify-between gap-3 border-t border-[#3b3b3b] px-4 py-2 text-xs text-[#999999]">
+            <div className="flex items-center justify-between gap-3 border-t border-[#2b2b31] px-4 py-2 text-xs text-[#999999]">
               <span role="status">
                 {results.length} de {response.total} resultados
               </span>
@@ -380,7 +380,7 @@ export function SearchModal({ open, onClose, onSelect }: Props): React.JSX.Eleme
                     setPage((value) => value + 1)
                     inputRef.current?.focus()
                   }}
-                  className="rounded-md border border-[#3b3b3b] bg-[#2a2a2a] px-2 py-1 text-[#d4d4d4] hover:bg-[#4a4a4a] disabled:opacity-50"
+                  className="rounded-md border border-[#2b2b31] bg-[#16161a] px-2 py-1 text-[#d4d4d4] hover:bg-[#303036] disabled:opacity-50"
                 >
                   {loading ? 'Carregando...' : `Mostrar mais (${response.total - results.length})`}
                 </button>
@@ -388,7 +388,7 @@ export function SearchModal({ open, onClose, onSelect }: Props): React.JSX.Eleme
             </div>
           )}
         </div>
-        <p className="border-t border-[#3b3b3b] px-4 py-2 text-[10px] text-[#999999]">
+        <p className="border-t border-[#2b2b31] px-4 py-2 text-[10px] text-[#999999]">
           ↑ ↓ selecionar · Enter abrir · Esc fechar
         </p>
       </div>

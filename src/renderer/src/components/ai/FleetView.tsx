@@ -621,7 +621,7 @@ export function FleetView({
 
   return (
     <>
-      <div className="flex items-center gap-3 px-6 py-4 border-b border-[#3b3b3b] shrink-0">
+      <div className="flex items-center gap-3 px-6 py-4 border-b border-[#2b2b31] shrink-0">
         <svg
           width="16"
           height="16"
@@ -675,7 +675,7 @@ export function FleetView({
             {(() => {
               const data = runCache.get(chatSession.id)
               return (
-                <div className="mb-4 p-3 rounded-xl bg-[#232323] border border-[#3b3b3b]">
+                <div className="mb-4 p-3 rounded-xl bg-[#16161a] border border-[#2b2b31]">
                   <p className="text-xs font-medium text-[#d4d4d4] mb-1">Tarefa original</p>
                   <p className="text-[11px] text-[#999999] mb-2">{chatSession.task}</p>
                   {data && <CodeDiff diff={data.diff} />}
@@ -697,7 +697,7 @@ export function FleetView({
                         onClick={() => {
                           void finishInteractive(liveRun.id)
                         }}
-                        className="ml-6 rounded border border-[#3b3b3b] px-3 py-1.5 text-xs text-[#f0b820] hover:bg-[#2a2a2a]"
+                        className="ml-6 rounded border border-[#2b2b31] px-3 py-1.5 text-xs text-[#f0b820] hover:bg-[#222227]"
                       >
                         Encerrar e revisar diff
                       </button>
@@ -709,7 +709,7 @@ export function FleetView({
               {chatMessages.map((m, i) => (
                 <div
                   key={i}
-                  className={`p-3 rounded-xl ${m.role === 'user' ? 'bg-[#3b3b3b] border border-[#3b3b3b] ml-8' : 'bg-[#232323] border border-[#3b3b3b] mr-8'}`}
+                  className={`p-3 rounded-xl ${m.role === 'user' ? 'bg-[#2a2a30] border border-[#2b2b31] ml-8' : 'bg-[#16161a] border border-[#2b2b31] mr-8'}`}
                 >
                   <p className="text-xs text-[#d4d4d4] whitespace-pre-wrap">{m.text}</p>
                   {m.diff && (
@@ -728,7 +728,7 @@ export function FleetView({
                 </div>
               ))}
               {chatSending && (
-                <div className="mr-8 p-3 rounded-xl bg-[#232323] border border-[#3b3b3b]">
+                <div className="mr-8 p-3 rounded-xl bg-[#16161a] border border-[#2b2b31]">
                   <div className="flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full border-[1.5px] border-[#a080f0] border-t-transparent animate-spin" />
                     <span className="text-xs text-[#999999]">Agente trabalhando…</span>
@@ -751,8 +751,8 @@ export function FleetView({
                 title="Ative para a próxima continuação abrir um terminal persistente do harness externo."
                 className={
                   chatSession.interactive
-                    ? 'rounded-lg border border-[#7c3aed] bg-[#3b3b3b] px-2 py-2 text-[11px] text-[#c4b5fd]'
-                    : 'rounded-lg border border-[#3b3b3b] px-2 py-2 text-[11px] text-[#999999] hover:text-[#d4d4d4]'
+                    ? 'rounded-lg border border-[#7c3aed] bg-[#2a2a30] px-2 py-2 text-[11px] text-[#c4b5fd]'
+                    : 'rounded-lg border border-[#2b2b31] px-2 py-2 text-[11px] text-[#999999] hover:text-[#d4d4d4]'
                 }
               >
                 {chatSession.interactive ? 'Terminal ao vivo' : 'Modo por tarefa'}
@@ -804,7 +804,7 @@ export function FleetView({
                     : 'Digite uma mensagem para o agente de código…'
                 }
                 disabled={chatSending}
-                className="flex-1 px-3 py-2 rounded-lg bg-[#1b1b1b] border border-[#3b3b3b] text-sm text-[#d4d4d4] placeholder:text-[#666666] focus:outline-none focus:border-[#7c3aed] disabled:opacity-50"
+                className="flex-1 px-3 py-2 rounded-lg bg-[#101014] border border-[#2b2b31] text-sm text-[#d4d4d4] placeholder:text-[#666666] focus:outline-none focus:border-[#7c3aed] disabled:opacity-50"
               />
               <button
                 onClick={async () => {
@@ -852,7 +852,7 @@ export function FleetView({
           <>
             {chatAgents.length === 0 && codeAgents.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-center">
-                <div className="w-12 h-12 rounded-full bg-[#2a2a2a] flex items-center justify-center mb-3">
+                <div className="w-12 h-12 rounded-full bg-[#16161a] flex items-center justify-center mb-3">
                   <svg
                     width="22"
                     height="22"
@@ -887,7 +887,7 @@ export function FleetView({
                   return (
                     <div
                       key={id}
-                      className="flex flex-col rounded-xl bg-[#232323] border border-[#3b3b3b] p-4 gap-3"
+                      className="flex flex-col rounded-xl bg-[#16161a] border border-[#2b2b31] p-4 gap-3"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
@@ -905,7 +905,7 @@ export function FleetView({
                                 ? `Passo ${progress.step} — sem limite`
                                 : `Passo ${progress.step} de ${progress.maxSteps}`
                             }
-                            className="shrink-0 px-1.5 py-[1px] rounded text-[10px] font-medium tabular-nums bg-[#2a2a2a] border border-[#3b3b3b] text-[#999999]"
+                            className="shrink-0 px-1.5 py-[1px] rounded text-[10px] font-medium tabular-nums bg-[#16161a] border border-[#2b2b31] text-[#999999]"
                           >
                             {formatProgress(progress.step, progress.maxSteps)}
                           </span>
@@ -925,7 +925,7 @@ export function FleetView({
 
                       {progress && (
                         <div
-                          className="h-1.5 overflow-hidden rounded-full bg-[#151515]"
+                          className="h-1.5 overflow-hidden rounded-full bg-[#2a2a30]"
                           role="progressbar"
                           aria-label="Progresso do agente"
                           aria-valuemin={0}
@@ -953,7 +953,7 @@ export function FleetView({
                       )}
 
                       {recentStatus.length > 0 && (
-                        <div className="rounded-lg border border-[#34303d] bg-[#1b1b1b] px-3 py-2">
+                        <div className="rounded-lg border border-[#34303d] bg-[#101014] px-3 py-2">
                           <div className="mb-1.5 flex items-center justify-between">
                             <span className="text-[10px] font-medium uppercase tracking-wide text-[#a080f0]">
                               Atividade recente
@@ -1021,14 +1021,14 @@ export function FleetView({
                       <div className="flex items-center gap-2 pt-1">
                         <button
                           onClick={() => openAgent(id)}
-                          className="flex-1 px-3 py-1.5 rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] text-xs text-[#d4d4d4] font-medium hover:bg-[#3b3b3b] transition-colors"
+                          className="flex-1 px-3 py-1.5 rounded-lg bg-[#16161a] border border-[#2b2b31] text-xs text-[#d4d4d4] font-medium hover:bg-[#2a2a30] transition-colors"
                         >
                           Abrir chat
                         </button>
                         <button
                           onClick={() => abort(id)}
                           title="Parar este agente"
-                          className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#3b3b3b] text-xs text-[#e04040] hover:bg-[#2a2a2a] transition-colors"
+                          className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#2b2b31] text-xs text-[#e04040] hover:bg-[#222227] transition-colors"
                         >
                           <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor">
                             <rect x="3" y="3" width="18" height="18" rx="3" />
@@ -1048,7 +1048,7 @@ export function FleetView({
                   return (
                     <div
                       key={run.id}
-                      className="flex flex-col rounded-xl bg-[#232323] border border-[#3b3b3b] p-4 gap-3"
+                      className="flex flex-col rounded-xl bg-[#16161a] border border-[#2b2b31] p-4 gap-3"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
@@ -1066,7 +1066,7 @@ export function FleetView({
                                 ? `Passo ${run.progress.step} — sem limite`
                                 : `Passo ${run.progress.step} de ${run.progress.maxSteps}`
                             }
-                            className="shrink-0 px-1.5 py-[1px] rounded text-[10px] font-medium tabular-nums bg-[#2a2a2a] border border-[#3b3b3b] text-[#999999]"
+                            className="shrink-0 px-1.5 py-[1px] rounded text-[10px] font-medium tabular-nums bg-[#16161a] border border-[#2b2b31] text-[#999999]"
                           >
                             {formatProgress(run.progress.step, run.progress.maxSteps)}
                           </span>
@@ -1103,7 +1103,7 @@ export function FleetView({
                         )}
                         <p className="text-xs text-[#999999] truncate flex items-center gap-1.5">
                           {run.autoApprove && (
-                            <span className="inline-flex items-center px-1.5 py-px rounded text-[10px] font-medium bg-[#3b3b3b] text-[#f0b820] shrink-0">
+                            <span className="inline-flex items-center px-1.5 py-px rounded text-[10px] font-medium bg-[#2a2a30] text-[#f0b820] shrink-0">
                               Auto
                             </span>
                           )}
@@ -1141,7 +1141,7 @@ export function FleetView({
                           moving forward, even when it emits no natural language. */}
                       {run.progress && (
                         <div
-                          className="h-1.5 overflow-hidden rounded-full bg-[#151515]"
+                          className="h-1.5 overflow-hidden rounded-full bg-[#2a2a30]"
                           role="progressbar"
                           aria-label="Progresso da execução"
                           aria-valuemin={0}
@@ -1171,7 +1171,7 @@ export function FleetView({
                       {/* Structured tool history stays useful when the model does
                           silent tool calls; the raw terminal is available below. */}
                       {run.events.length > 0 && (
-                        <div className="rounded-lg border border-[#34303d] bg-[#1b1b1b] px-3 py-2">
+                        <div className="rounded-lg border border-[#34303d] bg-[#101014] px-3 py-2">
                           <div className="mb-1.5 flex items-center justify-between">
                             <span className="text-[10px] font-medium uppercase tracking-wide text-[#a080f0]">
                               Atividade recente
@@ -1210,7 +1210,7 @@ export function FleetView({
 
                       {/* Log preview (last 3 lines) */}
                       {run.log && (
-                        <div className="rounded-lg bg-[#1b1b1b] p-2 max-h-16 overflow-hidden">
+                        <div className="rounded-lg bg-[#101014] p-2 max-h-16 overflow-hidden">
                           <pre className="text-[10px] text-[#999999] leading-relaxed whitespace-pre-wrap line-clamp-3 font-mono">
                             {run.log.split('\n').filter(Boolean).slice(-3).join('\n')}
                           </pre>
@@ -1218,7 +1218,7 @@ export function FleetView({
                       )}
 
                       {run.log && (
-                        <details className="rounded-lg border border-[#303030] bg-[#1b1b1b]">
+                        <details className="rounded-lg border border-[#2b2b31] bg-[#101014]">
                           <summary className="cursor-pointer px-3 py-2 text-[10px] text-[#a080f0] hover:text-[#c4b5fd]">
                             Terminal completo · {run.log.split('\n').filter(Boolean).length} linhas
                           </summary>
@@ -1239,7 +1239,7 @@ export function FleetView({
                       )}
 
                       {hasApproval && (
-                        <div className="space-y-2 rounded-lg border border-[#3b3b3b] bg-[#2a2a2a] p-2">
+                        <div className="space-y-2 rounded-lg border border-[#2b2b31] bg-[#16161a] p-2">
                           {run.approvals.map((approval) => (
                             <div
                               key={approval.id}
@@ -1254,13 +1254,13 @@ export function FleetView({
                               <span className="flex shrink-0 gap-1">
                                 <button
                                   onClick={() => approveAgent(run.id, approval.id, true)}
-                                  className="rounded border border-[#3b3b3b] px-2 py-1 text-[#72b972] hover:bg-[#2a2a2a]"
+                                  className="rounded border border-[#2b2b31] px-2 py-1 text-[#72b972] hover:bg-[#222227]"
                                 >
                                   Aprovar
                                 </button>
                                 <button
                                   onClick={() => approveAgent(run.id, approval.id, false)}
-                                  className="rounded border border-[#3b3b3b] px-2 py-1 text-[#e04040] hover:bg-[#2a2a2a]"
+                                  className="rounded border border-[#2b2b31] px-2 py-1 text-[#e04040] hover:bg-[#222227]"
                                 >
                                   Recusar
                                 </button>
@@ -1296,7 +1296,7 @@ export function FleetView({
                               }
                             })()
                           }}
-                          className="flex-1 px-3 py-1.5 rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] text-xs text-[#d4d4d4] font-medium hover:bg-[#3b3b3b] transition-colors"
+                          className="flex-1 px-3 py-1.5 rounded-lg bg-[#16161a] border border-[#2b2b31] text-xs text-[#d4d4d4] font-medium hover:bg-[#2a2a30] transition-colors"
                         >
                           Abrir chat
                         </button>
@@ -1314,7 +1314,7 @@ export function FleetView({
                         <button
                           onClick={() => stopAgent(run.id)}
                           title="Parar este agente de código"
-                          className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#3b3b3b] text-xs text-[#e04040] hover:bg-[#2a2a2a] transition-colors"
+                          className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#2b2b31] text-xs text-[#e04040] hover:bg-[#222227] transition-colors"
                         >
                           <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor">
                             <rect x="3" y="3" width="18" height="18" rx="3" />
@@ -1330,7 +1330,7 @@ export function FleetView({
 
             {/* ── Archived runs (finished agents) ───────────────────────────── */}
             {archivedRuns.length > 0 && (
-              <div className="mt-6 pt-4 border-t border-[#3b3b3b]">
+              <div className="mt-6 pt-4 border-t border-[#2b2b31]">
                 <h2 className="text-xs font-medium text-[#999999] mb-3 px-1">
                   Execuções anteriores (últimas 24h)
                 </h2>
@@ -1340,8 +1340,8 @@ export function FleetView({
                       key={run.id}
                       className={`rounded-xl border p-3 transition-colors ${
                         runCache.has(run.id)
-                          ? 'bg-[#3b3b3b] border-[#7c3aed]'
-                          : 'bg-[#232323] border-[#3b3b3b] hover:border-[#555555]'
+                          ? 'bg-[#2a2a30] border-[#7c3aed]'
+                          : 'bg-[#16161a] border-[#2b2b31] hover:border-[#3b3b42]'
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2">
@@ -1356,7 +1356,7 @@ export function FleetView({
                               {run.task.slice(0, 80)}
                             </p>
                             {run.delivery === 'merge_failed' && (
-                              <span className="shrink-0 rounded border border-[#3b3b3b] bg-[#2a2a2a] px-1.5 py-px text-[9px] font-medium text-[#e04040]">
+                              <span className="shrink-0 rounded border border-[#2b2b31] bg-[#16161a] px-1.5 py-px text-[9px] font-medium text-[#e04040]">
                                 Não aplicado
                               </span>
                             )}
@@ -1394,14 +1394,14 @@ export function FleetView({
                               }
                             }}
                             title="Continuar conversando com este agente"
-                            className="px-2.5 py-1.5 rounded-lg bg-[#3b3b3b] border border-[#3b3b3b] text-[10px] text-[#ffffff] font-medium hover:bg-[#4a4a4a] transition-colors"
+                            className="px-2.5 py-1.5 rounded-lg bg-[#2a2a30] border border-[#2b2b31] text-[10px] text-[#ffffff] font-medium hover:bg-[#303036] transition-colors"
                           >
                             Continuar
                           </button>
                           <button
                             onClick={() => toggleRun(run.id)}
                             title={runCache.has(run.id) ? 'Fechar detalhes' : 'Ver diff e log'}
-                            className="px-2.5 py-1.5 rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] text-[10px] text-[#d4d4d4] hover:bg-[#7c3aed] hover:border-[#7c3aed] transition-colors"
+                            className="px-2.5 py-1.5 rounded-lg bg-[#16161a] border border-[#2b2b31] text-[10px] text-[#d4d4d4] hover:bg-[#7c3aed] hover:border-[#7c3aed] transition-colors"
                           >
                             {runCache.has(run.id) ? 'Fechar' : 'Detalhes'}
                           </button>

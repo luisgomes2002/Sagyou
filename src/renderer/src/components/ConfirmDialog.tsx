@@ -22,7 +22,7 @@ export function ConfirmDialog({
 
   return (
     <ModalBase open={open} onClose={onCancel}>
-      <div className="relative z-10 w-full max-w-sm mx-4 rounded-xl border border-[#3b3b3b] bg-[#232323] shadow-2xl p-6">
+      <div className="relative z-10 w-full max-w-sm mx-4 rounded-xl border border-[#2b2b31] bg-[#16161a] shadow-2xl p-6">
         <h3 className="text-base font-semibold text-[#d4d4d4] mb-2">{title}</h3>
         {/* whitespace-pre-line so a message can use blank lines to separate what
             the action does from what it costs. A single-line message is

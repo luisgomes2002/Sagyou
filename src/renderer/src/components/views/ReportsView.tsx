@@ -64,7 +64,7 @@ function ActivityHeatmap({ doneTasks }: { doneTasks: Task[] }) {
   const dayLabels = ['', 'Seg', '', 'Qua', '', 'Sex', '']
 
   return (
-    <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4">
+    <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-4">
       <div className="flex items-baseline justify-between mb-2">
         <p className="text-[10px] font-semibold uppercase tracking-wider text-[#999999]">
           Atividade: últimos 12 meses
@@ -226,7 +226,7 @@ function WeeklyAreaChart({ data, max }: { data: { label: string; count: number }
         const y = MT + (1 - v / safeMax) * CH
         return (
           <g key={v}>
-            <line x1={ML} y1={y} x2={ML + CW} y2={y} stroke="#3b3b3b" strokeWidth={0.5} />
+            <line x1={ML} y1={y} x2={ML + CW} y2={y} stroke="#2b2b31" strokeWidth={0.5} />
             <text
               x={ML - 4}
               y={y}
@@ -255,12 +255,12 @@ function WeeklyAreaChart({ data, max }: { data: { label: string; count: number }
       />
 
       {/* Baseline */}
-      <line x1={ML} y1={bottom} x2={ML + CW} y2={bottom} stroke="#3b3b3b" strokeWidth={0.5} />
+      <line x1={ML} y1={bottom} x2={ML + CW} y2={bottom} stroke="#2b2b31" strokeWidth={0.5} />
 
       {/* Data points + X labels */}
       {pts.map((pt, i) => (
         <g key={i}>
-          <circle cx={pt.x} cy={pt.y} r={1.2} fill="#7c3aed" stroke="#2a2a2a" strokeWidth={0.5} />
+          <circle cx={pt.x} cy={pt.y} r={1.2} fill="#7c3aed" stroke="#2a2a30" strokeWidth={0.5} />
           <text x={pt.x} y={VH - 5} textAnchor="middle" fontSize={3} fill="#999999">
             {pt.label}
           </text>
@@ -314,7 +314,7 @@ function StatCard({
   delta?: number
 }) {
   return (
-    <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4">
+    <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-4">
       <p className="text-[11px] text-[#999999] mb-1.5">{label}</p>
       <p className="text-2xl font-bold" style={{ color }}>
         {value}
@@ -466,7 +466,7 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      <div className="flex items-center gap-3 px-6 py-4 border-b border-[#3b3b3b] shrink-0">
+      <div className="flex items-center gap-3 px-6 py-4 border-b border-[#2b2b31] shrink-0">
         <svg
           width="15"
           height="15"
@@ -514,18 +514,18 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
         {(dueDateData.overdue.length > 0 || dueDateData.upcoming.length > 0) && (
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4">
+              <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-4">
                 <p className="text-[11px] text-[#999999] mb-1.5">Vencidas</p>
                 <p className="text-2xl font-bold text-[#e04040]">{dueDateData.overdue.length}</p>
                 <p className="text-[10px] text-[#666666] mt-0.5">tasks atrasadas</p>
               </div>
-              <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4">
+              <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-4">
                 <p className="text-[11px] text-[#999999] mb-1.5">Vencem em 7 dias</p>
                 <p className="text-2xl font-bold text-[#f0c210]">{dueDateData.upcoming.length}</p>
                 <p className="text-[10px] text-[#666666] mt-0.5">tasks próximas</p>
               </div>
             </div>
-            <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] divide-y divide-[#3b3b3b] overflow-hidden">
+            <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] divide-y divide-[#2b2b31] overflow-hidden">
               {dueDateData.list.map(({ task, project }) => {
                 const isOverdue = task.dueDate! < dueDateData.todayStr
                 return (
@@ -563,7 +563,7 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
         <ActivityHeatmap doneTasks={doneTasks} />
 
         {/* Area chart — Concluídas por semana */}
-        <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4">
+        <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-4">
           <div className="flex items-baseline justify-between mb-2">
             <SectionTitle>Concluídas por semana</SectionTitle>
             <span className="text-[11px] text-[#999999]">média {avgPerWeek}/sem</span>
@@ -573,7 +573,7 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
 
         {/* Bar chart — Velocidade por sprint */}
         {sprintVelocity.length > 0 && (
-          <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4">
+          <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-4">
             <div className="flex items-baseline justify-between mb-4">
               <SectionTitle>Velocidade por sprint</SectionTitle>
               <span className="text-[11px] text-[#999999]">média {avgVelocity}/sprint</span>
@@ -603,7 +603,7 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
                           border: active
                             ? '1.5px dashed #7c3aed'
                             : count === 0
-                              ? '1px solid #3b3b3b'
+                              ? '1px solid #2b2b31'
                               : 'none',
                           boxSizing: 'border-box'
                         }}
@@ -651,7 +651,7 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
         )}
 
         {/* Priority — horizontal bars */}
-        <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4">
+        <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-4">
           <SectionTitle>Tasks ativas por prioridade</SectionTitle>
           <div className="space-y-3">
             {(['urgent', 'high', 'medium', 'low'] as const).map((p) => {
@@ -663,7 +663,7 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
                   <span className={`text-[10px] font-semibold w-14 shrink-0 ${cfg.color}`}>
                     {cfg.label}
                   </span>
-                  <div className="flex-1 h-2 bg-[#1b1b1b] rounded-full overflow-hidden">
+                  <div className="flex-1 h-2 bg-[#101014] rounded-full overflow-hidden">
                     <div
                       className="h-full rounded-full transition-all"
                       style={{ width: `${pct}%`, backgroundColor: PRIORITY_COLORS[p] }}
@@ -680,13 +680,13 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
 
         {/* Tags with percentage */}
         {tagData.length > 0 && (
-          <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4">
+          <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-4">
             <SectionTitle>Tasks ativas por tag</SectionTitle>
             <div className="space-y-2.5">
               {tagData.map(({ tag, count }) => (
                 <div key={tag} className="flex items-center gap-3">
                   <span className="text-[10px] text-[#999999] w-24 truncate shrink-0">{tag}</span>
-                  <div className="flex-1 h-1.5 bg-[#1b1b1b] rounded-full overflow-hidden">
+                  <div className="flex-1 h-1.5 bg-[#101014] rounded-full overflow-hidden">
                     <div
                       className="h-full rounded-full transition-all"
                       style={{ width: `${(count / maxTag) * 100}%`, backgroundColor: '#7c3aed' }}
@@ -706,7 +706,7 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
 
         {/* Combined projects: tasks abertas + tempo */}
         {projectCombined.length > 0 && (
-          <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4">
+          <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-4">
             <SectionTitle>Projetos</SectionTitle>
             {/* Column headers */}
             <div className="flex items-center gap-2 mb-2 pl-[calc(8px+80px+8px)]">
@@ -729,7 +729,7 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
                   <span className="text-[10px] text-[#a0a0a0] w-20 truncate shrink-0">
                     {project.name}
                   </span>
-                  <div className="flex-1 h-1.5 bg-[#1b1b1b] rounded-full overflow-hidden">
+                  <div className="flex-1 h-1.5 bg-[#101014] rounded-full overflow-hidden">
                     <div
                       className="h-full rounded-full transition-all"
                       style={{
@@ -742,7 +742,7 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
                   <span className="text-[10px] text-[#999999] w-5 text-right shrink-0 tabular-nums">
                     {load > 0 ? load : '-'}
                   </span>
-                  <div className="flex-1 h-1.5 bg-[#1b1b1b] rounded-full overflow-hidden">
+                  <div className="flex-1 h-1.5 bg-[#101014] rounded-full overflow-hidden">
                     <div
                       className="h-full rounded-full transition-all"
                       style={{
@@ -762,7 +762,7 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
 
         {/* Habits with mini 14-day calendar */}
         {habitSummary.length > 0 && (
-          <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4">
+          <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-4">
             <SectionTitle>Hábitos — mês atual</SectionTitle>
             <div className="space-y-4">
               {habitSummary.map(({ habit, streak, rate, monthDone }) => (
@@ -775,7 +775,7 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
                     <span className="text-xs text-[#999999] w-28 truncate shrink-0">
                       {habit.name}
                     </span>
-                    <div className="flex-1 h-2 bg-[#1b1b1b] rounded-full overflow-hidden">
+                    <div className="flex-1 h-2 bg-[#101014] rounded-full overflow-hidden">
                       <div
                         className="h-full rounded-full transition-all"
                         style={{ width: `${rate}%`, backgroundColor: habit.color }}
@@ -813,8 +813,8 @@ export function ReportsView({ projects, tasks, sprints, habits }: Props) {
                         key={d}
                         className="w-2 h-2 rounded-full shrink-0"
                         style={{
-                          backgroundColor: habit.completions.includes(d) ? habit.color : '#2a2a2a',
-                          border: habit.completions.includes(d) ? 'none' : '1px solid #3b3b3b'
+                          backgroundColor: habit.completions.includes(d) ? habit.color : '#2a2a30',
+                          border: habit.completions.includes(d) ? 'none' : '1px solid #2b2b31'
                         }}
                         title={d}
                       />

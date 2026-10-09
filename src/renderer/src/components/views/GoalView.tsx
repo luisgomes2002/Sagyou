@@ -79,7 +79,7 @@ export function GoalView({ projects, searchTargetId }: Props) {
   return (
     <>
       <div className="flex flex-col h-full overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#3b3b3b] shrink-0">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#2b2b31] shrink-0">
           <div className="flex items-center gap-3">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2">
               <circle cx="12" cy="12" r="10" />
@@ -100,7 +100,7 @@ export function GoalView({ projects, searchTargetId }: Props) {
         </div>
 
         {goals.length > 0 && (
-          <div className="px-6 py-3 border-b border-[#3b3b3b] bg-[#232323] shrink-0">
+          <div className="px-6 py-3 border-b border-[#2b2b31] bg-[#16161a] shrink-0">
             <div className="flex items-center gap-4 mb-2">
               <div className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-[#20b858]" />
@@ -112,7 +112,7 @@ export function GoalView({ projects, searchTargetId }: Props) {
               </div>
               <span className="text-[11px] font-semibold text-[#a080f0] ml-auto tabular-nums">{overallPct}% médio</span>
             </div>
-            <div className="h-1.5 rounded-full bg-[#3b3b3b] overflow-hidden">
+            <div className="h-1.5 rounded-full bg-[#2a2a30] overflow-hidden">
               <div
                 className="h-full rounded-full transition-all duration-500"
                 style={{ width: `${overallPct}%`, backgroundColor: overallPct === 100 ? '#20b858' : '#7c3aed' }}
@@ -122,13 +122,13 @@ export function GoalView({ projects, searchTargetId }: Props) {
         )}
 
         {goals.length > 0 && (
-          <div className="flex items-center gap-1 px-6 py-2 border-b border-[#3b3b3b] bg-[#232323] shrink-0">
+          <div className="flex items-center gap-1 px-6 py-2 border-b border-[#2b2b31] bg-[#16161a] shrink-0">
             {(['all', 'active', 'done'] as FilterType[]).map((f) => (
               <button
                 key={f}
                 onClick={() => setFilter(f)}
                 className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
-                  filter === f ? 'bg-[#3b3b3b] text-[#d4d4d4]' : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a]'
+                  filter === f ? 'bg-[#2a2a30] text-[#d4d4d4]' : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#222227]'
                 }`}
               >
                 {filterLabels[f]}
@@ -140,7 +140,7 @@ export function GoalView({ projects, searchTargetId }: Props) {
         {goals.length === 0 ? (
           <div className="flex flex-col items-center justify-center flex-1 gap-5">
             <div className="relative">
-              <div className="w-20 h-20 rounded-full bg-[#2a2a2a] border border-[#3b3b3b] flex items-center justify-center">
+              <div className="w-20 h-20 rounded-full bg-[#16161a] border border-[#2b2b31] flex items-center justify-center">
                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#555555" strokeWidth="1.5">
                   <circle cx="12" cy="12" r="10" />
                   <circle cx="12" cy="12" r="6" />

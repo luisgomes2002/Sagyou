@@ -195,8 +195,8 @@ export function AnalyticsTab({
             onClick={() => handleYearSelect('all')}
             className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
               selectedYear === 'all'
-                ? 'bg-[#3b3b3b] text-[#d4d4d4]'
-                : 'bg-[#2a2a2a] text-[#b3b3b3] hover:bg-[#383838] hover:text-[#f0f0f0]'
+                ? 'bg-[#2a2a30] text-[#d4d4d4]'
+                : 'bg-[#16161a] text-[#b3b3b3] hover:bg-[#303036] hover:text-[#f0f0f0]'
             }`}
           >
             Todos
@@ -207,8 +207,8 @@ export function AnalyticsTab({
               onClick={() => handleYearSelect(y)}
               className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
                 selectedYear === y
-                  ? 'bg-[#3b3b3b] text-[#d4d4d4]'
-                  : 'bg-[#2a2a2a] text-[#b3b3b3] hover:bg-[#383838] hover:text-[#f0f0f0]'
+                  ? 'bg-[#2a2a30] text-[#d4d4d4]'
+                  : 'bg-[#16161a] text-[#b3b3b3] hover:bg-[#303036] hover:text-[#f0f0f0]'
               }`}
             >
               {y}
@@ -223,8 +223,8 @@ export function AnalyticsTab({
               onClick={() => onMonthChange('all')}
               className={`px-2.5 py-0.5 rounded-full text-[10px] font-medium transition-colors ${
                 selectedMonth === 'all'
-                  ? 'bg-[#3b3b3b] text-[#d4d4d4]'
-                  : 'bg-[#2a2a2a] text-[#999999] hover:bg-[#383838] hover:text-[#d4d4d4]'
+                  ? 'bg-[#2a2a30] text-[#d4d4d4]'
+                  : 'bg-[#16161a] text-[#999999] hover:bg-[#303036] hover:text-[#d4d4d4]'
               }`}
             >
               Todos os meses
@@ -235,8 +235,8 @@ export function AnalyticsTab({
                 onClick={() => onMonthChange(m)}
                 className={`px-2.5 py-0.5 rounded-full text-[10px] font-medium transition-colors ${
                   selectedMonth === m
-                    ? 'bg-[#3b3b3b] text-[#d4d4d4]'
-                    : 'bg-[#2a2a2a] text-[#999999] hover:bg-[#383838] hover:text-[#d4d4d4]'
+                    ? 'bg-[#2a2a30] text-[#d4d4d4]'
+                    : 'bg-[#16161a] text-[#999999] hover:bg-[#303036] hover:text-[#d4d4d4]'
                 }`}
               >
                 {MONTH_ABBR[Number(m) - 1]}
@@ -248,7 +248,7 @@ export function AnalyticsTab({
 
       {/* Overview cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3">
+        <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-3">
           <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-1">
             <i className="w-1.5 h-1.5 rounded-full bg-[#20b858]" />
             Total Entradas
@@ -257,7 +257,7 @@ export function AnalyticsTab({
             {formatCurrency(totalIncome, currency)}
           </p>
         </div>
-        <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3">
+        <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-3">
           <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-1">
             <i className="w-1.5 h-1.5 rounded-full bg-[#e04040]" />
             Total Saídas
@@ -266,7 +266,7 @@ export function AnalyticsTab({
             {formatCurrency(totalExpense, currency)}
           </p>
         </div>
-        <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3">
+        <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-3">
           <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-1">
             <i className="w-1.5 h-1.5 rounded-full bg-[#a080f0]" />
             Saldo Geral
@@ -278,7 +278,7 @@ export function AnalyticsTab({
             {formatCurrency(totalBalance, currency)}
           </p>
         </div>
-        <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3">
+        <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-3">
           <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-1">
             <i className="w-1.5 h-1.5 rounded-full bg-[#a080f0]" />
             Média/Mês Gastos
@@ -291,7 +291,7 @@ export function AnalyticsTab({
 
       {/* Highlights */}
       <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3">
+        <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-3">
           <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-1.5">
             <i className="w-1.5 h-1.5 rounded-full bg-[#20b858]" />
             Melhor Mês
@@ -308,7 +308,7 @@ export function AnalyticsTab({
             <p className="text-xs text-[#999999]">Dados insuficientes</p>
           )}
         </div>
-        <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3">
+        <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-3">
           <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-1.5">
             <i className="w-1.5 h-1.5 rounded-full bg-[#a080f0]" />
             Maior Gasto
@@ -327,7 +327,7 @@ export function AnalyticsTab({
             <p className="text-xs text-[#999999]">-</p>
           )}
         </div>
-        <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3">
+        <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-3">
           <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-1.5">
             <i className="w-1.5 h-1.5 rounded-full bg-[#e04040]" />
             Pior Mês
@@ -344,7 +344,7 @@ export function AnalyticsTab({
             <p className="text-xs text-[#999999]">Dados insuficientes</p>
           )}
         </div>
-        <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3">
+        <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-3">
           <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-1.5">
             <i className="w-1.5 h-1.5 rounded-full bg-[#20b858]" />
             Maior Ganho
@@ -381,12 +381,12 @@ export function AnalyticsTab({
       <div>
         <div className="flex items-center justify-between mb-3">
           <p className="text-xs font-semibold text-[#d4d4d4]">Ranking por Categoria</p>
-          <div className="flex items-center p-0.5 rounded-lg bg-[#2a2a2a] border border-[#3b3b3b]">
+          <div className="flex items-center p-0.5 rounded-lg bg-[#16161a] border border-[#2b2b31]">
             <button
               onClick={() => onCatViewChange('expense')}
               className={`px-3 py-1 rounded-md text-[10px] font-medium transition-colors ${
                 catView === 'expense'
-                  ? 'bg-[#3b3b3b] text-[#ec6a6a]'
+                  ? 'bg-[#2a2a30] text-[#ec6a6a]'
                   : 'text-[#999999] hover:text-[#d4d4d4]'
               }`}
             >
@@ -396,7 +396,7 @@ export function AnalyticsTab({
               onClick={() => onCatViewChange('income')}
               className={`px-3 py-1 rounded-md text-[10px] font-medium transition-colors ${
                 catView === 'income'
-                  ? 'bg-[#3b3b3b] text-[#46d478]'
+                  ? 'bg-[#2a2a30] text-[#46d478]'
                   : 'text-[#999999] hover:text-[#d4d4d4]'
               }`}
             >
@@ -420,7 +420,7 @@ export function AnalyticsTab({
                     #{i + 1}
                   </span>
                   <span className="text-xs text-[#999999] w-28 truncate shrink-0">{cat}</span>
-                  <div className="flex-1 h-2 rounded-full bg-[#1b1b1b] overflow-hidden">
+                  <div className="flex-1 h-2 rounded-full bg-[#101014] overflow-hidden">
                     <div
                       className="h-full rounded-full transition-all duration-500"
                       style={{ width: `${(amount / activeMax) * 100}%`, backgroundColor: color }}
@@ -446,19 +446,19 @@ export function AnalyticsTab({
               const isBest = bestMonth && m.key === bestMonth.key
               const isWorst = worstMonth && m.key === worstMonth.key
               return (
-                <div key={m.key} className="rounded-lg p-3 border border-[#3b3b3b] bg-[#2a2a2a]">
+                <div key={m.key} className="rounded-lg p-3 border border-[#2b2b31] bg-[#16161a]">
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-medium text-[#d4d4d4]">
                         {monthLabel(m.key)}
                       </span>
                       {isBest && (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#3b3b3b] text-[#46d478] font-semibold">
+                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#2a2a30] text-[#46d478] font-semibold">
                           Melhor
                         </span>
                       )}
                       {isWorst && (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#3b3b3b] text-[#ec6a6a] font-semibold">
+                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#2a2a30] text-[#ec6a6a] font-semibold">
                           Pior
                         </span>
                       )}
@@ -473,7 +473,7 @@ export function AnalyticsTab({
                   <div className="space-y-1.5">
                     <div className="flex items-center gap-2">
                       <span className="text-[9px] text-[#46d478] w-12 shrink-0">Entradas</span>
-                      <div className="flex-1 h-1.5 rounded-full bg-[#1b1b1b] overflow-hidden">
+                      <div className="flex-1 h-1.5 rounded-full bg-[#101014] overflow-hidden">
                         <div
                           className="h-full rounded-full bg-[#20b858]"
                           style={{ width: `${(m.income / maxMonthBar) * 100}%` }}
@@ -485,7 +485,7 @@ export function AnalyticsTab({
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-[9px] text-[#e04040] w-12 shrink-0">Saídas</span>
-                      <div className="flex-1 h-1.5 rounded-full bg-[#1b1b1b] overflow-hidden">
+                      <div className="flex-1 h-1.5 rounded-full bg-[#101014] overflow-hidden">
                         <div
                           className="h-full rounded-full bg-[#e04040]"
                           style={{ width: `${(m.expense / maxMonthBar) * 100}%` }}

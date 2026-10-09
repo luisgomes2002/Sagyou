@@ -74,14 +74,14 @@ export function ProjectModal({ open, project, onSave, onClose }: Props) {
 
   return (
     <ModalBase open={open} onClose={onClose}>
-      <div className="relative z-10 w-full max-w-md mx-4 rounded-xl border border-[#3b3b3b] bg-[#232323] shadow-2xl max-h-[90vh] flex flex-col">
-        <div className="flex items-center justify-between p-5 border-b border-[#3b3b3b] shrink-0">
+      <div className="relative z-10 w-full max-w-md mx-4 rounded-xl border border-[#2b2b31] bg-[#16161a] shadow-2xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between p-5 border-b border-[#2b2b31] shrink-0">
           <h2 className="text-base font-semibold text-[#d4d4d4]">
             {project ? 'Editar projeto' : 'Novo projeto'}
           </h2>
           <button
             onClick={onClose}
-            className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors"
+            className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#222227] transition-colors"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <line x1="18" y1="6" x2="6" y2="18" />
@@ -100,7 +100,7 @@ export function ProjectModal({ open, project, onSave, onClose }: Props) {
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Nome do projeto"
                 autoFocus
-                className="w-full px-3 py-2 rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] text-sm text-[#d4d4d4] placeholder-[#999999] focus:outline-none focus:border-[#7c3aed] transition-colors"
+                className="w-full px-3 py-2 rounded-lg border border-[#2b2b31] bg-[#101014] text-sm text-[#d4d4d4] placeholder-[#999999] focus:outline-none focus:border-[#7c3aed] transition-colors"
               />
             </div>
 
@@ -111,7 +111,7 @@ export function ProjectModal({ open, project, onSave, onClose }: Props) {
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Descrição opcional"
                 rows={2}
-                className="w-full px-3 py-2 rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] text-sm text-[#d4d4d4] placeholder-[#999999] focus:outline-none focus:border-[#7c3aed] transition-colors resize-none"
+                className="w-full px-3 py-2 rounded-lg border border-[#2b2b31] bg-[#101014] text-sm text-[#d4d4d4] placeholder-[#999999] focus:outline-none focus:border-[#7c3aed] transition-colors resize-none"
               />
             </div>
 
@@ -144,7 +144,7 @@ export function ProjectModal({ open, project, onSave, onClose }: Props) {
               {links.length > 0 && (
                 <div className="space-y-1.5 mb-3">
                   {links.map((link) => (
-                    <div key={link.id} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#1b1b1b] border border-[#3b3b3b] group">
+                    <div key={link.id} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#101014] border border-[#2b2b31] group">
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#666666" strokeWidth="2" className="shrink-0">
                         <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
                         <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
@@ -174,7 +174,7 @@ export function ProjectModal({ open, project, onSave, onClose }: Props) {
                   onChange={(e) => setNewLabel(e.target.value)}
                   onKeyDown={handleLinkKeyDown}
                   placeholder="Rótulo  (ex: Frontend PC Casa)"
-                  className="w-full px-3 py-2 rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] text-sm text-[#d4d4d4] placeholder-[#999999] focus:outline-none focus:border-[#7c3aed] transition-colors"
+                  className="w-full px-3 py-2 rounded-lg border border-[#2b2b31] bg-[#101014] text-sm text-[#d4d4d4] placeholder-[#999999] focus:outline-none focus:border-[#7c3aed] transition-colors"
                 />
                 <div className="flex gap-2">
                   <input
@@ -183,13 +183,13 @@ export function ProjectModal({ open, project, onSave, onClose }: Props) {
                     onChange={(e) => setNewUrl(e.target.value)}
                     onKeyDown={handleLinkKeyDown}
                     placeholder="URL ou caminho  (ex: /home/luis/projetos/app)"
-                    className="flex-1 px-3 py-2 rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] text-sm text-[#d4d4d4] placeholder-[#999999] focus:outline-none focus:border-[#7c3aed] transition-colors"
+                    className="flex-1 px-3 py-2 rounded-lg border border-[#2b2b31] bg-[#101014] text-sm text-[#d4d4d4] placeholder-[#999999] focus:outline-none focus:border-[#7c3aed] transition-colors"
                   />
                   <button
                     type="button"
                     onClick={handleAddLink}
                     disabled={!newLabel.trim() || !newUrl.trim()}
-                    className="px-3 py-2 rounded-lg bg-[#3b3b3b] text-[#a080f0] text-sm hover:bg-[#4a4a4a] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                    className="px-3 py-2 rounded-lg bg-[#2a2a30] text-[#a080f0] text-sm hover:bg-[#303036] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                   >
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                       <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
@@ -226,8 +226,8 @@ export function ProjectModal({ open, project, onSave, onClose }: Props) {
                             key={cp.id}
                             className={`flex items-center gap-2 px-3 py-2 rounded-lg border group transition-colors ${
                               active
-                                ? 'bg-[#2a2a2a] border-[#7c3aed]'
-                                : 'bg-[#1b1b1b] border-[#3b3b3b]'
+                                ? 'bg-[#16161a] border-[#7c3aed]'
+                                : 'bg-[#101014] border-[#2b2b31]'
                             }`}
                           >
                             {/* Whole row toggles, so the hit target isn't a tiny box. */}
@@ -255,7 +255,7 @@ export function ProjectModal({ open, project, onSave, onClose }: Props) {
                                 <span className="block text-[11px] text-[#666666] truncate">{cp.path}</span>
                               </span>
                               {active && (
-                                <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#3b3b3b] text-[#a080f0]">
+                                <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#2a2a30] text-[#a080f0]">
                                   Ativo
                                 </span>
                               )}
@@ -278,7 +278,7 @@ export function ProjectModal({ open, project, onSave, onClose }: Props) {
                   <button
                     type="button"
                     onClick={handleAddCodePath}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-dashed border-[#3b3b3b] text-[#a080f0] text-xs hover:border-[#7c3aed] hover:bg-[#2a2a2a] transition-colors"
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-dashed border-[#2b2b31] text-[#a080f0] text-xs hover:border-[#7c3aed] hover:bg-[#222227] transition-colors"
                   >
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
@@ -290,7 +290,7 @@ export function ProjectModal({ open, project, onSave, onClose }: Props) {
             </div>
           </div>
 
-          <div className="flex justify-end gap-3 p-5 pt-4 border-t border-[#3b3b3b] shrink-0">
+          <div className="flex justify-end gap-3 p-5 pt-4 border-t border-[#2b2b31] shrink-0">
             <CancelButton onClick={onClose}>Cancelar</CancelButton>
             <button
               type="submit"

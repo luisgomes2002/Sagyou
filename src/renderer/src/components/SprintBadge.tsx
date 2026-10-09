@@ -108,8 +108,8 @@ export function SprintBadge({
         onClick={() => setOpen((v) => !v)}
         className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors border ${
           isFiltered
-            ? 'bg-[#3b3b3b] text-[#a080f0] border-[#3b3b3b] hover:bg-[#4a4a4a]'
-            : 'bg-[#2a2a2a] text-[#999999] border-[#3b3b3b] hover:border-[#555555] hover:text-[#d4d4d4]'
+            ? 'bg-[#2a2a30] text-[#a080f0] border-[#2b2b31] hover:bg-[#303036]'
+            : 'bg-[#16161a] text-[#999999] border-[#2b2b31] hover:border-[#3b3b42] hover:text-[#d4d4d4]'
         }`}
       >
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -124,7 +124,7 @@ export function SprintBadge({
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => { setOpen(false); setCreating(false); setBatchText(''); cancelRename() }} />
-          <div className="absolute right-0 top-9 z-20 max-h-[calc(100vh-3rem)] w-64 overflow-y-auto overscroll-contain rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] py-1 shadow-xl">
+          <div className="absolute right-0 top-9 z-20 max-h-[calc(100vh-3rem)] w-64 overflow-y-auto overscroll-contain rounded-lg border border-[#2b2b31] bg-[#101014] py-1 shadow-xl">
 
             {/* ── Filtro ── */}
             {activeSprints.length > 0 && (
@@ -137,8 +137,8 @@ export function SprintBadge({
                     onClick={() => { onSetFilter(null); setOpen(false) }}
                     className={`text-[11px] px-2 py-0.5 rounded-md border transition-colors ${
                       sprintFilter === null
-                        ? 'bg-[#3b3b3b] text-[#a080f0] border-[#3b3b3b]'
-                        : 'bg-[#2a2a2a] text-[#999999] border-[#3b3b3b] hover:text-[#d4d4d4]'
+                        ? 'bg-[#2a2a30] text-[#a080f0] border-[#2b2b31]'
+                        : 'bg-[#16161a] text-[#999999] border-[#2b2b31] hover:text-[#d4d4d4]'
                     }`}
                   >
                     Todas
@@ -149,8 +149,8 @@ export function SprintBadge({
                       onClick={() => { onSetFilter(s.id); setOpen(false) }}
                       className={`text-[11px] px-2 py-0.5 rounded-md border transition-colors flex items-center gap-1 ${
                         sprintFilter === s.id
-                          ? 'bg-[#3b3b3b] text-[#a080f0] border-[#3b3b3b]'
-                          : 'bg-[#2a2a2a] text-[#999999] border-[#3b3b3b] hover:text-[#d4d4d4]'
+                          ? 'bg-[#2a2a30] text-[#a080f0] border-[#2b2b31]'
+                          : 'bg-[#16161a] text-[#999999] border-[#2b2b31] hover:text-[#d4d4d4]'
                       }`}
                     >
                       <span className="w-1 h-1 rounded-full bg-[#7c3aed]" />
@@ -158,7 +158,7 @@ export function SprintBadge({
                     </button>
                   ))}
                 </div>
-                <div className="border-t border-[#3b3b3b] my-1" />
+                <div className="border-t border-[#2b2b31] my-1" />
               </>
             )}
 
@@ -166,7 +166,7 @@ export function SprintBadge({
             {!creating ? (
               <button
                 onClick={() => setCreating(true)}
-                className="w-full text-left px-3 py-2 text-sm text-[#7c3aed] hover:bg-[#2a2a2a] transition-colors flex items-center gap-2"
+                className="w-full text-left px-3 py-2 text-sm text-[#7c3aed] hover:bg-[#222227] transition-colors flex items-center gap-2"
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                   <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
@@ -185,7 +185,7 @@ export function SprintBadge({
                   }}
                   placeholder={'Sprint 1\nSprint 2\nv1.0'}
                   rows={4}
-                  className="w-full px-2 py-1.5 rounded-md border border-[#3b3b3b] bg-[#232323] text-xs text-[#d4d4d4] placeholder-[#999999]/50 focus:outline-none focus:border-[#7c3aed] transition-colors resize-none font-mono"
+                  className="w-full px-2 py-1.5 rounded-md border border-[#2b2b31] bg-[#16161a] text-xs text-[#d4d4d4] placeholder-[#999999]/50 focus:outline-none focus:border-[#7c3aed] transition-colors resize-none font-mono"
                 />
                 <div className="flex gap-2 mt-2">
                   <button
@@ -197,7 +197,7 @@ export function SprintBadge({
                   </button>
                   <button
                     onClick={() => { setCreating(false); setBatchText('') }}
-                    className="px-3 py-1.5 rounded-md border border-[#3b3b3b] text-xs text-[#999999] hover:text-[#d4d4d4] transition-colors"
+                    className="px-3 py-1.5 rounded-md border border-[#2b2b31] text-xs text-[#999999] hover:text-[#d4d4d4] transition-colors"
                   >
                     ✕
                   </button>
@@ -213,7 +213,7 @@ export function SprintBadge({
             {/* ── Gerenciar ── */}
             {(activeSprints.length > 0 || closedSprints.length > 0) && (
               <>
-                <div className="border-t border-[#3b3b3b] my-1" />
+                <div className="border-t border-[#2b2b31] my-1" />
                 <p className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#999999]">
                   Gerenciar
                 </p>
@@ -233,7 +233,7 @@ export function SprintBadge({
                               if (e.key === 'Enter') commitRename()
                               if (e.key === 'Escape') cancelRename()
                             }}
-                            className={`w-full bg-[#232323] text-xs text-[#d4d4d4] rounded px-1.5 py-0.5 focus:outline-none border ${
+                            className={`w-full bg-[#16161a] text-xs text-[#d4d4d4] rounded px-1.5 py-0.5 focus:outline-none border ${
                               renameError ? 'border-[#e04040]' : 'border-[#7c3aed]'
                             }`}
                           />
@@ -247,7 +247,7 @@ export function SprintBadge({
                           <span className="text-[9px] text-[#7c3aed] shrink-0">ativa</span>
                           <button
                             onClick={() => startRename(s)}
-                            className="opacity-0 group-hover/row:opacity-100 transition-opacity p-0.5 rounded hover:bg-[#2a2a2a] text-[#999999] hover:text-[#d4d4d4] shrink-0"
+                            className="opacity-0 group-hover/row:opacity-100 transition-opacity p-0.5 rounded hover:bg-[#222227] text-[#999999] hover:text-[#d4d4d4] shrink-0"
                             title="Renomear sprint"
                           >
                             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -262,7 +262,7 @@ export function SprintBadge({
                       <div className="flex items-center gap-1 shrink-0 ml-2">
                         <button
                           onClick={() => { onCloseSprint(s.id); setOpen(false) }}
-                          className="text-[10px] px-1.5 py-0.5 rounded bg-[#3b3b3b] text-[#999999] hover:text-[#d4d4d4] transition-colors"
+                          className="text-[10px] px-1.5 py-0.5 rounded bg-[#2a2a30] text-[#999999] hover:text-[#d4d4d4] transition-colors"
                         >
                           Encerrar
                         </button>
@@ -283,7 +283,7 @@ export function SprintBadge({
                 {closedSprints.map((s) => (
                   <div key={s.id} className="flex items-center justify-between px-3 py-1.5 group/row">
                     <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <div className="w-1.5 h-1.5 rounded-full bg-[#3b3b3b] shrink-0" />
+                      <div className="w-1.5 h-1.5 rounded-full bg-[#2a2a30] shrink-0" />
                       {renamingId === s.id ? (
                         <div className="flex-1 min-w-0">
                           <input
@@ -295,7 +295,7 @@ export function SprintBadge({
                               if (e.key === 'Enter') commitRename()
                               if (e.key === 'Escape') cancelRename()
                             }}
-                            className={`w-full bg-[#232323] text-xs text-[#d4d4d4] rounded px-1.5 py-0.5 focus:outline-none border ${
+                            className={`w-full bg-[#16161a] text-xs text-[#d4d4d4] rounded px-1.5 py-0.5 focus:outline-none border ${
                               renameError ? 'border-[#e04040]' : 'border-[#7c3aed]'
                             }`}
                           />
@@ -308,7 +308,7 @@ export function SprintBadge({
                           <span className="text-xs text-[#999999] truncate">{s.name}</span>
                           <button
                             onClick={() => startRename(s)}
-                            className="opacity-0 group-hover/row:opacity-100 transition-opacity p-0.5 rounded hover:bg-[#2a2a2a] text-[#999999] hover:text-[#d4d4d4] shrink-0"
+                            className="opacity-0 group-hover/row:opacity-100 transition-opacity p-0.5 rounded hover:bg-[#222227] text-[#999999] hover:text-[#d4d4d4] shrink-0"
                             title="Renomear sprint"
                           >
                             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -323,7 +323,7 @@ export function SprintBadge({
                       <div className="flex items-center gap-1 opacity-0 group-hover/row:opacity-100 transition-all shrink-0 ml-2">
                         <button
                           onClick={() => onReopenSprint(s.id)}
-                          className="text-[10px] px-1.5 py-0.5 rounded bg-[#3b3b3b] text-[#999999] hover:text-[#7c3aed] hover:bg-[#2a2a2a] transition-colors"
+                          className="text-[10px] px-1.5 py-0.5 rounded bg-[#2a2a30] text-[#999999] hover:text-[#7c3aed] hover:bg-[#222227] transition-colors"
                           title="Reabrir sprint"
                         >
                           Reabrir

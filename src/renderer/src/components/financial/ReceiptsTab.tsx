@@ -30,7 +30,7 @@ export function ReceiptsTab({ lists, files }: Props): React.JSX.Element {
         </p>
       </div>
       {receipts.length === 0 ? (
-        <div className="rounded-lg border border-[#3b3b3b] bg-[#232323] p-5 text-sm text-[#999999]">
+        <div className="rounded-lg border border-[#2b2b31] bg-[#16161a] p-5 text-sm text-[#999999]">
           Nenhum comprovante vinculado. Abra um lançamento em Finanças e clique em Documentar para
           anexar um arquivo.
         </div>
@@ -39,7 +39,7 @@ export function ReceiptsTab({ lists, files }: Props): React.JSX.Element {
           {receipts.map(({ fileId, file, transaction, list }) => (
             <div
               key={`${list.id}:${transaction.id}:${fileId}`}
-              className="flex flex-wrap items-center gap-3 rounded-lg border border-[#3b3b3b] bg-[#232323] px-4 py-3"
+              className="flex flex-wrap items-center gap-3 rounded-lg border border-[#2b2b31] bg-[#16161a] px-4 py-3"
             >
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">
@@ -53,7 +53,7 @@ export function ReceiptsTab({ lists, files }: Props): React.JSX.Element {
                 <button
                   type="button"
                   onClick={() => window.electronAPI.files.open(file.id, file.ext)}
-                  className="rounded border border-[#3b3b3b] px-3 py-1.5 text-xs text-[#a080f0] hover:border-[#7c3aed] hover:text-white"
+                  className="rounded border border-[#2b2b31] px-3 py-1.5 text-xs text-[#a080f0] hover:border-[#7c3aed] hover:text-white"
                 >
                   Abrir
                 </button>

@@ -176,7 +176,7 @@ describe('FleetView', () => {
     render(<FleetView projects={projects} onOpenChat={() => {}} />)
 
     const button = await screen.findByRole('button', { name: 'Auto: ON' })
-    expect(button).toHaveClass('bg-[#2a2a2a]', 'text-[#d4d4d4]')
+    expect(button).toHaveClass('bg-[#16161a]', 'text-[#d4d4d4]')
     expect(button.querySelector('svg')).toBeNull()
   })
 

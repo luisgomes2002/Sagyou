@@ -69,7 +69,7 @@ function HabitCalendar({ habit, today, year, month, onToggle }: CalendarProps) {
                 isFuture ? 'cursor-default opacity-15' : 'cursor-pointer hover:opacity-80 active:scale-90'
               }`}
               style={{
-                backgroundColor: done ? habit.color : '#3b3b3b',
+                backgroundColor: done ? habit.color : '#2b2b31',
                 opacity: isFuture ? 0.15 : done ? 1 : 0.45,
                 color: done ? 'rgba(0,0,0,0.55)' : '#999999',
                 ...(isToday && !isFuture
@@ -105,7 +105,7 @@ export function HabitCard({ habit, today, year, month, onToggle, onEdit, onDelet
   const totalDone = habit.completions.length
 
   return (
-    <div className="group rounded-xl border border-[#3b3b3b] bg-[#2a2a2a] p-4 hover:border-[#555555] transition-colors">
+    <div className="group rounded-xl border border-[#2b2b31] bg-[#16161a] p-4 hover:border-[#3b3b42] transition-colors">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 min-w-0">
           <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: habit.color }} />
@@ -114,7 +114,7 @@ export function HabitCard({ habit, today, year, month, onToggle, onEdit, onDelet
         <div className="relative">
           <button
             onClick={() => setMenuOpen((v) => !v)}
-            className="p-1 rounded text-[#555555] hover:text-[#999999] hover:bg-[#3b3b3b] transition-colors opacity-0 group-hover:opacity-100"
+            className="p-1 rounded text-[#555555] hover:text-[#999999] hover:bg-[#2a2a30] transition-colors opacity-0 group-hover:opacity-100"
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="5" r="1" fill="currentColor" />
@@ -125,15 +125,15 @@ export function HabitCard({ habit, today, year, month, onToggle, onEdit, onDelet
           {menuOpen && (
             <>
               <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-              <div className="absolute right-0 top-7 z-20 w-32 rounded-lg border border-[#3b3b3b] bg-[#232323] shadow-xl py-1">
+              <div className="absolute right-0 top-7 z-20 w-32 rounded-lg border border-[#2b2b31] bg-[#16161a] shadow-xl py-1">
                 <button
-                  className="w-full text-left px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors"
+                  className="w-full text-left px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#222227] transition-colors"
                   onClick={() => { setMenuOpen(false); onEdit() }}
                 >
                   Editar
                 </button>
                 <button
-                  className="w-full text-left px-3 py-2 text-sm text-[#e04040] hover:bg-[#2a2a2a] transition-colors"
+                  className="w-full text-left px-3 py-2 text-sm text-[#e04040] hover:bg-[#222227] transition-colors"
                   onClick={() => { setMenuOpen(false); onDelete() }}
                 >
                   Deletar
@@ -165,7 +165,7 @@ export function HabitCard({ habit, today, year, month, onToggle, onEdit, onDelet
           style={
             isDoneToday
               ? { backgroundColor: `${habit.color}18`, borderColor: `${habit.color}40`, color: habit.color }
-              : { backgroundColor: 'transparent', borderColor: '#3b3b3b', color: '#999999' }
+              : { backgroundColor: 'transparent', borderColor: '#2b2b31', color: '#999999' }
           }
         >
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={isDoneToday ? 3 : 2}>

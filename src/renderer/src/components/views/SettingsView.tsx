@@ -63,7 +63,7 @@ export function SettingsView({
           <p className="mt-1 text-sm text-[#999999]">Personalize o Sagyou para a sua rotina.</p>
         </div>
 
-        <section className="rounded-xl border border-[#3b3b3b] bg-[#232323]">
+        <section className="rounded-xl border border-[#2b2b31] bg-[#16161a]">
           <SectionTitle title="Perfil" description="Como o assistente deve chamar você." />
           <div className="p-5 flex gap-3 items-end">
             <label className="block flex-1">
@@ -75,7 +75,7 @@ export function SettingsView({
                 onChange={(event) => setUserName(event.target.value)}
                 placeholder="Ex.: Luísa"
                 disabled={loadingName}
-                className="w-full rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] px-3 py-2 text-sm text-[#d4d4d4] outline-none focus:border-[#7c3aed] disabled:opacity-50"
+                className="w-full rounded-lg border border-[#2b2b31] bg-[#101014] px-3 py-2 text-sm text-[#d4d4d4] outline-none focus:border-[#7c3aed] disabled:opacity-50"
               />
             </label>
             <button
@@ -91,19 +91,19 @@ export function SettingsView({
 
         <PasswordSettings onToast={onToast} />
 
-        <section className="rounded-xl border border-[#3b3b3b] bg-[#232323]">
+        <section className="rounded-xl border border-[#2b2b31] bg-[#16161a]">
           <SectionTitle
             title="Barra lateral"
             description="Escolha as áreas que aparecem na navegação. Seus dados não são apagados ao ocultar uma área."
           />
-          <div className="divide-y divide-[#3b3b3b]">
+          <div className="divide-y divide-[#2b2b31]">
             {ALL_FEATURE_IDS.map((feature) => {
               const info = FEATURE_LABELS[feature]
               const checked = enabledFeatures.includes(feature)
               return (
                 <label
                   key={feature}
-                  className="flex cursor-pointer items-center gap-4 px-5 py-3 hover:bg-[#2a2a2a]"
+                  className="flex cursor-pointer items-center gap-4 px-5 py-3 hover:bg-[#222227]"
                 >
                   <input
                     type="checkbox"
@@ -121,13 +121,13 @@ export function SettingsView({
           </div>
         </section>
 
-        <section className="rounded-xl border border-[#3b3b3b] bg-[#232323]">
+        <section className="rounded-xl border border-[#2b2b31] bg-[#16161a]">
           <SectionTitle
             title="Criptografia"
             description="Proteção dos dados armazenados neste computador."
           />
           <div className="p-5">
-            <p className="rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] px-3 py-2 text-sm text-[#999999]">
+            <p className="rounded-lg border border-[#2b2b31] bg-[#101014] px-3 py-2 text-sm text-[#999999]">
               A criptografia em repouso não está ativa. Ela foi adiada para evitar uma migração de
               dados de alto risco.
             </p>
@@ -182,7 +182,7 @@ function PasswordSettings({ onToast }: { onToast: Props['onToast'] }): JSX.Eleme
   }
 
   return (
-    <section className="rounded-xl border border-[#3b3b3b] bg-[#232323]">
+    <section className="rounded-xl border border-[#2b2b31] bg-[#16161a]">
       <SectionTitle title="Senha" description="Bloqueia o acesso ao app ao abri-lo." />
       <div className="space-y-4 p-5">
         {enabled === null ? (
@@ -240,7 +240,7 @@ function PasswordSettings({ onToast }: { onToast: Props['onToast'] }): JSX.Eleme
 
 function SectionTitle({ title, description }: { title: string; description: string }): JSX.Element {
   return (
-    <div className="border-b border-[#3b3b3b] px-5 py-4">
+    <div className="border-b border-[#2b2b31] px-5 py-4">
       <h2 className="text-base font-semibold text-[#d4d4d4]">{title}</h2>
       <p className="mt-1 text-xs text-[#999999]">{description}</p>
     </div>
@@ -264,7 +264,7 @@ function PasswordField({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         autoComplete="new-password"
-        className="w-full rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] px-3 py-2 text-sm text-[#d4d4d4] outline-none focus:border-[#7c3aed]"
+        className="w-full rounded-lg border border-[#2b2b31] bg-[#101014] px-3 py-2 text-sm text-[#d4d4d4] outline-none focus:border-[#7c3aed]"
       />
     </label>
   )

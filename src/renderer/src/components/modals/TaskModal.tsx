@@ -148,14 +148,14 @@ export function TaskModal({ open, task, columns, sprints, defaultColumnId, defau
 
   return (
     <ModalBase open={open} onClose={onClose}>
-      <div className="relative z-10 w-full max-w-lg mx-4 rounded-xl border border-[#3b3b3b] bg-[#232323] shadow-2xl">
-        <div className="flex items-center justify-between p-5 border-b border-[#3b3b3b]">
+      <div className="relative z-10 w-full max-w-lg mx-4 rounded-xl border border-[#2b2b31] bg-[#16161a] shadow-2xl">
+        <div className="flex items-center justify-between p-5 border-b border-[#2b2b31]">
           <h2 className="text-base font-semibold text-[#d4d4d4]">
             {task ? 'Editar task' : 'Nova task'}
           </h2>
           <button
             onClick={onClose}
-            className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors"
+            className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#222227] transition-colors"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <line x1="18" y1="6" x2="6" y2="18" />
@@ -174,7 +174,7 @@ export function TaskModal({ open, task, columns, sprints, defaultColumnId, defau
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Título da task"
               autoFocus
-              className="w-full px-3 py-2 rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] text-sm text-[#d4d4d4] placeholder-[#999999] focus:outline-none focus:border-[#7c3aed] transition-colors"
+              className="w-full px-3 py-2 rounded-lg border border-[#2b2b31] bg-[#101014] text-sm text-[#d4d4d4] placeholder-[#999999] focus:outline-none focus:border-[#7c3aed] transition-colors"
             />
           </div>
 
@@ -186,7 +186,7 @@ export function TaskModal({ open, task, columns, sprints, defaultColumnId, defau
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Descreva a task..."
               rows={3}
-              className="w-full px-3 py-2 rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] text-sm text-[#d4d4d4] placeholder-[#999999] focus:outline-none focus:border-[#7c3aed] transition-colors resize-none"
+              className="w-full px-3 py-2 rounded-lg border border-[#2b2b31] bg-[#101014] text-sm text-[#d4d4d4] placeholder-[#999999] focus:outline-none focus:border-[#7c3aed] transition-colors resize-none"
             />
           </div>
 
@@ -197,7 +197,7 @@ export function TaskModal({ open, task, columns, sprints, defaultColumnId, defau
               <select
                 value={columnId}
                 onChange={(e) => setColumnId(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] text-sm text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed] transition-colors"
+                className="w-full px-3 py-2 rounded-lg border border-[#2b2b31] bg-[#101014] text-sm text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed] transition-colors"
               >
                 {columns.map((col) => (
                   <option key={col.id} value={col.id}>{col.name}</option>
@@ -210,7 +210,7 @@ export function TaskModal({ open, task, columns, sprints, defaultColumnId, defau
               <select
                 value={priority}
                 onChange={(e) => setPriority(e.target.value as Priority)}
-                className="w-full px-3 py-2 rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] text-sm text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed] transition-colors"
+                className="w-full px-3 py-2 rounded-lg border border-[#2b2b31] bg-[#101014] text-sm text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed] transition-colors"
               >
                 {(Object.entries(PRIORITY_CONFIG) as [Priority, typeof PRIORITY_CONFIG[Priority]][]).map(([key, cfg]) => (
                   <option key={key} value={key}>{cfg.label}</option>
@@ -226,7 +226,7 @@ export function TaskModal({ open, task, columns, sprints, defaultColumnId, defau
               type="date"
               value={dueDate}
               onChange={(e) => setDueDate(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] text-sm text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed] transition-colors [color-scheme:dark]"
+              className="w-full px-3 py-2 rounded-lg border border-[#2b2b31] bg-[#101014] text-sm text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed] transition-colors [color-scheme:dark]"
             />
           </div>
 
@@ -237,7 +237,7 @@ export function TaskModal({ open, task, columns, sprints, defaultColumnId, defau
               <select
                 value={sprintId}
                 onChange={(e) => setSprintId(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] text-sm text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed] transition-colors"
+                className="w-full px-3 py-2 rounded-lg border border-[#2b2b31] bg-[#101014] text-sm text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed] transition-colors"
               >
                 <option value="">Sem sprint</option>
                 {sprints.filter((s) => !s.closedAt).map((s) => (
@@ -255,11 +255,11 @@ export function TaskModal({ open, task, columns, sprints, defaultColumnId, defau
             <label className="block text-xs font-medium text-[#999999] mb-1.5">
               Tags <span className="font-normal">(Enter ou vírgula para adicionar)</span>
             </label>
-            <div className="flex flex-wrap gap-1.5 p-2 rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] min-h-[40px] focus-within:border-[#7c3aed] transition-colors">
+            <div className="flex flex-wrap gap-1.5 p-2 rounded-lg border border-[#2b2b31] bg-[#101014] min-h-[40px] focus-within:border-[#7c3aed] transition-colors">
               {tags.map((tag) => (
                 <span
                   key={tag}
-                  className="flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-[#3b3b3b] text-[#a080f0]"
+                  className="flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-[#2a2a30] text-[#a080f0]"
                 >
                   {tag}
                   <button
@@ -295,8 +295,8 @@ export function TaskModal({ open, task, columns, sprints, defaultColumnId, defau
                       onClick={() => toggleSuggestedTag(tag)}
                       className={`text-[10px] px-2 py-0.5 rounded transition-colors ${
                         tags.includes(tag)
-                          ? 'bg-[#3b3b3b] text-[#a080f0] border border-[#3b3b3b]'
-                          : 'bg-[#2a2a2a] text-[#999999] border border-transparent hover:border-[#3b3b3b] hover:text-[#d4d4d4]'
+                          ? 'bg-[#2a2a30] text-[#a080f0] border border-[#2b2b31]'
+                          : 'bg-[#16161a] text-[#999999] border border-transparent hover:border-[#2b2b31] hover:text-[#d4d4d4]'
                       }`}
                     >
                       {tag}
@@ -325,7 +325,7 @@ export function TaskModal({ open, task, columns, sprints, defaultColumnId, defau
             {images.length > 0 && (
               <div className="grid grid-cols-4 gap-2 mb-2 max-h-48 overflow-y-auto">
                 {images.map((img) => (
-                  <div key={img.id} className="relative group/img aspect-square rounded-lg overflow-hidden border border-[#3b3b3b] bg-[#1b1b1b]">
+                  <div key={img.id} className="relative group/img aspect-square rounded-lg overflow-hidden border border-[#2b2b31] bg-[#101014]">
                     <img
                       src={imageData[img.id]}
                       alt={img.name}
@@ -346,7 +346,7 @@ export function TaskModal({ open, task, columns, sprints, defaultColumnId, defau
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-dashed border-[#3b3b3b] text-[#999999] text-xs hover:border-[#7c3aed] hover:text-[#a080f0] hover:bg-[#2a2a2a] transition-colors"
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-dashed border-[#2b2b31] text-[#999999] text-xs hover:border-[#7c3aed] hover:text-[#a080f0] hover:bg-[#222227] transition-colors"
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />

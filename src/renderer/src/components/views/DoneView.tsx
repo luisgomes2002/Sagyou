@@ -114,7 +114,7 @@ export function DoneView({
           type="button"
           onClick={() => changePage(page - 1)}
           disabled={page === 1}
-          className="rounded border border-[#3b3b3b] bg-[#2a2a2a] px-2.5 py-1.5 text-[#d4d4d4] hover:bg-[#3b3b3b] disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded border border-[#2b2b31] bg-[#16161a] px-2.5 py-1.5 text-[#d4d4d4] hover:bg-[#2a2a30] disabled:cursor-not-allowed disabled:opacity-50"
         >
           Anterior
         </button>
@@ -125,7 +125,7 @@ export function DoneView({
           type="button"
           onClick={() => changePage(page + 1)}
           disabled={page === totalPages}
-          className="rounded border border-[#3b3b3b] bg-[#2a2a2a] px-2.5 py-1.5 text-[#d4d4d4] hover:bg-[#3b3b3b] disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded border border-[#2b2b31] bg-[#16161a] px-2.5 py-1.5 text-[#d4d4d4] hover:bg-[#2a2a30] disabled:cursor-not-allowed disabled:opacity-50"
         >
           Próxima
         </button>
@@ -166,7 +166,7 @@ export function DoneView({
               style={{ backgroundColor: project.color }}
             />
             <h2 className="text-base font-semibold text-[#d4d4d4]">{project.name}</h2>
-            <span className="text-xs text-[#999999] bg-[#2a2a2a] px-2 py-0.5 rounded-full">
+            <span className="text-xs text-[#999999] bg-[#16161a] px-2 py-0.5 rounded-full">
               {doneTasks.length} concluída{doneTasks.length !== 1 ? 's' : ''}
             </span>
           </div>
@@ -225,7 +225,7 @@ function DoneTaskRow({
 
   return (
     <div
-      className="cv-row group flex items-center gap-3 px-4 py-2.5 rounded-lg bg-[#232323] border border-[#3b3b3b] hover:border-[#555555] transition-colors cursor-pointer"
+      className="cv-row group flex items-center gap-3 px-4 py-2.5 rounded-lg bg-[#16161a] border border-[#2b2b31] hover:border-[#3b3b42] transition-colors cursor-pointer"
       onClick={onView}
     >
       {/* done check */}
@@ -254,7 +254,7 @@ function DoneTaskRow({
           </span>
         )}
         {task.tags.slice(0, 2).map((tag) => (
-          <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded bg-[#3b3b3b] text-[#999999]">
+          <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded bg-[#2a2a30] text-[#999999]">
             {tag}
           </span>
         ))}
@@ -267,7 +267,7 @@ function DoneTaskRow({
             e.stopPropagation()
             onRestore()
           }}
-          className="p-1 rounded text-[#999999] hover:text-[#7c3aed] hover:bg-[#2a2a2a] transition-colors"
+          className="p-1 rounded text-[#999999] hover:text-[#7c3aed] hover:bg-[#222227] transition-colors"
           title="Restaurar task"
         >
           <svg
@@ -287,7 +287,7 @@ function DoneTaskRow({
             e.stopPropagation()
             onDelete()
           }}
-          className="p-1 rounded text-[#999999] hover:text-[#e04040] hover:bg-[#2a2a2a] transition-colors"
+          className="p-1 rounded text-[#999999] hover:text-[#e04040] hover:bg-[#222227] transition-colors"
           title="Deletar"
         >
           <svg

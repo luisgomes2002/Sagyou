@@ -99,8 +99,8 @@ function ActionBtn({
       title={title}
       className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium transition-colors opacity-0 group-hover:opacity-100 ${
         danger
-          ? 'text-[#999999] hover:text-[#e04040] hover:bg-[#2a2a2a]'
-          : 'text-[#999999] hover:text-[#a080f0] hover:bg-[#2a2a2a]'
+          ? 'text-[#999999] hover:text-[#e04040] hover:bg-[#222227]'
+          : 'text-[#999999] hover:text-[#a080f0] hover:bg-[#222227]'
       }`}
     >
       {children}
@@ -128,7 +128,7 @@ function FileRow({
   return (
     <div
       ref={searchRef}
-      className={`group flex items-center gap-3 px-4 py-3 rounded-lg bg-[#232323] border border-[#3b3b3b] hover:border-[#555555] transition-colors ${searchFocusClass(!!highlighted)}`}
+      className={`group flex items-center gap-3 px-4 py-3 rounded-lg bg-[#16161a] border border-[#2b2b31] hover:border-[#3b3b42] transition-colors ${searchFocusClass(!!highlighted)}`}
     >
       <div className="shrink-0">
         <FileIcon ext={file.ext} />
@@ -195,7 +195,7 @@ function FileRow({
           Baixar
         </ActionBtn>
 
-        <div className="w-px h-4 bg-[#3b3b3b] mx-1" />
+        <div className="w-px h-4 bg-[#2a2a30] mx-1" />
 
         <ActionBtn title="Remover arquivo" onClick={onDelete} danger>
           <svg
@@ -268,13 +268,13 @@ export function FilesView({
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Toolbar */}
-      <div className="flex items-center justify-between px-6 py-3 border-b border-[#3b3b3b] shrink-0">
+      <div className="flex items-center justify-between px-6 py-3 border-b border-[#2b2b31] shrink-0">
         <span className="text-xs text-[#999999]">
           {sorted.length} {sorted.length === 1 ? 'arquivo' : 'arquivos'}
         </span>
         <button
           onClick={handleUpload}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#3b3b3b] text-[#a080f0] text-xs font-medium hover:bg-[#4a4a4a] transition-colors"
+          className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#2a2a30] text-[#a080f0] text-xs font-medium hover:bg-[#303036] transition-colors"
         >
           <svg
             width="12"
@@ -296,7 +296,7 @@ export function FilesView({
       <div className="flex-1 overflow-y-auto px-6 py-4">
         {sorted.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-4">
-            <div className="w-16 h-16 rounded-2xl bg-[#2a2a2a] border border-[#3b3b3b] flex items-center justify-center">
+            <div className="w-16 h-16 rounded-2xl bg-[#16161a] border border-[#2b2b31] flex items-center justify-center">
               <svg
                 width="28"
                 height="28"
@@ -316,7 +316,7 @@ export function FilesView({
             </div>
             <button
               onClick={handleUpload}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg border border-dashed border-[#3b3b3b] text-[#a080f0] text-sm hover:border-[#7c3aed] hover:bg-[#2a2a2a] transition-colors"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg border border-dashed border-[#2b2b31] text-[#a080f0] text-sm hover:border-[#7c3aed] hover:bg-[#222227] transition-colors"
             >
               <svg
                 width="14"

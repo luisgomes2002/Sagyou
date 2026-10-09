@@ -43,9 +43,9 @@ function plannerColor(color: string | undefined): string | undefined {
 
 function blockAppearance(block: TimeBlock): CSSProperties {
   return {
-    backgroundColor: '#2a2a2a',
+    backgroundColor: '#16161a',
     color: '#d4d4d4',
-    border: `1px ${blockBorderStyle(block)} #777777`
+    border: `1px ${blockBorderStyle(block)} #3b3b42`
   }
 }
 
@@ -114,7 +114,7 @@ export function PlanView({ searchTarget }: { searchTarget?: GlobalSearchHit | nu
     : null
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#1b1b1b]">
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#0b0b0f]">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
         <div className="flex items-center gap-3">
@@ -154,7 +154,7 @@ export function PlanView({ searchTarget }: { searchTarget?: GlobalSearchHit | nu
               onClick={() => setViewMode(mode)}
               className={`px-3 py-1 text-xs rounded-md border transition ${
                 viewMode === mode
-                  ? 'bg-[#3b3b3b] border-[#3b3b3b] text-[#a080f0]'
+                  ? 'bg-[#2a2a30] border-[#2b2b31] text-[#a080f0]'
                   : 'border-white/10 text-[#999999] hover:text-white'
               }`}
             >
@@ -165,7 +165,7 @@ export function PlanView({ searchTarget }: { searchTarget?: GlobalSearchHit | nu
             onClick={() => setShowRoutines(!showRoutines)}
             className={`px-3 py-1 text-xs rounded-md border transition ${
               showRoutines
-                ? 'bg-[#3b3b3b] border-[#3b3b3b] text-[#46d478]'
+                ? 'bg-[#2a2a30] border-[#2b2b31] text-[#46d478]'
                 : 'border-white/10 text-[#999999] hover:text-white'
             }`}
           >
@@ -316,7 +316,7 @@ function DayView({
           <button
             type="button"
             aria-label={`Adicionar bloco às ${String(h).padStart(2, '0')}:00`}
-            className="flex-1 h-10 cursor-pointer hover:bg-[#2a2a2a]"
+            className="flex-1 h-10 cursor-pointer hover:bg-[#222227]"
             onClick={() => onAdd(date, h)}
           />
         </div>
@@ -429,7 +429,7 @@ function WeekView({
           <div key={day} className="flex-1 min-w-0 border-l border-white/5">
             <div
               className={`text-center py-1.5 text-xs font-medium border-b border-white/5 ${
-                isToday(day) ? 'text-[#a080f0] bg-[#2a2a2a]' : 'text-[#999999]'
+                isToday(day) ? 'text-[#a080f0] bg-[#16161a]' : 'text-[#999999]'
               }`}
             >
               <div className="text-[10px] text-[#999999]">{WEEKDAY_SHORT[d.getDay()]}</div>
@@ -507,15 +507,15 @@ function MonthView({
 
   return (
     <div className="p-3">
-      <div className="grid grid-cols-7 gap-px bg-[#2a2a2a] rounded-lg overflow-hidden">
+      <div className="grid grid-cols-7 gap-px bg-[#16161a] rounded-lg overflow-hidden">
         {WEEKDAY_SHORT.map((w) => (
-          <div key={w} className="text-center py-1.5 text-[10px] text-[#999999] bg-[#1b1b1b]">
+          <div key={w} className="text-center py-1.5 text-[10px] text-[#999999] bg-[#101014]">
             {w}
           </div>
         ))}
         {/* Empty cells before first day */}
         {Array.from({ length: firstDayWeekday }).map((_, i) => (
-          <div key={`empty-${i}`} className="bg-[#1b1b1b]" />
+          <div key={`empty-${i}`} className="bg-[#101014]" />
         ))}
         {days.map((day) => {
           const blocks = blocksByDay.get(day) ?? []
@@ -523,7 +523,7 @@ function MonthView({
           return (
             <div
               key={day}
-              className={`min-h-[60px] p-1 bg-[#1b1b1b] border border-white/[0.03] ${
+              className={`min-h-[60px] p-1 bg-[#101014] border border-white/[0.03] ${
                 isToday(day) ? 'ring-1 ring-[#a080f0]/30' : ''
               }`}
             >
@@ -630,14 +630,14 @@ function EditTimeBlockModal({
 
   return (
     <ModalBase open={true} onClose={onClose}>
-      <div className="relative z-10 w-full max-w-xs mx-4 rounded-xl border border-[#3b3b3b] bg-[#232323] shadow-2xl">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[#3b3b3b]">
+      <div className="relative z-10 w-full max-w-xs mx-4 rounded-xl border border-[#2b2b31] bg-[#16161a] shadow-2xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#2b2b31]">
           <h2 className="text-sm font-semibold text-[#d4d4d4]">
             {block ? 'Editar bloco' : `Novo bloco · ${date?.split('-').reverse().join('/')}`}
           </h2>
           <button
             onClick={onClose}
-            className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors"
+            className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#222227] transition-colors"
           >
             <svg
               width="14"
@@ -666,7 +666,7 @@ function EditTimeBlockModal({
                 id="block-routine"
                 value={selectedRoutineId}
                 onChange={(e) => selectRoutine(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] text-sm text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed]"
+                className="w-full px-3 py-2 rounded-lg border border-[#2b2b31] bg-[#101014] text-sm text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed]"
               >
                 <option value="">Bloco novo</option>
                 {routines
@@ -689,7 +689,7 @@ function EditTimeBlockModal({
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Nome do bloco"
               autoFocus
-              className="w-full px-3 py-2 rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] text-sm text-[#d4d4d4] placeholder-[#999999] focus:outline-none focus:border-[#7c3aed] transition-colors"
+              className="w-full px-3 py-2 rounded-lg border border-[#2b2b31] bg-[#101014] text-sm text-[#d4d4d4] placeholder-[#999999] focus:outline-none focus:border-[#7c3aed] transition-colors"
             />
           </div>
 
@@ -701,7 +701,7 @@ function EditTimeBlockModal({
                 required
                 value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] text-sm text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed] transition-colors [color-scheme:dark]"
+                className="w-full px-3 py-2 rounded-lg border border-[#2b2b31] bg-[#101014] text-sm text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed] transition-colors [color-scheme:dark]"
               />
             </div>
             <div className="flex-1">
@@ -711,7 +711,7 @@ function EditTimeBlockModal({
                 required
                 value={endTime}
                 onChange={(e) => setEndTime(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] text-sm text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed] transition-colors [color-scheme:dark]"
+                className="w-full px-3 py-2 rounded-lg border border-[#2b2b31] bg-[#101014] text-sm text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed] transition-colors [color-scheme:dark]"
               />
             </div>
           </div>
@@ -730,7 +730,7 @@ function EditTimeBlockModal({
                   className="w-5 h-5 rounded-full transition-transform hover:scale-110"
                   style={{
                     backgroundColor: plannerColor(c),
-                    boxShadow: color === c ? '0 0 0 2px #232323, 0 0 0 4px #d4d4d4' : 'none'
+                    boxShadow: color === c ? '0 0 0 2px #16161a, 0 0 0 4px #d4d4d4' : 'none'
                   }}
                 />
               ))}
@@ -747,8 +747,8 @@ function EditTimeBlockModal({
                   onClick={() => setBorderStyle(style)}
                   className={`px-3 py-2 rounded-lg border text-xs transition-colors ${
                     borderStyle === style
-                      ? 'border-[#7c3aed] bg-[#3b3b3b] text-[#d4d4d4]'
-                      : 'border-[#3b3b3b] bg-[#1b1b1b] text-[#999999] hover:border-[#555555]'
+                      ? 'border-[#7c3aed] bg-[#2a2a30] text-[#d4d4d4]'
+                      : 'border-[#2b2b31] bg-[#101014] text-[#999999] hover:border-[#3b3b42]'
                   }`}
                 >
                   <span
@@ -823,12 +823,12 @@ function EditRoutineModal({
 
   return (
     <ModalBase open={true} onClose={onClose}>
-      <div className="relative z-10 w-full max-w-xs mx-4 rounded-xl border border-[#3b3b3b] bg-[#232323] shadow-2xl">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[#3b3b3b]">
+      <div className="relative z-10 w-full max-w-xs mx-4 rounded-xl border border-[#2b2b31] bg-[#16161a] shadow-2xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#2b2b31]">
           <h2 className="text-sm font-semibold text-[#d4d4d4]">Editar rotina</h2>
           <button
             onClick={onClose}
-            className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors"
+            className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#222227] transition-colors"
           >
             <svg
               width="14"
@@ -853,7 +853,7 @@ function EditRoutineModal({
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Nome da rotina"
               autoFocus
-              className="w-full px-3 py-2 rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] text-sm text-[#d4d4d4] placeholder-[#999999] focus:outline-none focus:border-[#7c3aed] transition-colors"
+              className="w-full px-3 py-2 rounded-lg border border-[#2b2b31] bg-[#101014] text-sm text-[#d4d4d4] placeholder-[#999999] focus:outline-none focus:border-[#7c3aed] transition-colors"
             />
           </div>
 
@@ -864,7 +864,7 @@ function EditRoutineModal({
                 type="time"
                 value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] text-sm text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed] transition-colors [color-scheme:dark]"
+                className="w-full px-3 py-2 rounded-lg border border-[#2b2b31] bg-[#101014] text-sm text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed] transition-colors [color-scheme:dark]"
               />
             </div>
             <div className="flex-1">
@@ -873,7 +873,7 @@ function EditRoutineModal({
                 type="time"
                 value={endTime}
                 onChange={(e) => setEndTime(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] text-sm text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed] transition-colors [color-scheme:dark]"
+                className="w-full px-3 py-2 rounded-lg border border-[#2b2b31] bg-[#101014] text-sm text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed] transition-colors [color-scheme:dark]"
               />
             </div>
           </div>
@@ -888,7 +888,7 @@ function EditRoutineModal({
                   onClick={() => toggleDay(i)}
                   className={`flex-1 text-[10px] py-1 rounded border transition ${
                     selectedDays.includes(i)
-                      ? 'bg-[#3b3b3b] border-[#3b3b3b] text-[#a080f0]'
+                      ? 'bg-[#2a2a30] border-[#2b2b31] text-[#a080f0]'
                       : 'border-white/10 text-[#999999] hover:text-[#d4d4d4]'
                   }`}
                 >
@@ -909,7 +909,7 @@ function EditRoutineModal({
                   className="w-5 h-5 rounded-full transition-transform hover:scale-110"
                   style={{
                     backgroundColor: plannerColor(c),
-                    boxShadow: color === c ? '0 0 0 2px #232323, 0 0 0 4px #d4d4d4' : 'none'
+                    boxShadow: color === c ? '0 0 0 2px #16161a, 0 0 0 4px #d4d4d4' : 'none'
                   }}
                 />
               ))}
@@ -925,7 +925,7 @@ function EditRoutineModal({
                   type="button"
                   aria-pressed={borderStyle === style}
                   onClick={() => setBorderStyle(style)}
-                  className={`rounded-lg border px-3 py-2 text-xs ${borderStyle === style ? 'border-[#a080f0] bg-[#3b3b3b] text-[#d4d4d4]' : 'border-[#3b3b3b] bg-[#1b1b1b] text-[#999999]'}`}
+                  className={`rounded-lg border px-3 py-2 text-xs ${borderStyle === style ? 'border-[#a080f0] bg-[#2a2a30] text-[#d4d4d4]' : 'border-[#2b2b31] bg-[#101014] text-[#999999]'}`}
                 >
                   <span
                     className={`block border-t-2 ${style === 'dashed' ? 'border-dashed' : 'border-solid'}`}
@@ -1000,7 +1000,7 @@ function RoutinesPanel({
   }
 
   return (
-    <div className="border-t border-white/5 bg-[#1b1b1b] p-4 max-h-64 overflow-auto">
+    <div className="border-t border-white/5 bg-[#101014] p-4 max-h-64 overflow-auto">
       <div className="flex items-center justify-between mb-2">
         <h3 className="text-xs font-medium text-[#999999] uppercase tracking-wider">Rotinas</h3>
         <button
@@ -1012,13 +1012,13 @@ function RoutinesPanel({
       </div>
 
       {adding && (
-        <div className="mb-3 p-2 rounded bg-[#2a2a2a] border border-[#3b3b3b] space-y-2">
+        <div className="mb-3 p-2 rounded bg-[#16161a] border border-[#2b2b31] space-y-2">
           <input
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Nome da rotina (ex: Academia)"
-            className="w-full bg-[#1b1b1b] border border-white/10 rounded px-2 py-1 text-xs text-[#d4d4d4] placeholder:text-[#666666] outline-none focus:border-[#a080f0]"
+            className="w-full bg-[#101014] border border-white/10 rounded px-2 py-1 text-xs text-[#d4d4d4] placeholder:text-[#666666] outline-none focus:border-[#a080f0]"
             onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
           />
           <div className="flex gap-2">
@@ -1028,7 +1028,7 @@ function RoutinesPanel({
                 type="time"
                 value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
-                className="w-full bg-[#1b1b1b] border border-white/10 rounded px-2 py-1 text-xs text-[#d4d4d4] outline-none focus:border-[#a080f0] [color-scheme:dark]"
+                className="w-full bg-[#101014] border border-white/10 rounded px-2 py-1 text-xs text-[#d4d4d4] outline-none focus:border-[#a080f0] [color-scheme:dark]"
               />
             </div>
             <div className="flex-1">
@@ -1037,7 +1037,7 @@ function RoutinesPanel({
                 type="time"
                 value={endTime}
                 onChange={(e) => setEndTime(e.target.value)}
-                className="w-full bg-[#1b1b1b] border border-white/10 rounded px-2 py-1 text-xs text-[#d4d4d4] outline-none focus:border-[#a080f0] [color-scheme:dark]"
+                className="w-full bg-[#101014] border border-white/10 rounded px-2 py-1 text-xs text-[#d4d4d4] outline-none focus:border-[#a080f0] [color-scheme:dark]"
               />
             </div>
           </div>
@@ -1050,7 +1050,7 @@ function RoutinesPanel({
                   onClick={() => toggleDay(i)}
                   className={`flex-1 text-[10px] py-1 rounded border transition ${
                     selectedDays.includes(i)
-                      ? 'bg-[#3b3b3b] border-[#3b3b3b] text-[#a080f0]'
+                      ? 'bg-[#2a2a30] border-[#2b2b31] text-[#a080f0]'
                       : 'border-white/10 text-[#999999] hover:text-[#d4d4d4]'
                   }`}
                 >
@@ -1068,7 +1068,7 @@ function RoutinesPanel({
                   type="button"
                   aria-pressed={borderStyle === style}
                   onClick={() => setBorderStyle(style)}
-                  className={`flex-1 rounded border px-2 py-1 text-[10px] ${borderStyle === style ? 'border-[#a080f0] bg-[#3b3b3b] text-[#d4d4d4]' : 'border-[#555555] text-[#999999]'}`}
+                  className={`flex-1 rounded border px-2 py-1 text-[10px] ${borderStyle === style ? 'border-[#a080f0] bg-[#2a2a30] text-[#d4d4d4]' : 'border-[#3b3b42] text-[#999999]'}`}
                 >
                   {style === 'solid' ? 'Reta' : 'Pontilhada'}
                 </button>
@@ -1078,7 +1078,7 @@ function RoutinesPanel({
           <button
             onClick={handleCreate}
             disabled={!title.trim() || selectedDays.length === 0}
-            className="w-full py-1.5 rounded bg-[#3b3b3b] border border-[#3b3b3b] text-xs text-[#a080f0] hover:bg-[#4a4a4a] disabled:opacity-30 disabled:cursor-not-allowed transition"
+            className="w-full py-1.5 rounded bg-[#2a2a30] border border-[#2b2b31] text-xs text-[#a080f0] hover:bg-[#303036] disabled:opacity-30 disabled:cursor-not-allowed transition"
           >
             Criar rotina
           </button>
@@ -1094,7 +1094,7 @@ function RoutinesPanel({
           {routines.map((r) => (
             <div
               key={r.id}
-              className="flex items-center gap-3 text-xs group cursor-pointer hover:bg-[#2a2a2a] rounded px-0.5 py-0.5 -mx-0.5"
+              className="flex items-center gap-3 text-xs group cursor-pointer hover:bg-[#222227] rounded px-0.5 py-0.5 -mx-0.5"
               onClick={() => onEditRoutine(r)}
             >
               <button
@@ -1103,12 +1103,12 @@ function RoutinesPanel({
                   onToggle(r.id, !r.active)
                 }}
                 className={`w-4 h-4 rounded border transition shrink-0 ${
-                  r.active ? 'bg-[#46d478] border-[#46d478]' : 'border-[#555555]'
+                  r.active ? 'bg-[#46d478] border-[#46d478]' : 'border-[#3b3b42]'
                 }`}
               />
               <div
                 className="w-3 h-3 rounded shrink-0"
-                style={{ backgroundColor: plannerColor(r.color) ?? '#2a2a2a' }}
+                style={{ backgroundColor: plannerColor(r.color) ?? '#2a2a30' }}
               />
               <span className={`flex-1 truncate ${r.active ? 'text-[#d4d4d4]' : 'text-[#999999]'}`}>
                 {r.title}

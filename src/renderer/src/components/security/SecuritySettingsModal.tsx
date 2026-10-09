@@ -62,15 +62,15 @@ export function SecuritySettingsModal({ open, onClose, onToast }: Props): JSX.El
 
   return (
     <ModalBase open={open} onClose={onClose}>
-      <div className="relative z-10 mx-4 w-full max-w-md rounded-xl border border-[#3b3b3b] bg-[#232323] shadow-2xl">
-        <div className="flex items-center justify-between border-b border-[#3b3b3b] p-5">
+      <div className="relative z-10 mx-4 w-full max-w-md rounded-xl border border-[#2b2b31] bg-[#16161a] shadow-2xl">
+        <div className="flex items-center justify-between border-b border-[#2b2b31] p-5">
           <div>
             <h2 className="text-base font-semibold text-[#d4d4d4]">Segurança</h2>
             <p className="mt-1 text-xs text-[#999999]">Proteja o acesso ao Sagyou com uma senha.</p>
           </div>
           <button
             onClick={onClose}
-            className="rounded p-1 text-[#999999] hover:bg-[#2a2a2a] hover:text-[#d4d4d4]"
+            className="rounded p-1 text-[#999999] hover:bg-[#222227] hover:text-[#d4d4d4]"
           >
             ×
           </button>
@@ -80,7 +80,7 @@ export function SecuritySettingsModal({ open, onClose, onToast }: Props): JSX.El
             <p className="text-sm text-[#999999]">Carregando...</p>
           ) : enabled ? (
             <>
-              <p className="rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] px-3 py-2 text-sm text-[#46d478]">
+              <p className="rounded-lg border border-[#2b2b31] bg-[#101014] px-3 py-2 text-sm text-[#46d478]">
                 Senha ativada. Ela será solicitada ao abrir o app.
               </p>
               <Field label="Senha atual" value={current} onChange={setCurrent} />
@@ -154,7 +154,7 @@ function Field({
         onChange={(event) => onChange(event.target.value)}
         autoFocus={autoFocus}
         autoComplete="new-password"
-        className="w-full rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] px-3 py-2 text-sm text-[#d4d4d4] outline-none focus:border-[#7c3aed]"
+        className="w-full rounded-lg border border-[#2b2b31] bg-[#101014] px-3 py-2 text-sm text-[#d4d4d4] outline-none focus:border-[#7c3aed]"
       />
     </label>
   )

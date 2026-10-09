@@ -60,7 +60,7 @@ export function Column({
       className="flex flex-col w-72 shrink-0"
     >
       {/* header */}
-      <div className="flex items-center justify-between px-3 py-2.5 mb-2 rounded-lg bg-[#252525] border border-[#3b3b3b]">
+      <div className="flex items-center justify-between px-3 py-2.5 mb-2 rounded-lg bg-[#121216] border border-[#2b2b31]">
         <div className="flex items-center gap-2">
           {/* drag handle */}
           <div
@@ -83,7 +83,7 @@ export function Column({
             style={{ backgroundColor: column.color || project.color }}
           />
           <span className="text-sm font-medium text-[#d4d4d4] truncate max-w-[130px]">{column.name}</span>
-          <span className="text-xs text-[#999999] bg-[#3b3b3b] px-1.5 py-0.5 rounded-full">
+          <span className="text-xs text-[#999999] bg-[#2a2a30] px-1.5 py-0.5 rounded-full">
             {tasks.length}
           </span>
         </div>
@@ -91,7 +91,7 @@ export function Column({
         <div className="flex items-center gap-1">
           <button
             onClick={() => onAddTask(column.id)}
-            className="p-1 rounded text-[#999999] hover:text-[#7c3aed] hover:bg-[#2a2a2a] transition-colors"
+            className="p-1 rounded text-[#999999] hover:text-[#7c3aed] hover:bg-[#222227] transition-colors"
             title="Adicionar task"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -103,7 +103,7 @@ export function Column({
           <div className="relative">
             <button
               onClick={() => setMenuOpen((v) => !v)}
-              className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#3b3b3b] transition-colors"
+              className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a30] transition-colors"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <circle cx="12" cy="5" r="1" fill="currentColor" />
@@ -115,15 +115,15 @@ export function Column({
             {menuOpen && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-                <div className="absolute right-0 top-7 z-20 w-36 rounded-lg border border-[#3b3b3b] bg-[#232323] shadow-xl py-1">
+                <div className="absolute right-0 top-7 z-20 w-36 rounded-lg border border-[#2b2b31] bg-[#16161a] shadow-xl py-1">
                   <button
-                    className="w-full text-left px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors"
+                    className="w-full text-left px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#222227] transition-colors"
                     onClick={() => { setMenuOpen(false); onEditColumn(column) }}
                   >
                     Renomear
                   </button>
                   <button
-                    className="w-full text-left px-3 py-2 text-sm text-[#e04040] hover:bg-[#2a2a2a] transition-colors"
+                    className="w-full text-left px-3 py-2 text-sm text-[#e04040] hover:bg-[#222227] transition-colors"
                     onClick={() => { setMenuOpen(false); onDeleteColumn(column) }}
                   >
                     Deletar coluna
@@ -137,7 +137,7 @@ export function Column({
 
       {/* tasks area */}
       <div
-        className={`flex flex-col gap-2 flex-1 min-h-24 rounded-lg p-1.5 transition-colors ${isOver ? 'bg-[#2a2a2a] border border-[#7c3aed]' : 'border border-transparent'}`}
+        className={`flex flex-col gap-2 flex-1 min-h-24 rounded-lg p-1.5 transition-colors ${isOver ? 'bg-[#16161a] border border-[#7c3aed]' : 'border border-transparent'}`}
       >
         <SortableContext items={sorted.map((t) => t.id)} strategy={verticalListSortingStrategy}>
           {sorted.map((task) => (
@@ -148,7 +148,7 @@ export function Column({
         {tasks.length === 0 && (
           <button
             onClick={() => onAddTask(column.id)}
-            className="text-xs text-[#999999] border border-dashed border-[#3b3b3b] rounded-lg py-4 hover:border-[#7c3aed] hover:text-[#7c3aed] transition-colors"
+            className="text-xs text-[#999999] border border-dashed border-[#2b2b31] rounded-lg py-4 hover:border-[#7c3aed] hover:text-[#7c3aed] transition-colors"
           >
             + Add task
           </button>

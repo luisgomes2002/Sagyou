@@ -25,7 +25,7 @@ export const MessageBubble = memo(function MessageBubble({
         className={`px-3.5 py-2 rounded-2xl text-sm break-words ${
           m.role === 'user'
             ? 'max-w-[75%] whitespace-pre-wrap bg-[#7c3aed] text-white rounded-br-sm'
-            : 'max-w-[88%] bg-[#2a2a2a] text-[#d4d4d4] border border-[#3b3b3b] rounded-bl-sm'
+            : 'max-w-[88%] bg-[#16161a] text-[#d4d4d4] border border-[#2b2b31] rounded-bl-sm'
         }`}
       >
         {(m.imageIds ?? []).length > 0 && (
@@ -138,7 +138,7 @@ export const MemoStatusLine = memo(function StatusLine({
       {badge && (
         <span
           title={`Passo ${step} de ${maxSteps} desta execução`}
-          className="mt-[1px] shrink-0 px-1.5 py-[1px] rounded text-[10px] font-medium tabular-nums bg-[#2a2a2a] border border-[#3b3b3b] text-[#999999]"
+          className="mt-[1px] shrink-0 px-1.5 py-[1px] rounded text-[10px] font-medium tabular-nums bg-[#16161a] border border-[#2b2b31] text-[#999999]"
         >
           {badge}
         </span>
@@ -146,7 +146,7 @@ export const MemoStatusLine = memo(function StatusLine({
       {tokens !== undefined && tokens > 0 && (
         <span
           title="tokens desta chamada do modelo (prompt + resposta). Cresce a cada passo porque o histórico é reenviado."
-          className="mt-[1px] shrink-0 px-1.5 py-[1px] rounded text-[10px] font-medium tabular-nums bg-[#2a2a2a] border border-[#3b3b3b] text-[#999999]"
+          className="mt-[1px] shrink-0 px-1.5 py-[1px] rounded text-[10px] font-medium tabular-nums bg-[#16161a] border border-[#2b2b31] text-[#999999]"
         >
           {formatTokens(tokens)} tokens
         </span>

@@ -358,7 +358,7 @@ export function HomeView({ projects, onNavigate }: Props) {
   // ── Render ─────────────────────────────────────────────────────
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 bg-[#1b1b1b]">
+    <div className="flex-1 overflow-y-auto p-6 bg-[#0b0b0f]">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-bold text-[#d4d4d4]">Dashboard</h1>
@@ -372,7 +372,7 @@ export function HomeView({ projects, onNavigate }: Props) {
               aria-label="Perfil financeiro do dashboard"
               value={activeFinancialProfileId}
               onChange={(e) => setActiveFinancialProfile(e.target.value)}
-              className="bg-[#2a2a2a] border border-[#3b3b3b] text-[#d4d4d4] rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-[#7c3aed]"
+              className="bg-[#16161a] border border-[#2b2b31] text-[#d4d4d4] rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-[#7c3aed]"
             >
               {financialProfiles.map((profile) => (
                 <option key={profile.id} value={profile.id}>
@@ -386,7 +386,7 @@ export function HomeView({ projects, onNavigate }: Props) {
               aria-label="Tabela financeira do dashboard"
               value={financialTableId}
               onChange={(e) => selectFinancialTable(e.target.value)}
-              className="bg-[#2a2a2a] border border-[#3b3b3b] text-[#d4d4d4] rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-[#7c3aed]"
+              className="bg-[#16161a] border border-[#2b2b31] text-[#d4d4d4] rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-[#7c3aed]"
             >
               <option value="__consolidated__">Consolidado</option>
               {profileLists.map((l) => (
@@ -402,7 +402,7 @@ export function HomeView({ projects, onNavigate }: Props) {
       {/* Stat cards */}
       <div className="grid grid-cols-4 gap-4 mb-8">
         {/* Tasks abertas */}
-        <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4">
+        <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-4">
           <p className="text-[11px] text-[#999999] mb-1.5 flex items-center gap-1.5">
             <svg
               width="11"
@@ -427,7 +427,7 @@ export function HomeView({ projects, onNavigate }: Props) {
         </div>
 
         {/* Hábitos hoje */}
-        <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4">
+        <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-4">
           <p className="text-[11px] text-[#999999] mb-1.5 flex items-center gap-1.5">
             <svg
               width="11"
@@ -450,7 +450,7 @@ export function HomeView({ projects, onNavigate }: Props) {
         </div>
 
         {/* Metas ativas */}
-        <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4">
+        <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-4">
           <p className="text-[11px] text-[#999999] mb-1.5 flex items-center gap-1.5">
             <svg
               width="11"
@@ -477,7 +477,7 @@ export function HomeView({ projects, onNavigate }: Props) {
         </div>
 
         {/* Saldo */}
-        <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4">
+        <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-4">
           <p className="text-[11px] text-[#999999] mb-1.5 flex items-center gap-1.5">
             <svg
               width="11"
@@ -532,7 +532,7 @@ export function HomeView({ projects, onNavigate }: Props) {
       {/* Second row: Kanban + Hábitos */}
       <div className="grid grid-cols-2 gap-6 mb-8">
         {/* Kanban */}
-        <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4">
+        <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-4">
           <h2 className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-3 flex items-center gap-1.5">
             <svg
               width="10"
@@ -558,7 +558,7 @@ export function HomeView({ projects, onNavigate }: Props) {
                     {PRIORITY_CONFIG[p].label}
                   </span>
                   <span className="text-[11px] text-[#d4d4d4] w-5 tabular-nums">{count}</span>
-                  <div className="flex-1 h-1.5 rounded-full bg-[#3b3b3b] overflow-hidden">
+                  <div className="flex-1 h-1.5 rounded-full bg-[#2a2a30] overflow-hidden">
                     <div
                       className="h-full rounded-full transition-all"
                       style={{
@@ -609,7 +609,7 @@ export function HomeView({ projects, onNavigate }: Props) {
         </div>
 
         {/* Hábitos */}
-        <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4">
+        <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-4">
           <h2 className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-3 flex items-center gap-1.5">
             <svg
               width="10"
@@ -672,7 +672,7 @@ export function HomeView({ projects, onNavigate }: Props) {
       {/* Third row: Metas + Financeiro */}
       <div className="grid grid-cols-2 gap-6 mb-8">
         {/* Metas */}
-        <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4">
+        <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-4">
           <h2 className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-3 flex items-center gap-1.5">
             <svg
               width="10"
@@ -698,7 +698,7 @@ export function HomeView({ projects, onNavigate }: Props) {
                     <span className="text-[#d4d4d4] truncate flex-1">{g.title}</span>
                     <span className="text-[#999999] ml-2 tabular-nums">{g.percent}%</span>
                   </div>
-                  <div className="h-2 rounded-full bg-[#3b3b3b] overflow-hidden">
+                  <div className="h-2 rounded-full bg-[#2a2a30] overflow-hidden">
                     <div
                       className="h-full rounded-full transition-all"
                       style={{
@@ -717,7 +717,7 @@ export function HomeView({ projects, onNavigate }: Props) {
         </div>
 
         {/* Financeiro */}
-        <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4">
+        <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-4">
           <h2 className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-3 flex items-center gap-1.5">
             <svg
               width="10"
@@ -810,7 +810,7 @@ export function HomeView({ projects, onNavigate }: Props) {
 
       {/* Agents row (conditional) */}
       {runningAgentCount > 0 && (
-        <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4">
+        <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-4">
           <h2 className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-3 flex items-center gap-1.5">
             <svg
               width="10"

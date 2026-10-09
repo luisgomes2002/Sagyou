@@ -24,19 +24,19 @@ const COMPONENTS: React.ComponentProps<typeof ReactMarkdown>['components'] = {
   h2: ({ children }) => <h2 className="text-sm font-semibold text-white mt-1">{children}</h2>,
   h3: ({ children }) => <h3 className="text-sm font-semibold text-[#d4d4d4] mt-1">{children}</h3>,
   blockquote: ({ children }) => (
-    <blockquote className="border-l-2 border-[#555555] pl-3 text-[#999999]">{children}</blockquote>
+    <blockquote className="border-l-2 border-[#3b3b42] pl-3 text-[#999999]">{children}</blockquote>
   ),
-  hr: () => <hr className="border-[#3b3b3b]" />,
+  hr: () => <hr className="border-[#2b2b31]" />,
   code: ({ className, children }) =>
     className ? (
       <code className={`${className} font-mono text-[0.85em]`}>{children}</code>
     ) : (
-      <code className="px-1 py-0.5 rounded bg-[#1b1b1b] text-[#a080f0] font-mono text-[0.85em]">
+      <code className="px-1 py-0.5 rounded bg-[#101014] text-[#a080f0] font-mono text-[0.85em]">
         {children}
       </code>
     ),
   pre: ({ children }) => (
-    <pre className="overflow-x-auto p-3 rounded-lg bg-[#1b1b1b] border border-[#3b3b3b]">
+    <pre className="overflow-x-auto p-3 rounded-lg bg-[#101014] border border-[#2b2b31]">
       {children}
     </pre>
   ),
@@ -46,11 +46,11 @@ const COMPONENTS: React.ComponentProps<typeof ReactMarkdown>['components'] = {
     </div>
   ),
   th: ({ children }) => (
-    <th className="border border-[#3b3b3b] px-2 py-1 text-left font-semibold bg-[#1b1b1b]">
+    <th className="border border-[#2b2b31] px-2 py-1 text-left font-semibold bg-[#101014]">
       {children}
     </th>
   ),
-  td: ({ children }) => <td className="border border-[#3b3b3b] px-2 py-1 align-top">{children}</td>
+  td: ({ children }) => <td className="border border-[#2b2b31] px-2 py-1 align-top">{children}</td>
 }
 
 /** Likewise: a new array here would re-run the plugin pipeline every render. */

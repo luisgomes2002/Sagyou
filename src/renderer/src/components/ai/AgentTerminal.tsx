@@ -50,11 +50,11 @@ export function AgentTerminal({
     <div
       className={
         (compact ? '' : 'mx-6 mb-2 ') +
-        'rounded-lg overflow-hidden border border-[#232323] bg-[#1b1b1b] shadow-inner'
+        'rounded-lg overflow-hidden border border-[#2b2b31] bg-[#101014] shadow-inner'
       }
     >
       {/* Terminal chrome: traffic lights + a mono label, like a CLI window. */}
-      <div className="flex items-center gap-2 px-3 py-1.5 bg-[#1b1b1b] border-b border-[#232323]">
+      <div className="flex items-center gap-2 px-3 py-1.5 bg-[#101014] border-b border-[#2b2b31]">
         <span className="w-2.5 h-2.5 rounded-full bg-[#ff5f57]" />
         <span className="w-2.5 h-2.5 rounded-full bg-[#febc2e]" />
         <span className="w-2.5 h-2.5 rounded-full bg-[#28c840]" />
@@ -65,7 +65,7 @@ export function AgentTerminal({
           onClick={handleCopy}
           disabled={!log}
           title="Copiar log"
-          className="ml-auto flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono text-[#999999] hover:text-[#d4d4d4] hover:bg-[#232323] disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-[#999999] transition-colors"
+          className="ml-auto flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono text-[#999999] hover:text-[#d4d4d4] hover:bg-[#222227] disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-[#999999] transition-colors"
         >
           {copied ? (
             <>
