@@ -45,8 +45,8 @@ export function SpendPanel({
             }
             className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] tabular-nums transition-colors ${
               showSpend
-                ? 'bg-[#3b3b3b] text-[#a080f0]'
-                : 'bg-[#2a2a2a] text-[#999999] hover:text-[#d4d4d4]'
+                ? 'bg-[#2a2a30] text-[#a080f0]'
+                : 'bg-[#16161a] text-[#999999] hover:text-[#d4d4d4]'
             }`}
           >
             <svg
@@ -77,7 +77,7 @@ export function SpendPanel({
           {showSpend && spend && (
             <>
               <div className="fixed inset-0 z-30" onClick={() => onClose()} />
-              <div className="absolute right-0 top-full mt-1 z-40 w-80 max-h-[26rem] overflow-y-auto rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] shadow-2xl p-3">
+              <div className="absolute right-0 top-full mt-1 z-40 w-80 max-h-[26rem] overflow-y-auto rounded-lg border border-[#2b2b31] bg-[#101014] shadow-2xl p-3">
                 <p className="text-[11px] font-semibold text-[#d4d4d4] mb-2">Gastos com o modelo</p>
 
                 <div className="space-y-1">
@@ -103,7 +103,7 @@ export function SpendPanel({
                       </div>
                       {cacheHitRate(b) !== null && (
                         <div>
-                          <div className="w-full h-1 bg-[#3b3b3b] rounded-full mt-0.5">
+                          <div className="w-full h-1 bg-[#2a2a30] rounded-full mt-0.5">
                             <div
                               className="h-full bg-[#46d478] rounded-full"
                               style={{ width: `${Math.round(cacheHitRate(b)! * 100)}%` }}
@@ -142,7 +142,7 @@ export function SpendPanel({
                         </div>
                         {cacheHitRate(bucket) !== null && (
                           <div>
-                            <div className="w-full h-1 bg-[#3b3b3b] rounded-full mt-0.5">
+                            <div className="w-full h-1 bg-[#2a2a30] rounded-full mt-0.5">
                               <div
                                 className="h-full bg-[#46d478] rounded-full"
                                 style={{

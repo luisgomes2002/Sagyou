@@ -239,8 +239,8 @@ export function CanvasView(props: Props) {
       ref={containerRef}
       className="absolute inset-0 overflow-hidden select-none"
       style={{
-        backgroundColor: '#1b1b1b',
-        backgroundImage: 'radial-gradient(circle, #3b3b3b 1px, transparent 1px)',
+        backgroundColor: '#0b0b0f',
+        backgroundImage: 'radial-gradient(circle, #2b2b31 1px, transparent 1px)',
         backgroundSize: `${dotSpacing}px ${dotSpacing}px`,
         backgroundPosition: `${offset.x % dotSpacing}px ${offset.y % dotSpacing}px`,
         cursor: connectFrom ? 'crosshair' : isPanning ? 'grabbing' : 'default'
@@ -379,11 +379,11 @@ export function CanvasView(props: Props) {
       )}
 
       {/* Floating toolbar */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#3b3b3b] border border-[#3b3b3b] shadow-2xl backdrop-blur-sm pointer-events-auto">
+      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#2a2a30] border border-[#2b2b31] shadow-2xl backdrop-blur-sm pointer-events-auto">
         {/* Mode: sticky note */}
         <button
           onClick={() => setMode('note')}
-          className={`p-1.5 rounded-lg transition-colors ${mode === 'note' ? 'bg-[#4a4a4a] text-[#a080f0]' : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#4a4a4a]'}`}
+          className={`p-1.5 rounded-lg transition-colors ${mode === 'note' ? 'bg-[#2a2a30] text-[#a080f0]' : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#303036]'}`}
           title="Modo nota (duplo clique)"
         >
           <svg
@@ -402,7 +402,7 @@ export function CanvasView(props: Props) {
         {/* Mode: text */}
         <button
           onClick={() => setMode('text')}
-          className={`px-2 py-1 rounded-lg text-[11px] font-bold transition-colors ${mode === 'text' ? 'bg-[#4a4a4a] text-[#a080f0]' : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#4a4a4a]'}`}
+          className={`px-2 py-1 rounded-lg text-[11px] font-bold transition-colors ${mode === 'text' ? 'bg-[#2a2a30] text-[#a080f0]' : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#303036]'}`}
           title="Modo texto (duplo clique)"
         >
           Aa
@@ -411,7 +411,7 @@ export function CanvasView(props: Props) {
         {/* Color swatches — only in note mode */}
         {mode === 'note' && (
           <>
-            <div className="w-px h-4 bg-[#3b3b3b] mx-0.5 shrink-0" />
+            <div className="w-px h-4 bg-[#2a2a30] mx-0.5 shrink-0" />
             <div className="grid grid-cols-6 gap-1">
               {NOTE_COLORS.map((color) => (
                 <button
@@ -422,7 +422,7 @@ export function CanvasView(props: Props) {
                     backgroundColor: color,
                     boxShadow:
                       selectedColor === color
-                        ? `0 0 0 2px #1b1b1b, 0 0 0 3.5px ${color}`
+                        ? `0 0 0 2px #0b0b0f, 0 0 0 3.5px ${color}`
                         : '0 0 0 1px rgba(255,255,255,0.1)'
                   }}
                   title={color}
@@ -432,12 +432,12 @@ export function CanvasView(props: Props) {
           </>
         )}
 
-        <div className="w-px h-4 bg-[#3b3b3b] mx-0.5 shrink-0" />
+        <div className="w-px h-4 bg-[#2a2a30] mx-0.5 shrink-0" />
 
         {/* Zoom out */}
         <button
           onClick={handleZoomOut}
-          className="p-1.5 rounded-lg text-[#999999] hover:text-[#d4d4d4] hover:bg-[#3b3b3b] transition-colors"
+          className="p-1.5 rounded-lg text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a30] transition-colors"
           title="Diminuir zoom (scroll)"
         >
           <svg
@@ -461,7 +461,7 @@ export function CanvasView(props: Props) {
         {/* Zoom in */}
         <button
           onClick={handleZoomIn}
-          className="p-1.5 rounded-lg text-[#999999] hover:text-[#d4d4d4] hover:bg-[#3b3b3b] transition-colors"
+          className="p-1.5 rounded-lg text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a30] transition-colors"
           title="Aumentar zoom (scroll)"
         >
           <svg
@@ -479,12 +479,12 @@ export function CanvasView(props: Props) {
           </svg>
         </button>
 
-        <div className="w-px h-4 bg-[#3b3b3b] mx-0.5 shrink-0" />
+        <div className="w-px h-4 bg-[#2a2a30] mx-0.5 shrink-0" />
 
         {/* Reset / center view */}
         <button
           onClick={handleResetView}
-          className="p-1.5 rounded-lg text-[#999999] hover:text-[#d4d4d4] hover:bg-[#3b3b3b] transition-colors"
+          className="p-1.5 rounded-lg text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a30] transition-colors"
           title="Centralizar (100%)"
         >
           <svg

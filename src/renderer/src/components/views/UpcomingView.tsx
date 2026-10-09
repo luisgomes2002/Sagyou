@@ -58,7 +58,7 @@ export function UpcomingView({ projects, tasks, onViewTask }: Props) {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      <div className="flex items-center gap-3 px-6 py-4 border-b border-[#3b3b3b] shrink-0">
+      <div className="flex items-center gap-3 px-6 py-4 border-b border-[#2b2b31] shrink-0">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#a080f0" strokeWidth="2">
           <rect x="3" y="4" width="18" height="18" rx="2" />
           <line x1="16" y1="2" x2="16" y2="6" />
@@ -72,12 +72,12 @@ export function UpcomingView({ projects, tasks, onViewTask }: Props) {
       <div className="flex-1 overflow-y-auto px-6 py-4">
         {total === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-3">
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#3b3b3b" strokeWidth="1.5">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#2b2b31" strokeWidth="1.5">
               <rect x="3" y="4" width="18" height="18" rx="2" />
               <line x1="16" y1="2" x2="16" y2="6" />
               <line x1="8" y1="2" x2="8" y2="6" />
               <line x1="3" y1="10" x2="21" y2="10" />
-              <polyline points="9 14 11 16 15 12" stroke="#3b3b3b" strokeWidth="1.5" />
+              <polyline points="9 14 11 16 15 12" stroke="#2b2b31" strokeWidth="1.5" />
             </svg>
             <p className="text-sm text-[#999999]">Nenhuma task com prazo próximo</p>
             <p className="text-xs text-[#666666]">Adicione prazos nas tasks do board</p>
@@ -108,7 +108,7 @@ export function UpcomingView({ projects, tasks, onViewTask }: Props) {
                           <button
                             key={task.id}
                             onClick={() => onViewTask(task)}
-                            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg bg-[#2a2a2a] hover:bg-[#333333] transition-colors text-left"
+                            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg bg-[#16161a] hover:bg-[#222227] transition-colors text-left"
                           >
                             {project && (
                               <div

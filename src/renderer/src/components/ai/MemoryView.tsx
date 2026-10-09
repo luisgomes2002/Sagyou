@@ -90,7 +90,7 @@ export function MemoryView({ searchTargetId }: { searchTargetId?: string }): Rea
           <h1 className="text-lg font-semibold text-[#d4d4d4]">Memória do assistente</h1>
           <button
             onClick={() => setShowArchived((v) => !v)}
-            className="text-xs px-2.5 py-1 rounded-md text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors"
+            className="text-xs px-2.5 py-1 rounded-md text-[#999999] hover:text-[#d4d4d4] hover:bg-[#222227] transition-colors"
           >
             {showArchived ? 'Ocultar arquivadas' : `Ver arquivadas (${archivedCount})`}
           </button>
@@ -116,8 +116,8 @@ export function MemoryView({ searchTargetId }: { searchTargetId?: string }): Rea
                 id={m.id === searchTargetId ? `memory-search-${m.id}` : undefined}
                 className={`rounded-lg border p-3 ${searchFocusClass(m.id === searchTargetId)} ${
                   m.archivedAt
-                    ? 'border-[#2a2a2a] bg-transparent opacity-60'
-                    : 'border-[#2a2a2a] bg-[#1b1b1b]'
+                    ? 'border-[#2b2b31] bg-transparent opacity-60'
+                    : 'border-[#2b2b31] bg-[#101014]'
                 }`}
               >
                 <div className="flex items-start gap-2">
@@ -141,7 +141,7 @@ export function MemoryView({ searchTargetId }: { searchTargetId?: string }): Rea
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1.5 text-[10px] text-[#999999]">
                       <span>{projectName(m.projectId)}</span>
                       {m.tags.map((t) => (
-                        <span key={t} className="px-1.5 py-0.5 rounded bg-[#2a2a2a]">
+                        <span key={t} className="px-1.5 py-0.5 rounded bg-[#16161a]">
                           {t}
                         </span>
                       ))}
@@ -152,14 +152,14 @@ export function MemoryView({ searchTargetId }: { searchTargetId?: string }): Rea
                     {m.archivedAt ? (
                       <button
                         onClick={() => void restore(m)}
-                        className="text-[11px] px-2 py-1 rounded text-[#999999] hover:text-[#46d478] hover:bg-[#2a2a2a] transition-colors"
+                        className="text-[11px] px-2 py-1 rounded text-[#999999] hover:text-[#46d478] hover:bg-[#222227] transition-colors"
                       >
                         Restaurar
                       </button>
                     ) : (
                       <button
                         onClick={() => void togglePin(m)}
-                        className="text-[11px] px-2 py-1 rounded text-[#999999] hover:text-[#a080f0] hover:bg-[#2a2a2a] transition-colors"
+                        className="text-[11px] px-2 py-1 rounded text-[#999999] hover:text-[#a080f0] hover:bg-[#222227] transition-colors"
                       >
                         {m.pinned ? 'Desafixar' : 'Fixar'}
                       </button>
@@ -168,13 +168,13 @@ export function MemoryView({ searchTargetId }: { searchTargetId?: string }): Rea
                       <>
                         <button
                           onClick={() => void remove(m.id)}
-                          className="text-[11px] px-2 py-1 rounded text-[#ec6a6a] hover:bg-[#2a2a2a] transition-colors"
+                          className="text-[11px] px-2 py-1 rounded text-[#ec6a6a] hover:bg-[#222227] transition-colors"
                         >
                           Confirmar
                         </button>
                         <button
                           onClick={() => setConfirmId(null)}
-                          className="text-[11px] px-2 py-1 rounded text-[#999999] hover:bg-[#2a2a2a] transition-colors"
+                          className="text-[11px] px-2 py-1 rounded text-[#999999] hover:bg-[#222227] transition-colors"
                         >
                           Cancelar
                         </button>
@@ -182,7 +182,7 @@ export function MemoryView({ searchTargetId }: { searchTargetId?: string }): Rea
                     ) : (
                       <button
                         onClick={() => setConfirmId(m.id)}
-                        className="text-[11px] px-2 py-1 rounded text-[#999999] hover:text-[#ec6a6a] hover:bg-[#2a2a2a] transition-colors"
+                        className="text-[11px] px-2 py-1 rounded text-[#999999] hover:text-[#ec6a6a] hover:bg-[#222227] transition-colors"
                       >
                         Apagar
                       </button>

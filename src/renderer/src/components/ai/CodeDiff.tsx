@@ -4,10 +4,10 @@
 import { parseDiff, type LineKind } from '../../utils/diff'
 
 const LINE_STYLE: Record<LineKind, string> = {
-  add: 'bg-[#2a2a2a] text-[#46d478]',
-  del: 'bg-[#2a2a2a] text-[#e04040]',
+  add: 'bg-[#16161a] text-[#46d478]',
+  del: 'bg-[#16161a] text-[#e04040]',
   ctx: 'text-[#999999]',
-  meta: 'text-[#666666] bg-[#1b1b1b]'
+  meta: 'text-[#666666] bg-[#101014]'
 }
 
 const MARK: Record<LineKind, string> = { add: '+', del: '-', ctx: ' ', meta: '' }
@@ -45,7 +45,7 @@ export function CodeDiff({
 }): React.JSX.Element {
   if (diff.error) {
     return (
-      <div className="px-3 py-2 rounded-lg bg-[#1b1b1b] border border-[#3b3b3b]">
+      <div className="px-3 py-2 rounded-lg bg-[#101014] border border-[#2b2b31]">
         <p className="text-[11px] text-[#999999]">{diff.error}</p>
       </div>
     )
@@ -53,7 +53,7 @@ export function CodeDiff({
 
   if (diff.patch === '' && diff.files.length === 0) {
     return (
-      <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-[#1b1b1b] border border-[#3b3b3b]">
+      <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-[#101014] border border-[#2b2b31]">
         {/* "It changed nothing" is an answer, and a common one — an agent that
             only read the code, or gave up. Silence here reads as a bug. But
             mid-run it is not that answer yet: the same empty diff means the
@@ -82,8 +82,8 @@ export function CodeDiff({
     diff.files.find((f) => f.path === path)
 
   return (
-    <div className="rounded-lg bg-[#1b1b1b] border border-[#3b3b3b] overflow-hidden">
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-[#3b3b3b]">
+    <div className="rounded-lg bg-[#101014] border border-[#2b2b31] overflow-hidden">
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-[#2b2b31]">
         <span className="text-[11px] font-medium text-[#d4d4d4]">
           {diff.files.length} arquivo{diff.files.length === 1 ? '' : 's'}
         </span>
@@ -104,8 +104,8 @@ export function CodeDiff({
         {files.map((file) => {
           const stat = statOf(file.path)
           return (
-            <div key={file.path} className="border-b border-[#3b3b3b] last:border-b-0">
-              <div className="sticky top-0 flex items-center gap-2 px-3 py-1.5 bg-[#232323] border-b border-[#3b3b3b]">
+            <div key={file.path} className="border-b border-[#2b2b31] last:border-b-0">
+              <div className="sticky top-0 flex items-center gap-2 px-3 py-1.5 bg-[#16161a] border-b border-[#2b2b31]">
                 <span className="text-[11px] font-mono text-[#d4d4d4] truncate">{file.path}</span>
                 {stat && (
                   <span className="ml-auto shrink-0 text-[10px]">
@@ -133,7 +133,7 @@ export function CodeDiff({
       </div>
 
       {(diff.truncated || diff.omittedNewFiles.length > 0) && (
-        <div className="px-3 py-2 border-t border-[#3b3b3b] space-y-1">
+        <div className="px-3 py-2 border-t border-[#2b2b31] space-y-1">
           {diff.truncated && (
             <p className="text-[10px] text-[#f0b820]">
               Diff muito grande — mostrando só o começo. Veja o resto no editor.

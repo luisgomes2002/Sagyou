@@ -81,18 +81,18 @@ export function GoalHistoryModal({
     })
 
   const statusCfg: Record<string, { label: string; bg: string; text: string }> = {
-    concluded: { label: 'Concluído', bg: 'bg-[#3b3b3b]', text: 'text-[#69b780]' },
-    achieved: { label: 'Alcançado', bg: 'bg-[#3b3b3b]', text: 'text-[#69b780]' },
-    projected: { label: 'Previsto atingir', bg: 'bg-[#3b3b3b]', text: 'text-[#69b780]' },
-    overdue: { label: 'Vencido', bg: 'bg-[#3b3b3b]', text: 'text-[#e04040]' },
-    urgent: { label: 'Urgente', bg: 'bg-[#3b3b3b]', text: 'text-[#f08a34]' },
-    active: { label: 'Em andamento', bg: 'bg-[#3b3b3b]', text: 'text-[#a080f0]' }
+    concluded: { label: 'Concluído', bg: 'bg-[#2a2a30]', text: 'text-[#69b780]' },
+    achieved: { label: 'Alcançado', bg: 'bg-[#2a2a30]', text: 'text-[#69b780]' },
+    projected: { label: 'Previsto atingir', bg: 'bg-[#2a2a30]', text: 'text-[#69b780]' },
+    overdue: { label: 'Vencido', bg: 'bg-[#2a2a30]', text: 'text-[#e04040]' },
+    urgent: { label: 'Urgente', bg: 'bg-[#2a2a30]', text: 'text-[#f08a34]' },
+    active: { label: 'Em andamento', bg: 'bg-[#2a2a30]', text: 'text-[#a080f0]' }
   }
 
   return (
     <ModalBase open={true} onClose={onClose}>
-      <div className="relative z-10 w-[580px] max-h-[75vh] rounded-xl border border-[#3b3b3b] bg-[#232323] shadow-2xl flex flex-col">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[#3b3b3b] shrink-0">
+      <div className="relative z-10 w-[580px] max-h-[75vh] rounded-xl border border-[#2b2b31] bg-[#16161a] shadow-2xl flex flex-col">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#2b2b31] shrink-0">
           <div className="flex items-center gap-2">
             <svg
               width="13"
@@ -111,7 +111,7 @@ export function GoalHistoryModal({
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#3b3b3b] transition-colors"
+            className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a30] transition-colors"
           >
             <svg
               width="12"
@@ -127,17 +127,17 @@ export function GoalHistoryModal({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto divide-y divide-[#3b3b3b]">
+        <div className="flex-1 overflow-y-auto divide-y divide-[#2b2b31]">
           {withStatus.map(({ goal, status, progress }) => {
             const cfg = statusCfg[status]
             return (
               <div
                 key={goal.id}
-                className="flex items-center gap-4 px-5 py-3 hover:bg-[#2a2a2a] transition-colors"
+                className="flex items-center gap-4 px-5 py-3 hover:bg-[#222227] transition-colors"
               >
                 <div className="relative shrink-0 w-9 h-9">
                   <svg width="36" height="36" viewBox="0 0 36 36">
-                    <circle cx="18" cy="18" r="13" fill="none" stroke="#3b3b3b" strokeWidth="3" />
+                    <circle cx="18" cy="18" r="13" fill="none" stroke="#2b2b31" strokeWidth="3" />
                     <circle
                       cx="18"
                       cy="18"

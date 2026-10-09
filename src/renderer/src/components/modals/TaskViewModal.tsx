@@ -99,16 +99,16 @@ export function TaskViewModal({ open, task, columns, onEdit, onSendToAI, onClose
 
   return (
     <ModalBase open={true} onClose={onClose}>
-      <div className="relative z-10 w-full max-w-lg mx-4 rounded-xl border border-[#3b3b3b] bg-[#232323] shadow-2xl">
+      <div className="relative z-10 w-full max-w-lg mx-4 rounded-xl border border-[#2b2b31] bg-[#16161a] shadow-2xl">
 
         {/* header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[#3b3b3b]">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#2b2b31]">
           <div className="flex items-center gap-2">
             <span className={`text-[10px] font-medium px-2 py-0.5 rounded ${priority.bg} ${priority.color}`}>
               {priority.label}
             </span>
             {columnName && (
-              <span className="text-[10px] px-2 py-0.5 rounded bg-[#3b3b3b] text-[#999999]">
+              <span className="text-[10px] px-2 py-0.5 rounded bg-[#2a2a30] text-[#999999]">
                 {columnName}
               </span>
             )}
@@ -117,7 +117,7 @@ export function TaskViewModal({ open, task, columns, onEdit, onSendToAI, onClose
             {onSendToAI && (
               <button
                 onClick={() => { onClose(); onSendToAI(task) }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[#3b3b3b] text-[#a080f0] border border-[#3b3b3b] hover:bg-[#4a4a4a] transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[#2a2a30] text-[#a080f0] border border-[#2b2b31] hover:bg-[#303036] transition-colors"
                 title="Abrir no chat da IA com o contexto desta task"
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -130,8 +130,8 @@ export function TaskViewModal({ open, task, columns, onEdit, onSendToAI, onClose
               onClick={handleCopy}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                 copied
-                  ? 'bg-[#3b3b3b] text-[#46d478] border border-[#3b3b3b]'
-                  : 'bg-[#2a2a2a] text-[#999999] border border-[#3b3b3b] hover:text-[#d4d4d4] hover:border-[#555555]'
+                  ? 'bg-[#2a2a30] text-[#46d478] border border-[#2b2b31]'
+                  : 'bg-[#16161a] text-[#999999] border border-[#2b2b31] hover:text-[#d4d4d4] hover:border-[#3b3b42]'
               }`}
               title="Copiar para área de transferência"
             >
@@ -154,7 +154,7 @@ export function TaskViewModal({ open, task, columns, onEdit, onSendToAI, onClose
             </button>
             <button
               onClick={() => { onClose(); onEdit(task) }}
-              className="p-1.5 rounded-lg text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors"
+              className="p-1.5 rounded-lg text-[#999999] hover:text-[#d4d4d4] hover:bg-[#222227] transition-colors"
               title="Editar"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -164,7 +164,7 @@ export function TaskViewModal({ open, task, columns, onEdit, onSendToAI, onClose
             </button>
             <button
               onClick={onClose}
-              className="p-1.5 rounded-lg text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors"
+              className="p-1.5 rounded-lg text-[#999999] hover:text-[#d4d4d4] hover:bg-[#222227] transition-colors"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <line x1="18" y1="6" x2="6" y2="18" />
@@ -184,7 +184,7 @@ export function TaskViewModal({ open, task, columns, onEdit, onSendToAI, onClose
             <p className="text-sm text-[#999999] italic">Sem descrição.</p>
           )}
 
-          <div className="border-t border-[#3b3b3b] pt-4 grid grid-cols-2 gap-3">
+          <div className="border-t border-[#2b2b31] pt-4 grid grid-cols-2 gap-3">
             <div>
               <p className="text-[10px] uppercase tracking-wider text-[#999999] mb-1">Vencimento</p>
               {task.dueDate ? (
@@ -211,11 +211,11 @@ export function TaskViewModal({ open, task, columns, onEdit, onSendToAI, onClose
           </div>
 
           {/* Time tracking */}
-          <div className="border-t border-[#3b3b3b] pt-4">
+          <div className="border-t border-[#2b2b31] pt-4">
             <p className="text-[10px] uppercase tracking-wider text-[#999999] mb-3">Tempo gasto</p>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <div className={`flex items-center justify-center w-8 h-8 rounded-lg ${isRunning ? 'bg-[#3b3b3b] border border-[#3b3b3b]' : 'bg-[#2a2a2a] border border-[#3b3b3b]'}`}>
+                <div className={`flex items-center justify-center w-8 h-8 rounded-lg ${isRunning ? 'bg-[#2a2a30] border border-[#2b2b31]' : 'bg-[#16161a] border border-[#2b2b31]'}`}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={isRunning ? '#20b858' : '#999999'} strokeWidth="2">
                     <circle cx="12" cy="12" r="10" />
                     <polyline points="12 6 12 12 16 14" />
@@ -245,8 +245,8 @@ export function TaskViewModal({ open, task, columns, onEdit, onSendToAI, onClose
                 onClick={() => isRunning ? stopTimer(task.id) : startTimer(task.id)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
                   isRunning
-                    ? 'bg-[#3b3b3b] text-[#20b858] border-[#3b3b3b] hover:bg-[#4a4a4a]'
-                    : 'bg-[#2a2a2a] text-[#999999] border-[#3b3b3b] hover:text-[#d4d4d4] hover:border-[#555555]'
+                    ? 'bg-[#2a2a30] text-[#20b858] border-[#2b2b31] hover:bg-[#303036]'
+                    : 'bg-[#16161a] text-[#999999] border-[#2b2b31] hover:text-[#d4d4d4] hover:border-[#3b3b42]'
                 }`}
               >
                 {isRunning ? (
@@ -274,7 +274,7 @@ export function TaskViewModal({ open, task, columns, onEdit, onSendToAI, onClose
               <p className="text-[10px] uppercase tracking-wider text-[#999999] mb-2">Tags</p>
               <div className="flex flex-wrap gap-1.5">
                 {task.tags.map((tag) => (
-                  <span key={tag} className="text-xs px-2 py-0.5 rounded bg-[#3b3b3b] text-[#a080f0]">
+                  <span key={tag} className="text-xs px-2 py-0.5 rounded bg-[#2a2a30] text-[#a080f0]">
                     {tag}
                   </span>
                 ))}
@@ -294,7 +294,7 @@ export function TaskViewModal({ open, task, columns, onEdit, onSendToAI, onClose
                     key={img.id}
                     type="button"
                     onClick={() => imageData[img.id] && setLightboxSrc(imageData[img.id])}
-                    className="aspect-square rounded-lg overflow-hidden border border-[#3b3b3b] hover:border-[#7c3aed] transition-colors bg-[#1b1b1b] group/img relative"
+                    className="aspect-square rounded-lg overflow-hidden border border-[#2b2b31] hover:border-[#7c3aed] transition-colors bg-[#101014] group/img relative"
                     title={img.name}
                   >
                     <img
@@ -320,7 +320,7 @@ export function TaskViewModal({ open, task, columns, onEdit, onSendToAI, onClose
           )}
 
           {/* copy preview */}
-          <div className="rounded-lg bg-[#1b1b1b] border border-[#3b3b3b] p-3">
+          <div className="rounded-lg bg-[#101014] border border-[#2b2b31] p-3">
             <p className="text-[9px] uppercase tracking-wider text-[#999999] mb-2">Preview: o que será copiado</p>
             <pre className="text-[11px] text-[#999999] leading-relaxed whitespace-pre-wrap font-mono">{buildCopyText()}</pre>
           </div>

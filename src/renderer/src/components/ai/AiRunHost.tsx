@@ -218,7 +218,7 @@ export function AiRunHost({
         <button
           onClick={onOpenAI}
           title="A IA está trabalhando — clique para acompanhar"
-          className="fixed bottom-4 right-4 z-40 flex items-center gap-2 px-3 py-2 rounded-full bg-[#232323] border border-[#3b3b3b] shadow-lg hover:border-[#7c3aed] transition-colors"
+          className="fixed bottom-4 right-4 z-40 flex items-center gap-2 px-3 py-2 rounded-full bg-[#16161a] border border-[#2b2b31] shadow-lg hover:border-[#7c3aed] transition-colors"
         >
           <span className="w-3 h-3 shrink-0 rounded-full border-[1.5px] border-[#a080f0] border-t-transparent animate-spin" />
           <span className="text-xs text-[#d4d4d4]">IA trabalhando…</span>
@@ -232,10 +232,10 @@ export function AiRunHost({
           {codeQuestions.map((question) => (
             <div
               key={question.id}
-              className="w-full max-w-[520px] rounded-xl bg-[#232323] border border-[#4c3a70] shadow-2xl"
+              className="w-full max-w-[520px] rounded-xl bg-[#16161a] border border-[#4c3a70] shadow-2xl"
             >
-              <div className="flex items-center gap-2 px-5 py-4 border-b border-[#3b3b3b]">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#3b3b3b] text-xs text-[#c4b5fd]">
+              <div className="flex items-center gap-2 px-5 py-4 border-b border-[#2b2b31]">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#2a2a30] text-xs text-[#c4b5fd]">
                   ?
                 </span>
                 <h2 className="text-sm font-semibold text-[#e7e1f3]">
@@ -253,13 +253,13 @@ export function AiRunHost({
                   autoFocus={codeQuestions[0]?.id === question.id}
                   aria-label="Sua resposta para o agente"
                   placeholder="Digite sua resposta…"
-                  className="w-full resize-y rounded-lg border border-[#4a4a4a] bg-[#1b1b1b] px-3 py-2 text-sm text-[#e5e5e5] outline-none placeholder:text-[#737373] focus:border-[#8b5cf6]"
+                  className="w-full resize-y rounded-lg border border-[#34343a] bg-[#101014] px-3 py-2 text-sm text-[#e5e5e5] outline-none placeholder:text-[#737373] focus:border-[#8b5cf6]"
                 />
               </div>
-              <div className="flex items-center justify-end gap-2 border-t border-[#3b3b3b] px-5 py-3">
+              <div className="flex items-center justify-end gap-2 border-t border-[#2b2b31] px-5 py-3">
                 <button
                   onClick={() => answerCodeQuestion(question.id, '')}
-                  className="rounded-lg px-3 py-1.5 text-sm text-[#999999] transition-colors hover:bg-[#2a2a2a] hover:text-[#d4d4d4]"
+                  className="rounded-lg px-3 py-1.5 text-sm text-[#999999] transition-colors hover:bg-[#222227] hover:text-[#d4d4d4]"
                 >
                   Cancelar
                 </button>
@@ -285,8 +285,8 @@ export function AiRunHost({
           key={ca.id}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
         >
-          <div className="w-[520px] max-h-[80vh] flex flex-col rounded-xl bg-[#232323] border border-[#3b3b3b] shadow-2xl">
-            <div className="flex items-center gap-2 px-5 py-4 border-b border-[#3b3b3b]">
+          <div className="w-[520px] max-h-[80vh] flex flex-col rounded-xl bg-[#16161a] border border-[#2b2b31] shadow-2xl">
+            <div className="flex items-center gap-2 px-5 py-4 border-b border-[#2b2b31]">
               <svg
                 width="15"
                 height="15"
@@ -311,17 +311,17 @@ export function AiRunHost({
             <div className="flex-1 overflow-y-auto px-5 py-3 space-y-3">
               <p className="text-sm text-[#d4d4d4]">{ca.resumo}</p>
               {ca.conteudo && (
-                <pre className="text-[11px] font-mono text-[#a080f0] bg-[#1b1b1b] p-3 rounded-lg max-h-60 overflow-y-auto whitespace-pre-wrap">
+                <pre className="text-[11px] font-mono text-[#a080f0] bg-[#101014] p-3 rounded-lg max-h-60 overflow-y-auto whitespace-pre-wrap">
                   {ca.conteudo}
                 </pre>
               )}
               {ca.comando && (
-                <div className="text-[11px] font-mono text-[#a080f0] bg-[#1b1b1b] p-3 rounded-lg">
+                <div className="text-[11px] font-mono text-[#a080f0] bg-[#101014] p-3 rounded-lg">
                   {ca.comando}
                 </div>
               )}
               {ca.diff && ca.diff.length > 0 && (
-                <div className="bg-[#1b1b1b] p-3 rounded-lg max-h-60 overflow-y-auto">
+                <div className="bg-[#101014] p-3 rounded-lg max-h-60 overflow-y-auto">
                   {ca.diff.map((d, i) => (
                     <div
                       key={i}
@@ -345,10 +345,10 @@ export function AiRunHost({
                 <p className="text-[11px] text-[#f0b820]">Esta ação nao pode ser desfeita.</p>
               )}
             </div>
-            <div className="flex items-center justify-end px-5 py-3 border-t border-[#3b3b3b] gap-2">
+            <div className="flex items-center justify-end px-5 py-3 border-t border-[#2b2b31] gap-2">
               <button
                 onClick={() => approveCodeAction(ca.id, false)}
-                className="px-3 py-1.5 rounded-lg text-sm text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors"
+                className="px-3 py-1.5 rounded-lg text-sm text-[#999999] hover:text-[#d4d4d4] hover:bg-[#222227] transition-colors"
               >
                 Recusar
               </button>
@@ -372,9 +372,9 @@ export function AiRunHost({
           {pendingApprovals.map((pa) => (
             <div
               key={pa.convId}
-              className="w-[520px] max-h-[80vh] flex flex-col rounded-xl bg-[#232323] border border-[#3b3b3b] shadow-2xl"
+              className="w-[520px] max-h-[80vh] flex flex-col rounded-xl bg-[#16161a] border border-[#2b2b31] shadow-2xl"
             >
-              <div className="flex items-center gap-2 px-5 py-4 border-b border-[#3b3b3b]">
+              <div className="flex items-center gap-2 px-5 py-4 border-b border-[#2b2b31]">
                 <svg
                   width="15"
                   height="15"
@@ -417,7 +417,7 @@ export function AiRunHost({
                 {pa.writes.map((w) => (
                   <label
                     key={w.id}
-                    className="flex items-start gap-3 p-3 rounded-lg bg-[#1b1b1b] border border-[#3b3b3b] cursor-pointer hover:border-[#555555]"
+                    className="flex items-start gap-3 p-3 rounded-lg bg-[#101014] border border-[#2b2b31] cursor-pointer hover:border-[#3b3b42]"
                   >
                     <input
                       type="checkbox"
@@ -432,10 +432,10 @@ export function AiRunHost({
                 ))}
               </div>
 
-              <div className="flex items-center justify-between px-5 py-3 border-t border-[#3b3b3b] gap-2">
+              <div className="flex items-center justify-between px-5 py-3 border-t border-[#2b2b31] gap-2">
                 <button
                   onClick={() => resolveApproval(pa.convId, new Set())}
-                  className="px-3 py-1.5 rounded-lg text-sm text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors shrink-0"
+                  className="px-3 py-1.5 rounded-lg text-sm text-[#999999] hover:text-[#d4d4d4] hover:bg-[#222227] transition-colors shrink-0"
                 >
                   Recusar tudo
                 </button>
@@ -447,7 +447,7 @@ export function AiRunHost({
                         resolveApproval(pa.convId, new Set(pa.writes.map((w) => w.id)))
                       }}
                       title="A IA trabalhará sem interrupção nesta conversa — como o modo always allow do Claude Code"
-                      className="px-3 py-1.5 rounded-lg text-xs text-[#f0b820] border border-[#3b3b3b] hover:bg-[#2a2a2a] transition-colors"
+                      className="px-3 py-1.5 rounded-lg text-xs text-[#f0b820] border border-[#2b2b31] hover:bg-[#222227] transition-colors"
                     >
                       Sempre permitir
                     </button>

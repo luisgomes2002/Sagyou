@@ -225,11 +225,11 @@ export function YieldsTab({
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <div className="flex items-center justify-between px-5 py-3 border-b border-[#3b3b3b] shrink-0">
+      <div className="flex items-center justify-between px-5 py-3 border-b border-[#2b2b31] shrink-0">
         <div className="flex items-center gap-2">
           <button
             onClick={prevMonth}
-            className="p-1 rounded hover:bg-[#3b3b3b] text-[#999999] hover:text-[#d4d4d4] transition-colors"
+            className="p-1 rounded hover:bg-[#2a2a30] text-[#999999] hover:text-[#d4d4d4] transition-colors"
           >
             <svg
               width="14"
@@ -245,7 +245,7 @@ export function YieldsTab({
           <MonthJump month={activeMonth} onChange={onMonthChange} />
           <button
             onClick={nextMonth}
-            className="p-1 rounded hover:bg-[#3b3b3b] text-[#999999] hover:text-[#d4d4d4] transition-colors"
+            className="p-1 rounded hover:bg-[#2a2a30] text-[#999999] hover:text-[#d4d4d4] transition-colors"
           >
             <svg
               width="14"
@@ -260,7 +260,7 @@ export function YieldsTab({
           </button>
           <button
             onClick={goToday}
-            className="px-2.5 py-1 rounded-md text-[11px] font-medium bg-[#2a2a2a] border border-[#3b3b3b] text-[#999999] hover:text-[#d4d4d4] hover:border-[#555] transition-colors"
+            className="px-2.5 py-1 rounded-md text-[11px] font-medium bg-[#16161a] border border-[#2b2b31] text-[#999999] hover:text-[#d4d4d4] hover:border-[#555] transition-colors"
           >
             Hoje
           </button>
@@ -272,7 +272,7 @@ export function YieldsTab({
       </div>
 
       {duplicateDialog && (
-        <div className="px-5 py-3 border-b border-[#3b3b3b] bg-[#2a2a2a]">
+        <div className="px-5 py-3 border-b border-[#2b2b31] bg-[#16161a]">
           <p className="text-xs font-semibold text-[#e04040] mb-1">Duplicatas encontradas</p>
           <p className="text-xs text-[#999] mb-3">
             Há {duplicateDialog.length} transações &ldquo;{summaryDescription}&rdquo;. Escolha qual
@@ -283,7 +283,7 @@ export function YieldsTab({
               <button
                 key={dup.id}
                 onClick={() => handleKeepDuplicate(dup.id)}
-                className="w-full flex items-center justify-between px-3 py-2 rounded bg-[#1e1e1e] border border-[#3b3b3b] hover:border-[#7c3aed] transition-colors group"
+                className="w-full flex items-center justify-between px-3 py-2 rounded bg-[#16161a] border border-[#2b2b31] hover:border-[#7c3aed] transition-colors group"
               >
                 <span className="text-xs text-[#d4d4d4]">
                   {formatCurrency(dup.amount, currency)} — {dup.date.split('-').reverse().join('/')}
@@ -321,7 +321,7 @@ export function YieldsTab({
                       if (e.key === 'Escape') setEditingSourceId(null)
                     }}
                     onBlur={() => handleUpdateSource(source.id)}
-                    className="flex-1 bg-[#1e1e1e] border border-[#7c3aed] text-[#d4d4d4] rounded px-2 py-1 text-sm focus:outline-none"
+                    className="flex-1 bg-[#16161a] border border-[#7c3aed] text-[#d4d4d4] rounded px-2 py-1 text-sm focus:outline-none"
                     autoFocus
                   />
                 ) : (
@@ -363,7 +363,7 @@ export function YieldsTab({
                 if (e.key === 'Enter') handleAddSource()
               }}
               placeholder="Nova fonte..."
-              className="flex-1 bg-[#1e1e1e] border border-[#3b3b3b] text-[#d4d4d4] rounded px-2 py-1 text-sm focus:outline-none focus:border-[#7c3aed] placeholder-[#666]"
+              className="flex-1 bg-[#16161a] border border-[#2b2b31] text-[#d4d4d4] rounded px-2 py-1 text-sm focus:outline-none focus:border-[#7c3aed] placeholder-[#666]"
             />
             <button
               onClick={handleAddSource}
@@ -377,14 +377,14 @@ export function YieldsTab({
 
         {/* Daily entry */}
         {sources.length > 0 && (
-          <div className="px-5 py-3 border-t border-[#3b3b3b]">
+          <div className="px-5 py-3 border-t border-[#2b2b31]">
             <div className="flex items-center gap-3 mb-3">
               <p className="text-xs font-semibold text-[#d4d4d4]">Registrar rendimento</p>
               <input
                 type="date"
                 value={entryDate}
                 onChange={(e) => setEntryDate(e.target.value)}
-                className="bg-[#1e1e1e] border border-[#3b3b3b] text-[#d4d4d4] rounded px-2 py-1 text-xs focus:outline-none focus:border-[#7c3aed] [color-scheme:dark]"
+                className="bg-[#16161a] border border-[#2b2b31] text-[#d4d4d4] rounded px-2 py-1 text-xs focus:outline-none focus:border-[#7c3aed] [color-scheme:dark]"
               />
             </div>
             <div className="space-y-2 mb-3">
@@ -419,7 +419,7 @@ export function YieldsTab({
                                 ? '0.00'
                                 : '0,00'
                         }
-                        className="flex-1 bg-[#1e1e1e] border border-[#3b3b3b] text-[#d4d4d4] rounded px-2 py-1 text-sm focus:outline-none focus:border-[#7c3aed] placeholder-[#555]"
+                        className="flex-1 bg-[#16161a] border border-[#2b2b31] text-[#d4d4d4] rounded px-2 py-1 text-sm focus:outline-none focus:border-[#7c3aed] placeholder-[#555]"
                       />
                     </div>
                   </div>
@@ -437,7 +437,7 @@ export function YieldsTab({
 
         {/* Monthly grid */}
         {sources.length > 0 && (
-          <div className="px-5 py-3 border-t border-[#3b3b3b]">
+          <div className="px-5 py-3 border-t border-[#2b2b31]">
             <p className="text-xs font-semibold text-[#d4d4d4] mb-3">
               Rendimentos de {MONTH_NAMES[activeMonth.month - 1]}
             </p>
@@ -446,7 +446,7 @@ export function YieldsTab({
               <table className="w-full text-xs border-collapse">
                 <thead>
                   <tr>
-                    <th className="sticky left-0 bg-[#1e1e1e] text-left py-1 px-2 font-medium text-[#999] min-w-[120px]">
+                    <th className="sticky left-0 bg-[#16161a] text-left py-1 px-2 font-medium text-[#999] min-w-[120px]">
                       Fonte
                     </th>
                     {days.map((day) => (
@@ -464,8 +464,8 @@ export function YieldsTab({
                 </thead>
                 <tbody>
                   {sources.map((source) => (
-                    <tr key={source.id} className="border-t border-[#2a2a2a]">
-                      <td className="sticky left-0 bg-[#1e1e1e] py-1.5 px-2 text-[#d4d4d4] font-medium">
+                    <tr key={source.id} className="border-t border-[#2b2b31]">
+                      <td className="sticky left-0 bg-[#16161a] py-1.5 px-2 text-[#d4d4d4] font-medium">
                         {source.name}
                       </td>
                       {days.map((day) => {
@@ -483,7 +483,7 @@ export function YieldsTab({
                                   .replace(/^\$\s?/, '')}
                               </button>
                             ) : (
-                              <span className="text-[#3b3b3b]">-</span>
+                              <span className="text-[#666666]">-</span>
                             )}
                           </td>
                         )
@@ -497,8 +497,8 @@ export function YieldsTab({
                       </td>
                     </tr>
                   ))}
-                  <tr className="border-t border-[#3b3b3b]">
-                    <td className="sticky left-0 bg-[#1e1e1e] py-1.5 px-2 text-[#999] font-medium">
+                  <tr className="border-t border-[#2b2b31]">
+                    <td className="sticky left-0 bg-[#16161a] py-1.5 px-2 text-[#999] font-medium">
                       TOTAL
                     </td>
                     {days.map((day) => {
@@ -512,7 +512,7 @@ export function YieldsTab({
                                 .replace(/^\$\s?/, '')}
                             </span>
                           ) : (
-                            <span className="text-[#3b3b3b]">-</span>
+                            <span className="text-[#666666]">-</span>
                           )}
                         </td>
                       )

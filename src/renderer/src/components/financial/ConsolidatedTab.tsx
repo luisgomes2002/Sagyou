@@ -370,10 +370,10 @@ export function ConsolidatedTab({
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
       <div className="flex-1 overflow-y-auto">
         {/* Month navigator */}
-        <div className="flex items-center gap-3 px-5 py-3 border-b border-[#3b3b3b]">
+        <div className="flex items-center gap-3 px-5 py-3 border-b border-[#2b2b31]">
           <button
             onClick={prevMonth}
-            className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors"
+            className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#222227] transition-colors"
           >
             <svg
               width="12"
@@ -395,7 +395,7 @@ export function ConsolidatedTab({
           />
           <button
             onClick={nextMonth}
-            className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors"
+            className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#222227] transition-colors"
           >
             <svg
               width="12"
@@ -415,7 +415,7 @@ export function ConsolidatedTab({
             Hoje
           </button>
           {allTableCurrencies.length > 1 && (
-            <div className="ml-auto flex items-center p-0.5 rounded-lg bg-[#2a2a2a] border border-[#3b3b3b]">
+            <div className="ml-auto flex items-center p-0.5 rounded-lg bg-[#16161a] border border-[#2b2b31]">
               {allTableCurrencies.map((c) => (
                 <button
                   key={c}
@@ -447,7 +447,7 @@ export function ConsolidatedTab({
           }
           if (visibleRates.length === 0) return null
           return (
-            <div className="flex items-center gap-3 px-5 py-1.5 border-b border-[#3b3b3b] text-[10px] text-[#999999]">
+            <div className="flex items-center gap-3 px-5 py-1.5 border-b border-[#2b2b31] text-[10px] text-[#999999]">
               <span className="font-semibold uppercase tracking-wider text-[#666666] shrink-0">
                 Cotações
               </span>
@@ -479,7 +479,7 @@ export function ConsolidatedTab({
         })()}
 
         {/* Summary cards */}
-        <div className="px-5 py-4 border-b border-[#3b3b3b]">
+        <div className="px-5 py-4 border-b border-[#2b2b31]">
           <div className="mb-3">
             <p className="text-sm font-semibold text-[#d4d4d4]">
               Resumo de {MONTH_NAMES[activeMonth.month - 1].toLowerCase()}
@@ -494,7 +494,7 @@ export function ConsolidatedTab({
               return (
                 <div
                   key={values.currency}
-                  className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-4"
+                  className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-4"
                 >
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-semibold text-[#d4d4d4]">
@@ -518,7 +518,7 @@ export function ConsolidatedTab({
                       {formatCurrency(values.expense, values.currency)}
                     </span>
                   </div>
-                  <div className="mt-3 space-y-1.5 border-t border-[#3b3b3b] pt-3 text-xs">
+                  <div className="mt-3 space-y-1.5 border-t border-[#2b2b31] pt-3 text-xs">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-[#999999]">
                         {selectedMonthEnd < today ? 'Saldo até o mês' : 'Saldo até hoje'}
@@ -551,9 +551,9 @@ export function ConsolidatedTab({
         </div>
 
         {allTableCurrencies.length > 1 && (
-          <div className="px-5 py-4 border-b border-[#3b3b3b]">
+          <div className="px-5 py-4 border-b border-[#2b2b31]">
             {showEquivalent ? (
-              <div className="rounded-lg border border-[#3b3b3b] bg-[#2a2a2a] p-4">
+              <div className="rounded-lg border border-[#2b2b31] bg-[#16161a] p-4">
                 <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                   <p className="text-sm font-semibold text-[#d4d4d4]">Visão em {refCurrency}</p>
                   <span className="text-xs text-[#999999]">Pela cotação atual</span>
@@ -594,7 +594,7 @@ export function ConsolidatedTab({
                 </p>
               </div>
             ) : (
-              <div className="rounded-lg border border-[#3b3b3b] bg-[#2a2a2a] p-4">
+              <div className="rounded-lg border border-[#2b2b31] bg-[#16161a] p-4">
                 <p className="text-sm font-semibold text-[#d4d4d4]">Visão em {refCurrency}</p>
                 <p className="mt-1 text-xs text-[#999999]">
                   {conversionUnavailable
@@ -608,7 +608,7 @@ export function ConsolidatedTab({
 
         {/* Per-table breakdown stays available without repeating the main summary. */}
         {perTable.length > 1 && (
-          <details className="group border-b border-[#3b3b3b] px-5 py-3">
+          <details className="group border-b border-[#2b2b31] px-5 py-3">
             <summary className="cursor-pointer text-xs font-medium text-[#a080f0] hover:text-[#d4d4d4]">
               Ver saldo por tabela ({perTable.length})
             </summary>
@@ -616,7 +616,7 @@ export function ConsolidatedTab({
               {perTable.map((t) => {
                 const bal = t.income.minus(t.expense)
                 return (
-                  <div key={t.id} className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3">
+                  <div key={t.id} className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-3">
                     <div className="flex items-center gap-1.5 mb-1.5">
                       <span className="text-xs font-medium text-[#d4d4d4] truncate">{t.name}</span>
                       <span className="text-xs text-[#999999]">{t.currency}</span>
@@ -663,7 +663,7 @@ export function ConsolidatedTab({
           <select
             value={categoryFilter ?? ''}
             onChange={(e) => onCategoryFilterChange(e.target.value || null)}
-            className="w-full bg-[#2a2a2a] border border-[#3b3b3b] text-[#d4d4d4] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#7c3aed]"
+            className="w-full bg-[#16161a] border border-[#2b2b31] text-[#d4d4d4] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#7c3aed]"
           >
             <option value="">Todos</option>
             {categories.map((cat) => (
@@ -676,8 +676,8 @@ export function ConsolidatedTab({
 
         {/* Transactions table */}
         <table className="w-full">
-          <thead className="sticky top-0 bg-[#232323] z-10">
-            <tr className="border-b border-[#3b3b3b]">
+          <thead className="sticky top-0 bg-[#16161a] z-10">
+            <tr className="border-b border-[#2b2b31]">
               <th className="pl-4 pr-2 py-2 w-28 text-left text-[10px] font-semibold uppercase tracking-wider text-[#999999]">
                 Data
               </th>
@@ -723,12 +723,12 @@ export function ConsolidatedTab({
               return (
                 <React.Fragment key={`${tx.tableId}:${tx.id}`}>
                   <tr
-                    className={`group border-b border-[#3b3b3b] hover:bg-[#2a2a2a] transition-colors ${
+                    className={`group border-b border-[#2b2b31] hover:bg-[#222227] transition-colors ${
                       isParent ? 'opacity-40' : ''
                     }`}
                   >
                     <td className="pl-4 pr-2 py-2 w-28">
-                      <span className="inline-flex items-center gap-1 text-xs text-[#999999] tabular-nums bg-[#2a2a2a] px-1.5 py-0.5 rounded">
+                      <span className="inline-flex items-center gap-1 text-xs text-[#999999] tabular-nums bg-[#16161a] px-1.5 py-0.5 rounded">
                         <svg
                           width="9"
                           height="9"
@@ -749,7 +749,7 @@ export function ConsolidatedTab({
                     <td className="py-2 pr-2">
                       <div className="flex items-center gap-1.5 min-w-0">
                         {tx.linkedTransactionId && (
-                          <span className="shrink-0 inline-flex items-center gap-1 rounded bg-[#2a2a2a] px-1.5 py-0.5 text-[10px] text-[#999999] max-w-[260px]">
+                          <span className="shrink-0 inline-flex items-center gap-1 rounded bg-[#16161a] px-1.5 py-0.5 text-[10px] text-[#999999] max-w-[260px]">
                             <svg
                               width="10"
                               height="10"
@@ -787,7 +787,7 @@ export function ConsolidatedTab({
                                   desc: tx.description
                                 })
                               }
-                              className="p-0.5 rounded text-[#666666] hover:text-[#e04040] hover:bg-[#2a2a2a] opacity-0 group-hover:opacity-100 transition-all shrink-0"
+                              className="p-0.5 rounded text-[#666666] hover:text-[#e04040] hover:bg-[#222227] opacity-0 group-hover:opacity-100 transition-all shrink-0"
                               title="Desvincular"
                             >
                               <svg
@@ -806,7 +806,7 @@ export function ConsolidatedTab({
                         )}
                         {detailLink && (
                           <span
-                            className="shrink-0 inline-flex items-center gap-1 rounded bg-[#2a2a2a] px-1.5 py-0.5 text-[10px] text-[#999999] max-w-[260px]"
+                            className="shrink-0 inline-flex items-center gap-1 rounded bg-[#16161a] px-1.5 py-0.5 text-[10px] text-[#999999] max-w-[260px]"
                             title={`Vinculado ao item ${detailLink.detailName} da fatura ${detailLink.parentName} — ${detailLink.tableName}`}
                           >
                             <span aria-hidden="true">↔</span>
@@ -818,7 +818,7 @@ export function ConsolidatedTab({
                         )}
                         {tx.currencyTransferId && (
                           <span
-                            className="shrink-0 rounded bg-[#2a2a2a] px-1.5 py-0.5 text-[10px] text-[#a080f0]"
+                            className="shrink-0 rounded bg-[#16161a] px-1.5 py-0.5 text-[10px] text-[#a080f0]"
                             title="Transferência entre moedas; veja o par na tabela financeira"
                           >
                             Câmbio
@@ -827,7 +827,7 @@ export function ConsolidatedTab({
                         <span className="text-sm text-[#d4d4d4] truncate">{tx.description}</span>
                         {isParent && children.length > 0 && (
                           <span
-                            className="text-[10px] text-[#999999] bg-[#2a2a2a] px-1.5 py-0.5 rounded shrink-0"
+                            className="text-[10px] text-[#999999] bg-[#16161a] px-1.5 py-0.5 rounded shrink-0"
                             title={children
                               .map(
                                 (c) => `${c.description} (${formatDateBR(c.date)}) — ${c.tableName}`
@@ -846,8 +846,8 @@ export function ConsolidatedTab({
                       <span
                         className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
                           tx.type === 'income'
-                            ? 'bg-[#3b3b3b] text-[#46d478]'
-                            : 'bg-[#3b3b3b] text-[#e04040]'
+                            ? 'bg-[#2a2a30] text-[#46d478]'
+                            : 'bg-[#2a2a30] text-[#e04040]'
                         }`}
                       >
                         {tx.type === 'income' ? '↑ Entrada' : '↓ Saída'}
@@ -863,7 +863,7 @@ export function ConsolidatedTab({
                       </span>
                     </td>
                     <td className="py-2 pr-2 w-24">
-                      <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-[#2a2a2a] text-[#999999] truncate block max-w-[80px]">
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-[#16161a] text-[#999999] truncate block max-w-[80px]">
                         {tx.tableName}
                       </span>
                     </td>
@@ -875,8 +875,8 @@ export function ConsolidatedTab({
                           }
                           className={`p-1 rounded border transition-colors ${
                             isLinking
-                              ? 'border-[#a080f0] text-[#a080f0] bg-[#2a2a2a]'
-                              : 'border-[#3b3b3b] text-[#666666] hover:text-[#a080f0] hover:border-[#a080f0]'
+                              ? 'border-[#a080f0] text-[#a080f0] bg-[#16161a]'
+                              : 'border-[#2b2b31] text-[#666666] hover:text-[#a080f0] hover:border-[#a080f0]'
                           }`}
                           title="Vincular a transação de outra tabela"
                         >
@@ -898,7 +898,7 @@ export function ConsolidatedTab({
                   {isLinking && (
                     <tr
                       key={`${tx.tableId}:${tx.id}:link`}
-                      className="border-b border-[#3b3b3b] bg-[#1b1b1b]"
+                      className="border-b border-[#2b2b31] bg-[#101014]"
                     >
                       <td colSpan={7} className="px-4 py-2">
                         <div className="flex items-center justify-between">
@@ -925,7 +925,7 @@ export function ConsolidatedTab({
                                     onLinkTransaction(tx.tableId, tx.id, candidate.id)
                                     setLinkingTx(null)
                                   }}
-                                  className="w-full flex items-center gap-2 px-2 py-1 rounded hover:bg-[#2a2a2a] transition-colors text-left"
+                                  className="w-full flex items-center gap-2 px-2 py-1 rounded hover:bg-[#222227] transition-colors text-left"
                                 >
                                   <span className="text-[10px] tabular-nums text-[#999999] w-20 shrink-0">
                                     {formatDateBR(candidate.date)}
@@ -965,7 +965,7 @@ export function ConsolidatedTab({
                                         )
                                         setLinkingTx(null)
                                       }}
-                                      className="ml-20 w-[calc(100%-5rem)] flex items-center gap-2 px-2 py-1 rounded border-l border-[#3b3b3b] hover:bg-[#2a2a2a] text-left"
+                                      className="ml-20 w-[calc(100%-5rem)] flex items-center gap-2 px-2 py-1 rounded border-l border-[#2b2b31] hover:bg-[#222227] text-left"
                                     >
                                       <span className="text-[10px] text-[#a080f0] shrink-0">
                                         Item da fatura

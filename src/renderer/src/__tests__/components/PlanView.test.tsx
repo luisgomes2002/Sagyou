@@ -128,20 +128,20 @@ describe('Planejamento', () => {
     render(<PlanView />)
     const dayBlock = screen.getByText('Academia').closest('div[style*="background-color"]')
     expect(dayBlock).toHaveStyle({
-      backgroundColor: '#2a2a2a',
+      backgroundColor: '#16161a',
       borderWidth: '1px',
       borderStyle: 'dashed',
-      borderColor: '#777777'
+      borderColor: '#3b3b42'
     })
     expect(screen.getByText('07:00–08:00')).toHaveStyle({ color: '#7c3aed' })
 
     fireEvent.click(screen.getByRole('button', { name: 'Semana' }))
     const weekBlock = screen.getByText('Academia').closest('div[style*="background-color"]')
     expect(weekBlock).toHaveStyle({
-      backgroundColor: '#2a2a2a',
+      backgroundColor: '#16161a',
       borderWidth: '1px',
       borderStyle: 'dashed',
-      borderColor: '#777777'
+      borderColor: '#3b3b42'
     })
   })
 

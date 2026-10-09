@@ -84,7 +84,7 @@ export function AIConfigPanel({
           const raw = e.target.value.trim()
           setConfig((c) => ({ ...c, [key]: raw === '' ? undefined : Number(raw) }))
         }}
-        className="px-2.5 py-1.5 rounded-md bg-[#1b1b1b] border border-[#3b3b3b] text-sm text-[#d4d4d4] placeholder:text-[#666666] focus:outline-none focus:border-[#7c3aed]"
+        className="px-2.5 py-1.5 rounded-md bg-[#101014] border border-[#2b2b31] text-sm text-[#d4d4d4] placeholder:text-[#666666] focus:outline-none focus:border-[#7c3aed]"
       />
     </label>
   )
@@ -102,7 +102,7 @@ export function AIConfigPanel({
         value={typeof config[key] === 'string' ? (config[key] as string) : ''}
         placeholder={placeholder}
         onChange={(e) => setConfig((c) => ({ ...c, [key]: e.target.value }))}
-        className="px-2.5 py-1.5 rounded-md bg-[#1b1b1b] border border-[#3b3b3b] text-sm text-[#d4d4d4] placeholder:text-[#666666] focus:outline-none focus:border-[#7c3aed]"
+        className="px-2.5 py-1.5 rounded-md bg-[#101014] border border-[#2b2b31] text-sm text-[#d4d4d4] placeholder:text-[#666666] focus:outline-none focus:border-[#7c3aed]"
       />
     </label>
   )
@@ -134,7 +134,7 @@ export function AIConfigPanel({
         return { ...c, codeAgent: Object.keys(cleaned).length ? cleaned : undefined }
       })
     const inputClass =
-      'px-2.5 py-1.5 rounded-md bg-[#1b1b1b] border border-[#3b3b3b] text-sm text-[#d4d4d4] placeholder:text-[#666666] focus:outline-none focus:border-[#7c3aed]'
+      'px-2.5 py-1.5 rounded-md bg-[#101014] border border-[#2b2b31] text-sm text-[#d4d4d4] placeholder:text-[#666666] focus:outline-none focus:border-[#7c3aed]'
     const selectEl = options ? (
       <select
         value={current}
@@ -168,7 +168,7 @@ export function AIConfigPanel({
               onClick={loader.onLoad}
               disabled={loader.loading}
               title="Carregar modelos do endpoint do agente"
-              className="shrink-0 px-2 py-1.5 rounded-md bg-[#2a2a2a] border border-[#3b3b3b] text-[#999999] hover:text-[#d4d4d4] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="shrink-0 px-2 py-1.5 rounded-md bg-[#16161a] border border-[#2b2b31] text-[#999999] hover:text-[#d4d4d4] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               {loader.loading ? (
                 <div className="w-3.5 h-3.5 rounded-full border-2 border-[#7c3aed] border-t-transparent animate-spin" />
@@ -196,7 +196,7 @@ export function AIConfigPanel({
   }
 
   return (
-    <div className="max-h-[70vh] overflow-y-auto overscroll-contain px-6 py-4 border-b border-[#3b3b3b] bg-[#232323] shrink-0">
+    <div className="max-h-[70vh] overflow-y-auto overscroll-contain px-6 py-4 border-b border-[#2b2b31] bg-[#16161a] shrink-0">
       <span className="text-[11px] font-medium text-[#999999]">Chat</span>
       <p className="mt-1 mb-2 text-[11px] leading-relaxed text-[#666666]">
         Provider e modelo que o assistente usa para <b>conversar com você</b> no chat — ler seus
@@ -243,7 +243,7 @@ export function AIConfigPanel({
                   return { ...c, model, ...(shouldFill ? { baseUrl: url } : {}) }
                 })
               }}
-              className="flex-1 min-w-0 px-2.5 py-1.5 rounded-md bg-[#1b1b1b] border border-[#3b3b3b] text-sm text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed]"
+              className="flex-1 min-w-0 px-2.5 py-1.5 rounded-md bg-[#101014] border border-[#2b2b31] text-sm text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed]"
             >
               {models.length === 0 && (
                 <option value={config.model || ''}>{config.model || 'Carregue os modelos…'}</option>
@@ -258,7 +258,7 @@ export function AIConfigPanel({
               onClick={handleLoadModels}
               disabled={loadingModels || config.baseUrl.trim() === ''}
               title="Carregar modelos do endpoint"
-              className="shrink-0 px-2 py-1.5 rounded-md bg-[#2a2a2a] border border-[#3b3b3b] text-[#999999] hover:text-[#d4d4d4] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="shrink-0 px-2 py-1.5 rounded-md bg-[#16161a] border border-[#2b2b31] text-[#999999] hover:text-[#d4d4d4] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               {loadingModels ? (
                 <div className="w-3.5 h-3.5 rounded-full border-2 border-[#7c3aed] border-t-transparent animate-spin" />
@@ -288,7 +288,7 @@ export function AIConfigPanel({
             onChange={(e) =>
               setConfig((c) => ({ ...c, modelComplex: e.target.value || undefined }))
             }
-            className="px-2.5 py-1.5 rounded-md bg-[#1b1b1b] border border-[#3b3b3b] text-sm text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed]"
+            className="px-2.5 py-1.5 rounded-md bg-[#101014] border border-[#2b2b31] text-sm text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed]"
           >
             <option value="">Mesmo do principal</option>
             {/* The loaded list, plus whatever is stored (may not be listed yet). */}
@@ -329,7 +329,7 @@ export function AIConfigPanel({
                 | undefined
             }))
           }
-          className="px-2.5 py-1.5 rounded-md bg-[#1b1b1b] border border-[#3b3b3b] text-sm text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed]"
+          className="px-2.5 py-1.5 rounded-md bg-[#101014] border border-[#2b2b31] text-sm text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed]"
         >
           <option value="">Padrão do provedor</option>
           <option value="low">Baixo</option>
@@ -354,7 +354,7 @@ export function AIConfigPanel({
                 maxSteps: raw === '' ? undefined : Number(raw)
               }))
             }}
-            className="px-2.5 py-1.5 rounded-md bg-[#1b1b1b] border border-[#3b3b3b] text-sm text-[#d4d4d4] placeholder:text-[#666666] focus:outline-none focus:border-[#7c3aed]"
+            className="px-2.5 py-1.5 rounded-md bg-[#101014] border border-[#2b2b31] text-sm text-[#d4d4d4] placeholder:text-[#666666] focus:outline-none focus:border-[#7c3aed]"
           />
         </label>
         <div className="pt-5">
@@ -409,7 +409,7 @@ export function AIConfigPanel({
                 timeoutMs: raw === '' ? undefined : Math.round(Number(raw) * 1000)
               }))
             }}
-            className="px-2.5 py-1.5 rounded-md bg-[#1b1b1b] border border-[#3b3b3b] text-sm text-[#d4d4d4] placeholder:text-[#666666] focus:outline-none focus:border-[#7c3aed]"
+            className="px-2.5 py-1.5 rounded-md bg-[#101014] border border-[#2b2b31] text-sm text-[#d4d4d4] placeholder:text-[#666666] focus:outline-none focus:border-[#7c3aed]"
           />
         </label>
         <p className="text-[11px] text-[#666666] pt-5 leading-relaxed">
@@ -447,7 +447,7 @@ export function AIConfigPanel({
         </p>
       </div>
 
-      <div className="mt-3 pt-3 border-t border-[#3b3b3b]">
+      <div className="mt-3 pt-3 border-t border-[#2b2b31]">
         <span className="text-[11px] font-medium text-[#999999]">Agente de Código</span>
         <p className="mt-1 mb-2 text-[11px] leading-relaxed text-[#666666]">
           Modelo que <b>escreve as alterações nos seus arquivos</b> quando o assistente decide mexer
@@ -457,7 +457,7 @@ export function AIConfigPanel({
           custo zero). Como editar código é a parte pesada, costuma valer um modelo melhor aqui do
           que no chat.
         </p>
-        <div className="mb-3 rounded-lg border border-[#3b3b3b] bg-[#202020] p-3">
+        <div className="mb-3 rounded-lg border border-[#2b2b31] bg-[#16161a] p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <p className="text-[11px] font-medium text-[#d4d4d4]">Harness de execução</p>
@@ -468,7 +468,7 @@ export function AIConfigPanel({
             </div>
             <div className="flex items-center gap-2">
               {config.codeHarness === 'sagyou' && (
-                <span className="rounded-full border border-[#3b3b3b] bg-[#2a2a2a] px-2 py-0.5 text-[10px] font-medium text-[#e8bc70]">
+                <span className="rounded-full border border-[#2b2b31] bg-[#16161a] px-2 py-0.5 text-[10px] font-medium text-[#e8bc70]">
                   EM TESTE
                 </span>
               )}
@@ -514,8 +514,8 @@ export function AIConfigPanel({
                   className={
                     'rounded-md border px-2.5 py-2 text-left transition-colors ' +
                     (selected
-                      ? 'border-[#a080f0] bg-[#3b3b3b] text-[#e3dcff]'
-                      : 'border-[#3b3b3b] bg-[#181818] text-[#b0b0b0] hover:border-[#666666]')
+                      ? 'border-[#a080f0] bg-[#2a2a30] text-[#e3dcff]'
+                      : 'border-[#2b2b31] bg-[#16161a] text-[#b0b0b0] hover:border-[#666666]')
                   }
                   aria-pressed={selected}
                 >
@@ -566,7 +566,7 @@ export function AIConfigPanel({
         )}
       </div>
 
-      <div className="mt-3 pt-3 border-t border-[#3b3b3b]">
+      <div className="mt-3 pt-3 border-t border-[#2b2b31]">
         <div className="flex items-center justify-between mb-2">
           <span className="text-[11px] font-medium text-[#999999]">Skills</span>
           <div className="flex items-center gap-3">
@@ -623,7 +623,7 @@ export function AIConfigPanel({
               value={editingSkill.name}
               onChange={(e) => setEditingSkill((s) => (s ? { ...s, name: e.target.value } : s))}
               placeholder="Nome da skill (ex: criar-projeto)"
-              className="w-full px-2.5 py-1.5 rounded-md bg-[#1b1b1b] border border-[#3b3b3b] text-sm text-[#d4d4d4] placeholder:text-[#666666] focus:outline-none focus:border-[#7c3aed]"
+              className="w-full px-2.5 py-1.5 rounded-md bg-[#101014] border border-[#2b2b31] text-sm text-[#d4d4d4] placeholder:text-[#666666] focus:outline-none focus:border-[#7c3aed]"
             />
             <textarea
               aria-label="Conteúdo da skill"
@@ -631,7 +631,7 @@ export function AIConfigPanel({
               onChange={(e) => setEditingSkill((s) => (s ? { ...s, body: e.target.value } : s))}
               rows={8}
               spellCheck={false}
-              className="w-full resize-y px-2.5 py-1.5 rounded-md bg-[#1b1b1b] border border-[#3b3b3b] text-[11px] font-mono text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed]"
+              className="w-full resize-y px-2.5 py-1.5 rounded-md bg-[#101014] border border-[#2b2b31] text-[11px] font-mono text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed]"
             />
             <p className="text-[10px] text-[#666666] leading-relaxed">
               O conteúdo da skill é enviado como contexto no chat. Use markdown.
@@ -662,7 +662,7 @@ export function AIConfigPanel({
                 rest of the disk. Checked = required (default). Greyed when ai-jail
                 isn't installed, with a way to open onboarding. Unchecking it
                 runs shell commands unconfined. */}
-      <div className="mt-4 pt-4 border-t border-[#3b3b3b]">
+      <div className="mt-4 pt-4 border-t border-[#2b2b31]">
         <label
           className={`flex items-center gap-2 cursor-pointer select-none ${
             jailStatus && !jailStatus.available ? 'opacity-50' : ''

@@ -232,7 +232,7 @@ export function FinancialView({
           />
         ) : (
           <>
-            <div className="flex items-center justify-between px-5 py-3 border-b border-[#3b3b3b] shrink-0">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-[#2b2b31] shrink-0">
               <div className="flex items-center gap-3">
                 {ts.activeTab === 'consolidated' || ts.activeTab === 'receipts' ? (
                   <>
@@ -253,25 +253,25 @@ export function FinancialView({
                       {ts.activeTab === 'receipts' ? 'Comprovantes' : 'Consolidado'} ·{' '}
                       {activeProfile?.name ?? 'Perfil'}
                     </h2>
-                    <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-[#3b3b3b] text-[#a080f0]">
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-[#2a2a30] text-[#a080f0]">
                       {profileLists.length} tabela{profileLists.length !== 1 ? 's' : ''}
                     </span>
                   </>
                 ) : (
                   <>
                     <h2 className="text-sm font-semibold text-[#d4d4d4]">{activeList.name}</h2>
-                    <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-[#3b3b3b] text-[#a080f0]">
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-[#2a2a30] text-[#a080f0]">
                       {CURRENCY_CONFIG[currency].symbol} {currency}
                     </span>
                   </>
                 )}
               </div>
-              <div className="flex items-center p-0.5 rounded-lg bg-[#2a2a2a] border border-[#3b3b3b]">
+              <div className="flex items-center p-0.5 rounded-lg bg-[#16161a] border border-[#2b2b31]">
                 <button
                   onClick={() => updateTs({ activeTab: 'shopping' })}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
                     ts.activeTab === 'shopping'
-                      ? 'bg-[#3b3b3b] text-[#d4d4d4]'
+                      ? 'bg-[#2a2a30] text-[#d4d4d4]'
                       : 'text-[#999999] hover:text-[#d4d4d4]'
                   }`}
                 >
@@ -293,7 +293,7 @@ export function FinancialView({
                   onClick={() => updateTs({ activeTab: 'finance' })}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
                     ts.activeTab === 'finance'
-                      ? 'bg-[#3b3b3b] text-[#d4d4d4]'
+                      ? 'bg-[#2a2a30] text-[#d4d4d4]'
                       : 'text-[#999999] hover:text-[#d4d4d4]'
                   }`}
                 >
@@ -315,7 +315,7 @@ export function FinancialView({
                   onClick={() => updateTs({ activeTab: 'analytics' })}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
                     ts.activeTab === 'analytics'
-                      ? 'bg-[#3b3b3b] text-[#d4d4d4]'
+                      ? 'bg-[#2a2a30] text-[#d4d4d4]'
                       : 'text-[#999999] hover:text-[#d4d4d4]'
                   }`}
                 >
@@ -336,7 +336,7 @@ export function FinancialView({
                   onClick={() => updateTs({ activeTab: 'yields' })}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
                     ts.activeTab === 'yields'
-                      ? 'bg-[#3b3b3b] text-[#d4d4d4]'
+                      ? 'bg-[#2a2a30] text-[#d4d4d4]'
                       : 'text-[#999999] hover:text-[#d4d4d4]'
                   }`}
                 >
@@ -357,7 +357,7 @@ export function FinancialView({
                   onClick={() => updateTs({ activeTab: 'receipts' })}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
                     ts.activeTab === 'receipts'
-                      ? 'bg-[#3b3b3b] text-[#d4d4d4]'
+                      ? 'bg-[#2a2a30] text-[#d4d4d4]'
                       : 'text-[#999999] hover:text-[#d4d4d4]'
                   }`}
                 >
@@ -367,7 +367,7 @@ export function FinancialView({
                   onClick={() => updateTs({ activeTab: 'consolidated' })}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
                     ts.activeTab === 'consolidated'
-                      ? 'bg-[#3b3b3b] text-[#d4d4d4]'
+                      ? 'bg-[#2a2a30] text-[#d4d4d4]'
                       : 'text-[#999999] hover:text-[#d4d4d4]'
                   }`}
                 >

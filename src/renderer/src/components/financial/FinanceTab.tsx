@@ -174,10 +174,10 @@ export function FinanceTab({
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
       <div className="flex-1 overflow-y-auto">
         {/* Month navigator */}
-        <div className="flex items-center gap-3 px-5 py-3 border-b border-[#3b3b3b]">
+        <div className="flex items-center gap-3 px-5 py-3 border-b border-[#2b2b31]">
           <button
             onClick={prevMonth}
-            className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors"
+            className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#222227] transition-colors"
           >
             <svg
               width="12"
@@ -199,7 +199,7 @@ export function FinanceTab({
           />
           <button
             onClick={nextMonth}
-            className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors"
+            className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#222227] transition-colors"
           >
             <svg
               width="12"
@@ -221,8 +221,8 @@ export function FinanceTab({
         </div>
 
         {/* Summary cards */}
-        <div className="grid grid-cols-2 xl:grid-cols-5 gap-3 px-5 py-4 border-b border-[#3b3b3b]">
-          <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3">
+        <div className="grid grid-cols-2 xl:grid-cols-5 gap-3 px-5 py-4 border-b border-[#2b2b31]">
+          <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-3">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-1">
               Entradas
             </p>
@@ -230,7 +230,7 @@ export function FinanceTab({
               {formatCurrency(monthIncome, currency)}
             </p>
           </div>
-          <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3">
+          <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-3">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-1">
               Saídas
             </p>
@@ -238,7 +238,7 @@ export function FinanceTab({
               {formatCurrency(monthExpense, currency)}
             </p>
           </div>
-          <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3">
+          <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-3">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-1">
               Saldo do Mês
             </p>
@@ -248,7 +248,7 @@ export function FinanceTab({
               {formatCurrency(monthBalance, currency)}
             </p>
           </div>
-          <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3">
+          <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-3">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-[#a080f0] mb-1">
               {selectedMonthEnd < today ? 'Saldo até o mês' : 'Saldo até hoje'}
             </p>
@@ -261,7 +261,7 @@ export function FinanceTab({
               {selectedMonthEnd < today ? 'Até o mês selecionado' : 'Lançamentos até hoje'}
             </p>
           </div>
-          <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3">
+          <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-3">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-[#a080f0] mb-1">
               Saldo projetado
             </p>
@@ -275,7 +275,7 @@ export function FinanceTab({
         </div>
 
         {/* Goals */}
-        <div className="px-5 pt-4 pb-5 border-b border-[#3b3b3b]">
+        <div className="px-5 pt-4 pb-5 border-b border-[#2b2b31]">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <svg
@@ -302,7 +302,7 @@ export function FinanceTab({
               {list.goals.length > 0 && (
                 <button
                   onClick={() => setHistoryOpen(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-medium text-[#999999] border border-[#3b3b3b] hover:bg-[#2a2a2a] transition-colors"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-medium text-[#999999] border border-[#2b2b31] hover:bg-[#222227] transition-colors"
                 >
                   <svg
                     width="9"
@@ -322,7 +322,7 @@ export function FinanceTab({
               <button
                 type="button"
                 onClick={() => setGoalModal({ open: true })}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] text-[10px] font-medium text-[#d4d4d4] hover:bg-[#3b3b3b] transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#16161a] border border-[#2b2b31] text-[10px] font-medium text-[#d4d4d4] hover:bg-[#2a2a30] transition-colors"
               >
                 <svg
                   width="9"
@@ -341,8 +341,8 @@ export function FinanceTab({
           </div>
 
           {list.goals.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 py-8 rounded-xl border border-dashed border-[#3b3b3b]">
-              <div className="w-12 h-12 rounded-full bg-[#2a2a2a] flex items-center justify-center">
+            <div className="flex flex-col items-center gap-3 py-8 rounded-xl border border-dashed border-[#2b2b31]">
+              <div className="w-12 h-12 rounded-full bg-[#16161a] flex items-center justify-center">
                 <svg
                   width="22"
                   height="22"
@@ -364,14 +364,14 @@ export function FinanceTab({
               </div>
               <button
                 onClick={() => setGoalModal({ open: true })}
-                className="px-3 py-1.5 rounded-lg bg-[#3b3b3b] text-[10px] font-medium text-[#a080f0] hover:bg-[#4a4a4a] transition-colors"
+                className="px-3 py-1.5 rounded-lg bg-[#2a2a30] text-[10px] font-medium text-[#a080f0] hover:bg-[#303036] transition-colors"
               >
                 Criar primeiro objetivo
               </button>
             </div>
           ) : visibleGoals.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 py-8 rounded-xl border border-dashed border-[#3b3b3b] bg-[#2a2a2a]">
-              <div className="w-12 h-12 rounded-full bg-[#2a2a2a] flex items-center justify-center">
+            <div className="flex flex-col items-center gap-3 py-8 rounded-xl border border-dashed border-[#2b2b31] bg-[#16161a]">
+              <div className="w-12 h-12 rounded-full bg-[#16161a] flex items-center justify-center">
                 <svg
                   width="22"
                   height="22"
@@ -391,7 +391,7 @@ export function FinanceTab({
               </div>
               <button
                 onClick={() => setHistoryOpen(true)}
-                className="px-3 py-1.5 rounded-lg bg-[#3b3b3b] text-[10px] font-medium text-[#69b780] hover:bg-[#4a4a4a] transition-colors"
+                className="px-3 py-1.5 rounded-lg bg-[#2a2a30] text-[10px] font-medium text-[#69b780] hover:bg-[#303036] transition-colors"
               >
                 Ver histórico
               </button>
@@ -452,7 +452,7 @@ export function FinanceTab({
             </button>
           </div>
           {showCategories && (
-            <div className="mb-3 rounded-lg border border-[#3b3b3b] bg-[#232323] p-3">
+            <div className="mb-3 rounded-lg border border-[#2b2b31] bg-[#16161a] p-3">
               <p className="mb-2 text-xs text-[#d4d4d4]">
                 Etiquetas de {profile?.name ?? 'este perfil'}
               </p>
@@ -465,7 +465,7 @@ export function FinanceTab({
                     if (event.key === 'Enter') saveCategory()
                   }}
                   placeholder="Ex.: Murasaki Japão"
-                  className="min-w-0 flex-1 rounded border border-[#3b3b3b] bg-[#1b1b1b] px-2 py-1.5 text-xs text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed]"
+                  className="min-w-0 flex-1 rounded border border-[#2b2b31] bg-[#101014] px-2 py-1.5 text-xs text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed]"
                 />
                 <button
                   type="button"
@@ -486,7 +486,7 @@ export function FinanceTab({
                   {profile?.customCategories?.map((category) => (
                     <span
                       key={category}
-                      className="inline-flex items-center gap-1 rounded border border-[#3b3b3b] px-2 py-1 text-xs text-[#d4d4d4]"
+                      className="inline-flex items-center gap-1 rounded border border-[#2b2b31] px-2 py-1 text-xs text-[#d4d4d4]"
                     >
                       {category}
                       <button
@@ -507,7 +507,7 @@ export function FinanceTab({
           <select
             value={categoryFilter ?? ''}
             onChange={(e) => onCategoryFilterChange(e.target.value || null)}
-            className="w-full bg-[#2a2a2a] border border-[#3b3b3b] text-[#d4d4d4] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#7c3aed]"
+            className="w-full bg-[#16161a] border border-[#2b2b31] text-[#d4d4d4] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#7c3aed]"
           >
             <option value="">Todos</option>
             {categories.map((cat) => (
@@ -529,7 +529,7 @@ export function FinanceTab({
                 key={value}
                 type="button"
                 onClick={() => setReceiptFilter(value)}
-                className={`rounded border border-[#3b3b3b] px-2.5 py-1 transition-colors ${receiptFilter === value ? 'bg-[#3b3b3b] text-[#d4d4d4]' : 'bg-[#2a2a2a] text-[#999999] hover:bg-[#3b3b3b] hover:text-white'}`}
+                className={`rounded border border-[#2b2b31] px-2.5 py-1 transition-colors ${receiptFilter === value ? 'bg-[#2a2a30] text-[#d4d4d4]' : 'bg-[#16161a] text-[#999999] hover:bg-[#2a2a30] hover:text-white'}`}
               >
                 {label}
               </button>
@@ -543,8 +543,8 @@ export function FinanceTab({
         </div>
 
         <table className="w-full">
-          <thead className="sticky top-0 bg-[#232323] z-10">
-            <tr className="border-b border-[#3b3b3b]">
+          <thead className="sticky top-0 bg-[#16161a] z-10">
+            <tr className="border-b border-[#2b2b31]">
               <th className="pl-4 pr-2 py-2 w-28 text-left text-[10px] font-semibold uppercase tracking-wider text-[#999999]">
                 Data
               </th>

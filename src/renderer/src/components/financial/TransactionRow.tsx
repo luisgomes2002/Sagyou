@@ -55,7 +55,7 @@ export function AddTransactionRow({ currency, onAdd }: AddTransactionRowProps) {
   }
 
   return (
-    <tr className="border-b border-[#3b3b3b] hover:bg-[#2a2a2a] transition-colors">
+    <tr className="border-b border-[#2b2b31] hover:bg-[#222227] transition-colors">
       <td className="pl-4 pr-2 py-1.5 w-28">
         {dateEditing ? (
           <input
@@ -72,7 +72,7 @@ export function AddTransactionRow({ currency, onAdd }: AddTransactionRowProps) {
         ) : (
           <button
             onClick={() => setDateEditing(true)}
-            className="inline-flex items-center gap-1 text-xs text-[#999999] tabular-nums bg-[#2a2a2a] px-1.5 py-0.5 rounded hover:text-[#d4d4d4] transition-colors"
+            className="inline-flex items-center gap-1 text-xs text-[#999999] tabular-nums bg-[#16161a] px-1.5 py-0.5 rounded hover:text-[#d4d4d4] transition-colors"
           >
             <svg
               width="9"
@@ -115,7 +115,7 @@ export function AddTransactionRow({ currency, onAdd }: AddTransactionRowProps) {
         <button
           onClick={() => setType(type === 'income' ? 'expense' : 'income')}
           className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors ${
-            type === 'income' ? 'bg-[#3b3b3b] text-[#46d478]' : 'bg-[#3b3b3b] text-[#e04040]'
+            type === 'income' ? 'bg-[#2a2a30] text-[#46d478]' : 'bg-[#2a2a30] text-[#e04040]'
           }`}
         >
           {type === 'income' ? '↑ Entrada' : '↓ Saída'}
@@ -141,7 +141,7 @@ export function AddTransactionRow({ currency, onAdd }: AddTransactionRowProps) {
         <button
           onClick={submit}
           disabled={!description.trim() || !parseDecimalInput(amount, currency)?.greaterThan(0)}
-          className="p-1 rounded text-[#7c3aed] hover:bg-[#2a2a2a] disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+          className="p-1 rounded text-[#7c3aed] hover:bg-[#222227] disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
         >
           <svg
             width="11"
@@ -274,7 +274,7 @@ export function TransactionRow({
     <>
       <tr
         ref={searchRef}
-        className={`group border-b border-[#3b3b3b] hover:bg-[#2a2a2a] transition-colors ${searchFocusClass(!!searchTargetId)}`}
+        className={`group border-b border-[#2b2b31] hover:bg-[#222227] transition-colors ${searchFocusClass(!!searchTargetId)}`}
       >
         <td className="pl-4 pr-2 py-2 w-28">
           {readOnly ? (
@@ -293,12 +293,12 @@ export function TransactionRow({
                 blur(e)
                 if (e.key === 'Enter' || e.key === 'Escape') setDateEditing(false)
               }}
-              className="w-full bg-transparent text-xs text-[#999999] tabular-nums focus:outline-none focus:bg-[#1b1b1b] focus:px-1 rounded transition-all"
+              className="w-full bg-transparent text-xs text-[#999999] tabular-nums focus:outline-none focus:bg-[#101014] focus:px-1 rounded transition-all"
             />
           ) : (
             <button
               onClick={() => setDateEditing(true)}
-              className="inline-flex items-center gap-1 text-xs text-[#999999] tabular-nums bg-[#2a2a2a] px-1.5 py-0.5 rounded hover:text-[#d4d4d4] transition-colors"
+              className="inline-flex items-center gap-1 text-xs text-[#999999] tabular-nums bg-[#16161a] px-1.5 py-0.5 rounded hover:text-[#d4d4d4] transition-colors"
             >
               <svg
                 width="9"
@@ -338,7 +338,7 @@ export function TransactionRow({
             )}
             {linkedParent && (
               <span
-                className="shrink-0 inline-flex items-center gap-1 rounded bg-[#2a2a2a] px-1.5 py-0.5 text-[10px] text-[#999999] max-w-[220px] group/link"
+                className="shrink-0 inline-flex items-center gap-1 rounded bg-[#16161a] px-1.5 py-0.5 text-[10px] text-[#999999] max-w-[220px] group/link"
                 title={`Vinculado a: ${linkedParent.description} (${linkedParent.tableName} — ${formatDateBR(linkedParent.date)})`}
               >
                 <svg
@@ -366,7 +366,7 @@ export function TransactionRow({
                       e.stopPropagation()
                       onUnlink()
                     }}
-                    className="p-0.5 rounded text-[#666666] hover:text-[#e04040] hover:bg-[#2a2a2a] opacity-0 group-hover/link:opacity-100 transition-all shrink-0 ml-0.5"
+                    className="p-0.5 rounded text-[#666666] hover:text-[#e04040] hover:bg-[#222227] opacity-0 group-hover/link:opacity-100 transition-all shrink-0 ml-0.5"
                     title="Desvincular"
                   >
                     <svg
@@ -386,7 +386,7 @@ export function TransactionRow({
             )}
             {linkedInvoiceDetail && (
               <span
-                className="shrink-0 inline-flex items-center gap-1 rounded bg-[#2a2a2a] px-1.5 py-0.5 text-[10px] text-[#999999] max-w-[220px]"
+                className="shrink-0 inline-flex items-center gap-1 rounded bg-[#16161a] px-1.5 py-0.5 text-[10px] text-[#999999] max-w-[220px]"
                 title={`Vinculado ao item ${linkedInvoiceDetail.detail.description} da fatura ${linkedInvoiceDetail.parent.description} — ${linkedInvoiceDetail.tableName}`}
               >
                 <span aria-hidden="true">↔</span>
@@ -399,7 +399,7 @@ export function TransactionRow({
             )}
             {linkedChildren.length > 0 && (
               <span
-                className="shrink-0 inline-flex items-center gap-1 text-[10px] text-[#999999] bg-[#2a2a2a] px-1.5 py-0.5 rounded max-w-[220px]"
+                className="shrink-0 inline-flex items-center gap-1 text-[10px] text-[#999999] bg-[#16161a] px-1.5 py-0.5 rounded max-w-[220px]"
                 title={linkedChildren
                   .map((c) => `${c.description} (${formatDateBR(c.date)}) — ${c.tableName}`)
                   .join('\n')}
@@ -430,7 +430,7 @@ export function TransactionRow({
               <button
                 type="button"
                 onClick={() => setDetailsOpen((open) => !open)}
-                className="shrink-0 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-[#a080f0] hover:bg-[#2a2a2a] transition-colors"
+                className="shrink-0 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-[#a080f0] hover:bg-[#222227] transition-colors"
                 title="Detalhar esta transação"
               >
                 <svg
@@ -454,7 +454,7 @@ export function TransactionRow({
               <button
                 type="button"
                 onClick={() => setRecordOpen((open) => !open)}
-                className="shrink-0 inline-flex items-center gap-1 rounded bg-[#2a2a2a] px-1.5 py-0.5 text-[10px] text-[#d4d4d4] hover:bg-[#3b3b3b] transition-colors"
+                className="shrink-0 inline-flex items-center gap-1 rounded bg-[#16161a] px-1.5 py-0.5 text-[10px] text-[#d4d4d4] hover:bg-[#2a2a30] transition-colors"
                 title={
                   receiptCount
                     ? 'Abrir comprovantes desta transação'
@@ -491,7 +491,7 @@ export function TransactionRow({
                 onChange={(e) => setEditDesc(e.target.value)}
                 onBlur={commitDesc}
                 onKeyDown={blur}
-                className={`flex-1 min-w-0 bg-transparent text-sm focus:outline-none focus:bg-[#1b1b1b] focus:px-1.5 rounded transition-all ${
+                className={`flex-1 min-w-0 bg-transparent text-sm focus:outline-none focus:bg-[#101014] focus:px-1.5 rounded transition-all ${
                   tx.fromShopping ? 'text-[#a080f0]' : 'text-[#d4d4d4]'
                 }`}
               />
@@ -508,14 +508,14 @@ export function TransactionRow({
               onCommit={commitCat}
               onKeyDown={blur}
               placeholder="-"
-              className="w-full bg-transparent text-xs text-[#999999] placeholder-[#555555] focus:outline-none focus:bg-[#1b1b1b] focus:px-1 rounded transition-all"
+              className="w-full bg-transparent text-xs text-[#999999] placeholder-[#555555] focus:outline-none focus:bg-[#101014] focus:px-1 rounded transition-all"
             />
           )}
         </td>
         <td className="py-2 pr-2 w-20 text-center">
           <span
             className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
-              tx.type === 'income' ? 'bg-[#3b3b3b] text-[#46d478]' : 'bg-[#3b3b3b] text-[#e04040]'
+              tx.type === 'income' ? 'bg-[#2a2a30] text-[#46d478]' : 'bg-[#2a2a30] text-[#e04040]'
             }`}
           >
             {tx.type === 'income' ? '↑ Entrada' : '↓ Saída'}
@@ -540,7 +540,7 @@ export function TransactionRow({
                 onChange={(e) => setEditAmount(e.target.value)}
                 onBlur={commitAmount}
                 onKeyDown={blur}
-                className={`w-20 bg-transparent text-sm tabular-nums font-medium text-right focus:outline-none focus:bg-[#1b1b1b] focus:px-1 rounded transition-all ${
+                className={`w-20 bg-transparent text-sm tabular-nums font-medium text-right focus:outline-none focus:bg-[#101014] focus:px-1 rounded transition-all ${
                   tx.type === 'income' ? 'text-[#46d478]' : 'text-[#d4d4d4]'
                 }`}
               />
@@ -551,7 +551,7 @@ export function TransactionRow({
           {onDelete && (
             <button
               onClick={onDelete}
-              className="p-1 rounded text-[#3b3b3b] hover:text-[#e04040] hover:bg-[#2a2a2a] opacity-0 group-hover:opacity-100 transition-all"
+              className="p-1 rounded text-[#666666] hover:text-[#e04040] hover:bg-[#222227] opacity-0 group-hover:opacity-100 transition-all"
             >
               <svg
                 width="11"
@@ -569,7 +569,7 @@ export function TransactionRow({
         </td>
       </tr>
       {detailsOpen && !readOnly && (
-        <tr className="border-b border-[#3b3b3b]">
+        <tr className="border-b border-[#2b2b31]">
           <td colSpan={6} className="px-4 py-2.5">
             <TransactionDetails
               transaction={tx}
@@ -582,7 +582,7 @@ export function TransactionRow({
         </tr>
       )}
       {recordOpen && !readOnly && (
-        <tr className="border-b border-[#3b3b3b]">
+        <tr className="border-b border-[#2b2b31]">
           <td colSpan={6} className="px-4 py-2.5">
             <TransactionRecordPanel
               key={`${tx.id}:${tx.currencyTransferId ?? ''}`}

@@ -57,8 +57,8 @@ export function ProjectLinksDropdown({ links, activeLinkIds, onSelect }: Props) 
         onClick={handleOpen}
         className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs transition-colors border ${
           hasActive
-            ? 'border-[#3b3b3b] bg-[#2a2a2a] text-[#a080f0]'
-            : 'border-[#3b3b3b] bg-[#2a2a2a] text-[#999999] hover:text-[#d4d4d4]'
+            ? 'border-[#2b2b31] bg-[#16161a] text-[#a080f0]'
+            : 'border-[#2b2b31] bg-[#16161a] text-[#999999] hover:text-[#d4d4d4]'
         }`}
         title="Links do projeto"
       >
@@ -76,7 +76,7 @@ export function ProjectLinksDropdown({ links, activeLinkIds, onSelect }: Props) 
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div
-            className="fixed z-50 w-72 rounded-xl border border-[#3b3b3b] bg-[#1b1b1b] shadow-2xl py-1"
+            className="fixed z-50 w-72 rounded-xl border border-[#2b2b31] bg-[#101014] shadow-2xl py-1"
             style={{ top: menuPos.top, left: menuPos.left }}
           >
             <p className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-[#666666]">
@@ -92,7 +92,7 @@ export function ProjectLinksDropdown({ links, activeLinkIds, onSelect }: Props) 
                   key={link.id}
                   onClick={() => onSelect(link.id)}
                   className={`w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors group ${
-                    isActive ? 'bg-[#3b3b3b]' : 'hover:bg-[#2a2a2a]'
+                    isActive ? 'bg-[#2a2a30]' : 'hover:bg-[#222227]'
                   }`}
                 >
                   <div className={`w-3.5 h-3.5 rounded flex items-center justify-center shrink-0 border-2 transition-colors ${
@@ -149,14 +149,14 @@ export function ProjectLinksDropdown({ links, activeLinkIds, onSelect }: Props) 
             })}
             {activeLinks.length > 0 && (
               <>
-                <div className="border-t border-[#3b3b3b] my-1" />
+                <div className="border-t border-[#2b2b31] my-1" />
                 <button
                   onClick={() => {
                     navigator.clipboard.writeText(activeLinks.map((l) => l.url).join('\n'))
                     setCopied('__all__')
                     setTimeout(() => { setCopied(null); setOpen(false) }, 1200)
                   }}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#a080f0] hover:bg-[#2a2a2a] transition-colors"
+                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#a080f0] hover:bg-[#222227] transition-colors"
                 >
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <rect x="9" y="9" width="13" height="13" rx="2" />

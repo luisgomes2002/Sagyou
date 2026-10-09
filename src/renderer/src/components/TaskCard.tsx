@@ -63,7 +63,7 @@ export function TaskCard({ task, onEdit, onDelete, onView, onComplete, overlay =
       ref={overlay ? undefined : setNodeRef}
       style={overlay ? undefined : style}
       onClick={() => !overlay && onView?.(task)}
-      className={`group rounded-lg border border-[#3b3b3b] bg-[#2a2a2a] p-3 select-none transition-colors hover:bg-[#333333] hover:border-[#555555] ${overlay ? 'drag-overlay' : 'cursor-pointer cv-card'}`}
+      className={`group rounded-lg border border-[#2b2b31] bg-[#16161a] p-3 select-none transition-colors hover:bg-[#222227] hover:border-[#3b3b42] ${overlay ? 'drag-overlay' : 'cursor-pointer cv-card'}`}
     >
       {/* drag handle + actions */}
       <div className="flex items-start justify-between gap-2 mb-2">
@@ -90,8 +90,8 @@ export function TaskCard({ task, onEdit, onDelete, onView, onComplete, overlay =
               onClick={handleTimerToggle}
               className={`p-1 rounded transition-colors ${
                 isRunning
-                  ? 'text-[#20b858] bg-[#2a2a2a] hover:bg-[#3b3b3b]'
-                  : 'text-[#999999] hover:text-[#20b858] hover:bg-[#2a2a2a]'
+                  ? 'text-[#20b858] bg-[#16161a] hover:bg-[#2a2a30]'
+                  : 'text-[#999999] hover:text-[#20b858] hover:bg-[#222227]'
               }`}
               title={isRunning ? 'Pausar timer' : 'Iniciar timer'}
             >
@@ -111,7 +111,7 @@ export function TaskCard({ task, onEdit, onDelete, onView, onComplete, overlay =
           {onComplete && (
             <button
               onClick={(e) => { e.stopPropagation(); onComplete(task) }}
-              className="p-1 rounded text-[#999999] hover:text-[#20b858] hover:bg-[#2a2a2a] transition-colors"
+              className="p-1 rounded text-[#999999] hover:text-[#20b858] hover:bg-[#222227] transition-colors"
               title="Concluir task"
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -121,7 +121,7 @@ export function TaskCard({ task, onEdit, onDelete, onView, onComplete, overlay =
           )}
           <button
             onClick={(e) => { e.stopPropagation(); onEdit(task) }}
-            className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#3b3b3b] transition-colors"
+            className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a30] transition-colors"
             title="Editar"
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -131,7 +131,7 @@ export function TaskCard({ task, onEdit, onDelete, onView, onComplete, overlay =
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); onDelete(task) }}
-            className="p-1 rounded text-[#999999] hover:text-[#e04040] hover:bg-[#2a2a2a] transition-colors"
+            className="p-1 rounded text-[#999999] hover:text-[#e04040] hover:bg-[#222227] transition-colors"
             title="Deletar"
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -156,12 +156,12 @@ export function TaskCard({ task, onEdit, onDelete, onView, onComplete, overlay =
       {task.tags.length > 0 && (
         <div className="flex flex-wrap gap-1 mb-2">
           {task.tags.slice(0, 4).map((tag) => (
-            <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded bg-[#3b3b3b] text-[#999999]">
+            <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded bg-[#2a2a30] text-[#999999]">
               {tag}
             </span>
           ))}
           {task.tags.length > 4 && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#3b3b3b] text-[#999999]">
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#2a2a30] text-[#999999]">
               +{task.tags.length - 4}
             </span>
           )}

@@ -197,8 +197,8 @@ export function StickyNoteCard({
         style={{ left: localPos.x, top: localPos.y, width: localWidth }}
         onDoubleClick={(e) => e.stopPropagation()}
       >
-        <div className="relative rounded-md border border-transparent bg-transparent hover:border-[#555555] focus-within:border-[#a080f0]">
-          <div className="absolute -top-6 left-0 z-10 flex items-center gap-2 rounded-md border border-[#3b3b3b] bg-[#2a2a2a] px-2 py-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+        <div className="relative rounded-md border border-transparent bg-transparent hover:border-[#3b3b42] focus-within:border-[#a080f0]">
+          <div className="absolute -top-6 left-0 z-10 flex items-center gap-2 rounded-md border border-[#2b2b31] bg-[#16161a] px-2 py-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
             <button
               type="button"
               title="Arraste para mover o texto"
@@ -223,7 +223,7 @@ export function StickyNoteCard({
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') e.currentTarget.blur()
                 }}
-                className="w-12 rounded border border-[#4a4a4a] bg-[#1b1b1b] px-1 text-center text-[#d4d4d4] outline-none focus:border-[#a080f0]"
+                className="w-12 rounded border border-[#34343a] bg-[#101014] px-1 text-center text-[#d4d4d4] outline-none focus:border-[#a080f0]"
               />
             </label>
             <button
@@ -434,7 +434,7 @@ export function StickyNoteCard({
           }}
           onClick={(e) => e.stopPropagation()}
           onDoubleClick={(e) => e.stopPropagation()}
-          className="absolute left-1/2 -translate-x-1/2 -bottom-3 w-5 h-5 rounded-full border-2 border-[#1a1a1a] shadow-md opacity-0 group-hover:opacity-100 transition-all hover:scale-125 cursor-crosshair z-10"
+          className="absolute left-1/2 -translate-x-1/2 -bottom-3 w-5 h-5 rounded-full border-2 border-[#2b2b31] shadow-md opacity-0 group-hover:opacity-100 transition-all hover:scale-125 cursor-crosshair z-10"
           style={{ backgroundColor: accent }}
           title="Arraste até outra nota para conectar"
         >

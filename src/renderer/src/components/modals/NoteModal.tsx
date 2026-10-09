@@ -121,11 +121,11 @@ export function NoteModal({ note, onSave, onClose }: Props) {
   }
 
   return (
-    <div className="fixed inset-x-0 bottom-0 top-9 z-50 flex bg-[#0d0d0d] text-[#d4d4d4]">
+    <div className="fixed inset-x-0 bottom-0 top-9 z-50 flex bg-[#0b0b0f] text-[#d4d4d4]">
       {/* Main editor */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Toolbar */}
-        <div className="flex items-center gap-2 px-3 py-1.5 border-b border-[#232323] bg-[#0d0d0d] shrink-0">
+        <div className="flex items-center gap-2 px-3 py-1.5 border-b border-[#2b2b31] bg-[#0b0b0f] shrink-0">
           <button
             type="button"
             onClick={doSave}
@@ -136,14 +136,14 @@ export function NoteModal({ note, onSave, onClose }: Props) {
           <button
             type="button"
             onClick={doClose}
-            className="px-3 py-1 rounded-md border border-[#333] text-[11px] text-[#888] hover:text-white hover:bg-[#232323]"
+            className="px-3 py-1 rounded-md border border-[#2b2b31] text-[11px] text-[#888] hover:text-white hover:bg-[#222227]"
           >
             Salvar e fechar
           </button>
           <button
             type="button"
             onClick={onClose}
-            className="ml-auto p-2 rounded text-[#888] hover:text-white hover:bg-[#232323]"
+            className="ml-auto p-2 rounded text-[#888] hover:text-white hover:bg-[#222227]"
           >
             <svg
               width="14"
@@ -178,7 +178,7 @@ export function NoteModal({ note, onSave, onClose }: Props) {
         </div>
 
         {/* Bottom bar */}
-        <div className="flex items-center gap-3 px-3 py-2 border-t border-[#232323] shrink-0">
+        <div className="flex items-center gap-3 px-3 py-2 border-t border-[#2b2b31] shrink-0">
           {!isText && (
             <label className="flex items-center gap-1.5 cursor-pointer">
               <input
@@ -202,7 +202,7 @@ export function NoteModal({ note, onSave, onClose }: Props) {
                   onChange={(e) =>
                     setFontSize(Math.min(72, Math.max(12, Number(e.target.value) || 12)))
                   }
-                  className="w-16 rounded border border-[#3b3b3b] bg-[#2a2a2a] px-2 py-1 text-[#d4d4d4]"
+                  className="w-16 rounded border border-[#2b2b31] bg-[#16161a] px-2 py-1 text-[#d4d4d4]"
                 />
                 px
               </label>
@@ -217,14 +217,14 @@ export function NoteModal({ note, onSave, onClose }: Props) {
                   onChange={(e) =>
                     setWidth(Math.min(1200, Math.max(120, Number(e.target.value) || 120)))
                   }
-                  className="w-20 rounded border border-[#3b3b3b] bg-[#2a2a2a] px-2 py-1 text-[#d4d4d4]"
+                  className="w-20 rounded border border-[#2b2b31] bg-[#16161a] px-2 py-1 text-[#d4d4d4]"
                 />
                 px
               </label>
             </>
           ) : (
             <>
-              <div className="w-px h-4 bg-[#2a2a2a]" />
+              <div className="w-px h-4 bg-[#16161a]" />
               <span className="text-[10px] text-[#555]">Cor:</span>
               {NOTE_COLORS.map((c) => (
                 <button
@@ -234,7 +234,7 @@ export function NoteModal({ note, onSave, onClose }: Props) {
                   className="w-5 h-5 rounded-full transition-transform hover:scale-110"
                   style={{
                     backgroundColor: c,
-                    boxShadow: color === c ? `0 0 0 2px #0d0d0d, 0 0 0 3px ${c}` : 'none'
+                    boxShadow: color === c ? `0 0 0 2px #0b0b0f, 0 0 0 3px ${c}` : 'none'
                   }}
                 />
               ))}
@@ -246,7 +246,7 @@ export function NoteModal({ note, onSave, onClose }: Props) {
                       key={style}
                       type="button"
                       onClick={() => setBorderStyle(style)}
-                      className={`px-2 py-1 rounded border ${borderStyle === style ? 'border-[#a080f0] text-[#d4d4d4]' : 'border-[#3b3b3b] text-[#999999]'}`}
+                      className={`px-2 py-1 rounded border ${borderStyle === style ? 'border-[#a080f0] text-[#d4d4d4]' : 'border-[#2b2b31] text-[#999999]'}`}
                     >
                       {style === 'solid' ? 'Reta' : 'Pontilhada'}
                     </button>
@@ -263,7 +263,7 @@ export function NoteModal({ note, onSave, onClose }: Props) {
         <button
           type="button"
           onClick={() => setSidebarOpen((v) => !v)}
-          className="shrink-0 w-6 bg-[#1a1a1a] border-x border-[#2a2a2a] text-[#666] hover:text-[#999] flex items-center justify-center"
+          className="shrink-0 w-6 bg-[#16161a] border-x border-[#2b2b31] text-[#666] hover:text-[#999] flex items-center justify-center"
           style={{ opacity: sidebarOpen ? 0 : undefined }}
         >
           <svg
@@ -281,15 +281,15 @@ export function NoteModal({ note, onSave, onClose }: Props) {
 
       {/* Sidebar */}
       {!isText && sidebarOpen && (
-        <div className="w-72 shrink-0 border-l border-[#232323] bg-[#0d0d0d] flex flex-col overflow-hidden">
-          <div className="px-4 py-3 border-b border-[#232323] flex items-center justify-between">
+        <div className="w-72 shrink-0 border-l border-[#2b2b31] bg-[#0b0b0f] flex flex-col overflow-hidden">
+          <div className="px-4 py-3 border-b border-[#2b2b31] flex items-center justify-between">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-[#555]">
               Conexões
             </span>
             <button
               type="button"
               onClick={() => setSidebarOpen(false)}
-              className="p-0.5 rounded text-[#555] hover:text-[#999] hover:bg-[#232323]"
+              className="p-0.5 rounded text-[#555] hover:text-[#999] hover:bg-[#222227]"
             >
               <svg
                 width="12"
@@ -316,7 +316,7 @@ export function NoteModal({ note, onSave, onClose }: Props) {
                 return (
                   <div
                     key={t.id}
-                    className="flex items-center gap-1.5 px-2 py-1 mb-1 rounded-md bg-[#141414] border border-[#232323]"
+                    className="flex items-center gap-1.5 px-2 py-1 mb-1 rounded-md bg-[#16161a] border border-[#2b2b31]"
                   >
                     <span
                       className="shrink-0 text-[9px]"
@@ -329,7 +329,7 @@ export function NoteModal({ note, onSave, onClose }: Props) {
                     <button
                       type="button"
                       onClick={() => setTaskIds((prev) => prev.filter((id) => id !== t.id))}
-                      className="p-0.5 rounded hover:bg-[#232323] hover:text-red-400"
+                      className="p-0.5 rounded hover:bg-[#222227] hover:text-red-400"
                     >
                       <svg
                         width="9"
@@ -353,7 +353,7 @@ export function NoteModal({ note, onSave, onClose }: Props) {
                     setOpenDropdown(openDropdown === 'task' ? null : 'task')
                     setDdSearch('')
                   }}
-                  className="w-full flex items-center justify-between px-2 py-1.5 rounded-md border border-[#232323] text-[11px] text-[#666] hover:text-[#999] hover:bg-[#232323]"
+                  className="w-full flex items-center justify-between px-2 py-1.5 rounded-md border border-[#2b2b31] text-[11px] text-[#666] hover:text-[#999] hover:bg-[#222227]"
                 >
                   Vincular task...{' '}
                   <svg
@@ -368,15 +368,15 @@ export function NoteModal({ note, onSave, onClose }: Props) {
                   </svg>
                 </button>
                 {openDropdown === 'task' && (
-                  <div className="absolute left-0 right-0 top-full mt-1 rounded-lg border border-[#2a2a2a] bg-[#141414] shadow-xl z-30 max-h-52 flex flex-col">
-                    <div className="p-1.5 border-b border-[#1a1a1a]">
+                  <div className="absolute left-0 right-0 top-full mt-1 rounded-lg border border-[#2b2b31] bg-[#16161a] shadow-xl z-30 max-h-52 flex flex-col">
+                    <div className="p-1.5 border-b border-[#2b2b31]">
                       <input
                         type="text"
                         value={ddSearch}
                         onChange={(e) => setDdSearch(e.target.value)}
                         placeholder="Filtrar..."
                         autoFocus
-                        className="w-full px-2 py-1 rounded text-[11px] outline-none bg-[#0d0d0d] border border-[#232323] text-[#ccc] placeholder-[#555]"
+                        className="w-full px-2 py-1 rounded text-[11px] outline-none bg-[#0b0b0f] border border-[#2b2b31] text-[#ccc] placeholder-[#555]"
                       />
                     </div>
                     <div className="overflow-y-auto flex-1">
@@ -393,7 +393,7 @@ export function NoteModal({ note, onSave, onClose }: Props) {
                                 setTaskIds((prev) => [...prev, t.id])
                                 setOpenDropdown(null)
                               }}
-                              className="w-full text-left px-2.5 py-1.5 flex items-center gap-2 hover:bg-[#232323]"
+                              className="w-full text-left px-2.5 py-1.5 flex items-center gap-2 hover:bg-[#222227]"
                             >
                               <span
                                 className="text-[9px]"
@@ -418,14 +418,14 @@ export function NoteModal({ note, onSave, onClose }: Props) {
             </div>
 
             {/* Notes */}
-            <div className="border-t border-[#1a1a1a] pt-3">
+            <div className="border-t border-[#2b2b31] pt-3">
               <span className="text-[10px] font-semibold uppercase tracking-wider text-[#555]">
                 Notas ({connections.length})
               </span>
               {connectedNotes.map((cn) => (
                 <div
                   key={cn.id}
-                  className="flex items-center gap-1.5 px-2 py-1 mt-1 rounded-md bg-[#141414] border border-[#232323]"
+                  className="flex items-center gap-1.5 px-2 py-1 mt-1 rounded-md bg-[#16161a] border border-[#2b2b31]"
                 >
                   <span
                     className="w-1.5 h-1.5 rounded-full shrink-0"
@@ -437,7 +437,7 @@ export function NoteModal({ note, onSave, onClose }: Props) {
                   <button
                     type="button"
                     onClick={() => setConnections((prev) => prev.filter((id) => id !== cn.id))}
-                    className="p-0.5 rounded hover:bg-[#232323] hover:text-red-400"
+                    className="p-0.5 rounded hover:bg-[#222227] hover:text-red-400"
                   >
                     <svg
                       width="9"
@@ -460,7 +460,7 @@ export function NoteModal({ note, onSave, onClose }: Props) {
                     setOpenDropdown(openDropdown === 'note' ? null : 'note')
                     setDdSearch('')
                   }}
-                  className="w-full flex items-center justify-between px-2 py-1.5 rounded-md border border-[#232323] text-[11px] text-[#666] hover:text-[#999] hover:bg-[#232323]"
+                  className="w-full flex items-center justify-between px-2 py-1.5 rounded-md border border-[#2b2b31] text-[11px] text-[#666] hover:text-[#999] hover:bg-[#222227]"
                 >
                   Conectar nota...{' '}
                   <svg
@@ -475,15 +475,15 @@ export function NoteModal({ note, onSave, onClose }: Props) {
                   </svg>
                 </button>
                 {openDropdown === 'note' && (
-                  <div className="absolute left-0 right-0 top-full mt-1 rounded-lg border border-[#2a2a2a] bg-[#141414] shadow-xl z-30 max-h-52 flex flex-col">
-                    <div className="p-1.5 border-b border-[#1a1a1a]">
+                  <div className="absolute left-0 right-0 top-full mt-1 rounded-lg border border-[#2b2b31] bg-[#16161a] shadow-xl z-30 max-h-52 flex flex-col">
+                    <div className="p-1.5 border-b border-[#2b2b31]">
                       <input
                         type="text"
                         value={ddSearch}
                         onChange={(e) => setDdSearch(e.target.value)}
                         placeholder="Filtrar..."
                         autoFocus
-                        className="w-full px-2 py-1 rounded text-[11px] outline-none bg-[#0d0d0d] border border-[#232323] text-[#ccc] placeholder-[#555]"
+                        className="w-full px-2 py-1 rounded text-[11px] outline-none bg-[#0b0b0f] border border-[#2b2b31] text-[#ccc] placeholder-[#555]"
                       />
                     </div>
                     <div className="overflow-y-auto flex-1">
@@ -498,7 +498,7 @@ export function NoteModal({ note, onSave, onClose }: Props) {
                               setConnections((prev) => [...prev, fn.id])
                               setOpenDropdown(null)
                             }}
-                            className="w-full text-left px-2.5 py-1.5 flex items-center gap-2 hover:bg-[#232323]"
+                            className="w-full text-left px-2.5 py-1.5 flex items-center gap-2 hover:bg-[#222227]"
                           >
                             <span
                               className="w-1.5 h-1.5 rounded-full shrink-0"
@@ -517,14 +517,14 @@ export function NoteModal({ note, onSave, onClose }: Props) {
             </div>
 
             {/* Goals */}
-            <div className="border-t border-[#1a1a1a] pt-3">
+            <div className="border-t border-[#2b2b31] pt-3">
               <span className="text-[10px] font-semibold uppercase tracking-wider text-[#555]">
                 Metas ({goalIds.length})
               </span>
               {connectedGoals.map((cg) => (
                 <div
                   key={cg.id}
-                  className="flex items-center gap-1.5 px-2 py-1 mt-1 rounded-md bg-[#141414] border border-[#232323]"
+                  className="flex items-center gap-1.5 px-2 py-1 mt-1 rounded-md bg-[#16161a] border border-[#2b2b31]"
                 >
                   <span
                     className="w-1.5 h-1.5 rounded-full shrink-0"
@@ -537,7 +537,7 @@ export function NoteModal({ note, onSave, onClose }: Props) {
                   <button
                     type="button"
                     onClick={() => setGoalIds((prev) => prev.filter((id) => id !== cg.id))}
-                    className="p-0.5 rounded hover:bg-[#232323] hover:text-red-400"
+                    className="p-0.5 rounded hover:bg-[#222227] hover:text-red-400"
                   >
                     <svg
                       width="9"
@@ -560,7 +560,7 @@ export function NoteModal({ note, onSave, onClose }: Props) {
                     setOpenDropdown(openDropdown === 'goal' ? null : 'goal')
                     setDdSearch('')
                   }}
-                  className="w-full flex items-center justify-between px-2 py-1.5 rounded-md border border-[#232323] text-[11px] text-[#666] hover:text-[#999] hover:bg-[#232323]"
+                  className="w-full flex items-center justify-between px-2 py-1.5 rounded-md border border-[#2b2b31] text-[11px] text-[#666] hover:text-[#999] hover:bg-[#222227]"
                 >
                   Vincular meta...{' '}
                   <svg
@@ -575,15 +575,15 @@ export function NoteModal({ note, onSave, onClose }: Props) {
                   </svg>
                 </button>
                 {openDropdown === 'goal' && (
-                  <div className="absolute left-0 right-0 top-full mt-1 rounded-lg border border-[#2a2a2a] bg-[#141414] shadow-xl z-30 max-h-52 flex flex-col">
-                    <div className="p-1.5 border-b border-[#1a1a1a]">
+                  <div className="absolute left-0 right-0 top-full mt-1 rounded-lg border border-[#2b2b31] bg-[#16161a] shadow-xl z-30 max-h-52 flex flex-col">
+                    <div className="p-1.5 border-b border-[#2b2b31]">
                       <input
                         type="text"
                         value={ddSearch}
                         onChange={(e) => setDdSearch(e.target.value)}
                         placeholder="Filtrar..."
                         autoFocus
-                        className="w-full px-2 py-1 rounded text-[11px] outline-none bg-[#0d0d0d] border border-[#232323] text-[#ccc] placeholder-[#555]"
+                        className="w-full px-2 py-1 rounded text-[11px] outline-none bg-[#0b0b0f] border border-[#2b2b31] text-[#ccc] placeholder-[#555]"
                       />
                     </div>
                     <div className="overflow-y-auto flex-1">
@@ -598,7 +598,7 @@ export function NoteModal({ note, onSave, onClose }: Props) {
                               setGoalIds((prev) => [...prev, g.id])
                               setOpenDropdown(null)
                             }}
-                            className="w-full text-left px-2.5 py-1.5 flex items-center gap-2 hover:bg-[#232323]"
+                            className="w-full text-left px-2.5 py-1.5 flex items-center gap-2 hover:bg-[#222227]"
                           >
                             <span
                               className="w-1.5 h-1.5 rounded-full shrink-0"

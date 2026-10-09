@@ -45,8 +45,8 @@ export function FeatureOnboarding({ open, initialFeatures, onSave, onClose }: Pr
 
   return (
     <ModalBase open={open} onClose={onClose ?? (() => {})}>
-      <section className="relative z-10 w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-xl border border-[#3b3b3b] bg-[#232323] shadow-2xl">
-        <div className="px-6 pt-6 pb-4 border-b border-[#3b3b3b]">
+      <section className="relative z-10 w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-xl border border-[#2b2b31] bg-[#16161a] shadow-2xl">
+        <div className="px-6 pt-6 pb-4 border-b border-[#2b2b31]">
           <p className="text-xs font-semibold uppercase tracking-wider text-[#a080f0]">
             Personalize o Sagyou
           </p>
@@ -71,7 +71,7 @@ export function FeatureOnboarding({ open, initialFeatures, onSave, onClose }: Pr
                 className={`rounded-lg border p-3 text-left transition-colors ${
                   active
                     ? 'border-[#7c3aed] bg-[#30264a] text-[#f0f0f0]'
-                    : 'border-[#3b3b3b] bg-[#1b1b1b] text-[#999999] hover:border-[#666666]'
+                    : 'border-[#2b2b31] bg-[#101014] text-[#999999] hover:border-[#666666]'
                 }`}
               >
                 <span className="flex items-center gap-2 text-sm font-medium">
@@ -92,7 +92,7 @@ export function FeatureOnboarding({ open, initialFeatures, onSave, onClose }: Pr
           })}
         </div>
 
-        <div className="flex items-center justify-between gap-3 border-t border-[#3b3b3b] px-6 py-4">
+        <div className="flex items-center justify-between gap-3 border-t border-[#2b2b31] px-6 py-4">
           <button
             type="button"
             onClick={() => setSelected(ALL_FEATURE_IDS)}

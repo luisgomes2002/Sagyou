@@ -186,7 +186,7 @@ export function Sidebar({
         </svg>
         {label}
         {badge && (
-          <span className="ml-1 rounded border border-[#4a4a4a] px-1 py-px text-[9px] font-medium normal-case tracking-normal text-[#999999]">
+          <span className="ml-1 rounded border border-[#34343a] px-1 py-px text-[9px] font-medium normal-case tracking-normal text-[#999999]">
             {badge}
           </span>
         )}
@@ -502,8 +502,8 @@ export function Sidebar({
         onClick={() => onChangeView(item.view)}
         className={`flex items-center gap-2.5 w-full px-3 py-[5px] rounded text-[13px] font-normal transition-colors text-left ${
           active
-            ? 'bg-[#3b3b3b] text-[#d4d4d4]'
-            : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a]'
+            ? 'bg-[#2a2a30] text-[#d4d4d4]'
+            : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#222227]'
         }`}
       >
         {item.icon}
@@ -518,24 +518,10 @@ export function Sidebar({
   }
 
   return (
-    <aside className="flex flex-col w-56 shrink-0 h-full bg-[#232323] border-r border-[#3b3b3b]">
-      {/* logo */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-[#3b3b3b]">
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded bg-[#7c3aed] flex items-center justify-center">
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="white"
-              strokeWidth="2.5"
-            >
-              <rect x="3" y="3" width="7" height="18" rx="1" />
-              <rect x="14" y="3" width="7" height="11" rx="1" />
-              <rect x="14" y="18" width="7" height="3" rx="1" />
-            </svg>
-          </div>
+    <aside className="flex flex-col w-56 shrink-0 h-full bg-[#121216] border-r border-[#2b2b31]">
+      {/* título */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-[#2b2b31]">
+        <div className="flex items-center">
           <span className="text-sm font-semibold text-[#d4d4d4]">Sagyou</span>
         </div>
 
@@ -543,7 +529,7 @@ export function Sidebar({
         <div className="relative">
           <button
             onClick={() => setMenuOpen((v) => !v)}
-            className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors"
+            className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#222227] transition-colors"
             title="Opções"
           >
             <svg
@@ -563,12 +549,12 @@ export function Sidebar({
           {menuOpen && (
             <>
               <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-              <div className="absolute left-0 top-8 z-20 w-44 rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] shadow-xl py-1">
+              <div className="absolute left-0 top-8 z-20 w-44 rounded-lg border border-[#2b2b31] bg-[#101014] shadow-xl py-1">
                 <p className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#999999]">
                   Backup
                 </p>
                 <button
-                  className="w-full text-left px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors flex items-center gap-2"
+                  className="w-full text-left px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#222227] transition-colors flex items-center gap-2"
                   onClick={() => {
                     setMenuOpen(false)
                     onExportBackup()
@@ -589,7 +575,7 @@ export function Sidebar({
                   Exportar backup
                 </button>
                 <button
-                  className="w-full text-left px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#2a2a2a]"
+                  className="w-full text-left px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#222227]"
                   onClick={() => {
                     setMenuOpen(false)
                     onOpenBackupFolder()
@@ -598,7 +584,7 @@ export function Sidebar({
                   Abrir backups automáticos
                 </button>
                 <button
-                  className="w-full text-left px-3 py-2 text-sm text-[#46d478] hover:bg-[#2a2a2a] transition-colors flex items-center gap-2"
+                  className="w-full text-left px-3 py-2 text-sm text-[#46d478] hover:bg-[#222227] transition-colors flex items-center gap-2"
                   onClick={() => {
                     setMenuOpen(false)
                     onExportExcel()
@@ -620,7 +606,7 @@ export function Sidebar({
                   Exportar Excel
                 </button>
                 <button
-                  className="w-full text-left px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors flex items-center gap-2"
+                  className="w-full text-left px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#222227] transition-colors flex items-center gap-2"
                   onClick={() => {
                     setMenuOpen(false)
                     onImportBackup()
@@ -640,7 +626,7 @@ export function Sidebar({
                   </svg>
                   Importar backup
                 </button>
-                <div className="border-t border-[#3b3b3b] my-1" />
+                <div className="border-t border-[#2b2b31] my-1" />
                 <div className="flex items-center justify-between px-3 py-1.5">
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-[#999999]">
                     JSON
@@ -666,7 +652,7 @@ export function Sidebar({
                   </button>
                 </div>
                 <button
-                  className="w-full text-left px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors flex items-center gap-2"
+                  className="w-full text-left px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#222227] transition-colors flex items-center gap-2"
                   onClick={() => {
                     setMenuOpen(false)
                     setShowJsonExample(false)
@@ -694,7 +680,7 @@ export function Sidebar({
       {/* Search */}
       <button
         onClick={onOpenSearch}
-        className="flex items-center gap-2 mx-3 my-2 px-3 py-1.5 rounded-md bg-[#1b1b1b] border border-[#3b3b3b] text-[#999999] text-xs hover:border-[#7c3aed] hover:text-[#d4d4d4] transition-colors w-[calc(100%-1.5rem)]"
+        className="flex items-center gap-2 mx-3 my-2 px-3 py-1.5 rounded-md bg-[#101014] border border-[#2b2b31] text-[#999999] text-xs hover:border-[#7c3aed] hover:text-[#d4d4d4] transition-colors w-[calc(100%-1.5rem)]"
       >
         <svg
           width="11"
@@ -708,7 +694,7 @@ export function Sidebar({
           <line x1="21" y1="21" x2="16.65" y2="16.65" />
         </svg>
         <span className="flex-1 text-left">Buscar...</span>
-        <kbd className="text-[9px] px-1 py-0.5 rounded bg-[#2a2a2a] border border-[#3b3b3b] font-sans">
+        <kbd className="text-[9px] px-1 py-0.5 rounded bg-[#16161a] border border-[#2b2b31] font-sans">
           Ctrl K
         </kbd>
       </button>
@@ -768,8 +754,8 @@ export function Sidebar({
                       onClick={() => onSelectProject(project.id)}
                       className={`flex items-center gap-2.5 w-full px-3 py-[5px] rounded text-[13px] transition-colors text-left ${
                         activeProjectId === project.id
-                          ? 'bg-[#3b3b3b] text-[#a080f0]'
-                          : 'text-[#999999] hover:bg-[#2a2a2a] hover:text-[#d4d4d4]'
+                          ? 'bg-[#2a2a30] text-[#a080f0]'
+                          : 'text-[#999999] hover:bg-[#222227] hover:text-[#d4d4d4]'
                       }`}
                     >
                       <div
@@ -784,7 +770,7 @@ export function Sidebar({
                     >
                       <button
                         onClick={(e) => handleOpenProjectMenu(e, project.id)}
-                        className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#3b3b3b] transition-colors"
+                        className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a30] transition-colors"
                       >
                         <svg
                           width="12"
@@ -807,7 +793,7 @@ export function Sidebar({
                   <>
                     <button
                       onClick={() => setShowArchived((v) => !v)}
-                      className="flex items-center gap-2 w-full px-3 py-[5px] rounded text-xs text-[#666666] hover:text-[#999999] hover:bg-[#2a2a2a] transition-colors mt-1"
+                      className="flex items-center gap-2 w-full px-3 py-[5px] rounded text-xs text-[#666666] hover:text-[#999999] hover:bg-[#222227] transition-colors mt-1"
                     >
                       <svg
                         width="10"
@@ -833,8 +819,8 @@ export function Sidebar({
                             onClick={() => onSelectProject(project.id)}
                             className={`flex items-center gap-2.5 w-full px-3 py-[5px] rounded text-[13px] transition-colors text-left opacity-60 hover:opacity-90 ${
                               activeProjectId === project.id
-                                ? 'bg-[#3b3b3b] text-[#a080f0]'
-                                : 'text-[#999999] hover:bg-[#2a2a2a] hover:text-[#d4d4d4]'
+                                ? 'bg-[#2a2a30] text-[#a080f0]'
+                                : 'text-[#999999] hover:bg-[#222227] hover:text-[#d4d4d4]'
                             }`}
                           >
                             <div
@@ -849,7 +835,7 @@ export function Sidebar({
                           >
                             <button
                               onClick={(e) => handleOpenProjectMenu(e, project.id)}
-                              className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#3b3b3b] transition-colors"
+                              className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a30] transition-colors"
                             >
                               <svg
                                 width="12"
@@ -881,10 +867,10 @@ export function Sidebar({
           <>
             <div className="fixed inset-0 z-50" onClick={() => setShowJsonExample(false)} />
             <div
-              className="fixed z-50 w-96 rounded-xl border border-[#3b3b3b] bg-[#1b1b1b] shadow-2xl"
+              className="fixed z-50 w-96 rounded-xl border border-[#2b2b31] bg-[#101014] shadow-2xl"
               style={{ top: jsonExamplePos.top, left: jsonExamplePos.left }}
             >
-              <div className="flex items-center justify-between px-4 py-3 border-b border-[#3b3b3b]">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-[#2b2b31]">
                 <span className="text-xs font-semibold text-[#7c3aed] uppercase tracking-wider">
                   Formato esperado: JSON
                 </span>
@@ -944,7 +930,7 @@ export function Sidebar({
                 </div>
               </div>
               <div className="p-4">
-                <pre className="text-[11px] text-[#a080f0] leading-relaxed font-mono bg-[#232323] rounded-lg p-3 border border-[#3b3b3b] overflow-x-auto">{`{
+                <pre className="text-[11px] text-[#a080f0] leading-relaxed font-mono bg-[#16161a] rounded-lg p-3 border border-[#2b2b31] overflow-x-auto">{`{
   "tasks": [
     {
       "title": "Implementar login",
@@ -1000,7 +986,7 @@ export function Sidebar({
           <>
             <div className="fixed inset-0 z-50" onClick={() => setProjectMenuId(null)} />
             <div
-              className="fixed z-50 w-36 rounded-lg border border-[#3b3b3b] bg-[#232323] shadow-xl py-1"
+              className="fixed z-50 w-36 rounded-lg border border-[#2b2b31] bg-[#16161a] shadow-xl py-1"
               style={{
                 top: projectMenuPos.top,
                 bottom: projectMenuPos.bottom,
@@ -1015,7 +1001,7 @@ export function Sidebar({
                 return (
                   <div>
                     <button
-                      className="w-full text-left px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors"
+                      className="w-full text-left px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#222227] transition-colors"
                       onClick={() => {
                         setProjectMenuId(null)
                         onEditProject(project)
@@ -1027,7 +1013,7 @@ export function Sidebar({
                       <>
                         <button
                           disabled={idx === 0}
-                          className="w-full text-left px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                          className="w-full text-left px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#222227] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                           onClick={() => {
                             onMoveProject(project.id, 'up')
                             setProjectMenuId(null)
@@ -1037,7 +1023,7 @@ export function Sidebar({
                         </button>
                         <button
                           disabled={idx === sortedProjects.length - 1}
-                          className="w-full text-left px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                          className="w-full text-left px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#222227] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                           onClick={() => {
                             onMoveProject(project.id, 'down')
                             setProjectMenuId(null)
@@ -1049,7 +1035,7 @@ export function Sidebar({
                     )}
                     {!isArchived ? (
                       <button
-                        className="w-full text-left px-3 py-2 text-sm text-[#e0a040] hover:bg-[#2a2a2a] transition-colors"
+                        className="w-full text-left px-3 py-2 text-sm text-[#e0a040] hover:bg-[#222227] transition-colors"
                         onClick={() => {
                           setProjectMenuId(null)
                           onArchiveProject(project.id)
@@ -1059,7 +1045,7 @@ export function Sidebar({
                       </button>
                     ) : (
                       <button
-                        className="w-full text-left px-3 py-2 text-sm text-[#46d478] hover:bg-[#2a2a2a] transition-colors"
+                        className="w-full text-left px-3 py-2 text-sm text-[#46d478] hover:bg-[#222227] transition-colors"
                         onClick={() => {
                           setProjectMenuId(null)
                           onUnarchiveProject(project.id)
@@ -1069,7 +1055,7 @@ export function Sidebar({
                       </button>
                     )}
                     <button
-                      className="w-full text-left px-3 py-2 text-sm text-[#e04040] hover:bg-[#2a2a2a] transition-colors"
+                      className="w-full text-left px-3 py-2 text-sm text-[#e04040] hover:bg-[#222227] transition-colors"
                       onClick={() => {
                         setProjectMenuId(null)
                         onDeleteProject(project)
@@ -1086,14 +1072,14 @@ export function Sidebar({
         )}
 
       {/* new project button */}
-      <div className="p-3 border-t border-[#3b3b3b]">
+      <div className="p-3 border-t border-[#2b2b31]">
         <div className="mb-2">{renderNavItem(guideItem)}</div>
         <button
           onClick={() => onChangeView('settings')}
           className={`mb-2 flex items-center gap-2.5 w-full px-3 py-[6px] rounded text-[13px] transition-colors text-left ${
             isActive('settings')
-              ? 'bg-[#3b3b3b] text-[#d4d4d4]'
-              : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a]'
+              ? 'bg-[#2a2a30] text-[#d4d4d4]'
+              : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#222227]'
           }`}
         >
           <svg
@@ -1112,7 +1098,7 @@ export function Sidebar({
         {hasFeature('kanban') && (
           <button
             onClick={onNewProject}
-            className="w-full flex items-center justify-center gap-2 py-2 rounded bg-[#2a2a2a] border border-[#3b3b3b] text-[13px] text-[#d4d4d4] hover:bg-[#3b3b3b] transition-colors font-normal"
+            className="w-full flex items-center justify-center gap-2 py-2 rounded bg-[#16161a] border border-[#2b2b31] text-[13px] text-[#d4d4d4] hover:bg-[#2a2a30] transition-colors font-normal"
           >
             <svg
               width="13"

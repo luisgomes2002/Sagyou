@@ -49,8 +49,8 @@ export function ConversationHistoryMenu({
         }}
         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
           showHistory
-            ? 'bg-[#3b3b3b] text-[#a080f0]'
-            : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a]'
+            ? 'bg-[#2a2a30] text-[#a080f0]'
+            : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#222227]'
         }`}
       >
         <svg
@@ -71,14 +71,14 @@ export function ConversationHistoryMenu({
       {showHistory && (
         <>
           <div className="fixed inset-0 z-30" onClick={() => setShowHistory(false)} />
-          <div className="absolute right-0 top-full mt-1 z-40 w-80 max-h-96 overflow-y-auto rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] shadow-2xl py-1">
-            <div className="sticky top-0 bg-[#1b1b1b] px-2 pt-1 pb-2 border-b border-[#3b3b3b]">
+          <div className="absolute right-0 top-full mt-1 z-40 w-80 max-h-96 overflow-y-auto rounded-lg border border-[#2b2b31] bg-[#101014] shadow-2xl py-1">
+            <div className="sticky top-0 bg-[#101014] px-2 pt-1 pb-2 border-b border-[#2b2b31]">
               <input
                 autoFocus
                 value={historyQuery}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Buscar por título ou conteúdo…"
-                className="w-full px-2.5 py-1.5 rounded-md bg-[#232323] border border-[#3b3b3b] text-xs text-[#d4d4d4] placeholder:text-[#666666] focus:outline-none focus:border-[#7c3aed]"
+                className="w-full px-2.5 py-1.5 rounded-md bg-[#16161a] border border-[#2b2b31] text-xs text-[#d4d4d4] placeholder:text-[#666666] focus:outline-none focus:border-[#7c3aed]"
               />
             </div>
             {conversations.length === 0 ? (
@@ -93,7 +93,7 @@ export function ConversationHistoryMenu({
                   key={c.id}
                   onClick={() => handleLoadConversation(c.id)}
                   className={`group flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors ${
-                    c.id === conversationId ? 'bg-[#3b3b3b]' : 'hover:bg-[#2a2a2a]'
+                    c.id === conversationId ? 'bg-[#2a2a30]' : 'hover:bg-[#222227]'
                   }`}
                 >
                   <div className="flex-1 min-w-0">
@@ -112,7 +112,7 @@ export function ConversationHistoryMenu({
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') void commitRename()
                         }}
-                        className="w-full px-1.5 py-0.5 rounded bg-[#1b1b1b] border border-[#7c3aed] text-xs text-[#d4d4d4] focus:outline-none"
+                        className="w-full px-1.5 py-0.5 rounded bg-[#101014] border border-[#7c3aed] text-xs text-[#d4d4d4] focus:outline-none"
                       />
                     ) : (
                       <p className="text-xs text-[#d4d4d4] truncate">{c.title}</p>

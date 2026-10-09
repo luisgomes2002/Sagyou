@@ -16,7 +16,7 @@ function CommandBlock({
   return (
     <div className="mt-2 flex items-start gap-2">
       <code
-        className={`min-w-0 flex-1 rounded bg-[#1b1b1b] px-2 py-1.5 font-mono text-[11px] text-[#d4d4d4] ${
+        className={`min-w-0 flex-1 rounded bg-[#101014] px-2 py-1.5 font-mono text-[11px] text-[#d4d4d4] ${
           multiline ? 'whitespace-pre-wrap break-all' : 'overflow-x-auto whitespace-nowrap'
         }`}
       >
@@ -28,7 +28,7 @@ function CommandBlock({
           setCopied(true)
           setTimeout(() => setCopied(false), 2000)
         }}
-        className="shrink-0 rounded px-2 py-1.5 text-[11px] font-medium text-[#a080f0] hover:bg-[#2a2a2a]"
+        className="shrink-0 rounded px-2 py-1.5 text-[11px] font-medium text-[#a080f0] hover:bg-[#222227]"
       >
         {copied ? 'Copiado' : 'Copiar'}
       </button>
@@ -126,7 +126,7 @@ export function SandboxOnboarding({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6">
-      <div className="w-full max-w-lg rounded-xl border border-[#3b3b3b] bg-[#232323] p-6 shadow-2xl">
+      <div className="w-full max-w-lg rounded-xl border border-[#2b2b31] bg-[#16161a] p-6 shadow-2xl">
         <div className="flex items-start gap-3">
           <div className="mt-0.5 text-2xl" />
           <div className="min-w-0">
@@ -140,7 +140,7 @@ export function SandboxOnboarding({
           </div>
         </div>
 
-        <div className="mt-4 rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] p-3">
+        <div className="mt-4 rounded-lg border border-[#2b2b31] bg-[#101014] p-3">
           <p className="text-[11px] leading-relaxed text-[#999999]">
             É <b className="text-[#d4d4d4]">obrigatório por padrão</b> para proteger você de
             comandos acidentais ou maliciosos do agente. Projeto:{' '}
@@ -158,7 +158,7 @@ export function SandboxOnboarding({
         {/* Windows, step 1: no WSL2 yet. Needs admin + reboot, so we can only
             hand over the command — the app can't run it for the user. */}
         {isWindows && !status.wsl2 && (
-          <div className="mt-4 rounded-lg border border-[#3b3b3b] bg-[#2a2a2a] p-3">
+          <div className="mt-4 rounded-lg border border-[#2b2b31] bg-[#16161a] p-3">
             <p className="text-[12px] font-semibold text-[#f0a868]">Passo 1: instalar o WSL2</p>
             <p className="mt-1 text-[11px] leading-relaxed text-[#c9a68a]">
               O ai-jail roda dentro do WSL2. Abra o PowerShell <b>como administrador</b>, rode o
@@ -175,7 +175,7 @@ export function SandboxOnboarding({
             the DEFAULT distro (`wsl -e`), so a perfect install in Ubuntu is invisible
             until Ubuntu is the default. */}
         {isWindows && status.wsl2 && !status.available && (
-          <div className="mt-4 rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] p-3">
+          <div className="mt-4 rounded-lg border border-[#2b2b31] bg-[#101014] p-3">
             <p className="text-[12px] font-semibold text-[#a080f0]">
               Passo 2: instalar o ai-jail dentro do WSL
             </p>
@@ -226,7 +226,7 @@ export function SandboxOnboarding({
             the kernel restricts the user namespaces bwrap needs. Reinstalling
             won't fix it; the fix is a one-line sysctl (shown, not run). */}
         {isAppArmorBlock && (
-          <div className="mt-4 rounded-lg border border-[#3b3b3b] bg-[#2a2a2a] p-3">
+          <div className="mt-4 rounded-lg border border-[#2b2b31] bg-[#16161a] p-3">
             <p className="text-[12px] font-semibold text-[#f0a868]">
               Libere os namespaces do kernel
             </p>
@@ -248,7 +248,7 @@ export function SandboxOnboarding({
         {installing && (
           <div className="mt-4">
             <p className="text-[11px] text-[#999999]">{progress?.phase ?? 'Instalando…'}</p>
-            <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-[#1b1b1b]">
+            <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-[#101014]">
               <div
                 className="h-full rounded-full bg-[#4f46e5] transition-all"
                 style={{ width: pct != null ? `${pct}%` : '100%', opacity: pct != null ? 1 : 0.5 }}
@@ -263,7 +263,7 @@ export function SandboxOnboarding({
           <button
             onClick={later}
             disabled={installing}
-            className="rounded-md border border-[#3b3b3b] px-3.5 py-2 text-[12px] font-medium text-[#999999] hover:text-[#d4d4d4] disabled:opacity-40"
+            className="rounded-md border border-[#2b2b31] px-3.5 py-2 text-[12px] font-medium text-[#999999] hover:text-[#d4d4d4] disabled:opacity-40"
           >
             Depois
           </button>

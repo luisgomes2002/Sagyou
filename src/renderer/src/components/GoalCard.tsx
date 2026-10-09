@@ -67,7 +67,7 @@ export function GoalCard({
   const unitLabel = goal.unit ? goal.unit.charAt(0).toUpperCase() + goal.unit.slice(1) : 'Qtd'
 
   return (
-    <div className="group rounded-xl border border-[#3b3b3b] bg-[#2a2a2a] overflow-hidden hover:border-[#555555] transition-colors duration-200">
+    <div className="group rounded-xl border border-[#2b2b31] bg-[#16161a] overflow-hidden hover:border-[#3b3b42] transition-colors duration-200">
       <div className="p-5">
         <div className="mb-4">
           <div className="flex items-start justify-between gap-2 mb-2">
@@ -83,7 +83,7 @@ export function GoalCard({
             <div className="relative shrink-0">
               <button
                 onClick={() => setMenuOpen((v) => !v)}
-                className="p-1 rounded text-[#555555] hover:text-[#999999] hover:bg-[#3b3b3b] transition-colors opacity-0 group-hover:opacity-100"
+                className="p-1 rounded text-[#555555] hover:text-[#999999] hover:bg-[#2a2a30] transition-colors opacity-0 group-hover:opacity-100"
               >
                 <svg
                   width="12"
@@ -101,9 +101,9 @@ export function GoalCard({
               {menuOpen && (
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-                  <div className="absolute right-0 top-7 z-20 w-28 rounded-lg border border-[#3b3b3b] bg-[#232323] shadow-xl py-1">
+                  <div className="absolute right-0 top-7 z-20 w-28 rounded-lg border border-[#2b2b31] bg-[#16161a] shadow-xl py-1">
                     <button
-                      className="w-full text-left px-3 py-2 text-xs text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors"
+                      className="w-full text-left px-3 py-2 text-xs text-[#d4d4d4] hover:bg-[#222227] transition-colors"
                       onClick={() => {
                         setMenuOpen(false)
                         onEdit()
@@ -112,7 +112,7 @@ export function GoalCard({
                       Editar
                     </button>
                     <button
-                      className="w-full text-left px-3 py-2 text-xs text-[#e04040] hover:bg-[#2a2a2a] transition-colors"
+                      className="w-full text-left px-3 py-2 text-xs text-[#e04040] hover:bg-[#222227] transition-colors"
                       onClick={() => {
                         setMenuOpen(false)
                         onDelete()
@@ -141,7 +141,7 @@ export function GoalCard({
             </span>
           </div>
           <div
-            className="h-2 rounded-full bg-[#3b3b3b] overflow-hidden mb-2"
+            className="h-2 rounded-full bg-[#2a2a30] overflow-hidden mb-2"
             role="progressbar"
             aria-label={`Progresso de ${goal.title}`}
             aria-valuenow={Math.round(percent)}
@@ -155,7 +155,7 @@ export function GoalCard({
           </div>
 
           {isComplete ? (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#3b3b3b] text-[#20b858] text-[10px] font-semibold">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#2a2a30] text-[#20b858] text-[10px] font-semibold">
               <svg
                 width="8"
                 height="8"
@@ -184,7 +184,7 @@ export function GoalCard({
           )}
         </div>
 
-        <div className="border-t border-[#3b3b3b] pt-3">
+        <div className="border-t border-[#2b2b31] pt-3">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-[#999999]">
               Histórico
@@ -199,7 +199,7 @@ export function GoalCard({
             ) : (
               <button
                 onClick={openAdd}
-                className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-md bg-[#3b3b3b] hover:bg-[#4a4a4a] transition-colors"
+                className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-md bg-[#2a2a30] hover:bg-[#303036] transition-colors"
                 style={{ color: goal.color }}
               >
                 <svg
@@ -219,7 +219,7 @@ export function GoalCard({
           </div>
 
           {addOpen && (
-            <div className="mb-2 p-2 rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] space-y-2">
+            <div className="mb-2 p-2 rounded-lg border border-[#2b2b31] bg-[#101014] space-y-2">
               <div className="flex gap-2">
                 <div className="flex-1">
                   <label className="block text-[10px] text-[#999999] mb-1">Data</label>
@@ -227,7 +227,7 @@ export function GoalCard({
                     type="date"
                     value={entryDate}
                     onChange={(e) => setEntryDate(e.target.value)}
-                    className="w-full px-2 py-1 rounded border border-[#3b3b3b] bg-[#2a2a2a] text-xs text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed] transition-colors"
+                    className="w-full px-2 py-1 rounded border border-[#2b2b31] bg-[#16161a] text-xs text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed] transition-colors"
                   />
                 </div>
                 <div className="w-24">
@@ -242,7 +242,7 @@ export function GoalCard({
                       if (e.key === 'Enter') handleAddEntry()
                     }}
                     autoFocus
-                    className="w-full px-2 py-1 rounded border border-[#3b3b3b] bg-[#2a2a2a] text-xs text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed] transition-colors tabular-nums"
+                    className="w-full px-2 py-1 rounded border border-[#2b2b31] bg-[#16161a] text-xs text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed] transition-colors tabular-nums"
                   />
                 </div>
               </div>
@@ -265,7 +265,7 @@ export function GoalCard({
                           ? 'Ex: Parque Ibirapuera...'
                           : 'Observação...'
                     }
-                    className="flex-1 px-2 py-1 rounded border border-[#3b3b3b] bg-[#2a2a2a] text-xs text-[#d4d4d4] placeholder-[#555555] focus:outline-none focus:border-[#7c3aed] transition-colors"
+                    className="flex-1 px-2 py-1 rounded border border-[#2b2b31] bg-[#16161a] text-xs text-[#d4d4d4] placeholder-[#555555] focus:outline-none focus:border-[#7c3aed] transition-colors"
                   />
                   <button
                     onClick={handleAddEntry}
@@ -287,7 +287,7 @@ export function GoalCard({
               {visibleEntries.map((entry) => (
                 <div
                   key={entry.id}
-                  className="group/entry flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-[#3b3b3b] transition-colors"
+                  className="group/entry flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-[#2a2a30] transition-colors"
                 >
                   <span className="text-[10px] text-[#999999] shrink-0 tabular-nums w-10">
                     {fmtDate(entry.date)}

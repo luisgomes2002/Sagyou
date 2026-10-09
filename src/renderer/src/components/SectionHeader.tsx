@@ -11,7 +11,7 @@ interface Props {
  */
 export function SectionHeader({ className, children }: Props) {
   return (
-    <div className={`px-6 py-4 border-b border-[#3b3b3b] shrink-0 ${className ?? ''}`}>
+    <div className={`px-6 py-4 border-b border-[#2b2b31] shrink-0 ${className ?? ''}`}>
       {children}
     </div>
   )

@@ -29,7 +29,7 @@ export function MonthJump({ month, onChange }: MonthJumpProps): ReactElement {
         defaultValue={value}
         aria-label="Escolher mês e ano"
         title="Escolha o mês e o ano ou digite os valores"
-        className="w-36 rounded-md border border-[#3b3b3b] bg-[#2a2a2a] px-2 py-1 text-xs text-[#d4d4d4] focus:border-[#7c3aed] focus:outline-none"
+        className="w-36 rounded-md border border-[#2b2b31] bg-[#16161a] px-2 py-1 text-xs text-[#d4d4d4] focus:border-[#7c3aed] focus:outline-none"
         style={{ colorScheme: 'dark' }}
         onKeyDown={(event) => {
           if (event.key === 'Enter') goToMonth()
@@ -38,7 +38,7 @@ export function MonthJump({ month, onChange }: MonthJumpProps): ReactElement {
       <button
         type="button"
         onClick={goToMonth}
-        className="rounded-md border border-[#3b3b3b] bg-[#2a2a2a] px-2 py-1 text-xs font-medium text-[#d4d4d4] hover:border-[#7c3aed] hover:text-white transition-colors"
+        className="rounded-md border border-[#2b2b31] bg-[#16161a] px-2 py-1 text-xs font-medium text-[#d4d4d4] hover:border-[#7c3aed] hover:text-white transition-colors"
       >
         Ir
       </button>

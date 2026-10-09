@@ -49,7 +49,7 @@ function CashflowChart({
   const bar = Math.min(14, (slot - 4) / 2)
 
   return (
-    <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3">
+    <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-3">
       <div className="flex items-center justify-between mb-2">
         <p className="text-xs font-semibold text-[#d4d4d4]">Entradas e saídas por mês</p>
         <div className="flex gap-2 text-[9px] text-[#999999]">
@@ -78,7 +78,7 @@ function CashflowChart({
               x2={width - 12}
               y1={12 + plotHeight * line}
               y2={12 + plotHeight * line}
-              stroke="#3b3b3b"
+              stroke="#2b2b31"
             />
           ))}
           {months.map((month, index) => {
@@ -159,7 +159,7 @@ function BalanceChart({
   const last = months[months.length - 1]
 
   return (
-    <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3">
+    <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-3">
       <div className="flex items-center justify-between mb-2">
         <p className="text-xs font-semibold text-[#d4d4d4]">Evolução do saldo</p>
         <div className="flex items-center gap-3">
@@ -197,7 +197,7 @@ function BalanceChart({
                 x2={width - right}
                 y1={y(tick)}
                 y2={y(tick)}
-                stroke={tick === 0 ? '#666666' : '#3b3b3b'}
+                stroke={tick === 0 ? '#666666' : '#2b2b31'}
                 strokeDasharray={tick === 0 ? '3 3' : undefined}
               />
               <text
@@ -264,7 +264,7 @@ function CategoryChart({
   if (cursor < 100) slices.push('#666666 ' + cursor + '% 100%')
 
   return (
-    <div className="rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] p-3">
+    <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-3">
       <p className="text-xs font-semibold text-[#d4d4d4] mb-3">
         Distribuição por categoria — {categoryLabel}
       </p>
@@ -276,7 +276,7 @@ function CategoryChart({
             className="relative shrink-0 w-28 h-28 rounded-full"
             style={{ background: 'conic-gradient(' + slices.join(', ') + ')' }}
           >
-            <div className="absolute inset-5 rounded-full bg-[#2a2a2a] flex flex-col items-center justify-center">
+            <div className="absolute inset-5 rounded-full bg-[#16161a] flex flex-col items-center justify-center">
               <span className="text-[9px] text-[#999999]">Total</span>
               <span className="text-[10px] font-semibold text-[#d4d4d4] tabular-nums">
                 {formatCurrency(total, currency)}

@@ -302,7 +302,7 @@ function VisualBox({
   color?: string
 }): React.JSX.Element {
   return (
-    <div className="min-w-0 flex-1 rounded-lg border border-[#3b3b3b] bg-[#2a2a2a] p-3">
+    <div className="min-w-0 flex-1 rounded-lg border border-[#2b2b31] bg-[#16161a] p-3">
       <p className="text-[10px] font-semibold uppercase tracking-wide text-[#999999]">{label}</p>
       <p className={`mt-1 text-sm font-semibold ${color}`}>{value}</p>
       {detail && <p className="mt-1 text-[11px] leading-4 text-[#999999]">{detail}</p>}
@@ -320,9 +320,9 @@ function GuideVisual({ sectionId }: { sectionId: string }): React.JSX.Element {
           ['Review', 'Para revisar'],
           ['Done', 'Concluída']
         ].map(([name, detail], index) => (
-          <div key={name} className="rounded-lg border border-[#3b3b3b] bg-[#2a2a2a] p-3">
+          <div key={name} className="rounded-lg border border-[#2b2b31] bg-[#16161a] p-3">
             <p className="text-xs font-semibold text-white">{name}</p>
-            <div className="mt-3 rounded border border-[#4a4a4a] bg-[#232323] px-2 py-2 text-[11px] text-[#b8b8b8]">
+            <div className="mt-3 rounded border border-[#34343a] bg-[#16161a] px-2 py-2 text-[11px] text-[#b8b8b8]">
               {detail}
             </div>
             {index < 3 && <p className="mt-2 text-right text-xs text-[#a080f0]">→</p>}
@@ -335,15 +335,15 @@ function GuideVisual({ sectionId }: { sectionId: string }): React.JSX.Element {
   if (sectionId === 'organizacao') {
     return (
       <div className="space-y-2">
-        <div className="flex items-center gap-3 rounded-lg border border-[#3b3b3b] bg-[#2a2a2a] p-3">
+        <div className="flex items-center gap-3 rounded-lg border border-[#2b2b31] bg-[#16161a] p-3">
           <span className="w-16 shrink-0 text-xs text-[#999999]">09:00</span>
-          <div className="flex-1 rounded border-l-2 border-[#a080f0] bg-[#232323] px-3 py-2 text-xs text-white">
+          <div className="flex-1 rounded border-l-2 border-[#a080f0] bg-[#16161a] px-3 py-2 text-xs text-white">
             Bloco: trabalhar na tarefa
           </div>
         </div>
-        <div className="flex items-center gap-3 rounded-lg border border-[#3b3b3b] bg-[#2a2a2a] p-3">
+        <div className="flex items-center gap-3 rounded-lg border border-[#2b2b31] bg-[#16161a] p-3">
           <span className="w-16 shrink-0 text-xs text-[#999999]">11:00</span>
-          <div className="flex-1 rounded border-l-2 border-[#46d478] bg-[#232323] px-3 py-2 text-xs text-white">
+          <div className="flex-1 rounded border-l-2 border-[#46d478] bg-[#16161a] px-3 py-2 text-xs text-white">
             Rotina: fazer uma pausa
           </div>
         </div>
@@ -357,23 +357,23 @@ function GuideVisual({ sectionId }: { sectionId: string }): React.JSX.Element {
   if (sectionId === 'metas-habitos') {
     return (
       <div className="grid gap-3 sm:grid-cols-2">
-        <div className="rounded-lg border border-[#3b3b3b] bg-[#2a2a2a] p-4">
+        <div className="rounded-lg border border-[#2b2b31] bg-[#16161a] p-4">
           <div className="flex justify-between text-xs">
             <span>Meta: ler 10 livros</span>
             <strong>6 / 10</strong>
           </div>
-          <div className="mt-3 h-2 rounded-full bg-[#3b3b3b]">
+          <div className="mt-3 h-2 rounded-full bg-[#2a2a30]">
             <div className="h-2 w-3/5 rounded-full bg-[#a080f0]" />
           </div>
           <p className="mt-2 text-[11px] text-[#999999]">Os registros somam o progresso.</p>
         </div>
-        <div className="rounded-lg border border-[#3b3b3b] bg-[#2a2a2a] p-4">
+        <div className="rounded-lg border border-[#2b2b31] bg-[#16161a] p-4">
           <p className="text-xs">Hábito: caminhar</p>
           <div className="mt-3 flex gap-1.5">
             {['S', 'T', 'Q', 'Q', 'S', 'S', 'D'].map((day, index) => (
               <span
                 key={index}
-                className={`flex h-7 w-7 items-center justify-center rounded text-[10px] ${index < 4 ? 'bg-[#2e7a48] text-white' : 'bg-[#3b3b3b] text-[#999999]'}`}
+                className={`flex h-7 w-7 items-center justify-center rounded text-[10px] ${index < 4 ? 'bg-[#2e7a48] text-white' : 'bg-[#2a2a30] text-[#999999]'}`}
               >
                 {day}
               </span>
@@ -390,18 +390,18 @@ function GuideVisual({ sectionId }: { sectionId: string }): React.JSX.Element {
   if (sectionId === 'financeiro-base') {
     return (
       <div className="grid gap-3 sm:grid-cols-2">
-        <div className="rounded-lg border border-[#3b3b3b] bg-[#2a2a2a] p-4">
+        <div className="rounded-lg border border-[#2b2b31] bg-[#16161a] p-4">
           <p className="text-xs font-semibold text-[#a080f0]">Perfil pessoal</p>
           <div className="mt-3 space-y-2 text-xs text-[#d4d4d4]">
-            <p className="rounded bg-[#232323] p-2">Conta corrente · BRL</p>
-            <p className="rounded bg-[#232323] p-2">Cartão · BRL</p>
+            <p className="rounded bg-[#16161a] p-2">Conta corrente · BRL</p>
+            <p className="rounded bg-[#16161a] p-2">Cartão · BRL</p>
           </div>
         </div>
-        <div className="rounded-lg border border-[#3b3b3b] bg-[#2a2a2a] p-4">
+        <div className="rounded-lg border border-[#2b2b31] bg-[#16161a] p-4">
           <p className="text-xs font-semibold text-[#46d478]">Perfil trabalho</p>
           <div className="mt-3 space-y-2 text-xs text-[#d4d4d4]">
-            <p className="rounded bg-[#232323] p-2">Recebimentos · USD</p>
-            <p className="rounded bg-[#232323] p-2">Despesas · BRL</p>
+            <p className="rounded bg-[#16161a] p-2">Recebimentos · USD</p>
+            <p className="rounded bg-[#16161a] p-2">Despesas · BRL</p>
           </div>
         </div>
         <p className="sm:col-span-2 text-xs text-[#999999]">
@@ -452,9 +452,9 @@ function GuideVisual({ sectionId }: { sectionId: string }): React.JSX.Element {
         </div>
         <div className="mt-3 flex items-center gap-2 text-[11px] text-[#999999]">
           <span>Passado</span>
-          <span className="h-px flex-1 bg-[#4a4a4a]" />
+          <span className="h-px flex-1 bg-[#2a2a30]" />
           <span className="text-[#a080f0]">Hoje</span>
-          <span className="h-px flex-1 bg-[#4a4a4a]" />
+          <span className="h-px flex-1 bg-[#2a2a30]" />
           <span>Fim do mês</span>
         </div>
         <p className="mt-3 text-xs text-[#999999]">
@@ -467,7 +467,7 @@ function GuideVisual({ sectionId }: { sectionId: string }): React.JSX.Element {
   if (sectionId === 'financeiro-vinculos') {
     return (
       <div className="grid gap-3 sm:grid-cols-2">
-        <div className="rounded-lg border border-[#3b3b3b] bg-[#2a2a2a] p-4">
+        <div className="rounded-lg border border-[#2b2b31] bg-[#16161a] p-4">
           <p className="text-xs font-semibold text-white">Fatura e espelho</p>
           <p className="mt-2 text-xs text-[#b8b8b8]">Fatura R$ 100,00 + espelho R$ 30,00</p>
           <p className="mt-2 text-sm font-semibold text-[#46d478]">Consolidado: R$ 100,00</p>
@@ -475,7 +475,7 @@ function GuideVisual({ sectionId }: { sectionId: string }): React.JSX.Element {
             Com vínculo no detalhe, o espelho sai da soma.
           </p>
         </div>
-        <div className="rounded-lg border border-[#3b3b3b] bg-[#2a2a2a] p-4">
+        <div className="rounded-lg border border-[#2b2b31] bg-[#16161a] p-4">
           <p className="text-xs font-semibold text-white">Câmbio entre tabelas</p>
           <p className="mt-2 text-xs text-[#b8b8b8]">Saída em BRL → entrada em USD</p>
           <p className="mt-2 text-sm font-semibold text-[#a080f0]">Ambas as pontas permanecem</p>
@@ -542,10 +542,10 @@ export function GuideView(): React.JSX.Element {
   const activeSection = sections.find((section) => section.id === activeId) ?? sections[0]
 
   return (
-    <div className="flex h-full min-h-0 bg-[#1b1b1b] text-[#d4d4d4]">
+    <div className="flex h-full min-h-0 bg-[#0b0b0f] text-[#d4d4d4]">
       <nav
         aria-label="Seções do guia"
-        className="w-56 shrink-0 overflow-y-auto border-r border-[#3b3b3b] bg-[#232323] px-3 py-5"
+        className="w-56 shrink-0 overflow-y-auto border-r border-[#2b2b31] bg-[#121216] px-3 py-5"
       >
         <p className="px-2 pb-3 text-[10px] font-semibold uppercase tracking-wider text-[#999999]">
           Guia do app
@@ -557,7 +557,7 @@ export function GuideView(): React.JSX.Element {
               type="button"
               onClick={() => setActiveId(section.id)}
               aria-current={activeId === section.id ? 'page' : undefined}
-              className={`w-full rounded-md px-3 py-2 text-left text-xs transition-colors ${activeId === section.id ? 'bg-[#3b3b3b] font-medium text-white' : 'text-[#999999] hover:bg-[#2a2a2a] hover:text-[#d4d4d4]'}`}
+              className={`w-full rounded-md px-3 py-2 text-left text-xs transition-colors ${activeId === section.id ? 'bg-[#2a2a30] font-medium text-white' : 'text-[#999999] hover:bg-[#222227] hover:text-[#d4d4d4]'}`}
             >
               {section.label}
             </button>
@@ -566,14 +566,14 @@ export function GuideView(): React.JSX.Element {
       </nav>
       <div key={activeSection.id} className="min-w-0 flex-1 overflow-y-auto px-5 py-7 sm:px-8">
         <div className="mx-auto max-w-3xl">
-          <div className="mb-7 border-b border-[#3b3b3b] pb-6">
+          <div className="mb-7 border-b border-[#2b2b31] pb-6">
             <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[#a080f0]">
               Como funciona
             </p>
             <h1 className="text-2xl font-semibold text-white">{activeSection.label}</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#a8a8a8]">{activeSection.intro}</p>
           </div>
-          <div className="mb-5 rounded-xl border border-[#3b3b3b] bg-[#232323] p-4">
+          <div className="mb-5 rounded-xl border border-[#2b2b31] bg-[#16161a] p-4">
             <p className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-[#999999]">
               Exemplo visual
             </p>
@@ -583,7 +583,7 @@ export function GuideView(): React.JSX.Element {
             {activeSection.topics.map((topic) => (
               <section
                 key={topic.title}
-                className="rounded-xl border border-[#3b3b3b] bg-[#232323] p-5"
+                className="rounded-xl border border-[#2b2b31] bg-[#16161a] p-5"
               >
                 <h2 className="text-sm font-semibold text-white">{topic.title}</h2>
                 <ul className="mt-3 space-y-3">

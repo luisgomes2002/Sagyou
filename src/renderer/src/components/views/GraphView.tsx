@@ -512,8 +512,8 @@ export function GraphView({ onNavigate }: Props) {
   // ── Render ───────────────────────────────────────────────────────────────
   if (nodes.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-4 bg-[#0d0d0d]">
-        <div className="w-16 h-16 rounded-2xl bg-[#2a2a2a] border border-[#3b3b3b] flex items-center justify-center">
+      <div className="flex flex-col items-center justify-center h-full gap-4 bg-[#0b0b0f]">
+        <div className="w-16 h-16 rounded-2xl bg-[#16161a] border border-[#2b2b31] flex items-center justify-center">
           <svg
             width="28"
             height="28"
@@ -542,8 +542,8 @@ export function GraphView({ onNavigate }: Props) {
   }
 
   return (
-    <div className="flex flex-col h-full overflow-hidden bg-[#0d0d0d] relative">
-      <div className="flex items-center gap-3 px-4 py-2 border-b border-[#232323] shrink-0">
+    <div className="flex flex-col h-full overflow-hidden bg-[#0b0b0f] relative">
+      <div className="flex items-center gap-3 px-4 py-2 border-b border-[#2b2b31] shrink-0">
         <div className="relative flex-1 max-w-xs">
           <svg
             className="absolute left-2.5 top-1/2 -translate-y-1/2"
@@ -562,7 +562,7 @@ export function GraphView({ onNavigate }: Props) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar nó..."
-            className="w-full pl-8 pr-3 py-1.5 text-xs rounded-md bg-[#1a1a1a] border border-[#333] text-[#d4d4d4] placeholder-[#666] focus:outline-none focus:border-[#7c3aed]"
+            className="w-full pl-8 pr-3 py-1.5 text-xs rounded-md bg-[#16161a] border border-[#2b2b31] text-[#d4d4d4] placeholder-[#666] focus:outline-none focus:border-[#7c3aed]"
           />
         </div>
         <div className="flex items-center gap-3 text-[10px] text-[#666] ml-auto">
@@ -736,8 +736,8 @@ export function GraphView({ onNavigate }: Props) {
         </svg>
 
         {/* Project sidebar */}
-        <div className="w-40 shrink-0 border-l border-[#232323] bg-[#0d0d0d] flex flex-col overflow-hidden">
-          <div className="px-3 py-2 border-b border-[#232323] text-[10px] font-semibold uppercase tracking-wider text-[#555]">
+        <div className="w-40 shrink-0 border-l border-[#2b2b31] bg-[#0b0b0f] flex flex-col overflow-hidden">
+          <div className="px-3 py-2 border-b border-[#2b2b31] text-[10px] font-semibold uppercase tracking-wider text-[#555]">
             Projetos
           </div>
           <div className="flex-1 overflow-y-auto py-1">
@@ -753,8 +753,8 @@ export function GraphView({ onNavigate }: Props) {
                     onClick={() => focusProject(p.id)}
                     className={`w-full text-left px-3 py-1.5 text-[11px] transition-colors flex items-center gap-2 ${
                       hoveredNode === p.id
-                        ? 'text-white bg-[#3b3b3b]'
-                        : 'text-[#888] hover:text-[#ccc] hover:bg-[#2a2a2a]'
+                        ? 'text-white bg-[#2a2a30]'
+                        : 'text-[#888] hover:text-[#ccc] hover:bg-[#222227]'
                     }`}
                     onMouseEnter={() => setHoveredNode(p.id)}
                     onMouseLeave={() => setHoveredNode(null)}
@@ -775,7 +775,7 @@ export function GraphView({ onNavigate }: Props) {
 
       {tooltip && (
         <div
-          className="fixed z-50 px-2.5 py-1.5 rounded-md bg-[#1a1a1a] border border-[#3b3b3b] text-xs text-[#d4d4d4] shadow-lg pointer-events-none max-w-[260px]"
+          className="fixed z-50 px-2.5 py-1.5 rounded-md bg-[#16161a] border border-[#2b2b31] text-xs text-[#d4d4d4] shadow-lg pointer-events-none max-w-[260px]"
           style={{ left: tooltip.x + 12, top: tooltip.y - 10 }}
         >
           <div className="flex items-center gap-1.5 mb-0.5">

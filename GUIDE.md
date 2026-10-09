@@ -172,7 +172,7 @@ financeiros sem o ID do perfil ativo não podem ser devolvidos.
 
 ## Convenções
 
-- **Visual do renderer:** siga [`UI_DESIGN.md`](UI_DESIGN.md) ao criar cartões, botões, tags e banners. Use superfícies sólidas grafite com borda neutra e cor semântica no conteúdo; evite fundos coloridos de baixa opacidade e grandes blocos fluorescentes. Transparência continua válida quando tem função de interação, como scrims e estados desabilitados.
+- **Visual do renderer:** siga [`UI_DESIGN.md`](UI_DESIGN.md) ao criar cartões, botões, tags e banners. O fundo principal é `#0b0b0f`, próximo à tela de boas-vindas; a sidebar e colunas usam `#121216`, e os cartões `#16161a` com bordas `#2b2b31`. Use superfícies sólidas grafite com borda neutra e cor semântica no conteúdo; evite fundos coloridos de baixa opacidade e grandes blocos fluorescentes. Transparência continua válida quando tem função de interação, como scrims e estados desabilitados.
 
 - **Prettier manda**: aspas simples, **sem ponto e vírgula**, largura 100, sem
   trailing comma (`.prettierrc.yaml`). Não discuta com o formatador.

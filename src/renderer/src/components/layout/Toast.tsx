@@ -34,9 +34,9 @@ function ToastItem({ toast, onRemove }: { toast: ToastMessage; onRemove: (id: st
   }, [toast.id, onRemove])
 
   const colors = {
-    success: 'border-[#3b3b3b] bg-[#3b3b3b] text-[#46d478]',
-    error: 'border-[#3b3b3b] bg-[#3b3b3b] text-[#e04040]',
-    info: 'border-[#3b3b3b] bg-[#3b3b3b] text-[#a080f0]'
+    success: 'border-[#2b2b31] bg-[#2a2a30] text-[#46d478]',
+    error: 'border-[#2b2b31] bg-[#2a2a30] text-[#e04040]',
+    info: 'border-[#2b2b31] bg-[#2a2a30] text-[#a080f0]'
   }
 
   return (

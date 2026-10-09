@@ -59,16 +59,16 @@ export function CategoryInput({
         className={'w-full ' + (className ?? '')}
       />
       {open && filtered.length > 0 && (
-        <div className="absolute left-0 top-full mt-0.5 z-50 w-44 max-h-52 overflow-y-auto rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] shadow-xl py-1">
+        <div className="absolute left-0 top-full mt-0.5 z-50 w-44 max-h-52 overflow-y-auto rounded-lg border border-[#2b2b31] bg-[#101014] shadow-xl py-1">
           {filtered.map((category) => (
             <button
               key={category}
               type="button"
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => select(category)}
-              className={`w-full text-left px-3 py-1.5 text-xs transition-colors hover:bg-[#2a2a2a] ${
+              className={`w-full text-left px-3 py-1.5 text-xs transition-colors hover:bg-[#222227] ${
                 value === category
-                  ? 'bg-[#2a2a2a] text-[#999999]'
+                  ? 'bg-[#16161a] text-[#999999]'
                   : 'text-[#999999] hover:text-[#d4d4d4]'
               }`}
             >

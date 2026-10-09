@@ -32,14 +32,14 @@ export function ColumnModal({ open, column, onSave, onClose }: Props) {
 
   return (
     <ModalBase open={open} onClose={onClose}>
-      <div className="relative z-10 w-full max-w-sm mx-4 rounded-xl border border-[#3b3b3b] bg-[#232323] shadow-2xl">
-        <div className="flex items-center justify-between p-5 border-b border-[#3b3b3b]">
+      <div className="relative z-10 w-full max-w-sm mx-4 rounded-xl border border-[#2b2b31] bg-[#16161a] shadow-2xl">
+        <div className="flex items-center justify-between p-5 border-b border-[#2b2b31]">
           <h2 className="text-base font-semibold text-[#d4d4d4]">
             {column ? 'Editar coluna' : 'Nova coluna'}
           </h2>
           <button
             onClick={onClose}
-            className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors"
+            className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#222227] transition-colors"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <line x1="18" y1="6" x2="6" y2="18" />
@@ -57,7 +57,7 @@ export function ColumnModal({ open, column, onSave, onClose }: Props) {
               onChange={(e) => setName(e.target.value)}
               placeholder="Ex: Em andamento"
               autoFocus
-              className="w-full px-3 py-2 rounded-lg border border-[#3b3b3b] bg-[#1b1b1b] text-sm text-[#d4d4d4] placeholder-[#999999] focus:outline-none focus:border-[#7c3aed] transition-colors"
+              className="w-full px-3 py-2 rounded-lg border border-[#2b2b31] bg-[#101014] text-sm text-[#d4d4d4] placeholder-[#999999] focus:outline-none focus:border-[#7c3aed] transition-colors"
             />
           </div>
 
@@ -67,7 +67,7 @@ export function ColumnModal({ open, column, onSave, onClose }: Props) {
               <button
                 type="button"
                 onClick={() => setColor(undefined)}
-                className="w-7 h-7 rounded-full transition-transform hover:scale-110 border border-dashed border-[#555555] flex items-center justify-center"
+                className="w-7 h-7 rounded-full transition-transform hover:scale-110 border border-dashed border-[#3b3b42] flex items-center justify-center"
                 style={{
                   outline: color === undefined ? '2px solid #999999' : 'none',
                   outlineOffset: '2px'

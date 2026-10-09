@@ -59,7 +59,7 @@ export function HabitView({ searchTargetId }: { searchTargetId?: string | null }
   return (
     <>
       <div className="flex flex-col h-full overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#3b3b3b] shrink-0">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#2b2b31] shrink-0">
           <div className="flex items-center gap-3">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#20b858" strokeWidth="2">
               <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2z" />
@@ -76,7 +76,7 @@ export function HabitView({ searchTargetId }: { searchTargetId?: string | null }
               <div className="flex items-center gap-1">
                 <button
                   onClick={handlePrevMonth}
-                  className="p-1.5 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors"
+                  className="p-1.5 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#222227] transition-colors"
                 >
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <polyline points="15 18 9 12 15 6" />
@@ -88,7 +88,7 @@ export function HabitView({ searchTargetId }: { searchTargetId?: string | null }
                 <button
                   onClick={handleNextMonth}
                   disabled={isCurrentMonth}
-                  className="p-1.5 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a] disabled:opacity-25 disabled:cursor-not-allowed transition-colors"
+                  className="p-1.5 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#222227] disabled:opacity-25 disabled:cursor-not-allowed transition-colors"
                 >
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <polyline points="9 18 15 12 9 6" />
@@ -112,7 +112,7 @@ export function HabitView({ searchTargetId }: { searchTargetId?: string | null }
 
         {habits.length === 0 ? (
           <div className="flex flex-col items-center justify-center flex-1 gap-4">
-            <div className="w-16 h-16 rounded-2xl bg-[#2a2a2a] border border-[#3b3b3b] flex items-center justify-center">
+            <div className="w-16 h-16 rounded-2xl bg-[#16161a] border border-[#2b2b31] flex items-center justify-center">
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#999999" strokeWidth="1.5">
                 <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2z" />
                 <polyline points="12 6 12 12 16 14" />

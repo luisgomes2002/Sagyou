@@ -909,7 +909,7 @@ export function AIView({
     <>
       <div className="flex flex-col h-full overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#3b3b3b] shrink-0">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#2b2b31] shrink-0">
           <div className="flex items-center gap-3">
             <h1 className="text-base font-semibold text-[#d4d4d4]">Assistente IA</h1>
             <span className="text-xs text-[#999999]">
@@ -918,7 +918,7 @@ export function AIView({
             {activeCodePaths.length > 0 && (
               <span
                 title={`A IA lê o código em:\n${activeCodePaths.map((c) => c.path).join('\n')}`}
-                className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#2a2a2a] text-[11px] text-[#a080f0] max-w-[280px]"
+                className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#16161a] text-[11px] text-[#a080f0] max-w-[280px]"
               >
                 <svg
                   width="10"
@@ -1007,7 +1007,7 @@ export function AIView({
 
             <button
               onClick={handleNewConversation}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a] transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-[#999999] hover:text-[#d4d4d4] hover:bg-[#222227] transition-colors"
             >
               <svg
                 width="12"
@@ -1042,8 +1042,8 @@ export function AIView({
               onClick={() => setShowConfig((v) => !v)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                 showConfig
-                  ? 'bg-[#3b3b3b] text-[#a080f0]'
-                  : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a2a]'
+                  ? 'bg-[#2a2a30] text-[#a080f0]'
+                  : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#222227]'
               }`}
             >
               <svg
@@ -1116,7 +1116,7 @@ export function AIView({
                 <div className="flex justify-center sticky top-0 z-10 py-1">
                   <button
                     onClick={showMore}
-                    className="px-4 py-1.5 rounded-full bg-[#2a2a2a] border border-[#3b3b3b] text-xs text-[#999999] hover:text-[#d4d4d4] hover:border-[#555555] transition-colors shadow-lg"
+                    className="px-4 py-1.5 rounded-full bg-[#16161a] border border-[#2b2b31] text-xs text-[#999999] hover:text-[#d4d4d4] hover:border-[#3b3b42] transition-colors shadow-lg"
                   >
                     Mostrar {hiddenCount > MESSAGE_PAGE ? `${MESSAGE_PAGE}+` : hiddenCount} mensage
                     {hiddenCount === 1 ? 'm' : 'ns'} anterior{hiddenCount === 1 ? '' : 'es'}
@@ -1164,7 +1164,7 @@ export function AIView({
               {streaming ? (
                 // The answer typing itself out — same bubble as a finished
                 // message, with a caret trailing the text.
-                <div className="max-w-[88%] px-3.5 py-2 rounded-2xl rounded-bl-sm text-sm break-words bg-[#2a2a2a] text-[#d4d4d4] border border-[#3b3b3b]">
+                <div className="max-w-[88%] px-3.5 py-2 rounded-2xl rounded-bl-sm text-sm break-words bg-[#16161a] text-[#d4d4d4] border border-[#2b2b31]">
                   <ChatMarkdown content={streaming} />
                   <span className="inline-block w-[2px] h-3.5 ml-0.5 align-[-1px] bg-[#a080f0] animate-pulse" />
                 </div>
@@ -1188,7 +1188,7 @@ export function AIView({
                 // own status line is already spinning, so this would be a second
                 // spinner for the same wait.
                 !toolRunning && (
-                  <div className="px-3.5 py-2 rounded-2xl bg-[#2a2a2a] border border-[#3b3b3b]">
+                  <div className="px-3.5 py-2 rounded-2xl bg-[#16161a] border border-[#2b2b31]">
                     <div className="w-4 h-4 rounded-full border-2 border-[#7c3aed] border-t-transparent animate-spin" />
                   </div>
                 )
@@ -1199,7 +1199,7 @@ export function AIView({
                 onClick={() => useAiRunStore.getState().abort()}
                 title="Parar"
                 aria-label="Parar"
-                className="flex items-center justify-center w-7 h-7 rounded-full bg-[#2a2a2a] border border-[#3b3b3b] text-[#999999] hover:text-[#d4d4d4] hover:border-[#555555] transition-colors"
+                className="flex items-center justify-center w-7 h-7 rounded-full bg-[#16161a] border border-[#2b2b31] text-[#999999] hover:text-[#d4d4d4] hover:border-[#3b3b42] transition-colors"
               >
                 <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor">
                   <rect x="3" y="3" width="18" height="18" rx="3" />
@@ -1211,13 +1211,13 @@ export function AIView({
 
         {/* Banners */}
         {createdCount !== null && (
-          <div className="px-6 py-2 text-xs text-[#46d478] bg-[#2a2a2a] border-t border-[#3b3b3b] shrink-0">
+          <div className="px-6 py-2 text-xs text-[#46d478] bg-[#16161a] border-t border-[#2b2b31] shrink-0">
             {createdCount} task{createdCount === 1 ? '' : 's'} criada{createdCount === 1 ? '' : 's'}{' '}
             em {activeProject?.name}.
           </div>
         )}
         {error && (
-          <div className="px-6 py-2 text-xs text-[#e04040] bg-[#2a2a2a] border-t border-[#3b3b3b] shrink-0">
+          <div className="px-6 py-2 text-xs text-[#e04040] bg-[#16161a] border-t border-[#2b2b31] shrink-0">
             {error}
           </div>
         )}
@@ -1240,7 +1240,7 @@ export function AIView({
             if (docs.length > 0) void attachDocuments(docs)
           }}
           className={`px-6 py-3 border-t shrink-0 transition-colors ${
-            dragOver ? 'border-[#7c3aed] bg-[#2a2a2a]' : 'border-[#3b3b3b]'
+            dragOver ? 'border-[#7c3aed] bg-[#16161a]' : 'border-[#2b2b31]'
           }`}
         >
           {!configReady && (
@@ -1273,13 +1273,13 @@ export function AIView({
                   <img
                     src={img.dataUrl}
                     alt="Anexo"
-                    className="h-16 w-16 object-cover rounded-md border border-[#3b3b3b]"
+                    className="h-16 w-16 object-cover rounded-md border border-[#2b2b31]"
                   />
                   <button
                     onClick={() => removePendingImage(img.id)}
                     title="Remover"
                     aria-label="Remover imagem"
-                    className="absolute -top-1.5 -right-1.5 w-5 h-5 flex items-center justify-center rounded-full bg-[#2a2a2a] border border-[#3b3b3b] text-[#999999] opacity-0 group-hover:opacity-100 hover:text-[#e04040] transition-opacity"
+                    className="absolute -top-1.5 -right-1.5 w-5 h-5 flex items-center justify-center rounded-full bg-[#16161a] border border-[#2b2b31] text-[#999999] opacity-0 group-hover:opacity-100 hover:text-[#e04040] transition-opacity"
                   >
                     <svg
                       width="9"
@@ -1302,7 +1302,7 @@ export function AIView({
               {pendingDocuments.map((doc) => (
                 <div
                   key={doc.id}
-                  className="relative group flex items-center gap-2 px-2 py-1 rounded-md border border-[#3b3b3b] bg-[#1b1b1b] text-xs"
+                  className="relative group flex items-center gap-2 px-2 py-1 rounded-md border border-[#2b2b31] bg-[#101014] text-xs"
                 >
                   <span className="text-[#7c3aed] font-medium">
                     {doc.ext.replace('.', '').toUpperCase()}
@@ -1317,7 +1317,7 @@ export function AIView({
                     onClick={() => removePendingDocument(doc.id)}
                     title="Remover"
                     aria-label="Remover documento"
-                    className="ml-1 w-5 h-5 flex items-center justify-center rounded-full bg-[#2a2a2a] border border-[#3b3b3b] text-[#999999] opacity-0 group-hover:opacity-100 hover:text-[#e04040] transition-opacity"
+                    className="ml-1 w-5 h-5 flex items-center justify-center rounded-full bg-[#16161a] border border-[#2b2b31] text-[#999999] opacity-0 group-hover:opacity-100 hover:text-[#e04040] transition-opacity"
                   >
                     <svg
                       width="9"
@@ -1404,7 +1404,7 @@ export function AIView({
               // measurement is off; min-h holds the original two-line resting
               // size, which the inline height would otherwise undercut.
               style={{ maxHeight: COMPOSER_MAX_PX }}
-              className="flex-1 resize-none overflow-y-auto min-h-[58px] px-3 py-2 rounded-lg bg-[#1b1b1b] border border-[#3b3b3b] text-sm text-[#d4d4d4] placeholder:text-[#666666] focus:outline-none focus:border-[#7c3aed] disabled:opacity-50"
+              className="flex-1 resize-none overflow-y-auto min-h-[58px] px-3 py-2 rounded-lg bg-[#101014] border border-[#2b2b31] text-sm text-[#d4d4d4] placeholder:text-[#666666] focus:outline-none focus:border-[#7c3aed] disabled:opacity-50"
             />
             <div className="flex flex-col gap-2">
               <button
@@ -1416,7 +1416,7 @@ export function AIView({
                     pendingImages.length === 0 &&
                     pendingDocuments.length === 0)
                 }
-                className="px-3 py-1.5 rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] text-sm text-[#d4d4d4] font-medium hover:bg-[#3b3b3b] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                className="px-3 py-1.5 rounded-lg bg-[#16161a] border border-[#2b2b31] text-sm text-[#d4d4d4] font-medium hover:bg-[#2a2a30] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
                 {editingMessageIndex !== null ? 'Reenviar' : 'Enviar'}
               </button>
@@ -1434,8 +1434,8 @@ export function AIView({
                   <span
                     className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium ${
                       skill
-                        ? 'bg-[#3b3b3b] text-[#46d478] border border-[#3b3b3b]'
-                        : 'bg-[#3b3b3b] text-[#f0b820] border border-[#3b3b3b]'
+                        ? 'bg-[#2a2a30] text-[#46d478] border border-[#2b2b31]'
+                        : 'bg-[#2a2a30] text-[#f0b820] border border-[#2b2b31]'
                     }`}
                   >
                     <svg
@@ -1469,7 +1469,7 @@ export function AIView({
 
           {/* Skill autocomplete dropdown */}
           {skillMenuOpen && matchedSkills.length > 0 && (
-            <div className="mt-1 rounded-lg bg-[#2a2a2a] border border-[#3b3b3b] shadow-lg overflow-hidden max-h-48 overflow-y-auto">
+            <div className="mt-1 rounded-lg bg-[#16161a] border border-[#2b2b31] shadow-lg overflow-hidden max-h-48 overflow-y-auto">
               {matchedSkills.map((skill) => (
                 <button
                   key={skill.name}
@@ -1477,7 +1477,7 @@ export function AIView({
                     setInput(`/${skill.name} `)
                     setSkillMenuOpen(false)
                   }}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm text-[#d4d4d4] hover:bg-[#3b3b3b] transition-colors"
+                  className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm text-[#d4d4d4] hover:bg-[#2a2a30] transition-colors"
                 >
                   <svg
                     width="10"

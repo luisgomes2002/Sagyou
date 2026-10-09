@@ -185,7 +185,7 @@ export function TransactionRecordPanel({
   }
 
   return (
-    <div className="ml-5 rounded-lg border border-[#3b3b3b] bg-[#232323] p-3 text-xs text-[#d4d4d4] space-y-3">
+    <div className="ml-5 rounded-lg border border-[#2b2b31] bg-[#16161a] p-3 text-xs text-[#d4d4d4] space-y-3">
       <div className="flex items-center gap-3">
         <p className="font-semibold">Documentação e conferência</p>
         <span
@@ -215,7 +215,7 @@ export function TransactionRecordPanel({
               }
             }}
             placeholder="Ex.: Wise"
-            className="w-full rounded border border-[#3b3b3b] bg-[#1b1b1b] px-2 py-1.5 outline-none focus:border-[#7c3aed]"
+            className="w-full rounded border border-[#2b2b31] bg-[#101014] px-2 py-1.5 outline-none focus:border-[#7c3aed]"
           />
         </label>
         <label className="space-y-1">
@@ -237,7 +237,7 @@ export function TransactionRecordPanel({
             placeholder={
               transaction.type === 'expense' ? 'Nome de quem recebeu' : 'Nome de quem pagou'
             }
-            className="w-full rounded border border-[#3b3b3b] bg-[#1b1b1b] px-2 py-1.5 outline-none focus:border-[#7c3aed]"
+            className="w-full rounded border border-[#2b2b31] bg-[#101014] px-2 py-1.5 outline-none focus:border-[#7c3aed]"
           />
         </label>
         <label className="space-y-1">
@@ -255,7 +255,7 @@ export function TransactionRecordPanel({
               }
             }}
             placeholder="Referência no extrato"
-            className="w-full rounded border border-[#3b3b3b] bg-[#1b1b1b] px-2 py-1.5 outline-none focus:border-[#7c3aed]"
+            className="w-full rounded border border-[#2b2b31] bg-[#101014] px-2 py-1.5 outline-none focus:border-[#7c3aed]"
           />
         </label>
       </div>
@@ -264,18 +264,18 @@ export function TransactionRecordPanel({
           type="button"
           onClick={saveBankDetails}
           disabled={!bankDetailsChanged}
-          className="rounded bg-[#3b3b3b] px-3 py-1.5 font-medium text-[#d4d4d4] hover:bg-[#4a4a4a] disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded bg-[#2a2a30] px-3 py-1.5 font-medium text-[#d4d4d4] hover:bg-[#303036] disabled:cursor-not-allowed disabled:opacity-50"
         >
           Salvar informações
         </button>
       </div>
-      <div className="border-t border-[#3b3b3b] pt-3">
+      <div className="border-t border-[#2b2b31] pt-3">
         <div className="flex items-center gap-2">
           <span className="font-medium">Comprovantes</span>
           <button
             type="button"
             onClick={attach}
-            className="rounded bg-[#2a2a2a] px-2 py-1 text-[#a080f0] hover:bg-[#3b3b3b]"
+            className="rounded bg-[#16161a] px-2 py-1 text-[#a080f0] hover:bg-[#2a2a30]"
           >
             + Anexar arquivo
           </button>
@@ -286,7 +286,7 @@ export function TransactionRecordPanel({
               aria-label="Arquivo existente"
               value={selectedFile}
               onChange={(e) => setSelectedFile(e.target.value)}
-              className="min-w-0 flex-1 rounded border border-[#3b3b3b] bg-[#1b1b1b] px-2 py-1.5"
+              className="min-w-0 flex-1 rounded border border-[#2b2b31] bg-[#101014] px-2 py-1.5"
             >
               <option value="">Ou escolha um arquivo já salvo</option>
               {files
@@ -304,7 +304,7 @@ export function TransactionRecordPanel({
                 onUpdate({ receiptFileIds: [...(transaction.receiptFileIds ?? []), selectedFile] })
                 setSelectedFile('')
               }}
-              className="rounded bg-[#2a2a2a] px-2 py-1 text-[#a080f0] disabled:opacity-50"
+              className="rounded bg-[#16161a] px-2 py-1 text-[#a080f0] disabled:opacity-50"
             >
               Vincular
             </button>
@@ -316,7 +316,7 @@ export function TransactionRecordPanel({
             return (
               <span
                 key={id}
-                className="inline-flex items-center gap-1 rounded border border-[#3b3b3b] px-2 py-1"
+                className="inline-flex items-center gap-1 rounded border border-[#2b2b31] px-2 py-1"
               >
                 {file ? (
                   <button
@@ -351,7 +351,7 @@ export function TransactionRecordPanel({
           )}
         </div>
       </div>
-      <div className="border-t border-[#3b3b3b] pt-3 space-y-2">
+      <div className="border-t border-[#2b2b31] pt-3 space-y-2">
         <p className="font-medium">Transferência entre moedas</p>
         {transaction.currencyTransferId ? (
           <>
@@ -375,7 +375,7 @@ export function TransactionRecordPanel({
                   if (e.key === 'Enter') e.currentTarget.blur()
                 }}
                 placeholder="0"
-                className="w-24 rounded border border-[#3b3b3b] bg-[#1b1b1b] px-2 py-1 outline-none focus:border-[#7c3aed]"
+                className="w-24 rounded border border-[#2b2b31] bg-[#101014] px-2 py-1 outline-none focus:border-[#7c3aed]"
               />
               <select
                 aria-label="Moeda da tarifa"
@@ -390,7 +390,7 @@ export function TransactionRecordPanel({
                       next
                     )
                 }}
-                className="rounded border border-[#3b3b3b] bg-[#1b1b1b] px-2 py-1"
+                className="rounded border border-[#2b2b31] bg-[#101014] px-2 py-1"
               >
                 {[
                   ...new Set([outgoing?.list?.currency, incoming?.list?.currency].filter(Boolean))
@@ -418,7 +418,7 @@ export function TransactionRecordPanel({
               aria-label="Outra ponta da transferência"
               value={selectedPair}
               onChange={(e) => setSelectedPair(e.target.value)}
-              className="min-w-0 flex-1 rounded border border-[#3b3b3b] bg-[#1b1b1b] px-2 py-1.5"
+              className="min-w-0 flex-1 rounded border border-[#2b2b31] bg-[#101014] px-2 py-1.5"
             >
               <option value="">
                 Selecione a {transaction.type === 'expense' ? 'entrada' : 'saída'} em outra moeda
@@ -434,14 +434,14 @@ export function TransactionRecordPanel({
               type="button"
               disabled={!selectedPair}
               onClick={link}
-              className="rounded bg-[#2a2a2a] px-3 py-1.5 text-[#a080f0] disabled:opacity-50"
+              className="rounded bg-[#16161a] px-3 py-1.5 text-[#a080f0] disabled:opacity-50"
             >
               Vincular
             </button>
           </div>
         )}
       </div>
-      <div className="border-t border-[#3b3b3b] pt-3 flex flex-wrap items-center gap-3">
+      <div className="border-t border-[#2b2b31] pt-3 flex flex-wrap items-center gap-3">
         {transaction.reconciledAt && (
           <span className="text-[#46d478]">
             ✓ Conferido com extrato em {new Date(transaction.reconciledAt).toLocaleString('pt-BR')}
@@ -460,7 +460,7 @@ export function TransactionRecordPanel({
         )}
       </div>
       {!!transaction.audit?.length && (
-        <details className="border-t border-[#3b3b3b] pt-3">
+        <details className="border-t border-[#2b2b31] pt-3">
           <summary className="cursor-pointer text-[#a080f0]">
             Histórico de alterações ({transaction.audit.length})
           </summary>
