@@ -66,56 +66,36 @@
 
 ## Assistente de IA
 
+O cabeçalho do chat mostra a conexão e o modelo ativos. Use **Trocar IA** para escolher
+ChatGPT por assinatura ou um perfil de API e confirmar o modelo da conversa. A
+escolha permanece ao reabrir o histórico; respostas anteriores mostram a conexão
+e o modelo usados. Em **Configuração**, o ChatGPT e os Perfis de API têm cards
+próprios. Base URL, chave, modelo forte e preços ficam no editor do perfil ou em
+**Avançado**. As chaves salvas não reaparecem no formulário. Codex, Claude Code,
+OpenCode, sandbox e revisão de patch ficam em **Agentes → Agente de código**.
+
 O assistente é **opcional** e vem desligado — nada é enviado a lugar nenhum até você configurar um provedor.
 
 ### Configuração
 
-Abra a view **Assistente IA** e clique na engrenagem. A configuração tem sete grupos de campos:
+Abra **Assistente IA → Configuração** para conectar o ChatGPT por assinatura ou criar um
+perfil de API. Há atalhos para **OpenAI / Codex** (chave da plataforma OpenAI) e
+**Claude** (chave da API Anthropic), além de servidor compatível. A assinatura e as
+chaves de API são opções distintas, com cobrança própria.
+Depois de informar URL e chave, use **Buscar modelos**: os campos de modelo padrão
+e modelo forte são dropdowns alimentados pelo catálogo disponível para aquela conta.
+Editar um perfil abre nome, Base URL, API key, modelo padrão e modelo forte opcional.
+O modelo forte aparece como escolha no fluxo **Trocar IA**; ele não substitui
+automaticamente o modelo que o cabeçalho mostra. Em **Avançado** ficam preços
+e timeout. Configurações antigas de API são importadas automaticamente como
+um perfil comum, sem um modo legado visível. A configuração fica em
+`ai-config.json` (veja [Dados](#dados)); uma chave salva não volta para o renderer.
 
-**1. Provedor**
-
-| Campo        | Descrição                                                                                                                        |
-| ------------ | -------------------------------------------------------------------------------------------------------------------------------- |
-| **Base URL** | Endpoint da API — ex.: `https://api.openai.com/v1`, `http://localhost:11434/v1` (Ollama), `http://localhost:1234/v1` (LM Studio) |
-| **API Key**  | `sk-...` — deixe qualquer valor se o provedor local não exigir                                                                   |
-| **Model**    | Dropdown com os modelos disponíveis no endpoint; use o botão ao lado para carregar a lista                                       |
-
-**2. Modelo p/ código (opcional)**
-
-Dropdown extra que, quando preenchido, roteia perguntas de código (análise, bugs, refatoração) para um modelo diferente do usado no chat geral. Vazio = mesmo modelo para tudo.
-
-**3. Passos máximos**
-
-Quantas rodadas de ferramentas o assistente pode encadear numa execução. O padrão muda conforme o modo: **40 passos no manual** (você aprova cada ação) e **100 no automático**. Aumentar o limite permite tarefas mais longas, mas consome mais tokens.
-
-**4. Timeout (segundos)**
-
-Tempo máximo de espera para o modelo começar a responder cada chamada. Evita que uma conexão lenta trave o app indefinidamente.
-
-**5. Preços (opcional)**
-
-| Campo                      | Descrição                                         |
-| -------------------------- | ------------------------------------------------- |
-| **Input (por 1M tokens)**  | Custo de entrada para estimar o gasto da conversa |
-| **Output (por 1M tokens)** | Custo de saída para estimar o gasto da conversa   |
-
-Os valores informados são usados no rodapé do chat para exibir o custo estimado da sessão. Deixar em branco desabilita o cálculo.
-
-**6. Agente de Código**
-
-Provider separado para o agente de código nativo. Cada campo em branco herda o valor do provedor principal.
-
-| Campo        | Descrição                                                |
-| ------------ | -------------------------------------------------------- |
-| **Base URL** | Endpoint exclusivo para o agente (vazio = usa o do chat) |
-| **API Key**  | Chave exclusiva (vazio = usa a do chat)                  |
-| **Model**    | Modelo exclusivo (vazio = usa o do chat)                 |
-
-**7. Sandbox (ai-jail)**
-
-Toggle que exige o binário [AI Jail](https://github.com/akitaonrails/ai-jail) instalado. Ligado, todo comando do agente de código é confinado à pasta do projeto (bubblewrap no Linux, sandbox-exec no macOS, WSL2 no Windows). Desmarcar roda comandos sem confinamento — o app exibe um aviso antes de permitir.
-
-Serve qualquer provedor compatível com a API da OpenAI. A configuração fica em `ai-config.json` (veja [Dados](#dados)) e a chave **não** é enviada para o renderer.
+Em **Agentes → Agente de código**, escolha o harness nativo ou um CLI instalado.
+O modelo e a conexão do agente nativo podem ser configurados separadamente; campos
+vazios usam o perfil de API ativo. O sandbox [AI Jail](https://github.com/akitaonrails/ai-jail)
+continua exigido por padrão para comandos do agente nativo. CLIs externos usam
+suas próprias contas e passam por worktree e aprovação final do patch.
 
 ### Uso
 
@@ -165,7 +145,7 @@ Dá para marcar **mais de uma pasta** (útil para front-end e back-end em reposi
 
 ### Agente de código
 
-Para **alterar** código, use o agente de código nativo — ele roda com o provedor configurado na seção **Agente de Código** das configurações (cada campo em branco herda o valor do provedor principal) e edita arquivos no diretório do caminho de código ativo.
+Para **alterar** código, use o agente de código na área **Agentes → Agente de código**. O agente nativo usa o perfil de API ativo ou seus próprios campos avançados e edita arquivos no diretório do caminho de código ativo.
 
 Cada ação de escrita ou comando passa por aprovação antes de rodar. O agente não faz commit — as mudanças aparecem no painel de diff para você revisar e commitar por conta própria. A saída aparece ao vivo no app.
 
@@ -173,7 +153,9 @@ O agente principal não encerra por um número fixo de passos: ele segue até co
 
 A validação acompanha a stack detectada: projetos Node usam seus scripts, enquanto uma página HTML estática não tenta executar npm. Leituras e reescritas grandes também são compactadas depois de aplicadas para reduzir o gasto das rodadas seguintes.
 
-> O agente usa a mesma Base URL / API Key / Model do chat, ou um provedor separado se você configurar um na seção **Agente de Código** das configurações. Aponte para um repositório com Git e commits em dia — assim dá para revisar o diff e reverter se não gostar.
+> O agente nativo herda o perfil de API ativo quando os próprios campos estão vazios. Ele não herda uma assinatura ChatGPT nem as credenciais de um CLI externo.
+
+Também é possível escolher um harness externo instalado localmente (Codex, OpenCode ou Claude Code). Com **Terminal ao vivo** ativo, o Sagyou abre o TUI completo do CLI dentro do app — incluindo teclado, cores, prompts e redimensionamento — em um worktree isolado. Ao encerrar a sessão, o patch continua exigindo revisão e aprovação antes de alcançar seu projeto.
 
 ---
 

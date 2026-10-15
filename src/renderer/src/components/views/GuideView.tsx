@@ -435,30 +435,45 @@ function GuideVisual({ sectionId }: { sectionId: string }): React.JSX.Element {
   if (sectionId === 'financeiro-lancamentos') {
     return (
       <div>
+        <p className="mb-3 text-xs text-[#b8b8b8]">Exemplo: como um lançamento muda os saldos.</p>
         <div className="grid gap-2 sm:grid-cols-3">
-          <VisualBox label="Saldo anterior" value="R$ 500,00" />
+          <VisualBox label="1. Saldo anterior" value="R$ 500,00" detail="Ponto de partida" />
           <VisualBox
-            label="Até hoje"
-            value="R$ 400,00"
-            detail="Saída de R$ 100 já registrada"
-            color="text-[#a080f0]"
+            label="2. Lançamento de hoje"
+            value="− R$ 100,00"
+            detail="Uma saída diminui o saldo"
+            color="text-[#e88282]"
           />
           <VisualBox
-            label="Projetado"
+            label="3. Saldo até hoje"
+            value="R$ 400,00"
+            detail="500 − 100"
+            color="text-[#a080f0]"
+          />
+        </div>
+        <div className="my-3 flex items-center gap-2 text-[11px] text-[#999999]">
+          <span>Saldo anterior</span>
+          <span className="h-px flex-1 bg-[#2a2a30]" />
+          <span className="text-[#a080f0]">Hoje</span>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
+          <VisualBox
+            label="4. Lançamento futuro"
+            value="− R$ 50,00"
+            detail="Já cadastrado para este mês"
+            color="text-[#e0a040]"
+          />
+          <span className="text-center text-lg text-[#a080f0]">→</span>
+          <VisualBox
+            label="5. Saldo projetado"
             value="R$ 350,00"
-            detail="Inclui saída futura de R$ 50"
+            detail="Inclui a saída futura"
             color="text-[#e0a040]"
           />
         </div>
-        <div className="mt-3 flex items-center gap-2 text-[11px] text-[#999999]">
-          <span>Passado</span>
-          <span className="h-px flex-1 bg-[#2a2a30]" />
-          <span className="text-[#a080f0]">Hoje</span>
-          <span className="h-px flex-1 bg-[#2a2a30]" />
-          <span>Fim do mês</span>
-        </div>
         <p className="mt-3 text-xs text-[#999999]">
-          Exemplo ilustrativo. O período selecionado determina o corte dos saldos.
+          O período selecionado determina o corte dos saldos; lançamentos futuros entram apenas na
+          projeção.
         </p>
       </div>
     )

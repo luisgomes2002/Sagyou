@@ -239,8 +239,8 @@ export function CanvasView(props: Props) {
       ref={containerRef}
       className="absolute inset-0 overflow-hidden select-none"
       style={{
-        backgroundColor: '#0b0b0f',
-        backgroundImage: 'radial-gradient(circle, #2b2b31 1px, transparent 1px)',
+        backgroundColor: 'var(--bg-primary)',
+        backgroundImage: 'radial-gradient(circle, var(--canvas-grid) 1px, transparent 1px)',
         backgroundSize: `${dotSpacing}px ${dotSpacing}px`,
         backgroundPosition: `${offset.x % dotSpacing}px ${offset.y % dotSpacing}px`,
         cursor: connectFrom ? 'crosshair' : isPanning ? 'grabbing' : 'default'
@@ -422,7 +422,7 @@ export function CanvasView(props: Props) {
                     backgroundColor: color,
                     boxShadow:
                       selectedColor === color
-                        ? `0 0 0 2px #0b0b0f, 0 0 0 3.5px ${color}`
+                        ? `0 0 0 2px var(--bg-primary), 0 0 0 3.5px ${color}`
                         : '0 0 0 1px rgba(255,255,255,0.1)'
                   }}
                   title={color}

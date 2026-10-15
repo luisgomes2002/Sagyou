@@ -9,8 +9,18 @@ import systemPromptMd from './system-prompt.md?raw'
 /** AI provider config (base URL, key, model). */
 export interface AIConfig {
   baseUrl: string
-  apiKey: string
+  /** Only populated while the user is entering a replacement credential. */
+  apiKey?: string
+  hasApiKey?: boolean
   model: string
+  /** Saved API-backed chat connections. Secrets remain main-process only. */
+  providerProfiles?: AIProviderProfile[]
+  /** The profile used by the normal chat; absent keeps the legacy fields above. */
+  activeProviderProfileId?: string
+  /** Normal-chat transport; code-agent harness selection remains independent. */
+  chatProvider?: 'api' | 'chatgpt'
+  /** API profile selected for this conversation; main resolves its credential. */
+  chatProfileId?: string
   /** Preferred form of address for replies from the Sagyou assistant. */
   userName?: string
   /**
@@ -76,6 +86,21 @@ export interface AIConfig {
    * When absent/false, the handoff stays as the raw last exchange (no extra call).
    */
   handoffSummarize?: boolean
+}
+
+export interface AIProviderProfile {
+  id: string
+  name: string
+  /** API profiles are intentionally separate from CLI/OAuth subscriptions. */
+  kind: 'api'
+  /** Selects the small provider-specific wire adaptation in the main process. */
+  provider?: 'openai' | 'anthropic' | 'custom'
+  baseUrl: string
+  apiKey?: string
+  model: string
+  modelComplex?: string
+  /** Credential presence only; its value never comes back over IPC. */
+  hasApiKey?: boolean
 }
 
 /** Tokens billed by a model call, as the provider reported them. */
@@ -471,13 +496,35 @@ export async function callModel(
   const request = {
     messages,
     tools,
-    baseUrl: cfg.baseUrl,
-    apiKey: cfg.apiKey,
-    model: cfg.model
+    model: cfg.model,
+    profileId: cfg.chatProfileId
   }
-  const res = onDelta
-    ? await window.electronAPI.ai.chatStream(request, onDelta, onTool)
-    : await window.electronAPI.ai.chat(request)
+  if (cfg.chatProvider === 'chatgpt' && !onDelta) {
+    throw new ModelError('O ChatGPT por assinatura exige resposta em streaming.')
+  }
+  const res =
+    cfg.chatProvider === 'chatgpt'
+      ? await window.electronAPI.ai.chatgpt.stream(
+          {
+            streamId: crypto.randomUUID(),
+            model: cfg.model,
+            messages: messages
+              .filter((message) => message.role !== 'tool')
+              .map((message) => ({
+                role:
+                  message.role === 'system'
+                    ? 'system'
+                    : message.role === 'assistant'
+                      ? 'assistant'
+                      : 'user',
+                content: contentText(message.content)
+              }))
+          },
+          onDelta!
+        )
+      : onDelta
+        ? await window.electronAPI.ai.chatStream(request, onDelta, onTool)
+        : await window.electronAPI.ai.chat(request)
   if (!res.success || !res.message) {
     throw new ModelError(res.error || 'Falha ao contatar o modelo', res.status)
   }

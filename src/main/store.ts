@@ -209,6 +209,9 @@ interface FinancialProfile {
   name: string
   createdAt: string
   updatedAt: string
+  customCategories?: string[]
+  savedSources?: string[]
+  savedCounterparties?: string[]
 }
 interface FinancialTable {
   id: string
@@ -290,6 +293,7 @@ interface SaveData {
   financialProfiles?: FinancialProfile[]
   activeFinancialProfileId?: string
   featurePreferences?: string[]
+  uiPreferences?: unknown
   files: StoredFile[]
   timeBlocks?: TimeBlock[]
   routines?: Routine[]
@@ -554,7 +558,30 @@ function parseFinancialProfiles(value: unknown): FinancialProfile[] {
       typeof (profile as FinancialProfile).createdAt === 'string' &&
       typeof (profile as FinancialProfile).updatedAt === 'string'
   )
-  return profiles.length ? profiles : defaultFinancialProfiles()
+  const savedValues = (items: unknown): string[] | undefined => {
+    if (!Array.isArray(items)) return undefined
+    return [
+      ...new Map(
+        items
+          .filter((item): item is string => typeof item === 'string' && item.trim() !== '')
+          .map((item) => [item.trim().toLocaleLowerCase('pt-BR'), item.trim()])
+      ).values()
+    ]
+  }
+  return profiles.length
+    ? profiles.map((profile) => ({
+        ...profile,
+        ...(savedValues(profile.customCategories)
+          ? { customCategories: savedValues(profile.customCategories) }
+          : {}),
+        ...(savedValues(profile.savedSources)
+          ? { savedSources: savedValues(profile.savedSources) }
+          : {}),
+        ...(savedValues(profile.savedCounterparties)
+          ? { savedCounterparties: savedValues(profile.savedCounterparties) }
+          : {})
+      }))
+    : defaultFinancialProfiles()
 }
 
 function transactionDetails(value: unknown): FinancialTransactionDetail[] {
@@ -1623,6 +1650,9 @@ function persistDiff(db: Database.Database, prev: SaveData, next: SaveData): voi
   if (JSON.stringify(prev.featurePreferences) !== JSON.stringify(next.featurePreferences)) {
     w.setSetting('featurePreferences', next.featurePreferences ?? [])
   }
+  if (JSON.stringify(prev.uiPreferences) !== JSON.stringify(next.uiPreferences)) {
+    w.setSetting('uiPreferences', next.uiPreferences ?? {})
+  }
   diffEntities(prev.files, next.files, w.del.file, w.insert.file)
   diffEntities(prev.timeBlocks ?? [], next.timeBlocks ?? [], w.del.timeBlock, w.insert.timeBlock)
   diffEntities(prev.routines ?? [], next.routines ?? [], w.del.routine, w.insert.routine)
@@ -1677,6 +1707,9 @@ function persistAll(db: Database.Database, data: SaveData): void {
   writeFinancialProfiles(w, data.financialProfiles, data.activeFinancialProfileId)
   if (data.featurePreferences !== undefined) {
     w.setSetting('featurePreferences', data.featurePreferences)
+  }
+  if (data.uiPreferences !== undefined) {
+    w.setSetting('uiPreferences', data.uiPreferences)
   }
   for (const f of data.files ?? []) w.insert.file(f)
   for (const tb of data.timeBlocks ?? []) w.insert.timeBlock(tb)
@@ -2046,6 +2079,7 @@ export function loadData(existingDb?: Database.Database): SaveData {
   const timersRaw = getSetting('activeTimers')
   const activeTimers = Array.isArray(timersRaw) ? timersRaw : legacyTimer ? [legacyTimer] : []
   const featurePreferences = getSetting('featurePreferences')
+  const uiPreferences = getSetting('uiPreferences')
 
   return {
     projects,
@@ -2066,6 +2100,7 @@ export function loadData(existingDb?: Database.Database): SaveData {
     featurePreferences: Array.isArray(featurePreferences)
       ? featurePreferences.filter((feature): feature is string => typeof feature === 'string')
       : undefined,
+    uiPreferences,
     files,
     timeBlocks,
     routines,

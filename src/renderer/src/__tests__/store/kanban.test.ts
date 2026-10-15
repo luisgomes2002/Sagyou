@@ -4,7 +4,18 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 vi.mock('../../services/ElectronStorage', () => {
   return {
     ElectronStorage: vi.fn(function ElectronStorage(this: Record<string, unknown>) {
-      this.load = vi.fn().mockResolvedValue({ projects: [], tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: [] })
+      this.load = vi
+        .fn()
+        .mockResolvedValue({
+          projects: [],
+          tasks: [],
+          sprints: [],
+          tombstones: [],
+          notes: [],
+          goals: [],
+          habits: [],
+          lists: []
+        })
       this.save = vi.fn().mockResolvedValue(undefined)
       this.exportBackup = vi.fn().mockResolvedValue({ success: true })
       this.autoSaveBackup = vi.fn().mockResolvedValue({ success: true })
@@ -197,7 +208,9 @@ describe('task actions', () => {
     const id = useKanbanStore.getState().createTask({ projectId, columnId, title: 'To delete' })
     useKanbanStore.getState().deleteTask(id)
     expect(useKanbanStore.getState().tasks).toHaveLength(0)
-    expect(useKanbanStore.getState().tombstones.some((t) => t.id === id && t.type === 'task')).toBe(true)
+    expect(useKanbanStore.getState().tombstones.some((t) => t.id === id && t.type === 'task')).toBe(
+      true
+    )
   })
 
   it('moveTask moves a task to a new column and reorders', () => {
@@ -254,7 +267,9 @@ describe('sprint actions', () => {
     useKanbanStore.getState().deleteSprint(sprintId)
     expect(useKanbanStore.getState().sprints).toHaveLength(0)
     expect(useKanbanStore.getState().tasks.find((t) => t.id === taskId)!.sprintId).toBeUndefined()
-    expect(useKanbanStore.getState().tombstones.some((t) => t.id === sprintId && t.type === 'sprint')).toBe(true)
+    expect(
+      useKanbanStore.getState().tombstones.some((t) => t.id === sprintId && t.type === 'sprint')
+    ).toBe(true)
   })
 
   it('deleteSprint clears sprintFilter when the deleted sprint was active', () => {
@@ -304,7 +319,7 @@ describe('timer actions', () => {
     expect(useKanbanStore.getState().activeTimers.map((t) => t.taskId)).toEqual([taskId])
   })
 
-  it('stopTimer removes that task\'s timer and records time', () => {
+  it("stopTimer removes that task's timer and records time", () => {
     useKanbanStore.getState().startTimer(taskId)
     useKanbanStore.getState().stopTimer(taskId)
     expect(useKanbanStore.getState().activeTimers).toEqual([])
@@ -318,14 +333,19 @@ describe('timer actions', () => {
     useKanbanStore.getState().startTimer(taskId2)
 
     // Both are running; the first was not stopped, so no time was credited yet.
-    expect(useKanbanStore.getState().activeTimers.map((t) => t.taskId).sort()).toEqual(
-      [taskId, taskId2].sort()
-    )
+    expect(
+      useKanbanStore
+        .getState()
+        .activeTimers.map((t) => t.taskId)
+        .sort()
+    ).toEqual([taskId, taskId2].sort())
     expect(useKanbanStore.getState().tasks.find((t) => t.id === taskId)!.timeSpent).toBeUndefined()
 
     // Stopping one credits only that task and leaves the other running.
     useKanbanStore.getState().stopTimer(taskId)
-    expect(useKanbanStore.getState().tasks.find((t) => t.id === taskId)!.timeSpent).toBeGreaterThanOrEqual(4)
+    expect(
+      useKanbanStore.getState().tasks.find((t) => t.id === taskId)!.timeSpent
+    ).toBeGreaterThanOrEqual(4)
     expect(useKanbanStore.getState().activeTimers.map((t) => t.taskId)).toEqual([taskId2])
   })
 
@@ -339,22 +359,30 @@ describe('timer actions', () => {
   })
 
   it('updateTask stops timer when task is moved to done column', () => {
-    const doneColumnId = useKanbanStore.getState().projects[0].columns.find((c) => c.name.toLowerCase() === 'done')!.id
+    const doneColumnId = useKanbanStore
+      .getState()
+      .projects[0].columns.find((c) => c.name.toLowerCase() === 'done')!.id
     useKanbanStore.getState().startTimer(taskId)
     useKanbanStore.getState().updateTask(taskId, { columnId: doneColumnId })
     expect(useKanbanStore.getState().activeTimers).toEqual([])
   })
 
   it('moveTask stops timer when task is dragged to done column', () => {
-    const doneColumnId = useKanbanStore.getState().projects[0].columns.find((c) => c.name.toLowerCase() === 'done')!.id
+    const doneColumnId = useKanbanStore
+      .getState()
+      .projects[0].columns.find((c) => c.name.toLowerCase() === 'done')!.id
     useKanbanStore.getState().startTimer(taskId)
     useKanbanStore.getState().moveTask(taskId, doneColumnId, 0)
     expect(useKanbanStore.getState().activeTimers).toEqual([])
   })
 
   it('updateTask does not stop timer when another task is marked done', () => {
-    const taskId2 = useKanbanStore.getState().createTask({ projectId, columnId, title: 'Other task' })
-    const doneColumnId = useKanbanStore.getState().projects[0].columns.find((c) => c.name.toLowerCase() === 'done')!.id
+    const taskId2 = useKanbanStore
+      .getState()
+      .createTask({ projectId, columnId, title: 'Other task' })
+    const doneColumnId = useKanbanStore
+      .getState()
+      .projects[0].columns.find((c) => c.name.toLowerCase() === 'done')!.id
     useKanbanStore.getState().startTimer(taskId)
     useKanbanStore.getState().updateTask(taskId2, { columnId: doneColumnId })
     expect(useKanbanStore.getState().activeTimers.map((t) => t.taskId)).toEqual([taskId])
@@ -381,7 +409,9 @@ describe('note actions', () => {
   })
 
   it('createNote accepts custom data', () => {
-    const id = useKanbanStore.getState().createNote(projectId, { content: 'Hello', color: '#ff0000', x: 50, y: 60 })
+    const id = useKanbanStore
+      .getState()
+      .createNote(projectId, { content: 'Hello', color: '#ff0000', x: 50, y: 60 })
     const note = useKanbanStore.getState().notes.find((n) => n.id === id)!
     expect(note.content).toBe('Hello')
     expect(note.x).toBe(50)
@@ -390,7 +420,9 @@ describe('note actions', () => {
   it('updateNote updates fields', () => {
     const id = useKanbanStore.getState().createNote(projectId)
     useKanbanStore.getState().updateNote(id, { content: 'Updated content' })
-    expect(useKanbanStore.getState().notes.find((n) => n.id === id)!.content).toBe('Updated content')
+    expect(useKanbanStore.getState().notes.find((n) => n.id === id)!.content).toBe(
+      'Updated content'
+    )
   })
 
   it('deleteNote removes the note and cleans up connections', () => {
@@ -432,15 +464,21 @@ describe('goal actions', () => {
   beforeEach(resetStore)
 
   it('createGoal adds a goal with empty entries', () => {
-    const id = useKanbanStore.getState().createGoal({ title: 'Run 100km', target: 100, unit: 'km', color: '#22c55e' })
+    const id = useKanbanStore
+      .getState()
+      .createGoal({ title: 'Run 100km', target: 100, unit: 'km', color: '#22c55e' })
     const goal = useKanbanStore.getState().goals.find((g) => g.id === id)!
     expect(goal.entries).toEqual([])
     expect(goal.target).toBe(100)
   })
 
   it('addGoalEntry adds an entry and accumulates current', () => {
-    const id = useKanbanStore.getState().createGoal({ title: 'Books', target: 10, unit: 'livros', color: '#fff' })
-    useKanbanStore.getState().addGoalEntry(id, { date: '2026-06-01', label: 'Dom Casmurro', value: 1 })
+    const id = useKanbanStore
+      .getState()
+      .createGoal({ title: 'Books', target: 10, unit: 'livros', color: '#fff' })
+    useKanbanStore
+      .getState()
+      .addGoalEntry(id, { date: '2026-06-01', label: 'Dom Casmurro', value: 1 })
     useKanbanStore.getState().addGoalEntry(id, { date: '2026-06-05', value: 2.5 })
     const goal = useKanbanStore.getState().goals.find((g) => g.id === id)!
     expect(goal.entries).toHaveLength(2)
@@ -451,7 +489,9 @@ describe('goal actions', () => {
   })
 
   it('addGoalEntry accepts floating-point values', () => {
-    const id = useKanbanStore.getState().createGoal({ title: 'Corrida', target: 10, unit: 'km', color: '#fff' })
+    const id = useKanbanStore
+      .getState()
+      .createGoal({ title: 'Corrida', target: 10, unit: 'km', color: '#fff' })
     useKanbanStore.getState().addGoalEntry(id, { date: '2026-06-14', value: 2.3 })
     useKanbanStore.getState().addGoalEntry(id, { date: '2026-06-15', value: 3.7 })
     const goal = useKanbanStore.getState().goals.find((g) => g.id === id)!
@@ -460,7 +500,9 @@ describe('goal actions', () => {
   })
 
   it('deleteGoalEntry removes an entry', () => {
-    const id = useKanbanStore.getState().createGoal({ title: 'G', target: 10, unit: 'x', color: '#fff' })
+    const id = useKanbanStore
+      .getState()
+      .createGoal({ title: 'G', target: 10, unit: 'x', color: '#fff' })
     useKanbanStore.getState().addGoalEntry(id, { date: '2026-06-01', value: 3 })
     const entryId = useKanbanStore.getState().goals.find((g) => g.id === id)!.entries[0].id
     useKanbanStore.getState().deleteGoalEntry(id, entryId)
@@ -468,7 +510,9 @@ describe('goal actions', () => {
   })
 
   it('updateGoal changes metadata fields', () => {
-    const id = useKanbanStore.getState().createGoal({ title: 'Old', target: 5, unit: 'x', color: '#fff' })
+    const id = useKanbanStore
+      .getState()
+      .createGoal({ title: 'Old', target: 5, unit: 'x', color: '#fff' })
     useKanbanStore.getState().updateGoal(id, { title: 'New', target: 20 })
     const g = useKanbanStore.getState().goals.find((g) => g.id === id)!
     expect(g.title).toBe('New')
@@ -476,7 +520,9 @@ describe('goal actions', () => {
   })
 
   it('deleteGoal removes the goal', () => {
-    const id = useKanbanStore.getState().createGoal({ title: 'Delete', target: 1, unit: 'x', color: '#fff' })
+    const id = useKanbanStore
+      .getState()
+      .createGoal({ title: 'Delete', target: 1, unit: 'x', color: '#fff' })
     useKanbanStore.getState().deleteGoal(id)
     expect(useKanbanStore.getState().goals).toHaveLength(0)
   })
@@ -497,14 +543,18 @@ describe('habit actions', () => {
   it('toggleHabit adds date when not present', () => {
     const id = useKanbanStore.getState().createHabit({ name: 'Exercise', color: '#22c55e' })
     useKanbanStore.getState().toggleHabit(id, '2026-01-01')
-    expect(useKanbanStore.getState().habits.find((h) => h.id === id)!.completions).toContain('2026-01-01')
+    expect(useKanbanStore.getState().habits.find((h) => h.id === id)!.completions).toContain(
+      '2026-01-01'
+    )
   })
 
   it('toggleHabit removes date when already present (untoggle)', () => {
     const id = useKanbanStore.getState().createHabit({ name: 'Exercise', color: '#22c55e' })
     useKanbanStore.getState().toggleHabit(id, '2026-01-01')
     useKanbanStore.getState().toggleHabit(id, '2026-01-01')
-    expect(useKanbanStore.getState().habits.find((h) => h.id === id)!.completions).not.toContain('2026-01-01')
+    expect(useKanbanStore.getState().habits.find((h) => h.id === id)!.completions).not.toContain(
+      '2026-01-01'
+    )
   })
 
   it('deleteHabit removes the habit', () => {
@@ -548,7 +598,9 @@ describe('shopping list actions', () => {
 
   it('addItem adds item with done:false', () => {
     const listId = useKanbanStore.getState().createList('Cart')
-    const itemId = useKanbanStore.getState().addItem(listId, { name: 'Apple', qty: 3, price: '1.5' })
+    const itemId = useKanbanStore
+      .getState()
+      .addItem(listId, { name: 'Apple', qty: 3, price: '1.5' })
     const list = useKanbanStore.getState().lists.find((l) => l.id === listId)!
     const item = list.items.find((i) => i.id === itemId)!
     expect(item.name).toBe('Apple')
@@ -625,9 +677,30 @@ describe('backups carry AI chat history', () => {
   it('exportBackup includes conversations, memories and file metadata at version 5', async () => {
     const storage = getStorageMock()
     storage.loadConversations.mockResolvedValueOnce([conversation])
-    const memory = { id: 'm1', projectId: null, type: 'fato', title: 't', body: 'b', tags: [], pinned: false, source: 'modelo', createdAt: 'x', updatedAt: 'x', lastAccessedAt: 'x', accessCount: 0, archivedAt: null }
+    const memory = {
+      id: 'm1',
+      projectId: null,
+      type: 'fato',
+      title: 't',
+      body: 'b',
+      tags: [],
+      pinned: false,
+      source: 'modelo',
+      createdAt: 'x',
+      updatedAt: 'x',
+      lastAccessedAt: 'x',
+      accessCount: 0,
+      archivedAt: null
+    }
     storage.loadMemories.mockResolvedValueOnce([memory])
-    const file = { id: 'f1', name: 'doc.pdf', ext: '.pdf', size: 10, createdAt: 'x', projectId: 'p1' }
+    const file = {
+      id: 'f1',
+      name: 'doc.pdf',
+      ext: '.pdf',
+      size: 10,
+      createdAt: 'x',
+      projectId: 'p1'
+    }
     useKanbanStore.setState({ files: [file] })
 
     await useKanbanStore.getState().exportBackup()
@@ -642,13 +715,27 @@ describe('backups carry AI chat history', () => {
 
   it('importBackup restores file metadata from a v5 backup', async () => {
     const storage = getStorageMock()
-    const file = { id: 'f1', name: 'doc.pdf', ext: '.pdf', size: 10, createdAt: 'x', projectId: 'p1' }
+    const file = {
+      id: 'f1',
+      name: 'doc.pdf',
+      ext: '.pdf',
+      size: 10,
+      createdAt: 'x',
+      projectId: 'p1'
+    }
     storage.importBackup.mockResolvedValueOnce({
       success: true,
       data: {
         version: 5,
         exportedAt: new Date().toISOString(),
-        projects: [], tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: [],
+        projects: [],
+        tasks: [],
+        sprints: [],
+        tombstones: [],
+        notes: [],
+        goals: [],
+        habits: [],
+        lists: [],
         files: [file]
       }
     })
@@ -663,19 +750,32 @@ describe('backups carry AI chat history', () => {
     useKanbanStore.setState({ files: [] })
     const listId = useKanbanStore.getState().createList('Brasil', 'BRL')
     const txId = useKanbanStore.getState().addTransaction(listId, {
-      description: 'Pagamento', amount: '100', type: 'expense', date: '2026-10-06'
+      description: 'Pagamento',
+      amount: '100',
+      type: 'expense',
+      date: '2026-10-06'
     })
-    const file = { id: 'receipt-1', name: 'pix.pdf', ext: '.pdf', size: 10, createdAt: '2026-10-06T12:00:00Z' }
+    const file = {
+      id: 'receipt-1',
+      name: 'pix.pdf',
+      ext: '.pdf',
+      size: 10,
+      createdAt: '2026-10-06T12:00:00Z'
+    }
     useKanbanStore.getState().addFiles([file])
     useKanbanStore.getState().updateTransaction(listId, txId, {
-      receiptFileIds: [file.id], bankReference: 'E2E-123', counterparty: 'Loja',
+      receiptFileIds: [file.id],
+      bankReference: 'E2E-123',
+      counterparty: 'Loja',
       reconciledAt: '2026-10-06T13:00:00Z'
     })
 
     await useKanbanStore.getState().exportBackup()
     const backup = storage.exportBackup.mock.calls.at(-1)![0]
     expect(backup.lists[0].transactions[0]).toMatchObject({
-      receiptFileIds: [file.id], bankReference: 'E2E-123', counterparty: 'Loja',
+      receiptFileIds: [file.id],
+      bankReference: 'E2E-123',
+      counterparty: 'Loja',
       reconciledAt: '2026-10-06T13:00:00Z'
     })
     useKanbanStore.setState({ lists: [], files: [] })
@@ -684,7 +784,9 @@ describe('backups carry AI chat history', () => {
     expect(await useKanbanStore.getState().importBackup()).toBe(true)
     expect(useKanbanStore.getState().files).toEqual([file])
     expect(useKanbanStore.getState().lists[0].transactions[0]).toMatchObject({
-      receiptFileIds: [file.id], bankReference: 'E2E-123', counterparty: 'Loja',
+      receiptFileIds: [file.id],
+      bankReference: 'E2E-123',
+      counterparty: 'Loja',
       reconciledAt: '2026-10-06T13:00:00Z'
     })
   })
@@ -698,7 +800,14 @@ describe('backups carry AI chat history', () => {
       data: {
         version: 4,
         exportedAt: new Date().toISOString(),
-        projects: [], tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: []
+        projects: [],
+        tasks: [],
+        sprints: [],
+        tombstones: [],
+        notes: [],
+        goals: [],
+        habits: [],
+        lists: []
       }
     })
 
@@ -719,13 +828,34 @@ describe('backups carry AI chat history', () => {
 
   it('importBackup restores memories from a v4 backup', async () => {
     const storage = getStorageMock()
-    const memory = { id: 'm1', projectId: null, type: 'fato', title: 't', body: 'b', tags: [], pinned: false, source: 'modelo', createdAt: 'x', updatedAt: 'x', lastAccessedAt: 'x', accessCount: 0, archivedAt: null }
+    const memory = {
+      id: 'm1',
+      projectId: null,
+      type: 'fato',
+      title: 't',
+      body: 'b',
+      tags: [],
+      pinned: false,
+      source: 'modelo',
+      createdAt: 'x',
+      updatedAt: 'x',
+      lastAccessedAt: 'x',
+      accessCount: 0,
+      archivedAt: null
+    }
     storage.importBackup.mockResolvedValueOnce({
       success: true,
       data: {
         version: 4,
         exportedAt: new Date().toISOString(),
-        projects: [], tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: [],
+        projects: [],
+        tasks: [],
+        sprints: [],
+        tombstones: [],
+        notes: [],
+        goals: [],
+        habits: [],
+        lists: [],
         memories: [memory]
       }
     })
@@ -743,7 +873,14 @@ describe('backups carry AI chat history', () => {
       data: {
         version: 3,
         exportedAt: new Date().toISOString(),
-        projects: [], tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: [],
+        projects: [],
+        tasks: [],
+        sprints: [],
+        tombstones: [],
+        notes: [],
+        goals: [],
+        habits: [],
+        lists: [],
         conversations: []
       }
     })
@@ -770,7 +907,14 @@ describe('backups carry AI chat history', () => {
       data: {
         version: 3,
         exportedAt: new Date().toISOString(),
-        projects: [], tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: [],
+        projects: [],
+        tasks: [],
+        sprints: [],
+        tombstones: [],
+        notes: [],
+        goals: [],
+        habits: [],
+        lists: [],
         conversations: [conversation]
       }
     })
@@ -788,7 +932,14 @@ describe('backups carry AI chat history', () => {
       data: {
         version: 2,
         exportedAt: new Date().toISOString(),
-        projects: [], tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: []
+        projects: [],
+        tasks: [],
+        sprints: [],
+        tombstones: [],
+        notes: [],
+        goals: [],
+        habits: [],
+        lists: []
       }
     })
 
@@ -796,6 +947,59 @@ describe('backups carry AI chat history', () => {
 
     expect(result).toBe(true)
     expect(storage.saveConversations).not.toHaveBeenCalled()
+  })
+})
+
+describe('appearance preferences', () => {
+  beforeEach(resetStore)
+
+  it('persists the chosen appearance in backups', async () => {
+    const storage = getStorageMock()
+    useKanbanStore.getState().setUiPreferences({
+      theme: 'light',
+      fontSize: 'large',
+      reduceMotion: true,
+      highContrast: true
+    })
+
+    await useKanbanStore.getState().exportBackup()
+
+    expect(storage.exportBackup.mock.calls.at(-1)![0].uiPreferences).toEqual({
+      theme: 'light',
+      fontSize: 'large',
+      reduceMotion: true,
+      highContrast: true
+    })
+  })
+
+  it('keeps local appearance when an older backup has no preference', async () => {
+    const storage = getStorageMock()
+    const preferences = {
+      theme: 'light' as const,
+      fontSize: 'large' as const,
+      reduceMotion: true,
+      highContrast: false
+    }
+    useKanbanStore.getState().setUiPreferences(preferences)
+    storage.importBackup.mockResolvedValueOnce({
+      success: true,
+      data: {
+        version: 7,
+        exportedAt: new Date().toISOString(),
+        projects: [],
+        tasks: [],
+        sprints: [],
+        tombstones: [],
+        notes: [],
+        goals: [],
+        habits: [],
+        lists: []
+      }
+    })
+
+    await useKanbanStore.getState().importBackup()
+
+    expect(useKanbanStore.getState().uiPreferences).toEqual(preferences)
   })
 })
 
@@ -838,7 +1042,9 @@ describe('importBackup', () => {
       id: 'old-table',
       name: 'Old table',
       items: [{ id: 'item', name: 'Item', price: 3.75 }],
-      transactions: [{ id: 'tx', amount: 12.5, details: [{ id: 'part', description: 'Part', amount: 20 }] }],
+      transactions: [
+        { id: 'tx', amount: 12.5, details: [{ id: 'part', description: 'Part', amount: 20 }] }
+      ],
       goals: [{ id: 'goal', targetAmount: 100 }],
       actualBalance: 42.25,
       budgets: [{ category: 'Casa', limit: 100 }],
@@ -846,7 +1052,13 @@ describe('importBackup', () => {
       updatedAt: '2026-01-01'
     }
     const data = {
-      projects: [], tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [],
+      projects: [],
+      tasks: [],
+      sprints: [],
+      tombstones: [],
+      notes: [],
+      goals: [],
+      habits: [],
       lists: [legacyList]
     }
     const storage = getStorageMock()
@@ -907,13 +1119,45 @@ describe('importBackup', () => {
     const backup = {
       version: 2,
       exportedAt: new Date().toISOString(),
-      projects: [{ id: 'bp1', name: 'Backup project', color: '#ff0000', columns: [], order: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }],
-      tasks: [{ id: 'bt1', projectId: 'bp1', columnId: 'c1', title: 'Backup task', order: 0, priority: 'medium', tags: [], images: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }],
+      projects: [
+        {
+          id: 'bp1',
+          name: 'Backup project',
+          color: '#ff0000',
+          columns: [],
+          order: 0,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }
+      ],
+      tasks: [
+        {
+          id: 'bt1',
+          projectId: 'bp1',
+          columnId: 'c1',
+          title: 'Backup task',
+          order: 0,
+          priority: 'medium',
+          tags: [],
+          images: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }
+      ],
       sprints: [],
       tombstones: [],
       notes: [],
       goals: [],
-      habits: [{ id: 'bh1', name: 'Backup habit', color: '#0f0', completions: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }],
+      habits: [
+        {
+          id: 'bh1',
+          name: 'Backup habit',
+          color: '#0f0',
+          completions: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }
+      ],
       lists: []
     }
     getStorageMock().importBackup.mockResolvedValueOnce({ success: true, data: backup })
@@ -937,10 +1181,32 @@ describe('importBackup', () => {
       version: 2,
       exportedAt: new Date().toISOString(),
       projects: [
-        { id: 'first', name: 'First', color: '#fff', columns: [], order: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-        { id: 'second', name: 'Second', color: '#000', columns: [], order: 1, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+        {
+          id: 'first',
+          name: 'First',
+          color: '#fff',
+          columns: [],
+          order: 0,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        },
+        {
+          id: 'second',
+          name: 'Second',
+          color: '#000',
+          columns: [],
+          order: 1,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }
       ],
-      tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: []
+      tasks: [],
+      sprints: [],
+      tombstones: [],
+      notes: [],
+      goals: [],
+      habits: [],
+      lists: []
     }
     getStorageMock().importBackup.mockResolvedValueOnce({ success: true, data: backup })
 
@@ -952,7 +1218,18 @@ describe('importBackup', () => {
   it('sets activeProjectId to null when backup has no projects', async () => {
     useKanbanStore.getState().createProject('Local')
 
-    const backup = { version: 2, exportedAt: new Date().toISOString(), projects: [], tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: [] }
+    const backup = {
+      version: 2,
+      exportedAt: new Date().toISOString(),
+      projects: [],
+      tasks: [],
+      sprints: [],
+      tombstones: [],
+      notes: [],
+      goals: [],
+      habits: [],
+      lists: []
+    }
     getStorageMock().importBackup.mockResolvedValueOnce({ success: true, data: backup })
 
     await useKanbanStore.getState().importBackup()
@@ -963,11 +1240,24 @@ describe('importBackup', () => {
   it('clears any running timer on restore', async () => {
     const pid = useKanbanStore.getState().createProject('P')
     const col = useKanbanStore.getState().projects[0].columns[0]
-    const tid = useKanbanStore.getState().createTask({ projectId: pid, columnId: col.id, title: 'T' })
+    const tid = useKanbanStore
+      .getState()
+      .createTask({ projectId: pid, columnId: col.id, title: 'T' })
     useKanbanStore.getState().startTimer(tid)
     expect(useKanbanStore.getState().activeTimers).toHaveLength(1)
 
-    const backup = { version: 2, exportedAt: new Date().toISOString(), projects: [], tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: [] }
+    const backup = {
+      version: 2,
+      exportedAt: new Date().toISOString(),
+      projects: [],
+      tasks: [],
+      sprints: [],
+      tombstones: [],
+      notes: [],
+      goals: [],
+      habits: [],
+      lists: []
+    }
     getStorageMock().importBackup.mockResolvedValueOnce({ success: true, data: backup })
 
     await useKanbanStore.getState().importBackup()
@@ -986,7 +1276,15 @@ describe('importBackup', () => {
       notes: [],
       goals: [],
       habits: [],
-      lists: [{ id: 'l1', name: 'Old list', items: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }]
+      lists: [
+        {
+          id: 'l1',
+          name: 'Old list',
+          items: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }
+      ]
     }
     getStorageMock().importBackup.mockResolvedValueOnce({ success: true, data: backup })
 
@@ -1003,10 +1301,30 @@ describe('importBackup', () => {
       version: 2,
       exportedAt: new Date().toISOString(),
       projects: [
-        { id: 'p1', name: 'A', color: '#fff', columns: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-        { id: 'p2', name: 'B', color: '#000', columns: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+        {
+          id: 'p1',
+          name: 'A',
+          color: '#fff',
+          columns: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        },
+        {
+          id: 'p2',
+          name: 'B',
+          color: '#000',
+          columns: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }
       ],
-      tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: []
+      tasks: [],
+      sprints: [],
+      tombstones: [],
+      notes: [],
+      goals: [],
+      habits: [],
+      lists: []
     }
     getStorageMock().importBackup.mockResolvedValueOnce({ success: true, data: backup })
 
@@ -1138,12 +1456,21 @@ describe('code path actions', () => {
       data: {
         version: 3,
         exportedAt: '2024-01-01T00:00:00.000Z',
-        projects: [{
-          id: 'p-old', name: 'Antigo', color: '#fff', columns: [],
-          codePaths: [{ id: 'cp1', path: 'C:/a' }, { id: 'cp2', path: 'C:/b' }],
-          activeCodePathId: 'cp2', // backup written before multi-select existed
-          createdAt: '2024-01-01T00:00:00.000Z', updatedAt: '2024-01-01T00:00:00.000Z'
-        }],
+        projects: [
+          {
+            id: 'p-old',
+            name: 'Antigo',
+            color: '#fff',
+            columns: [],
+            codePaths: [
+              { id: 'cp1', path: 'C:/a' },
+              { id: 'cp2', path: 'C:/b' }
+            ],
+            activeCodePathId: 'cp2', // backup written before multi-select existed
+            createdAt: '2024-01-01T00:00:00.000Z',
+            updatedAt: '2024-01-01T00:00:00.000Z'
+          }
+        ],
         tasks: []
       }
     })
@@ -1160,7 +1487,10 @@ describe('code path actions', () => {
       name: 'Legado',
       color: '#fff',
       columns: [],
-      codePaths: [{ id: 'cp1', path: 'C:/a' }, { id: 'cp2', path: 'C:/b' }],
+      codePaths: [
+        { id: 'cp1', path: 'C:/a' },
+        { id: 'cp2', path: 'C:/b' }
+      ],
       activeCodePathId: 'cp2', // written by a pre-multi-select version
       createdAt: '2024-01-01T00:00:00.000Z',
       updatedAt: '2024-01-01T00:00:00.000Z'
@@ -1169,7 +1499,14 @@ describe('code path actions', () => {
       load: ReturnType<typeof vi.fn>
     }
     storage.load.mockResolvedValueOnce({
-      projects: [legacy], tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: []
+      projects: [legacy],
+      tasks: [],
+      sprints: [],
+      tombstones: [],
+      notes: [],
+      goals: [],
+      habits: [],
+      lists: []
     })
     await useKanbanStore.getState().loadData()
     const p = useKanbanStore.getState().projects.find((x) => x.id === 'p-legacy')!
@@ -1191,7 +1528,14 @@ describe('code path actions', () => {
       load: ReturnType<typeof vi.fn>
     }
     storage.load.mockResolvedValueOnce({
-      projects: [stale], tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: []
+      projects: [stale],
+      tasks: [],
+      sprints: [],
+      tombstones: [],
+      notes: [],
+      goals: [],
+      habits: [],
+      lists: []
     })
     await useKanbanStore.getState().loadData()
     const p = useKanbanStore.getState().projects.find((x) => x.id === 'p-stale')!
@@ -1212,13 +1556,33 @@ describe('code path actions', () => {
     }
     // A DB written by a pre-multi-timer version: only the singular `activeTimer`.
     storage.load.mockResolvedValueOnce({
-      projects: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: [],
-      tasks: [{ id: 't1', projectId: 'p', columnId: 'c', title: 'T', order: 0, priority: 'medium', tags: [], createdAt: 'x', updatedAt: 'x' }],
+      projects: [],
+      sprints: [],
+      tombstones: [],
+      notes: [],
+      goals: [],
+      habits: [],
+      lists: [],
+      tasks: [
+        {
+          id: 't1',
+          projectId: 'p',
+          columnId: 'c',
+          title: 'T',
+          order: 0,
+          priority: 'medium',
+          tags: [],
+          createdAt: 'x',
+          updatedAt: 'x'
+        }
+      ],
       activeTimer: { taskId: 't1', startedAt: Date.now() - 10_000 }
     })
     await useKanbanStore.getState().loadData()
     // Elapsed time committed to the task, and no timer left running after load.
-    expect(useKanbanStore.getState().tasks.find((t) => t.id === 't1')!.timeSpent).toBeGreaterThanOrEqual(9)
+    expect(
+      useKanbanStore.getState().tasks.find((t) => t.id === 't1')!.timeSpent
+    ).toBeGreaterThanOrEqual(9)
     expect(useKanbanStore.getState().activeTimers).toEqual([])
   })
 
@@ -1227,10 +1591,36 @@ describe('code path actions', () => {
       load: ReturnType<typeof vi.fn>
     }
     storage.load.mockResolvedValueOnce({
-      projects: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: [],
+      projects: [],
+      sprints: [],
+      tombstones: [],
+      notes: [],
+      goals: [],
+      habits: [],
+      lists: [],
       tasks: [
-        { id: 't1', projectId: 'p', columnId: 'c', title: 'A', order: 0, priority: 'medium', tags: [], createdAt: 'x', updatedAt: 'x' },
-        { id: 't2', projectId: 'p', columnId: 'c', title: 'B', order: 1, priority: 'medium', tags: [], createdAt: 'x', updatedAt: 'x' }
+        {
+          id: 't1',
+          projectId: 'p',
+          columnId: 'c',
+          title: 'A',
+          order: 0,
+          priority: 'medium',
+          tags: [],
+          createdAt: 'x',
+          updatedAt: 'x'
+        },
+        {
+          id: 't2',
+          projectId: 'p',
+          columnId: 'c',
+          title: 'B',
+          order: 1,
+          priority: 'medium',
+          tags: [],
+          createdAt: 'x',
+          updatedAt: 'x'
+        }
       ],
       activeTimers: [
         { taskId: 't1', startedAt: Date.now() - 10_000 },
@@ -1249,11 +1639,17 @@ describe('code path actions', () => {
       save: ReturnType<typeof vi.fn>
     }
     useKanbanStore.setState({
-      activeTimers: [{ taskId: 'a', startedAt: 111 }, { taskId: 'b', startedAt: 222 }]
+      activeTimers: [
+        { taskId: 'a', startedAt: 111 },
+        { taskId: 'b', startedAt: 222 }
+      ]
     })
     await useKanbanStore.getState()._flushPersist()
     const saved = storage.save.mock.calls.at(-1)![0]
-    expect(saved.activeTimers).toEqual([{ taskId: 'a', startedAt: 111 }, { taskId: 'b', startedAt: 222 }])
+    expect(saved.activeTimers).toEqual([
+      { taskId: 'a', startedAt: 111 },
+      { taskId: 'b', startedAt: 222 }
+    ])
     // Old app versions still resolve a single timer from the mirror.
     expect(saved.activeTimer).toEqual({ taskId: 'a', startedAt: 111 })
   })
@@ -1280,8 +1676,15 @@ describe('task images: disk storage + cleanup', () => {
     useKanbanStore.setState({
       tasks: [
         {
-          id: 't1', projectId: 'p1', columnId: 'c1', title: 'x', priority: 'medium',
-          tags: [], order: 0, createdAt: 'x', updatedAt: 'x',
+          id: 't1',
+          projectId: 'p1',
+          columnId: 'c1',
+          title: 'x',
+          priority: 'medium',
+          tags: [],
+          order: 0,
+          createdAt: 'x',
+          updatedAt: 'x',
           images: [
             { id: 'i1', name: 'a.jpg', ext: '.jpg', size: 1, addedAt: 'x' },
             { id: 'i2', name: 'b.png', ext: '.png', size: 2, addedAt: 'x' }
@@ -1305,12 +1708,33 @@ describe('task images: disk storage + cleanup', () => {
       data: {
         version: 5,
         exportedAt: new Date().toISOString(),
-        projects: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: [],
+        projects: [],
+        sprints: [],
+        tombstones: [],
+        notes: [],
+        goals: [],
+        habits: [],
+        lists: [],
         tasks: [
           {
-            id: 't1', projectId: 'p1', columnId: 'c1', title: 'x', priority: 'medium',
-            tags: [], order: 0, createdAt: 'x', updatedAt: 'x',
-            images: [{ id: 'old', name: 'a.jpg', size: 9, addedAt: 'x', dataUrl: 'data:image/jpeg;base64,AAAA' }]
+            id: 't1',
+            projectId: 'p1',
+            columnId: 'c1',
+            title: 'x',
+            priority: 'medium',
+            tags: [],
+            order: 0,
+            createdAt: 'x',
+            updatedAt: 'x',
+            images: [
+              {
+                id: 'old',
+                name: 'a.jpg',
+                size: 9,
+                addedAt: 'x',
+                dataUrl: 'data:image/jpeg;base64,AAAA'
+              }
+            ]
           }
         ]
       }
@@ -1332,11 +1756,24 @@ describe('task images: disk storage + cleanup', () => {
       data: {
         version: 5,
         exportedAt: new Date().toISOString(),
-        projects: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: [],
+        projects: [],
+        sprints: [],
+        tombstones: [],
+        notes: [],
+        goals: [],
+        habits: [],
+        lists: [],
         tasks: [
           {
-            id: 't1', projectId: 'p1', columnId: 'c1', title: 'x', priority: 'medium',
-            tags: [], order: 0, createdAt: 'x', updatedAt: 'x',
+            id: 't1',
+            projectId: 'p1',
+            columnId: 'c1',
+            title: 'x',
+            priority: 'medium',
+            tags: [],
+            order: 0,
+            createdAt: 'x',
+            updatedAt: 'x',
             images: [{ id: 'i1', name: 'a.jpg', ext: '.jpg', size: 9, addedAt: 'x' }]
           }
         ]

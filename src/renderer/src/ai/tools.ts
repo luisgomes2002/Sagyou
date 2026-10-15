@@ -74,6 +74,8 @@ export const REFERENCE_CODE_TOOL_DEFS: ToolDef[] = Object.values(REGISTRY)
  *  ~6.7k tokens instead of ~8.9k (saves ~2.2k per call). */
 const KANBAN_TOOL_NAMES = new Set([
   'data_de_hoje',
+  'resolver_periodo',
+  'buscar_registros',
   'ler_projetos',
   'ler_dados',
   'ler_tasks',
@@ -251,6 +253,12 @@ export function describeToolActivity(name: string, args: Record<string, unknown>
   switch (name) {
     case 'data_de_hoje':
       return 'Verificando a data de hoje'
+    case 'resolver_periodo':
+      return 'Resolvendo o período da consulta'
+    case 'buscar_registros': {
+      const term = str(args.termo)
+      return term ? `Buscando "${term}" nos registros` : 'Buscando nos registros'
+    }
     case 'ler_projetos':
       return 'Consultando os projetos'
     case 'ler_dados': {

@@ -5,6 +5,7 @@ import { describeToolActivity } from '../../ai/tools'
 import type { Project } from '../../types'
 import { CodeDiff, type CodeAgentDiff } from './CodeDiff'
 import { AgentTerminal } from './AgentTerminal'
+import { CodeAgentSettings } from './CodeAgentSettings'
 import type { AgentRunMeta } from './AgentRunPicker'
 import { whenLabel } from './AgentRunPicker'
 import { ModeToggleButton } from './ModeToggleButton'
@@ -108,6 +109,7 @@ function useCodeAgentRuns(): {
   setAuto: (runId: string, enabled: boolean) => void
   approveAgent: (runId: string, id: string, approved: boolean) => void
   terminalInput: (runId: string, input: string) => Promise<void>
+  terminalResize: (runId: string, cols: number, rows: number) => Promise<void>
   finishInteractive: (runId: string) => Promise<void>
 } {
   const [runs, setRuns] = useState<CodeAgentRunUI[]>([])
@@ -323,6 +325,14 @@ function useCodeAgentRuns(): {
     const result = await window.electronAPI.ai.codeAgent.terminalInput(runId, input)
     if (!result.success) throw new Error(result.error || 'Não foi possível enviar ao terminal.')
   }, [])
+  const terminalResize = useCallback(
+    async (runId: string, cols: number, rows: number): Promise<void> => {
+      const result = await window.electronAPI.ai.codeAgent.terminalResize(runId, cols, rows)
+      if (!result.success)
+        throw new Error(result.error || 'Não foi possível redimensionar o terminal.')
+    },
+    []
+  )
 
   const finishInteractive = useCallback(
     async (runId: string): Promise<void> => {
@@ -332,7 +342,15 @@ function useCodeAgentRuns(): {
     [sync]
   )
 
-  return { runs, stopAgent, setAuto, approveAgent, terminalInput, finishInteractive }
+  return {
+    runs,
+    stopAgent,
+    setAuto,
+    approveAgent,
+    terminalInput,
+    terminalResize,
+    finishInteractive
+  }
 }
 
 export function FleetView({
@@ -362,6 +380,7 @@ export function FleetView({
     setAuto,
     approveAgent,
     terminalInput,
+    terminalResize,
     finishInteractive
   } = useCodeAgentRuns()
 
@@ -670,6 +689,7 @@ export function FleetView({
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-4">
+        {!chatSession && <CodeAgentSettings />}
         {chatSession ? (
           <div className="flex flex-col h-full">
             {(() => {
@@ -687,7 +707,14 @@ export function FleetView({
                 const liveRun = codeRuns.find((run) => run.id === chatSession.runId)
                 return liveRun?.interactive ? (
                   <div className="mb-3">
-                    <AgentTerminal log={liveRun.log} running={!liveRun.finishing} />
+                    <AgentTerminal
+                      log={liveRun.log}
+                      running={!liveRun.finishing}
+                      interactive
+                      runId={liveRun.id}
+                      onInput={(input) => terminalInput(liveRun.id, input)}
+                      onResize={(cols, rows) => terminalResize(liveRun.id, cols, rows)}
+                    />
                     {liveRun.finishing ? (
                       <p className="px-1 text-[11px] text-[#999999]">
                         Encerrando a sessão e preparando o diff para sua aprovação…
@@ -1413,7 +1440,14 @@ export function FleetView({
                         if (!data) return null
                         return (
                           <div className="mt-3 space-y-3">
-                            <CodeDiff diff={data.diff} />
+                            <CodeDiff
+                              diff={data.diff}
+                              review={{
+                                log: data.log,
+                                delivery: run.delivery,
+                                exitCode: run.exitCode
+                              }}
+                            />
                             <details className="group">
                               <summary className="text-[10px] text-[#7c3aed] cursor-pointer hover:text-[#a080f0] select-none">
                                 Log completo ({data.log.split('\n').length} linhas)

@@ -12,7 +12,7 @@ describe('UnlockScreen', () => {
     expect(screen.getByRole('heading', { name: 'Bem-vindo, Marina' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Desbloqueie o Sagyou' })).toBeInTheDocument()
 
-    act(() => vi.advanceTimersByTime(850))
+    act(() => vi.advanceTimersByTime(2_550))
 
     expect(screen.getByLabelText('Senha')).toHaveFocus()
   })

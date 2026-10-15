@@ -157,8 +157,8 @@ describe('two agents running at once', () => {
     await flush()
 
     // B is on screen; A is parked. Neither answer bled into the other.
-    expect(run().messages.at(-1)).toEqual({ role: 'assistant', content: 'resposta B' })
-    expect(run().parked['A'].messages.at(-1)).toEqual({ role: 'assistant', content: 'resposta A' })
+    expect(run().messages.at(-1)).toEqual(expect.objectContaining({ role: 'assistant', content: 'resposta B', provider: 'api', model: 'm' }))
+    expect(run().parked['A'].messages.at(-1)).toEqual(expect.objectContaining({ role: 'assistant', content: 'resposta A', provider: 'api', model: 'm' }))
     expect(run().running.size).toBe(0)
   })
 

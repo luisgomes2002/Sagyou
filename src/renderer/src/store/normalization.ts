@@ -120,7 +120,30 @@ export function normalizeFinancialProfiles(value: unknown): FinancialProfile[] {
       typeof (profile as FinancialProfile).createdAt === 'string' &&
       typeof (profile as FinancialProfile).updatedAt === 'string'
   )
-  return profiles.length ? profiles : [{ ...DEFAULT_FINANCIAL_PROFILE }]
+  const suggestions = (items: unknown): string[] | undefined => {
+    if (!Array.isArray(items)) return undefined
+    return [
+      ...new Map(
+        items
+          .filter((item): item is string => typeof item === 'string' && item.trim() !== '')
+          .map((item) => [item.trim().toLocaleLowerCase('pt-BR'), item.trim()])
+      ).values()
+    ]
+  }
+  return profiles.length
+    ? profiles.map((profile) => ({
+        ...profile,
+        ...(suggestions(profile.customCategories)
+          ? { customCategories: suggestions(profile.customCategories) }
+          : {}),
+        ...(suggestions(profile.savedSources)
+          ? { savedSources: suggestions(profile.savedSources) }
+          : {}),
+        ...(suggestions(profile.savedCounterparties)
+          ? { savedCounterparties: suggestions(profile.savedCounterparties) }
+          : {})
+      }))
+    : [{ ...DEFAULT_FINANCIAL_PROFILE }]
 }
 
 export function normalizeTimers(data: {

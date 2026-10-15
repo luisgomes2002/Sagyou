@@ -83,6 +83,39 @@ export function normalizeFeaturePreferences(value: unknown): FeatureId[] | undef
   ]
 }
 
+export type ThemePreference = 'dark' | 'light'
+export type FontSizePreference = 'small' | 'default' | 'large'
+
+/** Visual and accessibility choices that apply to the whole application. */
+export interface UiPreferences {
+  theme: ThemePreference
+  fontSize: FontSizePreference
+  reduceMotion: boolean
+  highContrast: boolean
+}
+
+export const DEFAULT_UI_PREFERENCES: UiPreferences = {
+  theme: 'dark',
+  fontSize: 'default',
+  reduceMotion: false,
+  highContrast: false
+}
+
+export function normalizeUiPreferences(value: unknown): UiPreferences {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    return { ...DEFAULT_UI_PREFERENCES }
+  const preferences = value as Partial<UiPreferences>
+  return {
+    theme: preferences.theme === 'light' ? 'light' : 'dark',
+    fontSize:
+      preferences.fontSize === 'small' || preferences.fontSize === 'large'
+        ? preferences.fontSize
+        : 'default',
+    reduceMotion: preferences.reduceMotion === true,
+    highContrast: preferences.highContrast === true
+  }
+}
+
 export interface Task {
   id: string
   projectId: string
@@ -243,6 +276,10 @@ export interface FinancialProfile {
   updatedAt: string
   /** User-defined financial categories shared by tables in this profile. */
   customCategories?: string[]
+  /** Saved bank/app names from documented transactions in this profile. */
+  savedSources?: string[]
+  /** Saved payers/payees from documented transactions in this profile. */
+  savedCounterparties?: string[]
 }
 
 export interface FinancialTable {
@@ -299,6 +336,8 @@ export interface Backup {
   activeFinancialProfileId?: string
   /** Sidebar choices; absent in older backups so the local preference is retained. */
   featurePreferences?: FeatureId[]
+  /** Appearance and accessibility choices; absent in older backups keeps the local choices. */
+  uiPreferences?: UiPreferences
   // Added in version 3. Absent in older backups — importing one of those must
   // leave the local history untouched rather than wiping it.
   conversations?: AIConversation[]

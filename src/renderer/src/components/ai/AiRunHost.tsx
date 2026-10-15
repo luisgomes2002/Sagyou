@@ -46,6 +46,7 @@ export function AiRunHost({
 }): React.JSX.Element {
   const messages = useAiRunStore((s) => s.messages)
   const conversationId = useAiRunStore((s) => s.conversationId)
+  const connections = useAiRunStore((s) => s.connections)
   const usage = useAiRunStore((s) => s.usage)
   const parked = useAiRunStore((s) => s.parked)
   // One or more runs are working somewhere. Was the global `busy`; now derived
@@ -75,8 +76,10 @@ export function AiRunHost({
   // other wrote, then the last writer overwrites the first one's changes.
   useEffect(() => {
     const parkedEntries = Object.entries(parked)
-    if (messages.length === 0 && parkedEntries.length === 0) return
-    const id = messages.length > 0 ? ensureConversationId() : null
+    if (messages.length === 0 && parkedEntries.length === 0 && !connections[conversationId ?? '']) return
+    const id = messages.length > 0 || (conversationId && connections[conversationId])
+      ? ensureConversationId()
+      : null
     const timer = setTimeout(() => {
       const saves: Promise<unknown>[] = []
       if (id) {
@@ -85,7 +88,8 @@ export function AiRunHost({
             id,
             title: deriveTitle(messages),
             messages,
-            usage
+            usage,
+            connection: connections[id]
           })
         )
       }
@@ -95,14 +99,15 @@ export function AiRunHost({
             id: parkedId,
             title: deriveTitle(p.messages),
             messages: p.messages,
-            usage: p.usage
+            usage: p.usage,
+            connection: connections[parkedId]
           })
         )
       }
       void Promise.all(saves).then(() => markSaved())
     }, 600)
     return () => clearTimeout(timer)
-  }, [messages, conversationId, usage, parked, ensureConversationId, markSaved])
+  }, [messages, conversationId, usage, parked, connections, ensureConversationId, markSaved])
 
   // ── Code agent approval (lives here so it works even when FleetView is not
   //    mounted — FleetView is a view that unmounts on navigation, and a parked

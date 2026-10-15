@@ -87,6 +87,14 @@ describe('getOpenAIClient', () => {
     expect(b.apiKey).toBe('new-key')
   })
 
+  it('rebuilds when a Claude-compatible profile replaces an OpenAI one', () => {
+    const openai = getOpenAIClient('https://api.openai.com/v1', 'key', 'openai')
+    const claude = getOpenAIClient('https://api.openai.com/v1', 'key', 'anthropic')
+    // Provider headers are part of the connection identity. Reusing the OpenAI
+    // client here would silently omit Anthropic's compatibility headers.
+    expect(claude).not.toBe(openai)
+  })
+
   it('does not confuse two configs that concatenate alike', () => {
     // Without a separator, "http://x" + "ab" and "http://xa" + "b" collide.
     const a = getOpenAIClient('http://x', 'ab')

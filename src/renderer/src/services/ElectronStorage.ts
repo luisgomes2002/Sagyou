@@ -16,7 +16,8 @@ import type {
   AiMemory,
   TimeBlock,
   Routine,
-  FeatureId
+  FeatureId,
+  UiPreferences
 } from '../types'
 
 export class ElectronStorage implements IStorageAdapter {
@@ -34,6 +35,7 @@ export class ElectronStorage implements IStorageAdapter {
       financialProfiles: (data.financialProfiles || []) as FinancialProfile[],
       activeFinancialProfileId: data.activeFinancialProfileId as string | undefined,
       featurePreferences: data.featurePreferences as FeatureId[] | undefined,
+      uiPreferences: data.uiPreferences as UiPreferences | undefined,
       activeTimers: (data.activeTimers ?? undefined) as
         | { taskId: string; startedAt: number }[]
         | undefined,

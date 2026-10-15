@@ -22,6 +22,10 @@ export interface FinancialSlice {
   setActiveFinancialProfile: (id: string) => void
   addFinancialCategory: (profileId: string, category: string) => void
   removeFinancialCategory: (profileId: string, category: string) => void
+  addFinancialSource: (profileId: string, source: string) => void
+  removeFinancialSource: (profileId: string, source: string) => void
+  addFinancialCounterparty: (profileId: string, counterparty: string) => void
+  removeFinancialCounterparty: (profileId: string, counterparty: string) => void
   createList: (name: string, currency?: Currency, profileId?: string) => string
   updateList: (id: string, name: string) => void
   setListCurrency: (id: string, currency: Currency) => void
@@ -149,6 +153,82 @@ export const createFinancialSlice: StateCreator<
           ? {
               ...item,
               customCategories: (item.customCategories ?? []).filter((value) => value !== category),
+              updatedAt: new Date().toISOString()
+            }
+          : item
+      )
+    }))
+    get()._persist()
+  },
+
+  addFinancialSource: (profileId, source) => {
+    const trimmed = source.trim()
+    const profile = get().financialProfiles.find((item) => item.id === profileId)
+    if (
+      !trimmed ||
+      profile?.savedSources?.some((item) => item.toLowerCase() === trimmed.toLowerCase())
+    )
+      return
+    set((s) => ({
+      financialProfiles: s.financialProfiles.map((item) =>
+        item.id === profileId
+          ? {
+              ...item,
+              savedSources: [...(item.savedSources ?? []), trimmed],
+              updatedAt: new Date().toISOString()
+            }
+          : item
+      )
+    }))
+    get()._persist()
+  },
+
+  removeFinancialSource: (profileId, source) => {
+    set((s) => ({
+      financialProfiles: s.financialProfiles.map((item) =>
+        item.id === profileId
+          ? {
+              ...item,
+              savedSources: (item.savedSources ?? []).filter((value) => value !== source),
+              updatedAt: new Date().toISOString()
+            }
+          : item
+      )
+    }))
+    get()._persist()
+  },
+
+  addFinancialCounterparty: (profileId, counterparty) => {
+    const trimmed = counterparty.trim()
+    const profile = get().financialProfiles.find((item) => item.id === profileId)
+    if (
+      !trimmed ||
+      profile?.savedCounterparties?.some((item) => item.toLowerCase() === trimmed.toLowerCase())
+    )
+      return
+    set((s) => ({
+      financialProfiles: s.financialProfiles.map((item) =>
+        item.id === profileId
+          ? {
+              ...item,
+              savedCounterparties: [...(item.savedCounterparties ?? []), trimmed],
+              updatedAt: new Date().toISOString()
+            }
+          : item
+      )
+    }))
+    get()._persist()
+  },
+
+  removeFinancialCounterparty: (profileId, counterparty) => {
+    set((s) => ({
+      financialProfiles: s.financialProfiles.map((item) =>
+        item.id === profileId
+          ? {
+              ...item,
+              savedCounterparties: (item.savedCounterparties ?? []).filter(
+                (value) => value !== counterparty
+              ),
               updatedAt: new Date().toISOString()
             }
           : item

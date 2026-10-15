@@ -89,6 +89,12 @@ const MARKITDOWN_ONLY_EXT = new Set([
   '.flac'
 ])
 
+// These were the formats compared against the native parsers in
+// MARKITDOWN_EVALUATION.md. Keep the native parser as a fallback: bundled
+// runtimes can be unavailable or fail on one malformed document, and losing
+// all extraction is worse than returning the existing plain-text result.
+const MARKITDOWN_PREFERRED_EXT = new Set(['.pdf', '.docx', '.xlsx'])
+
 export function supportedExtensions(): string[] {
   return Object.keys(EXT_MIME)
 }
@@ -99,6 +105,10 @@ export function isDocumentExt(ext: string): boolean {
 
 export function mimeForDocumentExt(ext: string): string {
   return EXT_MIME[ext.toLowerCase()] ?? 'application/octet-stream'
+}
+
+export function prefersMarkItDown(ext: string): boolean {
+  return MARKITDOWN_PREFERRED_EXT.has(ext.toLowerCase())
 }
 
 // ---- plain text (CSV, TXT, MD, JSON, YAML, XML, HTML, LOG) ----
@@ -242,11 +252,21 @@ export async function parseDocument(
   if (buffer.length > MAX_DOCUMENT_BYTES) {
     return { error: `Arquivo grande demais (máx. ${MAX_DOCUMENT_BYTES / 1024 / 1024}MB)` }
   }
-  if (hasBundledMarkItDown()) {
+  const key = ext.toLowerCase()
+  if (prefersMarkItDown(key) && hasBundledMarkItDown()) {
+    const converted = await convertWithMarkItDown(filePath)
+    if (!('error' in converted)) return { ...converted, size: buffer.length }
+  }
+
+  if (MARKITDOWN_ONLY_EXT.has(key)) {
+    if (!hasBundledMarkItDown()) {
+      return { error: 'Runtime do MarkItDown não está disponível nesta instalação' }
+    }
     const converted = await convertWithMarkItDown(filePath)
     if ('error' in converted) return converted
     return { ...converted, size: buffer.length }
   }
+
   return parseDocumentBuffer(buffer, ext)
 }
 

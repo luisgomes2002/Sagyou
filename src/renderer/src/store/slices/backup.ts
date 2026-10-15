@@ -20,9 +20,14 @@ import type {
   AiMemory,
   Priority,
   ActiveTimer,
-  FeatureId
+  FeatureId,
+  UiPreferences
 } from '../../types'
-import { DEFAULT_FINANCIAL_PROFILE_ID, normalizeFeaturePreferences } from '../../types'
+import {
+  DEFAULT_FINANCIAL_PROFILE_ID,
+  normalizeFeaturePreferences,
+  normalizeUiPreferences
+} from '../../types'
 import {
   normalizeFinancialProfiles,
   normalizeFinancialTable,
@@ -69,6 +74,7 @@ export function createBackupSlice(storage: StorageDep): StateCreator<
     financialProfiles: FinancialProfile[]
     activeFinancialProfileId: string
     featurePreferences?: FeatureId[]
+    uiPreferences: UiPreferences
     files: StoredFile[]
     timeBlocks: TimeBlock[]
     routines: Routine[]
@@ -92,7 +98,8 @@ export function createBackupSlice(storage: StorageDep): StateCreator<
         lists,
         financialProfiles,
         activeFinancialProfileId,
-        featurePreferences
+        featurePreferences,
+        uiPreferences
       } = get()
       // Chat history isn't part of the store — read it straight from storage.
       // A failure here shouldn't cost the user the rest of the backup.
@@ -126,6 +133,7 @@ export function createBackupSlice(storage: StorageDep): StateCreator<
         financialProfiles,
         activeFinancialProfileId,
         featurePreferences,
+        uiPreferences,
         conversations,
         memories,
         // Attachment metadata (new in v5). The physical bytes (fileBlobs) and the
@@ -227,6 +235,9 @@ export function createBackupSlice(storage: StorageDep): StateCreator<
       const featurePreferences = Array.isArray(backup.featurePreferences)
         ? (normalizeFeaturePreferences(backup.featurePreferences) ?? [])
         : get().featurePreferences
+      const uiPreferences = backup.uiPreferences
+        ? normalizeUiPreferences(backup.uiPreferences)
+        : get().uiPreferences
       if (!(await storage.commitBackupBlobs()).success) return false
       set({
         projects,
@@ -243,6 +254,7 @@ export function createBackupSlice(storage: StorageDep): StateCreator<
         timeBlocks,
         routines,
         featurePreferences,
+        uiPreferences,
         activeProjectId,
         activeTimers: []
       })

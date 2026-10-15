@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { TransactionRecordPanel } from '../../components/financial/TransactionRecordPanel'
 import type { FinancialTable, FinancialTransaction } from '../../types'
+import { useKanbanStore } from '../../store/kanban'
 
 const transaction: FinancialTransaction = {
   id: 'tx-1',
@@ -64,6 +65,36 @@ describe('TransactionRecordPanel bank details', () => {
       />
     )
     expect(screen.getByLabelText('Quem pagou')).toBeInTheDocument()
+  })
+
+  it('fills and removes saved banks without changing the transaction', () => {
+    useKanbanStore.setState({
+      financialProfiles: [
+        {
+          id: 'personal',
+          name: 'Minhas finanças',
+          createdAt: '2026-01-01',
+          updatedAt: '2026-01-01',
+          savedSources: ['Wise'],
+          savedCounterparties: ['Loja Central']
+        }
+      ],
+      activeFinancialProfileId: 'personal'
+    })
+    render(
+      <TransactionRecordPanel
+        transaction={transaction}
+        currency="BRL"
+        allLists={[table(transaction)]}
+        onUpdate={vi.fn()}
+      />
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Wise' }))
+    expect(screen.getByLabelText('Banco ou app de origem')).toHaveValue('Wise')
+    fireEvent.click(screen.getByRole('button', { name: 'Excluir banco ou app Wise' }))
+    expect(screen.queryByRole('button', { name: 'Wise' })).not.toBeInTheDocument()
+    expect(useKanbanStore.getState().financialProfiles[0].savedSources).toEqual([])
   })
 
   it('shows an old reconciliation without an action to change it', () => {

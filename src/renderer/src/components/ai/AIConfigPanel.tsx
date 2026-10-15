@@ -1,4 +1,4 @@
-import type { Dispatch, SetStateAction } from 'react'
+import { useEffect, useState, type Dispatch, type SetStateAction } from 'react'
 import {
   LOW_STEPS_WARNING,
   MAX_STEPS_LIMIT,
@@ -13,6 +13,7 @@ type HarnessStatus = Awaited<ReturnType<typeof window.electronAPI.ai.harnesses.s
 type SkillItem = Awaited<ReturnType<typeof window.electronAPI.ai.skills.list>>[number]
 type JailStatus = Awaited<ReturnType<typeof window.electronAPI.ai.jail.status>>
 type EditingSkill = { id?: string; name: string; body: string } | null
+type ChatGPTSession = Awaited<ReturnType<typeof window.electronAPI.ai.chatgpt.session>>
 
 interface Props {
   config: AIConfig
@@ -67,6 +68,14 @@ export function AIConfigPanel({
   jailStatus,
   setShowOnboarding
 }: Props): React.JSX.Element {
+  const [editingProfileId, setEditingProfileId] = useState<string | null>(null)
+  const [showAdvanced, setShowAdvanced] = useState(false)
+  const [chatGPTSession, setChatGPTSession] = useState<ChatGPTSession | null>(null)
+  const [chatGPTBusy, setChatGPTBusy] = useState(false)
+
+  useEffect(() => {
+    void window.electronAPI.ai.chatgpt.session().then(setChatGPTSession).catch(() => undefined)
+  }, [])
   /** A USD-per-1M-tokens input. Blank means unset, which hides the cost. */
   const priceField = (
     label: string,
@@ -220,6 +229,167 @@ export function AIConfigPanel({
           </p>
         )}
       </div>
+      <div className="mb-3 rounded-lg border border-[#2b2b31] bg-[#101014] p-3">
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-[11px] font-medium text-[#999999]">Perfis de API</span>
+          <button
+            onClick={() =>
+              setConfig((c) => {
+                const id = crypto.randomUUID()
+                const profile = {
+                  id,
+                  name: `Perfil ${((c.providerProfiles?.length ?? 0) + 1)}`,
+                  kind: 'api' as const,
+                  baseUrl: c.baseUrl,
+                  // A key typed right now is sent once for persistence. Stored
+                  // keys are intentionally absent after reopening the panel.
+                  apiKey: c.apiKey,
+                  model: c.model,
+                  modelComplex: c.modelComplex
+                }
+                return { ...c, providerProfiles: [...(c.providerProfiles ?? []), profile], activeProviderProfileId: id }
+              })
+            }
+            className="text-[11px] text-[#a080f0] hover:text-[#c4b5fd]"
+          >
+            Salvar atual como perfil
+          </button>
+        </div>
+        {(config.providerProfiles ?? []).map((profile) => (
+          <div key={profile.id} className="mr-1.5 mb-1.5 inline-flex items-center rounded border border-[#2b2b31]">
+            <button
+              onClick={() =>
+                setConfig((c) => ({
+                  ...c,
+                  baseUrl: profile.baseUrl,
+                  model: profile.model,
+                  modelComplex: profile.modelComplex,
+                  activeProviderProfileId: profile.id
+                }))
+              }
+              className={`rounded-l px-2 py-1 text-[11px] ${config.activeProviderProfileId === profile.id ? 'text-violet-200' : 'text-[#999999] hover:text-[#d4d4d4]'}`}
+              title={profile.hasApiKey === false ? 'Este perfil ainda não tem uma chave salva' : undefined}
+            >
+              {profile.name}
+            </button>
+            <button
+              onClick={() => setEditingProfileId(profile.id)}
+              className="border-l border-[#2b2b31] px-1.5 py-1 text-[11px] text-[#999999] hover:text-[#d4d4d4]"
+              title={`Editar nome de ${profile.name}`}
+              aria-label={`Editar nome de ${profile.name}`}
+            >
+              ✎
+            </button>
+            <button
+              onClick={() =>
+                setConfig((c) => {
+                  const profiles = (c.providerProfiles ?? []).filter((item) => item.id !== profile.id)
+                  const activeProviderProfileId =
+                    c.activeProviderProfileId === profile.id ? profiles[0]?.id : c.activeProviderProfileId
+                  return { ...c, providerProfiles: profiles, activeProviderProfileId }
+                })
+              }
+              className="border-l border-[#2b2b31] px-1.5 py-1 text-[11px] text-[#999999] hover:text-red-300"
+              title={`Excluir ${profile.name}`}
+              aria-label={`Excluir ${profile.name}`}
+            >
+              ×
+            </button>
+          </div>
+        ))}
+        {editingProfileId && (
+          <div className="mt-2 flex gap-2">
+            <input
+              autoFocus
+              defaultValue={(config.providerProfiles ?? []).find((p) => p.id === editingProfileId)?.name ?? ''}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter') return
+                const name = event.currentTarget.value.trim().slice(0, 80)
+                if (name) {
+                  setConfig((c) => ({
+                    ...c,
+                    providerProfiles: (c.providerProfiles ?? []).map((p) =>
+                      p.id === editingProfileId ? { ...p, name } : p
+                    )
+                  }))
+                }
+                setEditingProfileId(null)
+              }}
+              className="min-w-0 flex-1 rounded border border-[#2b2b31] bg-[#16161a] px-2 py-1 text-xs text-[#d4d4d4] focus:border-[#7c3aed] focus:outline-none"
+              placeholder="Nome do perfil"
+            />
+            <button
+              onClick={() => setEditingProfileId(null)}
+              className="text-xs text-[#999999] hover:text-[#d4d4d4]"
+            >
+              Cancelar
+            </button>
+          </div>
+        )}
+      </div>
+      <div className="mb-3 rounded-lg border border-[#2b2b31] bg-[#101014] p-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <span className="text-[11px] font-medium text-[#999999]">ChatGPT por assinatura</span>
+            <p className="mt-1 text-[11px] text-[#666666]">
+              {chatGPTSession?.sharing
+                ? `Conectado: ${chatGPTSession.identity?.email ?? chatGPTSession.profileLabel ?? 'conta ChatGPT'}`
+                : 'Conecte sua conta para usar seu plano ChatGPT no Sagyou.'}
+            </p>
+          </div>
+          <div className="flex shrink-0 gap-2">
+            {chatGPTSession?.sharing && (
+              <>
+                <button
+                  onClick={() => setConfig((c) => ({ ...c, chatProvider: 'chatgpt' }))}
+                  className="text-[11px] text-[#a080f0] hover:text-[#c4b5fd]"
+                >
+                  {config.chatProvider === 'chatgpt' ? 'Usando no chat' : 'Usar no chat'}
+                </button>
+                <button
+                  onClick={() => void window.electronAPI.ai.chatgpt.manageUsage()}
+                  className="text-[11px] text-[#a080f0] hover:text-[#c4b5fd]"
+                >
+                  Gerenciar uso
+                </button>
+              </>
+            )}
+            <button
+              disabled={chatGPTBusy}
+              onClick={() => {
+                setChatGPTBusy(true)
+                void window.electronAPI.ai.chatgpt
+                  .signIn(Boolean(chatGPTSession?.profileId))
+                  .then(setChatGPTSession)
+                  .finally(() => setChatGPTBusy(false))
+              }}
+              className="rounded border border-violet-400/40 px-2 py-1 text-[11px] text-violet-200 hover:bg-violet-400/10 disabled:opacity-50"
+            >
+              {chatGPTBusy ? 'Conectando…' : chatGPTSession?.profileId ? 'Adicionar conta' : 'Conectar com ChatGPT'}
+            </button>
+          </div>
+        </div>
+        {chatGPTSession?.profileId && (
+          <button
+            onClick={() =>
+              void window.electronAPI.ai.chatgpt.disconnect().then(() =>
+                setChatGPTSession({ status: 'disconnected', sharing: false })
+              )
+            }
+            className="mt-2 text-[11px] text-[#999999] hover:text-red-300"
+          >
+            Desconectar
+          </button>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={() => setShowAdvanced((open) => !open)}
+        className="mb-3 text-xs text-[#999999] hover:text-[#d4d4d4]"
+      >
+        {showAdvanced ? 'Ocultar configuração avançada' : 'Configuração avançada (API, agente e segurança)'}
+      </button>
+      {showAdvanced && <>
       <div className="grid grid-cols-3 gap-3">
         {field('Base URL', 'baseUrl', 'text', 'https://api.openai.com/v1')}
         {field('API Key', 'apiKey', 'password', 'sk-...')}
@@ -719,6 +889,7 @@ export function AIConfigPanel({
           dispositivo.
         </p>
       )}
+      </>}
     </div>
   )
 }

@@ -18,7 +18,8 @@ import {
   MAX_DOCUMENT_BYTES,
   MAX_DOCUMENT_CHARS,
   parseDocument,
-  parseDocumentBuffer
+  parseDocumentBuffer,
+  prefersMarkItDown
 } from '../../main/document-parser'
 
 function tempFile(ext: string, content: string): string {
@@ -67,6 +68,16 @@ describe('supportedExtensions', () => {
     expect(list.length).toBeGreaterThanOrEqual(10)
     expect(list).toContain('.pdf')
     expect(list).toContain('.docx')
+  })
+})
+
+describe('prefersMarkItDown', () => {
+  it('uses the bundled converter only for formats validated in the evaluation', () => {
+    expect(prefersMarkItDown('.pdf')).toBe(true)
+    expect(prefersMarkItDown('.DOCX')).toBe(true)
+    expect(prefersMarkItDown('.xlsx')).toBe(true)
+    expect(prefersMarkItDown('.html')).toBe(false)
+    expect(prefersMarkItDown('.txt')).toBe(false)
   })
 })
 

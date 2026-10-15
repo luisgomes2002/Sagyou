@@ -29,7 +29,11 @@ function installApi(): void {
   ;(window as unknown as { electronAPI: unknown }).electronAPI = {
     ai: {
       config: {
-        get: vi.fn(async () => ({ baseUrl: 'http://x', apiKey: 'k', model: 'm' })),
+        get: vi.fn(async () => ({
+          baseUrl: 'http://x', apiKey: '', model: 'm',
+          activeProviderProfileId: 'api',
+          providerProfiles: [{ id: 'api', kind: 'api', name: 'Minha API', baseUrl: 'http://x', model: 'm', hasApiKey: true }]
+        })),
         set: vi.fn(async () => {})
       },
       models: vi.fn(async () => ({ success: true, models: ['m'] })),
@@ -189,7 +193,7 @@ describe('a run and the chat it belongs to', () => {
         expect.objectContaining({
           id: asked,
           messages: expect.arrayContaining([
-            { role: 'assistant', content: 'a resposta da primeira conversa' }
+            expect.objectContaining({ role: 'assistant', content: 'a resposta da primeira conversa', provider: 'api', model: 'm' })
           ])
         })
       )
@@ -302,7 +306,7 @@ describe('a run and the chat it belongs to', () => {
         expect.objectContaining({
           id: asked,
           messages: expect.arrayContaining([
-            { role: 'assistant', content: 'a resposta sobreviveu à Nova' }
+            expect.objectContaining({ role: 'assistant', content: 'a resposta sobreviveu à Nova', provider: 'api', model: 'm' })
           ])
         })
       )
@@ -342,7 +346,7 @@ describe('a run in the background', () => {
       expect(window.electronAPI.ai.conversations.save).toHaveBeenCalledWith(
         expect.objectContaining({
           messages: expect.arrayContaining([
-            { role: 'assistant', content: 'a resposta que o usuário pagou' }
+            expect.objectContaining({ role: 'assistant', content: 'a resposta que o usuário pagou', provider: 'api', model: 'm' })
           ])
         })
       )

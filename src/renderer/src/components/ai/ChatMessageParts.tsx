@@ -47,6 +47,11 @@ export const MessageBubble = memo(function MessageBubble({
           </div>
         )}
         {m.role === 'user' ? m.content : <ChatMarkdown content={m.content} />}
+        {m.role === 'assistant' && m.provider && m.model && (
+          <div className="mt-2 text-[10px] text-[#999999]">
+            {m.providerLabel ?? (m.provider === 'chatgpt' ? 'ChatGPT' : m.provider === 'api' ? 'API' : m.provider)} · {m.model}
+          </div>
+        )}
         <div className="flex items-center gap-3 mt-2 text-[11px] opacity-70">
           <button
             type="button"

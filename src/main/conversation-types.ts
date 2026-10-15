@@ -2,6 +2,7 @@ import type { TokenUsage } from './usage'
 
 export interface StoredConversation {
   id: string
+  connection?: { provider: 'api' | 'chatgpt'; profileId?: string; model: string }
   title: string
   createdAt: string
   updatedAt: string
@@ -21,6 +22,10 @@ export interface StoredConversation {
      */
     step?: number
     maxSteps?: number
+    /** Adapter/model provenance; additive so older transcripts remain valid. */
+    provider?: 'api' | 'chatgpt' | 'codex' | 'claude-code' | 'opencode'
+    model?: string
+    providerLabel?: string
   }[]
   /** Tokens billed across this conversation's whole life. Absent on old files. */
   usage?: TokenUsage

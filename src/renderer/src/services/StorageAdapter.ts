@@ -15,7 +15,8 @@ import type {
   AiMemory,
   TimeBlock,
   Routine,
-  FeatureId
+  FeatureId,
+  UiPreferences
 } from '../types'
 
 type SaveData = {
@@ -30,6 +31,7 @@ type SaveData = {
   financialProfiles?: FinancialProfile[]
   activeFinancialProfileId?: string
   featurePreferences?: FeatureId[]
+  uiPreferences?: UiPreferences
   files: StoredFile[]
   timeBlocks?: TimeBlock[]
   routines?: Routine[]

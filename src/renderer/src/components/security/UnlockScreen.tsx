@@ -13,7 +13,10 @@ export function UnlockScreen({ userName, onUnlocked }: Props): JSX.Element {
   const passwordRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    // jsdom and older embedded engines do not always expose matchMedia; lack of
+    // the preference should retain the normal animation rather than preventing
+    // the unlock form from appearing.
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
     const timer = window.setTimeout(() => setShowPassword(true), reduceMotion ? 0 : 2_550)
     return () => window.clearTimeout(timer)
   }, [])
