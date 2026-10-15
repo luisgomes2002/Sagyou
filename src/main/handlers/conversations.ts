@@ -44,6 +44,7 @@ export function registerConversationHandlers(
         title: string
         messages: StoredConversation['messages']
         usage?: TokenUsage
+        connection?: StoredConversation['connection']
       }
     ) => {
       deps.safeConversationsSave(() => {
@@ -56,6 +57,7 @@ export function registerConversationHandlers(
             title: list[idx].titleCustom ? list[idx].title : conv.title,
             messages: conv.messages,
             usage: conv.usage,
+            connection: conv.connection ?? list[idx].connection,
             updatedAt: now
           }
         } else {
@@ -64,6 +66,7 @@ export function registerConversationHandlers(
             title: conv.title,
             messages: conv.messages,
             usage: conv.usage,
+            connection: conv.connection,
             createdAt: now,
             updatedAt: now
           })
@@ -130,6 +133,15 @@ export function registerConversationHandlers(
         // Likewise carried: without it an imported chat reports its cost as
         // unknown, having lost a count it was exported with.
         ...(c.usage && { usage: c.usage }),
+        ...(c.connection &&
+          (c.connection.provider === 'api' || c.connection.provider === 'chatgpt') &&
+          typeof c.connection.model === 'string' && {
+            connection: {
+              provider: c.connection.provider,
+              model: c.connection.model,
+              ...(typeof c.connection.profileId === 'string' && { profileId: c.connection.profileId })
+            }
+          }),
         createdAt: typeof c.createdAt === 'string' ? c.createdAt : now,
         updatedAt: typeof c.updatedAt === 'string' ? c.updatedAt : now,
         messages: c.messages.filter(

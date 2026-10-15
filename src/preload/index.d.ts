@@ -11,8 +11,22 @@ import type {
 /** Persisted AI provider config (stored in the main process, not the renderer). */
 interface AIConfig {
   baseUrl: string
-  apiKey: string
+  /** Never returned by main; accepted only when the user replaces a credential. */
+  apiKey?: string
   model: string
+  hasApiKey?: boolean
+  providerProfiles?: {
+    id: string
+    name: string
+    kind: 'api'
+    provider?: 'openai' | 'anthropic' | 'custom'
+    baseUrl: string
+    model: string
+    modelComplex?: string
+    hasApiKey?: boolean
+  }[]
+  activeProviderProfileId?: string
+  chatProvider?: 'api' | 'chatgpt'
   /** Preferred form of address for replies from the assistant. */
   userName?: string
   /** Optional heavier model for code/analysis tasks; absent = one model for all. */
@@ -39,6 +53,26 @@ interface AIConfig {
    * does before answering. One of 'low', 'medium', 'high'. Only sent when set.
    */
   reasoningEffort?: 'low' | 'medium' | 'high'
+}
+
+/** Safe OAuth state returned by the trusted SIWC runtime; it never contains tokens. */
+interface ChatGPTSession {
+  status: 'disconnected' | 'connecting' | 'connected' | 'reauth_required'
+  sharing: boolean
+  profileId?: string
+  profileLabel?: string
+  identity?: { name?: string; email?: string }
+  error?: { code: string; message: string; retryable: boolean; status?: number }
+}
+
+interface ChatGPTProfile {
+  id: string
+  label: string
+  status: ChatGPTSession['status']
+  sharing: boolean
+  identity?: { name?: string; email?: string }
+  requiresNewRegistration?: boolean
+  pending?: boolean
 }
 
 /** A tool call requested by the model, in the OpenAI/DeepSeek wire format. */
@@ -79,9 +113,7 @@ interface AIChatRequest {
   tools?: AIToolDefinition[]
   /** Overrides the stored config model for this call. */
   model?: string
-  /** Provider credentials; when omitted the main process uses the stored config. */
-  baseUrl?: string
-  apiKey?: string
+  profileId?: string
 }
 
 /** Tokens billed by a model call, as the provider reported them. */
@@ -157,11 +189,7 @@ interface AIChatResponse {
   usage?: TokenUsage
 }
 
-interface AIModelsRequest {
-  /** Provider credentials; when omitted the main process uses the stored config. */
-  baseUrl?: string
-  apiKey?: string
-}
+interface AIModelsRequest {}
 
 interface AIModelsResponse {
   success: boolean
@@ -173,6 +201,7 @@ interface AIStoredMessage {
   /** 'status' is a display-only trace of the agent's work, never a chat turn. */
   role: 'user' | 'assistant' | 'status'
   content: string
+  providerLabel?: string
   feedback?: 'positive' | 'negative'
   /** Chat-image ids; the bytes live as files under chat-images/. */
   imageIds?: string[]
@@ -285,6 +314,7 @@ interface AIConversationMeta {
 
 interface AIConversation extends AIConversationMeta {
   messages: AIStoredMessage[]
+  connection?: { provider: 'api' | 'chatgpt'; profileId?: string; model: string }
   /** Tokens billed across the conversation's life. Absent on pre-existing files. */
   usage?: TokenUsage
   /** The user named this chat; the autosave must not derive over it. */
@@ -313,6 +343,14 @@ declare global {
         load: () => Promise<{ projects: unknown[]; tasks: unknown[] }>
         save: (data: unknown) => Promise<void>
         rebuildSearchIndex: () => Promise<void>
+        onReload: (cb: () => void) => () => void
+        onMcpCreateTask: (
+          cb: (request: {
+            requestId: string
+            task: { projectId: string; columnId: string; title: string; description?: string }
+          }) => void
+        ) => () => void
+        respondMcpCreateTask: (requestId: string, result: { id?: string; error?: string }) => void
       }
       search: {
         global: (options: GlobalSearchOptions) => Promise<GlobalSearchResponse>
@@ -340,6 +378,23 @@ declare global {
         config: {
           get: () => Promise<AIConfig>
           set: (config: AIConfig) => Promise<void>
+        }
+        chatgpt: {
+          session: () => Promise<ChatGPTSession>
+          profiles: () => Promise<ChatGPTProfile[]>
+          signIn: (newProfile?: boolean) => Promise<ChatGPTSession>
+          select: (profileId: string) => Promise<ChatGPTSession>
+          disconnect: () => Promise<void>
+          models: () => Promise<{ slug: string; displayName: string }[]>
+          manageUsage: () => Promise<void>
+          stream: (
+            request: {
+              streamId: string
+              model: string
+              messages: { role: 'system' | 'user' | 'assistant'; content: string }[]
+            },
+            onDelta: (chunk: string) => void
+          ) => Promise<AIChatResponse>
         }
         usage: { summary: () => Promise<UsageSummary> }
         runMetrics: {
@@ -437,7 +492,18 @@ declare global {
           delete: (name: string) => Promise<void>
           import: () => Promise<{ skill: Skill } | { error: string }>
         }
-        models: (request: AIModelsRequest) => Promise<AIModelsResponse>
+        models: (
+          request?:
+            | string
+            | {
+                profileId?: string
+                draft?: {
+                  baseUrl: string
+                  apiKey?: string
+                  provider?: 'openai' | 'anthropic' | 'custom'
+                }
+              }
+        ) => Promise<AIModelsResponse>
         chat: (request: AIChatRequest) => Promise<AIChatResponse>
         chatStream: (
           request: AIChatRequest,
@@ -473,6 +539,11 @@ declare global {
           terminalInput: (
             runId: string,
             input: string
+          ) => Promise<{ success: boolean; error?: string }>
+          terminalResize: (
+            runId: string,
+            cols: number,
+            rows: number
           ) => Promise<{ success: boolean; error?: string }>
           finishInteractive: (runId: string) => Promise<{ success: boolean; error?: string }>
           /** Answer an approval card the native agent's loop is parked on. */
@@ -570,6 +641,7 @@ declare global {
               installed: boolean
               path: string | null
               version: string | null
+              authentication: 'authenticated' | 'unauthenticated' | 'unknown'
             }>
           >
         }
@@ -649,6 +721,7 @@ declare global {
             title: string
             messages: AIStoredMessage[]
             usage?: TokenUsage
+            connection?: AIConversation['connection']
           }) => Promise<void>
           rename: (id: string, title: string) => Promise<{ title?: string; error?: string }>
           delete: (id: string) => Promise<{ ok?: true; error?: string }>

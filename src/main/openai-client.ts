@@ -16,6 +16,8 @@ import OpenAI from 'openai'
 // for a microsecond. So the key is the identity: same endpoint and credentials,
 // same client; anything else, rebuild.
 
+export type ApiProvider = 'openai' | 'anthropic' | 'custom'
+
 let cached: { key: string; client: OpenAI } | null = null
 
 /**
@@ -27,13 +29,29 @@ function resolveKey(apiKey: string): string {
 }
 
 /** A client for this endpoint and key, reusing the last one when they match. */
-export function getOpenAIClient(baseURL: string, apiKey: string): OpenAI {
+export function getOpenAIClient(
+  baseURL: string,
+  apiKey: string,
+  provider: ApiProvider = 'custom'
+): OpenAI {
   const key = resolveKey(apiKey)
   // NUL-separated: it can't appear in a URL or a key, so two different configs
   // can never run together into the same string and look like a cache hit.
-  const cacheKey = `${baseURL}\u0000${key}`
+  const cacheKey = `${baseURL}\u0000${key}\u0000${provider}`
   if (cached?.key === cacheKey) return cached.client
-  const client = new OpenAI({ baseURL, apiKey: key })
+  const client = new OpenAI({
+    baseURL,
+    apiKey: key,
+    // Anthropic exposes an OpenAI-SDK compatibility surface. Keep this opt-in
+    // to the Claude preset: arbitrary compatible endpoints must not receive
+    // provider-specific headers.
+    ...(provider === 'anthropic' && {
+      defaultHeaders: {
+        'anthropic-version': '2023-06-01',
+        'anthropic-beta': 'openai-compatibility-2024-10-22'
+      }
+    })
+  })
   cached = { key: cacheKey, client }
   return client
 }

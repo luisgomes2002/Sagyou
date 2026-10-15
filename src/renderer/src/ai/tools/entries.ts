@@ -72,6 +72,147 @@ export const registryEntries: Record<string, AITool> = {
     }
   },
 
+  resolver_periodo: {
+    definition: fn(
+      'resolver_periodo',
+      'Converte um período relativo em datas YYYY-MM-DD inclusivas no fuso local. ' +
+        'Use antes de filtrar tarefas ou finanças; não calcule datas relativas por conta própria.',
+      {
+        type: 'object',
+        properties: {
+          referencia: {
+            type: 'string',
+            enum: [
+              'hoje',
+              'amanha',
+              'esta_semana',
+              'semana_passada',
+              'este_mes',
+              'mes_passado',
+              'ultimos_30_dias'
+            ]
+          }
+        },
+        required: ['referencia'],
+        additionalProperties: false
+      }
+    ),
+    run: (args) => {
+      const reference = typeof args.referencia === 'string' ? args.referencia : ''
+      const valid = new Set([
+        'hoje',
+        'amanha',
+        'esta_semana',
+        'semana_passada',
+        'este_mes',
+        'mes_passado',
+        'ultimos_30_dias'
+      ])
+      if (!valid.has(reference)) return JSON.stringify({ error: 'Período relativo inválido' })
+
+      const now = new Date()
+      const toISO = (date: Date): string => {
+        const pad = (value: number): string => String(value).padStart(2, '0')
+        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+      }
+      const day = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      const plusDays = (base: Date, days: number): Date => {
+        const next = new Date(base)
+        next.setDate(next.getDate() + days)
+        return next
+      }
+      const monthBounds = (base: Date): { de: Date; ate: Date } => ({
+        de: new Date(base.getFullYear(), base.getMonth(), 1),
+        ate: new Date(base.getFullYear(), base.getMonth() + 1, 0)
+      })
+      const monday = plusDays(day, -((day.getDay() + 6) % 7))
+      let bounds: { de: Date; ate: Date }
+      switch (reference) {
+        case 'hoje':
+          bounds = { de: day, ate: day }
+          break
+        case 'amanha': {
+          const tomorrow = plusDays(day, 1)
+          bounds = { de: tomorrow, ate: tomorrow }
+          break
+        }
+        case 'esta_semana':
+          bounds = { de: monday, ate: plusDays(monday, 6) }
+          break
+        case 'semana_passada':
+          bounds = { de: plusDays(monday, -7), ate: plusDays(monday, -1) }
+          break
+        case 'este_mes':
+          bounds = monthBounds(day)
+          break
+        case 'mes_passado':
+          bounds = monthBounds(new Date(day.getFullYear(), day.getMonth() - 1, 1))
+          break
+        default:
+          bounds = { de: plusDays(day, -29), ate: day }
+      }
+      return JSON.stringify({ referencia: reference, de: toISO(bounds.de), ate: toISO(bounds.ate) })
+    }
+  },
+
+  buscar_registros: {
+    definition: fn(
+      'buscar_registros',
+      'Busca registros no índice global por texto e filtros. Retorna referências estáveis (tipo e ID), ' +
+        'trechos e contagem; use ler_dados com a referência para confirmar detalhes antes de responder.',
+      {
+        type: 'object',
+        properties: {
+          termo: { type: 'string', description: 'Termo a buscar' },
+          tipos: { type: 'array', items: { type: 'string' }, description: 'Tipos de registro' },
+          projetoId: { type: 'string' },
+          tabelaId: { type: 'string' },
+          estado: { type: 'string' },
+          concluida: { type: 'boolean' },
+          incluirProjetosArquivados: { type: 'boolean' },
+          incluirMemoriasArquivadas: { type: 'boolean' },
+          limite: { type: 'number', description: 'Máximo de resultados, até 25.' }
+        },
+        required: ['termo'],
+        additionalProperties: false
+      }
+    ),
+    run: async (args) => {
+      const term = typeof args.termo === 'string' ? args.termo.trim() : ''
+      if (!term) return JSON.stringify({ error: 'Informe um termo de busca' })
+      const limit =
+        typeof args.limite === 'number' && Number.isFinite(args.limite)
+          ? Math.max(1, Math.min(25, Math.floor(args.limite)))
+          : 10
+      const response = await window.electronAPI.search.global({
+        term,
+        ...(Array.isArray(args.tipos) ? { types: args.tipos as never } : {}),
+        ...(typeof args.projetoId === 'string' ? { projectId: args.projetoId } : {}),
+        ...(typeof args.tabelaId === 'string' ? { tableId: args.tabelaId } : {}),
+        ...(typeof args.estado === 'string' ? { state: args.estado } : {}),
+        ...(typeof args.concluida === 'boolean' ? { completed: args.concluida } : {}),
+        ...(args.incluirProjetosArquivados === true ? { includeArchivedProjects: true } : {}),
+        ...(args.incluirMemoriasArquivadas === true ? { includeArchivedMemories: true } : {}),
+        limit
+      })
+      return JSON.stringify({
+        termo: term,
+        total: response.total,
+        truncado: response.hasMore,
+        referencias: response.results.map((hit) => ({
+          tipo: hit.type,
+          id: hit.id,
+          titulo: hit.title,
+          trecho: hit.snippet,
+          campo: hit.matchedField,
+          projetoId: hit.projectId,
+          tabelaId: hit.tableId,
+          data: hit.date
+        }))
+      })
+    }
+  },
+
   ler_projetos: {
     definition: fn(
       'ler_projetos',
@@ -259,6 +400,12 @@ export const registryEntries: Record<string, AITool> = {
       const filtro = typeof args.tabela === 'string' ? args.tabela.toLowerCase() : null
       const de = typeof args.de === 'string' ? args.de : null
       const ate = typeof args.ate === 'string' ? args.ate : null
+      if ((de && !isCalendarDate(de)) || (ate && !isCalendarDate(ate))) {
+        return JSON.stringify({ error: 'Período inválido. Use datas YYYY-MM-DD reais.' })
+      }
+      if (de && ate && de > ate) {
+        return JSON.stringify({ error: 'Período inválido: a data inicial é posterior à final.' })
+      }
       const inPeriod = (date: string): boolean => (!de || date >= de) && (!ate || date <= ate)
 
       const tabelas = profileLists
@@ -302,6 +449,7 @@ export const registryEntries: Record<string, AITool> = {
             .sort((a, b) => b.date.localeCompare(a.date))
             .slice(0, 15)
             .map((t) => ({
+              id: t.id,
               data: t.date,
               descricao: t.description,
               tipo: t.type === 'income' ? 'receita' : 'despesa',
@@ -316,6 +464,7 @@ export const registryEntries: Record<string, AITool> = {
               }))
             }))
           return {
+            tabelaId: l.id,
             nome: l.name,
             moeda: l.currency,
             receitas: receitas.toString(),
@@ -324,6 +473,7 @@ export const registryEntries: Record<string, AITool> = {
             qtdTransacoes: txs.length,
             porCategoria,
             metasFinanceiras: l.goals.map((g) => ({
+              id: g.id,
               nome: g.name,
               alvo: g.targetAmount,
               mes: g.targetMonth,
@@ -331,7 +481,8 @@ export const registryEntries: Record<string, AITool> = {
               concluida: !!g.completedAt
             })),
             amostraTransacoes: amostra,
-            truncado: txs.length > amostra.length
+            truncado: txs.length > amostra.length,
+            referencias: txs.map((t) => ({ tipo: 'transacao', id: t.id }))
           }
         })
       return JSON.stringify({ periodo: { de, ate }, tabelas })

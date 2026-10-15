@@ -59,6 +59,11 @@ vi.mock('electron', () => ({
     isMaximized = (): boolean => false
   },
   shell: { openExternal: vi.fn(), openPath: vi.fn() },
+  safeStorage: {
+    isEncryptionAvailable: () => true,
+    encryptString: (value: string) => Buffer.from(value),
+    decryptString: (value: Buffer) => value.toString()
+  },
   dialog: { showSaveDialog: vi.fn(), showOpenDialog: vi.fn() }
 }))
 
@@ -126,9 +131,12 @@ afterAll(async () => {
   await rm(userData, { recursive: true, force: true })
 })
 
-beforeEach(() => {
+beforeEach(async () => {
   sent.length = 0
   vi.mocked(listMemories).mockReturnValue([])
+  // Credentials belong to the trusted config, never to a renderer chat IPC
+  // request. The local provider is still real; this only seeds main's config.
+  await writeFile(join(userData, 'ai-config.json'), JSON.stringify({ baseUrl, apiKey: 'k', model: 'm' }))
 })
 
 describe('main handlers are registered', () => {
@@ -207,11 +215,8 @@ describe('ai:chat', () => {
       res.end('{}')
     }
 
-    const res = await invoke<{ success: boolean; status?: number }>('ai:chat', {
-      messages: [],
-      baseUrl: '',
-      model: ''
-    })
+    await writeFile(join(userData, 'ai-config.json'), JSON.stringify({ baseUrl: '', apiKey: '', model: '' }))
+    const res = await invoke<{ success: boolean; status?: number }>('ai:chat', { messages: [] })
 
     expect(res.success).toBe(false)
     // 400 marks it non-retryable: retrying a missing config just delays the message.

@@ -127,7 +127,26 @@ const api = {
     load: (): Promise<{ projects: unknown[]; tasks: unknown[] }> =>
       ipcRenderer.invoke('store:load'),
     save: (data: unknown): Promise<void> => ipcRenderer.invoke('store:save', data),
-    rebuildSearchIndex: (): Promise<void> => ipcRenderer.invoke('store:rebuild-search-index')
+    rebuildSearchIndex: (): Promise<void> => ipcRenderer.invoke('store:rebuild-search-index'),
+    onReload: (cb: () => void) => {
+      const handler = (): void => cb()
+      ipcRenderer.on('store:reload', handler)
+      return () => ipcRenderer.removeListener('store:reload', handler)
+    },
+    onMcpCreateTask: (
+      cb: (request: {
+        requestId: string
+        task: { projectId: string; columnId: string; title: string; description?: string }
+      }) => void
+    ) => {
+      const handler = (_: Electron.IpcRendererEvent, request: Parameters<typeof cb>[0]): void =>
+        cb(request)
+      ipcRenderer.on('store:mcp:create-task', handler)
+      return () => ipcRenderer.removeListener('store:mcp:create-task', handler)
+    },
+    respondMcpCreateTask: (requestId: string, result: { id?: string; error?: string }): void => {
+      ipcRenderer.send('store:mcp:create-task:response', { requestId, ...result })
+    }
   },
   search: {
     global: (options: GlobalSearchOptions): Promise<GlobalSearchResponse> =>
@@ -177,6 +196,34 @@ const api = {
         timeoutMs?: number
         lastConversationId?: string
       }): Promise<void> => ipcRenderer.invoke('ai:config:set', config)
+    },
+    chatgpt: {
+      session: () => ipcRenderer.invoke('ai:chatgpt:session'),
+      profiles: () => ipcRenderer.invoke('ai:chatgpt:profiles'),
+      signIn: (newProfile = false) => ipcRenderer.invoke('ai:chatgpt:sign-in', newProfile),
+      select: (profileId: string) => ipcRenderer.invoke('ai:chatgpt:select', profileId),
+      disconnect: () => ipcRenderer.invoke('ai:chatgpt:disconnect'),
+      models: () => ipcRenderer.invoke('ai:chatgpt:models'),
+      manageUsage: () => ipcRenderer.invoke('ai:chatgpt:manage-usage'),
+      stream: (
+        request: {
+          streamId: string
+          model: string
+          messages: { role: 'system' | 'user' | 'assistant'; content: string }[]
+        },
+        onDelta: (chunk: string) => void
+      ) => {
+        const handler = (
+          _: Electron.IpcRendererEvent,
+          payload: { streamId: string; delta?: string }
+        ) => {
+          if (payload.streamId === request.streamId && payload.delta) onDelta(payload.delta)
+        }
+        ipcRenderer.on('ai:chat:delta', handler)
+        return ipcRenderer
+          .invoke('ai:chatgpt:stream', request)
+          .finally(() => ipcRenderer.removeListener('ai:chat:delta', handler))
+      }
     },
     // Spend tracking: per-call log kept by the main process (ai-usage-log.json).
     usage: {
@@ -262,10 +309,18 @@ const api = {
       > => ipcRenderer.invoke('ai:lineage:list', entityType, entityId)
     },
     // Lists the provider's models (GET /models) through the main process.
-    models: (request: {
-      baseUrl?: string
-      apiKey?: string
-    }): Promise<{ success: boolean; models?: string[]; error?: string }> =>
+    models: (
+      request?:
+        | string
+        | {
+            profileId?: string
+            draft?: {
+              baseUrl: string
+              apiKey?: string
+              provider?: 'openai' | 'anthropic' | 'custom'
+            }
+          }
+    ): Promise<{ success: boolean; models?: string[]; error?: string }> =>
       ipcRenderer.invoke('ai:models', request),
     // Proxies an OpenAI-compatible /chat/completions call through the main
     // process (avoids CORS, keeps the API key out of the renderer). Supports
@@ -279,8 +334,7 @@ const api = {
       }[]
       tools?: unknown[]
       model?: string
-      baseUrl?: string
-      apiKey?: string
+      profileId?: string
     }): Promise<{
       success: boolean
       message?: { role: 'assistant'; content: string; tool_calls?: unknown[] }
@@ -302,8 +356,7 @@ const api = {
         }[]
         tools?: unknown[]
         model?: string
-        baseUrl?: string
-        apiKey?: string
+        profileId?: string
       },
       onDelta: (chunk: string) => void,
       /** A tool call the model is composing right now, named before its args land. */
@@ -360,6 +413,12 @@ const api = {
         input: string
       ): Promise<{ success: boolean; error?: string }> =>
         ipcRenderer.invoke('ai:code-agent:terminal-input', runId, input),
+      terminalResize: (
+        runId: string,
+        cols: number,
+        rows: number
+      ): Promise<{ success: boolean; error?: string }> =>
+        ipcRenderer.invoke('ai:code-agent:terminal-resize', runId, cols, rows),
       finishInteractive: (runId: string): Promise<{ success: boolean; error?: string }> =>
         ipcRenderer.invoke('ai:code-agent:finish-interactive', runId),
       // Answer an approval card the loop is parked on (native agent).
@@ -531,6 +590,7 @@ const api = {
           installed: boolean
           path: string | null
           version: string | null
+          authentication: 'authenticated' | 'unauthenticated' | 'unknown'
         }>
       > => ipcRenderer.invoke('ai:harnesses:status', refresh)
     },

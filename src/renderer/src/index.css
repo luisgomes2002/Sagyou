@@ -9,6 +9,142 @@
   --border: #2b2b31;
   --text-primary: #d4d4d4;
   --text-secondary: #999999;
+  --canvas-grid: #2b2b31;
+}
+
+html[data-font-size='small'] {
+  font-size: 14px;
+}
+
+html[data-font-size='large'] {
+  font-size: 18px;
+}
+
+html[data-theme='light'] {
+  --bg-primary: #f5f4f1;
+  --bg-sidebar: #faf9f7;
+  --bg-column: #ebe9e4;
+  --bg-card: #ffffff;
+  --bg-card-hover: #e5e2dc;
+  --border: #d2cec6;
+  --text-primary: #292724;
+  --text-secondary: #625f59;
+  --canvas-grid: #d0cbc2;
+}
+
+/* Most existing views use Tailwind arbitrary colors. Keep the light theme
+ * consistent while the UI is progressively moved to semantic color tokens. */
+html[data-theme='light'] [class*='bg-[#0b0b0f]'],
+html[data-theme='light'] [class*='bg-[#101014]'] {
+  background-color: #faf9f7 !important;
+}
+
+html[data-theme='light'] [class*='bg-[#121216]'] {
+  background-color: #f7f6f3 !important;
+}
+
+html[data-theme='light'] [class*='bg-[#16161a]'] {
+  background-color: #ffffff !important;
+}
+
+html[data-theme='light'] [class*='bg-[#222227]'] {
+  background-color: #e8e5df !important;
+}
+
+html[data-theme='light'] [class*='bg-[#2a2a30]'] {
+  background-color: #ddd8cf !important;
+}
+
+html[data-theme='light'] [class*='bg-[#303036]'] {
+  background-color: #d3cec5 !important;
+}
+
+html[data-theme='light'] [class*='bg-[#30264a]'] {
+  background-color: #ece7f7 !important;
+}
+
+html[data-theme='light'] [class*='border-[#2b2b31]'],
+html[data-theme='light'] [class*='divide-[#2b2b31]'] {
+  border-color: #d2cec6 !important;
+}
+
+html[data-theme='light'] [class*='border-[#34343a]'],
+html[data-theme='light'] [class*='border-[#3b3b42]'] {
+  border-color: #bbb6ad !important;
+}
+
+html[data-theme='light'] [class*='text-[#d4d4d4]'] {
+  color: #292724;
+}
+
+html[data-theme='light'] [class*='text-[#999999]'] {
+  color: #625f59;
+}
+
+html[data-theme='light'] [class*='text-[#555555]'],
+html[data-theme='light'] [class*='text-[#666666]'],
+html[data-theme='light'] [class*='text-[#777777]'],
+html[data-theme='light'] [class*='text-[#888]'] {
+  color: #77716a;
+}
+
+html[data-theme='light'] [class*='text-[#ccc]'],
+html[data-theme='light'] [class*='text-[#e5e5e5]'],
+html[data-theme='light'] [class*='text-[#b0b0b0]'] {
+  color: #292724;
+}
+
+html[data-theme='light'] [class*='border-white/'] {
+  border-color: #d2cec6;
+}
+
+html[data-theme='light'] [class*='hover:text-white']:hover {
+  color: #292724;
+}
+
+html[data-theme='light'] input,
+html[data-theme='light'] select,
+html[data-theme='light'] textarea {
+  color-scheme: light;
+}
+
+html[data-reduce-motion='true'] *,
+html[data-reduce-motion='true'] *::before,
+html[data-reduce-motion='true'] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  scroll-behavior: auto !important;
+  transition-duration: 0.01ms !important;
+}
+
+html[data-high-contrast='true'] {
+  --border: #767680;
+  --text-primary: #000000;
+  --text-secondary: #2d2d35;
+}
+
+html[data-high-contrast='true'][data-theme='dark'] {
+  --bg-primary: #000000;
+  --bg-sidebar: #080808;
+  --bg-column: #080808;
+  --bg-card: #101010;
+  --bg-card-hover: #202020;
+  --border: #aaaaaa;
+  --text-primary: #ffffff;
+  --text-secondary: #e0e0e0;
+}
+
+html[data-high-contrast='true'] [class*='border-[#2b2b31]'],
+html[data-high-contrast='true'] [class*='divide-[#2b2b31]'] {
+  border-color: var(--border);
+}
+
+html[data-high-contrast='true'] [class*='text-[#d4d4d4]'] {
+  color: var(--text-primary);
+}
+
+html[data-high-contrast='true'] [class*='text-[#999999]'] {
+  color: var(--text-secondary);
 }
 
 * {
@@ -38,6 +174,11 @@ body {
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
+}
+
+:focus-visible {
+  outline: 3px solid #8b5cf6;
+  outline-offset: 2px;
 }
 
 ::-webkit-scrollbar {

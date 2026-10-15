@@ -3,7 +3,7 @@ process.env.LC_ALL = 'pt_BR.UTF-8'
 process.env.LC_TIME = 'pt_BR.UTF-8'
 process.env.LANGUAGE = 'pt_BR:pt'
 
-import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog, safeStorage } from 'electron'
 import { join, relative, resolve, sep } from 'path'
 import {
   readFileSync,
@@ -33,6 +33,7 @@ import { CodeRunCoordinator } from './code-run-coordinator'
 import { addDetachedWorktree, resolveWorktreeBase } from './git-worktree'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import OpenAI from 'openai'
+import type { ChatGPTClient } from '@siwc/local'
 import {
   loadData,
   saveData,
@@ -63,7 +64,12 @@ import {
   type RunMetric,
   type RunMetricInput
 } from './run-metrics'
-import { getOpenAIClient, requestOptions } from './openai-client'
+import {
+  getOpenAIClient,
+  requestOptions,
+  resolveTimeoutMs,
+  type ApiProvider
+} from './openai-client'
 import { confineToRoot, extractSymbol } from './code-files'
 import * as codeFiles from './code-files'
 import {
@@ -96,6 +102,7 @@ import { briefConversationsForTask, briefCurrentConversation } from './conversat
 import { fetchWeb } from './web-fetch'
 import { renderWeb } from './web-render'
 import { getExchangeRate } from './financial-exchange'
+import { MCP_STDIO_BRIDGE_SOURCE, startSagyouMcpBroker } from './sagyou-mcp'
 import { captureBase, diffSince, lineDiff, type AgentBase, type DiffLineItem } from './code-diff'
 import { isImageFileName } from './chat-images'
 import { safeAttachmentName } from './backup-files'
@@ -132,6 +139,57 @@ import {
 import icon from '../../resources/icon.png?asset'
 
 let mainWindow: BrowserWindow | null = null
+const sagyouMcp = startSagyouMcpBroker({
+  readTasks: (projectId) => {
+    if (!projectId) return []
+    const data = loadData()
+    return data.tasks
+      .filter((task) => task.projectId === projectId)
+      .map(({ id, title, description, priority, dueDate, projectId: taskProjectId, columnId }) => ({
+        id,
+        title,
+        description,
+        priority,
+        dueDate,
+        projectId: taskProjectId,
+        columnId
+      }))
+  },
+  readFinancial: (profileId) => {
+    const data = loadData()
+    return data.lists
+      .filter((list) => list.profileId === profileId)
+      .map(({ id, name, currency, transactions }) => ({ id, name, currency, transactions }))
+  },
+  readProjectData: (projectId) => {
+    if (!projectId) return { metas: [], notas: [] }
+    const data = loadData()
+    return {
+      metas: data.goals.filter((goal) => goal.projectId === projectId),
+      notas: data.notes.filter((note) => note.projectId === projectId)
+    }
+  },
+  createTask: async (session, args) => {
+    const title = typeof args.titulo === 'string' ? args.titulo.trim().slice(0, 300) : ''
+    if (!title) throw new Error('titulo é obrigatório.')
+    const approved = await requestMcpWriteApproval(session.runId, 'criar_task', { titulo: title })
+    if (!approved) return { ok: false, error: 'Criação não aprovada pelo usuário.' }
+    const data = loadData()
+    const project = data.projects.find((item) => item.id === session.projectId)
+    const column = project?.columns[0]
+    if (!project || !column)
+      throw new Error('O projeto autorizado não possui uma coluna para a task.')
+    const id = await requestRendererMcpTask({
+      projectId: project.id,
+      columnId: column.id,
+      title,
+      ...(typeof args.descricao === 'string' && args.descricao.trim()
+        ? { description: args.descricao.trim().slice(0, 5000) }
+        : {})
+    })
+    return { ok: true, id, titulo: title }
+  }
+})
 
 /**
  * The live state of one code-agent run.
@@ -226,6 +284,59 @@ const codeRuns = new Map<string, CodeRunState>()
 const reservedWorktrees = new Set<string>()
 
 const codeRunCoordinator = new CodeRunCoordinator()
+
+interface McpTaskRequest {
+  projectId: string
+  columnId: string
+  title: string
+  description?: string
+}
+
+const pendingMcpTaskRequests = new Map<
+  string,
+  { resolve: (id: string) => void; reject: (error: Error) => void; timeout: NodeJS.Timeout }
+>()
+
+/**
+ * The renderer owns Zustand persistence. Keeping MCP mutations on that path
+ * prevents a stale renderer autosave from overwriting a task written directly
+ * by the main process.
+ */
+function requestRendererMcpTask(task: McpTaskRequest): Promise<string> {
+  if (!mainWindow || mainWindow.isDestroyed())
+    return Promise.reject(new Error('A janela do Sagyou precisa estar aberta para criar a task.'))
+  const requestId = randomUUID()
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      pendingMcpTaskRequests.delete(requestId)
+      reject(new Error('O Sagyou não respondeu à criação da task a tempo.'))
+    }, 15_000)
+    pendingMcpTaskRequests.set(requestId, { resolve, reject, timeout })
+    mainWindow?.webContents.send('store:mcp:create-task', { requestId, task })
+  })
+}
+
+/** Routes MCP writes through the exact same approval UI as code-agent actions. */
+function requestMcpWriteApproval(
+  runId: string,
+  name: string,
+  args: Record<string, unknown>
+): Promise<boolean> {
+  const run = codeRuns.get(runId)
+  if (!run || run.abort) return Promise.resolve(false)
+  return new Promise((resolveApproval) => {
+    const id = randomUUID()
+    const request: CodeApprovalRequest = {
+      runId,
+      id,
+      name: `mcp:${name}`,
+      args,
+      resumo: `MCP Sagyou: ${name.replace('_', ' ')}`
+    }
+    run.pendingApprovals.set(id, { resolve: resolveApproval, request })
+    mainWindow?.webContents.send('ai:code-agent:approve-request', request)
+  })
+}
 
 /**
  * Backward compat: the last finished run's state, kept after the run is cleaned
@@ -599,6 +710,8 @@ interface HarnessStatus {
   installed: boolean
   path: string | null
   version: string | null
+  /** Only reported when the CLI has a safe status command; never opens login. */
+  authentication: 'authenticated' | 'unauthenticated' | 'unknown'
 }
 
 const EXTERNAL_HARNESSES: ReadonlyArray<Pick<HarnessStatus, 'id' | 'label' | 'command'>> = [
@@ -619,16 +732,31 @@ async function getHarnessStatuses(refresh = false): Promise<HarnessStatus[]> {
   harnessStatusCache = await Promise.all(
     EXTERNAL_HARNESSES.map(async ({ id, label, command }) => {
       const path = resolveExecutable(command)
-      if (!path) return { id, label, command, installed: false, path: null, version: null }
+      if (!path)
+        return {
+          id,
+          label,
+          command,
+          installed: false,
+          path: null,
+          version: null,
+          authentication: 'unknown' as const
+        }
       const result = await defaultExec(path, ['--version'])
       const output = (result.stdout || result.stderr).trim().replace(/\s+/g, ' ')
+      // Codex documents `login status` as a non-interactive credential check.
+      // The other CLIs do not expose a stable equivalent across their supported
+      // login methods, so claiming either state there would be worse than unknown.
+      const auth = id === 'codex' ? await defaultExec(path, ['login', 'status']) : null
       return {
         id,
         label,
         command,
         installed: true,
         path,
-        version: output ? output.slice(0, 120) : null
+        version: output ? output.slice(0, 120) : null,
+        authentication:
+          auth === null ? 'unknown' : auth.code === 0 ? 'authenticated' : 'unauthenticated'
       }
     })
   )
@@ -669,6 +797,22 @@ async function readOnlyReferenceBrief(roots: ReadOnlyRoot[]): Promise<string> {
     )
   }
   return sections.join('\n\n').slice(0, 18_000)
+}
+
+/**
+ * An external harness gets no data snapshot. It must request current data from
+ * the run-scoped MCP capability, where project/profile boundaries are enforced.
+ * Passing `loadData()` here would silently bypass those boundaries in the prompt.
+ */
+function sagyouContextBrief(projectId: string | null | undefined): string {
+  try {
+    const project = projectId ? loadData().projects.find((item) => item.id === projectId) : null
+    return project
+      ? `## ESCOPO DO SAGYOU\nProjeto autorizado: ${project.name}. Consulte dados pelo MCP Sagyou.`
+      : '## ESCOPO DO SAGYOU\nNenhum projeto foi autorizado. Consulte apenas o que o MCP Sagyou permitir.'
+  } catch {
+    return ''
+  }
 }
 
 /** Builds direct argv for each supported local harness. No shell is involved. */
@@ -801,6 +945,23 @@ interface AIConfig {
   baseUrl: string
   apiKey: string
   model: string
+  /** Named API connections make key/model switching explicit and reversible. */
+  providerProfiles?: {
+    id: string
+    name: string
+    kind: 'api'
+    /** Missing on old profiles means a generic OpenAI-compatible endpoint. */
+    provider?: ApiProvider
+    baseUrl: string
+    apiKey: string
+    model: string
+    /** Optional stronger model for analysis/code requests in this profile. */
+    modelComplex?: string
+  }[]
+  activeProviderProfileId?: string
+  /** Stops an intentionally deleted imported profile from being recreated. */
+  legacyProfileMigrated?: boolean
+  chatProvider?: 'api' | 'chatgpt'
   /** Preferred form of address for replies from the assistant. */
   userName?: string
   /**
@@ -881,15 +1042,135 @@ function resolveCodeAgentConfig(cfg: AIConfig): {
   reasoningEffort?: string
 } {
   const ca = cfg.codeAgent ?? {}
+  const chat = resolveChatConfig(cfg)
   const pick = (a: string | undefined, b: string): string => (a && a.trim() ? a.trim() : b)
   return {
-    baseUrl: pick(ca.baseUrl, cfg.baseUrl),
-    apiKey: pick(ca.apiKey, cfg.apiKey),
-    model: pick(ca.model, cfg.model),
+    baseUrl: pick(ca.baseUrl, chat.baseUrl),
+    apiKey: pick(ca.apiKey, chat.apiKey),
+    model: pick(ca.model, chat.model),
     reasoningEffort: cfg.reasoningEffort
   }
 }
+
+/**
+ * The renderer can choose and label a connection, but it must never receive a
+ * stored credential. Users may type a replacement key in the profile editor,
+ * yet reopening that form cannot expose credentials to the renderer.
+ */
+function publicAIConfig(config: AIConfig): Omit<AIConfig, 'apiKey' | 'providerProfiles'> & {
+  providerProfiles?: Array<
+    Omit<NonNullable<AIConfig['providerProfiles']>[number], 'apiKey'> & { hasApiKey: boolean }
+  >
+  hasApiKey: boolean
+} {
+  const { apiKey: _apiKey, providerProfiles, codeAgent, ...rest } = config
+  return {
+    ...rest,
+    // Keep the separate code-agent endpoint/model visible, but never replay its
+    // credential to the renderer after the user entered it.
+    ...(codeAgent && {
+      codeAgent: {
+        ...(codeAgent.baseUrl && { baseUrl: codeAgent.baseUrl }),
+        ...(codeAgent.model && { model: codeAgent.model })
+      }
+    }),
+    hasApiKey: Boolean(_apiKey),
+    providerProfiles: providerProfiles?.map(({ apiKey, ...profile }) => ({
+      ...profile,
+      hasApiKey: Boolean(apiKey)
+    }))
+  }
+}
+
+/** Keep an existing credential when the renderer submits its intentionally blank value. */
+function mergeAIConfigSecrets(next: AIConfig, previous: AIConfig): AIConfig {
+  const previousProfiles = new Map((previous.providerProfiles ?? []).map((p) => [p.id, p]))
+  const profiles = next.providerProfiles
+  return {
+    ...next,
+    apiKey: next.apiKey || previous.apiKey,
+    codeAgent:
+      next.codeAgent || previous.codeAgent
+        ? {
+            ...previous.codeAgent,
+            ...next.codeAgent,
+            apiKey: next.codeAgent?.apiKey || previous.codeAgent?.apiKey
+          }
+        : undefined,
+    providerProfiles: profiles?.map((profile) => ({
+      ...profile,
+      apiKey: profile.apiKey || previousProfiles.get(profile.id)?.apiKey || ''
+    }))
+  }
+}
+
+/** Resolve the selected API connection entirely in main, where its key stays. */
+function resolveChatConfig(
+  cfg: AIConfig,
+  profileId?: string
+): {
+  baseUrl: string
+  apiKey: string
+  model: string
+  provider: ApiProvider
+} {
+  const active = cfg.providerProfiles?.find(
+    (profile) => profile.id === (profileId ?? cfg.activeProviderProfileId)
+  )
+  if (profileId && !active) throw new Error('Perfil de API não encontrado')
+  return active
+    ? {
+        baseUrl: active.baseUrl,
+        apiKey: active.apiKey,
+        model: active.model,
+        provider: active.provider ?? 'custom'
+      }
+    : { baseUrl: '', apiKey: '', model: '', provider: 'custom' }
+}
 const aiConfigPath = (): string => join(app.getPath('userData'), 'ai-config.json')
+
+let chatGPT: ChatGPTClient | null = null
+let siwcModule: Promise<typeof import('@siwc/local')> | null = null
+
+/**
+ * electron-vite emits the main process as CommonJS while the official DevKit is
+ * ESM-only. A native dynamic import must stay intact at runtime; TypeScript's
+ * `import()` expression would otherwise be rewritten to `require()` here.
+ */
+function loadSiwc(): Promise<typeof import('@siwc/local')> {
+  siwcModule ??= new Function('specifier', 'return import(specifier)')('@siwc/local') as Promise<
+    typeof import('@siwc/local')
+  >
+  return siwcModule
+}
+
+/**
+ * SIWC owns OAuth, PKCE, loopback and refresh. Electron's OS-backed crypto is
+ * the only credential-encryption provider accepted here; never fall back to a
+ * plaintext file when the platform keychain is unavailable.
+ */
+async function getChatGPT(): Promise<ChatGPTClient> {
+  if (chatGPT) return chatGPT
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw new Error('O armazenamento protegido do sistema não está disponível.')
+  }
+  const { createChatGPT } = await loadSiwc()
+  chatGPT = createChatGPT({
+    appName: 'Sagyou',
+    appId: 'sagyou',
+    redirectPort: 0,
+    storageDir: join(app.getPath('userData'), 'chatgpt'),
+    sendHostId: true,
+    credentialEncryption: {
+      id: 'electron-safe-storage-v1',
+      isAvailable: () => safeStorage.isEncryptionAvailable(),
+      encrypt: (plaintext) => safeStorage.encryptString(plaintext),
+      decrypt: (ciphertext) => safeStorage.decryptString(Buffer.from(ciphertext))
+    },
+    openBrowser: (url) => shell.openExternal(url)
+  })
+  return chatGPT
+}
 
 // Password protection is intentionally separate from the data and backup formats:
 // importing a backup must never silently replace the credential that protects this machine.
@@ -963,20 +1244,67 @@ function toUsage(
   return { promptTokens, completionTokens, cachedPromptTokens, reasoningTokens }
 }
 
+/** Expose old top-level API settings as an ordinary profile without discarding them. */
+function withImportedAIProfile(config: AIConfig): AIConfig {
+  const profiles = Array.isArray(config.providerProfiles) ? config.providerProfiles : []
+  const hasOldConnection = Boolean(config.baseUrl?.trim() && config.model?.trim())
+  const matching = profiles.find(
+    (profile) =>
+      profile.baseUrl === config.baseUrl &&
+      profile.apiKey === config.apiKey &&
+      profile.model === config.model &&
+      profile.modelComplex === config.modelComplex
+  )
+  let imported: NonNullable<AIConfig['providerProfiles']>[number] | undefined
+  if (hasOldConnection && !config.legacyProfileMigrated && !matching) {
+    let id = 'legacy'
+    while (profiles.some((profile) => profile.id === id)) id += '-original'
+    imported = {
+      id,
+      name: 'Minha API',
+      kind: 'api',
+      baseUrl: config.baseUrl,
+      apiKey: config.apiKey,
+      model: config.model,
+      modelComplex: config.modelComplex
+    }
+  }
+  const nextProfiles = imported ? [...profiles, imported] : profiles
+  const activeProviderProfileId = nextProfiles.some(
+    (profile) => profile.id === config.activeProviderProfileId
+  )
+    ? config.activeProviderProfileId
+    : (imported?.id ?? matching?.id ?? nextProfiles[0]?.id)
+  return {
+    ...config,
+    legacyProfileMigrated: true,
+    providerProfiles: nextProfiles,
+    activeProviderProfileId
+  }
+}
+
 function loadAIConfig(): AIConfig {
   try {
-    return { ...DEFAULT_AI_CONFIG, ...JSON.parse(readFileSync(aiConfigPath(), 'utf-8')) }
+    return withImportedAIProfile({
+      ...DEFAULT_AI_CONFIG,
+      ...JSON.parse(readFileSync(aiConfigPath(), 'utf-8'))
+    })
   } catch {
-    return { ...DEFAULT_AI_CONFIG }
+    return withImportedAIProfile({ ...DEFAULT_AI_CONFIG })
   }
 }
 
 function saveAIConfig(config: AIConfig): void {
+  const merged = withImportedAIProfile(mergeAIConfigSecrets(config, loadAIConfig()))
   const userName =
-    typeof config.userName === 'string' ? config.userName.trim().slice(0, 80) : undefined
+    typeof merged.userName === 'string' ? merged.userName.trim().slice(0, 80) : undefined
   writeFileSync(
     aiConfigPath(),
-    JSON.stringify({ ...config, userName: userName || undefined }, null, 2),
+    JSON.stringify(
+      { ...merged, legacyProfileMigrated: true, userName: userName || undefined },
+      null,
+      2
+    ),
     'utf-8'
   )
 }
@@ -1494,6 +1822,25 @@ app.whenReady().then(() => {
   ipcMain.handle('store:save', (_, data) => {
     saveData(data)
   })
+  ipcMain.on(
+    'store:mcp:create-task:response',
+    (_, response: { requestId?: unknown; id?: unknown; error?: unknown }) => {
+      if (typeof response.requestId !== 'string') return
+      const pending = pendingMcpTaskRequests.get(response.requestId)
+      if (!pending) return
+      pendingMcpTaskRequests.delete(response.requestId)
+      clearTimeout(pending.timeout)
+      if (typeof response.id === 'string') pending.resolve(response.id)
+      else
+        pending.reject(
+          new Error(
+            typeof response.error === 'string'
+              ? response.error
+              : 'O Sagyou recusou a criação da task.'
+          )
+        )
+    }
+  )
   ipcMain.handle('store:rebuild-search-index', () => rebuildSearchIndex())
   ipcMain.handle('search:global', (_, options: unknown) => searchGlobalIndex(options))
   ipcMain.handle('search:global:get', (_, options: unknown) => getGlobalSearchIndexHit(options))
@@ -1514,11 +1861,70 @@ app.whenReady().then(() => {
     return shell.openPath(dir)
   })
 
-  ipcMain.handle('ai:config:get', () => loadAIConfig())
+  ipcMain.handle('ai:config:get', () => publicAIConfig(loadAIConfig()))
 
   ipcMain.handle('ai:config:set', (_, config: AIConfig) => {
     saveAIConfig(config)
   })
+
+  // Sign in with ChatGPT stays entirely in main. The DevKit performs PKCE,
+  // validates identity/scopes, refreshes tokens and keeps them encrypted at
+  // rest; IPC exposes only its deliberately safe session/profile shapes.
+  ipcMain.handle('ai:chatgpt:session', async () => (await getChatGPT()).getSession())
+  ipcMain.handle('ai:chatgpt:profiles', async () => (await getChatGPT()).listProfiles())
+  ipcMain.handle('ai:chatgpt:sign-in', async (_, newProfile?: boolean) =>
+    (await getChatGPT()).signIn({ newProfile: newProfile === true })
+  )
+  ipcMain.handle('ai:chatgpt:select', async (_, profileId: string) =>
+    (await getChatGPT()).selectProfile(profileId)
+  )
+  ipcMain.handle('ai:chatgpt:disconnect', async () => (await getChatGPT()).disconnect())
+  ipcMain.handle('ai:chatgpt:models', async () => (await getChatGPT()).listModels())
+  ipcMain.handle('ai:chatgpt:manage-usage', async () =>
+    shell.openExternal((await loadSiwc()).CHATGPT_USAGE_URL)
+  )
+  ipcMain.handle(
+    'ai:chatgpt:stream',
+    async (
+      event,
+      request: {
+        streamId: string
+        model: string
+        messages: { role: 'system' | 'user' | 'assistant'; content: string }[]
+      }
+    ) => {
+      try {
+        const instructions = request.messages
+          .filter((message) => message.role === 'system')
+          .map((message) => message.content)
+          .join('\n\n')
+        const input = request.messages
+          .filter((message) => message.role !== 'system')
+          .map((message) => ({
+            role: (message.role === 'assistant' ? 'assistant' : 'user') as 'assistant' | 'user',
+            content: message.content
+          }))
+        const result = await (
+          await getChatGPT()
+        ).streamResponse({
+          model: request.model,
+          input,
+          ...(instructions ? { instructions } : {}),
+          onDelta: (delta) => {
+            if (!event.sender.isDestroyed()) {
+              event.sender.send('ai:chat:delta', { streamId: request.streamId, delta })
+            }
+          }
+        })
+        return { success: true, message: { role: 'assistant', content: result.text } }
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Falha ao contatar o ChatGPT'
+        }
+      }
+    }
+  )
 
   ipcMain.handle('ai:harnesses:status', async (_, refresh?: boolean) =>
     getHarnessStatuses(refresh === true)
@@ -1585,14 +1991,16 @@ app.whenReady().then(() => {
         messages: unknown[]
         tools?: unknown[]
         model?: string
+        profileId?: string
         baseUrl?: string
         apiKey?: string
       }
     ) => {
       const config = loadAIConfig()
-      const baseURL = request.baseUrl || config.baseUrl
-      const apiKey = request.apiKey || config.apiKey
-      const model = request.model || config.model
+      const selected = resolveChatConfig(config, request.profileId)
+      const baseURL = selected.baseUrl
+      const apiKey = selected.apiKey
+      const model = request.model || selected.model
       if (!baseURL || !model) {
         return {
           success: false,
@@ -1601,7 +2009,7 @@ app.whenReady().then(() => {
         }
       }
       try {
-        const client = getOpenAIClient(baseURL, apiKey)
+        const client = getOpenAIClient(baseURL, apiKey, selected.provider)
         const body = {
           model,
           messages: request.messages,
@@ -1648,14 +2056,16 @@ app.whenReady().then(() => {
         messages: unknown[]
         tools?: unknown[]
         model?: string
+        profileId?: string
         baseUrl?: string
         apiKey?: string
       }
     ) => {
       const config = loadAIConfig()
-      const baseURL = request.baseUrl || config.baseUrl
-      const apiKey = request.apiKey || config.apiKey
-      const model = request.model || config.model
+      const selected = resolveChatConfig(config, request.profileId)
+      const baseURL = selected.baseUrl
+      const apiKey = selected.apiKey
+      const model = request.model || selected.model
       if (!baseURL || !model) {
         return {
           success: false,
@@ -1664,7 +2074,7 @@ app.whenReady().then(() => {
         }
       }
       try {
-        const client = getOpenAIClient(baseURL, apiKey)
+        const client = getOpenAIClient(baseURL, apiKey, selected.provider)
         const body = {
           model,
           messages: request.messages,
@@ -1785,26 +2195,77 @@ app.whenReady().then(() => {
 
   // List the models the provider exposes (GET /models), through the main
   // process so the renderer's model dropdown doesn't hit CORS either.
-  ipcMain.handle('ai:models', async (_, request: { baseUrl?: string; apiKey?: string }) => {
-    const config = loadAIConfig()
-    const baseURL = request.baseUrl || config.baseUrl
-    const apiKey = request.apiKey || config.apiKey
-    if (!baseURL) return { success: false, error: 'Base URL não configurada' }
-    try {
-      const client = getOpenAIClient(baseURL, apiKey)
-      const page = await client.models.list(requestOptions(config.timeoutMs))
-      const models = Array.from(
-        new Set(
-          (page.data ?? [])
-            .map((m) => m?.id)
-            .filter((id): id is string => typeof id === 'string' && id.trim() !== '')
-        )
-      ).sort((a, b) => a.localeCompare(b))
-      return { success: true, models }
-    } catch (e) {
-      return { success: false, error: e instanceof Error ? e.message : 'Falha ao carregar modelos' }
+  ipcMain.handle(
+    'ai:models',
+    async (
+      _,
+      request?:
+        | string
+        | {
+            profileId?: string
+            draft?: { baseUrl: string; apiKey?: string; provider?: ApiProvider }
+          }
+    ) => {
+      const config = loadAIConfig()
+      const profileId = typeof request === 'string' ? request : request?.profileId
+      // A draft credential exists only for this IPC call. It lets the user pick
+      // from their account's real catalog before saving a profile, without ever
+      // returning that credential to the renderer.
+      const selected =
+        request && typeof request !== 'string' && request.draft
+          ? {
+              baseUrl: request.draft.baseUrl.trim(),
+              apiKey: request.draft.apiKey ?? '',
+              model: '',
+              provider: request.draft.provider ?? 'custom'
+            }
+          : resolveChatConfig(config, profileId)
+      const baseURL = selected.baseUrl
+      const apiKey = selected.apiKey
+      if (!baseURL) return { success: false, error: 'Base URL não configurada' }
+      try {
+        if (selected.provider === 'anthropic') {
+          const endpoint = new URL(
+            'models?limit=1000&lifecycle=active',
+            `${baseURL.replace(/\/+$/, '')}/`
+          )
+          const response = await fetch(endpoint, {
+            headers: {
+              'x-api-key': apiKey,
+              'anthropic-version': '2023-06-01'
+            },
+            signal: AbortSignal.timeout(resolveTimeoutMs(config.timeoutMs))
+          })
+          if (!response.ok) throw new Error(`Claude retornou ${response.status} ao listar modelos`)
+          const body = (await response.json()) as { data?: Array<{ id?: unknown }> }
+          const models = Array.from(
+            new Set(
+              (body.data ?? [])
+                .map((model) => model.id)
+                .filter((id): id is string => typeof id === 'string' && id.trim() !== '')
+            )
+          )
+          return { success: true, models }
+        }
+        const client = getOpenAIClient(baseURL, apiKey, selected.provider)
+        const page = await client.models.list(requestOptions(config.timeoutMs))
+        const models = Array.from(
+          new Set(
+            (page.data ?? [])
+              .filter((model) => (model as { shutdown_date?: string | null }).shutdown_date == null)
+              .map((m) => m?.id)
+              .filter((id): id is string => typeof id === 'string' && id.trim() !== '')
+          )
+        ).sort((a, b) => a.localeCompare(b))
+        return { success: true, models }
+      } catch (e) {
+        return {
+          success: false,
+          error: e instanceof Error ? e.message : 'Falha ao carregar modelos'
+        }
+      }
     }
-  })
+  )
 
   // Launch a native code agent in the project directory. The renderer must
   // have obtained user approval before calling this (it writes files / runs
@@ -2154,21 +2615,105 @@ app.whenReady().then(() => {
           ? buildInteractiveHarnessLaunch(harness, task, effectiveDir)
           : buildExternalHarnessLaunch(harness, task, effectiveDir)
         const referenceBrief = await readOnlyReferenceBrief(readOnlyRoots)
+        const appBrief = sagyouContextBrief(request.projectId)
         const scopedTask = [
           task,
           rel.length ? 'Arquivos em foco: ' + rel.join(', ') + '.' : '',
           decisoes.length ? 'Decisões já tomadas: ' + decisoes.join(' | ') : '',
           referenceBrief,
+          appBrief,
+          'Você tem acesso ao MCP Sagyou para ler tarefas e finanças do escopo autorizado. Use-o quando precisar de dados atuais; nunca invente esses dados.',
           'Trabalhe somente neste projeto. Ao terminar, explique brevemente o que fez.'
         ]
           .filter(Boolean)
           .join('\n\n')
         const externalWorktree = worktreeDir
         const externalRuntime = externalHarnessEnv(harness, runId)
+        const mcpToken = randomUUID()
+        const currentData = loadData()
+        sagyouMcp.grant({
+          token: mcpToken,
+          runId,
+          projectId: request.projectId ?? null,
+          financialProfileId: currentData.activeFinancialProfileId ?? 'personal',
+          expiresAt: Date.now() + 2 * 60 * 60 * 1000
+        })
+        externalRuntime.env = {
+          ...externalRuntime.env,
+          SAGYOU_MCP_PORT: String(sagyouMcp.port()),
+          SAGYOU_MCP_TOKEN: mcpToken
+        }
+        const mcpBridgePath = join(effectiveDir, '.sagyou-mcp-bridge.cjs')
+        writeFileSync(mcpBridgePath, MCP_STDIO_BRIDGE_SOURCE, 'utf8')
+        const mcpClaudePath = join(effectiveDir, '.sagyou-mcp.json')
+        writeFileSync(
+          mcpClaudePath,
+          JSON.stringify({
+            mcpServers: {
+              sagyou: {
+                command: process.execPath,
+                args: [mcpBridgePath],
+                env: { ELECTRON_RUN_AS_NODE: '1' }
+              }
+            }
+          }),
+          'utf8'
+        )
+        if (harness === 'opencode' && injectedOpenCodeConfig) {
+          writeFileSync(
+            join(effectiveDir, 'opencode.json'),
+            JSON.stringify({
+              permission: { external_directory: { '*': 'allow' } },
+              mcp: {
+                servers: {
+                  sagyou: {
+                    type: 'local',
+                    command: [process.execPath, mcpBridgePath],
+                    environment: { ELECTRON_RUN_AS_NODE: '1' },
+                    codemode: false
+                  }
+                }
+              }
+            }),
+            'utf8'
+          )
+        }
+        if (harness === 'opencode') {
+          // OpenCode merges this inline config with the user's configuration,
+          // so an existing opencode.json keeps its providers and permissions.
+          externalRuntime.env = {
+            ...externalRuntime.env,
+            OPENCODE_CONFIG_CONTENT: JSON.stringify({
+              mcp: {
+                servers: {
+                  sagyou: {
+                    type: 'local',
+                    command: [process.execPath, mcpBridgePath],
+                    environment: { ELECTRON_RUN_AS_NODE: '1' },
+                    codemode: false
+                  }
+                }
+              }
+            })
+          }
+        }
         run.externalStateDir = externalRuntime.stateDir
         const externalArgs = interactive
           ? buildInteractiveHarnessLaunch(harness, scopedTask, effectiveDir).args
           : buildExternalHarnessLaunch(harness, scopedTask, effectiveDir).args
+        if (harness === 'claude-code') externalArgs.unshift('--mcp-config', mcpClaudePath)
+        if (harness === 'codex') {
+          // Codex accepts ephemeral TOML overrides, keeping this server out of
+          // the user's global config and binding it to this one worktree run.
+          externalArgs.unshift(
+            '--config',
+            `mcp_servers.sagyou.env={ELECTRON_RUN_AS_NODE="1"}`,
+            '--config',
+            `mcp_servers.sagyou.args=["${mcpBridgePath.replace(/\\/g, '\\\\')}"]`,
+            '--config',
+            `mcp_servers.sagyou.command="${process.execPath.replace(/\\/g, '\\\\')}"`
+          )
+        }
         emit(
           interactive
             ? '[' +
@@ -2303,6 +2848,12 @@ app.whenReady().then(() => {
               '[erro] alterações do worktree não foram aplicadas: ' + run.worktreeMergeError + '\n'
             )
           } finally {
+            sagyouMcp.revoke(mcpToken)
+            for (const file of [mcpBridgePath, mcpClaudePath]) {
+              try {
+                unlinkSync(file)
+              } catch {}
+            }
             const secs = ((Date.now() - run.startedAt) / 1000).toFixed(1)
             emit('[' + externalHarness.command + '] duração: ' + secs + 's\n')
             const terminal = run.worktreeMergeError
@@ -2786,6 +3337,36 @@ app.whenReady().then(() => {
     run.externalChild.write(input)
     return { success: true }
   })
+
+  // The renderer owns pixels; the PTY owns its character grid. Keep the bridge
+  // narrow so a terminal can resize only the interactive process it already
+  // belongs to, never create or reconfigure a shell on its own.
+  ipcMain.handle(
+    'ai:code-agent:terminal-resize',
+    (_, runId: string, cols: number, rows: number) => {
+      const run = codeRuns.get(runId)
+      if (
+        !run?.interactive ||
+        !run.externalChild ||
+        run.finishing ||
+        !('resize' in run.externalChild)
+      ) {
+        return { success: false, error: 'Sessão interativa indisponível.' }
+      }
+      if (
+        !Number.isInteger(cols) ||
+        !Number.isInteger(rows) ||
+        cols < 2 ||
+        rows < 1 ||
+        cols > 500 ||
+        rows > 300
+      ) {
+        return { success: false, error: 'Tamanho de terminal inválido.' }
+      }
+      run.externalChild.resize(cols, rows)
+      return { success: true }
+    }
+  )
 
   ipcMain.handle('ai:code-agent:finish-interactive', (_, runId: string) => {
     const run = codeRuns.get(runId)

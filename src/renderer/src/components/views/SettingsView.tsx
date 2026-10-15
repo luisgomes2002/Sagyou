@@ -1,9 +1,11 @@
 import { useEffect, useState, type JSX } from 'react'
-import { ALL_FEATURE_IDS, type FeatureId } from '../../types'
+import { ALL_FEATURE_IDS, type FeatureId, type UiPreferences } from '../../types'
 
 interface Props {
   featurePreferences?: FeatureId[]
   onSetFeaturePreferences: (features: FeatureId[]) => void
+  uiPreferences: UiPreferences
+  onSetUiPreferences: (preferences: UiPreferences) => void
   onToast: (message: string, type?: 'success' | 'error') => void
 }
 
@@ -23,6 +25,8 @@ const FEATURE_LABELS: Record<FeatureId, { label: string; description: string }> 
 export function SettingsView({
   featurePreferences,
   onSetFeaturePreferences,
+  uiPreferences,
+  onSetUiPreferences,
   onToast
 }: Props): JSX.Element {
   const [userName, setUserName] = useState('')
@@ -53,6 +57,13 @@ export function SettingsView({
       ? enabledFeatures.filter((item) => item !== feature)
       : [...enabledFeatures, feature]
     onSetFeaturePreferences(next)
+  }
+
+  const updateUiPreference = <Key extends keyof UiPreferences>(
+    key: Key,
+    value: UiPreferences[Key]
+  ): void => {
+    onSetUiPreferences({ ...uiPreferences, [key]: value })
   }
 
   return (
@@ -86,6 +97,75 @@ export function SettingsView({
             >
               Salvar
             </button>
+          </div>
+        </section>
+
+        <section className="rounded-xl border border-[#2b2b31] bg-[#16161a]">
+          <SectionTitle
+            title="Aparência e acessibilidade"
+            description="Ajuste a leitura e o comportamento visual do app. As mudanças são aplicadas na hora."
+          />
+          <div className="space-y-5 p-5">
+            <fieldset>
+              <legend className="mb-2 text-sm font-medium text-[#d4d4d4]">Tema</legend>
+              <div
+                className="flex flex-wrap gap-2"
+                role="radiogroup"
+                aria-label="Tema do aplicativo"
+              >
+                <PreferenceButton
+                  active={uiPreferences.theme === 'dark'}
+                  onClick={() => updateUiPreference('theme', 'dark')}
+                >
+                  Escuro
+                </PreferenceButton>
+                <PreferenceButton
+                  active={uiPreferences.theme === 'light'}
+                  onClick={() => updateUiPreference('theme', 'light')}
+                >
+                  Claro
+                </PreferenceButton>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend className="mb-2 text-sm font-medium text-[#d4d4d4]">Tamanho do texto</legend>
+              <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Tamanho do texto">
+                <PreferenceButton
+                  active={uiPreferences.fontSize === 'small'}
+                  onClick={() => updateUiPreference('fontSize', 'small')}
+                >
+                  Menor
+                </PreferenceButton>
+                <PreferenceButton
+                  active={uiPreferences.fontSize === 'default'}
+                  onClick={() => updateUiPreference('fontSize', 'default')}
+                >
+                  Padrão
+                </PreferenceButton>
+                <PreferenceButton
+                  active={uiPreferences.fontSize === 'large'}
+                  onClick={() => updateUiPreference('fontSize', 'large')}
+                >
+                  Maior
+                </PreferenceButton>
+              </div>
+            </fieldset>
+
+            <div className="divide-y divide-[#2b2b31] rounded-lg border border-[#2b2b31] bg-[#101014]">
+              <TogglePreference
+                label="Reduzir movimentos"
+                description="Desativa animações e transições que não são essenciais."
+                checked={uiPreferences.reduceMotion}
+                onChange={(checked) => updateUiPreference('reduceMotion', checked)}
+              />
+              <TogglePreference
+                label="Alto contraste"
+                description="Aumenta a diferença entre texto, fundos e bordas."
+                checked={uiPreferences.highContrast}
+                onChange={(checked) => updateUiPreference('highContrast', checked)}
+              />
+            </div>
           </div>
         </section>
 
@@ -135,6 +215,59 @@ export function SettingsView({
         </section>
       </div>
     </div>
+  )
+}
+
+function PreferenceButton({
+  active,
+  onClick,
+  children
+}: {
+  active: boolean
+  onClick: () => void
+  children: string
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={active}
+      onClick={onClick}
+      className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+        active
+          ? 'border-[#7c3aed] bg-[#7c3aed] text-white'
+          : 'border-[#2b2b31] bg-[#16161a] text-[#d4d4d4] hover:bg-[#222227]'
+      }`}
+    >
+      {children}
+    </button>
+  )
+}
+
+function TogglePreference({
+  label,
+  description,
+  checked,
+  onChange
+}: {
+  label: string
+  description: string
+  checked: boolean
+  onChange: (checked: boolean) => void
+}): JSX.Element {
+  return (
+    <label className="flex cursor-pointer items-center gap-4 px-4 py-3 hover:bg-[#222227]">
+      <span className="flex-1">
+        <span className="block text-sm text-[#d4d4d4]">{label}</span>
+        <span className="block text-xs text-[#999999]">{description}</span>
+      </span>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        className="h-4 w-4 accent-[#7c3aed]"
+      />
+    </label>
   )
 }
 

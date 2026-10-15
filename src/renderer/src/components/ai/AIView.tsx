@@ -6,27 +6,25 @@ import { resolveMaxSteps, type AIConfig } from '../../ai/agent'
 import { describeToolActivity } from '../../ai/tools'
 import { toScaledDataUrl, imageFilesFrom, documentFilesFrom } from '../../utils/images'
 import { formatChatDocumentPrompt } from '../../ai/document-context'
-import { fetchModels } from '../../ai/model-catalog'
 import { estimateAutoRun } from '../../utils/spend'
 import { estimateCost, formatCost, statusState } from '../../utils/aiDisplay'
 import { MessageBubble, MemoStatusLine } from './ChatMessageParts'
 import { ChatMarkdown } from './ChatMarkdown'
 import { SpendPanel } from './SpendPanel'
 import { ConversationHistoryMenu } from './ConversationHistoryMenu'
-import { AIConfigPanel } from './AIConfigPanel'
+import { ChatSettingsPanel } from './ChatSettingsPanel'
+import { ConnectionGuide } from './ConnectionGuide'
+import { SwitchAI } from './SwitchAI'
 import { ConfirmDialog } from '../ConfirmDialog'
-import { SandboxOnboarding, type JailStatus } from '../modals/SandboxOnboarding'
 import { ModeToggleButton } from './ModeToggleButton'
 
 // Config is persisted via ai:config in the main process (see effects below);
 // AIConfig and the tool-calling loop live in ../ai/agent.
 const DEFAULT_CONFIG: AIConfig = {
-  baseUrl: 'https://api.openai.com/v1',
+  baseUrl: '',
   apiKey: '',
-  model: 'gpt-4o-mini'
+  model: ''
 }
-
-type HarnessStatus = Awaited<ReturnType<typeof window.electronAPI.ai.harnesses.status>>[number]
 
 /**
  * The spend summary, taken straight off the preload API rather than restated —
@@ -53,7 +51,8 @@ export function AIView({
   projects,
   prefill,
   onPrefillConsumed,
-  searchConversationId
+  searchConversationId,
+  onOpenAgents
 }: {
   projects: Project[]
   /** Composer text handed in from another view (e.g. a board task). */
@@ -61,6 +60,7 @@ export function AIView({
   /** Called once `prefill` has been taken, so it can't be applied twice. */
   onPrefillConsumed?: () => void
   searchConversationId?: string
+  onOpenAgents?: () => void
 }) {
   const activeProjectId = useKanbanStore((s) => s.activeProjectId)
 
@@ -73,14 +73,6 @@ export function AIView({
 
   const [config, setConfig] = useState<AIConfig>(DEFAULT_CONFIG)
   const [showConfig, setShowConfig] = useState(false)
-  const [models, setModels] = useState<string[]>([])
-  const [loadingModels, setLoadingModels] = useState(false)
-  const [modelsError, setModelsError] = useState<string | null>(null)
-  // The code agent may point at its own endpoint, so it loads its own model list
-  // (falling back to the chat's when its provider fields are blank).
-  const [codeAgentModels, setCodeAgentModels] = useState<string[]>([])
-  const [loadingCodeAgentModels, setLoadingCodeAgentModels] = useState(false)
-  const [codeAgentModelsError, setCodeAgentModelsError] = useState<string | null>(null)
   // The run itself lives in its own store, above the view switch: this
   // component is unmounted the moment the user looks at anything else, and a
   // run must not die with it. See store/aiRun.ts.
@@ -90,6 +82,8 @@ export function AIView({
   const streamingAll = useAiRunStore((s) => s.streaming)
   const streamingToolsAll = useAiRunStore((s) => s.streamingTools)
   const conversationId = useAiRunStore((s) => s.conversationId)
+  const connections = useAiRunStore((s) => s.connections)
+  const setConnection = useAiRunStore((s) => s.setConnection)
   const busyHere = running.has(conversationId ?? '')
   const streaming = conversationId ? (streamingAll[conversationId] ?? '') : ''
   const streamingTools = conversationId ? (streamingToolsAll[conversationId] ?? []) : []
@@ -115,6 +109,29 @@ export function AIView({
   const resetRun = useAiRunStore((s) => s.reset)
 
   const [input, setInput] = useState('')
+  const [showSwitchAI, setShowSwitchAI] = useState(false)
+  const [defaultChatGPTModel, setDefaultChatGPTModel] = useState('')
+  useEffect(() => {
+    if (config.chatProvider !== 'chatgpt') return
+    void window.electronAPI.ai.chatgpt
+      .models()
+      .then((items) => setDefaultChatGPTModel(items[0]?.slug ?? ''))
+      .catch(() => setDefaultChatGPTModel(''))
+  }, [config.chatProvider])
+  const activeConnection = conversationId ? connections[conversationId] : undefined
+  const defaultProfile =
+    config.providerProfiles?.find((profile) => profile.id === config.activeProviderProfileId) ??
+    config.providerProfiles?.[0]
+  const effectiveConnection = activeConnection ?? {
+    provider: config.chatProvider ?? 'api',
+    profileId: config.chatProvider === 'chatgpt' ? undefined : defaultProfile?.id,
+    model: config.chatProvider === 'chatgpt' ? defaultChatGPTModel : (defaultProfile?.model ?? '')
+  }
+  const connectionName =
+    effectiveConnection.provider === 'chatgpt'
+      ? 'ChatGPT'
+      : (config.providerProfiles?.find((profile) => profile.id === effectiveConnection.profileId)
+          ?.name ?? 'Escolha uma IA')
   const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null)
   // Skill autocomplete: when input starts with /, show matching skills.
   const [skillMenuOpen, setSkillMenuOpen] = useState(false)
@@ -125,16 +142,6 @@ export function AIView({
   // same panel as spend, so a model's cost and its efficiency sit side by side.
   const [runMetrics, setRunMetrics] = useState<RunMetricsSummary | null>(null)
   const [showSpend, setShowSpend] = useState(false)
-
-  // ai-jail sandbox status (merged with config). Null until first fetched.
-  const [jailStatus, setJailStatus] = useState<Awaited<
-    ReturnType<typeof window.electronAPI.ai.jail.status>
-  > | null>(null)
-  const [harnessStatuses, setHarnessStatuses] = useState<HarnessStatus[]>([])
-  const [loadingHarnessStatuses, setLoadingHarnessStatuses] = useState(false)
-  const [harnessCheckFeedback, setHarnessCheckFeedback] = useState<string | null>(null)
-  /** Whether the first-run sandbox onboarding modal is showing. */
-  const [showOnboarding, setShowOnboarding] = useState(false)
 
   // Persisted conversation history
   const [conversations, setConversations] = useState<
@@ -182,7 +189,12 @@ export function AIView({
   // Guards the persist effect so we don't overwrite the stored config with the
   // defaults before the initial async load has completed.
   const configLoaded = useRef(false)
-  const configReady = config.baseUrl.trim() !== '' && config.model.trim() !== ''
+  const activeApiProfile = config.providerProfiles?.find(
+    (profile) => profile.id === effectiveConnection.profileId
+  )
+  const configReady =
+    Boolean(effectiveConnection.model) &&
+    (effectiveConnection.provider === 'chatgpt' || Boolean(activeApiProfile?.baseUrl.trim()))
   /**
    * A run is going *and it belongs to the chat on screen*.
    *
@@ -304,11 +316,16 @@ export function AIView({
       .get()
       .then((stored) => {
         if (cancelled) return
-        // Empty fields (first run, no ai-config.json) fall back to the defaults.
+        // Empty fields (first run, no ai-config.json) leave the chat unconfigured.
         setConfig({
+          ...stored,
           baseUrl: stored.baseUrl || DEFAULT_CONFIG.baseUrl,
           apiKey: stored.apiKey || DEFAULT_CONFIG.apiKey,
+          hasApiKey: stored.hasApiKey,
           model: stored.model || DEFAULT_CONFIG.model,
+          providerProfiles: stored.providerProfiles,
+          activeProviderProfileId: stored.activeProviderProfileId,
+          chatProvider: stored.chatProvider,
           userName: stored.userName,
           // Undefined = no separate model = one model for everything (routeModel).
           modelComplex: stored.modelComplex,
@@ -345,42 +362,37 @@ export function AIView({
   // Persist config whenever it changes (after the initial load).
   useEffect(() => {
     if (!configLoaded.current) return
-    window.electronAPI.ai.config.set(config).catch(() => {
-      /* persistence failure is non-fatal */
-    })
+    window.electronAPI.ai.config
+      .set(config)
+      .then(() => {
+        if (
+          config.apiKey ||
+          config.codeAgent?.apiKey ||
+          config.providerProfiles?.some((profile) => profile.apiKey)
+        ) {
+          setConfig((current) => ({
+            ...current,
+            apiKey: current.apiKey === config.apiKey ? '' : current.apiKey,
+            hasApiKey: Boolean(config.apiKey || current.hasApiKey),
+            providerProfiles: current.providerProfiles?.map((profile) => {
+              const submitted = config.providerProfiles?.find(
+                (item) => item.id === profile.id
+              )?.apiKey
+              return profile.apiKey && profile.apiKey === submitted
+                ? { ...profile, apiKey: undefined, hasApiKey: true }
+                : profile
+            }),
+            codeAgent:
+              current.codeAgent?.apiKey === config.codeAgent?.apiKey
+                ? { ...current.codeAgent, apiKey: undefined }
+                : current.codeAgent
+          }))
+        }
+      })
+      .catch(() => {
+        /* persistence failure is non-fatal */
+      })
   }, [config])
-
-  /** Refresh ai-jail status; opens onboarding when required-but-unavailable. */
-  const refreshJail = useCallback(async (redetect = false): Promise<void> => {
-    const s = await window.electronAPI.ai.jail.status(redetect)
-    setJailStatus(s)
-    if (!s.available && s.enabled && !s.onboardingDismissed) setShowOnboarding(true)
-  }, [])
-
-  // Load the sandbox status when the AI view mounts. Onboarding only appears the
-  // first time ai-jail reports unavailable and the user never sees the dialog.
-  useEffect(() => {
-    void refreshJail()
-  }, [refreshJail])
-
-  const refreshHarnesses = useCallback(async (refresh = false): Promise<void> => {
-    setLoadingHarnessStatuses(true)
-    setHarnessCheckFeedback(null)
-    try {
-      setHarnessStatuses(await window.electronAPI.ai.harnesses.status(refresh))
-      setHarnessCheckFeedback('Verificado agora')
-    } catch {
-      // A missing/pre-release preload bridge reads as unavailable, never as installed.
-      setHarnessStatuses([])
-      setHarnessCheckFeedback('Falha ao verificar')
-    } finally {
-      setLoadingHarnessStatuses(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    if (showConfig) void refreshHarnesses()
-  }, [showConfig, refreshHarnesses])
 
   // Keep the chat scrolled to the latest message. While an answer streams in
   // this fires on every chunk, so only follow along when the user is already at
@@ -708,47 +720,6 @@ export function AIView({
     }
   }
 
-  const handleLoadModels = async () => {
-    if (loadingModels || config.baseUrl.trim() === '') return
-    setLoadingModels(true)
-    setModelsError(null)
-    try {
-      const list = await fetchModels(config)
-      setModels(list)
-      if (list.length > 0 && !list.includes(config.model)) {
-        setConfig((c) => ({ ...c, model: list[0] }))
-      }
-    } catch (e) {
-      setModelsError(e instanceof Error ? e.message : 'Falha ao carregar modelos')
-    } finally {
-      setLoadingModels(false)
-    }
-  }
-
-  // Load the code agent's own model list. Its provider fields fall back to the
-  // chat's when blank (same rule as resolveCodeAgentConfig in main), so an empty
-  // Base URL/API Key here still lists the chat endpoint's models.
-  const handleLoadCodeAgentModels = async (): Promise<void> => {
-    const baseUrl = config.codeAgent?.baseUrl?.trim() || config.baseUrl
-    const apiKey = config.codeAgent?.apiKey?.trim() || config.apiKey
-    if (loadingCodeAgentModels || baseUrl.trim() === '') return
-    setLoadingCodeAgentModels(true)
-    setCodeAgentModelsError(null)
-    try {
-      setCodeAgentModels(await fetchModels({ ...config, baseUrl, apiKey }))
-    } catch (e) {
-      setCodeAgentModelsError(e instanceof Error ? e.message : 'Falha ao carregar modelos')
-    } finally {
-      setLoadingCodeAgentModels(false)
-    }
-  }
-
-  // Auto-load the model list the first time the config panel is opened
-  useEffect(() => {
-    if (showConfig && models.length === 0 && config.baseUrl.trim() !== '') handleLoadModels()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showConfig])
-
   // Skills matching the current /-prefixed input, for autocomplete.
   const matchedSkills = useMemo(() => {
     if (!input.startsWith('/')) return []
@@ -765,7 +736,19 @@ export function AIView({
    */
   const handleSend = (): void => {
     let text = input.trim()
-    if ((!text && pendingImages.length === 0 && pendingDocuments.length === 0) || busyHere) return
+    if (
+      (!text && pendingImages.length === 0 && pendingDocuments.length === 0) ||
+      busyHere ||
+      !configReady
+    )
+      return
+    if (effectiveConnection.provider === 'chatgpt' && pendingImages.length > 0) {
+      setError(
+        'Esta conexão ChatGPT ainda não envia imagens. Escolha uma API para esta conversa ou remova a imagem.'
+      )
+      return
+    }
+    if (!activeConnection) setConnection(effectiveConnection)
 
     if (editingMessageIndex !== null) {
       // Keep the original turn and its actions visible. A correction is a new
@@ -809,7 +792,14 @@ export function AIView({
     const documentIds = pendingDocuments.map((d) => d.id)
     setPendingImages([])
     setPendingDocuments([])
-    void useAiRunStore.getState().send(config, { text, imageIds, imageData, documentIds })
+    void useAiRunStore.getState().send(config, {
+      text,
+      imageIds,
+      imageData,
+      documentIds,
+      provider: effectiveConnection.provider,
+      model: effectiveConnection.model
+    })
   }
 
   const copyMessage = async (content: string): Promise<void> => {
@@ -868,6 +858,7 @@ export function AIView({
         return
       }
       if (e.key !== 'Escape') return
+      if (showSwitchAI) return setShowSwitchAI(false)
       if (confirmDelete) return setConfirmDelete(null)
       if (pendingApproval.length > 0) {
         // NOT just a close: the agent loop is awaiting this promise, so hiding
@@ -896,6 +887,7 @@ export function AIView({
     showSpend,
     renaming,
     showHistory,
+    showSwitchAI,
     showConfig,
     resolveApproval,
     ensureConversationId,
@@ -1039,6 +1031,16 @@ export function AIView({
               handleDeleteConversation={handleDeleteConversation}
             />
             <button
+              type="button"
+              onClick={() => setShowSwitchAI(true)}
+              disabled={busyHere}
+              className="rounded-lg border border-[#2b2b31] bg-[#16161a] px-3 py-1.5 text-xs text-[#d4d4d4] hover:border-violet-400 disabled:opacity-40"
+              title="Conexão e modelo desta conversa"
+            >
+              {connectionName} · {effectiveConnection.model || 'Escolha um modelo'}{' '}
+              <span className="ml-2 text-violet-300">Trocar IA</span>
+            </button>
+            <button
               onClick={() => setShowConfig((v) => !v)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                 showConfig
@@ -1063,39 +1065,28 @@ export function AIView({
         </div>
 
         {showConfig && (
-          <AIConfigPanel
+          <ChatSettingsPanel
             config={config}
             setConfig={setConfig}
-            models={models}
-            loadingModels={loadingModels}
-            modelsError={modelsError}
-            handleLoadModels={handleLoadModels}
-            codeAgentModels={codeAgentModels}
-            loadingCodeAgentModels={loadingCodeAgentModels}
-            codeAgentModelsError={codeAgentModelsError}
-            handleLoadCodeAgentModels={handleLoadCodeAgentModels}
-            harnessStatuses={harnessStatuses}
-            loadingHarnessStatuses={loadingHarnessStatuses}
-            harnessCheckFeedback={harnessCheckFeedback}
-            refreshHarnesses={refreshHarnesses}
             skills={skills}
             editingSkill={editingSkill}
             setEditingSkill={setEditingSkill}
             skillError={skillError}
             setSkillError={setSkillError}
-            handleImportSkill={handleImportSkill}
-            handleDeleteSkill={handleDeleteSkill}
-            handleSaveSkill={handleSaveSkill}
-            jailStatus={jailStatus}
-            setShowOnboarding={setShowOnboarding}
+            onImportSkill={handleImportSkill}
+            onDeleteSkill={handleDeleteSkill}
+            onSaveSkill={handleSaveSkill}
           />
         )}
-        {/* First-run sandbox onboarding modal */}
-        {showOnboarding && jailStatus && (
-          <SandboxOnboarding
-            status={jailStatus as JailStatus}
-            onDismiss={() => setShowOnboarding(false)}
-            onInstalled={() => void refreshJail(true)}
+        {showSwitchAI && (
+          <SwitchAI
+            config={config}
+            current={effectiveConnection}
+            onClose={() => setShowSwitchAI(false)}
+            onConfirm={(connection) => {
+              setConnection(connection)
+              setShowSwitchAI(false)
+            }}
           />
         )}
 
@@ -1109,6 +1100,13 @@ export function AIView({
                   Converse com o modelo ou use <b>/skill-name</b> no chat.
                 </p>
               </div>
+              <ConnectionGuide
+                config={config}
+                connection={effectiveConnection}
+                onConfigure={() => setShowConfig(true)}
+                onSwitch={() => setShowSwitchAI(true)}
+                onOpenAgents={() => onOpenAgents?.()}
+              />
             </div>
           ) : (
             <>

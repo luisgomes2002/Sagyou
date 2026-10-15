@@ -114,6 +114,37 @@ describe('financial table creation', () => {
     ).not.toContain('Canal')
   })
 
+  it('keeps saved banks and counterparties scoped to the profile without rewriting transactions', () => {
+    const companyId = useKanbanStore.getState().createFinancialProfile('Empresa')
+    const companyTable = useKanbanStore.getState().createList('Conta empresa', 'BRL', companyId)
+    useKanbanStore.getState().addFinancialSource(companyId, 'Wise')
+    useKanbanStore.getState().addFinancialSource(companyId, 'wise')
+    useKanbanStore.getState().addFinancialCounterparty(companyId, 'Loja Central')
+    useKanbanStore.getState().addTransaction(companyTable, {
+      description: 'Serviço',
+      amount: '50',
+      type: 'expense',
+      date: '2026-10-06',
+      source: 'Wise',
+      counterparty: 'Loja Central'
+    })
+
+    expect(
+      useKanbanStore.getState().financialProfiles.find((profile) => profile.id === companyId)
+    ).toMatchObject({ savedSources: ['Wise'], savedCounterparties: ['Loja Central'] })
+    expect(
+      useKanbanStore
+        .getState()
+        .financialProfiles.find((profile) => profile.id === DEFAULT_FINANCIAL_PROFILE_ID)
+    ).not.toMatchObject({ savedSources: ['Wise'] })
+
+    useKanbanStore.getState().removeFinancialSource(companyId, 'Wise')
+    useKanbanStore.getState().removeFinancialCounterparty(companyId, 'Loja Central')
+    expect(
+      useKanbanStore.getState().lists.find((list) => list.id === companyTable)?.transactions[0]
+    ).toMatchObject({ source: 'Wise', counterparty: 'Loja Central' })
+  })
+
   it('deleteList removes the table entirely', () => {
     const id = useKanbanStore.getState().createList('Empresa 1')
     useKanbanStore.getState().deleteList(id)

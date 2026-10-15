@@ -90,7 +90,9 @@ export default function App() {
     isLoaded,
     habits,
     featurePreferences,
+    uiPreferences,
     setFeaturePreferences,
+    setUiPreferences,
     loadData,
     setActiveProject,
     setSprintFilter,
@@ -126,7 +128,9 @@ export default function App() {
       isLoaded: s.isLoaded,
       habits: s.habits,
       featurePreferences: s.featurePreferences,
+      uiPreferences: s.uiPreferences,
       setFeaturePreferences: s.setFeaturePreferences,
+      setUiPreferences: s.setUiPreferences,
       loadData: s.loadData,
       setActiveProject: s.setActiveProject,
       setSprintFilter: s.setSprintFilter,
@@ -154,6 +158,26 @@ export default function App() {
       importAIJson: s.importAIJson
     }))
   )
+
+  useEffect(() => {
+    if (!window.electronAPI.store.onReload) return
+    return window.electronAPI.store.onReload(() => void loadData())
+  }, [loadData])
+
+  useEffect(() => {
+    if (!window.electronAPI.store.onMcpCreateTask) return
+    return window.electronAPI.store.onMcpCreateTask(async ({ requestId, task }) => {
+      try {
+        const id = createTask(task)
+        await useKanbanStore.getState()._flushPersist()
+        window.electronAPI.store.respondMcpCreateTask(requestId, { id })
+      } catch (error) {
+        window.electronAPI.store.respondMcpCreateTask(requestId, {
+          error: error instanceof Error ? error.message : 'Não foi possível criar a task.'
+        })
+      }
+    })
+  }, [createTask])
 
   const [toasts, setToasts] = useState<ToastMessage[]>([])
   const [taskModal, setTaskModal] = useState<TaskModalState>({ open: false })
@@ -206,6 +230,14 @@ export default function App() {
   const saveFeaturePreferences = (features: FeatureId[]) => {
     setFeaturePreferences(features)
   }
+
+  useEffect(() => {
+    const root = document.documentElement
+    root.dataset.theme = uiPreferences.theme
+    root.dataset.fontSize = uiPreferences.fontSize
+    root.dataset.reduceMotion = String(uiPreferences.reduceMotion)
+    root.dataset.highContrast = String(uiPreferences.highContrast)
+  }, [uiPreferences])
 
   useEffect(() => {
     const viewFeatures: Partial<Record<typeof activeView, FeatureId>> = {
@@ -646,6 +678,8 @@ export default function App() {
             <SettingsView
               featurePreferences={featurePreferences}
               onSetFeaturePreferences={saveFeaturePreferences}
+              uiPreferences={uiPreferences}
+              onSetUiPreferences={setUiPreferences}
               onToast={addToast}
             />
           ) : activeView === 'home' ? (
@@ -676,6 +710,7 @@ export default function App() {
               }
               prefill={aiPrefill}
               onPrefillConsumed={() => setAiPrefill(null)}
+              onOpenAgents={() => setActiveView('agents')}
             />
           ) : activeView === 'memory' ? (
             <MemoryView

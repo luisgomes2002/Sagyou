@@ -4,10 +4,13 @@
 // a <div> would otherwise show as garbage). Styled to read like a CLI session —
 // dark inset, monospace, a title bar — because that's what the output *is*.
 
+import { FitAddon } from '@xterm/addon-fit'
+import { Terminal } from '@xterm/xterm'
+import '@xterm/xterm/css/xterm.css'
 import { useEffect, useRef, useState } from 'react'
 import { parseAnsi } from '../../utils/ansi'
 
-export function AgentTerminal({
+function LogTerminal({
   log,
   running,
   compact = false
@@ -125,4 +128,147 @@ export function AgentTerminal({
       </div>
     </div>
   )
+}
+
+interface InteractiveTerminalProps {
+  log: string
+  running: boolean
+  runId: string
+  onInput: (input: string) => Promise<void>
+  onResize: (cols: number, rows: number) => Promise<void>
+  compact?: boolean
+}
+
+/** A real terminal emulator attached to the harness' existing PTY. */
+function InteractiveTerminal({
+  log,
+  running,
+  runId,
+  onInput,
+  onResize,
+  compact = false
+}: InteractiveTerminalProps): React.JSX.Element {
+  const hostRef = useRef<HTMLDivElement>(null)
+  const terminalRef = useRef<Terminal | null>(null)
+  const writtenLogRef = useRef('')
+  const callbacksRef = useRef({ onInput, onResize })
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    callbacksRef.current = { onInput, onResize }
+  }, [onInput, onResize])
+
+  useEffect(() => {
+    const host = hostRef.current
+    if (!host) return
+    const terminal = new Terminal({
+      cursorBlink: true,
+      cursorStyle: 'block',
+      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+      fontSize: 12,
+      lineHeight: 1.35,
+      scrollback: 10_000,
+      theme: {
+        background: '#101014',
+        foreground: '#d4d4d4',
+        cursor: '#46d478',
+        selectionBackground: '#3a3158',
+        black: '#101014',
+        brightBlack: '#777777',
+        red: '#ff7b72',
+        green: '#46d478',
+        yellow: '#f0b820',
+        blue: '#79c0ff',
+        magenta: '#c4a7e7',
+        cyan: '#76e3ea',
+        white: '#d4d4d4'
+      }
+    })
+    const fit = new FitAddon()
+    terminal.loadAddon(fit)
+    terminal.open(host)
+    terminalRef.current = terminal
+
+    const resize = (): void => {
+      try {
+        fit.fit()
+        void callbacksRef.current.onResize(terminal.cols, terminal.rows)
+      } catch {
+        // Collapsed panels have no measurable terminal dimensions yet.
+      }
+    }
+    const observer = new ResizeObserver(resize)
+    observer.observe(host)
+    const frame = requestAnimationFrame(resize)
+    const input = terminal.onData((data) => void callbacksRef.current.onInput(data))
+
+    return () => {
+      cancelAnimationFrame(frame)
+      input.dispose()
+      observer.disconnect()
+      terminal.dispose()
+      terminalRef.current = null
+    }
+  }, [runId])
+
+  useEffect(() => {
+    const terminal = terminalRef.current
+    if (!terminal) return
+    const written = writtenLogRef.current
+    if (log.startsWith(written)) {
+      terminal.write(log.slice(written.length))
+    } else {
+      terminal.reset()
+      terminal.write(log)
+    }
+    writtenLogRef.current = log
+  }, [log])
+
+  const copy = (): void => {
+    const terminal = terminalRef.current
+    if (!terminal) return
+    navigator.clipboard.writeText(terminal.getSelection() || log)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2_000)
+  }
+
+  return (
+    <div
+      className={
+        (compact ? '' : 'mx-6 mb-2 ') +
+        'rounded-lg overflow-hidden border border-[#2b2b31] bg-[#101014] shadow-inner'
+      }
+    >
+      <div className="flex items-center gap-2 px-3 py-1.5 bg-[#101014] border-b border-[#2b2b31]">
+        <span className="w-2.5 h-2.5 rounded-full bg-[#ff5f57]" />
+        <span className="w-2.5 h-2.5 rounded-full bg-[#febc2e]" />
+        <span className="w-2.5 h-2.5 rounded-full bg-[#28c840]" />
+        <span className="ml-2 text-[10px] font-mono text-[#999999] tracking-wide">
+          terminal: {running ? 'ativo' : 'encerrado'}
+        </span>
+        <button
+          onClick={copy}
+          disabled={!log}
+          title="Copiar seleção ou conteúdo do terminal"
+          className="ml-auto px-1.5 py-0.5 rounded text-[10px] font-mono text-[#999999] hover:text-[#d4d4d4] hover:bg-[#222227] disabled:opacity-40 transition-colors"
+        >
+          {copied ? 'copiado' : 'copiar'}
+        </button>
+      </div>
+      <div
+        ref={hostRef}
+        style={{ height: '22rem', maxHeight: '60vh', resize: 'vertical', overflow: 'hidden' }}
+        className="p-2 focus-within:ring-1 focus-within:ring-[#7c3aed]"
+        aria-label="Terminal interativo do agente"
+      />
+    </div>
+  )
+}
+
+export function AgentTerminal(
+  props:
+    | { log: string; running: boolean; compact?: boolean; interactive?: undefined }
+    | (InteractiveTerminalProps & { interactive: true })
+): React.JSX.Element {
+  return props.interactive ? <InteractiveTerminal {...props} /> : <LogTerminal {...props} />
 }

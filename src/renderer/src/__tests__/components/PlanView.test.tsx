@@ -127,22 +127,14 @@ describe('Planejamento', () => {
 
     render(<PlanView />)
     const dayBlock = screen.getByText('Academia').closest('div[style*="background-color"]')
-    expect(dayBlock).toHaveStyle({
-      backgroundColor: '#16161a',
-      borderWidth: '1px',
-      borderStyle: 'dashed',
-      borderColor: '#3b3b42'
-    })
+    expect(dayBlock?.getAttribute('style')).toContain('background-color: var(--bg-card)')
+    expect(dayBlock?.getAttribute('style')).toContain('border: 1px dashed var(--border)')
     expect(screen.getByText('07:00–08:00')).toHaveStyle({ color: '#7c3aed' })
 
     fireEvent.click(screen.getByRole('button', { name: 'Semana' }))
     const weekBlock = screen.getByText('Academia').closest('div[style*="background-color"]')
-    expect(weekBlock).toHaveStyle({
-      backgroundColor: '#16161a',
-      borderWidth: '1px',
-      borderStyle: 'dashed',
-      borderColor: '#3b3b42'
-    })
+    expect(weekBlock?.getAttribute('style')).toContain('background-color: var(--bg-card)')
+    expect(weekBlock?.getAttribute('style')).toContain('border: 1px dashed var(--border)')
   })
 
   it('deixa visíveis dois blocos consecutivos de dez minutos nas visões diária e semanal', () => {

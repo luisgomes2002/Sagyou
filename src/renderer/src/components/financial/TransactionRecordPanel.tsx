@@ -67,6 +67,14 @@ export function TransactionRecordPanel({
   const linkCurrencyTransfer = useKanbanStore((state) => state.linkCurrencyTransfer)
   const unlinkCurrencyTransfer = useKanbanStore((state) => state.unlinkCurrencyTransfer)
   const setCurrencyTransferFee = useKanbanStore((state) => state.setCurrencyTransferFee)
+  const activeFinancialProfileId = useKanbanStore((state) => state.activeFinancialProfileId)
+  const profile = useKanbanStore((state) =>
+    state.financialProfiles.find((item) => item.id === state.activeFinancialProfileId)
+  )
+  const addFinancialSource = useKanbanStore((state) => state.addFinancialSource)
+  const removeFinancialSource = useKanbanStore((state) => state.removeFinancialSource)
+  const addFinancialCounterparty = useKanbanStore((state) => state.addFinancialCounterparty)
+  const removeFinancialCounterparty = useKanbanStore((state) => state.removeFinancialCounterparty)
   const [source, setSource] = useState(transaction.source ?? '')
   const [counterparty, setCounterparty] = useState(transaction.counterparty ?? '')
   const [bankReference, setBankReference] = useState(transaction.bankReference ?? '')
@@ -137,6 +145,8 @@ export function TransactionRecordPanel({
     }
     if (!Object.keys(updates).length) return
     onUpdate(updates)
+    if (values.source) addFinancialSource(activeFinancialProfileId, values.source)
+    if (values.counterparty) addFinancialCounterparty(activeFinancialProfileId, values.counterparty)
     setSource(values.source)
     setCounterparty(values.counterparty)
     setBankReference(values.bankReference)
@@ -204,6 +214,7 @@ export function TransactionRecordPanel({
           <span className="text-[#999999]">Banco ou app de origem</span>
           <input
             value={source}
+            list="financial-source-suggestions"
             onChange={(e) => {
               setSource(e.target.value)
               setSaveStatus('editing')
@@ -224,6 +235,7 @@ export function TransactionRecordPanel({
           </span>
           <input
             value={counterparty}
+            list="financial-counterparty-suggestions"
             onChange={(e) => {
               setCounterparty(e.target.value)
               setSaveStatus('editing')
@@ -259,6 +271,75 @@ export function TransactionRecordPanel({
           />
         </label>
       </div>
+      <datalist id="financial-source-suggestions">
+        {(profile?.savedSources ?? []).map((item) => (
+          <option key={item} value={item} />
+        ))}
+      </datalist>
+      <datalist id="financial-counterparty-suggestions">
+        {(profile?.savedCounterparties ?? []).map((item) => (
+          <option key={item} value={item} />
+        ))}
+      </datalist>
+      {((profile?.savedSources?.length ?? 0) > 0 ||
+        (profile?.savedCounterparties?.length ?? 0) > 0) && (
+        <div className="space-y-2 border-t border-[#2b2b31] pt-3 text-xs">
+          {(profile?.savedSources?.length ?? 0) > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[#999999]">Bancos e apps salvos:</span>
+              {profile!.savedSources!.map((item) => (
+                <span
+                  key={item}
+                  className="inline-flex items-center rounded border border-[#2b2b31] bg-[#101014]"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setSource(item)}
+                    className="px-2 py-1 hover:text-white"
+                  >
+                    {item}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Excluir banco ou app ${item}`}
+                    onClick={() => removeFinancialSource(activeFinancialProfileId, item)}
+                    className="border-l border-[#2b2b31] px-1.5 py-1 text-[#999999] hover:text-[#f87171]"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          {(profile?.savedCounterparties?.length ?? 0) > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[#999999]">Pessoas salvas:</span>
+              {profile!.savedCounterparties!.map((item) => (
+                <span
+                  key={item}
+                  className="inline-flex items-center rounded border border-[#2b2b31] bg-[#101014]"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setCounterparty(item)}
+                    className="px-2 py-1 hover:text-white"
+                  >
+                    {item}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Excluir pessoa ${item}`}
+                    onClick={() => removeFinancialCounterparty(activeFinancialProfileId, item)}
+                    className="border-l border-[#2b2b31] px-1.5 py-1 text-[#999999] hover:text-[#f87171]"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       <div className="flex justify-end">
         <button
           type="button"

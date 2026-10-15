@@ -1,8 +1,13 @@
 ﻿import { create } from 'zustand'
 import type { StateCreator } from 'zustand'
 import { v4 as uuidv4 } from 'uuid'
-import type { Task, Goal, GoalEntry, FeatureId } from '../types'
-import { DEFAULT_FINANCIAL_PROFILE_ID, normalizeFeaturePreferences } from '../types'
+import type { Task, Goal, GoalEntry, FeatureId, UiPreferences } from '../types'
+import {
+  DEFAULT_FINANCIAL_PROFILE_ID,
+  normalizeFeaturePreferences,
+  normalizeUiPreferences,
+  DEFAULT_UI_PREFERENCES
+} from '../types'
 import { ElectronStorage } from '../services/ElectronStorage'
 import {
   normalizeFinancialProfiles,
@@ -40,6 +45,7 @@ interface CoreState {
   isLoaded: boolean
   /** Undefined means this installation has not answered feature onboarding yet. */
   featurePreferences?: FeatureId[]
+  uiPreferences: UiPreferences
 }
 
 interface CoreActions {
@@ -47,6 +53,7 @@ interface CoreActions {
   _persist: () => void
   _flushPersist: () => Promise<void>
   setFeaturePreferences: (features: FeatureId[]) => void
+  setUiPreferences: (preferences: UiPreferences) => void
 }
 
 type CoreSlice = CoreState & CoreActions
@@ -64,6 +71,7 @@ export type KanbanStore = CoreSlice &
 
 const createCoreSlice: StateCreator<KanbanStore, [], [], CoreSlice> = (set, get) => ({
   isLoaded: false,
+  uiPreferences: { ...DEFAULT_UI_PREFERENCES },
 
   _flushPersist: async () => {
     const {
@@ -78,6 +86,7 @@ const createCoreSlice: StateCreator<KanbanStore, [], [], CoreSlice> = (set, get)
       financialProfiles,
       activeFinancialProfileId,
       featurePreferences,
+      uiPreferences,
       activeTimers,
       files,
       timeBlocks,
@@ -95,6 +104,7 @@ const createCoreSlice: StateCreator<KanbanStore, [], [], CoreSlice> = (set, get)
       financialProfiles,
       activeFinancialProfileId,
       featurePreferences,
+      uiPreferences,
       activeTimers,
       files,
       timeBlocks,
@@ -112,6 +122,11 @@ const createCoreSlice: StateCreator<KanbanStore, [], [], CoreSlice> = (set, get)
 
   setFeaturePreferences: (features) => {
     set({ featurePreferences: normalizeFeaturePreferences(features) ?? [] })
+    get()._persist()
+  },
+
+  setUiPreferences: (uiPreferences) => {
+    set({ uiPreferences: normalizeUiPreferences(uiPreferences) })
     get()._persist()
   },
 
@@ -162,6 +177,7 @@ const createCoreSlice: StateCreator<KanbanStore, [], [], CoreSlice> = (set, get)
       financialProfiles,
       activeFinancialProfileId,
       featurePreferences: normalizeFeaturePreferences(data.featurePreferences),
+      uiPreferences: normalizeUiPreferences(data.uiPreferences),
       lists: (data.lists || []).map(normalizeFinancialTable).map((list) => ({
         ...list,
         profileId: financialProfileIds.has(list.profileId ?? '')

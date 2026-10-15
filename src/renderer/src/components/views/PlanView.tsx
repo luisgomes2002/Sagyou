@@ -43,9 +43,9 @@ function plannerColor(color: string | undefined): string | undefined {
 
 function blockAppearance(block: TimeBlock): CSSProperties {
   return {
-    backgroundColor: '#16161a',
-    color: '#d4d4d4',
-    border: `1px ${blockBorderStyle(block)} #3b3b42`
+    backgroundColor: 'var(--bg-card)',
+    color: 'var(--text-primary)',
+    border: `1px ${blockBorderStyle(block)} var(--border)`
   }
 }
 

@@ -38,9 +38,6 @@ export function HomeView({ projects, onNavigate }: Props) {
     }))
   )
 
-  const activeFinancialProfile = financialProfiles.find(
-    (profile) => profile.id === activeFinancialProfileId
-  )
   const profileLists = useMemo(
     () => lists.filter((list) => list.profileId === activeFinancialProfileId),
     [lists, activeFinancialProfileId]
@@ -358,229 +355,200 @@ export function HomeView({ projects, onNavigate }: Props) {
   // ── Render ─────────────────────────────────────────────────────
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 bg-[#0b0b0f]">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-xl font-bold text-[#d4d4d4]">Dashboard</h1>
-          <p className="text-[11px] text-[#999999] mt-0.5">
-            {activeFinancialProfile?.name ?? 'Perfil financeiro'}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {financialProfiles.length > 1 && (
-            <select
-              aria-label="Perfil financeiro do dashboard"
-              value={activeFinancialProfileId}
-              onChange={(e) => setActiveFinancialProfile(e.target.value)}
-              className="bg-[#16161a] border border-[#2b2b31] text-[#d4d4d4] rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-[#7c3aed]"
+    <div className="flex-1 overflow-y-auto bg-[#0b0b0f]">
+      <div className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-8">
+        <header className="mb-7 flex flex-col gap-5 border-b border-[#2b2b31] pb-6 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8b5cf6]">
+              Visão geral
+            </p>
+            <p className="mt-2 text-sm text-[#999999]">
+              Acompanhe prioridades, consistência e o seu panorama financeiro.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => onNavigate('board')}
+              className="rounded-lg border border-[#3a3a42] bg-[#16161a] px-3 py-2 text-xs font-medium text-[#d4d4d4] transition-colors hover:border-[#5b5b65] hover:bg-[#222227]"
             >
-              {financialProfiles.map((profile) => (
-                <option key={profile.id} value={profile.id}>
-                  {profile.name}
-                </option>
-              ))}
-            </select>
-          )}
-          {profileLists.length > 0 && (
-            <select
-              aria-label="Tabela financeira do dashboard"
-              value={financialTableId}
-              onChange={(e) => selectFinancialTable(e.target.value)}
-              className="bg-[#16161a] border border-[#2b2b31] text-[#d4d4d4] rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-[#7c3aed]"
+              Ver tarefas
+            </button>
+            <button
+              onClick={() => onNavigate('financial')}
+              className="rounded-lg bg-[#7c3aed] px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#6d28d9]"
             >
-              <option value="__consolidated__">Consolidado</option>
-              {profileLists.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
-      </div>
-
-      {/* Stat cards */}
-      <div className="grid grid-cols-4 gap-4 mb-8">
-        {/* Tasks abertas */}
-        <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-4">
-          <p className="text-[11px] text-[#999999] mb-1.5 flex items-center gap-1.5">
-            <svg
-              width="11"
-              height="11"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <rect x="3" y="3" width="7" height="18" rx="1" />
-              <rect x="14" y="3" width="7" height="11" rx="1" />
-              <rect x="14" y="18" width="7" height="3" rx="1" />
-            </svg>
-            Tasks abertas
-          </p>
-          <p className="text-2xl font-bold" style={{ color: '#7c3aed' }}>
-            {openTasks}
-          </p>
-          <p className="text-[10px] text-[#666666] mt-0.5">
-            em {projectCount} projeto{projectCount !== 1 ? 's' : ''}
-          </p>
-        </div>
-
-        {/* Hábitos hoje */}
-        <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-4">
-          <p className="text-[11px] text-[#999999] mb-1.5 flex items-center gap-1.5">
-            <svg
-              width="11"
-              height="11"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-            </svg>
-            Hábitos hoje
-          </p>
-          <p className="text-2xl font-bold" style={{ color: '#20b858' }}>
-            {habits.length > 0 ? `${habitsDoneToday}/${habits.length}` : '—'}
-          </p>
-          <p className="text-[10px] text-[#666666] mt-0.5">
-            {habits.length > 0 ? `${avgHabitRate}% no mês` : 'Nenhum hábito'}
-          </p>
-        </div>
-
-        {/* Metas ativas */}
-        <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-4">
-          <p className="text-[11px] text-[#999999] mb-1.5 flex items-center gap-1.5">
-            <svg
-              width="11"
-              height="11"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <circle cx="12" cy="12" r="10" />
-              <circle cx="12" cy="12" r="6" />
-              <circle cx="12" cy="12" r="2" />
-            </svg>
-            Metas ativas
-          </p>
-          <p className="text-2xl font-bold" style={{ color: '#f0b820' }}>
-            {goalsWithProgress.length}
-          </p>
-          <p className="text-[10px] text-[#666666] mt-0.5">
-            {completedGoals > 0
-              ? `${completedGoals} concluída${completedGoals !== 1 ? 's' : ''}`
-              : 'Nenhuma meta'}
-          </p>
-        </div>
-
-        {/* Saldo */}
-        <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-4">
-          <p className="text-[11px] text-[#999999] mb-1.5 flex items-center gap-1.5">
-            <svg
-              width="11"
-              height="11"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <line x1="12" y1="1" x2="12" y2="23" />
-              <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-            </svg>
-            Saldo até hoje
-          </p>
-          <p
-            className="text-2xl font-bold"
-            style={{ color: displayAccBalance.gte('0') ? '#20b858' : '#e04040' }}
-          >
-            {formatCurrency(displayAccBalance, displayCurrency)}
-          </p>
-          <p className="text-[10px] text-[#666666] mt-0.5">
-            <svg
-              width="9"
-              height="9"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              className="inline-block mr-0.5 align-[-1px]"
-            >
-              <line x1="12" y1="19" x2="12" y2="5" />
-              <polyline points="5 12 12 5 19 12" />
-            </svg>
-            Receitas {formatCurrency(displayIncome, displayCurrency)} /{' '}
-            <svg
-              width="9"
-              height="9"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              className="inline-block mr-0.5 align-[-1px]"
-            >
-              <line x1="12" y1="5" x2="12" y2="19" />
-              <polyline points="19 12 12 19 5 12" />
-            </svg>
-            Despesas {formatCurrency(displayExpense.negated(), displayCurrency)}
-          </p>
-        </div>
-      </div>
-
-      {/* Second row: Kanban + Hábitos */}
-      <div className="grid grid-cols-2 gap-6 mb-8">
-        {/* Kanban */}
-        <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-4">
-          <h2 className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-3 flex items-center gap-1.5">
-            <svg
-              width="10"
-              height="10"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-            >
-              <rect x="3" y="3" width="7" height="18" rx="1" />
-              <rect x="14" y="3" width="7" height="11" rx="1" />
-              <rect x="14" y="18" width="7" height="3" rx="1" />
-            </svg>
-            Kanban
-          </h2>
-          {openTasks === 0 ? (
-            <p className="text-[#999999] text-sm">Nenhuma task aberta</p>
-          ) : (
-            <div className="space-y-2">
-              {(Object.entries(priorityCounts.counts) as [Priority, number][]).map(([p, count]) => (
-                <div key={p} className="flex items-center gap-2">
-                  <span className={`text-[11px] w-12 font-medium ${PRIORITY_CONFIG[p].color}`}>
-                    {PRIORITY_CONFIG[p].label}
-                  </span>
-                  <span className="text-[11px] text-[#d4d4d4] w-5 tabular-nums">{count}</span>
-                  <div className="flex-1 h-1.5 rounded-full bg-[#2a2a30] overflow-hidden">
-                    <div
-                      className="h-full rounded-full transition-all"
-                      style={{
-                        width: `${Math.round((count / priorityCounts.max) * 100)}%`,
-                        backgroundColor:
-                          p === 'urgent'
-                            ? '#e04040'
-                            : p === 'high'
-                              ? '#f06c10'
-                              : p === 'medium'
-                                ? '#e8b810'
-                                : '#04acca'
-                      }}
-                    />
-                  </div>
-                </div>
-              ))}
+              Abrir finanças
+            </button>
+            <div className="ml-1 flex items-center gap-2">
+              {financialProfiles.length > 1 && (
+                <select
+                  aria-label="Perfil financeiro do dashboard"
+                  value={activeFinancialProfileId}
+                  onChange={(e) => setActiveFinancialProfile(e.target.value)}
+                  className="bg-[#16161a] border border-[#2b2b31] text-[#d4d4d4] rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-[#7c3aed]"
+                >
+                  {financialProfiles.map((profile) => (
+                    <option key={profile.id} value={profile.id}>
+                      {profile.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {profileLists.length > 0 && (
+                <select
+                  aria-label="Tabela financeira do dashboard"
+                  value={financialTableId}
+                  onChange={(e) => selectFinancialTable(e.target.value)}
+                  className="bg-[#16161a] border border-[#2b2b31] text-[#d4d4d4] rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-[#7c3aed]"
+                >
+                  <option value="__consolidated__">Consolidado</option>
+                  {profileLists.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
-          )}
-          {activeSprints.length > 0 && (
-            <div className="mt-4">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-2 flex items-center gap-1.5">
+          </div>
+        </header>
+
+        {/* Stat cards */}
+        <section className="mb-7 grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
+          {/* Tasks abertas */}
+          <div className="rounded-xl border border-[#2b2b31] bg-[#16161a] p-4 transition-colors hover:border-[#454550]">
+            <p className="mb-3 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#999999]">
+              <svg
+                width="11"
+                height="11"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <rect x="3" y="3" width="7" height="18" rx="1" />
+                <rect x="14" y="3" width="7" height="11" rx="1" />
+                <rect x="14" y="18" width="7" height="3" rx="1" />
+              </svg>
+              Tasks abertas
+            </p>
+            <p className="text-3xl font-semibold tracking-tight" style={{ color: '#a78bfa' }}>
+              {openTasks}
+            </p>
+            <p className="text-[10px] text-[#666666] mt-0.5">
+              em {projectCount} projeto{projectCount !== 1 ? 's' : ''}
+            </p>
+          </div>
+
+          {/* Hábitos hoje */}
+          <div className="rounded-xl border border-[#2b2b31] bg-[#16161a] p-4 transition-colors hover:border-[#454550]">
+            <p className="mb-3 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#999999]">
+              <svg
+                width="11"
+                height="11"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+              </svg>
+              Hábitos hoje
+            </p>
+            <p className="text-3xl font-semibold tracking-tight" style={{ color: '#46d478' }}>
+              {habits.length > 0 ? `${habitsDoneToday}/${habits.length}` : '—'}
+            </p>
+            <p className="text-[10px] text-[#666666] mt-0.5">
+              {habits.length > 0 ? `${avgHabitRate}% no mês` : 'Nenhum hábito'}
+            </p>
+          </div>
+
+          {/* Metas ativas */}
+          <div className="rounded-xl border border-[#2b2b31] bg-[#16161a] p-4 transition-colors hover:border-[#454550]">
+            <p className="mb-3 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#999999]">
+              <svg
+                width="11"
+                height="11"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <circle cx="12" cy="12" r="6" />
+                <circle cx="12" cy="12" r="2" />
+              </svg>
+              Metas ativas
+            </p>
+            <p className="text-3xl font-semibold tracking-tight" style={{ color: '#f0b820' }}>
+              {goalsWithProgress.length}
+            </p>
+            <p className="text-[10px] text-[#666666] mt-0.5">
+              {completedGoals > 0
+                ? `${completedGoals} concluída${completedGoals !== 1 ? 's' : ''}`
+                : 'Nenhuma meta'}
+            </p>
+          </div>
+
+          {/* Saldo */}
+          <div className="rounded-xl border border-[#2b2b31] bg-[#16161a] p-4 transition-colors hover:border-[#454550]">
+            <p className="mb-3 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#999999]">
+              <svg
+                width="11"
+                height="11"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <line x1="12" y1="1" x2="12" y2="23" />
+                <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+              </svg>
+              Saldo até hoje
+            </p>
+            <p
+              className="text-3xl font-semibold tracking-tight"
+              style={{ color: displayAccBalance.gte('0') ? '#20b858' : '#e04040' }}
+            >
+              {formatCurrency(displayAccBalance, displayCurrency)}
+            </p>
+            <p className="text-[10px] text-[#666666] mt-0.5">
+              <svg
+                width="9"
+                height="9"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                className="inline-block mr-0.5 align-[-1px]"
+              >
+                <line x1="12" y1="19" x2="12" y2="5" />
+                <polyline points="5 12 12 5 19 12" />
+              </svg>
+              Receitas {formatCurrency(displayIncome, displayCurrency)} /{' '}
+              <svg
+                width="9"
+                height="9"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                className="inline-block mr-0.5 align-[-1px]"
+              >
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <polyline points="19 12 12 19 5 12" />
+              </svg>
+              Despesas {formatCurrency(displayExpense.negated(), displayCurrency)}
+            </p>
+          </div>
+        </section>
+
+        {/* Second row: Kanban + Hábitos */}
+        <div className="mb-7 grid gap-4 lg:grid-cols-5">
+          {/* Kanban */}
+          <section className="rounded-xl border border-[#2b2b31] bg-[#16161a] p-5 lg:col-span-3">
+            <div className="mb-5 flex items-start justify-between">
+              <h2 className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#999999]">
                 <svg
                   width="10"
                   height="10"
@@ -589,257 +557,299 @@ export function HomeView({ projects, onNavigate }: Props) {
                   stroke="currentColor"
                   strokeWidth="2.5"
                 >
-                  <polyline points="1 4 1 10 7 10" />
-                  <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+                  <rect x="3" y="3" width="7" height="18" rx="1" />
+                  <rect x="14" y="3" width="7" height="11" rx="1" />
+                  <rect x="14" y="18" width="7" height="3" rx="1" />
                 </svg>
-                Sprints ativas
-              </p>
-              <div className="space-y-1.5">
-                {activeSprints.map((s) => (
-                  <div key={s.id} className="flex items-center justify-between text-xs">
-                    <span className="text-[#d4d4d4] truncate">{s.name}</span>
-                    <span className="text-[#999999] ml-2 shrink-0">
-                      {s.openTasks} task{s.openTasks !== 1 ? 's' : ''}
-                    </span>
-                  </div>
-                ))}
-              </div>
+                Kanban
+              </h2>
+              <button
+                onClick={() => onNavigate('board')}
+                className="text-[11px] font-medium text-[#a78bfa] hover:text-[#c4b5fd]"
+              >
+                Ver quadro →
+              </button>
             </div>
-          )}
-        </div>
-
-        {/* Hábitos */}
-        <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-4">
-          <h2 className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-3 flex items-center gap-1.5">
-            <svg
-              width="10"
-              height="10"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-            >
-              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-            </svg>
-            Hábitos
-          </h2>
-          {habits.length === 0 ? (
-            <p className="text-[#999999] text-sm">Nenhum hábito cadastrado</p>
-          ) : (
-            <div className="space-y-2">
-              {habitSummary.slice(0, 5).map(({ habit, streak, rate }) => {
-                const doneToday = habit.completions.includes(todayISO())
-                return (
-                  <div key={habit.id} className="flex items-center gap-2 text-sm">
-                    {doneToday ? (
-                      <svg
-                        width="13"
-                        height="13"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="#46d478"
-                        strokeWidth="2.5"
-                      >
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                    ) : (
-                      <svg
-                        width="13"
-                        height="13"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="#666666"
-                        strokeWidth="2"
-                      >
-                        <circle cx="12" cy="12" r="10" />
-                      </svg>
-                    )}
-                    <span className="text-[#d4d4d4] truncate flex-1">{habit.name}</span>
-                    {streak > 0 && (
-                      <span className="text-[11px] text-[#f0b820] shrink-0">seq. {streak}d</span>
-                    )}
-                    <span className="text-[11px] text-[#999999] w-9 text-right tabular-nums">
-                      {rate}%
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Third row: Metas + Financeiro */}
-      <div className="grid grid-cols-2 gap-6 mb-8">
-        {/* Metas */}
-        <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-4">
-          <h2 className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-3 flex items-center gap-1.5">
-            <svg
-              width="10"
-              height="10"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-            >
-              <circle cx="12" cy="12" r="10" />
-              <circle cx="12" cy="12" r="6" />
-              <circle cx="12" cy="12" r="2" />
-            </svg>
-            Metas
-          </h2>
-          {goals.length === 0 ? (
-            <p className="text-[#999999] text-sm">Nenhuma meta cadastrada</p>
-          ) : (
-            <div className="space-y-3">
-              {goalsWithProgress.slice(0, 5).map((g) => (
-                <div key={g.id}>
-                  <div className="flex items-center justify-between text-xs mb-1">
-                    <span className="text-[#d4d4d4] truncate flex-1">{g.title}</span>
-                    <span className="text-[#999999] ml-2 tabular-nums">{g.percent}%</span>
-                  </div>
-                  <div className="h-2 rounded-full bg-[#2a2a30] overflow-hidden">
-                    <div
-                      className="h-full rounded-full transition-all"
-                      style={{
-                        width: `${g.percent}%`,
-                        backgroundColor: g.color || '#7c3aed'
-                      }}
-                    />
-                  </div>
-                  <p className="text-[10px] text-[#666666] mt-0.5">
-                    {g.current} / {g.target} {g.unit}
-                  </p>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Financeiro */}
-        <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-4">
-          <h2 className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-3 flex items-center gap-1.5">
-            <svg
-              width="10"
-              height="10"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-            >
-              <rect x="2" y="3" width="20" height="14" rx="2" />
-              <line x1="8" y1="21" x2="16" y2="21" />
-              <line x1="12" y1="17" x2="12" y2="21" />
-            </svg>
-            Financeiro
-          </h2>
-          {!hasFinancialData || monthTransactions.length === 0 ? (
-            <p className="text-[#999999] text-sm">Nenhuma transação este mês</p>
-          ) : (
-            <>
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-xs text-[#d4d4d4] flex items-center gap-1">
-                  <svg
-                    width="10"
-                    height="10"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="#46d478"
-                    strokeWidth="2.5"
-                  >
-                    <line x1="12" y1="19" x2="12" y2="5" />
-                    <polyline points="5 12 12 5 19 12" />
-                  </svg>
-                  Receitas
-                </span>
-                <span className="text-xs font-medium text-[#20b858] tabular-nums">
-                  {formatCurrency(displayIncome, displayCurrency)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-xs text-[#d4d4d4] flex items-center gap-1">
-                  <svg
-                    width="10"
-                    height="10"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="#e04040"
-                    strokeWidth="2.5"
-                  >
-                    <line x1="12" y1="5" x2="12" y2="19" />
-                    <polyline points="19 12 12 19 5 12" />
-                  </svg>
-                  Despesas
-                </span>
-                <span className="text-xs font-medium text-[#e04040] tabular-nums">
-                  {formatCurrency(displayExpense.negated(), displayCurrency)}
-                </span>
-              </div>
-              {topCategories.length > 0 && (
-                <>
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-2 mt-4">
-                    Top categorias
-                  </p>
-                  {topCategories.map(([cat, amount]) => (
-                    <div key={cat} className="flex items-center justify-between text-xs mb-1">
-                      <span className="text-[#d4d4d4] flex items-center gap-1">
-                        <svg
-                          width="8"
-                          height="8"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2.5"
-                          className="shrink-0"
-                        >
-                          <polyline points="9 18 15 12 9 6" />
-                        </svg>
-                        {cat}
+            {openTasks === 0 ? (
+              <p className="text-[#999999] text-sm">Nenhuma task aberta</p>
+            ) : (
+              <div className="space-y-2">
+                {(Object.entries(priorityCounts.counts) as [Priority, number][]).map(
+                  ([p, count]) => (
+                    <div key={p} className="flex items-center gap-2">
+                      <span className={`text-[11px] w-12 font-medium ${PRIORITY_CONFIG[p].color}`}>
+                        {PRIORITY_CONFIG[p].label}
                       </span>
-                      <span className="text-[#999999] tabular-nums">
-                        {formatCurrency(amount.negated(), displayCurrency)}
+                      <span className="text-[11px] text-[#d4d4d4] w-5 tabular-nums">{count}</span>
+                      <div className="flex-1 h-1.5 rounded-full bg-[#2a2a30] overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all"
+                          style={{
+                            width: `${Math.round((count / priorityCounts.max) * 100)}%`,
+                            backgroundColor:
+                              p === 'urgent'
+                                ? '#e04040'
+                                : p === 'high'
+                                  ? '#f06c10'
+                                  : p === 'medium'
+                                    ? '#e8b810'
+                                    : '#04acca'
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )
+                )}
+              </div>
+            )}
+            {activeSprints.length > 0 && (
+              <div className="mt-4">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-2 flex items-center gap-1.5">
+                  <svg
+                    width="10"
+                    height="10"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                  >
+                    <polyline points="1 4 1 10 7 10" />
+                    <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+                  </svg>
+                  Sprints ativas
+                </p>
+                <div className="space-y-1.5">
+                  {activeSprints.map((s) => (
+                    <div key={s.id} className="flex items-center justify-between text-xs">
+                      <span className="text-[#d4d4d4] truncate">{s.name}</span>
+                      <span className="text-[#999999] ml-2 shrink-0">
+                        {s.openTasks} task{s.openTasks !== 1 ? 's' : ''}
                       </span>
                     </div>
                   ))}
-                </>
-              )}
-            </>
-          )}
-        </div>
-      </div>
+                </div>
+              </div>
+            )}
+          </section>
 
-      {/* Agents row (conditional) */}
-      {runningAgentCount > 0 && (
-        <div className="rounded-lg bg-[#16161a] border border-[#2b2b31] p-4">
-          <h2 className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-3 flex items-center gap-1.5">
-            <svg
-              width="10"
-              height="10"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-            >
-              <rect x="3" y="11" width="18" height="10" rx="2" />
-              <circle cx="12" cy="5" r="2" />
-              <path d="M12 7v4" />
-            </svg>
-            Agentes
-          </h2>
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-[#d4d4d4]">
-              {runningAgentCount} agente{runningAgentCount !== 1 ? 's' : ''} em execução — ver
-              FleetView
-            </p>
-            <button
-              onClick={() => onNavigate('agents')}
-              className="px-4 py-2 rounded-lg bg-[#7c3aed] text-sm text-white font-medium hover:bg-[#6d28d9] transition-colors"
-            >
-              Ver FleetView
-            </button>
-          </div>
+          {/* Hábitos */}
+          <section className="rounded-xl border border-[#2b2b31] bg-[#16161a] p-5 lg:col-span-2">
+            <div className="mb-5 flex items-start justify-between">
+              <h2 className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#999999]">
+                <svg
+                  width="10"
+                  height="10"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                >
+                  <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+                </svg>
+                Hábitos
+              </h2>
+              <button
+                onClick={() => onNavigate('habits')}
+                className="text-[11px] font-medium text-[#a78bfa] hover:text-[#c4b5fd]"
+              >
+                Acompanhar →
+              </button>
+            </div>
+            {habits.length === 0 ? (
+              <p className="text-[#999999] text-sm">Nenhum hábito cadastrado</p>
+            ) : (
+              <div className="space-y-2">
+                {habitSummary.slice(0, 5).map(({ habit, streak, rate }) => {
+                  const doneToday = habit.completions.includes(todayISO())
+                  return (
+                    <div key={habit.id} className="flex items-center gap-2 text-sm">
+                      {doneToday ? (
+                        <svg
+                          width="13"
+                          height="13"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="#46d478"
+                          strokeWidth="2.5"
+                        >
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      ) : (
+                        <svg
+                          width="13"
+                          height="13"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="#666666"
+                          strokeWidth="2"
+                        >
+                          <circle cx="12" cy="12" r="10" />
+                        </svg>
+                      )}
+                      <span className="text-[#d4d4d4] truncate flex-1">{habit.name}</span>
+                      {streak > 0 && (
+                        <span className="text-[11px] text-[#f0b820] shrink-0">seq. {streak}d</span>
+                      )}
+                      <span className="text-[11px] text-[#999999] w-9 text-right tabular-nums">
+                        {rate}%
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </section>
         </div>
-      )}
+
+        {/* Third row: Metas + Financeiro */}
+        <div className="mb-7 grid gap-4 lg:grid-cols-5">
+          {/* Metas */}
+          <section className="rounded-xl border border-[#2b2b31] bg-[#16161a] p-5 lg:col-span-2">
+            <div className="mb-5 flex items-start justify-between">
+              <h2 className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#999999]">
+                <svg
+                  width="10"
+                  height="10"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <circle cx="12" cy="12" r="6" />
+                  <circle cx="12" cy="12" r="2" />
+                </svg>
+                Metas
+              </h2>
+              <button
+                onClick={() => onNavigate('goals')}
+                className="text-[11px] font-medium text-[#a78bfa] hover:text-[#c4b5fd]"
+              >
+                Ver metas →
+              </button>
+            </div>
+            {goals.length === 0 ? (
+              <p className="text-[#999999] text-sm">Nenhuma meta cadastrada</p>
+            ) : (
+              <div className="space-y-3">
+                {goalsWithProgress.slice(0, 5).map((g) => (
+                  <div key={g.id}>
+                    <div className="flex items-center justify-between text-xs mb-1">
+                      <span className="text-[#d4d4d4] truncate flex-1">{g.title}</span>
+                      <span className="text-[#999999] ml-2 tabular-nums">{g.percent}%</span>
+                    </div>
+                    <div className="h-2 rounded-full bg-[#2a2a30] overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all"
+                        style={{
+                          width: `${g.percent}%`,
+                          backgroundColor: g.color || '#7c3aed'
+                        }}
+                      />
+                    </div>
+                    <p className="text-[10px] text-[#666666] mt-0.5">
+                      {g.current} / {g.target} {g.unit}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* Financeiro */}
+          <section className="rounded-xl border border-[#2b2b31] bg-[#16161a] p-5 lg:col-span-3">
+            <div className="mb-5 flex items-start justify-between">
+              <h2 className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#999999]">
+                <svg
+                  width="10"
+                  height="10"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                >
+                  <rect x="2" y="3" width="20" height="14" rx="2" />
+                  <line x1="8" y1="21" x2="16" y2="21" />
+                  <line x1="12" y1="17" x2="12" y2="21" />
+                </svg>
+                Financeiro
+              </h2>
+              <button
+                onClick={() => onNavigate('financial')}
+                className="text-[11px] font-medium text-[#a78bfa] hover:text-[#c4b5fd]"
+              >
+                Ver detalhes →
+              </button>
+            </div>
+            {!hasFinancialData || monthTransactions.length === 0 ? (
+              <p className="text-[#999999] text-sm">Nenhuma transação este mês</p>
+            ) : (
+              <>
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs text-[#d4d4d4] flex items-center gap-1">Receitas</span>
+                  <span className="text-xs font-medium text-[#20b858] tabular-nums">
+                    {formatCurrency(displayIncome, displayCurrency)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs text-[#d4d4d4] flex items-center gap-1">Despesas</span>
+                  <span className="text-xs font-medium text-[#e04040] tabular-nums">
+                    {formatCurrency(displayExpense.negated(), displayCurrency)}
+                  </span>
+                </div>
+                {topCategories.length > 0 && (
+                  <>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-2 mt-4">
+                      Top categorias
+                    </p>
+                    {topCategories.map(([cat, amount]) => (
+                      <div key={cat} className="flex items-center justify-between text-xs mb-1">
+                        <span className="text-[#d4d4d4]">{cat}</span>
+                        <span className="text-[#999999] tabular-nums">
+                          {formatCurrency(amount.negated(), displayCurrency)}
+                        </span>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </>
+            )}
+          </section>
+        </div>
+
+        {/* Agents row (conditional) */}
+        {runningAgentCount > 0 && (
+          <section className="rounded-xl border border-[#2b2b31] bg-[#16161a] p-5">
+            <h2 className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-3 flex items-center gap-1.5">
+              <svg
+                width="10"
+                height="10"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+              >
+                <rect x="3" y="11" width="18" height="10" rx="2" />
+                <circle cx="12" cy="5" r="2" />
+                <path d="M12 7v4" />
+              </svg>
+              Agentes
+            </h2>
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-[#d4d4d4]">
+                {runningAgentCount} agente{runningAgentCount !== 1 ? 's' : ''} em execução — ver
+                FleetView
+              </p>
+              <button
+                onClick={() => onNavigate('agents')}
+                className="px-4 py-2 rounded-lg bg-[#7c3aed] text-sm text-white font-medium hover:bg-[#6d28d9] transition-colors"
+              >
+                Ver FleetView
+              </button>
+            </div>
+          </section>
+        )}
+      </div>
     </div>
   )
 }

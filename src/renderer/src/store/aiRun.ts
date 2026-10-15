@@ -70,6 +70,17 @@ export interface ChatMessage {
   maxSteps?: number
   /** Tokens this step's model call billed, for the trace. Absent = unknown/older line. */
   tokens?: number
+  /** Which adapter produced an assistant response; absent is legacy history. */
+  provider?: 'api' | 'chatgpt' | 'codex' | 'claude-code' | 'opencode'
+  /** Concrete model identifier used for that response. */
+  model?: string
+  providerLabel?: string
+}
+
+export interface ChatConnection {
+  provider: 'api' | 'chatgpt'
+  profileId?: string
+  model: string
 }
 
 /**
@@ -333,6 +344,8 @@ export interface AiRunState {
   usage: TokenUsage
   /** Which chat is on screen. */
   conversationId: string | null
+  connections: Record<string, ChatConnection>
+  setConnection: (connection: ChatConnection) => void
   /**
    * Transcripts that are live but not on screen, keyed by conversation id.
    *
@@ -400,6 +413,9 @@ export interface AiRunState {
       imageIds: string[]
       imageData: Record<string, string>
       documentIds?: string[]
+      /** Per-message adapter choice; absent keeps the configured default. */
+      provider?: AIConfig['chatProvider']
+      model?: string
     },
     codeMode?: boolean
   ) => Promise<void>
@@ -428,7 +444,7 @@ export interface AiRunState {
    * old transcript under a new id, this chat's messages with the last one's
    * token count).
    */
-  openConversation: (conv: { id: string; messages: ChatMessage[]; usage?: TokenUsage }) => void
+  openConversation: (conv: { id: string; messages: ChatMessage[]; usage?: TokenUsage; connection?: ChatConnection }) => void
   /**
    * Forget a conversation that no longer exists (deleted from the history).
    * Drops any parked transcript and stops a run that was writing to it — its
@@ -457,6 +473,11 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
   error: null,
   usage: EMPTY_USAGE,
   conversationId: null,
+  connections: {},
+  setConnection: (connection) => {
+    const id = get().ensureConversationId()
+    set((s) => ({ connections: { ...s.connections, [id]: connection } }))
+  },
   parked: {},
   runProjects: {},
   runUsage: {},
@@ -467,7 +488,7 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
   abortRequested: new Set(),
   savedTick: 0,
 
-  send: async (config, { text, imageIds, imageData, documentIds }, codeMode = false) => {
+  send: async (config, { text, imageIds, imageData, documentIds, provider, model }, codeMode = false) => {
     const convId = get().ensureConversationId()
     if (get().running.has(convId)) return
     const next: ChatMessage[] = [
@@ -490,9 +511,17 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
       runProjects: { ...s.runProjects, [convId]: projectId ?? null },
       runUsage: { ...s.runUsage, [convId]: EMPTY_USAGE }
     }))
+    const connection = get().connections[convId]
+    const runConfig: AIConfig = {
+      ...config,
+      chatProvider: connection?.provider ?? provider ?? config.chatProvider,
+      chatProfileId: connection?.profileId,
+      model: connection?.model ?? model?.trim() ?? config.model,
+      modelComplex: undefined
+    }
     try {
       const reply = await runAgent(
-        config,
+        runConfig,
         toApiMessages(next, imageData),
         (writes) =>
           get().requestApproval(
@@ -531,7 +560,16 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
           // In chat mode: route tools by the user's message — code questions
           // get CODE tools (~2.1k tokens), kanban questions get KANBAN tools
           // (~6.7k), saving 25-75% of the fixed tool-definition cost per call.
-          ...(codeMode
+          ...(runConfig.chatProvider === 'chatgpt'
+            ? {
+                tools: [],
+                // The SIWC Responses route does not accept this app's
+                // chat-completions tool schema. Be explicit instead of
+                // pretending a task/memory action ran.
+                systemPrompt:
+                  'Você está no ChatGPT por assinatura. As ferramentas do Sagyou não estão disponíveis nesta resposta; explique essa limitação quando ela for relevante.'
+              }
+            : codeMode
             ? { tools: CODE_TOOL_DEFS, systemPrompt: codePromptMd.trim() }
             : { tools: routeTools(text) }),
           onStatus: (text, kind, progress) =>
@@ -564,12 +602,25 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
             )
         }
       )
-      set((s) => writeConv(s, convId, (prev) => [...prev, { role: 'assistant', content: reply }]))
+      set((s) =>
+        writeConv(s, convId, (prev) => [
+          ...prev,
+          {
+            role: 'assistant',
+            content: reply,
+            provider: runConfig.chatProvider === 'chatgpt' ? 'chatgpt' : 'api',
+            model: runConfig.model,
+            providerLabel: runConfig.chatProvider === 'chatgpt'
+              ? 'ChatGPT'
+              : config.providerProfiles?.find((profile) => profile.id === runConfig.chatProfileId)?.name ?? 'Minha API'
+          }
+        ])
+      )
       // Leave a breadcrumb for the next session (best-effort). When
       // handoffSummarize is enabled, do an extra LLM call to produce a concise
       // summary of the full conversation; otherwise use the raw last exchange.
-      if (config.handoffSummarize) {
-        void writeHandoffSummarized(config, next)
+      if (runConfig.handoffSummarize) {
+        void writeHandoffSummarized(runConfig, next)
       } else {
         void writeHandoff(text, reply, convId)
       }
@@ -712,6 +763,9 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
       delete parked[conv.id]
       return {
         conversationId: conv.id,
+        connections: conv.connection && !s.connections[conv.id]
+          ? { ...s.connections, [conv.id]: conv.connection }
+          : s.connections,
         messages: live?.messages ?? conv.messages,
         // Older files predate usage tracking: zero means "unknown", and the
         // header hides the counter rather than claiming this cost nothing.
@@ -725,6 +779,8 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
     set((s) => {
       const parked = { ...s.parked }
       delete parked[id]
+      const connections = { ...s.connections }
+      delete connections[id]
       // A run writing into a deleted chat has nowhere to land: stop it rather
       // than pay for steps whose output is discarded. The loop reads
       // abortRequested between steps and unwinds on its own.
@@ -735,6 +791,7 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
       }
       return {
         parked,
+        connections,
         ...(killing && {
           abortRequested: setAdd(s.abortRequested, id),
           pendingApprovals: s.pendingApprovals.filter((p) => p.convId !== id),

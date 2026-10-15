@@ -260,6 +260,84 @@ describe('data_de_hoje', () => {
   })
 })
 
+describe('resolver_periodo', () => {
+  afterEach(() => vi.useRealTimers())
+
+  it('derives inclusive calendar ranges in the local timezone', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-05T14:00:00.000Z')) // Wednesday in São Paulo
+
+    expect(await call('resolver_periodo', { referencia: 'esta_semana' })).toEqual({
+      referencia: 'esta_semana',
+      de: '2026-08-03',
+      ate: '2026-08-09'
+    })
+    expect(await call('resolver_periodo', { referencia: 'mes_passado' })).toEqual({
+      referencia: 'mes_passado',
+      de: '2026-07-01',
+      ate: '2026-07-31'
+    })
+  })
+
+  it('does not accept a free-form period the model could interpret differently', async () => {
+    expect(await call('resolver_periodo', { referencia: 'quando der' })).toMatchObject({
+      error: 'Período relativo inválido'
+    })
+  })
+})
+
+describe('buscar_registros', () => {
+  const originalApi = Object.getOwnPropertyDescriptor(window, 'electronAPI')
+
+  afterEach(() => {
+    if (originalApi) Object.defineProperty(window, 'electronAPI', originalApi)
+    else Reflect.deleteProperty(window, 'electronAPI')
+  })
+
+  it('keeps the main-process filters and returns stable references for the answer', async () => {
+    const global = vi.fn().mockResolvedValue({
+      total: 1,
+      hasMore: false,
+      results: [
+        {
+          type: 'task',
+          id: 'task-1',
+          title: 'Renovar seguro',
+          snippet: 'Vence em 2026-11-10',
+          matchedField: 'content',
+          projectId: 'project-1',
+          tableId: null,
+          date: '2026-11-10'
+        }
+      ]
+    })
+    Object.defineProperty(window, 'electronAPI', {
+      configurable: true,
+      value: { search: { global } }
+    })
+
+    const result = await call('buscar_registros', {
+      termo: 'seguro',
+      tipos: ['task'],
+      concluida: false
+    })
+
+    expect(global).toHaveBeenCalledWith({ term: 'seguro', types: ['task'], completed: false, limit: 10 })
+    expect(result).toMatchObject({
+      total: 1,
+      truncado: false,
+      referencias: [
+        {
+          tipo: 'task',
+          id: 'task-1',
+          titulo: 'Renovar seguro',
+          campo: 'content'
+        }
+      ]
+    })
+  })
+})
+
 // ── task leasing (multi-agent coordination) ─────────────────────────────────
 
 describe('task leasing across agents', () => {
@@ -933,6 +1011,8 @@ describe('ler_financeiro', () => {
     // Money stays a string end to end; a float would drift.
     expect(t).toMatchObject({ nome: 'Casa', receitas: '5000', despesas: '1350.5', saldo: '3649.5' })
     expect(typeof t.saldo).toBe('string')
+    expect(t.referencias).toHaveLength(3)
+    expect((t.referencias as { tipo: string; id: string }[]).every((ref) => ref.tipo === 'transacao')).toBe(true)
   })
 
   it('breaks spend down by category', async () => {
@@ -968,6 +1048,16 @@ describe('ler_financeiro', () => {
     seed()
     expect(table(await call('ler_financeiro', { de: '2026-07-01' })).qtdTransacoes).toBe(2)
     expect(table(await call('ler_financeiro', { ate: '2026-06-30' })).qtdTransacoes).toBe(1)
+  })
+
+  it('rejects invalid or inverted date filters before calculating totals', async () => {
+    seed()
+    expect(await call('ler_financeiro', { de: '2026-02-30' })).toMatchObject({
+      error: 'Período inválido. Use datas YYYY-MM-DD reais.'
+    })
+    expect(await call('ler_financeiro', { de: '2026-08-01', ate: '2026-07-31' })).toMatchObject({
+      error: 'Período inválido: a data inicial é posterior à final.'
+    })
   })
 
   it('picks a table by name or id, and reports all of them by default', async () => {
@@ -1026,7 +1116,7 @@ describe('ler_financeiro', () => {
     })
 
     const t = table(await call('ler_financeiro', {}))
-    expect(t.amostraTransacoes).toEqual([
+    expect(t.amostraTransacoes).toMatchObject([
       {
         data: '2026-07-10',
         descricao: 'Fatura do cartão',
@@ -1063,7 +1153,7 @@ describe('ler_financeiro', () => {
       targetYear: 2026
     })
     const t = table(await call('ler_financeiro', {}))
-    expect(t.metasFinanceiras).toEqual([
+    expect(t.metasFinanceiras).toMatchObject([
       { nome: 'Reserva', alvo: '10000', mes: 7, ano: 2026, concluida: false }
     ])
   })

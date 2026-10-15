@@ -198,6 +198,7 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    `ler_dados` permite à IA percorrer registros de todas as áreas do app, mas suas entidades financeiras obedecem ao mesmo perfil ativo. Listas são paginadas com total/truncado; um ID lê todos os campos do registro. Anexos expõem metadados, e o conteúdo passa por `ler_documento`; imagens inline legadas não entram no resultado.
    A exportação Excel é global: `Todas transações` inclui todos os perfis, tabelas e meses, sem depender do mês ativo na tela. Valores monetários exportados têm também coluna de texto exato, pois números do Excel podem perder precisão. Abas de transações por tabela repetem a aba geral: ficam desligadas por padrão, e a opção para incluí-las só cria abas não vazias com nomes únicos. `Detalhes financeiros` só aparece quando há detalhes.
    Categorias personalizadas ficam em `FinancialProfile.customCategories` (opcional), compartilhadas só entre tabelas do mesmo perfil. Remover uma sugestão não altera categorias de lançamentos antigos; elas continuam disponíveis nos filtros pelo histórico.
+   Bancos/apps e contrapartes salvos em `FinancialProfile` seguem o mesmo escopo: removê-los só retira a sugestão, nunca apaga esses valores dos lançamentos já registrados.
    **No consolidado, totais nativos nunca somam moedas diferentes**: mostre BRL, USD e JPY
    separadamente. A equivalência cambial é só uma leitura em tempo real, identificada como tal,
    e nunca é gravada nem altera os lançamentos.
@@ -244,7 +245,9 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    fallback. Campo novo opcional é seguro; mudar a forma de um array ou objeto
    existente, não. Preferências de recursos da sidebar seguem a mesma regra:
    `featurePreferences` ausente significa primeira configuração (ou backup antigo),
-   e não pode ocultar recursos/dados silenciosamente.
+   e não pode ocultar recursos/dados silenciosamente. `uiPreferences` ausente em
+   backup antigo preserva a escolha visual local; preferências de aparência novas
+   precisam de normalização com defaults antes de chegar à UI.
 4. **Avise explicitamente** ao propor algo que possa corromper dados no load
    (trocar `string` por `string[]`, mudar esquema de IDs), com:
    `⚠️ Breaking schema change — existing data may be affected.`
@@ -294,6 +297,23 @@ CODE_READ_PAGE`) devolve só ~100 linhas + `simbolos` + `dica`, não a janela de
    pesado; o resto fica no `model` barato. Ausente = um modelo só, comportamento
    antigo. A escolha é feita uma vez em `runAgent` (`rcfg`) e vale para todas as
    chamadas daquela execução.
+
+   **Chat com conexão explícita:** “Trocar IA” salva a conexão e o modelo em
+   `StoredConversation.connection` (opcional nos históricos antigos). Cada run
+   usa o modelo exibido no cabeçalho; o roteamento automático `modelComplex`
+   não atua nesse fluxo. O main resolve `profileId` e a chave do perfil. O
+   modelo forte continua como escolha explícita. Codex, Claude Code e OpenCode
+   são harnesses da área Agentes, sem adaptador para o chat normal por enquanto.
+   Campos antigos `baseUrl`/`apiKey`/`model` de `ai-config.json` são importados
+   uma vez como perfil comum, sem conexão legada visível; a marca de migração
+   impede que excluir esse perfil o recrie. Credenciais nunca retornam ao renderer.
+   O chat normal oferece assinatura ChatGPT e perfis de API. Os atalhos
+   OpenAI/Codex e Claude só preenchem o perfil e nunca transformam uma assinatura
+   de ChatGPT/Claude Code em chave de API; cada fornecedor mantém sua própria cobrança.
+   O editor de perfil busca o catálogo na URL configurada e mostra dropdowns para
+   modelo padrão e forte; para Claude usa somente `lifecycle=active`, e para
+   OpenAI ignora registros com `shutdown_date`. A chave digitada antes de salvar
+   cruza IPC só para essa consulta e nunca volta na resposta.
 
 10. 🔴 **A tabela `memory` é satélite, fora do `persistAll`.** Memórias do assistente
     (decisões, tradeoffs, gotchas, handoffs) ficam em SQLite mas nunca passam pelo
@@ -442,7 +462,7 @@ activeTimers[0]` no `settings` do DB (não viaja no backup); `normalizeTimers`
   o modelo e o disco são (1) `confineToRoot` (todo caminho preso à pasta do
   projeto) e (2) **aprovação por ação** antes de qualquer escrita ou comando. As
   duas são carga, não enfeite.
-- **Harnesses externos (Codex, OpenCode, Claude Code).** `AIConfig.codeHarness` escolhe o runtime; `ai:harnesses:status` só detecta o binário/version e nunca inicia uma tarefa. Todo harness externo roda em worktree Git isolado. O modo normal usa argv direto e saída estruturada; `sessao_interativa` usa `node-pty` para manter o TUI do CLI vivo e aceitar mensagens pelo painel. Nos dois modos, o worktree só é entregue após encerrar a execução e aprovar manualmente o patch final — inclusive com auto-approve ligado — e qualquer arquivo fora de `arquivos_permitidos` é recusado antes da aprovação. `stopCodeAgent` encerra o processo filho e recusa esse patch; **Encerrar e revisar diff** não marca abort, para permitir a revisão. O painel só deve mostrar uma modal de aprovação por vez (`slice(0, 1)`), para que pedidos simultâneos não se sobreponham.
+- **Harnesses externos (Codex, OpenCode, Claude Code).** `AIConfig.codeHarness` escolhe o runtime; `ai:harnesses:status` só detecta o binário/version e nunca inicia uma tarefa. Todo harness externo roda em worktree Git isolado. O modo normal usa argv direto e saída estruturada; `sessao_interativa` usa `node-pty` e o Fleet o renderiza com xterm: teclas e resize validados passam por IPC somente para o PTY daquela run, então é terminal completo sem o renderer ganhar autoridade para criar processos. Nos dois modos, o worktree só é entregue após encerrar a execução e aprovar manualmente o patch final — inclusive com auto-approve ligado — e qualquer arquivo fora de `arquivos_permitidos` é recusado antes da aprovação. `stopCodeAgent` encerra o processo filho e recusa esse patch; **Encerrar e revisar diff** não marca abort, para permitir a revisão. O painel só deve mostrar uma modal de aprovação por vez (`slice(0, 1)`), para que pedidos simultâneos não se sobreponham. Cada run externa também recebe um MCP local, com token aleatório revogado ao terminar e escopo fixo de projeto/perfil financeiro; o CLI nunca ganha acesso ao SQLite, nem recebe snapshot completo no prompt. Escritas MCP voltam ao Zustand pelo IPC e exigem o mesmo card de aprovação.
 - **O agente de código principal não tem teto de passos.** O launcher passa
   `maxSteps: 0` (a UI mostra apenas o passo atual) e a execução termina ao concluir, ao ser
   parada pelo usuário ou por um bloqueio real. Não restaure a antiga heurística
@@ -507,8 +527,10 @@ kernel.apparmor_restrict_unprivileged_userns=0` (mostrado, nunca rodado); `bubbl
   índice/HEAD do usuário e sem exigir identidade Git. Nunca peça commit inicial só
   para habilitar paralelismo.
 - **O log é renderizado como terminal** (`AgentTerminal.tsx` + `utils/ansi.ts`):
-  `parseAnsi` colore o SGR, **remove** cursor/OSC e **aplica** `\r`/erase-in-line por
-  linha (não faz pré-passe no texto cru). Puro e testado (`utils/ansi.test.ts`).
+  uma sessão interativa usa xterm conectado ao PTY, portanto preserva cursor, ANSI e
+  teclado completos; o caminho batch/arquivado usa `parseAnsi`, que colore o SGR,
+  **remove** cursor/OSC e **aplica** `\r`/erase-in-line por linha (não faz pré-passe no
+  texto cru). Puro e testado (`utils/ansi.test.ts`).
 - **O painel lidera pelo diff, não pelo log**: "Mudanças" fica visível _durante_ a
   execução (poll de 2s; derivado em main de uma base anterior ao run) e o log cru vai
   pra trás de "Log completo". Diff vazio com agente rodando diz "ainda não", não "não

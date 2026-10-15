@@ -36,7 +36,27 @@ let storedConfig: AIConfig = {
 function installApi(): void {
   ;(window as unknown as { electronAPI: unknown }).electronAPI = {
     ai: {
-      config: { get: vi.fn(async () => storedConfig), set: vi.fn(async () => {}) },
+      config: {
+        get: vi.fn(async () =>
+          storedConfig.baseUrl && storedConfig.model && !storedConfig.providerProfiles
+            ? {
+                ...storedConfig,
+                activeProviderProfileId: 'legacy',
+                providerProfiles: [
+                  {
+                    id: 'legacy',
+                    name: 'Minha API',
+                    kind: 'api' as const,
+                    baseUrl: storedConfig.baseUrl,
+                    model: storedConfig.model,
+                    hasApiKey: Boolean(storedConfig.apiKey)
+                  }
+                ]
+              }
+            : storedConfig
+        ),
+        set: vi.fn(async () => {})
+      },
       models: vi.fn(async () => ({ success: true, models: ['m'] })),
       conversations: {
         list: vi.fn(async () => []),
@@ -332,7 +352,28 @@ describe('AIView — reopening the last chat', () => {
   it('starts blank when nothing was open', async () => {
     renderAI(<AIView projects={[]} />)
     expect(await screen.findByText('Converse com o modelo')).toBeInTheDocument()
+    expect(screen.getByText('Dados do Sagyou')).toBeInTheDocument()
+    expect(screen.getByText('Ferramentas disponíveis')).toBeInTheDocument()
     expect(window.electronAPI.ai.conversations.get).not.toHaveBeenCalled()
+  })
+
+  it('opens API setup from the connection guide', async () => {
+    storedConfig = { baseUrl: '', apiKey: '', model: '' }
+    installApi()
+    renderAI(<AIView projects={[]} />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Configurar API' }))
+
+    expect(screen.getByText('Perfis de API')).toBeInTheDocument()
+  })
+
+  it('opens Agents from the code card in the connection guide', async () => {
+    const openAgents = vi.fn()
+    renderAI(<AIView projects={[]} onOpenAgents={openAgents} />)
+
+    await userEvent.click(await screen.findByRole('button', { name: /Abrir Agentes/ }))
+
+    expect(openAgents).toHaveBeenCalledOnce()
   })
 
   it('remembers a brand-new chat from its first message', async () => {
@@ -752,28 +793,11 @@ describe('AIView — harness de código', () => {
     Element.prototype.scrollTo = vi.fn()
   })
 
-  it('persists the selected harness and explains its isolated execution', async () => {
+  it('keeps code harness controls out of chat settings', async () => {
     renderAI(<AIView projects={[]} />)
     await userEvent.click(await screen.findByText('Configuração'))
-
-    expect(await screen.findByText('Harness de execução')).toBeInTheDocument()
-    expect(await screen.findByText('Instalado · codex 1.0.0')).toBeInTheDocument()
-    expect(screen.getByText('EM TESTE')).toBeInTheDocument()
-
-    await userEvent.click(
-      screen.getByRole('button', { name: /Verificar novamente|Verificado agora/ })
-    )
-    expect(await screen.findByText('Verificado agora')).toBeInTheDocument()
-    expect(vi.mocked(window.electronAPI.ai.harnesses.status)).toHaveBeenLastCalledWith(true)
-
-    await userEvent.click(screen.getByRole('button', { name: /Codex/ }))
-
-    expect(await screen.findByText(/vai executar em um worktree isolado/)).toBeInTheDocument()
-    await waitFor(() =>
-      expect(vi.mocked(window.electronAPI.ai.config.set)).toHaveBeenLastCalledWith(
-        expect.objectContaining({ codeHarness: 'codex' })
-      )
-    )
+    expect(screen.getByText('Perfis de API')).toBeInTheDocument()
+    expect(screen.queryByText('Harness de execução')).not.toBeInTheDocument()
   })
 })
 
@@ -792,31 +816,65 @@ describe('AIView — composer gating', () => {
     Element.prototype.scrollTo = vi.fn()
   })
 
-  it('stays usable on a first run, falling back to the built-in defaults', async () => {
-    // No ai-config.json yet: the loader substitutes defaults rather than
-    // locking the user out of their own chat.
+  it('asks for a connection on first run without inventing a legacy default', async () => {
     storedConfig = { baseUrl: '', apiKey: '', model: '' }
     installApi()
     renderAI(<AIView projects={[]} />)
 
     const box = await screen.findByPlaceholderText(/Descreva o projeto/)
-    await waitFor(() => expect(box).not.toBeDisabled())
-    expect(screen.queryByText(/Configure a Base URL e o Model/)).not.toBeInTheDocument()
+    await waitFor(() => expect(box).toBeDisabled())
+    expect(
+      screen.getByRole('button', { name: /Escolha uma IA · Escolha um modelo Trocar IA/ })
+    ).toBeInTheDocument()
   })
 
-  it('blocks sending once the base URL is cleared by hand', async () => {
+  it('shows one connection in the header and no model controls in the composer', async () => {
     storedConfig = { baseUrl: 'http://x', apiKey: 'k', model: 'm' }
     installApi()
     renderAI(<AIView projects={[]} />)
     const box = screen.getByPlaceholderText(/Descreva o projeto/)
     await waitFor(() => expect(box).not.toBeDisabled())
 
-    await userEvent.click(screen.getByText('Configuração'))
-    await userEvent.clear(screen.getByPlaceholderText('https://api.openai.com/v1'))
+    expect(screen.getByRole('button', { name: /Minha API · m Trocar IA/ })).toBeInTheDocument()
+    expect(screen.queryByText('Responder usando')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Modelo para esta resposta')).not.toBeInTheDocument()
+  })
 
-    // Sending would fail at the provider anyway; say so up front instead.
-    await waitFor(() => expect(box).toBeDisabled())
-    expect(screen.getByText(/Configure a Base URL e o Model/)).toBeInTheDocument()
+  it('keeps the selected API profile and model for the conversation', async () => {
+    storedConfig = {
+      baseUrl: 'http://legacy',
+      model: 'm',
+      providerProfiles: [
+        {
+          id: 'profile-a',
+          name: 'Minha API',
+          kind: 'api',
+          baseUrl: 'http://profile',
+          model: 'deep',
+          hasApiKey: true
+        }
+      ]
+    }
+    installApi()
+    vi.mocked(runAgent).mockResolvedValue('ok')
+    renderAI(<AIView projects={[]} />)
+    await userEvent.click(await screen.findByText('Trocar IA'))
+    await userEvent.click(screen.getByRole('button', { name: 'Minha API' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Usar nesta conversa' }))
+    expect(screen.getByRole('button', { name: /Minha API · deep Trocar IA/ })).toBeInTheDocument()
+    await userEvent.type(screen.getByPlaceholderText(/Descreva o projeto/), 'pergunta{Enter}')
+    await waitFor(() =>
+      expect(runAgent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chatProfileId: 'profile-a',
+          model: 'deep',
+          modelComplex: undefined
+        }),
+        expect.anything(),
+        expect.anything(),
+        expect.anything()
+      )
+    )
   })
 
   it('does not send an empty or whitespace-only prompt', async () => {
@@ -975,11 +1033,11 @@ describe('AIView — keyboard shortcuts', () => {
     it('closes the config panel', async () => {
       renderAI(<AIView projects={[]} />)
       await userEvent.click(screen.getByText('Configuração'))
-      await screen.findByPlaceholderText('sk-...')
+      await screen.findByText('Perfis de API')
 
       esc()
 
-      await waitFor(() => expect(screen.queryByPlaceholderText('sk-...')).not.toBeInTheDocument())
+      await waitFor(() => expect(screen.queryByText('Perfis de API')).not.toBeInTheDocument())
     })
 
     it('closes the delete confirmation without deleting', async () => {
@@ -1013,9 +1071,9 @@ describe('AIView — keyboard shortcuts', () => {
 
       // …and the config panel underneath is still reachable by a second press.
       await userEvent.click(screen.getByText('Configuração'))
-      await screen.findByPlaceholderText('sk-...')
+      await screen.findByText('Perfis de API')
       esc()
-      await waitFor(() => expect(screen.queryByPlaceholderText('sk-...')).not.toBeInTheDocument())
+      await waitFor(() => expect(screen.queryByText('Perfis de API')).not.toBeInTheDocument())
     })
 
     it('does nothing when there is nothing open', async () => {
