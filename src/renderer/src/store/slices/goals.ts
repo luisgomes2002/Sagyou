@@ -4,10 +4,18 @@ import type { Goal, GoalEntry } from '../../types'
 
 export interface GoalsSlice {
   goals: Goal[]
-  createGoal: (data: Pick<Goal, 'title' | 'target' | 'unit' | 'color'> & { projectId?: string }) => string
-  updateGoal: (id: string, updates: Partial<Pick<Goal, 'title' | 'target' | 'unit' | 'color' | 'projectId'>>) => void
+  createGoal: (
+    data: Pick<Goal, 'title' | 'target' | 'unit' | 'color' | 'kind'> & { projectId?: string }
+  ) => string
+  updateGoal: (
+    id: string,
+    updates: Partial<Pick<Goal, 'title' | 'target' | 'unit' | 'color' | 'kind' | 'projectId'>>
+  ) => void
   deleteGoal: (id: string) => void
-  addGoalEntry: (goalId: string, data: Pick<GoalEntry, 'date' | 'value'> & { label?: string }) => void
+  addGoalEntry: (
+    goalId: string,
+    data: Pick<GoalEntry, 'date' | 'value'> & { label?: string }
+  ) => void
   deleteGoalEntry: (goalId: string, entryId: string) => void
 }
 
@@ -26,6 +34,7 @@ export const createGoalsSlice: StateCreator<
       id,
       title: data.title,
       entries: [],
+      kind: data.kind,
       target: data.target,
       unit: data.unit,
       color: data.color,
@@ -54,7 +63,13 @@ export const createGoalsSlice: StateCreator<
 
   addGoalEntry: (goalId, data) => {
     const now = new Date().toISOString()
-    const entry: GoalEntry = { id: uuidv4(), date: data.date, label: data.label, value: data.value, createdAt: now }
+    const entry: GoalEntry = {
+      id: uuidv4(),
+      date: data.date,
+      label: data.label,
+      value: data.value,
+      createdAt: now
+    }
     set((s) => ({
       goals: s.goals.map((g) =>
         g.id === goalId ? { ...g, entries: [...g.entries, entry], updatedAt: now } : g
@@ -67,7 +82,9 @@ export const createGoalsSlice: StateCreator<
     const now = new Date().toISOString()
     set((s) => ({
       goals: s.goals.map((g) =>
-        g.id === goalId ? { ...g, entries: g.entries.filter((e) => e.id !== entryId), updatedAt: now } : g
+        g.id === goalId
+          ? { ...g, entries: g.entries.filter((e) => e.id !== entryId), updatedAt: now }
+          : g
       )
     }))
     get()._persist()

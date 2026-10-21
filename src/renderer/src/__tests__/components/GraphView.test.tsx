@@ -26,6 +26,28 @@ const graph = vi.hoisted(() => {
       connectionCount: 1,
       x: undefined as number | undefined,
       y: undefined as number | undefined
+    },
+    {
+      id: 'goal:one',
+      type: 'goal',
+      label: 'Meta',
+      color: '#f472b6',
+      radius: 12,
+      entityId: 'goal-one',
+      connectionCount: 0,
+      x: undefined as number | undefined,
+      y: undefined as number | undefined
+    },
+    {
+      id: 'habit:one',
+      type: 'habit',
+      label: 'Hábito',
+      color: '#4ade80',
+      radius: 10,
+      entityId: 'habit-one',
+      connectionCount: 0,
+      x: undefined as number | undefined,
+      y: undefined as number | undefined
     }
   ]
   const edges = [{ source: 'project:one', target: 'task:one', type: 'structural' }]
@@ -135,5 +157,20 @@ describe('Grafo', () => {
     })
     expect(wheel.defaultPrevented).toBe(true)
     expect(viewport.getAttribute('transform')).toContain('scale(1.1)')
+  })
+
+  it('envia o ID ao navegar para uma meta ou hábito', () => {
+    const onNavigate = vi.fn()
+    graph.nodes[2].x = 20
+    graph.nodes[2].y = 20
+    graph.nodes[3].x = 40
+    graph.nodes[3].y = 40
+    const { container } = render(<GraphView onNavigate={onNavigate} />)
+
+    fireEvent.doubleClick(container.querySelector('circle[fill="#f472b6"]')!)
+    fireEvent.doubleClick(container.querySelector('circle[fill="#4ade80"]')!)
+
+    expect(onNavigate).toHaveBeenNthCalledWith(1, { type: 'goal', id: 'goal-one' })
+    expect(onNavigate).toHaveBeenNthCalledWith(2, { type: 'habit', id: 'habit-one' })
   })
 })

@@ -2671,6 +2671,157 @@ describe('atualizar_meta', () => {
   })
 })
 
+describe('registrar_progresso_meta', () => {
+  beforeEach(resetStore)
+
+  const createGoal = (kind: 'completion' | 'quantity', title = 'Ler'): string =>
+    st().createGoal({
+      title,
+      kind,
+      target: kind === 'completion' ? 1 : 10,
+      unit: kind === 'completion' ? '' : 'capítulos',
+      color: PROJECT_COLORS[0]
+    })
+
+  it('conclui uma meta simples e preserva data e observação', async () => {
+    const id = createGoal('completion', 'Ler DDD')
+
+    const res = await call('registrar_progresso_meta', {
+      metaId: id,
+      data: '2026-10-20',
+      observacao: ' Livro concluído '
+    })
+
+    expect(res).toMatchObject({
+      ok: true,
+      metaId: id,
+      tipo: 'conclusao',
+      registrado: true,
+      valor: 1,
+      data: '2026-10-20',
+      observacao: 'Livro concluído',
+      concluida: true
+    })
+    expect(st().goals.find((goal) => goal.id === id)?.entries).toEqual([
+      expect.objectContaining({
+        date: '2026-10-20',
+        value: 1,
+        label: 'Livro concluído'
+      })
+    ])
+  })
+
+  it('não duplica a conclusão de uma meta simples já concluída', async () => {
+    const id = createGoal('completion')
+    await call('registrar_progresso_meta', { metaId: id })
+
+    const res = await call('registrar_progresso_meta', { metaId: id })
+
+    expect(res).toMatchObject({ ok: true, jaConcluida: true, registrado: false })
+    expect(st().goals.find((goal) => goal.id === id)?.entries).toHaveLength(1)
+  })
+
+  it('não registra quantidade depois que uma meta quantitativa atingiu o alvo', async () => {
+    const id = createGoal('quantity')
+    st().addGoalEntry(id, { date: '2026-10-20', value: 10 })
+
+    const res = await call('registrar_progresso_meta', { metaId: id, valor: 1 })
+
+    expect(res).toMatchObject({ ok: true, jaConcluida: true, registrado: false })
+    expect(st().goals.find((goal) => goal.id === id)?.entries).toHaveLength(1)
+  })
+
+  it('não interpreta uma quantidade como conclusão de meta simples', async () => {
+    const id = createGoal('completion')
+
+    const res = await call('registrar_progresso_meta', { metaId: id, valor: 5 })
+
+    expect(res.error).toContain('Não informe valor')
+    expect(st().goals.find((goal) => goal.id === id)?.entries).toEqual([])
+  })
+
+  it('registra uma quantidade positiva pelo título exato', async () => {
+    const id = createGoal('quantity', 'Estudar')
+
+    const res = await call('registrar_progresso_meta', {
+      titulo: 'estudar',
+      valor: 2.5,
+      data: '2026-10-19',
+      observacao: 'Capítulos 1 e 2'
+    })
+
+    expect(res).toMatchObject({
+      ok: true,
+      metaId: id,
+      tipo: 'quantidade',
+      valor: 2.5,
+      atual: 2.5,
+      concluida: false
+    })
+    expect(st().goals.find((goal) => goal.id === id)?.entries[0]).toMatchObject({
+      date: '2026-10-19',
+      value: 2.5,
+      label: 'Capítulos 1 e 2'
+    })
+  })
+
+  it('rejeita quantidade ausente ou inválida e uma data impossível', async () => {
+    const id = createGoal('quantity')
+
+    expect((await call('registrar_progresso_meta', { metaId: id })).error).toBeTruthy()
+    expect((await call('registrar_progresso_meta', { metaId: id, valor: -1 })).error).toBeTruthy()
+    expect(
+      (
+        await call('registrar_progresso_meta', {
+          metaId: id,
+          valor: 1,
+          data: '2026-02-30'
+        })
+      ).error
+    ).toBeTruthy()
+    expect(st().goals.find((goal) => goal.id === id)?.entries).toEqual([])
+  })
+
+  it('recusa título ambíguo sem alterar nenhuma meta', async () => {
+    const first = createGoal('quantity', 'Ler')
+    const second = createGoal('quantity', 'Ler')
+
+    const res = await call('registrar_progresso_meta', { titulo: 'Ler', valor: 1 })
+
+    expect(res.error).toBeTruthy()
+    expect((res.candidatos as { id: string }[]).map((item) => item.id).sort()).toEqual(
+      [first, second].sort()
+    )
+    expect(st().goals.every((goal) => goal.entries.length === 0)).toBe(true)
+  })
+
+  it('sempre exige aprovação e mostra os detalhes no cartão', () => {
+    expect(isWriteTool('registrar_progresso_meta')).toBe(true)
+    expect(
+      TOOL_DEFS.some((definition) => definition.function.name === 'registrar_progresso_meta')
+    ).toBe(true)
+    expect(getToolContract('registrar_progresso_meta')?.requiresExplicitApproval).toBe(true)
+    expect(
+      KANBAN_TOOL_DEFS.some((definition) => definition.function.name === 'registrar_progresso_meta')
+    ).toBe(true)
+    expect(
+      validateToolCall('registrar_progresso_meta', {
+        metaId: 'meta-1',
+        valor: 1,
+        data: '2026-02-30'
+      })
+    ).toMatchObject({ valid: false })
+    expect(
+      describeToolCall('registrar_progresso_meta', {
+        titulo: 'Estudar',
+        valor: 2,
+        data: '2026-10-19',
+        observacao: 'DDD'
+      })
+    ).toBe('registrar 2 na meta Estudar (em 2026-10-19; observação: DDD)')
+  })
+})
+
 // ── criar_sprints ────────────────────────────────────────────────────────────
 
 describe('criar_sprints', () => {
@@ -3056,6 +3207,7 @@ describe('describeToolActivity — before the arguments arrive', () => {
       'iniciar_cronometro',
       'marcar_habito',
       'criar_meta',
+      'registrar_progresso_meta',
       'atualizar_meta',
       'criar_sprints',
       'atribuir_sprint',

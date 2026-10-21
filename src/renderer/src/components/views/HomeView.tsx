@@ -6,6 +6,7 @@ import type { Project, Priority, FinancialTransaction, Currency } from '../../ty
 import { PRIORITY_CONFIG } from '../../types'
 import { isTaskDone } from '../../utils/columns'
 import { computeHabitSummary, todayISO } from '../../utils/habits'
+import { goalCurrent, goalKind, goalProgressPercent } from '../../utils/goals'
 import { D, formatCurrency } from '../financial/shared'
 
 interface Props {
@@ -80,11 +81,11 @@ export function HomeView({ projects, onNavigate }: Props) {
     () =>
       goals
         .map((g) => {
-          const current = g.entries.reduce((sum, e) => sum + e.value, 0)
-          const percent = Math.min(Math.round((current / g.target) * 100), 100)
+          const current = goalCurrent(g)
+          const percent = goalProgressPercent(g)
           return { ...g, current, percent }
         })
-        .filter((g) => g.percent > 0)
+        .filter((g) => g.percent > 0 || goalKind(g) === 'completion')
         .sort((a, b) => b.percent - a.percent),
     [goals]
   )
@@ -748,7 +749,11 @@ export function HomeView({ projects, onNavigate }: Props) {
                       />
                     </div>
                     <p className="text-[10px] text-[#666666] mt-0.5">
-                      {g.current} / {g.target} {g.unit}
+                      {goalKind(g) === 'completion'
+                        ? g.percent >= 100
+                          ? 'Concluída'
+                          : 'Em andamento'
+                        : `${g.current} / ${g.target} ${g.unit}`}
                     </p>
                   </div>
                 ))}

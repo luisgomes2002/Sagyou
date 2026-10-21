@@ -33,8 +33,8 @@ export type NavigateTarget =
   | { type: 'project'; id: string }
   | { type: 'task'; id: string; projectId: string }
   | { type: 'note'; id: string; projectId: string }
-  | { type: 'goal' }
-  | { type: 'habit' }
+  | { type: 'goal'; id: string }
+  | { type: 'habit'; id: string }
   | { type: 'file'; projectId?: string }
 
 const NODE_COLOR: Record<GraphNodeType, string> = {
@@ -194,20 +194,7 @@ export function buildGraph(
     }
   }
 
-  for (const n of notes) {
-    if (!n.goalIds || n.goalIds.length === 0) continue
-    const sourceId = noteNodeIds.get(n.id)
-    if (!sourceId) continue
-    for (const goalId of n.goalIds) {
-      const goalNodeId = Array.from(nodeRegistry.values()).find(
-        (nd) => nd.type === 'goal' && nd.entityId === goalId
-      )
-      if (goalNodeId) {
-        edges.push({ source: sourceId, target: goalNodeId.id, type: 'explicit' })
-      }
-    }
-  }
-
+  const goalNodeIds = new Map<string, string>()
   for (const g of goals) {
     const id = addNode({
       type: 'goal',
@@ -218,6 +205,7 @@ export function buildGraph(
       projectId: g.projectId,
       connectionCount: 0
     } as GraphNode)
+    goalNodeIds.set(g.id, id)
 
     if (g.projectId && projectNodeIds.has(g.projectId)) {
       edges.push({ source: id, target: projectNodeIds.get(g.projectId)!, type: 'structural' })
@@ -229,21 +217,27 @@ export function buildGraph(
     }
   }
 
-  const habitIds: string[] = []
-  for (const h of habits) {
-    habitIds.push(
-      addNode({
-        type: 'habit',
-        label: h.name,
-        color: NODE_COLOR.habit,
-        radius: computeRadius(10, 0),
-        entityId: h.id,
-        connectionCount: 0
-      } as GraphNode)
-    )
+  for (const n of notes) {
+    if (!n.goalIds || n.goalIds.length === 0) continue
+    const sourceId = noteNodeIds.get(n.id)
+    if (!sourceId) continue
+    for (const goalId of n.goalIds) {
+      const targetId = goalNodeIds.get(goalId)
+      if (targetId) {
+        edges.push({ source: sourceId, target: targetId, type: 'explicit' })
+      }
+    }
   }
-  for (let i = 1; i < habitIds.length; i++) {
-    edges.push({ source: habitIds[i - 1], target: habitIds[i], type: 'structural' })
+
+  for (const h of habits) {
+    addNode({
+      type: 'habit',
+      label: h.name,
+      color: NODE_COLOR.habit,
+      radius: computeRadius(10, 0),
+      entityId: h.id,
+      connectionCount: 0
+    } as GraphNode)
   }
 
   const counts = new Map<string, number>()

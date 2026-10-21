@@ -12,6 +12,7 @@ import type {
   StickyNote
 } from '../types'
 import { CURRENCY_CONFIG } from '../types'
+import { goalKind } from './goals'
 
 export type ExportKey =
   | 'projects'
@@ -224,6 +225,7 @@ export function buildWorkbook(
       return {
         ID: g.id,
         Título: g.title,
+        Tipo: goalKind(g) === 'completion' ? 'Conclusão única' : 'Quantidade',
         Meta: g.target,
         Unidade: g.unit,
         'Progresso atual': total,
