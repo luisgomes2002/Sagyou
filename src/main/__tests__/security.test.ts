@@ -1,6 +1,11 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { createPasswordConfig, passwordError, verifyPassword } from '../security'
+import {
+  createPasswordConfig,
+  parsePasswordConfig,
+  passwordError,
+  verifyPassword
+} from '../security'
 
 describe('password security', () => {
   it('stores a salted derived key and verifies only the matching password', () => {
@@ -16,5 +21,13 @@ describe('password security', () => {
   it('requires a minimally usable password', () => {
     expect(passwordError('123')).toMatch('ao menos')
     expect(passwordError('1234')).toBeNull()
+  })
+
+  it('treats a present malformed config as corrupt rather than unprotected', () => {
+    expect(parsePasswordConfig('{quebrado')).toEqual({ config: null, corrupt: true })
+    expect(parsePasswordConfig(JSON.stringify({ version: 1, salt: 'x' }))).toEqual({
+      config: null,
+      corrupt: true
+    })
   })
 })

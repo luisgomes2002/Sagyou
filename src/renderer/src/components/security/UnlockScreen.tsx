@@ -2,11 +2,13 @@ import { useEffect, useRef, useState, type JSX } from 'react'
 
 interface Props {
   userName?: string
+  corrupt?: boolean
   onUnlocked: () => void
 }
 
-export function UnlockScreen({ userName, onUnlocked }: Props): JSX.Element {
+export function UnlockScreen({ userName, corrupt = false, onUnlocked }: Props): JSX.Element {
   const [password, setPassword] = useState('')
+  const [recoveryConfirmed, setRecoveryConfirmed] = useState(false)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
@@ -29,7 +31,9 @@ export function UnlockScreen({ userName, onUnlocked }: Props): JSX.Element {
     event.preventDefault()
     setSubmitting(true)
     setError('')
-    const result = await window.electronAPI.security.unlock(password)
+    const result = corrupt
+      ? await window.electronAPI.security.recover(recoveryConfirmed)
+      : await window.electronAPI.security.unlock(password)
     setSubmitting(false)
     if (result.success) onUnlocked()
     else setError(result.error ?? 'Não foi possível desbloquear o Sagyou.')
@@ -72,32 +76,55 @@ export function UnlockScreen({ userName, onUnlocked }: Props): JSX.Element {
               </svg>
             </div>
             <div>
-              <h2 className="text-base font-semibold text-white">Desbloqueie o Sagyou</h2>
-              <p className="mt-0.5 text-xs text-white/55">Informe sua senha para continuar.</p>
+              <h2 className="text-base font-semibold text-white">
+                {corrupt ? 'Recupere o acesso' : 'Desbloqueie o Sagyou'}
+              </h2>
+              <p className="mt-0.5 text-xs text-white/55">
+                {corrupt
+                  ? 'A configuração da senha não pode ser lida.'
+                  : 'Informe sua senha para continuar.'}
+              </p>
             </div>
           </div>
-          <label
-            htmlFor="unlock-password"
-            className="mb-1.5 block text-xs font-medium text-white/60"
-          >
-            Senha
-          </label>
-          <input
-            id="unlock-password"
-            ref={passwordRef}
-            type="password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            autoComplete="current-password"
-            className="w-full rounded-xl border border-white/15 bg-black/25 px-3 py-2.5 text-sm text-white outline-none transition-colors placeholder:text-white/30 focus:border-violet-300/80 focus:ring-2 focus:ring-violet-300/20"
-          />
+          {corrupt ? (
+            <label className="flex gap-2.5 rounded-xl border border-amber-200/20 bg-amber-100/10 p-3 text-xs leading-relaxed text-amber-50/85">
+              <input
+                type="checkbox"
+                checked={recoveryConfirmed}
+                onChange={(event) => setRecoveryConfirmed(event.target.checked)}
+                className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-violet-300"
+              />
+              <span>
+                Entendo que a senha não pode ser recuperada. Remover a configuração corrompida
+                não altera meus dados, anexos ou backups.
+              </span>
+            </label>
+          ) : (
+            <>
+              <label
+                htmlFor="unlock-password"
+                className="mb-1.5 block text-xs font-medium text-white/60"
+              >
+                Senha
+              </label>
+              <input
+                id="unlock-password"
+                ref={passwordRef}
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                autoComplete="current-password"
+                className="w-full rounded-xl border border-white/15 bg-black/25 px-3 py-2.5 text-sm text-white outline-none transition-colors placeholder:text-white/30 focus:border-violet-300/80 focus:ring-2 focus:ring-violet-300/20"
+              />
+            </>
+          )}
           {error && <p className="mt-2 text-xs text-rose-300">{error}</p>}
           <button
             type="submit"
-            disabled={!password || submitting}
+            disabled={(corrupt ? !recoveryConfirmed : !password) || submitting}
             className="mt-5 w-full rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-[#111111] transition-all hover:scale-[1.01] hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {submitting ? 'Desbloqueando...' : 'Desbloquear'}
+            {submitting ? 'Recuperando...' : corrupt ? 'Remover configuração e continuar' : 'Desbloquear'}
           </button>
         </form>
       </main>

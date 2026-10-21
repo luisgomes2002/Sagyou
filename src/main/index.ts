@@ -3,7 +3,17 @@ process.env.LC_ALL = 'pt_BR.UTF-8'
 process.env.LC_TIME = 'pt_BR.UTF-8'
 process.env.LANGUAGE = 'pt_BR:pt'
 
-import { app, shell, BrowserWindow, ipcMain, dialog, safeStorage } from 'electron'
+import {
+  app,
+  shell,
+  BrowserWindow,
+  ipcMain,
+  dialog,
+  safeStorage,
+  type IpcMain,
+  type IpcMainEvent,
+  type IpcMainInvokeEvent
+} from 'electron'
 import { join, relative, resolve, sep } from 'path'
 import {
   readFileSync,
@@ -124,21 +134,62 @@ import {
   importSkill as importSkillDialog,
   skillsDir
 } from './skills'
-import { registerWindowHandlers } from './handlers/window'
+import { createManagedWindow, registerWindowHandlers, type ManagedWindow } from './handlers/window'
 import { registerFilesHandlers } from './handlers/files'
 import { registerBackupHandlers } from './handlers/backup'
 import { registerCodeFilesHandlers } from './handlers/code-files'
 import { registerConversationHandlers } from './handlers/conversations'
-import { safeExternalUrl } from './external-links'
 import {
   createPasswordConfig,
-  isPasswordConfig,
+  parsePasswordConfig,
   verifyPassword,
   type PasswordConfig
 } from './security'
 import icon from '../../resources/icon.png?asset'
 
 let mainWindow: BrowserWindow | null = null
+let managedWindow: ManagedWindow | null = null
+
+/** Only the app's own renderer may invoke privileged IPC handlers. */
+function assertTrustedRenderer(event: IpcMainInvokeEvent | IpcMainEvent): void {
+  const expected = mainWindow?.webContents
+  const sameDocument =
+    typeof event.sender.getURL === 'function' &&
+    typeof expected?.getURL === 'function' &&
+    event.sender.getURL() === expected.getURL()
+  if (!expected || (event.sender !== expected && !sameDocument)) {
+    throw new Error('Solicitação IPC recusada.')
+  }
+}
+
+/** All user data stays unavailable until the password screen unlocks the app. */
+function assertUnlockedDataAccess(event: IpcMainInvokeEvent | IpcMainEvent): void {
+  assertTrustedRenderer(event)
+  if (!passwordUnlocked) throw new Error('Desbloqueie o Sagyou para acessar os dados.')
+}
+
+/**
+ * From this point onward every registered handler receives the same origin and
+ * unlock checks. Keeping the guard at registration avoids a missed check when
+ * a new data handler is added in a domain-specific module.
+ */
+function protectDataIpc(ipc: IpcMain): void {
+  const registerHandle = ipc.handle.bind(ipc)
+  const registerOn = ipc.on.bind(ipc)
+  ipc.handle = ((
+    channel: string,
+    listener: (event: IpcMainInvokeEvent, ...args: never[]) => unknown
+  ) =>
+    registerHandle(channel, (event, ...args) => {
+      assertUnlockedDataAccess(event)
+      return listener(event, ...(args as never[]))
+    })) as IpcMain['handle']
+  ipc.on = ((channel: string, listener: (event: IpcMainEvent, ...args: never[]) => unknown) =>
+    registerOn(channel, (event, ...args) => {
+      assertUnlockedDataAccess(event)
+      return listener(event, ...(args as never[]))
+    })) as IpcMain['on']
+}
 const sagyouMcp = startSagyouMcpBroker({
   readTasks: (projectId) => {
     if (!projectId) return []
@@ -1176,14 +1227,16 @@ async function getChatGPT(): Promise<ChatGPTClient> {
 // importing a backup must never silently replace the credential that protects this machine.
 const passwordConfigPath = (): string => join(app.getPath('userData'), 'password-security.json')
 let passwordConfig: PasswordConfig | null = null
+let passwordConfigCorrupt = false
 let passwordUnlocked = false
 
-function loadPasswordConfig(): PasswordConfig | null {
+function loadPasswordConfig(): { config: PasswordConfig | null; corrupt: boolean } {
+  if (!existsSync(passwordConfigPath())) return { config: null, corrupt: false }
   try {
-    const parsed: unknown = JSON.parse(readFileSync(passwordConfigPath(), 'utf-8'))
-    return isPasswordConfig(parsed) ? parsed : null
+    return parsePasswordConfig(readFileSync(passwordConfigPath(), 'utf-8'))
   } catch {
-    return null
+    // A broken or unreadable config must never look like "no password".
+    return { config: null, corrupt: true }
   }
 }
 
@@ -1193,9 +1246,13 @@ function savePasswordConfig(config: PasswordConfig): void {
   chmodSync(passwordConfigPath(), 0o600)
 }
 
-function passwordStatus(): { enabled: boolean; userName?: string } {
+function passwordStatus(): { enabled: boolean; corrupt: boolean; userName?: string } {
   const userName = loadAIConfig().userName?.trim()
-  return { enabled: passwordConfig !== null, userName: userName || undefined }
+  return {
+    enabled: passwordConfig !== null || passwordConfigCorrupt,
+    corrupt: passwordConfigCorrupt,
+    userName: userName || undefined
+  }
 }
 
 /**
@@ -1680,50 +1737,24 @@ function safeConversationsSave(op: () => void): void {
 }
 
 function createWindow(): void {
-  mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 800,
-    minWidth: 900,
-    minHeight: 600,
-    show: false,
-    autoHideMenuBar: true,
-    title: 'Sagyou',
-    frame: false,
-    ...(process.platform === 'linux' ? { icon } : {}),
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      sandbox: false,
-      spellcheck: false
-    }
+  managedWindow = createManagedWindow({
+    preloadPath: join(__dirname, '../preload/index.js'),
+    productionPagePath: join(__dirname, '../renderer/index.html'),
+    icon,
+    isDev: is.dev,
+    rendererUrl: process.env['ELECTRON_RENDERER_URL']
   })
-
-  mainWindow.on('ready-to-show', () => mainWindow!.show())
-
-  mainWindow.on('maximize', () => mainWindow!.webContents.send('window:maximized-change', true))
-  mainWindow.on('unmaximize', () => mainWindow!.webContents.send('window:maximized-change', false))
-
-  mainWindow.webContents.setWindowOpenHandler((details) => {
-    const url = safeExternalUrl(details.url)
-    if (url) void shell.openExternal(url).catch(() => {})
-    return { action: 'deny' }
-  })
-  mainWindow.webContents.on('will-navigate', (event, url) => {
-    if (url !== mainWindow?.webContents.getURL()) event.preventDefault()
-  })
-
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
-  } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
-  }
+  mainWindow = managedWindow.window
 }
 
 app.commandLine.appendSwitch('lang', 'pt-BR')
 
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.sagyou')
-  passwordConfig = loadPasswordConfig()
-  passwordUnlocked = passwordConfig === null
+  const passwordState = loadPasswordConfig()
+  passwordConfig = passwordState.config
+  passwordConfigCorrupt = passwordState.corrupt
+  passwordUnlocked = passwordConfig === null && !passwordConfigCorrupt
 
   const filesDir = join(app.getPath('userData'), 'files')
   if (!existsSync(filesDir)) mkdirSync(filesDir)
@@ -1764,15 +1795,29 @@ app.whenReady().then(() => {
   })
 
   registerWindowHandlers(ipcMain, () => mainWindow)
-  ipcMain.handle('security:status', () => passwordStatus())
-  ipcMain.handle('security:unlock', (_, password: unknown) => {
+  ipcMain.handle('security:status', (event) => {
+    assertTrustedRenderer(event)
+    return passwordStatus()
+  })
+  ipcMain.handle('security:unlock', (event, password: unknown) => {
+    assertTrustedRenderer(event)
+    if (passwordConfigCorrupt) {
+      return {
+        success: false,
+        error: 'A configuração de senha está corrompida. Use a recuperação.'
+      }
+    }
     if (!passwordConfig || verifyPassword(passwordConfig, password)) {
       passwordUnlocked = true
       return { success: true }
     }
     return { success: false, error: 'Senha incorreta.' }
   })
-  ipcMain.handle('security:enable', (_, password: unknown) => {
+  ipcMain.handle('security:enable', (event, password: unknown) => {
+    assertTrustedRenderer(event)
+    if (passwordConfigCorrupt) {
+      return { success: false, error: 'Recupere a configuração de senha antes de criar outra.' }
+    }
     if (passwordConfig) return { success: false, error: 'A senha já está ativada.' }
     const next = createPasswordConfig(password)
     if ('error' in next) return { success: false, error: next.error }
@@ -1781,7 +1826,11 @@ app.whenReady().then(() => {
     passwordUnlocked = true
     return { success: true }
   })
-  ipcMain.handle('security:change', (_, current: unknown, nextPassword: unknown) => {
+  ipcMain.handle('security:change', (event, current: unknown, nextPassword: unknown) => {
+    assertTrustedRenderer(event)
+    if (passwordConfigCorrupt) {
+      return { success: false, error: 'A configuração de senha está corrompida.' }
+    }
     if (!passwordConfig || !verifyPassword(passwordConfig, current))
       return { success: false, error: 'Senha atual incorreta.' }
     const next = createPasswordConfig(nextPassword)
@@ -1790,7 +1839,11 @@ app.whenReady().then(() => {
     passwordConfig = next
     return { success: true }
   })
-  ipcMain.handle('security:disable', (_, current: unknown) => {
+  ipcMain.handle('security:disable', (event, current: unknown) => {
+    assertTrustedRenderer(event)
+    if (passwordConfigCorrupt) {
+      return { success: false, error: 'A configuração de senha está corrompida.' }
+    }
     if (!passwordConfig || !verifyPassword(passwordConfig, current))
       return { success: false, error: 'Senha atual incorreta.' }
     try {
@@ -1802,6 +1855,25 @@ app.whenReady().then(() => {
     passwordUnlocked = true
     return { success: true }
   })
+  ipcMain.handle('security:recover', (event, confirmed: unknown) => {
+    assertTrustedRenderer(event)
+    if (!passwordConfigCorrupt || confirmed !== true) {
+      return { success: false, error: 'Confirme a recuperação para continuar.' }
+    }
+    try {
+      unlinkSync(passwordConfigPath())
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        return { success: false, error: 'Não foi possível remover a configuração corrompida.' }
+      }
+    }
+    passwordConfig = null
+    passwordConfigCorrupt = false
+    passwordUnlocked = true
+    return { success: true }
+  })
+  protectDataIpc(ipcMain)
+  ipcMain.handle('app:flush-before-close:complete', () => managedWindow?.completeClose())
   registerFilesHandlers(ipcMain, {
     mainWindow,
     dialog,
@@ -1814,10 +1886,7 @@ app.whenReady().then(() => {
     sep
   })
 
-  ipcMain.handle('store:load', () => {
-    if (!passwordUnlocked) throw new Error('Desbloqueie o Sagyou para acessar os dados.')
-    return loadData()
-  })
+  ipcMain.handle('store:load', () => loadData())
 
   ipcMain.handle('store:save', (_, data) => {
     saveData(data)

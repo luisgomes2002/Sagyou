@@ -250,8 +250,8 @@ export function FilesView({
   }
 
   const handleDelete = async (file: StoredFile) => {
-    await window.electronAPI.files.delete(file.id, file.ext)
-    removeFile(file.id)
+    const result = await window.electronAPI.files.delete(file.id, file.ext)
+    if (result.success) removeFile(file.id)
   }
 
   const confirmDelete = (): void => {

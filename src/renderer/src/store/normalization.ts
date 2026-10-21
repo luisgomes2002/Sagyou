@@ -64,6 +64,24 @@ export function normalizeFinancialTable(list: FinancialTable): FinancialTable {
       ...goal,
       targetAmount: moneyStr(goal.targetAmount)
     })),
+    debts: (list.debts ?? []).flatMap((debt) => {
+      if (!debt || !debt.id || !debt.name) return []
+      const originalAmount = D(debt.originalAmount)
+      const remainingAmount = D(debt.remainingAmount)
+      if (
+        originalAmount.lessThanOrEqualTo(0) ||
+        remainingAmount.lessThan(0) ||
+        remainingAmount.greaterThan(originalAmount)
+      )
+        return []
+      return [
+        {
+          ...debt,
+          originalAmount: originalAmount.toString(),
+          remainingAmount: remainingAmount.toString()
+        }
+      ]
+    }),
     yieldSources: (list.yieldSources ?? []).map((source) => ({ ...source })),
     yieldEntries: (list.yieldEntries ?? []).map((entry) => ({
       ...entry,

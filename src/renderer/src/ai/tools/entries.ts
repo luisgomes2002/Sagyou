@@ -2296,6 +2296,32 @@ export const registryEntries: Record<string, AITool> = {
         return JSON.stringify({ error: 'Informe ao menos um bloco para atualizar' })
 
       const store = useKanbanStore.getState()
+      const toMinutes = (time: string): number | null => {
+        const match = /^(\d{2}):(\d{2})$/.exec(time)
+        if (!match) return null
+        const hours = Number(match[1])
+        const minutes = Number(match[2])
+        return hours < 24 && minutes < 60 ? hours * 60 + minutes : null
+      }
+      // Validate the complete batch before changing anything. A partially applied
+      // agenda is harder to recover than a rejected tool call.
+      const invalid = blocos.find((b) => {
+        const id = typeof b.id === 'string' ? b.id : ''
+        const existing = store.timeBlocks.find((tb) => tb.id === id)
+        if (!id || !existing || b.remover === true) return !id || !existing
+        const start = typeof b.inicio === 'string' ? b.inicio : existing.startTime
+        const end = typeof b.fim === 'string' ? b.fim : existing.endTime
+        const startMinutes = toMinutes(start)
+        const endMinutes = toMinutes(end)
+        return startMinutes === null || endMinutes === null || endMinutes <= startMinutes
+      })
+      if (invalid) {
+        return JSON.stringify({
+          error:
+            'Lote não alterado: cada horário deve ser HH:MM válido e o fim deve ser posterior ao início.'
+        })
+      }
+
       let atualizados = 0
       let removidos = 0
       for (const b of blocos) {
@@ -2309,9 +2335,8 @@ export const registryEntries: Record<string, AITool> = {
           continue
         }
         const updates: Record<string, unknown> = {}
-        if (typeof b.inicio === 'string' && /^\d{2}:\d{2}$/.test(b.inicio))
-          updates.startTime = b.inicio
-        if (typeof b.fim === 'string' && /^\d{2}:\d{2}$/.test(b.fim)) updates.endTime = b.fim
+        if (typeof b.inicio === 'string') updates.startTime = b.inicio
+        if (typeof b.fim === 'string') updates.endTime = b.fim
         if (typeof b.titulo === 'string') updates.title = b.titulo.trim()
         if (typeof b.descricao === 'string') updates.description = b.descricao.trim()
         if (typeof b.cor === 'string') updates.color = b.cor

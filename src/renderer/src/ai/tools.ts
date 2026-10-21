@@ -1,8 +1,12 @@
 ﻿import { useAiRunStore } from '../store/aiRun'
-import { isWriteTool as isWriteFromRegistry } from './permission-registry'
-import { validateToolInput } from './validators'
-import { registryEntries } from './tools/entries'
+import { toolContracts } from './tool-contracts'
 import type { AITool, ToolDef } from './tools/helpers'
+export {
+  getToolContract,
+  requiresExplicitApproval,
+  validateToolCall,
+  type ToolContract
+} from './tool-contracts'
 
 export type { ToolDef, AITool }
 export {
@@ -22,7 +26,7 @@ export {
 // ---------------------------------------------------------------------------
 
 // --- Registry: name -> tool. This is the map the task asks for. ---
-const REGISTRY: Record<string, AITool> = registryEntries
+const REGISTRY = toolContracts
 
 /** Tool definitions sent to the model each turn (derived from the registry). */
 export const TOOL_DEFS: ToolDef[] = Object.values(REGISTRY).map((t) => t.definition)
@@ -215,14 +219,16 @@ export async function runTool(
   if (!tool) return JSON.stringify({ error: `Ferramenta desconhecida: ${name}` })
   activeRunConvId = convId
   try {
+    const validation = tool.validate(args)
     const result = await tool.run(args)
-    // Validate write-tool outputs: check args against expected shapes and
-    // attach warnings to the result so the approval card can surface them.
+    // Validators are exposed by the same contract, but not every legacy tool
+    // has migrated its permissive normalisation into a strict schema yet. Keep
+    // execution semantics intact while surfacing only non-blocking warnings.
+    // The preventive validation gate is migrated separately, per tool.
     if (tool.write) {
-      const v = validateToolInput(name, args)
-      if (!v.valid || v.warnings.length > 0) {
+      if (validation.warnings.length > 0) {
         const parsed = JSON.parse(result)
-        parsed._validation = { valid: v.valid, errors: v.errors, warnings: v.warnings }
+        parsed._validation = validation
         return JSON.stringify(parsed)
       }
     }
@@ -234,7 +240,8 @@ export async function runTool(
 
 /** Whether a tool mutates state (used to gate it behind user approval). */
 export function isWriteTool(name: string): boolean {
-  return isWriteFromRegistry(name) || REGISTRY[name]?.write === true
+  const tool = REGISTRY[name]
+  return tool?.permission.level === 'write' || tool?.permission.level === 'destructive'
 }
 
 /**

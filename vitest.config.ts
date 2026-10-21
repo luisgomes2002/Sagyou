@@ -18,8 +18,12 @@ export default defineConfig({
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
     coverage: {
       reporter: ['text', 'lcov'],
-      include: ['src/renderer/src/**/*.{ts,tsx}'],
-      exclude: ['src/renderer/src/__tests__/**', 'src/renderer/src/main.tsx']
+      include: ['src/main/**/*.ts', 'src/renderer/src/**/*.{ts,tsx}'],
+      exclude: [
+        'src/main/__tests__/**',
+        'src/renderer/src/__tests__/**',
+        'src/renderer/src/main.tsx'
+      ]
     }
   },
   resolve: {

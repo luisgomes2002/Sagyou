@@ -2,7 +2,7 @@ import type { IpcMain } from 'electron'
 import { join, extname, basename } from 'path'
 import { existsSync, mkdirSync, copyFileSync, unlinkSync, statSync, writeFileSync } from 'fs'
 import { randomUUID } from 'crypto'
-import { safeAttachmentName } from '../backup-files'
+import { attachmentPath, safeAttachmentName } from '../backup-files'
 import {
   isImageFileName,
   saveImageToDir,
@@ -16,7 +16,7 @@ import {
   deleteChatFiles
 } from '../chat-files'
 import { isDocumentExt, parseDocument } from '../document-parser'
-import { indexProjectFileContent, removeProjectFileSearchContent } from '../store'
+import { indexProjectFileContent, loadData, removeProjectFileSearchContent } from '../store'
 import type { BrowserWindow, Dialog, Shell } from 'electron'
 
 interface Deps {
@@ -36,6 +36,24 @@ export function registerFilesHandlers(
   deps: Deps
 ): void {
   const { dialog: dlg, shell: sh, filesDir, chatImagesDir, chatFilesDir, taskImagesDir, userDataPath: _, sep } = deps
+  // A just-uploaded file returns to the renderer before its debounced store
+  // save reaches SQLite. Keep those known names for this process, then fall
+  // back to the persisted metadata for files from earlier sessions.
+  const uploadedAttachmentNames = new Set<string>()
+
+  const projectAttachmentPath = (id: unknown, ext: unknown): string | null => {
+    const name = safeAttachmentName(id, ext)
+    if (!name || typeof id !== 'string' || typeof ext !== 'string') return null
+    if (!uploadedAttachmentNames.has(name)) {
+      try {
+        const known = loadData().files.some((file) => file.id === id && file.ext === ext)
+        if (!known) return null
+      } catch {
+        return null
+      }
+    }
+    return attachmentPath(filesDir, sep, id, ext)
+  }
 
   // --- File attachments ---
 
@@ -55,6 +73,7 @@ export function registerFilesHandlers(
         const destination = join(filesDir, `${id}${ext}`)
         copyFileSync(filePath, destination)
         await indexProjectFileContent(id, destination, ext)
+        uploadedAttachmentNames.add(`${id}${ext}`)
         results.push({ id, name, ext, size, createdAt: new Date().toISOString() })
       } catch {
         /* skip files that can't be copied */
@@ -63,25 +82,30 @@ export function registerFilesHandlers(
     return results
   })
 
-  ipcMain.handle('files:delete', (_, id: string, ext: string) => {
+  ipcMain.handle('files:delete', (_, id: unknown, ext: unknown) => {
+    const filePath = projectAttachmentPath(id, ext)
+    if (!filePath || typeof id !== 'string') return { success: false, error: 'Arquivo inválido' }
     try {
-      const filePath = join(filesDir, `${id}${ext}`)
       if (existsSync(filePath)) unlinkSync(filePath)
       removeProjectFileSearchContent(id)
+      const name = safeAttachmentName(id, ext)
+      if (name) uploadedAttachmentNames.delete(name)
       return { success: true }
     } catch {
       return { success: false }
     }
   })
 
-  ipcMain.handle('files:open', async (_, id: string, ext: string) => {
-    const filePath = join(filesDir, `${id}${ext}`)
+  ipcMain.handle('files:open', async (_, id: unknown, ext: unknown) => {
+    const filePath = projectAttachmentPath(id, ext)
+    if (!filePath) return { success: false, error: 'Arquivo inválido' }
     const error = await sh.openPath(filePath)
     return { success: !error, error: error || undefined }
   })
 
-  ipcMain.handle('files:openInBrowser', async (_, id: string, ext: string) => {
-    const filePath = join(filesDir, `${id}${ext}`)
+  ipcMain.handle('files:openInBrowser', async (_, id: unknown, ext: unknown) => {
+    const filePath = projectAttachmentPath(id, ext)
+    if (!filePath) return { success: false, error: 'Arquivo inválido' }
     try {
       await sh.openExternal(`file://${filePath}`)
       return { success: true }
@@ -90,14 +114,16 @@ export function registerFilesHandlers(
     }
   })
 
-  ipcMain.handle('files:download', async (_, id: string, name: string, ext: string) => {
+  ipcMain.handle('files:download', async (_, id: unknown, name: string, ext: unknown) => {
+    const source = projectAttachmentPath(id, ext)
+    if (!source) return { success: false, error: 'Arquivo inválido' }
     const { filePath: dest, canceled } = await dlg.showSaveDialog({
       defaultPath: name,
       filters: [{ name: 'Todos os arquivos', extensions: ['*'] }]
     })
     if (canceled || !dest) return { success: false, cancelled: true }
     try {
-      copyFileSync(join(filesDir, `${id}${ext}`), dest)
+      copyFileSync(source, dest)
       return { success: true }
     } catch {
       return { success: false, error: 'Erro ao salvar arquivo' }
@@ -211,7 +237,7 @@ export function registerFilesHandlers(
   // --- Project file reading (for the ler_documento tool) ---
 
   ipcMain.handle('ai:project-file:read', async (_, fileId: string) => {
-    if (typeof fileId !== 'string' || fileId.length === 0) {
+    if (!safeAttachmentName(fileId, '')) {
       return { error: 'ID do arquivo inválido' }
     }
     // Walk the filesDir to find the file with this id (files are named <id><ext>).
@@ -221,7 +247,7 @@ export function registerFilesHandlers(
       const { readdirSync } = await import('fs')
       const entries = readdirSync(filesDir)
       for (const entry of entries) {
-        if (entry.startsWith(fileId)) {
+        if (entry === fileId || entry.startsWith(`${fileId}.`)) {
           ext = extname(entry)
           filePath = join(filesDir, entry)
           break

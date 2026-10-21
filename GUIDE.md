@@ -78,20 +78,23 @@ npm run dev          # sobe o app em dev (Electron + Vite HMR)
 npm run typecheck    # checa main e renderer
 npm run lint         # ESLint
 npm test             # roda tudo uma vez
+npm run test:coverage # testes + relatório de cobertura de main e renderer
 npx vitest run src/main/__tests__/web-fetch.test.ts   # um arquivo só
 npm run build:linux  # (ou :win / :mac) gera o distribuível
 ```
 
 **Antes de dar qualquer coisa por pronta:** `npm run typecheck && npm test`.
-O lint tem ~240 erros pré-existentes de estilo antigo — não conserte os que não
-são seus, mas **não adicione novos**.
+O lint tem dívida histórica de estilo — não conserte os que não são seus, mas
+**não adicione novos**. O CI roda typecheck, testes e cobertura em cada PR/push;
+nas PRs o lint é bloqueante para erros introduzidos no diff, para a dívida antiga
+não mascarar uma regressão nova.
 
 ## Estrutura
 
 ```
 src/
   main/          # janela, IPC, SQLite, spawn de processos
-    index.ts     # cria a janela, orquestra os handlers, proxy das chamadas de IA
+    index.ts     # orquestra os handlers e proxy das chamadas de IA
     handlers/    # handlers IPC por domínio (extraídos de index.ts)
       window.ts  # window:minimize/maximize/close/is-maximized
       files.ts   # files:*, excel:export, ai:images:*, task:images:*
@@ -107,7 +110,7 @@ src/
     __tests__/   # precisam de @vitest-environment node
   preload/
     index.ts     # ponte contextBridge -> window.electronAPI
-    index.d.ts   # tipagem da ponte (mantenha em sincronia com index.ts)
+    index.d.ts   # declara Window.electronAPI a partir do tipo derivado de index.ts
   renderer/src/
     App.tsx      # troca de views; dono do estado dos modais
     store/
@@ -145,6 +148,9 @@ src/
 Uma regra acima de todas: **o renderer nunca toca disco nem rede**. Tudo passa
 por um handler IPC no main, exposto pelo preload. Capacidade nova = handler em
 `main/index.ts` + método em `preload/index.ts` + tipo em `preload/index.d.ts`.
+Depois de `security:*`, `protectDataIpc` envolve todo handler novo com a mesma
+guarda: só o renderer do app pode chamar e, com senha ativada, os dados ficam
+indisponíveis até o desbloqueio. Não registre um handler de dados antes dela.
 
 O índice global FTS5 é derivado: salvamentos sincronizam suas entradas e a
 importação de backup o reconstrói após restaurar store, conversas e memórias.
@@ -162,6 +168,9 @@ O bloqueio opcional por senha guarda somente um derivado com salt em
 `password-security.json` (permissão 0600), fora do SQLite e dos backups. A tela
 de desbloqueio vem antes de `loadData`; ativar, alterar ou desativar exige o
 fluxo IPC `security:*` — nunca persista senha ou hash junto dos dados do usuário.
+Arquivo de senha existente mas inválido ou ilegível é **configuração corrompida**,
+nunca ausência de senha: mantenha o app bloqueado e só remova essa configuração
+pelo fluxo explícito `security:recover`, que não altera dados nem backups.
 `security:status` pode expor somente o nome de exibição escolhido para a saudação
 antes do desbloqueio; nunca devolva a configuração de IA, sua chave, ou dados do
 app nesse ponto.
@@ -183,18 +192,23 @@ financeiros sem o ID do perfil ativo não podem ser devolvidos.
   decisão e o que quebra se alguém a desfizer. Siga-o.
 - Testes descrevem comportamento em frases ("mantém o nome quando o autosave
   passa por cima"), não a implementação.
+- **Toda correção de bug inclui um teste de regressão.** O teste precisa falhar
+  com o defeito original e afirmar o comportamento corrigido, para o mesmo bug
+  não voltar sem ser percebido.
 
 ## Regras que quebram dados
 
 Não são preferências. Quebrá-las corrompe dados reais de gente real.
 
 1. **Dinheiro é string decimal, não número.** `FinancialTransaction.amount`,
-   `FinancialGoal.targetAmount` e `ShoppingItem.price` são strings canônicas
+   `FinancialGoal.targetAmount`, `FinancialDebt.originalAmount`,
+   `FinancialDebt.remainingAmount` e `ShoppingItem.price` são strings canônicas
    (`"1500.5"`) em memória, no backup e no SQLite (colunas `TEXT`). Toda conta
    passa por `decimal.js` (`D()` em `components/financial/shared.ts`). Converta
    para `number` só para largura de barra e porcentagem. `qty` é `number` — é
    quantidade, não dinheiro.
 2. **Perfis financeiros não se misturam.** Cada tabela tem `profileId`; tabelas antigas sem esse campo pertencem a `personal` (`Minhas finanças`). Consolidado, Dashboard, seletores de tabela e leituras financeiras da IA usam somente o perfil ativo. Nunca cruze transações ou vínculos entre perfis.
+   Pagamentos de dívida pertencem à própria tabela: criar uma baixa reduz `remainingAmount` e cria, ao mesmo tempo, uma transação de despesa com `debtId`. Essa transação não pode ser editada isoladamente; excluí-la restaura o saldo da dívida. Excluir a dívida apenas desvincula o histórico de despesas.
    `ler_dados` permite à IA percorrer registros de todas as áreas do app, mas suas entidades financeiras obedecem ao mesmo perfil ativo. Listas são paginadas com total/truncado; um ID lê todos os campos do registro. Anexos expõem metadados, e o conteúdo passa por `ler_documento`; imagens inline legadas não entram no resultado.
    A exportação Excel é global: `Todas transações` inclui todos os perfis, tabelas e meses, sem depender do mês ativo na tela. Valores monetários exportados têm também coluna de texto exato, pois números do Excel podem perder precisão. Abas de transações por tabela repetem a aba geral: ficam desligadas por padrão, e a opção para incluí-las só cria abas não vazias com nomes únicos. `Detalhes financeiros` só aparece quando há detalhes.
    Categorias personalizadas ficam em `FinancialProfile.customCategories` (opcional), compartilhadas só entre tabelas do mesmo perfil. Remover uma sugestão não altera categorias de lançamentos antigos; elas continuam disponíveis nos filtros pelo histórico.
@@ -227,6 +241,10 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    Um detalhe pode vincular uma transação espelho de outra tabela: a fatura pai continua no
    consolidado e somente o espelho é omitido. O vínculo legado entre transações mantém a regra
    inversa, omitindo a transação pai, para preservar dados existentes.
+3. **Agenda é atômica.** Horários são `HH:MM` no formato de 24 horas e o fim é sempre posterior ao início. `atualizar_plano` valida todos os blocos antes de qualquer escrita: um horário inválido rejeita o lote inteiro, sem atualizar nem remover blocos.
+4. **Fechamento espera persistência.** Ao fechar, o main mantém a janela aberta até o renderer confirmar o flush do estado e das conversas da IA; não remova esse handshake em favor de `beforeunload`, que não espera IPC assíncrono. O timeout de segurança só evita uma janela presa se o renderer falhar.
+5. **Falhas de view são isoladas.** Toda área principal dentro de `App` passa por `ViewErrorBoundary`; uma exceção de renderização mostra recuperação local e não deve derrubar a navegação, modais nem os processos em segundo plano.
+6. **Modal acessível usa `ModalBase`.** O componente fornece `role="dialog"`, `aria-modal`, foco inicial, foco preso, Escape e restauração do foco anterior. Não crie um novo modal sem esse comportamento. O quadro usa `KeyboardSensor` do dnd-kit para reordenação por teclado.
    Comprovantes financeiros referenciam IDs da biblioteca compartilhada de `files/`;
    o backup inclui metadados e bytes. Excluir um arquivo remove seu ID dos lançamentos.
    O par de câmbio usa `currencyTransferId` próprio: somente uma saída e uma entrada
@@ -241,17 +259,17 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    agrupam milhares (BRL e JPY com ponto, USD com vírgula), mostram frações já
    salvas e passam a moeda a `parseDecimalInput` para preservar
    o valor ao editar; quantidade (`qty`) usa o formato numérico local padrão.
-3. **Nunca remova nem renomeie campos** de tipos persistidos sem migração ou
+5. **Nunca remova nem renomeie campos** de tipos persistidos sem migração ou
    fallback. Campo novo opcional é seguro; mudar a forma de um array ou objeto
    existente, não. Preferências de recursos da sidebar seguem a mesma regra:
    `featurePreferences` ausente significa primeira configuração (ou backup antigo),
    e não pode ocultar recursos/dados silenciosamente. `uiPreferences` ausente em
    backup antigo preserva a escolha visual local; preferências de aparência novas
    precisam de normalização com defaults antes de chegar à UI.
-4. **Avise explicitamente** ao propor algo que possa corromper dados no load
+6. **Avise explicitamente** ao propor algo que possa corromper dados no load
    (trocar `string` por `string[]`, mudar esquema de IDs), com:
    `⚠️ Breaking schema change — existing data may be affected.`
-5. **Nem tudo está no banco.** Em `app.getPath('userData')`: `kanban.db`,
+7. **Nem tudo está no banco.** Em `app.getPath('userData')`: `kanban.db`,
    `files/` (os blobs dos anexos — a tabela só guarda metadados),
    `ai-config.json`, `ai-conversations.json`, `ai-usage-log.json`,
    `ai-run-metrics.json` (uma linha por execução do agente — modelo, passos,
@@ -264,10 +282,10 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    `agent-runs/` (execuções arquivadas do agente de código — log + diff congelados).
    Apagar um
    lado sem o outro deixa órfão.
-6. **Ferramenta de IA que escreve leva `write: true`** em `ai/tools.ts`. É a
+8. **Ferramenta de IA que escreve leva `write: true`** em `ai/tools.ts`. É a
    única coisa entre o modelo e os dados do usuário: sem isso a ação roda sem
    aprovação. Ferramenta nova que muta estado **tem** que marcar.
-7. **Ferramenta de leitura que devolve menos do que existe tem que dizer isso.**
+9. **Ferramenta de leitura que devolve menos do que existe tem que dizer isso.**
    Tudo o que uma tool retorna é reenviado ao modelo a cada passo seguinte da
    execução, então elas cortam: `ler_tasks` esconde as concluídas por padrão
    (45% do quadro real), `ai:code:list`/`:read` paginam. Toda redução vem com o
@@ -275,47 +293,47 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    `outros_projetos`, `nextOffset`) — sem ele o modelo afirma com confiança que
    o quadro tem 228 tasks quando tem 413, ou que uma task não existe quando ela
    está em outro projeto. A resposta errada custa mais que os tokens salvos.
-8. **Leitura de código por escopo, não por arquivo inteiro.** `ler_arquivo` aceita
-   `simbolo` (extrai uma função/classe via `extractSymbol` em `code-files.ts`) ou
-   `linha_inicio`/`linha_fim` (`extractLines`) — ~1-3k chars em vez de janelas de
-   20k paginadas. Tudo regex/best-effort de propósito (sem AST). É o 5º arg
-   `scope` de `ai:code:read`, que ganha da paginação por char; a 1ª página de um
-   arquivo grande traz `simbolos` (o mapa de declarações) só quando `truncated`.
-   `buscar_no_codigo` agrupa por arquivo (`arquivo` + `ocorrencias`), então o
-   modelo leva a `linha` direto para o `ler_arquivo` mirado. O prompt
-   (`system-prompt.md`) tem tabela de custo e exemplo bom-vs-ruim guiando isso.
-   Leitura **cega** de arquivo grande (sem escopo/`inicio`/`max_chars`, `total >
+10. **Leitura de código por escopo, não por arquivo inteiro.** `ler_arquivo` aceita
+    `simbolo` (extrai uma função/classe via `extractSymbol` em `code-files.ts`) ou
+    `linha_inicio`/`linha_fim` (`extractLines`) — ~1-3k chars em vez de janelas de
+    20k paginadas. Tudo regex/best-effort de propósito (sem AST). É o 5º arg
+    `scope` de `ai:code:read`, que ganha da paginação por char; a 1ª página de um
+    arquivo grande traz `simbolos` (o mapa de declarações) só quando `truncated`.
+    `buscar_no_codigo` agrupa por arquivo (`arquivo` + `ocorrencias`), então o
+    modelo leva a `linha` direto para o `ler_arquivo` mirado. O prompt
+    (`system-prompt.md`) tem tabela de custo e exemplo bom-vs-ruim guiando isso.
+    Leitura **cega** de arquivo grande (sem escopo/`inicio`/`max_chars`, `total >
 CODE_READ_PAGE`) devolve só ~100 linhas + `simbolos` + `dica`, não a janela de
-   20k. `buscar_no_codigo` tem cache de 30s por (raízes+termo), limpo quando o
-   agente de código roda. Freios de releitura (`ler_arquivo` cego 2×, busca fuzzy
-   substring que avisa mas não bloqueia) e o log de custo por execução vivem em
-   `agent.ts` (estado **por execução**), **não** em `tools.ts` (global entre
-   conversas).
-9. **Roteamento de modelo é opcional e por execução.** `AIConfig.modelComplex`,
-   quando definido, faz `routeModel(cfg, texto)` mandar tarefas de código/análise
-   (palavras como código, bug, refatorar, arquitetura, investigar) para o modelo
-   pesado; o resto fica no `model` barato. Ausente = um modelo só, comportamento
-   antigo. A escolha é feita uma vez em `runAgent` (`rcfg`) e vale para todas as
-   chamadas daquela execução.
+    20k. `buscar_no_codigo` tem cache de 30s por (raízes+termo), limpo quando o
+    agente de código roda. Freios de releitura (`ler_arquivo` cego 2×, busca fuzzy
+    substring que avisa mas não bloqueia) e o log de custo por execução vivem em
+    `agent.ts` (estado **por execução**), **não** em `tools.ts` (global entre
+    conversas).
+11. **Roteamento de modelo é opcional e por execução.** `AIConfig.modelComplex`,
+    quando definido, faz `routeModel(cfg, texto)` mandar tarefas de código/análise
+    (palavras como código, bug, refatorar, arquitetura, investigar) para o modelo
+    pesado; o resto fica no `model` barato. Ausente = um modelo só, comportamento
+    antigo. A escolha é feita uma vez em `runAgent` (`rcfg`) e vale para todas as
+    chamadas daquela execução.
 
-   **Chat com conexão explícita:** “Trocar IA” salva a conexão e o modelo em
-   `StoredConversation.connection` (opcional nos históricos antigos). Cada run
-   usa o modelo exibido no cabeçalho; o roteamento automático `modelComplex`
-   não atua nesse fluxo. O main resolve `profileId` e a chave do perfil. O
-   modelo forte continua como escolha explícita. Codex, Claude Code e OpenCode
-   são harnesses da área Agentes, sem adaptador para o chat normal por enquanto.
-   Campos antigos `baseUrl`/`apiKey`/`model` de `ai-config.json` são importados
-   uma vez como perfil comum, sem conexão legada visível; a marca de migração
-   impede que excluir esse perfil o recrie. Credenciais nunca retornam ao renderer.
-   O chat normal oferece assinatura ChatGPT e perfis de API. Os atalhos
-   OpenAI/Codex e Claude só preenchem o perfil e nunca transformam uma assinatura
-   de ChatGPT/Claude Code em chave de API; cada fornecedor mantém sua própria cobrança.
-   O editor de perfil busca o catálogo na URL configurada e mostra dropdowns para
-   modelo padrão e forte; para Claude usa somente `lifecycle=active`, e para
-   OpenAI ignora registros com `shutdown_date`. A chave digitada antes de salvar
-   cruza IPC só para essa consulta e nunca volta na resposta.
+    **Chat com conexão explícita:** “Trocar IA” salva a conexão e o modelo em
+    `StoredConversation.connection` (opcional nos históricos antigos). Cada run
+    usa o modelo exibido no cabeçalho; o roteamento automático `modelComplex`
+    não atua nesse fluxo. O main resolve `profileId` e a chave do perfil. O
+    modelo forte continua como escolha explícita. Codex, Claude Code e OpenCode
+    são harnesses da área Agentes, sem adaptador para o chat normal por enquanto.
+    Campos antigos `baseUrl`/`apiKey`/`model` de `ai-config.json` são importados
+    uma vez como perfil comum, sem conexão legada visível; a marca de migração
+    impede que excluir esse perfil o recrie. Credenciais nunca retornam ao renderer.
+    O chat normal oferece assinatura ChatGPT e perfis de API. Os atalhos
+    OpenAI/Codex e Claude só preenchem o perfil e nunca transformam uma assinatura
+    de ChatGPT/Claude Code em chave de API; cada fornecedor mantém sua própria cobrança.
+    O editor de perfil busca o catálogo na URL configurada e mostra dropdowns para
+    modelo padrão e forte; para Claude usa somente `lifecycle=active`, e para
+    OpenAI ignora registros com `shutdown_date`. A chave digitada antes de salvar
+    cruza IPC só para essa consulta e nunca volta na resposta.
 
-10. 🔴 **A tabela `memory` é satélite, fora do `persistAll`.** Memórias do assistente
+12. 🔴 **A tabela `memory` é satélite, fora do `persistAll`.** Memórias do assistente
     (decisões, tradeoffs, gotchas, handoffs) ficam em SQLite mas nunca passam pelo
     store Zustand — `access_count`/`last_accessed_at` são bumpados a cada leitura, e
     isso via `persistAll` reescreveria as 17 tabelas por bump. As ferramentas são
@@ -334,21 +352,26 @@ CODE_READ_PAGE`) devolve só ~100 linhas + `simbolos` + `dica`, não a janela de
     o modelo abre a conversa inteira com `ler_conversa` (senão gasta buscas às cegas e refaz
     do zero). Compartilhada entre chat e code-agent.
 
-11. **Orçamento é por chamada do modelo, não por tool round.** `maxSteps` limita toda chamada bem-sucedida da run — rodadas principais, compactação e resposta final. Sem configuração explícita, o chat usa 40 no manual e 100 no Auto; não reintroduza heurísticas 2/4/8/15 por texto, pois elas encerram orquestrações no momento de disparar agentes. O contexto de uma conversa reaberta entra limitado (12 mensagens/24k caracteres/1 imagem); ferramentas além de 8 numa rodada recebem resultado sintético. O limite é **por execução**: várias conversas/projetos continuam rodando em paralelo. O subagente de pesquisa exige aprovação, é no máximo 2 por run e seu resumo é cortado antes de voltar ao agente pai.
+13. **Orçamento é por chamada do modelo, não por tool round.** `maxSteps` limita toda chamada bem-sucedida da run — rodadas principais, compactação e resposta final. Sem configuração explícita, o chat usa 40 no manual e 100 no Auto; não reintroduza heurísticas 2/4/8/15 por texto, pois elas encerram orquestrações no momento de disparar agentes. O contexto de uma conversa reaberta entra limitado (12 mensagens/24k caracteres/1 imagem); ferramentas além de 8 numa rodada recebem resultado sintético. O limite é **por execução**: várias conversas/projetos continuam rodando em paralelo. O subagente de pesquisa exige aprovação, é no máximo 2 por run e seu resumo é cortado antes de voltar ao agente pai.
 
-12. 🔴 **Importação de backup só altera dados após validação e ponto de restauração.**
+14. 🔴 **Importação de backup só conclui depois de todas as fontes serem gravadas.**
     `backup:import` valida formato/versão e segura os blobs em main; o renderer salva
-    um snapshot forçado do estado atual em `userData/backups/` antes de chamar
-    `backup:commit-blobs` e persistir o backup importado. Sem snapshot, aborte.
+    um snapshot forçado do estado atual em `userData/backups/` antes de persistir store,
+    conversas e memórias. Os blobs só são confirmados ao final. Qualquer falha reverte os
+    dados, conversas e memórias anteriores e informa erro; sem snapshot, aborte.
+    Antes disso, o main rejeita IDs duplicados, datas/horários inválidos, estruturas obrigatórias
+    incompletas e referências quebradas entre projeto, coluna, task, agenda e hábito.
+    Na exportação, blobs são lidos de forma assíncrona e cooperativa; mantenha os eventos de
+    progresso/cancelamento para que anexos grandes não congelem a janela.
     O app atualiza um snapshot diário ao abrir e a cada hora, com retenção dos
     sete mais recentes. Bytes dos anexos continuam fora do IPC.
 
-13. 🔴 **Conversa citada por memória não pode ser apagada.** `sourceConversationId`
+15. 🔴 **Conversa citada por memória não pode ser apagada.** `sourceConversationId`
     de memórias ativas **ou arquivadas** protege o transcript dos limites de 14 dias/50
     conversas, da exclusão manual e da substituição do histórico no restore de backup.
     O main decide isso antes de apagar bytes de anexos;
     remover só o arquivo deixaria handoffs e outras memórias apontando para o vazio.
-14. **Auto não aprova exclusão nem lançamento financeiro.** `deletar_task` e
+16. **Auto não aprova exclusão nem lançamento financeiro.** `deletar_task` e
     `criar_transacao` sempre passam pelo card de aprovação do chat; as outras
     escritas continuam podendo rodar no Auto. Uma correção reenviada desliga o
     Auto daquela conversa para impedir repetição silenciosa de ações anteriores.
@@ -429,7 +452,9 @@ Não "simplifique" nenhuma destas sem ler o comentário que as acompanha:
 - **`ai/tools.ts` está fatiado** — as helpers e constantes (`fn`, `resolveTask`,
   `PRIORITIES`, …) vivem em `ai/tools/helpers.ts` e as 31 definições do REGISTRY
   em `ai/tools/entries.ts`. `tools.ts` só tem a infraestrutura (REGISTRY,
-  TOOL_DEFS, runTool, describeTool\*). Adicionar uma ferramenta = adicionar em
+  TOOL_DEFS, runTool, describeTool\*). O contrato em `tool-contracts.ts` reúne a
+  definição, permissão, validação e execução de cada entrada; adicionar uma
+  ferramenta = adicionar em
   `entries.ts` e pronto.
 - **Multi-agente: a store é desingletonizada** — N chat-agents rodam em paralelo
   (até no mesmo projeto). Os campos por-run são coleções por `convId`

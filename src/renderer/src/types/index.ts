@@ -204,6 +204,8 @@ export interface FinancialTransaction {
    *  When set, the consolidated view treats the linked (parent) transaction as
    *  already accounted for and excludes it from totals to avoid double-counting. */
   linkedTransactionId?: string
+  /** Debt settled by this expense. Debt payments stay linked so their balance can be restored safely. */
+  debtId?: string
   /** Bank, card or app used for this transaction. */
   source?: string
   /** File ids from the shared Files library; the blob remains in files/ and in backups. */
@@ -251,6 +253,18 @@ export interface FinancialGoal {
   completionNote?: string
 }
 
+export interface FinancialDebt {
+  id: string
+  name: string
+  /** Amount originally owed, as a canonical decimal string. */
+  originalAmount: string
+  /** Outstanding balance, as a canonical decimal string. */
+  remainingAmount: string
+  createdAt: string
+  updatedAt: string
+  completedAt?: string
+}
+
 export interface YieldSource {
   id: string
   name: string
@@ -291,6 +305,7 @@ export interface FinancialTable {
   items: ShoppingItem[]
   transactions: FinancialTransaction[]
   goals: FinancialGoal[]
+  debts?: FinancialDebt[]
   yieldSources?: YieldSource[]
   yieldEntries?: YieldEntry[]
   /** Optional label for the bank, card or app represented by this table. */

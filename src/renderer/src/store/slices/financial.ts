@@ -6,6 +6,7 @@ import type {
   FinancialProfile,
   FinancialTransaction,
   FinancialGoal,
+  FinancialDebt,
   ShoppingItem,
   YieldSource,
   YieldEntry,
@@ -52,6 +53,9 @@ export interface FinancialSlice {
     updates: Partial<Omit<FinancialTransaction, 'id'>>
   ) => void
   deleteTransaction: (listId: string, txId: string) => void
+  addFinancialDebt: (listId: string, name: string, amount: string) => string
+  payFinancialDebt: (listId: string, debtId: string, amount: string, date: string) => boolean
+  deleteFinancialDebt: (listId: string, debtId: string) => void
   linkCurrencyTransfer: (
     fromListId: string,
     fromTxId: string,
@@ -516,6 +520,9 @@ export const createFinancialSlice: StateCreator<
         if (l.id !== listId) return l
         const transactions = l.transactions.map((t) => {
           if (t.id !== txId) return t
+          // A debt payment changes two records atomically. Editing it here could
+          // make the debt balance disagree with the expense, so it is immutable.
+          if (t.debtId) return t
           const next = applyFinancialTransactionEdit(t, updates, at)
           const detailed = (next.details ?? []).reduce(
             (total, detail) => total.plus(detail.amount),
@@ -638,6 +645,9 @@ export const createFinancialSlice: StateCreator<
   },
 
   deleteTransaction: (listId, txId) => {
+    const removed = get()
+      .lists.find((l) => l.id === listId)
+      ?.transactions.find((tx) => tx.id === txId)
     const groupId = get()
       .lists.find((l) => l.id === listId)
       ?.transactions.find((tx) => tx.id === txId)?.currencyTransferId
@@ -659,11 +669,127 @@ export const createFinancialSlice: StateCreator<
                 )
               : tx
           )
+        const debts =
+          removed?.debtId && l.id === listId
+            ? (l.debts ?? []).map((debt) =>
+                debt.id !== removed.debtId
+                  ? debt
+                  : {
+                      ...debt,
+                      remainingAmount: new Decimal(debt.remainingAmount)
+                        .plus(removed.amount)
+                        .toString(),
+                      completedAt: undefined,
+                      updatedAt: at
+                    }
+              )
+            : l.debts
         return transactions.length !== l.transactions.length ||
           transactions.some((tx, index) => tx !== l.transactions[index])
-          ? { ...l, transactions, updatedAt: at }
+          ? { ...l, transactions, debts, updatedAt: at }
           : l
       })
+    }))
+    get()._persist()
+  },
+
+  addFinancialDebt: (listId, name, amount) => {
+    const clean = name.trim()
+    let value: Decimal
+    try {
+      value = new Decimal(amount)
+    } catch {
+      return ''
+    }
+    if (!clean || !value.isFinite() || !value.greaterThan(0)) return ''
+    const now = new Date().toISOString()
+    const id = uuidv4()
+    const debt: FinancialDebt = {
+      id,
+      name: clean,
+      originalAmount: value.toString(),
+      remainingAmount: value.toString(),
+      createdAt: now,
+      updatedAt: now
+    }
+    set((s) => ({
+      lists: s.lists.map((l) =>
+        l.id === listId ? { ...l, debts: [...(l.debts ?? []), debt], updatedAt: now } : l
+      )
+    }))
+    get()._persist()
+    return id
+  },
+
+  payFinancialDebt: (listId, debtId, amount, date) => {
+    let value: Decimal
+    try {
+      value = new Decimal(amount)
+    } catch {
+      return false
+    }
+    const list = get().lists.find((item) => item.id === listId)
+    const debt = list?.debts?.find((item) => item.id === debtId)
+    if (
+      !list ||
+      !debt ||
+      !value.isFinite() ||
+      !value.greaterThan(0) ||
+      value.greaterThan(debt.remainingAmount)
+    )
+      return false
+    const now = new Date().toISOString()
+    const remaining = new Decimal(debt.remainingAmount).minus(value)
+    const transaction: FinancialTransaction = {
+      id: uuidv4(),
+      description: `Pagamento de dívida: ${debt.name}`,
+      amount: value.toString(),
+      type: 'expense',
+      date,
+      category: 'Dívidas',
+      debtId,
+      createdAt: now
+    }
+    set((s) => ({
+      lists: s.lists.map((l) =>
+        l.id !== listId
+          ? l
+          : {
+              ...l,
+              transactions: [...l.transactions, transaction],
+              debts: (l.debts ?? []).map((item) =>
+                item.id !== debtId
+                  ? item
+                  : {
+                      ...item,
+                      remainingAmount: remaining.toString(),
+                      updatedAt: now,
+                      ...(remaining.isZero() ? { completedAt: now } : {})
+                    }
+              ),
+              updatedAt: now
+            }
+      )
+    }))
+    get()._persist()
+    return true
+  },
+
+  deleteFinancialDebt: (listId, debtId) => {
+    const now = new Date().toISOString()
+    set((s) => ({
+      lists: s.lists.map((l) =>
+        l.id !== listId
+          ? l
+          : {
+              ...l,
+              debts: (l.debts ?? []).filter((debt) => debt.id !== debtId),
+              transactions: l.transactions.map((tx) =>
+                tx.debtId === debtId ? { ...tx, debtId: undefined } : tx
+              ),
+              updatedAt: now
+            }
+      )
     }))
     get()._persist()
   },

@@ -9,9 +9,10 @@ import {
   unlinkSync,
   statSync
 } from 'fs'
+import { readFile } from 'fs/promises'
 import { safeAttachmentName } from '../backup-files'
 import { isValidBackup } from '../backup-validation'
-import type { IpcMain, Dialog } from 'electron'
+import type { IpcMain, Dialog, IpcMainInvokeEvent } from 'electron'
 
 interface BlobEntry {
   id: string
@@ -40,13 +41,44 @@ export function registerBackupHandlers(ipcMain: IpcMain, deps: BackupDeps): void
 
   let pendingBlobs: { fileBlobs?: unknown; chatImages?: unknown; taskImages?: unknown } | null =
     null
+  const exportJobs = new Map<number, { cancelled: boolean }>()
+  const yieldToRenderer = (): Promise<void> => new Promise((resolve) => setImmediate(resolve))
 
-  const fullBackup = (backup: unknown): Record<string, unknown> => ({
-    ...(backup as Record<string, unknown>),
-    fileBlobs: collectFileBlobs((backup as { files?: unknown })?.files),
-    chatImages: collectChatImages(),
-    taskImages: collectTaskImageBlobs((backup as { tasks?: unknown })?.tasks)
-  })
+  const fullBackup = async (
+    backup: unknown,
+    event?: IpcMainInvokeEvent,
+    job?: { cancelled: boolean }
+  ): Promise<Record<string, unknown>> => {
+    const source = backup as { files?: unknown; tasks?: unknown }
+    const total =
+      (Array.isArray(source.files) ? source.files.length : 0) +
+      (Array.isArray(source.tasks)
+        ? source.tasks.reduce(
+            (count, task) =>
+              count +
+              (Array.isArray((task as { images?: unknown }).images)
+                ? (task as { images: unknown[] }).images.length
+                : 0),
+            0
+          )
+        : 0) +
+      (existsSync(chatImagesDir) ? readdirSync(chatImagesDir).length : 0)
+    let completed = 0
+    const progress = (): void => event?.sender.send('backup:export-progress', { completed, total })
+    const checkpoint = async (): Promise<void> => {
+      if (job?.cancelled) throw new Error('Exportação cancelada.')
+      completed++
+      progress()
+      await yieldToRenderer()
+    }
+    progress()
+    return {
+      ...(backup as Record<string, unknown>),
+      fileBlobs: await collectFileBlobs(source.files, checkpoint),
+      chatImages: await collectChatImages(checkpoint),
+      taskImages: await collectTaskImageBlobs(source.tasks, checkpoint)
+    }
+  }
 
   const writeAtomic = (path: string, content: string): void => {
     const tmp = `${path}.tmp`
@@ -59,7 +91,10 @@ export function registerBackupHandlers(ipcMain: IpcMain, deps: BackupDeps): void
     }
   }
 
-  const collectFileBlobs = (files: unknown): BlobEntry[] => {
+  const collectFileBlobs = async (
+    files: unknown,
+    checkpoint: () => Promise<void>
+  ): Promise<BlobEntry[]> => {
     if (!Array.isArray(files)) return []
     const out: BlobEntry[] = []
     for (const f of files) {
@@ -73,31 +108,36 @@ export function registerBackupHandlers(ipcMain: IpcMain, deps: BackupDeps): void
         out.push({
           id: id as string,
           ext: ext as string,
-          base64: readFileSync(full).toString('base64')
+          base64: (await readFile(full)).toString('base64')
         })
       } catch {
         /* unreadable blob is skipped, not fatal to the backup */
       }
+      await checkpoint()
     }
     return out
   }
 
-  const collectChatImages = (): ImageEntry[] => {
+  const collectChatImages = async (checkpoint: () => Promise<void>): Promise<ImageEntry[]> => {
     if (!existsSync(chatImagesDir)) return []
     const out: ImageEntry[] = []
     for (const id of readdirSync(chatImagesDir)) {
       const full = chatImagePath(id)
       if (!full || !existsSync(full)) continue
       try {
-        out.push({ id, base64: readFileSync(full).toString('base64') })
+        out.push({ id, base64: (await readFile(full)).toString('base64') })
       } catch {
         /* skip an unreadable image */
       }
+      await checkpoint()
     }
     return out
   }
 
-  const collectTaskImageBlobs = (tasks: unknown): BlobEntry[] => {
+  const collectTaskImageBlobs = async (
+    tasks: unknown,
+    checkpoint: () => Promise<void>
+  ): Promise<BlobEntry[]> => {
     if (!Array.isArray(tasks)) return []
     const out: BlobEntry[] = []
     for (const t of tasks) {
@@ -112,11 +152,12 @@ export function registerBackupHandlers(ipcMain: IpcMain, deps: BackupDeps): void
           out.push({
             id: id as string,
             ext: ext as string,
-            base64: readFileSync(full).toString('base64')
+            base64: (await readFile(full)).toString('base64')
           })
         } catch {
           /* unreadable blob is skipped */
         }
+        await checkpoint()
       }
     }
     return out
@@ -134,11 +175,7 @@ export function registerBackupHandlers(ipcMain: IpcMain, deps: BackupDeps): void
       if (!name || typeof b64 !== 'string') continue
       const full = join(filesDir, name)
       if (!full.startsWith(filesDir + sep)) continue
-      try {
-        writeFileSync(full, Buffer.from(b64, 'base64'))
-      } catch {
-        /* one bad blob doesn't abort the restore */
-      }
+      writeFileSync(full, Buffer.from(b64, 'base64'))
     }
   }
 
@@ -150,11 +187,7 @@ export function registerBackupHandlers(ipcMain: IpcMain, deps: BackupDeps): void
       const b64 = (img as { base64?: unknown })?.base64
       const full = chatImagePath(id)
       if (!full || typeof b64 !== 'string') continue
-      try {
-        writeFileSync(full, Buffer.from(b64, 'base64'))
-      } catch {
-        /* skip a bad image */
-      }
+      writeFileSync(full, Buffer.from(b64, 'base64'))
     }
   }
 
@@ -165,24 +198,37 @@ export function registerBackupHandlers(ipcMain: IpcMain, deps: BackupDeps): void
       const full = taskImagePath((b as { id?: unknown })?.id, (b as { ext?: unknown })?.ext ?? '')
       const b64 = (b as { base64?: unknown })?.base64
       if (!full || typeof b64 !== 'string') continue
-      try {
-        writeFileSync(full, Buffer.from(b64, 'base64'))
-      } catch {
-        /* one bad blob doesn't abort the restore */
-      }
+      writeFileSync(full, Buffer.from(b64, 'base64'))
     }
   }
 
-  ipcMain.handle('backup:export', async (_, backup) => {
+  ipcMain.on('backup:export:cancel', (event) => {
+    const job = exportJobs.get(event.sender.id)
+    if (job) job.cancelled = true
+  })
+
+  ipcMain.handle('backup:export', async (event, backup) => {
     const date = new Date().toISOString().split('T')[0]
     const { filePath, canceled } = await dialog.showSaveDialog({
       defaultPath: `kanban-backup-${date}.json`,
       filters: [{ name: 'JSON', extensions: ['json'] }]
     })
     if (canceled || !filePath) return { success: false, cancelled: true }
-    const full = fullBackup(backup)
-    writeAtomic(filePath, JSON.stringify(full, null, 2))
-    return { success: true }
+    const job = { cancelled: false }
+    exportJobs.set(event.sender.id, job)
+    try {
+      const full = await fullBackup(backup, event, job)
+      if (job.cancelled) return { success: false, cancelled: true }
+      writeAtomic(filePath, JSON.stringify(full, null, 2))
+      event.sender.send('backup:export-progress', { completed: 1, total: 1, done: true })
+      return { success: true }
+    } catch (error) {
+      if (job.cancelled || (error instanceof Error && error.message === 'Exportação cancelada.'))
+        return { success: false, cancelled: true }
+      throw error
+    } finally {
+      exportJobs.delete(event.sender.id)
+    }
   })
 
   // One local restore point per day, plus forced snapshots just before import.
@@ -197,7 +243,7 @@ export function registerBackupHandlers(ipcMain: IpcMain, deps: BackupDeps): void
         ? `sagyou-before-import-${day}-${now.toTimeString().slice(0, 8).replace(/:/g, '-')}-${now.getMilliseconds()}.json`
         : `sagyou-${day}.json`
       const path = join(deps.backupDir, name)
-      writeAtomic(path, JSON.stringify(fullBackup(backup)))
+      writeAtomic(path, JSON.stringify(await fullBackup(backup)))
       const snapshots = readdirSync(deps.backupDir)
         .filter((file) => /^sagyou-(?:before-import-)?\d{4}-\d{2}-\d{2}.*\.json$/.test(file))
         .sort(
@@ -241,11 +287,18 @@ export function registerBackupHandlers(ipcMain: IpcMain, deps: BackupDeps): void
   ipcMain.handle('backup:commit-blobs', () => {
     if (!pendingBlobs) return { success: false }
     const blobs = pendingBlobs
-    pendingBlobs = null
-    restoreFileBlobs(blobs.fileBlobs)
-    restoreChatImages(blobs.chatImages)
-    restoreTaskImages(blobs.taskImages)
-    return { success: true }
+    try {
+      restoreFileBlobs(blobs.fileBlobs)
+      restoreChatImages(blobs.chatImages)
+      restoreTaskImages(blobs.taskImages)
+      pendingBlobs = null
+      return { success: true }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Não foi possível restaurar os anexos.'
+      }
+    }
   })
 
   ipcMain.handle('ai:import', async () => {

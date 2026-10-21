@@ -1,3 +1,5 @@
+import { join } from 'path'
+
 // Path-safety guards for restoring attachment/image blobs from a backup file.
 //
 // A v5 backup carries the physical bytes of file attachments and chat images.
@@ -23,4 +25,21 @@ export function safeAttachmentName(id: unknown, ext: unknown): string | null {
   const e = ext == null ? '' : ext
   if (typeof e !== 'string' || !SAFE_EXT.test(e)) return null
   return `${id}${e}`
+}
+
+/**
+ * Resolves an attachment requested through IPC only when its validated basename
+ * remains directly inside the attachment directory. The renderer supplies id
+ * and ext, so they must never be joined into a filesystem path unchecked.
+ */
+export function attachmentPath(
+  directory: string,
+  separator: string,
+  id: unknown,
+  ext: unknown
+): string | null {
+  const name = safeAttachmentName(id, ext)
+  if (!name) return null
+  const path = join(directory, name)
+  return path.startsWith(directory + separator) ? path : null
 }

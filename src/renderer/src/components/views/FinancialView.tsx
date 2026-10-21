@@ -11,9 +11,17 @@ import { AnalyticsTab } from '../financial/AnalyticsTab'
 import { ConsolidatedTab } from '../financial/ConsolidatedTab'
 import { YieldsTab } from '../financial/YieldsTab'
 import { ReceiptsTab } from '../financial/ReceiptsTab'
+import { DebtsTab } from '../financial/DebtsTab'
 import type { GlobalSearchHit } from '../../../../main/global-search-query'
 
-type ActiveTab = 'shopping' | 'finance' | 'analytics' | 'consolidated' | 'yields' | 'receipts'
+type ActiveTab =
+  | 'shopping'
+  | 'finance'
+  | 'debts'
+  | 'analytics'
+  | 'consolidated'
+  | 'yields'
+  | 'receipts'
 
 interface TableViewState {
   activeTab: ActiveTab
@@ -59,6 +67,9 @@ export function FinancialView({
   const addTransaction = useKanbanStore((s) => s.addTransaction)
   const updateTransaction = useKanbanStore((s) => s.updateTransaction)
   const deleteTransaction = useKanbanStore((s) => s.deleteTransaction)
+  const addFinancialDebt = useKanbanStore((s) => s.addFinancialDebt)
+  const payFinancialDebt = useKanbanStore((s) => s.payFinancialDebt)
+  const deleteFinancialDebt = useKanbanStore((s) => s.deleteFinancialDebt)
   const addFinancialGoal = useKanbanStore((s) => s.addFinancialGoal)
   const updateFinancialGoal = useKanbanStore((s) => s.updateFinancialGoal)
   const deleteFinancialGoal = useKanbanStore((s) => s.deleteFinancialGoal)
@@ -312,6 +323,12 @@ export function FinancialView({
                   Finanças
                 </button>
                 <button
+                  onClick={() => updateTs({ activeTab: 'debts' })}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${ts.activeTab === 'debts' ? 'bg-[#2a2a30] text-[#d4d4d4]' : 'text-[#999999] hover:text-[#d4d4d4]'}`}
+                >
+                  Dívidas
+                </button>
+                <button
                   onClick={() => updateTs({ activeTab: 'analytics' })}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
                     ts.activeTab === 'analytics'
@@ -392,7 +409,9 @@ export function FinancialView({
             {ts.activeTab === 'shopping' && (
               <ShoppingTab
                 list={activeList}
-                searchTargetId={searchTarget?.type === 'shopping_item' ? searchTarget.id : undefined}
+                searchTargetId={
+                  searchTarget?.type === 'shopping_item' ? searchTarget.id : undefined
+                }
                 onUpdate={(itemId, updates) => updateItem(activeListId!, itemId, updates)}
                 onDelete={handleDeleteItem}
                 onToggle={(itemId) => toggleItem(activeListId!, itemId)}
@@ -418,6 +437,16 @@ export function FinancialView({
                   updateFinancialGoal(activeListId!, goalId, updates)
                 }
                 onDeleteGoal={(goalId) => deleteFinancialGoal(activeListId!, goalId)}
+              />
+            )}
+            {ts.activeTab === 'debts' && (
+              <DebtsTab
+                list={activeList}
+                onAdd={(name, amount) => addFinancialDebt(activeListId!, name, amount)}
+                onPay={(debtId, amount, date) =>
+                  payFinancialDebt(activeListId!, debtId, amount, date)
+                }
+                onDelete={(debtId) => deleteFinancialDebt(activeListId!, debtId)}
               />
             )}
             {ts.activeTab === 'analytics' && (

@@ -24,15 +24,34 @@ import { useAiRunStore } from '../../store/aiRun'
 import { runAgent } from '../../ai/agent'
 
 const emptyBucket = { calls: 0, promptTokens: 0, completionTokens: 0, cost: 0, unpricedCalls: 0 }
+let onFlushBeforeClose: (() => void) | undefined
 
 function installApi(): void {
   ;(window as unknown as { electronAPI: unknown }).electronAPI = {
+    lifecycle: {
+      onFlushBeforeClose: vi.fn((callback: () => void) => {
+        onFlushBeforeClose = callback
+        return vi.fn()
+      }),
+      flushBeforeCloseComplete: vi.fn(async () => {})
+    },
     ai: {
       config: {
         get: vi.fn(async () => ({
-          baseUrl: 'http://x', apiKey: '', model: 'm',
+          baseUrl: 'http://x',
+          apiKey: '',
+          model: 'm',
           activeProviderProfileId: 'api',
-          providerProfiles: [{ id: 'api', kind: 'api', name: 'Minha API', baseUrl: 'http://x', model: 'm', hasApiKey: true }]
+          providerProfiles: [
+            {
+              id: 'api',
+              kind: 'api',
+              name: 'Minha API',
+              baseUrl: 'http://x',
+              model: 'm',
+              hasApiKey: true
+            }
+          ]
         })),
         set: vi.fn(async () => {})
       },
@@ -132,6 +151,7 @@ async function startRun(): Promise<void> {
 beforeEach(() => {
   vi.clearAllMocks()
   installApi()
+  onFlushBeforeClose = undefined
   // Clear the running set before reset: reset() spares a run in flight by
   // design, so a previous test's run would survive into this one.
   useAiRunStore.setState({
@@ -148,6 +168,25 @@ beforeEach(() => {
   useAiRunStore.getState().reset()
   // jsdom has no layout, and the transcript scrolls itself on every message.
   Element.prototype.scrollTo = vi.fn()
+})
+
+describe('close flush', () => {
+  it('persists the pending conversation and acknowledges close only after saving', async () => {
+    useAiRunStore.setState({
+      conversationId: 'close-chat',
+      messages: [{ role: 'user', content: 'não perca esta mensagem' }]
+    })
+    render(<AiRunHost activeView="board" onOpenAI={() => {}} />)
+
+    await act(async () => onFlushBeforeClose?.())
+
+    await waitFor(() => {
+      expect(window.electronAPI.ai.conversations.save).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'close-chat', messages: expect.any(Array) })
+      )
+      expect(window.electronAPI.lifecycle.flushBeforeCloseComplete).toHaveBeenCalledTimes(1)
+    })
+  })
 })
 
 /**
@@ -193,7 +232,12 @@ describe('a run and the chat it belongs to', () => {
         expect.objectContaining({
           id: asked,
           messages: expect.arrayContaining([
-            expect.objectContaining({ role: 'assistant', content: 'a resposta da primeira conversa', provider: 'api', model: 'm' })
+            expect.objectContaining({
+              role: 'assistant',
+              content: 'a resposta da primeira conversa',
+              provider: 'api',
+              model: 'm'
+            })
           ])
         })
       )
@@ -306,7 +350,12 @@ describe('a run and the chat it belongs to', () => {
         expect.objectContaining({
           id: asked,
           messages: expect.arrayContaining([
-            expect.objectContaining({ role: 'assistant', content: 'a resposta sobreviveu à Nova', provider: 'api', model: 'm' })
+            expect.objectContaining({
+              role: 'assistant',
+              content: 'a resposta sobreviveu à Nova',
+              provider: 'api',
+              model: 'm'
+            })
           ])
         })
       )
@@ -346,7 +395,12 @@ describe('a run in the background', () => {
       expect(window.electronAPI.ai.conversations.save).toHaveBeenCalledWith(
         expect.objectContaining({
           messages: expect.arrayContaining([
-            expect.objectContaining({ role: 'assistant', content: 'a resposta que o usuário pagou', provider: 'api', model: 'm' })
+            expect.objectContaining({
+              role: 'assistant',
+              content: 'a resposta que o usuário pagou',
+              provider: 'api',
+              model: 'm'
+            })
           ])
         })
       )

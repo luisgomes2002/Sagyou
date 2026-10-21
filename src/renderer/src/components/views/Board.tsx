@@ -4,16 +4,14 @@ import {
   DragEndEvent,
   DragOverlay,
   DragStartEvent,
+  KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
   closestCorners
 } from '@dnd-kit/core'
-import {
-  SortableContext,
-  horizontalListSortingStrategy,
-  arrayMove
-} from '@dnd-kit/sortable'
+import { SortableContext, horizontalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
+import { sortableKeyboardCoordinates } from '@dnd-kit/sortable'
 import type { Column as ColumnType, Task, Project } from '../../types'
 import { isDoneColumn } from '../../utils/columns'
 import { Column } from '../Column'
@@ -56,7 +54,8 @@ export function Board({
   const [activeColumn, setActiveColumn] = useState<ColumnType | null>(null)
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   )
 
   const visibleColumns = useMemo(
@@ -64,10 +63,7 @@ export function Board({
     [project.columns]
   )
 
-  const hiddenColumns = useMemo(
-    () => project.columns.filter(isDoneColumn),
-    [project.columns]
-  )
+  const hiddenColumns = useMemo(() => project.columns.filter(isDoneColumn), [project.columns])
 
   const columnTasksMap = useMemo(() => {
     const map = new Map<string, Task[]>()
@@ -107,7 +103,10 @@ export function Board({
       const newIndex = visibleColumns.findIndex((c) => c.id === over.id)
       if (oldIndex === -1 || newIndex === -1) return
       const reordered = arrayMove(visibleColumns, oldIndex, newIndex)
-      reorderColumns(project.id, [...reordered, ...hiddenColumns].map((c) => c.id))
+      reorderColumns(
+        project.id,
+        [...reordered, ...hiddenColumns].map((c) => c.id)
+      )
       return
     }
 
@@ -148,7 +147,10 @@ export function Board({
       onDragEnd={handleDragEnd}
     >
       <div className="flex gap-4 p-6 overflow-x-auto h-full items-start">
-        <SortableContext items={visibleColumns.map((c) => c.id)} strategy={horizontalListSortingStrategy}>
+        <SortableContext
+          items={visibleColumns.map((c) => c.id)}
+          strategy={horizontalListSortingStrategy}
+        >
           {visibleColumns.map((col) => (
             <Column
               key={col.id}
@@ -171,7 +173,14 @@ export function Board({
           onClick={onAddColumn}
           className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-dashed border-[#2b2b31] text-sm text-[#999999] hover:border-[#7c3aed] hover:text-[#7c3aed] transition-colors shrink-0 mt-0"
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+          >
             <line x1="12" y1="5" x2="12" y2="19" />
             <line x1="5" y1="12" x2="19" y2="12" />
           </svg>
@@ -181,12 +190,21 @@ export function Board({
 
       <DragOverlay>
         {activeTask && (
-          <TaskCard task={activeTask} overlay onEdit={() => {}} onDelete={() => {}} onView={() => {}} />
+          <TaskCard
+            task={activeTask}
+            overlay
+            onEdit={() => {}}
+            onDelete={() => {}}
+            onView={() => {}}
+          />
         )}
         {activeColumn && (
           <div className="flex flex-col w-72 shrink-0 opacity-90 rotate-2">
             <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-[#121216] border border-[#7c3aed] shadow-2xl">
-              <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: activeColumn.color || project.color }} />
+              <div
+                className="w-2 h-2 rounded-full shrink-0"
+                style={{ backgroundColor: activeColumn.color || project.color }}
+              />
               <span className="text-sm font-medium text-[#d4d4d4]">{activeColumn.name}</span>
               <span className="text-xs text-[#999999] bg-[#2a2a30] px-1.5 py-0.5 rounded-full">
                 {(columnTasksMap.get(activeColumn.id) ?? EMPTY_TASKS).length}

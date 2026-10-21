@@ -43,7 +43,8 @@ describe('backup restore flow', () => {
       registerBackupHandlers(
         {
           handle: (name: string, fn: (...args: unknown[]) => Promise<unknown>) =>
-            handlers.set(name, fn)
+            handlers.set(name, fn),
+          on: vi.fn()
         } as unknown as IpcMain,
         {
           dialog: {
@@ -126,5 +127,62 @@ describe('backup validation', () => {
         ]
       })
     ).toBe(false)
+  })
+
+  it('rejects duplicate ids, broken references and invalid planning data', () => {
+    expect(
+      isValidBackup({
+        ...backup(),
+        projects: [
+          { id: 'p1', name: 'A', columns: [] },
+          { id: 'p1', name: 'B', columns: [] }
+        ]
+      })
+    ).toBe(false)
+    expect(
+      isValidBackup({
+        ...backup(),
+        tasks: [{ id: 't1', title: 'Órfã', projectId: 'missing', columnId: 'c1' }]
+      })
+    ).toBe(false)
+    expect(
+      isValidBackup({
+        ...backup(),
+        projects: [{ id: 'p1', name: 'Projeto', columns: [{ id: 'c1', name: 'A', order: 0 }] }],
+        timeBlocks: [
+          {
+            id: 'block-1',
+            date: '2026-99-40',
+            startTime: '09:00',
+            endTime: '10:00',
+            title: 'Inválido',
+            order: 0
+          }
+        ]
+      })
+    ).toBe(false)
+  })
+
+  it('accepts valid references and rejects malformed persisted timestamps', () => {
+    const valid = {
+      ...backup(),
+      projects: [{ id: 'p1', name: 'Projeto', columns: [{ id: 'c1', name: 'Fazer', order: 0 }] }],
+      tasks: [{ id: 't1', title: 'Task', projectId: 'p1', columnId: 'c1' }],
+      timeBlocks: [
+        {
+          id: 'b1',
+          date: '2026-10-01',
+          startTime: '09:00',
+          endTime: '10:00',
+          title: 'Foco',
+          order: 0,
+          taskId: 't1'
+        }
+      ]
+    }
+    expect(isValidBackup(valid)).toBe(true)
+    expect(isValidBackup({ ...valid, tasks: [{ ...valid.tasks[0], createdAt: 'ontem' }] })).toBe(
+      false
+    )
   })
 })

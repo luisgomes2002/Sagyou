@@ -9,6 +9,11 @@ export interface PasswordConfig {
   hash: string
 }
 
+export interface PasswordConfigLoad {
+  config: PasswordConfig | null
+  corrupt: boolean
+}
+
 export function passwordError(password: unknown): string | null {
   if (typeof password !== 'string' || password.length < MIN_PASSWORD_LENGTH)
     return `A senha deve ter ao menos ${MIN_PASSWORD_LENGTH} caracteres.`
@@ -35,6 +40,18 @@ export function isPasswordConfig(value: unknown): value is PasswordConfig {
   if (!value || typeof value !== 'object') return false
   const config = value as Partial<PasswordConfig>
   return config.version === 1 && typeof config.salt === 'string' && typeof config.hash === 'string'
+}
+
+/** A present password file is either valid or corrupt; it is never "absent". */
+export function parsePasswordConfig(contents: string): PasswordConfigLoad {
+  try {
+    const value: unknown = JSON.parse(contents)
+    return isPasswordConfig(value)
+      ? { config: value, corrupt: false }
+      : { config: null, corrupt: true }
+  } catch {
+    return { config: null, corrupt: true }
+  }
 }
 
 export function verifyPassword(config: PasswordConfig, password: unknown): boolean {

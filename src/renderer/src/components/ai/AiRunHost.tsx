@@ -1,8 +1,9 @@
 ﻿import { useEffect, useState } from 'react'
 import { useAiRunStore } from '../../store/aiRun'
+import { useKanbanStore } from '../../store/kanban'
 import type { ChatMessage } from '../../store/aiRun'
 import { describeToolCall } from '../../ai/tools'
-import { requiresExplicitApproval } from '../../ai/permission-registry'
+import { requiresExplicitApproval } from '../../ai/tool-contracts'
 
 // ---------------------------------------------------------------------------
 // The agent run's home outside the AI view.
@@ -60,6 +61,39 @@ export function AiRunHost({
   const setAutoApprove = useAiRunStore((s) => s.setAutoApprove)
   const autoApprove = useAiRunStore((s) => s.autoApprove)
 
+  const saveConversationsNow = async (): Promise<void> => {
+    const parkedEntries = Object.entries(parked)
+    const id =
+      messages.length > 0 || (conversationId && connections[conversationId])
+        ? ensureConversationId()
+        : null
+    const saves: Promise<unknown>[] = []
+    if (id) {
+      saves.push(
+        window.electronAPI.ai.conversations.save({
+          id,
+          title: deriveTitle(messages),
+          messages,
+          usage,
+          connection: connections[id]
+        })
+      )
+    }
+    for (const [parkedId, p] of parkedEntries) {
+      saves.push(
+        window.electronAPI.ai.conversations.save({
+          id: parkedId,
+          title: deriveTitle(p.messages),
+          messages: p.messages,
+          usage: p.usage,
+          connection: connections[parkedId]
+        })
+      )
+    }
+    await Promise.all(saves)
+    markSaved()
+  }
+
   const onAIView = activeView === 'ai'
 
   /**
@@ -76,38 +110,20 @@ export function AiRunHost({
   // other wrote, then the last writer overwrites the first one's changes.
   useEffect(() => {
     const parkedEntries = Object.entries(parked)
-    if (messages.length === 0 && parkedEntries.length === 0 && !connections[conversationId ?? '']) return
-    const id = messages.length > 0 || (conversationId && connections[conversationId])
-      ? ensureConversationId()
-      : null
-    const timer = setTimeout(() => {
-      const saves: Promise<unknown>[] = []
-      if (id) {
-        saves.push(
-          window.electronAPI.ai.conversations.save({
-            id,
-            title: deriveTitle(messages),
-            messages,
-            usage,
-            connection: connections[id]
-          })
-        )
-      }
-      for (const [parkedId, p] of parkedEntries) {
-        saves.push(
-          window.electronAPI.ai.conversations.save({
-            id: parkedId,
-            title: deriveTitle(p.messages),
-            messages: p.messages,
-            usage: p.usage,
-            connection: connections[parkedId]
-          })
-        )
-      }
-      void Promise.all(saves).then(() => markSaved())
-    }, 600)
+    if (messages.length === 0 && parkedEntries.length === 0 && !connections[conversationId ?? ''])
+      return
+    const timer = setTimeout(() => void saveConversationsNow(), 600)
     return () => clearTimeout(timer)
-  }, [messages, conversationId, usage, parked, connections, ensureConversationId, markSaved])
+  }, [messages, conversationId, usage, parked, connections, saveConversationsNow])
+
+  useEffect(() => {
+    if (!window.electronAPI.lifecycle?.onFlushBeforeClose) return
+    return window.electronAPI.lifecycle.onFlushBeforeClose(() => {
+      void Promise.all([useKanbanStore.getState()._flushPersist(), saveConversationsNow()]).finally(
+        () => void window.electronAPI.lifecycle.flushBeforeCloseComplete()
+      )
+    })
+  }, [saveConversationsNow])
 
   // ── Code agent approval (lives here so it works even when FleetView is not
   //    mounted — FleetView is a view that unmounts on navigation, and a parked
@@ -445,18 +461,19 @@ export function AiRunHost({
                   Recusar tudo
                 </button>
                 <div className="flex items-center gap-2">
-                  {!pa.documentReview && !pa.writes.some((w) => requiresExplicitApproval(w.name)) && (
-                    <button
-                      onClick={() => {
-                        setAutoApprove(pa.convId, true)
-                        resolveApproval(pa.convId, new Set(pa.writes.map((w) => w.id)))
-                      }}
-                      title="A IA trabalhará sem interrupção nesta conversa — como o modo always allow do Claude Code"
-                      className="px-3 py-1.5 rounded-lg text-xs text-[#f0b820] border border-[#2b2b31] hover:bg-[#222227] transition-colors"
-                    >
-                      Sempre permitir
-                    </button>
-                  )}
+                  {!pa.documentReview &&
+                    !pa.writes.some((w) => requiresExplicitApproval(w.name)) && (
+                      <button
+                        onClick={() => {
+                          setAutoApprove(pa.convId, true)
+                          resolveApproval(pa.convId, new Set(pa.writes.map((w) => w.id)))
+                        }}
+                        title="A IA trabalhará sem interrupção nesta conversa — como o modo always allow do Claude Code"
+                        className="px-3 py-1.5 rounded-lg text-xs text-[#f0b820] border border-[#2b2b31] hover:bg-[#222227] transition-colors"
+                      >
+                        Sempre permitir
+                      </button>
+                    )}
                   <button
                     onClick={() => resolveApproval(pa.convId, pa.selected)}
                     disabled={pa.selected.size === 0}
