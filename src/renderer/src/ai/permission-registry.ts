@@ -233,16 +233,24 @@ const REGISTRY: PermissionEntry[] = [
     rationale:
       'Cria uma meta de progresso (Goal) com target > 0. O target é divisor em GoalView — target 0 quebra a UI.',
     guard:
-      'Cartão de aprovação. Valida target > 0. Valida projectId. A meta criada tem 0 entradas — o progresso é preenchido pelo usuário.',
+      'Cartão de aprovação. Valida target > 0. Valida projectId. A meta criada tem 0 entradas; o progresso exige uma ação separada.',
     since: '2024-06'
   },
   {
     name: 'atualizar_meta',
     level: 'write',
-    rationale:
-      'Edita campos de uma meta existente. Não mexe nas entradas (progresso é do usuário).',
+    rationale: 'Edita campos de uma meta existente sem alterar seu histórico de entradas.',
     guard: 'Cartão de aprovação. Erra em título ambíguo. Valida target > 0 se alterado.',
     since: '2024-06'
+  },
+  {
+    name: 'registrar_progresso_meta',
+    level: 'write',
+    rationale:
+      'Adiciona uma entrada ao histórico de uma meta ou conclui uma meta simples; altera progresso persistido.',
+    guard:
+      'Aprovação explícita inclusive no modo automático. Erra em título ambíguo, valida valor positivo e data de calendário; metas que já atingiram o alvo não recebem novas entradas.',
+    since: '2026-10'
   },
   {
     name: 'marcar_habito',
@@ -316,7 +324,7 @@ export function isDestructive(name: string): boolean {
 
 /** Auto may handle ordinary writes, but never hard deletion or money movement. */
 export function requiresExplicitApproval(name: string): boolean {
-  return isDestructive(name) || name === 'criar_transacao'
+  return isDestructive(name) || name === 'criar_transacao' || name === 'registrar_progresso_meta'
 }
 
 export function getPermissionLevel(name: string): PermissionLevel {

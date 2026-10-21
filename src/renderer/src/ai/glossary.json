@@ -3,7 +3,13 @@
     "termo": "kanban",
     "definicao": "Quadro de tarefas organizado em colunas. Cada projeto tem seu próprio kanban com colunas como 'Backlog', 'Em andamento', 'Done'.",
     "contexto": "Gerenciamento de tarefas visuais.",
-    "ferramentas_relevantes": ["ler_projetos", "ler_tasks", "criar_tasks", "mover_task", "concluir_task"],
+    "ferramentas_relevantes": [
+      "ler_projetos",
+      "ler_tasks",
+      "criar_tasks",
+      "mover_task",
+      "concluir_task"
+    ],
     "exemplo": "Um projeto 'App Mobile' tem colunas: Backlog (10 tasks), Em andamento (3), Done (45)."
   },
   {
@@ -17,7 +23,15 @@
     "termo": "task",
     "definicao": "Uma tarefa no kanban. Tem título, prioridade (low/medium/high/urgent), descrição, prazo (dueDate), tags, sprint, tempo gasto (timeSpent) e anexos (images).",
     "contexto": "Unidade de trabalho no sistema.",
-    "ferramentas_relevantes": ["ler_tasks", "criar_tasks", "atualizar_task", "mover_task", "concluir_task", "deletar_task", "iniciar_cronometro"],
+    "ferramentas_relevantes": [
+      "ler_tasks",
+      "criar_tasks",
+      "atualizar_task",
+      "mover_task",
+      "concluir_task",
+      "deletar_task",
+      "iniciar_cronometro"
+    ],
     "exemplo": "Task 'Corrigir bug de login' com prioridade high, prazo 2026-08-01, tag 'bug'."
   },
   {
@@ -36,9 +50,14 @@
   },
   {
     "termo": "meta",
-    "definicao": "Uma meta de progresso (Goal) com valor alvo (target), unidade (ex: 'páginas', 'horas', '%') e entradas de progresso. O progresso é preenchido pelo usuário, não pela IA.",
-    "contexto": "Acompanhamento de metas quantitativas.",
-    "ferramentas_relevantes": ["criar_meta", "atualizar_meta", "ler_metas"],
+    "definicao": "Uma meta (Goal) de conclusão única ou quantidade, com entradas datadas de progresso e observação opcional. O usuário ou a IA, após aprovação explícita, pode registrar progresso.",
+    "contexto": "Acompanhamento de metas simples e quantitativas.",
+    "ferramentas_relevantes": [
+      "criar_meta",
+      "atualizar_meta",
+      "registrar_progresso_meta",
+      "ler_metas"
+    ],
     "exemplo": "Meta 'Ler 12 livros' com target 12, unidade 'livros', progresso atual 7 (58%)."
   },
   {

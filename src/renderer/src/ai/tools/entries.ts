@@ -31,6 +31,7 @@ import { leaseBlock, currentRunConvId } from '../tools'
 import { useKanbanStore } from '../../store/kanban'
 import { D, FINANCIAL_CATEGORIES } from '../../components/financial/shared'
 import { computeHabitSummary, todayISO } from '../../utils/habits'
+import { goalKind } from '../../utils/goals'
 import { isDoneColumn } from '../../utils/columns'
 import { PROJECT_COLORS, NOTE_COLORS, TIME_BLOCK_COLORS } from '../../types'
 import type { AITaskInput, Priority, Habit } from '../../types'
@@ -492,8 +493,8 @@ export const registryEntries: Record<string, AITool> = {
   ler_metas: {
     definition: fn(
       'ler_metas',
-      'Lista as metas de progresso: título, unidade, alvo, valor atual, progresso (%) e ' +
-        'quantas entradas tem.',
+      'Lista as metas: tipo (conclusão única ou quantidade), título, unidade, alvo, valor ' +
+        'atual, progresso (%) e quantas entradas tem.',
       NO_PARAMS
     ),
     run: () => {
@@ -506,6 +507,7 @@ export const registryEntries: Record<string, AITool> = {
           // is exactly what fails when two goals share one.
           id: g.id,
           titulo: g.title,
+          tipo: goalKind(g) === 'completion' ? 'conclusao' : 'quantidade',
           unidade: g.unit,
           alvo: g.target,
           atual,
@@ -1019,12 +1021,108 @@ export const registryEntries: Record<string, AITool> = {
 
       const metaId = state.createGoal({
         title: titulo,
+        kind: 'quantity',
         target: alvo,
         unit: unidade,
         color: cor,
         projectId
       })
       return JSON.stringify({ ok: true, metaId, titulo, alvo, unidade, progresso: 0 })
+    }
+  },
+
+  registrar_progresso_meta: {
+    write: true,
+    definition: fn(
+      'registrar_progresso_meta',
+      'Registra progresso em uma meta existente. Em uma meta de conclusão única, conclui a ' +
+        'meta e valor deve ser omitido. Em uma meta de quantidade, valor é obrigatório e deve ' +
+        'ser positivo. Aceita data YYYY-MM-DD (hoje no fuso local por padrão) e uma observação. ' +
+        'Identifique por metaId (veja ler_metas) ou pelo titulo exato.',
+      {
+        type: 'object',
+        properties: {
+          metaId: { type: 'string', description: 'ID da meta (vem de ler_metas)' },
+          titulo: { type: 'string', description: 'Título exato da meta' },
+          valor: { type: 'number', description: 'Quantidade positiva a registrar' },
+          data: { type: 'string', description: 'Data do progresso em YYYY-MM-DD; padrão: hoje' },
+          observacao: { type: 'string', description: 'Observação opcional do progresso' }
+        },
+        additionalProperties: false
+      }
+    ),
+    run: (args) => {
+      const state = useKanbanStore.getState()
+      const resolved = resolveGoal(args)
+      if ('error' in resolved) return JSON.stringify(resolved)
+      const { goal } = resolved
+
+      const data = args.data === undefined ? todayISO() : args.data
+      if (typeof data !== 'string' || !isCalendarDate(data)) {
+        return JSON.stringify({ error: 'data deve ser uma data válida em YYYY-MM-DD' })
+      }
+
+      if (args.observacao !== undefined && typeof args.observacao !== 'string') {
+        return JSON.stringify({ error: 'observacao deve ser texto' })
+      }
+      const observacao =
+        typeof args.observacao === 'string' && args.observacao.trim()
+          ? args.observacao.trim()
+          : undefined
+      const atual = goal.entries.reduce((sum, entry) => sum + entry.value, 0)
+      const tipo = goalKind(goal)
+      const alvo = tipo === 'completion' ? 1 : goal.target
+
+      if (atual >= alvo) {
+        return JSON.stringify({
+          ok: true,
+          metaId: goal.id,
+          meta: goal.title,
+          jaConcluida: true,
+          registrado: false
+        })
+      }
+
+      if (tipo === 'completion') {
+        if (args.valor !== undefined) {
+          return JSON.stringify({
+            error:
+              'Não informe valor para uma meta de conclusão única; omita o campo para concluí-la.'
+          })
+        }
+        state.addGoalEntry(goal.id, { date: data, value: 1, label: observacao })
+        return JSON.stringify({
+          ok: true,
+          metaId: goal.id,
+          meta: goal.title,
+          tipo: 'conclusao',
+          registrado: true,
+          valor: 1,
+          data,
+          observacao: observacao ?? null,
+          atual: atual + 1,
+          concluida: true
+        })
+      }
+
+      const valor = toTarget(args.valor)
+      if (valor === null) {
+        return JSON.stringify({ error: 'valor deve ser um número maior que zero' })
+      }
+      state.addGoalEntry(goal.id, { date: data, value: valor, label: observacao })
+      const novoAtual = atual + valor
+      return JSON.stringify({
+        ok: true,
+        metaId: goal.id,
+        meta: goal.title,
+        tipo: 'quantidade',
+        registrado: true,
+        valor,
+        data,
+        observacao: observacao ?? null,
+        atual: novoAtual,
+        concluida: novoAtual >= goal.target
+      })
     }
   },
 

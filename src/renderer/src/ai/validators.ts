@@ -38,9 +38,13 @@ function isStr(v: unknown): v is string {
 const CALENDAR_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
 function isCalendarDate(v: string): boolean {
-  if (!CALENDAR_DATE_RE.test(v)) return false
-  const d = new Date(v + 'T00:00:00')
-  return !isNaN(d.getTime())
+  const match = CALENDAR_DATE_RE.exec(v)
+  if (!match) return false
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])]
+  const date = new Date(Date.UTC(year, month - 1, day))
+  return (
+    date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+  )
 }
 
 // ── Validators — one per write tool ───────────────────────────────────────────
@@ -70,7 +74,12 @@ export function validateCriarTasks(args: Record<string, unknown>): ValidationRes
     if (t && typeof t.titulo === 'string' && t.titulo.length > 500) {
       issues.push(`task[${i}]: título muito longo (máx 500)`)
     }
-    if (t && t.prioridade !== undefined && typeof t.prioridade === 'string' && !VALID_PRIORITIES.has(t.prioridade as 'low')) {
+    if (
+      t &&
+      t.prioridade !== undefined &&
+      typeof t.prioridade === 'string' &&
+      !VALID_PRIORITIES.has(t.prioridade as 'low')
+    ) {
       issues.push(`task[${i}]: prioridade "${t.prioridade}" inválida`)
     }
   }
@@ -85,11 +94,20 @@ export function validateAtualizarTask(args: Record<string, unknown>): Validation
   const campos = ['prioridade', 'descricao', 'dueDate', 'tags'] as const
   const algumCampo = campos.some((c) => args[c] !== undefined)
   if (!algumCampo) issues.push('nenhum campo para atualizar')
-  if (args.prioridade !== undefined && typeof args.prioridade === 'string' && !VALID_PRIORITIES.has(args.prioridade as 'low')) {
+  if (
+    args.prioridade !== undefined &&
+    typeof args.prioridade === 'string' &&
+    !VALID_PRIORITIES.has(args.prioridade as 'low')
+  ) {
     issues.push(`prioridade "${args.prioridade}" inválida`)
   }
-  if (args.dueDate !== undefined && typeof args.dueDate === 'string' && args.dueDate.trim() !== '') {
-    if (!isCalendarDate(args.dueDate.trim())) issues.push(`dueDate "${args.dueDate}" não é uma data válida (YYYY-MM-DD)`)
+  if (
+    args.dueDate !== undefined &&
+    typeof args.dueDate === 'string' &&
+    args.dueDate.trim() !== ''
+  ) {
+    if (!isCalendarDate(args.dueDate.trim()))
+      issues.push(`dueDate "${args.dueDate}" não é uma data válida (YYYY-MM-DD)`)
   }
   if (args.tags !== undefined && !Array.isArray(args.tags)) {
     issues.push('tags deve ser um array')
@@ -142,10 +160,34 @@ export function validateCriarMeta(args: Record<string, unknown>): ValidationResu
 
 export function validateAtualizarMeta(args: Record<string, unknown>): ValidationResult {
   const issues: string[] = []
-  const algumCampo = ['titulo', 'target', 'alvo', 'unidade', 'unit', 'cor'].some((c) => args[c] !== undefined)
+  const algumCampo = ['titulo', 'target', 'alvo', 'unidade', 'unit', 'cor'].some(
+    (c) => args[c] !== undefined
+  )
   if (!algumCampo) issues.push('nenhum campo para atualizar')
-  const target = args.target !== undefined ? Number(args.target) : args.alvo !== undefined ? Number(args.alvo) : undefined
-  if (target !== undefined && (!isFinite(target) || target <= 0)) issues.push('target deve ser um número > 0')
+  const target =
+    args.target !== undefined
+      ? Number(args.target)
+      : args.alvo !== undefined
+        ? Number(args.alvo)
+        : undefined
+  if (target !== undefined && (!isFinite(target) || target <= 0))
+    issues.push('target deve ser um número > 0')
+  return issues.length ? fail(issues) : ok()
+}
+
+export function validateRegistrarProgressoMeta(args: Record<string, unknown>): ValidationResult {
+  const issues: string[] = []
+  if (!isStr(args.titulo) && !isStr(args.metaId)) issues.push('titulo ou metaId é obrigatório')
+  if (args.valor !== undefined) {
+    const value = Number(args.valor)
+    if (!isFinite(value) || value <= 0) issues.push('valor deve ser um número > 0')
+  }
+  if (args.data !== undefined && (!isStr(args.data) || !isCalendarDate(args.data))) {
+    issues.push('data deve ser uma data válida (YYYY-MM-DD)')
+  }
+  if (args.observacao !== undefined && !isStr(args.observacao)) {
+    issues.push('observacao deve ser texto')
+  }
   return issues.length ? fail(issues) : ok()
 }
 
@@ -177,7 +219,8 @@ export function validateCriarTransacao(args: Record<string, unknown>): Validatio
     if (!isFinite(n) || n <= 0) issues.push('valor deve ser um número positivo')
   }
   const data = isStr(args.data) ? args.data : ''
-  if (data && !isCalendarDate(data)) issues.push(`data "${data}" não é uma data válida (YYYY-MM-DD)`)
+  if (data && !isCalendarDate(data))
+    issues.push(`data "${data}" não é uma data válida (YYYY-MM-DD)`)
   const cat = isStr(args.categoria) ? args.categoria : ''
   if (cat && !VALID_CATEGORIES.has(cat)) {
     // category might be custom — warn but don't block
@@ -194,11 +237,14 @@ export function validateSalvarMemoria(args: Record<string, unknown>): Validation
   if (!corpo) issues.push('corpo é obrigatório')
   const tipo = isStr(args.tipo) ? args.tipo : ''
   const tiposValidos = ['decisao', 'tradeoff', 'gotcha', 'fato']
-  if (tipo && !tiposValidos.includes(tipo)) issues.push(`tipo "${tipo}" inválido; use: ${tiposValidos.join(', ')}`)
+  if (tipo && !tiposValidos.includes(tipo))
+    issues.push(`tipo "${tipo}" inválido; use: ${tiposValidos.join(', ')}`)
   return issues.length ? fail(issues) : ok()
 }
 
-export function validateAjustarBlocoEDeslocarPosteriores(args: Record<string, unknown>): ValidationResult {
+export function validateAjustarBlocoEDeslocarPosteriores(
+  args: Record<string, unknown>
+): ValidationResult {
   const issues: string[] = []
   const text = (...keys: string[]): string => {
     for (const key of keys) {
@@ -229,6 +275,7 @@ const VALIDATORS: Record<string, (args: Record<string, unknown>) => ValidationRe
   atribuir_sprint: validateAtribuirSprint,
   criar_meta: validateCriarMeta,
   atualizar_meta: validateAtualizarMeta,
+  registrar_progresso_meta: validateRegistrarProgressoMeta,
   marcar_habito: validateMarcarHabito,
   criar_nota: validateCriarNota,
   criar_transacao: validateCriarTransacao,
@@ -240,10 +287,7 @@ const VALIDATORS: Record<string, (args: Record<string, unknown>) => ValidationRe
  * Validate a write tool's arguments before the tool runs.
  * Returns validation errors/warnings to surface on the approval card.
  */
-export function validateToolInput(
-  name: string,
-  args: Record<string, unknown>
-): ValidationResult {
+export function validateToolInput(name: string, args: Record<string, unknown>): ValidationResult {
   const v = VALIDATORS[name]
   if (!v) return ok()
   return v(args)

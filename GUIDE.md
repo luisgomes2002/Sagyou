@@ -259,17 +259,21 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    agrupam milhares (BRL e JPY com ponto, USD com vírgula), mostram frações já
    salvas e passam a moeda a `parseDecimalInput` para preservar
    o valor ao editar; quantidade (`qty`) usa o formato numérico local padrão.
-5. **Nunca remova nem renomeie campos** de tipos persistidos sem migração ou
+7. **Nunca remova nem renomeie campos** de tipos persistidos sem migração ou
    fallback. Campo novo opcional é seguro; mudar a forma de um array ou objeto
    existente, não. Preferências de recursos da sidebar seguem a mesma regra:
    `featurePreferences` ausente significa primeira configuração (ou backup antigo),
    e não pode ocultar recursos/dados silenciosamente. `uiPreferences` ausente em
    backup antigo preserva a escolha visual local; preferências de aparência novas
    precisam de normalização com defaults antes de chegar à UI.
-6. **Avise explicitamente** ao propor algo que possa corromper dados no load
+   `Goal.kind` é opcional por compatibilidade: ausente significa meta quantitativa.
+   `completion` usa alvo interno 1 e uma entrada de valor 1 como conclusão; nunca
+   reinterprete automaticamente metas antigas com alvo 1, pois só a edição explícita
+   do usuário pode convertê-las.
+8. **Avise explicitamente** ao propor algo que possa corromper dados no load
    (trocar `string` por `string[]`, mudar esquema de IDs), com:
    `⚠️ Breaking schema change — existing data may be affected.`
-7. **Nem tudo está no banco.** Em `app.getPath('userData')`: `kanban.db`,
+9. **Nem tudo está no banco.** Em `app.getPath('userData')`: `kanban.db`,
    `files/` (os blobs dos anexos — a tabela só guarda metadados),
    `ai-config.json`, `ai-conversations.json`, `ai-usage-log.json`,
    `ai-run-metrics.json` (uma linha por execução do agente — modelo, passos,
@@ -282,18 +286,18 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    `agent-runs/` (execuções arquivadas do agente de código — log + diff congelados).
    Apagar um
    lado sem o outro deixa órfão.
-8. **Ferramenta de IA que escreve leva `write: true`** em `ai/tools.ts`. É a
-   única coisa entre o modelo e os dados do usuário: sem isso a ação roda sem
-   aprovação. Ferramenta nova que muta estado **tem** que marcar.
-9. **Ferramenta de leitura que devolve menos do que existe tem que dizer isso.**
-   Tudo o que uma tool retorna é reenviado ao modelo a cada passo seguinte da
-   execução, então elas cortam: `ler_tasks` esconde as concluídas por padrão
-   (45% do quadro real), `ai:code:list`/`:read` paginam. Toda redução vem com o
-   número do que ficou de fora (`total`, `truncado`, `concluidas_ocultas`,
-   `outros_projetos`, `nextOffset`) — sem ele o modelo afirma com confiança que
-   o quadro tem 228 tasks quando tem 413, ou que uma task não existe quando ela
-   está em outro projeto. A resposta errada custa mais que os tokens salvos.
-10. **Leitura de código por escopo, não por arquivo inteiro.** `ler_arquivo` aceita
+10. **Ferramenta de IA que escreve leva `write: true`** em `ai/tools.ts`. É a
+    única coisa entre o modelo e os dados do usuário: sem isso a ação roda sem
+    aprovação. Ferramenta nova que muta estado **tem** que marcar.
+11. **Ferramenta de leitura que devolve menos do que existe tem que dizer isso.**
+    Tudo o que uma tool retorna é reenviado ao modelo a cada passo seguinte da
+    execução, então elas cortam: `ler_tasks` esconde as concluídas por padrão
+    (45% do quadro real), `ai:code:list`/`:read` paginam. Toda redução vem com o
+    número do que ficou de fora (`total`, `truncado`, `concluidas_ocultas`,
+    `outros_projetos`, `nextOffset`) — sem ele o modelo afirma com confiança que
+    o quadro tem 228 tasks quando tem 413, ou que uma task não existe quando ela
+    está em outro projeto. A resposta errada custa mais que os tokens salvos.
+12. **Leitura de código por escopo, não por arquivo inteiro.** `ler_arquivo` aceita
     `simbolo` (extrai uma função/classe via `extractSymbol` em `code-files.ts`) ou
     `linha_inicio`/`linha_fim` (`extractLines`) — ~1-3k chars em vez de janelas de
     20k paginadas. Tudo regex/best-effort de propósito (sem AST). É o 5º arg
@@ -309,7 +313,7 @@ CODE_READ_PAGE`) devolve só ~100 linhas + `simbolos` + `dica`, não a janela de
     substring que avisa mas não bloqueia) e o log de custo por execução vivem em
     `agent.ts` (estado **por execução**), **não** em `tools.ts` (global entre
     conversas).
-11. **Roteamento de modelo é opcional e por execução.** `AIConfig.modelComplex`,
+13. **Roteamento de modelo é opcional e por execução.** `AIConfig.modelComplex`,
     quando definido, faz `routeModel(cfg, texto)` mandar tarefas de código/análise
     (palavras como código, bug, refatorar, arquitetura, investigar) para o modelo
     pesado; o resto fica no `model` barato. Ausente = um modelo só, comportamento
@@ -333,7 +337,7 @@ CODE_READ_PAGE`) devolve só ~100 linhas + `simbolos` + `dica`, não a janela de
     OpenAI ignora registros com `shutdown_date`. A chave digitada antes de salvar
     cruza IPC só para essa consulta e nunca volta na resposta.
 
-12. 🔴 **A tabela `memory` é satélite, fora do `persistAll`.** Memórias do assistente
+14. 🔴 **A tabela `memory` é satélite, fora do `persistAll`.** Memórias do assistente
     (decisões, tradeoffs, gotchas, handoffs) ficam em SQLite mas nunca passam pelo
     store Zustand — `access_count`/`last_accessed_at` são bumpados a cada leitura, e
     isso via `persistAll` reescreveria as 17 tabelas por bump. As ferramentas são
@@ -352,9 +356,9 @@ CODE_READ_PAGE`) devolve só ~100 linhas + `simbolos` + `dica`, não a janela de
     o modelo abre a conversa inteira com `ler_conversa` (senão gasta buscas às cegas e refaz
     do zero). Compartilhada entre chat e code-agent.
 
-13. **Orçamento é por chamada do modelo, não por tool round.** `maxSteps` limita toda chamada bem-sucedida da run — rodadas principais, compactação e resposta final. Sem configuração explícita, o chat usa 40 no manual e 100 no Auto; não reintroduza heurísticas 2/4/8/15 por texto, pois elas encerram orquestrações no momento de disparar agentes. O contexto de uma conversa reaberta entra limitado (12 mensagens/24k caracteres/1 imagem); ferramentas além de 8 numa rodada recebem resultado sintético. O limite é **por execução**: várias conversas/projetos continuam rodando em paralelo. O subagente de pesquisa exige aprovação, é no máximo 2 por run e seu resumo é cortado antes de voltar ao agente pai.
+15. **Orçamento é por chamada do modelo, não por tool round.** `maxSteps` limita toda chamada bem-sucedida da run — rodadas principais, compactação e resposta final. Sem configuração explícita, o chat usa 40 no manual e 100 no Auto; não reintroduza heurísticas 2/4/8/15 por texto, pois elas encerram orquestrações no momento de disparar agentes. O contexto de uma conversa reaberta entra limitado (12 mensagens/24k caracteres/1 imagem); ferramentas além de 8 numa rodada recebem resultado sintético. O limite é **por execução**: várias conversas/projetos continuam rodando em paralelo. O subagente de pesquisa exige aprovação, é no máximo 2 por run e seu resumo é cortado antes de voltar ao agente pai.
 
-14. 🔴 **Importação de backup só conclui depois de todas as fontes serem gravadas.**
+16. 🔴 **Importação de backup só conclui depois de todas as fontes serem gravadas.**
     `backup:import` valida formato/versão e segura os blobs em main; o renderer salva
     um snapshot forçado do estado atual em `userData/backups/` antes de persistir store,
     conversas e memórias. Os blobs só são confirmados ao final. Qualquer falha reverte os
@@ -366,12 +370,12 @@ CODE_READ_PAGE`) devolve só ~100 linhas + `simbolos` + `dica`, não a janela de
     O app atualiza um snapshot diário ao abrir e a cada hora, com retenção dos
     sete mais recentes. Bytes dos anexos continuam fora do IPC.
 
-15. 🔴 **Conversa citada por memória não pode ser apagada.** `sourceConversationId`
+17. 🔴 **Conversa citada por memória não pode ser apagada.** `sourceConversationId`
     de memórias ativas **ou arquivadas** protege o transcript dos limites de 14 dias/50
     conversas, da exclusão manual e da substituição do histórico no restore de backup.
     O main decide isso antes de apagar bytes de anexos;
     remover só o arquivo deixaria handoffs e outras memórias apontando para o vazio.
-16. **Auto não aprova exclusão nem lançamento financeiro.** `deletar_task` e
+18. **Auto não aprova exclusão nem lançamento financeiro.** `deletar_task` e
     `criar_transacao` sempre passam pelo card de aprovação do chat; as outras
     escritas continuam podendo rodar no Auto. Uma correção reenviada desliga o
     Auto daquela conversa para impedir repetição silenciosa de ações anteriores.

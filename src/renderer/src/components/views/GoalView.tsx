@@ -5,6 +5,8 @@ import { GoalModal } from '../modals/GoalModal'
 import { GoalCard } from '../GoalCard'
 import { useDeleteConfirm } from '../useDeleteConfirm'
 import { searchFocusClass, useSearchFocus } from '../../utils/searchFocus'
+import { goalProgressPercent, isGoalComplete } from '../../utils/goals'
+import type { GoalKind } from '../../utils/goals'
 
 interface Props {
   projects: Project[]
@@ -18,7 +20,7 @@ interface ModalState {
   goal?: Goal
 }
 
-export function GoalView({ projects, searchTargetId }: Props) {
+export function GoalView({ projects, searchTargetId }: Props): React.JSX.Element {
   const goals = useKanbanStore((s) => s.goals)
   const createGoal = useKanbanStore((s) => s.createGoal)
   const updateGoal = useKanbanStore((s) => s.updateGoal)
@@ -27,7 +29,10 @@ export function GoalView({ projects, searchTargetId }: Props) {
   const deleteGoalEntry = useKanbanStore((s) => s.deleteGoalEntry)
 
   const [modal, setModal] = useState<ModalState>({ open: false })
-  const [filter, setFilter] = useState<FilterType>('all')
+  const [filter, setFilter] = useState<FilterType>(() => {
+    const target = searchTargetId ? goals.find((goal) => goal.id === searchTargetId) : undefined
+    return target && isGoalComplete(target) ? 'all' : 'active'
+  })
   const searchRef = useSearchFocus<HTMLDivElement>(!!searchTargetId)
 
   const { prompt: promptDelete, confirmDialog } = useDeleteConfirm(deleteGoal, {
@@ -37,9 +42,14 @@ export function GoalView({ projects, searchTargetId }: Props) {
 
   const projectMap = Object.fromEntries(projects.map((p) => [p.id, p.name]))
 
-  const goalCurrent = (g: Goal) => g.entries.reduce((sum, e) => sum + e.value, 0)
-
-  const handleSave = (data: { title: string; target: number; unit: string; color: string; projectId?: string }) => {
+  const handleSave = (data: {
+    title: string
+    kind: GoalKind
+    target: number
+    unit: string
+    color: string
+    projectId?: string
+  }): void => {
     if (modal.goal) {
       updateGoal(modal.goal.id, data)
     } else {
@@ -48,32 +58,33 @@ export function GoalView({ projects, searchTargetId }: Props) {
     setModal({ open: false })
   }
 
-  const completedCount = goals.filter((g) => goalCurrent(g) >= g.target).length
+  const completedCount = goals.filter(isGoalComplete).length
   const activeCount = goals.length - completedCount
-  const overallPct = goals.length > 0
-    ? Math.round(goals.reduce((sum, g) => sum + Math.min(goalCurrent(g) / Math.max(g.target, 1), 1), 0) / goals.length * 100)
-    : 0
+  const overallPct =
+    goals.length > 0
+      ? Math.round(goals.reduce((sum, goal) => sum + goalProgressPercent(goal), 0) / goals.length)
+      : 0
 
   const filtered = goals
     .filter((g) => {
-      const done = goalCurrent(g) >= g.target
+      const done = isGoalComplete(g)
       if (filter === 'active') return !done
       if (filter === 'done') return done
       return true
     })
     .sort((a, b) => {
-      const aDone = goalCurrent(a) >= a.target ? 1 : 0
-      const bDone = goalCurrent(b) >= b.target ? 1 : 0
+      const aDone = isGoalComplete(a) ? 1 : 0
+      const bDone = isGoalComplete(b) ? 1 : 0
       if (aDone !== bDone) return aDone - bDone
-      const aPct = a.target > 0 ? goalCurrent(a) / a.target : 0
-      const bPct = b.target > 0 ? goalCurrent(b) / b.target : 0
+      const aPct = goalProgressPercent(a)
+      const bPct = goalProgressPercent(b)
       return bPct - aPct
     })
 
   const filterLabels: Record<FilterType, string> = {
     all: `Todas (${goals.length})`,
     active: `Em progresso (${activeCount})`,
-    done: `Concluídas (${completedCount})`,
+    done: `Concluídas (${completedCount})`
   }
 
   return (
@@ -81,7 +92,14 @@ export function GoalView({ projects, searchTargetId }: Props) {
       <div className="flex flex-col h-full overflow-hidden">
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#2b2b31] shrink-0">
           <div className="flex items-center gap-3">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2">
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#7c3aed"
+              strokeWidth="2"
+            >
               <circle cx="12" cy="12" r="10" />
               <circle cx="12" cy="12" r="6" />
               <circle cx="12" cy="12" r="2" />
@@ -92,8 +110,16 @@ export function GoalView({ projects, searchTargetId }: Props) {
             onClick={() => setModal({ open: true })}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#7c3aed] text-sm text-white font-medium hover:bg-[#6d28d9] transition-colors"
           >
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+            <svg
+              width="11"
+              height="11"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+            >
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
             </svg>
             Nova meta
           </button>
@@ -104,18 +130,25 @@ export function GoalView({ projects, searchTargetId }: Props) {
             <div className="flex items-center gap-4 mb-2">
               <div className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-[#20b858]" />
-                <span className="text-[11px] text-[#999999]">{completedCount} concluída{completedCount !== 1 ? 's' : ''}</span>
+                <span className="text-[11px] text-[#999999]">
+                  {completedCount} concluída{completedCount !== 1 ? 's' : ''}
+                </span>
               </div>
               <div className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-[#7c3aed]" />
                 <span className="text-[11px] text-[#999999]">{activeCount} em progresso</span>
               </div>
-              <span className="text-[11px] font-semibold text-[#a080f0] ml-auto tabular-nums">{overallPct}% médio</span>
+              <span className="text-[11px] font-semibold text-[#a080f0] ml-auto tabular-nums">
+                {overallPct}% médio
+              </span>
             </div>
             <div className="h-1.5 rounded-full bg-[#2a2a30] overflow-hidden">
               <div
                 className="h-full rounded-full transition-all duration-500"
-                style={{ width: `${overallPct}%`, backgroundColor: overallPct === 100 ? '#20b858' : '#7c3aed' }}
+                style={{
+                  width: `${overallPct}%`,
+                  backgroundColor: overallPct === 100 ? '#20b858' : '#7c3aed'
+                }}
               />
             </div>
           </div>
@@ -123,12 +156,14 @@ export function GoalView({ projects, searchTargetId }: Props) {
 
         {goals.length > 0 && (
           <div className="flex items-center gap-1 px-6 py-2 border-b border-[#2b2b31] bg-[#16161a] shrink-0">
-            {(['all', 'active', 'done'] as FilterType[]).map((f) => (
+            {(['active', 'all', 'done'] as FilterType[]).map((f) => (
               <button
                 key={f}
                 onClick={() => setFilter(f)}
                 className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
-                  filter === f ? 'bg-[#2a2a30] text-[#d4d4d4]' : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#222227]'
+                  filter === f
+                    ? 'bg-[#2a2a30] text-[#d4d4d4]'
+                    : 'text-[#999999] hover:text-[#d4d4d4] hover:bg-[#222227]'
                 }`}
               >
                 {filterLabels[f]}
@@ -141,28 +176,59 @@ export function GoalView({ projects, searchTargetId }: Props) {
           <div className="flex flex-col items-center justify-center flex-1 gap-5">
             <div className="relative">
               <div className="w-20 h-20 rounded-full bg-[#16161a] border border-[#2b2b31] flex items-center justify-center">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#555555" strokeWidth="1.5">
+                <svg
+                  width="32"
+                  height="32"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#555555"
+                  strokeWidth="1.5"
+                >
                   <circle cx="12" cy="12" r="10" />
                   <circle cx="12" cy="12" r="6" />
                   <circle cx="12" cy="12" r="2" />
                 </svg>
               </div>
-              <svg className="absolute inset-0 -m-2 opacity-20" width="88" height="88" viewBox="0 0 88 88">
-                <circle cx="44" cy="44" r="40" fill="none" stroke="#7c3aed" strokeWidth="1" strokeDasharray="4 6" />
+              <svg
+                className="absolute inset-0 -m-2 opacity-20"
+                width="88"
+                height="88"
+                viewBox="0 0 88 88"
+              >
+                <circle
+                  cx="44"
+                  cy="44"
+                  r="40"
+                  fill="none"
+                  stroke="#7c3aed"
+                  strokeWidth="1"
+                  strokeDasharray="4 6"
+                />
               </svg>
             </div>
             <div className="text-center">
-              <p className="text-[#d4d4d4] font-semibold mb-1.5">Você ainda não criou nenhuma meta</p>
+              <p className="text-[#d4d4d4] font-semibold mb-1.5">
+                Você ainda não criou nenhuma meta
+              </p>
               <p className="text-sm text-[#999999] max-w-xs leading-relaxed">
-                Crie metas e registre cada progresso com data e descrição — livros lidos, km corridos, horas estudadas.
+                Crie metas e registre cada progresso com data e descrição — livros lidos, km
+                corridos, horas estudadas.
               </p>
             </div>
             <button
               onClick={() => setModal({ open: true })}
               className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#7c3aed] text-sm text-white font-medium hover:bg-[#6d28d9] transition-colors"
             >
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+              <svg
+                width="11"
+                height="11"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+              >
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
               </svg>
               Criar primeira meta
             </button>

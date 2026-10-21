@@ -127,6 +127,7 @@ interface Goal {
   id: string
   title: string
   entries: GoalEntry[]
+  kind?: 'completion' | 'quantity'
   target: number
   unit: string
   color: string
@@ -341,6 +342,7 @@ function getDb(): Database.Database {
   migrateTimeBlockBorderStyleColumn(_db)
   migrateRoutineBorderStyleColumn(_db)
   migrateNoteBorderStyleColumn(_db)
+  migrateGoalKindColumn(_db)
   migrateMemoryDropProjectFk(_db)
   migrateMemoryProvenanceColumn(_db)
   ensureMemorySearch(_db)
@@ -812,6 +814,16 @@ function migrateNoteBorderStyleColumn(db: Database.Database): void {
   if (!has) db.prepare('ALTER TABLE notes ADD COLUMN border_style TEXT').run()
 }
 
+// Goals created before the two goal modes existed remain quantitative when
+// this nullable column is absent. The renderer writes it only after creation
+// or an explicit edit, so the migration never reinterprets existing data.
+function migrateGoalKindColumn(db: Database.Database): void {
+  const has = (db.prepare('PRAGMA table_info(goals)').all() as { name: string }[]).some(
+    (column) => column.name === 'kind'
+  )
+  if (!has) db.prepare('ALTER TABLE goals ADD COLUMN kind TEXT').run()
+}
+
 // One-time migration for existing DBs: the `memory` table originally declared
 // `project_id TEXT REFERENCES projects(id) ON DELETE CASCADE`. That cascade was
 // a data-loss bug — persistAll (first save of a session) and persistDiff (any
@@ -1080,6 +1092,7 @@ function initSchema(db: Database.Database): void {
     CREATE TABLE IF NOT EXISTS goals (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
+      kind TEXT,
       target REAL NOT NULL,
       unit TEXT NOT NULL,
       color TEXT NOT NULL,
@@ -1321,7 +1334,7 @@ function prepareWrite(db: Database.Database) {
       'INSERT OR IGNORE INTO note_connections (note_id,connected_note_id) VALUES (?,?)'
     ),
     goal: db.prepare(
-      'INSERT INTO goals (id,title,target,unit,color,project_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)'
+      'INSERT INTO goals (id,title,kind,target,unit,color,project_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)'
     ),
     entry: db.prepare(
       'INSERT INTO goal_entries (id,goal_id,date,label,value,created_at) VALUES (?,?,?,?,?,?)'
@@ -1446,6 +1459,7 @@ function prepareWrite(db: Database.Database) {
       ins.goal.run(
         g.id,
         g.title,
+        g.kind ?? null,
         g.target,
         g.unit,
         g.color,
@@ -1883,6 +1897,7 @@ export function loadData(existingDb?: Database.Database): SaveData {
   const goals = all('SELECT * FROM goals').map((g) => ({
     id: g.id,
     title: g.title,
+    ...(g.kind === 'completion' || g.kind === 'quantity' ? { kind: g.kind } : {}),
     target: g.target,
     unit: g.unit,
     color: g.color,

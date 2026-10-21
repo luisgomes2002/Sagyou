@@ -417,10 +417,10 @@ export function GraphView({ onNavigate }: Props) {
           onNavigate({ type: 'note', id: node.entityId, projectId: node.projectId! })
           break
         case 'goal':
-          onNavigate({ type: 'goal' })
+          onNavigate({ type: 'goal', id: node.entityId })
           break
         case 'habit':
-          onNavigate({ type: 'habit' })
+          onNavigate({ type: 'habit', id: node.entityId })
           break
         case 'file':
           onNavigate({ type: 'file', projectId: node.projectId })

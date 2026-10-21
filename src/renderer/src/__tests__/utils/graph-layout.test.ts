@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { GRAPH_NODE_COLORS, buildGraph } from '../../utils/graph-layout'
-import type { Project, StickyNote, StoredFile, Task } from '../../types'
+import type { Goal, Habit, Project, StickyNote, StoredFile, Task } from '../../types'
 
 const NOW = '2025-01-01T00:00:00.000Z'
 
@@ -53,6 +53,30 @@ function makeFile(overrides: Partial<StoredFile> & { id: string }): StoredFile {
     ext: '.pdf',
     size: 10,
     createdAt: NOW,
+    ...overrides
+  }
+}
+
+function makeGoal(overrides: Partial<Goal> & { id: string }): Goal {
+  return {
+    title: 'Meta',
+    entries: [],
+    target: 1,
+    unit: 'unidade',
+    color: '#f472b6',
+    createdAt: NOW,
+    updatedAt: NOW,
+    ...overrides
+  }
+}
+
+function makeHabit(overrides: Partial<Habit> & { id: string }): Habit {
+  return {
+    name: 'Hábito',
+    color: '#4ade80',
+    completions: [],
+    createdAt: NOW,
+    updatedAt: NOW,
     ...overrides
   }
 }
@@ -112,6 +136,31 @@ describe('buildGraph', () => {
       type: 'structural'
     })
     expect(edges).toContainEqual({ source: noteNode.id, target: taskNode.id, type: 'explicit' })
+  })
+
+  it('cria a ligação explícita entre uma nota e sua meta', () => {
+    const goal = makeGoal({ id: 'goal-1', projectId: 'project-1' })
+    const note = makeNote({ id: 'note-1', goalIds: [goal.id] })
+
+    const { nodes, edges } = buildGraph([makeProject()], [], [note], [goal], [])
+    const noteNode = nodes.find((node) => node.entityId === note.id)!
+    const goalNode = nodes.find((node) => node.entityId === goal.id)!
+
+    expect(edges).toContainEqual({
+      source: noteNode.id,
+      target: goalNode.id,
+      type: 'explicit'
+    })
+  })
+
+  it('não inventa ligações entre hábitos independentes', () => {
+    const first = makeHabit({ id: 'habit-1', name: 'Ler' })
+    const second = makeHabit({ id: 'habit-2', name: 'Exercitar' })
+
+    const { nodes, edges } = buildGraph([], [], [], [], [first, second])
+
+    expect(nodes.filter((node) => node.type === 'habit')).toHaveLength(2)
+    expect(edges).toEqual([])
   })
 
   it('usa tons mais escuros para tasks e notas concluídas', () => {

@@ -517,6 +517,19 @@ describe('goal actions', () => {
     expect(g.target).toBe(20)
   })
 
+  it('converts an existing quantity goal to a single-completion goal', () => {
+    const id = useKanbanStore
+      .getState()
+      .createGoal({ title: 'Ler DDD', target: 1, unit: 'livro', color: '#fff' })
+    useKanbanStore.getState().updateGoal(id, { kind: 'completion', target: 1, unit: '' })
+
+    expect(useKanbanStore.getState().goals.find((g) => g.id === id)).toMatchObject({
+      kind: 'completion',
+      target: 1,
+      unit: ''
+    })
+  })
+
   it('deleteGoal removes the goal', () => {
     const id = useKanbanStore
       .getState()

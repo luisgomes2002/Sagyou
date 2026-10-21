@@ -12,6 +12,7 @@ import {
   type FeatureId
 } from './types'
 import { isDoneColumn, isTaskDone } from './utils/columns'
+import { isGoalComplete } from './utils/goals'
 import { TitleBar } from './components/layout/TitleBar'
 import { Sidebar } from './components/layout/Sidebar'
 import { Board } from './components/views/Board'
@@ -71,6 +72,29 @@ interface ConfirmState {
   title: string
   message: string
   onConfirm: () => void
+}
+
+function focusedEntityHit(
+  type: 'goal' | 'habit',
+  id: string,
+  title: string,
+  completed: boolean
+): GlobalSearchHit {
+  return {
+    type,
+    id,
+    title,
+    snippet: title,
+    matchedField: 'title',
+    projectId: null,
+    profileId: null,
+    tableId: null,
+    projectArchived: false,
+    memoryArchived: false,
+    completed,
+    state: null,
+    date: null
+  }
 }
 
 export default function App() {
@@ -780,9 +804,30 @@ export default function App() {
                       setSprintFilter(null)
                       break
                     case 'goal':
+                      {
+                        const goal = useKanbanStore
+                          .getState()
+                          .goals.find((item) => item.id === target.id)
+                        setSearchTarget(
+                          focusedEntityHit(
+                            'goal',
+                            target.id,
+                            goal?.title ?? '',
+                            !!goal && isGoalComplete(goal)
+                          )
+                        )
+                        setSearchSerial((serial) => serial + 1)
+                      }
                       setActiveView('goals')
                       break
                     case 'habit':
+                      {
+                        const habit = habits.find((item) => item.id === target.id)
+                        setSearchTarget(
+                          focusedEntityHit('habit', target.id, habit?.name ?? '', false)
+                        )
+                        setSearchSerial((serial) => serial + 1)
+                      }
                       setActiveView('habits')
                       break
                     case 'file':

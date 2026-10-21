@@ -1,10 +1,11 @@
 ﻿import { useState } from 'react'
 import type { Goal, GoalEntry } from '../types'
 import { todayLocalISO as todayISO } from '../utils/dates'
+import { goalCurrent, goalKind, goalProgressPercent, isGoalComplete } from '../utils/goals'
 
-const fmtNum = (n: number) => parseFloat(n.toFixed(4)).toString()
+const fmtNum = (n: number): string => parseFloat(n.toFixed(4)).toString()
 
-const fmtDate = (iso: string) => {
+const fmtDate = (iso: string): string => {
   const [y, m, d] = iso.split('-')
   return `${d}/${m}/${y?.slice(-2)}`
 }
@@ -25,7 +26,7 @@ export function GoalCard({
   onDelete,
   onAddEntry,
   onDeleteEntry
-}: Props) {
+}: Props): React.JSX.Element {
   const [menuOpen, setMenuOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
   const [entryDate, setEntryDate] = useState(todayISO)
@@ -33,9 +34,11 @@ export function GoalCard({
   const [entryValue, setEntryValue] = useState('1')
   const [showAll, setShowAll] = useState(false)
 
-  const current = goal.entries.reduce((sum, e) => sum + e.value, 0)
-  const percent = goal.target > 0 ? Math.min((current / goal.target) * 100, 100) : 0
-  const isComplete = current >= goal.target
+  const kind = goalKind(goal)
+  const isCompletion = kind === 'completion'
+  const current = goalCurrent(goal)
+  const percent = goalProgressPercent(goal)
+  const isComplete = isGoalComplete(goal)
   const remaining = Math.max(goal.target - current, 0)
   const unitSuffix = goal.unit ? ` ${goal.unit}` : ''
   const accentColor = isComplete ? '#46d478' : goal.color
@@ -48,8 +51,8 @@ export function GoalCard({
   const visibleEntries = showAll ? sortedEntries : sortedEntries.slice(0, COLLAPSED_LIMIT)
   const hiddenCount = sortedEntries.length - visibleEntries.length
 
-  const handleAddEntry = () => {
-    const val = parseFloat(entryValue)
+  const handleAddEntry = (): void => {
+    const val = isCompletion ? 1 : parseFloat(entryValue)
     if (isNaN(val) || val <= 0) return
     onAddEntry({ date: entryDate, label: entryLabel.trim() || undefined, value: val })
     setEntryLabel('')
@@ -57,7 +60,7 @@ export function GoalCard({
     setAddOpen(false)
   }
 
-  const openAdd = () => {
+  const openAdd = (): void => {
     setEntryDate(todayISO())
     setEntryLabel('')
     setEntryValue('1')
@@ -65,6 +68,9 @@ export function GoalCard({
   }
 
   const unitLabel = goal.unit ? goal.unit.charAt(0).toUpperCase() + goal.unit.slice(1) : 'Qtd'
+  const dateInputId = `goal-entry-date-${goal.id}`
+  const valueInputId = `goal-entry-value-${goal.id}`
+  const labelInputId = `goal-entry-label-${goal.id}`
 
   return (
     <div className="group rounded-xl border border-[#2b2b31] bg-[#16161a] overflow-hidden hover:border-[#3b3b42] transition-colors duration-200">
@@ -126,68 +132,104 @@ export function GoalCard({
             </div>
           </div>
 
-          <div className="flex items-baseline gap-1.5 mt-4 mb-2">
-            <span
-              className="text-3xl font-bold tabular-nums leading-none"
-              style={{ color: accentColor }}
-            >
-              {fmtNum(current)}
-            </span>
-            {goal.unit && <span className="text-sm text-[#999999]">{goal.unit}</span>}
-            <span className="text-xs text-[#555555] mx-0.5">/</span>
-            <span className="text-sm font-medium text-[#999999] tabular-nums">
-              {fmtNum(goal.target)}
-              {unitSuffix}
-            </span>
-          </div>
-          <div
-            className="h-2 rounded-full bg-[#2a2a30] overflow-hidden mb-2"
-            role="progressbar"
-            aria-label={`Progresso de ${goal.title}`}
-            aria-valuenow={Math.round(percent)}
-            aria-valuemin={0}
-            aria-valuemax={100}
-          >
-            <div
-              className="h-full rounded-full transition-[width] duration-500"
-              style={{ width: `${percent}%`, backgroundColor: accentColor }}
-            />
-          </div>
-
-          {isComplete ? (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#2a2a30] text-[#20b858] text-[10px] font-semibold">
-              <svg
-                width="8"
-                height="8"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="3.5"
+          {isCompletion ? (
+            <div className="mt-4 flex items-center gap-3 rounded-lg border border-[#2b2b31] bg-[#101014] p-3">
+              <span
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border"
+                style={{ borderColor: accentColor, color: accentColor }}
               >
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-              Concluída
-            </span>
+                {isComplete ? (
+                  <svg
+                    width="15"
+                    height="15"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="3"
+                  >
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                ) : (
+                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: accentColor }} />
+                )}
+              </span>
+              <div>
+                <p className="text-sm font-semibold" style={{ color: accentColor }}>
+                  {isComplete ? 'Concluída' : 'Em andamento'}
+                </p>
+                <p className="mt-0.5 text-[11px] text-[#999999]">
+                  {isComplete
+                    ? 'Este objetivo foi concluído.'
+                    : 'Objetivo único, sem contagem de quantidade.'}
+                </p>
+              </div>
+            </div>
           ) : (
-            <p className="flex items-center justify-between text-[11px] text-[#999999]">
-              <span>
-                Faltam{' '}
-                <span className="text-[#d4d4d4] font-semibold tabular-nums">
-                  {fmtNum(remaining)}
+            <>
+              <div className="flex items-baseline gap-1.5 mt-4 mb-2">
+                <span
+                  className="text-3xl font-bold tabular-nums leading-none"
+                  style={{ color: accentColor }}
+                >
+                  {fmtNum(current)}
+                </span>
+                {goal.unit && <span className="text-sm text-[#999999]">{goal.unit}</span>}
+                <span className="text-xs text-[#555555] mx-0.5">/</span>
+                <span className="text-sm font-medium text-[#999999] tabular-nums">
+                  {fmtNum(goal.target)}
                   {unitSuffix}
                 </span>
-              </span>
-              <span className="tabular-nums font-semibold" style={{ color: accentColor }}>
-                {Math.round(percent)}%
-              </span>
-            </p>
+              </div>
+              <div
+                className="h-2 rounded-full bg-[#2a2a30] overflow-hidden mb-2"
+                role="progressbar"
+                aria-label={`Progresso de ${goal.title}`}
+                aria-valuenow={Math.round(percent)}
+                aria-valuemin={0}
+                aria-valuemax={100}
+              >
+                <div
+                  className="h-full rounded-full transition-[width] duration-500"
+                  style={{ width: `${percent}%`, backgroundColor: accentColor }}
+                />
+              </div>
+
+              {isComplete ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#2a2a30] text-[#20b858] text-[10px] font-semibold">
+                  <svg
+                    width="8"
+                    height="8"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="3.5"
+                  >
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  Concluída
+                </span>
+              ) : (
+                <p className="flex items-center justify-between text-[11px] text-[#999999]">
+                  <span>
+                    Faltam{' '}
+                    <span className="text-[#d4d4d4] font-semibold tabular-nums">
+                      {fmtNum(remaining)}
+                      {unitSuffix}
+                    </span>
+                  </span>
+                  <span className="tabular-nums font-semibold" style={{ color: accentColor }}>
+                    {Math.round(percent)}%
+                  </span>
+                </p>
+              )}
+            </>
           )}
         </div>
 
         <div className="border-t border-[#2b2b31] pt-3">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-[#999999]">
-              Histórico
+              {isCompletion ? 'Conclusão' : 'Histórico'}
             </span>
             {addOpen ? (
               <button
@@ -196,7 +238,7 @@ export function GoalCard({
               >
                 Cancelar
               </button>
-            ) : (
+            ) : !isComplete ? (
               <button
                 onClick={openAdd}
                 className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-md bg-[#2a2a30] hover:bg-[#303036] transition-colors"
@@ -213,45 +255,55 @@ export function GoalCard({
                   <line x1="12" y1="5" x2="12" y2="19" />
                   <line x1="5" y1="12" x2="19" y2="12" />
                 </svg>
-                Registrar
+                {isCompletion ? 'Concluir' : 'Registrar'}
               </button>
-            )}
+            ) : null}
           </div>
 
           {addOpen && (
             <div className="mb-2 p-2 rounded-lg border border-[#2b2b31] bg-[#101014] space-y-2">
               <div className="flex gap-2">
                 <div className="flex-1">
-                  <label className="block text-[10px] text-[#999999] mb-1">Data</label>
+                  <label htmlFor={dateInputId} className="block text-[10px] text-[#999999] mb-1">
+                    {isCompletion ? 'Data da conclusão' : 'Data'}
+                  </label>
                   <input
+                    id={dateInputId}
                     type="date"
                     value={entryDate}
                     onChange={(e) => setEntryDate(e.target.value)}
+                    autoFocus={isCompletion}
                     className="w-full px-2 py-1 rounded border border-[#2b2b31] bg-[#16161a] text-xs text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed] transition-colors"
                   />
                 </div>
-                <div className="w-24">
-                  <label className="block text-[10px] text-[#999999] mb-1">{unitLabel}</label>
-                  <input
-                    type="number"
-                    value={entryValue}
-                    onChange={(e) => setEntryValue(e.target.value)}
-                    min="0.01"
-                    step="any"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleAddEntry()
-                    }}
-                    autoFocus
-                    className="w-full px-2 py-1 rounded border border-[#2b2b31] bg-[#16161a] text-xs text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed] transition-colors tabular-nums"
-                  />
-                </div>
+                {!isCompletion && (
+                  <div className="w-24">
+                    <label htmlFor={valueInputId} className="block text-[10px] text-[#999999] mb-1">
+                      {unitLabel}
+                    </label>
+                    <input
+                      id={valueInputId}
+                      type="number"
+                      value={entryValue}
+                      onChange={(e) => setEntryValue(e.target.value)}
+                      min="0.01"
+                      step="any"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleAddEntry()
+                      }}
+                      autoFocus
+                      className="w-full px-2 py-1 rounded border border-[#2b2b31] bg-[#16161a] text-xs text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed] transition-colors tabular-nums"
+                    />
+                  </div>
+                )}
               </div>
               <div>
-                <label className="block text-[10px] text-[#999999] mb-1">
-                  Descrição (opcional)
+                <label htmlFor={labelInputId} className="block text-[10px] text-[#999999] mb-1">
+                  {isCompletion ? 'Observação (opcional)' : 'Descrição (opcional)'}
                 </label>
                 <div className="flex gap-2">
                   <input
+                    id={labelInputId}
                     type="text"
                     value={entryLabel}
                     onChange={(e) => setEntryLabel(e.target.value)}
@@ -259,21 +311,23 @@ export function GoalCard({
                       if (e.key === 'Enter') handleAddEntry()
                     }}
                     placeholder={
-                      goal.unit === 'livros' || goal.unit === 'livro'
-                        ? 'Nome do livro...'
-                        : goal.unit === 'km'
-                          ? 'Ex: Parque Ibirapuera...'
-                          : 'Observação...'
+                      isCompletion
+                        ? 'Como foi concluir esta meta?'
+                        : goal.unit === 'livros' || goal.unit === 'livro'
+                          ? 'Nome do livro...'
+                          : goal.unit === 'km'
+                            ? 'Ex: Parque Ibirapuera...'
+                            : 'Observação...'
                     }
                     className="flex-1 px-2 py-1 rounded border border-[#2b2b31] bg-[#16161a] text-xs text-[#d4d4d4] placeholder-[#555555] focus:outline-none focus:border-[#7c3aed] transition-colors"
                   />
                   <button
                     onClick={handleAddEntry}
-                    disabled={!entryValue || parseFloat(entryValue) <= 0}
+                    disabled={!isCompletion && (!entryValue || parseFloat(entryValue) <= 0)}
                     className="px-3 py-1 rounded text-xs font-semibold text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                     style={{ backgroundColor: goal.color }}
                   >
-                    Salvar
+                    {isCompletion ? 'Concluir meta' : 'Salvar'}
                   </button>
                 </div>
               </div>
@@ -301,8 +355,7 @@ export function GoalCard({
                     className="text-xs font-semibold tabular-nums shrink-0"
                     style={{ color: accentColor }}
                   >
-                    +{fmtNum(entry.value)}
-                    {unitSuffix}
+                    {isCompletion ? 'Concluída' : `+${fmtNum(entry.value)}${unitSuffix}`}
                   </span>
                   <button
                     onClick={() => onDeleteEntry(entry.id)}

@@ -152,6 +152,8 @@ export interface Goal {
   id: string
   title: string
   entries: GoalEntry[]
+  /** Missing on goals created before completion goals existed; absence means quantity. */
+  kind?: 'completion' | 'quantity'
   target: number
   unit: string
   color: string

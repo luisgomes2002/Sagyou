@@ -93,6 +93,7 @@ const KANBAN_TOOL_NAMES = new Set([
   'criar_transacao',
   'ler_metas',
   'criar_meta',
+  'registrar_progresso_meta',
   'atualizar_meta',
   'ler_habitos',
   'marcar_habito',
@@ -367,6 +368,10 @@ export function describeToolActivity(name: string, args: Record<string, unknown>
       const titulo = str(args.titulo)
       return titulo ? `Criando a meta ${titulo}` : 'Criando uma meta'
     }
+    case 'registrar_progresso_meta': {
+      const alvo = str(args.titulo) || str(args.metaId)
+      return alvo ? `Registrando progresso na meta ${alvo}` : 'Registrando progresso em uma meta'
+    }
     case 'atualizar_meta': {
       const alvo = str(args.titulo) || str(args.metaId)
       return alvo ? `Atualizando a meta ${alvo}` : 'Atualizando uma meta'
@@ -464,6 +469,16 @@ export function describeToolCall(name: string, args: Record<string, unknown>): s
     }
     case 'criar_meta':
       return `Criar meta "${args.titulo ?? '?'}": alvo ${args.alvo ?? '?'} ${args.unidade ?? ''}`.trim()
+    case 'registrar_progresso_meta': {
+      const meta = args.titulo ?? args.metaId ?? '?'
+      const progresso =
+        args.valor === undefined
+          ? 'concluir'
+          : `registrar ${args.valor}${args.unidade ? ` ${args.unidade}` : ''}`
+      const detalhes = [args.data ? `em ${args.data}` : 'hoje']
+      if (args.observacao) detalhes.push(`observação: ${args.observacao}`)
+      return `${progresso} na meta ${meta} (${detalhes.join('; ')})`
+    }
     case 'atualizar_meta': {
       const campos: string[] = []
       if (args.novoTitulo !== undefined) campos.push(`nome → ${args.novoTitulo}`)

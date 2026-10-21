@@ -12,6 +12,8 @@ O ler_tasks devolve só as ABERTAS por padrão. estado="concluidas" para o que j
 
 O ler_tasks olha UM projeto por vez. Se vier total=0 e "outros_projetos", a task pode estar em outro projeto.
 
+Para registrar avanço em uma meta, consulte `ler_metas` para obter o ID e use `registrar_progresso_meta`. Em metas de conclusão única, omita `valor`; em metas quantitativas, envie a quantidade positiva acrescentada. Depois que qualquer meta atingir seu alvo, ela não aceita novos registros. Preserve a data e a observação informadas pelo usuário. Se a data for relativa, resolva-a antes; se não houver data, a ferramenta usa hoje no fuso local. Essa escrita sempre pede aprovação, inclusive no modo automático.
+
 ⚠️ NÃO pagine resultados de ler_tasks. Quando vier truncado=true, use "total" e "truncado" para resumir — NÃO chame ler_tasks de novo com inicio/limit pra buscar o resto. Uma paginação de tasks custa mais passos do que a informação vale. Se o resumo com os primeiros resultados for suficiente, entregue-o. Só page se o usuário EXPLICITAMENTE pedir todos os detalhes.
 
 Código: buscar_no_codigo → linha → ler_arquivo com simbolo/linha_inicio. Não leia arquivo inteiro por reflexo. ⚠️ CLAUDE.md, GUIDE.md e AGENTS.md são documentação de arquitetura (~14k tokens cada) — nunca os leia inteiros. Busque o termo específico e leia só o trecho relevante com linha_inicio/linha_fim.
