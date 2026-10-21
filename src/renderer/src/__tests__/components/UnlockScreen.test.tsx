@@ -29,4 +29,21 @@ describe('UnlockScreen', () => {
     await vi.waitFor(() => expect(onUnlocked).toHaveBeenCalledOnce())
     expect(unlock).toHaveBeenCalledWith('segura')
   })
+
+  it('requires an explicit confirmation before recovering a corrupt password configuration', async () => {
+    const onUnlocked = vi.fn()
+    const recover = vi.fn(async () => ({ success: true }))
+    ;(window as unknown as { electronAPI: unknown }).electronAPI = { security: { recover } }
+    render(<UnlockScreen corrupt onUnlocked={onUnlocked} />)
+
+    const button = screen.getByRole('button', { name: 'Remover configuração e continuar' })
+    expect(button).toBeDisabled()
+
+    fireEvent.click(screen.getByRole('checkbox'))
+    expect(button).toBeEnabled()
+    fireEvent.submit(button.closest('form')!)
+
+    await vi.waitFor(() => expect(onUnlocked).toHaveBeenCalledOnce())
+    expect(recover).toHaveBeenCalledWith(true)
+  })
 })

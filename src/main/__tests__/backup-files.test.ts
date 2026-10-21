@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { safeAttachmentName } from '../backup-files'
+import { attachmentPath, safeAttachmentName } from '../backup-files'
 
 // The id/ext come from a backup file a user could hand-edit, and the result is
 // joined onto userData/files to write a blob — so a traversal must resolve to
@@ -41,5 +41,19 @@ describe('safeAttachmentName', () => {
   it('rejects a non-string ext', () => {
     expect(safeAttachmentName(uuid, 42)).toBeNull()
     expect(safeAttachmentName(uuid, {})).toBeNull()
+  })
+})
+
+describe('attachmentPath', () => {
+  const directory = '/tmp/sagyou/files'
+  const uuid = '123e4567-e89b-12d3-a456-426614174000'
+
+  it('resolves only a validated attachment below its own directory', () => {
+    expect(attachmentPath(directory, '/', uuid, '.pdf')).toBe(`${directory}/${uuid}.pdf`)
+  })
+
+  it('rejects ids and extensions that could turn an IPC argument into a path', () => {
+    expect(attachmentPath(directory, '/', '../../kanban', '.db')).toBeNull()
+    expect(attachmentPath(directory, '/', uuid, '.pdf/../kanban.db')).toBeNull()
   })
 })

@@ -29,6 +29,8 @@ import { useAiRunStore } from '../../store/aiRun'
 import {
   runTool,
   isWriteTool,
+  getToolContract,
+  validateToolCall,
   TOOL_DEFS,
   describeToolCall,
   describeToolActivity,
@@ -60,6 +62,22 @@ function resetStore(): void {
     isLoaded: false
   })
 }
+
+describe('tool contracts', () => {
+  it('keeps definition, permission, validation and execution in one contract', () => {
+    const contract = getToolContract('criar_tasks')
+
+    expect(contract).toMatchObject({
+      name: 'criar_tasks',
+      permission: { name: 'criar_tasks', level: 'write' }
+    })
+    expect(contract?.definition.function.name).toBe('criar_tasks')
+    expect(contract?.run).toBeTypeOf('function')
+    expect(contract?.validate).toBeTypeOf('function')
+    expect(isWriteTool('criar_tasks')).toBe(true)
+    expect(validateToolCall('ferramenta_inexistente', {})).toMatchObject({ valid: false })
+  })
+})
 
 describe('criar_plano', () => {
   beforeEach(resetStore)
@@ -117,6 +135,63 @@ describe('criar_plano', () => {
   })
 })
 
+describe('atualizar_plano', () => {
+  beforeEach(resetStore)
+
+  it('rejects an entire batch with invalid times without changing any block', async () => {
+    st().createTimeBlock({
+      date: '2026-10-16',
+      startTime: '09:00',
+      endTime: '10:00',
+      title: 'Primeiro',
+      type: 'custom',
+      color: '#06b6d4',
+      order: 0
+    })
+    st().createTimeBlock({
+      date: '2026-10-16',
+      startTime: '11:00',
+      endTime: '12:00',
+      title: 'Segundo',
+      type: 'custom',
+      color: '#06b6d4',
+      order: 1
+    })
+    const [first, second] = st().timeBlocks
+
+    const result = await call('atualizar_plano', {
+      blocos: [
+        { id: first.id, inicio: '08:00', fim: '09:00' },
+        { id: second.id, inicio: '99:99', fim: '10:00' }
+      ]
+    })
+
+    expect(result.error).toContain('Lote não alterado')
+    expect(st().timeBlocks).toMatchObject([
+      { id: first.id, startTime: '09:00', endTime: '10:00' },
+      { id: second.id, startTime: '11:00', endTime: '12:00' }
+    ])
+  })
+
+  it('rejects an end time that is not after the effective start time', async () => {
+    st().createTimeBlock({
+      date: '2026-10-16',
+      startTime: '09:00',
+      endTime: '10:00',
+      title: 'Foco',
+      type: 'custom',
+      color: '#06b6d4',
+      order: 0
+    })
+    const block = st().timeBlocks[0]
+
+    const result = await call('atualizar_plano', { blocos: [{ id: block.id, fim: '09:00' }] })
+
+    expect(result.error).toContain('fim deve ser posterior')
+    expect(st().timeBlocks[0]).toMatchObject({ startTime: '09:00', endTime: '10:00' })
+  })
+})
+
 const st = (): ReturnType<typeof useKanbanStore.getState> => useKanbanStore.getState()
 const call = async (
   name: string,
@@ -129,7 +204,14 @@ describe('ler_dados', () => {
     resetStore()
     useKanbanStore.setState({
       activeFinancialProfileId: 'personal',
-      financialProfiles: [{ id: 'personal', name: 'Minhas finanças', createdAt: '2026-01-01', updatedAt: '2026-01-01' }]
+      financialProfiles: [
+        {
+          id: 'personal',
+          name: 'Minhas finanças',
+          createdAt: '2026-01-01',
+          updatedAt: '2026-01-01'
+        }
+      ]
     })
   })
 
@@ -322,7 +404,12 @@ describe('buscar_registros', () => {
       concluida: false
     })
 
-    expect(global).toHaveBeenCalledWith({ term: 'seguro', types: ['task'], completed: false, limit: 10 })
+    expect(global).toHaveBeenCalledWith({
+      term: 'seguro',
+      types: ['task'],
+      completed: false,
+      limit: 10
+    })
     expect(result).toMatchObject({
       total: 1,
       truncado: false,
@@ -1012,7 +1099,9 @@ describe('ler_financeiro', () => {
     expect(t).toMatchObject({ nome: 'Casa', receitas: '5000', despesas: '1350.5', saldo: '3649.5' })
     expect(typeof t.saldo).toBe('string')
     expect(t.referencias).toHaveLength(3)
-    expect((t.referencias as { tipo: string; id: string }[]).every((ref) => ref.tipo === 'transacao')).toBe(true)
+    expect(
+      (t.referencias as { tipo: string; id: string }[]).every((ref) => ref.tipo === 'transacao')
+    ).toBe(true)
   })
 
   it('breaks spend down by category', async () => {

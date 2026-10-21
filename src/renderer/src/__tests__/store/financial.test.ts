@@ -617,6 +617,43 @@ describe('transaction actions', () => {
   })
 })
 
+describe('debt payments', () => {
+  let listId: string
+
+  beforeEach(() => {
+    resetStore()
+    listId = useKanbanStore.getState().createList('Conta', 'BRL')
+  })
+
+  it('decrements a debt and records every payment as an expense transaction', () => {
+    const state = useKanbanStore.getState()
+    const debtId = state.addFinancialDebt(listId, 'Notebook', '1200')
+    expect(state.payFinancialDebt(listId, debtId, '200', '2026-10-16')).toBe(true)
+    expect(state.payFinancialDebt(listId, debtId, '1000', '2026-10-17')).toBe(true)
+
+    const list = useKanbanStore.getState().lists.find((item) => item.id === listId)!
+    expect(list.debts?.[0].remainingAmount).toBe('0')
+    expect(list.debts?.[0].completedAt).toBeTruthy()
+    expect(list.transactions.map((tx) => [tx.type, tx.amount, tx.debtId])).toEqual([
+      ['expense', '200', debtId],
+      ['expense', '1000', debtId]
+    ])
+  })
+
+  it('does not allow a payment larger than the outstanding amount and restores balance on deletion', () => {
+    const state = useKanbanStore.getState()
+    const debtId = state.addFinancialDebt(listId, 'Curso', '100')
+    expect(state.payFinancialDebt(listId, debtId, '101', '2026-10-16')).toBe(false)
+    expect(state.payFinancialDebt(listId, debtId, '40', '2026-10-16')).toBe(true)
+    const txId = useKanbanStore.getState().lists.find((item) => item.id === listId)!.transactions[0]
+      .id
+    useKanbanStore.getState().deleteTransaction(listId, txId)
+    expect(
+      useKanbanStore.getState().lists.find((item) => item.id === listId)?.debts?.[0].remainingAmount
+    ).toBe('100')
+  })
+})
+
 // ── Financial Goals CRUD ──────────────────────────────────────────────────────
 
 describe('financial goal actions', () => {

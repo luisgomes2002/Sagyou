@@ -162,6 +162,7 @@ Também é possível escolher um harness externo instalado localmente (Codex, Op
 ## Tecnologias
 
 - [Electron](https://www.electronjs.org/) + [electron-vite](https://electron-vite.org/)
+- Ponte IPC tipada a partir do preload — renderer e métodos expostos compartilham o mesmo contrato
 - [React](https://react.dev/) + [TypeScript](https://www.typescriptlang.org/)
 - [Zustand](https://zustand-demo.pmnd.rs/) — gerenciamento de estado
 - [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) — armazenamento local em SQLite
@@ -182,8 +183,8 @@ Também é possível escolher um harness externo instalado localmente (Codex, Op
 ```bash
 npm install       # instalar dependências
 npm run dev       # iniciar servidor de desenvolvimento
-npm test          # rodar testes
-npm run typecheck # verificar tipos
+npm run typecheck # validar TypeScript de main e renderer
+npm test          # rodar os testes
 npm run lint      # ESLint
 ```
 

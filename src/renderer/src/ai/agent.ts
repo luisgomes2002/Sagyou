@@ -1,4 +1,10 @@
-import { TOOL_DEFS, runTool, isWriteTool, describeToolActivity, type ToolDef } from './tools'
+import {
+  TOOL_DEFS,
+  runTool,
+  isWriteTool,
+  describeToolActivity,
+  type ToolDef
+} from './tools'
 import systemPromptMd from './system-prompt.md?raw'
 
 // ---------------------------------------------------------------------------
@@ -1180,7 +1186,11 @@ export async function runAgent(
       const parsed = calls.map((call) => {
         try {
           const args = call.function.arguments ? JSON.parse(call.function.arguments) : {}
-          return { call, args: args as Record<string, unknown>, parseError: null as string | null }
+          return {
+            call,
+            args: args as Record<string, unknown>,
+            parseError: null
+          }
         } catch {
           return {
             call,

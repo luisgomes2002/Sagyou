@@ -4,18 +4,16 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 vi.mock('../../services/ElectronStorage', () => {
   return {
     ElectronStorage: vi.fn(function ElectronStorage(this: Record<string, unknown>) {
-      this.load = vi
-        .fn()
-        .mockResolvedValue({
-          projects: [],
-          tasks: [],
-          sprints: [],
-          tombstones: [],
-          notes: [],
-          goals: [],
-          habits: [],
-          lists: []
-        })
+      this.load = vi.fn().mockResolvedValue({
+        projects: [],
+        tasks: [],
+        sprints: [],
+        tombstones: [],
+        notes: [],
+        goals: [],
+        habits: [],
+        lists: []
+      })
       this.save = vi.fn().mockResolvedValue(undefined)
       this.exportBackup = vi.fn().mockResolvedValue({ success: true })
       this.autoSaveBackup = vi.fn().mockResolvedValue({ success: true })
@@ -1098,6 +1096,35 @@ describe('importBackup', () => {
 
     expect(await useKanbanStore.getState().importBackup()).toBe(false)
     expect(useKanbanStore.getState().projects[0].id).toBe(localId)
+    expect(storage.commitBackupBlobs).not.toHaveBeenCalled()
+  })
+
+  it('rolls back state and conversations when a sidecar write fails during restore', async () => {
+    const localId = useKanbanStore.getState().createProject('Local')
+    const storage = getStorageMock()
+    const previousConversations = [{ id: 'old', title: 'Anterior', messages: [] }]
+    // exportBackup(true) reads history for the restore point before importBackup
+    // captures the state it must restore on failure.
+    storage.loadConversations.mockResolvedValueOnce([]).mockResolvedValueOnce(previousConversations)
+    storage.saveConversations
+      .mockRejectedValueOnce(new Error('disco cheio'))
+      .mockResolvedValueOnce(undefined)
+    storage.importBackup.mockResolvedValueOnce({
+      success: true,
+      data: {
+        version: 7,
+        exportedAt: new Date().toISOString(),
+        projects: [],
+        tasks: [],
+        conversations: [{ id: 'new', title: 'Novo', messages: [] }]
+      }
+    })
+
+    await expect(useKanbanStore.getState().importBackup()).rejects.toThrow(
+      'dados anteriores foram preservados'
+    )
+    expect(useKanbanStore.getState().projects.map((project) => project.id)).toEqual([localId])
+    expect(storage.saveConversations).toHaveBeenLastCalledWith(previousConversations)
     expect(storage.commitBackupBlobs).not.toHaveBeenCalled()
   })
 

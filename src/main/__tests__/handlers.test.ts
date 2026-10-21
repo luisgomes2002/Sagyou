@@ -91,7 +91,11 @@ const invoke = async <T>(channel: string, ...args: unknown[]): Promise<T> => {
 /** The event arg: only webContents.send (stream deltas) is ever used. */
 const sent: { channel: string; payload: unknown }[] = []
 const fakeEvent = {
-  sender: { isDestroyed: () => false, send: (channel: string, payload: unknown) => sent.push({ channel, payload }) }
+  sender: {
+    getURL: () => 'file:///sagyou/index.html',
+    isDestroyed: () => false,
+    send: (channel: string, payload: unknown) => sent.push({ channel, payload })
+  }
 }
 
 // --- a stand-in provider -----------------------------------------------------
@@ -144,6 +148,17 @@ describe('main handlers are registered', () => {
     for (const ch of ['ai:chat', 'ai:chat:stream', 'ai:code:list', 'ai:code:read', 'ai:code:search']) {
       expect(handlers.has(ch)).toBe(true)
     }
+  })
+
+  it('rejects a data request from a renderer outside the app document', () => {
+    const handler = handlers.get('store:load')
+    expect(handler).toBeDefined()
+    expect(() =>
+      handler?.(
+        { sender: { getURL: () => 'https://untrusted.example', isDestroyed: () => false } },
+        ...([] as never[])
+      )
+    ).toThrow('Solicitação IPC recusada.')
   })
 })
 

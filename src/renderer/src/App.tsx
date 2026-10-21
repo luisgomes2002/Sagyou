@@ -45,6 +45,7 @@ import { HomeView } from './components/views/HomeView'
 import { GuideView } from './components/views/GuideView'
 import { SettingsView } from './components/views/SettingsView'
 import { UnlockScreen } from './components/security/UnlockScreen'
+import { ViewErrorBoundary } from './components/ViewErrorBoundary'
 import type { GlobalSearchHit } from '../../main/global-search-query'
 
 interface TaskModalState {
@@ -211,6 +212,11 @@ export default function App() {
   const [excelExportOpen, setExcelExportOpen] = useState(false)
   const [securityState, setSecurityState] = useState<'checking' | 'locked' | 'unlocked'>('checking')
   const [unlockUserName, setUnlockUserName] = useState<string | undefined>()
+  const [passwordConfigCorrupt, setPasswordConfigCorrupt] = useState(false)
+  const [backupExportProgress, setBackupExportProgress] = useState<{
+    completed: number
+    total: number
+  } | null>(null)
   // session-only: maps projectId → active linkIds (not persisted — each machine picks its own)
   const [activeLinkIds, setActiveLinkIds] = useState<Record<string, string[]>>({})
   const [confirm, setConfirm] = useState<ConfirmState>({
@@ -240,6 +246,14 @@ export default function App() {
   }, [uiPreferences])
 
   useEffect(() => {
+    if (!window.electronAPI.backup.onExportProgress) return
+    return window.electronAPI.backup.onExportProgress(({ completed, total, done }) => {
+      if (done) setBackupExportProgress(null)
+      else setBackupExportProgress({ completed, total })
+    })
+  }, [])
+
+  useEffect(() => {
     const viewFeatures: Partial<Record<typeof activeView, FeatureId>> = {
       board: 'kanban',
       upcoming: 'kanban',
@@ -263,6 +277,7 @@ export default function App() {
   useEffect(() => {
     window.electronAPI.security.status().then((status) => {
       setUnlockUserName(status.userName)
+      setPasswordConfigCorrupt(status.corrupt)
       setSecurityState(status.enabled ? 'locked' : 'unlocked')
     })
   }, [])
@@ -561,8 +576,13 @@ export default function App() {
 
   // --- Import/Export ---
   const handleExportBackup = async () => {
-    const ok = await exportBackup()
-    if (ok) addToast('Backup exportado com sucesso')
+    setBackupExportProgress({ completed: 0, total: 0 })
+    try {
+      const ok = await exportBackup()
+      if (ok) addToast('Backup exportado com sucesso')
+    } finally {
+      setBackupExportProgress(null)
+    }
   }
 
   const handleOpenBackupFolder = async () => {
@@ -612,7 +632,11 @@ export default function App() {
 
   if (securityState === 'locked') {
     return (
-      <UnlockScreen userName={unlockUserName} onUnlocked={() => setSecurityState('unlocked')} />
+      <UnlockScreen
+        userName={unlockUserName}
+        corrupt={passwordConfigCorrupt}
+        onUnlocked={() => setSecurityState('unlocked')}
+      />
     )
   }
 
@@ -674,253 +698,255 @@ export default function App() {
         />
 
         <main className="flex-1 flex flex-col overflow-hidden">
-          {activeView === 'settings' ? (
-            <SettingsView
-              featurePreferences={featurePreferences}
-              onSetFeaturePreferences={saveFeaturePreferences}
-              uiPreferences={uiPreferences}
-              onSetUiPreferences={setUiPreferences}
-              onToast={addToast}
-            />
-          ) : activeView === 'home' ? (
-            <HomeView
-              projects={projects}
-              onNavigate={(view) => {
-                setSearchTarget(null)
-                setFinancialSearchTarget(null)
-                setActiveView(view as typeof activeView)
-              }}
-            />
-          ) : activeView === 'reports' ? (
-            <ReportsView projects={projects} tasks={tasks} sprints={sprints} habits={habits} />
-          ) : activeView === 'upcoming' ? (
-            <UpcomingView projects={projects} tasks={tasks} onViewTask={handleViewTask} />
-          ) : activeView === 'planejamento' ? (
-            <PlanView key={searchSerial} searchTarget={searchTarget} />
-          ) : activeView === 'financial' ? (
-            <FinancialView key={financialSearchSerial} searchTarget={financialSearchTarget} />
-          ) : activeView === 'guide' ? (
-            <GuideView />
-          ) : activeView === 'ai' ? (
-            <AIView
-              key={searchSerial}
-              projects={projects}
-              searchConversationId={
-                searchTarget?.type === 'conversation' ? searchTarget.id : undefined
-              }
-              prefill={aiPrefill}
-              onPrefillConsumed={() => setAiPrefill(null)}
-              onOpenAgents={() => setActiveView('agents')}
-            />
-          ) : activeView === 'memory' ? (
-            <MemoryView
-              key={searchSerial}
-              searchTargetId={searchTarget?.type === 'memory' ? searchTarget.id : undefined}
-            />
-          ) : activeView === 'agents' ? (
-            <FleetView
-              projects={projects}
-              onOpenChat={() => {
-                setSearchTarget(null)
-                setActiveView('ai')
-              }}
-            />
-          ) : activeView === 'habits' ? (
-            <HabitView
-              key={searchSerial}
-              searchTargetId={searchTarget?.type === 'habit' ? searchTarget.id : undefined}
-            />
-          ) : activeView === 'graph' ? (
-            <GraphView
-              onNavigate={(target: NavigateTarget) => {
-                setSearchTarget(null)
-                setFinancialSearchTarget(null)
-                switch (target.type) {
-                  case 'project':
-                    setActiveProject(target.id)
-                    setActiveView('board')
-                    setSprintFilter(null)
-                    break
-                  case 'task': {
-                    setActiveProject(target.projectId)
-                    setActiveView('board')
-                    setSprintFilter(null)
-                    const t = tasks.find((tk) => tk.id === target.id)
-                    if (t) setViewTask(t)
-                    break
-                  }
-                  case 'note':
-                    setActiveProject(target.projectId)
-                    setActiveView('canvas')
-                    setSprintFilter(null)
-                    break
-                  case 'goal':
-                    setActiveView('goals')
-                    break
-                  case 'habit':
-                    setActiveView('habits')
-                    break
-                  case 'file':
-                    setActiveProject(target.projectId ?? null)
-                    setActiveView('files')
-                    setSprintFilter(null)
-                    break
-                }
-              }}
-            />
-          ) : activeView === 'goals' ? (
-            <GoalView
-              key={searchSerial}
-              projects={projects}
-              searchTargetId={searchTarget?.type === 'goal' ? searchTarget.id : undefined}
-            />
-          ) : activeView === 'done' ? (
-            <>
-              <div className="flex items-center gap-3 px-6 py-4 border-b border-[#2b2b31] shrink-0">
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="#20b858"
-                  strokeWidth="2.5"
-                >
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-                <h1 className="text-base font-semibold text-[#d4d4d4]">Concluídas</h1>
-                <span className="text-xs text-[#999999]">
-                  {tasks.filter((t) => isTaskDone(t, projects)).length} tasks
-                </span>
-              </div>
-              <DoneView
-                projects={projects}
-                tasks={tasks}
-                sprints={sprints}
-                sprintFilter={sprintFilter}
-                onViewTask={handleViewTask}
-                onRestoreTask={handleRestoreTask}
-                onDeleteTask={handleDeleteTask}
+          <ViewErrorBoundary key={activeView} area={activeView}>
+            {activeView === 'settings' ? (
+              <SettingsView
+                featurePreferences={featurePreferences}
+                onSetFeaturePreferences={saveFeaturePreferences}
+                uiPreferences={uiPreferences}
+                onSetUiPreferences={setUiPreferences}
+                onToast={addToast}
               />
-            </>
-          ) : activeView === 'files' && !activeProject ? (
-            <FilesView
-              key={searchSerial}
-              activeProjectId={null}
-              searchTargetId={searchTarget?.type === 'file' ? searchTarget.id : undefined}
-            />
-          ) : activeProject ? (
-            <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
-              <div className="flex items-center gap-3 px-6 py-4 border-b border-[#2b2b31] shrink-0">
-                <div
-                  className="w-3 h-3 rounded-full shrink-0"
-                  style={{ backgroundColor: activeProject.color }}
-                />
-                <h1 className="text-base font-semibold text-[#d4d4d4]">{activeProject.name}</h1>
-                {activeProject.description && (
-                  <span className="text-sm text-[#999999] truncate max-w-[200px]">
-                    {activeProject.description}
+            ) : activeView === 'home' ? (
+              <HomeView
+                projects={projects}
+                onNavigate={(view) => {
+                  setSearchTarget(null)
+                  setFinancialSearchTarget(null)
+                  setActiveView(view as typeof activeView)
+                }}
+              />
+            ) : activeView === 'reports' ? (
+              <ReportsView projects={projects} tasks={tasks} sprints={sprints} habits={habits} />
+            ) : activeView === 'upcoming' ? (
+              <UpcomingView projects={projects} tasks={tasks} onViewTask={handleViewTask} />
+            ) : activeView === 'planejamento' ? (
+              <PlanView key={searchSerial} searchTarget={searchTarget} />
+            ) : activeView === 'financial' ? (
+              <FinancialView key={financialSearchSerial} searchTarget={financialSearchTarget} />
+            ) : activeView === 'guide' ? (
+              <GuideView />
+            ) : activeView === 'ai' ? (
+              <AIView
+                key={searchSerial}
+                projects={projects}
+                searchConversationId={
+                  searchTarget?.type === 'conversation' ? searchTarget.id : undefined
+                }
+                prefill={aiPrefill}
+                onPrefillConsumed={() => setAiPrefill(null)}
+                onOpenAgents={() => setActiveView('agents')}
+              />
+            ) : activeView === 'memory' ? (
+              <MemoryView
+                key={searchSerial}
+                searchTargetId={searchTarget?.type === 'memory' ? searchTarget.id : undefined}
+              />
+            ) : activeView === 'agents' ? (
+              <FleetView
+                projects={projects}
+                onOpenChat={() => {
+                  setSearchTarget(null)
+                  setActiveView('ai')
+                }}
+              />
+            ) : activeView === 'habits' ? (
+              <HabitView
+                key={searchSerial}
+                searchTargetId={searchTarget?.type === 'habit' ? searchTarget.id : undefined}
+              />
+            ) : activeView === 'graph' ? (
+              <GraphView
+                onNavigate={(target: NavigateTarget) => {
+                  setSearchTarget(null)
+                  setFinancialSearchTarget(null)
+                  switch (target.type) {
+                    case 'project':
+                      setActiveProject(target.id)
+                      setActiveView('board')
+                      setSprintFilter(null)
+                      break
+                    case 'task': {
+                      setActiveProject(target.projectId)
+                      setActiveView('board')
+                      setSprintFilter(null)
+                      const t = tasks.find((tk) => tk.id === target.id)
+                      if (t) setViewTask(t)
+                      break
+                    }
+                    case 'note':
+                      setActiveProject(target.projectId)
+                      setActiveView('canvas')
+                      setSprintFilter(null)
+                      break
+                    case 'goal':
+                      setActiveView('goals')
+                      break
+                    case 'habit':
+                      setActiveView('habits')
+                      break
+                    case 'file':
+                      setActiveProject(target.projectId ?? null)
+                      setActiveView('files')
+                      setSprintFilter(null)
+                      break
+                  }
+                }}
+              />
+            ) : activeView === 'goals' ? (
+              <GoalView
+                key={searchSerial}
+                projects={projects}
+                searchTargetId={searchTarget?.type === 'goal' ? searchTarget.id : undefined}
+              />
+            ) : activeView === 'done' ? (
+              <>
+                <div className="flex items-center gap-3 px-6 py-4 border-b border-[#2b2b31] shrink-0">
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="#20b858"
+                    strokeWidth="2.5"
+                  >
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  <h1 className="text-base font-semibold text-[#d4d4d4]">Concluídas</h1>
+                  <span className="text-xs text-[#999999]">
+                    {tasks.filter((t) => isTaskDone(t, projects)).length} tasks
                   </span>
-                )}
-                <div className="ml-auto flex items-center gap-3">
-                  {(activeProject.links?.length ?? 0) > 0 && (
-                    <ProjectLinksDropdown
-                      links={activeProject.links ?? []}
-                      activeLinkIds={activeLinkIds[activeProject.id] ?? []}
-                      onSelect={(linkId) =>
-                        setActiveLinkIds((prev) => {
-                          const current = prev[activeProject.id] ?? []
-                          const next = current.includes(linkId)
-                            ? current.filter((id) => id !== linkId)
-                            : [...current, linkId]
-                          return { ...prev, [activeProject.id]: next }
-                        })
-                      }
-                    />
+                </div>
+                <DoneView
+                  projects={projects}
+                  tasks={tasks}
+                  sprints={sprints}
+                  sprintFilter={sprintFilter}
+                  onViewTask={handleViewTask}
+                  onRestoreTask={handleRestoreTask}
+                  onDeleteTask={handleDeleteTask}
+                />
+              </>
+            ) : activeView === 'files' && !activeProject ? (
+              <FilesView
+                key={searchSerial}
+                activeProjectId={null}
+                searchTargetId={searchTarget?.type === 'file' ? searchTarget.id : undefined}
+              />
+            ) : activeProject ? (
+              <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+                <div className="flex items-center gap-3 px-6 py-4 border-b border-[#2b2b31] shrink-0">
+                  <div
+                    className="w-3 h-3 rounded-full shrink-0"
+                    style={{ backgroundColor: activeProject.color }}
+                  />
+                  <h1 className="text-base font-semibold text-[#d4d4d4]">{activeProject.name}</h1>
+                  {activeProject.description && (
+                    <span className="text-sm text-[#999999] truncate max-w-[200px]">
+                      {activeProject.description}
+                    </span>
                   )}
-                  {activeView === 'board' && (
-                    <>
-                      <SprintBadge
-                        projectId={activeProject.id}
-                        sprints={activeProjectSprints}
-                        sprintFilter={sprintFilter}
-                        onSetFilter={setSprintFilter}
-                        onCreateSprints={createSprints}
-                        onRenameSprint={updateSprint}
-                        onCloseSprint={closeSprint}
-                        onReopenSprint={reopenSprint}
-                        onDeleteSprint={deleteSprint}
+                  <div className="ml-auto flex items-center gap-3">
+                    {(activeProject.links?.length ?? 0) > 0 && (
+                      <ProjectLinksDropdown
+                        links={activeProject.links ?? []}
+                        activeLinkIds={activeLinkIds[activeProject.id] ?? []}
+                        onSelect={(linkId) =>
+                          setActiveLinkIds((prev) => {
+                            const current = prev[activeProject.id] ?? []
+                            const next = current.includes(linkId)
+                              ? current.filter((id) => id !== linkId)
+                              : [...current, linkId]
+                            return { ...prev, [activeProject.id]: next }
+                          })
+                        }
                       />
-                      <span className="text-xs text-[#999999]">
-                        {
-                          projectTasks.filter((t) => {
-                            const col = activeProject.columns.find((c) => c.id === t.columnId)
-                            return col && !isDoneColumn(col)
-                          }).length
-                        }{' '}
-                        tasks
-                      </span>
-                    </>
+                    )}
+                    {activeView === 'board' && (
+                      <>
+                        <SprintBadge
+                          projectId={activeProject.id}
+                          sprints={activeProjectSprints}
+                          sprintFilter={sprintFilter}
+                          onSetFilter={setSprintFilter}
+                          onCreateSprints={createSprints}
+                          onRenameSprint={updateSprint}
+                          onCloseSprint={closeSprint}
+                          onReopenSprint={reopenSprint}
+                          onDeleteSprint={deleteSprint}
+                        />
+                        <span className="text-xs text-[#999999]">
+                          {
+                            projectTasks.filter((t) => {
+                              const col = activeProject.columns.find((c) => c.id === t.columnId)
+                              return col && !isDoneColumn(col)
+                            }).length
+                          }{' '}
+                          tasks
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+                <div className="flex-1 min-h-0 overflow-hidden relative">
+                  {activeView === 'canvas' ? (
+                    <CanvasView
+                      key={searchSerial}
+                      project={activeProject}
+                      tasks={projectTasks}
+                      searchTargetId={searchTarget?.type === 'note' ? searchTarget.id : undefined}
+                      onCreateTask={handleCreateTaskFromCanvas}
+                    />
+                  ) : activeView === 'files' ? (
+                    <FilesView
+                      key={searchSerial}
+                      activeProjectId={activeProjectId}
+                      searchTargetId={searchTarget?.type === 'file' ? searchTarget.id : undefined}
+                    />
+                  ) : (
+                    <Board
+                      project={activeProject}
+                      tasks={projectTasks}
+                      onAddTask={handleAddTask}
+                      onEditTask={handleEditTask}
+                      onDeleteTask={handleDeleteTask}
+                      onViewTask={handleViewTask}
+                      onCompleteTask={handleCompleteTask}
+                      onEditColumn={handleEditColumn}
+                      onDeleteColumn={handleDeleteColumn}
+                      onAddColumn={handleAddColumn}
+                    />
                   )}
                 </div>
               </div>
-              <div className="flex-1 min-h-0 overflow-hidden relative">
-                {activeView === 'canvas' ? (
-                  <CanvasView
-                    key={searchSerial}
-                    project={activeProject}
-                    tasks={projectTasks}
-                    searchTargetId={searchTarget?.type === 'note' ? searchTarget.id : undefined}
-                    onCreateTask={handleCreateTaskFromCanvas}
-                  />
-                ) : activeView === 'files' ? (
-                  <FilesView
-                    key={searchSerial}
-                    activeProjectId={activeProjectId}
-                    searchTargetId={searchTarget?.type === 'file' ? searchTarget.id : undefined}
-                  />
-                ) : (
-                  <Board
-                    project={activeProject}
-                    tasks={projectTasks}
-                    onAddTask={handleAddTask}
-                    onEditTask={handleEditTask}
-                    onDeleteTask={handleDeleteTask}
-                    onViewTask={handleViewTask}
-                    onCompleteTask={handleCompleteTask}
-                    onEditColumn={handleEditColumn}
-                    onDeleteColumn={handleDeleteColumn}
-                    onAddColumn={handleAddColumn}
-                  />
-                )}
-              </div>
-            </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center flex-1 gap-4">
-              <div className="w-16 h-16 rounded-2xl bg-[#16161a] border border-[#2b2b31] flex items-center justify-center">
-                <svg
-                  width="28"
-                  height="28"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="#999999"
-                  strokeWidth="1.5"
+            ) : (
+              <div className="flex flex-col items-center justify-center flex-1 gap-4">
+                <div className="w-16 h-16 rounded-2xl bg-[#16161a] border border-[#2b2b31] flex items-center justify-center">
+                  <svg
+                    width="28"
+                    height="28"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="#999999"
+                    strokeWidth="1.5"
+                  >
+                    <rect x="3" y="3" width="7" height="18" rx="1" />
+                    <rect x="14" y="3" width="7" height="11" rx="1" />
+                  </svg>
+                </div>
+                <div className="text-center">
+                  <p className="text-[#d4d4d4] font-medium mb-1">Nenhum projeto</p>
+                  <p className="text-sm text-[#999999]">Crie um projeto para começar</p>
+                </div>
+                <button
+                  onClick={handleNewProject}
+                  className="px-4 py-2 rounded-lg bg-[#7c3aed] text-sm text-white font-medium hover:bg-[#6d28d9] transition-colors"
                 >
-                  <rect x="3" y="3" width="7" height="18" rx="1" />
-                  <rect x="14" y="3" width="7" height="11" rx="1" />
-                </svg>
+                  Criar projeto
+                </button>
               </div>
-              <div className="text-center">
-                <p className="text-[#d4d4d4] font-medium mb-1">Nenhum projeto</p>
-                <p className="text-sm text-[#999999]">Crie um projeto para começar</p>
-              </div>
-              <button
-                onClick={handleNewProject}
-                className="px-4 py-2 rounded-lg bg-[#7c3aed] text-sm text-white font-medium hover:bg-[#6d28d9] transition-colors"
-              >
-                Criar projeto
-              </button>
-            </div>
-          )}
+            )}
+          </ViewErrorBoundary>
         </main>
       </div>
 
@@ -988,6 +1014,24 @@ export default function App() {
           onClose={() => setExcelExportOpen(false)}
           onToast={(msg) => addToast(msg)}
         />
+      )}
+
+      {backupExportProgress && (
+        <div className="fixed inset-x-0 bottom-5 z-50 mx-auto flex w-fit items-center gap-3 rounded-lg border border-[#2b2b31] bg-[#16161a] px-4 py-3 text-sm text-[#d4d4d4] shadow-xl">
+          <div>
+            Exportando backup…{' '}
+            {backupExportProgress.total > 0
+              ? `${backupExportProgress.completed}/${backupExportProgress.total}`
+              : 'preparando arquivos'}
+          </div>
+          <button
+            type="button"
+            onClick={() => window.electronAPI.backup.cancelExport()}
+            className="text-xs text-[#f0a060] hover:text-white"
+          >
+            Cancelar
+          </button>
+        </div>
       )}
 
       {/* Code agent indicator movido para o badge da sidebar (Agentes) */}

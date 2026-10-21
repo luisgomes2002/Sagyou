@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 // Type-only: erased at build, so no main-process code is pulled into the preload.
 import type { RunMetricInput, RunMetricsSummary } from '../main/run-metrics'
 import type { AiMemory, MemoryInput, MemorySummary, MemoryConflict } from '../main/memory'
+import type { UsageSummary } from '../main/usage'
 import type {
   GlobalSearchHit,
   GlobalSearchLookup,
@@ -50,6 +51,8 @@ interface CodeRunSummary {
   task: string
   convId: string | null
   agent: string
+  interactive?: boolean
+  finishing?: boolean
   allowedWritePaths?: string[]
   readOnlyRoots?: { id: string; nome: string; path: string }[]
   startedAt: number
@@ -87,32 +90,73 @@ interface CodeApprovalRequest {
 }
 
 /** Totals for a slice of the usage log. `unpricedCalls` are calls with no price. */
-interface UsageBucket {
-  calls: number
-  promptTokens: number
-  completionTokens: number
-  cost: number
-  unpricedCalls: number
+/** Safe AI config that can cross IPC; credentials are accepted but never returned. */
+interface PublicAIConfig {
+  baseUrl: string
+  apiKey?: string
+  hasApiKey?: boolean
+  model: string
+  providerProfiles?: {
+    id: string
+    name: string
+    kind: 'api'
+    provider?: 'openai' | 'anthropic' | 'custom'
+    baseUrl: string
+    model: string
+    modelComplex?: string
+    hasApiKey?: boolean
+  }[]
+  activeProviderProfileId?: string
+  chatProvider?: 'api' | 'chatgpt'
+  userName?: string
+  modelComplex?: string
+  codeAgent?: { baseUrl?: string; apiKey?: string; model?: string }
+  codeHarness?: 'sagyou' | 'codex' | 'opencode' | 'claude-code'
+  sandboxEnabled?: boolean
+  sandboxOnboardingDismissed?: boolean
+  maxSteps?: number
+  inputPricePer1M?: number
+  outputPricePer1M?: number
+  timeoutMs?: number
+  lastConversationId?: string
+  reasoningEffort?: 'low' | 'medium' | 'high'
 }
 import { electronAPI } from '@electron-toolkit/preload'
 // Node's randomUUID, not the WebCrypto global — the latter is only defined in a
 // secure context, which the preload can't count on.
 import { randomUUID } from 'crypto'
 
-const api = {
+/**
+ * Public IPC bridge. `SagyouElectronAPI` below is derived from this value, so
+ * the renderer declaration cannot silently drift away from exposed methods.
+ */
+export const api = {
   window: {
     minimize: () => ipcRenderer.invoke('window:minimize'),
     maximize: () => ipcRenderer.invoke('window:maximize'),
     close: () => ipcRenderer.invoke('window:close'),
     isMaximized: (): Promise<boolean> => ipcRenderer.invoke('window:is-maximized'),
     onMaximizedChange: (cb: (isMax: boolean) => void) => {
-      const handler = (_: Electron.IpcRendererEvent, isMax: boolean) => cb(isMax)
+      const handler = (_: Electron.IpcRendererEvent, isMax: boolean): void => cb(isMax)
       ipcRenderer.on('window:maximized-change', handler)
-      return () => ipcRenderer.removeListener('window:maximized-change', handler)
+      return (): void => {
+        ipcRenderer.removeListener('window:maximized-change', handler)
+      }
     }
   },
+  lifecycle: {
+    onFlushBeforeClose: (cb: () => void) => {
+      const handler = (): void => cb()
+      ipcRenderer.on('app:flush-before-close', handler)
+      return (): void => {
+        ipcRenderer.removeListener('app:flush-before-close', handler)
+      }
+    },
+    flushBeforeCloseComplete: (): Promise<void> =>
+      ipcRenderer.invoke('app:flush-before-close:complete')
+  },
   security: {
-    status: (): Promise<{ enabled: boolean; userName?: string }> =>
+    status: (): Promise<{ enabled: boolean; corrupt: boolean; userName?: string }> =>
       ipcRenderer.invoke('security:status'),
     unlock: (password: string): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('security:unlock', password),
@@ -121,7 +165,9 @@ const api = {
     change: (current: string, next: string): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('security:change', current, next),
     disable: (current: string): Promise<{ success: boolean; error?: string }> =>
-      ipcRenderer.invoke('security:disable', current)
+      ipcRenderer.invoke('security:disable', current),
+    recover: (confirmed: boolean): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('security:recover', confirmed)
   },
   store: {
     load: (): Promise<{ projects: unknown[]; tasks: unknown[] }> =>
@@ -131,7 +177,9 @@ const api = {
     onReload: (cb: () => void) => {
       const handler = (): void => cb()
       ipcRenderer.on('store:reload', handler)
-      return () => ipcRenderer.removeListener('store:reload', handler)
+      return (): void => {
+        ipcRenderer.removeListener('store:reload', handler)
+      }
     },
     onMcpCreateTask: (
       cb: (request: {
@@ -142,7 +190,9 @@ const api = {
       const handler = (_: Electron.IpcRendererEvent, request: Parameters<typeof cb>[0]): void =>
         cb(request)
       ipcRenderer.on('store:mcp:create-task', handler)
-      return () => ipcRenderer.removeListener('store:mcp:create-task', handler)
+      return (): void => {
+        ipcRenderer.removeListener('store:mcp:create-task', handler)
+      }
     },
     respondMcpCreateTask: (requestId: string, result: { id?: string; error?: string }): void => {
       ipcRenderer.send('store:mcp:create-task:response', { requestId, ...result })
@@ -157,6 +207,17 @@ const api = {
   backup: {
     export: (backup: unknown): Promise<{ success: boolean; cancelled?: boolean }> =>
       ipcRenderer.invoke('backup:export', backup),
+    cancelExport: (): void => ipcRenderer.send('backup:export:cancel'),
+    onExportProgress: (
+      cb: (progress: { completed: number; total: number; done?: boolean }) => void
+    ) => {
+      const handler = (_: Electron.IpcRendererEvent, progress: Parameters<typeof cb>[0]): void =>
+        cb(progress)
+      ipcRenderer.on('backup:export-progress', handler)
+      return (): void => {
+        ipcRenderer.removeListener('backup:export-progress', handler)
+      }
+    },
     autoSave: (backup: unknown, force = false): Promise<{ success: boolean }> =>
       ipcRenderer.invoke('backup:auto-save', backup, force),
     commitBlobs: (): Promise<{ success: boolean }> => ipcRenderer.invoke('backup:commit-blobs'),
@@ -176,26 +237,8 @@ const api = {
       error?: string
     }> => ipcRenderer.invoke('ai:import'),
     config: {
-      get: (): Promise<{
-        baseUrl: string
-        apiKey: string
-        model: string
-        maxSteps?: number
-        inputPricePer1M?: number
-        outputPricePer1M?: number
-        timeoutMs?: number
-        lastConversationId?: string
-      }> => ipcRenderer.invoke('ai:config:get'),
-      set: (config: {
-        baseUrl: string
-        apiKey: string
-        model: string
-        maxSteps?: number
-        inputPricePer1M?: number
-        outputPricePer1M?: number
-        timeoutMs?: number
-        lastConversationId?: string
-      }): Promise<void> => ipcRenderer.invoke('ai:config:set', config)
+      get: (): Promise<PublicAIConfig> => ipcRenderer.invoke('ai:config:get'),
+      set: (config: PublicAIConfig): Promise<void> => ipcRenderer.invoke('ai:config:set', config)
     },
     chatgpt: {
       session: () => ipcRenderer.invoke('ai:chatgpt:session'),
@@ -216,7 +259,7 @@ const api = {
         const handler = (
           _: Electron.IpcRendererEvent,
           payload: { streamId: string; delta?: string }
-        ) => {
+        ): void => {
           if (payload.streamId === request.streamId && payload.delta) onDelta(payload.delta)
         }
         ipcRenderer.on('ai:chat:delta', handler)
@@ -227,19 +270,7 @@ const api = {
     },
     // Spend tracking: per-call log kept by the main process (ai-usage-log.json).
     usage: {
-      summary: (): Promise<{
-        today: UsageBucket
-        last30: UsageBucket
-        total: UsageBucket
-        byModel: { model: string; bucket: UsageBucket }[]
-        recent: {
-          at: string
-          model: string
-          promptTokens: number
-          completionTokens: number
-          cost?: number
-        }[]
-      }> => ipcRenderer.invoke('ai:usage:summary')
+      summary: (): Promise<UsageSummary> => ipcRenderer.invoke('ai:usage:summary')
     },
     // Per-run efficiency metrics, aggregated by the main process for comparing
     // models over time (ai-run-metrics.json). append is best-effort bookkeeping.
@@ -467,7 +498,9 @@ const api = {
           payload: { runId: string; chunk: string }
         ): void => cb(payload)
         ipcRenderer.on('ai:code-agent:output', handler)
-        return () => ipcRenderer.removeListener('ai:code-agent:output', handler)
+        return (): void => {
+          ipcRenderer.removeListener('ai:code-agent:output', handler)
+        }
       },
       // Fires immediately when a run starts — before any output, so the UI can
       // light indicators without waiting for the first chunk.
@@ -477,7 +510,9 @@ const api = {
           payload: { runId: string; dir: string }
         ): void => cb(payload)
         ipcRenderer.on('ai:code-agent:started', handler)
-        return () => ipcRenderer.removeListener('ai:code-agent:started', handler)
+        return (): void => {
+          ipcRenderer.removeListener('ai:code-agent:started', handler)
+        }
       },
       // Fires once a finished run has been written to the archive — later than
       // onExit, which doesn't wait for the diff that snapshot needs.
@@ -487,7 +522,9 @@ const api = {
           payload: { runId: string; id: string; convId: string | null }
         ): void => cb(payload)
         ipcRenderer.on('ai:code-agent:archived', handler)
-        return () => ipcRenderer.removeListener('ai:code-agent:archived', handler)
+        return (): void => {
+          ipcRenderer.removeListener('ai:code-agent:archived', handler)
+        }
       },
       // Live progress during a run: the step and the running token total, for
       // the panel's "Passo X/Y · Zk tokens" counter.
@@ -502,7 +539,9 @@ const api = {
       ) => {
         const handler = (_: Electron.IpcRendererEvent, p: Parameters<typeof cb>[0]): void => cb(p)
         ipcRenderer.on('ai:code-agent:progress', handler)
-        return () => ipcRenderer.removeListener('ai:code-agent:progress', handler)
+        return (): void => {
+          ipcRenderer.removeListener('ai:code-agent:progress', handler)
+        }
       },
       onExit: (cb: (payload: { runId: string; code: number }) => void) => {
         const handler = (
@@ -510,7 +549,9 @@ const api = {
           payload: { runId: string; code: number }
         ): void => cb(payload)
         ipcRenderer.on('ai:code-agent:exit', handler)
-        return () => ipcRenderer.removeListener('ai:code-agent:exit', handler)
+        return (): void => {
+          ipcRenderer.removeListener('ai:code-agent:exit', handler)
+        }
       },
       // Structured tool events (native agent): a tool call being run, then its
       // result summary — so the panel can show the run's steps live (task 6/11).
@@ -525,7 +566,9 @@ const api = {
       ) => {
         const handler = (_: Electron.IpcRendererEvent, ev: Parameters<typeof cb>[0]): void => cb(ev)
         ipcRenderer.on('ai:code-agent:tool', handler)
-        return () => ipcRenderer.removeListener('ai:code-agent:tool', handler)
+        return (): void => {
+          ipcRenderer.removeListener('ai:code-agent:tool', handler)
+        }
       },
       // The loop is parked on a write/command and needs the user's OK (task 9).
       onApproveRequest: (
@@ -545,7 +588,9 @@ const api = {
         const handler = (_: Electron.IpcRendererEvent, req: Parameters<typeof cb>[0]): void =>
           cb(req)
         ipcRenderer.on('ai:code-agent:approve-request', handler)
-        return () => ipcRenderer.removeListener('ai:code-agent:approve-request', handler)
+        return (): void => {
+          ipcRenderer.removeListener('ai:code-agent:approve-request', handler)
+        }
       },
       // A recognised environment failure hit mid-run (e.g. the sandbox couldn't
       // start) — pushed so the panel's hint card can appear without waiting for
@@ -554,7 +599,9 @@ const api = {
       onQuestion: (cb: (req: CodeQuestionRequest) => void) => {
         const handler = (_: Electron.IpcRendererEvent, req: CodeQuestionRequest): void => cb(req)
         ipcRenderer.on('ai:code-agent:question', handler)
-        return () => ipcRenderer.removeListener('ai:code-agent:question', handler)
+        return (): void => {
+          ipcRenderer.removeListener('ai:code-agent:question', handler)
+        }
       },
       onHint: (
         cb: (hint: { runId: string; title: string; detail: string; command?: string }) => void
@@ -562,7 +609,9 @@ const api = {
         const handler = (_: Electron.IpcRendererEvent, hint: Parameters<typeof cb>[0]): void =>
           cb(hint)
         ipcRenderer.on('ai:code-agent:hint', handler)
-        return () => ipcRenderer.removeListener('ai:code-agent:hint', handler)
+        return (): void => {
+          ipcRenderer.removeListener('ai:code-agent:hint', handler)
+        }
       },
       // Fires when auto-approval is toggled for a run, so the UI can reflect it.
       onAutoChanged: (
@@ -575,7 +624,9 @@ const api = {
         const handler = (_: Electron.IpcRendererEvent, payload: Parameters<typeof cb>[0]): void =>
           cb(payload)
         ipcRenderer.on('ai:code-agent:auto-changed', handler)
-        return () => ipcRenderer.removeListener('ai:code-agent:auto-changed', handler)
+        return (): void => {
+          ipcRenderer.removeListener('ai:code-agent:auto-changed', handler)
+        }
       }
     },
     harnesses: {
@@ -620,7 +671,9 @@ const api = {
       onProgress: (cb: (p: { phase: string; fraction: number | null }) => void) => {
         const handler = (_: Electron.IpcRendererEvent, p: Parameters<typeof cb>[0]): void => cb(p)
         ipcRenderer.on('ai:jail:progress', handler)
-        return () => ipcRenderer.removeListener('ai:jail:progress', handler)
+        return (): void => {
+          ipcRenderer.removeListener('ai:jail:progress', handler)
+        }
       }
     },
     // Native folder picker for choosing a project's code directory.
@@ -761,6 +814,7 @@ const api = {
           documentIds?: string[]
         }[]
         usage?: { promptTokens: number; completionTokens: number }
+        connection?: { provider: 'api' | 'chatgpt'; profileId?: string; model: string }
       }): Promise<void> => ipcRenderer.invoke('ai:conversations:save', conv),
       delete: (id: string): Promise<{ ok?: true; error?: string }> =>
         ipcRenderer.invoke('ai:conversations:delete', id),
@@ -833,6 +887,8 @@ const api = {
   }
 }
 
+export type SagyouElectronAPI = typeof api
+
 if (process.contextIsolated) {
   try {
     contextBridge.exposeInMainWorld('electron', electronAPI)
@@ -841,8 +897,8 @@ if (process.contextIsolated) {
     console.error(error)
   }
 } else {
-  // @ts-ignore
+  // @ts-ignore: Electron only injects this global when context isolation is off.
   window.electron = electronAPI
-  // @ts-ignore
+  // @ts-ignore: Electron only injects this global when context isolation is off.
   window.electronAPI = api
 }

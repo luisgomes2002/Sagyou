@@ -162,6 +162,7 @@ interface FinancialTransaction {
   category?: string
   fromShopping?: boolean
   linkedTransactionId?: string
+  debtId?: string
   source?: string
   receiptFileIds?: string[]
   bankReference?: string
@@ -192,6 +193,15 @@ interface FinancialGoal {
   completedAt?: string
   completionNote?: string
 }
+interface FinancialDebt {
+  id: string
+  name: string
+  originalAmount: number | string
+  remainingAmount: number | string
+  createdAt: string
+  updatedAt: string
+  completedAt?: string
+}
 interface YieldSource {
   id: string
   name: string
@@ -221,6 +231,7 @@ interface FinancialTable {
   items: ShoppingItem[]
   transactions: FinancialTransaction[]
   goals: FinancialGoal[]
+  debts?: FinancialDebt[]
   yieldSources?: YieldSource[]
   yieldEntries?: YieldEntry[]
   provider?: string
@@ -1455,7 +1466,8 @@ function prepareWrite(db: Database.Database) {
         provider: ft.provider,
         actualBalance: ft.actualBalance,
         actualBalanceUpdatedAt: ft.actualBalanceUpdatedAt,
-        profileId: ft.profileId
+        profileId: ft.profileId,
+        debts: ft.debts
       })
       ins.ftable.run(ft.id, ft.name, ft.currency, ft.createdAt, ft.updatedAt, metadata)
       for (const i of ft.items ?? [])
@@ -1492,7 +1504,8 @@ function prepareWrite(db: Database.Database) {
             audit: tx.audit,
             currencyTransferId: tx.currencyTransferId,
             currencyTransferFee: tx.currencyTransferFee,
-            currencyTransferFeeCurrency: tx.currencyTransferFeeCurrency
+            currencyTransferFeeCurrency: tx.currencyTransferFeeCurrency,
+            debtId: tx.debtId
           })
         )
       for (const fg of ft.goals ?? [])
@@ -1918,7 +1931,8 @@ export function loadData(existingDb?: Database.Database): SaveData {
               }
             }
           : {}),
-        ...(typeof meta.profileId === 'string' ? { profileId: meta.profileId } : {})
+        ...(typeof meta.profileId === 'string' ? { profileId: meta.profileId } : {}),
+        ...(Array.isArray(meta.debts) ? { debts: meta.debts } : {})
       }
     })(),
     items: (itemsByTable.get(ft.id) ?? []).map((i) => ({
@@ -1966,7 +1980,8 @@ export function loadData(existingDb?: Database.Database): SaveData {
             : {}),
           ...(typeof meta.currencyTransferFeeCurrency === 'string'
             ? { currencyTransferFeeCurrency: meta.currencyTransferFeeCurrency }
-            : {})
+            : {}),
+          ...(typeof meta.debtId === 'string' ? { debtId: meta.debtId } : {})
         }
       })(),
       ...(transactionDetails(tx.details).length ? { details: transactionDetails(tx.details) } : {})

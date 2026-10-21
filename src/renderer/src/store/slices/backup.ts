@@ -160,6 +160,33 @@ export function createBackupSlice(storage: StorageDep): StateCreator<
       // Save the current data and blobs before changing either side of the store.
       if (!(await get().exportBackup(true, true))) return false
 
+      // Keep every source that an import can replace. The main process stages
+      // blobs until commit; this snapshot lets us restore data, chats and memory
+      // if any later write fails instead of reporting a partial import as done.
+      const previous = {
+        projects: get().projects,
+        tasks: get().tasks,
+        sprints: get().sprints,
+        tombstones: get().tombstones,
+        notes: get().notes,
+        goals: get().goals,
+        habits: get().habits,
+        lists: get().lists,
+        financialProfiles: get().financialProfiles,
+        activeFinancialProfileId: get().activeFinancialProfileId,
+        files: get().files,
+        timeBlocks: get().timeBlocks,
+        routines: get().routines,
+        featurePreferences: get().featurePreferences,
+        uiPreferences: get().uiPreferences,
+        activeProjectId: get().activeProjectId,
+        activeTimers: get().activeTimers
+      }
+      const previousConversations = Array.isArray(backup.conversations)
+        ? await storage.loadConversations()
+        : null
+      const previousMemories = Array.isArray(backup.memories) ? await storage.loadMemories() : null
+
       const tombstones: Tombstone[] = backup.tombstones || []
       const tombstoneIds = new Set(tombstones.map((t) => t.id))
 
@@ -238,7 +265,6 @@ export function createBackupSlice(storage: StorageDep): StateCreator<
       const uiPreferences = backup.uiPreferences
         ? normalizeUiPreferences(backup.uiPreferences)
         : get().uiPreferences
-      if (!(await storage.commitBackupBlobs()).success) return false
       set({
         projects,
         tasks,
@@ -258,31 +284,42 @@ export function createBackupSlice(storage: StorageDep): StateCreator<
         activeProjectId,
         activeTimers: []
       })
-      await get()._flushPersist()
+      try {
+        await get()._flushPersist()
 
-      // Only touch the chat history when the backup actually carries it: a v2
-      // file has no `conversations` key and must leave local history alone.
-      if (Array.isArray(backup.conversations)) {
-        try {
+        // Only touch the chat history when the backup actually carries it: a v2
+        // file has no `conversations` key and must leave local history alone.
+        if (Array.isArray(backup.conversations)) {
           await storage.saveConversations(backup.conversations)
-        } catch {
-          // History is secondary — a failure here doesn't undo the import above.
         }
-      }
-      // Same rule for memory (v4+): absent key = leave local memory untouched.
-      // Written after the store flush above, so projects exist when a memory's
-      // FK is checked (see replaceMemories).
-      if (Array.isArray(backup.memories)) {
-        try {
+        // Same rule for memory (v4+): absent key = leave local memory untouched.
+        // Written after the store flush above, so projects exist when a memory's
+        // FK is checked (see replaceMemories).
+        if (Array.isArray(backup.memories)) {
           await storage.replaceMemories(backup.memories)
-        } catch {
-          // Memory is secondary — a failure here doesn't undo the import above.
         }
+        const blobs = await storage.commitBackupBlobs()
+        if (!blobs.success) throw new Error('Não foi possível restaurar os anexos do backup.')
+        // The backup spans three sources (store, conversation JSON, memory). Rebuild
+        // after all of them have settled so no row from the previous state survives.
+        await storage.rebuildSearchIndex()
+        return true
+      } catch (error) {
+        set(previous)
+        try {
+          await get()._flushPersist()
+          if (previousConversations) await storage.saveConversations(previousConversations)
+          if (previousMemories) await storage.replaceMemories(previousMemories)
+          await storage.rebuildSearchIndex()
+        } catch (rollbackError) {
+          throw new Error(
+            `A restauração falhou e não foi possível concluir a reversão: ${rollbackError instanceof Error ? rollbackError.message : 'erro desconhecido'}`
+          )
+        }
+        throw new Error(
+          `A restauração falhou; os dados anteriores foram preservados. ${error instanceof Error ? error.message : ''}`.trim()
+        )
       }
-      // The backup spans three sources (store, conversation JSON, memory). Rebuild
-      // after all of them have settled so no row from the previous state survives.
-      await storage.rebuildSearchIndex()
-      return true
     },
 
     importAIJson: async (projectId) => {
