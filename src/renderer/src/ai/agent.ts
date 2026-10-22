@@ -1,10 +1,4 @@
-import {
-  TOOL_DEFS,
-  runTool,
-  isWriteTool,
-  describeToolActivity,
-  type ToolDef
-} from './tools'
+import { TOOL_DEFS, runTool, isWriteTool, describeToolActivity, type ToolDef } from './tools'
 import systemPromptMd from './system-prompt.md?raw'
 
 // ---------------------------------------------------------------------------
@@ -503,7 +497,8 @@ export async function callModel(
     messages,
     tools,
     model: cfg.model,
-    profileId: cfg.chatProfileId
+    profileId: cfg.chatProfileId,
+    reasoningEffort: cfg.reasoningEffort
   }
   if (cfg.chatProvider === 'chatgpt' && !onDelta) {
     throw new ModelError('O ChatGPT por assinatura exige resposta em streaming.')
@@ -514,6 +509,7 @@ export async function callModel(
           {
             streamId: crypto.randomUUID(),
             model: cfg.model,
+            reasoningEffort: cfg.reasoningEffort,
             messages: messages
               .filter((message) => message.role !== 'tool')
               .map((message) => ({

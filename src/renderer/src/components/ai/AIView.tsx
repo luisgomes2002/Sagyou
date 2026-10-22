@@ -17,6 +17,7 @@ import { ConnectionGuide } from './ConnectionGuide'
 import { SwitchAI } from './SwitchAI'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { ModeToggleButton } from './ModeToggleButton'
+import { ModalBase } from '../ModalBase'
 
 // Config is persisted via ai:config in the main process (see effects below);
 // AIConfig and the tool-calling loop live in ../ai/agent.
@@ -63,13 +64,7 @@ export function AIView({
   onOpenAgents?: () => void
 }) {
   const activeProjectId = useKanbanStore((s) => s.activeProjectId)
-
-  const activeProject = projects.find((p) => p.id === activeProjectId) ?? null
-  // Surfaced in the header so the code tools' reach is visible without opening
-  // the project modal.
-  const activeCodePaths = (activeProject?.codePaths ?? []).filter((c) =>
-    (activeProject?.activeCodePathIds ?? []).includes(c.id)
-  )
+  const setActiveProject = useKanbanStore((s) => s.setActiveProject)
 
   const [config, setConfig] = useState<AIConfig>(DEFAULT_CONFIG)
   const [showConfig, setShowConfig] = useState(false)
@@ -82,6 +77,34 @@ export function AIView({
   const streamingAll = useAiRunStore((s) => s.streaming)
   const streamingToolsAll = useAiRunStore((s) => s.streamingTools)
   const conversationId = useAiRunStore((s) => s.conversationId)
+  const conversationProjects = useAiRunStore((s) => s.conversationProjects)
+  const hasConversationProject = Boolean(
+    conversationId && Object.prototype.hasOwnProperty.call(conversationProjects, conversationId)
+  )
+  const conversationProjectId =
+    conversationId && hasConversationProject
+      ? conversationProjects[conversationId]
+      : activeProjectId
+  const activeProject = projects.find((p) => p.id === conversationProjectId) ?? null
+  // Surfaced in the header so the code tools' reach is visible without opening
+  // the project modal.
+  const activeCodePaths = (activeProject?.codePaths ?? []).filter((c) =>
+    (activeProject?.activeCodePathIds ?? []).includes(c.id)
+  )
+  // Returning from another view may have changed the app-wide selection. A
+  // scoped conversation owns its context, so bring Zustand back into agreement
+  // before any legacy tool reads activeProjectId directly.
+  useEffect(() => {
+    if (conversationId && hasConversationProject && activeProjectId !== conversationProjectId) {
+      setActiveProject(conversationProjectId)
+    }
+  }, [
+    activeProjectId,
+    conversationId,
+    conversationProjectId,
+    hasConversationProject,
+    setActiveProject
+  ])
   const connections = useAiRunStore((s) => s.connections)
   const setConnection = useAiRunStore((s) => s.setConnection)
   const busyHere = running.has(conversationId ?? '')
@@ -107,8 +130,10 @@ export function AIView({
   const setPlan = useAiRunStore((s) => s.setPlanMode)
   const resolveApproval = useAiRunStore((s) => s.resolveApproval)
   const resetRun = useAiRunStore((s) => s.reset)
+  const setConversationProject = useAiRunStore((s) => s.setConversationProject)
 
   const [input, setInput] = useState('')
+  const [showProjectPicker, setShowProjectPicker] = useState(false)
   const [showSwitchAI, setShowSwitchAI] = useState(false)
   const [defaultChatGPTModel, setDefaultChatGPTModel] = useState('')
   useEffect(() => {
@@ -125,8 +150,12 @@ export function AIView({
   const effectiveConnection = activeConnection ?? {
     provider: config.chatProvider ?? 'api',
     profileId: config.chatProvider === 'chatgpt' ? undefined : defaultProfile?.id,
-    model: config.chatProvider === 'chatgpt' ? defaultChatGPTModel : (defaultProfile?.model ?? '')
+    model: config.chatProvider === 'chatgpt' ? defaultChatGPTModel : (defaultProfile?.model ?? ''),
+    reasoningEffort: config.reasoningEffort
   }
+  const effortLabel = effectiveConnection.reasoningEffort
+    ? { low: 'baixo', medium: 'médio', high: 'alto' }[effectiveConnection.reasoningEffort]
+    : null
   const connectionName =
     effectiveConnection.provider === 'chatgpt'
       ? 'ChatGPT'
@@ -290,6 +319,7 @@ export function AIView({
     const conv = await window.electronAPI.ai.conversations.get(id)
     if (conv) {
       openConversation(conv)
+      if (conv.projectId !== undefined) setActiveProject(conv.projectId)
       setProposed(null)
       // A whole transcript just arrived: show its end, where the user left off.
       jumpToEnd.current = true
@@ -511,10 +541,17 @@ export function AIView({
   }, [])
 
   const handleNewConversation = (): void => {
+    setShowProjectPicker(true)
+  }
+
+  const startNewConversation = (projectId: string | null): void => {
     setEditingMessageIndex(null)
     // Clears the transcript, the id, the usage and any card the loop is parked
     // on; the effect above then remembers the blank chat for next entry.
     resetRun()
+    setActiveProject(projectId)
+    setConversationProject(projectId)
+    setShowProjectPicker(false)
     setProposed(null)
     setShowHistory(false)
     // Attachments never sent belong to no conversation — bin the files rather
@@ -905,7 +942,7 @@ export function AIView({
           <div className="flex items-center gap-3">
             <h1 className="text-base font-semibold text-[#d4d4d4]">Assistente IA</h1>
             <span className="text-xs text-[#999999]">
-              {activeProject ? activeProject.name : 'Nenhum projeto selecionado'}
+              {activeProject ? `Projeto: ${activeProject.name}` : 'Conversa geral (sem projeto)'}
             </span>
             {activeCodePaths.length > 0 && (
               <span
@@ -1037,7 +1074,8 @@ export function AIView({
               className="rounded-lg border border-[#2b2b31] bg-[#16161a] px-3 py-1.5 text-xs text-[#d4d4d4] hover:border-violet-400 disabled:opacity-40"
               title="Conexão e modelo desta conversa"
             >
-              {connectionName} · {effectiveConnection.model || 'Escolha um modelo'}{' '}
+              {connectionName} · {effectiveConnection.model || 'Escolha um modelo'}
+              {effortLabel ? ` · esforço ${effortLabel}` : ''}{' '}
               <span className="ml-2 text-violet-300">Trocar IA</span>
             </button>
             <button
@@ -1496,6 +1534,44 @@ export function AIView({
           )}
         </div>
       </div>
+      <ModalBase open={showProjectPicker} onClose={() => setShowProjectPicker(false)}>
+        <div className="w-[min(92vw,460px)] rounded-xl border border-[#2b2b31] bg-[#16161a] p-5 shadow-2xl">
+          <h2 className="text-base font-semibold text-[#e4e4e7]">
+            Qual projeto esta conversa vai usar?
+          </h2>
+          <p className="mt-1 text-sm text-[#999999]">
+            A IA usará as tarefas, arquivos e memórias desse projeto durante toda a conversa.
+          </p>
+          <div className="mt-4 max-h-72 space-y-2 overflow-y-auto">
+            {projects.map((project) => (
+              <button
+                key={project.id}
+                type="button"
+                onClick={() => startNewConversation(project.id)}
+                className="w-full rounded-lg border border-[#2b2b31] bg-[#121216] px-4 py-3 text-left text-sm text-[#d4d4d4] hover:border-violet-400"
+              >
+                {project.name}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => startNewConversation(null)}
+              className="w-full rounded-lg border border-[#2b2b31] bg-[#121216] px-4 py-3 text-left text-sm text-[#d4d4d4] hover:border-violet-400"
+            >
+              Conversa geral (sem projeto)
+            </button>
+          </div>
+          <div className="mt-4 flex justify-end">
+            <button
+              type="button"
+              onClick={() => setShowProjectPicker(false)}
+              className="rounded-lg px-3 py-2 text-sm text-[#999999] hover:bg-[#222227] hover:text-[#d4d4d4]"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      </ModalBase>
 
       {/* Confirmation modals */}
 

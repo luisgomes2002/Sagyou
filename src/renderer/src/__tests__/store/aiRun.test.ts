@@ -128,6 +128,7 @@ describe('two agents running at once', () => {
       error: null,
       usage: { promptTokens: 0, completionTokens: 0 },
       conversationId: null,
+      conversationProjects: {},
       parked: {},
       runProjects: {},
       pendingApprovals: [],
@@ -157,8 +158,22 @@ describe('two agents running at once', () => {
     await flush()
 
     // B is on screen; A is parked. Neither answer bled into the other.
-    expect(run().messages.at(-1)).toEqual(expect.objectContaining({ role: 'assistant', content: 'resposta B', provider: 'api', model: 'm' }))
-    expect(run().parked['A'].messages.at(-1)).toEqual(expect.objectContaining({ role: 'assistant', content: 'resposta A', provider: 'api', model: 'm' }))
+    expect(run().messages.at(-1)).toEqual(
+      expect.objectContaining({
+        role: 'assistant',
+        content: 'resposta B',
+        provider: 'api',
+        model: 'm'
+      })
+    )
+    expect(run().parked['A'].messages.at(-1)).toEqual(
+      expect.objectContaining({
+        role: 'assistant',
+        content: 'resposta A',
+        provider: 'api',
+        model: 'm'
+      })
+    )
     expect(run().running.size).toBe(0)
   })
 
@@ -223,6 +238,23 @@ describe('two agents running at once', () => {
     await flush()
 
     expect(run().runProjects['A']).toBeUndefined()
+  })
+
+  it('keeps using the project chosen for the conversation after the active project changes', async () => {
+    const runs = captureRuns()
+    useKanbanStore.setState({ activeProjectId: 'project-on-screen' })
+    useAiRunStore.setState({
+      conversationId: 'scoped-chat',
+      messages: [],
+      conversationProjects: { 'scoped-chat': 'project-chosen' }
+    })
+
+    void run().send(cfg, { text: 'continue', imageIds: [], imageData: {} })
+
+    expect(runs.get('scoped-chat')?.opts.projectId).toBe('project-chosen')
+    expect(run().runProjects['scoped-chat']).toBe('project-chosen')
+    runs.get('scoped-chat')!.resolve('ok')
+    await flush()
   })
 
   it('blocks a second run of the same conversation, but not of another', async () => {

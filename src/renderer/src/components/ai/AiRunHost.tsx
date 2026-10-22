@@ -48,6 +48,7 @@ export function AiRunHost({
   const messages = useAiRunStore((s) => s.messages)
   const conversationId = useAiRunStore((s) => s.conversationId)
   const connections = useAiRunStore((s) => s.connections)
+  const conversationProjects = useAiRunStore((s) => s.conversationProjects)
   const usage = useAiRunStore((s) => s.usage)
   const parked = useAiRunStore((s) => s.parked)
   // One or more runs are working somewhere. Was the global `busy`; now derived
@@ -75,7 +76,8 @@ export function AiRunHost({
           title: deriveTitle(messages),
           messages,
           usage,
-          connection: connections[id]
+          connection: connections[id],
+          projectId: conversationProjects[id]
         })
       )
     }
@@ -86,7 +88,8 @@ export function AiRunHost({
           title: deriveTitle(p.messages),
           messages: p.messages,
           usage: p.usage,
-          connection: connections[parkedId]
+          connection: connections[parkedId],
+          projectId: conversationProjects[parkedId]
         })
       )
     }
@@ -114,7 +117,15 @@ export function AiRunHost({
       return
     const timer = setTimeout(() => void saveConversationsNow(), 600)
     return () => clearTimeout(timer)
-  }, [messages, conversationId, usage, parked, connections, saveConversationsNow])
+  }, [
+    messages,
+    conversationId,
+    usage,
+    parked,
+    connections,
+    conversationProjects,
+    saveConversationsNow
+  ])
 
   useEffect(() => {
     if (!window.electronAPI.lifecycle?.onFlushBeforeClose) return

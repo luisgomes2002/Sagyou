@@ -108,7 +108,9 @@ let baseUrl: string
 const sse = (res: http.ServerResponse, frames: unknown[]): void => {
   res.writeHead(200, { 'Content-Type': 'text/event-stream' })
   for (const f of frames) {
-    res.write(`data: ${JSON.stringify({ id: '1', object: 'chat.completion.chunk', model: 'm', ...(f as object) })}\n\n`)
+    res.write(
+      `data: ${JSON.stringify({ id: '1', object: 'chat.completion.chunk', model: 'm', ...(f as object) })}\n\n`
+    )
   }
   res.write('data: [DONE]\n\n')
   res.end()
@@ -140,12 +142,21 @@ beforeEach(async () => {
   vi.mocked(listMemories).mockReturnValue([])
   // Credentials belong to the trusted config, never to a renderer chat IPC
   // request. The local provider is still real; this only seeds main's config.
-  await writeFile(join(userData, 'ai-config.json'), JSON.stringify({ baseUrl, apiKey: 'k', model: 'm' }))
+  await writeFile(
+    join(userData, 'ai-config.json'),
+    JSON.stringify({ baseUrl, apiKey: 'k', model: 'm' })
+  )
 })
 
 describe('main handlers are registered', () => {
   it('exposes the AI channels the renderer calls', () => {
-    for (const ch of ['ai:chat', 'ai:chat:stream', 'ai:code:list', 'ai:code:read', 'ai:code:search']) {
+    for (const ch of [
+      'ai:chat',
+      'ai:chat:stream',
+      'ai:code:list',
+      'ai:code:read',
+      'ai:code:search'
+    ]) {
       expect(handlers.has(ch)).toBe(true)
     }
   })
@@ -170,7 +181,9 @@ describe('ai:chat', () => {
         JSON.stringify({
           id: '1',
           object: 'chat.completion',
-          choices: [{ index: 0, message: { role: 'assistant', content: 'olá' }, finish_reason: 'stop' }],
+          choices: [
+            { index: 0, message: { role: 'assistant', content: 'olá' }, finish_reason: 'stop' }
+          ],
           usage: { prompt_tokens: 12, completion_tokens: 3 }
         })
       )
@@ -194,7 +207,9 @@ describe('ai:chat', () => {
       res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'x' } }] }))
     }
 
-    const tools = [{ type: 'function', function: { name: 'ler_tasks', description: '', parameters: {} } }]
+    const tools = [
+      { type: 'function', function: { name: 'ler_tasks', description: '', parameters: {} } }
+    ]
     await invoke('ai:chat', { messages: [], tools, baseUrl, apiKey: 'k', model: 'm' })
     expect(seen.tools).toHaveLength(1)
 
@@ -230,7 +245,10 @@ describe('ai:chat', () => {
       res.end('{}')
     }
 
-    await writeFile(join(userData, 'ai-config.json'), JSON.stringify({ baseUrl: '', apiKey: '', model: '' }))
+    await writeFile(
+      join(userData, 'ai-config.json'),
+      JSON.stringify({ baseUrl: '', apiKey: '', model: '' })
+    )
     const res = await invoke<{ success: boolean; status?: number }>('ai:chat', { messages: [] })
 
     expect(res.success).toBe(false)
@@ -256,6 +274,23 @@ describe('ai:chat', () => {
 })
 
 describe('ai:chat:stream', () => {
+  it('forwards the reasoning effort selected for this conversation', async () => {
+    let received: Record<string, unknown> = {}
+    reply = (_req, res, body) => {
+      received = JSON.parse(body) as Record<string, unknown>
+      sse(res, [{ choices: [{ index: 0, delta: { content: 'ok' } }] }])
+    }
+
+    await invoke('ai:chat:stream', {
+      streamId: 'effort',
+      messages: [],
+      model: 'm',
+      reasoningEffort: 'high'
+    })
+
+    expect(received.reasoning_effort).toBe('high')
+  })
+
   it('streams deltas to the renderer and returns the whole message', async () => {
     reply = (_req, res) =>
       sse(res, [
@@ -264,13 +299,16 @@ describe('ai:chat:stream', () => {
         { choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] }
       ])
 
-    const res = await invoke<{ success: boolean; message?: { content: string } }>('ai:chat:stream', {
-      streamId: 's1',
-      messages: [],
-      baseUrl,
-      apiKey: 'k',
-      model: 'm'
-    })
+    const res = await invoke<{ success: boolean; message?: { content: string } }>(
+      'ai:chat:stream',
+      {
+        streamId: 's1',
+        messages: [],
+        baseUrl,
+        apiKey: 'k',
+        model: 'm'
+      }
+    )
 
     expect(res.message?.content).toBe('Olá, tudo bem?')
     expect(sent.map((s) => s.payload)).toEqual([
@@ -281,7 +319,13 @@ describe('ai:chat:stream', () => {
 
   it('tags deltas with the caller’s streamId so concurrent calls do not cross', async () => {
     reply = (_req, res) => sse(res, [{ choices: [{ index: 0, delta: { content: 'x' } }] }])
-    await invoke('ai:chat:stream', { streamId: 'abc', messages: [], baseUrl, apiKey: 'k', model: 'm' })
+    await invoke('ai:chat:stream', {
+      streamId: 'abc',
+      messages: [],
+      baseUrl,
+      apiKey: 'k',
+      model: 'm'
+    })
     expect(sent[0]).toMatchObject({ channel: 'ai:chat:delta', payload: { streamId: 'abc' } })
   })
 
@@ -297,17 +341,35 @@ describe('ai:chat:stream', () => {
               index: 0,
               delta: {
                 tool_calls: [
-                  { index: 0, id: 'call_1', type: 'function', function: { name: 'criar_tasks', arguments: '' } }
+                  {
+                    index: 0,
+                    id: 'call_1',
+                    type: 'function',
+                    function: { name: 'criar_tasks', arguments: '' }
+                  }
                 ]
               }
             }
           ]
         },
-        { choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: '{"tasks":[]}' } }] } }] },
+        {
+          choices: [
+            {
+              index: 0,
+              delta: { tool_calls: [{ index: 0, function: { arguments: '{"tasks":[]}' } }] }
+            }
+          ]
+        },
         { choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] }
       ])
 
-    await invoke('ai:chat:stream', { streamId: 's', messages: [], baseUrl, apiKey: 'k', model: 'm' })
+    await invoke('ai:chat:stream', {
+      streamId: 's',
+      messages: [],
+      baseUrl,
+      apiKey: 'k',
+      model: 'm'
+    })
 
     const tools = sent.filter(
       (e) => e.channel === 'ai:chat:delta' && (e.payload as { tool?: unknown }).tool
@@ -328,7 +390,9 @@ describe('ai:chat:stream', () => {
             {
               index: 0,
               delta: {
-                tool_calls: [{ index: 0, id: 'c1', type: 'function', function: { name: 'ler_tasks' } }]
+                tool_calls: [
+                  { index: 0, id: 'c1', type: 'function', function: { name: 'ler_tasks' } }
+                ]
               }
             }
           ]
@@ -336,7 +400,13 @@ describe('ai:chat:stream', () => {
         { choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] }
       ])
 
-    await invoke('ai:chat:stream', { streamId: 's', messages: [], baseUrl, apiKey: 'k', model: 'm' })
+    await invoke('ai:chat:stream', {
+      streamId: 's',
+      messages: [],
+      baseUrl,
+      apiKey: 'k',
+      model: 'm'
+    })
 
     for (const e of sent.filter((x) => x.channel === 'ai:chat:delta')) {
       const p = e.payload as { delta?: string; tool?: unknown }
@@ -349,12 +419,31 @@ describe('ai:chat:stream', () => {
     // for an index is the whole name — the renderer keys on index and corrects.
     reply = (_req, res) =>
       sse(res, [
-        { choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'c1', type: 'function', function: { name: 'criar_' } }] } }] },
-        { choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { name: 'tasks' } }] } }] },
+        {
+          choices: [
+            {
+              index: 0,
+              delta: {
+                tool_calls: [{ index: 0, id: 'c1', type: 'function', function: { name: 'criar_' } }]
+              }
+            }
+          ]
+        },
+        {
+          choices: [
+            { index: 0, delta: { tool_calls: [{ index: 0, function: { name: 'tasks' } }] } }
+          ]
+        },
         { choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] }
       ])
 
-    await invoke('ai:chat:stream', { streamId: 's', messages: [], baseUrl, apiKey: 'k', model: 'm' })
+    await invoke('ai:chat:stream', {
+      streamId: 's',
+      messages: [],
+      baseUrl,
+      apiKey: 'k',
+      model: 'm'
+    })
 
     const names = sent
       .filter((e) => e.channel === 'ai:chat:delta' && (e.payload as { tool?: unknown }).tool)
@@ -381,7 +470,13 @@ describe('ai:chat:stream', () => {
         { choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] }
       ])
 
-    await invoke('ai:chat:stream', { streamId: 's', messages: [], baseUrl, apiKey: 'k', model: 'm' })
+    await invoke('ai:chat:stream', {
+      streamId: 's',
+      messages: [],
+      baseUrl,
+      apiKey: 'k',
+      model: 'm'
+    })
 
     const tools = sent
       .filter((e) => e.channel === 'ai:chat:delta' && (e.payload as { tool?: unknown }).tool)
@@ -402,23 +497,38 @@ describe('ai:chat:stream', () => {
               index: 0,
               delta: {
                 tool_calls: [
-                  { index: 0, id: 'call_1', type: 'function', function: { name: 'ler_tasks', arguments: '{"pro' } }
+                  {
+                    index: 0,
+                    id: 'call_1',
+                    type: 'function',
+                    function: { name: 'ler_tasks', arguments: '{"pro' }
+                  }
                 ]
               }
             }
           ]
         },
-        { choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: 'jectId":"p1"}' } }] } }] },
+        {
+          choices: [
+            {
+              index: 0,
+              delta: { tool_calls: [{ index: 0, function: { arguments: 'jectId":"p1"}' } }] }
+            }
+          ]
+        },
         { choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] }
       ])
 
-    const res = await invoke<{ message?: { tool_calls?: { id: string; function: { name: string; arguments: string } }[] } }>(
-      'ai:chat:stream',
-      { streamId: 's', messages: [], baseUrl, apiKey: 'k', model: 'm' }
-    )
+    const res = await invoke<{
+      message?: { tool_calls?: { id: string; function: { name: string; arguments: string } }[] }
+    }>('ai:chat:stream', { streamId: 's', messages: [], baseUrl, apiKey: 'k', model: 'm' })
 
     expect(res.message?.tool_calls).toEqual([
-      { id: 'call_1', type: 'function', function: { name: 'ler_tasks', arguments: '{"projectId":"p1"}' } }
+      {
+        id: 'call_1',
+        type: 'function',
+        function: { name: 'ler_tasks', arguments: '{"projectId":"p1"}' }
+      }
     ])
   })
 
@@ -431,14 +541,28 @@ describe('ai:chat:stream', () => {
               index: 0,
               delta: {
                 tool_calls: [
-                  { index: 0, id: 'a', type: 'function', function: { name: 'ler_tasks', arguments: '{}' } },
-                  { index: 1, id: 'b', type: 'function', function: { name: 'ler_metas', arguments: '{' } }
+                  {
+                    index: 0,
+                    id: 'a',
+                    type: 'function',
+                    function: { name: 'ler_tasks', arguments: '{}' }
+                  },
+                  {
+                    index: 1,
+                    id: 'b',
+                    type: 'function',
+                    function: { name: 'ler_metas', arguments: '{' }
+                  }
                 ]
               }
             }
           ]
         },
-        { choices: [{ index: 0, delta: { tool_calls: [{ index: 1, function: { arguments: '}' } }] } }] },
+        {
+          choices: [
+            { index: 0, delta: { tool_calls: [{ index: 1, function: { arguments: '}' } }] } }
+          ]
+        },
         { choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] }
       ])
 
@@ -462,16 +586,28 @@ describe('ai:chat:stream', () => {
         { choices: [{ index: 0, delta: { content: 'oi' } }] },
         {
           choices: [
-            { index: 0, delta: { tool_calls: [{ index: 0, id: 'c1', type: 'function', function: { name: 'ler_tasks', arguments: '{}' } }] } }
+            {
+              index: 0,
+              delta: {
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: 'c1',
+                    type: 'function',
+                    function: { name: 'ler_tasks', arguments: '{}' }
+                  }
+                ]
+              }
+            }
           ]
         },
         { choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] }
       ])
 
-    const res = await invoke<{ success: boolean; message?: { content: string; tool_calls?: unknown[] } }>(
-      'ai:chat:stream',
-      { streamId: 's', messages: [], baseUrl, apiKey: 'k', model: 'm' }
-    )
+    const res = await invoke<{
+      success: boolean
+      message?: { content: string; tool_calls?: unknown[] }
+    }>('ai:chat:stream', { streamId: 's', messages: [], baseUrl, apiKey: 'k', model: 'm' })
 
     expect(res.success).toBe(true)
     expect(res.message?.content).toBe('oi')
@@ -607,7 +743,11 @@ describe('ai:code:* handlers', () => {
 
   describe('ai:code:read', () => {
     it('reads a file inside the root', async () => {
-      const res = await invoke<{ content: string; truncated: boolean }>('ai:code:read', root, 'src/a.ts')
+      const res = await invoke<{ content: string; truncated: boolean }>(
+        'ai:code:read',
+        root,
+        'src/a.ts'
+      )
       expect(res.content).toContain('const alvo = 1')
       expect(res.truncated).toBe(false)
     })
@@ -740,8 +880,9 @@ describe('ai:conversations:rename', () => {
     })
 
   const titleOf = async (id: string): Promise<string | undefined> =>
-    (await invoke<{ id: string; title: string }[]>('ai:conversations:list')).find((c) => c.id === id)
-      ?.title
+    (await invoke<{ id: string; title: string }[]>('ai:conversations:list')).find(
+      (c) => c.id === id
+    )?.title
 
   beforeEach(async () => {
     await invoke('ai:conversations:replace', [])
@@ -768,7 +909,11 @@ describe('ai:conversations:rename', () => {
 
   it('trims and clips, so the stored name is the one the list can show', async () => {
     await save('r3', 'oi')
-    const res = await invoke<{ title: string }>('ai:conversations:rename', 'r3', `  ${'x'.repeat(300)}  `)
+    const res = await invoke<{ title: string }>(
+      'ai:conversations:rename',
+      'r3',
+      `  ${'x'.repeat(300)}  `
+    )
     expect(res.title).toHaveLength(120)
     expect(await titleOf('r3')).toHaveLength(120)
   })
@@ -865,7 +1010,12 @@ describe('native code agent', () => {
     winSent.length = 0
     // Point both chat and code-agent at the stand-in server. Sandbox off: ai-jail
     // isn't installed in CI, and the run would otherwise be blocked by the gate.
-    await invoke('ai:config:set', { baseUrl, apiKey: 'k', model: 'meu-modelo', sandboxEnabled: false })
+    await invoke('ai:config:set', {
+      baseUrl,
+      apiKey: 'k',
+      model: 'meu-modelo',
+      sandboxEnabled: false
+    })
   })
   afterEach(async () => {
     await invoke('ai:code-agent:stop')
@@ -890,7 +1040,11 @@ describe('native code agent', () => {
     // The model answers with plain text — no tools — so the loop ends at once.
     reply = (_req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'pronto: nada a fazer' } }] }))
+      res.end(
+        JSON.stringify({
+          choices: [{ message: { role: 'assistant', content: 'pronto: nada a fazer' } }]
+        })
+      )
     }
 
     const res = await invoke<{ success: boolean; agent?: string }>('ai:code-agent:run', {
@@ -951,7 +1105,10 @@ describe('native code agent', () => {
                       type: 'function',
                       function: {
                         name: 'escrever_arquivo',
-                        arguments: JSON.stringify({ caminho: 'novo.ts', conteudo: 'export const b = 2\n' })
+                        arguments: JSON.stringify({
+                          caminho: 'novo.ts',
+                          conteudo: 'export const b = 2\n'
+                        })
                       }
                     }
                   ]
@@ -1021,7 +1178,11 @@ describe('native code agent', () => {
     // Deny it, then keep answering "feito" so the loop can conclude.
     reply = (_req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'ok, não escrevi' } }] }))
+      res.end(
+        JSON.stringify({
+          choices: [{ message: { role: 'assistant', content: 'ok, não escrevi' } }]
+        })
+      )
     }
     await invoke('ai:code-agent:approve-response', approvalId, false)
 
@@ -1050,7 +1211,10 @@ describe('native code agent', () => {
                       type: 'function',
                       function: {
                         name: 'escrever_arquivo',
-                        arguments: JSON.stringify({ caminho: 'a.ts', conteudo: 'export const a = 2\n' })
+                        arguments: JSON.stringify({
+                          caminho: 'a.ts',
+                          conteudo: 'export const a = 2\n'
+                        })
                       }
                     }
                   ]
@@ -1107,7 +1271,8 @@ describe('native code agent', () => {
                       function: {
                         name: 'executar_comando',
                         arguments: JSON.stringify({
-                          comando: 'echo "bwrap: needs access to create user namespaces" 1>&2; exit 1'
+                          comando:
+                            'echo "bwrap: needs access to create user namespaces" 1>&2; exit 1'
                         })
                       }
                     }
@@ -1118,7 +1283,9 @@ describe('native code agent', () => {
           })
         )
       } else {
-        res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'não deu' } }] }))
+        res.end(
+          JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'não deu' } }] })
+        )
       }
     }
 
@@ -1158,7 +1325,9 @@ describe('native code agent', () => {
   })
 
   it('ai:jail:status reports availability merged with config', async () => {
-    const s = await invoke<{ available: boolean; enabled: boolean; wslCommand: string }>('ai:jail:status')
+    const s = await invoke<{ available: boolean; enabled: boolean; wslCommand: string }>(
+      'ai:jail:status'
+    )
     expect(typeof s.available).toBe('boolean')
     expect(typeof s.enabled).toBe('boolean')
     expect(s.wslCommand).toBe('wsl --install')
@@ -1167,7 +1336,9 @@ describe('native code agent', () => {
 
 describe('detectAgentHint', () => {
   it('recognises a bwrap / user-namespace failure and offers the sysctl fix', () => {
-    const fromBwrap = mainModule.detectAgentHint('bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted')
+    const fromBwrap = mainModule.detectAgentHint(
+      'bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted'
+    )
     expect(fromBwrap?.command).toBe('sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0')
     expect(mainModule.detectAgentHint('needs access to create user namespaces')).not.toBeNull()
   })

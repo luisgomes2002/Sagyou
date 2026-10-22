@@ -26,7 +26,7 @@ import {
   type AITool
 } from './helpers'
 import Decimal from 'decimal.js'
-import { leaseBlock, currentRunConvId } from '../tools'
+import { leaseBlock, currentRunConvId, currentRunProjectId } from '../tools'
 
 import { useKanbanStore } from '../../store/kanban'
 import { D, FINANCIAL_CATEGORIES } from '../../components/financial/shared'
@@ -1386,7 +1386,9 @@ export const registryEntries: Record<string, AITool> = {
     run: async (args) => {
       const id = typeof args.id === 'string' ? args.id.trim() : ''
       const termo = typeof args.termo === 'string' ? args.termo.trim() : ''
-      const projectId = useKanbanStore.getState().activeProjectId
+      const runProjectId = currentRunProjectId()
+      const projectId =
+        runProjectId === undefined ? useKanbanStore.getState().activeProjectId : runProjectId
       const tipos = ['decisao', 'tradeoff', 'gotcha', 'fato', 'handoff', 'planejamento']
       const tipo = tipos.includes(String(args.tipo)) ? String(args.tipo) : undefined
       if (id) {
@@ -1608,10 +1610,11 @@ export const registryEntries: Record<string, AITool> = {
       if (!titulo && !corpo) return JSON.stringify({ error: 'Informe título e corpo da memória' })
 
       const global = args.global === true
+      const runProjectId = currentRunProjectId()
       const projectId = global
         ? null
         : (typeof args.projectId === 'string' && args.projectId) ||
-          useKanbanStore.getState().activeProjectId ||
+          (runProjectId === undefined ? useKanbanStore.getState().activeProjectId : runProjectId) ||
           null
       const tags = Array.isArray(args.tags)
         ? args.tags.filter((t): t is string => typeof t === 'string')
