@@ -2,7 +2,14 @@ import type { TokenUsage } from './usage'
 
 export interface StoredConversation {
   id: string
-  connection?: { provider: 'api' | 'chatgpt'; profileId?: string; model: string }
+  /** Project context chosen when the chat was created. Absent on legacy chats. */
+  projectId?: string | null
+  connection?: {
+    provider: 'api' | 'chatgpt'
+    profileId?: string
+    model: string
+    reasoningEffort?: 'low' | 'medium' | 'high'
+  }
   title: string
   createdAt: string
   updatedAt: string

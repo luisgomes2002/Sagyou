@@ -11,6 +11,7 @@ vi.mock('../../ai/tools', () => ({
 
 import {
   runAgent,
+  callModel,
   SYSTEM_PROMPT,
   resolveMaxSteps,
   isRetryable,
@@ -79,6 +80,34 @@ function toolCall(id: string, name: string, args = '{}'): unknown {
 }
 
 const approveNone = vi.fn(async () => new Set<string>())
+
+describe('ChatGPT subscription requests', () => {
+  it('forwards the selected reasoning effort to the subscription stream', async () => {
+    const stream = vi.fn(async () => ({
+      success: true,
+      message: { role: 'assistant', content: 'ok' }
+    }))
+    ;(window as unknown as { electronAPI: unknown }).electronAPI = {
+      ai: { chatgpt: { stream } }
+    }
+
+    await callModel(
+      {
+        ...cfg,
+        chatProvider: 'chatgpt',
+        reasoningEffort: 'high'
+      },
+      user,
+      undefined,
+      vi.fn()
+    )
+
+    expect(stream).toHaveBeenCalledWith(
+      expect.objectContaining({ model: 'm', reasoningEffort: 'high' }),
+      expect.any(Function)
+    )
+  })
+})
 
 describe('userNamePrompt', () => {
   it('adds the preferred form of address without changing the empty default', () => {

@@ -357,8 +357,10 @@ CODE_READ_PAGE`) devolve só ~100 linhas + `simbolos` + `dica`, não a janela de
     do zero). Compartilhada entre chat e code-agent.
 
 15. **Orçamento é por chamada do modelo, não por tool round.** `maxSteps` limita toda chamada bem-sucedida da run — rodadas principais, compactação e resposta final. Sem configuração explícita, o chat usa 40 no manual e 100 no Auto; não reintroduza heurísticas 2/4/8/15 por texto, pois elas encerram orquestrações no momento de disparar agentes. O contexto de uma conversa reaberta entra limitado (12 mensagens/24k caracteres/1 imagem); ferramentas além de 8 numa rodada recebem resultado sintético. O limite é **por execução**: várias conversas/projetos continuam rodando em paralelo. O subagente de pesquisa exige aprovação, é no máximo 2 por run e seu resumo é cortado antes de voltar ao agente pai.
+16. **Cada conversa nova escolhe seu projeto.** `StoredConversation.projectId` fixa o contexto de tarefas, arquivos, memória e handoff durante toda a conversa; `null` é uma conversa geral explícita. Não volte a derivar o projeto de cada envio pelo `activeProjectId`, pois trocar de tela faria um chat mudar silenciosamente de escopo. Conversas antigas sem o campo mantêm o fallback legado até serem substituídas por uma nova conversa escolhida.
+    A conexão da conversa também persiste o `reasoningEffort` opcional junto ao modelo. Envie-o em todas as rodadas, inclusive pela assinatura ChatGPT; ausente mantém o padrão global/do provedor.
 
-16. 🔴 **Importação de backup só conclui depois de todas as fontes serem gravadas.**
+17. 🔴 **Importação de backup só conclui depois de todas as fontes serem gravadas.**
     `backup:import` valida formato/versão e segura os blobs em main; o renderer salva
     um snapshot forçado do estado atual em `userData/backups/` antes de persistir store,
     conversas e memórias. Os blobs só são confirmados ao final. Qualquer falha reverte os
@@ -370,12 +372,12 @@ CODE_READ_PAGE`) devolve só ~100 linhas + `simbolos` + `dica`, não a janela de
     O app atualiza um snapshot diário ao abrir e a cada hora, com retenção dos
     sete mais recentes. Bytes dos anexos continuam fora do IPC.
 
-17. 🔴 **Conversa citada por memória não pode ser apagada.** `sourceConversationId`
+18. 🔴 **Conversa citada por memória não pode ser apagada.** `sourceConversationId`
     de memórias ativas **ou arquivadas** protege o transcript dos limites de 14 dias/50
     conversas, da exclusão manual e da substituição do histórico no restore de backup.
     O main decide isso antes de apagar bytes de anexos;
     remover só o arquivo deixaria handoffs e outras memórias apontando para o vazio.
-18. **Auto não aprova exclusão nem lançamento financeiro.** `deletar_task` e
+19. **Auto não aprova exclusão nem lançamento financeiro.** `deletar_task` e
     `criar_transacao` sempre passam pelo card de aprovação do chat; as outras
     escritas continuam podendo rodar no Auto. Uma correção reenviada desliga o
     Auto daquela conversa para impedir repetição silenciosa de ações anteriores.

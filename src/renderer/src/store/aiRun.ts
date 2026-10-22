@@ -81,6 +81,8 @@ export interface ChatConnection {
   provider: 'api' | 'chatgpt'
   profileId?: string
   model: string
+  /** Per-conversation reasoning effort. Absent keeps the configured/provider default. */
+  reasoningEffort?: 'low' | 'medium' | 'high'
 }
 
 /**
@@ -163,7 +165,8 @@ const HANDOFF_SKIP = 'Execução interrompida.'
 export async function writeHandoff(
   question: string,
   reply: string,
-  convId?: string | null
+  convId?: string | null,
+  conversationProjectId?: string | null
 ): Promise<void> {
   try {
     const api = window.electronAPI?.ai?.memory
@@ -171,7 +174,8 @@ export async function writeHandoff(
     const answer = (reply ?? '').trim()
     if (!answer || answer === HANDOFF_SKIP) return
     const { activeProjectId, projects } = useKanbanStore.getState()
-    const name = projects.find((p) => p.id === activeProjectId)?.name
+    const projectId = conversationProjectId === undefined ? activeProjectId : conversationProjectId
+    const name = projects.find((p) => p.id === projectId)?.name
     const q = (question ?? '').trim().slice(0, 200)
     // The handoff is a small breadcrumb re-sent in every future prompt, so it's
     // capped. When it IS cut, point at the full conversation by id: the model
@@ -185,7 +189,7 @@ export async function writeHandoff(
         ? ` (conversa completa: id=${convId} — use ler_conversa para ler tudo)`
         : ''
     await api.handoff({
-      projectId: activeProjectId,
+      projectId,
       title: name ? `Última sessão — ${name}` : 'Última sessão',
       body: (q ? `Perguntou: "${q}". ` : '') + `Conclusão: ${a}${pointer}`,
       sourceConversationId: convId
@@ -203,7 +207,8 @@ export async function writeHandoff(
  */
 export async function writeHandoffSummarized(
   config: AIConfig,
-  conversation: ChatMessage[]
+  conversation: ChatMessage[],
+  conversationProjectId?: string | null
 ): Promise<void> {
   try {
     const api = window.electronAPI?.ai?.memory
@@ -235,10 +240,11 @@ export async function writeHandoffSummarized(
     if (!summary) return
 
     const { activeProjectId, projects } = useKanbanStore.getState()
-    const name = projects.find((p) => p.id === activeProjectId)?.name
+    const projectId = conversationProjectId === undefined ? activeProjectId : conversationProjectId
+    const name = projects.find((p) => p.id === projectId)?.name
 
     await api.handoff({
-      projectId: activeProjectId,
+      projectId,
       title: name ? `Última sessão — ${name}` : 'Última sessão',
       body: summary
     })
@@ -345,6 +351,9 @@ export interface AiRunState {
   /** Which chat is on screen. */
   conversationId: string | null
   connections: Record<string, ChatConnection>
+  /** Project context fixed when each conversation is created. */
+  conversationProjects: Record<string, string | null>
+  setConversationProject: (projectId: string | null) => string
   setConnection: (connection: ChatConnection) => void
   /**
    * Transcripts that are live but not on screen, keyed by conversation id.
@@ -444,7 +453,13 @@ export interface AiRunState {
    * old transcript under a new id, this chat's messages with the last one's
    * token count).
    */
-  openConversation: (conv: { id: string; messages: ChatMessage[]; usage?: TokenUsage; connection?: ChatConnection }) => void
+  openConversation: (conv: {
+    id: string
+    messages: ChatMessage[]
+    usage?: TokenUsage
+    connection?: ChatConnection
+    projectId?: string | null
+  }) => void
   /**
    * Forget a conversation that no longer exists (deleted from the history).
    * Drops any parked transcript and stops a run that was writing to it — its
@@ -474,6 +489,14 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
   usage: EMPTY_USAGE,
   conversationId: null,
   connections: {},
+  conversationProjects: {},
+  setConversationProject: (projectId) => {
+    const id = get().ensureConversationId()
+    set((s) => ({
+      conversationProjects: { ...s.conversationProjects, [id]: projectId }
+    }))
+    return id
+  },
   setConnection: (connection) => {
     const id = get().ensureConversationId()
     set((s) => ({ connections: { ...s.connections, [id]: connection } }))
@@ -488,7 +511,11 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
   abortRequested: new Set(),
   savedTick: 0,
 
-  send: async (config, { text, imageIds, imageData, documentIds, provider, model }, codeMode = false) => {
+  send: async (
+    config,
+    { text, imageIds, imageData, documentIds, provider, model },
+    codeMode = false
+  ) => {
     const convId = get().ensureConversationId()
     if (get().running.has(convId)) return
     const next: ChatMessage[] = [
@@ -500,7 +527,12 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
         ...(documentIds && documentIds.length > 0 && { documentIds })
       }
     ]
-    const projectId = useKanbanStore.getState().activeProjectId
+    // Legacy conversations predate the persisted project choice. They retain
+    // the old active-project behaviour until the user starts a new, explicitly
+    // scoped chat; an explicit null means "Conversa geral" and must not fall back.
+    const projectId = Object.prototype.hasOwnProperty.call(get().conversationProjects, convId)
+      ? get().conversationProjects[convId]
+      : useKanbanStore.getState().activeProjectId
     set((s) => ({
       messages: next,
       running: setAdd(s.running, convId),
@@ -517,6 +549,7 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
       chatProvider: connection?.provider ?? provider ?? config.chatProvider,
       chatProfileId: connection?.profileId,
       model: connection?.model ?? model?.trim() ?? config.model,
+      reasoningEffort: connection?.reasoningEffort ?? config.reasoningEffort,
       modelComplex: undefined
     }
     try {
@@ -570,8 +603,8 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
                   'Você está no ChatGPT por assinatura. As ferramentas do Sagyou não estão disponíveis nesta resposta; explique essa limitação quando ela for relevante.'
               }
             : codeMode
-            ? { tools: CODE_TOOL_DEFS, systemPrompt: codePromptMd.trim() }
-            : { tools: routeTools(text) }),
+              ? { tools: CODE_TOOL_DEFS, systemPrompt: codePromptMd.trim() }
+              : { tools: routeTools(text) }),
           onStatus: (text, kind, progress) =>
             set((s) =>
               writeConv(s, convId, (prev) => [
@@ -610,9 +643,12 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
             content: reply,
             provider: runConfig.chatProvider === 'chatgpt' ? 'chatgpt' : 'api',
             model: runConfig.model,
-            providerLabel: runConfig.chatProvider === 'chatgpt'
-              ? 'ChatGPT'
-              : config.providerProfiles?.find((profile) => profile.id === runConfig.chatProfileId)?.name ?? 'Minha API'
+            providerLabel:
+              runConfig.chatProvider === 'chatgpt'
+                ? 'ChatGPT'
+                : (config.providerProfiles?.find(
+                    (profile) => profile.id === runConfig.chatProfileId
+                  )?.name ?? 'Minha API')
           }
         ])
       )
@@ -620,9 +656,9 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
       // handoffSummarize is enabled, do an extra LLM call to produce a concise
       // summary of the full conversation; otherwise use the raw last exchange.
       if (runConfig.handoffSummarize) {
-        void writeHandoffSummarized(runConfig, next)
+        void writeHandoffSummarized(runConfig, next, projectId)
       } else {
-        void writeHandoff(text, reply, convId)
+        void writeHandoff(text, reply, convId, projectId)
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Falha ao contatar o modelo'
@@ -763,9 +799,14 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
       delete parked[conv.id]
       return {
         conversationId: conv.id,
-        connections: conv.connection && !s.connections[conv.id]
-          ? { ...s.connections, [conv.id]: conv.connection }
-          : s.connections,
+        connections:
+          conv.connection && !s.connections[conv.id]
+            ? { ...s.connections, [conv.id]: conv.connection }
+            : s.connections,
+        conversationProjects:
+          conv.projectId !== undefined
+            ? { ...s.conversationProjects, [conv.id]: conv.projectId }
+            : s.conversationProjects,
         messages: live?.messages ?? conv.messages,
         // Older files predate usage tracking: zero means "unknown", and the
         // header hides the counter rather than claiming this cost nothing.
@@ -781,6 +822,8 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
       delete parked[id]
       const connections = { ...s.connections }
       delete connections[id]
+      const conversationProjects = { ...s.conversationProjects }
+      delete conversationProjects[id]
       // A run writing into a deleted chat has nowhere to land: stop it rather
       // than pay for steps whose output is discarded. The loop reads
       // abortRequested between steps and unwinds on its own.
@@ -792,6 +835,7 @@ export const useAiRunStore = create<AiRunState>((set, get) => ({
       return {
         parked,
         connections,
+        conversationProjects,
         ...(killing && {
           abortRequested: setAdd(s.abortRequested, id),
           pendingApprovals: s.pendingApprovals.filter((p) => p.convId !== id),

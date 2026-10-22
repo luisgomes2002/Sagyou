@@ -19,7 +19,13 @@ export function registerConversationHandlers(
   ipcMain.handle('ai:conversations:list', () =>
     deps
       .loadConversations()
-      .map(({ id, title, createdAt, updatedAt }) => ({ id, title, createdAt, updatedAt }))
+      .map(({ id, title, createdAt, updatedAt, projectId }) => ({
+        id,
+        title,
+        createdAt,
+        updatedAt,
+        projectId
+      }))
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   )
 
@@ -45,6 +51,7 @@ export function registerConversationHandlers(
         messages: StoredConversation['messages']
         usage?: TokenUsage
         connection?: StoredConversation['connection']
+        projectId?: string | null
       }
     ) => {
       deps.safeConversationsSave(() => {
@@ -58,6 +65,7 @@ export function registerConversationHandlers(
             messages: conv.messages,
             usage: conv.usage,
             connection: conv.connection ?? list[idx].connection,
+            projectId: conv.projectId ?? list[idx].projectId,
             updatedAt: now
           }
         } else {
@@ -67,6 +75,7 @@ export function registerConversationHandlers(
             messages: conv.messages,
             usage: conv.usage,
             connection: conv.connection,
+            projectId: conv.projectId,
             createdAt: now,
             updatedAt: now
           })
@@ -133,13 +142,21 @@ export function registerConversationHandlers(
         // Likewise carried: without it an imported chat reports its cost as
         // unknown, having lost a count it was exported with.
         ...(c.usage && { usage: c.usage }),
+        ...(typeof c.projectId === 'string' || c.projectId === null
+          ? { projectId: c.projectId }
+          : {}),
         ...(c.connection &&
           (c.connection.provider === 'api' || c.connection.provider === 'chatgpt') &&
           typeof c.connection.model === 'string' && {
             connection: {
               provider: c.connection.provider,
               model: c.connection.model,
-              ...(typeof c.connection.profileId === 'string' && { profileId: c.connection.profileId })
+              ...(['low', 'medium', 'high'].includes(c.connection.reasoningEffort ?? '') && {
+                reasoningEffort: c.connection.reasoningEffort
+              }),
+              ...(typeof c.connection.profileId === 'string' && {
+                profileId: c.connection.profileId
+              })
             }
           }),
         createdAt: typeof c.createdAt === 'string' ? c.createdAt : now,

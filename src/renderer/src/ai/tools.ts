@@ -190,6 +190,15 @@ export function currentRunConvId(): string | null {
   return activeRunConvId
 }
 
+/** Project scope chosen for the running conversation, including explicit null. */
+export function currentRunProjectId(): string | null | undefined {
+  if (!activeRunConvId) return undefined
+  const projects = useAiRunStore.getState().conversationProjects
+  return Object.prototype.hasOwnProperty.call(projects, activeRunConvId)
+    ? projects[activeRunConvId]
+    : undefined
+}
+
 /**
  * Cooperative task lease for the multi-agent case: before a work tool mutates a
  * task, claim it for the running conversation. If another *active* run already

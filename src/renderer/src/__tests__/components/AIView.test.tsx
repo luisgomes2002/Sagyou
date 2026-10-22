@@ -22,6 +22,7 @@ vi.mock('../../services/ElectronStorage', () => ({
 import { AIView } from '../../components/ai/AIView'
 import { AiRunHost } from '../../components/ai/AiRunHost'
 import { useAiRunStore } from '../../store/aiRun'
+import { useKanbanStore } from '../../store/kanban'
 import { runAgent, AUTO_MAX_STEPS } from '../../ai/agent'
 import type { RunAgentOptions, AIConfig, PendingCall } from '../../ai/agent'
 
@@ -417,19 +418,42 @@ describe('AIView — reopening the last chat', () => {
     await waitFor(() => expect(Element.prototype.scrollTo).toHaveBeenCalledWith({ top: 1000 }))
   })
 
-  it('forgets the chat when the user asks for a new one', async () => {
+  it('replaces the previous chat with a newly scoped conversation', async () => {
     storedConfig = { ...storedConfig, lastConversationId: 'c1' }
     storeConversation()
     renderAI(<AIView projects={[]} />)
     await screen.findByText('última mensagem')
 
     await userEvent.click(screen.getByText('Nova'))
+    await userEvent.click(screen.getByRole('button', { name: 'Conversa geral (sem projeto)' }))
 
-    // Asking for a blank chat must mean a blank chat next time as well.
+    // Choosing a scope creates the new conversation immediately, so reopening
+    // the view cannot fall back to the previous chat.
     const set = vi.mocked(window.electronAPI.ai.config.set)
     await waitFor(() =>
-      expect(set).toHaveBeenCalledWith(expect.objectContaining({ lastConversationId: undefined }))
+      expect(set).toHaveBeenCalledWith(
+        expect.objectContaining({ lastConversationId: expect.any(String) })
+      )
     )
+    expect(useAiRunStore.getState().conversationId).not.toBe('c1')
+    expect(
+      useAiRunStore.getState().conversationProjects[useAiRunStore.getState().conversationId!]
+    ).toBeNull()
+  })
+
+  it('asks for a project and fixes the chosen scope on the new conversation', async () => {
+    const projectId = useKanbanStore.getState().createProject('Sagyou')
+    const projects = useKanbanStore.getState().projects
+    renderAI(<AIView projects={projects} />)
+
+    await userEvent.click(screen.getByText('Nova'))
+    expect(screen.getByRole('dialog')).toHaveTextContent('Qual projeto esta conversa vai usar?')
+    await userEvent.click(screen.getByRole('button', { name: 'Sagyou' }))
+
+    const state = useAiRunStore.getState()
+    expect(state.conversationProjects[state.conversationId!]).toBe(projectId)
+    expect(useKanbanStore.getState().activeProjectId).toBe(projectId)
+    expect(screen.getByText('Projeto: Sagyou')).toBeInTheDocument()
   })
 
   it('forgets an id whose conversation is gone, instead of retrying forever', async () => {
@@ -860,14 +884,20 @@ describe('AIView — composer gating', () => {
     renderAI(<AIView projects={[]} />)
     await userEvent.click(await screen.findByText('Trocar IA'))
     await userEvent.click(screen.getByRole('button', { name: 'Minha API' }))
-    await userEvent.click(await screen.findByRole('button', { name: 'Usar nesta conversa' }))
-    expect(screen.getByRole('button', { name: /Minha API · deep Trocar IA/ })).toBeInTheDocument()
+    await userEvent.selectOptions(screen.getByLabelText('Esforço de raciocínio'), 'high')
+    const useConnection = await screen.findByRole('button', { name: 'Usar nesta conversa' })
+    await waitFor(() => expect(useConnection).not.toBeDisabled())
+    await userEvent.click(useConnection)
+    expect(
+      screen.getByRole('button', { name: /Minha API · deep · esforço alto Trocar IA/ })
+    ).toBeInTheDocument()
     await userEvent.type(screen.getByPlaceholderText(/Descreva o projeto/), 'pergunta{Enter}')
     await waitFor(() =>
       expect(runAgent).toHaveBeenCalledWith(
         expect.objectContaining({
           chatProfileId: 'profile-a',
           model: 'deep',
+          reasoningEffort: 'high',
           modelComplex: undefined
         }),
         expect.anything(),
@@ -1242,6 +1272,7 @@ describe('AIView — pasted images', () => {
     await paste(pngFile())
 
     await userEvent.click(screen.getByText('Nova'))
+    await userEvent.click(screen.getByRole('button', { name: 'Conversa geral (sem projeto)' }))
 
     expect(window.electronAPI.ai.images.delete).toHaveBeenCalledWith(['img-1'])
   })

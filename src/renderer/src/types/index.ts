@@ -331,6 +331,8 @@ export interface AIMessage {
 
 export interface AIConversation {
   id: string
+  /** Project context chosen when the conversation was created. */
+  projectId?: string | null
   title: string
   createdAt: string
   updatedAt: string

@@ -1959,6 +1959,7 @@ app.whenReady().then(() => {
       request: {
         streamId: string
         model: string
+        reasoningEffort?: 'low' | 'medium' | 'high'
         messages: { role: 'system' | 'user' | 'assistant'; content: string }[]
       }
     ) => {
@@ -1978,6 +1979,7 @@ app.whenReady().then(() => {
         ).streamResponse({
           model: request.model,
           input,
+          ...(request.reasoningEffort ? { reasoningEffort: request.reasoningEffort } : {}),
           ...(instructions ? { instructions } : {}),
           onDelta: (delta) => {
             if (!event.sender.isDestroyed()) {
@@ -2061,6 +2063,7 @@ app.whenReady().then(() => {
         tools?: unknown[]
         model?: string
         profileId?: string
+        reasoningEffort?: 'low' | 'medium' | 'high'
         baseUrl?: string
         apiKey?: string
       }
@@ -2083,7 +2086,9 @@ app.whenReady().then(() => {
           model,
           messages: request.messages,
           ...(request.tools && request.tools.length > 0 ? { tools: request.tools } : {}),
-          ...(config.reasoningEffort ? { reasoning_effort: config.reasoningEffort } : {})
+          ...((request.reasoningEffort ?? config.reasoningEffort)
+            ? { reasoning_effort: request.reasoningEffort ?? config.reasoningEffort }
+            : {})
         } as unknown as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming
         const completion = await client.chat.completions.create(
           body,
@@ -2126,6 +2131,7 @@ app.whenReady().then(() => {
         tools?: unknown[]
         model?: string
         profileId?: string
+        reasoningEffort?: 'low' | 'medium' | 'high'
         baseUrl?: string
         apiKey?: string
       }
@@ -2149,7 +2155,9 @@ app.whenReady().then(() => {
           messages: request.messages,
           stream: true,
           ...(request.tools && request.tools.length > 0 ? { tools: request.tools } : {}),
-          ...(config.reasoningEffort ? { reasoning_effort: config.reasoningEffort } : {})
+          ...((request.reasoningEffort ?? config.reasoningEffort)
+            ? { reasoning_effort: request.reasoningEffort ?? config.reasoningEffort }
+            : {})
         } as unknown as OpenAI.Chat.ChatCompletionCreateParamsStreaming
 
         // A streaming provider only reports token usage if asked. Not every

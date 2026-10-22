@@ -252,6 +252,7 @@ export const api = {
         request: {
           streamId: string
           model: string
+          reasoningEffort?: 'low' | 'medium' | 'high'
           messages: { role: 'system' | 'user' | 'assistant'; content: string }[]
         },
         onDelta: (chunk: string) => void
@@ -366,6 +367,7 @@ export const api = {
       tools?: unknown[]
       model?: string
       profileId?: string
+      reasoningEffort?: 'low' | 'medium' | 'high'
     }): Promise<{
       success: boolean
       message?: { role: 'assistant'; content: string; tool_calls?: unknown[] }
@@ -388,6 +390,7 @@ export const api = {
         tools?: unknown[]
         model?: string
         profileId?: string
+        reasoningEffort?: 'low' | 'medium' | 'high'
       },
       onDelta: (chunk: string) => void,
       /** A tool call the model is composing right now, named before its args land. */
@@ -778,8 +781,15 @@ export const api = {
     },
     // Persisted chat history (ai-conversations.json in userData).
     conversations: {
-      list: (): Promise<{ id: string; title: string; createdAt: string; updatedAt: string }[]> =>
-        ipcRenderer.invoke('ai:conversations:list'),
+      list: (): Promise<
+        {
+          id: string
+          title: string
+          createdAt: string
+          updatedAt: string
+          projectId?: string | null
+        }[]
+      > => ipcRenderer.invoke('ai:conversations:list'),
       // Filters by title or by anything said in the chat; '' returns everything.
       search: (
         term: string
@@ -793,6 +803,7 @@ export const api = {
         title: string
         createdAt: string
         updatedAt: string
+        projectId?: string | null
         messages: {
           role: 'user' | 'assistant' | 'status'
           content: string
@@ -814,7 +825,13 @@ export const api = {
           documentIds?: string[]
         }[]
         usage?: { promptTokens: number; completionTokens: number }
-        connection?: { provider: 'api' | 'chatgpt'; profileId?: string; model: string }
+        connection?: {
+          provider: 'api' | 'chatgpt'
+          profileId?: string
+          model: string
+          reasoningEffort?: 'low' | 'medium' | 'high'
+        }
+        projectId?: string | null
       }): Promise<void> => ipcRenderer.invoke('ai:conversations:save', conv),
       delete: (id: string): Promise<{ ok?: true; error?: string }> =>
         ipcRenderer.invoke('ai:conversations:delete', id),
@@ -824,6 +841,7 @@ export const api = {
           title: string
           createdAt: string
           updatedAt: string
+          projectId?: string | null
           messages: { role: 'user' | 'assistant' | 'status'; content: string }[]
         }[]
       > => ipcRenderer.invoke('ai:conversations:all'),
@@ -833,6 +851,7 @@ export const api = {
           title: string
           createdAt: string
           updatedAt: string
+          projectId?: string | null
           messages: { role: 'user' | 'assistant' | 'status'; content: string }[]
         }[]
       ): Promise<void> => ipcRenderer.invoke('ai:conversations:replace', list)

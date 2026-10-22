@@ -15,6 +15,9 @@ export function SwitchAI({ config, current, onClose, onConfirm }: Props): React.
     current.profileId ?? config.activeProviderProfileId ?? config.providerProfiles?.[0]?.id ?? ''
   )
   const [model, setModel] = useState(current.model)
+  const [reasoningEffort, setReasoningEffort] = useState<'' | 'low' | 'medium' | 'high'>(
+    current.reasoningEffort ?? ''
+  )
   const [models, setModels] = useState<string[]>([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
@@ -69,9 +72,11 @@ export function SwitchAI({ config, current, onClose, onConfirm }: Props): React.
   }, [provider, profileId, config.providerProfiles])
 
   const choose = (nextProvider: ChatConnection['provider'], nextProfileId = ''): void => {
+    if (nextProvider === provider && nextProfileId === profileId) return
     setProvider(nextProvider)
     setProfileId(nextProfileId)
     setModel('')
+    setReasoningEffort('')
     setLoading(true)
     setError('')
   }
@@ -133,6 +138,21 @@ export function SwitchAI({ config, current, onClose, onConfirm }: Props): React.
             ))}
           </select>
         </label>
+        <label className="mt-4 block text-xs text-[#999999]">
+          Esforço de raciocínio
+          <select
+            value={reasoningEffort}
+            onChange={(event) =>
+              setReasoningEffort(event.target.value as '' | 'low' | 'medium' | 'high')
+            }
+            className="mt-1 w-full rounded-lg border border-[#2b2b31] bg-[#101014] px-3 py-2 text-sm text-[#ededed]"
+          >
+            <option value="">Automático / padrão</option>
+            <option value="low">Baixo</option>
+            <option value="medium">Médio</option>
+            <option value="high">Alto</option>
+          </select>
+        </label>
         {error && <p className="mt-2 text-xs text-amber-300">{error}</p>}
         {provider === 'chatgpt' && (
           <p className="mt-2 text-xs text-amber-300">
@@ -164,7 +184,8 @@ export function SwitchAI({ config, current, onClose, onConfirm }: Props): React.
               onConfirm({
                 provider,
                 profileId: provider === 'api' ? profileId : undefined,
-                model
+                model,
+                reasoningEffort: reasoningEffort || undefined
               })
             }
             className="rounded-lg bg-violet-700 px-3 py-2 text-sm text-white disabled:opacity-40"
