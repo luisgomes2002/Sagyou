@@ -23,16 +23,13 @@ import {
   unlinkSync,
   renameSync,
   chmodSync,
-  symlinkSync,
-  rmSync,
   statSync,
   accessSync,
   constants
 } from 'fs'
 import * as codeFileFs from 'fs'
 import { homedir } from 'os'
-import { exec as execCallback, spawn, type ChildProcess } from 'child_process'
-import { spawn as spawnPty, type IPty } from 'node-pty'
+import { exec as execCallback } from 'child_process'
 import { promisify } from 'util'
 import { readFile } from 'fs/promises'
 const execAsync = promisify(execCallback)
@@ -40,7 +37,17 @@ import { randomUUID } from 'crypto'
 import { partitionConversations, referencedConversationIds } from './conversation-retention'
 import type { StoredConversation } from './conversation-types'
 import { CodeRunCoordinator } from './code-run-coordinator'
-import { addDetachedWorktree, resolveWorktreeBase } from './git-worktree'
+import { AgentSessionRegistry } from './agent-session'
+import { AgentWorktreeManager } from './agent-worktree'
+import {
+  isAgentTerminalInput,
+  isAgentTerminalSize,
+  startAgentPty,
+  type AgentPty
+} from './agent-pty'
+import { collectAgentPatch, agentPatchPreview, patchWithinScope } from './agent-diff'
+import { deliverApprovedPatch } from './agent-delivery'
+import { prepareAgentMcpSession } from './agent-mcp-session'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import OpenAI from 'openai'
 import type { ChatGPTClient } from '@siwc/local'
@@ -112,7 +119,7 @@ import { briefConversationsForTask, briefCurrentConversation } from './conversat
 import { fetchWeb } from './web-fetch'
 import { renderWeb } from './web-render'
 import { getExchangeRate } from './financial-exchange'
-import { MCP_STDIO_BRIDGE_SOURCE, startSagyouMcpBroker } from './sagyou-mcp'
+import { startSagyouMcpBroker } from './sagyou-mcp'
 import { captureBase, diffSince, lineDiff, type AgentBase, type DiffLineItem } from './code-diff'
 import { isImageFileName } from './chat-images'
 import { safeAttachmentName } from './backup-files'
@@ -259,6 +266,10 @@ interface CodeRunState {
   id: string
   dir: string
   convId: string | null
+  /** Immutable application scope captured when the terminal was created. */
+  projectId: string | null
+  financialProfileId: string
+  codeRoot: string
   /** The real model name this run is using, shown by the panel and picker. */
   agent: string
   task: string
@@ -291,13 +302,14 @@ interface CodeRunState {
   allowedWritePaths?: string[]
   /** Read-only references selected for this run; never a write or shell root. */
   readOnlyRoots: ReadOnlyRoot[]
-  externalChild: ChildProcess | IPty | null
+  externalChild: AgentPty | null
   /** A real TTY session accepts user input until the user asks to review its diff. */
   interactive: boolean
   /** User ended an interactive TTY and asked to prepare the worktree diff. */
   finishing: boolean
-  /** Isolated OpenCode state prevents SQLite startup locks between parallel runs. */
-  externalStateDir: string | null
+  /** Last PTY grid reported by xterm; restored when a view reconnects. */
+  terminalCols: number
+  terminalRows: number
 }
 
 interface CodeApprovalRequest {
@@ -329,10 +341,10 @@ interface PendingCodeQuestion {
   request: CodeQuestionRequest
 }
 
-/** All runs in flight, keyed by run id. */
-const codeRuns = new Map<string, CodeRunState>()
-/** Worktree paths reserved during async creation, before their run is registered. */
-const reservedWorktrees = new Set<string>()
+/** Shared executor infrastructure; the native loop is only one temporary caller. */
+const codeSessions = new AgentSessionRegistry<CodeRunState>()
+const codeRuns = codeSessions.runs
+const worktreeManager = new AgentWorktreeManager(codeSessions)
 
 const codeRunCoordinator = new CodeRunCoordinator()
 
@@ -752,7 +764,7 @@ export function resolveExecutable(
   return null
 }
 
-type ExternalHarnessId = 'codex' | 'opencode' | 'claude-code'
+type ExternalHarnessId = 'codex' | 'claude-code'
 
 interface HarnessStatus {
   id: ExternalHarnessId
@@ -767,7 +779,6 @@ interface HarnessStatus {
 
 const EXTERNAL_HARNESSES: ReadonlyArray<Pick<HarnessStatus, 'id' | 'label' | 'command'>> = [
   { id: 'codex', label: 'Codex', command: 'codex' },
-  { id: 'opencode', label: 'OpenCode', command: 'opencode' },
   { id: 'claude-code', label: 'Claude Code', command: 'claude' }
 ]
 
@@ -866,52 +877,14 @@ function sagyouContextBrief(projectId: string | null | undefined): string {
   }
 }
 
-/** Builds direct argv for each supported local harness. No shell is involved. */
-function buildExternalHarnessLaunch(
-  harness: ExternalHarnessId,
-  task: string,
-  cwd: string
-): ExternalHarnessLaunch {
-  if (harness === 'codex') {
-    return {
-      label: 'Codex',
-      args: ['exec', '--json', '--sandbox', 'workspace-write', '--ephemeral', '--', task]
-    }
-  }
-  if (harness === 'opencode') {
-    return {
-      label: 'OpenCode',
-      args: ['run', '--dir', cwd, '--format', 'json', '--print-logs', '--auto', '--', task]
-    }
-  }
-  return {
-    label: 'Claude Code',
-    args: [
-      '--print',
-      '--output-format',
-      'stream-json',
-      '--permission-mode',
-      'acceptEdits',
-      '--',
-      task
-    ]
-  }
-}
-
 /**
  * OpenCode keeps its SQLite session database under XDG_DATA_HOME. Sharing that
  * file makes simultaneous CLI instances wait during bootstrap before they emit
  * any JSON event. Give each worktree a disposable data home, but link the normal
  * auth file so the configured provider remains available.
  */
-function externalHarnessEnv(
-  harness: ExternalHarnessId,
-  runId: string
-): {
-  env: NodeJS.ProcessEnv
-  stateDir: string | null
-} {
-  if (harness !== 'opencode') return { env: process.env, stateDir: null }
+export function terminalHarnessEnv(): NodeJS.ProcessEnv {
+  /* Legacy OpenCode state isolation removed with its executor adapter.
   // When opencode runs inside another opencode (the user launched one manually),
   // it inherits OPENCODE / OPENCODE_PID through process.env and may try to
   // attach to the parent instance instead of starting its own — a deadlock.
@@ -928,11 +901,12 @@ function externalHarnessEnv(
       // A missing link lets OpenCode report its normal login error.
     }
   }
-  return { env: { ...cleanEnv, XDG_DATA_HOME: stateDir }, stateDir }
+  return { env: { ...cleanEnv, XDG_DATA_HOME: stateDir }, stateDir } */
+  return process.env
 }
 
 /** A persistent terminal uses the harness normal TUI in its isolated worktree. */
-function buildInteractiveHarnessLaunch(
+function buildTerminalHarnessLaunch(
   harness: ExternalHarnessId,
   task: string,
   cwd: string
@@ -942,9 +916,6 @@ function buildInteractiveHarnessLaunch(
       label: 'Codex',
       args: ['--cd', cwd, '--sandbox', 'workspace-write', '--ask-for-approval', 'on-request', task]
     }
-  }
-  if (harness === 'opencode') {
-    return { label: 'OpenCode', args: [cwd, '--prompt', task] }
   }
   return { label: 'Claude Code', args: ['--permission-mode', 'manual', task] }
 }
@@ -967,24 +938,6 @@ function formatExternalHarnessEvent(harness: ExternalHarnessId, line: string): s
     return '[' + harness + '] ' + type + ': ' + detail.slice(0, 700)
   } catch {
     return '[' + harness + '] ' + raw.slice(0, 700)
-  }
-}
-
-/** A compact visual preview for the final worktree merge approval. */
-function patchPreview(patch: string): { lines: DiffLineItem[]; truncated: boolean } {
-  const all = patch.split('\n')
-  const limit = 400
-  return {
-    lines: all.slice(0, limit).map((line) => ({
-      kind:
-        line.startsWith('+') && !line.startsWith('+++')
-          ? 'add'
-          : line.startsWith('-') && !line.startsWith('---')
-            ? 'del'
-            : 'ctx',
-      text: line
-    })),
-    truncated: all.length > limit
   }
 }
 
@@ -2364,6 +2317,10 @@ app.whenReady().then(() => {
         convId?: string
         /** The project whose memory to brief the agent with (shared with the chat). */
         projectId?: string | null
+        /** Financial profile captured with the project scope. */
+        financialProfileId?: string
+        /** Chat-coordinated requests may only hand off to a terminal executor. */
+        coordinated?: boolean
         /** Start in auto-approval mode — approve() returns true without IPC. */
         autoApprove?: boolean
         /** Opens an external harness as a persistent terminal instead of a batch run. */
@@ -2371,26 +2328,70 @@ app.whenReady().then(() => {
       }
     ) => {
       const dir = request.path
+      const capturedProjectId =
+        typeof request.projectId === 'string' && request.projectId.trim() ? request.projectId : null
+      const capturedData = loadData()
+      const capturedProject = capturedProjectId
+        ? capturedData.projects.find((project) => project.id === capturedProjectId)
+        : null
+      const codeRoot = dir ? resolve(dir) : ''
+      if (capturedProjectId && !capturedProject) {
+        return { success: false, error: 'Projeto escolhido indisponÃ­vel. Selecione-o novamente.' }
+      }
+      if (capturedProjectId && !(capturedProject?.codePaths ?? []).length) {
+        return {
+          success: false,
+          error: 'O projeto escolhido nÃ£o possui raiz de cÃ³digo. Adicione uma pasta antes de iniciar o terminal.'
+        }
+      }
+      if (
+        capturedProjectId &&
+        !(capturedProject?.codePaths ?? []).some((root) => resolve(root.path) === codeRoot)
+      ) {
+        return {
+          success: false,
+          error: 'A raiz escolhida nÃ£o pertence ao projeto. Selecione uma raiz cadastrada nele.'
+        }
+      }
+      const capturedFinancialProfileId =
+        typeof request.financialProfileId === 'string' && request.financialProfileId.trim()
+          ? request.financialProfileId
+          : capturedData.activeFinancialProfileId ?? 'personal'
       if (!dir || !existsSync(dir) || !statSync(dir).isDirectory()) {
         return { success: false, error: 'Diretório do projeto inválido' }
       }
       const cfg = loadAIConfig()
       const harness = cfg.codeHarness ?? 'sagyou'
+      if (request.coordinated && harness === 'sagyou') {
+        return {
+          success: false,
+          error: 'Escolha Codex ou Claude Code para abrir uma sessÃ£o coordenada pelo chat.'
+        }
+      }
+      if (harness === 'opencode') {
+        return {
+          success: false,
+          error: 'OpenCode Ã© uma seleÃ§Ã£o legada. Escolha Codex ou Claude Code nas configuraÃ§Ãµes.'
+        }
+      }
       const externalHarness =
         harness === 'sagyou'
           ? null
           : ((await getHarnessStatuses()).find((status) => status.id === harness) ?? null)
       if (harness !== 'sagyou' && (!externalHarness?.installed || !externalHarness.path)) {
         const label =
-          harness === 'claude-code' ? 'Claude Code' : harness === 'opencode' ? 'OpenCode' : 'Codex'
+          harness === 'claude-code' ? 'Claude Code' : 'Codex'
         return {
           success: false,
           error:
             label + ' não foi encontrado nesta máquina. Use Verificar novamente nas configurações.'
         }
       }
-      const interactive = request.interactive === true
-      if (interactive && harness === 'sagyou') {
+      // Codex and Claude Code have exactly one execution transport: their
+      // native interactive CLI in a main-owned PTY. The renderer cannot select
+      // an executable or downgrade that contract to a batch process.
+      const interactive = harness === 'codex' || harness === 'claude-code'
+      if (interactive && !externalHarness) {
         return {
           success: false,
           error: 'A sessão interativa é disponível somente para Codex, OpenCode ou Claude Code.'
@@ -2398,25 +2399,7 @@ app.whenReady().then(() => {
       }
       // Cleanup worktrees órfãos (que sobraram de uma queda do app)
       try {
-        const activeWorktrees = new Set(
-          [
-            ...[...codeRuns.values()]
-              .map((run) => run.worktreeDir)
-              .filter((path): path is string => path !== null),
-            ...reservedWorktrees
-          ].map((path) => resolve(path))
-        )
-        const { stdout: wtList } = await execAsync(`git -C "${dir}" worktree list --porcelain`)
-        for (const line of wtList.split('\n')) {
-          if (line.startsWith('worktree ') && line.includes('.sagyou-wt-')) {
-            const orphanPath = line.slice(9).trim()
-            if (orphanPath && existsSync(orphanPath) && !activeWorktrees.has(resolve(orphanPath))) {
-              await execAsync(`git -C "${dir}" worktree remove --force "${orphanPath}"`).catch(
-                () => {}
-              )
-            }
-          }
-        }
+        await worktreeManager.removeOrphans(dir)
       } catch {
         // Se não é git ou não há worktrees, ignora
       }
@@ -2431,20 +2414,12 @@ app.whenReady().then(() => {
       const releaseFailedStart = async (): Promise<void> => {
         codeRunCoordinator.unregister(dir, runId)
         if (!worktreeDir) return
-        reservedWorktrees.delete(resolve(worktreeDir))
-        try {
-          await execAsync(`git -C "${dir}" worktree remove --force "${worktreeDir}"`)
-        } catch {
-          // A later orphan sweep retries cleanup.
-        }
+        await worktreeManager.remove({ originalDir: dir, worktreeDir }).catch(() => {})
       }
       if (needsWorktree) {
-        worktreeDir = join(dir, `.sagyou-wt-${runId}`)
-        reservedWorktrees.add(resolve(worktreeDir))
         try {
           await execAsync(`git -C "${dir}" rev-parse --show-toplevel`)
-          const base = await resolveWorktreeBase(dir)
-          await addDetachedWorktree(dir, worktreeDir, base.revision)
+          worktreeDir = (await worktreeManager.create(dir, runId)).worktreeDir
         } catch (error) {
           await releaseFailedStart()
           const reason = error instanceof Error ? error.message : 'falha desconhecida do Git'
@@ -2575,6 +2550,9 @@ app.whenReady().then(() => {
         id: runId,
         dir,
         convId: typeof request.convId === 'string' && request.convId ? request.convId : null,
+        projectId: capturedProjectId,
+        financialProfileId: capturedFinancialProfileId,
+        codeRoot,
         agent: harness === 'sagyou' ? caCfg.model || 'nativo' : externalHarness?.label || harness,
         task: taskLabel(task),
         startedAt: Date.now(),
@@ -2598,10 +2576,10 @@ app.whenReady().then(() => {
         externalChild: null,
         interactive,
         finishing: false,
-        externalStateDir: null
+        terminalCols: 100,
+        terminalRows: 30
       }
-      codeRuns.set(runId, run)
-      if (worktreeDir) reservedWorktrees.delete(resolve(worktreeDir))
+      codeSessions.register(run)
 
       const send = (channel: string, data: unknown): void =>
         mainWindow?.webContents.send(channel, data)
@@ -2673,26 +2651,9 @@ app.whenReady().then(() => {
       }
 
       if (harness !== 'sagyou' && externalHarness?.path && worktreeDir) {
-        // OpenCode's --auto flag does not cover external_directory permission
-        // (the agent asks and blocks when stdin is closed). Pre-approve it with
-        // a worktree-scoped opencode.json that is removed before the final diff.
-        let injectedOpenCodeConfig = false
-        if (harness === 'opencode') {
-          const cfgPath = join(effectiveDir, 'opencode.json')
-          if (!existsSync(cfgPath)) {
-            writeFileSync(
-              cfgPath,
-              JSON.stringify({ permission: { external_directory: { '*': 'allow' } } }),
-              'utf-8'
-            )
-            injectedOpenCodeConfig = true
-          }
-        }
-        const launch = interactive
-          ? buildInteractiveHarnessLaunch(harness, task, effectiveDir)
-          : buildExternalHarnessLaunch(harness, task, effectiveDir)
+        const launch = buildTerminalHarnessLaunch(harness, task, effectiveDir)
         const referenceBrief = await readOnlyReferenceBrief(readOnlyRoots)
-        const appBrief = sagyouContextBrief(request.projectId)
+        const appBrief = sagyouContextBrief(run.projectId)
         const scopedTask = [
           task,
           rel.length ? 'Arquivos em foco: ' + rel.join(', ') + '.' : '',
@@ -2705,92 +2666,24 @@ app.whenReady().then(() => {
           .filter(Boolean)
           .join('\n\n')
         const externalWorktree = worktreeDir
-        const externalRuntime = externalHarnessEnv(harness, runId)
+        const externalRuntime = { env: process.env }
         const mcpToken = randomUUID()
-        const currentData = loadData()
-        sagyouMcp.grant({
+        const baseExternalArgs = buildTerminalHarnessLaunch(harness, scopedTask, effectiveDir).args
+        const mcpSession = await prepareAgentMcpSession({
+          broker: sagyouMcp,
           token: mcpToken,
           runId,
-          projectId: request.projectId ?? null,
-          financialProfileId: currentData.activeFinancialProfileId ?? 'personal',
+          projectId: run.projectId,
+          financialProfileId: run.financialProfileId,
+          worktreeDir: effectiveDir,
+          executor: harness,
+          executable: process.execPath,
+          args: baseExternalArgs,
+          env: externalRuntime.env,
           expiresAt: Date.now() + 2 * 60 * 60 * 1000
         })
-        externalRuntime.env = {
-          ...externalRuntime.env,
-          SAGYOU_MCP_PORT: String(sagyouMcp.port()),
-          SAGYOU_MCP_TOKEN: mcpToken
-        }
-        const mcpBridgePath = join(effectiveDir, '.sagyou-mcp-bridge.cjs')
-        writeFileSync(mcpBridgePath, MCP_STDIO_BRIDGE_SOURCE, 'utf8')
-        const mcpClaudePath = join(effectiveDir, '.sagyou-mcp.json')
-        writeFileSync(
-          mcpClaudePath,
-          JSON.stringify({
-            mcpServers: {
-              sagyou: {
-                command: process.execPath,
-                args: [mcpBridgePath],
-                env: { ELECTRON_RUN_AS_NODE: '1' }
-              }
-            }
-          }),
-          'utf8'
-        )
-        if (harness === 'opencode' && injectedOpenCodeConfig) {
-          writeFileSync(
-            join(effectiveDir, 'opencode.json'),
-            JSON.stringify({
-              permission: { external_directory: { '*': 'allow' } },
-              mcp: {
-                servers: {
-                  sagyou: {
-                    type: 'local',
-                    command: [process.execPath, mcpBridgePath],
-                    environment: { ELECTRON_RUN_AS_NODE: '1' },
-                    codemode: false
-                  }
-                }
-              }
-            }),
-            'utf8'
-          )
-        }
-        if (harness === 'opencode') {
-          // OpenCode merges this inline config with the user's configuration,
-          // so an existing opencode.json keeps its providers and permissions.
-          externalRuntime.env = {
-            ...externalRuntime.env,
-            OPENCODE_CONFIG_CONTENT: JSON.stringify({
-              mcp: {
-                servers: {
-                  sagyou: {
-                    type: 'local',
-                    command: [process.execPath, mcpBridgePath],
-                    environment: { ELECTRON_RUN_AS_NODE: '1' },
-                    codemode: false
-                  }
-                }
-              }
-            })
-          }
-        }
-        run.externalStateDir = externalRuntime.stateDir
-        const externalArgs = interactive
-          ? buildInteractiveHarnessLaunch(harness, scopedTask, effectiveDir).args
-          : buildExternalHarnessLaunch(harness, scopedTask, effectiveDir).args
-        if (harness === 'claude-code') externalArgs.unshift('--mcp-config', mcpClaudePath)
-        if (harness === 'codex') {
-          // Codex accepts ephemeral TOML overrides, keeping this server out of
-          // the user's global config and binding it to this one worktree run.
-          externalArgs.unshift(
-            '--config',
-            `mcp_servers.sagyou.env={ELECTRON_RUN_AS_NODE="1"}`,
-            '--config',
-            `mcp_servers.sagyou.args=["${mcpBridgePath.replace(/\\/g, '\\\\')}"]`,
-            '--config',
-            `mcp_servers.sagyou.command="${process.execPath.replace(/\\/g, '\\\\')}"`
-          )
-        }
+        externalRuntime.env = mcpSession.env
+        const externalArgs = mcpSession.args
         emit(
           interactive
             ? '[' +
@@ -2810,53 +2703,11 @@ app.whenReady().then(() => {
           if (settled) return
           settled = true
           run.externalChild = null
-          // Remove the injected opencode.json before computing the final diff
-          // so it doesn't pollute the patch as an untracked file.
-          if (injectedOpenCodeConfig && harness === 'opencode' && externalWorktree) {
-            try {
-              unlinkSync(join(externalWorktree, 'opencode.json'))
-            } catch {}
-          }
           let exitCode = run.abort ? -2 : run.finishing ? 0 : (code ?? 1)
           try {
-            const { stdout: patch } = await execAsync('git -C "' + externalWorktree + '" diff HEAD')
-            const { stdout: changed } = await execAsync(
-              'git -C "' + externalWorktree + '" diff --name-only HEAD'
-            )
-            const changedPaths = changed
-              .split('\n')
-              .map((path) => path.trim())
-              .filter(Boolean)
-            // New files the harness left untracked — invisible to `git diff HEAD`.
-            // Stage them temporarily with --intent-to-add so `git diff HEAD` sees
-            // them, then reset. The worktree is ephemeral so the index churn is
-            // harmless; what matters is producing a standard-format patch that
-            // `git apply` can ingest.
-            const { stdout: porcelain } = await execAsync(
-              'git -C "' + externalWorktree + '" status --porcelain --untracked-files=all'
-            )
-            const untrackedFiles = porcelain
-              .split('\n')
-              .filter((l) => l.startsWith('?? '))
-              .map((l) => l.slice(3).trim())
-              .filter(Boolean)
-            let untrackedPatch = ''
-            for (const untrackedPath of untrackedFiles) {
-              changedPaths.push(untrackedPath)
-              await execAsync('git -C "' + externalWorktree + '" add -N "' + untrackedPath + '"')
-              const { stdout: filePatch } = await execAsync(
-                'git -C "' + externalWorktree + '" diff HEAD -- "' + untrackedPath + '"'
-              )
-              if (filePatch) untrackedPatch += filePatch
-              await execAsync(
-                'git -C "' + externalWorktree + '" reset HEAD -- "' + untrackedPath + '"'
-              )
-            }
-            const fullPatch = patch + untrackedPatch
-            if (
-              run.allowedWritePaths?.length &&
-              changedPaths.some((path) => !run.allowedWritePaths!.includes(path))
-            ) {
+            const changes = await collectAgentPatch(externalWorktree)
+            const fullPatch = changes.patch
+            if (!patchWithinScope(changes.changedPaths, run.allowedWritePaths)) {
               run.worktreeMergeError = 'o agente alterou arquivo fora do escopo permitido'
               exitCode = 2
               emit(
@@ -2865,10 +2716,8 @@ app.whenReady().then(() => {
               return
             }
             if (fullPatch.trim() && !run.abort) {
-              const fileCount = fullPatch
-                .split('\n')
-                .filter((line) => line.startsWith('diff --git')).length
-              const preview = patchPreview(fullPatch)
+              const fileCount = changes.fileCount
+              const preview = agentPatchPreview(fullPatch)
               const approved = await new Promise<boolean>((resolveApproval) => {
                 const id = randomUUID()
                 const approval: CodeApprovalRequest = {
@@ -2887,25 +2736,13 @@ app.whenReady().then(() => {
                 send('ai:code-agent:approve-request', approval)
               })
               if (approved && !run.abort) {
-                if (codeRunCoordinator.hasDirectRun(dir, runId)) {
-                  emit('[worktree] aguardando o agente que escreve no diretório original…\n')
-                  await codeRunCoordinator.waitForDirectRun(dir, runId)
-                }
-                await codeRunCoordinator.deliver(dir, async () => {
-                  const tmpPatch = join(dir, '.sagyou-wt-patch-' + runId + '.diff')
-                  writeFileSync(tmpPatch, fullPatch, 'utf-8')
-                  try {
-                    await execAsync(
-                      'git -C "' +
-                        dir +
-                        '" apply --whitespace=nowarn --ignore-space-change --ignore-whitespace "' +
-                        tmpPatch +
-                        '"'
-                    )
-                  } finally {
-                    try {
-                      unlinkSync(tmpPatch)
-                    } catch {}
+                await deliverApprovedPatch({
+                  originalDir: dir,
+                  runId,
+                  patch: fullPatch,
+                  coordinator: codeRunCoordinator,
+                  onWaitingForDirectRun: () => {
+                    emit('[worktree] aguardando o agente que escreve no diretório original…\n')
                   }
                 })
                 emit('[worktree] ' + fileCount + ' arquivo(s) aplicado(s) após sua aprovação.\n')
@@ -2925,12 +2762,7 @@ app.whenReady().then(() => {
               '[erro] alterações do worktree não foram aplicadas: ' + run.worktreeMergeError + '\n'
             )
           } finally {
-            sagyouMcp.revoke(mcpToken)
-            for (const file of [mcpBridgePath, mcpClaudePath]) {
-              try {
-                unlinkSync(file)
-              } catch {}
-            }
+            await mcpSession.cleanup()
             const secs = ((Date.now() - run.startedAt) / 1000).toFixed(1)
             emit('[' + externalHarness.command + '] duração: ' + secs + 's\n')
             const terminal = run.worktreeMergeError
@@ -2938,17 +2770,9 @@ app.whenReady().then(() => {
               : '[agente encerrado — código ' + exitCode + ']'
             appendAgentLog(runId, '\n' + terminal + '\n')
             await archiveAgentRun(runId, exitCode)
-            try {
-              await execAsync(
-                'git -C "' + dir + '" worktree remove --force "' + externalWorktree + '"'
-              )
-            } catch {}
-            reservedWorktrees.delete(resolve(externalWorktree))
-            if (run.externalStateDir) {
-              try {
-                rmSync(run.externalStateDir, { recursive: true, force: true })
-              } catch {}
-            }
+            await worktreeManager
+              .remove({ originalDir: dir, worktreeDir: externalWorktree })
+              .catch(() => {})
             send('ai:code-agent:exit', { runId, code: exitCode })
             lastRunLog = run.log
             lastRunHint = run.hint
@@ -2959,7 +2783,7 @@ app.whenReady().then(() => {
               promptTokens: run.usage.promptTokens,
               completionTokens: run.usage.completionTokens
             }
-            codeRuns.delete(runId)
+            codeSessions.remove(runId)
             codeRunCoordinator.unregister(dir, runId)
           }
         }
@@ -2977,7 +2801,7 @@ app.whenReady().then(() => {
               // OpenCode's --format json emits step_finish events that carry the
               // provider token counts — extract them so the Fleet panel and the
               // archived run show real numbers instead of zeroes.
-              if (harness === 'opencode') {
+              if (run.abort && harness === 'codex') {
                 try {
                   const event = JSON.parse(line) as Record<string, unknown>
                   if (event.type === 'step_finish') {
@@ -2987,8 +2811,8 @@ app.whenReady().then(() => {
                         : undefined) ?? event.tokens
                     if (tokens && typeof tokens === 'object') {
                       const t = tokens as Record<string, unknown>
-                      const input = typeof t.input === 'number' ? t.input : 0
-                      const output = typeof t.output === 'number' ? t.output : 0
+                      const input = typeof t.input === 'number' ? Number(t.input) : 0
+                      const output = typeof t.output === 'number' ? Number(t.output) : 0
                       if (input > 0 || output > 0) {
                         run.usage.promptTokens += input
                         run.usage.completionTokens += output
@@ -3003,38 +2827,19 @@ app.whenReady().then(() => {
             }
           }
         }
+        void streamLines
         try {
-          if (interactive) {
-            const terminal = spawnPty(externalHarness.path, externalArgs, {
-              name: 'xterm-256color',
-              cols: 100,
-              rows: 30,
-              cwd: effectiveDir,
-              env: externalRuntime.env
-            })
-            run.externalChild = terminal
-            terminal.onData((data) => emit(data))
-            terminal.onExit(({ exitCode }) => {
+          const terminal = startAgentPty({
+            command: externalHarness.path,
+            args: externalArgs,
+            cwd: effectiveDir,
+            env: externalRuntime.env,
+            onData: emit,
+            onExit: (exitCode) => {
               void finishExternal(exitCode)
-            })
-          } else {
-            const child = spawn(externalHarness.path, externalArgs, {
-              cwd: effectiveDir,
-              stdio: ['ignore', 'pipe', 'pipe'],
-              windowsHide: true,
-              env: externalRuntime.env
-            })
-            run.externalChild = child
-            child.stdout.on('data', streamLines())
-            child.stderr.on('data', streamLines())
-            child.once('error', (error) => {
-              emit('[erro no ' + launch.label + ': ' + error.message + ']\n')
-              void finishExternal(1)
-            })
-            child.once('close', (code) => {
-              void finishExternal(code)
-            })
-          }
+            }
+          })
+          run.externalChild = terminal
         } catch (error) {
           emit(
             '[erro ao iniciar ' +
@@ -3106,7 +2911,7 @@ app.whenReady().then(() => {
       if (!hasPinnedFiles) {
         try {
           memories = formatMemoriesForPrompt(
-            memoriesForContext(typeof request.projectId === 'string' ? request.projectId : null),
+            memoriesForContext(run.projectId),
             5 // injectMax: show full body for ≤5, title-only above
           )
         } catch {
@@ -3122,12 +2927,12 @@ app.whenReady().then(() => {
         const conversationList = loadConversations()
         const currentConversation = briefCurrentConversation(
           conversationList,
-          typeof request.convId === 'string' ? request.convId : null
+          run.convId
         )
         const relatedConversations = hasPinnedFiles
           ? ''
           : briefConversationsForTask(conversationList, task, {
-              excludeId: typeof request.convId === 'string' ? request.convId : null
+              excludeId: run.convId
             })
         conversas = [currentConversation, relatedConversations].filter(Boolean).join('\n\n')
       } catch {
@@ -3324,28 +3129,21 @@ app.whenReady().then(() => {
           // Fase 2(b): se usou worktree, mescla de volta e remove
           if (run.worktreeDir) {
             try {
-              const { stdout: patch } = await execAsync(`git -C "${run.worktreeDir}" diff HEAD`)
-              if (patch.trim()) {
-                const fileCount = patch.split('\n').filter((l) => l.startsWith('diff --git')).length
-                if (codeRunCoordinator.hasDirectRun(dir, runId)) {
-                  emit('\n[worktree] aguardando o agente que escreve no diretório original…\n')
-                  await codeRunCoordinator.waitForDirectRun(dir, runId)
-                }
-                await codeRunCoordinator.deliver(dir, async () => {
-                  const tmpPatch = join(dir, `.sagyou-wt-patch-${runId}.diff`)
-                  writeFileSync(tmpPatch, patch, 'utf-8')
-                  try {
-                    await execAsync(
-                      `git -C "${dir}" apply --whitespace=nowarn --ignore-space-change --ignore-whitespace "${tmpPatch}"`
-                    )
-                  } finally {
-                    try {
-                      unlinkSync(tmpPatch)
-                    } catch {}
+              const changes = await collectAgentPatch(run.worktreeDir, {
+                includeUntracked: false
+              })
+              if (changes.patch.trim()) {
+                await deliverApprovedPatch({
+                  originalDir: dir,
+                  runId,
+                  patch: changes.patch,
+                  coordinator: codeRunCoordinator,
+                  onWaitingForDirectRun: () => {
+                    emit('\n[worktree] aguardando o agente que escreve no diretório original…\n')
                   }
                 })
                 emit(
-                  `\n[worktree] ${fileCount} arquivo(s) mesclado(s) do worktree para o diretório original\n`
+                  `\n[worktree] ${changes.fileCount} arquivo(s) mesclado(s) do worktree para o diretório original\n`
                 )
               }
             } catch (e) {
@@ -3361,12 +3159,9 @@ app.whenReady().then(() => {
               appendAgentLog(runId, `\n${terminalStatus}\n`)
               await archiveAgentRun(runId, exitCode)
               archivedInWorktree = true
-              try {
-                await execAsync(`git -C "${dir}" worktree remove --force "${run.worktreeDir}"`)
-              } catch {
-                // cleanup falhou — não crítico, o worktree fica órfão mas não afeta o app
-              }
-              reservedWorktrees.delete(resolve(run.worktreeDir))
+              await worktreeManager
+                .remove({ originalDir: dir, worktreeDir: run.worktreeDir })
+                .catch(() => {})
             }
           }
           if (!archivedInWorktree) {
@@ -3385,7 +3180,7 @@ app.whenReady().then(() => {
             promptTokens: run.usage.promptTokens,
             completionTokens: run.usage.completionTokens
           }
-          codeRuns.delete(runId)
+          codeSessions.remove(runId)
           codeRunCoordinator.unregister(dir, runId)
         }
       })()
@@ -3403,12 +3198,7 @@ app.whenReady().then(() => {
     if (!run?.interactive || !run.externalChild || run.finishing) {
       return { success: false, error: 'Sessão interativa indisponível.' }
     }
-    if (
-      typeof input !== 'string' ||
-      !input ||
-      input.length > 8_000 ||
-      !('write' in run.externalChild)
-    ) {
+    if (!isAgentTerminalInput(input) || !('write' in run.externalChild)) {
       return { success: false, error: 'Entrada de terminal inválida.' }
     }
     run.externalChild.write(input)
@@ -3430,17 +3220,12 @@ app.whenReady().then(() => {
       ) {
         return { success: false, error: 'Sessão interativa indisponível.' }
       }
-      if (
-        !Number.isInteger(cols) ||
-        !Number.isInteger(rows) ||
-        cols < 2 ||
-        rows < 1 ||
-        cols > 500 ||
-        rows > 300
-      ) {
+      if (!isAgentTerminalSize(cols, rows)) {
         return { success: false, error: 'Tamanho de terminal inválido.' }
       }
       run.externalChild.resize(cols, rows)
+      run.terminalCols = cols
+      run.terminalRows = rows
       return { success: true }
     }
   )
@@ -3453,6 +3238,21 @@ app.whenReady().then(() => {
     run.finishing = true
     run.externalChild.kill('SIGTERM')
     return { success: true }
+  })
+
+  // Read-only reconnect: return the bounded buffer of an existing PTY without
+  // creating a process or exposing an executable selection to the renderer.
+  ipcMain.handle('ai:code-agent:terminal-reconnect', (_, runId: string) => {
+    const run = codeRuns.get(runId)
+    if (!run?.interactive || !run.externalChild || run.finishing) {
+      return { success: false, error: 'SessÃ£o interativa indisponÃ­vel.' }
+    }
+    return {
+      success: true,
+      log: run.log,
+      cols: run.terminalCols,
+      rows: run.terminalRows
+    }
   })
 
   // The renderer's answer to an approval card the loop is parked on. Resolving
@@ -3530,11 +3330,16 @@ app.whenReady().then(() => {
         dir: r.dir,
         task: r.task,
         convId: r.convId,
+        projectId: r.projectId,
+        financialProfileId: r.financialProfileId,
+        codeRoot: r.codeRoot,
         agent: r.agent,
         allowedWritePaths: r.allowedWritePaths,
         readOnlyRoots: r.readOnlyRoots,
         interactive: r.interactive,
         finishing: r.finishing,
+        terminalCols: r.terminalCols,
+        terminalRows: r.terminalRows,
         startedAt: r.startedAt,
         log: r.log,
         model: r.model,

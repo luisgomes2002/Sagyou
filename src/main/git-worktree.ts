@@ -44,14 +44,11 @@ export async function resolveWorktreeBase(dir: string): Promise<WorktreeBase> {
     GIT_COMMITTER_EMAIL: 'sagyou@local'
   }
   try {
-    await git(dir, [
-      'add',
-      '-A',
-      '--',
-      '.',
-      ':(exclude).sagyou-wt-*',
-      ':(exclude).sagyou-wt-patch-*.diff'
-    ], env)
+    await git(
+      dir,
+      ['add', '-A', '--', '.', ':(exclude).sagyou-wt-*', ':(exclude).sagyou-wt-patch-*.diff'],
+      env
+    )
     const tree = await git(dir, ['write-tree'], env)
     const revision = await git(
       dir,
@@ -71,4 +68,17 @@ export async function addDetachedWorktree(
   revision: string
 ): Promise<void> {
   await git(dir, ['worktree', 'add', '--detach', worktreeDir, revision])
+}
+
+export async function removeWorktree(dir: string, worktreeDir: string): Promise<void> {
+  await git(dir, ['worktree', 'remove', '--force', worktreeDir])
+}
+
+export async function listWorktrees(dir: string): Promise<string[]> {
+  const output = await git(dir, ['worktree', 'list', '--porcelain'])
+  return output
+    .split('\n')
+    .filter((line) => line.startsWith('worktree '))
+    .map((line) => line.slice('worktree '.length).trim())
+    .filter(Boolean)
 }

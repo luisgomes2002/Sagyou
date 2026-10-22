@@ -37,13 +37,24 @@ export const toolContracts: Record<string, ToolContract> = Object.fromEntries(
   ])
 )
 
+const legacyToolAliases: Record<string, string> = {
+  buscar_memoria: 'search_memory',
+  salvar_memoria: 'save_memory',
+  verificar_memorias: 'check_memories',
+  buscar_conversas: 'search_conversations',
+  ler_conversa: 'read_conversation',
+  rodar_agente_codigo: 'run_code_agent'
+}
+
+const canonical = (name: string): string => legacyToolAliases[name] ?? name
+
 export function getToolContract(name: string): ToolContract | undefined {
-  return toolContracts[name]
+  return toolContracts[canonical(name)]
 }
 
 export function validateToolCall(name: string, args: Record<string, unknown>): ValidationResult {
   return (
-    toolContracts[name]?.validate(args) ?? {
+    toolContracts[canonical(name)]?.validate(args) ?? {
       valid: false,
       errors: ['Ferramenta desconhecida'],
       warnings: []
@@ -52,5 +63,5 @@ export function validateToolCall(name: string, args: Record<string, unknown>): V
 }
 
 export function requiresExplicitApproval(name: string): boolean {
-  return toolContracts[name]?.requiresExplicitApproval === true
+  return toolContracts[canonical(name)]?.requiresExplicitApproval === true
 }

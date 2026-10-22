@@ -1355,9 +1355,9 @@ export const registryEntries: Record<string, AITool> = {
     }
   },
 
-  buscar_memoria: {
+  search_memory: {
     definition: fn(
-      'buscar_memoria',
+      'search_memory',
       'Consulta as suas memórias duráveis (do projeto ativo + as globais). Sem filtro, ' +
         'lista todas; com "id" (o código em [colchetes] no briefing), pega aquela memória exata; ' +
         'com "termo", filtra por título, corpo ou tags (sem diferenciar acento/maiúscula). ' +
@@ -1443,9 +1443,26 @@ export const registryEntries: Record<string, AITool> = {
     }
   },
 
-  buscar_conversas: {
+  read_memory: {
     definition: fn(
-      'buscar_conversas',
+      'read_memory',
+      'Lê uma memória específica pelo id retornado por search_memory.',
+      {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'Id da memória a ler' },
+          incluir_arquivadas: { type: 'boolean', description: 'true = inclui memórias arquivadas' }
+        },
+        required: ['id'],
+        additionalProperties: false
+      }
+    ),
+    run: async (args) => registryEntries.search_memory.run(args)
+  },
+
+  search_conversations: {
+    definition: fn(
+      'search_conversations',
       'Procura em conversas anteriores com este usuário por título ou por qualquer coisa dita ' +
         'no chat (sem diferenciar acento). Devolve os chats que batem, com um trecho. Use para ' +
         'lembrar o que já foi discutido antes.',
@@ -1476,9 +1493,9 @@ export const registryEntries: Record<string, AITool> = {
     }
   },
 
-  ler_conversa: {
+  read_conversation: {
     definition: fn(
-      'ler_conversa',
+      'read_conversation',
       'Lê o conteúdo completo de uma conversa anterior pelo id (o "id=..." que um handoff ' +
         '"Última sessão" traz no fim). Use quando um handoff truncado (terminando em "…") for ' +
         'relevante e você precisar do que foi de fato discutido — em vez de refazer do zero. ' +
@@ -1525,9 +1542,9 @@ export const registryEntries: Record<string, AITool> = {
     }
   },
 
-  verificar_memorias: {
+  check_memories: {
     definition: fn(
-      'verificar_memorias',
+      'check_memories',
       'Audita suas memórias em busca de contradições — pares que falam do mesmo assunto ' +
         '(mesmo título) com conteúdos diferentes, sinal de que uma pode estar desatualizada. ' +
         'Use quando suspeitar que suas memórias se contradizem ou quando o usuário pedir para revisá-las.',
@@ -1567,10 +1584,10 @@ export const registryEntries: Record<string, AITool> = {
     }
   },
 
-  salvar_memoria: {
+  save_memory: {
     write: true,
     definition: fn(
-      'salvar_memoria',
+      'save_memory',
       'Guarda um fato durável entre conversas (decisao/tradeoff/gotcha/fato/planejamento). ' +
         'Uma por chamada. Escopo = projeto ativo; use global=true para fatos pessoais. ' +
         'NUNCA salve segredos — são removidos automaticamente.',
@@ -1737,10 +1754,10 @@ export const registryEntries: Record<string, AITool> = {
     }
   },
 
-  rodar_agente_codigo: {
+  run_code_agent: {
     write: true,
     definition: fn(
-      'rodar_agente_codigo',
+      'run_code_agent',
       'Dispara um agente de código para implementar. Aceita várias execuções simultâneas, inclusive ' +
         'na mesma pasta, usando worktrees isolados. Para variantes paralelas, faça várias chamadas ' +
         'nesta rodada. Passe "arquivos" com os caminhos a editar.',
@@ -1826,7 +1843,9 @@ export const registryEntries: Record<string, AITool> = {
         : undefined
       // Scope decisions the chat already settled: passed through to the agent's
       // system prompt as constraints, so it doesn't reopen a choice already made.
-      const interactive = args.sessao_interativa === true
+      // The chat only coordinates a reviewed handoff; execution is always the
+      // selected CLI's native PTY, never an in-chat code loop.
+      const interactive = true
       const decisoes = Array.isArray(args.decisoes)
         ? args.decisoes.filter((d): d is string => typeof d === 'string' && d.trim() !== '')
         : undefined
@@ -1854,7 +1873,9 @@ export const registryEntries: Record<string, AITool> = {
         decisoes,
         convId: runningConvId ?? undefined,
         projectId,
-        interactive
+        financialProfileId: useKanbanStore.getState().activeFinancialProfileId,
+        interactive,
+        coordinated: true
       })
       if (!result.success) {
         return JSON.stringify({
@@ -1873,6 +1894,14 @@ export const registryEntries: Record<string, AITool> = {
         referencias: referencias.length ? referencias.map((root) => root.nome) : undefined,
         decisoes: decisoes && decisoes.length ? decisoes : undefined,
         sessao_interativa: interactive || undefined,
+        pedido: {
+          objetivo: task,
+          decisoes: decisoes ?? [],
+          arquivos: files ?? [],
+          arquivos_permitidos: allowedWritePaths ?? [],
+          agente: 'terminal configurado',
+          conversa: runningConvId ?? null
+        },
         aviso:
           'Pedido enviado. Não afirme sucesso: acompanhe o painel de saída. Se o agente não ' +
           'estiver instalado, aparecerá um erro lá.'

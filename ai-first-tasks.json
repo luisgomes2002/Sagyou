@@ -1,0 +1,268 @@
+{
+  "tasks": [
+    {
+      "title": "Definir arquitetura agent-first",
+      "description": "Objetivo: fechar as decisões da migração antes de alterar código. Implementação: registrar em GUIDE.md e CLAUDE.md o chat como coordenador, Codex/Claude como executores PTY, MCP como única ponte de dados e worktree com aprovação final. Critérios de aceite: responsabilidades, fluxos de sucesso/falha, ciclo de vida da sessão e destino do OpenCode estão decididos; nenhuma regra contraditória permanece. Testes: revisão manual cruzada entre os dois documentos. Dependências: nenhuma. Não alterar: formatos persistidos nesta task.",
+      "priority": "urgent",
+      "tags": ["Dev", "IA", "arquitetura"],
+      "column": "Backlog",
+      "sprint": "ai first"
+    },
+    {
+      "title": "Separar infraestrutura do agente de código",
+      "description": "Objetivo: tornar removível o loop antigo sem afetar a infraestrutura segura. Implementação: extrair interfaces/módulos para PTY, sessões, worktree, diff, entrega e MCP; manter adaptadores temporários para os chamadores atuais. Critérios de aceite: o terminal interativo funciona usando apenas os módulos extraídos e o loop antigo pode ser removido sem duplicar essas funções. Testes: unitários dos módulos extraídos e regressão dos fluxos atuais. Dependências: Definir arquitetura agent-first. Não alterar: comportamento de entrega, isolamento ou aprovação.",
+      "priority": "urgent",
+      "tags": ["Dev", "IA", "refatoração"],
+      "column": "Backlog",
+      "sprint": "ai first"
+    },
+    {
+      "title": "Tornar o terminal nativo o modo principal",
+      "description": "Objetivo: fazer o terminal original ser a única interface de execução de Codex e Claude. Implementação: iniciar os executáveis por node-pty no main e ligar entrada, saída e resize ao xterm por IPC restrito. Critérios de aceite: comandos nativos, ANSI, cursor, colagem, Ctrl+C e resize funcionam em ambos os CLIs no Windows; o renderer não escolhe executáveis arbitrários. Testes: IPC/PTY automatizado onde possível e roteiro manual Codex/Claude. Dependências: Separar infraestrutura do agente de código. Não alterar: worktree e revisão final.",
+      "priority": "urgent",
+      "tags": ["Dev", "IA", "terminal"],
+      "column": "Backlog",
+      "sprint": "ai first"
+    },
+    {
+      "title": "Persistir e restaurar sessões de terminal",
+      "description": "Objetivo: não perder uma execução ao navegar no app. Implementação: manter registro de sessões no main, buffer limitado de saída e IPC de status/reconexão; restaurar dimensões ao remontar o xterm. Critérios de aceite: trocar de tela e voltar reconecta ao mesmo PID, sem duplicar processo ou perder estado recente; sessão encerrada não reaparece. Testes: desmontar/remontar a view, concorrência e encerramento. Dependências: Tornar o terminal nativo o modo principal. Não alterar: persistir credenciais ou texto sensível em logs permanentes.",
+      "priority": "high",
+      "tags": ["Dev", "IA", "terminal"],
+      "column": "Backlog",
+      "sprint": "ai first"
+    },
+    {
+      "title": "Vincular cada terminal ao projeto escolhido",
+      "description": "Objetivo: impedir mudança silenciosa de escopo. Implementação: capturar projectId, conversationId, codeRoot e financialProfileId na criação da sessão e usá-los até o cleanup. Critérios de aceite: trocar o projeto ativo na UI não altera cwd, MCP, memórias nem entrega de uma sessão existente; projeto sem raiz exibe erro acionável. Testes: duas sessões simultâneas em projetos/perfis distintos. Dependências: infraestrutura separada. Não alterar: dados fora do projeto capturado.",
+      "priority": "urgent",
+      "tags": ["Dev", "IA", "projetos"],
+      "column": "Backlog",
+      "sprint": "ai first"
+    },
+    {
+      "title": "Transformar o chat em coordenador de agentes",
+      "description": "Objetivo: usar o chat somente para preparar e acompanhar o trabalho. Implementação: gerar um pedido estruturado com objetivo, decisões, arquivos e agente escolhido e iniciar/reabrir a sessão PTY vinculada. Critérios de aceite: o chat nunca executa ferramentas de código internas; o usuário revisa o contexto antes de abrir o terminal; a conversa guarda o ID da sessão. Testes: iniciar, reabrir, cancelar e tratar CLI ausente. Dependências: terminal principal e vínculo de projeto. Não alterar: ferramentas do chat para dados pessoais nesta etapa.",
+      "priority": "high",
+      "tags": ["Dev", "IA", "chat"],
+      "column": "Backlog",
+      "sprint": "ai first"
+    },
+    {
+      "title": "Renomear ferramentas públicas para inglês",
+      "description": "Objetivo: padronizar identificadores públicos em inglês. Implementação: renomear para search_memory, read_memory, save_memory, check_memories, search_conversations, read_conversation e run_code_agent em contratos, dispatch, prompts, MCP, métricas, testes e docs. Critérios de aceite: sessões novas listam somente nomes ingleses e não há referência ativa aos nomes antigos fora da camada de compatibilidade. Testes: cada nome resolve e executa o handler correto. Dependências: arquitetura definida. Não alterar: semântica, permissão ou payload durante a renomeação.",
+      "priority": "high",
+      "tags": ["Dev", "IA", "MCP"],
+      "column": "Backlog",
+      "sprint": "ai first"
+    },
+    {
+      "title": "Adicionar aliases temporários para ferramentas antigas",
+      "description": "Objetivo: preservar históricos e chamadas antigas durante a migração. Implementação: mapear nomes portugueses para handlers ingleses apenas no dispatch, sem anunciá-los em tools/list; registrar uso para remoção futura. Critérios de aceite: transcript antigo continua executável e sessão nova desconhece os aliases. Testes: um caso por alias e rejeição de nomes parecidos. Dependências: Renomear ferramentas públicas. Não alterar: payloads persistidos nem criar duas implementações.",
+      "priority": "medium",
+      "tags": ["Dev", "IA", "compatibilidade"],
+      "column": "Backlog",
+      "sprint": "ai first"
+    },
+    {
+      "title": "Adicionar search_memory ao MCP",
+      "description": "Objetivo: permitir recall sob demanda pelo agente. Implementação: expor search_memory no broker usando a busca FTS existente, projeto da sessão e memórias globais; limitar quantidade e snippets. Critérios de aceite: projectId não existe no schema da ferramenta, arquivadas ficam fora por padrão e resultados não expõem corpo completo. Testes: ranking, globais, isolamento, limites e token inválido. Dependências: renomeação e escopo MCP. Não alterar: contador de acesso fora das regras atuais.",
+      "priority": "high",
+      "tags": ["Dev", "IA", "MCP", "memória"],
+      "column": "Backlog",
+      "sprint": "ai first"
+    },
+    {
+      "title": "Adicionar read_memory ao MCP",
+      "description": "Objetivo: recuperar o corpo completo somente de uma memória autorizada. Implementação: expor read_memory por ID, validar memória global ou do projeto fixo e aplicar touch pela regra existente. Critérios de aceite: ID de outro projeto, arquivado ou inexistente não vaza metadados; resposta é limitada e marcada como evidência não confiável. Testes: escopos, prefixo/ID, touch e falhas. Dependências: search_memory. Não alterar: conteúdo armazenado.",
+      "priority": "high",
+      "tags": ["Dev", "IA", "MCP", "memória"],
+      "column": "Backlog",
+      "sprint": "ai first"
+    },
+    {
+      "title": "Adicionar save_memory ao MCP",
+      "description": "Objetivo: salvar aprendizados sem transformar suposições em fatos silenciosamente. Implementação: expor save_memory, validar tipo/tamanho, fixar projectId da sessão, aplicar buildMemory/scrubSecrets e aguardar aprovação do Sagyou antes da persistência. Critérios de aceite: recusa não grava; aprovação responde somente após flush; segredo é removido. Testes: aprovar, negar, timeout, sanitização e projeto concorrente. Dependências: aprovações MCP. Não alterar: memórias existentes em falha.",
+      "priority": "urgent",
+      "tags": ["Dev", "IA", "MCP", "segurança"],
+      "column": "Backlog",
+      "sprint": "ai first"
+    },
+    {
+      "title": "Adicionar check_memories ao MCP",
+      "description": "Objetivo: mostrar contradições antes de uma decisão. Implementação: expor check_memories sobre globais e projeto autorizado usando findConflicts. Critérios de aceite: retorna pares limitados com IDs e trechos, ignora handoffs conforme regra atual e nunca modifica/arquiva registros. Testes: conflito real, mesmo texto, handoff e isolamento. Dependências: search_memory. Não alterar: algoritmo de resolução sem decisão separada.",
+      "priority": "medium",
+      "tags": ["Dev", "IA", "MCP", "memória"],
+      "column": "Backlog",
+      "sprint": "ai first"
+    },
+    {
+      "title": "Adicionar search_conversations ao MCP",
+      "description": "Objetivo: recuperar contexto histórico sem enviar todo o arquivo de conversas. Implementação: expor search_conversations usando o índice existente, projectId fixo, limite e snippets sem mensagens de status. Critérios de aceite: conversa de outro projeto ou geral não aparece indevidamente; resultado informa ID, título e trecho. Testes: termo, vazio, limite, legado e isolamento. Dependências: escopo MCP e renomeação. Não alterar: retenção de conversas.",
+      "priority": "high",
+      "tags": ["Dev", "IA", "MCP", "conversas"],
+      "column": "Backlog",
+      "sprint": "ai first"
+    },
+    {
+      "title": "Adicionar read_conversation ao MCP",
+      "description": "Objetivo: ler o transcript necessário de forma controlada. Implementação: expor read_conversation por ID, confirmar escopo, remover status e limitar caracteres preservando cauda relevante. Critérios de aceite: acesso cruzado é recusado sem revelar existência; conteúdo recebe aviso de evidência não confiável; anexos não são retornados. Testes: limites, conversa protegida, legado e projeto errado. Dependências: search_conversations. Não alterar: arquivo de histórico.",
+      "priority": "high",
+      "tags": ["Dev", "IA", "MCP", "conversas"],
+      "column": "Backlog",
+      "sprint": "ai first"
+    },
+    {
+      "title": "Ampliar ferramentas de dados do MCP",
+      "description": "Objetivo: oferecer aos agentes somente dados necessários e coerentes. Implementação: definir schemas read_tasks, read_project, read_notes, read_goals e read_financial_data com paginação e escopo vindo da sessão. Critérios de aceite: nenhuma ferramenta aceita projectId/profileId; finanças respeitam perfil e valores decimais string; respostas têm limites. Testes: cada domínio, paginação e isolamento. Dependências: escopo MCP. Não alterar: formatos monetários ou dados persistidos.",
+      "priority": "high",
+      "tags": ["Dev", "IA", "MCP", "dados"],
+      "column": "Backlog",
+      "sprint": "ai first"
+    },
+    {
+      "title": "Centralizar aprovações de escrita do MCP",
+      "description": "Objetivo: impedir mutações invisíveis ou perdidas. Implementação: criar fila de aprovação por run, mostrar uma modal por vez, executar a action no renderer e aguardar flush antes de responder ao broker. Critérios de aceite: negar/fechar/expirar não grava; duas solicitações não se sobrepõem; cleanup rejeita pendências. Testes: concorrência, timeout, renderer desmontado e persistência falha. Dependências: infraestrutura separada. Não alterar: aprovação final do diff.",
+      "priority": "urgent",
+      "tags": ["Dev", "IA", "MCP", "segurança"],
+      "column": "Backlog",
+      "sprint": "ai first"
+    },
+    {
+      "title": "Endurecer o escopo das sessões MCP",
+      "description": "Objetivo: tratar cada MCP como capacidade mínima e temporária. Implementação: gerar token criptograficamente aleatório, vincular run/projeto/perfil/permissões, validar em toda chamada, expirar e revogar no cleanup. Critérios de aceite: broker escuta apenas loopback; token nunca aparece no log/UI; troca de projeto não muda escopo; token revogado falha imediatamente. Testes: forja, expiração, revogação e sessões cruzadas. Dependências: arquitetura MCP. Não alterar: acesso direto ao SQLite continua proibido.",
+      "priority": "urgent",
+      "tags": ["Dev", "IA", "MCP", "segurança"],
+      "column": "Backlog",
+      "sprint": "ai first"
+    },
+    {
+      "title": "Criar briefing inicial para Codex e Claude",
+      "description": "Objetivo: iniciar o agente com contexto suficiente sem despejar dados. Implementação: montar briefing limitado com objetivo, decisões, arquivos indicados, conversa de origem e memórias relevantes; informar ferramentas MCP para aprofundamento. Critérios de aceite: limites são determinísticos, secrets são removidos e contexto histórico nunca supera instruções atuais. Testes: truncamento, conversa curta, sem memória e prompt injection histórico. Dependências: ferramentas MCP de leitura. Não alterar: prompt nativo do CLI além do contexto autorizado.",
+      "priority": "high",
+      "tags": ["Dev", "IA", "contexto"],
+      "column": "Backlog",
+      "sprint": "ai first"
+    },
+    {
+      "title": "Criar handoff ao encerrar o terminal",
+      "description": "Objetivo: permitir continuidade entre sessões sem armazenar todo o terminal. Implementação: ao finalizar, gravar handoff determinístico com pedido, resultado, arquivos alterados, status e IDs da conversa/run; limitar no momento da escrita. Critérios de aceite: um handoff por projeto é atualizado, cancelamento fica identificado e referências permitem achar o detalhe. Testes: sucesso, cancelamento, resposta longa e projeto geral. Dependências: terminal e memória MCP. Não alterar: logs completos não viram memória.",
+      "priority": "high",
+      "tags": ["Dev", "IA", "memória"],
+      "column": "Backlog",
+      "sprint": "ai first"
+    },
+    {
+      "title": "Preservar worktree isolado para cada sessão",
+      "description": "Objetivo: impedir escrita direta na árvore de trabalho real. Implementação: criar worktree detached por run, inclusive para repositório sem commit, validar caminho absoluto e limpar somente após entrega ou cancelamento. Critérios de aceite: execuções simultâneas não colidem; falha de criação não toca o projeto; crash deixa recuperação segura. Testes: repo normal, sem commit, concorrência e cleanup interrompido. Dependências: infraestrutura separada. Não alterar: índice, HEAD ou mudanças locais do usuário.",
+      "priority": "urgent",
+      "tags": ["Dev", "IA", "Git", "segurança"],
+      "column": "Backlog",
+      "sprint": "ai first"
+    },
+    {
+      "title": "Manter revisão e aprovação final do diff",
+      "description": "Objetivo: manter o usuário como decisor da entrega. Implementação: calcular diff contra a base da run, atualizar durante a execução, encerrar para revisão e aplicar serialmente somente após confirmação. Critérios de aceite: auto-approve nunca entrega; diff vazio é distinguido de ainda executando; conflito com alteração local bloqueia sem sobrescrever. Testes: aceitar, negar, conflito, binário e diff vazio. Dependências: worktree isolado. Não alterar: arquivos antes da aprovação.",
+      "priority": "urgent",
+      "tags": ["Dev", "IA", "Git", "segurança"],
+      "column": "Backlog",
+      "sprint": "ai first"
+    },
+    {
+      "title": "Definir tratamento de arquivos fora do escopo",
+      "description": "Objetivo: garantir que o escopo combinado limite a entrega. Implementação: normalizar caminhos, comparar o changed-path list final com arquivos/raízes permitidos e bloquear todo o lote se houver violação. Critérios de aceite: traversal, symlink e diferença de caixa no Windows não burlam a regra; UI lista os caminhos recusados; nada é aplicado parcialmente. Testes: caminhos irmãos reais, symlink, rename e mistura válido/inválido. Dependências: revisão final. Não alterar: arquivos fora do escopo nem em tentativa de recuperação.",
+      "priority": "high",
+      "tags": ["Dev", "IA", "segurança"],
+      "column": "Backlog",
+      "sprint": "ai first"
+    },
+    {
+      "title": "Remover o agente interno do Sagyou",
+      "description": "Objetivo: eliminar o executor duplicado somente após paridade comprovada. Implementação: remover loop de chamadas de modelo, command runner interno, tools exclusivas e opção codeHarness=sagyou; conservar módulos compartilhados extraídos. Critérios de aceite: nenhum import ou configuração morta permanece; conversas antigas carregam; Codex/Claude cobrem iniciar, interagir, parar e entregar. Testes: typecheck, busca de símbolos removidos e regressão completa. Dependências: paridade, migração e validação aprovadas. Não alterar: histórico, memórias, worktree, diff ou MCP.",
+      "priority": "high",
+      "tags": ["Dev", "IA", "limpeza"],
+      "column": "Backlog",
+      "sprint": "ai first"
+    },
+    {
+      "title": "Remover execução batch dos agentes externos",
+      "description": "Objetivo: manter uma única forma de executar cada CLI. Implementação: remover spawn batch, parsers de JSON/eventos, estados e UI usados apenas pelo modo não interativo; redirecionar lançamentos ao PTY. Critérios de aceite: não existe seletor de modo nem processo externo fora do gerenciador PTY; arquivos antigos de run ainda abrem como somente leitura se suportados. Testes: Codex e Claude iniciam pelo mesmo contrato e erros de saída são tratados. Dependências: terminal nativo com paridade. Não alterar: revisão final e MCP.",
+      "priority": "medium",
+      "tags": ["Dev", "IA", "limpeza"],
+      "column": "Backlog",
+      "sprint": "ai first"
+    },
+    {
+      "title": "Simplificar a interface da área de agentes",
+      "description": "Objetivo: apresentar um fluxo único e compreensível. Implementação: remover controles dos modos antigos e manter agente, projeto, terminal, status, reconexão, parar, encerrar e revisar, diff e entrega. Critérios de aceite: estados vazio/iniciando/ativo/aguardando aprovação/finalizado/erro são claros; teclado e foco são acessíveis; sair da view não encerra. Testes: Testing Library para estados e roteiro manual do terminal. Dependências: terminal principal e remoção batch. Não alterar: visual fora da área de agentes.",
+      "priority": "high",
+      "tags": ["Dev", "IA", "frontend"],
+      "column": "Backlog",
+      "sprint": "ai first"
+    },
+    {
+      "title": "Definir destino do suporte ao OpenCode",
+      "description": "Objetivo: evitar escopo indefinido na migração. Implementação: avaliar se OpenCode suporta o mesmo contrato PTY/MCP/worktree e registrar decisão de manter com paridade ou remover completamente. Critérios de aceite: arquitetura, UI, tipos e testes refletem uma única decisão; nenhuma opção parcialmente funcional permanece. Testes: se mantido, mesma matriz dos outros CLIs; se removido, busca sem referências ativas. Dependências: Definir arquitetura agent-first. Não alterar: Codex e Claude.",
+      "priority": "medium",
+      "tags": ["Dev", "IA", "produto"],
+      "column": "Backlog",
+      "sprint": "ai first"
+    },
+    {
+      "title": "Adicionar testes do terminal nativo",
+      "description": "Objetivo: proteger o contrato do terminal contra regressão. Implementação: testar handlers IPC com PTY mockado e componentes com xterm mockado; complementar com smoke manual em ConPTY. Critérios de aceite: cobre start/input/resize/status/reconnect/stop/exit, rejeita runId alheio e payloads inválidos, e confirma cleanup. Testes: automatizados determinísticos mais checklist Codex/Claude no Windows. Dependências: terminal e persistência de sessão. Não alterar: testes não podem iniciar CLIs reais no CI.",
+      "priority": "high",
+      "tags": ["Dev", "IA", "testes"],
+      "column": "Backlog",
+      "sprint": "ai first"
+    },
+    {
+      "title": "Adicionar testes de segurança do MCP",
+      "description": "Objetivo: provar que o broker não amplia autoridade. Implementação: criar testes end-to-end do bridge stdio ao broker com relógio controlado e duas sessões. Critérios de aceite: token ausente/forjado/expirado/revogado falha; projeto e perfil não cruzam; respostas obedecem limites; broker só usa loopback. Testes: incluir initialize, tools/list, tools/call e mensagens malformadas. Dependências: ferramentas e escopo MCP concluídos. Não alterar: testes nunca usam banco ou dados reais.",
+      "priority": "urgent",
+      "tags": ["Dev", "IA", "MCP", "testes", "segurança"],
+      "column": "Backlog",
+      "sprint": "ai first"
+    },
+    {
+      "title": "Adicionar testes de escrita e memória pelo MCP",
+      "description": "Objetivo: provar o ciclo completo de memória sem perda ou vazamento. Implementação: testar bridge, broker, fila de aprovação, renderer e store com dependências isoladas. Critérios de aceite: leitura respeita escopo; aprovação grava antes do retorno; recusa/timeout/falha de flush não grava; secrets são sanitizados. Testes: cada ferramenta de memória e concorrência entre projetos. Dependências: MCP de memória e aprovações. Não alterar: dados reais do usuário.",
+      "priority": "urgent",
+      "tags": ["Dev", "IA", "MCP", "testes"],
+      "column": "Backlog",
+      "sprint": "ai first"
+    },
+    {
+      "title": "Adicionar testes da entrega por worktree",
+      "description": "Objetivo: garantir que nenhuma alteração alcance o projeto sem revisão. Implementação: usar repositórios temporários reais para testar worktree, diff, validação e entrega. Critérios de aceite: aceita aplica exatamente o diff; negar/stop preserva original; fora do escopo bloqueia lote; conflito preserva ambos os lados; cleanup ocorre no momento correto. Testes: repo com commit, sem commit, rename, binário e mudança local concorrente. Dependências: worktree e revisão final. Não alterar: repositório do próprio teste runner.",
+      "priority": "urgent",
+      "tags": ["Dev", "IA", "Git", "testes"],
+      "column": "Backlog",
+      "sprint": "ai first"
+    },
+    {
+      "title": "Migrar configurações e histórico antigos",
+      "description": "Objetivo: atualizar sem perder dados nem reativar modos removidos. Implementação: normalizar configurações antigas na leitura, preservar campos desconhecidos quando necessário, migrar nomes de ferramentas apenas na execução e manter backups compatíveis. Critérios de aceite: fixture anterior abre com conversas/memórias intactas; primeiro autosave não apaga campos; rollback documentado. Testes: fixtures de versões anteriores, import/export e round-trip. Dependências: formato final definido antes da remoção. Não alterar: banco destrutivamente ou versão de backup sem migração explícita.",
+      "priority": "urgent",
+      "tags": ["Dev", "IA", "migração", "dados"],
+      "column": "Backlog",
+      "sprint": "ai first"
+    },
+    {
+      "title": "Atualizar documentação agent-first",
+      "description": "Objetivo: deixar uma única fonte de verdade para manutenção e uso. Implementação: atualizar GUIDE.md, CLAUDE.md e UI com fluxo agent-first, nomes ingleses, escopo MCP, aprovações, worktree, recuperação e limitações. Critérios de aceite: não há instrução do modo removido; textos ao usuário permanecem em pt-BR; exemplos correspondem aos contratos reais. Testes: revisar links/comandos e pesquisar termos obsoletos. Dependências: implementação estabilizada. Não alterar: documentar comportamento futuro como se já existisse.",
+      "priority": "medium",
+      "tags": ["Dev", "IA", "documentação"],
+      "column": "Backlog",
+      "sprint": "ai first"
+    },
+    {
+      "title": "Executar validação final da migração agent-first",
+      "description": "Objetivo: liberar a migração somente com evidência de paridade e segurança. Implementação: executar typecheck, lint do diff, suíte completa, cobertura, build Windows e matriz manual Codex/Claude com login, modelo/effort, MCP, reconexão, stop e entrega. Critérios de aceite: zero falha nova, checklist anexado e teste de backup/restore aprovado; caminhos antigos só são removidos depois deste gate. Testes: todos os comandos oficiais mais instalação limpa do artefato. Dependências: todas as tasks anteriores, exceto remoção definitiva que usa este resultado como gate. Não alterar: não mascarar falhas ambientais como sucesso.",
+      "priority": "urgent",
+      "tags": ["Dev", "IA", "qualidade"],
+      "column": "Backlog",
+      "sprint": "ai first"
+    }
+  ]
+}

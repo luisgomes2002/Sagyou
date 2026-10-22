@@ -75,6 +75,9 @@ export function startSagyouMcpBroker(deps: McpBrokerDeps): {
 } {
   const sessions = new Map<string, McpSession>()
   const server = createServer((socket) => {
+    // A disposable stdio bridge may exit immediately after receiving its reply.
+    // Treat that peer reset as session teardown, not as an uncaught main-process error.
+    socket.on('error', () => {})
     let buffer = ''
     socket.on('data', (chunk: Buffer) => {
       buffer += chunk.toString('utf8')

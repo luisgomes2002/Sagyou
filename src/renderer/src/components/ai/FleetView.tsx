@@ -47,6 +47,9 @@ interface ChatSession {
   agent: string
   allowedWritePaths?: string[]
   readOnlyRoots?: { id: string; nome: string; path: string }[]
+  projectId: string | null
+  financialProfileId?: string
+  codeRoot?: string
   /** convId that links multiple runs into one conversation. */
   sessionId: string
   /** Live runId while a continuation is running. Null when idle. */
@@ -65,6 +68,9 @@ interface CodeAgentRunUI {
   task: string
   model: string
   convId: string | null
+  projectId: string | null
+  financialProfileId?: string
+  codeRoot?: string
   startedAt: number
   log: string
   hint: { title: string; detail: string; command?: string } | null
@@ -79,6 +85,8 @@ interface CodeAgentRunUI {
   readOnlyRoots?: { id: string; nome: string; path: string }[]
   interactive: boolean
   finishing: boolean
+  terminalCols?: number
+  terminalRows?: number
   /** Questions pause a run until the user supplies an answer. */
   questions: { id: string; question: string }[]
   /** Structured activity emitted for every tool call and result. */
@@ -126,6 +134,9 @@ function useCodeAgentRuns(): {
             task: r.task,
             model: r.model ?? r.agent,
             convId: r.convId ?? null,
+            projectId: r.projectId ?? null,
+            financialProfileId: r.financialProfileId,
+            codeRoot: r.codeRoot,
             startedAt: r.startedAt,
             log: r.log,
             hint: r.hint,
@@ -135,6 +146,8 @@ function useCodeAgentRuns(): {
             readOnlyRoots: r.readOnlyRoots,
             interactive: r.interactive === true,
             finishing: r.finishing === true,
+            terminalCols: r.terminalCols,
+            terminalRows: r.terminalRows,
             questions: r.questions ?? existing?.questions ?? [],
             events: existing?.events ?? [],
             approvals: r.approvals ?? existing?.approvals ?? []
@@ -714,6 +727,8 @@ export function FleetView({
                       runId={liveRun.id}
                       onInput={(input) => terminalInput(liveRun.id, input)}
                       onResize={(cols, rows) => terminalResize(liveRun.id, cols, rows)}
+                      initialCols={liveRun.terminalCols}
+                      initialRows={liveRun.terminalRows}
                     />
                     {liveRun.finishing ? (
                       <p className="px-1 text-[11px] text-[#999999]">
@@ -764,26 +779,12 @@ export function FleetView({
               )}
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={() =>
-                  setChatSession((prev) =>
-                    prev ? { ...prev, interactive: !prev.interactive } : prev
-                  )
-                }
-                disabled={
-                  !!chatSession.runId &&
-                  codeRuns.some((run) => run.id === chatSession.runId && run.interactive)
-                }
-                title="Ative para a próxima continuação abrir um terminal persistente do harness externo."
-                className={
-                  chatSession.interactive
-                    ? 'rounded-lg border border-[#7c3aed] bg-[#2a2a30] px-2 py-2 text-[11px] text-[#c4b5fd]'
-                    : 'rounded-lg border border-[#2b2b31] px-2 py-2 text-[11px] text-[#999999] hover:text-[#d4d4d4]'
-                }
+              <span
+                title="Codex e Claude Code sempre usam seus terminais nativos."
+                className="rounded-lg border border-[#7c3aed] bg-[#2a2a30] px-2 py-2 text-[11px] text-[#c4b5fd]"
               >
-                {chatSession.interactive ? 'Terminal ao vivo' : 'Modo por tarefa'}
-              </button>
+                Terminal nativo
+              </span>
               <input
                 type="text"
                 value={chatInput}
@@ -811,7 +812,8 @@ export function FleetView({
                         files: undefined,
                         allowedWritePaths: chatSession.allowedWritePaths,
                         readOnlyRoots: chatSession.readOnlyRoots,
-                        projectId: undefined,
+                        projectId: chatSession.projectId,
+                        financialProfileId: chatSession.financialProfileId,
                         convId: chatSession.sessionId,
                         interactive: chatSession.interactive
                       })
@@ -855,7 +857,8 @@ export function FleetView({
                       files: undefined,
                       allowedWritePaths: chatSession.allowedWritePaths,
                       readOnlyRoots: chatSession.readOnlyRoots,
-                      projectId: undefined,
+                      projectId: chatSession.projectId,
+                        financialProfileId: chatSession.financialProfileId,
                       convId: chatSession.sessionId,
                       interactive: chatSession.interactive
                     })
@@ -1310,6 +1313,9 @@ export function FleetView({
                                 agent: run.model || 'codex',
                                 allowedWritePaths: run.allowedWritePaths,
                                 readOnlyRoots: run.readOnlyRoots,
+                                projectId: run.projectId,
+                                financialProfileId: run.financialProfileId,
+                                codeRoot: run.codeRoot,
                                 sessionId: sid,
                                 runId: run.id,
                                 interactive: run.interactive
@@ -1408,6 +1414,9 @@ export function FleetView({
                                 agent: run.agent,
                                 allowedWritePaths: run.allowedWritePaths,
                                 readOnlyRoots: run.readOnlyRoots,
+                                projectId: null,
+                                financialProfileId: undefined,
+                                codeRoot: run.dir,
                                 sessionId: sid,
                                 runId: null,
                                 interactive: false

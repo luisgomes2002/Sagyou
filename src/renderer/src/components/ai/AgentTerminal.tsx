@@ -136,6 +136,8 @@ interface InteractiveTerminalProps {
   runId: string
   onInput: (input: string) => Promise<void>
   onResize: (cols: number, rows: number) => Promise<void>
+  initialCols?: number
+  initialRows?: number
   compact?: boolean
 }
 
@@ -146,6 +148,8 @@ function InteractiveTerminal({
   runId,
   onInput,
   onResize,
+  initialCols,
+  initialRows,
   compact = false
 }: InteractiveTerminalProps): React.JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -162,6 +166,8 @@ function InteractiveTerminal({
     const host = hostRef.current
     if (!host) return
     const terminal = new Terminal({
+      cols: initialCols,
+      rows: initialRows,
       cursorBlink: true,
       cursorStyle: 'block',
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
@@ -201,15 +207,24 @@ function InteractiveTerminal({
     observer.observe(host)
     const frame = requestAnimationFrame(resize)
     const input = terminal.onData((data) => void callbacksRef.current.onInput(data))
+    let disposed = false
+    void window.electronAPI.ai.codeAgent.terminalReconnect?.(runId).then((session) => {
+      if (disposed || !session.success || !terminalRef.current) return
+      if (session.cols && session.rows) terminal.resize(session.cols, session.rows)
+      if (session.log) terminal.write(session.log)
+      writtenLogRef.current = session.log ?? ''
+      resize()
+    })
 
     return () => {
+      disposed = true
       cancelAnimationFrame(frame)
       input.dispose()
       observer.disconnect()
       terminal.dispose()
       terminalRef.current = null
     }
-  }, [runId])
+  }, [runId, initialCols, initialRows])
 
   useEffect(() => {
     const terminal = terminalRef.current

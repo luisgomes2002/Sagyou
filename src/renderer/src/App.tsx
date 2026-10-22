@@ -233,6 +233,10 @@ export default function App() {
   const [financialSearchSerial, setFinancialSearchSerial] = useState(0)
   const [searchTarget, setSearchTarget] = useState<GlobalSearchHit | null>(null)
   const [searchSerial, setSearchSerial] = useState(0)
+  // A sidebar Chat click always starts with an explicit scope choice. Keep this
+  // separate from navigation: search results and background-run links reopen a
+  // specific conversation and must not be intercepted by the new-chat picker.
+  const [newChatRequest, setNewChatRequest] = useState(0)
   const [excelExportOpen, setExcelExportOpen] = useState(false)
   const [securityState, setSecurityState] = useState<'checking' | 'locked' | 'unlocked'>('checking')
   const [unlockUserName, setUnlockUserName] = useState<string | undefined>()
@@ -703,6 +707,7 @@ export default function App() {
           onChangeView={(view) => {
             setSearchTarget(null)
             setFinancialSearchTarget(null)
+            if (view === 'ai') setNewChatRequest((request) => request + 1)
             setActiveView(view)
           }}
           onOpenSearch={() => setSearchOpen(true)}
@@ -760,6 +765,7 @@ export default function App() {
                 prefill={aiPrefill}
                 onPrefillConsumed={() => setAiPrefill(null)}
                 onOpenAgents={() => setActiveView('agents')}
+                newConversationRequest={newChatRequest}
               />
             ) : activeView === 'memory' ? (
               <MemoryView

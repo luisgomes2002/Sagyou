@@ -654,12 +654,11 @@ export function AIConfigPanel({
               </button>
             </div>
           </div>
-          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
             {(
               [
                 ['sagyou', 'Sagyou'],
                 ['codex', 'Codex'],
-                ['opencode', 'OpenCode'],
                 ['claude-code', 'Claude Code']
               ] as const
             ).map(([value, label]) => {
