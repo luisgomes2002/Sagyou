@@ -279,7 +279,7 @@ const VALIDATORS: Record<string, (args: Record<string, unknown>) => ValidationRe
   marcar_habito: validateMarcarHabito,
   criar_nota: validateCriarNota,
   criar_transacao: validateCriarTransacao,
-  salvar_memoria: validateSalvarMemoria,
+  save_memory: validateSalvarMemoria,
   ajustar_bloco_e_deslocar_posteriores: validateAjustarBlocoEDeslocarPosteriores
 }
 

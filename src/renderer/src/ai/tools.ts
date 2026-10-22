@@ -27,6 +27,18 @@ export {
 
 // --- Registry: name -> tool. This is the map the task asks for. ---
 const REGISTRY = toolContracts
+const LEGACY_TOOL_ALIASES: Record<string, string> = {
+  buscar_memoria: 'search_memory',
+  salvar_memoria: 'save_memory',
+  verificar_memorias: 'check_memories',
+  buscar_conversas: 'search_conversations',
+  ler_conversa: 'read_conversation',
+  rodar_agente_codigo: 'run_code_agent'
+}
+
+function canonicalToolName(name: string): string {
+  return LEGACY_TOOL_ALIASES[name] ?? name
+}
 
 /** Tool definitions sent to the model each turn (derived from the registry). */
 export const TOOL_DEFS: ToolDef[] = Object.values(REGISTRY).map((t) => t.definition)
@@ -38,16 +50,14 @@ export const TOOL_DEFS: ToolDef[] = Object.values(REGISTRY).map((t) => t.definit
 const CODE_TOOL_NAMES = new Set([
   'ler_projetos',
   'ler_dados',
-  'listar_arquivos',
-  'ler_arquivo',
-  'buscar_no_codigo',
-  'rodar_agente_codigo',
+  'run_code_agent',
   'buscar_na_web',
-  'buscar_memoria',
-  'salvar_memoria',
-  'buscar_conversas',
-  'ler_conversa',
-  'verificar_memorias',
+  'search_memory',
+  'read_memory',
+  'save_memory',
+  'search_conversations',
+  'read_conversation',
+  'check_memories',
   'ler_linhagem',
   'resolver_termo'
 ])
@@ -57,16 +67,14 @@ export const CODE_TOOL_DEFS: ToolDef[] = Object.values(REGISTRY)
 
 /** A clear visual redesign needs no chat-side discovery: start the native agent. */
 export const DIRECT_CODE_AGENT_TOOL_DEFS: ToolDef[] = Object.values(REGISTRY)
-  .filter((t) => t.definition.function.name === 'rodar_agente_codigo')
+  .filter((t) => t.definition.function.name === 'run_code_agent')
   .map((t) => t.definition)
 
 /** Cross-project variant work may read only the stated code references before launch. */
 const REFERENCE_CODE_TOOL_NAMES = new Set([
   'ler_projetos',
-  'listar_arquivos',
-  'ler_arquivo',
-  'buscar_no_codigo',
-  'rodar_agente_codigo'
+  'ler_dados',
+  'run_code_agent'
 ])
 export const REFERENCE_CODE_TOOL_DEFS: ToolDef[] = Object.values(REGISTRY)
   .filter((t) => REFERENCE_CODE_TOOL_NAMES.has(t.definition.function.name))
@@ -106,15 +114,16 @@ const KANBAN_TOOL_NAMES = new Set([
   'criar_plano',
   'atualizar_plano',
   'ler_documento',
-  'buscar_memoria',
-  'salvar_memoria',
-  'buscar_conversas',
-  'ler_conversa',
-  'verificar_memorias',
+  'search_memory',
+  'read_memory',
+  'save_memory',
+  'search_conversations',
+  'read_conversation',
+  'check_memories',
   'ler_linhagem',
   'resolver_termo',
   'buscar_na_web',
-  'rodar_agente_codigo'
+  'run_code_agent'
 ])
 
 export const KANBAN_TOOL_DEFS: ToolDef[] = Object.values(REGISTRY)
@@ -225,7 +234,7 @@ export async function runTool(
   args: Record<string, unknown>,
   convId: string | null = null
 ): Promise<string> {
-  const tool = REGISTRY[name]
+  const tool = REGISTRY[canonicalToolName(name)]
   if (!tool) return JSON.stringify({ error: `Ferramenta desconhecida: ${name}` })
   activeRunConvId = convId
   try {
@@ -250,7 +259,7 @@ export async function runTool(
 
 /** Whether a tool mutates state (used to gate it behind user approval). */
 export function isWriteTool(name: string): boolean {
-  const tool = REGISTRY[name]
+  const tool = REGISTRY[canonicalToolName(name)]
   return tool?.permission.level === 'write' || tool?.permission.level === 'destructive'
 }
 
@@ -267,7 +276,7 @@ export function describeToolActivity(name: string, args: Record<string, unknown>
   // guessed number or type reads as fact and is worse than saying less. The
   // same restraint covers a model that sends malformed args at execution time.
   const n = (v: unknown): number | null => (Array.isArray(v) ? v.length : null)
-  switch (name) {
+  switch (canonicalToolName(name)) {
     case 'data_de_hoje':
       return 'Verificando a data de hoje'
     case 'resolver_periodo':
@@ -308,17 +317,19 @@ export function describeToolActivity(name: string, args: Record<string, unknown>
       const url = str(args.url)
       return url ? `Lendo ${url}` : 'Lendo uma página web'
     }
-    case 'buscar_memoria': {
+    case 'search_memory': {
       const termo = str(args.termo)
       return termo ? `Buscando "${termo}" na memória` : 'Consultando a memória'
     }
-    case 'buscar_conversas': {
+    case 'read_memory':
+      return 'Lendo uma memória'
+    case 'search_conversations': {
       const termo = str(args.termo)
       return termo ? `Buscando "${termo}" nas conversas` : 'Buscando nas conversas'
     }
-    case 'ler_conversa':
+    case 'read_conversation':
       return 'Lendo uma conversa anterior'
-    case 'verificar_memorias':
+    case 'check_memories':
       return 'Verificando contradições na memória'
     case 'ler_linhagem':
       return 'Consultando o histórico da entidade'
@@ -362,7 +373,7 @@ export function describeToolActivity(name: string, args: Record<string, unknown>
       return 'Consultando as notas do canvas'
     case 'criar_nota':
       return `Criando uma nota no canvas`
-    case 'salvar_memoria': {
+    case 'save_memory': {
       const titulo = str(args.titulo)
       return titulo ? `Salvando na memória: ${titulo}` : 'Salvando na memória'
     }
@@ -393,7 +404,7 @@ export function describeToolActivity(name: string, args: Record<string, unknown>
       const sprint = str(args.sprint)
       return sprint ? `Atribuindo a sprint "${sprint}"` : 'Atribuindo uma sprint'
     }
-    case 'rodar_agente_codigo':
+    case 'run_code_agent':
       return 'Rodando o agente de código'
     case 'ler_plano': {
       const data = str(args.data)
@@ -419,7 +430,7 @@ export function describeToolActivity(name: string, args: Record<string, unknown>
 /** Human-readable summary of a write action, shown in the approval card. */
 export function describeToolCall(name: string, args: Record<string, unknown>): string {
   const alvo = (args.titulo ?? args.taskId ?? '?') as string
-  switch (name) {
+  switch (canonicalToolName(name)) {
     // Worth spelling out: this also switches the active project.
     case 'criar_projeto':
       return `Criar projeto "${args.nome ?? '?'}" (passa a ser o projeto ativo)`
@@ -460,7 +471,7 @@ export function describeToolCall(name: string, args: Record<string, unknown>): s
       const texto = String(args.conteudo ?? '')
       return `Criar nota: "${texto.length > 60 ? `${texto.slice(0, 60)}…` : texto}"`
     }
-    case 'salvar_memoria': {
+    case 'save_memory': {
       const titulo = String(args.titulo ?? '')
       const escopo = args.global === true ? 'global' : 'projeto'
       const t = titulo.length > 60 ? `${titulo.slice(0, 60)}…` : titulo
@@ -510,7 +521,7 @@ export function describeToolCall(name: string, args: Record<string, unknown>): s
       const bloco = args.titulo ?? args.blocoId ?? '?'
       return `Ajustar "${bloco}" para terminar às ${args.novoFim ?? '?'} e deslocar os blocos posteriores`
     }
-    case 'rodar_agente_codigo':
+    case 'run_code_agent':
       return `⚠️ Rodar agente de código no projeto: ${args.task ?? ''}`
     default:
       return name

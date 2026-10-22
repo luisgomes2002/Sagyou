@@ -112,7 +112,7 @@ const REGISTRY: PermissionEntry[] = [
     since: '2024-09'
   },
   {
-    name: 'buscar_memoria',
+    name: 'search_memory',
     level: 'read',
     rationale: 'Busca fatos duráveis na memória do assistente. Leitura pura.',
     guard:
@@ -120,7 +120,14 @@ const REGISTRY: PermissionEntry[] = [
     since: '2024-10'
   },
   {
-    name: 'buscar_conversas',
+    name: 'read_memory',
+    level: 'read',
+    rationale: 'Lê uma memória durável específica pelo id. Leitura pura.',
+    guard: 'Mesmo escopo e regras de acesso de search_memory.',
+    since: '2026-10'
+  },
+  {
+    name: 'search_conversations',
     level: 'read',
     rationale: 'Busca no histórico de conversas. Acesso somente ao que já foi dito.',
     guard:
@@ -128,7 +135,7 @@ const REGISTRY: PermissionEntry[] = [
     since: '2024-10'
   },
   {
-    name: 'ler_conversa',
+    name: 'read_conversation',
     level: 'read',
     rationale: 'Lê o transcript completo de uma conversa por id.',
     guard:
@@ -136,7 +143,7 @@ const REGISTRY: PermissionEntry[] = [
     since: '2024-10'
   },
   {
-    name: 'verificar_memorias',
+    name: 'check_memories',
     level: 'read',
     rationale:
       'Detecta pares de memórias com mesmo título e corpo diferente (sinal de contradição).',
@@ -279,7 +286,7 @@ const REGISTRY: PermissionEntry[] = [
     since: '2024-06'
   },
   {
-    name: 'salvar_memoria',
+    name: 'save_memory',
     level: 'write',
     rationale:
       'Salva um fato duradouro na memória do assistente. A memória é reenviada ao modelo a cada passo — dados errados ou vazamento de segredos são permanentes.',
@@ -288,7 +295,7 @@ const REGISTRY: PermissionEntry[] = [
     since: '2024-10'
   },
   {
-    name: 'rodar_agente_codigo',
+    name: 'run_code_agent',
     level: 'write',
     rationale:
       'Dispara o agente de código nativo — um loop autônomo que lê, edita e executa comandos no projeto de código. Fire-and-forget: o chat não espera o resultado.',

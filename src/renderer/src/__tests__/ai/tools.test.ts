@@ -979,7 +979,7 @@ describe('rodar_agente_codigo', () => {
   })
 
   it('tells the model that same-folder agents can run in parallel', () => {
-    const description = TOOL_DEFS.find((tool) => tool.function.name === 'rodar_agente_codigo')
+    const description = TOOL_DEFS.find((tool) => tool.function.name === 'run_code_agent')
       ?.function.description
     expect(description).toContain('várias execuções simultâneas')
     expect(description).toContain('worktrees isolados')
@@ -1986,7 +1986,7 @@ describe('salvar_memoria', () => {
 
   it('is gated behind approval and shows scope + type on the card', () => {
     expect(isWriteTool('salvar_memoria')).toBe(true)
-    expect(TOOL_DEFS.some((d) => d.function.name === 'salvar_memoria')).toBe(true)
+    expect(TOOL_DEFS.some((d) => d.function.name === 'save_memory')).toBe(true)
     const card = describeToolCall('salvar_memoria', {
       tipo: 'decisao',
       titulo: 'Usar SQLite',
@@ -2067,7 +2067,7 @@ describe('buscar_memoria', () => {
     const res = await call('buscar_memoria', { termo: 'amount' })
     expect((res.memorias as { escopo: string }[])[0].escopo).toBe('projeto')
     expect(isWriteTool('buscar_memoria')).toBe(false)
-    expect(TOOL_DEFS.some((d) => d.function.name === 'buscar_memoria')).toBe(true)
+    expect(TOOL_DEFS.some((d) => d.function.name === 'search_memory')).toBe(true)
   })
 })
 
@@ -2153,7 +2153,7 @@ describe('ler_conversa', () => {
     expect((await call('ler_conversa', {})).error).toBeTruthy()
     expect((await call('ler_conversa', { id: 'nope' })).error).toBeTruthy()
     expect(isWriteTool('ler_conversa')).toBe(false)
-    expect(TOOL_DEFS.some((d) => d.function.name === 'ler_conversa')).toBe(true)
+    expect(TOOL_DEFS.some((d) => d.function.name === 'read_conversation')).toBe(true)
   })
 })
 
@@ -3331,14 +3331,14 @@ describe('routeTools — redesign visual', () => {
       'Use as cores atuais como base, mas refaça todo o design da página.'
     ).map((tool) => tool.function.name)
     expect(names).toEqual(DIRECT_CODE_AGENT_TOOL_DEFS.map((tool) => tool.function.name))
-    expect(names).toEqual(['rodar_agente_codigo'])
+    expect(names).toEqual(['run_code_agent'])
   })
 
   it('delega diretamente a criação explícita de uma landing page', () => {
     const names = routeTools(
       'preciso que vc cire um landpage em html e css e javascript somente para anunciar uma pausa no projeto murasaki'
     ).map((tool) => tool.function.name)
-    expect(names).toEqual(['rodar_agente_codigo'])
+    expect(names).toEqual(['run_code_agent'])
   })
   it('permite apenas leitura de referências antes de três agentes paralelos', () => {
     const names = routeTools(

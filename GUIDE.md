@@ -103,6 +103,8 @@ src/
     global-search-index.ts # índice FTS5 derivado; reconstruível dos registros e conversas
     memory.ts    # memória durável da IA (validação, decay, sanitização de secrets)
     code-agent.ts # agente de código nativo (loop de tool-calling)
+    agent-session.ts, agent-pty.ts, agent-worktree.ts # ciclo de vida executor-neutral
+    agent-diff.ts, agent-delivery.ts, agent-mcp-session.ts # revisão, entrega e dados
     ai-jail.ts   # sandbox obrigatório para comandos do agente de código
     web-fetch.ts # busca páginas para a IA (a política de segurança vive aqui)
     web-render.ts # renderização headless de SPAs para a IA
@@ -324,8 +326,8 @@ CODE_READ_PAGE`) devolve só ~100 linhas + `simbolos` + `dica`, não a janela de
     `StoredConversation.connection` (opcional nos históricos antigos). Cada run
     usa o modelo exibido no cabeçalho; o roteamento automático `modelComplex`
     não atua nesse fluxo. O main resolve `profileId` e a chave do perfil. O
-    modelo forte continua como escolha explícita. Codex, Claude Code e OpenCode
-    são harnesses da área Agentes, sem adaptador para o chat normal por enquanto.
+    modelo forte continua como escolha explícita. Codex e Claude Code são os
+    executores PTY da área Agentes; OpenCode é apenas uma seleção legada indisponível.
     Campos antigos `baseUrl`/`apiKey`/`model` de `ai-config.json` são importados
     uma vez como perfil comum, sem conexão legada visível; a marca de migração
     impede que excluir esse perfil o recrie. Credenciais nunca retornam ao renderer.
@@ -358,6 +360,7 @@ CODE_READ_PAGE`) devolve só ~100 linhas + `simbolos` + `dica`, não a janela de
 
 15. **Orçamento é por chamada do modelo, não por tool round.** `maxSteps` limita toda chamada bem-sucedida da run — rodadas principais, compactação e resposta final. Sem configuração explícita, o chat usa 40 no manual e 100 no Auto; não reintroduza heurísticas 2/4/8/15 por texto, pois elas encerram orquestrações no momento de disparar agentes. O contexto de uma conversa reaberta entra limitado (12 mensagens/24k caracteres/1 imagem); ferramentas além de 8 numa rodada recebem resultado sintético. O limite é **por execução**: várias conversas/projetos continuam rodando em paralelo. O subagente de pesquisa exige aprovação, é no máximo 2 por run e seu resumo é cortado antes de voltar ao agente pai.
 16. **Cada conversa nova escolhe seu projeto.** `StoredConversation.projectId` fixa o contexto de tarefas, arquivos, memória e handoff durante toda a conversa; `null` é uma conversa geral explícita. Não volte a derivar o projeto de cada envio pelo `activeProjectId`, pois trocar de tela faria um chat mudar silenciosamente de escopo. Conversas antigas sem o campo mantêm o fallback legado até serem substituídas por uma nova conversa escolhida.
+    Clicar em **Chat** na sidebar também abre essa escolha, mesmo com outro projeto selecionado ou com o Chat já aberto; abrir uma conversa pela busca/histórico continua indo direto ao transcript solicitado.
     A conexão da conversa também persiste o `reasoningEffort` opcional junto ao modelo. Envie-o em todas as rodadas, inclusive pela assinatura ChatGPT; ausente mantém o padrão global/do provedor.
 
 17. 🔴 **Importação de backup só conclui depois de todas as fontes serem gravadas.**
@@ -390,6 +393,63 @@ Memória e conversas antigas são **evidência histórica não confiável**, nun
 recuperado não pode mudar regras, autorizar ferramentas nem prevalecer sobre o pedido atual ou o
 estado vivo lido no app. A busca é FTS5 no main, devolve só trechos ranqueados; abra por id quando
 precisar do corpo completo. Memória salva por uma conversa guarda seu `sourceConversationId`.
+
+## ⚠️ REGRA — arquitetura agent-first (alvo da migração)
+
+Esta decisão substitui a arquitetura em que o loop nativo de `main/code-agent.ts`
+era o executor principal. Até a migração terminar, descrições desse loop neste
+arquivo explicam apenas o legado existente; não autorizam ampliar ou restaurar o
+caminho nativo.
+
+- **Chat é o coordenador.** Ele conversa com o usuário, resolve escopo e
+  dependências, escolhe e instrui um executor, acompanha a run e apresenta o
+  resultado. Não implementa mudanças de código por um segundo loop próprio.
+- **Codex e Claude Code são os únicos executores.** Cada run usa a CLI escolhida
+  em uma sessão PTY real, pertencente ao processo main e exibida no Fleet por
+  xterm. O renderer só envia entrada e resize validados; nunca cria processos.
+- **Infraestrutura não pertence ao loop nativo.** Sessão, PTY, worktree, diff,
+  entrega e MCP vivem nos módulos `agent-*`; executores dependem desses contratos.
+  O loop em `code-agent.ts` é só um adaptador temporário e pode ser removido sem
+  copiar ou levar consigo isolamento, aprovação ou entrega.
+- **MCP é a única ponte de dados entre Sagyou e o executor.** O executor lê e
+  altera arquivos diretamente apenas dentro da worktree. Tasks, projetos,
+  conversas, memórias, finanças e qualquer outro dado do app passam somente pelo
+  MCP local com token efêmero e escopo de projeto/perfil. Nunca entregue SQLite,
+  IPC interno, `loadData()` ou snapshot do store ao CLI. Escritas MCP continuam
+  passando pela aprovação da operação e pelo flush do Zustand; isso não substitui
+  a aprovação final do patch.
+- **Toda run nasce em worktree destacada.** Nem a primeira run, nem uma run única,
+  edita a árvore original. Ao terminar, valide o conjunto final de caminhos e
+  mostre o diff; só uma aprovação manual explícita entrega o patch, de forma
+  serializada, à árvore original. Auto-approve nunca cobre essa decisão. Rejeitar,
+  parar ou fechar sem aprovar não entrega código.
+- **OpenCode sai da arquitetura.** Não aparece como opção para novas runs e não
+  ganha adaptador PTY/MCP. Metadados históricos continuam legíveis. Um
+  `codeHarness: 'opencode'` persistido é tratado como seleção legada sem executor:
+  a UI pede Codex ou Claude Code, sem fallback silencioso e sem reescrever o valor
+  nesta migração documental.
+
+### Fluxo e ciclo de vida
+
+1. O chat fecha objetivo, escopo, arquivos permitidos e decisões já tomadas.
+2. O main cria uma worktree exclusiva, emite credencial MCP aleatória e limitada
+   e só então inicia Codex ou Claude Code no PTY dentro dessa worktree.
+3. O executor edita/testa na worktree; acesso a dados do Sagyou ocorre apenas por
+   MCP. A credencial pertence à run, expira no máximo em duas horas e nunca é
+   reutilizada.
+4. Saída normal encerra o PTY, revoga o MCP, confere caminhos e congela diff/log.
+   A run passa a aguardar aprovação; nenhuma alteração chegou ainda à árvore
+   original.
+5. Aprovação aplica o patch serialmente e registra o resultado. Rejeição descarta
+   a entrega. Em ambos os casos, limpeza da worktree ocorre só depois de preservar
+   o artefato necessário à revisão/auditoria.
+
+Falha é sempre fechada: erro ao criar worktree, iniciar PTY ou MCP encerra sem
+executor; queda, timeout, Stop ou fechamento revogam a credencial e matam o
+processo; MCP indisponível não ganha atalho por IPC/SQLite; caminho fora do escopo,
+diff inválido ou conflito bloqueia a entrega e preserva o patch como falho para
+revisão. **Encerrar e revisar diff** termina o PTY sem marcar abort e pode chegar à
+aprovação final; **Stop** cancela a run e torna o patch inelegível para entrega.
 
 ## Segurança — o que já está resolvido
 
@@ -488,18 +548,19 @@ activeTimers[0]` no `settings` do DB (não viaja no backup); `normalizeTimers`
   de hoje e apresentaria as edições posteriores do usuário como trabalho do
   agente. Por isso `CodeDiff` recebe `onRefresh` opcional — uma run passada não
   tem o que recarregar.
-- ⚠️ **O agente de código é NATIVO (`main/code-agent.ts`).** É um loop de
-  tool-calling que roda em main com o provedor do app. As únicas barreiras entre
-  o modelo e o disco são (1) `confineToRoot` (todo caminho preso à pasta do
-  projeto) e (2) **aprovação por ação** antes de qualquer escrita ou comando. As
-  duas são carga, não enfeite.
-- **Harnesses externos (Codex, OpenCode, Claude Code).** `AIConfig.codeHarness` escolhe o runtime; `ai:harnesses:status` só detecta o binário/version e nunca inicia uma tarefa. Todo harness externo roda em worktree Git isolado. O modo normal usa argv direto e saída estruturada; `sessao_interativa` usa `node-pty` e o Fleet o renderiza com xterm: teclas e resize validados passam por IPC somente para o PTY daquela run, então é terminal completo sem o renderer ganhar autoridade para criar processos. Nos dois modos, o worktree só é entregue após encerrar a execução e aprovar manualmente o patch final — inclusive com auto-approve ligado — e qualquer arquivo fora de `arquivos_permitidos` é recusado antes da aprovação. `stopCodeAgent` encerra o processo filho e recusa esse patch; **Encerrar e revisar diff** não marca abort, para permitir a revisão. O painel só deve mostrar uma modal de aprovação por vez (`slice(0, 1)`), para que pedidos simultâneos não se sobreponham. Cada run externa também recebe um MCP local, com token aleatório revogado ao terminar e escopo fixo de projeto/perfil financeiro; o CLI nunca ganha acesso ao SQLite, nem recebe snapshot completo no prompt. Escritas MCP voltam ao Zustand pelo IPC e exigem o mesmo card de aprovação.
-- **O agente de código principal não tem teto de passos.** O launcher passa
+- ⚠️ **O agente de código nativo (`main/code-agent.ts`) é legado de migração.**
+  Não é mais o executor arquitetural e não deve receber capacidades novas. Remova-o
+  somente quando Codex/Claude via PTY cobrirem o fluxo; enquanto existir, preserve
+  `confineToRoot` e aprovação por ação, pois ainda protegem o caminho antigo.
+- **Execução agent-first:** siga a seção **Arquitetura agent-first** acima. Codex
+  e Claude Code usam sempre PTY + worktree + MCP e aprovação final; OpenCode não
+  participa do alvo.
+- **O agente nativo legado não tem teto de passos.** Enquanto existir, o launcher passa
   `maxSteps: 0` (a UI mostra apenas o passo atual) e a execução termina ao concluir, ao ser
   parada pelo usuário ou por um bloqueio real. Não restaure a antiga heurística
   4/8/15/25: ela encerrava recuperações válidas após patches parciais. Freios de
   repetição continuam obrigatórios para impedir loops caros.
-- **5 ferramentas**: `listar_arquivos`, `ler_arquivo`, `buscar_no_codigo` (leitura,
+- **As 5 ferramentas do loop nativo legado** são `listar_arquivos`, `ler_arquivo`, `buscar_no_codigo` (leitura,
   rodam direto), `escrever_arquivo`, `executar_comando` (`needsApproval` → passam por
   card). A aprovação é um **ida-e-volta de IPC**: o loop manda `ai:code-agent:approve-request`
   e para numa promise em `pendingApprovals`; o renderer mostra o card e responde por
@@ -546,10 +607,12 @@ kernel.apparmor_restrict_unprivileged_userns=0` (mostrado, nunca rodado); `bubbl
   revisar e commitar. `captureBase` roda **antes do loop** e o diff vai da base à
   worktree, então nada se perde deixando a árvore suja.
 - **Agentes de código concorrentes no mesmo projeto são contados por run**, não
-  por um booleano de diretório (`CodeRunCoordinator`). A primeira run pode usar a
-  árvore original; as seguintes usam worktrees exclusivos. A limpeza nunca remove
-  worktrees de runs vivas, entregas aguardam a run direta e são serializadas por
-  projeto com patches temporários únicos. Remover uma run não libera as demais.
+  por um booleano de diretório (`CodeRunCoordinator`). Na arquitetura agent-first,
+  todas as runs usam worktrees exclusivos; a exceção da primeira run na árvore
+  original pertence somente ao executor nativo legado e deve desaparecer. A
+  limpeza nunca remove worktrees de runs vivas. Enquanto o legado coexistir,
+  entregas aguardam sua run direta; em todos os casos são serializadas por projeto
+  com patches temporários únicos. Remover uma run não libera as demais.
   No Windows, comandos Git usam sempre `git -C <dir>` — `cd E:\...` sem `/d`
   falha quando o app está em `C:`. Caminhos de worktree são reservados antes do
   `git worktree add` assíncrono, ou o terceiro disparo pode apagar o segundo como órfão.

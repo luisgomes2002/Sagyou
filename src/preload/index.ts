@@ -50,9 +50,14 @@ interface CodeRunSummary {
   dir: string
   task: string
   convId: string | null
+  projectId?: string | null
+  financialProfileId?: string
+  codeRoot?: string
   agent: string
   interactive?: boolean
   finishing?: boolean
+  terminalCols?: number
+  terminalRows?: number
   allowedWritePaths?: string[]
   readOnlyRoots?: { id: string; nome: string; path: string }[]
   startedAt: number
@@ -432,6 +437,8 @@ export const api = {
         decisoes?: string[]
         convId?: string
         projectId?: string | null
+        financialProfileId?: string
+        coordinated?: boolean
         autoApprove?: boolean
         interactive?: boolean
       }): Promise<{
@@ -455,6 +462,10 @@ export const api = {
         ipcRenderer.invoke('ai:code-agent:terminal-resize', runId, cols, rows),
       finishInteractive: (runId: string): Promise<{ success: boolean; error?: string }> =>
         ipcRenderer.invoke('ai:code-agent:finish-interactive', runId),
+      terminalReconnect: (
+        runId: string
+      ): Promise<{ success: boolean; error?: string; log?: string; cols?: number; rows?: number }> =>
+        ipcRenderer.invoke('ai:code-agent:terminal-reconnect', runId),
       // Answer an approval card the loop is parked on (native agent).
       approve: (id: string, approved: boolean): Promise<void> =>
         ipcRenderer.invoke('ai:code-agent:approve-response', id, approved),

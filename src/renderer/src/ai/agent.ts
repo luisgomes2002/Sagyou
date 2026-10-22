@@ -1247,7 +1247,7 @@ export async function runAgent(
             }
           }
         }
-        if (name === 'rodar_agente_codigo') {
+        if (name === 'run_code_agent') {
           try {
             const launch = JSON.parse(result) as { status?: string; erro?: unknown }
             if (launch.status === 'solicitado') {

@@ -53,7 +53,8 @@ export function AIView({
   prefill,
   onPrefillConsumed,
   searchConversationId,
-  onOpenAgents
+  onOpenAgents,
+  newConversationRequest
 }: {
   projects: Project[]
   /** Composer text handed in from another view (e.g. a board task). */
@@ -62,6 +63,8 @@ export function AIView({
   onPrefillConsumed?: () => void
   searchConversationId?: string
   onOpenAgents?: () => void
+  /** Incremented only when the sidebar Chat item is clicked. */
+  newConversationRequest?: number
 }) {
   const activeProjectId = useKanbanStore((s) => s.activeProjectId)
   const setActiveProject = useKanbanStore((s) => s.setActiveProject)
@@ -136,6 +139,9 @@ export function AIView({
   const [showProjectPicker, setShowProjectPicker] = useState(false)
   const [showSwitchAI, setShowSwitchAI] = useState(false)
   const [defaultChatGPTModel, setDefaultChatGPTModel] = useState('')
+  useEffect(() => {
+    if (newConversationRequest && newConversationRequest > 0) setShowProjectPicker(true)
+  }, [newConversationRequest])
   useEffect(() => {
     if (config.chatProvider !== 'chatgpt') return
     void window.electronAPI.ai.chatgpt

@@ -456,6 +456,25 @@ describe('AIView — reopening the last chat', () => {
     expect(screen.getByText('Projeto: Sagyou')).toBeInTheDocument()
   })
 
+  it('asks for a project when Chat is opened from the sidebar request', async () => {
+    const projectId = useKanbanStore.getState().createProject('Sagyou')
+    const projects = useKanbanStore.getState().projects
+    useAiRunStore.setState({
+      conversationId: 'existing-chat',
+      messages: [{ role: 'user', content: 'Conversa que já estava aberta' }],
+      conversationProjects: { 'existing-chat': projectId }
+    })
+
+    renderAI(<AIView projects={projects} newConversationRequest={1} />)
+
+    expect(await screen.findByText('Qual projeto esta conversa vai usar?')).toBeInTheDocument()
+    // Opening the picker is non-destructive: cancelling keeps the previous
+    // conversation, while choosing a scope is what actually creates a new one.
+    expect(useAiRunStore.getState().conversationId).toBe('existing-chat')
+    await userEvent.click(screen.getByRole('button', { name: 'Conversa geral (sem projeto)' }))
+    expect(useAiRunStore.getState().conversationId).not.toBe('existing-chat')
+  })
+
   it('forgets an id whose conversation is gone, instead of retrying forever', async () => {
     storedConfig = { ...storedConfig, lastConversationId: 'apagada' }
     vi.mocked(window.electronAPI.ai.conversations.get).mockResolvedValue(null as never)

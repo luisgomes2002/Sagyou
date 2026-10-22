@@ -84,8 +84,7 @@ export function CodeAgentSettings(): React.JSX.Element {
   const names: [Harness, string][] = [
     ['sagyou', 'Sagyou'],
     ['codex', 'Codex'],
-    ['claude-code', 'Claude Code'],
-    ['opencode', 'OpenCode']
+    ['claude-code', 'Claude Code']
   ]
   const selectedHarness = config.codeHarness ?? 'sagyou'
   const selectedInfo = HARNESS_INFO[selectedHarness]
