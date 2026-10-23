@@ -1,5 +1,7 @@
 import { existsSync } from 'fs'
-import { join, resolve } from 'path'
+import { mkdir } from 'fs/promises'
+import { tmpdir } from 'os'
+import { isAbsolute, relative, resolve } from 'path'
 import {
   addDetachedWorktree,
   listWorktrees,
@@ -18,17 +20,50 @@ export interface AgentWorktree {
   worktreeDir: string
 }
 
+const WORKTREE_ROOT = resolve(tmpdir(), 'sagyou-worktrees')
+
+function managedWorktreePath(path: string): boolean {
+  const rel = relative(WORKTREE_ROOT, resolve(path))
+  return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel)
+}
+
 /** Worktree lifecycle shared by every executor adapter. */
 export class AgentWorktreeManager {
+  private static readonly repoQueues = new Map<string, Promise<void>>()
+
   constructor(private readonly reservations: WorktreeReservations) {}
 
+  private async withRepoLock<T>(repo: string, action: () => Promise<T>): Promise<T> {
+    const previous = AgentWorktreeManager.repoQueues.get(repo) ?? Promise.resolve()
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const queued = previous.then(() => gate)
+    AgentWorktreeManager.repoQueues.set(repo, queued)
+    await previous
+    try {
+      return await action()
+    } finally {
+      release()
+      if (AgentWorktreeManager.repoQueues.get(repo) === queued)
+        AgentWorktreeManager.repoQueues.delete(repo)
+    }
+  }
+
   async create(originalDir: string, runId: string): Promise<AgentWorktree> {
-    const worktreeDir = join(originalDir, `.sagyou-wt-${runId}`)
+    const source = resolve(originalDir)
+    const worktreeDir = resolve(WORKTREE_ROOT, `sagyou-wt-${runId}`)
+    if (!managedWorktreePath(worktreeDir) || worktreeDir === source)
+      throw new Error('Destino de worktree isolado inválido.')
     this.reservations.reserveWorktree(worktreeDir)
     try {
-      const base = await resolveWorktreeBase(originalDir)
-      await addDetachedWorktree(originalDir, worktreeDir, base.revision)
-      return { originalDir, worktreeDir }
+      await this.withRepoLock(source, async () => {
+        await mkdir(WORKTREE_ROOT, { recursive: true })
+        const base = await resolveWorktreeBase(source)
+        await addDetachedWorktree(source, worktreeDir, base.revision)
+      })
+      return { originalDir: source, worktreeDir }
     } catch (error) {
       this.reservations.releaseWorktree(worktreeDir)
       throw error
@@ -40,8 +75,12 @@ export class AgentWorktreeManager {
   }
 
   async remove(worktree: AgentWorktree): Promise<void> {
+    if (!managedWorktreePath(worktree.worktreeDir))
+      throw new Error('Recusada remoção fora da raiz de worktrees do Sagyou.')
     try {
-      await removeWorktree(worktree.originalDir, worktree.worktreeDir)
+      await this.withRepoLock(worktree.originalDir, () =>
+        removeWorktree(worktree.originalDir, worktree.worktreeDir)
+      )
     } finally {
       this.reservations.releaseWorktree(worktree.worktreeDir)
     }
@@ -49,11 +88,11 @@ export class AgentWorktreeManager {
 
   async removeOrphans(originalDir: string): Promise<void> {
     const protectedPaths = this.reservations.protectedWorktrees()
-    const worktrees = await listWorktrees(originalDir)
+    const worktrees = await this.withRepoLock(originalDir, () => listWorktrees(originalDir))
     for (const path of worktrees) {
-      if (!path.includes('.sagyou-wt-')) continue
+      if (!managedWorktreePath(path)) continue
       if (!existsSync(path) || protectedPaths.has(resolve(path))) continue
-      await removeWorktree(originalDir, path).catch(() => {})
+      await this.withRepoLock(originalDir, () => removeWorktree(originalDir, path)).catch(() => {})
     }
   }
 }

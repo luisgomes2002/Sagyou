@@ -1,8 +1,10 @@
 ﻿import { useAiRunStore } from '../store/aiRun'
-import { toolContracts } from './tool-contracts'
+import { canonicalToolName, isLegacyToolAlias, toolContracts } from './tool-contracts'
 import type { AITool, ToolDef } from './tools/helpers'
 export {
+  canonicalToolName,
   getToolContract,
+  isLegacyToolAlias,
   requiresExplicitApproval,
   validateToolCall,
   type ToolContract
@@ -27,18 +29,6 @@ export {
 
 // --- Registry: name -> tool. This is the map the task asks for. ---
 const REGISTRY = toolContracts
-const LEGACY_TOOL_ALIASES: Record<string, string> = {
-  buscar_memoria: 'search_memory',
-  salvar_memoria: 'save_memory',
-  verificar_memorias: 'check_memories',
-  buscar_conversas: 'search_conversations',
-  ler_conversa: 'read_conversation',
-  rodar_agente_codigo: 'run_code_agent'
-}
-
-function canonicalToolName(name: string): string {
-  return LEGACY_TOOL_ALIASES[name] ?? name
-}
 
 /** Tool definitions sent to the model each turn (derived from the registry). */
 export const TOOL_DEFS: ToolDef[] = Object.values(REGISTRY).map((t) => t.definition)
@@ -71,11 +61,7 @@ export const DIRECT_CODE_AGENT_TOOL_DEFS: ToolDef[] = Object.values(REGISTRY)
   .map((t) => t.definition)
 
 /** Cross-project variant work may read only the stated code references before launch. */
-const REFERENCE_CODE_TOOL_NAMES = new Set([
-  'ler_projetos',
-  'ler_dados',
-  'run_code_agent'
-])
+const REFERENCE_CODE_TOOL_NAMES = new Set(['ler_projetos', 'ler_dados', 'run_code_agent'])
 export const REFERENCE_CODE_TOOL_DEFS: ToolDef[] = Object.values(REGISTRY)
   .filter((t) => REFERENCE_CODE_TOOL_NAMES.has(t.definition.function.name))
   .map((t) => t.definition)
@@ -236,6 +222,12 @@ export async function runTool(
 ): Promise<string> {
   const tool = REGISTRY[canonicalToolName(name)]
   if (!tool) return JSON.stringify({ error: `Ferramenta desconhecida: ${name}` })
+  if (isLegacyToolAlias(name)) {
+    // This is intentionally a diagnostic, not a persisted transcript change:
+    // archived calls must retain their original name, while this makes it
+    // possible to remove aliases once no old history reaches this path.
+    console.info(`[ai] alias temporário de ferramenta usado: ${name} → ${canonicalToolName(name)}`)
+  }
   activeRunConvId = convId
   try {
     const validation = tool.validate(args)

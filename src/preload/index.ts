@@ -54,7 +54,8 @@ interface CodeRunSummary {
   financialProfileId?: string
   codeRoot?: string
   agent: string
-  interactive?: boolean
+  /** Live external executors always run in the PTY; archived snapshots may not. */
+  interactive: boolean
   finishing?: boolean
   terminalCols?: number
   terminalRows?: number
@@ -115,10 +116,7 @@ interface PublicAIConfig {
   chatProvider?: 'api' | 'chatgpt'
   userName?: string
   modelComplex?: string
-  codeAgent?: { baseUrl?: string; apiKey?: string; model?: string }
-  codeHarness?: 'sagyou' | 'codex' | 'opencode' | 'claude-code'
-  sandboxEnabled?: boolean
-  sandboxOnboardingDismissed?: boolean
+  codeHarness?: 'codex' | 'claude-code'
   maxSteps?: number
   inputPricePer1M?: number
   outputPricePer1M?: number
@@ -440,7 +438,6 @@ export const api = {
         financialProfileId?: string
         coordinated?: boolean
         autoApprove?: boolean
-        interactive?: boolean
       }): Promise<{
         success: boolean
         agent?: string
@@ -649,7 +646,7 @@ export const api = {
         refresh?: boolean
       ): Promise<
         Array<{
-          id: 'codex' | 'opencode' | 'claude-code'
+          id: 'codex' | 'claude-code'
           label: string
           command: string
           installed: boolean
@@ -658,37 +655,6 @@ export const api = {
           authentication: 'authenticated' | 'unauthenticated' | 'unknown'
         }>
       > => ipcRenderer.invoke('ai:harnesses:status', refresh)
-    },
-    // The ai-jail sandbox for the code agent (see main/ai-jail.ts).
-    jail: {
-      // Current status merged with config. `refresh` re-runs detection.
-      status: (
-        refresh?: boolean
-      ): Promise<{
-        available: boolean
-        version: string | null
-        path: string | null
-        platform: string
-        installable: boolean
-        bubblewrap?: boolean
-        wsl2?: boolean
-        viaWsl?: boolean
-        reason?: string
-        enabled: boolean
-        onboardingDismissed: boolean
-        wslCommand: string
-        wslAiJailCommands: string
-      }> => ipcRenderer.invoke('ai:jail:status', refresh),
-      install: (): Promise<{ success: boolean; version?: string; path?: string; error?: string }> =>
-        ipcRenderer.invoke('ai:jail:install'),
-      dismissOnboarding: (): Promise<void> => ipcRenderer.invoke('ai:jail:dismiss-onboarding'),
-      onProgress: (cb: (p: { phase: string; fraction: number | null }) => void) => {
-        const handler = (_: Electron.IpcRendererEvent, p: Parameters<typeof cb>[0]): void => cb(p)
-        ipcRenderer.on('ai:jail:progress', handler)
-        return (): void => {
-          ipcRenderer.removeListener('ai:jail:progress', handler)
-        }
-      }
     },
     // Native folder picker for choosing a project's code directory.
     pickDirectory: (): Promise<{ path: string | null }> => ipcRenderer.invoke('ai:pick-directory'),

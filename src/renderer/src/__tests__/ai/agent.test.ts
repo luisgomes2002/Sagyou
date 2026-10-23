@@ -548,7 +548,7 @@ describe('runAgent (tool-calling loop)', () => {
       message: {
         role: 'assistant',
         content: '',
-        tool_calls: [toolCall('code-1', 'rodar_agente_codigo', '{"task":"refaça a página"}')]
+        tool_calls: [toolCall('code-1', 'run_code_agent', '{"task":"refaça a página"}')]
       }
     })
     vi.mocked(runTool).mockResolvedValueOnce(
@@ -560,7 +560,7 @@ describe('runAgent (tool-calling loop)', () => {
     expect(result).toContain('agente(s) de código iniciado')
     expect(chat).toHaveBeenCalledTimes(1)
     expect(runTool).toHaveBeenCalledWith(
-      'rodar_agente_codigo',
+      'run_code_agent',
       { task: 'refaça a página' },
       undefined
     )

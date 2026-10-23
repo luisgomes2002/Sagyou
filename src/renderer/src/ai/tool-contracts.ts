@@ -37,7 +37,14 @@ export const toolContracts: Record<string, ToolContract> = Object.fromEntries(
   ])
 )
 
-const legacyToolAliases: Record<string, string> = {
+/**
+ * Names emitted by transcripts created before the public tool-name migration.
+ *
+ * Keep this map out of `toolContracts`: it is a dispatch-only bridge, so new
+ * sessions receive only the English definitions. Exact lookup is intentional;
+ * accepting near matches would turn a model typo into an unexpected action.
+ */
+export const LEGACY_TOOL_ALIASES: Readonly<Record<string, string>> = {
   buscar_memoria: 'search_memory',
   salvar_memoria: 'save_memory',
   verificar_memorias: 'check_memories',
@@ -46,15 +53,23 @@ const legacyToolAliases: Record<string, string> = {
   rodar_agente_codigo: 'run_code_agent'
 }
 
-const canonical = (name: string): string => legacyToolAliases[name] ?? name
+/** Resolve an old transcript name without expanding the public tool registry. */
+export function canonicalToolName(name: string): string {
+  return LEGACY_TOOL_ALIASES[name] ?? name
+}
+
+/** Whether this exact call name used the temporary compatibility bridge. */
+export function isLegacyToolAlias(name: string): boolean {
+  return Object.hasOwn(LEGACY_TOOL_ALIASES, name)
+}
 
 export function getToolContract(name: string): ToolContract | undefined {
-  return toolContracts[canonical(name)]
+  return toolContracts[canonicalToolName(name)]
 }
 
 export function validateToolCall(name: string, args: Record<string, unknown>): ValidationResult {
   return (
-    toolContracts[canonical(name)]?.validate(args) ?? {
+    toolContracts[canonicalToolName(name)]?.validate(args) ?? {
       valid: false,
       errors: ['Ferramenta desconhecida'],
       warnings: []
@@ -63,5 +78,5 @@ export function validateToolCall(name: string, args: Record<string, unknown>): V
 }
 
 export function requiresExplicitApproval(name: string): boolean {
-  return toolContracts[canonical(name)]?.requiresExplicitApproval === true
+  return toolContracts[canonicalToolName(name)]?.requiresExplicitApproval === true
 }

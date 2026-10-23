@@ -5,10 +5,8 @@ import { describeToolActivity } from '../../ai/tools'
 import type { Project } from '../../types'
 import { CodeDiff, type CodeAgentDiff } from './CodeDiff'
 import { AgentTerminal } from './AgentTerminal'
-import { CodeAgentSettings } from './CodeAgentSettings'
 import type { AgentRunMeta } from './AgentRunPicker'
 import { whenLabel } from './AgentRunPicker'
-import { ModeToggleButton } from './ModeToggleButton'
 
 // ---------------------------------------------------------------------------
 // Painel de Agentes (FleetView)
@@ -390,7 +388,6 @@ export function FleetView({
   const {
     runs: codeRuns,
     stopAgent,
-    setAuto,
     approveAgent,
     terminalInput,
     terminalResize,
@@ -702,7 +699,6 @@ export function FleetView({
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-4">
-        {!chatSession && <CodeAgentSettings />}
         {chatSession ? (
           <div className="flex flex-col h-full">
             {(() => {
@@ -814,8 +810,7 @@ export function FleetView({
                         readOnlyRoots: chatSession.readOnlyRoots,
                         projectId: chatSession.projectId,
                         financialProfileId: chatSession.financialProfileId,
-                        convId: chatSession.sessionId,
-                        interactive: chatSession.interactive
+                        convId: chatSession.sessionId
                       })
                       if (result.runId) {
                         setChatSession((prev) =>
@@ -858,9 +853,8 @@ export function FleetView({
                       allowedWritePaths: chatSession.allowedWritePaths,
                       readOnlyRoots: chatSession.readOnlyRoots,
                       projectId: chatSession.projectId,
-                        financialProfileId: chatSession.financialProfileId,
-                      convId: chatSession.sessionId,
-                      interactive: chatSession.interactive
+                      financialProfileId: chatSession.financialProfileId,
+                      convId: chatSession.sessionId
                     })
                     if (result.runId) {
                       setChatSession((prev) =>
@@ -1132,11 +1126,6 @@ export function FleetView({
                           />
                         )}
                         <p className="text-xs text-[#999999] truncate flex items-center gap-1.5">
-                          {run.autoApprove && (
-                            <span className="inline-flex items-center px-1.5 py-px rounded text-[10px] font-medium bg-[#2a2a30] text-[#f0b820] shrink-0">
-                              Auto
-                            </span>
-                          )}
                           {hasQuestion ? (
                             <span className="text-[#c4b5fd] font-medium">
                               Aguardando sua resposta ({run.questions.length})
@@ -1333,19 +1322,9 @@ export function FleetView({
                         >
                           Abrir chat
                         </button>
-                        <ModeToggleButton
-                          active={run.autoApprove}
-                          label="Auto"
-                          activeLabel="Auto: ON"
-                          onClick={() => setAuto(run.id, !run.autoApprove)}
-                          title={
-                            run.autoApprove
-                              ? 'Modo autônomo LIGADO — clique para voltar a pedir aprovação.'
-                              : 'Modo autônomo DESLIGADO — clique para aprovar ações automaticamente.'
-                          }
-                        />
                         <button
                           onClick={() => stopAgent(run.id)}
+                          aria-label={`Parar agente: ${run.task}`}
                           title="Parar este agente de código"
                           className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#2b2b31] text-xs text-[#e04040] hover:bg-[#222227] transition-colors"
                         >

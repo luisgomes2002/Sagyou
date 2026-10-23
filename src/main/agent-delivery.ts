@@ -30,19 +30,12 @@ export async function deliverApprovedPatch(options: DeliverPatchOptions): Promis
     const patchPath = join(originalDir, `.sagyou-wt-patch-${runId}.diff`)
     await writeFile(patchPath, patch, 'utf8')
     try {
-      await execFileAsync(
-        'git',
-        [
-          '-C',
-          originalDir,
-          'apply',
-          '--whitespace=nowarn',
-          '--ignore-space-change',
-          '--ignore-whitespace',
-          patchPath
-        ],
-        { windowsHide: true }
-      )
+      // Check the exact patch immediately before applying it. In particular, do
+      // not relax context matching: a user edit made while the final review was
+      // open must block delivery rather than being silently merged around.
+      const gitArgs = ['-C', originalDir, 'apply', '--whitespace=nowarn']
+      await execFileAsync('git', [...gitArgs, '--check', patchPath], { windowsHide: true })
+      await execFileAsync('git', [...gitArgs, patchPath], { windowsHide: true })
     } finally {
       await unlink(patchPath).catch(() => {})
     }

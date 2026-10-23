@@ -171,15 +171,6 @@ describe('FleetView', () => {
     expect(screen.getByText(/gpt-4/)).toBeInTheDocument()
   })
 
-  it('uses the shared gray Auto: ON toggle without a lightning icon', async () => {
-    oneRun({ autoApprove: true })
-    render(<FleetView projects={projects} onOpenChat={() => {}} />)
-
-    const button = await screen.findByRole('button', { name: 'Auto: ON' })
-    expect(button).toHaveClass('bg-[#16161a]', 'text-[#d4d4d4]')
-    expect(button.querySelector('svg')).toBeNull()
-  })
-
   it('"Abrir chat" opens the inline chat view for a running code agent', async () => {
     oneRun()
     const onOpenChat = vi.fn()
