@@ -1,8 +1,13 @@
 import { writeFile, unlink } from 'fs/promises'
 import { join } from 'path'
-import { MCP_STDIO_BRIDGE_SOURCE, type McpSession } from './sagyou-mcp'
+import {
+  MCP_PERMISSIONS,
+  MCP_STDIO_BRIDGE_SOURCE,
+  type McpPermission,
+  type McpSession
+} from './sagyou-mcp'
 
-export type McpExecutorId = 'codex' | 'opencode' | 'claude-code'
+export type McpExecutorId = 'codex' | 'claude-code'
 
 export interface McpCapabilityBroker {
   port(): number
@@ -16,6 +21,7 @@ export interface PrepareMcpSessionOptions {
   runId: string
   projectId: string | null
   financialProfileId: string
+  permissions: readonly McpPermission[]
   worktreeDir: string
   executor: McpExecutorId
   executable: string
@@ -41,6 +47,7 @@ export async function prepareAgentMcpSession(
     runId: options.runId,
     projectId: options.projectId,
     financialProfileId: options.financialProfileId,
+    permissions: options.permissions,
     expiresAt: options.expiresAt
   })
   try {
@@ -81,23 +88,6 @@ export async function prepareAgentMcpSession(
       `mcp_servers.sagyou.command="${options.executable.replace(/\\/g, '\\\\')}"`
     )
   }
-  if (options.executor === 'opencode') {
-    env = {
-      ...env,
-      OPENCODE_CONFIG_CONTENT: JSON.stringify({
-        mcp: {
-          servers: {
-            sagyou: {
-              type: 'local',
-              command: [options.executable, bridgePath],
-              environment: { ELECTRON_RUN_AS_NODE: '1' },
-              codemode: false
-            }
-          }
-        }
-      })
-    }
-  }
 
   let cleaned = false
   return {
@@ -111,3 +101,6 @@ export async function prepareAgentMcpSession(
     }
   }
 }
+
+/** The code executors need this fixed set; the broker still checks every call. */
+export const CODE_EXECUTOR_MCP_PERMISSIONS = [...MCP_PERMISSIONS] as const

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { join, sep } from 'path'
 import { attachmentPath, safeAttachmentName } from '../backup-files'
 
 // The id/ext come from a backup file a user could hand-edit, and the result is
@@ -45,11 +46,11 @@ describe('safeAttachmentName', () => {
 })
 
 describe('attachmentPath', () => {
-  const directory = '/tmp/sagyou/files'
+  const directory = join('tmp', 'sagyou', 'files')
   const uuid = '123e4567-e89b-12d3-a456-426614174000'
 
   it('resolves only a validated attachment below its own directory', () => {
-    expect(attachmentPath(directory, '/', uuid, '.pdf')).toBe(`${directory}/${uuid}.pdf`)
+    expect(attachmentPath(directory, sep, uuid, '.pdf')).toBe(`${directory}${sep}${uuid}.pdf`)
   })
 
   it('rejects ids and extensions that could turn an IPC argument into a path', () => {

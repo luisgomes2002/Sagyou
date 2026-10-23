@@ -30,6 +30,8 @@ import {
   runTool,
   isWriteTool,
   getToolContract,
+  canonicalToolName,
+  isLegacyToolAlias,
   validateToolCall,
   TOOL_DEFS,
   describeToolCall,
@@ -76,6 +78,36 @@ describe('tool contracts', () => {
     expect(contract?.validate).toBeTypeOf('function')
     expect(isWriteTool('criar_tasks')).toBe(true)
     expect(validateToolCall('ferramenta_inexistente', {})).toMatchObject({ valid: false })
+  })
+})
+
+describe('aliases temporários de ferramentas', () => {
+  const aliases = {
+    buscar_memoria: 'search_memory',
+    salvar_memoria: 'save_memory',
+    verificar_memorias: 'check_memories',
+    buscar_conversas: 'search_conversations',
+    ler_conversa: 'read_conversation',
+    rodar_agente_codigo: 'run_code_agent'
+  }
+
+  it.each(Object.entries(aliases))(
+    'despacha %s para o handler de %s sem anunciá-lo em tools/list',
+    (legacy, current) => {
+      expect(canonicalToolName(legacy)).toBe(current)
+      expect(getToolContract(legacy)).toBe(getToolContract(current))
+      expect(isLegacyToolAlias(legacy)).toBe(true)
+      expect(TOOL_DEFS.some((tool) => tool.function.name === legacy)).toBe(false)
+    }
+  )
+
+  it('rejeita nomes parecidos em vez de adivinhar um alias', async () => {
+    for (const name of ['Buscar_memoria', 'buscar-memoria', 'buscar_memorias', 'run_code_agents']) {
+      expect(canonicalToolName(name)).toBe(name)
+      expect(isLegacyToolAlias(name)).toBe(false)
+      expect(getToolContract(name)).toBeUndefined()
+      await expect(runTool(name, {})).resolves.toContain(`Ferramenta desconhecida: ${name}`)
+    }
   })
 })
 
@@ -979,8 +1011,8 @@ describe('rodar_agente_codigo', () => {
   })
 
   it('tells the model that same-folder agents can run in parallel', () => {
-    const description = TOOL_DEFS.find((tool) => tool.function.name === 'run_code_agent')
-      ?.function.description
+    const description = TOOL_DEFS.find((tool) => tool.function.name === 'run_code_agent')?.function
+      .description
     expect(description).toContain('várias execuções simultâneas')
     expect(description).toContain('worktrees isolados')
   })

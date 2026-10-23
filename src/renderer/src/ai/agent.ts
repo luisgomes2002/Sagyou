@@ -17,7 +17,7 @@ export interface AIConfig {
   providerProfiles?: AIProviderProfile[]
   /** The profile used by the normal chat; absent keeps the legacy fields above. */
   activeProviderProfileId?: string
-  /** Normal-chat transport; code-agent harness selection remains independent. */
+  /** Normal-chat transport. */
   chatProvider?: 'api' | 'chatgpt'
   /** API profile selected for this conversation; main resolves its credential. */
   chatProfileId?: string
@@ -50,21 +50,8 @@ export interface AIConfig {
   /** The conversation to reopen when the AI view is entered. */
   lastConversationId?: string
 
-  /**
-   * A separate provider for the native code agent. Any field left empty falls
-   * back to the chat config above, so a user sets only what differs. Absent =
-   * the code agent uses the chat provider.
-   */
-  codeAgent?: { baseUrl?: string; apiKey?: string; model?: string }
-  /**
-   * Runtime that executes code changes. External harnesses are persisted now so
-   * their adapters can be added without changing the user's preference shape.
-   */
-  codeHarness?: 'sagyou' | 'codex' | 'opencode' | 'claude-code'
-  /** Whether the ai-jail sandbox is required for the agent's shell commands (absent = on). */
-  sandboxEnabled?: boolean
-  /** Whether the sandbox onboarding has been answered (so it doesn't reappear). */
-  sandboxOnboardingDismissed?: boolean
+  /** Runtime that executes code changes. Legacy values are tolerated on load. */
+  codeHarness?: 'codex' | 'claude-code'
   /**
    * When true (default), the prompt prefix is kept stable to maximise provider
    * prompt caching (DeepSeek ~50x cheaper on cache hit, Claude, Gemini). When

@@ -1,12 +1,13 @@
 /** @vitest-environment node */
 
 import { describe, expect, it } from 'vitest'
+import { join } from 'path'
 import { hasBundledMarkItDown, markitdownBinaryPath } from '../markitdown'
 
 describe('MarkItDown runtime path', () => {
   it('resolves the executable bundled for the current platform', () => {
     const path = markitdownBinaryPath('/app/resources', 'linux', 'x64')
-    expect(path).toBe('/app/resources/markitdown/linux-x64/sagyou-markitdown')
+    expect(path).toBe(join('/app/resources', 'markitdown', 'linux-x64', 'sagyou-markitdown'))
   })
 
   it('uses the executable extension on Windows', () => {

@@ -414,10 +414,24 @@ caminho nativo.
 - **MCP é a única ponte de dados entre Sagyou e o executor.** O executor lê e
   altera arquivos diretamente apenas dentro da worktree. Tasks, projetos,
   conversas, memórias, finanças e qualquer outro dado do app passam somente pelo
-  MCP local com token efêmero e escopo de projeto/perfil. Nunca entregue SQLite,
+  MCP local com token criptográfico efêmero, escopo congelado de projeto/perfil e
+  permissões por ferramenta verificadas em toda chamada. Nunca entregue SQLite,
   IPC interno, `loadData()` ou snapshot do store ao CLI. Escritas MCP continuam
-  passando pela aprovação da operação e pelo flush do Zustand; isso não substitui
-  a aprovação final do patch.
+  passando por uma fila de aprovação por run e pelo flush do Zustand; timeout,
+  recusa, Stop e fechamento rejeitam sem escrever. Isso não substitui a aprovação
+  final do patch.
+- **Briefing de executor externo é contexto, não prompt alternativo.** Codex e
+  Claude recebem objetivo/decisões atuais primeiro, arquivos indicados e um
+  recorte limitado e sanitizado de conversa/memórias. Histórico é dado não
+  confiável e nunca substitui a solicitação atual; detalhes e dados vivos vêm do MCP.
+- **Handoff de terminal é um breadcrumb, não log.** No encerramento, a memória
+  determinística `handoff:<projeto>` é atualizada com pedido, status, arquivos e
+  IDs da conversa/run, todos limitados. O terminal completo continua apenas no
+  arquivo arquivado da run.
+- **Toda run usa worktree externo e detached.** A árvore do usuário nunca é
+  destino de um executor, nem na primeira run ou em repo sem commit; retorno só
+  ocorre pela entrega validada. Worktrees órfãos são recuperados da raiz temporária
+  do Sagyou, nunca por remoção dentro do projeto.
 - **Toda run nasce em worktree destacada.** Nem a primeira run, nem uma run única,
   edita a árvore original. Ao terminar, valide o conjunto final de caminhos e
   mostre o diff; só uma aprovação manual explícita entrega o patch, de forma
@@ -430,6 +444,14 @@ caminho nativo.
   nesta migração documental.
 
 ### Fluxo e ciclo de vida
+
+- **Escopo de escrita vale para o lote final.** Antes da revisao, normalize todos os
+  caminhos alterados e compare arquivos/raizes permitidos, incluindo os dois lados de rename
+  e qualquer symlink. Um caminho recusado aparece no Fleet e bloqueia o patch inteiro; nunca
+  tente aplicar a parte valida ou tocar o caminho fora do escopo.
+- **Entrega final confere a base no último instante.** O patch da worktree inclui
+  arquivos binários e novos; `git apply --check` roda antes da aplicação sem ignorar
+  contexto ou espaços. Mudança local durante a revisão bloqueia a entrega, sem sobrescrever.
 
 1. O chat fecha objetivo, escopo, arquivos permitidos e decisões já tomadas.
 2. O main cria uma worktree exclusiva, emite credencial MCP aleatória e limitada

@@ -277,6 +277,7 @@ ser registrados depois desse ponto; controles de janela podem ficar antes.
   - The cap comes from `resolveMaxSteps(config.maxSteps, autoApprove)`. **The step cap and the approval mode are deliberately separate**: an explicit `maxSteps` wins in _both_ modes, so you can raise the ceiling while still approving each write (previously the only way past the manual default was automatic mode, which also surrenders approval). Unset → `MAX_STEPS` (40) manual, `AUTO_MAX_STEPS` (100) automatic. ⚠️ **Both are deliberate settings, and 100 is the expensive one**: every step resends the whole accumulated history, so the last steps of a long run cost far more than the first and the total grows worse than linearly in the cap. The pair has moved twice on request (15/40 originally, briefly 15/15 as a cost measure, now 40/100) — someone who wants a shorter run sets `maxSteps` explicitly, and turning automatic mode on quotes what a full run is likely to cost (`estimateAutoRun`, priced off the user's own logged calls, and silent when there is no sample to price from). Anything invalid (0, negative, NaN, a string hand-edited into `ai-config.json`) falls back to the default; everything is clamped to `MAX_STEPS_LIMIT` (100), including inside `runAgent`, because each step is a paid model call. **`MAX_STEPS_LIMIT` must stay ≥ `AUTO_MAX_STEPS`** — it is the clamp, so a lower limit would silently cap automatic runs below their own documented default. `AIConfig.maxSteps` is optional and persists in `ai-config.json` — the loader must keep passing it through, or the setting silently reverts to the default on every boot.
   - **A soft brake catches a model looping on the same read**, complementary to the step cap. `runAgent` counts each read call by signature (tool name + JSON args) in `readRepeats`; on the `READ_REPEAT_LIMIT`-th (3) identical call it **doesn't run the tool** and feeds back a synthetic result telling the model to answer with what it has. It's a _nudge, not an abort_ — the result goes back as an ordinary `tool` message, so nothing is discarded and a model that takes the hint concludes on the next step instead of burning the rest of the budget re-fetching an answer it already has. **Reads only** (`!isWriteTool`), the same line `pruneSupersededResults` draws: two identical writes are two events, not a loop. The two are siblings — prune blanks the _cost_ of a repeated read, the brake stops _running_ it. Two more run-scoped nudges ride alongside it: a **blind whole-file re-read brake** (`BLIND_FILE_READ_LIMIT` 2) fires when `ler_arquivo` is called on the same path twice with no targeting arg (`simbolo`/`linha_inicio`/`linha_fim`/`inicio`) — tighter than the exact brake because a second read of a whole file is almost always a re-fetch, and paged/scoped reads are deliberately **not** counted; and a **fuzzy-search warning** appends an `aviso` to a `buscar_no_codigo` result whose term is a substring of an earlier one this run (`backup`→`exportBackup`). The warning _never blocks_ — the search still runs — since a substring is a genuinely different query, not a loop; it only nudges the model to reuse what it already fetched. Both live in `runAgent` (run-scoped state), **not** `tools.ts`, whose handlers are module-global and shared across every conversation.
 - The assistant can read a project's source when the project has code paths selected: `listar_arquivos`, `ler_arquivo`, `buscar_no_codigo` map to the `ai:code:*` handlers, which confine every path to the given root. A project can have **several roots selected at once**, so these tools take an optional `pastaId` to narrow to one and otherwise fan out across all of them (`activeRoots()` in `tools.ts` resolves the list). `ler_arquivo` errors instead of guessing when the same relative path exists under more than one root. It is **paged, not capped-and-dropped**: `ai:code:read` returns at most `CODE_READ_PAGE` (20000) chars — a whole file is resent on every later step, so a 60k-char file was a ~15k-token per-step tax for a question that usually needs a slice — reporting `total`, the slice's `offset`, and a `nextOffset` when `truncated`; the tool exposes `inicio`/`max_chars` so the model pages through the rest (`inicio = nextOffset`) instead of pulling it whole. `max_chars` can raise a single read to `CODE_READ_MAX` (60000), the old ceiling, so a genuinely large read is still possible on demand. ⚠️ A **blind read of a big file** (no scope, no `inicio`, no explicit `max_chars`, and `total > CODE_READ_PAGE`) no longer returns a full 20k window: it returns the first ~100 lines plus the `simbolos` map, a `nextOffset` to page on, and a `dica` steering the model to `simbolo`/line-range/`inicio`. An explicit `inicio` or `max_chars` bypasses it — the model already knows what it wants. The 5000-line threshold the request suggested was a no-op (the largest real file is ~1k lines), so the guard keys on the same char boundary the paging already uses. **`ler_arquivo` also reads by scope**: `simbolo` extracts one function/class/const (~1-3k chars via `extractSymbol`), `linha_inicio`/`linha_fim` a line range (`extractLines`) — the cheap path is `buscar_no_codigo` → take the `linha` → read just that scope, instead of paging the file whole. A `simbolo` that isn't found returns `simbolos` (the file's declaration map) so the model picks a real one rather than guessing. `listar_arquivos` is paged the same way and for the same reason — with several roots selected it fans out, so a flat 400-per-root cap put ~1200 paths in one result, resent every step: `ai:code:list` now walks up to `CODE_LIST_WALK` (2000) to report a real `total`, returns one `CODE_LIST_PAGE` (200) window with `offset`/`truncated`/`nextOffset`, and takes `inicio`/`max_arquivos` (ceiling `CODE_LIST_MAX` 400) to page or widen — or narrow the tree with `subpasta`. `buscar_no_codigo` stays capped-and-dropped (60 matches): a search hit is already a filtered answer, not a listing to walk. Its results are **grouped by file** in the tool layer (`{ arquivo, ocorrencias: [{linha, texto}] }`), so the path isn't repeated per hit and the model can feed a `linha` straight into `ler_arquivo`'s scoped read; the `ai:code:search` IPC shape stays flat (`matches`), so its handler and `handlers.test.ts` are untouched. `buscar_no_codigo` results are also **cached in the renderer** by `(sorted roots + normalised term)` for `CODE_SEARCH_TTL_MS` (30s), since a run often re-searches near-duplicate terms and each result is resent every later step; the cache is dropped whenever a code-agent run is fired (`clearCodeSearchCache()` in `rodar_agente_codigo`, `salvar_memoria`), which edits files. ⚠️ Within the TTL a file edited _outside_ the app (an editor, git) can return a stale hit — the short window bounds staleness the renderer can't observe.
+
 ### Agent-first migration target
 
 This section is the architectural source of truth for the migration and supersedes
@@ -311,19 +312,42 @@ The CLI accesses the worktree filesystem directly. For Sagyou application data �
 projects, tasks, conversations, memories, finance and every future domain — the local
 scoped MCP server is the **only** bridge. PTY is a terminal transport, not a data API.
 Never expose SQLite, internal IPC, `loadData()`, a Zustand snapshot or a parallel ad-hoc
-bridge to the CLI. MCP credentials are random, run-scoped, limited to the chosen project
-and active financial profile, expire after at most two hours and are revoked on every
-terminal path. MCP writes keep their operation approval and renderer flush; that approval
-does not imply approval of the code patch.
+bridge to the CLI. MCP credentials use 256 bits of entropy, are run-scoped, capture the
+chosen project, financial profile and tool permissions at launch, expire after at most two
+hours and are revoked on every terminal path. The broker verifies that capability on every
+call and never logs or renders the token. MCP writes are serialized in an approval queue per run, execute only after
+approval and renderer flush, and fail closed on denial, timeout or cleanup; that operation
+approval does not imply approval of the code patch.
+
+**External executor briefing.** Codex and Claude receive a deterministic, secret-scrubbed
+briefing with the current objective and decisions first, bounded indicated files, source and
+related conversation excerpts, and ranked relevant memories. Historical material is explicitly
+untrusted data: it cannot supersede the current request or decisions. The briefing names MCP as
+the path for live or deeper data and does not modify either CLI's native prompt.
+
+**Terminal handoff.** Every terminal exit upserts the deterministic
+`handoff:<projectId|global>` memory with a bounded request, outcome/status, changed-file list,
+and conversation/run references. Cancelled runs are marked as such. This is only a breadcrumb:
+full terminal output remains exclusively in the frozen run archive, never in memory.
+
+**Worktree isolation.** Every executor run, including the first native run, gets a unique
+detached worktree under Sagyou's external temporary root. For an unborn repository, a temporary
+commit object is built with a separate index, leaving the user's HEAD, index and files unchanged.
+Only the validated delivery path may affect the original tree. Per-repository lifecycle operations
+are serialized; startup removes only orphaned worktrees inside that managed root.
 
 **Lifecycle / success.** (1) The coordinator freezes the brief, executor and allowed
 paths. (2) Main creates/reserves the worktree and MCP capability before starting the PTY
 in that worktree. (3) Codex or Claude edits and tests there, consulting Sagyou only via
 MCP. (4) Normal exit closes the PTY, revokes MCP, validates the complete changed-path
-set, freezes the log/diff and moves the run to awaiting final approval; the original tree is
+set, freezes the log/diff and moves the run to awaiting final approval; paths are normalized,
+case-aware on Windows, and both sides of renames plus symlinks are checked against the frozen
+file/root scope. One violation rejects the whole patch and is listed in Fleet; the original tree is
 still untouched. (5) One explicit manual approval applies the patch serially to the
-original tree and records delivery. Auto-approve never covers final delivery. Rejection
-records no delivery. Cleanup happens only after preserving the artifact needed for
+original tree and records delivery. Auto-approve never covers final delivery. Immediately
+before applying, `git apply --check` validates the exact binary-capable patch without
+relaxed whitespace/context matching; a user edit made during review blocks delivery.
+Rejection records no delivery. Cleanup happens only after preserving the artifact needed for
 review/audit.
 
 **Lifecycle / failure.** Worktree, MCP or PTY startup failure aborts before an executor

@@ -373,13 +373,8 @@ export function AIView({
           outputPricePer1M: stored.outputPricePer1M,
           timeoutMs: stored.timeoutMs,
           lastConversationId: stored.lastConversationId,
-          // Undefined = the code agent falls back to the chat provider.
-          codeAgent: stored.codeAgent,
-          // Older configs predate the harness picker and keep using the native runtime.
-          codeHarness: stored.codeHarness ?? 'sagyou',
-          // Undefined = sandbox required (safe default); only explicit false is off.
-          sandboxEnabled: stored.sandboxEnabled,
-          sandboxOnboardingDismissed: stored.sandboxOnboardingDismissed,
+          // Historic native harness values load safely as the Codex default.
+          codeHarness: stored.codeHarness === 'claude-code' ? 'claude-code' : 'codex',
           reasoningEffort: stored.reasoningEffort
         })
         // Entering the view puts the user back where they were, at the end of
@@ -403,7 +398,6 @@ export function AIView({
       .then(() => {
         if (
           config.apiKey ||
-          config.codeAgent?.apiKey ||
           config.providerProfiles?.some((profile) => profile.apiKey)
         ) {
           setConfig((current) => ({
@@ -418,10 +412,6 @@ export function AIView({
                 ? { ...profile, apiKey: undefined, hasApiKey: true }
                 : profile
             }),
-            codeAgent:
-              current.codeAgent?.apiKey === config.codeAgent?.apiKey
-                ? { ...current.codeAgent, apiKey: undefined }
-                : current.codeAgent
           }))
         }
       })

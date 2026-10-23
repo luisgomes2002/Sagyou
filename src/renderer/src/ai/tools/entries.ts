@@ -1845,7 +1845,6 @@ export const registryEntries: Record<string, AITool> = {
       // system prompt as constraints, so it doesn't reopen a choice already made.
       // The chat only coordinates a reviewed handoff; execution is always the
       // selected CLI's native PTY, never an in-chat code loop.
-      const interactive = true
       const decisoes = Array.isArray(args.decisoes)
         ? args.decisoes.filter((d): d is string => typeof d === 'string' && d.trim() !== '')
         : undefined
@@ -1874,7 +1873,6 @@ export const registryEntries: Record<string, AITool> = {
         convId: runningConvId ?? undefined,
         projectId,
         financialProfileId: useKanbanStore.getState().activeFinancialProfileId,
-        interactive,
         coordinated: true
       })
       if (!result.success) {
@@ -1893,7 +1891,6 @@ export const registryEntries: Record<string, AITool> = {
           allowedWritePaths && allowedWritePaths.length ? allowedWritePaths : undefined,
         referencias: referencias.length ? referencias.map((root) => root.nome) : undefined,
         decisoes: decisoes && decisoes.length ? decisoes : undefined,
-        sessao_interativa: interactive || undefined,
         pedido: {
           objetivo: task,
           decisoes: decisoes ?? [],
