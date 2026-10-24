@@ -52,6 +52,8 @@ SQLite só como índice, consulta por MCP) fica para depois e **não** faz parte
 - A migração é idempotente e deixa uma marca em `settings` (`legacyChatRemovedAt`). Roda uma única vez.
 - **Se o snapshot falhar, nada é apagado**, e a migração tenta de novo na abertura seguinte.
 - Saem do MCP as ferramentas `search_conversations` e `read_conversation`.
+- O aviso do Fleet é buscado pelo renderer quando a tela abre: o main guarda o resultado da migração e o caminho do snapshot até o aviso ser dispensado.
+- Ficam, por não terem mandato na spec: `ai:skills:*`, `ai:web:fetch`, `ai:code:*`, `ai:harnesses:status` e `modules/ai/evaluator.ts`. Seus consumidores no chat saem, e eles viram candidatos a limpeza futura.
 - Saem as ferramentas `buscar_conversas` e `ler_conversa`, e os canais `ai:conversations:*`, `ai:images:*`, `ai:usage:summary` e `ai:run-metrics:*`.
 - O índice de busca global (FTS5) deixa de indexar conversas. Como é descartável, ele é reconstruído na migração.
 - A regra de retenção de conversas por memória (`referencedConversationIds`, `retainReferencedConversations`) é removida junto com o histórico.
@@ -61,12 +63,12 @@ SQLite só como índice, consulta por MCP) fica para depois e **não** faz parte
 
 **Primeira abertura da versão nova**
 1. Se a marca `legacyChatRemovedAt` existe, não faz nada.
-2. Cria o snapshot em `userData/backups/` com nome `pre-remocao-chat-<timestamp>.json` (mesmo formato do snapshot pré-importação). Se falhar, aborta sem apagar nada e registra o erro.
-3. Apaga `ai-conversations.json` e `chat-images/`.
-4. Remove de `ai-config.json` as chaves de API e `providerProfiles`, o `baseUrl`/`apiKey`/`model` antigos, `modelComplex`, os preços de token e `codeAgent` (agente nativo). Preserva `codeHarness`, as flags de sandbox/ai-jail e **qualquer chave desconhecida**.
-5. Apaga `ai-usage-log.json` e `ai-run-metrics.json`.
-6. Limpa `sourceConversationId` e o ponteiro de conversa nos handoffs, em memórias ativas e arquivadas.
-7. Reconstrói o índice de busca global.
+2. Cria o snapshot: o processo main copia, sem passar pelo renderer, para a pasta `userData/backups/pre-remocao-chat-<timestamp>/` os arquivos `ai-conversations.json`, `chat-images/`, `chat-files/` e uma cópia consistente do `kanban.db`. O `ai-config.json` **não** entra (tem as chaves). Se qualquer cópia falhar, aborta sem apagar nada e registra o erro.
+3. Apaga `ai-conversations.json`, `chat-images/` e `chat-files/` (textos extraídos dos documentos anexados ao chat).
+4. Apaga `ai-usage-log.json` e `ai-run-metrics.json`.
+5. Limpa `sourceConversationId` e o ponteiro de conversa nos handoffs, em memórias ativas e arquivadas.
+6. Reconstrói o índice de busca global.
+7. Remove de `ai-config.json` exatamente: `baseUrl`, `apiKey`, `model`, `providerProfiles`, `activeProviderProfileId`, `legacyProfileMigrated`, `chatProvider`, `modelComplex`, `maxSteps`, `inputPricePer1M`, `outputPricePer1M`, `timeoutMs`, `lastConversationId` e `codeAgent`. Preserva `codeHarness`, `userName`, `reasoningEffort`, as flags de sandbox/ai-jail e **qualquer chave desconhecida**. É o último passo destrutivo: as chaves só caem depois de todos os anteriores.
 8. Grava a marca `legacyChatRemovedAt`.
 
 A migração é pensada para ser retomada: cada passo é idempotente, e a marca só é gravada no fim. A falha de um passo posterior não desfaz o anterior, mas a próxima abertura continua de onde parou.
@@ -97,8 +99,8 @@ A migração é pensada para ser retomada: cada passo é idempotente, e a marca 
 
 ⚠️ Breaking schema change — existing data may be affected. Esta feature **apaga dados do usuário de forma definitiva**.
 
-- **Apagados:** `ai-conversations.json`, `chat-images/`, `ai-usage-log.json`, `ai-run-metrics.json`, e em `ai-config.json` as chaves e perfis de API.
-- **Recuperável via snapshot:** conversas e imagens de chat. O snapshot é um backup v5, e a importação ignora esses campos, então **restaurar o snapshot não traz as conversas de volta pelo app**. O arquivo continua legível à mão.
+- **Apagados:** `ai-conversations.json`, `chat-images/`, `chat-files/`, `ai-usage-log.json`, `ai-run-metrics.json`, e em `ai-config.json` as chaves e perfis de API.
+- **Recuperável via snapshot:** conversas, imagens e documentos de chat, como arquivos crus numa pasta. O snapshot **não** é um backup importável pelo app, e a importação ignora esses campos de qualquer forma, então **nada traz as conversas de volta pela interface**. Os arquivos continuam legíveis à mão.
 - **Irrecuperável:** as chaves de API. O `ai-config.json` fica fora de qualquer backup, e a spec não cria cópia, porque guardar credenciais em um arquivo de backup seria um risco novo.
 - **Preservado:** `kanban.db` inteiro (projetos, tasks, finanças, memória, etc.), `agent-runs/`, `files/`, `task-images/`, `skills/`, a configuração dos agentes e chaves desconhecidas do `ai-config.json`.
 - **Novo:** a chave `legacyChatRemovedAt` em `settings` (aditiva, sem migração de schema).
