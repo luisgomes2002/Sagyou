@@ -14,7 +14,6 @@ import {
 import { McpWriteQueue, RendererMcpActionBridge } from '../modules/agent/mcp-write-queue'
 import type { AiMemory } from '../modules/ai/memory'
 import type { MemorySearchHit } from '../store'
-import type { StoredConversation } from '../modules/conversations/conversation-types'
 
 const memoryHit = (over: Record<string, unknown> = {}): MemorySearchHit =>
   ({
@@ -141,8 +140,6 @@ describe('Sagyou MCP broker', () => {
       readMemory: () => null,
       touchMemory: () => {},
       memoriesForConflict: () => [],
-      searchConversations: () => [],
-      readConversation: () => null,
       saveMemory: async () => ({ ok: false }),
       createTask: async () => ({ ok: true })
     })
@@ -207,8 +204,6 @@ describe('Sagyou MCP broker', () => {
       readMemory: () => null,
       touchMemory: () => {},
       memoriesForConflict: () => [],
-      searchConversations: () => [],
-      readConversation: () => null,
       saveMemory: async () => ({ ok: false }),
       createTask: async () => ({ ok: true })
     })
@@ -258,8 +253,6 @@ describe('Sagyou MCP broker', () => {
       readMemory: () => null,
       touchMemory: () => {},
       memoriesForConflict: () => [],
-      searchConversations: () => [],
-      readConversation: () => null,
       saveMemory: async () => ({ ok: false }),
       createTask: async () => {
         writes += 1
@@ -325,8 +318,6 @@ describe('Sagyou MCP broker', () => {
       readMemory: () => null,
       touchMemory: () => {},
       memoriesForConflict: () => [],
-      searchConversations: () => [],
-      readConversation: () => null,
       saveMemory: async () => ({ ok: false }),
       createTask: async (session, args) => {
         received = { runId: session.runId, projectId: session.projectId, args }
@@ -372,8 +363,6 @@ describe('Sagyou MCP broker', () => {
       readMemory: () => null,
       touchMemory: () => {},
       memoriesForConflict: () => [],
-      searchConversations: () => [],
-      readConversation: () => null,
       saveMemory: async () => ({ ok: false }),
       createTask: async () => ({ ok: true })
     })
@@ -434,8 +423,6 @@ describe('Sagyou MCP broker', () => {
       readMemory: () => null,
       touchMemory: () => {},
       memoriesForConflict: () => [],
-      searchConversations: () => [],
-      readConversation: () => null,
       saveMemory: async () => ({ ok: false }),
       createTask: async () => ({ ok: true })
     })
@@ -627,8 +614,6 @@ describe('Sagyou MCP broker', () => {
         [...memories.values()].filter(
           (memory) => memory.projectId === null || memory.projectId === projectId
         ),
-      searchConversations: () => [],
-      readConversation: () => null,
       saveMemory: async (session, memory, redacted) => {
         const outcome = await writes.enqueue(
           {
@@ -791,8 +776,6 @@ describe('Sagyou MCP broker', () => {
       readMemory: () => null,
       touchMemory: () => {},
       memoriesForConflict: () => [],
-      searchConversations: () => [],
-      readConversation: () => null,
       saveMemory: async () => ({ ok: false }),
       createTask: async () => ({ ok: true })
     })
@@ -851,8 +834,6 @@ describe('Sagyou MCP broker', () => {
       readMemory: () => null,
       touchMemory: () => {},
       memoriesForConflict: () => [],
-      searchConversations: () => [],
-      readConversation: () => null,
       saveMemory: async () => ({ ok: false }),
       createTask: async () => ({ ok: true })
     })
@@ -919,8 +900,6 @@ describe('Sagyou MCP broker', () => {
       readMemory: (id) => byId.get(id) ?? null,
       touchMemory: (id) => touched.push(id),
       memoriesForConflict: () => [],
-      searchConversations: () => [],
-      readConversation: () => null,
       saveMemory: async () => ({ ok: false }),
       createTask: async () => ({ ok: true })
     })
@@ -983,8 +962,6 @@ describe('Sagyou MCP broker', () => {
       readMemory: () => null,
       touchMemory: () => {},
       memoriesForConflict: () => [],
-      searchConversations: () => [],
-      readConversation: () => null,
       saveMemory: async (_session, memory, redacted) => {
         saveCalls += 1
         if (mode === 'timeout') throw new Error('A aprovação expirou.')
@@ -1102,8 +1079,6 @@ describe('Sagyou MCP broker', () => {
         requestedProject = projectId
         return [global, project, duplicate, handoff] // `otherProject` is intentionally excluded by scope.
       },
-      searchConversations: () => [],
-      readConversation: () => null,
       saveMemory: async () => ({ ok: false }),
       createTask: async () => ({ ok: true })
     })
@@ -1136,23 +1111,9 @@ describe('Sagyou MCP broker', () => {
     expect(JSON.stringify(result)).not.toContain(otherProject.id)
   })
 
-  it('searches conversations across projects, rejects an empty term and bounds results', async () => {
-    const calls: { projectId: string | null | undefined; term: string }[] = []
-    const projectHits = Array.from({ length: 10 }, (_, index) => ({
-      id: `project-${index}`,
-      title: `Projeto ${index}`,
-      createdAt: '2026-01-01T00:00:00Z',
-      updatedAt: `2026-01-${String(index + 1).padStart(2, '0')}T00:00:00Z`,
-      snippet: index === 0 ? 'Mensagem de usuário sobre deploy.' : 'x'.repeat(300)
-    }))
-    const legacyHit = {
-      id: 'legacy-general',
-      title: 'Conversa antiga',
-      createdAt: '2025-01-01T00:00:00Z',
-      updatedAt: '2025-01-02T00:00:00Z',
-      snippet: 'Contexto legado.'
-    }
+  it('does not offer, grant or answer the conversation tools', async () => {
     const broker = startSagyouMcpBroker({
+      listProjects: () => [],
       readTasks: () => [],
       readFinancial: () => [],
       readProjectData: () => ({}),
@@ -1160,148 +1121,51 @@ describe('Sagyou MCP broker', () => {
       readMemory: () => null,
       touchMemory: () => {},
       memoriesForConflict: () => [],
-      searchConversations: (projectId, term) => {
-        calls.push({ projectId, term })
-        return (projectId === undefined ? [legacyHit, ...projectHits] : projectHits) as never
-      },
-      readConversation: () => null,
       saveMemory: async () => ({ ok: false }),
       createTask: async () => ({ ok: true })
     })
     servers.push(broker.server)
     await new Promise<void>((resolve) => broker.server.once('listening', resolve))
+    expect(MCP_PERMISSIONS).not.toContain('search_conversations')
+    expect(MCP_PERMISSIONS).not.toContain('read_conversation')
     broker.grant({
-      token: 'conversation-token',
-      runId: 'run-conversation',
-      projectId: 'project-1',
-      financialProfileId: 'personal',
-      permissions: MCP_PERMISSIONS,
-      expiresAt: Date.now() + 10_000
-    })
-    broker.grant({
-      token: 'general-token',
-      runId: 'run-general',
+      token: 'no-chat',
+      runId: 'run-no-chat',
       projectId: null,
       financialProfileId: 'personal',
-      permissions: MCP_PERMISSIONS,
+      // A stale grant that still names the removed tools must not revive them.
+      permissions: [...MCP_PERMISSIONS, 'search_conversations', 'read_conversation'] as never,
       expiresAt: Date.now() + 10_000
     })
-    const call = (token: string, term: string, id: number) =>
-      request(broker.port(), {
-        jsonrpc: '2.0',
-        id,
-        method: 'tools/call',
-        params: { token, name: 'search_conversations', arguments: { term } }
-      })
-
-    const projectReply = await call('conversation-token', 'deploy', 20)
-    const project = JSON.parse(
-      (projectReply.result as { content: { text: string }[] }).content[0].text
-    ) as {
-      total: number
-      truncated: boolean
-      conversations: { id: string; title: string; snippet: string }[]
-    }
-    expect(calls[0]).toEqual({ projectId: 'project-1', term: 'deploy' })
-    expect(project).toMatchObject({ total: 10, truncated: true })
-    expect(project.conversations).toHaveLength(8)
-    expect(project.conversations[0]).toMatchObject({ id: 'project-0', title: 'Projeto 0' })
-    expect(project.conversations[1].snippet).toHaveLength(240)
-
-    const blank = await call('conversation-token', '   ', 21)
-    expect(blank.error).toBeTruthy()
-    expect(calls).toHaveLength(1)
-
-    const generalReply = await call('general-token', 'legado', 22)
-    expect(calls[1]).toEqual({ projectId: undefined, term: 'legado' })
-    expect(JSON.stringify(generalReply)).toContain('legacy-general')
-    expect(JSON.stringify(generalReply)).toContain('project-0')
-  })
-
-  it('reads transcripts across projects, drops status and attachments, and keeps the relevant tail', async () => {
-    const protectedConversation = {
-      id: 'protected',
-      projectId: 'project-1',
-      title: 'Decisão do projeto',
-      createdAt: '2026-01-01T00:00:00Z',
-      updatedAt: '2026-01-02T00:00:00Z',
-      messages: [
-        { role: 'user' as const, content: 'Contexto inicial' },
-        { role: 'status' as const, content: 'SEGREDO_STATUS', imageIds: ['attachment-id'] },
-        { role: 'assistant' as const, content: `${'x'.repeat(8_100)} cauda importante` }
-      ]
-    }
-    const legacyConversation = {
-      ...protectedConversation,
-      id: 'legacy',
-      projectId: undefined,
-      title: 'Conversa legada',
-      messages: [{ role: 'user' as const, content: 'Legado geral' }]
-    }
-    const wrongProject = { ...protectedConversation, id: 'wrong', projectId: 'project-2' }
-    const conversations = new Map<string, StoredConversation>([
-      ['protected', protectedConversation],
-      ['legacy', legacyConversation],
-      ['wrong', wrongProject]
-    ])
-    const broker = startSagyouMcpBroker({
-      readTasks: () => [],
-      readFinancial: () => [],
-      readProjectData: () => ({}),
-      searchMemory: () => [],
-      readMemory: () => null,
-      touchMemory: () => {},
-      memoriesForConflict: () => [],
-      searchConversations: () => [],
-      readConversation: (id) => (conversations.get(id) as never) ?? null,
-      saveMemory: async () => ({ ok: false }),
-      createTask: async () => ({ ok: true })
+    const listed = await request(broker.port(), {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/list',
+      params: { token: 'no-chat' }
     })
-    servers.push(broker.server)
-    await new Promise<void>((resolve) => broker.server.once('listening', resolve))
-    for (const [token, projectId] of [
-      ['reader-project', 'project-1'],
-      ['reader-general', null]
-    ] as const) {
-      broker.grant({
-        token,
-        runId: token,
-        projectId,
-        financialProfileId: 'personal',
-        permissions: MCP_PERMISSIONS,
-        expiresAt: Date.now() + 10_000
-      })
+    const names = (listed.result as { tools: { name: string }[] }).tools.map((tool) => tool.name)
+    expect(names).not.toContain('search_conversations')
+    expect(names).not.toContain('read_conversation')
+    for (const kept of [
+      'list_projects',
+      'search_memory',
+      'read_memory',
+      'save_memory',
+      'check_memories',
+      'ler_tasks',
+      'criar_task',
+      'ler_financeiro',
+      'ler_projeto'
+    ]) {
+      expect(names).toContain(kept)
     }
-    const call = (token: string, id: string, requestId: number) =>
-      request(broker.port(), {
-        jsonrpc: '2.0',
-        id: requestId,
-        method: 'tools/call',
-        params: { token, name: 'read_conversation', arguments: { id } }
-      })
-
-    const allowed = await call('reader-project', 'protected', 23)
-    const result = JSON.parse(
-      (allowed.result as { content: { text: string }[] }).content[0].text
-    ) as { turns: { role: string; text: string }[]; truncated: boolean; warning: string }
-    expect(result.truncated).toBe(true)
-    expect(result.warning).toMatch(/evidência histórica/i)
-    expect(result.turns.map((turn) => turn.role)).not.toContain('status')
-    expect(JSON.stringify(result)).not.toContain('SEGREDO_STATUS')
-    expect(JSON.stringify(result)).not.toContain('attachment-id')
-    expect(result.turns.map((turn) => turn.text).join('').length).toBeLessThanOrEqual(8_000)
-    expect(result.turns.at(-1)?.text).toContain('cauda importante')
-
-    const [legacyAllowed, wrongAllowed, missingDenied] = await Promise.all([
-      call('reader-project', 'legacy', 24),
-      call('reader-project', 'wrong', 25),
-      call('reader-project', 'missing', 26)
-    ])
-    expect(legacyAllowed.error).toBeUndefined()
-    expect(wrongAllowed.error).toBeUndefined()
-    expect(missingDenied.error).toMatchObject({ code: -32000 })
-    const generalAllowed = await call('reader-general', 'legacy', 27)
-    expect(JSON.stringify(generalAllowed)).toContain('Conversa legada')
+    const called = await request(broker.port(), {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: { token: 'no-chat', name: 'search_conversations', arguments: { term: 'x' } }
+    })
+    expect(called.error).toBeDefined()
   })
 
   it('pages data domains with a chosen project while retaining the financial profile', async () => {
@@ -1323,8 +1187,6 @@ describe('Sagyou MCP broker', () => {
       readMemory: () => null,
       touchMemory: () => {},
       memoriesForConflict: () => [],
-      searchConversations: () => [],
-      readConversation: () => null,
       saveMemory: async () => ({ ok: false }),
       createTask: async () => ({ ok: true })
     })

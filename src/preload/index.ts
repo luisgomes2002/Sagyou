@@ -1,8 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 // Type-only: erased at build, so no main-process code is pulled into the preload.
-import type { RunMetricInput, RunMetricsSummary } from '../main/modules/ai/run-metrics'
 import type { AiMemory, MemoryInput, MemorySummary, MemoryConflict } from '../main/modules/ai/memory'
-import type { UsageSummary } from '../main/modules/ai/usage'
 import type {
   GlobalSearchHit,
   GlobalSearchLookup,
@@ -102,39 +100,14 @@ interface CodeApprovalRequest {
   irreversivel?: boolean
 }
 
-/** Totals for a slice of the usage log. `unpricedCalls` are calls with no price. */
-/** Safe AI config that can cross IPC; credentials are accepted but never returned. */
+/** Agent settings that cross IPC. No API key exists in this shape, in either direction. */
 interface PublicAIConfig {
-  baseUrl: string
-  apiKey?: string
-  hasApiKey?: boolean
-  model: string
-  providerProfiles?: {
-    id: string
-    name: string
-    kind: 'api'
-    provider?: 'openai' | 'anthropic' | 'custom'
-    baseUrl: string
-    model: string
-    modelComplex?: string
-    hasApiKey?: boolean
-  }[]
-  activeProviderProfileId?: string
-  chatProvider?: 'api' | 'chatgpt'
   userName?: string
-  modelComplex?: string
   codeHarness?: 'codex' | 'claude-code' | 'opencode'
-  maxSteps?: number
-  inputPricePer1M?: number
-  outputPricePer1M?: number
-  timeoutMs?: number
-  lastConversationId?: string
   reasoningEffort?: 'low' | 'medium' | 'high'
+  [key: string]: unknown
 }
 import { electronAPI } from '@electron-toolkit/preload'
-// Node's randomUUID, not the WebCrypto global — the latter is only defined in a
-// secure context, which the preload can't count on.
-import { randomUUID } from 'crypto'
 
 /**
  * Public IPC bridge. `SagyouElectronAPI` below is derived from this value, so
@@ -255,46 +228,6 @@ export const api = {
       get: (): Promise<PublicAIConfig> => ipcRenderer.invoke('ai:config:get'),
       set: (config: PublicAIConfig): Promise<void> => ipcRenderer.invoke('ai:config:set', config)
     },
-    chatgpt: {
-      session: () => ipcRenderer.invoke('ai:chatgpt:session'),
-      profiles: () => ipcRenderer.invoke('ai:chatgpt:profiles'),
-      signIn: (newProfile = false) => ipcRenderer.invoke('ai:chatgpt:sign-in', newProfile),
-      select: (profileId: string) => ipcRenderer.invoke('ai:chatgpt:select', profileId),
-      disconnect: () => ipcRenderer.invoke('ai:chatgpt:disconnect'),
-      models: () => ipcRenderer.invoke('ai:chatgpt:models'),
-      manageUsage: () => ipcRenderer.invoke('ai:chatgpt:manage-usage'),
-      stream: (
-        request: {
-          streamId: string
-          model: string
-          reasoningEffort?: 'low' | 'medium' | 'high'
-          messages: { role: 'system' | 'user' | 'assistant'; content: string }[]
-        },
-        onDelta: (chunk: string) => void
-      ) => {
-        const handler = (
-          _: Electron.IpcRendererEvent,
-          payload: { streamId: string; delta?: string }
-        ): void => {
-          if (payload.streamId === request.streamId && payload.delta) onDelta(payload.delta)
-        }
-        ipcRenderer.on('ai:chat:delta', handler)
-        return ipcRenderer
-          .invoke('ai:chatgpt:stream', request)
-          .finally(() => ipcRenderer.removeListener('ai:chat:delta', handler))
-      }
-    },
-    // Spend tracking: per-call log kept by the main process (ai-usage-log.json).
-    usage: {
-      summary: (): Promise<UsageSummary> => ipcRenderer.invoke('ai:usage:summary')
-    },
-    // Per-run efficiency metrics, aggregated by the main process for comparing
-    // models over time (ai-run-metrics.json). append is best-effort bookkeeping.
-    runMetrics: {
-      append: (input: RunMetricInput): Promise<void> =>
-        ipcRenderer.invoke('ai:run-metrics:append', input),
-      summary: (): Promise<RunMetricsSummary> => ipcRenderer.invoke('ai:run-metrics:summary')
-    },
     // Durable memory: facts the assistant carries across chats (kanban.db,
     // outside persistAll). save scrubs secrets; prune archives cold pages.
     memory: {
@@ -353,86 +286,6 @@ export const api = {
           timestamp: string
         }[]
       > => ipcRenderer.invoke('ai:lineage:list', entityType, entityId)
-    },
-    // Lists the provider's models (GET /models) through the main process.
-    models: (
-      request?:
-        | string
-        | {
-            profileId?: string
-            draft?: {
-              baseUrl: string
-              apiKey?: string
-              provider?: 'openai' | 'anthropic' | 'custom'
-            }
-          }
-    ): Promise<{ success: boolean; models?: string[]; error?: string }> =>
-      ipcRenderer.invoke('ai:models', request),
-    // Proxies an OpenAI-compatible /chat/completions call through the main
-    // process (avoids CORS, keeps the API key out of the renderer). Supports
-    // tool calling so the renderer can drive an agent loop.
-    chat: (request: {
-      messages: {
-        role: 'system' | 'user' | 'assistant' | 'tool'
-        content: string | unknown[]
-        tool_calls?: unknown[]
-        tool_call_id?: string
-      }[]
-      tools?: unknown[]
-      model?: string
-      profileId?: string
-      reasoningEffort?: 'low' | 'medium' | 'high'
-    }): Promise<{
-      success: boolean
-      message?: { role: 'assistant'; content: string; tool_calls?: unknown[] }
-      error?: string
-      /** Provider HTTP status, when the call reached one. Drives retry policy. */
-      status?: number
-      usage?: { promptTokens: number; completionTokens: number }
-    }> => ipcRenderer.invoke('ai:chat', request),
-    // Streaming variant of `chat`: onDelta fires for each text chunk as the
-    // model produces it; the promise resolves with the complete message. The
-    // streamId keeps concurrent calls from crossing wires.
-    chatStream: (
-      request: {
-        messages: {
-          role: 'system' | 'user' | 'assistant' | 'tool'
-          content: string | unknown[]
-          tool_calls?: unknown[]
-          tool_call_id?: string
-        }[]
-        tools?: unknown[]
-        model?: string
-        profileId?: string
-        reasoningEffort?: 'low' | 'medium' | 'high'
-      },
-      onDelta: (chunk: string) => void,
-      /** A tool call the model is composing right now, named before its args land. */
-      onTool?: (index: number, name: string) => void
-    ): Promise<{
-      success: boolean
-      message?: { role: 'assistant'; content: string; tool_calls?: unknown[] }
-      error?: string
-      /** Provider HTTP status, when the call reached one. Drives retry policy. */
-      status?: number
-      usage?: { promptTokens: number; completionTokens: number }
-    }> => {
-      const streamId = randomUUID()
-      const handler = (
-        _: Electron.IpcRendererEvent,
-        payload: { streamId: string; delta?: string; tool?: { index: number; name: string } }
-      ): void => {
-        if (payload.streamId !== streamId) return
-        // One channel, two kinds of event, so each field is checked before use:
-        // a tool payload carries no `delta`, and passing that straight through
-        // would append the string "undefined" to the answer.
-        if (payload.delta) onDelta(payload.delta)
-        if (payload.tool) onTool?.(payload.tool.index, payload.tool.name)
-      }
-      ipcRenderer.on('ai:chat:delta', handler)
-      return ipcRenderer
-        .invoke('ai:chat:stream', { ...request, streamId })
-        .finally(() => ipcRenderer.removeListener('ai:chat:delta', handler))
     },
     // Native code agent (the loop in ./code-agent). N concurrent runs can be
     // active in different directories.
@@ -736,29 +589,6 @@ export const api = {
       ): Promise<{ content: string; url: string; truncated: boolean } | { error: string }> =>
         ipcRenderer.invoke('ai:web:fetch', url, render)
     },
-    // Images pasted into the chat: stored as files by the main process, which
-    // hands back an id. The transcript keeps ids, never the bytes.
-    images: {
-      save: (dataUrl: string): Promise<{ id: string } | { error: string }> =>
-        ipcRenderer.invoke('ai:images:save', dataUrl),
-      get: (id: string): Promise<{ dataUrl: string } | { error: string }> =>
-        ipcRenderer.invoke('ai:images:get', id),
-      delete: (ids: string[]): Promise<void> => ipcRenderer.invoke('ai:images:delete', ids)
-    },
-    // Documents attached to the chat: the renderer sends raw bytes; main saves,
-    // parses, and returns the extracted text so it can be sent inline in the user
-    // message — no tool call consumed.
-    documents: {
-      save: (
-        name: string,
-        ext: string,
-        data: number[]
-      ): Promise<
-        | { id: string; name: string; ext: string; size: number; text: string; truncated: boolean }
-        | { error: string }
-      > => ipcRenderer.invoke('ai:documents:save', name, ext, data),
-      delete: (ids: string[]): Promise<void> => ipcRenderer.invoke('ai:documents:delete', ids)
-    },
     // Read a project file (uploaded via FilesView) and return its parsed text.
     projectFile: {
       read: (
@@ -778,83 +608,6 @@ export const api = {
       delete: (name: string): Promise<void> => ipcRenderer.invoke('ai:skills:delete', name),
       import: (): Promise<{ skill: Skill } | { error: string }> =>
         ipcRenderer.invoke('ai:skills:import')
-    },
-    // Persisted chat history (ai-conversations.json in userData).
-    conversations: {
-      list: (): Promise<
-        {
-          id: string
-          title: string
-          createdAt: string
-          updatedAt: string
-          projectId?: string | null
-        }[]
-      > => ipcRenderer.invoke('ai:conversations:list'),
-      // Filters by title or by anything said in the chat; '' returns everything.
-      search: (
-        term: string
-      ): Promise<
-        { id: string; title: string; createdAt: string; updatedAt: string; snippet?: string }[]
-      > => ipcRenderer.invoke('ai:conversations:search', term),
-      get: (
-        id: string
-      ): Promise<{
-        id: string
-        title: string
-        createdAt: string
-        updatedAt: string
-        projectId?: string | null
-        messages: {
-          role: 'user' | 'assistant' | 'status'
-          content: string
-          imageIds?: string[]
-          documentIds?: string[]
-        }[]
-        usage?: { promptTokens: number; completionTokens: number }
-      } | null> => ipcRenderer.invoke('ai:conversations:get', id),
-      // Names a chat by hand; the autosave's derived title stops applying to it.
-      rename: (id: string, title: string): Promise<{ title?: string; error?: string }> =>
-        ipcRenderer.invoke('ai:conversations:rename', id, title),
-      save: (conv: {
-        id: string
-        title: string
-        messages: {
-          role: 'user' | 'assistant' | 'status'
-          content: string
-          imageIds?: string[]
-          documentIds?: string[]
-        }[]
-        usage?: { promptTokens: number; completionTokens: number }
-        connection?: {
-          provider: 'api' | 'chatgpt'
-          profileId?: string
-          model: string
-          reasoningEffort?: 'low' | 'medium' | 'high'
-        }
-        projectId?: string | null
-      }): Promise<void> => ipcRenderer.invoke('ai:conversations:save', conv),
-      delete: (id: string): Promise<{ ok?: true; error?: string }> =>
-        ipcRenderer.invoke('ai:conversations:delete', id),
-      all: (): Promise<
-        {
-          id: string
-          title: string
-          createdAt: string
-          updatedAt: string
-          projectId?: string | null
-          messages: { role: 'user' | 'assistant' | 'status'; content: string }[]
-        }[]
-      > => ipcRenderer.invoke('ai:conversations:all'),
-      replace: (
-        list: {
-          id: string
-          title: string
-          createdAt: string
-          updatedAt: string
-          projectId?: string | null
-          messages: { role: 'user' | 'assistant' | 'status'; content: string }[]
-        }[]
-      ): Promise<void> => ipcRenderer.invoke('ai:conversations:replace', list)
     }
   },
   files: {

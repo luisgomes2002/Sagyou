@@ -2,7 +2,7 @@
  * @vitest-environment node
  */
 import { describe, it, expect } from 'vitest'
-import { decodeDataUrl, mimeForExt, isImageFileName, MAX_IMAGE_BYTES } from '../modules/conversations/chat-images'
+import { decodeDataUrl, mimeForExt, MAX_IMAGE_BYTES } from '../modules/files/image-files'
 
 const b64 = (s: string): string => Buffer.from(s).toString('base64')
 const png = `data:image/png;base64,${b64('fake png bytes')}`
@@ -46,30 +46,6 @@ describe('decodeDataUrl', () => {
 
   it('refuses an empty payload', () => {
     expect(decodeDataUrl('data:image/png;base64,')).toHaveProperty('error')
-  })
-})
-
-describe('isImageFileName', () => {
-  it('accepts an id this app minted', () => {
-    expect(isImageFileName('123e4567-e89b-12d3-a456-426614174000.png')).toBe(true)
-    expect(isImageFileName('123e4567-e89b-12d3-a456-426614174000.webp')).toBe(true)
-  })
-
-  it('refuses a path pretending to be an id', () => {
-    // The id comes back from the renderer to read or delete a file — it is a
-    // path in disguise, and this is what stops it escaping chat-images/.
-    for (const bad of [
-      '../../ai-config.json',
-      '../ai-conversations.json',
-      '/etc/passwd',
-      'chat-images/../../secret.txt',
-      '123e4567-e89b-12d3-a456-426614174000.png/../../x',
-      'not-a-uuid.png',
-      '',
-      null
-    ]) {
-      expect(isImageFileName(bad)).toBe(false)
-    }
   })
 })
 

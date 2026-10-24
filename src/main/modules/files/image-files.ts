@@ -1,13 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, readFileSync, unlinkSync } from 'node:fs'
 
-// Images pasted into the chat. No Electron here, so the parsing rules are
-// testable on their own; index.ts owns the directory.
-//
-// They live as files under userData/chat-images rather than inline in
-// ai-conversations.json: that file is re-read and rewritten whole on every
-// autosave and on every keystroke of the history search, so a few screenshots
-// inlined as base64 would drag both down for the rest of the app's life.
+// Task attachment images. No Electron here, so the parsing rules are testable
+// on their own; the handlers own the directory (userData/task-images).
 
 /** Formats worth sending to a vision model. */
 const ALLOWED = new Map([
@@ -61,43 +55,6 @@ export function decodeDataUrl(dataUrl: unknown): DecodedImage | { error: string 
 export function mimeForExt(ext: string): string {
   for (const [mime, e] of ALLOWED) if (e === ext) return mime
   return 'application/octet-stream'
-}
-
-/**
- * Whether `name` is one of ours: `<uuid>.<ext>` and nothing else.
- *
- * The id comes back from the renderer to read or delete a file, so it is a
- * path in disguise — "../../../../ai-config.json" must not resolve to anything.
- */
-export function isImageFileName(name: unknown): name is string {
-  return typeof name === 'string' && /^[0-9a-f-]{36}\.[a-z]{3,4}$/i.test(name)
-}
-
-// --- Shared helpers for chat + task image handlers ---
-
-/**
- * Decode a data URL and write the bytes to disk inside `dir`. The caller
- * provides a `makeId` function that receives the decoded image and returns the
- * object to send back to the renderer (the "id" field is always the filename).
- *
- * Used by both `ai:images:save` and `task:images:save`, which differ only in
- * their naming convention and return shape.
- */
-export function saveImageToDir(
-  dir: string,
-  dataUrl: string,
-  makeId: (decoded: DecodedImage) => { id: string; [k: string]: unknown }
-): { error: string } | { id: string; [k: string]: unknown } {
-  const decoded = decodeDataUrl(dataUrl)
-  if ('error' in decoded) return decoded
-  try {
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-    const meta = makeId(decoded)
-    writeFileSync(join(dir, meta.id), decoded.bytes)
-    return meta
-  } catch (e) {
-    return { error: e instanceof Error ? e.message : 'Falha ao salvar a imagem' }
-  }
 }
 
 /**

@@ -1,5 +1,3 @@
-import type { StoredConversation } from './conversation-types'
-
 type RecordValue = Record<string, unknown>
 
 function isRecord(value: unknown): value is RecordValue {
@@ -16,30 +14,4 @@ export function normalizeLegacyAIConfig(value: unknown): RecordValue {
   // The native executor is retired; an old selection must not resurrect it.
   if (config.codeHarness === 'sagyou') config.codeHarness = 'codex'
   return config
-}
-
-/**
- * Keep legacy conversation records structurally intact. In particular, an
- * absent projectId remains absent because it has a documented legacy fallback.
- */
-export function normalizeLegacyConversations(value: unknown): StoredConversation[] {
-  if (!Array.isArray(value)) return []
-  return value
-    .filter(
-      (conversation): conversation is RecordValue =>
-        isRecord(conversation) &&
-        typeof conversation.id === 'string' &&
-        Array.isArray(conversation.messages)
-    )
-    .map((conversation) => ({
-      ...conversation,
-      messages: (conversation.messages as unknown[])
-        .filter(
-          (message): message is RecordValue =>
-            isRecord(message) &&
-            typeof message.role === 'string' &&
-            typeof message.content === 'string'
-        )
-        .map((message) => ({ ...message }))
-    })) as StoredConversation[]
 }

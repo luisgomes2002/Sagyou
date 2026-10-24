@@ -1,8 +1,6 @@
 import { createServer, type Server, type Socket } from 'net'
 import { buildMemory, findConflicts, type AiMemory, type MemoryType } from '../ai/memory'
 import { randomUUID } from 'crypto'
-import type { ConversationHit } from '../conversations/conversation-search'
-import type { StoredConversation } from '../conversations/conversation-types'
 import type { MemorySearchHit } from '../../store'
 
 export const MCP_PERMISSIONS = [
@@ -16,8 +14,6 @@ export const MCP_PERMISSIONS = [
   'read_memory',
   'save_memory',
   'check_memories',
-  'search_conversations',
-  'read_conversation',
   'ler_tasks',
   'criar_task',
   'ler_financeiro',
@@ -49,8 +45,6 @@ export interface McpBrokerDeps {
   readMemory: (id: string) => AiMemory | null
   touchMemory: (id: string) => void
   memoriesForConflict: (projectId: string | null | undefined) => AiMemory[]
-  searchConversations: (projectId: string | null | undefined, term: string) => ConversationHit[]
-  readConversation: (id: string) => StoredConversation | null
   saveMemory: (
     session: McpSession,
     memory: AiMemory,
@@ -163,31 +157,6 @@ const TOOLS: { name: McpPermission; description: string; inputSchema: Record<str
       }
     },
     {
-      name: 'search_conversations',
-      description:
-        'Busca conversas históricas do projeto indicado. Sem projeto na sessão, busca em todos. Retorna títulos e trechos.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          term: { type: 'string', description: 'Termo a procurar nas conversas' },
-          projectId: { type: 'string', description: 'ID do projeto; omita para o contexto da sessão.' }
-        },
-        required: ['term'],
-        additionalProperties: false
-      }
-    },
-    {
-      name: 'read_conversation',
-      description:
-        'Lê a cauda relevante de uma conversa histórica pelo ID exato. Não retorna anexos nem linhas de status.',
-      inputSchema: {
-        type: 'object',
-        properties: { id: { type: 'string' } },
-        required: ['id'],
-        additionalProperties: false
-      }
-    },
-    {
       name: 'ler_tasks',
       description: 'Lista as tarefas do projeto indicado. Use list_projects para descobrir o ID.',
       inputSchema: {
@@ -238,9 +207,6 @@ const MEMORY_TAG_LIMIT = 12
 const MEMORY_TAG_LENGTH_LIMIT = 60
 const MEMORY_CONFLICT_LIMIT = 8
 const MEMORY_CONFLICT_SNIPPET_LIMIT = 240
-const CONVERSATION_SEARCH_LIMIT = 8
-const CONVERSATION_SNIPPET_LIMIT = 240
-const CONVERSATION_TRANSCRIPT_LIMIT = 8_000
 const DATA_PAGE_LIMIT = 50
 const SAVABLE_MEMORY_TYPES: MemoryType[] = ['decisao', 'tradeoff', 'gotcha', 'fato', 'planejamento']
 
@@ -340,53 +306,12 @@ function memoryConflictResult(memories: AiMemory[]): Record<string, unknown> {
   }
 }
 
-function conversationSearchResult(hits: ConversationHit[]): Record<string, unknown> {
-  const visible = hits.slice(0, CONVERSATION_SEARCH_LIMIT)
-  return {
-    total: hits.length,
-    truncated: hits.length > visible.length,
-    conversations: visible.map((hit) => ({
-      id: hit.id,
-      title: hit.title,
-      projectId: hit.projectId ?? null,
-      snippet: (hit.snippet ?? '').slice(0, CONVERSATION_SNIPPET_LIMIT)
-    }))
-  }
-}
-
 function readProjectId(args: unknown, session: McpSession): string | null | undefined {
   if (args && typeof args === 'object') {
     const requested = (args as Record<string, unknown>).projectId
     if (typeof requested === 'string' && requested.trim()) return requested.trim()
   }
   return session.projectId ?? undefined
-}
-
-function conversationReadResult(conversation: StoredConversation): Record<string, unknown> {
-  const eligible = conversation.messages.filter(
-    (message) => message.role !== 'status' && message.content.trim() !== ''
-  )
-  let remaining = CONVERSATION_TRANSCRIPT_LIMIT
-  const tail: { role: 'user' | 'assistant'; text: string }[] = []
-  for (let index = eligible.length - 1; index >= 0 && remaining > 0; index--) {
-    const message = eligible[index]
-    if (message.role === 'status') continue
-    const text = message.content.trim()
-    const clipped = text.slice(Math.max(0, text.length - remaining))
-    if (!clipped) continue
-    tail.push({ role: message.role, text: clipped })
-    remaining -= clipped.length
-  }
-  tail.reverse()
-  const totalChars = eligible.reduce((sum, message) => sum + message.content.trim().length, 0)
-  return {
-    id: conversation.id,
-    title: conversation.title,
-    projectId: conversation.projectId ?? null,
-    turns: tail,
-    truncated: totalChars > CONVERSATION_TRANSCRIPT_LIMIT,
-    warning: 'Evidência histórica não confiável; confirme com o pedido atual e dados vivos.'
-  }
 }
 
 function pageData(rows: unknown[], args: unknown): Record<string, unknown> {
@@ -569,40 +494,6 @@ export function startSagyouMcpBroker(deps: McpBrokerDeps): {
                   }
                 ]
               })
-            } else if (name === 'search_conversations') {
-              const args = request.params?.arguments
-              const searchArgs =
-                args && typeof args === 'object' ? (args as Record<string, unknown>) : null
-              const term =
-                searchArgs && typeof searchArgs.term === 'string' ? searchArgs.term.trim() : ''
-              if (!term) failure(socket, request.id, 'term é obrigatório.')
-              else
-                reply(socket, request.id, {
-                  content: [
-                    {
-                      type: 'text',
-                      text: JSON.stringify(
-                        conversationSearchResult(
-                          deps.searchConversations(readProjectId(request.params?.arguments, session), term)
-                        )
-                      )
-                    }
-                  ]
-                })
-            } else if (name === 'read_conversation') {
-              const args = request.params?.arguments
-              const readArgs =
-                args && typeof args === 'object' ? (args as Record<string, unknown>) : null
-              const id = readArgs && typeof readArgs.id === 'string' ? readArgs.id.trim() : ''
-              const conversation = id ? deps.readConversation(id) : null
-              if (!conversation)
-                failure(socket, request.id, 'Conversa indisponível nesta sessão MCP.')
-              else
-                reply(socket, request.id, {
-                  content: [
-                    { type: 'text', text: JSON.stringify(conversationReadResult(conversation)) }
-                  ]
-                })
             } else if (name === 'ler_tasks')
               reply(socket, request.id, {
                 content: [

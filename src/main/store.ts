@@ -10,7 +10,7 @@ import {
   type AiMemory,
   type MemoryType
 } from './modules/ai/memory'
-import { decodeDataUrl } from './modules/conversations/chat-images'
+import { decodeDataUrl } from './modules/files/image-files'
 import { isDocumentExt, parseDocument } from './modules/files/document-parser'
 import {
   buildMemoryDocuments,

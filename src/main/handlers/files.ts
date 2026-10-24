@@ -4,17 +4,10 @@ import { existsSync, mkdirSync, copyFileSync, unlinkSync, statSync, writeFileSyn
 import { randomUUID } from 'crypto'
 import { attachmentPath, safeAttachmentName } from '../modules/files/backup-files'
 import {
-  isImageFileName,
-  saveImageToDir,
   readImageAsDataUrl,
   deleteImageFiles,
   decodeDataUrl
-} from '../modules/conversations/chat-images'
-import {
-  isChatFileName,
-  saveAndParseChatFile,
-  deleteChatFiles
-} from '../modules/conversations/chat-files'
+} from '../modules/files/image-files'
 import { isDocumentExt, parseDocument } from '../modules/files/document-parser'
 import { indexProjectFileContent, loadData, removeProjectFileSearchContent } from '../store'
 import type { BrowserWindow, Dialog, Shell } from 'electron'
@@ -24,8 +17,6 @@ interface Deps {
   dialog: Dialog
   shell: Shell
   filesDir: string
-  chatImagesDir: string
-  chatFilesDir: string
   taskImagesDir: string
   userDataPath: string
   sep: string
@@ -35,7 +26,7 @@ export function registerFilesHandlers(
   ipcMain: IpcMain,
   deps: Deps
 ): void {
-  const { dialog: dlg, shell: sh, filesDir, chatImagesDir, chatFilesDir, taskImagesDir, userDataPath: _, sep } = deps
+  const { dialog: dlg, shell: sh, filesDir, taskImagesDir, userDataPath: _, sep } = deps
   // A just-uploaded file returns to the renderer before its debounced store
   // save reaches SQLite. Keep those known names for this process, then fall
   // back to the persisted metadata for files from earlier sessions.
@@ -146,31 +137,6 @@ export function registerFilesHandlers(
     }
   })
 
-  // --- Chat images ---
-
-  const chatImagePath = (id: unknown): string | null => {
-    if (!isImageFileName(id)) return null
-    const full = join(chatImagesDir, id)
-    return full.startsWith(chatImagesDir + sep) ? full : null
-  }
-
-  ipcMain.handle('ai:images:save', (_, dataUrl: string) =>
-    saveImageToDir(chatImagesDir, dataUrl, (decoded) => ({
-      id: `${randomUUID()}.${decoded.ext}`
-    }))
-  )
-
-  ipcMain.handle('ai:images:get', (_, id: string) => {
-    const full = chatImagePath(id)
-    const ext = typeof id === 'string' ? id.split('.').pop() ?? '' : ''
-    return readImageAsDataUrl(full, ext)
-  })
-
-  ipcMain.handle('ai:images:delete', (_, ids: string[]) => {
-    if (!Array.isArray(ids)) return
-    deleteImageFiles(ids.map((id) => chatImagePath(id)))
-  })
-
   // --- Task images ---
 
   const taskImagePath = (id: unknown, ext: unknown): string | null => {
@@ -202,36 +168,6 @@ export function registerFilesHandlers(
   ipcMain.handle('task:images:delete', (_, items: { id: string; ext: string }[]) => {
     if (!Array.isArray(items)) return
     deleteImageFiles(items.map((it) => taskImagePath(it?.id, it?.ext)))
-  })
-
-  // --- Chat documents ---
-
-  const chatFilePath = (id: unknown): string | null => {
-    if (!isChatFileName(id)) return null
-    const full = join(chatFilesDir, id)
-    return full.startsWith(chatFilesDir + sep) ? full : null
-  }
-
-  ipcMain.handle('ai:documents:save', async (_, name: string, ext: string, data: number[]) => {
-    if (typeof name !== 'string' || typeof ext !== 'string' || !Array.isArray(data)) {
-      return { error: 'Dados inválidos' }
-    }
-    if (!isDocumentExt(ext)) {
-      return { error: `Tipo de arquivo não suportado: ${ext}` }
-    }
-    const result = await saveAndParseChatFile(
-      chatFilesDir,
-      name,
-      ext,
-      new Uint8Array(data),
-      () => `${randomUUID()}${ext}`
-    )
-    return result
-  })
-
-  ipcMain.handle('ai:documents:delete', (_, ids: string[]) => {
-    if (!Array.isArray(ids)) return
-    deleteChatFiles(ids.map((id) => chatFilePath(id)))
   })
 
   // --- Project file reading (for the ler_documento tool) ---

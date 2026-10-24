@@ -9,7 +9,6 @@ import {
   BrowserWindow,
   ipcMain,
   dialog,
-  safeStorage,
   type IpcMain,
   type IpcMainEvent,
   type IpcMainInvokeEvent
@@ -34,7 +33,6 @@ import { promisify } from 'util'
 import { readFile } from 'fs/promises'
 const execFileAsync = promisify(execFile)
 import { randomBytes, randomUUID } from 'crypto'
-import type { StoredConversation } from './modules/conversations/conversation-types'
 import { CodeRunCoordinator } from './modules/agent/code-run-coordinator'
 import { McpWriteQueue, RendererMcpActionBridge } from './modules/agent/mcp-write-queue'
 import { AgentSessionRegistry } from './modules/agent/agent-session'
@@ -54,8 +52,6 @@ import { CODE_EXECUTOR_MCP_PERMISSIONS, prepareAgentMcpSession } from './modules
 import { buildExternalAgentBrief, scrubExternalBriefSecrets } from './modules/agent/agent-briefing'
 import { buildTerminalHandoff } from './modules/agent/terminal-handoff'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import OpenAI from 'openai'
-import type { ChatGPTClient } from '@siwc/local'
 import {
   loadData,
   saveData,
@@ -70,32 +66,15 @@ import {
 } from './store'
 import {
   runLegacyChatRemoval,
-  stripAiConfigFile
+  stripAiConfigFile,
+  stripLegacyApiConfig
 } from './modules/ai/legacy-chat-removal'
 import { registerLegacyChatHandlers, startLegacyChatRemoval } from './handlers/legacy-chat'
 import * as memoryStore from './store'
-import { listMemories } from './store'
 import * as memoryRules from './modules/ai/memory'
 import { registerMemoryHandlers } from './handlers/memory'
-import { appendEntry, newEntry, type TokenUsage, type UsageLogEntry } from './modules/ai/usage'
-import {
-  appendRunMetric,
-  newRunMetric,
-  summarizeRunMetrics,
-  type RunMetric,
-  type RunMetricInput
-} from './modules/ai/run-metrics'
-import {
-  getOpenAIClient,
-  requestOptions,
-  resolveTimeoutMs,
-  type ApiProvider
-} from './modules/ai/openai-client'
 import { confineToRoot } from './modules/code/code-files'
 import * as codeFiles from './modules/code/code-files'
-import {
-  searchConversations
-} from './modules/conversations/conversation-search'
 import { fetchWeb } from './modules/web/web-fetch'
 import { renderWeb } from './modules/web/web-render'
 import { getExchangeRate } from './modules/financial/financial-exchange'
@@ -124,9 +103,8 @@ import {
 import { createManagedWindow, registerWindowHandlers, type ManagedWindow } from './handlers/window'
 import { registerFilesHandlers } from './handlers/files'
 import { registerBackupHandlers } from './handlers/backup'
-import { normalizeLegacyAIConfig, normalizeLegacyConversations } from './modules/conversations/legacy-ai-data'
+import { normalizeLegacyAIConfig } from './modules/conversations/legacy-ai-data'
 import { registerCodeFilesHandlers } from './handlers/code-files'
-import { registerConversationHandlers } from './handlers/conversations'
 import {
   createPasswordConfig,
   parsePasswordConfig,
@@ -251,22 +229,6 @@ const sagyouMcp = startSagyouMcpBroker({
     projectId === undefined
       ? memoryStore.listMemories()
       : memoryStore.memoriesForContext(projectId),
-  searchConversations: (projectId, term) => {
-    const scoped = loadConversations().filter((conversation) =>
-      projectId === undefined
-        ? true
-        : projectId === null
-          ? conversation.projectId == null
-          : conversation.projectId === projectId
-    )
-    const projectById = new Map(scoped.map((conversation) => [conversation.id, conversation.projectId]))
-    return searchConversations(scoped, term).map((hit) => ({
-      ...hit,
-      projectId: projectById.get(hit.id) ?? null
-    }))
-  },
-  readConversation: (id) =>
-    loadConversations().find((conversation) => conversation.id === id) ?? null,
   saveMemory: async (session, memory, redacted) => {
     const outcome = await mcpWriteQueue.enqueue(
       {
@@ -357,7 +319,7 @@ interface CodeRunState {
   hint: AgentHint | null
   model: string
   /** Tokens accumulated across this run's model calls. */
-  usage: TokenUsage
+  usage: { promptTokens: number; completionTokens: number }
   step: number
   maxSteps: number
   /** Approvals the loop is waiting on, keyed by request id. */
@@ -744,166 +706,26 @@ function buildTerminalHarnessLaunch(
 ): ExternalHarnessLaunch {
   return buildHarnessLaunch(harness, task, cwd)
 }
+/**
+ * Agent settings only. The generic chat's API connection keys are gone for
+ * good; unknown keys still ride along untouched so an older or newer build's
+ * field is never lost by a rewrite.
+ */
 interface AIConfig {
-  baseUrl: string
-  apiKey: string
-  model: string
-  /** Named API connections make key/model switching explicit and reversible. */
-  providerProfiles?: {
-    id: string
-    name: string
-    kind: 'api'
-    /** Missing on old profiles means a generic OpenAI-compatible endpoint. */
-    provider?: ApiProvider
-    baseUrl: string
-    apiKey: string
-    model: string
-    /** Optional stronger model for analysis/code requests in this profile. */
-    modelComplex?: string
-  }[]
-  activeProviderProfileId?: string
-  /** Stops an intentionally deleted imported profile from being recreated. */
-  legacyProfileMigrated?: boolean
-  chatProvider?: 'api' | 'chatgpt'
-  /** Preferred form of address for replies from the assistant. */
+  /** Preferred form of address, shown on the lock screen. */
   userName?: string
-  /**
-   * Optional heavier model for code/analysis tasks. When set, runAgent routes a
-   * message that looks like one (see routeModel in ../renderer/src/ai/agent) to
-   * this model and leaves the cheaper `model` for everything else. Absent means
-   * "one model for everything", the previous behaviour.
-   */
-  modelComplex?: string
-  /** Optional cap on the agent's tool rounds; absent means the per-mode default. */
-  maxSteps?: number
-  /**
-   * USD per 1M tokens, as charged by whatever provider is configured. There is
-   * no sane default: the same app talks to OpenAI and to a free local model, so
-   * a built-in price table would invent a number. Absent = show tokens only.
-   */
-  inputPricePer1M?: number
-  outputPricePer1M?: number
-  /**
-   * How long to wait for the model to start responding, in ms. Absent = the
-   * default in ./openai-client (the SDK's own 10min is effectively a hang).
-   */
-  timeoutMs?: number
-  /**
-   * The conversation the user last had open, reopened when they come back to
-   * the AI view. UI state rather than provider config, but it lives here to
-   * ride the ai:config plumbing instead of earning a file of its own.
-   */
-  lastConversationId?: string
   /** Historic native selections load as the Codex default. */
   codeHarness?: HarnessId
-  /**
-   * DeepSeek reasoning_effort parameter. Controls how much reasoning the model
-   * does before answering. One of 'low', 'medium', 'high'. Applied to every
-   * model call (chat and code agent) when set.
-   */
   reasoningEffort?: 'low' | 'medium' | 'high'
+  [key: string]: unknown
 }
 
-const DEFAULT_AI_CONFIG: AIConfig = { baseUrl: '', apiKey: '', model: '' }
-
-function publicAIConfig(config: AIConfig): Omit<AIConfig, 'apiKey' | 'providerProfiles'> & {
-  providerProfiles?: Array<
-    Omit<NonNullable<AIConfig['providerProfiles']>[number], 'apiKey'> & { hasApiKey: boolean }
-  >
-  hasApiKey: boolean
-} {
-  const { apiKey: _apiKey, providerProfiles, ...rest } = config
-  return {
-    ...rest,
-    hasApiKey: Boolean(_apiKey),
-    providerProfiles: providerProfiles?.map(({ apiKey, ...profile }) => ({
-      ...profile,
-      hasApiKey: Boolean(apiKey)
-    }))
-  }
+/** The only shape this process ever hands out or writes: no API-chat keys. */
+function agentOnlyConfig(value: unknown): AIConfig {
+  return stripLegacyApiConfig(normalizeLegacyAIConfig(value)).config as AIConfig
 }
 
-/** Keep an existing credential when the renderer submits its intentionally blank value. */
-function mergeAIConfigSecrets(next: AIConfig, previous: AIConfig): AIConfig {
-  const previousProfiles = new Map((previous.providerProfiles ?? []).map((p) => [p.id, p]))
-  const profiles = next.providerProfiles
-  return {
-    ...next,
-    apiKey: next.apiKey || previous.apiKey,
-    providerProfiles: profiles?.map((profile) => ({
-      ...profile,
-      apiKey: profile.apiKey || previousProfiles.get(profile.id)?.apiKey || ''
-    }))
-  }
-}
-
-/** Resolve the selected API connection entirely in main, where its key stays. */
-function resolveChatConfig(
-  cfg: AIConfig,
-  profileId?: string
-): {
-  baseUrl: string
-  apiKey: string
-  model: string
-  provider: ApiProvider
-} {
-  const active = cfg.providerProfiles?.find(
-    (profile) => profile.id === (profileId ?? cfg.activeProviderProfileId)
-  )
-  if (profileId && !active) throw new Error('Perfil de API não encontrado')
-  return active
-    ? {
-        baseUrl: active.baseUrl,
-        apiKey: active.apiKey,
-        model: active.model,
-        provider: active.provider ?? 'custom'
-      }
-    : { baseUrl: '', apiKey: '', model: '', provider: 'custom' }
-}
 const aiConfigPath = (): string => join(app.getPath('userData'), 'ai-config.json')
-
-let chatGPT: ChatGPTClient | null = null
-let siwcModule: Promise<typeof import('@siwc/local')> | null = null
-
-/**
- * electron-vite emits the main process as CommonJS while the official DevKit is
- * ESM-only. A native dynamic import must stay intact at runtime; TypeScript's
- * `import()` expression would otherwise be rewritten to `require()` here.
- */
-function loadSiwc(): Promise<typeof import('@siwc/local')> {
-  siwcModule ??= new Function('specifier', 'return import(specifier)')('@siwc/local') as Promise<
-    typeof import('@siwc/local')
-  >
-  return siwcModule
-}
-
-/**
- * SIWC owns OAuth, PKCE, loopback and refresh. Electron's OS-backed crypto is
- * the only credential-encryption provider accepted here; never fall back to a
- * plaintext file when the platform keychain is unavailable.
- */
-async function getChatGPT(): Promise<ChatGPTClient> {
-  if (chatGPT) return chatGPT
-  if (!safeStorage.isEncryptionAvailable()) {
-    throw new Error('O armazenamento protegido do sistema não está disponível.')
-  }
-  const { createChatGPT } = await loadSiwc()
-  chatGPT = createChatGPT({
-    appName: 'Sagyou',
-    appId: 'sagyou',
-    redirectPort: 0,
-    storageDir: join(app.getPath('userData'), 'chatgpt'),
-    sendHostId: true,
-    credentialEncryption: {
-      id: 'electron-safe-storage-v1',
-      isAvailable: () => safeStorage.isEncryptionAvailable(),
-      encrypt: (plaintext) => safeStorage.encryptString(plaintext),
-      decrypt: (ciphertext) => safeStorage.decryptString(Buffer.from(ciphertext))
-    },
-    openBrowser: (url) => shell.openExternal(url)
-  })
-  return chatGPT
-}
 
 // Password protection is intentionally separate from the data and backup formats:
 // importing a backup must never silently replace the credential that protects this machine.
@@ -937,180 +759,32 @@ function passwordStatus(): { enabled: boolean; corrupt: boolean; userName?: stri
   }
 }
 
-/**
- * The provider's HTTP status off an SDK error, when there was a response at all.
- * The renderer needs it to tell a transient failure (429/5xx — worth retrying)
- * from a permanent one (401/400 — retrying just delays the real message).
- * Undefined means the call never got a response: DNS, refused connection, etc.
- */
-function errorStatus(e: unknown): number | undefined {
-  const status = (e as { status?: unknown })?.status
-  return typeof status === 'number' ? status : undefined
-}
-
-/** The provider's usage block, normalised. Absent when it didn't report one. */
-function toUsage(
-  raw:
-    | {
-        prompt_tokens?: number
-        completion_tokens?: number
-        prompt_cache_hit_tokens?: number // DeepSeek
-        prompt_tokens_details?: { cached_tokens?: number } // OpenAI
-        completion_tokens_details?: { reasoning_tokens?: number } // DeepSeek reasoning
-        reasoning_tokens?: number // some providers at top level
-      }
-    | undefined
-    | null
-): TokenUsage | undefined {
-  if (!raw) return undefined
-  const promptTokens = typeof raw.prompt_tokens === 'number' ? raw.prompt_tokens : 0
-  const completionTokens = typeof raw.completion_tokens === 'number' ? raw.completion_tokens : 0
-  if (promptTokens === 0 && completionTokens === 0) return undefined
-  const cachedPromptTokens =
-    typeof raw.prompt_cache_hit_tokens === 'number'
-      ? raw.prompt_cache_hit_tokens
-      : typeof raw.prompt_tokens_details?.cached_tokens === 'number'
-        ? raw.prompt_tokens_details?.cached_tokens
-        : undefined
-  // DeepSeek returns reasoning tokens nested in completion_tokens_details;
-  // some providers put them at top level. Either is fine.
-  const reasoningTokens =
-    typeof raw.completion_tokens_details?.reasoning_tokens === 'number'
-      ? raw.completion_tokens_details.reasoning_tokens
-      : typeof raw.reasoning_tokens === 'number'
-        ? raw.reasoning_tokens
-        : undefined
-  return { promptTokens, completionTokens, cachedPromptTokens, reasoningTokens }
-}
-
-/** Expose old top-level API settings as an ordinary profile without discarding them. */
-function withImportedAIProfile(config: AIConfig): AIConfig {
-  const profiles = Array.isArray(config.providerProfiles) ? config.providerProfiles : []
-  const hasOldConnection = Boolean(config.baseUrl?.trim() && config.model?.trim())
-  const matching = profiles.find(
-    (profile) =>
-      profile.baseUrl === config.baseUrl &&
-      profile.apiKey === config.apiKey &&
-      profile.model === config.model &&
-      profile.modelComplex === config.modelComplex
-  )
-  let imported: NonNullable<AIConfig['providerProfiles']>[number] | undefined
-  if (hasOldConnection && !config.legacyProfileMigrated && !matching) {
-    let id = 'legacy'
-    while (profiles.some((profile) => profile.id === id)) id += '-original'
-    imported = {
-      id,
-      name: 'Minha API',
-      kind: 'api',
-      baseUrl: config.baseUrl,
-      apiKey: config.apiKey,
-      model: config.model,
-      modelComplex: config.modelComplex
-    }
-  }
-  const nextProfiles = imported ? [...profiles, imported] : profiles
-  const activeProviderProfileId = nextProfiles.some(
-    (profile) => profile.id === config.activeProviderProfileId
-  )
-    ? config.activeProviderProfileId
-    : (imported?.id ?? matching?.id ?? nextProfiles[0]?.id)
-  return {
-    ...config,
-    legacyProfileMigrated: true,
-    providerProfiles: nextProfiles,
-    activeProviderProfileId
+function readAIConfigFile(): AIConfig {
+  try {
+    return agentOnlyConfig(JSON.parse(readFileSync(aiConfigPath(), 'utf-8')))
+  } catch {
+    return {}
   }
 }
 
 function loadAIConfig(): AIConfig {
-  try {
-    return withImportedAIProfile({
-      ...DEFAULT_AI_CONFIG,
-      ...normalizeLegacyAIConfig(JSON.parse(readFileSync(aiConfigPath(), 'utf-8')))
-    })
-  } catch {
-    return withImportedAIProfile({ ...DEFAULT_AI_CONFIG })
-  }
+  return readAIConfigFile()
 }
 
-function saveAIConfig(config: AIConfig): void {
-  const merged = withImportedAIProfile(mergeAIConfigSecrets(config, loadAIConfig()))
+/**
+ * Merge over what is on disk so a key this build does not know survives, and
+ * drop every API-chat key from both sides: none may be accepted or persisted.
+ */
+function saveAIConfig(config: unknown): void {
+  const merged = { ...readAIConfigFile(), ...agentOnlyConfig(config) }
   const userName =
     typeof merged.userName === 'string' ? merged.userName.trim().slice(0, 80) : undefined
   writeFileSync(
     aiConfigPath(),
-    JSON.stringify(
-      { ...merged, legacyProfileMigrated: true, userName: userName || undefined },
-      null,
-      2
-    ),
+    JSON.stringify({ ...merged, userName: userName || undefined }, null, 2),
     'utf-8'
   )
 }
-
-// --- AI usage log (persisted to ai-usage-log.json in userData) ---
-//
-// Written here rather than in the renderer because every model call funnels
-// through this process: a log kept anywhere else could be bypassed by a caller
-// that forgets to report. The rules live in ./usage (no Electron, so testable);
-// this only does the file IO.
-
-const aiUsagePath = (): string => join(app.getPath('userData'), 'ai-usage-log.json')
-
-function loadUsageLog(): UsageLogEntry[] {
-  try {
-    const data = JSON.parse(readFileSync(aiUsagePath(), 'utf-8'))
-    return Array.isArray(data) ? data : []
-  } catch {
-    return []
-  }
-}
-
-/** Record one billed call. Never throws: losing the log must not fail the chat. */
-function appendUsage(model: string, usage: TokenUsage, cfg: AIConfig): void {
-  try {
-    const next = appendEntry(loadUsageLog(), newEntry(model, usage, cfg))
-    writeFileSync(aiUsagePath(), JSON.stringify(next), 'utf-8')
-  } catch {
-    /* the log is bookkeeping; a failure here must not break the answer */
-  }
-}
-
-// --- AI run metrics (persisted to ai-run-metrics.json in userData) ---
-//
-// Per-run efficiency, sent up by the renderer's agent loop (which is the only
-// place that can count redundant searches and repeated reads). Rules live in
-// ./run-metrics (no Electron, so testable); this only does the file IO.
-
-const aiRunMetricsPath = (): string => join(app.getPath('userData'), 'ai-run-metrics.json')
-
-function loadRunMetrics(): RunMetric[] {
-  try {
-    const data = JSON.parse(readFileSync(aiRunMetricsPath(), 'utf-8'))
-    return Array.isArray(data) ? data : []
-  } catch {
-    return []
-  }
-}
-
-/** Record one finished run. Never throws: metrics are bookkeeping, not the answer. */
-function appendRunMetricIO(input: RunMetricInput): void {
-  try {
-    const next = appendRunMetric(loadRunMetrics(), newRunMetric(input))
-    writeFileSync(aiRunMetricsPath(), JSON.stringify(next), 'utf-8')
-  } catch {
-    /* losing a metric must not affect anything the user sees */
-  }
-}
-
-// --- Chat images (files under userData/chat-images) ---
-
-const chatImagesDir = (): string => join(app.getPath('userData'), 'chat-images')
-
-// --- Chat documents (files under userData/chat-files) ---
-
-const chatFilesDir = (): string => join(app.getPath('userData'), 'chat-files')
-
 
 // --- Task images (files under userData/task-images, named <id><ext>) ---
 //
@@ -1298,36 +972,6 @@ function persistTerminalHandoff(
 
 const skillsPath = (): string => skillsDir(app.getPath('userData'))
 
-// --- AI chat history (persisted to ai-conversations.json in userData) ---
-const aiConversationsPath = (): string => join(app.getPath('userData'), 'ai-conversations.json')
-
-function loadConversations(): StoredConversation[] {
-  try {
-    const data = JSON.parse(readFileSync(aiConversationsPath(), 'utf-8'))
-    return normalizeLegacyConversations(data)
-  } catch {
-    return []
-  }
-}
-
-function saveConversations(list: StoredConversation[]): void {
-  const path = aiConversationsPath()
-  const tmp = path + '.tmp'
-  writeFileSync(tmp, JSON.stringify(list), 'utf-8')
-  renameSync(tmp, path)
-}
-
-/**
- * Serialise writes to `ai-conversations.json` so a save that loaded the file
- * before another one finished doesn't overwrite the other's changes.
- */
-let _saveQueue: Promise<void> = Promise.resolve()
-function safeConversationsSave(op: () => void): void {
-  _saveQueue = _saveQueue.then(() => {
-    op()
-  })
-}
-
 function createWindow(): void {
   managedWindow = createManagedWindow({
     preloadPath: join(__dirname, '../preload/index.js'),
@@ -1471,8 +1115,6 @@ app.whenReady().then(() => {
     dialog,
     shell,
     filesDir,
-    chatImagesDir: chatImagesDir(),
-    chatFilesDir: chatFilesDir(),
     taskImagesDir: taskImagesDir(),
     userDataPath: app.getPath('userData'),
     sep
@@ -1517,377 +1159,21 @@ app.whenReady().then(() => {
     return shell.openPath(dir)
   })
 
-  ipcMain.handle('ai:config:get', () => publicAIConfig(loadAIConfig()))
+  ipcMain.handle('ai:config:get', () => loadAIConfig())
 
-  ipcMain.handle('ai:config:set', (_, config: AIConfig) => {
+  ipcMain.handle('ai:config:set', (_, config: unknown) => {
     saveAIConfig(config)
   })
-
-  // Sign in with ChatGPT stays entirely in main. The DevKit performs PKCE,
-  // validates identity/scopes, refreshes tokens and keeps them encrypted at
-  // rest; IPC exposes only its deliberately safe session/profile shapes.
-  ipcMain.handle('ai:chatgpt:session', async () => (await getChatGPT()).getSession())
-  ipcMain.handle('ai:chatgpt:profiles', async () => (await getChatGPT()).listProfiles())
-  ipcMain.handle('ai:chatgpt:sign-in', async (_, newProfile?: boolean) =>
-    (await getChatGPT()).signIn({ newProfile: newProfile === true })
-  )
-  ipcMain.handle('ai:chatgpt:select', async (_, profileId: string) =>
-    (await getChatGPT()).selectProfile(profileId)
-  )
-  ipcMain.handle('ai:chatgpt:disconnect', async () => (await getChatGPT()).disconnect())
-  ipcMain.handle('ai:chatgpt:models', async () => (await getChatGPT()).listModels())
-  ipcMain.handle('ai:chatgpt:manage-usage', async () =>
-    shell.openExternal((await loadSiwc()).CHATGPT_USAGE_URL)
-  )
-  ipcMain.handle(
-    'ai:chatgpt:stream',
-    async (
-      event,
-      request: {
-        streamId: string
-        model: string
-        reasoningEffort?: 'low' | 'medium' | 'high'
-        messages: { role: 'system' | 'user' | 'assistant'; content: string }[]
-      }
-    ) => {
-      try {
-        const instructions = request.messages
-          .filter((message) => message.role === 'system')
-          .map((message) => message.content)
-          .join('\n\n')
-        const input = request.messages
-          .filter((message) => message.role !== 'system')
-          .map((message) => ({
-            role: (message.role === 'assistant' ? 'assistant' : 'user') as 'assistant' | 'user',
-            content: message.content
-          }))
-        const result = await (
-          await getChatGPT()
-        ).streamResponse({
-          model: request.model,
-          input,
-          ...(request.reasoningEffort ? { reasoningEffort: request.reasoningEffort } : {}),
-          ...(instructions ? { instructions } : {}),
-          onDelta: (delta) => {
-            if (!event.sender.isDestroyed()) {
-              event.sender.send('ai:chat:delta', { streamId: request.streamId, delta })
-            }
-          }
-        })
-        return { success: true, message: { role: 'assistant', content: result.text } }
-      } catch (error) {
-        return {
-          success: false,
-          error: error instanceof Error ? error.message : 'Falha ao contatar o ChatGPT'
-        }
-      }
-    }
-  )
 
   ipcMain.handle('ai:harnesses:status', async (_, refresh?: boolean) =>
     getHarnessStatuses(refresh === true)
   )
-
-  ipcMain.handle('ai:run-metrics:append', (_, input: RunMetricInput) => appendRunMetricIO(input))
-  ipcMain.handle('ai:run-metrics:summary', () => summarizeRunMetrics(loadRunMetrics()))
 
   registerMemoryHandlers(ipcMain, { store: memoryStore, memory: memoryRules, newId: randomUUID })
 
   // Entity lineage: query the event log for one entity's history.
   ipcMain.handle('ai:lineage:list', (_, entityType: string, entityId: string) =>
     eventsForEntity(entityType, entityId)
-  )
-
-  // Proxy an OpenAI-compatible chat/completions call. baseURL + apiKey come
-  // from the renderer when provided, falling back to the stored config.
-  ipcMain.handle(
-    'ai:chat',
-    async (
-      _,
-      request: {
-        messages: unknown[]
-        tools?: unknown[]
-        model?: string
-        profileId?: string
-        reasoningEffort?: 'low' | 'medium' | 'high'
-        baseUrl?: string
-        apiKey?: string
-      }
-    ) => {
-      const config = loadAIConfig()
-      const selected = resolveChatConfig(config, request.profileId)
-      const baseURL = selected.baseUrl
-      const apiKey = selected.apiKey
-      const model = request.model || selected.model
-      if (!baseURL || !model) {
-        return {
-          success: false,
-          error: 'Configuração de IA incompleta (Base URL / Model)',
-          status: 400
-        }
-      }
-      try {
-        const client = getOpenAIClient(baseURL, apiKey, selected.provider)
-        const body = {
-          model,
-          messages: request.messages,
-          ...(request.tools && request.tools.length > 0 ? { tools: request.tools } : {}),
-          ...((request.reasoningEffort ?? config.reasoningEffort)
-            ? { reasoning_effort: request.reasoningEffort ?? config.reasoningEffort }
-            : {})
-        } as unknown as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming
-        const completion = await client.chat.completions.create(
-          body,
-          requestOptions(config.timeoutMs)
-        )
-        const message = completion.choices[0]?.message
-        if (!message) return { success: false, error: 'Resposta vazia do modelo' }
-        const usage = toUsage(completion.usage)
-        if (usage) appendUsage(model, usage, config)
-        return {
-          success: true,
-          message: {
-            role: 'assistant',
-            content: message.content ?? '',
-            tool_calls: message.tool_calls
-          },
-          usage
-        }
-      } catch (e) {
-        return {
-          success: false,
-          error: e instanceof Error ? e.message : 'Falha ao contatar o modelo',
-          status: errorStatus(e)
-        }
-      }
-    }
-  )
-
-  // Same as 'ai:chat', but streams the assistant's text back as it arrives
-  // ('ai:chat:delta' events tagged with the caller's streamId) so the renderer
-  // can type the answer out. Resolves with the assembled message, identical in
-  // shape to 'ai:chat', so the agent loop treats both the same.
-  ipcMain.handle(
-    'ai:chat:stream',
-    async (
-      event,
-      request: {
-        streamId: string
-        messages: unknown[]
-        tools?: unknown[]
-        model?: string
-        profileId?: string
-        reasoningEffort?: 'low' | 'medium' | 'high'
-        baseUrl?: string
-        apiKey?: string
-      }
-    ) => {
-      const config = loadAIConfig()
-      const selected = resolveChatConfig(config, request.profileId)
-      const baseURL = selected.baseUrl
-      const apiKey = selected.apiKey
-      const model = request.model || selected.model
-      if (!baseURL || !model) {
-        return {
-          success: false,
-          error: 'Configuração de IA incompleta (Base URL / Model)',
-          status: 400
-        }
-      }
-      try {
-        const client = getOpenAIClient(baseURL, apiKey, selected.provider)
-        const body = {
-          model,
-          messages: request.messages,
-          stream: true,
-          ...(request.tools && request.tools.length > 0 ? { tools: request.tools } : {}),
-          ...((request.reasoningEffort ?? config.reasoningEffort)
-            ? { reasoning_effort: request.reasoningEffort ?? config.reasoningEffort }
-            : {})
-        } as unknown as OpenAI.Chat.ChatCompletionCreateParamsStreaming
-
-        // A streaming provider only reports token usage if asked. Not every
-        // OpenAI-compatible server knows `stream_options` though, and a strict
-        // one answers 400 — so fall back to a plain stream rather than break
-        // chat for it. Losing the token count beats losing the answer.
-        let stream: Awaited<ReturnType<typeof client.chat.completions.create>>
-        try {
-          stream = await client.chat.completions.create(
-            {
-              ...body,
-              stream_options: { include_usage: true }
-            } as unknown as OpenAI.Chat.ChatCompletionCreateParamsStreaming,
-            requestOptions(config.timeoutMs)
-          )
-        } catch (e) {
-          if (errorStatus(e) !== 400) throw e
-          stream = await client.chat.completions.create(body, requestOptions(config.timeoutMs))
-        }
-
-        let usage: TokenUsage | undefined
-        let content = ''
-        // tool_calls arrive split across chunks: each delta carries an index and
-        // a slice of the JSON arguments, which we concatenate per index.
-        //
-        // Yes, the SDK can assemble this for us — `client.chat.completions
-        // .stream(...).finalChatCompletion()` returns the message with
-        // tool_calls already joined, and it handles content deltas and usage
-        // too. It is deliberately NOT used here. Its finalizer hard-throws
-        // `OpenAIError: missing role for choice 0` when a delta never carries a
-        // `role`, which real OpenAI always sends but an OpenAI-compatible
-        // server need not — and this app points at any such endpoint, local
-        // ones included. Verified against a mock provider: on role-less deltas
-        // the SDK helper throws while this loop returns the tool call fine, and
-        // it throws at the END, after the answer already streamed to the user.
-        //
-        // (`stream.toReadableStream()` assembles nothing at all — it just hands
-        // back the raw SSE bytes as a web stream.)
-        //
-        // Tolerance is the point here; the ~20 lines below are the price.
-        const toolCalls: {
-          id: string
-          type: 'function'
-          function: { name: string; arguments: string }
-        }[] = []
-
-        for await (const chunk of stream) {
-          // The usage chunk arrives last and carries no choices, so read it
-          // before the delta guard below skips the chunk entirely.
-          usage = toUsage(chunk.usage) ?? usage
-          const delta = chunk.choices[0]?.delta
-          if (!delta) continue
-          if (delta.content) {
-            content += delta.content
-            if (!event.sender.isDestroyed()) {
-              event.sender.send('ai:chat:delta', {
-                streamId: request.streamId,
-                delta: delta.content
-              })
-            }
-          }
-          for (const tc of delta.tool_calls ?? []) {
-            const slot = (toolCalls[tc.index] ??= {
-              id: '',
-              type: 'function',
-              function: { name: '', arguments: '' }
-            })
-            if (tc.id) slot.id = tc.id
-            if (tc.function?.name) {
-              slot.function.name += tc.function.name
-              // Say what's coming as soon as it's known, rather than sitting on
-              // it until the message completes. A tool call with no preamble
-              // streams no text at all, so the renderer has nothing to show
-              // while the arguments arrive — which for a big criar_tasks is
-              // seconds of anonymous spinner. The name lands in the first delta;
-              // the arguments are what take the time.
-              //
-              // Re-sent if a name arrives in pieces (name += above): the
-              // renderer takes the latest per index, so a partial is corrected
-              // rather than duplicated.
-              if (!event.sender.isDestroyed()) {
-                event.sender.send('ai:chat:delta', {
-                  streamId: request.streamId,
-                  tool: { index: tc.index, name: slot.function.name }
-                })
-              }
-            }
-            if (tc.function?.arguments) slot.function.arguments += tc.function.arguments
-          }
-        }
-
-        const calls = toolCalls.filter(Boolean)
-        if (usage) appendUsage(model, usage, config)
-        return {
-          success: true,
-          message: {
-            role: 'assistant',
-            content,
-            ...(calls.length > 0 ? { tool_calls: calls } : {})
-          },
-          usage
-        }
-      } catch (e) {
-        return {
-          success: false,
-          error: e instanceof Error ? e.message : 'Falha ao contatar o modelo',
-          status: errorStatus(e)
-        }
-      }
-    }
-  )
-
-  // List the models the provider exposes (GET /models), through the main
-  // process so the renderer's model dropdown doesn't hit CORS either.
-  ipcMain.handle(
-    'ai:models',
-    async (
-      _,
-      request?:
-        | string
-        | {
-            profileId?: string
-            draft?: { baseUrl: string; apiKey?: string; provider?: ApiProvider }
-          }
-    ) => {
-      const config = loadAIConfig()
-      const profileId = typeof request === 'string' ? request : request?.profileId
-      // A draft credential exists only for this IPC call. It lets the user pick
-      // from their account's real catalog before saving a profile, without ever
-      // returning that credential to the renderer.
-      const selected =
-        request && typeof request !== 'string' && request.draft
-          ? {
-              baseUrl: request.draft.baseUrl.trim(),
-              apiKey: request.draft.apiKey ?? '',
-              model: '',
-              provider: request.draft.provider ?? 'custom'
-            }
-          : resolveChatConfig(config, profileId)
-      const baseURL = selected.baseUrl
-      const apiKey = selected.apiKey
-      if (!baseURL) return { success: false, error: 'Base URL não configurada' }
-      try {
-        if (selected.provider === 'anthropic') {
-          const endpoint = new URL(
-            'models?limit=1000&lifecycle=active',
-            `${baseURL.replace(/\/+$/, '')}/`
-          )
-          const response = await fetch(endpoint, {
-            headers: {
-              'x-api-key': apiKey,
-              'anthropic-version': '2023-06-01'
-            },
-            signal: AbortSignal.timeout(resolveTimeoutMs(config.timeoutMs))
-          })
-          if (!response.ok) throw new Error(`Claude retornou ${response.status} ao listar modelos`)
-          const body = (await response.json()) as { data?: Array<{ id?: unknown }> }
-          const models = Array.from(
-            new Set(
-              (body.data ?? [])
-                .map((model) => model.id)
-                .filter((id): id is string => typeof id === 'string' && id.trim() !== '')
-            )
-          )
-          return { success: true, models }
-        }
-        const client = getOpenAIClient(baseURL, apiKey, selected.provider)
-        const page = await client.models.list(requestOptions(config.timeoutMs))
-        const models = Array.from(
-          new Set(
-            (page.data ?? [])
-              .filter((model) => (model as { shutdown_date?: string | null }).shutdown_date == null)
-              .map((m) => m?.id)
-              .filter((id): id is string => typeof id === 'string' && id.trim() !== '')
-          )
-        ).sort((a, b) => a.localeCompare(b))
-        return { success: true, models }
-      } catch (e) {
-        return {
-          success: false,
-          error: e instanceof Error ? e.message : 'Falha ao carregar modelos'
-        }
-      }
-    }
   )
 
   // Launch a native agent in a project root or the private general workspace. The renderer must
@@ -2674,13 +1960,6 @@ app.whenReady().then(() => {
 
   ipcMain.handle('ai:skills:import', async () => {
     return importSkillDialog(skillsPath())
-  })
-
-  registerConversationHandlers(ipcMain, {
-    loadConversations,
-    saveConversations,
-    safeConversationsSave,
-    listMemories
   })
 
   registerLegacyChatHandlers(ipcMain, {
