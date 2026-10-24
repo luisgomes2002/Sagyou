@@ -311,7 +311,7 @@ export default function App() {
     return () => clearInterval(timer)
   }, [isLoaded, exportBackup])
 
-  // Track the code agent across all views (App never unmounts, unlike AIView).
+  // Track the code agent across all views (App never unmounts, unlike the views).
   useEffect(() => {
     window.electronAPI.ai.codeAgent.status().then((s) => setCodeAgentRunCount(s.runs.length))
     // onOutput now receives {runId, chunk} — any activity across any run lights the banner.

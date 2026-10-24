@@ -1,13 +1,11 @@
 ﻿import { useState, useEffect, useMemo } from 'react'
 import { v4 as uuidv4 } from 'uuid'
-import { useAiRunStore, EMPTY_USAGE, type ChatMessage, type TokenUsage } from '../../store/aiRun'
-import { describeToolActivity } from '../../ai/tools'
 import type { Project } from '../../types'
 import { SessionRail, type SessionItem } from './fleet/SessionRail'
 import { NewSessionPanel, type Harness, type SessionRequest } from './fleet/NewSessionPanel'
-import { ChatAgentWorkspace, LiveRunWorkspace } from './fleet/Workspaces'
+import { LiveRunWorkspace } from './fleet/Workspaces'
 import { useCodeAgentRuns } from './fleet/useCodeAgentRuns'
-import { deriveTitle, formatProgress } from './fleet/format'
+import { formatProgress } from './fleet/format'
 
 // ---------------------------------------------------------------------------
 // Sessões de código
@@ -15,7 +13,7 @@ import { deriveTitle, formatProgress } from './fleet/format'
 // Um workspace em três partes: a lista de sessões (à esquerda), a sessão
 // selecionada (centro: terminal ou diff) e um inspetor com atividade, alterações
 // e contexto. Tudo é derivado do estado dos agentes em main (código) e da run
-// store (agentes de chat); a view não guarda cópia de nenhum deles.
+// store; a view não guarda cópia de nenhum deles.
 // ---------------------------------------------------------------------------
 
 const NEW = 'new'
@@ -27,12 +25,9 @@ let retainedSelection: string | null = null
 
 export function FleetView({
   projects,
-  onOpenChat,
   retainThread = false
 }: {
   projects: Project[]
-  /** Chamado ao abrir o chat de um agente do assistente. */
-  onOpenChat?: () => void
   /** App opts in because it owns navigation; isolated mounts start clean. */
   retainThread?: boolean
 }): React.JSX.Element {
@@ -40,19 +35,7 @@ export function FleetView({
   const [starting, setStarting] = useState(false)
   const [startError, setStartError] = useState('')
   const [harnesses, setHarnesses] = useState<Harness[]>([])
-
-  const running = useAiRunStore((s) => s.running)
-  const runProjects = useAiRunStore((s) => s.runProjects)
-  const runUsage = useAiRunStore((s) => s.runUsage)
-  const streaming = useAiRunStore((s) => s.streaming)
-  const streamingTools = useAiRunStore((s) => s.streamingTools)
-  const messages = useAiRunStore((s) => s.messages)
-  const conversationId = useAiRunStore((s) => s.conversationId)
-  const parked = useAiRunStore((s) => s.parked)
-  const pendingApprovals = useAiRunStore((s) => s.pendingApprovals)
-  const usage = useAiRunStore((s) => s.usage)
-  const openConversation = useAiRunStore((s) => s.openConversation)
-  const abort = useAiRunStore((s) => s.abort)
+  const [removalNotice, setRemovalNotice] = useState<string | null>(null)
 
   const {
     runs: codeRuns,
@@ -65,34 +48,27 @@ export function FleetView({
   } = useCodeAgentRuns()
 
   useEffect(() => {
-    void window.electronAPI.ai.harnesses?.status().then(setHarnesses).catch(() => {})
+    void window.electronAPI.ai.harnesses
+      ?.status()
+      .then(setHarnesses)
+      .catch(() => {})
   }, [])
 
+  // One-time notice that the retired chat history was removed (main hands it
+  // out until the user dismisses it).
+  useEffect(() => {
+    void window.electronAPI.legacyChat
+      ?.notice()
+      .then((notice) => setRemovalNotice(notice?.snapshotDir ?? null))
+      .catch(() => {})
+  }, [])
+
+  const dismissNotice = (): void => {
+    setRemovalNotice(null)
+    void window.electronAPI.legacyChat?.dismiss().catch(() => {})
+  }
+
   // ── Derived helpers ────────────────────────────────────────────────────────
-  const messagesOf = (id: string): ChatMessage[] =>
-    id === conversationId ? messages : (parked[id]?.messages ?? [])
-  const usageOf = (id: string): TokenUsage =>
-    id === conversationId ? usage : (parked[id]?.usage ?? EMPTY_USAGE)
-
-  const activityOf = (id: string): string => {
-    const text = streaming[id]
-    if (text && text.trim()) return 'Respondendo…'
-    const tools = streamingTools[id] ?? []
-    if (tools.length > 0) return tools.map((t) => describeToolActivity(t, {})).join(', ')
-    const msgs = messagesOf(id)
-    const inFlight = [...msgs].reverse().find((m) => m.role === 'status' && m.done === false)
-    if (inFlight) return inFlight.content
-    const lastStatus = [...msgs].reverse().find((m) => m.role === 'status')
-    return lastStatus ? lastStatus.content : 'Pensando…'
-  }
-
-  const progressOf = (id: string): { step: number; maxSteps: number } | null => {
-    const withStep = [...messagesOf(id)]
-      .reverse()
-      .find((m) => m.role === 'status' && m.step !== undefined && m.maxSteps !== undefined)
-    return withStep ? { step: withStep.step!, maxSteps: withStep.maxSteps! } : null
-  }
-
   const projectNameOf = (dir: string, projectId?: string | null): string => {
     const byId = projectId ? projects.find((p) => p.id === projectId) : undefined
     if (byId) return byId.name
@@ -116,20 +92,9 @@ export function FleetView({
       status: run.approvals.length || run.questions.length ? 'attention' : 'running',
       meta: run.progress ? formatProgress(run.progress.step, run.progress.maxSteps) : undefined
     }))
-    const chats: SessionItem[] = [...running].map((id) => {
-      const progress = progressOf(id)
-      return {
-        key: `chat:${id}`,
-        kind: 'chat',
-        title: deriveTitle(messagesOf(id)),
-        subtitle: `${projects.find((p) => p.id === runProjects[id])?.name ?? 'Global'} · Chat`,
-        status: pendingApprovals.some((p) => p.convId === id) ? 'attention' : 'running',
-        meta: progress ? formatProgress(progress.step, progress.maxSteps) : undefined
-      }
-    })
-    return [...live, ...chats]
+    return live
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [codeRuns, running, projects, harnesses, messages, parked, pendingApprovals, runProjects])
+  }, [codeRuns, projects, harnesses])
 
   // Resolve what is on screen. A selection whose session ended falls back to
   // the first available one, but only once main has answered: an empty first
@@ -184,13 +149,6 @@ export function FleetView({
     }
   }
 
-  const openAgent = (id: string): void => {
-    // The parked/on-screen copy is ahead of disk; openConversation takes the
-    // live one. Then switch to the AI view to land on that agent's chat.
-    openConversation({ id, messages: messagesOf(id), usage: usageOf(id) })
-    onOpenChat?.()
-  }
-
   // ── Render ─────────────────────────────────────────────────────────────────
   const renderMain = (): React.JSX.Element => {
     if (effective === NEW) {
@@ -228,37 +186,39 @@ export function FleetView({
         />
       )
     }
-    if (kind === 'chat') {
-      return (
-        <ChatAgentWorkspace
-          title={deriveTitle(messagesOf(id))}
-          projectName={projects.find((p) => p.id === runProjects[id])?.name ?? 'Global'}
-          activity={activityOf(id)}
-          awaiting={pendingApprovals.some((p) => p.convId === id)}
-          progress={progressOf(id)}
-          tokens={runUsage[id] ?? EMPTY_USAGE}
-          recent={messagesOf(id).filter((m) => m.role === 'status').slice(-6).reverse()}
-          onOpen={() => openAgent(id)}
-          onStop={() => abort(id)}
-        />
-      )
-    }
     return <p className="p-6 text-sm text-[#8a8a92]">Sessão encerrada.</p>
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-1">
-      <SessionRail
-        items={items}
-        selectedKey={effective === NEW ? null : effective}
-        onSelect={setSelected}
-        onNew={() => {
-          setStartError('')
-          setSelected(NEW)
-        }}
-        starting={starting}
-      />
-      <main className="min-h-0 min-w-0 flex-1 bg-[#0f0f13]">{renderMain()}</main>
+    <div className="flex h-full min-h-0 flex-1 flex-col">
+      {removalNotice && (
+        <div
+          role="status"
+          className="flex items-center justify-between gap-3 border-b border-[#2b2b31] bg-[#1b1b20] px-4 py-2 text-xs text-[#d4d4d4]"
+        >
+          <p>{`O histórico de conversas foi removido. Um backup foi salvo em ${removalNotice}.`}</p>
+          <button
+            type="button"
+            onClick={dismissNotice}
+            className="shrink-0 rounded border border-[#2b2b31] px-2 py-1 text-[#d4d4d4] hover:bg-[#2a2a30]"
+          >
+            Fechar aviso
+          </button>
+        </div>
+      )}
+      <div className="flex min-h-0 flex-1">
+        <SessionRail
+          items={items}
+          selectedKey={effective === NEW ? null : effective}
+          onSelect={setSelected}
+          onNew={() => {
+            setStartError('')
+            setSelected(NEW)
+          }}
+          starting={starting}
+        />
+        <main className="min-h-0 min-w-0 flex-1 bg-[#0f0f13]">{renderMain()}</main>
+      </div>
     </div>
   )
 }

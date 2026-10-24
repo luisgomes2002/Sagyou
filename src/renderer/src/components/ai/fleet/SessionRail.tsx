@@ -1,9 +1,9 @@
 import { STATUS_STYLE, type SessionStatus } from './format'
 
 export interface SessionItem {
-  /** Stable selection key: `run:<id>` or `chat:<convId>`. */
+  /** Stable selection key: `run:<id>`. */
   key: string
-  kind: 'run' | 'chat'
+  kind: 'run'
   title: string
   /** Project · harness, already resolved. */
   subtitle: string

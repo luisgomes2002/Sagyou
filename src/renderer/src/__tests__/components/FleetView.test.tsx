@@ -69,6 +69,10 @@ beforeEach(() => {
       .mockResolvedValue({ patch: '', files: [], truncated: false, omittedNewFiles: [] }),
     approve: vi.fn()
   } as never
+  window.electronAPI.legacyChat = {
+    notice: vi.fn().mockResolvedValue(null),
+    dismiss: vi.fn().mockResolvedValue(undefined)
+  } as never
   window.electronAPI.ai.harnesses = {
     status: vi.fn().mockResolvedValue([
       {
@@ -116,7 +120,7 @@ function twoRuns(): void {
 
 describe('FleetView', () => {
   it('offers a new session when nothing is running', async () => {
-    render(<FleetView projects={projects} onOpenChat={() => {}} />)
+    render(<FleetView projects={projects} />)
     expect(await screen.findByText('Nenhum agente ativo')).toBeInTheDocument()
     expect(screen.getByText('Ativas · 0')).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: 'Projeto da sessão' })).toBeInTheDocument()
@@ -140,7 +144,7 @@ describe('FleetView', () => {
       }
     ] as Project[]
     const user = userEvent.setup()
-    render(<FleetView projects={projectWithRoot} onOpenChat={() => {}} />)
+    render(<FleetView projects={projectWithRoot} />)
 
     await user.selectOptions(
       await screen.findByRole('combobox', { name: 'Projeto da sessão' }),
@@ -170,7 +174,7 @@ describe('FleetView', () => {
       agent: 'Codex'
     })
     const user = userEvent.setup()
-    render(<FleetView projects={projects} onOpenChat={() => {}} />)
+    render(<FleetView projects={projects} />)
 
     expect(await screen.findByRole('combobox', { name: 'Projeto da sessão' })).toHaveValue('')
     await user.click(screen.getByRole('button', { name: 'Abrir sessão' }))
@@ -191,7 +195,7 @@ describe('FleetView', () => {
       dir: '/tmp/r'
     })
     const user = userEvent.setup()
-    render(<FleetView projects={projects} onOpenChat={() => {}} />)
+    render(<FleetView projects={projects} />)
 
     await screen.findByRole('option', { name: 'Codex' })
     await user.selectOptions(screen.getByRole('combobox', { name: 'Executor' }), 'codex')
@@ -204,7 +208,7 @@ describe('FleetView', () => {
 
   it('lists every running code agent in the rail, with its project', async () => {
     twoRuns()
-    render(<FleetView projects={projects} onOpenChat={() => {}} />)
+    render(<FleetView projects={projects} />)
 
     expect(await screen.findByRole('button', { name: /^tarefa A/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^tarefa B/ })).toBeInTheDocument()
@@ -214,7 +218,7 @@ describe('FleetView', () => {
 
   it('selecting a session switches the workspace to it', async () => {
     twoRuns()
-    render(<FleetView projects={projects} onOpenChat={() => {}} />)
+    render(<FleetView projects={projects} />)
 
     await userEvent.click(await screen.findByRole('button', { name: /^tarefa B/ }))
     expect(screen.getByRole('heading', { name: 'tarefa B' })).toBeInTheDocument()
@@ -222,7 +226,7 @@ describe('FleetView', () => {
 
   it('shows what a code agent is doing and its step progress', async () => {
     oneRun()
-    render(<FleetView projects={projects} onOpenChat={() => {}} />)
+    render(<FleetView projects={projects} />)
 
     expect(
       await screen.findByRole('progressbar', { name: 'Progresso da execução' })
@@ -240,7 +244,7 @@ describe('FleetView', () => {
       }
     )
 
-    render(<FleetView projects={projects} onOpenChat={() => {}} />)
+    render(<FleetView projects={projects} />)
     await screen.findByRole('heading', { name: 'Corrigir bug no login' })
     act(() => {
       onToolEvent?.({
@@ -257,7 +261,7 @@ describe('FleetView', () => {
 
   it('shows only the current step for an unlimited agent', async () => {
     oneRun({ progress: { step: 15, maxSteps: 0, promptTokens: 100, completionTokens: 20 } })
-    render(<FleetView projects={projects} onOpenChat={() => {}} />)
+    render(<FleetView projects={projects} />)
 
     expect((await screen.findAllByText('15')).length).toBeGreaterThan(0)
     expect(screen.queryByText('15/0')).not.toBeInTheDocument()
@@ -265,7 +269,7 @@ describe('FleetView', () => {
 
   it('shows the token spend per code agent — input and output', async () => {
     oneRun()
-    render(<FleetView projects={projects} onOpenChat={() => {}} />)
+    render(<FleetView projects={projects} />)
 
     expect(await screen.findByText(/↑ 1,500 entrada/)).toBeInTheDocument()
     expect(screen.getByText(/↓ 300 saída/)).toBeInTheDocument()
@@ -273,7 +277,7 @@ describe('FleetView', () => {
 
   it('reports in the context tab what the harness does not expose', async () => {
     oneRun({ harness: 'codex', codeRoot: '/home/user/projeto-um', worktreeDir: '/tmp/run-1' })
-    render(<FleetView projects={projects} onOpenChat={() => {}} />)
+    render(<FleetView projects={projects} />)
 
     await userEvent.click(await screen.findByRole('tab', { name: 'Contexto' }))
     expect(screen.getByText('/tmp/run-1')).toBeInTheDocument()
@@ -283,7 +287,7 @@ describe('FleetView', () => {
 
   it('"Parar" stops the code agent', async () => {
     oneRun()
-    render(<FleetView projects={projects} onOpenChat={() => {}} />)
+    render(<FleetView projects={projects} />)
 
     await userEvent.click(await screen.findByRole('button', { name: /Parar agente/ }))
 
@@ -292,7 +296,7 @@ describe('FleetView', () => {
 
   it('does not offer to stop an interactive terminal from the renderer', async () => {
     oneRun({ interactive: true })
-    render(<FleetView projects={projects} onOpenChat={() => {}} />)
+    render(<FleetView projects={projects} />)
 
     await screen.findByRole('heading', { name: 'Corrigir bug no login' })
     expect(screen.queryByRole('button', { name: /Parar agente/ })).not.toBeInTheDocument()
@@ -304,7 +308,7 @@ describe('FleetView', () => {
         { id: 'approval-1', name: 'escrever_arquivo', args: {}, resumo: 'Editar o cronômetro' }
       ]
     })
-    render(<FleetView projects={projects} onOpenChat={() => {}} />)
+    render(<FleetView projects={projects} />)
 
     expect(await screen.findByText('Aguardando sua aprovação (1)')).toBeInTheDocument()
     expect(
@@ -313,5 +317,29 @@ describe('FleetView', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Aprovar' }))
 
     expect(window.electronAPI.ai.codeAgent.approve).toHaveBeenCalledWith('approval-1', true)
+  })
+
+  it('shows the one-time removal notice with the snapshot path and dismisses it', async () => {
+    ;(window.electronAPI.legacyChat.notice as ReturnType<typeof vi.fn>).mockResolvedValue({
+      snapshotDir: 'C:\dados\backups\pre-remocao-chat-1'
+    })
+    render(<FleetView projects={projects} />)
+
+    expect(
+      await screen.findByText(
+        'O histórico de conversas foi removido. Um backup foi salvo em C:\dados\backups\pre-remocao-chat-1.'
+      )
+    ).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Fechar aviso' }))
+
+    expect(window.electronAPI.legacyChat.dismiss).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText(/O histórico de conversas foi removido/)).not.toBeInTheDocument()
+  })
+
+  it('shows no notice when the migration reports nothing', async () => {
+    render(<FleetView projects={projects} />)
+    await screen.findByText('Nenhum agente ativo')
+    expect(window.electronAPI.legacyChat.notice).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText(/O histórico de conversas foi removido/)).not.toBeInTheDocument()
   })
 })

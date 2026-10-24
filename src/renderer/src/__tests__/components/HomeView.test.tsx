@@ -33,11 +33,6 @@ vi.mock('../../store/kanban', () => ({
   useKanbanStore: (selector: (state: typeof dashboard) => unknown) => selector(dashboard)
 }))
 
-vi.mock('../../store/aiRun', () => ({
-  useAiRunStore: (selector: (state: { running: Set<string> }) => unknown) =>
-    selector({ running: new Set() })
-}))
-
 describe('Tabela financeira da Home', () => {
   beforeEach(() => {
     localStorage.clear()

@@ -1,11 +1,3 @@
-import type { ChatMessage } from '../../../store/aiRun'
-
-/** Nome de um chat a partir da sua primeira mensagem do usuário. */
-export function deriveTitle(messages: ChatMessage[]): string {
-  const firstUser = messages.find((m) => m.role === 'user')?.content ?? 'Conversa'
-  return firstUser.slice(0, 60) || 'Conversa'
-}
-
 /** Tokens compactos: 980 → "980", 4210 → "4.2k". */
 export function formatTokens(n: number): string {
   if (n < 1000) return String(n)

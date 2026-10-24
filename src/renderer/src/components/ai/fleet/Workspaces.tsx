@@ -1,10 +1,9 @@
-import type { ChatMessage, TokenUsage } from '../../../store/aiRun'
 import { AgentTerminal } from '../AgentTerminal'
 import { AttentionPanel } from './AttentionPanel'
 import { Inspector } from './Inspector'
 import type { Harness } from './NewSessionPanel'
 import type { CodeAgentRunUI } from './useCodeAgentRuns'
-import { STATUS_STYLE, formatProgress, formatTokens, type SessionStatus } from './format'
+import { STATUS_STYLE, formatProgress, type SessionStatus } from './format'
 
 function StatusPill({ status, label }: { status: SessionStatus; label?: string }): React.JSX.Element {
   const style = STATUS_STYLE[status]
@@ -144,89 +143,6 @@ export function LiveRunWorkspace({
           )}
         </section>
         <Inspector run={run} harness={harness} projectName={projectName} />
-      </div>
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// A chat agent (Sagyou assistant loop) running in the background
-// ---------------------------------------------------------------------------
-
-export function ChatAgentWorkspace({
-  title,
-  projectName,
-  activity,
-  awaiting,
-  progress,
-  tokens,
-  recent,
-  onOpen,
-  onStop
-}: {
-  title: string
-  projectName: string
-  activity: string
-  awaiting: boolean
-  progress: { step: number; maxSteps: number } | null
-  tokens: TokenUsage
-  recent: ChatMessage[]
-  onOpen: () => void
-  onStop: () => void
-}): React.JSX.Element {
-  const reasoning = tokens.reasoningTokens ?? 0
-  const total = tokens.promptTokens + tokens.completionTokens + reasoning
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <Header
-        title={title}
-        status={awaiting ? 'attention' : 'running'}
-        statusLabel={awaiting ? 'Aguardando sua aprovação' : undefined}
-        chips={['Chat do assistente', projectName, progress ? `passo ${formatProgress(progress.step, progress.maxSteps)}` : '']}
-        actions={
-          <>
-            <button
-              type="button"
-              onClick={onOpen}
-              className="rounded-lg border border-[#2b2b31] bg-[#16161a] px-3 py-1.5 text-xs font-medium text-[#d4d4d4] hover:bg-[#2a2a30]"
-            >
-              Abrir chat
-            </button>
-            <button type="button" onClick={onStop} title="Parar este agente" className={stopButton}>
-              Parar
-            </button>
-          </>
-        }
-      />
-      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5">
-        <p className="text-sm text-[#d4d4d4]">{awaiting ? 'Aguardando sua aprovação…' : activity}</p>
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] tabular-nums text-[#8a8a92]">
-          <span title="tokens de entrada desta execução">↑ {formatTokens(tokens.promptTokens)} entrada</span>
-          <span title="tokens de saída desta execução">↓ {formatTokens(tokens.completionTokens)} saída</span>
-          {reasoning > 0 && <span>🧠 {formatTokens(reasoning)} rac.</span>}
-          <span>= {formatTokens(total)} total</span>
-        </div>
-        {recent.length > 0 && (
-          <section aria-label="Atividade recente">
-            <h3 className="mb-2 text-[10px] font-medium uppercase tracking-wide text-[#8a8a92]">
-              Atividade recente
-            </h3>
-            <ul className="space-y-2">
-              {recent.map((status, index) => (
-                <li key={index} className="flex min-w-0 items-center gap-2">
-                  <span
-                    className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                      status.done === false ? 'animate-pulse bg-[#a080f0]' : 'bg-[#46d478]'
-                    }`}
-                  />
-                  <span className="truncate text-xs text-[#d4d4d4]" title={status.content}>
-                    {status.content}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
       </div>
     </div>
   )

@@ -1,5 +1,33 @@
 import { useState, useEffect, useCallback } from 'react'
-import { describeToolActivity } from '../../../ai/tools'
+
+/** Label for a tool call of the native code agent (legacy executor). */
+function describeToolActivity(name: string, args: Record<string, unknown>): string {
+  const str = (v: unknown): string => (typeof v === 'string' && v.trim() !== '' ? v : '')
+  switch (name) {
+    case 'listar_arquivos': {
+      const sub = str(args.subpasta)
+      return sub ? `Listando os arquivos em ${sub}` : 'Listando os arquivos do projeto'
+    }
+    case 'ler_arquivo': {
+      const caminho = str(args.caminho)
+      return caminho ? `Lendo ${caminho}` : 'Lendo um arquivo'
+    }
+    case 'buscar_no_codigo': {
+      const termo = str(args.termo)
+      return termo ? `Buscando "${termo}" no código` : 'Buscando no código'
+    }
+    case 'escrever_arquivo': {
+      const caminho = str(args.caminho)
+      return caminho ? `Escrevendo ${caminho}` : 'Escrevendo um arquivo'
+    }
+    case 'executar_comando': {
+      const comando = str(args.comando)
+      return comando ? `Executando ${comando}` : 'Executando um comando'
+    }
+    default:
+      return name
+  }
+}
 
 export interface CodeAgentRunUI {
   id: string

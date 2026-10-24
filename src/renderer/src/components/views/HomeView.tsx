@@ -1,7 +1,6 @@
 ﻿import { useEffect, useMemo, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useKanbanStore } from '../../store/kanban'
-import { useAiRunStore } from '../../store/aiRun'
 import type { Project, Priority, FinancialTransaction, Currency } from '../../types'
 import { PRIORITY_CONFIG } from '../../types'
 import { isTaskDone } from '../../utils/columns'
@@ -43,8 +42,6 @@ export function HomeView({ projects, onNavigate }: Props) {
     () => lists.filter((list) => list.profileId === activeFinancialProfileId),
     [lists, activeFinancialProfileId]
   )
-
-  const runningAgentCount = useAiRunStore((s) => s.running.size)
 
   // ── Summary stats ──────────────────────────────────────────────
 
@@ -822,38 +819,6 @@ export function HomeView({ projects, onNavigate }: Props) {
           </section>
         </div>
 
-        {/* Agents row (conditional) */}
-        {runningAgentCount > 0 && (
-          <section className="rounded-xl border border-[#2b2b31] bg-[#16161a] p-5">
-            <h2 className="text-[10px] font-semibold uppercase tracking-wider text-[#999999] mb-3 flex items-center gap-1.5">
-              <svg
-                width="10"
-                height="10"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-              >
-                <rect x="3" y="11" width="18" height="10" rx="2" />
-                <circle cx="12" cy="5" r="2" />
-                <path d="M12 7v4" />
-              </svg>
-              Agentes
-            </h2>
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-[#d4d4d4]">
-                {runningAgentCount} agente{runningAgentCount !== 1 ? 's' : ''} em execução — ver
-                FleetView
-              </p>
-              <button
-                onClick={() => onNavigate('agents')}
-                className="px-4 py-2 rounded-lg bg-[#7c3aed] text-sm text-white font-medium hover:bg-[#6d28d9] transition-colors"
-              >
-                Ver FleetView
-              </button>
-            </div>
-          </section>
-        )}
       </div>
     </div>
   )

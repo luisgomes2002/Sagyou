@@ -45,7 +45,7 @@ function fileLabel(n: number): string {
   return n === 1 ? '1 arquivo' : `${n} arquivos`
 }
 
-/** "47.2k", "1.2M" — matches AIView's formatTokens; a row has to be scannable. */
+/** "47.2k", "1.2M" — matches fleet/format's formatTokens; a row has to be scannable. */
 function tokenLabel(t?: { promptTokens: number; completionTokens: number; reasoningTokens?: number }): string {
   if (!t) return ''
   const n = t.promptTokens + t.completionTokens + (t.reasoningTokens ?? 0)
