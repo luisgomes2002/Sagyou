@@ -2,7 +2,6 @@ import { buildMemory, handoffId, type AiMemory } from '../ai/memory'
 
 export interface TerminalHandoffInput {
   projectId: string | null
-  conversationId: string | null
   runId: string
   request: string
   status: 'completed' | 'cancelled' | 'failed' | 'not_applied'
@@ -24,7 +23,7 @@ export function buildTerminalHandoff(input: TerminalHandoffInput, now: string): 
     `Status: ${input.status}`,
     `Arquivos alterados (${input.changedFiles.length}):`,
     ...(files.length ? files : ['- nenhum detectado']),
-    `Referências: conversa=${input.conversationId ?? 'nenhuma'}; run=${input.runId}`
+    `Referências: run=${input.runId}`
   ]
     .join('\n')
     .slice(0, BODY_LIMIT)
@@ -36,8 +35,7 @@ export function buildTerminalHandoff(input: TerminalHandoffInput, now: string): 
       title: 'Última sessão de terminal',
       body,
       tags: ['handoff', 'terminal', input.status],
-      source: 'modelo',
-      sourceConversationId: input.conversationId
+      source: 'modelo'
     },
     handoffId(input.projectId),
     now

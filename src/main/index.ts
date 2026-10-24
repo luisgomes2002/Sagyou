@@ -1287,7 +1287,6 @@ function persistTerminalHandoff(
       buildTerminalHandoff(
         {
           projectId: run.projectId,
-          conversationId: run.convId,
           runId: run.id,
           request: run.task,
           status,

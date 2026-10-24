@@ -2344,8 +2344,7 @@ function memRowToMemory(r: Record<string, unknown>): AiMemory {
     tags,
     pinned: r.pinned === 1,
     source: r.source as AiMemory['source'],
-    sourceConversationId:
-      r.source_conversation_id == null ? null : String(r.source_conversation_id),
+    sourceConversationId: null,
     createdAt: String(r.created_at),
     updatedAt: String(r.updated_at),
     lastAccessedAt: String(r.last_accessed_at),
@@ -2488,11 +2487,11 @@ export function upsertMemory(m: AiMemory): void {
 function writeMemoryRow(db: Database.Database, m: AiMemory): void {
   db.prepare(
     `INSERT INTO memory
-         (id,project_id,type,title,body,tags,pinned,source,source_conversation_id,created_at,updated_at,last_accessed_at,access_count,archived_at)
-       VALUES (@id,@project_id,@type,@title,@body,@tags,@pinned,@source,@source_conversation_id,@created_at,@updated_at,@last_accessed_at,@access_count,@archived_at)
+         (id,project_id,type,title,body,tags,pinned,source,created_at,updated_at,last_accessed_at,access_count,archived_at)
+       VALUES (@id,@project_id,@type,@title,@body,@tags,@pinned,@source,@created_at,@updated_at,@last_accessed_at,@access_count,@archived_at)
        ON CONFLICT(id) DO UPDATE SET
          project_id=@project_id, type=@type, title=@title, body=@body, tags=@tags,
-         pinned=@pinned, source=@source, source_conversation_id=@source_conversation_id, updated_at=@updated_at,
+         pinned=@pinned, source=@source, updated_at=@updated_at,
          last_accessed_at=@last_accessed_at, access_count=@access_count, archived_at=@archived_at`
   ).run({
     id: m.id,
@@ -2503,7 +2502,6 @@ function writeMemoryRow(db: Database.Database, m: AiMemory): void {
     tags: JSON.stringify(m.tags),
     pinned: m.pinned ? 1 : 0,
     source: m.source,
-    source_conversation_id: m.sourceConversationId,
     created_at: m.createdAt,
     updated_at: m.updatedAt,
     last_accessed_at: m.lastAccessedAt,
@@ -2607,13 +2605,16 @@ export function scrubMemoryConversationLinks(): number {
   const db = getDb()
   const current = listMemories({ includeArchived: true })
   const { memories, changed } = scrubConversationLinks(current)
-  if (!changed) return 0
   db.transaction(() => {
+    // Rows are read as having no link, so the column itself is cleared in SQL.
+    db.prepare(
+      'UPDATE memory SET source_conversation_id=NULL WHERE source_conversation_id IS NOT NULL'
+    ).run()
     // scrubConversationLinks returns the very same object for an untouched memory.
     memories.forEach((memory, index) => {
       if (memory !== current[index]) writeMemoryRow(db, memory)
     })
-    syncMemorySearchRows(db)
+    if (changed) syncMemorySearchRows(db)
   })()
   return changed
 }

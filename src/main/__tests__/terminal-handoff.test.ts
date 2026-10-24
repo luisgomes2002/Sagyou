@@ -7,7 +7,6 @@ describe('buildTerminalHandoff', () => {
     const handoff = buildTerminalHandoff(
       {
         projectId: 'project-1',
-        conversationId: 'conversation-1',
         runId: 'run-1',
         request: 'Corrigir o deploy',
         status: 'completed',
@@ -20,9 +19,10 @@ describe('buildTerminalHandoff', () => {
       id: 'handoff:project-1',
       type: 'handoff',
       projectId: 'project-1',
-      sourceConversationId: 'conversation-1'
+      sourceConversationId: null
     })
     expect(handoff.body).toContain('run=run-1')
+    expect(handoff.body).not.toContain('conversa=')
     expect(handoff.body).toContain('src/main/deploy.ts')
   })
 
@@ -30,7 +30,6 @@ describe('buildTerminalHandoff', () => {
     const handoff = buildTerminalHandoff(
       {
         projectId: null,
-        conversationId: null,
         runId: 'run-cancelled',
         request: 'Investigar o erro',
         status: 'cancelled',
@@ -47,7 +46,6 @@ describe('buildTerminalHandoff', () => {
     const handoff = buildTerminalHandoff(
       {
         projectId: 'project-1',
-        conversationId: 'conversation-1',
         runId: 'run-long',
         request: 'x'.repeat(2_000),
         status: 'failed',

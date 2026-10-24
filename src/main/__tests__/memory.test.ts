@@ -78,10 +78,30 @@ describe('buildMemory (create)', () => {
     expect(res.memory.pinned).toBe(false) // only an explicit true pins
   })
 
-  it('keeps the conversation that supplied the memory as provenance', () => {
-    const res = buildMemory(null, { title: 'decisao', sourceConversationId: 'conv-1' }, 'id1', NOW)
+  it('ignores a conversation reference: chat history no longer exists', () => {
+    const res = buildMemory(
+      null,
+      { title: 'decisao', sourceConversationId: 'conv-1' } as never,
+      'id1',
+      NOW
+    )
     if ('error' in res) throw new Error('unexpected error')
-    expect(res.memory.sourceConversationId).toBe('conv-1')
+    expect(res.memory.sourceConversationId).toBeNull()
+  })
+
+  it('drops a stored conversation reference when the memory is edited', () => {
+    const existing = mem({ id: 'e1', sourceConversationId: 'conv-old' })
+    const res = buildMemory(existing, { title: 'novo' }, 'e1', NOW)
+    if ('error' in res) throw new Error('unexpected error')
+    expect(res.memory.sourceConversationId).toBeNull()
+  })
+
+  it('reads a legacy row with a conversation reference as having none', () => {
+    const memory = normalizeMemory(
+      { id: 'legacy', sourceConversationId: 'conv-9' } as Partial<AiMemory> & { id: string },
+      NOW
+    )
+    expect(memory.sourceConversationId).toBeNull()
   })
 })
 

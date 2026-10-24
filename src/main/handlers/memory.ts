@@ -111,7 +111,6 @@ export function registerMemoryHandlers(ipcMain: IpcMain, deps: MemoryHandlerDeps
         projectId?: string | null
         title: string
         body: string
-        sourceConversationId?: string | null
       }
     ) => {
       const projectId = typeof input?.projectId === 'string' ? input.projectId : null
@@ -124,8 +123,7 @@ export function registerMemoryHandlers(ipcMain: IpcMain, deps: MemoryHandlerDeps
           title: input?.title,
           body: input?.body,
           projectId,
-          source: 'modelo',
-          sourceConversationId: input?.sourceConversationId
+          source: 'modelo'
         },
         id,
         now

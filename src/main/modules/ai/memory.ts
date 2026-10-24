@@ -30,8 +30,6 @@ export interface MemoryInput {
   tags?: string[]
   pinned?: boolean
   source?: string
-  /** Chat that supplied the evidence for this memory. Kept nullable for imports and manual edits. */
-  sourceConversationId?: string | null
 }
 
 /** A stored memory. `archivedAt` is set (not deleted) when decay retires it. */
@@ -44,6 +42,7 @@ export interface AiMemory {
   tags: string[]
   pinned: boolean
   source: MemorySource
+  /** Always null: chat history is gone. Kept so older stored rows and backups still parse. */
   sourceConversationId: string | null
   createdAt: string
   updatedAt: string
@@ -210,11 +209,7 @@ export function buildMemory(
     tags: has('tags') ? coerceTags(input.tags) : (existing?.tags ?? []),
     pinned: has('pinned') ? input.pinned === true : (existing?.pinned ?? false),
     source: existing?.source ?? coerceSource(input.source),
-    sourceConversationId: has('sourceConversationId')
-      ? input.sourceConversationId == null
-        ? null
-        : str(input.sourceConversationId) || null
-      : (existing?.sourceConversationId ?? null),
+    sourceConversationId: null,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
     lastAccessedAt: existing?.lastAccessedAt ?? now,
@@ -236,8 +231,7 @@ export function normalizeMemory(raw: Partial<AiMemory> & { id: string }, now: st
     tags: coerceTags(raw.tags),
     pinned: raw.pinned === true,
     source: coerceSource(raw.source),
-    sourceConversationId:
-      raw.sourceConversationId == null ? null : str(raw.sourceConversationId) || null,
+    sourceConversationId: null,
     createdAt: str(raw.createdAt) || now,
     updatedAt: str(raw.updatedAt) || now,
     lastAccessedAt: str(raw.lastAccessedAt) || str(raw.createdAt) || now,

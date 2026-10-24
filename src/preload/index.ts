@@ -328,7 +328,6 @@ export const api = {
         projectId?: string | null
         title: string
         body: string
-        sourceConversationId?: string | null
       }): Promise<{ ok: true } | { error: string }> =>
         ipcRenderer.invoke('ai:memory:handoff', input)
     },
