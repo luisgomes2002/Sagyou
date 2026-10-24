@@ -20,26 +20,19 @@ interface BlobEntry {
   base64: string
 }
 
-interface ImageEntry {
-  id: string
-  base64: string
-}
-
 interface BackupDeps {
   dialog: Dialog
   filesDir: string
-  chatImagesDir: string
   taskImagesDir: string
   sep: string
-  chatImagePath: (id: unknown) => string | null
   taskImagePath: (id: unknown, ext: unknown) => string | null
   backupDir: string
 }
 
 export function registerBackupHandlers(ipcMain: IpcMain, deps: BackupDeps): void {
-  const { dialog, filesDir, chatImagesDir, taskImagesDir, sep, chatImagePath, taskImagePath } = deps
+  const { dialog, filesDir, taskImagesDir, sep, taskImagePath } = deps
 
-  let pendingBlobs: { fileBlobs?: unknown; chatImages?: unknown; taskImages?: unknown } | null =
+  let pendingBlobs: { fileBlobs?: unknown; taskImages?: unknown } | null =
     null
   const exportJobs = new Map<number, { cancelled: boolean }>()
   const yieldToRenderer = (): Promise<void> => new Promise((resolve) => setImmediate(resolve))
@@ -61,8 +54,7 @@ export function registerBackupHandlers(ipcMain: IpcMain, deps: BackupDeps): void
                 : 0),
             0
           )
-        : 0) +
-      (existsSync(chatImagesDir) ? readdirSync(chatImagesDir).length : 0)
+        : 0)
     let completed = 0
     const progress = (): void => event?.sender.send('backup:export-progress', { completed, total })
     const checkpoint = async (): Promise<void> => {
@@ -75,7 +67,6 @@ export function registerBackupHandlers(ipcMain: IpcMain, deps: BackupDeps): void
     return {
       ...(backup as Record<string, unknown>),
       fileBlobs: await collectFileBlobs(source.files, checkpoint),
-      chatImages: await collectChatImages(checkpoint),
       taskImages: await collectTaskImageBlobs(source.tasks, checkpoint)
     }
   }
@@ -112,22 +103,6 @@ export function registerBackupHandlers(ipcMain: IpcMain, deps: BackupDeps): void
         })
       } catch {
         /* unreadable blob is skipped, not fatal to the backup */
-      }
-      await checkpoint()
-    }
-    return out
-  }
-
-  const collectChatImages = async (checkpoint: () => Promise<void>): Promise<ImageEntry[]> => {
-    if (!existsSync(chatImagesDir)) return []
-    const out: ImageEntry[] = []
-    for (const id of readdirSync(chatImagesDir)) {
-      const full = chatImagePath(id)
-      if (!full || !existsSync(full)) continue
-      try {
-        out.push({ id, base64: (await readFile(full)).toString('base64') })
-      } catch {
-        /* skip an unreadable image */
       }
       await checkpoint()
     }
@@ -175,18 +150,6 @@ export function registerBackupHandlers(ipcMain: IpcMain, deps: BackupDeps): void
       if (!name || typeof b64 !== 'string') continue
       const full = join(filesDir, name)
       if (!full.startsWith(filesDir + sep)) continue
-      writeFileSync(full, Buffer.from(b64, 'base64'))
-    }
-  }
-
-  const restoreChatImages = (images: unknown): void => {
-    if (!Array.isArray(images)) return
-    if (!existsSync(chatImagesDir)) mkdirSync(chatImagesDir, { recursive: true })
-    for (const img of images) {
-      const id = (img as { id?: unknown })?.id
-      const b64 = (img as { base64?: unknown })?.base64
-      const full = chatImagePath(id)
-      if (!full || typeof b64 !== 'string') continue
       writeFileSync(full, Buffer.from(b64, 'base64'))
     }
   }
@@ -270,11 +233,12 @@ export function registerBackupHandlers(ipcMain: IpcMain, deps: BackupDeps): void
       if (!isValidBackup(data)) return { success: false, error: 'Backup inválido ou incompatível' }
       pendingBlobs = {
         fileBlobs: data.fileBlobs,
-        chatImages: data.chatImages,
         taskImages: data.taskImages
       }
       if (data && typeof data === 'object') {
         delete data.fileBlobs
+        // Removed chat history: never reaches the renderer or disk.
+        delete data.conversations
         delete data.chatImages
         delete data.taskImages
       }
@@ -289,7 +253,6 @@ export function registerBackupHandlers(ipcMain: IpcMain, deps: BackupDeps): void
     const blobs = pendingBlobs
     try {
       restoreFileBlobs(blobs.fileBlobs)
-      restoreChatImages(blobs.chatImages)
       restoreTaskImages(blobs.taskImages)
       pendingBlobs = null
       return { success: true }

@@ -51,11 +51,9 @@ describe('backup restore flow', () => {
             showOpenDialog: vi.fn().mockResolvedValue({ canceled: false, filePaths: [selected] })
           } as unknown as Dialog,
           filesDir,
-          chatImagesDir: join(root, 'chat-images'),
           taskImagesDir: join(root, 'task-images'),
           backupDir: join(root, 'backups'),
           sep,
-          chatImagePath: () => null,
           taskImagePath: () => null
         }
       )
@@ -103,7 +101,114 @@ describe('backup restore flow', () => {
   })
 })
 
+describe('legacy chat data in a backup', () => {
+  it('backup:import drops conversations and chatImages and writes no chat-images', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'sagyou-backup-chat-'))
+    try {
+      const filesDir = join(root, 'files')
+      mkdirSync(filesDir)
+      const selected = join(root, 'old.json')
+      writeFileSync(
+        selected,
+        JSON.stringify({
+          ...backup(),
+          conversations: [{ id: 'c1' }, { id: 'c1' }, 'lixo'],
+          chatImages: [{ id: '../../ai-config.json', base64: '!!' }]
+        })
+      )
+      const handlers = new Map<string, (...args: unknown[]) => Promise<unknown>>()
+      registerBackupHandlers(
+        {
+          handle: (name: string, fn: (...args: unknown[]) => Promise<unknown>) =>
+            handlers.set(name, fn),
+          on: vi.fn()
+        } as unknown as IpcMain,
+        {
+          dialog: {
+            showOpenDialog: vi.fn().mockResolvedValue({ canceled: false, filePaths: [selected] })
+          } as unknown as Dialog,
+          filesDir,
+          taskImagesDir: join(root, 'task-images'),
+          backupDir: join(root, 'backups'),
+          sep,
+          taskImagePath: () => null
+        }
+      )
+      const result = (await handlers.get('backup:import')?.(null)) as {
+        success: boolean
+        data: Record<string, unknown>
+      }
+      expect(result.success).toBe(true)
+      expect(result.data).not.toHaveProperty('conversations')
+      expect(result.data).not.toHaveProperty('chatImages')
+      expect(result.data.projects).toHaveLength(1)
+      await handlers.get('backup:commit-blobs')?.(null)
+      expect(readdirSync(root)).not.toContain('chat-images')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('backup writing', () => {
+  it('still carries fileBlobs and taskImages but never chatImages or conversations', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'sagyou-backup-out-'))
+    try {
+      const filesDir = join(root, 'files')
+      const taskImagesDir = join(root, 'task-images')
+      mkdirSync(filesDir)
+      mkdirSync(taskImagesDir)
+      mkdirSync(join(root, 'chat-images'))
+      writeFileSync(join(root, 'chat-images', 'a.png'), 'chat')
+      const fileId = '12345678-1234-1234-1234-123456789abc'
+      const imgId = '22345678-1234-1234-1234-123456789abc'
+      writeFileSync(join(filesDir, `${fileId}.txt`), 'doc')
+      writeFileSync(join(taskImagesDir, `${imgId}.png`), 'img')
+      const handlers = new Map<string, (...args: unknown[]) => Promise<unknown>>()
+      registerBackupHandlers(
+        {
+          handle: (name: string, fn: (...args: unknown[]) => Promise<unknown>) =>
+            handlers.set(name, fn),
+          on: vi.fn()
+        } as unknown as IpcMain,
+        {
+          dialog: {} as unknown as Dialog,
+          filesDir,
+          taskImagesDir,
+          backupDir: join(root, 'backups'),
+          sep,
+          taskImagePath: (id, ext) => join(taskImagesDir, `${id}${ext}`)
+        }
+      )
+      await handlers.get('backup:auto-save')?.(null, {
+        ...backup(),
+        files: [{ id: fileId, ext: '.txt' }],
+        tasks: [],
+        conversations: [{ id: 'c1' }]
+      })
+      const name = readdirSync(join(root, 'backups'))[0]
+      const saved = JSON.parse(readFileSync(join(root, 'backups', name), 'utf8'))
+      expect(saved.fileBlobs).toHaveLength(1)
+      expect(saved.taskImages).toEqual([])
+      expect(saved).not.toHaveProperty('chatImages')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('backup validation', () => {
+  it('ignores malformed conversations and chatImages entirely', () => {
+    expect(
+      isValidBackup({
+        ...backup(),
+        conversations: [{ id: 'c1' }, { id: 'c1' }, null, 'lixo'],
+        chatImages: [{ id: '../../x', base64: 'not base64!' }, 42]
+      })
+    ).toBe(true)
+    expect(isValidBackup({ ...backup(), conversations: 'x', chatImages: {} })).toBe(true)
+  })
+
   it('accepts current and legacy backups, including an intentionally empty board', () => {
     expect(isValidBackup(backup())).toBe(true)
     expect(isValidBackup({ ...backup(), version: 2, projects: [] })).toBe(true)

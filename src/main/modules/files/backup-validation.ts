@@ -1,5 +1,4 @@
 import { safeAttachmentName } from './backup-files'
-import { isImageFileName } from '../conversations/chat-images'
 
 const REQUIRED_ARRAYS = ['projects', 'tasks'] as const
 const OPTIONAL_ARRAYS = [
@@ -10,11 +9,9 @@ const OPTIONAL_ARRAYS = [
   'habits',
   'lists',
   'financialProfiles',
-  'conversations',
   'memories',
   'files',
   'fileBlobs',
-  'chatImages',
   'taskImages',
   'timeBlocks',
   'routines'
@@ -38,6 +35,8 @@ const hasUniqueIds = (entries: unknown[]): boolean => {
 }
 
 /** Validate the envelope before a restore writes blobs or replaces live state. */
+// `conversations` and `chatImages` (removed chat history) are ignored entirely:
+// neither required nor validated, so old backups still import.
 export function isValidBackup(value: unknown): boolean {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const data = value as Record<string, unknown>
@@ -70,8 +69,7 @@ export function isValidBackup(value: unknown): boolean {
     'habits',
     'lists',
     'financialProfiles',
-    'conversations',
-    'memories',
+      'memories',
     'files',
     'timeBlocks',
     'routines'
@@ -188,10 +186,5 @@ export function isValidBackup(value: unknown): boolean {
     )
       return false
   }
-  if (
-    Array.isArray(data.chatImages) &&
-    data.chatImages.some((entry) => !isImageFileName(entry.id) || !validBase64(entry.base64))
-  )
-    return false
   return true
 }

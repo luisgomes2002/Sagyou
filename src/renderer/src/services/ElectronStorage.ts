@@ -12,7 +12,6 @@ import type {
   FinancialTable,
   FinancialProfile,
   StoredFile,
-  AIConversation,
   AiMemory,
   TimeBlock,
   Routine,
@@ -85,14 +84,6 @@ export class ElectronStorage implements IStorageAdapter {
   }> {
     const result = await window.electronAPI.ai.import()
     return result as { success: boolean; cancelled?: boolean; data?: AIJson; error?: string }
-  }
-
-  async loadConversations(): Promise<AIConversation[]> {
-    return window.electronAPI.ai.conversations.all()
-  }
-
-  async saveConversations(list: AIConversation[]): Promise<void> {
-    await window.electronAPI.ai.conversations.replace(list)
   }
 
   async loadMemories(): Promise<AiMemory[]> {

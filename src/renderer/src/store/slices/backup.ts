@@ -16,7 +16,6 @@ import type {
   StoredFile,
   TimeBlock,
   Routine,
-  AIConversation,
   AiMemory,
   Priority,
   ActiveTimer,
@@ -45,8 +44,6 @@ interface StorageDep {
     error?: string
   }>
   importAIJson: () => Promise<{ success: boolean; cancelled?: boolean; data?: unknown }>
-  loadConversations: () => Promise<AIConversation[]>
-  saveConversations: (list: AIConversation[]) => Promise<void>
   loadMemories: () => Promise<AiMemory[]>
   replaceMemories: (list: AiMemory[]) => Promise<void>
   rebuildSearchIndex: () => Promise<void>
@@ -101,15 +98,6 @@ export function createBackupSlice(storage: StorageDep): StateCreator<
         featurePreferences,
         uiPreferences
       } = get()
-      // Chat history isn't part of the store — read it straight from storage.
-      // A failure here shouldn't cost the user the rest of the backup.
-      let conversations: AIConversation[] = []
-      try {
-        conversations = await storage.loadConversations()
-      } catch {
-        if (automatic) return false
-        conversations = []
-      }
       // AI memory rides along like chat history — same store-external treatment,
       // same "a failure here shouldn't cost the rest of the backup" guard.
       let memories: AiMemory[] = []
@@ -134,7 +122,6 @@ export function createBackupSlice(storage: StorageDep): StateCreator<
         activeFinancialProfileId,
         featurePreferences,
         uiPreferences,
-        conversations,
         memories,
         // Attachment metadata (new in v5). The physical bytes (fileBlobs) and the
         // chat images are attached by the main process at write time — see the
@@ -182,9 +169,6 @@ export function createBackupSlice(storage: StorageDep): StateCreator<
         activeProjectId: get().activeProjectId,
         activeTimers: get().activeTimers
       }
-      const previousConversations = Array.isArray(backup.conversations)
-        ? await storage.loadConversations()
-        : null
       const previousMemories = Array.isArray(backup.memories) ? await storage.loadMemories() : null
 
       const tombstones: Tombstone[] = backup.tombstones || []
@@ -287,11 +271,6 @@ export function createBackupSlice(storage: StorageDep): StateCreator<
       try {
         await get()._flushPersist()
 
-        // Only touch the chat history when the backup actually carries it: a v2
-        // file has no `conversations` key and must leave local history alone.
-        if (Array.isArray(backup.conversations)) {
-          await storage.saveConversations(backup.conversations)
-        }
         // Same rule for memory (v4+): absent key = leave local memory untouched.
         // Written after the store flush above, so projects exist when a memory's
         // FK is checked (see replaceMemories).
@@ -300,7 +279,7 @@ export function createBackupSlice(storage: StorageDep): StateCreator<
         }
         const blobs = await storage.commitBackupBlobs()
         if (!blobs.success) throw new Error('Não foi possível restaurar os anexos do backup.')
-        // The backup spans three sources (store, conversation JSON, memory). Rebuild
+        // The backup spans two sources (store, memory). Rebuild
         // after all of them have settled so no row from the previous state survives.
         await storage.rebuildSearchIndex()
         return true
@@ -308,7 +287,6 @@ export function createBackupSlice(storage: StorageDep): StateCreator<
         set(previous)
         try {
           await get()._flushPersist()
-          if (previousConversations) await storage.saveConversations(previousConversations)
           if (previousMemories) await storage.replaceMemories(previousMemories)
           await storage.rebuildSearchIndex()
         } catch (rollbackError) {

@@ -11,7 +11,6 @@ import type {
   FinancialTable,
   FinancialProfile,
   StoredFile,
-  AIConversation,
   AiMemory,
   TimeBlock,
   Routine,
@@ -49,8 +48,6 @@ export interface IStorageAdapter {
   importAIJson(): Promise<{ success: boolean; cancelled?: boolean; data?: AIJson; error?: string }>
   // AI chat history lives outside the main store (its own file in userData),
   // so backup export/import reaches it through these.
-  loadConversations(): Promise<AIConversation[]>
-  saveConversations(list: AIConversation[]): Promise<void>
   // AI memory lives in the DB but outside the Zustand store, so backup
   // export/import reaches it through these (like conversations above).
   loadMemories(): Promise<AiMemory[]>

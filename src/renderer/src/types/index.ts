@@ -357,9 +357,9 @@ export interface Backup {
   featurePreferences?: FeatureId[]
   /** Appearance and accessibility choices; absent in older backups keeps the local choices. */
   uiPreferences?: UiPreferences
-  // Added in version 3. Absent in older backups — importing one of those must
-  // leave the local history untouched rather than wiping it.
-  conversations?: AIConversation[]
+  // Legacy (chat history was removed): read-tolerant only. Never written by
+  // export, ignored on import.
+  conversations?: unknown[]
   // Added in version 4. Same rule: absent = leave local memory alone.
   memories?: AiMemory[]
   // Added in version 5: the physical files that used to live only on disk.
@@ -370,6 +370,7 @@ export interface Backup {
   // renderer. Same "absent = leave local files untouched" rule as above.
   files?: StoredFile[]
   fileBlobs?: BackupFileBlob[]
+  /** Legacy, ignored on import and never exported. */
   chatImages?: BackupChatImage[]
   // Task-image bytes (metadata rides on `tasks[].images`). Same main-injects-on-
   // export / main-writes-and-strips-on-import handling as fileBlobs.

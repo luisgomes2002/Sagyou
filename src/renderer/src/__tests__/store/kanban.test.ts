@@ -20,8 +20,6 @@ vi.mock('../../services/ElectronStorage', () => {
       this.commitBackupBlobs = vi.fn().mockResolvedValue({ success: true })
       this.importBackup = vi.fn().mockResolvedValue({ success: false, cancelled: true })
       this.importAIJson = vi.fn().mockResolvedValue({ success: false, cancelled: true })
-      this.loadConversations = vi.fn().mockResolvedValue([])
-      this.saveConversations = vi.fn().mockResolvedValue(undefined)
       this.loadMemories = vi.fn().mockResolvedValue([])
       this.replaceMemories = vi.fn().mockResolvedValue(undefined)
       this.rebuildSearchIndex = vi.fn().mockResolvedValue(undefined)
@@ -41,8 +39,6 @@ function getStorageMock() {
     exportBackup: ReturnType<typeof vi.fn>
     autoSaveBackup: ReturnType<typeof vi.fn>
     commitBackupBlobs: ReturnType<typeof vi.fn>
-    loadConversations: ReturnType<typeof vi.fn>
-    saveConversations: ReturnType<typeof vi.fn>
     loadMemories: ReturnType<typeof vi.fn>
     replaceMemories: ReturnType<typeof vi.fn>
     rebuildSearchIndex: ReturnType<typeof vi.fn>
@@ -667,9 +663,9 @@ describe('shopping list actions', () => {
   })
 })
 
-// ── AI chat history in backups ────────────────────────────────────────────────
+// ── Chat history is no longer part of backups ────────────────────────────────────────────────
 
-describe('backups carry AI chat history', () => {
+describe('backups ignore the removed AI chat history', () => {
   beforeEach(resetStore)
 
   const conversation = {
@@ -685,9 +681,8 @@ describe('backups carry AI chat history', () => {
     ]
   }
 
-  it('exportBackup includes conversations, memories and file metadata at version 5', async () => {
+  it('exportBackup has no conversations or chatImages, keeps memories and file metadata at version 7', async () => {
     const storage = getStorageMock()
-    storage.loadConversations.mockResolvedValueOnce([conversation])
     const memory = {
       id: 'm1',
       projectId: null,
@@ -718,7 +713,8 @@ describe('backups carry AI chat history', () => {
 
     const backup = storage.exportBackup.mock.calls[0][0]
     expect(backup.version).toBe(7)
-    expect(backup.conversations).toEqual([conversation])
+    expect(backup).not.toHaveProperty('conversations')
+    expect(backup).not.toHaveProperty('chatImages')
     expect(backup.memories).toEqual([memory])
     // Attachment metadata rides along now; the bytes are attached in main.
     expect(backup.files).toEqual([file])
@@ -891,8 +887,7 @@ describe('backups carry AI chat history', () => {
         notes: [],
         goals: [],
         habits: [],
-        lists: [],
-        conversations: []
+        lists: []
       }
     })
 
@@ -901,63 +896,34 @@ describe('backups carry AI chat history', () => {
     expect(storage.replaceMemories).not.toHaveBeenCalled()
   })
 
-  it('exportBackup still succeeds when the history cannot be read', async () => {
+  it('importBackup ignores conversations and chatImages but restores tasks and memories', async () => {
     const storage = getStorageMock()
-    storage.loadConversations.mockRejectedValueOnce(new Error('disk on fire'))
-
-    const result = await useKanbanStore.getState().exportBackup()
-
-    expect(result).toBe(true)
-    expect(storage.exportBackup.mock.calls.at(-1)![0].conversations).toEqual([])
-  })
-
-  it('importBackup restores conversations from a v3 backup', async () => {
-    const storage = getStorageMock()
+    storage.replaceMemories.mockClear()
     storage.importBackup.mockResolvedValueOnce({
       success: true,
       data: {
-        version: 3,
+        version: 7,
         exportedAt: new Date().toISOString(),
-        projects: [],
-        tasks: [],
+        projects: [{ id: 'p9', name: 'Importado', columns: [{ id: 'c9', name: 'A', order: 0 }] }],
+        tasks: [{ id: 't9', title: 'Tarefa', projectId: 'p9', columnId: 'c9' }],
         sprints: [],
         tombstones: [],
         notes: [],
         goals: [],
         habits: [],
         lists: [],
-        conversations: [conversation]
+        conversations: [conversation],
+        chatImages: [{ id: 'x.png', base64: 'AAAA' }],
+        memories: [{ id: 'm9', title: 'Fato', body: 'corpo', sourceConversationId: 'c1' }]
       }
     })
 
-    await useKanbanStore.getState().importBackup()
+    expect(await useKanbanStore.getState().importBackup()).toBe(true)
 
-    expect(storage.saveConversations).toHaveBeenCalledWith([conversation])
-  })
-
-  it('importBackup leaves local history alone for a v2 backup', async () => {
-    const storage = getStorageMock()
-    storage.saveConversations.mockClear()
-    storage.importBackup.mockResolvedValueOnce({
-      success: true,
-      data: {
-        version: 2,
-        exportedAt: new Date().toISOString(),
-        projects: [],
-        tasks: [],
-        sprints: [],
-        tombstones: [],
-        notes: [],
-        goals: [],
-        habits: [],
-        lists: []
-      }
-    })
-
-    const result = await useKanbanStore.getState().importBackup()
-
-    expect(result).toBe(true)
-    expect(storage.saveConversations).not.toHaveBeenCalled()
+    expect(useKanbanStore.getState().tasks.map((t) => t.id)).toContain('t9')
+    expect(storage.replaceMemories).toHaveBeenCalledOnce()
+    expect(storage).not.toHaveProperty('saveConversations')
+    expect(storage).not.toHaveProperty('loadConversations')
   })
 })
 
@@ -1017,7 +983,7 @@ describe('appearance preferences', () => {
 // ── importBackup ──────────────────────────────────────────────────────────────
 
 describe('importBackup', () => {
-  it('rebuilds search after the restored store, conversations and memories are saved', async () => {
+  it('rebuilds search after the restored store and memories are saved', async () => {
     resetStore()
     const storage = getStorageMock()
     storage.rebuildSearchIndex.mockClear()
@@ -1034,7 +1000,6 @@ describe('importBackup', () => {
         goals: [],
         habits: [],
         lists: [],
-        conversations: [],
         memories: []
       }
     })
@@ -1043,7 +1008,6 @@ describe('importBackup', () => {
     expect(storage.rebuildSearchIndex).toHaveBeenCalledOnce()
     const rebuildOrder = storage.rebuildSearchIndex.mock.invocationCallOrder[0]
     expect(storage.save.mock.invocationCallOrder.at(-1)).toBeLessThan(rebuildOrder)
-    expect(storage.saveConversations.mock.invocationCallOrder.at(-1)).toBeLessThan(rebuildOrder)
     expect(storage.replaceMemories.mock.invocationCallOrder.at(-1)).toBeLessThan(rebuildOrder)
   })
 
@@ -1112,14 +1076,14 @@ describe('importBackup', () => {
     expect(storage.commitBackupBlobs).not.toHaveBeenCalled()
   })
 
-  it('rolls back state and conversations when a sidecar write fails during restore', async () => {
+  it('rolls back state and memories when a sidecar write fails during restore', async () => {
     const localId = useKanbanStore.getState().createProject('Local')
     const storage = getStorageMock()
-    const previousConversations = [{ id: 'old', title: 'Anterior', messages: [] }]
-    // exportBackup(true) reads history for the restore point before importBackup
+    const previousMemories = [{ id: 'old', title: 'Anterior', body: 'x' }]
+    // exportBackup(true) reads memories for the restore point before importBackup
     // captures the state it must restore on failure.
-    storage.loadConversations.mockResolvedValueOnce([]).mockResolvedValueOnce(previousConversations)
-    storage.saveConversations
+    storage.loadMemories.mockResolvedValueOnce([]).mockResolvedValueOnce(previousMemories)
+    storage.replaceMemories
       .mockRejectedValueOnce(new Error('disco cheio'))
       .mockResolvedValueOnce(undefined)
     storage.importBackup.mockResolvedValueOnce({
@@ -1129,7 +1093,7 @@ describe('importBackup', () => {
         exportedAt: new Date().toISOString(),
         projects: [],
         tasks: [],
-        conversations: [{ id: 'new', title: 'Novo', messages: [] }]
+        memories: [{ id: 'new', title: 'Novo', body: 'y' }]
       }
     })
 
@@ -1137,7 +1101,7 @@ describe('importBackup', () => {
       'dados anteriores foram preservados'
     )
     expect(useKanbanStore.getState().projects.map((project) => project.id)).toEqual([localId])
-    expect(storage.saveConversations).toHaveBeenLastCalledWith(previousConversations)
+    expect(storage.replaceMemories).toHaveBeenLastCalledWith(previousMemories)
     expect(storage.commitBackupBlobs).not.toHaveBeenCalled()
   })
 

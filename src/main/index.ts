@@ -104,7 +104,6 @@ import { renderWeb } from './modules/web/web-render'
 import { getExchangeRate } from './modules/financial/financial-exchange'
 import { startSagyouMcpBroker } from './modules/agent/sagyou-mcp'
 import { captureBase, diffSince, type AgentBase, type DiffLineItem } from './modules/code/code-diff'
-import { isImageFileName } from './modules/conversations/chat-images'
 import { safeAttachmentName } from './modules/files/backup-files'
 import {
   diffFileCount,
@@ -1113,13 +1112,6 @@ const chatImagesDir = (): string => join(app.getPath('userData'), 'chat-images')
 
 const chatFilesDir = (): string => join(app.getPath('userData'), 'chat-files')
 
-/** Resolve an image id to a path, or null if it isn't one of ours. */
-function chatImagePath(id: unknown): string | null {
-  if (!isImageFileName(id)) return null
-  const full = join(chatImagesDir(), id)
-  // The id arrives from the renderer; belt and braces on top of the name check.
-  return full.startsWith(chatImagesDir() + sep) ? full : null
-}
 
 // --- Task images (files under userData/task-images, named <id><ext>) ---
 //
@@ -1519,11 +1511,9 @@ app.whenReady().then(() => {
   registerBackupHandlers(ipcMain, {
     dialog,
     filesDir,
-    chatImagesDir: chatImagesDir(),
     taskImagesDir: taskImagesDir(),
     backupDir: join(app.getPath('userData'), 'backups'),
     sep,
-    chatImagePath,
     taskImagePath
   })
   ipcMain.handle('backup:open-folder', async () => {
