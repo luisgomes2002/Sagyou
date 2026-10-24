@@ -36,7 +36,7 @@ SQLite só como índice, consulta por MCP) fica para depois e **não** faz parte
 
 ## Decisões (de Luis)
 
-- Uma sessão começa direto no terminal, sem formulário: o usuário escolhe projeto/escopo e agente no Fleet e digita o pedido ao CLI. O Sagyou injeta sozinho um briefing fixo no início (projeto, memórias relevantes, canal MCP), sem o usuário escrever nada. (Esclarecimento de 2026-10-24, depois da aprovação.)
+- Uma sessão começa direto no terminal, sem formulário e sem briefing colado: o usuário escolhe projeto/escopo e agente no Fleet e digita o pedido ao CLI. Isso já é o comportamento atual da sessão em branco (`blank`). O contexto do Sagyou chega só pelo MCP, sob demanda do agente. (Esclarecimento de 2026-10-24, depois da aprovação.)
 - A tela de Chat some. O Fleet é a única porta de entrada, e funciona como `claude`/`codex` no terminal. Cada CLI cuida do próprio histórico.
 - A migração roda sozinha na primeira abertura, **sem perguntar**, depois de um snapshot automático.
 - Apagar todas as conversas, sem prazo nem exceção (inclui conversas citadas por memória).
@@ -51,6 +51,7 @@ SQLite só como índice, consulta por MCP) fica para depois e **não** faz parte
 - As memórias existentes ficam. `sourceConversationId` passa a nulo, e o trecho `(conversa completa: id=… — use ler_conversa…)` é removido do corpo dos handoffs antigos.
 - A migração é idempotente e deixa uma marca em `settings` (`legacyChatRemovedAt`). Roda uma única vez.
 - **Se o snapshot falhar, nada é apagado**, e a migração tenta de novo na abertura seguinte.
+- Saem do MCP as ferramentas `search_conversations` e `read_conversation`.
 - Saem as ferramentas `buscar_conversas` e `ler_conversa`, e os canais `ai:conversations:*`, `ai:images:*`, `ai:usage:summary` e `ai:run-metrics:*`.
 - O índice de busca global (FTS5) deixa de indexar conversas. Como é descartável, ele é reconstruído na migração.
 - A regra de retenção de conversas por memória (`referencedConversationIds`, `retainReferencedConversations`) é removida junto com o histórico.
