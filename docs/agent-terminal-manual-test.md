@@ -1,6 +1,7 @@
 # Roteiro manual — terminal nativo de agentes (Windows)
 
-Execute este roteiro uma vez com **Codex** e uma vez com **Claude Code**. Antes
+Execute este roteiro uma vez com **Codex**, uma com **Claude Code** e uma com
+**OpenCode**. Antes
 de começar, autentique o CLI no Windows e selecione-o nas configurações do
 Agente de Código.
 

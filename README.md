@@ -72,7 +72,7 @@ escolha permanece ao reabrir o histórico; respostas anteriores mostram a conex�
 e o modelo usados. Em **Configuração**, o ChatGPT e os Perfis de API têm cards
 próprios. Base URL, chave, modelo forte e preços ficam no editor do perfil ou em
 **Avançado**. As chaves salvas não reaparecem no formulário. Codex, Claude Code,
-sandbox e revisão de patch ficam em **Agentes → Agente de código**.
+OpenCode, sandbox e revisão de patch ficam em **Agentes → Agente de código**.
 
 O assistente é **opcional** e vem desligado — nada é enviado a lugar nenhum até você configurar um provedor.
 
@@ -91,7 +91,7 @@ e timeout. Configurações antigas de API são importadas automaticamente como
 um perfil comum, sem um modo legado visível. A configuração fica em
 `ai-config.json` (veja [Dados](#dados)); uma chave salva não volta para o renderer.
 
-Em **Agentes → Agente de código**, escolha **Codex** ou **Claude Code** instalado
+Em **Agentes → Agente de código**, escolha **Codex**, **Claude Code** ou **OpenCode** instalado
 localmente. Cada CLI usa a própria conta, roda em uma worktree isolada e só entrega
 o patch ao projeto depois da sua revisão e aprovação final.
 
@@ -143,7 +143,7 @@ Dá para marcar **mais de uma pasta** (útil para front-end e back-end em reposi
 
 ### Agente de código
 
-Para **alterar** código, use o agente de código na área **Agentes → Agente de código** e escolha Codex ou Claude Code. O Sagyou abre o terminal nativo do CLI em uma worktree detached; teclado, cores, colagem e redimensionamento seguem funcionando no painel.
+Para **alterar** código, use o agente de código na área **Agentes → Agente de código** e escolha Codex, Claude Code ou OpenCode. O Sagyou abre o terminal nativo do CLI em uma worktree detached; teclado, cores, colagem e redimensionamento seguem funcionando no painel.
 
 O CLI lê e altera somente os arquivos da worktree. Dados do Sagyou — tarefas, projeto, finanças, memórias e conversas — passam exclusivamente pelo MCP local, com credencial efêmera limitada ao projeto, perfil financeiro e permissões da execução. Escritas MCP pedem aprovação própria; isso não aprova o patch.
 

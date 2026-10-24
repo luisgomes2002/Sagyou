@@ -327,8 +327,8 @@ CODE_READ_PAGE`) devolve só ~100 linhas + `simbolos` + `dica`, não a janela de
     `StoredConversation.connection` (opcional nos históricos antigos). Cada run
     usa o modelo exibido no cabeçalho; o roteamento automático `modelComplex`
     não atua nesse fluxo. O main resolve `profileId` e a chave do perfil. O
-    modelo forte continua como escolha explícita. Codex e Claude Code são os
-    executores PTY da área Agentes.
+    modelo forte continua como escolha explícita. Codex, Claude Code e OpenCode são
+    os executores PTY da área Agentes.
     Campos antigos `baseUrl`/`apiKey`/`model` de `ai-config.json` são importados
     uma vez como perfil comum, sem conexão legada visível; a marca de migração
     impede que excluir esse perfil o recrie. Credenciais nunca retornam ao renderer.
@@ -583,8 +583,8 @@ activeTimers[0]` no `settings` do DB (não viaja no backup); `normalizeTimers`
   Não é mais o executor arquitetural e não deve receber capacidades novas. Remova-o
   somente quando os harnesses via PTY/protocolo cobrirem o fluxo; enquanto existir, preserve
   `confineToRoot` e aprovação por ação, pois ainda protegem o caminho antigo.
-- **Execução agent-first:** siga a seção **Arquitetura agent-first** acima. Codex
-  e Claude Code usam sempre PTY + worktree + MCP e aprovação final.
+- **Execução agent-first:** siga a seção **Arquitetura agent-first** acima. Codex,
+  Claude Code e OpenCode usam sempre PTY + worktree + MCP e aprovação final.
 - **Execução agent-first não usa teto artificial de passos do CLI.** A sessão termina
   quando o executor conclui, quando o usuário a encerra para revisar o diff ou quando
   há bloqueio real; Stop revoga MCP e torna o patch inelegível para entrega.
