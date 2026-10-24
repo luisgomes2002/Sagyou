@@ -13,13 +13,11 @@ import {
 import { decodeDataUrl } from './modules/conversations/chat-images'
 import { isDocumentExt, parseDocument } from './modules/files/document-parser'
 import {
-  buildConversationDocuments,
   buildMemoryDocuments,
   createGlobalSearchIndex,
   rebuildGlobalSearchIndex,
   syncGlobalSearchIndex,
   syncSupplementalSearchIndex,
-  type SearchConversation
 } from './modules/search/global-search-index'
 import {
   getGlobalSearchHit,
@@ -370,12 +368,11 @@ function rebuildSearchIndexFromDb(db: Database.Database): void {
     ...buildMemoryDocuments(
       memoryRows(db),
       new Set(source.projects.filter((p) => p.archivedAt).map((p) => p.id))
-    ),
-    ...buildConversationDocuments(readSearchConversations())
+    )
   ])
 }
 
-/** Recreate every derived document from the current SQLite and conversation file. */
+/** Recreate every derived document from the current SQLite data. */
 export async function rebuildSearchIndex(): Promise<void> {
   const db = getDb()
   await refreshProjectFileSearchContent(db)
@@ -483,25 +480,6 @@ export function getGlobalSearchIndexHit(options: unknown): GlobalSearchHit | nul
   return getGlobalSearchHit(db, options, activeProfileIdForSearch(db))
 }
 
-function readSearchConversations(): SearchConversation[] {
-  try {
-    const value: unknown = JSON.parse(
-      readFileSync(join(app.getPath('userData'), 'ai-conversations.json'), 'utf-8')
-    )
-    if (!Array.isArray(value)) return []
-    return value.filter(
-      (c): c is SearchConversation =>
-        c &&
-        typeof c.id === 'string' &&
-        typeof c.title === 'string' &&
-        typeof c.updatedAt === 'string' &&
-        Array.isArray(c.messages)
-    )
-  } catch {
-    return []
-  }
-}
-
 function memoryRows(db: Database.Database): AiMemory[] {
   return (db.prepare('SELECT * FROM memory').all() as Record<string, unknown>[]).map(memRowToMemory)
 }
@@ -517,14 +495,6 @@ function syncMemorySearchRows(db: Database.Database, archivedProjects?: Set<stri
       ).map((p) => p.id)
     )
   syncSupplementalSearchIndex(db, 'memory', buildMemoryDocuments(memoryRows(db), archived))
-}
-
-/** Conversations live in JSON; their index is repaired from that file on startup. */
-export function syncGlobalSearchConversations(list: SearchConversation[]): void {
-  const db = getDb()
-  db.transaction(() => {
-    syncSupplementalSearchIndex(db, 'conversation', buildConversationDocuments(list))
-  })()
 }
 
 // Coerce a monetary value (legacy number or current string) to a canonical

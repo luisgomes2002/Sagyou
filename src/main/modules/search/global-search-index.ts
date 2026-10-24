@@ -18,13 +18,6 @@ export interface SearchDocument {
   updatedAt: string | null
 }
 
-export interface SearchConversation {
-  id: string
-  title: string
-  updatedAt: string
-  messages: { role: string; content: string }[]
-}
-
 export interface SearchMemory {
   id: string
   projectId: string | null
@@ -270,31 +263,6 @@ export function buildSearchDocuments(data: SearchSource): SearchDocument[] {
   return docs
 }
 
-export function buildConversationDocuments(list: SearchConversation[]): SearchDocument[] {
-  return list.map((c) => ({
-    type: 'conversation',
-    id: c.id,
-    title: c.title,
-    tags: '',
-    content: c.messages
-      .filter(
-        (m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string'
-      )
-      .map((m) => m.content)
-      .join('\n'),
-    projectId: null,
-    profileId: null,
-    tableId: null,
-    archived: 0,
-    projectArchived: 0,
-    memoryArchived: 0,
-    completed: 0,
-    state: null,
-    date: null,
-    updatedAt: c.updatedAt
-  }))
-}
-
 export function buildMemoryDocuments(
   list: SearchMemory[],
   archivedProjects: Set<string>
@@ -354,13 +322,13 @@ export function rebuildGlobalSearchIndex(
 
 /** Keep the derived rows in the same transaction as the source save. */
 export function syncGlobalSearchIndex(db: Database.Database, source: SearchSource): void {
-  syncDocuments(db, buildSearchDocuments(source), "type NOT IN ('conversation', 'memory')")
+  syncDocuments(db, buildSearchDocuments(source), "type NOT IN ('memory')")
 }
 
 /** Caller owns the transaction when this accompanies another persisted change. */
 export function syncSupplementalSearchIndex(
   db: Database.Database,
-  type: 'conversation' | 'memory',
+  type: 'memory',
   documents: SearchDocument[]
 ): void {
   syncDocuments(db, documents, 'type = ?', type)

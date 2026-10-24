@@ -127,6 +127,10 @@ describe('global search query', () => {
   it('does not turn unknown type filters into an unrestricted search', () => {
     const { db, calls } = database([])
     expect(queryGlobalSearch(db, { term: 'teste', types: ['unknown'] }, 'personal').total).toBe(0)
+    // 'conversation' was a type before chat history was removed; it is now unknown.
+    expect(
+      queryGlobalSearch(db, { term: 'teste', types: ['conversation' as never] }, 'personal').total
+    ).toBe(0)
     expect(calls).toEqual([])
   })
 

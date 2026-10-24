@@ -16,7 +16,6 @@ export const GLOBAL_SEARCH_TYPES = [
   'transaction_detail',
   'financial_goal',
   'yield_source',
-  'conversation',
   'memory'
 ] as const
 

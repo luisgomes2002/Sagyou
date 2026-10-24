@@ -515,9 +515,6 @@ export default function App() {
         setFinancialSearchSerial((serial) => serial + 1)
         setActiveView('financial')
         break
-      case 'conversation':
-        setActiveView('ai')
-        break
       case 'memory':
         setActiveView('memory')
         break

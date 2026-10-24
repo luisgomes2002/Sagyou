@@ -1,7 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import {
-  buildConversationDocuments,
   buildMemoryDocuments,
   buildSearchDocuments,
   rebuildGlobalSearchIndex,
@@ -123,19 +122,7 @@ describe('global search documents', () => {
     expect(docs.find((d) => d.id === 't')?.tags).toBe('trabalho')
   })
 
-  it('excludes status messages and records memory archive states separately', () => {
-    const [conversation] = buildConversationDocuments([
-      {
-        id: 'c',
-        title: 'Chat',
-        updatedAt: '2026-01-01',
-        messages: [
-          { role: 'status', content: 'Lendo segredo' },
-          { role: 'user', content: 'Planejar' }
-        ]
-      }
-    ])
-    expect(conversation.content).toBe('Planejar')
+  it('records memory archive states separately', () => {
     const [memory] = buildMemoryDocuments(
       [
         {
@@ -166,9 +153,7 @@ function searchDatabase(): {
       all: () =>
         rows
           .filter((row) =>
-            sql.includes("type NOT IN ('conversation', 'memory')")
-              ? row.type !== 'conversation' && row.type !== 'memory'
-              : true
+            sql.includes("type NOT IN ('memory')") ? row.type !== 'memory' : true
           )
           .map((row) => ({ ...row })),
       run: (value?: unknown) => {
@@ -243,5 +228,41 @@ describe('global search synchronization', () => {
     rebuildGlobalSearchIndex(db, restored)
     expect(hits('Relatório')).toEqual([])
     expect(hits('Projeto antigo')).toEqual([{ type: 'project', id: 'p', title: 'Projeto antigo' }])
+  })
+})
+
+describe('removed chat history', () => {
+  it('has no document builder for conversations any more', async () => {
+    const module = await import('../modules/search/global-search-index')
+    expect('buildConversationDocuments' in module).toBe(false)
+  })
+
+  it('purges conversation rows left in the index by an older version on the next sync', () => {
+    const { db, hits } = searchDatabase()
+    const insert = db.prepare('INSERT INTO global_search_fts (type) VALUES (?)') as unknown as {
+      run: (doc: unknown) => void
+    }
+    insert.run({
+      type: 'conversation',
+      id: 'old-chat',
+      title: 'Chat antigo',
+      tags: '',
+      content: 'segredo do chat',
+      projectId: null,
+      profileId: null,
+      tableId: null,
+      archived: 0,
+      projectArchived: 0,
+      memoryArchived: 0,
+      completed: 0,
+      state: null,
+      date: null,
+      updatedAt: '2026-01-01'
+    })
+    expect(hits('segredo do chat')).toHaveLength(1)
+
+    syncGlobalSearchIndex(db, source)
+
+    expect(hits('segredo do chat')).toEqual([])
   })
 })

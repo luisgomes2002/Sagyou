@@ -53,7 +53,6 @@ const AREAS: { label: string; types: { type: GlobalSearchType; label: string }[]
   {
     label: 'IA',
     types: [
-      { type: 'conversation', label: 'Conversa' },
       { type: 'memory', label: 'Memória' }
     ]
   }

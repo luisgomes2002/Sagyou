@@ -105,6 +105,15 @@ describe('global search modal', () => {
     expect(screen.getByText('2 de 31 resultados')).toBeInTheDocument()
   })
 
+  it('does not offer a conversation filter: chat history was removed', async () => {
+    search.mockResolvedValue(page([]))
+    render(<SearchModal open onSelect={vi.fn()} onClose={vi.fn()} />)
+    await screen.findByRole('combobox', { name: 'Buscar em todo o aplicativo' })
+
+    expect(screen.queryByText('Conversa')).toBeNull()
+    expect(screen.getAllByText('Memória').length).toBeGreaterThan(0)
+  })
+
   it('closes with Escape', async () => {
     const onClose = vi.fn()
     const user = userEvent.setup()

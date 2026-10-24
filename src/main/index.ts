@@ -63,7 +63,6 @@ import {
   rebuildSearchIndex,
   searchGlobalIndex,
   getGlobalSearchIndexHit,
-  syncGlobalSearchConversations,
   readSetting,
   writeSetting,
   copyDatabaseTo,
@@ -1314,12 +1313,6 @@ function saveConversations(list: StoredConversation[]): void {
   const tmp = path + '.tmp'
   writeFileSync(tmp, JSON.stringify(list), 'utf-8')
   renameSync(tmp, path)
-  // The JSON file is authoritative; a failed derived update is repaired at next startup.
-  try {
-    syncGlobalSearchConversations(list)
-  } catch (error) {
-    console.error('[search] Conversation index update failed:', error)
-  }
 }
 
 /**
