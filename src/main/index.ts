@@ -94,8 +94,6 @@ import {
 import { confineToRoot } from './modules/code/code-files'
 import * as codeFiles from './modules/code/code-files'
 import {
-  briefConversationsForTask,
-  briefCurrentConversation,
   searchConversations
 } from './modules/conversations/conversation-search'
 import { fetchWeb } from './modules/web/web-fetch'
@@ -110,7 +108,8 @@ import {
   normalizeRuns,
   sortRuns,
   pruneRuns,
-  runsForConv,
+  runOwnership,
+  runsForSession,
   taskLabel,
   type AgentRunMeta,
   type AgentRunSnapshot
@@ -335,6 +334,7 @@ interface CodeRunState {
   id: string
   dir: string
   convId: string | null
+  sessionId: string | null
   /** Immutable application scope captured when the terminal was created. */
   projectId: string | null
   financialProfileId: string
@@ -1192,6 +1192,8 @@ async function archiveAgentRun(runId: string, exitCode: number): Promise<AgentRu
     const snapshot: AgentRunSnapshot = {
       id: run.id,
       convId: run.convId,
+      sessionId: run.sessionId,
+      projectId: run.projectId,
       agent: run.agent,
       dir: run.dir,
       allowedWritePaths: run.allowedWritePaths,
@@ -1226,7 +1228,7 @@ async function archiveAgentRun(runId: string, exitCode: number): Promise<AgentRu
     mainWindow?.webContents.send('ai:code-agent:archived', {
       runId: run.id,
       id: meta.id,
-      convId: run.convId
+      sessionId: run.sessionId
     })
     for (const gone of drop) {
       const p = agentRunPath(gone.id)
@@ -1909,8 +1911,8 @@ app.whenReady().then(() => {
         readOnlyRoots?: ReadOnlyRoot[]
         /** Scope decisions already agreed with the user, honoured without re-deciding. */
         decisoes?: string[]
-        /** The chat that asked, so the run can be reopened from it later. */
-        convId?: string
+        /** The terminal session that owns the run, so it can be reopened later. */
+        sessionId?: string
         /** The project whose memory to brief the agent with (shared with the chat). */
         projectId?: string | null
         /** Financial profile captured with the project scope. */
@@ -2123,7 +2125,7 @@ app.whenReady().then(() => {
       const run: CodeRunState = {
         id: runId,
         dir,
-        convId: typeof request.convId === 'string' && request.convId ? request.convId : null,
+        ...runOwnership({ sessionId: request.sessionId, projectId: capturedProjectId }),
         projectId: capturedProjectId,
         financialProfileId: capturedFinancialProfileId,
         codeRoot,
@@ -2207,16 +2209,8 @@ app.whenReady().then(() => {
         const referenceBrief = await readOnlyReferenceBrief(readOnlyRoots)
         const appBrief = sagyouContextBrief(run.projectId)
         const localSkillsBrief = sagyouSkillsBrief()
-        let sourceConversation = ''
-        let relatedConversations = ''
         let relevantMemories: import('./modules/ai/memory').AiMemory[] = []
         try {
-          const conversations = loadConversations()
-          sourceConversation = briefCurrentConversation(conversations, run.convId)
-          relatedConversations = briefConversationsForTask(conversations, task, {
-            excludeId: run.convId,
-            maxConversations: 3
-          })
           // Search is ranking-only and does not touch decay counters. Full data
           // still stays behind MCP once the executor needs to investigate.
           relevantMemories = memoryStore
@@ -2229,8 +2223,6 @@ app.whenReady().then(() => {
           objective: task,
           decisions: decisoes,
           files: rel,
-          sourceConversation,
-          relatedConversations,
           memories: relevantMemories
         })
         // A blank session starts the CLI on its normal screen: pasting a briefing
@@ -2541,6 +2533,7 @@ app.whenReady().then(() => {
         dir: r.dir,
         task: r.task,
         convId: r.convId,
+        sessionId: r.sessionId,
         projectId: r.projectId,
         financialProfileId: r.financialProfileId,
         codeRoot: r.codeRoot,
@@ -2598,12 +2591,12 @@ app.whenReady().then(() => {
   })
 
   /**
-   * Past runs of one conversation, newest first. Index only — the logs and
+   * Past runs of one session, newest first. Index only — the logs and
    * diffs stay on disk until a row is actually opened.
    */
-  ipcMain.handle('ai:code-agent:runs', (_, convId?: string) =>
-    typeof convId === 'string' && convId
-      ? runsForConv(loadRunIndex(), convId)
+  ipcMain.handle('ai:code-agent:runs', (_, sessionId?: string) =>
+    typeof sessionId === 'string' && sessionId
+      ? runsForSession(loadRunIndex(), sessionId)
       : sortRuns(loadRunIndex())
   )
 

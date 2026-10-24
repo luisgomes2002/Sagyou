@@ -6,7 +6,8 @@ import {
   isRunId,
   normalizeRuns,
   pruneRuns,
-  runsForConv,
+  runOwnership,
+  runsForSession,
   sortRuns,
   taskLabel,
   type AgentRunMeta
@@ -16,7 +17,9 @@ const NOW = Date.now()
 
 const run = (over: Partial<AgentRunMeta> = {}): AgentRunMeta => ({
   id: '00000000-0000-4000-8000-000000000000',
-  convId: 'c1',
+  convId: null,
+  sessionId: 's1',
+  projectId: 'p1',
   agent: 'codex',
   dir: '/repo',
   task: 'faz algo',
@@ -131,26 +134,69 @@ describe('sortRuns', () => {
   })
 })
 
-describe('runsForConv', () => {
-  it('returns only that conversation, newest first', () => {
+describe('runsForSession', () => {
+  it('returns only that session, newest first', () => {
     const runs = [
-      run({ id: uuid(1), convId: 'a', startedAt: 100 }),
-      run({ id: uuid(2), convId: 'b', startedAt: 200 }),
-      run({ id: uuid(3), convId: 'a', startedAt: 300 })
+      run({ id: uuid(1), sessionId: 'a', startedAt: 100 }),
+      run({ id: uuid(2), sessionId: 'b', startedAt: 200 }),
+      run({ id: uuid(3), sessionId: 'a', startedAt: 300 })
     ]
-    expect(runsForConv(runs, 'a').map((r) => r.id)).toEqual([uuid(3), uuid(1)])
+    expect(runsForSession(runs, 'a').map((r) => r.id)).toEqual([uuid(3), uuid(1)])
   })
 
-  it('never matches a run with no conversation', () => {
-    expect(runsForConv([run({ convId: null })], '')).toEqual([])
-    expect(runsForConv([run({ convId: null })], null)).toEqual([])
+  it('never matches a run with no session', () => {
+    expect(runsForSession([run({ sessionId: null })], '')).toEqual([])
+    expect(runsForSession([run({ sessionId: null })], null)).toEqual([])
+  })
+
+  it('still finds an old run through its legacy convId', () => {
+    const old = run({ id: uuid(1), sessionId: null, convId: 'legacy' })
+    expect(runsForSession([old], 'legacy').map((r) => r.id)).toEqual([uuid(1)])
+  })
+})
+
+describe('runOwnership', () => {
+  it('records the session and project; convId is never set for a new run', () => {
+    expect(runOwnership({ sessionId: 's1', projectId: 'p1' })).toEqual({
+      convId: null,
+      sessionId: 's1',
+      projectId: 'p1'
+    })
+  })
+
+  it('stores a null project for a general session', () => {
+    expect(runOwnership({ sessionId: 's1', projectId: null })).toEqual({
+      convId: null,
+      sessionId: 's1',
+      projectId: null
+    })
+    expect(runOwnership({ sessionId: '', projectId: undefined }).sessionId).toBeNull()
+  })
+})
+
+describe('legacy index rows', () => {
+  it('keeps an old convId-only row listable and preserves its convId', () => {
+    const [r] = normalizeRuns([{ id: uuid(1), convId: 'old-chat', task: 'x' }])
+    expect(r.convId).toBe('old-chat')
+    expect(r.sessionId).toBeNull()
+    expect(r.projectId).toBeNull()
+    // Survives a write/read round trip of index.json.
+    const [again] = normalizeRuns(JSON.parse(JSON.stringify([r])))
+    expect(again.convId).toBe('old-chat')
+  })
+
+  it('reads sessionId and projectId from a new row', () => {
+    const [r] = normalizeRuns([{ id: uuid(1), sessionId: 's9', projectId: 'p9' }])
+    expect(r.sessionId).toBe('s9')
+    expect(r.projectId).toBe('p9')
+    expect(r.convId).toBeNull()
   })
 })
 
 describe('pruneRuns', () => {
   it('keeps the newest per conversation and drops the rest', () => {
     const runs = Array.from({ length: 5 }, (_, i) =>
-      run({ id: uuid(i), convId: 'a', startedAt: i })
+      run({ id: uuid(i), sessionId: 'a', startedAt: i })
     )
     const { keep, drop } = pruneRuns(runs, 3, 100)
     expect(keep.map((r) => r.startedAt)).toEqual([4, 3, 2])
@@ -161,17 +207,17 @@ describe('pruneRuns', () => {
   // other chat's history — a purely global cap would.
   it('budgets each conversation separately', () => {
     const runs = [
-      ...Array.from({ length: 5 }, (_, i) => run({ id: uuid(i), convId: 'a', startedAt: i })),
-      run({ id: uuid(90), convId: 'b', startedAt: 1 })
+      ...Array.from({ length: 5 }, (_, i) => run({ id: uuid(i), sessionId: 'a', startedAt: i })),
+      run({ id: uuid(90), sessionId: 'b', startedAt: 1 })
     ]
     const { keep } = pruneRuns(runs, 2, 100)
-    expect(keep.filter((r) => r.convId === 'a')).toHaveLength(2)
-    expect(keep.filter((r) => r.convId === 'b')).toHaveLength(1)
+    expect(keep.filter((r) => r.sessionId === 'a')).toHaveLength(2)
+    expect(keep.filter((r) => r.sessionId === 'b')).toHaveLength(1)
   })
 
   it('applies the global backstop across conversations', () => {
     const runs = Array.from({ length: 6 }, (_, i) =>
-      run({ id: uuid(i), convId: `c${i}`, startedAt: i })
+      run({ id: uuid(i), sessionId: `c${i}`, startedAt: i })
     )
     const { keep, drop } = pruneRuns(runs, 20, 4)
     expect(keep).toHaveLength(4)
@@ -184,10 +230,22 @@ describe('pruneRuns', () => {
   // and an index that forgets a run without deleting its file leaks disk.
   it('accounts for every run exactly once', () => {
     const runs = Array.from({ length: 9 }, (_, i) =>
-      run({ id: uuid(i), convId: i % 2 ? 'a' : 'b', startedAt: i })
+      run({ id: uuid(i), sessionId: i % 2 ? 'a' : 'b', startedAt: i })
     )
     const { keep, drop } = pruneRuns(runs, 2, 3)
     expect([...keep, ...drop].map((r) => r.id).sort()).toEqual(runs.map((r) => r.id).sort())
+  })
+
+  it('groups by sessionId, then legacy convId, then a shared bucket', () => {
+    const runs = [
+      run({ id: uuid(1), sessionId: 's', convId: 'x', startedAt: 1 }),
+      run({ id: uuid(2), sessionId: null, convId: 'x', startedAt: 2 }),
+      run({ id: uuid(3), sessionId: null, convId: null, startedAt: 3 }),
+      run({ id: uuid(4), sessionId: null, convId: null, startedAt: 4 })
+    ]
+    const { keep, drop } = pruneRuns(runs, 1, 100)
+    expect(keep.map((r) => r.id).sort()).toEqual([uuid(1), uuid(2), uuid(4)].sort())
+    expect(drop.map((r) => r.id)).toEqual([uuid(3)])
   })
 })
 

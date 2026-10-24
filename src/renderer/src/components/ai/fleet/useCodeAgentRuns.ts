@@ -38,7 +38,7 @@ export interface CodeAgentRunUI {
   worktreeDir?: string | null
   localInstructions?: string[]
   localSkills?: string[]
-  convId: string | null
+  sessionId: string | null
   projectId: string | null
   financialProfileId?: string
   codeRoot?: string
@@ -108,7 +108,7 @@ export function useCodeAgentRuns(): {
             worktreeDir: r.worktreeDir,
             localInstructions: r.localInstructions,
             localSkills: r.localSkills,
-            convId: r.convId ?? null,
+            sessionId: r.sessionId ?? r.convId ?? null,
             projectId: r.projectId ?? null,
             financialProfileId: r.financialProfileId,
             codeRoot: r.codeRoot,

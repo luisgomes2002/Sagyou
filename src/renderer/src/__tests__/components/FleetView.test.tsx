@@ -182,6 +182,11 @@ describe('FleetView', () => {
     expect(window.electronAPI.ai.codeAgent.run).toHaveBeenCalledWith(
       expect.objectContaining({ path: '', projectId: null, task: '', blank: true })
     )
+    const sent = (window.electronAPI.ai.codeAgent.run as ReturnType<typeof vi.fn>).mock
+      .calls[0][0] as Record<string, unknown>
+    expect(typeof sent.sessionId).toBe('string')
+    expect((sent.sessionId as string).length).toBeGreaterThan(0)
+    expect(sent).not.toHaveProperty('convId')
   })
 
   it('persists the chosen executor before starting the session', async () => {

@@ -12,7 +12,10 @@ import { useEffect, useRef, useState } from 'react'
 /** Mirrors the main-process AgentRunMeta; see src/main/modules/agent/agent-runs.ts. */
 export interface AgentRunMeta {
   id: string
+  /** Legacy: only on runs archived before chats were removed. */
   convId: string | null
+  sessionId: string | null
+  projectId: string | null
   /** The model that ran it (native agent), or "codex" for old runs. */
   agent: string
   dir: string

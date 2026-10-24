@@ -9,7 +9,7 @@ interface Props {
   projects: Project[]
   projectId: string | null
   skillCount: number
-  convId: string | null
+  sessionId: string | null
   /** Renders inside the session view instead of taking over the window. */
   inline?: boolean
   onClose: () => void
@@ -19,7 +19,7 @@ interface Props {
     task: string
     agent: string
     projectId: string
-    convId: string | null
+    sessionId: string | null
   }) => void
   onUseHarness: (harness: HarnessId) => void
 }
@@ -33,7 +33,7 @@ export function CodeAgentLauncher({
   projects,
   projectId,
   skillCount,
-  convId,
+  sessionId,
   inline = false,
   onClose,
   onStarted,
@@ -102,7 +102,7 @@ export function CodeAgentLauncher({
         path: rootPath,
         task: task.trim(),
         projectId: project.id,
-        convId: convId ?? undefined
+        sessionId: sessionId ?? undefined
       })
       if (!result.success) {
         setError(result.error ?? `Não foi possível iniciar ${harness?.label ?? 'o harness'}.`)
@@ -118,7 +118,7 @@ export function CodeAgentLauncher({
         task: task.trim(),
         agent: harnessLabel,
         projectId: project.id,
-        convId
+        sessionId
       })
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível iniciar o harness.')

@@ -20,7 +20,10 @@ interface Skill {
 /** A finished code-agent run, as listed in the run picker. */
 interface AgentRunMeta {
   id: string
+  /** Legacy: only on runs archived before chats were removed. */
   convId: string | null
+  sessionId: string | null
+  projectId: string | null
   /** codex is the only agent. Kept on the row so the picker can state it. */
   agent: 'codex'
   dir: string
@@ -50,6 +53,7 @@ interface CodeRunSummary {
   dir: string
   task: string
   convId: string | null
+  sessionId?: string | null
   projectId?: string | null
   financialProfileId?: string
   codeRoot?: string
@@ -442,7 +446,7 @@ export const api = {
         allowedWritePaths?: string[]
         readOnlyRoots?: { id: string; nome: string; path: string }[]
         decisoes?: string[]
-        convId?: string
+        sessionId?: string
         projectId?: string | null
         financialProfileId?: string
         coordinated?: boolean
@@ -502,10 +506,10 @@ export const api = {
         omittedNewFiles: string[]
         error?: string
       }> => ipcRenderer.invoke('ai:code-agent:diff', runId),
-      // Past runs of a conversation. The index only — a row's log and diff are
+      // Past runs of a session. The index only — a row's log and diff are
       // fetched by runGet when the user actually opens it.
-      runs: (convId?: string): Promise<AgentRunMeta[]> =>
-        ipcRenderer.invoke('ai:code-agent:runs', convId),
+      runs: (sessionId?: string): Promise<AgentRunMeta[]> =>
+        ipcRenderer.invoke('ai:code-agent:runs', sessionId),
       runGet: (id: string): Promise<AgentRunSnapshot | null> =>
         ipcRenderer.invoke('ai:code-agent:run-get', id),
       runRenew: (id: string): Promise<void> => ipcRenderer.invoke('ai:code-agent:run-renew', id),
@@ -534,10 +538,10 @@ export const api = {
       },
       // Fires once a finished run has been written to the archive — later than
       // onExit, which doesn't wait for the diff that snapshot needs.
-      onArchived: (cb: (payload: { runId: string; id: string; convId: string | null }) => void) => {
+      onArchived: (cb: (payload: { runId: string; id: string; sessionId: string | null }) => void) => {
         const handler = (
           _: Electron.IpcRendererEvent,
-          payload: { runId: string; id: string; convId: string | null }
+          payload: { runId: string; id: string; sessionId: string | null }
         ): void => cb(payload)
         ipcRenderer.on('ai:code-agent:archived', handler)
         return (): void => {

@@ -133,7 +133,7 @@ export function FleetView({
         task: '',
         blank: true,
         projectId: request.projectId,
-        convId: uuidv4()
+        sessionId: uuidv4()
       })
       if (!result.success || !result.runId || !result.dir) {
         setStartError(result.error ?? 'Não foi possível iniciar o terminal.')
