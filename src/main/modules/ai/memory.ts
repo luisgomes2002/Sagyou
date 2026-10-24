@@ -394,3 +394,25 @@ export function findConflicts(memories: AiMemory[]): MemoryConflict[] {
   }
   return out
 }
+
+/**
+ * Chat history no longer exists, so a memory must not point into it. Drops the
+ * `sourceConversationId` and the two textual traces of it: the pointer that a
+ * truncated chat handoff carried, and the `conversa=` reference of a terminal
+ * handoff. Everything else in the memory is left byte-for-byte as it was.
+ */
+export function scrubConversationLinks(memories: AiMemory[]): {
+  memories: AiMemory[]
+  changed: number
+} {
+  let changed = 0
+  const scrubbed = memories.map((memory) => {
+    const body = memory.body
+      .replace(/\s*\(conversa completa: id=[^)]*\)/g, '')
+      .replace(/conversa=[^;\n]*;\s*/g, '')
+    if (body === memory.body && memory.sourceConversationId == null) return memory
+    changed += 1
+    return { ...memory, body, sourceConversationId: null }
+  })
+  return { memories: scrubbed, changed }
+}

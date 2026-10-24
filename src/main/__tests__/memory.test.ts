@@ -12,6 +12,7 @@ import {
   formatMemoriesForPrompt,
   shortMemoryId,
   handoffId,
+  scrubConversationLinks,
   titleKey,
   MEMORY_DECAY_BASE_DAYS,
   MEMORY_MAX,
@@ -319,5 +320,53 @@ describe('normalizeMemory / titleKey', () => {
     expect(handoffId('p1')).toBe('handoff:p1')
     expect(handoffId(null)).toBe('handoff:global')
     expect(handoffId('p1')).toBe(handoffId('p1')) // stable → upsert, not pile-up
+  })
+})
+
+describe('scrubConversationLinks', () => {
+  const pointer = ' (conversa completa: id=conv-9 — use ler_conversa para ler tudo)'
+
+  it('drops the conversation pointer from a truncated handoff body', () => {
+    const [out] = scrubConversationLinks([
+      mem({
+        id: 'handoff:p1',
+        type: 'handoff',
+        body: `Pergunta: x\nResposta: abc…${pointer}`,
+        sourceConversationId: 'conv-9'
+      })
+    ]).memories
+
+    expect(out.body).toBe('Pergunta: x\nResposta: abc…')
+    expect(out.sourceConversationId).toBeNull()
+  })
+
+  it('drops the conversation reference from a terminal handoff', () => {
+    const [out] = scrubConversationLinks([
+      mem({
+        type: 'handoff',
+        body: 'Status: ok\nReferências: conversa=conv-1; run=run-7',
+        sourceConversationId: 'conv-1'
+      })
+    ]).memories
+
+    expect(out.body).toBe('Status: ok\nReferências: run=run-7')
+  })
+
+  it('clears the link on a memory whose body never mentioned it', () => {
+    const result = scrubConversationLinks([
+      mem({ id: 'a', body: 'Use Decimal.', sourceConversationId: 'conv-2' })
+    ])
+
+    expect(result.memories[0].body).toBe('Use Decimal.')
+    expect(result.memories[0].sourceConversationId).toBeNull()
+    expect(result.changed).toBe(1)
+  })
+
+  it('leaves unrelated memories identical, archived ones included', () => {
+    const untouched = mem({ id: 'b', body: 'Sem vínculo.', archivedAt: NOW })
+    const result = scrubConversationLinks([untouched])
+
+    expect(result.memories[0]).toEqual(untouched)
+    expect(result.changed).toBe(0)
   })
 })

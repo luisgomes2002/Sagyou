@@ -26,6 +26,11 @@ const handlers = new Map<string, (event: unknown, ...args: never[]) => unknown>(
  */
 const winSent = vi.hoisted(() => [] as { channel: string; payload: unknown }[])
 
+/** Startup milestones in order, to prove the chat data is removed before a window exists. */
+const startupOrder = vi.hoisted(() => [] as string[])
+/** Stand-in for the SQLite `settings` table the removal reads and writes. */
+const settingsStore = vi.hoisted(() => new Map<string, unknown>())
+
 let userData: string
 
 vi.mock('electron', () => ({
@@ -42,6 +47,9 @@ vi.mock('electron', () => ({
     on: vi.fn()
   },
   BrowserWindow: class {
+    constructor() {
+      startupOrder.push('createWindow')
+    }
     webContents = {
       setWindowOpenHandler: vi.fn(),
       on: vi.fn(),
@@ -74,7 +82,12 @@ vi.mock('@electron-toolkit/utils', () => ({
 vi.mock('../store', () => ({
   loadData: vi.fn(() => ({})),
   saveData: vi.fn(),
-  listMemories: vi.fn(() => [])
+  listMemories: vi.fn(() => []),
+  readSetting: vi.fn((key: string) => settingsStore.get(key) ?? null),
+  writeSetting: vi.fn((key: string, value: unknown) => void settingsStore.set(key, value)),
+  copyDatabaseTo: vi.fn(async () => void startupOrder.push('migration')),
+  scrubMemoryConversationLinks: vi.fn(() => 0),
+  rebuildSearchIndex: vi.fn(async () => undefined)
 }))
 vi.mock('../../../resources/icon.png?asset', () => ({ default: '/icon.png' }))
 
@@ -142,6 +155,21 @@ beforeEach(async () => {
     join(userData, 'ai-config.json'),
     JSON.stringify({ baseUrl, apiKey: 'k', model: 'm' })
   )
+})
+
+describe('legacy chat removal on startup', () => {
+  it('removes the chat data before the first window is created', () => {
+    expect(startupOrder.slice(0, 2)).toEqual(['migration', 'createWindow'])
+  })
+
+  it('writes the marker and offers the snapshot notice once', async () => {
+    expect(typeof settingsStore.get('legacyChatRemovedAt')).toBe('string')
+    const notice = await invoke<{ snapshotDir: string } | null>('legacy-chat:notice')
+    expect(notice?.snapshotDir).toContain('pre-remocao-chat-')
+
+    await invoke('legacy-chat:dismiss')
+    expect(await invoke('legacy-chat:notice')).toBeNull()
+  })
 })
 
 describe('main handlers are registered', () => {

@@ -34,7 +34,6 @@ import { promisify } from 'util'
 import { readFile } from 'fs/promises'
 const execFileAsync = promisify(execFile)
 import { randomBytes, randomUUID } from 'crypto'
-import { partitionConversations, referencedConversationIds } from './modules/conversations/conversation-retention'
 import type { StoredConversation } from './modules/conversations/conversation-types'
 import { CodeRunCoordinator } from './modules/agent/code-run-coordinator'
 import { McpWriteQueue, RendererMcpActionBridge } from './modules/agent/mcp-write-queue'
@@ -64,8 +63,17 @@ import {
   rebuildSearchIndex,
   searchGlobalIndex,
   getGlobalSearchIndexHit,
-  syncGlobalSearchConversations
+  syncGlobalSearchConversations,
+  readSetting,
+  writeSetting,
+  copyDatabaseTo,
+  scrubMemoryConversationLinks
 } from './store'
+import {
+  runLegacyChatRemoval,
+  stripAiConfigFile
+} from './modules/ai/legacy-chat-removal'
+import { registerLegacyChatHandlers, startLegacyChatRemoval } from './handlers/legacy-chat'
 import * as memoryStore from './store'
 import { listMemories } from './store'
 import * as memoryRules from './modules/ai/memory'
@@ -1321,84 +1329,6 @@ function saveConversations(list: StoredConversation[]): void {
   } catch (error) {
     console.error('[search] Conversation index update failed:', error)
   }
-}
-
-/**
- * Remove stale conversations, along with their chat-image files.
- *
- * Two rules, applied in order:
- * 1. Conversations last active more than 14 days ago are dropped.
- * 2. If more than MAX_CONVERSATIONS remain, the oldest ones are dropped.
- *
- * Any conversation cited by an active or archived memory is exempt from both
- * limits. That includes handoffs whose body points back to a full transcript.
- * Otherwise cleanup would silently destroy the evidence behind a memory.
- */
-const PRUNE_CONVERSATION_TTL_MS = 14 * 24 * 60 * 60 * 1000
-const MAX_CONVERSATIONS = 50
-
-function pruneConversations(): void {
-  const all = loadConversations()
-  if (all.length === 0) return
-  const cutoff = new Date(Date.now() - PRUNE_CONVERSATION_TTL_MS)
-  const referenced = referencedConversationIds(listMemories({ includeArchived: true }))
-  const { keep, prune } = partitionConversations(all, referenced, cutoff, MAX_CONVERSATIONS)
-
-  if (prune.length === 0) return
-
-  // Collect image ids from pruned conversations that no kept conversation
-  // still references — otherwise we'd delete a shared image.
-  const keptImageIds = new Set(keep.flatMap((c) => c.messages.flatMap((m) => m.imageIds ?? [])))
-  const prunedImageIds = prune.flatMap((c) => c.messages.flatMap((m) => m.imageIds ?? []))
-  const orphanIds = [...new Set(prunedImageIds)].filter((id) => !keptImageIds.has(id))
-  const toDelete = orphanIds.map((id) => chatImagePath(id)).filter((p): p is string => p !== null)
-
-  for (const full of toDelete) {
-    try {
-      if (existsSync(full)) unlinkSync(full)
-    } catch {
-      /* already gone or locked — not worth failing over */
-    }
-  }
-
-  // Same for chat document files.
-  const keptDocIds = new Set(
-    keep.flatMap((c) =>
-      c.messages.flatMap((m) => (m as { documentIds?: string[] }).documentIds ?? [])
-    )
-  )
-  const prunedDocIds = prune.flatMap((c) =>
-    c.messages.flatMap((m) => (m as { documentIds?: string[] }).documentIds ?? [])
-  )
-  const orphanDocIds = [...new Set(prunedDocIds)].filter((id) => !keptDocIds.has(id))
-  const docFilesDir = chatFilesDir()
-  const toDeleteDocs = orphanDocIds
-    .map((id) => {
-      if (!/^[0-9a-f-]{36}\.[a-z0-9]{2,5}$/i.test(id)) return null
-      const full = join(docFilesDir, id)
-      return full.startsWith(docFilesDir + sep) ? full : null
-    })
-    .filter((p): p is string => p !== null)
-
-  for (const full of toDeleteDocs) {
-    try {
-      if (existsSync(full)) unlinkSync(full)
-    } catch {
-      /* already gone or locked */
-    }
-  }
-
-  saveConversations(keep)
-  const byAge = prune.filter((c) => new Date(c.updatedAt) < cutoff).length
-  const byCount = prune.length - byAge
-  const parts: string[] = []
-  if (byAge > 0) parts.push(`${byAge} por idade (>14 dias)`)
-  if (byCount > 0) parts.push(`${byCount} por limite (max ${MAX_CONVERSATIONS})`)
-  console.log(
-    `[conversations] pruned ${prune.length} conversation(s) — ${parts.join(', ')}` +
-      (toDelete.length > 0 ? `; ${toDelete.length} image file(s) deleted` : '') +
-      (toDeleteDocs.length > 0 ? `; ${toDeleteDocs.length} document file(s) deleted` : '')
-  )
 }
 
 /**
@@ -2778,12 +2708,38 @@ app.whenReady().then(() => {
     listMemories
   })
 
-  pruneConversations()
+  registerLegacyChatHandlers(ipcMain, {
+    readSetting,
+    writeSetting,
+    now: () => new Date()
+  })
 
-  createWindow()
+  // The chat's data is removed before any window exists, so the renderer can
+  // never read a half-deleted history. A failure is logged, never fatal.
+  void startLegacyChatRemoval({
+    run: () =>
+      runLegacyChatRemoval({
+        userDataDir: app.getPath('userData'),
+        getMarker: () => {
+          const marker = readSetting('legacyChatRemovedAt')
+          return typeof marker === 'string' && marker ? marker : null
+        },
+        setMarker: (iso) => writeSetting('legacyChatRemovedAt', iso),
+        copyDatabase: copyDatabaseTo,
+        scrubMemories: scrubMemoryConversationLinks,
+        rebuildSearchIndex,
+        stripAiConfig: () => stripAiConfigFile(aiConfigPath()),
+        now: () => new Date()
+      }),
+    readSetting,
+    writeSetting,
+    warn: (message) => console.warn(`[legacy-chat] ${message}`)
+  }).finally(() => {
+    createWindow()
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    })
   })
 })
 

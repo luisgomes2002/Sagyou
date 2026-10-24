@@ -4,7 +4,12 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from '
 import { is } from '@electron-toolkit/utils'
 import { randomUUID } from 'crypto'
 import Database from 'better-sqlite3'
-import { normalizeMemory, type AiMemory, type MemoryType } from './modules/ai/memory'
+import {
+  normalizeMemory,
+  scrubConversationLinks,
+  type AiMemory,
+  type MemoryType
+} from './modules/ai/memory'
 import { decodeDataUrl } from './modules/conversations/chat-images'
 import { isDocumentExt, parseDocument } from './modules/files/document-parser'
 import {
@@ -2567,4 +2572,48 @@ export function replaceMemories(memories: AiMemory[]): void {
     }
     syncMemorySearchRows(db)
   })()
+}
+
+/** Reads a JSON-encoded `settings` row; null when absent or unreadable. */
+export function readSetting(key: string): unknown {
+  const row = getDb().prepare('SELECT value FROM settings WHERE key=?').get(key) as
+    | { value: string }
+    | undefined
+  if (!row) return null
+  try {
+    return JSON.parse(row.value)
+  } catch {
+    return null
+  }
+}
+
+/** Writes one `settings` row without going through the full-replace save. */
+export function writeSetting(key: string, value: unknown): void {
+  getDb()
+    .prepare('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)')
+    .run(key, JSON.stringify(value))
+}
+
+/** Consistent copy of the live database (safe under WAL), used by the pre-removal snapshot. */
+export async function copyDatabaseTo(dest: string): Promise<void> {
+  await getDb().backup(dest)
+}
+
+/**
+ * Chat history is gone, so no memory may point into it. Rewrites only the rows
+ * that carry a link; timestamps and access counters are left as they were.
+ */
+export function scrubMemoryConversationLinks(): number {
+  const db = getDb()
+  const current = listMemories({ includeArchived: true })
+  const { memories, changed } = scrubConversationLinks(current)
+  if (!changed) return 0
+  db.transaction(() => {
+    // scrubConversationLinks returns the very same object for an untouched memory.
+    memories.forEach((memory, index) => {
+      if (memory !== current[index]) writeMemoryRow(db, memory)
+    })
+    syncMemorySearchRows(db)
+  })()
+  return changed
 }

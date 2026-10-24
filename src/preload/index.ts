@@ -175,6 +175,11 @@ export const api = {
     recover: (confirmed: boolean): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('security:recover', confirmed)
   },
+  // One-time notice that the retired chat's data was removed (pulled when the Fleet opens).
+  legacyChat: {
+    notice: (): Promise<{ snapshotDir: string } | null> => ipcRenderer.invoke('legacy-chat:notice'),
+    dismiss: (): Promise<void> => ipcRenderer.invoke('legacy-chat:dismiss')
+  },
   store: {
     load: (): Promise<{ projects: unknown[]; tasks: unknown[] }> =>
       ipcRenderer.invoke('store:load'),
