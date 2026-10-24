@@ -178,10 +178,13 @@ function InteractiveTerminal({
   const terminalRef = useRef<Terminal | null>(null)
   const writtenLogRef = useRef('')
   const latestLogRef = useRef(log)
-  latestLogRef.current = log
   const connectedRef = useRef(false)
   const callbacksRef = useRef({ onInput, onResize })
   const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    latestLogRef.current = log
+  })
 
   useEffect(() => {
     callbacksRef.current = { onInput, onResize }

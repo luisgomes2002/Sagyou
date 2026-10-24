@@ -56,7 +56,6 @@ import { AgentTerminal } from '../../components/ai/AgentTerminal'
 class ResizeObserverMock {
   observe = vi.fn()
   disconnect = vi.fn()
-  constructor(_callback: ResizeObserverCallback) {}
 }
 
 describe('AgentTerminal', () => {

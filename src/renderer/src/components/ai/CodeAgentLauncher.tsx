@@ -71,6 +71,7 @@ export function CodeAgentLauncher({
   useEffect(() => {
     // The project can change while the dialog is open; never retain a root
     // that is no longer authorised for the conversation's project.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setRootPath(roots[0]?.path ?? '')
   }, [roots])
 
@@ -85,6 +86,7 @@ export function CodeAgentLauncher({
   }
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     refresh()
   }, [])
 
