@@ -1,9 +1,15 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import { FleetView } from '../../components/ai/FleetView'
 import type { Project } from '../../types'
+import { useKanbanStore } from '../../store/kanban'
+
+// xterm needs a real canvas/matchMedia; the terminal itself is covered by AgentTerminal.test.
+vi.mock('../../components/ai/AgentTerminal', () => ({
+  AgentTerminal: ({ log }: { log: string }) => <pre data-testid="terminal">{log}</pre>
+}))
 
 // FleetView is a pure view over the code-agent state from the main process.
 // The code-agent IPC is mocked; the component fetches status, runs, and
@@ -14,7 +20,7 @@ const projects = [
   { id: 'p2', name: 'Projeto Dois', codePaths: [{ path: '/home/user/projeto-dois' }] }
 ] as Project[]
 
-/** A running code-agent card mock (what status() returns). */
+/** A running code-agent mock (what status() returns). */
 function makeRun(overrides: Record<string, unknown> = {}) {
   return {
     id: 'run-1',
@@ -32,7 +38,7 @@ function makeRun(overrides: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
-  // Mock the code-agent IPC so that useCodeAgentRuns doesn't crash.
+  useKanbanStore.setState({ activeProjectId: 'p1' })
   if (!window.electronAPI) {
     // @ts-expect-error partial mock for tests
     window.electronAPI = {}
@@ -40,7 +46,10 @@ beforeEach(() => {
   window.electronAPI.ai ??= {} as never
   window.electronAPI.ai.codeAgent = {
     status: vi.fn().mockResolvedValue({ running: false, runs: [], log: '', hint: null }),
+    run: vi.fn(),
     stop: vi.fn(),
+    terminalInput: vi.fn(),
+    terminalResize: vi.fn().mockResolvedValue({ success: true }),
     setAuto: vi.fn().mockResolvedValue(undefined),
     onStarted: vi.fn(() => vi.fn()),
     onOutput: vi.fn(() => vi.fn()),
@@ -54,7 +63,31 @@ beforeEach(() => {
     onArchived: vi.fn(() => vi.fn()),
     runs: vi.fn().mockResolvedValue([]),
     runGet: vi.fn().mockResolvedValue(null),
+    runRenew: vi.fn().mockResolvedValue(undefined),
+    diff: vi
+      .fn()
+      .mockResolvedValue({ patch: '', files: [], truncated: false, omittedNewFiles: [] }),
     approve: vi.fn()
+  } as never
+  window.electronAPI.ai.harnesses = {
+    status: vi.fn().mockResolvedValue([
+      {
+        id: 'codex',
+        label: 'Codex',
+        installed: true,
+        capabilities: {
+          interactiveTerminal: 'available',
+          createSession: 'available',
+          resumeSession: 'unknown',
+          modelSelection: 'unknown',
+          modelStatus: 'unknown',
+          permissionPrompts: 'available',
+          cancellation: 'available',
+          mcp: 'available',
+          localInstructionDiscovery: 'unknown'
+        }
+      }
+    ])
   } as never
 })
 
@@ -67,65 +100,139 @@ function oneRun(overrides: Record<string, unknown> = {}): void {
     log: run.log,
     hint: null
   })
-  ;(window.electronAPI.ai.codeAgent.runs as ReturnType<typeof vi.fn>).mockResolvedValue([])
 }
 
 /** Set up two mock code-agent runs. */
 function twoRuns(): void {
   const runA = makeRun({ id: 'run-A', task: 'tarefa A', dir: '/home/user/projeto-um' })
-  const runB = makeRun({
-    id: 'run-B',
-    task: 'tarefa B',
-    dir: '/home/user/projeto-dois',
-    toolEvent: { phase: 'result', name: 'escrever_arquivo' }
-  })
+  const runB = makeRun({ id: 'run-B', task: 'tarefa B', dir: '/home/user/projeto-dois' })
   ;(window.electronAPI.ai.codeAgent.status as ReturnType<typeof vi.fn>).mockResolvedValue({
     running: true,
     runs: [runA, runB],
     log: '',
     hint: null
   })
-  ;(window.electronAPI.ai.codeAgent.runs as ReturnType<typeof vi.fn>).mockResolvedValue([])
 }
 
 describe('FleetView', () => {
-  it('says so when nothing is running', async () => {
+  it('offers a new session when nothing is running', async () => {
     render(<FleetView projects={projects} onOpenChat={() => {}} />)
     expect(await screen.findByText('Nenhum agente ativo')).toBeInTheDocument()
-    expect(screen.getByText('0 ativos')).toBeInTheDocument()
+    expect(screen.getByText('Ativas · 0')).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Projeto da sessão' })).toBeInTheDocument()
   })
 
-  it('lists one card per running code-agent, with its project', async () => {
+  it('shows progress and prevents duplicate clicks while opening a native terminal', async () => {
+    let finishStart:
+      | ((value: { success: boolean; runId: string; dir: string; agent: string }) => void)
+      | null = null
+    ;(window.electronAPI.ai.codeAgent.run as ReturnType<typeof vi.fn>).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishStart = resolve
+        })
+    )
+    const projectWithRoot = [
+      {
+        ...projects[0],
+        codePaths: [{ id: 'root-1', path: '/home/user/projeto-um' }],
+        activeCodePathIds: ['root-1']
+      }
+    ] as Project[]
+    const user = userEvent.setup()
+    render(<FleetView projects={projectWithRoot} onOpenChat={() => {}} />)
+
+    await user.selectOptions(
+      await screen.findByRole('combobox', { name: 'Projeto da sessão' }),
+      'p1'
+    )
+    await user.click(screen.getByRole('button', { name: 'Abrir sessão' }))
+
+    expect(screen.getAllByRole('button', { name: 'Abrindo terminal…' })[0]).toBeDisabled()
+    expect(window.electronAPI.ai.codeAgent.run).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      finishStart?.({
+        success: true,
+        runId: 'run-terminal',
+        dir: '/tmp/run-terminal',
+        agent: 'Codex'
+      })
+    })
+  })
+
+  it('opens a general terminal without a selected project or repository', async () => {
+    useKanbanStore.setState({ activeProjectId: null })
+    ;(window.electronAPI.ai.codeAgent.run as ReturnType<typeof vi.fn>).mockResolvedValue({
+      success: true,
+      runId: 'general-run',
+      dir: '/tmp/general-run',
+      agent: 'Codex'
+    })
+    const user = userEvent.setup()
+    render(<FleetView projects={projects} onOpenChat={() => {}} />)
+
+    expect(await screen.findByRole('combobox', { name: 'Projeto da sessão' })).toHaveValue('')
+    await user.click(screen.getByRole('button', { name: 'Abrir sessão' }))
+
+    expect(window.electronAPI.ai.codeAgent.run).toHaveBeenCalledWith(
+      expect.objectContaining({ path: '', projectId: null, task: '', blank: true })
+    )
+  })
+
+  it('persists the chosen executor before starting the session', async () => {
+    window.electronAPI.ai.config = {
+      get: vi.fn().mockResolvedValue({ codeHarness: 'claude-code' }),
+      set: vi.fn().mockResolvedValue(undefined)
+    } as never
+    ;(window.electronAPI.ai.codeAgent.run as ReturnType<typeof vi.fn>).mockResolvedValue({
+      success: true,
+      runId: 'r',
+      dir: '/tmp/r'
+    })
+    const user = userEvent.setup()
+    render(<FleetView projects={projects} onOpenChat={() => {}} />)
+
+    await screen.findByRole('option', { name: 'Codex' })
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Executor' }), 'codex')
+    await user.click(screen.getByRole('button', { name: 'Abrir sessão' }))
+
+    expect(window.electronAPI.ai.config.set).toHaveBeenCalledWith(
+      expect.objectContaining({ codeHarness: 'codex' })
+    )
+  })
+
+  it('lists every running code agent in the rail, with its project', async () => {
     twoRuns()
     render(<FleetView projects={projects} onOpenChat={() => {}} />)
 
-    expect(await screen.findByText('tarefa A')).toBeInTheDocument()
-    expect(screen.getByText('tarefa B')).toBeInTheDocument()
-    expect(screen.getByText('Projeto Um')).toBeInTheDocument()
-    expect(screen.getByText('Projeto Dois')).toBeInTheDocument()
-    expect(screen.getByText('2 ativos')).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /^tarefa A/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^tarefa B/ })).toBeInTheDocument()
+    expect(screen.getAllByText(/Projeto Um/).length).toBeGreaterThan(0)
+    expect(screen.getByText('Ativas · 2')).toBeInTheDocument()
   })
 
-  it('shows what a code-agent is doing and its step progress', async () => {
+  it('selecting a session switches the workspace to it', async () => {
+    twoRuns()
+    render(<FleetView projects={projects} onOpenChat={() => {}} />)
+
+    await userEvent.click(await screen.findByRole('button', { name: /^tarefa B/ }))
+    expect(screen.getByRole('heading', { name: 'tarefa B' })).toBeInTheDocument()
+  })
+
+  it('shows what a code agent is doing and its step progress', async () => {
     oneRun()
     render(<FleetView projects={projects} onOpenChat={() => {}} />)
 
-    expect(await screen.findByText('3/40')).toBeInTheDocument()
-    // The tool event shows as "[tool] ler_arquivo"
-    expect(screen.getAllByText(/\[tool\] ler_arquivo/).length).toBeGreaterThan(0)
+    expect(
+      await screen.findByRole('progressbar', { name: 'Progresso da execução' })
+    ).toBeInTheDocument()
+    expect(screen.getAllByText('3/40').length).toBeGreaterThan(0)
   })
 
   it('turns live tool events into a visible activity timeline', async () => {
     oneRun()
-    let onToolEvent:
-      | ((event: {
-          runId: string
-          phase: 'call' | 'result'
-          name: string
-          args?: Record<string, unknown>
-          summary?: string
-        }) => void)
-      | undefined
+    let onToolEvent: ((event: Record<string, unknown>) => void) | undefined
     ;(window.electronAPI.ai.codeAgent.onToolEvent as ReturnType<typeof vi.fn>).mockImplementation(
       (callback) => {
         onToolEvent = callback
@@ -134,78 +241,75 @@ describe('FleetView', () => {
     )
 
     render(<FleetView projects={projects} onOpenChat={() => {}} />)
-    await screen.findByText('Corrigir bug no login')
-    onToolEvent?.({
-      runId: 'run-1',
-      phase: 'call',
-      name: 'ler_arquivo',
-      args: { caminho: 'src/App.tsx' }
+    await screen.findByRole('heading', { name: 'Corrigir bug no login' })
+    act(() => {
+      onToolEvent?.({
+        runId: 'run-1',
+        phase: 'call',
+        name: 'ler_arquivo',
+        args: { caminho: 'src/App.tsx' }
+      })
     })
 
     expect(await screen.findByText('Atividade recente')).toBeInTheDocument()
-    expect(screen.getByText('Lendo src/App.tsx')).toBeInTheDocument()
-    expect(screen.getByRole('progressbar', { name: 'Progresso da execução' })).toBeInTheDocument()
-    expect(screen.getByText(/Terminal completo/)).toBeInTheDocument()
+    expect(screen.getByText(/Lendo src\/App.tsx/)).toBeInTheDocument()
   })
 
   it('shows only the current step for an unlimited agent', async () => {
     oneRun({ progress: { step: 15, maxSteps: 0, promptTokens: 100, completionTokens: 20 } })
     render(<FleetView projects={projects} onOpenChat={() => {}} />)
 
-    expect(await screen.findByText('15')).toHaveAttribute('title', 'Passo 15 — sem limite')
+    expect((await screen.findAllByText('15')).length).toBeGreaterThan(0)
+    expect(screen.queryByText('15/0')).not.toBeInTheDocument()
   })
 
-  it('shows the token spend per code-agent — input and output', async () => {
+  it('shows the token spend per code agent — input and output', async () => {
     oneRun()
     render(<FleetView projects={projects} onOpenChat={() => {}} />)
 
-    expect(await screen.findByText('↑ 1,500 entrada')).toBeInTheDocument()
-    expect(screen.getByText('↓ 300 saída')).toBeInTheDocument()
+    expect(await screen.findByText(/↑ 1,500 entrada/)).toBeInTheDocument()
+    expect(screen.getByText(/↓ 300 saída/)).toBeInTheDocument()
   })
 
-  it('shows the code-agent model and step progress', async () => {
+  it('reports in the context tab what the harness does not expose', async () => {
+    oneRun({ harness: 'codex', codeRoot: '/home/user/projeto-um', worktreeDir: '/tmp/run-1' })
+    render(<FleetView projects={projects} onOpenChat={() => {}} />)
+
+    await userEvent.click(await screen.findByRole('tab', { name: 'Contexto' }))
+    expect(screen.getByText('/tmp/run-1')).toBeInTheDocument()
+    expect(screen.getByText('não informado pelo harness')).toBeInTheDocument()
+    expect(window.electronAPI.ai.codeAgent.terminalInput).not.toHaveBeenCalled()
+  })
+
+  it('"Parar" stops the code agent', async () => {
     oneRun()
     render(<FleetView projects={projects} onOpenChat={() => {}} />)
 
-    await screen.findByText('Corrigir bug no login')
-    expect(screen.getByText(/gpt-4/)).toBeInTheDocument()
-  })
-
-  it('"Abrir chat" opens the inline chat view for a running code agent', async () => {
-    oneRun()
-    const onOpenChat = vi.fn()
-    render(<FleetView projects={projects} onOpenChat={onOpenChat} />)
-
-    await screen.findByText('Corrigir bug no login')
-    await userEvent.click(screen.getByRole('button', { name: 'Abrir chat' }))
-
-    await screen.findByPlaceholderText('Digite uma mensagem para o agente de código…')
-  })
-
-  it('"Parar" stops the code-agent', async () => {
-    oneRun()
-    render(<FleetView projects={projects} onOpenChat={() => {}} />)
-
-    await screen.findByText('Corrigir bug no login')
-    await userEvent.click(screen.getByRole('button', { name: /Parar/ }))
+    await userEvent.click(await screen.findByRole('button', { name: /Parar agente/ }))
 
     expect(window.electronAPI.ai.codeAgent.stop).toHaveBeenCalledWith('run-1')
   })
 
-  it('restores pending approvals from status and lets the user approve them', async () => {
+  it('does not offer to stop an interactive terminal from the renderer', async () => {
+    oneRun({ interactive: true })
+    render(<FleetView projects={projects} onOpenChat={() => {}} />)
+
+    await screen.findByRole('heading', { name: 'Corrigir bug no login' })
+    expect(screen.queryByRole('button', { name: /Parar agente/ })).not.toBeInTheDocument()
+  })
+
+  it('flags a session that needs the user and lets them approve it', async () => {
     oneRun({
       approvals: [
-        {
-          id: 'approval-1',
-          name: 'escrever_arquivo',
-          args: {},
-          resumo: 'Editar o cronômetro'
-        }
+        { id: 'approval-1', name: 'escrever_arquivo', args: {}, resumo: 'Editar o cronômetro' }
       ]
     })
     render(<FleetView projects={projects} onOpenChat={() => {}} />)
 
     expect(await screen.findByText('Aguardando sua aprovação (1)')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /Corrigir bug no login — Precisa de você/ })
+    ).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Aprovar' }))
 
     expect(window.electronAPI.ai.codeAgent.approve).toHaveBeenCalledWith('approval-1', true)

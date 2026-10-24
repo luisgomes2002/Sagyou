@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { checkTools, parseJudgeResponse, buildSuiteReport, type EvalToolCall, type EvalRubric, type EvalRunResult } from '../evaluator'
+import { checkTools, parseJudgeResponse, buildSuiteReport, type EvalToolCall, type EvalRubric, type EvalRunResult } from '../modules/ai/evaluator'
 
 describe('checkTools', () => {
   const rubric: EvalRubric = {

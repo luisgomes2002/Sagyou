@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { join, sep } from 'path'
-import { attachmentPath, safeAttachmentName } from '../backup-files'
+import { attachmentPath, safeAttachmentName } from '../modules/files/backup-files'
 
 // The id/ext come from a backup file a user could hand-edit, and the result is
 // joined onto userData/files to write a blob — so a traversal must resolve to

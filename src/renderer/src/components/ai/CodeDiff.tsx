@@ -13,7 +13,7 @@ const LINE_STYLE: Record<LineKind, string> = {
 const MARK: Record<LineKind, string> = { add: '+', del: '-', ctx: ' ', meta: '' }
 
 /**
- * What `ai:code-agent:diff` hands back. Mirrors DiffResult in main/code-diff.ts
+ * What `ai:code-agent:diff` hands back. Mirrors DiffResult in main/modules/code/code-diff.ts
  * — the preload's copy is module-scoped, so it can't be shared across the
  * process boundary and this is the renderer's word for the same shape.
  */

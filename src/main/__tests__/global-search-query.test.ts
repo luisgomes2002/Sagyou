@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { getGlobalSearchHit, queryGlobalSearch, searchMatch } from '../global-search-query'
+import { getGlobalSearchHit, queryGlobalSearch, searchMatch } from '../modules/search/global-search-query'
 
 function database(
   rows: Record<string, unknown>[],

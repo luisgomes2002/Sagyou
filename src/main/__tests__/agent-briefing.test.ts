@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { buildExternalAgentBrief, EXTERNAL_AGENT_BRIEF_LIMIT } from '../agent-briefing'
-import type { AiMemory } from '../memory'
+import { buildExternalAgentBrief, EXTERNAL_AGENT_BRIEF_LIMIT } from '../modules/agent/agent-briefing'
+import type { AiMemory } from '../modules/ai/memory'
 
 function memory(over: Partial<AiMemory> = {}): AiMemory {
   return {

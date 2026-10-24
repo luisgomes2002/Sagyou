@@ -8,7 +8,7 @@ import { GoalModal, FinancialGoalCard } from './FinancialGoalCard'
 import { GoalHistoryModal } from './GoalHistoryModal'
 import { AddTransactionRow, TransactionRow } from './TransactionRow'
 import { MonthJump } from './MonthJump'
-import type { GlobalSearchHit } from '../../../../main/global-search-query'
+import type { GlobalSearchHit } from '../../../../main/modules/search/global-search-query'
 import { searchFocusClass, useSearchFocus } from '../../utils/searchFocus'
 
 interface FinanceTabProps {

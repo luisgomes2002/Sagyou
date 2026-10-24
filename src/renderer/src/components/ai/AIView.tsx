@@ -15,6 +15,7 @@ import { ConversationHistoryMenu } from './ConversationHistoryMenu'
 import { ChatSettingsPanel } from './ChatSettingsPanel'
 import { ConnectionGuide } from './ConnectionGuide'
 import { SwitchAI } from './SwitchAI'
+import { CodeAgentLauncher } from './CodeAgentLauncher'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { ModeToggleButton } from './ModeToggleButton'
 import { ModalBase } from '../ModalBase'
@@ -138,6 +139,8 @@ export function AIView({
   const [input, setInput] = useState('')
   const [showProjectPicker, setShowProjectPicker] = useState(false)
   const [showSwitchAI, setShowSwitchAI] = useState(false)
+  const [showCodeAgent, setShowCodeAgent] = useState(false)
+  const [codeAgentStarted, setCodeAgentStarted] = useState(false)
   const [defaultChatGPTModel, setDefaultChatGPTModel] = useState('')
   useEffect(() => {
     if (newConversationRequest && newConversationRequest > 0) setShowProjectPicker(true)
@@ -373,8 +376,12 @@ export function AIView({
           outputPricePer1M: stored.outputPricePer1M,
           timeoutMs: stored.timeoutMs,
           lastConversationId: stored.lastConversationId,
-          // Historic native harness values load safely as the Codex default.
-          codeHarness: stored.codeHarness === 'claude-code' ? 'claude-code' : 'codex',
+          // Historic native values load safely as Codex; known external
+          // harness ids remain explicit rather than falling back silently.
+          codeHarness:
+            stored.codeHarness === 'claude-code' || stored.codeHarness === 'opencode'
+              ? stored.codeHarness
+              : 'codex',
           reasoningEffort: stored.reasoningEffort
         })
         // Entering the view puts the user back where they were, at the end of
@@ -1095,6 +1102,13 @@ export function AIView({
               </svg>
               Configuração
             </button>
+            <button
+              type="button"
+              onClick={() => setShowCodeAgent(true)}
+              className="rounded-lg bg-violet-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-600"
+            >
+              Executar com Codex
+            </button>
           </div>
         </div>
 
@@ -1123,6 +1137,38 @@ export function AIView({
             }}
           />
         )}
+        {showCodeAgent && (
+          <CodeAgentLauncher
+            projects={projects}
+            projectId={conversationProjectId ?? null}
+            skillCount={skills.length}
+            convId={conversationId}
+            onClose={() => setShowCodeAgent(false)}
+            onUseHarness={(harness) => setConfig((current) => ({ ...current, codeHarness: harness }))}
+            onStarted={() => {
+              setShowCodeAgent(false)
+              // Keep the user in this conversation. The agent is a terminal
+              // execution, not a second chat; its detailed monitor remains
+              // available on demand through the single tracking link below.
+              setCodeAgentStarted(true)
+            }}
+          />
+        )}
+
+        {codeAgentStarted && (
+          <div className="mx-6 mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-violet-500/40 bg-[#16161a] px-3 py-2 text-xs">
+            <span className="text-[#d4d4d4]">
+              Codex em execução. Esta conversa continua sendo o seu chat normal.
+            </span>
+            <button
+              type="button"
+              onClick={onOpenAgents}
+              className="font-medium text-violet-300 hover:text-violet-200"
+            >
+              Ver acompanhamento
+            </button>
+          </div>
+        )}
 
         {/* Chat */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
@@ -1139,7 +1185,7 @@ export function AIView({
                 connection={effectiveConnection}
                 onConfigure={() => setShowConfig(true)}
                 onSwitch={() => setShowSwitchAI(true)}
-                onOpenAgents={() => onOpenAgents?.()}
+                onOpenAgents={() => setShowCodeAgent(true)}
               />
             </div>
           ) : (

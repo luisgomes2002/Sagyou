@@ -1,6 +1,6 @@
 /** @vitest-environment node */
 import { describe, expect, it } from 'vitest'
-import { safeExternalUrl } from '../external-links'
+import { safeExternalUrl } from '../modules/web/external-links'
 
 describe('external links', () => {
   it('opens ordinary browser links', () => {

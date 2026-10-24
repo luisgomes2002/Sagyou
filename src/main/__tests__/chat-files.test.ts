@@ -8,8 +8,8 @@ import { describe, it, expect } from 'vitest'
 import { join } from 'path'
 import { mkdtempSync, writeFileSync, rmSync, existsSync } from 'fs'
 import { tmpdir } from 'os'
-import { isChatFileName, saveAndParseChatFile, deleteChatFiles } from '../../main/chat-files'
-import type { ChatDocumentMeta } from '../../main/chat-files'
+import { isChatFileName, saveAndParseChatFile, deleteChatFiles } from '../modules/conversations/chat-files'
+import type { ChatDocumentMeta } from '../modules/conversations/chat-files'
 
 function tempDir(): string {
   return mkdtempSync(join(tmpdir(), 'chat-files-test-'))

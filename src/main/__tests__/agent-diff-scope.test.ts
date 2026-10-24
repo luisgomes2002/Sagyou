@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, rm, symlink } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { checkPatchScope, validatePatchScope } from '../agent-diff'
+import { checkPatchScope, validatePatchScope } from '../modules/agent/agent-diff'
 
 const made: string[] = []
 

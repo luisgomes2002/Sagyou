@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSyn
 import { tmpdir } from 'os'
 import { join, sep } from 'path'
 import type { Dialog, IpcMain } from 'electron'
-import { isValidBackup } from '../backup-validation'
+import { isValidBackup } from '../modules/files/backup-validation'
 import { registerBackupHandlers } from '../handlers/backup'
 
 const backup = (): {

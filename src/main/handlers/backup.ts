@@ -10,8 +10,8 @@ import {
   statSync
 } from 'fs'
 import { readFile } from 'fs/promises'
-import { safeAttachmentName } from '../backup-files'
-import { isValidBackup } from '../backup-validation'
+import { safeAttachmentName } from '../modules/files/backup-files'
+import { isValidBackup } from '../modules/files/backup-validation'
 import type { IpcMain, Dialog, IpcMainInvokeEvent } from 'electron'
 
 interface BlobEntry {

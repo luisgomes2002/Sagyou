@@ -1,5 +1,5 @@
 import type { IpcMain } from 'electron'
-import type { MemoryInput } from '../memory'
+import type { MemoryInput } from '../modules/ai/memory'
 
 interface MemoryHandlerDeps {
   store: Pick<
@@ -15,7 +15,7 @@ interface MemoryHandlerDeps {
     | 'upsertMemory'
   >
   memory: Pick<
-    typeof import('../memory'),
+    typeof import('../modules/ai/memory'),
     | 'buildMemory'
     | 'findConflicts'
     | 'formatMemoriesForPrompt'

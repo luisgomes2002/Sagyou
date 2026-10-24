@@ -1,6 +1,6 @@
 import { BrowserWindow, shell } from 'electron'
 import type { IpcMain } from 'electron'
-import { safeExternalUrl } from '../external-links'
+import { safeExternalUrl } from '../modules/web/external-links'
 
 export interface ManagedWindow {
   window: BrowserWindow

@@ -51,7 +51,7 @@ export interface AIConfig {
   lastConversationId?: string
 
   /** Runtime that executes code changes. Legacy values are tolerated on load. */
-  codeHarness?: 'codex' | 'claude-code'
+  codeHarness?: 'codex' | 'claude-code' | 'opencode'
   /**
    * When true (default), the prompt prefix is kept stable to maximise provider
    * prompt caching (DeepSeek ~50x cheaper on cache hit, Claude, Gemini). When

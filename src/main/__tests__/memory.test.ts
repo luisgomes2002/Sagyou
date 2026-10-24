@@ -16,7 +16,7 @@ import {
   MEMORY_DECAY_BASE_DAYS,
   MEMORY_MAX,
   type AiMemory
-} from '../memory'
+} from '../modules/ai/memory'
 
 const NOW = '2026-07-21T12:00:00.000Z'
 

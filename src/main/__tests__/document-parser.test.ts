@@ -20,7 +20,7 @@ import {
   parseDocument,
   parseDocumentBuffer,
   prefersMarkItDown
-} from '../../main/document-parser'
+} from '../modules/files/document-parser'
 
 function tempFile(ext: string, content: string): string {
   const dir = mkdtempSync(join(tmpdir(), 'doc-test-'))

@@ -1,7 +1,6 @@
 ﻿import { useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import type { FeatureId, Project } from '../../types'
-import { useAiRunStore } from '../../store/aiRun'
 
 type ActiveView =
   | 'home'
@@ -16,7 +15,6 @@ type ActiveView =
   | 'files'
   | 'ai'
   | 'memory'
-  | 'agents'
   | 'planejamento'
   | 'graph'
   | 'guide'
@@ -72,7 +70,6 @@ export function Sidebar({
   enabledFeatures,
   codeAgentRunCount = 0
 }: Props) {
-  const runningCount = useAiRunStore((s) => s.running.size)
   const [menuOpen, setMenuOpen] = useState(false)
   const [projectMenuId, setProjectMenuId] = useState<string | null>(null)
   const [projectMenuPos, setProjectMenuPos] = useState<{
@@ -443,7 +440,7 @@ export function Sidebar({
   const aiItems: NavItem[] = [
     {
       view: 'ai',
-      label: 'Chat',
+      label: 'Sessões de código',
       icon: (
         <svg
           width="16"
@@ -473,24 +470,6 @@ export function Sidebar({
           <path d="M12 2a5 5 0 0 1 5 5v1a4 4 0 0 1 2 7 4 4 0 0 1-4 5 3 3 0 0 1-3-3" />
         </svg>
       )
-    },
-    {
-      view: 'agents',
-      label: 'Agentes',
-      icon: (
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.8"
-        >
-          <rect x="3" y="11" width="18" height="10" rx="2" />
-          <circle cx="12" cy="5" r="2" />
-          <path d="M12 7v4" />
-        </svg>
-      )
     }
   ]
 
@@ -508,9 +487,9 @@ export function Sidebar({
       >
         {item.icon}
         <span className="flex-1 truncate">{item.label}</span>
-        {item.view === 'agents' && runningCount + codeAgentRunCount > 0 && (
+        {item.view === 'ai' && codeAgentRunCount > 0 && (
           <span className="min-w-[18px] h-[18px] px-1.5 inline-flex items-center justify-center rounded-full bg-[#7c3aed] text-[10px] font-semibold text-white tabular-nums">
-            {runningCount + codeAgentRunCount}
+            {codeAgentRunCount}
           </span>
         )}
       </button>

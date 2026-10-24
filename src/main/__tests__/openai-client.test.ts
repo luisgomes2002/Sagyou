@@ -14,7 +14,7 @@ import {
   DEFAULT_TIMEOUT_MS,
   MIN_TIMEOUT_MS,
   MAX_TIMEOUT_MS
-} from '../openai-client'
+} from '../modules/ai/openai-client'
 
 // Reusing a client is only safe if it stops being reused the moment the config
 // changes. Everything here is about that: the cache must never outlive the

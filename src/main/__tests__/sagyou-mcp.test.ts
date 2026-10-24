@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { connect, type Socket } from 'net'
 import { mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
@@ -10,10 +10,11 @@ import {
   MCP_STDIO_BRIDGE_SOURCE,
   startSagyouMcpBroker,
   type McpSession
-} from '../sagyou-mcp'
-import type { AiMemory } from '../memory'
+} from '../modules/agent/sagyou-mcp'
+import { McpWriteQueue, RendererMcpActionBridge } from '../modules/agent/mcp-write-queue'
+import type { AiMemory } from '../modules/ai/memory'
 import type { MemorySearchHit } from '../store'
-import type { StoredConversation } from '../conversation-types'
+import type { StoredConversation } from '../modules/conversations/conversation-types'
 
 const memoryHit = (over: Record<string, unknown> = {}): MemorySearchHit =>
   ({
@@ -33,6 +34,7 @@ const memoryHit = (over: Record<string, unknown> = {}): MemorySearchHit =>
 const servers: { close: () => void }[] = []
 
 afterEach(() => {
+  vi.restoreAllMocks()
   while (servers.length) servers.pop()?.close()
 })
 
@@ -41,6 +43,18 @@ function request(port: number, body: object): Promise<Record<string, unknown>> {
     const socket: Socket = connect(port, '127.0.0.1')
     socket.once('error', reject)
     socket.once('connect', () => socket.write(JSON.stringify(body) + '\n'))
+    socket.once('data', (chunk) => {
+      socket.end()
+      resolve(JSON.parse(chunk.toString('utf8')) as Record<string, unknown>)
+    })
+  })
+}
+
+function malformedRequest(port: number, line: string): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    const socket: Socket = connect(port, '127.0.0.1')
+    socket.once('error', reject)
+    socket.once('connect', () => socket.write(line + '\n'))
     socket.once('data', (chunk) => {
       socket.end()
       resolve(JSON.parse(chunk.toString('utf8')) as Record<string, unknown>)
@@ -82,10 +96,45 @@ function bridgeRequest(
   })
 }
 
+function bridgeExitCode(bridgePath: string, env: NodeJS.ProcessEnv): Promise<number | null> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [bridgePath], { env, stdio: ['pipe', 'ignore', 'pipe'] })
+    child.once('error', reject)
+    child.once('close', (code) => resolve(code))
+    child.stdin.end()
+  })
+}
+
+function bridgeDropsMalformedInput(bridgePath: string, env: NodeJS.ProcessEnv): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [bridgePath], { env, stdio: ['pipe', 'pipe', 'pipe'] })
+    let output = ''
+    const timeout = setTimeout(() => child.kill(), 100)
+    child.stdout.setEncoding('utf8')
+    child.stdout.on('data', (chunk: string) => {
+      output += chunk
+    })
+    child.once('error', (error) => {
+      clearTimeout(timeout)
+      reject(error)
+    })
+    child.once('close', () => {
+      clearTimeout(timeout)
+      resolve(output)
+    })
+    child.stdin.end('{not-json\n')
+  })
+}
+
 describe('Sagyou MCP broker', () => {
-  it('requires a scoped temporary token and never exposes another project', async () => {
+  it('uses a temporary token while allowing an explicit project read', async () => {
+    const requestedProjects: (string | null | undefined)[] = []
     const broker = startSagyouMcpBroker({
-      readTasks: (projectId) => [{ projectId }],
+      listProjects: () => [{ id: 'other', name: 'Outro' }],
+      readTasks: (projectId) => {
+        requestedProjects.push(projectId)
+        return [{ projectId: projectId ?? 'all' }]
+      },
       readFinancial: () => [],
       readProjectData: () => ({}),
       searchMemory: () => [],
@@ -115,8 +164,30 @@ describe('Sagyou MCP broker', () => {
       params: { token: 'one-run', name: 'ler_tasks', arguments: { projectId: 'other' } }
     })
 
-    expect(JSON.stringify(reply)).toContain('project-1')
-    expect(JSON.stringify(reply)).not.toContain('other')
+    expect(JSON.stringify(reply)).toContain('other')
+    const listed = await request(broker.port(), {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: { token: 'one-run', name: 'list_projects', arguments: {} }
+    })
+    expect(JSON.stringify(listed)).toContain('Outro')
+    broker.grant({
+      token: 'general-run',
+      runId: 'run-general',
+      projectId: null,
+      financialProfileId: 'personal',
+      permissions: MCP_PERMISSIONS,
+      expiresAt: Date.now() + 10_000
+    })
+    const general = await request(broker.port(), {
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'tools/call',
+      params: { token: 'general-run', name: 'ler_tasks', arguments: {} }
+    })
+    expect(JSON.stringify(general)).toContain('all')
+    expect(requestedProjects).toEqual(['other', undefined])
   })
 
   it('rejects missing and expired capabilities before invoking a tool', async () => {
@@ -240,7 +311,7 @@ describe('Sagyou MCP broker', () => {
     expect(reads).toBe(1)
   })
 
-  it('routes a write through the granted run rather than caller-supplied scope', async () => {
+  it('routes an explicit task target through the granted run for approval', async () => {
     let received: {
       runId: string
       projectId: string | null
@@ -335,8 +406,377 @@ describe('Sagyou MCP broker', () => {
     }
   })
 
+  it('keeps two stdio MCP sessions bounded to their capability across protocol calls', async () => {
+    // This intentionally uses no Electron store or database. The broker receives
+    // in-memory fixtures only, while the child process exercises the disposable
+    // stdio bridge exactly as an external executor does.
+    let now = 1_700_000_000_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const scopedReads: { domain: string; projectId: string | null | undefined; profileId: string }[] = []
+    const broker = startSagyouMcpBroker({
+      readScopedData: (domain, session, projectId) => {
+        scopedReads.push({
+          domain,
+          projectId,
+          profileId: session.financialProfileId
+        })
+        if (domain === 'financial') return [{ profileId: session.financialProfileId }]
+        return Array.from({ length: 51 }, (_, index) => ({
+          id: `${projectId}-${index}`,
+          projectId,
+          profileId: session.financialProfileId
+        }))
+      },
+      readTasks: () => [],
+      readFinancial: () => [],
+      readProjectData: () => ({}),
+      searchMemory: () => [],
+      readMemory: () => null,
+      touchMemory: () => {},
+      memoriesForConflict: () => [],
+      searchConversations: () => [],
+      readConversation: () => null,
+      saveMemory: async () => ({ ok: false }),
+      createTask: async () => ({ ok: true })
+    })
+    servers.push(broker.server)
+    await new Promise<void>((resolve) => broker.server.once('listening', resolve))
+    expect((broker.server.address() as { address: string }).address).toBe('127.0.0.1')
+
+    const expiresAt = now + 100
+    broker.grant({
+      token: 'session-alpha',
+      runId: 'run-alpha',
+      projectId: 'project-alpha',
+      financialProfileId: 'profile-alpha',
+      permissions: ['read_tasks', 'read_financial_data'],
+      expiresAt
+    })
+    broker.grant({
+      token: 'session-beta',
+      runId: 'run-beta',
+      projectId: 'project-beta',
+      financialProfileId: 'profile-beta',
+      permissions: ['read_tasks', 'read_financial_data'],
+      expiresAt
+    })
+
+    const dir = mkdtempSync(join(tmpdir(), 'sagyou-mcp-security-'))
+    const bridgePath = join(dir, 'bridge.cjs')
+    writeFileSync(bridgePath, MCP_STDIO_BRIDGE_SOURCE, 'utf8')
+    const call = (token: string, body: object) =>
+      bridgeRequest(
+        bridgePath,
+        {
+          ...process.env,
+          SAGYOU_MCP_PORT: String(broker.port()),
+          SAGYOU_MCP_TOKEN: token
+        },
+        body
+      )
+    try {
+      expect(
+        await bridgeExitCode(bridgePath, {
+          ...process.env,
+          SAGYOU_MCP_PORT: String(broker.port()),
+          SAGYOU_MCP_TOKEN: undefined
+        })
+      ).toBe(2)
+      expect(
+        await bridgeDropsMalformedInput(bridgePath, {
+          ...process.env,
+          SAGYOU_MCP_PORT: String(broker.port()),
+          SAGYOU_MCP_TOKEN: 'session-alpha'
+        })
+      ).toBe('')
+
+      const initialize = await call('session-alpha', {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: { token: 'forged-token' }
+      })
+      expect(initialize.result).toMatchObject({ protocolVersion: '2024-11-05' })
+
+      const listed = await call('session-alpha', {
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'tools/list',
+        params: {}
+      })
+      expect(
+        (listed.result as { tools: { name: string }[] }).tools.map((tool) => tool.name)
+      ).toEqual(['read_tasks', 'read_financial_data'])
+
+      const alphaTasks = await call('session-alpha', {
+        jsonrpc: '2.0',
+        id: 3,
+        method: 'tools/call',
+        params: {
+          name: 'read_tasks',
+          arguments: { projectId: 'project-beta', profileId: 'profile-beta', offset: 0, limit: 999 }
+        }
+      })
+      const alphaPage = JSON.parse(
+        (alphaTasks.result as { content: { text: string }[] }).content[0].text
+      ) as { total: number; items: { projectId: string; profileId: string }[]; truncated: boolean }
+      expect(alphaPage).toMatchObject({ total: 51, truncated: true })
+      expect(alphaPage.items).toHaveLength(50)
+      expect(alphaPage.items.every((item) => item.projectId === 'project-beta')).toBe(true)
+      expect(alphaPage.items.every((item) => item.profileId === 'profile-alpha')).toBe(true)
+
+      const betaFinancial = await call('session-beta', {
+        jsonrpc: '2.0',
+        id: 4,
+        method: 'tools/call',
+        params: {
+          name: 'read_financial_data',
+          arguments: { projectId: 'project-alpha', profileId: 'profile-alpha' }
+        }
+      })
+      expect(JSON.stringify(betaFinancial)).toContain('profile-beta')
+      expect(JSON.stringify(betaFinancial)).not.toContain('profile-alpha')
+      expect(scopedReads).toEqual([
+        { domain: 'tasks', projectId: 'project-beta', profileId: 'profile-alpha' },
+        { domain: 'financial', projectId: 'project-alpha', profileId: 'profile-beta' }
+      ])
+
+      const forged = await call('forged-token', {
+        jsonrpc: '2.0',
+        id: 5,
+        method: 'tools/call',
+        params: { name: 'read_tasks', arguments: {} }
+      })
+      expect(forged.error).toMatchObject({ message: expect.stringMatching(/inválida|expirada/i) })
+
+      broker.revoke('session-alpha')
+      const revoked = await call('session-alpha', {
+        jsonrpc: '2.0',
+        id: 6,
+        method: 'tools/call',
+        params: { name: 'read_tasks', arguments: {} }
+      })
+      expect(revoked.error).toBeTruthy()
+
+      now = expiresAt
+      const expired = await call('session-beta', {
+        jsonrpc: '2.0',
+        id: 7,
+        method: 'tools/call',
+        params: { name: 'read_tasks', arguments: {} }
+      })
+      expect(expired.error).toMatchObject({ message: expect.stringMatching(/expirada/i) })
+
+      const malformed = await malformedRequest(broker.port(), '{not-json')
+      expect(malformed.error).toMatchObject({
+        message: expect.stringMatching(/mensagem MCP inválida/i)
+      })
+
+      const missingParameters = await request(broker.port(), {
+        jsonrpc: '2.0',
+        id: 8,
+        method: 'tools/call',
+        params: null
+      })
+      expect(missingParameters.error).toBeTruthy()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('persists approved scoped MCP memories only after the renderer path flushes', async () => {
+    // The production store is intentionally replaced with this in-memory map:
+    // the test covers the complete authority/approval protocol without loading
+    // ElectronStorage, SQLite, or any user record.
+    const memories = new Map<string, AiMemory>()
+    type ApprovalMode = 'approve' | 'deny' | 'timeout' | 'flush-failure'
+    const approvalByRun = new Map<string, ApprovalMode>([
+      ['run-alpha', 'approve'],
+      ['run-beta', 'approve']
+    ])
+    const rendererRequests: { runId: string; args: Record<string, unknown> }[] = []
+    const renderer = new RendererMcpActionBridge<
+      { runId: string; args: Record<string, unknown> },
+      boolean
+    >(({ requestId, payload }) => {
+      rendererRequests.push(payload)
+      const mode = approvalByRun.get(payload.runId) ?? 'deny'
+      if (mode === 'approve' || mode === 'flush-failure') renderer.resolve(requestId, true)
+      else if (mode === 'deny') renderer.resolve(requestId, false)
+      // A timeout deliberately leaves the renderer request unresolved.
+    }, 25)
+    const writes = new McpWriteQueue((request) =>
+      renderer.request({ runId: request.runId, args: request.args })
+    )
+    let flushes = 0
+    const broker = startSagyouMcpBroker({
+      readTasks: () => [],
+      readFinancial: () => [],
+      readProjectData: () => ({}),
+      searchMemory: (projectId, term) =>
+        [...memories.values()]
+          .filter(
+            (memory) =>
+              (memory.projectId === null || memory.projectId === projectId) &&
+              memory.title.toLocaleLowerCase().includes(term.toLocaleLowerCase())
+          )
+          .map((memory) => ({ memory, snippet: memory.body.slice(0, 240) })) as MemorySearchHit[],
+      readMemory: (id) => memories.get(id) ?? null,
+      touchMemory: () => {},
+      memoriesForConflict: (projectId) =>
+        [...memories.values()].filter(
+          (memory) => memory.projectId === null || memory.projectId === projectId
+        ),
+      searchConversations: () => [],
+      readConversation: () => null,
+      saveMemory: async (session, memory, redacted) => {
+        const outcome = await writes.enqueue(
+          {
+            runId: session.runId,
+            name: 'save_memory',
+            args: { tipo: memory.type, titulo: memory.title, corpo: memory.body, tags: memory.tags }
+          },
+          async () => {
+            if (approvalByRun.get(session.runId) === 'flush-failure')
+              throw new Error('flush da memória falhou')
+            // This represents the store's completed durable upsert. The broker
+            // must not send success until this has happened.
+            flushes += 1
+            memories.set(memory.id, memory)
+            return { ok: true, id: memory.id, ...(redacted ? { redacted: true } : {}) }
+          }
+        )
+        return outcome.approved
+          ? outcome.value!
+          : { ok: false, error: 'Salvamento não aprovado pelo usuário.' }
+      },
+      createTask: async () => ({ ok: true })
+    })
+    servers.push(broker.server)
+    await new Promise<void>((resolve) => broker.server.once('listening', resolve))
+    for (const [token, runId, projectId] of [
+      ['memory-alpha', 'run-alpha', 'project-alpha'],
+      ['memory-beta', 'run-beta', 'project-beta']
+    ] as const) {
+      broker.grant({
+        token,
+        runId,
+        projectId,
+        financialProfileId: 'personal',
+        permissions: ['search_memory', 'read_memory', 'save_memory', 'check_memories'],
+        expiresAt: Date.now() + 10_000
+      })
+    }
+
+    const dir = mkdtempSync(join(tmpdir(), 'sagyou-mcp-memory-'))
+    const bridgePath = join(dir, 'bridge.cjs')
+    writeFileSync(bridgePath, MCP_STDIO_BRIDGE_SOURCE, 'utf8')
+    const call = (token: string, name: string, arguments_: Record<string, unknown>, id: number) =>
+      bridgeRequest(
+        bridgePath,
+        {
+          ...process.env,
+          SAGYOU_MCP_PORT: String(broker.port()),
+          SAGYOU_MCP_TOKEN: token
+        },
+        { jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: arguments_ } }
+      )
+    const result = (reply: Record<string, unknown>): Record<string, unknown> =>
+      JSON.parse((reply.result as { content: { text: string }[] }).content[0].text) as Record<
+        string,
+        unknown
+      >
+    try {
+      const approved = await call(
+        'memory-alpha',
+        'save_memory',
+        {
+          type: 'decisao',
+          title: 'Segurança do broker',
+          body: 'Nunca registre sk-abcdefghijklmnop em logs.',
+          tags: ['mcp']
+        },
+        1
+      )
+      expect(result(approved)).toMatchObject({ ok: true, redacted: true })
+      expect(flushes).toBe(1)
+      expect(memories.size).toBe(1)
+      const alphaMemory = [...memories.values()][0]
+      expect(alphaMemory).toMatchObject({ projectId: 'project-alpha', type: 'decisao' })
+      expect(alphaMemory.body).toContain('[REDIGIDO]')
+      expect(alphaMemory.body).not.toContain('sk-abcdefghijklmnop')
+      expect(JSON.stringify(rendererRequests[0])).not.toContain('sk-abcdefghijklmnop')
+
+      const [alphaSecond, betaApproved] = await Promise.all([
+        call(
+          'memory-alpha',
+          'save_memory',
+          { type: 'fato', title: 'Escopo alpha', body: 'Somente alpha lê isto.' },
+          2
+        ),
+        call(
+          'memory-beta',
+          'save_memory',
+          { type: 'fato', title: 'Escopo beta', body: 'Somente beta lê isto.' },
+          3
+        )
+      ])
+      expect(result(alphaSecond)).toMatchObject({ ok: true })
+      expect(result(betaApproved)).toMatchObject({ ok: true })
+      expect(
+        [...memories.values()].filter((memory) => memory.projectId === 'project-alpha')
+      ).toHaveLength(2)
+      expect(
+        [...memories.values()].filter((memory) => memory.projectId === 'project-beta')
+      ).toHaveLength(1)
+
+      const searched = await call('memory-alpha', 'search_memory', { term: 'escopo' }, 4)
+      expect(JSON.stringify(result(searched))).toContain('Escopo alpha')
+      expect(JSON.stringify(result(searched))).not.toContain('Escopo beta')
+
+      const readOwn = await call('memory-alpha', 'read_memory', { id: alphaMemory.id }, 5)
+      expect(result(readOwn)).toMatchObject({ id: alphaMemory.id, scope: 'project' })
+      const readOther = await call('memory-beta', 'read_memory', { id: alphaMemory.id }, 6)
+      expect(result(readOther)).toMatchObject({ id: alphaMemory.id })
+      const conflicts = await call('memory-alpha', 'check_memories', {}, 7)
+      expect(result(conflicts)).toHaveProperty('conflicts')
+
+      approvalByRun.set('run-beta', 'deny')
+      const denied = await call(
+        'memory-beta',
+        'save_memory',
+        { type: 'fato', title: 'Não salvar', body: 'recusada' },
+        8
+      )
+      expect(result(denied)).toMatchObject({ ok: false })
+      expect([...memories.values()].some((memory) => memory.title === 'Não salvar')).toBe(false)
+
+      approvalByRun.set('run-alpha', 'timeout')
+      const timedOut = await call(
+        'memory-alpha',
+        'save_memory',
+        { type: 'fato', title: 'Expira', body: 'não grava' },
+        9
+      )
+      expect(timedOut.error).toMatchObject({ message: expect.stringMatching(/não respondeu/i) })
+      expect([...memories.values()].some((memory) => memory.title === 'Expira')).toBe(false)
+
+      approvalByRun.set('run-beta', 'flush-failure')
+      const flushFailure = await call(
+        'memory-beta',
+        'save_memory',
+        { type: 'fato', title: 'Flush falha', body: 'não grava' },
+        10
+      )
+      expect(flushFailure.error).toMatchObject({ message: 'flush da memória falhou' })
+      expect([...memories.values()].some((memory) => memory.title === 'Flush falha')).toBe(false)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('searches ranked project and global memories without exposing their bodies', async () => {
-    let received: { projectId: string | null; term: string } | null = null
+    let received: { projectId: string | null | undefined; term: string } | null = null
     const broker = startSagyouMcpBroker({
       readTasks: () => [],
       readFinancial: () => [],
@@ -382,9 +822,21 @@ describe('Sagyou MCP broker', () => {
     expect(result.memories.map((memory) => memory.id)).toEqual(['project-hit', 'global-hit'])
     expect(result.memories.map((memory) => memory.scope)).toEqual(['project', 'global'])
     expect(text).not.toContain('Este corpo completo')
+
+    await request(broker.port(), {
+      jsonrpc: '2.0',
+      id: 6,
+      method: 'tools/call',
+      params: {
+        token: 'memory-token',
+        name: 'search_memory',
+        arguments: { term: 'decisão', projectId: 'project-2' }
+      }
+    })
+    expect(received).toEqual({ projectId: 'project-2', term: 'decisão' })
   })
 
-  it('keeps projectId out of the memory tool schema and caps snippets and results', async () => {
+  it('offers project selection in memory search and caps snippets and results', async () => {
     const broker = startSagyouMcpBroker({
       readTasks: () => [],
       readFinancial: () => [],
@@ -427,7 +879,7 @@ describe('Sagyou MCP broker', () => {
     const readTool = (
       listed.result as { tools: { name: string; inputSchema: { properties: object } }[] }
     ).tools.find((tool) => tool.name === 'read_memory')
-    expect(searchTool?.inputSchema.properties).not.toHaveProperty('projectId')
+    expect(searchTool?.inputSchema.properties).toHaveProperty('projectId')
     expect(searchTool?.inputSchema.properties).not.toHaveProperty('includeArchived')
     expect(readTool?.inputSchema.properties).not.toHaveProperty('projectId')
 
@@ -446,7 +898,7 @@ describe('Sagyou MCP broker', () => {
     expect(result.memories[0].snippet).toHaveLength(240)
   })
 
-  it('reads only exact active global or session-project memories and touches successful reads', async () => {
+  it('reads active memories across projects and touches successful reads', async () => {
     const touched: string[] = []
     const active = { ...memoryHit().memory, archivedAt: null }
     const authorized = { ...active, id: 'authorized', body: 'a'.repeat(6_100) }
@@ -507,8 +959,9 @@ describe('Sagyou MCP broker', () => {
     expect(project.truncated).toBe(true)
     expect(project.warning).toMatch(/evidência histórica/i)
     expect(globalReply.error).toBeUndefined()
-    expect(touched.sort()).toEqual(['authorized', 'global'])
-    for (const reply of [prefixReply, otherReply, archivedReply, missingReply]) {
+    expect(otherReply.error).toBeUndefined()
+    expect(touched.sort()).toEqual(['authorized', 'global', 'other'])
+    for (const reply of [prefixReply, archivedReply, missingReply]) {
       expect(reply.error).toEqual({
         code: -32000,
         message: 'Memória indisponível nesta sessão MCP.'
@@ -683,8 +1136,8 @@ describe('Sagyou MCP broker', () => {
     expect(JSON.stringify(result)).not.toContain(otherProject.id)
   })
 
-  it('searches only the session conversation scope, rejects an empty term and bounds results', async () => {
-    const calls: { projectId: string | null; term: string }[] = []
+  it('searches conversations across projects, rejects an empty term and bounds results', async () => {
+    const calls: { projectId: string | null | undefined; term: string }[] = []
     const projectHits = Array.from({ length: 10 }, (_, index) => ({
       id: `project-${index}`,
       title: `Projeto ${index}`,
@@ -709,7 +1162,7 @@ describe('Sagyou MCP broker', () => {
       memoriesForConflict: () => [],
       searchConversations: (projectId, term) => {
         calls.push({ projectId, term })
-        return (projectId === null ? [legacyHit] : projectHits) as never
+        return (projectId === undefined ? [legacyHit, ...projectHits] : projectHits) as never
       },
       readConversation: () => null,
       saveMemory: async () => ({ ok: false }),
@@ -760,12 +1213,12 @@ describe('Sagyou MCP broker', () => {
     expect(calls).toHaveLength(1)
 
     const generalReply = await call('general-token', 'legado', 22)
-    expect(calls[1]).toEqual({ projectId: null, term: 'legado' })
+    expect(calls[1]).toEqual({ projectId: undefined, term: 'legado' })
     expect(JSON.stringify(generalReply)).toContain('legacy-general')
-    expect(JSON.stringify(generalReply)).not.toContain('project-0')
+    expect(JSON.stringify(generalReply)).toContain('project-0')
   })
 
-  it('reads only scoped transcripts, drops status and attachments, and keeps the relevant tail', async () => {
+  it('reads transcripts across projects, drops status and attachments, and keeps the relevant tail', async () => {
     const protectedConversation = {
       id: 'protected',
       projectId: 'project-1',
@@ -839,31 +1292,28 @@ describe('Sagyou MCP broker', () => {
     expect(result.turns.map((turn) => turn.text).join('').length).toBeLessThanOrEqual(8_000)
     expect(result.turns.at(-1)?.text).toContain('cauda importante')
 
-    const [legacyDenied, wrongDenied, missingDenied] = await Promise.all([
+    const [legacyAllowed, wrongAllowed, missingDenied] = await Promise.all([
       call('reader-project', 'legacy', 24),
       call('reader-project', 'wrong', 25),
       call('reader-project', 'missing', 26)
     ])
-    for (const denied of [legacyDenied, wrongDenied, missingDenied]) {
-      expect(denied.error).toEqual({
-        code: -32000,
-        message: 'Conversa indisponível nesta sessão MCP.'
-      })
-    }
-    const legacyAllowed = await call('reader-general', 'legacy', 27)
-    expect(JSON.stringify(legacyAllowed)).toContain('Conversa legada')
+    expect(legacyAllowed.error).toBeUndefined()
+    expect(wrongAllowed.error).toBeUndefined()
+    expect(missingDenied.error).toMatchObject({ code: -32000 })
+    const generalAllowed = await call('reader-general', 'legacy', 27)
+    expect(JSON.stringify(generalAllowed)).toContain('Conversa legada')
   })
 
-  it('pages scoped data domains without accepting caller-supplied scope', async () => {
+  it('pages data domains with a chosen project while retaining the financial profile', async () => {
     const calls: string[] = []
     const broker = startSagyouMcpBroker({
-      readScopedData: (domain, session) => {
-        calls.push(`${domain}:${session.projectId}:${session.financialProfileId}`)
+      readScopedData: (domain, session, projectId) => {
+        calls.push(`${domain}:${projectId}:${session.financialProfileId}`)
         if (domain === 'financial')
           return [{ amount: '10.50', profileId: session.financialProfileId }]
         return Array.from({ length: 3 }, (_, index) => ({
           id: `${domain}-${index}`,
-          projectId: session.projectId
+          projectId
         }))
       },
       readTasks: () => [],
@@ -900,14 +1350,14 @@ describe('Sagyou MCP broker', () => {
       (tasks.result as { content: { text: string }[] }).content[0].text
     ) as { total: number; items: { projectId: string }[]; nextOffset: number }
     expect(taskPage).toMatchObject({ total: 3, nextOffset: 2 })
-    expect(taskPage.items[0].projectId).toBe('project-1')
+    expect(taskPage.items[0].projectId).toBe('forged')
     const financial = await call('read_financial_data', {}, 29)
     const financialPage = JSON.parse(
       (financial.result as { content: { text: string }[] }).content[0].text
     ) as { items: { amount: string }[] }
     expect(financialPage.items[0].amount).toBe('10.50')
     for (const name of ['read_project', 'read_notes', 'read_goals']) await call(name, {}, 30)
-    expect(calls).toContain('tasks:project-1:profile-1')
+    expect(calls).toContain('tasks:forged:profile-1')
     expect(calls).toContain('financial:project-1:profile-1')
     expect(calls).toContain('project:project-1:profile-1')
     expect(calls).toContain('notes:project-1:profile-1')

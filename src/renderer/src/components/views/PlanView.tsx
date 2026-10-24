@@ -24,7 +24,7 @@ import {
 import { ModalBase } from '../ModalBase'
 import { CancelButton } from '../CancelButton'
 import { ConfirmDialog } from '../ConfirmDialog'
-import type { GlobalSearchHit } from '../../../../main/global-search-query'
+import type { GlobalSearchHit } from '../../../../main/modules/search/global-search-query'
 
 const TYPE_LABELS: Record<TimeBlock['type'], string> = {
   task: 'Task',

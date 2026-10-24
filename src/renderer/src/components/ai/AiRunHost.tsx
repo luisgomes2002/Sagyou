@@ -61,6 +61,7 @@ export function AiRunHost({
   const toggleApproval = useAiRunStore((s) => s.toggleApproval)
   const setAutoApprove = useAiRunStore((s) => s.setAutoApprove)
   const autoApprove = useAiRunStore((s) => s.autoApprove)
+  const [isClosing, setIsClosing] = useState(false)
 
   const saveConversationsNow = async (): Promise<void> => {
     const parkedEntries = Object.entries(parked)
@@ -130,6 +131,9 @@ export function AiRunHost({
   useEffect(() => {
     if (!window.electronAPI.lifecycle?.onFlushBeforeClose) return
     return window.electronAPI.lifecycle.onFlushBeforeClose(() => {
+      // The main process keeps the window alive until this acknowledgement, so
+      // make that intentional pause visible instead of looking like a frozen close.
+      setIsClosing(true)
       void Promise.all([useKanbanStore.getState()._flushPersist(), saveConversationsNow()]).finally(
         () => void window.electronAPI.lifecycle.flushBeforeCloseComplete()
       )
@@ -245,6 +249,22 @@ export function AiRunHost({
 
   return (
     <>
+      {isClosing && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-[#0b0b0f]/90"
+          role="status"
+          aria-live="assertive"
+        >
+          <div className="flex items-center gap-3 rounded-xl border border-[#2b2b31] bg-[#16161a] px-5 py-4 shadow-2xl">
+            <span className="h-5 w-5 shrink-0 rounded-full border-2 border-[#a080f0] border-t-transparent animate-spin" />
+            <div>
+              <p className="text-sm font-medium text-[#e7e1f3]">Salvando antes de fechar…</p>
+              <p className="mt-0.5 text-xs text-[#999999]">Seus dados e conversas estão sendo protegidos.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* The agent is working somewhere else — a way back, and proof it didn't die. */}
       {anyRunning && !onAIView && (
         <button

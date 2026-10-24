@@ -12,7 +12,7 @@ import { ConsolidatedTab } from '../financial/ConsolidatedTab'
 import { YieldsTab } from '../financial/YieldsTab'
 import { ReceiptsTab } from '../financial/ReceiptsTab'
 import { DebtsTab } from '../financial/DebtsTab'
-import type { GlobalSearchHit } from '../../../../main/global-search-query'
+import type { GlobalSearchHit } from '../../../../main/modules/search/global-search-query'
 
 type ActiveTab =
   | 'shopping'

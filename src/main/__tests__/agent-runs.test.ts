@@ -10,7 +10,7 @@ import {
   sortRuns,
   taskLabel,
   type AgentRunMeta
-} from '../agent-runs'
+} from '../modules/agent/agent-runs'
 
 const NOW = Date.now()
 

@@ -8,3 +8,6 @@ coverage
 .eslintcache
 *.log*
 resources/markitdown/bin/
+
+# Registro de progresso do workflow de agentes
+.sagyou/

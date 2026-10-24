@@ -2,20 +2,20 @@ import type { IpcMain } from 'electron'
 import { join, extname, basename } from 'path'
 import { existsSync, mkdirSync, copyFileSync, unlinkSync, statSync, writeFileSync } from 'fs'
 import { randomUUID } from 'crypto'
-import { attachmentPath, safeAttachmentName } from '../backup-files'
+import { attachmentPath, safeAttachmentName } from '../modules/files/backup-files'
 import {
   isImageFileName,
   saveImageToDir,
   readImageAsDataUrl,
   deleteImageFiles,
   decodeDataUrl
-} from '../chat-images'
+} from '../modules/conversations/chat-images'
 import {
   isChatFileName,
   saveAndParseChatFile,
   deleteChatFiles
-} from '../chat-files'
-import { isDocumentExt, parseDocument } from '../document-parser'
+} from '../modules/conversations/chat-files'
+import { isDocumentExt, parseDocument } from '../modules/files/document-parser'
 import { indexProjectFileContent, loadData, removeProjectFileSearchContent } from '../store'
 import type { BrowserWindow, Dialog, Shell } from 'electron'
 

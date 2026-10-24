@@ -6,7 +6,7 @@ import {
   MAX_RUN_METRICS,
   type RunMetric,
   type RunMetricInput
-} from '../run-metrics'
+} from '../modules/ai/run-metrics'
 
 const input = (over: Partial<RunMetricInput> = {}): RunMetricInput => ({
   model: 'flash',

@@ -5,7 +5,7 @@ import type {
   GlobalSearchHit,
   GlobalSearchResponse,
   GlobalSearchType
-} from '../../../../main/global-search-query'
+} from '../../../../main/modules/search/global-search-query'
 
 interface Props {
   open: boolean

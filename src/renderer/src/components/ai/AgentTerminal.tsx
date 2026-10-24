@@ -141,6 +141,28 @@ interface InteractiveTerminalProps {
   compact?: boolean
 }
 
+/** Main keeps a rolling raw log. Match its overlap instead of resetting xterm
+ * whenever the oldest bytes fall out of that bounded buffer. */
+function terminalLogDelta(previous: string, current: string): string {
+  if (!previous) return current
+  if (current.startsWith(previous)) return current.slice(previous.length)
+  if (previous === current) return ''
+
+  const prefix = new Array<number>(current.length).fill(0)
+  for (let index = 1, matched = 0; index < current.length; index++) {
+    while (matched > 0 && current[index] !== current[matched]) matched = prefix[matched - 1]
+    if (current[index] === current[matched]) matched++
+    prefix[index] = matched
+  }
+  let overlap = 0
+  for (const character of previous) {
+    while (overlap > 0 && (overlap === current.length || character !== current[overlap]))
+      overlap = prefix[overlap - 1]
+    if (character === current[overlap]) overlap++
+  }
+  return current.slice(overlap)
+}
+
 /** A real terminal emulator attached to the harness' existing PTY. */
 function InteractiveTerminal({
   log,
@@ -155,6 +177,9 @@ function InteractiveTerminal({
   const hostRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const writtenLogRef = useRef('')
+  const latestLogRef = useRef(log)
+  latestLogRef.current = log
+  const connectedRef = useRef(false)
   const callbacksRef = useRef({ onInput, onResize })
   const [copied, setCopied] = useState(false)
 
@@ -195,10 +220,28 @@ function InteractiveTerminal({
     terminal.open(host)
     terminalRef.current = terminal
 
+    const writeLog = (nextLog: string): void => {
+      const previous = writtenLogRef.current
+      // Status may have been captured before the reconnect snapshot.
+      if (previous.startsWith(nextLog)) return
+      const delta = terminalLogDelta(previous, nextLog)
+      writtenLogRef.current = nextLog
+      if (!delta) return
+      // Preserve the user's reading position while output keeps arriving.
+      const viewport = terminal.buffer.active.viewportY
+      const scrolledUp = viewport < terminal.buffer.active.baseY
+      terminal.write(delta, () => {
+        if (scrolledUp) terminal.scrollToLine(Math.min(viewport, terminal.buffer.active.baseY))
+      })
+    }
     const resize = (): void => {
+      if (!connectedRef.current) return
       try {
+        const beforeCols = terminal.cols
+        const beforeRows = terminal.rows
         fit.fit()
-        void callbacksRef.current.onResize(terminal.cols, terminal.rows)
+        if (terminal.cols !== beforeCols || terminal.rows !== beforeRows)
+          void callbacksRef.current.onResize(terminal.cols, terminal.rows)
       } catch {
         // Collapsed panels have no measurable terminal dimensions yet.
       }
@@ -208,13 +251,25 @@ function InteractiveTerminal({
     const frame = requestAnimationFrame(resize)
     const input = terminal.onData((data) => void callbacksRef.current.onInput(data))
     let disposed = false
-    void window.electronAPI.ai.codeAgent.terminalReconnect?.(runId).then((session) => {
-      if (disposed || !session.success || !terminalRef.current) return
-      if (session.cols && session.rows) terminal.resize(session.cols, session.rows)
-      if (session.log) terminal.write(session.log)
-      writtenLogRef.current = session.log ?? ''
-      resize()
-    })
+    void Promise.resolve(window.electronAPI.ai.codeAgent.terminalReconnect?.(runId))
+      .then((session) => {
+        if (disposed) return
+        if (session?.success) {
+          if (session.cols && session.rows) terminal.resize(session.cols, session.rows)
+          writeLog(session.log ?? '')
+        }
+        connectedRef.current = true
+        // The status prop may have advanced while reconnect was in flight.
+        const latest = latestLogRef.current
+        if (!session?.success || latest.startsWith(session.log ?? '')) writeLog(latest)
+        resize()
+      })
+      .catch(() => {
+        if (disposed) return
+        connectedRef.current = true
+        writeLog(latestLogRef.current)
+        resize()
+      })
 
     return () => {
       disposed = true
@@ -223,20 +278,23 @@ function InteractiveTerminal({
       observer.disconnect()
       terminal.dispose()
       terminalRef.current = null
+      connectedRef.current = false
+      writtenLogRef.current = ''
     }
-  }, [runId, initialCols, initialRows])
+  }, [runId])
 
   useEffect(() => {
     const terminal = terminalRef.current
-    if (!terminal) return
-    const written = writtenLogRef.current
-    if (log.startsWith(written)) {
-      terminal.write(log.slice(written.length))
-    } else {
-      terminal.reset()
-      terminal.write(log)
-    }
+    if (!terminal || !connectedRef.current) return
+    if (writtenLogRef.current.startsWith(log)) return
+    const delta = terminalLogDelta(writtenLogRef.current, log)
     writtenLogRef.current = log
+    if (!delta) return
+    const viewport = terminal.buffer.active.viewportY
+    const scrolledUp = viewport < terminal.buffer.active.baseY
+    terminal.write(delta, () => {
+      if (scrolledUp) terminal.scrollToLine(Math.min(viewport, terminal.buffer.active.baseY))
+    })
   }, [log])
 
   const copy = (): void => {
@@ -251,7 +309,7 @@ function InteractiveTerminal({
     <div
       className={
         (compact ? '' : 'mx-6 mb-2 ') +
-        'rounded-lg overflow-hidden border border-[#2b2b31] bg-[#101014] shadow-inner'
+        'flex min-h-0 flex-1 flex-col rounded-lg overflow-hidden border border-[#2b2b31] bg-[#101014] shadow-inner'
       }
     >
       <div className="flex items-center gap-2 px-3 py-1.5 bg-[#101014] border-b border-[#2b2b31]">
@@ -272,8 +330,7 @@ function InteractiveTerminal({
       </div>
       <div
         ref={hostRef}
-        style={{ height: '22rem', maxHeight: '60vh', resize: 'vertical', overflow: 'hidden' }}
-        className="p-2 focus-within:ring-1 focus-within:ring-[#7c3aed]"
+        className="min-h-0 flex-1 overflow-hidden p-2 focus-within:ring-1 focus-within:ring-[#7c3aed]"
         aria-label="Terminal interativo do agente"
       />
     </div>

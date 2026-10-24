@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
-import { McpWriteQueue, RendererMcpActionBridge } from '../mcp-write-queue'
+import { McpWriteQueue, RendererMcpActionBridge } from '../modules/agent/mcp-write-queue'
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   let resolve!: (value: T) => void

@@ -14,9 +14,14 @@ Agente de Código.
    interrupção sem encerrar o aplicativo.
 5. Redimensione a janela/painel do terminal e confirme que o CLI se adapta ao
    novo número de colunas e linhas.
-6. Faça uma pequena alteração, use **Encerrar e revisar diff**, recuse uma vez
-   e aceite uma vez. A árvore original só deve mudar após a aceitação.
+6. Navegue para outra tela e volte para Agentes. Confirme que a sessão reconecta
+   com o buffer e o tamanho anteriores, sem abrir um segundo processo.
+7. Faça uma pequena alteração e saia normalmente do CLI no terminal. Confirme
+   que a sessão MCP é revogada, o diff é arquivado e nenhum pedido de aprovação
+   final permanece pendente.
+8. Confirme que a árvore original não mudou e que a sessão encerrada não aparece
+   como aguardando aprovação.
 
-Falhas de inicialização, encerramento, `Ctrl+C` ou fechamento da janela devem
+Falhas de inicialização, encerramento ou fechamento da janela devem
 encerrar o PTY e revogar a sessão MCP; não devem aplicar alterações sem a
 aprovação final.

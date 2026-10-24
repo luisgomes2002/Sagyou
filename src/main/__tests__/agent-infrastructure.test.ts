@@ -1,27 +1,35 @@
 // @vitest-environment node
 
-import { execFile } from 'child_process'
+import { execFile, spawn } from 'child_process'
+import { once } from 'events'
 import { existsSync } from 'fs'
 import { mkdtemp, readFile, rm, writeFile } from 'fs/promises'
+import { createServer } from 'net'
 import { tmpdir } from 'os'
 import { isAbsolute, join, relative } from 'path'
 import { promisify } from 'util'
 import { afterAll, describe, expect, it, vi } from 'vitest'
-import { AgentSessionRegistry } from '../agent-session'
+import { AgentSessionRegistry } from '../modules/agent/agent-session'
 import {
   isAgentTerminalInput,
   isAgentTerminalSize,
   startAgentPty,
   type AgentPtySpawner
-} from '../agent-pty'
-import { AgentWorktreeManager } from '../agent-worktree'
-import { collectAgentPatch, patchWithinScope } from '../agent-diff'
-import { deliverApprovedPatch, type DeliveryCoordinator } from '../agent-delivery'
-import { prepareAgentMcpSession } from '../agent-mcp-session'
-import { MCP_PERMISSIONS, type McpSession } from '../sagyou-mcp'
+} from '../modules/agent/agent-pty'
+import { AgentWorktreeManager } from '../modules/agent/agent-worktree'
+import { collectAgentPatch, patchWithinScope, validatePatchScope } from '../modules/agent/agent-diff'
+import { deliverApprovedPatch, type DeliveryCoordinator } from '../modules/agent/agent-delivery'
+import { prepareAgentMcpSession } from '../modules/agent/agent-mcp-session'
+import { MCP_PERMISSIONS, type McpSession } from '../modules/agent/sagyou-mcp'
 
 const execFileAsync = promisify(execFile)
 const made: string[] = []
+let worktreeSequence = 0
+
+function worktreeRunId(prefix: string): string {
+  worktreeSequence += 1
+  return `${prefix}-${process.pid}-${Date.now()}-${worktreeSequence}`
+}
 
 async function git(dir: string, args: string[]): Promise<void> {
   await execFileAsync('git', ['-C', dir, ...args], { windowsHide: true })
@@ -201,11 +209,12 @@ describe('agent infrastructure', () => {
     const originalDir = await newRepo()
     const sessions = new AgentSessionRegistry<{ id: string; worktreeDir: string | null }>()
     const worktrees = new AgentWorktreeManager(sessions)
-    const isolated = await worktrees.create(originalDir, 'run-one')
+    const runId = worktreeRunId('run-one')
+    const isolated = await worktrees.create(originalDir, runId)
     expect(isAbsolute(isolated.worktreeDir)).toBe(true)
     expect(relative(originalDir, isolated.worktreeDir).startsWith('..')).toBe(true)
-    expect(existsSync(join(originalDir, '.sagyou-wt-run-one'))).toBe(false)
-    sessions.register({ id: 'run-one', worktreeDir: isolated.worktreeDir })
+    expect(existsSync(join(originalDir, `.sagyou-wt-${runId}`))).toBe(false)
+    sessions.register({ id: runId, worktreeDir: isolated.worktreeDir })
     await writeFile(join(isolated.worktreeDir, 'tracked.txt'), 'after\n')
     await writeFile(join(isolated.worktreeDir, 'new.txt'), 'new\n')
 
@@ -215,6 +224,12 @@ describe('agent infrastructure', () => {
     expect(changes.patch).toContain('new.txt')
     expect(patchWithinScope(changes.changedPaths, ['tracked.txt'])).toBe(false)
     expect(patchWithinScope(changes.changedPaths, ['tracked.txt', 'new.txt'])).toBe(true)
+    // A completed diff is still review material: no original file changes until
+    // the explicit delivery operation below is called.
+    expect((await readFile(join(originalDir, 'tracked.txt'), 'utf8')).replace(/\r\n/g, '\n')).toBe(
+      'before\n'
+    )
+    expect(existsSync(isolated.worktreeDir)).toBe(true)
 
     const coordinator: DeliveryCoordinator = {
       hasDirectRun: () => false,
@@ -223,7 +238,7 @@ describe('agent infrastructure', () => {
     }
     await deliverApprovedPatch({
       originalDir,
-      runId: 'run-one',
+      runId,
       patch: changes.patch,
       coordinator
     })
@@ -234,7 +249,10 @@ describe('agent infrastructure', () => {
       'new\n'
     )
 
-    sessions.remove('run-one')
+    // Delivery preserves the review artifact; lifecycle cleanup happens only
+    // after the caller records the finished run.
+    expect(existsSync(isolated.worktreeDir)).toBe(true)
+    sessions.remove(runId)
     await worktrees.remove(isolated)
     expect(existsSync(isolated.worktreeDir)).toBe(false)
   })
@@ -243,7 +261,8 @@ describe('agent infrastructure', () => {
     const originalDir = await newRepo()
     const sessions = new AgentSessionRegistry<{ id: string; worktreeDir: string | null }>()
     const worktrees = new AgentWorktreeManager(sessions)
-    const isolated = await worktrees.create(originalDir, 'binary-conflict')
+    const runId = worktreeRunId('binary-conflict')
+    const isolated = await worktrees.create(originalDir, runId)
     await writeFile(join(isolated.worktreeDir, 'image.bin'), Buffer.from([0, 1, 2, 0, 255]))
     const binaryChanges = await collectAgentPatch(isolated.worktreeDir)
     const coordinator: DeliveryCoordinator = {
@@ -253,7 +272,7 @@ describe('agent infrastructure', () => {
     }
     await deliverApprovedPatch({
       originalDir,
-      runId: 'binary-conflict',
+      runId,
       patch: binaryChanges.patch,
       coordinator
     })
@@ -266,7 +285,7 @@ describe('agent infrastructure', () => {
     await expect(
       deliverApprovedPatch({
         originalDir,
-        runId: 'binary-conflict',
+        runId,
         patch: conflictingChanges.patch,
         coordinator
       })
@@ -282,7 +301,7 @@ describe('agent infrastructure', () => {
     const originalDir = await newRepo()
     const sessions = new AgentSessionRegistry<{ id: string; worktreeDir: string | null }>()
     const worktrees = new AgentWorktreeManager(sessions)
-    const isolated = await worktrees.create(originalDir, 'committed-change')
+    const isolated = await worktrees.create(originalDir, worktreeRunId('committed-change'))
     const { stdout: base } = await execFileAsync('git', [
       '-C',
       isolated.worktreeDir,
@@ -305,7 +324,7 @@ describe('agent infrastructure', () => {
     const originalDir = await newRepo()
     const sessions = new AgentSessionRegistry<{ id: string; worktreeDir: string | null }>()
     const worktrees = new AgentWorktreeManager(sessions)
-    const isolated = await worktrees.create(originalDir, 'rename-scope')
+    const isolated = await worktrees.create(originalDir, worktreeRunId('rename-scope'))
     await git(isolated.worktreeDir, ['mv', 'tracked.txt', 'renamed.txt'])
 
     const changes = await collectAgentPatch(isolated.worktreeDir)
@@ -315,11 +334,36 @@ describe('agent infrastructure', () => {
     await worktrees.remove(isolated)
   })
 
+  it('blocks an entire mixed-scope review batch before it can reach the original repository', async () => {
+    const originalDir = await newRepo()
+    const sessions = new AgentSessionRegistry<{ id: string; worktreeDir: string | null }>()
+    const worktrees = new AgentWorktreeManager(sessions)
+    const isolated = await worktrees.create(originalDir, worktreeRunId('mixed-scope'))
+    await writeFile(join(isolated.worktreeDir, 'tracked.txt'), 'allowed change\n')
+    await writeFile(join(isolated.worktreeDir, 'private.txt'), 'outside scope\n')
+
+    const changes = await collectAgentPatch(isolated.worktreeDir)
+    const scope = await validatePatchScope(isolated.worktreeDir, changes.changedPaths, [
+      'tracked.txt'
+    ])
+    expect(scope).toEqual({ allowed: false, rejectedPaths: ['private.txt'] })
+    // Validation happens before final approval/delivery. Refusing one path must
+    // refuse the whole patch, including the otherwise permitted tracked change.
+    expect((await readFile(join(originalDir, 'tracked.txt'), 'utf8')).replace(/\r\n/g, '\n')).toBe(
+      'before\n'
+    )
+    expect(existsSync(join(originalDir, 'private.txt'))).toBe(false)
+    expect(existsSync(isolated.worktreeDir)).toBe(true)
+
+    await worktrees.remove(isolated)
+    expect(existsSync(isolated.worktreeDir)).toBe(false)
+  })
+
   it('creates an isolated snapshot for an unborn repository without changing its index or HEAD', async () => {
     const originalDir = await newUnbornRepo()
     const sessions = new AgentSessionRegistry<{ id: string; worktreeDir: string | null }>()
     const worktrees = new AgentWorktreeManager(sessions)
-    const runId = `unborn-${Date.now()}`
+    const runId = worktreeRunId('unborn')
     const isolated = await worktrees.create(originalDir, runId)
     sessions.register({ id: runId, worktreeDir: isolated.worktreeDir })
 
@@ -336,13 +380,39 @@ describe('agent infrastructure', () => {
     await worktrees.remove(isolated)
   })
 
+  it('initializes a code folder without Git so it can run concurrent isolated sessions', async () => {
+    const originalDir = await mkdtemp(join(tmpdir(), 'sagyou-agent-no-git-'))
+    made.push(originalDir)
+    await writeFile(join(originalDir, 'draft.txt'), 'keep this file\n')
+    const sessions = new AgentSessionRegistry<{ id: string; worktreeDir: string | null }>()
+    const worktrees = new AgentWorktreeManager(sessions)
+
+    const [first, second] = await Promise.all([
+      worktrees.create(originalDir, worktreeRunId('plain-one')),
+      worktrees.create(originalDir, worktreeRunId('plain-two'))
+    ])
+
+    expect(existsSync(join(originalDir, '.git'))).toBe(true)
+    expect(await readFile(join(originalDir, 'draft.txt'), 'utf8')).toBe('keep this file\n')
+    expect(first.worktreeDir).not.toBe(second.worktreeDir)
+    expect((await readFile(join(first.worktreeDir, 'draft.txt'), 'utf8')).replace(/\r\n/g, '\n')).toBe(
+      'keep this file\n'
+    )
+    expect((await readFile(join(second.worktreeDir, 'draft.txt'), 'utf8')).replace(/\r\n/g, '\n')).toBe(
+      'keep this file\n'
+    )
+
+    await worktrees.remove(first)
+    await worktrees.remove(second)
+  })
+
   it('gives concurrent runs distinct detached worktrees and cleans an orphan after interruption', async () => {
     const originalDir = await newRepo()
     const sessions = new AgentSessionRegistry<{ id: string; worktreeDir: string | null }>()
     const worktrees = new AgentWorktreeManager(sessions)
     const [first, second] = await Promise.all([
-      worktrees.create(originalDir, 'parallel-one'),
-      worktrees.create(originalDir, 'parallel-two')
+      worktrees.create(originalDir, worktreeRunId('parallel-one')),
+      worktrees.create(originalDir, worktreeRunId('parallel-two'))
     ])
     expect(first.worktreeDir).not.toBe(second.worktreeDir)
     expect(existsSync(first.worktreeDir)).toBe(true)
@@ -394,6 +464,12 @@ describe('agent infrastructure', () => {
     ])
     expect(prepared.env).toMatchObject({ SAGYOU_MCP_PORT: '4567', SAGYOU_MCP_TOKEN: 'secret' })
     expect(prepared.args.join(' ')).toContain('mcp_servers.sagyou.command')
+    expect(prepared.args).toContain(
+      'mcp_servers.sagyou.env_vars=["SAGYOU_MCP_PORT","SAGYOU_MCP_TOKEN"]'
+    )
+    expect(prepared.args).toContain('mcp_servers.sagyou.required=true')
+    expect(prepared.args).toContain('mcp_servers.sagyou.enabled=true')
+    expect(prepared.args.join(' ')).not.toContain('secret')
     expect(existsSync(join(dir, '.sagyou-mcp-bridge.cjs'))).toBe(true)
 
     await prepared.cleanup()
@@ -401,5 +477,95 @@ describe('agent infrastructure', () => {
     expect(revoked).toEqual(['secret'])
     expect(existsSync(join(dir, '.sagyou-mcp-bridge.cjs'))).toBe(false)
     expect(existsSync(join(dir, '.sagyou-mcp.json'))).toBe(false)
+  })
+
+  it('connects the disposable stdio bridge to loopback without exposing its token', async () => {
+    const token = 'test-capability'
+    let authorized = false
+    const server = createServer((socket) => {
+      socket.on('error', () => {})
+      let input = ''
+      socket.on('data', (chunk) => {
+        input += chunk.toString('utf8')
+        const lines = input.split('\n')
+        input = lines.pop() ?? ''
+        for (const line of lines) {
+          const request = JSON.parse(line) as {
+            id: number
+            params: { token?: string }
+          }
+          authorized = request.params.token === token
+          socket.write(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              id: request.id,
+              result: {
+                protocolVersion: '2024-11-05',
+                capabilities: { tools: {} },
+                serverInfo: { name: 'Sagyou', version: '1' }
+              }
+            }) + '\n'
+          )
+        }
+      })
+    })
+    server.listen(0, '127.0.0.1')
+    await once(server, 'listening')
+    const dir = await mkdtemp(join(tmpdir(), 'sagyou-mcp-bridge-'))
+    made.push(dir)
+    const prepared = await prepareAgentMcpSession({
+      broker: {
+        port: () => (server.address() as { port: number }).port,
+        grant: () => {},
+        revoke: () => {}
+      },
+      token,
+      runId: 'run-bridge',
+      projectId: 'project-one',
+      financialProfileId: 'personal',
+      permissions: MCP_PERMISSIONS,
+      worktreeDir: dir,
+      executor: 'codex',
+      executable: process.execPath,
+      args: [],
+      env: process.env,
+      expiresAt: Date.now() + 60_000
+    })
+    const bridge = spawn(process.execPath, [join(dir, '.sagyou-mcp-bridge.cjs')], {
+      env: prepared.env,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true
+    })
+    try {
+      const response = new Promise<string>((resolve, reject) => {
+        let output = ''
+        bridge.stdout.on('data', (chunk: Buffer) => {
+          output += chunk.toString('utf8')
+          if (output.includes('\n')) resolve(output.split('\n')[0])
+        })
+        bridge.once('exit', () => reject(new Error('MCP bridge exited before initialize')))
+      })
+      bridge.stdin.write(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'test', version: '1' } }
+        }) + '\n'
+      )
+      const line = await Promise.race([
+        response,
+        new Promise<string>((_, reject) =>
+          setTimeout(() => reject(new Error('MCP bridge did not answer')), 3_000)
+        )
+      ])
+      expect(authorized).toBe(true)
+      expect(JSON.parse(line).result.serverInfo.name).toBe('Sagyou')
+      expect(line).not.toContain(token)
+    } finally {
+      bridge.kill()
+      await prepared.cleanup()
+      server.close()
+    }
   })
 })

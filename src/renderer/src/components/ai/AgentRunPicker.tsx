@@ -9,7 +9,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 
-/** Mirrors the main-process AgentRunMeta; see src/main/agent-runs.ts. */
+/** Mirrors the main-process AgentRunMeta; see src/main/modules/agent/agent-runs.ts. */
 export interface AgentRunMeta {
   id: string
   convId: string | null

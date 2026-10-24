@@ -7,7 +7,7 @@ import {
   briefConversationsForTask,
   briefCurrentConversation,
   type SearchableConversation
-} from '../conversation-search'
+} from '../modules/conversations/conversation-search'
 
 const conv = (
   id: string,

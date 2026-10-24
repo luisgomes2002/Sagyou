@@ -7,7 +7,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { mkdtemp, mkdir, writeFile, rm } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join, resolve, sep } from 'path'
-import { confineToRoot, walkFiles, detectSymbols, extractSymbol, extractLines } from '../code-files'
+import { confineToRoot, walkFiles, detectSymbols, extractSymbol, extractLines } from '../modules/code/code-files'
 
 let root: string
 

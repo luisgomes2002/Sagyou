@@ -2,7 +2,7 @@
  * @vitest-environment node
  */
 import { describe, it, expect } from 'vitest'
-import { decodeDataUrl, mimeForExt, isImageFileName, MAX_IMAGE_BYTES } from '../chat-images'
+import { decodeDataUrl, mimeForExt, isImageFileName, MAX_IMAGE_BYTES } from '../modules/conversations/chat-images'
 
 const b64 = (s: string): string => Buffer.from(s).toString('base64')
 const png = `data:image/png;base64,${b64('fake png bytes')}`

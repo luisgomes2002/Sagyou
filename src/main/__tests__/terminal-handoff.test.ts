@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { buildTerminalHandoff } from '../terminal-handoff'
+import { buildTerminalHandoff } from '../modules/agent/terminal-handoff'
 
 describe('buildTerminalHandoff', () => {
   it('records a successful run with deterministic project id and references', () => {

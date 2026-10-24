@@ -4,7 +4,7 @@ import {
   partitionConversations,
   referencedConversationIds,
   retainReferencedConversations
-} from '../conversation-retention'
+} from '../modules/conversations/conversation-retention'
 
 describe('conversation retention', () => {
   it('keeps memory sources across both the age and count limits, including archived memories', () => {

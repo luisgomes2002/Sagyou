@@ -6,7 +6,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { promisify } from 'util'
-import { addDetachedWorktree, resolveWorktreeBase } from '../git-worktree'
+import { addDetachedWorktree, resolveWorktreeBase } from '../modules/agent/git-worktree'
 
 const execFileAsync = promisify(execFile)
 const made: string[] = []

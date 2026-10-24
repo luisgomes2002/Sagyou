@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { join } from 'path'
-import { hasBundledMarkItDown, markitdownBinaryPath } from '../markitdown'
+import { hasBundledMarkItDown, markitdownBinaryPath } from '../modules/files/markitdown'
 
 describe('MarkItDown runtime path', () => {
   it('resolves the executable bundled for the current platform', () => {

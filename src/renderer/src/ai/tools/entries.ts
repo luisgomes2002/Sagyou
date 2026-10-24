@@ -1758,9 +1758,9 @@ export const registryEntries: Record<string, AITool> = {
     write: true,
     definition: fn(
       'run_code_agent',
-      'Dispara um agente de código para implementar. Aceita várias execuções simultâneas, inclusive ' +
-        'na mesma pasta, usando worktrees isolados. Para variantes paralelas, faça várias chamadas ' +
-        'nesta rodada. Passe "arquivos" com os caminhos a editar.',
+      'Inicia Codex ou Claude Code para implementar em worktrees isolados. Aceita várias execuções ' +
+        'simultâneas, inclusive na mesma pasta. O diff final sempre exige revisão e aprovação manual. ' +
+        'Passe "arquivos" com os caminhos a editar.',
       {
         type: 'object',
         properties: {
@@ -1791,7 +1791,7 @@ export const registryEntries: Record<string, AITool> = {
           sessao_interativa: {
             type: 'boolean',
             description:
-              'Somente para Codex, OpenCode ou Claude Code: abre o terminal persistente para o usuário conversar ao vivo. O usuário encerra a sessão antes de revisar o diff.'
+              'Somente para Codex ou Claude Code: abre o terminal persistente para o usuário conversar ao vivo. O usuário encerra a sessão antes de revisar o diff.'
           },
           ...PASTA_PARAM,
           projectId: { type: 'string', description: 'ID do projeto; usa o ativo' }

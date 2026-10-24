@@ -162,7 +162,7 @@ export function SwitchAI({ config, current, onClose, onConfirm }: Props): React.
         )}
         <p className="mt-3 text-xs text-[#777]">
           Assinatura usa ChatGPT. Para uso por chave, selecione um perfil OpenAI/Codex ou Claude.
-          Codex CLI, Claude Code e OpenCode continuam na área Agente de código.
+          Codex CLI e Claude Code continuam na área Agente de código.
         </p>
         <div className="mt-5 flex justify-end gap-2">
           <button

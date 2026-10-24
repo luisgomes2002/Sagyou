@@ -2,7 +2,7 @@ import type { IpcMain } from 'electron'
 
 interface CodeFilesHandlerDeps {
   files: Pick<
-    typeof import('../code-files'),
+    typeof import('../modules/code/code-files'),
     | 'confineToRoot'
     | 'walkFiles'
     | 'detectSymbols'

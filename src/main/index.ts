@@ -29,29 +29,31 @@ import {
 } from 'fs'
 import * as codeFileFs from 'fs'
 import { homedir } from 'os'
-import { exec as execCallback, execFile } from 'child_process'
+import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { readFile } from 'fs/promises'
-const execAsync = promisify(execCallback)
 const execFileAsync = promisify(execFile)
 import { randomBytes, randomUUID } from 'crypto'
-import { partitionConversations, referencedConversationIds } from './conversation-retention'
-import type { StoredConversation } from './conversation-types'
-import { CodeRunCoordinator } from './code-run-coordinator'
-import { McpWriteQueue, RendererMcpActionBridge } from './mcp-write-queue'
-import { AgentSessionRegistry } from './agent-session'
-import { AgentWorktreeManager } from './agent-worktree'
+import { partitionConversations, referencedConversationIds } from './modules/conversations/conversation-retention'
+import type { StoredConversation } from './modules/conversations/conversation-types'
+import { CodeRunCoordinator } from './modules/agent/code-run-coordinator'
+import { McpWriteQueue, RendererMcpActionBridge } from './modules/agent/mcp-write-queue'
+import { AgentSessionRegistry } from './modules/agent/agent-session'
+import { AgentWorktreeManager } from './modules/agent/agent-worktree'
+import { startAgentPty, type AgentPty } from './modules/agent/agent-pty'
+import { resizeTerminal, writeTerminalInput } from './modules/agent/agent-terminal-session'
 import {
-  isAgentTerminalInput,
-  isAgentTerminalSize,
-  startAgentPty,
-  type AgentPty
-} from './agent-pty'
-import { collectAgentPatch, agentPatchPreview, validatePatchScope } from './agent-diff'
-import { deliverApprovedPatch } from './agent-delivery'
-import { CODE_EXECUTOR_MCP_PERMISSIONS, prepareAgentMcpSession } from './agent-mcp-session'
-import { buildExternalAgentBrief, scrubExternalBriefSecrets } from './agent-briefing'
-import { buildTerminalHandoff } from './terminal-handoff'
+  buildHarnessLaunch,
+  discoverHarnessLocalContext,
+  discoverHarnesses,
+  isHarnessId,
+  type HarnessId
+} from './modules/agent/harness-adapter'
+import { collectAgentPatch, agentPatchPreview, validatePatchScope } from './modules/agent/agent-diff'
+import { deliverApprovedPatch } from './modules/agent/agent-delivery'
+import { CODE_EXECUTOR_MCP_PERMISSIONS, prepareAgentMcpSession } from './modules/agent/agent-mcp-session'
+import { buildExternalAgentBrief, scrubExternalBriefSecrets } from './modules/agent/agent-briefing'
+import { buildTerminalHandoff } from './modules/agent/terminal-handoff'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import OpenAI from 'openai'
 import type { ChatGPTClient } from '@siwc/local'
@@ -66,41 +68,36 @@ import {
 } from './store'
 import * as memoryStore from './store'
 import { listMemories } from './store'
-import * as memoryRules from './memory'
+import * as memoryRules from './modules/ai/memory'
 import { registerMemoryHandlers } from './handlers/memory'
-import {
-  appendEntry,
-  newEntry,
-  type TokenUsage,
-  type UsageLogEntry
-} from './usage'
+import { appendEntry, newEntry, type TokenUsage, type UsageLogEntry } from './modules/ai/usage'
 import {
   appendRunMetric,
   newRunMetric,
   summarizeRunMetrics,
   type RunMetric,
   type RunMetricInput
-} from './run-metrics'
+} from './modules/ai/run-metrics'
 import {
   getOpenAIClient,
   requestOptions,
   resolveTimeoutMs,
   type ApiProvider
-} from './openai-client'
-import { confineToRoot } from './code-files'
-import * as codeFiles from './code-files'
+} from './modules/ai/openai-client'
+import { confineToRoot } from './modules/code/code-files'
+import * as codeFiles from './modules/code/code-files'
 import {
   briefConversationsForTask,
   briefCurrentConversation,
   searchConversations
-} from './conversation-search'
-import { fetchWeb } from './web-fetch'
-import { renderWeb } from './web-render'
-import { getExchangeRate } from './financial-exchange'
-import { startSagyouMcpBroker } from './sagyou-mcp'
-import { captureBase, diffSince, type AgentBase, type DiffLineItem } from './code-diff'
-import { isImageFileName } from './chat-images'
-import { safeAttachmentName } from './backup-files'
+} from './modules/conversations/conversation-search'
+import { fetchWeb } from './modules/web/web-fetch'
+import { renderWeb } from './modules/web/web-render'
+import { getExchangeRate } from './modules/financial/financial-exchange'
+import { startSagyouMcpBroker } from './modules/agent/sagyou-mcp'
+import { captureBase, diffSince, type AgentBase, type DiffLineItem } from './modules/code/code-diff'
+import { isImageFileName } from './modules/conversations/chat-images'
+import { safeAttachmentName } from './modules/files/backup-files'
 import {
   diffFileCount,
   isRunId,
@@ -111,17 +108,18 @@ import {
   taskLabel,
   type AgentRunMeta,
   type AgentRunSnapshot
-} from './agent-runs'
+} from './modules/agent/agent-runs'
 import {
   listSkills,
   saveSkill,
   deleteSkill,
   importSkill as importSkillDialog,
   skillsDir
-} from './skills'
+} from './modules/ai/skills'
 import { createManagedWindow, registerWindowHandlers, type ManagedWindow } from './handlers/window'
 import { registerFilesHandlers } from './handlers/files'
 import { registerBackupHandlers } from './handlers/backup'
+import { normalizeLegacyAIConfig, normalizeLegacyConversations } from './modules/conversations/legacy-ai-data'
 import { registerCodeFilesHandlers } from './handlers/code-files'
 import { registerConversationHandlers } from './handlers/conversations'
 import {
@@ -129,7 +127,7 @@ import {
   parsePasswordConfig,
   verifyPassword,
   type PasswordConfig
-} from './security'
+} from './modules/security/security'
 import icon from '../../resources/icon.png?asset'
 
 let mainWindow: BrowserWindow | null = null
@@ -176,22 +174,16 @@ function protectDataIpc(ipc: IpcMain): void {
     })) as IpcMain['on']
 }
 const sagyouMcp = startSagyouMcpBroker({
-  readScopedData: (domain, session) => {
+  readScopedData: (domain, session, projectId) => {
     const data = loadData()
     if (domain === 'tasks')
-      return session.projectId
-        ? data.tasks.filter((item) => item.projectId === session.projectId)
-        : []
+      return projectId ? data.tasks.filter((item) => item.projectId === projectId) : data.tasks
     if (domain === 'project')
-      return session.projectId ? data.projects.filter((item) => item.id === session.projectId) : []
+      return projectId ? data.projects.filter((item) => item.id === projectId) : data.projects
     if (domain === 'notes')
-      return session.projectId
-        ? data.notes.filter((item) => item.projectId === session.projectId)
-        : []
+      return projectId ? data.notes.filter((item) => item.projectId === projectId) : data.notes
     if (domain === 'goals')
-      return session.projectId
-        ? data.goals.filter((item) => item.projectId === session.projectId)
-        : []
+      return projectId ? data.goals.filter((item) => item.projectId === projectId) : data.goals
     return data.lists
       .filter((list) => list.profileId === session.financialProfileId)
       .flatMap((list) =>
@@ -203,11 +195,17 @@ const sagyouMcp = startSagyouMcpBroker({
         }))
       )
   },
+  listProjects: () =>
+    loadData().projects.map(({ id, name, description, archivedAt }) => ({
+      id,
+      name,
+      description,
+      archived: Boolean(archivedAt)
+    })),
   readTasks: (projectId) => {
-    if (!projectId) return []
     const data = loadData()
     return data.tasks
-      .filter((task) => task.projectId === projectId)
+      .filter((task) => !projectId || task.projectId === projectId)
       .map(({ id, title, description, priority, dueDate, projectId: taskProjectId, columnId }) => ({
         id,
         title,
@@ -225,28 +223,42 @@ const sagyouMcp = startSagyouMcpBroker({
       .map(({ id, name, currency, transactions }) => ({ id, name, currency, transactions }))
   },
   readProjectData: (projectId) => {
-    if (!projectId) return { metas: [], notas: [] }
     const data = loadData()
     return {
-      metas: data.goals.filter((goal) => goal.projectId === projectId),
-      notas: data.notes.filter((note) => note.projectId === projectId)
+      metas: data.goals.filter((goal) => !projectId || goal.projectId === projectId),
+      notas: data.notes.filter((note) => !projectId || note.projectId === projectId)
     }
   },
-  // FTS stays in the main process. The broker supplies the capability's
-  // project id, so an executor cannot widen this to another project's memory.
-  searchMemory: (projectId, term) => memoryStore.searchMemories({ projectId, term, limit: 8 }),
+  searchMemory: (projectId, term) =>
+    memoryStore.searchMemories({
+      projectId: projectId ?? null,
+      allProjects: projectId === undefined,
+      term,
+      limit: 8
+    }),
   readMemory: (id) => memoryStore.getMemory(id),
   // Keep the existing once-per-hour decay accounting in the store; the broker
   // decides authorization first, so rejected probes never count as a read.
   touchMemory: (id) => memoryStore.touchMemories([id], new Date().toISOString()),
   // Context already limits this to active project + global memories. The pure
   // conflict check below never writes, touches, archives or resolves anything.
-  memoriesForConflict: (projectId) => memoryStore.memoriesForContext(projectId),
+  memoriesForConflict: (projectId) =>
+    projectId === undefined
+      ? memoryStore.listMemories()
+      : memoryStore.memoriesForContext(projectId),
   searchConversations: (projectId, term) => {
     const scoped = loadConversations().filter((conversation) =>
-      projectId === null ? conversation.projectId == null : conversation.projectId === projectId
+      projectId === undefined
+        ? true
+        : projectId === null
+          ? conversation.projectId == null
+          : conversation.projectId === projectId
     )
-    return searchConversations(scoped, term)
+    const projectById = new Map(scoped.map((conversation) => [conversation.id, conversation.projectId]))
+    return searchConversations(scoped, term).map((hit) => ({
+      ...hit,
+      projectId: projectById.get(hit.id) ?? null
+    }))
   },
   readConversation: (id) =>
     loadConversations().find((conversation) => conversation.id === id) ?? null,
@@ -270,13 +282,18 @@ const sagyouMcp = startSagyouMcpBroker({
   createTask: async (session, args) => {
     const title = typeof args.titulo === 'string' ? args.titulo.trim().slice(0, 300) : ''
     if (!title) throw new Error('titulo é obrigatório.')
+    const projectId =
+      typeof args.projectId === 'string' && args.projectId.trim()
+        ? args.projectId.trim()
+        : session.projectId
+    if (!projectId) throw new Error('Escolha um projeto em list_projects para criar a task.')
     const data = loadData()
-    const project = data.projects.find((item) => item.id === session.projectId)
+    const project = data.projects.find((item) => item.id === projectId)
     const column = project?.columns[0]
     if (!project || !column)
       throw new Error('O projeto autorizado não possui uma coluna para a task.')
     const outcome = await mcpWriteQueue.enqueue(
-      { runId: session.runId, name: 'criar_task', args: { titulo: title } },
+      { runId: session.runId, name: 'criar_task', args: { projectId, titulo: title } },
       async () => {
         const id = await requestRendererMcpTask({
           projectId: project.id,
@@ -318,6 +335,10 @@ interface CodeRunState {
   codeRoot: string
   /** The real model name this run is using, shown by the panel and picker. */
   agent: string
+  /** Stable adapter id; labels and model names are presentation only. */
+  harness: HarnessId
+  localInstructions: string[]
+  localSkills: string[]
   task: string
   startedAt: number
   /** Set by stopCodeAgent; the loop checks this between steps. */
@@ -349,10 +370,8 @@ interface CodeRunState {
   /** Read-only references selected for this run; never a write or shell root. */
   readOnlyRoots: ReadOnlyRoot[]
   externalChild: AgentPty | null
-  /** A real TTY session accepts user input until the user asks to review its diff. */
+  /** A real TTY session accepts user input until the harness exits. */
   interactive: boolean
-  /** User ended an interactive TTY and asked to prepare the worktree diff. */
-  finishing: boolean
   /** Last PTY grid reported by xterm; restored when a view reconnects. */
   terminalCols: number
   terminalRows: number
@@ -431,7 +450,8 @@ function requestMcpWriteApproval(
   args: Record<string, unknown>
 ): Promise<boolean> {
   const run = codeRuns.get(runId)
-  if (!run || run.abort) return Promise.resolve(false)
+  if (!run || run.abort || (run.interactive && !run.externalChild))
+    return Promise.resolve(false)
   return new Promise((resolveApproval) => {
     const id = randomUUID()
     const request: CodeApprovalRequest = {
@@ -439,7 +459,10 @@ function requestMcpWriteApproval(
       id,
       name: `mcp:${name}`,
       args,
-      resumo: `MCP Sagyou: ${name.replace('_', ' ')}`
+      resumo:
+        name === 'criar_task'
+          ? `Criar task "${String(args.titulo ?? '').slice(0, 80)}" em ${loadData().projects.find((project) => project.id === args.projectId)?.name ?? String(args.projectId ?? 'projeto desconhecido')}`
+          : `MCP Sagyou: ${name.replace('_', ' ')}`
     }
     const timeout = setTimeout(() => {
       if (!run.pendingApprovals.delete(id)) return
@@ -499,7 +522,6 @@ function stopCodeAgent(runId?: string): void {
     }
   }
 }
-
 
 /**
  * Directories to look in when the agent isn't on PATH — node version managers
@@ -590,7 +612,7 @@ export function resolveExecutable(
   return null
 }
 
-type ExternalHarnessId = 'codex' | 'claude-code'
+type ExternalHarnessId = HarnessId
 
 interface HarnessStatus {
   id: ExternalHarnessId
@@ -601,12 +623,9 @@ interface HarnessStatus {
   version: string | null
   /** Only reported when the CLI has a safe status command; never opens login. */
   authentication: 'authenticated' | 'unauthenticated' | 'unknown'
+  models: string[]
+  capabilities: import('./modules/agent/harness-adapter').HarnessCapabilities
 }
-
-const EXTERNAL_HARNESSES: ReadonlyArray<Pick<HarnessStatus, 'id' | 'label' | 'command'>> = [
-  { id: 'codex', label: 'Codex', command: 'codex' },
-  { id: 'claude-code', label: 'Claude Code', command: 'claude' }
-]
 
 let harnessStatusCache: HarnessStatus[] | null = null
 
@@ -634,37 +653,7 @@ async function runHarnessCommand(
  */
 async function getHarnessStatuses(refresh = false): Promise<HarnessStatus[]> {
   if (harnessStatusCache && !refresh) return harnessStatusCache
-  harnessStatusCache = await Promise.all(
-    EXTERNAL_HARNESSES.map(async ({ id, label, command }) => {
-      const path = resolveExecutable(command)
-      if (!path)
-        return {
-          id,
-          label,
-          command,
-          installed: false,
-          path: null,
-          version: null,
-          authentication: 'unknown' as const
-        }
-      const result = await runHarnessCommand(path, ['--version'])
-      const output = (result.stdout || result.stderr).trim().replace(/\s+/g, ' ')
-      // Codex documents `login status` as a non-interactive credential check.
-      // The other CLIs do not expose a stable equivalent across their supported
-      // login methods, so claiming either state there would be worse than unknown.
-      const auth = id === 'codex' ? await runHarnessCommand(path, ['login', 'status']) : null
-      return {
-        id,
-        label,
-        command,
-        installed: true,
-        path,
-        version: output ? output.slice(0, 120) : null,
-        authentication:
-          auth === null ? 'unknown' : auth.code === 0 ? 'authenticated' : 'unauthenticated'
-      }
-    })
-  )
+  harnessStatusCache = await discoverHarnesses(runHarnessCommand, resolveExecutable)
   return harnessStatusCache
 }
 
@@ -706,15 +695,36 @@ async function readOnlyReferenceBrief(roots: ReadOnlyRoot[]): Promise<string> {
 
 /**
  * An external harness gets no data snapshot. It must request current data from
- * the run-scoped MCP capability, where project/profile boundaries are enforced.
+ * the run-scoped MCP capability, which retains the financial profile and
+ * approves writes while letting the user query other projects explicitly.
  * Passing `loadData()` here would silently bypass those boundaries in the prompt.
  */
 function sagyouContextBrief(projectId: string | null | undefined): string {
   try {
     const project = projectId ? loadData().projects.find((item) => item.id === projectId) : null
     return project
-      ? `## ESCOPO DO SAGYOU\nProjeto autorizado: ${project.name}. Consulte dados pelo MCP Sagyou.`
-      : '## ESCOPO DO SAGYOU\nNenhum projeto foi autorizado. Consulte apenas o que o MCP Sagyou permitir.'
+      ? `## CONTEXTO DO SAGYOU\nProjeto inicial: ${project.name}. Use list_projects no MCP Sagyou para consultar outros projetos por ID.`
+      : '## CONTEXTO DO SAGYOU\nSessão geral. Use list_projects no MCP Sagyou para descobrir projetos e consultar seus dados.'
+  } catch {
+    return ''
+  }
+}
+
+/**
+ * Local Sagyou skills are explicit user-authored briefing material, so an
+ * external executor can use them without receiving the skills directory (or
+ * any extra filesystem authority). Keep the hand-off bounded and sanitize it
+ * together with the rest of the external brief.
+ */
+function sagyouSkillsBrief(): string {
+  try {
+    const skills = listSkills(skillsPath()).slice(0, 20)
+    if (!skills.length) return ''
+    const body = skills
+      .map((skill) => `### /${skill.name}\n${skill.body.slice(0, 4_000)}`)
+      .join('\n\n')
+      .slice(0, 20_000)
+    return `## SKILLS LOCAIS DO SAGYOU\nUse estas instruções quando forem pertinentes à tarefa.\n\n${body}`
   } catch {
     return ''
   }
@@ -726,13 +736,7 @@ function buildTerminalHarnessLaunch(
   task: string,
   cwd: string
 ): ExternalHarnessLaunch {
-  if (harness === 'codex') {
-    return {
-      label: 'Codex',
-      args: ['--cd', cwd, '--sandbox', 'workspace-write', '--ask-for-approval', 'on-request', task]
-    }
-  }
-  return { label: 'Claude Code', args: ['--permission-mode', 'manual', task] }
+  return buildHarnessLaunch(harness, task, cwd)
 }
 interface AIConfig {
   baseUrl: string
@@ -785,7 +789,7 @@ interface AIConfig {
    */
   lastConversationId?: string
   /** Historic native selections load as the Codex default. */
-  codeHarness?: 'codex' | 'claude-code'
+  codeHarness?: HarnessId
   /**
    * DeepSeek reasoning_effort parameter. Controls how much reasoning the model
    * does before answering. One of 'low', 'medium', 'high'. Applied to every
@@ -1016,7 +1020,7 @@ function loadAIConfig(): AIConfig {
   try {
     return withImportedAIProfile({
       ...DEFAULT_AI_CONFIG,
-      ...JSON.parse(readFileSync(aiConfigPath(), 'utf-8'))
+      ...normalizeLegacyAIConfig(JSON.parse(readFileSync(aiConfigPath(), 'utf-8')))
     })
   } catch {
     return withImportedAIProfile({ ...DEFAULT_AI_CONFIG })
@@ -1300,7 +1304,7 @@ const aiConversationsPath = (): string => join(app.getPath('userData'), 'ai-conv
 function loadConversations(): StoredConversation[] {
   try {
     const data = JSON.parse(readFileSync(aiConversationsPath(), 'utf-8'))
-    return Array.isArray(data) ? data : []
+    return normalizeLegacyConversations(data)
   } catch {
     return []
   }
@@ -1670,7 +1674,6 @@ app.whenReady().then(() => {
     getHarnessStatuses(refresh === true)
   )
 
-
   ipcMain.handle('ai:run-metrics:append', (_, input: RunMetricInput) => appendRunMetricIO(input))
   ipcMain.handle('ai:run-metrics:summary', () => summarizeRunMetrics(loadRunMetrics()))
 
@@ -1973,7 +1976,7 @@ app.whenReady().then(() => {
     }
   )
 
-  // Launch a native code agent in the project directory. The renderer must
+  // Launch a native agent in a project root or the private general workspace. The renderer must
   // have obtained user approval before calling this (it writes files / runs
   // commands). Output is streamed back via 'ai:code-agent:output'.
   ipcMain.handle(
@@ -1983,6 +1986,11 @@ app.whenReady().then(() => {
       request: {
         path: string
         task: string
+        /**
+         * A session with no initial request: the CLI opens on its own screen and
+         * receives no briefing. Ignored when a task is given.
+         */
+        blank?: boolean
         files?: string[]
         allowedWritePaths?: string[]
         /** Absolute directories selected by the user for read-only reference. */
@@ -2001,9 +2009,16 @@ app.whenReady().then(() => {
         autoApprove?: boolean
       }
     ) => {
-      const dir = request.path
       const capturedProjectId =
         typeof request.projectId === 'string' && request.projectId.trim() ? request.projectId : null
+      // General sessions use a private workspace. The renderer cannot supply an
+      // arbitrary filesystem path when no project has authorised a code root.
+      if (!capturedProjectId && request.path) {
+        return { success: false, error: 'Uma sessão geral não aceita pasta de código.' }
+      }
+      const dir = capturedProjectId
+        ? request.path
+        : join(app.getPath('userData'), 'general-agent-workspace')
       const capturedData = loadData()
       const capturedProject = capturedProjectId
         ? capturedData.projects.find((project) => project.id === capturedProjectId)
@@ -2021,42 +2036,54 @@ app.whenReady().then(() => {
       }
       if (
         capturedProjectId &&
-        !(capturedProject?.codePaths ?? []).some((root) => resolve(root.path) === codeRoot)
+        !(capturedProject?.codePaths ?? []).some(
+          (root) =>
+            // An unselected root is deliberately not a fallback: empty is a
+            // valid selection and means the user has authorised no code access.
+            (capturedProject?.activeCodePathIds ??
+              (capturedProject?.activeCodePathId ? [capturedProject.activeCodePathId] : [])).includes(
+              root.id
+            ) && resolve(root.path) === codeRoot
+        )
       ) {
         return {
           success: false,
-          error: 'A raiz escolhida nÃ£o pertence ao projeto. Selecione uma raiz cadastrada nele.'
+          error: 'A raiz escolhida não está autorizada para este projeto. Marque-a no projeto antes de iniciar.'
         }
       }
       const capturedFinancialProfileId =
         typeof request.financialProfileId === 'string' && request.financialProfileId.trim()
           ? request.financialProfileId
           : (capturedData.activeFinancialProfileId ?? 'personal')
+      if (!capturedProjectId) mkdirSync(dir, { recursive: true })
       if (!dir || !existsSync(dir) || !statSync(dir).isDirectory()) {
         return { success: false, error: 'Diretório do projeto inválido' }
       }
       const cfg = loadAIConfig()
-      const harness = cfg.codeHarness === 'claude-code' ? 'claude-code' : 'codex'
+      const harness: HarnessId = isHarnessId(cfg.codeHarness) ? cfg.codeHarness : 'codex'
       const externalHarness =
         (await getHarnessStatuses()).find((status) => status.id === harness) ?? null
       if (!externalHarness?.installed || !externalHarness.path) {
-        const label = harness === 'claude-code' ? 'Claude Code' : 'Codex'
+        const label = harness === 'claude-code' ? 'Claude Code' : harness === 'opencode' ? 'OpenCode' : 'Codex'
         return {
           success: false,
           error:
             label + ' não foi encontrado nesta máquina. Use Verificar novamente nas configurações.'
         }
       }
-      // Codex and Claude Code have exactly one execution transport: their
-      // native CLI in a main-owned PTY. The renderer cannot select an executable
-      // or an execution mode.
-      const interactive = true
-      if (!externalHarness) {
+      if (
+        externalHarness.capabilities.createSession !== 'available' ||
+        externalHarness.capabilities.interactiveTerminal !== 'available' ||
+        externalHarness.capabilities.mcp !== 'available'
+      ) {
         return {
           success: false,
-          error: 'A sessão interativa é disponível somente para Codex, OpenCode ou Claude Code.'
+          error: `${externalHarness.label} não oferece a sessão MCP interativa exigida nesta versão.`
         }
       }
+      // The adapter selects the one native transport for each CLI. The renderer
+      // cannot select an executable or an execution mode.
+      const interactive = true
       // Cleanup worktrees órfãos (que sobraram de uma queda do app)
       try {
         await worktreeManager.removeOrphans(dir)
@@ -2080,7 +2107,6 @@ app.whenReady().then(() => {
       }
       if (needsWorktree) {
         try {
-          await execAsync(`git -C "${dir}" rev-parse --show-toplevel`)
           worktreeDir = (await worktreeManager.create(dir, runId)).worktreeDir
         } catch (error) {
           await releaseFailedStart()
@@ -2094,8 +2120,10 @@ app.whenReady().then(() => {
         }
       }
       const effectiveDir = worktreeDir ?? dir
+      const localHarnessContext = discoverHarnessLocalContext(effectiveDir)
       const task = typeof request.task === 'string' ? request.task.trim() : ''
-      if (!task) {
+      const blankSession = !task && request.blank === true
+      if (!task && !blankSession) {
         await releaseFailedStart()
         return { success: false, error: 'Tarefa vazia' }
       }
@@ -2188,7 +2216,10 @@ app.whenReady().then(() => {
         financialProfileId: capturedFinancialProfileId,
         codeRoot,
         agent: externalHarness.label,
-        task: taskLabel(task),
+        harness,
+        localInstructions: localHarnessContext.instructions,
+        localSkills: localHarnessContext.skills,
+        task: blankSession ? 'Sessão interativa' : taskLabel(task),
         startedAt: Date.now(),
         abort: false,
         log: '',
@@ -2209,7 +2240,6 @@ app.whenReady().then(() => {
         readOnlyRoots,
         externalChild: null,
         interactive,
-        finishing: false,
         terminalCols: 100,
         terminalRows: 30
       }
@@ -2264,9 +2294,10 @@ app.whenReady().then(() => {
         const launch = buildTerminalHarnessLaunch(harness, task, effectiveDir)
         const referenceBrief = await readOnlyReferenceBrief(readOnlyRoots)
         const appBrief = sagyouContextBrief(run.projectId)
+        const localSkillsBrief = sagyouSkillsBrief()
         let sourceConversation = ''
         let relatedConversations = ''
-        let relevantMemories: import('./memory').AiMemory[] = []
+        let relevantMemories: import('./modules/ai/memory').AiMemory[] = []
         try {
           const conversations = loadConversations()
           sourceConversation = briefCurrentConversation(conversations, run.convId)
@@ -2290,12 +2321,20 @@ app.whenReady().then(() => {
           relatedConversations,
           memories: relevantMemories
         })
-        const scopedTask = scrubExternalBriefSecrets(
+        // A blank session starts the CLI on its normal screen: pasting a briefing
+        // (skills, MCP hints) would run a turn nobody asked for.
+        const scopedTask = blankSession
+          ? ''
+          : scrubExternalBriefSecrets(
           [
             agentBrief,
             referenceBrief,
             appBrief,
-            'Trabalhe somente neste projeto. Ao terminar, explique brevemente o que fez.'
+            localSkillsBrief,
+            localHarnessContext.instructions.length || localHarnessContext.skills.length
+              ? `## INSTRUÇÕES LOCAIS\nConsulte no worktree as instruções nativas detectadas: ${[...localHarnessContext.instructions, ...localHarnessContext.skills].join(', ')}. Não copie seu conteúdo para logs ou respostas sem necessidade.`
+              : '',
+            'Use esta worktree para alterações de código. Para dados do Sagyou, use list_projects no MCP e consulte outros projetos quando necessário. Ao terminar, explique brevemente o que fez.'
           ]
             .filter(Boolean)
             .join('\n\n')
@@ -2328,7 +2367,7 @@ app.whenReady().then(() => {
                 externalHarness.command +
                 '] sessão interativa de ' +
                 launch.label +
-                ' iniciada no worktree. Envie mensagens pelo painel e encerre a sessão para revisar o diff.\n'
+                ' iniciada no worktree. Ao sair do CLI, o diff será arquivado sem pedido de aprovação ou entrega.\n'
             : '[' +
                 externalHarness.command +
                 '] iniciando ' +
@@ -2341,7 +2380,14 @@ app.whenReady().then(() => {
           if (settled) return
           settled = true
           run.externalChild = null
-          let exitCode = run.abort ? -2 : run.finishing ? 0 : (code ?? 1)
+          // A closed terminal cannot answer MCP writes or questions. Deny them
+          // before collecting the diff so the UI never remains parked on them.
+          mcpWriteQueue.rejectRun(runId)
+          for (const { resolve } of run.pendingApprovals.values()) resolve(false)
+          run.pendingApprovals.clear()
+          for (const { resolve } of run.pendingQuestions.values()) resolve(null)
+          run.pendingQuestions.clear()
+          let exitCode = run.abort ? -2 : (code ?? 1)
           try {
             const changes = await collectAgentPatch(externalWorktree, {
               base: run.base?.base
@@ -2365,42 +2411,49 @@ app.whenReady().then(() => {
               return
             }
             if (fullPatch.trim() && !run.abort) {
-              const fileCount = changes.fileCount
-              const preview = agentPatchPreview(fullPatch)
-              const approved = await new Promise<boolean>((resolveApproval) => {
-                const id = randomUUID()
-                const approval: CodeApprovalRequest = {
-                  runId,
-                  id,
-                  name: 'aplicar_alteracoes_externas',
-                  args: { harness: launch.label, arquivos: fileCount },
-                  resumo:
-                    'Aplicar ' + fileCount + ' alteração(ões) do ' + launch.label + ' ao projeto',
-                  conteudo: fullPatch.slice(0, 12000),
-                  diff: preview.lines,
-                  diffTruncated: preview.truncated,
-                  irreversivel: false
-                }
-                run.pendingApprovals.set(id, { resolve: resolveApproval, request: approval })
-                send('ai:code-agent:approve-request', approval)
-              })
-              if (approved && !run.abort) {
-                await deliverApprovedPatch({
-                  originalDir: dir,
-                  runId,
-                  patch: fullPatch,
-                  coordinator: codeRunCoordinator,
-                  onWaitingForDirectRun: () => {
-                    emit('[worktree] aguardando o agente que escreve no diretório original…\n')
-                  }
-                })
-                emit('[worktree] ' + fileCount + ' arquivo(s) aplicado(s) após sua aprovação.\n')
+              if (run.interactive) {
+                // Closing the native chat is a terminal outcome, never a parked
+                // request for delivery. archiveAgentRun freezes this worktree diff.
+                run.worktreeMergeError = 'sessão encerrada sem entrega'
+                emit('[worktree] diff arquivado; alterações não aplicadas ao projeto original.\n')
               } else {
-                run.worktreeMergeError = run.abort
-                  ? 'execução interrompida'
-                  : 'alterações não aprovadas pelo usuário'
-                if (exitCode === 0) exitCode = run.abort ? -2 : 2
-                emit('[worktree] alterações não aplicadas ao projeto original.\n')
+                const fileCount = changes.fileCount
+                const preview = agentPatchPreview(fullPatch)
+                const approved = await new Promise<boolean>((resolveApproval) => {
+                  const id = randomUUID()
+                  const approval: CodeApprovalRequest = {
+                    runId,
+                    id,
+                    name: 'aplicar_alteracoes_externas',
+                    args: { harness: launch.label, arquivos: fileCount },
+                    resumo:
+                      'Aplicar ' + fileCount + ' alteração(ões) do ' + launch.label + ' ao projeto',
+                    conteudo: fullPatch.slice(0, 12000),
+                    diff: preview.lines,
+                    diffTruncated: preview.truncated,
+                    irreversivel: false
+                  }
+                  run.pendingApprovals.set(id, { resolve: resolveApproval, request: approval })
+                  send('ai:code-agent:approve-request', approval)
+                })
+                if (approved && !run.abort) {
+                  await deliverApprovedPatch({
+                    originalDir: dir,
+                    runId,
+                    patch: fullPatch,
+                    coordinator: codeRunCoordinator,
+                    onWaitingForDirectRun: () => {
+                      emit('[worktree] aguardando o agente que escreve no diretório original…\n')
+                    }
+                  })
+                  emit('[worktree] ' + fileCount + ' arquivo(s) aplicado(s) após sua aprovação.\n')
+                } else {
+                  run.worktreeMergeError = run.abort
+                    ? 'execução interrompida'
+                    : 'alterações não aprovadas pelo usuário'
+                  if (exitCode === 0) exitCode = run.abort ? -2 : 2
+                  emit('[worktree] alterações não aplicadas ao projeto original.\n')
+                }
               }
             }
           } catch (error) {
@@ -2466,7 +2519,6 @@ app.whenReady().then(() => {
 
       await releaseFailedStart()
       return { success: false, error: 'Não foi possível iniciar o executor externo.' }
-
     }
   )
   ipcMain.handle('ai:code-agent:stop', (_, runId?: string) => {
@@ -2474,15 +2526,7 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('ai:code-agent:terminal-input', (_, runId: string, input: string) => {
-    const run = codeRuns.get(runId)
-    if (!run?.interactive || !run.externalChild || run.finishing) {
-      return { success: false, error: 'Sessão interativa indisponível.' }
-    }
-    if (!isAgentTerminalInput(input) || !('write' in run.externalChild)) {
-      return { success: false, error: 'Entrada de terminal inválida.' }
-    }
-    run.externalChild.write(input)
-    return { success: true }
+    return writeTerminalInput(codeRuns, runId, input)
   })
 
   // The renderer owns pixels; the PTY owns its character grid. Keep the bridge
@@ -2491,40 +2535,15 @@ app.whenReady().then(() => {
   ipcMain.handle(
     'ai:code-agent:terminal-resize',
     (_, runId: string, cols: number, rows: number) => {
-      const run = codeRuns.get(runId)
-      if (
-        !run?.interactive ||
-        !run.externalChild ||
-        run.finishing ||
-        !('resize' in run.externalChild)
-      ) {
-        return { success: false, error: 'Sessão interativa indisponível.' }
-      }
-      if (!isAgentTerminalSize(cols, rows)) {
-        return { success: false, error: 'Tamanho de terminal inválido.' }
-      }
-      run.externalChild.resize(cols, rows)
-      run.terminalCols = cols
-      run.terminalRows = rows
-      return { success: true }
+      return resizeTerminal(codeRuns, runId, cols, rows)
     }
   )
-
-  ipcMain.handle('ai:code-agent:finish-interactive', (_, runId: string) => {
-    const run = codeRuns.get(runId)
-    if (!run?.interactive || !run.externalChild) {
-      return { success: false, error: 'Sessão interativa indisponível.' }
-    }
-    run.finishing = true
-    run.externalChild.kill('SIGTERM')
-    return { success: true }
-  })
 
   // Read-only reconnect: return the bounded buffer of an existing PTY without
   // creating a process or exposing an executable selection to the renderer.
   ipcMain.handle('ai:code-agent:terminal-reconnect', (_, runId: string) => {
     const run = codeRuns.get(runId)
-    if (!run?.interactive || !run.externalChild || run.finishing) {
+    if (!run?.interactive || !run.externalChild) {
       return { success: false, error: 'SessÃ£o interativa indisponÃ­vel.' }
     }
     return {
@@ -2614,10 +2633,13 @@ app.whenReady().then(() => {
         financialProfileId: r.financialProfileId,
         codeRoot: r.codeRoot,
         agent: r.agent,
+        harness: r.harness,
+        worktreeDir: r.worktreeDir,
+        localInstructions: r.localInstructions,
+        localSkills: r.localSkills,
         allowedWritePaths: r.allowedWritePaths,
         readOnlyRoots: r.readOnlyRoots,
         interactive: r.interactive,
-        finishing: r.finishing,
         terminalCols: r.terminalCols,
         terminalRows: r.terminalRows,
         startedAt: r.startedAt,

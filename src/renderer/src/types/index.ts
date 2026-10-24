@@ -392,12 +392,12 @@ export interface BackupChatImage {
   base64: string
 }
 
-/** The type of a durable AI memory. Mirrors MemoryType in main/memory.ts. */
+/** The type of a durable AI memory. Mirrors MemoryType in main/modules/ai/memory.ts. */
 export type MemoryType = 'decisao' | 'tradeoff' | 'gotcha' | 'fato' | 'handoff' | 'planejamento'
 
 /**
  * A durable fact the assistant carries across conversations. Renderer-side
- * mirror of AiMemory in main/memory.ts (the store's source of truth) — the two
+ * mirror of AiMemory in main/modules/ai/memory.ts (the store's source of truth) — the two
  * are kept in step by hand, like store.ts mirrors these types the other way.
  */
 export interface AiMemory {

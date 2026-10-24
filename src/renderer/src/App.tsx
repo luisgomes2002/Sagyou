@@ -27,10 +27,8 @@ import { ReportsView } from './components/views/ReportsView'
 import { GraphView } from './components/views/GraphView'
 import type { NavigateTarget } from './utils/graph-layout'
 import { FilesView } from './components/views/FilesView'
-import { AIView } from './components/ai/AIView'
 import { MemoryView } from './components/ai/MemoryView'
 import { FleetView } from './components/ai/FleetView'
-import { AiRunHost } from './components/ai/AiRunHost'
 import { ExcelExportModal } from './components/modals/ExcelExportModal'
 import { ProjectLinksDropdown } from './components/ProjectLinksDropdown'
 import { SearchModal } from './components/modals/SearchModal'
@@ -40,14 +38,13 @@ import { ProjectModal } from './components/modals/ProjectModal'
 import { ColumnModal } from './components/modals/ColumnModal'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { TaskViewModal } from './components/modals/TaskViewModal'
-import { buildTaskPrompt } from './utils/taskPrompt'
 import { ToastContainer, type ToastMessage } from './components/layout/Toast'
 import { HomeView } from './components/views/HomeView'
 import { GuideView } from './components/views/GuideView'
 import { SettingsView } from './components/views/SettingsView'
 import { UnlockScreen } from './components/security/UnlockScreen'
 import { ViewErrorBoundary } from './components/ViewErrorBoundary'
-import type { GlobalSearchHit } from '../../main/global-search-query'
+import type { GlobalSearchHit } from '../../main/modules/search/global-search-query'
 
 interface TaskModalState {
   open: boolean
@@ -222,7 +219,6 @@ export default function App() {
     | 'files'
     | 'ai'
     | 'memory'
-    | 'agents'
     | 'planejamento'
     | 'graph'
     | 'guide'
@@ -233,10 +229,6 @@ export default function App() {
   const [financialSearchSerial, setFinancialSearchSerial] = useState(0)
   const [searchTarget, setSearchTarget] = useState<GlobalSearchHit | null>(null)
   const [searchSerial, setSearchSerial] = useState(0)
-  // A sidebar Chat click always starts with an explicit scope choice. Keep this
-  // separate from navigation: search results and background-run links reopen a
-  // specific conversation and must not be intercepted by the new-chat picker.
-  const [newChatRequest, setNewChatRequest] = useState(0)
   const [excelExportOpen, setExcelExportOpen] = useState(false)
   const [securityState, setSecurityState] = useState<'checking' | 'locked' | 'unlocked'>('checking')
   const [unlockUserName, setUnlockUserName] = useState<string | undefined>()
@@ -253,10 +245,6 @@ export default function App() {
     message: '',
     onConfirm: () => {}
   })
-  // Composer text waiting to be handed to the AI view. Set when a task is sent
-  // over from the board; AIView is unmounted until the switch below lands, so
-  // the text is parked here rather than pushed into a component that isn't there.
-  const [aiPrefill, setAiPrefill] = useState<string | null>(null)
   // Count of live code-agent runs (supports N concurrent agents in different dirs).
   const [codeAgentRunCount, setCodeAgentRunCount] = useState(0)
 
@@ -296,7 +284,6 @@ export default function App() {
       graph: 'graph',
       ai: 'ai',
       memory: 'ai',
-      agents: 'ai'
     }
     const feature = viewFeatures[activeView]
     if (feature && !enabledFeatures.includes(feature)) setActiveView('home')
@@ -680,12 +667,6 @@ export default function App() {
     <div className="flex flex-col h-screen overflow-hidden bg-[#0b0b0f]">
       <TitleBar />
 
-      {/* Outside the view switch on purpose: the agent's run has to survive the
-          user navigating away from AIView, which unmounts it. Owns the chat's
-          autosave and the approval card, so a background run can still be
-          answered instead of parking forever. */}
-      <AiRunHost activeView={activeView} onOpenAI={() => setActiveView('ai')} />
-
       <div className="flex flex-1 overflow-hidden">
         <Sidebar
           projects={projects}
@@ -707,7 +688,6 @@ export default function App() {
           onChangeView={(view) => {
             setSearchTarget(null)
             setFinancialSearchTarget(null)
-            if (view === 'ai') setNewChatRequest((request) => request + 1)
             setActiveView(view)
           }}
           onOpenSearch={() => setSearchOpen(true)}
@@ -756,29 +736,11 @@ export default function App() {
             ) : activeView === 'guide' ? (
               <GuideView />
             ) : activeView === 'ai' ? (
-              <AIView
-                key={searchSerial}
-                projects={projects}
-                searchConversationId={
-                  searchTarget?.type === 'conversation' ? searchTarget.id : undefined
-                }
-                prefill={aiPrefill}
-                onPrefillConsumed={() => setAiPrefill(null)}
-                onOpenAgents={() => setActiveView('agents')}
-                newConversationRequest={newChatRequest}
-              />
+              <FleetView projects={projects} retainThread />
             ) : activeView === 'memory' ? (
               <MemoryView
                 key={searchSerial}
                 searchTargetId={searchTarget?.type === 'memory' ? searchTarget.id : undefined}
-              />
-            ) : activeView === 'agents' ? (
-              <FleetView
-                projects={projects}
-                onOpenChat={() => {
-                  setSearchTarget(null)
-                  setActiveView('ai')
-                }}
               />
             ) : activeView === 'habits' ? (
               <HabitView
@@ -1044,9 +1006,7 @@ export default function App() {
           handleEditTask(task)
         }}
         onSendToAI={(task) => {
-          const project = projects.find((p) => p.id === task.projectId)
-          const column = project?.columns.find((c) => c.id === task.columnId)
-          setAiPrefill(buildTaskPrompt(task, project?.name ?? '', column?.name ?? ''))
+          setActiveProject(task.projectId)
           setActiveView('ai')
         }}
         onClose={() => setViewTask(null)}

@@ -72,7 +72,7 @@ escolha permanece ao reabrir o histórico; respostas anteriores mostram a conex�
 e o modelo usados. Em **Configuração**, o ChatGPT e os Perfis de API têm cards
 próprios. Base URL, chave, modelo forte e preços ficam no editor do perfil ou em
 **Avançado**. As chaves salvas não reaparecem no formulário. Codex, Claude Code,
-OpenCode, sandbox e revisão de patch ficam em **Agentes → Agente de código**.
+sandbox e revisão de patch ficam em **Agentes → Agente de código**.
 
 O assistente é **opcional** e vem desligado — nada é enviado a lugar nenhum até você configurar um provedor.
 
@@ -91,17 +91,15 @@ e timeout. Configurações antigas de API são importadas automaticamente como
 um perfil comum, sem um modo legado visível. A configuração fica em
 `ai-config.json` (veja [Dados](#dados)); uma chave salva não volta para o renderer.
 
-Em **Agentes → Agente de código**, escolha o harness nativo ou um CLI instalado.
-O modelo e a conexão do agente nativo podem ser configurados separadamente; campos
-vazios usam o perfil de API ativo. O sandbox [AI Jail](https://github.com/akitaonrails/ai-jail)
-continua exigido por padrão para comandos do agente nativo. CLIs externos usam
-suas próprias contas e passam por worktree e aprovação final do patch.
+Em **Agentes → Agente de código**, escolha **Codex** ou **Claude Code** instalado
+localmente. Cada CLI usa a própria conta, roda em uma worktree isolada e só entrega
+o patch ao projeto depois da sua revisão e aprovação final.
 
 ### Uso
 
 Converse normalmente — o assistente tem ferramentas para ler seus dados (tarefas, hábitos, metas, finanças) e responde com base neles em vez de adivinhar.
 
-O assistente também tem **memória entre conversas**: ele grava decisões, tradeoffs e fatos que você fixar, e os recupera em conversas futuras. Use `salvar_memoria` para registrar algo que não vale a pena reaprender depois. Memórias com dados sensíveis (chaves, senhas) são automaticamente sanitizadas antes de gravar.
+O assistente também tem **memória entre conversas**: ele grava decisões, tradeoffs e fatos que você fixar, e os recupera em conversas futuras. Use `save_memory` para registrar algo que não vale a pena reaprender depois. Memórias com dados sensíveis (chaves, senhas) são automaticamente sanitizadas antes de gravar.
 
 Ações que **alteram** dados (criar tarefas, concluir, iniciar cronômetro, criar/atribuir sprint) pedem sua aprovação antes de rodar. O botão no topo liga o **modo automático** para ações comuns; apagar tasks e registrar transações financeiras continuam pedindo aprovação. Você pode copiar mensagens, avaliar respostas como úteis ou ruins e editar a última pergunta para reenviá-la como correção. A correção mantém o histórico anterior e desliga o modo automático naquela conversa.
 
@@ -145,17 +143,11 @@ Dá para marcar **mais de uma pasta** (útil para front-end e back-end em reposi
 
 ### Agente de código
 
-Para **alterar** código, use o agente de código na área **Agentes → Agente de código**. O agente nativo usa o perfil de API ativo ou seus próprios campos avançados e edita arquivos no diretório do caminho de código ativo.
+Para **alterar** código, use o agente de código na área **Agentes → Agente de código** e escolha Codex ou Claude Code. O Sagyou abre o terminal nativo do CLI em uma worktree detached; teclado, cores, colagem e redimensionamento seguem funcionando no painel.
 
-Cada ação de escrita ou comando passa por aprovação antes de rodar. O agente não faz commit — as mudanças aparecem no painel de diff para você revisar e commitar por conta própria. A saída aparece ao vivo no app.
+O CLI lê e altera somente os arquivos da worktree. Dados do Sagyou — tarefas, projeto, finanças, memórias e conversas — passam exclusivamente pelo MCP local, com credencial efêmera limitada ao projeto, perfil financeiro e permissões da execução. Escritas MCP pedem aprovação própria; isso não aprova o patch.
 
-O agente principal não encerra por um número fixo de passos: ele segue até concluir ou até você usar **Parar**. O painel mostra apenas o passo atual; proteções contra leituras, buscas e comandos repetidos continuam evitando loops.
-
-A validação acompanha a stack detectada: projetos Node usam seus scripts, enquanto uma página HTML estática não tenta executar npm. Leituras e reescritas grandes também são compactadas depois de aplicadas para reduzir o gasto das rodadas seguintes.
-
-> O agente nativo herda o perfil de API ativo quando os próprios campos estão vazios. Ele não herda uma assinatura ChatGPT nem as credenciais de um CLI externo.
-
-Também é possível escolher um harness externo instalado localmente (Codex, OpenCode ou Claude Code). Com **Terminal ao vivo** ativo, o Sagyou abre o TUI completo do CLI dentro do app — incluindo teclado, cores, prompts e redimensionamento — em um worktree isolado. Ao encerrar a sessão, o patch continua exigindo revisão e aprovação antes de alcançar seu projeto.
+Ao sair normalmente do CLI no terminal, o Sagyou valida todos os caminhos, inclusive renames e symlinks, e arquiva o diff. A sessão interativa termina sem ficar aguardando aprovação e sem aplicar alterações ao projeto original. O diff arquivado permanece disponível para consulta.
 
 ---
 
@@ -180,6 +172,11 @@ Também é possível escolher um harness externo instalado localmente (Codex, Op
 
 ## Desenvolvimento
 
+O código do processo principal fica em `src/main`: `index.ts` registra os fluxos,
+`handlers/` expõe o IPC, `store.ts` cuida do SQLite e `modules/` agrupa as
+implementações por área (agentes, IA, conversas, arquivos, busca, web e finanças).
+O renderer fica em `src/renderer/src`, com componentes, estado e utilitários.
+
 ```bash
 npm install       # instalar dependências
 npm run dev       # iniciar servidor de desenvolvimento
@@ -189,6 +186,10 @@ npm run lint      # ESLint
 ```
 
 Para mudanças na persistência, consulte `GUIDE.md`: a normalização compartilhada da carga e da importação fica em `src/renderer/src/store/normalization.ts`.
+
+### Fluxo de contribuição
+
+Toda mudança segue spec → plano → build → review → PR, com aprovação humana na spec, no plano e no merge; nunca se commita direto na `main`. Branches `feature/`, `fix/` e `chore/`, commits no padrão Conventional Commits e um template de PR em `.github/`. Para quem usa Claude Code há uma skill por estágio (`/sagyou-spec`, `/sagyou-plan`, `/sagyou-build`, `/sagyou-review`, `/sagyou-pr`, `/sagyou-fix`) e subagentes em `.claude/`. Detalhes em [`docs/workflow.md`](docs/workflow.md).
 
 ## Build
 

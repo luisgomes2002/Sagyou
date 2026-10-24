@@ -11,7 +11,7 @@ import { describe, it, expect, vi } from 'vitest'
 
 vi.mock('electron', () => ({ BrowserWindow: class {}, session: {}, app: { getName: () => 'sagyou' } }))
 
-const { shouldCancelRequest, plainChromeUA } = await import('../web-render')
+const { shouldCancelRequest, plainChromeUA } = await import('../modules/web/web-render')
 
 describe('shouldCancelRequest (the browser SSRF guard)', () => {
   it('cancels exactly what the fetch path refuses — the local machine and LAN', () => {

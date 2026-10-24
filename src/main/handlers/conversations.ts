@@ -1,8 +1,8 @@
 import type { IpcMain } from 'electron'
-import type { TokenUsage } from '../usage'
-import type { StoredConversation } from '../conversation-types'
-import { searchConversations } from '../conversation-search'
-import { referencedConversationIds, retainReferencedConversations } from '../conversation-retention'
+import type { TokenUsage } from '../modules/ai/usage'
+import type { StoredConversation } from '../modules/conversations/conversation-types'
+import { searchConversations } from '../modules/conversations/conversation-search'
+import { referencedConversationIds, retainReferencedConversations } from '../modules/conversations/conversation-retention'
 
 interface ConversationHandlerDeps {
   loadConversations: () => StoredConversation[]

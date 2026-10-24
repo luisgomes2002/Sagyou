@@ -7,7 +7,7 @@ import {
   rebuildGlobalSearchIndex,
   syncGlobalSearchIndex,
   type SearchSource
-} from '../global-search-index'
+} from '../modules/search/global-search-index'
 
 const source: SearchSource = {
   projects: [

@@ -1,7 +1,7 @@
 // @vitest-environment node
 
 import { describe, expect, it, vi } from 'vitest'
-import { reviewFinalDiff } from '../final-diff-review'
+import { reviewFinalDiff } from '../modules/agent/final-diff-review'
 
 describe('reviewFinalDiff', () => {
   it('only reports approval after an explicit affirmative answer', async () => {

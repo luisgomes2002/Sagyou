@@ -1,14 +1,14 @@
 import { contextBridge, ipcRenderer } from 'electron'
 // Type-only: erased at build, so no main-process code is pulled into the preload.
-import type { RunMetricInput, RunMetricsSummary } from '../main/run-metrics'
-import type { AiMemory, MemoryInput, MemorySummary, MemoryConflict } from '../main/memory'
-import type { UsageSummary } from '../main/usage'
+import type { RunMetricInput, RunMetricsSummary } from '../main/modules/ai/run-metrics'
+import type { AiMemory, MemoryInput, MemorySummary, MemoryConflict } from '../main/modules/ai/memory'
+import type { UsageSummary } from '../main/modules/ai/usage'
 import type {
   GlobalSearchHit,
   GlobalSearchLookup,
   GlobalSearchOptions,
   GlobalSearchResponse
-} from '../main/global-search-query'
+} from '../main/modules/search/global-search-query'
 
 /** A user-written Skill (.md file in userData/skills/). */
 interface Skill {
@@ -54,9 +54,12 @@ interface CodeRunSummary {
   financialProfileId?: string
   codeRoot?: string
   agent: string
+  harness?: 'codex' | 'claude-code' | 'opencode'
+  worktreeDir?: string | null
+  localInstructions?: string[]
+  localSkills?: string[]
   /** Live external executors always run in the PTY; archived snapshots may not. */
   interactive: boolean
-  finishing?: boolean
   terminalCols?: number
   terminalRows?: number
   allowedWritePaths?: string[]
@@ -116,7 +119,7 @@ interface PublicAIConfig {
   chatProvider?: 'api' | 'chatgpt'
   userName?: string
   modelComplex?: string
-  codeHarness?: 'codex' | 'claude-code'
+  codeHarness?: 'codex' | 'claude-code' | 'opencode'
   maxSteps?: number
   inputPricePer1M?: number
   outputPricePer1M?: number
@@ -429,6 +432,8 @@ export const api = {
       run: (request: {
         path: string
         task: string
+        /** Open the CLI on its own screen, with no initial request or briefing. */
+        blank?: boolean
         files?: string[]
         allowedWritePaths?: string[]
         readOnlyRoots?: { id: string; nome: string; path: string }[]
@@ -457,8 +462,6 @@ export const api = {
         rows: number
       ): Promise<{ success: boolean; error?: string }> =>
         ipcRenderer.invoke('ai:code-agent:terminal-resize', runId, cols, rows),
-      finishInteractive: (runId: string): Promise<{ success: boolean; error?: string }> =>
-        ipcRenderer.invoke('ai:code-agent:finish-interactive', runId),
       terminalReconnect: (
         runId: string
       ): Promise<{ success: boolean; error?: string; log?: string; cols?: number; rows?: number }> =>
@@ -646,13 +649,25 @@ export const api = {
         refresh?: boolean
       ): Promise<
         Array<{
-          id: 'codex' | 'claude-code'
+          id: 'codex' | 'claude-code' | 'opencode'
           label: string
           command: string
           installed: boolean
           path: string | null
           version: string | null
           authentication: 'authenticated' | 'unauthenticated' | 'unknown'
+          models: string[]
+          capabilities: {
+            interactiveTerminal: 'available' | 'unavailable' | 'unknown'
+            createSession: 'available' | 'unavailable' | 'unknown'
+            resumeSession: 'available' | 'unavailable' | 'unknown'
+            modelSelection: 'available' | 'unavailable' | 'unknown'
+            modelStatus: 'available' | 'unavailable' | 'unknown'
+            permissionPrompts: 'available' | 'unavailable' | 'unknown'
+            cancellation: 'available' | 'unavailable' | 'unknown'
+            mcp: 'available' | 'unavailable' | 'unknown'
+            localInstructionDiscovery: 'available' | 'unavailable' | 'unknown'
+          }
         }>
       > => ipcRenderer.invoke('ai:harnesses:status', refresh)
     },

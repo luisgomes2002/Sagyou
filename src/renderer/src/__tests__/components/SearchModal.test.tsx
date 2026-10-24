@@ -1,7 +1,7 @@
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { GlobalSearchHit, GlobalSearchResponse } from '../../../../main/global-search-query'
+import type { GlobalSearchHit, GlobalSearchResponse } from '../../../../main/modules/search/global-search-query'
 import { SearchModal } from '../../components/modals/SearchModal'
 
 const { search } = vi.hoisted(() => ({ search: vi.fn() }))

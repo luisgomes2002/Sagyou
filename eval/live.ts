@@ -13,7 +13,7 @@ import {
   type EvalRunResult,
   type EvalSuiteReport,
   type EvalToolCall
-} from '../src/main/evaluator.ts'
+} from '../src/main/modules/ai/evaluator.ts'
 
 const root = dirname(fileURLToPath(import.meta.url))
 const goldenDir = process.env.SAGYOU_EVAL_GOLDEN_DIR || join(root, 'golden')

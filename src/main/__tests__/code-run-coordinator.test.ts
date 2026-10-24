@@ -1,7 +1,7 @@
 // @vitest-environment node
 
 import { describe, expect, it } from 'vitest'
-import { CodeRunCoordinator } from '../code-run-coordinator'
+import { CodeRunCoordinator } from '../modules/agent/code-run-coordinator'
 
 describe('CodeRunCoordinator', () => {
   it('keeps a directory occupied until every concurrent run finishes', () => {

@@ -171,6 +171,15 @@ beforeEach(() => {
 })
 
 describe('close flush', () => {
+  it('shows that data is being saved while closing', async () => {
+    render(<AiRunHost activeView="board" onOpenAI={() => {}} />)
+
+    await act(async () => onFlushBeforeClose?.())
+
+    expect(screen.getByText('Salvando antes de fechar…')).toBeInTheDocument()
+    expect(screen.getByText('Seus dados e conversas estão sendo protegidos.')).toBeInTheDocument()
+  })
+
   it('persists the pending conversation and acknowledges close only after saving', async () => {
     useAiRunStore.setState({
       conversationId: 'close-chat',

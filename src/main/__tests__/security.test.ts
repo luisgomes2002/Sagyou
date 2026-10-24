@@ -5,7 +5,7 @@ import {
   parsePasswordConfig,
   passwordError,
   verifyPassword
-} from '../security'
+} from '../modules/security/security'
 
 describe('password security', () => {
   it('stores a salted derived key and verifies only the matching password', () => {

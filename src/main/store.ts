@@ -4,9 +4,9 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from '
 import { is } from '@electron-toolkit/utils'
 import { randomUUID } from 'crypto'
 import Database from 'better-sqlite3'
-import { normalizeMemory, type AiMemory, type MemoryType } from './memory'
-import { decodeDataUrl } from './chat-images'
-import { isDocumentExt, parseDocument } from './document-parser'
+import { normalizeMemory, type AiMemory, type MemoryType } from './modules/ai/memory'
+import { decodeDataUrl } from './modules/conversations/chat-images'
+import { isDocumentExt, parseDocument } from './modules/files/document-parser'
 import {
   buildConversationDocuments,
   buildMemoryDocuments,
@@ -15,13 +15,13 @@ import {
   syncGlobalSearchIndex,
   syncSupplementalSearchIndex,
   type SearchConversation
-} from './global-search-index'
+} from './modules/search/global-search-index'
 import {
   getGlobalSearchHit,
   queryGlobalSearch,
   type GlobalSearchHit,
   type GlobalSearchResponse
-} from './global-search-query'
+} from './modules/search/global-search-query'
 
 // ── Inline types (mirrors src/renderer/src/types/index.ts) ──────────────────
 
@@ -2356,6 +2356,7 @@ export interface ListMemoriesOpts {
 
 export interface SearchMemoriesOpts {
   projectId: string | null
+  allProjects?: boolean
   term?: string
   type?: MemoryType
   includeArchived?: boolean
@@ -2390,10 +2391,14 @@ export function searchMemories(opts: SearchMemoriesOpts): MemorySearchHit[] {
   const where = ['m.archived_at IS NULL']
   const params: unknown[] = []
   if (opts.includeArchived) where[0] = '1=1'
-  if (opts.projectId) {
-    where.push('(m.project_id=? OR m.project_id IS NULL)')
-    params.push(opts.projectId)
-  } else where.push('m.project_id IS NULL')
+  // Explicit global MCP reads may search every project; ordinary chat recall
+  // still uses its project plus global pages.
+  if (!opts.allProjects) {
+    if (opts.projectId) {
+      where.push('(m.project_id=? OR m.project_id IS NULL)')
+      params.push(opts.projectId)
+    } else where.push('m.project_id IS NULL')
+  }
   if (opts.type) {
     where.push('m.type=?')
     params.push(opts.type)

@@ -92,7 +92,7 @@ export function resolveTaskState(args: Record<string, unknown>): TaskState {
  *
  * The app is Portuguese: without this, a model searching "habito" misses
  * "hábito" and "reuniao" misses "reunião". Mirrors `normalize` in
- * main/conversation-search.ts, which does the same for the history search.
+ * main/modules/conversations/conversation-search.ts, which does the same for the history search.
  */
 export function normalize(s: string): string {
   return s

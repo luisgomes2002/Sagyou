@@ -11,7 +11,7 @@ import {
   localDay,
   MAX_USAGE_ENTRIES,
   type UsageLogEntry
-} from '../usage'
+} from '../modules/ai/usage'
 
 const usage = { promptTokens: 1_000_000, completionTokens: 1_000_000 }
 const prices = { inputPricePer1M: 0.15, outputPricePer1M: 0.6 }

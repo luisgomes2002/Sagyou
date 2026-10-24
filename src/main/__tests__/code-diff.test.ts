@@ -21,7 +21,7 @@ import {
   MAX_APPROVAL_DIFF_LINES,
   MAX_DIFFABLE_LINES,
   type GitRunner
-} from '../code-diff'
+} from '../modules/code/code-diff'
 
 const made: string[] = []
 afterAll(async () => {

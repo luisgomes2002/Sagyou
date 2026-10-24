@@ -100,6 +100,7 @@ function installApi(): void {
         // The panel asks for the buffered log on mount — it may have missed the
         // stream entirely while this view was unmounted.
         status: vi.fn(async () => ({ running: false, log: '' })),
+        run: vi.fn(async () => ({ success: true, runId: 'codex-run', dir: '/workspace/app' })),
         stop: vi.fn()
       },
       harnesses: {
@@ -111,14 +112,6 @@ function installApi(): void {
             installed: true,
             path: '/usr/local/bin/codex',
             version: 'codex 1.0.0'
-          },
-          {
-            id: 'opencode',
-            label: 'OpenCode',
-            command: 'opencode',
-            installed: true,
-            path: '/usr/local/bin/opencode',
-            version: 'opencode 1.0.0'
           },
           {
             id: 'claude-code',
@@ -368,13 +361,14 @@ describe('AIView — reopening the last chat', () => {
     expect(screen.getByText('Perfis de API')).toBeInTheDocument()
   })
 
-  it('opens Agents from the code card in the connection guide', async () => {
+  it('opens the direct Codex flow from the code card in the connection guide', async () => {
     const openAgents = vi.fn()
     renderAI(<AIView projects={[]} onOpenAgents={openAgents} />)
 
     await userEvent.click(await screen.findByRole('button', { name: /Abrir Agentes/ }))
 
-    expect(openAgents).toHaveBeenCalledOnce()
+    expect(await screen.findByRole('heading', { name: 'Executar com Codex' })).toBeInTheDocument()
+    expect(openAgents).not.toHaveBeenCalled()
   })
 
   it('remembers a brand-new chat from its first message', async () => {
@@ -841,6 +835,51 @@ describe('AIView — harness de código', () => {
     await userEvent.click(await screen.findByText('Configuração'))
     expect(screen.getByText('Perfis de API')).toBeInTheDocument()
     expect(screen.queryByText('Harness de execução')).not.toBeInTheDocument()
+  })
+
+  it('starts Codex from chat with only an explicitly authorised root without leaving the chat', async () => {
+    const openAgents = vi.fn()
+    useKanbanStore.setState({ activeProjectId: 'project-1' })
+    renderAI(
+      <AIView
+        projects={[
+          {
+            id: 'project-1',
+            name: 'Projeto',
+            color: '#000',
+            columns: [],
+            codePaths: [
+              { id: 'allowed', label: 'Aplicativo', path: '/workspace/app' },
+              { id: 'blocked', label: 'Privado', path: '/workspace/private' }
+            ],
+            activeCodePathIds: ['allowed'],
+            createdAt: '2026-01-01T00:00:00.000Z',
+            updatedAt: '2026-01-01T00:00:00.000Z'
+          }
+        ]}
+        onOpenAgents={openAgents}
+      />
+    )
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Executar com Codex' }))
+    expect(await screen.findByText('Raiz de código autorizada')).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Aplicativo' })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'Privado' })).not.toBeInTheDocument()
+
+    await userEvent.type(screen.getByLabelText('Tarefa para o Codex'), 'Corrigir a tela inicial')
+    await userEvent.click(screen.getByRole('button', { name: 'Iniciar Codex' }))
+
+    await waitFor(() =>
+      expect(window.electronAPI.ai.codeAgent.run).toHaveBeenCalledWith(
+        expect.objectContaining({
+          path: '/workspace/app',
+          task: 'Corrigir a tela inicial',
+          projectId: 'project-1'
+        })
+      )
+    )
+    expect(await screen.findByText('Codex em execução. Esta conversa continua sendo o seu chat normal.')).toBeInTheDocument()
+    expect(openAgents).not.toHaveBeenCalled()
   })
 })
 
