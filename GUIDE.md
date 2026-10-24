@@ -8,9 +8,9 @@ A ideia é que você não precise descobrir tudo sozinho antes da primeira linha
 > `CLAUDE.md`, o `CLAUDE.md` vence — e o erro aqui é um bug, conserte.
 >
 > Este arquivo é curto de propósito: um agente o carrega no contexto e o reenvia
-> a cada passo, então cada parágrafo aqui é pago muitas vezes por execução
-> (~2.3k tokens/passo hoje; o `CLAUDE.md` seria ~14k). Detalhe fino vai no
-> `CLAUDE.md`, que se lê sob demanda. **Ao acrescentar algo aqui, corte algo.**
+> a cada passo, então cada parágrafo aqui é pago muitas vezes por execução.
+> Detalhe fino vai no `CLAUDE.md`, que se lê sob demanda. **Ao acrescentar algo
+> aqui, corte algo.**
 
 ---
 
@@ -34,17 +34,18 @@ também: os dois andam juntos.
 
 🧠 **CONTEXTO:** isto não tem como ser automatizado, e não finja que tem. Nenhum
 script detecta "surgiu uma regra nova" — é julgamento, e só o agente que fez a
-mudança está em posição de exercê-lo, na hora. Um hook que só reclamasse "você
-mexeu em `src/` e não no `GUIDE.md`" dispararia em quase todo commit, e a única
-coisa que ensinaria é a ignorá-lo.
+mudança está em posição de exercê-lo, na hora.
 
 O teste é simples: _alguém, daqui a seis meses, vai desfazer isto achando que é
 bobagem?_ Se sim, é regra — documente com o custo junto.
 
 ## O que é
 
-Sagyou — app **pessoal e offline** de kanban, hábitos, metas e finanças.
-Electron, janela sem moldura, um usuário só, tudo na máquina dele.
+Sagyou — app **pessoal e offline** de kanban, hábitos, metas e finanças, com um
+painel de **agentes de código** (Codex, Claude Code, OpenCode) rodando em
+terminal. Electron, janela sem moldura, um usuário só, tudo na máquina dele.
+Não há chat de IA por API, histórico de conversas, chaves de API nem controle de
+gasto de tokens: foram removidos (veja a regra 15).
 
 ⚠️ **Há dados de produção reais em uso.** Pessoas têm tasks, hábitos, metas e
 registros financeiros de verdade salvos localmente. Não existe "é só um app de
@@ -65,11 +66,11 @@ qualquer coisa persistida.
 | Testes      | Vitest + Testing Library, jsdom por padrão                      |
 | Drag & drop | dnd-kit                                                         |
 | Grafo       | d3-force                                                        |
-| IA          | SDK `openai` (qualquer endpoint compatível), proxiado pelo main |
+| Agentes     | CLIs locais em PTY (`node-pty` + xterm), worktree isolada, MCP  |
 
 Idioma: **a UI e os textos são em pt-BR**; código, nomes e comentários em
-inglês. As ferramentas da IA têm nome em português de propósito (`ler_tasks`,
-`criar_tasks`) — é o modelo que as chama.
+inglês. As ferramentas MCP de leitura/escrita do Sagyou têm nomes mistos
+(`ler_tasks`, `criar_task`, `search_memory`) — é o CLI que as chama.
 
 ## Comandos
 
@@ -94,17 +95,17 @@ não mascarar uma regressão nova.
 ```
 src/
   main/          # janela, IPC, SQLite, spawn de processos
-    index.ts     # orquestra os handlers e proxy das chamadas de IA
+    index.ts     # orquestra os handlers e o lançamento dos agentes
     handlers/    # handlers IPC por domínio (extraídos de index.ts)
       window.ts  # window:minimize/maximize/close/is-maximized
-      files.ts   # files:*, excel:export, ai:images:*, task:images:*
-      backup.ts, memory.ts, code-files.ts, conversations.ts # IPC por domínio
+      files.ts   # files:*, excel:export, task:images:*
+      backup.ts, memory.ts, code-files.ts, legacy-chat.ts # IPC por domínio
     store.ts     # persistência SQLite (kanban.db)
     modules/     # implementação agrupada por responsabilidade; index.ts e handlers orquestram
-      agent/     # sessões, PTY, worktree, diff, entrega, MCP e adapters de executor
-      ai/        # cliente, memória, skills, uso e métricas
-      conversations/ # histórico e anexos de chat
-      files/     # anexos, backup, parser e runtime MarkItDown
+      agent/     # sessões, PTY, worktree, diff, entrega, MCP, arquivo de runs e adapters
+      ai/        # memória, skills, migração de remoção do chat, núcleo de avaliação
+      conversations/ # só legacy-ai-data.ts (normaliza o ai-config.json)
+      files/     # anexos, backup, bytes de imagem, parser e runtime MarkItDown
       code/      # leitura e diff de arquivos de código
       search/    # índice FTS5 derivado e consultas
       security/  # senha de bloqueio e validação da configuração
@@ -119,45 +120,31 @@ src/
     store/
       kanban.ts  # compõe os slices; core (loadData, _persist, _flushPersist)
       normalization.ts # normalização compartilhada por load, backup e projetos
-      slices/    # slices Zustand por domínio (extraídos de kanban.ts)
-        projects.ts  # projetos + colunas + codePaths
-        tasks.ts     # tasks + sprints + timers
-        financial.ts # listas + items + transações + metas financeiras
-        habits.ts, goals.ts, notes.ts, planner.ts, files.ts, backup.ts
-      aiRun.ts   # execução da IA (store separada, sobrevive à troca de view)
+      slices/    # slices Zustand por domínio (projects, tasks, financial, habits, goals, notes, planner, files, backup)
     components/
-      modals/     # ~9 modais (GoalModal, TaskModal, ProjectModal, …)
+      modals/     # modais (GoalModal, TaskModal, ProjectModal, …)
       views/      # views da aplicação (Board, GraphView, GoalView, HabitView, …)
-      ai/         # componentes de IA (AIView, FleetView, AiRunHost, …)
+      ai/         # FleetView (view 'ai'), fleet/, AgentTerminal, CodeDiff, MemoryView
       layout/     # Sidebar, TitleBar, Toast
       financial/  # componentes financeiros
       (raiz)      # componentes compartilhados (ModalBase, CancelButton, EmptyState, …)
-    ai/
-      tools.ts    # infraestrutura: REGISTRY, TOOL_DEFS, runTool, describeTool*
-      tools/
-        helpers.ts  # funções helper + constantes (fn, resolveTask, PRIORITIES, …)
-        entries.ts  # definições de ferramentas (definição + run)
-        read-data.ts # leitura detalhada e paginada dos domínios do app
-      agent.ts    # o loop (runAgent)
-      system-prompt.md, code-prompt.md, validators.ts, permission-registry.ts, glossary.json
-    utils/
-      dates.ts    # todayLocalISO, todayUTCISO, formatDateBR
-      money.ts    # moneyStr (coerção canônica), D (Decimal seguro)
-      immutable.ts # setAdd, setDel (Set imutável para Zustand)
+    ai/system-prompt.md # só para o harness de eval; sem consumidor no app
+    utils/       # dates, money (moneyStr, D), immutable, …
     types/, services/
     __tests__/   # espelha a estrutura acima
 ```
 
 Uma regra acima de todas: **o renderer nunca toca disco nem rede**. Tudo passa
 por um handler IPC no main, exposto pelo preload. Capacidade nova = handler em
-`main/index.ts` + método em `preload/index.ts` + tipo em `preload/index.d.ts`.
+`main/index.ts` (ou em `handlers/`) + método em `preload/index.ts`; o tipo vem
+derivado do próprio objeto do preload.
 Depois de `security:*`, `protectDataIpc` envolve todo handler novo com a mesma
 guarda: só o renderer do app pode chamar e, com senha ativada, os dados ficam
 indisponíveis até o desbloqueio. Não registre um handler de dados antes dela.
 
 O índice global FTS5 é derivado: salvamentos sincronizam suas entradas e a
-importação de backup o reconstrói após restaurar store, conversas e memórias.
-Nunca use o índice como fonte dos registros originais.
+importação de backup o reconstrói após restaurar store e memórias. Conversas não
+são mais indexadas. Nunca use o índice como fonte dos registros originais.
 O texto extraído de arquivos suportados mora em `file_search_content`, também
 derivado e ligado por `file_id` sem FK: `persistAll` remove e reinsere `files`,
 e um cascade apagaria o cache. Upload e reconstrução usam `document-parser.ts`;
@@ -175,8 +162,7 @@ Arquivo de senha existente mas inválido ou ilegível é **configuração corrom
 nunca ausência de senha: mantenha o app bloqueado e só remova essa configuração
 pelo fluxo explícito `security:recover`, que não altera dados nem backups.
 `security:status` pode expor somente o nome de exibição escolhido para a saudação
-antes do desbloqueio; nunca devolva a configuração de IA, sua chave, ou dados do
-app nesse ponto.
+antes do desbloqueio; nunca devolva configuração de IA ou dados do app nesse ponto.
 A consulta `search:global` roda no main, usa o perfil financeiro ativo e devolve
 trechos limitados com total; título, tags e conteúdo têm pesos distintos.
 O acesso direto `search:global:get` por tipo e ID aplica o mesmo filtro: registros
@@ -210,9 +196,8 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    passa por `decimal.js` (`D()` em `components/financial/shared.ts`). Converta
    para `number` só para largura de barra e porcentagem. `qty` é `number` — é
    quantidade, não dinheiro.
-2. **Perfis financeiros não se misturam.** Cada tabela tem `profileId`; tabelas antigas sem esse campo pertencem a `personal` (`Minhas finanças`). Consolidado, Dashboard, seletores de tabela e leituras financeiras da IA usam somente o perfil ativo. Nunca cruze transações ou vínculos entre perfis.
+2. **Perfis financeiros não se misturam.** Cada tabela tem `profileId`; tabelas antigas sem esse campo pertencem a `personal` (`Minhas finanças`). Consolidado, Dashboard, seletores de tabela e a leitura financeira do MCP usam somente o perfil ativo/capturado. Nunca cruze transações ou vínculos entre perfis.
    Pagamentos de dívida pertencem à própria tabela: criar uma baixa reduz `remainingAmount` e cria, ao mesmo tempo, uma transação de despesa com `debtId`. Essa transação não pode ser editada isoladamente; excluí-la restaura o saldo da dívida. Excluir a dívida apenas desvincula o histórico de despesas.
-   `ler_dados` permite à IA percorrer registros de todas as áreas do app, mas suas entidades financeiras obedecem ao mesmo perfil ativo. Listas são paginadas com total/truncado; um ID lê todos os campos do registro. Anexos expõem metadados, e o conteúdo passa por `ler_documento`; imagens inline legadas não entram no resultado.
    A exportação Excel é global: `Todas transações` inclui todos os perfis, tabelas e meses, sem depender do mês ativo na tela. Valores monetários exportados têm também coluna de texto exato, pois números do Excel podem perder precisão. Abas de transações por tabela repetem a aba geral: ficam desligadas por padrão, e a opção para incluí-las só cria abas não vazias com nomes únicos. `Detalhes financeiros` só aparece quando há detalhes.
    Categorias personalizadas ficam em `FinancialProfile.customCategories` (opcional), compartilhadas só entre tabelas do mesmo perfil. Remover uma sugestão não altera categorias de lançamentos antigos; elas continuam disponíveis nos filtros pelo histórico.
    Bancos/apps e contrapartes salvos em `FinancialProfile` seguem o mesmo escopo: removê-los só retira a sugestão, nunca apaga esses valores dos lançamentos já registrados.
@@ -244,8 +229,8 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    Um detalhe pode vincular uma transação espelho de outra tabela: a fatura pai continua no
    consolidado e somente o espelho é omitido. O vínculo legado entre transações mantém a regra
    inversa, omitindo a transação pai, para preservar dados existentes.
-3. **Agenda é atômica.** Horários são `HH:MM` no formato de 24 horas e o fim é sempre posterior ao início. `atualizar_plano` valida todos os blocos antes de qualquer escrita: um horário inválido rejeita o lote inteiro, sem atualizar nem remover blocos.
-4. **Fechamento espera persistência.** Ao fechar, o main mantém a janela aberta até o renderer confirmar o flush do estado e das conversas da IA; não remova esse handshake em favor de `beforeunload`, que não espera IPC assíncrono. O timeout de segurança só evita uma janela presa se o renderer falhar.
+3. **Agenda é atômica.** Horários são `HH:MM` no formato de 24 horas e o fim é sempre posterior ao início.
+4. **Fechamento espera persistência.** Ao fechar, o main mantém a janela aberta até o renderer confirmar o flush do estado; não remova esse handshake em favor de `beforeunload`, que não espera IPC assíncrono. O timeout de segurança só evita uma janela presa se o renderer falhar.
 5. **Falhas de view são isoladas.** Toda área principal dentro de `App` passa por `ViewErrorBoundary`; uma exceção de renderização mostra recuperação local e não deve derrubar a navegação, modais nem os processos em segundo plano.
 6. **Modal acessível usa `ModalBase`.** O componente fornece `role="dialog"`, `aria-modal`, foco inicial, foco preso, Escape e restauração do foco anterior. Não crie um novo modal sem esse comportamento. O quadro usa `KeyboardSensor` do dnd-kit para reordenação por teclado.
    Comprovantes financeiros referenciam IDs da biblioteca compartilhada de `files/`;
@@ -278,217 +263,146 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    `⚠️ Breaking schema change — existing data may be affected.`
 9. **Nem tudo está no banco.** Em `app.getPath('userData')`: `kanban.db`,
    `files/` (os blobs dos anexos — a tabela só guarda metadados),
-   `ai-config.json`, `ai-conversations.json`, `ai-usage-log.json`,
-   `ai-run-metrics.json` (uma linha por execução do agente — modelo, passos,
-   tokens, buscas redundantes, releituras — regras puras em `main/modules/ai/run-metrics.ts`,
-   enviadas pelo `runAgent` no `finally`, best-effort), `chat-images/`,
-   `chat-files/` (texto extraído dos documentos enviados no chat, limpo com a conversa),
    `task-images/` (bytes das imagens de task — só metadata no DB, downscale JPEG
-   no cliente, `migrateTaskImagesToDisk` migra dados legados), `skills/`
-   (arquivos `.md` de system prompts — usados via `/skill-name` no chat),
-   `agent-runs/` (execuções arquivadas do agente de código — log + diff congelados).
-   Apagar um
-   lado sem o outro deixa órfão.
-10. **Ferramenta de IA que escreve leva `write: true`** em `ai/tools.ts`. É a
-    única coisa entre o modelo e os dados do usuário: sem isso a ação roda sem
-    aprovação. Ferramenta nova que muta estado **tem** que marcar.
-11. **Ferramenta de leitura que devolve menos do que existe tem que dizer isso.**
-    Tudo o que uma tool retorna é reenviado ao modelo a cada passo seguinte da
-    execução, então elas cortam: `ler_tasks` esconde as concluídas por padrão
-    (45% do quadro real), `ai:code:list`/`:read` paginam. Toda redução vem com o
-    número do que ficou de fora (`total`, `truncado`, `concluidas_ocultas`,
-    `outros_projetos`, `nextOffset`) — sem ele o modelo afirma com confiança que
-    o quadro tem 228 tasks quando tem 413, ou que uma task não existe quando ela
-    está em outro projeto. A resposta errada custa mais que os tokens salvos.
-12. **Leitura de código por escopo, não por arquivo inteiro.** `ler_arquivo` aceita
-    `simbolo` (extrai uma função/classe via `extractSymbol` em `code-files.ts`) ou
-    `linha_inicio`/`linha_fim` (`extractLines`) — ~1-3k chars em vez de janelas de
-    20k paginadas. Tudo regex/best-effort de propósito (sem AST). É o 5º arg
-    `scope` de `ai:code:read`, que ganha da paginação por char; a 1ª página de um
-    arquivo grande traz `simbolos` (o mapa de declarações) só quando `truncated`.
-    `buscar_no_codigo` agrupa por arquivo (`arquivo` + `ocorrencias`), então o
-    modelo leva a `linha` direto para o `ler_arquivo` mirado. O prompt
-    (`system-prompt.md`) tem tabela de custo e exemplo bom-vs-ruim guiando isso.
-    Leitura **cega** de arquivo grande (sem escopo/`inicio`/`max_chars`, `total >
-CODE_READ_PAGE`) devolve só ~100 linhas + `simbolos` + `dica`, não a janela de
-    20k. `buscar_no_codigo` tem cache de 30s por (raízes+termo), limpo quando o
-    agente de código roda. Freios de releitura (`ler_arquivo` cego 2×, busca fuzzy
-    substring que avisa mas não bloqueia) e o log de custo por execução vivem em
-    `agent.ts` (estado **por execução**), **não** em `tools.ts` (global entre
-    conversas).
-13. **Roteamento de modelo é opcional e por execução.** `AIConfig.modelComplex`,
-    quando definido, faz `routeModel(cfg, texto)` mandar tarefas de código/análise
-    (palavras como código, bug, refatorar, arquitetura, investigar) para o modelo
-    pesado; o resto fica no `model` barato. Ausente = um modelo só, comportamento
-    antigo. A escolha é feita uma vez em `runAgent` (`rcfg`) e vale para todas as
-    chamadas daquela execução.
-
-    **Chat com conexão explícita:** “Trocar IA” salva a conexão e o modelo em
-    `StoredConversation.connection` (opcional nos históricos antigos). Cada run
-    usa o modelo exibido no cabeçalho; o roteamento automático `modelComplex`
-    não atua nesse fluxo. O main resolve `profileId` e a chave do perfil. O
-    modelo forte continua como escolha explícita. Codex e Claude Code são os
-    executores PTY da área Agentes.
-    Campos antigos `baseUrl`/`apiKey`/`model` de `ai-config.json` são importados
-    uma vez como perfil comum, sem conexão legada visível; a marca de migração
-    impede que excluir esse perfil o recrie. Credenciais nunca retornam ao renderer.
-    O chat normal oferece assinatura ChatGPT e perfis de API. Os atalhos
-    OpenAI/Codex e Claude só preenchem o perfil e nunca transformam uma assinatura
-    de ChatGPT/Claude Code em chave de API; cada fornecedor mantém sua própria cobrança.
-    O editor de perfil busca o catálogo na URL configurada e mostra dropdowns para
-    modelo padrão e forte; para Claude usa somente `lifecycle=active`, e para
-    OpenAI ignora registros com `shutdown_date`. A chave digitada antes de salvar
-    cruza IPC só para essa consulta e nunca volta na resposta.
-
-14. 🔴 **A tabela `memory` é satélite, fora do `persistAll`.** Memórias do assistente
-    (decisões, tradeoffs, gotchas, handoffs) ficam em SQLite mas nunca passam pelo
-    store Zustand — `access_count`/`last_accessed_at` são bumpados a cada leitura, e
-    isso via `persistAll` reescreveria as 17 tabelas por bump. As ferramentas são
-    `salvar_memoria` (write, gated), `buscar_memoria` (por id ou termo),
-    `buscar_conversas`, `ler_conversa` (transcript completo por id) e
-    `verificar_memorias`. A sanitização de segredos (`scrubSecrets`) roda em todo
-    save — memória é reenviada ao modelo a cada passo, então uma chave vazada seria
-    permanente. Decay arquiva (nunca hard-deleta); memória pinada nunca decai.
-    ⚠️ `memory.project_id` é **TEXT puro, NUNCA FK com `ON DELETE CASCADE`** — o cascade
-    era perda de dados (persistAll/persistDiff deletam-e-reinserem o projeto e apagavam
-    as memórias dele, que não voltam por estarem fora do persistAll); `migrateMemoryDropProjectFk`
-    remove o FK. Projeto apagado deixa memórias órfãs (decaem sozinhas), não as destrói.
-    Handoff automático (`writeHandoff`) grava um breadcrumb por projeto ao fim de
-    cada run, sem chamada LLM. ⚠️ O corpo é cortado em 600 chars **na gravação**, então
-    `buscar_memoria` não expande um handoff `…`; quando cortado, ele guarda `id=<convId>` e
-    o modelo abre a conversa inteira com `ler_conversa` (senão gasta buscas às cegas e refaz
-    do zero). Compartilhada entre chat e code-agent.
-
-15. **Orçamento é por chamada do modelo, não por tool round.** `maxSteps` limita toda chamada bem-sucedida da run — rodadas principais, compactação e resposta final. Sem configuração explícita, o chat usa 40 no manual e 100 no Auto; não reintroduza heurísticas 2/4/8/15 por texto, pois elas encerram orquestrações no momento de disparar agentes. O contexto de uma conversa reaberta entra limitado (12 mensagens/24k caracteres/1 imagem); ferramentas além de 8 numa rodada recebem resultado sintético. O limite é **por execução**: várias conversas/projetos continuam rodando em paralelo. O subagente de pesquisa exige aprovação, é no máximo 2 por run e seu resumo é cortado antes de voltar ao agente pai.
-16. **Cada conversa nova escolhe seu projeto.** `StoredConversation.projectId` fixa o contexto de tarefas, arquivos, memória e handoff durante toda a conversa; `null` é uma conversa geral explícita. Não volte a derivar o projeto de cada envio pelo `activeProjectId`, pois trocar de tela faria um chat mudar silenciosamente de escopo. Conversas antigas sem o campo mantêm o fallback legado até serem substituídas por uma nova conversa escolhida.
-    Clicar em **Chat** na sidebar também abre essa escolha, mesmo com outro projeto selecionado ou com o Chat já aberto; abrir uma conversa pela busca/histórico continua indo direto ao transcript solicitado.
-    A conexão da conversa também persiste o `reasoningEffort` opcional junto ao modelo. Envie-o em todas as rodadas, inclusive pela assinatura ChatGPT; ausente mantém o padrão global/do provedor.
-
-17. 🔴 **Importação de backup só conclui depois de todas as fontes serem gravadas.**
+   no cliente, `migrateTaskImagesToDisk` migra dados legados), `ai-config.json`
+   (**só** configuração de agente: `codeHarness`, `userName`, `reasoningEffort`,
+   chaves desconhecidas; fora de todo backup), `skills/` (`.md`), `agent-runs/`
+   (execuções arquivadas — log + diff congelados, ligadas a `sessionId`/`projectId`),
+   `backups/` (snapshots automáticos, de pré-importação e a pasta
+   `pre-remocao-chat-*`), `password-security.json` e `general-agent-workspace/`.
+   Apagar um lado sem o outro deixa órfão. **Não existem mais**
+   `ai-conversations.json`, `chat-images/`, `chat-files/`, `ai-usage-log.json` nem
+   `ai-run-metrics.json`: a migração os apagou — não os recrie.
+10. **Escrita pelo MCP passa pela fila de aprovação.** `save_memory` e `criar_task`
+    só executam depois da aprovação da run e do flush do renderer; recusa, timeout
+    ou limpeza rejeitam sem escrever. Ferramenta MCP nova que muta estado **tem**
+    que entrar nessa fila e ter permissão verificada em toda chamada.
+11. **Ferramenta de leitura que devolve menos do que existe tem que dizer isso**
+    (`total`, `truncado`, `proximoInicio`). Sem o número do que ficou de fora, o
+    agente afirma com confiança um total errado. Vale para o MCP e para
+    `ai:code:list`/`:read`, que paginam.
+12. **Leitura de código confina na raiz.** `confineToRoot` em `code-files.ts` é a
+    única barreira entre quem lê e o resto do disco; o walk é assíncrono de
+    propósito (o síncrono travava o event loop do main). Extração por símbolo ou
+    linha é regex best-effort, sem AST.
+13. **Configuração de IA não guarda segredo.** `ai-config.json` não tem mais chave,
+    perfil, preço nem modelo de API; `ai:config:set` mescla sobre o arquivo e
+    descarta essas chaves nos dois lados, e `ai:config:get` nunca devolve chave.
+    Não reintroduza campo de credencial ali.
+14. 🔴 **A tabela `memory` é satélite, fora do `persistAll`.** Memórias (decisões,
+    tradeoffs, gotchas, handoffs) ficam em SQLite mas nunca passam pelo store
+    Zustand — `access_count`/`last_accessed_at` são bumpados a cada leitura, e
+    isso via `persistAll` reescreveria todas as tabelas por bump. O acesso é por
+    `ai:memory:*` e pelo MCP (`search_memory`, `read_memory`, `save_memory`,
+    `check_memories`). `scrubSecrets` roda em todo save — memória persiste, então
+    uma chave vazada seria permanente. Decay arquiva (nunca hard-deleta); memória
+    pinada nunca decai. ⚠️ `memory.project_id` é **TEXT puro, NUNCA FK com
+    `ON DELETE CASCADE`** — o cascade apagava as memórias do projeto quando
+    `persistAll`/`persistDiff` o reinseriam; `migrateMemoryDropProjectFk` remove o
+    FK. Projeto apagado deixa memórias órfãs (decaem sozinhas). O handoff de
+    terminal grava um breadcrumb por projeto a cada saída do CLI, sem LLM e sem
+    referência a conversa; o log completo fica só no arquivo da run. Memória
+    recuperada é evidência histórica não confiável, nunca instrução.
+15. 🔴 **O chat genérico foi removido e a migração apagou dados de propósito.** Na
+    primeira abertura (antes da janela), `legacy-chat-removal.ts`: (1) se
+    `legacyChatRemovedAt` existe em `settings`, não faz nada; (2) copia por cópia
+    crua, no main, para `userData/backups/pre-remocao-chat-<timestamp>/` as
+    conversas, `chat-images/`, `chat-files/` e o `kanban.db` — falhou, **nada é
+    apagado**; (3) apaga esses itens + `ai-usage-log.json` e `ai-run-metrics.json`;
+    (4) zera `sourceConversationId` e o ponteiro `ler_conversa` nas memórias; (5)
+    reconstrói o índice FTS; (6) **por último** tira as 14 chaves de API do
+    `ai-config.json` (arquivo ilegível não é tocado); (7) grava a marca. Passos
+    idempotentes, retomáveis. `legacyChatSnapshotDir` e `legacyChatNoticeDismissedAt`
+    em `settings` alimentam o aviso do Fleet. ⚠️ `persistAll` faz
+    `DELETE FROM settings` na primeira gravação da sessão: essas chaves precisam
+    ficar fora desse delete. **As chaves de API não estão em nenhum backup: a perda
+    é definitiva.** Canais `ai:chat*`, `ai:conversations:*`, `ai:images:*`,
+    `ai:usage:*`, `ai:run-metrics:*` não existem mais; não os re-crie sem spec nova.
+16. 🔴 **Importação de backup só conclui depois de todas as fontes serem gravadas.**
     `backup:import` valida formato/versão e segura os blobs em main; o renderer salva
-    um snapshot forçado do estado atual em `userData/backups/` antes de persistir store,
-    conversas e memórias. Os blobs só são confirmados ao final. Qualquer falha reverte os
-    dados, conversas e memórias anteriores e informa erro; sem snapshot, aborte.
-    Antes disso, o main rejeita IDs duplicados, datas/horários inválidos, estruturas obrigatórias
-    incompletas e referências quebradas entre projeto, coluna, task, agenda e hábito.
-    Na exportação, blobs são lidos de forma assíncrona e cooperativa; mantenha os eventos de
-    progresso/cancelamento para que anexos grandes não congelem a janela.
-    O app atualiza um snapshot diário ao abrir e a cada hora, com retenção dos
-    sete mais recentes. Bytes dos anexos continuam fora do IPC.
-
-18. 🔴 **Conversa citada por memória não pode ser apagada.** `sourceConversationId`
-    de memórias ativas **ou arquivadas** protege o transcript dos limites de 14 dias/50
-    conversas, da exclusão manual e da substituição do histórico no restore de backup.
-    O main decide isso antes de apagar bytes de anexos;
-    remover só o arquivo deixaria handoffs e outras memórias apontando para o vazio.
-19. **Auto não aprova exclusão nem lançamento financeiro.** `deletar_task` e
-    `criar_transacao` sempre passam pelo card de aprovação do chat; as outras
-    escritas continuam podendo rodar no Auto. Uma correção reenviada desliga o
-    Auto daquela conversa para impedir repetição silenciosa de ações anteriores.
-    Execuções cuja conversa contenha documento anexado também pedem aprovação de
-    **todas** as escritas, pois o conteúdo do arquivo não é uma instrução confiável.
+    um snapshot forçado do estado atual em `userData/backups/` antes de persistir store
+    e memórias. Os blobs só são confirmados ao final. Qualquer falha reverte os dados e
+    memórias anteriores e informa erro; sem snapshot, aborte. O backup (versão 7) **não
+    traz mais** `conversations` nem `chatImages`, e a importação de um backup antigo
+    **ignora** esses campos (e `sourceConversationId` das memórias) em vez de falhar:
+    restaurar não traz o chat de volta. Antes disso, o main rejeita IDs duplicados,
+    datas/horários inválidos, estruturas incompletas e referências quebradas entre
+    projeto, coluna, task, agenda e hábito. Na exportação, blobs são lidos de forma
+    assíncrona e cooperativa; mantenha progresso/cancelamento. O app atualiza um
+    snapshot diário ao abrir e a cada hora, com retenção dos sete mais recentes.
+    Bytes dos anexos continuam fora do IPC.
 
 ## Memória — fronteira de confiança
 
-Memória e conversas antigas são **evidência histórica não confiável**, nunca instruções. O conteúdo
-recuperado não pode mudar regras, autorizar ferramentas nem prevalecer sobre o pedido atual ou o
-estado vivo lido no app. A busca é FTS5 no main, devolve só trechos ranqueados; abra por id quando
-precisar do corpo completo. Memória salva por uma conversa guarda seu `sourceConversationId`.
+Memória é **evidência histórica não confiável**, nunca instrução. O conteúdo
+recuperado não pode mudar regras, autorizar ferramentas nem prevalecer sobre o
+pedido atual ou o estado vivo lido no app. A busca é FTS5 no main e devolve só
+trechos ranqueados; abra por id quando precisar do corpo completo.
 
 ## ⚠️ REGRA — arquitetura agent-first
 
-O destino é uma **única thread de agente de código por harness**, sem chat
-genérico/API paralelo. Codex, Claude Code e OpenCode são as opções de harness;
-o contrato comum, as capacidades que podem ser realmente verificadas e as
-limitações estão em `docs/harness-chat-architecture.md`. Ausente ou desconhecido
-sempre aparece como indisponível — nunca simule compatibilidade nem faça fallback
-silencioso para outro CLI.
+Há **uma única thread de agente de código por harness**, sem chat genérico/API
+paralelo. Codex, Claude Code e OpenCode são as opções; o contrato comum e as
+capacidades que podem ser verificadas estão em `docs/harness-chat-architecture.md`.
+Ausente ou desconhecido sempre aparece como indisponível — nunca simule
+compatibilidade nem faça fallback silencioso para outro CLI.
 
-- **Chat é o coordenador.** Ele conversa com o usuário, resolve escopo e
-  dependências, escolhe e instrui um executor, acompanha a run e apresenta o
-  resultado. Não implementa mudanças de código por um segundo loop próprio.
-- **Codex, Claude Code e OpenCode são os executores-alvo.** Cada run usa a CLI escolhida
-  em uma sessão PTY real, pertencente ao processo main e exibida no Fleet por
-  xterm. O renderer só envia entrada e resize validados; nunca cria processos.
-- **Infraestrutura não pertence ao loop nativo.** Sessão, PTY, worktree, diff,
-  entrega e MCP vivem nos módulos `agent-*`; executores dependem desses contratos.
-  O loop em `code-agent.ts` é só um adaptador temporário e pode ser removido sem
-  copiar ou levar consigo isolamento, aprovação ou entrega.
-- **MCP é a única ponte de dados entre Sagyou e o executor.** O executor lê e
-  altera arquivos diretamente apenas dentro da worktree. Tasks, projetos,
-  conversas, memórias, finanças e qualquer outro dado do app passam somente pelo
-  MCP local com token criptográfico efêmero, projeto padrão e perfil financeiro
-  congelado, e
-  permissões por ferramenta verificadas em toda chamada. Nunca entregue SQLite,
-  IPC interno, `loadData()` ou snapshot do store ao CLI. Escritas MCP continuam
-  passando por uma fila de aprovação por run e pelo flush do Zustand; timeout,
-  recusa, Stop e fechamento rejeitam sem escrever. Isso não substitui a aprovação
-  final do patch.
-- **Leituras MCP podem atravessar projetos.** `list_projects` revela IDs; as
-  ferramentas de leitura aceitam `projectId` explícito. Sem ele, sessões de
-  projeto usam o projeto inicial e sessões gerais consultam todos. Financeiro
-  permanece no perfil capturado. `criar_task` aceita outro projeto existente,
-  mas sempre passa pela fila de aprovação.
-- **Briefing de executor externo é contexto, não prompt alternativo.** Codex e
-  Claude recebem objetivo/decisões atuais primeiro, arquivos indicados e um
-  recorte limitado e sanitizado de conversa/memórias. Histórico é dado não
-  confiável e nunca substitui a solicitação atual; detalhes e dados vivos vêm do MCP.
+- **O usuário fala com o CLI, no terminal do Fleet.** A sessão abre em branco
+  (`blank: true`): sem formulário e **sem briefing colado**. Sagyou não coordena
+  por outro modelo. O contexto do app chega só pelo MCP, sob demanda do agente. Se
+  `ai:code-agent:run` receber um pedido inicial, o briefing leva objetivo,
+  decisões, arquivos e memórias — sem trechos de conversa.
+- **Cada run usa a CLI escolhida em uma sessão PTY real**, pertencente ao main e
+  exibida no Fleet por xterm. O renderer só envia entrada e resize validados;
+  nunca cria processos.
+- **Infraestrutura é compartilhada.** Sessão, PTY, worktree, diff, entrega e MCP
+  vivem nos módulos `agent/`; não há mais loop nativo próprio, sandbox ai-jail nem
+  cliente OpenAI em `src/main`.
+- **MCP é a única ponte de dados entre Sagyou e o executor.** O executor altera
+  arquivos só dentro da worktree. Tasks, projetos, memórias, finanças e tudo mais
+  passam pelo MCP local com token criptográfico efêmero, projeto padrão e perfil
+  financeiro congelados, e permissões verificadas em toda chamada. Nunca entregue
+  SQLite, IPC interno, `loadData()` ou snapshot do store ao CLI. Escritas MCP
+  passam por uma fila de aprovação por run e pelo flush do Zustand; isso não
+  substitui a aprovação final do patch.
+- **Leituras MCP podem atravessar projetos** (`list_projects` revela IDs; as
+  leituras aceitam `projectId`). Sem ele, sessões de projeto usam o projeto
+  inicial e sessões gerais consultam todos. Financeiro permanece no perfil
+  capturado. `criar_task` aceita outro projeto existente, sempre com aprovação.
 - **Handoff de terminal é um breadcrumb, não log.** No encerramento, a memória
-  determinística `handoff:<projeto>` é atualizada com pedido, status, arquivos e
-  IDs da conversa/run, todos limitados. O terminal completo continua apenas no
-  arquivo arquivado da run.
-- **Toda run usa worktree externo e detached.** A árvore do usuário nunca é
+  `handoff:<projeto>` é atualizada com pedido, status, arquivos e id da run, todos
+  limitados. O terminal completo continua apenas no arquivo arquivado da run.
+- **Toda run usa worktree externa e detached.** A árvore do usuário nunca é
   destino de um executor, nem na primeira run ou em repo sem commit; se a raiz
-  de código ainda não tiver Git, o Sagyou inicializa somente o `.git`, sem criar
-  commit, antes de montar as worktrees. Retorno só ocorre pela entrega validada.
-  Worktrees órfãos são recuperados da raiz temporária
-  do Sagyou, nunca por remoção dentro do projeto.
+  de código não tiver Git, o Sagyou inicializa somente o `.git`, sem criar
+  commit. Retorno só ocorre pela entrega validada. Worktrees órfãos são
+  recuperados da raiz temporária do Sagyou, nunca por remoção dentro do projeto.
 - **Sessões gerais não dependem da seleção da sidebar.** Ao criar uma sessão, o
   usuário escolhe o projeto e a pasta autorizada, ou uma sessão geral. A sessão
   geral usa apenas `userData/general-agent-workspace`; o main recusa caminhos
-  enviados pelo renderer sem projeto para impedir acesso arbitrário ao disco.
-- **Toda run nasce em worktree destacada.** Nem a primeira run, nem uma run única,
-  edita a árvore original. Ao terminar, valide o conjunto final de caminhos e
-  mostre o diff; só uma aprovação manual explícita entrega o patch, de forma
-  serializada, à árvore original. Auto-approve nunca cobre essa decisão. Rejeitar,
-  parar ou fechar sem aprovar não entrega código.
-### Fluxo e ciclo de vida
-
-- **Escopo de escrita vale para o lote final.** Antes da revisao, normalize todos os
-  caminhos alterados e compare arquivos/raizes permitidos, incluindo os dois lados de rename
-  e qualquer symlink. Um caminho recusado aparece no Fleet e bloqueia o patch inteiro; nunca
-  tente aplicar a parte valida ou tocar o caminho fora do escopo.
-- **Entrega final confere a base no último instante.** O patch da worktree inclui
-  arquivos binários e novos; `git apply --check` roda antes da aplicação sem ignorar
-  contexto ou espaços. Mudança local durante a revisão bloqueia a entrega, sem sobrescrever.
-
-1. O chat fecha objetivo, escopo, arquivos permitidos e decisões já tomadas.
-2. O main cria uma worktree exclusiva, emite credencial MCP aleatória e limitada
-   e só então inicia o harness escolhido no PTY/protocolo dentro dessa worktree.
-3. O executor edita/testa na worktree; acesso a dados do Sagyou ocorre apenas por
-   MCP. A credencial pertence à run, expira no máximo em duas horas e nunca é
-   reutilizada. No Codex, a configuração stdio deve incluir `env_vars` somente
-   para `SAGYOU_MCP_PORT` e `SAGYOU_MCP_TOKEN`, e exigir a conexão; sem isso a
-   ponte pode falhar em silêncio.
-4. Saída normal encerra o PTY, revoga o MCP, confere caminhos e congela diff/log.
-   Sessões interativas não ficam aguardando aprovação: o diff é arquivado e a
-   árvore original permanece intacta.
-5. Para execuções não interativas, aprovação aplica o patch serialmente e registra
-   o resultado; rejeição descarta a entrega. A limpeza da worktree ocorre só
-   depois de preservar o artefato necessário à revisão/auditoria.
+  enviados pelo renderer sem projeto.
+- **Escopo de escrita vale para o lote final.** Antes da revisão, normalize todos
+  os caminhos alterados e compare arquivos/raízes permitidos, incluindo os dois
+  lados de rename e qualquer symlink. Um caminho recusado bloqueia o patch inteiro.
+- **Entrega final confere a base no último instante.** O patch inclui binários e
+  novos; `git apply --check` roda antes da aplicação sem ignorar contexto ou
+  espaços. Mudança local durante a revisão bloqueia a entrega, sem sobrescrever.
+  Sessões interativas só arquivam o diff; não aplicam. Auto-approve nunca cobre
+  a entrega.
 
 Falha é sempre fechada: erro ao criar worktree, iniciar PTY ou MCP encerra sem
-executor; queda, timeout ou fechamento revogam a credencial e matam o
-processo; MCP indisponível não ganha atalho por IPC/SQLite; caminho fora do escopo,
-diff inválido ou conflito bloqueia a entrega e preserva o patch como falho para
-revisão. Na sessão interativa, a saída normal do CLI arquiva o diff sem pedido
-de aprovação ou entrega; não há comando separado para encerrar ou parar o PTY.
+executor; queda, timeout ou fechamento revogam a credencial e matam o processo;
+MCP indisponível não ganha atalho por IPC/SQLite; caminho fora do escopo, diff
+inválido ou conflito bloqueia a entrega e preserva o patch como falho para
+revisão. A credencial MCP pertence à run e expira em no máximo duas horas; no
+Codex, a configuração stdio inclui `env_vars` só para `SAGYOU_MCP_PORT` e
+`SAGYOU_MCP_TOKEN`.
 
 ## Segurança — o que já está resolvido
 
-`main/modules/web/web-fetch.ts` busca páginas cuja URL **vem do modelo**, ou seja, não é
-confiável (uma página lida pode dizer ao modelo o que buscar em seguida). Já
-existe, com testes, e não deve ser afrouxado:
+`main/modules/web/web-fetch.ts` busca páginas cuja URL **não é confiável** (vem de
+um modelo ou de uma página). Já existe, com testes, e não deve ser afrouxado
+(o canal `ai:web:fetch` segue registrado, sem chamador no renderer hoje):
 
 - só `http`/`https` (allowlist — `file:` leria o disco);
 - redes privadas, loopback, link-local e metadata de nuvem bloqueadas;
@@ -498,16 +412,15 @@ existe, com testes, e não deve ser afrouxado:
 - o parser (`new URL()`) é o único sanitizador — **não** acrescente limpeza de
   string na frente dele, e não decodifique entidades HTML.
 
-`main/modules/web/web-render.ts` é o irmão que **executa JavaScript** (páginas SPA), via
-`ai:web:fetch` com `render`. Um navegador é uma superfície SSRF muito maior:
-ele carrega todo sub-recurso, e **nenhum** passa pela checagem de redirect do
-`web-fetch`. Por isso **toda requisição** (documento e sub-recursos) passa pela
-mesma política `checkUrl` via `session.webRequest.onBeforeRequest` — mantenha
-isso. Sessão efêmera sem cookie, sandbox, sem node. A orquestração do
-`BrowserWindow` **não roda no vitest** (precisa do Electron) — verifique no app.
+`main/modules/web/web-render.ts` é o irmão que **executa JavaScript** (páginas SPA),
+via `ai:web:fetch` com `render`. Um navegador é uma superfície SSRF muito maior:
+**toda requisição** (documento e sub-recursos) passa pela mesma política `checkUrl`
+via `session.webRequest.onBeforeRequest` — mantenha isso. Sessão efêmera sem
+cookie, sandbox, sem node. A orquestração do `BrowserWindow` **não roda no
+vitest** — verifique no app.
 
 `main/modules/code/code-files.ts` confina todo acesso a arquivo dentro da raiz escolhida
-(`confineToRoot`) — é a única barreira entre o assistente e o resto do disco.
+(`confineToRoot`).
 
 **Links externos:** `main/modules/web/external-links.ts` só deixa `http:`/`https:` sem
 credenciais chegar a `shell.openExternal`; a janela principal bloqueia
@@ -517,12 +430,12 @@ diretamente no handler do sistema operacional.
 ## Testes
 
 - Vitest, jsdom por padrão. Teste de processo main precisa de
-  `@vitest-environment node` no topo (o SDK da OpenAI se recusa a construir sob
-  globais de browser).
+  `@vitest-environment node` no topo.
 - `ElectronStorage` é mockado por arquivo, **antes** de importar a store.
 - Os testes do main usam **coisas reais** — servidor HTTP local, repositório git
-  de verdade, processo filho de verdade. Prefira isso a stub: quase todo bug
-  desta área é um detalhe de como a coisa real se comporta.
+  de verdade, processo filho de verdade, diretório temporário. Prefira isso a
+  stub. `better-sqlite3` não carrega no vitest (ABI do Electron): SQL de
+  `store.ts` se verifica no app.
 - Testando o **fluxo agent-first**: use repositório Git temporário, bridge MCP
   stdio real e processo filho real. Cubra worktree, diff, escopo, aprovação final,
   conflito e limpeza sem tocar no repositório do runner.
@@ -535,177 +448,51 @@ Não "simplifique" nenhuma destas sem ler o comentário que as acompanha:
 
 - **`await` em série no `main/modules/code/code-files.ts`** — de propósito. A versão síncrona
   travava o event loop do main (que também serve o IPC) por ~70ms.
-- **A montagem manual de `tool_calls` no `ai:chat:stream`** — o SDK faz isso e
-  quebra com provedores compatíveis que não mandam `role` em todo delta.
-- **`maxRetries: 0` no cliente OpenAI** — o retry é do `callModelResilient`. Com
-  os dois, uma resposta virou 12 requisições HTTP.
-- **A store da execução da IA é separada (`store/aiRun.ts`)** — a execução
-  sobrevive à `AIView` ser desmontada. Não a mova para dentro do componente.
+- **A chave de view `'ai'` é o Fleet** ("Sessões de código"). Renomear seria churn
+  em `App`, `Sidebar` e feature flags; não há view de Chat nem `agents`.
+- **`AiMemory.sourceConversationId` e a coluna `memory.source_conversation_id`
+  ainda existem**, sempre nulos: a coluna não foi removida para não reconstruir a
+  tabela. `AgentRunMeta.convId` também fica (nulo em runs novas) para runs antigas
+  continuarem listáveis.
+- **`ai/system-prompt.md`, `modules/ai/evaluator.ts` e `eval/`** não têm consumidor
+  no app: são o resto do harness de avaliação do loop antigo.
 - **O layout do grafo é uma simulação viva** (`GraphView.tsx` + `utils/graph-layout.ts`):
   o d3-force muta nós, então preserve `positionsRef` ao recriar o grafo e nunca chame
   `sim.tick()` no evento `tick`. Arrastar fixa só durante o gesto; ao soltar, pare e guarde a posição da sessão.
   Projetos arquivados continuam no grafo com seus itens. Blocos `StickyNote.type === 'text'`
   são apenas conteúdo visual do canvas: não recebem conexões e não entram no grafo.
-- **`ai/tools.ts` está fatiado** — as helpers e constantes (`fn`, `resolveTask`,
-  `PRIORITIES`, …) vivem em `ai/tools/helpers.ts` e as 31 definições do REGISTRY
-  em `ai/tools/entries.ts`. `tools.ts` só tem a infraestrutura (REGISTRY,
-  TOOL_DEFS, runTool, describeTool\*). O contrato em `tool-contracts.ts` reúne a
-  definição, permissão, validação e execução de cada entrada; adicionar uma
-  ferramenta = adicionar em
-  `entries.ts` e pronto.
-- **Multi-agente: a store é desingletonizada** — N chat-agents rodam em paralelo
-  (até no mesmo projeto). Os campos por-run são coleções por `convId`
-  (`running: Set`, `streaming`/`streamingTools: Record`, `autoApprove`/
-  `abortRequested: Set`, `pendingApprovals: []` = fila de cards). `send()` captura
-  seu `convId` e escreve via `writeConv`/`addUsageConv` (nunca um "run atual"
-  global); o `convId` é passado ao loop e às tools (`runTool(name,args,convId)` →
-  `currentRunConvId()`). `taskLeases` + `acquireLease` impedem dois agentes de
-  pegar a mesma task (as tools de escrita chamam `leaseBlock`). O painel
-  `FleetView.tsx` (aba "Agentes") lista as runs vivas a partir de `running`/
-  `runProjects` e mostra o gasto de tokens por agente (`runUsage`, zerado ao fim
-  da run). Detalhes e fases em `MULTI_AGENT_PLAN.md`.
 - **Múltiplos cronômetros** (`activeTimers: ActiveTimer[]`, 1 por task) — vários
   timers correm ao mesmo tempo. `startTimer(taskId)` adiciona sem parar os outros;
   `stopTimer(taskId)` credita só aquele. Espelho legado `activeTimer =
 activeTimers[0]` no `settings` do DB (não viaja no backup); `normalizeTimers`
   migra o objeto único antigo e faz o commit de tempo em loop no load. ⚠️ Mudança
   de schema — mantenha a coleção **e** o espelho.
-- **O diff do agente captura a base _antes_ de rodar** (`captureBase`) — depois
-  não dá para separar o que o agente fez do que o usuário já tinha em andamento.
+- **O diff do agente captura a base _antes_ de rodar** — depois não dá para
+  separar o que o agente fez do que o usuário já tinha em andamento.
 - **Runs antigas são snapshots congelados** (`agent-runs.ts`): o log e o diff são
   gravados uma vez, quando o agente sai, em `userData/agent-runs/` (payload em
-  arquivo, só ids no índice — `ai-conversations.json` é reescrito inteiro a cada
-  autosave). ⚠️ **Nunca recalcule o diff de uma run arquivada**: mediria a árvore
-  de hoje e apresentaria as edições posteriores do usuário como trabalho do
-  agente. Por isso `CodeDiff` recebe `onRefresh` opcional — uma run passada não
-  tem o que recarregar.
-- ⚠️ **O agente de código nativo (`main/code-agent.ts`) é legado de migração.**
-  Não é mais o executor arquitetural e não deve receber capacidades novas. Remova-o
-  somente quando os harnesses via PTY/protocolo cobrirem o fluxo; enquanto existir, preserve
-  `confineToRoot` e aprovação por ação, pois ainda protegem o caminho antigo.
-- **Execução agent-first:** siga a seção **Arquitetura agent-first** acima. Codex
-  e Claude Code usam sempre PTY + worktree + MCP e aprovação final.
-- **Execução agent-first não usa teto artificial de passos do CLI.** A sessão termina
-  quando o executor conclui, quando o usuário a encerra para revisar o diff ou quando
-  há bloqueio real; Stop revoga MCP e torna o patch inelegível para entrega.
-- **As 5 ferramentas do loop nativo legado** são `listar_arquivos`, `ler_arquivo`, `buscar_no_codigo` (leitura,
-  rodam direto), `escrever_arquivo`, `executar_comando` (`needsApproval` → passam por
-  card). A aprovação é um **ida-e-volta de IPC**: o loop manda `ai:code-agent:approve-request`
-  e para numa promise em `pendingApprovals`; o renderer mostra o card e responde por
-  `ai:code-agent:approve-response`. `stopCodeAgent()` aborta o loop **e** nega toda
-  aprovação parada; quando a run usa um harness externo, também encerra seu processo filho. `executar_comando` usa
-  `exec` async (não `execSync`, que travaria o event loop do main), com timeout e
-  saída limitada.
-- **Validação segue a stack, não uma receita fixa.** O handler só exige
-  `npm run typecheck` quando existe `package.json` na raiz ativa; HTML estático
-  não tenta npm. Um comando idêntico que falhou é bloqueado na segunda chamada.
-  Depois de uma escrita, leituras grandes e o payload integral de reescrita são
-  reduzidos a recibos no histórico — mantê-los faria o mesmo HTML ser cobrado em
-  toda rodada seguinte.
-- 🛡️ **Sandbox obrigatório (`main/ai-jail.ts`)**: a aprovação cobre a _intenção_, o
-  ai-jail cobre o _alcance_ — confina os comandos à pasta do projeto (bubblewrap no
-  Linux, sandbox-exec no macOS). `sandboxEnabled` ausente = **ligado**; só `false`
-  explícito roda sem confinar. O handler `ai:code-agent:run` **recusa iniciar** quando
-  o sandbox é exigido mas o ai-jail não está disponível (`getJailStatus`); o usuário
-  instala (onboarding) ou desmarca o Sandbox. Ativo, o runner embrulha cada comando com
-  `wrapCommand` → `ai-jail --rw-map <dir> -- /bin/sh -c '<cmd>'` (⚠️ **não existe
-  `--workdir`** — o confinamento é por mounts). ⚠️ **Windows roda o sandbox _dentro do
-  WSL2_** (não há build nativo): a detecção procura o ai-jail dentro do WSL (`wsl -e
-bash -lc 'command -v ai-jail…'`, `viaWsl:true`) e os comandos vão por `runSandboxedWsl`
-  → `wsl -e <ai-jail> --rw-map <wsl-path> -- bash -c 'cd … && <cmd>'` (**argv**, sem
-  aspas atravessando cmd.exe→wsl→bash; `winToWslPath` traduz `C:\proj`→`/mnt/c/proj`) —
-  ou seja, o comando roda no Linux do WSL. Onboarding em 2 passos (`wsl --install` →
-  instalar ai-jail dentro do WSL, ambos oferecidos pra rodar à mão). Só binários
-  `linux-x86_64` e `macos-aarch64` existem upstream; instala em `~/.local/bin` com
-  **sha256 verificado**. A detecção só roda com o sandbox **ligado**. Lógica pura testada
-  em `ai-jail.test.ts`.
-  ⚠️ **ai-jail + bwrap no PATH não prova que o sandbox roda** (Ubuntu 23.10+ restringe os
-  user namespaces que o bwrap precisa): no Linux, achados os dois, `detectAiJail` faz um
-  **smoke test** (`sandboxSmokeTest`: `ai-jail --rw-map <tmp> -- sh -c 'true'`) e vira
-  `available:false` se não iniciar — o gate recusa em vez de rodar sem confinar. Falha de
-  namespace (`looksLikeUserNsBlock`) dá o `reason` com o fix `sudo sysctl -w
-kernel.apparmor_restrict_unprivileged_userns=0` (mostrado, nunca rodado); `bubblewrap`
-  fica `true` (está instalado, só não cria o namespace). O erro do gate mostra `jail.reason`.
-- **Config separada**: `AIConfig.codeAgent {baseUrl,apiKey,model}` — campo vazio cai
-  pro provedor do chat (`resolveCodeAgentConfig`). O painel mostra o **modelo real**
-  (banner `modelo: X @ Y`, `status.model`, header). Os
-  passos aparecem no log como `[tool] …` / `[resultado] …` e em eventos
-  `ai:code-agent:tool`.
-- ⚠️ **O agente não commita nada** — o painel de Mudanças existe pra o _usuário_
-  revisar e commitar. `captureBase` roda **antes do loop** e o diff vai da base à
-  worktree, então nada se perde deixando a árvore suja.
+  arquivo, só ids no índice). ⚠️ **Nunca recalcule o diff de uma run arquivada**:
+  mediria a árvore de hoje e apresentaria as edições posteriores do usuário como
+  trabalho do agente. Por isso `CodeDiff` recebe `onRefresh` opcional. Runs
+  expiram em 24h; `loadRunIndex` poda a cada leitura.
 - **Agentes de código concorrentes no mesmo projeto são contados por run**, não
-  por um booleano de diretório (`CodeRunCoordinator`). Na arquitetura agent-first,
-  todas as runs usam worktrees exclusivos; a exceção da primeira run na árvore
-  original pertence somente ao executor nativo legado e deve desaparecer. A
-  limpeza nunca remove worktrees de runs vivas. Enquanto o legado coexistir,
-  entregas aguardam sua run direta; em todos os casos são serializadas por projeto
-  com patches temporários únicos. Remover uma run não libera as demais.
-  No Windows, comandos Git usam sempre `git -C <dir>` — `cd E:\...` sem `/d`
-  falha quando o app está em `C:`. Caminhos de worktree são reservados antes do
-  `git worktree add` assíncrono, ou o terceiro disparo pode apagar o segundo como órfão.
-  Uma raiz sem Git é inicializada automaticamente, sem commit; `git init` sem commits também é suportado: `resolveWorktreeBase` usa um
-  `GIT_INDEX_FILE` temporário para criar um commit-objeto sem branch, sem tocar no
-  índice/HEAD do usuário e sem exigir identidade Git. Nunca peça commit inicial só
-  para habilitar paralelismo.
-- **O log é renderizado como terminal** (`AgentTerminal.tsx` + `utils/ansi.ts`):
-  uma sessão interativa usa xterm conectado ao PTY, portanto preserva cursor, ANSI e
-  teclado completos; o caminho batch/arquivado usa `parseAnsi`, que colore o SGR,
-  **remove** cursor/OSC e **aplica** `\r`/erase-in-line por linha (não faz pré-passe no
-  texto cru). Puro e testado (`utils/ansi.test.ts`).
-- **O painel lidera pelo diff, não pelo log**: "Mudanças" fica visível _durante_ a
-  execução (poll de 2s; derivado em main de uma base anterior ao run) e o log cru vai
-  pra trás de "Log completo". Diff vazio com agente rodando diz "ainda não", não "não
-  alterou nada" — fatos opostos.
-- **`run_code_agent` monta um briefing enxuto** — `arquivos` (caminhos
-  relativos) → seção "arquivos indicados" do system prompt (`buildSystemPrompt`) com
-  descoberta desativada (`codeToolsFor`), e `decisoes` (escolhas já acertadas, ex.
-  "manter fallback X") → seção "DECISÕES JÁ TOMADAS" como restrições. Main confina cada
-  caminho à raiz (`confineToRoot`) e descarta os inválidos; o run abre com um banner do
-  modelo, dos arquivos indicados e das decisões, e fecha com `[sagyou] duração: N.Ns`.
-  O objetivo é o agente editar direto, sem grep exploratório.
-- **O system prompt do agente traz um briefing de memória E de conversas**: além das
-  memórias do projeto (`formatMemoriesForPrompt`), o run handler inclui até 6k chars
-  da **conversa atual** (`briefCurrentConversation`: primeiro pedido + cauda recente,
-  sem status) e busca outras conversas relacionadas com `briefConversationsForTask`.
-  Isso é obrigatório também com arquivos pinados: uma resposta curta como “sim” não
-  pode perder o assunto, o arquivo exato ou as restrições originais. O histórico é
-  capped para não voltar a cobrar o chat inteiro em toda rodada.
-- 🛡️ **Diagnóstico de sandbox**: o `CommandRunner` do run passa a
-  saída (stdout+stderr) de todo comando que falha por `detectAgentHint` — é o único
-  ponto com a saída completa (o painel só recebe o resumo de uma linha, sem o marcador
-  `bwrap:`). Casando `bwrap:` / `needs access to create user namespaces`, seta
-  `codeAgentHint` **uma vez** e **empurra `ai:code-agent:hint`** pro card aparecer no
-  meio do run (não só no fim). O smoke test do ai-jail pega o caso comum antes de
-  começar; isso cobre o que escapa (detecção em cache, ou o comando do próprio agente
-  chamando bwrap/containers com o sandbox off). Checado **antes** de
-  `looksLikeSandboxBlock` (que também casa `bwrap:`), pra não rotular uma falha de
-  namespace — sandbox que não _iniciou_ — como tentativa de sair do projeto.
-- **Arquivos fixados são citados em caminho relativo** (`relative(dir, f)`):
-  `files` chega absoluto do `confineToRoot`, então o prompt dizia "caminhos
-  relativos à raiz" e entregava um absoluto — além de vazar o home da máquina.
+  por um booleano de diretório (`CodeRunCoordinator`). A limpeza nunca remove
+  worktrees de runs vivas; caminhos de worktree são reservados antes do
+  `git worktree add` assíncrono. Entregas são serializadas por projeto com
+  patches temporários únicos. No Windows, comandos Git usam sempre
+  `git -C <dir>` — `cd E:\...` sem `/d` falha quando o app está em `C:`. Uma raiz
+  sem Git é inicializada sem commit; `git init` sem commits também é suportado
+  (`resolveWorktreeBase` usa um `GIT_INDEX_FILE` temporário). Nunca peça commit
+  inicial só para habilitar paralelismo.
+- **O terminal é xterm conectado ao PTY** (`AgentTerminal.tsx`): preserva cursor,
+  ANSI e teclado completos; o caminho arquivado usa `utils/ansi.ts`
+  (`parseAnsi`, puro e testado).
+- ⚠️ **O agente não commita nada** — o painel de Mudanças existe pra o _usuário_
+  revisar e commitar.
 - **Handlers em `main/handlers/` recebem dependências via injeção.**
   `registerWindowHandlers` recebe `() => mainWindow` (getter, não o valor)
   porque é chamado antes de `createWindow()` — capturar `mainWindow` na
-  chamada pegaria `null`. Handlers novos devem seguir o mesmo padrão: receber
-  getters ou valores que não dependam de estado ainda não inicializado.
-- **O autosave do `AiRunHost` é um `useEffect` único.** Dois efeitos separados
-  (conversa ativa + parked) disputavam o `ai-conversations.json` com
-  load-modify-save intercalados — o último sobrescrevia o primeiro.
-- 🔴 **`saveConversations` escreve em `.tmp` e renomeia.** `writeFileSync` direto
-  corrompia o JSON se o processo crashasse no meio da escrita, deixando o
-  arquivo truncado. O rename é atômico: ou o arquivo original sobrevive, ou o
-  novo está completo.
-- **`loadRunIndex` faz poda lazy de runs expiradas.** Execuções de agente têm
-  TTL de 24h (`agent-runs.ts`), mas a poda só rodava quando um novo agente
-  terminava. Agora `loadRunIndex()` chama `pruneRuns` em toda leitura — runs
-  antigas somem mesmo sem novos agentes.
-- **`pruneConversations` limpa o histórico na inicialização.** Conversas inativas
-  há mais de 14 dias são removidas; se sobrarem mais de 50 conversas sem referência
-  de memória, as mais antigas vão junto. Conversas citadas por qualquer memória
-  são preservadas. As imagens (`chat-images/`) das conversas removidas também são apagadas
-  do disco, desde que nenhuma conversa mantida ainda as referencie. Roda uma vez
-  em `app.whenReady()`, antes de `createWindow()`.
+  chamada pegaria `null`. Handlers novos devem seguir o mesmo padrão.
 
 ## Fluxo de trabalho
 

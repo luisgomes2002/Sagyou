@@ -16,7 +16,7 @@ item abaixo estiver pendente ou falhar.
 | Instalação limpa do artefato                                      | pendente manual | Em VM/usuário sem dados: instalar o artefato recém-gerado, abrir, confirmar que não usa dados/configuração prévia e desinstalar.                        |
 | Codex: login, modelo/effort, MCP, reconexão, Stop e entrega       | pendente manual | Executar o roteiro em `docs/agent-terminal-manual-test.md`; registrar versão do CLI e resultado de cada passo.                                          |
 | Claude Code: login, modelo/effort, MCP, reconexão, Stop e entrega | pendente manual | Executar o mesmo roteiro; registrar versão do CLI e resultado de cada passo.                                                                            |
-| Backup/restore                                                    | pendente manual | Em perfil de teste, exportar backup v7 com conversa/memória, importar, conferir conteúdo e restaurar o snapshot pré-importação.                         |
+| Backup/restore                                                    | pendente manual | Em perfil de teste, exportar backup v7 com memória, importar (um backup antigo com conversas as ignora), conferir conteúdo e restaurar o snapshot pré-importação.                         |
 
 ## Condição de liberação
 

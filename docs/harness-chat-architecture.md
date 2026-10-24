@@ -7,21 +7,23 @@ de diff.
 
 ## Decisão
 
-O Sagyou terá uma única thread de agente de código por vez na interface principal.
-Essa thread é sempre executada por um harness local escolhido pelo usuário:
-**Codex**, **Claude Code** ou **OpenCode**. O aplicativo coordena escopo, segurança,
-persistência da sessão e entrega do patch; não chama um modelo por API nem mantém
-um loop de ferramentas próprio para responder à mesma conversa.
+O Sagyou tem uma única thread de agente de código por vez na interface principal (o
+Fleet, "Sessões de código"). Essa thread é sempre executada por um harness local
+escolhido pelo usuário: **Codex**, **Claude Code** ou **OpenCode**. O aplicativo cuida
+de escopo, segurança, ciclo de vida da sessão e entrega do patch; não chama um modelo por
+API, não mantém um loop de ferramentas próprio, não coordena a sessão por outro modelo e
+não guarda histórico de conversa: a sessão começa **direto no terminal**, sem formulário
+e sem briefing colado, e cada CLI guarda o próprio histórico.
 
-Uma conversa genérica existente é um artefato de migração somente-leitura. Ela não
-ganha entrada, streaming, configuração de provedor ou novas runs. Não há fallback
-silencioso de um harness para outro e não existe modo "chat por assinatura/API" em
-paralelo.
+O chat genérico e o histórico de conversas foram removidos (spec
+`docs/specs/2026-10-24-remover-historico-chat.md`; ver `docs/data-migrations.md`). Não há
+fallback silencioso de um harness para outro e não existe modo "chat por assinatura/API" em
+paralelo. Contexto do Sagyou chega ao harness só pelo MCP, sob demanda dele.
 
 ## Limites de responsabilidade
 
 ```
-Thread única (renderer)
+Fleet (renderer)
   -> IPC restrito
 Main: sessão + worktree + MCP + PTY/protocolo + arquivo de execução
   -> adaptador do harness selecionado
@@ -93,7 +95,7 @@ interface HarnessAdapter {
 `start` recebe uma worktree já criada e um MCP já emitido. `finalize` não entrega
 o patch: ele encerra o harness e inicia a validação de escopo, o diff congelado e
 a revisão humana. A sessão arquivada conserva eventos, status e capacidades
-observadas; não consulta o CLI novamente para reconstruir seu estado.
+observadas, ligada a `sessionId` e `projectId` (nunca a uma conversa); não consulta o CLI novamente para reconstruir seu estado.
 
 ## Ciclo de vida invariável
 
@@ -102,7 +104,8 @@ observadas; não consulta o CLI novamente para reconstruir seu estado.
 2. O main cria uma worktree detached, emite MCP limitado à run e grava o snapshot
    de capacidades antes de iniciar o harness.
 3. A thread única exibe o transporte nativo disponível (PTY ou protocolo do
-   harness), perguntas e aprovações MCP. Navegar não cria outra sessão.
+   harness), perguntas e aprovações MCP. A sessão abre em branco: nenhum briefing é
+   colado, e o contexto vem do MCP. Navegar não cria outra sessão.
 4. Stop, crash, timeout, fechamento ou fim normal revogam MCP e encerram o
    processo/conexão. Nenhum destes caminhos escreve na árvore original.
 5. No fim normal, o main valida o conjunto completo de caminhos e congela log e
@@ -145,12 +148,14 @@ novo ao atualizar um adaptador, pois flags e protocolos evoluem independentement
 
 ## Migração
 
-1. Introduzir o adaptador e a thread única atrás do contrato, mantendo conversas
-   anteriores somente para leitura.
+1. Concluída: o adaptador e a thread única (Fleet) passaram a ser a única tela de IA.
 2. Migrar preferências antigas para `HarnessId` apenas quando o valor for válido;
-   valor desconhecido exige nova escolha explícita.
-3. Remover o launcher separado, a view Fleet como segunda conversa e toda chamada
-   `ai:chat*`/configuração de API depois que a thread única estiver coberta por
-   testes de migração e backup/restore.
+   valor desconhecido exige nova escolha explícita (`codeHarness: 'sagyou'` já é lido
+   como `codex`).
+3. Concluída: o chat por API, as conversas, as chaves e perfis de API, o gasto de
+   tokens e os canais `ai:chat*`, `ai:conversations:*`, `ai:images:*`, `ai:usage:*` e
+   `ai:run-metrics:*` foram removidos. Os dados antigos foram tratados pela migração
+   única descrita em `docs/data-migrations.md`; backups antigos continuam importáveis
+   e têm os campos de conversa ignorados.
 4. Testar cada adaptador com doubles determinísticos; CI não autentica nem inicia
    CLIs reais.

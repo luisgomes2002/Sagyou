@@ -53,101 +53,27 @@
 | **Relatórios**            | Visão geral de produtividade                                                                                                                                                                                                                                                                                         |
 | **Busca**                 | Busca global (Ctrl+K) por área, tipo e projeto, com trechos e resultados adicionais                                                                                                                                                                                                                                                                                           |
 | **Arquivos**              | Anexos por projeto, guardados localmente                                                                                                                                                                                                                                                                             |
-| **Assistente de IA**      | Chat com acesso aos seus dados via ferramentas — funciona com qualquer provedor compatível com a API da OpenAI (local ou hospedado). Suporte a imagens (arraste screenshots) e documentos (PDF, DOCX, XLSX, CSV, etc.) — o texto é extraído e enviado inline. Ações que alteram dados pedem aprovação antes de rodar |
-| **Agente de código**      | Aponte um projeto para um diretório e peça alterações no código — edita arquivos e roda comandos com aprovação por ação. Sandbox obrigatório (ai-jail) confina comandos ao diretório do projeto                                                                                                                      |
-| **Multi-agente**          | Vários chats de IA rodando em paralelo — o painel Agentes mostra o que cada um está fazendo, com gasto de tokens por agente                                                                                                                                                                                          |
-| **Skills**                | Comandos `/skill-name` no chat que injetam system prompts customizados — crie, edite e importe arquivos `.md`                                                                                                                                                                                                        |
-| **Memória**               | Assistente lembra decisões, tradeoffs e contexto entre conversas — você e o modelo gravam fatos que persistem. Painel dedicado para listar, fixar e restaurar memórias                                                                                                                                               |
+| **Agentes de código**     | Abra sessões do Codex, Claude Code ou OpenCode direto no terminal, dentro do Sagyou: cada uma roda em uma worktree isolada, e o patch só chega ao seu projeto depois da sua revisão e aprovação |
+| **Memória**               | Decisões, tradeoffs e contexto que os agentes consultam e gravam pelo MCP entre sessões. Painel dedicado para listar, fixar e restaurar memórias |
 | **Importação via IA**     | Cole JSON gerado por um LLM — o sidebar tem "Copiar tudo" para gerar um prompt pronto com schema e tags                                                                                                                                                                                                              |
 | **Exportação para Excel** | Exporte projetos, tarefas, hábitos, metas e dados financeiros em `.xlsx`                                                                                                                                                                                                                                             |
-| **Backup**                | Exportação e restauração de dados em JSON, incluindo anexos, imagens de chat/tarefas e memórias. O app também salva snapshots locais ao abrir e a cada hora em `userData/backups/`, mantendo os sete mais recentes. Abra a pasta pelo menu Backup                                                                 |
+| **Backup**                | Exportação e restauração de dados em JSON, incluindo anexos, imagens de tarefas e memórias. O app também salva snapshots locais ao abrir e a cada hora em `userData/backups/`, mantendo os sete mais recentes. Abra a pasta pelo menu Backup |
 
 ---
 
-## Assistente de IA
+## Agentes de código
 
-O cabeçalho do chat mostra a conexão e o modelo ativos. Use **Trocar IA** para escolher
-ChatGPT por assinatura ou um perfil de API e confirmar o modelo da conversa. A
-escolha permanece ao reabrir o histórico; respostas anteriores mostram a conexão
-e o modelo usados. Em **Configuração**, o ChatGPT e os Perfis de API têm cards
-próprios. Base URL, chave, modelo forte e preços ficam no editor do perfil ou em
-**Avançado**. As chaves salvas não reaparecem no formulário. Codex, Claude Code,
-sandbox e revisão de patch ficam em **Agentes → Agente de código**.
+A IA do Sagyou é o próprio CLI que você já usa. Em **Sessões de código** (barra lateral, seção IA), escolha o projeto e a pasta autorizada, ou uma sessão geral, e o harness: **Codex**, **Claude Code** ou **OpenCode** instalado localmente. A sessão abre direto no terminal, como rodar `claude` ou `codex` à mão: você digita o pedido ao CLI. Cada CLI usa a própria conta e guarda o próprio histórico; o Sagyou não chama modelo por API, não guarda chaves e não registra gasto de tokens.
 
-O assistente é **opcional** e vem desligado — nada é enviado a lugar nenhum até você configurar um provedor.
+O CLI lê e altera somente os arquivos de uma **worktree isolada**; vários agentes podem trabalhar ao mesmo tempo no mesmo repositório, e um repositório criado só com `git init` também funciona (o Sagyou cria uma base temporária sem fazer commit na sua branch). Dados do Sagyou — tarefas, projetos, finanças, memórias — chegam ao CLI exclusivamente pelo **MCP local**, com credencial efêmera limitada ao projeto, ao perfil financeiro e às permissões da execução. Escritas pelo MCP pedem aprovação própria; isso não aprova o patch.
 
-### Configuração
+Ao sair normalmente do CLI, o Sagyou valida todos os caminhos alterados, inclusive renames e symlinks, e arquiva o diff. A sessão interativa termina sem aplicar nada ao projeto original; o diff arquivado fica disponível para consulta no painel (execuções arquivadas expiram em 24 horas).
 
-Abra **Assistente IA → Configuração** para conectar o ChatGPT por assinatura ou criar um
-perfil de API. Há atalhos para **OpenAI / Codex** (chave da plataforma OpenAI) e
-**Claude** (chave da API Anthropic), além de servidor compatível. A assinatura e as
-chaves de API são opções distintas, com cobrança própria.
-Depois de informar URL e chave, use **Buscar modelos**: os campos de modelo padrão
-e modelo forte são dropdowns alimentados pelo catálogo disponível para aquela conta.
-Editar um perfil abre nome, Base URL, API key, modelo padrão e modelo forte opcional.
-O modelo forte aparece como escolha no fluxo **Trocar IA**; ele não substitui
-automaticamente o modelo que o cabeçalho mostra. Em **Avançado** ficam preços
-e timeout. Configurações antigas de API são importadas automaticamente como
-um perfil comum, sem um modo legado visível. A configuração fica em
-`ai-config.json` (veja [Dados](#dados)); uma chave salva não volta para o renderer.
+Para liberar uma pasta de código a um projeto, abra o projeto para edição e, em **Caminhos de código**, clique em **Adicionar pasta**. O projeto precisa estar salvo antes. A primeira pasta já fica marcada; dá para marcar mais de uma, e uma sessão roda em uma pasta só.
 
-Em **Agentes → Agente de código**, escolha **Codex** ou **Claude Code** instalado
-localmente. Cada CLI usa a própria conta, roda em uma worktree isolada e só entrega
-o patch ao projeto depois da sua revisão e aprovação final.
+### Remoção do chat por API
 
-### Uso
-
-Converse normalmente — o assistente tem ferramentas para ler seus dados (tarefas, hábitos, metas, finanças) e responde com base neles em vez de adivinhar.
-
-O assistente também tem **memória entre conversas**: ele grava decisões, tradeoffs e fatos que você fixar, e os recupera em conversas futuras. Use `save_memory` para registrar algo que não vale a pena reaprender depois. Memórias com dados sensíveis (chaves, senhas) são automaticamente sanitizadas antes de gravar.
-
-Ações que **alteram** dados (criar tarefas, concluir, iniciar cronômetro, criar/atribuir sprint) pedem sua aprovação antes de rodar. O botão no topo liga o **modo automático** para ações comuns; apagar tasks e registrar transações financeiras continuam pedindo aprovação. Você pode copiar mensagens, avaliar respostas como úteis ou ruins e editar a última pergunta para reenviá-la como correção. A correção mantém o histórico anterior e desliga o modo automático naquela conversa.
-
-O assistente também suporta **imagens**: arraste ou cole screenshots no chat e o modelo responde sobre elas. As imagens ficam salvas em `chat-images/` e são enviadas ao modelo a cada passo da execução.
-
-O assistente também lê **documentos**: arraste ou cole PDF, DOCX, XLSX, CSV, TXT, MD e outros formatos no chat. O texto é extraído na hora e enviado como dados do anexo, separado do seu pedido; instruções escritas no documento não são tratadas como pedidos seus. Quando há documento anexado, qualquer ação que altere dados pede aprovação mesmo no modo automático. Para documentos salvos nos anexos do projeto (via FilesView), use a ferramenta `ler_documento` — útil para referências de longo prazo como políticas, relatórios ou notas de reunião. Os arquivos ficam em `chat-files/` e são limpos quando a conversa é deletada. Uma conversa referenciada por uma memória não pode ser apagada, inclusive pela limpeza automática do histórico; remova a memória primeiro se quiser excluí-la.
-
-### Multi-agente
-
-Você pode abrir **vários chats em paralelo** — cada um roda como um agente independente. O sidebar ganha uma aba **Agentes** com um painel ao vivo que mostra, para cada agente ativo:
-
-- O projeto em que está trabalhando
-- O que está fazendo no momento (texto sendo gerado ou ferramenta em execução)
-- O passo atual e o total de passos
-- O gasto de tokens acumulado (entrada e saída)
-- Se está parado aguardando aprovação
-
-Ações disponíveis: **Abrir chat** (volta para a conversa) e **Parar** (aborta a execução). Um contador no sidebar mostra quantos agentes estão rodando.
-
-Agentes que trabalham no mesmo projeto usam **leases cooperativas**: uma tarefa já atribuída a um agente não pode ser pega por outro. Se você deletar uma conversa que está rodando, o agente é abortado automaticamente.
-
-Agentes de código também podem trabalhar simultaneamente no mesmo repositório. Cada execução concorrente usa um worktree isolado; a entrega das alterações ao diretório original é ordenada, e conflitos permanecem disponíveis para revisão em vez de apagar o trabalho de outra execução.
-
-Um repositório criado apenas com `git init` também funciona: o Sagyou cria internamente uma base temporária para os worktrees sem fazer commit na sua branch, alterar o stage ou exigir configuração de nome e e-mail.
-
-### Skills
-
-Skills são arquivos `.md` que você cria e usa como system prompts sob demanda. No chat, digite `/` para ver a lista e selecionar — o conteúdo do arquivo é injetado como instrução extra para o modelo naquela conversa.
-
-Gerencie skills pelo menu de configuração do assistente: criar, editar, importar e excluir. Skills ficam salvas em `skills/` no diretório de dados do app.
-
-### Acesso ao código (opcional)
-
-Abra o projeto para edição e, em **Caminhos de código**, clique em **Adicionar pasta**. A partir daí o assistente lê o código-fonte para responder perguntas sobre ele — listar arquivos, ler e buscar. O acesso é **somente leitura** e confinado ao diretório escolhido.
-
-O projeto precisa estar salvo antes (a seção fica desabilitada em projetos novos). A **primeira pasta adicionada já fica marcada automaticamente** — não há nada a fazer no caso simples.
-
-Dá para marcar **mais de uma pasta** (útil para front-end e back-end em repositórios separados, por exemplo): clique na linha da pasta para marcar/desmarcar. As marcadas ganham o selo **Ativo**, e o cabeçalho do Assistente IA mostra o que está em uso. As ferramentas de leitura cobrem todas as pastas marcadas de uma vez.
-
-> O **agente de código** é a exceção: ele roda em uma pasta só. Se você tiver várias marcadas, ele pede para você escolher qual antes de rodar.
-
-### Agente de código
-
-Para **alterar** código, use o agente de código na área **Agentes → Agente de código** e escolha Codex ou Claude Code. O Sagyou abre o terminal nativo do CLI em uma worktree detached; teclado, cores, colagem e redimensionamento seguem funcionando no painel.
-
-O CLI lê e altera somente os arquivos da worktree. Dados do Sagyou — tarefas, projeto, finanças, memórias e conversas — passam exclusivamente pelo MCP local, com credencial efêmera limitada ao projeto, perfil financeiro e permissões da execução. Escritas MCP pedem aprovação própria; isso não aprova o patch.
-
-Ao sair normalmente do CLI no terminal, o Sagyou valida todos os caminhos, inclusive renames e symlinks, e arquiva o diff. A sessão interativa termina sem ficar aguardando aprovação e sem aplicar alterações ao projeto original. O diff arquivado permanece disponível para consulta.
+Versões anteriores tinham um chat com provedores de API, histórico de conversas e controle de gasto. Isso foi removido. Na primeira abertura da versão nova, o Sagyou copia as conversas e os arquivos do chat para uma pasta `backups/pre-remocao-chat-<data>/` (dentro do diretório de dados do app) e depois apaga as conversas, as imagens e os documentos do chat, o registro de gastos, as métricas e as chaves de API. **As chaves de API não vão para nenhum backup e não podem ser recuperadas.** A pasta com as conversas pode ser lida à mão, mas não é importável pelo app. Detalhes em [`docs/data-migrations.md`](docs/data-migrations.md).
 
 ---
 
@@ -166,7 +92,7 @@ Ao sair normalmente do CLI no terminal, o Sagyou valida todos os caminhos, inclu
 - [pdfjs-dist](https://github.com/mozilla/pdf.js) — extração de texto de PDF
 - [mammoth.js](https://github.com/mwilliamson/mammoth.js) — extração de texto de DOCX/ODT
 - [Vitest](https://vitest.dev/) — testes
-- [OpenAI SDK](https://github.com/openai/openai-node) — cliente para provedores compatíveis
+- [node-pty](https://github.com/microsoft/node-pty) + [xterm.js](https://xtermjs.org/) — terminal dos agentes
 
 ---
 
@@ -174,7 +100,7 @@ Ao sair normalmente do CLI no terminal, o Sagyou valida todos os caminhos, inclu
 
 O código do processo principal fica em `src/main`: `index.ts` registra os fluxos,
 `handlers/` expõe o IPC, `store.ts` cuida do SQLite e `modules/` agrupa as
-implementações por área (agentes, IA, conversas, arquivos, busca, web e finanças).
+implementações por área (agentes, memória, arquivos, busca, web e finanças).
 O renderer fica em `src/renderer/src`, com componentes, estado e utilitários.
 
 ```bash
@@ -215,22 +141,17 @@ Tudo fica na sua máquina, no diretório de dados do app (`userData`):
 
 | Arquivo                 | Conteúdo                                                                                                                 |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `kanban.db`             | banco SQLite com projetos, tarefas, hábitos, metas, finanças (incluindo detalhes de transações) e memórias do assistente |
+| `kanban.db`             | banco SQLite com projetos, tarefas, hábitos, metas, finanças (incluindo detalhes de transações) e memórias                |
 | `files/`                | anexos enviados                                                                                                          |
-| `chat-images/`          | imagens enviadas no chat                                                                                                 |
-| `chat-files/`           | documentos enviados no chat (PDF, DOCX, etc.)                                                                            |
 | `task-images/`          | imagens anexadas a tarefas                                                                                               |
-| `ai-config.json`        | configuração do provedor de IA (inclui a chave de API)                                                                   |
+| `ai-config.json`        | configuração dos agentes (executor padrão, nome de exibição); não guarda chaves de API e não entra em backups              |
 | `password-security.json` | derivado com salt da senha opcional do app; não contém a senha e não entra em backups                                  |
-| `ai-conversations.json` | histórico do chat                                                                                                        |
-| `ai-usage-log.json`     | registro de gastos por chamada (hoje, 30 dias, total, por modelo)                                                        |
-| `ai-run-metrics.json`   | métricas de eficiência por execução do agente (modelo, passos, tokens, buscas)                                           |
-| `agent-runs/`           | arquivo de execuções do agente de código (log + diff congelados)                                                         |
-| `skills/`               | skills customizadas em `.md` — system prompts sob demanda via `/skill-name`                                              |
+| `backups/`              | snapshots locais automáticos, de pré-importação e a pasta única `pre-remocao-chat-*`                                      |
+| `agent-runs/`           | execuções arquivadas dos agentes (log + diff congelados), ligadas a projeto e sessão                                       |
 
-O assistente de IA é opcional e desligado até você configurar um provedor. Se você apontar para um provedor hospedado, os dados enviados no chat saem da máquina — use um modelo local se preferir manter tudo offline.
+O Sagyou não envia seus dados a lugar nenhum por conta própria. Os agentes de código são CLIs externos com a própria conta e a própria política de dados: o que o CLI enviar ao seu provedor depende dele, não do Sagyou.
 
-O `kanban.db` também guarda um índice local de busca FTS5. Ele é derivado dos registros e do histórico de conversas e pode ser reconstruído sem alterar os dados originais.
+O `kanban.db` também guarda um índice local de busca FTS5. Ele é derivado dos registros e das memórias e pode ser reconstruído sem alterar os dados originais.
 
 Para bloquear o app, abra o menu **Opções** na barra lateral e escolha **Segurança**. Você pode ativar, alterar ou desativar uma senha; quando ativa, ela é solicitada antes de os dados carregarem.
 
@@ -238,5 +159,4 @@ Para bloquear o app, abra o menu **Opções** na barra lateral e escolha **Segur
 
 ## Agradecimentos
 
-- [AI Jail](https://github.com/akitaonrails/ai-jail) por [Fabio Akita](https://github.com/akitaonrails) — sandbox multi-OS obrigatório que confina os comandos do agente de código ao diretório do projeto. No Windows roda via WSL2 (sem build nativo). O Sagyou embrulha cada comando com ai-jail; não há código linkado, portanto a licença do Sagyou não é afetada.
 - [AI Memory](https://github.com/akitaonrails/ai-memory) por [Fabio Akita](https://github.com/akitaonrails) — sistema de memória durável para agentes de IA com indexação e busca, que inspirou a arquitetura de memória do Sagyou.
