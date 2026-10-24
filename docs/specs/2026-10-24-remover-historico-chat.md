@@ -36,6 +36,7 @@ SQLite só como índice, consulta por MCP) fica para depois e **não** faz parte
 
 ## Decisões (de Luis)
 
+- Uma sessão começa direto no terminal, sem formulário: o usuário escolhe projeto/escopo e agente no Fleet e digita o pedido ao CLI. O Sagyou injeta sozinho um briefing fixo no início (projeto, memórias relevantes, canal MCP), sem o usuário escrever nada. (Esclarecimento de 2026-10-24, depois da aprovação.)
 - A tela de Chat some. O Fleet é a única porta de entrada, e funciona como `claude`/`codex` no terminal. Cada CLI cuida do próprio histórico.
 - A migração roda sozinha na primeira abertura, **sem perguntar**, depois de um snapshot automático.
 - Apagar todas as conversas, sem prazo nem exceção (inclui conversas citadas por memória).
