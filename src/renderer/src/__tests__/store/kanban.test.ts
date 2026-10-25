@@ -1792,3 +1792,68 @@ describe('task images: disk storage + cleanup', () => {
     ])
   })
 })
+
+// ── moveTaskToProject (MCP) ───────────────────────────────────────────────────
+
+describe('moveTaskToProject', () => {
+  beforeEach(resetStore)
+
+  function setup() {
+    const s = useKanbanStore.getState()
+    const source = s.createProject('Origem')
+    const target = s.createProject('Destino')
+    const projects = useKanbanStore.getState().projects
+    const src = projects.find((p) => p.id === source)!
+    const dst = projects.find((p) => p.id === target)!
+    const sprintId = s.createSprint(source, 'Sprint 1')
+    const taskId = s.createTask({
+      projectId: source,
+      columnId: src.columns[0].id,
+      title: 'Mover',
+      sprintId
+    })
+    s.createTask({ projectId: target, columnId: dst.columns[1].id, title: 'Já lá' })
+    return { source, target, src, dst, taskId }
+  }
+
+  it('moves into the target column, clears sprint and appends at the end', () => {
+    const { target, dst, taskId } = setup()
+    expect(useKanbanStore.getState().moveTaskToProject(taskId, target, dst.columns[1].id)).toBe(
+      true
+    )
+    const task = useKanbanStore.getState().tasks.find((t) => t.id === taskId)!
+    expect(task.projectId).toBe(target)
+    expect(task.columnId).toBe(dst.columns[1].id)
+    expect(task.sprintId).toBeUndefined()
+    const other = useKanbanStore.getState().tasks.find((t) => t.title === 'Já lá')!
+    expect(task.order).toBeGreaterThan(other.order)
+  })
+
+  it('always stops and credits a running timer, even into a non-done column', () => {
+    const { target, dst, taskId } = setup()
+    useKanbanStore.setState({ activeTimers: [{ taskId, startedAt: Date.now() - 90_000 }] })
+    useKanbanStore.getState().moveTaskToProject(taskId, target, dst.columns[0].id)
+    const s = useKanbanStore.getState()
+    expect(s.activeTimers.some((t) => t.taskId === taskId)).toBe(false)
+    expect(s.tasks.find((t) => t.id === taskId)!.timeSpent).toBeGreaterThanOrEqual(90)
+  })
+
+  it('completes when the target column is done and reopens when it is not', () => {
+    const { source, src, target, dst, taskId } = setup()
+    useKanbanStore.getState().moveTaskToProject(taskId, target, dst.columns[3].id)
+    expect(useKanbanStore.getState().tasks.find((t) => t.id === taskId)!.completedAt).toBeDefined()
+    useKanbanStore.getState().moveTaskToProject(taskId, source, src.columns[0].id)
+    expect(
+      useKanbanStore.getState().tasks.find((t) => t.id === taskId)!.completedAt
+    ).toBeUndefined()
+  })
+
+  it('refuses a column of another project and changes nothing', () => {
+    const { target, src, taskId } = setup()
+    const before = useKanbanStore.getState().tasks.find((t) => t.id === taskId)
+    expect(useKanbanStore.getState().moveTaskToProject(taskId, target, src.columns[1].id)).toBe(
+      false
+    )
+    expect(useKanbanStore.getState().tasks.find((t) => t.id === taskId)).toEqual(before)
+  })
+})

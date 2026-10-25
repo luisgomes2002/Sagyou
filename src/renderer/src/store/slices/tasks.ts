@@ -20,6 +20,8 @@ export interface TasksSlice {
   ) => void
   deleteTask: (id: string) => void
   moveTask: (taskId: string, newColumnId: string, newIndex: number) => void
+  /** Moves a task to another project's column (MCP). Refuses a column outside that project. */
+  moveTaskToProject: (taskId: string, projectId: string, columnId: string) => boolean
   createSprint: (projectId: string, name: string) => string
   createSprints: (projectId: string, names: string[]) => void
   updateSprint: (sprintId: string, name: string) => boolean
@@ -139,6 +141,38 @@ export const createTasksSlice: StateCreator<
       s.stopTimer(taskId)
     }
     get()._persist()
+  },
+
+  moveTaskToProject: (taskId, projectId, columnId) => {
+    const before = get()
+    const task = before.tasks.find((t) => t.id === taskId)
+    const column = before.projects
+      .find((p) => p.id === projectId)
+      ?.columns.find((c) => c.id === columnId)
+    if (!task || !column) return false
+    // The elapsed time belongs to the task's old context, so the timer is
+    // credited whatever the destination column is.
+    if (before.activeTimers.some((t) => t.taskId === taskId)) before.stopTimer(taskId)
+    set((s) => {
+      const current = s.tasks.find((t) => t.id === taskId)
+      if (!current) return s
+      const now = new Date().toISOString()
+      const order = s.tasks
+        .filter((t) => t.id !== taskId && t.projectId === projectId && t.columnId === columnId)
+        .reduce((max, t) => Math.max(max, t.order + 1), 0)
+      const moved: Task = {
+        ...current,
+        projectId,
+        columnId,
+        sprintId: undefined,
+        order,
+        updatedAt: now,
+        completedAt: isDoneColumn(column) ? (current.completedAt ?? now) : undefined
+      }
+      return { tasks: s.tasks.map((t) => (t.id === taskId ? moved : t)) }
+    })
+    get()._persist()
+    return true
   },
 
   createSprint: (projectId, name) => {
