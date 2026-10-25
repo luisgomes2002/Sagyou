@@ -1,20 +1,9 @@
 import { execFileSync } from 'node:child_process'
-import {
-  cpSync,
-  existsSync,
-  lstatSync,
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  readlinkSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync
-} from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, relative, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { copyPyInstallerBundle } from './markitdown-runtime-copy.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const sourceDir = join(root, 'resources', 'markitdown')
@@ -25,24 +14,7 @@ const binary = join(
   target,
   process.platform === 'win32' ? 'sagyou-markitdown.exe' : 'sagyou-markitdown'
 )
-const BUILD_REVISION = 4
-
-function rewritePyInstallerLinks(dir, sourceRoot) {
-  for (const name of readdirSync(dir)) {
-    const path = join(dir, name)
-    const stat = lstatSync(path)
-    if (stat.isDirectory()) {
-      rewritePyInstallerLinks(path, sourceRoot)
-    } else if (stat.isSymbolicLink()) {
-      const original = readlinkSync(path)
-      if (original.startsWith(sourceRoot)) {
-        const destination = join(target, relative(sourceRoot, original))
-        rmSync(path)
-        symlinkSync(relative(dirname(path), destination), path)
-      }
-    }
-  }
-}
+const BUILD_REVISION = 5
 
 function pythonCommand() {
   const candidates = process.platform === 'win32' ? ['python', 'py'] : ['python3', 'python']
@@ -122,10 +94,9 @@ try {
   )
   rmSync(target, { recursive: true, force: true })
   mkdirSync(target, { recursive: true })
-  // PyInstaller's native wheels contain absolute symlinks. Rewrite those links
-  // after copying, otherwise electron-builder follows them into this temp dir.
-  cpSync(join(dist, 'sagyou-markitdown'), target, { recursive: true, dereference: true })
-  rewritePyInstallerLinks(target, join(dist, 'sagyou-markitdown'))
+  // PyInstaller's bundle (Python.framework on macOS) contains symlinks; they
+  // must end up relative to the runtime, never pointing into this temp dir.
+  copyPyInstallerBundle(join(dist, 'sagyou-markitdown'), target)
   writeFileSync(
     join(target, 'manifest.json'),
     JSON.stringify({
