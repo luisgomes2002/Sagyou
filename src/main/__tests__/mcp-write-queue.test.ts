@@ -85,6 +85,131 @@ describe('McpWriteQueue', () => {
   })
 })
 
+describe('McpWriteQueue preparation and optional approval', () => {
+  it('skips the approval callback when approval is false', async () => {
+    const approve = vi.fn(async () => true)
+    const queue = new McpWriteQueue(approve)
+    await expect(
+      queue.enqueue(
+        { runId: 'run-1', name: 'update_task', args: {}, approval: false },
+        async () => 'done'
+      )
+    ).resolves.toEqual({ approved: true, value: 'done' })
+    expect(approve).not.toHaveBeenCalled()
+  })
+
+  it('still serializes a no-approval write behind a pending card', async () => {
+    const approval = deferred<boolean>()
+    const queue = new McpWriteQueue(() => approval.promise)
+    const secondWrite = vi.fn(async () => 'second')
+    const first = queue.enqueue({ runId: 'run-1', name: 'delete_task', args: {} }, async () => 'a')
+    const second = queue.enqueue(
+      { runId: 'run-1', name: 'update_task', args: {}, approval: false },
+      secondWrite
+    )
+    await Promise.resolve()
+    expect(secondWrite).not.toHaveBeenCalled()
+    approval.resolve(true)
+    await first
+    await expect(second).resolves.toEqual({ approved: true, value: 'second' })
+  })
+
+  it('runs prepare inside the queue after the previous write finished', async () => {
+    const queue = new McpWriteQueue(async () => true)
+    let state = 0
+    const first = queue.enqueue(
+      { runId: 'run-1', name: 'create_column', args: {}, approval: false },
+      async () => {
+        state = 1
+        return 'created'
+      },
+      async () => ({ resumo: 'criar' })
+    )
+    const seen: number[] = []
+    const second = queue.enqueue(
+      { runId: 'run-1', name: 'move_task', args: {}, approval: false },
+      async () => 'moved',
+      async () => {
+        seen.push(state)
+        return { resumo: 'mover' }
+      }
+    )
+    await first
+    await second
+    expect(seen).toEqual([1])
+  })
+
+  it('a refusing prepare never reaches approval or execute', async () => {
+    const approve = vi.fn(async () => true)
+    const queue = new McpWriteQueue(approve)
+    const write = vi.fn(async () => ({ ok: true }))
+    await expect(
+      queue.enqueue({ runId: 'run-1', name: 'delete_task', args: {} }, write, async () => ({
+        refuse: { ok: false }
+      }))
+    ).resolves.toEqual({ approved: false, refused: true, value: { ok: false } })
+    expect(approve).not.toHaveBeenCalled()
+    expect(write).not.toHaveBeenCalled()
+  })
+
+  it('passes the prepare resumo to the approval callback', async () => {
+    const approve = vi.fn(async () => true)
+    const queue = new McpWriteQueue(approve)
+    await queue.enqueue(
+      { runId: 'run-1', name: 'delete_task', args: { id: 't' } },
+      async () => 'ok',
+      async () => ({ resumo: 'Excluir tarefa "X"' })
+    )
+    expect(approve).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'delete_task', resumo: 'Excluir tarefa "X"' })
+    )
+  })
+
+  it('a run that ended before execute does not execute, even without approval', async () => {
+    let live = true
+    const queue = new McpWriteQueue(
+      async () => true,
+      () => live
+    )
+    const write = vi.fn(async () => 'x')
+    const outcome = queue.enqueue(
+      { runId: 'run-1', name: 'update_task', args: {}, approval: false },
+      write,
+      async () => {
+        live = false
+        return { resumo: 'editar' }
+      }
+    )
+    await expect(outcome).resolves.toEqual({ approved: false, ended: true })
+    expect(write).not.toHaveBeenCalled()
+
+    const before = queue.enqueue(
+      { runId: 'run-1', name: 'update_task', args: {}, approval: false },
+      write
+    )
+    await expect(before).resolves.toEqual({ approved: false, ended: true })
+    expect(write).not.toHaveBeenCalled()
+  })
+
+  it('rejectRun cancels queued no-approval writes', async () => {
+    const approval = deferred<boolean>()
+    const queue = new McpWriteQueue(() => approval.promise)
+    const write = vi.fn(async () => 'x')
+    const first = queue.enqueue({ runId: 'run-1', name: 'delete_task', args: {} }, write)
+    const second = queue.enqueue(
+      { runId: 'run-1', name: 'update_task', args: {}, approval: false },
+      write
+    )
+    await Promise.resolve()
+    queue.rejectRun('run-1')
+    await expect(first).rejects.toThrow('encerrada')
+    await expect(second).rejects.toThrow('encerrada')
+    approval.resolve(true)
+    await Promise.resolve()
+    expect(write).not.toHaveBeenCalled()
+  })
+})
+
 describe('RendererMcpActionBridge', () => {
   it('rejects when the renderer is unmounted or fails to flush', async () => {
     const unavailable = new RendererMcpActionBridge<string, string>(() => {
