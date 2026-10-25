@@ -1,14 +1,14 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 import type { Goal, GoalEntry } from '../types'
+import { todayLocalISO as todayISO } from '../utils/dates'
+import { goalCurrent, goalKind, goalProgressPercent, isGoalComplete } from '../utils/goals'
 
-const fmtNum = (n: number) => parseFloat(n.toFixed(4)).toString()
+const fmtNum = (n: number): string => parseFloat(n.toFixed(4)).toString()
 
-const fmtDate = (iso: string) => {
+const fmtDate = (iso: string): string => {
   const [y, m, d] = iso.split('-')
   return `${d}/${m}/${y?.slice(-2)}`
 }
-
-const todayISO = () => new Date().toISOString().slice(0, 10)
 
 interface Props {
   goal: Goal
@@ -19,7 +19,14 @@ interface Props {
   onDeleteEntry: (entryId: string) => void
 }
 
-export function GoalCard({ goal, projectName, onEdit, onDelete, onAddEntry, onDeleteEntry }: Props) {
+export function GoalCard({
+  goal,
+  projectName,
+  onEdit,
+  onDelete,
+  onAddEntry,
+  onDeleteEntry
+}: Props): React.JSX.Element {
   const [menuOpen, setMenuOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
   const [entryDate, setEntryDate] = useState(todayISO)
@@ -27,15 +34,14 @@ export function GoalCard({ goal, projectName, onEdit, onDelete, onAddEntry, onDe
   const [entryValue, setEntryValue] = useState('1')
   const [showAll, setShowAll] = useState(false)
 
-  const current = goal.entries.reduce((sum, e) => sum + e.value, 0)
-  const percent = goal.target > 0 ? Math.min((current / goal.target) * 100, 100) : 0
-  const isComplete = current >= goal.target
+  const kind = goalKind(goal)
+  const isCompletion = kind === 'completion'
+  const current = goalCurrent(goal)
+  const percent = goalProgressPercent(goal)
+  const isComplete = isGoalComplete(goal)
   const remaining = Math.max(goal.target - current, 0)
   const unitSuffix = goal.unit ? ` ${goal.unit}` : ''
-  const ringColor = isComplete ? '#22c55e' : goal.color
-
-  const R = 32
-  const circ = 2 * Math.PI * R
+  const accentColor = isComplete ? '#46d478' : goal.color
 
   const sortedEntries: GoalEntry[] = [...goal.entries].sort((a, b) => {
     if (b.date !== a.date) return b.date.localeCompare(a.date)
@@ -45,8 +51,8 @@ export function GoalCard({ goal, projectName, onEdit, onDelete, onAddEntry, onDe
   const visibleEntries = showAll ? sortedEntries : sortedEntries.slice(0, COLLAPSED_LIMIT)
   const hiddenCount = sortedEntries.length - visibleEntries.length
 
-  const handleAddEntry = () => {
-    const val = parseFloat(entryValue)
+  const handleAddEntry = (): void => {
+    const val = isCompletion ? 1 : parseFloat(entryValue)
     if (isNaN(val) || val <= 0) return
     onAddEntry({ date: entryDate, label: entryLabel.trim() || undefined, value: val })
     setEntryLabel('')
@@ -54,7 +60,7 @@ export function GoalCard({ goal, projectName, onEdit, onDelete, onAddEntry, onDe
     setAddOpen(false)
   }
 
-  const openAdd = () => {
+  const openAdd = (): void => {
     setEntryDate(todayISO())
     setEntryLabel('')
     setEntryValue('1')
@@ -62,173 +68,266 @@ export function GoalCard({ goal, projectName, onEdit, onDelete, onAddEntry, onDe
   }
 
   const unitLabel = goal.unit ? goal.unit.charAt(0).toUpperCase() + goal.unit.slice(1) : 'Qtd'
+  const dateInputId = `goal-entry-date-${goal.id}`
+  const valueInputId = `goal-entry-value-${goal.id}`
+  const labelInputId = `goal-entry-label-${goal.id}`
 
   return (
-    <div className="group rounded-xl border border-[#2a2d42] bg-[#1e2235] overflow-hidden hover:border-[#3a3e58] transition-all duration-200">
-      <div className="h-[3px]" style={{ backgroundColor: ringColor, opacity: isComplete ? 1 : 0.55 }} />
-
-      <div className="p-4">
-        <div className="flex items-start gap-4 mb-4">
-          <div className="relative shrink-0 w-20 h-20">
-            <svg width="80" height="80" viewBox="0 0 80 80">
-              <circle cx="40" cy="40" r={R} fill="none" stroke="#2a2d42" strokeWidth="5.5" />
-              <circle
-                cx="40" cy="40" r={R}
-                fill="none"
-                stroke={ringColor}
-                strokeWidth="5.5"
-                strokeLinecap="round"
-                strokeDasharray={`${(percent / 100) * circ} ${circ}`}
-                transform="rotate(-90 40 40)"
-                style={{ transition: 'stroke-dasharray 0.5s ease' }}
-              />
-            </svg>
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 pointer-events-none">
-              <span className="text-base font-bold tabular-nums leading-none" style={{ color: ringColor }}>
-                {Math.round(percent)}%
+    <div className="group rounded-xl border border-[#2b2b31] bg-[#16161a] overflow-hidden hover:border-[#3b3b42] transition-colors duration-200">
+      <div className="p-5">
+        <div className="mb-4">
+          <div className="flex items-start justify-between gap-2 mb-2">
+            <div className="min-w-0">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-[#999999]">
+                Meta
               </span>
-              {isComplete && (
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={ringColor} strokeWidth="3.5">
-                  <polyline points="20 6 9 17 4 12" />
+              <h3 className="text-sm font-semibold text-[#d4d4d4] leading-snug">{goal.title}</h3>
+              {projectName && (
+                <p className="text-[10px] text-[#999999] mt-0.5 truncate">{projectName}</p>
+              )}
+            </div>
+            <div className="relative shrink-0">
+              <button
+                onClick={() => setMenuOpen((v) => !v)}
+                className="p-1 rounded text-[#555555] hover:text-[#999999] hover:bg-[#2a2a30] transition-colors opacity-0 group-hover:opacity-100"
+              >
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <circle cx="12" cy="5" r="1" fill="currentColor" />
+                  <circle cx="12" cy="12" r="1" fill="currentColor" />
+                  <circle cx="12" cy="19" r="1" fill="currentColor" />
                 </svg>
+              </button>
+              {menuOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+                  <div className="absolute right-0 top-7 z-20 w-28 rounded-lg border border-[#2b2b31] bg-[#16161a] shadow-xl py-1">
+                    <button
+                      className="w-full text-left px-3 py-2 text-xs text-[#d4d4d4] hover:bg-[#222227] transition-colors"
+                      onClick={() => {
+                        setMenuOpen(false)
+                        onEdit()
+                      }}
+                    >
+                      Editar
+                    </button>
+                    <button
+                      className="w-full text-left px-3 py-2 text-xs text-[#e04040] hover:bg-[#222227] transition-colors"
+                      onClick={() => {
+                        setMenuOpen(false)
+                        onDelete()
+                      }}
+                    >
+                      Deletar
+                    </button>
+                  </div>
+                </>
               )}
             </div>
           </div>
 
-          <div className="flex-1 min-w-0 pt-0.5">
-            <div className="flex items-start justify-between gap-2 mb-2">
-              <div className="min-w-0">
-                <h3 className="text-sm font-semibold text-[#e2e8f0] leading-snug">{goal.title}</h3>
-                {projectName && <p className="text-[10px] text-[#8892a4] mt-0.5 truncate">{projectName}</p>}
-              </div>
-              <div className="relative shrink-0">
-                <button
-                  onClick={() => setMenuOpen((v) => !v)}
-                  className="p-1 rounded text-[#3a3e58] hover:text-[#8892a4] hover:bg-[#2a2d42] transition-colors opacity-0 group-hover:opacity-100"
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <circle cx="12" cy="5" r="1" fill="currentColor" />
-                    <circle cx="12" cy="12" r="1" fill="currentColor" />
-                    <circle cx="12" cy="19" r="1" fill="currentColor" />
+          {isCompletion ? (
+            <div className="mt-4 flex items-center gap-3 rounded-lg border border-[#2b2b31] bg-[#101014] p-3">
+              <span
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border"
+                style={{ borderColor: accentColor, color: accentColor }}
+              >
+                {isComplete ? (
+                  <svg
+                    width="15"
+                    height="15"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="3"
+                  >
+                    <polyline points="20 6 9 17 4 12" />
                   </svg>
-                </button>
-                {menuOpen && (
-                  <>
-                    <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-                    <div className="absolute right-0 top-7 z-20 w-28 rounded-lg border border-[#2a2d42] bg-[#13151f] shadow-xl py-1">
-                      <button
-                        className="w-full text-left px-3 py-2 text-xs text-[#e2e8f0] hover:bg-[#1e2235] transition-colors"
-                        onClick={() => { setMenuOpen(false); onEdit() }}
-                      >
-                        Editar
-                      </button>
-                      <button
-                        className="w-full text-left px-3 py-2 text-xs text-red-400 hover:bg-red-400/10 transition-colors"
-                        onClick={() => { setMenuOpen(false); onDelete() }}
-                      >
-                        Deletar
-                      </button>
-                    </div>
-                  </>
+                ) : (
+                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: accentColor }} />
                 )}
+              </span>
+              <div>
+                <p className="text-sm font-semibold" style={{ color: accentColor }}>
+                  {isComplete ? 'Concluída' : 'Em andamento'}
+                </p>
+                <p className="mt-0.5 text-[11px] text-[#999999]">
+                  {isComplete
+                    ? 'Este objetivo foi concluído.'
+                    : 'Objetivo único, sem contagem de quantidade.'}
+                </p>
               </div>
             </div>
+          ) : (
+            <>
+              <div className="flex items-baseline gap-1.5 mt-4 mb-2">
+                <span
+                  className="text-3xl font-bold tabular-nums leading-none"
+                  style={{ color: accentColor }}
+                >
+                  {fmtNum(current)}
+                </span>
+                {goal.unit && <span className="text-sm text-[#999999]">{goal.unit}</span>}
+                <span className="text-xs text-[#555555] mx-0.5">/</span>
+                <span className="text-sm font-medium text-[#999999] tabular-nums">
+                  {fmtNum(goal.target)}
+                  {unitSuffix}
+                </span>
+              </div>
+              <div
+                className="h-2 rounded-full bg-[#2a2a30] overflow-hidden mb-2"
+                role="progressbar"
+                aria-label={`Progresso de ${goal.title}`}
+                aria-valuenow={Math.round(percent)}
+                aria-valuemin={0}
+                aria-valuemax={100}
+              >
+                <div
+                  className="h-full rounded-full transition-[width] duration-500"
+                  style={{ width: `${percent}%`, backgroundColor: accentColor }}
+                />
+              </div>
 
-            <div className="flex items-baseline gap-1.5 mb-1.5">
-              <span className="text-2xl font-bold tabular-nums leading-none" style={{ color: ringColor }}>
-                {fmtNum(current)}
-              </span>
-              {goal.unit && <span className="text-sm text-[#8892a4]">{goal.unit}</span>}
-              <span className="text-xs text-[#3a3e58] mx-0.5">/</span>
-              <span className="text-sm font-medium text-[#8892a4] tabular-nums">{fmtNum(goal.target)}{unitSuffix}</span>
-            </div>
-
-            {isComplete ? (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#22c55e]/15 text-[#22c55e] text-[10px] font-semibold">
-                <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-                Concluída
-              </span>
-            ) : (
-              <p className="text-[10px] text-[#8892a4]">
-                Faltam <span className="text-[#e2e8f0] font-semibold tabular-nums">{fmtNum(remaining)}{unitSuffix}</span>
-              </p>
-            )}
-          </div>
+              {isComplete ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#2a2a30] text-[#20b858] text-[10px] font-semibold">
+                  <svg
+                    width="8"
+                    height="8"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="3.5"
+                  >
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  Concluída
+                </span>
+              ) : (
+                <p className="flex items-center justify-between text-[11px] text-[#999999]">
+                  <span>
+                    Faltam{' '}
+                    <span className="text-[#d4d4d4] font-semibold tabular-nums">
+                      {fmtNum(remaining)}
+                      {unitSuffix}
+                    </span>
+                  </span>
+                  <span className="tabular-nums font-semibold" style={{ color: accentColor }}>
+                    {Math.round(percent)}%
+                  </span>
+                </p>
+              )}
+            </>
+          )}
         </div>
 
-        <div className="border-t border-[#2a2d42] pt-3">
+        <div className="border-t border-[#2b2b31] pt-3">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#8892a4]">Histórico</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#999999]">
+              {isCompletion ? 'Conclusão' : 'Histórico'}
+            </span>
             {addOpen ? (
-              <button onClick={() => setAddOpen(false)} className="text-[10px] text-[#8892a4] hover:text-[#e2e8f0] transition-colors">
+              <button
+                onClick={() => setAddOpen(false)}
+                className="text-[10px] text-[#999999] hover:text-[#d4d4d4] transition-colors"
+              >
                 Cancelar
               </button>
-            ) : (
+            ) : !isComplete ? (
               <button
                 onClick={openAdd}
-                className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-md transition-colors"
-                style={{ color: goal.color, backgroundColor: `${goal.color}15` }}
+                className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-md bg-[#2a2a30] hover:bg-[#303036] transition-colors"
+                style={{ color: goal.color }}
               >
-                <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                <svg
+                  width="8"
+                  height="8"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                >
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
                 </svg>
-                Registrar
+                {isCompletion ? 'Concluir' : 'Registrar'}
               </button>
-            )}
+            ) : null}
           </div>
 
           {addOpen && (
-            <div className="mb-2 p-2 rounded-lg border border-[#2a2d42] bg-[#0d0f18] space-y-2">
+            <div className="mb-2 p-2 rounded-lg border border-[#2b2b31] bg-[#101014] space-y-2">
               <div className="flex gap-2">
                 <div className="flex-1">
-                  <label className="block text-[10px] text-[#8892a4] mb-1">Data</label>
+                  <label htmlFor={dateInputId} className="block text-[10px] text-[#999999] mb-1">
+                    {isCompletion ? 'Data da conclusão' : 'Data'}
+                  </label>
                   <input
+                    id={dateInputId}
                     type="date"
                     value={entryDate}
                     onChange={(e) => setEntryDate(e.target.value)}
-                    className="w-full px-2 py-1 rounded border border-[#2a2d42] bg-[#1e2235] text-xs text-[#e2e8f0] focus:outline-none focus:border-[#6366f1] transition-colors"
+                    autoFocus={isCompletion}
+                    className="w-full px-2 py-1 rounded border border-[#2b2b31] bg-[#16161a] text-xs text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed] transition-colors"
                   />
                 </div>
-                <div className="w-24">
-                  <label className="block text-[10px] text-[#8892a4] mb-1">{unitLabel}</label>
-                  <input
-                    type="number"
-                    value={entryValue}
-                    onChange={(e) => setEntryValue(e.target.value)}
-                    min="0.01"
-                    step="any"
-                    onKeyDown={(e) => { if (e.key === 'Enter') handleAddEntry() }}
-                    autoFocus
-                    className="w-full px-2 py-1 rounded border border-[#2a2d42] bg-[#1e2235] text-xs text-[#e2e8f0] focus:outline-none focus:border-[#6366f1] transition-colors tabular-nums"
-                  />
-                </div>
+                {!isCompletion && (
+                  <div className="w-24">
+                    <label htmlFor={valueInputId} className="block text-[10px] text-[#999999] mb-1">
+                      {unitLabel}
+                    </label>
+                    <input
+                      id={valueInputId}
+                      type="number"
+                      value={entryValue}
+                      onChange={(e) => setEntryValue(e.target.value)}
+                      min="0.01"
+                      step="any"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleAddEntry()
+                      }}
+                      autoFocus
+                      className="w-full px-2 py-1 rounded border border-[#2b2b31] bg-[#16161a] text-xs text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed] transition-colors tabular-nums"
+                    />
+                  </div>
+                )}
               </div>
               <div>
-                <label className="block text-[10px] text-[#8892a4] mb-1">Descrição (opcional)</label>
+                <label htmlFor={labelInputId} className="block text-[10px] text-[#999999] mb-1">
+                  {isCompletion ? 'Observação (opcional)' : 'Descrição (opcional)'}
+                </label>
                 <div className="flex gap-2">
                   <input
+                    id={labelInputId}
                     type="text"
                     value={entryLabel}
                     onChange={(e) => setEntryLabel(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') handleAddEntry() }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleAddEntry()
+                    }}
                     placeholder={
-                      goal.unit === 'livros' || goal.unit === 'livro'
-                        ? 'Nome do livro...'
-                        : goal.unit === 'km'
-                          ? 'Ex: Parque Ibirapuera...'
-                          : 'Observação...'
+                      isCompletion
+                        ? 'Como foi concluir esta meta?'
+                        : goal.unit === 'livros' || goal.unit === 'livro'
+                          ? 'Nome do livro...'
+                          : goal.unit === 'km'
+                            ? 'Ex: Parque Ibirapuera...'
+                            : 'Observação...'
                     }
-                    className="flex-1 px-2 py-1 rounded border border-[#2a2d42] bg-[#1e2235] text-xs text-[#e2e8f0] placeholder-[#3a3e58] focus:outline-none focus:border-[#6366f1] transition-colors"
+                    className="flex-1 px-2 py-1 rounded border border-[#2b2b31] bg-[#16161a] text-xs text-[#d4d4d4] placeholder-[#555555] focus:outline-none focus:border-[#7c3aed] transition-colors"
                   />
                   <button
                     onClick={handleAddEntry}
-                    disabled={!entryValue || parseFloat(entryValue) <= 0}
+                    disabled={!isCompletion && (!entryValue || parseFloat(entryValue) <= 0)}
                     className="px-3 py-1 rounded text-xs font-semibold text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                     style={{ backgroundColor: goal.color }}
                   >
-                    Salvar
+                    {isCompletion ? 'Concluir meta' : 'Salvar'}
                   </button>
                 </div>
               </div>
@@ -236,30 +335,43 @@ export function GoalCard({ goal, projectName, onEdit, onDelete, onAddEntry, onDe
           )}
 
           {sortedEntries.length === 0 ? (
-            <p className="text-xs text-[#3a3e58] text-center py-3">Nenhum registro ainda</p>
+            <p className="text-xs text-[#555555] text-center py-3">Nenhum registro ainda</p>
           ) : (
             <div className="space-y-0.5">
               {visibleEntries.map((entry) => (
                 <div
                   key={entry.id}
-                  className="group/entry flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-[#2a2d42] transition-colors"
+                  className="group/entry flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-[#2a2a30] transition-colors"
                 >
-                  <span className="text-[10px] text-[#8892a4] shrink-0 tabular-nums w-10">{fmtDate(entry.date)}</span>
+                  <span className="text-[10px] text-[#999999] shrink-0 tabular-nums w-10">
+                    {fmtDate(entry.date)}
+                  </span>
                   {entry.label ? (
-                    <span className="flex-1 text-xs text-[#c8cdd8] truncate">{entry.label}</span>
+                    <span className="flex-1 text-xs text-[#d4d4d4] truncate">{entry.label}</span>
                   ) : (
                     <span className="flex-1" />
                   )}
-                  <span className="text-xs font-semibold tabular-nums shrink-0" style={{ color: ringColor }}>
-                    +{fmtNum(entry.value)}{unitSuffix}
+                  <span
+                    className="text-xs font-semibold tabular-nums shrink-0"
+                    style={{ color: accentColor }}
+                  >
+                    {isCompletion ? 'Concluída' : `+${fmtNum(entry.value)}${unitSuffix}`}
                   </span>
                   <button
                     onClick={() => onDeleteEntry(entry.id)}
                     title="Remover entrada"
-                    className="opacity-0 group-hover/entry:opacity-100 p-0.5 rounded text-[#8892a4] hover:text-red-400 transition-all shrink-0"
+                    className="opacity-0 group-hover/entry:opacity-100 p-0.5 rounded text-[#999999] hover:text-[#e04040] transition-all shrink-0"
                   >
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                    <svg
+                      width="10"
+                      height="10"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                    >
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
                     </svg>
                   </button>
                 </div>
@@ -268,7 +380,7 @@ export function GoalCard({ goal, projectName, onEdit, onDelete, onAddEntry, onDe
               {hiddenCount > 0 && (
                 <button
                   onClick={() => setShowAll(true)}
-                  className="w-full text-[10px] text-[#8892a4] hover:text-[#e2e8f0] text-center py-1 transition-colors"
+                  className="w-full text-[10px] text-[#999999] hover:text-[#d4d4d4] text-center py-1 transition-colors"
                 >
                   ver mais {hiddenCount} entrada{hiddenCount !== 1 ? 's' : ''}
                 </button>
@@ -276,7 +388,7 @@ export function GoalCard({ goal, projectName, onEdit, onDelete, onAddEntry, onDe
               {showAll && sortedEntries.length > COLLAPSED_LIMIT && (
                 <button
                   onClick={() => setShowAll(false)}
-                  className="w-full text-[10px] text-[#8892a4] hover:text-[#e2e8f0] text-center py-1 transition-colors"
+                  className="w-full text-[10px] text-[#999999] hover:text-[#d4d4d4] text-center py-1 transition-colors"
                 >
                   mostrar menos
                 </button>

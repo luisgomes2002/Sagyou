@@ -1,69 +1,173 @@
-import Decimal from 'decimal.js'
-import type { ShoppingItem, Currency } from '../../types'
+﻿import Decimal from 'decimal.js'
+import type { ShoppingItem, Currency, FinancialProfile, FinancialTable } from '../../types'
 import { CURRENCY_CONFIG } from '../../types'
-
-export const MONTH_NAMES = [
-  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
-]
+import { D, moneyStr } from '../../utils/money'
+import { YIELD_SUMMARY_CATEGORY } from '../../utils/yieldSummary'
+export { D, moneyStr }
+export { todayLocalISO as todayISO, formatDateBR } from '../../utils/dates'
+export { MONTH_NAMES } from '../../utils/yieldSummary'
+export { YIELD_SUMMARY_CATEGORY }
 
 export const FINANCIAL_CATEGORIES = [
-  // Despesas
-  'Alimentação', 'Moradia', 'Transporte', 'Saúde', 'Educação', 'Lazer',
-  'Vestuário', 'Serviços', 'Assinaturas', 'Impostos', 'Taxa', 'Família',
-  'Viagem', 'Intercâmbio', 'Investimentos', 'Pet', 'Cartão', 'Empréstimo',
-  // Tech / Negócio
-  'AI', 'ADS', 'Servidor', 'Marketing', 'Segurança Cloud', 'Domínio',
-  'AI Programação', 'AI Tokens', 'Canva', 'Streaming', 'Contador', 'Advogado',
-  // Receitas
-  'Salário', 'Freelance', 'Trabalho', 'Aluguel Recebido', 'Dividendos',
-  'Reembolso', 'Bônus', 'Venda', 'Rendimento Mensal', 'Outros'
+  'ADS',
+  'AI',
+  'AI Programação',
+  'AI Tokens',
+  'Advogado',
+  'Academia',
+  'Alimentação',
+  'Aluguel',
+  'Aluguel Recebido',
+  'Assinaturas',
+  'Auto Escola',
+  'Barbeiro',
+  'Bônus',
+  'Canva',
+  'Cartão',
+  'Compras',
+  'Conta de Água',
+  'Conta de Gás',
+  'Conta de Internet',
+  'Conta de Luz',
+  'Contador',
+  'Curso',
+  'Delivery',
+  'Devolução',
+  'Dividendos',
+  'Domínio',
+  'Educação',
+  'Empréstimo',
+  'Família',
+  'Freelance',
+  'Fatura',
+  'Gasolina',
+  'Impostos',
+  'Intercâmbio',
+  'Investimentos',
+  'Juros',
+  'Lazer',
+  'Marketing',
+  'Marketplace',
+  'Moradia',
+  'Muay Thai',
+  'Outros',
+  'Parcelamento',
+  'Parcelamento de Fatura',
+  'Pet',
+  'Pix no crédito',
+  'Recarga e plano de celular',
+  'Reembolso',
+  'Salário',
+  'Saldo',
+  'Saúde',
+  'Segurança Cloud',
+  'Serviços',
+  'Servidor',
+  'Streaming',
+  'Taxa',
+  'Taxa de câmbio / spread cambial',
+  'Taxas de transferência internacional',
+  'Trabalho',
+  'Transferência entre contas',
+  'Transferência entre contas internacionais',
+  'Transferência internacional',
+  'Transporte',
+  'Venda',
+  'Vestuário',
+  'Viagem',
+  'IOF'
 ]
+
+export function financialCategories(
+  profile: FinancialProfile | undefined,
+  lists: FinancialTable[]
+): string[] {
+  const names = [
+    ...FINANCIAL_CATEGORIES,
+    ...(profile?.customCategories ?? []),
+    ...lists.flatMap((list) =>
+      list.transactions.flatMap((transaction) => [
+        transaction.category ?? '',
+        ...(transaction.details ?? []).map((detail) => detail.category ?? '')
+      ])
+    )
+  ]
+  const seen = new Set<string>()
+  return names.filter((name) => {
+    const clean = name.trim().toLowerCase()
+    if (!clean || clean === YIELD_SUMMARY_CATEGORY.toLowerCase() || seen.has(clean)) return false
+    seen.add(clean)
+    return true
+  })
+}
 
 export const CAT_COLORS = [
-  '#818cf8', '#a78bfa', '#c084fc', '#f472b6', '#fb923c', '#facc15',
-  '#4ade80', '#22d3ee', '#60a5fa', '#f87171', '#34d399', '#a3e635',
-  '#e879f9', '#38bdf8', '#fbbf24'
+  '#a080f0',
+  '#c098e0',
+  '#e098d4',
+  '#eca8c0',
+  '#ecb060',
+  '#e8b810',
+  '#60c080',
+  '#48c0d0',
+  '#68a8d8',
+  '#d48888',
+  '#50c0a0',
+  '#a0c868',
+  '#e890ac',
+  '#60b8d4',
+  '#e8b848'
 ]
-
-// Safe Decimal constructor — treats null/undefined/'' as 0.
-export function D(value: Decimal.Value | null | undefined): Decimal {
-  if (value === null || value === undefined || value === '') return new Decimal(0)
-  try {
-    const d = new Decimal(value)
-    return d.isNaN() || !d.isFinite() ? new Decimal(0) : d
-  } catch {
-    return new Decimal(0)
-  }
-}
 
 export function formatCurrency(value: Decimal | number | string, currency: Currency): string {
   const { symbol, decimals } = CURRENCY_CONFIG[currency]
-  const num = value instanceof Decimal ? value.toNumber() : typeof value === 'string' ? D(value).toNumber() : value
-  const abs = Math.abs(num)
-  const fixed = abs.toFixed(decimals)
+  const amount = D(value)
+  // Summary values use whole yen. Keep historical fractions in stored values
+  // and edit fields so merely opening a transaction cannot change its amount.
+  const fixed = amount.abs().toFixed(decimals)
   const [intPart, decPart] = fixed.split('.')
-
-  let formatted: string
-  if (currency === 'USD') {
-    const intFormatted = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
-    formatted = decPart !== undefined ? `${intFormatted}.${decPart}` : intFormatted
-  } else {
-    // BRL and JPY: dot as thousands separator, comma as decimal
-    const intFormatted = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
-    formatted = decPart !== undefined ? `${intFormatted},${decPart}` : intFormatted
-  }
-
-  return `${num < 0 ? '-' : ''}${symbol} ${formatted}`
+  const group = currency === 'USD' ? ',' : '.'
+  const decimal = currency === 'BRL' ? ',' : '.'
+  const intFormatted = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, group)
+  const formatted = decPart === undefined ? intFormatted : `${intFormatted}${decimal}${decPart}`
+  const sign = amount.lessThan(0) && fixed !== '0' ? '-' : ''
+  return `${sign}${symbol}${currency === 'JPY' ? '' : ' '}${formatted}`
 }
 
 export function itemTotal(item: ShoppingItem): Decimal {
   return new Decimal(item.qty).times(D(item.price))
 }
 
-export function parseDecimalInput(raw: string): Decimal | null {
-  const normalized = raw.trim().replace(',', '.')
-  if (normalized === '') return null
+export function parseDecimalInput(raw: string, currency: Currency = 'BRL'): Decimal | null {
+  const input = raw.trim()
+  if (input === '') return null
+  if (currency === 'JPY') {
+    // A dot between groups of three digits means thousands in yen fields.
+    // Decimal fractions remain accepted for historical amounts and must not
+    // change when an unchanged edit field blurs.
+    const grouped = /^[+-]?\d{1,3}(?:\.\d{3})+$/.test(input)
+    const decimal = /^[+-]?\d+(?:\.\d+)?$/.test(input)
+    if (!grouped && !decimal) return null
+    try {
+      return new Decimal(grouped ? input.replace(/\./g, '') : input)
+    } catch {
+      return null
+    }
+  }
+  const localPattern =
+    currency === 'BRL'
+      ? /^[+-]?(?:\d{1,3}(?:\.\d{3})+|\d+)(?:,\d+)?$/
+      : /^[+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?$/
+  let normalized: string
+  if (localPattern.test(input)) {
+    normalized =
+      currency === 'BRL' ? input.replace(/\./g, '').replace(',', '.') : input.replace(/,/g, '')
+  } else if (/^[+-]?\d+[.,]\d+$/.test(input)) {
+    // Accept the other decimal separator when it cannot be a grouped number.
+    normalized = input.replace(',', '.')
+  } else {
+    return null
+  }
   try {
     const d = new Decimal(normalized)
     return d.isNaN() || !d.isFinite() ? null : d
@@ -72,18 +176,21 @@ export function parseDecimalInput(raw: string): Decimal | null {
   }
 }
 
-export function todayISO(): string {
-  return new Date().toISOString().slice(0, 10)
-}
-
-export function formatDateBR(iso: string): string {
-  if (!iso) return ''
-  const [y, m, d] = iso.split('-')
-  return `${d}/${m}/${y}`
-}
-
 export function formatAmountInput(value: number | string, currency: Currency): string {
   const { decimals } = CURRENCY_CONFIG[currency]
-  const fixed = D(value).toFixed(decimals)
-  return currency === 'USD' ? fixed : fixed.replace('.', ',')
+  if (currency === 'JPY') {
+    const [integer, fraction] = D(value).toFixed().split('.')
+    if (fraction !== undefined) {
+      // "1.123" means ¥1,123; an extra trailing zero makes a legacy
+      // fractional value of 1.123 unambiguous when it is shown for editing.
+      const unambiguousFraction =
+        /^[-+]?\d{1,3}$/.test(integer) && fraction.length === 3 ? `${fraction}0` : fraction
+      return `${integer}.${unambiguousFraction}`
+    }
+    return integer.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+  }
+  const [integer, fraction = ''] = D(value).toFixed().split('.')
+  const grouped = integer.replace(/\B(?=(\d{3})+(?!\d))/g, currency === 'BRL' ? '.' : ',')
+  const separator = currency === 'BRL' ? ',' : '.'
+  return `${grouped}${separator}${fraction.padEnd(decimals, '0')}`
 }

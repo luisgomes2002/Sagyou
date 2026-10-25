@@ -10,10 +10,13 @@ vi.mock('../../services/ElectronStorage', () => ({
     this.load = vi.fn().mockResolvedValue({ projects: [], tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: [] })
     this.save = vi.fn().mockResolvedValue(undefined)
     this.exportBackup = vi.fn().mockResolvedValue({ success: true })
+    this.autoSaveBackup = vi.fn().mockResolvedValue({ success: true })
+    this.commitBackupBlobs = vi.fn().mockResolvedValue({ success: true })
     this.importBackup = vi.fn().mockResolvedValue({ success: false, cancelled: true })
     this.importAIJson = vi.fn().mockResolvedValue({ success: false, cancelled: true })
-    this.loadConversations = vi.fn().mockResolvedValue([])
-    this.saveConversations = vi.fn().mockResolvedValue(undefined)
+    this.loadMemories = vi.fn().mockResolvedValue([])
+    this.replaceMemories = vi.fn().mockResolvedValue(undefined)
+    this.rebuildSearchIndex = vi.fn().mockResolvedValue(undefined)
   })
 }))
 
@@ -32,7 +35,7 @@ function reset() {
     lists: [],
     activeProjectId: null,
     sprintFilter: null,
-    activeTimer: null,
+    activeTimers: [],
     isLoaded: false
   })
 }

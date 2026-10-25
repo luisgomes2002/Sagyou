@@ -1,881 +1,1891 @@
-import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
-import { join, extname, basename, resolve, sep } from 'path'
+process.env.LANG = 'pt_BR.UTF-8'
+process.env.LC_ALL = 'pt_BR.UTF-8'
+process.env.LC_TIME = 'pt_BR.UTF-8'
+process.env.LANGUAGE = 'pt_BR:pt'
+
+import {
+  app,
+  shell,
+  BrowserWindow,
+  ipcMain,
+  dialog,
+  type IpcMain,
+  type IpcMainEvent,
+  type IpcMainInvokeEvent
+} from 'electron'
+import { join, relative, resolve, sep } from 'path'
 import {
   readFileSync,
   writeFileSync,
-  copyFileSync,
   mkdirSync,
   existsSync,
   unlinkSync,
-  statSync
+  renameSync,
+  copyFileSync,
+  chmodSync,
+  statSync,
+  accessSync,
+  constants
 } from 'fs'
+import * as codeFileFs from 'fs'
+import { homedir } from 'os'
+import { execFile } from 'child_process'
+import { promisify } from 'util'
 import { readFile } from 'fs/promises'
-import { randomUUID } from 'crypto'
-import { spawn, execSync, type ChildProcess } from 'child_process'
-import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import OpenAI from 'openai'
-import { loadData, saveData } from './store'
-import { appendEntry, newEntry, summarize, type TokenUsage, type UsageLogEntry } from './usage'
-import { getOpenAIClient, requestOptions } from './openai-client'
-import { confineToRoot, walkFiles } from './code-files'
-import { searchConversations } from './conversation-search'
-import { fetchWeb } from './web-fetch'
-import { captureBase, diffSince, type AgentBase } from './code-diff'
-import { decodeDataUrl, mimeForExt, isImageFileName } from './chat-images'
+const execFileAsync = promisify(execFile)
+import { randomBytes, randomUUID } from 'crypto'
+import { CodeRunCoordinator } from './modules/agent/code-run-coordinator'
+import { McpWriteQueue, RendererMcpActionBridge } from './modules/agent/mcp-write-queue'
+import { AgentSessionRegistry } from './modules/agent/agent-session'
+import { AgentWorktreeManager } from './modules/agent/agent-worktree'
+import { startAgentPty, type AgentPty } from './modules/agent/agent-pty'
+import { resizeTerminal, writeTerminalInput } from './modules/agent/agent-terminal-session'
 import {
-  saveTemplate,
-  removeTemplate,
-  normalizeTemplates,
-  type PromptTemplate,
-  type SaveInput
-} from './task-templates'
+  buildHarnessLaunch,
+  discoverHarnessLocalContext,
+  discoverHarnesses,
+  isHarnessId,
+  type HarnessId
+} from './modules/agent/harness-adapter'
+import { collectAgentPatch, agentPatchPreview, validatePatchScope } from './modules/agent/agent-diff'
+import { deliverApprovedPatch } from './modules/agent/agent-delivery'
+import { CODE_EXECUTOR_MCP_PERMISSIONS, prepareAgentMcpSession } from './modules/agent/agent-mcp-session'
+import { buildExternalAgentBrief, scrubExternalBriefSecrets } from './modules/agent/agent-briefing'
+import { buildTerminalHandoff } from './modules/agent/terminal-handoff'
+import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import {
+  loadData,
+  saveData,
+  eventsForEntity,
+  rebuildSearchIndex,
+  searchGlobalIndex,
+  getGlobalSearchIndexHit,
+  copyDatabaseTo,
+  scrubMemoryConversationLinks
+} from './store'
+import {
+  hasLegacyApiConfig,
+  runLegacyChatRemoval,
+  stripAiConfigFile,
+  stripLegacyApiConfig
+} from './modules/ai/legacy-chat-removal'
+import { createLegacyChatState } from './modules/ai/legacy-chat-state'
+import {
+  registerLegacyChatHandlers,
+  shouldRunLegacyChatRemoval,
+  startLegacyChatRemoval
+} from './handlers/legacy-chat'
+import * as memoryStore from './store'
+import * as memoryRules from './modules/ai/memory'
+import { registerMemoryHandlers } from './handlers/memory'
+import { confineToRoot } from './modules/code/code-files'
+import * as codeFiles from './modules/code/code-files'
+import { fetchWeb } from './modules/web/web-fetch'
+import { renderWeb } from './modules/web/web-render'
+import { getExchangeRate } from './modules/financial/financial-exchange'
+import { startSagyouMcpBroker } from './modules/agent/sagyou-mcp'
+import { captureBase, diffSince, type AgentBase, type DiffLineItem } from './modules/code/code-diff'
+import { safeAttachmentName } from './modules/files/backup-files'
+import {
+  diffFileCount,
+  isRunId,
+  normalizeRuns,
+  sortRuns,
+  pruneRuns,
+  runOwnership,
+  runsForSession,
+  taskLabel,
+  type AgentRunMeta,
+  type AgentRunSnapshot
+} from './modules/agent/agent-runs'
+import {
+  listSkills,
+  saveSkill,
+  deleteSkill,
+  importSkill as importSkillDialog,
+  skillsDir
+} from './modules/ai/skills'
+import { createManagedWindow, registerWindowHandlers, type ManagedWindow } from './handlers/window'
+import { registerFilesHandlers } from './handlers/files'
+import { registerBackupHandlers } from './handlers/backup'
+import { normalizeLegacyAIConfig } from './modules/conversations/legacy-ai-data'
+import { registerCodeFilesHandlers } from './handlers/code-files'
+import {
+  createPasswordConfig,
+  parsePasswordConfig,
+  verifyPassword,
+  type PasswordConfig
+} from './modules/security/security'
 import icon from '../../resources/icon.png?asset'
 
 let mainWindow: BrowserWindow | null = null
+let managedWindow: ManagedWindow | null = null
 
-// A single external code agent (Aider/Codex) at a time, spawned in the
-// selected project directory. Only launched after explicit user approval in
-// the renderer, since it can write files and run commands.
-let codeAgentProc: ChildProcess | null = null
-
-/**
- * What the code agent has printed so far, kept on this side.
- *
- * The agent is a child process that can run for many minutes — a code review is
- * the whole point of it — and the user is meant to go on using the app while it
- * works. But `ai:code-agent:output` is a live stream to whoever is listening,
- * and the only thing accumulating it was `agentLog` inside AIView, which is
- * unmounted the moment another view is active: every chunk emitted while the
- * user was elsewhere went to a listener that no longer existed, and an agent
- * that finished while they were away left nothing behind at all.
- *
- * So the output is buffered where the process itself lives. The stream stays as
- * it is (a mounted panel still updates live); this is what a returning panel
- * reads back through `ai:code-agent:status`, and it survives the renderer
- * reloading too.
- */
-let codeAgentLog = ''
-
-/**
- * What the tree looked like when the current agent run started.
- *
- * Captured before the spawn, because `git diff` after the fact cannot tell the
- * agent's work from whatever the user already had in progress — and presenting
- * a user's own half-finished edits as something an AI did to their code is
- * worse than showing no diff at all. Null when the directory isn't a git repo,
- * which is a legitimate state: the diff is simply unavailable.
- */
-let codeAgentBase: AgentBase | null = null
-
-/**
- * Cap on the buffer above, matching the panel's own cap in AIView.
- *
- * Equal on purpose: leaving the view and coming back should show exactly what
- * staying would have shown. A generous main-side buffer would make the panel
- * change depending on where the user had been standing.
- */
-const MAX_AGENT_LOG = 8000
-
-/** Append to the buffer, keeping only the tail the panel can show. */
-function appendAgentLog(chunk: string): void {
-  codeAgentLog = (codeAgentLog + chunk).slice(-MAX_AGENT_LOG)
+/** Only the app's own renderer may invoke privileged IPC handlers. */
+function assertTrustedRenderer(event: IpcMainInvokeEvent | IpcMainEvent): void {
+  const expected = mainWindow?.webContents
+  const sameDocument =
+    typeof event.sender.getURL === 'function' &&
+    typeof expected?.getURL === 'function' &&
+    event.sender.getURL() === expected.getURL()
+  if (!expected || (event.sender !== expected && !sameDocument)) {
+    throw new Error('Solicitação IPC recusada.')
+  }
 }
 
-// On Windows, spawn without a shell won't append .exe/.cmd, so `spawn('aider')`
-// fails even when installed. Resolve to the real file on PATH (pip installs
-// aider.exe; npm installs codex.cmd). Returns the full path, or null. POSIX
-// resolves via PATH natively, so pass through.
-function resolveExecutable(cmd: string): string | null {
-  if (process.platform === 'win32') {
-    const exts = ['.exe', '.cmd', '.bat', '']
-    for (const dir of (process.env.PATH || '').split(';')) {
-      if (!dir) continue
-      for (const ext of exts) {
-        const full = join(dir, cmd + ext)
-        if (existsSync(full)) return full
-      }
+/** All user data stays unavailable until the password screen unlocks the app. */
+function assertUnlockedDataAccess(event: IpcMainInvokeEvent | IpcMainEvent): void {
+  assertTrustedRenderer(event)
+  if (!passwordUnlocked) throw new Error('Desbloqueie o Sagyou para acessar os dados.')
+}
+
+/**
+ * From this point onward every registered handler receives the same origin and
+ * unlock checks. Keeping the guard at registration avoids a missed check when
+ * a new data handler is added in a domain-specific module.
+ */
+function protectDataIpc(ipc: IpcMain): void {
+  const registerHandle = ipc.handle.bind(ipc)
+  const registerOn = ipc.on.bind(ipc)
+  ipc.handle = ((
+    channel: string,
+    listener: (event: IpcMainInvokeEvent, ...args: never[]) => unknown
+  ) =>
+    registerHandle(channel, (event, ...args) => {
+      assertUnlockedDataAccess(event)
+      return listener(event, ...(args as never[]))
+    })) as IpcMain['handle']
+  ipc.on = ((channel: string, listener: (event: IpcMainEvent, ...args: never[]) => unknown) =>
+    registerOn(channel, (event, ...args) => {
+      assertUnlockedDataAccess(event)
+      return listener(event, ...(args as never[]))
+    })) as IpcMain['on']
+}
+const sagyouMcp = startSagyouMcpBroker({
+  readScopedData: (domain, session, projectId) => {
+    const data = loadData()
+    if (domain === 'tasks')
+      return projectId ? data.tasks.filter((item) => item.projectId === projectId) : data.tasks
+    if (domain === 'project')
+      return projectId ? data.projects.filter((item) => item.id === projectId) : data.projects
+    if (domain === 'notes')
+      return projectId ? data.notes.filter((item) => item.projectId === projectId) : data.notes
+    if (domain === 'goals')
+      return projectId ? data.goals.filter((item) => item.projectId === projectId) : data.goals
+    return data.lists
+      .filter((list) => list.profileId === session.financialProfileId)
+      .flatMap((list) =>
+        list.transactions.map((transaction) => ({
+          ...transaction,
+          listId: list.id,
+          listName: list.name,
+          currency: list.currency
+        }))
+      )
+  },
+  listProjects: () =>
+    loadData().projects.map(({ id, name, description, archivedAt }) => ({
+      id,
+      name,
+      description,
+      archived: Boolean(archivedAt)
+    })),
+  readTasks: (projectId) => {
+    const data = loadData()
+    return data.tasks
+      .filter((task) => !projectId || task.projectId === projectId)
+      .map(({ id, title, description, priority, dueDate, projectId: taskProjectId, columnId }) => ({
+        id,
+        title,
+        description,
+        priority,
+        dueDate,
+        projectId: taskProjectId,
+        columnId
+      }))
+  },
+  readFinancial: (profileId) => {
+    const data = loadData()
+    return data.lists
+      .filter((list) => list.profileId === profileId)
+      .map(({ id, name, currency, transactions }) => ({ id, name, currency, transactions }))
+  },
+  readProjectData: (projectId) => {
+    const data = loadData()
+    return {
+      metas: data.goals.filter((goal) => !projectId || goal.projectId === projectId),
+      notas: data.notes.filter((note) => !projectId || note.projectId === projectId)
     }
-    return null
+  },
+  searchMemory: (projectId, term) =>
+    memoryStore.searchMemories({
+      projectId: projectId ?? null,
+      allProjects: projectId === undefined,
+      term,
+      limit: 8
+    }),
+  readMemory: (id) => memoryStore.getMemory(id),
+  // Keep the existing once-per-hour decay accounting in the store; the broker
+  // decides authorization first, so rejected probes never count as a read.
+  touchMemory: (id) => memoryStore.touchMemories([id], new Date().toISOString()),
+  // Context already limits this to active project + global memories. The pure
+  // conflict check below never writes, touches, archives or resolves anything.
+  memoriesForConflict: (projectId) =>
+    projectId === undefined
+      ? memoryStore.listMemories()
+      : memoryStore.memoriesForContext(projectId),
+  saveMemory: async (session, memory, redacted) => {
+    const outcome = await mcpWriteQueue.enqueue(
+      {
+        runId: session.runId,
+        name: 'save_memory',
+        args: { tipo: memory.type, titulo: memory.title, corpo: memory.body, tags: memory.tags }
+      },
+      async () => {
+        // Memory is main-owned SQLite data; upsert completes before the reply.
+        memoryStore.upsertMemory(memory)
+        return { ok: true, id: memory.id, ...(redacted ? { redacted: true } : {}) }
+      }
+    )
+    return outcome.approved
+      ? outcome.value!
+      : { ok: false, error: 'Salvamento não aprovado pelo usuário.' }
+  },
+  createTask: async (session, args) => {
+    const title = typeof args.titulo === 'string' ? args.titulo.trim().slice(0, 300) : ''
+    if (!title) throw new Error('titulo é obrigatório.')
+    const projectId =
+      typeof args.projectId === 'string' && args.projectId.trim()
+        ? args.projectId.trim()
+        : session.projectId
+    if (!projectId) throw new Error('Escolha um projeto em list_projects para criar a task.')
+    const data = loadData()
+    const project = data.projects.find((item) => item.id === projectId)
+    const column = project?.columns[0]
+    if (!project || !column)
+      throw new Error('O projeto autorizado não possui uma coluna para a task.')
+    const outcome = await mcpWriteQueue.enqueue(
+      { runId: session.runId, name: 'criar_task', args: { projectId, titulo: title } },
+      async () => {
+        const id = await requestRendererMcpTask({
+          projectId: project.id,
+          columnId: column.id,
+          title,
+          ...(typeof args.descricao === 'string' && args.descricao.trim()
+            ? { description: args.descricao.trim().slice(0, 5000) }
+            : {})
+        })
+        return { ok: true, id, titulo: title }
+      }
+    )
+    return outcome.approved
+      ? outcome.value!
+      : { ok: false, error: 'Criação não aprovada pelo usuário.' }
   }
+})
 
-  // POSIX (linux/macOS): use `which` to locate the binary, falling back to the
-  // plain command name so spawn can try the PATH itself.
-  try {
-    const absolute = execSync(`which ${cmd}`, { encoding: 'utf-8' }).trim()
-    if (absolute) return absolute
-  } catch {
-    // `which` prints nothing and exits non‑zero when not found.
-  }
-  return cmd
+/**
+ * The live state of one code-agent run.
+ *
+ * Before N-agent support this was a set of module-level singletons — one run
+ * at a time. Now the app can host multiple concurrent runs in different
+ * directories, each with its own log, base, approval queue, and usage counter.
+ */
+interface ReadOnlyRoot {
+  id: string
+  nome: string
+  path: string
 }
 
-// Kill the running code agent (and its child tree on Windows, since a shell
-// wrapper won't propagate the kill to the real agent process).
-function killCodeAgent(): void {
-  const proc = codeAgentProc
-  if (!proc) return
-  codeAgentProc = null
-  if (process.platform === 'win32' && proc.pid) {
-    try {
-      spawn('taskkill', ['/pid', String(proc.pid), '/T', '/F'])
-    } catch {
-      proc.kill()
+interface CodeRunState {
+  id: string
+  dir: string
+  convId: string | null
+  sessionId: string | null
+  /** Immutable application scope captured when the terminal was created. */
+  projectId: string | null
+  financialProfileId: string
+  codeRoot: string
+  /** The real model name this run is using, shown by the panel and picker. */
+  agent: string
+  /** Stable adapter id; labels and model names are presentation only. */
+  harness: HarnessId
+  localInstructions: string[]
+  localSkills: string[]
+  task: string
+  startedAt: number
+  /** Set by stopCodeAgent; the loop checks this between steps. */
+  abort: boolean
+  /** Buffered output, kept so a remounted panel can catch up. */
+  log: string
+  /** What the tree looked like before the agent touched it. */
+  base: AgentBase | null
+  /** A recognised environment failure, surfaced to the panel's hint card. */
+  hint: AgentHint | null
+  model: string
+  /** Tokens accumulated across this run's model calls. */
+  usage: { promptTokens: number; completionTokens: number }
+  step: number
+  maxSteps: number
+  /** Approvals the loop is waiting on, keyed by request id. */
+  pendingApprovals: Map<string, PendingCodeApproval>
+  /** Questions the loop is waiting on, keyed by request id. */
+  pendingQuestions: Map<string, PendingCodeQuestion>
+  /** Whether auto-approval mode is on for this run. */
+  autoApprove: boolean
+  /** Se não-null, o agente roda num git worktree isolado em vez do dir original. */
+  worktreeDir: string | null
+  /** The isolated run finished, but its patch could not be applied to the original tree. */
+  worktreeMergeError: string | null
+  /** Child process of an external harness, so Stop can terminate it immediately. */
+  /** Exact relative paths this run may write; absent means the project root. */
+  allowedWritePaths?: string[]
+  /** Read-only references selected for this run; never a write or shell root. */
+  readOnlyRoots: ReadOnlyRoot[]
+  externalChild: AgentPty | null
+  /** A real TTY session accepts user input until the harness exits. */
+  interactive: boolean
+  /** Last PTY grid reported by xterm; restored when a view reconnects. */
+  terminalCols: number
+  terminalRows: number
+}
+
+interface AgentHint {
+  title: string
+  detail: string
+  command?: string
+}
+
+interface CodeApprovalRequest {
+  runId: string
+  id: string
+  name: string
+  args: Record<string, unknown>
+  resumo: string
+  conteudo?: string
+  comando?: string
+  diff?: DiffLineItem[]
+  diffTruncated?: boolean
+  irreversivel?: boolean
+}
+
+interface PendingCodeApproval {
+  resolve: (approved: boolean) => void
+  request: CodeApprovalRequest
+}
+
+interface CodeQuestionRequest {
+  runId: string
+  id: string
+  question: string
+}
+
+interface PendingCodeQuestion {
+  resolve: (answer: string | null) => void
+  request: CodeQuestionRequest
+}
+
+/** Shared executor infrastructure; the native loop is only one temporary caller. */
+const codeSessions = new AgentSessionRegistry<CodeRunState>()
+const codeRuns = codeSessions.runs
+const worktreeManager = new AgentWorktreeManager(codeSessions)
+
+const codeRunCoordinator = new CodeRunCoordinator()
+
+interface McpTaskRequest {
+  projectId: string
+  columnId: string
+  title: string
+  description?: string
+}
+
+/**
+ * The renderer owns Zustand persistence. Keeping MCP mutations on that path
+ * prevents a stale renderer autosave from overwriting a task written directly
+ * by the main process.
+ */
+const rendererMcpTasks = new RendererMcpActionBridge<McpTaskRequest, string>(
+  ({ requestId, payload }) => {
+    if (!mainWindow || mainWindow.isDestroyed())
+      throw new Error('A janela do Sagyou precisa estar aberta para criar a task.')
+    mainWindow.webContents.send('store:mcp:create-task', { requestId, task: payload })
+  }
+)
+
+function requestRendererMcpTask(task: McpTaskRequest): Promise<string> {
+  return rendererMcpTasks.request(task)
+}
+
+/** Routes MCP writes through the exact same approval UI as code-agent actions. */
+function requestMcpWriteApproval(
+  runId: string,
+  name: string,
+  args: Record<string, unknown>
+): Promise<boolean> {
+  const run = codeRuns.get(runId)
+  if (!run || run.abort || (run.interactive && !run.externalChild))
+    return Promise.resolve(false)
+  return new Promise((resolveApproval) => {
+    const id = randomUUID()
+    const request: CodeApprovalRequest = {
+      runId,
+      id,
+      name: `mcp:${name}`,
+      args,
+      resumo:
+        name === 'criar_task'
+          ? `Criar task "${String(args.titulo ?? '').slice(0, 80)}" em ${loadData().projects.find((project) => project.id === args.projectId)?.name ?? String(args.projectId ?? 'projeto desconhecido')}`
+          : `MCP Sagyou: ${name.replace('_', ' ')}`
+    }
+    const timeout = setTimeout(() => {
+      if (!run.pendingApprovals.delete(id)) return
+      resolveApproval(false)
+    }, 30_000)
+    run.pendingApprovals.set(id, {
+      resolve: (approved) => {
+        clearTimeout(timeout)
+        resolveApproval(approved)
+      },
+      request
+    })
+    mainWindow?.webContents.send('ai:code-agent:approve-request', request)
+  })
+}
+
+const mcpWriteQueue = new McpWriteQueue((request) =>
+  requestMcpWriteApproval(request.runId, request.name, request.args)
+)
+
+const MAX_AGENT_LOG = 8000
+let lastRunLog = ''
+let lastRunHint: AgentHint | null = null
+let lastRunModel: string | undefined
+let lastRunProgress:
+  | { step: number; maxSteps: number; promptTokens: number; completionTokens: number }
+  | undefined
+
+function appendAgentLog(runId: string, chunk: string): void {
+  const run = codeRuns.get(runId)
+  if (run) run.log = (run.log + chunk).slice(-MAX_AGENT_LOG)
+}
+
+/** The only route from an isolated worktree to the user's project. */
+/** Stop one or all running agents: abort the loop and deny any parked approval. */
+function stopCodeAgent(runId?: string): void {
+  if (runId) {
+    const run = codeRuns.get(runId)
+    if (run) {
+      run.abort = true
+      run.externalChild?.kill('SIGTERM')
+      mcpWriteQueue.rejectRun(run.id)
+      for (const { resolve } of run.pendingApprovals.values()) resolve(false)
+      run.pendingApprovals.clear()
+      for (const { resolve } of run.pendingQuestions.values()) resolve(null)
+      run.pendingQuestions.clear()
     }
   } else {
-    proc.kill()
+    for (const run of codeRuns.values()) {
+      run.abort = true
+      run.externalChild?.kill('SIGTERM')
+      mcpWriteQueue.rejectRun(run.id)
+      for (const { resolve } of run.pendingApprovals.values()) resolve(false)
+      run.pendingApprovals.clear()
+      for (const { resolve } of run.pendingQuestions.values()) resolve(null)
+      run.pendingQuestions.clear()
+    }
   }
 }
-
-/** The context file an agent should read first, if the target repo has one. */
-export const GUIDE_FILE = 'GUIDE.md'
 
 /**
- * Whether `dir` carries a guide for agents working in it.
+ * Directories to look in when the agent isn't on PATH — node version managers
+ * and custom npm prefixes, which is where a global CLI installed without sudo
+ * actually lands.
  *
- * ⚠️ Checked against the **target directory**, never this repo. The agent runs
- * wherever the project's code path points, which may be any repo on the
- * machine; injecting Sagyou's own GUIDE.md there would brief the agent on this
- * app's rules while it edits something else entirely. A repo without a guide
- * simply gets none — that is the honest answer, not a reason to substitute ours.
+ * ⚠️ These are a **fallback, never a first choice** — see `resolveExecutable`.
  */
-function guideIn(dir: string): string | null {
+export function fallbackBinDirs(): string[] {
+  // ⚠️ The one opt-out, and it exists for a specific hazard. `handlers.test.ts`
+  // proves the "not installed" path by emptying PATH — but the agent binary is
+  // genuinely installed on a dev machine, and these dirs are exactly where it
+  // lives (`~/.npm-global/bin` here, `/usr/local/bin` on a Mac). Without this
+  // the test would spawn the real binary, which waits on stdin and never exits,
+  // poisoning every test after it — the failure the PATH-replacement guard
+  // exists to stop. Set only by tests; unset in the app, where the fallback is
+  // the whole point.
+  if (process.env.SAGYOU_DISABLE_BIN_FALLBACK) return []
+  const home = homedir()
+  const dirs = [
+    process.env.NVM_BIN, // nvm's currently-active version
+    join(home, '.npm-global/bin'), // the `npm config set prefix` convention
+    join(home, '.local/bin'),
+    join(home, '.local/share/npm/bin'),
+    join(home, '.volta/bin'),
+    join(home, '.bun/bin')
+  ]
+  if (process.platform === 'darwin') dirs.push('/opt/homebrew/bin', '/usr/local/bin')
+  return dirs.filter((d): d is string => Boolean(d))
+}
+
+/**
+ * Absolute path to `cmd`, or null if it can't be found.
+ *
+ * Two different failures, one fix:
+ *   • **Windows** — spawn without a shell won't append .exe/.cmd, so
+ *     `spawn('binary')` fails even when installed (npm installs a .cmd wrapper).
+ *   • **POSIX** — spawn *does* resolve via PATH, but only the PATH this process
+ *     was handed, and a GUI-launched Electron app doesn't get the user's shell
+ *     PATH. Measured on Ubuntu 24.04 + GNOME/Wayland: apps started from the
+ *     launcher inherit the systemd user manager's PATH, which has no
+ *     `~/.npm-global/bin` — that lives in `~/.bashrc`, read only by interactive
+ *     shells. So `binary --version` works in a terminal while the app reports it
+ *     "não encontrado", which is a lie about the cause and sends the user off
+ *     reinstalling something that is already there.
+ *
+ * ⚠️ **PATH is searched first and `extraDirs` only if that finds nothing.** The
+ * order is load-bearing for the tests, not a preference: `handlers.test.ts`
+ * *replaces* PATH with a dir holding only a stub, precisely so a real binary on
+ * the dev machine can't be spawned (it waits on stdin and never exits, poisoning
+ * every later test). A fallback dir consulted first — or consulted at all when
+ * PATH already matched — would walk straight around that guard and find the real
+ * binary. `extraDirs` is injectable for the same reason.
+ *
+ * Deliberately not `npm prefix -g`: it would be authoritative, but it costs a
+ * subprocess on every run and needs npm on PATH — the very thing that is missing
+ * in the case this exists to fix.
+ */
+export function resolveExecutable(
+  cmd: string,
+  extraDirs: string[] = fallbackBinDirs()
+): string | null {
+  const win = process.platform === 'win32'
+  // '' last: on Windows a bare name (extensionless) is only a match if no
+  // real wrapper exists; on POSIX it is the only form there is.
+  const exts = win ? ['.exe', '.cmd', '.bat', ''] : ['']
+  const pathDirs = (process.env.PATH || '').split(win ? ';' : ':')
+  const runnable = (full: string): boolean => {
+    if (!existsSync(full)) return false
+    // On POSIX, existing is not enough — a non-executable file of the right name
+    // would be picked here and then fail at spawn with EACCES, which reports as
+    // a different problem than the one it is.
+    if (win) return true
+    try {
+      accessSync(full, constants.X_OK)
+      return true
+    } catch {
+      return false
+    }
+  }
+  for (const dir of [...pathDirs, ...extraDirs]) {
+    if (!dir) continue
+    for (const ext of exts) {
+      const full = join(dir, cmd + ext)
+      if (runnable(full)) return full
+    }
+  }
+  return null
+}
+
+type ExternalHarnessId = HarnessId
+
+interface HarnessStatus {
+  id: ExternalHarnessId
+  label: string
+  command: string
+  installed: boolean
+  path: string | null
+  version: string | null
+  /** Only reported when the CLI has a safe status command; never opens login. */
+  authentication: 'authenticated' | 'unauthenticated' | 'unknown'
+  models: string[]
+  capabilities: import('./modules/agent/harness-adapter').HarnessCapabilities
+}
+
+let harnessStatusCache: HarnessStatus[] | null = null
+
+async function runHarnessCommand(
+  command: string,
+  args: string[]
+): Promise<{ code: number; stdout: string; stderr: string }> {
   try {
-    return existsSync(join(dir, GUIDE_FILE)) ? GUIDE_FILE : null
+    const { stdout, stderr } = await execFileAsync(command, args, { timeout: 10_000 })
+    return { code: 0, stdout, stderr }
+  } catch (error) {
+    const result = error as { code?: number; stdout?: string; stderr?: string }
+    return {
+      code: typeof result.code === 'number' ? result.code : 1,
+      stdout: result.stdout ?? '',
+      stderr: result.stderr ?? ''
+    }
+  }
+}
+
+/**
+ * Checks only the local executable and its version. This is intentionally
+ * separate from launching a harness: detection must never start a task, touch
+ * a project, or trigger an external provider login.
+ */
+async function getHarnessStatuses(refresh = false): Promise<HarnessStatus[]> {
+  if (harnessStatusCache && !refresh) return harnessStatusCache
+  harnessStatusCache = await discoverHarnesses(runHarnessCommand, resolveExecutable)
+  return harnessStatusCache
+}
+
+interface ExternalHarnessLaunch {
+  label: string
+  args: string[]
+}
+
+/**
+ * External CLIs run in an isolated worktree. Their flags either make extra
+ * directories writable or differ by harness, so never hand them raw reference
+ * paths. A bounded snapshot gives them real project context without expanding
+ * their filesystem authority.
+ */
+async function readOnlyReferenceBrief(roots: ReadOnlyRoot[]): Promise<string> {
+  const candidates = ['README.md', 'GUIDE.md', 'CLAUDE.md', 'package.json', 'manifest.json']
+  const sections: string[] = []
+  for (const root of roots) {
+    const files: string[] = []
+    for (const name of candidates) {
+      const file = join(root.path, name)
+      if (!existsSync(file) || !statSync(file).isFile()) continue
+      try {
+        const content = await readFile(file, 'utf-8')
+        files.push('### ' + name + '\n' + content.slice(0, 4_000))
+      } catch {
+        /* unreadable references are simply omitted from the bounded briefing */
+      }
+    }
+    sections.push(
+      '## REFERÊNCIA SOMENTE DE LEITURA: ' +
+        root.nome +
+        '\n' +
+        (files.join('\n\n') || 'Sem arquivos-base legíveis.')
+    )
+  }
+  return sections.join('\n\n').slice(0, 18_000)
+}
+
+/**
+ * An external harness gets no data snapshot. It must request current data from
+ * the run-scoped MCP capability, which retains the financial profile and
+ * approves writes while letting the user query other projects explicitly.
+ * Passing `loadData()` here would silently bypass those boundaries in the prompt.
+ */
+function sagyouContextBrief(projectId: string | null | undefined): string {
+  try {
+    const project = projectId ? loadData().projects.find((item) => item.id === projectId) : null
+    return project
+      ? `## CONTEXTO DO SAGYOU\nProjeto inicial: ${project.name}. Use list_projects no MCP Sagyou para consultar outros projetos por ID.`
+      : '## CONTEXTO DO SAGYOU\nSessão geral. Use list_projects no MCP Sagyou para descobrir projetos e consultar seus dados.'
   } catch {
-    return null
+    return ''
   }
 }
 
-function buildAgentCommand(
-  agent: 'aider' | 'codex',
+/**
+ * Local Sagyou skills are explicit user-authored briefing material, so an
+ * external executor can use them without receiving the skills directory (or
+ * any extra filesystem authority). Keep the hand-off bounded and sanitize it
+ * together with the rest of the external brief.
+ */
+function sagyouSkillsBrief(): string {
+  try {
+    const skills = listSkills(skillsPath()).slice(0, 20)
+    if (!skills.length) return ''
+    const body = skills
+      .map((skill) => `### /${skill.name}\n${skill.body.slice(0, 4_000)}`)
+      .join('\n\n')
+      .slice(0, 20_000)
+    return `## SKILLS LOCAIS DO SAGYOU\nUse estas instruções quando forem pertinentes à tarefa.\n\n${body}`
+  } catch {
+    return ''
+  }
+}
+
+/** A persistent terminal uses the harness normal TUI in its isolated worktree. */
+function buildTerminalHarnessLaunch(
+  harness: ExternalHarnessId,
   task: string,
-  cfg: AIConfig,
-  dir: string
-): { cmd: string; args: string[]; taskFile: string | null } {
-  // The hook: hand the repo's own guide to the agent before it touches code.
-  // Relative to the agent's cwd, which is `dir` — so the path is the same
-  // string for every repo and nothing leaks about the machine's layout.
-  const guide = guideIn(dir)
-
-  if (agent === 'codex') {
-    // Codex CLI reads the OpenAI-compatible endpoint from the env set below.
-    //
-    // It has no --read: it finds AGENTS.md by itself (and truncates a project
-    // doc past its budget, silently). So the guide is asked for in the prompt —
-    // the one channel codex exec has — and only when the repo actually has one.
-    const prompt = guide
-      ? `Antes de alterar qualquer código, leia o ${guide} deste repositório e siga as regras dele.\n\n${task}`
-      : task
-    return { cmd: 'codex', args: ['exec', prompt], taskFile: null }
-  }
-  // Aider (default). The task goes in a temp file (--message-file) so untrusted
-  // text never lands on the command line (which may be shell-interpreted on
-  // Windows). `--yes-always` keeps it autonomous after the approved launch.
-  const taskFile = join(app.getPath('temp'), `sagyou-task-${randomUUID()}.txt`)
-  writeFileSync(taskFile, task, 'utf-8')
-  return {
-    cmd: 'aider',
-    args: [
-      '--model',
-      `openai/${cfg.model}`,
-      '--yes-always',
-      // Read-only, so aider keeps it in context but never edits it. This is
-      // belt and braces with the repo's own .aider.conf.yml (which only applies
-      // when aider is launched from the repo): the flag is what makes a guide
-      // work in *any* repo the app points at, config file or not. Naming the
-      // same file twice is harmless — aider takes it once.
-      ...(guide ? ['--read', guide] : []),
-      '--message-file',
-      taskFile
-    ],
-    taskFile
-  }
+  cwd: string
+): ExternalHarnessLaunch {
+  return buildHarnessLaunch(harness, task, cwd)
 }
-
-// --- AI config (persisted to ai-config.json in userData, not the DB) ---
+/**
+ * Agent settings only. The generic chat's API connection keys are gone for
+ * good; unknown keys still ride along untouched so an older or newer build's
+ * field is never lost by a rewrite.
+ */
 interface AIConfig {
-  baseUrl: string
-  apiKey: string
-  model: string
-  /** Optional cap on the agent's tool rounds; absent means the per-mode default. */
-  maxSteps?: number
-  /**
-   * USD per 1M tokens, as charged by whatever provider is configured. There is
-   * no sane default: the same app talks to OpenAI and to a free local model, so
-   * a built-in price table would invent a number. Absent = show tokens only.
-   */
-  inputPricePer1M?: number
-  outputPricePer1M?: number
-  /**
-   * How long to wait for the model to start responding, in ms. Absent = the
-   * default in ./openai-client (the SDK's own 10min is effectively a hang).
-   */
-  timeoutMs?: number
-  /**
-   * The conversation the user last had open, reopened when they come back to
-   * the AI view. UI state rather than provider config, but it lives here to
-   * ride the ai:config plumbing instead of earning a file of its own.
-   */
-  lastConversationId?: string
+  /** Preferred form of address, shown on the lock screen. */
+  userName?: string
+  /** Historic native selections load as the Codex default. */
+  codeHarness?: HarnessId
+  reasoningEffort?: 'low' | 'medium' | 'high'
+  [key: string]: unknown
 }
 
-const DEFAULT_AI_CONFIG: AIConfig = { baseUrl: '', apiKey: '', model: '' }
+/** The only shape this process ever hands out or writes: no API-chat keys. */
+function agentOnlyConfig(value: unknown): AIConfig {
+  return stripLegacyApiConfig(normalizeLegacyAIConfig(value)).config as AIConfig
+}
+
 const aiConfigPath = (): string => join(app.getPath('userData'), 'ai-config.json')
 
-/**
- * The provider's HTTP status off an SDK error, when there was a response at all.
- * The renderer needs it to tell a transient failure (429/5xx — worth retrying)
- * from a permanent one (401/400 — retrying just delays the real message).
- * Undefined means the call never got a response: DNS, refused connection, etc.
- */
-function errorStatus(e: unknown): number | undefined {
-  const status = (e as { status?: unknown })?.status
-  return typeof status === 'number' ? status : undefined
+// Password protection is intentionally separate from the data and backup formats:
+// importing a backup must never silently replace the credential that protects this machine.
+const passwordConfigPath = (): string => join(app.getPath('userData'), 'password-security.json')
+let passwordConfig: PasswordConfig | null = null
+let passwordConfigCorrupt = false
+let passwordUnlocked = false
+
+function loadPasswordConfig(): { config: PasswordConfig | null; corrupt: boolean } {
+  if (!existsSync(passwordConfigPath())) return { config: null, corrupt: false }
+  try {
+    return parsePasswordConfig(readFileSync(passwordConfigPath(), 'utf-8'))
+  } catch {
+    // A broken or unreadable config must never look like "no password".
+    return { config: null, corrupt: true }
+  }
 }
 
-/** The provider's usage block, normalised. Absent when it didn't report one. */
-function toUsage(raw: { prompt_tokens?: number; completion_tokens?: number } | undefined | null): TokenUsage | undefined {
-  if (!raw) return undefined
-  const promptTokens = typeof raw.prompt_tokens === 'number' ? raw.prompt_tokens : 0
-  const completionTokens = typeof raw.completion_tokens === 'number' ? raw.completion_tokens : 0
-  if (promptTokens === 0 && completionTokens === 0) return undefined
-  return { promptTokens, completionTokens }
+function savePasswordConfig(config: PasswordConfig): void {
+  writeFileSync(passwordConfigPath(), JSON.stringify(config), { mode: 0o600 })
+  // Existing files retain their old mode unless explicitly corrected.
+  chmodSync(passwordConfigPath(), 0o600)
+}
+
+function passwordStatus(): { enabled: boolean; corrupt: boolean; userName?: string } {
+  const userName = loadAIConfig().userName?.trim()
+  return {
+    enabled: passwordConfig !== null || passwordConfigCorrupt,
+    corrupt: passwordConfigCorrupt,
+    userName: userName || undefined
+  }
+}
+
+function readAIConfigFile(): AIConfig {
+  try {
+    return agentOnlyConfig(JSON.parse(readFileSync(aiConfigPath(), 'utf-8')))
+  } catch {
+    return {}
+  }
 }
 
 function loadAIConfig(): AIConfig {
+  return readAIConfigFile()
+}
+
+/**
+ * Merge over what is on disk so a key this build does not know survives, and
+ * drop every API-chat key from both sides: none may be accepted or persisted.
+ */
+function saveAIConfig(config: unknown): void {
+  keepUnreadableAIConfig()
+  const merged = { ...readAIConfigFile(), ...agentOnlyConfig(config) }
+  const userName =
+    typeof merged.userName === 'string' ? merged.userName.trim().slice(0, 80) : undefined
+  const path = aiConfigPath()
+  const tmp = `${path}.tmp`
+  writeFileSync(tmp, JSON.stringify({ ...merged, userName: userName || undefined }, null, 2), 'utf-8')
+  renameSync(tmp, path)
+}
+
+/**
+ * An unreadable ai-config.json reads as empty, so the next save would replace
+ * it with defaults and destroy whatever was recoverable in it. Keep a copy
+ * beside it first (the migration leaves such a file untouched for the same
+ * reason).
+ */
+function keepUnreadableAIConfig(): void {
+  const path = aiConfigPath()
+  if (!existsSync(path)) return
   try {
-    return { ...DEFAULT_AI_CONFIG, ...JSON.parse(readFileSync(aiConfigPath(), 'utf-8')) }
+    JSON.parse(readFileSync(path, 'utf-8'))
   } catch {
-    return { ...DEFAULT_AI_CONFIG }
+    copyFileSync(path, `${path}.corrupt-${new Date().toISOString().replace(/[:.]/g, '-')}`)
   }
 }
 
-function saveAIConfig(config: AIConfig): void {
-  writeFileSync(aiConfigPath(), JSON.stringify(config, null, 2), 'utf-8')
-}
-
-// --- AI usage log (persisted to ai-usage-log.json in userData) ---
+// --- Task images (files under userData/task-images, named <id><ext>) ---
 //
-// Written here rather than in the renderer because every model call funnels
-// through this process: a log kept anywhere else could be bypassed by a caller
-// that forgets to report. The rules live in ./usage (no Electron, so testable);
-// this only does the file IO.
+// Same on-disk shape as file attachments (files/), so safeAttachmentName guards
+// the id/ext. The bytes were moved off the DB (see migrateTaskImagesToDisk).
 
-const aiUsagePath = (): string => join(app.getPath('userData'), 'ai-usage-log.json')
+const taskImagesDir = (): string => join(app.getPath('userData'), 'task-images')
 
-function loadUsageLog(): UsageLogEntry[] {
-  try {
-    const data = JSON.parse(readFileSync(aiUsagePath(), 'utf-8'))
-    return Array.isArray(data) ? data : []
-  } catch {
-    return []
-  }
+/** Resolve a task image's id+ext to a path inside task-images/, or null. */
+function taskImagePath(id: unknown, ext: unknown): string | null {
+  const name = safeAttachmentName(id, ext)
+  if (!name) return null
+  const full = join(taskImagesDir(), name)
+  return full.startsWith(taskImagesDir() + sep) ? full : null
 }
 
-/** Record one billed call. Never throws: losing the log must not fail the chat. */
-function appendUsage(model: string, usage: TokenUsage, cfg: AIConfig): void {
-  try {
-    const next = appendEntry(loadUsageLog(), newEntry(model, usage, cfg))
-    writeFileSync(aiUsagePath(), JSON.stringify(next), 'utf-8')
-  } catch {
-    /* the log is bookkeeping; a failure here must not break the answer */
-  }
-}
+// --- Past agent runs (files under userData/agent-runs) ---
+//
+// See agent-runs.ts for why a run is a frozen snapshot and why the payload is
+// out here rather than on the conversation.
 
-// --- Chat images (files under userData/chat-images) ---
+const agentRunsDir = (): string => join(app.getPath('userData'), 'agent-runs')
+const agentRunsIndexPath = (): string => join(agentRunsDir(), 'index.json')
 
-const chatImagesDir = (): string => join(app.getPath('userData'), 'chat-images')
-
-/** Resolve an image id to a path, or null if it isn't one of ours. */
-function chatImagePath(id: unknown): string | null {
-  if (!isImageFileName(id)) return null
-  const full = join(chatImagesDir(), id)
+/** Resolve a run id to its payload path, or null if it isn't one of ours. */
+function agentRunPath(id: unknown): string | null {
+  if (!isRunId(id)) return null
+  const full = join(agentRunsDir(), `${id}.json`)
   // The id arrives from the renderer; belt and braces on top of the name check.
-  return full.startsWith(chatImagesDir() + sep) ? full : null
+  return full.startsWith(agentRunsDir() + sep) ? full : null
 }
 
-// --- Gerar Tasks templates (persisted to ai-templates.json in userData) ---
-
-const aiTemplatesPath = (): string => join(app.getPath('userData'), 'ai-templates.json')
-
-function loadTemplates(): PromptTemplate[] {
+function loadRunIndex(): AgentRunMeta[] {
   try {
-    return normalizeTemplates(JSON.parse(readFileSync(aiTemplatesPath(), 'utf-8')))
+    if (!existsSync(agentRunsIndexPath())) return []
+    const raw = JSON.parse(readFileSync(agentRunsIndexPath(), 'utf-8'))
+    const runs = normalizeRuns(raw)
+    // Lazy prune: drop runs past their TTL and payload files, even when no new
+    // run was just archived. Without this, old runs persist forever in the index
+    // until someone happens to fire a new agent.
+    const { keep, drop } = pruneRuns(runs)
+    if (drop.length > 0) {
+      saveRunIndex(keep)
+      for (const gone of drop) {
+        const p = agentRunPath(gone.id)
+        if (p && existsSync(p)) {
+          try {
+            unlinkSync(p)
+          } catch {
+            /* best-effort */
+          }
+        }
+      }
+    }
+    return keep
   } catch {
     return []
   }
 }
 
-function writeTemplates(list: PromptTemplate[]): void {
-  writeFileSync(aiTemplatesPath(), JSON.stringify(list, null, 2), 'utf-8')
+function saveRunIndex(runs: AgentRunMeta[]): void {
+  if (!existsSync(agentRunsDir())) mkdirSync(agentRunsDir(), { recursive: true })
+  writeFileSync(agentRunsIndexPath(), JSON.stringify(runs), 'utf-8')
 }
 
-// --- AI chat history (persisted to ai-conversations.json in userData) ---
-interface StoredConversation {
-  id: string
-  title: string
-  createdAt: string
-  updatedAt: string
-  messages: {
-    role: 'user' | 'assistant' | 'status'
-    content: string
-    /** Chat-image ids; the bytes live under chat-images/. Absent on old files. */
-    imageIds?: string[]
-  }[]
-  /** Tokens billed across this conversation's whole life. Absent on old files. */
-  usage?: TokenUsage
-  /**
-   * The user named this chat, so `title` is theirs to keep.
-   *
-   * Titles are otherwise derived from the first user message on every autosave,
-   * which would overwrite a rename within the second. The flag lives here and
-   * is enforced in `ai:conversations:save` rather than in the renderer: the
-   * autosave keeps sending its derived title and this side ignores it once the
-   * name is the user's. Absent on old files — an underived title is just a
-   * title, and stays derivable until someone renames it.
-   */
-  titleCustom?: boolean
-}
-
-const aiConversationsPath = (): string => join(app.getPath('userData'), 'ai-conversations.json')
-
-function loadConversations(): StoredConversation[] {
+/**
+ * Freeze a finished run: its log and the diff as computed right now.
+ *
+ * Called once, from the agent's exit path, because *now* is the only moment the
+ * diff means "what the agent did" — every later edit the user makes would be
+ * folded into it. Best-effort throughout: a run that can't be archived must
+ * never break the run itself, which already did the work the user asked for.
+ */
+async function archiveAgentRun(runId: string, exitCode: number): Promise<AgentRunSnapshot | null> {
+  const run = codeRuns.get(runId)
+  if (!run) return null
   try {
-    const data = JSON.parse(readFileSync(aiConversationsPath(), 'utf-8'))
-    return Array.isArray(data) ? data : []
+    const diff = run.base ? await diffSince(run.base) : null
+    const snapshot: AgentRunSnapshot = {
+      id: run.id,
+      convId: run.convId,
+      sessionId: run.sessionId,
+      projectId: run.projectId,
+      agent: run.agent,
+      dir: run.dir,
+      allowedWritePaths: run.allowedWritePaths,
+      readOnlyRoots: run.readOnlyRoots,
+      task: run.task,
+      startedAt: run.startedAt,
+      endedAt: Date.now(),
+      exitCode,
+      ...(run.worktreeDir
+        ? { delivery: run.worktreeMergeError ? ('merge_failed' as const) : ('applied' as const) }
+        : {}),
+      fileCount: diffFileCount(diff),
+      // Frozen with the run so the picker can show what a past run cost.
+      tokens: { ...run.usage },
+      log: run.log,
+      diff
+    }
+    const path = agentRunPath(run.id)
+    if (!path) return null
+    if (!existsSync(agentRunsDir())) mkdirSync(agentRunsDir(), { recursive: true })
+    writeFileSync(path, JSON.stringify(snapshot), 'utf-8')
+
+    // Index last, so a row never points at a payload that was never written.
+    // Pruning deletes the dropped payloads too — forgetting a run in the index
+    // without unlinking its file leaks that disk for good.
+    const { log: _log, diff: _diff, ...meta } = snapshot
+    const { keep, drop } = pruneRuns([meta, ...loadRunIndex().filter((r) => r.id !== meta.id)])
+    saveRunIndex(keep)
+    // Announced separately from 'exit', which fires before this: the archive
+    // costs a `git diff`, and the panel must not stay on "rodando" waiting for
+    // it. This is what tells the run picker its new row exists.
+    mainWindow?.webContents.send('ai:code-agent:archived', {
+      runId: run.id,
+      id: meta.id,
+      sessionId: run.sessionId
+    })
+    for (const gone of drop) {
+      const p = agentRunPath(gone.id)
+      if (p && existsSync(p)) {
+        try {
+          unlinkSync(p)
+        } catch {
+          /* a payload we can't delete is not worth failing the archive over */
+        }
+      }
+    }
+    return snapshot
   } catch {
-    return []
+    /* archiving is a convenience; the run itself already happened */
+    return null
+  }
+  // Run state already cleaned from codeRuns in the finally block;
+  // survivors (lastRunLog etc.) persist for status() backward compat.
+}
+
+/** Persist one bounded breadcrumb per project without copying a terminal log into memory. */
+function persistTerminalHandoff(
+  run: CodeRunState,
+  exitCode: number,
+  archived: AgentRunSnapshot | null
+): void {
+  try {
+    const files = Array.isArray((archived?.diff as { files?: unknown } | undefined)?.files)
+      ? ((archived?.diff as { files: { path?: unknown }[] }).files
+          .map((file) => (typeof file.path === 'string' ? file.path : ''))
+          .filter(Boolean) as string[])
+      : []
+    const status = run.abort
+      ? 'cancelled'
+      : run.worktreeMergeError
+        ? 'not_applied'
+        : exitCode === 0
+          ? 'completed'
+          : 'failed'
+    const result =
+      status === 'completed'
+        ? 'Terminal concluído; consulte o diff arquivado para os detalhes.'
+        : status === 'cancelled'
+          ? 'Execução interrompida pelo usuário; consulte a run arquivada para os detalhes.'
+          : status === 'not_applied'
+            ? 'A execução terminou, mas as alterações não foram aplicadas; consulte a run arquivada.'
+            : `Terminal terminou com código ${exitCode}; consulte a run arquivada para os detalhes.`
+    memoryStore.upsertMemory(
+      buildTerminalHandoff(
+        {
+          projectId: run.projectId,
+          runId: run.id,
+          request: run.task,
+          status,
+          result,
+          changedFiles: files
+        },
+        new Date().toISOString()
+      )
+    )
+  } catch {
+    /* A continuity note must never turn a completed terminal run into a failure. */
   }
 }
 
-function saveConversations(list: StoredConversation[]): void {
-  writeFileSync(aiConversationsPath(), JSON.stringify(list), 'utf-8')
-}
+// --- Skills (.md files in userData/skills/) ---
+
+const skillsPath = (): string => skillsDir(app.getPath('userData'))
 
 function createWindow(): void {
-  mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 800,
-    minWidth: 900,
-    minHeight: 600,
-    show: false,
-    autoHideMenuBar: true,
-    title: 'Sagyou',
-    frame: false,
-    ...(process.platform === 'linux' ? { icon } : {}),
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
-    }
+  managedWindow = createManagedWindow({
+    preloadPath: join(__dirname, '../preload/index.js'),
+    productionPagePath: join(__dirname, '../renderer/index.html'),
+    icon,
+    isDev: is.dev,
+    rendererUrl: process.env['ELECTRON_RENDERER_URL']
   })
-
-  mainWindow.on('ready-to-show', () => mainWindow!.show())
-
-  mainWindow.on('maximize', () => mainWindow!.webContents.send('window:maximized-change', true))
-  mainWindow.on('unmaximize', () => mainWindow!.webContents.send('window:maximized-change', false))
-
-  mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
-    return { action: 'deny' }
-  })
-
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
-  } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
-  }
+  mainWindow = managedWindow.window
 }
+
+app.commandLine.appendSwitch('lang', 'pt-BR')
 
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.sagyou')
+  const passwordState = loadPasswordConfig()
+  passwordConfig = passwordState.config
+  passwordConfigCorrupt = passwordState.corrupt
+  passwordUnlocked = passwordConfig === null && !passwordConfigCorrupt
 
   const filesDir = join(app.getPath('userData'), 'files')
   if (!existsSync(filesDir)) mkdirSync(filesDir)
+
+  // Migrate old ai-templates.json to per-file skills (one .md = one skill).
+  // Templates were a flat JSON array; skills are individual .md files the model
+  // can call with /skill-name.  Run once: after migration the .json is renamed
+  // to .bak so it never runs again.
+  const templatesPath = join(app.getPath('userData'), 'ai-templates.json')
+  if (existsSync(templatesPath)) {
+    try {
+      const raw = readFileSync(templatesPath, 'utf-8')
+      const parsed: unknown = JSON.parse(raw)
+      const entries: { name?: string; body?: string }[] = Array.isArray(parsed) ? parsed : []
+      const dir = skillsDir(app.getPath('userData'))
+      let migrated = 0
+      for (const t of entries) {
+        const name = (t.name ?? '').trim()
+        const body = (t.body ?? '').trim()
+        if (!name || !body) continue
+        const res = saveSkill(dir, { name, body })
+        if ('skill' in res) migrated++
+      }
+      if (migrated > 0)
+        console.log(`[skills] migrated ${migrated} template(s) from ai-templates.json`)
+    } catch (_) {
+      /* best-effort — a corrupt json is silently skipped */
+    }
+    try {
+      renameSync(templatesPath, templatesPath + '.bak')
+    } catch (_) {
+      /* if rename fails (e.g. permissions), leave it — worst case it tries next launch */
+    }
+  }
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  ipcMain.handle('window:minimize', () => mainWindow?.minimize())
-  ipcMain.handle('window:maximize', () => {
-    if (mainWindow?.isMaximized()) mainWindow.restore()
-    else mainWindow?.maximize()
+  registerWindowHandlers(ipcMain, () => mainWindow)
+  ipcMain.handle('security:status', (event) => {
+    assertTrustedRenderer(event)
+    return passwordStatus()
   })
-  ipcMain.handle('window:close', () => mainWindow?.close())
-  ipcMain.handle('window:is-maximized', () => mainWindow?.isMaximized())
+  ipcMain.handle('security:unlock', (event, password: unknown) => {
+    assertTrustedRenderer(event)
+    if (passwordConfigCorrupt) {
+      return {
+        success: false,
+        error: 'A configuração de senha está corrompida. Use a recuperação.'
+      }
+    }
+    if (!passwordConfig || verifyPassword(passwordConfig, password)) {
+      passwordUnlocked = true
+      return { success: true }
+    }
+    return { success: false, error: 'Senha incorreta.' }
+  })
+  ipcMain.handle('security:enable', (event, password: unknown) => {
+    assertTrustedRenderer(event)
+    if (passwordConfigCorrupt) {
+      return { success: false, error: 'Recupere a configuração de senha antes de criar outra.' }
+    }
+    if (passwordConfig) return { success: false, error: 'A senha já está ativada.' }
+    const next = createPasswordConfig(password)
+    if ('error' in next) return { success: false, error: next.error }
+    savePasswordConfig(next)
+    passwordConfig = next
+    passwordUnlocked = true
+    return { success: true }
+  })
+  ipcMain.handle('security:change', (event, current: unknown, nextPassword: unknown) => {
+    assertTrustedRenderer(event)
+    if (passwordConfigCorrupt) {
+      return { success: false, error: 'A configuração de senha está corrompida.' }
+    }
+    if (!passwordConfig || !verifyPassword(passwordConfig, current))
+      return { success: false, error: 'Senha atual incorreta.' }
+    const next = createPasswordConfig(nextPassword)
+    if ('error' in next) return { success: false, error: next.error }
+    savePasswordConfig(next)
+    passwordConfig = next
+    return { success: true }
+  })
+  ipcMain.handle('security:disable', (event, current: unknown) => {
+    assertTrustedRenderer(event)
+    if (passwordConfigCorrupt) {
+      return { success: false, error: 'A configuração de senha está corrompida.' }
+    }
+    if (!passwordConfig || !verifyPassword(passwordConfig, current))
+      return { success: false, error: 'Senha atual incorreta.' }
+    try {
+      unlinkSync(passwordConfigPath())
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+    passwordConfig = null
+    passwordUnlocked = true
+    return { success: true }
+  })
+  ipcMain.handle('security:recover', (event, confirmed: unknown) => {
+    assertTrustedRenderer(event)
+    if (!passwordConfigCorrupt || confirmed !== true) {
+      return { success: false, error: 'Confirme a recuperação para continuar.' }
+    }
+    try {
+      unlinkSync(passwordConfigPath())
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        return { success: false, error: 'Não foi possível remover a configuração corrompida.' }
+      }
+    }
+    passwordConfig = null
+    passwordConfigCorrupt = false
+    passwordUnlocked = true
+    return { success: true }
+  })
+  protectDataIpc(ipcMain)
+  ipcMain.handle('app:flush-before-close:complete', () => managedWindow?.completeClose())
+  registerFilesHandlers(ipcMain, {
+    mainWindow,
+    dialog,
+    shell,
+    filesDir,
+    taskImagesDir: taskImagesDir(),
+    userDataPath: app.getPath('userData'),
+    sep
+  })
 
   ipcMain.handle('store:load', () => loadData())
 
   ipcMain.handle('store:save', (_, data) => {
     saveData(data)
   })
-
-  ipcMain.handle('backup:export', async (_, backup) => {
-    const date = new Date().toISOString().split('T')[0]
-    const { filePath, canceled } = await dialog.showSaveDialog({
-      defaultPath: `kanban-backup-${date}.json`,
-      filters: [{ name: 'JSON', extensions: ['json'] }]
-    })
-    if (canceled || !filePath) return { success: false, cancelled: true }
-    writeFileSync(filePath, JSON.stringify(backup, null, 2), 'utf-8')
-    return { success: true }
-  })
-
-  ipcMain.handle('backup:import', async () => {
-    const { filePaths, canceled } = await dialog.showOpenDialog({
-      filters: [{ name: 'JSON', extensions: ['json'] }],
-      properties: ['openFile']
-    })
-    if (canceled || filePaths.length === 0) return { success: false, cancelled: true }
-    try {
-      const content = readFileSync(filePaths[0], 'utf-8')
-      return { success: true, data: JSON.parse(content) }
-    } catch {
-      return { success: false, error: 'Arquivo inválido' }
+  ipcMain.on(
+    'store:mcp:create-task:response',
+    (_, response: { requestId?: unknown; id?: unknown; error?: unknown }) => {
+      if (typeof response.requestId !== 'string') return
+      if (typeof response.id === 'string') rendererMcpTasks.resolve(response.requestId, response.id)
+      else
+        rendererMcpTasks.reject(
+          response.requestId,
+          new Error(
+            typeof response.error === 'string'
+              ? response.error
+              : 'O Sagyou recusou a criação da task.'
+          )
+        )
     }
-  })
+  )
+  ipcMain.handle('store:rebuild-search-index', () => rebuildSearchIndex())
+  ipcMain.handle('search:global', (_, options: unknown) => searchGlobalIndex(options))
+  ipcMain.handle('search:global:get', (_, options: unknown) => getGlobalSearchIndexHit(options))
 
-  ipcMain.handle('files:upload', async () => {
-    const { filePaths, canceled } = await dialog.showOpenDialog({
-      title: 'Selecionar arquivos',
-      properties: ['openFile', 'multiSelections']
-    })
-    if (canceled || filePaths.length === 0) return []
-    const results: { id: string; name: string; ext: string; size: number; createdAt: string }[] = []
-    for (const filePath of filePaths) {
-      try {
-        const id = randomUUID()
-        const ext = extname(filePath)
-        const name = basename(filePath)
-        const size = statSync(filePath).size
-        copyFileSync(filePath, join(filesDir, `${id}${ext}`))
-        results.push({ id, name, ext, size, createdAt: new Date().toISOString() })
-      } catch {
-        // skip files that can't be copied
-      }
-    }
-    return results
+  registerBackupHandlers(ipcMain, {
+    dialog,
+    filesDir,
+    taskImagesDir: taskImagesDir(),
+    backupDir: join(app.getPath('userData'), 'backups'),
+    sep,
+    taskImagePath
   })
-
-  ipcMain.handle('files:delete', (_, id: string, ext: string) => {
-    try {
-      const filePath = join(filesDir, `${id}${ext}`)
-      if (existsSync(filePath)) unlinkSync(filePath)
-      return { success: true }
-    } catch {
-      return { success: false }
-    }
-  })
-
-  ipcMain.handle('files:open', async (_, id: string, ext: string) => {
-    const filePath = join(filesDir, `${id}${ext}`)
-    const error = await shell.openPath(filePath)
-    return { success: !error, error: error || undefined }
-  })
-
-  ipcMain.handle('files:openInBrowser', async (_, id: string, ext: string) => {
-    const filePath = join(filesDir, `${id}${ext}`)
-    try {
-      await shell.openExternal(`file://${filePath}`)
-      return { success: true }
-    } catch (e) {
-      return { success: false, error: String(e) }
-    }
-  })
-
-  ipcMain.handle('files:download', async (_, id: string, name: string, ext: string) => {
-    const { filePath: dest, canceled } = await dialog.showSaveDialog({
-      defaultPath: name,
-      filters: [{ name: 'Todos os arquivos', extensions: ['*'] }]
-    })
-    if (canceled || !dest) return { success: false, cancelled: true }
-    try {
-      copyFileSync(join(filesDir, `${id}${ext}`), dest)
-      return { success: true }
-    } catch {
-      return { success: false, error: 'Erro ao salvar arquivo' }
-    }
-  })
-
-  ipcMain.handle('excel:export', async (_, buffer: Buffer, filename: string) => {
-    const { filePath, canceled } = await dialog.showSaveDialog({
-      defaultPath: filename,
-      filters: [{ name: 'Excel', extensions: ['xlsx'] }]
-    })
-    if (canceled || !filePath) return { success: false, cancelled: true }
-    try {
-      writeFileSync(filePath, Buffer.from(buffer))
-      return { success: true }
-    } catch {
-      return { success: false, error: 'Erro ao salvar arquivo' }
-    }
-  })
-
-  ipcMain.handle('ai:import', async () => {
-    const { filePaths, canceled } = await dialog.showOpenDialog({
-      filters: [{ name: 'JSON', extensions: ['json'] }],
-      properties: ['openFile']
-    })
-    if (canceled || filePaths.length === 0) return { success: false, cancelled: true }
-    try {
-      const content = readFileSync(filePaths[0], 'utf-8')
-      return { success: true, data: JSON.parse(content) }
-    } catch {
-      return { success: false, error: 'Arquivo inválido' }
-    }
+  ipcMain.handle('backup:open-folder', async () => {
+    const dir = join(app.getPath('userData'), 'backups')
+    mkdirSync(dir, { recursive: true })
+    return shell.openPath(dir)
   })
 
   ipcMain.handle('ai:config:get', () => loadAIConfig())
 
-  ipcMain.handle('ai:config:set', (_, config: AIConfig) => {
+  ipcMain.handle('ai:config:set', (_, config: unknown) => {
     saveAIConfig(config)
   })
 
-  ipcMain.handle('ai:usage:summary', () => summarize(loadUsageLog()))
-
-  // Proxy an OpenAI-compatible chat/completions call. baseURL + apiKey come
-  // from the renderer when provided, falling back to the stored config.
-  ipcMain.handle(
-    'ai:chat',
-    async (
-      _,
-      request: {
-        messages: unknown[]
-        tools?: unknown[]
-        model?: string
-        baseUrl?: string
-        apiKey?: string
-      }
-    ) => {
-      const config = loadAIConfig()
-      const baseURL = request.baseUrl || config.baseUrl
-      const apiKey = request.apiKey || config.apiKey
-      const model = request.model || config.model
-      if (!baseURL || !model) {
-        return { success: false, error: 'Configuração de IA incompleta (Base URL / Model)', status: 400 }
-      }
-      try {
-        const client = getOpenAIClient(baseURL, apiKey)
-        const body = {
-          model,
-          messages: request.messages,
-          ...(request.tools && request.tools.length > 0 ? { tools: request.tools } : {})
-        } as unknown as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming
-        const completion = await client.chat.completions.create(body, requestOptions(config.timeoutMs))
-        const message = completion.choices[0]?.message
-        if (!message) return { success: false, error: 'Resposta vazia do modelo' }
-        const usage = toUsage(completion.usage)
-        if (usage) appendUsage(model, usage, config)
-        return {
-          success: true,
-          message: {
-            role: 'assistant',
-            content: message.content ?? '',
-            tool_calls: message.tool_calls
-          },
-          usage
-        }
-      } catch (e) {
-        return {
-          success: false,
-          error: e instanceof Error ? e.message : 'Falha ao contatar o modelo',
-          status: errorStatus(e)
-        }
-      }
-    }
+  ipcMain.handle('ai:harnesses:status', async (_, refresh?: boolean) =>
+    getHarnessStatuses(refresh === true)
   )
 
-  // Same as 'ai:chat', but streams the assistant's text back as it arrives
-  // ('ai:chat:delta' events tagged with the caller's streamId) so the renderer
-  // can type the answer out. Resolves with the assembled message, identical in
-  // shape to 'ai:chat', so the agent loop treats both the same.
-  ipcMain.handle(
-    'ai:chat:stream',
-    async (
-      event,
-      request: {
-        streamId: string
-        messages: unknown[]
-        tools?: unknown[]
-        model?: string
-        baseUrl?: string
-        apiKey?: string
-      }
-    ) => {
-      const config = loadAIConfig()
-      const baseURL = request.baseUrl || config.baseUrl
-      const apiKey = request.apiKey || config.apiKey
-      const model = request.model || config.model
-      if (!baseURL || !model) {
-        return { success: false, error: 'Configuração de IA incompleta (Base URL / Model)', status: 400 }
-      }
-      try {
-        const client = getOpenAIClient(baseURL, apiKey)
-        const body = {
-          model,
-          messages: request.messages,
-          stream: true,
-          ...(request.tools && request.tools.length > 0 ? { tools: request.tools } : {})
-        } as unknown as OpenAI.Chat.ChatCompletionCreateParamsStreaming
+  registerMemoryHandlers(ipcMain, { store: memoryStore, memory: memoryRules, newId: randomUUID })
 
-        // A streaming provider only reports token usage if asked. Not every
-        // OpenAI-compatible server knows `stream_options` though, and a strict
-        // one answers 400 — so fall back to a plain stream rather than break
-        // chat for it. Losing the token count beats losing the answer.
-        let stream: Awaited<ReturnType<typeof client.chat.completions.create>>
-        try {
-          stream = await client.chat.completions.create(
-            {
-              ...body,
-              stream_options: { include_usage: true }
-            } as unknown as OpenAI.Chat.ChatCompletionCreateParamsStreaming,
-            requestOptions(config.timeoutMs)
-          )
-        } catch (e) {
-          if (errorStatus(e) !== 400) throw e
-          stream = await client.chat.completions.create(body, requestOptions(config.timeoutMs))
-        }
-
-        let usage: TokenUsage | undefined
-        let content = ''
-        // tool_calls arrive split across chunks: each delta carries an index and
-        // a slice of the JSON arguments, which we concatenate per index.
-        //
-        // Yes, the SDK can assemble this for us — `client.chat.completions
-        // .stream(...).finalChatCompletion()` returns the message with
-        // tool_calls already joined, and it handles content deltas and usage
-        // too. It is deliberately NOT used here. Its finalizer hard-throws
-        // `OpenAIError: missing role for choice 0` when a delta never carries a
-        // `role`, which real OpenAI always sends but an OpenAI-compatible
-        // server need not — and this app points at any such endpoint, local
-        // ones included. Verified against a mock provider: on role-less deltas
-        // the SDK helper throws while this loop returns the tool call fine, and
-        // it throws at the END, after the answer already streamed to the user.
-        //
-        // (`stream.toReadableStream()` assembles nothing at all — it just hands
-        // back the raw SSE bytes as a web stream.)
-        //
-        // Tolerance is the point here; the ~20 lines below are the price.
-        const toolCalls: { id: string; type: 'function'; function: { name: string; arguments: string } }[] = []
-
-        for await (const chunk of stream) {
-          // The usage chunk arrives last and carries no choices, so read it
-          // before the delta guard below skips the chunk entirely.
-          usage = toUsage(chunk.usage) ?? usage
-          const delta = chunk.choices[0]?.delta
-          if (!delta) continue
-          if (delta.content) {
-            content += delta.content
-            if (!event.sender.isDestroyed()) {
-              event.sender.send('ai:chat:delta', { streamId: request.streamId, delta: delta.content })
-            }
-          }
-          for (const tc of delta.tool_calls ?? []) {
-            const slot = (toolCalls[tc.index] ??= {
-              id: '',
-              type: 'function',
-              function: { name: '', arguments: '' }
-            })
-            if (tc.id) slot.id = tc.id
-            if (tc.function?.name) {
-              slot.function.name += tc.function.name
-              // Say what's coming as soon as it's known, rather than sitting on
-              // it until the message completes. A tool call with no preamble
-              // streams no text at all, so the renderer has nothing to show
-              // while the arguments arrive — which for a big criar_tasks is
-              // seconds of anonymous spinner. The name lands in the first delta;
-              // the arguments are what take the time.
-              //
-              // Re-sent if a name arrives in pieces (name += above): the
-              // renderer takes the latest per index, so a partial is corrected
-              // rather than duplicated.
-              if (!event.sender.isDestroyed()) {
-                event.sender.send('ai:chat:delta', {
-                  streamId: request.streamId,
-                  tool: { index: tc.index, name: slot.function.name }
-                })
-              }
-            }
-            if (tc.function?.arguments) slot.function.arguments += tc.function.arguments
-          }
-        }
-
-        const calls = toolCalls.filter(Boolean)
-        if (usage) appendUsage(model, usage, config)
-        return {
-          success: true,
-          message: {
-            role: 'assistant',
-            content,
-            ...(calls.length > 0 ? { tool_calls: calls } : {})
-          },
-          usage
-        }
-      } catch (e) {
-        return {
-          success: false,
-          error: e instanceof Error ? e.message : 'Falha ao contatar o modelo',
-          status: errorStatus(e)
-        }
-      }
-    }
+  // Entity lineage: query the event log for one entity's history.
+  ipcMain.handle('ai:lineage:list', (_, entityType: string, entityId: string) =>
+    eventsForEntity(entityType, entityId)
   )
 
-  // List the models the provider exposes (GET /models), through the main
-  // process so the renderer's model dropdown doesn't hit CORS either.
-  ipcMain.handle('ai:models', async (_, request: { baseUrl?: string; apiKey?: string }) => {
-    const config = loadAIConfig()
-    const baseURL = request.baseUrl || config.baseUrl
-    const apiKey = request.apiKey || config.apiKey
-    if (!baseURL) return { success: false, error: 'Base URL não configurada' }
-    try {
-      const client = getOpenAIClient(baseURL, apiKey)
-      const page = await client.models.list(requestOptions(config.timeoutMs))
-      const models = Array.from(
-        new Set(
-          (page.data ?? [])
-            .map((m) => m?.id)
-            .filter((id): id is string => typeof id === 'string' && id.trim() !== '')
-        )
-      ).sort((a, b) => a.localeCompare(b))
-      return { success: true, models }
-    } catch (e) {
-      return { success: false, error: e instanceof Error ? e.message : 'Falha ao carregar modelos' }
-    }
-  })
-
-  // Launch an external code agent in the project directory. The renderer must
+  // Launch a native agent in a project root or the private general workspace. The renderer must
   // have obtained user approval before calling this (it writes files / runs
   // commands). Output is streamed back via 'ai:code-agent:output'.
   ipcMain.handle(
     'ai:code-agent:run',
-    async (_, request: { path: string; task: string; agent?: 'aider' | 'codex' }) => {
-      if (codeAgentProc) return { success: false, error: 'Já existe um agente de código rodando' }
-      const dir = request.path
+    async (
+      _,
+      request: {
+        path: string
+        task: string
+        /**
+         * A session with no initial request: the CLI opens on its own screen and
+         * receives no briefing. Ignored when a task is given.
+         */
+        blank?: boolean
+        files?: string[]
+        allowedWritePaths?: string[]
+        /** Absolute directories selected by the user for read-only reference. */
+        readOnlyRoots?: ReadOnlyRoot[]
+        /** Scope decisions already agreed with the user, honoured without re-deciding. */
+        decisoes?: string[]
+        /** The terminal session that owns the run, so it can be reopened later. */
+        sessionId?: string
+        /** The project whose memory to brief the agent with (shared with the chat). */
+        projectId?: string | null
+        /** Financial profile captured with the project scope. */
+        financialProfileId?: string
+        /** Chat-coordinated requests may only hand off to a terminal executor. */
+        coordinated?: boolean
+        /** Start in auto-approval mode — approve() returns true without IPC. */
+        autoApprove?: boolean
+      }
+    ) => {
+      const capturedProjectId =
+        typeof request.projectId === 'string' && request.projectId.trim() ? request.projectId : null
+      // General sessions use a private workspace. The renderer cannot supply an
+      // arbitrary filesystem path when no project has authorised a code root.
+      if (!capturedProjectId && request.path) {
+        return { success: false, error: 'Uma sessão geral não aceita pasta de código.' }
+      }
+      const dir = capturedProjectId
+        ? request.path
+        : join(app.getPath('userData'), 'general-agent-workspace')
+      const capturedData = loadData()
+      const capturedProject = capturedProjectId
+        ? capturedData.projects.find((project) => project.id === capturedProjectId)
+        : null
+      const codeRoot = dir ? resolve(dir) : ''
+      if (capturedProjectId && !capturedProject) {
+        return { success: false, error: 'Projeto escolhido indisponÃ­vel. Selecione-o novamente.' }
+      }
+      if (capturedProjectId && !(capturedProject?.codePaths ?? []).length) {
+        return {
+          success: false,
+          error:
+            'O projeto escolhido nÃ£o possui raiz de cÃ³digo. Adicione uma pasta antes de iniciar o terminal.'
+        }
+      }
+      if (
+        capturedProjectId &&
+        !(capturedProject?.codePaths ?? []).some(
+          (root) =>
+            // An unselected root is deliberately not a fallback: empty is a
+            // valid selection and means the user has authorised no code access.
+            (capturedProject?.activeCodePathIds ??
+              (capturedProject?.activeCodePathId ? [capturedProject.activeCodePathId] : [])).includes(
+              root.id
+            ) && resolve(root.path) === codeRoot
+        )
+      ) {
+        return {
+          success: false,
+          error: 'A raiz escolhida não está autorizada para este projeto. Marque-a no projeto antes de iniciar.'
+        }
+      }
+      const capturedFinancialProfileId =
+        typeof request.financialProfileId === 'string' && request.financialProfileId.trim()
+          ? request.financialProfileId
+          : (capturedData.activeFinancialProfileId ?? 'personal')
+      if (!capturedProjectId) mkdirSync(dir, { recursive: true })
       if (!dir || !existsSync(dir) || !statSync(dir).isDirectory()) {
         return { success: false, error: 'Diretório do projeto inválido' }
       }
-      const task = typeof request.task === 'string' ? request.task.trim() : ''
-      if (!task) return { success: false, error: 'Tarefa vazia' }
       const cfg = loadAIConfig()
-      if (!cfg.baseUrl || !cfg.model) {
-        return { success: false, error: 'Configuração de IA incompleta (Base URL / Model)', status: 400 }
+      const harness: HarnessId = isHarnessId(cfg.codeHarness) ? cfg.codeHarness : 'codex'
+      const externalHarness =
+        (await getHarnessStatuses()).find((status) => status.id === harness) ?? null
+      if (!externalHarness?.installed || !externalHarness.path) {
+        const label = harness === 'claude-code' ? 'Claude Code' : harness === 'opencode' ? 'OpenCode' : 'Codex'
+        return {
+          success: false,
+          error:
+            label + ' não foi encontrado nesta máquina. Use Verificar novamente nas configurações.'
+        }
       }
-      const agent = request.agent === 'codex' ? 'codex' : 'aider'
-      // A new run starts a new log. Only reached once the request is known good
-      // (a rejected one never spawns), so a failed start can't wipe the output
-      // of the run before it — which is what the user would still be reading.
-      codeAgentLog = ''
-      // Snapshot the tree BEFORE the agent touches it — after the fact there is
-      // no way to tell its work from what the user already had in progress.
-      // Null here just means "no diff for this run" (not a git repo); it must
-      // never stop the run, which is what the user actually asked for.
-      codeAgentBase = await captureBase(dir)
-      const { cmd, args, taskFile } = buildAgentCommand(agent, task, cfg, dir)
+      if (
+        externalHarness.capabilities.createSession !== 'available' ||
+        externalHarness.capabilities.interactiveTerminal !== 'available' ||
+        externalHarness.capabilities.mcp !== 'available'
+      ) {
+        return {
+          success: false,
+          error: `${externalHarness.label} não oferece a sessão MCP interativa exigida nesta versão.`
+        }
+      }
+      // The adapter selects the one native transport for each CLI. The renderer
+      // cannot select an executable or an execution mode.
+      const interactive = true
+      // Cleanup worktrees órfãos (que sobraram de uma queda do app)
+      try {
+        await worktreeManager.removeOrphans(dir)
+      } catch {
+        // Se não é git ou não há worktrees, ignora
+      }
 
-      // Resolve to a real .exe when possible and spawn it directly (safe, no
-      // shell). Fall back to a shell only on Windows for .cmd/.bat wrappers.
-      const resolved = resolveExecutable(cmd)
-      const isExe = resolved !== null && /\.exe$/i.test(resolved)
-      const spawnCmd = isExe && resolved ? resolved : cmd
-      const useShell = process.platform === 'win32' && !isExe
+      // Fase 2(b): se o dir já está ocupado, cria um git worktree isolado
+      const runId = randomUUID()
+      // Every executor, including the first native run, works in its own
+      // detached tree. The original project is touched only by delivery.
+      const needsWorktree = true
+      // Reserve synchronously before the first await below. Two IPC requests can
+      // otherwise both observe an idle directory and write to the original tree.
+      codeRunCoordinator.register(dir, runId, !needsWorktree)
+      let worktreeDir: string | null = null
+      const releaseFailedStart = async (): Promise<void> => {
+        codeRunCoordinator.unregister(dir, runId)
+        if (!worktreeDir) return
+        await worktreeManager.remove({ originalDir: dir, worktreeDir }).catch(() => {})
+      }
+      if (needsWorktree) {
+        try {
+          worktreeDir = (await worktreeManager.create(dir, runId)).worktreeDir
+        } catch (error) {
+          await releaseFailedStart()
+          const reason = error instanceof Error ? error.message : 'falha desconhecida do Git'
+          return {
+            success: false,
+            error:
+              'Já existe um agente de código rodando neste diretório e não foi possível criar um worktree. ' +
+              `O Git informou: ${reason}`
+          }
+        }
+      }
+      const effectiveDir = worktreeDir ?? dir
+      const localHarnessContext = discoverHarnessLocalContext(effectiveDir)
+      const task = typeof request.task === 'string' ? request.task.trim() : ''
+      const blankSession = !task && request.blank === true
+      if (!task && !blankSession) {
+        await releaseFailedStart()
+        return { success: false, error: 'Tarefa vazia' }
+      }
+      // Files the caller pinned so the agent skips discovery. Confine each to the
+      // root (same barrier as the read tools — a path is the model's, so it may
+      // be `../../etc`), and drop anything that escapes or doesn't exist rather
+      // than handing the agent a bogus target. An empty/all-invalid list falls
+      // back to the discovery path, so this can only speed things up, never break.
+      // Kept alongside the accepted list so the banner below can name what was
+      // dropped. A silently discarded path is the failure mode worth surfacing:
+      // it doesn't error, it just costs the user the slow discovery path.
+      const requestedFiles = Array.isArray(request.files)
+        ? request.files.filter((f): f is string => typeof f === 'string' && f.trim() !== '')
+        : []
+      const files = requestedFiles
+        .map((f) => confineToRoot(effectiveDir, f))
+        .filter((f): f is string => f !== null && existsSync(f) && statSync(f).isFile())
+      const droppedFiles = requestedFiles.filter((f) => {
+        const abs = confineToRoot(effectiveDir, f)
+        return abs === null || !existsSync(abs) || !statSync(abs).isFile()
+      })
+      // Unlike pinned input files, an allowed output may not exist yet. It is
+      // still confined to the root and later enforced by writeFileTool.
+      const requestedAllowedPaths = Array.isArray(request.allowedWritePaths)
+        ? request.allowedWritePaths.filter(
+            (f): f is string => typeof f === 'string' && f.trim() !== ''
+          )
+        : []
+      const allowedWritePaths = requestedAllowedPaths
+        .map((requestedPath) => {
+          const absolutePath = confineToRoot(effectiveDir, requestedPath)
+          if (!absolutePath) return null
+          const isRoot =
+            /[\\/]$/.test(requestedPath) ||
+            (existsSync(absolutePath) && statSync(absolutePath).isDirectory())
+          const path = relative(effectiveDir, absolutePath)
+          return isRoot ? path + '/' : path
+        })
+        .filter((f): f is string => f !== null)
+        .filter((f) => f !== '')
+      const requestedReadOnlyRoots = Array.isArray(request.readOnlyRoots)
+        ? request.readOnlyRoots
+        : []
+      const readOnlyRoots = requestedReadOnlyRoots
+        .filter(
+          (item): item is ReadOnlyRoot =>
+            !!item &&
+            typeof item.id === 'string' &&
+            typeof item.nome === 'string' &&
+            typeof item.path === 'string'
+        )
+        .map((item) => ({
+          ...item,
+          id: item.id.trim(),
+          nome: item.nome.trim(),
+          path: resolve(item.path)
+        }))
+        .filter(
+          (item) =>
+            item.id && item.nome && existsSync(item.path) && statSync(item.path).isDirectory()
+        )
+      if (requestedReadOnlyRoots.length !== readOnlyRoots.length) {
+        await releaseFailedStart()
+        return { success: false, error: 'Uma ou mais referências de leitura são inválidas.' }
+      }
+      if (
+        requestedAllowedPaths.length &&
+        allowedWritePaths.length !== requestedAllowedPaths.length
+      ) {
+        await releaseFailedStart()
+        return {
+          success: false,
+          error: 'Um ou mais caminhos permitidos estão fora da raiz do projeto.'
+        }
+      }
+      // Scope decisions the chat already settled with the user — plain strings,
+      // no path involved, so just clean and pass them into the prompt.
+      const decisoes = Array.isArray(request.decisoes)
+        ? request.decisoes
+            .filter((d): d is string => typeof d === 'string' && d.trim() !== '')
+            .map((d) => d.trim())
+        : []
+      // Create the run state and register it — a new run starts fresh.
+      // (runId foi criado acima, antes do worktree)
+      const run: CodeRunState = {
+        id: runId,
+        dir,
+        ...runOwnership({ sessionId: request.sessionId, projectId: capturedProjectId }),
+        projectId: capturedProjectId,
+        financialProfileId: capturedFinancialProfileId,
+        codeRoot,
+        agent: externalHarness.label,
+        harness,
+        localInstructions: localHarnessContext.instructions,
+        localSkills: localHarnessContext.skills,
+        task: blankSession ? 'Sessão interativa' : taskLabel(task),
+        startedAt: Date.now(),
+        abort: false,
+        log: '',
+        base: await captureBase(effectiveDir),
+        hint: null,
+        model: externalHarness.label,
+        usage: { promptTokens: 0, completionTokens: 0 },
+        step: 0,
+        // Zero means unlimited. The user stops a runaway run explicitly; loop
+        // brakes still block repeated reads/searches/commands.
+        maxSteps: 0,
+        pendingApprovals: new Map(),
+        pendingQuestions: new Map(),
+        autoApprove: typeof request.autoApprove === 'boolean' ? request.autoApprove : false,
+        worktreeDir: worktreeDir,
+        worktreeMergeError: null,
+        allowedWritePaths: allowedWritePaths.length ? allowedWritePaths : undefined,
+        readOnlyRoots,
+        externalChild: null,
+        interactive,
+        terminalCols: 100,
+        terminalRows: 30
+      }
+      codeSessions.register(run)
 
       const send = (channel: string, data: unknown): void =>
         mainWindow?.webContents.send(channel, data)
+      // Push the live progress (step + running token total) to the panel's
+      // counter. Cheap and idempotent; fired on each step and each usage report.
+      send('ai:code-agent:started', { runId, dir })
       // Stream it and keep it: the panel may not be mounted to hear this.
       const emit = (chunk: string): void => {
-        appendAgentLog(chunk)
-        send('ai:code-agent:output', chunk)
-      }
-      const cleanup = (): void => {
-        if (taskFile) {
-          try {
-            unlinkSync(taskFile)
-          } catch {
-            /* best effort */
-          }
-        }
+        appendAgentLog(runId, chunk)
+        send('ai:code-agent:output', { runId, chunk })
       }
 
-      return new Promise<{ success: boolean; agent?: string; dir?: string; error?: string }>(
-        (resolve) => {
-          let settled = false
-          let child: ChildProcess
-          try {
-            child = spawn(spawnCmd, args, {
-              cwd: dir,
-              shell: useShell,
-              env: {
-                ...process.env,
-                OPENAI_API_BASE: cfg.baseUrl,
-                OPENAI_BASE_URL: cfg.baseUrl,
-                OPENAI_API_KEY: cfg.apiKey || 'not-needed'
-              }
-            })
-          } catch (e) {
-            cleanup()
-            resolve({ success: false, error: e instanceof Error ? e.message : 'Falha ao iniciar' })
-            return
-          }
-          codeAgentProc = child
-          child.stdout?.on('data', (d: Buffer) => emit(d.toString()))
-          child.stderr?.on('data', (d: Buffer) => emit(d.toString()))
-          // 'spawn' fires only when the process actually started.
-          child.once('spawn', () => {
-            if (!settled) {
-              settled = true
-              resolve({ success: true, agent, dir })
-            }
-          })
-          child.on('error', (e) => {
-            const notFound = (e as NodeJS.ErrnoException).code === 'ENOENT'
-            const msg = notFound
-              ? `"${cmd}" não encontrado. Instale-o e confirme com "${cmd} --version" no terminal.`
-              : e.message
-            emit(`\n[erro ao iniciar ${cmd}: ${msg}]\n`)
-            codeAgentProc = null
-            cleanup()
-            // Buffered too: "aider isn't installed" is the single most useful
-            // line the panel can show, and it is exactly the one that fires
-            // instantly — usually before the user has looked at the panel at all.
-            appendAgentLog(`[agente encerrado — código -1]\n`)
-            send('ai:code-agent:exit', -1)
-            if (!settled) {
-              settled = true
-              resolve({ success: false, error: msg })
-            }
-          })
-          child.on('close', (code) => {
-            codeAgentProc = null
-            cleanup()
-            // The panel appends this line itself when it's mounted to hear the
-            // event; buffering it is what tells a user who was away that the
-            // run is over rather than still going.
-            appendAgentLog(`\n[agente encerrado — código ${code ?? 0}]\n`)
-            send('ai:code-agent:exit', code ?? 0)
-          })
-        }
+      // Opening banner: the REAL model in use (task 11), and which files were
+      // pinned vs left for the agent to discover with buscar_no_codigo.
+      const rel = files.map((f) => relative(effectiveDir, f) || f)
+      emit(
+        '[' +
+          externalHarness.command +
+          '] ' +
+          externalHarness.label +
+          ' · execução isolada em worktree\n'
       )
+      emit(
+        '[' +
+          externalHarness.command +
+          '] permissões do CLI próprio; alterações ficam no worktree até sua aprovação.\n'
+      )
+      emit(
+        rel.length
+          ? `[sagyou] ${rel.length} arquivo(s) indicado(s) — busca desativada, conteúdo já no contexto:\n` +
+              rel.map((f) => `  · ${f}\n`).join('')
+          : '[sagyou] nenhum arquivo indicado — o agente vai localizá-los com buscar_no_codigo.\n'
+      )
+      if (droppedFiles.length) {
+        emit(
+          `[sagyou] ${droppedFiles.length} caminho(s) descartado(s) (fora da raiz ou inexistente):\n` +
+            droppedFiles.map((f) => `  · ${f}\n`).join('')
+        )
+      }
+      if (decisoes.length) {
+        emit(
+          `[sagyou] ${decisoes.length} decisão(ões) já tomada(s) — o agente deve respeitá-las:\n` +
+            decisoes.map((d) => `  · ${d}\n`).join('')
+        )
+      }
+
+      if (externalHarness.path && worktreeDir) {
+        const launch = buildTerminalHarnessLaunch(harness, task, effectiveDir)
+        const referenceBrief = await readOnlyReferenceBrief(readOnlyRoots)
+        const appBrief = sagyouContextBrief(run.projectId)
+        const localSkillsBrief = sagyouSkillsBrief()
+        let relevantMemories: import('./modules/ai/memory').AiMemory[] = []
+        try {
+          // Search is ranking-only and does not touch decay counters. Full data
+          // still stays behind MCP once the executor needs to investigate.
+          relevantMemories = memoryStore
+            .searchMemories({ projectId: run.projectId, term: task, limit: 5 })
+            .map((hit) => hit.memory)
+        } catch {
+          /* Briefing context is best-effort; a launch must remain available. */
+        }
+        const agentBrief = buildExternalAgentBrief({
+          objective: task,
+          decisions: decisoes,
+          files: rel,
+          memories: relevantMemories
+        })
+        // A blank session starts the CLI on its normal screen: pasting a briefing
+        // (skills, MCP hints) would run a turn nobody asked for.
+        const scopedTask = blankSession
+          ? ''
+          : scrubExternalBriefSecrets(
+          [
+            agentBrief,
+            referenceBrief,
+            appBrief,
+            localSkillsBrief,
+            localHarnessContext.instructions.length || localHarnessContext.skills.length
+              ? `## INSTRUÇÕES LOCAIS\nConsulte no worktree as instruções nativas detectadas: ${[...localHarnessContext.instructions, ...localHarnessContext.skills].join(', ')}. Não copie seu conteúdo para logs ou respostas sem necessidade.`
+              : '',
+            'Use esta worktree para alterações de código. Para dados do Sagyou, use list_projects no MCP e consulte outros projetos quando necessário. Ao terminar, explique brevemente o que fez.'
+          ]
+            .filter(Boolean)
+            .join('\n\n')
+        )
+        const externalWorktree = worktreeDir
+        const externalRuntime = { env: process.env }
+        // A capability token is not an identifier: use 256 bits of entropy and
+        // keep it only in the spawned executor environment, never in UI/logs.
+        const mcpToken = randomBytes(32).toString('base64url')
+        const baseExternalArgs = buildTerminalHarnessLaunch(harness, scopedTask, effectiveDir).args
+        const mcpSession = await prepareAgentMcpSession({
+          broker: sagyouMcp,
+          token: mcpToken,
+          runId,
+          projectId: run.projectId,
+          financialProfileId: run.financialProfileId,
+          permissions: CODE_EXECUTOR_MCP_PERMISSIONS,
+          worktreeDir: effectiveDir,
+          executor: harness,
+          executable: process.execPath,
+          args: baseExternalArgs,
+          env: externalRuntime.env,
+          expiresAt: Date.now() + 2 * 60 * 60 * 1000
+        })
+        externalRuntime.env = mcpSession.env
+        const externalArgs = mcpSession.args
+        emit(
+          interactive
+            ? '[' +
+                externalHarness.command +
+                '] sessão interativa de ' +
+                launch.label +
+                ' iniciada no worktree. Ao sair do CLI, o diff será arquivado sem pedido de aprovação ou entrega.\n'
+            : '[' +
+                externalHarness.command +
+                '] iniciando ' +
+                launch.label +
+                ' em worktree; o diff final pedirá sua aprovação.\n'
+        )
+
+        let settled = false
+        const finishExternal = async (code: number | null): Promise<void> => {
+          if (settled) return
+          settled = true
+          run.externalChild = null
+          // A closed terminal cannot answer MCP writes or questions. Deny them
+          // before collecting the diff so the UI never remains parked on them.
+          mcpWriteQueue.rejectRun(runId)
+          for (const { resolve } of run.pendingApprovals.values()) resolve(false)
+          run.pendingApprovals.clear()
+          for (const { resolve } of run.pendingQuestions.values()) resolve(null)
+          run.pendingQuestions.clear()
+          let exitCode = run.abort ? -2 : (code ?? 1)
+          try {
+            const changes = await collectAgentPatch(externalWorktree, {
+              base: run.base?.base
+            })
+            const fullPatch = changes.patch
+            const scope = await validatePatchScope(
+              externalWorktree,
+              changes.changedPaths,
+              run.allowedWritePaths
+            )
+            if (!scope.allowed) {
+              run.worktreeMergeError =
+                'o agente alterou arquivo fora do escopo permitido: ' +
+                scope.rejectedPaths.join(', ')
+              exitCode = 2
+              emit(
+                '[worktree] caminhos recusados por escopo: ' +
+                  scope.rejectedPaths.join(', ') +
+                  '. Nenhuma alteração foi apresentada para aprovação.\n'
+              )
+              return
+            }
+            if (fullPatch.trim() && !run.abort) {
+              if (run.interactive) {
+                // Closing the native chat is a terminal outcome, never a parked
+                // request for delivery. archiveAgentRun freezes this worktree diff.
+                run.worktreeMergeError = 'sessão encerrada sem entrega'
+                emit('[worktree] diff arquivado; alterações não aplicadas ao projeto original.\n')
+              } else {
+                const fileCount = changes.fileCount
+                const preview = agentPatchPreview(fullPatch)
+                const approved = await new Promise<boolean>((resolveApproval) => {
+                  const id = randomUUID()
+                  const approval: CodeApprovalRequest = {
+                    runId,
+                    id,
+                    name: 'aplicar_alteracoes_externas',
+                    args: { harness: launch.label, arquivos: fileCount },
+                    resumo:
+                      'Aplicar ' + fileCount + ' alteração(ões) do ' + launch.label + ' ao projeto',
+                    conteudo: fullPatch.slice(0, 12000),
+                    diff: preview.lines,
+                    diffTruncated: preview.truncated,
+                    irreversivel: false
+                  }
+                  run.pendingApprovals.set(id, { resolve: resolveApproval, request: approval })
+                  send('ai:code-agent:approve-request', approval)
+                })
+                if (approved && !run.abort) {
+                  await deliverApprovedPatch({
+                    originalDir: dir,
+                    runId,
+                    patch: fullPatch,
+                    coordinator: codeRunCoordinator,
+                    onWaitingForDirectRun: () => {
+                      emit('[worktree] aguardando o agente que escreve no diretório original…\n')
+                    }
+                  })
+                  emit('[worktree] ' + fileCount + ' arquivo(s) aplicado(s) após sua aprovação.\n')
+                } else {
+                  run.worktreeMergeError = run.abort
+                    ? 'execução interrompida'
+                    : 'alterações não aprovadas pelo usuário'
+                  if (exitCode === 0) exitCode = run.abort ? -2 : 2
+                  emit('[worktree] alterações não aplicadas ao projeto original.\n')
+                }
+              }
+            }
+          } catch (error) {
+            run.worktreeMergeError =
+              error instanceof Error ? error.message : 'erro ao preparar alterações'
+            if (exitCode === 0) exitCode = 2
+            emit(
+              '[erro] alterações do worktree não foram aplicadas: ' + run.worktreeMergeError + '\n'
+            )
+          } finally {
+            await mcpSession.cleanup()
+            const secs = ((Date.now() - run.startedAt) / 1000).toFixed(1)
+            emit('[' + externalHarness.command + '] duração: ' + secs + 's\n')
+            const terminal = run.worktreeMergeError
+              ? '[agente encerrado — código ' + exitCode + '; alterações não aplicadas]'
+              : '[agente encerrado — código ' + exitCode + ']'
+            appendAgentLog(runId, '\n' + terminal + '\n')
+            const archived = await archiveAgentRun(runId, exitCode)
+            persistTerminalHandoff(run, exitCode, archived)
+            await worktreeManager
+              .remove({ originalDir: dir, worktreeDir: externalWorktree })
+              .catch(() => {})
+            send('ai:code-agent:exit', { runId, code: exitCode })
+            lastRunLog = run.log
+            lastRunHint = run.hint
+            lastRunModel = run.model
+            lastRunProgress = {
+              step: run.step,
+              maxSteps: run.maxSteps,
+              promptTokens: run.usage.promptTokens,
+              completionTokens: run.usage.completionTokens
+            }
+            mcpWriteQueue.rejectRun(runId)
+            codeSessions.remove(runId)
+            codeRunCoordinator.unregister(dir, runId)
+          }
+        }
+
+        try {
+          const terminal = startAgentPty({
+            command: externalHarness.path,
+            args: externalArgs,
+            cwd: effectiveDir,
+            env: externalRuntime.env,
+            onData: emit,
+            onExit: (exitCode) => {
+              void finishExternal(exitCode)
+            }
+          })
+          run.externalChild = terminal
+        } catch (error) {
+          emit(
+            '[erro ao iniciar ' +
+              launch.label +
+              ': ' +
+              (error instanceof Error ? error.message : 'falha') +
+              ']\n'
+          )
+          void finishExternal(1)
+        }
+        return { success: true, agent: launch.label, dir, runId, worktreeDir }
+      }
+
+      await releaseFailedStart()
+      return { success: false, error: 'Não foi possível iniciar o executor externo.' }
+    }
+  )
+  ipcMain.handle('ai:code-agent:stop', (_, runId?: string) => {
+    stopCodeAgent(typeof runId === 'string' ? runId : undefined)
+  })
+
+  ipcMain.handle('ai:code-agent:terminal-input', (_, runId: string, input: string) => {
+    return writeTerminalInput(codeRuns, runId, input)
+  })
+
+  // The renderer owns pixels; the PTY owns its character grid. Keep the bridge
+  // narrow so a terminal can resize only the interactive process it already
+  // belongs to, never create or reconfigure a shell on its own.
+  ipcMain.handle(
+    'ai:code-agent:terminal-resize',
+    (_, runId: string, cols: number, rows: number) => {
+      return resizeTerminal(codeRuns, runId, cols, rows)
     }
   )
 
-  ipcMain.handle('ai:code-agent:stop', () => {
-    killCodeAgent()
+  // Read-only reconnect: return the bounded buffer of an existing PTY without
+  // creating a process or exposing an executable selection to the renderer.
+  ipcMain.handle('ai:code-agent:terminal-reconnect', (_, runId: string) => {
+    const run = codeRuns.get(runId)
+    if (!run?.interactive || !run.externalChild) {
+      return { success: false, error: 'SessÃ£o interativa indisponÃ­vel.' }
+    }
+    return {
+      success: true,
+      log: run.log,
+      cols: run.terminalCols,
+      rows: run.terminalRows
+    }
   })
 
-  // `log` is how a panel that wasn't mounted catches up — see codeAgentLog.
-  ipcMain.handle('ai:code-agent:status', () => ({
-    running: codeAgentProc !== null,
-    log: codeAgentLog
-  }))
+  // The renderer's answer to an approval card the loop is parked on. Resolving
+  // the pending promise is what lets the run continue (or run the denied path).
+  // UUIDs are unique, so search across all runs' pendingApprovals maps.
+  ipcMain.handle('ai:code-agent:approve-response', (_, id: string, approved: boolean) => {
+    for (const run of codeRuns.values()) {
+      const pending = run.pendingApprovals.get(id)
+      if (pending) {
+        run.pendingApprovals.delete(id)
+        pending.resolve(approved === true)
+        return
+      }
+    }
+  })
+  // The renderer's answer to a question card. An empty answer means the user
+  // cancelled it; code-agent.ts returns that fact to the model so it can stop or
+  // choose a safe alternative instead of inventing a response.
+  ipcMain.handle('ai:code-agent:question-response', (_, id: string, answer?: string) => {
+    for (const run of codeRuns.values()) {
+      const pending = run.pendingQuestions.get(id)
+      if (pending) {
+        run.pendingQuestions.delete(id)
+        const normalized = typeof answer === 'string' ? answer.trim() : ''
+        pending.resolve(normalized || null)
+        return
+      }
+    }
+  })
+
+  // Toggle auto-approval for a running code agent. When on, approve() returns
+  // true without sending IPC — the renderer gets ai:code-agent:auto-changed
+  // so the UI can reflect the new state.
+  ipcMain.handle('ai:code-agent:set-auto', (_, runId: string, enabled: boolean) => {
+    const run = codeRuns.get(runId)
+    if (!run) return
+    run.autoApprove = enabled === true
+    const resolvedApprovalIds: string[] = []
+    if (run.autoApprove) {
+      for (const [id, pending] of run.pendingApprovals) {
+        if (pending.request.name === 'aplicar_alteracoes_externas') continue
+        run.pendingApprovals.delete(id)
+        resolvedApprovalIds.push(id)
+        pending.resolve(true)
+      }
+    }
+    mainWindow?.webContents.send('ai:code-agent:auto-changed', {
+      runId,
+      autoApprove: run.autoApprove,
+      resolvedApprovalIds
+    })
+  })
+
+  // `runs` is an array of run summaries — a panel that wasn't mounted catches
+  // up per-run. Keep old fields for backward compat (tests and code read
+  // `.running` / `.log` / `.hint` directly), sourced from the first active run.
+  ipcMain.handle('ai:code-agent:status', () => {
+    const runs = [...codeRuns.values()]
+    const first = runs[0]
+    return {
+      running: codeRuns.size > 0,
+      log: first?.log ?? lastRunLog,
+      model: first?.model ?? lastRunModel,
+      hint: first?.hint ?? lastRunHint,
+      progress: first
+        ? {
+            step: first.step,
+            maxSteps: first.maxSteps,
+            promptTokens: first.usage.promptTokens,
+            completionTokens: first.usage.completionTokens
+          }
+        : lastRunProgress,
+      runs: runs.map((r) => ({
+        id: r.id,
+        dir: r.dir,
+        task: r.task,
+        convId: r.convId,
+        sessionId: r.sessionId,
+        projectId: r.projectId,
+        financialProfileId: r.financialProfileId,
+        codeRoot: r.codeRoot,
+        agent: r.agent,
+        harness: r.harness,
+        worktreeDir: r.worktreeDir,
+        localInstructions: r.localInstructions,
+        localSkills: r.localSkills,
+        allowedWritePaths: r.allowedWritePaths,
+        readOnlyRoots: r.readOnlyRoots,
+        interactive: r.interactive,
+        terminalCols: r.terminalCols,
+        terminalRows: r.terminalRows,
+        startedAt: r.startedAt,
+        log: r.log,
+        model: r.model,
+        hint: r.hint,
+        autoApprove: r.autoApprove,
+        approvals: [...r.pendingApprovals.values()].map((pending) => pending.request),
+        questions: [...r.pendingQuestions.values()].map((pending) => pending.request),
+        progress: {
+          step: r.step,
+          maxSteps: r.maxSteps,
+          promptTokens: r.usage.promptTokens,
+          completionTokens: r.usage.completionTokens
+        }
+      }))
+    }
+  })
 
   /**
-   * What the last run changed. Computed on demand rather than captured on exit:
-   * it is derived state, so a panel that was unmounted when the agent finished
-   * can still ask for it, and re-reading is free.
+   * What a run changed. If `runId` is given, use that run's base; otherwise
+   * use the first active run's base.
    */
-  ipcMain.handle('ai:code-agent:diff', async () => {
-    if (!codeAgentBase) {
+  ipcMain.handle('ai:code-agent:diff', async (_, runId?: string) => {
+    let base: AgentBase | null = null
+    if (typeof runId === 'string') {
+      base = codeRuns.get(runId)?.base ?? null
+    } else {
+      for (const run of codeRuns.values()) {
+        base = run.base
+        break
+      }
+    }
+    if (!base) {
       return {
         patch: '',
         files: [],
@@ -884,7 +1894,47 @@ app.whenReady().then(() => {
         error: 'Sem diff: esta pasta não é um repositório git (ou não tem commits ainda).'
       }
     }
-    return diffSince(codeAgentBase)
+    return diffSince(base)
+  })
+
+  /**
+   * Past runs of one session, newest first. Index only — the logs and
+   * diffs stay on disk until a row is actually opened.
+   */
+  ipcMain.handle('ai:code-agent:runs', (_, sessionId?: string) =>
+    typeof sessionId === 'string' && sessionId
+      ? runsForSession(loadRunIndex(), sessionId)
+      : sortRuns(loadRunIndex())
+  )
+
+  /**
+   * One archived run, log and diff included. Frozen at the moment the agent
+   * exited: re-deriving the diff today would fold in everything the user has
+   * changed since and present it as the agent's work.
+   */
+  ipcMain.handle('ai:code-agent:run-get', async (_, id: string) => {
+    const path = agentRunPath(id)
+    if (!path || !existsSync(path)) return null
+    try {
+      return JSON.parse(await readFile(path, 'utf-8')) as AgentRunSnapshot
+    } catch {
+      return null
+    }
+  })
+
+  /**
+   * Renew a run's TTL by updating its endedAt to now. Called when the user
+   * continues a conversation with an archived agent — resets the 24h countdown.
+   */
+  ipcMain.handle('ai:code-agent:run-renew', (_, id: string) => {
+    const path = agentRunPath(id)
+    if (!path || !existsSync(path)) return
+    const index = loadRunIndex()
+    const run = index.find((r) => r.id === id)
+    if (run) {
+      run.endedAt = Date.now()
+      saveRunIndex(index)
+    }
   })
 
   ipcMain.handle('ai:pick-directory', async () => {
@@ -893,250 +1943,99 @@ app.whenReady().then(() => {
     return { path: filePaths[0] }
   })
 
-  // --- Read-only code access (for the assistant to analyze source) ---
-  // Every path is confined to `root`; nothing outside it can be read.
-  ipcMain.handle('ai:code:list', async (_, root: string, sub?: string) => {
-    if (!root || !existsSync(root)) return { error: 'Diretório inválido' }
-    return walkFiles(root, sub || '.', 400)
-  })
-
-  ipcMain.handle('ai:code:read', (_, root: string, rel: string) => {
-    const full = confineToRoot(root, rel)
-    if (!full || !existsSync(full) || !statSync(full).isFile()) {
-      return { error: 'Arquivo inválido ou fora do projeto' }
-    }
-    try {
-      let content = readFileSync(full, 'utf-8')
-      const MAX = 60000
-      const truncated = content.length > MAX
-      if (truncated) content = content.slice(0, MAX)
-      return { content, truncated }
-    } catch (e) {
-      return { error: e instanceof Error ? e.message : 'Falha ao ler o arquivo' }
-    }
-  })
-
-  ipcMain.handle('ai:code:search', async (_, root: string, term: string) => {
-    if (!root || !existsSync(root)) return { error: 'Diretório inválido' }
-    if (!term) return { error: 'Termo vazio' }
-    const { files } = await walkFiles(root, '.', 3000)
-    const matches: { file: string; line: number; text: string }[] = []
-    const CAP = 60
-    const lower = term.toLowerCase()
-    for (const rel of files) {
-      if (matches.length >= CAP) break
-      let content: string
-      try {
-        // Awaited per file: this loop is the expensive half (~640ms sync over a
-        // large tree), and each await lets the main process serve IPC/window
-        // events instead of freezing until the search finishes.
-        content = await readFile(join(resolve(root), rel), 'utf-8')
-      } catch {
-        continue
-      }
-      if (content.includes('\u0000')) continue // skip binaries
-      const lines = content.split('\n')
-      for (let i = 0; i < lines.length && matches.length < CAP; i++) {
-        if (lines[i].toLowerCase().includes(lower)) {
-          matches.push({ file: rel, line: i + 1, text: lines[i].trim().slice(0, 200) })
-        }
-      }
-    }
-    return { matches, truncated: matches.length >= CAP }
-  })
+  registerCodeFilesHandlers(ipcMain, { files: codeFiles, fs: codeFileFs })
 
   // Fetch a page for the assistant. The URL comes from the model, so it is
   // untrusted input — ./web-fetch does the vetting (http(s) only, no local or
   // private addresses, re-checked on every redirect), caps the read and bounds
-  // the wait.
-  ipcMain.handle('ai:web:fetch', (_, url: string) => fetchWeb(url))
+  // the wait. With `render`, ./web-render loads it in a headless browser instead
+  // (for SPA pages that need JS), applying the SAME policy to every request the
+  // page makes — see web-render.ts for the guard and its residual risks.
+  ipcMain.handle('ai:web:fetch', (_, url: string, render?: boolean) =>
+    render ? renderWeb(url) : fetchWeb(url)
+  )
 
-  // Store a pasted image and hand back its id. The renderer has already
-  // downscaled it; this checks the bytes are really an image before writing.
-  ipcMain.handle('ai:images:save', (_, dataUrl: string) => {
-    const decoded = decodeDataUrl(dataUrl)
-    if ('error' in decoded) return decoded
+  // Exchange rate from AwesomeAPI (primary) or Frankfurter (fallback).
+  // Cached for 24h in userData/financial-rates.json.
+  // Returns { rate: string, date: string, source: 'awesomeapi'|'frankfurter'|'cache'|'identity' }
+  ipcMain.handle('financial:exchange-rate:fetch', async (_, pair: string) => {
     try {
-      if (!existsSync(chatImagesDir())) mkdirSync(chatImagesDir(), { recursive: true })
-      const id = `${randomUUID()}.${decoded.ext}`
-      writeFileSync(join(chatImagesDir(), id), decoded.bytes)
-      return { id }
+      const result = await getExchangeRate(pair)
+      return result
     } catch (e) {
-      return { error: e instanceof Error ? e.message : 'Falha ao salvar a imagem' }
+      return { error: e instanceof Error ? e.message : 'Falha ao buscar cotação' }
     }
   })
 
-  ipcMain.handle('ai:images:get', (_, id: string) => {
-    const full = chatImagePath(id)
-    if (!full || !existsSync(full)) return { error: 'Imagem não encontrada' }
-    try {
-      const ext = id.split('.').pop() ?? ''
-      const b64 = readFileSync(full).toString('base64')
-      return { dataUrl: `data:${mimeForExt(ext)};base64,${b64}` }
-    } catch {
-      return { error: 'Falha ao ler a imagem' }
-    }
-  })
+  ipcMain.handle('ai:skills:list', () => listSkills(skillsPath()))
 
-  // Called when a conversation is deleted: the file has no other owner, so
-  // leaving it behind orphans it on disk forever.
-  ipcMain.handle('ai:images:delete', (_, ids: string[]) => {
-    if (!Array.isArray(ids)) return
-    for (const id of ids) {
-      const full = chatImagePath(id)
-      if (full && existsSync(full)) {
-        try {
-          unlinkSync(full)
-        } catch {
-          /* already gone, or locked — not worth failing the delete over */
-        }
-      }
-    }
-  })
-
-  ipcMain.handle('ai:templates:list', () => loadTemplates())
-
-  ipcMain.handle('ai:templates:save', (_, input: SaveInput) => {
-    const res = saveTemplate(loadTemplates(), input, new Date().toISOString(), randomUUID)
+  ipcMain.handle('ai:skills:save', (_, input: { name: string; body: string; oldName?: string }) => {
+    const res = saveSkill(skillsPath(), input)
     if ('error' in res) return res
-    writeTemplates(res.list)
-    return { template: res.template }
+    return { skill: res.skill }
   })
 
-  ipcMain.handle('ai:templates:delete', (_, id: string) => {
-    writeTemplates(removeTemplate(loadTemplates(), id))
+  ipcMain.handle('ai:skills:delete', (_, name: string) => {
+    deleteSkill(skillsPath(), name)
   })
 
-  // --- AI conversation history ---
-  ipcMain.handle('ai:conversations:list', () =>
-    loadConversations()
-      .map(({ id, title, createdAt, updatedAt }) => ({ id, title, createdAt, updatedAt }))
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-  )
-
-  // Searching here rather than in the renderer: the file is already read on
-  // this side, and shipping every message body over IPC to filter it there
-  // would move megabytes for a substring test.
-  ipcMain.handle('ai:conversations:search', (_, term: string) =>
-    searchConversations(loadConversations(), typeof term === 'string' ? term : '')
-  )
-
-  ipcMain.handle('ai:conversations:get', (_, id: string) =>
-    loadConversations().find((c) => c.id === id) ?? null
-  )
-
-  ipcMain.handle(
-    'ai:conversations:save',
-    (
-      _,
-      conv: {
-        id: string
-        title: string
-        messages: StoredConversation['messages']
-        usage?: TokenUsage
-      }
-    ) => {
-      const list = loadConversations()
-      const now = new Date().toISOString()
-      const idx = list.findIndex((c) => c.id === conv.id)
-      if (idx >= 0) {
-        list[idx] = {
-          ...list[idx],
-          // A renamed chat keeps its name. The caller derives a title from the
-          // first message on every save and has no idea the user renamed it, so
-          // honouring `conv.title` here would undo the rename on the next
-          // keystroke of the reply.
-          title: list[idx].titleCustom ? list[idx].title : conv.title,
-          messages: conv.messages,
-          usage: conv.usage,
-          updatedAt: now
-        }
-      } else {
-        list.push({
-          id: conv.id,
-          title: conv.title,
-          messages: conv.messages,
-          usage: conv.usage,
-          createdAt: now,
-          updatedAt: now
-        })
-      }
-      saveConversations(list)
-    }
-  )
-
-  /**
-   * Name a chat by hand, latching the title against the autosave's derived one.
-   *
-   * Renaming reaches any chat in the history, not just the open one, so it goes
-   * through the file rather than through the run store — the renderer only
-   * holds the transcript of what's on screen.
-   */
-  ipcMain.handle('ai:conversations:rename', (_, id: string, title: string) => {
-    if (typeof id !== 'string' || typeof title !== 'string') return { error: 'Argumentos inválidos' }
-    const name = title.trim()
-    if (!name) return { error: 'O nome não pode ficar vazio' }
-    // A title is a one-line label in a narrow dropdown; the rest is not shown
-    // and would only bloat a file re-read on every autosave and every keystroke
-    // of the search.
-    const clipped = name.slice(0, 120)
-    const list = loadConversations()
-    const idx = list.findIndex((c) => c.id === id)
-    if (idx < 0) return { error: 'Conversa não encontrada' }
-    // updatedAt is deliberately untouched: it orders the history by when the
-    // chat was last *talked to*, and renaming would jump it to the top.
-    list[idx] = { ...list[idx], title: clipped, titleCustom: true }
-    saveConversations(list)
-    return { title: clipped }
+  ipcMain.handle('ai:skills:import', async () => {
+    return importSkillDialog(skillsPath())
   })
 
-  ipcMain.handle('ai:conversations:delete', (_, id: string) => {
-    saveConversations(loadConversations().filter((c) => c.id !== id))
+  // Outside SQLite on purpose: persistAll() empties `settings` on a session's first save.
+  const legacyState = createLegacyChatState(app.getPath('userData'))
+  registerLegacyChatHandlers(ipcMain, {
+    readSetting: legacyState.read,
+    writeSetting: legacyState.write,
+    now: () => new Date()
   })
 
-  // Full history read/write — used by backup export/import, which needs every
-  // conversation with its messages rather than the metadata `list` returns.
-  ipcMain.handle('ai:conversations:all', () => loadConversations())
+  // The chat's data is removed before any window exists. A failure is logged,
+  // never fatal. Dev runs skip it unless opted in: only the database file has a
+  // dev suffix, so the rest of this migration would hit the real user data.
+  const openWindows = (): void => {
+    createWindow()
 
-  ipcMain.handle('ai:conversations:replace', (_, list: StoredConversation[]) => {
-    if (!Array.isArray(list)) return
-    const now = new Date().toISOString()
-    const clean = list
-      .filter((c) => c && typeof c.id === 'string' && Array.isArray(c.messages))
-      .map((c) => ({
-        id: c.id,
-        title: typeof c.title === 'string' ? c.title : 'Conversa',
-        // Carried through, or restoring a backup would quietly un-name every
-        // chat the user had renamed: the title survives the round trip but the
-        // next autosave, seeing no flag, derives over it.
-        ...(c.titleCustom === true && { titleCustom: true }),
-        // Likewise carried: without it an imported chat reports its cost as
-        // unknown, having lost a count it was exported with.
-        ...(c.usage && { usage: c.usage }),
-        createdAt: typeof c.createdAt === 'string' ? c.createdAt : now,
-        updatedAt: typeof c.updatedAt === 'string' ? c.updatedAt : now,
-        messages: c.messages.filter(
-          (m) =>
-            m &&
-            (m.role === 'user' || m.role === 'assistant' || m.role === 'status') &&
-            typeof m.content === 'string'
-        )
-      }))
-    saveConversations(clean)
-  })
-
-  createWindow()
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
-  })
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    })
+  }
+  if (!shouldRunLegacyChatRemoval({ isDev: is.dev, optIn: process.env.SAGYOU_RUN_LEGACY_CHAT_REMOVAL })) {
+    console.warn('[legacy-chat] dev build: removal skipped (set SAGYOU_RUN_LEGACY_CHAT_REMOVAL=1 to run it)')
+    openWindows()
+  } else {
+    void startLegacyChatRemoval({
+      run: () =>
+        runLegacyChatRemoval({
+          userDataDir: app.getPath('userData'),
+          getMarker: () => {
+            const marker = legacyState.read('legacyChatRemovedAt')
+            return typeof marker === 'string' && marker ? marker : null
+          },
+          setMarker: (iso) => legacyState.write('legacyChatRemovedAt', iso),
+          copyDatabase: copyDatabaseTo,
+          scrubMemories: scrubMemoryConversationLinks,
+          hasLegacyConfig: () => hasLegacyApiConfig(aiConfigPath()),
+          getSnapshotDir: () => {
+            const dir = legacyState.read('legacyChatSnapshotDir')
+            return typeof dir === 'string' && dir ? dir : null
+          },
+          setSnapshotDir: (dir) => legacyState.write('legacyChatSnapshotDir', dir),
+          stripAiConfig: () => stripAiConfigFile(aiConfigPath()),
+          now: () => new Date()
+        }),
+      warn: (message) => console.warn(`[legacy-chat] ${message}`)
+    }).finally(openWindows)
+  }
 })
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-// Don't leave the external code agent running orphaned when the app closes.
+// Don't leave any code agent's loop running when the app closes.
 app.on('before-quit', () => {
-  killCodeAgent()
+  rendererMcpTasks.close()
+  stopCodeAgent()
 })

@@ -4,13 +4,25 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 vi.mock('../../services/ElectronStorage', () => {
   return {
     ElectronStorage: vi.fn(function ElectronStorage(this: Record<string, unknown>) {
-      this.load = vi.fn().mockResolvedValue({ projects: [], tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: [] })
+      this.load = vi.fn().mockResolvedValue({
+        projects: [],
+        tasks: [],
+        sprints: [],
+        tombstones: [],
+        notes: [],
+        goals: [],
+        habits: [],
+        lists: []
+      })
       this.save = vi.fn().mockResolvedValue(undefined)
       this.exportBackup = vi.fn().mockResolvedValue({ success: true })
+      this.autoSaveBackup = vi.fn().mockResolvedValue({ success: true })
+      this.commitBackupBlobs = vi.fn().mockResolvedValue({ success: true })
       this.importBackup = vi.fn().mockResolvedValue({ success: false, cancelled: true })
       this.importAIJson = vi.fn().mockResolvedValue({ success: false, cancelled: true })
-      this.loadConversations = vi.fn().mockResolvedValue([])
-      this.saveConversations = vi.fn().mockResolvedValue(undefined)
+      this.loadMemories = vi.fn().mockResolvedValue([])
+      this.replaceMemories = vi.fn().mockResolvedValue(undefined)
+      this.rebuildSearchIndex = vi.fn().mockResolvedValue(undefined)
     })
   }
 })
@@ -21,10 +33,15 @@ import { DEFAULT_COLUMN_NAMES } from '../../types'
 
 function getStorageMock() {
   return vi.mocked(ElectronStorage).mock.instances[0] as unknown as {
+    load: ReturnType<typeof vi.fn>
+    save: ReturnType<typeof vi.fn>
     importBackup: ReturnType<typeof vi.fn>
     exportBackup: ReturnType<typeof vi.fn>
-    loadConversations: ReturnType<typeof vi.fn>
-    saveConversations: ReturnType<typeof vi.fn>
+    autoSaveBackup: ReturnType<typeof vi.fn>
+    commitBackupBlobs: ReturnType<typeof vi.fn>
+    loadMemories: ReturnType<typeof vi.fn>
+    replaceMemories: ReturnType<typeof vi.fn>
+    rebuildSearchIndex: ReturnType<typeof vi.fn>
   }
 }
 
@@ -40,7 +57,7 @@ function resetStore() {
     lists: [],
     activeProjectId: null,
     sprintFilter: null,
-    activeTimer: null,
+    activeTimers: [],
     isLoaded: false
   })
 }
@@ -63,7 +80,7 @@ describe('project actions', () => {
 
   it('createProject uses default color when none is provided', () => {
     useKanbanStore.getState().createProject('No Color')
-    expect(useKanbanStore.getState().projects[0].color).toBe('#6366f1')
+    expect(useKanbanStore.getState().projects[0].color).toBe('#7c3aed')
   })
 
   it('updateProject changes name and color', () => {
@@ -185,7 +202,9 @@ describe('task actions', () => {
     const id = useKanbanStore.getState().createTask({ projectId, columnId, title: 'To delete' })
     useKanbanStore.getState().deleteTask(id)
     expect(useKanbanStore.getState().tasks).toHaveLength(0)
-    expect(useKanbanStore.getState().tombstones.some((t) => t.id === id && t.type === 'task')).toBe(true)
+    expect(useKanbanStore.getState().tombstones.some((t) => t.id === id && t.type === 'task')).toBe(
+      true
+    )
   })
 
   it('moveTask moves a task to a new column and reorders', () => {
@@ -242,7 +261,9 @@ describe('sprint actions', () => {
     useKanbanStore.getState().deleteSprint(sprintId)
     expect(useKanbanStore.getState().sprints).toHaveLength(0)
     expect(useKanbanStore.getState().tasks.find((t) => t.id === taskId)!.sprintId).toBeUndefined()
-    expect(useKanbanStore.getState().tombstones.some((t) => t.id === sprintId && t.type === 'sprint')).toBe(true)
+    expect(
+      useKanbanStore.getState().tombstones.some((t) => t.id === sprintId && t.type === 'sprint')
+    ).toBe(true)
   })
 
   it('deleteSprint clears sprintFilter when the deleted sprint was active', () => {
@@ -287,46 +308,78 @@ describe('timer actions', () => {
     expect(useKanbanStore.getState().tasks.find((t) => t.id === taskId)!.timeSpent).toBeUndefined()
   })
 
-  it('startTimer sets activeTimer', () => {
+  it('startTimer adds a running timer for the task', () => {
     useKanbanStore.getState().startTimer(taskId)
-    expect(useKanbanStore.getState().activeTimer?.taskId).toBe(taskId)
+    expect(useKanbanStore.getState().activeTimers.map((t) => t.taskId)).toEqual([taskId])
   })
 
-  it('stopTimer clears activeTimer and records time', () => {
+  it("stopTimer removes that task's timer and records time", () => {
     useKanbanStore.getState().startTimer(taskId)
-    useKanbanStore.getState().stopTimer()
-    expect(useKanbanStore.getState().activeTimer).toBeNull()
+    useKanbanStore.getState().stopTimer(taskId)
+    expect(useKanbanStore.getState().activeTimers).toEqual([])
   })
 
-  it('startTimer saves elapsed time from previous timer before switching', () => {
+  it('runs several timers at once, one per task, without switching', () => {
+    // The Phase 5 change: starting a second timer no longer commits/replaces the
+    // first — both tick in parallel (human + agents, or several agents).
     const taskId2 = useKanbanStore.getState().createTask({ projectId, columnId, title: 'Task 2' })
-    useKanbanStore.setState({ activeTimer: { taskId, startedAt: Date.now() - 5000 } })
+    useKanbanStore.setState({ activeTimers: [{ taskId, startedAt: Date.now() - 5000 }] })
     useKanbanStore.getState().startTimer(taskId2)
-    const spent = useKanbanStore.getState().tasks.find((t) => t.id === taskId)!.timeSpent ?? 0
-    expect(spent).toBeGreaterThanOrEqual(4)
-    expect(useKanbanStore.getState().activeTimer?.taskId).toBe(taskId2)
+
+    // Both are running; the first was not stopped, so no time was credited yet.
+    expect(
+      useKanbanStore
+        .getState()
+        .activeTimers.map((t) => t.taskId)
+        .sort()
+    ).toEqual([taskId, taskId2].sort())
+    expect(useKanbanStore.getState().tasks.find((t) => t.id === taskId)!.timeSpent).toBeUndefined()
+
+    // Stopping one credits only that task and leaves the other running.
+    useKanbanStore.getState().stopTimer(taskId)
+    expect(
+      useKanbanStore.getState().tasks.find((t) => t.id === taskId)!.timeSpent
+    ).toBeGreaterThanOrEqual(4)
+    expect(useKanbanStore.getState().activeTimers.map((t) => t.taskId)).toEqual([taskId2])
+  })
+
+  it('starting an already-running task is a no-op (does not reset its clock)', () => {
+    useKanbanStore.setState({ activeTimers: [{ taskId, startedAt: Date.now() - 5000 }] })
+    useKanbanStore.getState().startTimer(taskId)
+    // Still one timer, and its startedAt was not reset to now.
+    const timers = useKanbanStore.getState().activeTimers
+    expect(timers).toHaveLength(1)
+    expect(Date.now() - timers[0].startedAt).toBeGreaterThanOrEqual(5000)
   })
 
   it('updateTask stops timer when task is moved to done column', () => {
-    const doneColumnId = useKanbanStore.getState().projects[0].columns.find((c) => c.name.toLowerCase() === 'done')!.id
+    const doneColumnId = useKanbanStore
+      .getState()
+      .projects[0].columns.find((c) => c.name.toLowerCase() === 'done')!.id
     useKanbanStore.getState().startTimer(taskId)
     useKanbanStore.getState().updateTask(taskId, { columnId: doneColumnId })
-    expect(useKanbanStore.getState().activeTimer).toBeNull()
+    expect(useKanbanStore.getState().activeTimers).toEqual([])
   })
 
   it('moveTask stops timer when task is dragged to done column', () => {
-    const doneColumnId = useKanbanStore.getState().projects[0].columns.find((c) => c.name.toLowerCase() === 'done')!.id
+    const doneColumnId = useKanbanStore
+      .getState()
+      .projects[0].columns.find((c) => c.name.toLowerCase() === 'done')!.id
     useKanbanStore.getState().startTimer(taskId)
     useKanbanStore.getState().moveTask(taskId, doneColumnId, 0)
-    expect(useKanbanStore.getState().activeTimer).toBeNull()
+    expect(useKanbanStore.getState().activeTimers).toEqual([])
   })
 
   it('updateTask does not stop timer when another task is marked done', () => {
-    const taskId2 = useKanbanStore.getState().createTask({ projectId, columnId, title: 'Other task' })
-    const doneColumnId = useKanbanStore.getState().projects[0].columns.find((c) => c.name.toLowerCase() === 'done')!.id
+    const taskId2 = useKanbanStore
+      .getState()
+      .createTask({ projectId, columnId, title: 'Other task' })
+    const doneColumnId = useKanbanStore
+      .getState()
+      .projects[0].columns.find((c) => c.name.toLowerCase() === 'done')!.id
     useKanbanStore.getState().startTimer(taskId)
     useKanbanStore.getState().updateTask(taskId2, { columnId: doneColumnId })
-    expect(useKanbanStore.getState().activeTimer?.taskId).toBe(taskId)
+    expect(useKanbanStore.getState().activeTimers.map((t) => t.taskId)).toEqual([taskId])
   })
 })
 
@@ -350,7 +403,9 @@ describe('note actions', () => {
   })
 
   it('createNote accepts custom data', () => {
-    const id = useKanbanStore.getState().createNote(projectId, { content: 'Hello', color: '#ff0000', x: 50, y: 60 })
+    const id = useKanbanStore
+      .getState()
+      .createNote(projectId, { content: 'Hello', color: '#ff0000', x: 50, y: 60 })
     const note = useKanbanStore.getState().notes.find((n) => n.id === id)!
     expect(note.content).toBe('Hello')
     expect(note.x).toBe(50)
@@ -359,7 +414,9 @@ describe('note actions', () => {
   it('updateNote updates fields', () => {
     const id = useKanbanStore.getState().createNote(projectId)
     useKanbanStore.getState().updateNote(id, { content: 'Updated content' })
-    expect(useKanbanStore.getState().notes.find((n) => n.id === id)!.content).toBe('Updated content')
+    expect(useKanbanStore.getState().notes.find((n) => n.id === id)!.content).toBe(
+      'Updated content'
+    )
   })
 
   it('deleteNote removes the note and cleans up connections', () => {
@@ -401,15 +458,21 @@ describe('goal actions', () => {
   beforeEach(resetStore)
 
   it('createGoal adds a goal with empty entries', () => {
-    const id = useKanbanStore.getState().createGoal({ title: 'Run 100km', target: 100, unit: 'km', color: '#22c55e' })
+    const id = useKanbanStore
+      .getState()
+      .createGoal({ title: 'Run 100km', target: 100, unit: 'km', color: '#22c55e' })
     const goal = useKanbanStore.getState().goals.find((g) => g.id === id)!
     expect(goal.entries).toEqual([])
     expect(goal.target).toBe(100)
   })
 
   it('addGoalEntry adds an entry and accumulates current', () => {
-    const id = useKanbanStore.getState().createGoal({ title: 'Books', target: 10, unit: 'livros', color: '#fff' })
-    useKanbanStore.getState().addGoalEntry(id, { date: '2026-06-01', label: 'Dom Casmurro', value: 1 })
+    const id = useKanbanStore
+      .getState()
+      .createGoal({ title: 'Books', target: 10, unit: 'livros', color: '#fff' })
+    useKanbanStore
+      .getState()
+      .addGoalEntry(id, { date: '2026-06-01', label: 'Dom Casmurro', value: 1 })
     useKanbanStore.getState().addGoalEntry(id, { date: '2026-06-05', value: 2.5 })
     const goal = useKanbanStore.getState().goals.find((g) => g.id === id)!
     expect(goal.entries).toHaveLength(2)
@@ -420,7 +483,9 @@ describe('goal actions', () => {
   })
 
   it('addGoalEntry accepts floating-point values', () => {
-    const id = useKanbanStore.getState().createGoal({ title: 'Corrida', target: 10, unit: 'km', color: '#fff' })
+    const id = useKanbanStore
+      .getState()
+      .createGoal({ title: 'Corrida', target: 10, unit: 'km', color: '#fff' })
     useKanbanStore.getState().addGoalEntry(id, { date: '2026-06-14', value: 2.3 })
     useKanbanStore.getState().addGoalEntry(id, { date: '2026-06-15', value: 3.7 })
     const goal = useKanbanStore.getState().goals.find((g) => g.id === id)!
@@ -429,7 +494,9 @@ describe('goal actions', () => {
   })
 
   it('deleteGoalEntry removes an entry', () => {
-    const id = useKanbanStore.getState().createGoal({ title: 'G', target: 10, unit: 'x', color: '#fff' })
+    const id = useKanbanStore
+      .getState()
+      .createGoal({ title: 'G', target: 10, unit: 'x', color: '#fff' })
     useKanbanStore.getState().addGoalEntry(id, { date: '2026-06-01', value: 3 })
     const entryId = useKanbanStore.getState().goals.find((g) => g.id === id)!.entries[0].id
     useKanbanStore.getState().deleteGoalEntry(id, entryId)
@@ -437,15 +504,32 @@ describe('goal actions', () => {
   })
 
   it('updateGoal changes metadata fields', () => {
-    const id = useKanbanStore.getState().createGoal({ title: 'Old', target: 5, unit: 'x', color: '#fff' })
+    const id = useKanbanStore
+      .getState()
+      .createGoal({ title: 'Old', target: 5, unit: 'x', color: '#fff' })
     useKanbanStore.getState().updateGoal(id, { title: 'New', target: 20 })
     const g = useKanbanStore.getState().goals.find((g) => g.id === id)!
     expect(g.title).toBe('New')
     expect(g.target).toBe(20)
   })
 
+  it('converts an existing quantity goal to a single-completion goal', () => {
+    const id = useKanbanStore
+      .getState()
+      .createGoal({ title: 'Ler DDD', target: 1, unit: 'livro', color: '#fff' })
+    useKanbanStore.getState().updateGoal(id, { kind: 'completion', target: 1, unit: '' })
+
+    expect(useKanbanStore.getState().goals.find((g) => g.id === id)).toMatchObject({
+      kind: 'completion',
+      target: 1,
+      unit: ''
+    })
+  })
+
   it('deleteGoal removes the goal', () => {
-    const id = useKanbanStore.getState().createGoal({ title: 'Delete', target: 1, unit: 'x', color: '#fff' })
+    const id = useKanbanStore
+      .getState()
+      .createGoal({ title: 'Delete', target: 1, unit: 'x', color: '#fff' })
     useKanbanStore.getState().deleteGoal(id)
     expect(useKanbanStore.getState().goals).toHaveLength(0)
   })
@@ -466,14 +550,18 @@ describe('habit actions', () => {
   it('toggleHabit adds date when not present', () => {
     const id = useKanbanStore.getState().createHabit({ name: 'Exercise', color: '#22c55e' })
     useKanbanStore.getState().toggleHabit(id, '2026-01-01')
-    expect(useKanbanStore.getState().habits.find((h) => h.id === id)!.completions).toContain('2026-01-01')
+    expect(useKanbanStore.getState().habits.find((h) => h.id === id)!.completions).toContain(
+      '2026-01-01'
+    )
   })
 
   it('toggleHabit removes date when already present (untoggle)', () => {
     const id = useKanbanStore.getState().createHabit({ name: 'Exercise', color: '#22c55e' })
     useKanbanStore.getState().toggleHabit(id, '2026-01-01')
     useKanbanStore.getState().toggleHabit(id, '2026-01-01')
-    expect(useKanbanStore.getState().habits.find((h) => h.id === id)!.completions).not.toContain('2026-01-01')
+    expect(useKanbanStore.getState().habits.find((h) => h.id === id)!.completions).not.toContain(
+      '2026-01-01'
+    )
   })
 
   it('deleteHabit removes the habit', () => {
@@ -517,7 +605,9 @@ describe('shopping list actions', () => {
 
   it('addItem adds item with done:false', () => {
     const listId = useKanbanStore.getState().createList('Cart')
-    const itemId = useKanbanStore.getState().addItem(listId, { name: 'Apple', qty: 3, price: '1.5' })
+    const itemId = useKanbanStore
+      .getState()
+      .addItem(listId, { name: 'Apple', qty: 3, price: '1.5' })
     const list = useKanbanStore.getState().lists.find((l) => l.id === listId)!
     const item = list.items.find((i) => i.id === itemId)!
     expect(item.name).toBe('Apple')
@@ -573,9 +663,9 @@ describe('shopping list actions', () => {
   })
 })
 
-// ── AI chat history in backups ────────────────────────────────────────────────
+// ── Chat history is no longer part of backups ────────────────────────────────────────────────
 
-describe('backups carry AI chat history', () => {
+describe('backups ignore the removed AI chat history', () => {
   beforeEach(resetStore)
 
   const conversation = {
@@ -591,67 +681,429 @@ describe('backups carry AI chat history', () => {
     ]
   }
 
-  it('exportBackup includes the stored conversations at version 3', async () => {
+  it('exportBackup has no conversations or chatImages, keeps memories and file metadata at version 7', async () => {
     const storage = getStorageMock()
-    storage.loadConversations.mockResolvedValueOnce([conversation])
+    const memory = {
+      id: 'm1',
+      projectId: null,
+      type: 'fato',
+      title: 't',
+      body: 'b',
+      tags: [],
+      pinned: false,
+      source: 'modelo',
+      createdAt: 'x',
+      updatedAt: 'x',
+      lastAccessedAt: 'x',
+      accessCount: 0,
+      archivedAt: null
+    }
+    storage.loadMemories.mockResolvedValueOnce([memory])
+    const file = {
+      id: 'f1',
+      name: 'doc.pdf',
+      ext: '.pdf',
+      size: 10,
+      createdAt: 'x',
+      projectId: 'p1'
+    }
+    useKanbanStore.setState({ files: [file] })
 
     await useKanbanStore.getState().exportBackup()
 
     const backup = storage.exportBackup.mock.calls[0][0]
-    expect(backup.version).toBe(3)
-    expect(backup.conversations).toEqual([conversation])
+    expect(backup.version).toBe(7)
+    expect(backup).not.toHaveProperty('conversations')
+    expect(backup).not.toHaveProperty('chatImages')
+    expect(backup.memories).toEqual([memory])
+    // Attachment metadata rides along now; the bytes are attached in main.
+    expect(backup.files).toEqual([file])
   })
 
-  it('exportBackup still succeeds when the history cannot be read', async () => {
+  it('importBackup restores file metadata from a v5 backup', async () => {
     const storage = getStorageMock()
-    storage.loadConversations.mockRejectedValueOnce(new Error('disk on fire'))
-
-    const result = await useKanbanStore.getState().exportBackup()
-
-    expect(result).toBe(true)
-    expect(storage.exportBackup.mock.calls.at(-1)![0].conversations).toEqual([])
-  })
-
-  it('importBackup restores conversations from a v3 backup', async () => {
-    const storage = getStorageMock()
+    const file = {
+      id: 'f1',
+      name: 'doc.pdf',
+      ext: '.pdf',
+      size: 10,
+      createdAt: 'x',
+      projectId: 'p1'
+    }
     storage.importBackup.mockResolvedValueOnce({
       success: true,
       data: {
-        version: 3,
+        version: 5,
         exportedAt: new Date().toISOString(),
-        projects: [], tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: [],
-        conversations: [conversation]
+        projects: [],
+        tasks: [],
+        sprints: [],
+        tombstones: [],
+        notes: [],
+        goals: [],
+        habits: [],
+        lists: [],
+        files: [file]
       }
     })
 
     await useKanbanStore.getState().importBackup()
 
-    expect(storage.saveConversations).toHaveBeenCalledWith([conversation])
+    expect(useKanbanStore.getState().files).toEqual([file])
   })
 
-  it('importBackup leaves local history alone for a v2 backup', async () => {
+  it('restores a financial receipt link and its record metadata with the file', async () => {
     const storage = getStorageMock()
-    storage.saveConversations.mockClear()
+    useKanbanStore.setState({ files: [] })
+    const listId = useKanbanStore.getState().createList('Brasil', 'BRL')
+    const txId = useKanbanStore.getState().addTransaction(listId, {
+      description: 'Pagamento',
+      amount: '100',
+      type: 'expense',
+      date: '2026-10-06'
+    })
+    const file = {
+      id: 'receipt-1',
+      name: 'pix.pdf',
+      ext: '.pdf',
+      size: 10,
+      createdAt: '2026-10-06T12:00:00Z'
+    }
+    useKanbanStore.getState().addFiles([file])
+    useKanbanStore.getState().updateTransaction(listId, txId, {
+      receiptFileIds: [file.id],
+      bankReference: 'E2E-123',
+      counterparty: 'Loja',
+      reconciledAt: '2026-10-06T13:00:00Z'
+    })
+
+    await useKanbanStore.getState().exportBackup()
+    const backup = storage.exportBackup.mock.calls.at(-1)![0]
+    expect(backup.lists[0].transactions[0]).toMatchObject({
+      receiptFileIds: [file.id],
+      bankReference: 'E2E-123',
+      counterparty: 'Loja',
+      reconciledAt: '2026-10-06T13:00:00Z'
+    })
+    useKanbanStore.setState({ lists: [], files: [] })
+    storage.importBackup.mockResolvedValueOnce({ success: true, data: backup })
+
+    expect(await useKanbanStore.getState().importBackup()).toBe(true)
+    expect(useKanbanStore.getState().files).toEqual([file])
+    expect(useKanbanStore.getState().lists[0].transactions[0]).toMatchObject({
+      receiptFileIds: [file.id],
+      bankReference: 'E2E-123',
+      counterparty: 'Loja',
+      reconciledAt: '2026-10-06T13:00:00Z'
+    })
+  })
+
+  it('importBackup leaves local files alone for a pre-v5 backup (no files key)', async () => {
+    const local = { id: 'local', name: 'keep.txt', ext: '.txt', size: 1, createdAt: 'x' }
+    useKanbanStore.setState({ files: [local] })
+    const storage = getStorageMock()
     storage.importBackup.mockResolvedValueOnce({
       success: true,
       data: {
-        version: 2,
+        version: 4,
         exportedAt: new Date().toISOString(),
-        projects: [], tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: []
+        projects: [],
+        tasks: [],
+        sprints: [],
+        tombstones: [],
+        notes: [],
+        goals: [],
+        habits: [],
+        lists: []
       }
     })
 
-    const result = await useKanbanStore.getState().importBackup()
+    await useKanbanStore.getState().importBackup()
+
+    expect(useKanbanStore.getState().files).toEqual([local])
+  })
+
+  it('exportBackup still succeeds when memory cannot be read', async () => {
+    const storage = getStorageMock()
+    storage.loadMemories.mockRejectedValueOnce(new Error('db locked'))
+
+    const result = await useKanbanStore.getState().exportBackup()
 
     expect(result).toBe(true)
-    expect(storage.saveConversations).not.toHaveBeenCalled()
+    expect(storage.exportBackup.mock.calls.at(-1)![0].memories).toEqual([])
+  })
+
+  it('importBackup restores memories from a v4 backup', async () => {
+    const storage = getStorageMock()
+    const memory = {
+      id: 'm1',
+      projectId: null,
+      type: 'fato',
+      title: 't',
+      body: 'b',
+      tags: [],
+      pinned: false,
+      source: 'modelo',
+      createdAt: 'x',
+      updatedAt: 'x',
+      lastAccessedAt: 'x',
+      accessCount: 0,
+      archivedAt: null
+    }
+    storage.importBackup.mockResolvedValueOnce({
+      success: true,
+      data: {
+        version: 4,
+        exportedAt: new Date().toISOString(),
+        projects: [],
+        tasks: [],
+        sprints: [],
+        tombstones: [],
+        notes: [],
+        goals: [],
+        habits: [],
+        lists: [],
+        memories: [memory]
+      }
+    })
+
+    await useKanbanStore.getState().importBackup()
+
+    expect(storage.replaceMemories).toHaveBeenCalledWith([memory])
+  })
+
+  it('importBackup leaves local memory alone for a backup without the key', async () => {
+    const storage = getStorageMock()
+    storage.replaceMemories.mockClear()
+    storage.importBackup.mockResolvedValueOnce({
+      success: true,
+      data: {
+        version: 3,
+        exportedAt: new Date().toISOString(),
+        projects: [],
+        tasks: [],
+        sprints: [],
+        tombstones: [],
+        notes: [],
+        goals: [],
+        habits: [],
+        lists: []
+      }
+    })
+
+    await useKanbanStore.getState().importBackup()
+
+    expect(storage.replaceMemories).not.toHaveBeenCalled()
+  })
+
+  it('importBackup ignores conversations and chatImages but restores tasks and memories', async () => {
+    const storage = getStorageMock()
+    storage.replaceMemories.mockClear()
+    storage.importBackup.mockResolvedValueOnce({
+      success: true,
+      data: {
+        version: 7,
+        exportedAt: new Date().toISOString(),
+        projects: [{ id: 'p9', name: 'Importado', columns: [{ id: 'c9', name: 'A', order: 0 }] }],
+        tasks: [{ id: 't9', title: 'Tarefa', projectId: 'p9', columnId: 'c9' }],
+        sprints: [],
+        tombstones: [],
+        notes: [],
+        goals: [],
+        habits: [],
+        lists: [],
+        conversations: [conversation],
+        chatImages: [{ id: 'x.png', base64: 'AAAA' }],
+        memories: [{ id: 'm9', title: 'Fato', body: 'corpo', sourceConversationId: 'c1' }]
+      }
+    })
+
+    expect(await useKanbanStore.getState().importBackup()).toBe(true)
+
+    expect(useKanbanStore.getState().tasks.map((t) => t.id)).toContain('t9')
+    expect(storage.replaceMemories).toHaveBeenCalledOnce()
+    expect(storage).not.toHaveProperty('saveConversations')
+    expect(storage).not.toHaveProperty('loadConversations')
+  })
+})
+
+describe('appearance preferences', () => {
+  beforeEach(resetStore)
+
+  it('persists the chosen appearance in backups', async () => {
+    const storage = getStorageMock()
+    useKanbanStore.getState().setUiPreferences({
+      theme: 'light',
+      fontSize: 'large',
+      reduceMotion: true,
+      highContrast: true
+    })
+
+    await useKanbanStore.getState().exportBackup()
+
+    expect(storage.exportBackup.mock.calls.at(-1)![0].uiPreferences).toEqual({
+      theme: 'light',
+      fontSize: 'large',
+      reduceMotion: true,
+      highContrast: true
+    })
+  })
+
+  it('keeps local appearance when an older backup has no preference', async () => {
+    const storage = getStorageMock()
+    const preferences = {
+      theme: 'light' as const,
+      fontSize: 'large' as const,
+      reduceMotion: true,
+      highContrast: false
+    }
+    useKanbanStore.getState().setUiPreferences(preferences)
+    storage.importBackup.mockResolvedValueOnce({
+      success: true,
+      data: {
+        version: 7,
+        exportedAt: new Date().toISOString(),
+        projects: [],
+        tasks: [],
+        sprints: [],
+        tombstones: [],
+        notes: [],
+        goals: [],
+        habits: [],
+        lists: []
+      }
+    })
+
+    await useKanbanStore.getState().importBackup()
+
+    expect(useKanbanStore.getState().uiPreferences).toEqual(preferences)
   })
 })
 
 // ── importBackup ──────────────────────────────────────────────────────────────
 
 describe('importBackup', () => {
+  it('rebuilds search after the restored store and memories are saved', async () => {
+    resetStore()
+    const storage = getStorageMock()
+    storage.rebuildSearchIndex.mockClear()
+    storage.importBackup.mockResolvedValueOnce({
+      success: true,
+      data: {
+        version: 7,
+        exportedAt: new Date().toISOString(),
+        projects: [],
+        tasks: [],
+        sprints: [],
+        tombstones: [],
+        notes: [],
+        goals: [],
+        habits: [],
+        lists: [],
+        memories: []
+      }
+    })
+
+    expect(await useKanbanStore.getState().importBackup()).toBe(true)
+    expect(storage.rebuildSearchIndex).toHaveBeenCalledOnce()
+    const rebuildOrder = storage.rebuildSearchIndex.mock.invocationCallOrder[0]
+    expect(storage.save.mock.invocationCallOrder.at(-1)).toBeLessThan(rebuildOrder)
+    expect(storage.replaceMemories.mock.invocationCallOrder.at(-1)).toBeLessThan(rebuildOrder)
+  })
+
+  it('migrates legacy money identically when loading data and importing a backup', async () => {
+    resetStore()
+    const legacyList = {
+      id: 'old-table',
+      name: 'Old table',
+      items: [{ id: 'item', name: 'Item', price: 3.75 }],
+      transactions: [
+        { id: 'tx', amount: 12.5, details: [{ id: 'part', description: 'Part', amount: 20 }] }
+      ],
+      goals: [{ id: 'goal', targetAmount: 100 }],
+      actualBalance: 42.25,
+      budgets: [{ category: 'Casa', limit: 100 }],
+      createdAt: '2026-01-01',
+      updatedAt: '2026-01-01'
+    }
+    const data = {
+      projects: [],
+      tasks: [],
+      sprints: [],
+      tombstones: [],
+      notes: [],
+      goals: [],
+      habits: [],
+      lists: [legacyList]
+    }
+    const storage = getStorageMock()
+    storage.load.mockResolvedValueOnce(data)
+    await useKanbanStore.getState().loadData()
+    const loaded = useKanbanStore.getState().lists[0]
+
+    storage.importBackup.mockResolvedValueOnce({
+      success: true,
+      data: { ...data, version: 2, exportedAt: '2026-01-01' }
+    })
+    expect(await useKanbanStore.getState().importBackup()).toBe(true)
+    const imported = useKanbanStore.getState().lists[0]
+
+    expect(imported).toEqual(loaded)
+    expect(imported).toMatchObject({
+      currency: 'BRL',
+      items: [{ price: '3.75' }],
+      transactions: [{ amount: '12.5', details: [{ amount: '12.5' }] }],
+      goals: [{ targetAmount: '100' }],
+      actualBalance: '42.25',
+      legacyFinancialMetadata: { budgets: legacyList.budgets }
+    })
+  })
+
   beforeEach(resetStore)
+
+  it('keeps current data and blobs when the pre-import snapshot fails', async () => {
+    const localId = useKanbanStore.getState().createProject('Local')
+    const storage = getStorageMock()
+    storage.commitBackupBlobs.mockClear()
+    storage.importBackup.mockResolvedValueOnce({
+      success: true,
+      data: { version: 7, exportedAt: new Date().toISOString(), projects: [], tasks: [] }
+    })
+    storage.autoSaveBackup.mockResolvedValueOnce({ success: false })
+
+    expect(await useKanbanStore.getState().importBackup()).toBe(false)
+    expect(useKanbanStore.getState().projects[0].id).toBe(localId)
+    expect(storage.commitBackupBlobs).not.toHaveBeenCalled()
+  })
+
+  it('rolls back state and memories when a sidecar write fails during restore', async () => {
+    const localId = useKanbanStore.getState().createProject('Local')
+    const storage = getStorageMock()
+    const previousMemories = [{ id: 'old', title: 'Anterior', body: 'x' }]
+    // exportBackup(true) reads memories for the restore point before importBackup
+    // captures the state it must restore on failure.
+    storage.loadMemories.mockResolvedValueOnce([]).mockResolvedValueOnce(previousMemories)
+    storage.replaceMemories
+      .mockRejectedValueOnce(new Error('disco cheio'))
+      .mockResolvedValueOnce(undefined)
+    storage.importBackup.mockResolvedValueOnce({
+      success: true,
+      data: {
+        version: 7,
+        exportedAt: new Date().toISOString(),
+        projects: [],
+        tasks: [],
+        memories: [{ id: 'new', title: 'Novo', body: 'y' }]
+      }
+    })
+
+    await expect(useKanbanStore.getState().importBackup()).rejects.toThrow(
+      'dados anteriores foram preservados'
+    )
+    expect(useKanbanStore.getState().projects.map((project) => project.id)).toEqual([localId])
+    expect(storage.replaceMemories).toHaveBeenLastCalledWith(previousMemories)
+    expect(storage.commitBackupBlobs).not.toHaveBeenCalled()
+  })
 
   it('returns false and leaves state unchanged when cancelled', async () => {
     const pid = useKanbanStore.getState().createProject('Local project')
@@ -671,13 +1123,45 @@ describe('importBackup', () => {
     const backup = {
       version: 2,
       exportedAt: new Date().toISOString(),
-      projects: [{ id: 'bp1', name: 'Backup project', color: '#ff0000', columns: [], order: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }],
-      tasks: [{ id: 'bt1', projectId: 'bp1', columnId: 'c1', title: 'Backup task', order: 0, priority: 'medium', tags: [], images: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }],
+      projects: [
+        {
+          id: 'bp1',
+          name: 'Backup project',
+          color: '#ff0000',
+          columns: [],
+          order: 0,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }
+      ],
+      tasks: [
+        {
+          id: 'bt1',
+          projectId: 'bp1',
+          columnId: 'c1',
+          title: 'Backup task',
+          order: 0,
+          priority: 'medium',
+          tags: [],
+          images: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }
+      ],
       sprints: [],
       tombstones: [],
       notes: [],
       goals: [],
-      habits: [{ id: 'bh1', name: 'Backup habit', color: '#0f0', completions: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }],
+      habits: [
+        {
+          id: 'bh1',
+          name: 'Backup habit',
+          color: '#0f0',
+          completions: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }
+      ],
       lists: []
     }
     getStorageMock().importBackup.mockResolvedValueOnce({ success: true, data: backup })
@@ -701,10 +1185,32 @@ describe('importBackup', () => {
       version: 2,
       exportedAt: new Date().toISOString(),
       projects: [
-        { id: 'first', name: 'First', color: '#fff', columns: [], order: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-        { id: 'second', name: 'Second', color: '#000', columns: [], order: 1, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+        {
+          id: 'first',
+          name: 'First',
+          color: '#fff',
+          columns: [],
+          order: 0,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        },
+        {
+          id: 'second',
+          name: 'Second',
+          color: '#000',
+          columns: [],
+          order: 1,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }
       ],
-      tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: []
+      tasks: [],
+      sprints: [],
+      tombstones: [],
+      notes: [],
+      goals: [],
+      habits: [],
+      lists: []
     }
     getStorageMock().importBackup.mockResolvedValueOnce({ success: true, data: backup })
 
@@ -716,7 +1222,18 @@ describe('importBackup', () => {
   it('sets activeProjectId to null when backup has no projects', async () => {
     useKanbanStore.getState().createProject('Local')
 
-    const backup = { version: 2, exportedAt: new Date().toISOString(), projects: [], tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: [] }
+    const backup = {
+      version: 2,
+      exportedAt: new Date().toISOString(),
+      projects: [],
+      tasks: [],
+      sprints: [],
+      tombstones: [],
+      notes: [],
+      goals: [],
+      habits: [],
+      lists: []
+    }
     getStorageMock().importBackup.mockResolvedValueOnce({ success: true, data: backup })
 
     await useKanbanStore.getState().importBackup()
@@ -727,16 +1244,29 @@ describe('importBackup', () => {
   it('clears any running timer on restore', async () => {
     const pid = useKanbanStore.getState().createProject('P')
     const col = useKanbanStore.getState().projects[0].columns[0]
-    const tid = useKanbanStore.getState().createTask({ projectId: pid, columnId: col.id, title: 'T' })
+    const tid = useKanbanStore
+      .getState()
+      .createTask({ projectId: pid, columnId: col.id, title: 'T' })
     useKanbanStore.getState().startTimer(tid)
-    expect(useKanbanStore.getState().activeTimer).not.toBeNull()
+    expect(useKanbanStore.getState().activeTimers).toHaveLength(1)
 
-    const backup = { version: 2, exportedAt: new Date().toISOString(), projects: [], tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: [] }
+    const backup = {
+      version: 2,
+      exportedAt: new Date().toISOString(),
+      projects: [],
+      tasks: [],
+      sprints: [],
+      tombstones: [],
+      notes: [],
+      goals: [],
+      habits: [],
+      lists: []
+    }
     getStorageMock().importBackup.mockResolvedValueOnce({ success: true, data: backup })
 
     await useKanbanStore.getState().importBackup()
 
-    expect(useKanbanStore.getState().activeTimer).toBeNull()
+    expect(useKanbanStore.getState().activeTimers).toEqual([])
   })
 
   it('applies defaults for missing optional fields in backup lists', async () => {
@@ -750,7 +1280,15 @@ describe('importBackup', () => {
       notes: [],
       goals: [],
       habits: [],
-      lists: [{ id: 'l1', name: 'Old list', items: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }]
+      lists: [
+        {
+          id: 'l1',
+          name: 'Old list',
+          items: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }
+      ]
     }
     getStorageMock().importBackup.mockResolvedValueOnce({ success: true, data: backup })
 
@@ -767,10 +1305,30 @@ describe('importBackup', () => {
       version: 2,
       exportedAt: new Date().toISOString(),
       projects: [
-        { id: 'p1', name: 'A', color: '#fff', columns: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-        { id: 'p2', name: 'B', color: '#000', columns: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+        {
+          id: 'p1',
+          name: 'A',
+          color: '#fff',
+          columns: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        },
+        {
+          id: 'p2',
+          name: 'B',
+          color: '#000',
+          columns: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }
       ],
-      tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: []
+      tasks: [],
+      sprints: [],
+      tombstones: [],
+      notes: [],
+      goals: [],
+      habits: [],
+      lists: []
     }
     getStorageMock().importBackup.mockResolvedValueOnce({ success: true, data: backup })
 
@@ -902,12 +1460,21 @@ describe('code path actions', () => {
       data: {
         version: 3,
         exportedAt: '2024-01-01T00:00:00.000Z',
-        projects: [{
-          id: 'p-old', name: 'Antigo', color: '#fff', columns: [],
-          codePaths: [{ id: 'cp1', path: 'C:/a' }, { id: 'cp2', path: 'C:/b' }],
-          activeCodePathId: 'cp2', // backup written before multi-select existed
-          createdAt: '2024-01-01T00:00:00.000Z', updatedAt: '2024-01-01T00:00:00.000Z'
-        }],
+        projects: [
+          {
+            id: 'p-old',
+            name: 'Antigo',
+            color: '#fff',
+            columns: [],
+            codePaths: [
+              { id: 'cp1', path: 'C:/a' },
+              { id: 'cp2', path: 'C:/b' }
+            ],
+            activeCodePathId: 'cp2', // backup written before multi-select existed
+            createdAt: '2024-01-01T00:00:00.000Z',
+            updatedAt: '2024-01-01T00:00:00.000Z'
+          }
+        ],
         tasks: []
       }
     })
@@ -924,7 +1491,10 @@ describe('code path actions', () => {
       name: 'Legado',
       color: '#fff',
       columns: [],
-      codePaths: [{ id: 'cp1', path: 'C:/a' }, { id: 'cp2', path: 'C:/b' }],
+      codePaths: [
+        { id: 'cp1', path: 'C:/a' },
+        { id: 'cp2', path: 'C:/b' }
+      ],
       activeCodePathId: 'cp2', // written by a pre-multi-select version
       createdAt: '2024-01-01T00:00:00.000Z',
       updatedAt: '2024-01-01T00:00:00.000Z'
@@ -933,7 +1503,14 @@ describe('code path actions', () => {
       load: ReturnType<typeof vi.fn>
     }
     storage.load.mockResolvedValueOnce({
-      projects: [legacy], tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: []
+      projects: [legacy],
+      tasks: [],
+      sprints: [],
+      tombstones: [],
+      notes: [],
+      goals: [],
+      habits: [],
+      lists: []
     })
     await useKanbanStore.getState().loadData()
     const p = useKanbanStore.getState().projects.find((x) => x.id === 'p-legacy')!
@@ -955,7 +1532,14 @@ describe('code path actions', () => {
       load: ReturnType<typeof vi.fn>
     }
     storage.load.mockResolvedValueOnce({
-      projects: [stale], tasks: [], sprints: [], tombstones: [], notes: [], goals: [], habits: [], lists: []
+      projects: [stale],
+      tasks: [],
+      sprints: [],
+      tombstones: [],
+      notes: [],
+      goals: [],
+      habits: [],
+      lists: []
     })
     await useKanbanStore.getState().loadData()
     const p = useKanbanStore.getState().projects.find((x) => x.id === 'p-stale')!
@@ -968,5 +1552,243 @@ describe('code path actions', () => {
     useKanbanStore.getState().toggleCodePath(pid, id2)
     useKanbanStore.getState().removeCodePath(pid, id2)
     expect(project().activeCodePathIds).toEqual([id1])
+  })
+
+  it('loadData migrates a legacy single activeTimer, committing its elapsed time', async () => {
+    const storage = vi.mocked(ElectronStorage).mock.instances[0] as unknown as {
+      load: ReturnType<typeof vi.fn>
+    }
+    // A DB written by a pre-multi-timer version: only the singular `activeTimer`.
+    storage.load.mockResolvedValueOnce({
+      projects: [],
+      sprints: [],
+      tombstones: [],
+      notes: [],
+      goals: [],
+      habits: [],
+      lists: [],
+      tasks: [
+        {
+          id: 't1',
+          projectId: 'p',
+          columnId: 'c',
+          title: 'T',
+          order: 0,
+          priority: 'medium',
+          tags: [],
+          createdAt: 'x',
+          updatedAt: 'x'
+        }
+      ],
+      activeTimer: { taskId: 't1', startedAt: Date.now() - 10_000 }
+    })
+    await useKanbanStore.getState().loadData()
+    // Elapsed time committed to the task, and no timer left running after load.
+    expect(
+      useKanbanStore.getState().tasks.find((t) => t.id === 't1')!.timeSpent
+    ).toBeGreaterThanOrEqual(9)
+    expect(useKanbanStore.getState().activeTimers).toEqual([])
+  })
+
+  it('loadData commits every running timer, not just one', async () => {
+    const storage = vi.mocked(ElectronStorage).mock.instances[0] as unknown as {
+      load: ReturnType<typeof vi.fn>
+    }
+    storage.load.mockResolvedValueOnce({
+      projects: [],
+      sprints: [],
+      tombstones: [],
+      notes: [],
+      goals: [],
+      habits: [],
+      lists: [],
+      tasks: [
+        {
+          id: 't1',
+          projectId: 'p',
+          columnId: 'c',
+          title: 'A',
+          order: 0,
+          priority: 'medium',
+          tags: [],
+          createdAt: 'x',
+          updatedAt: 'x'
+        },
+        {
+          id: 't2',
+          projectId: 'p',
+          columnId: 'c',
+          title: 'B',
+          order: 1,
+          priority: 'medium',
+          tags: [],
+          createdAt: 'x',
+          updatedAt: 'x'
+        }
+      ],
+      activeTimers: [
+        { taskId: 't1', startedAt: Date.now() - 10_000 },
+        { taskId: 't2', startedAt: Date.now() - 20_000 }
+      ]
+    })
+    await useKanbanStore.getState().loadData()
+    const tasks = useKanbanStore.getState().tasks
+    expect(tasks.find((t) => t.id === 't1')!.timeSpent).toBeGreaterThanOrEqual(9)
+    expect(tasks.find((t) => t.id === 't2')!.timeSpent).toBeGreaterThanOrEqual(19)
+    expect(useKanbanStore.getState().activeTimers).toEqual([])
+  })
+
+  it('_flushPersist writes the legacy activeTimer mirror (activeTimers[0])', async () => {
+    const storage = vi.mocked(ElectronStorage).mock.instances[0] as unknown as {
+      save: ReturnType<typeof vi.fn>
+    }
+    useKanbanStore.setState({
+      activeTimers: [
+        { taskId: 'a', startedAt: 111 },
+        { taskId: 'b', startedAt: 222 }
+      ]
+    })
+    await useKanbanStore.getState()._flushPersist()
+    const saved = storage.save.mock.calls.at(-1)![0]
+    expect(saved.activeTimers).toEqual([
+      { taskId: 'a', startedAt: 111 },
+      { taskId: 'b', startedAt: 222 }
+    ])
+    // Old app versions still resolve a single timer from the mirror.
+    expect(saved.activeTimer).toEqual({ taskId: 'a', startedAt: 111 })
+  })
+})
+
+// ── Task images live on disk (metadata only in the store) ─────────────────────
+
+describe('task images: disk storage + cleanup', () => {
+  const taskImages = {
+    save: vi.fn(),
+    get: vi.fn(),
+    delete: vi.fn().mockResolvedValue(undefined)
+  }
+
+  beforeEach(() => {
+    resetStore()
+    taskImages.save.mockReset().mockResolvedValue({ id: 'stored-1', ext: '.jpg', size: 42 })
+    taskImages.get.mockReset()
+    taskImages.delete.mockReset().mockResolvedValue(undefined)
+    ;(window as unknown as { electronAPI: unknown }).electronAPI = { taskImages }
+  })
+
+  it('deleteTask removes the task images from disk', () => {
+    useKanbanStore.setState({
+      tasks: [
+        {
+          id: 't1',
+          projectId: 'p1',
+          columnId: 'c1',
+          title: 'x',
+          priority: 'medium',
+          tags: [],
+          order: 0,
+          createdAt: 'x',
+          updatedAt: 'x',
+          images: [
+            { id: 'i1', name: 'a.jpg', ext: '.jpg', size: 1, addedAt: 'x' },
+            { id: 'i2', name: 'b.png', ext: '.png', size: 2, addedAt: 'x' }
+          ]
+        }
+      ]
+    })
+
+    useKanbanStore.getState().deleteTask('t1')
+
+    expect(taskImages.delete).toHaveBeenCalledWith([
+      { id: 'i1', ext: '.jpg' },
+      { id: 'i2', ext: '.png' }
+    ])
+  })
+
+  it('importBackup converts a legacy inline task image to a disk file', async () => {
+    const storage = getStorageMock()
+    storage.importBackup.mockResolvedValueOnce({
+      success: true,
+      data: {
+        version: 5,
+        exportedAt: new Date().toISOString(),
+        projects: [],
+        sprints: [],
+        tombstones: [],
+        notes: [],
+        goals: [],
+        habits: [],
+        lists: [],
+        tasks: [
+          {
+            id: 't1',
+            projectId: 'p1',
+            columnId: 'c1',
+            title: 'x',
+            priority: 'medium',
+            tags: [],
+            order: 0,
+            createdAt: 'x',
+            updatedAt: 'x',
+            images: [
+              {
+                id: 'old',
+                name: 'a.jpg',
+                size: 9,
+                addedAt: 'x',
+                dataUrl: 'data:image/jpeg;base64,AAAA'
+              }
+            ]
+          }
+        ]
+      }
+    })
+
+    await useKanbanStore.getState().importBackup()
+
+    // The inline dataUrl was written to disk, and the store kept metadata only.
+    expect(taskImages.save).toHaveBeenCalledWith('data:image/jpeg;base64,AAAA')
+    const imgs = useKanbanStore.getState().tasks[0].images!
+    expect(imgs).toEqual([{ id: 'stored-1', name: 'a.jpg', ext: '.jpg', size: 42, addedAt: 'x' }])
+    expect(imgs[0]).not.toHaveProperty('dataUrl')
+  })
+
+  it('importBackup leaves a v5 metadata-only task image untouched (bytes handled in main)', async () => {
+    const storage = getStorageMock()
+    storage.importBackup.mockResolvedValueOnce({
+      success: true,
+      data: {
+        version: 5,
+        exportedAt: new Date().toISOString(),
+        projects: [],
+        sprints: [],
+        tombstones: [],
+        notes: [],
+        goals: [],
+        habits: [],
+        lists: [],
+        tasks: [
+          {
+            id: 't1',
+            projectId: 'p1',
+            columnId: 'c1',
+            title: 'x',
+            priority: 'medium',
+            tags: [],
+            order: 0,
+            createdAt: 'x',
+            updatedAt: 'x',
+            images: [{ id: 'i1', name: 'a.jpg', ext: '.jpg', size: 9, addedAt: 'x' }]
+          }
+        ]
+      }
+    })
+
+    await useKanbanStore.getState().importBackup()
+
+    expect(taskImages.save).not.toHaveBeenCalled()
+    expect(useKanbanStore.getState().tasks[0].images).toEqual([
+      { id: 'i1', name: 'a.jpg', ext: '.jpg', size: 9, addedAt: 'x' }
+    ])
   })
 })

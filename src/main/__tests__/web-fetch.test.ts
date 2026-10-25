@@ -14,7 +14,7 @@ import {
   RATE_WINDOW_MS,
   type FetchOk,
   type FetchErr
-} from '../web-fetch'
+} from '../modules/web/web-fetch'
 
 const isOk = (r: FetchOk | FetchErr): r is FetchOk => !('error' in r)
 

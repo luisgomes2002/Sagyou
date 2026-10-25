@@ -41,106 +41,81 @@
 
 ## Funcionalidades
 
-| | |
-|---|---|
-| **Kanban** | Quadros com colunas customizáveis, sprints, prioridades e cronômetro por tarefa |
-| **Hábitos** | Rastreamento diário com histórico e streak |
-| **Metas** | Acompanhamento de objetivos pessoais |
-| **Financeiro** | Transações, metas financeiras e análises, com listas de compras em múltiplas moedas (BRL, USD, JPY) |
-| **Canvas** | Notas adesivas livres em tela infinita |
-| **Arquivos** | Anexos por projeto, guardados localmente |
-| **Relatórios** | Visão geral de produtividade |
-| **Upcoming** | Tarefas com data de vencimento próxima |
-| **Busca** | Pesquisa rápida em todos os dados |
-| **Assistente de IA** | Chat com acesso aos seus dados via ferramentas — funciona com qualquer provedor compatível com a API da OpenAI (local ou hospedado). Ações que alteram dados pedem aprovação antes de rodar |
-| **Agente de código** | Aponte um projeto para um diretório e peça alterações no código — executado por `aider` ou `codex` ([instalação separada](#agente-de-código-requer-instalação)) |
-| **Importação via IA** | Cole JSON gerado por um LLM — o sidebar tem "Copiar tudo" para gerar um prompt pronto com schema e tags |
-| **Exportação para Excel** | Exporte projetos, tarefas, hábitos, metas e dados financeiros em `.xlsx` |
-| **Backup** | Exportação e restauração de dados em JSON |
+|                           |                                                                                                                                                                                                                                                                                                                      |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Kanban**                | Quadros com colunas customizáveis, sprints, prioridades e múltiplos cronômetros por tarefa                                                                                                                                                                                                                           |
+| **Hábitos**               | Rastreamento diário com histórico e streak                                                                                                                                                                                                                                                                           |
+| **Metas**                 | Acompanhamento de objetivos pessoais                                                                                                                                                                                                                                                                                 |
+| **Financeiro**            | Transações, metas financeiras e análises, com listas de compras em múltiplas moedas (BRL, USD, JPY). Detalhe um lançamento em itens e categorias para que a análise reflita como o dinheiro foi gasto, sem duplicar valores nos totais                                                                               |
+| **Canvas**                | Notas adesivas livres com conexões e blocos de texto independentes para títulos, subtítulos e anotações, com fonte e largura ajustáveis                                                                                                                                                                             |
+| **Grafo**                 | Mapa interativo de projetos, inclusive arquivados, tarefas, notas, metas e hábitos; blocos de texto do canvas não aparecem no grafo                                                                                                                                                                                  |
+| **Upcoming**              | Tarefas com data de vencimento próxima                                                                                                                                                                                                                                                                               |
+| **Relatórios**            | Visão geral de produtividade                                                                                                                                                                                                                                                                                         |
+| **Busca**                 | Busca global (Ctrl+K) por área, tipo e projeto, com trechos e resultados adicionais                                                                                                                                                                                                                                                                                           |
+| **Arquivos**              | Anexos por projeto, guardados localmente                                                                                                                                                                                                                                                                             |
+| **Agentes de código**     | Abra sessões do Codex, Claude Code ou OpenCode direto no terminal, dentro do Sagyou: cada uma roda em uma worktree isolada, e o patch só chega ao seu projeto depois da sua revisão e aprovação |
+| **Memória**               | Decisões, tradeoffs e contexto que os agentes consultam e gravam pelo MCP entre sessões. Painel dedicado para listar, fixar e restaurar memórias |
+| **Importação via IA**     | Cole JSON gerado por um LLM — o sidebar tem "Copiar tudo" para gerar um prompt pronto com schema e tags                                                                                                                                                                                                              |
+| **Exportação para Excel** | Exporte projetos, tarefas, hábitos, metas e dados financeiros em `.xlsx`                                                                                                                                                                                                                                             |
+| **Backup**                | Exportação e restauração de dados em JSON, incluindo anexos, imagens de tarefas e memórias. O app também salva snapshots locais ao abrir e a cada hora em `userData/backups/`, mantendo os sete mais recentes. Abra a pasta pelo menu Backup |
 
 ---
 
-## Assistente de IA
+## Agentes de código
 
-O assistente é **opcional** e vem desligado — nada é enviado a lugar nenhum até você configurar um provedor.
+A IA do Sagyou é o próprio CLI que você já usa. Em **Sessões de código** (barra lateral, seção IA), escolha o projeto e a pasta autorizada, ou uma sessão geral, e o harness: **Codex**, **Claude Code** ou **OpenCode** instalado localmente. A sessão abre direto no terminal, como rodar `claude` ou `codex` à mão: você digita o pedido ao CLI. Cada CLI usa a própria conta e guarda o próprio histórico; o Sagyou não chama modelo por API, não guarda chaves e não registra gasto de tokens.
 
-### Configuração
+O CLI lê e altera somente os arquivos de uma **worktree isolada**; vários agentes podem trabalhar ao mesmo tempo no mesmo repositório, e um repositório criado só com `git init` também funciona (o Sagyou cria uma base temporária sem fazer commit na sua branch). Dados do Sagyou — tarefas, projetos, finanças, memórias — chegam ao CLI exclusivamente pelo **MCP local**, com credencial efêmera limitada ao projeto, ao perfil financeiro e às permissões da execução. Escritas pelo MCP pedem aprovação própria; isso não aprova o patch.
 
-Abra a view **Assistente IA** e clique na engrenagem. Preencha:
+Ao sair normalmente do CLI, o Sagyou valida todos os caminhos alterados, inclusive renames e symlinks, e arquiva o diff. A sessão interativa termina sem aplicar nada ao projeto original; o diff arquivado fica disponível para consulta no painel (execuções arquivadas expiram em 24 horas).
 
-| Campo | Exemplo |
-|---|---|
-| **Base URL** | `https://api.openai.com/v1` — ou `http://localhost:11434/v1` (Ollama), `http://localhost:1234/v1` (LM Studio) |
-| **API Key** | `sk-...` — deixe qualquer valor se o provedor local não exigir |
-| **Model** | clique no botão ao lado do campo para listar os modelos do endpoint e escolher um |
+Para liberar uma pasta de código a um projeto, abra o projeto para edição e, em **Caminhos de código**, clique em **Adicionar pasta**. O projeto precisa estar salvo antes. A primeira pasta já fica marcada; dá para marcar mais de uma, e uma sessão roda em uma pasta só.
 
-Serve qualquer provedor compatível com a API da OpenAI. A configuração fica em `ai-config.json` (veja [Dados](#dados)) e a chave **não** é enviada para o renderer.
+### Remoção do chat por API
 
-### Uso
-
-Converse normalmente — o assistente tem ferramentas para ler seus dados (tarefas, hábitos, metas, finanças) e responde com base neles em vez de adivinhar.
-
-Ações que **alteram** dados (criar tarefas, concluir, iniciar cronômetro, criar/atribuir sprint) pedem sua aprovação antes de rodar. O botão no topo liga o **modo automático**, que executa sem perguntar — use com cuidado.
-
-### Acesso ao código (opcional)
-
-Abra o projeto para edição e, em **Caminhos de código**, clique em **Adicionar pasta**. A partir daí o assistente lê o código-fonte para responder perguntas sobre ele — listar arquivos, ler e buscar. O acesso é **somente leitura** e confinado ao diretório escolhido.
-
-O projeto precisa estar salvo antes (a seção fica desabilitada em projetos novos). A **primeira pasta adicionada já fica marcada automaticamente** — não há nada a fazer no caso simples.
-
-Dá para marcar **mais de uma pasta** (útil para front-end e back-end em repositórios separados, por exemplo): clique na linha da pasta para marcar/desmarcar. As marcadas ganham o selo **Ativo**, e o cabeçalho do Assistente IA mostra o que está em uso. As ferramentas de leitura cobrem todas as pastas marcadas de uma vez.
-
-> O **agente de código** é a exceção: ele roda em uma pasta só. Se você tiver várias marcadas, ele pede para você escolher qual antes de rodar.
-
-### Agente de código (requer instalação)
-
-> ⚠️ Para **alterar** código, o Sagyou chama uma CLI externa que você precisa instalar por conta própria. Sem isso, essa função não funciona — o resto do assistente funciona normalmente.
-
-Instale **um** dos dois:
-
-```bash
-# Aider (padrão)
-python -m pip install aider-install && aider-install
-# ou: pipx install aider-chat
-
-# Codex CLI
-npm install -g @openai/codex
-```
-
-Confirme que está no `PATH` — o app chama o comando pelo nome:
-
-```bash
-aider --version
-codex --version
-```
-
-O agente roda no diretório do caminho de código ativo, usando a mesma Base URL / API Key / Model configurados acima, e a saída aparece ao vivo no app. Ele roda de forma autônoma depois que você aprova o início (o Aider é chamado com `--yes-always`), então aponte para um repositório com Git e commits em dia — assim dá para revisar o diff e reverter se não gostar.
+Versões anteriores tinham um chat com provedores de API, histórico de conversas e controle de gasto. Isso foi removido. Na primeira abertura da versão nova, o Sagyou copia as conversas e os arquivos do chat para uma pasta `backups/pre-remocao-chat-<data>/` (dentro do diretório de dados do app) e depois apaga as conversas, as imagens e os documentos do chat, o registro de gastos, as métricas e as chaves de API. **As chaves de API não vão para nenhum backup e não podem ser recuperadas.** A pasta com as conversas pode ser lida à mão, mas não é importável pelo app. Detalhes em [`docs/data-migrations.md`](docs/data-migrations.md).
 
 ---
 
 ## Tecnologias
 
 - [Electron](https://www.electronjs.org/) + [electron-vite](https://electron-vite.org/)
+- Ponte IPC tipada a partir do preload — renderer e métodos expostos compartilham o mesmo contrato
 - [React](https://react.dev/) + [TypeScript](https://www.typescriptlang.org/)
 - [Zustand](https://zustand-demo.pmnd.rs/) — gerenciamento de estado
 - [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) — armazenamento local em SQLite
 - [decimal.js](https://mikemcl.github.io/decimal.js/) — aritmética monetária exata
+- [D3 Force](https://d3js.org/d3-force) — simulação e layout da visão de grafo
 - [dnd kit](https://dndkit.com/) — drag and drop
 - [Tailwind CSS](https://tailwindcss.com/) — estilização
-- [SheetJS](https://sheetjs.com/) — exportação para Excel
+- [SheetJS](https://sheetjs.com/) — exportação para Excel e leitura de XLSX/ODS
+- [pdfjs-dist](https://github.com/mozilla/pdf.js) — extração de texto de PDF
+- [mammoth.js](https://github.com/mwilliamson/mammoth.js) — extração de texto de DOCX/ODT
 - [Vitest](https://vitest.dev/) — testes
+- [node-pty](https://github.com/microsoft/node-pty) + [xterm.js](https://xtermjs.org/) — terminal dos agentes
 
 ---
 
 ## Desenvolvimento
 
+O código do processo principal fica em `src/main`: `index.ts` registra os fluxos,
+`handlers/` expõe o IPC, `store.ts` cuida do SQLite e `modules/` agrupa as
+implementações por área (agentes, memória, arquivos, busca, web e finanças).
+O renderer fica em `src/renderer/src`, com componentes, estado e utilitários.
+
 ```bash
 npm install       # instalar dependências
 npm run dev       # iniciar servidor de desenvolvimento
-npm test          # rodar testes
-npm run typecheck # verificar tipos
+npm run typecheck # validar TypeScript de main e renderer
+npm test          # rodar os testes
 npm run lint      # ESLint
 ```
+
+Para mudanças na persistência, consulte `GUIDE.md`: a normalização compartilhada da carga e da importação fica em `src/renderer/src/store/normalization.ts`.
+
+### Fluxo de contribuição
+
+Toda mudança segue spec → plano → build → review → PR, com aprovação humana na spec, no plano e no merge; nunca se commita direto na `main`. Branches `feature/`, `fix/` e `chore/`, commits no padrão Conventional Commits e um template de PR em `.github/`. Para quem usa Claude Code há uma skill por estágio (`/sagyou-spec`, `/sagyou-plan`, `/sagyou-build`, `/sagyou-review`, `/sagyou-pr`, `/sagyou-fix`) e subagentes em `.claude/`. Detalhes em [`docs/workflow.md`](docs/workflow.md).
 
 ## Build
 
@@ -152,15 +127,36 @@ npm run build:linux  # Linux
 
 ---
 
+## Financeiro
+
+Além do valor, data, categoria e origem de cada lançamento, você pode **detalhar uma transação** em itens. Cada item pode ter descrição, valor, categoria e data de compra próprios — útil, por exemplo, para separar uma fatura de cartão entre mercado, transporte e lazer. No consolidado, um item da fatura também pode ser vinculado ao lançamento espelho de outra tabela: a fatura continua inteira e a cópia não duplica o total.
+
+Os itens apenas repartem o valor do lançamento principal: a soma deles não pode ultrapassá-lo e eles não são contabilizados novamente nos totais. Nas análises por categoria, a parcela detalhada aparece nas categorias dos itens; se uma transação de categoria **Cartão** ficar parcialmente detalhada, o restante aparece como **Cartão não detalhado** para deixar claro o que ainda falta classificar.
+
+---
+
 ## Dados
 
 Tudo fica na sua máquina, no diretório de dados do app (`userData`):
 
-| Arquivo | Conteúdo |
-|---|---|
-| `kanban.db` | banco SQLite com projetos, tarefas, hábitos, metas e finanças |
-| `files/` | anexos enviados |
-| `ai-config.json` | configuração do provedor de IA (inclui a chave de API) |
-| `ai-conversations.json` | histórico do chat |
+| Arquivo                 | Conteúdo                                                                                                                 |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `kanban.db`             | banco SQLite com projetos, tarefas, hábitos, metas, finanças (incluindo detalhes de transações) e memórias                |
+| `files/`                | anexos enviados                                                                                                          |
+| `task-images/`          | imagens anexadas a tarefas                                                                                               |
+| `ai-config.json`        | configuração dos agentes (executor padrão, nome de exibição); não guarda chaves de API e não entra em backups              |
+| `password-security.json` | derivado com salt da senha opcional do app; não contém a senha e não entra em backups                                  |
+| `backups/`              | snapshots locais automáticos, de pré-importação e a pasta única `pre-remocao-chat-*`                                      |
+| `agent-runs/`           | execuções arquivadas dos agentes (log + diff congelados), ligadas a projeto e sessão                                       |
 
-O assistente de IA é opcional e desligado até você configurar um provedor. Se você apontar para um provedor hospedado, os dados enviados no chat saem da máquina — use um modelo local se preferir manter tudo offline.
+O Sagyou não envia seus dados a lugar nenhum por conta própria. Os agentes de código são CLIs externos com a própria conta e a própria política de dados: o que o CLI enviar ao seu provedor depende dele, não do Sagyou.
+
+O `kanban.db` também guarda um índice local de busca FTS5. Ele é derivado dos registros e das memórias e pode ser reconstruído sem alterar os dados originais.
+
+Para bloquear o app, abra o menu **Opções** na barra lateral e escolha **Segurança**. Você pode ativar, alterar ou desativar uma senha; quando ativa, ela é solicitada antes de os dados carregarem.
+
+---
+
+## Agradecimentos
+
+- [AI Memory](https://github.com/akitaonrails/ai-memory) por [Fabio Akita](https://github.com/akitaonrails) — sistema de memória durável para agentes de IA com indexação e busca, que inspirou a arquitetura de memória do Sagyou.

@@ -30,6 +30,9 @@ jobs:
         with:
           node-version: 20
           cache: 'npm'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - run: npm ci
       - run: npm run build:win
       - uses: actions/upload-artifact@v4
@@ -46,6 +49,9 @@ jobs:
         with:
           node-version: 20
           cache: 'npm'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - run: npm ci
       - run: npm run build:mac
       - uses: actions/upload-artifact@v4
@@ -62,9 +68,12 @@ jobs:
         with:
           node-version: 20
           cache: 'npm'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - run: npm ci
       # Builds only AppImage and deb; snap is skipped (requires snapcraft not available on runners)
-      - run: npx electron-vite build && npx electron-builder --linux AppImage deb
+      - run: npm run prepare:markitdown && npx electron-vite build && npx electron-builder --linux AppImage deb
       - uses: actions/upload-artifact@v4
         with:
           name: linux

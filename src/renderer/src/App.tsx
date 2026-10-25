@@ -1,31 +1,50 @@
-import { useEffect, useState, useCallback, useMemo } from 'react'
+﻿import { useEffect, useState, useCallback, useMemo } from 'react'
 import { v4 as uuidv4 } from 'uuid'
+import { useShallow } from 'zustand/react/shallow'
 import { useKanbanStore } from './store/kanban'
-import type { Task, Column, Project, Priority, TaskImage } from './types'
+import {
+  ALL_FEATURE_IDS,
+  type Task,
+  type Column,
+  type Project,
+  type Priority,
+  type TaskImage,
+  type FeatureId
+} from './types'
 import { isDoneColumn, isTaskDone } from './utils/columns'
-import { TitleBar } from './components/TitleBar'
-import { Sidebar } from './components/Sidebar'
-import { Board } from './components/Board'
-import { CanvasView } from './components/CanvasView'
-import { DoneView } from './components/DoneView'
-import { GoalView } from './components/GoalView'
-import { HabitView } from './components/HabitView'
-import { FinancialView } from './components/FinancialView'
-import { UpcomingView } from './components/UpcomingView'
-import { ReportsView } from './components/ReportsView'
-import { FilesView } from './components/FilesView'
-import { AIView } from './components/AIView'
-import { AiRunHost } from './components/AiRunHost'
-import { ExcelExportModal } from './components/ExcelExportModal'
+import { isGoalComplete } from './utils/goals'
+import { TitleBar } from './components/layout/TitleBar'
+import { Sidebar } from './components/layout/Sidebar'
+import { Board } from './components/views/Board'
+import { CanvasView } from './components/views/CanvasView'
+import { DoneView } from './components/views/DoneView'
+import { GoalView } from './components/views/GoalView'
+import { HabitView } from './components/views/HabitView'
+import { FinancialView } from './components/views/FinancialView'
+import { UpcomingView } from './components/views/UpcomingView'
+import { PlanView } from './components/views/PlanView'
+import { ReportsView } from './components/views/ReportsView'
+import { GraphView } from './components/views/GraphView'
+import type { NavigateTarget } from './utils/graph-layout'
+import { FilesView } from './components/views/FilesView'
+import { MemoryView } from './components/ai/MemoryView'
+import { FleetView } from './components/ai/FleetView'
+import { ExcelExportModal } from './components/modals/ExcelExportModal'
 import { ProjectLinksDropdown } from './components/ProjectLinksDropdown'
-import { SearchModal } from './components/SearchModal'
+import { SearchModal } from './components/modals/SearchModal'
 import { SprintBadge } from './components/SprintBadge'
-import { TaskModal } from './components/TaskModal'
-import { ProjectModal } from './components/ProjectModal'
-import { ColumnModal } from './components/ColumnModal'
+import { TaskModal } from './components/modals/TaskModal'
+import { ProjectModal } from './components/modals/ProjectModal'
+import { ColumnModal } from './components/modals/ColumnModal'
 import { ConfirmDialog } from './components/ConfirmDialog'
-import { TaskViewModal } from './components/TaskViewModal'
-import { ToastContainer, type ToastMessage } from './components/Toast'
+import { TaskViewModal } from './components/modals/TaskViewModal'
+import { ToastContainer, type ToastMessage } from './components/layout/Toast'
+import { HomeView } from './components/views/HomeView'
+import { GuideView } from './components/views/GuideView'
+import { SettingsView } from './components/views/SettingsView'
+import { UnlockScreen } from './components/security/UnlockScreen'
+import { ViewErrorBoundary } from './components/ViewErrorBoundary'
+import type { GlobalSearchHit } from '../../main/modules/search/global-search-query'
 
 interface TaskModalState {
   open: boolean
@@ -52,7 +71,38 @@ interface ConfirmState {
   onConfirm: () => void
 }
 
+function focusedEntityHit(
+  type: 'goal' | 'habit',
+  id: string,
+  title: string,
+  completed: boolean
+): GlobalSearchHit {
+  return {
+    type,
+    id,
+    title,
+    snippet: title,
+    matchedField: 'title',
+    projectId: null,
+    profileId: null,
+    tableId: null,
+    projectArchived: false,
+    memoryArchived: false,
+    completed,
+    state: null,
+    date: null
+  }
+}
+
 export default function App() {
+  // Subscribe with useShallow to only the slices this root component actually
+  // reads. Without a selector, useKanbanStore() subscribes to the whole state
+  // object and re-renders App (and therefore the entire tree) on EVERY mutation
+  // to any domain — financial lists, canvas notes, the running timer, files.
+  // Actions are stable references, so listing them here costs no extra renders;
+  // only the state fields drive re-renders. Note `goals`/`notes`/`lists` are
+  // deliberately absent — they now belong to ExcelExportModal, which reads them
+  // straight from the store, so mutating them never touches the kanban root.
   const {
     projects,
     tasks,
@@ -60,6 +110,11 @@ export default function App() {
     activeProjectId,
     sprintFilter,
     isLoaded,
+    habits,
+    featurePreferences,
+    uiPreferences,
+    setFeaturePreferences,
+    setUiPreferences,
     loadData,
     setActiveProject,
     setSprintFilter,
@@ -67,6 +122,8 @@ export default function App() {
     updateProject,
     moveProject,
     deleteProject,
+    archiveProject,
+    unarchiveProject,
     createColumn,
     updateColumn,
     deleteColumn,
@@ -80,23 +137,106 @@ export default function App() {
     closeSprint,
     reopenSprint,
     deleteSprint,
-    habits,
-    goals,
-    notes,
-    lists,
     exportBackup,
     importBackup,
     importAIJson
-  } = useKanbanStore()
+  } = useKanbanStore(
+    useShallow((s) => ({
+      projects: s.projects,
+      tasks: s.tasks,
+      sprints: s.sprints,
+      activeProjectId: s.activeProjectId,
+      sprintFilter: s.sprintFilter,
+      isLoaded: s.isLoaded,
+      habits: s.habits,
+      featurePreferences: s.featurePreferences,
+      uiPreferences: s.uiPreferences,
+      setFeaturePreferences: s.setFeaturePreferences,
+      setUiPreferences: s.setUiPreferences,
+      loadData: s.loadData,
+      setActiveProject: s.setActiveProject,
+      setSprintFilter: s.setSprintFilter,
+      createProject: s.createProject,
+      updateProject: s.updateProject,
+      moveProject: s.moveProject,
+      deleteProject: s.deleteProject,
+      archiveProject: s.archiveProject,
+      unarchiveProject: s.unarchiveProject,
+      createColumn: s.createColumn,
+      updateColumn: s.updateColumn,
+      deleteColumn: s.deleteColumn,
+      createTask: s.createTask,
+      updateTask: s.updateTask,
+      deleteTask: s.deleteTask,
+      moveTask: s.moveTask,
+      updateNote: s.updateNote,
+      createSprints: s.createSprints,
+      updateSprint: s.updateSprint,
+      closeSprint: s.closeSprint,
+      reopenSprint: s.reopenSprint,
+      deleteSprint: s.deleteSprint,
+      exportBackup: s.exportBackup,
+      importBackup: s.importBackup,
+      importAIJson: s.importAIJson
+    }))
+  )
+
+  useEffect(() => {
+    if (!window.electronAPI.store.onReload) return
+    return window.electronAPI.store.onReload(() => void loadData())
+  }, [loadData])
+
+  useEffect(() => {
+    if (!window.electronAPI.store.onMcpCreateTask) return
+    return window.electronAPI.store.onMcpCreateTask(async ({ requestId, task }) => {
+      try {
+        const id = createTask(task)
+        await useKanbanStore.getState()._flushPersist()
+        window.electronAPI.store.respondMcpCreateTask(requestId, { id })
+      } catch (error) {
+        window.electronAPI.store.respondMcpCreateTask(requestId, {
+          error: error instanceof Error ? error.message : 'Não foi possível criar a task.'
+        })
+      }
+    })
+  }, [createTask])
 
   const [toasts, setToasts] = useState<ToastMessage[]>([])
   const [taskModal, setTaskModal] = useState<TaskModalState>({ open: false })
   const [viewTask, setViewTask] = useState<Task | null>(null)
   const [projectModal, setProjectModal] = useState<ProjectModalState>({ open: false })
   const [columnModal, setColumnModal] = useState<ColumnModalState>({ open: false })
-  const [activeView, setActiveView] = useState<'board' | 'canvas' | 'done' | 'goals' | 'habits' | 'financial' | 'upcoming' | 'reports' | 'files' | 'ai'>('board')
+  const [activeView, setActiveView] = useState<
+    | 'home'
+    | 'board'
+    | 'canvas'
+    | 'done'
+    | 'goals'
+    | 'habits'
+    | 'financial'
+    | 'upcoming'
+    | 'reports'
+    | 'files'
+    | 'ai'
+    | 'memory'
+    | 'planejamento'
+    | 'graph'
+    | 'guide'
+    | 'settings'
+  >('home')
   const [searchOpen, setSearchOpen] = useState(false)
+  const [financialSearchTarget, setFinancialSearchTarget] = useState<GlobalSearchHit | null>(null)
+  const [financialSearchSerial, setFinancialSearchSerial] = useState(0)
+  const [searchTarget, setSearchTarget] = useState<GlobalSearchHit | null>(null)
+  const [searchSerial, setSearchSerial] = useState(0)
   const [excelExportOpen, setExcelExportOpen] = useState(false)
+  const [securityState, setSecurityState] = useState<'checking' | 'locked' | 'unlocked'>('checking')
+  const [unlockUserName, setUnlockUserName] = useState<string | undefined>()
+  const [passwordConfigCorrupt, setPasswordConfigCorrupt] = useState(false)
+  const [backupExportProgress, setBackupExportProgress] = useState<{
+    completed: number
+    total: number
+  } | null>(null)
   // session-only: maps projectId → active linkIds (not persisted — each machine picks its own)
   const [activeLinkIds, setActiveLinkIds] = useState<Record<string, string[]>>({})
   const [confirm, setConfirm] = useState<ConfirmState>({
@@ -105,19 +245,90 @@ export default function App() {
     message: '',
     onConfirm: () => {}
   })
-  // Global indicator: is the external code agent (Aider/Codex) running?
-  const [codeAgentRunning, setCodeAgentRunning] = useState(false)
+  // Count of live code-agent runs (supports N concurrent agents in different dirs).
+  const [codeAgentRunCount, setCodeAgentRunCount] = useState(0)
 
-  useEffect(() => { loadData() }, [loadData])
+  const enabledFeatures = featurePreferences ?? ALL_FEATURE_IDS
+  const saveFeaturePreferences = (features: FeatureId[]) => {
+    setFeaturePreferences(features)
+  }
 
-  // Track the code agent across all views (App never unmounts, unlike AIView).
   useEffect(() => {
-    window.electronAPI.ai.codeAgent.status().then((s) => setCodeAgentRunning(s.running))
-    const offOutput = window.electronAPI.ai.codeAgent.onOutput(() => setCodeAgentRunning(true))
-    const offExit = window.electronAPI.ai.codeAgent.onExit(() => setCodeAgentRunning(false))
+    const root = document.documentElement
+    root.dataset.theme = uiPreferences.theme
+    root.dataset.fontSize = uiPreferences.fontSize
+    root.dataset.reduceMotion = String(uiPreferences.reduceMotion)
+    root.dataset.highContrast = String(uiPreferences.highContrast)
+  }, [uiPreferences])
+
+  useEffect(() => {
+    if (!window.electronAPI.backup.onExportProgress) return
+    return window.electronAPI.backup.onExportProgress(({ completed, total, done }) => {
+      if (done) setBackupExportProgress(null)
+      else setBackupExportProgress({ completed, total })
+    })
+  }, [])
+
+  useEffect(() => {
+    const viewFeatures: Partial<Record<typeof activeView, FeatureId>> = {
+      board: 'kanban',
+      upcoming: 'kanban',
+      done: 'kanban',
+      goals: 'goals',
+      habits: 'habits',
+      financial: 'financial',
+      planejamento: 'planning',
+      reports: 'reports',
+      canvas: 'canvas',
+      files: 'files',
+      graph: 'graph',
+      ai: 'ai',
+      memory: 'ai',
+    }
+    const feature = viewFeatures[activeView]
+    if (feature && !enabledFeatures.includes(feature)) setActiveView('home')
+  }, [activeView, enabledFeatures])
+
+  useEffect(() => {
+    window.electronAPI.security.status().then((status) => {
+      setUnlockUserName(status.userName)
+      setPasswordConfigCorrupt(status.corrupt)
+      setSecurityState(status.enabled ? 'locked' : 'unlocked')
+    })
+  }, [])
+
+  useEffect(() => {
+    if (securityState !== 'unlocked') return
+    loadData()
+  }, [loadData, securityState])
+
+  useEffect(() => {
+    if (!isLoaded) return
+    // The main process keeps one snapshot per day; retry while the app is open
+    // so a long-running session is covered without a manual export.
+    void exportBackup(true)
+    const timer = setInterval(() => void exportBackup(true), 60 * 60 * 1000)
+    return () => clearInterval(timer)
+  }, [isLoaded, exportBackup])
+
+  // Track the code agent across all views (App never unmounts, unlike the views).
+  useEffect(() => {
+    window.electronAPI.ai.codeAgent.status().then((s) => setCodeAgentRunCount(s.runs.length))
+    // onOutput now receives {runId, chunk} — any activity across any run lights the banner.
+    const offOutput = window.electronAPI.ai.codeAgent.onOutput(() =>
+      setCodeAgentRunCount((n) => (n > 0 ? n : 1))
+    )
+    const offStarted = window.electronAPI.ai.codeAgent.onStarted(() =>
+      setCodeAgentRunCount((n) => (n > 0 ? n : 1))
+    )
+    // onExit now receives {runId, code} — a run ended, but others may still be active.
+    const offExit = window.electronAPI.ai.codeAgent.onExit(() => {
+      window.electronAPI.ai.codeAgent.status().then((s) => setCodeAgentRunCount(s.runs.length))
+    })
     return () => {
       offOutput()
       offExit()
+      offStarted()
     }
   }, [])
 
@@ -150,12 +361,13 @@ export default function App() {
     [sprints, activeProjectId]
   )
 
-  const projectTasks = useMemo(() =>
-    tasks.filter((t) => {
-      if (t.projectId !== activeProjectId) return false
-      if (sprintFilter !== null) return t.sprintId === sprintFilter
-      return true
-    }),
+  const projectTasks = useMemo(
+    () =>
+      tasks.filter((t) => {
+        if (t.projectId !== activeProjectId) return false
+        if (sprintFilter !== null) return t.sprintId === sprintFilter
+        return true
+      }),
     [tasks, activeProjectId, sprintFilter]
   )
 
@@ -172,18 +384,26 @@ export default function App() {
     return map
   }, [projects])
 
-  // Task count per column — O(1) lookup for move-to-end positioning
-  const columnTaskCount = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const t of tasks) map.set(t.columnId, (map.get(t.columnId) ?? 0) + 1)
-    return map
-  }, [tasks])
+  // Count tasks in a single column, on demand, for move-to-end positioning.
+  // Computed at call time (complete/restore) rather than as a whole-map memo
+  // that rebuilt on every task mutation only to be read on the occasional click.
+  // Keyed on the globally-unique columnId, so it stays correct for any project's
+  // task (restore is triggered from DoneView across every project).
+  const countTasksInColumn = useCallback(
+    (columnId: string) => tasks.reduce((n, t) => (t.columnId === columnId ? n + 1 : n), 0),
+    [tasks]
+  )
 
   // --- Project handlers ---
   const handleNewProject = () => setProjectModal({ open: true })
   const handleEditProject = (project: Project) => setProjectModal({ open: true, project })
 
-  const handleSaveProject = (name: string, description: string, color: string, links: import('./types').ProjectLink[]) => {
+  const handleSaveProject = (
+    name: string,
+    description: string,
+    color: string,
+    links: import('./types').ProjectLink[]
+  ) => {
     if (projectModal.project) {
       updateProject(projectModal.project.id, { name, description, color, links })
       addToast('Projeto atualizado')
@@ -247,10 +467,58 @@ export default function App() {
     setViewTask(task)
   }
 
-  const handleSearchSelectNote = (note: { projectId: string }) => {
-    setActiveProject(note.projectId)
-    setActiveView('canvas')
-    setSprintFilter(null)
+  const handleSearchSelect = (hit: GlobalSearchHit) => {
+    setSearchTarget(hit)
+    setSearchSerial((serial) => serial + 1)
+    if (hit.projectId) setActiveProject(hit.projectId)
+    switch (hit.type) {
+      case 'project':
+        setActiveProject(hit.id)
+        setActiveView('board')
+        setSprintFilter(null)
+        break
+      case 'task': {
+        const task = tasks.find((item) => item.id === hit.id)
+        if (task) handleSearchSelectTask(task)
+        break
+      }
+      case 'note':
+        if (hit.projectId) {
+          setActiveProject(hit.projectId)
+          setActiveView('canvas')
+          setSprintFilter(null)
+        }
+        break
+      case 'goal':
+        setActiveView('goals')
+        break
+      case 'habit':
+        setActiveView('habits')
+        break
+      case 'time_block':
+      case 'routine':
+        setActiveView('planejamento')
+        break
+      case 'file':
+        setActiveProject(hit.projectId)
+        setActiveView('files')
+        setSprintFilter(null)
+        break
+      case 'financial_profile':
+      case 'financial_table':
+      case 'shopping_item':
+      case 'transaction':
+      case 'transaction_detail':
+      case 'financial_goal':
+      case 'yield_source':
+        setFinancialSearchTarget(hit)
+        setFinancialSearchSerial((serial) => serial + 1)
+        setActiveView('financial')
+        break
+      case 'memory':
+        setActiveView('memory')
+        break
+    }
   }
   const handleAddTask = (columnId: string) => setTaskModal({ open: true, columnId })
   const handleEditTask = (task: Task) => setTaskModal({ open: true, task })
@@ -277,7 +545,11 @@ export default function App() {
       updateTask(taskModal.task.id, { ...rest, sprintId: sprintId || undefined })
       addToast('Task atualizada')
     } else if (activeProjectId) {
-      const newTaskId = createTask({ ...rest, projectId: activeProjectId, sprintId: sprintId || undefined })
+      const newTaskId = createTask({
+        ...rest,
+        projectId: activeProjectId,
+        sprintId: sprintId || undefined
+      })
       if (taskModal.linkNoteId) updateNote(taskModal.linkNoteId, { taskId: newTaskId })
       addToast('Task criada')
     }
@@ -299,40 +571,61 @@ export default function App() {
 
   const handleCompleteTask = (task: Task) => {
     const { doneCol } = projectColumnInfo.get(task.projectId) ?? {}
-    if (!doneCol) { addToast('Coluna "Done" não encontrada', 'error'); return }
-    moveTask(task.id, doneCol.id, columnTaskCount.get(doneCol.id) ?? 0)
+    if (!doneCol) {
+      addToast('Coluna "Done" não encontrada', 'error')
+      return
+    }
+    moveTask(task.id, doneCol.id, countTasksInColumn(doneCol.id))
     addToast('Task concluída')
   }
 
   const handleRestoreTask = (task: Task) => {
     const { firstCol } = projectColumnInfo.get(task.projectId) ?? {}
     if (!firstCol) return
-    moveTask(task.id, firstCol.id, columnTaskCount.get(firstCol.id) ?? 0)
+    moveTask(task.id, firstCol.id, countTasksInColumn(firstCol.id))
     addToast('Task restaurada')
   }
 
   // --- Import/Export ---
   const handleExportBackup = async () => {
-    const ok = await exportBackup()
-    if (ok) addToast('Backup exportado com sucesso')
+    setBackupExportProgress({ completed: 0, total: 0 })
+    try {
+      const ok = await exportBackup()
+      if (ok) addToast('Backup exportado com sucesso')
+    } finally {
+      setBackupExportProgress(null)
+    }
+  }
+
+  const handleOpenBackupFolder = async () => {
+    const error = await window.electronAPI.backup.openFolder()
+    if (error) addToast('Não foi possível abrir a pasta de backups', 'error')
   }
 
   const handleImportBackup = () => {
     setConfirm({
       open: true,
       title: 'Importar backup',
-      message: 'Isso vai substituir TODOS os dados atuais pelo backup. Esta ação não pode ser desfeita.',
+      message:
+        'Isso vai substituir os dados atuais pelo backup. Um ponto de restauração será salvo antes da importação.',
       onConfirm: async () => {
         setConfirm((c) => ({ ...c, open: false }))
-        const ok = await importBackup()
-        if (ok) addToast('Backup importado com sucesso')
-        else addToast('Importação cancelada', 'info')
+        try {
+          const ok = await importBackup()
+          if (ok) addToast('Backup importado com sucesso')
+          else addToast('Importação cancelada ou sem ponto de restauração', 'info')
+        } catch (error) {
+          addToast(error instanceof Error ? error.message : 'Falha ao importar backup', 'error')
+        }
       }
     })
   }
 
   const handleImportAI = async () => {
-    if (!activeProjectId) { addToast('Selecione um projeto primeiro', 'error'); return }
+    if (!activeProjectId) {
+      addToast('Selecione um projeto primeiro', 'error')
+      return
+    }
     const count = await importAIJson(activeProjectId)
     if (count > 0) {
       addToast(`${count} task${count > 1 ? 's' : ''} importada${count > 1 ? 's' : ''} com sucesso`)
@@ -341,202 +634,329 @@ export default function App() {
     }
   }
 
+  if (securityState === 'checking') {
+    return (
+      <div className="flex items-center justify-center h-screen bg-[#0b0b0f]">
+        <div className="w-6 h-6 rounded-full border-2 border-[#7c3aed] border-t-transparent animate-spin" />
+      </div>
+    )
+  }
+
+  if (securityState === 'locked') {
+    return (
+      <UnlockScreen
+        userName={unlockUserName}
+        corrupt={passwordConfigCorrupt}
+        onUnlocked={() => setSecurityState('unlocked')}
+      />
+    )
+  }
+
   if (!isLoaded) {
     return (
-      <div className="flex items-center justify-center h-screen bg-[#0d0f18]">
-        <div className="w-6 h-6 rounded-full border-2 border-[#6366f1] border-t-transparent animate-spin" />
+      <div className="flex items-center justify-center h-screen bg-[#0b0b0f]">
+        <div className="w-6 h-6 rounded-full border-2 border-[#7c3aed] border-t-transparent animate-spin" />
       </div>
     )
   }
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-[#0d0f18]">
+    <div className="flex flex-col h-screen overflow-hidden bg-[#0b0b0f]">
       <TitleBar />
-
-      {/* Outside the view switch on purpose: the agent's run has to survive the
-          user navigating away from AIView, which unmounts it. Owns the chat's
-          autosave and the approval card, so a background run can still be
-          answered instead of parking forever. */}
-      <AiRunHost activeView={activeView} onOpenAI={() => setActiveView('ai')} />
 
       <div className="flex flex-1 overflow-hidden">
         <Sidebar
           projects={projects}
           activeProjectId={activeProjectId}
           activeView={activeView}
-          onSelectProject={(id) => { setActiveProject(id); if (activeView !== 'board' && activeView !== 'canvas' && activeView !== 'files' && activeView !== 'ai') setActiveView('board'); setSprintFilter(null) }}
-          onChangeView={setActiveView}
+          onSelectProject={(id) => {
+            setSearchTarget(null)
+            setFinancialSearchTarget(null)
+            setActiveProject(id)
+            if (
+              activeView !== 'board' &&
+              activeView !== 'canvas' &&
+              activeView !== 'files' &&
+              activeView !== 'ai'
+            )
+              setActiveView('board')
+            setSprintFilter(null)
+          }}
+          onChangeView={(view) => {
+            setSearchTarget(null)
+            setFinancialSearchTarget(null)
+            setActiveView(view)
+          }}
           onOpenSearch={() => setSearchOpen(true)}
           onNewProject={handleNewProject}
           onEditProject={handleEditProject}
           onMoveProject={moveProject}
           onDeleteProject={handleDeleteProject}
+          onArchiveProject={archiveProject}
+          onUnarchiveProject={unarchiveProject}
           onExportBackup={handleExportBackup}
+          onOpenBackupFolder={handleOpenBackupFolder}
           onImportBackup={handleImportBackup}
           onImportAI={handleImportAI}
           onExportExcel={() => setExcelExportOpen(true)}
+          enabledFeatures={enabledFeatures}
+          codeAgentRunCount={codeAgentRunCount}
         />
 
         <main className="flex-1 flex flex-col overflow-hidden">
-          {activeView === 'reports' ? (
-            <ReportsView projects={projects} tasks={tasks} sprints={sprints} habits={habits} />
-          ) : activeView === 'upcoming' ? (
-            <UpcomingView
-              projects={projects}
-              tasks={tasks}
-              onViewTask={handleViewTask}
-            />
-          ) : activeView === 'financial' ? (
-            <FinancialView />
-          ) : activeView === 'ai' ? (
-            <AIView projects={projects} />
-          ) : activeView === 'habits' ? (
-            <HabitView />
-          ) : activeView === 'goals' ? (
-            <GoalView projects={projects} />
-          ) : activeView === 'done' ? (
-            <>
-              <div className="flex items-center gap-3 px-6 py-4 border-b border-[#2a2d42] shrink-0">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-                <h1 className="text-base font-semibold text-[#e2e8f0]">Concluídas</h1>
-                <span className="text-xs text-[#8892a4]">
-                  {tasks.filter((t) => isTaskDone(t, projects)).length} tasks
-                </span>
-              </div>
-              <DoneView
-                projects={projects}
-                tasks={tasks}
-                sprints={sprints}
-                sprintFilter={sprintFilter}
-                onViewTask={handleViewTask}
-                onRestoreTask={handleRestoreTask}
-                onDeleteTask={handleDeleteTask}
+          <ViewErrorBoundary key={activeView} area={activeView}>
+            {activeView === 'settings' ? (
+              <SettingsView
+                featurePreferences={featurePreferences}
+                onSetFeaturePreferences={saveFeaturePreferences}
+                uiPreferences={uiPreferences}
+                onSetUiPreferences={setUiPreferences}
+                onToast={addToast}
               />
-            </>
-          ) : activeProject ? (
-            <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
-              <div className="flex items-center gap-3 px-6 py-4 border-b border-[#2a2d42] shrink-0">
-                <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: activeProject.color }} />
-                <h1 className="text-base font-semibold text-[#e2e8f0]">{activeProject.name}</h1>
-                {activeProject.description && (
-                  <span className="text-sm text-[#8892a4] truncate max-w-[200px]">{activeProject.description}</span>
-                )}
-                <div className="flex items-center gap-1 ml-4 p-0.5 rounded-lg bg-[#1e2235] border border-[#2a2d42]">
-                  <button
-                    onClick={() => setActiveView('board')}
-                    className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
-                      activeView === 'board'
-                        ? 'bg-[#2a2d42] text-[#e2e8f0]'
-                        : 'text-[#8892a4] hover:text-[#e2e8f0]'
-                    }`}
+            ) : activeView === 'home' ? (
+              <HomeView
+                projects={projects}
+                onNavigate={(view) => {
+                  setSearchTarget(null)
+                  setFinancialSearchTarget(null)
+                  setActiveView(view as typeof activeView)
+                }}
+              />
+            ) : activeView === 'reports' ? (
+              <ReportsView projects={projects} tasks={tasks} sprints={sprints} habits={habits} />
+            ) : activeView === 'upcoming' ? (
+              <UpcomingView projects={projects} tasks={tasks} onViewTask={handleViewTask} />
+            ) : activeView === 'planejamento' ? (
+              <PlanView key={searchSerial} searchTarget={searchTarget} />
+            ) : activeView === 'financial' ? (
+              <FinancialView key={financialSearchSerial} searchTarget={financialSearchTarget} />
+            ) : activeView === 'guide' ? (
+              <GuideView />
+            ) : activeView === 'ai' ? (
+              <FleetView projects={projects} retainThread />
+            ) : activeView === 'memory' ? (
+              <MemoryView
+                key={searchSerial}
+                searchTargetId={searchTarget?.type === 'memory' ? searchTarget.id : undefined}
+              />
+            ) : activeView === 'habits' ? (
+              <HabitView
+                key={searchSerial}
+                searchTargetId={searchTarget?.type === 'habit' ? searchTarget.id : undefined}
+              />
+            ) : activeView === 'graph' ? (
+              <GraphView
+                onNavigate={(target: NavigateTarget) => {
+                  setSearchTarget(null)
+                  setFinancialSearchTarget(null)
+                  switch (target.type) {
+                    case 'project':
+                      setActiveProject(target.id)
+                      setActiveView('board')
+                      setSprintFilter(null)
+                      break
+                    case 'task': {
+                      setActiveProject(target.projectId)
+                      setActiveView('board')
+                      setSprintFilter(null)
+                      const t = tasks.find((tk) => tk.id === target.id)
+                      if (t) setViewTask(t)
+                      break
+                    }
+                    case 'note':
+                      setActiveProject(target.projectId)
+                      setActiveView('canvas')
+                      setSprintFilter(null)
+                      break
+                    case 'goal':
+                      {
+                        const goal = useKanbanStore
+                          .getState()
+                          .goals.find((item) => item.id === target.id)
+                        setSearchTarget(
+                          focusedEntityHit(
+                            'goal',
+                            target.id,
+                            goal?.title ?? '',
+                            !!goal && isGoalComplete(goal)
+                          )
+                        )
+                        setSearchSerial((serial) => serial + 1)
+                      }
+                      setActiveView('goals')
+                      break
+                    case 'habit':
+                      {
+                        const habit = habits.find((item) => item.id === target.id)
+                        setSearchTarget(
+                          focusedEntityHit('habit', target.id, habit?.name ?? '', false)
+                        )
+                        setSearchSerial((serial) => serial + 1)
+                      }
+                      setActiveView('habits')
+                      break
+                    case 'file':
+                      setActiveProject(target.projectId ?? null)
+                      setActiveView('files')
+                      setSprintFilter(null)
+                      break
+                  }
+                }}
+              />
+            ) : activeView === 'goals' ? (
+              <GoalView
+                key={searchSerial}
+                projects={projects}
+                searchTargetId={searchTarget?.type === 'goal' ? searchTarget.id : undefined}
+              />
+            ) : activeView === 'done' ? (
+              <>
+                <div className="flex items-center gap-3 px-6 py-4 border-b border-[#2b2b31] shrink-0">
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="#20b858"
+                    strokeWidth="2.5"
                   >
-                    Board
-                  </button>
-                  <button
-                    onClick={() => setActiveView('canvas')}
-                    className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
-                      activeView === 'canvas'
-                        ? 'bg-[#2a2d42] text-[#e2e8f0]'
-                        : 'text-[#8892a4] hover:text-[#e2e8f0]'
-                    }`}
-                  >
-                    Canvas
-                  </button>
-                  <button
-                    onClick={() => setActiveView('files')}
-                    className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
-                      activeView === 'files'
-                        ? 'bg-[#2a2d42] text-[#e2e8f0]'
-                        : 'text-[#8892a4] hover:text-[#e2e8f0]'
-                    }`}
-                  >
-                    Arquivos
-                  </button>
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  <h1 className="text-base font-semibold text-[#d4d4d4]">Concluídas</h1>
+                  <span className="text-xs text-[#999999]">
+                    {tasks.filter((t) => isTaskDone(t, projects)).length} tasks
+                  </span>
                 </div>
-                <div className="ml-auto flex items-center gap-3">
-                  {(activeProject.links?.length ?? 0) > 0 && (
-                    <ProjectLinksDropdown
-                      links={activeProject.links ?? []}
-                      activeLinkIds={activeLinkIds[activeProject.id] ?? []}
-                      onSelect={(linkId) => setActiveLinkIds((prev) => {
-                        const current = prev[activeProject.id] ?? []
-                        const next = current.includes(linkId)
-                          ? current.filter((id) => id !== linkId)
-                          : [...current, linkId]
-                        return { ...prev, [activeProject.id]: next }
-                      })}
+                <DoneView
+                  projects={projects}
+                  tasks={tasks}
+                  sprints={sprints}
+                  sprintFilter={sprintFilter}
+                  onViewTask={handleViewTask}
+                  onRestoreTask={handleRestoreTask}
+                  onDeleteTask={handleDeleteTask}
+                />
+              </>
+            ) : activeView === 'files' && !activeProject ? (
+              <FilesView
+                key={searchSerial}
+                activeProjectId={null}
+                searchTargetId={searchTarget?.type === 'file' ? searchTarget.id : undefined}
+              />
+            ) : activeProject ? (
+              <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+                <div className="flex items-center gap-3 px-6 py-4 border-b border-[#2b2b31] shrink-0">
+                  <div
+                    className="w-3 h-3 rounded-full shrink-0"
+                    style={{ backgroundColor: activeProject.color }}
+                  />
+                  <h1 className="text-base font-semibold text-[#d4d4d4]">{activeProject.name}</h1>
+                  {activeProject.description && (
+                    <span className="text-sm text-[#999999] truncate max-w-[200px]">
+                      {activeProject.description}
+                    </span>
+                  )}
+                  <div className="ml-auto flex items-center gap-3">
+                    {(activeProject.links?.length ?? 0) > 0 && (
+                      <ProjectLinksDropdown
+                        links={activeProject.links ?? []}
+                        activeLinkIds={activeLinkIds[activeProject.id] ?? []}
+                        onSelect={(linkId) =>
+                          setActiveLinkIds((prev) => {
+                            const current = prev[activeProject.id] ?? []
+                            const next = current.includes(linkId)
+                              ? current.filter((id) => id !== linkId)
+                              : [...current, linkId]
+                            return { ...prev, [activeProject.id]: next }
+                          })
+                        }
+                      />
+                    )}
+                    {activeView === 'board' && (
+                      <>
+                        <SprintBadge
+                          projectId={activeProject.id}
+                          sprints={activeProjectSprints}
+                          sprintFilter={sprintFilter}
+                          onSetFilter={setSprintFilter}
+                          onCreateSprints={createSprints}
+                          onRenameSprint={updateSprint}
+                          onCloseSprint={closeSprint}
+                          onReopenSprint={reopenSprint}
+                          onDeleteSprint={deleteSprint}
+                        />
+                        <span className="text-xs text-[#999999]">
+                          {
+                            projectTasks.filter((t) => {
+                              const col = activeProject.columns.find((c) => c.id === t.columnId)
+                              return col && !isDoneColumn(col)
+                            }).length
+                          }{' '}
+                          tasks
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+                <div className="flex-1 min-h-0 overflow-hidden relative">
+                  {activeView === 'canvas' ? (
+                    <CanvasView
+                      key={searchSerial}
+                      project={activeProject}
+                      tasks={projectTasks}
+                      searchTargetId={searchTarget?.type === 'note' ? searchTarget.id : undefined}
+                      onCreateTask={handleCreateTaskFromCanvas}
+                    />
+                  ) : activeView === 'files' ? (
+                    <FilesView
+                      key={searchSerial}
+                      activeProjectId={activeProjectId}
+                      searchTargetId={searchTarget?.type === 'file' ? searchTarget.id : undefined}
+                    />
+                  ) : (
+                    <Board
+                      project={activeProject}
+                      tasks={projectTasks}
+                      onAddTask={handleAddTask}
+                      onEditTask={handleEditTask}
+                      onDeleteTask={handleDeleteTask}
+                      onViewTask={handleViewTask}
+                      onCompleteTask={handleCompleteTask}
+                      onEditColumn={handleEditColumn}
+                      onDeleteColumn={handleDeleteColumn}
+                      onAddColumn={handleAddColumn}
                     />
                   )}
-                  {activeView === 'board' && (
-                    <>
-                      <SprintBadge
-                        projectId={activeProject.id}
-                        sprints={activeProjectSprints}
-                        sprintFilter={sprintFilter}
-                        onSetFilter={setSprintFilter}
-                        onCreateSprints={createSprints}
-                        onRenameSprint={updateSprint}
-                        onCloseSprint={closeSprint}
-                        onReopenSprint={reopenSprint}
-                        onDeleteSprint={deleteSprint}
-                      />
-                      <span className="text-xs text-[#8892a4]">
-                        {projectTasks.filter((t) => {
-                          const col = activeProject.columns.find((c) => c.id === t.columnId)
-                          return col && !isDoneColumn(col)
-                        }).length} tasks
-                      </span>
-                    </>
-                  )}
                 </div>
               </div>
-              <div className="flex-1 min-h-0 overflow-hidden relative">
-                {activeView === 'canvas' ? (
-                  <CanvasView
-                    project={activeProject}
-                    tasks={projectTasks}
-                    onCreateTask={handleCreateTaskFromCanvas}
-                  />
-                ) : activeView === 'files' ? (
-                  <FilesView activeProjectId={activeProjectId} />
-                ) : (
-                  <Board
-                    project={activeProject}
-                    tasks={projectTasks}
-                    onAddTask={handleAddTask}
-                    onEditTask={handleEditTask}
-                    onDeleteTask={handleDeleteTask}
-                    onViewTask={handleViewTask}
-                    onCompleteTask={handleCompleteTask}
-                    onEditColumn={handleEditColumn}
-                    onDeleteColumn={handleDeleteColumn}
-                    onAddColumn={handleAddColumn}
-                  />
-                )}
+            ) : (
+              <div className="flex flex-col items-center justify-center flex-1 gap-4">
+                <div className="w-16 h-16 rounded-2xl bg-[#16161a] border border-[#2b2b31] flex items-center justify-center">
+                  <svg
+                    width="28"
+                    height="28"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="#999999"
+                    strokeWidth="1.5"
+                  >
+                    <rect x="3" y="3" width="7" height="18" rx="1" />
+                    <rect x="14" y="3" width="7" height="11" rx="1" />
+                  </svg>
+                </div>
+                <div className="text-center">
+                  <p className="text-[#d4d4d4] font-medium mb-1">Nenhum projeto</p>
+                  <p className="text-sm text-[#999999]">Crie um projeto para começar</p>
+                </div>
+                <button
+                  onClick={handleNewProject}
+                  className="px-4 py-2 rounded-lg bg-[#7c3aed] text-sm text-white font-medium hover:bg-[#6d28d9] transition-colors"
+                >
+                  Criar projeto
+                </button>
               </div>
-            </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center flex-1 gap-4">
-              <div className="w-16 h-16 rounded-2xl bg-[#1e2235] border border-[#2a2d42] flex items-center justify-center">
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#8892a4" strokeWidth="1.5">
-                  <rect x="3" y="3" width="7" height="18" rx="1" />
-                  <rect x="14" y="3" width="7" height="11" rx="1" />
-                </svg>
-              </div>
-              <div className="text-center">
-                <p className="text-[#e2e8f0] font-medium mb-1">Nenhum projeto</p>
-                <p className="text-sm text-[#8892a4]">Crie um projeto para começar</p>
-              </div>
-              <button
-                onClick={handleNewProject}
-                className="px-4 py-2 rounded-lg bg-[#6366f1] text-sm text-white font-medium hover:bg-[#5254c5] transition-colors"
-              >
-                Criar projeto
-              </button>
-            </div>
-          )}
+            )}
+          </ViewErrorBoundary>
         </main>
       </div>
 
@@ -578,7 +998,14 @@ export default function App() {
         open={viewTask !== null}
         task={viewTask}
         columns={viewTask ? (projects.find((p) => p.id === viewTask.projectId)?.columns ?? []) : []}
-        onEdit={(task) => { setViewTask(null); handleEditTask(task) }}
+        onEdit={(task) => {
+          setViewTask(null)
+          handleEditTask(task)
+        }}
+        onSendToAI={(task) => {
+          setActiveProject(task.projectId)
+          setActiveView('ai')
+        }}
         onClose={() => setViewTask(null)}
       />
 
@@ -587,40 +1014,35 @@ export default function App() {
       <SearchModal
         open={searchOpen}
         onClose={() => setSearchOpen(false)}
-        onSelectTask={handleSearchSelectTask}
-        onSelectNote={handleSearchSelectNote}
+        onSelect={handleSearchSelect}
       />
 
       {excelExportOpen && (
         <ExcelExportModal
-          projects={projects}
-          tasks={tasks}
-          sprints={sprints}
-          habits={habits}
-          goals={goals}
-          notes={notes}
-          lists={lists}
           onClose={() => setExcelExportOpen(false)}
           onToast={(msg) => addToast(msg)}
         />
       )}
 
-      {/* Global indicator: code agent running in the background (visible on any view) */}
-      {codeAgentRunning && (
-        <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg bg-[#13151f] border border-amber-500/40 shadow-2xl">
-          <span className="relative flex w-2.5 h-2.5">
-            <span className="absolute inline-flex w-full h-full rounded-full bg-amber-400 opacity-60 animate-ping" />
-            <span className="relative inline-flex w-2.5 h-2.5 rounded-full bg-amber-400" />
-          </span>
-          <span className="text-xs font-medium text-amber-300">Agente de código rodando</span>
+      {backupExportProgress && (
+        <div className="fixed inset-x-0 bottom-5 z-50 mx-auto flex w-fit items-center gap-3 rounded-lg border border-[#2b2b31] bg-[#16161a] px-4 py-3 text-sm text-[#d4d4d4] shadow-xl">
+          <div>
+            Exportando backup…{' '}
+            {backupExportProgress.total > 0
+              ? `${backupExportProgress.completed}/${backupExportProgress.total}`
+              : 'preparando arquivos'}
+          </div>
           <button
-            onClick={() => window.electronAPI.ai.codeAgent.stop()}
-            className="ml-1 px-2 py-0.5 rounded text-[11px] text-red-400 hover:text-red-300 hover:bg-red-400/10 transition-colors"
+            type="button"
+            onClick={() => window.electronAPI.backup.cancelExport()}
+            className="text-xs text-[#f0a060] hover:text-white"
           >
-            Parar
+            Cancelar
           </button>
         </div>
       )}
+
+      {/* Code agent indicator movido para o badge da sidebar (Agentes) */}
     </div>
   )
 }

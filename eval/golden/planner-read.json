@@ -1,0 +1,22 @@
+{
+  "id": "planner-read",
+  "description": "Consulta um bloco de agenda pela data informada.",
+  "messages": [{ "role": "user", "content": "No dia 2026-10-08, o que tenho às 09h?" }],
+  "rubric": {
+    "passThreshold": 4,
+    "criteria": [
+      "Diz que há um bloco de Estudo das 09:00 às 10:30 em 2026-10-08.",
+      "Não inventa outros compromissos."
+    ],
+    "tools": [{ "kind": "called", "name": "ler_plano", "args": { "data": "2026-10-08" } }]
+  },
+  "availableTools": ["ler_plano"],
+  "toolResults": {
+    "ler_plano": {
+      "data": "2026-10-08",
+      "blocos": [{ "titulo": "Estudo", "inicio": "09:00", "fim": "10:30" }]
+    }
+  },
+  "tags": ["planejamento", "leitura"],
+  "schemaVersion": "3.6.0"
+}

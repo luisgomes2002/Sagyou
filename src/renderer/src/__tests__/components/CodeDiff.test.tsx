@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { CodeDiff, type CodeAgentDiff } from '../../components/CodeDiff'
+import { CodeDiff, type CodeAgentDiff } from '../../components/ai/CodeDiff'
 import { parseDiff } from '../../utils/diff'
 
 /**

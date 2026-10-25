@@ -1,0 +1,34 @@
+{
+  "id": "finance-read",
+  "description": "Consulta despesas sem registrar uma transação.",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Quanto gastei neste mês no perfil financeiro ativo? Só quero consultar."
+    }
+  ],
+  "rubric": {
+    "passThreshold": 4,
+    "criteria": [
+      "Informa despesas de R$ 120,50 no mês.",
+      "Não confunde despesas com receitas nem afirma ter registrado lançamento.",
+      "Responde em português."
+    ],
+    "tools": [
+      { "kind": "called", "name": "ler_financeiro" },
+      { "kind": "notCalled", "name": "criar_transacao" }
+    ]
+  },
+  "availableTools": ["ler_financeiro", "criar_transacao"],
+  "toolResults": {
+    "ler_financeiro": {
+      "perfil": "personal",
+      "moeda": "BRL",
+      "despesas_mes": "120.50",
+      "receitas_mes": "900.00"
+    },
+    "criar_transacao": { "error": "Ação simulada; nada foi registrado." }
+  },
+  "tags": ["financeiro", "leitura"],
+  "schemaVersion": "3.6.0"
+}
