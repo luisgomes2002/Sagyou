@@ -304,13 +304,13 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
     referência a conversa; o log completo fica só no arquivo da run. Memória
     recuperada é evidência histórica não confiável, nunca instrução.
 15. 🔴 **O chat genérico foi removido e a migração apagou dados de propósito.** Na
-    primeira abertura (antes da janela), `legacy-chat-removal.ts`: (1) se
+    primeira abertura (antes da janela), `legacy-chat-removal.ts` (em build dev só roda com `SAGYOU_RUN_LEGACY_CHAT_REMOVAL=1`, pois o resto compartilha o userData real): (1) se
     `legacyChatRemovedAt` existe em `userData/legacy-chat-state.json`, não faz nada; (2) copia por cópia
     crua, no main, para `userData/backups/pre-remocao-chat-<timestamp>/` as
     conversas, `chat-images/`, `chat-files/` e o `kanban.db` — falhou, **nada é
     apagado**; (3) apaga esses itens + `ai-usage-log.json` e `ai-run-metrics.json`;
     (4) zera `sourceConversationId` e o ponteiro `ler_conversa` nas memórias; (5)
-    reconstrói o índice FTS; (6) **por último** tira as 14 chaves de API do
+    sem reconstruir o índice FTS (o `getDb()` já o faz); (6) **por último** tira as 14 chaves de API do
     `ai-config.json` (arquivo ilegível não é tocado); (7) grava a marca. Passos
     idempotentes, retomáveis. `legacyChatSnapshotDir` e `legacyChatNoticeDismissedAt`
     no mesmo arquivo alimentam o aviso do Fleet. ⚠️ Esse estado fica em arquivo

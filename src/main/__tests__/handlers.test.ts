@@ -8,7 +8,7 @@
  * @vitest-environment node
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
-import { mkdtemp, mkdir, readFile, writeFile, rm } from 'fs/promises'
+import { mkdtemp, mkdir, readdir, readFile, writeFile, rm } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { listMemories } from '../store'
@@ -103,6 +103,8 @@ const fakeEvent = {
 
 beforeAll(async () => {
   userData = await mkdtemp(join(tmpdir(), 'sagyou-main-'))
+  // An old install: a chat history the first launch has to snapshot and remove.
+  await writeFile(join(userData, 'ai-conversations.json'), '[{"id":"c1"}]')
   // Importing the module runs whenReady() and registers everything.
   await import('../index')
   await new Promise((r) => setImmediate(r))
@@ -118,8 +120,14 @@ beforeEach(() => {
 })
 
 describe('legacy chat removal on startup', () => {
-  it('removes the chat data before the first window is created', () => {
+  it('snapshots and removes the chat data before the first window is created', async () => {
     expect(startupOrder.slice(0, 2)).toEqual(['migration', 'createWindow'])
+    const state = JSON.parse(await readFile(join(userData, 'legacy-chat-state.json'), 'utf-8'))
+    // The conversations are in the snapshot and gone from userData.
+    expect(
+      await readFile(join(state.legacyChatSnapshotDir, 'ai-conversations.json'), 'utf-8')
+    ).toBe('[{"id":"c1"}]')
+    await expect(readFile(join(userData, 'ai-conversations.json'), 'utf-8')).rejects.toThrow()
   })
 
   it('keeps its state in a file of its own, out of reach of the store', async () => {
@@ -255,6 +263,31 @@ describe('ai:config:*', () => {
   it('turns a legacy sagyou harness into codex on read', async () => {
     await writeFile(configPath(), JSON.stringify({ codeHarness: 'sagyou' }))
     expect(await invoke('ai:config:get')).toMatchObject({ codeHarness: 'codex' })
+  })
+
+  it('keeps a copy of an unreadable config instead of silently overwriting it', async () => {
+    // The migration leaves an unreadable ai-config.json alone on purpose; the
+    // first executor switch in the Fleet must not be what destroys it.
+    await writeFile(configPath(), '{ not json, mas pode ser recuperável')
+
+    await invoke('ai:config:set', { codeHarness: 'claude-code' })
+
+    expect(JSON.parse(await readFile(configPath(), 'utf-8'))).toMatchObject({
+      codeHarness: 'claude-code'
+    })
+    const copies = (await readdir(userData)).filter((name) =>
+      name.startsWith('ai-config.json.corrupt-')
+    )
+    expect(copies).toHaveLength(1)
+    expect(await readFile(join(userData, copies[0]), 'utf-8')).toBe(
+      '{ not json, mas pode ser recuperável'
+    )
+  })
+
+  it('writes the config atomically, leaving no temporary file', async () => {
+    await writeFile(configPath(), JSON.stringify({ codeHarness: 'codex' }))
+    await invoke('ai:config:set', { codeHarness: 'claude-code' })
+    expect((await readdir(userData)).filter((name) => name.endsWith('.tmp'))).toEqual([])
   })
 })
 

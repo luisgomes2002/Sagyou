@@ -401,9 +401,14 @@ export function scrubConversationLinks(memories: AiMemory[]): {
 } {
   let changed = 0
   const scrubbed = memories.map((memory) => {
-    const body = memory.body
-      .replace(/\s*\(conversa completa: id=[^)]*\)/g, '')
-      .replace(/conversa=[^;\n]*;\s*/g, '')
+    // Only generated handoffs carry these traces; a memory the user or the model
+    // wrote may legitimately contain the same words.
+    const body =
+      memory.type === 'handoff'
+        ? memory.body
+            .replace(/\s*\(conversa completa: id=[^)]*\)/g, '')
+            .replace(/conversa=[^;\n]*;\s*/g, '')
+        : memory.body
     if (body === memory.body && memory.sourceConversationId == null) return memory
     changed += 1
     return { ...memory, body, sourceConversationId: null }

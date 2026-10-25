@@ -382,6 +382,18 @@ describe('scrubConversationLinks', () => {
     expect(result.changed).toBe(1)
   })
 
+  it('only rewrites handoff text: a user-written memory that mentions conversa= is untouched', () => {
+    const decision = mem({
+      id: 'd',
+      type: 'decisao',
+      body: 'O endpoint aceita conversa=<id>; retorna 404 sem ele (conversa completa: id=x é só exemplo).'
+    })
+    const result = scrubConversationLinks([decision])
+
+    expect(result.memories[0]).toEqual(decision)
+    expect(result.changed).toBe(0)
+  })
+
   it('leaves unrelated memories identical, archived ones included', () => {
     const untouched = mem({ id: 'b', body: 'Sem vínculo.', archivedAt: NOW })
     const result = scrubConversationLinks([untouched])

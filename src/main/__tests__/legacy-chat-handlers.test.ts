@@ -3,9 +3,9 @@ import type { IpcMain } from 'electron'
 import { describe, expect, it, vi } from 'vitest'
 import {
   registerLegacyChatHandlers,
+  shouldRunLegacyChatRemoval,
   startLegacyChatRemoval
 } from '../handlers/legacy-chat'
-import type { LegacyChatRemovalResult } from '../modules/ai/legacy-chat-removal'
 
 function fakeSettings(initial: Record<string, unknown> = {}): {
   read: (key: string) => unknown
@@ -33,61 +33,37 @@ function fakeIpc(): {
   }
 }
 
-const done = (snapshotDir: string): LegacyChatRemovalResult => ({
-  status: 'done',
-  snapshotDir,
-  warnings: []
+describe('shouldRunLegacyChatRemoval', () => {
+  // Only the database has a dev suffix; every other file shares userData with
+  // the installed app, so a dev run would delete the real chat and API keys.
+  it('runs in a packaged app', () => {
+    expect(shouldRunLegacyChatRemoval({ isDev: false, optIn: undefined })).toBe(true)
+  })
+
+  it('does not run in dev unless explicitly opted in', () => {
+    expect(shouldRunLegacyChatRemoval({ isDev: true, optIn: undefined })).toBe(false)
+    expect(shouldRunLegacyChatRemoval({ isDev: true, optIn: '0' })).toBe(false)
+    expect(shouldRunLegacyChatRemoval({ isDev: true, optIn: '1' })).toBe(true)
+  })
 })
 
 describe('startLegacyChatRemoval', () => {
-  it('remembers the first snapshot so the notice survives a restart', async () => {
-    const settings = fakeSettings()
-    await startLegacyChatRemoval({
-      run: async () => done('/backups/pre-1'),
-      readSetting: settings.read,
-      writeSetting: settings.write
-    })
-
-    expect(settings.values.legacyChatSnapshotDir).toBe('/backups/pre-1')
-  })
-
-  it('does not replace the first snapshot after an interrupted retry', async () => {
-    const settings = fakeSettings({ legacyChatSnapshotDir: '/backups/pre-1' })
-    await startLegacyChatRemoval({
-      run: async () => done('/backups/pre-2'),
-      readSetting: settings.read,
-      writeSetting: settings.write
-    })
-
-    expect(settings.values.legacyChatSnapshotDir).toBe('/backups/pre-1')
-  })
-
-  it('records nothing when the migration was skipped or aborted without a snapshot', async () => {
-    const settings = fakeSettings()
-    await startLegacyChatRemoval({
-      run: async () => ({ status: 'skipped', warnings: [] }),
-      readSetting: settings.read,
-      writeSetting: settings.write
-    })
+  it('reports the migration warnings', async () => {
+    const warn = vi.fn()
     await startLegacyChatRemoval({
       run: async () => ({ status: 'aborted', warnings: ['disco cheio'] }),
-      readSetting: settings.read,
-      writeSetting: settings.write
+      warn
     })
-
-    expect(settings.values).toEqual({})
+    expect(warn).toHaveBeenCalledWith('disco cheio')
   })
 
   it('never lets a migration crash stop the app from starting', async () => {
-    const settings = fakeSettings()
     const warn = vi.fn()
     await expect(
       startLegacyChatRemoval({
         run: async () => {
           throw new Error('boom')
         },
-        readSetting: settings.read,
-        writeSetting: settings.write,
         warn
       })
     ).resolves.toBeUndefined()
@@ -96,8 +72,10 @@ describe('startLegacyChatRemoval', () => {
 })
 
 describe('legacy-chat IPC', () => {
+  const done = { legacyChatRemovedAt: '2026-10-24T11:00:00.000Z', legacyChatSnapshotDir: '/backups/pre-1' }
+
   it('shows the notice once, then not after it is dismissed', async () => {
-    const settings = fakeSettings({ legacyChatSnapshotDir: '/backups/pre-1' })
+    const settings = fakeSettings(done)
     const ipc = fakeIpc()
     registerLegacyChatHandlers(ipc as unknown as Pick<IpcMain, 'handle'>, {
       readSetting: settings.read,
@@ -111,8 +89,22 @@ describe('legacy-chat IPC', () => {
     expect(await ipc.invoke('legacy-chat:notice')).toBeNull()
   })
 
+  it('does not say the history was removed while the migration is still unfinished', async () => {
+    // A snapshot exists but the marker does not: the run was interrupted and
+    // the API keys are still on disk waiting for the next launch.
+    const settings = fakeSettings({ legacyChatSnapshotDir: '/backups/pre-1' })
+    const ipc = fakeIpc()
+    registerLegacyChatHandlers(ipc as unknown as Pick<IpcMain, 'handle'>, {
+      readSetting: settings.read,
+      writeSetting: settings.write,
+      now: () => new Date()
+    })
+
+    expect(await ipc.invoke('legacy-chat:notice')).toBeNull()
+  })
+
   it('has no notice when no migration ever produced a snapshot', async () => {
-    const settings = fakeSettings()
+    const settings = fakeSettings({ legacyChatRemovedAt: '2026-10-24T11:00:00.000Z' })
     const ipc = fakeIpc()
     registerLegacyChatHandlers(ipc as unknown as Pick<IpcMain, 'handle'>, {
       readSetting: settings.read,

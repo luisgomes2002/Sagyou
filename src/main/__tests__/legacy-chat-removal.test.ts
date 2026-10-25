@@ -5,6 +5,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import {
   runLegacyChatRemoval,
+  hasLegacyApiConfig,
   stripAiConfigFile,
   stripLegacyApiConfig,
   LEGACY_API_CONFIG_KEYS,
@@ -28,9 +29,11 @@ function makeDeps(overrides: Partial<LegacyChatRemovalDeps> = {}): {
   deps: LegacyChatRemovalDeps
   calls: string[]
   marker: { value: string | null }
+  snapshot: { value: string | null }
 } {
   const calls: string[] = []
   const marker = { value: null as string | null }
+  const snapshot = { value: null as string | null }
   const deps: LegacyChatRemovalDeps = {
     userDataDir: dir,
     getMarker: () => marker.value,
@@ -46,8 +49,11 @@ function makeDeps(overrides: Partial<LegacyChatRemovalDeps> = {}): {
       calls.push('scrubMemories')
       return 2
     },
-    rebuildSearchIndex: async () => {
-      calls.push('rebuildSearchIndex')
+    hasLegacyConfig: () => true,
+    getSnapshotDir: () => snapshot.value,
+    setSnapshotDir: (dir) => {
+      calls.push('setSnapshotDir')
+      snapshot.value = dir
     },
     stripAiConfig: () => {
       calls.push('stripAiConfig')
@@ -56,7 +62,7 @@ function makeDeps(overrides: Partial<LegacyChatRemovalDeps> = {}): {
     now: () => new Date('2026-10-24T12:00:00.000Z'),
     ...overrides
   }
-  return { deps, calls, marker }
+  return { deps, calls, marker, snapshot }
 }
 
 beforeEach(() => {
@@ -125,8 +131,8 @@ describe('runLegacyChatRemoval', () => {
     }
     expect(calls).toEqual([
       'copyDatabase',
+      'setSnapshotDir',
       'scrubMemories',
-      'rebuildSearchIndex',
       'stripAiConfig',
       'setMarker'
     ])
@@ -171,6 +177,65 @@ describe('runLegacyChatRemoval', () => {
     const second = await runLegacyChatRemoval(deps)
     expect(second.status).toBe('done')
     expect(marker.value).not.toBeNull()
+    // The retry points at the first folder (the one holding the conversations)
+    // instead of copying a second database into a folder with nothing in it.
+    expect(second.snapshotDir).toBe(first.snapshotDir)
+    expect(readdirSync(join(dir, 'backups'))).toHaveLength(1)
+    expect(readFileSync(join(second.snapshotDir as string, 'ai-conversations.json'), 'utf-8')).toBe(
+      '[{"id":"c1"}]'
+    )
+  })
+
+  it('records the snapshot folder before deleting anything, so an interrupted run still points at it', async () => {
+    const { deps, snapshot } = makeDeps({
+      scrubMemories: () => {
+        throw new Error('processo morto aqui')
+      }
+    })
+
+    const result = await runLegacyChatRemoval(deps)
+
+    expect(result.status).toBe('aborted')
+    expect(snapshot.value).toBe(result.snapshotDir)
+    expect(existsSync(join(snapshot.value as string, 'ai-conversations.json'))).toBe(true)
+  })
+
+  it('does not snapshot or announce anything for an install that never had a chat', async () => {
+    for (const item of [
+      'ai-conversations.json',
+      'ai-usage-log.json',
+      'ai-run-metrics.json',
+      'ai-config.json'
+    ]) {
+      rmSync(join(dir, item), { force: true })
+    }
+    rmSync(join(dir, 'chat-images'), { recursive: true })
+    rmSync(join(dir, 'chat-files'), { recursive: true })
+    const { deps, calls, marker, snapshot } = makeDeps({ hasLegacyConfig: () => false })
+
+    const result = await runLegacyChatRemoval(deps)
+
+    expect(result.status).toBe('done')
+    expect(result.snapshotDir).toBeUndefined()
+    expect(existsSync(join(dir, 'backups'))).toBe(false)
+    expect(snapshot.value).toBeNull()
+    expect(calls).toEqual(['scrubMemories', 'setMarker'])
+    expect(marker.value).not.toBeNull()
+  })
+
+  it('still snapshots when only the API keys are left to remove', async () => {
+    for (const item of ['ai-conversations.json', 'ai-usage-log.json', 'ai-run-metrics.json']) {
+      rmSync(join(dir, item), { force: true })
+    }
+    rmSync(join(dir, 'chat-images'), { recursive: true })
+    rmSync(join(dir, 'chat-files'), { recursive: true })
+    const { deps, calls } = makeDeps()
+
+    const result = await runLegacyChatRemoval(deps)
+
+    expect(result.status).toBe('done')
+    expect(result.snapshotDir).toBeDefined()
+    expect(calls).toContain('copyDatabase')
   })
 
   it('tolerates files that never existed and snapshots only what is there', async () => {
@@ -286,5 +351,22 @@ describe('stripAiConfigFile', () => {
     stripAiConfigFile(path)
 
     expect(readFileSync(path, 'utf-8')).toBe(original)
+  })
+})
+
+describe('hasLegacyApiConfig', () => {
+  it('is true when the file still carries a chat key', () => {
+    const path = join(dir, 'ai-config.json')
+    writeFileSync(path, JSON.stringify({ apiKey: 'sk', codeHarness: 'codex' }))
+    expect(hasLegacyApiConfig(path)).toBe(true)
+  })
+
+  it('is false for agent-only, unreadable and missing files', () => {
+    const path = join(dir, 'ai-config.json')
+    writeFileSync(path, JSON.stringify({ codeHarness: 'codex', futureSetting: 1 }))
+    expect(hasLegacyApiConfig(path)).toBe(false)
+    writeFileSync(path, '{ not json')
+    expect(hasLegacyApiConfig(path)).toBe(false)
+    expect(hasLegacyApiConfig(join(dir, 'missing.json'))).toBe(false)
   })
 })

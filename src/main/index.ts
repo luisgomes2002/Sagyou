@@ -21,6 +21,7 @@ import {
   existsSync,
   unlinkSync,
   renameSync,
+  copyFileSync,
   chmodSync,
   statSync,
   accessSync,
@@ -63,12 +64,17 @@ import {
   scrubMemoryConversationLinks
 } from './store'
 import {
+  hasLegacyApiConfig,
   runLegacyChatRemoval,
   stripAiConfigFile,
   stripLegacyApiConfig
 } from './modules/ai/legacy-chat-removal'
 import { createLegacyChatState } from './modules/ai/legacy-chat-state'
-import { registerLegacyChatHandlers, startLegacyChatRemoval } from './handlers/legacy-chat'
+import {
+  registerLegacyChatHandlers,
+  shouldRunLegacyChatRemoval,
+  startLegacyChatRemoval
+} from './handlers/legacy-chat'
 import * as memoryStore from './store'
 import * as memoryRules from './modules/ai/memory'
 import { registerMemoryHandlers } from './handlers/memory'
@@ -775,14 +781,30 @@ function loadAIConfig(): AIConfig {
  * drop every API-chat key from both sides: none may be accepted or persisted.
  */
 function saveAIConfig(config: unknown): void {
+  keepUnreadableAIConfig()
   const merged = { ...readAIConfigFile(), ...agentOnlyConfig(config) }
   const userName =
     typeof merged.userName === 'string' ? merged.userName.trim().slice(0, 80) : undefined
-  writeFileSync(
-    aiConfigPath(),
-    JSON.stringify({ ...merged, userName: userName || undefined }, null, 2),
-    'utf-8'
-  )
+  const path = aiConfigPath()
+  const tmp = `${path}.tmp`
+  writeFileSync(tmp, JSON.stringify({ ...merged, userName: userName || undefined }, null, 2), 'utf-8')
+  renameSync(tmp, path)
+}
+
+/**
+ * An unreadable ai-config.json reads as empty, so the next save would replace
+ * it with defaults and destroy whatever was recoverable in it. Keep a copy
+ * beside it first (the migration leaves such a file untouched for the same
+ * reason).
+ */
+function keepUnreadableAIConfig(): void {
+  const path = aiConfigPath()
+  if (!existsSync(path)) return
+  try {
+    JSON.parse(readFileSync(path, 'utf-8'))
+  } catch {
+    copyFileSync(path, `${path}.corrupt-${new Date().toISOString().replace(/[:.]/g, '-')}`)
+  }
 }
 
 // --- Task images (files under userData/task-images, named <id><ext>) ---
@@ -1969,33 +1991,43 @@ app.whenReady().then(() => {
     now: () => new Date()
   })
 
-  // The chat's data is removed before any window exists, so the renderer can
-  // never read a half-deleted history. A failure is logged, never fatal.
-  void startLegacyChatRemoval({
-    run: () =>
-      runLegacyChatRemoval({
-        userDataDir: app.getPath('userData'),
-        getMarker: () => {
-          const marker = legacyState.read('legacyChatRemovedAt')
-          return typeof marker === 'string' && marker ? marker : null
-        },
-        setMarker: (iso) => legacyState.write('legacyChatRemovedAt', iso),
-        copyDatabase: copyDatabaseTo,
-        scrubMemories: scrubMemoryConversationLinks,
-        rebuildSearchIndex,
-        stripAiConfig: () => stripAiConfigFile(aiConfigPath()),
-        now: () => new Date()
-      }),
-    readSetting: legacyState.read,
-    writeSetting: legacyState.write,
-    warn: (message) => console.warn(`[legacy-chat] ${message}`)
-  }).finally(() => {
+  // The chat's data is removed before any window exists. A failure is logged,
+  // never fatal. Dev runs skip it unless opted in: only the database file has a
+  // dev suffix, so the rest of this migration would hit the real user data.
+  const openWindows = (): void => {
     createWindow()
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
     })
-  })
+  }
+  if (!shouldRunLegacyChatRemoval({ isDev: is.dev, optIn: process.env.SAGYOU_RUN_LEGACY_CHAT_REMOVAL })) {
+    console.warn('[legacy-chat] dev build: removal skipped (set SAGYOU_RUN_LEGACY_CHAT_REMOVAL=1 to run it)')
+    openWindows()
+  } else {
+    void startLegacyChatRemoval({
+      run: () =>
+        runLegacyChatRemoval({
+          userDataDir: app.getPath('userData'),
+          getMarker: () => {
+            const marker = legacyState.read('legacyChatRemovedAt')
+            return typeof marker === 'string' && marker ? marker : null
+          },
+          setMarker: (iso) => legacyState.write('legacyChatRemovedAt', iso),
+          copyDatabase: copyDatabaseTo,
+          scrubMemories: scrubMemoryConversationLinks,
+          hasLegacyConfig: () => hasLegacyApiConfig(aiConfigPath()),
+          getSnapshotDir: () => {
+            const dir = legacyState.read('legacyChatSnapshotDir')
+            return typeof dir === 'string' && dir ? dir : null
+          },
+          setSnapshotDir: (dir) => legacyState.write('legacyChatSnapshotDir', dir),
+          stripAiConfig: () => stripAiConfigFile(aiConfigPath()),
+          now: () => new Date()
+        }),
+      warn: (message) => console.warn(`[legacy-chat] ${message}`)
+    }).finally(openWindows)
+  }
 })
 
 app.on('window-all-closed', () => {
