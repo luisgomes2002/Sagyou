@@ -1,6 +1,14 @@
 import { v4 as uuidv4 } from 'uuid'
 import { useKanbanStore } from '../store/kanban'
-import { PROJECT_COLORS, type Column, type Project, type ProjectLink } from '../types'
+import {
+  PRIORITY_CONFIG,
+  PROJECT_COLORS,
+  type Column,
+  type Priority,
+  type Project,
+  type ProjectLink,
+  type Task
+} from '../types'
 import { isDoneColumn } from '../utils/columns'
 import type { McpActionResult, McpScope } from '../types/mcp-actions'
 
@@ -39,7 +47,10 @@ const LIMITS = {
   description: 5000,
   linkLabel: 80,
   linkUrl: 2000,
-  links: 20
+  links: 20,
+  taskTitle: 300,
+  tags: 20,
+  tag: 60
 } as const
 
 const DONE_RENAME_REFUSAL =
@@ -71,6 +82,41 @@ function optionalProjectColor(args: Args): string | undefined {
   return color
 }
 
+/** A real calendar day in YYYY-MM-DD; `2026-02-30` is refused. */
+export function isCalendarDate(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  if (!match) return false
+  const [year, month, day] = match.slice(1).map(Number)
+  const parsed = new Date(Date.UTC(year, month - 1, day))
+  return (
+    parsed.getUTCFullYear() === year &&
+    parsed.getUTCMonth() === month - 1 &&
+    parsed.getUTCDate() === day
+  )
+}
+
+/** Optional date: undefined when absent, '' when explicitly cleared. */
+function optionalDate(args: Args, key: string): string | undefined {
+  const value = optionalText(args, key, 10)
+  if (value === undefined || value === '') return value
+  if (!isCalendarDate(value)) refuse(`${key} precisa ser uma data real no formato YYYY-MM-DD.`)
+  return value
+}
+
+function optionalTags(args: Args): string[] | undefined {
+  const value = args.tags
+  if (value === undefined) return undefined
+  if (
+    !Array.isArray(value) ||
+    value.length > LIMITS.tags ||
+    value.some((tag) => typeof tag !== 'string' || !tag.trim() || tag.trim().length > LIMITS.tag)
+  )
+    refuse(
+      `tags precisa ser uma lista de até ${LIMITS.tags} textos de até ${LIMITS.tag} caracteres.`
+    )
+  return (value as string[]).map((tag) => tag.trim())
+}
+
 const sameName = (a: string, b: string): boolean =>
   a.trim().toLowerCase() === b.trim().toLowerCase()
 
@@ -96,6 +142,42 @@ function resolveColumn(project: Project, ref: string): Column {
     )
   if (!byName.length) refuse(`Coluna "${ref}" não encontrada no projeto ${project.name}.`)
   return byName[0]
+}
+
+const byOrder = (project: Project): Column[] =>
+  [...project.columns].sort((a, b) => a.order - b.order)
+
+/** By exact id anywhere, or by exact title (case-insensitive) inside the scoped project. */
+function resolveTask(args: Args, scope: McpScope, store: Store, projectKey = 'projectId'): Task {
+  const id = optionalText(args, 'id', 200)
+  if (id) {
+    const task = store.tasks.find((item) => item.id === id)
+    if (!task) refuse('Tarefa não encontrada.')
+    return task as Task
+  }
+  const title = optionalText(args, 'title', LIMITS.taskTitle)
+  if (!title) refuse('Informe id ou title da tarefa.')
+  const project = resolveProject(args, scope, store, projectKey)
+  const matches = store.tasks.filter(
+    (item) => item.projectId === project.id && sameName(item.title, title as string)
+  )
+  if (matches.length > 1)
+    refuse(
+      'Mais de um registro com esse título; use o id.',
+      matches.slice(0, 10).map((item) => ({ id: item.id, title: item.title }))
+    )
+  if (!matches.length) refuse('Tarefa não encontrada.')
+  return matches[0]
+}
+
+function taskProject(store: Store, task: Task): Project {
+  const project = store.projects.find((item) => item.id === task.projectId)
+  if (!project) refuse('Projeto da tarefa não encontrado.')
+  return project as Project
+}
+
+function taskInDone(project: Project, task: Task): boolean {
+  return isDoneColumn(project.columns.find((column) => column.id === task.columnId))
 }
 
 function columnTaskCount(store: Store, project: Project, column: Column): number {
@@ -265,6 +347,93 @@ const deleteColumn: Handler = (args, scope, phase, store) => {
   return done(column.id, `Excluir coluna "${column.name}" do projeto ${project.name}`)
 }
 
+// ── Tasks ────────────────────────────────────────────────────────────────────
+
+const updateTask: Handler = (args, scope, phase, store) => {
+  const task = resolveTask(args, scope, store)
+  const updates: Partial<Pick<Task, 'title' | 'description' | 'priority' | 'dueDate' | 'tags'>> = {}
+  const title = optionalText(args, 'newTitle', LIMITS.taskTitle)
+  if (title !== undefined) {
+    if (!title) refuse('newTitle não pode ser vazio.')
+    updates.title = title
+  }
+  const description = optionalText(args, 'description', LIMITS.description)
+  if (description !== undefined) updates.description = description || undefined
+  const dueDate = optionalDate(args, 'dueDate')
+  if (dueDate !== undefined) updates.dueDate = dueDate || undefined
+  const priority = optionalText(args, 'priority', 20)
+  if (priority !== undefined) {
+    if (!(priority in PRIORITY_CONFIG))
+      refuse(`priority precisa ser uma de: ${Object.keys(PRIORITY_CONFIG).join(', ')}.`)
+    updates.priority = priority as Priority
+  }
+  const tags = optionalTags(args)
+  if (tags !== undefined) updates.tags = tags
+  if (!Object.keys(updates).length) refuse('Nada para alterar.')
+  if (phase === 'apply') store.updateTask(task.id, updates)
+  return done(task.id, `Editar tarefa "${task.title}"`)
+}
+
+/** Moves within the project via moveTask, or across projects via moveTaskToProject. */
+function moveTo(store: Store, task: Task, target: Project, column: Column): Args {
+  const wasDone = taskInDone(taskProject(store, task), task)
+  if (target.id !== task.projectId) store.moveTaskToProject(task.id, target.id, column.id)
+  else {
+    const end = store.tasks.filter(
+      (item) => item.id !== task.id && item.projectId === target.id && item.columnId === column.id
+    ).length
+    store.moveTask(task.id, column.id, end)
+  }
+  const nowDone = isDoneColumn(column)
+  if (nowDone && !wasDone) return { concluida: true }
+  if (!nowDone && wasDone) return { reaberta: true }
+  return {}
+}
+
+const moveTask: Handler = (args, scope, phase, store) => {
+  const task = resolveTask(args, scope, store, 'fromProjectId')
+  const target = optionalText(args, 'projectId', 200)
+    ? resolveProject(args, scope, store)
+    : taskProject(store, task)
+  const ref = optionalText(args, 'column', 200)
+  if (!ref && target.id === task.projectId)
+    refuse('column é obrigatório para mover dentro do projeto.')
+  const column = ref ? resolveColumn(target, ref) : byOrder(target)[0]
+  if (!column) refuse(`O projeto ${target.name} não tem colunas.`)
+  const resumo = `Mover tarefa "${task.title}" para ${column.name} em ${target.name}`
+  if (phase === 'prepare') return done(task.id, resumo)
+  return done(task.id, resumo, moveTo(store, task, target, column))
+}
+
+const completeTask: Handler = (args, scope, phase, store) => {
+  const task = resolveTask(args, scope, store)
+  const project = taskProject(store, task)
+  const resumo = `Concluir tarefa "${task.title}"`
+  if (taskInDone(project, task)) return done(task.id, resumo, { jaConcluida: true })
+  const column = byOrder(project).find((item) => isDoneColumn(item))
+  if (!column) return refuse('O projeto não tem coluna de concluídas.')
+  if (phase === 'prepare') return done(task.id, resumo)
+  return done(task.id, resumo, moveTo(store, task, project, column))
+}
+
+const reopenTask: Handler = (args, scope, phase, store) => {
+  const task = resolveTask(args, scope, store)
+  const project = taskProject(store, task)
+  const resumo = `Reabrir tarefa "${task.title}"`
+  if (!taskInDone(project, task)) return done(task.id, resumo, { jaAberta: true })
+  const column = byOrder(project).find((item) => !isDoneColumn(item))
+  if (!column) return refuse('O projeto não tem coluna aberta para reabrir a tarefa.')
+  if (phase === 'prepare') return done(task.id, resumo)
+  return done(task.id, resumo, moveTo(store, task, project, column))
+}
+
+const deleteTask: Handler = (args, scope, phase, store) => {
+  const task = resolveTask(args, scope, store)
+  const project = taskProject(store, task)
+  if (phase === 'apply') store.deleteTask(task.id)
+  return done(task.id, `Excluir tarefa "${task.title}" do projeto ${project.name}`)
+}
+
 const HANDLERS: Record<string, Handler> = {
   create_project: createProject,
   update_project: updateProject,
@@ -274,7 +443,12 @@ const HANDLERS: Record<string, Handler> = {
   create_column: createColumn,
   update_column: updateColumn,
   reorder_columns: reorderColumns,
-  delete_column: deleteColumn
+  delete_column: deleteColumn,
+  update_task: updateTask,
+  move_task: moveTask,
+  complete_task: completeTask,
+  reopen_task: reopenTask,
+  delete_task: deleteTask
 }
 
 function run(name: string, args: Args, scope: McpScope, phase: Phase): McpActionResult {
