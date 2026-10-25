@@ -55,7 +55,7 @@ SQLite só como índice, consulta por MCP) fica para depois e **não** faz parte
 - O aviso do Fleet é buscado pelo renderer quando a tela abre: o main guarda o resultado da migração e o caminho do snapshot até o aviso ser dispensado.
 - Ficam, por não terem mandato na spec: `ai:skills:*`, `ai:web:fetch`, `ai:code:*`, `ai:harnesses:status` e `modules/ai/evaluator.ts`. Seus consumidores no chat saem, e eles viram candidatos a limpeza futura.
 - Saem as ferramentas `buscar_conversas` e `ler_conversa`, e os canais `ai:conversations:*`, `ai:images:*`, `ai:usage:summary` e `ai:run-metrics:*`.
-- O índice de busca global (FTS5) deixa de indexar conversas. Como é descartável, ele é reconstruído na migração.
+- O índice de busca global (FTS5) deixa de indexar conversas. Como é derivado, ele já é reconstruído a cada abertura a partir do SQLite; a migração não o reconstrói de novo.
 - A regra de retenção de conversas por memória (`referencedConversationIds`, `retainReferencedConversations`) é removida junto com o histórico.
 - As chaves de API só são apagadas depois que o snapshot e a limpeza de conversas terminam com sucesso.
 
@@ -67,7 +67,7 @@ SQLite só como índice, consulta por MCP) fica para depois e **não** faz parte
 3. Apaga `ai-conversations.json`, `chat-images/` e `chat-files/` (textos extraídos dos documentos anexados ao chat).
 4. Apaga `ai-usage-log.json` e `ai-run-metrics.json`.
 5. Limpa `sourceConversationId` e o ponteiro de conversa nos handoffs, em memórias ativas e arquivadas.
-6. Reconstrói o índice de busca global.
+6. (Sem passo: o índice de busca é derivado e já é reconstruído na abertura do banco.)
 7. Remove de `ai-config.json` exatamente: `baseUrl`, `apiKey`, `model`, `providerProfiles`, `activeProviderProfileId`, `legacyProfileMigrated`, `chatProvider`, `modelComplex`, `maxSteps`, `inputPricePer1M`, `outputPricePer1M`, `timeoutMs`, `lastConversationId` e `codeAgent`. Preserva `codeHarness`, `userName`, `reasoningEffort`, as flags de sandbox/ai-jail e **qualquer chave desconhecida**. É o último passo destrutivo: as chaves só caem depois de todos os anteriores.
 8. Grava a marca `legacyChatRemovedAt`.
 

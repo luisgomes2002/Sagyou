@@ -42,7 +42,7 @@ agentes (`codeHarness`, `userName`, `reasoningEffort`) e **qualquer chave descon
 
 ### Ordem dos passos
 
-1. Se a chave `legacyChatRemovedAt` existe em `legacy-chat-state.json` (em `userData`), a migração não faz nada.
+1. Se a chave `legacyChatRemovedAt` existe em `legacy-chat-state.json` (em `userData`), a migração não faz nada. Uma instalação que nunca teve chat (nada para apagar e nenhuma chave de API no `ai-config.json`) só recebe a marca, sem snapshot e sem aviso. Em build de desenvolvimento a migração **não roda** sem `SAGYOU_RUN_LEGACY_CHAT_REMOVAL=1`, porque só o banco tem sufixo de dev e o resto seria apagado dos dados reais. Se uma execução anterior foi interrompida, o snapshot já feito é reaproveitado (o caminho é gravado antes da primeira exclusão), em vez de criar um segundo sem conversas.
 2. **Snapshot em pasta.** O processo main copia, sem passar pelo renderer, para
    `<diretório de dados>/backups/pre-remocao-chat-<timestamp>/`: `ai-conversations.json`,
    `chat-images/`, `chat-files/` (os que existirem) e uma cópia consistente do `kanban.db`. O
@@ -50,7 +50,7 @@ agentes (`codeHarness`, `userName`, `reasoningEffort`) e **qualquer chave descon
    por falta de espaço), a pasta incompleta é removida e **nada é apagado**.
 3. Apaga as conversas, imagens e documentos de chat, o registro de gastos e as métricas.
 4. Limpa o vínculo de conversa nas memórias.
-5. Reconstrói o índice de busca global (é descartável; conversas deixam de ser indexadas).
+5. O índice de busca global é derivado e já é reconstruído a cada abertura a partir do SQLite, onde conversas deixaram de ser indexadas; a migração não o reconstrói de novo.
 6. **Por último**, remove as chaves de API do `ai-config.json`, com escrita atômica. Um arquivo
    ilegível **não é tocado** (a migração registra um aviso): ele ainda poderia ser recuperado.
 7. Grava `legacyChatRemovedAt` em `legacy-chat-state.json`.
