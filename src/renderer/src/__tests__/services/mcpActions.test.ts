@@ -19,7 +19,7 @@ vi.mock('../../services/ElectronStorage', () => {
 
 import { useKanbanStore } from '../../store/kanban'
 import { applyMcpAction, prepareMcpAction } from '../../services/mcpActions'
-import { DEFAULT_FINANCIAL_PROFILE_ID, PROJECT_COLORS, type Project } from '../../types'
+import { DEFAULT_FINANCIAL_PROFILE_ID, PROJECT_COLORS, type Project, type Task } from '../../types'
 import type { McpActionResult, McpScope } from '../../types/mcp-actions'
 
 const state = (): ReturnType<typeof useKanbanStore.getState> => useKanbanStore.getState()
@@ -230,5 +230,158 @@ describe('MCP project and column writes', () => {
     })
     expect(state().tasks).toHaveLength(1)
     expect(project(id).columns.map((c) => c.name)).toContain('Review')
+  })
+})
+
+describe('MCP task writes', () => {
+  beforeEach(resetStore)
+
+  function seedTasks(): {
+    id: string
+    scope: McpScope
+    taskId: string
+    col: (name: string) => string
+  } {
+    const { id, scope } = seedProject()
+    const col = (name: string): string => project(id).columns.find((c) => c.name === name)!.id
+    const taskId = state().createTask({
+      projectId: id,
+      columnId: col('Backlog'),
+      title: 'Corrigir login',
+      description: 'antiga',
+      dueDate: '2026-11-01',
+      tags: ['bug']
+    })
+    return { id, scope, taskId, col }
+  }
+  const task = (id: string): Task | undefined => state().tasks.find((t) => t.id === id)
+
+  it('update_task only touches sent keys and clears with empty string', () => {
+    const { scope, taskId } = seedTasks()
+    expect(both('update_task', { id: taskId, priority: 'high', description: '' }, scope).ok).toBe(
+      true
+    )
+    expect(task(taskId)).toMatchObject({
+      priority: 'high',
+      dueDate: '2026-11-01',
+      tags: ['bug'],
+      title: 'Corrigir login'
+    })
+    expect(task(taskId)!.description).toBeUndefined()
+    expect(both('update_task', { id: taskId, tags: [], newTitle: 'Login' }, scope).ok).toBe(true)
+    expect(task(taskId)).toMatchObject({ tags: [], title: 'Login' })
+  })
+
+  it('update_task rejects an impossible date and an unknown priority', () => {
+    const { scope, taskId } = seedTasks()
+    expect(both('update_task', { id: taskId, dueDate: '2026-02-30' }, scope)).toMatchObject({
+      ok: false
+    })
+    expect(both('update_task', { id: taskId, priority: 'alta' }, scope)).toMatchObject({
+      ok: false
+    })
+    expect(task(taskId)!.dueDate).toBe('2026-11-01')
+  })
+
+  it('finds a task by title and refuses an ambiguous title with candidatos', () => {
+    const { id, scope, col } = seedTasks()
+    expect(both('update_task', { title: 'corrigir LOGIN', priority: 'low' }, scope).ok).toBe(true)
+    state().createTask({ projectId: id, columnId: col('Review'), title: 'Corrigir login' })
+    const result = both('update_task', { title: 'Corrigir login', priority: 'urgent' }, scope)
+    expect(result).toMatchObject({
+      ok: false,
+      error: 'Mais de um registro com esse título; use o id.'
+    })
+    expect((result as { candidatos: unknown[] }).candidatos).toHaveLength(2)
+    expect(state().tasks.every((t) => t.priority !== 'urgent')).toBe(true)
+  })
+
+  it('move_task within the project reports completion and reopening', () => {
+    const { scope, taskId, col } = seedTasks()
+    expect(both('move_task', { id: taskId, column: 'Done' }, scope)).toMatchObject({
+      ok: true,
+      concluida: true
+    })
+    expect(task(taskId)!.columnId).toBe(col('Done'))
+    expect(both('move_task', { id: taskId, column: 'Review' }, scope)).toMatchObject({
+      ok: true,
+      reaberta: true
+    })
+  })
+
+  it('move_task across projects without column lands in the target first column', () => {
+    const { scope, taskId } = seedTasks()
+    const { id: other } = seedProject('Outro')
+    expect(both('move_task', { id: taskId, projectId: other }, scope).ok).toBe(true)
+    expect(task(taskId)).toMatchObject({
+      projectId: other,
+      columnId: project(other).columns[0].id
+    })
+  })
+
+  it('move_task across projects resolves the column on the target, clears sprint and credits timer', () => {
+    const { id, scope, taskId } = seedTasks()
+    const sprintId = state().createSprint(id, 'S1')
+    state().setTaskSprint(taskId, sprintId)
+    useKanbanStore.setState({ activeTimers: [{ taskId, startedAt: Date.now() - 60_000 }] })
+    const { id: other } = seedProject('Outro')
+    const targetReview = project(other).columns.find((c) => c.name === 'Review')!.id
+    expect(both('move_task', { id: taskId, projectId: other, column: 'Review' }, scope).ok).toBe(
+      true
+    )
+    expect(task(taskId)).toMatchObject({ projectId: other, columnId: targetReview })
+    expect(task(taskId)!.sprintId).toBeUndefined()
+    expect(task(taskId)!.timeSpent).toBeGreaterThanOrEqual(60)
+    expect(state().activeTimers).toHaveLength(0)
+  })
+
+  it('move_task to a column created earlier in the same run works', () => {
+    const { scope, taskId } = seedTasks()
+    expect(both('create_column', { name: 'Testes' }, scope).ok).toBe(true)
+    expect(both('move_task', { id: taskId, column: 'Testes' }, scope).ok).toBe(true)
+  })
+
+  it('complete_task and reopen_task are idempotent', () => {
+    const { scope, taskId, col } = seedTasks()
+    expect(both('complete_task', { id: taskId }, scope)).toMatchObject({ ok: true })
+    expect(task(taskId)).toMatchObject({ columnId: col('Done') })
+    expect(task(taskId)!.completedAt).toBeDefined()
+    expect(both('complete_task', { id: taskId }, scope)).toMatchObject({
+      ok: true,
+      jaConcluida: true
+    })
+    expect(both('reopen_task', { id: taskId }, scope)).toMatchObject({ ok: true })
+    expect(task(taskId)).toMatchObject({ columnId: col('Backlog') })
+    expect(both('reopen_task', { id: taskId }, scope)).toMatchObject({ ok: true, jaAberta: true })
+  })
+
+  it('complete_task refuses a project without a Done column', () => {
+    const { id, scope, taskId } = seedTasks()
+    const doneCol = project(id).columns.find((c) => c.name === 'Done')!
+    state().deleteColumn(id, doneCol.id)
+    expect(both('complete_task', { id: taskId }, scope)).toEqual({
+      ok: false,
+      error: 'O projeto não tem coluna de concluídas.'
+    })
+  })
+
+  it('delete_task leaves a tombstone and its resumo names the project', () => {
+    const { scope, taskId } = seedTasks()
+    expect(prepareMcpAction('delete_task', { id: taskId }, scope)).toMatchObject({
+      resumo: 'Excluir tarefa "Corrigir login" do projeto Sagyou'
+    })
+    expect(applyMcpAction('delete_task', { id: taskId }, scope).ok).toBe(true)
+    expect(task(taskId)).toBeUndefined()
+    expect(state().tombstones.some((t) => t.id === taskId && t.type === 'task')).toBe(true)
+  })
+
+  it('a task deleted after prepare returns "Tarefa não encontrada." in apply', () => {
+    const { scope, taskId } = seedTasks()
+    expect(prepareMcpAction('update_task', { id: taskId, priority: 'low' }, scope).ok).toBe(true)
+    state().deleteTask(taskId)
+    expect(applyMcpAction('update_task', { id: taskId, priority: 'low' }, scope)).toEqual({
+      ok: false,
+      error: 'Tarefa não encontrada.'
+    })
   })
 })
