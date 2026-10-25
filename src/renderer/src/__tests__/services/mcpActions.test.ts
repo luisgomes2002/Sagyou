@@ -18,8 +18,15 @@ vi.mock('../../services/ElectronStorage', () => {
 })
 
 import { useKanbanStore } from '../../store/kanban'
-import { applyMcpAction, prepareMcpAction } from '../../services/mcpActions'
-import { DEFAULT_FINANCIAL_PROFILE_ID, PROJECT_COLORS, type Project, type Task } from '../../types'
+import { applyMcpAction, freeNotePosition, prepareMcpAction } from '../../services/mcpActions'
+import {
+  DEFAULT_FINANCIAL_PROFILE_ID,
+  PROJECT_COLORS,
+  type Goal,
+  type Project,
+  type StickyNote,
+  type Task
+} from '../../types'
 import type { McpActionResult, McpScope } from '../../types/mcp-actions'
 
 const state = (): ReturnType<typeof useKanbanStore.getState> => useKanbanStore.getState()
@@ -383,5 +390,130 @@ describe('MCP task writes', () => {
       ok: false,
       error: 'Tarefa não encontrada.'
     })
+  })
+})
+
+describe('MCP goal writes', () => {
+  beforeEach(resetStore)
+  const goal = (id: string): Goal | undefined => state().goals.find((g) => g.id === id)
+
+  it('create_goal defaults and rejects target 0 and NaN', () => {
+    const { id, scope } = seedProject()
+    const created = both('create_goal', { title: 'Ler livros', target: 12, unit: 'livros' }, scope)
+    expect(created.ok).toBe(true)
+    const g = goal((created as { id: string }).id)!
+    expect(g).toMatchObject({ kind: 'quantity', target: 12, color: PROJECT_COLORS[0] })
+    expect(g.projectId).toBeUndefined()
+    expect(both('create_goal', { title: 'X', target: 0 }, scope)).toMatchObject({ ok: false })
+    expect(both('create_goal', { title: 'X', target: Number.NaN }, scope)).toMatchObject({
+      ok: false
+    })
+    const scoped = both('create_goal', { title: 'Do projeto', target: 2, projectId: id }, scope)
+    expect(goal((scoped as { id: string }).id)!.projectId).toBe(id)
+  })
+
+  it('completion goal forces target 1 and progress writes value 1', () => {
+    const { scope } = seedProject()
+    const created = both(
+      'create_goal',
+      { title: 'Lançar v1', kind: 'completion', target: 9 },
+      scope
+    )
+    const id = (created as { id: string }).id
+    expect(goal(id)!.target).toBe(1)
+    expect(both('add_goal_progress', { id, value: 5 }, scope)).toMatchObject({
+      ok: true,
+      concluida: true
+    })
+    expect(goal(id)!.entries.map((e) => e.value)).toEqual([1])
+  })
+
+  it('add_goal_progress requires a positive value on quantity goals and no-ops when reached', () => {
+    const { scope } = seedProject()
+    const id = (both('create_goal', { title: 'Correr', target: 10 }, scope) as { id: string }).id
+    expect(both('add_goal_progress', { id }, scope)).toMatchObject({ ok: false })
+    expect(both('add_goal_progress', { id, value: -1 }, scope)).toMatchObject({ ok: false })
+    expect(
+      both(
+        'add_goal_progress',
+        { title: 'correr', value: 10, date: '2026-10-20', label: 'treino' },
+        scope
+      )
+    ).toMatchObject({ ok: true, progresso: 10, concluida: true })
+    expect(goal(id)!.entries[0]).toMatchObject({ date: '2026-10-20', label: 'treino', value: 10 })
+    expect(both('add_goal_progress', { id, value: 1 }, scope)).toMatchObject({
+      ok: true,
+      jaConcluida: true
+    })
+    expect(goal(id)!.entries).toHaveLength(1)
+  })
+
+  it('update_goal edits fields and refuses an unknown project', () => {
+    const { scope } = seedProject()
+    const id = (both('create_goal', { title: 'Correr', target: 10 }, scope) as { id: string }).id
+    expect(both('update_goal', { id, newTitle: 'Correr 10k', target: 20 }, scope).ok).toBe(true)
+    expect(goal(id)).toMatchObject({ title: 'Correr 10k', target: 20 })
+    expect(both('update_goal', { id, projectId: 'nope' }, scope)).toEqual({
+      ok: false,
+      error: 'Projeto não encontrado.'
+    })
+  })
+
+  it('an ambiguous goal title returns candidatos', () => {
+    const { scope } = seedProject()
+    both('create_goal', { title: 'Meta', target: 1 }, scope)
+    both('create_goal', { title: 'meta', target: 2 }, scope)
+    expect(both('delete_goal', { title: 'Meta' }, scope)).toMatchObject({
+      ok: false,
+      error: 'Mais de um registro com esse título; use o id.'
+    })
+    expect(state().goals).toHaveLength(2)
+  })
+
+  it('delete_goal removes the goal', () => {
+    const { scope } = seedProject()
+    const id = (both('create_goal', { title: 'Meta', target: 1 }, scope) as { id: string }).id
+    expect(prepareMcpAction('delete_goal', { id }, scope)).toMatchObject({
+      resumo: 'Excluir meta "Meta"'
+    })
+    expect(applyMcpAction('delete_goal', { id }, scope).ok).toBe(true)
+    expect(goal(id)).toBeUndefined()
+  })
+})
+
+describe('MCP note writes', () => {
+  beforeEach(resetStore)
+
+  it('freeNotePosition skips occupied cells', () => {
+    expect(freeNotePosition([])).toEqual({ x: 100, y: 100 })
+    const at = (x: number, y: number): StickyNote =>
+      ({ x, y, width: 200, height: 150 }) as StickyNote
+    expect(freeNotePosition([at(100, 100)])).toEqual({ x: 320, y: 100 })
+    const row = [100, 320, 540, 760, 980].map((x) => at(x, 100))
+    expect(freeNotePosition(row)).toEqual({ x: 100, y: 270 })
+  })
+
+  it('create_note tiles instead of stacking at 100,100', () => {
+    const { id, scope } = seedProject()
+    for (const content of ['a', 'b', 'c'])
+      expect(both('create_note', { content }, scope).ok).toBe(true)
+    const notes = state().notes.filter((n) => n.projectId === id)
+    expect(new Set(notes.map((n) => `${n.x},${n.y}`)).size).toBe(3)
+  })
+
+  it('create_note validates color, update_note edits and delete_note removes', () => {
+    const { scope } = seedProject()
+    expect(both('create_note', { content: 'x', color: '#000000' }, scope)).toMatchObject({
+      ok: false
+    })
+    const id = (both('create_note', { content: 'Ideia' }, scope) as { id: string }).id
+    expect(both('update_note', { id, content: 'Ideia melhor' }, scope).ok).toBe(true)
+    expect(state().notes.find((n) => n.id === id)!.content).toBe('Ideia melhor')
+    expect(both('update_note', { id: 'nope', content: 'x' }, scope)).toEqual({
+      ok: false,
+      error: 'Nota não encontrada.'
+    })
+    expect(both('delete_note', { id }, scope).ok).toBe(true)
+    expect(state().notes).toHaveLength(0)
   })
 })
