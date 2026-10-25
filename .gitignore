@@ -11,3 +11,10 @@ resources/markitdown/bin/
 
 # Registro de progresso do workflow de agentes
 .sagyou/
+
+# Cópias de recuperação do banco: contêm dados pessoais, nunca versionar
+.recovery-*/
+*.db
+*.db-shm
+*.db-wal
+*.db.raw
