@@ -59,7 +59,7 @@ O `sagyou-mcp` (a ponte entre Codex, Claude Code e OpenCode e os dados do Sagyou
   - nome de projeto aparado e não duplicado (duplicado devolve o `projectId` existente, como no chat);
   - tabela financeira de outro perfil, ou ID de outro perfil → "Tabela indisponível nesta sessão MCP." (a mesma resposta para inexistente, para não vazar existência).
 - **Editar tarefa** só mexe nos campos enviados; `""`/`[]` limpam explicitamente; tags substituem a lista.
-- **Excluir tarefa** é exclusão definitiva com tombstone (mesmo `deleteTask` do app). Excluir projeto apaga também suas tarefas, notas e colunas, exatamente como o botão do app; o cartão mostra quantas tarefas e notas vão junto.
+- **Excluir tarefa** é exclusão definitiva com tombstone (mesmo `deleteTask` do app). Excluir projeto apaga o projeto e suas tarefas, exatamente como o botão do app (notas e metas ficam); o cartão mostra quantas tarefas vão junto. (Corrigido no plano: a versão aprovada dizia que as notas iam junto, o que o botão não faz.)
 - **Editar transação** passa por `applyFinancialTransactionEdit` (auditoria, `updatedAt`, limpa `reconciledAt` quando muda valor/data/tipo). Transação de pagamento de dívida não pode ser editada nem excluída pelo MCP: "Esta transação pertence a uma dívida; altere-a no Sagyou."
 - **Remover categoria** não reescreve transações antigas (mesma regra do app).
 - **Nota nova** usa uma posição livre no canvas (como `criar_nota` do chat), não empilha em (100,100).
