@@ -1231,3 +1231,104 @@ describe('Sagyou MCP broker', () => {
     expect(calls).toContain('goals:project-1:profile-1')
   })
 })
+
+describe('Sagyou MCP write tools', () => {
+  const baseDeps = {
+    listProjects: () => [],
+    readTasks: () => [],
+    readFinancial: () => [],
+    readProjectData: () => ({}),
+    searchMemory: () => [],
+    readMemory: () => null,
+    touchMemory: () => {},
+    memoriesForConflict: () => [],
+    saveMemory: async () => ({ ok: false }),
+    createTask: async () => ({ ok: true })
+  }
+
+  async function startWith(
+    write?: (
+      session: McpSession,
+      name: string,
+      args: Record<string, unknown>
+    ) => Promise<{ ok: true; id: string } | { ok: false; error: string }>,
+    permissions: readonly (typeof MCP_PERMISSIONS)[number][] = MCP_PERMISSIONS
+  ): Promise<ReturnType<typeof startSagyouMcpBroker>> {
+    const broker = startSagyouMcpBroker({ ...baseDeps, ...(write ? { write } : {}) })
+    servers.push(broker.server)
+    await new Promise<void>((resolve) => broker.server.once('listening', resolve))
+    broker.grant({
+      token: 'write-run',
+      runId: 'run-w',
+      projectId: 'project-1',
+      financialProfileId: 'personal',
+      permissions,
+      expiresAt: Date.now() + 10_000
+    })
+    return broker
+  }
+
+  const call = (port: number, name: string, args: object = {}): Promise<Record<string, unknown>> =>
+    request(port, {
+      jsonrpc: '2.0',
+      id: 7,
+      method: 'tools/call',
+      params: { token: 'write-run', name, arguments: args }
+    })
+
+  it('routes permitted write tools to deps.write with the session and arguments', async () => {
+    const write = vi.fn(async () => ({ ok: true as const, id: 'task-1' }))
+    const broker = await startWith(write)
+    const reply = await call(broker.port(), 'update_task', { id: 'task-1', priority: 'high' })
+    expect(write).toHaveBeenCalledWith(
+      expect.objectContaining({ runId: 'run-w', projectId: 'project-1' }),
+      'update_task',
+      { id: 'task-1', priority: 'high' }
+    )
+    expect(JSON.stringify(reply)).toContain('task-1')
+  })
+
+  it('lists write tools only when the session permits them', async () => {
+    const broker = await startWith(async () => ({ ok: true, id: 'x' }), ['ler_tasks'])
+    const listed = await request(broker.port(), {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/list',
+      params: { token: 'write-run' }
+    })
+    const names = ((listed.result as { tools: { name: string }[] }).tools ?? []).map((t) => t.name)
+    expect(names).toEqual(['ler_tasks'])
+    const refused = await call(broker.port(), 'delete_task', { id: 't' })
+    expect(refused.error).toBeDefined()
+  })
+
+  it('fails an unknown write name as unavailable', async () => {
+    const write = vi.fn(async () => ({ ok: true as const, id: 'x' }))
+    const broker = await startWith(write)
+    const reply = await call(broker.port(), 'delete_everything')
+    expect((reply.error as { message: string }).message).toBe(
+      'Ferramenta indisponível nesta sessão MCP.'
+    )
+    expect(write).not.toHaveBeenCalled()
+  })
+
+  it('returns a domain refusal as a reply with ok:false, not a JSON-RPC error', async () => {
+    const broker = await startWith(async () => ({ ok: false, error: 'Projeto não encontrado.' }))
+    const reply = await call(broker.port(), 'delete_project', { projectId: 'nope' })
+    expect(reply.error).toBeUndefined()
+    const text = (reply.result as { content: { text: string }[] }).content[0].text
+    expect(JSON.parse(text)).toEqual({ ok: false, error: 'Projeto não encontrado.' })
+  })
+
+  it('turns a thrown write into an ok:false reply', async () => {
+    const broker = await startWith(async () => {
+      throw new Error('O renderer não respondeu à ação MCP a tempo.')
+    })
+    const reply = await call(broker.port(), 'update_task', { id: 't' })
+    const text = (reply.result as { content: { text: string }[] }).content[0].text
+    expect(JSON.parse(text)).toEqual({
+      ok: false,
+      error: 'O renderer não respondeu à ação MCP a tempo.'
+    })
+  })
+})

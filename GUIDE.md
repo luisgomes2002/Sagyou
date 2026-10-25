@@ -273,10 +273,14 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    Apagar um lado sem o outro deixa órfão. **Não existem mais**
    `ai-conversations.json`, `chat-images/`, `chat-files/`, `ai-usage-log.json` nem
    `ai-run-metrics.json`: a migração os apagou — não os recrie.
-10. **Escrita pelo MCP passa pela fila de aprovação.** `save_memory` e `criar_task`
-    só executam depois da aprovação da run e do flush do renderer; recusa, timeout
-    ou limpeza rejeitam sem escrever. Ferramenta MCP nova que muta estado **tem**
-    que entrar nessa fila e ter permissão verificada em toda chamada.
+10. **Escrita pelo MCP passa pela fila da run.** Toda escrita é serializada, só
+    executa com a run viva e depois do flush do renderer. As de
+    `MCP_APPROVAL_REQUIRED` (exclusões, dinheiro, arquivar projeto, tabelas e perfis
+    financeiros) e as legadas `save_memory`/`criar_task` também esperam o cartão,
+    que o modo auto da run nunca responde; recusa,
+    timeout ou limpeza rejeitam sem escrever. Ferramenta MCP nova que muta estado
+    **tem** que entrar nessa fila, ser classificada nesse conjunto (um teste exige)
+    e revalidar no `apply` (`services/mcpActions.ts`).
 11. **Ferramenta de leitura que devolve menos do que existe tem que dizer isso**
     (`total`, `truncado`, `proximoInicio`). Sem o número do que ficou de fora, o
     agente afirma com confiança um total errado. Vale para o MCP e para
@@ -363,8 +367,8 @@ compatibilidade nem faça fallback silencioso para outro CLI.
   passam pelo MCP local com token criptográfico efêmero, projeto padrão e perfil
   financeiro congelados, e permissões verificadas em toda chamada. Nunca entregue
   SQLite, IPC interno, `loadData()` ou snapshot do store ao CLI. Escritas MCP
-  passam por uma fila de aprovação por run e pelo flush do Zustand; isso não
-  substitui a aprovação final do patch.
+  passam pela fila da run e pelo flush do Zustand (as arriscadas, também pelo
+  cartão — regra 10); isso não substitui a aprovação final do patch.
 - **Leituras MCP podem atravessar projetos** (`list_projects` revela IDs; as
   leituras aceitam `projectId`). Sem ele, sessões de projeto usam o projeto
   inicial e sessões gerais consultam todos. Financeiro permanece no perfil

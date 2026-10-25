@@ -810,3 +810,35 @@ describe('financial goal actions', () => {
     expect(progress).toBe(1)
   })
 })
+
+// ── renameFinancialProfile (MCP) ──────────────────────────────────────────────
+
+describe('renameFinancialProfile', () => {
+  beforeEach(resetStore)
+
+  it('trims, persists and bumps updatedAt', () => {
+    const id = useKanbanStore.getState().createFinancialProfile('Empresa')
+    const before = useKanbanStore.getState().financialProfiles.find((p) => p.id === id)!
+    expect(useKanbanStore.getState().renameFinancialProfile(id, '  Empresa LTDA  ')).toBe(true)
+    const after = useKanbanStore.getState().financialProfiles.find((p) => p.id === id)!
+    expect(after.name).toBe('Empresa LTDA')
+    expect(after.updatedAt >= before.updatedAt).toBe(true)
+  })
+
+  it('returns false for an empty name or a missing id', () => {
+    expect(
+      useKanbanStore.getState().renameFinancialProfile(DEFAULT_FINANCIAL_PROFILE_ID, '  ')
+    ).toBe(false)
+    expect(useKanbanStore.getState().renameFinancialProfile('nope', 'X')).toBe(false)
+  })
+
+  it('can rename the personal profile, keeping its id', () => {
+    expect(
+      useKanbanStore.getState().renameFinancialProfile(DEFAULT_FINANCIAL_PROFILE_ID, 'Casa')
+    ).toBe(true)
+    const p = useKanbanStore
+      .getState()
+      .financialProfiles.find((x) => x.id === DEFAULT_FINANCIAL_PROFILE_ID)!
+    expect(p.name).toBe('Casa')
+  })
+})
