@@ -326,13 +326,13 @@ describe('FleetView', () => {
 
   it('shows the one-time removal notice with the snapshot path and dismisses it', async () => {
     ;(window.electronAPI.legacyChat.notice as ReturnType<typeof vi.fn>).mockResolvedValue({
-      snapshotDir: 'C:\dados\backups\pre-remocao-chat-1'
+      snapshotDir: 'C:\\dados\\backups\\pre-remocao-chat-1'
     })
     render(<FleetView projects={projects} />)
 
     expect(
       await screen.findByText(
-        'O histórico de conversas foi removido. Um backup foi salvo em C:\dados\backups\pre-remocao-chat-1.'
+        'O histórico de conversas foi removido. Um backup foi salvo em C:\\dados\\backups\\pre-remocao-chat-1.'
       )
     ).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Fechar aviso' }))

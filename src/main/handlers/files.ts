@@ -26,7 +26,7 @@ export function registerFilesHandlers(
   ipcMain: IpcMain,
   deps: Deps
 ): void {
-  const { dialog: dlg, shell: sh, filesDir, taskImagesDir, userDataPath: _, sep } = deps
+  const { dialog: dlg, shell: sh, filesDir, taskImagesDir, sep } = deps
   // A just-uploaded file returns to the renderer before its debounced store
   // save reaches SQLite. Keep those known names for this process, then fall
   // back to the persisted metadata for files from earlier sessions.
