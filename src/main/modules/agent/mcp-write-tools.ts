@@ -358,6 +358,16 @@ export const MCP_DENIAL_MESSAGE: Record<string, string> = {
 
 export const MCP_RUN_ENDED = 'A execução MCP foi encerrada.'
 
+/**
+ * Whether turning a run's auto mode on may answer this pending card. Auto mode
+ * is about the code agent's own actions: a risky MCP write and the final patch
+ * delivery always need the user's explicit answer.
+ */
+export function autoApprovesPending(requestName: string): boolean {
+  if (requestName === 'aplicar_alteracoes_externas') return false
+  return !(requestName.startsWith('mcp:') && MCP_APPROVAL_REQUIRED.has(requestName.slice(4)))
+}
+
 /** Turns a queue outcome into the tool's reply; every refusal is an `ok: false` result. */
 export function mcpWriteResult(
   name: string,

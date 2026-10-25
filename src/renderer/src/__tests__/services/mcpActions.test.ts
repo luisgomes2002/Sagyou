@@ -710,6 +710,41 @@ describe('MCP financial writes', () => {
   })
 })
 
+describe('MCP review fixes', () => {
+  beforeEach(resetStore)
+
+  it('refuses every write while the store is not loaded, so an empty store is never saved', () => {
+    useKanbanStore.setState({ isLoaded: false })
+    const refusal = {
+      ok: false,
+      error: 'O Sagyou ainda está carregando ou bloqueado; tente de novo em instantes.'
+    }
+    expect(prepareMcpAction('create_project', { name: 'X' }, general)).toEqual(refusal)
+    expect(applyMcpAction('create_project', { name: 'X' }, general)).toEqual(refusal)
+    expect(state().projects).toHaveLength(0)
+  })
+
+  it('update_transaction refuses an amount below the sum of its details', () => {
+    const scope: McpScope = { projectId: null, financialProfileId: DEFAULT_FINANCIAL_PROFILE_ID }
+    const tableId = state().createList('Cartão', 'BRL', DEFAULT_FINANCIAL_PROFILE_ID)
+    const id = state().addTransaction(tableId, {
+      description: 'Fatura',
+      amount: '500',
+      type: 'expense',
+      date: '2026-10-01',
+      details: [
+        { id: 'd1', description: 'A', amount: '300' },
+        { id: 'd2', description: 'B', amount: '200' }
+      ]
+    })
+    expect(prepareMcpAction('update_transaction', { tableId, id, amount: '400' }, scope)).toEqual({
+      ok: false,
+      error: 'Os detalhes desta transação somam R$ 500,00; ajuste-os antes de reduzir o valor.'
+    })
+    expect(state().lists[0].transactions[0].amount).toBe('500')
+  })
+})
+
 describe('MCP handler coverage', () => {
   it('every renderer write tool has a handler', () => {
     for (const name of MCP_RENDERER_WRITE_TOOLS)

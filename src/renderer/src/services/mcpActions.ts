@@ -21,6 +21,7 @@ import {
 } from '../types'
 import { isDoneColumn } from '../utils/columns'
 import { todayLocalISO } from '../utils/dates'
+import { D } from '../utils/money'
 import { goalCurrent, goalKind, isGoalComplete, type GoalKind } from '../utils/goals'
 import type { McpActionResult, McpScope } from '../types/mcp-actions'
 
@@ -750,6 +751,15 @@ const updateTransaction: Handler = (args, scope, phase, store) => {
   const category = optionalText(args, 'category', LIMITS.category)
   if (category !== undefined) updates.category = category || undefined
   if (!Object.keys(updates).length) refuse('Nada para alterar.')
+  // updateTransaction silently keeps the old amount when its details exceed the new one.
+  const detailed = (transaction.details ?? []).reduce(
+    (total, detail) => total.plus(D(detail.amount)),
+    new Decimal(0)
+  )
+  if (updates.amount && detailed.greaterThan(new Decimal(updates.amount)))
+    refuse(
+      `Os detalhes desta transação somam ${formatMcpMoney(detailed.toString(), table.currency)}; ajuste-os antes de reduzir o valor.`
+    )
   const value = formatMcpMoney(updates.amount ?? transaction.amount, table.currency)
   const label = TYPE_LABEL[updates.type ?? transaction.type]
   const resumo = `Editar ${label} "${transaction.description}" em ${table.name} (${value})`
@@ -851,6 +861,13 @@ const HANDLERS: Record<string, Handler> = {
 function run(name: string, args: Args, scope: McpScope, phase: Phase): McpActionResult {
   const handler = HANDLERS[name]
   if (!handler) return { ok: false, error: 'Ferramenta indisponível nesta sessão MCP.' }
+  // Before loadData (lock screen, reload) the store is empty: flushing it would
+  // save an empty state over the database, so nothing may be written yet.
+  if (!useKanbanStore.getState().isLoaded)
+    return {
+      ok: false,
+      error: 'O Sagyou ainda está carregando ou bloqueado; tente de novo em instantes.'
+    }
   try {
     return handler(args ?? {}, scope, phase, useKanbanStore.getState())
   } catch (error) {
