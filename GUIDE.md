@@ -490,7 +490,10 @@ activeTimers[0]` no `settings` do DB (não viaja no backup); `normalizeTimers`
   inicial só para habilitar paralelismo.
 - **O terminal é xterm conectado ao PTY** (`AgentTerminal.tsx`): preserva cursor,
   ANSI e teclado completos; o caminho arquivado usa `utils/ansi.ts`
-  (`parseAnsi`, puro e testado).
+  (`parseAnsi`, puro e testado). ⚠️ Cada PTY vivo mantém um único xterm
+  (`liveTerminals.ts`) até sair; trocar de sessão só desanexa o elemento. Não
+  recrie o xterm a partir do buffer de 8000 caracteres do main, e não chame
+  `status()` a cada chunk de saída (ver CLAUDE.md, Fleet).
 - ⚠️ **O agente não commita nada** — o painel de Mudanças existe pra o _usuário_
   revisar e commitar.
 - **Handlers em `main/handlers/` recebem dependências via injeção.**

@@ -1,5 +1,5 @@
 import { act, render, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const xterm = vi.hoisted(() => {
   const instances: Array<{
@@ -9,6 +9,7 @@ const xterm = vi.hoisted(() => {
     resize: ReturnType<typeof vi.fn>
     reset: ReturnType<typeof vi.fn>
     open: ReturnType<typeof vi.fn>
+    refresh: ReturnType<typeof vi.fn>
     dispose: ReturnType<typeof vi.fn>
     loadAddon: ReturnType<typeof vi.fn>
     onData: ReturnType<typeof vi.fn>
@@ -28,6 +29,7 @@ const xterm = vi.hoisted(() => {
       }),
       reset: vi.fn(),
       open: vi.fn(),
+      refresh: vi.fn(),
       dispose: vi.fn(),
       loadAddon: vi.fn(),
       onData: vi.fn((listener: (data: string) => void) => {
@@ -52,13 +54,29 @@ vi.mock('@xterm/addon-fit', () => ({ FitAddon: xterm.FitAddon }))
 vi.mock('@xterm/xterm/css/xterm.css', () => ({}))
 
 import { AgentTerminal } from '../../components/ai/AgentTerminal'
+import { disposeAllLiveTerminals } from '../../components/ai/liveTerminals'
 
 class ResizeObserverMock {
   observe = vi.fn()
   disconnect = vi.fn()
 }
 
+type OutputListener = (payload: { runId: string; chunk: string }) => void
+type ExitListener = (payload: { runId: string; code: number }) => void
+
 describe('AgentTerminal', () => {
+  let emitOutput: OutputListener
+  let emitExit: ExitListener
+
+  const props = (runId: string): Parameters<typeof AgentTerminal>[0] & { interactive: true } => ({
+    interactive: true as const,
+    runId,
+    log: '',
+    running: true,
+    onInput: async () => {},
+    onResize: async () => {}
+  })
+
   beforeEach(() => {
     xterm.instances.length = 0
     vi.stubGlobal('ResizeObserver', ResizeObserverMock)
@@ -75,24 +93,26 @@ describe('AgentTerminal', () => {
         log: 'restored\\r\\n',
         cols: 132,
         rows: 48
-      }))
+      })),
+      onOutput: vi.fn((listener: OutputListener) => {
+        emitOutput = listener
+        return vi.fn()
+      }),
+      onExit: vi.fn((listener: ExitListener) => {
+        emitExit = listener
+        return vi.fn()
+      })
     } as never
   })
 
-  it('reconnects the existing PTY buffer, forwards raw input and cleans up the xterm instance', async () => {
+  afterEach(() => {
+    disposeAllLiveTerminals()
+  })
+
+  it('reconnects the existing PTY buffer and forwards raw input', async () => {
     const onInput = vi.fn(async () => {})
-    const onResize = vi.fn(async () => {})
-    const { unmount } = render(
-      <AgentTerminal
-        interactive
-        runId="run-owned"
-        log=""
-        running
-        initialCols={100}
-        initialRows={30}
-        onInput={onInput}
-        onResize={onResize}
-      />
+    render(
+      <AgentTerminal {...props('run-owned')} initialCols={100} initialRows={30} onInput={onInput} />
     )
 
     const terminal = xterm.instances[0]
@@ -102,79 +122,54 @@ describe('AgentTerminal', () => {
 
     await act(async () => xterm.input('\u0003\u001b[A'))
     expect(onInput).toHaveBeenCalledWith('\u0003\u001b[A')
-
-    unmount()
-    expect(terminal.dispose).toHaveBeenCalledOnce()
   })
 
-  it('appends only new output when the bounded log rolls without resetting the viewport', async () => {
-    ;(
-      window.electronAPI.ai.codeAgent.terminalReconnect as ReturnType<typeof vi.fn>
-    ).mockResolvedValue({
-      success: false
-    })
-    const { rerender } = render(
-      <AgentTerminal
-        interactive
-        runId="run-owned"
-        log="first"
-        running
-        onInput={async () => {}}
-        onResize={async () => {}}
-      />
-    )
+  it('writes PTY chunks straight from the output event, only for its own run', async () => {
+    render(<AgentTerminal {...props('run-owned')} />)
     const terminal = xterm.instances[0]
     await waitFor(() => expect(terminal.write).toHaveBeenCalled())
     terminal.write.mockClear()
 
-    rerender(
-      <AgentTerminal
-        interactive
-        runId="run-owned"
-        log="first second"
-        running
-        onInput={async () => {}}
-        onResize={async () => {}}
-      />
-    )
-    expect(terminal.write).toHaveBeenCalledWith(' second', expect.any(Function))
+    act(() => {
+      emitOutput({ runId: 'run-owned', chunk: '\u001b[2J frame' })
+      emitOutput({ runId: 'run-other', chunk: 'not mine' })
+    })
 
-    terminal.buffer.active.viewportY = 2
-    terminal.buffer.active.baseY = 12
-    terminal.write.mockClear()
-
-    rerender(
-      <AgentTerminal
-        interactive
-        runId="run-owned"
-        log="second third"
-        running
-        onInput={async () => {}}
-        onResize={async () => {}}
-      />
-    )
-    expect(terminal.reset).not.toHaveBeenCalled()
-    expect(terminal.write).toHaveBeenCalledWith(' third', expect.any(Function))
-    expect(terminal.scrollToLine).toHaveBeenCalledWith(2)
+    expect(terminal.write).toHaveBeenCalledOnce()
+    expect(terminal.write).toHaveBeenCalledWith('\u001b[2J frame', expect.any(Function))
   })
 
-  it('ignores an older status after reconnect, then appends only fresh bytes', async () => {
-    const props = {
-      interactive: true as const,
-      runId: 'run-owned',
-      running: true,
-      onInput: async () => {},
-      onResize: async () => {}
-    }
-    const { rerender } = render(<AgentTerminal {...props} log="" />)
+  // Switching sessions used to dispose the xterm and rebuild it from main's last
+  // 8000 raw characters, which start mid-redraw for a full-screen CLI: the
+  // screen came back blank or scrambled until the CLI repainted.
+  it('keeps the same terminal alive across a session switch and feeds it while hidden', async () => {
+    const { rerender } = render(<AgentTerminal {...props('run-A')} />)
+    const terminalA = xterm.instances[0]
+    await waitFor(() => expect(terminalA.write).toHaveBeenCalled())
+
+    rerender(<AgentTerminal {...props('run-B')} />)
+    await waitFor(() => expect(xterm.instances).toHaveLength(2))
+    terminalA.write.mockClear()
+
+    act(() => emitOutput({ runId: 'run-A', chunk: 'while hidden' }))
+    expect(terminalA.write).toHaveBeenCalledWith('while hidden', expect.any(Function))
+
+    rerender(<AgentTerminal {...props('run-A')} />)
+
+    expect(xterm.instances).toHaveLength(2)
+    expect(terminalA.dispose).not.toHaveBeenCalled()
+    expect(terminalA.open).toHaveBeenCalledOnce()
+    expect(window.electronAPI.ai.codeAgent.terminalReconnect).toHaveBeenCalledTimes(2)
+  })
+
+  it('disposes the terminal when its PTY exits', async () => {
+    const { unmount } = render(<AgentTerminal {...props('run-owned')} />)
     const terminal = xterm.instances[0]
-    await waitFor(() => expect(terminal.write).toHaveBeenCalledOnce())
-    terminal.write.mockClear()
+    await waitFor(() => expect(terminal.write).toHaveBeenCalled())
+    unmount()
+    expect(terminal.dispose).not.toHaveBeenCalled()
 
-    rerender(<AgentTerminal {...props} log="restor" />)
-    expect(terminal.write).not.toHaveBeenCalled()
-
-    rerender(<AgentTerminal {...props} log="restored\r\nmore" />)
-    expect(terminal.write).toHaveBeenCalledWith('more', expect.any(Function))
+    act(() => emitExit({ runId: 'run-owned', code: 0 }))
+    expect(terminal.dispose).toHaveBeenCalledOnce()
   })
 })
