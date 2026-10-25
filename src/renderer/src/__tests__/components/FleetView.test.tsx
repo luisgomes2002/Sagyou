@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { act, render, screen } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import { FleetView } from '../../components/ai/FleetView'
@@ -32,7 +32,6 @@ function makeRun(overrides: Record<string, unknown> = {}) {
     hint: null,
     progress: { step: 3, maxSteps: 40, promptTokens: 1500, completionTokens: 300 },
     approval: null,
-    toolEvent: { phase: 'call', name: 'ler_arquivo' },
     ...overrides
   }
 }
@@ -59,7 +58,6 @@ beforeEach(() => {
     onApproveRequest: vi.fn(() => vi.fn()),
     onQuestion: vi.fn(() => vi.fn()),
     onHint: vi.fn(() => vi.fn()),
-    onToolEvent: vi.fn(() => vi.fn()),
     onArchived: vi.fn(() => vi.fn()),
     runs: vi.fn().mockResolvedValue([]),
     runGet: vi.fn().mockResolvedValue(null),
@@ -229,41 +227,6 @@ describe('FleetView', () => {
     expect(screen.getByRole('heading', { name: 'tarefa B' })).toBeInTheDocument()
   })
 
-  it('shows what a code agent is doing and its step progress', async () => {
-    oneRun()
-    render(<FleetView projects={projects} />)
-
-    expect(
-      await screen.findByRole('progressbar', { name: 'Progresso da execução' })
-    ).toBeInTheDocument()
-    expect(screen.getAllByText('3/40').length).toBeGreaterThan(0)
-  })
-
-  it('turns live tool events into a visible activity timeline', async () => {
-    oneRun()
-    let onToolEvent: ((event: Record<string, unknown>) => void) | undefined
-    ;(window.electronAPI.ai.codeAgent.onToolEvent as ReturnType<typeof vi.fn>).mockImplementation(
-      (callback) => {
-        onToolEvent = callback
-        return vi.fn()
-      }
-    )
-
-    render(<FleetView projects={projects} />)
-    await screen.findByRole('heading', { name: 'Corrigir bug no login' })
-    act(() => {
-      onToolEvent?.({
-        runId: 'run-1',
-        phase: 'call',
-        name: 'ler_arquivo',
-        args: { caminho: 'src/App.tsx' }
-      })
-    })
-
-    expect(await screen.findByText('Atividade recente')).toBeInTheDocument()
-    expect(screen.getByText(/Lendo src\/App.tsx/)).toBeInTheDocument()
-  })
-
   it('shows only the current step for an unlimited agent', async () => {
     oneRun({ progress: { step: 15, maxSteps: 0, promptTokens: 100, completionTokens: 20 } })
     render(<FleetView projects={projects} />)
@@ -272,19 +235,14 @@ describe('FleetView', () => {
     expect(screen.queryByText('15/0')).not.toBeInTheDocument()
   })
 
-  it('shows the token spend per code agent — input and output', async () => {
-    oneRun()
-    render(<FleetView projects={projects} />)
-
-    expect(await screen.findByText(/↑ 1,500 entrada/)).toBeInTheDocument()
-    expect(screen.getByText(/↓ 300 saída/)).toBeInTheDocument()
-  })
-
-  it('reports in the context tab what the harness does not expose', async () => {
+  it('the inspector shows only the context, without activity or changes tabs', async () => {
     oneRun({ harness: 'codex', codeRoot: '/home/user/projeto-um', worktreeDir: '/tmp/run-1' })
     render(<FleetView projects={projects} />)
 
-    await userEvent.click(await screen.findByRole('tab', { name: 'Contexto' }))
+    const inspector = await screen.findByRole('complementary', { name: 'Inspetor' })
+    expect(within(inspector).getByRole('heading', { name: 'Contexto' })).toBeInTheDocument()
+    expect(within(inspector).queryByRole('tab')).not.toBeInTheDocument()
+    expect(within(inspector).getByText('Tokens')).toBeInTheDocument()
     expect(screen.getByText('/tmp/run-1')).toBeInTheDocument()
     expect(screen.getByText('não informado pelo harness')).toBeInTheDocument()
     expect(window.electronAPI.ai.codeAgent.terminalInput).not.toHaveBeenCalled()

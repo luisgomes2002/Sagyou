@@ -1,34 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
 
-/** Label for a tool call of the native code agent (legacy executor). */
-function describeToolActivity(name: string, args: Record<string, unknown>): string {
-  const str = (v: unknown): string => (typeof v === 'string' && v.trim() !== '' ? v : '')
-  switch (name) {
-    case 'listar_arquivos': {
-      const sub = str(args.subpasta)
-      return sub ? `Listando os arquivos em ${sub}` : 'Listando os arquivos do projeto'
-    }
-    case 'ler_arquivo': {
-      const caminho = str(args.caminho)
-      return caminho ? `Lendo ${caminho}` : 'Lendo um arquivo'
-    }
-    case 'buscar_no_codigo': {
-      const termo = str(args.termo)
-      return termo ? `Buscando "${termo}" no código` : 'Buscando no código'
-    }
-    case 'escrever_arquivo': {
-      const caminho = str(args.caminho)
-      return caminho ? `Escrevendo ${caminho}` : 'Escrevendo um arquivo'
-    }
-    case 'executar_comando': {
-      const comando = str(args.comando)
-      return comando ? `Executando ${comando}` : 'Executando um comando'
-    }
-    default:
-      return name
-  }
-}
-
 export interface CodeAgentRunUI {
   id: string
   dir: string
@@ -59,14 +30,6 @@ export interface CodeAgentRunUI {
   terminalRows?: number
   /** Questions pause a run until the user supplies an answer. */
   questions: { id: string; question: string }[]
-  /** Structured activity emitted for every tool call and result. */
-  events: {
-    id: string
-    name: string
-    detail: string
-    phase: 'call' | 'result'
-    at: number
-  }[]
   /** Pending approval requests — shown inline until the user acts on them. */
   approvals: {
     id: string
@@ -123,7 +86,6 @@ export function useCodeAgentRuns(): {
             terminalCols: r.terminalCols,
             terminalRows: r.terminalRows,
             questions: r.questions ?? existing?.questions ?? [],
-            events: existing?.events ?? [],
             approvals: r.approvals ?? existing?.approvals ?? []
           }
         })
@@ -211,35 +173,7 @@ export function useCodeAgentRuns(): {
       )
     })
 
-    // 8. Tool events are more useful than raw output for a live UI: they tell
-    // the user what the agent is doing even when the model emits no prose.
-    const offToolEvent = window.electronAPI.ai.codeAgent.onToolEvent((event) => {
-      const detail =
-        event.phase === 'result'
-          ? event.summary || 'Etapa concluída'
-          : describeToolActivity(event.name, event.args ?? {})
-      setRuns((prev) =>
-        prev.map((run) =>
-          run.id === event.runId
-            ? {
-                ...run,
-                events: [
-                  ...run.events.slice(-23),
-                  {
-                    id: `${event.name}-${event.phase}-${Date.now()}-${Math.random()}`,
-                    name: event.name,
-                    detail,
-                    phase: event.phase,
-                    at: Date.now()
-                  }
-                ]
-              }
-            : run
-        )
-      )
-    })
-
-    // 9. Questions also appear on the run card, not only in the modal, so the
+    // 8. Questions also appear on the run card, not only in the modal, so the
     // user can tell why that agent is paused when several are active.
     const offQuestion = window.electronAPI.ai.codeAgent.onQuestion((question) => {
       setRuns((prev) =>
@@ -257,7 +191,7 @@ export function useCodeAgentRuns(): {
       )
     })
 
-    // 10. Environment hint mid-run (sandbox blocked, etc.)
+    // 9. Environment hint mid-run (sandbox blocked, etc.)
     const offHint = window.electronAPI.ai.codeAgent.onHint((hint) => {
       setRuns((prev) =>
         prev.map((r) =>
@@ -275,7 +209,6 @@ export function useCodeAgentRuns(): {
       offExit()
       offAutoChanged()
       offApproveRequest()
-      offToolEvent()
       offQuestion()
       offHint()
     }

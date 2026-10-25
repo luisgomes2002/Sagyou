@@ -442,23 +442,6 @@ export const api = {
           ipcRenderer.removeListener('ai:code-agent:exit', handler)
         }
       },
-      // Structured tool events (native agent): a tool call being run, then its
-      // result summary — so the panel can show the run's steps live (task 6/11).
-      onToolEvent: (
-        cb: (ev: {
-          runId: string
-          phase: 'call' | 'result'
-          name: string
-          args?: Record<string, unknown>
-          summary?: string
-        }) => void
-      ) => {
-        const handler = (_: Electron.IpcRendererEvent, ev: Parameters<typeof cb>[0]): void => cb(ev)
-        ipcRenderer.on('ai:code-agent:tool', handler)
-        return (): void => {
-          ipcRenderer.removeListener('ai:code-agent:tool', handler)
-        }
-      },
       // The loop is parked on a write/command and needs the user's OK (task 9).
       onApproveRequest: (
         cb: (req: {
