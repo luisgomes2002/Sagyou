@@ -1,0 +1,29 @@
+{
+  "id": "memory-read",
+  "description": "Recupera uma preferência antiga sem tratá-la como instrução nova.",
+  "messages": [
+    { "role": "user", "content": "Que horário eu tinha dito que prefiro para tarefas criativas?" }
+  ],
+  "rubric": {
+    "passThreshold": 4,
+    "criteria": [
+      "Responde que a preferência registrada é pela manhã.",
+      "Apresenta a informação como preferência histórica, sem alterar agenda ou tasks."
+    ],
+    "tools": [{ "kind": "called", "name": "buscar_memoria" }]
+  },
+  "availableTools": ["buscar_memoria"],
+  "toolResults": {
+    "buscar_memoria": {
+      "memorias": [
+        {
+          "titulo": "Horário criativo",
+          "body": "Prefiro tarefas criativas pela manhã.",
+          "sourceConversationId": "exemplo-1"
+        }
+      ]
+    }
+  },
+  "tags": ["memoria", "leitura"],
+  "schemaVersion": "3.6.0"
+}

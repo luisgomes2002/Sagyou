@@ -1,0 +1,363 @@
+import type { StateCreator } from 'zustand'
+import { v4 as uuidv4 } from 'uuid'
+import type {
+  Backup,
+  AIJson,
+  Project,
+  Task,
+  TaskImage,
+  Sprint,
+  Tombstone,
+  StickyNote,
+  Goal,
+  Habit,
+  FinancialTable,
+  FinancialProfile,
+  StoredFile,
+  TimeBlock,
+  Routine,
+  AiMemory,
+  Priority,
+  ActiveTimer,
+  FeatureId,
+  UiPreferences
+} from '../../types'
+import {
+  DEFAULT_FINANCIAL_PROFILE_ID,
+  normalizeFeaturePreferences,
+  normalizeUiPreferences
+} from '../../types'
+import {
+  normalizeFinancialProfiles,
+  normalizeFinancialTable,
+  normalizeProject
+} from '../normalization'
+
+interface StorageDep {
+  exportBackup: (backup: Backup) => Promise<{ success: boolean }>
+  autoSaveBackup: (backup: Backup, force?: boolean) => Promise<{ success: boolean }>
+  commitBackupBlobs: () => Promise<{ success: boolean }>
+  importBackup: () => Promise<{
+    success: boolean
+    cancelled?: boolean
+    data?: unknown
+    error?: string
+  }>
+  importAIJson: () => Promise<{ success: boolean; cancelled?: boolean; data?: unknown }>
+  loadMemories: () => Promise<AiMemory[]>
+  replaceMemories: (list: AiMemory[]) => Promise<void>
+  rebuildSearchIndex: () => Promise<void>
+}
+
+export interface BackupSlice {
+  exportBackup: (automatic?: boolean, force?: boolean) => Promise<boolean>
+  importBackup: () => Promise<boolean>
+  importAIJson: (projectId: string) => Promise<number>
+  importTasksFromAIChat: (projectId: string, tasks: AIJson['tasks']) => number
+}
+
+export function createBackupSlice(storage: StorageDep): StateCreator<
+  BackupSlice & {
+    _persist: () => void
+    _flushPersist: () => Promise<void>
+    projects: Project[]
+    tasks: Task[]
+    sprints: Sprint[]
+    tombstones: Tombstone[]
+    notes: StickyNote[]
+    goals: Goal[]
+    habits: Habit[]
+    lists: FinancialTable[]
+    financialProfiles: FinancialProfile[]
+    activeFinancialProfileId: string
+    featurePreferences?: FeatureId[]
+    uiPreferences: UiPreferences
+    files: StoredFile[]
+    timeBlocks: TimeBlock[]
+    routines: Routine[]
+    activeTimers: ActiveTimer[]
+    activeProjectId: string | null
+  },
+  [],
+  [],
+  BackupSlice
+> {
+  return (set, get) => ({
+    exportBackup: async (automatic = false, force = false) => {
+      const {
+        projects,
+        tasks,
+        sprints,
+        tombstones,
+        notes,
+        goals,
+        habits,
+        lists,
+        financialProfiles,
+        activeFinancialProfileId,
+        featurePreferences,
+        uiPreferences
+      } = get()
+      // AI memory rides along like chat history — same store-external treatment,
+      // same "a failure here shouldn't cost the rest of the backup" guard.
+      let memories: AiMemory[] = []
+      try {
+        memories = await storage.loadMemories()
+      } catch {
+        if (automatic) return false
+        memories = []
+      }
+      const backup: Backup = {
+        version: 7,
+        exportedAt: new Date().toISOString(),
+        projects,
+        tasks,
+        sprints,
+        tombstones,
+        notes,
+        goals,
+        habits,
+        lists,
+        financialProfiles,
+        activeFinancialProfileId,
+        featurePreferences,
+        uiPreferences,
+        memories,
+        // Attachment metadata (new in v5). The physical bytes (fileBlobs) and the
+        // chat images are attached by the main process at write time — see the
+        // backup:export handler; keeping them out of the renderer avoids shipping
+        // megabytes of base64 over IPC.
+        files: get().files,
+        timeBlocks: get().timeBlocks,
+        routines: get().routines
+      }
+      const result = automatic
+        ? await storage.autoSaveBackup(backup, force)
+        : await storage.exportBackup(backup)
+      return result.success
+    },
+
+    importBackup: async () => {
+      const result = await storage.importBackup()
+      if (result.error) throw new Error(result.error)
+      if (!result.success || result.cancelled || !result.data) return false
+
+      const backup = result.data as Backup
+
+      // Save the current data and blobs before changing either side of the store.
+      if (!(await get().exportBackup(true, true))) return false
+
+      // Keep every source that an import can replace. The main process stages
+      // blobs until commit; this snapshot lets us restore data, chats and memory
+      // if any later write fails instead of reporting a partial import as done.
+      const previous = {
+        projects: get().projects,
+        tasks: get().tasks,
+        sprints: get().sprints,
+        tombstones: get().tombstones,
+        notes: get().notes,
+        goals: get().goals,
+        habits: get().habits,
+        lists: get().lists,
+        financialProfiles: get().financialProfiles,
+        activeFinancialProfileId: get().activeFinancialProfileId,
+        files: get().files,
+        timeBlocks: get().timeBlocks,
+        routines: get().routines,
+        featurePreferences: get().featurePreferences,
+        uiPreferences: get().uiPreferences,
+        activeProjectId: get().activeProjectId,
+        activeTimers: get().activeTimers
+      }
+      const previousMemories = Array.isArray(backup.memories) ? await storage.loadMemories() : null
+
+      const tombstones: Tombstone[] = backup.tombstones || []
+      const tombstoneIds = new Set(tombstones.map((t) => t.id))
+
+      const projects = (backup.projects || [])
+        .filter((p: Project) => !tombstoneIds.has(p.id))
+        .map(normalizeProject)
+      // Legacy task images carried their bytes inline (`dataUrl`); a v5+ backup has
+      // them as metadata with the bytes already written to disk by backup:import.
+      // Convert any inline image to a disk file so the store only ever holds metadata.
+      const tasks: Task[] = await Promise.all(
+        (backup.tasks || [])
+          .filter((t: Task) => !tombstoneIds.has(t.id))
+          .map(async (t: Task) => {
+            if (!t.images?.some((img) => img.dataUrl)) return t
+            const images: TaskImage[] = []
+            for (const img of t.images) {
+              if (img.dataUrl) {
+                const res = await window.electronAPI.taskImages.save(img.dataUrl)
+                if ('error' in res) continue // undecodable → drop it, no dangling ref
+                images.push({
+                  id: res.id,
+                  name: img.name,
+                  ext: res.ext,
+                  size: res.size,
+                  addedAt: img.addedAt
+                })
+              } else {
+                images.push(img)
+              }
+            }
+            return { ...t, images }
+          })
+      )
+      const sprints: Sprint[] = backup.sprints || []
+      const notes: StickyNote[] = backup.notes || []
+      const goals: Goal[] = backup.goals || []
+
+      const localHabits = get().habits
+      const habits: Habit[] = (backup.habits || []).map((h: Habit) => {
+        const local = localHabits.find((lh) => lh.id === h.id)
+        if (!local) return h
+        return { ...h, completions: [...new Set([...local.completions, ...h.completions])] }
+      })
+
+      const safeFinancialProfiles = normalizeFinancialProfiles(backup.financialProfiles)
+      const financialProfileIds = new Set(safeFinancialProfiles.map((profile) => profile.id))
+      const activeFinancialProfileId =
+        typeof backup.activeFinancialProfileId === 'string' &&
+        financialProfileIds.has(backup.activeFinancialProfileId)
+          ? backup.activeFinancialProfileId
+          : DEFAULT_FINANCIAL_PROFILE_ID
+      const lists: FinancialTable[] = (backup.lists || [])
+        .map(normalizeFinancialTable)
+        .map((list) => ({
+          ...list,
+          profileId: financialProfileIds.has(list.profileId ?? '')
+            ? list.profileId
+            : DEFAULT_FINANCIAL_PROFILE_ID
+        }))
+
+      const activeProjectId = projects[0]?.id ?? null
+
+      // v5+ carries attachment metadata (and the main process has already written
+      // the blobs to disk during backup:import). A pre-v5 backup has no `files`
+      // key — leave the local attachments untouched rather than wiping them.
+      const files: StoredFile[] = Array.isArray(backup.files) ? backup.files : get().files
+      const timeBlocks: TimeBlock[] = Array.isArray(backup.timeBlocks)
+        ? backup.timeBlocks
+        : get().timeBlocks
+      const routines: Routine[] = Array.isArray(backup.routines) ? backup.routines : get().routines
+      // Older backups do not have this preference, so don't reset a choice the
+      // user has already made on this machine.
+      const featurePreferences = Array.isArray(backup.featurePreferences)
+        ? (normalizeFeaturePreferences(backup.featurePreferences) ?? [])
+        : get().featurePreferences
+      const uiPreferences = backup.uiPreferences
+        ? normalizeUiPreferences(backup.uiPreferences)
+        : get().uiPreferences
+      set({
+        projects,
+        tasks,
+        sprints,
+        tombstones,
+        notes,
+        goals,
+        habits,
+        lists,
+        financialProfiles: safeFinancialProfiles,
+        activeFinancialProfileId,
+        files,
+        timeBlocks,
+        routines,
+        featurePreferences,
+        uiPreferences,
+        activeProjectId,
+        activeTimers: []
+      })
+      try {
+        await get()._flushPersist()
+
+        // Same rule for memory (v4+): absent key = leave local memory untouched.
+        // Written after the store flush above, so projects exist when a memory's
+        // FK is checked (see replaceMemories).
+        if (Array.isArray(backup.memories)) {
+          await storage.replaceMemories(backup.memories)
+        }
+        const blobs = await storage.commitBackupBlobs()
+        if (!blobs.success) throw new Error('Não foi possível restaurar os anexos do backup.')
+        // The backup spans two sources (store, memory). Rebuild
+        // after all of them have settled so no row from the previous state survives.
+        await storage.rebuildSearchIndex()
+        return true
+      } catch (error) {
+        set(previous)
+        try {
+          await get()._flushPersist()
+          if (previousMemories) await storage.replaceMemories(previousMemories)
+          await storage.rebuildSearchIndex()
+        } catch (rollbackError) {
+          throw new Error(
+            `A restauração falhou e não foi possível concluir a reversão: ${rollbackError instanceof Error ? rollbackError.message : 'erro desconhecido'}`
+          )
+        }
+        throw new Error(
+          `A restauração falhou; os dados anteriores foram preservados. ${error instanceof Error ? error.message : ''}`.trim()
+        )
+      }
+    },
+
+    importAIJson: async (projectId) => {
+      const result = await storage.importAIJson()
+      if (!result.success || result.cancelled || !result.data) return 0
+
+      const aiJson = result.data as AIJson
+      if (!Array.isArray(aiJson.tasks) || aiJson.tasks.length === 0) return 0
+
+      return get().importTasksFromAIChat(projectId, aiJson.tasks)
+    },
+
+    // Create tasks directly from an AI-produced task list (no file dialog).
+    // Shares the column/sprint-matching logic used by importAIJson.
+    importTasksFromAIChat: (projectId, inputs) => {
+      if (!Array.isArray(inputs) || inputs.length === 0) return 0
+
+      const { projects, tasks, sprints } = get()
+      const project = projects.find((p) => p.id === projectId)
+      if (!project) return 0
+
+      const now = new Date().toISOString()
+      const columnTaskCounts: Record<string, number> = {}
+      for (const t of tasks.filter((t) => t.projectId === projectId)) {
+        columnTaskCounts[t.columnId] = (columnTaskCounts[t.columnId] ?? 0) + 1
+      }
+
+      const projectSprints = sprints.filter((s) => s.projectId === projectId)
+
+      const newTasks: Task[] = inputs.map((input) => {
+        const col =
+          project.columns.find(
+            (c) => c.name.toLowerCase() === (input.column ?? '').toLowerCase()
+          ) ?? project.columns[0]
+        const order = columnTaskCounts[col.id] ?? 0
+        columnTaskCounts[col.id] = order + 1
+
+        const matchedSprint = input.sprint
+          ? projectSprints.find((s) => s.name.toLowerCase() === input.sprint!.toLowerCase())
+          : undefined
+
+        return {
+          id: uuidv4(),
+          projectId,
+          columnId: col.id,
+          title: input.title,
+          description: input.description,
+          priority: (input.priority as Priority) ?? 'medium',
+          dueDate: input.dueDate,
+          tags: input.tags ?? [],
+          sprintId: matchedSprint?.id,
+          order,
+          createdAt: now,
+          updatedAt: now
+        }
+      })
+
+      set((s) => ({ tasks: [...s.tasks, ...newTasks] }))
+      get()._persist()
+      return newTasks.length
+    }
+  })
+}

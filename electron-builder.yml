@@ -1,5 +1,6 @@
 appId: com.sagyou.app
 productName: Sagyou
+icon: build/icon.png
 directories:
   buildResources: build
 files:
@@ -12,6 +13,9 @@ files:
 asarUnpack:
   - resources/**
   - '**/*.node'
+extraResources:
+  - from: resources/markitdown/bin
+    to: markitdown
 win:
   executableName: sagyou
 nsis:
@@ -38,7 +42,9 @@ linux:
   category: Utility
 appImage:
   artifactName: ${name}-${version}.${ext}
-npmRebuild: true
+# Native dependencies used here ship N-API prebuilds for the supported platforms.
+# Rebuilding node-pty on Windows needlessly requires the MSVC Spectre toolchain.
+npmRebuild: false
 publish:
   provider: generic
   url: https://example.com/auto-updates

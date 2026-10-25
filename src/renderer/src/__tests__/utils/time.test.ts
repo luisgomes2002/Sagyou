@@ -2,39 +2,39 @@ import { describe, it, expect } from 'vitest'
 import { formatDuration } from '../../utils/time'
 
 describe('formatDuration', () => {
-  it('returns "0s" for zero', () => {
-    expect(formatDuration(0)).toBe('0s')
+  it('returns "00:00" for zero', () => {
+    expect(formatDuration(0)).toBe('00:00')
   })
 
-  it('returns "0s" for negative values', () => {
-    expect(formatDuration(-5)).toBe('0s')
+  it('returns "00:00" for negative values', () => {
+    expect(formatDuration(-5)).toBe('00:00')
   })
 
-  it('formats pure seconds', () => {
-    expect(formatDuration(1)).toBe('1s')
-    expect(formatDuration(45)).toBe('45s')
-    expect(formatDuration(59)).toBe('59s')
+  it('formats seconds as MM:SS', () => {
+    expect(formatDuration(1)).toBe('00:01')
+    expect(formatDuration(45)).toBe('00:45')
+    expect(formatDuration(59)).toBe('00:59')
   })
 
-  it('formats minutes without seconds', () => {
-    expect(formatDuration(60)).toBe('1m')
-    expect(formatDuration(120)).toBe('2m')
-    expect(formatDuration(3599)).toBe('59m')
+  it('formats minutes as MM:SS', () => {
+    expect(formatDuration(60)).toBe('01:00')
+    expect(formatDuration(120)).toBe('02:00')
+    expect(formatDuration(3599)).toBe('59:59')
   })
 
-  it('formats hours without minutes when minutes are zero', () => {
-    expect(formatDuration(3600)).toBe('1h')
-    expect(formatDuration(7200)).toBe('2h')
+  it('formats hours as H:MM:SS', () => {
+    expect(formatDuration(3600)).toBe('1:00:00')
+    expect(formatDuration(7200)).toBe('2:00:00')
   })
 
   it('formats hours with minutes when minutes are non-zero', () => {
-    expect(formatDuration(3660)).toBe('1h 1m')
-    expect(formatDuration(5400)).toBe('1h 30m')
-    expect(formatDuration(7320)).toBe('2h 2m')
+    expect(formatDuration(3660)).toBe('1:01:00')
+    expect(formatDuration(5400)).toBe('1:30:00')
+    expect(formatDuration(7320)).toBe('2:02:00')
   })
 
-  it('ignores sub-minute seconds when hours are present', () => {
-    expect(formatDuration(3601)).toBe('1h')   // 1h 0m 1s
-    expect(formatDuration(3661)).toBe('1h 1m') // 1h 1m 1s
+  it('includes seconds when hours are present', () => {
+    expect(formatDuration(3601)).toBe('1:00:01')
+    expect(formatDuration(3661)).toBe('1:01:01')
   })
 })

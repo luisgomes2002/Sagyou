@@ -1,9 +1,42 @@
-import type { Project, Task, Sprint, Tombstone, Backup, AIJson, StickyNote, Goal, Habit, FinancialTable, StoredFile, AIConversation } from '../types'
+import type {
+  Project,
+  Task,
+  Sprint,
+  Tombstone,
+  Backup,
+  AIJson,
+  StickyNote,
+  Goal,
+  Habit,
+  FinancialTable,
+  FinancialProfile,
+  StoredFile,
+  AiMemory,
+  TimeBlock,
+  Routine,
+  FeatureId,
+  UiPreferences
+} from '../types'
 
 type SaveData = {
-  projects: Project[]; tasks: Task[]; sprints: Sprint[]; tombstones: Tombstone[]
-  notes: StickyNote[]; goals: Goal[]; habits: Habit[]; lists: FinancialTable[]
+  projects: Project[]
+  tasks: Task[]
+  sprints: Sprint[]
+  tombstones: Tombstone[]
+  notes: StickyNote[]
+  goals: Goal[]
+  habits: Habit[]
+  lists: FinancialTable[]
+  financialProfiles?: FinancialProfile[]
+  activeFinancialProfileId?: string
+  featurePreferences?: FeatureId[]
+  uiPreferences?: UiPreferences
   files: StoredFile[]
+  timeBlocks?: TimeBlock[]
+  routines?: Routine[]
+  activeTimers?: { taskId: string; startedAt: number }[]
+  // Legacy single-timer mirror (activeTimers[0]); kept so an older app version
+  // reading the same DB still resolves one running timer.
   activeTimer?: { taskId: string; startedAt: number } | null
 }
 
@@ -15,6 +48,8 @@ export interface IStorageAdapter {
   importAIJson(): Promise<{ success: boolean; cancelled?: boolean; data?: AIJson; error?: string }>
   // AI chat history lives outside the main store (its own file in userData),
   // so backup export/import reaches it through these.
-  loadConversations(): Promise<AIConversation[]>
-  saveConversations(list: AIConversation[]): Promise<void>
+  // AI memory lives in the DB but outside the Zustand store, so backup
+  // export/import reaches it through these (like conversations above).
+  loadMemories(): Promise<AiMemory[]>
+  replaceMemories(list: AiMemory[]): Promise<void>
 }

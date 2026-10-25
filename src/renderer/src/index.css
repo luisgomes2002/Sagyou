@@ -1,18 +1,170 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 :root {
-  --bg-primary: #0d0f18;
-  --bg-sidebar: #13151f;
-  --bg-column: #181b28;
-  --bg-card: #1e2235;
-  --bg-card-hover: #242840;
-  --border: #2a2d42;
-  --text-primary: #e2e8f0;
-  --text-secondary: #8892a4;
+  --bg-primary: #0b0b0f;
+  --bg-sidebar: #121216;
+  --bg-column: #121216;
+  --bg-card: #16161a;
+  --bg-card-hover: #222227;
+  --border: #2b2b31;
+  --text-primary: #d4d4d4;
+  --text-secondary: #999999;
+  --canvas-grid: #2b2b31;
+}
+
+html[data-font-size='small'] {
+  font-size: 14px;
+}
+
+html[data-font-size='large'] {
+  font-size: 18px;
+}
+
+html[data-theme='light'] {
+  --bg-primary: #f5f4f1;
+  --bg-sidebar: #faf9f7;
+  --bg-column: #ebe9e4;
+  --bg-card: #ffffff;
+  --bg-card-hover: #e5e2dc;
+  --border: #d2cec6;
+  --text-primary: #292724;
+  --text-secondary: #625f59;
+  --canvas-grid: #d0cbc2;
+}
+
+/* Most existing views use Tailwind arbitrary colors. Keep the light theme
+ * consistent while the UI is progressively moved to semantic color tokens. */
+html[data-theme='light'] [class*='bg-[#0b0b0f]'],
+html[data-theme='light'] [class*='bg-[#101014]'] {
+  background-color: #faf9f7 !important;
+}
+
+html[data-theme='light'] [class*='bg-[#121216]'] {
+  background-color: #f7f6f3 !important;
+}
+
+html[data-theme='light'] [class*='bg-[#16161a]'] {
+  background-color: #ffffff !important;
+}
+
+html[data-theme='light'] [class*='bg-[#222227]'] {
+  background-color: #e8e5df !important;
+}
+
+html[data-theme='light'] [class*='bg-[#2a2a30]'] {
+  background-color: #ddd8cf !important;
+}
+
+html[data-theme='light'] [class*='bg-[#303036]'] {
+  background-color: #d3cec5 !important;
+}
+
+html[data-theme='light'] [class*='bg-[#30264a]'] {
+  background-color: #ece7f7 !important;
+}
+
+html[data-theme='light'] [class*='border-[#2b2b31]'],
+html[data-theme='light'] [class*='divide-[#2b2b31]'] {
+  border-color: #d2cec6 !important;
+}
+
+html[data-theme='light'] [class*='border-[#34343a]'],
+html[data-theme='light'] [class*='border-[#3b3b42]'] {
+  border-color: #bbb6ad !important;
+}
+
+html[data-theme='light'] [class*='text-[#d4d4d4]'] {
+  color: #292724;
+}
+
+html[data-theme='light'] [class*='text-[#999999]'] {
+  color: #625f59;
+}
+
+html[data-theme='light'] [class*='text-[#555555]'],
+html[data-theme='light'] [class*='text-[#666666]'],
+html[data-theme='light'] [class*='text-[#777777]'],
+html[data-theme='light'] [class*='text-[#888]'] {
+  color: #77716a;
+}
+
+html[data-theme='light'] [class*='text-[#ccc]'],
+html[data-theme='light'] [class*='text-[#e5e5e5]'],
+html[data-theme='light'] [class*='text-[#b0b0b0]'] {
+  color: #292724;
+}
+
+html[data-theme='light'] [class*='border-white/'] {
+  border-color: #d2cec6;
+}
+
+html[data-theme='light'] [class*='hover:text-white']:hover {
+  color: #292724;
+}
+
+html[data-theme='light'] input,
+html[data-theme='light'] select,
+html[data-theme='light'] textarea {
+  color-scheme: light;
+}
+
+html[data-reduce-motion='true'] *,
+html[data-reduce-motion='true'] *::before,
+html[data-reduce-motion='true'] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  scroll-behavior: auto !important;
+  transition-duration: 0.01ms !important;
+}
+
+html[data-high-contrast='true'] {
+  --border: #767680;
+  --text-primary: #000000;
+  --text-secondary: #2d2d35;
+}
+
+html[data-high-contrast='true'][data-theme='dark'] {
+  --bg-primary: #000000;
+  --bg-sidebar: #080808;
+  --bg-column: #080808;
+  --bg-card: #101010;
+  --bg-card-hover: #202020;
+  --border: #aaaaaa;
+  --text-primary: #ffffff;
+  --text-secondary: #e0e0e0;
+}
+
+html[data-high-contrast='true'] [class*='border-[#2b2b31]'],
+html[data-high-contrast='true'] [class*='divide-[#2b2b31]'] {
+  border-color: var(--border);
+}
+
+html[data-high-contrast='true'] [class*='text-[#d4d4d4]'] {
+  color: var(--text-primary);
+}
+
+html[data-high-contrast='true'] [class*='text-[#999999]'] {
+  color: var(--text-secondary);
 }
 
 * {
   box-sizing: border-box;
+}
+
+button:not(:disabled),
+[role='button']:not([aria-disabled='true']),
+a[href],
+input[type='checkbox']:not(:disabled),
+input[type='radio']:not(:disabled),
+label[for] {
+  cursor: pointer;
+}
+
+button:disabled,
+[role='button'][aria-disabled='true'],
+input[type='checkbox']:disabled,
+input[type='radio']:disabled {
+  cursor: not-allowed;
 }
 
 body {
@@ -24,6 +176,11 @@ body {
   overflow: hidden;
 }
 
+:focus-visible {
+  outline: 3px solid #8b5cf6;
+  outline-offset: 2px;
+}
+
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -32,16 +189,114 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #2a2d42;
+  background: #2a2a30;
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #3a3e58;
+  background: #3b3b42;
 }
 
 /* drag overlay styling */
 .drag-overlay {
   opacity: 0.92;
-  transform: rotate(2deg) scale(1.02);
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+/*
+ * Off-screen render skipping for long lists (Board cards, DoneView rows,
+ * Reports rows). content-visibility: auto lets the browser skip layout/paint
+ * for items scrolled out of view — fewer live DOM render trees — WITHOUT
+ * unmounting them, so @dnd-kit sortables stay in the DOM and measurable.
+ * `contain-intrinsic-size: auto <fallback>` remembers each item's real size
+ * once painted, so the fallback is only used pre-first-paint and the
+ * scrollbar doesn't jump. Not applied to the drag overlay (single, on-screen).
+ */
+.cv-card {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 96px;
+}
+.cv-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 44px;
+}
+
+@keyframes unlock-greeting-settle {
+  0% {
+    opacity: 0;
+    transform: translateY(150px) scale(1.38);
+    filter: blur(3px);
+  }
+  12% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+@keyframes unlock-panel-rise {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.unlock-greeting {
+  animation: unlock-greeting-settle 2.35s cubic-bezier(0.22, 0.8, 0.2, 1) both;
+}
+
+.unlock-password-panel {
+  opacity: 0;
+  transform: translateY(20px);
+  pointer-events: none;
+}
+
+.unlock-password-panel-visible {
+  animation: unlock-panel-rise 850ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  pointer-events: auto;
+}
+
+.unlock-glow {
+  position: absolute;
+  width: min(54vw, 760px);
+  height: min(74vh, 660px);
+  border-radius: 999px;
+  filter: blur(100px);
+  opacity: 0.34;
+  pointer-events: none;
+}
+
+.unlock-glow-left {
+  left: -28vw;
+  top: 19vh;
+  background: radial-gradient(circle, #473b8d 0%, rgba(71, 59, 141, 0) 70%);
+}
+
+.unlock-glow-right {
+  right: -28vw;
+  bottom: -24vh;
+  background: radial-gradient(circle, #075f6a 0%, rgba(7, 95, 106, 0) 70%);
+}
+
+.unlock-noise {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.1) 0.5px, transparent 0.5px);
+  background-size: 5px 5px;
+  mask-image: linear-gradient(to bottom, transparent, black 30%, transparent);
+  opacity: 0.06;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .unlock-greeting,
+  .unlock-password-panel-visible {
+    animation: none;
+  }
 }

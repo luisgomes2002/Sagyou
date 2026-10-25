@@ -1,4 +1,4 @@
-export interface Column {
+﻿export interface Column {
   id: string
   name: string
   order: number
@@ -43,9 +43,78 @@ export interface Project {
   order?: number
   createdAt: string
   updatedAt: string
+  /** ISO date when archived. Undefined = active project. */
+  archivedAt?: string
 }
 
 export type Priority = 'low' | 'medium' | 'high' | 'urgent'
+
+/** Optional areas shown in the sidebar. Kept separate from the data they own. */
+export type FeatureId =
+  | 'kanban'
+  | 'goals'
+  | 'habits'
+  | 'financial'
+  | 'planning'
+  | 'reports'
+  | 'canvas'
+  | 'files'
+  | 'graph'
+  | 'ai'
+
+export const ALL_FEATURE_IDS: FeatureId[] = [
+  'kanban',
+  'goals',
+  'habits',
+  'financial',
+  'planning',
+  'reports',
+  'canvas',
+  'files',
+  'graph',
+  'ai'
+]
+
+export function normalizeFeaturePreferences(value: unknown): FeatureId[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const known = new Set<FeatureId>(ALL_FEATURE_IDS)
+  return [
+    ...new Set(value.filter((feature): feature is FeatureId => known.has(feature as FeatureId)))
+  ]
+}
+
+export type ThemePreference = 'dark' | 'light'
+export type FontSizePreference = 'small' | 'default' | 'large'
+
+/** Visual and accessibility choices that apply to the whole application. */
+export interface UiPreferences {
+  theme: ThemePreference
+  fontSize: FontSizePreference
+  reduceMotion: boolean
+  highContrast: boolean
+}
+
+export const DEFAULT_UI_PREFERENCES: UiPreferences = {
+  theme: 'dark',
+  fontSize: 'default',
+  reduceMotion: false,
+  highContrast: false
+}
+
+export function normalizeUiPreferences(value: unknown): UiPreferences {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    return { ...DEFAULT_UI_PREFERENCES }
+  const preferences = value as Partial<UiPreferences>
+  return {
+    theme: preferences.theme === 'light' ? 'light' : 'dark',
+    fontSize:
+      preferences.fontSize === 'small' || preferences.fontSize === 'large'
+        ? preferences.fontSize
+        : 'default',
+    reduceMotion: preferences.reduceMotion === true,
+    highContrast: preferences.highContrast === true
+  }
+}
 
 export interface Task {
   id: string
@@ -65,6 +134,12 @@ export interface Task {
   completedAt?: string
 }
 
+/** A running timer — at most one per task. */
+export interface ActiveTimer {
+  taskId: string
+  startedAt: number
+}
+
 export interface GoalEntry {
   id: string
   date: string
@@ -77,6 +152,8 @@ export interface Goal {
   id: string
   title: string
   entries: GoalEntry[]
+  /** Missing on goals created before completion goals existed; absence means quantity. */
+  kind?: 'completion' | 'quantity'
   target: number
   unit: string
   color: string
@@ -107,10 +184,13 @@ export interface ShoppingItem {
 
 export type Currency = 'BRL' | 'USD' | 'JPY'
 
-export const CURRENCY_CONFIG: Record<Currency, { symbol: string; decimals: number; label: string }> = {
+export const CURRENCY_CONFIG: Record<
+  Currency,
+  { symbol: string; decimals: number; label: string }
+> = {
   BRL: { symbol: 'R$', decimals: 2, label: 'Real' },
-  USD: { symbol: '$',  decimals: 2, label: 'Dólar' },
-  JPY: { symbol: '¥',  decimals: 0, label: 'Iene' },
+  USD: { symbol: '$', decimals: 2, label: 'Dólar' },
+  JPY: { symbol: '¥', decimals: 0, label: 'Iene' }
 }
 
 export interface FinancialTransaction {
@@ -122,6 +202,46 @@ export interface FinancialTransaction {
   date: string
   category?: string
   fromShopping?: boolean
+  /** Id of a transaction in another table that this transaction is part of.
+   *  When set, the consolidated view treats the linked (parent) transaction as
+   *  already accounted for and excludes it from totals to avoid double-counting. */
+  linkedTransactionId?: string
+  /** Debt settled by this expense. Debt payments stay linked so their balance can be restored safely. */
+  debtId?: string
+  /** Bank, card or app used for this transaction. */
+  source?: string
+  /** File ids from the shared Files library; the blob remains in files/ and in backups. */
+  receiptFileIds?: string[]
+  bankReference?: string
+  counterparty?: string
+  createdAt?: string
+  updatedAt?: string
+  reconciledAt?: string
+  audit?: FinancialTransactionAudit[]
+  /** Both sides of one internal currency transfer share this id. */
+  currencyTransferId?: string
+  /** Informational fee, shared by both sides; it is never added to totals. */
+  currencyTransferFee?: string
+  currencyTransferFeeCurrency?: Currency
+  /** Optional breakdown of this transaction. Its amounts partition, but never add to, `amount`. */
+  details?: FinancialTransactionDetail[]
+}
+
+export interface FinancialTransactionAudit {
+  at: string
+  changes: { field: string; before?: unknown; after?: unknown }[]
+}
+
+export interface FinancialTransactionDetail {
+  id: string
+  description: string
+  /** Amount as a canonical decimal string. It cannot exceed the parent transaction remainder. */
+  amount: string
+  category?: string
+  /** Optional purchase date (YYYY-MM-DD). The parent transaction date remains the accounting date. */
+  date?: string
+  /** Mirror transaction represented by this invoice item. */
+  linkedTransactionId?: string
 }
 
 export interface FinancialGoal {
@@ -135,13 +255,68 @@ export interface FinancialGoal {
   completionNote?: string
 }
 
+export interface FinancialDebt {
+  id: string
+  name: string
+  /** Amount originally owed, as a canonical decimal string. */
+  originalAmount: string
+  /** Outstanding balance, as a canonical decimal string. */
+  remainingAmount: string
+  createdAt: string
+  updatedAt: string
+  completedAt?: string
+}
+
+export interface YieldSource {
+  id: string
+  name: string
+  createdAt: string
+}
+
+export interface YieldEntry {
+  id: string
+  sourceId: string
+  /** YYYY-MM-DD */
+  date: string
+  /** Yield amount as a canonical decimal string. Always positive. */
+  amount: string
+  createdAt: string
+}
+
+export const DEFAULT_FINANCIAL_PROFILE_ID = 'personal'
+
+export interface FinancialProfile {
+  id: string
+  name: string
+  createdAt: string
+  updatedAt: string
+  /** User-defined financial categories shared by tables in this profile. */
+  customCategories?: string[]
+  /** Saved bank/app names from documented transactions in this profile. */
+  savedSources?: string[]
+  /** Saved payers/payees from documented transactions in this profile. */
+  savedCounterparties?: string[]
+}
+
 export interface FinancialTable {
   id: string
   name: string
   currency: Currency
+  /** Finance profiles are isolated in every consolidated view. Missing legacy values migrate to personal. */
+  profileId?: string
   items: ShoppingItem[]
   transactions: FinancialTransaction[]
   goals: FinancialGoal[]
+  debts?: FinancialDebt[]
+  yieldSources?: YieldSource[]
+  yieldEntries?: YieldEntry[]
+  /** Optional label for the bank, card or app represented by this table. */
+  provider?: string
+  /** Manually reconciled balance, kept separate from the calculated balance. */
+  actualBalance?: string
+  actualBalanceUpdatedAt?: string
+  /** Preserves unsupported keys from older databases and backups without exposing them as app features. */
+  legacyFinancialMetadata?: Record<string, unknown>
   createdAt: string
   updatedAt: string
 }
@@ -151,10 +326,13 @@ export interface AIMessage {
   // persisted alongside real turns (see AIView's ChatMessage).
   role: 'user' | 'assistant' | 'status'
   content: string
+  feedback?: 'positive' | 'negative'
 }
 
 export interface AIConversation {
   id: string
+  /** Project context chosen when the conversation was created. */
+  projectId?: string | null
   title: string
   createdAt: string
   updatedAt: string
@@ -172,9 +350,73 @@ export interface Backup {
   goals?: Goal[]
   habits?: Habit[]
   lists?: FinancialTable[]
-  // Added in version 3. Absent in older backups — importing one of those must
-  // leave the local history untouched rather than wiping it.
-  conversations?: AIConversation[]
+  /** Added in version 7. Older backups place all tables in the personal profile. */
+  financialProfiles?: FinancialProfile[]
+  activeFinancialProfileId?: string
+  /** Sidebar choices; absent in older backups so the local preference is retained. */
+  featurePreferences?: FeatureId[]
+  /** Appearance and accessibility choices; absent in older backups keeps the local choices. */
+  uiPreferences?: UiPreferences
+  // Legacy (chat history was removed): read-tolerant only. Never written by
+  // export, ignored on import.
+  conversations?: unknown[]
+  // Added in version 4. Same rule: absent = leave local memory alone.
+  memories?: AiMemory[]
+  // Added in version 5: the physical files that used to live only on disk.
+  // `files` is the attachment metadata (was never in the backup before — a
+  // restore preserved local files); `fileBlobs`/`chatImages` carry the actual
+  // bytes as base64. The bytes are injected by the main process at export time
+  // and written back to disk by it at import time — they never reach the
+  // renderer. Same "absent = leave local files untouched" rule as above.
+  files?: StoredFile[]
+  fileBlobs?: BackupFileBlob[]
+  /** Legacy, ignored on import and never exported. */
+  chatImages?: BackupChatImage[]
+  // Task-image bytes (metadata rides on `tasks[].images`). Same main-injects-on-
+  // export / main-writes-and-strips-on-import handling as fileBlobs.
+  taskImages?: BackupFileBlob[]
+  // Added in version 6 (addition only, no breaking changes)
+  timeBlocks?: TimeBlock[]
+  routines?: Routine[]
+}
+
+/** An attachment's bytes, base64-encoded, keyed to its StoredFile id/ext. */
+export interface BackupFileBlob {
+  id: string
+  ext: string
+  base64: string
+}
+
+/** A chat image's bytes, base64-encoded, keyed to its on-disk `<uuid>.<ext>` id. */
+export interface BackupChatImage {
+  id: string
+  base64: string
+}
+
+/** The type of a durable AI memory. Mirrors MemoryType in main/modules/ai/memory.ts. */
+export type MemoryType = 'decisao' | 'tradeoff' | 'gotcha' | 'fato' | 'handoff' | 'planejamento'
+
+/**
+ * A durable fact the assistant carries across conversations. Renderer-side
+ * mirror of AiMemory in main/modules/ai/memory.ts (the store's source of truth) — the two
+ * are kept in step by hand, like store.ts mirrors these types the other way.
+ */
+export interface AiMemory {
+  id: string
+  projectId: string | null
+  type: MemoryType
+  title: string
+  body: string
+  tags: string[]
+  pinned: boolean
+  source: 'modelo' | 'usuario'
+  /** Conversation that supplied this memory's evidence, when it came from a chat. */
+  sourceConversationId: string | null
+  createdAt: string
+  updatedAt: string
+  lastAccessedAt: string
+  accessCount: number
+  archivedAt: string | null
 }
 
 export interface AITaskInput {
@@ -194,9 +436,9 @@ export interface AIJson {
 
 export interface StoredFile {
   id: string
-  name: string      // original filename with extension
-  ext: string       // e.g. '.pdf', '.docx'
-  size: number      // bytes
+  name: string // original filename with extension
+  ext: string // e.g. '.pdf', '.docx'
+  size: number // bytes
   createdAt: string
   projectId?: string
 }
@@ -204,9 +446,13 @@ export interface StoredFile {
 export interface TaskImage {
   id: string
   name: string
-  dataUrl: string
+  ext: string // e.g. '.jpg' — the bytes live on disk at task-images/<id><ext>
   size: number
   addedAt: string
+  // Legacy/transient only: older data (a pre-migration DB row or an old backup)
+  // carried the bytes inline here. It is NEVER persisted now — the store writes
+  // metadata only, and importBackup/migration move any dataUrl to a disk file.
+  dataUrl?: string
 }
 
 export interface Sprint {
@@ -228,12 +474,16 @@ export interface StickyNote {
   projectId: string
   content: string
   color: string
+  borderStyle?: 'solid' | 'dashed'
   x: number
   y: number
   width: number
   height: number
+  /** @deprecated Use taskIds. Kept for backward compatibility with old data. */
   taskId?: string
+  taskIds?: string[]
   connections?: string[]
+  goalIds?: string[]
   createdAt: string
   updatedAt: string
   fontSize?: number
@@ -257,25 +507,27 @@ export const NOTE_COLORS = [
 ] as const
 
 export const PROJECT_COLORS = [
-  '#6366f1',
+  '#7c3aed',
   '#8b5cf6',
   '#ec4899',
-  '#ef4444',
+  '#e04040',
   '#f97316',
   '#eab308',
-  '#22c55e',
+  '#20b858',
   '#06b6d4',
   '#14b8a6',
   '#84cc16',
   '#f43f5e',
-  '#d946ef'
+  '#d946ef',
+  '#ffffff',
+  '#000000'
 ] as const
 
 export const PRIORITY_CONFIG: Record<Priority, { label: string; color: string; bg: string }> = {
-  low: { label: 'Low', color: 'text-sky-400', bg: 'bg-sky-400/15' },
-  medium: { label: 'Medium', color: 'text-yellow-400', bg: 'bg-yellow-400/15' },
-  high: { label: 'High', color: 'text-orange-400', bg: 'bg-orange-400/15' },
-  urgent: { label: 'Urgent', color: 'text-red-400', bg: 'bg-red-400/15' }
+  low: { label: 'Low', color: 'text-[#34b4ec]', bg: 'bg-[#2a2a30]' },
+  medium: { label: 'Medium', color: 'text-[#f0c210]', bg: 'bg-[#2a2a30]' },
+  high: { label: 'High', color: 'text-[#f08a34]', bg: 'bg-[#2a2a30]' },
+  urgent: { label: 'Urgent', color: 'text-[#e04040]', bg: 'bg-[#2a2a30]' }
 }
 
 export const DEFAULT_COLUMN_NAMES = ['Backlog', 'In Progress', 'Review', 'Done']
@@ -283,70 +535,245 @@ export const DEFAULT_COLUMN_NAMES = ['Backlog', 'In Progress', 'Review', 'Done']
 export const DEFAULT_TAGS: { label: string; tags: string[] }[] = [
   {
     label: 'Dev',
-    tags: ['frontend', 'backend', 'bug', 'fix', 'feat', 'refactor', 'api', 'design', 'mobile', 'devops', 'testes', 'docs', 'deploy', 'delivery', 'auth', 'security', 'performance', 'infra', 'ipc', 'store', 'utils', 'dnd', 'memoization', 'correctness', 'idempotency', 'query-optimization', 'redis', 'jwt', 'reports', 'heatmap', 'due-date', 'tags', 'sprints']
+    tags: [
+      'frontend',
+      'backend',
+      'bug',
+      'fix',
+      'feat',
+      'refactor',
+      'api',
+      'design',
+      'mobile',
+      'devops',
+      'testes',
+      'docs',
+      'deploy',
+      'delivery',
+      'auth',
+      'security',
+      'performance',
+      'infra',
+      'ipc',
+      'store',
+      'utils',
+      'dnd',
+      'memoization',
+      'correctness',
+      'idempotency',
+      'query-optimization',
+      'redis',
+      'jwt',
+      'reports',
+      'heatmap',
+      'due-date',
+      'tags',
+      'sprints'
+    ]
   },
   {
     label: 'Estudo',
-    tags: ['estudo', 'leitura', 'revisão', 'resumo', 'prova', 'pesquisa', 'aula', 'curso', 'faculdade', 'idioma', 'exercício-mental', 'flashcard', 'vocabulário', 'gramática', 'prática', 'escrita', 'listening', 'tradução']
+    tags: [
+      'estudo',
+      'leitura',
+      'revisão',
+      'resumo',
+      'prova',
+      'pesquisa',
+      'aula',
+      'curso',
+      'faculdade',
+      'idioma',
+      'exercício-mental',
+      'flashcard',
+      'vocabulário',
+      'gramática',
+      'prática',
+      'escrita',
+      'listening',
+      'tradução'
+    ]
   },
   {
     label: 'Trabalho',
-    tags: ['reunião', 'relatório', 'prazo', 'cliente', 'apresentação', 'email', 'planejamento', 'meta', 'entrega', 'revisão', 'feedback', 'onboarding', 'contrato', 'proposta', 'sprint', 'retrospectiva']
+    tags: [
+      'reunião',
+      'relatório',
+      'prazo',
+      'cliente',
+      'apresentação',
+      'email',
+      'planejamento',
+      'meta',
+      'entrega',
+      'revisão',
+      'feedback',
+      'onboarding',
+      'contrato',
+      'proposta',
+      'sprint',
+      'retrospectiva'
+    ]
   },
   {
     label: 'Saúde',
-    tags: ['exercício', 'academia', 'dieta', 'médico', 'sono', 'saúde mental', 'hidratação', 'corrida', 'alongamento', 'meditação', 'consulta', 'exame', 'suplemento', 'descanso']
+    tags: [
+      'exercício',
+      'academia',
+      'dieta',
+      'médico',
+      'sono',
+      'saúde mental',
+      'hidratação',
+      'corrida',
+      'alongamento',
+      'meditação',
+      'consulta',
+      'exame',
+      'suplemento',
+      'descanso'
+    ]
   },
   {
     label: 'Casa & Vida',
-    tags: ['compras', 'casa', 'limpeza', 'contas', 'família', 'social', 'lazer', 'viagem', 'alimentação', 'pet', 'manutenção', 'organização', 'decoração', 'mudança', 'vizinhança']
+    tags: [
+      'compras',
+      'casa',
+      'limpeza',
+      'contas',
+      'família',
+      'social',
+      'lazer',
+      'viagem',
+      'alimentação',
+      'pet',
+      'manutenção',
+      'organização',
+      'decoração',
+      'mudança',
+      'vizinhança'
+    ]
   },
   {
     label: 'Finanças',
-    tags: ['investimento', 'gasto', 'economia', 'imposto', 'assinatura', 'renda extra', 'orçamento', 'dívida', 'cartão', 'poupança', 'declaração', 'recibo', 'transferência', 'AI', 'ADS', 'servidor', 'marketing', 'segurança cloud', 'domínio', 'AI programação', 'AI tokens', 'canva', 'streaming', 'contador', 'advogado']
+    tags: [
+      'investimento',
+      'gasto',
+      'economia',
+      'imposto',
+      'assinatura',
+      'renda extra',
+      'orçamento',
+      'dívida',
+      'Parcelas',
+      'cartão',
+      'poupança',
+      'declaração',
+      'recibo',
+      'transferência',
+      'devolução',
+      'saldo',
+      'AI',
+      'ADS',
+      'servidor',
+      'marketing',
+      'segurança cloud',
+      'domínio',
+      'AI programação',
+      'AI tokens',
+      'canva',
+      'streaming',
+      'contador',
+      'advogado'
+    ]
   },
   {
     label: 'Pessoal',
-    tags: ['hábito', 'rotina', 'projeto pessoal', 'criatividade', 'foco', 'urgente', 'importante', 'ideia', 'meta pessoal', 'lembrete', 'reflexão', 'diário', 'gratidão', 'planejamento semanal']
+    tags: [
+      'hábito',
+      'rotina',
+      'projeto pessoal',
+      'criatividade',
+      'foco',
+      'urgente',
+      'importante',
+      'ideia',
+      'meta pessoal',
+      'lembrete',
+      'reflexão',
+      'diário',
+      'gratidão',
+      'planejamento semanal'
+    ]
   }
 ]
 
-// Tag list per area, derived from DEFAULT_TAGS so the prompt stays in sync.
-const AI_TAG_LINES = DEFAULT_TAGS.map((g) => `  ${g.label}: ${g.tags.join(', ')}`).join('\n\n')
+// ── Planner (time blocks & routines) ───────────────────────────────────────
 
-/**
- * Shared task-JSON template. Describes the exact `{ "tasks": [...] }` shape the
- * app imports. Used both as the copyable example in the Sidebar and as the
- * instruction sent to the model by the AI view's "Gerar Tasks". Tags are
- * generated from DEFAULT_TAGS so there is a single source of truth.
- */
-export const AI_TASK_PROMPT_TEMPLATE = `{
-  "tasks": [
-    {
-      "title": "Implementar login",
-      "description": "Tela de autenticação com JWT.",
-      "priority": "high",
-      "dueDate": "2026-07-15",
-      "tags": ["auth", "frontend"],
-      "column": "In Progress",
-      "sprint": "Sprint 1"
-    },
-    {
-      "title": "Criar testes unitários",
-      "priority": "medium",
-      "tags": ["testes"],
-      "column": "Backlog"
-    }
-  ]
+export type TimeBlockType = 'task' | 'routine' | 'buffer' | 'custom'
+export type TimeBlockBorderStyle = 'solid' | 'dashed'
+
+export interface TimeBlock {
+  id: string
+  date: string // YYYY-MM-DD
+  startTime: string // HH:MM
+  endTime: string // HH:MM
+  title: string
+  description?: string
+  taskId?: string // optional link to a kanban task
+  habitId?: string // optional link to a habit
+  type: TimeBlockType
+  color?: string
+  borderStyle?: TimeBlockBorderStyle
+  order: number
+  createdAt: string
+  updatedAt: string
 }
 
-Campos:
-- priority — low · medium · high · urgent
-- column — nome exato da coluna no projeto (ex: "In Progress")
-- sprint — nome exato da sprint (ex: "Sprint 1"). Opcional.
-- dueDate — formato YYYY-MM-DD. Opcional.
-- tags — use as tags relevantes para o contexto. Tags disponíveis por área:
+export interface Routine {
+  id: string
+  title: string
+  description?: string
+  startTime: string // HH:MM
+  endTime: string // HH:MM
+  daysOfWeek: number[] // 0=Sun, 1=Mon, …, 6=Sat
+  color?: string
+  borderStyle?: TimeBlockBorderStyle
+  active: boolean
+  createdAt: string
+  updatedAt: string
+}
 
-${AI_TAG_LINES}
+export const TIME_BLOCK_COLORS = [
+  '#7c3aed',
+  '#8b5cf6',
+  '#ec4899',
+  '#e04040',
+  '#f97316',
+  '#eab308',
+  '#20b858',
+  '#06b6d4',
+  '#14b8a6',
+  '#84cc16',
+  '#f43f5e',
+  '#d946ef'
+] as const
 
-Gere tarefas para cada parte desse projeto, não deixe as tarefas muito granuladas e se o assunto de uma para outra for muito diferente separe em arquivos json diferentes, por exemplo na área de desenvolvimento tem a parte de testes, refatoração e nova feature, cada uma dessas é um arquivo separado.`
+// ── Entity Event Log (data lineage) ──────────────────────────────────────────
+
+/** One mutation recorded in the append-only event log. */
+export interface EntityEvent {
+  id: string
+  entityType: 'project' | 'task' | 'sprint' | 'note' | 'goal' | 'habit' | 'financial_table' | 'file'
+  entityId: string
+  action: 'created' | 'updated' | 'deleted'
+  /** Human-readable summary (e.g. "task 'Corrigir bug' moved to Done"). */
+  summary: string
+  /** Who or what triggered the change. */
+  source: 'user' | 'ai'
+  /** AI tool name when source=ai. */
+  toolName?: string
+  /** Conversation id when source=ai. */
+  convId?: string
+  timestamp: string
+}

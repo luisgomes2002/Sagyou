@@ -3,25 +3,34 @@
  *
  * Electron is mocked just enough to let `app.whenReady()` run, which is what
  * registers the handlers; `ipcMain.handle` is captured so each channel can be
- * invoked the way the renderer invokes it. The model calls go to a real local
- * HTTP server rather than a stubbed SDK, so what's under test is the whole
- * path: request shaping, SSE parsing, tool_call assembly, usage and errors.
+ * invoked the way the renderer invokes it.
  *
  * @vitest-environment node
  */
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest'
-import http from 'http'
-import { mkdtemp, mkdir, writeFile, rm } from 'fs/promises'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
+import { mkdtemp, mkdir, readdir, readFile, writeFile, rm } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import { listMemories } from '../store'
 
 /** channel -> handler, filled in when the module registers them. */
 const handlers = new Map<string, (event: unknown, ...args: never[]) => unknown>()
+
+/**
+ * main -> renderer sends (mainWindow.webContents.send), captured so the native
+ * code-agent tests can read its streamed output and answer its approval cards.
+ * Hoisted so the electron mock factory below can push into it.
+ */
+const winSent = vi.hoisted(() => [] as { channel: string; payload: unknown }[])
+
+/** Startup milestones in order, to prove the chat data is removed before a window exists. */
+const startupOrder = vi.hoisted(() => [] as string[])
 
 let userData: string
 
 vi.mock('electron', () => ({
   app: {
+    commandLine: { appendSwitch: vi.fn() },
     whenReady: () => Promise.resolve(),
     getPath: (name: string) => (name === 'userData' ? userData : tmpdir()),
     on: vi.fn(),
@@ -33,14 +42,28 @@ vi.mock('electron', () => ({
     on: vi.fn()
   },
   BrowserWindow: class {
-    webContents = { setWindowOpenHandler: vi.fn(), send: vi.fn(), isDestroyed: () => false }
+    constructor() {
+      startupOrder.push('createWindow')
+    }
+    webContents = {
+      setWindowOpenHandler: vi.fn(),
+      on: vi.fn(),
+      getURL: () => 'file:///sagyou/index.html',
+      send: (channel: string, payload: unknown) => winSent.push({ channel, payload }),
+      isDestroyed: () => false
+    }
     on = vi.fn()
     loadURL = vi.fn()
     loadFile = vi.fn()
     show = vi.fn()
     isMaximized = (): boolean => false
   },
-  shell: { openExternal: vi.fn() },
+  shell: { openExternal: vi.fn(), openPath: vi.fn() },
+  safeStorage: {
+    isEncryptionAvailable: () => true,
+    encryptString: (value: string) => Buffer.from(value),
+    decryptString: (value: Buffer) => value.toString()
+  },
   dialog: { showSaveDialog: vi.fn(), showOpenDialog: vi.fn() }
 }))
 
@@ -51,7 +74,14 @@ vi.mock('@electron-toolkit/utils', () => ({
 }))
 
 // better-sqlite3 is a native module and irrelevant here.
-vi.mock('../store', () => ({ loadData: vi.fn(() => ({})), saveData: vi.fn() }))
+vi.mock('../store', () => ({
+  loadData: vi.fn(() => ({})),
+  saveData: vi.fn(),
+  listMemories: vi.fn(() => []),
+  copyDatabaseTo: vi.fn(async () => void startupOrder.push('migration')),
+  scrubMemoryConversationLinks: vi.fn(() => 0),
+  rebuildSearchIndex: vi.fn(async () => undefined)
+}))
 vi.mock('../../../resources/icon.png?asset', () => ({ default: '/icon.png' }))
 
 /** Invoke a channel the way the renderer does. */
@@ -64,443 +94,200 @@ const invoke = async <T>(channel: string, ...args: unknown[]): Promise<T> => {
 /** The event arg: only webContents.send (stream deltas) is ever used. */
 const sent: { channel: string; payload: unknown }[] = []
 const fakeEvent = {
-  sender: { isDestroyed: () => false, send: (channel: string, payload: unknown) => sent.push({ channel, payload }) }
-}
-
-// --- a stand-in provider -----------------------------------------------------
-
-type Reply = (req: http.IncomingMessage, res: http.ServerResponse, body: string) => void
-let reply: Reply
-let server: http.Server
-let baseUrl: string
-
-const sse = (res: http.ServerResponse, frames: unknown[]): void => {
-  res.writeHead(200, { 'Content-Type': 'text/event-stream' })
-  for (const f of frames) {
-    res.write(`data: ${JSON.stringify({ id: '1', object: 'chat.completion.chunk', model: 'm', ...(f as object) })}\n\n`)
+  sender: {
+    getURL: () => 'file:///sagyou/index.html',
+    isDestroyed: () => false,
+    send: (channel: string, payload: unknown) => sent.push({ channel, payload })
   }
-  res.write('data: [DONE]\n\n')
-  res.end()
 }
 
 beforeAll(async () => {
   userData = await mkdtemp(join(tmpdir(), 'sagyou-main-'))
-  server = http.createServer(async (req, res) => {
-    let body = ''
-    for await (const c of req) body += c
-    reply(req, res, body)
-  })
-  await new Promise<void>((r) => server.listen(0, r))
-  baseUrl = `http://127.0.0.1:${(server.address() as { port: number }).port}/v1`
-
+  // An old install: a chat history the first launch has to snapshot and remove.
+  await writeFile(join(userData, 'ai-conversations.json'), '[{"id":"c1"}]')
   // Importing the module runs whenReady() and registers everything.
   await import('../index')
   await new Promise((r) => setImmediate(r))
 })
 
 afterAll(async () => {
-  server.close()
   await rm(userData, { recursive: true, force: true })
 })
 
 beforeEach(() => {
   sent.length = 0
+  vi.mocked(listMemories).mockReturnValue([])
+})
+
+describe('legacy chat removal on startup', () => {
+  it('snapshots and removes the chat data before the first window is created', async () => {
+    expect(startupOrder.slice(0, 2)).toEqual(['migration', 'createWindow'])
+    const state = JSON.parse(await readFile(join(userData, 'legacy-chat-state.json'), 'utf-8'))
+    // The conversations are in the snapshot and gone from userData.
+    expect(
+      await readFile(join(state.legacyChatSnapshotDir, 'ai-conversations.json'), 'utf-8')
+    ).toBe('[{"id":"c1"}]')
+    await expect(readFile(join(userData, 'ai-conversations.json'), 'utf-8')).rejects.toThrow()
+  })
+
+  it('keeps its state in a file of its own, out of reach of the store', async () => {
+    // persistAll() empties the SQLite `settings` table on a session's first
+    // save; a marker kept there made the migration run on every launch.
+    const state = JSON.parse(await readFile(join(userData, 'legacy-chat-state.json'), 'utf-8'))
+    expect(typeof state.legacyChatRemovedAt).toBe('string')
+    expect(state.legacyChatSnapshotDir).toContain('pre-remocao-chat-')
+  })
+
+  it('offers the snapshot notice once', async () => {
+    const notice = await invoke<{ snapshotDir: string } | null>('legacy-chat:notice')
+    expect(notice?.snapshotDir).toContain('pre-remocao-chat-')
+
+    await invoke('legacy-chat:dismiss')
+    expect(await invoke('legacy-chat:notice')).toBeNull()
+  })
 })
 
 describe('main handlers are registered', () => {
-  it('exposes the AI channels the renderer calls', () => {
-    for (const ch of ['ai:chat', 'ai:chat:stream', 'ai:code:list', 'ai:code:read', 'ai:code:search']) {
+  it('exposes the code and config channels that remain', () => {
+    for (const ch of [
+      'ai:config:get',
+      'ai:config:set',
+      'ai:code:list',
+      'ai:code:read',
+      'ai:code:search',
+      'ai:harnesses:status'
+    ]) {
       expect(handlers.has(ch)).toBe(true)
     }
   })
-})
 
-describe('ai:chat', () => {
-  it('returns the assistant message and the usage', async () => {
-    reply = (_req, res) => {
-      res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(
-        JSON.stringify({
-          id: '1',
-          object: 'chat.completion',
-          choices: [{ index: 0, message: { role: 'assistant', content: 'olá' }, finish_reason: 'stop' }],
-          usage: { prompt_tokens: 12, completion_tokens: 3 }
-        })
-      )
-    }
-
-    const res = await invoke<{ success: boolean; message?: { content: string }; usage?: unknown }>(
+  it('no longer registers any channel of the generic chat', () => {
+    for (const ch of [
+      'ai:conversations:list',
+      'ai:conversations:get',
+      'ai:conversations:save',
+      'ai:conversations:rename',
+      'ai:conversations:delete',
+      'ai:conversations:search',
+      'ai:conversations:all',
+      'ai:conversations:replace',
+      'ai:images:save',
+      'ai:images:get',
+      'ai:images:delete',
+      'ai:usage:summary',
+      'ai:run-metrics:append',
+      'ai:run-metrics:summary',
       'ai:chat',
-      { messages: [{ role: 'user', content: 'oi' }], baseUrl, apiKey: 'k', model: 'm' }
-    )
-
-    expect(res.success).toBe(true)
-    expect(res.message?.content).toBe('olá')
-    expect(res.usage).toEqual({ promptTokens: 12, completionTokens: 3 })
+      'ai:chat:stream',
+      'ai:models',
+      'ai:chatgpt:session',
+      'ai:chatgpt:profiles',
+      'ai:chatgpt:sign-in',
+      'ai:chatgpt:select',
+      'ai:chatgpt:disconnect',
+      'ai:chatgpt:models',
+      'ai:chatgpt:manage-usage',
+      'ai:chatgpt:stream'
+    ]) {
+      expect(handlers.has(ch), ch).toBe(false)
+    }
   })
 
-  it('sends the tools it was given, and omits the key when there are none', async () => {
-    let seen: Record<string, unknown> = {}
-    reply = (_req, res, body) => {
-      seen = JSON.parse(body)
-      res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'x' } }] }))
-    }
-
-    const tools = [{ type: 'function', function: { name: 'ler_tasks', description: '', parameters: {} } }]
-    await invoke('ai:chat', { messages: [], tools, baseUrl, apiKey: 'k', model: 'm' })
-    expect(seen.tools).toHaveLength(1)
-
-    await invoke('ai:chat', { messages: [], tools: [], baseUrl, apiKey: 'k', model: 'm' })
-    // An empty tools array is not the same as "tools: []" on the wire — some
-    // providers reject it.
-    expect(seen).not.toHaveProperty('tools')
-  })
-
-  it('reports a provider error with its status, for the retry policy', async () => {
-    reply = (_req, res) => {
-      res.writeHead(503, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ error: { message: 'upstream busy' } }))
-    }
-
-    const res = await invoke<{ success: boolean; error?: string; status?: number }>('ai:chat', {
-      messages: [],
-      baseUrl,
-      apiKey: 'k',
-      model: 'm'
-    })
-
-    expect(res.success).toBe(false)
-    // Without the status the renderer cannot tell transient from permanent.
-    expect(res.status).toBe(503)
-    expect(res.error).toBeTruthy()
-  })
-
-  it('refuses to call out at all when the config is incomplete', async () => {
-    let called = false
-    reply = (_req, res) => {
-      called = true
-      res.end('{}')
-    }
-
-    const res = await invoke<{ success: boolean; status?: number }>('ai:chat', {
-      messages: [],
-      baseUrl: '',
-      model: ''
-    })
-
-    expect(res.success).toBe(false)
-    // 400 marks it non-retryable: retrying a missing config just delays the message.
-    expect(res.status).toBe(400)
-    expect(called).toBe(false)
-  })
-
-  it('reports an empty choices list rather than crashing', async () => {
-    reply = (_req, res) => {
-      res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ choices: [] }))
-    }
-    const res = await invoke<{ success: boolean; error?: string }>('ai:chat', {
-      messages: [],
-      baseUrl,
-      apiKey: 'k',
-      model: 'm'
-    })
-    expect(res).toMatchObject({ success: false })
-    expect(res.error).toContain('vazia')
+  it('rejects a data request from a renderer outside the app document', () => {
+    const handler = handlers.get('store:load')
+    expect(handler).toBeDefined()
+    expect(() =>
+      handler?.(
+        { sender: { getURL: () => 'https://untrusted.example', isDestroyed: () => false } },
+        ...([] as never[])
+      )
+    ).toThrow('Solicitação IPC recusada.')
   })
 })
 
-describe('ai:chat:stream', () => {
-  it('streams deltas to the renderer and returns the whole message', async () => {
-    reply = (_req, res) =>
-      sse(res, [
-        { choices: [{ index: 0, delta: { role: 'assistant', content: 'Olá' } }] },
-        { choices: [{ index: 0, delta: { content: ', tudo bem?' } }] },
-        { choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] }
-      ])
+describe('ai:config:*', () => {
+  const configPath = (): string => join(userData, 'ai-config.json')
 
-    const res = await invoke<{ success: boolean; message?: { content: string } }>('ai:chat:stream', {
-      streamId: 's1',
-      messages: [],
-      baseUrl,
-      apiKey: 'k',
-      model: 'm'
-    })
-
-    expect(res.message?.content).toBe('Olá, tudo bem?')
-    expect(sent.map((s) => s.payload)).toEqual([
-      { streamId: 's1', delta: 'Olá' },
-      { streamId: 's1', delta: ', tudo bem?' }
-    ])
-  })
-
-  it('tags deltas with the caller’s streamId so concurrent calls do not cross', async () => {
-    reply = (_req, res) => sse(res, [{ choices: [{ index: 0, delta: { content: 'x' } }] }])
-    await invoke('ai:chat:stream', { streamId: 'abc', messages: [], baseUrl, apiKey: 'k', model: 'm' })
-    expect(sent[0]).toMatchObject({ channel: 'ai:chat:delta', payload: { streamId: 'abc' } })
-  })
-
-  it('announces a tool call by name as soon as the name arrives', async () => {
-    // The name lands in the first delta; the arguments are what take the time.
-    // Sitting on it until the message completes leaves a step that streams no
-    // text at all — a bare tool call — with nothing on screen but a spinner.
-    reply = (_req, res) =>
-      sse(res, [
-        {
-          choices: [
-            {
-              index: 0,
-              delta: {
-                tool_calls: [
-                  { index: 0, id: 'call_1', type: 'function', function: { name: 'criar_tasks', arguments: '' } }
-                ]
-              }
-            }
-          ]
-        },
-        { choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: '{"tasks":[]}' } }] } }] },
-        { choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] }
-      ])
-
-    await invoke('ai:chat:stream', { streamId: 's', messages: [], baseUrl, apiKey: 'k', model: 'm' })
-
-    const tools = sent.filter(
-      (e) => e.channel === 'ai:chat:delta' && (e.payload as { tool?: unknown }).tool
+  it('never returns API keys, even when an old file still holds them', async () => {
+    await writeFile(
+      configPath(),
+      JSON.stringify({
+        apiKey: 'segredo',
+        baseUrl: 'http://x',
+        model: 'm',
+        providerProfiles: [{ id: 'a', name: 'A', kind: 'api', baseUrl: 'u', apiKey: 'k2', model: 'm' }],
+        codeHarness: 'claude-code',
+        userName: 'Ana'
+      })
     )
-    expect(tools[0]).toMatchObject({
-      payload: { streamId: 's', tool: { index: 0, name: 'criar_tasks' } }
-    })
-  })
-
-  it('sends no text delta alongside a tool announcement', async () => {
-    // One channel carries both, so a tool payload has no `delta` field. A
-    // consumer that read it unconditionally would append "undefined" to the
-    // answer — the reason the preload handler checks each field before use.
-    reply = (_req, res) =>
-      sse(res, [
-        {
-          choices: [
-            {
-              index: 0,
-              delta: {
-                tool_calls: [{ index: 0, id: 'c1', type: 'function', function: { name: 'ler_tasks' } }]
-              }
-            }
-          ]
-        },
-        { choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] }
-      ])
-
-    await invoke('ai:chat:stream', { streamId: 's', messages: [], baseUrl, apiKey: 'k', model: 'm' })
-
-    for (const e of sent.filter((x) => x.channel === 'ai:chat:delta')) {
-      const p = e.payload as { delta?: string; tool?: unknown }
-      if (p.tool) expect(p.delta).toBeUndefined()
+    const cfg = await invoke<Record<string, unknown>>('ai:config:get')
+    const text = JSON.stringify(cfg)
+    expect(text).not.toContain('segredo')
+    expect(text).not.toContain('k2')
+    for (const key of ['apiKey', 'hasApiKey', 'providerProfiles', 'baseUrl', 'model']) {
+      expect(cfg).not.toHaveProperty(key)
     }
+    expect(cfg).toMatchObject({ codeHarness: 'claude-code', userName: 'Ana' })
   })
 
-  it('re-announces a name that the provider split across deltas', async () => {
-    // Nothing forbids it. Main concatenates and re-sends, so the last payload
-    // for an index is the whole name — the renderer keys on index and corrects.
-    reply = (_req, res) =>
-      sse(res, [
-        { choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'c1', type: 'function', function: { name: 'criar_' } }] } }] },
-        { choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { name: 'tasks' } }] } }] },
-        { choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] }
-      ])
-
-    await invoke('ai:chat:stream', { streamId: 's', messages: [], baseUrl, apiKey: 'k', model: 'm' })
-
-    const names = sent
-      .filter((e) => e.channel === 'ai:chat:delta' && (e.payload as { tool?: unknown }).tool)
-      .map((e) => (e.payload as { tool: { name: string } }).tool.name)
-    expect(names).toEqual(['criar_', 'criar_tasks'])
-  })
-
-  it('announces each of two parallel tool calls under its own index', async () => {
-    reply = (_req, res) =>
-      sse(res, [
-        {
-          choices: [
-            {
-              index: 0,
-              delta: {
-                tool_calls: [
-                  { index: 0, id: 'c1', type: 'function', function: { name: 'ler_tasks' } },
-                  { index: 1, id: 'c2', type: 'function', function: { name: 'ler_metas' } }
-                ]
-              }
-            }
-          ]
-        },
-        { choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] }
-      ])
-
-    await invoke('ai:chat:stream', { streamId: 's', messages: [], baseUrl, apiKey: 'k', model: 'm' })
-
-    const tools = sent
-      .filter((e) => e.channel === 'ai:chat:delta' && (e.payload as { tool?: unknown }).tool)
-      .map((e) => (e.payload as { tool: { index: number; name: string } }).tool)
-    expect(tools).toEqual([
-      { index: 0, name: 'ler_tasks' },
-      { index: 1, name: 'ler_metas' }
-    ])
-  })
-
-  it('joins tool_call arguments split across chunks', async () => {
-    reply = (_req, res) =>
-      sse(res, [
-        { choices: [{ index: 0, delta: { role: 'assistant', content: '' } }] },
-        {
-          choices: [
-            {
-              index: 0,
-              delta: {
-                tool_calls: [
-                  { index: 0, id: 'call_1', type: 'function', function: { name: 'ler_tasks', arguments: '{"pro' } }
-                ]
-              }
-            }
-          ]
-        },
-        { choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: 'jectId":"p1"}' } }] } }] },
-        { choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] }
-      ])
-
-    const res = await invoke<{ message?: { tool_calls?: { id: string; function: { name: string; arguments: string } }[] } }>(
-      'ai:chat:stream',
-      { streamId: 's', messages: [], baseUrl, apiKey: 'k', model: 'm' }
+  it('does not accept API keys on write, and keeps agent and unknown keys', async () => {
+    await writeFile(
+      configPath(),
+      JSON.stringify({ codeHarness: 'codex', sandboxEnabled: false, chaveFutura: { x: 1 } })
     )
-
-    expect(res.message?.tool_calls).toEqual([
-      { id: 'call_1', type: 'function', function: { name: 'ler_tasks', arguments: '{"projectId":"p1"}' } }
-    ])
-  })
-
-  it('keeps two parallel tool calls apart by index', async () => {
-    reply = (_req, res) =>
-      sse(res, [
-        {
-          choices: [
-            {
-              index: 0,
-              delta: {
-                tool_calls: [
-                  { index: 0, id: 'a', type: 'function', function: { name: 'ler_tasks', arguments: '{}' } },
-                  { index: 1, id: 'b', type: 'function', function: { name: 'ler_metas', arguments: '{' } }
-                ]
-              }
-            }
-          ]
-        },
-        { choices: [{ index: 0, delta: { tool_calls: [{ index: 1, function: { arguments: '}' } }] } }] },
-        { choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] }
-      ])
-
-    const res = await invoke<{ message?: { tool_calls?: { id: string }[] } }>('ai:chat:stream', {
-      streamId: 's',
-      messages: [],
-      baseUrl,
-      apiKey: 'k',
-      model: 'm'
+    await invoke('ai:config:set', {
+      codeHarness: 'opencode',
+      userName: '  Ana  ',
+      apiKey: 'novo-segredo',
+      model: 'gpt',
+      providerProfiles: [{ id: 'a', apiKey: 'k3' }],
+      codeAgent: { apiKey: 'k4' },
+      lastConversationId: 'c1'
     })
-
-    expect(res.message?.tool_calls).toHaveLength(2)
-    expect(res.message?.tool_calls?.map((t) => t.id)).toEqual(['a', 'b'])
+    const raw = await readFile(configPath(), 'utf-8')
+    const saved = JSON.parse(raw)
+    expect(saved).toMatchObject({
+      codeHarness: 'opencode',
+      userName: 'Ana',
+      sandboxEnabled: false,
+      chaveFutura: { x: 1 }
+    })
+    for (const key of ['apiKey', 'model', 'providerProfiles', 'codeAgent', 'lastConversationId']) {
+      expect(saved).not.toHaveProperty(key)
+    }
+    expect(raw).not.toContain('segredo')
+    expect(raw).not.toContain('k3')
+    expect(raw).not.toContain('k4')
   })
 
-  it('survives a provider that never sends a role — the reason this is hand-rolled', async () => {
-    // The SDK's own stream helper throws "missing role for choice 0" here. Any
-    // OpenAI-compatible server may omit it, and this app points at those.
-    reply = (_req, res) =>
-      sse(res, [
-        { choices: [{ index: 0, delta: { content: 'oi' } }] },
-        {
-          choices: [
-            { index: 0, delta: { tool_calls: [{ index: 0, id: 'c1', type: 'function', function: { name: 'ler_tasks', arguments: '{}' } }] } }
-          ]
-        },
-        { choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] }
-      ])
+  it('turns a legacy sagyou harness into codex on read', async () => {
+    await writeFile(configPath(), JSON.stringify({ codeHarness: 'sagyou' }))
+    expect(await invoke('ai:config:get')).toMatchObject({ codeHarness: 'codex' })
+  })
 
-    const res = await invoke<{ success: boolean; message?: { content: string; tool_calls?: unknown[] } }>(
-      'ai:chat:stream',
-      { streamId: 's', messages: [], baseUrl, apiKey: 'k', model: 'm' }
+  it('keeps a copy of an unreadable config instead of silently overwriting it', async () => {
+    // The migration leaves an unreadable ai-config.json alone on purpose; the
+    // first executor switch in the Fleet must not be what destroys it.
+    await writeFile(configPath(), '{ not json, mas pode ser recuperável')
+
+    await invoke('ai:config:set', { codeHarness: 'claude-code' })
+
+    expect(JSON.parse(await readFile(configPath(), 'utf-8'))).toMatchObject({
+      codeHarness: 'claude-code'
+    })
+    const copies = (await readdir(userData)).filter((name) =>
+      name.startsWith('ai-config.json.corrupt-')
     )
-
-    expect(res.success).toBe(true)
-    expect(res.message?.content).toBe('oi')
-    expect(res.message?.tool_calls).toHaveLength(1)
-  })
-
-  it('asks for usage, and reads it off the final chunk', async () => {
-    let asked: unknown
-    reply = (_req, res, body) => {
-      asked = JSON.parse(body).stream_options
-      sse(res, [
-        { choices: [{ index: 0, delta: { content: 'x' } }] },
-        { choices: [], usage: { prompt_tokens: 50, completion_tokens: 7 } }
-      ])
-    }
-
-    const res = await invoke<{ usage?: unknown }>('ai:chat:stream', {
-      streamId: 's',
-      messages: [],
-      baseUrl,
-      apiKey: 'k',
-      model: 'm'
-    })
-
-    expect(asked).toEqual({ include_usage: true })
-    // The usage chunk carries no choices, so it is read before the delta guard.
-    expect(res.usage).toEqual({ promptTokens: 50, completionTokens: 7 })
-  })
-
-  it('falls back to a plain stream when the provider rejects stream_options', async () => {
-    // A strict server answers 400 to an unknown field. Losing the token count
-    // beats losing the answer.
-    let attempts = 0
-    reply = (_req, res, body) => {
-      attempts++
-      if (JSON.parse(body).stream_options) {
-        res.writeHead(400, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ error: { message: 'unknown field stream_options' } }))
-        return
-      }
-      sse(res, [{ choices: [{ index: 0, delta: { content: 'funcionou' } }] }])
-    }
-
-    const res = await invoke<{ success: boolean; message?: { content: string }; usage?: unknown }>(
-      'ai:chat:stream',
-      { streamId: 's', messages: [], baseUrl, apiKey: 'k', model: 'm' }
+    expect(copies).toHaveLength(1)
+    expect(await readFile(join(userData, copies[0]), 'utf-8')).toBe(
+      '{ not json, mas pode ser recuperável'
     )
-
-    expect(attempts).toBe(2)
-    expect(res.success).toBe(true)
-    expect(res.message?.content).toBe('funcionou')
-    expect(res.usage).toBeUndefined()
   })
 
-  it('does not retry the fallback for a non-400 failure', async () => {
-    let attempts = 0
-    reply = (_req, res) => {
-      attempts++
-      res.writeHead(401, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ error: { message: 'bad key' } }))
-    }
-
-    const res = await invoke<{ success: boolean; status?: number }>('ai:chat:stream', {
-      streamId: 's',
-      messages: [],
-      baseUrl,
-      apiKey: 'k',
-      model: 'm'
-    })
-
-    // A 401 is not a stream_options problem; retrying without it changes nothing.
-    expect(attempts).toBe(1)
-    expect(res).toMatchObject({ success: false, status: 401 })
+  it('writes the config atomically, leaving no temporary file', async () => {
+    await writeFile(configPath(), JSON.stringify({ codeHarness: 'codex' }))
+    await invoke('ai:config:set', { codeHarness: 'claude-code' })
+    expect((await readdir(userData)).filter((name) => name.endsWith('.tmp'))).toEqual([])
   })
 })
 
@@ -525,8 +312,33 @@ describe('ai:code:* handlers', () => {
 
   describe('ai:code:list', () => {
     it('lists the files under the root', async () => {
-      const res = await invoke<{ files: string[] }>('ai:code:list', root, '.')
+      const res = await invoke<{ files: string[]; total: number; truncated: boolean }>(
+        'ai:code:list',
+        root,
+        '.'
+      )
       expect(res.files).toEqual(['bin.dat', 'src/a.ts', 'src/b.ts'])
+      // The whole listing fits under the default page: total is exact, no more.
+      expect(res).toMatchObject({ total: 3, offset: 0, truncated: false })
+    })
+
+    it('pages the listing: a small limit returns one window and points at the rest', async () => {
+      type Page = {
+        files: string[]
+        total: number
+        offset: number
+        truncated: boolean
+        nextOffset?: number
+      }
+      const first = await invoke<Page>('ai:code:list', root, '.', 0, 2)
+      expect(first.files).toEqual(['bin.dat', 'src/a.ts'])
+      expect(first).toMatchObject({ total: 3, offset: 0, truncated: true, nextOffset: 2 })
+
+      // Resume from nextOffset for the tail; nothing left, so no nextOffset.
+      const second = await invoke<Page>('ai:code:list', root, '.', first.nextOffset, 2)
+      expect(second.files).toEqual(['src/b.ts'])
+      expect(second).toMatchObject({ total: 3, offset: 2, truncated: false })
+      expect(second.nextOffset).toBeUndefined()
     })
 
     it('rejects a directory that does not exist', async () => {
@@ -538,7 +350,11 @@ describe('ai:code:* handlers', () => {
 
   describe('ai:code:read', () => {
     it('reads a file inside the root', async () => {
-      const res = await invoke<{ content: string; truncated: boolean }>('ai:code:read', root, 'src/a.ts')
+      const res = await invoke<{ content: string; truncated: boolean }>(
+        'ai:code:read',
+        root,
+        'src/a.ts'
+      )
       expect(res.content).toContain('const alvo = 1')
       expect(res.truncated).toBe(false)
     })
@@ -570,12 +386,56 @@ describe('ai:code:* handlers', () => {
       expect(await invoke('ai:code:read', root, 'src')).toMatchObject({ error: expect.any(String) })
     })
 
-    it('truncates a huge file instead of shipping it whole', async () => {
+    it('pages a huge file instead of shipping it whole', async () => {
+      // A file result is resent on every later step, so a bare read returns one
+      // 20000-char window and points at the rest via nextOffset — not the whole
+      // 70000-char file, which was a per-step token tax.
       const big = join(root, 'big.txt')
       await writeFile(big, 'a'.repeat(70000))
-      const res = await invoke<{ content: string; truncated: boolean }>('ai:code:read', root, 'big.txt')
+      const res = await invoke<{
+        content: string
+        truncated: boolean
+        offset: number
+        total: number
+        nextOffset?: number
+      }>('ai:code:read', root, 'big.txt')
       expect(res.truncated).toBe(true)
+      expect(res.content).toHaveLength(20000)
+      expect(res).toMatchObject({ offset: 0, total: 70000, nextOffset: 20000 })
+      await rm(big)
+    })
+
+    it('resumes from nextOffset and drops it once the file is exhausted', async () => {
+      const big = join(root, 'big.txt')
+      await writeFile(big, 'a'.repeat(70000))
+      // Resume at 20000 asking for the rest in one large window (raised via
+      // maxChars up to the 60000 ceiling): reads to the end, no more nextOffset.
+      const res = await invoke<{
+        content: string
+        truncated: boolean
+        offset: number
+        total: number
+        nextOffset?: number
+      }>('ai:code:read', root, 'big.txt', 20000, 60000)
+      expect(res.content).toHaveLength(50000)
+      expect(res.truncated).toBe(false)
+      expect(res.offset).toBe(20000)
+      expect(res.nextOffset).toBeUndefined()
+      await rm(big)
+    })
+
+    it('caps a single read at 60000 chars even when maxChars asks for more', async () => {
+      const big = join(root, 'big.txt')
+      await writeFile(big, 'a'.repeat(80000))
+      const res = await invoke<{ content: string; truncated: boolean }>(
+        'ai:code:read',
+        root,
+        'big.txt',
+        0,
+        1_000_000
+      )
       expect(res.content).toHaveLength(60000)
+      expect(res.truncated).toBe(true)
       await rm(big)
     })
   })
@@ -609,336 +469,15 @@ describe('ai:code:* handlers', () => {
   })
 })
 
-// -----------------------------------------------------------------------------
-
-/**
- * Naming a chat by hand.
- *
- * The autosave derives a title from the first message and re-sends it on every
- * save, knowing nothing about renames — so the rule that a user's name wins
- * lives here, on the side that owns the file.
- */
-describe('ai:conversations:rename', () => {
-  const save = (id: string, title: string, text = 'oi'): Promise<unknown> =>
-    invoke('ai:conversations:save', {
-      id,
-      title,
-      messages: [{ role: 'user', content: text }]
-    })
-
-  const titleOf = async (id: string): Promise<string | undefined> =>
-    (await invoke<{ id: string; title: string }[]>('ai:conversations:list')).find((c) => c.id === id)
-      ?.title
-
-  beforeEach(async () => {
-    await invoke('ai:conversations:replace', [])
-  })
-
-  it('names a chat', async () => {
-    await save('r1', 'oi')
-    expect(await invoke('ai:conversations:rename', 'r1', 'Planejamento do sprint')).toEqual({
-      title: 'Planejamento do sprint'
-    })
-    expect(await titleOf('r1')).toBe('Planejamento do sprint')
-  })
-
-  it('keeps the name when the autosave writes its derived one over it', async () => {
-    // The regression this guards: the reply lands, the autosave fires with a
-    // title taken from the first message, and the rename is gone a second after
-    // it was made.
-    await save('r2', 'oi')
-    await invoke('ai:conversations:rename', 'r2', 'Nome escolhido')
-    await save('r2', 'oi', 'mais uma pergunta')
-
-    expect(await titleOf('r2')).toBe('Nome escolhido')
-  })
-
-  it('trims and clips, so the stored name is the one the list can show', async () => {
-    await save('r3', 'oi')
-    const res = await invoke<{ title: string }>('ai:conversations:rename', 'r3', `  ${'x'.repeat(300)}  `)
-    expect(res.title).toHaveLength(120)
-    expect(await titleOf('r3')).toHaveLength(120)
-  })
-
-  it('refuses a blank name instead of leaving a nameless row', async () => {
-    await save('r4', 'oi')
-    expect(await invoke('ai:conversations:rename', 'r4', '   ')).toMatchObject({
-      error: expect.any(String)
-    })
-    expect(await titleOf('r4')).toBe('oi')
-  })
-
-  it('reports an id that is not there rather than inventing a chat', async () => {
-    expect(await invoke('ai:conversations:rename', 'nao-existe', 'x')).toMatchObject({
-      error: expect.any(String)
-    })
-    expect(await invoke<unknown[]>('ai:conversations:list')).toHaveLength(0)
-  })
-
-  it('does not jump the chat to the top of the history', async () => {
-    // updatedAt orders the list by when a chat was last talked to. Renaming is
-    // not talking to it.
-    await save('r5', 'oi')
-    const before = (await invoke<{ id: string; updatedAt: string }[]>('ai:conversations:list'))[0]
-      .updatedAt
-    await invoke('ai:conversations:rename', 'r5', 'Outro nome')
-    const after = (await invoke<{ id: string; updatedAt: string }[]>('ai:conversations:list'))[0]
-      .updatedAt
-
-    expect(after).toBe(before)
-  })
-
-  it('survives a backup restore, name and all', async () => {
-    await save('r6', 'oi')
-    await invoke('ai:conversations:rename', 'r6', 'Nome que importa')
-    const exported = await invoke<unknown[]>('ai:conversations:all')
-
-    await invoke('ai:conversations:replace', exported)
-    // Restored, then saved again: without the flag the derived title would win
-    // and the restore would have quietly un-named it.
-    await save('r6', 'oi', 'depois do restore')
-
-    expect(await titleOf('r6')).toBe('Nome que importa')
-  })
-
-  it('rejects junk arguments', async () => {
-    expect(await invoke('ai:conversations:rename', 42, 'x')).toMatchObject({
-      error: expect.any(String)
-    })
-    expect(await invoke('ai:conversations:rename', 'r1', null)).toMatchObject({
-      error: expect.any(String)
-    })
-  })
-})
 
 // -----------------------------------------------------------------------------
 
 /**
- * The code agent's output outliving whoever was watching.
+ * The native code agent (the loop in ../code-agent), driven end to end through
+ * the real `ai:code-agent:run` handler against the stand-in provider.
  *
- * The agent is a child process that runs for minutes (a code review is the
- * point), and the user is meant to keep working meanwhile. But its output is a
- * live stream, and the only thing accumulating it was a panel inside AIView —
- * unmounted the moment another view is active. Everything printed while the
- * user was elsewhere went nowhere, and an agent that finished while they were
- * away left nothing at all. Main buffers it now, because main owns the process.
+ * The old external-codex tests were removed with the codex spawn path; the loop
+ * itself is unit-tested in code-agent.test.ts. What these cover is the IPC glue
+ * the unit tests can't: the run handler streaming to the panel, the real model
+ * in the banner, and the per-action approval round-trip.
  */
-describe('ai:code-agent output survives the panel', () => {
-  let dir: string
-  /** Holds the stand-in agent. PATH is narrowed to this — see beforeAll. */
-  let binDir: string
-  const oldPath = process.env.PATH
-
-  const fakeAider = (body: string): Promise<void> =>
-    writeFile(join(binDir, 'aider'), `#!/bin/sh\n${body}\n`, { mode: 0o755 })
-
-  beforeAll(async () => {
-    dir = await mkdtemp(join(tmpdir(), 'agent-cwd-'))
-    binDir = await mkdtemp(join(tmpdir(), 'agent-bin-'))
-    // PATH is *replaced*, not prepended. Both aider and codex are really
-    // installed on a dev machine, and the handler spawns whatever it finds:
-    // prepending let a test fire the real codex, which sits waiting on stdin
-    // and never exits, poisoning every test after it. The only agent reachable
-    // from here is the script below; `codex` resolves to nothing, on purpose.
-    process.env.PATH = binDir
-    await fakeAider('echo "LINHA_UM"\necho "LINHA_DOIS"\nexit 0')
-  })
-
-  afterAll(async () => {
-    process.env.PATH = oldPath
-    await rm(dir, { recursive: true, force: true })
-    await rm(binDir, { recursive: true, force: true })
-  })
-
-  const status = (): Promise<{ running: boolean; log: string }> =>
-    invoke('ai:code-agent:status')
-
-  /** Wait for the agent to exit, so the buffer is complete. */
-  const settle = async (): Promise<void> => {
-    for (let i = 0; i < 100; i++) {
-      if (!(await status()).running) return
-      await new Promise((r) => setTimeout(r, 20))
-    }
-    throw new Error('the agent never exited')
-  }
-
-  beforeEach(async () => {
-    await invoke('ai:config:set', { baseUrl, apiKey: 'k', model: 'm' })
-  })
-
-  // Never leave a child running into the next test.
-  afterEach(async () => {
-    await invoke('ai:code-agent:stop')
-  })
-
-  it('keeps what the agent printed, for a panel that was not there to hear it', async () => {
-    const res = await invoke<{ success: boolean }>('ai:code-agent:run', {
-      path: dir,
-      task: 'revisar o código',
-      agent: 'aider'
-    })
-    expect(res.success).toBe(true)
-    await settle()
-
-    // Nobody was listening to ai:code-agent:output — which is exactly the case
-    // when the user is on the Board — and the output is still here.
-    const { log } = await status()
-    expect(log).toContain('LINHA_UM')
-    expect(log).toContain('LINHA_DOIS')
-  })
-
-  it('records that the run is over, not merely that it went quiet', async () => {
-    await invoke('ai:code-agent:run', { path: dir, task: 't', agent: 'aider' })
-    await settle()
-
-    // A returning user has to be able to tell "finished" from "still working".
-    const { running, log } = await status()
-    expect(running).toBe(false)
-    expect(log).toContain('agente encerrado')
-  })
-
-  it('starts a new log per run, instead of stacking reviews together', async () => {
-    await invoke('ai:code-agent:run', { path: dir, task: 'primeira', agent: 'aider' })
-    await settle()
-    await invoke('ai:code-agent:run', { path: dir, task: 'segunda', agent: 'aider' })
-    await settle()
-
-    const { log } = await status()
-    // Two runs, one panel: the old output prepended to the new would read as
-    // one very confusing review.
-    expect(log.match(/LINHA_UM/g)).toHaveLength(1)
-  })
-
-  it('does not wipe the last run when a bad request is refused', async () => {
-    await invoke('ai:code-agent:run', { path: dir, task: 'boa', agent: 'aider' })
-    await settle()
-
-    // Refused before anything spawns — the user may still be reading the panel.
-    expect(
-      await invoke('ai:code-agent:run', { path: dir, task: '  ', agent: 'aider' })
-    ).toMatchObject({ success: false })
-    expect(
-      await invoke('ai:code-agent:run', { path: join(dir, 'nao-existe'), task: 't' })
-    ).toMatchObject({ success: false })
-
-    expect((await status()).log).toContain('LINHA_UM')
-  })
-
-  it('keeps the "not installed" line, the one nobody is ever watching for', async () => {
-    // Fires instantly, usually before the user has looked at the panel — and it
-    // is the most useful line the panel can show. (`codex` is not on the PATH
-    // this suite runs with.)
-    const res = await invoke<{ success: boolean }>('ai:code-agent:run', {
-      path: dir,
-      task: 't',
-      agent: 'codex'
-    })
-    expect(res.success).toBe(false)
-
-    const { log } = await status()
-    expect(log).toMatch(/não encontrado|erro ao iniciar/)
-  })
-
-  it('keeps only the tail of a chatty agent', async () => {
-    // ~1000 lines x ~15 chars comfortably overruns the 8000-char cap; 400 did
-    // not, and the test passed for the wrong reason.
-    await fakeAider('i=0\nwhile [ $i -lt 1000 ]; do echo "enchimento-$i"; i=$((i+1)); done')
-
-    await invoke('ai:code-agent:run', { path: dir, task: 't', agent: 'aider' })
-    await settle()
-
-    // An unbounded buffer of a long agent run is a leak that grows for as long
-    // as the app is open.
-    const { log } = await status()
-    expect(log.length).toBeLessThanOrEqual(8000)
-    expect(log).toContain('enchimento-999') // the newest survives
-    expect(log).not.toContain('enchimento-0\n') // the oldest is gone
-  })
-})
-
-// -----------------------------------------------------------------------------
-
-/**
- * Handing the repo's guide to the agent before it touches code.
- *
- * The stub agents echo their own argv, so what's asserted is what the real
- * handler really spawned — not what a mock was told.
- */
-describe('the guide is given to the agent', () => {
-  let withGuide: string
-  let without: string
-  let binDir: string
-  const oldPath = process.env.PATH
-
-  beforeAll(async () => {
-    binDir = await mkdtemp(join(tmpdir(), 'guide-bin-'))
-    // PATH replaced, not prepended: the real aider/codex are installed on a dev
-    // machine and the handler runs whatever it finds.
-    process.env.PATH = binDir
-    for (const name of ['aider', 'codex']) {
-      await writeFile(join(binDir, name), '#!/bin/sh\necho "ARGV: $@"\n', { mode: 0o755 })
-    }
-
-    withGuide = await mkdtemp(join(tmpdir(), 'guide-yes-'))
-    await writeFile(join(withGuide, 'GUIDE.md'), '# guia do projeto\n')
-    without = await mkdtemp(join(tmpdir(), 'guide-no-'))
-  })
-
-  afterAll(async () => {
-    process.env.PATH = oldPath
-    await rm(binDir, { recursive: true, force: true })
-    await rm(withGuide, { recursive: true, force: true })
-    await rm(without, { recursive: true, force: true })
-  })
-
-  const argv = async (path: string, agent: 'aider' | 'codex'): Promise<string> => {
-    await invoke('ai:config:set', { baseUrl, apiKey: 'k', model: 'm' })
-    await invoke('ai:code-agent:run', { path, task: 'faça algo', agent })
-    for (let i = 0; i < 100; i++) {
-      const s = await invoke<{ running: boolean; log: string }>('ai:code-agent:status')
-      if (!s.running) return s.log
-      await new Promise((r) => setTimeout(r, 20))
-    }
-    throw new Error('the agent never exited')
-  }
-
-  afterEach(async () => {
-    await invoke('ai:code-agent:stop')
-  })
-
-  it('gives aider the guide as a read-only file', async () => {
-    expect(await argv(withGuide, 'aider')).toContain('--read GUIDE.md')
-  })
-
-  it('asks codex to read it, since codex exec has no --read', async () => {
-    const log = await argv(withGuide, 'codex')
-
-    expect(log).toMatch(/leia o GUIDE\.md/i)
-    expect(log).toContain('faça algo') // the task itself still gets through
-  })
-
-  it('does NOT hand our guide to a repo that has none', async () => {
-    // The bug this exists for: the agent runs wherever the project's code path
-    // points, which may be any repo on the machine. Briefing it on Sagyou's
-    // rules while it edits someone else's code is worse than briefing it on
-    // nothing.
-    expect(await argv(without, 'aider')).not.toContain('--read')
-  })
-
-  it('leaves the codex prompt alone when the repo has no guide', async () => {
-    const log = await argv(without, 'codex')
-
-    expect(log).not.toMatch(/leia o GUIDE\.md/i)
-    expect(log).toContain('faça algo')
-  })
-
-  it('names the guide by a path relative to the repo, not this machine', async () => {
-    // The agent's cwd is the repo, so 'GUIDE.md' resolves there. An absolute
-    // path would work here and be wrong everywhere else — and would put the
-    // user's directory layout into the agent's prompt.
-    const log = await argv(withGuide, 'aider')
-
-    expect(log).toContain('--read GUIDE.md')
-    expect(log).not.toContain(withGuide) // no absolute path in the argv
-  })
-})

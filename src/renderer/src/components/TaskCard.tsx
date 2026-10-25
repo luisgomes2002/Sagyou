@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { format, isPast, parseISO } from 'date-fns'
@@ -29,12 +29,13 @@ export function TaskCard({ task, onEdit, onDelete, onView, onComplete, overlay =
     opacity: isDragging ? 0.3 : 1
   }
 
-  const activeTimer = useKanbanStore((s) => s.activeTimer)
+  // This task's own timer, if it's one of the several that may be running.
+  const timer = useKanbanStore((s) => s.activeTimers.find((t) => t.taskId === task.id))
   const startTimer = useKanbanStore((s) => s.startTimer)
   const stopTimer = useKanbanStore((s) => s.stopTimer)
   const isLinkedToCanvas = useKanbanStore((s) => s.notes.some((n) => n.taskId === task.id))
 
-  const isRunning = activeTimer?.taskId === task.id
+  const isRunning = !!timer
   const [, setTick] = useState(0)
 
   // Re-render every second while this task's timer is running
@@ -44,7 +45,7 @@ export function TaskCard({ task, onEdit, onDelete, onView, onComplete, overlay =
     return () => clearInterval(id)
   }, [isRunning])
 
-  const sessionSeconds = isRunning ? Math.floor((Date.now() - activeTimer!.startedAt) / 1000) : 0
+  const sessionSeconds = timer ? Math.floor((Date.now() - timer.startedAt) / 1000) : 0
   const totalSeconds = (task.timeSpent ?? 0) + sessionSeconds
   const showTime = totalSeconds > 0
 
@@ -53,7 +54,7 @@ export function TaskCard({ task, onEdit, onDelete, onView, onComplete, overlay =
 
   const handleTimerToggle = (e: React.MouseEvent) => {
     e.stopPropagation()
-    if (isRunning) stopTimer()
+    if (isRunning) stopTimer(task.id)
     else startTimer(task.id)
   }
 
@@ -62,13 +63,13 @@ export function TaskCard({ task, onEdit, onDelete, onView, onComplete, overlay =
       ref={overlay ? undefined : setNodeRef}
       style={overlay ? undefined : style}
       onClick={() => !overlay && onView?.(task)}
-      className={`group rounded-lg border border-[#2a2d42] bg-[#1e2235] p-3 select-none transition-colors hover:bg-[#242840] hover:border-[#3a3e58] ${overlay ? 'drag-overlay' : 'cursor-pointer'}`}
+      className={`group rounded-lg border border-[#2b2b31] bg-[#16161a] p-3 select-none transition-colors hover:bg-[#222227] hover:border-[#3b3b42] ${overlay ? 'drag-overlay' : 'cursor-pointer cv-card'}`}
     >
       {/* drag handle + actions */}
       <div className="flex items-start justify-between gap-2 mb-2">
         <div
           {...(overlay ? {} : { ...attributes, ...listeners })}
-          className="mt-0.5 cursor-grab active:cursor-grabbing text-[#3a3e58] hover:text-[#6366f1] transition-colors shrink-0"
+          className="mt-0.5 cursor-grab active:cursor-grabbing text-[#555555] hover:text-[#7c3aed] transition-colors shrink-0"
         >
           <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor">
             <circle cx="3" cy="3" r="1.5" />
@@ -89,8 +90,8 @@ export function TaskCard({ task, onEdit, onDelete, onView, onComplete, overlay =
               onClick={handleTimerToggle}
               className={`p-1 rounded transition-colors ${
                 isRunning
-                  ? 'text-[#22c55e] bg-[#22c55e]/10 hover:bg-[#22c55e]/20'
-                  : 'text-[#8892a4] hover:text-[#22c55e] hover:bg-[#22c55e]/10'
+                  ? 'text-[#20b858] bg-[#16161a] hover:bg-[#2a2a30]'
+                  : 'text-[#999999] hover:text-[#20b858] hover:bg-[#222227]'
               }`}
               title={isRunning ? 'Pausar timer' : 'Iniciar timer'}
             >
@@ -110,7 +111,7 @@ export function TaskCard({ task, onEdit, onDelete, onView, onComplete, overlay =
           {onComplete && (
             <button
               onClick={(e) => { e.stopPropagation(); onComplete(task) }}
-              className="p-1 rounded text-[#8892a4] hover:text-[#22c55e] hover:bg-[#22c55e]/10 transition-colors"
+              className="p-1 rounded text-[#999999] hover:text-[#20b858] hover:bg-[#222227] transition-colors"
               title="Concluir task"
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -120,7 +121,7 @@ export function TaskCard({ task, onEdit, onDelete, onView, onComplete, overlay =
           )}
           <button
             onClick={(e) => { e.stopPropagation(); onEdit(task) }}
-            className="p-1 rounded text-[#8892a4] hover:text-[#e2e8f0] hover:bg-[#2a2d42] transition-colors"
+            className="p-1 rounded text-[#999999] hover:text-[#d4d4d4] hover:bg-[#2a2a30] transition-colors"
             title="Editar"
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -130,7 +131,7 @@ export function TaskCard({ task, onEdit, onDelete, onView, onComplete, overlay =
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); onDelete(task) }}
-            className="p-1 rounded text-[#8892a4] hover:text-red-400 hover:bg-red-400/10 transition-colors"
+            className="p-1 rounded text-[#999999] hover:text-[#e04040] hover:bg-[#222227] transition-colors"
             title="Deletar"
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -144,23 +145,23 @@ export function TaskCard({ task, onEdit, onDelete, onView, onComplete, overlay =
       </div>
 
       {/* title */}
-      <p className="text-sm text-[#e2e8f0] leading-snug mb-2 break-words">{task.title}</p>
+      <p className="text-sm text-[#d4d4d4] leading-snug mb-2 break-words">{task.title}</p>
 
       {/* description preview */}
       {task.description && (
-        <p className="text-xs text-[#8892a4] mb-2 line-clamp-2 leading-relaxed">{task.description}</p>
+        <p className="text-xs text-[#999999] mb-2 line-clamp-2 leading-relaxed">{task.description}</p>
       )}
 
       {/* tags */}
       {task.tags.length > 0 && (
         <div className="flex flex-wrap gap-1 mb-2">
           {task.tags.slice(0, 4).map((tag) => (
-            <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded bg-[#2a2d42] text-[#8892a4]">
+            <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded bg-[#2a2a30] text-[#999999]">
               {tag}
             </span>
           ))}
           {task.tags.length > 4 && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#2a2d42] text-[#8892a4]">
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#2a2a30] text-[#999999]">
               +{task.tags.length - 4}
             </span>
           )}
@@ -174,7 +175,7 @@ export function TaskCard({ task, onEdit, onDelete, onView, onComplete, overlay =
             {priority.label}
           </span>
           {isLinkedToCanvas && (
-            <span className="flex items-center text-[#6366f1]/70" title="Vinculada ao Canvas">
+            <span className="flex items-center text-[#7c3aed]" title="Vinculada ao Canvas">
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                 <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
                 <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
@@ -186,11 +187,11 @@ export function TaskCard({ task, onEdit, onDelete, onView, onComplete, overlay =
         <div className="flex items-center gap-2">
           {showTime && (
             <span
-              className={`flex items-center gap-0.5 text-[10px] tabular-nums font-mono ${isRunning ? 'text-[#22c55e]' : 'text-[#8892a4]'}`}
+              className={`flex items-center gap-0.5 text-[10px] tabular-nums font-mono ${isRunning ? 'text-[#20b858]' : 'text-[#999999]'}`}
               title={isRunning ? 'Cronômetro em andamento' : 'Cronômetro pausado'}
             >
               {isRunning ? (
-                <span className="w-1.5 h-1.5 rounded-full bg-[#22c55e] animate-pulse shrink-0" />
+                <span className="w-1.5 h-1.5 rounded-full bg-[#20b858] animate-pulse shrink-0" />
               ) : (
                 <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor" className="shrink-0 opacity-60">
                   <rect x="6" y="4" width="4" height="16" rx="1" />
@@ -201,7 +202,7 @@ export function TaskCard({ task, onEdit, onDelete, onView, onComplete, overlay =
             </span>
           )}
           {task.images && task.images.length > 0 && (
-            <span className="flex items-center gap-0.5 text-[10px] text-[#8892a4]">
+            <span className="flex items-center gap-0.5 text-[10px] text-[#999999]">
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
                 <circle cx="12" cy="13" r="4" />
@@ -210,7 +211,7 @@ export function TaskCard({ task, onEdit, onDelete, onView, onComplete, overlay =
             </span>
           )}
           {task.dueDate && (
-            <span className={`text-[10px] ${isOverdue ? 'text-red-400' : 'text-[#8892a4]'}`}>
+            <span className={`text-[10px] ${isOverdue ? 'text-[#e04040]' : 'text-[#999999]'}`}>
               {format(parseISO(task.dueDate), 'dd/MM')}
             </span>
           )}

@@ -1,8 +1,8 @@
 import type { IStorageAdapter } from './StorageAdapter'
-import type { Project, Task, Sprint, Tombstone, Backup, AIJson, StickyNote, Goal, Habit, FinancialTable, StoredFile, AIConversation } from '../types'
+import type { Project, Task, Sprint, Tombstone, Backup, AIJson, StickyNote, Goal, Habit, FinancialTable, StoredFile, AiMemory } from '../types'
 
 const STORAGE_KEY = 'kanban-data'
-const CONVERSATIONS_KEY = 'ai-conversations'
+const MEMORIES_KEY = 'ai-memories'
 
 // Web implementation — swap ElectronStorage for this when migrating to browser
 export class WebStorage implements IStorageAdapter {
@@ -92,16 +92,16 @@ export class WebStorage implements IStorageAdapter {
     })
   }
 
-  async loadConversations(): Promise<AIConversation[]> {
+  async loadMemories(): Promise<AiMemory[]> {
     try {
-      const parsed = JSON.parse(localStorage.getItem(CONVERSATIONS_KEY) || '[]')
+      const parsed = JSON.parse(localStorage.getItem(MEMORIES_KEY) || '[]')
       return Array.isArray(parsed) ? parsed : []
     } catch {
       return []
     }
   }
 
-  async saveConversations(list: AIConversation[]): Promise<void> {
-    localStorage.setItem(CONVERSATIONS_KEY, JSON.stringify(list))
+  async replaceMemories(list: AiMemory[]): Promise<void> {
+    localStorage.setItem(MEMORIES_KEY, JSON.stringify(list))
   }
 }

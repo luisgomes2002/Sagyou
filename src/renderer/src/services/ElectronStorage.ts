@@ -1,9 +1,27 @@
 import type { IStorageAdapter } from './StorageAdapter'
-import type { Project, Task, Sprint, Tombstone, Backup, AIJson, StickyNote, Goal, Habit, FinancialTable, StoredFile, AIConversation } from '../types'
+import type {
+  Project,
+  Task,
+  Sprint,
+  Tombstone,
+  Backup,
+  AIJson,
+  StickyNote,
+  Goal,
+  Habit,
+  FinancialTable,
+  FinancialProfile,
+  StoredFile,
+  AiMemory,
+  TimeBlock,
+  Routine,
+  FeatureId,
+  UiPreferences
+} from '../types'
 
 export class ElectronStorage implements IStorageAdapter {
   async load() {
-    const data = await window.electronAPI.store.load() as Record<string, unknown>
+    const data = (await window.electronAPI.store.load()) as Record<string, unknown>
     return {
       projects: (data.projects || []) as Project[],
       tasks: (data.tasks || []) as Task[],
@@ -13,8 +31,18 @@ export class ElectronStorage implements IStorageAdapter {
       goals: (data.goals || []) as Goal[],
       habits: (data.habits || []) as Habit[],
       lists: (data.lists || []) as FinancialTable[],
+      financialProfiles: (data.financialProfiles || []) as FinancialProfile[],
+      activeFinancialProfileId: data.activeFinancialProfileId as string | undefined,
+      featurePreferences: data.featurePreferences as FeatureId[] | undefined,
+      uiPreferences: data.uiPreferences as UiPreferences | undefined,
+      activeTimers: (data.activeTimers ?? undefined) as
+        | { taskId: string; startedAt: number }[]
+        | undefined,
+      // Legacy single-timer field, migrated to the array by the store's loader.
       activeTimer: (data.activeTimer ?? null) as { taskId: string; startedAt: number } | null,
-      files: (data.files || []) as StoredFile[]
+      files: (data.files || []) as StoredFile[],
+      timeBlocks: (data.timeBlocks || []) as TimeBlock[],
+      routines: (data.routines || []) as Routine[]
     }
   }
 
@@ -22,8 +50,20 @@ export class ElectronStorage implements IStorageAdapter {
     await window.electronAPI.store.save(data)
   }
 
+  async rebuildSearchIndex(): Promise<void> {
+    await window.electronAPI.store.rebuildSearchIndex()
+  }
+
   async exportBackup(backup: Backup): Promise<{ success: boolean; cancelled?: boolean }> {
     return window.electronAPI.backup.export(backup)
+  }
+
+  async autoSaveBackup(backup: Backup, force = false): Promise<{ success: boolean }> {
+    return window.electronAPI.backup.autoSave(backup, force)
+  }
+
+  async commitBackupBlobs(): Promise<{ success: boolean }> {
+    return window.electronAPI.backup.commitBlobs()
   }
 
   async importBackup(): Promise<{
@@ -46,11 +86,12 @@ export class ElectronStorage implements IStorageAdapter {
     return result as { success: boolean; cancelled?: boolean; data?: AIJson; error?: string }
   }
 
-  async loadConversations(): Promise<AIConversation[]> {
-    return window.electronAPI.ai.conversations.all()
+  async loadMemories(): Promise<AiMemory[]> {
+    // Everything, archived included — a backup must round-trip the full store.
+    return window.electronAPI.ai.memory.list({ includeArchived: true })
   }
 
-  async saveConversations(list: AIConversation[]): Promise<void> {
-    await window.electronAPI.ai.conversations.replace(list)
+  async replaceMemories(list: AiMemory[]): Promise<void> {
+    await window.electronAPI.ai.memory.replace(list)
   }
 }
