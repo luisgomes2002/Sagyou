@@ -8,6 +8,7 @@ import {
   MCP_NO_APPROVAL,
   MCP_WRITE_TOOLS,
   MCP_WRITE_TOOL_NAMES,
+  autoApprovesPending,
   mcpWriteResult,
   prepareMemoryWrite,
   type McpMemoryDeps
@@ -226,5 +227,18 @@ describe('prepareMemoryWrite', () => {
     expect(MCP_MEMORY_WRITE_TOOLS.filter((name) => MCP_APPROVAL_REQUIRED.has(name))).toEqual([
       'delete_memory'
     ])
+  })
+})
+
+describe('autoApprovesPending', () => {
+  it('never lets the run auto toggle answer a risky MCP card or the final delivery', () => {
+    for (const name of MCP_APPROVAL_REQUIRED) expect(autoApprovesPending(`mcp:${name}`)).toBe(false)
+    expect(autoApprovesPending('aplicar_alteracoes_externas')).toBe(false)
+  })
+
+  it('keeps auto-approving the cards it approved before', () => {
+    expect(autoApprovesPending('mcp:criar_task')).toBe(true)
+    expect(autoApprovesPending('mcp:save_memory')).toBe(true)
+    expect(autoApprovesPending('escrever_arquivo')).toBe(true)
   })
 })

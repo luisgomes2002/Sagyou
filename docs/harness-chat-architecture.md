@@ -37,8 +37,12 @@ sessão somente depois de congelar o escopo.
 
 O harness opera arquivos apenas na worktree. Dados do Sagyou só chegam por MCP
 escopado; nunca por SQLite, IPC interno, snapshot Zustand, variáveis de ambiente
-com segredo ou texto injetado no prompt. A aprovação de uma escrita MCP e a
-aprovação final do patch são decisões distintas.
+com segredo ou texto injetado no prompt. Toda escrita MCP passa pela fila
+serializada da run e só executa com a run viva; as arriscadas
+(`MCP_APPROVAL_REQUIRED`: exclusões, dinheiro, arquivar projeto, tabelas e
+perfis financeiros) também esperam o cartão, que o modo auto da run nunca
+responde. A aprovação de uma escrita MCP e a aprovação final do patch são
+decisões distintas.
 
 ## Contrato comum de sessão
 

@@ -276,7 +276,8 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
 10. **Escrita pelo MCP passa pela fila da run.** Toda escrita é serializada, só
     executa com a run viva e depois do flush do renderer. As de
     `MCP_APPROVAL_REQUIRED` (exclusões, dinheiro, arquivar projeto, tabelas e perfis
-    financeiros, `save_memory`, `criar_task`) também esperam o cartão; recusa,
+    financeiros) e as legadas `save_memory`/`criar_task` também esperam o cartão,
+    que o modo auto da run nunca responde; recusa,
     timeout ou limpeza rejeitam sem escrever. Ferramenta MCP nova que muta estado
     **tem** que entrar nessa fila, ser classificada nesse conjunto (um teste exige)
     e revalidar no `apply` (`services/mcpActions.ts`).

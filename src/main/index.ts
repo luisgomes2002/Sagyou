@@ -39,6 +39,7 @@ import { McpWriteQueue, RendererMcpActionBridge } from './modules/agent/mcp-writ
 import {
   MCP_APPROVAL_REQUIRED,
   MCP_MEMORY_TOOLS,
+  autoApprovesPending,
   mcpWriteResult,
   prepareMemoryWrite,
   type McpMemoryOp
@@ -1905,7 +1906,7 @@ app.whenReady().then(() => {
     const resolvedApprovalIds: string[] = []
     if (run.autoApprove) {
       for (const [id, pending] of run.pendingApprovals) {
-        if (pending.request.name === 'aplicar_alteracoes_externas') continue
+        if (!autoApprovesPending(pending.request.name)) continue
         run.pendingApprovals.delete(id)
         resolvedApprovalIds.push(id)
         pending.resolve(true)
