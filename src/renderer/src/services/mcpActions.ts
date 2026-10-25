@@ -1,15 +1,20 @@
 import { v4 as uuidv4 } from 'uuid'
 import { useKanbanStore } from '../store/kanban'
 import {
+  NOTE_COLORS,
   PRIORITY_CONFIG,
   PROJECT_COLORS,
   type Column,
+  type Goal,
   type Priority,
   type Project,
   type ProjectLink,
+  type StickyNote,
   type Task
 } from '../types'
 import { isDoneColumn } from '../utils/columns'
+import { todayLocalISO } from '../utils/dates'
+import { goalCurrent, goalKind, isGoalComplete, type GoalKind } from '../utils/goals'
 import type { McpActionResult, McpScope } from '../types/mcp-actions'
 
 /**
@@ -50,7 +55,9 @@ const LIMITS = {
   links: 20,
   taskTitle: 300,
   tags: 20,
-  tag: 60
+  tag: 60,
+  goalUnit: 40,
+  goalLabel: 200
 } as const
 
 const DONE_RENAME_REFUSAL =
@@ -434,6 +441,184 @@ const deleteTask: Handler = (args, scope, phase, store) => {
   return done(task.id, `Excluir tarefa "${task.title}" do projeto ${project.name}`)
 }
 
+// ── Goals ────────────────────────────────────────────────────────────────────
+
+function resolveGoal(args: Args, store: Store): Goal {
+  const id = optionalText(args, 'id', 200)
+  if (id) {
+    const goal = store.goals.find((item) => item.id === id)
+    if (!goal) refuse('Meta não encontrada.')
+    return goal as Goal
+  }
+  const title = optionalText(args, 'title', LIMITS.taskTitle)
+  if (!title) refuse('Informe id ou title da meta.')
+  const matches = store.goals.filter((item) => sameName(item.title, title as string))
+  if (matches.length > 1)
+    refuse(
+      'Mais de um registro com esse título; use o id.',
+      matches.slice(0, 10).map((item) => ({ id: item.id, title: item.title }))
+    )
+  if (!matches.length) refuse('Meta não encontrada.')
+  return matches[0]
+}
+
+function optionalTarget(args: Args): number | undefined {
+  const value = args.target
+  if (value === undefined) return undefined
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0)
+    refuse('target precisa ser um número maior que zero.')
+  return value as number
+}
+
+/** A goal may belong to no project, so an absent projectId never falls back to the session. */
+function optionalGoalProject(args: Args, store: Store): string | undefined {
+  const id = optionalText(args, 'projectId', 200)
+  if (!id) return undefined
+  if (!store.projects.some((project) => project.id === id)) refuse('Projeto não encontrado.')
+  return id
+}
+
+const createGoal: Handler = (args, _scope, phase, store) => {
+  const title = requiredText(args, 'title', LIMITS.taskTitle)
+  const kindRaw = optionalText(args, 'kind', 20) || 'quantity'
+  if (kindRaw !== 'quantity' && kindRaw !== 'completion')
+    refuse('kind precisa ser quantity ou completion.')
+  const kind = kindRaw as GoalKind
+  const target = kind === 'completion' ? 1 : optionalTarget(args)
+  if (target === undefined) return refuse('target é obrigatório numa meta de quantidade.')
+  const unit = optionalText(args, 'unit', LIMITS.goalUnit) ?? ''
+  const color = optionalProjectColor(args) ?? PROJECT_COLORS[0]
+  const projectId = optionalGoalProject(args, store)
+  const resumo = `Criar meta "${title}"`
+  if (phase === 'prepare') return done('', resumo)
+  const id = store.createGoal({ title, target, unit, color, kind, projectId })
+  return done(id, resumo)
+}
+
+const updateGoal: Handler = (args, _scope, phase, store) => {
+  const goal = resolveGoal(args, store)
+  const updates: Partial<Pick<Goal, 'title' | 'target' | 'unit' | 'color' | 'projectId'>> = {}
+  const title = optionalText(args, 'newTitle', LIMITS.taskTitle)
+  if (title !== undefined) {
+    if (!title) refuse('newTitle não pode ser vazio.')
+    updates.title = title
+  }
+  const target = optionalTarget(args)
+  if (target !== undefined) {
+    if (goalKind(goal) === 'completion' && target !== 1) refuse('Uma meta de conclusão tem alvo 1.')
+    updates.target = target
+  }
+  const unit = optionalText(args, 'unit', LIMITS.goalUnit)
+  if (unit !== undefined) updates.unit = unit
+  const color = optionalProjectColor(args)
+  if (color) updates.color = color
+  const projectId = optionalGoalProject(args, store)
+  if (projectId) updates.projectId = projectId
+  if (!Object.keys(updates).length) refuse('Nada para alterar.')
+  if (phase === 'apply') store.updateGoal(goal.id, updates)
+  return done(goal.id, `Editar meta "${goal.title}"`)
+}
+
+const addGoalProgress: Handler = (args, _scope, phase, store) => {
+  const goal = resolveGoal(args, store)
+  const resumo = `Registrar progresso na meta "${goal.title}"`
+  if (isGoalComplete(goal)) return done(goal.id, resumo, { jaConcluida: true })
+  let value = 1
+  if (goalKind(goal) === 'quantity') {
+    const raw = args.value
+    if (typeof raw !== 'number' || !Number.isFinite(raw) || raw <= 0)
+      refuse('value precisa ser um número maior que zero.')
+    value = raw as number
+  }
+  const date = optionalDate(args, 'date') || todayLocalISO()
+  const label = optionalText(args, 'label', LIMITS.goalLabel)
+  if (phase === 'prepare') return done(goal.id, resumo)
+  store.addGoalEntry(goal.id, { date, value, ...(label ? { label } : {}) })
+  const updated = useKanbanStore.getState().goals.find((item) => item.id === goal.id)
+  return done(goal.id, resumo, {
+    progresso: updated ? goalCurrent(updated) : value,
+    concluida: updated ? isGoalComplete(updated) : false
+  })
+}
+
+const deleteGoal: Handler = (args, _scope, phase, store) => {
+  const goal = resolveGoal(args, store)
+  if (phase === 'apply') store.deleteGoal(goal.id)
+  return done(goal.id, `Excluir meta "${goal.title}"`)
+}
+
+// ── Notes ────────────────────────────────────────────────────────────────────
+
+const NOTE_GRID = { originX: 100, originY: 100, stepX: 220, stepY: 170, perRow: 5 } as const
+const NOTE_SIZE = { width: 200, height: 150 } as const
+
+/** First grid cell whose note-sized box overlaps no existing note. */
+export function freeNotePosition(notes: Pick<StickyNote, 'x' | 'y' | 'width' | 'height'>[]): {
+  x: number
+  y: number
+} {
+  const overlaps = (x: number, y: number): boolean =>
+    notes.some(
+      (note) =>
+        x < note.x + note.width &&
+        note.x < x + NOTE_SIZE.width &&
+        y < note.y + note.height &&
+        note.y < y + NOTE_SIZE.height
+    )
+  for (let cell = 0; ; cell++) {
+    const x = NOTE_GRID.originX + (cell % NOTE_GRID.perRow) * NOTE_GRID.stepX
+    const y = NOTE_GRID.originY + Math.floor(cell / NOTE_GRID.perRow) * NOTE_GRID.stepY
+    if (!overlaps(x, y)) return { x, y }
+  }
+}
+
+function optionalNoteColor(args: Args): string | undefined {
+  const color = optionalText(args, 'color', 20)
+  if (color === undefined || color === '') return undefined
+  if (!(NOTE_COLORS as readonly string[]).includes(color))
+    refuse(`color precisa ser uma de: ${NOTE_COLORS.join(', ')}.`)
+  return color
+}
+
+function resolveNote(args: Args, store: Store): StickyNote {
+  const id = requiredText(args, 'id', 200)
+  const note = store.notes.find((item) => item.id === id)
+  if (!note) refuse('Nota não encontrada.')
+  return note as StickyNote
+}
+
+const noteLabel = (content: string): string =>
+  content.length > 40 ? `${content.slice(0, 40)}…` : content
+
+const createNote: Handler = (args, scope, phase, store) => {
+  const project = resolveProject(args, scope, store)
+  const content = requiredText(args, 'content', LIMITS.description)
+  const color = optionalNoteColor(args)
+  const resumo = `Criar nota "${noteLabel(content)}" em ${project.name}`
+  if (phase === 'prepare') return done('', resumo)
+  const position = freeNotePosition(store.notes.filter((note) => note.projectId === project.id))
+  const id = store.createNote(project.id, { content, ...position, ...(color ? { color } : {}) })
+  return done(id, resumo)
+}
+
+const updateNote: Handler = (args, _scope, phase, store) => {
+  const note = resolveNote(args, store)
+  const updates: Partial<Pick<StickyNote, 'content' | 'color'>> = {}
+  const content = optionalText(args, 'content', LIMITS.description)
+  if (content !== undefined) updates.content = content
+  const color = optionalNoteColor(args)
+  if (color) updates.color = color
+  if (!Object.keys(updates).length) refuse('Nada para alterar.')
+  if (phase === 'apply') store.updateNote(note.id, updates)
+  return done(note.id, `Editar nota "${noteLabel(note.content)}"`)
+}
+
+const deleteNote: Handler = (args, _scope, phase, store) => {
+  const note = resolveNote(args, store)
+  if (phase === 'apply') store.deleteNote(note.id)
+  return done(note.id, `Excluir nota "${noteLabel(note.content)}"`)
+}
+
 const HANDLERS: Record<string, Handler> = {
   create_project: createProject,
   update_project: updateProject,
@@ -448,7 +633,14 @@ const HANDLERS: Record<string, Handler> = {
   move_task: moveTask,
   complete_task: completeTask,
   reopen_task: reopenTask,
-  delete_task: deleteTask
+  delete_task: deleteTask,
+  create_goal: createGoal,
+  update_goal: updateGoal,
+  add_goal_progress: addGoalProgress,
+  delete_goal: deleteGoal,
+  create_note: createNote,
+  update_note: updateNote,
+  delete_note: deleteNote
 }
 
 function run(name: string, args: Args, scope: McpScope, phase: Phase): McpActionResult {
