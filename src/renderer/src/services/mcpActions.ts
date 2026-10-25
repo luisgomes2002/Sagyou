@@ -1,10 +1,17 @@
+import Decimal from 'decimal.js'
 import { v4 as uuidv4 } from 'uuid'
 import { useKanbanStore } from '../store/kanban'
 import {
+  CURRENCY_CONFIG,
+  DEFAULT_FINANCIAL_PROFILE_ID,
   NOTE_COLORS,
   PRIORITY_CONFIG,
   PROJECT_COLORS,
   type Column,
+  type Currency,
+  type FinancialProfile,
+  type FinancialTable,
+  type FinancialTransaction,
   type Goal,
   type Priority,
   type Project,
@@ -57,7 +64,10 @@ const LIMITS = {
   tags: 20,
   tag: 60,
   goalUnit: 40,
-  goalLabel: 200
+  goalLabel: 200,
+  transactionDescription: 300,
+  category: 60,
+  financialName: 80
 } as const
 
 const DONE_RENAME_REFUSAL =
@@ -619,6 +629,193 @@ const deleteNote: Handler = (args, _scope, phase, store) => {
   return done(note.id, `Excluir nota "${noteLabel(note.content)}"`)
 }
 
+// ── Finance (always the session's profile) ───────────────────────────────────
+
+const MONEY_PATTERN = /^\d+([.,]\d{1,2})?$/
+
+/**
+ * Positive amount as a 2-place canonical decimal string, or null.
+ *
+ * A thousands separator is refused rather than guessed: `new Decimal('1.500')`
+ * is 1.5, so guessing would turn R$ 1.500 into R$ 1,50.
+ */
+export function parseMcpMoney(raw: unknown): string | null {
+  const text = typeof raw === 'number' && Number.isFinite(raw) ? String(raw) : raw
+  if (typeof text !== 'string' || !MONEY_PATTERN.test(text.trim())) return null
+  const amount = new Decimal(text.trim().replace(',', '.'))
+  return amount.greaterThan(0) ? amount.toDecimalPlaces(2).toString() : null
+}
+
+/** Display-only: "R$ 1.500,00", "¥ 1.500", "$ 1,500.50". */
+export function formatMcpMoney(amount: string, currency: Currency): string {
+  const { symbol, decimals } = CURRENCY_CONFIG[currency]
+  const formatted = new Intl.NumberFormat(currency === 'USD' ? 'en-US' : 'pt-BR', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals
+  }).format(Number(amount))
+  return `${symbol} ${formatted}`
+}
+
+const TRANSACTION_TYPES: Record<string, FinancialTransaction['type']> = {
+  receita: 'income',
+  despesa: 'expense'
+}
+const TYPE_LABEL: Record<FinancialTransaction['type'], string> = {
+  income: 'receita',
+  expense: 'despesa'
+}
+const TABLE_REFUSAL = 'Tabela indisponível nesta sessão MCP.'
+const TRANSACTION_REFUSAL = 'Transação indisponível nesta sessão MCP.'
+const DEBT_REFUSAL = 'Esta transação pertence a uma dívida; altere-a no Sagyou.'
+
+function sessionProfile(scope: McpScope, store: Store): FinancialProfile {
+  const profile = store.financialProfiles.find((item) => item.id === scope.financialProfileId)
+  if (!profile) refuse('O perfil financeiro da sessão não existe mais.')
+  return profile as FinancialProfile
+}
+
+/** Another profile's table and a missing one get the same answer, so existence never leaks. */
+function resolveTable(args: Args, scope: McpScope, store: Store): FinancialTable {
+  const id = optionalText(args, 'tableId', 200)
+  const table = store.lists.find((item) => item.id === id)
+  if (!table || (table.profileId ?? DEFAULT_FINANCIAL_PROFILE_ID) !== scope.financialProfileId)
+    refuse(TABLE_REFUSAL)
+  return table as FinancialTable
+}
+
+function resolveTransaction(args: Args, table: FinancialTable): FinancialTransaction {
+  const id = optionalText(args, 'id', 200)
+  const transaction = table.transactions.find((item) => item.id === id)
+  if (!transaction) refuse(TRANSACTION_REFUSAL)
+  if ((transaction as FinancialTransaction).debtId) refuse(DEBT_REFUSAL)
+  return transaction as FinancialTransaction
+}
+
+function readType(args: Args, required: boolean): FinancialTransaction['type'] | undefined {
+  const raw = optionalText(args, 'type', 20)
+  if (raw === undefined && !required) return undefined
+  const type = TRANSACTION_TYPES[raw ?? '']
+  if (!type) refuse('type precisa ser receita ou despesa.')
+  return type
+}
+
+function readAmount(args: Args, required: boolean): string | undefined {
+  if (args.amount === undefined && !required) return undefined
+  const amount = parseMcpMoney(args.amount)
+  if (!amount)
+    refuse(
+      'amount precisa ser um valor positivo sem separador de milhar (ex.: 1500.50 ou 1500,50).'
+    )
+  return amount as string
+}
+
+const createTransaction: Handler = (args, scope, phase, store) => {
+  const table = resolveTable(args, scope, store)
+  const type = readType(args, true) as FinancialTransaction['type']
+  const amount = readAmount(args, true) as string
+  const description = requiredText(args, 'description', LIMITS.transactionDescription)
+  const date = optionalDate(args, 'date') || todayLocalISO()
+  const category = optionalText(args, 'category', LIMITS.category)
+  const value = formatMcpMoney(amount, table.currency)
+  const resumo = `Lançar ${TYPE_LABEL[type]} de ${value} em ${table.name} — ${description} — ${date}`
+  if (phase === 'prepare') return done('', resumo)
+  const id = store.addTransaction(table.id, {
+    description,
+    amount,
+    type,
+    date,
+    ...(category ? { category } : {})
+  })
+  return done(id, resumo)
+}
+
+const updateTransaction: Handler = (args, scope, phase, store) => {
+  const table = resolveTable(args, scope, store)
+  const transaction = resolveTransaction(args, table)
+  const updates: Partial<Omit<FinancialTransaction, 'id'>> = {}
+  const type = readType(args, false)
+  if (type) updates.type = type
+  const amount = readAmount(args, false)
+  if (amount) updates.amount = amount
+  const description = optionalText(args, 'description', LIMITS.transactionDescription)
+  if (description !== undefined) {
+    if (!description) refuse('description não pode ser vazia.')
+    updates.description = description
+  }
+  const date = optionalDate(args, 'date')
+  if (date !== undefined) {
+    if (!date) refuse('date não pode ser vazia.')
+    updates.date = date
+  }
+  const category = optionalText(args, 'category', LIMITS.category)
+  if (category !== undefined) updates.category = category || undefined
+  if (!Object.keys(updates).length) refuse('Nada para alterar.')
+  const value = formatMcpMoney(updates.amount ?? transaction.amount, table.currency)
+  const label = TYPE_LABEL[updates.type ?? transaction.type]
+  const resumo = `Editar ${label} "${transaction.description}" em ${table.name} (${value})`
+  if (phase === 'apply') store.updateTransaction(table.id, transaction.id, updates)
+  return done(transaction.id, resumo)
+}
+
+const deleteTransaction: Handler = (args, scope, phase, store) => {
+  const table = resolveTable(args, scope, store)
+  const transaction = resolveTransaction(args, table)
+  const value = formatMcpMoney(transaction.amount, table.currency)
+  const label = TYPE_LABEL[transaction.type]
+  const resumo = `Excluir ${label} "${transaction.description}" de ${value} em ${table.name}`
+  if (phase === 'apply') store.deleteTransaction(table.id, transaction.id)
+  return done(transaction.id, resumo)
+}
+
+const createFinancialTable: Handler = (args, scope, phase, store) => {
+  const profile = sessionProfile(scope, store)
+  const name = requiredText(args, 'name', LIMITS.financialName)
+  const currency = optionalText(args, 'currency', 3) ?? ''
+  if (!(currency in CURRENCY_CONFIG))
+    refuse(`currency precisa ser uma de: ${Object.keys(CURRENCY_CONFIG).join(', ')}.`)
+  const resumo = `Criar tabela financeira "${name}" (${currency}) em ${profile.name}`
+  if (phase === 'prepare') return done('', resumo)
+  return done(store.createList(name, currency as Currency, profile.id), resumo)
+}
+
+const addFinancialCategory: Handler = (args, scope, phase, store) => {
+  const profile = sessionProfile(scope, store)
+  const category = requiredText(args, 'category', LIMITS.category)
+  const resumo = `Adicionar categoria "${category}" em ${profile.name}`
+  if (profile.customCategories?.some((item) => sameName(item, category)))
+    return done(profile.id, resumo, { existente: true })
+  if (phase === 'apply') store.addFinancialCategory(profile.id, category)
+  return done(profile.id, resumo)
+}
+
+const removeFinancialCategory: Handler = (args, scope, phase, store) => {
+  const profile = sessionProfile(scope, store)
+  const requested = requiredText(args, 'category', LIMITS.category)
+  const stored = profile.customCategories?.find((item) => sameName(item, requested))
+  if (!stored)
+    return refuse(`A categoria "${requested}" não está nas categorias de ${profile.name}.`)
+  if (phase === 'apply') store.removeFinancialCategory(profile.id, stored)
+  return done(profile.id, `Remover categoria "${stored}" de ${profile.name}`)
+}
+
+const createFinancialProfile: Handler = (args, _scope, phase, store) => {
+  const name = requiredText(args, 'name', LIMITS.financialName)
+  const resumo = `Criar perfil financeiro "${name}"`
+  const existing = store.financialProfiles.find((item) => sameName(item.name, name))
+  if (existing) return done(existing.id, resumo, { existente: true })
+  if (phase === 'prepare') return done('', resumo)
+  return done(store.createFinancialProfile(name), resumo)
+}
+
+const renameFinancialProfile: Handler = (args, scope, phase, store) => {
+  const profile = sessionProfile(scope, store)
+  const name = requiredText(args, 'name', LIMITS.financialName)
+  if (store.financialProfiles.some((item) => item.id !== profile.id && sameName(item.name, name)))
+    refuse(`Já existe um perfil financeiro chamado "${name}".`)
+  if (phase === 'apply') store.renameFinancialProfile(profile.id, name)
+  return done(profile.id, `Renomear perfil financeiro "${profile.name}" para "${name}"`)
+}
+
 const HANDLERS: Record<string, Handler> = {
   create_project: createProject,
   update_project: updateProject,
@@ -640,7 +837,15 @@ const HANDLERS: Record<string, Handler> = {
   delete_goal: deleteGoal,
   create_note: createNote,
   update_note: updateNote,
-  delete_note: deleteNote
+  delete_note: deleteNote,
+  create_transaction: createTransaction,
+  update_transaction: updateTransaction,
+  delete_transaction: deleteTransaction,
+  create_financial_table: createFinancialTable,
+  add_financial_category: addFinancialCategory,
+  remove_financial_category: removeFinancialCategory,
+  create_financial_profile: createFinancialProfile,
+  rename_financial_profile: renameFinancialProfile
 }
 
 function run(name: string, args: Args, scope: McpScope, phase: Phase): McpActionResult {
