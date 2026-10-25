@@ -2,6 +2,12 @@ import { createServer, type Server, type Socket } from 'net'
 import { buildMemory, findConflicts, type AiMemory, type MemoryType } from '../ai/memory'
 import { randomUUID } from 'crypto'
 import type { MemorySearchHit } from '../../store'
+import { MCP_WRITE_TOOLS } from './mcp-write-tools'
+import {
+  MCP_MEMORY_WRITE_TOOLS,
+  MCP_RENDERER_WRITE_TOOLS,
+  type McpActionResult
+} from './mcp-write-types'
 
 export const MCP_PERMISSIONS = [
   'read_tasks',
@@ -17,8 +23,15 @@ export const MCP_PERMISSIONS = [
   'ler_tasks',
   'criar_task',
   'ler_financeiro',
-  'ler_projeto'
+  'ler_projeto',
+  ...MCP_RENDERER_WRITE_TOOLS,
+  ...MCP_MEMORY_WRITE_TOOLS
 ] as const
+
+const WRITE_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
+  ...MCP_RENDERER_WRITE_TOOLS,
+  ...MCP_MEMORY_WRITE_TOOLS
+])
 
 export type McpPermission = (typeof MCP_PERMISSIONS)[number]
 
@@ -51,6 +64,12 @@ export interface McpBrokerDeps {
     redacted: boolean
   ) => Promise<{ ok: boolean; id?: string; redacted?: boolean; error?: string }>
   createTask: (session: McpSession, args: Record<string, unknown>) => Promise<unknown>
+  /** Every tool of MCP_WRITE_TOOLS; absent means writes are unavailable. */
+  write?: (
+    session: McpSession,
+    name: string,
+    args: Record<string, unknown>
+  ) => Promise<McpActionResult>
 }
 
 /** Source for a disposable stdio adapter written only into an agent worktree. */
@@ -195,7 +214,8 @@ const TOOLS: { name: McpPermission; description: string; inputSchema: Record<str
         properties: { projectId: { type: 'string' } },
         additionalProperties: false
       }
-    }
+    },
+    ...MCP_WRITE_TOOLS
   ]
 
 const MEMORY_SEARCH_LIMIT = 8
@@ -395,6 +415,32 @@ export function startSagyouMcpBroker(deps: McpBrokerDeps): {
               !session.permissions.includes(name as McpPermission)
             ) {
               failure(socket, request.id, 'Ferramenta indisponível nesta sessão MCP.')
+              continue
+            }
+            if (WRITE_TOOL_NAMES.has(name)) {
+              const args = request.params?.arguments
+              if (!deps.write) {
+                failure(socket, request.id, 'Ferramenta indisponível nesta sessão MCP.')
+                continue
+              }
+              // A domain refusal is an ordinary reply, so the agent can read it and adapt.
+              void deps
+                .write(
+                  session,
+                  name,
+                  args && typeof args === 'object' ? (args as Record<string, unknown>) : {}
+                )
+                .catch(
+                  (error: unknown): McpActionResult => ({
+                    ok: false,
+                    error: error instanceof Error ? error.message : 'A escrita MCP falhou.'
+                  })
+                )
+                .then((result) =>
+                  reply(socket, request.id, {
+                    content: [{ type: 'text', text: JSON.stringify(result) }]
+                  })
+                )
               continue
             }
             const dataDomain = {

@@ -36,6 +36,12 @@ const execFileAsync = promisify(execFile)
 import { randomBytes, randomUUID } from 'crypto'
 import { CodeRunCoordinator } from './modules/agent/code-run-coordinator'
 import { McpWriteQueue, RendererMcpActionBridge } from './modules/agent/mcp-write-queue'
+import {
+  MCP_APPROVAL_REQUIRED,
+  MCP_MEMORY_TOOLS,
+  mcpWriteResult
+} from './modules/agent/mcp-write-tools'
+import type { McpActionRequest, McpActionResult } from './modules/agent/mcp-write-types'
 import { AgentSessionRegistry } from './modules/agent/agent-session'
 import { AgentWorktreeManager } from './modules/agent/agent-worktree'
 import { startAgentPty, type AgentPty } from './modules/agent/agent-pty'
@@ -281,6 +287,20 @@ const sagyouMcp = startSagyouMcpBroker({
     return outcome.approved
       ? outcome.value!
       : { ok: false, error: 'Criação não aprovada pelo usuário.' }
+  },
+  write: async (session, name, args) => {
+    if (MCP_MEMORY_TOOLS.has(name))
+      return { ok: false, error: 'Ferramenta indisponível nesta sessão MCP.' }
+    const scope = { projectId: session.projectId, financialProfileId: session.financialProfileId }
+    const outcome = await mcpWriteQueue.enqueue<McpActionResult>(
+      { runId: session.runId, name, args, approval: MCP_APPROVAL_REQUIRED.has(name) },
+      () => rendererMcpActions.request({ phase: 'apply', name, args, scope }),
+      async () => {
+        const prepared = await rendererMcpActions.request({ phase: 'prepare', name, args, scope })
+        return prepared.ok ? { resumo: String(prepared.resumo ?? name) } : { refuse: prepared }
+      }
+    )
+    return mcpWriteResult(name, outcome)
   }
 })
 
@@ -416,15 +436,30 @@ function requestRendererMcpTask(task: McpTaskRequest): Promise<string> {
   return rendererMcpTasks.request(task)
 }
 
+/** Generic MCP writes: the renderer validates (prepare) and applies them on its live store. */
+const rendererMcpActions = new RendererMcpActionBridge<McpActionRequest, McpActionResult>(
+  ({ requestId, payload }) => {
+    if (!mainWindow || mainWindow.isDestroyed())
+      throw new Error('A janela do Sagyou precisa estar aberta para alterar dados.')
+    mainWindow.webContents.send('store:mcp:action', { requestId, request: payload })
+  }
+)
+
+/** A run can only write while it exists, was not stopped and still has its terminal. */
+function isMcpRunLive(runId: string): boolean {
+  const run = codeRuns.get(runId)
+  return Boolean(run && !run.abort && !(run.interactive && !run.externalChild))
+}
+
 /** Routes MCP writes through the exact same approval UI as code-agent actions. */
 function requestMcpWriteApproval(
   runId: string,
   name: string,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  resumo?: string
 ): Promise<boolean> {
   const run = codeRuns.get(runId)
-  if (!run || run.abort || (run.interactive && !run.externalChild))
-    return Promise.resolve(false)
+  if (!run || !isMcpRunLive(runId)) return Promise.resolve(false)
   return new Promise((resolveApproval) => {
     const id = randomUUID()
     const request: CodeApprovalRequest = {
@@ -433,9 +468,10 @@ function requestMcpWriteApproval(
       name: `mcp:${name}`,
       args,
       resumo:
-        name === 'criar_task'
+        resumo ??
+        (name === 'criar_task'
           ? `Criar task "${String(args.titulo ?? '').slice(0, 80)}" em ${loadData().projects.find((project) => project.id === args.projectId)?.name ?? String(args.projectId ?? 'projeto desconhecido')}`
-          : `MCP Sagyou: ${name.replace('_', ' ')}`
+          : `MCP Sagyou: ${name.replace('_', ' ')}`)
     }
     const timeout = setTimeout(() => {
       if (!run.pendingApprovals.delete(id)) return
@@ -452,8 +488,10 @@ function requestMcpWriteApproval(
   })
 }
 
-const mcpWriteQueue = new McpWriteQueue((request) =>
-  requestMcpWriteApproval(request.runId, request.name, request.args)
+const mcpWriteQueue = new McpWriteQueue(
+  (request) =>
+    requestMcpWriteApproval(request.runId, request.name, request.args, request.resumo),
+  isMcpRunLive
 )
 
 const MAX_AGENT_LOG = 8000
@@ -1159,6 +1197,20 @@ app.whenReady().then(() => {
               ? response.error
               : 'O Sagyou recusou a criação da task.'
           )
+        )
+    }
+  )
+  ipcMain.on(
+    'store:mcp:action:response',
+    (_, response: { requestId?: unknown; result?: unknown }) => {
+      if (typeof response.requestId !== 'string') return
+      const result = response.result as McpActionResult | undefined
+      if (result && typeof result === 'object' && typeof result.ok === 'boolean')
+        rendererMcpActions.resolve(response.requestId, result)
+      else
+        rendererMcpActions.reject(
+          response.requestId,
+          new Error('O Sagyou devolveu uma resposta inválida à ação MCP.')
         )
     }
   )
@@ -2037,5 +2089,6 @@ app.on('window-all-closed', () => {
 // Don't leave any code agent's loop running when the app closes.
 app.on('before-quit', () => {
   rendererMcpTasks.close()
+  rendererMcpActions.close()
   stopCodeAgent()
 })

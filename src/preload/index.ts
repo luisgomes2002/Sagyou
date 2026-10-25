@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 // Type-only: erased at build, so no main-process code is pulled into the preload.
 import type { AiMemory, MemoryInput, MemorySummary, MemoryConflict } from '../main/modules/ai/memory'
+import type { McpActionRequest, McpActionResult } from '../main/modules/agent/mcp-write-types'
 import type {
   GlobalSearchHit,
   GlobalSearchLookup,
@@ -184,6 +185,19 @@ export const api = {
     },
     respondMcpCreateTask: (requestId: string, result: { id?: string; error?: string }): void => {
       ipcRenderer.send('store:mcp:create-task:response', { requestId, ...result })
+    },
+    onMcpAction: (
+      cb: (message: { requestId: string; request: McpActionRequest }) => void
+    ) => {
+      const handler = (_: Electron.IpcRendererEvent, message: Parameters<typeof cb>[0]): void =>
+        cb(message)
+      ipcRenderer.on('store:mcp:action', handler)
+      return (): void => {
+        ipcRenderer.removeListener('store:mcp:action', handler)
+      }
+    },
+    respondMcpAction: (requestId: string, result: McpActionResult): void => {
+      ipcRenderer.send('store:mcp:action:response', { requestId, result })
     }
   },
   search: {
