@@ -4,11 +4,11 @@
 // a <div> would otherwise show as garbage). Styled to read like a CLI session —
 // dark inset, monospace, a title bar — because that's what the output *is*.
 
-import { FitAddon } from '@xterm/addon-fit'
-import { Terminal } from '@xterm/xterm'
+import type { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import { useEffect, useRef, useState } from 'react'
 import { parseAnsi } from '../../utils/ansi'
+import { acquireLiveTerminal, attachLiveTerminal } from './liveTerminals'
 
 function LogTerminal({
   log,
@@ -141,29 +141,9 @@ interface InteractiveTerminalProps {
   compact?: boolean
 }
 
-/** Main keeps a rolling raw log. Match its overlap instead of resetting xterm
- * whenever the oldest bytes fall out of that bounded buffer. */
-function terminalLogDelta(previous: string, current: string): string {
-  if (!previous) return current
-  if (current.startsWith(previous)) return current.slice(previous.length)
-  if (previous === current) return ''
-
-  const prefix = new Array<number>(current.length).fill(0)
-  for (let index = 1, matched = 0; index < current.length; index++) {
-    while (matched > 0 && current[index] !== current[matched]) matched = prefix[matched - 1]
-    if (current[index] === current[matched]) matched++
-    prefix[index] = matched
-  }
-  let overlap = 0
-  for (const character of previous) {
-    while (overlap > 0 && (overlap === current.length || character !== current[overlap]))
-      overlap = prefix[overlap - 1]
-    if (character === current[overlap]) overlap++
-  }
-  return current.slice(overlap)
-}
-
-/** A real terminal emulator attached to the harness' existing PTY. */
+/** A real terminal emulator attached to the harness' existing PTY. The xterm
+ * itself outlives this panel (see liveTerminals): switching sessions hides it
+ * instead of rebuilding it from main's truncated buffer. */
 function InteractiveTerminal({
   log,
   running,
@@ -176,9 +156,7 @@ function InteractiveTerminal({
 }: InteractiveTerminalProps): React.JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
-  const writtenLogRef = useRef('')
   const latestLogRef = useRef(log)
-  const connectedRef = useRef(false)
   const callbacksRef = useRef({ onInput, onResize })
   const [copied, setCopied] = useState(false)
 
@@ -193,52 +171,17 @@ function InteractiveTerminal({
   useEffect(() => {
     const host = hostRef.current
     if (!host) return
-    const terminal = new Terminal({
+    const session = acquireLiveTerminal(runId, {
       cols: initialCols,
       rows: initialRows,
-      cursorBlink: true,
-      cursorStyle: 'block',
-      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-      fontSize: 12,
-      lineHeight: 1.35,
-      scrollback: 10_000,
-      theme: {
-        background: '#101014',
-        foreground: '#d4d4d4',
-        cursor: '#46d478',
-        selectionBackground: '#3a3158',
-        black: '#101014',
-        brightBlack: '#777777',
-        red: '#ff7b72',
-        green: '#46d478',
-        yellow: '#f0b820',
-        blue: '#79c0ff',
-        magenta: '#c4a7e7',
-        cyan: '#76e3ea',
-        white: '#d4d4d4'
-      }
+      fallbackLog: latestLogRef.current
     })
-    const fit = new FitAddon()
-    terminal.loadAddon(fit)
-    terminal.open(host)
+    const { terminal, fit } = session
+    const detach = attachLiveTerminal(session, host)
     terminalRef.current = terminal
 
-    const writeLog = (nextLog: string): void => {
-      const previous = writtenLogRef.current
-      // Status may have been captured before the reconnect snapshot.
-      if (previous.startsWith(nextLog)) return
-      const delta = terminalLogDelta(previous, nextLog)
-      writtenLogRef.current = nextLog
-      if (!delta) return
-      // Preserve the user's reading position while output keeps arriving.
-      const viewport = terminal.buffer.active.viewportY
-      const scrolledUp = viewport < terminal.buffer.active.baseY
-      terminal.write(delta, () => {
-        if (scrolledUp) terminal.scrollToLine(Math.min(viewport, terminal.buffer.active.baseY))
-      })
-    }
     const resize = (): void => {
-      if (!connectedRef.current) return
+      if (!session.connected) return
       try {
         const beforeCols = terminal.cols
         const beforeRows = terminal.rows
@@ -254,51 +197,21 @@ function InteractiveTerminal({
     const frame = requestAnimationFrame(resize)
     const input = terminal.onData((data) => void callbacksRef.current.onInput(data))
     let disposed = false
-    void Promise.resolve(window.electronAPI.ai.codeAgent.terminalReconnect?.(runId))
-      .then((session) => {
-        if (disposed) return
-        if (session?.success) {
-          if (session.cols && session.rows) terminal.resize(session.cols, session.rows)
-          writeLog(session.log ?? '')
-        }
-        connectedRef.current = true
-        // The status prop may have advanced while reconnect was in flight.
-        const latest = latestLogRef.current
-        if (!session?.success || latest.startsWith(session.log ?? '')) writeLog(latest)
-        resize()
-      })
-      .catch(() => {
-        if (disposed) return
-        connectedRef.current = true
-        writeLog(latestLogRef.current)
-        resize()
-      })
+    void session.ready.then(() => {
+      if (!disposed) resize()
+    })
 
     return () => {
       disposed = true
       cancelAnimationFrame(frame)
       input.dispose()
       observer.disconnect()
-      terminal.dispose()
+      detach()
       terminalRef.current = null
-      connectedRef.current = false
-      writtenLogRef.current = ''
     }
+    // initialCols/initialRows only seed a terminal created for this run.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runId])
-
-  useEffect(() => {
-    const terminal = terminalRef.current
-    if (!terminal || !connectedRef.current) return
-    if (writtenLogRef.current.startsWith(log)) return
-    const delta = terminalLogDelta(writtenLogRef.current, log)
-    writtenLogRef.current = log
-    if (!delta) return
-    const viewport = terminal.buffer.active.viewportY
-    const scrolledUp = viewport < terminal.buffer.active.baseY
-    terminal.write(delta, () => {
-      if (scrolledUp) terminal.scrollToLine(Math.min(viewport, terminal.buffer.active.baseY))
-    })
-  }, [log])
 
   const copy = (): void => {
     const terminal = terminalRef.current
