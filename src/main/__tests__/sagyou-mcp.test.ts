@@ -451,7 +451,7 @@ describe('Sagyou MCP broker', () => {
     const dir = mkdtempSync(join(tmpdir(), 'sagyou-mcp-security-'))
     const bridgePath = join(dir, 'bridge.cjs')
     writeFileSync(bridgePath, MCP_STDIO_BRIDGE_SOURCE, 'utf8')
-    const call = (token: string, body: object) =>
+    const call = (token: string, body: object): Promise<Record<string, unknown>> =>
       bridgeRequest(
         bridgePath,
         {
@@ -656,7 +656,12 @@ describe('Sagyou MCP broker', () => {
     const dir = mkdtempSync(join(tmpdir(), 'sagyou-mcp-memory-'))
     const bridgePath = join(dir, 'bridge.cjs')
     writeFileSync(bridgePath, MCP_STDIO_BRIDGE_SOURCE, 'utf8')
-    const call = (token: string, name: string, arguments_: Record<string, unknown>, id: number) =>
+    const call = (
+      token: string,
+      name: string,
+      arguments_: Record<string, unknown>,
+      id: number
+    ): Promise<Record<string, unknown>> =>
       bridgeRequest(
         bridgePath,
         {
