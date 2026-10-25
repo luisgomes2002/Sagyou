@@ -16,6 +16,7 @@ import {
   type Priority,
   type Project,
   type ProjectLink,
+  type Sprint,
   type StickyNote,
   type Task
 } from '../types'
@@ -62,6 +63,7 @@ const LIMITS = {
   linkUrl: 2000,
   links: 20,
   taskTitle: 300,
+  sprintName: 120,
   tags: 20,
   tag: 60,
   goalUnit: 40,
@@ -387,9 +389,35 @@ const updateTask: Handler = (args, scope, phase, store) => {
   }
   const tags = optionalTags(args)
   if (tags !== undefined) updates.tags = tags
-  if (!Object.keys(updates).length) refuse('Nada para alterar.')
-  if (phase === 'apply') store.updateTask(task.id, updates)
+  const sprintRef = optionalText(args, 'sprint', 200)
+  const sprint = sprintRef ? resolveSprint(store, task.projectId, sprintRef) : undefined
+  if (!Object.keys(updates).length && sprintRef === undefined) refuse('Nada para alterar.')
+  if (phase === 'apply') {
+    if (Object.keys(updates).length) store.updateTask(task.id, updates)
+    if (sprintRef !== undefined) store.setTaskSprint(task.id, sprint?.id ?? null)
+  }
   return done(task.id, `Editar tarefa "${task.title}"`)
+}
+
+/** Sprints belong to one project: by id or by name (case-insensitive) inside it. */
+function resolveSprint(store: Store, projectId: string, ref: string): Sprint {
+  const inProject = store.sprints.filter((sprint) => sprint.projectId === projectId)
+  const sprint =
+    inProject.find((item) => item.id === ref) ?? inProject.find((item) => sameName(item.name, ref))
+  if (!sprint) refuse(`Sprint "${ref}" não encontrada no projeto da tarefa.`)
+  return sprint as Sprint
+}
+
+const createSprint: Handler = (args, scope, phase, store) => {
+  const project = resolveProject(args, scope, store)
+  const name = requiredText(args, 'name', LIMITS.sprintName)
+  const resumo = `Criar sprint "${name}" em ${project.name}`
+  const existing = store.sprints.find(
+    (sprint) => sprint.projectId === project.id && sameName(sprint.name, name)
+  )
+  if (existing) return done(existing.id, resumo, { existente: true })
+  if (phase === 'prepare') return done('', resumo)
+  return done(store.createSprint(project.id, name), resumo)
 }
 
 /** Moves within the project via moveTask, or across projects via moveTaskToProject. */
@@ -841,6 +869,7 @@ const HANDLERS: Record<string, Handler> = {
   complete_task: completeTask,
   reopen_task: reopenTask,
   delete_task: deleteTask,
+  create_sprint: createSprint,
   create_goal: createGoal,
   update_goal: updateGoal,
   add_goal_progress: addGoalProgress,

@@ -176,7 +176,14 @@ const sagyouMcp = startSagyouMcpBroker({
     if (domain === 'tasks')
       return projectId ? data.tasks.filter((item) => item.projectId === projectId) : data.tasks
     if (domain === 'project')
-      return projectId ? data.projects.filter((item) => item.id === projectId) : data.projects
+      return (
+        projectId ? data.projects.filter((item) => item.id === projectId) : data.projects
+      ).map((project) => ({
+        ...project,
+        sprints: (data.sprints ?? [])
+          .filter((sprint) => sprint.projectId === project.id)
+          .map(({ id, name, closedAt }) => ({ id, name, closed: Boolean(closedAt) }))
+      }))
     if (domain === 'notes')
       return projectId ? data.notes.filter((item) => item.projectId === projectId) : data.notes
     if (domain === 'goals')

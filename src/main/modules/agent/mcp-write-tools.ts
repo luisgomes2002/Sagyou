@@ -123,8 +123,15 @@ export const MCP_WRITE_TOOLS: McpToolDefinition[] = [
     description: text('Nova descrição; "" limpa.'),
     dueDate: text('Prazo YYYY-MM-DD; "" limpa.'),
     priority,
-    tags
+    tags,
+    sprint: text('ID ou nome de uma sprint do projeto da tarefa (read_project); "" remove.')
   }),
+  tool(
+    'create_sprint',
+    'Cria uma sprint no projeto. Nome repetido devolve a sprint existente.',
+    { projectId, name: text('Nome da sprint.') },
+    ['name']
+  ),
   tool(
     'move_task',
     'Move uma tarefa para outra coluna, inclusive de outro projeto (projectId destino).',
@@ -324,6 +331,7 @@ export const MCP_NO_APPROVAL: ReadonlySet<string> = new Set<McpWriteTool>([
   'move_task',
   'complete_task',
   'reopen_task',
+  'create_sprint',
   'create_goal',
   'update_goal',
   'add_goal_progress',
