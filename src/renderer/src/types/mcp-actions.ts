@@ -17,6 +17,7 @@ export const MCP_RENDERER_WRITE_TOOLS = [
   'complete_task',
   'reopen_task',
   'delete_task',
+  'create_sprint',
   'create_goal',
   'update_goal',
   'add_goal_progress',

@@ -42,7 +42,7 @@ describe('MCP write tool classification', () => {
     for (const name of names)
       expect(Number(MCP_APPROVAL_REQUIRED.has(name)) + Number(MCP_NO_APPROVAL.has(name))).toBe(1)
     expect([...MCP_APPROVAL_REQUIRED].sort()).toEqual([...APPROVAL_LIST].sort())
-    expect(MCP_APPROVAL_REQUIRED.size + MCP_NO_APPROVAL.size).toBe(34)
+    expect(MCP_APPROVAL_REQUIRED.size + MCP_NO_APPROVAL.size).toBe(35)
   })
 
   it('has a denial message for every approval tool', () => {

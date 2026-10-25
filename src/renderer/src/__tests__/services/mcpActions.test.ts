@@ -302,6 +302,45 @@ describe('MCP task writes', () => {
     expect(task(taskId)!.dueDate).toBe('2026-11-01')
   })
 
+  it('update_task assigns a sprint by name or id and clears it with empty string', () => {
+    const { id, scope, taskId } = seedTasks()
+    const sprintId = state().createSprint(id, 'Sprint 1')
+    expect(both('update_task', { id: taskId, sprint: 'sprint 1' }, scope).ok).toBe(true)
+    expect(task(taskId)!.sprintId).toBe(sprintId)
+    expect(both('update_task', { id: taskId, sprint: '' }, scope).ok).toBe(true)
+    expect(task(taskId)!.sprintId).toBeUndefined()
+    expect(both('update_task', { id: taskId, sprint: sprintId }, scope).ok).toBe(true)
+    expect(task(taskId)!.sprintId).toBe(sprintId)
+  })
+
+  it('update_task refuses a sprint from another project', () => {
+    const { scope, taskId } = seedTasks()
+    const other = state().createProject('Outro')
+    const foreign = state().createSprint(other, 'Sprint 1')
+    expect(both('update_task', { id: taskId, sprint: foreign }, scope)).toMatchObject({
+      ok: false
+    })
+    expect(both('update_task', { id: taskId, sprint: 'Sprint 1' }, scope)).toMatchObject({
+      ok: false
+    })
+    expect(task(taskId)!.sprintId).toBeUndefined()
+  })
+
+  it('create_sprint creates once and returns the existing sprint for a repeated name', () => {
+    const { id, scope } = seedTasks()
+    expect(prepareMcpAction('create_sprint', { name: 'Electron' }, scope).ok).toBe(true)
+    expect(state().sprints).toHaveLength(0)
+    const created = both('create_sprint', { name: '  Electron ' }, scope)
+    expect(created.ok).toBe(true)
+    expect(state().sprints).toMatchObject([{ projectId: id, name: 'Electron' }])
+    expect(both('create_sprint', { name: 'electron' }, scope)).toMatchObject({
+      ok: true,
+      id: (created as { id: string }).id,
+      existente: true
+    })
+    expect(state().sprints).toHaveLength(1)
+  })
+
   it('finds a task by title and refuses an ambiguous title with candidatos', () => {
     const { id, scope, col } = seedTasks()
     expect(both('update_task', { title: 'corrigir LOGIN', priority: 'low' }, scope).ok).toBe(true)
