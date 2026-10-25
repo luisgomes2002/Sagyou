@@ -17,6 +17,9 @@ Agente de Código.
    novo número de colunas e linhas.
 6. Navegue para outra tela e volte para Agentes. Confirme que a sessão reconecta
    com o buffer e o tamanho anteriores, sem abrir um segundo processo.
+   Abra três ou mais sessões com o CLI produzindo saída; alterne entre elas e
+   confirme que cada tela volta exatamente como estava (sem ficar vazia ou
+   embaralhada até o CLI redesenhar) e que digitar continua responsivo.
 7. Faça uma pequena alteração e saia normalmente do CLI no terminal. Confirme
    que a sessão MCP é revogada, o diff é arquivado e nenhum pedido de aprovação
    final permanece pendente.

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 
 export interface CodeAgentRunUI {
   id: string
@@ -44,6 +44,11 @@ export interface CodeAgentRunUI {
   }[]
 }
 
+/** Mirrors main's MAX_AGENT_LOG: the same bounded tail status() returns. */
+const MAX_AGENT_LOG = 8000
+/** Output is coalesced so a chatty CLI re-renders the Fleet a few times a second, not per chunk. */
+const OUTPUT_FLUSH_MS = 50
+
 export function useCodeAgentRuns(): {
   runs: CodeAgentRunUI[]
   hydrated: boolean
@@ -55,9 +60,17 @@ export function useCodeAgentRuns(): {
 } {
   const [runs, setRuns] = useState<CodeAgentRunUI[]>([])
   const [hydrated, setHydrated] = useState(false)
+  // Chunks not yet folded into `runs`, per run.
+  const pendingOutput = useRef(new Map<string, string>())
+  const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const sync = useCallback((): void => {
     window.electronAPI.ai.codeAgent.status().then((s) => {
+      // Main sends every chunk already in its log before answering, so what is
+      // pending here is part of this snapshot.
+      pendingOutput.current.clear()
+      if (flushTimer.current) clearTimeout(flushTimer.current)
+      flushTimer.current = null
       setRuns((prev) =>
         s.runs.map((r) => {
           // Status is the source of truth, so a remount cannot hide a parked approval.
@@ -99,25 +112,34 @@ export function useCodeAgentRuns(): {
     sync()
 
     // 2. Um novo agente iniciou
-    const offStarted = window.electronAPI.ai.codeAgent.onStarted(
-      () => {
-        sync()
-      }
-    )
+    const offStarted = window.electronAPI.ai.codeAgent.onStarted(() => {
+      sync()
+    })
 
-    // 3. Output chegou — atualiza o log do run correspondente
-    const offOutput = window.electronAPI.ai.codeAgent.onOutput(
-      () => {
-        sync()
-      }
-    )
+    // 3. Output chegou — anexa ao log do run correspondente. Refazer o status a
+    // cada chunk trazia todos os runs e todos os logs pelo IPC: cada terminal a
+    // mais deixava os outros mais lentos.
+    const pending = pendingOutput.current
+    const flushOutput = (): void => {
+      flushTimer.current = null
+      const chunks = new Map(pending)
+      pending.clear()
+      setRuns((prev) =>
+        prev.map((r) => {
+          const chunk = chunks.get(r.id)
+          return chunk ? { ...r, log: (r.log + chunk).slice(-MAX_AGENT_LOG) } : r
+        })
+      )
+    }
+    const offOutput = window.electronAPI.ai.codeAgent.onOutput(({ runId, chunk }) => {
+      pending.set(runId, (pending.get(runId) ?? '') + chunk)
+      flushTimer.current ??= setTimeout(flushOutput, OUTPUT_FLUSH_MS)
+    })
 
     // 4. Progresso mudou
-    const offProgress = window.electronAPI.ai.codeAgent.onProgress(
-      () => {
-        sync()
-      }
-    )
+    const offProgress = window.electronAPI.ai.codeAgent.onProgress(() => {
+      sync()
+    })
 
     // 5. Agente terminou
     const offExit = window.electronAPI.ai.codeAgent.onExit(
@@ -203,6 +225,9 @@ export function useCodeAgentRuns(): {
     })
 
     return () => {
+      if (flushTimer.current) clearTimeout(flushTimer.current)
+      flushTimer.current = null
+      pending.clear()
       offStarted()
       offOutput()
       offProgress()
