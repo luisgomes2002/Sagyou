@@ -20,6 +20,7 @@ export interface FinancialSlice {
   financialProfiles: FinancialProfile[]
   activeFinancialProfileId: string
   createFinancialProfile: (name: string) => string
+  renameFinancialProfile: (id: string, name: string) => boolean
   setActiveFinancialProfile: (id: string) => void
   addFinancialCategory: (profileId: string, category: string) => void
   removeFinancialCategory: (profileId: string, category: string) => void
@@ -117,6 +118,19 @@ export const createFinancialSlice: StateCreator<
     }))
     get()._persist()
     return id
+  },
+
+  renameFinancialProfile: (id, name) => {
+    const trimmed = name.trim()
+    if (!trimmed || !get().financialProfiles.some((p) => p.id === id)) return false
+    const now = new Date().toISOString()
+    set((s) => ({
+      financialProfiles: s.financialProfiles.map((p) =>
+        p.id === id ? { ...p, name: trimmed, updatedAt: now } : p
+      )
+    }))
+    get()._persist()
+    return true
   },
 
   setActiveFinancialProfile: (id) => {
