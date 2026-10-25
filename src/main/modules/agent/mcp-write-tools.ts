@@ -1,3 +1,4 @@
+import { buildMemory, findConflicts, type AiMemory, type MemoryType } from '../ai/memory'
 import type { McpWriteOutcome } from './mcp-write-queue'
 import {
   MCP_MEMORY_WRITE_TOOLS,
@@ -367,4 +368,170 @@ export function mcpWriteResult(
   if (!outcome.approved)
     return { ok: false, error: MCP_DENIAL_MESSAGE[name] ?? 'Escrita não aprovada pelo usuário.' }
   return outcome.value ?? { ok: false, error: 'A escrita MCP não devolveu resultado.' }
+}
+
+// ── Memory writes (main-owned SQLite) ────────────────────────────────────────
+
+/** Same limits and types as save_memory. */
+const MEMORY_LIMITS = { title: 200, body: 2_000, tags: 12, tag: 60 } as const
+const EDITABLE_MEMORY_TYPES: MemoryType[] = [
+  'decisao',
+  'tradeoff',
+  'gotcha',
+  'fato',
+  'planejamento'
+]
+const MEMORY_UNAVAILABLE = 'Memória indisponível nesta sessão MCP.'
+const HANDOFF_REFUSAL = 'Memórias de handoff não podem ser alteradas pelo MCP.'
+const NOT_A_CONFLICT = 'Essas memórias não formam uma contradição apontada por check_memories.'
+
+export type McpMemoryOp =
+  | { kind: 'upsert'; memory: AiMemory; redacted: boolean }
+  | { kind: 'archive'; id: string }
+  | { kind: 'delete'; id: string }
+  | { kind: 'resolve'; archiveId: string; keep?: AiMemory; redacted: boolean }
+  | { kind: 'none'; id: string }
+
+export interface McpMemoryDeps {
+  getMemory: (id: string) => AiMemory | null
+  listMemories: () => AiMemory[]
+  now: string
+}
+
+type MemoryPrepared = { ok: true; resumo: string; op: McpMemoryOp } | { ok: false; error: string }
+
+class MemoryRefusal extends Error {}
+
+const refuseMemory = (message: string): never => {
+  throw new MemoryRefusal(message)
+}
+
+function memoryId(args: Record<string, unknown>, key: string): string {
+  const value = args[key]
+  const id = typeof value === 'string' ? value.trim() : ''
+  if (!id) refuseMemory(`${key} é obrigatório.`)
+  return id
+}
+
+/** Missing and archived read the same, like read_memory, so a probe learns nothing. */
+function activeMemory(deps: McpMemoryDeps, id: string): AiMemory {
+  const memory = deps.getMemory(id)
+  if (!memory || memory.archivedAt) refuseMemory(MEMORY_UNAVAILABLE)
+  return memory as AiMemory
+}
+
+function editableMemory(deps: McpMemoryDeps, id: string): AiMemory {
+  const memory = activeMemory(deps, id)
+  if (memory.type === 'handoff') refuseMemory(HANDOFF_REFUSAL)
+  return memory
+}
+
+/** Runs buildMemory (secret scrubbing) over an edit, keeping pin, scope and decay counters. */
+function editMemory(
+  existing: AiMemory,
+  args: Record<string, unknown>,
+  now: string
+): { memory: AiMemory; redacted: boolean } {
+  const input: { title?: string; body?: string; tags?: string[]; type?: string } = {}
+  if (args.title !== undefined) {
+    const title = typeof args.title === 'string' ? args.title.trim() : ''
+    if (!title || title.length > MEMORY_LIMITS.title) refuseMemory('title inválido.')
+    input.title = title
+  }
+  if (args.body !== undefined) {
+    const body = typeof args.body === 'string' ? args.body.trim() : ''
+    if (!body || body.length > MEMORY_LIMITS.body) refuseMemory('body inválido.')
+    input.body = body
+  }
+  if (args.tags !== undefined) {
+    const tags = args.tags
+    if (
+      !Array.isArray(tags) ||
+      tags.length > MEMORY_LIMITS.tags ||
+      tags.some((tag) => typeof tag !== 'string' || tag.length > MEMORY_LIMITS.tag)
+    )
+      refuseMemory('tags inválidas.')
+    input.tags = tags as string[]
+  }
+  if (args.type !== undefined) {
+    if (!EDITABLE_MEMORY_TYPES.includes(args.type as MemoryType))
+      refuseMemory('type precisa ser um tipo de memória permitido.')
+    input.type = args.type as string
+  }
+  if (!Object.keys(input).length) refuseMemory('Nada para alterar.')
+  const built = buildMemory(existing, input, existing.id, now)
+  if ('error' in built) return refuseMemory(built.error)
+  return built
+}
+
+function prepareMemoryOp(
+  name: string,
+  args: Record<string, unknown>,
+  deps: McpMemoryDeps
+): { resumo: string; op: McpMemoryOp } {
+  if (name === 'update_memory') {
+    const existing = editableMemory(deps, memoryId(args, 'id'))
+    const { memory, redacted } = editMemory(existing, args, deps.now)
+    return {
+      resumo: `Editar memória "${existing.title}"`,
+      op: { kind: 'upsert', memory, redacted }
+    }
+  }
+  if (name === 'archive_memory') {
+    const memory = activeMemory(deps, memoryId(args, 'id'))
+    return { resumo: `Arquivar memória "${memory.title}"`, op: { kind: 'archive', id: memory.id } }
+  }
+  if (name === 'unarchive_memory') {
+    const memory = deps.getMemory(memoryId(args, 'id'))
+    if (!memory) return refuseMemory(MEMORY_UNAVAILABLE)
+    const resumo = `Restaurar memória "${memory.title}"`
+    if (!memory.archivedAt) return { resumo, op: { kind: 'none', id: memory.id } }
+    const restored = { ...memory, archivedAt: null, updatedAt: deps.now }
+    return { resumo, op: { kind: 'upsert', memory: restored, redacted: false } }
+  }
+  if (name === 'delete_memory') {
+    const memory = deps.getMemory(memoryId(args, 'id'))
+    if (!memory) return refuseMemory(MEMORY_UNAVAILABLE)
+    return { resumo: `Excluir memória "${memory.title}"`, op: { kind: 'delete', id: memory.id } }
+  }
+  if (name === 'resolve_memory_conflict') {
+    const keep = editableMemory(deps, memoryId(args, 'keepId'))
+    const lose = editableMemory(deps, memoryId(args, 'archiveId'))
+    const paired = findConflicts(deps.listMemories()).some(
+      (conflict) =>
+        (conflict.a === keep.id && conflict.b === lose.id) ||
+        (conflict.a === lose.id && conflict.b === keep.id)
+    )
+    if (!paired) refuseMemory(NOT_A_CONFLICT)
+    const edited =
+      args.body === undefined ? undefined : editMemory(keep, { body: args.body }, deps.now)
+    return {
+      resumo: `Resolver contradição em "${keep.title}" arquivando ${lose.id}`,
+      op: {
+        kind: 'resolve',
+        archiveId: lose.id,
+        keep: edited?.memory,
+        redacted: edited?.redacted ?? false
+      }
+    }
+  }
+  return refuseMemory('Ferramenta indisponível nesta sessão MCP.')
+}
+
+/**
+ * Validates a memory write and describes the operation without performing it.
+ * Called once as the queue's prepare step and again right before executing, so
+ * the write always applies to the memory as it is at that moment.
+ */
+export function prepareMemoryWrite(
+  name: string,
+  args: Record<string, unknown>,
+  deps: McpMemoryDeps
+): MemoryPrepared {
+  try {
+    return { ok: true, ...prepareMemoryOp(name, args, deps) }
+  } catch (error) {
+    if (error instanceof MemoryRefusal) return { ok: false, error: error.message }
+    throw error
+  }
 }

@@ -39,7 +39,9 @@ import { McpWriteQueue, RendererMcpActionBridge } from './modules/agent/mcp-writ
 import {
   MCP_APPROVAL_REQUIRED,
   MCP_MEMORY_TOOLS,
-  mcpWriteResult
+  mcpWriteResult,
+  prepareMemoryWrite,
+  type McpMemoryOp
 } from './modules/agent/mcp-write-tools'
 import type { McpActionRequest, McpActionResult } from './modules/agent/mcp-write-types'
 import { AgentSessionRegistry } from './modules/agent/agent-session'
@@ -289,8 +291,28 @@ const sagyouMcp = startSagyouMcpBroker({
       : { ok: false, error: 'Criação não aprovada pelo usuário.' }
   },
   write: async (session, name, args) => {
-    if (MCP_MEMORY_TOOLS.has(name))
-      return { ok: false, error: 'Ferramenta indisponível nesta sessão MCP.' }
+    if (MCP_MEMORY_TOOLS.has(name)) {
+      const prepareMemory = (): ReturnType<typeof prepareMemoryWrite> =>
+        prepareMemoryWrite(name, args, {
+          getMemory: (id) => memoryStore.getMemory(id),
+          listMemories: () => memoryStore.listMemories(),
+          now: new Date().toISOString()
+        })
+      const outcome = await mcpWriteQueue.enqueue<McpActionResult>(
+        { runId: session.runId, name, args, approval: MCP_APPROVAL_REQUIRED.has(name) },
+        async () => {
+          // Re-validate: the memory may have changed while the card was up.
+          const prepared = prepareMemory()
+          if (!prepared.ok) return prepared
+          return applyMemoryOp(prepared.op)
+        },
+        async () => {
+          const prepared = prepareMemory()
+          return prepared.ok ? { resumo: prepared.resumo } : { refuse: prepared }
+        }
+      )
+      return mcpWriteResult(name, outcome)
+    }
     const scope = { projectId: session.projectId, financialProfileId: session.financialProfileId }
     const outcome = await mcpWriteQueue.enqueue<McpActionResult>(
       { runId: session.runId, name, args, approval: MCP_APPROVAL_REQUIRED.has(name) },
@@ -444,6 +466,34 @@ const rendererMcpActions = new RendererMcpActionBridge<McpActionRequest, McpActi
     mainWindow.webContents.send('store:mcp:action', { requestId, request: payload })
   }
 )
+
+/** Memory is main-owned SQLite: each MCP memory write completes before the reply. */
+function applyMemoryOp(op: McpMemoryOp): McpActionResult {
+  const now = new Date().toISOString()
+  if (op.kind === 'upsert') {
+    memoryStore.upsertMemory(op.memory)
+    return { ok: true, id: op.memory.id, ...(op.redacted ? { redacted: true } : {}) }
+  }
+  if (op.kind === 'archive') {
+    memoryStore.archiveMemories([op.id], now)
+    return { ok: true, id: op.id }
+  }
+  if (op.kind === 'delete') {
+    memoryStore.deleteMemory(op.id)
+    return { ok: true, id: op.id }
+  }
+  if (op.kind === 'resolve') {
+    if (op.keep) memoryStore.upsertMemory(op.keep)
+    memoryStore.archiveMemories([op.archiveId], now)
+    return {
+      ok: true,
+      id: op.archiveId,
+      arquivada: op.archiveId,
+      ...(op.redacted ? { redacted: true } : {})
+    }
+  }
+  return { ok: true, id: op.id }
+}
 
 /** A run can only write while it exists, was not stopped and still has its terminal. */
 function isMcpRunLive(runId: string): boolean {
