@@ -8,10 +8,13 @@ import {
   MCP_NO_APPROVAL,
   MCP_WRITE_TOOLS,
   MCP_WRITE_TOOL_NAMES,
-  mcpWriteResult
+  mcpWriteResult,
+  prepareMemoryWrite,
+  type McpMemoryDeps
 } from '../modules/agent/mcp-write-tools'
-import { MCP_RENDERER_WRITE_TOOLS } from '../modules/agent/mcp-write-types'
+import { MCP_MEMORY_WRITE_TOOLS, MCP_RENDERER_WRITE_TOOLS } from '../modules/agent/mcp-write-types'
 import { MCP_PERMISSIONS } from '../modules/agent/sagyou-mcp'
+import type { AiMemory } from '../modules/ai/memory'
 
 const APPROVAL_LIST = [
   'archive_project',
@@ -90,5 +93,138 @@ describe('mcpWriteResult', () => {
   it('returns the applied result', () => {
     const value = { ok: true as const, id: 'p1' }
     expect(mcpWriteResult('create_project', { approved: true, value })).toBe(value)
+  })
+})
+
+describe('prepareMemoryWrite', () => {
+  const NOW = '2026-10-25T12:00:00.000Z'
+  const memory = (over: Partial<AiMemory> = {}): AiMemory => ({
+    id: 'm1',
+    projectId: 'p1',
+    type: 'decisao',
+    title: 'Banco',
+    body: 'Usar SQLite.',
+    tags: [],
+    pinned: false,
+    source: 'modelo',
+    sourceConversationId: null,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    lastAccessedAt: '2026-01-01T00:00:00.000Z',
+    accessCount: 3,
+    archivedAt: null,
+    ...over
+  })
+  const deps = (memories: AiMemory[]): McpMemoryDeps => ({
+    getMemory: (id: string) => memories.find((item) => item.id === id) ?? null,
+    listMemories: () => memories,
+    now: NOW
+  })
+
+  it('update_memory scrubs a secret, keeps pinned and reports redaction', () => {
+    const result = prepareMemoryWrite(
+      'update_memory',
+      { id: 'm1', body: 'Chave sk-abcdefghijklmnopqrstuvwxyz0123456789 no .env' },
+      deps([memory({ pinned: true })])
+    )
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.op.kind).toBe('upsert')
+    if (result.op.kind !== 'upsert') return
+    expect(result.op.memory.pinned).toBe(true)
+    expect(result.op.memory.body).not.toContain('sk-abcdefghijklmnopqrstuvwxyz0123456789')
+    expect(result.op.redacted).toBe(true)
+    expect(result.op.memory.updatedAt).toBe(NOW)
+  })
+
+  it('handoff memory cannot be updated or resolved', () => {
+    const handoff = memory({ id: 'h1', type: 'handoff' })
+    const refusal = { ok: false, error: 'Memórias de handoff não podem ser alteradas pelo MCP.' }
+    expect(prepareMemoryWrite('update_memory', { id: 'h1', body: 'x' }, deps([handoff]))).toEqual(
+      refusal
+    )
+    expect(
+      prepareMemoryWrite(
+        'resolve_memory_conflict',
+        { keepId: 'h1', archiveId: 'm1' },
+        deps([handoff, memory()])
+      )
+    ).toEqual(refusal)
+  })
+
+  it('archived or missing memory gives the same refusal on update', () => {
+    const refusal = { ok: false, error: 'Memória indisponível nesta sessão MCP.' }
+    const archived = memory({ archivedAt: '2026-05-01T00:00:00.000Z' })
+    expect(prepareMemoryWrite('update_memory', { id: 'm1', body: 'x' }, deps([archived]))).toEqual(
+      refusal
+    )
+    expect(prepareMemoryWrite('update_memory', { id: 'zz', body: 'x' }, deps([]))).toEqual(refusal)
+  })
+
+  it('update_memory enforces the save_memory limits and types', () => {
+    const d = deps([memory()])
+    expect(
+      prepareMemoryWrite('update_memory', { id: 'm1', body: 'x'.repeat(2001) }, d)
+    ).toMatchObject({ ok: false })
+    expect(prepareMemoryWrite('update_memory', { id: 'm1', type: 'handoff' }, d)).toMatchObject({
+      ok: false
+    })
+    expect(prepareMemoryWrite('update_memory', { id: 'm1' }, d)).toEqual({
+      ok: false,
+      error: 'Nada para alterar.'
+    })
+  })
+
+  it('archive, unarchive and delete produce the matching operations', () => {
+    const active = memory()
+    const archived = memory({ id: 'm2', archivedAt: '2026-05-01T00:00:00.000Z' })
+    const d = deps([active, archived])
+    expect(prepareMemoryWrite('archive_memory', { id: 'm1' }, d)).toMatchObject({
+      ok: true,
+      op: { kind: 'archive', id: 'm1' }
+    })
+    const restored = prepareMemoryWrite('unarchive_memory', { id: 'm2' }, d)
+    expect(restored).toMatchObject({ ok: true, op: { kind: 'upsert' } })
+    if (restored.ok && restored.op.kind === 'upsert')
+      expect(restored.op.memory.archivedAt).toBeNull()
+    expect(prepareMemoryWrite('unarchive_memory', { id: 'm1' }, d)).toMatchObject({
+      ok: true,
+      op: { kind: 'none' }
+    })
+    expect(prepareMemoryWrite('delete_memory', { id: 'm1' }, d)).toMatchObject({
+      ok: true,
+      resumo: 'Excluir memória "Banco"',
+      op: { kind: 'delete', id: 'm1' }
+    })
+  })
+
+  it('resolve_memory_conflict archives the loser and never deletes', () => {
+    const keep = memory({ id: 'k', body: 'Usar SQLite.' })
+    const lose = memory({ id: 'l', body: 'Usar Postgres.' })
+    const result = prepareMemoryWrite(
+      'resolve_memory_conflict',
+      { keepId: 'k', archiveId: 'l', body: 'Usar SQLite (decidido em out/2026).' },
+      deps([keep, lose])
+    )
+    expect(result).toMatchObject({ ok: true, op: { kind: 'resolve', archiveId: 'l' } })
+    if (result.ok && result.op.kind === 'resolve')
+      expect(result.op.keep?.body).toBe('Usar SQLite (decidido em out/2026).')
+  })
+
+  it('resolve refuses a pair that is not a conflict', () => {
+    const a = memory({ id: 'a', title: 'Banco' })
+    const b = memory({ id: 'b', title: 'Outro assunto', body: 'x' })
+    expect(
+      prepareMemoryWrite('resolve_memory_conflict', { keepId: 'a', archiveId: 'b' }, deps([a, b]))
+    ).toEqual({
+      ok: false,
+      error: 'Essas memórias não formam uma contradição apontada por check_memories.'
+    })
+  })
+
+  it('only delete_memory requires approval among memory tools', () => {
+    expect(MCP_MEMORY_WRITE_TOOLS.filter((name) => MCP_APPROVAL_REQUIRED.has(name))).toEqual([
+      'delete_memory'
+    ])
   })
 })
