@@ -25,8 +25,6 @@ const winSent = vi.hoisted(() => [] as { channel: string; payload: unknown }[])
 
 /** Startup milestones in order, to prove the chat data is removed before a window exists. */
 const startupOrder = vi.hoisted(() => [] as string[])
-/** Stand-in for the SQLite `settings` table the removal reads and writes. */
-const settingsStore = vi.hoisted(() => new Map<string, unknown>())
 
 let userData: string
 
@@ -80,8 +78,6 @@ vi.mock('../store', () => ({
   loadData: vi.fn(() => ({})),
   saveData: vi.fn(),
   listMemories: vi.fn(() => []),
-  readSetting: vi.fn((key: string) => settingsStore.get(key) ?? null),
-  writeSetting: vi.fn((key: string, value: unknown) => void settingsStore.set(key, value)),
   copyDatabaseTo: vi.fn(async () => void startupOrder.push('migration')),
   scrubMemoryConversationLinks: vi.fn(() => 0),
   rebuildSearchIndex: vi.fn(async () => undefined)
@@ -126,8 +122,15 @@ describe('legacy chat removal on startup', () => {
     expect(startupOrder.slice(0, 2)).toEqual(['migration', 'createWindow'])
   })
 
-  it('writes the marker and offers the snapshot notice once', async () => {
-    expect(typeof settingsStore.get('legacyChatRemovedAt')).toBe('string')
+  it('keeps its state in a file of its own, out of reach of the store', async () => {
+    // persistAll() empties the SQLite `settings` table on a session's first
+    // save; a marker kept there made the migration run on every launch.
+    const state = JSON.parse(await readFile(join(userData, 'legacy-chat-state.json'), 'utf-8'))
+    expect(typeof state.legacyChatRemovedAt).toBe('string')
+    expect(state.legacyChatSnapshotDir).toContain('pre-remocao-chat-')
+  })
+
+  it('offers the snapshot notice once', async () => {
     const notice = await invoke<{ snapshotDir: string } | null>('legacy-chat:notice')
     expect(notice?.snapshotDir).toContain('pre-remocao-chat-')
 

@@ -49,7 +49,7 @@ SQLite só como índice, consulta por MCP) fica para depois e **não** faz parte
 
 - A importação de backup antigo **ignora** `conversations` e `chatImages` em vez de falhar. Restaurar um backup velho não traz o chat de volta.
 - As memórias existentes ficam. `sourceConversationId` passa a nulo, e o trecho `(conversa completa: id=… — use ler_conversa…)` é removido do corpo dos handoffs antigos.
-- A migração é idempotente e deixa uma marca em `settings` (`legacyChatRemovedAt`). Roda uma única vez.
+- A migração é idempotente e deixa uma marca (`legacyChatRemovedAt`) em `userData/legacy-chat-state.json`, e não na tabela `settings`: o `persistAll` esvazia `settings` na primeira gravação de cada sessão e apagaria a marca. Roda uma única vez.
 - **Se o snapshot falhar, nada é apagado**, e a migração tenta de novo na abertura seguinte.
 - Saem do MCP as ferramentas `search_conversations` e `read_conversation`.
 - O aviso do Fleet é buscado pelo renderer quando a tela abre: o main guarda o resultado da migração e o caminho do snapshot até o aviso ser dispensado.
@@ -103,7 +103,7 @@ A migração é pensada para ser retomada: cada passo é idempotente, e a marca 
 - **Recuperável via snapshot:** conversas, imagens e documentos de chat, como arquivos crus numa pasta. O snapshot **não** é um backup importável pelo app, e a importação ignora esses campos de qualquer forma, então **nada traz as conversas de volta pela interface**. Os arquivos continuam legíveis à mão.
 - **Irrecuperável:** as chaves de API. O `ai-config.json` fica fora de qualquer backup, e a spec não cria cópia, porque guardar credenciais em um arquivo de backup seria um risco novo.
 - **Preservado:** `kanban.db` inteiro (projetos, tasks, finanças, memória, etc.), `agent-runs/`, `files/`, `task-images/`, `skills/`, a configuração dos agentes e chaves desconhecidas do `ai-config.json`.
-- **Novo:** a chave `legacyChatRemovedAt` em `settings` (aditiva, sem migração de schema).
+- **Novo:** o arquivo `userData/legacy-chat-state.json` com `legacyChatRemovedAt`, `legacyChatSnapshotDir` e `legacyChatNoticeDismissedAt` (aditivo, fora do SQLite e de qualquer backup).
 - **Memória:** a coluna `source_conversation_id` deixa de ser lida e escrita e fica nula nas linhas existentes. A coluna não é removida do SQLite, para não exigir reconstrução de tabela.
 - **Compatibilidade:** versão antiga do app abrindo os dados da nova ainda funciona, pois só faltam arquivos e chaves opcionais.
 

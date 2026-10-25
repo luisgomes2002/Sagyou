@@ -9,7 +9,7 @@ Branch: feature/remover-historico-chat
 
 ## Restrições Globais
 
-- Marca da migração: chave `legacyChatRemovedAt` na tabela `settings`, gravada só no fim. Ao iniciar, a migração apenas **confere** a marca.
+- Marca da migração: chave `legacyChatRemovedAt` em `userData/legacy-chat-state.json` (NÃO em `settings`: `persistAll` esvazia a tabela na primeira gravação da sessão), gravada só no fim. Ao iniciar, a migração apenas **confere** a marca.
 - Ordem: conferir marca → snapshot → apagar conversas, imagens e `chat-files/` → apagar logs → limpar memória → reconstruir índice de busca → limpar `ai-config.json` → gravar marca. As chaves de API são o último passo destrutivo.
 - Snapshot feito pelo main, sem renderer: pasta `userData/backups/pre-remocao-chat-<timestamp>/` com cópia de `ai-conversations.json`, `chat-images/`, `chat-files/` e do `kanban.db` (API `backup()` do better-sqlite3). `ai-config.json` **não** entra. Qualquer falha de cópia → nada é apagado e a marca não é gravada.
 - Apaga: `ai-conversations.json`, `chat-images/`, `chat-files/`, `ai-usage-log.json`, `ai-run-metrics.json`.

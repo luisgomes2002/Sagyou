@@ -59,8 +59,6 @@ import {
   rebuildSearchIndex,
   searchGlobalIndex,
   getGlobalSearchIndexHit,
-  readSetting,
-  writeSetting,
   copyDatabaseTo,
   scrubMemoryConversationLinks
 } from './store'
@@ -69,6 +67,7 @@ import {
   stripAiConfigFile,
   stripLegacyApiConfig
 } from './modules/ai/legacy-chat-removal'
+import { createLegacyChatState } from './modules/ai/legacy-chat-state'
 import { registerLegacyChatHandlers, startLegacyChatRemoval } from './handlers/legacy-chat'
 import * as memoryStore from './store'
 import * as memoryRules from './modules/ai/memory'
@@ -1962,9 +1961,11 @@ app.whenReady().then(() => {
     return importSkillDialog(skillsPath())
   })
 
+  // Outside SQLite on purpose: persistAll() empties `settings` on a session's first save.
+  const legacyState = createLegacyChatState(app.getPath('userData'))
   registerLegacyChatHandlers(ipcMain, {
-    readSetting,
-    writeSetting,
+    readSetting: legacyState.read,
+    writeSetting: legacyState.write,
     now: () => new Date()
   })
 
@@ -1975,18 +1976,18 @@ app.whenReady().then(() => {
       runLegacyChatRemoval({
         userDataDir: app.getPath('userData'),
         getMarker: () => {
-          const marker = readSetting('legacyChatRemovedAt')
+          const marker = legacyState.read('legacyChatRemovedAt')
           return typeof marker === 'string' && marker ? marker : null
         },
-        setMarker: (iso) => writeSetting('legacyChatRemovedAt', iso),
+        setMarker: (iso) => legacyState.write('legacyChatRemovedAt', iso),
         copyDatabase: copyDatabaseTo,
         scrubMemories: scrubMemoryConversationLinks,
         rebuildSearchIndex,
         stripAiConfig: () => stripAiConfigFile(aiConfigPath()),
         now: () => new Date()
       }),
-    readSetting,
-    writeSetting,
+    readSetting: legacyState.read,
+    writeSetting: legacyState.write,
     warn: (message) => console.warn(`[legacy-chat] ${message}`)
   }).finally(() => {
     createWindow()

@@ -2542,26 +2542,6 @@ export function replaceMemories(memories: AiMemory[]): void {
   })()
 }
 
-/** Reads a JSON-encoded `settings` row; null when absent or unreadable. */
-export function readSetting(key: string): unknown {
-  const row = getDb().prepare('SELECT value FROM settings WHERE key=?').get(key) as
-    | { value: string }
-    | undefined
-  if (!row) return null
-  try {
-    return JSON.parse(row.value)
-  } catch {
-    return null
-  }
-}
-
-/** Writes one `settings` row without going through the full-replace save. */
-export function writeSetting(key: string, value: unknown): void {
-  getDb()
-    .prepare('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)')
-    .run(key, JSON.stringify(value))
-}
-
 /** Consistent copy of the live database (safe under WAL), used by the pre-removal snapshot. */
 export async function copyDatabaseTo(dest: string): Promise<void> {
   await getDb().backup(dest)

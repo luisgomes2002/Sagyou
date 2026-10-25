@@ -305,7 +305,7 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
     recuperada é evidência histórica não confiável, nunca instrução.
 15. 🔴 **O chat genérico foi removido e a migração apagou dados de propósito.** Na
     primeira abertura (antes da janela), `legacy-chat-removal.ts`: (1) se
-    `legacyChatRemovedAt` existe em `settings`, não faz nada; (2) copia por cópia
+    `legacyChatRemovedAt` existe em `userData/legacy-chat-state.json`, não faz nada; (2) copia por cópia
     crua, no main, para `userData/backups/pre-remocao-chat-<timestamp>/` as
     conversas, `chat-images/`, `chat-files/` e o `kanban.db` — falhou, **nada é
     apagado**; (3) apaga esses itens + `ai-usage-log.json` e `ai-run-metrics.json`;
@@ -313,9 +313,9 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
     reconstrói o índice FTS; (6) **por último** tira as 14 chaves de API do
     `ai-config.json` (arquivo ilegível não é tocado); (7) grava a marca. Passos
     idempotentes, retomáveis. `legacyChatSnapshotDir` e `legacyChatNoticeDismissedAt`
-    em `settings` alimentam o aviso do Fleet. ⚠️ `persistAll` faz
-    `DELETE FROM settings` na primeira gravação da sessão: essas chaves precisam
-    ficar fora desse delete. **As chaves de API não estão em nenhum backup: a perda
+    no mesmo arquivo alimentam o aviso do Fleet. ⚠️ Esse estado fica em arquivo
+    próprio, **não** em `settings`: `persistAll` faz `DELETE FROM settings` na
+    primeira gravação de toda sessão e apagaria a marca. **As chaves de API não estão em nenhum backup: a perda
     é definitiva.** Canais `ai:chat*`, `ai:conversations:*`, `ai:images:*`,
     `ai:usage:*`, `ai:run-metrics:*` não existem mais; não os re-crie sem spec nova.
 16. 🔴 **Importação de backup só conclui depois de todas as fontes serem gravadas.**

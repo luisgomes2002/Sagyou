@@ -42,7 +42,7 @@ agentes (`codeHarness`, `userName`, `reasoningEffort`) e **qualquer chave descon
 
 ### Ordem dos passos
 
-1. Se a chave `legacyChatRemovedAt` existe em `settings`, a migração não faz nada.
+1. Se a chave `legacyChatRemovedAt` existe em `legacy-chat-state.json` (em `userData`), a migração não faz nada.
 2. **Snapshot em pasta.** O processo main copia, sem passar pelo renderer, para
    `<diretório de dados>/backups/pre-remocao-chat-<timestamp>/`: `ai-conversations.json`,
    `chat-images/`, `chat-files/` (os que existirem) e uma cópia consistente do `kanban.db`. O
@@ -53,14 +53,15 @@ agentes (`codeHarness`, `userName`, `reasoningEffort`) e **qualquer chave descon
 5. Reconstrói o índice de busca global (é descartável; conversas deixam de ser indexadas).
 6. **Por último**, remove as chaves de API do `ai-config.json`, com escrita atômica. Um arquivo
    ilegível **não é tocado** (a migração registra um aviso): ele ainda poderia ser recuperado.
-7. Grava `legacyChatRemovedAt` em `settings`.
+7. Grava `legacyChatRemovedAt` em `legacy-chat-state.json`.
 
 ### Como achar o snapshot
 
 Pelo aviso único do painel **Sessões de código**, que mostra o caminho completo e some quando
 dispensado, ou abrindo a pasta de backups pelo menu **Backup**. O Sagyou guarda o caminho em
-`settings` (`legacyChatSnapshotDir`, sempre o do **primeiro** snapshot) e a dispensa do aviso em
-`legacyChatNoticeDismissedAt`.
+`legacy-chat-state.json` (`legacyChatSnapshotDir`, sempre o do **primeiro** snapshot) e a dispensa do aviso em
+`legacyChatNoticeDismissedAt`. Esse arquivo é separado do banco de propósito: o SQLite esvazia a tabela
+`settings` na primeira gravação de cada sessão, e a marca se perderia.
 
 O snapshot é uma pasta de arquivos crus, legível à mão (o JSON de conversas abre em qualquer
 editor). **Não é um backup importável**: nada na interface traz as conversas de volta.
