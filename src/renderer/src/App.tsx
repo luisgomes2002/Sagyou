@@ -44,6 +44,7 @@ import { GuideView } from './components/views/GuideView'
 import { SettingsView } from './components/views/SettingsView'
 import { UnlockScreen } from './components/security/UnlockScreen'
 import { ViewErrorBoundary } from './components/ViewErrorBoundary'
+import { applyMcpAction, prepareMcpAction } from './services/mcpActions'
 import type { GlobalSearchHit } from '../../main/modules/search/global-search-query'
 
 interface TaskModalState {
@@ -200,6 +201,25 @@ export default function App() {
       }
     })
   }, [createTask])
+
+  useEffect(() => {
+    if (!window.electronAPI.store.onMcpAction) return
+    return window.electronAPI.store.onMcpAction(async ({ requestId, request }) => {
+      try {
+        const result =
+          request.phase === 'prepare'
+            ? prepareMcpAction(request.name, request.args, request.scope)
+            : applyMcpAction(request.name, request.args, request.scope)
+        if (request.phase === 'apply' && result.ok) await useKanbanStore.getState()._flushPersist()
+        window.electronAPI.store.respondMcpAction(requestId, result)
+      } catch (error) {
+        window.electronAPI.store.respondMcpAction(requestId, {
+          ok: false,
+          error: error instanceof Error ? error.message : 'Não foi possível alterar os dados.'
+        })
+      }
+    })
+  }, [])
 
   const [toasts, setToasts] = useState<ToastMessage[]>([])
   const [taskModal, setTaskModal] = useState<TaskModalState>({ open: false })
