@@ -18,16 +18,28 @@ vi.mock('../../services/ElectronStorage', () => {
 })
 
 import { useKanbanStore } from '../../store/kanban'
-import { applyMcpAction, freeNotePosition, prepareMcpAction } from '../../services/mcpActions'
+import {
+  applyMcpAction,
+  formatMcpMoney,
+  freeNotePosition,
+  parseMcpMoney,
+  prepareMcpAction
+} from '../../services/mcpActions'
 import {
   DEFAULT_FINANCIAL_PROFILE_ID,
   PROJECT_COLORS,
+  type FinancialProfile,
+  type FinancialTable,
   type Goal,
   type Project,
   type StickyNote,
   type Task
 } from '../../types'
-import type { McpActionResult, McpScope } from '../../types/mcp-actions'
+import {
+  MCP_RENDERER_WRITE_TOOLS,
+  type McpActionResult,
+  type McpScope
+} from '../../types/mcp-actions'
 
 const state = (): ReturnType<typeof useKanbanStore.getState> => useKanbanStore.getState()
 
@@ -515,5 +527,195 @@ describe('MCP note writes', () => {
     })
     expect(both('delete_note', { id }, scope).ok).toBe(true)
     expect(state().notes).toHaveLength(0)
+  })
+})
+
+describe('MCP financial writes', () => {
+  beforeEach(resetStore)
+
+  const scope: McpScope = { projectId: null, financialProfileId: DEFAULT_FINANCIAL_PROFILE_ID }
+  const table = (id: string): FinancialTable => state().lists.find((l) => l.id === id)!
+
+  function seedTables(): { mine: string; other: string; otherProfile: string } {
+    const mine = state().createList('Nubank', 'BRL', DEFAULT_FINANCIAL_PROFILE_ID)
+    const otherProfile = state().createFinancialProfile('Empresa')
+    const other = state().createList('PJ', 'BRL', otherProfile)
+    return { mine, other, otherProfile }
+  }
+
+  it('parseMcpMoney accepts plain decimals and refuses ambiguous or non-positive values', () => {
+    expect(parseMcpMoney('1500')).toBe('1500')
+    expect(parseMcpMoney('10,5')).toBe('10.5')
+    expect(parseMcpMoney(12.5)).toBe('12.5')
+    for (const bad of ['1.500', '1.500,00', '-5', '0', 0, 12.345, 'abc', ''])
+      expect(parseMcpMoney(bad)).toBeNull()
+  })
+
+  it('formatMcpMoney follows the table currency', () => {
+    expect(formatMcpMoney('1500', 'BRL')).toBe('R$ 1.500,00')
+    expect(formatMcpMoney('1500', 'JPY')).toBe('¥ 1.500')
+    expect(formatMcpMoney('1500.5', 'USD')).toBe('$ 1,500.50')
+  })
+
+  it('create_transaction stores a 2-place decimal string and a readable resumo', () => {
+    const { mine } = seedTables()
+    const args = {
+      tableId: mine,
+      type: 'despesa',
+      amount: '1500,45',
+      description: 'Mercado',
+      date: '2026-10-25',
+      category: 'Alimentação'
+    }
+    expect(prepareMcpAction('create_transaction', args, scope)).toMatchObject({
+      ok: true,
+      resumo: 'Lançar despesa de R$ 1.500,45 em Nubank — Mercado — 2026-10-25'
+    })
+    expect(applyMcpAction('create_transaction', args, scope).ok).toBe(true)
+    const tx = table(mine).transactions[0]
+    expect(tx).toMatchObject({
+      amount: '1500.45',
+      type: 'expense',
+      description: 'Mercado',
+      date: '2026-10-25',
+      category: 'Alimentação'
+    })
+    expect(tx.createdAt).toBeDefined()
+  })
+
+  it('refuses "1.500" instead of reading it as 1.5', () => {
+    const { mine } = seedTables()
+    const args = { tableId: mine, type: 'receita', amount: '1.500', description: 'X' }
+    expect(both('create_transaction', args, scope)).toMatchObject({ ok: false })
+    expect(table(mine).transactions).toHaveLength(0)
+  })
+
+  it('a table of another profile and a missing table give the same refusal', () => {
+    const { other } = seedTables()
+    const refusal = { ok: false, error: 'Tabela indisponível nesta sessão MCP.' }
+    const args = { type: 'receita', amount: '10', description: 'X' }
+    expect(both('create_transaction', { ...args, tableId: other }, scope)).toEqual(refusal)
+    expect(both('create_transaction', { ...args, tableId: 'nope' }, scope)).toEqual(refusal)
+    expect(table(other).transactions).toHaveLength(0)
+  })
+
+  it('a transaction id of another table gives the transaction refusal', () => {
+    const { mine, other } = seedTables()
+    const foreign = state().addTransaction(other, {
+      description: 'PJ',
+      amount: '50',
+      type: 'income',
+      date: '2026-10-01'
+    })
+    expect(both('delete_transaction', { tableId: mine, id: foreign }, scope)).toEqual({
+      ok: false,
+      error: 'Transação indisponível nesta sessão MCP.'
+    })
+    expect(table(other).transactions).toHaveLength(1)
+  })
+
+  it('update_transaction appends audit and clears reconciledAt when the amount changes', () => {
+    const { mine } = seedTables()
+    const id = state().addTransaction(mine, {
+      description: 'Luz',
+      amount: '100',
+      type: 'expense',
+      date: '2026-10-01',
+      reconciledAt: '2026-10-02T00:00:00.000Z'
+    })
+    expect(both('update_transaction', { tableId: mine, id, amount: '120' }, scope).ok).toBe(true)
+    const tx = table(mine).transactions[0]
+    expect(tx.amount).toBe('120')
+    expect(tx.reconciledAt).toBeUndefined()
+    expect(tx.audit?.length).toBeGreaterThan(0)
+  })
+
+  it('a debt payment transaction cannot be edited or deleted', () => {
+    const { mine } = seedTables()
+    const id = state().addTransaction(mine, {
+      description: 'Parcela',
+      amount: '100',
+      type: 'expense',
+      date: '2026-10-01',
+      debtId: 'debt-1'
+    })
+    const refusal = {
+      ok: false,
+      error: 'Esta transação pertence a uma dívida; altere-a no Sagyou.'
+    }
+    expect(both('update_transaction', { tableId: mine, id, amount: '1' }, scope)).toEqual(refusal)
+    expect(both('delete_transaction', { tableId: mine, id }, scope)).toEqual(refusal)
+    expect(table(mine).transactions).toHaveLength(1)
+  })
+
+  it('delete_transaction removes it', () => {
+    const { mine } = seedTables()
+    const id = state().addTransaction(mine, {
+      description: 'Luz',
+      amount: '100',
+      type: 'expense',
+      date: '2026-10-01'
+    })
+    expect(both('delete_transaction', { tableId: mine, id }, scope).ok).toBe(true)
+    expect(table(mine).transactions).toHaveLength(0)
+  })
+
+  it('create_financial_table uses the session profile and requested currency', () => {
+    const { otherProfile } = seedTables()
+    useKanbanStore.setState({ activeFinancialProfileId: otherProfile })
+    const created = both('create_financial_table', { name: 'Wise', currency: 'JPY' }, scope)
+    expect(table((created as { id: string }).id)).toMatchObject({
+      name: 'Wise',
+      currency: 'JPY',
+      profileId: DEFAULT_FINANCIAL_PROFILE_ID
+    })
+    expect(both('create_financial_table', { name: 'X', currency: 'EUR' }, scope)).toMatchObject({
+      ok: false
+    })
+  })
+
+  it('categories: add ignores case, remove matches case-insensitively and keeps history', () => {
+    const { mine } = seedTables()
+    const profile = (): FinancialProfile =>
+      state().financialProfiles.find((p) => p.id === DEFAULT_FINANCIAL_PROFILE_ID)!
+    expect(both('add_financial_category', { category: 'Pets' }, scope).ok).toBe(true)
+    expect(both('add_financial_category', { category: 'pets' }, scope).ok).toBe(true)
+    expect(profile().customCategories).toEqual(['Pets'])
+    state().addTransaction(mine, {
+      description: 'Ração',
+      amount: '80',
+      type: 'expense',
+      date: '2026-10-01',
+      category: 'Pets'
+    })
+    expect(both('remove_financial_category', { category: 'PETS' }, scope).ok).toBe(true)
+    expect(profile().customCategories).toEqual([])
+    expect(table(mine).transactions[0].category).toBe('Pets')
+    expect(both('remove_financial_category', { category: 'Nada' }, scope)).toMatchObject({
+      ok: false
+    })
+  })
+
+  it('profiles: duplicate name returns the existing id; rename touches only the session profile', () => {
+    const { otherProfile } = seedTables()
+    expect(both('create_financial_profile', { name: 'empresa' }, scope)).toMatchObject({
+      ok: true,
+      id: otherProfile,
+      existente: true
+    })
+    expect(both('rename_financial_profile', { name: 'Casa' }, scope).ok).toBe(true)
+    const names = Object.fromEntries(state().financialProfiles.map((p) => [p.id, p.name]))
+    expect(names[DEFAULT_FINANCIAL_PROFILE_ID]).toBe('Casa')
+    expect(names[otherProfile]).toBe('Empresa')
+  })
+})
+
+describe('MCP handler coverage', () => {
+  it('every renderer write tool has a handler', () => {
+    for (const name of MCP_RENDERER_WRITE_TOOLS)
+      expect(prepareMcpAction(name, {}, general)).not.toEqual({
+        ok: false,
+        error: 'Ferramenta indisponível nesta sessão MCP.'
+      })
   })
 })
