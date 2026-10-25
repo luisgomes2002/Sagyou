@@ -2,15 +2,25 @@ export interface McpWriteRequest {
   runId: string
   name: string
   args: Record<string, unknown>
+  /** Absent means the approval card is shown, as for every write before it existed. */
+  approval?: boolean
+  resumo?: string
 }
 
 export interface McpWriteOutcome<T> {
   approved: boolean
   value?: T
+  /** The prepare step refused the write; `value` carries its refusal. */
+  refused?: boolean
+  /** The run stopped being live before the write could execute. */
+  ended?: boolean
 }
+
+export type McpWritePrepare<T> = () => Promise<{ resumo: string } | { refuse: T }>
 
 interface QueuedWrite<T> extends McpWriteRequest {
   execute: () => Promise<T>
+  prepare?: McpWritePrepare<T>
   resolve: (outcome: McpWriteOutcome<T>) => void
   reject: (error: Error) => void
   cancelled: boolean
@@ -24,11 +34,29 @@ export class McpWriteQueue {
   private readonly queues = new Map<string, QueuedWrite<unknown>[]>()
   private readonly active = new Map<string, QueuedWrite<unknown>>()
 
-  constructor(private readonly approve: (request: McpWriteRequest) => Promise<boolean>) {}
+  constructor(
+    private readonly approve: (request: McpWriteRequest) => Promise<boolean>,
+    private readonly isRunLive: (runId: string) => boolean = () => true
+  ) {}
 
-  enqueue<T>(request: McpWriteRequest, execute: () => Promise<T>): Promise<McpWriteOutcome<T>> {
+  /**
+   * `prepare` runs inside the queue, after the previous write of the run has
+   * executed, so it validates against the state that write produced.
+   */
+  enqueue<T>(
+    request: McpWriteRequest,
+    execute: () => Promise<T>,
+    prepare?: McpWritePrepare<T>
+  ): Promise<McpWriteOutcome<T>> {
     return new Promise((resolve, reject) => {
-      const queued: QueuedWrite<T> = { ...request, execute, resolve, reject, cancelled: false }
+      const queued: QueuedWrite<T> = {
+        ...request,
+        execute,
+        prepare,
+        resolve,
+        reject,
+        cancelled: false
+      }
       const queue = this.queues.get(request.runId) ?? []
       queue.push(queued as QueuedWrite<unknown>)
       this.queues.set(request.runId, queue)
@@ -63,9 +91,31 @@ export class McpWriteQueue {
     }
     this.active.set(runId, write)
     try {
-      const approved = await this.approve(write)
+      if (!this.isRunLive(runId)) {
+        write.resolve({ approved: false, ended: true })
+        return
+      }
+      if (write.prepare) {
+        const prepared = await write.prepare()
+        if (write.cancelled) return
+        if ('refuse' in prepared) {
+          write.resolve({ approved: false, refused: true, value: prepared.refuse })
+          return
+        }
+        write.resumo = prepared.resumo
+      }
+      const approved =
+        write.approval === false
+          ? true
+          : await this.approve({
+              runId: write.runId,
+              name: write.name,
+              args: write.args,
+              resumo: write.resumo
+            })
       if (write.cancelled) return
       if (!approved) write.resolve({ approved: false })
+      else if (!this.isRunLive(runId)) write.resolve({ approved: false, ended: true })
       else write.resolve({ approved: true, value: await write.execute() })
     } catch (error) {
       if (!write.cancelled)
