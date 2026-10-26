@@ -82,6 +82,17 @@ function makeHabit(overrides: Partial<Habit> & { id: string }): Habit {
 }
 
 describe('buildGraph', () => {
+  it('usa a paleta sóbria', () => {
+    expect(GRAPH_NODE_COLORS).toMatchObject({
+      project: '#7d6fc0',
+      task: '#5b84b8',
+      note: '#c09a4a',
+      goal: '#b86a8e',
+      habit: '#4f9a6c',
+      file: '#b87a4a'
+    })
+  })
+
   it('mantém projetos arquivados e seus itens no grafo', () => {
     const project = { ...makeProject(), archivedAt: NOW }
     const task = makeTask({ id: 'task-archived' })
@@ -183,9 +194,9 @@ describe('buildGraph', () => {
     const completedNoteNode = nodes.find((node) => node.entityId === completedNote.id)!
 
     expect(activeTaskNode.color).toBe(GRAPH_NODE_COLORS.task)
-    expect(completedTaskNode).toMatchObject({ color: '#3b6f9f', completed: true })
+    expect(completedTaskNode).toMatchObject({ color: '#3d5878', completed: true })
     expect(activeNoteNode.color).toBe(GRAPH_NODE_COLORS.note)
-    expect(completedNoteNode).toMatchObject({ color: '#a87916', completed: true })
+    expect(completedNoteNode).toMatchObject({ color: '#7f6732', completed: true })
   })
 
   it('inclui todos os arquivos e liga os associados ao projeto ativo', () => {

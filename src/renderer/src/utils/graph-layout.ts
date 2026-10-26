@@ -38,17 +38,17 @@ export type NavigateTarget =
   | { type: 'file'; projectId?: string }
 
 const NODE_COLOR: Record<GraphNodeType, string> = {
-  project: '#a78bfa',
-  task: '#60a5fa',
-  note: '#fbbf24',
-  goal: '#f472b6',
-  habit: '#4ade80',
-  file: '#fb923c'
+  project: '#7d6fc0',
+  task: '#5b84b8',
+  note: '#c09a4a',
+  goal: '#b86a8e',
+  habit: '#4f9a6c',
+  file: '#b87a4a'
 }
 
 const COMPLETED_NODE_COLOR: Partial<Record<GraphNodeType, string>> = {
-  task: '#3b6f9f',
-  note: '#a87916'
+  task: '#3d5878',
+  note: '#7f6732'
 }
 
 export const GRAPH_NODE_COLORS = NODE_COLOR

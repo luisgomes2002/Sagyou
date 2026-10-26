@@ -8,7 +8,7 @@ const graph = vi.hoisted(() => {
       id: 'project:one',
       type: 'project',
       label: 'Projeto',
-      color: '#a78bfa',
+      color: '#7d6fc0',
       radius: 20,
       entityId: 'one',
       connectionCount: 1,
@@ -19,7 +19,7 @@ const graph = vi.hoisted(() => {
       id: 'task:one',
       type: 'task',
       label: 'Tarefa',
-      color: '#60a5fa',
+      color: '#5b84b8',
       radius: 8,
       entityId: 'one',
       projectId: 'one',
@@ -31,7 +31,7 @@ const graph = vi.hoisted(() => {
       id: 'goal:one',
       type: 'goal',
       label: 'Meta',
-      color: '#f472b6',
+      color: '#b86a8e',
       radius: 12,
       entityId: 'goal-one',
       connectionCount: 0,
@@ -42,7 +42,7 @@ const graph = vi.hoisted(() => {
       id: 'habit:one',
       type: 'habit',
       label: 'Hábito',
-      color: '#4ade80',
+      color: '#4f9a6c',
       radius: 10,
       entityId: 'habit-one',
       connectionCount: 0,
@@ -62,12 +62,12 @@ vi.mock('../../store/kanban', () => ({
 
 vi.mock('../../utils/graph-layout', () => ({
   GRAPH_NODE_COLORS: {
-    project: '#a78bfa',
-    task: '#60a5fa',
-    note: '#fbbf24',
-    goal: '#f472b6',
-    habit: '#4ade80',
-    file: '#fb923c'
+    project: '#7d6fc0',
+    task: '#5b84b8',
+    note: '#c09a4a',
+    goal: '#b86a8e',
+    habit: '#4f9a6c',
+    file: '#b87a4a'
   },
   buildGraph: () => ({ nodes: graph.nodes, edges: graph.edges }),
   createLiveSimulation: () => {
@@ -123,7 +123,7 @@ describe('Grafo', () => {
     flushFrame()
 
     const svg = container.querySelector('svg.flex-1')!
-    const project = container.querySelector('circle[fill="#a78bfa"]')!.parentElement!
+    const project = container.querySelector('circle[fill="#7d6fc0"]')!.parentElement!
     const edge = container.querySelector('line[stroke="#555"]')!
     const initialTick = svg.getAttribute('data-sim-tick')
     const initialPosition = project.getAttribute('transform')
@@ -167,8 +167,8 @@ describe('Grafo', () => {
     graph.nodes[3].y = 40
     const { container } = render(<GraphView onNavigate={onNavigate} />)
 
-    fireEvent.doubleClick(container.querySelector('circle[fill="#f472b6"]')!)
-    fireEvent.doubleClick(container.querySelector('circle[fill="#4ade80"]')!)
+    fireEvent.doubleClick(container.querySelector('circle[fill="#b86a8e"]')!)
+    fireEvent.doubleClick(container.querySelector('circle[fill="#4f9a6c"]')!)
 
     expect(onNavigate).toHaveBeenNthCalledWith(1, { type: 'goal', id: 'goal-one' })
     expect(onNavigate).toHaveBeenNthCalledWith(2, { type: 'habit', id: 'habit-one' })

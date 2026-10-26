@@ -562,7 +562,7 @@ export function GraphView({ onNavigate }: Props) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar nó..."
-            className="w-full pl-8 pr-3 py-1.5 text-xs rounded-md bg-[#16161a] border border-[#2b2b31] text-[#d4d4d4] placeholder-[#666] focus:outline-none focus:border-[#7c3aed]"
+            className="w-full pl-8 pr-3 py-1.5 text-xs rounded-md bg-[#16161a] border border-[#2b2b31] text-[#d4d4d4] placeholder-[#666] focus:outline-none focus:border-[#6d5bb8]"
           />
         </div>
         <div className="flex items-center gap-3 text-[10px] text-[#666] ml-auto">
@@ -635,7 +635,7 @@ export function GraphView({ onNavigate }: Props) {
               markerHeight="6"
               orient="auto-start-reverse"
             >
-              <path d="M 0 0 L 10 5 L 0 10 z" fill="#7c3aed" opacity="0.7" />
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#6d5bb8" />
             </marker>
           </defs>
           <g ref={viewportRef} transform="translate(0,0) scale(1)">
@@ -661,7 +661,7 @@ export function GraphView({ onNavigate }: Props) {
                   y1={srcPos.y}
                   x2={tgtPos.x}
                   y2={tgtPos.y}
-                  stroke={e.type === 'explicit' ? '#7c3aed' : '#555'}
+                  stroke={e.type === 'explicit' ? '#6d5bb8' : '#555'}
                   strokeWidth={e.type === 'explicit' ? 1.5 : 0.8}
                   opacity={getEdgeOpacity(src.id, tgt.id)}
                   strokeDasharray={e.type === 'structural' ? '4 3' : undefined}
