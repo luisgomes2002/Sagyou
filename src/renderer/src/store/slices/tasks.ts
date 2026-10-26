@@ -1,6 +1,7 @@
 import type { StateCreator } from 'zustand'
 import { v4 as uuidv4 } from 'uuid'
-import type { Task, Sprint, Tombstone, ActiveTimer } from '../../types'
+import type { Task, Sprint, Tombstone, ActiveTimer, TimeBlock } from '../../types'
+import { unlinkTimeBlocks } from './planner'
 import { isDoneColumn } from '../../utils/columns'
 
 export interface TasksSlice {
@@ -41,6 +42,7 @@ export const createTasksSlice: StateCreator<
     projects: { id: string; columns: { id: string; name: string; order: number; color?: string }[] }[]
     addTimeSpent: (taskId: string, seconds: number) => void
     stopTimer: (taskId: string) => void
+    timeBlocks: TimeBlock[]
   },
   [],
   [],
@@ -106,6 +108,7 @@ export const createTasksSlice: StateCreator<
     if (blobs.length) void window.electronAPI.taskImages.delete(blobs)
     set((s) => ({
       tasks: s.tasks.filter((t) => t.id !== id),
+      timeBlocks: unlinkTimeBlocks(s.timeBlocks, 'taskId', new Set([id])),
       tombstones: [...s.tombstones, { id, type: 'task', deletedAt: now }]
     }))
     get()._persist()

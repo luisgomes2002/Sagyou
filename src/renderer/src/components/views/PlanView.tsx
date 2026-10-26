@@ -810,7 +810,7 @@ function EditRoutineModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!title.trim() || selectedDays.length === 0) return
+    if (!title.trim() || selectedDays.length === 0 || endTime <= startTime) return
     onSave({
       title: title.trim(),
       startTime,
@@ -877,6 +877,9 @@ function EditRoutineModal({
               />
             </div>
           </div>
+          {endTime <= startTime && (
+            <p className="text-xs text-[#ec6a6a]">O fim precisa ser depois do início.</p>
+          )}
 
           <div>
             <label className="block text-xs font-medium text-[#999999] mb-1.5">Dias *</label>
@@ -941,7 +944,7 @@ function EditRoutineModal({
             <CancelButton onClick={onClose}>Cancelar</CancelButton>
             <button
               type="submit"
-              disabled={!title.trim() || selectedDays.length === 0}
+              disabled={!title.trim() || selectedDays.length === 0 || endTime <= startTime}
               className="px-4 py-2 text-sm rounded-lg bg-[#7c3aed] text-white font-medium hover:bg-[#6d28d9] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               Salvar
@@ -981,7 +984,7 @@ function RoutinesPanel({
 
   const handleCreate = () => {
     const t = title.trim()
-    if (!t || selectedDays.length === 0) return
+    if (!t || selectedDays.length === 0 || endTime <= startTime) return
     onCreate({
       title: t,
       startTime,
@@ -1041,6 +1044,9 @@ function RoutinesPanel({
               />
             </div>
           </div>
+          {endTime <= startTime && (
+            <p className="text-[10px] text-[#ec6a6a]">O fim precisa ser depois do início.</p>
+          )}
           <div>
             <label className="text-[9px] text-[#999999] block mb-1">Dias</label>
             <div className="flex gap-1">
@@ -1077,7 +1083,7 @@ function RoutinesPanel({
           </div>
           <button
             onClick={handleCreate}
-            disabled={!title.trim() || selectedDays.length === 0}
+            disabled={!title.trim() || selectedDays.length === 0 || endTime <= startTime}
             className="w-full py-1.5 rounded bg-[#2a2a30] border border-[#2b2b31] text-xs text-[#a080f0] hover:bg-[#303036] disabled:opacity-30 disabled:cursor-not-allowed transition"
           >
             Criar rotina

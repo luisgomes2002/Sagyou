@@ -147,8 +147,9 @@ importação de backup o reconstrói após restaurar store e memórias. Conversa
 são mais indexadas. Nunca use o índice como fonte dos registros originais.
 Importação e snapshot automático passam por `repairBackup` antes de
 `isValidBackup`: sobras que o próprio app gravou (sprint/nota de projeto
-excluído, horário do planner com fim ≤ início) são consertadas, não recusam o
-arquivo. Validação nova que recuse dado já existente precisa de reparo junto.
+excluído, bloco ligado a tarefa/hábito excluído, horário do planner com fim ≤
+início) são consertadas, não recusam o arquivo. O snapshot grava o estado sem
+reparo. Validação nova que recuse dado já existente precisa de reparo junto.
 O texto extraído de arquivos suportados mora em `file_search_content`, também
 derivado e ligado por `file_id` sem FK: `persistAll` remove e reinsere `files`,
 e um cascade apagaria o cache. Upload e reconstrução usam `document-parser.ts`;

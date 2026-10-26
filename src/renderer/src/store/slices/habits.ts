@@ -1,6 +1,7 @@
 import type { StateCreator } from 'zustand'
 import { v4 as uuidv4 } from 'uuid'
-import type { Habit } from '../../types'
+import type { Habit, TimeBlock } from '../../types'
+import { unlinkTimeBlocks } from './planner'
 
 export interface HabitsSlice {
   habits: Habit[]
@@ -11,7 +12,7 @@ export interface HabitsSlice {
 }
 
 export const createHabitsSlice: StateCreator<
-  HabitsSlice & { _persist: () => void },
+  HabitsSlice & { _persist: () => void; timeBlocks: TimeBlock[] },
   [],
   [],
   HabitsSlice
@@ -37,7 +38,10 @@ export const createHabitsSlice: StateCreator<
   },
 
   deleteHabit: (id) => {
-    set((s) => ({ habits: s.habits.filter((h) => h.id !== id) }))
+    set((s) => ({
+      habits: s.habits.filter((h) => h.id !== id),
+      timeBlocks: unlinkTimeBlocks(s.timeBlocks, 'habitId', new Set([id]))
+    }))
     get()._persist()
   },
 

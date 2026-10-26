@@ -16,8 +16,10 @@ const fromMinutes = (minutes: number): string =>
  * - sprints/notes of a deleted project are dropped (invisible in the app);
  *   a `projectId` holding a project's name is pointed back at its id;
  * - a goal linked to a deleted project keeps its data and loses the link;
+ * - a planner block linked to a deleted task or habit loses only the link;
  * - a planner block/routine ending at or before its start ends at 23:59 when
- *   it ended at midnight, otherwise one minute after it starts.
+ *   it ended at midnight, otherwise one minute after it starts (a 23:59 start
+ *   moves to 23:58, the only case that touches the start).
  */
 export function repairBackup<T>(value: T): T {
   if (!isRecord(value) || !Array.isArray(value.projects)) return value
@@ -52,6 +54,22 @@ export function repairBackup<T>(value: T): T {
       if (projectId !== null) return { ...entry, projectId }
       const unlinked = { ...entry }
       delete unlinked.projectId
+      return unlinked
+    })
+  }
+  const presentIds = (key: string): Set<unknown> =>
+    new Set(Array.isArray(value[key]) ? value[key].filter(isRecord).map((entry) => entry.id) : [])
+  const taskIds = presentIds('tasks')
+  const habitIds = presentIds('habits')
+  if (Array.isArray(data.timeBlocks)) {
+    data.timeBlocks = data.timeBlocks.map((entry) => {
+      if (!isRecord(entry)) return entry
+      const danglingTask = isId(entry.taskId) && !taskIds.has(entry.taskId)
+      const danglingHabit = isId(entry.habitId) && !habitIds.has(entry.habitId)
+      if (!danglingTask && !danglingHabit) return entry
+      const unlinked = { ...entry }
+      if (danglingTask) delete unlinked.taskId
+      if (danglingHabit) delete unlinked.habitId
       return unlinked
     })
   }
