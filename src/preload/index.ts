@@ -99,6 +99,8 @@ interface CodeApprovalRequest {
   diff?: { kind: 'add' | 'del' | 'ctx' | 'meta'; text: string }[]
   diffTruncated?: boolean
   irreversivel?: boolean
+  /** MCP cards only: after this instant main has already answered with a denial. */
+  expiresAt?: string
 }
 
 /** Agent settings that cross IPC. No API key exists in this shape, in either direction. */
