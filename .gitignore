@@ -1,7 +1,5 @@
 node_modules
 dist
-!vendor/siwc-local/dist/
-!vendor/siwc-local/dist/**
 out
 coverage
 .DS_Store
