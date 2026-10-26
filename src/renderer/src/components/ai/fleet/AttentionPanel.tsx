@@ -32,10 +32,10 @@ export function AttentionPanel({
   if (!approvals.length && !questions.length && !hint) return null
 
   return (
-    <div className="max-h-64 shrink-0 space-y-2 overflow-y-auto border-b border-[#f0b820]/30 bg-[#1a1812] px-4 py-3">
+    <div className="max-h-64 shrink-0 space-y-2 overflow-y-auto border-b border-[#2b2b31] bg-[#16161a] px-4 py-3">
       {questions.length > 0 && (
         <div>
-          <p className="text-xs font-medium text-[#c4b5fd]">
+          <p className="text-xs font-medium text-[#a080f0]">
             Aguardando sua resposta ({questions.length})
           </p>
           {questions.map((question) => (
@@ -48,7 +48,7 @@ export function AttentionPanel({
 
       {approvals.length > 0 && (
         <div className="space-y-2">
-          <p className="text-xs font-medium text-[#f0b820]">
+          <p className="text-xs font-medium text-[#d9a640]">
             Aguardando sua aprovação ({approvals.length})
           </p>
           {approvals.map((approval) => {
@@ -72,7 +72,7 @@ export function AttentionPanel({
                     )}
                     {left && <p className="mt-0.5 text-[10px] text-[#8a8a92]">Expira em {left}</p>}
                     {expired && (
-                      <p className="mt-0.5 text-[10px] text-[#f0b820]">
+                      <p className="mt-0.5 text-[10px] text-[#d9a640]">
                         Expirou sem resposta; o agente recebeu uma recusa e pode pedir de novo.
                       </p>
                     )}
@@ -81,7 +81,7 @@ export function AttentionPanel({
                     <button
                       type="button"
                       onClick={() => onApprove(run.id, approval.id, false)}
-                      className="rounded border border-[#2b2b31] px-2.5 py-1 text-xs text-[#e04040] hover:bg-[#222227]"
+                      className="rounded border border-[#2b2b31] bg-[#2a2a30] px-2.5 py-1 text-xs text-[#ec6a6a] hover:bg-[#303036]"
                     >
                       {expired ? 'Dispensar' : 'Recusar'}
                     </button>
@@ -89,7 +89,7 @@ export function AttentionPanel({
                       type="button"
                       disabled={expired}
                       onClick={() => onApprove(run.id, approval.id, true)}
-                      className="rounded bg-violet-700 px-2.5 py-1 text-xs text-white hover:bg-violet-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-violet-700"
+                      className="rounded bg-[#6d5bb8] px-2.5 py-1 text-xs text-white hover:bg-[#7b69c6] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-[#6d5bb8]"
                     >
                       Aprovar
                     </button>
@@ -97,7 +97,7 @@ export function AttentionPanel({
                 </div>
                 {approval.diff && approval.diff.length > 0 && (
                   <details className="mt-2 rounded border border-[#2b2b31] bg-[#0b0b0f]">
-                    <summary className="cursor-pointer px-2 py-1 text-[10px] text-violet-300">
+                    <summary className="cursor-pointer px-2 py-1 text-[10px] text-[#a080f0]">
                       Ver diff para revisão{approval.diffTruncated ? ' (resumido)' : ''}
                     </summary>
                     <pre className="max-h-56 overflow-auto border-t border-[#2b2b31] p-2 text-[10px] leading-relaxed">
@@ -106,11 +106,11 @@ export function AttentionPanel({
                           key={index}
                           className={
                             line.kind === 'add'
-                              ? 'text-emerald-300'
+                              ? 'text-[#46d478]'
                               : line.kind === 'del'
-                                ? 'text-red-300'
+                                ? 'text-[#ec6a6a]'
                                 : line.kind === 'meta'
-                                  ? 'text-violet-300'
+                                  ? 'text-[#a080f0]'
                                   : 'text-[#999]'
                           }
                         >
@@ -128,11 +128,11 @@ export function AttentionPanel({
       )}
 
       {hint && (
-        <div className="rounded-lg border border-[#f0b820]/30 px-3 py-2">
-          <p className="text-xs font-medium text-[#f0b820]">{hint.title}</p>
+        <div className="rounded-lg border border-[#2b2b31] bg-[#101014] px-3 py-2">
+          <p className="text-xs font-medium text-[#d9a640]">{hint.title}</p>
           <p className="mt-0.5 text-[11px] text-[#d4d4d4]">{hint.detail}</p>
           {hint.command && (
-            <code className="mt-1 block overflow-x-auto rounded bg-[#0b0b0f] px-2 py-1 text-[10px] text-[#c4b5fd]">
+            <code className="mt-1 block overflow-x-auto rounded bg-[#0b0b0f] px-2 py-1 text-[10px] text-[#a080f0]">
               {hint.command}
             </code>
           )}

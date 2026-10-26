@@ -109,7 +109,7 @@ export function NewSessionPanel({
               ))}
             </select>
             {!roots.length && (
-              <span className="mt-1 block text-xs text-amber-300">
+              <span className="mt-1 block text-xs text-[#d9a640]">
                 Autorize uma pasta de código no projeto para abrir o terminal nele.
               </span>
             )}
@@ -133,7 +133,7 @@ export function NewSessionPanel({
             ))}
           </select>
           {chosen && (
-            <span className={`mt-1 block text-xs ${harnessBlocked ? 'text-amber-300' : 'text-[#8a8a92]'}`}>
+            <span className={`mt-1 block text-xs ${harnessBlocked ? 'text-[#d9a640]' : 'text-[#8a8a92]'}`}>
               {!chosen.installed
                 ? 'Não encontrado nesta máquina.'
                 : harnessBlocked
@@ -151,7 +151,7 @@ export function NewSessionPanel({
       </div>
 
       {error && (
-        <p role="alert" className="mt-4 text-sm text-red-300">
+        <p role="alert" className="mt-4 text-sm text-[#ec6a6a]">
           {error}
         </p>
       )}
@@ -166,7 +166,7 @@ export function NewSessionPanel({
           type="button"
           onClick={() => onStart({ projectId, rootPath, harnessId })}
           disabled={starting || missingRoot || harnessBlocked}
-          className="rounded-lg bg-violet-700 px-4 py-2 text-sm font-medium text-white hover:bg-violet-600 disabled:opacity-40"
+          className="rounded-lg bg-[#6d5bb8] px-4 py-2 text-sm font-medium text-white hover:bg-[#7b69c6] disabled:opacity-40"
         >
           {starting ? 'Abrindo…' : 'Abrir sessão'}
         </button>

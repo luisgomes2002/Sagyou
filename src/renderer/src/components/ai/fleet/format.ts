@@ -21,8 +21,8 @@ export function formatElapsed(ms: number): string {
 export type SessionStatus = 'running' | 'attention' | 'done' | 'failed'
 
 export const STATUS_STYLE: Record<SessionStatus, { dot: string; label: string; text: string }> = {
-  running: { dot: 'bg-[#a080f0] animate-pulse', label: 'Em execução', text: 'text-[#c4b5fd]' },
-  attention: { dot: 'bg-[#f0b820] animate-pulse', label: 'Precisa de você', text: 'text-[#f0b820]' },
+  running: { dot: 'bg-[#a080f0]', label: 'Em execução', text: 'text-[#a080f0]' },
+  attention: { dot: 'bg-[#d9a640]', label: 'Precisa de você', text: 'text-[#d9a640]' },
   done: { dot: 'bg-[#46d478]', label: 'Concluída', text: 'text-[#46d478]' },
   failed: { dot: 'bg-[#e04040]', label: 'Falhou', text: 'text-[#e04040]' }
 }
