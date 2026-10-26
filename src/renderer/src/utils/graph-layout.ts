@@ -94,12 +94,26 @@ function normalizedTags(memory: AiMemory): Set<string> {
   return new Set(memory.tags.map((tag) => tag.trim().toLowerCase()).filter(Boolean))
 }
 
+// Pairing is quadratic in memories sharing a tag, while buildGraph reruns on
+// every store change. GraphView keeps one memories array until it reloads, so
+// the result is cached per array.
+const tagPairsCache = new WeakMap<AiMemory[], [AiMemory, AiMemory][]>()
+
+export function memoryTagPairs(memories: AiMemory[]): [AiMemory, AiMemory][] {
+  let pairs = tagPairsCache.get(memories)
+  if (!pairs) {
+    pairs = computeMemoryTagPairs(memories)
+    tagPairsCache.set(memories, pairs)
+  }
+  return pairs
+}
+
 // Greedy over all candidate pairs, best first, so the limit holds on both ends
 // of every edge. Handoffs are automatic breadcrumbs with repeated shapes, so
-// they never take part.
-function memoryTagPairs(memories: AiMemory[]): [AiMemory, AiMemory][] {
+// they never take part, and neither do archived memories.
+function computeMemoryTagPairs(memories: AiMemory[]): [AiMemory, AiMemory][] {
   const tagged = memories
-    .filter((memory) => memory.type !== 'handoff')
+    .filter((memory) => memory.archivedAt == null && memory.type !== 'handoff')
     .map((memory) => ({ memory, tags: normalizedTags(memory) }))
     .filter((entry) => entry.tags.size > 0)
 
@@ -350,7 +364,7 @@ export function buildGraph(
       linkToGeneral(id)
     }
   }
-  for (const [a, b] of memoryTagPairs(activeMemories)) {
+  for (const [a, b] of memoryTagPairs(memories)) {
     edges.push({ source: memoryNodeIds.get(a.id)!, target: memoryNodeIds.get(b.id)!, type: 'tag' })
   }
 

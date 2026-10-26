@@ -65,15 +65,21 @@ export function GraphView({ onNavigate }: Props) {
   // graph opens. A failure keeps the rest of the graph usable.
   const [memories, setMemories] = useState<AiMemory[]>([])
   const [memoriesFailed, setMemoriesFailed] = useState(false)
+  const [memoriesLoaded, setMemoriesLoaded] = useState(false)
   useEffect(() => {
     let cancelled = false
-    window.electronAPI.ai.memory
-      .list({ includeArchived: false })
+    // Starting inside a promise turns a missing API into a rejection instead
+    // of an error thrown from the effect.
+    Promise.resolve()
+      .then(() => window.electronAPI.ai.memory.list({ includeArchived: false }))
       .then((list) => {
         if (!cancelled) setMemories(list)
       })
       .catch(() => {
         if (!cancelled) setMemoriesFailed(true)
+      })
+      .finally(() => {
+        if (!cancelled) setMemoriesLoaded(true)
       })
     return () => {
       cancelled = true
@@ -564,6 +570,11 @@ export function GraphView({ onNavigate }: Props) {
   )
 
   // ── Render ───────────────────────────────────────────────────────────────
+  // Someone with only memories would otherwise see the empty state flash.
+  if (nodes.length === 0 && !memoriesLoaded) {
+    return <div className="h-full bg-[#0b0b0f]" />
+  }
+
   if (nodes.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-4 bg-[#0b0b0f]">
@@ -592,6 +603,9 @@ export function GraphView({ onNavigate }: Props) {
           <p className="text-sm text-[#999999]">
             Crie projetos, tasks, notas, adicione arquivos ou salve memórias
           </p>
+          {memoriesFailed && (
+            <p className="text-sm text-[#d9a640] mt-2">Não foi possível carregar as memórias.</p>
+          )}
         </div>
       </div>
     )

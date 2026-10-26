@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { GRAPH_NODE_COLORS, buildGraph, type GraphEdge } from '../../utils/graph-layout'
+import {
+  GRAPH_NODE_COLORS,
+  buildGraph,
+  memoryTagPairs,
+  type GraphEdge
+} from '../../utils/graph-layout'
 import type { AiMemory, Goal, Habit, Project, StickyNote, StoredFile, Task } from '../../types'
 
 const NOW = '2025-01-01T00:00:00.000Z'
@@ -260,14 +265,20 @@ describe('buildGraph', () => {
 
   it('não deixa nenhum nó sem ligação', () => {
     const { nodes } = buildGraph(
-      [makeProject()],
+      [makeProject(), { ...makeProject(), id: 'project-empty', name: 'Vazio' }],
       [makeTask({ id: 'task-1' })],
       [makeNote({ id: 'note-1' })],
       [makeGoal({ id: 'goal-project', projectId: 'project-1' }), makeGoal({ id: 'goal-loose' })],
       [makeHabit({ id: 'habit-1' })],
-      [makeFile({ id: 'file-project', projectId: 'project-1' }), makeFile({ id: 'file-loose' })]
+      [makeFile({ id: 'file-project', projectId: 'project-1' }), makeFile({ id: 'file-loose' })],
+      [
+        makeMemory({ id: 'mem-project', projectId: 'project-1' }),
+        makeMemory({ id: 'mem-global' }),
+        makeMemory({ id: 'mem-removed', projectId: 'missing' })
+      ]
     )
 
+    expect(nodes.filter((node) => node.type === 'memory')).toHaveLength(3)
     expect(nodes.filter((node) => node.connectionCount < 1)).toEqual([])
   })
 
@@ -407,6 +418,28 @@ describe('buildGraph', () => {
         target: 'project:project-1',
         type: 'structural'
       })
+    })
+
+    it('reaproveita os pares por tag enquanto a lista de memórias é a mesma', () => {
+      const memories = ['m1', 'm2', 'm3'].map((id) => makeMemory({ id, tags: ['x'] }))
+
+      expect(memoryTagPairs(memories)).toBe(memoryTagPairs(memories))
+      expect(memoryTagPairs([...memories])).not.toBe(memoryTagPairs(memories))
+      expect(memoryTagPairs([...memories])).toEqual(memoryTagPairs(memories))
+    })
+
+    it('não refaz os pares por tag quando só outros dados mudam', () => {
+      const memories = Array.from({ length: 1000 }, (_, i) =>
+        makeMemory({ id: `m${i}`, tags: ['electron'] })
+      )
+      const firstStart = performance.now()
+      buildGraph([makeProject()], [], [], [], [], [], memories)
+      const first = performance.now() - firstStart
+      const secondStart = performance.now()
+      buildGraph([makeProject()], [makeTask({ id: 'nova' })], [], [], [], [], memories)
+      const second = performance.now() - secondStart
+
+      expect(second).toBeLessThan(first / 5)
     })
 
     it('limita a 3 ligações por tag por memória', () => {

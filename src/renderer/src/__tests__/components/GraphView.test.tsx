@@ -135,7 +135,8 @@ describe('Grafo', () => {
 
   afterEach(() => {
     delete (window as unknown as { electronAPI?: unknown }).electronAPI
-    graph.buildGraph.mockClear()
+    graph.buildGraph.mockReset()
+    graph.buildGraph.mockImplementation(() => ({ nodes: graph.nodes, edges: graph.edges }))
     graph.listeners.clear()
     graph.nodes.forEach((node) => {
       node.x = undefined
@@ -232,6 +233,34 @@ describe('Grafo', () => {
 
     expect(await screen.findByText('Não foi possível carregar as memórias.')).toBeTruthy()
     expect(container.querySelector('circle[fill="#7d6fc0"]')).not.toBeNull()
+  })
+
+  it('mostra o aviso de falha também quando o grafo está vazio', async () => {
+    graph.buildGraph.mockReturnValue({ nodes: [], edges: [] })
+    stubMemoryList(vi.fn().mockRejectedValue(new Error('bloqueado')))
+    render(<GraphView onNavigate={vi.fn()} />)
+
+    expect(await screen.findByText('Não foi possível carregar as memórias.')).toBeTruthy()
+  })
+
+  it('não mostra o estado vazio enquanto as memórias carregam', async () => {
+    graph.buildGraph.mockReturnValue({ nodes: [], edges: [] })
+    let resolve: (list: unknown[]) => void = () => {}
+    stubMemoryList(vi.fn().mockReturnValue(new Promise((r) => (resolve = r))))
+    render(<GraphView onNavigate={vi.fn()} />)
+
+    expect(screen.queryByText('Nenhum dado para exibir')).toBeNull()
+    await act(async () => resolve([]))
+    expect(screen.getByText('Nenhum dado para exibir')).toBeTruthy()
+  })
+
+  it('mostra aviso em vez de quebrar quando a API de memórias não existe', async () => {
+    ;(window as unknown as { electronAPI: unknown }).electronAPI = {}
+    graph.nodes[0].x = 10
+    graph.nodes[0].y = 10
+    render(<GraphView onNavigate={vi.fn()} />)
+
+    expect(await screen.findByText('Não foi possível carregar as memórias.')).toBeTruthy()
   })
 
   it('envia o ID ao navegar para uma memória e ignora o Geral', () => {
