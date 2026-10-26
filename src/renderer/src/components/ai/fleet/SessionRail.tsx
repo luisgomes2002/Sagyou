@@ -30,8 +30,8 @@ function Row({
       aria-label={`${item.title} — ${style.label}`}
       className={`group flex w-full items-start gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-colors ${
         selected
-          ? 'border-[#7c3aed]/60 bg-[#211c33]'
-          : 'border-transparent hover:border-[#2b2b31] hover:bg-[#1b1b20]'
+          ? 'border-[#7c3aed] bg-[#2d2350]'
+          : 'border-[#2b2b31] bg-[#1b1b20] hover:border-[#3a3a42] hover:bg-[#222228]'
       }`}
     >
       <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${style.dot}`} aria-hidden="true" />
