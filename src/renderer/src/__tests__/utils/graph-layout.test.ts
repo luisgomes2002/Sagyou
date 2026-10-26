@@ -164,14 +164,99 @@ describe('buildGraph', () => {
     })
   })
 
-  it('não inventa ligações entre hábitos independentes', () => {
+  it('liga hábitos ao nó Geral sem ligá-los entre si', () => {
     const first = makeHabit({ id: 'habit-1', name: 'Ler' })
     const second = makeHabit({ id: 'habit-2', name: 'Exercitar' })
 
     const { nodes, edges } = buildGraph([], [], [], [], [first, second])
+    const general = nodes.find((node) => node.type === 'general')!
+    const habitIds = nodes.filter((node) => node.type === 'habit').map((node) => node.id)
 
-    expect(nodes.filter((node) => node.type === 'habit')).toHaveLength(2)
-    expect(edges).toEqual([])
+    expect(habitIds).toHaveLength(2)
+    expect(general).toMatchObject({ label: 'Geral', color: GRAPH_NODE_COLORS.general })
+    expect(edges).toEqual(
+      habitIds.map((id) => ({ source: id, target: general.id, type: 'structural' }))
+    )
+  })
+
+  it('liga meta sem projeto ao Geral e não ao primeiro projeto', () => {
+    const goal = makeGoal({ id: 'goal-loose' })
+    const { nodes, edges } = buildGraph(
+      [makeProject()],
+      [makeTask({ id: 'task-1' })],
+      [],
+      [goal],
+      []
+    )
+    const goalNode = nodes.find((node) => node.entityId === goal.id)!
+    const general = nodes.find((node) => node.type === 'general')!
+    const project = nodes.find((node) => node.type === 'project')!
+
+    expect(edges).toContainEqual({ source: goalNode.id, target: general.id, type: 'structural' })
+    expect(
+      edges.some(
+        (edge) =>
+          (edge.source === goalNode.id && edge.target === project.id) ||
+          (edge.source === project.id && edge.target === goalNode.id)
+      )
+    ).toBe(false)
+  })
+
+  it('liga meta e arquivo de projeto removido ao Geral', () => {
+    const goal = makeGoal({ id: 'goal-orphan', projectId: 'missing' })
+    const file = makeFile({ id: 'file-orphan', projectId: 'missing' })
+    const { nodes, edges } = buildGraph([], [], [], [goal], [], [file])
+    const general = nodes.find((node) => node.type === 'general')!
+
+    for (const entityId of [goal.id, file.id]) {
+      const node = nodes.find((item) => item.entityId === entityId)!
+      expect(edges).toContainEqual({ source: node.id, target: general.id, type: 'structural' })
+    }
+  })
+
+  it('não cria o nó Geral quando nada depende dele', () => {
+    const { nodes } = buildGraph([makeProject()], [makeTask({ id: 'task-1' })], [], [], [])
+
+    expect(nodes.some((node) => node.type === 'general')).toBe(false)
+  })
+
+  it('liga projeto sem itens ao Geral', () => {
+    const { nodes, edges } = buildGraph([makeProject()], [], [], [], [])
+    const project = nodes.find((node) => node.type === 'project')!
+    const general = nodes.find((node) => node.type === 'general')!
+
+    expect(edges).toEqual([{ source: project.id, target: general.id, type: 'structural' }])
+  })
+
+  it('não deixa nenhum nó sem ligação', () => {
+    const { nodes } = buildGraph(
+      [makeProject()],
+      [makeTask({ id: 'task-1' })],
+      [makeNote({ id: 'note-1' })],
+      [makeGoal({ id: 'goal-project', projectId: 'project-1' }), makeGoal({ id: 'goal-loose' })],
+      [makeHabit({ id: 'habit-1' })],
+      [makeFile({ id: 'file-project', projectId: 'project-1' }), makeFile({ id: 'file-loose' })]
+    )
+
+    expect(nodes.filter((node) => node.connectionCount < 1)).toEqual([])
+  })
+
+  it('usa ids estáveis por entidade', () => {
+    const project = makeProject()
+    const task = makeTask({ id: 't1' })
+    const first = buildGraph([project], [task], [], [], [makeHabit({ id: 'h1' })])
+    const second = buildGraph(
+      [project],
+      [task],
+      [],
+      [],
+      [makeHabit({ id: 'h0' }), makeHabit({ id: 'h1' })]
+    )
+
+    expect(first.nodes.find((node) => node.entityId === 't1')!.id).toBe('task:t1')
+    expect(first.nodes.find((node) => node.type === 'general')!.id).toBe('general:general')
+    const secondIds = new Set(second.nodes.map((node) => node.id))
+    for (const node of first.nodes) expect(secondIds.has(node.id)).toBe(true)
   })
 
   it('usa tons mais escuros para tasks e notas concluídas', () => {
@@ -199,7 +284,7 @@ describe('buildGraph', () => {
     expect(completedNoteNode).toMatchObject({ color: '#7f6732', completed: true })
   })
 
-  it('inclui todos os arquivos e liga os associados ao projeto ativo', () => {
+  it('liga arquivos ao seu projeto e os sem projeto ao Geral', () => {
     const attachedFile = makeFile({ id: 'file-project', projectId: 'project-1' })
     const globalFile = makeFile({ id: 'file-global', name: 'manual.docx', ext: '.docx' })
 
@@ -220,8 +305,7 @@ describe('buildGraph', () => {
       target: project.id,
       type: 'structural'
     })
-    expect(
-      edges.some((edge) => edge.source === globalNode.id || edge.target === globalNode.id)
-    ).toBe(false)
+    const general = nodes.find((node) => node.type === 'general')!
+    expect(edges).toContainEqual({ source: globalNode.id, target: general.id, type: 'structural' })
   })
 })

@@ -11,7 +11,7 @@ import {
 import type { Project, Task, StickyNote, Goal, Habit, StoredFile } from '../types'
 import { isDoneColumn } from './columns'
 
-export type GraphNodeType = 'project' | 'task' | 'note' | 'goal' | 'habit' | 'file'
+export type GraphNodeType = 'project' | 'task' | 'note' | 'goal' | 'habit' | 'file' | 'general'
 
 export interface GraphNode extends SimulationNodeDatum {
   id: string
@@ -43,7 +43,8 @@ const NODE_COLOR: Record<GraphNodeType, string> = {
   note: '#c09a4a',
   goal: '#b86a8e',
   habit: '#4f9a6c',
-  file: '#b87a4a'
+  file: '#b87a4a',
+  general: '#8a8a94'
 }
 
 const COMPLETED_NODE_COLOR: Partial<Record<GraphNodeType, string>> = {
@@ -52,6 +53,10 @@ const COMPLETED_NODE_COLOR: Partial<Record<GraphNodeType, string>> = {
 }
 
 export const GRAPH_NODE_COLORS = NODE_COLOR
+
+// Hub for items that belong to no project, so nothing floats unconnected and
+// nothing is pinned to a project it does not belong to.
+export const GENERAL_NODE_ENTITY_ID = 'general'
 
 function nodeColor(type: GraphNodeType, completed = false): string {
   return completed ? (COMPLETED_NODE_COLOR[type] ?? NODE_COLOR[type]) : NODE_COLOR[type]
@@ -86,13 +91,27 @@ export function buildGraph(
 
   const nodeRegistry = new Map<string, GraphNode>()
   const edges: GraphEdge[] = []
-  let nodeIdx = 0
 
+  // IDs are stable per entity: GraphView keeps positions by node ID, so an
+  // ID that shifts when an earlier item appears would swap nodes' positions.
   const addNode = (n: GraphNode): string => {
-    const id = `n${nodeIdx++}`
+    const id = `${n.type}:${n.entityId}`
     n.id = id
     nodeRegistry.set(id, n)
     return id
+  }
+
+  let generalNodeId: string | null = null
+  const linkToGeneral = (nodeId: string): void => {
+    generalNodeId ??= addNode({
+      type: 'general',
+      label: 'Geral',
+      color: NODE_COLOR.general,
+      radius: computeRadius(20, 0),
+      entityId: GENERAL_NODE_ENTITY_ID,
+      connectionCount: 0
+    } as GraphNode)
+    edges.push({ source: nodeId, target: generalNodeId, type: 'structural' })
   }
 
   const projectNodeIds = new Map<string, string>()
@@ -121,9 +140,11 @@ export function buildGraph(
       connectionCount: 0
     } as GraphNode)
 
-    // Files without a project stay visible; archived projects retain their edges.
+    // Archived projects retain their edges; files without one go to Geral.
     if (file.projectId && projectNodeIds.has(file.projectId)) {
       edges.push({ source: id, target: projectNodeIds.get(file.projectId)!, type: 'structural' })
+    } else {
+      linkToGeneral(id)
     }
   }
 
@@ -210,10 +231,7 @@ export function buildGraph(
     if (g.projectId && projectNodeIds.has(g.projectId)) {
       edges.push({ source: id, target: projectNodeIds.get(g.projectId)!, type: 'structural' })
     } else {
-      const firstProjectId = projectNodeIds.values().next().value
-      if (firstProjectId) {
-        edges.push({ source: id, target: firstProjectId, type: 'structural' })
-      }
+      linkToGeneral(id)
     }
   }
 
@@ -230,7 +248,7 @@ export function buildGraph(
   }
 
   for (const h of habits) {
-    addNode({
+    const id = addNode({
       type: 'habit',
       label: h.name,
       color: NODE_COLOR.habit,
@@ -238,6 +256,16 @@ export function buildGraph(
       entityId: h.id,
       connectionCount: 0
     } as GraphNode)
+    linkToGeneral(id)
+  }
+
+  const linkedNodeIds = new Set<string>()
+  for (const e of edges) {
+    linkedNodeIds.add(e.source as string)
+    linkedNodeIds.add(e.target as string)
+  }
+  for (const projectNodeId of projectNodeIds.values()) {
+    if (!linkedNodeIds.has(projectNodeId)) linkToGeneral(projectNodeId)
   }
 
   const counts = new Map<string, number>()
@@ -255,7 +283,8 @@ export function buildGraph(
     note: 6,
     goal: 12,
     habit: 10,
-    file: 7
+    file: 7,
+    general: 20
   }
 
   for (const n of nodes) {
