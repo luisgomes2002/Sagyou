@@ -81,12 +81,54 @@ describe('repairBackup', () => {
     expect(repaired.routines[0].endTime).toBe('23:59')
   })
 
-  it('leaves what it cannot safely repair for the validator to refuse', () => {
+  it('unlinks planner blocks from a deleted task or habit and keeps the block', () => {
+    const repaired = repairBackup(
+      backup({
+        timeBlocks: [
+          { id: 'b1', date: '2026-08-10', startTime: '09:00', endTime: '10:00', taskId: 'gone' },
+          { id: 'b2', date: '2026-08-10', startTime: '10:00', endTime: '11:00', habitId: 'gone' }
+        ]
+      })
+    ) as Record<string, Record<string, unknown>[]>
+    expect(isValidBackup(repaired)).toBe(true)
+    expect(repaired.timeBlocks.map((b) => [b.id, b.taskId, b.habitId])).toEqual([
+      ['b1', undefined, undefined],
+      ['b2', undefined, undefined]
+    ])
+  })
+
+  it('returns a valid backup unchanged', () => {
+    const valid = backup({
+      projects: [{ id: 'p1', name: 'P', columns: [{ id: 'c1', name: 'Fazer', order: 0 }] }],
+      tasks: [{ id: 't1', title: 'x', projectId: 'p1', columnId: 'c1' }],
+      sprints: [{ id: 's1', projectId: 'p1', name: 'v1', createdAt: '2026-08-11T19:57:36.560Z' }],
+      notes: [{ id: 'n1', projectId: 'p1', createdAt: '2026-08-11T19:57:36.560Z' }],
+      goals: [
+        { id: 'g1', title: 'Meta', projectId: 'p1' },
+        { id: 'g2', title: 'Livre' }
+      ],
+      timeBlocks: [
+        { id: 'b1', date: '2026-08-10', startTime: '09:00', endTime: '10:00', taskId: 't1' }
+      ],
+      routines: [{ id: 'r1', startTime: '07:00', endTime: '08:00', daysOfWeek: [1] }]
+    })
+    expect(isValidBackup(valid)).toBe(true)
+    expect(repairBackup(structuredClone(valid))).toEqual(valid)
+  })
+
+  it('leaves a task of a missing project for the validator to refuse', () => {
+    const data = backup({ tasks: [{ id: 't1', title: 'x', projectId: 'gone', columnId: 'c1' }] })
+    expect(isValidBackup(repairBackup(data))).toBe(false)
+  })
+
+  it('leaves a malformed planner time for the validator to refuse', () => {
     const data = backup({
-      tasks: [{ id: 't1', title: 'x', projectId: 'gone', columnId: 'c1' }],
       timeBlocks: [{ id: 'b1', date: '2026-08-10', startTime: '25:00', endTime: '26:00' }]
     })
     expect(isValidBackup(repairBackup(data))).toBe(false)
+  })
+
+  it('passes through values that are not a backup', () => {
     expect(repairBackup(null)).toBeNull()
     expect(repairBackup({ projects: 'x' })).toEqual({ projects: 'x' })
   })

@@ -110,6 +110,22 @@ describe('Planejamento', () => {
     )
   })
 
+  // Planner writes require end > start; the routine forms skipped that check and
+  // saved routines that later made the backup fail validation.
+  it('não cria rotina com fim antes ou igual ao início', () => {
+    render(<PlanView />)
+    fireEvent.click(screen.getByRole('button', { name: 'Rotinas' }))
+    fireEvent.click(screen.getByRole('button', { name: '+ Nova' }))
+    fireEvent.change(screen.getByPlaceholderText('Nome da rotina (ex: Academia)'), {
+      target: { value: 'Leitura' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Seg' }))
+    fireEvent.change(screen.getByDisplayValue('09:00'), { target: { value: '00:00' } })
+    expect(screen.getByText('O fim precisa ser depois do início.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Criar rotina' }))
+    expect(planner.createRoutine).not.toHaveBeenCalled()
+  })
+
   it('mostra o bloco em grafite com cor no horário nas visões diária e semanal', () => {
     planner.timeBlocks = [
       {

@@ -336,10 +336,17 @@ describe('backups with repairable leftovers', () => {
       expect(result.data.sprints).toEqual([])
       expect(result.data.timeBlocks[0].endTime).toBe('23:59')
 
-      expect(await handlers.get('backup:auto-save')?.(null, leftovers)).toEqual({ success: true })
+      // The restore point is the database as it was: repaired only to decide
+      // it is restorable, never trimmed, so an import cannot lose the originals.
+      expect(await handlers.get('backup:auto-save')?.(null, leftovers, true)).toEqual({
+        success: true
+      })
       const [snapshot] = readdirSync(join(root, 'backups'))
       const saved = JSON.parse(readFileSync(join(root, 'backups', snapshot), 'utf8'))
-      expect(isValidBackup(saved)).toBe(true)
+      expect(saved.sprints).toEqual(leftovers.sprints)
+      expect(saved.timeBlocks[0].endTime).toBe('00:00')
+      writeFileSync(selected, JSON.stringify(saved))
+      expect(await handlers.get('backup:import')?.(null)).toMatchObject({ success: true })
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

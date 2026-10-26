@@ -196,9 +196,10 @@ export function registerBackupHandlers(ipcMain: IpcMain, deps: BackupDeps): void
 
   // One local restore point per day, plus forced snapshots just before import.
   // The latest seven snapshots stay available even when the user never exports manually.
-  ipcMain.handle('backup:auto-save', async (_, raw: unknown, force = false) => {
-    const backup = repairBackup(raw)
-    if (!isValidBackup(backup)) return { success: false }
+  // The snapshot keeps the state as it is: it is repaired only to decide whether
+  // it can be restored (import repairs it again), so no restore point loses data.
+  ipcMain.handle('backup:auto-save', async (_, backup: unknown, force = false) => {
+    if (!isValidBackup(repairBackup(backup))) return { success: false }
     try {
       mkdirSync(deps.backupDir, { recursive: true })
       const now = new Date()
