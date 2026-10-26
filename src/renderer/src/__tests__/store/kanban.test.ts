@@ -102,6 +102,30 @@ describe('project actions', () => {
     expect(tombstones.some((t) => t.id === pid && t.type === 'project')).toBe(true)
   })
 
+  // Regression: sprints, notes and goal links of a deleted project survived the
+  // delete and made every later backup (manual and automatic) fail validation.
+  it('deleteProject removes its sprints and notes and unlinks its goals', () => {
+    const keep = useKanbanStore.getState().createProject('Keep')
+    const pid = useKanbanStore.getState().createProject('Delete Me')
+    const s = useKanbanStore.getState()
+    s.createSprint(pid, 'v1')
+    s.createSprint(keep, 'v1')
+    s.createNote(pid)
+    s.createNote(keep)
+    const goalId = s.createGoal({
+      title: 'Meta',
+      target: 1,
+      unit: '',
+      color: '#fff',
+      projectId: pid
+    })
+    useKanbanStore.getState().deleteProject(pid)
+    const { sprints, notes, goals } = useKanbanStore.getState()
+    expect(sprints.map((x) => x.projectId)).toEqual([keep])
+    expect(notes.map((x) => x.projectId)).toEqual([keep])
+    expect(goals.find((g) => g.id === goalId)?.projectId).toBeUndefined()
+  })
+
   it('deleteProject switches activeProject to another project', () => {
     const id1 = useKanbanStore.getState().createProject('First')
     const id2 = useKanbanStore.getState().createProject('Second')

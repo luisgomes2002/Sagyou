@@ -155,7 +155,7 @@ describe('MCP project and column writes', () => {
     expect(project(id).archivedAt).toBeUndefined()
   })
 
-  it('delete_project keeps notes and goals, and the resumo counts tasks', () => {
+  it('delete_project removes notes, unlinks goals, and the resumo counts tasks and notes', () => {
     const { id, scope } = seedProject()
     const col = project(id).columns[0].id
     state().createTask({ projectId: id, columnId: col, title: 'A' })
@@ -170,13 +170,14 @@ describe('MCP project and column writes', () => {
       projectId: id
     })
     expect(prepareMcpAction('delete_project', {}, scope)).toMatchObject({
-      resumo: 'Excluir projeto "Sagyou" e 2 tarefa(s)'
+      resumo: 'Excluir projeto "Sagyou" e 2 tarefa(s), com 1 nota(s) do canvas'
     })
     expect(applyMcpAction('delete_project', {}, scope).ok).toBe(true)
     expect(state().projects).toHaveLength(0)
     expect(state().tasks).toHaveLength(0)
-    expect(state().notes).toHaveLength(1)
+    expect(state().notes).toHaveLength(0)
     expect(state().goals).toHaveLength(1)
+    expect(state().goals[0].projectId).toBeUndefined()
   })
 
   it('delete_project of a project removed after prepare refuses in apply', () => {

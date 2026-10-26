@@ -40,7 +40,7 @@ As duas fases rodam **dentro** da `McpWriteQueue`, serializada por run. Assim ca
 
 ## Decisões do construtor tomadas no plano (corrigem ou detalham a spec)
 
-1. **`delete_project` faz exatamente o que o botão do app faz**: remove o projeto e suas tarefas (com tombstones). Notas e metas do projeto **ficam**, como hoje. O cartão diz `Excluir projeto "<nome>" e N tarefa(s)`. A spec dizia que as notas iam junto, o que não é o que o botão faz; a frase da spec é corrigida para "projeto e tarefas, como o botão".
+1. **`delete_project` faz exatamente o que o botão do app faz**: remove o projeto e suas tarefas (com tombstones). Notas e metas do projeto **ficam**, como hoje. O cartão diz `Excluir projeto "<nome>" e N tarefa(s)`. A spec dizia que as notas iam junto, o que não é o que o botão faz; a frase da spec é corrigida para "projeto e tarefas, como o botão". _(Superado em 2026-10-26 por `fix/backup-import-dados-orfaos`: sprints e notas do canvas vão junto, as metas são desvinculadas e o cartão conta as notas.)_
 2. **Perfis financeiros**: `rename_financial_profile` renomeia **só o perfil da sessão** e não recebe `id`. `create_financial_profile` cria o perfil, mas a sessão continua escrevendo só no perfil capturado (o novo fica para a próxima sessão ou para o app).
 3. **Coluna "Done"**: concluída é decidido pelo nome (`isDoneColumn`). O MCP recusa renomear a coluna Done e recusa dar o nome "done" (sem diferenciar maiúsculas) a outra coluna: `"A coluna de concluídas é identificada pelo nome \"Done\"; renomeie-a no Sagyou."`. Excluir a coluna Done segue a regra de excluir qualquer coluna (só vazia).
 4. **Links de projeto**: `links` substitui a lista inteira; `[]` limpa. Um link cuja `url` já existe mantém seu `id`; um novo recebe `uuidv4()`.
