@@ -244,7 +244,7 @@ describe('FleetView', () => {
     expect(within(inspector).queryByRole('tab')).not.toBeInTheDocument()
     expect(within(inspector).getByText('Tokens')).toBeInTheDocument()
     expect(screen.getByText('/tmp/run-1')).toBeInTheDocument()
-    expect(screen.getByText('não informado pelo harness')).toBeInTheDocument()
+    expect(within(inspector).getByText('gpt-4')).toBeInTheDocument()
     expect(window.electronAPI.ai.codeAgent.terminalInput).not.toHaveBeenCalled()
   })
 
