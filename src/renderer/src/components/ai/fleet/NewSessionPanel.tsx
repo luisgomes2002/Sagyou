@@ -109,7 +109,7 @@ export function NewSessionPanel({
               ))}
             </select>
             {!roots.length && (
-              <span className="mt-1 block text-xs text-amber-300">
+              <span className="mt-1 block text-xs text-[#d9a640]">
                 Autorize uma pasta de código no projeto para abrir o terminal nele.
               </span>
             )}
@@ -133,7 +133,7 @@ export function NewSessionPanel({
             ))}
           </select>
           {chosen && (
-            <span className={`mt-1 block text-xs ${harnessBlocked ? 'text-amber-300' : 'text-[#8a8a92]'}`}>
+            <span className={`mt-1 block text-xs ${harnessBlocked ? 'text-[#d9a640]' : 'text-[#8a8a92]'}`}>
               {!chosen.installed
                 ? 'Não encontrado nesta máquina.'
                 : harnessBlocked

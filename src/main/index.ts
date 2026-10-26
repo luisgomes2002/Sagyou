@@ -36,6 +36,7 @@ const execFileAsync = promisify(execFile)
 import { randomBytes, randomUUID } from 'crypto'
 import { CodeRunCoordinator } from './modules/agent/code-run-coordinator'
 import { McpWriteQueue, RendererMcpActionBridge } from './modules/agent/mcp-write-queue'
+import { parkMcpApproval } from './modules/agent/mcp-approval'
 import {
   MCP_APPROVAL_REQUIRED,
   MCP_MEMORY_TOOLS,
@@ -420,6 +421,8 @@ interface CodeApprovalRequest {
   diff?: DiffLineItem[]
   diffTruncated?: boolean
   irreversivel?: boolean
+  /** MCP cards only: when main stops waiting and answers the agent with a denial. */
+  expiresAt?: string
 }
 
 interface PendingCodeApproval {
@@ -521,32 +524,20 @@ function requestMcpWriteApproval(
 ): Promise<boolean> {
   const run = codeRuns.get(runId)
   if (!run || !isMcpRunLive(runId)) return Promise.resolve(false)
-  return new Promise((resolveApproval) => {
-    const id = randomUUID()
-    const request: CodeApprovalRequest = {
-      runId,
-      id,
-      name: `mcp:${name}`,
-      args,
-      resumo:
-        resumo ??
-        (name === 'criar_task'
-          ? `Criar task "${String(args.titulo ?? '').slice(0, 80)}" em ${loadData().projects.find((project) => project.id === args.projectId)?.name ?? String(args.projectId ?? 'projeto desconhecido')}`
-          : `MCP Sagyou: ${name.replace('_', ' ')}`)
-    }
-    const timeout = setTimeout(() => {
-      if (!run.pendingApprovals.delete(id)) return
-      resolveApproval(false)
-    }, 30_000)
-    run.pendingApprovals.set(id, {
-      resolve: (approved) => {
-        clearTimeout(timeout)
-        resolveApproval(approved)
-      },
-      request
-    })
-    mainWindow?.webContents.send('ai:code-agent:approve-request', request)
-  })
+  const request: CodeApprovalRequest = {
+    runId,
+    id: randomUUID(),
+    name: `mcp:${name}`,
+    args,
+    resumo:
+      resumo ??
+      (name === 'criar_task'
+        ? `Criar task "${String(args.titulo ?? '').slice(0, 80)}" em ${loadData().projects.find((project) => project.id === args.projectId)?.name ?? String(args.projectId ?? 'projeto desconhecido')}`
+        : `MCP Sagyou: ${name.replace('_', ' ')}`)
+  }
+  return parkMcpApproval(run.pendingApprovals, request, (card) =>
+    mainWindow?.webContents.send('ai:code-agent:approve-request', card)
+  )
 }
 
 const mcpWriteQueue = new McpWriteQueue(

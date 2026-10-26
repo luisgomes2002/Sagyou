@@ -1,4 +1,12 @@
+import { useEffect, useState } from 'react'
 import type { CodeAgentRunUI } from './useCodeAgentRuns'
+
+/** "4:59" for the time left until `expiresAt`, or null once it has passed. */
+function timeLeft(expiresAt: string, now: number): string | null {
+  const seconds = Math.ceil((Date.parse(expiresAt) - now) / 1000)
+  if (seconds <= 0) return null
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+}
 
 /**
  * Everything that is blocking a run on the user, in one place above the
@@ -13,6 +21,14 @@ export function AttentionPanel({
   onApprove: (runId: string, approvalId: string, approved: boolean) => void
 }): React.JSX.Element | null {
   const { approvals, questions, hint } = run
+  // MCP cards expire in main; ticking here keeps a dead card from looking answerable.
+  const counting = approvals.some((approval) => approval.expiresAt)
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!counting) return
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [counting])
   if (!approvals.length && !questions.length && !hint) return null
 
   return (
@@ -35,68 +51,79 @@ export function AttentionPanel({
           <p className="text-xs font-medium text-[#d9a640]">
             Aguardando sua aprovação ({approvals.length})
           </p>
-          {approvals.map((approval) => (
-            <div
-              key={approval.id}
-              className="rounded-lg border border-[#2b2b31] bg-[#101014] px-3 py-2"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="text-xs text-[#d4d4d4]">{approval.resumo}</p>
-                  {approval.name.startsWith('mcp:') && (
-                    <p className="mt-0.5 text-[10px] text-[#8a8a92]">
-                      Escrita solicitada pelo MCP desta sessão.
-                    </p>
-                  )}
-                  {approval.irreversivel && (
-                    <p className="mt-0.5 text-[10px] text-[#e04040]">Não pode ser desfeita.</p>
-                  )}
+          {approvals.map((approval) => {
+            const left = approval.expiresAt ? timeLeft(approval.expiresAt, now) : null
+            const expired = Boolean(approval.expiresAt) && left === null
+            return (
+              <div
+                key={approval.id}
+                className="rounded-lg border border-[#2b2b31] bg-[#101014] px-3 py-2"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-xs text-[#d4d4d4]">{approval.resumo}</p>
+                    {approval.name.startsWith('mcp:') && (
+                      <p className="mt-0.5 text-[10px] text-[#8a8a92]">
+                        Escrita solicitada pelo MCP desta sessão.
+                      </p>
+                    )}
+                    {approval.irreversivel && (
+                      <p className="mt-0.5 text-[10px] text-[#e04040]">Não pode ser desfeita.</p>
+                    )}
+                    {left && <p className="mt-0.5 text-[10px] text-[#8a8a92]">Expira em {left}</p>}
+                    {expired && (
+                      <p className="mt-0.5 text-[10px] text-[#d9a640]">
+                        Expirou sem resposta; o agente recebeu uma recusa e pode pedir de novo.
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onApprove(run.id, approval.id, false)}
+                      className="rounded border border-[#2b2b31] bg-[#2a2a30] px-2.5 py-1 text-xs text-[#ec6a6a] hover:bg-[#303036]"
+                    >
+                      {expired ? 'Dispensar' : 'Recusar'}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={expired}
+                      onClick={() => onApprove(run.id, approval.id, true)}
+                      className="rounded bg-[#6d5bb8] px-2.5 py-1 text-xs text-white hover:bg-[#7b69c6] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-[#6d5bb8]"
+                    >
+                      Aprovar
+                    </button>
+                  </div>
                 </div>
-                <div className="flex shrink-0 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => onApprove(run.id, approval.id, false)}
-                    className="rounded border border-[#2b2b31] bg-[#2a2a30] px-2.5 py-1 text-xs text-[#ec6a6a] hover:bg-[#303036]"
-                  >
-                    Recusar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onApprove(run.id, approval.id, true)}
-                    className="rounded bg-[#6d5bb8] px-2.5 py-1 text-xs text-white hover:bg-[#7b69c6]"
-                  >
-                    Aprovar
-                  </button>
-                </div>
+                {approval.diff && approval.diff.length > 0 && (
+                  <details className="mt-2 rounded border border-[#2b2b31] bg-[#0b0b0f]">
+                    <summary className="cursor-pointer px-2 py-1 text-[10px] text-[#a080f0]">
+                      Ver diff para revisão{approval.diffTruncated ? ' (resumido)' : ''}
+                    </summary>
+                    <pre className="max-h-56 overflow-auto border-t border-[#2b2b31] p-2 text-[10px] leading-relaxed">
+                      {approval.diff.map((line, index) => (
+                        <span
+                          key={index}
+                          className={
+                            line.kind === 'add'
+                              ? 'text-[#46d478]'
+                              : line.kind === 'del'
+                                ? 'text-[#ec6a6a]'
+                                : line.kind === 'meta'
+                                  ? 'text-[#a080f0]'
+                                  : 'text-[#999]'
+                          }
+                        >
+                          {line.text}
+                          {'\n'}
+                        </span>
+                      ))}
+                    </pre>
+                  </details>
+                )}
               </div>
-              {approval.diff && approval.diff.length > 0 && (
-                <details className="mt-2 rounded border border-[#2b2b31] bg-[#0b0b0f]">
-                  <summary className="cursor-pointer px-2 py-1 text-[10px] text-[#a080f0]">
-                    Ver diff para revisão{approval.diffTruncated ? ' (resumido)' : ''}
-                  </summary>
-                  <pre className="max-h-56 overflow-auto border-t border-[#2b2b31] p-2 text-[10px] leading-relaxed">
-                    {approval.diff.map((line, index) => (
-                      <span
-                        key={index}
-                        className={
-                          line.kind === 'add'
-                            ? 'text-[#46d478]'
-                            : line.kind === 'del'
-                              ? 'text-[#ec6a6a]'
-                              : line.kind === 'meta'
-                                ? 'text-[#a080f0]'
-                                : 'text-[#999]'
-                        }
-                      >
-                        {line.text}
-                        {'\n'}
-                      </span>
-                    ))}
-                  </pre>
-                </details>
-              )}
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
 

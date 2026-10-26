@@ -21,6 +21,7 @@ import { collectAgentPatch, patchWithinScope, validatePatchScope } from '../modu
 import { deliverApprovedPatch, type DeliveryCoordinator } from '../modules/agent/agent-delivery'
 import { prepareAgentMcpSession } from '../modules/agent/agent-mcp-session'
 import { MCP_PERMISSIONS, type McpSession } from '../modules/agent/sagyou-mcp'
+import { MCP_APPROVAL_TIMEOUT_MS, MCP_CLIENT_TOOL_TIMEOUT_SEC } from '../modules/agent/mcp-approval'
 
 const execFileAsync = promisify(execFile)
 const made: string[] = []
@@ -469,6 +470,13 @@ describe('agent infrastructure', () => {
     )
     expect(prepared.args).toContain('mcp_servers.sagyou.required=true')
     expect(prepared.args).toContain('mcp_servers.sagyou.enabled=true')
+    // Codex gives up on a tool call after 60 s by default. An approval card
+    // answered later would still write while Codex had told the model the
+    // call failed, inviting a duplicate retry.
+    expect(prepared.args).toContain(
+      `mcp_servers.sagyou.tool_timeout_sec=${MCP_CLIENT_TOOL_TIMEOUT_SEC}`
+    )
+    expect(MCP_CLIENT_TOOL_TIMEOUT_SEC * 1000).toBeGreaterThan(2 * MCP_APPROVAL_TIMEOUT_MS)
     expect(prepared.args.join(' ')).not.toContain('secret')
     expect(existsSync(join(dir, '.sagyou-mcp-bridge.cjs'))).toBe(true)
 
