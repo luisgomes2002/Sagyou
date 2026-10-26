@@ -120,6 +120,7 @@ Soft deletes use a `Tombstone[]` array. On `importBackup`, all local state is re
 | `ai`        | `FleetView.tsx`     | the only AI screen: code-agent sessions in a terminal (see Fleet below)                                                                  |
 | `home`      | `HomeView.tsx`      | landing/dashboard — quick overview and shortcuts                                                                                         |
 | `memory`    | `MemoryView.tsx`    | memory management: list, pin, restore and delete memories                                                                                |
+| `graph`     | `GraphView.tsx`     | d3-force graph of projects, tasks, notes, goals, habits, files and active memories; a **Geral** hub holds everything without a project, so no node is left unlinked; memories also link by shared tags (max 3 each, handoffs excluded); node IDs are stable (`<type>:<entityId>`) |
 
 `board`, `canvas`, and `files` share the project-scoped layout, so they are selected by a nested branch in `App.tsx` rather than the top-level one.
 

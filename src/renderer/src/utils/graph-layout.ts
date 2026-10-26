@@ -8,10 +8,18 @@ import {
   type SimulationNodeDatum,
   type SimulationLinkDatum
 } from 'd3-force'
-import type { Project, Task, StickyNote, Goal, Habit, StoredFile } from '../types'
+import type { Project, Task, StickyNote, Goal, Habit, StoredFile, AiMemory } from '../types'
 import { isDoneColumn } from './columns'
 
-export type GraphNodeType = 'project' | 'task' | 'note' | 'goal' | 'habit' | 'file'
+export type GraphNodeType =
+  | 'project'
+  | 'task'
+  | 'note'
+  | 'goal'
+  | 'habit'
+  | 'file'
+  | 'memory'
+  | 'general'
 
 export interface GraphNode extends SimulationNodeDatum {
   id: string
@@ -26,7 +34,7 @@ export interface GraphNode extends SimulationNodeDatum {
 }
 
 export interface GraphEdge extends SimulationLinkDatum<GraphNode> {
-  type: 'explicit' | 'structural'
+  type: 'explicit' | 'structural' | 'tag'
 }
 
 export type NavigateTarget =
@@ -36,22 +44,29 @@ export type NavigateTarget =
   | { type: 'goal'; id: string }
   | { type: 'habit'; id: string }
   | { type: 'file'; projectId?: string }
+  | { type: 'memory'; id: string }
 
 const NODE_COLOR: Record<GraphNodeType, string> = {
-  project: '#a78bfa',
-  task: '#60a5fa',
-  note: '#fbbf24',
-  goal: '#f472b6',
-  habit: '#4ade80',
-  file: '#fb923c'
+  project: '#7d6fc0',
+  task: '#5b84b8',
+  note: '#c09a4a',
+  goal: '#b86a8e',
+  habit: '#4f9a6c',
+  file: '#b87a4a',
+  memory: '#5a9ea0',
+  general: '#8a8a94'
 }
 
 const COMPLETED_NODE_COLOR: Partial<Record<GraphNodeType, string>> = {
-  task: '#3b6f9f',
-  note: '#a87916'
+  task: '#3d5878',
+  note: '#7f6732'
 }
 
 export const GRAPH_NODE_COLORS = NODE_COLOR
+
+// Hub for items that belong to no project, so nothing floats unconnected and
+// nothing is pinned to a project it does not belong to.
+export const GENERAL_NODE_ENTITY_ID = 'general'
 
 function nodeColor(type: GraphNodeType, completed = false): string {
   return completed ? (COMPLETED_NODE_COLOR[type] ?? NODE_COLOR[type]) : NODE_COLOR[type]
@@ -64,11 +79,84 @@ const EXPLICIT_LINK_DISTANCE = 72
 const STRUCTURAL_LINK_DISTANCE = 115
 const EXPLICIT_LINK_STRENGTH = 0.5
 const STRUCTURAL_LINK_STRENGTH = 0.3
+const TAG_LINK_DISTANCE = 90
+const TAG_LINK_STRENGTH = 0.4
 const NODE_REPULSION = -120
 const PROJECT_REPULSION = -1000
 const REPULSION_DISTANCE_MAX = 500
 const CENTER_STRENGTH = 0.08
 const COLLISION_PADDING = 12
+
+// A common tag would otherwise tie every memory to every other one.
+export const MEMORY_TAG_LINK_LIMIT = 3
+
+function normalizedTags(memory: AiMemory): Set<string> {
+  return new Set(memory.tags.map((tag) => tag.trim().toLowerCase()).filter(Boolean))
+}
+
+// Pairing is quadratic in memories sharing a tag, while buildGraph reruns on
+// every store change. GraphView keeps one memories array until it reloads, so
+// the result is cached per array.
+const tagPairsCache = new WeakMap<AiMemory[], [AiMemory, AiMemory][]>()
+
+export function memoryTagPairs(memories: AiMemory[]): [AiMemory, AiMemory][] {
+  let pairs = tagPairsCache.get(memories)
+  if (!pairs) {
+    pairs = computeMemoryTagPairs(memories)
+    tagPairsCache.set(memories, pairs)
+  }
+  return pairs
+}
+
+// Greedy over all candidate pairs, best first, so the limit holds on both ends
+// of every edge. Handoffs are automatic breadcrumbs with repeated shapes, so
+// they never take part, and neither do archived memories.
+function computeMemoryTagPairs(memories: AiMemory[]): [AiMemory, AiMemory][] {
+  const tagged = memories
+    .filter((memory) => memory.archivedAt == null && memory.type !== 'handoff')
+    .map((memory) => ({ memory, tags: normalizedTags(memory) }))
+    .filter((entry) => entry.tags.size > 0)
+
+  const candidates: {
+    pair: [AiMemory, AiMemory]
+    shared: number
+    updatedAt: string
+    key: string
+  }[] = []
+  for (let i = 0; i < tagged.length; i++) {
+    for (let j = i + 1; j < tagged.length; j++) {
+      let shared = 0
+      for (const tag of tagged[i].tags) if (tagged[j].tags.has(tag)) shared++
+      if (shared === 0) continue
+      const a = tagged[i].memory
+      const b = tagged[j].memory
+      candidates.push({
+        pair: [a, b],
+        shared,
+        updatedAt: a.updatedAt > b.updatedAt ? a.updatedAt : b.updatedAt,
+        key: [a.id, b.id].sort().join('|')
+      })
+    }
+  }
+  candidates.sort(
+    (x, y) =>
+      y.shared - x.shared ||
+      (x.updatedAt < y.updatedAt ? 1 : x.updatedAt > y.updatedAt ? -1 : 0) ||
+      (x.key < y.key ? -1 : x.key > y.key ? 1 : 0)
+  )
+
+  const linkCount = new Map<string, number>()
+  const pairs: [AiMemory, AiMemory][] = []
+  for (const { pair } of candidates) {
+    const [a, b] = pair
+    if ((linkCount.get(a.id) ?? 0) >= MEMORY_TAG_LINK_LIMIT) continue
+    if ((linkCount.get(b.id) ?? 0) >= MEMORY_TAG_LINK_LIMIT) continue
+    linkCount.set(a.id, (linkCount.get(a.id) ?? 0) + 1)
+    linkCount.set(b.id, (linkCount.get(b.id) ?? 0) + 1)
+    pairs.push(pair)
+  }
+  return pairs
+}
 
 function computeRadius(baseRadius: number, connectionCount: number): number {
   return Math.min(30, baseRadius + Math.log2(connectionCount + 1) * 3)
@@ -80,19 +168,34 @@ export function buildGraph(
   notes: StickyNote[],
   goals: Goal[],
   habits: Habit[],
-  files: StoredFile[] = []
+  files: StoredFile[] = [],
+  memories: AiMemory[] = []
 ): { nodes: GraphNode[]; edges: GraphEdge[] } {
   const projectById = new Map(projects.map((project) => [project.id, project]))
 
   const nodeRegistry = new Map<string, GraphNode>()
   const edges: GraphEdge[] = []
-  let nodeIdx = 0
 
+  // IDs are stable per entity: GraphView keeps positions by node ID, so an
+  // ID that shifts when an earlier item appears would swap nodes' positions.
   const addNode = (n: GraphNode): string => {
-    const id = `n${nodeIdx++}`
+    const id = `${n.type}:${n.entityId}`
     n.id = id
     nodeRegistry.set(id, n)
     return id
+  }
+
+  let generalNodeId: string | null = null
+  const linkToGeneral = (nodeId: string): void => {
+    generalNodeId ??= addNode({
+      type: 'general',
+      label: 'Geral',
+      color: NODE_COLOR.general,
+      radius: computeRadius(20, 0),
+      entityId: GENERAL_NODE_ENTITY_ID,
+      connectionCount: 0
+    } as GraphNode)
+    edges.push({ source: nodeId, target: generalNodeId, type: 'structural' })
   }
 
   const projectNodeIds = new Map<string, string>()
@@ -121,9 +224,11 @@ export function buildGraph(
       connectionCount: 0
     } as GraphNode)
 
-    // Files without a project stay visible; archived projects retain their edges.
+    // Archived projects retain their edges; files without one go to Geral.
     if (file.projectId && projectNodeIds.has(file.projectId)) {
       edges.push({ source: id, target: projectNodeIds.get(file.projectId)!, type: 'structural' })
+    } else {
+      linkToGeneral(id)
     }
   }
 
@@ -210,10 +315,7 @@ export function buildGraph(
     if (g.projectId && projectNodeIds.has(g.projectId)) {
       edges.push({ source: id, target: projectNodeIds.get(g.projectId)!, type: 'structural' })
     } else {
-      const firstProjectId = projectNodeIds.values().next().value
-      if (firstProjectId) {
-        edges.push({ source: id, target: firstProjectId, type: 'structural' })
-      }
+      linkToGeneral(id)
     }
   }
 
@@ -230,7 +332,7 @@ export function buildGraph(
   }
 
   for (const h of habits) {
-    addNode({
+    const id = addNode({
       type: 'habit',
       label: h.name,
       color: NODE_COLOR.habit,
@@ -238,6 +340,41 @@ export function buildGraph(
       entityId: h.id,
       connectionCount: 0
     } as GraphNode)
+    linkToGeneral(id)
+  }
+
+  const activeMemories = memories.filter((memory) => memory.archivedAt == null)
+  const memoryNodeIds = new Map<string, string>()
+  for (const m of activeMemories) {
+    const id = addNode({
+      type: 'memory',
+      label: m.title,
+      color: NODE_COLOR.memory,
+      radius: computeRadius(7, 0),
+      entityId: m.id,
+      projectId: m.projectId ?? undefined,
+      connectionCount: 0
+    } as GraphNode)
+    memoryNodeIds.set(m.id, id)
+
+    // A memory of a deleted project keeps showing, attached to Geral.
+    if (m.projectId && projectNodeIds.has(m.projectId)) {
+      edges.push({ source: id, target: projectNodeIds.get(m.projectId)!, type: 'structural' })
+    } else {
+      linkToGeneral(id)
+    }
+  }
+  for (const [a, b] of memoryTagPairs(memories)) {
+    edges.push({ source: memoryNodeIds.get(a.id)!, target: memoryNodeIds.get(b.id)!, type: 'tag' })
+  }
+
+  const linkedNodeIds = new Set<string>()
+  for (const e of edges) {
+    linkedNodeIds.add(e.source as string)
+    linkedNodeIds.add(e.target as string)
+  }
+  for (const projectNodeId of projectNodeIds.values()) {
+    if (!linkedNodeIds.has(projectNodeId)) linkToGeneral(projectNodeId)
   }
 
   const counts = new Map<string, number>()
@@ -255,7 +392,9 @@ export function buildGraph(
     note: 6,
     goal: 12,
     habit: 10,
-    file: 7
+    file: 7,
+    memory: 7,
+    general: 20
   }
 
   for (const n of nodes) {
@@ -277,10 +416,18 @@ export function createLiveSimulation(
         forceLink<GraphNode, GraphEdge>(edges)
           .id((d) => d.id)
           .distance((edge) =>
-            edge.type === 'explicit' ? EXPLICIT_LINK_DISTANCE : STRUCTURAL_LINK_DISTANCE
+            edge.type === 'explicit'
+              ? EXPLICIT_LINK_DISTANCE
+              : edge.type === 'tag'
+                ? TAG_LINK_DISTANCE
+                : STRUCTURAL_LINK_DISTANCE
           )
           .strength((edge) =>
-            edge.type === 'explicit' ? EXPLICIT_LINK_STRENGTH : STRUCTURAL_LINK_STRENGTH
+            edge.type === 'explicit'
+              ? EXPLICIT_LINK_STRENGTH
+              : edge.type === 'tag'
+                ? TAG_LINK_STRENGTH
+                : STRUCTURAL_LINK_STRENGTH
           )
       )
       // Repulsion is deliberately mild and short-range: projects may stay
