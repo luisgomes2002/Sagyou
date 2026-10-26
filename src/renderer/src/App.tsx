@@ -26,6 +26,7 @@ import { PlanView } from './components/views/PlanView'
 import { ReportsView } from './components/views/ReportsView'
 import { GraphView } from './components/views/GraphView'
 import type { NavigateTarget } from './utils/graph-layout'
+import { focusedEntityHit } from './utils/focused-entity-hit'
 import { FilesView } from './components/views/FilesView'
 import { MemoryView } from './components/ai/MemoryView'
 import { FleetView } from './components/ai/FleetView'
@@ -70,29 +71,6 @@ interface ConfirmState {
   title: string
   message: string
   onConfirm: () => void
-}
-
-function focusedEntityHit(
-  type: 'goal' | 'habit',
-  id: string,
-  title: string,
-  completed: boolean
-): GlobalSearchHit {
-  return {
-    type,
-    id,
-    title,
-    snippet: title,
-    matchedField: 'title',
-    projectId: null,
-    profileId: null,
-    tableId: null,
-    projectArchived: false,
-    memoryArchived: false,
-    completed,
-    state: null,
-    date: null
-  }
 }
 
 export default function App() {
@@ -819,6 +797,11 @@ export default function App() {
                       setActiveProject(target.projectId ?? null)
                       setActiveView('files')
                       setSprintFilter(null)
+                      break
+                    case 'memory':
+                      setSearchTarget(focusedEntityHit('memory', target.id, '', false))
+                      setSearchSerial((serial) => serial + 1)
+                      setActiveView('memory')
                       break
                   }
                 }}
