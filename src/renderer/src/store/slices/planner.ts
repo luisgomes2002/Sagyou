@@ -38,6 +38,21 @@ export interface PlannerSlice {
   deleteRoutine: (id: string) => void
 }
 
+/** Drop the link of blocks pointing at deleted tasks or habits; the block stays. */
+export function unlinkTimeBlocks(
+  blocks: TimeBlock[],
+  field: 'taskId' | 'habitId',
+  ids: Set<string>
+): TimeBlock[] {
+  if (!ids.size || !blocks.some((block) => block[field] && ids.has(block[field]))) return blocks
+  return blocks.map((block) => {
+    if (!block[field] || !ids.has(block[field])) return block
+    const unlinked = { ...block }
+    delete unlinked[field]
+    return unlinked
+  })
+}
+
 export const createPlannerSlice: StateCreator<
   PlannerSlice & { _persist: () => void },
   [],

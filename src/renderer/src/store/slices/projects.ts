@@ -1,8 +1,9 @@
 import type { StateCreator } from 'zustand'
 import { v4 as uuidv4 } from 'uuid'
-import type { Project, Column, Tombstone } from '../../types'
+import type { Project, Column, Tombstone, Sprint, StickyNote, Goal, TimeBlock } from '../../types'
 import { DEFAULT_COLUMN_NAMES } from '../../types'
 import { activeCodePathIds, withActiveCodePaths } from '../normalization'
+import { unlinkTimeBlocks } from './planner'
 
 export interface ProjectsSlice {
   projects: Project[]
@@ -43,6 +44,10 @@ export const createProjectsSlice: StateCreator<
       images?: { id: string; ext: string }[]
     }[]
     tombstones: Tombstone[]
+    sprints: Sprint[]
+    notes: StickyNote[]
+    goals: Goal[]
+    timeBlocks: TimeBlock[]
   },
   [],
   [],
@@ -185,6 +190,17 @@ export const createProjectsSlice: StateCreator<
     set((s) => ({
       projects: remaining,
       tasks: s.tasks.filter((t) => t.projectId !== id),
+      timeBlocks: unlinkTimeBlocks(s.timeBlocks, 'taskId', new Set(deletedTaskIds)),
+      // Left behind, these point at a project that no longer exists and make
+      // every later backup fail validation.
+      sprints: s.sprints.filter((sp) => sp.projectId !== id),
+      notes: s.notes.filter((n) => n.projectId !== id),
+      goals: s.goals.map((g) => {
+        if (g.projectId !== id) return g
+        const unlinked = { ...g }
+        delete unlinked.projectId
+        return unlinked
+      }),
       tombstones: [...s.tombstones, ...newTombstones],
       activeProjectId: s.activeProjectId === id ? (remaining[0]?.id ?? null) : s.activeProjectId
     }))

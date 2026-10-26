@@ -102,6 +102,64 @@ describe('project actions', () => {
     expect(tombstones.some((t) => t.id === pid && t.type === 'project')).toBe(true)
   })
 
+  // Regression: sprints, notes and goal links of a deleted project survived the
+  // delete and made every later backup (manual and automatic) fail validation.
+  it('deleteProject removes its sprints and notes and unlinks its goals', () => {
+    const keep = useKanbanStore.getState().createProject('Keep')
+    const pid = useKanbanStore.getState().createProject('Delete Me')
+    const s = useKanbanStore.getState()
+    s.createSprint(pid, 'v1')
+    s.createSprint(keep, 'v1')
+    s.createNote(pid)
+    s.createNote(keep)
+    const goalId = s.createGoal({
+      title: 'Meta',
+      target: 1,
+      unit: '',
+      color: '#fff',
+      projectId: pid
+    })
+    useKanbanStore.getState().deleteProject(pid)
+    const { sprints, notes, goals } = useKanbanStore.getState()
+    expect(sprints.map((x) => x.projectId)).toEqual([keep])
+    expect(notes.map((x) => x.projectId)).toEqual([keep])
+    expect(goals.find((g) => g.id === goalId)?.projectId).toBeUndefined()
+  })
+
+  // Regression: a planner block linked to a deleted task/habit made every later
+  // backup fail validation, exactly like the orphan sprints above.
+  it('deleting a task, its project or a habit unlinks planner blocks', () => {
+    const s = useKanbanStore.getState()
+    const pid = s.createProject('P')
+    const col = useKanbanStore.getState().projects.find((p) => p.id === pid)!.columns[0].id
+    const t1 = s.createTask({ projectId: pid, columnId: col, title: 'A' })
+    const t2 = s.createTask({ projectId: pid, columnId: col, title: 'B' })
+    const habit = s.createHabit({ name: 'Ler', color: '#fff' })
+    const block = (data: { taskId?: string; habitId?: string }): string =>
+      s.createTimeBlock({
+        date: '2026-10-26',
+        startTime: '09:00',
+        endTime: '10:00',
+        title: 'Foco',
+        type: 'custom',
+        order: 0,
+        ...data
+      })
+    const b1 = block({ taskId: t1 })
+    const b2 = block({ taskId: t2 })
+    const b3 = block({ habitId: habit })
+    const blockById = (id: string) => useKanbanStore.getState().timeBlocks.find((b) => b.id === id)!
+
+    useKanbanStore.getState().deleteTask(t1)
+    expect(blockById(b1).taskId).toBeUndefined()
+    expect(blockById(b2).taskId).toBe(t2)
+    useKanbanStore.getState().deleteProject(pid)
+    expect(blockById(b2).taskId).toBeUndefined()
+    useKanbanStore.getState().deleteHabit(habit)
+    expect(blockById(b3).habitId).toBeUndefined()
+    expect(useKanbanStore.getState().timeBlocks).toHaveLength(3)
+  })
+
   it('deleteProject switches activeProject to another project', () => {
     const id1 = useKanbanStore.getState().createProject('First')
     const id2 = useKanbanStore.getState().createProject('Second')

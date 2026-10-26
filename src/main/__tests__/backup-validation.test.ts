@@ -291,3 +291,64 @@ describe('backup validation', () => {
     )
   })
 })
+
+// Regression: a backup the app itself exported (orphan sprints of a deleted
+// project, a 23:20–00:00 planner block) was refused on import, and the same
+// state made every automatic snapshot fail silently.
+describe('backups with repairable leftovers', () => {
+  it('import and auto-save accept them after repair', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'sagyou-backup-repair-'))
+    try {
+      const leftovers = {
+        ...backup(),
+        sprints: [
+          { id: 's1', projectId: 'gone', name: 'v1', createdAt: '2026-06-11T20:15:48.807Z' }
+        ],
+        timeBlocks: [
+          { id: 'b1', date: '2026-08-10', startTime: '23:20', endTime: '00:00', title: 'Inglês' }
+        ]
+      }
+      const selected = join(root, 'backup.json')
+      writeFileSync(selected, JSON.stringify(leftovers))
+      const handlers = new Map<string, (...args: unknown[]) => Promise<unknown>>()
+      registerBackupHandlers(
+        {
+          handle: (name: string, fn: (...args: unknown[]) => Promise<unknown>) =>
+            handlers.set(name, fn),
+          on: vi.fn()
+        } as unknown as IpcMain,
+        {
+          dialog: {
+            showOpenDialog: vi.fn().mockResolvedValue({ canceled: false, filePaths: [selected] })
+          } as unknown as Dialog,
+          filesDir: join(root, 'files'),
+          taskImagesDir: join(root, 'task-images'),
+          backupDir: join(root, 'backups'),
+          sep,
+          taskImagePath: () => null
+        }
+      )
+      const result = (await handlers.get('backup:import')?.(null)) as {
+        success: boolean
+        data: { sprints: unknown[]; timeBlocks: { endTime: string }[] }
+      }
+      expect(result.success).toBe(true)
+      expect(result.data.sprints).toEqual([])
+      expect(result.data.timeBlocks[0].endTime).toBe('23:59')
+
+      // The restore point is the database as it was: repaired only to decide
+      // it is restorable, never trimmed, so an import cannot lose the originals.
+      expect(await handlers.get('backup:auto-save')?.(null, leftovers, true)).toEqual({
+        success: true
+      })
+      const [snapshot] = readdirSync(join(root, 'backups'))
+      const saved = JSON.parse(readFileSync(join(root, 'backups', snapshot), 'utf8'))
+      expect(saved.sprints).toEqual(leftovers.sprints)
+      expect(saved.timeBlocks[0].endTime).toBe('00:00')
+      writeFileSync(selected, JSON.stringify(saved))
+      expect(await handlers.get('backup:import')?.(null)).toMatchObject({ success: true })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+})

@@ -303,7 +303,7 @@ export default function App() {
       files: 'files',
       graph: 'graph',
       ai: 'ai',
-      memory: 'ai',
+      memory: 'ai'
     }
     const feature = viewFeatures[activeView]
     if (feature && !enabledFeatures.includes(feature)) setActiveView('home')
@@ -438,7 +438,7 @@ export default function App() {
     setConfirm({
       open: true,
       title: 'Deletar projeto',
-      message: `Isso vai deletar o projeto "${project.name}" e todas as suas tasks permanentemente.`,
+      message: `Isso vai deletar o projeto "${project.name}" e todas as suas tasks, sprints e notas do canvas permanentemente.`,
       onConfirm: () => {
         deleteProject(project.id)
         setConfirm((c) => ({ ...c, open: false }))

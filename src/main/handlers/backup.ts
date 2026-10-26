@@ -12,6 +12,7 @@ import {
 import { readFile } from 'fs/promises'
 import { safeAttachmentName } from '../modules/files/backup-files'
 import { isValidBackup } from '../modules/files/backup-validation'
+import { repairBackup } from '../modules/files/backup-repair'
 import type { IpcMain, Dialog, IpcMainInvokeEvent } from 'electron'
 
 interface BlobEntry {
@@ -32,8 +33,7 @@ interface BackupDeps {
 export function registerBackupHandlers(ipcMain: IpcMain, deps: BackupDeps): void {
   const { dialog, filesDir, taskImagesDir, sep, taskImagePath } = deps
 
-  let pendingBlobs: { fileBlobs?: unknown; taskImages?: unknown } | null =
-    null
+  let pendingBlobs: { fileBlobs?: unknown; taskImages?: unknown } | null = null
   const exportJobs = new Map<number, { cancelled: boolean }>()
   const yieldToRenderer = (): Promise<void> => new Promise((resolve) => setImmediate(resolve))
 
@@ -196,8 +196,10 @@ export function registerBackupHandlers(ipcMain: IpcMain, deps: BackupDeps): void
 
   // One local restore point per day, plus forced snapshots just before import.
   // The latest seven snapshots stay available even when the user never exports manually.
+  // The snapshot keeps the state as it is: it is repaired only to decide whether
+  // it can be restored (import repairs it again), so no restore point loses data.
   ipcMain.handle('backup:auto-save', async (_, backup: unknown, force = false) => {
-    if (!isValidBackup(backup)) return { success: false }
+    if (!isValidBackup(repairBackup(backup))) return { success: false }
     try {
       mkdirSync(deps.backupDir, { recursive: true })
       const now = new Date()
@@ -229,7 +231,7 @@ export function registerBackupHandlers(ipcMain: IpcMain, deps: BackupDeps): void
     if (canceled || filePaths.length === 0) return { success: false, cancelled: true }
     try {
       const content = readFileSync(filePaths[0], 'utf-8')
-      const data = JSON.parse(content)
+      const data = repairBackup(JSON.parse(content))
       if (!isValidBackup(data)) return { success: false, error: 'Backup inválido ou incompatível' }
       pendingBlobs = {
         fileBlobs: data.fileBlobs,
