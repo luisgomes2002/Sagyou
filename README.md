@@ -40,7 +40,7 @@ Não é preciso instalar Python, Node nem nada além do app. Para usar as sessõ
 | **Concluídas**   | Histórico do que já foi entregue                                                                       |
 | **Planejamento** | Agenda semanal com blocos de horário ligados a tarefas e hábitos                                       |
 | **Canvas**       | Notas adesivas livres, conectáveis e ligadas a tarefas, mais blocos de texto para títulos e anotações  |
-| **Grafo**        | Mapa interativo das relações entre projetos, tarefas, notas, metas e hábitos                           |
+| **Grafo**        | Mapa interativo das relações entre projetos, tarefas, notas, metas, hábitos e memórias                |
 | **Arquivos**     | Anexos por projeto, guardados localmente e pesquisáveis pelo conteúdo (PDF, DOCX, planilhas e mais)    |
 
 ### Vida pessoal

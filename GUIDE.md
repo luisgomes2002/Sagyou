@@ -474,6 +474,12 @@ Não "simplifique" nenhuma destas sem ler o comentário que as acompanha:
   `sim.tick()` no evento `tick`. Arrastar fixa só durante o gesto; ao soltar, pare e guarde a posição da sessão.
   Projetos arquivados continuam no grafo com seus itens. Blocos `StickyNote.type === 'text'`
   são apenas conteúdo visual do canvas: não recebem conexões e não entram no grafo.
+  Ids de nó são estáveis por entidade (`<tipo>:<entityId>`), porque `positionsRef` é
+  indexado por eles. Nenhum nó fica solto: o que não tem projeto (hábitos, metas e
+  arquivos sem projeto, memórias globais ou de projeto removido, projeto vazio) liga-se
+  ao nó **Geral**, criado só quando algo depende dele. Memórias ativas são lidas por
+  `ai:memory:list` ao abrir o grafo (fora do Zustand) e ligam-se por tags em comum
+  (arestas `tag`, no máximo `MEMORY_TAG_LINK_LIMIT` = 3 por memória, sem handoffs).
 - **Múltiplos cronômetros** (`activeTimers: ActiveTimer[]`, 1 por task) — vários
   timers correm ao mesmo tempo. `startTimer(taskId)` adiciona sem parar os outros;
   `stopTimer(taskId)` credita só aquele. Espelho legado `activeTimer =
