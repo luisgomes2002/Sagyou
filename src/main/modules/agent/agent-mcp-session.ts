@@ -6,6 +6,7 @@ import {
   type McpPermission,
   type McpSession
 } from './sagyou-mcp'
+import { MCP_CLIENT_TOOL_TIMEOUT_SEC } from './mcp-approval'
 
 export type McpExecutorId = 'codex' | 'claude-code' | 'opencode'
 
@@ -84,6 +85,8 @@ export async function prepareAgentMcpSession(
       'mcp_servers.sagyou.enabled=true',
       '--config',
       'mcp_servers.sagyou.required=true',
+      '--config',
+      `mcp_servers.sagyou.tool_timeout_sec=${MCP_CLIENT_TOOL_TIMEOUT_SEC}`,
       '--config',
       'mcp_servers.sagyou.env_vars=["SAGYOU_MCP_PORT","SAGYOU_MCP_TOKEN"]',
       '--config',

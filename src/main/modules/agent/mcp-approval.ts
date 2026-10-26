@@ -5,6 +5,15 @@
  */
 export const MCP_APPROVAL_TIMEOUT_MS = 5 * 60_000
 
+/**
+ * How long Codex waits for a Sagyou tool call (its own default is 60 s).
+ * A write can wait behind an earlier card of its run and then on its own, so this must
+ * outlast several approval windows: if Codex gave up first, an approval given
+ * afterwards would still write while the model was told the call failed, and a
+ * retry would duplicate it. Claude Code and OpenCode already wait for hours.
+ */
+export const MCP_CLIENT_TOOL_TIMEOUT_SEC = 60 * 60
+
 export interface PendingMcpApproval<R> {
   resolve: (approved: boolean) => void
   request: R
