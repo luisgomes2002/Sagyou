@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { GRAPH_NODE_COLORS, buildGraph } from '../../utils/graph-layout'
-import type { Goal, Habit, Project, StickyNote, StoredFile, Task } from '../../types'
+import type { AiMemory, Goal, Habit, Project, StickyNote, StoredFile, Task } from '../../types'
 
 const NOW = '2025-01-01T00:00:00.000Z'
 
@@ -79,6 +79,33 @@ function makeHabit(overrides: Partial<Habit> & { id: string }): Habit {
     updatedAt: NOW,
     ...overrides
   }
+}
+
+function makeMemory(overrides: Partial<AiMemory> & { id: string }): AiMemory {
+  return {
+    projectId: null,
+    type: 'fato',
+    title: 'Memória',
+    body: 'Corpo',
+    tags: [],
+    pinned: false,
+    source: 'usuario',
+    sourceConversationId: null,
+    createdAt: NOW,
+    updatedAt: NOW,
+    lastAccessedAt: NOW,
+    accessCount: 0,
+    archivedAt: null,
+    ...overrides
+  }
+}
+
+function graphWithMemories(memories: AiMemory[], projects: Project[] = []) {
+  return buildGraph(projects, [], [], [], [], [], memories)
+}
+
+function tagEdgesOf(edges: { source: unknown; target: unknown; type: string }[], id: string) {
+  return edges.filter((edge) => edge.type === 'tag' && (edge.source === id || edge.target === id))
 }
 
 describe('buildGraph', () => {
@@ -307,5 +334,110 @@ describe('buildGraph', () => {
     })
     const general = nodes.find((node) => node.type === 'general')!
     expect(edges).toContainEqual({ source: globalNode.id, target: general.id, type: 'structural' })
+  })
+
+  describe('memórias', () => {
+    it('liga memória de projeto ao projeto e memória global ao Geral', () => {
+      const scoped = makeMemory({ id: 'mem-project', projectId: 'project-1', title: 'Decisão' })
+      const global = makeMemory({ id: 'mem-global' })
+      const { nodes, edges } = graphWithMemories([scoped, global], [makeProject()])
+
+      expect(nodes.find((node) => node.id === 'memory:mem-project')).toMatchObject({
+        type: 'memory',
+        label: 'Decisão',
+        entityId: 'mem-project',
+        projectId: 'project-1',
+        color: GRAPH_NODE_COLORS.memory
+      })
+      expect(edges).toContainEqual({
+        source: 'memory:mem-project',
+        target: 'project:project-1',
+        type: 'structural'
+      })
+      expect(edges).toContainEqual({
+        source: 'memory:mem-global',
+        target: 'general:general',
+        type: 'structural'
+      })
+    })
+
+    it('liga memória de projeto removido ao Geral', () => {
+      const { edges } = graphWithMemories([makeMemory({ id: 'mem', projectId: 'missing' })])
+
+      expect(edges).toContainEqual({
+        source: 'memory:mem',
+        target: 'general:general',
+        type: 'structural'
+      })
+    })
+
+    it('ignora memórias arquivadas', () => {
+      const { nodes } = graphWithMemories([makeMemory({ id: 'mem', archivedAt: NOW })])
+
+      expect(nodes).toEqual([])
+    })
+
+    it('liga memórias com tag em comum, ignorando caixa e espaços', () => {
+      const { edges } = graphWithMemories([
+        makeMemory({ id: 'a', tags: ['Electron'] }),
+        makeMemory({ id: 'b', tags: [' electron '] }),
+        makeMemory({ id: 'c', tags: ['  ', 'outra'] })
+      ])
+
+      expect(edges.filter((edge) => edge.type === 'tag')).toEqual([
+        { source: 'memory:a', target: 'memory:b', type: 'tag' }
+      ])
+    })
+
+    it('não liga handoffs por tag', () => {
+      const { edges } = graphWithMemories(
+        [
+          makeMemory({ id: 'handoff', type: 'handoff', projectId: 'project-1', tags: ['x'] }),
+          makeMemory({ id: 'other', tags: ['x'] })
+        ],
+        [makeProject()]
+      )
+
+      expect(tagEdgesOf(edges, 'memory:handoff')).toEqual([])
+      expect(edges).toContainEqual({
+        source: 'memory:handoff',
+        target: 'project:project-1',
+        type: 'structural'
+      })
+    })
+
+    it('limita a 3 ligações por tag por memória', () => {
+      const memories = ['m1', 'm2', 'm3', 'm4', 'm5', 'm6'].map((id) =>
+        makeMemory({ id, tags: ['x'] })
+      )
+      const { edges } = graphWithMemories(memories)
+      const tagEdges = edges.filter((edge) => edge.type === 'tag')
+      const pairs = tagEdges.map((edge) => [edge.source, edge.target].sort().join('|'))
+
+      expect(tagEdges.length).toBeGreaterThan(0)
+      for (const memory of memories) {
+        expect(tagEdgesOf(edges, `memory:${memory.id}`).length).toBeLessThanOrEqual(3)
+      }
+      expect(new Set(pairs).size).toBe(pairs.length)
+      expect(tagEdges.some((edge) => edge.source === edge.target)).toBe(false)
+    })
+
+    it('prefere as memórias com mais tags em comum', () => {
+      const { edges } = graphWithMemories([
+        makeMemory({ id: 'c', tags: ['x'], updatedAt: '2026-01-01T00:00:00.000Z' }),
+        makeMemory({ id: 'd', tags: ['x'], updatedAt: '2026-01-01T00:00:00.000Z' }),
+        makeMemory({ id: 'e', tags: ['x'], updatedAt: '2026-01-01T00:00:00.000Z' }),
+        makeMemory({ id: 'a', tags: ['x', 'y'] }),
+        makeMemory({ id: 'b', tags: ['y', 'x'] })
+      ])
+
+      expect(
+        edges.some(
+          (edge) =>
+            edge.type === 'tag' &&
+            [edge.source, edge.target].sort().join('|') === 'memory:a|memory:b'
+        )
+      ).toBe(true)
+    })
   })
 })
