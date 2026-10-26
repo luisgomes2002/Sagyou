@@ -56,6 +56,7 @@ import {
   isHarnessId,
   type HarnessId
 } from './modules/agent/harness-adapter'
+import { detectHarnessModel } from './modules/agent/harness-model'
 import { collectAgentPatch, agentPatchPreview, validatePatchScope } from './modules/agent/agent-diff'
 import { deliverApprovedPatch } from './modules/agent/agent-delivery'
 import { CODE_EXECUTOR_MCP_PERMISSIONS, prepareAgentMcpSession } from './modules/agent/agent-mcp-session'
@@ -373,6 +374,8 @@ interface CodeRunState {
   /** A recognised environment failure, surfaced to the panel's hint card. */
   hint: AgentHint | null
   model: string
+  /** Last time the harness transcript was read for `model`; throttles status polls. */
+  modelCheckedAt?: number
   /** Tokens accumulated across this run's model calls. */
   usage: { promptTokens: number; completionTokens: number }
   step: number
@@ -1931,6 +1934,15 @@ app.whenReady().then(() => {
   // `.running` / `.log` / `.hint` directly), sourced from the first active run.
   ipcMain.handle('ai:code-agent:status', () => {
     const runs = [...codeRuns.values()]
+    // Status is polled on every output chunk; re-read the CLI's transcript at
+    // most every few seconds so a mid-session model switch still shows up.
+    const now = Date.now()
+    for (const r of runs) {
+      if (r.modelCheckedAt && now - r.modelCheckedAt < 5_000) continue
+      r.modelCheckedAt = now
+      const detected = detectHarnessModel(r.harness, r.worktreeDir ?? r.dir, r.startedAt)
+      if (detected) r.model = detected
+    }
     const first = runs[0]
     return {
       running: codeRuns.size > 0,

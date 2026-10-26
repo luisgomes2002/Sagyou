@@ -32,12 +32,18 @@ function ContextFacts({
     const timer = setInterval(() => setNow(Date.now()), 15_000)
     return () => clearInterval(timer)
   }, [])
-  const modelKnown = harness?.capabilities.modelStatus === 'available' && run.model !== harness.label
+  // Main replaces the harness label with the model read from the CLI's own
+  // transcript (Claude Code, Codex) once the first turn has been written.
+  const modelKnown = !!run.model && run.model !== (harness?.label ?? run.model)
+  const modelPending =
+    run.harness === 'claude-code' || run.harness === 'codex'
+      ? 'aguardando a primeira resposta'
+      : 'não informado pelo harness'
   const total = run.progress ? run.progress.promptTokens + run.progress.completionTokens : 0
   return (
     <dl className="space-y-3">
       <Fact label="Executor" value={harness?.label ?? run.model} />
-      <Fact label="Modelo" value={modelKnown ? run.model : 'não informado pelo harness'} />
+      <Fact label="Modelo" value={modelKnown ? run.model : modelPending} />
       <Fact label="Projeto" value={projectName} />
       <Fact label="Raiz" value={run.codeRoot ?? run.dir} />
       <Fact label="Worktree" value={run.worktreeDir ?? 'indisponível'} />
