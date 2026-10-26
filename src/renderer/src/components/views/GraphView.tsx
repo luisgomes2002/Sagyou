@@ -6,15 +6,17 @@ import {
   GRAPH_NODE_COLORS,
   type GraphNode,
   type GraphEdge,
+  type GraphNodeType,
   type NavigateTarget
 } from '../../utils/graph-layout'
 import type { Simulation } from 'd3-force'
+import type { AiMemory } from '../../types'
 
 interface Props {
   onNavigate: (target: NavigateTarget) => void
 }
 
-type ResolvedEdge = { source: GraphNode; target: GraphNode; type: 'explicit' | 'structural' }
+type ResolvedEdge = { source: GraphNode; target: GraphNode; type: GraphEdge['type'] }
 type ViewportTransform = { x: number; y: number; scale: number }
 
 const INITIAL_LAYOUT_TICKS = 100
@@ -25,6 +27,32 @@ const DRAG_ALPHA = 0.3
 // zoomed in. Dragging reheats the simulation through DRAG_ALPHA.
 const IDLE_ALPHA_TARGET = 0
 
+const TYPE_LABEL: Record<GraphNodeType, string> = {
+  project: 'Projeto',
+  task: 'Task',
+  note: 'Nota',
+  goal: 'Meta',
+  habit: 'Hábito',
+  file: 'Arquivo',
+  memory: 'Memória',
+  general: 'Geral'
+}
+
+const LEGEND_TYPES: GraphNodeType[] = [
+  'project',
+  'habit',
+  'task',
+  'note',
+  'goal',
+  'file',
+  'memory',
+  'general'
+]
+
+const EXPLICIT_EDGE_COLOR = '#6d5bb8'
+const TAG_EDGE_COLOR = '#4a7a7c'
+const STRUCTURAL_EDGE_COLOR = '#555'
+
 export function GraphView({ onNavigate }: Props) {
   const projects = useKanbanStore((s) => s.projects)
   const tasks = useKanbanStore((s) => s.tasks)
@@ -33,9 +61,28 @@ export function GraphView({ onNavigate }: Props) {
   const habits = useKanbanStore((s) => s.habits)
   const files = useKanbanStore((s) => s.files)
 
+  // Memories live outside the Zustand store; they are re-read whenever the
+  // graph opens. A failure keeps the rest of the graph usable.
+  const [memories, setMemories] = useState<AiMemory[]>([])
+  const [memoriesFailed, setMemoriesFailed] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    window.electronAPI.ai.memory
+      .list({ includeArchived: false })
+      .then((list) => {
+        if (!cancelled) setMemories(list)
+      })
+      .catch(() => {
+        if (!cancelled) setMemoriesFailed(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   const { nodes, edges } = useMemo(
-    () => buildGraph(projects, tasks, notes, goals, habits, files),
-    [projects, tasks, notes, goals, habits, files]
+    () => buildGraph(projects, tasks, notes, goals, habits, files, memories),
+    [projects, tasks, notes, goals, habits, files, memories]
   )
 
   const nodeMap = useMemo(() => {
@@ -425,6 +472,9 @@ export function GraphView({ onNavigate }: Props) {
         case 'file':
           onNavigate({ type: 'file', projectId: node.projectId })
           break
+        case 'memory':
+          onNavigate({ type: 'memory', id: node.entityId })
+          break
       }
     },
     [onNavigate]
@@ -478,7 +528,7 @@ export function GraphView({ onNavigate }: Props) {
 
   const showLabel = useCallback(
     (node: GraphNode, nodeId: string) => {
-      if (node.type === 'project' || node.type === 'goal') return true
+      if (node.type === 'project' || node.type === 'goal' || node.type === 'general') return true
       if (hoveredNode === nodeId) return true
       if (activeHighlight && getNodeOpacity(nodeId) === 1 && labelScale > 0.6) return true
       if (node.type === 'habit' && labelScale > 0.8) return true
@@ -487,8 +537,12 @@ export function GraphView({ onNavigate }: Props) {
     [hoveredNode, activeHighlight, getNodeOpacity, labelScale]
   )
 
+  // Geral leads the sidebar so items without a project are one click away.
   const projectNodes = useMemo(
-    () => nodes.filter((n) => n.type === 'project').sort((a, b) => a.label.localeCompare(b.label)),
+    () => [
+      ...nodes.filter((n) => n.type === 'general'),
+      ...nodes.filter((n) => n.type === 'project').sort((a, b) => a.label.localeCompare(b.label))
+    ],
     [nodes]
   )
 
@@ -535,7 +589,9 @@ export function GraphView({ onNavigate }: Props) {
         </div>
         <div className="text-center">
           <p className="text-[#d4d4d4] font-medium mb-1">Nenhum dado para exibir</p>
-          <p className="text-sm text-[#999999]">Crie projetos, tasks, notas ou adicione arquivos</p>
+          <p className="text-sm text-[#999999]">
+            Crie projetos, tasks, notas, adicione arquivos ou salve memórias
+          </p>
         </div>
       </div>
     )
@@ -566,48 +622,15 @@ export function GraphView({ onNavigate }: Props) {
           />
         </div>
         <div className="flex items-center gap-3 text-[10px] text-[#666] ml-auto">
-          <span className="flex items-center gap-1">
-            <span
-              className="w-2 h-2 rounded-full"
-              style={{ backgroundColor: GRAPH_NODE_COLORS.project }}
-            />{' '}
-            Projeto
-          </span>
-          <span className="flex items-center gap-1">
-            <span
-              className="w-2 h-2 rounded-full"
-              style={{ backgroundColor: GRAPH_NODE_COLORS.habit }}
-            />{' '}
-            Hábito
-          </span>
-          <span className="flex items-center gap-1">
-            <span
-              className="w-2 h-2 rounded-full"
-              style={{ backgroundColor: GRAPH_NODE_COLORS.task }}
-            />{' '}
-            Task
-          </span>
-          <span className="flex items-center gap-1">
-            <span
-              className="w-2 h-2 rounded-full"
-              style={{ backgroundColor: GRAPH_NODE_COLORS.note }}
-            />{' '}
-            Nota
-          </span>
-          <span className="flex items-center gap-1">
-            <span
-              className="w-2 h-2 rounded-full"
-              style={{ backgroundColor: GRAPH_NODE_COLORS.goal }}
-            />{' '}
-            Meta
-          </span>
-          <span className="flex items-center gap-1">
-            <span
-              className="w-2 h-2 rounded-full"
-              style={{ backgroundColor: GRAPH_NODE_COLORS.file }}
-            />{' '}
-            Arquivo
-          </span>
+          {LEGEND_TYPES.map((type) => (
+            <span key={type} className="flex items-center gap-1">
+              <span
+                className="w-2 h-2 rounded-full"
+                style={{ backgroundColor: GRAPH_NODE_COLORS[type] }}
+              />{' '}
+              {TYPE_LABEL[type]}
+            </span>
+          ))}
           <span className="text-[#555]">|</span>
           <span>Tom mais escuro = concluído</span>
           <span className="text-[#555]">|</span>
@@ -635,7 +658,7 @@ export function GraphView({ onNavigate }: Props) {
               markerHeight="6"
               orient="auto-start-reverse"
             >
-              <path d="M 0 0 L 10 5 L 0 10 z" fill="#6d5bb8" />
+              <path d="M 0 0 L 10 5 L 0 10 z" fill={EXPLICIT_EDGE_COLOR} />
             </marker>
           </defs>
           <g ref={viewportRef} transform="translate(0,0) scale(1)">
@@ -661,8 +684,14 @@ export function GraphView({ onNavigate }: Props) {
                   y1={srcPos.y}
                   x2={tgtPos.x}
                   y2={tgtPos.y}
-                  stroke={e.type === 'explicit' ? '#6d5bb8' : '#555'}
-                  strokeWidth={e.type === 'explicit' ? 1.5 : 0.8}
+                  stroke={
+                    e.type === 'explicit'
+                      ? EXPLICIT_EDGE_COLOR
+                      : e.type === 'tag'
+                        ? TAG_EDGE_COLOR
+                        : STRUCTURAL_EDGE_COLOR
+                  }
+                  strokeWidth={e.type === 'explicit' ? 1.5 : e.type === 'tag' ? 1 : 0.8}
                   opacity={getEdgeOpacity(src.id, tgt.id)}
                   strokeDasharray={e.type === 'structural' ? '4 3' : undefined}
                   markerEnd={e.type === 'explicit' ? 'url(#graph-arrow)' : undefined}
@@ -761,7 +790,7 @@ export function GraphView({ onNavigate }: Props) {
                   >
                     <span
                       className="w-2 h-2 rounded-full shrink-0"
-                      style={{ backgroundColor: GRAPH_NODE_COLORS.project }}
+                      style={{ backgroundColor: p.color }}
                     />
                     <span className="truncate flex-1">{p.label}</span>
                     {isHere && <span className="text-[9px] text-[#555]">{p.connectionCount}</span>}
@@ -784,25 +813,20 @@ export function GraphView({ onNavigate }: Props) {
               style={{ backgroundColor: tooltip.node.color }}
             />
             <span className="text-[10px] text-[#666] uppercase">
-              {tooltip.node.type === 'project'
-                ? 'Projeto'
-                : tooltip.node.type === 'task'
-                  ? 'Task'
-                  : tooltip.node.type === 'note'
-                    ? 'Nota'
-                    : tooltip.node.type === 'goal'
-                      ? 'Meta'
-                      : tooltip.node.type === 'habit'
-                        ? 'Hábito'
-                        : 'Arquivo'}
+              {TYPE_LABEL[tooltip.node.type]}
             </span>
           </div>
           <span>{tooltip.node.label}</span>
         </div>
       )}
 
-      <div className="absolute bottom-3 right-3 text-[10px] text-[#555] pointer-events-none select-none">
-        {nodes.length} nós · {resolvedEdges.length} conexões
+      <div className="absolute bottom-3 right-3 flex items-center gap-3 text-[10px] text-[#555] pointer-events-none select-none">
+        {memoriesFailed && (
+          <span className="text-[#d9a640]">Não foi possível carregar as memórias.</span>
+        )}
+        <span>
+          {nodes.length} nós · {resolvedEdges.length} conexões
+        </span>
       </div>
     </div>
   )

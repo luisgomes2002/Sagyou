@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, fireEvent, render } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { GraphView } from '../../components/views/GraphView'
 
 const graph = vi.hoisted(() => {
@@ -48,11 +48,39 @@ const graph = vi.hoisted(() => {
       connectionCount: 0,
       x: undefined as number | undefined,
       y: undefined as number | undefined
+    },
+    {
+      id: 'memory:one',
+      type: 'memory',
+      label: 'Lembrança',
+      color: '#5a9ea0',
+      radius: 7,
+      entityId: 'mem-one',
+      connectionCount: 1,
+      x: undefined as number | undefined,
+      y: undefined as number | undefined
+    },
+    {
+      id: 'general:general',
+      type: 'general',
+      label: 'Geral',
+      color: '#8a8a94',
+      radius: 20,
+      entityId: 'general',
+      connectionCount: 1,
+      x: undefined as number | undefined,
+      y: undefined as number | undefined
     }
   ]
-  const edges = [{ source: 'project:one', target: 'task:one', type: 'structural' }]
+  const edges = [
+    { source: 'project:one', target: 'task:one', type: 'structural' },
+    { source: 'memory:one', target: 'task:one', type: 'tag' }
+  ]
   const listeners = new Map<string, () => void>()
-  return { nodes, edges, listeners }
+  const buildGraph = vi.fn<(...args: unknown[]) => { nodes: typeof nodes; edges: typeof edges }>(
+    () => ({ nodes, edges })
+  )
+  return { nodes, edges, listeners, buildGraph }
 })
 
 vi.mock('../../store/kanban', () => ({
@@ -67,9 +95,11 @@ vi.mock('../../utils/graph-layout', () => ({
     note: '#c09a4a',
     goal: '#b86a8e',
     habit: '#4f9a6c',
-    file: '#b87a4a'
+    file: '#b87a4a',
+    memory: '#5a9ea0',
+    general: '#8a8a94'
   },
-  buildGraph: () => ({ nodes: graph.nodes, edges: graph.edges }),
+  buildGraph: graph.buildGraph,
   createLiveSimulation: () => {
     const simulation = {
       tick: () => {
@@ -94,8 +124,18 @@ vi.mock('../../utils/graph-layout', () => ({
   }
 }))
 
+function stubMemoryList(list: ReturnType<typeof vi.fn>): void {
+  ;(window as unknown as { electronAPI: unknown }).electronAPI = { ai: { memory: { list } } }
+}
+
 describe('Grafo', () => {
+  beforeEach(() => {
+    stubMemoryList(vi.fn().mockResolvedValue([]))
+  })
+
   afterEach(() => {
+    delete (window as unknown as { electronAPI?: unknown }).electronAPI
+    graph.buildGraph.mockClear()
     graph.listeners.clear()
     graph.nodes.forEach((node) => {
       node.x = undefined
@@ -172,5 +212,63 @@ describe('Grafo', () => {
 
     expect(onNavigate).toHaveBeenNthCalledWith(1, { type: 'goal', id: 'goal-one' })
     expect(onNavigate).toHaveBeenNthCalledWith(2, { type: 'habit', id: 'habit-one' })
+  })
+
+  it('passa as memórias ativas ao buildGraph', async () => {
+    const memory = { id: 'mem-one', title: 'Lembrança' }
+    const list = vi.fn().mockResolvedValue([memory])
+    stubMemoryList(list)
+    render(<GraphView onNavigate={vi.fn()} />)
+
+    await waitFor(() => expect(graph.buildGraph.mock.lastCall?.[6]).toEqual([memory]))
+    expect(list).toHaveBeenCalledWith({ includeArchived: false })
+  })
+
+  it('mostra aviso quando as memórias não carregam', async () => {
+    stubMemoryList(vi.fn().mockRejectedValue(new Error('bloqueado')))
+    graph.nodes[0].x = 10
+    graph.nodes[0].y = 10
+    const { container } = render(<GraphView onNavigate={vi.fn()} />)
+
+    expect(await screen.findByText('Não foi possível carregar as memórias.')).toBeTruthy()
+    expect(container.querySelector('circle[fill="#7d6fc0"]')).not.toBeNull()
+  })
+
+  it('envia o ID ao navegar para uma memória e ignora o Geral', () => {
+    const onNavigate = vi.fn()
+    graph.nodes[4].x = 20
+    graph.nodes[4].y = 20
+    graph.nodes[5].x = 40
+    graph.nodes[5].y = 40
+    const { container } = render(<GraphView onNavigate={onNavigate} />)
+
+    fireEvent.doubleClick(container.querySelector('circle[fill="#5a9ea0"]')!)
+    fireEvent.doubleClick(container.querySelector('circle[fill="#8a8a94"]')!)
+
+    expect(onNavigate).toHaveBeenCalledTimes(1)
+    expect(onNavigate).toHaveBeenCalledWith({ type: 'memory', id: 'mem-one' })
+  })
+
+  it('desenha arestas por tag na cor própria', () => {
+    graph.nodes[1].x = 10
+    graph.nodes[1].y = 10
+    graph.nodes[4].x = 20
+    graph.nodes[4].y = 20
+    const { container } = render(<GraphView onNavigate={vi.fn()} />)
+    const tagEdge = container.querySelector('line[stroke="#4a7a7c"]')
+
+    expect(tagEdge).not.toBeNull()
+    expect(tagEdge!.getAttribute('marker-end')).toBeNull()
+  })
+
+  it('lista Geral na barra lateral acima dos projetos e na legenda', () => {
+    render(<GraphView onNavigate={vi.fn()} />)
+    const sidebar = screen.getByText('Projetos').parentElement!
+    const buttons = sidebar.querySelectorAll('button')
+
+    expect(buttons[0].textContent).toContain('Geral')
+    expect(buttons[1].textContent).toContain('Projeto')
+    expect(screen.getByText('Memória')).toBeTruthy()
+    expect(screen.getAllByText('Geral').length).toBeGreaterThanOrEqual(2)
   })
 })

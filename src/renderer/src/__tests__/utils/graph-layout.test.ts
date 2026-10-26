@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { GRAPH_NODE_COLORS, buildGraph } from '../../utils/graph-layout'
+import { GRAPH_NODE_COLORS, buildGraph, type GraphEdge } from '../../utils/graph-layout'
 import type { AiMemory, Goal, Habit, Project, StickyNote, StoredFile, Task } from '../../types'
 
 const NOW = '2025-01-01T00:00:00.000Z'
@@ -100,11 +100,14 @@ function makeMemory(overrides: Partial<AiMemory> & { id: string }): AiMemory {
   }
 }
 
-function graphWithMemories(memories: AiMemory[], projects: Project[] = []) {
+function graphWithMemories(
+  memories: AiMemory[],
+  projects: Project[] = []
+): ReturnType<typeof buildGraph> {
   return buildGraph(projects, [], [], [], [], [], memories)
 }
 
-function tagEdgesOf(edges: { source: unknown; target: unknown; type: string }[], id: string) {
+function tagEdgesOf(edges: GraphEdge[], id: string): GraphEdge[] {
   return edges.filter((edge) => edge.type === 'tag' && (edge.source === id || edge.target === id))
 }
 
