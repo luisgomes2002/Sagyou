@@ -303,7 +303,10 @@ const unarchiveProject: Handler = (args, scope, phase, store) => {
 const deleteProject: Handler = (args, scope, phase, store) => {
   const project = resolveProject(args, scope, store)
   const tasks = store.tasks.filter((task) => task.projectId === project.id).length
-  const resumo = `Excluir projeto "${project.name}" e ${tasks} tarefa(s)`
+  const notes = store.notes.filter((note) => note.projectId === project.id).length
+  const resumo =
+    `Excluir projeto "${project.name}" e ${tasks} tarefa(s)` +
+    (notes ? `, com ${notes} nota(s) do canvas` : '')
   if (phase === 'apply') store.deleteProject(project.id)
   return done(project.id, resumo, { tarefasExcluidas: tasks })
 }

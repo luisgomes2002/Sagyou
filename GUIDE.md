@@ -145,6 +145,10 @@ indisponíveis até o desbloqueio. Não registre um handler de dados antes dela.
 O índice global FTS5 é derivado: salvamentos sincronizam suas entradas e a
 importação de backup o reconstrói após restaurar store e memórias. Conversas não
 são mais indexadas. Nunca use o índice como fonte dos registros originais.
+Importação e snapshot automático passam por `repairBackup` antes de
+`isValidBackup`: sobras que o próprio app gravou (sprint/nota de projeto
+excluído, horário do planner com fim ≤ início) são consertadas, não recusam o
+arquivo. Validação nova que recuse dado já existente precisa de reparo junto.
 O texto extraído de arquivos suportados mora em `file_search_content`, também
 derivado e ligado por `file_id` sem FK: `persistAll` remove e reinsere `files`,
 e um cascade apagaria o cache. Upload e reconstrução usam `document-parser.ts`;
