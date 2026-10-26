@@ -30,7 +30,7 @@ function Row({
       aria-label={`${item.title} — ${style.label}`}
       className={`group flex w-full items-start gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-colors ${
         selected
-          ? 'border-[#7c3aed] bg-[#2d2350]'
+          ? 'border-[#3a3a42] bg-[#2a2a30]'
           : 'border-[#2b2b31] bg-[#1b1b20] hover:border-[#3a3a42] hover:bg-[#222228]'
       }`}
     >
@@ -75,7 +75,7 @@ export function SessionRail({
           type="button"
           onClick={onNew}
           disabled={starting}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-violet-700 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-violet-600 disabled:cursor-wait disabled:opacity-70"
+          className="inline-flex items-center gap-1.5 rounded-lg bg-[#6d5bb8] px-2.5 py-1.5 text-xs font-medium text-white hover:bg-[#7b69c6] disabled:cursor-wait disabled:opacity-70"
         >
           {starting ? 'Abrindo terminal…' : 'Nova sessão'}
         </button>

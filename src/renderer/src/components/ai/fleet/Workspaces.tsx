@@ -49,7 +49,7 @@ function Header({
 }
 
 const stopButton =
-  'inline-flex items-center gap-1.5 rounded-lg border border-[#2b2b31] px-3 py-1.5 text-xs text-[#e04040] hover:bg-[#222227]'
+  'inline-flex items-center gap-1.5 rounded-lg border border-[#2b2b31] px-3 py-1.5 bg-[#2a2a30] text-xs text-[#ec6a6a] hover:bg-[#303036]'
 
 // ---------------------------------------------------------------------------
 // A code agent that is running right now
@@ -102,7 +102,7 @@ export function LiveRunWorkspace({
                   type="checkbox"
                   checked={run.autoApprove}
                   onChange={(event) => onSetAuto(run.id, event.target.checked)}
-                  className="accent-violet-600"
+                  className="accent-[#6d5bb8]"
                 />
                 Aprovar ações automaticamente
               </label>
