@@ -1,162 +1,153 @@
 # Sagyou
 
-> Kanban pessoal offline construído com Electron, React e TypeScript.
+**Seu espaço de trabalho pessoal, offline e no seu computador.** Tarefas, hábitos, metas, finanças e notas em um só app, com sessões de agentes de código (Codex, Claude Code, OpenCode) rodando ao lado, em terminais isolados.
 
 ![Electron](https://img.shields.io/badge/Electron-47848F?style=flat&logo=electron&logoColor=white)
 ![React](https://img.shields.io/badge/React-61DAFB?style=flat&logo=react&logoColor=black)
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat&logo=typescript&logoColor=white)
+![SQLite](https://img.shields.io/badge/SQLite-003B57?style=flat&logo=sqlite&logoColor=white)
 ![Offline](https://img.shields.io/badge/100%25-Offline-brightgreen?style=flat)
 
----
-
-## Capturas de tela
-
-<table>
-  <tr>
-    <td><img src="https://github.com/user-attachments/assets/eb3a5c35-829f-480a-b1d7-7dbc7e84de14" alt="Board"/></td>
-    <td><img src="https://github.com/user-attachments/assets/5bec424d-d8fc-4157-9770-10fb08a85803" alt="Board - modal de tarefa"/></td>
-  </tr>
-  <tr>
-    <td><img src="https://github.com/user-attachments/assets/07afcbc4-6625-415b-bb2a-af5499f485d7" alt="Hábitos"/></td>
-    <td><img src="https://github.com/user-attachments/assets/2eb079f9-896c-4853-a1ab-ca13ec3b5721" alt="Metas"/></td>
-  </tr>
-  <tr>
-    <td><img src="https://github.com/user-attachments/assets/c86a7a34-9271-4798-bcb0-54ab6f50d4ed" alt="Canvas"/></td>
-    <td><img src="https://github.com/user-attachments/assets/7b1bd2c3-f4c9-4faf-a25a-3b5d9fd2949c" alt="Lista de compras"/></td>
-  </tr>
-  <tr>
-    <td><img src="https://github.com/user-attachments/assets/679efc5c-fd4e-4e76-8bf0-3175ef91a22d" alt="Upcoming"/></td>
-    <td><img src="https://github.com/user-attachments/assets/79510096-8e0d-4844-a3a2-9260913d2e0a" alt="Relatórios"/></td>
-  </tr>
-  <tr>
-    <td><img src="https://github.com/user-attachments/assets/05ac6c2e-d5dd-4c82-9d29-855afa538827" alt="Importação via IA"/></td>
-    <td><img src="https://github.com/user-attachments/assets/9167dc07-f098-4b53-9241-175d772fdf14" alt="Busca"/></td>
-  </tr>
-  <tr>
-    <td colspan="2"><img src="https://github.com/user-attachments/assets/30fd8017-a4e6-4921-8068-676272ead630" alt="Visão geral"/></td>
-  </tr>
-</table>
+- **Local de verdade.** Tudo fica em um banco SQLite na sua máquina. Sem conta, sem nuvem, sem telemetria.
+- **Um app, várias áreas.** Kanban, planejamento, hábitos, metas, finanças, canvas, grafo e arquivos compartilham os mesmos projetos.
+- **IA do jeito que você já usa.** Em vez de um chat próprio, o Sagyou abre o CLI que você já tem instalado, numa worktree Git isolada, e dá a ele acesso controlado aos seus dados por MCP.
 
 ---
 
-## Funcionalidades
+## Instalação
 
-|                           |                                                                                                                                                                                                                                                                                                                      |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Kanban**                | Quadros com colunas customizáveis, sprints, prioridades e múltiplos cronômetros por tarefa                                                                                                                                                                                                                           |
-| **Hábitos**               | Rastreamento diário com histórico e streak                                                                                                                                                                                                                                                                           |
-| **Metas**                 | Acompanhamento de objetivos pessoais                                                                                                                                                                                                                                                                                 |
-| **Financeiro**            | Transações, metas financeiras e análises, com listas de compras em múltiplas moedas (BRL, USD, JPY). Detalhe um lançamento em itens e categorias para que a análise reflita como o dinheiro foi gasto, sem duplicar valores nos totais                                                                               |
-| **Canvas**                | Notas adesivas livres com conexões e blocos de texto independentes para títulos, subtítulos e anotações, com fonte e largura ajustáveis                                                                                                                                                                             |
-| **Grafo**                 | Mapa interativo de projetos, inclusive arquivados, tarefas, notas, metas e hábitos; blocos de texto do canvas não aparecem no grafo                                                                                                                                                                                  |
-| **Upcoming**              | Tarefas com data de vencimento próxima                                                                                                                                                                                                                                                                               |
-| **Relatórios**            | Visão geral de produtividade                                                                                                                                                                                                                                                                                         |
-| **Busca**                 | Busca global (Ctrl+K) por área, tipo e projeto, com trechos e resultados adicionais                                                                                                                                                                                                                                                                                           |
-| **Arquivos**              | Anexos por projeto, guardados localmente                                                                                                                                                                                                                                                                             |
-| **Agentes de código**     | Abra sessões do Codex, Claude Code ou OpenCode direto no terminal, dentro do Sagyou: cada uma roda em uma worktree isolada, e o patch só chega ao seu projeto depois da sua revisão e aprovação |
-| **Memória**               | Decisões, tradeoffs e contexto que os agentes consultam e gravam pelo MCP entre sessões. Painel dedicado para listar, fixar e restaurar memórias |
-| **Importação via IA**     | Cole JSON gerado por um LLM — o sidebar tem "Copiar tudo" para gerar um prompt pronto com schema e tags                                                                                                                                                                                                              |
-| **Exportação para Excel** | Exporte projetos, tarefas, hábitos, metas e dados financeiros em `.xlsx`                                                                                                                                                                                                                                             |
-| **Backup**                | Exportação e restauração de dados em JSON, incluindo anexos, imagens de tarefas e memórias. O app também salva snapshots locais ao abrir e a cada hora em `userData/backups/`, mantendo os sete mais recentes. Abra a pasta pelo menu Backup |
+Baixe o instalador da sua plataforma na página de [Releases](https://github.com/luisgomes2002/Sagyou/releases):
+
+| Plataforma | Formato           |
+| ---------- | ----------------- |
+| Windows    | instalador `.exe` |
+| macOS      | `.dmg`            |
+| Linux      | `.AppImage`, `.deb` |
+
+Não é preciso instalar Python, Node nem nada além do app. Para usar as sessões de código, tenha ao menos um dos CLIs (Codex, Claude Code ou OpenCode) instalado e autenticado.
 
 ---
 
-## Agentes de código
+## O que tem dentro
 
-A IA do Sagyou é o próprio CLI que você já usa. Em **Sessões de código** (barra lateral, seção IA), escolha o projeto e a pasta autorizada, ou uma sessão geral, e o harness: **Codex**, **Claude Code** ou **OpenCode** instalado localmente. A sessão abre direto no terminal, como rodar `claude` ou `codex` à mão: você digita o pedido ao CLI. Cada CLI usa a própria conta e guarda o próprio histórico; o Sagyou não chama modelo por API, não guarda chaves e não registra gasto de tokens.
+### Organização
 
-O CLI lê e altera somente os arquivos de uma **worktree isolada**; vários agentes podem trabalhar ao mesmo tempo no mesmo repositório, e um repositório criado só com `git init` também funciona (o Sagyou cria uma base temporária sem fazer commit na sua branch). Dados do Sagyou — tarefas, projetos, finanças, memórias — chegam ao CLI exclusivamente pelo **MCP local**, com credencial efêmera limitada ao projeto, ao perfil financeiro e às permissões da execução. Pelo MCP o agente lê e também altera seus dados: cria e edita projetos e colunas; edita, move (inclusive entre projetos), conclui, reabre e exclui tarefas; cria, edita e registra progresso de metas; cria e edita notas; lança e edita transações, cria tabelas e categorias no perfil financeiro da sessão; e edita, arquiva ou resolve memórias contraditórias. Exclusões, lançamentos de dinheiro, arquivar projeto e mexer em tabelas ou perfis financeiros pedem sua aprovação; o resto entra direto. Ficam só com você: pastas de código do projeto, trocar a moeda de uma tabela e escrever em outro perfil financeiro. Essas aprovações não aprovam o patch.
+| Área             | O que faz                                                                                              |
+| ---------------- | ------------------------------------------------------------------------------------------------------ |
+| **Início**       | Painel com o resumo do dia: tarefas, hábitos, metas e saldo                                            |
+| **Board**        | Kanban por projeto com colunas próprias, sprints, prioridades, tags, imagens e vários cronômetros simultâneos |
+| **Próximas**     | Tarefas com prazo, em ordem de vencimento                                                              |
+| **Concluídas**   | Histórico do que já foi entregue                                                                       |
+| **Planejamento** | Agenda semanal com blocos de horário ligados a tarefas e hábitos                                       |
+| **Canvas**       | Notas adesivas livres, conectáveis e ligadas a tarefas, mais blocos de texto para títulos e anotações  |
+| **Grafo**        | Mapa interativo das relações entre projetos, tarefas, notas, metas e hábitos                           |
+| **Arquivos**     | Anexos por projeto, guardados localmente e pesquisáveis pelo conteúdo (PDF, DOCX, planilhas e mais)    |
 
-Ao sair normalmente do CLI, o Sagyou valida todos os caminhos alterados, inclusive renames e symlinks, e arquiva o diff. A sessão interativa termina sem aplicar nada ao projeto original; o diff arquivado fica disponível para consulta no painel (execuções arquivadas expiram em 24 horas).
+### Vida pessoal
 
-Para liberar uma pasta de código a um projeto, abra o projeto para edição e, em **Caminhos de código**, clique em **Adicionar pasta**. O projeto precisa estar salvo antes. A primeira pasta já fica marcada; dá para marcar mais de uma, e uma sessão roda em uma pasta só.
+| Área           | O que faz                                                                                           |
+| -------------- | --------------------------------------------------------------------------------------------------- |
+| **Hábitos**    | Registro diário com histórico e sequência                                                           |
+| **Metas**      | Metas de quantidade (progresso acumulado) ou de conclusão única, opcionalmente ligadas a um projeto |
+| **Relatórios** | Visão geral da sua produtividade                                                                    |
 
-### Remoção do chat por API
+### Financeiro
 
-Versões anteriores tinham um chat com provedores de API, histórico de conversas e controle de gasto. Isso foi removido. Na primeira abertura da versão nova, o Sagyou copia as conversas e os arquivos do chat para uma pasta `backups/pre-remocao-chat-<data>/` (dentro do diretório de dados do app) e depois apaga as conversas, as imagens e os documentos do chat, o registro de gastos, as métricas e as chaves de API. **As chaves de API não vão para nenhum backup e não podem ser recuperadas.** A pasta com as conversas pode ser lida à mão, mas não é importável pelo app. Detalhes em [`docs/data-migrations.md`](docs/data-migrations.md).
+- Tabelas de transações em **BRL, USD e JPY**, com valores guardados como decimais exatos (nada de erro de arredondamento).
+- **Perfis financeiros** separados (ex.: pessoal e empresa), cada um com suas tabelas e categorias.
+- **Detalhamento de lançamentos**: divida uma fatura de cartão em itens com categoria própria, sem contar o valor duas vezes. O que não foi detalhado aparece como "Cartão não detalhado".
+- Faturas espelhadas entre tabelas, transferências entre moedas, dívidas com pagamentos parciais, metas financeiras, listas de compras e análises por categoria.
+- Comprovantes anexados, histórico de alterações e marcação de conciliação bancária.
+- Visão **consolidada** que mantém cada moeda separada e mostra a conversão só como referência.
+
+### Ferramentas
+
+- **Busca global (Ctrl+K)** em tudo: tarefas, notas, metas, transações, arquivos e memórias, com filtros por área e projeto.
+- **Exportação para Excel** de projetos, tarefas, hábitos, metas e finanças.
+- **Importação via IA**: o botão "Copiar tudo" gera um prompt com schema e tags; cole o JSON que o modelo devolver para criar tarefas.
+- **Backup completo** em um único `.json`, com anexos, imagens e memórias. Snapshots automáticos ao abrir e a cada hora (os sete mais recentes ficam guardados).
+- **Senha opcional** para bloquear o app (menu **Opções → Segurança**).
+- Tema, escala de texto e opções de acessibilidade.
 
 ---
 
-## Tecnologias
+## Sessões de código
 
-- [Electron](https://www.electronjs.org/) + [electron-vite](https://electron-vite.org/)
-- Ponte IPC tipada a partir do preload — renderer e métodos expostos compartilham o mesmo contrato
-- [React](https://react.dev/) + [TypeScript](https://www.typescriptlang.org/)
-- [Zustand](https://zustand-demo.pmnd.rs/) — gerenciamento de estado
-- [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) — armazenamento local em SQLite
-- [decimal.js](https://mikemcl.github.io/decimal.js/) — aritmética monetária exata
-- [D3 Force](https://d3js.org/d3-force) — simulação e layout da visão de grafo
-- [dnd kit](https://dndkit.com/) — drag and drop
-- [Tailwind CSS](https://tailwindcss.com/) — estilização
-- [SheetJS](https://sheetjs.com/) — exportação para Excel e leitura de XLSX/ODS
-- [pdfjs-dist](https://github.com/mozilla/pdf.js) — extração de texto de PDF
-- [mammoth.js](https://github.com/mwilliamson/mammoth.js) — extração de texto de DOCX/ODT
-- [Vitest](https://vitest.dev/) — testes
-- [node-pty](https://github.com/microsoft/node-pty) + [xterm.js](https://xtermjs.org/) — terminal dos agentes
+Em **Sessões de código** (seção IA da barra lateral) você abre um terminal com **Codex**, **Claude Code** ou **OpenCode**, exatamente como rodaria `codex` ou `claude` à mão. Cada CLI usa a própria conta e guarda o próprio histórico. O Sagyou não chama modelo por API, não guarda chaves e não mede gasto de tokens.
+
+**Isolamento.** Cada sessão roda em uma worktree Git separada, então vários agentes podem trabalhar no mesmo repositório ao mesmo tempo sem tocar nos seus arquivos. Funciona até em uma pasta sem Git ou só com `git init`, sem criar commits na sua branch. Ao sair do CLI, o Sagyou valida todos os caminhos alterados (inclusive renames e symlinks) e arquiva o diff para revisão. Nada é aplicado ao projeto original automaticamente.
+
+**Acesso aos seus dados por MCP.** O agente consulta e altera tarefas, projetos, notas, metas, finanças e memórias por um servidor MCP local, com credencial temporária limitada àquela sessão, ao projeto e ao perfil financeiro escolhidos.
+
+| Sem aprovação                                       | Pede sua aprovação                                    | Só você faz                         |
+| --------------------------------------------------- | ----------------------------------------------------- | ----------------------------------- |
+| criar/editar projetos, colunas, tarefas, notas e metas | qualquer exclusão                                     | definir as pastas de código         |
+| mover, concluir e reabrir tarefas                   | lançamentos de dinheiro                               | trocar a moeda de uma tabela        |
+| editar e arquivar memórias                          | arquivar projeto, criar tabelas e perfis financeiros  | escrever em outro perfil financeiro |
+
+Aprovar uma ação de dados não aprova o patch de código.
+
+**Configurando um projeto.** Edite o projeto (salvo) e, em **Caminhos de código**, clique em **Adicionar pasta**. Também dá para abrir uma sessão geral, sem projeto.
+
+### Memória
+
+Decisões, tradeoffs e contexto que os agentes gravam e consultam entre sessões. Na tela **Memória** você lista, fixa, restaura e apaga. Memórias pouco usadas são arquivadas com o tempo (nunca apagadas sozinhas); as fixadas ficam para sempre. Ao fim de cada sessão, um resumo curto do que aconteceu é salvo para a próxima.
+
+> **Vindo de uma versão antiga?** O chat por API foi removido. Na primeira abertura, as conversas são copiadas para `backups/pre-remocao-chat-<data>/` e depois apagadas, junto com as chaves de API, que não podem ser recuperadas. Detalhes em [`docs/data-migrations.md`](docs/data-migrations.md).
+
+---
+
+## Seus dados
+
+Tudo fica no diretório de dados do app (`userData`):
+
+| Caminho                  | Conteúdo                                                                  |
+| ------------------------ | ------------------------------------------------------------------------- |
+| `kanban.db`              | banco SQLite com todos os registros, memórias e o índice de busca         |
+| `files/`, `task-images/` | anexos e imagens de tarefas                                               |
+| `backups/`               | snapshots automáticos e de antes de cada importação                       |
+| `agent-runs/`            | log e diff congelados de cada sessão de código (expiram em 24 horas)      |
+| `ai-config.json`         | preferências dos agentes; sem chaves, fora dos backups                    |
+| `password-security.json` | derivação da senha opcional (não a senha em si); fora dos backups         |
+
+O Sagyou não envia nada a lugar nenhum por conta própria. Os CLIs de código são programas externos, com a própria conta e política de dados.
 
 ---
 
 ## Desenvolvimento
 
-O código do processo principal fica em `src/main`: `index.ts` registra os fluxos,
-`handlers/` expõe o IPC, `store.ts` cuida do SQLite e `modules/` agrupa as
-implementações por área (agentes, memória, arquivos, busca, web e finanças).
-O renderer fica em `src/renderer/src`, com componentes, estado e utilitários.
+Requisitos: **Node 24** e **Python 3** (usado só no build para empacotar o leitor de documentos; o usuário final não precisa dele).
 
 ```bash
-npm install       # instalar dependências
-npm run dev       # iniciar servidor de desenvolvimento
-npm run typecheck # validar TypeScript de main e renderer
-npm test          # rodar os testes
-npm run lint      # ESLint
+npm install
+npm run dev          # app em modo desenvolvimento, com HMR
+npm test             # testes (Vitest)
+npm run typecheck    # TypeScript do main e do renderer
+npm run lint         # ESLint
+
+npm run build:win    # instaladores
+npm run build:mac
+npm run build:linux
 ```
 
-Para mudanças na persistência, consulte `GUIDE.md`: a normalização compartilhada da carga e da importação fica em `src/renderer/src/store/normalization.ts`.
+**Estrutura.** `src/main` é o processo principal do Electron (SQLite, IPC, terminais dos agentes, MCP), `src/preload` expõe a ponte IPC tipada e `src/renderer/src` é a interface em React com estado em Zustand.
 
-### Fluxo de contribuição
+**Stack.** Electron + electron-vite, React, TypeScript, Zustand, better-sqlite3, Tailwind CSS, dnd kit, D3 Force, decimal.js, SheetJS, node-pty + xterm.js e Vitest.
 
-Toda mudança segue spec → plano → build → review → PR, com aprovação humana na spec, no plano e no merge; nunca se commita direto na `main`. Branches `feature/`, `fix/` e `chore/`, commits no padrão Conventional Commits e um template de PR em `.github/`. Para quem usa Claude Code há uma skill por estágio (`/sagyou-spec`, `/sagyou-plan`, `/sagyou-build`, `/sagyou-review`, `/sagyou-pr`, `/sagyou-fix`) e subagentes em `.claude/`. Detalhes em [`docs/workflow.md`](docs/workflow.md).
+### Contribuindo
 
-## Build
+Toda mudança segue **spec → plano → build → review → PR**, com aprovação humana na spec, no plano e no merge. Branches `feature/`, `fix/` ou `chore/`, commits em Conventional Commits, nunca direto na `main`. Quem usa Claude Code tem uma skill por etapa (`/sagyou-spec`, `/sagyou-plan`, `/sagyou-build`, `/sagyou-review`, `/sagyou-pr`, `/sagyou-fix`).
 
-```bash
-npm run build:win    # Windows
-npm run build:mac    # macOS
-npm run build:linux  # Linux
-```
+- [`docs/workflow.md`](docs/workflow.md): o fluxo completo
+- [`GUIDE.md`](GUIDE.md): orientação para agentes de código
+- [`CLAUDE.md`](CLAUDE.md): arquitetura detalhada e regras de dados
 
 ---
 
-## Financeiro
+## Licença
 
-Além do valor, data, categoria e origem de cada lançamento, você pode **detalhar uma transação** em itens. Cada item pode ter descrição, valor, categoria e data de compra próprios — útil, por exemplo, para separar uma fatura de cartão entre mercado, transporte e lazer. No consolidado, um item da fatura também pode ser vinculado ao lançamento espelho de outra tabela: a fatura continua inteira e a cópia não duplica o total.
-
-Os itens apenas repartem o valor do lançamento principal: a soma deles não pode ultrapassá-lo e eles não são contabilizados novamente nos totais. Nas análises por categoria, a parcela detalhada aparece nas categorias dos itens; se uma transação de categoria **Cartão** ficar parcialmente detalhada, o restante aparece como **Cartão não detalhado** para deixar claro o que ainda falta classificar.
-
----
-
-## Dados
-
-Tudo fica na sua máquina, no diretório de dados do app (`userData`):
-
-| Arquivo                 | Conteúdo                                                                                                                 |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `kanban.db`             | banco SQLite com projetos, tarefas, hábitos, metas, finanças (incluindo detalhes de transações) e memórias                |
-| `files/`                | anexos enviados                                                                                                          |
-| `task-images/`          | imagens anexadas a tarefas                                                                                               |
-| `ai-config.json`        | configuração dos agentes (executor padrão, nome de exibição); não guarda chaves de API e não entra em backups              |
-| `password-security.json` | derivado com salt da senha opcional do app; não contém a senha e não entra em backups                                  |
-| `backups/`              | snapshots locais automáticos, de pré-importação e a pasta única `pre-remocao-chat-*`                                      |
-| `agent-runs/`           | execuções arquivadas dos agentes (log + diff congelados), ligadas a projeto e sessão                                       |
-
-O Sagyou não envia seus dados a lugar nenhum por conta própria. Os agentes de código são CLIs externos com a própria conta e a própria política de dados: o que o CLI enviar ao seu provedor depende dele, não do Sagyou.
-
-O `kanban.db` também guarda um índice local de busca FTS5. Ele é derivado dos registros e das memórias e pode ser reconstruído sem alterar os dados originais.
-
-Para bloquear o app, abra o menu **Opções** na barra lateral e escolha **Segurança**. Você pode ativar, alterar ou desativar uma senha; quando ativa, ela é solicitada antes de os dados carregarem.
-
----
+[Sagyou Noncommercial License](LICENSE): uso, modificação e redistribuição livres para fins **não comerciais**, mantendo a atribuição. Dependências de terceiros em [`THIRD-PARTY-LICENSES.md`](THIRD-PARTY-LICENSES.md).
 
 ## Agradecimentos
 
-- [AI Memory](https://github.com/akitaonrails/ai-memory) por [Fabio Akita](https://github.com/akitaonrails) — sistema de memória durável para agentes de IA com indexação e busca, que inspirou a arquitetura de memória do Sagyou.
+- [AI Memory](https://github.com/akitaonrails/ai-memory), de [Fabio Akita](https://github.com/akitaonrails), que inspirou a arquitetura de memória do Sagyou.
