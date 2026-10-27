@@ -95,6 +95,7 @@ import { fetchWeb } from './modules/web/web-fetch'
 import { renderWeb } from './modules/web/web-render'
 import { getExchangeRate } from './modules/financial/financial-exchange'
 import { startSagyouMcpBroker } from './modules/agent/sagyou-mcp'
+import { configureLog, createLogger, errorMessage, log } from './modules/logs/logger'
 import { captureBase, diffSince, type AgentBase, type DiffLineItem } from './modules/code/code-diff'
 import { safeAttachmentName } from './modules/files/backup-files'
 import {
@@ -173,6 +174,8 @@ function protectDataIpc(ipc: IpcMain): void {
     })) as IpcMain['on']
 }
 const sagyouMcp = startSagyouMcpBroker({
+  readLogs: (query) => log.readLogs(query),
+  onToolCall: (call) => log.info('mcp', 'tool_call', call),
   readScopedData: (domain, session, projectId) => {
     const data = loadData()
     if (domain === 'tasks')
@@ -537,7 +540,15 @@ function requestMcpWriteApproval(
   }
   return parkMcpApproval(run.pendingApprovals, request, (card) =>
     mainWindow?.webContents.send('ai:code-agent:approve-request', card)
-  )
+  ).then((approved) => {
+    // Refusal, closing and timeout all resolve false; only the outcome is logged.
+    log.info('mcp', 'approval', {
+      runId,
+      tool: name,
+      decision: approved ? 'approved' : 'not_approved'
+    })
+    return approved
+  })
 }
 
 const mcpWriteQueue = new McpWriteQueue(
@@ -1097,6 +1108,37 @@ function createWindow(): void {
 app.commandLine.appendSwitch('lang', 'pt-BR')
 
 app.whenReady().then(() => {
+  // Diagnostic log first, so migrations and startup failures are recorded.
+  // Lives in userData/logs (outside the backup); in dev it also echoes to the console.
+  configureLog(
+    createLogger({
+      // Dev shares userData with the installed app; keep its events apart.
+      dir: join(app.getPath('userData'), is.dev ? 'logs-dev' : 'logs'),
+      echo: is.dev
+        ? (entry) =>
+            (entry.level === 'info' ? console.log : console.warn)(
+              `[${entry.area}] ${entry.event}`,
+              entry.msg ?? '',
+              entry.data ?? ''
+            )
+        : undefined
+    })
+  )
+  log.prune()
+  log.info('app', 'started', { version: app.getVersion(), platform: process.platform, dev: is.dev })
+  // The monitor only observes: Electron still handles the crash as before.
+  process.on('uncaughtExceptionMonitor', (error) =>
+    log.error('app', 'uncaught_exception', { msg: errorMessage(error) })
+  )
+  // A listener replaces Node's default warning, so print it as before too.
+  process.on('unhandledRejection', (reason) => {
+    console.error('Unhandled rejection:', reason)
+    log.error('app', 'unhandled_rejection', { msg: errorMessage(reason) })
+  })
+  app.on('render-process-gone', (_, __, details) =>
+    log.error('app', 'renderer_gone', { reason: details.reason, exitCode: details.exitCode })
+  )
+
   electronApp.setAppUserModelId('com.sagyou')
   const passwordState = loadPasswordConfig()
   passwordConfig = passwordState.config
@@ -1125,8 +1167,7 @@ app.whenReady().then(() => {
         const res = saveSkill(dir, { name, body })
         if ('skill' in res) migrated++
       }
-      if (migrated > 0)
-        console.log(`[skills] migrated ${migrated} template(s) from ai-templates.json`)
+      if (migrated > 0) log.info('app', 'skills_migrated', { count: migrated })
     } catch (_) {
       /* best-effort — a corrupt json is silently skipped */
     }
@@ -1717,6 +1758,11 @@ app.whenReady().then(() => {
               run.worktreeMergeError =
                 'o agente alterou arquivo fora do escopo permitido: ' +
                 scope.rejectedPaths.join(', ')
+              log.error('delivery', 'failed', {
+                runId,
+                reason: 'out_of_scope',
+                paths: scope.rejectedPaths.length
+              })
               exitCode = 2
               emit(
                 '[worktree] caminhos recusados por escopo: ' +
@@ -1730,6 +1776,7 @@ app.whenReady().then(() => {
                 // Closing the native chat is a terminal outcome, never a parked
                 // request for delivery. archiveAgentRun freezes this worktree diff.
                 run.worktreeMergeError = 'sessão encerrada sem entrega'
+                log.info('delivery', 'not_applied', { runId, reason: 'session_closed' })
                 emit('[worktree] diff arquivado; alterações não aplicadas ao projeto original.\n')
               } else {
                 const fileCount = changes.fileCount
@@ -1762,7 +1809,12 @@ app.whenReady().then(() => {
                     }
                   })
                   emit('[worktree] ' + fileCount + ' arquivo(s) aplicado(s) após sua aprovação.\n')
+                  log.info('delivery', 'applied', { runId, files: fileCount })
                 } else {
+                  log.info('delivery', 'not_applied', {
+                    runId,
+                    reason: run.abort ? 'stopped' : 'refused'
+                  })
                   run.worktreeMergeError = run.abort
                     ? 'execução interrompida'
                     : 'alterações não aprovadas pelo usuário'
@@ -1774,6 +1826,7 @@ app.whenReady().then(() => {
           } catch (error) {
             run.worktreeMergeError =
               error instanceof Error ? error.message : 'erro ao preparar alterações'
+            log.error('delivery', 'failed', { runId, msg: errorMessage(error) })
             if (exitCode === 0) exitCode = 2
             emit(
               '[erro] alterações do worktree não foram aplicadas: ' + run.worktreeMergeError + '\n'
@@ -1782,6 +1835,7 @@ app.whenReady().then(() => {
             await mcpSession.cleanup()
             const secs = ((Date.now() - run.startedAt) / 1000).toFixed(1)
             emit('[' + externalHarness.command + '] duração: ' + secs + 's\n')
+            log.info('pty', 'exited', { runId, exitCode, seconds: Number(secs) })
             const terminal = run.worktreeMergeError
               ? '[agente encerrado — código ' + exitCode + '; alterações não aplicadas]'
               : '[agente encerrado — código ' + exitCode + ']'
@@ -1819,7 +1873,13 @@ app.whenReady().then(() => {
             }
           })
           run.externalChild = terminal
+          log.info('pty', 'started', { runId, harness: launch.label })
         } catch (error) {
+          log.error('pty', 'start_failed', {
+            runId,
+            harness: launch.label,
+            msg: errorMessage(error)
+          })
           emit(
             '[erro ao iniciar ' +
               launch.label +
@@ -2115,7 +2175,9 @@ app.whenReady().then(() => {
     })
   }
   if (!shouldRunLegacyChatRemoval({ isDev: is.dev, optIn: process.env.SAGYOU_RUN_LEGACY_CHAT_REMOVAL })) {
-    console.warn('[legacy-chat] dev build: removal skipped (set SAGYOU_RUN_LEGACY_CHAT_REMOVAL=1 to run it)')
+    log.warn('app', 'legacy_chat_removal_skipped', {
+      msg: 'dev build: removal skipped (set SAGYOU_RUN_LEGACY_CHAT_REMOVAL=1 to run it)'
+    })
     openWindows()
   } else {
     void startLegacyChatRemoval({
@@ -2138,7 +2200,7 @@ app.whenReady().then(() => {
           stripAiConfig: () => stripAiConfigFile(aiConfigPath()),
           now: () => new Date()
         }),
-      warn: (message) => console.warn(`[legacy-chat] ${message}`)
+      warn: (message) => log.warn('app', 'legacy_chat', { msg: message })
     }).finally(openWindows)
   }
 })

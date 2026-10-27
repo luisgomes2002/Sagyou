@@ -24,6 +24,7 @@ export const MCP_PERMISSIONS = [
   'criar_task',
   'ler_financeiro',
   'ler_projeto',
+  'read_logs',
   ...MCP_RENDERER_WRITE_TOOLS,
   ...MCP_MEMORY_WRITE_TOOLS
 ] as const
@@ -64,6 +65,15 @@ export interface McpBrokerDeps {
     redacted: boolean
   ) => Promise<{ ok: boolean; id?: string; redacted?: boolean; error?: string }>
   createTask: (session: McpSession, args: Record<string, unknown>) => Promise<unknown>
+  /** Diagnostic log reader; absent means read_logs returns no entries. */
+  readLogs?: (query: { level?: string; area?: string; since?: string; limit: number }) => unknown
+  /** Observes each tools/call: name, outcome and duration only, never arguments or results. */
+  onToolCall?: (call: {
+    runId: string
+    tool: string
+    outcome: 'ok' | 'refused' | 'error'
+    ms: number
+  }) => void
   /** Every tool of MCP_WRITE_TOOLS; absent means writes are unavailable. */
   write?: (
     session: McpSession,
@@ -82,6 +92,9 @@ process.stdin.setEncoding('utf8');
 process.stdin.on('data',chunk=>{input+=chunk;const lines=input.split('\\n');input=lines.pop()||'';for(const line of lines){if(!line)continue;try{const msg=JSON.parse(line);msg.params={...(msg.params||{}),token};socket.write(JSON.stringify(msg)+'\\n')}catch{}}});
 socket.on('data',chunk=>{buffer+=chunk;const lines=buffer.split('\\n');buffer=lines.pop()||'';for(const line of lines)if(line)process.stdout.write(line+'\\n')});
 socket.on('error',()=>process.exit(1));`
+
+const LOG_READ_LIMIT = 200
+const TOOL_UNAVAILABLE = 'Ferramenta indisponível nesta sessão MCP.'
 
 const TOOLS: { name: McpPermission; description: string; inputSchema: Record<string, unknown> }[] =
   [
@@ -212,6 +225,31 @@ const TOOLS: { name: McpPermission; description: string; inputSchema: Record<str
       inputSchema: {
         type: 'object',
         properties: { projectId: { type: 'string' } },
+        additionalProperties: false
+      }
+    },
+    {
+      name: 'read_logs',
+      description:
+        'Lê os logs de diagnóstico do Sagyou (erros, avisos, migrações, backup, PTY, MCP e entrega), do mais recente ao mais antigo. Sem dados pessoais.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          level: {
+            type: 'string',
+            enum: ['info', 'warn', 'error'],
+            description: 'warn = avisos e erros; error = só erros; info ou omitido = tudo.'
+          },
+          area: {
+            type: 'string',
+            enum: ['app', 'store', 'backup', 'pty', 'mcp', 'delivery']
+          },
+          since: {
+            type: 'string',
+            description: 'Data ISO ou janela relativa como 24h ou 7d. Padrão: 24h.'
+          },
+          limit: { type: 'integer', minimum: 1, maximum: LOG_READ_LIMIT }
+        },
         additionalProperties: false
       }
     },
@@ -354,6 +392,46 @@ function pageData(rows: unknown[], args: unknown): Record<string, unknown> {
   }
 }
 
+function logQuery(args: unknown): {
+  level?: string
+  area?: string
+  since?: string
+  limit: number
+} {
+  const input = args && typeof args === 'object' ? (args as Record<string, unknown>) : {}
+  const text = (value: unknown): string | undefined =>
+    typeof value === 'string' && value.trim() ? value.trim().slice(0, 40) : undefined
+  const limit =
+    typeof input.limit === 'number' && Number.isFinite(input.limit)
+      ? Math.min(Math.max(1, Math.floor(input.limit)), LOG_READ_LIMIT)
+      : 100
+  return {
+    ...(text(input.level) ? { level: text(input.level) } : {}),
+    ...(text(input.area) ? { area: text(input.area) } : {}),
+    ...(text(input.since) ? { since: text(input.since) } : {}),
+    limit
+  }
+}
+
+/** Outcome of one JSON-RPC reply line: protocol error, domain refusal ({ ok: false }) or ok. */
+function replyOutcome(line: string): 'ok' | 'refused' | 'error' {
+  try {
+    const message = JSON.parse(line) as {
+      error?: unknown
+      result?: { content?: { text?: string }[] }
+    }
+    if (message.error)
+      return (message.error as { message?: unknown }).message === TOOL_UNAVAILABLE
+        ? 'refused'
+        : 'error'
+    const text = message.result?.content?.[0]?.text
+    const payload = text ? (JSON.parse(text) as { ok?: unknown }) : null
+    return payload && typeof payload === 'object' && payload.ok === false ? 'refused' : 'ok'
+  } catch {
+    return 'ok'
+  }
+}
+
 function reply(socket: Socket, id: unknown, result: unknown): void {
   socket.write(JSON.stringify({ jsonrpc: '2.0', id, result }) + '\n')
 }
@@ -409,18 +487,33 @@ export function startSagyouMcpBroker(deps: McpBrokerDeps): {
             })
           } else if (request.method === 'tools/call') {
             const name = request.params?.name
+            // Same socket, but each reply also reports the call (no arguments or results).
+            const startedAt = Date.now()
+            const call = {
+              write: (line: string) => {
+                socket.write(line)
+                deps.onToolCall?.({
+                  runId: session.runId,
+                  // Never echo an arbitrary name the agent invented into the log.
+                  tool: MCP_PERMISSIONS.includes(name as McpPermission) ? String(name) : 'unknown',
+                  outcome: replyOutcome(line),
+                  ms: Date.now() - startedAt
+                })
+                return true
+              }
+            } as unknown as Socket
             if (
               typeof name !== 'string' ||
               !MCP_PERMISSIONS.includes(name as McpPermission) ||
               !session.permissions.includes(name as McpPermission)
             ) {
-              failure(socket, request.id, 'Ferramenta indisponível nesta sessão MCP.')
+              failure(call, request.id, TOOL_UNAVAILABLE)
               continue
             }
             if (WRITE_TOOL_NAMES.has(name)) {
               const args = request.params?.arguments
               if (!deps.write) {
-                failure(socket, request.id, 'Ferramenta indisponível nesta sessão MCP.')
+                failure(call, request.id, TOOL_UNAVAILABLE)
                 continue
               }
               // A domain refusal is an ordinary reply, so the agent can read it and adapt.
@@ -437,7 +530,7 @@ export function startSagyouMcpBroker(deps: McpBrokerDeps): {
                   })
                 )
                 .then((result) =>
-                  reply(socket, request.id, {
+                  reply(call, request.id, {
                     content: [{ type: 'text', text: JSON.stringify(result) }]
                   })
                 )
@@ -452,7 +545,7 @@ export function startSagyouMcpBroker(deps: McpBrokerDeps): {
             } as const
             if (typeof name === 'string' && name in dataDomain) {
               const domain = dataDomain[name as keyof typeof dataDomain]
-              reply(socket, request.id, {
+              reply(call, request.id, {
                 content: [
                   {
                     type: 'text',
@@ -469,8 +562,22 @@ export function startSagyouMcpBroker(deps: McpBrokerDeps): {
                   }
                 ]
               })
+            } else if (name === 'read_logs') {
+              reply(call, request.id, {
+                content: [
+                  {
+                    type: 'text',
+                    text: JSON.stringify(
+                      deps.readLogs?.(logQuery(request.params?.arguments)) ?? {
+                        entries: [],
+                        truncated: false
+                      }
+                    )
+                  }
+                ]
+              })
             } else if (name === 'list_projects') {
-              reply(socket, request.id, {
+              reply(call, request.id, {
                 content: [{ type: 'text', text: JSON.stringify(deps.listProjects?.() ?? []) }]
               })
             } else if (name === 'search_memory') {
@@ -479,9 +586,9 @@ export function startSagyouMcpBroker(deps: McpBrokerDeps): {
                 args && typeof args === 'object' ? (args as Record<string, unknown>) : null
               const term =
                 searchArgs && typeof searchArgs.term === 'string' ? searchArgs.term.trim() : ''
-              if (!term) failure(socket, request.id, 'term Ã© obrigatÃ³rio.')
+              if (!term) failure(call, request.id, 'term Ã© obrigatÃ³rio.')
               else
-                reply(socket, request.id, {
+                reply(call, request.id, {
                   content: [
                     {
                       type: 'text',
@@ -502,33 +609,33 @@ export function startSagyouMcpBroker(deps: McpBrokerDeps): {
               // Return one indistinguishable refusal for a missing, archived or
               // out-of-scope ID so a forged probe cannot learn its metadata.
               if (!memory || !readableMemory(memory))
-                failure(socket, request.id, 'Memória indisponível nesta sessão MCP.')
+                failure(call, request.id, 'Memória indisponível nesta sessão MCP.')
               else {
                 deps.touchMemory(memory.id)
-                reply(socket, request.id, {
+                reply(call, request.id, {
                   content: [{ type: 'text', text: JSON.stringify(memoryReadResult(memory)) }]
                 })
               }
             } else if (name === 'save_memory') {
               const prepared = memorySaveInput(request.params?.arguments, session.projectId)
-              if ('error' in prepared) failure(socket, request.id, prepared.error)
+              if ('error' in prepared) failure(call, request.id, prepared.error)
               else
                 void deps
                   .saveMemory(session, prepared.memory, prepared.redacted)
                   .then((result) =>
-                    reply(socket, request.id, {
+                    reply(call, request.id, {
                       content: [{ type: 'text', text: JSON.stringify(result) }]
                     })
                   )
                   .catch((error: unknown) =>
                     failure(
-                      socket,
+                      call,
                       request.id,
                       error instanceof Error ? error.message : 'Não foi possível salvar a memória.'
                     )
                   )
             } else if (name === 'check_memories') {
-              reply(socket, request.id, {
+              reply(call, request.id, {
                 content: [
                   {
                     type: 'text',
@@ -541,7 +648,7 @@ export function startSagyouMcpBroker(deps: McpBrokerDeps): {
                 ]
               })
             } else if (name === 'ler_tasks')
-              reply(socket, request.id, {
+              reply(call, request.id, {
                 content: [
                   {
                     type: 'text',
@@ -552,7 +659,7 @@ export function startSagyouMcpBroker(deps: McpBrokerDeps): {
                 ]
               })
             else if (name === 'ler_financeiro')
-              reply(socket, request.id, {
+              reply(call, request.id, {
                 content: [
                   {
                     type: 'text',
@@ -561,7 +668,7 @@ export function startSagyouMcpBroker(deps: McpBrokerDeps): {
                 ]
               })
             else if (name === 'ler_projeto')
-              reply(socket, request.id, {
+              reply(call, request.id, {
                 content: [
                   {
                     type: 'text',
@@ -579,18 +686,18 @@ export function startSagyouMcpBroker(deps: McpBrokerDeps): {
                   args && typeof args === 'object' ? (args as Record<string, unknown>) : {}
                 )
                 .then((result) =>
-                  reply(socket, request.id, {
+                  reply(call, request.id, {
                     content: [{ type: 'text', text: JSON.stringify(result) }]
                   })
                 )
                 .catch((error: unknown) =>
                   failure(
-                    socket,
+                    call,
                     request.id,
                     error instanceof Error ? error.message : 'Não foi possível criar a task.'
                   )
                 )
-            } else failure(socket, request.id, 'Ferramenta indisponível nesta sessão MCP.')
+            } else failure(call, request.id, TOOL_UNAVAILABLE)
           } else if (request.method === 'notifications/initialized') {
             // MCP notification: deliberately no response.
           } else failure(socket, request.id, 'Método MCP não suportado.')

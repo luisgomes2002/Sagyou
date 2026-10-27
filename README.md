@@ -109,6 +109,7 @@ Tudo fica no diretório de dados do app (`userData`):
 | `agent-runs/`            | log e diff congelados de cada sessão de código (expiram em 24 horas)      |
 | `ai-config.json`         | preferências dos agentes; sem chaves, fora dos backups                    |
 | `password-security.json` | derivação da senha opcional (não a senha em si); fora dos backups         |
+| `logs/`                  | logs de diagnóstico por dia (14 dias), sem conteúdo seu; fora dos backups  |
 
 O Sagyou não envia nada a lugar nenhum por conta própria. Os CLIs de código são programas externos, com a própria conta e política de dados.
 
