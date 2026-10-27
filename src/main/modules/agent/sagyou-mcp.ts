@@ -94,6 +94,7 @@ socket.on('data',chunk=>{buffer+=chunk;const lines=buffer.split('\\n');buffer=li
 socket.on('error',()=>process.exit(1));`
 
 const LOG_READ_LIMIT = 200
+const TOOL_UNAVAILABLE = 'Ferramenta indisponível nesta sessão MCP.'
 
 const TOOLS: { name: McpPermission; description: string; inputSchema: Record<string, unknown> }[] =
   [
@@ -419,7 +420,10 @@ function replyOutcome(line: string): 'ok' | 'refused' | 'error' {
       error?: unknown
       result?: { content?: { text?: string }[] }
     }
-    if (message.error) return 'error'
+    if (message.error)
+      return (message.error as { message?: unknown }).message === TOOL_UNAVAILABLE
+        ? 'refused'
+        : 'error'
     const text = message.result?.content?.[0]?.text
     const payload = text ? (JSON.parse(text) as { ok?: unknown }) : null
     return payload && typeof payload === 'object' && payload.ok === false ? 'refused' : 'ok'
@@ -490,7 +494,8 @@ export function startSagyouMcpBroker(deps: McpBrokerDeps): {
                 socket.write(line)
                 deps.onToolCall?.({
                   runId: session.runId,
-                  tool: typeof name === 'string' ? name.slice(0, 60) : 'invalid',
+                  // Never echo an arbitrary name the agent invented into the log.
+                  tool: MCP_PERMISSIONS.includes(name as McpPermission) ? String(name) : 'unknown',
                   outcome: replyOutcome(line),
                   ms: Date.now() - startedAt
                 })
@@ -502,13 +507,13 @@ export function startSagyouMcpBroker(deps: McpBrokerDeps): {
               !MCP_PERMISSIONS.includes(name as McpPermission) ||
               !session.permissions.includes(name as McpPermission)
             ) {
-              failure(call, request.id, 'Ferramenta indisponível nesta sessão MCP.')
+              failure(call, request.id, TOOL_UNAVAILABLE)
               continue
             }
             if (WRITE_TOOL_NAMES.has(name)) {
               const args = request.params?.arguments
               if (!deps.write) {
-                failure(call, request.id, 'Ferramenta indisponível nesta sessão MCP.')
+                failure(call, request.id, TOOL_UNAVAILABLE)
                 continue
               }
               // A domain refusal is an ordinary reply, so the agent can read it and adapt.
@@ -692,7 +697,7 @@ export function startSagyouMcpBroker(deps: McpBrokerDeps): {
                     error instanceof Error ? error.message : 'Não foi possível criar a task.'
                   )
                 )
-            } else failure(call, request.id, 'Ferramenta indisponível nesta sessão MCP.')
+            } else failure(call, request.id, TOOL_UNAVAILABLE)
           } else if (request.method === 'notifications/initialized') {
             // MCP notification: deliberately no response.
           } else failure(socket, request.id, 'Método MCP não suportado.')

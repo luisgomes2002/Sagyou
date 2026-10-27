@@ -7,7 +7,12 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mkdtemp, rm, readdir, readFile, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { createLogger, LOG_DAY_BYTE_LIMIT, LOG_RETENTION_DAYS } from '../modules/logs/logger'
+import {
+  createLogger,
+  errorMessage,
+  LOG_DAY_BYTE_LIMIT,
+  LOG_RETENTION_DAYS
+} from '../modules/logs/logger'
 
 let dir: string
 let clock: number
@@ -153,5 +158,48 @@ describe('logger', () => {
     const log = make()
     log.info('app', 'fine')
     expect(log.readLogs({}).entries.map((e) => e.event)).toEqual(['fine'])
+  })
+
+  it('prunes old files again when the day changes while the app is open', async () => {
+    const log = make()
+    log.info('app', 'today')
+    at('2026-11-12T12:00:00.000Z')
+    log.info('app', 'weeks later')
+    expect(await readdir(dir)).toEqual(['2026-11-12.jsonl'])
+  })
+
+  it('does not let a failing echo reach the caller', () => {
+    const log = createLogger({
+      dir,
+      now: () => clock,
+      echo: () => {
+        throw new Error('console closed')
+      }
+    })
+    expect(() => log.warn('app', 'x')).not.toThrow()
+  })
+})
+
+describe('errorMessage', () => {
+  it('never returns the text around a JSON syntax error', () => {
+    let error: unknown
+    try {
+      JSON.parse('{"tasks":[{"title":"Consulta médica","amount":"1500.45"}')
+    } catch (e) {
+      error = e
+    }
+    expect(errorMessage(error)).toBe('invalid_json')
+  })
+
+  it('returns only the code of a file system error, without the path', () => {
+    const error = Object.assign(new Error("ENOENT: no such file, open '/home/luis/x.json'"), {
+      code: 'ENOENT'
+    })
+    expect(errorMessage(error)).toBe('ENOENT')
+  })
+
+  it('keeps other messages', () => {
+    expect(errorMessage(new Error('boom'))).toBe('boom')
+    expect(errorMessage('plain')).toBe('plain')
   })
 })

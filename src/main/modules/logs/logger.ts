@@ -111,6 +111,8 @@ export function createLogger(options: {
   const now = options.now ?? Date.now
   const { dir } = options
 
+  let lastDay: string | null = null
+
   const write = (level: LogLevel, area: LogArea, event: string, data?: LogData): void => {
     const time = now()
     const entry: LogEntry = {
@@ -120,10 +122,14 @@ export function createLogger(options: {
       event,
       ...sanitizeLogData(data)
     }
-    options.echo?.(entry)
     try {
+      options.echo?.(entry)
       mkdirSync(dir, { recursive: true })
-      const file = join(dir, `${dayOf(time)}.jsonl`)
+      const day = dayOf(time)
+      // A long-running app crosses midnight: apply the retention again then.
+      if (lastDay !== null && day !== lastDay) prune()
+      lastDay = day
+      const file = join(dir, `${day}.jsonl`)
       if (level === 'info') {
         try {
           if (statSync(file).size >= LOG_DAY_BYTE_LIMIT) return
@@ -226,6 +232,14 @@ export const log: Logger = {
   prune: () => active?.prune()
 }
 
-/** Error → short, scrubbed message for log data. */
-export const errorMessage = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error)
+/**
+ * Error → short message for log data, without user content: a JSON syntax
+ * error quotes the text around the failure (task titles, amounts), and a
+ * file-system error carries the path, so both are reduced to a code.
+ */
+export const errorMessage = (error: unknown): string => {
+  if (error instanceof SyntaxError) return 'invalid_json'
+  const code = (error as { code?: unknown } | null)?.code
+  if (typeof code === 'string' && /^E[A-Z]+$/.test(code)) return code
+  return error instanceof Error ? error.message : String(error)
+}

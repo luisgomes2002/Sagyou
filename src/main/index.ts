@@ -1112,7 +1112,8 @@ app.whenReady().then(() => {
   // Lives in userData/logs (outside the backup); in dev it also echoes to the console.
   configureLog(
     createLogger({
-      dir: join(app.getPath('userData'), 'logs'),
+      // Dev shares userData with the installed app; keep its events apart.
+      dir: join(app.getPath('userData'), is.dev ? 'logs-dev' : 'logs'),
       echo: is.dev
         ? (entry) =>
             (entry.level === 'info' ? console.log : console.warn)(
@@ -1757,6 +1758,11 @@ app.whenReady().then(() => {
               run.worktreeMergeError =
                 'o agente alterou arquivo fora do escopo permitido: ' +
                 scope.rejectedPaths.join(', ')
+              log.error('delivery', 'failed', {
+                runId,
+                reason: 'out_of_scope',
+                paths: scope.rejectedPaths.length
+              })
               exitCode = 2
               emit(
                 '[worktree] caminhos recusados por escopo: ' +
@@ -1770,6 +1776,7 @@ app.whenReady().then(() => {
                 // Closing the native chat is a terminal outcome, never a parked
                 // request for delivery. archiveAgentRun freezes this worktree diff.
                 run.worktreeMergeError = 'sessão encerrada sem entrega'
+                log.info('delivery', 'not_applied', { runId, reason: 'session_closed' })
                 emit('[worktree] diff arquivado; alterações não aplicadas ao projeto original.\n')
               } else {
                 const fileCount = changes.fileCount
@@ -1819,7 +1826,7 @@ app.whenReady().then(() => {
           } catch (error) {
             run.worktreeMergeError =
               error instanceof Error ? error.message : 'erro ao preparar alterações'
-            log.error('delivery', 'failed', { runId, msg: run.worktreeMergeError })
+            log.error('delivery', 'failed', { runId, msg: errorMessage(error) })
             if (exitCode === 0) exitCode = 2
             emit(
               '[erro] alterações do worktree não foram aplicadas: ' + run.worktreeMergeError + '\n'

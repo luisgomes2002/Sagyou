@@ -1454,4 +1454,21 @@ describe('read_logs over MCP', () => {
       expect(call.runId).toBe('run-logs')
     }
   })
+
+  it('logs a permission refusal as refused and an unknown tool name as unknown', async () => {
+    const onToolCall = vi.fn()
+    const broker = await startWith({ onToolCall }, ['read_tasks'])
+    for (const name of ['read_logs', 'drop_database_please']) {
+      await request(broker.port(), {
+        jsonrpc: '2.0',
+        id: 7,
+        method: 'tools/call',
+        params: { token: 'logs-run', name, arguments: {} }
+      })
+    }
+    expect(onToolCall.mock.calls.map(([call]) => [call.tool, call.outcome])).toEqual([
+      ['read_logs', 'refused'],
+      ['unknown', 'refused']
+    ])
+  })
 })

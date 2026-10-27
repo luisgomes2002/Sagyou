@@ -276,7 +276,7 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    `backups/` (snapshots automáticos, de pré-importação e a pasta
    `pre-remocao-chat-*`), `password-security.json`, `general-agent-workspace/` e
    `logs/` (diagnóstico: `AAAA-MM-DD.jsonl` por dia local, 14 dias, fora do
-   backup; acima de 5 MB no dia só grava `warn`/`error`).
+   backup; acima de 5 MB no dia só grava `warn`/`error`; em dev, `logs-dev/`).
    Apagar um lado sem o outro deixa órfão. **Não existem mais**
    `ai-conversations.json`, `chat-images/`, `chat-files/`, `ai-usage-log.json` nem
    `ai-run-metrics.json`: a migração os apagou — não os recrie.
