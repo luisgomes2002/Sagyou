@@ -42,7 +42,26 @@ describe('MCP write tool classification', () => {
     for (const name of names)
       expect(Number(MCP_APPROVAL_REQUIRED.has(name)) + Number(MCP_NO_APPROVAL.has(name))).toBe(1)
     expect([...MCP_APPROVAL_REQUIRED].sort()).toEqual([...APPROVAL_LIST].sort())
-    expect(MCP_APPROVAL_REQUIRED.size + MCP_NO_APPROVAL.size).toBe(35)
+    expect(MCP_APPROVAL_REQUIRED.size + MCP_NO_APPROVAL.size).toBe(38)
+  })
+
+  it('declares the task timer tools without an approval card', () => {
+    const byName = (name: string): Record<string, unknown> | undefined =>
+      MCP_WRITE_TOOLS.find((tool) => tool.name === name)?.inputSchema
+    for (const name of ['start_task_timer', 'stop_task_timer', 'add_time_spent']) {
+      expect(MCP_NO_APPROVAL.has(name)).toBe(true)
+      expect(Object.keys((byName(name)?.properties as object) ?? {})).toEqual(
+        expect.arrayContaining(['projectId', 'id', 'title'])
+      )
+    }
+    const addTime = byName('add_time_spent')
+    expect((addTime?.properties as Record<string, unknown>).seconds).toEqual({
+      type: 'integer',
+      minimum: 1,
+      maximum: 86400,
+      description: 'Segundos a somar ao tempo da tarefa (1 a 86400).'
+    })
+    expect(addTime?.required).toEqual(['seconds'])
   })
 
   it('has a denial message for every approval tool', () => {
