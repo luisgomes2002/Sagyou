@@ -1,4 +1,5 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import type { StageResult as FileStageResult } from '../main/modules/files/file-import'
 // Type-only: erased at build, so no main-process code is pulled into the preload.
 import type { AiMemory, MemoryInput, MemorySummary, MemoryConflict } from '../main/modules/ai/memory'
 import type { McpActionRequest, McpActionResult } from '../main/modules/agent/mcp-write-types'
@@ -610,9 +611,20 @@ export const api = {
     }
   },
   files: {
-    upload: (): Promise<
-      { id: string; name: string; ext: string; size: number; createdAt: string }[]
-    > => ipcRenderer.invoke('files:upload'),
+    // Two-step import: pick/stageDropped return tokens for the chosen files
+    // (paths stay in main), then import/discard settle every token.
+    pick: (): Promise<FileStageResult> => ipcRenderer.invoke('files:pick'),
+    // Dropped File objects only reveal their disk path here in the preload.
+    stageDropped: (files: File[]): Promise<FileStageResult> =>
+      ipcRenderer.invoke(
+        'files:stage-paths',
+        files.map((file) => webUtils.getPathForFile(file))
+      ),
+    import: (
+      items: { token: string; name: string }[]
+    ): Promise<{ id: string; name: string; ext: string; size: number; createdAt: string }[]> =>
+      ipcRenderer.invoke('files:import', items),
+    discard: (tokens: string[]): Promise<void> => ipcRenderer.invoke('files:discard', tokens),
     delete: (id: string, ext: string): Promise<{ success: boolean }> =>
       ipcRenderer.invoke('files:delete', id, ext),
     open: (id: string, ext: string): Promise<{ success: boolean; error?: string }> =>

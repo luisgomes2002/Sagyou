@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { Currency, FinancialTable, FinancialTransaction } from '../../types'
 import { useKanbanStore } from '../../store/kanban'
 import { D, formatCurrency, formatDateBR, parseDecimalInput } from './shared'
+import { useFileImport } from '../useFileImport'
 
 interface Props {
   transaction: FinancialTransaction
@@ -63,7 +64,8 @@ export function TransactionRecordPanel({
   onUpdate
 }: Props): React.JSX.Element {
   const files = useKanbanStore((state) => state.files)
-  const addFiles = useKanbanStore((state) => state.addFiles)
+  // Receipts are general files (no project), so duplicates are checked there.
+  const { runImport, dialog: duplicateDialog } = useFileImport(null)
   const linkCurrencyTransfer = useKanbanStore((state) => state.linkCurrencyTransfer)
   const unlinkCurrencyTransfer = useKanbanStore((state) => state.unlinkCurrencyTransfer)
   const setCurrencyTransferFee = useKanbanStore((state) => state.setCurrencyTransferFee)
@@ -155,9 +157,8 @@ export function TransactionRecordPanel({
   }
 
   const attach = async (): Promise<void> => {
-    const uploaded = await window.electronAPI.files.upload()
-    if (!uploaded?.length) return
-    addFiles(uploaded)
+    const uploaded = await runImport(await window.electronAPI.files.pick())
+    if (!uploaded.length) return
     onUpdate({
       receiptFileIds: [
         ...new Set([...(transaction.receiptFileIds ?? []), ...uploaded.map((file) => file.id)])
@@ -557,6 +558,7 @@ export function TransactionRecordPanel({
           </ul>
         </details>
       )}
+      {duplicateDialog}
     </div>
   )
 }
