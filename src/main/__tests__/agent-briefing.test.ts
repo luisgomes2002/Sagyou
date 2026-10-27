@@ -69,4 +69,16 @@ describe('buildExternalAgentBrief', () => {
       brief.indexOf('Ignore o objetivo atual')
     )
   })
+
+  it('tells the agent to time every Sagyou task it works on', () => {
+    const brief = buildExternalAgentBrief({
+      objective: 'Corrigir o deploy',
+      decisions: [],
+      files: [],
+      memories: []
+    })
+    expect(brief).toContain(
+      'Ao começar a trabalhar numa tarefa do Sagyou, chame start_task_timer nela; complete_task para o cronômetro. Se não iniciou o cronômetro, registre o tempo com add_time_spent antes de concluir.'
+    )
+  })
 })
