@@ -4,6 +4,14 @@ import { TransactionRecordPanel } from '../../components/financial/TransactionRe
 import type { FinancialTable, FinancialTransaction } from '../../types'
 import { useKanbanStore } from '../../store/kanban'
 
+// addFiles schedules a debounced store save; keep it off window.electronAPI.store.
+vi.mock('../../services/ElectronStorage', () => ({
+  ElectronStorage: vi.fn(function ElectronStorage(this: Record<string, unknown>) {
+    this.load = vi.fn().mockResolvedValue(null)
+    this.save = vi.fn().mockResolvedValue(undefined)
+  })
+}))
+
 const transaction: FinancialTransaction = {
   id: 'tx-1',
   description: 'Transferência',

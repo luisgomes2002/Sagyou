@@ -4,6 +4,14 @@ import { FilesView } from '../../components/views/FilesView'
 import { useKanbanStore } from '../../store/kanban'
 import type { StoredFile } from '../../types'
 
+// addFiles schedules a debounced store save; keep it off window.electronAPI.store.
+vi.mock('../../services/ElectronStorage', () => ({
+  ElectronStorage: vi.fn(function ElectronStorage(this: Record<string, unknown>) {
+    this.load = vi.fn().mockResolvedValue(null)
+    this.save = vi.fn().mockResolvedValue(undefined)
+  })
+}))
+
 const stored = (id: string, name: string, size: number, projectId?: string): StoredFile => ({
   id,
   name,
