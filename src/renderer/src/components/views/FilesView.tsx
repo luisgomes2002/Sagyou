@@ -1,9 +1,13 @@
-﻿import { useState } from 'react'
+﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import { useKanbanStore } from '../../store/kanban'
 import type { StoredFile } from '../../types'
 import { formatDateBR } from '../../utils/dates'
+import { repeatedFileIds } from '../../utils/file-duplicates'
 import { searchFocusClass, useSearchFocus } from '../../utils/searchFocus'
 import { ConfirmDialog } from '../ConfirmDialog'
+import { useFileImport } from '../useFileImport'
+
+const NOTICE_MS = 5000
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -115,6 +119,7 @@ function FileRow({
   onDownload,
   onDelete,
   highlighted,
+  repeated,
   searchRef
 }: {
   file: StoredFile
@@ -123,6 +128,7 @@ function FileRow({
   onDownload: () => void
   onDelete: () => void
   highlighted?: boolean
+  repeated?: boolean
   searchRef?: React.RefObject<HTMLDivElement | null>
 }) {
   return (
@@ -135,7 +141,12 @@ function FileRow({
       </div>
 
       <div className="flex-1 min-w-0">
-        <p className="text-sm text-[#d4d4d4] truncate">{file.name}</p>
+        <div className="flex items-center gap-2 min-w-0">
+          <p className="text-sm text-[#d4d4d4] truncate">{file.name}</p>
+          {repeated && (
+            <span className="shrink-0 text-[10px] font-medium text-[#d9a640]">Repetido</span>
+          )}
+        </div>
         <p className="text-[11px] text-[#666666] mt-0.5">
           {formatSize(file.size)} · {formatDateBR(file.createdAt)}
         </p>
@@ -223,18 +234,61 @@ export function FilesView({
   searchTargetId?: string | null
 }) {
   const files = useKanbanStore((s) => s.files)
-  const addFiles = useKanbanStore((s) => s.addFiles)
   const removeFile = useKanbanStore((s) => s.removeFile)
   const searchRef = useSearchFocus<HTMLDivElement>(!!searchTargetId)
   const [fileToDelete, setFileToDelete] = useState<StoredFile | null>(null)
+  const [onlyRepeated, setOnlyRepeated] = useState(false)
+  const { runImport, dialog: duplicateDialog } = useFileImport(activeProjectId)
+  // Files being dragged over the list: null = no overlay, 0 = count unknown.
+  const [dragCount, setDragCount] = useState<number | null>(null)
+  const dragDepth = useRef(0)
+  const [notice, setNotice] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!notice) return
+    const timer = setTimeout(() => setNotice(null), NOTICE_MS)
+    return () => clearTimeout(timer)
+  }, [notice])
 
   const handleUpload = async () => {
-    const results = await window.electronAPI.files.upload()
-    if (results.length > 0) {
-      addFiles(
-        activeProjectId ? results.map((f) => ({ ...f, projectId: activeProjectId })) : results
-      )
-    }
+    await runImport(await window.electronAPI.files.pick())
+  }
+
+  const hasFiles = (e: React.DragEvent): boolean =>
+    Array.from(e.dataTransfer?.types ?? []).includes('Files')
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    if (!hasFiles(e)) return
+    e.preventDefault()
+    dragDepth.current++
+    setDragCount(e.dataTransfer.items?.length ?? 0)
+  }
+
+  const handleDragOver = (e: React.DragEvent) => {
+    if (!hasFiles(e)) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+  }
+
+  // Entering a child fires dragleave on the parent first; count depth so the
+  // overlay only goes away when the pointer really leaves the list.
+  const handleDragLeave = (e: React.DragEvent) => {
+    if (!hasFiles(e)) return
+    dragDepth.current = Math.max(0, dragDepth.current - 1)
+    if (dragDepth.current === 0) setDragCount(null)
+  }
+
+  const handleDrop = async (e: React.DragEvent) => {
+    if (!hasFiles(e)) return
+    e.preventDefault()
+    dragDepth.current = 0
+    setDragCount(null)
+    const dropped = Array.from(e.dataTransfer.files ?? [])
+    if (!dropped.length) return
+    const result = await window.electronAPI.files.stageDropped(dropped)
+    if (result.overLimit > 0) setNotice('Só 200 arquivos por vez; o restante foi ignorado.')
+    else if (result.skipped > 0) setNotice('Pastas não são importadas; arraste os arquivos.')
+    await runImport(result)
   }
 
   const handleOpen = async (file: StoredFile) => {
@@ -259,19 +313,58 @@ export function FilesView({
     void handleDelete(fileToDelete).then(() => setFileToDelete(null))
   }
 
-  const visible = activeProjectId
-    ? files.filter((f) => f.projectId === activeProjectId)
-    : files.filter((f) => !f.projectId)
+  const visible = useMemo(
+    () =>
+      activeProjectId
+        ? files.filter((f) => f.projectId === activeProjectId)
+        : files.filter((f) => !f.projectId),
+    [files, activeProjectId]
+  )
 
-  const sorted = [...visible].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  const repeated = useMemo(() => repeatedFileIds(visible), [visible])
+  const showRepeated = onlyRepeated && repeated.size > 0
+
+  // The repeated view groups copies together by name; the normal one is newest first.
+  const sorted = showRepeated
+    ? visible
+        .filter((f) => repeated.has(f.id))
+        .sort(
+          (a, b) =>
+            a.name.toLowerCase().localeCompare(b.name.toLowerCase()) ||
+            b.createdAt.localeCompare(a.createdAt)
+        )
+    : [...visible].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Toolbar */}
-      <div className="flex items-center justify-between px-6 py-3 border-b border-[#2b2b31] shrink-0">
-        <span className="text-xs text-[#999999]">
-          {sorted.length} {sorted.length === 1 ? 'arquivo' : 'arquivos'}
-        </span>
+      <div
+        data-testid="files-toolbar"
+        className="flex items-center justify-between gap-3 px-6 py-3 border-b border-[#2b2b31] shrink-0"
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          <span className="text-xs text-[#999999]">
+            {sorted.length} {sorted.length === 1 ? 'arquivo' : 'arquivos'}
+          </span>
+          {repeated.size > 0 && (
+            <button
+              onClick={() => setOnlyRepeated(!showRepeated)}
+              aria-pressed={showRepeated}
+              className={`px-2 py-1 rounded-md border text-[11px] font-medium transition-colors ${
+                showRepeated
+                  ? 'border-[#d9a640] text-[#d9a640] bg-[#222227]'
+                  : 'border-[#2b2b31] text-[#999999] hover:text-[#d9a640] hover:bg-[#222227]'
+              }`}
+            >
+              Repetidos ({repeated.size})
+            </button>
+          )}
+          {notice && (
+            <span role="status" className="text-[11px] text-[#d9a640] truncate">
+              {notice}
+            </span>
+          )}
+        </div>
         <button
           onClick={handleUpload}
           className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#2a2a30] text-[#a080f0] text-xs font-medium hover:bg-[#303036] transition-colors"
@@ -292,8 +385,24 @@ export function FilesView({
         </button>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto px-6 py-4">
+      {/* Content — also the drop zone for files dragged from the system */}
+      <div
+        data-testid="files-drop-zone"
+        className="relative flex-1 overflow-y-auto px-6 py-4"
+        onDragEnter={handleDragEnter}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={(e) => void handleDrop(e)}
+      >
+        {dragCount !== null && (
+          <div className="pointer-events-none absolute inset-3 z-10 flex items-center justify-center rounded-xl border-2 border-dashed border-[#3b3b42] bg-[#16161a]">
+            <p className="text-sm font-medium text-[#d4d4d4]">
+              {dragCount > 0
+                ? `Solte para importar ${dragCount} arquivo(s)`
+                : 'Solte para importar os arquivos'}
+            </p>
+          </div>
+        )}
         {sorted.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-4">
             <div className="w-16 h-16 rounded-2xl bg-[#16161a] border border-[#2b2b31] flex items-center justify-center">
@@ -339,6 +448,7 @@ export function FilesView({
                 key={file.id}
                 file={file}
                 highlighted={file.id === searchTargetId}
+                repeated={repeated.has(file.id)}
                 searchRef={file.id === searchTargetId ? searchRef : undefined}
                 onOpen={() => handleOpen(file)}
                 onOpenInBrowser={() => handleOpenInBrowser(file)}
@@ -362,6 +472,7 @@ export function FilesView({
         onConfirm={confirmDelete}
         onCancel={() => setFileToDelete(null)}
       />
+      {duplicateDialog}
     </div>
   )
 }
