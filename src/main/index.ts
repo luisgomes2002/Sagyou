@@ -174,6 +174,8 @@ function protectDataIpc(ipc: IpcMain): void {
     })) as IpcMain['on']
 }
 const sagyouMcp = startSagyouMcpBroker({
+  readLogs: (query) => log.readLogs(query),
+  onToolCall: (call) => log.info('mcp', 'tool_call', call),
   readScopedData: (domain, session, projectId) => {
     const data = loadData()
     if (domain === 'tasks')

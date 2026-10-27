@@ -1332,3 +1332,126 @@ describe('Sagyou MCP write tools', () => {
     })
   })
 })
+
+describe('read_logs over MCP', () => {
+  const baseDeps = {
+    readTasks: () => [],
+    readFinancial: () => [],
+    readProjectData: () => ({}),
+    searchMemory: () => [],
+    readMemory: () => null,
+    touchMemory: () => {},
+    memoriesForConflict: () => [],
+    saveMemory: async () => ({ ok: false }),
+    createTask: async () => ({ ok: true })
+  }
+
+  async function startWith(
+    extra: Record<string, unknown>,
+    permissions: McpSession['permissions'] = MCP_PERMISSIONS
+  ): Promise<ReturnType<typeof startSagyouMcpBroker>> {
+    const broker = startSagyouMcpBroker({ ...baseDeps, ...extra })
+    servers.push(broker.server)
+    await new Promise<void>((resolve) => broker.server.once('listening', resolve))
+    broker.grant({
+      token: 'logs-run',
+      runId: 'run-logs',
+      projectId: null,
+      financialProfileId: 'personal',
+      permissions,
+      expiresAt: Date.now() + 10_000
+    })
+    return broker
+  }
+
+  it('lists read_logs with its filters', async () => {
+    const broker = await startWith({ readLogs: () => ({ entries: [], truncated: false }) })
+    const listed = await request(broker.port(), {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/list',
+      params: { token: 'logs-run' }
+    })
+    const tool = (
+      listed.result as { tools: { name: string; inputSchema: { properties: object } }[] }
+    ).tools.find((t) => t.name === 'read_logs')
+    expect(Object.keys(tool?.inputSchema.properties ?? {}).sort()).toEqual([
+      'area',
+      'level',
+      'limit',
+      'since'
+    ])
+  })
+
+  it('returns the log entries with normalized arguments', async () => {
+    const readLogs = vi.fn(() => ({
+      entries: [{ ts: '2026-10-27T00:00:00.000Z', level: 'error', area: 'pty', event: 'crashed' }],
+      truncated: false
+    }))
+    const broker = await startWith({ readLogs })
+    const reply = await request(broker.port(), {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: {
+        token: 'logs-run',
+        name: 'read_logs',
+        arguments: { level: 'error', area: 'pty', since: '7d', limit: 500, extra: 'x' }
+      }
+    })
+    expect(readLogs).toHaveBeenCalledWith({ level: 'error', area: 'pty', since: '7d', limit: 200 })
+    const text = (reply.result as { content: { text: string }[] }).content[0].text
+    expect(JSON.parse(text).entries[0].event).toBe('crashed')
+  })
+
+  it('refuses read_logs without the permission', async () => {
+    const readLogs = vi.fn()
+    const broker = await startWith({ readLogs }, ['read_tasks'])
+    const reply = await request(broker.port(), {
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'tools/call',
+      params: { token: 'logs-run', name: 'read_logs', arguments: {} }
+    })
+    expect((reply.error as { message: string }).message).toBe(
+      'Ferramenta indisponível nesta sessão MCP.'
+    )
+    expect(readLogs).not.toHaveBeenCalled()
+  })
+
+  it('reports each tool call without its arguments or result', async () => {
+    const onToolCall = vi.fn()
+    const broker = await startWith({
+      onToolCall,
+      readLogs: () => ({ entries: [], truncated: false }),
+      write: async () => ({ ok: false, error: 'Projeto não encontrado.' })
+    })
+    await request(broker.port(), {
+      jsonrpc: '2.0',
+      id: 4,
+      method: 'tools/call',
+      params: { token: 'logs-run', name: 'read_logs', arguments: { area: 'secret-area' } }
+    })
+    await request(broker.port(), {
+      jsonrpc: '2.0',
+      id: 5,
+      method: 'tools/call',
+      params: { token: 'logs-run', name: 'search_memory', arguments: {} }
+    })
+    await request(broker.port(), {
+      jsonrpc: '2.0',
+      id: 6,
+      method: 'tools/call',
+      params: { token: 'logs-run', name: 'create_note', arguments: { title: 'x' } }
+    })
+    expect(onToolCall.mock.calls.map(([call]) => [call.tool, call.outcome])).toEqual([
+      ['read_logs', 'ok'],
+      ['search_memory', 'error'],
+      ['create_note', 'refused']
+    ])
+    for (const [call] of onToolCall.mock.calls) {
+      expect(Object.keys(call).sort()).toEqual(['ms', 'outcome', 'runId', 'tool'])
+      expect(call.runId).toBe('run-logs')
+    }
+  })
+})
