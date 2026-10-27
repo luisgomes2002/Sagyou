@@ -60,6 +60,7 @@ import {
 import { detectHarnessModel } from './modules/agent/harness-model'
 import { collectAgentPatch, agentPatchPreview, validatePatchScope } from './modules/agent/agent-diff'
 import { deliverApprovedPatch } from './modules/agent/agent-delivery'
+import { createRunTaskTimers } from './modules/agent/agent-task-timers'
 import { CODE_EXECUTOR_MCP_PERMISSIONS, prepareAgentMcpSession } from './modules/agent/agent-mcp-session'
 import { buildExternalAgentBrief, scrubExternalBriefSecrets } from './modules/agent/agent-briefing'
 import { buildTerminalHandoff } from './modules/agent/terminal-handoff'
@@ -329,7 +330,13 @@ const sagyouMcp = startSagyouMcpBroker({
     const scope = { projectId: session.projectId, financialProfileId: session.financialProfileId }
     const outcome = await mcpWriteQueue.enqueue<McpActionResult>(
       { runId: session.runId, name, args, approval: MCP_APPROVAL_REQUIRED.has(name) },
-      () => rendererMcpActions.request({ phase: 'apply', name, args, scope }),
+      () =>
+        rendererMcpActions.request({ phase: 'apply', name, args, scope }).then((result) => {
+          // Recorded when the renderer answers, even if the run ended meanwhile
+          // (the queue rejects the caller, but the timer was started all the same).
+          runTaskTimers.record(session.runId, scope, name, result)
+          return result
+        }),
       async () => {
         const prepared = await rendererMcpActions.request({ phase: 'prepare', name, args, scope })
         return prepared.ok ? { resumo: String(prepared.resumo ?? name) } : { refuse: prepared }
@@ -482,6 +489,22 @@ const rendererMcpActions = new RendererMcpActionBridge<McpActionRequest, McpActi
       throw new Error('A janela do Sagyou precisa estar aberta para alterar dados.')
     mainWindow.webContents.send('store:mcp:action', { requestId, request: payload })
   }
+)
+
+/**
+ * Timers an agent run created; stopped (time saved) when the run ends or the
+ * app quits. `stop_run_timer` is internal: it only stops the timer started at
+ * that instant, never one the user restarted.
+ */
+const runTaskTimers = createRunTaskTimers(
+  (taskId, startedAt, scope) =>
+    rendererMcpActions.request({
+      phase: 'apply',
+      name: 'stop_run_timer',
+      args: { id: taskId, startedAt },
+      scope
+    }),
+  (event) => log.info('mcp', 'run_timer_stop', event)
 )
 
 /** Memory is main-owned SQLite: each MCP memory write completes before the reply. */
@@ -1739,6 +1762,8 @@ app.whenReady().then(() => {
           // A closed terminal cannot answer MCP writes or questions. Deny them
           // before collecting the diff so the UI never remains parked on them.
           mcpWriteQueue.rejectRun(runId)
+          // Applied directly, not through the queue just rejected; never holds up cleanup.
+          void runTaskTimers.stopAll(runId)
           for (const { resolve } of run.pendingApprovals.values()) resolve(false)
           run.pendingApprovals.clear()
           for (const { resolve } of run.pendingQuestions.values()) resolve(null)
@@ -2210,7 +2235,21 @@ app.on('window-all-closed', () => {
 })
 
 // Don't leave any code agent's loop running when the app closes.
-app.on('before-quit', () => {
+// Set once the agent-run timers were stopped, so the second quit goes through.
+let runTimersStoppedForQuit = false
+
+app.on('before-quit', (event) => {
+  // Stop the timers agent runs created while the renderer can still save them;
+  // otherwise the next launch would credit every hour the app stayed closed.
+  if (!runTimersStoppedForQuit && runTaskTimers.hasRunning()) {
+    event.preventDefault()
+    runTimersStoppedForQuit = true
+    void Promise.race([
+      runTaskTimers.stopEverything(),
+      new Promise((resolve) => setTimeout(resolve, 3000))
+    ]).finally(() => app.quit())
+    return
+  }
   rendererMcpTasks.close()
   rendererMcpActions.close()
   stopCodeAgent()

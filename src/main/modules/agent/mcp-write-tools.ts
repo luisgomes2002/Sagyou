@@ -155,6 +155,30 @@ export const MCP_WRITE_TOOLS: McpToolDefinition[] = [
     ...taskRef
   }),
   tool(
+    'start_task_timer',
+    'Inicia o cronômetro da tarefa ao começar a trabalhar nela. complete_task para o cronômetro.',
+    { projectId, ...taskRef }
+  ),
+  tool('stop_task_timer', 'Para o cronômetro da tarefa e soma o tempo decorrido.', {
+    projectId,
+    ...taskRef
+  }),
+  tool(
+    'add_time_spent',
+    'Soma tempo gasto a uma tarefa quando o cronômetro não foi iniciado.',
+    {
+      projectId,
+      ...taskRef,
+      seconds: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 86400,
+        description: 'Segundos a somar ao tempo da tarefa (1 a 86400).'
+      }
+    },
+    ['seconds']
+  ),
+  tool(
     'create_goal',
     'Cria uma meta de quantidade ou de conclusão única.',
     {
@@ -331,6 +355,9 @@ export const MCP_NO_APPROVAL: ReadonlySet<string> = new Set<McpWriteTool>([
   'move_task',
   'complete_task',
   'reopen_task',
+  'start_task_timer',
+  'stop_task_timer',
+  'add_time_spent',
   'create_sprint',
   'create_goal',
   'update_goal',

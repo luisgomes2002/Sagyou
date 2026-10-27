@@ -265,6 +265,13 @@ describe('task actions', () => {
     )
   })
 
+  it('deleteTask drops the deleted task timer', () => {
+    const id = useKanbanStore.getState().createTask({ projectId, columnId, title: 'Timed' })
+    useKanbanStore.getState().startTimer(id)
+    useKanbanStore.getState().deleteTask(id)
+    expect(useKanbanStore.getState().activeTimers.some((t) => t.taskId === id)).toBe(false)
+  })
+
   it('moveTask moves a task to a new column and reorders', () => {
     const col2Id = useKanbanStore.getState().projects[0].columns[1].id
     const id = useKanbanStore.getState().createTask({ projectId, columnId, title: 'Movable' })

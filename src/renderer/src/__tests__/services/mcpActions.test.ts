@@ -794,3 +794,149 @@ describe('MCP handler coverage', () => {
       })
   })
 })
+
+describe('MCP task timer', () => {
+  beforeEach(resetStore)
+
+  function seedTimerTask(): { id: string; scope: McpScope; taskId: string } {
+    const { id, scope } = seedProject()
+    const backlog = project(id).columns.find((c) => c.name === 'Backlog')!.id
+    const taskId = state().createTask({ projectId: id, columnId: backlog, title: 'Cronometrar' })
+    return { id, scope, taskId }
+  }
+  const spent = (taskId: string): number =>
+    state().tasks.find((item) => item.id === taskId)?.timeSpent ?? 0
+  const running = (taskId: string): boolean =>
+    state().activeTimers.some((timer) => timer.taskId === taskId)
+
+  it('start_task_timer starts once and reports a timer already running', () => {
+    const { scope, taskId } = seedTimerTask()
+    const now = vi.spyOn(Date, 'now').mockReturnValue(7_000)
+    expect(both('start_task_timer', { id: taskId }, scope)).toEqual({
+      ok: true,
+      id: taskId,
+      resumo: 'Iniciar cronômetro de "Cronometrar"',
+      startedAt: 7_000
+    })
+    now.mockRestore()
+    expect(running(taskId)).toBe(true)
+    expect(both('start_task_timer', { title: 'Cronometrar' }, scope)).toMatchObject({
+      ok: true,
+      jaRodando: true
+    })
+    expect(state().activeTimers).toHaveLength(1)
+  })
+
+  it('prepare never starts the timer', () => {
+    const { scope, taskId } = seedTimerTask()
+    expect(prepareMcpAction('start_task_timer', { id: taskId }, scope).ok).toBe(true)
+    expect(running(taskId)).toBe(false)
+  })
+
+  it('start_task_timer refuses a completed task', () => {
+    const { scope, taskId } = seedTimerTask()
+    both('complete_task', { id: taskId }, scope)
+    expect(both('start_task_timer', { id: taskId }, scope)).toEqual({
+      ok: false,
+      error: 'A tarefa já está concluída.'
+    })
+  })
+
+  it('stop_task_timer adds the elapsed seconds and returns the total', () => {
+    const { scope, taskId } = seedTimerTask()
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000_000)
+    both('start_task_timer', { id: taskId }, scope)
+    now.mockReturnValue(1_000_000 + 90_000)
+    expect(both('stop_task_timer', { id: taskId }, scope)).toEqual({
+      ok: true,
+      id: taskId,
+      resumo: 'Parar cronômetro de "Cronometrar"',
+      timeSpent: 90
+    })
+    expect(running(taskId)).toBe(false)
+    expect(spent(taskId)).toBe(90)
+    now.mockRestore()
+  })
+
+  it('stop_task_timer refuses when no timer is running', () => {
+    const { scope, taskId } = seedTimerTask()
+    expect(both('stop_task_timer', { id: taskId }, scope)).toEqual({
+      ok: false,
+      error: 'O cronômetro desta tarefa não está rodando.'
+    })
+  })
+
+  it('add_time_spent adds whole seconds within the limit', () => {
+    const { scope, taskId } = seedTimerTask()
+    expect(both('add_time_spent', { id: taskId, seconds: 600 }, scope)).toEqual({
+      ok: true,
+      id: taskId,
+      resumo: 'Somar 600 s ao tempo de "Cronometrar"',
+      timeSpent: 600
+    })
+    for (const seconds of [0, 86401, 1.5, '60', undefined])
+      expect(both('add_time_spent', { id: taskId, seconds }, scope)).toEqual({
+        ok: false,
+        error: 'seconds deve ser um inteiro entre 1 e 86400.'
+      })
+    expect(spent(taskId)).toBe(600)
+  })
+
+  it('finds a task by title only inside the session project, like the other task tools', () => {
+    const { taskId } = seedTimerTask()
+    const other = seedProject('Outro')
+    expect(both('start_task_timer', { title: 'Cronometrar' }, other.scope)).toEqual({
+      ok: false,
+      error: 'Tarefa não encontrada.'
+    })
+    expect(running(taskId)).toBe(false)
+  })
+
+  it('complete_task with a running timer adds the elapsed time', () => {
+    const { scope, taskId } = seedTimerTask()
+    const now = vi.spyOn(Date, 'now').mockReturnValue(5_000_000)
+    both('start_task_timer', { id: taskId }, scope)
+    now.mockReturnValue(5_000_000 + 30_000)
+    both('complete_task', { id: taskId }, scope)
+    expect(running(taskId)).toBe(false)
+    expect(spent(taskId)).toBe(30)
+    now.mockRestore()
+  })
+
+  it('stop_run_timer stops only the timer started at that instant', () => {
+    const { scope, taskId } = seedTimerTask()
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000)
+    both('start_task_timer', { id: taskId }, scope)
+    now.mockReturnValue(61_000)
+    expect(applyMcpAction('stop_run_timer', { id: taskId, startedAt: 1_000 }, scope)).toMatchObject({
+      ok: true,
+      id: taskId
+    })
+    expect(running(taskId)).toBe(false)
+    expect(spent(taskId)).toBe(60)
+    now.mockRestore()
+  })
+
+  it('stop_run_timer leaves alone a timer the user restarted or already stopped', () => {
+    const { scope, taskId } = seedTimerTask()
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000)
+    both('start_task_timer', { id: taskId }, scope)
+    state().stopTimer(taskId)
+    expect(applyMcpAction('stop_run_timer', { id: taskId, startedAt: 1_000 }, scope)).toMatchObject({
+      ok: true,
+      jaParado: true
+    })
+    now.mockReturnValue(5_000)
+    state().startTimer(taskId)
+    expect(applyMcpAction('stop_run_timer', { id: taskId, startedAt: 1_000 }, scope)).toMatchObject({
+      ok: true,
+      jaParado: true
+    })
+    expect(running(taskId)).toBe(true)
+    now.mockRestore()
+  })
+
+  it('stop_run_timer is internal: not an MCP tool', () => {
+    expect(MCP_RENDERER_WRITE_TOOLS).not.toContain('stop_run_timer')
+  })
+})
