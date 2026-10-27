@@ -60,6 +60,7 @@ import {
 import { detectHarnessModel } from './modules/agent/harness-model'
 import { collectAgentPatch, agentPatchPreview, validatePatchScope } from './modules/agent/agent-diff'
 import { deliverApprovedPatch } from './modules/agent/agent-delivery'
+import { createRunTaskTimers } from './modules/agent/agent-task-timers'
 import { CODE_EXECUTOR_MCP_PERMISSIONS, prepareAgentMcpSession } from './modules/agent/agent-mcp-session'
 import { buildExternalAgentBrief, scrubExternalBriefSecrets } from './modules/agent/agent-briefing'
 import { buildTerminalHandoff } from './modules/agent/terminal-handoff'
@@ -335,7 +336,9 @@ const sagyouMcp = startSagyouMcpBroker({
         return prepared.ok ? { resumo: String(prepared.resumo ?? name) } : { refuse: prepared }
       }
     )
-    return mcpWriteResult(name, outcome)
+    const result = mcpWriteResult(name, outcome)
+    runTaskTimers.record(session.runId, scope, name, result)
+    return result
   }
 })
 
@@ -482,6 +485,11 @@ const rendererMcpActions = new RendererMcpActionBridge<McpActionRequest, McpActi
       throw new Error('A janela do Sagyou precisa estar aberta para alterar dados.')
     mainWindow.webContents.send('store:mcp:action', { requestId, request: payload })
   }
+)
+
+/** Timers an agent run started; stopped (time saved) when the run ends. */
+const runTaskTimers = createRunTaskTimers((taskId, scope) =>
+  rendererMcpActions.request({ phase: 'apply', name: 'stop_task_timer', args: { id: taskId }, scope })
 )
 
 /** Memory is main-owned SQLite: each MCP memory write completes before the reply. */
@@ -1739,6 +1747,8 @@ app.whenReady().then(() => {
           // A closed terminal cannot answer MCP writes or questions. Deny them
           // before collecting the diff so the UI never remains parked on them.
           mcpWriteQueue.rejectRun(runId)
+          // Applied directly, not through the queue just rejected; never holds up cleanup.
+          void runTaskTimers.stopAll(runId)
           for (const { resolve } of run.pendingApprovals.values()) resolve(false)
           run.pendingApprovals.clear()
           for (const { resolve } of run.pendingQuestions.values()) resolve(null)
