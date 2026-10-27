@@ -5,7 +5,7 @@ import { formatDateBR } from '../../utils/dates'
 import { repeatedFileIds } from '../../utils/file-duplicates'
 import { searchFocusClass, useSearchFocus } from '../../utils/searchFocus'
 import { ConfirmDialog } from '../ConfirmDialog'
-import { useFileImport } from '../useFileImport'
+import { useFileImport, type ImportOutcome } from '../useFileImport'
 
 const NOTICE_MS = 5000
 
@@ -237,7 +237,10 @@ export function FilesView({
   const removeFile = useKanbanStore((s) => s.removeFile)
   const searchRef = useSearchFocus<HTMLDivElement>(!!searchTargetId)
   const [fileToDelete, setFileToDelete] = useState<StoredFile | null>(null)
-  const [onlyRepeated, setOnlyRepeated] = useState(false)
+  // Scope (project id, or '' for general files) where the repeated filter was
+  // turned on; changing scope or running out of repeats turns it off.
+  const [repeatedFilterScope, setRepeatedFilterScope] = useState<string | null>(null)
+  const scopeKey = activeProjectId ?? ''
   const { runImport, dialog: duplicateDialog } = useFileImport(activeProjectId)
   // Files being dragged over the list: null = no overlay, 0 = count unknown.
   const [dragCount, setDragCount] = useState<number | null>(null)
@@ -250,8 +253,16 @@ export function FilesView({
     return () => clearTimeout(timer)
   }, [notice])
 
+  const reportImport = (outcome: ImportOutcome): void => {
+    if (outcome.failed > 0) setNotice('Alguns arquivos não foram importados; tente de novo.')
+  }
+
   const handleUpload = async (): Promise<void> => {
-    await runImport(await window.electronAPI.files.pick())
+    try {
+      reportImport(await runImport(await window.electronAPI.files.pick()))
+    } catch {
+      setNotice('Não foi possível importar os arquivos.')
+    }
   }
 
   const hasFiles = (e: React.DragEvent): boolean =>
@@ -285,10 +296,14 @@ export function FilesView({
     setDragCount(null)
     const dropped = Array.from(e.dataTransfer.files ?? [])
     if (!dropped.length) return
-    const result = await window.electronAPI.files.stageDropped(dropped)
-    if (result.overLimit > 0) setNotice('Só 200 arquivos por vez; o restante foi ignorado.')
-    else if (result.skipped > 0) setNotice('Pastas não são importadas; arraste os arquivos.')
-    await runImport(result)
+    try {
+      const result = await window.electronAPI.files.stageDropped(dropped)
+      if (result.overLimit > 0) setNotice('Só 200 arquivos por vez; o restante foi ignorado.')
+      else if (result.skipped > 0) setNotice('Pastas não são importadas; arraste os arquivos.')
+      reportImport(await runImport(result))
+    } catch {
+      setNotice('Não foi possível importar os arquivos.')
+    }
   }
 
   const handleOpen = async (file: StoredFile) => {
@@ -322,7 +337,8 @@ export function FilesView({
   )
 
   const repeated = useMemo(() => repeatedFileIds(visible), [visible])
-  const showRepeated = onlyRepeated && repeated.size > 0
+  const showRepeated = repeatedFilterScope === scopeKey && repeated.size > 0
+  if (repeatedFilterScope !== null && !showRepeated) setRepeatedFilterScope(null)
 
   // The repeated view groups copies together by name; the normal one is newest first.
   const sorted = showRepeated
@@ -348,7 +364,7 @@ export function FilesView({
           </span>
           {repeated.size > 0 && (
             <button
-              onClick={() => setOnlyRepeated(!showRepeated)}
+              onClick={() => setRepeatedFilterScope(showRepeated ? null : scopeKey)}
               aria-pressed={showRepeated}
               className={`px-2 py-1 rounded-md border text-[11px] font-medium transition-colors ${
                 showRepeated
@@ -385,10 +401,11 @@ export function FilesView({
         </button>
       </div>
 
-      {/* Content — also the drop zone for files dragged from the system */}
+      {/* Content — also the drop zone for files dragged from the system. The
+          overlay sits outside the scrolling list so it stays in view. */}
       <div
         data-testid="files-drop-zone"
-        className="relative flex-1 overflow-y-auto px-6 py-4"
+        className="relative flex-1 min-h-0"
         onDragEnter={handleDragEnter}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -403,61 +420,63 @@ export function FilesView({
             </p>
           </div>
         )}
-        {sorted.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full gap-4">
-            <div className="w-16 h-16 rounded-2xl bg-[#16161a] border border-[#2b2b31] flex items-center justify-center">
-              <svg
-                width="28"
-                height="28"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="#999999"
-                strokeWidth="1.5"
+        <div className="h-full overflow-y-auto px-6 py-4">
+          {sorted.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full gap-4">
+              <div className="w-16 h-16 rounded-2xl bg-[#16161a] border border-[#2b2b31] flex items-center justify-center">
+                <svg
+                  width="28"
+                  height="28"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#999999"
+                  strokeWidth="1.5"
+                >
+                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                </svg>
+              </div>
+              <div className="text-center">
+                <p className="text-[#d4d4d4] font-medium mb-1">Nenhum arquivo neste projeto</p>
+                <p className="text-sm text-[#999999]">
+                  Adicione docs, planilhas e outros arquivos para acesso rápido
+                </p>
+              </div>
+              <button
+                onClick={handleUpload}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-dashed border-[#2b2b31] text-[#a080f0] text-sm hover:border-[#7c3aed] hover:bg-[#222227] transition-colors"
               >
-                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-              </svg>
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                >
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+                Adicionar arquivos
+              </button>
             </div>
-            <div className="text-center">
-              <p className="text-[#d4d4d4] font-medium mb-1">Nenhum arquivo neste projeto</p>
-              <p className="text-sm text-[#999999]">
-                Adicione docs, planilhas e outros arquivos para acesso rápido
-              </p>
+          ) : (
+            <div className="space-y-1.5">
+              {sorted.map((file) => (
+                <FileRow
+                  key={file.id}
+                  file={file}
+                  highlighted={file.id === searchTargetId}
+                  repeated={repeated.has(file.id)}
+                  searchRef={file.id === searchTargetId ? searchRef : undefined}
+                  onOpen={() => handleOpen(file)}
+                  onOpenInBrowser={() => handleOpenInBrowser(file)}
+                  onDownload={() => handleDownload(file)}
+                  onDelete={() => setFileToDelete(file)}
+                />
+              ))}
             </div>
-            <button
-              onClick={handleUpload}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg border border-dashed border-[#2b2b31] text-[#a080f0] text-sm hover:border-[#7c3aed] hover:bg-[#222227] transition-colors"
-            >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-              >
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-              Adicionar arquivos
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-1.5">
-            {sorted.map((file) => (
-              <FileRow
-                key={file.id}
-                file={file}
-                highlighted={file.id === searchTargetId}
-                repeated={repeated.has(file.id)}
-                searchRef={file.id === searchTargetId ? searchRef : undefined}
-                onOpen={() => handleOpen(file)}
-                onOpenInBrowser={() => handleOpenInBrowser(file)}
-                onDownload={() => handleDownload(file)}
-                onDelete={() => setFileToDelete(file)}
-              />
-            ))}
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       <ConfirmDialog

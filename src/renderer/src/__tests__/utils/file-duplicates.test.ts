@@ -32,6 +32,12 @@ describe('uniqueCopyName', () => {
   it('numbers from the base when the name already ends in (n)', () => {
     expect(uniqueCopyName('nome (2).pdf', ['nome.pdf', 'nome (2).pdf'])).toBe('nome (3).pdf')
   })
+
+  it('keeps a number in parentheses that is part of the name', () => {
+    expect(uniqueCopyName('Balancete (2025).pdf', ['balancete (2025).pdf'])).toBe(
+      'Balancete (2025) (2).pdf'
+    )
+  })
 })
 
 describe('planImport', () => {

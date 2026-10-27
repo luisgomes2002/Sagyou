@@ -91,8 +91,10 @@ describe('file import registry', () => {
   it('discarded tokens cannot be imported', async () => {
     const registry = make()
     const { staged } = registry.stage([join(source, 'relatorio.pdf')])
+    expect(await readdir(filesDir)).toEqual([])
     registry.discard([staged[0].token])
     expect(await registry.importStaged([{ token: staged[0].token, name: 'a.pdf' }])).toEqual([])
+    expect(await readdir(filesDir)).toEqual([])
   })
 
   it('falls back to the original name when the chosen one is invalid', async () => {

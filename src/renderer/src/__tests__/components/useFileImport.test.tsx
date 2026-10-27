@@ -70,7 +70,7 @@ describe('useFileImport', () => {
 
   it('asks about a duplicate and skipping discards it', async () => {
     render(<Harness projectId="p1" />)
-    let done!: Promise<StoredFile[]>
+    let done!: ReturnType<typeof runImport>
     act(() => {
       done = runImport(staged('novo.txt', 'Relatorio.pdf'))
     })
@@ -89,7 +89,7 @@ describe('useFileImport', () => {
 
   it('saves a copy under the next free name', async () => {
     render(<Harness projectId="p1" />)
-    let done!: Promise<StoredFile[]>
+    let done!: ReturnType<typeof runImport>
     act(() => {
       done = runImport(staged('relatorio.pdf'))
     })
@@ -102,7 +102,7 @@ describe('useFileImport', () => {
 
   it('applies one decision to the remaining duplicates', async () => {
     render(<Harness projectId="p1" />)
-    let done!: Promise<StoredFile[]>
+    let done!: ReturnType<typeof runImport>
     act(() => {
       done = runImport(staged('relatorio.pdf', 'foto.png', 'nota.txt'))
     })
@@ -122,7 +122,7 @@ describe('useFileImport', () => {
   it('uses the general files as scope without a project', async () => {
     useKanbanStore.setState({ files: [existing('geral.pdf')] })
     render(<Harness projectId={null} />)
-    let done!: Promise<StoredFile[]>
+    let done!: ReturnType<typeof runImport>
     act(() => {
       done = runImport(staged('geral.pdf'))
     })
@@ -131,8 +131,53 @@ describe('useFileImport', () => {
     ).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Pular' }))
     await act(async () => {
-      expect(await done).toEqual([])
+      expect(await done).toEqual({ files: [], failed: 0 })
     })
     expect(importMock).not.toHaveBeenCalled()
+  })
+
+  it('imports the files without duplicates before asking about the rest', async () => {
+    render(<Harness projectId="p1" />)
+    let done!: ReturnType<typeof runImport>
+    act(() => {
+      done = runImport(staged('novo.txt', 'relatorio.pdf'))
+    })
+    await screen.findByText('Arquivo já existe')
+    expect(importMock).toHaveBeenCalledWith([{ token: 't0', name: 'novo.txt' }])
+    expect(useKanbanStore.getState().files.some((f) => f.id === 'new-t0')).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Pular' }))
+    await act(async () => {
+      await done
+    })
+  })
+
+  it('queues a second import until the first one is settled', async () => {
+    render(<Harness projectId="p1" />)
+    let first!: ReturnType<typeof runImport>
+    let second!: ReturnType<typeof runImport>
+    act(() => {
+      first = runImport(staged('relatorio.pdf'))
+      second = runImport({ staged: [{ token: 'u0', name: 'relatorio.pdf', size: 1 }] })
+    })
+    fireEvent.click(await screen.findByRole('button', { name: 'Salvar cópia' }))
+    await act(async () => {
+      await first
+    })
+    fireEvent.click(await screen.findByRole('button', { name: 'Salvar cópia' }))
+    await act(async () => {
+      await second
+    })
+    expect(importMock).toHaveBeenNthCalledWith(1, [{ token: 't0', name: 'relatorio (2).pdf' }])
+    expect(importMock).toHaveBeenNthCalledWith(2, [{ token: 'u0', name: 'relatorio (3).pdf' }])
+  })
+
+  it('reports files that could not be imported', async () => {
+    importMock.mockResolvedValueOnce([])
+    render(<Harness projectId="p1" />)
+    let result!: Awaited<ReturnType<typeof runImport>>
+    await act(async () => {
+      result = await runImport(staged('novo.txt'))
+    })
+    expect(result).toEqual({ files: [], failed: 1 })
   })
 })

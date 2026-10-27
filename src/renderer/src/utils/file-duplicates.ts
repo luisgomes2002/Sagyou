@@ -13,19 +13,21 @@ export interface ImportItem {
 
 const key = (name: string): string => name.toLowerCase()
 
-/** Splits "relatorio (2).pdf" into base "relatorio" and ext ".pdf". */
-function splitName(name: string): { base: string; ext: string } {
+function splitName(name: string): { stem: string; ext: string } {
   const dot = name.lastIndexOf('.')
-  const hasExt = dot > 0
-  const stem = hasExt ? name.slice(0, dot) : name
-  const ext = hasExt ? name.slice(dot) : ''
-  return { base: stem.replace(/ \(\d+\)$/, ''), ext }
+  return dot > 0 ? { stem: name.slice(0, dot), ext: name.slice(dot) } : { stem: name, ext: '' }
 }
 
-/** First free "name (n).ext" (n ≥ 2) not in `taken`, compared ignoring case. */
+/**
+ * First free "name (n).ext" (n ≥ 2) not in `taken`, compared ignoring case.
+ * A trailing " (n)" is treated as an earlier copy number only when the plain
+ * name is also taken, so "Balancete (2025).pdf" keeps its year.
+ */
 export function uniqueCopyName(name: string, taken: Iterable<string>): string {
   const used = new Set([...taken].map(key))
-  const { base, ext } = splitName(name)
+  const { stem, ext } = splitName(name)
+  const plain = stem.replace(/ \(\d+\)$/, '')
+  const base = plain !== stem && used.has(key(`${plain}${ext}`)) ? plain : stem
   for (let n = 2; ; n++) {
     const candidate = `${base} (${n})${ext}`
     if (!used.has(key(candidate))) return candidate

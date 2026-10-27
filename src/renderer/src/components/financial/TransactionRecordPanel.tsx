@@ -157,7 +157,7 @@ export function TransactionRecordPanel({
   }
 
   const attach = async (): Promise<void> => {
-    const uploaded = await runImport(await window.electronAPI.files.pick())
+    const { files: uploaded } = await runImport(await window.electronAPI.files.pick())
     if (!uploaded.length) return
     onUpdate({
       receiptFileIds: [

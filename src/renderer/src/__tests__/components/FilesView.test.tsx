@@ -82,8 +82,47 @@ describe('FilesView', () => {
     expect(screen.queryByText(/Solte para importar/)).toBeNull()
     fireEvent.dragEnter(zone, filesDrag(['Files'], 2))
     expect(screen.getByText('Solte para importar 2 arquivo(s)')).toBeInTheDocument()
+    // Moving onto a row fires enter on the row before leave on the zone.
+    const row = screen.getAllByText(/contrato\.pdf/i)[0]
+    fireEvent.dragEnter(row, filesDrag(['Files'], 2))
     fireEvent.dragLeave(zone, filesDrag(['Files']))
+    expect(screen.getByText('Solte para importar 2 arquivo(s)')).toBeInTheDocument()
+    fireEvent.dragLeave(row, filesDrag(['Files']))
     expect(screen.queryByText(/Solte para importar/)).toBeNull()
+  })
+
+  it('turns the repeated filter off when the project changes', () => {
+    const { rerender } = render(<FilesView activeProjectId="p1" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Repetidos (2)' }))
+    rerender(<FilesView activeProjectId="p2" />)
+    useKanbanStore.setState({
+      files: [
+        ...useKanbanStore.getState().files,
+        stored('eeeee', 'outro.pdf', 100, 'p2')
+      ]
+    })
+    rerender(<FilesView activeProjectId="p2" />)
+    expect(screen.getByRole('button', { name: 'Repetidos (2)' })).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    )
+  })
+
+  it('shows a notice when the import fails', async () => {
+    pick.mockRejectedValue(new Error('ipc down'))
+    render(<FilesView activeProjectId="p1" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar arquivos' }))
+    expect(await screen.findByText('Não foi possível importar os arquivos.')).toBeInTheDocument()
+  })
+
+  it('keeps the drop overlay in view while the list scrolls', () => {
+    render(<FilesView activeProjectId="p1" />)
+    const zone = screen.getByTestId('files-drop-zone')
+    fireEvent.dragEnter(zone, filesDrag(['Files'], 1))
+    const overlay = screen.getByText('Solte para importar 1 arquivo(s)').parentElement
+    // The overlay must not live inside the element that scrolls.
+    expect(zone.className).not.toContain('overflow-y-auto')
+    expect(overlay?.parentElement).toBe(zone)
   })
 
   it('imports dropped files and warns about skipped folders', async () => {
