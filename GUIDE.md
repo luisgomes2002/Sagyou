@@ -413,6 +413,12 @@ Codex, a configuração stdio inclui `env_vars` só para `SAGYOU_MCP_PORT` e
 
 ## Segurança — o que já está resolvido
 
+`files:stage-paths` (arrastar e soltar em Arquivos) é o **único** IPC que aceita
+caminho de disco vindo do renderer: valida absoluto/existe/arquivo e só devolve
+tokens de uso único (10 min); a cópia acontece em `files:import`. Um renderer
+comprometido poderia importar qualquer arquivo legível pelo usuário, então não
+dê outro chamador a esse canal nem crie outro que receba caminhos.
+
 `main/modules/web/web-fetch.ts` busca páginas cuja URL **não é confiável** (vem de
 um modelo ou de uma página). Já existe, com testes, e não deve ser afrouxado
 (o canal `ai:web:fetch` segue registrado, sem chamador no renderer hoje):

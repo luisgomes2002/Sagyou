@@ -1,6 +1,6 @@
 import type { IpcMain } from 'electron'
-import { join, extname, basename } from 'path'
-import { existsSync, mkdirSync, copyFileSync, unlinkSync, statSync, writeFileSync } from 'fs'
+import { join, extname } from 'path'
+import { existsSync, mkdirSync, copyFileSync, unlinkSync, writeFileSync } from 'fs'
 import { randomUUID } from 'crypto'
 import { attachmentPath, safeAttachmentName } from '../modules/files/backup-files'
 import {
@@ -9,6 +9,7 @@ import {
   decodeDataUrl
 } from '../modules/files/image-files'
 import { isDocumentExt, parseDocument } from '../modules/files/document-parser'
+import { createFileImportRegistry } from '../modules/files/file-import'
 import { indexProjectFileContent, loadData, removeProjectFileSearchContent } from '../store'
 import type { BrowserWindow, Dialog, Shell } from 'electron'
 
@@ -48,30 +49,30 @@ export function registerFilesHandlers(
 
   // --- File attachments ---
 
-  ipcMain.handle('files:upload', async () => {
+  // Importing is two-step (see file-import.ts): pick/stage-paths return tokens,
+  // the renderer resolves duplicates, then import/discard consume the tokens.
+  const fileImport = createFileImportRegistry({
+    filesDir,
+    index: (id, destination, ext) => indexProjectFileContent(id, destination, ext),
+    onImported: (storedName) => uploadedAttachmentNames.add(storedName)
+  })
+
+  ipcMain.handle('files:pick', async () => {
     const { filePaths, canceled } = await dlg.showOpenDialog({
       title: 'Selecionar arquivos',
       properties: ['openFile', 'multiSelections']
     })
-    if (canceled || filePaths.length === 0) return []
-    const results: { id: string; name: string; ext: string; size: number; createdAt: string }[] = []
-    for (const filePath of filePaths) {
-      try {
-        const id = randomUUID()
-        const ext = extname(filePath)
-        const name = basename(filePath)
-        const size = statSync(filePath).size
-        const destination = join(filesDir, `${id}${ext}`)
-        copyFileSync(filePath, destination)
-        await indexProjectFileContent(id, destination, ext)
-        uploadedAttachmentNames.add(`${id}${ext}`)
-        results.push({ id, name, ext, size, createdAt: new Date().toISOString() })
-      } catch {
-        /* skip files that can't be copied */
-      }
-    }
-    return results
+    if (canceled || filePaths.length === 0) return { staged: [], skipped: 0, overLimit: 0 }
+    return fileImport.stage(filePaths)
   })
+
+  // Paths of files dropped on the window, resolved by the preload with
+  // webUtils.getPathForFile. Only staged after validation; never copied here.
+  ipcMain.handle('files:stage-paths', (_, paths: unknown) => fileImport.stage(paths))
+
+  ipcMain.handle('files:import', (_, items: unknown) => fileImport.importStaged(items))
+
+  ipcMain.handle('files:discard', (_, tokens: unknown) => fileImport.discard(tokens))
 
   ipcMain.handle('files:delete', (_, id: unknown, ext: unknown) => {
     const filePath = projectAttachmentPath(id, ext)

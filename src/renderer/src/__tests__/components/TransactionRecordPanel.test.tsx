@@ -1,8 +1,16 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { TransactionRecordPanel } from '../../components/financial/TransactionRecordPanel'
 import type { FinancialTable, FinancialTransaction } from '../../types'
 import { useKanbanStore } from '../../store/kanban'
+
+// addFiles schedules a debounced store save; keep it off window.electronAPI.store.
+vi.mock('../../services/ElectronStorage', () => ({
+  ElectronStorage: vi.fn(function ElectronStorage(this: Record<string, unknown>) {
+    this.load = vi.fn().mockResolvedValue(null)
+    this.save = vi.fn().mockResolvedValue(undefined)
+  })
+}))
 
 const transaction: FinancialTransaction = {
   id: 'tx-1',
@@ -109,5 +117,53 @@ describe('TransactionRecordPanel bank details', () => {
     )
     expect(screen.getByText(/Conferido com extrato em/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /conferido com extrato/i })).not.toBeInTheDocument()
+  })
+
+  it('links a receipt saved as a copy of an existing general file', async () => {
+    useKanbanStore.setState({
+      files: [
+        {
+          id: 'old',
+          name: 'nota.pdf',
+          ext: '.pdf',
+          size: 1,
+          createdAt: '2026-10-01T00:00:00.000Z'
+        }
+      ]
+    })
+    const importFiles = vi.fn(async (items: { token: string; name: string }[]) =>
+      items.map((item) => ({
+        id: 'receipt-1',
+        name: item.name,
+        ext: '.pdf',
+        size: 1,
+        createdAt: '2026-10-27T00:00:00.000Z'
+      }))
+    )
+    ;(window as unknown as { electronAPI: unknown }).electronAPI = {
+      files: {
+        pick: vi.fn(async () => ({
+          staged: [{ token: 't1', name: 'nota.pdf', size: 1 }],
+          skipped: 0,
+          overLimit: 0
+        })),
+        import: importFiles,
+        discard: vi.fn(async () => {})
+      }
+    }
+    const onUpdate = vi.fn()
+    render(
+      <TransactionRecordPanel
+        transaction={transaction}
+        currency="BRL"
+        allLists={[table(transaction)]}
+        onUpdate={onUpdate}
+      />
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: '+ Anexar arquivo' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Salvar cópia' }))
+    await waitFor(() => expect(onUpdate).toHaveBeenCalledWith({ receiptFileIds: ['receipt-1'] }))
+    expect(importFiles).toHaveBeenCalledWith([{ token: 't1', name: 'nota (2).pdf' }])
   })
 })
