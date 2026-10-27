@@ -25,6 +25,7 @@ import {
   type GlobalSearchHit,
   type GlobalSearchResponse
 } from './modules/search/global-search-query'
+import { errorMessage, log } from './modules/logs/logger'
 
 // ── Inline types (mirrors src/renderer/src/types/index.ts) ──────────────────
 
@@ -699,7 +700,10 @@ function migrateMoneyColumnsToText(db: Database.Database): void {
         db.exec(`ALTER TABLE ${r.table}_new RENAME TO ${r.table}`)
       }
     })()
-    console.log(`[store] Migrated money columns to TEXT: ${pending.map((r) => r.table).join(', ')}`)
+    log.info('store', 'migration', {
+      name: 'money_columns_to_text',
+      tables: pending.map((r) => r.table).join(', ')
+    })
   } finally {
     db.pragma('foreign_keys = ON')
   }
@@ -714,7 +718,7 @@ function migrateTransactionsLinkedColumn(db: Database.Database): void {
   }
   if (!colExists('transactions', 'linked_transaction_id')) {
     db.prepare('ALTER TABLE transactions ADD COLUMN linked_transaction_id TEXT').run()
-    console.log('[store] Added linked_transaction_id column to transactions')
+    log.info('store', 'migration', { name: 'transactions_linked_transaction_id' })
   }
 }
 
@@ -764,7 +768,7 @@ function migrateProjectsArchivedColumn(db: Database.Database): void {
   }
   if (!colExists('projects', 'archived_at')) {
     db.prepare('ALTER TABLE projects ADD COLUMN archived_at TEXT').run()
-    console.log('[store] Added archived_at column to projects')
+    log.info('store', 'migration', { name: 'projects_archived_at' })
   }
 }
 
@@ -841,7 +845,7 @@ function migrateMemoryDropProjectFk(db: Database.Database): void {
         `CREATE INDEX IF NOT EXISTS idx_memory_project ON memory(project_id) WHERE archived_at IS NULL`
       )
     })()
-    console.log('[store] Migrated memory table: dropped project_id ON DELETE CASCADE')
+    log.info('store', 'migration', { name: 'memory_drop_project_cascade' })
   } finally {
     db.pragma('foreign_keys = ON')
   }
@@ -938,7 +942,11 @@ function migrateTaskImagesToDisk(db: Database.Database): void {
       db.exec(`DROP TABLE task_images`)
       db.exec(`ALTER TABLE task_images_new RENAME TO task_images`)
     })()
-    console.log(`[store] Migrated ${extById.size}/${rows.length} task images to disk`)
+    log.info('store', 'migration', {
+      name: 'task_images_to_disk',
+      migrated: extById.size,
+      total: rows.length
+    })
   } finally {
     db.pragma('foreign_keys = ON')
   }
@@ -954,11 +962,11 @@ function migrateNotesTaskIdsGoalIds(db: Database.Database): void {
   }
   if (!colExists('notes', 'task_ids')) {
     db.prepare('ALTER TABLE notes ADD COLUMN task_ids TEXT').run()
-    console.log('[store] Added task_ids column to notes')
+    log.info('store', 'migration', { name: 'notes_task_ids' })
   }
   if (!colExists('notes', 'goal_ids')) {
     db.prepare('ALTER TABLE notes ADD COLUMN goal_ids TEXT').run()
-    console.log('[store] Added goal_ids column to notes')
+    log.info('store', 'migration', { name: 'notes_goal_ids' })
   }
 }
 
@@ -1257,9 +1265,9 @@ function migrateFromJson(db: Database.Database): void {
     const data = JSON.parse(readFileSync(LEGACY_PATH, 'utf-8')) as SaveData
     db.transaction(() => persistAll(db, data))()
     renameSync(LEGACY_PATH, LEGACY_PATH + '.migrated')
-    console.log('[store] Migrated from JSON to SQLite')
+    log.info('store', 'migration', { name: 'json_to_sqlite' })
   } catch (err) {
-    console.error('[store] JSON migration failed:', err)
+    log.error('store', 'migration_failed', { name: 'json_to_sqlite', msg: errorMessage(err) })
   }
 }
 

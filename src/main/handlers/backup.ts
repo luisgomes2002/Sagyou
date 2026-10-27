@@ -13,6 +13,7 @@ import { readFile } from 'fs/promises'
 import { safeAttachmentName } from '../modules/files/backup-files'
 import { isValidBackup } from '../modules/files/backup-validation'
 import { repairBackup } from '../modules/files/backup-repair'
+import { errorMessage, log } from '../modules/logs/logger'
 import type { IpcMain, Dialog, IpcMainInvokeEvent } from 'electron'
 
 interface BlobEntry {
@@ -184,10 +185,14 @@ export function registerBackupHandlers(ipcMain: IpcMain, deps: BackupDeps): void
       if (job.cancelled) return { success: false, cancelled: true }
       writeAtomic(filePath, JSON.stringify(full, null, 2))
       event.sender.send('backup:export-progress', { completed: 1, total: 1, done: true })
+      log.info('backup', 'exported', {
+        files: Array.isArray(full.fileBlobs) ? full.fileBlobs.length : 0
+      })
       return { success: true }
     } catch (error) {
       if (job.cancelled || (error instanceof Error && error.message === 'Exportação cancelada.'))
         return { success: false, cancelled: true }
+      log.error('backup', 'export_failed', { msg: errorMessage(error) })
       throw error
     } finally {
       exportJobs.delete(event.sender.id)
@@ -199,7 +204,10 @@ export function registerBackupHandlers(ipcMain: IpcMain, deps: BackupDeps): void
   // The snapshot keeps the state as it is: it is repaired only to decide whether
   // it can be restored (import repairs it again), so no restore point loses data.
   ipcMain.handle('backup:auto-save', async (_, backup: unknown, force = false) => {
-    if (!isValidBackup(repairBackup(backup))) return { success: false }
+    if (!isValidBackup(repairBackup(backup))) {
+      log.warn('backup', 'auto_snapshot_invalid', { beforeImport: Boolean(force) })
+      return { success: false }
+    }
     try {
       mkdirSync(deps.backupDir, { recursive: true })
       const now = new Date()
@@ -216,8 +224,10 @@ export function registerBackupHandlers(ipcMain: IpcMain, deps: BackupDeps): void
             statSync(join(deps.backupDir, b)).mtimeMs - statSync(join(deps.backupDir, a)).mtimeMs
         )
       for (const old of snapshots.slice(7)) unlinkSync(join(deps.backupDir, old))
+      log.info('backup', 'auto_snapshot', { beforeImport: Boolean(force) })
       return { success: true }
-    } catch {
+    } catch (error) {
+      log.error('backup', 'auto_snapshot_failed', { msg: errorMessage(error) })
       return { success: false }
     }
   })
@@ -232,7 +242,14 @@ export function registerBackupHandlers(ipcMain: IpcMain, deps: BackupDeps): void
     try {
       const content = readFileSync(filePaths[0], 'utf-8')
       const data = repairBackup(JSON.parse(content))
-      if (!isValidBackup(data)) return { success: false, error: 'Backup inválido ou incompatível' }
+      if (!isValidBackup(data)) {
+        log.warn('backup', 'import_invalid')
+        return { success: false, error: 'Backup inválido ou incompatível' }
+      }
+      log.info('backup', 'imported', {
+        projects: Array.isArray(data.projects) ? data.projects.length : 0,
+        files: data.fileBlobs?.length ?? 0
+      })
       pendingBlobs = {
         fileBlobs: data.fileBlobs,
         taskImages: data.taskImages
@@ -245,7 +262,8 @@ export function registerBackupHandlers(ipcMain: IpcMain, deps: BackupDeps): void
         delete data.taskImages
       }
       return { success: true, data }
-    } catch {
+    } catch (error) {
+      log.warn('backup', 'import_unreadable', { msg: errorMessage(error) })
       return { success: false, error: 'Arquivo inválido' }
     }
   })
@@ -259,6 +277,7 @@ export function registerBackupHandlers(ipcMain: IpcMain, deps: BackupDeps): void
       pendingBlobs = null
       return { success: true }
     } catch (error) {
+      log.error('backup', 'restore_files_failed', { msg: errorMessage(error) })
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Não foi possível restaurar os anexos.'

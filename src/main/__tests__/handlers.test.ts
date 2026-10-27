@@ -33,6 +33,7 @@ vi.mock('electron', () => ({
     commandLine: { appendSwitch: vi.fn() },
     whenReady: () => Promise.resolve(),
     getPath: (name: string) => (name === 'userData' ? userData : tmpdir()),
+    getVersion: () => '0.0.0-test',
     on: vi.fn(),
     quit: vi.fn()
   },
