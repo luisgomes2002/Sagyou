@@ -26,13 +26,21 @@ const discardMock = vi.fn(async () => {})
 
 let runImport: ReturnType<typeof useFileImport>['runImport']
 
-function Harness({ projectId }: { projectId: string | null }) {
+function Harness({
+  projectId,
+  expose = (run) => (runImport = run)
+}: {
+  projectId: string | null
+  expose?: (run: typeof runImport) => void
+}): React.JSX.Element {
   const fileImport = useFileImport(projectId)
-  runImport = fileImport.runImport
+  expose(fileImport.runImport)
   return <>{fileImport.dialog}</>
 }
 
-const staged = (...names: string[]) => ({
+const staged = (
+  ...names: string[]
+): { staged: { token: string; name: string; size: number }[]; skipped: number; overLimit: number } => ({
   staged: names.map((name, i) => ({ token: `t${i}`, name, size: 1 })),
   skipped: 0,
   overLimit: 0

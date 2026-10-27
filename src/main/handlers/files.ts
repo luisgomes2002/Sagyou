@@ -53,7 +53,7 @@ export function registerFilesHandlers(
   // the renderer resolves duplicates, then import/discard consume the tokens.
   const fileImport = createFileImportRegistry({
     filesDir,
-    index: indexProjectFileContent,
+    index: (id, destination, ext) => indexProjectFileContent(id, destination, ext),
     onImported: (storedName) => uploadedAttachmentNames.add(storedName)
   })
 

@@ -15,7 +15,7 @@ let filesDir: string
 let clock: number
 const index = vi.fn(async () => {})
 
-const make = () =>
+const make = (): ReturnType<typeof createFileImportRegistry> =>
   createFileImportRegistry({ filesDir, index, now: () => clock })
 
 beforeEach(async () => {

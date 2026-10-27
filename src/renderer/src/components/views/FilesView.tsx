@@ -250,21 +250,21 @@ export function FilesView({
     return () => clearTimeout(timer)
   }, [notice])
 
-  const handleUpload = async () => {
+  const handleUpload = async (): Promise<void> => {
     await runImport(await window.electronAPI.files.pick())
   }
 
   const hasFiles = (e: React.DragEvent): boolean =>
     Array.from(e.dataTransfer?.types ?? []).includes('Files')
 
-  const handleDragEnter = (e: React.DragEvent) => {
+  const handleDragEnter = (e: React.DragEvent): void => {
     if (!hasFiles(e)) return
     e.preventDefault()
     dragDepth.current++
     setDragCount(e.dataTransfer.items?.length ?? 0)
   }
 
-  const handleDragOver = (e: React.DragEvent) => {
+  const handleDragOver = (e: React.DragEvent): void => {
     if (!hasFiles(e)) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'copy'
@@ -272,13 +272,13 @@ export function FilesView({
 
   // Entering a child fires dragleave on the parent first; count depth so the
   // overlay only goes away when the pointer really leaves the list.
-  const handleDragLeave = (e: React.DragEvent) => {
+  const handleDragLeave = (e: React.DragEvent): void => {
     if (!hasFiles(e)) return
     dragDepth.current = Math.max(0, dragDepth.current - 1)
     if (dragDepth.current === 0) setDragCount(null)
   }
 
-  const handleDrop = async (e: React.DragEvent) => {
+  const handleDrop = async (e: React.DragEvent): Promise<void> => {
     if (!hasFiles(e)) return
     e.preventDefault()
     dragDepth.current = 0

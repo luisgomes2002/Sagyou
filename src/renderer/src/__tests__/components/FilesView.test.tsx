@@ -42,7 +42,7 @@ beforeEach(() => {
   })
 })
 
-const filesDrag = (types: string[], count = 2) => ({
+const filesDrag = (types: string[], count = 2): { dataTransfer: Record<string, unknown> } => ({
   dataTransfer: { types, items: { length: count }, files: [], dropEffect: 'none' }
 })
 
