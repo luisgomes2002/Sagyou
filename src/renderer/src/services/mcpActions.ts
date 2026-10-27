@@ -476,6 +476,50 @@ const reopenTask: Handler = (args, scope, phase, store) => {
   return done(task.id, resumo, moveTo(store, task, project, column))
 }
 
+// ── Task timer ───────────────────────────────────────────────────────────────
+
+const MAX_TIME_SECONDS = 86400
+
+const timerRunning = (store: Store, task: Task): boolean =>
+  store.activeTimers.some((timer) => timer.taskId === task.id)
+
+const spentSeconds = (taskId: string): number =>
+  useKanbanStore.getState().tasks.find((item) => item.id === taskId)?.timeSpent ?? 0
+
+const startTaskTimer: Handler = (args, scope, phase, store) => {
+  const task = resolveTask(args, scope, store)
+  const resumo = `Iniciar cronômetro de "${task.title}"`
+  if (taskInDone(taskProject(store, task), task)) return refuse('A tarefa já está concluída.')
+  if (timerRunning(store, task)) return done(task.id, resumo, { jaRodando: true })
+  if (phase === 'apply') store.startTimer(task.id)
+  return done(task.id, resumo)
+}
+
+const stopTaskTimer: Handler = (args, scope, phase, store) => {
+  const task = resolveTask(args, scope, store)
+  const resumo = `Parar cronômetro de "${task.title}"`
+  if (!timerRunning(store, task)) return refuse('O cronômetro desta tarefa não está rodando.')
+  if (phase === 'prepare') return done(task.id, resumo)
+  store.stopTimer(task.id)
+  return done(task.id, resumo, { timeSpent: spentSeconds(task.id) })
+}
+
+const addTimeSpent: Handler = (args, scope, phase, store) => {
+  const task = resolveTask(args, scope, store)
+  const seconds = args.seconds
+  if (
+    typeof seconds !== 'number' ||
+    !Number.isInteger(seconds) ||
+    seconds < 1 ||
+    seconds > MAX_TIME_SECONDS
+  )
+    return refuse(`seconds deve ser um inteiro entre 1 e ${MAX_TIME_SECONDS}.`)
+  const resumo = `Somar ${seconds} s ao tempo de "${task.title}"`
+  if (phase === 'prepare') return done(task.id, resumo)
+  store.addTimeSpent(task.id, seconds)
+  return done(task.id, resumo, { timeSpent: spentSeconds(task.id) })
+}
+
 const deleteTask: Handler = (args, scope, phase, store) => {
   const task = resolveTask(args, scope, store)
   const project = taskProject(store, task)
@@ -872,6 +916,9 @@ const HANDLERS: Record<string, Handler> = {
   complete_task: completeTask,
   reopen_task: reopenTask,
   delete_task: deleteTask,
+  start_task_timer: startTaskTimer,
+  stop_task_timer: stopTaskTimer,
+  add_time_spent: addTimeSpent,
   create_sprint: createSprint,
   create_goal: createGoal,
   update_goal: updateGoal,
