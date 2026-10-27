@@ -108,6 +108,8 @@ export const createTasksSlice: StateCreator<
     if (blobs.length) void window.electronAPI.taskImages.delete(blobs)
     set((s) => ({
       tasks: s.tasks.filter((t) => t.id !== id),
+      // A running timer of a deleted task would never be stopped or shown again.
+      activeTimers: s.activeTimers.filter((t) => t.taskId !== id),
       timeBlocks: unlinkTimeBlocks(s.timeBlocks, 'taskId', new Set([id])),
       tombstones: [...s.tombstones, { id, type: 'task', deletedAt: now }]
     }))

@@ -811,11 +811,14 @@ describe('MCP task timer', () => {
 
   it('start_task_timer starts once and reports a timer already running', () => {
     const { scope, taskId } = seedTimerTask()
+    const now = vi.spyOn(Date, 'now').mockReturnValue(7_000)
     expect(both('start_task_timer', { id: taskId }, scope)).toEqual({
       ok: true,
       id: taskId,
-      resumo: 'Iniciar cronômetro de "Cronometrar"'
+      resumo: 'Iniciar cronômetro de "Cronometrar"',
+      startedAt: 7_000
     })
+    now.mockRestore()
     expect(running(taskId)).toBe(true)
     expect(both('start_task_timer', { title: 'Cronometrar' }, scope)).toMatchObject({
       ok: true,
@@ -898,5 +901,42 @@ describe('MCP task timer', () => {
     expect(running(taskId)).toBe(false)
     expect(spent(taskId)).toBe(30)
     now.mockRestore()
+  })
+
+  it('stop_run_timer stops only the timer started at that instant', () => {
+    const { scope, taskId } = seedTimerTask()
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000)
+    both('start_task_timer', { id: taskId }, scope)
+    now.mockReturnValue(61_000)
+    expect(applyMcpAction('stop_run_timer', { id: taskId, startedAt: 1_000 }, scope)).toMatchObject({
+      ok: true,
+      id: taskId
+    })
+    expect(running(taskId)).toBe(false)
+    expect(spent(taskId)).toBe(60)
+    now.mockRestore()
+  })
+
+  it('stop_run_timer leaves alone a timer the user restarted or already stopped', () => {
+    const { scope, taskId } = seedTimerTask()
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000)
+    both('start_task_timer', { id: taskId }, scope)
+    state().stopTimer(taskId)
+    expect(applyMcpAction('stop_run_timer', { id: taskId, startedAt: 1_000 }, scope)).toMatchObject({
+      ok: true,
+      jaParado: true
+    })
+    now.mockReturnValue(5_000)
+    state().startTimer(taskId)
+    expect(applyMcpAction('stop_run_timer', { id: taskId, startedAt: 1_000 }, scope)).toMatchObject({
+      ok: true,
+      jaParado: true
+    })
+    expect(running(taskId)).toBe(true)
+    now.mockRestore()
+  })
+
+  it('stop_run_timer is internal: not an MCP tool', () => {
+    expect(MCP_RENDERER_WRITE_TOOLS).not.toContain('stop_run_timer')
   })
 })

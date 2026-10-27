@@ -491,8 +491,13 @@ const startTaskTimer: Handler = (args, scope, phase, store) => {
   const resumo = `Iniciar cronômetro de "${task.title}"`
   if (taskInDone(taskProject(store, task), task)) return refuse('A tarefa já está concluída.')
   if (timerRunning(store, task)) return done(task.id, resumo, { jaRodando: true })
-  if (phase === 'apply') store.startTimer(task.id)
-  return done(task.id, resumo)
+  if (phase === 'prepare') return done(task.id, resumo)
+  store.startTimer(task.id)
+  // main keys the run's ownership on this instant (agent-task-timers.ts).
+  const startedAt = useKanbanStore
+    .getState()
+    .activeTimers.find((timer) => timer.taskId === task.id)?.startedAt
+  return done(task.id, resumo, { startedAt })
 }
 
 const stopTaskTimer: Handler = (args, scope, phase, store) => {
@@ -502,6 +507,22 @@ const stopTaskTimer: Handler = (args, scope, phase, store) => {
   if (phase === 'prepare') return done(task.id, resumo)
   store.stopTimer(task.id)
   return done(task.id, resumo, { timeSpent: spentSeconds(task.id) })
+}
+
+/**
+ * Internal (not an MCP tool): main stops, at the end of an agent run, a timer
+ * the run created. Only the timer started at that exact instant is stopped, so
+ * a timer the user stopped and restarted is left alone.
+ */
+const stopRunTimer: Handler = (args, _scope, phase, store) => {
+  const id = optionalText(args, 'id', 200)
+  const task = store.tasks.find((item) => item.id === id)
+  const timer = store.activeTimers.find((item) => item.taskId === id)
+  const resumo = `Parar cronômetro da sessão de "${task?.title ?? id}"`
+  if (!task || !timer || timer.startedAt !== args.startedAt)
+    return done(id ?? '', resumo, { jaParado: true })
+  if (phase === 'apply') store.stopTimer(task.id)
+  return done(task.id, resumo)
 }
 
 const addTimeSpent: Handler = (args, scope, phase, store) => {
@@ -919,6 +940,7 @@ const HANDLERS: Record<string, Handler> = {
   start_task_timer: startTaskTimer,
   stop_task_timer: stopTaskTimer,
   add_time_spent: addTimeSpent,
+  stop_run_timer: stopRunTimer,
   create_sprint: createSprint,
   create_goal: createGoal,
   update_goal: updateGoal,
