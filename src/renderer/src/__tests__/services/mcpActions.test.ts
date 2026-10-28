@@ -570,18 +570,19 @@ describe('MCP note writes', () => {
   })
 })
 
+const table = (id: string): FinancialTable => state().lists.find((l) => l.id === id)!
+
+function seedTables(): { mine: string; other: string; otherProfile: string } {
+  const mine = state().createList('Nubank', 'BRL', DEFAULT_FINANCIAL_PROFILE_ID)
+  const otherProfile = state().createFinancialProfile('Empresa')
+  const other = state().createList('PJ', 'BRL', otherProfile)
+  return { mine, other, otherProfile }
+}
+
 describe('MCP financial writes', () => {
   beforeEach(resetStore)
 
   const scope: McpScope = { projectId: null, financialProfileId: DEFAULT_FINANCIAL_PROFILE_ID }
-  const table = (id: string): FinancialTable => state().lists.find((l) => l.id === id)!
-
-  function seedTables(): { mine: string; other: string; otherProfile: string } {
-    const mine = state().createList('Nubank', 'BRL', DEFAULT_FINANCIAL_PROFILE_ID)
-    const otherProfile = state().createFinancialProfile('Empresa')
-    const other = state().createList('PJ', 'BRL', otherProfile)
-    return { mine, other, otherProfile }
-  }
 
   it('parseMcpMoney accepts plain decimals and refuses ambiguous or non-positive values', () => {
     expect(parseMcpMoney('1500')).toBe('1500')
@@ -750,6 +751,424 @@ describe('MCP financial writes', () => {
   })
 })
 
+describe('MCP transaction bank fields', () => {
+  beforeEach(resetStore)
+
+  const scope: McpScope = { projectId: null, financialProfileId: DEFAULT_FINANCIAL_PROFILE_ID }
+  const profile = (id: string): FinancialProfile =>
+    state().financialProfiles.find((p) => p.id === id)!
+  const seedTx = (tableId: string, extra: Record<string, unknown> = {}): string =>
+    state().addTransaction(tableId, {
+      description: 'Luz',
+      amount: '100',
+      type: 'expense',
+      date: '2026-10-01',
+      ...extra
+    })
+
+  it('create_transaction stores source, counterparty and reference and saves the suggestions', () => {
+    const { mine } = seedTables()
+    const args = {
+      tableId: mine,
+      type: 'despesa',
+      amount: '50',
+      description: 'Mercado',
+      date: '2026-10-25',
+      source: ' C6 Bank ',
+      counterparty: 'Mercado X',
+      bankReference: '#123'
+    }
+    expect(prepareMcpAction('create_transaction', args, scope)).toMatchObject({
+      ok: true,
+      resumo:
+        'Lançar despesa de R$ 50,00 em Nubank — Mercado — 2026-10-25 · origem C6 Bank · contraparte Mercado X · ref. #123'
+    })
+    expect(profile(DEFAULT_FINANCIAL_PROFILE_ID).savedSources ?? []).toEqual([])
+    expect(applyMcpAction('create_transaction', args, scope).ok).toBe(true)
+    expect(table(mine).transactions[0]).toMatchObject({
+      source: 'C6 Bank',
+      counterparty: 'Mercado X',
+      bankReference: '#123'
+    })
+    expect(profile(DEFAULT_FINANCIAL_PROFILE_ID).savedSources).toEqual(['C6 Bank'])
+    expect(profile(DEFAULT_FINANCIAL_PROFILE_ID).savedCounterparties).toEqual(['Mercado X'])
+  })
+
+  it('saves the suggestions in the session profile, not in the active one', () => {
+    const { other, otherProfile } = seedTables()
+    useKanbanStore.setState({ activeFinancialProfileId: DEFAULT_FINANCIAL_PROFILE_ID })
+    const session: McpScope = { projectId: null, financialProfileId: otherProfile }
+    const args = { tableId: other, type: 'receita', amount: '10', description: 'X' }
+    expect(
+      both('create_transaction', { ...args, source: 'Wise', counterparty: 'Cliente' }, session).ok
+    ).toBe(true)
+    expect(profile(otherProfile).savedSources).toEqual(['Wise'])
+    expect(profile(otherProfile).savedCounterparties).toEqual(['Cliente'])
+    expect(profile(DEFAULT_FINANCIAL_PROFILE_ID).savedSources ?? []).toEqual([])
+    expect(profile(DEFAULT_FINANCIAL_PROFILE_ID).savedCounterparties ?? []).toEqual([])
+  })
+
+  it('create_transaction omits empty bank fields', () => {
+    const { mine } = seedTables()
+    const args = {
+      tableId: mine,
+      type: 'receita',
+      amount: '10',
+      description: 'X',
+      date: '2026-10-25'
+    }
+    const result = both('create_transaction', { ...args, source: '', bankReference: ' ' }, scope)
+    expect(result).toMatchObject({
+      ok: true,
+      resumo: 'Lançar receita de R$ 10,00 em Nubank — X — 2026-10-25'
+    })
+    const tx = table(mine).transactions[0]
+    expect('source' in tx).toBe(false)
+    expect('bankReference' in tx).toBe(false)
+    expect(profile(DEFAULT_FINANCIAL_PROFILE_ID).savedSources ?? []).toEqual([])
+  })
+
+  it('update_transaction with only source clears reconciledAt and audits the field', () => {
+    const { mine } = seedTables()
+    const id = seedTx(mine, { reconciledAt: '2026-10-02T00:00:00.000Z' })
+    const result = both('update_transaction', { tableId: mine, id, source: 'Wise' }, scope)
+    expect(result).toMatchObject({
+      ok: true,
+      resumo: 'Editar despesa "Luz" em Nubank (R$ 100,00) · origem Wise'
+    })
+    const tx = table(mine).transactions[0]
+    expect(tx.source).toBe('Wise')
+    expect(tx.reconciledAt).toBeUndefined()
+    expect(tx.audit?.at(-1)?.changes.map((change) => change.field)).toContain('source')
+    expect(profile(DEFAULT_FINANCIAL_PROFILE_ID).savedSources).toEqual(['Wise'])
+  })
+
+  it('update_transaction with "" removes the field and says so in the resumo', () => {
+    const { mine } = seedTables()
+    const id = seedTx(mine, { counterparty: 'Enel', bankReference: '#9' })
+    const result = both(
+      'update_transaction',
+      { tableId: mine, id, counterparty: '', bankReference: '' },
+      scope
+    )
+    expect(result).toMatchObject({
+      ok: true,
+      resumo: 'Editar despesa "Luz" em Nubank (R$ 100,00) · contraparte removida · ref. removida'
+    })
+    const tx = table(mine).transactions[0]
+    expect(tx.counterparty).toBeUndefined()
+    expect(tx.bankReference).toBeUndefined()
+    expect(tx.audit?.at(-1)?.changes.map((change) => change.field)).toEqual(
+      expect.arrayContaining(['counterparty', 'bankReference'])
+    )
+  })
+
+  it('an oversized field refuses without writing the transaction or the suggestions', () => {
+    const { mine } = seedTables()
+    const args = { tableId: mine, type: 'despesa', amount: '10', description: 'X' }
+    expect(
+      both('create_transaction', { ...args, counterparty: 'C', source: 'x'.repeat(81) }, scope)
+    ).toEqual({ ok: false, error: 'source excede 80 caracteres.' })
+    expect(table(mine).transactions).toHaveLength(0)
+    expect(profile(DEFAULT_FINANCIAL_PROFILE_ID).savedCounterparties ?? []).toEqual([])
+    const id = seedTx(mine)
+    expect(
+      both('update_transaction', { tableId: mine, id, bankReference: 'x'.repeat(121) }, scope)
+    ).toEqual({ ok: false, error: 'bankReference excede 120 caracteres.' })
+    expect(table(mine).transactions[0].audit).toBeUndefined()
+  })
+
+  it('update_transaction with no field is still refused', () => {
+    const { mine } = seedTables()
+    const id = seedTx(mine)
+    expect(both('update_transaction', { tableId: mine, id }, scope)).toEqual({
+      ok: false,
+      error: 'Nada para alterar.'
+    })
+  })
+})
+
+describe('MCP transaction details', () => {
+  beforeEach(resetStore)
+
+  const scope: McpScope = { projectId: null, financialProfileId: DEFAULT_FINANCIAL_PROFILE_ID }
+  const invoice = [
+    { description: 'Netflix', amount: '44,90', category: 'Assinaturas', date: '2026-07-05' },
+    { description: 'Sushi', amount: '91', category: 'Lazer' },
+    { description: 'Juros', amount: 1.03 }
+  ]
+  const create = (tableId: string, extra: Record<string, unknown>): Record<string, unknown> => ({
+    tableId,
+    type: 'despesa',
+    amount: '136.93',
+    description: 'Fatura C6',
+    date: '2026-08-05',
+    ...extra
+  })
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+
+  it('create_transaction stores the details in order with new ids and sums them in the resumo', () => {
+    const { mine } = seedTables()
+    const args = create(mine, { details: invoice })
+    expect(prepareMcpAction('create_transaction', args, scope)).toMatchObject({
+      ok: true,
+      resumo:
+        'Lançar despesa de R$ 136,93 em Nubank — Fatura C6 — 2026-08-05 · 3 detalhes somando R$ 136,93'
+    })
+    expect(applyMcpAction('create_transaction', args, scope).ok).toBe(true)
+    const details = table(mine).transactions[0].details ?? []
+    expect(details).toEqual([
+      {
+        id: expect.stringMatching(UUID),
+        description: 'Netflix',
+        amount: '44.9',
+        category: 'Assinaturas',
+        date: '2026-07-05'
+      },
+      { id: expect.stringMatching(UUID), description: 'Sushi', amount: '91', category: 'Lazer' },
+      { id: expect.stringMatching(UUID), description: 'Juros', amount: '1.03' }
+    ])
+    expect(new Set(details.map((detail) => detail.id)).size).toBe(3)
+  })
+
+  it('the resumo shows what is left to detail and the singular form', () => {
+    const { mine } = seedTables()
+    expect(
+      prepareMcpAction(
+        'create_transaction',
+        create(mine, { amount: '150', details: invoice }),
+        scope
+      )
+    ).toMatchObject({
+      resumo: expect.stringMatching(
+        / · 3 detalhes somando R\$ 136,93 \(falta detalhar R\$ 13,07\)$/
+      )
+    })
+    expect(
+      prepareMcpAction(
+        'create_transaction',
+        create(mine, { amount: '200', details: [{ description: 'Claude', amount: '118.38' }] }),
+        scope
+      )
+    ).toMatchObject({
+      resumo: expect.stringMatching(/ · 1 detalhe somando R\$ 118,38 \(falta detalhar R\$ 81,62\)$/)
+    })
+    const empty = both('create_transaction', create(mine, { details: [] }), scope)
+    expect(empty).toMatchObject({ ok: true, resumo: expect.stringMatching(/ · sem detalhes$/) })
+    expect(table(mine).transactions[0].details).toBeUndefined()
+  })
+
+  it('refuses details summing above the amount and writes nothing', () => {
+    const { mine } = seedTables()
+    const args = create(mine, {
+      amount: '797.48',
+      details: [
+        { description: 'A', amount: '700' },
+        { description: 'B', amount: '112' }
+      ]
+    })
+    expect(both('create_transaction', args, scope)).toEqual({
+      ok: false,
+      error: 'Os detalhes somam R$ 812,00, acima do valor da transação (R$ 797,48).'
+    })
+    expect(table(mine).transactions).toHaveLength(0)
+  })
+
+  it('refuses an invalid item with its index, even after valid ones, and writes nothing', () => {
+    const { mine } = seedTables()
+    const good = [...invoice]
+    const cases: [Record<string, unknown>, string][] = [
+      [{ description: ' ', amount: '1' }, 'details[3].description é obrigatório.'],
+      [
+        { description: 'X', amount: '1.500' },
+        'details[3].amount precisa ser um valor positivo sem separador de milhar (ex.: 1500.50 ou 1500,50).'
+      ],
+      [
+        { description: 'X', amount: '1', date: '2026-02-30' },
+        'details[3].date precisa ser uma data real no formato YYYY-MM-DD.'
+      ],
+      [{ description: 'X', amount: '1', foo: 1 }, 'details[3] tem o campo desconhecido "foo".'],
+      [{ id: 'x', description: 'X', amount: '1' }, 'details[3] tem o campo desconhecido "id".'],
+      [
+        { description: 'X', amount: '1', linkedTransactionId: 'tx' },
+        'details[3] tem o campo desconhecido "linkedTransactionId".'
+      ]
+    ]
+    for (const [bad, error] of cases) {
+      const args = create(mine, { amount: '500', details: [...good, bad] })
+      expect(both('create_transaction', args, scope)).toEqual({ ok: false, error })
+    }
+    expect(table(mine).transactions).toHaveLength(0)
+  })
+
+  it('refuses a non-list details and more than 200 items', () => {
+    const { mine } = seedTables()
+    expect(both('create_transaction', create(mine, { details: 'Netflix' }), scope)).toEqual({
+      ok: false,
+      error: 'details precisa ser uma lista.'
+    })
+    const many = Array.from({ length: 201 }, () => ({ description: 'X', amount: '0.01' }))
+    expect(both('create_transaction', create(mine, { details: many }), scope)).toEqual({
+      ok: false,
+      error: 'details aceita no máximo 200 itens.'
+    })
+    expect(table(mine).transactions).toHaveLength(0)
+  })
+
+  const RECONCILED = '2026-10-02T00:00:00.000Z'
+  function seedInvoice(extra: Record<string, unknown> = {}): { mine: string; id: string } {
+    const { mine } = seedTables()
+    const id = state().addTransaction(mine, {
+      description: 'Fatura',
+      amount: '200',
+      type: 'expense',
+      date: '2026-10-01',
+      reconciledAt: RECONCILED,
+      details: [
+        {
+          id: 'a',
+          description: 'Claude',
+          amount: '118.38',
+          category: 'IA',
+          linkedTransactionId: 'tx-murasaki'
+        },
+        { id: 'b', description: 'Uber', amount: '40' }
+      ],
+      ...extra
+    })
+    return { mine, id }
+  }
+  const stored = (mine: string): FinancialTable['transactions'][number] =>
+    table(mine).transactions[0]
+
+  it('update_transaction keeps a detail by id with its link, drops the rest and adds new ones', () => {
+    const { mine, id } = seedInvoice()
+    const args = {
+      tableId: mine,
+      id,
+      details: [
+        { id: 'a', description: 'Claude Pro', amount: '118.38' },
+        { description: 'Novo', amount: '10' }
+      ]
+    }
+    expect(prepareMcpAction('update_transaction', args, scope)).toMatchObject({
+      ok: true,
+      resumo:
+        'Editar despesa "Fatura" em Nubank (R$ 200,00) · 2 detalhes somando R$ 128,38 (falta detalhar R$ 71,62)'
+    })
+    expect(applyMcpAction('update_transaction', args, scope).ok).toBe(true)
+    const tx = stored(mine)
+    expect(tx.details).toEqual([
+      {
+        id: 'a',
+        description: 'Claude Pro',
+        amount: '118.38',
+        category: 'IA',
+        linkedTransactionId: 'tx-murasaki'
+      },
+      { id: expect.stringMatching(UUID), description: 'Novo', amount: '10' }
+    ])
+    expect(tx.audit?.at(-1)?.changes.map((change) => change.field)).toEqual(['details'])
+    expect(tx.reconciledAt).toBe(RECONCILED)
+  })
+
+  it('"" clears an optional field of a kept detail', () => {
+    const { mine, id } = seedInvoice()
+    const args = {
+      tableId: mine,
+      id,
+      details: [{ id: 'a', description: 'Claude', amount: '118.38', category: '' }]
+    }
+    expect(both('update_transaction', args, scope).ok).toBe(true)
+    expect(stored(mine).details?.[0]).toEqual({
+      id: 'a',
+      description: 'Claude',
+      amount: '118.38',
+      linkedTransactionId: 'tx-murasaki'
+    })
+  })
+
+  it('details: [] clears the list', () => {
+    const { mine, id } = seedInvoice()
+    expect(both('update_transaction', { tableId: mine, id, details: [] }, scope)).toMatchObject({
+      ok: true,
+      resumo: 'Editar despesa "Fatura" em Nubank (R$ 200,00) · sem detalhes'
+    })
+    expect(stored(mine).details).toEqual([])
+  })
+
+  it('refuses an id that is not of this transaction and a repeated id', () => {
+    const { mine, id } = seedInvoice()
+    const before = structuredClone(stored(mine))
+    expect(
+      both(
+        'update_transaction',
+        { tableId: mine, id, details: [{ id: 'nao-existe', description: 'X', amount: '1' }] },
+        scope
+      )
+    ).toEqual({ ok: false, error: 'details[0].id não é um detalhe desta transação.' })
+    expect(
+      both(
+        'update_transaction',
+        {
+          tableId: mine,
+          id,
+          details: [
+            { id: 'a', description: 'X', amount: '1' },
+            { id: 'a', description: 'Y', amount: '1' }
+          ]
+        },
+        scope
+      )
+    ).toEqual({ ok: false, error: 'details[1].id repete outro item da lista.' })
+    expect(stored(mine)).toEqual(before)
+  })
+
+  it('compares the details with the new amount when both come together', () => {
+    const { mine, id } = seedInvoice()
+    const sixty = [
+      { description: 'A', amount: '30' },
+      { description: 'B', amount: '30' }
+    ]
+    expect(
+      both('update_transaction', { tableId: mine, id, amount: '50', details: sixty }, scope)
+    ).toEqual({
+      ok: false,
+      error: 'Os detalhes somam R$ 60,00, acima do valor da transação (R$ 50,00).'
+    })
+    expect(stored(mine).amount).toBe('200')
+    expect(stored(mine).details).toHaveLength(2)
+    const above = [
+      { description: 'A', amount: '150' },
+      { description: 'B', amount: '100' }
+    ]
+    expect(
+      both('update_transaction', { tableId: mine, id, amount: '300', details: above }, scope).ok
+    ).toBe(true)
+    expect(stored(mine).amount).toBe('300')
+    expect(stored(mine).details?.map((detail) => detail.amount)).toEqual(['150', '100'])
+  })
+
+  it('an edit without details leaves the stored details as they are', () => {
+    const { mine, id } = seedInvoice()
+    const before = structuredClone(stored(mine).details)
+    expect(both('update_transaction', { tableId: mine, id, description: 'X' }, scope).ok).toBe(true)
+    expect(stored(mine).details).toEqual(before)
+    expect(stored(mine).reconciledAt).toBe(RECONCILED)
+  })
+
+  it('a debt transaction refuses details', () => {
+    const { mine, id } = seedInvoice({ debtId: 'debt-1' })
+    expect(
+      both(
+        'update_transaction',
+        { tableId: mine, id, details: [{ description: 'X', amount: '1' }] },
+        scope
+      )
+    ).toEqual({ ok: false, error: 'Esta transação pertence a uma dívida; altere-a no Sagyou.' })
+  })
+})
+
 describe('MCP review fixes', () => {
   beforeEach(resetStore)
 
@@ -908,10 +1327,12 @@ describe('MCP task timer', () => {
     const now = vi.spyOn(Date, 'now').mockReturnValue(1_000)
     both('start_task_timer', { id: taskId }, scope)
     now.mockReturnValue(61_000)
-    expect(applyMcpAction('stop_run_timer', { id: taskId, startedAt: 1_000 }, scope)).toMatchObject({
-      ok: true,
-      id: taskId
-    })
+    expect(applyMcpAction('stop_run_timer', { id: taskId, startedAt: 1_000 }, scope)).toMatchObject(
+      {
+        ok: true,
+        id: taskId
+      }
+    )
     expect(running(taskId)).toBe(false)
     expect(spent(taskId)).toBe(60)
     now.mockRestore()
@@ -922,16 +1343,20 @@ describe('MCP task timer', () => {
     const now = vi.spyOn(Date, 'now').mockReturnValue(1_000)
     both('start_task_timer', { id: taskId }, scope)
     state().stopTimer(taskId)
-    expect(applyMcpAction('stop_run_timer', { id: taskId, startedAt: 1_000 }, scope)).toMatchObject({
-      ok: true,
-      jaParado: true
-    })
+    expect(applyMcpAction('stop_run_timer', { id: taskId, startedAt: 1_000 }, scope)).toMatchObject(
+      {
+        ok: true,
+        jaParado: true
+      }
+    )
     now.mockReturnValue(5_000)
     state().startTimer(taskId)
-    expect(applyMcpAction('stop_run_timer', { id: taskId, startedAt: 1_000 }, scope)).toMatchObject({
-      ok: true,
-      jaParado: true
-    })
+    expect(applyMcpAction('stop_run_timer', { id: taskId, startedAt: 1_000 }, scope)).toMatchObject(
+      {
+        ok: true,
+        jaParado: true
+      }
+    )
     expect(running(taskId)).toBe(true)
     now.mockRestore()
   })

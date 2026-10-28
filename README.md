@@ -79,6 +79,8 @@ Em **Sessões de código** (seção IA da barra lateral) você abre um terminal 
 
 **Acesso aos seus dados por MCP.** O agente consulta e altera tarefas, projetos, notas, metas, finanças e memórias por um servidor MCP local, com credencial temporária limitada àquela sessão, ao projeto e ao perfil financeiro escolhidos.
 
+Ao lançar ou editar uma transação, o agente também preenche os detalhes da fatura (item, valor, categoria e data da compra), a origem, a contraparte e a referência bancária. Valem as mesmas regras do app: a soma dos detalhes nunca passa do valor, e a edição entra na auditoria.
+
 | Sem aprovação                                       | Pede sua aprovação                                    | Só você faz                         |
 | --------------------------------------------------- | ----------------------------------------------------- | ----------------------------------- |
 | criar/editar projetos, colunas, tarefas, notas e metas | qualquer exclusão                                     | definir as pastas de código         |

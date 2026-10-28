@@ -64,6 +64,31 @@ describe('MCP write tool classification', () => {
     expect(addTime?.required).toEqual(['seconds'])
   })
 
+  it('transaction tools expose bank fields and details', () => {
+    const schemaOf = (name: string): Record<string, unknown> =>
+      MCP_WRITE_TOOLS.find((tool) => tool.name === name)?.inputSchema ?? {}
+    const create = schemaOf('create_transaction')
+    const update = schemaOf('update_transaction')
+    for (const schema of [create, update]) {
+      const properties = schema.properties as Record<string, Record<string, unknown>>
+      expect(Object.keys(properties)).toEqual(
+        expect.arrayContaining(['source', 'counterparty', 'bankReference', 'details'])
+      )
+      expect(properties.details.type).toBe('array')
+      expect(properties.details.maxItems).toBe(200)
+      const items = properties.details.items as Record<string, unknown>
+      expect(items.required).toEqual(['description', 'amount'])
+      expect(items.additionalProperties).toBe(false)
+    }
+    const itemProps = (schema: Record<string, unknown>): object =>
+      ((schema.properties as Record<string, Record<string, Record<string, unknown>>>).details.items
+        .properties as object) ?? {}
+    expect('id' in itemProps(update)).toBe(true)
+    expect('id' in itemProps(create)).toBe(false)
+    expect(create.required).toEqual(['tableId', 'type', 'amount', 'description'])
+    expect(update.required).toEqual(['tableId', 'id'])
+  })
+
   it('has a denial message for every approval tool', () => {
     for (const name of MCP_APPROVAL_REQUIRED)
       expect(MCP_DENIAL_MESSAGE[name]).toMatch(/não aprovad/)

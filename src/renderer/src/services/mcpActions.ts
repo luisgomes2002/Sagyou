@@ -12,6 +12,7 @@ import {
   type FinancialProfile,
   type FinancialTable,
   type FinancialTransaction,
+  type FinancialTransactionDetail,
   type Goal,
   type Priority,
   type Project,
@@ -70,7 +71,11 @@ const LIMITS = {
   goalLabel: 200,
   transactionDescription: 300,
   category: 60,
-  financialName: 80
+  financialName: 80,
+  transactionSource: 80,
+  counterparty: 120,
+  bankReference: 120,
+  details: 200
 } as const
 
 const DONE_RENAME_REFUSAL =
@@ -806,6 +811,144 @@ function readAmount(args: Args, required: boolean): string | undefined {
   return amount as string
 }
 
+type BankFields = Partial<Pick<FinancialTransaction, 'source' | 'counterparty' | 'bankReference'>>
+
+const BANK_FIELDS = [
+  ['source', LIMITS.transactionSource, 'origem'],
+  ['counterparty', LIMITS.counterparty, 'contraparte'],
+  ['bankReference', LIMITS.bankReference, 'ref.']
+] as const
+
+/**
+ * Creation omits an empty field; an update keeps the key with `undefined`, so
+ * `applyFinancialTransactionEdit` records the removal in the audit.
+ */
+function readBankFields(args: Args, mode: 'create' | 'update'): BankFields {
+  const fields: BankFields = {}
+  for (const [key, max] of BANK_FIELDS) {
+    const value = optionalText(args, key, max)
+    if (value) fields[key] = value
+    else if (value === '' && mode === 'update') fields[key] = undefined
+  }
+  return fields
+}
+
+const bankResumo = (fields: BankFields): string =>
+  BANK_FIELDS.filter(([key]) => Object.hasOwn(fields, key))
+    .map(([key, , label]) => ` · ${label} ${fields[key] ?? 'removida'}`)
+    .join('')
+
+/** Same autocomplete suggestions the transaction panel saves, in the session's profile. */
+function saveBankSuggestions(store: Store, scope: McpScope, fields: BankFields): void {
+  if (fields.source) store.addFinancialSource(scope.financialProfileId, fields.source)
+  if (fields.counterparty)
+    store.addFinancialCounterparty(scope.financialProfileId, fields.counterparty)
+}
+
+const DETAIL_KEYS = new Set(['id', 'description', 'amount', 'category', 'date'])
+
+/** `optionalText` for a details item, with `details[i].` in the messages. */
+function readDetailText(item: Args, index: number, key: string, max: number): string | undefined {
+  const value = item[key]
+  if (value === undefined || value === null) return undefined
+  if (typeof value !== 'string') refuse(`details[${index}].${key} precisa ser texto.`)
+  const trimmed = (value as string).trim()
+  if (trimmed.length > max) refuse(`details[${index}].${key} excede ${max} caracteres.`)
+  return trimmed
+}
+
+/**
+ * `details` replaces the whole list; undefined when absent. `existing` is the
+ * stored list on update, or null on creation, where an item `id` is an unknown
+ * key. A kept item is the stored one with the sent fields on top, so its
+ * `linkedTransactionId` survives; the agent can never set that key itself.
+ */
+function readDetails(
+  args: Args,
+  existing: FinancialTransactionDetail[] | null
+): FinancialTransactionDetail[] | undefined {
+  const raw = args.details
+  if (raw === undefined || raw === null) return undefined
+  if (!Array.isArray(raw)) refuse('details precisa ser uma lista.')
+  const list = raw as unknown[]
+  if (list.length > LIMITS.details) refuse(`details aceita no máximo ${LIMITS.details} itens.`)
+  const stored = new Map((existing ?? []).map((detail) => [detail.id, detail]))
+  const seen = new Set<string>()
+  return list.map((entry, i) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry))
+      refuse(`details[${i}] precisa ser um objeto.`)
+    const item = entry as Args
+    const unknown = Object.keys(item).find(
+      (key) => !DETAIL_KEYS.has(key) || (key === 'id' && !existing)
+    )
+    if (unknown !== undefined) refuse(`details[${i}] tem o campo desconhecido "${unknown}".`)
+    const description = readDetailText(item, i, 'description', LIMITS.transactionDescription)
+    if (!description) refuse(`details[${i}].description é obrigatório.`)
+    const amount = parseMcpMoney(item.amount)
+    if (!amount)
+      refuse(
+        `details[${i}].amount precisa ser um valor positivo sem separador de milhar (ex.: 1500.50 ou 1500,50).`
+      )
+    const category = readDetailText(item, i, 'category', LIMITS.category)
+    const date = readDetailText(item, i, 'date', 10)
+    if (date && !isCalendarDate(date))
+      refuse(`details[${i}].date precisa ser uma data real no formato YYYY-MM-DD.`)
+    const id = readDetailText(item, i, 'id', 200)
+    let kept: FinancialTransactionDetail | undefined
+    if (id) {
+      if (seen.has(id)) refuse(`details[${i}].id repete outro item da lista.`)
+      kept = stored.get(id)
+      if (!kept) refuse(`details[${i}].id não é um detalhe desta transação.`)
+      seen.add(id)
+    }
+    const detail: FinancialTransactionDetail = {
+      ...kept,
+      id: id || uuidv4(),
+      description: description as string,
+      amount: amount as string
+    }
+    // "" clears an optional field of a kept item; absent keeps the stored value.
+    if (category) detail.category = category
+    else if (category === '') delete detail.category
+    if (date) detail.date = date
+    else if (date === '') delete detail.date
+    return detail
+  })
+}
+
+const detailsTotal = (details: FinancialTransactionDetail[]): Decimal =>
+  details.reduce((total, detail) => total.plus(D(detail.amount)), new Decimal(0))
+
+/** The slice drops over-total details silently, so the MCP refuses them first. */
+function refuseDetailsOverTotal(
+  details: FinancialTransactionDetail[],
+  total: string,
+  currency: Currency
+): void {
+  const sum = detailsTotal(details)
+  if (sum.greaterThan(D(total)))
+    refuse(
+      `Os detalhes somam ${formatMcpMoney(sum.toString(), currency)}, acima do valor da transação (${formatMcpMoney(total, currency)}).`
+    )
+}
+
+function detailsResumo(
+  details: FinancialTransactionDetail[],
+  total: string,
+  currency: Currency
+): string {
+  if (!details.length) return ' · sem detalhes'
+  const sum = detailsTotal(details)
+  const missing = D(total).minus(sum)
+  const label = details.length === 1 ? 'detalhe' : 'detalhes'
+  return (
+    ` · ${details.length} ${label} somando ${formatMcpMoney(sum.toString(), currency)}` +
+    (missing.greaterThan(0)
+      ? ` (falta detalhar ${formatMcpMoney(missing.toString(), currency)})`
+      : '')
+  )
+}
+
 const createTransaction: Handler = (args, scope, phase, store) => {
   const table = resolveTable(args, scope, store)
   const type = readType(args, true) as FinancialTransaction['type']
@@ -813,16 +956,25 @@ const createTransaction: Handler = (args, scope, phase, store) => {
   const description = requiredText(args, 'description', LIMITS.transactionDescription)
   const date = optionalDate(args, 'date') || todayLocalISO()
   const category = optionalText(args, 'category', LIMITS.category)
+  const bank = readBankFields(args, 'create')
+  const details = readDetails(args, null)
+  if (details) refuseDetailsOverTotal(details, amount, table.currency)
   const value = formatMcpMoney(amount, table.currency)
-  const resumo = `Lançar ${TYPE_LABEL[type]} de ${value} em ${table.name} — ${description} — ${date}`
+  const resumo =
+    `Lançar ${TYPE_LABEL[type]} de ${value} em ${table.name} — ${description} — ${date}` +
+    bankResumo(bank) +
+    (details ? detailsResumo(details, amount, table.currency) : '')
   if (phase === 'prepare') return done('', resumo)
   const id = store.addTransaction(table.id, {
     description,
     amount,
     type,
     date,
-    ...(category ? { category } : {})
+    ...(category ? { category } : {}),
+    ...bank,
+    ...(details?.length ? { details } : {})
   })
+  saveBankSuggestions(store, scope, bank)
   return done(id, resumo)
 }
 
@@ -846,20 +998,31 @@ const updateTransaction: Handler = (args, scope, phase, store) => {
   }
   const category = optionalText(args, 'category', LIMITS.category)
   if (category !== undefined) updates.category = category || undefined
+  const bank = readBankFields(args, 'update')
+  Object.assign(updates, bank)
+  const details = readDetails(args, transaction.details ?? [])
+  if (details) updates.details = details
   if (!Object.keys(updates).length) refuse('Nada para alterar.')
-  // updateTransaction silently keeps the old amount when its details exceed the new one.
-  const detailed = (transaction.details ?? []).reduce(
-    (total, detail) => total.plus(D(detail.amount)),
-    new Decimal(0)
-  )
-  if (updates.amount && detailed.greaterThan(new Decimal(updates.amount)))
-    refuse(
-      `Os detalhes desta transação somam ${formatMcpMoney(detailed.toString(), table.currency)}; ajuste-os antes de reduzir o valor.`
-    )
-  const value = formatMcpMoney(updates.amount ?? transaction.amount, table.currency)
+  const total = updates.amount ?? transaction.amount
+  // updateTransaction silently ignores the whole edit when the details exceed the amount.
+  if (details) refuseDetailsOverTotal(details, total, table.currency)
+  else {
+    const detailed = detailsTotal(transaction.details ?? [])
+    if (updates.amount && detailed.greaterThan(D(updates.amount)))
+      refuse(
+        `Os detalhes desta transação somam ${formatMcpMoney(detailed.toString(), table.currency)}; ajuste-os antes de reduzir o valor.`
+      )
+  }
+  const value = formatMcpMoney(total, table.currency)
   const label = TYPE_LABEL[updates.type ?? transaction.type]
-  const resumo = `Editar ${label} "${transaction.description}" em ${table.name} (${value})`
-  if (phase === 'apply') store.updateTransaction(table.id, transaction.id, updates)
+  const resumo =
+    `Editar ${label} "${transaction.description}" em ${table.name} (${value})` +
+    bankResumo(bank) +
+    (details ? detailsResumo(details, total, table.currency) : '')
+  if (phase === 'apply') {
+    store.updateTransaction(table.id, transaction.id, updates)
+    saveBankSuggestions(store, scope, bank)
+  }
   return done(transaction.id, resumo)
 }
 
