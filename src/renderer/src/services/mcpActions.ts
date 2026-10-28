@@ -70,7 +70,10 @@ const LIMITS = {
   goalLabel: 200,
   transactionDescription: 300,
   category: 60,
-  financialName: 80
+  financialName: 80,
+  transactionSource: 80,
+  counterparty: 120,
+  bankReference: 120
 } as const
 
 const DONE_RENAME_REFUSAL =
@@ -806,6 +809,40 @@ function readAmount(args: Args, required: boolean): string | undefined {
   return amount as string
 }
 
+type BankFields = Partial<Pick<FinancialTransaction, 'source' | 'counterparty' | 'bankReference'>>
+
+const BANK_FIELDS = [
+  ['source', LIMITS.transactionSource, 'origem'],
+  ['counterparty', LIMITS.counterparty, 'contraparte'],
+  ['bankReference', LIMITS.bankReference, 'ref.']
+] as const
+
+/**
+ * Creation omits an empty field; an update keeps the key with `undefined`, so
+ * `applyFinancialTransactionEdit` records the removal in the audit.
+ */
+function readBankFields(args: Args, mode: 'create' | 'update'): BankFields {
+  const fields: BankFields = {}
+  for (const [key, max] of BANK_FIELDS) {
+    const value = optionalText(args, key, max)
+    if (value) fields[key] = value
+    else if (value === '' && mode === 'update') fields[key] = undefined
+  }
+  return fields
+}
+
+const bankResumo = (fields: BankFields): string =>
+  BANK_FIELDS.filter(([key]) => Object.hasOwn(fields, key))
+    .map(([key, , label]) => ` · ${label} ${fields[key] ?? 'removida'}`)
+    .join('')
+
+/** Same autocomplete suggestions the transaction panel saves, in the session's profile. */
+function saveBankSuggestions(store: Store, scope: McpScope, fields: BankFields): void {
+  if (fields.source) store.addFinancialSource(scope.financialProfileId, fields.source)
+  if (fields.counterparty)
+    store.addFinancialCounterparty(scope.financialProfileId, fields.counterparty)
+}
+
 const createTransaction: Handler = (args, scope, phase, store) => {
   const table = resolveTable(args, scope, store)
   const type = readType(args, true) as FinancialTransaction['type']
@@ -813,16 +850,21 @@ const createTransaction: Handler = (args, scope, phase, store) => {
   const description = requiredText(args, 'description', LIMITS.transactionDescription)
   const date = optionalDate(args, 'date') || todayLocalISO()
   const category = optionalText(args, 'category', LIMITS.category)
+  const bank = readBankFields(args, 'create')
   const value = formatMcpMoney(amount, table.currency)
-  const resumo = `Lançar ${TYPE_LABEL[type]} de ${value} em ${table.name} — ${description} — ${date}`
+  const resumo =
+    `Lançar ${TYPE_LABEL[type]} de ${value} em ${table.name} — ${description} — ${date}` +
+    bankResumo(bank)
   if (phase === 'prepare') return done('', resumo)
   const id = store.addTransaction(table.id, {
     description,
     amount,
     type,
     date,
-    ...(category ? { category } : {})
+    ...(category ? { category } : {}),
+    ...bank
   })
+  saveBankSuggestions(store, scope, bank)
   return done(id, resumo)
 }
 
@@ -846,6 +888,8 @@ const updateTransaction: Handler = (args, scope, phase, store) => {
   }
   const category = optionalText(args, 'category', LIMITS.category)
   if (category !== undefined) updates.category = category || undefined
+  const bank = readBankFields(args, 'update')
+  Object.assign(updates, bank)
   if (!Object.keys(updates).length) refuse('Nada para alterar.')
   // updateTransaction silently keeps the old amount when its details exceed the new one.
   const detailed = (transaction.details ?? []).reduce(
@@ -858,8 +902,12 @@ const updateTransaction: Handler = (args, scope, phase, store) => {
     )
   const value = formatMcpMoney(updates.amount ?? transaction.amount, table.currency)
   const label = TYPE_LABEL[updates.type ?? transaction.type]
-  const resumo = `Editar ${label} "${transaction.description}" em ${table.name} (${value})`
-  if (phase === 'apply') store.updateTransaction(table.id, transaction.id, updates)
+  const resumo =
+    `Editar ${label} "${transaction.description}" em ${table.name} (${value})` + bankResumo(bank)
+  if (phase === 'apply') {
+    store.updateTransaction(table.id, transaction.id, updates)
+    saveBankSuggestions(store, scope, bank)
+  }
   return done(transaction.id, resumo)
 }
 
