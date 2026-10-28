@@ -13,6 +13,7 @@ import {
   shortMemoryId,
   handoffId,
   scrubConversationLinks,
+  selectRecentMemories,
   titleKey,
   MEMORY_DECAY_BASE_DAYS,
   MEMORY_MAX,
@@ -400,5 +401,84 @@ describe('scrubConversationLinks', () => {
 
     expect(result.memories[0]).toEqual(untouched)
     expect(result.changed).toBe(0)
+  })
+})
+
+describe('selectRecentMemories', () => {
+  const all = [
+    mem({ id: 'g', projectId: null, updatedAt: '2026-10-20T10:00:00.000Z' }),
+    mem({ id: 'p1', projectId: 'p', updatedAt: '2026-10-27T10:00:00.000Z' }),
+    mem({
+      id: 'h',
+      projectId: 'p',
+      type: 'handoff',
+      title: 'Última sessão de terminal',
+      updatedAt: '2026-10-28T09:00:00.000Z'
+    }),
+    mem({ id: 'x', projectId: 'outro', updatedAt: '2026-10-28T11:00:00.000Z' }),
+    mem({
+      id: 'a',
+      projectId: 'p',
+      updatedAt: '2026-10-26T10:00:00.000Z',
+      archivedAt: '2026-10-26T11:00:00.000Z'
+    })
+  ]
+  const base = {
+    projectId: 'p',
+    allProjects: false,
+    status: 'active' as const,
+    offset: 0,
+    limit: 20
+  }
+  const ids = (result: { items: AiMemory[] }): string[] => result.items.map((item) => item.id)
+
+  it('lists the project and the globals, newest first, without other projects or archived ones', () => {
+    expect(ids(selectRecentMemories(all, base))).toEqual(['h', 'p1', 'g'])
+    expect(ids(selectRecentMemories(all, { ...base, allProjects: true }))).toEqual([
+      'x',
+      'h',
+      'p1',
+      'g'
+    ])
+    expect(ids(selectRecentMemories(all, { ...base, projectId: null }))).toEqual(['g'])
+  })
+
+  it('filters by type and status', () => {
+    expect(ids(selectRecentMemories(all, { ...base, type: 'handoff' }))).toEqual(['h'])
+    expect(ids(selectRecentMemories(all, { ...base, status: 'archived' }))).toEqual(['a'])
+    expect(ids(selectRecentMemories(all, { ...base, status: 'all' }))).toEqual([
+      'h',
+      'p1',
+      'a',
+      'g'
+    ])
+  })
+
+  it('keeps both edges of the period', () => {
+    const period = {
+      ...base,
+      from: '2026-10-27T10:00:00.000Z',
+      before: '2026-10-28T09:00:00.001Z'
+    }
+    expect(ids(selectRecentMemories(all, period))).toEqual(['h', 'p1'])
+    expect(
+      ids(selectRecentMemories(all, { ...period, before: '2026-10-28T09:00:00.000Z' }))
+    ).toEqual(['p1'])
+  })
+
+  it('pages with the total of the whole match', () => {
+    const page = selectRecentMemories(all, { ...base, offset: 1, limit: 1 })
+    expect(page.total).toBe(3)
+    expect(ids(page)).toEqual(['p1'])
+  })
+
+  it('breaks a date tie by id so pages never repeat or skip', () => {
+    const tied = [
+      mem({ id: 'b', updatedAt: NOW }),
+      mem({ id: 'a', updatedAt: NOW }),
+      mem({ id: 'c', updatedAt: NOW })
+    ]
+    const filter = { ...base, projectId: null }
+    expect(ids(selectRecentMemories(tied, filter))).toEqual(['a', 'b', 'c'])
   })
 })

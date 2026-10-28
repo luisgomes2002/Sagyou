@@ -247,6 +247,7 @@ const sagyouMcp = startSagyouMcpBroker({
       limit: 8
     }),
   readMemory: (id) => memoryStore.getMemory(id),
+  listMemoriesForRecent: () => memoryStore.listMemories({ includeArchived: true }),
   // Keep the existing once-per-hour decay accounting in the store; the broker
   // decides authorization first, so rejected probes never count as a read.
   touchMemory: (id) => memoryStore.touchMemories([id], new Date().toISOString()),

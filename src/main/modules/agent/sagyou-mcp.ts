@@ -1,5 +1,13 @@
 import { createServer, type Server, type Socket } from 'net'
-import { buildMemory, findConflicts, type AiMemory, type MemoryType } from '../ai/memory'
+import {
+  buildMemory,
+  findConflicts,
+  MEMORY_TYPES,
+  selectRecentMemories,
+  type AiMemory,
+  type MemoryType,
+  type RecentMemoryFilter
+} from '../ai/memory'
 import { randomUUID } from 'crypto'
 import type { MemorySearchHit } from '../../store'
 import { MCP_WRITE_TOOLS } from './mcp-write-tools'
@@ -18,6 +26,7 @@ export const MCP_PERMISSIONS = [
   'list_projects',
   'search_memory',
   'read_memory',
+  'list_recent_memories',
   'save_memory',
   'check_memories',
   'ler_tasks',
@@ -57,6 +66,8 @@ export interface McpBrokerDeps {
   readProjectData: (projectId: string | null | undefined) => unknown
   searchMemory: (projectId: string | null | undefined, term: string) => MemorySearchHit[]
   readMemory: (id: string) => AiMemory | null
+  /** Every memory, archived included; absent means list_recent_memories finds none. */
+  listMemoriesForRecent?: () => AiMemory[]
   touchMemory: (id: string) => void
   memoriesForConflict: (projectId: string | null | undefined) => AiMemory[]
   saveMemory: (
@@ -142,7 +153,10 @@ const TOOLS: { name: McpPermission; description: string; inputSchema: Record<str
         type: 'object',
         properties: {
           term: { type: 'string', description: 'Termo a procurar nas memórias' },
-          projectId: { type: 'string', description: 'ID do projeto; omita para o contexto da sessão.' }
+          projectId: {
+            type: 'string',
+            description: 'ID do projeto; omita para o contexto da sessão.'
+          }
         },
         required: ['term'],
         additionalProperties: false
@@ -156,6 +170,34 @@ const TOOLS: { name: McpPermission; description: string; inputSchema: Record<str
         type: 'object',
         properties: { id: { type: 'string', description: 'ID exato retornado por search_memory' } },
         required: ['id'],
+        additionalProperties: false
+      }
+    },
+    {
+      name: 'list_recent_memories',
+      description:
+        'Lista memórias por data de atualização, da mais recente, sem termo de busca: do projeto indicado e globais (sem projeto na sessão, de todos). Retorna trechos curtos; abra o corpo com read_memory.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          projectId: {
+            type: 'string',
+            description: 'ID do projeto; omita para o contexto da sessão.'
+          },
+          type: { type: 'string', enum: MEMORY_TYPES },
+          status: {
+            type: 'string',
+            enum: ['active', 'archived', 'all'],
+            description: 'Padrão active.'
+          },
+          since: { type: 'string', description: 'Atualizadas a partir deste dia, YYYY-MM-DD.' },
+          until: {
+            type: 'string',
+            description: 'Atualizadas até este dia (inclusive), YYYY-MM-DD.'
+          },
+          limit: { type: 'integer', minimum: 1, maximum: 50, description: 'Padrão 20.' },
+          offset: { type: 'integer', minimum: 0 }
+        },
         additionalProperties: false
       }
     },
@@ -282,6 +324,86 @@ function memorySearchResult(hits: MemorySearchHit[]): { total: number; memories:
       pinned: memory.pinned,
       snippet: snippet.slice(0, MEMORY_SNIPPET_LIMIT)
     }))
+  }
+}
+
+const RECENT_PAGE_DEFAULT = 20
+const RECENT_PAGE_LIMIT = 50
+
+/** Local midnight of a real YYYY-MM-DD day, plus `days`, as an ISO instant; null if not a real day. */
+function localDayStart(value: string, days = 0): string | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  if (!match) return null
+  const [year, month, day] = match.slice(1).map(Number)
+  const start = new Date(year, month - 1, day)
+  if (start.getFullYear() !== year || start.getMonth() !== month - 1 || start.getDate() !== day)
+    return null
+  start.setDate(start.getDate() + days)
+  return start.toISOString()
+}
+
+/** Validates list_recent_memories input; a wrong value is refused, never clamped. */
+function recentMemoryFilter(
+  args: unknown,
+  session: McpSession
+): RecentMemoryFilter | { error: string } {
+  const input = args && typeof args === 'object' ? (args as Record<string, unknown>) : {}
+  const type = input.type
+  if (type !== undefined && !MEMORY_TYPES.includes(type as MemoryType))
+    return { error: `type precisa ser um de: ${MEMORY_TYPES.join(', ')}.` }
+  const status = input.status ?? 'active'
+  if (status !== 'active' && status !== 'archived' && status !== 'all')
+    return { error: 'status precisa ser active, archived ou all.' }
+  const day = (key: 'since' | 'until'): string | undefined | null => {
+    const value = input[key]
+    if (value === undefined) return undefined
+    return typeof value === 'string' ? localDayStart(value.trim(), key === 'until' ? 1 : 0) : null
+  }
+  const from = day('since')
+  if (from === null) return { error: 'since precisa ser uma data real no formato YYYY-MM-DD.' }
+  const before = day('until')
+  if (before === null) return { error: 'until precisa ser uma data real no formato YYYY-MM-DD.' }
+  if (from && before && from >= before) return { error: 'since não pode ser depois de until.' }
+  const limit = input.limit ?? RECENT_PAGE_DEFAULT
+  if (!Number.isInteger(limit) || (limit as number) < 1 || (limit as number) > RECENT_PAGE_LIMIT)
+    return { error: `limit precisa ser um inteiro de 1 a ${RECENT_PAGE_LIMIT}.` }
+  const offset = input.offset ?? 0
+  if (!Number.isInteger(offset) || (offset as number) < 0)
+    return { error: 'offset precisa ser um inteiro maior ou igual a 0.' }
+  const projectId = readProjectId(args, session)
+  return {
+    projectId: projectId ?? null,
+    allProjects: projectId === undefined,
+    ...(type ? { type: type as MemoryType } : {}),
+    status,
+    ...(from ? { from } : {}),
+    ...(before ? { before } : {}),
+    offset: offset as number,
+    limit: limit as number
+  }
+}
+
+function recentMemoryResult(
+  page: { total: number; items: AiMemory[] },
+  offset: number
+): Record<string, unknown> {
+  const nextOffset = offset + page.items.length
+  return {
+    total: page.total,
+    offset,
+    items: page.items.map((memory) => ({
+      id: memory.id,
+      title: memory.title,
+      type: memory.type,
+      tags: memory.tags,
+      scope: memory.projectId === null ? 'global' : 'project',
+      projectId: memory.projectId,
+      status: memory.archivedAt ? 'archived' : 'active',
+      updatedAt: memory.updatedAt,
+      snippet: conflictSnippet(memory.body).slice(0, MEMORY_SNIPPET_LIMIT)
+    })),
+    truncated: nextOffset < page.total,
+    ...(nextOffset < page.total ? { nextOffset } : {})
   }
 }
 
@@ -616,6 +738,24 @@ export function startSagyouMcpBroker(deps: McpBrokerDeps): {
                   content: [{ type: 'text', text: JSON.stringify(memoryReadResult(memory)) }]
                 })
               }
+            } else if (name === 'list_recent_memories') {
+              // Read-only: no touchMemory, so listing never feeds the decay counters.
+              const filter = recentMemoryFilter(request.params?.arguments, session)
+              if ('error' in filter) failure(call, request.id, filter.error)
+              else
+                reply(call, request.id, {
+                  content: [
+                    {
+                      type: 'text',
+                      text: JSON.stringify(
+                        recentMemoryResult(
+                          selectRecentMemories(deps.listMemoriesForRecent?.() ?? [], filter),
+                          filter.offset
+                        )
+                      )
+                    }
+                  ]
+                })
             } else if (name === 'save_memory') {
               const prepared = memorySaveInput(request.params?.arguments, session.projectId)
               if ('error' in prepared) failure(call, request.id, prepared.error)

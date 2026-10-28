@@ -339,6 +339,51 @@ export function formatMemoriesForPrompt(
   return `${header}${note}\n\n${active.map(line).join('\n')}`
 }
 
+// ── Recent listing ───────────────────────────────────────────────────────────
+
+export interface RecentMemoryFilter {
+  /** The project plus the globals; null means only the globals. */
+  projectId: string | null
+  /** Every project, as a session without a project reads them. */
+  allProjects: boolean
+  type?: MemoryType
+  status: 'active' | 'archived' | 'all'
+  /** Inclusive lower bound on `updatedAt`, as an ISO instant. */
+  from?: string
+  /** Exclusive upper bound on `updatedAt`, as an ISO instant. */
+  before?: string
+  offset: number
+  limit: number
+}
+
+/**
+ * Newest-updated first, with no search term: how an agent finds a record whose
+ * words it cannot guess (a handoff titled only "Última sessão de terminal").
+ * Pinned memories are not lifted, because the question is what is recent.
+ */
+export function selectRecentMemories(
+  all: AiMemory[],
+  filter: RecentMemoryFilter
+): { total: number; items: AiMemory[] } {
+  const from = filter.from ? Date.parse(filter.from) : -Infinity
+  const before = filter.before ? Date.parse(filter.before) : Infinity
+  const matches = all
+    .filter((m) => {
+      if (!filter.allProjects && m.projectId !== null && m.projectId !== filter.projectId)
+        return false
+      if (filter.type && m.type !== filter.type) return false
+      if (filter.status === 'active' && m.archivedAt) return false
+      if (filter.status === 'archived' && !m.archivedAt) return false
+      const updated = Date.parse(m.updatedAt)
+      return updated >= from && updated < before
+    })
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id))
+  return {
+    total: matches.length,
+    items: matches.slice(filter.offset, filter.offset + filter.limit)
+  }
+}
+
 // ── Summary / lint ───────────────────────────────────────────────────────────
 
 export function summarizeMemories(memories: AiMemory[]): MemorySummary {
