@@ -36,7 +36,9 @@ export class McpWriteQueue {
 
   constructor(
     private readonly approve: (request: McpWriteRequest) => Promise<boolean>,
-    private readonly isRunLive: (runId: string) => boolean = () => true
+    private readonly isRunLive: (runId: string) => boolean = () => true,
+    /** Sees each write that was approved and executed, with its final card resumo. */
+    private readonly onApplied?: (request: McpWriteRequest, value: unknown) => void
   ) {}
 
   /**
@@ -81,6 +83,17 @@ export class McpWriteQueue {
     }
   }
 
+  private observe(write: QueuedWrite<unknown>, value: unknown): void {
+    try {
+      this.onApplied?.(
+        { runId: write.runId, name: write.name, args: write.args, resumo: write.resumo },
+        value
+      )
+    } catch {
+      /* An observer (the session handoff) must never fail a write that already applied. */
+    }
+  }
+
   private async drain(runId: string): Promise<void> {
     if (this.active.has(runId)) return
     const queue = this.queues.get(runId)
@@ -116,7 +129,11 @@ export class McpWriteQueue {
       if (write.cancelled) return
       if (!approved) write.resolve({ approved: false })
       else if (!this.isRunLive(runId)) write.resolve({ approved: false, ended: true })
-      else write.resolve({ approved: true, value: await write.execute() })
+      else {
+        const value = await write.execute()
+        this.observe(write, value)
+        write.resolve({ approved: true, value })
+      }
     } catch (error) {
       if (!write.cancelled)
         write.reject(error instanceof Error ? error : new Error('A escrita MCP falhou.'))

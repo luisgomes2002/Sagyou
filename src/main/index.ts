@@ -35,7 +35,11 @@ import { readFile } from 'fs/promises'
 const execFileAsync = promisify(execFile)
 import { randomBytes, randomUUID } from 'crypto'
 import { CodeRunCoordinator } from './modules/agent/code-run-coordinator'
-import { McpWriteQueue, RendererMcpActionBridge } from './modules/agent/mcp-write-queue'
+import {
+  McpWriteQueue,
+  RendererMcpActionBridge,
+  type McpWriteRequest
+} from './modules/agent/mcp-write-queue'
 import { parkMcpApproval } from './modules/agent/mcp-approval'
 import {
   MCP_APPROVAL_REQUIRED,
@@ -64,6 +68,7 @@ import { createRunTaskTimers } from './modules/agent/agent-task-timers'
 import { CODE_EXECUTOR_MCP_PERMISSIONS, prepareAgentMcpSession } from './modules/agent/agent-mcp-session'
 import { buildExternalAgentBrief, scrubExternalBriefSecrets } from './modules/agent/agent-briefing'
 import { buildTerminalHandoff } from './modules/agent/terminal-handoff'
+import { createRunActivity, summarizeRunActivity } from './modules/agent/run-activity'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import {
   loadData,
@@ -376,6 +381,8 @@ interface CodeRunState {
   localInstructions: string[]
   localSkills: string[]
   task: string
+  /** Scope decisions the chat settled before launch; they go into the handoff. */
+  decisions: string[]
   startedAt: number
   /** Set by stopCodeAgent; the loop checks this between steps. */
   abort: boolean
@@ -542,6 +549,35 @@ function isMcpRunLive(runId: string): boolean {
   return Boolean(run && !run.abort && !(run.interactive && !run.externalChild))
 }
 
+/** Card text for the writes whose tool does not prepare a resumo of its own. */
+function mcpCardResumo(name: string, args: Record<string, unknown>): string {
+  return name === 'criar_task'
+    ? `Criar task "${String(args.titulo ?? '').slice(0, 80)}" em ${loadData().projects.find((project) => project.id === args.projectId)?.name ?? String(args.projectId ?? 'projeto desconhecido')}`
+    : `MCP Sagyou: ${name.replace('_', ' ')}`
+}
+
+/** Applied MCP writes per run: the handoff's subject, actions and pending tasks. */
+const runActivity = createRunActivity()
+
+function recordRunActivity(request: McpWriteRequest, value: unknown): void {
+  const result = value as { ok?: unknown; id?: unknown } | null
+  if (!result || result.ok !== true) return
+  const decision =
+    request.name === 'save_memory' && request.args.tipo === 'decisao'
+      ? String(request.args.titulo ?? '').trim()
+      : ''
+  runActivity.record(request.runId, {
+    name: request.name,
+    resumo:
+      request.resumo ??
+      (request.name === 'save_memory'
+        ? `Salvar memória ${String(request.args.tipo ?? '')} "${String(request.args.titulo ?? '').slice(0, 80)}"`
+        : mcpCardResumo(request.name, request.args)),
+    ...(typeof result.id === 'string' ? { id: result.id } : {}),
+    ...(decision ? { decision } : {})
+  })
+}
+
 /** Routes MCP writes through the exact same approval UI as code-agent actions. */
 function requestMcpWriteApproval(
   runId: string,
@@ -556,11 +592,7 @@ function requestMcpWriteApproval(
     id: randomUUID(),
     name: `mcp:${name}`,
     args,
-    resumo:
-      resumo ??
-      (name === 'criar_task'
-        ? `Criar task "${String(args.titulo ?? '').slice(0, 80)}" em ${loadData().projects.find((project) => project.id === args.projectId)?.name ?? String(args.projectId ?? 'projeto desconhecido')}`
-        : `MCP Sagyou: ${name.replace('_', ' ')}`)
+    resumo: resumo ?? mcpCardResumo(name, args)
   }
   return parkMcpApproval(run.pendingApprovals, request, (card) =>
     mainWindow?.webContents.send('ai:code-agent:approve-request', card)
@@ -578,7 +610,8 @@ function requestMcpWriteApproval(
 const mcpWriteQueue = new McpWriteQueue(
   (request) =>
     requestMcpWriteApproval(request.runId, request.name, request.args, request.resumo),
-  isMcpRunLive
+  isMcpRunLive,
+  recordRunActivity
 )
 
 const MAX_AGENT_LOG = 8000
@@ -1069,6 +1102,8 @@ async function archiveAgentRun(runId: string, exitCode: number): Promise<AgentRu
   // survivors (lastRunLog etc.) persist for status() backward compat.
 }
 
+const BLANK_SESSION_TASK = 'Sessão interativa'
+
 /** Persist one bounded breadcrumb per project without copying a terminal log into memory. */
 function persistTerminalHandoff(
   run: CodeRunState,
@@ -1096,6 +1131,7 @@ function persistTerminalHandoff(
           : status === 'not_applied'
             ? 'A execução terminou, mas as alterações não foram aplicadas; consulte a run arquivada.'
             : `Terminal terminou com código ${exitCode}; consulte a run arquivada para os detalhes.`
+    const activity = summarizeRunActivity(runActivity.take(run.id))
     memoryStore.upsertMemory(
       buildTerminalHandoff(
         {
@@ -1104,7 +1140,11 @@ function persistTerminalHandoff(
           request: run.task,
           status,
           result,
-          changedFiles: files
+          changedFiles: files,
+          subject: run.task === BLANK_SESSION_TASK ? activity.subject : run.task,
+          decisions: [...run.decisions, ...activity.decisions],
+          actions: activity.actions,
+          pending: activity.pending
         },
         new Date().toISOString()
       )
@@ -1609,7 +1649,8 @@ app.whenReady().then(() => {
         harness,
         localInstructions: localHarnessContext.instructions,
         localSkills: localHarnessContext.skills,
-        task: blankSession ? 'Sessão interativa' : taskLabel(task),
+        task: blankSession ? BLANK_SESSION_TASK : taskLabel(task),
+        decisions: decisoes,
         startedAt: Date.now(),
         abort: false,
         log: '',
