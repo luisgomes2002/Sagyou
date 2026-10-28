@@ -31,6 +31,34 @@ const amount = {
   description: 'Valor positivo, sem separador de milhar (ex.: "1500.50" ou "1500,50").'
 }
 const date = text('Data YYYY-MM-DD; omita para hoje.')
+const bankFields = {
+  source: text('Origem (banco, cartão ou app).'),
+  counterparty: text('Contraparte.'),
+  bankReference: text('ID bancário ou Pix.')
+}
+const DETAILS_NOTE =
+  'Itens da transação; substitui a lista inteira, [] limpa. A soma não pode passar do valor.'
+function transactionDetails(withId: boolean): Record<string, unknown> {
+  return {
+    type: 'array',
+    maxItems: 200,
+    description: withId
+      ? DETAILS_NOTE + ' Mande o id de um detalhe existente para mantê-lo.'
+      : DETAILS_NOTE,
+    items: {
+      type: 'object',
+      properties: {
+        ...(withId ? { id: text('ID de um detalhe existente desta transação.') } : {}),
+        description: text('Descrição do item.'),
+        amount,
+        category: text('Categoria do item.'),
+        date: text('Data da compra YYYY-MM-DD.')
+      },
+      required: ['description', 'amount'],
+      additionalProperties: false
+    }
+  }
+}
 const memoryType = {
   type: 'string',
   enum: ['decisao', 'tradeoff', 'gotcha', 'fato', 'planejamento']
@@ -228,7 +256,9 @@ export const MCP_WRITE_TOOLS: McpToolDefinition[] = [
       amount,
       description: text('Descrição.'),
       date,
-      category: text('Categoria.')
+      category: text('Categoria.'),
+      ...bankFields,
+      details: transactionDetails(false)
     },
     ['tableId', 'type', 'amount', 'description']
   ),
@@ -242,7 +272,11 @@ export const MCP_WRITE_TOOLS: McpToolDefinition[] = [
       amount,
       description: text('Descrição.'),
       date: text('Data YYYY-MM-DD.'),
-      category: text('Categoria; "" limpa.')
+      category: text('Categoria; "" limpa.'),
+      source: text('Origem (banco, cartão ou app); "" limpa.'),
+      counterparty: text('Contraparte; "" limpa.'),
+      bankReference: text('ID bancário ou Pix; "" limpa.'),
+      details: transactionDetails(true)
     },
     ['tableId', 'id']
   ),
