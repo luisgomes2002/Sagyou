@@ -210,6 +210,70 @@ describe('McpWriteQueue preparation and optional approval', () => {
   })
 })
 
+describe('McpWriteQueue onApplied', () => {
+  it('reports an approved, executed write with the final card resumo', async () => {
+    const onApplied = vi.fn()
+    const queue = new McpWriteQueue(
+      async () => true,
+      () => true,
+      onApplied
+    )
+    await queue.enqueue(
+      { runId: 'run-1', name: 'complete_task', args: { id: 't1' } },
+      async () => ({ ok: true, id: 't1' }),
+      async () => ({ resumo: 'Concluir tarefa "A"' })
+    )
+    expect(onApplied).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: 'run-1',
+        name: 'complete_task',
+        resumo: 'Concluir tarefa "A"'
+      }),
+      { ok: true, id: 't1' }
+    )
+  })
+
+  it('stays silent for a denied, refused or ended write', async () => {
+    const onApplied = vi.fn()
+    const denied = new McpWriteQueue(
+      async () => false,
+      () => true,
+      onApplied
+    )
+    await denied.enqueue({ runId: 'r', name: 'delete_task', args: {} }, async () => ({ ok: true }))
+    const refusing = new McpWriteQueue(
+      async () => true,
+      () => true,
+      onApplied
+    )
+    await refusing.enqueue(
+      { runId: 'r', name: 'update_task', args: {} },
+      async () => ({ ok: true }),
+      async () => ({ refuse: { ok: false } })
+    )
+    const ended = new McpWriteQueue(
+      async () => true,
+      () => false,
+      onApplied
+    )
+    await ended.enqueue({ runId: 'r', name: 'update_task', args: {} }, async () => ({ ok: true }))
+    expect(onApplied).not.toHaveBeenCalled()
+  })
+
+  it('a failing observer never fails the write', async () => {
+    const queue = new McpWriteQueue(
+      async () => true,
+      () => true,
+      () => {
+        throw new Error('observer')
+      }
+    )
+    await expect(
+      queue.enqueue({ runId: 'r', name: 'update_task', args: {} }, async () => 'ok')
+    ).resolves.toEqual({ approved: true, value: 'ok' })
+  })
+})
+
 describe('RendererMcpActionBridge', () => {
   it('rejects when the renderer is unmounted or fails to flush', async () => {
     const unavailable = new RendererMcpActionBridge<string, string>(() => {

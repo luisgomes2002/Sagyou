@@ -401,7 +401,11 @@ describe('Sagyou MCP broker', () => {
     // stdio bridge exactly as an external executor does.
     let now = 1_700_000_000_000
     vi.spyOn(Date, 'now').mockImplementation(() => now)
-    const scopedReads: { domain: string; projectId: string | null | undefined; profileId: string }[] = []
+    const scopedReads: {
+      domain: string
+      projectId: string | null | undefined
+      profileId: string
+    }[] = []
     const broker = startSagyouMcpBroker({
       readScopedData: (domain, session, projectId) => {
         scopedReads.push({
@@ -1470,5 +1474,193 @@ describe('read_logs over MCP', () => {
       ['read_logs', 'refused'],
       ['unknown', 'refused']
     ])
+  })
+})
+
+describe('list_recent_memories', () => {
+  const stored = (over: Partial<AiMemory>): AiMemory => ({
+    id: 'm',
+    projectId: 'project-1',
+    type: 'fato',
+    title: 'título',
+    body: 'corpo',
+    tags: [],
+    pinned: false,
+    source: 'modelo',
+    sourceConversationId: null,
+    createdAt: '2026-10-01T12:00:00.000Z',
+    updatedAt: '2026-10-01T12:00:00.000Z',
+    lastAccessedAt: '2026-10-01T12:00:00.000Z',
+    accessCount: 0,
+    archivedAt: null,
+    ...over
+  })
+  const corpus = [
+    stored({
+      id: 'handoff:project-1',
+      type: 'handoff',
+      title: 'Última sessão de terminal',
+      body: 'Pedido: Sessão interativa\n' + 'x'.repeat(400),
+      updatedAt: '2026-10-27T15:00:00.000Z'
+    }),
+    stored({ id: 'decisao-1', type: 'decisao', updatedAt: '2026-10-20T12:00:00.000Z' }),
+    stored({ id: 'global-1', projectId: null, updatedAt: '2026-10-10T12:00:00.000Z' }),
+    stored({ id: 'outro-1', projectId: 'project-2', updatedAt: '2026-10-28T12:00:00.000Z' }),
+    stored({
+      id: 'arquivada-1',
+      updatedAt: '2026-10-25T12:00:00.000Z',
+      archivedAt: '2026-10-26T12:00:00.000Z'
+    })
+  ]
+
+  async function recentBroker(): Promise<{
+    call: (args: Record<string, unknown>, name?: string) => Promise<Record<string, unknown>>
+    touchMemory: ReturnType<typeof vi.fn>
+  }> {
+    const touchMemory = vi.fn()
+    const broker = startSagyouMcpBroker({
+      readTasks: () => [],
+      readFinancial: () => [],
+      readProjectData: () => ({}),
+      searchMemory: (_projectId, term) =>
+        corpus
+          .filter((memory) => memory.body.includes(term) || memory.title.includes(term))
+          .map((memory) => ({ memory, snippet: memory.body })),
+      listMemoriesForRecent: () => corpus,
+      readMemory: () => null,
+      touchMemory,
+      memoriesForConflict: () => [],
+      saveMemory: async () => ({ ok: false }),
+      createTask: async () => ({ ok: true })
+    })
+    servers.push(broker.server)
+    await new Promise<void>((resolve) => broker.server.once('listening', resolve))
+    broker.grant({
+      token: 'recent-token',
+      runId: 'run-recent',
+      projectId: 'project-1',
+      financialProfileId: 'personal',
+      permissions: MCP_PERMISSIONS,
+      expiresAt: Date.now() + 10_000
+    })
+    let id = 0
+    return {
+      touchMemory,
+      call: (args, name = 'list_recent_memories') =>
+        request(broker.port(), {
+          jsonrpc: '2.0',
+          id: ++id,
+          method: 'tools/call',
+          params: { token: 'recent-token', name, arguments: args }
+        })
+    }
+  }
+  const page = (
+    reply: Record<string, unknown>
+  ): { total: number; items: Record<string, unknown>[]; nextOffset?: number } =>
+    JSON.parse((reply.result as { content: { text: string }[] }).content[0].text)
+  const ids = (reply: Record<string, unknown>): unknown[] => page(reply).items.map((m) => m.id)
+
+  it('is listed with its filters and no required argument', async () => {
+    const broker = startSagyouMcpBroker({
+      readTasks: () => [],
+      readFinancial: () => [],
+      readProjectData: () => ({}),
+      searchMemory: () => [],
+      readMemory: () => null,
+      touchMemory: () => {},
+      memoriesForConflict: () => [],
+      saveMemory: async () => ({ ok: false }),
+      createTask: async () => ({ ok: true })
+    })
+    servers.push(broker.server)
+    await new Promise<void>((resolve) => broker.server.once('listening', resolve))
+    broker.grant({
+      token: 'list-token',
+      runId: 'run-list',
+      projectId: 'project-1',
+      financialProfileId: 'personal',
+      permissions: MCP_PERMISSIONS,
+      expiresAt: Date.now() + 10_000
+    })
+    const listed = await request(broker.port(), {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/list',
+      params: { token: 'list-token' }
+    })
+    const tool = (
+      listed.result as {
+        tools: { name: string; description: string; inputSchema: Record<string, unknown> }[]
+      }
+    ).tools.find((item) => item.name === 'list_recent_memories')
+    expect(Object.keys(tool?.inputSchema.properties as object)).toEqual(
+      expect.arrayContaining(['projectId', 'type', 'status', 'since', 'until', 'limit', 'offset'])
+    )
+    expect(tool?.inputSchema.required).toBeUndefined()
+    expect(tool?.description).toContain('read_memory')
+    expect(tool?.description).toContain('save_memory')
+    const search = (listed.result as { tools: { name: string; description: string }[] }).tools.find(
+      (item) => item.name === 'search_memory'
+    )
+    expect(search?.description).toContain(
+      'Se não achar o contexto, use list_recent_memories com type handoff'
+    )
+  })
+
+  it('finds the generic handoff that a term search misses', async () => {
+    const { call } = await recentBroker()
+    const searched = await call({ term: 'plano' }, 'search_memory')
+    expect(JSON.stringify(searched)).not.toContain('handoff:project-1')
+    const listed = await call({ type: 'handoff' })
+    expect(page(listed)).toMatchObject({ total: 1 })
+    expect(page(listed).items[0]).toMatchObject({
+      id: 'handoff:project-1',
+      title: 'Última sessão de terminal',
+      type: 'handoff',
+      scope: 'project',
+      projectId: 'project-1',
+      status: 'active',
+      updatedAt: '2026-10-27T15:00:00.000Z'
+    })
+    expect(String(page(listed).items[0].snippet).length).toBeLessThanOrEqual(240)
+    expect(JSON.stringify(listed)).not.toContain('x'.repeat(300))
+  })
+
+  it('lists the session project and globals newest first, never another project by default', async () => {
+    const { call, touchMemory } = await recentBroker()
+    expect(ids(await call({}))).toEqual(['handoff:project-1', 'decisao-1', 'global-1'])
+    expect(ids(await call({ projectId: 'project-2' }))).toEqual(['outro-1', 'global-1'])
+    expect(ids(await call({ status: 'archived' }))).toEqual(['arquivada-1'])
+    expect(touchMemory).not.toHaveBeenCalled()
+  })
+
+  it('filters by local day and pages', async () => {
+    const { call } = await recentBroker()
+    expect(ids(await call({ since: '2026-10-20', until: '2026-10-27' }))).toEqual([
+      'handoff:project-1',
+      'decisao-1'
+    ])
+    const first = page(await call({ limit: 1 }))
+    expect(first).toMatchObject({ total: 3, nextOffset: 1 })
+    expect(ids(await call({ limit: 1, offset: 1 }))).toEqual(['decisao-1'])
+  })
+
+  it('refuses invalid filters with the field and the rule', async () => {
+    const { call } = await recentBroker()
+    const cases: [Record<string, unknown>, RegExp][] = [
+      [{ type: 'segredo' }, /^type precisa ser/],
+      [{ status: 'todas' }, /^status precisa ser active, archived ou all\.$/],
+      [{ since: '2026-02-30' }, /^since precisa ser uma data real no formato YYYY-MM-DD\.$/],
+      [{ until: 'ontem' }, /^until precisa ser uma data real no formato YYYY-MM-DD\.$/],
+      [{ since: '2026-10-28', until: '2026-10-01' }, /^since não pode ser depois de until\.$/],
+      [{ limit: 0 }, /^limit precisa ser um inteiro de 1 a 50\.$/],
+      [{ limit: 51 }, /^limit precisa ser um inteiro de 1 a 50\.$/],
+      [{ offset: -1 }, /^offset precisa ser um inteiro maior ou igual a 0\.$/]
+    ]
+    for (const [args, message] of cases) {
+      const reply = await call(args)
+      expect((reply.error as { message: string }).message).toMatch(message)
+    }
   })
 })

@@ -35,7 +35,11 @@ import { readFile } from 'fs/promises'
 const execFileAsync = promisify(execFile)
 import { randomBytes, randomUUID } from 'crypto'
 import { CodeRunCoordinator } from './modules/agent/code-run-coordinator'
-import { McpWriteQueue, RendererMcpActionBridge } from './modules/agent/mcp-write-queue'
+import {
+  McpWriteQueue,
+  RendererMcpActionBridge,
+  type McpWriteRequest
+} from './modules/agent/mcp-write-queue'
 import { parkMcpApproval } from './modules/agent/mcp-approval'
 import {
   MCP_APPROVAL_REQUIRED,
@@ -64,6 +68,11 @@ import { createRunTaskTimers } from './modules/agent/agent-task-timers'
 import { CODE_EXECUTOR_MCP_PERMISSIONS, prepareAgentMcpSession } from './modules/agent/agent-mcp-session'
 import { buildExternalAgentBrief, scrubExternalBriefSecrets } from './modules/agent/agent-briefing'
 import { buildTerminalHandoff } from './modules/agent/terminal-handoff'
+import {
+  createRunActivity,
+  runActivityEntry,
+  summarizeRunActivity
+} from './modules/agent/run-activity'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import {
   loadData,
@@ -247,6 +256,7 @@ const sagyouMcp = startSagyouMcpBroker({
       limit: 8
     }),
   readMemory: (id) => memoryStore.getMemory(id),
+  listMemoriesForRecent: () => memoryStore.listMemories({ includeArchived: true }),
   // Keep the existing once-per-hour decay accounting in the store; the broker
   // decides authorization first, so rejected probes never count as a read.
   touchMemory: (id) => memoryStore.touchMemories([id], new Date().toISOString()),
@@ -375,6 +385,8 @@ interface CodeRunState {
   localInstructions: string[]
   localSkills: string[]
   task: string
+  /** Scope decisions the chat settled before launch; they go into the handoff. */
+  decisions: string[]
   startedAt: number
   /** Set by stopCodeAgent; the loop checks this between steps. */
   abort: boolean
@@ -541,6 +553,21 @@ function isMcpRunLive(runId: string): boolean {
   return Boolean(run && !run.abort && !(run.interactive && !run.externalChild))
 }
 
+/** Card text for the writes whose tool does not prepare a resumo of its own. */
+function mcpCardResumo(name: string, args: Record<string, unknown>): string {
+  return name === 'criar_task'
+    ? `Criar task "${String(args.titulo ?? '').slice(0, 80)}" em ${loadData().projects.find((project) => project.id === args.projectId)?.name ?? String(args.projectId ?? 'projeto desconhecido')}`
+    : `MCP Sagyou: ${name.replace('_', ' ')}`
+}
+
+/** Applied MCP writes per run: the handoff's subject, actions and pending tasks. */
+const runActivity = createRunActivity()
+
+function recordRunActivity(request: McpWriteRequest, value: unknown): void {
+  const entry = runActivityEntry(request, value, () => mcpCardResumo(request.name, request.args))
+  if (entry) runActivity.record(request.runId, entry)
+}
+
 /** Routes MCP writes through the exact same approval UI as code-agent actions. */
 function requestMcpWriteApproval(
   runId: string,
@@ -555,11 +582,7 @@ function requestMcpWriteApproval(
     id: randomUUID(),
     name: `mcp:${name}`,
     args,
-    resumo:
-      resumo ??
-      (name === 'criar_task'
-        ? `Criar task "${String(args.titulo ?? '').slice(0, 80)}" em ${loadData().projects.find((project) => project.id === args.projectId)?.name ?? String(args.projectId ?? 'projeto desconhecido')}`
-        : `MCP Sagyou: ${name.replace('_', ' ')}`)
+    resumo: resumo ?? mcpCardResumo(name, args)
   }
   return parkMcpApproval(run.pendingApprovals, request, (card) =>
     mainWindow?.webContents.send('ai:code-agent:approve-request', card)
@@ -577,7 +600,8 @@ function requestMcpWriteApproval(
 const mcpWriteQueue = new McpWriteQueue(
   (request) =>
     requestMcpWriteApproval(request.runId, request.name, request.args, request.resumo),
-  isMcpRunLive
+  isMcpRunLive,
+  recordRunActivity
 )
 
 const MAX_AGENT_LOG = 8000
@@ -1068,6 +1092,8 @@ async function archiveAgentRun(runId: string, exitCode: number): Promise<AgentRu
   // survivors (lastRunLog etc.) persist for status() backward compat.
 }
 
+const BLANK_SESSION_TASK = 'Sessão interativa'
+
 /** Persist one bounded breadcrumb per project without copying a terminal log into memory. */
 function persistTerminalHandoff(
   run: CodeRunState,
@@ -1095,6 +1121,7 @@ function persistTerminalHandoff(
           : status === 'not_applied'
             ? 'A execução terminou, mas as alterações não foram aplicadas; consulte a run arquivada.'
             : `Terminal terminou com código ${exitCode}; consulte a run arquivada para os detalhes.`
+    const activity = summarizeRunActivity(runActivity.take(run.id))
     memoryStore.upsertMemory(
       buildTerminalHandoff(
         {
@@ -1103,7 +1130,11 @@ function persistTerminalHandoff(
           request: run.task,
           status,
           result,
-          changedFiles: files
+          changedFiles: files,
+          subject: run.task === BLANK_SESSION_TASK ? activity.subject : run.task,
+          decisions: [...run.decisions, ...activity.decisions],
+          actions: activity.actions,
+          pending: activity.pending
         },
         new Date().toISOString()
       )
@@ -1608,7 +1639,8 @@ app.whenReady().then(() => {
         harness,
         localInstructions: localHarnessContext.instructions,
         localSkills: localHarnessContext.skills,
-        task: blankSession ? 'Sessão interativa' : taskLabel(task),
+        task: blankSession ? BLANK_SESSION_TASK : taskLabel(task),
+        decisions: decisoes,
         startedAt: Date.now(),
         abort: false,
         log: '',
@@ -1685,12 +1717,23 @@ app.whenReady().then(() => {
         const appBrief = sagyouContextBrief(run.projectId)
         const localSkillsBrief = sagyouSkillsBrief()
         let relevantMemories: import('./modules/ai/memory').AiMemory[] = []
+        let recentHandoffs: import('./modules/ai/memory').AiMemory[] = []
         try {
           // Search is ranking-only and does not touch decay counters. Full data
           // still stays behind MCP once the executor needs to investigate.
           relevantMemories = memoryStore
             .searchMemories({ projectId: run.projectId, term: task, limit: 5 })
             .map((hit) => hit.memory)
+          // Nothing matched the request's words: the last handoffs say what came before.
+          if (!relevantMemories.length)
+            recentHandoffs = memoryRules.selectRecentMemories(memoryStore.listMemories(), {
+              projectId: run.projectId,
+              allProjects: false,
+              type: 'handoff',
+              status: 'active',
+              offset: 0,
+              limit: 2
+            }).items
         } catch {
           /* Briefing context is best-effort; a launch must remain available. */
         }
@@ -1698,7 +1741,8 @@ app.whenReady().then(() => {
           objective: task,
           decisions: decisoes,
           files: rel,
-          memories: relevantMemories
+          memories: relevantMemories,
+          recentHandoffs
         })
         // A blank session starts the CLI on its normal screen: pasting a briefing
         // (skills, MCP hints) would run a turn nobody asked for.
