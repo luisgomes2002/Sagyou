@@ -308,8 +308,8 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
     tradeoffs, gotchas, handoffs) ficam em SQLite mas nunca passam pelo store
     Zustand — `access_count`/`last_accessed_at` são bumpados a cada leitura, e
     isso via `persistAll` reescreveria todas as tabelas por bump. O acesso é por
-    `ai:memory:*` e pelo MCP (`search_memory`, `read_memory`, `save_memory`,
-    `check_memories`). `scrubSecrets` roda em todo save — memória persiste, então
+    `ai:memory:*` e pelo MCP (`search_memory`, `read_memory`,
+    `list_recent_memories`, `save_memory`, `check_memories`). `scrubSecrets` roda em todo save — memória persiste, então
     uma chave vazada seria permanente. Decay arquiva (nunca hard-deleta); memória
     pinada nunca decai. ⚠️ `memory.project_id` é **TEXT puro, NUNCA FK com
     `ON DELETE CASCADE`** — o cascade apagava as memórias do projeto quando
@@ -386,7 +386,12 @@ compatibilidade nem faça fallback silencioso para outro CLI.
   capturado. `criar_task` aceita outro projeto existente, sempre com aprovação.
 - **Handoff de terminal é um breadcrumb, não log.** No encerramento, a memória
   `handoff:<projeto>` é atualizada com pedido, status, arquivos e id da run, todos
-  limitados. O terminal completo continua apenas no arquivo arquivado da run.
+  limitados. Quando há fonte, entram também o assunto (o pedido, ou a primeira
+  escrita MCP aplicada), as decisões passadas pelo chat e as memórias `decisao`
+  salvas na run, as ações aplicadas pelo MCP e as tasks com cronômetro iniciado e
+  não concluídas. Nada vem do log do PTY nem de diff não aplicado; sem fonte, o
+  handoff manda consultar a run. O terminal completo continua apenas no arquivo
+  arquivado da run.
 - **Toda run usa worktree externa e detached.** A árvore do usuário nunca é
   destino de um executor, nem na primeira run ou em repo sem commit; se a raiz
   de código não tiver Git, o Sagyou inicializa somente o `.git`, sem criar
