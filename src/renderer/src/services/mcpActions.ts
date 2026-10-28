@@ -1000,20 +1000,25 @@ const updateTransaction: Handler = (args, scope, phase, store) => {
   if (category !== undefined) updates.category = category || undefined
   const bank = readBankFields(args, 'update')
   Object.assign(updates, bank)
+  const details = readDetails(args, transaction.details ?? [])
+  if (details) updates.details = details
   if (!Object.keys(updates).length) refuse('Nada para alterar.')
-  // updateTransaction silently keeps the old amount when its details exceed the new one.
-  const detailed = (transaction.details ?? []).reduce(
-    (total, detail) => total.plus(D(detail.amount)),
-    new Decimal(0)
-  )
-  if (updates.amount && detailed.greaterThan(new Decimal(updates.amount)))
-    refuse(
-      `Os detalhes desta transação somam ${formatMcpMoney(detailed.toString(), table.currency)}; ajuste-os antes de reduzir o valor.`
-    )
-  const value = formatMcpMoney(updates.amount ?? transaction.amount, table.currency)
+  const total = updates.amount ?? transaction.amount
+  // updateTransaction silently ignores the whole edit when the details exceed the amount.
+  if (details) refuseDetailsOverTotal(details, total, table.currency)
+  else {
+    const detailed = detailsTotal(transaction.details ?? [])
+    if (updates.amount && detailed.greaterThan(D(updates.amount)))
+      refuse(
+        `Os detalhes desta transação somam ${formatMcpMoney(detailed.toString(), table.currency)}; ajuste-os antes de reduzir o valor.`
+      )
+  }
+  const value = formatMcpMoney(total, table.currency)
   const label = TYPE_LABEL[updates.type ?? transaction.type]
   const resumo =
-    `Editar ${label} "${transaction.description}" em ${table.name} (${value})` + bankResumo(bank)
+    `Editar ${label} "${transaction.description}" em ${table.name} (${value})` +
+    bankResumo(bank) +
+    (details ? detailsResumo(details, total, table.currency) : '')
   if (phase === 'apply') {
     store.updateTransaction(table.id, transaction.id, updates)
     saveBankSuggestions(store, scope, bank)

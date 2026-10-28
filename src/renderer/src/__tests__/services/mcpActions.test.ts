@@ -1014,6 +1014,159 @@ describe('MCP transaction details', () => {
     })
     expect(table(mine).transactions).toHaveLength(0)
   })
+
+  const RECONCILED = '2026-10-02T00:00:00.000Z'
+  function seedInvoice(extra: Record<string, unknown> = {}): { mine: string; id: string } {
+    const { mine } = seedTables()
+    const id = state().addTransaction(mine, {
+      description: 'Fatura',
+      amount: '200',
+      type: 'expense',
+      date: '2026-10-01',
+      reconciledAt: RECONCILED,
+      details: [
+        {
+          id: 'a',
+          description: 'Claude',
+          amount: '118.38',
+          category: 'IA',
+          linkedTransactionId: 'tx-murasaki'
+        },
+        { id: 'b', description: 'Uber', amount: '40' }
+      ],
+      ...extra
+    })
+    return { mine, id }
+  }
+  const stored = (mine: string): FinancialTable['transactions'][number] =>
+    table(mine).transactions[0]
+
+  it('update_transaction keeps a detail by id with its link, drops the rest and adds new ones', () => {
+    const { mine, id } = seedInvoice()
+    const args = {
+      tableId: mine,
+      id,
+      details: [
+        { id: 'a', description: 'Claude Pro', amount: '118.38' },
+        { description: 'Novo', amount: '10' }
+      ]
+    }
+    expect(prepareMcpAction('update_transaction', args, scope)).toMatchObject({
+      ok: true,
+      resumo:
+        'Editar despesa "Fatura" em Nubank (R$ 200,00) · 2 detalhes somando R$ 128,38 (falta detalhar R$ 71,62)'
+    })
+    expect(applyMcpAction('update_transaction', args, scope).ok).toBe(true)
+    const tx = stored(mine)
+    expect(tx.details).toEqual([
+      {
+        id: 'a',
+        description: 'Claude Pro',
+        amount: '118.38',
+        category: 'IA',
+        linkedTransactionId: 'tx-murasaki'
+      },
+      { id: expect.stringMatching(UUID), description: 'Novo', amount: '10' }
+    ])
+    expect(tx.audit?.at(-1)?.changes.map((change) => change.field)).toEqual(['details'])
+    expect(tx.reconciledAt).toBe(RECONCILED)
+  })
+
+  it('"" clears an optional field of a kept detail', () => {
+    const { mine, id } = seedInvoice()
+    const args = {
+      tableId: mine,
+      id,
+      details: [{ id: 'a', description: 'Claude', amount: '118.38', category: '' }]
+    }
+    expect(both('update_transaction', args, scope).ok).toBe(true)
+    expect(stored(mine).details?.[0]).toEqual({
+      id: 'a',
+      description: 'Claude',
+      amount: '118.38',
+      linkedTransactionId: 'tx-murasaki'
+    })
+  })
+
+  it('details: [] clears the list', () => {
+    const { mine, id } = seedInvoice()
+    expect(both('update_transaction', { tableId: mine, id, details: [] }, scope)).toMatchObject({
+      ok: true,
+      resumo: 'Editar despesa "Fatura" em Nubank (R$ 200,00) · sem detalhes'
+    })
+    expect(stored(mine).details).toEqual([])
+  })
+
+  it('refuses an id that is not of this transaction and a repeated id', () => {
+    const { mine, id } = seedInvoice()
+    const before = structuredClone(stored(mine))
+    expect(
+      both(
+        'update_transaction',
+        { tableId: mine, id, details: [{ id: 'nao-existe', description: 'X', amount: '1' }] },
+        scope
+      )
+    ).toEqual({ ok: false, error: 'details[0].id não é um detalhe desta transação.' })
+    expect(
+      both(
+        'update_transaction',
+        {
+          tableId: mine,
+          id,
+          details: [
+            { id: 'a', description: 'X', amount: '1' },
+            { id: 'a', description: 'Y', amount: '1' }
+          ]
+        },
+        scope
+      )
+    ).toEqual({ ok: false, error: 'details[1].id repete outro item da lista.' })
+    expect(stored(mine)).toEqual(before)
+  })
+
+  it('compares the details with the new amount when both come together', () => {
+    const { mine, id } = seedInvoice()
+    const sixty = [
+      { description: 'A', amount: '30' },
+      { description: 'B', amount: '30' }
+    ]
+    expect(
+      both('update_transaction', { tableId: mine, id, amount: '50', details: sixty }, scope)
+    ).toEqual({
+      ok: false,
+      error: 'Os detalhes somam R$ 60,00, acima do valor da transação (R$ 50,00).'
+    })
+    expect(stored(mine).amount).toBe('200')
+    expect(stored(mine).details).toHaveLength(2)
+    const above = [
+      { description: 'A', amount: '150' },
+      { description: 'B', amount: '100' }
+    ]
+    expect(
+      both('update_transaction', { tableId: mine, id, amount: '300', details: above }, scope).ok
+    ).toBe(true)
+    expect(stored(mine).amount).toBe('300')
+    expect(stored(mine).details?.map((detail) => detail.amount)).toEqual(['150', '100'])
+  })
+
+  it('an edit without details leaves the stored details as they are', () => {
+    const { mine, id } = seedInvoice()
+    const before = structuredClone(stored(mine).details)
+    expect(both('update_transaction', { tableId: mine, id, description: 'X' }, scope).ok).toBe(true)
+    expect(stored(mine).details).toEqual(before)
+    expect(stored(mine).reconciledAt).toBe(RECONCILED)
+  })
+
+  it('a debt transaction refuses details', () => {
+    const { mine, id } = seedInvoice({ debtId: 'debt-1' })
+    expect(
+      both(
+        'update_transaction',
+        { tableId: mine, id, details: [{ description: 'X', amount: '1' }] },
+        scope
+      )
+    ).toEqual({ ok: false, error: 'Esta transação pertence a uma dívida; altere-a no Sagyou.' })
+  })
 })
 
 describe('MCP review fixes', () => {
