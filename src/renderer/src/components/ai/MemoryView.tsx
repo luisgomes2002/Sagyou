@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useState } from 'react'
+﻿import { useCallback, useEffect, useState } from 'react'
 import { useKanbanStore } from '../../store/kanban'
 import type { AiMemory, MemoryType } from '../../types'
 import { searchFocusClass } from '../../utils/searchFocus'
@@ -26,9 +26,14 @@ const TYPE_COLOR: Record<MemoryType, string> = {
   planejamento: '#a080f0'
 }
 
+const PAGE_SIZE = 25
+
+type MemoryPage = Awaited<ReturnType<typeof window.electronAPI.ai.memory.page>>
+
 export function MemoryView({ searchTargetId }: { searchTargetId?: string }): React.JSX.Element {
   const projects = useKanbanStore((s) => s.projects)
-  const [memories, setMemories] = useState<AiMemory[]>([])
+  // Main pages the corpus; only the visible page and the counts reach the screen.
+  const [page, setPage] = useState<MemoryPage | null>(null)
   const [showArchived, setShowArchived] = useState(false)
   const [loading, setLoading] = useState(true)
   const [confirmId, setConfirmId] = useState<string | null>(null)
@@ -42,29 +47,50 @@ export function MemoryView({ searchTargetId }: { searchTargetId?: string }): Rea
   // setState lives in the promise callbacks (not after an await), matching
   // AIView's refresh helpers — that's what keeps it off react-hooks/
   // set-state-in-effect. The initial state is already `loading: true`.
-  const refresh = useCallback((): void => {
+  const load = useCallback((includeArchived: boolean, offset: number, focusId?: string): void => {
     window.electronAPI.ai.memory
-      .list({ includeArchived: true })
-      .then(setMemories)
-      .catch(() => setMemories([]))
+      .page({ includeArchived, offset, limit: PAGE_SIZE, ...(focusId ? { focusId } : {}) })
+      .then(setPage)
+      .catch(() => setPage(null))
       .finally(() => setLoading(false))
   }, [])
 
   useEffect(() => {
-    refresh()
-  }, [refresh])
+    if (!searchTargetId) {
+      load(false, 0)
+      return
+    }
+    // A Ctrl+K hit may be archived: look among all first, and keep the archived
+    // filter on only when the target is one, so it is never filtered off screen.
+    window.electronAPI.ai.memory
+      .page({ includeArchived: true, offset: 0, limit: PAGE_SIZE, focusId: searchTargetId })
+      .then((all) => {
+        if (all.items.find((m) => m.id === searchTargetId)?.archivedAt) {
+          setShowArchived(true)
+          setPage(all)
+          setLoading(false)
+        } else load(false, 0, searchTargetId)
+      })
+      .catch(() => load(false, 0))
+  }, [searchTargetId, load])
 
   useEffect(() => {
     if (!searchTargetId || loading) return
     document.getElementById(`memory-search-${searchTargetId}`)?.scrollIntoView?.({ block: 'center' })
-  }, [searchTargetId, loading, showArchived])
+  }, [searchTargetId, loading, page])
 
-  const shown = useMemo(
-    () => memories.filter((m) => showArchived || !m.archivedAt),
-    [memories, showArchived]
-  )
-  const archivedCount = useMemo(() => memories.filter((m) => m.archivedAt).length, [memories])
-  const activeCount = memories.length - archivedCount
+  // Main clamps an offset past the end, so a page emptied by a delete steps back.
+  const refresh = (): void => load(showArchived, page?.offset ?? 0)
+  const toggleArchived = (): void => {
+    setShowArchived(!showArchived)
+    load(!showArchived, 0)
+  }
+
+  const shown = page?.items ?? []
+  const archivedCount = page?.archivedCount ?? 0
+  const activeCount = page?.activeCount ?? 0
+  const pageCount = page ? Math.ceil(page.total / PAGE_SIZE) : 0
+  const pageIndex = page ? Math.floor(page.offset / PAGE_SIZE) : 0
 
   const togglePin = async (m: AiMemory): Promise<void> => {
     await window.electronAPI.ai.memory.save({ id: m.id, pinned: !m.pinned })
@@ -89,7 +115,7 @@ export function MemoryView({ searchTargetId }: { searchTargetId?: string }): Rea
         <div className="flex items-center justify-between mb-1">
           <h1 className="text-lg font-semibold text-[#d4d4d4]">Memória do assistente</h1>
           <button
-            onClick={() => setShowArchived((v) => !v)}
+            onClick={toggleArchived}
             className="text-xs px-2.5 py-1 rounded-md text-[#999999] hover:text-[#d4d4d4] hover:bg-[#222227] transition-colors"
           >
             {showArchived ? 'Ocultar arquivadas' : `Ver arquivadas (${archivedCount})`}
@@ -191,6 +217,28 @@ export function MemoryView({ searchTargetId }: { searchTargetId?: string }): Rea
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {!loading && pageCount > 1 && (
+          <div className="flex items-center justify-between mt-4">
+            <button
+              onClick={() => load(showArchived, (pageIndex - 1) * PAGE_SIZE)}
+              disabled={pageIndex === 0}
+              className="text-xs px-2.5 py-1 rounded-md text-[#999999] hover:text-[#d4d4d4] hover:bg-[#222227] transition-colors disabled:opacity-40 disabled:pointer-events-none"
+            >
+              Anterior
+            </button>
+            <span className="text-xs text-[#999999]">
+              Página {pageIndex + 1} de {pageCount}
+            </span>
+            <button
+              onClick={() => load(showArchived, (pageIndex + 1) * PAGE_SIZE)}
+              disabled={pageIndex + 1 >= pageCount}
+              className="text-xs px-2.5 py-1 rounded-md text-[#999999] hover:text-[#d4d4d4] hover:bg-[#222227] transition-colors disabled:opacity-40 disabled:pointer-events-none"
+            >
+              Próxima
+            </button>
           </div>
         )}
       </div>
