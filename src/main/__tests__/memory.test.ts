@@ -13,6 +13,7 @@ import {
   shortMemoryId,
   handoffId,
   scrubConversationLinks,
+  pageMemories,
   selectRecentMemories,
   titleKey,
   MEMORY_DECAY_BASE_DAYS,
@@ -480,5 +481,71 @@ describe('selectRecentMemories', () => {
     ]
     const filter = { ...base, projectId: null }
     expect(ids(selectRecentMemories(tied, filter))).toEqual(['a', 'b', 'c'])
+  })
+})
+
+describe('pageMemories', () => {
+  const all = Array.from({ length: 30 }, (_, i) =>
+    mem({ id: `m${i}`, archivedAt: i % 3 === 2 ? NOW : null })
+  )
+  const ids = (page: { items: AiMemory[] }): string[] => page.items.map((m) => m.id)
+
+  it('pages the active memories in the given order with totals of everything', () => {
+    const first = pageMemories(all, { includeArchived: false, offset: 0, limit: 15 })
+    expect(first.total).toBe(20)
+    expect(first.offset).toBe(0)
+    expect(ids(first)).toEqual(
+      all
+        .filter((m) => !m.archivedAt)
+        .slice(0, 15)
+        .map((m) => m.id)
+    )
+    expect(first.activeCount).toBe(20)
+    expect(first.archivedCount).toBe(10)
+    const second = pageMemories(all, { includeArchived: false, offset: 15, limit: 15 })
+    expect(ids(second)).toHaveLength(5)
+  })
+
+  it('includes the archived ones when asked', () => {
+    const page = pageMemories(all, { includeArchived: true, offset: 25, limit: 25 })
+    expect(page.total).toBe(30)
+    expect(ids(page)).toEqual(['m25', 'm26', 'm27', 'm28', 'm29'])
+  })
+
+  it('falls back to 25 for an invalid limit and clamps the offset', () => {
+    expect(pageMemories(all, { includeArchived: true, offset: 0, limit: 0 }).items).toHaveLength(25)
+    expect(pageMemories(all, { includeArchived: true, offset: 0, limit: 101 }).items).toHaveLength(
+      25
+    )
+    expect(pageMemories(all, { includeArchived: true, offset: -5, limit: 10 }).offset).toBe(0)
+    const past = pageMemories(all, { includeArchived: true, offset: 90, limit: 10 })
+    expect(past.offset).toBe(20)
+    expect(ids(past)).toHaveLength(10)
+    expect(pageMemories([], { includeArchived: true, offset: 50, limit: 10 })).toMatchObject({
+      offset: 0,
+      total: 0,
+      items: []
+    })
+  })
+
+  it('opens on the page that holds focusId', () => {
+    const page = pageMemories(all, {
+      includeArchived: true,
+      offset: 0,
+      limit: 10,
+      focusId: 'm23'
+    })
+    expect(page.offset).toBe(20)
+    expect(ids(page)).toContain('m23')
+  })
+
+  it('ignores a focusId outside the filter', () => {
+    const page = pageMemories(all, {
+      includeArchived: false,
+      offset: 10,
+      limit: 10,
+      focusId: 'm2'
+    })
+    expect(page.offset).toBe(10)
   })
 })

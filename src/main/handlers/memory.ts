@@ -21,6 +21,8 @@ interface MemoryHandlerDeps {
     | 'formatMemoriesForPrompt'
     | 'handoffId'
     | 'MEMORY_TYPES'
+    | 'pageMemories'
+    | 'MEMORY_PAGE_DEFAULT'
     | 'selectStale'
     | 'summarizeMemories'
   >
@@ -48,6 +50,18 @@ export function registerMemoryHandlers(ipcMain: IpcMain, deps: MemoryHandlerDeps
       if (opts && 'projectId' in opts) return deps.store.memoriesForContext(opts.projectId ?? null)
       return deps.store.listMemories()
     }
+  )
+
+  // The memory screen asks for one page; the corpus stays in main.
+  ipcMain.handle(
+    'ai:memory:page',
+    (_, opts?: { includeArchived?: boolean; offset?: number; limit?: number; focusId?: string }) =>
+      deps.memory.pageMemories(deps.store.listMemories({ includeArchived: true }), {
+        includeArchived: opts?.includeArchived === true,
+        offset: typeof opts?.offset === 'number' ? opts.offset : 0,
+        limit: typeof opts?.limit === 'number' ? opts.limit : deps.memory.MEMORY_PAGE_DEFAULT,
+        ...(typeof opts?.focusId === 'string' ? { focusId: opts.focusId } : {})
+      })
   )
 
   ipcMain.handle('ai:memory:save', (_, input: MemoryInput & { id?: string }) => {

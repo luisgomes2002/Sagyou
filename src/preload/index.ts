@@ -1,7 +1,13 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { StageResult as FileStageResult } from '../main/modules/files/file-import'
 // Type-only: erased at build, so no main-process code is pulled into the preload.
-import type { AiMemory, MemoryInput, MemorySummary, MemoryConflict } from '../main/modules/ai/memory'
+import type {
+  AiMemory,
+  MemoryInput,
+  MemoryPage,
+  MemorySummary,
+  MemoryConflict
+} from '../main/modules/ai/memory'
 import type { McpActionRequest, McpActionResult } from '../main/modules/agent/mcp-write-types'
 import type {
   GlobalSearchHit,
@@ -252,6 +258,12 @@ export const api = {
         projectId?: string | null
         includeArchived?: boolean
       }): Promise<AiMemory[]> => ipcRenderer.invoke('ai:memory:list', opts),
+      page: (opts: {
+        includeArchived: boolean
+        offset: number
+        limit: number
+        focusId?: string
+      }): Promise<MemoryPage> => ipcRenderer.invoke('ai:memory:page', opts),
       save: (
         input: MemoryInput & { id?: string }
       ): Promise<{ memory: AiMemory; redacted: boolean } | { error: string }> =>

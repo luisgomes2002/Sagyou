@@ -384,6 +384,49 @@ export function selectRecentMemories(
   }
 }
 
+// ── Memory screen paging ─────────────────────────────────────────────────────
+
+export const MEMORY_PAGE_DEFAULT = 25
+const MEMORY_PAGE_MAX = 100
+
+export interface MemoryPage {
+  items: AiMemory[]
+  /** Size of the current filter (active only, or active + archived). */
+  total: number
+  offset: number
+  /** Of every memory, not of the page: the screen's header shows them. */
+  activeCount: number
+  archivedCount: number
+}
+
+/**
+ * One page for the memory screen, in the order given (listMemories: pinned
+ * first, then most recently accessed). A `focusId` inside the filter opens on
+ * the page that holds it, so a Ctrl+K hit is never off screen. Read-only.
+ */
+export function pageMemories(
+  all: AiMemory[],
+  opts: { includeArchived: boolean; offset: number; limit: number; focusId?: string }
+): MemoryPage {
+  const limit =
+    Number.isInteger(opts.limit) && opts.limit >= 1 && opts.limit <= MEMORY_PAGE_MAX
+      ? opts.limit
+      : MEMORY_PAGE_DEFAULT
+  const filtered = opts.includeArchived ? all : all.filter((m) => !m.archivedAt)
+  const lastOffset = filtered.length ? Math.floor((filtered.length - 1) / limit) * limit : 0
+  const focus = opts.focusId ? filtered.findIndex((m) => m.id === opts.focusId) : -1
+  const requested = Number.isInteger(opts.offset) ? Math.max(0, opts.offset) : 0
+  const offset = focus >= 0 ? Math.floor(focus / limit) * limit : Math.min(requested, lastOffset)
+  const archivedCount = all.filter((m) => m.archivedAt).length
+  return {
+    items: filtered.slice(offset, offset + limit),
+    total: filtered.length,
+    offset,
+    activeCount: all.length - archivedCount,
+    archivedCount
+  }
+}
+
 // ── Summary / lint ───────────────────────────────────────────────────────────
 
 export function summarizeMemories(memories: AiMemory[]): MemorySummary {
