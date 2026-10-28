@@ -1598,6 +1598,14 @@ describe('list_recent_memories', () => {
       expect.arrayContaining(['projectId', 'type', 'status', 'since', 'until', 'limit', 'offset'])
     )
     expect(tool?.inputSchema.required).toBeUndefined()
+    expect(tool?.description).toContain('read_memory')
+    expect(tool?.description).toContain('save_memory')
+    const search = (listed.result as { tools: { name: string; description: string }[] }).tools.find(
+      (item) => item.name === 'search_memory'
+    )
+    expect(search?.description).toContain(
+      'Se não achar o contexto, use list_recent_memories com type handoff'
+    )
   })
 
   it('finds the generic handoff that a term search misses', async () => {

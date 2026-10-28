@@ -1727,12 +1727,23 @@ app.whenReady().then(() => {
         const appBrief = sagyouContextBrief(run.projectId)
         const localSkillsBrief = sagyouSkillsBrief()
         let relevantMemories: import('./modules/ai/memory').AiMemory[] = []
+        let recentHandoffs: import('./modules/ai/memory').AiMemory[] = []
         try {
           // Search is ranking-only and does not touch decay counters. Full data
           // still stays behind MCP once the executor needs to investigate.
           relevantMemories = memoryStore
             .searchMemories({ projectId: run.projectId, term: task, limit: 5 })
             .map((hit) => hit.memory)
+          // Nothing matched the request's words: the last handoffs say what came before.
+          if (!relevantMemories.length)
+            recentHandoffs = memoryRules.selectRecentMemories(memoryStore.listMemories(), {
+              projectId: run.projectId,
+              allProjects: false,
+              type: 'handoff',
+              status: 'active',
+              offset: 0,
+              limit: 2
+            }).items
         } catch {
           /* Briefing context is best-effort; a launch must remain available. */
         }
@@ -1740,7 +1751,8 @@ app.whenReady().then(() => {
           objective: task,
           decisions: decisoes,
           files: rel,
-          memories: relevantMemories
+          memories: relevantMemories,
+          recentHandoffs
         })
         // A blank session starts the CLI on its normal screen: pasting a briefing
         // (skills, MCP hints) would run a turn nobody asked for.
