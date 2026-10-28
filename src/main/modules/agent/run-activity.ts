@@ -16,6 +16,49 @@ export interface RunActivitySummary {
 }
 
 const ENTRY_LIMIT = 40
+const TITLE_LIMIT = 80
+
+/**
+ * Finance stays in its captured profile, but a handoff is a memory any session
+ * can read. Their card text (amount, table, profile name) never goes into it.
+ */
+const FINANCIAL_WRITE_TOOLS: ReadonlySet<string> = new Set([
+  'create_transaction',
+  'update_transaction',
+  'delete_transaction',
+  'create_financial_table',
+  'add_financial_category',
+  'remove_financial_category',
+  'create_financial_profile',
+  'rename_financial_profile'
+])
+
+/**
+ * The entry a write leaves in its run, or null when it did not succeed.
+ * `cardResumo` is the approval card's default text, for tools that prepare none.
+ */
+export function runActivityEntry(
+  request: { name: string; args: Record<string, unknown>; resumo?: string },
+  value: unknown,
+  cardResumo: () => string
+): RunActivityEntry | null {
+  const result = value as { ok?: unknown; id?: unknown } | null
+  if (!result || result.ok !== true) return null
+  if (FINANCIAL_WRITE_TOOLS.has(request.name))
+    return { name: request.name, resumo: `Escrita financeira (${request.name}); confira no Sagyou` }
+  const title = String(request.args.titulo ?? '').trim()
+  const isMemory = request.name === 'save_memory'
+  return {
+    name: request.name,
+    resumo:
+      request.resumo ??
+      (isMemory
+        ? `Salvar memória ${String(request.args.tipo ?? '')} "${title.slice(0, TITLE_LIMIT)}"`
+        : cardResumo()),
+    ...(typeof result.id === 'string' ? { id: result.id } : {}),
+    ...(isMemory && request.args.tipo === 'decisao' && title ? { decision: title } : {})
+  }
+}
 const ACTION_LIMIT = 12
 
 /**

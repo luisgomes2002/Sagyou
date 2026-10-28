@@ -68,7 +68,11 @@ import { createRunTaskTimers } from './modules/agent/agent-task-timers'
 import { CODE_EXECUTOR_MCP_PERMISSIONS, prepareAgentMcpSession } from './modules/agent/agent-mcp-session'
 import { buildExternalAgentBrief, scrubExternalBriefSecrets } from './modules/agent/agent-briefing'
 import { buildTerminalHandoff } from './modules/agent/terminal-handoff'
-import { createRunActivity, summarizeRunActivity } from './modules/agent/run-activity'
+import {
+  createRunActivity,
+  runActivityEntry,
+  summarizeRunActivity
+} from './modules/agent/run-activity'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import {
   loadData,
@@ -560,22 +564,8 @@ function mcpCardResumo(name: string, args: Record<string, unknown>): string {
 const runActivity = createRunActivity()
 
 function recordRunActivity(request: McpWriteRequest, value: unknown): void {
-  const result = value as { ok?: unknown; id?: unknown } | null
-  if (!result || result.ok !== true) return
-  const decision =
-    request.name === 'save_memory' && request.args.tipo === 'decisao'
-      ? String(request.args.titulo ?? '').trim()
-      : ''
-  runActivity.record(request.runId, {
-    name: request.name,
-    resumo:
-      request.resumo ??
-      (request.name === 'save_memory'
-        ? `Salvar memória ${String(request.args.tipo ?? '')} "${String(request.args.titulo ?? '').slice(0, 80)}"`
-        : mcpCardResumo(request.name, request.args)),
-    ...(typeof result.id === 'string' ? { id: result.id } : {}),
-    ...(decision ? { decision } : {})
-  })
+  const entry = runActivityEntry(request, value, () => mcpCardResumo(request.name, request.args))
+  if (entry) runActivity.record(request.runId, entry)
 }
 
 /** Routes MCP writes through the exact same approval UI as code-agent actions. */
