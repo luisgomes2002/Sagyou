@@ -69,7 +69,10 @@ export function MemoryView({ searchTargetId }: { searchTargetId?: string }): Rea
           setShowArchived(true)
           setPage(all)
           setLoading(false)
-        } else load(false, 0, searchTargetId)
+        } else {
+          setShowArchived(false)
+          load(false, 0, searchTargetId)
+        }
       })
       .catch(() => load(false, 0))
   }, [searchTargetId, load])

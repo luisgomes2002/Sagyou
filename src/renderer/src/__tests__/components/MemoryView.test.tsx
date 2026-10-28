@@ -107,6 +107,17 @@ describe('MemoryView paging', () => {
     expect(screen.getByText('Página 2 de 2')).toBeTruthy()
   })
 
+  it('turns the archived filter off when a later Ctrl+K target is active', async () => {
+    corpus.push(memory(30, true))
+    const { rerender } = render(<MemoryView searchTargetId="m30" />)
+    await screen.findByRole('button', { name: 'Ocultar arquivadas' })
+    rerender(<MemoryView searchTargetId="m3" />)
+    expect(await screen.findByRole('button', { name: 'Ver arquivadas (1)' })).toBeTruthy()
+    expect(page).toHaveBeenLastCalledWith(
+      expect.objectContaining({ includeArchived: false, focusId: 'm3' })
+    )
+  })
+
   it('goes back a page after deleting the only memory of the last page', async () => {
     corpus = corpus.slice(0, 26)
     render(<MemoryView />)
