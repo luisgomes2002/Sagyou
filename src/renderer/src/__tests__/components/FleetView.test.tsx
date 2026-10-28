@@ -217,6 +217,7 @@ describe('FleetView', () => {
     expect(screen.getByRole('button', { name: /^tarefa B/ })).toBeInTheDocument()
     expect(screen.getAllByText(/Projeto Um/).length).toBeGreaterThan(0)
     expect(screen.getByText('Ativas · 2')).toBeInTheDocument()
+    expect(screen.queryByText('3/40')).not.toBeInTheDocument()
   })
 
   it('selecting a session switches the workspace to it', async () => {
@@ -227,12 +228,15 @@ describe('FleetView', () => {
     expect(screen.getByRole('heading', { name: 'tarefa B' })).toBeInTheDocument()
   })
 
-  it('shows only the current step for an unlimited agent', async () => {
+  it('hides step counts while retaining token usage for an unlimited agent', async () => {
     oneRun({ progress: { step: 15, maxSteps: 0, promptTokens: 100, completionTokens: 20 } })
     render(<FleetView projects={projects} />)
 
-    expect((await screen.findAllByText('15')).length).toBeGreaterThan(0)
+    const inspector = await screen.findByRole('complementary', { name: 'Inspetor' })
+    expect(within(inspector).getByText('Tokens')).toBeInTheDocument()
+    expect(screen.queryByText('15')).not.toBeInTheDocument()
     expect(screen.queryByText('15/0')).not.toBeInTheDocument()
+    expect(screen.queryByText(/passo 15/)).not.toBeInTheDocument()
   })
 
   it('the inspector shows only the context, without activity or changes tabs', async () => {

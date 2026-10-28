@@ -3,7 +3,7 @@ import { AttentionPanel } from './AttentionPanel'
 import { Inspector } from './Inspector'
 import type { Harness } from './NewSessionPanel'
 import type { CodeAgentRunUI } from './useCodeAgentRuns'
-import { STATUS_STYLE, formatProgress, type SessionStatus } from './format'
+import { STATUS_STYLE, type SessionStatus } from './format'
 
 function StatusPill({ status, label }: { status: SessionStatus; label?: string }): React.JSX.Element {
   const style = STATUS_STYLE[status]
@@ -76,8 +76,10 @@ export function LiveRunWorkspace({
 }): React.JSX.Element {
   const attention = run.approvals.length > 0 || run.questions.length > 0
   const status: SessionStatus = attention ? 'attention' : 'running'
-  const step = run.progress ? `passo ${formatProgress(run.progress.step, run.progress.maxSteps)}` : ''
-  const title = run.interactive && /^Abra uma sessão interativa/.test(run.task) ? 'Sessão interativa' : run.task
+  const title =
+    run.interactive && /^Abra uma sessão interativa/.test(run.task)
+      ? 'Sessão interativa'
+      : run.task
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -91,7 +93,7 @@ export function LiveRunWorkspace({
               ? 'Aguardando sua aprovação'
               : undefined
         }
-        chips={[harness?.label ?? run.model, projectName, step]}
+        chips={[harness?.label ?? run.model, projectName]}
         actions={
           run.interactive ? (
             <span className="text-[11px] text-[#8a8a92]">Encerre digitando /exit no terminal</span>
