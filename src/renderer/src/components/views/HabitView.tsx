@@ -131,7 +131,7 @@ export function HabitView({ searchTargetId }: { searchTargetId?: string | null }
           </div>
         ) : (
           <div className="flex-1 overflow-y-auto p-6">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-4 xl:grid-cols-3">
               {habits.map((habit) => (
                 <div
                   key={habit.id}

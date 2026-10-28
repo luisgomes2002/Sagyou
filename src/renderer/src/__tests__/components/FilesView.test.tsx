@@ -173,3 +173,48 @@ describe('FilesView', () => {
     ).toBeInTheDocument()
   })
 })
+
+describe('FilesView rename', () => {
+  beforeEach(() => {
+    useKanbanStore.setState({
+      files: [stored('r1', 'IMG_1422.jpg', 10, 'p3'), stored('r2', 'Recibo.jpg', 10, 'p3')]
+    })
+  })
+  const row = (name: string): HTMLElement => screen.getByText(name).closest('.group') as HTMLElement
+  const nameOf = (id: string): string | undefined =>
+    useKanbanStore.getState().files.find((f) => f.id === id)?.name
+
+  it('opens the field with the name without its extension and saves on Enter', () => {
+    render(<FilesView activeProjectId="p3" />)
+    fireEvent.click(within(row('IMG_1422.jpg')).getByRole('button', { name: 'Renomear' }))
+    const input = screen.getByRole('textbox', { name: 'Novo nome do arquivo' }) as HTMLInputElement
+    expect(input.value).toBe('IMG_1422')
+    expect(screen.getByText('.jpg')).toBeTruthy()
+    fireEvent.change(input, { target: { value: 'Conta de luz' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(nameOf('r1')).toBe('Conta de luz.jpg')
+    expect(screen.getByText('Conta de luz.jpg')).toBeTruthy()
+    expect(screen.queryByRole('textbox', { name: 'Novo nome do arquivo' })).toBeNull()
+  })
+
+  it('cancels on Escape without saving', () => {
+    render(<FilesView activeProjectId="p3" />)
+    fireEvent.click(within(row('IMG_1422.jpg')).getByRole('button', { name: 'Renomear' }))
+    const input = screen.getByRole('textbox', { name: 'Novo nome do arquivo' })
+    fireEvent.change(input, { target: { value: 'Outro' } })
+    fireEvent.keyDown(input, { key: 'Escape' })
+    expect(nameOf('r1')).toBe('IMG_1422.jpg')
+    expect(screen.getByText('IMG_1422.jpg')).toBeTruthy()
+  })
+
+  it('shows the error and keeps the field open for a name taken in the project', () => {
+    render(<FilesView activeProjectId="p3" />)
+    fireEvent.click(within(row('IMG_1422.jpg')).getByRole('button', { name: 'Renomear' }))
+    const input = screen.getByRole('textbox', { name: 'Novo nome do arquivo' })
+    fireEvent.change(input, { target: { value: 'recibo' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    expect(screen.getByRole('alert').textContent).toBe('Já existe um arquivo com esse nome aqui.')
+    expect(nameOf('r1')).toBe('IMG_1422.jpg')
+    expect(screen.getByRole('textbox', { name: 'Novo nome do arquivo' })).toBeTruthy()
+  })
+})

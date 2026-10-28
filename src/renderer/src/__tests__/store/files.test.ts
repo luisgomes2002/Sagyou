@@ -230,3 +230,40 @@ describe('loadData — files hydration', () => {
     expect(useKanbanStore.getState().files[0].projectId).toBe('proj-xyz')
   })
 })
+
+// ── renameFile ────────────────────────────────────────────────────────────────
+
+describe('renameFile', () => {
+  beforeEach(resetStore)
+
+  it('changes only the name and keeps a linked receipt', () => {
+    const stored = makeFile({ id: 'f1', name: 'IMG.jpg', ext: '.jpg', projectId: 'p1' })
+    useKanbanStore.setState({
+      files: [stored, makeFile({ id: 'f2' })],
+      lists: [
+        {
+          id: 'l1',
+          name: 'Conta',
+          currency: 'BRL',
+          transactions: [
+            {
+              id: 't1',
+              description: 'Luz',
+              amount: '100',
+              type: 'expense',
+              date: '2026-10-01',
+              receiptFileIds: ['f1']
+            }
+          ],
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z'
+        }
+      ] as never
+    })
+    useKanbanStore.getState().renameFile('f1', 'Conta de luz.jpg')
+    const { files, lists } = useKanbanStore.getState()
+    expect(files[0]).toEqual({ ...stored, name: 'Conta de luz.jpg' })
+    expect(files[1].name).toBe('document.pdf')
+    expect(lists[0].transactions[0].receiptFileIds).toEqual(['f1'])
+  })
+})

@@ -6,6 +6,8 @@ export interface FilesSlice {
   files: StoredFile[]
   addFiles: (files: StoredFile[]) => void
   removeFile: (id: string) => void
+  /** Only the display name changes: bytes stay at files/<id><ext> and links use the id. */
+  renameFile: (id: string, name: string) => void
 }
 
 export const createFilesSlice: StateCreator<
@@ -18,6 +20,11 @@ export const createFilesSlice: StateCreator<
 
   addFiles: (files) => {
     set((s) => ({ files: [...s.files, ...files] }))
+    get()._persist()
+  },
+
+  renameFile: (id, name) => {
+    set((s) => ({ files: s.files.map((f) => (f.id === id ? { ...f, name } : f)) }))
     get()._persist()
   },
 
