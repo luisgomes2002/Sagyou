@@ -5,7 +5,6 @@ import { SessionRail, type SessionItem } from './fleet/SessionRail'
 import { NewSessionPanel, type Harness, type SessionRequest } from './fleet/NewSessionPanel'
 import { LiveRunWorkspace } from './fleet/Workspaces'
 import { useCodeAgentRuns } from './fleet/useCodeAgentRuns'
-import { formatProgress } from './fleet/format'
 
 // ---------------------------------------------------------------------------
 // Sessões de código
@@ -89,8 +88,7 @@ export function FleetView({
           ? 'Sessão interativa'
           : run.task,
       subtitle: `${projectNameOf(run.dir, run.projectId)} · ${harnessLabelOf(run.harness, run.model)}`,
-      status: run.approvals.length || run.questions.length ? 'attention' : 'running',
-      meta: run.progress ? formatProgress(run.progress.step, run.progress.maxSteps) : undefined
+      status: run.approvals.length || run.questions.length ? 'attention' : 'running'
     }))
     return live
     // eslint-disable-next-line react-hooks/exhaustive-deps

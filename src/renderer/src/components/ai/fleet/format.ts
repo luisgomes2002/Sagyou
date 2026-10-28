@@ -5,10 +5,6 @@ export function formatTokens(n: number): string {
   return `${(n / 1_000_000).toFixed(2)}M`
 }
 
-export function formatProgress(step: number, maxSteps: number): string {
-  return maxSteps === 0 ? String(step) : `${step}/${maxSteps}`
-}
-
 /** Duração curta: 45s, 12min, 2h05. */
 export function formatElapsed(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000))
