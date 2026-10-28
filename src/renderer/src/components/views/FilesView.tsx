@@ -3,6 +3,7 @@ import { useKanbanStore } from '../../store/kanban'
 import type { StoredFile } from '../../types'
 import { formatDateBR } from '../../utils/dates'
 import { repeatedFileIds } from '../../utils/file-duplicates'
+import { fileStem, validateFileRename } from '../../utils/file-rename'
 import { searchFocusClass, useSearchFocus } from '../../utils/searchFocus'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { useFileImport, type ImportOutcome } from '../useFileImport'
@@ -114,23 +115,100 @@ function ActionBtn({
 
 function FileRow({
   file,
+  siblings,
   onOpen,
   onOpenInBrowser,
   onDownload,
+  onRename,
   onDelete,
   highlighted,
   repeated,
   searchRef
 }: {
   file: StoredFile
+  /** Files of the same scope; a name taken among them is refused. */
+  siblings: StoredFile[]
   onOpen: () => void
   onOpenInBrowser: () => void
   onDownload: () => void
+  onRename: (name: string) => void
   onDelete: () => void
   highlighted?: boolean
   repeated?: boolean
   searchRef?: React.RefObject<HTMLDivElement | null>
 }) {
+  // null = not editing; otherwise the stem being typed (the extension is fixed).
+  const [draft, setDraft] = useState<string | null>(null)
+  const [renameError, setRenameError] = useState<string | null>(null)
+
+  const startRename = (): void => {
+    setDraft(fileStem(file))
+    setRenameError(null)
+  }
+  const cancelRename = (): void => {
+    setDraft(null)
+    setRenameError(null)
+  }
+  const saveRename = (): void => {
+    if (draft === null) return
+    const result = validateFileRename(file, draft, siblings)
+    if (!result.ok) {
+      setRenameError(result.error)
+      return
+    }
+    if (!result.unchanged) onRename(result.name)
+    cancelRename()
+  }
+
+  if (draft !== null)
+    return (
+      <div
+        ref={searchRef}
+        className="flex items-start gap-3 px-4 py-3 rounded-lg bg-[#16161a] border border-[#3b3b42]"
+      >
+        <div className="shrink-0 pt-1">
+          <FileIcon ext={file.ext} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <input
+              aria-label="Novo nome do arquivo"
+              value={draft}
+              autoFocus
+              onFocus={(e) => e.currentTarget.select()}
+              onChange={(e) => {
+                setDraft(e.target.value)
+                setRenameError(null)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') saveRename()
+                else if (e.key === 'Escape') cancelRename()
+              }}
+              className="flex-1 min-w-0 px-2 py-1 rounded-md border border-[#2b2b31] bg-[#101014] text-sm text-[#d4d4d4] focus:outline-none focus:border-[#7c3aed] transition-colors"
+            />
+            <span className="shrink-0 text-sm text-[#999999] font-mono">{file.ext}</span>
+            <button
+              onClick={saveRename}
+              className="shrink-0 px-2.5 py-1 rounded-md bg-[#2a2a30] text-[11px] font-medium text-[#a080f0] hover:bg-[#303036] transition-colors"
+            >
+              Salvar
+            </button>
+            <button
+              onClick={cancelRename}
+              className="shrink-0 px-2.5 py-1 rounded-md text-[11px] font-medium text-[#999999] hover:text-[#d4d4d4] hover:bg-[#222227] transition-colors"
+            >
+              Cancelar
+            </button>
+          </div>
+          {renameError && (
+            <p role="alert" className="text-[11px] text-[#e04040] mt-1">
+              {renameError}
+            </p>
+          )}
+        </div>
+      </div>
+    )
+
   return (
     <div
       ref={searchRef}
@@ -206,6 +284,21 @@ function FileRow({
           Baixar
         </ActionBtn>
 
+        <ActionBtn title="Renomear arquivo" onClick={startRename}>
+          <svg
+            width="11"
+            height="11"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
+          </svg>
+          Renomear
+        </ActionBtn>
+
         <div className="w-px h-4 bg-[#2a2a30] mx-1" />
 
         <ActionBtn title="Remover arquivo" onClick={onDelete} danger>
@@ -235,6 +328,7 @@ export function FilesView({
 }) {
   const files = useKanbanStore((s) => s.files)
   const removeFile = useKanbanStore((s) => s.removeFile)
+  const renameFile = useKanbanStore((s) => s.renameFile)
   const searchRef = useSearchFocus<HTMLDivElement>(!!searchTargetId)
   const [fileToDelete, setFileToDelete] = useState<StoredFile | null>(null)
   // Scope (project id, or '' for general files) where the repeated filter was
@@ -465,12 +559,14 @@ export function FilesView({
                 <FileRow
                   key={file.id}
                   file={file}
+                  siblings={visible}
                   highlighted={file.id === searchTargetId}
                   repeated={repeated.has(file.id)}
                   searchRef={file.id === searchTargetId ? searchRef : undefined}
                   onOpen={() => handleOpen(file)}
                   onOpenInBrowser={() => handleOpenInBrowser(file)}
                   onDownload={() => handleDownload(file)}
+                  onRename={(name) => renameFile(file.id, name)}
                   onDelete={() => setFileToDelete(file)}
                 />
               ))}
