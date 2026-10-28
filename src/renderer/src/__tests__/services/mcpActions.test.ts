@@ -888,6 +888,134 @@ describe('MCP transaction bank fields', () => {
   })
 })
 
+describe('MCP transaction details', () => {
+  beforeEach(resetStore)
+
+  const scope: McpScope = { projectId: null, financialProfileId: DEFAULT_FINANCIAL_PROFILE_ID }
+  const invoice = [
+    { description: 'Netflix', amount: '44,90', category: 'Assinaturas', date: '2026-07-05' },
+    { description: 'Sushi', amount: '91', category: 'Lazer' },
+    { description: 'Juros', amount: 1.03 }
+  ]
+  const create = (tableId: string, extra: Record<string, unknown>): Record<string, unknown> => ({
+    tableId,
+    type: 'despesa',
+    amount: '136.93',
+    description: 'Fatura C6',
+    date: '2026-08-05',
+    ...extra
+  })
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+
+  it('create_transaction stores the details in order with new ids and sums them in the resumo', () => {
+    const { mine } = seedTables()
+    const args = create(mine, { details: invoice })
+    expect(prepareMcpAction('create_transaction', args, scope)).toMatchObject({
+      ok: true,
+      resumo:
+        'Lançar despesa de R$ 136,93 em Nubank — Fatura C6 — 2026-08-05 · 3 detalhes somando R$ 136,93'
+    })
+    expect(applyMcpAction('create_transaction', args, scope).ok).toBe(true)
+    const details = table(mine).transactions[0].details ?? []
+    expect(details).toEqual([
+      {
+        id: expect.stringMatching(UUID),
+        description: 'Netflix',
+        amount: '44.9',
+        category: 'Assinaturas',
+        date: '2026-07-05'
+      },
+      { id: expect.stringMatching(UUID), description: 'Sushi', amount: '91', category: 'Lazer' },
+      { id: expect.stringMatching(UUID), description: 'Juros', amount: '1.03' }
+    ])
+    expect(new Set(details.map((detail) => detail.id)).size).toBe(3)
+  })
+
+  it('the resumo shows what is left to detail and the singular form', () => {
+    const { mine } = seedTables()
+    expect(
+      prepareMcpAction(
+        'create_transaction',
+        create(mine, { amount: '150', details: invoice }),
+        scope
+      )
+    ).toMatchObject({
+      resumo: expect.stringMatching(
+        / · 3 detalhes somando R\$ 136,93 \(falta detalhar R\$ 13,07\)$/
+      )
+    })
+    expect(
+      prepareMcpAction(
+        'create_transaction',
+        create(mine, { amount: '200', details: [{ description: 'Claude', amount: '118.38' }] }),
+        scope
+      )
+    ).toMatchObject({
+      resumo: expect.stringMatching(/ · 1 detalhe somando R\$ 118,38 \(falta detalhar R\$ 81,62\)$/)
+    })
+    const empty = both('create_transaction', create(mine, { details: [] }), scope)
+    expect(empty).toMatchObject({ ok: true, resumo: expect.stringMatching(/ · sem detalhes$/) })
+    expect(table(mine).transactions[0].details).toBeUndefined()
+  })
+
+  it('refuses details summing above the amount and writes nothing', () => {
+    const { mine } = seedTables()
+    const args = create(mine, {
+      amount: '797.48',
+      details: [
+        { description: 'A', amount: '700' },
+        { description: 'B', amount: '112' }
+      ]
+    })
+    expect(both('create_transaction', args, scope)).toEqual({
+      ok: false,
+      error: 'Os detalhes somam R$ 812,00, acima do valor da transação (R$ 797,48).'
+    })
+    expect(table(mine).transactions).toHaveLength(0)
+  })
+
+  it('refuses an invalid item with its index, even after valid ones, and writes nothing', () => {
+    const { mine } = seedTables()
+    const good = [...invoice]
+    const cases: [Record<string, unknown>, string][] = [
+      [{ description: ' ', amount: '1' }, 'details[3].description é obrigatório.'],
+      [
+        { description: 'X', amount: '1.500' },
+        'details[3].amount precisa ser um valor positivo sem separador de milhar (ex.: 1500.50 ou 1500,50).'
+      ],
+      [
+        { description: 'X', amount: '1', date: '2026-02-30' },
+        'details[3].date precisa ser uma data real no formato YYYY-MM-DD.'
+      ],
+      [{ description: 'X', amount: '1', foo: 1 }, 'details[3] tem o campo desconhecido "foo".'],
+      [{ id: 'x', description: 'X', amount: '1' }, 'details[3] tem o campo desconhecido "id".'],
+      [
+        { description: 'X', amount: '1', linkedTransactionId: 'tx' },
+        'details[3] tem o campo desconhecido "linkedTransactionId".'
+      ]
+    ]
+    for (const [bad, error] of cases) {
+      const args = create(mine, { amount: '500', details: [...good, bad] })
+      expect(both('create_transaction', args, scope)).toEqual({ ok: false, error })
+    }
+    expect(table(mine).transactions).toHaveLength(0)
+  })
+
+  it('refuses a non-list details and more than 200 items', () => {
+    const { mine } = seedTables()
+    expect(both('create_transaction', create(mine, { details: 'Netflix' }), scope)).toEqual({
+      ok: false,
+      error: 'details precisa ser uma lista.'
+    })
+    const many = Array.from({ length: 201 }, () => ({ description: 'X', amount: '0.01' }))
+    expect(both('create_transaction', create(mine, { details: many }), scope)).toEqual({
+      ok: false,
+      error: 'details aceita no máximo 200 itens.'
+    })
+    expect(table(mine).transactions).toHaveLength(0)
+  })
+})
+
 describe('MCP review fixes', () => {
   beforeEach(resetStore)
 
