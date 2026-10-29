@@ -12,6 +12,7 @@ Branch: feature/sessao-projeto-sem-pasta
 
 - O renderer nunca escolhe o caminho privado. Caminho preenchido fora das raízes ativas continua recusado.
 - O projeto precisa existir no `loadData()` antes de criar workspace, worktree, PTY ou MCP.
+- O workspace privado deve ser um repositório Git independente antes de `removeOrphans`. Se estiver dentro de outro repositório, a busca de Git no diretório pai não pode levar à remoção de worktrees desse repositório.
 - Sessões interativas arquivam o diff e não aplicam patch no diretório de origem.
 - Nenhum schema ou backup muda; sessão com pasta autorizada mantém comportamento atual.
 
@@ -22,6 +23,7 @@ Branch: feature/sessao-projeto-sem-pasta
 3. **Workspace compartilhado indevidamente:** duas sessões ganham worktrees destacados distintos. Testado no fluxo Electron da Task 3.
 4. **Patch aplicado no lugar errado:** sessão sem pasta arquiva diff sem entregar à raiz privada ou ao projeto. Testado no fluxo Electron da Task 3.
 5. **Projeto removido:** falha antes de criar diretório ou executor. Testado no helper da Task 2 e no fluxo Electron da Task 3.
+6. **Workspace privado dentro de outro repositório:** Git não pode subir ao pai e considerar worktrees alheios órfãos. Testado na Task 2a.
 
 ### Task 1: painel permite sessão sem pasta
 
@@ -44,6 +46,18 @@ Branch: feature/sessao-projeto-sem-pasta
 - [ ] Escrever teste do helper: projeto inexistente falha antes de devolver caminho utilizável. Testar `AgentWorktreeManager` existente em repo Git temporário para duas worktrees distintas; o efeito do handler sobre o disco será verificado na Task 3.
 - [ ] Ajustar o handler para resolver raiz no main, criar workspace privado quando `privateWorkspace`, e manter captura MCP. Worktree/diff/cleanup continuam pelo fluxo atual.
 - [ ] Rodar testes específicos, typecheck e suíte; commit `feat(fleet): iniciar sessao de projeto no workspace privado`.
+
+### Task 2a: impedir descoberta de repositório pai no workspace privado
+
+**Causa observada:** num perfil temporário dentro da worktree atual, `removeOrphans(privateWorkspace)` executou Git antes de inicializar `.git` no workspace. Git encontrou o repositório pai e removeu o registro da worktree atual como se fosse órfã. Os arquivos foram preservados e o vínculo Git foi recuperado, mas o comportamento pode apagar trabalho se `userData` estiver dentro de um repositório.
+
+**Arquivos:** modificar `src/main/index.ts` e `src/main/modules/agent/git-worktree.ts` ou novo helper privado; teste em `src/main/__tests__/agent-infrastructure.test.ts`.
+
+**Interface:** `ensurePrivateWorkspaceRepository(dir): Promise<void>` inicializa Git exatamente em `dir` quando ele ainda não tem `.git` próprio, antes de `removeOrphans(dir)`. Para raízes de código do projeto, preservar a descoberta atual de Git no pai.
+
+- [ ] Teste RED com diretório temporário que é subpasta de outro repositório Git: a inicialização cria `private/.git`; `listWorktrees(private)` não contém a worktree do pai; `removeOrphans(private)` não remove o registro do pai.
+- [ ] Implementar a inicialização local idempotente antes da limpeza de órfãos para sessões privadas, sem tocar no Git da raiz de código de projeto.
+- [ ] Rodar teste específico, typecheck e suíte completa; verificar novamente com Electron usando perfil temporário fora da pasta de worktrees do Sagyou; commit `fix(fleet): isolar git do workspace privado`.
 
 ### Task 3: revisão e PR
 
