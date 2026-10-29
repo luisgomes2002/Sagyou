@@ -61,13 +61,15 @@ Usuários do Claude Code têm o fluxo automatizado por skills e subagentes em `.
 
 Crie uma skill ou agente novo quando **um fluxo foi feito duas vezes do mesmo jeito** ou **o mesmo erro aconteceu duas vezes**. Mantenha curto, aponte para este arquivo em vez de repetir, e liste-o abaixo no mesmo PR.
 
-**Skills:** `/sagyou-spec`, `/sagyou-plan`, `/sagyou-build`, `/sagyou-review`, `/sagyou-pr`, `/sagyou-fix` (os estágios acima).
+**Skills:** `/sagyou-spec`, `/sagyou-plan`, `/sagyou-build`, `/sagyou-review`, `/sagyou-pr`, `/sagyou-fix` (os estágios acima), e `sagyou-ui` (padrão visual, carregada sozinha ao mexer no renderer).
 
 **Agentes** (cada um com um papel só; revisores são somente leitura):
 
 - `sagyou-plan-checker`: lê spec + plano como um construtor novo e devolve só perguntas.
 - `sagyou-implementer`: implementa uma task do plano, teste primeiro.
 - `sagyou-reviewer`: revisão da branch inteira (correção, segurança de dados, aderência a este fluxo).
+- `sagyou-security-reviewer`: ataca a branch como executor com injeção de prompt, conteúdo web/memória malicioso, renderer comprometido ou processo local; roda quando o diff toca IPC, MCP, sessões de agente, arquivos, web ou logs.
+- `sagyou-ui-reviewer`: confere telas alteradas contra o `UI_DESIGN.md`, acessibilidade, textos e estados; roda quando o diff toca o renderer.
 - `sagyou-test-runner`: roda lint/typecheck/testes e devolve um resumo curto das falhas.
 
 ## Permissões do Claude Code
