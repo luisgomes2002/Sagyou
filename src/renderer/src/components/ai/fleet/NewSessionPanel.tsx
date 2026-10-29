@@ -50,7 +50,6 @@ export function NewSessionPanel({
     (project?.activeCodePathIds ?? []).includes(root.id)
   )
   const chosen = harnesses.find((item) => item.id === harnessId)
-  const missingRoot = Boolean(projectId && !rootPath)
   const harnessBlocked = Boolean(chosen && !harnessReady(chosen))
 
   return (
@@ -101,16 +100,16 @@ export function NewSessionPanel({
               onChange={(event) => setRootPath(event.target.value)}
               className="mt-1 w-full rounded-lg border border-[#2b2b31] bg-[#101014] px-3 py-2"
             >
-              {!roots.length && <option value="">Nenhuma pasta autorizada</option>}
+              <option value="">Sem pasta de código</option>
               {roots.map((root) => (
                 <option key={root.id} value={root.path}>
                   {root.label || root.path}
                 </option>
               ))}
             </select>
-            {!roots.length && (
+            {!rootPath && (
               <span className="mt-1 block text-xs text-[#d9a640]">
-                Autorize uma pasta de código no projeto para abrir o terminal nele.
+                Sem pasta de código: o agente usará um espaço privado. O MCP continuará vinculado a este projeto.
               </span>
             )}
           </label>
@@ -165,7 +164,7 @@ export function NewSessionPanel({
         <button
           type="button"
           onClick={() => onStart({ projectId, rootPath, harnessId })}
-          disabled={starting || missingRoot || harnessBlocked}
+          disabled={starting || harnessBlocked}
           className="rounded-lg bg-[#6d5bb8] px-4 py-2 text-sm font-medium text-white hover:bg-[#7b69c6] disabled:opacity-40"
         >
           {starting ? 'Abrindo…' : 'Abrir sessão'}
