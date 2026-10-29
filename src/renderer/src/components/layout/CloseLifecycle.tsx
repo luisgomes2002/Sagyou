@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ReactElement } from 'react'
+import type { PropsWithChildren, ReactElement } from 'react'
 import { useKanbanStore } from '../../store/kanban'
 import { ClosingScreen } from './ClosingScreen'
 
-export function CloseLifecycle(): ReactElement | null {
+export function CloseLifecycle({ children }: PropsWithChildren): ReactElement {
   const closingRef = useRef(false)
   const [closing, setClosing] = useState(false)
   const [error, setError] = useState(false)
@@ -13,6 +13,11 @@ export function CloseLifecycle(): ReactElement | null {
     let fallback: ReturnType<typeof setTimeout> | null = null
     let cancelled = false
     let flushStarted = false
+
+    const blockKeyboard = (event: KeyboardEvent): void => {
+      event.preventDefault()
+      event.stopImmediatePropagation()
+    }
 
     const flushAndClose = async (): Promise<void> => {
       const state = useKanbanStore.getState()
@@ -41,6 +46,7 @@ export function CloseLifecycle(): ReactElement | null {
     const unsubscribe = window.electronAPI.lifecycle.onFlushBeforeClose(() => {
       if (closingRef.current) return
       closingRef.current = true
+      window.addEventListener('keydown', blockKeyboard, true)
       setClosing(true)
       // A frame lets the closing screen paint first. Background windows may
       // never receive one, so the short timer starts the flush regardless.
@@ -52,9 +58,17 @@ export function CloseLifecycle(): ReactElement | null {
       cancelled = true
       if (frame !== null) cancelAnimationFrame(frame)
       if (fallback !== null) clearTimeout(fallback)
+      window.removeEventListener('keydown', blockKeyboard, true)
       unsubscribe()
     }
   }, [])
 
-  return closing ? <ClosingScreen error={error} /> : null
+  return (
+    <>
+      <div data-app-content inert={closing} aria-hidden={closing}>
+        {children}
+      </div>
+      {closing && <ClosingScreen error={error} />}
+    </>
+  )
 }

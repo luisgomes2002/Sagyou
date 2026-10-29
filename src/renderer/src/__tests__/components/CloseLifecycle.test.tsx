@@ -125,4 +125,26 @@ describe('CloseLifecycle', () => {
     unmount()
     expect(unsubscribe).toHaveBeenCalledOnce()
   })
+
+  it('makes the app inaccessible and blocks global shortcuts while closing', async () => {
+    const shortcut = vi.fn()
+    window.addEventListener('keydown', shortcut)
+    try {
+      const { container } = render(
+        <CloseLifecycle>
+          <button>Editar task</button>
+        </CloseLifecycle>
+      )
+      await requestClose()
+
+      expect(container.querySelector('[data-app-content]')).toHaveAttribute('inert')
+      expect(container.querySelector('[data-app-content]')).toHaveAttribute('aria-hidden', 'true')
+      await act(async () => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', bubbles: true }))
+      })
+      expect(shortcut).not.toHaveBeenCalled()
+    } finally {
+      window.removeEventListener('keydown', shortcut)
+    }
+  })
 })

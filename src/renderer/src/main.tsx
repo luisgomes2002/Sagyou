@@ -8,7 +8,8 @@ import { CloseLifecycle } from './components/layout/CloseLifecycle'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
-    <CloseLifecycle />
+    <CloseLifecycle>
+      <App />
+    </CloseLifecycle>
   </StrictMode>
 )
