@@ -1,6 +1,5 @@
 import { execFile } from 'child_process'
-import { existsSync } from 'fs'
-import { unlink } from 'fs/promises'
+import { realpath, unlink } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
@@ -36,10 +35,20 @@ export async function ensureGitRepository(dir: string): Promise<void> {
  * accept the parent there, and orphan cleanup would then remove the parent's
  * worktrees. The workspace must own its `.git`, so no command climbs above it.
  * Project code roots keep the parent lookup: a subfolder of a repo is legitimate.
+ * A `.git` that exists is not enough: an interrupted init can leave it empty, and
+ * Git then climbs to the parent again, so the top level itself is checked.
  */
 export async function ensurePrivateWorkspaceRepository(dir: string): Promise<void> {
-  if (existsSync(join(dir, '.git'))) return
+  const own = await realpath(dir)
+  const topLevel = await git(dir, ['rev-parse', '--show-toplevel'])
+    .then((path) => realpath(path))
+    .catch(() => null)
+  if (topLevel && sameDirectory(topLevel, own)) return
   await git(dir, ['init', '--quiet'])
+}
+
+function sameDirectory(a: string, b: string): boolean {
+  return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b
 }
 
 export interface WorktreeBase {

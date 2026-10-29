@@ -6,7 +6,7 @@ import { existsSync } from 'fs'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises'
 import { createServer } from 'net'
 import { tmpdir } from 'os'
-import { isAbsolute, join, relative } from 'path'
+import { isAbsolute, join, relative, resolve } from 'path'
 import { promisify } from 'util'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import { AgentSessionRegistry } from '../modules/agent/agent-session'
@@ -412,21 +412,33 @@ describe('agent infrastructure', () => {
     const parentDir = await newRepo()
     const sessions = new AgentSessionRegistry<{ id: string; worktreeDir: string | null }>()
     const worktrees = new AgentWorktreeManager(sessions)
-    // Unregistered on purpose: to the parent's cleanup it would be an orphan.
     const parentRun = await worktrees.create(parentDir, worktreeRunId('parent-run'))
+    // Released and never registered: to a cleanup of the parent it is an orphan.
+    worktrees.activate(parentRun.worktreeDir)
     const privateDir = join(parentDir, 'profile', 'general-agent-workspace')
     await mkdir(privateDir, { recursive: true })
 
     await ensurePrivateWorkspaceRepository(privateDir)
     await ensurePrivateWorkspaceRepository(privateDir)
 
-    expect(existsSync(join(privateDir, '.git'))).toBe(true)
-    expect(await listWorktrees(privateDir)).not.toContain(parentRun.worktreeDir)
+    const listed = (await listWorktrees(privateDir)).map((path) => resolve(path))
+    expect(listed).toEqual([resolve(privateDir)])
     await worktrees.removeOrphans(privateDir)
     expect(existsSync(parentRun.worktreeDir)).toBe(true)
     expect(await listWorktrees(parentDir)).toHaveLength(2)
 
     await worktrees.remove(parentRun)
+  })
+
+  it('reinitialises a private workspace whose .git an interrupted init left empty', async () => {
+    const parentDir = await newRepo()
+    const privateDir = join(parentDir, 'general-agent-workspace')
+    await mkdir(join(privateDir, '.git'), { recursive: true })
+
+    await ensurePrivateWorkspaceRepository(privateDir)
+
+    const listed = (await listWorktrees(privateDir)).map((path) => resolve(path))
+    expect(listed).toEqual([resolve(privateDir)])
   })
 
   it('gives concurrent runs distinct detached worktrees and cleans an orphan after interruption', async () => {
