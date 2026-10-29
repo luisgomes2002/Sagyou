@@ -6,7 +6,7 @@ Branch: feature/animacao-fechamento
 
 **Objetivo:** mostrar o fechamento em andamento e confirmar o flush do estado antes de encerrar a janela.
 
-**Arquitetura:** o evento `app:flush-before-close` existente no main/preload inicia um pequeno componente de ciclo de vida no renderer. Ele mostra uma camada de fechamento, chama `_flushPersist()` somente quando o estado já foi carregado e só então responde com `flushBeforeCloseComplete()`. O main mantém seu timeout de segurança e ignora pedidos de fechamento repetidos enquanto aguarda. Nenhum canal IPC ou dado persistido novo é necessário.
+**Arquitetura:** o evento `app:flush-before-close` existente no main/preload inicia um pequeno componente de ciclo de vida no renderer. Ele mostra uma camada de fechamento, chama `_flushPersist()` somente quando o estado já foi carregado e só então responde com `flushBeforeCloseComplete()`. O main mantém seu timeout de segurança e ignora pedidos de fechamento repetidos enquanto aguarda. A confirmação de fechamento é registrada antes da guarda de dados, com validação explícita do renderer confiável, para funcionar também na tela bloqueada. Nenhum canal IPC ou dado persistido novo é necessário.
 
 ## Restrições Globais
 
@@ -15,7 +15,7 @@ Branch: feature/animacao-fechamento
 - Timeout de segurança existente: 10 segundos a partir do primeiro pedido; não reiniciar em cliques repetidos.
 - Sem mudança de schema, backup, normalização ou dados em `userData`.
 - UI em pt-BR, cores de `UI_DESIGN.md`, animação desativada com `prefers-reduced-motion`.
-- A camada cobre também os estados de carregamento e desbloqueio.
+- A camada cobre também os estados de carregamento e desbloqueio e torna a árvore do app inerte para teclado e leitor de tela.
 - Se `isLoaded` for falso, fechar sem salvar o estado inicial vazio sobre os dados reais.
 - O handler `store:save` no main é síncrono; mensagens IPC do mesmo renderer chegam em ordem. O flush final cancela o debounce pendente antes de enviar sua gravação.
 
@@ -25,7 +25,7 @@ Branch: feature/animacao-fechamento
 2. **Renderer sem resposta:** o timeout de 10 segundos ainda fecha a janela. Testado na Task 1.
 3. **Cliques repetidos:** um novo clique não prolonga o timeout nem dispara outro flush. Testado nas Tasks 1 e 3.
 4. **Erro de gravação:** a tela informa falha, não envia confirmação de sucesso e espera o timeout. Testado na Task 3.
-5. **Bloqueio, carga e acessibilidade:** fechar antes de carregar não sobrescreve dados existentes; botão e fechamento nativo mostram o mesmo estado, com texto acessível e movimento reduzido. Testado nas Tasks 1 e 3.
+5. **Bloqueio, carga e acessibilidade:** fechar antes de carregar não sobrescreve dados existentes e a confirmação funciona sem senha; botão e fechamento nativo mostram o mesmo estado, com conteúdo subjacente inerte e movimento reduzido. Testado nas Tasks 1, 3 e 4.
 
 ### Task 1: proteger o handshake do main contra pedidos repetidos
 
@@ -49,18 +49,29 @@ Branch: feature/animacao-fechamento
 - [ ] Cancelar o timer no início de `_flushPersist()`. Gravações IPC já enviadas terminam antes da gravação final porque o handler `store:save` é síncrono e recebe as chamadas do mesmo renderer em ordem.
 - [ ] Rodar o teste e `npm run typecheck`; commit `fix(store): cancelar debounce no flush final`.
 
-### Task 3: mostrar o estado de encerramento e salvar antes de fechar
+### Task 3: confirmar o fechamento mesmo na tela bloqueada
+
+**Arquivos:** modificar `src/main/index.ts`, `src/main/handlers/window.ts` e `src/main/__tests__/window-close.test.ts`.
+
+**Interfaces:** estender `registerWindowHandlers` com `getManagedWindow: () => ManagedWindow | null` e `assertTrustedRenderer: (event: IpcMainInvokeEvent) => void`; registrar `app:flush-before-close:complete` ali, antes de `protectDataIpc(ipcMain)`. Remover o registro posterior em `index.ts`.
+
+- [ ] Escrever teste que falha: renderer confiável conclui o fechamento mesmo sem estado de senha desbloqueada; renderer não confiável recebe erro e não fecha a janela.
+- [ ] Rodar `npx vitest run src/main/__tests__/window-close.test.ts` e ver falhar.
+- [ ] Registrar o handler de ciclo de vida com `assertTrustedRenderer(event)` explícito, sem exigir senha; manter os handlers de dados sob `protectDataIpc`.
+- [ ] Rodar teste e `npm run typecheck`; commit `fix(window): permitir confirmação ao fechar bloqueado`.
+
+### Task 4: mostrar o estado de encerramento e salvar antes de fechar
 
 **Arquivos:** criar `src/renderer/src/components/layout/ClosingScreen.tsx` e `src/renderer/src/components/layout/CloseLifecycle.tsx`; modificar `src/renderer/src/main.tsx`; criar `src/renderer/src/__tests__/components/CloseLifecycle.test.tsx`.
 
-**Interfaces:** `CloseLifecycle` registra `window.electronAPI.lifecycle.onFlushBeforeClose`, chama `useKanbanStore.getState()._flushPersist()` apenas se `isLoaded` for verdadeiro e, em sucesso, `flushBeforeCloseComplete()`. Com `isLoaded` falso, confirma o fechamento sem gravar. `ClosingScreen` recebe `error: boolean` e mostra o texto da spec. `main.tsx` monta `CloseLifecycle` como irmão de `App`, para cobrir também os retornos condicionais de segurança/carga.
+**Interfaces:** `CloseLifecycle` registra `window.electronAPI.lifecycle.onFlushBeforeClose`, chama `useKanbanStore.getState()._flushPersist()` apenas se `isLoaded` for verdadeiro e, em sucesso, `flushBeforeCloseComplete()`. Com `isLoaded` falso, confirma o fechamento sem gravar. `ClosingScreen` recebe `error: boolean` e mostra o texto da spec. `main.tsx` monta `CloseLifecycle` envolvendo `App`, para cobrir também os retornos condicionais de segurança/carga e marcar a árvore do app como `inert`/`aria-hidden` durante o fechamento.
 
-- [ ] Escrever testes de componente antes da lógica: evento recebido mostra `Fechando Sagyou…` e cobre a UI; promessa de flush pendente não confirma; sucesso confirma uma vez; evento duplicado não cria outro flush; com `isLoaded=false`, confirma sem salvar; rejeição mostra a mensagem de erro e não confirma; desmontagem remove listener; a animação tem variante para movimento reduzido.
+- [ ] Escrever testes de componente antes da lógica: evento recebido mostra `Fechando Sagyou…` e cobre a UI; promessa de flush pendente não confirma; sucesso confirma uma vez; evento duplicado não cria outro flush; com `isLoaded=false`, confirma sem salvar; rejeição mostra a mensagem de erro e não confirma; desmontagem remove listener; a animação tem variante para movimento reduzido; conteúdo de `App` fica `inert`/`aria-hidden` e um atalho global não executa durante o fechamento.
 - [ ] Rodar `npx vitest run src/renderer/src/__tests__/components/CloseLifecycle.test.tsx` e ver falhar.
-- [ ] Implementar a camada sem dependência nova, com `role="status"`, animação CSS discreta e `motion-reduce:animate-none`. Agendar o flush após um `requestAnimationFrame` para permitir pintura, com fallback de 100 ms para janelas em segundo plano; executar apenas uma vez.
+- [ ] Implementar a camada sem dependência nova, com `role="status"`, animação CSS discreta e `motion-reduce:animate-none`. Agendar o flush após um `requestAnimationFrame` para permitir pintura, com fallback de 100 ms para janelas em segundo plano; executar apenas uma vez. Bloquear eventos de teclado globais durante o fechamento.
 - [ ] Rodar teste e `npm run typecheck`; commit `feat(window): mostrar encerramento enquanto salva`.
 
-### Task 4: revisão, validação e PR
+### Task 5: revisão, validação e PR
 
 - [ ] Rodar `npm run typecheck`, `npm test` e `npm run lint`; corrigir erros introduzidos.
 - [ ] Revisar o diff inteiro: preservação de dados, timeout, IPC, acessibilidade e aderência ao `UI_DESIGN.md`.
