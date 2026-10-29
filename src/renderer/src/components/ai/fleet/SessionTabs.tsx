@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { STATUS_STYLE, type SessionStatus } from './format'
 
 export interface SessionItem {
@@ -14,15 +15,18 @@ export interface SessionItem {
 function SessionTab({
   item,
   selected,
-  onSelect
+  onSelect,
+  selectedRef
 }: {
   item: SessionItem
   selected: boolean
   onSelect: (key: string) => void
+  selectedRef: React.RefObject<HTMLButtonElement | null>
 }): React.JSX.Element {
   const style = STATUS_STYLE[item.status]
   return (
     <button
+      ref={selected ? selectedRef : undefined}
       type="button"
       onClick={() => onSelect(item.key)}
       aria-current={selected ? 'true' : undefined}
@@ -58,6 +62,14 @@ export function SessionTabs({
   onNew: () => void
   starting: boolean
 }): React.JSX.Element {
+  const selectedRef = useRef<HTMLButtonElement>(null)
+  const selectedExists = items.some((item) => item.key === selectedKey)
+
+  useEffect(() => {
+    if (selectedExists)
+      selectedRef.current?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+  }, [selectedKey, selectedExists])
+
   return (
     <nav
       aria-label="Sessões"
@@ -81,6 +93,7 @@ export function SessionTabs({
               item={item}
               selected={item.key === selectedKey}
               onSelect={onSelect}
+              selectedRef={selectedRef}
             />
           ))
         )}
