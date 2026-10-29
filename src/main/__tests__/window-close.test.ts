@@ -22,16 +22,16 @@ vi.mock('electron', () => ({
     isDestroyed(): boolean {
       return this.destroyed
     }
-    loadFile(): void {}
-    loadURL(): void {}
-    show(): void {}
+    loadFile = vi.fn()
+    loadURL = vi.fn()
+    show = vi.fn()
   },
   shell: { openExternal: vi.fn() }
 }))
 
-import { createManagedWindow } from '../handlers/window'
+import { createManagedWindow, type ManagedWindow } from '../handlers/window'
 
-function makeWindow() {
+function makeWindow(): ManagedWindow {
   return createManagedWindow({
     preloadPath: '/preload.js',
     productionPagePath: '/index.html',
