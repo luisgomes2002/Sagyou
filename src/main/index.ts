@@ -52,6 +52,8 @@ import {
 import type { McpActionRequest, McpActionResult } from './modules/agent/mcp-write-types'
 import { AgentSessionRegistry } from './modules/agent/agent-session'
 import { AgentWorktreeManager } from './modules/agent/agent-worktree'
+import { resolveAgentSessionRoot } from './modules/agent/agent-session-root'
+import { ensurePrivateWorkspaceRepository } from './modules/agent/git-worktree'
 import { startAgentPty, type AgentPty } from './modules/agent/agent-pty'
 import { resizeTerminal, writeTerminalInput } from './modules/agent/agent-terminal-session'
 import {
@@ -1431,51 +1433,30 @@ app.whenReady().then(() => {
     ) => {
       const capturedProjectId =
         typeof request.projectId === 'string' && request.projectId.trim() ? request.projectId : null
-      // General sessions use a private workspace. The renderer cannot supply an
-      // arbitrary filesystem path when no project has authorised a code root.
-      if (!capturedProjectId && request.path) {
-        return { success: false, error: 'Uma sessão geral não aceita pasta de código.' }
-      }
-      const dir = capturedProjectId
-        ? request.path
-        : join(app.getPath('userData'), 'general-agent-workspace')
       const capturedData = loadData()
       const capturedProject = capturedProjectId
         ? capturedData.projects.find((project) => project.id === capturedProjectId)
         : null
-      const codeRoot = dir ? resolve(dir) : ''
-      if (capturedProjectId && !capturedProject) {
-        return { success: false, error: 'Projeto escolhido indisponÃ­vel. Selecione-o novamente.' }
-      }
-      if (capturedProjectId && !(capturedProject?.codePaths ?? []).length) {
+      let sessionRoot
+      try {
+        sessionRoot = resolveAgentSessionRoot({
+          projectId: capturedProjectId,
+          requestPath: request.path,
+          project: capturedProject ?? null,
+          userDataDir: app.getPath('userData')
+        })
+      } catch (error) {
         return {
           success: false,
-          error:
-            'O projeto escolhido nÃ£o possui raiz de cÃ³digo. Adicione uma pasta antes de iniciar o terminal.'
+          error: error instanceof Error ? error.message : 'Diretório do projeto inválido'
         }
       }
-      if (
-        capturedProjectId &&
-        !(capturedProject?.codePaths ?? []).some(
-          (root) =>
-            // An unselected root is deliberately not a fallback: empty is a
-            // valid selection and means the user has authorised no code access.
-            (capturedProject?.activeCodePathIds ??
-              (capturedProject?.activeCodePathId ? [capturedProject.activeCodePathId] : [])).includes(
-              root.id
-            ) && resolve(root.path) === codeRoot
-        )
-      ) {
-        return {
-          success: false,
-          error: 'A raiz escolhida não está autorizada para este projeto. Marque-a no projeto antes de iniciar.'
-        }
-      }
+      const { dir, codeRoot, privateWorkspace } = sessionRoot
       const capturedFinancialProfileId =
         typeof request.financialProfileId === 'string' && request.financialProfileId.trim()
           ? request.financialProfileId
           : (capturedData.activeFinancialProfileId ?? 'personal')
-      if (!capturedProjectId) mkdirSync(dir, { recursive: true })
+      if (privateWorkspace) mkdirSync(dir, { recursive: true })
       if (!dir || !existsSync(dir) || !statSync(dir).isDirectory()) {
         return { success: false, error: 'Diretório do projeto inválido' }
       }
@@ -1504,6 +1485,15 @@ app.whenReady().then(() => {
       // The adapter selects the one native transport for each CLI. The renderer
       // cannot select an executable or an execution mode.
       const interactive = true
+      // Before any Git command: otherwise Git climbs to a repository around
+      // userData and the cleanup below removes that repository's worktrees.
+      if (privateWorkspace) {
+        try {
+          await ensurePrivateWorkspaceRepository(dir)
+        } catch {
+          return { success: false, error: 'Não foi possível preparar o workspace privado.' }
+        }
+      }
       // Cleanup worktrees órfãos (que sobraram de uma queda do app)
       try {
         await worktreeManager.removeOrphans(dir)

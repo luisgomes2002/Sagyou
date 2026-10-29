@@ -113,7 +113,7 @@ export function FleetView({
     if (starting) return
     const project = projects.find((item) => item.id === request.projectId)
     const root = (project?.codePaths ?? []).find((item) => item.path === request.rootPath)
-    if (request.projectId && !root) {
+    if (request.projectId && (!project || (request.rootPath && !root))) {
       setStartError('Selecione uma raiz de código autorizada para o projeto.')
       return
     }

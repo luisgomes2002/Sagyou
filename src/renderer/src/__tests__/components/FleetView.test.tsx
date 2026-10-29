@@ -187,6 +187,27 @@ describe('FleetView', () => {
     expect(sent).not.toHaveProperty('convId')
   })
 
+  it('starts a project terminal in the private workspace when no root is selected', async () => {
+    ;(window.electronAPI.ai.codeAgent.run as ReturnType<typeof vi.fn>).mockResolvedValue({
+      success: true,
+      runId: 'project-private-run',
+      dir: '/tmp/project-private-run',
+      agent: 'Codex'
+    })
+    const user = userEvent.setup()
+    render(<FleetView projects={[{ ...projects[0], codePaths: [], activeCodePathIds: [] }]} />)
+
+    await user.selectOptions(
+      await screen.findByRole('combobox', { name: 'Projeto da sessão' }),
+      'p1'
+    )
+    await user.click(screen.getByRole('button', { name: 'Abrir sessão' }))
+
+    expect(window.electronAPI.ai.codeAgent.run).toHaveBeenCalledWith(
+      expect.objectContaining({ path: '', projectId: 'p1', task: '', blank: true })
+    )
+  })
+
   it('persists the chosen executor before starting the session', async () => {
     window.electronAPI.ai.config = {
       get: vi.fn().mockResolvedValue({ codeHarness: 'claude-code' }),

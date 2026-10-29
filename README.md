@@ -89,7 +89,7 @@ Ao lançar ou editar uma transação, o agente também preenche os detalhes da f
 
 Aprovar uma ação de dados não aprova o patch de código.
 
-**Configurando um projeto.** Edite o projeto (salvo) e, em **Caminhos de código**, clique em **Adicionar pasta**. Também dá para abrir uma sessão geral, sem projeto.
+**Configurando um projeto.** Edite o projeto (salvo) e, em **Caminhos de código**, clique em **Adicionar pasta** se quiser que o agente trabalhe no código. Também dá para abrir uma sessão vinculada ao projeto sem pasta de código: ela usa um espaço privado e mantém o projeto como padrão no MCP. A sessão geral continua disponível.
 
 ### Memória
 
