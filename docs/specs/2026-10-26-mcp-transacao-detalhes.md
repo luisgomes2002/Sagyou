@@ -1,6 +1,6 @@
 # MCP: detalhes e dados bancários nas transações
 
-Status: draft
+Status: entregue no PR #16 (o status não chegou a ser marcado como aprovado antes do merge)
 Branch: feature/mcp-transacao-detalhes
 
 ## Por quê

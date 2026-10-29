@@ -128,7 +128,6 @@ src/
       layout/     # Sidebar, TitleBar, Toast
       financial/  # componentes financeiros
       (raiz)      # componentes compartilhados (ModalBase, CancelButton, EmptyState, …)
-    ai/system-prompt.md # só para o harness de eval; sem consumidor no app
     utils/       # dates, money (moneyStr, D), immutable, …
     types/, services/
     __tests__/   # espelha a estrutura acima
@@ -482,8 +481,6 @@ Não "simplifique" nenhuma destas sem ler o comentário que as acompanha:
   ainda existem**, sempre nulos: a coluna não foi removida para não reconstruir a
   tabela. `AgentRunMeta.convId` também fica (nulo em runs novas) para runs antigas
   continuarem listáveis.
-- **`ai/system-prompt.md`, `modules/ai/evaluator.ts` e `eval/`** não têm consumidor
-  no app: são o resto do harness de avaliação do loop antigo.
 - **O layout do grafo é uma simulação viva** (`GraphView.tsx` + `utils/graph-layout.ts`):
   o d3-force muta nós, então preserve `positionsRef` ao recriar o grafo e nunca chame
   `sim.tick()` no evento `tick`. Arrastar fixa só durante o gesto; ao soltar, pare e guarde a posição da sessão.
