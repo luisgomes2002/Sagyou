@@ -1,5 +1,5 @@
 import { BrowserWindow, shell } from 'electron'
-import type { IpcMain } from 'electron'
+import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 import { safeExternalUrl } from '../modules/web/external-links'
 
 export interface ManagedWindow {
@@ -66,9 +66,11 @@ export function createManagedWindow(options: CreateManagedWindowOptions): Manage
 
 export function registerWindowHandlers(
   ipcMain: IpcMain,
-  getWindow: () => BrowserWindow | null
+  getWindow: () => BrowserWindow | null,
+  getManagedWindow: () => ManagedWindow | null,
+  assertTrustedRenderer: (event: IpcMainInvokeEvent) => void
 ): void {
-  const win = () => getWindow()
+  const win = (): BrowserWindow | null => getWindow()
   ipcMain.handle('window:minimize', () => win()?.minimize())
   ipcMain.handle('window:maximize', () => {
     if (win()?.isMaximized()) win()?.restore()
@@ -76,4 +78,10 @@ export function registerWindowHandlers(
   })
   ipcMain.handle('window:close', () => win()?.close())
   ipcMain.handle('window:is-maximized', () => win()?.isMaximized())
+  ipcMain.handle('app:flush-before-close:complete', (event) => {
+    // This lifecycle reply must work before password unlock, but only the app
+    // renderer may end the window's close handshake.
+    assertTrustedRenderer(event)
+    getManagedWindow()?.completeClose()
+  })
 }

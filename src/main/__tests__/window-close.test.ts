@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 
 vi.mock('electron', () => ({
   BrowserWindow: class {
@@ -29,7 +30,7 @@ vi.mock('electron', () => ({
   shell: { openExternal: vi.fn() }
 }))
 
-import { createManagedWindow, type ManagedWindow } from '../handlers/window'
+import { createManagedWindow, registerWindowHandlers, type ManagedWindow } from '../handlers/window'
 
 function makeWindow(): ManagedWindow {
   return createManagedWindow({
@@ -73,6 +74,33 @@ describe('window close handshake', () => {
     vi.advanceTimersByTime(9_999)
     expect(managed.window.isDestroyed()).toBe(false)
     vi.advanceTimersByTime(1)
+    expect(managed.window.isDestroyed()).toBe(true)
+  })
+
+  it('accepts completion from the trusted renderer while locked and rejects other senders', () => {
+    vi.useFakeTimers()
+    const managed = makeWindow()
+    managed.window.close()
+    const handlers = new Map<string, (event: IpcMainInvokeEvent) => unknown>()
+    const ipc = {
+      handle: (channel: string, callback: (event: IpcMainInvokeEvent) => unknown) =>
+        handlers.set(channel, callback)
+    } as unknown as IpcMain
+    const assertTrustedRenderer = vi.fn((event: IpcMainInvokeEvent) => {
+      if (event.sender !== managed.window.webContents) throw new Error('untrusted renderer')
+    })
+    registerWindowHandlers(
+      ipc,
+      () => managed.window,
+      () => managed,
+      assertTrustedRenderer
+    )
+    const complete = handlers.get('app:flush-before-close:complete')
+
+    expect(complete).toBeDefined()
+    expect(() => complete?.({ sender: {} } as IpcMainInvokeEvent)).toThrow('untrusted renderer')
+    expect(managed.window.isDestroyed()).toBe(false)
+    complete?.({ sender: managed.window.webContents } as IpcMainInvokeEvent)
     expect(managed.window.isDestroyed()).toBe(true)
   })
 })

@@ -1238,7 +1238,12 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  registerWindowHandlers(ipcMain, () => mainWindow)
+  registerWindowHandlers(
+    ipcMain,
+    () => mainWindow,
+    () => managedWindow,
+    assertTrustedRenderer
+  )
   ipcMain.handle('security:status', (event) => {
     assertTrustedRenderer(event)
     return passwordStatus()
@@ -1317,7 +1322,6 @@ app.whenReady().then(() => {
     return { success: true }
   })
   protectDataIpc(ipcMain)
-  ipcMain.handle('app:flush-before-close:complete', () => managedWindow?.completeClose())
   registerFilesHandlers(ipcMain, {
     mainWindow,
     dialog,
