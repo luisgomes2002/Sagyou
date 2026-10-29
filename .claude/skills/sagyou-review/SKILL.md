@@ -23,6 +23,12 @@ Passe ao `sagyou-reviewer`: o caminho do pacote, os caminhos da spec e do plano 
 
 Mudança pequena (menos de ~150 linhas, nada persistido): despache com `model: sonnet`.
 
+Em paralelo, conforme o que o diff toca:
+- **`sagyou-security-reviewer`**: IPC ou preload, MCP, `agent/` (PTY, worktree, entrega), arquivos e caminhos, `web/`, links externos, renderização de Markdown, bloqueio por senha ou logs. Passe o pacote, a spec, o plano e o Foco de Review.
+- **`sagyou-ui-reviewer`**: componentes, telas ou estilos em `src/renderer/src/`. Passe o pacote e a spec.
+
+Junte os achados de todos antes da triagem.
+
 ## 3. Triagem (você decide, não os rótulos)
 Reclassifique cada achado por **o que o usuário viveria se fosse para produção**. Um revisor que marcou Minor "porque a spec não mencionava" avaliou a spec, não o efeito. Perda ou corrupção de dados é sempre Critical.
 - **Critical / Important:** corrija tudo numa passada. Para cada um: escreva um teste que o reproduz, veja falhar, corrija, veja passar, rode a suíte inteira. Registre `Final: fixed <achado> — <teste> RED→GREEN`.
