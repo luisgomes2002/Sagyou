@@ -30,6 +30,7 @@ export function createManagedWindow(options: CreateManagedWindowOptions): Manage
     webPreferences: { preload: options.preloadPath, sandbox: false, spellcheck: false }
   })
   let allowClose = false
+  let closePending = false
   let flushTimeout: ReturnType<typeof setTimeout> | null = null
   const completeClose = (): void => {
     if (window.isDestroyed()) return
@@ -43,8 +44,9 @@ export function createManagedWindow(options: CreateManagedWindowOptions): Manage
   window.on('close', (event) => {
     if (allowClose) return
     event.preventDefault()
+    if (closePending) return
+    closePending = true
     window.webContents.send('app:flush-before-close')
-    if (flushTimeout) clearTimeout(flushTimeout)
     flushTimeout = setTimeout(completeClose, 10_000)
   })
   window.on('maximize', () => window.webContents.send('window:maximized-change', true))
