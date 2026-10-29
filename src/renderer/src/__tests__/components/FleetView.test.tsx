@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { act, render, screen, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import { FleetView } from '../../components/ai/FleetView'
@@ -21,7 +21,7 @@ const projects = [
 ] as Project[]
 
 /** A running code-agent mock (what status() returns). */
-function makeRun(overrides: Record<string, unknown> = {}) {
+function makeRun(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     id: 'run-1',
     dir: '/home/user/projeto-um',
@@ -230,15 +230,48 @@ describe('FleetView', () => {
     )
   })
 
-  it('lists every running code agent in the rail, with its project', async () => {
+  it('shows session tabs above the workspace and keeps New session outside the scroll area', async () => {
     twoRuns()
-    render(<FleetView projects={projects} />)
+    const { container } = render(<FleetView projects={projects} />)
 
-    expect(await screen.findByRole('button', { name: /^tarefa A/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /^tarefa B/ })).toBeInTheDocument()
+    const sessions = await screen.findByRole('navigation', { name: 'Sessões' })
+    const tabs = within(sessions).getByRole('group', { name: 'Sessões ativas' })
+    expect(within(tabs).getByRole('button', { name: /^tarefa A/ })).toHaveAttribute(
+      'aria-current',
+      'true'
+    )
+    expect(within(tabs).getByRole('button', { name: /^tarefa B/ })).toBeInTheDocument()
+    expect(within(sessions).getByRole('button', { name: 'Nova sessão' })).toBeInTheDocument()
+    expect(within(tabs).queryByRole('button', { name: 'Nova sessão' })).not.toBeInTheDocument()
+    expect(sessions.compareDocumentPosition(container.querySelector('main')!)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
+    )
     expect(screen.getAllByText(/Projeto Um/).length).toBeGreaterThan(0)
     expect(screen.getByText('Ativas · 2')).toBeInTheDocument()
     expect(screen.queryByText('3/40')).not.toBeInTheDocument()
+  })
+
+  it('distinguishes tabs with matching titles, projects and executors', async () => {
+    const runs = [makeRun({ id: 'run-A' }), makeRun({ id: 'run-B' })]
+    ;(window.electronAPI.ai.codeAgent.status as ReturnType<typeof vi.fn>).mockResolvedValue({
+      running: true,
+      runs,
+      log: '',
+      hint: null
+    })
+    render(<FleetView projects={projects} />)
+
+    const tabs = within(await screen.findByRole('navigation', { name: 'Sessões' })).getByRole(
+      'group',
+      { name: 'Sessões ativas' }
+    )
+    const names = within(tabs)
+      .getAllByRole('button')
+      .map((button) => button.getAttribute('aria-label'))
+    expect(names).toHaveLength(2)
+    expect(names[0]).not.toBe(names[1])
+    expect(names[0]).toContain('Projeto Um')
+    expect(names[0]).toContain('run-A')
   })
 
   it('selecting a session switches the workspace to it', async () => {
@@ -247,6 +280,42 @@ describe('FleetView', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: /^tarefa B/ }))
     expect(screen.getByRole('heading', { name: 'tarefa B' })).toBeInTheDocument()
+  })
+
+  it('opens the existing form from the tab strip and cancels back to a session', async () => {
+    twoRuns()
+    render(<FleetView projects={projects} />)
+
+    const sessions = await screen.findByRole('navigation', { name: 'Sessões' })
+    await userEvent.click(within(sessions).getByRole('button', { name: 'Nova sessão' }))
+    expect(screen.getByRole('heading', { name: 'Nova sessão de código' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+    expect(screen.getByRole('heading', { name: 'tarefa A' })).toBeInTheDocument()
+  })
+
+  it('falls back to another tab when the selected session ends', async () => {
+    twoRuns()
+    let emitExit: ((payload: { runId: string; code: number }) => void) | undefined
+    window.electronAPI.ai.codeAgent.onExit = vi.fn((callback) => {
+      emitExit = callback
+      return vi.fn()
+    }) as never
+    render(<FleetView projects={projects} />)
+
+    await userEvent.click(await screen.findByRole('button', { name: /^tarefa B/ }))
+    const remaining = makeRun({ id: 'run-A', task: 'tarefa A' })
+    ;(window.electronAPI.ai.codeAgent.status as ReturnType<typeof vi.fn>).mockResolvedValue({
+      running: true,
+      runs: [remaining],
+      log: '',
+      hint: null
+    })
+    act(() => emitExit?.({ runId: 'run-B', code: 0 }))
+
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'tarefa A' })).toBeInTheDocument()
+    )
+    expect(screen.queryByRole('button', { name: /^tarefa B/ })).not.toBeInTheDocument()
   })
 
   it('hides step counts while retaining token usage for an unlimited agent', async () => {

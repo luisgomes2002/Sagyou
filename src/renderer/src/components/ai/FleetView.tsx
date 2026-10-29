@@ -1,18 +1,16 @@
 ﻿import { useState, useEffect, useMemo } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 import type { Project } from '../../types'
-import { SessionRail, type SessionItem } from './fleet/SessionRail'
+import { SessionTabs, type SessionItem } from './fleet/SessionTabs'
 import { NewSessionPanel, type Harness, type SessionRequest } from './fleet/NewSessionPanel'
 import { LiveRunWorkspace } from './fleet/Workspaces'
 import { useCodeAgentRuns } from './fleet/useCodeAgentRuns'
 
 // ---------------------------------------------------------------------------
-// Sessões de código
+// Code sessions
 //
-// Um workspace em três partes: a lista de sessões (à esquerda), a sessão
-// selecionada (centro: terminal ou diff) e um inspetor com atividade, alterações
-// e contexto. Tudo é derivado do estado dos agentes em main (código) e da run
-// store; a view não guarda cópia de nenhum deles.
+// Session tabs sit above the selected terminal or diff and its context inspector.
+// Main owns the agent state; this view only derives what it displays.
 // ---------------------------------------------------------------------------
 
 const NEW = 'new'
@@ -204,19 +202,17 @@ export function FleetView({
           </button>
         </div>
       )}
-      <div className="flex min-h-0 flex-1">
-        <SessionRail
-          items={items}
-          selectedKey={effective === NEW ? null : effective}
-          onSelect={setSelected}
-          onNew={() => {
-            setStartError('')
-            setSelected(NEW)
-          }}
-          starting={starting}
-        />
-        <main className="min-h-0 min-w-0 flex-1 bg-[#0f0f13]">{renderMain()}</main>
-      </div>
+      <SessionTabs
+        items={items}
+        selectedKey={effective === NEW ? null : effective}
+        onSelect={setSelected}
+        onNew={() => {
+          setStartError('')
+          setSelected(NEW)
+        }}
+        starting={starting}
+      />
+      <main className="min-h-0 min-w-0 flex-1 bg-[#0f0f13]">{renderMain()}</main>
     </div>
   )
 }
