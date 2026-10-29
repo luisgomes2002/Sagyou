@@ -1,6 +1,6 @@
 # Plano de implementação: MCP — detalhes e dados bancários nas transações
 
-Status: draft
+Status: entregue no PR #16 (o status não chegou a ser marcado como aprovado antes do merge)
 Spec: docs/specs/2026-10-26-mcp-transacao-detalhes.md
 Branch: feature/mcp-transacao-detalhes
 
