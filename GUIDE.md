@@ -397,10 +397,12 @@ compatibilidade nem faça fallback silencioso para outro CLI.
   de código não tiver Git, o Sagyou inicializa somente o `.git`, sem criar
   commit. Retorno só ocorre pela entrega validada. Worktrees órfãos são
   recuperados da raiz temporária do Sagyou, nunca por remoção dentro do projeto.
-- **Sessões gerais não dependem da seleção da sidebar.** Ao criar uma sessão, o
-  usuário escolhe o projeto e a pasta autorizada, ou uma sessão geral. A sessão
-  geral usa apenas `userData/general-agent-workspace`; o main recusa caminhos
-  enviados pelo renderer sem projeto.
+- **Sessões não dependem da seleção da sidebar.** Ao criar uma sessão, o
+  usuário escolhe projeto e uma pasta autorizada, ou `Sem pasta de código`.
+  Sem pasta, com ou sem projeto, o main usa `userData/general-agent-workspace`
+  em worktree destacado; o projeto escolhido continua como padrão do MCP.
+  Caminho preenchido só é aceito se for raiz ativa do projeto. O renderer nunca
+  escolhe o workspace privado, e sessões interativas só arquivam o diff.
 - **Escopo de escrita vale para o lote final.** Antes da revisão, normalize todos
   os caminhos alterados e compare arquivos/raízes permitidos, incluindo os dois
   lados de rename e qualquer symlink. Um caminho recusado bloqueia o patch inteiro.
