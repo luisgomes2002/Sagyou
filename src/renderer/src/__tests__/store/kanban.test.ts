@@ -1722,6 +1722,25 @@ describe('code path actions', () => {
     // Old app versions still resolve a single timer from the mirror.
     expect(saved.activeTimer).toEqual({ taskId: 'a', startedAt: 111 })
   })
+
+  it('_flushPersist saves the current state once without a later debounced write', async () => {
+    vi.useFakeTimers()
+    try {
+      resetStore()
+      const storage = getStorageMock()
+      storage.save.mockClear()
+      const id = useKanbanStore.getState().createProject('Projeto atual')
+
+      await useKanbanStore.getState()._flushPersist()
+      expect(storage.save).toHaveBeenCalledTimes(1)
+      expect(storage.save.mock.calls[0][0].projects[0].id).toBe(id)
+
+      await vi.advanceTimersByTimeAsync(300)
+      expect(storage.save).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
 
 // ── Task images live on disk (metadata only in the store) ─────────────────────

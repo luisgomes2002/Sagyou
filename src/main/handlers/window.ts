@@ -1,5 +1,5 @@
 import { BrowserWindow, shell } from 'electron'
-import type { IpcMain } from 'electron'
+import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 import { safeExternalUrl } from '../modules/web/external-links'
 
 export interface ManagedWindow {
@@ -30,6 +30,7 @@ export function createManagedWindow(options: CreateManagedWindowOptions): Manage
     webPreferences: { preload: options.preloadPath, sandbox: false, spellcheck: false }
   })
   let allowClose = false
+  let closePending = false
   let flushTimeout: ReturnType<typeof setTimeout> | null = null
   const completeClose = (): void => {
     if (window.isDestroyed()) return
@@ -43,8 +44,9 @@ export function createManagedWindow(options: CreateManagedWindowOptions): Manage
   window.on('close', (event) => {
     if (allowClose) return
     event.preventDefault()
+    if (closePending) return
+    closePending = true
     window.webContents.send('app:flush-before-close')
-    if (flushTimeout) clearTimeout(flushTimeout)
     flushTimeout = setTimeout(completeClose, 10_000)
   })
   window.on('maximize', () => window.webContents.send('window:maximized-change', true))
@@ -64,9 +66,11 @@ export function createManagedWindow(options: CreateManagedWindowOptions): Manage
 
 export function registerWindowHandlers(
   ipcMain: IpcMain,
-  getWindow: () => BrowserWindow | null
+  getWindow: () => BrowserWindow | null,
+  getManagedWindow: () => ManagedWindow | null,
+  assertTrustedRenderer: (event: IpcMainInvokeEvent) => void
 ): void {
-  const win = () => getWindow()
+  const win = (): BrowserWindow | null => getWindow()
   ipcMain.handle('window:minimize', () => win()?.minimize())
   ipcMain.handle('window:maximize', () => {
     if (win()?.isMaximized()) win()?.restore()
@@ -74,4 +78,10 @@ export function registerWindowHandlers(
   })
   ipcMain.handle('window:close', () => win()?.close())
   ipcMain.handle('window:is-maximized', () => win()?.isMaximized())
+  ipcMain.handle('app:flush-before-close:complete', (event) => {
+    // This lifecycle reply must work before password unlock, but only the app
+    // renderer may end the window's close handshake.
+    assertTrustedRenderer(event)
+    getManagedWindow()?.completeClose()
+  })
 }

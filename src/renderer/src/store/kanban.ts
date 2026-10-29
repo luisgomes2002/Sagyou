@@ -74,6 +74,10 @@ const createCoreSlice: StateCreator<KanbanStore, [], [], CoreSlice> = (set, get)
   uiPreferences: { ...DEFAULT_UI_PREFERENCES },
 
   _flushPersist: async () => {
+    if (_persistTimer !== null) {
+      clearTimeout(_persistTimer)
+      _persistTimer = null
+    }
     const {
       projects,
       tasks,
