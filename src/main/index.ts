@@ -53,6 +53,7 @@ import type { McpActionRequest, McpActionResult } from './modules/agent/mcp-writ
 import { AgentSessionRegistry } from './modules/agent/agent-session'
 import { AgentWorktreeManager } from './modules/agent/agent-worktree'
 import { resolveAgentSessionRoot } from './modules/agent/agent-session-root'
+import { ensurePrivateWorkspaceRepository } from './modules/agent/git-worktree'
 import { startAgentPty, type AgentPty } from './modules/agent/agent-pty'
 import { resizeTerminal, writeTerminalInput } from './modules/agent/agent-terminal-session'
 import {
@@ -1484,6 +1485,15 @@ app.whenReady().then(() => {
       // The adapter selects the one native transport for each CLI. The renderer
       // cannot select an executable or an execution mode.
       const interactive = true
+      // Before any Git command: otherwise Git climbs to a repository around
+      // userData and the cleanup below removes that repository's worktrees.
+      if (privateWorkspace) {
+        try {
+          await ensurePrivateWorkspaceRepository(dir)
+        } catch {
+          return { success: false, error: 'Não foi possível preparar o workspace privado.' }
+        }
+      }
       // Cleanup worktrees órfãos (que sobraram de uma queda do app)
       try {
         await worktreeManager.removeOrphans(dir)

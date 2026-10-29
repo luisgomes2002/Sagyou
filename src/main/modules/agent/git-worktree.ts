@@ -1,4 +1,5 @@
 import { execFile } from 'child_process'
+import { existsSync } from 'fs'
 import { unlink } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -27,6 +28,18 @@ export async function ensureGitRepository(dir: string): Promise<void> {
   } catch {
     await git(dir, ['init', '--quiet'])
   }
+}
+
+/**
+ * The private workspace lives in userData, which can sit inside someone else's
+ * repository (a portable install, a test profile). `ensureGitRepository` would
+ * accept the parent there, and orphan cleanup would then remove the parent's
+ * worktrees. The workspace must own its `.git`, so no command climbs above it.
+ * Project code roots keep the parent lookup: a subfolder of a repo is legitimate.
+ */
+export async function ensurePrivateWorkspaceRepository(dir: string): Promise<void> {
+  if (existsSync(join(dir, '.git'))) return
+  await git(dir, ['init', '--quiet'])
 }
 
 export interface WorktreeBase {

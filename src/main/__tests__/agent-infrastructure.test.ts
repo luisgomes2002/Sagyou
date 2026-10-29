@@ -3,7 +3,7 @@
 import { execFile, spawn } from 'child_process'
 import { once } from 'events'
 import { existsSync } from 'fs'
-import { mkdtemp, readFile, rm, writeFile } from 'fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises'
 import { createServer } from 'net'
 import { tmpdir } from 'os'
 import { isAbsolute, join, relative } from 'path'
@@ -17,6 +17,7 @@ import {
   type AgentPtySpawner
 } from '../modules/agent/agent-pty'
 import { AgentWorktreeManager } from '../modules/agent/agent-worktree'
+import { ensurePrivateWorkspaceRepository, listWorktrees } from '../modules/agent/git-worktree'
 import { collectAgentPatch, patchWithinScope, validatePatchScope } from '../modules/agent/agent-diff'
 import { deliverApprovedPatch, type DeliveryCoordinator } from '../modules/agent/agent-delivery'
 import { prepareAgentMcpSession } from '../modules/agent/agent-mcp-session'
@@ -405,6 +406,27 @@ describe('agent infrastructure', () => {
 
     await worktrees.remove(first)
     await worktrees.remove(second)
+  })
+
+  it('keeps a private workspace inside another repository from cleaning that repository', async () => {
+    const parentDir = await newRepo()
+    const sessions = new AgentSessionRegistry<{ id: string; worktreeDir: string | null }>()
+    const worktrees = new AgentWorktreeManager(sessions)
+    // Unregistered on purpose: to the parent's cleanup it would be an orphan.
+    const parentRun = await worktrees.create(parentDir, worktreeRunId('parent-run'))
+    const privateDir = join(parentDir, 'profile', 'general-agent-workspace')
+    await mkdir(privateDir, { recursive: true })
+
+    await ensurePrivateWorkspaceRepository(privateDir)
+    await ensurePrivateWorkspaceRepository(privateDir)
+
+    expect(existsSync(join(privateDir, '.git'))).toBe(true)
+    expect(await listWorktrees(privateDir)).not.toContain(parentRun.worktreeDir)
+    await worktrees.removeOrphans(privateDir)
+    expect(existsSync(parentRun.worktreeDir)).toBe(true)
+    expect(await listWorktrees(parentDir)).toHaveLength(2)
+
+    await worktrees.remove(parentRun)
   })
 
   it('gives concurrent runs distinct detached worktrees and cleans an orphan after interruption', async () => {
