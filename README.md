@@ -75,6 +75,8 @@ Não é preciso instalar Python, Node nem nada além do app. Para usar as sessõ
 
 Em **Sessões de código** (seção IA da barra lateral) você abre um terminal com **Codex**, **Claude Code** ou **OpenCode**, exatamente como rodaria `codex` ou `claude` à mão. Cada CLI usa a própria conta e guarda o próprio histórico. O Sagyou não chama modelo por API, não guarda chaves e não mede gasto de tokens.
 
+As sessões abertas aparecem em abas acima do terminal. Se houver muitas, role a faixa de abas; **Nova sessão** continua disponível ao lado dela.
+
 **Isolamento.** Cada sessão roda em uma worktree Git separada, então vários agentes podem trabalhar no mesmo repositório ao mesmo tempo sem tocar nos seus arquivos. Funciona até em uma pasta sem Git ou só com `git init`, sem criar commits na sua branch. Ao sair do CLI, o Sagyou valida todos os caminhos alterados (inclusive renames e symlinks) e arquiva o diff para revisão. Nada é aplicado ao projeto original automaticamente.
 
 **Acesso aos seus dados por MCP.** O agente consulta e altera tarefas, projetos, notas, metas, finanças e memórias por um servidor MCP local, com credencial temporária limitada àquela sessão, ao projeto e ao perfil financeiro escolhidos.

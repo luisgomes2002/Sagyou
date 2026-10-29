@@ -477,6 +477,8 @@ Não "simplifique" nenhuma destas sem ler o comentário que as acompanha:
   travava o event loop do main (que também serve o IPC) por ~70ms.
 - **A chave de view `'ai'` é o Fleet** ("Sessões de código"). Renomear seria churn
   em `App`, `Sidebar` e feature flags; não há view de Chat nem `agents`.
+- **As sessões do Fleet ficam em abas no topo.** `SessionTabs` só navega entre runs;
+  o xterm vivo continua com `liveTerminals.ts` quando a aba muda.
 - **`AiMemory.sourceConversationId` e a coluna `memory.source_conversation_id`
   ainda existem**, sempre nulos: a coluna não foi removida para não reconstruir a
   tabela. `AgentRunMeta.convId` também fica (nulo em runs novas) para runs antigas
