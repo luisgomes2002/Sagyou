@@ -86,7 +86,7 @@ npm run build:linux  # (ou :win / :mac) gera o distribuível
 
 **Antes de dar qualquer coisa por pronta:** `npm run typecheck && npm test`.
 O lint tem dívida histórica de estilo — não conserte os que não são seus, mas
-**não adicione novos**. O CI roda typecheck, testes e cobertura em cada PR/push;
+**não adicione novos**. O CI roda typecheck, testes e cobertura em cada PR e push na `main`;
 nas PRs o lint é bloqueante para erros introduzidos no diff, para a dívida antiga
 não mascarar uma regressão nova.
 
