@@ -1332,11 +1332,7 @@ function captureSafely(db: Database.Database, capture: () => unknown): void {
  * Re-read the given memory rows and capture them: archive changes them in SQL,
  * and an upsert keeps the stored created_at, so only the row hashes like loadData.
  */
-function captureMemoryRows(
-  db: Database.Database,
-  ids: string[],
-  op: 'archive' | 'upsert'
-): number {
+function captureMemoryRows(db: Database.Database, ids: string[], op: 'archive' | 'upsert'): number {
   const select = db.prepare('SELECT * FROM memory WHERE id=?')
   const rows = ids.flatMap((id) => {
     const row = select.get(id) as Record<string, unknown> | undefined

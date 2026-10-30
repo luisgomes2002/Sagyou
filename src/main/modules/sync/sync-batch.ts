@@ -69,10 +69,7 @@ export function packBatches(records: WireRecord[]): { records: WireRecord[]; byt
   let bytes = 0
   for (const record of records) {
     const size = wireBytes(record) + 1
-    if (
-      current.length &&
-      (current.length >= MAX_BATCH_RECORDS || bytes + size > MAX_BATCH_BYTES)
-    ) {
+    if (current.length && (current.length >= MAX_BATCH_RECORDS || bytes + size > MAX_BATCH_BYTES)) {
       batches.push({ records: current, bytes })
       current = []
       bytes = 0

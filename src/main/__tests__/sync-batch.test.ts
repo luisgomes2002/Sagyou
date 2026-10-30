@@ -37,7 +37,14 @@ describe('buildOutgoing', () => {
   it('pairs a version with the current payload, in seq order', () => {
     const out = buildOutgoing([row('a', 2)], current)
     expect(out).toEqual([
-      { kind: 'task', id: 'a', hlc: 'h-a', baseHlc: 'base', deleted: false, payload: { title: 'A' } }
+      {
+        kind: 'task',
+        id: 'a',
+        hlc: 'h-a',
+        baseHlc: 'base',
+        deleted: false,
+        payload: { title: 'A' }
+      }
     ])
   })
 

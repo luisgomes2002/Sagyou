@@ -92,7 +92,12 @@ describe('saveSyncConfig / loadSyncConfig', () => {
 
   it('refuses to save without a keychain', () => {
     expect(() =>
-      saveSyncConfig(dir, SYNC_CONFIG_FILE, fakeSafe({ isEncryptionAvailable: () => false }), config)
+      saveSyncConfig(
+        dir,
+        SYNC_CONFIG_FILE,
+        fakeSafe({ isEncryptionAvailable: () => false }),
+        config
+      )
     ).toThrow()
     expect(existsSync(join(dir, SYNC_CONFIG_FILE))).toBe(false)
   })
@@ -101,8 +106,11 @@ describe('saveSyncConfig / loadSyncConfig', () => {
     expect(loadSyncConfig(dir, SYNC_CONFIG_FILE, fakeSafe()).status).toBe('none')
     saveSyncConfig(dir, SYNC_CONFIG_FILE, fakeSafe(), config)
     expect(
-      loadSyncConfig(dir, SYNC_CONFIG_FILE, fakeSafe({ getSelectedStorageBackend: () => 'basic_text' }))
-        .status
+      loadSyncConfig(
+        dir,
+        SYNC_CONFIG_FILE,
+        fakeSafe({ getSelectedStorageBackend: () => 'basic_text' })
+      ).status
     ).toBe('no-keychain')
 
     writeFileSync(join(dir, SYNC_CONFIG_FILE), '{not json')
