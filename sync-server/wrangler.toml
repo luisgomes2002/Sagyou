@@ -1,0 +1,11 @@
+name = "sagyou-sync"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+
+# Fill database_id with the id printed by `wrangler d1 create sagyou-sync`.
+[[d1_databases]]
+binding = "DB"
+database_name = "sagyou-sync"
+database_id = "COLE-AQUI-O-ID-DO-D1"
+
+# SETUP_TOKEN is a secret: `wrangler secret put SETUP_TOKEN`, never here.

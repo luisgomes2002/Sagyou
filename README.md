@@ -119,6 +119,26 @@ O Sagyou não envia nada a lugar nenhum por conta própria. Os CLIs de código s
 
 ---
 
+## Servidor de sincronização
+
+A sincronização entre dois PCs usa um servidor seu: um Worker da Cloudflare com um banco D1, no plano gratuito. O código fica em [`sync-server/`](sync-server/). O servidor só guarda lotes cifrados antes de sair do seu PC, ids opacos de aparelho e números; a chave nunca sai dos aparelhos.
+
+Para publicar (precisa de uma conta Cloudflare e do Node):
+
+```bash
+cd sync-server
+npm install                                   # instala o wrangler
+npx wrangler login
+npx wrangler d1 create sagyou-sync            # copie o database_id para o wrangler.toml
+npx wrangler d1 execute sagyou-sync --remote --file schema.sql
+npx wrangler secret put SETUP_TOKEN           # um segredo longo, usado só para registrar o primeiro aparelho
+npx wrangler deploy                           # mostra a URL do Worker
+```
+
+O `SETUP_TOKEN` registra o primeiro aparelho e, se nenhum outro sobrar, um aparelho novo pelo código de recuperação. Os demais entram por convite, gerado num aparelho já pareado.
+
+---
+
 ## Desenvolvimento
 
 Requisitos: **Node 24** e **Python 3** (usado só no build para empacotar o leitor de documentos; o usuário final não precisa dele).
