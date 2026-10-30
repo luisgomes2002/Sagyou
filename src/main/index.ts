@@ -186,6 +186,8 @@ function protectDataIpc(ipc: IpcMain): void {
     })) as IpcMain['on']
 }
 const sagyouMcp = startSagyouMcpBroker({
+  // Called per request, long after codeRuns (declared below) exists.
+  isRunLive: (runId) => isMcpRunLive(runId),
   readLogs: (query) => log.readLogs(query),
   onToolCall: (call) => log.info('mcp', 'tool_call', call),
   readScopedData: (domain, session, projectId) => {
@@ -1773,8 +1775,10 @@ app.whenReady().then(() => {
           executor: harness,
           executable: process.execPath,
           args: baseExternalArgs,
-          env: externalRuntime.env,
-          expiresAt: Date.now() + 2 * 60 * 60 * 1000
+          // No expiresAt: the capability lives as long as the terminal. Cleanup
+          // revokes it on every exit path, and the broker refuses it once
+          // isMcpRunLive reports the run ended.
+          env: externalRuntime.env
         })
         externalRuntime.env = mcpSession.env
         const externalArgs = mcpSession.args

@@ -415,7 +415,8 @@ Falha é sempre fechada: erro ao criar worktree, iniciar PTY ou MCP encerra sem
 executor; queda, timeout ou fechamento revogam a credencial e matam o processo;
 MCP indisponível não ganha atalho por IPC/SQLite; caminho fora do escopo, diff
 inválido ou conflito bloqueia a entrega e preserva o patch como falho para
-revisão. A credencial MCP pertence à run e expira em no máximo duas horas; no
+revisão. A credencial MCP pertence à run e vale enquanto o terminal estiver aberto: é
+revogada em todo encerramento e recusada assim que a run deixa de estar viva; no
 Codex, a configuração stdio inclui `env_vars` só para `SAGYOU_MCP_PORT` e
 `SAGYOU_MCP_TOKEN`.
 
