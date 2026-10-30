@@ -34,7 +34,11 @@ describe('nextHlc', () => {
   })
 
   it('parses its own output', () => {
-    expect(parseHlc('000000000001000-00ff-abc')).toEqual({ ms: 1000, counter: 255, deviceId: 'abc' })
+    expect(parseHlc('000000000001000-00ff-abc')).toEqual({
+      ms: 1000,
+      counter: 255,
+      deviceId: 'abc'
+    })
   })
 
   it('produces a strictly increasing sequence whatever the clock does', () => {
