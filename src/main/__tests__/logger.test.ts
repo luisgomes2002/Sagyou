@@ -60,6 +60,20 @@ describe('logger', () => {
     ])
   })
 
+  it('accepts the sync area', async () => {
+    const log = make()
+    log.info('sync', 'reconcile', { data: 3, memory: 1 })
+    expect(await lines('2026-10-27')).toEqual([
+      {
+        ts: '2026-10-27T12:00:00.000Z',
+        level: 'info',
+        area: 'sync',
+        event: 'reconcile',
+        data: { data: 3, memory: 1 }
+      }
+    ])
+  })
+
   it('switches file when the day changes', async () => {
     const log = make()
     log.info('app', 'one')

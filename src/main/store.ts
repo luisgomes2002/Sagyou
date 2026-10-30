@@ -17,7 +17,7 @@ import {
   createGlobalSearchIndex,
   rebuildGlobalSearchIndex,
   syncGlobalSearchIndex,
-  syncSupplementalSearchIndex,
+  syncSupplementalSearchIndex
 } from './modules/search/global-search-index'
 import {
   getGlobalSearchHit,
@@ -27,6 +27,24 @@ import {
 } from './modules/search/global-search-query'
 import { errorMessage, log } from './modules/logs/logger'
 import { moneyText, transactionDetails } from './modules/financial/money-text'
+import {
+  loadOrCreateDeviceId,
+  SYNC_DEVICE_FILE,
+  SYNC_DEVICE_FILE_DEV
+} from './modules/sync/device-id'
+import {
+  DATA_KINDS,
+  extractDataRecords,
+  extractMemoryRecords,
+  MEMORY_KINDS,
+  type SyncRecord
+} from './modules/sync/sync-records'
+import {
+  buildSyncRows,
+  planSyncChanges,
+  type StoredVersion,
+  type SyncScope
+} from './modules/sync/sync-plan'
 
 // ── Inline types (mirrors src/renderer/src/types/index.ts) ──────────────────
 
@@ -338,6 +356,7 @@ function getDb(): Database.Database {
   _db.pragma('journal_mode = WAL')
   _db.pragma('foreign_keys = ON')
   initSchema(_db)
+  migrateSyncRecordsTable(_db)
   migrateMoneyColumnsToText(_db)
   migrateTransactionsLinkedColumn(_db)
   migrateFinancialPlanningColumns(_db)
@@ -354,6 +373,7 @@ function getDb(): Database.Database {
   migrateTaskImagesToDisk(_db)
   migrateNotesTaskIdsGoalIds(_db)
   migrateFromJson(_db)
+  reconcileSyncRecords(_db)
   trimEventLog(_db)
   createGlobalSearchIndex(_db)
   // FTS is disposable: startup also repairs an index left stale by an older build.
@@ -1206,6 +1226,133 @@ function initSchema(db: Database.Database): void {
       updated_at TEXT NOT NULL
     );
   `)
+}
+
+// ── Sync versions ────────────────────────────────────────────────────────────
+//
+// One row per syncable record (see modules/sync/sync-records.ts): its version
+// (hybrid clock), the device that made it, a hash of its stored form and
+// whether it is a tombstone. A table of its own on purpose: persistAll and
+// persistDiff delete and reinsert data rows, and nothing in them touches this
+// one. Capture runs in a savepoint, so a failure here never undoes a save; the
+// next save re-captures whatever was missed, because detection is by hash.
+
+function migrateSyncRecordsTable(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sync_records (
+      kind TEXT NOT NULL,
+      id TEXT NOT NULL,
+      hlc TEXT NOT NULL,
+      device_id TEXT NOT NULL,
+      hash TEXT NOT NULL,
+      deleted INTEGER NOT NULL DEFAULT 0,
+      seq INTEGER NOT NULL,
+      PRIMARY KEY (kind, id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_sync_records_seq ON sync_records(seq);
+    CREATE INDEX IF NOT EXISTS idx_sync_records_hlc ON sync_records(hlc);
+  `)
+}
+
+let syncDeviceId: string | null = null
+
+function getSyncDeviceId(): string {
+  syncDeviceId ??= loadOrCreateDeviceId(
+    app.getPath('userData'),
+    is.dev ? SYNC_DEVICE_FILE_DEV : SYNC_DEVICE_FILE,
+    (reason) =>
+      reason === 'missing'
+        ? log.info('sync', 'device_id_created')
+        : log.warn('sync', 'device_id_reset')
+  )
+  return syncDeviceId
+}
+
+/** Write a new version for every record of `scope` whose hash changed; returns how many rows. */
+function captureSyncVersions(
+  db: Database.Database,
+  records: SyncRecord[],
+  scope: SyncScope
+): number {
+  const started = Date.now()
+  const placeholders = scope.kinds.map(() => '?').join(',')
+  const stored = (
+    db
+      .prepare(`SELECT kind, id, hash, deleted FROM sync_records WHERE kind IN (${placeholders})`)
+      .all(...scope.kinds) as {
+      kind: StoredVersion['kind']
+      id: string
+      hash: string
+      deleted: number
+    }[]
+  ).map((r) => ({ kind: r.kind, id: r.id, hash: r.hash, deleted: r.deleted === 1 }))
+  const plan = planSyncChanges(records, stored, scope)
+  if (!plan.upserts.length && !plan.deletes.length) return 0
+
+  const state = db
+    .prepare('SELECT MAX(hlc) AS maxHlc, COALESCE(MAX(seq), 0) AS maxSeq FROM sync_records')
+    .get() as { maxHlc: string | null; maxSeq: number }
+  const rows = buildSyncRows(plan, state, getSyncDeviceId(), Date.now())
+  const write = db.prepare(
+    `INSERT INTO sync_records (kind, id, hlc, device_id, hash, deleted, seq)
+     VALUES (@kind, @id, @hlc, @deviceId, @hash, @deleted, @seq)
+     ON CONFLICT(kind, id) DO UPDATE SET
+       hlc=@hlc, device_id=@deviceId, hash=@hash, deleted=@deleted, seq=@seq`
+  )
+  for (const row of rows) write.run({ ...row, deleted: row.deleted ? 1 : 0 })
+
+  const ms = Date.now() - started
+  if (ms > 50) log.info('sync', 'capture_slow', { ms, records: records.length })
+  return rows.length
+}
+
+/** Run a capture in a savepoint: on failure only the capture rolls back, never the caller's write. */
+function captureSafely(db: Database.Database, capture: () => unknown): void {
+  try {
+    db.transaction(capture)()
+  } catch (err) {
+    log.error('sync', 'capture_failed', { msg: errorMessage(err) })
+  }
+}
+
+function allMemories(db: Database.Database): AiMemory[] {
+  return (db.prepare('SELECT * FROM memory').all() as Record<string, unknown>[]).map(memRowToMemory)
+}
+
+/**
+ * On open: version the existing data once (first run after the update, or a
+ * first capture that failed), and always reconcile memories, whose writes are
+ * partial captures. With nothing edited every hash matches and nothing is written.
+ */
+function reconcileSyncRecords(db: Database.Database): void {
+  let data = 0
+  let memory = 0
+  try {
+    const { c } = db
+      .prepare("SELECT COUNT(*) AS c FROM sync_records WHERE kind != 'memory'")
+      .get() as { c: number }
+    if (c === 0) {
+      data = db.transaction(() =>
+        captureSyncVersions(db, extractDataRecords(loadData(db)), {
+          kinds: DATA_KINDS,
+          complete: true
+        })
+      )()
+    }
+  } catch (err) {
+    log.error('sync', 'reconcile_failed', { scope: 'data', msg: errorMessage(err) })
+  }
+  try {
+    memory = db.transaction(() =>
+      captureSyncVersions(db, extractMemoryRecords(allMemories(db)), {
+        kinds: MEMORY_KINDS,
+        complete: true
+      })
+    )()
+  } catch (err) {
+    log.error('sync', 'reconcile_failed', { scope: 'memory', msg: errorMessage(err) })
+  }
+  if (data || memory) log.info('sync', 'reconcile', { data, memory })
 }
 
 // ── JSON migration ────────────────────────────────────────────────────────────
@@ -2086,6 +2233,9 @@ export function saveData(data: unknown): void {
   db.transaction(() => {
     if (prev) persistDiff(db, prev, next)
     else persistAll(db, next)
+    captureSafely(db, () =>
+      captureSyncVersions(db, extractDataRecords(next), { kinds: DATA_KINDS, complete: true })
+    )
     // Generate entity events from the diff between prev and next. The source
     // is 'user' for auto-generated events (the renderer doesn't tag saves by
     // origin); AI events ride on `entityEvents` and are appended separately.
