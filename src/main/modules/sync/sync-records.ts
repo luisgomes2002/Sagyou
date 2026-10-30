@@ -102,6 +102,13 @@ function borderStyle(value: unknown): unknown {
   return value === 'solid' || value === 'dashed' ? value : undefined
 }
 
+/** A number SQLite keeps in a TEXT column (notes.font_size) reads back as a string. */
+function numeric(value: unknown): unknown {
+  if (typeof value !== 'string' || value.trim() === '') return value
+  const n = Number(value)
+  return Number.isFinite(n) ? n : value
+}
+
 function optionalMoney(value: unknown): string | undefined {
   return value == null || value === '' ? undefined : moneyText(value)
 }
@@ -250,7 +257,7 @@ export function extractDataRecords(data: SyncSourceData): SyncRecord[] {
         taskId: n.taskId,
         taskIds: n.taskIds,
         goalIds: n.goalIds,
-        fontSize: n.fontSize,
+        fontSize: numeric(n.fontSize),
         type: n.type,
         completedAt: n.completedAt,
         createdAt: n.createdAt,

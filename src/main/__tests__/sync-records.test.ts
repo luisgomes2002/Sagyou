@@ -189,6 +189,28 @@ describe('extractDataRecords', () => {
     expect(hashOf(legacy, 'transaction', 'tx1')).toBe(hashOf(data(), 'transaction', 'tx1'))
   })
 
+  it('hashes a note font size like loadData reads it back from its TEXT column', () => {
+    const note = {
+      id: 'n1',
+      projectId: 'p1',
+      content: 'Texto',
+      color: '#fff',
+      x: 10,
+      y: 20,
+      width: 200,
+      height: 40,
+      type: 'text',
+      createdAt: T,
+      updatedAt: T
+    }
+    const fromRenderer = { ...data(), notes: [{ ...note, fontSize: 20, connections: [] }] }
+    const fromLoadData = { ...data(), notes: [{ ...note, fontSize: '20' }] }
+    expect(hashOf(fromLoadData, 'note', 'n1')).toBe(hashOf(fromRenderer, 'note', 'n1'))
+
+    const resized = { ...data(), notes: [{ ...note, fontSize: 24 }] }
+    expect(hashOf(resized, 'note', 'n1')).not.toBe(hashOf(fromRenderer, 'note', 'n1'))
+  })
+
   it('ignores fields SQLite does not store', () => {
     const extra = data()
     extra.tasks[0].foo = 1

@@ -1272,10 +1272,11 @@ function getSyncDeviceId(): string {
 /** Write a new version for every record of `scope` whose hash changed; returns how many rows. */
 function captureSyncVersions(
   db: Database.Database,
-  records: SyncRecord[],
+  extract: () => SyncRecord[],
   scope: SyncScope
 ): number {
   const started = Date.now()
+  const records = extract()
   const placeholders = scope.kinds.map(() => '?').join(',')
   const stored = (
     db
@@ -1288,7 +1289,10 @@ function captureSyncVersions(
     }[]
   ).map((r) => ({ kind: r.kind, id: r.id, hash: r.hash, deleted: r.deleted === 1 }))
   const plan = planSyncChanges(records, stored, scope)
-  if (!plan.upserts.length && !plan.deletes.length) return 0
+  if (!plan.upserts.length && !plan.deletes.length) {
+    logSlowCapture(started, records.length)
+    return 0
+  }
 
   const state = db
     .prepare('SELECT MAX(hlc) AS maxHlc, COALESCE(MAX(seq), 0) AS maxSeq FROM sync_records')
@@ -1302,9 +1306,14 @@ function captureSyncVersions(
   )
   for (const row of rows) write.run({ ...row, deleted: row.deleted ? 1 : 0 })
 
-  const ms = Date.now() - started
-  if (ms > 50) log.info('sync', 'capture_slow', { ms, records: records.length })
+  logSlowCapture(started, records.length)
   return rows.length
+}
+
+/** Timed from before extraction: hashing every record is the expensive part. */
+function logSlowCapture(started: number, records: number): void {
+  const ms = Date.now() - started
+  if (ms > 50) log.info('sync', 'capture_slow', { ms, records })
 }
 
 /** Run a capture in a savepoint: on failure only the capture rolls back, never the caller's write. */
@@ -1312,18 +1321,28 @@ function captureSafely(db: Database.Database, capture: () => unknown): void {
   try {
     db.transaction(capture)()
   } catch (err) {
+    // SQLITE_FULL/IOERR/NOMEM roll back the caller's whole transaction, not just
+    // the savepoint: swallowing them would let the rest of the save autocommit.
+    if (!db.inTransaction) throw err
     log.error('sync', 'capture_failed', { msg: errorMessage(err) })
   }
 }
 
-/** Re-read the given memory rows and capture them (archive changes them in SQL, not in hand). */
-function captureMemoryRows(db: Database.Database, ids: string[], op: 'archive'): number {
+/**
+ * Re-read the given memory rows and capture them: archive changes them in SQL,
+ * and an upsert keeps the stored created_at, so only the row hashes like loadData.
+ */
+function captureMemoryRows(
+  db: Database.Database,
+  ids: string[],
+  op: 'archive' | 'upsert'
+): number {
   const select = db.prepare('SELECT * FROM memory WHERE id=?')
   const rows = ids.flatMap((id) => {
     const row = select.get(id) as Record<string, unknown> | undefined
     return row ? [memRowToMemory(row)] : []
   })
-  return captureSyncVersions(db, extractMemoryRecords(rows), memoryCaptureScope(op, ids))
+  return captureSyncVersions(db, () => extractMemoryRecords(rows), memoryCaptureScope(op, ids))
 }
 
 function allMemories(db: Database.Database): AiMemory[] {
@@ -1344,7 +1363,7 @@ function reconcileSyncRecords(db: Database.Database): void {
       .get() as { c: number }
     if (c === 0) {
       data = db.transaction(() =>
-        captureSyncVersions(db, extractDataRecords(loadData(db)), {
+        captureSyncVersions(db, () => extractDataRecords(loadData(db)), {
           kinds: DATA_KINDS,
           complete: true
         })
@@ -1355,7 +1374,7 @@ function reconcileSyncRecords(db: Database.Database): void {
   }
   try {
     memory = db.transaction(() =>
-      captureSyncVersions(db, extractMemoryRecords(allMemories(db)), {
+      captureSyncVersions(db, () => extractMemoryRecords(allMemories(db)), {
         kinds: MEMORY_KINDS,
         complete: true
       })
@@ -2245,7 +2264,10 @@ export function saveData(data: unknown): void {
     if (prev) persistDiff(db, prev, next)
     else persistAll(db, next)
     captureSafely(db, () =>
-      captureSyncVersions(db, extractDataRecords(next), { kinds: DATA_KINDS, complete: true })
+      captureSyncVersions(db, () => extractDataRecords(next), {
+        kinds: DATA_KINDS,
+        complete: true
+      })
     )
     // Generate entity events from the diff between prev and next. The source
     // is 'user' for auto-generated events (the renderer doesn't tag saves by
@@ -2573,9 +2595,7 @@ export function upsertMemory(m: AiMemory): void {
   db.transaction(() => {
     writeMemoryRow(db, m)
     syncMemorySearchRows(db)
-    captureSafely(db, () =>
-      captureSyncVersions(db, extractMemoryRecords([m]), memoryCaptureScope('upsert', [m.id]))
-    )
+    captureSafely(db, () => captureMemoryRows(db, [m.id], 'upsert'))
   })()
 }
 
@@ -2640,7 +2660,7 @@ export function deleteMemory(id: string): void {
   db.transaction(() => {
     db.prepare('DELETE FROM memory WHERE id=?').run(id)
     syncMemorySearchRows(db)
-    captureSafely(db, () => captureSyncVersions(db, [], memoryCaptureScope('delete', [id])))
+    captureSafely(db, () => captureSyncVersions(db, () => [], memoryCaptureScope('delete', [id])))
   })()
 }
 
@@ -2669,7 +2689,7 @@ export function replaceMemories(memories: AiMemory[]): void {
     captureSafely(db, () =>
       captureSyncVersions(
         db,
-        extractMemoryRecords(allMemories(db)),
+        () => extractMemoryRecords(allMemories(db)),
         memoryCaptureScope('replace', [])
       )
     )
@@ -2701,7 +2721,7 @@ export function scrubMemoryConversationLinks(): number {
     captureSafely(db, () =>
       captureSyncVersions(
         db,
-        extractMemoryRecords(rewritten),
+        () => extractMemoryRecords(rewritten),
         memoryCaptureScope(
           'scrub',
           rewritten.map((m) => m.id)
