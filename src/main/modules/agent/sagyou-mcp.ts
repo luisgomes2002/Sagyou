@@ -51,7 +51,8 @@ export interface McpSession {
   projectId: string | null
   financialProfileId: string
   permissions: readonly McpPermission[]
-  expiresAt: number
+  /** Absent means no fixed expiry: the capability lives as long as its run. */
+  expiresAt?: number
 }
 
 export interface McpBrokerDeps {
@@ -91,6 +92,8 @@ export interface McpBrokerDeps {
     name: string,
     args: Record<string, unknown>
   ) => Promise<McpActionResult>
+  /** Whether the run owning a capability is still live; absent means always. */
+  isRunLive?: (runId: string) => boolean
 }
 
 /** Source for a disposable stdio adapter written only into an agent worktree. */
@@ -564,7 +567,8 @@ function failure(socket: Socket, id: unknown, message: string): void {
 
 /**
  * Local-only MCP broker. A CLI never receives database access: it gets a
- * random, expiring capability whose project and financial-profile scope is
+ * random capability, valid only while its run is live (and before its
+ * expiresAt, when one is set), whose project and financial-profile scope is
  * resolved here before every tool response.
  */
 export function startSagyouMcpBroker(deps: McpBrokerDeps): {
@@ -592,7 +596,11 @@ export function startSagyouMcpBroker(deps: McpBrokerDeps): {
           }
           const token = typeof request.params?.token === 'string' ? request.params.token : ''
           const session = sessions.get(token)
-          if (!session || session.expiresAt <= Date.now()) {
+          if (
+            !session ||
+            (session.expiresAt !== undefined && session.expiresAt <= Date.now()) ||
+            !(deps.isRunLive?.(session.runId) ?? true)
+          ) {
             sessions.delete(token)
             failure(socket, request.id, 'Sessão MCP inválida ou expirada.')
             continue

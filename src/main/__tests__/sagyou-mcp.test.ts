@@ -239,6 +239,87 @@ describe('Sagyou MCP broker', () => {
     expect(searches).toBe(0)
   })
 
+  it('keeps a capability without expiresAt valid for as long as its run lives', async () => {
+    let now = 1_700_000_000_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const broker = startSagyouMcpBroker({
+      readTasks: () => [{ id: 'task-1' }],
+      readFinancial: () => [],
+      readProjectData: () => ({}),
+      searchMemory: () => [],
+      readMemory: () => null,
+      touchMemory: () => {},
+      memoriesForConflict: () => [],
+      saveMemory: async () => ({ ok: false }),
+      createTask: async () => ({ ok: true }),
+      isRunLive: () => true
+    })
+    servers.push(broker.server)
+    await new Promise<void>((resolve) => broker.server.once('listening', resolve))
+    broker.grant({
+      token: 'long-run',
+      runId: 'run-long',
+      projectId: 'project-1',
+      financialProfileId: 'personal',
+      permissions: MCP_PERMISSIONS
+    })
+
+    now += 3 * 60 * 60 * 1000
+    const reply = await request(broker.port(), {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { token: 'long-run', name: 'ler_tasks', arguments: {} }
+    })
+
+    expect(reply.error).toBeUndefined()
+    expect(JSON.stringify(reply)).toContain('task-1')
+  })
+
+  it('refuses and discards a capability whose run is no longer live', async () => {
+    let live = false
+    let reads = 0
+    const broker = startSagyouMcpBroker({
+      readTasks: () => {
+        reads += 1
+        return []
+      },
+      readFinancial: () => [],
+      readProjectData: () => ({}),
+      searchMemory: () => [],
+      readMemory: () => null,
+      touchMemory: () => {},
+      memoriesForConflict: () => [],
+      saveMemory: async () => ({ ok: false }),
+      createTask: async () => ({ ok: true }),
+      isRunLive: (runId) => live && runId === 'run-ended'
+    })
+    servers.push(broker.server)
+    await new Promise<void>((resolve) => broker.server.once('listening', resolve))
+    broker.grant({
+      token: 'ended-run',
+      runId: 'run-ended',
+      projectId: 'project-1',
+      financialProfileId: 'personal',
+      permissions: MCP_PERMISSIONS
+    })
+    const call = (id: number): Promise<Record<string, unknown>> =>
+      request(broker.port(), {
+        jsonrpc: '2.0',
+        id,
+        method: 'tools/call',
+        params: { token: 'ended-run', name: 'ler_tasks', arguments: {} }
+      })
+
+    const ended = await call(1)
+    expect(ended.error).toMatchObject({ message: 'Sessão MCP inválida ou expirada.' })
+
+    live = true
+    const again = await call(2)
+    expect(again.error).toMatchObject({ message: 'Sessão MCP inválida ou expirada.' })
+    expect(reads).toBe(0)
+  })
+
   it('rejects forged, revoked and unpermitted capabilities immediately on loopback', async () => {
     let reads = 0
     let writes = 0
