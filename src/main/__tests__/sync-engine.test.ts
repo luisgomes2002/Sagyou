@@ -758,6 +758,14 @@ describe('revogar e apagar', () => {
     expect(a.engine.status().state).toBe('ok')
   })
 
+  it('401 no sync normal desconecta quando o token deixou de valer', async () => {
+    const { a } = await pairedDevices(withData({}))
+    server.mode = 'unauthorized'
+    await a.engine.syncNow()
+    expect(a.config.stored).toBeNull()
+    expect(a.engine.status().state).toBe('disconnected')
+  })
+
   it('cadastro do autenticador entrega QR e códigos reserva ao confirmar', async () => {
     const { a } = await pairedDevices(withData({}))
     expect(await a.engine.enrollTotp()).toContain('otpauth://totp/')

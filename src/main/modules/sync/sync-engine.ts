@@ -552,7 +552,19 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       throw new SyncOfflineError(null)
     }
     const body = asObject(await res.json().catch(() => ({})))
-    if (res.status === 401 && body.revoked === true) throw new SyncAuthError(body.wipe === true)
+    if (res.status === 401) {
+      if (body.revoked === true) throw new SyncAuthError(body.wipe === true)
+      // A bad setup proof or second factor is an action error. A 401 on the
+      // regular token-only routes means this session can no longer sync.
+      if (
+        path === '/setup' ||
+        path === '/pair' ||
+        path.startsWith('/totp/') ||
+        path.endsWith('/revoke')
+      )
+        throw new SyncHttpError(401, body)
+      throw new SyncAuthError(false)
+    }
     if (res.status >= 500) throw new SyncOfflineError(res.status)
     if (res.status < 200 || res.status >= 300) throw new SyncHttpError(res.status, body)
     return body
