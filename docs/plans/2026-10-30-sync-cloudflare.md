@@ -1,6 +1,6 @@
 # Plano de implementação: Sync, etapa 2 — dois PCs pela Cloudflare
 
-Status: approved by Luis on 2026-10-30
+Status: approved by Luis on 2026-10-30 (Task 7b aprovada em 2026-10-30)
 Spec: docs/specs/2026-10-30-sync-cloudflare.md
 Branch: feature/sync-cloudflare (base: feature/sync-registro-mudancas, PR #29)
 
@@ -337,6 +337,31 @@ Token: 32 bytes aleatórios em base64url, guardado como SHA-256 hex. Corpo acima
   - os corpos de pedido capturados não contêm nenhum título, valor ou id de registro da fixture.
 - [ ] Passo 2: implemente.
 - [ ] Passo 3: commit `feat(sync): motor de sincronização e pareamento`.
+
+### Task 7b: prova da chave e Google Authenticator para apagar (adendo da spec)
+**Arquivos:**
+- Modificar `sync-server/src/routes.ts`, `db.ts` e `schema.sql`:
+  - tabela `auth(key_proof_hash TEXT, totp_cipher TEXT, totp_confirmed INTEGER, backup_hashes TEXT, fail_count INTEGER, locked_until INTEGER)` com uma linha só;
+  - `POST /totp/enroll` e `POST /totp/confirm`.
+- Modificar `sync-crypto.ts` (`keyProof(idKey)`), `sync-engine.ts`, `handlers/sync.ts` e `SyncSettings.tsx`.
+- Testes em `routes.test.ts`, `sync-engine.test.ts` e `SyncSettings.test.tsx`.
+
+**Comportamento:**
+- `/setup` sem nenhum aparelho grava `key_proof_hash`. Com aparelhos ativos, exige `X-Key-Proof` válido e TOTP (se cadastrado).
+- `POST /devices/:id/revoke` exige `X-Key-Proof`. Com `wipe: true`, exige também `totp` ou um código reserva (que é consumido).
+- O TOTP é verificado no Worker com `crypto.subtle` (HMAC-SHA1, 6 dígitos, janela ±1). 5 falhas bloqueiam por 15 min.
+- O cadastro exige `X-Key-Proof` e confirma com o primeiro código. Ele devolve uma vez os 8 códigos reserva, e o servidor guarda só os hashes deles.
+
+- [ ] Passo 1: testes:
+  - setup com aparelhos e sem prova dá 401;
+  - revoke sem prova dá 401;
+  - revoke com wipe e sem TOTP dá 401, e com o código certo funciona;
+  - um código reserva funciona uma vez;
+  - 5 erros dão 429 até passarem 15 min;
+  - o segredo TOTP não aparece em claro no banco;
+  - na UI, "Também apagar os dados dele" pede o código.
+- [ ] Passo 2: implemente.
+- [ ] Passo 3: commit `feat(sync): prova da chave e autenticador para apagar aparelho`.
 
 ### Task 8: retrato e limpeza de tombstones (Sync 2.7)
 **Arquivos:**

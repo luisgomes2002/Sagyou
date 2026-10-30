@@ -191,3 +191,23 @@ Mudança aditiva, sem migração destrutiva.
   <aparelho>" e não abre.
 
 ## Perguntas em aberto
+
+## Adendo (aprovado por Luis em 2026-10-30, durante o build)
+
+- **Prova da chave.** No primeiro `/setup`, o aparelho envia `keyProof = HMAC-SHA256(id, "sagyou-sync-auth-v1")`. O servidor guarda só o SHA-256 dela. São três os usos:
+  - revogar outro aparelho;
+  - registrar um aparelho novo pelo `SETUP_TOKEN` quando já existem aparelhos não revogados;
+  - (com o TOTP) cadastrar ou trocar o autenticador.
+
+  Os três exigem a mesma prova. Quem vazou só o `SETUP_TOKEN` não consegue registrar nem apagar nada.
+- **Google Authenticator (TOTP, RFC 6238)** é obrigatório para:
+  - revogar **com** "apagar os dados";
+  - registrar um aparelho novo pelo `SETUP_TOKEN` quando já existem outros (recuperação).
+
+  Revogar **sem** apagar não pede código, para dar para cortar rápido um aparelho suspeito. O cadastro e o uso funcionam assim:
+  - O cadastro fica na tela Sincronização: um QR `otpauth://` e a confirmação do primeiro código.
+  - O cadastro gera 8 códigos reserva de uso único.
+  - O segredo TOTP fica no Worker, cifrado com o segredo `TOTP_ENC_KEY` do próprio Worker.
+  - O código é aceito com ±1 janela de 30 s.
+  - 5 erros seguidos bloqueiam por 15 min.
+- **Senha do app esquecida:** nada muda no sync. A senha é só a trava de tela, e a chave de sync fica no `safeStorage`.
