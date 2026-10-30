@@ -1030,7 +1030,9 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
           }
         }
       })
-      if (session && !session.config.paused) await cycle()
+      // Assigned inside the closure above, which TypeScript's narrowing does not see.
+      const joined = session as Session | null
+      if (joined && !joined.config.paused) await cycle()
       return publish()
     },
 
