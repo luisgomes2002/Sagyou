@@ -28,7 +28,8 @@ export interface PrepareMcpSessionOptions {
   executable: string
   args: string[]
   env: NodeJS.ProcessEnv
-  expiresAt: number
+  /** Absent means the capability lives until cleanup revokes it. */
+  expiresAt?: number
 }
 
 export interface PreparedMcpSession {
@@ -49,7 +50,7 @@ export async function prepareAgentMcpSession(
     projectId: options.projectId,
     financialProfileId: options.financialProfileId,
     permissions: options.permissions,
-    expiresAt: options.expiresAt
+    ...(options.expiresAt === undefined ? {} : { expiresAt: options.expiresAt })
   })
   try {
     await writeFile(bridgePath, MCP_STDIO_BRIDGE_SOURCE, 'utf8')

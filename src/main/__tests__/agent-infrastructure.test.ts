@@ -463,6 +463,33 @@ describe('agent infrastructure', () => {
     expect(existsSync(second.worktreeDir)).toBe(false)
   })
 
+  it('grants a capability with no expiry when the session sets none', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'sagyou-agent-mcp-'))
+    made.push(dir)
+    const granted: McpSession[] = []
+    const prepared = await prepareAgentMcpSession({
+      broker: {
+        port: () => 4567,
+        grant: (session) => granted.push(session),
+        revoke: () => {}
+      },
+      token: 'secret',
+      runId: 'run-mcp',
+      projectId: 'project-one',
+      financialProfileId: 'personal',
+      permissions: MCP_PERMISSIONS,
+      worktreeDir: dir,
+      executor: 'claude-code',
+      executable: process.execPath,
+      args: [],
+      env: {}
+    })
+
+    expect(granted).toHaveLength(1)
+    expect('expiresAt' in granted[0]).toBe(false)
+    await prepared.cleanup()
+  })
+
   it('grants and revokes a scoped MCP bridge with executor-specific arguments', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'sagyou-agent-mcp-'))
     made.push(dir)
