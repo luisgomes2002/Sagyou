@@ -92,8 +92,8 @@ describe('recovery code', () => {
   })
 
   it('round-trips, ignoring case and spaces', () => {
-    const code = toRecoveryCode(key, url)
-    const messy = code.toLowerCase().replace(/-/g, ' - ')
+    const [line, second] = toRecoveryCode(key, url).split('\n')
+    const messy = `${line.toLowerCase().replace(/-/g, ' - ')}\n${second}`
     const back = fromRecoveryCode(messy)
     expect(Buffer.from(back.key).equals(Buffer.from(key))).toBe(true)
     expect(back.url).toBe(url)
