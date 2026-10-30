@@ -44,6 +44,12 @@ do celular.
 - **Aparelhos sincronizados:** PC Windows de casa, PC Linux do trabalho (com todos os
   dados, inclusive finanças) e o Android.
 - **App mobile:** Expo / React Native, só Android, instalado por APK.
+- **Repositórios:** o app mobile (`apps/mobile`), o código compartilhado (`packages/core`)
+  e o Worker (`sync-server/`) ficam no repositório do Sagyou, para que uma mudança no
+  protocolo de sync seja um PR só, testado dos dois lados. O código do ESP32 fica num
+  repositório privado separado (configuração da casa, outra toolchain); ele se liga ao
+  Sagyou só pelas rotas do Worker documentadas na spec da etapa 6. Segredos do ESP32
+  ficam num `secrets.h` ignorado pelo git.
 - **App v1:** tarefas, hábitos, lançamentos financeiros (gasto e receita), notas e
   busca. Ficam para a v2: finanças completas (dívidas, faturas, transferências entre
   moedas, conciliação), metas, planejamento, lista de compras, anexos e imagens.
