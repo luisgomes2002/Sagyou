@@ -151,9 +151,10 @@ Cloudflare ou qualquer outra pessoa consiga ler nada. É também a base do app A
   Uma dívida em conflito aparece com o aviso no Financeiro até ser resolvida.
 - **Aparelhos:** lista com nome, último contato e "Revogar".
   - A revogação pede confirmação e oferece "Também apagar os dados dele".
-  - Na próxima conexão, um aparelho revogado com essa opção faz um backup local cifrado
-    com a senha do app e apaga o banco e os arquivos. Sem senha de app, apaga sem backup,
-    e o aviso de confirmação diz isso.
+  - Na próxima conexão, um aparelho revogado com essa opção apaga o banco, os arquivos e
+    os backups locais (`backups/`), **sem fazer backup antes** (decisão de Luis em
+    2026-10-30, na aprovação do plano). Os dados continuam na nuvem e nos outros
+    aparelhos. O aviso de confirmação diz isso.
 - **Restaurar backup com o sync ligado:** a pergunta das Decisões.
 - **Erros:** uma falha de rede ou um 5xx do Worker não aparece como erro, só como estado.
   Um 401 mostra "Este aparelho foi desconectado da sincronização". Um lote que não
