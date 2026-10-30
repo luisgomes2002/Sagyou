@@ -57,7 +57,12 @@ export interface SnapshotPartInput {
 export interface SyncDb {
   deviceByTokenHash(tokenHash: string): Promise<DeviceRow | null>
   /** Inserts the device, or re-registers it: new token, not revoked, no wipe, cursor 0. */
-  registerDevice(d: { id: string; tokenHash: string; nameCipher: string; now: number }): Promise<void>
+  registerDevice(d: {
+    id: string
+    tokenHash: string
+    nameCipher: string
+    now: number
+  }): Promise<void>
   touchDevice(id: string, now: number): Promise<void>
   listDevices(): Promise<DeviceRow[]>
   /** False when the device does not exist. Keeps the first revocation time. */
@@ -173,9 +178,7 @@ export class D1SyncDb implements SyncDb {
 
   async revokeDevice(id: string, wipe: boolean, now: number): Promise<boolean> {
     const res = await this.db
-      .prepare(
-        'UPDATE devices SET revoked_at = COALESCE(revoked_at, ?2), wipe = ?3 WHERE id = ?1'
-      )
+      .prepare('UPDATE devices SET revoked_at = COALESCE(revoked_at, ?2), wipe = ?3 WHERE id = ?1')
       .bind(id, now, wipe ? 1 : 0)
       .run()
     return (res.meta.changes ?? 0) > 0

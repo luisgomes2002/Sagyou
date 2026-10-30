@@ -352,8 +352,8 @@ describe('guardStaleSave', () => {
     next.lists[0].name = 'Renomeada aqui'
 
     const result = guardStaleSave(next, current, new Set(['task:t1'])) as State
-    expect(result.tasks.find((t) => t.id === 't1')?.title).toBe('Remota')
-    expect(result.tasks.find((t) => t.id === 't2')?.title).toBe('Editada aqui')
+    expect((result.tasks as Row[]).find((t) => t.id === 't1')?.title).toBe('Remota')
+    expect((result.tasks as Row[]).find((t) => t.id === 't2')?.title).toBe('Editada aqui')
     expect(result.lists[0].name).toBe('Renomeada aqui')
   })
 
@@ -484,7 +484,7 @@ describe('planRemoteApply', () => {
     }
     const plan = planRemoteApply(state, [from(column), from(project)], versionsOf(state))
     expect(plan.pending).toEqual([])
-    const p9 = (plan.state as State).projects.find((p) => p.id === 'p9')
+    const p9 = ((plan.state as State).projects as Row[]).find((p) => p.id === 'p9')
     expect(p9?.columns).toEqual([{ id: 'c9', name: 'Nova', order: 0 }])
   })
 

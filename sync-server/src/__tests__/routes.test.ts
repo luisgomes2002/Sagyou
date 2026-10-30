@@ -111,7 +111,12 @@ class MemoryDb implements SyncDb {
       .filter((c) => c.seq > since && c.seq <= maxSeq && c.device !== device)
       .sort((a, b) => a.seq - b.seq)
       .slice(0, limit)
-      .map(({ seq, device: dev, batchId, ciphertext }) => ({ seq, device: dev, batchId, ciphertext }))
+      .map(({ seq, device: dev, batchId, ciphertext }) => ({
+        seq,
+        device: dev,
+        batchId,
+        ciphertext
+      }))
     return { rows, maxSeq }
   }
 
@@ -159,7 +164,9 @@ class MemoryDb implements SyncDb {
   }
 
   async snapshotPart(snapshotId: string, index: number): Promise<string | null> {
-    return this.parts.find((x) => x.snapshotId === snapshotId && x.index === index)?.ciphertext ?? null
+    return (
+      this.parts.find((x) => x.snapshotId === snapshotId && x.index === index)?.ciphertext ?? null
+    )
   }
 }
 
@@ -243,7 +250,9 @@ describe('autenticação', () => {
     const { deps } = setup()
     expect((await handle(req('GET', '/pull?since=0'), deps)).status).toBe(401)
     expect((await handle(req('GET', '/devices'), deps)).status).toBe(401)
-    expect((await handle(req('GET', '/pull?since=0', { token: 'nao-existe' }), deps)).status).toBe(401)
+    expect((await handle(req('GET', '/pull?since=0', { token: 'nao-existe' }), deps)).status).toBe(
+      401
+    )
   })
 
   it('token revogado dá 401 com revoked e wipe', async () => {
@@ -339,7 +348,9 @@ describe('convites e /pair', () => {
     const a = await registerFirst(deps)
     await pairSecond(deps, a, DEV_B)
     const again = await handle(
-      req('POST', '/pair', { body: { invite: `convite-${DEV_B}`, deviceId: DEV_C, nameCipher: 'eA==' } }),
+      req('POST', '/pair', {
+        body: { invite: `convite-${DEV_B}`, deviceId: DEV_C, nameCipher: 'eA==' }
+      }),
       deps
     )
     expect(again.status).toBe(410)
@@ -365,7 +376,9 @@ describe('convites e /pair', () => {
     const { deps } = setup()
     await registerFirst(deps)
     const res = await handle(
-      req('POST', '/pair', { body: { invite: 'nunca-criado', deviceId: DEV_B, nameCipher: 'eA==' } }),
+      req('POST', '/pair', {
+        body: { invite: 'nunca-criado', deviceId: DEV_B, nameCipher: 'eA==' }
+      }),
       deps
     )
     expect(res.status).toBe(410)
@@ -533,7 +546,12 @@ describe('/devices', () => {
     const list = body.devices as Record<string, unknown>[]
     expect(list.map((d) => d.id).sort()).toEqual([DEV_A, DEV_B])
     const me = list.find((d) => d.id === DEV_A)
-    expect(me).toMatchObject({ current: true, nameCipher: 'bm9tZQ==', revokedAt: null, wipe: false })
+    expect(me).toMatchObject({
+      current: true,
+      nameCipher: 'bm9tZQ==',
+      revokedAt: null,
+      wipe: false
+    })
     expect(list.find((d) => d.id === DEV_B)).toMatchObject({ current: false, cursor: 0 })
   })
 })
@@ -547,7 +565,9 @@ describe('segredos', () => {
     const capture = async (r: Request): Promise<void> => {
       bodies.push(await (await handle(r, deps)).text())
     }
-    await capture(req('POST', '/push', { token: a, body: { batches: [{ batchId: 'z', ciphertext: 'eA==' }] } }))
+    await capture(
+      req('POST', '/push', { token: a, body: { batches: [{ batchId: 'z', ciphertext: 'eA==' }] } })
+    )
     await capture(req('GET', '/pull?since=0', { token: b }))
     await capture(req('GET', '/devices', { token: a }))
     await capture(req('POST', '/invites', { token: a, body: { inviteHash: 'e'.repeat(64) } }))
@@ -587,7 +607,10 @@ describe('retrato (item 7)', () => {
       expect(res.status).toBe(200)
     }
     const commit = await handle(
-      req('POST', '/snapshot/commit', { token: a, body: { snapshotId: id, seqUntil: 7, parts: 2 } }),
+      req('POST', '/snapshot/commit', {
+        token: a,
+        body: { snapshotId: id, seqUntil: 7, parts: 2 }
+      }),
       deps
     )
     expect(commit.status).toBe(200)
@@ -603,11 +626,17 @@ describe('retrato (item 7)', () => {
     const a = await registerFirst(deps)
     const id = '00000000-0000-4000-8000-000000000001'
     await handle(
-      req('POST', '/snapshot/parts', { token: a, body: { snapshotId: id, index: 0, ciphertext: 'eA==' } }),
+      req('POST', '/snapshot/parts', {
+        token: a,
+        body: { snapshotId: id, index: 0, ciphertext: 'eA==' }
+      }),
       deps
     )
     const res = await handle(
-      req('POST', '/snapshot/commit', { token: a, body: { snapshotId: id, seqUntil: 1, parts: 2 } }),
+      req('POST', '/snapshot/commit', {
+        token: a,
+        body: { snapshotId: id, seqUntil: 1, parts: 2 }
+      }),
       deps
     )
     expect(res.status).toBe(409)
@@ -620,11 +649,17 @@ describe('retrato (item 7)', () => {
     const ids = ['00000000-0000-4000-8000-00000000000a', '00000000-0000-4000-8000-00000000000b']
     for (const [n, id] of ids.entries()) {
       await handle(
-        req('POST', '/snapshot/parts', { token: a, body: { snapshotId: id, index: 0, ciphertext: 'eA==' } }),
+        req('POST', '/snapshot/parts', {
+          token: a,
+          body: { snapshotId: id, index: 0, ciphertext: 'eA==' }
+        }),
         deps
       )
       await handle(
-        req('POST', '/snapshot/commit', { token: a, body: { snapshotId: id, seqUntil: n, parts: 1 } }),
+        req('POST', '/snapshot/commit', {
+          token: a,
+          body: { snapshotId: id, seqUntil: n, parts: 1 }
+        }),
         deps
       )
     }
