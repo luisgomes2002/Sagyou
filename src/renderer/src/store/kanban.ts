@@ -1,7 +1,22 @@
 ﻿import { create } from 'zustand'
 import type { StateCreator } from 'zustand'
 import { v4 as uuidv4 } from 'uuid'
-import type { Task, Goal, GoalEntry, FeatureId, UiPreferences } from '../types'
+import type {
+  Task,
+  Goal,
+  GoalEntry,
+  FeatureId,
+  UiPreferences,
+  Project,
+  Sprint,
+  Tombstone,
+  StickyNote,
+  Habit,
+  FinancialTable,
+  StoredFile,
+  TimeBlock,
+  Routine
+} from '../types'
 import {
   DEFAULT_FINANCIAL_PROFILE_ID,
   normalizeFeaturePreferences,
@@ -38,6 +53,9 @@ import { createBackupSlice } from './slices/backup'
 
 const storage = new ElectronStorage()
 let _persistTimer: ReturnType<typeof setTimeout> | null = null
+// Saves sent to main and not answered yet. A remote state that arrives
+// meanwhile may predate one of them, so it is not taken as is.
+let _savesInFlight = 0
 
 // --- Core slice (lifecycle + persistence) ---
 
@@ -46,12 +64,22 @@ interface CoreState {
   /** Undefined means this installation has not answered feature onboarding yet. */
   featurePreferences?: FeatureId[]
   uiPreferences: UiPreferences
+  /** Last sync generation applied; sent with every save so main keeps newer remote changes. */
+  syncGeneration: number
+}
+
+/** What main sends on `sync:remote-changes`: the state after a pull, and its generation. */
+export interface RemoteChanges {
+  generation: number
+  state: Record<string, unknown>
 }
 
 interface CoreActions {
   loadData: () => Promise<void>
   _persist: () => void
   _flushPersist: () => Promise<void>
+  /** Take a state changed by sync. It is already in the database, so it is never saved back. */
+  applyRemoteChanges: (changes: RemoteChanges) => Promise<void>
   setFeaturePreferences: (features: FeatureId[]) => void
   setUiPreferences: (preferences: UiPreferences) => void
 }
@@ -69,9 +97,55 @@ export type KanbanStore = CoreSlice &
   FinancialSlice &
   BackupSlice
 
+function listOf<T>(value: unknown): T[] {
+  return Array.isArray(value) ? (value as T[]) : []
+}
+
+/**
+ * The synced collections of a state from main, normalized like loadData does.
+ * Device-only choices (active project and profile, timers, preferences) stay
+ * with this window; a choice whose target was deleted elsewhere falls back.
+ */
+function syncedCollections(
+  data: Record<string, unknown>,
+  current: { activeProjectId: string | null; activeFinancialProfileId: string }
+): Partial<KanbanStore> {
+  const projects = listOf<Project>(data.projects).map(normalizeProject)
+  const financialProfiles = normalizeFinancialProfiles(data.financialProfiles)
+  const profileIds = new Set(financialProfiles.map((profile) => profile.id))
+  return {
+    projects,
+    tasks: listOf<Task>(data.tasks),
+    sprints: listOf<Sprint>(data.sprints),
+    tombstones: listOf<Tombstone>(data.tombstones),
+    notes: normalizeNotes(listOf<StickyNote>(data.notes)),
+    goals: listOf<Goal>(data.goals),
+    habits: listOf<Habit>(data.habits),
+    financialProfiles,
+    activeFinancialProfileId: profileIds.has(current.activeFinancialProfileId)
+      ? current.activeFinancialProfileId
+      : DEFAULT_FINANCIAL_PROFILE_ID,
+    lists: listOf<FinancialTable>(data.lists)
+      .map(normalizeFinancialTable)
+      .map((list) => ({
+        ...list,
+        profileId: profileIds.has(list.profileId ?? '')
+          ? list.profileId
+          : DEFAULT_FINANCIAL_PROFILE_ID
+      })),
+    files: listOf<StoredFile>(data.files),
+    timeBlocks: listOf<TimeBlock>(data.timeBlocks),
+    routines: listOf<Routine>(data.routines),
+    activeProjectId: projects.some((project) => project.id === current.activeProjectId)
+      ? current.activeProjectId
+      : (projects[0]?.id ?? null)
+  }
+}
+
 const createCoreSlice: StateCreator<KanbanStore, [], [], CoreSlice> = (set, get) => ({
   isLoaded: false,
   uiPreferences: { ...DEFAULT_UI_PREFERENCES },
+  syncGeneration: 0,
 
   _flushPersist: async () => {
     if (_persistTimer !== null) {
@@ -94,27 +168,34 @@ const createCoreSlice: StateCreator<KanbanStore, [], [], CoreSlice> = (set, get)
       activeTimers,
       files,
       timeBlocks,
-      routines
-    } = get()
-    await storage.save({
-      projects,
-      tasks,
-      sprints,
-      tombstones,
-      notes,
-      goals,
-      habits,
-      lists,
-      financialProfiles,
-      activeFinancialProfileId,
-      featurePreferences,
-      uiPreferences,
-      activeTimers,
-      files,
-      timeBlocks,
       routines,
-      activeTimer: activeTimers[0] ?? null
-    })
+      syncGeneration
+    } = get()
+    _savesInFlight += 1
+    try {
+      await storage.save({
+        projects,
+        tasks,
+        sprints,
+        tombstones,
+        notes,
+        goals,
+        habits,
+        lists,
+        financialProfiles,
+        activeFinancialProfileId,
+        featurePreferences,
+        uiPreferences,
+        activeTimers,
+        files,
+        timeBlocks,
+        routines,
+        activeTimer: activeTimers[0] ?? null,
+        syncGeneration
+      })
+    } finally {
+      _savesInFlight -= 1
+    }
   },
 
   _persist: () => {
@@ -122,6 +203,24 @@ const createCoreSlice: StateCreator<KanbanStore, [], [], CoreSlice> = (set, get)
     _persistTimer = setTimeout(() => {
       get()._flushPersist()
     }, 300)
+  },
+
+  applyRemoteChanges: async ({ generation, state }) => {
+    // Locked or not loaded yet: loadData will read the database, changes included.
+    if (!get().isLoaded || generation <= get().syncGeneration) return
+    if (_persistTimer !== null || _savesInFlight > 0) {
+      // A local edit is waiting to be saved, or its save is still on the way,
+      // so it may be missing from this state. Save (main keeps the remote
+      // versions over it), then take what the database holds.
+      await get()._flushPersist()
+      const saved = await storage.load()
+      set({
+        ...syncedCollections(saved as unknown as Record<string, unknown>, get()),
+        syncGeneration: Math.max(saved.syncGeneration ?? 0, generation)
+      })
+      return
+    }
+    set({ ...syncedCollections(state, get()), syncGeneration: generation })
   },
 
   setFeaturePreferences: (features) => {
@@ -192,6 +291,7 @@ const createCoreSlice: StateCreator<KanbanStore, [], [], CoreSlice> = (set, get)
       timeBlocks: data.timeBlocks || [],
       routines: data.routines || [],
       isLoaded: true,
+      syncGeneration: data.syncGeneration ?? 0,
       activeProjectId: projects[0]?.id ?? null,
       activeTimers: []
     })
@@ -214,3 +314,8 @@ export const useKanbanStore = create<KanbanStore>()((...a) => ({
   ...createFinancialSlice(...a),
   ...createBackupSlice(storage)(...a)
 }))
+
+// The preload is absent in tests and in a browser build.
+window.electronAPI?.sync?.onRemoteChanges((changes) => {
+  void useKanbanStore.getState().applyRemoteChanges(changes)
+})

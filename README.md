@@ -119,6 +119,27 @@ O Sagyou não envia nada a lugar nenhum por conta própria. Os CLIs de código s
 
 ---
 
+## Servidor de sincronização
+
+A sincronização entre dois PCs usa um servidor seu: um Worker da Cloudflare com um banco D1, no plano gratuito. O código fica em [`sync-server/`](sync-server/). O servidor só guarda lotes cifrados antes de sair do seu PC, ids opacos de aparelho e números; a chave nunca sai dos aparelhos.
+
+Para publicar (precisa de uma conta Cloudflare e do Node):
+
+```bash
+cd sync-server
+npm install                                   # instala o wrangler
+npx wrangler login
+npx wrangler d1 create sagyou-sync            # copie o database_id para o wrangler.toml
+npx wrangler d1 execute sagyou-sync --remote --file schema.sql
+npx wrangler secret put SETUP_TOKEN           # um segredo longo, usado só para registrar o primeiro aparelho
+npx wrangler secret put TOTP_ENC_KEY          # 32 bytes aleatórios em base64url; guarde fora do repositório
+npx wrangler deploy                           # mostra a URL do Worker
+```
+
+O `SETUP_TOKEN` registra o primeiro aparelho. Para recuperar um aparelho com o código de recuperação quando ainda há aparelhos ativos, também são exigidos a prova da chave e o código do autenticador. Os demais entram por convite, gerado num aparelho já pareado. O segredo `TOTP_ENC_KEY` deve ser uma chave nova de 32 bytes, codificada em base64url (por exemplo, gerada com `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`). Sem ele, o cadastro do autenticador não funciona.
+
+---
+
 ## Desenvolvimento
 
 Requisitos: **Node 24** e **Python 3** (usado só no build para empacotar o leitor de documentos; o usuário final não precisa dele).

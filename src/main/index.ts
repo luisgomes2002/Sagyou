@@ -9,6 +9,7 @@ import {
   BrowserWindow,
   ipcMain,
   dialog,
+  safeStorage,
   type IpcMain,
   type IpcMainEvent,
   type IpcMainInvokeEvent
@@ -28,7 +29,7 @@ import {
   constants
 } from 'fs'
 import * as codeFileFs from 'fs'
-import { homedir } from 'os'
+import { homedir, hostname } from 'os'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { readFile } from 'fs/promises'
@@ -79,12 +80,14 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import {
   loadData,
   saveData,
+  currentSyncGeneration,
   eventsForEntity,
   rebuildSearchIndex,
   searchGlobalIndex,
   getGlobalSearchIndexHit,
   copyDatabaseTo,
-  scrubMemoryConversationLinks
+  scrubMemoryConversationLinks,
+  closeDatabase
 } from './store'
 import {
   hasLegacyApiConfig,
@@ -134,6 +137,19 @@ import { registerFilesHandlers } from './handlers/files'
 import { registerBackupHandlers } from './handlers/backup'
 import { normalizeLegacyAIConfig } from './modules/conversations/legacy-ai-data'
 import { registerCodeFilesHandlers } from './handlers/code-files'
+import { registerSyncHandlers } from './handlers/sync'
+import {
+  createSyncEngine,
+  syncConfigFileName,
+  wipeLocalData,
+  type SyncEngine
+} from './modules/sync/sync-engine'
+import {
+  clearSyncConfig,
+  loadSyncConfig,
+  saveSyncConfig,
+  syncAvailability
+} from './modules/sync/sync-config'
 import {
   createPasswordConfig,
   parsePasswordConfig,
@@ -144,6 +160,8 @@ import icon from '../../resources/icon.png?asset'
 
 let mainWindow: BrowserWindow | null = null
 let managedWindow: ManagedWindow | null = null
+// Created after protectDataIpc; started on the first store:load (only after unlock).
+let syncEngine: SyncEngine | null = null
 
 /** Only the app's own renderer may invoke privileged IPC handlers. */
 function assertTrustedRenderer(event: IpcMainInvokeEvent | IpcMainEvent): void {
@@ -1334,10 +1352,18 @@ app.whenReady().then(() => {
     sep
   })
 
-  ipcMain.handle('store:load', () => loadData())
+  // The renderer echoes syncGeneration on every save, so a save it builds from
+  // this load never undoes a remote change already in it.
+  ipcMain.handle('store:load', () => {
+    const data = { ...loadData(), syncGeneration: currentSyncGeneration() }
+    // store:load only answers once the app is unlocked, so sync never runs locked.
+    syncEngine?.start()
+    return data
+  })
 
   ipcMain.handle('store:save', (_, data) => {
     saveData(data)
+    syncEngine?.notifySaved()
   })
   ipcMain.on(
     'store:mcp:create-task:response',
@@ -1373,13 +1399,91 @@ app.whenReady().then(() => {
   ipcMain.handle('search:global', (_, options: unknown) => searchGlobalIndex(options))
   ipcMain.handle('search:global:get', (_, options: unknown) => getGlobalSearchIndexHit(options))
 
-  registerBackupHandlers(ipcMain, {
+  const backupHandlers = registerBackupHandlers(ipcMain, {
     dialog,
     filesDir,
     taskImagesDir: taskImagesDir(),
     backupDir: join(app.getPath('userData'), 'backups'),
     sep,
     taskImagePath
+  })
+
+  // Sync: the engine and its channels, after protectDataIpc like every data handler.
+  const userDataDir = app.getPath('userData')
+  const syncFile = syncConfigFileName(is.dev)
+  const sendToRenderer = (channel: string, payload: unknown): void => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload)
+  }
+  // The same forced snapshot an import makes, built here from the database.
+  const forcedSyncBackup = async (): Promise<boolean> => {
+    try {
+      const data = loadData()
+      const backup = {
+        version: 7,
+        exportedAt: new Date().toISOString(),
+        projects: data.projects,
+        tasks: data.tasks,
+        sprints: data.sprints,
+        tombstones: data.tombstones,
+        notes: data.notes,
+        goals: data.goals,
+        habits: data.habits,
+        lists: data.lists,
+        financialProfiles: data.financialProfiles,
+        activeFinancialProfileId: data.activeFinancialProfileId,
+        featurePreferences: data.featurePreferences,
+        uiPreferences: data.uiPreferences,
+        memories: memoryStore.listMemories({ includeArchived: true }),
+        files: data.files,
+        timeBlocks: data.timeBlocks,
+        routines: data.routines
+      }
+      return (await backupHandlers.autoSave(backup, true)).success
+    } catch (error) {
+      log.error('sync', 'forced_backup_failed', { msg: errorMessage(error) })
+      return false
+    }
+  }
+  const engine = createSyncEngine({
+    store: memoryStore,
+    config: {
+      availability: () => syncAvailability(safeStorage),
+      load: () => loadSyncConfig(userDataDir, syncFile, safeStorage),
+      save: (config) => saveSyncConfig(userDataDir, syncFile, safeStorage, config),
+      clear: () => clearSyncConfig(userDataDir, syncFile)
+    },
+    fetch: (url, init) => fetch(url, init),
+    now: () => Date.now(),
+    setTimer: (fn, ms) => setTimeout(fn, ms),
+    clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+    forcedBackup: forcedSyncBackup,
+    // Revoked with "apagar os dados": no backup first (decision of 2026-10-30).
+    wipe: () => {
+      try {
+        closeDatabase()
+      } catch (error) {
+        log.error('sync', 'wipe_close_failed', { msg: errorMessage(error) })
+      }
+      const result = wipeLocalData(userDataDir, is.dev)
+      log.warn('sync', 'wiped', { removed: result.removed.length, failed: result.failed })
+      app.relaunch()
+      app.exit(0)
+    },
+    emitStatus: (status) => sendToRenderer('sync:status-changed', status),
+    emitRemoteChanges: (change) => sendToRenderer('sync:remote-changes', change)
+  })
+  syncEngine = engine
+  registerSyncHandlers(ipcMain, {
+    engine,
+    listFiles: () => loadData().files.map((file) => ({ id: file.id, ext: file.ext })),
+    hasFileBytes: (id, ext) => {
+      const name = safeAttachmentName(id, ext)
+      return name !== null && existsSync(join(filesDir, name))
+    },
+    verifyAppPassword: (password) =>
+      !passwordConfigCorrupt &&
+      (passwordConfig === null || verifyPassword(passwordConfig, password)),
+    defaultDeviceName: () => hostname().slice(0, 80) || 'Aparelho'
   })
   ipcMain.handle('backup:open-folder', async () => {
     const dir = join(app.getPath('userData'), 'backups')
@@ -2294,5 +2398,6 @@ app.on('before-quit', (event) => {
   }
   rendererMcpTasks.close()
   rendererMcpActions.close()
+  syncEngine?.stop()
   stopCodeAgent()
 })

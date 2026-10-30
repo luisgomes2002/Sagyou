@@ -15,7 +15,7 @@ export default defineConfig({
     // (UTC-3, no DST) to keep those tests meaningful on any machine.
     env: { TZ: 'America/Sao_Paulo' },
     setupFiles: ['./src/renderer/src/__tests__/setup.ts'],
-    include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    include: ['src/**/*.{test,spec}.{ts,tsx}', 'sync-server/src/**/*.test.ts'],
     coverage: {
       reporter: ['text', 'lcov'],
       include: ['src/main/**/*.ts', 'src/renderer/src/**/*.{ts,tsx}'],

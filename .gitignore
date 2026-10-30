@@ -1,6 +1,7 @@
 node_modules
 dist
 out
+.wrangler
 coverage
 .DS_Store
 .eslintcache
