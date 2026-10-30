@@ -211,3 +211,14 @@ Mudança aditiva, sem migração destrutiva.
   - O código é aceito com ±1 janela de 30 s.
   - 5 erros seguidos bloqueiam por 15 min.
 - **Senha do app esquecida:** nada muda no sync. A senha é só a trava de tela, e a chave de sync fica no `safeStorage`.
+
+## Adendo de inicialização (decisão de Luis em 2026-10-30; plano pendente)
+
+Quando o atualizador automático estiver instalado, a ordem ao abrir passa a ser:
+
+1. Abrir a janela e consultar em segundo plano o Release estável mais recente do Sagyou.
+2. Se não houver versão nova, iniciar o sync e buscar os dados cifrados da nuvem.
+3. Se houver versão nova, baixar e instalar primeiro; o sync não faz pull nem push até o app atualizado abrir. Se a instalação for adiada ou falhar, os dados locais continuam acessíveis e o sync fica em espera com estado visível.
+4. Se a consulta ao GitHub falhar ou não responder em **10 segundos**, liberar o sync. A verificação pode ser repetida depois; um erro do GitHub não bloqueia indefinidamente a Cloudflare.
+
+Este adendo depende de `docs/specs/2026-10-30-atualizacao-automatica.md`. O motor atual do PR #30 inicia o sync ao abrir; o portão de atualização pertence ao plano da feature de atualização automática e ainda não foi implementado.
