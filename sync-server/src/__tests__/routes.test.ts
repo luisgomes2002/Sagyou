@@ -4,7 +4,7 @@
 // opaque device ids, ciphertext and numbers; device tokens are stored as
 // SHA-256 hex, and a revoked token answers 401 saying whether to wipe.
 import { describe, expect, it } from 'vitest'
-import { handle, MAX_BODY_BYTES, type RouteDeps } from '../routes'
+import { handle, MAX_BODY_BYTES, MAX_PULL_LIMIT, type RouteDeps } from '../routes'
 import type {
   ChangeInput,
   ChangeRow,
@@ -434,6 +434,26 @@ describe('/push e /pull', () => {
     )
     expect((rest.changes as ChangeRow[]).map((c) => c.batchId)).toEqual(['3', '4', '5'])
     expect(rest.more).toBe(false)
+  })
+
+  it('o limit do pull é no máximo 20 (respostas de até ~7 MB)', async () => {
+    const { deps } = setup()
+    const a = await registerFirst(deps)
+    const b = await pairSecond(deps, a)
+    await push(
+      deps,
+      a,
+      Array.from({ length: 25 }, (_, i) => `l${i}`)
+    )
+    expect(MAX_PULL_LIMIT).toBe(20)
+    const over = await handle(req('GET', '/pull?since=0&limit=21', { token: b }), deps)
+    expect(over.status).toBe(400)
+    const max = await json(await handle(req('GET', '/pull?since=0&limit=20', { token: b }), deps))
+    expect((max.changes as ChangeRow[]).length).toBe(20)
+    expect(max.more).toBe(true)
+    // Without limit, the default is the same 20.
+    const plain = await json(await handle(req('GET', '/pull?since=0', { token: b }), deps))
+    expect((plain.changes as ChangeRow[]).length).toBe(20)
   })
 
   it('o pull não devolve os lotes do próprio aparelho e atualiza o cursor', async () => {

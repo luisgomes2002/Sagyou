@@ -15,6 +15,13 @@ import type {
   GlobalSearchOptions,
   GlobalSearchResponse
 } from '../main/modules/search/global-search-query'
+import type {
+  SyncConflictView,
+  SyncDevice,
+  SyncResult,
+  SyncSecondFactor,
+  SyncStatus
+} from '../main/modules/sync/sync-engine'
 
 /** A user-written Skill (.md file in userData/skills/). */
 interface Skill {
@@ -220,7 +227,48 @@ export const api = {
       return (): void => {
         ipcRenderer.removeListener('sync:remote-changes', handler)
       }
-    }
+    },
+    onStatusChanged: (cb: (status: SyncStatus) => void) => {
+      const handler = (_: Electron.IpcRendererEvent, status: SyncStatus): void => cb(status)
+      ipcRenderer.on('sync:status-changed', handler)
+      return (): void => {
+        ipcRenderer.removeListener('sync:status-changed', handler)
+      }
+    },
+    status: (): Promise<SyncStatus> => ipcRenderer.invoke('sync:status'),
+    // Returns the recovery code once; the screen must show it with "Guardei o código".
+    activate: (
+      url: string,
+      setupToken: string,
+      deviceName?: string,
+      factor?: SyncSecondFactor
+    ): Promise<SyncResult<{ recoveryCode: string }>> =>
+      ipcRenderer.invoke('sync:activate', url, setupToken, deviceName, factor),
+    invite: (): Promise<SyncResult<{ code: string; expiresAt: number }>> =>
+      ipcRenderer.invoke('sync:invite'),
+    join: (
+      code: string,
+      mode: 'merge' | 'replace',
+      deviceName?: string
+    ): Promise<SyncResult<{ status: SyncStatus }>> =>
+      ipcRenderer.invoke('sync:join', code, mode, deviceName),
+    now: (): Promise<SyncStatus> => ipcRenderer.invoke('sync:now'),
+    devices: (): Promise<SyncResult<{ devices: SyncDevice[] }>> =>
+      ipcRenderer.invoke('sync:devices'),
+    revoke: (id: string, wipe: boolean, factor?: SyncSecondFactor): Promise<SyncResult> =>
+      ipcRenderer.invoke('sync:revoke', id, wipe, factor),
+    conflicts: (): Promise<SyncResult<{ conflicts: SyncConflictView[] }>> =>
+      ipcRenderer.invoke('sync:conflicts'),
+    // 'local' = the version this device made or holds; 'remote' = the other device's.
+    resolve: (conflictId: string, choice: 'local' | 'remote'): Promise<SyncResult> =>
+      ipcRenderer.invoke('sync:resolve', conflictId, choice),
+    recoveryCode: (password?: string): Promise<SyncResult<{ code: string }>> =>
+      ipcRenderer.invoke('sync:recovery-code', password),
+    disable: (): Promise<SyncResult> => ipcRenderer.invoke('sync:disable'),
+    resume: (choice: 'push-local' | 'take-cloud'): Promise<SyncResult<{ status: SyncStatus }>> =>
+      ipcRenderer.invoke('sync:resume', choice),
+    afterRestore: (choice: 'propagate' | 'pause'): Promise<SyncResult<{ status: SyncStatus }>> =>
+      ipcRenderer.invoke('sync:after-restore', choice)
   },
   search: {
     global: (options: GlobalSearchOptions): Promise<GlobalSearchResponse> =>
@@ -661,7 +709,10 @@ export const api = {
       name: string,
       ext: string
     ): Promise<{ success: boolean; cancelled?: boolean; error?: string }> =>
-      ipcRenderer.invoke('files:download', id, name, ext)
+      ipcRenderer.invoke('files:download', id, name, ext),
+    // {fileId: null} when the bytes are here; otherwise the device that has them.
+    availability: (): Promise<Record<string, string | null>> =>
+      ipcRenderer.invoke('files:availability')
   },
   // Task images: the renderer downscales and hands over a dataUrl; main stores
   // the bytes as files under task-images/ and returns id+ext. The DB keeps only

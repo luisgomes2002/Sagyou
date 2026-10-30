@@ -36,6 +36,7 @@ import {
   DATA_KINDS,
   extractDataRecords,
   extractMemoryRecords,
+  hashPayload,
   MEMORY_KINDS,
   type SyncRecord
 } from './modules/sync/sync-records'
@@ -50,9 +51,17 @@ import {
   type ConflictWrite,
   type IncomingRecord,
   type StoredSyncVersion,
-  type VersionWrite
+  type VersionWrite,
+  applyRecordsToState,
+  type ConflictType
 } from './modules/sync/sync-apply'
-import { encodeBatch, recordKey, type OutgoingRow } from './modules/sync/sync-batch'
+import { latestVersions, replaceSyncableState } from './modules/sync/sync-replace'
+import {
+  encodeBatch,
+  recordKey,
+  type OutgoingRow,
+  type WireRecord
+} from './modules/sync/sync-batch'
 import { openBatch, sealBatch } from './modules/sync/sync-crypto'
 import {
   buildSyncRows,
@@ -368,9 +377,12 @@ const LEGACY_PATH = join(
 )
 
 let _db: Database.Database | null = null
+// Set by closeDatabase() before a remote wipe deletes the file: nothing may reopen it.
+let _dbClosedForWipe = false
 
 function getDb(): Database.Database {
   if (_db) return _db
+  if (_dbClosedForWipe) throw new Error('database closed for a sync wipe')
   _db = new Database(DB_PATH)
   _db.pragma('journal_mode = WAL')
   _db.pragma('foreign_keys = ON')
@@ -1277,7 +1289,8 @@ function migrateSyncRecordsTable(db: Database.Database): void {
 
 let syncDeviceId: string | null = null
 
-function getSyncDeviceId(): string {
+/** This installation's stage-1 sync id; the engine only ever sends its opaque HMAC. */
+export function getSyncDeviceId(): string {
   syncDeviceId ??= loadOrCreateDeviceId(
     app.getPath('userData'),
     is.dev ? SYNC_DEVICE_FILE_DEV : SYNC_DEVICE_FILE,
@@ -1827,6 +1840,221 @@ export function currentSyncRecords(): Map<string, SyncRecord> {
   const db = getDb()
   const records = [...extractDataRecords(loadData(db)), ...extractMemoryRecords(allMemories(db))]
   return new Map(records.map((r) => [recordKey(r.kind, r.id), r]))
+}
+
+// ── Sync: engine support ─────────────────────────────────────────────────────
+
+/** A conflict's losing version stays listed for 30 days, then it is dropped. */
+export const CONFLICT_TTL_MS = 30 * 86400000
+
+/**
+ * Close the database for good: a remote wipe deletes the file next, and the
+ * app relaunches right after. Any later getDb() throws instead of recreating it.
+ */
+export function closeDatabase(): void {
+  _dbClosedForWipe = true
+  _db?.close()
+  _db = null
+}
+
+/** What a remote apply or an adoption hands the renderer (`sync:remote-changes`). */
+export interface SyncStateChange {
+  generation: number
+  state: SaveData | null
+}
+
+function receivedVersion(item: IncomingRecord): VersionWrite {
+  const { record } = item
+  return {
+    kind: record.kind,
+    id: record.id,
+    hlc: record.hlc,
+    baseHlc: record.baseHlc,
+    deviceId: item.device,
+    hash: !record.deleted && record.payload ? hashPayload(record.payload) : '',
+    deleted: record.deleted,
+    serverSeq: item.serverSeq
+  }
+}
+
+/**
+ * "Substituir pelos da nuvem" / "a nuvem manda": the syncable data and every
+ * memory become exactly the newest version of each received record. Device
+ * fields survive (replaceSyncableState); what existed only here is gone, so the
+ * caller must have made the forced backup first. sync_records is rewritten from
+ * the received versions, so nothing local is pushed back afterwards.
+ */
+export function replaceWithRemoteRecords(
+  records: IncomingRecord[],
+  ctx: SyncApplyContext
+): SyncStateChange & { records: number } {
+  const db = getDb()
+  const now = ctx.now ?? Date.now()
+  const latest = latestVersions(records)
+  const data = latest.filter((item) => DATA_KIND_SET.has(item.record.kind))
+  const memories = latest.filter((item) => item.record.kind === 'memory')
+
+  const { generation, state, changedKeys } = db.transaction(() => {
+    const base = lastSnapshot ?? loadData(db)
+    const next = replaceSyncableState(
+      base,
+      data.map((item) => item.record)
+    )
+    persistAll(db, next)
+    db.prepare('DELETE FROM file_search_content WHERE file_id NOT IN (SELECT id FROM files)').run()
+    syncGlobalSearchIndex(db, withFileSearchContent(db, next))
+
+    db.prepare('DELETE FROM memory').run()
+    const nowIso = new Date(now).toISOString()
+    for (const item of memories)
+      if (!item.record.deleted && item.record.payload)
+        writeMemoryRow(db, memoryFromPayload(item.record.payload, null, nowIso))
+    syncMemorySearchRows(db, new Set(next.projects.filter((p) => p.archivedAt).map((p) => p.id)))
+
+    db.prepare('DELETE FROM sync_pending').run()
+    db.prepare('DELETE FROM sync_records').run()
+    writeReceivedVersions(db, latest.map(receivedVersion))
+
+    const nextGeneration = syncStateNumber(db, 'generation') + 1
+    writeSyncStateIn(db, 'generation', String(nextGeneration))
+    // Every record that was here or came down: a late renderer save must not
+    // bring back a record only this device had, nor undo a received one.
+    const keys = new Set<string>([
+      ...extractDataRecords(base).map((r) => recordKey(r.kind, r.id)),
+      ...data.map((item) => recordKey(item.record.kind, item.record.id))
+    ])
+    return { generation: nextGeneration, state: next, changedKeys: keys }
+  })()
+
+  lastSnapshot = structuredClone(state)
+  remoteKeysByGeneration.set(generation, changedKeys)
+  return { generation, state, records: latest.length }
+}
+
+/**
+ * "Usar esta" on a kept version: it becomes a new edit of this device (a new
+ * HLC on top of the current one), so every other device adopts it too.
+ * Throws when a child's parent no longer exists here.
+ */
+export function adoptSyncVersion(record: WireRecord, now = Date.now()): SyncStateChange {
+  const db = getDb()
+  if (record.kind === 'memory') {
+    db.transaction(() => {
+      if (record.deleted || !record.payload) {
+        db.prepare('DELETE FROM memory WHERE id=?').run(record.id)
+        syncMemorySearchRows(db)
+        captureSyncVersions(db, () => [], memoryCaptureScope('delete', [record.id]))
+        return
+      }
+      const row = db.prepare('SELECT * FROM memory WHERE id=?').get(record.id) as
+        | Record<string, unknown>
+        | undefined
+      const existing = row ? memRowToMemory(row) : null
+      writeMemoryRow(db, memoryFromPayload(record.payload, existing, new Date(now).toISOString()))
+      syncMemorySearchRows(db)
+      captureMemoryRows(db, [record.id], 'upsert')
+    })()
+    return { generation: currentSyncGeneration(), state: null }
+  }
+
+  const key = recordKey(record.kind, record.id)
+  const result = db.transaction((): { generation: number; state: SaveData } => {
+    const base = lastSnapshot ?? loadData(db)
+    const next = applyRecordsToState(base, [record])
+    const present = extractDataRecords(next).some((r) => recordKey(r.kind, r.id) === key)
+    if (!record.deleted && !present) throw new Error('sync record parent missing')
+    persistDiff(db, base, next)
+    db.prepare('DELETE FROM file_search_content WHERE file_id NOT IN (SELECT id FROM files)').run()
+    syncGlobalSearchIndex(db, withFileSearchContent(db, next))
+    captureSyncVersions(db, () => extractDataRecords(next), { kinds: DATA_KINDS, complete: true })
+    const generation = syncStateNumber(db, 'generation') + 1
+    writeSyncStateIn(db, 'generation', String(generation))
+    return { generation, state: next }
+  })()
+  lastSnapshot = structuredClone(result.state)
+  remoteKeysByGeneration.set(result.generation, new Set([key]))
+  return result
+}
+
+export interface StoredSyncConflict {
+  id: string
+  kind: SyncRecord['kind']
+  recordId: string
+  type: ConflictType
+  /** Sealed WireRecord (batchId `conflict:<id>`, this device's opaque id). */
+  loserCipher: string
+  winnerHlc: string | null
+  loserHlc: string
+  loserDevice: string
+  createdAt: number
+}
+
+/** Open conflicts, newest first; anything older than CONFLICT_TTL_MS is deleted first. */
+export function listSyncConflicts(now: number): StoredSyncConflict[] {
+  const db = getDb()
+  db.prepare('DELETE FROM sync_conflicts WHERE created_at < ?').run(now - CONFLICT_TTL_MS)
+  const rows = db
+    .prepare(
+      `SELECT id, kind, record_id, type, loser_cipher, winner_hlc, loser_hlc, loser_device, created_at
+       FROM sync_conflicts WHERE resolved_at IS NULL ORDER BY created_at DESC`
+    )
+    .all() as {
+    id: string
+    kind: SyncRecord['kind']
+    record_id: string
+    type: ConflictType
+    loser_cipher: string
+    winner_hlc: string | null
+    loser_hlc: string
+    loser_device: string
+    created_at: number
+  }[]
+  return rows.map((r) => ({
+    id: r.id,
+    kind: r.kind,
+    recordId: r.record_id,
+    type: r.type,
+    loserCipher: r.loser_cipher,
+    winnerHlc: r.winner_hlc,
+    loserHlc: r.loser_hlc,
+    loserDevice: r.loser_device,
+    createdAt: r.created_at
+  }))
+}
+
+export function openSyncConflictCount(now: number): number {
+  const { c } = getDb()
+    .prepare(
+      'SELECT COUNT(*) AS c FROM sync_conflicts WHERE resolved_at IS NULL AND created_at >= ?'
+    )
+    .get(now - CONFLICT_TTL_MS) as { c: number }
+  return c
+}
+
+export function markSyncConflictResolved(id: string, now: number): void {
+  getDb()
+    .prepare('UPDATE sync_conflicts SET resolved_at=? WHERE id=? AND resolved_at IS NULL')
+    .run(now, id)
+}
+
+/** The version a record holds here now (the "current" side of a conflict). */
+export function syncRecordVersion(
+  kind: string,
+  id: string
+): { hlc: string; deviceId: string; deleted: boolean } | null {
+  const row = getDb()
+    .prepare('SELECT hlc, device_id, deleted FROM sync_records WHERE kind=? AND id=?')
+    .get(kind, id) as { hlc: string; device_id: string; deleted: number } | undefined
+  return row ? { hlc: row.hlc, deviceId: row.device_id, deleted: row.deleted === 1 } : null
+}
+
+/** Which device minted each record of `kind` (stage-1 id for this device, opaque id for others). */
+export function syncRecordOrigins(kind: string): Map<string, string> {
+  const rows = getDb().prepare('SELECT id, device_id FROM sync_records WHERE kind=?').all(kind) as {
+    id: string
+    device_id: string
+  }[]
+  return new Map(rows.map((r) => [r.id, r.device_id]))
 }
 
 // ── JSON migration ────────────────────────────────────────────────────────────

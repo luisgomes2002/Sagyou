@@ -9,8 +9,10 @@ import type { DeviceRow, SyncDb } from './db'
 
 export const MAX_BODY_BYTES = 2 * 1024 * 1024
 export const INVITE_TTL_MS = 10 * 60 * 1000
-export const DEFAULT_PULL_LIMIT = 50
-export const MAX_PULL_LIMIT = 200
+// A batch is at most 256 KB before gzip, so ~350 KB sealed in base64: 20 of them
+// keep one /pull response near 7 MB.
+export const DEFAULT_PULL_LIMIT = 20
+export const MAX_PULL_LIMIT = 20
 /** Upper bound on snapshot parts (1.5 MB each: ~15 GB, far above any real store). */
 export const MAX_SNAPSHOT_PARTS = 10000
 /** `last_seen` is rewritten at most once a minute per device. */
