@@ -1,5 +1,5 @@
 import { nextHlc } from './hlc'
-import type { SyncKind, SyncRecord } from './sync-records'
+import { MEMORY_KINDS, type SyncKind, type SyncRecord } from './sync-records'
 
 export interface StoredVersion {
   kind: SyncKind
@@ -87,4 +87,23 @@ export function buildSyncRows(
     ...plan.upserts.map((r) => row(r.kind, r.id, r.hash, false)),
     ...plan.deletes.map((v) => row(v.kind, v.id, v.hash, true))
   ]
+}
+
+/**
+ * Memory writes go straight to SQL, one or a few rows at a time, so their
+ * captures are partial: only a wholesale replace (backup restore) sees every
+ * memory and may tombstone the ones it did not write.
+ */
+export function memoryCaptureScope(
+  op: 'upsert' | 'archive' | 'delete' | 'replace' | 'scrub',
+  ids: string[]
+): SyncScope {
+  if (op === 'replace') return { kinds: MEMORY_KINDS, complete: true }
+  if (op === 'delete')
+    return {
+      kinds: MEMORY_KINDS,
+      complete: false,
+      removedIds: ids.map((id) => ({ kind: 'memory' as const, id }))
+    }
+  return { kinds: MEMORY_KINDS, complete: false }
 }

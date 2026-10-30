@@ -11,7 +11,12 @@ import {
   extractDataRecords,
   type SyncRecord
 } from '../modules/sync/sync-records'
-import { buildSyncRows, planSyncChanges, type StoredVersion } from '../modules/sync/sync-plan'
+import {
+  buildSyncRows,
+  memoryCaptureScope,
+  planSyncChanges,
+  type StoredVersion
+} from '../modules/sync/sync-plan'
 
 const T = '2026-10-30T12:00:00.000Z'
 const ALL_DATA = { kinds: DATA_KINDS, complete: true }
@@ -180,5 +185,41 @@ describe('buildSyncRows', () => {
     const rows = buildSyncRows(plan, { maxHlc: future, maxSeq: 10 }, 'dev', 1000)
     expect(rows[0].seq).toBe(11)
     expect(rows[0].hlc > future).toBe(true)
+  })
+})
+
+describe('memoryCaptureScope', () => {
+  it('keeps single-memory writes partial', () => {
+    for (const op of ['upsert', 'archive', 'scrub'] as const)
+      expect(memoryCaptureScope(op, ['m1'])).toEqual({ kinds: MEMORY_KINDS, complete: false })
+  })
+
+  it('names the deleted memory', () => {
+    expect(memoryCaptureScope('delete', ['m2'])).toEqual({
+      kinds: MEMORY_KINDS,
+      complete: false,
+      removedIds: [{ kind: 'memory', id: 'm2' }]
+    })
+  })
+
+  it('treats a wholesale replace as complete', () => {
+    expect(memoryCaptureScope('replace', [])).toEqual({ kinds: MEMORY_KINDS, complete: true })
+  })
+
+  it('saves one memory without tombstoning the others', () => {
+    const old = [stored(rec('memory', 'm1')), stored(rec('memory', 'm2'))]
+    const plan = planSyncChanges(
+      [rec('memory', 'm1', 'edited')],
+      old,
+      memoryCaptureScope('upsert', ['m1'])
+    )
+    expect(keys(plan.upserts)).toEqual(['memory:m1'])
+    expect(plan.deletes).toEqual([])
+  })
+
+  it('tombstones a memory missing from a replace', () => {
+    const old = [stored(rec('memory', 'm1')), stored(rec('memory', 'm2'))]
+    const plan = planSyncChanges([rec('memory', 'm1')], old, memoryCaptureScope('replace', []))
+    expect(keys(plan.deletes)).toEqual(['memory:m2'])
   })
 })

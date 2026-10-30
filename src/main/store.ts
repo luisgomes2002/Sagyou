@@ -41,6 +41,7 @@ import {
 } from './modules/sync/sync-records'
 import {
   buildSyncRows,
+  memoryCaptureScope,
   planSyncChanges,
   type StoredVersion,
   type SyncScope
@@ -1315,6 +1316,16 @@ function captureSafely(db: Database.Database, capture: () => unknown): void {
   }
 }
 
+/** Re-read the given memory rows and capture them (archive changes them in SQL, not in hand). */
+function captureMemoryRows(db: Database.Database, ids: string[], op: 'archive'): number {
+  const select = db.prepare('SELECT * FROM memory WHERE id=?')
+  const rows = ids.flatMap((id) => {
+    const row = select.get(id) as Record<string, unknown> | undefined
+    return row ? [memRowToMemory(row)] : []
+  })
+  return captureSyncVersions(db, extractMemoryRecords(rows), memoryCaptureScope(op, ids))
+}
+
 function allMemories(db: Database.Database): AiMemory[] {
   return (db.prepare('SELECT * FROM memory').all() as Record<string, unknown>[]).map(memRowToMemory)
 }
@@ -2562,6 +2573,9 @@ export function upsertMemory(m: AiMemory): void {
   db.transaction(() => {
     writeMemoryRow(db, m)
     syncMemorySearchRows(db)
+    captureSafely(db, () =>
+      captureSyncVersions(db, extractMemoryRecords([m]), memoryCaptureScope('upsert', [m.id]))
+    )
   })()
 }
 
@@ -2616,6 +2630,7 @@ export function archiveMemories(ids: string[], nowIso: string): void {
   db.transaction((list: string[]) => {
     for (const id of list) stmt.run(nowIso, nowIso, id)
     syncMemorySearchRows(db)
+    captureSafely(db, () => captureMemoryRows(db, list, 'archive'))
   })(ids)
 }
 
@@ -2625,6 +2640,7 @@ export function deleteMemory(id: string): void {
   db.transaction(() => {
     db.prepare('DELETE FROM memory WHERE id=?').run(id)
     syncMemorySearchRows(db)
+    captureSafely(db, () => captureSyncVersions(db, [], memoryCaptureScope('delete', [id])))
   })()
 }
 
@@ -2650,6 +2666,13 @@ export function replaceMemories(memories: AiMemory[]): void {
       writeMemoryRow(db, m)
     }
     syncMemorySearchRows(db)
+    captureSafely(db, () =>
+      captureSyncVersions(
+        db,
+        extractMemoryRecords(allMemories(db)),
+        memoryCaptureScope('replace', [])
+      )
+    )
   })()
 }
 
@@ -2672,10 +2695,19 @@ export function scrubMemoryConversationLinks(): number {
       'UPDATE memory SET source_conversation_id=NULL WHERE source_conversation_id IS NOT NULL'
     ).run()
     // scrubConversationLinks returns the very same object for an untouched memory.
-    memories.forEach((memory, index) => {
-      if (memory !== current[index]) writeMemoryRow(db, memory)
-    })
+    const rewritten = memories.filter((memory, index) => memory !== current[index])
+    for (const memory of rewritten) writeMemoryRow(db, memory)
     if (changed) syncMemorySearchRows(db)
+    captureSafely(db, () =>
+      captureSyncVersions(
+        db,
+        extractMemoryRecords(rewritten),
+        memoryCaptureScope(
+          'scrub',
+          rewritten.map((m) => m.id)
+        )
+      )
+    )
   })()
   return changed
 }
