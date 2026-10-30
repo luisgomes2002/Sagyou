@@ -56,7 +56,9 @@ import {
   type ConflictType
 } from './modules/sync/sync-apply'
 import { latestVersions, replaceSyncableState } from './modules/sync/sync-replace'
+import { parseHlc } from './modules/sync/hlc'
 import {
+  buildOutgoing,
   encodeBatch,
   recordKey,
   type OutgoingRow,
@@ -1840,6 +1842,58 @@ export function currentSyncRecords(): Map<string, SyncRecord> {
   const db = getDb()
   const records = [...extractDataRecords(loadData(db)), ...extractMemoryRecords(allMemories(db))]
   return new Map(records.map((r) => [recordKey(r.kind, r.id), r]))
+}
+
+/** Every current version, including tombstones, for a complete encrypted snapshot. */
+export function snapshotRecords(): WireRecord[] {
+  const db = getDb()
+  const rows = db
+    .prepare('SELECT kind, id, hlc, base_hlc, deleted, seq FROM sync_records ORDER BY seq')
+    .all() as {
+    kind: OutgoingRow['kind']
+    id: string
+    hlc: string
+    base_hlc: string | null
+    deleted: number
+    seq: number
+  }[]
+  return buildOutgoing(
+    rows.map((r) => ({
+      kind: r.kind,
+      id: r.id,
+      hlc: r.hlc,
+      baseHlc: r.base_hlc,
+      deleted: r.deleted === 1,
+      seq: r.seq
+    })),
+    currentSyncRecords()
+  )
+}
+
+/** Retain a deletion until it is old and every active device has passed its server seq. */
+export function pruneSyncTombstones(minCursor: number, nowMs: number): number {
+  if (!Number.isSafeInteger(minCursor) || minCursor < 0) return 0
+  const db = getDb()
+  const rows = db
+    .prepare(
+      `SELECT kind, id, hlc FROM sync_records
+    WHERE deleted = 1 AND server_seq IS NOT NULL AND server_seq <= ?`
+    )
+    .all(minCursor) as {
+    kind: string
+    id: string
+    hlc: string
+  }[]
+  const cutoff = nowMs - 90 * 86400000
+  const remove = db.prepare('DELETE FROM sync_records WHERE kind = ? AND id = ? AND deleted = 1')
+  return db.transaction(() => {
+    let count = 0
+    for (const row of rows) {
+      const parsed = parseHlc(row.hlc)
+      if (parsed && parsed.ms < cutoff) count += remove.run(row.kind, row.id).changes
+    }
+    return count
+  })()
 }
 
 // ── Sync: engine support ─────────────────────────────────────────────────────

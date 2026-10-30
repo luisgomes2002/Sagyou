@@ -52,6 +52,9 @@ export const PUSH_DEBOUNCE_MS = 5000
 export const POLL_MS = 60000
 export const BASE_BACKOFF_MS = 5000
 export const MAX_BACKOFF_MS = 900000
+export const SNAPSHOT_EVERY_CHANGES = 5000
+export const SNAPSHOT_EVERY_MS = 30 * 86400000
+export const MAX_SNAPSHOT_PART_CHARS = 1_500_000
 /** Pull page size: 20 batches of at most ~350 KB sealed keeps a response near 7 MB. */
 export const PULL_PAGE_LIMIT = 20
 export const REQUEST_TIMEOUT_MS = 30000
@@ -83,6 +86,7 @@ export interface SyncDevice {
   revokedAt: number | null
   wipe: boolean
   current: boolean
+  cursor: number
 }
 
 export interface SyncVersionView {
@@ -153,6 +157,8 @@ export interface SyncStoreLike {
     serverSeqs: { kind: string; id: string; hlc: string; serverSeq: number }[]
   ): void
   currentSyncRecords(): Map<string, SyncRecord>
+  snapshotRecords(): WireRecord[]
+  pruneSyncTombstones(minCursor: number, nowMs: number): number
   applyRemoteRecords(
     records: IncomingRecord[],
     ctx: SyncApplyCtx
@@ -619,6 +625,8 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
         !seqs.every((n) => typeof n === 'number')
       )
         throw new SyncHttpError(200, {})
+      const known = Number(store.readSyncState('known_server_seq') ?? 0)
+      store.writeSyncState('known_server_seq', String(Math.max(known, ...seqs)))
       // Marked group by group: a failure later re-sends only what did not go.
       store.markPushed(
         group[group.length - 1].seqMax,
@@ -679,9 +687,93 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       deps.emitRemoteChanges({ generation: change.generation, state: change.state })
   }
 
+  /** A complete, independently sealed batch per part; the AAD binds order and snapshot id. */
+  const readSnapshot = async (
+    s: Session
+  ): Promise<{ items: IncomingRecord[]; seqUntil: number } | null> => {
+    let meta: Record<string, unknown>
+    try {
+      meta = await authed(s, '/snapshot', { method: 'GET' })
+    } catch (err) {
+      if (err instanceof SyncHttpError && err.status === 404) return null
+      throw err
+    }
+    const { snapshotId, seqUntil, parts, device } = meta
+    if (
+      typeof snapshotId !== 'string' ||
+      !/^[0-9A-Za-z-]{8,64}$/.test(snapshotId) ||
+      typeof seqUntil !== 'number' ||
+      !Number.isSafeInteger(seqUntil) ||
+      seqUntil < 0 ||
+      typeof parts !== 'number' ||
+      !Number.isSafeInteger(parts) ||
+      parts < 1 ||
+      parts > 10000 ||
+      typeof device !== 'string' ||
+      !/^[0-9a-f]{32}$/.test(device)
+    )
+      throw new SyncHttpError(200, {})
+    const items: IncomingRecord[] = []
+    for (let index = 0; index < parts; index++) {
+      const part = await authed(s, `/snapshot/parts/${index}?snapshotId=${snapshotId}`, {
+        method: 'GET'
+      })
+      if (typeof part.ciphertext !== 'string') throw new SyncHttpError(200, {})
+      const records = decodeBatch(
+        openBatch(s.enc, device, `snapshot:${snapshotId}:${index}`, part.ciphertext)
+      )
+      for (const record of records) items.push({ record, device, serverSeq: seqUntil })
+    }
+    return { items, seqUntil }
+  }
+
+  const uploadSnapshot = async (s: Session, seqUntil: number): Promise<void> => {
+    const snapshotId = randomUUID()
+    const records = store.snapshotRecords()
+    const parts = packBatches(records)
+    if (!parts.length) parts.push({ records: [], bytes: 0 })
+    for (let index = 0; index < parts.length; index++) {
+      const ciphertext = sealBatch(
+        s.enc,
+        s.opaqueId,
+        `snapshot:${snapshotId}:${index}`,
+        encodeBatch(parts[index].records)
+      )
+      if (ciphertext.length > MAX_SNAPSHOT_PART_CHARS) {
+        log.warn('sync', 'snapshot_part_oversize', { index })
+        return
+      }
+      await authed(s, '/snapshot/parts', {
+        method: 'POST',
+        body: { snapshotId, index, ciphertext }
+      })
+    }
+    await authed(s, '/snapshot/commit', {
+      method: 'POST',
+      body: { snapshotId, seqUntil, parts: parts.length }
+    })
+    store.writeSyncState('snapshot_seq', String(seqUntil))
+    store.writeSyncState('snapshot_at', String(deps.now()))
+    log.info('sync', 'snapshot_uploaded', {
+      records: records.length,
+      parts: parts.length,
+      seqUntil
+    })
+  }
+
   const pull = async (s: Session): Promise<number> => {
-    const since = Number(store.readSyncState('pull_cursor') ?? 0) || 0
+    let since = Number(store.readSyncState('pull_cursor') ?? 0) || 0
     let applied = 0
+    if (since === 0) {
+      const snapshot = await readSnapshot(s)
+      if (snapshot) {
+        const result = store.applyRemoteRecords(snapshot.items, ctxOf(s))
+        applied += result.applied + result.memories
+        emitChange(result)
+        since = snapshot.seqUntil
+        store.writeSyncState('pull_cursor', String(since))
+      }
+    }
     await pullPages(s, since, (items, cursor) => {
       if (items.length) {
         const result = store.applyRemoteRecords(items, ctxOf(s))
@@ -696,8 +788,10 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
   /** "A nuvem manda": everything from seq 0, then the local syncable data is replaced. */
   const takeCloud = async (s: Session): Promise<void> => {
     const all: IncomingRecord[] = []
-    let last = 0
-    await pullPages(s, 0, (items, cursor) => {
+    const snapshot = await readSnapshot(s)
+    let last = snapshot?.seqUntil ?? 0
+    if (snapshot) all.push(...snapshot.items)
+    await pullPages(s, last, (items, cursor) => {
       all.push(...items)
       last = cursor
     })
@@ -754,6 +848,27 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       // Received first, then local: "Juntar" applies the cloud by the rule, then sends.
       const pulled = await pull(s)
       const pushed = await push(s)
+      const knownSeq = Math.max(
+        Number(store.readSyncState('pull_cursor') ?? 0),
+        Number(store.readSyncState('known_server_seq') ?? 0)
+      )
+      const snapshotSeq = Number(store.readSyncState('snapshot_seq') ?? 0)
+      const snapshotAt = Number(store.readSyncState('snapshot_at') ?? 0)
+      if (
+        knownSeq > 0 &&
+        (snapshotAt === 0 ||
+          knownSeq - snapshotSeq >= SNAPSHOT_EVERY_CHANGES ||
+          deps.now() - snapshotAt >= SNAPSHOT_EVERY_MS)
+      )
+        await uploadSnapshot(s, knownSeq)
+      const devices = await refreshDevices(s)
+      const activeCursors = devices
+        .filter((device) => device.revokedAt === null)
+        .map((device) => device.cursor)
+      if (activeCursors.length) {
+        const removed = store.pruneSyncTombstones(Math.min(...activeCursors), deps.now())
+        if (removed) log.info('sync', 'tombstones_pruned', { count: removed })
+      }
       failures = 0
       offline = false
       lastSyncAt = deps.now()
@@ -904,7 +1019,8 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
           lastSeen: typeof d.lastSeen === 'number' ? d.lastSeen : 0,
           revokedAt: typeof d.revokedAt === 'number' ? d.revokedAt : null,
           wipe: d.wipe === true,
-          current: d.current === true
+          current: d.current === true,
+          cursor: typeof d.cursor === 'number' && Number.isSafeInteger(d.cursor) ? d.cursor : 0
         }
       })
     deviceNames.clear()

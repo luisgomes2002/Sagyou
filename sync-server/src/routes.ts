@@ -15,6 +15,7 @@ export const DEFAULT_PULL_LIMIT = 20
 export const MAX_PULL_LIMIT = 20
 /** Upper bound on snapshot parts (1.5 MB each: ~15 GB, far above any real store). */
 export const MAX_SNAPSHOT_PARTS = 10000
+export const MAX_SNAPSHOT_PART_CHARS = 1_500_000
 /** `last_seen` is rewritten at most once a minute per device. */
 const TOUCH_EVERY_MS = 60 * 1000
 
@@ -412,6 +413,7 @@ async function pullRoute(request: Request, url: URL, deps: RouteDeps): Promise<R
   // up to the whole log (its own batches it never needs to pull).
   const cursor = more ? changes[changes.length - 1].seq : maxSeq
   if (cursor !== device.cursor) await deps.db.setCursor(device.id, cursor)
+  await deps.db.pruneCoveredChanges()
   return reply(200, { changes, more, cursor })
 }
 
@@ -442,6 +444,7 @@ async function revokeRoute(request: Request, id: string, deps: RouteDeps): Promi
   if (!(await deps.db.revokeDevice(id, body.wipe, deps.now()))) {
     throw new HttpError(404, { error: 'not found' })
   }
+  await deps.db.pruneCoveredChanges()
   return reply(200, { ok: true })
 }
 
@@ -495,7 +498,7 @@ async function snapshotPartPut(request: Request, deps: RouteDeps): Promise<Respo
   const ok = await deps.db.putSnapshotPart({
     snapshotId: str(body, 'snapshotId', SNAPSHOT_ID, 64),
     index: int(body.index, 'index', 0, MAX_SNAPSHOT_PARTS - 1),
-    ciphertext: str(body, 'ciphertext', BASE64, MAX_BODY_BYTES),
+    ciphertext: str(body, 'ciphertext', BASE64, MAX_SNAPSHOT_PART_CHARS),
     device: device.id,
     now: deps.now()
   })
@@ -506,14 +509,21 @@ async function snapshotPartPut(request: Request, deps: RouteDeps): Promise<Respo
 async function snapshotCommit(request: Request, deps: RouteDeps): Promise<Response> {
   const device = await authenticate(request, deps)
   const body = await readJson(request)
+  const seqUntil = int(body.seqUntil, 'seqUntil', 0, Number.MAX_SAFE_INTEGER)
+  if (seqUntil > (await deps.db.maxSequence()))
+    throw new HttpError(409, { error: 'snapshot cursor ahead' })
+  const previous = await deps.db.currentSnapshot()
+  if (previous && seqUntil < previous.seqUntil)
+    throw new HttpError(409, { error: 'snapshot cursor behind' })
   const ok = await deps.db.commitSnapshot({
     snapshotId: str(body, 'snapshotId', SNAPSHOT_ID, 64),
-    seqUntil: int(body.seqUntil, 'seqUntil', 0, Number.MAX_SAFE_INTEGER),
+    seqUntil,
     parts: int(body.parts, 'parts', 1, MAX_SNAPSHOT_PARTS),
     device: device.id,
     now: deps.now()
   })
   if (!ok) throw new HttpError(409, { error: 'snapshot incomplete' })
+  await deps.db.pruneCoveredChanges()
   return reply(200, { ok: true })
 }
 

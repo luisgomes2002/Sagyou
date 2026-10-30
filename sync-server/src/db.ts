@@ -91,6 +91,8 @@ export interface SyncDb {
   insertChanges(device: string, items: ChangeInput[], now: number): Promise<number[]>
   pullChanges(device: string, since: number, limit: number): Promise<PullResult>
   setCursor(id: string, cursor: number): Promise<void>
+  /** Compact only when every non-revoked device has passed the committed snapshot. */
+  pruneCoveredChanges(): Promise<void>
   /** False when the snapshot is already committed or its parts belong to another device. */
   putSnapshotPart(p: SnapshotPartInput): Promise<boolean>
   /**
@@ -105,6 +107,7 @@ export interface SyncDb {
     now: number
   }): Promise<boolean>
   currentSnapshot(): Promise<SnapshotRow | null>
+  maxSequence(): Promise<number>
   snapshotPart(snapshotId: string, index: number): Promise<string | null>
 }
 
@@ -298,7 +301,10 @@ export class D1SyncDb implements SyncDb {
   async pullChanges(device: string, since: number, limit: number): Promise<PullResult> {
     // A batch runs as one transaction, so maxSeq and the page agree.
     const [maxRes, pageRes] = await this.db.batch([
-      this.db.prepare('SELECT COALESCE(MAX(seq), 0) AS m FROM changes'),
+      this.db.prepare(`SELECT MAX(
+        (SELECT COALESCE(MAX(seq), 0) FROM changes),
+        (SELECT COALESCE(MAX(seq_until), 0) FROM snapshots)
+      ) AS m`),
       this.db
         .prepare(
           `SELECT seq, device, batch_id, ciphertext FROM changes
@@ -315,7 +321,25 @@ export class D1SyncDb implements SyncDb {
   }
 
   async setCursor(id: string, cursor: number): Promise<void> {
-    await this.db.prepare('UPDATE devices SET cursor = ?2 WHERE id = ?1').bind(id, cursor).run()
+    await this.db
+      .prepare('UPDATE devices SET cursor = MAX(cursor, ?2) WHERE id = ?1')
+      .bind(id, cursor)
+      .run()
+  }
+
+  async pruneCoveredChanges(): Promise<void> {
+    const snapshot = await this.currentSnapshot()
+    if (!snapshot) return
+    const row = await this.db
+      .prepare('SELECT MIN(cursor) AS min_cursor FROM devices WHERE revoked_at IS NULL')
+      .first<{ min_cursor: number | null }>()
+    if (
+      row?.min_cursor !== null &&
+      row?.min_cursor !== undefined &&
+      row.min_cursor < snapshot.seqUntil
+    )
+      return
+    await this.db.prepare('DELETE FROM changes WHERE seq <= ?1').bind(snapshot.seqUntil).run()
   }
 
   async putSnapshotPart(p: SnapshotPartInput): Promise<boolean> {
@@ -346,6 +370,8 @@ export class D1SyncDb implements SyncDb {
     device: string
     now: number
   }): Promise<boolean> {
+    const previous = await this.currentSnapshot()
+    if (previous && s.seqUntil < previous.seqUntil) return false
     const count = await this.db
       .prepare(
         `SELECT COUNT(*) AS n FROM snapshot_parts
@@ -389,6 +415,18 @@ export class D1SyncDb implements SyncDb {
           createdAt: row.created_at
         }
       : null
+  }
+
+  async maxSequence(): Promise<number> {
+    const row = await this.db
+      .prepare(
+        `SELECT MAX(
+      (SELECT COALESCE(MAX(seq), 0) FROM changes),
+      (SELECT COALESCE(MAX(seq_until), 0) FROM snapshots)
+    ) AS seq`
+      )
+      .first<{ seq: number }>()
+    return row?.seq ?? 0
   }
 
   async snapshotPart(snapshotId: string, index: number): Promise<string | null> {

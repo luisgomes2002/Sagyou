@@ -129,6 +129,8 @@ class FakeServer {
   requests: { url: string; init: FetchInit }[] = []
   mode: 'up' | 'down' | 'error500' | 'unauthorized' = 'up'
   private seq = 0
+  snapshot: { id: string; seqUntil: number; device: string; parts: string[] } | null = null
+  pendingParts = new Map<string, { device: string; parts: Map<number, string> }>()
 
   pushes(): number {
     return this.requests.filter((r) => r.url.endsWith('/push')).length
@@ -219,6 +221,40 @@ class FakeServer {
         }))
       })
     }
+    if (u.pathname === '/snapshot' && init.method === 'GET') {
+      if (!this.snapshot) return reply(404, { error: 'no snapshot' })
+      return reply(200, {
+        snapshotId: this.snapshot.id,
+        seqUntil: this.snapshot.seqUntil,
+        device: this.snapshot.device,
+        parts: this.snapshot.parts.length
+      })
+    }
+    if (u.pathname === '/snapshot/parts' && init.method === 'POST') {
+      const id = String(body.snapshotId)
+      const pending = this.pendingParts.get(id) ?? {
+        device: me.id,
+        parts: new Map<number, string>()
+      }
+      pending.parts.set(Number(body.index), String(body.ciphertext))
+      this.pendingParts.set(id, pending)
+      return reply(200, { ok: true })
+    }
+    if (u.pathname === '/snapshot/commit' && init.method === 'POST') {
+      const pending = this.pendingParts.get(String(body.snapshotId))
+      if (!pending || pending.parts.size !== Number(body.parts))
+        return reply(409, { error: 'incomplete' })
+      this.snapshot = {
+        id: String(body.snapshotId),
+        seqUntil: Number(body.seqUntil),
+        device: pending.device,
+        parts: [...pending.parts].sort((a, b) => a[0] - b[0]).map((item) => item[1])
+      }
+      return reply(200, { ok: true })
+    }
+    const part = /^\/snapshot\/parts\/(\d+)$/.exec(u.pathname)
+    if (part && init.method === 'GET' && this.snapshot)
+      return reply(200, { ciphertext: this.snapshot.parts[Number(part[1])] })
     const revoke = /^\/devices\/([0-9a-f]{32})\/revoke$/.exec(u.pathname)
     if (revoke) {
       const target = this.devices.find((d) => d.id === revoke[1])
@@ -340,6 +376,34 @@ class FakeStore implements SyncStoreLike {
 
   pendingOutgoingCount(): number {
     return this.pendingOutgoing().length
+  }
+
+  snapshotRecords(): WireRecord[] {
+    const current = this.currentSyncRecords()
+    return [...this.versions.values()].map((v) => ({
+      kind: v.kind,
+      id: v.id,
+      hlc: v.hlc,
+      baseHlc: v.baseHlc,
+      deleted: v.deleted,
+      ...(v.deleted ? {} : { payload: current.get(recordKey(v.kind, v.id))?.payload })
+    }))
+  }
+
+  pruneSyncTombstones(minCursor: number, nowMs: number): number {
+    let count = 0
+    for (const [key, v] of this.versions) {
+      if (
+        v.deleted &&
+        v.serverSeq !== null &&
+        v.serverSeq <= minCursor &&
+        Number(v.hlc.slice(0, 15)) < nowMs - 90 * 86400000
+      ) {
+        this.versions.delete(key)
+        count++
+      }
+    }
+    return count
   }
 
   markPushed(
@@ -682,6 +746,60 @@ describe('pareamento e convergência', () => {
     expect([...parsed.syncKey]).toEqual([...key])
     expect(parsed.invite).toBe('convite_abcdefghijklmnop')
     expect(() => parsePairCode('sagyou-sync:1:xx')).toThrow('Código de pareamento inválido.')
+  })
+})
+
+describe('retrato e retenção', () => {
+  it('publica um novo retrato depois de 30 dias mesmo sem novas edições', async () => {
+    const { a } = await pairedDevices(withData({ projects: [project('p1', 'Casa')] }))
+    const before = server.snapshot?.id
+    expect(before).toBeDefined()
+    clock.t += 30 * 86400000 + 1
+    await a.engine.syncNow()
+    expect(server.snapshot?.id).not.toBe(before)
+  })
+
+  it('um aparelho novo recebe o retrato mesmo depois de o histórico antigo ser apagado', async () => {
+    const a = device(server, clock, ID_A)
+    a.store.save(
+      withData({ projects: [project('p1', 'Casa')], tasks: [task('t1', 'p1', 'Lavar')] })
+    )
+    await a.engine.activate(SERVER_URL, SETUP, 'PC de casa')
+    await clock.advance(0)
+    expect(server.snapshot).not.toBeNull()
+    server.changes = []
+    a.store.save(
+      withData({
+        projects: [project('p1', 'Casa')],
+        tasks: [task('t1', 'p1', 'Lavar'), task('t2', 'p1', 'Secar')]
+      })
+    )
+    await a.engine.syncNow()
+    const b = device(server, clock, ID_B)
+    const { code } = await a.engine.createInvite()
+    await b.engine.join(code, 'merge', 'PC do trabalho')
+    expect(dataHashes(b.store)).toEqual(dataHashes(a.store))
+  })
+
+  it('só remove tombstone antigo confirmado por todos os cursores', () => {
+    const store = new FakeStore(ID_A, clock.now)
+    const version = (id: string, ageDays: number, serverSeq: number | null): Version => ({
+      kind: 'project',
+      id,
+      hlc: `${String(clock.now() - ageDays * 86400000).padStart(15, '0')}-0000-${ID_A}`,
+      baseHlc: null,
+      hash: '',
+      deleted: true,
+      deviceId: ID_A,
+      seq: 1,
+      serverSeq
+    })
+    store.versions.set('project:novo', version('novo', 89, 10))
+    store.versions.set('project:antigo', version('antigo', 91, 10))
+    store.versions.set('project:sem-confirmacao', version('sem-confirmacao', 91, null))
+    expect(store.pruneSyncTombstones(9, clock.now())).toBe(0)
+    expect(store.pruneSyncTombstones(10, clock.now())).toBe(1)
+    expect([...store.versions.keys()].sort()).toEqual(['project:novo', 'project:sem-confirmacao'])
   })
 })
 

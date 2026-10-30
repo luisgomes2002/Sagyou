@@ -110,7 +110,10 @@ class MemoryDb implements SyncDb {
   }
 
   async pullChanges(device: string, since: number, limit: number): Promise<PullResult> {
-    const maxSeq = this.changes.reduce((m, c) => Math.max(m, c.seq), 0)
+    const maxSeq = Math.max(
+      this.changes.reduce((m, c) => Math.max(m, c.seq), 0),
+      this.snapshots[0]?.seqUntil ?? 0
+    )
     const rows = this.changes
       .filter((c) => c.seq > since && c.seq <= maxSeq && c.device !== device)
       .sort((a, b) => a.seq - b.seq)
@@ -126,7 +129,15 @@ class MemoryDb implements SyncDb {
 
   async setCursor(id: string, cursor: number): Promise<void> {
     const d = this.devices.get(id)
-    if (d) d.cursor = cursor
+    if (d) d.cursor = Math.max(d.cursor, cursor)
+  }
+
+  async pruneCoveredChanges(): Promise<void> {
+    const snap = this.snapshots[0]
+    if (!snap) return
+    const active = [...this.devices.values()].filter((d) => d.revokedAt === null)
+    if (active.every((d) => d.cursor >= snap.seqUntil))
+      this.changes = this.changes.filter((c) => c.seq > snap.seqUntil)
   }
 
   async putSnapshotPart(p: SnapshotPartInput): Promise<boolean> {
@@ -151,6 +162,7 @@ class MemoryDb implements SyncDb {
     device: string
     now: number
   }): Promise<boolean> {
+    if (this.snapshots[0] && s.seqUntil < this.snapshots[0].seqUntil) return false
     const mine = this.parts.filter(
       (x) => x.snapshotId === s.snapshotId && x.device === s.device && x.index < s.parts
     )
@@ -165,6 +177,10 @@ class MemoryDb implements SyncDb {
 
   async currentSnapshot(): Promise<SnapshotRow | null> {
     return this.snapshots[0] ? { ...this.snapshots[0] } : null
+  }
+
+  async maxSequence(): Promise<number> {
+    return Math.max(this.nextSeq - 1, this.snapshots[0]?.seqUntil ?? 0)
   }
 
   async snapshotPart(snapshotId: string, index: number): Promise<string | null> {
@@ -803,6 +819,111 @@ describe('/devices', () => {
   })
 })
 
+describe('limpeza do histórico depois do retrato', () => {
+  it('recusa substituir o retrato por outro que cobre menos mudanças', async () => {
+    const { db, deps } = setup()
+    const a = await registerFirst(deps)
+    await push(deps, a, ['um', 'dois'])
+    const commit = async (snapshotId: string, seqUntil: number): Promise<Response> => {
+      await handle(
+        req('POST', '/snapshot/parts', {
+          token: a,
+          body: { snapshotId, index: 0, ciphertext: 'eA==' }
+        }),
+        deps
+      )
+      return handle(
+        req('POST', '/snapshot/commit', { token: a, body: { snapshotId, seqUntil, parts: 1 } }),
+        deps
+      )
+    }
+    expect((await commit('retrato-1001', 2)).status).toBe(200)
+    expect((await commit('retrato-1002', 1)).status).toBe(409)
+    expect(db.snapshots[0].id).toBe('retrato-1001')
+  })
+
+  it('recusa retrato que diz cobrir mudanças que o servidor ainda não recebeu', async () => {
+    const { deps } = setup()
+    const a = await registerFirst(deps)
+    await push(deps, a, ['um'])
+    const snapshotId = 'retrato-futuro'
+    await handle(
+      req('POST', '/snapshot/parts', {
+        token: a,
+        body: { snapshotId, index: 0, ciphertext: 'eA==' }
+      }),
+      deps
+    )
+    const res = await handle(
+      req('POST', '/snapshot/commit', { token: a, body: { snapshotId, seqUntil: 99, parts: 1 } }),
+      deps
+    )
+    expect(res.status).toBe(409)
+  })
+
+  it('mantém mudanças até todos os aparelhos ativos passarem do retrato', async () => {
+    const { db, deps } = setup()
+    const a = await registerFirst(deps)
+    const b = await pairSecond(deps, a)
+    await push(deps, a, ['um', 'dois'])
+    const id = 'retrato-1234'
+    await handle(
+      req('POST', '/snapshot/parts', {
+        token: a,
+        body: { snapshotId: id, index: 0, ciphertext: 'eA==' }
+      }),
+      deps
+    )
+    await handle(
+      req('POST', '/snapshot/commit', {
+        token: a,
+        body: { snapshotId: id, seqUntil: 2, parts: 1 }
+      }),
+      deps
+    )
+    expect(db.changes).toHaveLength(2)
+    await handle(req('GET', '/pull?since=0', { token: a }), deps)
+    expect(db.changes).toHaveLength(2)
+    await handle(req('GET', '/pull?since=0', { token: b }), deps)
+    expect(db.changes).toHaveLength(0)
+    const after = await json(await handle(req('GET', '/pull?since=2', { token: b }), deps))
+    expect(after.cursor).toBe(2)
+  })
+
+  it('um aparelho revogado deixa de segurar a limpeza', async () => {
+    const { db, deps } = setup()
+    const a = await registerFirst(deps)
+    await pairSecond(deps, a)
+    await push(deps, a, ['um'])
+    const id = 'retrato-5678'
+    await handle(
+      req('POST', '/snapshot/parts', {
+        token: a,
+        body: { snapshotId: id, index: 0, ciphertext: 'eA==' }
+      }),
+      deps
+    )
+    await handle(
+      req('POST', '/snapshot/commit', {
+        token: a,
+        body: { snapshotId: id, seqUntil: 1, parts: 1 }
+      }),
+      deps
+    )
+    await handle(req('GET', '/pull?since=0', { token: a }), deps)
+    expect(db.changes).toHaveLength(1)
+    await handle(
+      req('POST', `/devices/${DEV_B}/revoke`, {
+        token: a,
+        headers: { 'x-key-proof': PROOF },
+        body: { wipe: false }
+      }),
+      deps
+    )
+    expect(db.changes).toHaveLength(0)
+  })
+})
+
 describe('segredos', () => {
   it('nenhuma resposta além da que entrega o token, nem o banco, contém o token em claro', async () => {
     const { db, deps } = setup()
@@ -843,10 +964,28 @@ describe('segredos', () => {
 })
 
 describe('retrato (item 7)', () => {
+  it('recusa uma parte cifrada maior que 1,5 MB', async () => {
+    const { deps } = setup()
+    const a = await registerFirst(deps)
+    const res = await handle(
+      req('POST', '/snapshot/parts', {
+        token: a,
+        body: {
+          snapshotId: 'retrato-grande',
+          index: 0,
+          ciphertext: 'A'.repeat(1_500_001)
+        }
+      }),
+      deps
+    )
+    expect(res.status).toBe(400)
+  })
+
   it('sobe partes, confirma, e outro aparelho baixa', async () => {
     const { deps } = setup()
     const a = await registerFirst(deps)
     const b = await pairSecond(deps, a)
+    await push(deps, a, ['1', '2', '3', '4', '5', '6', '7'])
     const id = '6f1c2a4e-1b2c-4d3e-8f9a-0123456789ab'
     expect((await handle(req('GET', '/snapshot', { token: b }), deps)).status).toBe(404)
     for (const index of [0, 1]) {
@@ -888,7 +1027,7 @@ describe('retrato (item 7)', () => {
     const res = await handle(
       req('POST', '/snapshot/commit', {
         token: a,
-        body: { snapshotId: id, seqUntil: 1, parts: 2 }
+        body: { snapshotId: id, seqUntil: 0, parts: 2 }
       }),
       deps
     )
@@ -899,6 +1038,7 @@ describe('retrato (item 7)', () => {
   it('um retrato novo confirmado substitui o anterior', async () => {
     const { db, deps } = setup()
     const a = await registerFirst(deps)
+    await push(deps, a, ['um'])
     const ids = ['00000000-0000-4000-8000-00000000000a', '00000000-0000-4000-8000-00000000000b']
     for (const [n, id] of ids.entries()) {
       await handle(
