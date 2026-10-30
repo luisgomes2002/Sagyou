@@ -64,8 +64,8 @@ do celular.
   aprovadas pelo app mobile; até o app existir, são recusadas.
 - **Ligar o PC:** ESP32 com Wake-on-LAN, alimentado por carregador próprio. **Desligar:**
   o ESP32 envia um comando pela rede local e um script no Windows executa
-  `shutdown /s /t 60`, que pode ser cancelado. Primeiro por bot do Telegram; depois
-  pelo app, via Worker.
+  `shutdown /s /t 60`, que pode ser cancelado. O comando remoto vem só pelo app, via
+  Worker (etapa 6); sem bot do Telegram. Até lá, o ESP32 funciona só na rede local.
 
 ## Etapas
 
@@ -102,8 +102,9 @@ As etapas 4 e 5 não dependem do sync e podem entrar antes, se o ESP32 chegar ce
 - Wake-on-LAN no Windows: BIOS (Wake on LAN ligado, ErP desligado), placa de rede
   ("pacote mágico"), Inicialização Rápida desligada, IPs fixos para o PC e para o ESP32.
 - Comprar o ESP32 (DevKit ou Arduino Nano ESP32) e reservar um carregador USB.
-- Bot do Telegram (@BotFather) e chat ID; script de escuta no Windows
-  (`C:\Program Files\esp32\`, tarefa como SYSTEM, firewall só para o IP do ESP32).
+- Firmware básico do ESP32 (Wake-on-LAN e desligar pela rede local); script de escuta
+  no Windows (`C:\Program Files\esp32\`, tarefa como SYSTEM, firewall só para o IP do
+  ESP32).
 - Autologon + tarefa de logon que bloqueia a tela.
 
 ## Perguntas em aberto
