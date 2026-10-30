@@ -750,6 +750,16 @@ describe('pareamento e convergência', () => {
 })
 
 describe('retrato e retenção', () => {
+  it('não reaplica o retrato em ciclos posteriores quando o cursor ainda é zero', async () => {
+    const { a } = await pairedDevices(withData({ projects: [project('p1', 'Casa')] }))
+    expect(a.store.readSyncState('pull_cursor')).toBe('0')
+    const snapshotsRead = (): number =>
+      server.requests.filter((r) => r.url.endsWith('/snapshot') && r.init.method === 'GET').length
+    const before = snapshotsRead()
+    await a.engine.syncNow()
+    expect(snapshotsRead()).toBe(before)
+  })
+
   it('publica um novo retrato depois de 30 dias mesmo sem novas edições', async () => {
     const { a } = await pairedDevices(withData({ projects: [project('p1', 'Casa')] }))
     const before = server.snapshot?.id

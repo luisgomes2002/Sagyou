@@ -764,7 +764,7 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
   const pull = async (s: Session): Promise<number> => {
     let since = Number(store.readSyncState('pull_cursor') ?? 0) || 0
     let applied = 0
-    if (since === 0) {
+    if (since === 0 && store.readSyncState('snapshot_checked') !== '1') {
       const snapshot = await readSnapshot(s)
       if (snapshot) {
         const result = store.applyRemoteRecords(snapshot.items, ctxOf(s))
@@ -773,6 +773,7 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
         since = snapshot.seqUntil
         store.writeSyncState('pull_cursor', String(since))
       }
+      store.writeSyncState('snapshot_checked', '1')
     }
     await pullPages(s, since, (items, cursor) => {
       if (items.length) {
@@ -797,6 +798,7 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
     })
     const result = store.replaceWithRemoteRecords(all, ctxOf(s))
     store.writeSyncState('pull_cursor', String(last))
+    store.writeSyncState('snapshot_checked', '1')
     emitChange(result)
     log.info('sync', 'took_cloud', { records: result.records })
   }
@@ -943,6 +945,7 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
 
   const resetCursors = (): void => {
     store.writeSyncState('pull_cursor', '0')
+    store.writeSyncState('snapshot_checked', '0')
     // Everything this device minted goes up again (the server drops nothing; the rule skips equals).
     store.writeSyncState('pushed_seq', '0')
   }
