@@ -56,7 +56,7 @@ import {
   type OutgoingRow,
   type WireRecord
 } from '../modules/sync/sync-batch'
-import { sealBatch } from '../modules/sync/sync-crypto'
+import { deriveKeys, keyProof, sealBatch } from '../modules/sync/sync-crypto'
 import { buildSyncRows, planSyncChanges } from '../modules/sync/sync-plan'
 import { latestVersions, replaceSyncableState } from '../modules/sync/sync-replace'
 import {
@@ -127,7 +127,7 @@ class FakeServer {
   changes: { seq: number; device: string; batchId: string; ciphertext: string }[] = []
   /** Every request as sent: URL, headers and body, for the leak test. */
   requests: { url: string; init: FetchInit }[] = []
-  mode: 'up' | 'down' | 'error500' = 'up'
+  mode: 'up' | 'down' | 'error500' | 'unauthorized' = 'up'
   private seq = 0
 
   pushes(): number {
@@ -152,6 +152,7 @@ class FakeServer {
       json: async () => body
     })
     if (this.mode === 'error500') return reply(500, { error: 'internal error' })
+    if (this.mode === 'unauthorized') return reply(401, { error: 'invalid factor' })
     const u = new URL(url)
     const body = init.body ? (JSON.parse(init.body) as Row) : {}
     const register = (
@@ -180,6 +181,9 @@ class FakeServer {
       this.invites.add(String(body.inviteHash))
       return reply(200, { expiresAt: 0 })
     }
+    if (u.pathname === '/totp/enroll')
+      return reply(200, { uri: 'otpauth://totp/Sagyou?secret=AAAAAAAA&issuer=Sagyou' })
+    if (u.pathname === '/totp/confirm') return reply(200, { backupCodes: ['ABCDEF0123456789'] })
     if (u.pathname === '/push') {
       const seqs = (body.batches as Row[]).map((b) => {
         this.changes.push({
@@ -617,6 +621,20 @@ async function pairedDevices(
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 describe('pareamento e convergência', () => {
+  it('recupera com a mesma chave e envia a prova mais o segundo fator', async () => {
+    const { a } = await pairedDevices(withData({ projects: [project('p1', 'Casa')] }))
+    const c = device(server, clock, 'c'.repeat(32))
+    await c.engine.recover(a.engine.recoveryCode(), SETUP, 'PC novo', { totp: '123456' })
+    expect(
+      Buffer.from(c.config.stored!.syncKey).equals(Buffer.from(a.config.stored!.syncKey))
+    ).toBe(true)
+    const request = server.requests.findLast((r) => r.url.endsWith('/setup'))
+    expect(request?.init.headers['x-key-proof']).toBe(
+      keyProof(deriveKeys(a.config.stored!.syncKey).id)
+    )
+    expect(request?.init.headers['x-totp-code']).toBe('123456')
+  })
+
   it('push seguido de pull entre dois motores sobre o mesmo servidor converge', async () => {
     const { a, b } = await pairedDevices(
       withData({ projects: [project('p1', 'Casa')], tasks: [task('t1', 'p1', 'Lavar')] })
@@ -715,6 +733,37 @@ describe('ritmo', () => {
 })
 
 describe('revogar e apagar', () => {
+  it('manda a prova da chave e o código somente na ação protegida', async () => {
+    const { a, b } = await pairedDevices(withData({}))
+    const key = deriveKeys(a.config.stored!.syncKey).id
+    const setup = server.requests.find((r) => r.url.endsWith('/setup'))
+    expect(setup?.init.headers['x-key-proof']).toBe(keyProof(key))
+    expect(setup?.init.body).not.toContain(keyProof(key))
+    const other = (await a.engine.devices()).find((d) => !d.current)
+    await a.engine.revoke(other!.id, true, { totp: '123456' })
+    const request = server.requests.findLast((r) => r.url.endsWith('/revoke'))
+    expect(request?.init.headers['x-key-proof']).toBe(keyProof(key))
+    expect(request?.init.headers['x-totp-code']).toBe('123456')
+    expect(request?.init.body).not.toContain('123456')
+    expect(b.config.stored).not.toBeNull()
+  })
+
+  it('401 por código errado não desconecta nem apaga o aparelho', async () => {
+    const { a } = await pairedDevices(withData({}))
+    const other = (await a.engine.devices()).find((d) => !d.current)
+    server.mode = 'unauthorized'
+    await expect(a.engine.revoke(other!.id, true, { totp: '000000' })).rejects.toThrow()
+    expect(a.config.stored).not.toBeNull()
+    expect(a.wipe).not.toHaveBeenCalled()
+    expect(a.engine.status().state).toBe('ok')
+  })
+
+  it('cadastro do autenticador entrega QR e códigos reserva ao confirmar', async () => {
+    const { a } = await pairedDevices(withData({}))
+    expect(await a.engine.enrollTotp()).toContain('otpauth://totp/')
+    expect(await a.engine.confirmTotp('123456')).toEqual(['ABCDEF0123456789'])
+  })
+
   it('um TypeError de rede ou um 5xx nunca apaga nada', async () => {
     const { a } = await pairedDevices(withData({ projects: [project('p1', 'Casa')] }))
     const before = dataHashes(a.store)

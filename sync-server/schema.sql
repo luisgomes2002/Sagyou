@@ -44,3 +44,17 @@ CREATE TABLE IF NOT EXISTS snapshot_parts (
   created_at INTEGER NOT NULL,
   PRIMARY KEY (snapshot_id, idx)
 );
+
+-- One authentication policy for the sync group. TOTP is AES-GCM encrypted with
+-- TOTP_ENC_KEY, which lives only in the Worker's secret store.
+CREATE TABLE IF NOT EXISTS auth (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  key_proof_hash TEXT NOT NULL,
+  version INTEGER NOT NULL DEFAULT 0,
+  totp_cipher TEXT,
+  pending_totp_cipher TEXT,
+  totp_confirmed INTEGER NOT NULL DEFAULT 0,
+  backup_hashes TEXT NOT NULL DEFAULT '[]',
+  fail_count INTEGER NOT NULL DEFAULT 0,
+  locked_until INTEGER NOT NULL DEFAULT 0
+);

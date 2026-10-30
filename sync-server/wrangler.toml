@@ -9,3 +9,4 @@ database_name = "sagyou-sync"
 database_id = "COLE-AQUI-O-ID-DO-D1"
 
 # SETUP_TOKEN is a secret: `wrangler secret put SETUP_TOKEN`, never here.
+# TOTP_ENC_KEY is another secret: 32 random bytes, base64url encoded.

@@ -5,6 +5,7 @@ import { handle } from './routes'
 export interface Env {
   DB: D1Database
   SETUP_TOKEN?: string
+  TOTP_ENC_KEY?: string
 }
 
 export default {
@@ -12,6 +13,7 @@ export default {
     return handle(request, {
       db: new D1SyncDb(env.DB),
       setupToken: env.SETUP_TOKEN,
+      totpEncKey: env.TOTP_ENC_KEY,
       now: () => Date.now()
     })
   }

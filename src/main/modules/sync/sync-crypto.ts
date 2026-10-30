@@ -38,6 +38,11 @@ export function opaqueDeviceId(idKey: Uint8Array, deviceId: string): string {
   return createHmac('sha256', idKey).update(deviceId).digest('hex').slice(0, 32)
 }
 
+/** Proof of possession of the shared sync key, without revealing it to the Worker. */
+export function keyProof(idKey: Uint8Array): string {
+  return createHmac('sha256', idKey).update('sagyou-sync-auth-v1').digest('hex')
+}
+
 function associatedData(opaqueId: string, batchId: string): Uint8Array {
   return new TextEncoder().encode(`sagyou-sync|${PROTOCOL_VERSION}|${opaqueId}|${batchId}`)
 }

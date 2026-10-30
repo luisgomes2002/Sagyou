@@ -4,6 +4,7 @@
 // opaque device ids, ciphertext and numbers; device tokens are stored as
 // SHA-256 hex, and a revoked token answers 401 saying whether to wipe.
 import { describe, expect, it } from 'vitest'
+import { createHmac } from 'crypto'
 import { handle, MAX_BODY_BYTES, MAX_PULL_LIMIT, type RouteDeps } from '../routes'
 import type {
   ChangeInput,
@@ -20,6 +21,8 @@ const SETUP = 'setup-secret-de-teste'
 const DEV_A = 'a'.repeat(32)
 const DEV_B = 'b'.repeat(32)
 const DEV_C = 'c'.repeat(32)
+const PROOF = '1'.repeat(64)
+const ENC_KEY = Buffer.alloc(32, 7).toString('base64url')
 
 interface PartRow {
   snapshotId: string
@@ -35,6 +38,7 @@ class MemoryDb implements SyncDb {
   invites = new Map<string, { expiresAt: number; usedAt: number | null }>()
   snapshots: SnapshotRow[] = []
   parts: PartRow[] = []
+  auth: import('../db').AuthRow | null = null
   private nextSeq = 1
 
   async deviceByTokenHash(tokenHash: string): Promise<DeviceRow | null> {
@@ -168,6 +172,32 @@ class MemoryDb implements SyncDb {
       this.parts.find((x) => x.snapshotId === snapshotId && x.index === index)?.ciphertext ?? null
     )
   }
+
+  async getAuth(): Promise<import('../db').AuthRow | null> {
+    return this.auth ? { ...this.auth, backupHashes: [...this.auth.backupHashes] } : null
+  }
+
+  async createAuth(proofHash: string): Promise<boolean> {
+    if (this.auth) return false
+    this.auth = {
+      version: 0,
+      proofHash,
+      totpCipher: null,
+      pendingTotpCipher: null,
+      totpConfirmed: false,
+      backupHashes: [],
+      failCount: 0,
+      lockedUntil: 0
+    }
+    return true
+  }
+
+  async saveAuth(auth: import('../db').AuthRow): Promise<boolean> {
+    if (auth.version !== this.auth?.version) return false
+    this.auth = { ...auth, backupHashes: [...auth.backupHashes] }
+    this.auth.version++
+    return true
+  }
 }
 
 function setup(start = 1_700_000_000_000): {
@@ -177,7 +207,7 @@ function setup(start = 1_700_000_000_000): {
 } {
   const db = new MemoryDb()
   const clock = { now: start }
-  const deps: RouteDeps = { db, setupToken: SETUP, now: () => clock.now }
+  const deps: RouteDeps = { db, setupToken: SETUP, totpEncKey: ENC_KEY, now: () => clock.now }
   return { db, deps, clock }
 }
 
@@ -209,7 +239,7 @@ async function sha256Hex(text: string): Promise<string> {
 async function registerFirst(deps: RouteDeps, deviceId = DEV_A): Promise<string> {
   const res = await handle(
     req('POST', '/setup', {
-      headers: { 'x-setup-token': SETUP },
+      headers: { 'x-setup-token': SETUP, 'x-key-proof': PROOF },
       body: { deviceId, nameCipher: 'bm9tZQ==' }
     }),
     deps
@@ -218,6 +248,46 @@ async function registerFirst(deps: RouteDeps, deviceId = DEV_A): Promise<string>
   const { token } = await json(res)
   expect(typeof token).toBe('string')
   return token as string
+}
+
+function codeFromUri(uri: string, now: number): string {
+  const secret = new URL(uri).searchParams.get('secret') ?? ''
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
+  let bits = 0
+  let value = 0
+  const bytes: number[] = []
+  for (const char of secret) {
+    value = (value << 5) | chars.indexOf(char)
+    bits += 5
+    if (bits >= 8) {
+      bytes.push((value >>> (bits - 8)) & 255)
+      bits -= 8
+    }
+  }
+  const counter = Buffer.alloc(8)
+  counter.writeBigUInt64BE(BigInt(Math.floor(now / 30_000)))
+  const hmac = createHmac('sha1', Buffer.from(bytes)).update(counter).digest()
+  const offset = hmac[hmac.length - 1] & 15
+  return ((hmac.readUInt32BE(offset) & 0x7fffffff) % 1_000_000).toString().padStart(6, '0')
+}
+
+async function enroll(
+  deps: RouteDeps,
+  token: string
+): Promise<{ uri: string; code: string; backupCodes: string[] }> {
+  const response = await handle(
+    req('POST', '/totp/enroll', { token, headers: { 'x-key-proof': PROOF } }),
+    deps
+  )
+  expect(response.status).toBe(200)
+  const uri = (await json(response)).uri as string
+  const code = codeFromUri(uri, deps.now())
+  const confirmed = await handle(
+    req('POST', '/totp/confirm', { token, headers: { 'x-key-proof': PROOF }, body: { code } }),
+    deps
+  )
+  expect(confirmed.status).toBe(200)
+  return { uri, code, backupCodes: (await json(confirmed)).backupCodes as string[] }
 }
 
 async function pairSecond(deps: RouteDeps, tokenA: string, deviceId = DEV_B): Promise<string> {
@@ -234,6 +304,143 @@ async function pairSecond(deps: RouteDeps, tokenA: string, deviceId = DEV_B): Pr
   expect(res.status).toBe(200)
   return (await json(res)).token as string
 }
+
+describe('prova da chave e segundo fator', () => {
+  it('o primeiro setup exige prova, e outro setup exige prova igual', async () => {
+    const { db, deps } = setup()
+    const body = { deviceId: DEV_A, nameCipher: 'eA==' }
+    expect(
+      (await handle(req('POST', '/setup', { headers: { 'x-setup-token': SETUP }, body }), deps))
+        .status
+    ).toBe(401)
+    expect(db.devices.size).toBe(0)
+    await registerFirst(deps)
+    const second = { deviceId: DEV_B, nameCipher: 'eQ==' }
+    expect(
+      (
+        await handle(
+          req('POST', '/setup', { headers: { 'x-setup-token': SETUP }, body: second }),
+          deps
+        )
+      ).status
+    ).toBe(401)
+    expect(
+      (
+        await handle(
+          req('POST', '/setup', {
+            headers: { 'x-setup-token': SETUP, 'x-key-proof': '2'.repeat(64) },
+            body: second
+          }),
+          deps
+        )
+      ).status
+    ).toBe(401)
+    expect(db.devices.size).toBe(1)
+  })
+
+  it('revogar exige prova e apagar exige TOTP confirmado', async () => {
+    const { db, deps } = setup()
+    const a = await registerFirst(deps)
+    await pairSecond(deps, a)
+    const path = `/devices/${DEV_B}/revoke`
+    expect(
+      (await handle(req('POST', path, { token: a, body: { wipe: false } }), deps)).status
+    ).toBe(401)
+    expect(
+      (
+        await handle(
+          req('POST', path, {
+            token: a,
+            headers: { 'x-key-proof': '1'.repeat(64) },
+            body: { wipe: true }
+          }),
+          deps
+        )
+      ).status
+    ).toBe(401)
+    expect(db.devices.get(DEV_B)?.revokedAt).toBeNull()
+  })
+
+  it('TOTP libera wipe e setup de recuperação, mas reserva funciona uma vez', async () => {
+    const { db, deps } = setup()
+    const a = await registerFirst(deps)
+    await pairSecond(deps, a)
+    const { uri, code, backupCodes } = await enroll(deps, a)
+    expect(db.auth?.totpCipher).not.toContain(new URL(uri).searchParams.get('secret'))
+    const setupHeaders = { 'x-setup-token': SETUP, 'x-key-proof': PROOF }
+    expect(
+      (
+        await handle(
+          req('POST', '/setup', {
+            headers: setupHeaders,
+            body: { deviceId: DEV_C, nameCipher: 'eA==' }
+          }),
+          deps
+        )
+      ).status
+    ).toBe(401)
+    const recovered = await handle(
+      req('POST', '/setup', {
+        headers: { ...setupHeaders, 'x-totp-code': code },
+        body: { deviceId: DEV_C, nameCipher: 'eA==' }
+      }),
+      deps
+    )
+    expect(recovered.status).toBe(200)
+    const revoke = (factor: string): Promise<Response> =>
+      handle(
+        req('POST', `/devices/${DEV_B}/revoke`, {
+          token: a,
+          headers: { 'x-key-proof': PROOF, 'x-totp-code': factor },
+          body: { wipe: true }
+        }),
+        deps
+      )
+    expect((await revoke(backupCodes[0])).status).toBe(200)
+    expect((await revoke(backupCodes[0])).status).toBe(401)
+    expect(db.devices.get(DEV_B)?.wipe).toBe(true)
+  })
+
+  it('duas revogações simultâneas não consomem o mesmo código reserva duas vezes', async () => {
+    const { deps } = setup()
+    const a = await registerFirst(deps)
+    await pairSecond(deps, a)
+    const { backupCodes } = await enroll(deps, a)
+    // Recovery setup always checks the factor, with a fresh device id per request.
+    const recover = (id: string): Promise<Response> =>
+      handle(
+        req('POST', '/setup', {
+          headers: { 'x-setup-token': SETUP, 'x-key-proof': PROOF, 'x-totp-code': backupCodes[0] },
+          body: { deviceId: id, nameCipher: 'eA==' }
+        }),
+        deps
+      )
+    const results = await Promise.all([recover(DEV_C), recover('d'.repeat(32))])
+    expect(results.filter((result) => result.status === 200)).toHaveLength(1)
+  })
+
+  it('cinco códigos errados bloqueiam por 15 minutos', async () => {
+    const { deps, clock } = setup()
+    const a = await registerFirst(deps)
+    await pairSecond(deps, a)
+    const { uri, code } = await enroll(deps, a)
+    const revoke = (factor: string): Promise<Response> =>
+      handle(
+        req('POST', `/devices/${DEV_B}/revoke`, {
+          token: a,
+          headers: { 'x-key-proof': PROOF, 'x-totp-code': factor },
+          body: { wipe: true }
+        }),
+        deps
+      )
+    const wrong = code === '000000' ? '999999' : '000000'
+    for (let i = 0; i < 4; i++) expect((await revoke(wrong)).status).toBe(401)
+    expect((await revoke(wrong)).status).toBe(429)
+    expect((await revoke(code)).status).toBe(429)
+    clock.now += 15 * 60_000 + 1
+    expect((await revoke(codeFromUri(uri, clock.now))).status).toBe(200)
+  })
+})
 
 function push(deps: RouteDeps, token: string, ids: string[]): Promise<Response> {
   return handle(
@@ -259,8 +466,13 @@ describe('autenticação', () => {
     const { deps } = setup()
     const a = await registerFirst(deps)
     const b = await pairSecond(deps, a)
+    const { code } = await enroll(deps, a)
     const rev = await handle(
-      req('POST', `/devices/${DEV_B}/revoke`, { token: a, body: { wipe: true } }),
+      req('POST', `/devices/${DEV_B}/revoke`, {
+        token: a,
+        headers: { 'x-key-proof': PROOF, 'x-totp-code': code },
+        body: { wipe: true }
+      }),
       deps
     )
     expect(rev.status).toBe(200)
@@ -273,7 +485,14 @@ describe('autenticação', () => {
     const { deps } = setup()
     const a = await registerFirst(deps)
     const b = await pairSecond(deps, a)
-    await handle(req('POST', `/devices/${DEV_B}/revoke`, { token: a, body: { wipe: false } }), deps)
+    await handle(
+      req('POST', `/devices/${DEV_B}/revoke`, {
+        token: a,
+        headers: { 'x-key-proof': PROOF },
+        body: { wipe: false }
+      }),
+      deps
+    )
     const res = await handle(req('POST', '/push', { token: b, body: { batches: [] } }), deps)
     expect(res.status).toBe(401)
     expect(await json(res)).toEqual({ revoked: true, wipe: false })
@@ -283,12 +502,20 @@ describe('autenticação', () => {
     const { deps } = setup()
     const a = await registerFirst(deps)
     const unknown = await handle(
-      req('POST', `/devices/${DEV_C}/revoke`, { token: a, body: { wipe: false } }),
+      req('POST', `/devices/${DEV_C}/revoke`, {
+        token: a,
+        headers: { 'x-key-proof': PROOF },
+        body: { wipe: false }
+      }),
       deps
     )
     expect(unknown.status).toBe(404)
     const bad = await handle(
-      req('POST', `/devices/${DEV_A}/revoke`, { token: a, body: { wipe: 'sim' } }),
+      req('POST', `/devices/${DEV_A}/revoke`, {
+        token: a,
+        headers: { 'x-key-proof': PROOF },
+        body: { wipe: 'sim' }
+      }),
       deps
     )
     expect(bad.status).toBe(400)
@@ -327,7 +554,7 @@ describe('/setup', () => {
     const { deps } = setup()
     const res = await handle(
       req('POST', '/setup', {
-        headers: { 'x-setup-token': SETUP },
+        headers: { 'x-setup-token': SETUP, 'x-key-proof': PROOF },
         body: { deviceId: 'device-da-etapa-1', nameCipher: 'eA==' }
       }),
       deps
@@ -591,7 +818,13 @@ describe('segredos', () => {
     await capture(req('GET', '/pull?since=0', { token: b }))
     await capture(req('GET', '/devices', { token: a }))
     await capture(req('POST', '/invites', { token: a, body: { inviteHash: 'e'.repeat(64) } }))
-    await capture(req('POST', `/devices/${DEV_B}/revoke`, { token: a, body: { wipe: true } }))
+    await capture(
+      req('POST', `/devices/${DEV_B}/revoke`, {
+        token: a,
+        headers: { 'x-key-proof': PROOF },
+        body: { wipe: false }
+      })
+    )
     await capture(req('GET', '/pull?since=0', { token: b }))
     const dbDump = JSON.stringify({
       devices: [...db.devices.values()],

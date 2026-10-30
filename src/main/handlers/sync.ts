@@ -68,6 +68,19 @@ export function registerSyncHandlers(ipcMain: IpcMain, deps: SyncHandlerDeps): v
 
   ipcMain.handle('sync:invite', () => run('invite', () => engine.createInvite()))
 
+  ipcMain.handle(
+    'sync:recover',
+    (_, code: unknown, setupToken: unknown, name: unknown, factor: unknown) =>
+      run('recover', async () => ({
+        status: await engine.recover(
+          text(code, 4096),
+          text(setupToken, 512),
+          deviceName(name),
+          factorOf(factor)
+        )
+      }))
+  )
+
   ipcMain.handle('sync:join', (_, code: unknown, mode: unknown, name: unknown) =>
     run('join', async () => {
       if (mode !== 'merge' && mode !== 'replace') throw new SyncUserError('Dados inválidos.')
@@ -87,6 +100,14 @@ export function registerSyncHandlers(ipcMain: IpcMain, deps: SyncHandlerDeps): v
       await engine.revoke(text(id, 64), wipe, factorOf(factor))
       return {}
     })
+  )
+
+  ipcMain.handle('sync:totp:enroll', () =>
+    run('totp-enroll', async () => ({ uri: await engine.enrollTotp() }))
+  )
+
+  ipcMain.handle('sync:totp:confirm', (_, code: unknown) =>
+    run('totp-confirm', async () => ({ backupCodes: await engine.confirmTotp(text(code, 6)) }))
   )
 
   ipcMain.handle('sync:conflicts', () =>

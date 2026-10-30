@@ -202,9 +202,7 @@ export const api = {
     respondMcpCreateTask: (requestId: string, result: { id?: string; error?: string }): void => {
       ipcRenderer.send('store:mcp:create-task:response', { requestId, ...result })
     },
-    onMcpAction: (
-      cb: (message: { requestId: string; request: McpActionRequest }) => void
-    ) => {
+    onMcpAction: (cb: (message: { requestId: string; request: McpActionRequest }) => void) => {
       const handler = (_: Electron.IpcRendererEvent, message: Parameters<typeof cb>[0]): void =>
         cb(message)
       ipcRenderer.on('store:mcp:action', handler)
@@ -246,6 +244,13 @@ export const api = {
       ipcRenderer.invoke('sync:activate', url, setupToken, deviceName, factor),
     invite: (): Promise<SyncResult<{ code: string; expiresAt: number }>> =>
       ipcRenderer.invoke('sync:invite'),
+    recover: (
+      code: string,
+      setupToken: string,
+      deviceName?: string,
+      factor?: SyncSecondFactor
+    ): Promise<SyncResult<{ status: SyncStatus }>> =>
+      ipcRenderer.invoke('sync:recover', code, setupToken, deviceName, factor),
     join: (
       code: string,
       mode: 'merge' | 'replace',
@@ -257,6 +262,9 @@ export const api = {
       ipcRenderer.invoke('sync:devices'),
     revoke: (id: string, wipe: boolean, factor?: SyncSecondFactor): Promise<SyncResult> =>
       ipcRenderer.invoke('sync:revoke', id, wipe, factor),
+    enrollTotp: (): Promise<SyncResult<{ uri: string }>> => ipcRenderer.invoke('sync:totp:enroll'),
+    confirmTotp: (code: string): Promise<SyncResult<{ backupCodes: string[] }>> =>
+      ipcRenderer.invoke('sync:totp:confirm', code),
     conflicts: (): Promise<SyncResult<{ conflicts: SyncConflictView[] }>> =>
       ipcRenderer.invoke('sync:conflicts'),
     // 'local' = the version this device made or holds; 'remote' = the other device's.
@@ -415,8 +423,13 @@ export const api = {
         ipcRenderer.invoke('ai:code-agent:terminal-resize', runId, cols, rows),
       terminalReconnect: (
         runId: string
-      ): Promise<{ success: boolean; error?: string; log?: string; cols?: number; rows?: number }> =>
-        ipcRenderer.invoke('ai:code-agent:terminal-reconnect', runId),
+      ): Promise<{
+        success: boolean
+        error?: string
+        log?: string
+        cols?: number
+        rows?: number
+      }> => ipcRenderer.invoke('ai:code-agent:terminal-reconnect', runId),
       // Answer an approval card the loop is parked on (native agent).
       approve: (id: string, approved: boolean): Promise<void> =>
         ipcRenderer.invoke('ai:code-agent:approve-response', id, approved),
@@ -481,7 +494,9 @@ export const api = {
       },
       // Fires once a finished run has been written to the archive — later than
       // onExit, which doesn't wait for the diff that snapshot needs.
-      onArchived: (cb: (payload: { runId: string; id: string; sessionId: string | null }) => void) => {
+      onArchived: (
+        cb: (payload: { runId: string; id: string; sessionId: string | null }) => void
+      ) => {
         const handler = (
           _: Electron.IpcRendererEvent,
           payload: { runId: string; id: string; sessionId: string | null }

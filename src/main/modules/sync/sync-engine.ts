@@ -38,6 +38,8 @@ import {
 } from './sync-config'
 import {
   deriveKeys,
+  fromRecoveryCode,
+  keyProof,
   newSyncKey,
   opaqueDeviceId,
   openBatch,
@@ -223,10 +225,18 @@ export interface SyncEngine {
     deviceName: string,
     factor?: SyncSecondFactor
   ): Promise<{ recoveryCode: string }>
+  recover(
+    code: string,
+    setupToken: string,
+    deviceName: string,
+    factor?: SyncSecondFactor
+  ): Promise<SyncStatus>
   createInvite(): Promise<{ code: string; expiresAt: number }>
   join(code: string, mode: 'merge' | 'replace', deviceName: string): Promise<SyncStatus>
   devices(): Promise<SyncDevice[]>
   revoke(id: string, wipe: boolean, factor?: SyncSecondFactor): Promise<void>
+  enrollTotp(): Promise<string>
+  confirmTotp(code: string): Promise<string[]>
   conflicts(): SyncConflictView[]
   resolve(conflictId: string, choice: 'local' | 'remote'): void
   recoveryCode(): string
@@ -542,7 +552,7 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       throw new SyncOfflineError(null)
     }
     const body = asObject(await res.json().catch(() => ({})))
-    if (res.status === 401) throw new SyncAuthError(body.revoked === true && body.wipe === true)
+    if (res.status === 401 && body.revoked === true) throw new SyncAuthError(body.wipe === true)
     if (res.status >= 500) throw new SyncOfflineError(res.status)
     if (res.status < 200 || res.status >= 300) throw new SyncHttpError(res.status, body)
     return body
@@ -795,6 +805,10 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
     if (err instanceof SyncOfflineError)
       return new SyncUserError('Sem conexão com o servidor de sincronização.')
     if (err instanceof SyncAuthError) return new SyncUserError('O servidor recusou o acesso.')
+    if (err instanceof SyncHttpError && err.status === 401)
+      return new SyncUserError('Prova da chave ou código do autenticador inválido.')
+    if (err instanceof SyncHttpError && err.status === 429)
+      return new SyncUserError('Muitas tentativas. Aguarde 15 minutos e tente novamente.')
     if (err instanceof SyncHttpError && err.status === 410)
       return new SyncUserError('O convite expirou ou já foi usado.')
     return new SyncUserError(fallback)
@@ -804,6 +818,58 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
     store.writeSyncState('pull_cursor', '0')
     // Everything this device minted goes up again (the server drops nothing; the rule skips equals).
     store.writeSyncState('pushed_seq', '0')
+  }
+
+  const activateWithKey = async (
+    base: string,
+    syncKey: Uint8Array,
+    setupToken: string,
+    deviceName: string,
+    factor?: SyncSecondFactor
+  ): Promise<{ recoveryCode: string }> => {
+    if (session) throw new SyncUserError('A sincronização já está ativa neste aparelho.')
+    if (deps.config.availability() !== 'ok')
+      throw new SyncUserError(
+        'O chaveiro do sistema não está disponível; a sincronização não liga.'
+      )
+    const name = deviceName.trim().slice(0, 80) || 'Aparelho'
+    return exclusive(async () => {
+      const keys = deriveKeys(syncKey)
+      const opaqueId = opaqueDeviceId(keys.id, store.getSyncDeviceId())
+      let res: Record<string, unknown>
+      try {
+        res = await request(base, '/setup', {
+          method: 'POST',
+          headers: {
+            'x-setup-token': setupToken,
+            'x-key-proof': keyProof(keys.id),
+            ...(factor?.totp ? { 'x-totp-code': factor.totp } : {}),
+            ...deps.extraHeaders?.('setup', { idKey: keys.id, factor })
+          },
+          body: { deviceId: opaqueId, nameCipher: nameCipher(keys.enc, opaqueId, name) }
+        })
+      } catch (err) {
+        throw userError(err, 'Não foi possível ativar a sincronização.')
+      }
+      if (typeof res.token !== 'string') throw new SyncUserError('Resposta inválida do servidor.')
+      const config: SyncConfig = {
+        url: base,
+        syncKey,
+        token: res.token,
+        deviceName: name,
+        paused: null
+      }
+      deps.config.save(config)
+      resetCursors()
+      session = sessionFrom(config)
+      disconnected = false
+      loadState = 'ok'
+      log.info('sync', 'activated')
+      return { recoveryCode: toRecoveryCode(syncKey, base) }
+    }).finally(() => {
+      if (session && started) schedule(0)
+      publish()
+    })
   }
 
   const refreshDevices = async (s: Session): Promise<SyncDevice[]> => {
@@ -914,49 +980,20 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
     status,
 
     async activate(url, setupToken, deviceName, factor): Promise<{ recoveryCode: string }> {
-      if (session) throw new SyncUserError('A sincronização já está ativa neste aparelho.')
-      if (deps.config.availability() !== 'ok')
-        throw new SyncUserError(
-          'O chaveiro do sistema não está disponível; a sincronização não liga.'
-        )
-      const base = normalizeServerUrl(url)
-      const name = deviceName.trim().slice(0, 80) || 'Aparelho'
-      return exclusive(async () => {
-        const syncKey = newSyncKey()
-        const keys = deriveKeys(syncKey)
-        const opaqueId = opaqueDeviceId(keys.id, store.getSyncDeviceId())
-        let res: Record<string, unknown>
-        try {
-          res = await request(base, '/setup', {
-            method: 'POST',
-            headers: {
-              'x-setup-token': setupToken,
-              ...deps.extraHeaders?.('setup', { idKey: keys.id, factor })
-            },
-            body: { deviceId: opaqueId, nameCipher: nameCipher(keys.enc, opaqueId, name) }
-          })
-        } catch (err) {
-          throw userError(err, 'Não foi possível ativar a sincronização.')
-        }
-        if (typeof res.token !== 'string') throw new SyncUserError('Resposta inválida do servidor.')
-        const config: SyncConfig = {
-          url: base,
-          syncKey,
-          token: res.token,
-          deviceName: name,
-          paused: null
-        }
-        deps.config.save(config)
-        resetCursors()
-        session = sessionFrom(config)
-        disconnected = false
-        loadState = 'ok'
-        log.info('sync', 'activated')
-        return { recoveryCode: toRecoveryCode(syncKey, base) }
-      }).finally(() => {
-        if (session && started) schedule(0)
-        publish()
-      })
+      return activateWithKey(normalizeServerUrl(url), newSyncKey(), setupToken, deviceName, factor)
+    },
+
+    async recover(code, setupToken, deviceName, factor): Promise<SyncStatus> {
+      let recovered: ReturnType<typeof fromRecoveryCode>
+      try {
+        recovered = fromRecoveryCode(code)
+      } catch {
+        throw new SyncUserError('Código de recuperação inválido.')
+      }
+      const { url, key } = recovered
+      await activateWithKey(normalizeServerUrl(url), key, setupToken, deviceName, factor)
+      await cycle()
+      return publish()
     },
 
     async createInvite(): Promise<{ code: string; expiresAt: number }> {
@@ -1057,7 +1094,11 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       try {
         await authed(s, `/devices/${id}/revoke`, {
           method: 'POST',
-          headers: deps.extraHeaders?.('revoke', { idKey: s.idKey, factor }),
+          headers: {
+            'x-key-proof': keyProof(s.idKey),
+            ...(factor?.totp ? { 'x-totp-code': factor.totp } : {}),
+            ...deps.extraHeaders?.('revoke', { idKey: s.idKey, factor })
+          },
           body: { wipe }
         })
       } catch (err) {
@@ -1069,6 +1110,38 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       }
       log.info('sync', 'revoked', { wipe })
       await refreshDevices(s).catch(() => undefined)
+    },
+
+    async enrollTotp(): Promise<string> {
+      const s = requireSession()
+      try {
+        const res = await authed(s, '/totp/enroll', {
+          method: 'POST',
+          headers: { 'x-key-proof': keyProof(s.idKey) }
+        })
+        if (typeof res.uri !== 'string' || !res.uri.startsWith('otpauth://totp/'))
+          throw new SyncUserError('Resposta inválida do servidor.')
+        return res.uri
+      } catch (err) {
+        throw userError(err, 'Não foi possível cadastrar o autenticador.')
+      }
+    },
+
+    async confirmTotp(code: string): Promise<string[]> {
+      const s = requireSession()
+      if (!/^\d{6}$/.test(code)) throw new SyncUserError('Código de 6 dígitos inválido.')
+      try {
+        const res = await authed(s, '/totp/confirm', {
+          method: 'POST',
+          headers: { 'x-key-proof': keyProof(s.idKey) },
+          body: { code }
+        })
+        if (!Array.isArray(res.backupCodes) || !res.backupCodes.every((x) => typeof x === 'string'))
+          throw new SyncUserError('Resposta inválida do servidor.')
+        return res.backupCodes as string[]
+      } catch (err) {
+        throw userError(err, 'Não foi possível confirmar o autenticador.')
+      }
     },
 
     conflicts(): SyncConflictView[] {

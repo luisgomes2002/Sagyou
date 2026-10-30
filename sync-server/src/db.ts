@@ -54,7 +54,23 @@ export interface SnapshotPartInput {
   now: number
 }
 
+export interface AuthRow {
+  version: number
+  proofHash: string
+  totpCipher: string | null
+  pendingTotpCipher: string | null
+  totpConfirmed: boolean
+  backupHashes: string[]
+  failCount: number
+  lockedUntil: number
+}
+
 export interface SyncDb {
+  getAuth(): Promise<AuthRow | null>
+  /** Only the first setup may establish the proof. */
+  createAuth(proofHash: string): Promise<boolean>
+  /** Compare-and-swap; false means another request changed the policy first. */
+  saveAuth(auth: AuthRow): Promise<boolean>
   deviceByTokenHash(tokenHash: string): Promise<DeviceRow | null>
   /** Inserts the device, or re-registers it: new token, not revoked, no wipe, cursor 0. */
   registerDevice(d: {
@@ -138,6 +154,59 @@ const DEVICE_COLUMNS = 'id, token_hash, name_cipher, last_seen, revoked_at, wipe
 
 export class D1SyncDb implements SyncDb {
   constructor(private readonly db: D1Database) {}
+
+  async getAuth(): Promise<AuthRow | null> {
+    const row = await this.db.prepare('SELECT * FROM auth WHERE id = 1').first<{
+      key_proof_hash: string
+      version: number
+      totp_cipher: string | null
+      pending_totp_cipher: string | null
+      totp_confirmed: number
+      backup_hashes: string
+      fail_count: number
+      locked_until: number
+    }>()
+    return row
+      ? {
+          version: row.version,
+          proofHash: row.key_proof_hash,
+          totpCipher: row.totp_cipher,
+          pendingTotpCipher: row.pending_totp_cipher,
+          totpConfirmed: row.totp_confirmed === 1,
+          backupHashes: JSON.parse(row.backup_hashes) as string[],
+          failCount: row.fail_count,
+          lockedUntil: row.locked_until
+        }
+      : null
+  }
+
+  async createAuth(proofHash: string): Promise<boolean> {
+    const result = await this.db
+      .prepare('INSERT OR IGNORE INTO auth (id, key_proof_hash) VALUES (1, ?1)')
+      .bind(proofHash)
+      .run()
+    return (result.meta.changes ?? 0) > 0
+  }
+
+  async saveAuth(auth: AuthRow): Promise<boolean> {
+    const result = await this.db
+      .prepare(
+        `UPDATE auth SET totp_cipher = ?1, pending_totp_cipher = ?2,
+      totp_confirmed = ?3, backup_hashes = ?4, fail_count = ?5, locked_until = ?6,
+      version = version + 1 WHERE id = 1 AND version = ?7`
+      )
+      .bind(
+        auth.totpCipher,
+        auth.pendingTotpCipher,
+        auth.totpConfirmed ? 1 : 0,
+        JSON.stringify(auth.backupHashes),
+        auth.failCount,
+        auth.lockedUntil,
+        auth.version
+      )
+      .run()
+    return (result.meta.changes ?? 0) > 0
+  }
 
   async deviceByTokenHash(tokenHash: string): Promise<DeviceRow | null> {
     const row = await this.db

@@ -4,9 +4,11 @@
 // server never sees. Opening must fail on any tampering or on a batch claimed
 // by another device, and the recovery code must round-trip the key exactly.
 import { describe, expect, it } from 'vitest'
+import { createHmac } from 'crypto'
 import {
   deriveKeys,
   fromRecoveryCode,
+  keyProof,
   newSyncKey,
   opaqueDeviceId,
   openBatch,
@@ -47,6 +49,14 @@ describe('opaqueDeviceId', () => {
     const other = deriveKeys(new Uint8Array(32).fill(8)).id
     expect(opaqueDeviceId(other, 'a'.repeat(32))).not.toBe(one)
     expect(one).not.toContain('a'.repeat(32))
+  })
+})
+
+describe('keyProof', () => {
+  it('proves possession of the id key with the fixed auth context', () => {
+    const id = keys().id
+    expect(keyProof(id)).toBe(createHmac('sha256', id).update('sagyou-sync-auth-v1').digest('hex'))
+    expect(keyProof(id)).not.toBe(keyProof(deriveKeys(new Uint8Array(32).fill(8)).id))
   })
 })
 
