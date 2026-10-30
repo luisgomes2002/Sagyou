@@ -209,6 +209,19 @@ export const api = {
       ipcRenderer.send('store:mcp:action:response', { requestId, result })
     }
   },
+  sync: {
+    // A pull changed data records: the renderer takes the state without saving it.
+    onRemoteChanges: (
+      cb: (payload: { generation: number; state: Record<string, unknown> }) => void
+    ) => {
+      const handler = (_: Electron.IpcRendererEvent, payload: Parameters<typeof cb>[0]): void =>
+        cb(payload)
+      ipcRenderer.on('sync:remote-changes', handler)
+      return (): void => {
+        ipcRenderer.removeListener('sync:remote-changes', handler)
+      }
+    }
+  },
   search: {
     global: (options: GlobalSearchOptions): Promise<GlobalSearchResponse> =>
       ipcRenderer.invoke('search:global', options),

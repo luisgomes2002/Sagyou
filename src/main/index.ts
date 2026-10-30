@@ -79,6 +79,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import {
   loadData,
   saveData,
+  currentSyncGeneration,
   eventsForEntity,
   rebuildSearchIndex,
   searchGlobalIndex,
@@ -1334,7 +1335,9 @@ app.whenReady().then(() => {
     sep
   })
 
-  ipcMain.handle('store:load', () => loadData())
+  // The renderer echoes syncGeneration on every save, so a save it builds from
+  // this load never undoes a remote change already in it.
+  ipcMain.handle('store:load', () => ({ ...loadData(), syncGeneration: currentSyncGeneration() }))
 
   ipcMain.handle('store:save', (_, data) => {
     saveData(data)

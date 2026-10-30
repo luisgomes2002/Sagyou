@@ -40,6 +40,21 @@ import {
   type SyncRecord
 } from './modules/sync/sync-records'
 import {
+  decodeIncoming,
+  encodeIncoming,
+  guardStaleSave,
+  memoryFromPayload,
+  PENDING_TTL_MS,
+  planMemoryApply,
+  planRemoteApply,
+  type ConflictWrite,
+  type IncomingRecord,
+  type StoredSyncVersion,
+  type VersionWrite
+} from './modules/sync/sync-apply'
+import { encodeBatch, recordKey, type OutgoingRow } from './modules/sync/sync-batch'
+import { openBatch, sealBatch } from './modules/sync/sync-crypto'
+import {
   buildSyncRows,
   memoryCaptureScope,
   planSyncChanges,
@@ -339,6 +354,9 @@ interface SaveData {
   activeTimer?: { taskId: string; startedAt: number } | null
   // Entity events to append (set by the AI tool layer; absent on user saves).
   entityEvents?: EntityEvent[]
+  // The last sync generation the renderer applied (absent = 0). Never persisted:
+  // saveData uses it to keep records changed remotely after that generation.
+  syncGeneration?: number
 }
 
 // ── DB paths ─────────────────────────────────────────────────────────────────
@@ -358,6 +376,8 @@ function getDb(): Database.Database {
   _db.pragma('foreign_keys = ON')
   initSchema(_db)
   migrateSyncRecordsTable(_db)
+  migrateSyncRecordsColumns(_db)
+  migrateSyncTables(_db)
   migrateMoneyColumnsToText(_db)
   migrateTransactionsLinkedColumn(_db)
   migrateFinancialPlanningColumns(_db)
@@ -1280,14 +1300,17 @@ function captureSyncVersions(
   const placeholders = scope.kinds.map(() => '?').join(',')
   const stored = (
     db
-      .prepare(`SELECT kind, id, hash, deleted FROM sync_records WHERE kind IN (${placeholders})`)
+      .prepare(
+        `SELECT kind, id, hlc, hash, deleted FROM sync_records WHERE kind IN (${placeholders})`
+      )
       .all(...scope.kinds) as {
       kind: StoredVersion['kind']
       id: string
+      hlc: string
       hash: string
       deleted: number
     }[]
-  ).map((r) => ({ kind: r.kind, id: r.id, hash: r.hash, deleted: r.deleted === 1 }))
+  ).map((r) => ({ kind: r.kind, id: r.id, hlc: r.hlc, hash: r.hash, deleted: r.deleted === 1 }))
   const plan = planSyncChanges(records, stored, scope)
   if (!plan.upserts.length && !plan.deletes.length) {
     logSlowCapture(started, records.length)
@@ -1298,13 +1321,21 @@ function captureSyncVersions(
     .prepare('SELECT MAX(hlc) AS maxHlc, COALESCE(MAX(seq), 0) AS maxSeq FROM sync_records')
     .get() as { maxHlc: string | null; maxSeq: number }
   const rows = buildSyncRows(plan, state, getSyncDeviceId(), Date.now())
+  // A new local version was made on top of whatever version the row held.
+  const previousHlc = new Map(stored.map((v) => [recordKey(v.kind, v.id), v.hlc]))
   const write = db.prepare(
-    `INSERT INTO sync_records (kind, id, hlc, device_id, hash, deleted, seq)
-     VALUES (@kind, @id, @hlc, @deviceId, @hash, @deleted, @seq)
+    `INSERT INTO sync_records (kind, id, hlc, device_id, hash, deleted, seq, base_hlc, server_seq)
+     VALUES (@kind, @id, @hlc, @deviceId, @hash, @deleted, @seq, @baseHlc, NULL)
      ON CONFLICT(kind, id) DO UPDATE SET
-       hlc=@hlc, device_id=@deviceId, hash=@hash, deleted=@deleted, seq=@seq`
+       hlc=@hlc, device_id=@deviceId, hash=@hash, deleted=@deleted, seq=@seq,
+       base_hlc=@baseHlc, server_seq=NULL`
   )
-  for (const row of rows) write.run({ ...row, deleted: row.deleted ? 1 : 0 })
+  for (const row of rows)
+    write.run({
+      ...row,
+      deleted: row.deleted ? 1 : 0,
+      baseHlc: previousHlc.get(recordKey(row.kind, row.id)) ?? null
+    })
 
   logSlowCapture(started, records.length)
   return rows.length
@@ -1379,6 +1410,423 @@ function reconcileSyncRecords(db: Database.Database): void {
     log.error('sync', 'reconcile_failed', { scope: 'memory', msg: errorMessage(err) })
   }
   if (data || memory) log.info('sync', 'reconcile', { data, memory })
+}
+
+// ── Sync: applying received versions ─────────────────────────────────────────
+//
+// Received versions are written through persistDiff like any save, and their
+// version rows are written by hand with the sender's id, so capture never sees
+// them as local edits and they are never pushed back. Each data apply bumps a
+// generation; a renderer save that still carries an older generation keeps the
+// database version of every record changed since (guardStaleSave), or a save
+// built before the renderer saw the change would undo it.
+
+/** Adds the version a local edit was made on top of, and the server seq it travelled with. */
+function migrateSyncRecordsColumns(db: Database.Database): void {
+  const columns = new Set(
+    (db.prepare('PRAGMA table_info(sync_records)').all() as { name: string }[]).map((c) => c.name)
+  )
+  if (!columns.has('base_hlc')) db.exec('ALTER TABLE sync_records ADD COLUMN base_hlc TEXT')
+  if (!columns.has('server_seq')) db.exec('ALTER TABLE sync_records ADD COLUMN server_seq INTEGER')
+}
+
+// Outside persistAll/persistDiff and the backup, like sync_records. Payloads
+// kept here (a conflict's losing version, a child waiting for its parent) are
+// sealed with the sync key, never stored in clear.
+function migrateSyncTables(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sync_state (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    );
+    CREATE TABLE IF NOT EXISTS sync_conflicts (
+      id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL,
+      record_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      loser_cipher TEXT NOT NULL,
+      winner_hlc TEXT,
+      loser_hlc TEXT NOT NULL,
+      loser_device TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      resolved_at INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_sync_conflicts_open ON sync_conflicts(resolved_at);
+    CREATE TABLE IF NOT EXISTS sync_pending (
+      kind TEXT NOT NULL,
+      id TEXT NOT NULL,
+      record_cipher TEXT NOT NULL,
+      received_at INTEGER NOT NULL,
+      PRIMARY KEY (kind, id)
+    );
+  `)
+}
+
+function readSyncStateIn(db: Database.Database, key: string): string | null {
+  const row = db.prepare('SELECT value FROM sync_state WHERE key=?').get(key) as
+    | { value: string | null }
+    | undefined
+  return row?.value ?? null
+}
+
+function writeSyncStateIn(db: Database.Database, key: string, value: string): void {
+  db.prepare('INSERT OR REPLACE INTO sync_state (key, value) VALUES (?, ?)').run(key, value)
+}
+
+function syncStateNumber(db: Database.Database, key: string): number {
+  const n = Number(readSyncStateIn(db, key) ?? 0)
+  return Number.isFinite(n) ? n : 0
+}
+
+/** Keys: pull_cursor, pushed_seq, generation, paused. */
+export function readSyncState(key: string): string | null {
+  return readSyncStateIn(getDb(), key)
+}
+
+export function writeSyncState(key: string, value: string): void {
+  writeSyncStateIn(getDb(), key, value)
+}
+
+/** The generation of the last remote apply; the renderer echoes it back on every save. */
+export function currentSyncGeneration(): number {
+  return syncStateNumber(getDb(), 'generation')
+}
+
+// Which records each remote apply changed, kept until a renderer save shows it
+// has seen that generation. In memory on purpose: after a restart the renderer
+// loads the database, so no save can be older than it.
+const remoteKeysByGeneration = new Map<number, Set<string>>()
+
+function staleRemoteKeys(seenGeneration: number): Set<string> {
+  const keys = new Set<string>()
+  for (const [generation, changed] of remoteKeysByGeneration)
+    if (generation > seenGeneration) for (const key of changed) keys.add(key)
+  return keys
+}
+
+function forgetRemoteKeysUpTo(seenGeneration: number): void {
+  for (const generation of [...remoteKeysByGeneration.keys()])
+    if (generation <= seenGeneration) remoteKeysByGeneration.delete(generation)
+}
+
+/** What sealing needs: the `enc` key and this device's opaque id (AAD). Never read from config here. */
+export interface SyncApplyContext {
+  enc: Uint8Array
+  opaqueId: string
+  now?: number
+}
+
+export interface RemoteApplyResult {
+  /** Data records written into the store. */
+  applied: number
+  memories: number
+  conflicts: number
+  pending: number
+  generation: number
+  /** The new state for the renderer (`sync:remote-changes`); null when no data record changed. */
+  state: SaveData | null
+}
+
+function storedSyncVersions(
+  db: Database.Database,
+  kinds: readonly string[]
+): Map<string, StoredSyncVersion> {
+  const placeholders = kinds.map(() => '?').join(',')
+  const rows = db
+    .prepare(
+      `SELECT kind, id, hlc, hash, deleted, device_id, base_hlc FROM sync_records WHERE kind IN (${placeholders})`
+    )
+    .all(...kinds) as {
+    kind: string
+    id: string
+    hlc: string
+    hash: string
+    deleted: number
+    device_id: string
+    base_hlc: string | null
+  }[]
+  return new Map(
+    rows.map((r) => [
+      recordKey(r.kind, r.id),
+      {
+        hlc: r.hlc,
+        hash: r.hash,
+        deleted: r.deleted === 1,
+        deviceId: r.device_id,
+        baseHlc: r.base_hlc
+      }
+    ])
+  )
+}
+
+/** Received versions keep the sender's id and HLC, and take a new local seq (never pushed back). */
+function writeReceivedVersions(db: Database.Database, versions: VersionWrite[]): void {
+  if (!versions.length) return
+  let { maxSeq } = db.prepare('SELECT COALESCE(MAX(seq), 0) AS maxSeq FROM sync_records').get() as {
+    maxSeq: number
+  }
+  const write = db.prepare(
+    `INSERT INTO sync_records (kind, id, hlc, device_id, hash, deleted, seq, base_hlc, server_seq)
+     VALUES (@kind, @id, @hlc, @deviceId, @hash, @deleted, @seq, @baseHlc, @serverSeq)
+     ON CONFLICT(kind, id) DO UPDATE SET
+       hlc=@hlc, device_id=@deviceId, hash=@hash, deleted=@deleted, seq=@seq,
+       base_hlc=@baseHlc, server_seq=@serverSeq`
+  )
+  for (const v of versions) {
+    maxSeq += 1
+    write.run({
+      kind: v.kind,
+      id: v.id,
+      hlc: v.hlc,
+      deviceId: v.deviceId,
+      hash: v.hash,
+      deleted: v.deleted ? 1 : 0,
+      seq: maxSeq,
+      baseHlc: v.baseHlc,
+      serverSeq: v.serverSeq
+    })
+  }
+}
+
+function writeConflicts(
+  db: Database.Database,
+  conflicts: ConflictWrite[],
+  ctx: SyncApplyContext,
+  now: number
+): void {
+  const insert = db.prepare(
+    `INSERT INTO sync_conflicts
+       (id, kind, record_id, type, loser_cipher, winner_hlc, loser_hlc, loser_device, created_at, resolved_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`
+  )
+  for (const c of conflicts) {
+    const id = randomUUID()
+    const cipher = sealBatch(ctx.enc, ctx.opaqueId, `conflict:${id}`, encodeBatch([c.loser]))
+    insert.run(id, c.kind, c.recordId, c.type, cipher, c.winnerHlc, c.loserHlc, c.loserDevice, now)
+  }
+}
+
+function pendingBatchId(kind: string, id: string): string {
+  return `pending:${kind}:${id}`
+}
+
+function writePending(
+  db: Database.Database,
+  pending: IncomingRecord[],
+  ctx: SyncApplyContext,
+  now: number
+): void {
+  const insert = db.prepare(
+    'INSERT OR REPLACE INTO sync_pending (kind, id, record_cipher, received_at) VALUES (?, ?, ?, ?)'
+  )
+  for (const item of pending) {
+    const { kind, id } = item.record
+    const cipher = sealBatch(ctx.enc, ctx.opaqueId, pendingBatchId(kind, id), encodeIncoming(item))
+    insert.run(kind, id, cipher, item.receivedAt ?? now)
+  }
+}
+
+/** Take every waiting child out of sync_pending to plan it again; drop the expired and unreadable. */
+function takePending(db: Database.Database, ctx: SyncApplyContext, now: number): IncomingRecord[] {
+  const rows = db
+    .prepare('SELECT kind, id, record_cipher, received_at FROM sync_pending')
+    .all() as { kind: string; id: string; record_cipher: string; received_at: number }[]
+  if (!rows.length) return []
+  db.prepare('DELETE FROM sync_pending').run()
+  const out: IncomingRecord[] = []
+  let dropped = 0
+  for (const row of rows) {
+    if (now - row.received_at > PENDING_TTL_MS) {
+      dropped += 1
+      continue
+    }
+    try {
+      const item = decodeIncoming(
+        openBatch(ctx.enc, ctx.opaqueId, pendingBatchId(row.kind, row.id), row.record_cipher)
+      )
+      out.push({ ...item, receivedAt: row.received_at })
+    } catch {
+      dropped += 1
+    }
+  }
+  if (dropped) log.info('sync', 'pending_dropped', { count: dropped })
+  return out
+}
+
+function applyMemoriesIn(
+  db: Database.Database,
+  items: IncomingRecord[],
+  ctx: SyncApplyContext,
+  now: number
+): { applied: number; conflicts: number } {
+  if (!items.length) return { applied: 0, conflicts: 0 }
+  const select = db.prepare('SELECT * FROM memory WHERE id=?')
+  const existing = (id: string): AiMemory | null => {
+    const row = select.get(id) as Record<string, unknown> | undefined
+    return row ? memRowToMemory(row) : null
+  }
+  const plan = planMemoryApply(items, storedSyncVersions(db, MEMORY_KINDS), (id) => {
+    const memory = existing(id)
+    return memory ? extractMemoryRecords([memory])[0]?.payload : undefined
+  })
+  const nowIso = new Date(now).toISOString()
+  const remove = db.prepare('DELETE FROM memory WHERE id=?')
+  for (const record of plan.applied) {
+    if (record.deleted || !record.payload) remove.run(record.id)
+    else writeMemoryRow(db, memoryFromPayload(record.payload, existing(record.id), nowIso))
+  }
+  if (plan.applied.length) syncMemorySearchRows(db)
+  writeReceivedVersions(db, plan.versions)
+  writeConflicts(db, plan.conflicts, ctx, now)
+  return { applied: plan.applied.length, conflicts: plan.conflicts.length }
+}
+
+/**
+ * Apply received memories (upsert or delete) without recapturing them; this
+ * device's access count and last access survive.
+ */
+export function applyRemoteMemories(
+  records: IncomingRecord[],
+  ctx: SyncApplyContext
+): { applied: number; conflicts: number } {
+  const db = getDb()
+  const now = ctx.now ?? Date.now()
+  return db.transaction(() => applyMemoriesIn(db, records, ctx, now))()
+}
+
+const DATA_KIND_SET = new Set<string>(DATA_KINDS)
+
+/**
+ * Apply one pull: each record goes through the conflict rule, the winners are
+ * written with persistDiff (never capture), losers and debts edited on both
+ * sides go to sync_conflicts, children without a parent to sync_pending.
+ * Children already waiting are retried here, so a parent that arrives later
+ * releases them. Memory records in `records` go through applyRemoteMemories.
+ */
+export function applyRemoteRecords(
+  records: IncomingRecord[],
+  ctx: SyncApplyContext
+): RemoteApplyResult {
+  const db = getDb()
+  const now = ctx.now ?? Date.now()
+  const data = records.filter((item) => DATA_KIND_SET.has(item.record.kind))
+  const memories = records.filter((item) => item.record.kind === 'memory')
+
+  const { result, changedKeys } = db.transaction(
+    (): {
+      result: RemoteApplyResult
+      changedKeys: string[]
+    } => {
+      const retried = takePending(db, ctx, now)
+      const base = lastSnapshot ?? loadData(db)
+      const plan = planRemoteApply(base, [...retried, ...data], storedSyncVersions(db, DATA_KINDS))
+      let generation = syncStateNumber(db, 'generation')
+      let state: SaveData | null = null
+      if (plan.applied.length) {
+        persistDiff(db, base, plan.state)
+        db.prepare(
+          'DELETE FROM file_search_content WHERE file_id NOT IN (SELECT id FROM files)'
+        ).run()
+        syncGlobalSearchIndex(db, withFileSearchContent(db, plan.state))
+        const archived = (projects: Project[]): string =>
+          projects
+            .filter((p) => p.archivedAt)
+            .map((p) => p.id)
+            .sort()
+            .join('\0')
+        if (archived(base.projects) !== archived(plan.state.projects))
+          syncMemorySearchRows(
+            db,
+            new Set(plan.state.projects.filter((p) => p.archivedAt).map((p) => p.id))
+          )
+        generation += 1
+        writeSyncStateIn(db, 'generation', String(generation))
+        state = plan.state
+      }
+      writeReceivedVersions(db, plan.versions)
+      writeConflicts(db, plan.conflicts, ctx, now)
+      writePending(db, plan.pending, ctx, now)
+      const memory = applyMemoriesIn(db, memories, ctx, now)
+      return {
+        result: {
+          applied: plan.applied.length,
+          memories: memory.applied,
+          conflicts: plan.conflicts.length + memory.conflicts,
+          pending: plan.pending.length,
+          generation,
+          state
+        },
+        changedKeys: plan.applied.map((r) => recordKey(r.kind, r.id))
+      }
+    }
+  )()
+
+  // Only after the commit: on a rollback the snapshot must keep matching the disk.
+  if (result.state) {
+    lastSnapshot = structuredClone(result.state)
+    remoteKeysByGeneration.set(result.generation, new Set(changedKeys))
+  }
+  return result
+}
+
+/** Versions this device made and has not pushed yet, oldest first. Received versions never qualify. */
+export function pendingOutgoing(): OutgoingRow[] {
+  const db = getDb()
+  const pushed = syncStateNumber(db, 'pushed_seq')
+  const rows = db
+    .prepare(
+      `SELECT kind, id, hlc, base_hlc, deleted, seq FROM sync_records
+       WHERE device_id = ? AND seq > ? ORDER BY seq`
+    )
+    .all(getSyncDeviceId(), pushed) as {
+    kind: OutgoingRow['kind']
+    id: string
+    hlc: string
+    base_hlc: string | null
+    deleted: number
+    seq: number
+  }[]
+  return rows.map((r) => ({
+    kind: r.kind,
+    id: r.id,
+    hlc: r.hlc,
+    baseHlc: r.base_hlc,
+    deleted: r.deleted === 1,
+    seq: r.seq
+  }))
+}
+
+export function pendingOutgoingCount(): number {
+  const db = getDb()
+  const { c } = db
+    .prepare('SELECT COUNT(*) AS c FROM sync_records WHERE device_id = ? AND seq > ?')
+    .get(getSyncDeviceId(), syncStateNumber(db, 'pushed_seq')) as { c: number }
+  return c
+}
+
+/**
+ * After a successful /push: everything up to `seqLocalMax` is out, and each
+ * version records the server seq it went up with (skipped when the record was
+ * edited again meanwhile, since the row then holds a newer, unpushed version).
+ */
+export function markPushed(
+  seqLocalMax: number,
+  serverSeqs: { kind: string; id: string; hlc: string; serverSeq: number }[]
+): void {
+  const db = getDb()
+  const update = db.prepare('UPDATE sync_records SET server_seq=? WHERE kind=? AND id=? AND hlc=?')
+  db.transaction(() => {
+    for (const s of serverSeqs) update.run(s.serverSeq, s.kind, s.id, s.hlc)
+    if (seqLocalMax > syncStateNumber(db, 'pushed_seq'))
+      writeSyncStateIn(db, 'pushed_seq', String(seqLocalMax))
+  })()
+}
+
+/** Every record as it stands now, keyed by kind:id, for building an outgoing batch. */
+export function currentSyncRecords(): Map<string, SyncRecord> {
+  const db = getDb()
+  const records = [...extractDataRecords(loadData(db)), ...extractMemoryRecords(allMemories(db))]
+  return new Map(records.map((r) => [recordKey(r.kind, r.id), r]))
 }
 
 // ── JSON migration ────────────────────────────────────────────────────────────
@@ -2251,8 +2699,18 @@ export function loadData(existingDb?: Database.Database): SaveData {
 
 export function saveData(data: unknown): void {
   const db = getDb()
-  const next = data as SaveData
   const prev = lastSnapshot
+  const seenGeneration =
+    typeof (data as SaveData).syncGeneration === 'number'
+      ? Number((data as SaveData).syncGeneration)
+      : 0
+  // A save the renderer built before it applied a remote change must not write
+  // the old version back: those records keep what the database has.
+  const remoteKeys = staleRemoteKeys(seenGeneration)
+  const next = remoteKeys.size
+    ? guardStaleSave(data as SaveData, prev ?? loadData(db), remoteKeys)
+    : (data as SaveData)
+  if (remoteKeys.size) log.info('sync', 'stale_save_guarded', { records: remoteKeys.size })
   // Events the AI tool layer explicitly asked to log (lineage). These ride
   // alongside the save payload without altering the existing persist path.
   const aiEvents = next.entityEvents ?? []
@@ -2289,6 +2747,7 @@ export function saveData(data: unknown): void {
   // line is skipped, so the snapshot keeps matching what's actually on disk —
   // the next save then re-diffs (or rewrites) from a truthful base.
   lastSnapshot = structuredClone(next)
+  forgetRemoteKeysUpTo(seenGeneration)
 }
 
 // ── Entity Event Log ─────────────────────────────────────────────────────────
