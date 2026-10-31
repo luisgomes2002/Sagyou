@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from 'uuid'
+import { randomUUID as uuidv4 } from './sync/bytes'
 import type { Sprint } from './types'
 
 export const SPRINT_NAME_EMPTY = 'Dê um nome à sprint.'

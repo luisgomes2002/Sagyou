@@ -71,3 +71,12 @@ describe('compatibilidade com o sync do desktop antes do core', () => {
     expect(() => openBatch(enc, 'dev', 'b1', 'não é base64!')).toThrow()
   })
 })
+
+describe('randomUUID', () => {
+  it('gera UUID v4 diferente a cada chamada', async () => {
+    const { randomUUID } = await import('../bytes')
+    const a = randomUUID()
+    expect(a).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+    expect(randomUUID()).not.toBe(a)
+  })
+})

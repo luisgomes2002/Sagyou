@@ -13,11 +13,11 @@
  * - only a 401 whose body says `{revoked: true, wipe: true}` wipes the device;
  * - a batch that does not decrypt is logged, skipped, and the cursor moves on.
  */
-import { v4 as randomUUID } from 'uuid'
 import {
   fromBase64Url as decodeBase64Url,
   fromUtf8,
   randomBytes,
+  randomUUID,
   sha256Hex,
   toBase64Url as encodeBase64Url,
   utf8

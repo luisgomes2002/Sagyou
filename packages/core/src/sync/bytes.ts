@@ -37,3 +37,12 @@ export const hkdfSha256 = (ikm: Uint8Array, info: string, length: number): Uint8
 
 export const gzip = (data: Uint8Array | string): Uint8Array => gzipSync(asBytes(data))
 export const gunzip = (data: Uint8Array): Uint8Array => gunzipSync(data)
+
+/** RFC 4122 version 4 UUID from secure random bytes (no `uuid` package: it is ESM-only). */
+export function randomUUID(): string {
+  const b = randomBytes(16)
+  b[6] = (b[6] & 0x0f) | 0x40
+  b[8] = (b[8] & 0x3f) | 0x80
+  const h = toHex(b)
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`
+}
