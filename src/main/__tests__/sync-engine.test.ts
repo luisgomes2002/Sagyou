@@ -1436,4 +1436,3 @@ describe('conflitos', () => {
     expect(dataHashes(a.store)).toEqual(dataHashes(b.store))
   })
 })
-
