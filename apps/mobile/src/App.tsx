@@ -11,6 +11,7 @@ import { ActivityIndicator, Pressable, Text, View } from 'react-native'
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context'
 import { bootstrap } from './bootstrap'
 import { StatusBanner } from './components/StatusBanner'
+import { LockGate } from './lock/LockGate'
 import { FinanceScreen } from './screens/FinanceScreen'
 import { HabitsScreen } from './screens/HabitsScreen'
 import { NotesScreen } from './screens/NotesScreen'
@@ -153,7 +154,9 @@ export default function App(): React.JSX.Element {
   useEffect(() => bootstrap(), [])
   return (
     <SafeAreaProvider>
-      <AppShell mode={mode} />
+      <LockGate>
+        <AppShell mode={mode} />
+      </LockGate>
     </SafeAreaProvider>
   )
 }
