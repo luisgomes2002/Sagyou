@@ -135,7 +135,7 @@ describe('configuração de release do atualizador', () => {
     const checkouts = apk.match(/uses: actions\/checkout@/g)?.length ?? 0
     expect(checkouts).toBeGreaterThan(0)
     expect(apk.match(/persist-credentials: false/g)?.length).toBe(checkouts)
-    const secrets = [...new Set((apk.match(/secrets\.[A-Z_]+/g) ?? []).sort())]
+    const secrets = [...new Set((apk.match(/secrets\.[A-Z0-9_]+/g) ?? []).sort())]
     expect(secrets).toEqual([
       'secrets.ANDROID_KEYSTORE_BASE64',
       'secrets.ANDROID_KEYSTORE_PASSWORD',
