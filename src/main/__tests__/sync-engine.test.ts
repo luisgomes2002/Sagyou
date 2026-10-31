@@ -1106,6 +1106,61 @@ describe('wipeLocalData', () => {
   })
 })
 
+describe('restaurar backup com o sync ligado', () => {
+  it('"Não" pausa em restore e não envia nada', async () => {
+    const { a } = await pairedDevices(withData({ projects: [project('p1', 'Casa')] }))
+    a.store.save({ ...a.store.state, projects: [project('p1', 'Casa restaurada')] })
+    const status = await a.engine.afterRestore('pause')
+    expect(status.state).toBe('paused')
+    expect(status.paused).toBe('restore')
+    const pushes = server.pushes()
+    a.engine.notifySaved()
+    await clock.advance(PUSH_DEBOUNCE_MS)
+    await clock.advance(POLL_MS)
+    await a.engine.syncNow()
+    expect(server.pushes()).toBe(pushes)
+  })
+
+  it('"Sim" envia a versão restaurada para os outros aparelhos', async () => {
+    const { a, b } = await pairedDevices(withData({ projects: [project('p1', 'Casa')] }))
+    a.store.save({ ...a.store.state, projects: [project('p1', 'Casa restaurada')] })
+    await a.engine.afterRestore('propagate')
+    await clock.advance(POLL_MS)
+    expect((b.store.state.projects[0] as Row).name).toBe('Casa restaurada')
+  })
+
+  it('"Este aparelho manda" tira a pausa e envia', async () => {
+    const { a, b } = await pairedDevices(withData({ projects: [project('p1', 'Casa')] }))
+    a.store.save({ ...a.store.state, projects: [project('p1', 'Casa restaurada')] })
+    await a.engine.afterRestore('pause')
+    const status = await a.engine.resume('push-local')
+    expect(status.paused).toBeNull()
+    await clock.advance(POLL_MS)
+    expect((b.store.state.projects[0] as Row).name).toBe('Casa restaurada')
+  })
+
+  it('"A nuvem manda" com o backup forçado falhando não apaga nada', async () => {
+    const { a } = await pairedDevices(withData({ projects: [project('p1', 'Casa')] }))
+    a.store.save({ ...a.store.state, projects: [project('p1', 'Casa restaurada')] })
+    await a.engine.afterRestore('pause')
+    const before = dataHashes(a.store)
+    a.backup.mockResolvedValue(false)
+    await expect(a.engine.resume('take-cloud')).rejects.toThrow('backup')
+    expect(dataHashes(a.store)).toEqual(before)
+    expect(a.engine.status().paused).toBe('restore')
+  })
+
+  it('"A nuvem manda" volta ao que está na nuvem', async () => {
+    const { a } = await pairedDevices(withData({ projects: [project('p1', 'Casa')] }))
+    a.store.save({ ...a.store.state, projects: [project('p1', 'Casa restaurada')] })
+    await a.engine.afterRestore('pause')
+    const status = await a.engine.resume('take-cloud')
+    expect(a.backup).toHaveBeenCalled()
+    expect(status.paused).toBeNull()
+    expect((a.store.state.projects[0] as Row).name).toBe('Casa')
+  })
+})
+
 describe('substituir', () => {
   it('um backup forçado que falha impede o replace e não gasta o convite', async () => {
     const a = device(server, clock, ID_A)

@@ -39,6 +39,8 @@ import { TaskModal } from './components/modals/TaskModal'
 import { ProjectModal } from './components/modals/ProjectModal'
 import { ColumnModal } from './components/modals/ColumnModal'
 import { ConfirmDialog } from './components/ConfirmDialog'
+import { RestoreSyncDialog } from './components/modals/RestoreSyncDialog'
+import { syncAsksAfterRestore } from './utils/sync-view'
 import { TaskViewModal } from './components/modals/TaskViewModal'
 import { ToastContainer, type ToastMessage } from './components/layout/Toast'
 import { HomeView } from './components/views/HomeView'
@@ -247,6 +249,8 @@ export default function App() {
     message: '',
     onConfirm: () => {}
   })
+  // Open after a backup import while sync is on (Sync 2.9).
+  const [restoreSyncOpen, setRestoreSyncOpen] = useState(false)
   // Count of live code-agent runs (supports N concurrent agents in different dirs).
   const [codeAgentRunCount, setCodeAgentRunCount] = useState(0)
 
@@ -614,8 +618,11 @@ export default function App() {
         setConfirm((c) => ({ ...c, open: false }))
         try {
           const ok = await importBackup()
-          if (ok) addToast('Backup importado com sucesso')
-          else addToast('Importação cancelada ou sem ponto de restauração', 'info')
+          if (ok) {
+            addToast('Backup importado com sucesso')
+            const status = await window.electronAPI.sync.status().catch(() => null)
+            if (status && syncAsksAfterRestore(status.state)) setRestoreSyncOpen(true)
+          } else addToast('Importação cancelada ou sem ponto de restauração', 'info')
         } catch (error) {
           addToast(error instanceof Error ? error.message : 'Falha ao importar backup', 'error')
         }
@@ -992,6 +999,8 @@ export default function App() {
         onSave={handleSaveColumn}
         onClose={() => setColumnModal({ open: false })}
       />
+
+      <RestoreSyncDialog open={restoreSyncOpen} onDone={() => setRestoreSyncOpen(false)} />
 
       <ConfirmDialog
         open={confirm.open}

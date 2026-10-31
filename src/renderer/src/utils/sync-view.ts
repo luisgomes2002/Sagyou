@@ -1,4 +1,5 @@
 import type { SyncKind } from '../../../main/modules/sync/sync-records'
+import type { SyncStateName } from '../../../main/modules/sync/sync-engine'
 
 /** What a conflict calls each kind of record on the Sincronização screen. */
 const KIND_LABELS: Record<SyncKind, string> = {
@@ -96,4 +97,9 @@ export function hasLocalData(state: LocalDataState): boolean {
     state.timeBlocks ?? [],
     state.routines ?? []
   ].some((items) => items.length > 0)
+}
+
+/** Only a device with a sync session is asked to spread a restored backup. */
+export function syncAsksAfterRestore(state: SyncStateName): boolean {
+  return state !== 'off' && state !== 'no-keychain' && state !== 'disconnected'
 }
