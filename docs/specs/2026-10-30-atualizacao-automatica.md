@@ -29,6 +29,7 @@ Hoje o Sagyou só é atualizado quando a pessoa abre a página de Releases, baix
 - A fonte das versões é o GitHub Releases do Sagyou.
 - A ordem ao abrir é: consultar atualização → se houver, atualizar o app → depois baixar dados sincronizados da nuvem. Sem atualização, a sincronização pode começar logo após a consulta.
 - Se o GitHub não responder, a sincronização pode começar depois de um prazo curto, sem bloquear os dados locais.
+- No macOS sem assinatura (sem atualização interna), uma versão nova **não** segura o sync: ele continua e o app só mostra "Nova versão disponível" com o link do Release (decidido em 31/10/2026).
 
 ## Decisões do construtor (podem ser alteradas na aprovação)
 
