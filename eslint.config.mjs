@@ -37,7 +37,7 @@ export default defineConfig(
   },
   {
     // Expo/Metro/Jest config files are CommonJS by convention.
-    files: ['apps/mobile/*.js'],
+    files: ['apps/mobile/*.js', 'apps/mobile/plugins/*.js'],
     rules: {
       '@typescript-eslint/no-require-imports': 'off'
     }
