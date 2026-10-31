@@ -6,6 +6,7 @@ import { ActivityIndicator, Pressable, Text, View } from 'react-native'
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context'
 import { bootstrap } from './bootstrap'
 import { StatusBanner } from './components/StatusBanner'
+import { FinanceScreen } from './screens/FinanceScreen'
 import { HabitsScreen } from './screens/HabitsScreen'
 import { PairScreen } from './screens/PairScreen'
 import { Placeholder } from './screens/Placeholder'
@@ -19,7 +20,8 @@ export const TAB_LABELS = ['Tarefas', 'Hábitos', 'Finanças', 'Notas', 'Busca']
 /** Each tab's content; a tab without one shows a placeholder until its task lands. */
 const TAB_SCREENS: Partial<Record<(typeof TAB_LABELS)[number], ComponentType>> = {
   Tarefas: TasksStack,
-  Hábitos: HabitsScreen
+  Hábitos: HabitsScreen,
+  Finanças: FinanceScreen
 }
 
 export type RootStackParams = {
