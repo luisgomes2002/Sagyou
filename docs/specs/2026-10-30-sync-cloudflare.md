@@ -212,7 +212,7 @@ Mudança aditiva, sem migração destrutiva.
   - 5 erros seguidos bloqueiam por 15 min.
 - **Senha do app esquecida:** nada muda no sync. A senha é só a trava de tela, e a chave de sync fica no `safeStorage`.
 
-## Adendo de inicialização (decisão de Luis em 2026-10-30; plano pendente)
+## Adendo de inicialização (decisão de Luis em 2026-10-30; implementado em 2026-10-31)
 
 Quando o atualizador automático estiver instalado, a ordem ao abrir passa a ser:
 
@@ -221,4 +221,4 @@ Quando o atualizador automático estiver instalado, a ordem ao abrir passa a ser
 3. Se houver versão nova, baixar e instalar primeiro; o sync não faz pull nem push até o app atualizado abrir. Se a instalação for adiada ou falhar, os dados locais continuam acessíveis e o sync fica em espera com estado visível.
 4. Se a consulta ao GitHub falhar ou não responder em **10 segundos**, liberar o sync. A verificação pode ser repetida depois; um erro do GitHub não bloqueia indefinidamente a Cloudflare.
 
-Este adendo depende de `docs/specs/2026-10-30-atualizacao-automatica.md`. O motor atual do PR #30 inicia o sync ao abrir; o portão de atualização pertence ao plano da feature de atualização automática e ainda não foi implementado.
+Este adendo depende de `docs/specs/2026-10-30-atualizacao-automatica.md` e foi implementado pelo plano `docs/plans/2026-10-31-atualizacao-automatica.md`: o motor recusa toda chamada ao servidor enquanto o atualizador segura o sync (estado `update-pending`). No macOS sem assinatura, uma versão nova não segura o sync (decisão de Luis em 2026-10-31).

@@ -24,6 +24,8 @@ Baixe o instalador da sua plataforma na página de [Releases](https://github.com
 | macOS      | `.dmg`            |
 | Linux      | `.AppImage`, `.deb` |
 
+Depois de instalado, o Sagyou procura uma versão nova toda vez que abre, baixa em segundo plano e mostra **"Reiniciar e instalar"** quando ela estiver pronta. Seus dados ficam onde estão. A primeira versão com esse recurso precisa ser instalada à mão. No macOS, enquanto o app não tem assinatura da Apple, ele só avisa e abre a página do Release. Com a sincronização ligada, ela espera a atualização terminar antes de falar com a nuvem.
+
 Não é preciso instalar Python, Node nem nada além do app. Para usar as sessões de código, tenha ao menos um dos CLIs (Codex, Claude Code ou OpenCode) instalado e autenticado.
 
 ---
