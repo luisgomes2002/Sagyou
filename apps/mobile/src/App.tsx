@@ -1,4 +1,9 @@
-import { DarkTheme, DefaultTheme, NavigationContainer } from '@react-navigation/native'
+import {
+  DarkTheme,
+  DefaultTheme,
+  NavigationContainer,
+  useNavigation
+} from '@react-navigation/native'
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
 import { createNativeStackNavigator } from '@react-navigation/native-stack'
 import { useEffect, type ComponentType } from 'react'
@@ -10,6 +15,8 @@ import { FinanceScreen } from './screens/FinanceScreen'
 import { HabitsScreen } from './screens/HabitsScreen'
 import { NotesScreen } from './screens/NotesScreen'
 import { PairScreen } from './screens/PairScreen'
+import { SearchScreen } from './screens/SearchScreen'
+import type { SearchHit } from './data/search'
 import { Placeholder } from './screens/Placeholder'
 import { SettingsScreen } from './screens/SettingsScreen'
 import { TasksStack } from './screens/tasks/TasksStack'
@@ -18,12 +25,33 @@ import { useTheme, type Theme } from './theme'
 
 export const TAB_LABELS = ['Tarefas', 'Hábitos', 'Finanças', 'Notas', 'Busca'] as const
 
+/** Opens a search hit in its tab (tasks and projects go straight to the record). */
+function SearchTab(): React.JSX.Element {
+  const navigation = useNavigation() as unknown as {
+    navigate(name: string, params?: object): void
+  }
+  const open = (hit: SearchHit): void => {
+    if (hit.kind === 'task' && hit.parentId)
+      navigation.navigate('Tarefas', {
+        screen: 'Tarefa',
+        params: { projectId: hit.parentId, taskId: hit.id }
+      })
+    else if (hit.kind === 'project')
+      navigation.navigate('Tarefas', { screen: 'Projeto', params: { projectId: hit.id } })
+    else if (hit.kind === 'note') navigation.navigate('Notas')
+    else if (hit.kind === 'habit') navigation.navigate('Hábitos')
+    else navigation.navigate('Finanças')
+  }
+  return <SearchScreen onOpen={open} />
+}
+
 /** Each tab's content; a tab without one shows a placeholder until its task lands. */
 const TAB_SCREENS: Partial<Record<(typeof TAB_LABELS)[number], ComponentType>> = {
   Tarefas: TasksStack,
   Hábitos: HabitsScreen,
   Finanças: FinanceScreen,
-  Notas: NotesScreen
+  Notas: NotesScreen,
+  Busca: SearchTab
 }
 
 export type RootStackParams = {

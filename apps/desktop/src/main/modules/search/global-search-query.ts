@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3'
+import { searchMatch } from '@sagyou/core/search'
 
 export const GLOBAL_SEARCH_TYPES = [
   'project',
@@ -100,14 +101,7 @@ const allowedTypes = new Set<string>(GLOBAL_SEARCH_TYPES)
 const MAX_LIMIT = 100
 
 /** FTS syntax comes only from quoted Unicode tokens, never from raw IPC text. */
-export function searchMatch(term: string): { tokens: string[]; match: string } {
-  const tokens =
-    term
-      .slice(0, 200)
-      .match(/[\p{L}\p{N}]+/gu)
-      ?.slice(0, 8) ?? []
-  return { tokens, match: tokens.map((token) => `"${token}"*`).join(' AND ') }
-}
+export { searchMatch }
 
 function normalized(text: string): string {
   return text

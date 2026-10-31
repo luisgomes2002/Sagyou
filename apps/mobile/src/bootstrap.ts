@@ -3,6 +3,7 @@ import * as SecureStore from 'expo-secure-store'
 import { AppState } from 'react-native'
 import { createRecordRepo } from './data/records'
 import { migrate } from './data/schema'
+import { rebuildSearchIndex, searchRecords } from './data/search'
 import { openExpoDb } from './data/sql'
 import { useApp } from './store/app'
 import { createSyncRuntime } from './sync/runtime'
@@ -15,7 +16,8 @@ export function bootstrap(): void {
   started = true
   const db = openExpoDb()
   migrate(db)
-  const repo = createRecordRepo(db)
+  const repo = createRecordRepo(db, (_change, state) => rebuildSearchIndex(db, state))
+  rebuildSearchIndex(db, repo.loadState())
   const runtime = createSyncRuntime({
     db,
     repo,
@@ -31,5 +33,10 @@ export function bootstrap(): void {
   // start() reads the secure store first; before it the engine always says 'off'.
   runtime.engine.start()
   const paired = runtime.engine.status().state !== 'off'
-  useApp.getState().init({ repo, runtime }, paired)
+  useApp
+    .getState()
+    .init(
+      { repo, runtime, search: (text, profileId) => searchRecords(db, text, profileId) },
+      paired
+    )
 }

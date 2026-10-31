@@ -2,6 +2,7 @@ import type { SyncStatus } from '@sagyou/core/sync/engine'
 import { DEFAULT_FINANCIAL_PROFILE_ID as DEFAULT_PROFILE_ID } from '@sagyou/core/types'
 import { create } from 'zustand'
 import type { RecordRepo } from '../data/records'
+import type { SearchHit } from '../data/search'
 import { emptyState, type MobileState } from '../data/state'
 import type { SyncRuntime } from '../sync/runtime'
 
@@ -15,6 +16,7 @@ export const PREF_PROFILE = 'finance.profileId'
 export interface AppServices {
   repo: RecordRepo
   runtime: SyncRuntime
+  search: (text: string, profileId: string) => SearchHit[]
 }
 
 export type AppMode = 'loading' | 'pair' | 'app'

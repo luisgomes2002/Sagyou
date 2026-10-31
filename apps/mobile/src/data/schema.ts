@@ -53,7 +53,8 @@ const MIGRATIONS: string[] = [
     PRIMARY KEY (kind, id)
   );
   CREATE VIRTUAL TABLE search_fts USING fts5(
-    kind UNINDEXED, id UNINDEXED, profile_id UNINDEXED, archived UNINDEXED, title, body
+    kind UNINDEXED, id UNINDEXED, profile_id UNINDEXED, archived UNINDEXED, title, body,
+    parent UNINDEXED
   );
   CREATE TABLE prefs (key TEXT PRIMARY KEY, value TEXT);
   `
