@@ -52,6 +52,40 @@ export function Field(props: TextInputProps & { label: string }): React.JSX.Elem
   )
 }
 
+/** A selectable option (radio or checkbox look depends on how the caller uses it). */
+export function Chip({
+  label,
+  selected,
+  onPress
+}: {
+  label: string
+  selected: boolean
+  onPress: () => void
+}): React.JSX.Element {
+  const theme = useTheme()
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ selected }}
+      onPress={onPress}
+      style={[
+        styles.chip,
+        {
+          backgroundColor: selected ? theme.selected : theme.surface,
+          borderColor: selected ? theme.purple : theme.border
+        }
+      ]}
+    >
+      <Text style={{ color: selected ? theme.text : theme.muted }}>{label}</Text>
+    </Pressable>
+  )
+}
+
+export function Row({ children }: { children: ReactNode }): React.JSX.Element {
+  return <View style={styles.row}>{children}</View>
+}
+
 export function Card({ children }: { children: ReactNode }): React.JSX.Element {
   const theme = useTheme()
   return (
@@ -79,5 +113,7 @@ const styles = StyleSheet.create({
     fontSize: 15
   },
   card: { borderWidth: 1, borderRadius: 8, padding: 12, gap: 6 },
+  chip: { borderWidth: 1, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 6 },
+  row: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   screen: { flex: 1, padding: 16, gap: 12 }
 })

@@ -1,7 +1,7 @@
 import { DarkTheme, DefaultTheme, NavigationContainer } from '@react-navigation/native'
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
 import { createNativeStackNavigator } from '@react-navigation/native-stack'
-import { useEffect } from 'react'
+import { useEffect, type ComponentType } from 'react'
 import { ActivityIndicator, Pressable, Text, View } from 'react-native'
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context'
 import { bootstrap } from './bootstrap'
@@ -9,10 +9,16 @@ import { StatusBanner } from './components/StatusBanner'
 import { PairScreen } from './screens/PairScreen'
 import { Placeholder } from './screens/Placeholder'
 import { SettingsScreen } from './screens/SettingsScreen'
+import { TasksStack } from './screens/tasks/TasksStack'
 import { useApp, type AppMode } from './store/app'
 import { useTheme, type Theme } from './theme'
 
 export const TAB_LABELS = ['Tarefas', 'Hábitos', 'Finanças', 'Notas', 'Busca'] as const
+
+/** Each tab's content; a tab without one shows a placeholder until its task lands. */
+const TAB_SCREENS: Partial<Record<(typeof TAB_LABELS)[number], ComponentType>> = {
+  Tarefas: TasksStack
+}
 
 export type RootStackParams = {
   Abas: undefined
@@ -61,11 +67,14 @@ function TabsScreen({
         )
       }}
     >
-      {TAB_LABELS.map((label) => (
-        <Tabs.Screen key={label} name={label}>
-          {() => <Placeholder title={label} />}
-        </Tabs.Screen>
-      ))}
+      {TAB_LABELS.map((label) => {
+        const Content = TAB_SCREENS[label]
+        return (
+          <Tabs.Screen key={label} name={label}>
+            {() => (Content ? <Content /> : <Placeholder title={label} />)}
+          </Tabs.Screen>
+        )
+      })}
     </Tabs.Navigator>
   )
 }
