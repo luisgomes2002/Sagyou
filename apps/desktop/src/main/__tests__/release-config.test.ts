@@ -5,12 +5,14 @@ import { describe, expect, it } from 'vitest'
 
 // The updater reads what these files publish; a release that ships without its
 // manifests would leave every installed copy unable to find the next version.
-const root = join(__dirname, '..', '..', '..')
-const read = (file: string): string => readFileSync(join(root, file), 'utf8')
+const desktop = join(__dirname, '..', '..', '..')
+const repo = join(desktop, '..', '..')
+const read = (file: string): string => readFileSync(join(desktop, file), 'utf8')
+const readRepo = (file: string): string => readFileSync(join(repo, file), 'utf8')
 
 describe('configuração de release do atualizador', () => {
   const builder = read('electron-builder.yml')
-  const workflow = read('.github/workflows/release.yml')
+  const workflow = readRepo('.github/workflows/release.yml')
   const pkg = JSON.parse(read('package.json')) as { scripts: Record<string, string> }
 
   it('publica no GitHub do projeto, não na URL de exemplo', () => {
@@ -47,7 +49,7 @@ describe('configuração de release do atualizador', () => {
 
   it('confere que a tag e o package.json têm a mesma versão', () => {
     expect(workflow).toContain('GITHUB_REF_NAME#v')
-    expect(workflow).toMatch(/require\('\.\/package\.json'\)\.version/)
+    expect(workflow).toMatch(/require\('\.\/apps\/desktop\/package\.json'\)\.version/)
   })
 
   it('não deixa o electron-builder publicar sozinho', () => {
@@ -89,5 +91,18 @@ describe('configuração de release do atualizador', () => {
     const uses = workflow.match(/uses: \S+/g) ?? []
     expect(uses.length).toBeGreaterThan(0)
     for (const use of uses) expect(use).toMatch(/@[0-9a-f]{40}$/)
+  })
+
+  it('roda os builds à mão sem criar Release', () => {
+    expect(workflow).toMatch(/^on:[\s\S]*workflow_dispatch:/m)
+    const release = workflow.slice(workflow.indexOf('\n  release:'))
+    expect(release.length).toBeGreaterThan(0)
+    expect(release).toContain("if: startsWith(github.ref, 'refs/tags/')")
+  })
+
+  it('o Quality confere o tipo do Worker', () => {
+    expect(readRepo('.github/workflows/quality.yml')).toContain(
+      'npm run typecheck -w sagyou-sync-server'
+    )
   })
 })

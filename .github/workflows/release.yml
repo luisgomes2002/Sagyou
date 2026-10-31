@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - 'v*.*.*'
+  # Manual run: builds and uploads the installers as artifacts, never a Release.
+  workflow_dispatch:
 
 # Only the release job may write: npm/pip scripts in the build jobs never see a writable token.
 permissions:
@@ -21,9 +23,10 @@ jobs:
           node-version: 24
           cache: 'npm'
       - name: Tag matches package.json
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
           tag="${GITHUB_REF_NAME#v}"
-          pkg="$(node -p "require('./package.json').version")"
+          pkg="$(node -p "require('./apps/desktop/package.json').version")"
           if [ "$tag" != "$pkg" ]; then echo "tag v$tag != package.json $pkg"; exit 1; fi
       - run: npm ci
       - run: npm run typecheck
@@ -45,8 +48,10 @@ jobs:
           python-version: '3.12'
       - run: npm ci
       - run: npm run build:win
+        working-directory: apps/desktop
       - name: Every installer and update manifest exists
         shell: bash
+        working-directory: apps/desktop
         run: |
           v="$(node -p "require('./package.json').version")"
           for f in dist/sagyou-$v-setup.exe dist/sagyou-$v-setup.exe.blockmap dist/latest.yml; do
@@ -58,9 +63,9 @@ jobs:
           name: windows
           if-no-files-found: error
           path: |
-            dist/sagyou-*-setup.exe
-            dist/sagyou-*-setup.exe.blockmap
-            dist/latest.yml
+            apps/desktop/dist/sagyou-*-setup.exe
+            apps/desktop/dist/sagyou-*-setup.exe.blockmap
+            apps/desktop/dist/latest.yml
 
   build-mac:
     needs: check
@@ -78,8 +83,10 @@ jobs:
           python-version: '3.12'
       - run: npm ci
       - run: npm run build:mac
+        working-directory: apps/desktop
       - name: Every installer and update manifest exists
         shell: bash
+        working-directory: apps/desktop
         run: |
           v="$(node -p "require('./package.json').version")"
           for f in dist/sagyou-$v.dmg dist/sagyou-$v-mac.zip dist/sagyou-$v-mac.zip.blockmap dist/latest-mac.yml; do
@@ -91,10 +98,10 @@ jobs:
           name: mac
           if-no-files-found: error
           path: |
-            dist/sagyou-*.dmg
-            dist/sagyou-*-mac.zip
-            dist/*.blockmap
-            dist/latest-mac.yml
+            apps/desktop/dist/sagyou-*.dmg
+            apps/desktop/dist/sagyou-*-mac.zip
+            apps/desktop/dist/*.blockmap
+            apps/desktop/dist/latest-mac.yml
 
   build-linux:
     needs: check
@@ -113,8 +120,10 @@ jobs:
       - run: npm ci
       # Builds only AppImage and deb; snap is skipped (requires snapcraft not available on runners)
       - run: npm run prepare:markitdown && npx electron-vite build && npx electron-builder --linux AppImage deb --publish never
+        working-directory: apps/desktop
       - name: Every installer and update manifest exists
         shell: bash
+        working-directory: apps/desktop
         run: |
           v="$(node -p "require('./package.json').version")"
           for f in dist/sagyou-$v.AppImage dist/sagyou-$v.deb dist/latest-linux.yml; do
@@ -126,12 +135,13 @@ jobs:
           name: linux
           if-no-files-found: error
           path: |
-            dist/sagyou-*.AppImage
-            dist/sagyou-*.deb
-            dist/latest-linux.yml
+            apps/desktop/dist/sagyou-*.AppImage
+            apps/desktop/dist/sagyou-*.deb
+            apps/desktop/dist/latest-linux.yml
 
   release:
     needs: [build-windows, build-mac, build-linux]
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
       contents: write
