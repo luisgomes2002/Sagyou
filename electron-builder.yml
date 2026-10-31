@@ -25,6 +25,11 @@ nsis:
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
 mac:
+  target:
+    - dmg
+    - zip
+  # The updater needs the zip; without this name it would follow productName (Sagyou-…).
+  artifactName: ${name}-${version}-mac.${ext}
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
     - NSCameraUsageDescription: Application requests access to the device's camera.
@@ -47,5 +52,7 @@ appImage:
 # Rebuilding node-pty on Windows needlessly requires the MSVC Spectre toolchain.
 npmRebuild: false
 publish:
-  provider: generic
-  url: https://example.com/auto-updates
+  provider: github
+  owner: luisgomes2002
+  repo: Sagyou
+  releaseType: release

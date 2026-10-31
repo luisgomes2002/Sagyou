@@ -17,6 +17,11 @@ jobs:
         with:
           node-version: 24
           cache: 'npm'
+      - name: Tag matches package.json
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$pkg" ]; then echo "tag v$tag != package.json $pkg"; exit 1; fi
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
@@ -38,7 +43,11 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: windows
-          path: dist/sagyou-*-setup.exe
+          if-no-files-found: error
+          path: |
+            dist/sagyou-*-setup.exe
+            dist/sagyou-*-setup.exe.blockmap
+            dist/latest.yml
 
   build-mac:
     needs: check
@@ -57,7 +66,12 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: mac
-          path: dist/sagyou-*.dmg
+          if-no-files-found: error
+          path: |
+            dist/sagyou-*.dmg
+            dist/sagyou-*-mac.zip
+            dist/*.blockmap
+            dist/latest-mac.yml
 
   build-linux:
     needs: check
@@ -73,13 +87,15 @@ jobs:
           python-version: '3.12'
       - run: npm ci
       # Builds only AppImage and deb; snap is skipped (requires snapcraft not available on runners)
-      - run: npm run prepare:markitdown && npx electron-vite build && npx electron-builder --linux AppImage deb
+      - run: npm run prepare:markitdown && npx electron-vite build && npx electron-builder --linux AppImage deb --publish never
       - uses: actions/upload-artifact@v4
         with:
           name: linux
+          if-no-files-found: error
           path: |
             dist/sagyou-*.AppImage
             dist/sagyou-*.deb
+            dist/latest-linux.yml
 
   release:
     needs: [build-windows, build-mac, build-linux]
@@ -91,4 +107,5 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: artifacts/**/*
+          fail_on_unmatched_files: true
           generate_release_notes: true
