@@ -1,0 +1,1326 @@
+{
+  "generatedFrom": "apps/desktop/src/main/modules/sync (antes do packages/core)",
+  "source": {
+    "projects": [
+      {
+        "updatedAt": "2026-10-30T12:00:00.000Z",
+        "id": "p1",
+        "name": "Sagyou — ação 🚀",
+        "color": "#6366f1",
+        "order": 0,
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "description": "Descrição com \"aspas\" e \\barra",
+        "columns": [
+          {
+            "id": "c1",
+            "name": "Backlog",
+            "order": 0
+          },
+          {
+            "id": "c2",
+            "name": "Done",
+            "order": 1
+          }
+        ],
+        "links": [
+          {
+            "id": "l1",
+            "label": "GitHub",
+            "url": "https://github.com"
+          }
+        ],
+        "codePaths": [
+          {
+            "id": "cp1",
+            "path": "C:\\Users\\luis\\Sagyou"
+          }
+        ],
+        "activeCodePathIds": [
+          "cp1"
+        ],
+        "activeCodePathId": "cp1"
+      },
+      {
+        "id": "p2",
+        "name": "Arquivado",
+        "color": "#000000",
+        "order": 1,
+        "archived": true,
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z",
+        "columns": [
+          {
+            "id": "c3",
+            "name": "A fazer",
+            "order": 0
+          }
+        ]
+      }
+    ],
+    "tasks": [
+      {
+        "id": "t1",
+        "projectId": "p1",
+        "columnId": "c1",
+        "title": "Tarefa ñ",
+        "description": "linha 1\nlinha 2",
+        "priority": "high",
+        "dueDate": "2026-11-02",
+        "tags": [
+          "b",
+          "a",
+          "á"
+        ],
+        "sprintId": "s1",
+        "images": [
+          {
+            "id": "img1",
+            "name": "print.png",
+            "ext": ".png",
+            "size": 1234,
+            "addedAt": "2026-10-30T12:00:00.000Z"
+          }
+        ],
+        "timeSpent": 3600,
+        "order": 0,
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z"
+      },
+      {
+        "id": "t2",
+        "projectId": "p1",
+        "columnId": "c2",
+        "title": "Feita",
+        "priority": "low",
+        "tags": [],
+        "order": 1,
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z",
+        "completedAt": "2026-10-30T12:00:00.000Z"
+      }
+    ],
+    "sprints": [
+      {
+        "id": "s1",
+        "projectId": "p1",
+        "name": "Sprint 1",
+        "createdAt": "2026-10-30T12:00:00.000Z"
+      },
+      {
+        "id": "s0",
+        "projectId": "p1",
+        "name": "Sprint 0",
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "closedAt": "2026-10-30T12:00:00.000Z"
+      }
+    ],
+    "tombstones": [],
+    "notes": [
+      {
+        "id": "n1",
+        "projectId": "p1",
+        "content": "Nota 📝",
+        "color": "#fef08a",
+        "x": 100,
+        "y": 100,
+        "width": 200,
+        "height": 150,
+        "linkedTaskIds": [
+          "t1"
+        ],
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z"
+      },
+      {
+        "id": "n2",
+        "projectId": "p1",
+        "type": "text",
+        "content": "Bloco de texto",
+        "color": "#ffffff",
+        "x": 400,
+        "y": 900,
+        "width": 300,
+        "height": 40,
+        "fontSize": 18,
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z"
+      }
+    ],
+    "goals": [
+      {
+        "id": "g1",
+        "title": "Ler livros",
+        "kind": "quantity",
+        "target": 12,
+        "unit": "livros",
+        "projectId": "p1",
+        "entries": [
+          {
+            "id": "ge1",
+            "value": 2,
+            "date": "2026-10-01",
+            "createdAt": "2026-10-30T12:00:00.000Z"
+          }
+        ],
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z"
+      }
+    ],
+    "habits": [
+      {
+        "id": "h1",
+        "name": "Água",
+        "color": "#00aaff",
+        "completions": [
+          "2026-10-30",
+          "2026-10-29"
+        ],
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z"
+      }
+    ],
+    "lists": [
+      {
+        "id": "ft1",
+        "name": "Conta",
+        "currency": "BRL",
+        "profileId": "personal",
+        "provider": "Banco",
+        "actualBalance": "1000.10",
+        "legacyFinancialMetadata": {
+          "budget": 500
+        },
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z",
+        "items": [
+          {
+            "id": "i1",
+            "name": "Pão",
+            "qty": 1.5,
+            "price": "5.25",
+            "done": false
+          }
+        ],
+        "transactions": [
+          {
+            "id": "tx1",
+            "description": "Mercado",
+            "amount": "1500.5",
+            "type": "expense",
+            "date": "2026-10-30",
+            "category": "Alimentação",
+            "details": [
+              {
+                "id": "dt1",
+                "description": "Arroz",
+                "amount": "20.00"
+              }
+            ],
+            "receiptFileIds": [
+              "f1"
+            ],
+            "createdAt": "2026-10-30T12:00:00.000Z"
+          },
+          {
+            "id": "tx2",
+            "description": "Salário",
+            "amount": 1000,
+            "type": "income",
+            "date": "2026-10-05"
+          }
+        ],
+        "goals": [
+          {
+            "id": "fg1",
+            "name": "Reserva",
+            "targetAmount": "1000",
+            "targetMonth": 12,
+            "targetYear": 2026
+          }
+        ],
+        "debts": [
+          {
+            "id": "d1",
+            "name": "Cartão",
+            "originalAmount": "300",
+            "remainingAmount": "200",
+            "createdAt": "2026-10-30T12:00:00.000Z",
+            "updatedAt": "2026-10-30T12:00:00.000Z"
+          }
+        ],
+        "yieldSources": [
+          {
+            "id": "ys1",
+            "name": "CDB",
+            "createdAt": "2026-10-30T12:00:00.000Z"
+          }
+        ],
+        "yieldEntries": [
+          {
+            "id": "ye1",
+            "sourceId": "ys1",
+            "date": "2026-10-01",
+            "amount": "10",
+            "createdAt": "2026-10-30T12:00:00.000Z"
+          }
+        ]
+      },
+      {
+        "id": "ft2",
+        "name": "円",
+        "currency": "JPY",
+        "profileId": "trabalho",
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z",
+        "items": [],
+        "transactions": [
+          {
+            "id": "tx3",
+            "description": "Ramen",
+            "amount": "1200",
+            "type": "expense",
+            "date": "2026-10-10"
+          }
+        ],
+        "goals": []
+      }
+    ],
+    "financialProfiles": [
+      {
+        "id": "personal",
+        "name": "Minhas finanças",
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z"
+      },
+      {
+        "id": "trabalho",
+        "name": "Trabalho",
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z",
+        "customCategories": [
+          "Viagem",
+          "Almoço"
+        ]
+      }
+    ],
+    "files": [
+      {
+        "id": "f1",
+        "name": "recibo.pdf",
+        "ext": ".pdf",
+        "size": 4096,
+        "mimeType": "application/pdf",
+        "projectId": "p1",
+        "addedAt": "2026-10-30T12:00:00.000Z"
+      }
+    ],
+    "timeBlocks": [
+      {
+        "id": "tb1",
+        "date": "2026-10-31",
+        "startTime": "09:00",
+        "endTime": "10:30",
+        "title": "Foco",
+        "taskId": "t1",
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z"
+      }
+    ],
+    "routines": [
+      {
+        "id": "r1",
+        "title": "Academia",
+        "days": [
+          1,
+          3,
+          5
+        ],
+        "startTime": "07:00",
+        "endTime": "08:00",
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z"
+      }
+    ],
+    "activeTimers": [
+      {
+        "taskId": "t1",
+        "startedAt": 1
+      }
+    ],
+    "uiPreferences": {
+      "theme": "dark"
+    }
+  },
+  "dataRecords": [
+    {
+      "kind": "project",
+      "id": "p1",
+      "payload": {
+        "id": "p1",
+        "name": "Sagyou — ação 🚀",
+        "description": "Descrição com \"aspas\" e \\barra",
+        "color": "#6366f1",
+        "order": 0,
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z"
+      },
+      "hash": "2d31d32c149e9b03297fda3b672a46e80f42308a36fc528cd1b47142df0b909c"
+    },
+    {
+      "kind": "project_column",
+      "id": "c1",
+      "payload": {
+        "id": "c1",
+        "projectId": "p1",
+        "name": "Backlog",
+        "order": 0
+      },
+      "hash": "3d69abb097d819d07489786f2b7cd76cbab14e583c16cbee98f23cb83608d789"
+    },
+    {
+      "kind": "project_column",
+      "id": "c2",
+      "payload": {
+        "id": "c2",
+        "projectId": "p1",
+        "name": "Done",
+        "order": 1
+      },
+      "hash": "f56d2e75d31dd3f5ea870fad50d2465e1576384cdef0123201ca8bd8f46ea0a7"
+    },
+    {
+      "kind": "project_link",
+      "id": "l1",
+      "payload": {
+        "id": "l1",
+        "projectId": "p1",
+        "label": "GitHub",
+        "url": "https://github.com"
+      },
+      "hash": "894a0923d8d099f37197cbaaf374c8f104a5b77d262b03f161e30d55469cb7d8"
+    },
+    {
+      "kind": "project",
+      "id": "p2",
+      "payload": {
+        "id": "p2",
+        "name": "Arquivado",
+        "color": "#000000",
+        "order": 1,
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z"
+      },
+      "hash": "80d3da66f5de0046fc914cf2846010adf95962bf1646635da2c93ee569ae18f1"
+    },
+    {
+      "kind": "project_column",
+      "id": "c3",
+      "payload": {
+        "id": "c3",
+        "projectId": "p2",
+        "name": "A fazer",
+        "order": 0
+      },
+      "hash": "b0cff1dd2cfaaa98b99c4d14949f4c3ffd9c6c254da8fa35085ee595c297198a"
+    },
+    {
+      "kind": "task",
+      "id": "t1",
+      "payload": {
+        "id": "t1",
+        "projectId": "p1",
+        "columnId": "c1",
+        "title": "Tarefa ñ",
+        "description": "linha 1\nlinha 2",
+        "priority": "high",
+        "dueDate": "2026-11-02",
+        "sprintId": "s1",
+        "timeSpent": 3600,
+        "order": 0,
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z",
+        "tags": [
+          "a",
+          "b",
+          "á"
+        ],
+        "images": [
+          {
+            "id": "img1",
+            "name": "print.png",
+            "ext": ".png",
+            "size": 1234,
+            "addedAt": "2026-10-30T12:00:00.000Z"
+          }
+        ]
+      },
+      "hash": "5099698afae3a723fa5e8c2a57f69c3b2af7722585334dcac9198892ddbf66b7"
+    },
+    {
+      "kind": "task",
+      "id": "t2",
+      "payload": {
+        "id": "t2",
+        "projectId": "p1",
+        "columnId": "c2",
+        "title": "Feita",
+        "priority": "low",
+        "order": 1,
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z",
+        "completedAt": "2026-10-30T12:00:00.000Z"
+      },
+      "hash": "231dc292c08c8c25b7ad86c80d895a4cc4c9e87117f3aba4a00ef4317b26bbcb"
+    },
+    {
+      "kind": "sprint",
+      "id": "s1",
+      "payload": {
+        "id": "s1",
+        "projectId": "p1",
+        "name": "Sprint 1",
+        "createdAt": "2026-10-30T12:00:00.000Z"
+      },
+      "hash": "7faa6bfe808e287b109bf3e8472fffda408189a17f988cca3e26bca5d9d64eec"
+    },
+    {
+      "kind": "sprint",
+      "id": "s0",
+      "payload": {
+        "id": "s0",
+        "projectId": "p1",
+        "name": "Sprint 0",
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "closedAt": "2026-10-30T12:00:00.000Z"
+      },
+      "hash": "92f1cf673c9630bbbf074e4626e2a7c295808b5516e31eb68db09da3ebcc8b0f"
+    },
+    {
+      "kind": "note",
+      "id": "n1",
+      "payload": {
+        "id": "n1",
+        "projectId": "p1",
+        "content": "Nota 📝",
+        "color": "#fef08a",
+        "x": 100,
+        "y": 100,
+        "width": 200,
+        "height": 150,
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z"
+      },
+      "hash": "0b24f39b02f4c78a50e79eca7c36099af15795f93678f9106c8a9debbc975fa1"
+    },
+    {
+      "kind": "note",
+      "id": "n2",
+      "payload": {
+        "id": "n2",
+        "projectId": "p1",
+        "content": "Bloco de texto",
+        "color": "#ffffff",
+        "x": 400,
+        "y": 900,
+        "width": 300,
+        "height": 40,
+        "fontSize": 18,
+        "type": "text",
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z"
+      },
+      "hash": "ef91089faee1d63ec12447cf730a2f180fc6dfa8dd1a787bc5344dd4e5506362"
+    },
+    {
+      "kind": "goal",
+      "id": "g1",
+      "payload": {
+        "id": "g1",
+        "title": "Ler livros",
+        "kind": "quantity",
+        "target": 12,
+        "unit": "livros",
+        "projectId": "p1",
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z"
+      },
+      "hash": "2805f8191d22cbb3638f5a1f9c05d876485fa59151198b046d67d43dcd7409bd"
+    },
+    {
+      "kind": "goal_entry",
+      "id": "ge1",
+      "payload": {
+        "id": "ge1",
+        "goalId": "g1",
+        "date": "2026-10-01",
+        "value": 2,
+        "createdAt": "2026-10-30T12:00:00.000Z"
+      },
+      "hash": "3db76f0d6e472189dba474eb5d213ebef9b634fb1ee5fc0f68e0b8d87c064af4"
+    },
+    {
+      "kind": "habit",
+      "id": "h1",
+      "payload": {
+        "id": "h1",
+        "name": "Água",
+        "color": "#00aaff",
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z"
+      },
+      "hash": "3356d6fdaf3a3c693b44b4ac2a69baaaf26b806044d6eabf902cc021e833f02f"
+    },
+    {
+      "kind": "habit_completion",
+      "id": "h1:2026-10-29",
+      "payload": {
+        "habitId": "h1",
+        "date": "2026-10-29"
+      },
+      "hash": "930fbad4802daaa0ffe2b253aee483dafc584d1ae76baef2313e794632769d3e"
+    },
+    {
+      "kind": "habit_completion",
+      "id": "h1:2026-10-30",
+      "payload": {
+        "habitId": "h1",
+        "date": "2026-10-30"
+      },
+      "hash": "49b96d1bb193ed6b7300fb45a55561b806aba3e034b2f3c79173a4a2608689e0"
+    },
+    {
+      "kind": "financial_profile",
+      "id": "personal",
+      "payload": {
+        "id": "personal",
+        "name": "Minhas finanças",
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z"
+      },
+      "hash": "7eb8c13156e1371cbbfbe7775449cbada6adc4bd264a5bf8cc08fb2d882c5339"
+    },
+    {
+      "kind": "financial_profile",
+      "id": "trabalho",
+      "payload": {
+        "id": "trabalho",
+        "name": "Trabalho",
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z",
+        "customCategories": [
+          "Viagem",
+          "Almoço"
+        ]
+      },
+      "hash": "bf5329dc61e4513acbf3b4e926d7dd3204e650d429b42b0e3f1f5d28830a09c6"
+    },
+    {
+      "kind": "financial_table",
+      "id": "ft1",
+      "payload": {
+        "id": "ft1",
+        "name": "Conta",
+        "currency": "BRL",
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z",
+        "profileId": "personal",
+        "provider": "Banco",
+        "actualBalance": "1000.1",
+        "legacyFinancialMetadata": {
+          "budget": 500
+        }
+      },
+      "hash": "25676edf968a925d212595b44633e109f07a1cd82d4c6589add38b55525b6928"
+    },
+    {
+      "kind": "financial_debt",
+      "id": "d1",
+      "payload": {
+        "id": "d1",
+        "tableId": "ft1",
+        "name": "Cartão",
+        "originalAmount": "300",
+        "remainingAmount": "200",
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z"
+      },
+      "hash": "13f449eb85f66f14a1287996000c9bf18088c4e74fee0803e1e5694921d5ca5c"
+    },
+    {
+      "kind": "transaction",
+      "id": "tx1",
+      "payload": {
+        "id": "tx1",
+        "tableId": "ft1",
+        "description": "Mercado",
+        "amount": "1500.5",
+        "type": "expense",
+        "date": "2026-10-30",
+        "category": "Alimentação",
+        "details": [
+          {
+            "id": "dt1",
+            "description": "Arroz",
+            "amount": "20"
+          }
+        ],
+        "receiptFileIds": [
+          "f1"
+        ],
+        "createdAt": "2026-10-30T12:00:00.000Z"
+      },
+      "hash": "25d22d9ba493087dc473528807612d735d9930ce352c27f0e7da155bbab54deb"
+    },
+    {
+      "kind": "transaction",
+      "id": "tx2",
+      "payload": {
+        "id": "tx2",
+        "tableId": "ft1",
+        "description": "Salário",
+        "amount": "1000",
+        "type": "income",
+        "date": "2026-10-05"
+      },
+      "hash": "858f3cf04d20127162d6f7a323382a08b9710f7b8caef3391f7d046e4fed3f8d"
+    },
+    {
+      "kind": "shopping_item",
+      "id": "i1",
+      "payload": {
+        "id": "i1",
+        "tableId": "ft1",
+        "name": "Pão",
+        "qty": 1.5,
+        "price": "5.25"
+      },
+      "hash": "1450f8d38692601b75ecdc657a4b5eab0f8efb312d70c377d8cf42e49209b42d"
+    },
+    {
+      "kind": "financial_goal",
+      "id": "fg1",
+      "payload": {
+        "id": "fg1",
+        "tableId": "ft1",
+        "name": "Reserva",
+        "targetAmount": "1000",
+        "targetMonth": 12,
+        "targetYear": 2026
+      },
+      "hash": "e68907142a8737518f57313a3a598b72fcae5771af41bd4fe535d327831e594c"
+    },
+    {
+      "kind": "yield_source",
+      "id": "ys1",
+      "payload": {
+        "id": "ys1",
+        "tableId": "ft1",
+        "name": "CDB",
+        "createdAt": "2026-10-30T12:00:00.000Z"
+      },
+      "hash": "ef1fc0398ff8f3d26e5c5ca468d13e6fbb4ece5f487ad4a9d21300ecbb76e5a9"
+    },
+    {
+      "kind": "yield_entry",
+      "id": "ye1",
+      "payload": {
+        "id": "ye1",
+        "tableId": "ft1",
+        "sourceId": "ys1",
+        "date": "2026-10-01",
+        "amount": "10",
+        "createdAt": "2026-10-30T12:00:00.000Z"
+      },
+      "hash": "b57c7cd8043ed635e7440aef8973d3a17087eff2e567c1a3817839bee1bf3771"
+    },
+    {
+      "kind": "financial_table",
+      "id": "ft2",
+      "payload": {
+        "id": "ft2",
+        "name": "円",
+        "currency": "JPY",
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z",
+        "profileId": "trabalho"
+      },
+      "hash": "2e17518db13500c006b15d3be9548b5f77d51adc77e211102dd9ae9c9f5f9d98"
+    },
+    {
+      "kind": "transaction",
+      "id": "tx3",
+      "payload": {
+        "id": "tx3",
+        "tableId": "ft2",
+        "description": "Ramen",
+        "amount": "1200",
+        "type": "expense",
+        "date": "2026-10-10"
+      },
+      "hash": "e2c5390423892222112a54017c01b4ec2ad410e62ae670b773ef45a4ff0f0985"
+    },
+    {
+      "kind": "file",
+      "id": "f1",
+      "payload": {
+        "id": "f1",
+        "name": "recibo.pdf",
+        "ext": ".pdf",
+        "size": 4096,
+        "projectId": "p1"
+      },
+      "hash": "690c8a2d419c772a68e59def77f792946c7afaf12cc79932b99e7a4a1af8e4be"
+    },
+    {
+      "kind": "time_block",
+      "id": "tb1",
+      "payload": {
+        "id": "tb1",
+        "date": "2026-10-31",
+        "startTime": "09:00",
+        "endTime": "10:30",
+        "title": "Foco",
+        "taskId": "t1",
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z"
+      },
+      "hash": "3215ad40a01f70c72cd2627fd973f40ea4262a5f8ca5ae27fdfd450a8ba54622"
+    },
+    {
+      "kind": "routine",
+      "id": "r1",
+      "payload": {
+        "id": "r1",
+        "title": "Academia",
+        "startTime": "07:00",
+        "endTime": "08:00",
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z"
+      },
+      "hash": "119b285e3fe632ae4f276328e7a3ae3b6203b384f84710f4c93751149fd64539"
+    }
+  ],
+  "memories": [
+    {
+      "id": "m1",
+      "projectId": "p1",
+      "type": "decisao",
+      "title": "Cifra do sync",
+      "body": "XChaCha20-Poly1305 — decidido em 2026-10-30.",
+      "tags": [
+        "sync",
+        "cifra"
+      ],
+      "pinned": true,
+      "source": "user",
+      "sourceConversationId": null,
+      "createdAt": "2026-10-30T12:00:00.000Z",
+      "updatedAt": "2026-10-30T12:00:00.000Z",
+      "lastAccessedAt": "2026-10-30T12:00:00.000Z",
+      "accessCount": 7,
+      "archivedAt": null
+    }
+  ],
+  "memoryRecords": [
+    {
+      "kind": "memory",
+      "id": "m1",
+      "payload": {
+        "id": "m1",
+        "projectId": "p1",
+        "type": "decisao",
+        "title": "Cifra do sync",
+        "body": "XChaCha20-Poly1305 — decidido em 2026-10-30.",
+        "tags": [
+          "cifra",
+          "sync"
+        ],
+        "pinned": true,
+        "source": "user",
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z"
+      },
+      "hash": "08994e4f6ecf4bc10e932f5b51586a4e7acdc894f641701e30b6ebb29200188f"
+    }
+  ],
+  "payloadHashes": [
+    {
+      "payload": {
+        "id": "p1",
+        "name": "Sagyou — ação 🚀",
+        "description": "Descrição com \"aspas\" e \\barra",
+        "color": "#6366f1",
+        "order": 0,
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z"
+      },
+      "hash": "2d31d32c149e9b03297fda3b672a46e80f42308a36fc528cd1b47142df0b909c"
+    },
+    {
+      "payload": {
+        "id": "c1",
+        "projectId": "p1",
+        "name": "Backlog",
+        "order": 0
+      },
+      "hash": "3d69abb097d819d07489786f2b7cd76cbab14e583c16cbee98f23cb83608d789"
+    },
+    {
+      "payload": {
+        "id": "c2",
+        "projectId": "p1",
+        "name": "Done",
+        "order": 1
+      },
+      "hash": "f56d2e75d31dd3f5ea870fad50d2465e1576384cdef0123201ca8bd8f46ea0a7"
+    },
+    {
+      "payload": {
+        "id": "l1",
+        "projectId": "p1",
+        "label": "GitHub",
+        "url": "https://github.com"
+      },
+      "hash": "894a0923d8d099f37197cbaaf374c8f104a5b77d262b03f161e30d55469cb7d8"
+    },
+    {
+      "payload": {
+        "id": "p2",
+        "name": "Arquivado",
+        "color": "#000000",
+        "order": 1,
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z"
+      },
+      "hash": "80d3da66f5de0046fc914cf2846010adf95962bf1646635da2c93ee569ae18f1"
+    },
+    {
+      "payload": {
+        "id": "c3",
+        "projectId": "p2",
+        "name": "A fazer",
+        "order": 0
+      },
+      "hash": "b0cff1dd2cfaaa98b99c4d14949f4c3ffd9c6c254da8fa35085ee595c297198a"
+    },
+    {
+      "payload": {
+        "id": "t1",
+        "projectId": "p1",
+        "columnId": "c1",
+        "title": "Tarefa ñ",
+        "description": "linha 1\nlinha 2",
+        "priority": "high",
+        "dueDate": "2026-11-02",
+        "sprintId": "s1",
+        "timeSpent": 3600,
+        "order": 0,
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z",
+        "tags": [
+          "a",
+          "b",
+          "á"
+        ],
+        "images": [
+          {
+            "id": "img1",
+            "name": "print.png",
+            "ext": ".png",
+            "size": 1234,
+            "addedAt": "2026-10-30T12:00:00.000Z"
+          }
+        ]
+      },
+      "hash": "5099698afae3a723fa5e8c2a57f69c3b2af7722585334dcac9198892ddbf66b7"
+    },
+    {
+      "payload": {
+        "id": "t2",
+        "projectId": "p1",
+        "columnId": "c2",
+        "title": "Feita",
+        "priority": "low",
+        "order": 1,
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z",
+        "completedAt": "2026-10-30T12:00:00.000Z"
+      },
+      "hash": "231dc292c08c8c25b7ad86c80d895a4cc4c9e87117f3aba4a00ef4317b26bbcb"
+    },
+    {
+      "payload": {
+        "id": "s1",
+        "projectId": "p1",
+        "name": "Sprint 1",
+        "createdAt": "2026-10-30T12:00:00.000Z"
+      },
+      "hash": "7faa6bfe808e287b109bf3e8472fffda408189a17f988cca3e26bca5d9d64eec"
+    },
+    {
+      "payload": {
+        "id": "s0",
+        "projectId": "p1",
+        "name": "Sprint 0",
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "closedAt": "2026-10-30T12:00:00.000Z"
+      },
+      "hash": "92f1cf673c9630bbbf074e4626e2a7c295808b5516e31eb68db09da3ebcc8b0f"
+    },
+    {
+      "payload": {
+        "id": "n1",
+        "projectId": "p1",
+        "content": "Nota 📝",
+        "color": "#fef08a",
+        "x": 100,
+        "y": 100,
+        "width": 200,
+        "height": 150,
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z"
+      },
+      "hash": "0b24f39b02f4c78a50e79eca7c36099af15795f93678f9106c8a9debbc975fa1"
+    },
+    {
+      "payload": {
+        "id": "n2",
+        "projectId": "p1",
+        "content": "Bloco de texto",
+        "color": "#ffffff",
+        "x": 400,
+        "y": 900,
+        "width": 300,
+        "height": 40,
+        "fontSize": 18,
+        "type": "text",
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z"
+      },
+      "hash": "ef91089faee1d63ec12447cf730a2f180fc6dfa8dd1a787bc5344dd4e5506362"
+    },
+    {
+      "payload": {
+        "id": "g1",
+        "title": "Ler livros",
+        "kind": "quantity",
+        "target": 12,
+        "unit": "livros",
+        "projectId": "p1",
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z"
+      },
+      "hash": "2805f8191d22cbb3638f5a1f9c05d876485fa59151198b046d67d43dcd7409bd"
+    },
+    {
+      "payload": {
+        "id": "ge1",
+        "goalId": "g1",
+        "date": "2026-10-01",
+        "value": 2,
+        "createdAt": "2026-10-30T12:00:00.000Z"
+      },
+      "hash": "3db76f0d6e472189dba474eb5d213ebef9b634fb1ee5fc0f68e0b8d87c064af4"
+    },
+    {
+      "payload": {
+        "id": "h1",
+        "name": "Água",
+        "color": "#00aaff",
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z"
+      },
+      "hash": "3356d6fdaf3a3c693b44b4ac2a69baaaf26b806044d6eabf902cc021e833f02f"
+    },
+    {
+      "payload": {
+        "habitId": "h1",
+        "date": "2026-10-29"
+      },
+      "hash": "930fbad4802daaa0ffe2b253aee483dafc584d1ae76baef2313e794632769d3e"
+    },
+    {
+      "payload": {
+        "habitId": "h1",
+        "date": "2026-10-30"
+      },
+      "hash": "49b96d1bb193ed6b7300fb45a55561b806aba3e034b2f3c79173a4a2608689e0"
+    },
+    {
+      "payload": {
+        "id": "personal",
+        "name": "Minhas finanças",
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z"
+      },
+      "hash": "7eb8c13156e1371cbbfbe7775449cbada6adc4bd264a5bf8cc08fb2d882c5339"
+    },
+    {
+      "payload": {
+        "id": "trabalho",
+        "name": "Trabalho",
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z",
+        "customCategories": [
+          "Viagem",
+          "Almoço"
+        ]
+      },
+      "hash": "bf5329dc61e4513acbf3b4e926d7dd3204e650d429b42b0e3f1f5d28830a09c6"
+    },
+    {
+      "payload": {
+        "id": "ft1",
+        "name": "Conta",
+        "currency": "BRL",
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z",
+        "profileId": "personal",
+        "provider": "Banco",
+        "actualBalance": "1000.1",
+        "legacyFinancialMetadata": {
+          "budget": 500
+        }
+      },
+      "hash": "25676edf968a925d212595b44633e109f07a1cd82d4c6589add38b55525b6928"
+    },
+    {
+      "payload": {
+        "id": "d1",
+        "tableId": "ft1",
+        "name": "Cartão",
+        "originalAmount": "300",
+        "remainingAmount": "200",
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z"
+      },
+      "hash": "13f449eb85f66f14a1287996000c9bf18088c4e74fee0803e1e5694921d5ca5c"
+    },
+    {
+      "payload": {
+        "id": "tx1",
+        "tableId": "ft1",
+        "description": "Mercado",
+        "amount": "1500.5",
+        "type": "expense",
+        "date": "2026-10-30",
+        "category": "Alimentação",
+        "details": [
+          {
+            "id": "dt1",
+            "description": "Arroz",
+            "amount": "20"
+          }
+        ],
+        "receiptFileIds": [
+          "f1"
+        ],
+        "createdAt": "2026-10-30T12:00:00.000Z"
+      },
+      "hash": "25d22d9ba493087dc473528807612d735d9930ce352c27f0e7da155bbab54deb"
+    },
+    {
+      "payload": {
+        "id": "tx2",
+        "tableId": "ft1",
+        "description": "Salário",
+        "amount": "1000",
+        "type": "income",
+        "date": "2026-10-05"
+      },
+      "hash": "858f3cf04d20127162d6f7a323382a08b9710f7b8caef3391f7d046e4fed3f8d"
+    },
+    {
+      "payload": {
+        "id": "i1",
+        "tableId": "ft1",
+        "name": "Pão",
+        "qty": 1.5,
+        "price": "5.25"
+      },
+      "hash": "1450f8d38692601b75ecdc657a4b5eab0f8efb312d70c377d8cf42e49209b42d"
+    },
+    {
+      "payload": {
+        "id": "fg1",
+        "tableId": "ft1",
+        "name": "Reserva",
+        "targetAmount": "1000",
+        "targetMonth": 12,
+        "targetYear": 2026
+      },
+      "hash": "e68907142a8737518f57313a3a598b72fcae5771af41bd4fe535d327831e594c"
+    },
+    {
+      "payload": {
+        "id": "ys1",
+        "tableId": "ft1",
+        "name": "CDB",
+        "createdAt": "2026-10-30T12:00:00.000Z"
+      },
+      "hash": "ef1fc0398ff8f3d26e5c5ca468d13e6fbb4ece5f487ad4a9d21300ecbb76e5a9"
+    },
+    {
+      "payload": {
+        "id": "ye1",
+        "tableId": "ft1",
+        "sourceId": "ys1",
+        "date": "2026-10-01",
+        "amount": "10",
+        "createdAt": "2026-10-30T12:00:00.000Z"
+      },
+      "hash": "b57c7cd8043ed635e7440aef8973d3a17087eff2e567c1a3817839bee1bf3771"
+    },
+    {
+      "payload": {
+        "id": "ft2",
+        "name": "円",
+        "currency": "JPY",
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z",
+        "profileId": "trabalho"
+      },
+      "hash": "2e17518db13500c006b15d3be9548b5f77d51adc77e211102dd9ae9c9f5f9d98"
+    },
+    {
+      "payload": {
+        "id": "tx3",
+        "tableId": "ft2",
+        "description": "Ramen",
+        "amount": "1200",
+        "type": "expense",
+        "date": "2026-10-10"
+      },
+      "hash": "e2c5390423892222112a54017c01b4ec2ad410e62ae670b773ef45a4ff0f0985"
+    },
+    {
+      "payload": {
+        "id": "f1",
+        "name": "recibo.pdf",
+        "ext": ".pdf",
+        "size": 4096,
+        "projectId": "p1"
+      },
+      "hash": "690c8a2d419c772a68e59def77f792946c7afaf12cc79932b99e7a4a1af8e4be"
+    },
+    {
+      "payload": {
+        "id": "tb1",
+        "date": "2026-10-31",
+        "startTime": "09:00",
+        "endTime": "10:30",
+        "title": "Foco",
+        "taskId": "t1",
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z"
+      },
+      "hash": "3215ad40a01f70c72cd2627fd973f40ea4262a5f8ca5ae27fdfd450a8ba54622"
+    },
+    {
+      "payload": {
+        "id": "r1",
+        "title": "Academia",
+        "startTime": "07:00",
+        "endTime": "08:00",
+        "createdAt": "2026-10-30T12:00:00.000Z",
+        "updatedAt": "2026-10-30T12:00:00.000Z"
+      },
+      "hash": "119b285e3fe632ae4f276328e7a3ae3b6203b384f84710f4c93751149fd64539"
+    }
+  ],
+  "crypto": {
+    "keyHex": "030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dc",
+    "encHex": "c40c018bba73268ffd10c8e61ec87fddf34db41e4be24d28c95e08c07131b81f",
+    "idHex": "724a5b0a7f229e7fbf693421529daa8678f25090697b5737d96aa2d4d0561ade",
+    "deviceId": "0123456789abcdef0123456789abcdef",
+    "opaqueId": "6bf4d86a0dee9066caba1f4796763ebc",
+    "keyProof": "eb33ac428816c04732c27a974e7237bc29cbaf55f02b27a2a42518f493c22aa8",
+    "recoveryCode": "AMFB-CGA7-EYWT-IO2C-JFIF-OXTF-NRZX-VAMI-R6LJ-3JFL-WK44-BR6O-2XOA-VNPQ\nhttps://sagyou-sync.exemplo.workers.dev",
+    "pairCode": "sagyou-sync:1:aHR0cHM6Ly9zYWd5b3Utc3luYy5leGVtcGxvLndvcmtlcnMuZGV2:AwoRGB8mLTQ7QklQV15lbHN6gYiPlp2kq7K5wMfO1dw:abcdefghijklmnopqrstuvwxyzABCDEF0123456789_-",
+    "url": "https://sagyou-sync.exemplo.workers.dev",
+    "invite": "abcdefghijklmnopqrstuvwxyzABCDEF0123456789_-"
+  },
+  "batch": {
+    "batchId": "7f1c2e3a-0000-4000-8000-000000000001",
+    "records": [
+      {
+        "kind": "project",
+        "id": "p1",
+        "hlc": "000001793480000-0000-0123456789abcdef0123456789abcdef",
+        "baseHlc": null,
+        "deleted": false,
+        "payload": {
+          "id": "p1",
+          "name": "Sagyou — ação 🚀",
+          "description": "Descrição com \"aspas\" e \\barra",
+          "color": "#6366f1",
+          "order": 0,
+          "createdAt": "2026-10-30T12:00:00.000Z",
+          "updatedAt": "2026-10-30T12:00:00.000Z"
+        }
+      },
+      {
+        "kind": "project_column",
+        "id": "c1",
+        "hlc": "000001793480000-0001-0123456789abcdef0123456789abcdef",
+        "baseHlc": null,
+        "deleted": false,
+        "payload": {
+          "id": "c1",
+          "projectId": "p1",
+          "name": "Backlog",
+          "order": 0
+        }
+      },
+      {
+        "kind": "project_column",
+        "id": "c2",
+        "hlc": "000001793480000-0002-0123456789abcdef0123456789abcdef",
+        "baseHlc": null,
+        "deleted": false,
+        "payload": {
+          "id": "c2",
+          "projectId": "p1",
+          "name": "Done",
+          "order": 1
+        }
+      },
+      {
+        "kind": "project_link",
+        "id": "l1",
+        "hlc": "000001793480000-0003-0123456789abcdef0123456789abcdef",
+        "baseHlc": null,
+        "deleted": false,
+        "payload": {
+          "id": "l1",
+          "projectId": "p1",
+          "label": "GitHub",
+          "url": "https://github.com"
+        }
+      },
+      {
+        "kind": "project",
+        "id": "p2",
+        "hlc": "000001793480000-0004-0123456789abcdef0123456789abcdef",
+        "baseHlc": null,
+        "deleted": false,
+        "payload": {
+          "id": "p2",
+          "name": "Arquivado",
+          "color": "#000000",
+          "order": 1,
+          "createdAt": "2026-10-30T12:00:00.000Z",
+          "updatedAt": "2026-10-30T12:00:00.000Z"
+        }
+      },
+      {
+        "kind": "task",
+        "id": "gone",
+        "hlc": "000001793480001-0000-0123456789abcdef0123456789abcdef",
+        "baseHlc": "000001793480000-0000-0123456789abcdef0123456789abcdef",
+        "deleted": true
+      }
+    ],
+    "sealed": "pBAO4wOR3UhtPZMMxH5MXH0o54SqC7KdApwDMoOXtoZZlmGgRgfj6HB8cwj/HsKMHC0P7kope9XXH9aeP9F8boNPl3VPJRIFS7FBc6i+NytmuVP+fqUfULe/FzQ/haO7bXKcBG3lZLFGKQ/pRdOYphzABHoVsSprN2TWgGWyWPNtG8lLyuX7sBAlP8UVygbEhzhL5/0weVwpwl8R86Tp3g6XL21yxd9GxbnlI/Qa8z76GEPh492H3rZpGig+e3FgQp/zlByW7R3yynAKk+SGUt2UUY7I0xU0xTYYk+eUR2aU08q1v4vPOQsZiVvhdszJ9TkQT02m/orBA4jZ6n7O7idlrns/l127+CBQQuUUavOA7fdwO0TO2oF3Cgla3B00icjhTCigaP7L2camp8AVz5vo2rkx5tPdxaqDmagk8jvndreLmnLbqtRf6c6J6ch9DkjY60BNjD+KZ9KXPrg98FxWQZ+e1JvrbmKrTG9OLVdfdVFHxkLAKBJ/Zv3k3S9C/iwhgE1U48N8QnLA05e7KvbwC6mIYItcbFnpTnr6ppEqZwYExAXjAglP5853S2y+I++a24rn4LSWvpYwG1Koq4jEtxsmUn9lRmsd4bYlyc+M"
+  }
+}
