@@ -1,7 +1,8 @@
 import type { WireRecord } from '@sagyou/core/sync/batch'
 import { extractDataRecords } from '@sagyou/core/sync/records'
 import { replaceSyncableState } from '@sagyou/core/sync/replace'
-import { createRecordRepo } from '../records'
+import { createRecordRepo, type RecordRepo } from '../records'
+import type { SqlDb } from '../sql'
 import { SCHEMA_VERSION, migrate } from '../schema'
 import { emptyState, type MobileState } from '../state'
 import { openNodeDb } from './node-db'
@@ -12,7 +13,7 @@ const vectors = require('../../../../../packages/core/src/__tests__/fixtures/syn
 const T = '2026-10-30T12:00:00.000Z'
 const NOW = Date.parse('2026-10-31T12:00:00.000Z')
 
-function setup() {
+function setup(): { db: SqlDb; repo: RecordRepo } {
   const db = openNodeDb()
   migrate(db)
   return { db, repo: createRecordRepo(db) }
@@ -53,7 +54,7 @@ function withTask(): MobileState {
   return state
 }
 
-const versions = (db: ReturnType<typeof openNodeDb>) =>
+const versions = (db: SqlDb): { kind: string; id: string; deleted: number }[] =>
   db.all<{ kind: string; id: string; deleted: number }>(
     'SELECT kind, id, deleted FROM sync_records ORDER BY seq'
   )
