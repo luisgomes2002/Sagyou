@@ -72,13 +72,17 @@ export interface SyncDb {
   /** Compare-and-swap; false means another request changed the policy first. */
   saveAuth(auth: AuthRow): Promise<boolean>
   deviceByTokenHash(tokenHash: string): Promise<DeviceRow | null>
-  /** Inserts the device, or re-registers it: new token, not revoked, no wipe, cursor 0. */
+  /**
+   * Inserts the device, or re-registers one that is revoked without a pending
+   * wipe: new token, not revoked, cursor 0. False (nothing written) when the id
+   * is active or revoked with a wipe pending.
+   */
   registerDevice(d: {
     id: string
     tokenHash: string
     nameCipher: string
     now: number
-  }): Promise<void>
+  }): Promise<boolean>
   touchDevice(id: string, now: number): Promise<void>
   listDevices(): Promise<DeviceRow[]>
   /** False when the device does not exist. Keeps the first revocation time. */
@@ -224,17 +228,20 @@ export class D1SyncDb implements SyncDb {
     tokenHash: string
     nameCipher: string
     now: number
-  }): Promise<void> {
-    await this.db
+  }): Promise<boolean> {
+    // The WHERE on the upsert makes the check and the write one statement.
+    const res = await this.db
       .prepare(
         `INSERT INTO devices (id, token_hash, name_cipher, last_seen, revoked_at, wipe, cursor)
          VALUES (?1, ?2, ?3, ?4, NULL, 0, 0)
          ON CONFLICT(id) DO UPDATE SET token_hash = excluded.token_hash,
            name_cipher = excluded.name_cipher, last_seen = excluded.last_seen,
-           revoked_at = NULL, wipe = 0, cursor = 0`
+           revoked_at = NULL, wipe = 0, cursor = 0
+         WHERE devices.revoked_at IS NOT NULL AND devices.wipe = 0`
       )
       .bind(d.id, d.tokenHash, d.nameCipher, d.now)
       .run()
+    return (res.meta.changes ?? 0) > 0
   }
 
   async touchDevice(id: string, now: number): Promise<void> {

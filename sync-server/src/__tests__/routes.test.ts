@@ -51,7 +51,9 @@ class MemoryDb implements SyncDb {
     tokenHash: string
     nameCipher: string
     now: number
-  }): Promise<void> {
+  }): Promise<boolean> {
+    const old = this.devices.get(d.id)
+    if (old && (old.revokedAt === null || old.wipe)) return false
     this.devices.set(d.id, {
       id: d.id,
       tokenHash: d.tokenHash,
@@ -61,6 +63,7 @@ class MemoryDb implements SyncDb {
       wipe: false,
       cursor: 0
     })
+    return true
   }
 
   async touchDevice(id: string, now: number): Promise<void> {
@@ -699,7 +702,7 @@ describe('/push e /pull', () => {
     expect((plain.changes as ChangeRow[]).length).toBe(20)
   })
 
-  it('o pull não devolve os lotes do próprio aparelho e atualiza o cursor', async () => {
+  it('o pull não devolve os lotes do próprio aparelho e o pedido seguinte confirma o cursor', async () => {
     const { db, deps } = setup()
     const a = await registerFirst(deps)
     const b = await pairSecond(deps, a)
@@ -709,8 +712,13 @@ describe('/push e /pull', () => {
     expect((forA.changes as ChangeRow[]).map((c) => c.batchId)).toEqual(['de-b'])
     const forB = await json(await handle(req('GET', '/pull?since=0', { token: b }), deps))
     expect((forB.changes as ChangeRow[]).map((c) => c.batchId)).toEqual(['de-a'])
-    // Both saw everything up to the last seq, own batches included.
+    // Both saw everything up to the last seq, own batches included...
     expect(forA.cursor).toBe(2)
+    expect(forB.cursor).toBe(2)
+    // ...but the server only records it once they ask from there.
+    expect(db.devices.get(DEV_A)?.cursor).toBe(0)
+    await handle(req('GET', '/pull?since=2', { token: a }), deps)
+    await handle(req('GET', '/pull?since=2', { token: b }), deps)
     expect(db.devices.get(DEV_A)?.cursor).toBe(2)
     expect(db.devices.get(DEV_B)?.cursor).toBe(2)
   })
@@ -723,6 +731,7 @@ describe('/push e /pull', () => {
     const page = await json(await handle(req('GET', '/pull?since=0&limit=1', { token: b }), deps))
     expect(page.more).toBe(true)
     expect(page.cursor).toBe(1)
+    await handle(req('GET', '/pull?since=1&limit=1', { token: b }), deps)
     expect(db.devices.get(DEV_B)?.cursor).toBe(1)
   })
 
@@ -882,12 +891,13 @@ describe('limpeza do histórico depois do retrato', () => {
       deps
     )
     expect(db.changes).toHaveLength(2)
-    await handle(req('GET', '/pull?since=0', { token: a }), deps)
+    await handle(req('GET', '/pull?since=2', { token: a }), deps)
     expect(db.changes).toHaveLength(2)
     await handle(req('GET', '/pull?since=0', { token: b }), deps)
-    expect(db.changes).toHaveLength(0)
+    expect(db.changes).toHaveLength(2)
     const after = await json(await handle(req('GET', '/pull?since=2', { token: b }), deps))
     expect(after.cursor).toBe(2)
+    expect(db.changes).toHaveLength(0)
   })
 
   it('um aparelho revogado deixa de segurar a limpeza', async () => {
@@ -910,7 +920,7 @@ describe('limpeza do histórico depois do retrato', () => {
       }),
       deps
     )
-    await handle(req('GET', '/pull?since=0', { token: a }), deps)
+    await handle(req('GET', '/pull?since=1', { token: a }), deps)
     expect(db.changes).toHaveLength(1)
     await handle(
       req('POST', `/devices/${DEV_B}/revoke`, {
@@ -1085,5 +1095,202 @@ describe('rotas', () => {
     const res = await handle(req('GET', '/pull?since=0', { token: a }), deps)
     expect(res.status).toBe(500)
     expect(await res.text()).not.toContain('segredo interno')
+  })
+})
+
+describe('achados de revisão', () => {
+  it('trocar o autenticador exige o fator atual; o primeiro cadastro não', async () => {
+    const { db, deps } = setup()
+    const a = await registerFirst(deps)
+    const b = await pairSecond(deps, a)
+    // First enrollment: no TOTP yet, so token + key proof are enough.
+    const { uri, backupCodes } = await enroll(deps, a)
+    const before = db.auth?.totpCipher
+    const reenroll = (headers: Record<string, string>): Promise<Response> =>
+      handle(
+        req('POST', '/totp/enroll', { token: b, headers: { 'x-key-proof': PROOF, ...headers } }),
+        deps
+      )
+    expect((await reenroll({})).status).toBe(401)
+    expect(db.auth?.pendingTotpCipher).toBeNull()
+    // Nothing pending, so confirm cannot promote anything.
+    expect(
+      (
+        await handle(
+          req('POST', '/totp/confirm', {
+            token: b,
+            headers: { 'x-key-proof': PROOF },
+            body: { code: '123456' }
+          }),
+          deps
+        )
+      ).status
+    ).toBe(409)
+    expect((await reenroll({ 'x-totp-code': '000000' })).status).toBe(401)
+    expect(db.auth?.pendingTotpCipher).toBeNull()
+    // With the current code it works, and confirm promotes the new secret.
+    const ok = await reenroll({ 'x-totp-code': codeFromUri(uri, deps.now()) })
+    expect(ok.status).toBe(200)
+    const newUri = (await json(ok)).uri as string
+    const confirmed = await handle(
+      req('POST', '/totp/confirm', {
+        token: b,
+        headers: { 'x-key-proof': PROOF },
+        body: { code: codeFromUri(newUri, deps.now()) }
+      }),
+      deps
+    )
+    expect(confirmed.status).toBe(200)
+    expect(db.auth?.totpCipher).not.toBe(before)
+    // A backup code is also a valid current factor, once.
+    const fresh = (await json(confirmed)).backupCodes as string[]
+    expect(fresh).not.toEqual(backupCodes)
+    expect((await reenroll({ 'x-totp-code': fresh[0] })).status).toBe(200)
+    expect((await reenroll({ 'x-totp-code': fresh[0] })).status).toBe(401)
+  })
+
+  it('reenrolar errando cinco vezes bloqueia', async () => {
+    const { deps } = setup()
+    const a = await registerFirst(deps)
+    const { code } = await enroll(deps, a)
+    const wrong = code === '000000' ? '999999' : '000000'
+    const reenroll = (factor: string): Promise<Response> =>
+      handle(
+        req('POST', '/totp/enroll', {
+          token: a,
+          headers: { 'x-key-proof': PROOF, 'x-totp-code': factor }
+        }),
+        deps
+      )
+    for (let i = 0; i < 4; i++) expect((await reenroll(wrong)).status).toBe(401)
+    expect((await reenroll(wrong)).status).toBe(429)
+    expect((await reenroll(code)).status).toBe(429)
+  })
+
+  async function invite(deps: RouteDeps, token: string, value: string): Promise<void> {
+    const res = await handle(
+      req('POST', '/invites', { token, body: { inviteHash: await sha256Hex(value) } }),
+      deps
+    )
+    expect(res.status).toBe(200)
+  }
+
+  function pair(deps: RouteDeps, value: string, deviceId: string): Promise<Response> {
+    return handle(
+      req('POST', '/pair', { body: { invite: value, deviceId, nameCipher: 'eA==' } }),
+      deps
+    )
+  }
+
+  it('/pair com o id de um aparelho ativo dá 409 e não derruba o token dele', async () => {
+    const { db, deps } = setup()
+    const a = await registerFirst(deps)
+    const b = await pairSecond(deps, a)
+    const tokenHash = db.devices.get(DEV_B)?.tokenHash
+    await invite(deps, a, 'convite-de-novo')
+    expect((await pair(deps, 'convite-de-novo', DEV_B)).status).toBe(409)
+    expect(db.devices.get(DEV_B)?.tokenHash).toBe(tokenHash)
+    expect((await handle(req('GET', '/devices', { token: b }), deps)).status).toBe(200)
+    // The refused id did not burn the invite.
+    expect((await pair(deps, 'convite-de-novo', DEV_C)).status).toBe(200)
+  })
+
+  it('/setup com o id de um aparelho ativo dá 409', async () => {
+    const { db, deps } = setup()
+    const a = await registerFirst(deps)
+    await pairSecond(deps, a)
+    const { code } = await enroll(deps, a)
+    const tokenHash = db.devices.get(DEV_B)?.tokenHash
+    const res = await handle(
+      req('POST', '/setup', {
+        headers: { 'x-setup-token': SETUP, 'x-key-proof': PROOF, 'x-totp-code': code },
+        body: { deviceId: DEV_B, nameCipher: 'eA==' }
+      }),
+      deps
+    )
+    expect(res.status).toBe(409)
+    expect(db.devices.get(DEV_B)?.tokenHash).toBe(tokenHash)
+  })
+
+  it('/pair não desfaz a revogação com apagamento pendente', async () => {
+    const { db, deps } = setup()
+    const a = await registerFirst(deps)
+    await pairSecond(deps, a)
+    const { code } = await enroll(deps, a)
+    expect(
+      (
+        await handle(
+          req('POST', `/devices/${DEV_B}/revoke`, {
+            token: a,
+            headers: { 'x-key-proof': PROOF, 'x-totp-code': code },
+            body: { wipe: true }
+          }),
+          deps
+        )
+      ).status
+    ).toBe(200)
+    await invite(deps, a, 'convite-volta')
+    expect((await pair(deps, 'convite-volta', DEV_B)).status).toBe(409)
+    expect(db.devices.get(DEV_B)?.revokedAt).not.toBeNull()
+    expect(db.devices.get(DEV_B)?.wipe).toBe(true)
+  })
+
+  it('/pair reativa um aparelho revogado sem apagamento', async () => {
+    const { db, deps } = setup()
+    const a = await registerFirst(deps)
+    await pairSecond(deps, a)
+    await handle(
+      req('POST', `/devices/${DEV_B}/revoke`, {
+        token: a,
+        headers: { 'x-key-proof': PROOF },
+        body: { wipe: false }
+      }),
+      deps
+    )
+    await invite(deps, a, 'convite-volta')
+    const res = await pair(deps, 'convite-volta', DEV_B)
+    expect(res.status).toBe(200)
+    expect(db.devices.get(DEV_B)?.revokedAt).toBeNull()
+    expect(db.devices.get(DEV_B)?.cursor).toBe(0)
+  })
+
+  it('o pull só confirma a página anterior: um retrato novo não poda o que o aparelho não aplicou', async () => {
+    const { db, deps } = setup()
+    const a = await registerFirst(deps)
+    const b = await pairSecond(deps, a)
+    await push(deps, a, ['um', 'dois'])
+    // B reads the page but never asks again (it fails before applying).
+    const page = await json(await handle(req('GET', '/pull?since=0', { token: b }), deps))
+    expect(page.cursor).toBe(2)
+    expect(db.devices.get(DEV_B)?.cursor).toBe(0)
+    await handle(req('GET', '/pull?since=0', { token: a }), deps)
+    await handle(req('GET', '/pull?since=2', { token: a }), deps)
+    const id = 'retrato-9999'
+    await handle(
+      req('POST', '/snapshot/parts', {
+        token: a,
+        body: { snapshotId: id, index: 0, ciphertext: 'eA==' }
+      }),
+      deps
+    )
+    expect(
+      (
+        await handle(
+          req('POST', '/snapshot/commit', {
+            token: a,
+            body: { snapshotId: id, seqUntil: 2, parts: 1 }
+          }),
+          deps
+        )
+      ).status
+    ).toBe(200)
+    expect(db.changes).toHaveLength(2)
+    // B retries from where it stood and still gets both changes.
+    const retry = await json(await handle(req('GET', '/pull?since=0', { token: b }), deps))
+    expect((retry.changes as ChangeRow[]).map((c) => c.batchId)).toEqual(['um', 'dois'])
+    // The next request confirms it, and only then the log is compacted.
+    await handle(req('GET', '/pull?since=2', { token: b }), deps)
+    expect(db.devices.get(DEV_B)?.cursor).toBe(2)
+    expect(db.changes).toHaveLength(0)
   })
 })

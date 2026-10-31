@@ -219,7 +219,13 @@ async function factorFailed(deps: RouteDeps, auth: AuthRow): Promise<never> {
   throw new HttpError(429, { error: 'temporarily locked' })
 }
 
-async function requireFactor(request: Request, deps: RouteDeps, auth: AuthRow): Promise<void> {
+/**
+ * Checks the current second factor (TOTP or a backup code) and applies its
+ * effects to `auth` (failure counter reset, backup code spent) without saving,
+ * so the caller can fold them into one compare-and-swap with its own change.
+ * A wrong factor is saved right away and counts toward the 5-error lock.
+ */
+async function checkFactor(request: Request, deps: RouteDeps, auth: AuthRow): Promise<void> {
   if (!auth.totpConfirmed || !auth.totpCipher) throw new HttpError(401, { error: 'totp required' })
   if (auth.lockedUntil > deps.now()) throw new HttpError(429, { error: 'temporarily locked' })
   const input = request.headers.get('x-totp-code') ?? ''
@@ -237,6 +243,10 @@ async function requireFactor(request: Request, deps: RouteDeps, auth: AuthRow): 
   auth.failCount = 0
   auth.lockedUntil = 0
   if (usedBackup >= 0) auth.backupHashes.splice(usedBackup, 1)
+}
+
+async function requireFactor(request: Request, deps: RouteDeps, auth: AuthRow): Promise<void> {
+  await checkFactor(request, deps, auth)
   if (!(await deps.db.saveAuth(auth))) throw new HttpError(409, { error: 'factor already used' })
 }
 
@@ -318,17 +328,31 @@ function parseDevice(body: Record<string, unknown>): { id: string; nameCipher: s
   }
 }
 
+const ID_TAKEN = (): HttpError => new HttpError(409, { error: 'device id in use' })
+
+/**
+ * An opaque id may be (re)registered only when it is new, or revoked without a
+ * pending wipe. Re-registering an active id would drop its token; a revoked one
+ * with wipe would undo the revocation and the wipe. Checked before spending an
+ * invite or a factor; `registerDevice` enforces it again atomically.
+ */
+async function refuseTakenId(deps: RouteDeps, id: string): Promise<void> {
+  const existing = (await deps.db.listDevices()).find((d) => d.id === id)
+  if (existing && (existing.revokedAt === null || existing.wipe)) throw ID_TAKEN()
+}
+
 async function issueToken(
   deps: RouteDeps,
   d: { id: string; nameCipher: string }
 ): Promise<Response> {
   const token = newDeviceToken()
-  await deps.db.registerDevice({
+  const ok = await deps.db.registerDevice({
     id: d.id,
     tokenHash: await sha256Hex(token),
     nameCipher: d.nameCipher,
     now: deps.now()
   })
+  if (!ok) throw ID_TAKEN()
   return reply(200, { token })
 }
 
@@ -354,9 +378,11 @@ async function setupRoute(request: Request, deps: RouteDeps): Promise<Response> 
   }
   if (!auth) throw new Error('auth missing')
   await requireProof(request, deps, auth)
+  const device = parseDevice(body)
+  await refuseTakenId(deps, device.id)
   if ((await deps.db.listDevices()).some((d) => d.revokedAt === null))
     await requireFactor(request, deps, auth)
-  return issueToken(deps, parseDevice(body))
+  return issueToken(deps, device)
 }
 
 async function pairRoute(request: Request, deps: RouteDeps): Promise<Response> {
@@ -366,6 +392,7 @@ async function pairRoute(request: Request, deps: RouteDeps): Promise<Response> {
     throw bad('invalid invite')
   }
   const device = parseDevice(body)
+  await refuseTakenId(deps, device.id)
   if (!(await deps.db.consumeInvite(await sha256Hex(invite), deps.now()))) {
     throw new HttpError(410, { error: 'invite expired or used' })
   }
@@ -409,10 +436,13 @@ async function pullRoute(request: Request, url: URL, deps: RouteDeps): Promise<R
   const { rows, maxSeq } = await deps.db.pullChanges(device.id, since, limit + 1)
   const more = rows.length > limit
   const changes = more ? rows.slice(0, limit) : rows
-  // The device holds everything up to the last page row, or, on the final page,
-  // up to the whole log (its own batches it never needs to pull).
+  // The answer tells the device it will hold everything up to the last page row,
+  // or, on the final page, up to the whole log (its own batches it never needs
+  // to pull). But it holds them only once applied: what is stored is `since`,
+  // which the device asks for only after applying the previous page. So the
+  // next request confirms this one, and pruning never outruns a failed apply.
   const cursor = more ? changes[changes.length - 1].seq : maxSeq
-  if (cursor !== device.cursor) await deps.db.setCursor(device.id, cursor)
+  if (since > device.cursor) await deps.db.setCursor(device.id, since)
   await deps.db.pruneCoveredChanges()
   return reply(200, { changes, more, cursor })
 }
@@ -461,6 +491,10 @@ async function enrollRoute(request: Request, deps: RouteDeps): Promise<Response>
   }
   if (!auth) throw new Error('auth missing')
   await requireProof(request, deps, auth)
+  // Replacing a confirmed authenticator needs the current factor, or any paired
+  // device (token + key) could take over the factor that guards wipe. Factor
+  // spent and pending secret are saved together, so a lost race spends nothing.
+  if (auth.totpConfirmed) await checkFactor(request, deps, auth)
   const secret = base32(crypto.getRandomValues(new Uint8Array(20)))
   auth.pendingTotpCipher = await encryptSecret(deps, secret)
   if (!(await deps.db.saveAuth(auth))) throw new HttpError(409, { error: 'authentication changed' })
