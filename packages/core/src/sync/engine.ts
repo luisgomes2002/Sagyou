@@ -74,6 +74,9 @@ export type SyncStateName =
   | 'disconnected'
   | 'update-pending'
 
+/** What /pair answers (410) for an invite that expired or was already used. */
+export const INVITE_EXPIRED_MESSAGE = 'O convite expirou ou já foi usado.'
+
 /** Shown when an action needs the server while an app update holds sync. */
 export const UPDATE_PENDING_MESSAGE = 'Sincronização em espera: começa depois da atualização'
 const DATA_ROUTE = /^\/(push|pull|snapshot)(\/|\?|$)/
@@ -920,7 +923,7 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
     if (err instanceof SyncHttpError && err.status === 429)
       return new SyncUserError('Muitas tentativas. Aguarde 15 minutos e tente novamente.')
     if (err instanceof SyncHttpError && err.status === 410)
-      return new SyncUserError('O convite expirou ou já foi usado.')
+      return new SyncUserError(INVITE_EXPIRED_MESSAGE)
     return new SyncUserError(fallback)
   }
 

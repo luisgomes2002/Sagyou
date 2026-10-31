@@ -5,3 +5,18 @@ jest.mock(
   'react-native-safe-area-context',
   () => require('react-native-safe-area-context/jest/mock').default
 )
+jest.mock('@react-native-community/netinfo', () =>
+  require('@react-native-community/netinfo/jest/netinfo-mock.js')
+)
+// The tests use node:sqlite through src/data/__tests__/node-db.ts instead.
+jest.mock('expo-sqlite', () => ({ openDatabaseSync: jest.fn() }))
+jest.mock('expo-secure-store', () => ({
+  getItem: jest.fn(() => null),
+  setItem: jest.fn(),
+  deleteItemAsync: jest.fn(async () => undefined)
+}))
+jest.mock('expo-device', () => ({ modelName: 'Pixel de teste' }))
+jest.mock('expo-camera', () => ({
+  CameraView: () => null,
+  useCameraPermissions: () => [{ granted: false }, jest.fn(async () => ({ granted: false }))]
+}))

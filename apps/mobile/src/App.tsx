@@ -1,9 +1,15 @@
 import { DarkTheme, DefaultTheme, NavigationContainer } from '@react-navigation/native'
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
 import { createNativeStackNavigator } from '@react-navigation/native-stack'
-import { Pressable, Text } from 'react-native'
-import { SafeAreaProvider } from 'react-native-safe-area-context'
+import { useEffect } from 'react'
+import { ActivityIndicator, Pressable, Text, View } from 'react-native'
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context'
+import { bootstrap } from './bootstrap'
+import { StatusBanner } from './components/StatusBanner'
+import { PairScreen } from './screens/PairScreen'
 import { Placeholder } from './screens/Placeholder'
+import { SettingsScreen } from './screens/SettingsScreen'
+import { useApp, type AppMode } from './store/app'
 import { useTheme, type Theme } from './theme'
 
 export const TAB_LABELS = ['Tarefas', 'Hábitos', 'Finanças', 'Notas', 'Busca'] as const
@@ -35,7 +41,7 @@ function navigationTheme(theme: Theme): typeof DefaultTheme {
 function TabsScreen({
   navigation
 }: {
-  navigation: { navigate(r: 'Ajustes'): void }
+  navigation: { navigate(route: 'Ajustes'): void }
 }): React.JSX.Element {
   const theme = useTheme()
   return (
@@ -64,16 +70,47 @@ function TabsScreen({
   )
 }
 
-export default function App(): React.JSX.Element {
+/** What is on screen for each mode; no tab exists before the phone is paired. */
+export function AppShell({ mode }: { mode: AppMode }): React.JSX.Element {
   const theme = useTheme()
+  if (mode === 'loading')
+    return (
+      <View
+        style={{
+          flex: 1,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: theme.bg
+        }}
+      >
+        <ActivityIndicator color={theme.purple} />
+      </View>
+    )
+  if (mode === 'pair')
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: theme.bg }}>
+        <PairScreen />
+      </SafeAreaView>
+    )
+  return (
+    <NavigationContainer theme={navigationTheme(theme)}>
+      <SafeAreaView edges={['top']} style={{ backgroundColor: theme.bg }}>
+        <StatusBanner />
+      </SafeAreaView>
+      <Stack.Navigator>
+        <Stack.Screen name="Abas" component={TabsScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="Ajustes" component={SettingsScreen} />
+      </Stack.Navigator>
+    </NavigationContainer>
+  )
+}
+
+export default function App(): React.JSX.Element {
+  const mode = useApp((s) => s.mode)
+  useEffect(() => bootstrap(), [])
   return (
     <SafeAreaProvider>
-      <NavigationContainer theme={navigationTheme(theme)}>
-        <Stack.Navigator>
-          <Stack.Screen name="Abas" component={TabsScreen} options={{ headerShown: false }} />
-          <Stack.Screen name="Ajustes">{() => <Placeholder title="Ajustes" />}</Stack.Screen>
-        </Stack.Navigator>
-      </NavigationContainer>
+      <AppShell mode={mode} />
     </SafeAreaProvider>
   )
 }
