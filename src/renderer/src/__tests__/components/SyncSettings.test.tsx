@@ -58,6 +58,19 @@ beforeEach(() => {
   })
 })
 
+describe('Sincronização em espera pela atualização', () => {
+  it('avisa que começa depois da atualização', async () => {
+    vi.mocked(window.electronAPI.sync.status).mockResolvedValueOnce({
+      ...status,
+      state: 'update-pending'
+    })
+    render(<SyncSettings onToast={vi.fn()} />)
+    expect(
+      await screen.findByText('Sincronização em espera: começa depois da atualização')
+    ).toBeInTheDocument()
+  })
+})
+
 describe('Sincronização: autenticação e revogação', () => {
   it('mostra o QR e entrega os códigos reserva só depois da confirmação', async () => {
     render(<SyncSettings onToast={vi.fn()} />)

@@ -15,6 +15,7 @@ import { isDoneColumn, isTaskDone } from './utils/columns'
 import { isGoalComplete } from './utils/goals'
 import { TitleBar } from './components/layout/TitleBar'
 import { Sidebar } from './components/layout/Sidebar'
+import { UpdateBanner } from './components/layout/UpdateBanner'
 import { Board } from './components/views/Board'
 import { CanvasView } from './components/views/CanvasView'
 import { DoneView } from './components/views/DoneView'
@@ -702,6 +703,7 @@ export default function App() {
         />
 
         <main className="flex-1 flex flex-col overflow-hidden">
+          <UpdateBanner />
           <ViewErrorBoundary key={activeView} area={activeView}>
             {activeView === 'settings' ? (
               <SettingsView

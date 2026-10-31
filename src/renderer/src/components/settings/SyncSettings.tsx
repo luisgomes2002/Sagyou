@@ -14,6 +14,7 @@ interface Device {
 
 export function SyncSettings({ onToast }: Props): JSX.Element {
   const [active, setActive] = useState(false)
+  const [waitingUpdate, setWaitingUpdate] = useState(false)
   const [devices, setDevices] = useState<Device[]>([])
   const [busy, setBusy] = useState(false)
   const [uri, setUri] = useState('')
@@ -27,14 +28,20 @@ export function SyncSettings({ onToast }: Props): JSX.Element {
 
   useEffect(() => {
     let mounted = true
+    const unsubscribe = window.electronAPI.sync.onStatusChanged?.((status) => {
+      if (mounted) setWaitingUpdate(status.state === 'update-pending')
+    })
     void window.electronAPI.sync.status().then(async (status) => {
-      if (!mounted || status.state === 'off' || status.state === 'no-keychain') return
+      if (!mounted) return
+      setWaitingUpdate(status.state === 'update-pending')
+      if (status.state === 'off' || status.state === 'no-keychain') return
       setActive(true)
       const result = await window.electronAPI.sync.devices()
       if (mounted && result.ok) setDevices(result.devices)
     })
     return () => {
       mounted = false
+      unsubscribe?.()
     }
   }, [])
 
@@ -108,6 +115,11 @@ export function SyncSettings({ onToast }: Props): JSX.Element {
           Proteja a recuperação e o apagamento remoto dos aparelhos.
         </p>
       </div>
+      {waitingUpdate && (
+        <p role="status" className="text-sm text-[#d9a640]">
+          Sincronização em espera: começa depois da atualização
+        </p>
+      )}
       {!active && (
         <p className="text-sm text-[#999999]">
           Ative a sincronização para cadastrar o autenticador.
