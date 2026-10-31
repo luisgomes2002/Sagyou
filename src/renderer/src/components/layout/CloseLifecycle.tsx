@@ -54,12 +54,43 @@ export function CloseLifecycle({ children }: PropsWithChildren): ReactElement {
       fallback = setTimeout(startFlush, 100)
     })
 
+    // An update install saves like a close, but must give the app back if the
+    // save or the install fails: the current version keeps running then.
+    const release = (): void => {
+      closingRef.current = false
+      window.removeEventListener('keydown', blockKeyboard, true)
+      setClosing(false)
+      setError(false)
+    }
+
+    const unsubscribeInstall = window.electronAPI.lifecycle.onFlushBeforeInstall(() => {
+      if (closingRef.current) return
+      closingRef.current = true
+      window.addEventListener('keydown', blockKeyboard, true)
+      setClosing(true)
+      void (async () => {
+        let ok = true
+        try {
+          const state = useKanbanStore.getState()
+          if (state.isLoaded) await state._flushPersist()
+        } catch {
+          ok = false
+        }
+        if (cancelled) return
+        if (!ok) release()
+        void window.electronAPI.lifecycle.flushBeforeInstallComplete(ok).catch(() => {})
+      })()
+    })
+    const unsubscribeAborted = window.electronAPI.lifecycle.onInstallAborted(release)
+
     return () => {
       cancelled = true
       if (frame !== null) cancelAnimationFrame(frame)
       if (fallback !== null) clearTimeout(fallback)
       window.removeEventListener('keydown', blockKeyboard, true)
       unsubscribe()
+      unsubscribeInstall()
+      unsubscribeAborted()
     }
   }, [])
 

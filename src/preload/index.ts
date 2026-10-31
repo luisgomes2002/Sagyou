@@ -9,6 +9,7 @@ import type {
   MemoryConflict
 } from '../main/modules/ai/memory'
 import type { McpActionRequest, McpActionResult } from '../main/modules/agent/mcp-write-types'
+import type { UpdateStatus } from '../main/modules/update/app-updater'
 import type {
   GlobalSearchHit,
   GlobalSearchLookup,
@@ -153,7 +154,36 @@ export const api = {
       }
     },
     flushBeforeCloseComplete: (): Promise<void> =>
-      ipcRenderer.invoke('app:flush-before-close:complete')
+      ipcRenderer.invoke('app:flush-before-close:complete'),
+    onFlushBeforeInstall: (cb: () => void) => {
+      const handler = (): void => cb()
+      ipcRenderer.on('app:flush-before-install', handler)
+      return (): void => {
+        ipcRenderer.removeListener('app:flush-before-install', handler)
+      }
+    },
+    flushBeforeInstallComplete: (ok: boolean): Promise<void> =>
+      ipcRenderer.invoke('app:flush-before-install:complete', ok),
+    onInstallAborted: (cb: () => void) => {
+      const handler = (): void => cb()
+      ipcRenderer.on('app:install-aborted', handler)
+      return (): void => {
+        ipcRenderer.removeListener('app:install-aborted', handler)
+      }
+    }
+  },
+  update: {
+    status: (): Promise<UpdateStatus> => ipcRenderer.invoke('update:status'),
+    check: (): Promise<UpdateStatus> => ipcRenderer.invoke('update:check'),
+    install: (): Promise<UpdateStatus> => ipcRenderer.invoke('update:install'),
+    openRelease: (): Promise<void> => ipcRenderer.invoke('update:open-release'),
+    onStatusChanged: (cb: (status: UpdateStatus) => void) => {
+      const handler = (_: Electron.IpcRendererEvent, status: UpdateStatus): void => cb(status)
+      ipcRenderer.on('update:status-changed', handler)
+      return (): void => {
+        ipcRenderer.removeListener('update:status-changed', handler)
+      }
+    }
   },
   security: {
     status: (): Promise<{ enabled: boolean; corrupt: boolean; userName?: string }> =>

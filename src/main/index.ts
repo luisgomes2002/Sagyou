@@ -138,6 +138,16 @@ import { registerBackupHandlers } from './handlers/backup'
 import { normalizeLegacyAIConfig } from './modules/conversations/legacy-ai-data'
 import { registerCodeFilesHandlers } from './handlers/code-files'
 import { registerSyncHandlers } from './handlers/sync'
+import { registerUpdateHandlers } from './handlers/update'
+import {
+  createAppUpdater,
+  shouldEnableUpdater,
+  type AppUpdater,
+  type UpdaterLike
+} from './modules/update/app-updater'
+import { safeExternalUrl } from './modules/web/external-links'
+import { autoUpdater } from 'electron-updater'
+import { EventEmitter } from 'events'
 import {
   createSyncEngine,
   syncConfigFileName,
@@ -162,6 +172,9 @@ let mainWindow: BrowserWindow | null = null
 let managedWindow: ManagedWindow | null = null
 // Created after protectDataIpc; started on the first store:load (only after unlock).
 let syncEngine: SyncEngine | null = null
+let appUpdater: AppUpdater | null = null
+// Set once store:load runs, which only answers after unlock.
+let syncStartedByLoad = false
 
 /** Only the app's own renderer may invoke privileged IPC handlers. */
 function assertTrustedRenderer(event: IpcMainInvokeEvent | IpcMainEvent): void {
@@ -1357,6 +1370,7 @@ app.whenReady().then(() => {
   ipcMain.handle('store:load', () => {
     const data = { ...loadData(), syncGeneration: currentSyncGeneration() }
     // store:load only answers once the app is unlocked, so sync never runs locked.
+    syncStartedByLoad = true
     syncEngine?.start()
     return data
   })
@@ -1414,6 +1428,41 @@ app.whenReady().then(() => {
   const sendToRenderer = (channel: string, payload: unknown): void => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload)
   }
+  // Every launch asks GitHub for a newer release before sync talks to the
+  // server (modules/update/app-updater.ts). Dev, unpacked and Snap never ask.
+  const resources = process.resourcesPath
+  const updateEnabled = shouldEnableUpdater({
+    isDev: is.dev,
+    isPackaged: app.isPackaged === true,
+    snap: Boolean(process.env.SNAP),
+    hasUpdateYml: Boolean(resources) && existsSync(join(resources, 'app-update.yml'))
+  })
+  const packageType = (): string => {
+    try {
+      return readFileSync(join(resources, 'package-type'), 'utf-8').trim()
+    } catch {
+      return ''
+    }
+  }
+  const updater = createAppUpdater({
+    // Touching autoUpdater instantiates it, so a disabled build never does.
+    updater: updateEnabled
+      ? (autoUpdater as unknown as UpdaterLike)
+      : (new EventEmitter() as unknown as UpdaterLike),
+    enabled: updateEnabled,
+    platform: process.platform,
+    isDeb: updateEnabled && packageType() === 'deb',
+    setTimer: (fn, ms) => setTimeout(fn, ms),
+    clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+    emitStatus: (status) => sendToRenderer('update:status-changed', status),
+    // A hold change republishes the sync status; released, it also syncs.
+    onSyncHoldChanged: () => {
+      if (syncStartedByLoad) void syncEngine?.syncNow()
+    },
+    log
+  })
+  appUpdater = updater
+
   // The same forced snapshot an import makes, built here from the database.
   const forcedSyncBackup = async (): Promise<boolean> => {
     try {
@@ -1470,7 +1519,8 @@ app.whenReady().then(() => {
       app.exit(0)
     },
     emitStatus: (status) => sendToRenderer('sync:status-changed', status),
-    emitRemoteChanges: (change) => sendToRenderer('sync:remote-changes', change)
+    emitRemoteChanges: (change) => sendToRenderer('sync:remote-changes', change),
+    isHeld: () => updater.isSyncHeld()
   })
   syncEngine = engine
   registerSyncHandlers(ipcMain, {
@@ -1484,6 +1534,29 @@ app.whenReady().then(() => {
       !passwordConfigCorrupt &&
       (passwordConfig === null || verifyPassword(passwordConfig, password)),
     defaultDeviceName: () => hostname().slice(0, 80) || 'Aparelho'
+  })
+  registerUpdateHandlers(ipcMain, {
+    updater,
+    // Same as before-quit: the renderer must still be there to save their time.
+    stopAgentTimers: async () => {
+      runTimersStoppedForQuit = true
+      await Promise.race([
+        runTaskTimers.stopEverything(),
+        new Promise((resolve) => setTimeout(resolve, 3000))
+      ])
+    },
+    flushForInstall: () => managedWindow?.flushForInstall() ?? Promise.resolve(false),
+    allowCloseForInstall: (on) => managedWindow?.allowCloseForInstall(on),
+    abortInstall: () => {
+      runTimersStoppedForQuit = false
+      managedWindow?.abortInstall()
+    },
+    openExternal: (url) => {
+      const safe = safeExternalUrl(url)
+      if (safe) return shell.openExternal(safe)
+      return undefined
+    },
+    log
   })
   ipcMain.handle('backup:open-folder', async () => {
     const dir = join(app.getPath('userData'), 'backups')
@@ -2340,6 +2413,8 @@ app.whenReady().then(() => {
   // dev suffix, so the rest of this migration would hit the real user data.
   const openWindows = (): void => {
     createWindow()
+    // In the background: the window never waits for the network.
+    appUpdater?.start()
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()

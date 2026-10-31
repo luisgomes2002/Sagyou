@@ -5,6 +5,13 @@ import { safeExternalUrl } from '../modules/web/external-links'
 export interface ManagedWindow {
   window: BrowserWindow
   completeClose: () => void
+  /** Asks the renderer to save without closing; false on failure or timeout. */
+  flushForInstall: (timeoutMs?: number) => Promise<boolean>
+  completeInstallFlush: (ok: boolean) => void
+  /** Lets the updater's quit close the window without a second flush. */
+  allowCloseForInstall: (on: boolean) => void
+  /** Restores the normal close and the renderer's screen after a failed install. */
+  abortInstall: () => void
 }
 
 interface CreateManagedWindowOptions {
@@ -40,6 +47,22 @@ export function createManagedWindow(options: CreateManagedWindowOptions): Manage
     window.close()
   }
 
+  let installFlush: ((ok: boolean) => void) | null = null
+  const flushForInstall = (timeoutMs = 10_000): Promise<boolean> =>
+    new Promise((resolve) => {
+      if (window.isDestroyed() || closePending || installFlush) {
+        resolve(false)
+        return
+      }
+      const timer = setTimeout(() => installFlush?.(false), timeoutMs)
+      installFlush = (ok) => {
+        clearTimeout(timer)
+        installFlush = null
+        resolve(ok)
+      }
+      window.webContents.send('app:flush-before-install')
+    })
+
   window.on('ready-to-show', () => window.show())
   window.on('close', (event) => {
     if (allowClose) return
@@ -61,7 +84,19 @@ export function createManagedWindow(options: CreateManagedWindowOptions): Manage
   })
   if (options.isDev && options.rendererUrl) window.loadURL(options.rendererUrl)
   else window.loadFile(options.productionPagePath)
-  return { window, completeClose }
+  return {
+    window,
+    completeClose,
+    flushForInstall,
+    completeInstallFlush: (ok) => installFlush?.(ok),
+    allowCloseForInstall: (on) => {
+      allowClose = on
+    },
+    abortInstall: () => {
+      allowClose = false
+      if (!window.isDestroyed()) window.webContents.send('app:install-aborted')
+    }
+  }
 }
 
 export function registerWindowHandlers(
@@ -83,5 +118,9 @@ export function registerWindowHandlers(
     // renderer may end the window's close handshake.
     assertTrustedRenderer(event)
     getManagedWindow()?.completeClose()
+  })
+  ipcMain.handle('app:flush-before-install:complete', (event, ok: unknown) => {
+    assertTrustedRenderer(event)
+    getManagedWindow()?.completeInstallFlush(ok === true)
   })
 }

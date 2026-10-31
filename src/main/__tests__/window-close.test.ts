@@ -104,3 +104,88 @@ describe('window close handshake', () => {
     expect(managed.window.isDestroyed()).toBe(true)
   })
 })
+
+describe('flush before installing an update', () => {
+  function withHandlers(managed: ManagedWindow): Map<string, (...args: unknown[]) => unknown> {
+    const handlers = new Map<string, (...args: unknown[]) => unknown>()
+    const ipc = {
+      handle: (channel: string, callback: (...args: unknown[]) => unknown) =>
+        handlers.set(channel, callback)
+    } as unknown as IpcMain
+    registerWindowHandlers(
+      ipc,
+      () => managed.window,
+      () => managed,
+      () => {}
+    )
+    return handlers
+  }
+
+  it('resolves true on the renderer ack and keeps the window open', async () => {
+    const managed = makeWindow()
+    const handlers = withHandlers(managed)
+    const flushed = managed.flushForInstall()
+    expect(managed.window.webContents.send).toHaveBeenCalledWith('app:flush-before-install')
+    expect(managed.window.webContents.send).not.toHaveBeenCalledWith('app:flush-before-close')
+    handlers.get('app:flush-before-install:complete')?.(
+      { sender: managed.window.webContents },
+      true
+    )
+    await expect(flushed).resolves.toBe(true)
+    expect(managed.window.isDestroyed()).toBe(false)
+  })
+
+  it('resolves false when the renderer reports a failed save', async () => {
+    const managed = makeWindow()
+    const handlers = withHandlers(managed)
+    const flushed = managed.flushForInstall()
+    handlers.get('app:flush-before-install:complete')?.(
+      { sender: managed.window.webContents },
+      false
+    )
+    await expect(flushed).resolves.toBe(false)
+  })
+
+  it('resolves false after 10 s without an answer', async () => {
+    vi.useFakeTimers()
+    const managed = makeWindow()
+    const flushed = managed.flushForInstall()
+    vi.advanceTimersByTime(9_999)
+    let settled = false
+    void flushed.then(() => (settled = true))
+    await Promise.resolve()
+    expect(settled).toBe(false)
+    vi.advanceTimersByTime(1)
+    await expect(flushed).resolves.toBe(false)
+    expect(managed.window.isDestroyed()).toBe(false)
+  })
+
+  it('lets the install close through without a second flush', () => {
+    const managed = makeWindow()
+    managed.allowCloseForInstall(true)
+    managed.window.close()
+    expect(managed.window.webContents.send).not.toHaveBeenCalledWith('app:flush-before-close')
+    expect(managed.window.isDestroyed()).toBe(true)
+  })
+
+  it('an aborted install restores the normal close and tells the renderer', () => {
+    vi.useFakeTimers()
+    const managed = makeWindow()
+    managed.allowCloseForInstall(true)
+    managed.abortInstall()
+    expect(managed.window.webContents.send).toHaveBeenCalledWith('app:install-aborted')
+    managed.window.close()
+    expect(managed.window.isDestroyed()).toBe(false)
+    expect(managed.window.webContents.send).toHaveBeenCalledWith('app:flush-before-close')
+  })
+
+  it('a regular close still works after an install flush', () => {
+    vi.useFakeTimers()
+    const managed = makeWindow()
+    void managed.flushForInstall()
+    vi.advanceTimersByTime(10_000)
+    managed.window.close()
+    managed.completeClose()
+    expect(managed.window.isDestroyed()).toBe(true)
+  })
+})
