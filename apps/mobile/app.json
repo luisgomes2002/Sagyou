@@ -26,7 +26,8 @@
           "microphonePermission": false,
           "recordAudioAndroid": false
         }
-      ]
+      ],
+      "./plugins/withReleaseSigning"
     ]
   }
 }

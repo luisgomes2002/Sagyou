@@ -126,6 +126,25 @@ describe('configuração de release do atualizador', () => {
     expect(desktop.devDependencies['@sagyou/core']).toBeDefined()
   })
 
+  // The APK workflow handles the signing key: it must not be able to write to
+  // the repository, keep a token in the checkout, or read any other secret.
+  it('o workflow do APK só lê o repositório e só os quatro secrets da assinatura', () => {
+    const apk = readRepo('.github/workflows/mobile-apk.yml')
+    expect(apk).toMatch(/^permissions:\r?\n {2}contents: read\r?$/m)
+    expect(apk).not.toContain('contents: write')
+    const checkouts = apk.match(/uses: actions\/checkout@/g)?.length ?? 0
+    expect(checkouts).toBeGreaterThan(0)
+    expect(apk.match(/persist-credentials: false/g)?.length).toBe(checkouts)
+    const secrets = [...new Set((apk.match(/secrets\.[A-Z_]+/g) ?? []).sort())]
+    expect(secrets).toEqual([
+      'secrets.ANDROID_KEYSTORE_BASE64',
+      'secrets.ANDROID_KEYSTORE_PASSWORD',
+      'secrets.ANDROID_KEY_ALIAS',
+      'secrets.ANDROID_KEY_PASSWORD'
+    ])
+    for (const use of apk.match(/uses: \S+/g) ?? []) expect(use).toMatch(/@[0-9a-f]{40}$/)
+  })
+
   it('o Quality confere o tipo do Worker', () => {
     expect(readRepo('.github/workflows/quality.yml')).toContain(
       'npm run typecheck -w sagyou-sync-server'

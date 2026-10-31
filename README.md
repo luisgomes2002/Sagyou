@@ -18,10 +18,10 @@
 
 Baixe o instalador da sua plataforma na página de [Releases](https://github.com/luisgomes2002/Sagyou/releases):
 
-| Plataforma | Formato           |
-| ---------- | ----------------- |
-| Windows    | instalador `.exe` |
-| macOS      | `.dmg`            |
+| Plataforma | Formato             |
+| ---------- | ------------------- |
+| Windows    | instalador `.exe`   |
+| macOS      | `.dmg`              |
 | Linux      | `.AppImage`, `.deb` |
 
 Depois de instalado, o Sagyou procura uma versão nova toda vez que abre, baixa em segundo plano e mostra **"Reiniciar e instalar"** quando ela estiver pronta. Seus dados ficam onde estão. A primeira versão com esse recurso precisa ser instalada à mão. No macOS, enquanto o app não tem assinatura da Apple, ele só avisa e abre a página do Release. Com a sincronização ligada, ela espera a atualização terminar antes de falar com a nuvem.
@@ -34,16 +34,16 @@ Não é preciso instalar Python, Node nem nada além do app. Para usar as sessõ
 
 ### Organização
 
-| Área             | O que faz                                                                                              |
-| ---------------- | ------------------------------------------------------------------------------------------------------ |
-| **Início**       | Painel com o resumo do dia: tarefas, hábitos, metas e saldo                                            |
+| Área             | O que faz                                                                                                     |
+| ---------------- | ------------------------------------------------------------------------------------------------------------- |
+| **Início**       | Painel com o resumo do dia: tarefas, hábitos, metas e saldo                                                   |
 | **Board**        | Kanban por projeto com colunas próprias, sprints, prioridades, tags, imagens e vários cronômetros simultâneos |
-| **Próximas**     | Tarefas com prazo, em ordem de vencimento                                                              |
-| **Concluídas**   | Histórico do que já foi entregue                                                                       |
-| **Planejamento** | Agenda semanal com blocos de horário ligados a tarefas e hábitos                                       |
-| **Canvas**       | Notas adesivas livres, conectáveis e ligadas a tarefas, mais blocos de texto para títulos e anotações  |
-| **Grafo**        | Mapa interativo das relações entre projetos, tarefas, notas, metas, hábitos e memórias                |
-| **Arquivos**     | Anexos por projeto, guardados localmente e pesquisáveis pelo conteúdo (PDF, DOCX, planilhas e mais)    |
+| **Próximas**     | Tarefas com prazo, em ordem de vencimento                                                                     |
+| **Concluídas**   | Histórico do que já foi entregue                                                                              |
+| **Planejamento** | Agenda semanal com blocos de horário ligados a tarefas e hábitos                                              |
+| **Canvas**       | Notas adesivas livres, conectáveis e ligadas a tarefas, mais blocos de texto para títulos e anotações         |
+| **Grafo**        | Mapa interativo das relações entre projetos, tarefas, notas, metas, hábitos e memórias                        |
+| **Arquivos**     | Anexos por projeto, guardados localmente e pesquisáveis pelo conteúdo (PDF, DOCX, planilhas e mais)           |
 
 ### Vida pessoal
 
@@ -85,11 +85,11 @@ As sessões abertas aparecem em abas acima do terminal. Se houver muitas, role a
 
 Ao lançar ou editar uma transação, o agente também preenche os detalhes da fatura (item, valor, categoria e data da compra), a origem, a contraparte e a referência bancária. Valem as mesmas regras do app: a soma dos detalhes nunca passa do valor, e a edição entra na auditoria.
 
-| Sem aprovação                                       | Pede sua aprovação                                    | Só você faz                         |
-| --------------------------------------------------- | ----------------------------------------------------- | ----------------------------------- |
-| criar/editar projetos, colunas, tarefas, notas e metas | qualquer exclusão                                     | definir as pastas de código         |
-| mover, concluir e reabrir tarefas                   | lançamentos de dinheiro                               | trocar a moeda de uma tabela        |
-| editar e arquivar memórias                          | arquivar projeto, criar tabelas e perfis financeiros  | escrever em outro perfil financeiro |
+| Sem aprovação                                          | Pede sua aprovação                                   | Só você faz                         |
+| ------------------------------------------------------ | ---------------------------------------------------- | ----------------------------------- |
+| criar/editar projetos, colunas, tarefas, notas e metas | qualquer exclusão                                    | definir as pastas de código         |
+| mover, concluir e reabrir tarefas                      | lançamentos de dinheiro                              | trocar a moeda de uma tabela        |
+| editar e arquivar memórias                             | arquivar projeto, criar tabelas e perfis financeiros | escrever em outro perfil financeiro |
 
 Aprovar uma ação de dados não aprova o patch de código.
 
@@ -115,7 +115,7 @@ Tudo fica no diretório de dados do app (`userData`):
 | `agent-runs/`            | log e diff congelados de cada sessão de código (expiram em 24 horas)      |
 | `ai-config.json`         | preferências dos agentes; sem chaves, fora dos backups                    |
 | `password-security.json` | derivação da senha opcional (não a senha em si); fora dos backups         |
-| `logs/`                  | logs de diagnóstico por dia (14 dias), sem conteúdo seu; fora dos backups  |
+| `logs/`                  | logs de diagnóstico por dia (14 dias), sem conteúdo seu; fora dos backups |
 
 O Sagyou não envia nada a lugar nenhum por conta própria. Os CLIs de código são programas externos, com a própria conta e política de dados.
 
@@ -148,6 +148,35 @@ Para parear, no app, em **Configurações → Sincronização**:
 4. No segundo PC, use **Entrar com código** e cole o texto. Se esse PC já tiver dados, escolha **Juntar** (fica tudo dos dois lados) ou **Substituir** (fica só o que está na nuvem, com um backup antes).
 
 Quando a mesma coisa é editada nos dois PCs sem conexão, a versão mais recente vale e a outra aparece em **Conflitos**, com **Usar esta** para trocar. Uma dívida editada nos dois lados nunca muda sozinha: ela fica marcada como "conflito: escolha a versão" até você escolher.
+
+---
+
+## App Android
+
+O app do celular (em [`apps/mobile/`](apps/mobile/)) entra na mesma sincronização como mais um aparelho. Na v1 ele tem tarefas (com **Próximas**), hábitos, gastos e receitas, notas dos projetos e busca. Tudo funciona sem internet e sincroniza quando o app está aberto. Ele abre com biometria, ou com o PIN/padrão/senha do Android, e pede de novo depois de 5 minutos fora. Para usar, o Android precisa ter um bloqueio de tela configurado.
+
+O APK é gerado pelo GitHub Actions e assinado com uma chave sua. Prepare uma vez:
+
+```bash
+# Gera a chave de assinatura (guarde o arquivo e as senhas fora do repositório)
+keytool -genkeypair -v -keystore sagyou.jks -alias sagyou -keyalg RSA -keysize 2048 -validity 10000
+base64 -w0 sagyou.jks > sagyou.jks.b64       # no macOS: base64 -i sagyou.jks -o sagyou.jks.b64
+```
+
+Em **Settings → Secrets and variables → Actions** do repositório, cadastre:
+
+| Secret                      | Valor                          |
+| --------------------------- | ------------------------------ |
+| `ANDROID_KEYSTORE_BASE64`   | o conteúdo de `sagyou.jks.b64` |
+| `ANDROID_KEYSTORE_PASSWORD` | a senha do keystore            |
+| `ANDROID_KEY_ALIAS`         | `sagyou` (o alias usado acima) |
+| `ANDROID_KEY_PASSWORD`      | a senha da chave               |
+
+Depois, rode o workflow **Android APK** (aba Actions → Run workflow, ou empurre uma tag `mobile-v*`) e baixe o artefato `sagyou-mobile-apk`. Para instalar, copie o `.apk` para o celular, abra-o e permita a instalação de apps dessa origem quando o Android pedir.
+
+> ⚠️ **Não perca o keystore.** Um APK assinado com outra chave não instala por cima do anterior: seria preciso desinstalar o app (e parear de novo).
+
+Para parear, no PC, abra **Configurações → Sincronização → Parear novo aparelho**. No celular, toque em **Escanear QR** (ou cole o texto em **Colar código**). O celular baixa tudo da nuvem e passa a sincronizar. Conflitos aparecem no celular só como aviso ("N conflitos — resolva no PC"). Em **Ajustes**, **Desconectar este aparelho** apaga os dados do celular, que continuam na nuvem e nos PCs.
 
 ---
 

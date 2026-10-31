@@ -1,0 +1,57 @@
+name: Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'mobile-v*'
+
+# Builds and uploads the signed APK as an artifact. It never creates a
+# Release and never writes to the repository.
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: 'npm'
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      # Electron's native rebuild and downloads are not needed for the phone.
+      - run: npm ci --ignore-scripts
+      - name: Keystore from secrets
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$ANDROID_KEYSTORE_BASE64" || { echo "Falta o secret ANDROID_KEYSTORE_BASE64"; exit 1; }
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/sagyou.jks"
+      - run: npx expo prebuild -p android --no-install
+        working-directory: apps/mobile
+      - run: ./gradlew assembleRelease --no-daemon
+        working-directory: apps/mobile/android
+        env:
+          SAGYOU_KEYSTORE_PATH: ${{ runner.temp }}/sagyou.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      - name: Name the APK by version
+        run: |
+          v="$(node -p "require('./apps/mobile/app.json').expo.version")"
+          mv apps/mobile/android/app/build/outputs/apk/release/app-release.apk "sagyou-mobile-$v.apk"
+      - name: Remove the keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/sagyou.jks"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sagyou-mobile-apk
+          path: sagyou-mobile-*.apk
+          if-no-files-found: error
