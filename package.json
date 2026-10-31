@@ -23,7 +23,8 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "test:watch": "npm run test:watch -w sagyou",
-    "test:coverage": "npm run test:coverage -w sagyou"
+    "test:coverage": "npm run test:coverage -w sagyou",
+    "postinstall": "npm run rebuild:native -w sagyou"
   },
   "devDependencies": {
     "@electron-toolkit/eslint-config-prettier": "^3.0.0",

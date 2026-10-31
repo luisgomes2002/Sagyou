@@ -28,7 +28,16 @@ describe('layout do monorepo', () => {
     }
     expect(pkg.name).toBe('sagyou')
     expect(pkg.version).toBe('1.0.1')
-    expect(pkg.scripts.postinstall).toContain('better-sqlite3')
+    expect(pkg.scripts['rebuild:native']).toContain('better-sqlite3')
+  })
+
+  // `npm ci` at the root does not run a workspace's own postinstall, so the
+  // Electron rebuild of better-sqlite3 must hang off the root package. Without it
+  // the tests still pass (vitest never loads the module) but `npm run dev` and
+  // every installer ship a module built for the wrong ABI.
+  it('recompila o better-sqlite3 para o Electron a partir do postinstall da raiz', () => {
+    const root = json(join(repo, 'package.json')) as { scripts: Record<string, string> }
+    expect(root.scripts.postinstall).toBe('npm run rebuild:native -w sagyou')
   })
 
   it('leva a configuração de build junto com o desktop', () => {
