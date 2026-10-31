@@ -184,6 +184,8 @@ export interface SyncStoreLike {
   openSyncConflictCount(now: number): number
   markSyncConflictResolved(id: string, now: number): void
   adoptSyncVersion(record: WireRecord, now: number): SyncStateChange
+  /** Mint a new local version of the record's current content on top of `baseHlc`. */
+  rebaseSyncVersion(kind: string, id: string, baseHlc: string, now: number): boolean
   syncRecordVersion(
     kind: string,
     id: string
@@ -1354,9 +1356,15 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
           throw new SyncUserError('Não foi possível usar esta versão.')
         }
       }
+      // Keeping this side of a debt choice: the other device still holds its
+      // own version, so ours goes out again as an edit made on top of it.
+      const rebased =
+        !adoptKept &&
+        row.type === 'pending_choice' &&
+        store.rebaseSyncVersion(row.kind, row.recordId, row.loserHlc, now)
       store.markSyncConflictResolved(conflictId, now)
       log.info('sync', 'conflict_resolved', { adopted: adoptKept })
-      if (adoptKept) notifySaved()
+      if (adoptKept || rebased) notifySaved()
       publish()
     },
 

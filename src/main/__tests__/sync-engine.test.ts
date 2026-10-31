@@ -57,7 +57,12 @@ import {
   type WireRecord
 } from '../modules/sync/sync-batch'
 import { deriveKeys, keyProof, sealBatch } from '../modules/sync/sync-crypto'
-import { buildSyncRows, planSyncChanges } from '../modules/sync/sync-plan'
+import {
+  buildRebasedRow,
+  buildSyncRows,
+  captureBaseHlc,
+  planSyncChanges
+} from '../modules/sync/sync-plan'
 import { latestVersions, replaceSyncableState } from '../modules/sync/sync-replace'
 import {
   DATA_KINDS,
@@ -347,7 +352,11 @@ class FakeStore implements SyncStoreLike {
         hash: row.hash,
         deleted: row.deleted,
         deviceId: this.deviceId,
-        baseHlc: this.versions.get(key)?.hlc ?? null,
+        baseHlc: captureBaseHlc(
+          this.versions.get(key),
+          this.deviceId,
+          Number(this.kv.get('pushed_seq') ?? 0)
+        ),
         seq: row.seq,
         serverSeq: null
       })
@@ -544,6 +553,24 @@ class FakeStore implements SyncStoreLike {
     return { generation: this.generation, state: this.state }
   }
 
+  rebaseSyncVersion(kind: string, id: string, baseHlc: string): boolean {
+    const key = recordKey(kind, id)
+    const current = this.versions.get(key)
+    if (!current) return false
+    let maxHlc: string | null = null
+    for (const v of this.versions.values()) if (maxHlc === null || v.hlc > maxHlc) maxHlc = v.hlc
+    const row = buildRebasedRow(
+      current,
+      baseHlc,
+      { maxHlc, maxSeq: this.seq },
+      this.deviceId,
+      this.now()
+    )
+    this.seq = row.seq
+    this.versions.set(key, { ...current, ...row, serverSeq: null })
+    return true
+  }
+
   syncRecordVersion(
     kind: string,
     id: string
@@ -599,6 +626,15 @@ const table = (id: string, amount: string): Row => ({
   debts: [],
   yieldSources: [],
   yieldEntries: []
+})
+
+const debt = (id: string, remaining: string): Row => ({
+  id,
+  name: 'Empréstimo',
+  originalAmount: '100',
+  remainingAmount: remaining,
+  createdAt: T,
+  updatedAt: T
 })
 
 const withData = (patch: Partial<State>): State => ({ ...emptyState(), ...patch })
@@ -1282,4 +1318,122 @@ describe('conflitos', () => {
     await b.engine.syncNow()
     expect((b.store.state.tasks[0] as Row).title).toBe('Versão de A')
   })
+
+  it('duas edições antes do envio chegam ao outro lado sem conflito', async () => {
+    const { a, b } = await pairedDevices(
+      withData({ projects: [project('p1', 'Casa')], tasks: [task('t1', 'p1', 'Original')] })
+    )
+    server.mode = 'down'
+    a.store.save({ ...a.store.state, tasks: [task('t1', 'p1', 'Primeira')] })
+    clock.t += 10
+    a.store.save({ ...a.store.state, tasks: [task('t1', 'p1', 'Segunda')] })
+    server.mode = 'up'
+    await a.engine.syncNow()
+    await b.engine.syncNow()
+    expect((b.store.state.tasks[0] as Row).title).toBe('Segunda')
+    expect(b.engine.conflicts()).toEqual([])
+  })
+
+  it('uma dívida editada duas vezes antes do envio continua sincronizando', async () => {
+    const withDebt = (remaining: string): Row => ({
+      ...table('ft1', '10'),
+      debts: [debt('d1', remaining)]
+    })
+    const { a, b } = await pairedDevices(
+      withData({ lists: [withDebt('100')], financialProfiles: [] })
+    )
+    server.mode = 'down'
+    a.store.save({ ...a.store.state, lists: [withDebt('90')] })
+    clock.t += 10
+    a.store.save({ ...a.store.state, lists: [withDebt('80')] })
+    server.mode = 'up'
+    await a.engine.syncNow()
+    await b.engine.syncNow()
+    const debts = (s: FakeStore): Row[] => (s.state.lists[0] as Row).debts as Row[]
+    expect(debts(b.store)[0].remainingAmount).toBe('80')
+    expect(b.engine.conflicts()).toEqual([])
+  })
+
+  it('uma transação lançada offline numa tabela apagada no outro aparelho vira conflito de órfão', async () => {
+    const { a, b } = await pairedDevices(withData({ lists: [table('ft1', '10')] }))
+    server.mode = 'down'
+    a.store.save({ ...a.store.state, lists: [] })
+    const offline = {
+      id: 'tx-offline',
+      description: 'Mercado',
+      amount: '55',
+      type: 'expense',
+      date: '2026-10-02'
+    }
+    const t = structuredClone(b.store.state.lists[0] as Row)
+    ;(t.transactions as Row[]).push(offline)
+    b.store.save({ ...b.store.state, lists: [t] })
+    server.mode = 'up'
+    await a.engine.syncNow()
+    await b.engine.syncNow()
+    await a.engine.syncNow()
+
+    expect(b.store.state.lists).toEqual([])
+    const orphans = b.engine.conflicts().filter((c) => c.type === 'orphan')
+    expect(orphans.map((c) => c.recordId)).toEqual(['tx-offline'])
+    expect(orphans[0].local.payload?.description).toBe('Mercado')
+    // Nothing about it goes out: the other device never hears of it.
+    expect(b.store.pendingOutgoingCount()).toBe(0)
+    expect(a.store.versions.has(recordKey('transaction', 'tx-offline'))).toBe(false)
+    expect(a.engine.conflicts()).toEqual([])
+  })
+
+  it('uma tarefa criada offline num projeto apagado no outro aparelho vira conflito de órfão', async () => {
+    const { a, b } = await pairedDevices(
+      withData({ projects: [project('p1', 'Casa')], tasks: [task('t1', 'p1', 'Antiga')] })
+    )
+    server.mode = 'down'
+    a.store.save({ ...a.store.state, projects: [], tasks: [] })
+    b.store.save({ ...b.store.state, tasks: [...b.store.state.tasks, task('t-off', 'p1', 'Nova')] })
+    server.mode = 'up'
+    await a.engine.syncNow()
+    await b.engine.syncNow()
+    await a.engine.syncNow()
+
+    expect(b.store.state.projects).toEqual([])
+    expect(b.store.state.tasks).toEqual([])
+    const orphans = b.engine.conflicts().filter((c) => c.type === 'orphan')
+    expect(orphans.map((c) => c.recordId)).toEqual(['t-off'])
+    expect(orphans[0].local.payload?.title).toBe('Nova')
+    expect(b.store.pendingOutgoingCount()).toBe(0)
+    expect(a.store.versions.has(recordKey('task', 't-off'))).toBe(false)
+    expect(dataHashes(a.store)).toEqual(dataHashes(b.store))
+  })
+
+  it('"Usar esta" na versão local de uma dívida em escolha chega ao outro aparelho', async () => {
+    const withDebt = (remaining: string): Row => ({
+      ...table('ft1', '10'),
+      debts: [debt('d1', remaining)]
+    })
+    const { a, b } = await pairedDevices(
+      withData({ lists: [withDebt('100')], financialProfiles: [] })
+    )
+    server.mode = 'down'
+    a.store.save({ ...a.store.state, lists: [withDebt('90')] })
+    clock.t += 10
+    b.store.save({ ...b.store.state, lists: [withDebt('70')] })
+    server.mode = 'up'
+    await a.engine.syncNow()
+    await b.engine.syncNow()
+    await a.engine.syncNow()
+    const debts = (s: FakeStore): Row[] => (s.state.lists[0] as Row).debts as Row[]
+    // Both sides keep their own value and wait for a choice.
+    expect(debts(a.store)[0].remainingAmount).toBe('90')
+    expect(debts(b.store)[0].remainingAmount).toBe('70')
+    const [conflict] = a.engine.conflicts()
+    expect(conflict.type).toBe('pending_choice')
+
+    a.engine.resolve(conflict.id, 'local')
+    await clock.advance(PUSH_DEBOUNCE_MS)
+    await b.engine.syncNow()
+    expect(debts(b.store)[0].remainingAmount).toBe('90')
+    expect(debts(a.store)[0].remainingAmount).toBe('90')
+    expect(dataHashes(a.store)).toEqual(dataHashes(b.store))
+  })
 })
+

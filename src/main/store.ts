@@ -66,7 +66,9 @@ import {
 } from './modules/sync/sync-batch'
 import { openBatch, sealBatch } from './modules/sync/sync-crypto'
 import {
+  buildRebasedRow,
   buildSyncRows,
+  captureBaseHlc,
   memoryCaptureScope,
   planSyncChanges,
   type StoredVersion,
@@ -1316,7 +1318,8 @@ function captureSyncVersions(
   const stored = (
     db
       .prepare(
-        `SELECT kind, id, hlc, hash, deleted FROM sync_records WHERE kind IN (${placeholders})`
+        `SELECT kind, id, hlc, hash, deleted, device_id, base_hlc, seq
+         FROM sync_records WHERE kind IN (${placeholders})`
       )
       .all(...scope.kinds) as {
       kind: StoredVersion['kind']
@@ -1324,8 +1327,20 @@ function captureSyncVersions(
       hlc: string
       hash: string
       deleted: number
+      device_id: string
+      base_hlc: string | null
+      seq: number
     }[]
-  ).map((r) => ({ kind: r.kind, id: r.id, hlc: r.hlc, hash: r.hash, deleted: r.deleted === 1 }))
+  ).map((r) => ({
+    kind: r.kind,
+    id: r.id,
+    hlc: r.hlc,
+    hash: r.hash,
+    deleted: r.deleted === 1,
+    deviceId: r.device_id,
+    baseHlc: r.base_hlc,
+    seq: r.seq
+  }))
   const plan = planSyncChanges(records, stored, scope)
   if (!plan.upserts.length && !plan.deletes.length) {
     logSlowCapture(started, records.length)
@@ -1335,9 +1350,12 @@ function captureSyncVersions(
   const state = db
     .prepare('SELECT MAX(hlc) AS maxHlc, COALESCE(MAX(seq), 0) AS maxSeq FROM sync_records')
     .get() as { maxHlc: string | null; maxSeq: number }
-  const rows = buildSyncRows(plan, state, getSyncDeviceId(), Date.now())
-  // A new local version was made on top of whatever version the row held.
-  const previousHlc = new Map(stored.map((v) => [recordKey(v.kind, v.id), v.hlc]))
+  const deviceId = getSyncDeviceId()
+  const rows = buildSyncRows(plan, state, deviceId, Date.now())
+  // A new local version is made on top of the version the row held, or, when
+  // that one is still unpushed here, on top of the version it was made on.
+  const pushedSeq = syncStateNumber(db, 'pushed_seq')
+  const previous = new Map(stored.map((v) => [recordKey(v.kind, v.id), v]))
   const write = db.prepare(
     `INSERT INTO sync_records (kind, id, hlc, device_id, hash, deleted, seq, base_hlc, server_seq)
      VALUES (@kind, @id, @hlc, @deviceId, @hash, @deleted, @seq, @baseHlc, NULL)
@@ -1349,7 +1367,7 @@ function captureSyncVersions(
     write.run({
       ...row,
       deleted: row.deleted ? 1 : 0,
-      baseHlc: previousHlc.get(recordKey(row.kind, row.id)) ?? null
+      baseHlc: captureBaseHlc(previous.get(recordKey(row.kind, row.id)), deviceId, pushedSeq)
     })
 
   logSlowCapture(started, records.length)
@@ -2028,6 +2046,42 @@ export function adoptSyncVersion(record: WireRecord, now = Date.now()): SyncStat
   lastSnapshot = structuredClone(result.state)
   remoteKeysByGeneration.set(result.generation, new Set([key]))
   return result
+}
+
+/**
+ * "Usar esta" on the local side of a pending choice: the content stays, but it
+ * becomes a new version of this device made on top of the received one
+ * (`baseHlc`), so the other device applies it without a new conflict.
+ * False when the record has no version here.
+ */
+export function rebaseSyncVersion(
+  kind: string,
+  id: string,
+  baseHlc: string,
+  now = Date.now()
+): boolean {
+  const db = getDb()
+  return db.transaction((): boolean => {
+    const current = db
+      .prepare('SELECT hash, deleted FROM sync_records WHERE kind=? AND id=?')
+      .get(kind, id) as { hash: string; deleted: number } | undefined
+    if (!current) return false
+    const state = db
+      .prepare('SELECT MAX(hlc) AS maxHlc, COALESCE(MAX(seq), 0) AS maxSeq FROM sync_records')
+      .get() as { maxHlc: string | null; maxSeq: number }
+    const row = buildRebasedRow(
+      { kind: kind as SyncRecord['kind'], id, hash: current.hash, deleted: current.deleted === 1 },
+      baseHlc,
+      state,
+      getSyncDeviceId(),
+      now
+    )
+    db.prepare(
+      `UPDATE sync_records SET hlc=?, device_id=?, seq=?, base_hlc=?, server_seq=NULL
+       WHERE kind=? AND id=?`
+    ).run(row.hlc, row.deviceId, row.seq, row.baseHlc, kind, id)
+    return true
+  })()
 }
 
 export interface StoredSyncConflict {

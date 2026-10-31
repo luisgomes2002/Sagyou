@@ -278,6 +278,47 @@ describe('applyRecordsToState', () => {
     expect(project.activeCodePathId).toBe('cp-local')
   })
 
+  it('never takes code paths from a received project, new or existing', () => {
+    const payload = {
+      id: 'p9',
+      name: 'Vindo de fora',
+      color: '#fff',
+      order: 0,
+      createdAt: T,
+      updatedAt: T,
+      codePaths: [{ id: 'cp-x', path: 'C:\\outro' }],
+      activeCodePathIds: ['cp-x'],
+      activeCodePathId: 'cp-x',
+      columns: [{ id: 'cx', name: 'Intrusa', order: 0 }]
+    }
+    const record = (): WireRecord => ({
+      kind: 'project',
+      id: 'p9',
+      hlc: NEW,
+      baseHlc: null,
+      deleted: false,
+      payload: structuredClone(payload)
+    })
+    const empty = { ...local(), projects: [] } as State
+    const fresh = (applyRecordsToState(empty, [record()]) as State).projects[0]
+    expect(fresh.name).toBe('Vindo de fora')
+    expect(fresh.codePaths).toEqual([])
+    expect(fresh.activeCodePathIds).toEqual([])
+    expect(fresh.activeCodePathId).toBeUndefined()
+    expect(fresh.columns).toEqual([])
+
+    // An existing project without any code path stays without one.
+    const bare = {
+      ...local(),
+      projects: [{ id: 'p9', name: 'Antigo', color: '#fff', columns: [], links: [] }]
+    } as State
+    const kept = (applyRecordsToState(bare, [record()]) as State).projects[0]
+    expect(kept.name).toBe('Vindo de fora')
+    expect(kept.codePaths).toBeUndefined()
+    expect(kept.activeCodePathIds).toBeUndefined()
+    expect(kept.activeCodePathId).toBeUndefined()
+  })
+
   it('does not change the state it was given', () => {
     const a = local()
     const before = JSON.stringify(a)
@@ -486,6 +527,33 @@ describe('planRemoteApply', () => {
     expect(plan.pending).toEqual([])
     const p9 = ((plan.state as State).projects as Row[]).find((p) => p.id === 'p9')
     expect(p9?.columns).toEqual([{ id: 'c9', name: 'Nova', order: 0 }])
+  })
+
+  it('keeps local children of a deleted parent as orphans unless they arrived deleted too', () => {
+    const state = remote()
+    const versions = versionsOf(state)
+    const gone = (kind: WireRecord['kind'], id: string): IncomingRecord =>
+      from({ kind, id, hlc: NEW, baseHlc: MID, deleted: true })
+    // The sender deleted the goal with its one entry; the habit day 10-30 it
+    // never saw, and day 10-29 it deleted along with the habit.
+    const plan = planRemoteApply(
+      state,
+      [
+        gone('goal', 'g1'),
+        gone('goal_entry', 'ge1'),
+        gone('habit', 'h1'),
+        gone('habit_completion', 'h1:2026-10-29')
+      ],
+      versions
+    )
+    expect(plan.conflicts.map((c) => [c.type, c.kind, c.recordId])).toEqual([
+      ['orphan', 'habit_completion', 'h1:2026-10-30']
+    ])
+    expect(plan.conflicts[0].loser.payload).toEqual({ habitId: 'h1', date: '2026-10-30' })
+    const orphanVersion = plan.versions.find((v) => v.id === 'h1:2026-10-30')
+    expect(orphanVersion).toMatchObject({ deleted: true, deviceId: 'remote-device', hlc: MID })
+    expect((plan.state as State).goals).toEqual([])
+    expect((plan.state as State).habits).toEqual([])
   })
 
   it('holds a child whose parent has not arrived, and flags one whose parent was deleted', () => {

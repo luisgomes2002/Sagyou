@@ -11,7 +11,13 @@
 import { gunzipSync, gzipSync } from 'zlib'
 import { normalizeMemory, type AiMemory } from '../ai/memory'
 import { recordKey, type WireRecord } from './sync-batch'
-import { decideIncoming, parentOf, type LocalVersion, type ParentState } from './sync-merge'
+import {
+  decideIncoming,
+  PARENT_OF,
+  parentOf,
+  type LocalVersion,
+  type ParentState
+} from './sync-merge'
 import { DATA_KINDS, extractDataRecords, hashPayload, type SyncKind } from './sync-records'
 
 /** A pending child that never saw its parent is dropped after 30 days. */
@@ -179,7 +185,8 @@ const KEPT_ON_PARENT: Partial<Record<DataKind, string[]>> = {
 }
 
 const EMPTY_CHILDREN: Partial<Record<DataKind, Row>> = {
-  project: { columns: [] },
+  // A project new to this device has no folder authorised for agents here.
+  project: { columns: [], links: [], codePaths: [], activeCodePathIds: [] },
   goal: { entries: [] },
   habit: { completions: [] },
   financial_table: {
@@ -242,6 +249,9 @@ function applyTopLevel(state: Row, kind: DataKind, key: string, record: WireReco
   const entity = entityFrom(kind, record.payload)
   const kept = KEPT_ON_PARENT[kind]
   if (kept) {
+    // Children and device fields never come from the wire, even when a sender
+    // put them there: a received project must not arrive with a code folder.
+    for (const field of kept) delete entity[field]
     const existing = items.find((item) => item.id === record.id)
     if (existing) {
       for (const field of kept) if (field in existing) entity[field] = existing[field]
@@ -509,6 +519,86 @@ function resolveAll(resolver: Resolver, incoming: IncomingRecord[]): IncomingRec
 }
 
 /**
+ * Files outlive their project: deleting a project here leaves them in place,
+ * so a received project tombstone must not take them either.
+ */
+const NOT_ORPHANED = new Set<SyncKind>(['file'])
+
+/**
+ * A parent deleted on another device takes with it every child it had there,
+ * and those arrive as tombstones in the same pull. A child that exists only
+ * here (made offline, or edited after the sender last saw it) would vanish
+ * with its parent and then go out as a tombstone of its own. Instead it is
+ * kept as an `orphan` conflict, taken out of the state, and its version is
+ * marked deleted under the sender's id, so capture never mints a tombstone
+ * for it and nothing about it is pushed.
+ */
+function sweepOrphans(
+  state: SyncableState,
+  data: IncomingRecord[],
+  stored: Map<string, StoredSyncVersion>,
+  resolver: Resolver
+): void {
+  if (!resolver.applied.some((r) => r.deleted && r.kind in PARENT_COLLECTION)) return
+  const sources = new Map(
+    data.map((item) => [`${recordKey(item.record.kind, item.record.id)}@${item.record.hlc}`, item])
+  )
+  const deletedParents = new Map<string, IncomingRecord>()
+  const children = new Map(
+    extractDataRecords(state)
+      .filter((r) => PARENT_OF[r.kind] && !NOT_ORPHANED.has(r.kind))
+      .map((r) => [recordKey(r.kind, r.id), { kind: r.kind, id: r.id, payload: r.payload as Row }])
+  )
+  for (const record of resolver.applied) {
+    const key = recordKey(record.kind, record.id)
+    if (record.kind in PARENT_COLLECTION) {
+      const source = sources.get(`${key}@${record.hlc}`)
+      if (record.deleted && source) deletedParents.set(key, source)
+      else deletedParents.delete(key)
+    }
+    if (!children.has(key) && !(PARENT_OF[record.kind] && !NOT_ORPHANED.has(record.kind))) continue
+    if (record.deleted || !record.payload) children.delete(key)
+    else children.set(key, { kind: record.kind, id: record.id, payload: record.payload })
+  }
+  if (!deletedParents.size) return
+
+  for (const [key, child] of children) {
+    const ref = PARENT_OF[child.kind]?.(child.payload)
+    const parent = ref ? deletedParents.get(recordKey(ref.kind, ref.id)) : undefined
+    if (!parent) continue
+    const local = stored.get(key)
+    const hlc = local?.hlc ?? parent.record.hlc
+    resolver.conflicts.push({
+      type: 'orphan',
+      kind: child.kind,
+      recordId: child.id,
+      loser: {
+        kind: child.kind,
+        id: child.id,
+        hlc,
+        baseHlc: local?.baseHlc ?? null,
+        deleted: false,
+        payload: child.payload
+      },
+      loserDevice: local?.deviceId ?? parent.device,
+      winnerHlc: parent.record.hlc,
+      loserHlc: hlc
+    })
+    resolver.versions.push({
+      kind: child.kind,
+      id: child.id,
+      hlc,
+      baseHlc: local?.baseHlc ?? null,
+      deviceId: parent.device,
+      hash: local?.hash ?? hashPayload(child.payload),
+      deleted: true,
+      serverSeq: parent.serverSeq
+    })
+    resolver.applied.push({ kind: child.kind, id: child.id, hlc, baseHlc: null, deleted: true })
+  }
+}
+
+/**
  * Decide every received data record against the local versions and fold the
  * winners into `state`. Nothing is written: store.ts persists `state`, the
  * versions, the conflicts (sealed) and the pending children.
@@ -535,6 +625,7 @@ export function planRemoteApply<T extends SyncableState>(
   const resolver = createResolver(stored, localPayload, parentPresent)
   const data = incoming.filter((item) => KIND_ORDER.has(item.record.kind))
   const pending = resolveAll(resolver, data)
+  sweepOrphans(state, data, stored, resolver)
   return {
     state: resolver.applied.length ? applyRecordsToState(state, resolver.applied) : state,
     applied: resolver.applied,

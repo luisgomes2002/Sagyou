@@ -69,6 +69,30 @@ export function planSyncChanges(
   return { upserts, deletes }
 }
 
+/** The version a record holds before a new capture overwrites it. */
+export interface PreviousVersion {
+  hlc: string
+  baseHlc: string | null
+  deviceId: string
+  seq: number
+}
+
+/**
+ * The version a new local edit is made on top of. Other devices only ever
+ * see what was pushed, so an edit over a version of this device that has not
+ * gone out yet keeps that version's base: two edits before a push reach the
+ * other side as one, made on top of what it already has.
+ */
+export function captureBaseHlc(
+  previous: PreviousVersion | undefined,
+  deviceId: string,
+  pushedSeq: number
+): string | null {
+  if (!previous) return null
+  if (previous.deviceId === deviceId && previous.seq > pushedSeq) return previous.baseHlc
+  return previous.hlc
+}
+
 /** Turn a plan into rows, each with a newer version and the next local sequence. */
 export function buildSyncRows(
   plan: SyncPlan,
@@ -87,6 +111,34 @@ export function buildSyncRows(
     ...plan.upserts.map((r) => row(r.kind, r.id, r.hash, false)),
     ...plan.deletes.map((v) => row(v.kind, v.id, v.hash, true))
   ]
+}
+
+/**
+ * A new version of this device for content it already holds, made on top of
+ * `baseHlc` (a version received from another device and kept aside). Keeping
+ * the local side of a pending choice this way makes the other device, which
+ * still holds that version, apply ours without a new conflict. The HLC passes
+ * `baseHlc` too: the received version was never written to sync_records, so
+ * the stored maximum may be behind it.
+ */
+export function buildRebasedRow(
+  current: { kind: SyncKind; id: string; hash: string; deleted: boolean },
+  baseHlc: string,
+  state: { maxHlc: string | null; maxSeq: number },
+  deviceId: string,
+  nowMs: number
+): SyncRow & { baseHlc: string } {
+  const last = state.maxHlc !== null && state.maxHlc > baseHlc ? state.maxHlc : baseHlc
+  return {
+    kind: current.kind,
+    id: current.id,
+    hlc: nextHlc(nowMs, last, deviceId),
+    deviceId,
+    hash: current.hash,
+    deleted: current.deleted,
+    seq: state.maxSeq + 1,
+    baseHlc
+  }
 }
 
 /**
