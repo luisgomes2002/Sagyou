@@ -69,14 +69,16 @@ Na entrevista desta spec (2026-10-31):
   passam a ser `@noble/hashes` (SHA-256, HMAC, HKDF), `@noble/ciphers` (já usado) e
   `fflate` (gzip), todos JS puro. Os bytes produzidos são idênticos (gzip é o formato, não
   a biblioteca); um teste do core decifra um lote gerado pela implementação atual do
-  desktop, para provar compatibilidade. Aleatoriedade vem de um `randomBytes` injetado
-  (Node no desktop, `expo-crypto` no celular).
+  desktop, para provar compatibilidade. Aleatoriedade vem de `globalThis.crypto.getRandomValues`
+  (nativo no Node/Electron; no celular pelo polyfill `react-native-get-random-values`,
+  que usa o gerador seguro do Android). *(Ajustado no plano, 2026-10-31.)*
 - **O que vai para o core:** tipos de domínio (`types/index.ts`), `store/normalization.ts`,
   helpers de dinheiro (`D()`, `parseDecimalInput`, `formatAmountInput`, `moneyText`),
   `hlc.ts`, `sync-records.ts` (kinds, extração, hash canônico), `sync-plan.ts`,
-  `sync-merge.ts`, `sync-batch.ts`, `sync-crypto.ts`, e o cliente HTTP do Worker sem
-  dependência de Electron. Ficam no desktop: SQLite (`store.ts`), `safeStorage`,
-  arquivos, IPC e a orquestração do `sync-engine.ts` que depende deles.
+  `sync-merge.ts`, `sync-batch.ts`, `sync-crypto.ts`, `sync-apply.ts` e o próprio motor
+  (`createSyncEngine`, que já recebe store, config, fetch, timers e log por injeção).
+  Ficam no desktop: SQLite (`store.ts`), `safeStorage`, o id do aparelho, arquivos, IPC e
+  a limpeza de dados ao revogar. *(Ajustado no plano, 2026-10-31.)*
 - **O celular guarda tudo que sincroniza, não só a v1.** Recebe e grava todos os kinds
   (metas, dívidas, planejamento, memórias…) no próprio SQLite, mesmo sem tela. Assim a v2
   não precisa ressincronizar nada, e editar uma tarefa no celular nunca apaga um campo
@@ -89,8 +91,11 @@ Na entrevista desta spec (2026-10-31):
   padrão ou senha), oferecida pelo `expo-local-authentication`. O app não cria uma senha
   própria. Sem nenhuma trava configurada no Android, o app não abre os dados e diz:
   "Configure um bloqueio de tela no Android para usar o Sagyou."
-- **Banco:** `expo-sqlite` com as tabelas dos kinds sincronizados mais `sync_records`,
-  `sync_state`, `sync_conflicts` e `sync_pending`, com a mesma semântica da etapa 2.
+- **Banco:** `expo-sqlite` com uma tabela `records(kind, id, payload)` que guarda cada
+  registro sincronizado exatamente como o payload do sync (sem uma tabela por tipo), mais
+  `sync_records`, `sync_state`, `sync_conflicts` e `sync_pending`, com a mesma semântica
+  da etapa 2. Carregar e salvar sem editar nunca gera versão nova. *(Ajustado no plano,
+  2026-10-31.)*
   Busca com FTS5 do próprio SQLite, derivado e descartável como no desktop.
 - **Estado:** Zustand, reaproveitando dos slices do desktop só a lógica pura que já vive
   (ou passa a viver) no core; as ações do celular gravam direto no SQLite por registro,
@@ -115,7 +120,7 @@ Na entrevista desta spec (2026-10-31):
   existe.
 - **Pareamento:** lê URL, chave e convite; registra o aparelho (o nome padrão é o
   modelo do celular, editável); baixa o retrato e depois as mudanças. Mostra "Baixando
-  seus dados…" com contagem. Convite vencido ou usado: "Este código expirou. Gere outro
+  seus dados…" (sem contagem: o motor não expõe progresso). Convite vencido ou usado: "Este código expirou. Gere outro
   no Sagyou do PC."
 - **Tarefas:** lista de projetos não arquivados; dentro do projeto, tarefas por coluna.
   Criar (título, descrição, prioridade, prazo, tags, coluna, sprint), editar, mover de
