@@ -17,6 +17,7 @@ const ready: UpdateStatus = {
 
 let current: UpdateStatus
 let calls: string[]
+let lateFailure: (() => void) | undefined
 let deps: UpdateHandlerDeps
 let handlers: Map<string, (...args: unknown[]) => unknown>
 
@@ -34,7 +35,11 @@ beforeEach(() => {
         calls.push('markInstallFailed')
         current = { ...current, installError: true }
       }),
-      quitAndInstall: vi.fn(() => void calls.push('quitAndInstall'))
+      quitAndInstall: vi.fn((onFailed: () => void) => {
+        calls.push('quitAndInstall')
+        lateFailure = onFailed
+        return true
+      })
     },
     stopAgentTimers: vi.fn(async () => void calls.push('stopAgentTimers')),
     flushForInstall: vi.fn(async () => {
@@ -78,12 +83,21 @@ describe('update:install', () => {
     expect(calls).toContain('markInstallFailed')
   })
 
-  it('quitAndInstall que lança devolve a proteção do fechamento', async () => {
+  it('instalação que falha na hora devolve a proteção do fechamento e a tela', async () => {
     vi.mocked(deps.updater.quitAndInstall).mockImplementationOnce(() => {
-      throw new Error('spawn failed')
+      calls.push('quitAndInstall')
+      return false
     })
     await invoke('update:install')
-    expect(calls.slice(-2)).toEqual(['abortInstall', 'markInstallFailed'])
+    expect(calls.slice(-2)).toEqual(['quitAndInstall', 'abortInstall'])
+    expect(deps.log.warn).toHaveBeenCalledWith('update', 'install_aborted', { msg: 'install' })
+  })
+
+  it('instalação que falha depois também devolve a tela', async () => {
+    await invoke('update:install')
+    expect(calls).not.toContain('abortInstall')
+    lateFailure?.()
+    expect(calls).toContain('abortInstall')
   })
 
   it('fora de "pronto" não faz nada', async () => {

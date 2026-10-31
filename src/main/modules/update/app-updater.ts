@@ -58,7 +58,11 @@ export interface AppUpdater {
   status(): UpdateStatus
   isSyncHeld(): boolean
   markInstallFailed(): void
-  quitAndInstall(): void
+  /**
+   * false when the install failed on the spot; onFailed runs when it fails
+   * later (electron-updater emits 'error' instead of throwing).
+   */
+  quitAndInstall(onFailed: () => void): boolean
 }
 
 /** Dev, unpacked and Snap builds never check: they cannot install a release. */
@@ -86,6 +90,9 @@ export function createAppUpdater(deps: AppUpdaterDeps): AppUpdater {
 
   let state: UpdateState = deps.enabled ? 'checking' : 'disabled'
   let version: string | null = null
+  // A newer version was announced; it owes an install even if its number is missing.
+  let found = false
+  let installing: { onFailed: () => void; returned: boolean; failed: boolean } | null = null
   let percent: number | null = null
   let installError = false
   let started = false
@@ -97,13 +104,14 @@ export function createAppUpdater(deps: AppUpdaterDeps): AppUpdater {
   const isSyncHeld = (): boolean => {
     switch (state) {
       case 'checking':
-        return !graceOver
+        // A retry after a failed download still owes that install.
+        return !graceOver || (found && !manualOnly)
       case 'downloading':
       case 'ready':
         return true
       case 'error':
         // A failed download still owes an install; a failed check does not.
-        return version !== null
+        return found && !manualOnly
       default:
         return false
     }
@@ -134,7 +142,18 @@ export function createAppUpdater(deps: AppUpdaterDeps): AppUpdater {
 
   const fail = (error: unknown): void => {
     if (state === 'disabled') return
-    if (version !== null && state !== 'manual') {
+    if (installing) {
+      const attempt = installing
+      installing = null
+      attempt.failed = true
+      deps.log.error('update', 'install_failed', { version, msg: messageOf(error) })
+      state = 'ready'
+      installError = true
+      publish()
+      if (attempt.returned) attempt.onFailed()
+      return
+    }
+    if (found && state !== 'manual') {
       deps.log.error('update', 'download_failed', { version, msg: messageOf(error) })
     } else {
       deps.log.warn('update', 'check_failed', { msg: messageOf(error) })
@@ -147,11 +166,15 @@ export function createAppUpdater(deps: AppUpdaterDeps): AppUpdater {
 
   updater.on('update-not-available', () => {
     if (state !== 'checking') return
+    // A withdrawn release: nothing is owed any more.
+    found = false
+    version = null
     state = 'none'
     endGrace()
     publish()
   })
   updater.on('update-available', (info: unknown) => {
+    found = true
     version = versionOf(info)
     percent = manualOnly ? null : 0
     state = manualOnly ? 'manual' : 'downloading'
@@ -205,6 +228,11 @@ export function createAppUpdater(deps: AppUpdaterDeps): AppUpdater {
       graceTimer = deps.setTimer(() => {
         graceTimer = null
         graceOver = true
+        // No answer in time: show it as a failure the user can retry.
+        if (state === 'checking') {
+          deps.log.warn('update', 'check_timeout')
+          state = 'error'
+        }
         publish()
       }, UPDATE_SYNC_GRACE_MS)
       void check()
@@ -213,14 +241,22 @@ export function createAppUpdater(deps: AppUpdaterDeps): AppUpdater {
     status,
     isSyncHeld,
     markInstallFailed(): void {
-      if (version === null) return
+      if (!found) return
       state = 'ready'
       installError = true
       publish()
     },
-    quitAndInstall(): void {
+    quitAndInstall(onFailed: () => void): boolean {
       deps.log.info('update', 'install_started', { version })
-      updater.quitAndInstall(true, true)
+      const attempt = { onFailed, returned: false, failed: false }
+      installing = attempt
+      try {
+        updater.quitAndInstall(true, true)
+      } catch (error) {
+        fail(error)
+      }
+      attempt.returned = true
+      return !attempt.failed
     }
   }
 }

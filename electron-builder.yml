@@ -48,6 +48,9 @@ linux:
   category: Utility
 appImage:
   artifactName: ${name}-${version}.${ext}
+deb:
+  # The default (sagyou_<v>_amd64.deb) never matched the release workflow's glob.
+  artifactName: ${name}-${version}.${ext}
 # Native dependencies used here ship N-API prebuilds for the supported platforms.
 # Rebuilding node-pty on Windows needlessly requires the MSVC Spectre toolchain.
 npmRebuild: false

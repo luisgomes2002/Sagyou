@@ -775,17 +775,58 @@ describe('espera da atualização', () => {
     expect(released.pendingCount).toBe(0)
   })
 
-  it('segurado, ativar e entrar com código não chamam o servidor', async () => {
+  const dataRoutes = (): string[] =>
+    server.requests
+      .map((r) => new URL(r.url).pathname)
+      .filter((path) => /^\/(push|pull|snapshot)/.test(path))
+
+  it('segurado, ativar e entrar com código não levam nem trazem dados', async () => {
     const a = device(server, clock, ID_A, { on: true })
-    await expect(a.engine.activate(SERVER_URL, SETUP, 'PC de casa')).rejects.toThrow(
-      'Sincronização em espera: começa depois da atualização'
-    )
+    a.store.save(withData({ projects: [project('p1', 'Casa')] }))
+    await a.engine.activate(SERVER_URL, SETUP, 'PC de casa')
+    await clock.advance(0)
+    const { code } = await a.engine.createInvite()
     const b = device(server, clock, ID_B, { on: true })
-    const code = encodePairCode(SERVER_URL, new Uint8Array(32).fill(7), 'convite_abcdefghijklmnop')
-    await expect(b.engine.join(code, 'merge', 'PC do trabalho')).rejects.toThrow(
-      'Sincronização em espera: começa depois da atualização'
-    )
-    expect(server.requests).toEqual([])
+    await b.engine.join(code, 'merge', 'PC do trabalho').catch(() => {})
+    await clock.advance(POLL_MS)
+    expect(dataRoutes()).toEqual([])
+    expect(a.engine.status().state).toBe('update-pending')
+  })
+
+  it('segurado, ainda revoga um aparelho perdido', async () => {
+    const hold = { on: false }
+    const a = device(server, clock, ID_A, hold)
+    await a.engine.activate(SERVER_URL, SETUP, 'PC de casa')
+    await clock.advance(0)
+    const { code } = await a.engine.createInvite()
+    const b = device(server, clock, ID_B)
+    await b.engine.join(code, 'merge', 'Notebook perdido')
+    await clock.advance(0)
+    hold.on = true
+    const lost = (await a.engine.devices()).find((d) => d.name === 'Notebook perdido')
+    expect(lost).toBeDefined()
+    await a.engine.revoke(lost!.id, false)
+    expect((await a.engine.devices()).find((d) => d.id === lost!.id)?.revokedAt).not.toBeNull()
+  })
+
+  it('uma atualização achada no meio do ciclo não conta como falha', async () => {
+    const hold = { on: false }
+    let armed = false
+    const fetch = server.fetch
+    server.fetch = (url, init) => {
+      if (armed && url.includes('/pull')) hold.on = true
+      return fetch(url, init)
+    }
+    const a = device(server, clock, ID_A, hold)
+    await a.engine.activate(SERVER_URL, SETUP, 'PC de casa')
+    await clock.advance(0)
+    armed = true
+    a.store.save(withData({ projects: [project('p1', 'Casa')] }))
+    a.engine.notifySaved()
+    logged.length = 0
+    await a.engine.syncNow()
+    expect(a.engine.status().state).toBe('update-pending')
+    expect(logged.filter((l) => l.event.startsWith('cycle_'))).toEqual([])
   })
 
   it('sem sync configurado, a espera não aparece', () => {

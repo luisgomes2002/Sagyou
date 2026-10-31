@@ -56,4 +56,38 @@ describe('configuração de release do atualizador', () => {
     }
     expect(workflow).toMatch(/electron-builder --linux AppImage deb --publish never/)
   })
+
+  it('confere cada instalador e manifesto pelo nome, não só um glob', () => {
+    for (const file of [
+      'dist/sagyou-$v-setup.exe',
+      'dist/sagyou-$v-setup.exe.blockmap',
+      'dist/latest.yml',
+      'dist/sagyou-$v-mac.zip',
+      'dist/latest-mac.yml',
+      'dist/sagyou-$v.AppImage',
+      'dist/sagyou-$v.deb',
+      'dist/latest-linux.yml'
+    ]) {
+      expect(workflow).toContain(file)
+    }
+    expect(workflow.match(/test -f "\$f"/g)?.length).toBe(3)
+    const deb = builder.slice(builder.indexOf('\ndeb:'))
+    expect(deb.split('\n').slice(0, 4).join('\n')).toContain(
+      'artifactName: ${name}-${version}.${ext}'
+    )
+  })
+
+  it('só o job de release escreve, sem token salvo no checkout e como rascunho', () => {
+    expect(workflow).toMatch(/^permissions:\r?\n {2}contents: read\r?$/m)
+    expect(workflow.match(/contents: write/g)?.length).toBe(1)
+    const checkouts = workflow.match(/uses: actions\/checkout@/g)?.length ?? 0
+    expect(workflow.match(/persist-credentials: false/g)?.length).toBe(checkouts)
+    expect(workflow).toContain('draft: true')
+  })
+
+  it('fixa toda action por SHA', () => {
+    const uses = workflow.match(/uses: \S+/g) ?? []
+    expect(uses.length).toBeGreaterThan(0)
+    for (const use of uses) expect(use).toMatch(/@[0-9a-f]{40}$/)
+  })
 })

@@ -358,8 +358,10 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
 18. 🔴 **Nunca mude `appId` nem `productName` no `electron-builder.yml`.**
     Eles dão nome à pasta `userData`: trocar faz o app atualizado abrir sem o
     banco, os anexos e os backups. Todo Release precisa levar os `latest*.yml`
-    e `.blockmap` junto dos instaladores (o workflow falha sem eles), senão
-    nenhuma cópia instalada acha a versão seguinte. "Reiniciar e instalar" só
+    e `.blockmap` junto dos instaladores (cada build confere arquivo por
+    arquivo), senão nenhuma cópia instalada acha a versão seguinte. O Release
+    sai como **rascunho**: publique só depois de conferir os arquivos, porque
+    toda cópia instalada baixa o último Release publicado. "Reiniciar e instalar" só
     instala depois de o renderer confirmar o salvamento (`app:flush-before-install`).
 
 ## Memória — fronteira de confiança

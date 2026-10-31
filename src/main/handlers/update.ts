@@ -41,11 +41,12 @@ export function registerUpdateHandlers(ipcMain: IpcMain, deps: UpdateHandlerDeps
       }
       if (!(await deps.flushForInstall())) return abort('flush')
       deps.allowCloseForInstall(true)
-      try {
-        updater.quitAndInstall()
-      } catch {
-        return abort('quit_and_install')
+      // The updater marks the failure itself; this gives back the close guard and the screen.
+      const giveBack = (): void => {
+        deps.log.warn('update', 'install_aborted', { msg: 'install' })
+        deps.abortInstall()
       }
+      if (!updater.quitAndInstall(giveBack)) giveBack()
       return updater.status()
     } finally {
       installing = false

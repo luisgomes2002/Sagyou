@@ -19,7 +19,7 @@ class FakeUpdater extends EventEmitter implements UpdaterLike {
   allowPrerelease = true
   allowDowngrade = true
   checkForUpdates = vi.fn(async () => null)
-  quitAndInstall = vi.fn()
+  quitAndInstall = vi.fn<(isSilent?: boolean, isForceRunAfter?: boolean) => void>()
 }
 
 class Clock {
@@ -207,6 +207,88 @@ describe('createAppUpdater', () => {
     await Promise.resolve()
     expect(app.status().state).toBe('error')
     expect(app.isSyncHeld()).toBe(false)
+  })
+
+  it('10 s sem resposta viram erro com log e permitem tentar de novo', async () => {
+    const app = make()
+    app.start()
+    clock.advance(UPDATE_SYNC_GRACE_MS)
+    expect(app.status().state).toBe('error')
+    expect(log.warn).toHaveBeenCalledWith('update', 'check_timeout')
+    await app.check()
+    expect(updater.checkForUpdates).toHaveBeenCalledTimes(2)
+  })
+
+  it('"Tentar novamente" depois de um download falho mantém o sync segurado', async () => {
+    const app = make()
+    app.start()
+    updater.emit('update-available', { version: '1.2.0' })
+    updater.emit('error', new Error('sha512 checksum mismatch'))
+    void app.check()
+    expect(app.status().state).toBe('checking')
+    expect(app.isSyncHeld()).toBe(true)
+    expect(holdChanges).toEqual([])
+    // The retry finds the same version again: still held while it downloads.
+    updater.emit('update-available', { version: '1.2.0' })
+    expect(app.isSyncHeld()).toBe(true)
+    expect(holdChanges).toEqual([])
+  })
+
+  it('Release retirado: a nova consulta sem versão libera o sync', async () => {
+    const app = make()
+    app.start()
+    updater.emit('update-available', { version: '1.2.0' })
+    updater.emit('error', new Error('404'))
+    void app.check()
+    updater.emit('update-not-available', { version: '1.0.1' })
+    expect(app.isSyncHeld()).toBe(false)
+    expect(holdChanges).toEqual([false])
+  })
+
+  it('uma versão sem número ainda segura o sync quando o download falha', () => {
+    const app = make()
+    app.start()
+    updater.emit('update-available', {})
+    updater.emit('error', new Error('offline'))
+    expect(app.isSyncHeld()).toBe(true)
+  })
+
+  it('macOS: um erro depois do aviso manual não segura o sync', () => {
+    const app = make({ platform: 'darwin' })
+    app.start()
+    updater.emit('update-available', { version: '1.2.0' })
+    updater.emit('error', new Error('offline'))
+    expect(app.isSyncHeld()).toBe(false)
+  })
+
+  it('instalação que falha na hora devolve false e fica pronta com aviso', () => {
+    const app = make()
+    app.start()
+    updater.emit('update-available', { version: '1.2.0' })
+    updater.emit('update-downloaded', { version: '1.2.0' })
+    // electron-updater never throws here: it emits 'error' and returns.
+    updater.quitAndInstall.mockImplementationOnce(() => {
+      updater.emit('error', new Error("No update filepath provided, can't quit and install"))
+    })
+    const onFailed = vi.fn()
+    expect(app.quitAndInstall(onFailed)).toBe(false)
+    expect(app.status()).toMatchObject({ state: 'ready', installError: true })
+    expect(onFailed).not.toHaveBeenCalled()
+    expect(log.error).toHaveBeenCalledWith('update', 'install_failed', expect.anything())
+  })
+
+  it('instalação que falha depois (pkexec cancelado) chama o aviso de falha', () => {
+    const app = make({ platform: 'linux', isDeb: true })
+    app.start()
+    updater.emit('update-available', { version: '1.2.0' })
+    updater.emit('update-downloaded', { version: '1.2.0' })
+    const onFailed = vi.fn()
+    expect(app.quitAndInstall(onFailed)).toBe(true)
+    expect(updater.quitAndInstall).toHaveBeenCalledWith(true, true)
+    updater.emit('error', new Error('dpkg exited with code 1'))
+    expect(onFailed).toHaveBeenCalledTimes(1)
+    expect(app.status()).toMatchObject({ state: 'ready', installError: true })
+    expect(app.isSyncHeld()).toBe(true)
   })
 
   it('instalação que falhou volta para pronto com aviso', () => {

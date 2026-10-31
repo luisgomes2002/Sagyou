@@ -78,6 +78,7 @@ export type SyncStateName =
 
 /** Shown when an action needs the server while an app update holds sync. */
 export const UPDATE_PENDING_MESSAGE = 'Sincronização em espera: começa depois da atualização'
+const DATA_ROUTE = /^\/(push|pull|snapshot)(\/|\?|$)/
 
 export interface SyncStatus {
   state: SyncStateName
@@ -558,8 +559,9 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       body?: unknown
     }
   ): Promise<Record<string, unknown>> => {
-    // Every route goes through here, so an update hold stops all traffic to the server.
-    if (held()) throw new SyncUserError(UPDATE_PENDING_MESSAGE)
+    // An update hold stops every route that carries data. Control routes stay
+    // open, so a lost device can still be revoked while an update is pending.
+    if (held() && DATA_ROUTE.test(path)) throw new SyncUserError(UPDATE_PENDING_MESSAGE)
     const headers: Record<string, string> = { accept: 'application/json', ...init.headers }
     if (init.token) headers.authorization = `Bearer ${init.token}`
     if (init.body !== undefined) headers['content-type'] = 'application/json'
@@ -831,6 +833,8 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
 
   /** Returns true when the failure ended the session (401). */
   const handleFailure = (err: unknown): boolean => {
+    // An update found mid-cycle pauses sync; it is not a server failure.
+    if (err instanceof SyncUserError && err.message === UPDATE_PENDING_MESSAGE) return false
     if (err instanceof SyncAuthError) {
       if (err.wipe) {
         log.warn('sync', 'remote_wipe')

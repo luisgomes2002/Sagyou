@@ -5,15 +5,18 @@ on:
     tags:
       - 'v*.*.*'
 
+# Only the release job may write: npm/pip scripts in the build jobs never see a writable token.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
           cache: 'npm'
@@ -30,17 +33,27 @@ jobs:
     needs: check
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
           cache: 'npm'
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.12'
       - run: npm ci
       - run: npm run build:win
-      - uses: actions/upload-artifact@v4
+      - name: Every installer and update manifest exists
+        shell: bash
+        run: |
+          v="$(node -p "require('./package.json').version")"
+          for f in dist/sagyou-$v-setup.exe dist/sagyou-$v-setup.exe.blockmap dist/latest.yml; do
+            test -f "$f" || { echo "missing $f"; exit 1; }
+          done
+          grep -q "^version: $v$" dist/latest.yml || { echo "dist/latest.yml is not $v"; exit 1; }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: windows
           if-no-files-found: error
@@ -53,17 +66,27 @@ jobs:
     needs: check
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
           cache: 'npm'
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.12'
       - run: npm ci
       - run: npm run build:mac
-      - uses: actions/upload-artifact@v4
+      - name: Every installer and update manifest exists
+        shell: bash
+        run: |
+          v="$(node -p "require('./package.json').version")"
+          for f in dist/sagyou-$v.dmg dist/sagyou-$v-mac.zip dist/sagyou-$v-mac.zip.blockmap dist/latest-mac.yml; do
+            test -f "$f" || { echo "missing $f"; exit 1; }
+          done
+          grep -q "^version: $v$" dist/latest-mac.yml || { echo "dist/latest-mac.yml is not $v"; exit 1; }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: mac
           if-no-files-found: error
@@ -77,18 +100,28 @@ jobs:
     needs: check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
           cache: 'npm'
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.12'
       - run: npm ci
       # Builds only AppImage and deb; snap is skipped (requires snapcraft not available on runners)
       - run: npm run prepare:markitdown && npx electron-vite build && npx electron-builder --linux AppImage deb --publish never
-      - uses: actions/upload-artifact@v4
+      - name: Every installer and update manifest exists
+        shell: bash
+        run: |
+          v="$(node -p "require('./package.json').version")"
+          for f in dist/sagyou-$v.AppImage dist/sagyou-$v.deb dist/latest-linux.yml; do
+            test -f "$f" || { echo "missing $f"; exit 1; }
+          done
+          grep -q "^version: $v$" dist/latest-linux.yml || { echo "dist/latest-linux.yml is not $v"; exit 1; }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: linux
           if-no-files-found: error
@@ -100,12 +133,17 @@ jobs:
   release:
     needs: [build-windows, build-mac, build-linux]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: artifacts
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: artifacts/**/*
           fail_on_unmatched_files: true
+          # Published by hand after checking the assets: installed copies update
+          # from the latest published release, so a half-uploaded one must never be it.
+          draft: true
           generate_release_notes: true
