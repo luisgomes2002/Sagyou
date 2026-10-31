@@ -1,6 +1,6 @@
 # Atualização automática a partir dos Releases do GitHub
 
-Status: draft
+Status: approved by Luis on 2026-10-31
 Branch: feature/sync-cloudflare (documentação no PR #30; implementação após plano aprovado)
 
 ## Por quê
@@ -69,4 +69,4 @@ Sem mudança de schema ou formato de backup. O pacote baixado fica no cache do a
 
 ## Perguntas em aberto
 
-Nenhuma sobre o comportamento. A spec permanece em draft até aprovação explícita de Luis, conforme `docs/workflow.md`.
+Nenhuma sobre o comportamento. Aprovada por Luis em 31/10/2026; o plano exige aprovação separada.
