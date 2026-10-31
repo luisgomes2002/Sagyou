@@ -8,10 +8,12 @@
     "db:create": "wrangler d1 create sagyou-sync",
     "db:schema": "wrangler d1 execute sagyou-sync --remote --file schema.sql",
     "deploy": "wrangler deploy",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
   },
   "devDependencies": {
     "typescript": "^5.9.3",
-    "wrangler": "^4.40.0"
+    "wrangler": "^4.40.0",
+    "vitest": "^4.1.8"
   }
 }

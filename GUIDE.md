@@ -80,7 +80,7 @@ npm run typecheck    # checa main e renderer
 npm run lint         # ESLint
 npm test             # roda tudo uma vez
 npm run test:coverage # testes + relatório de cobertura de main e renderer
-npx vitest run src/main/__tests__/web-fetch.test.ts   # um arquivo só
+npm test -w sagyou -- src/main/__tests__/web-fetch.test.ts   # um arquivo só
 npm run build:linux  # (ou :win / :mac) gera o distribuível
 ```
 
@@ -91,6 +91,8 @@ nas PRs o lint é bloqueante para erros introduzidos no diff, para a dívida ant
 não mascarar uma regressão nova.
 
 ## Estrutura
+
+Monorepo com workspaces npm: o desktop em `apps/desktop/` (pacote `sagyou`; o nome define a pasta `userData` em dev e o nome dos instaladores, não mude), o código compartilhado em `packages/core/` (`@sagyou/core`) e o Worker em `sync-server/`. **Os caminhos abaixo são relativos a `apps/desktop/`.** Os comandos rodam na raiz.
 
 ```
 src/

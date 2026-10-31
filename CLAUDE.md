@@ -23,7 +23,7 @@ npm run test:watch   # run tests in watch mode
 npm run test:coverage # generate coverage report in coverage/
 
 # Run a single test file
-npx vitest run src/renderer/src/__tests__/store/kanban.test.ts
+npm test -w sagyou -- src/renderer/src/__tests__/store/kanban.test.ts
 
 # Build distributables
 npm run build:win
@@ -32,6 +32,8 @@ npm run build:linux
 ```
 
 ## Architecture
+
+**Monorepo (npm workspaces).** The desktop app lives in `apps/desktop/` (package name `sagyou` — kept on purpose: Electron derives the dev `userData` folder from it and electron-builder the installer names), shared code in `packages/core/` (`@sagyou/core`), the Worker in `sync-server/`. **Every desktop path in this file (`src/main/...`, `src/renderer/...`, `electron-builder.yml`, `scripts/`) is relative to `apps/desktop/`.** The commands above run from the repository root.
 
 The app is a frameless Electron window split into three processes. **AI in the product means running a code-agent CLI (Codex, Claude Code, OpenCode) in a terminal.** There is no generic API chat, no conversation history, no API keys and no token-spend tracking; see "Remoção do chat genérico" below for what was removed and how existing data was migrated.
 
