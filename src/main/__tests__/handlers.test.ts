@@ -226,7 +226,9 @@ describe('ai:config:*', () => {
         apiKey: 'segredo',
         baseUrl: 'http://x',
         model: 'm',
-        providerProfiles: [{ id: 'a', name: 'A', kind: 'api', baseUrl: 'u', apiKey: 'k2', model: 'm' }],
+        providerProfiles: [
+          { id: 'a', name: 'A', kind: 'api', baseUrl: 'u', apiKey: 'k2', model: 'm' }
+        ],
         codeHarness: 'claude-code',
         userName: 'Ana'
       })
@@ -479,7 +481,6 @@ describe('ai:code:* handlers', () => {
     })
   })
 })
-
 
 // -----------------------------------------------------------------------------
 
