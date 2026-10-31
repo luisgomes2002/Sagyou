@@ -1520,7 +1520,8 @@ app.whenReady().then(() => {
     },
     emitStatus: (status) => sendToRenderer('sync:status-changed', status),
     emitRemoteChanges: (change) => sendToRenderer('sync:remote-changes', change),
-    isHeld: () => updater.isSyncHeld()
+    isHeld: () => updater.isSyncHeld(),
+    log
   })
   syncEngine = engine
   registerSyncHandlers(ipcMain, {

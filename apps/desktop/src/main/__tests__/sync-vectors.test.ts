@@ -15,11 +15,7 @@ import {
   toRecoveryCode
 } from '../modules/sync/sync-crypto'
 import { encodePairCode } from '../modules/sync/sync-engine'
-import {
-  extractDataRecords,
-  extractMemoryRecords,
-  hashPayload
-} from '../modules/sync/sync-records'
+import { extractDataRecords, extractMemoryRecords, hashPayload } from '../modules/sync/sync-records'
 
 const vectors = JSON.parse(
   readFileSync(

@@ -202,7 +202,9 @@ const source = {
       createdAt: T,
       updatedAt: T,
       items: [],
-      transactions: [{ id: 'tx3', description: 'Ramen', amount: '1200', type: 'expense', date: '2026-10-10' }],
+      transactions: [
+        { id: 'tx3', description: 'Ramen', amount: '1200', type: 'expense', date: '2026-10-10' }
+      ],
       goals: []
     }
   ],

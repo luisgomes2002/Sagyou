@@ -26,7 +26,13 @@ describe('tableBalance', () => {
 describe('newTransaction', () => {
   it('grava dinheiro como string decimal canônica e createdAt', () => {
     const t = newTransaction(
-      { type: 'expense', amount: '10.10', date: '2026-10-31', category: 'Mercado', description: ' Pão ' },
+      {
+        type: 'expense',
+        amount: '10.10',
+        date: '2026-10-31',
+        category: 'Mercado',
+        description: ' Pão '
+      },
       new Date('2026-10-31T12:00:00.000Z')
     )
     expect(t.amount).toBe('10.1')

@@ -16,8 +16,12 @@
     "vitest": "^4.1.8"
   },
   "dependencies": {
+    "@noble/ciphers": "^1.3.0",
+    "@noble/hashes": "^1.8.0",
+    "@scure/base": "^1.2.6",
     "date-fns": "^4.4.0",
     "decimal.js": "^10.6.0",
+    "fflate": "^0.8.2",
     "uuid": "^14.0.0"
   }
 }

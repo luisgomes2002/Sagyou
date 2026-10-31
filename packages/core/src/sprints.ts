@@ -30,5 +30,7 @@ export function addSprint(
 export function latestOpenSprint(sprints: Sprint[], projectId: string): Sprint | undefined {
   return sprints
     .filter((s) => s.projectId === projectId && !s.closedAt)
-    .reduce<Sprint | undefined>((best, s) => (!best || s.createdAt > best.createdAt ? s : best), undefined)
+    .reduce<
+      Sprint | undefined
+    >((best, s) => (!best || s.createdAt > best.createdAt ? s : best), undefined)
 }

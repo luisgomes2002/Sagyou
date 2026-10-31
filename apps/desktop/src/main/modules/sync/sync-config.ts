@@ -1,5 +1,6 @@
 import { chmodSync, existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'fs'
 import { join } from 'path'
+import type { SyncConfig, SyncConfigLoad, SyncPause } from '@sagyou/core/sync/config-types'
 import { log } from '../logs/logger'
 
 export const SYNC_CONFIG_FILE = 'sync-config.json'
@@ -13,21 +14,7 @@ export interface SafeStorageLike {
   decryptString(encrypted: Buffer): string
 }
 
-export type SyncPause = null | 'restore' | 'join'
-
-export interface SyncConfig {
-  url: string
-  syncKey: Uint8Array
-  token: string
-  deviceName: string
-  paused: SyncPause
-}
-
-export type SyncConfigLoad =
-  | { status: 'none' }
-  | { status: 'no-keychain' }
-  | { status: 'corrupt' }
-  | { status: 'ok'; config: SyncConfig }
+export type { SyncConfig, SyncConfigLoad, SyncPause } from '@sagyou/core/sync/config-types'
 
 /**
  * Sync only runs when the OS keychain protects its secrets. On Linux without a
@@ -114,4 +101,9 @@ export function saveSyncConfig(
 
 export function clearSyncConfig(dir: string, file: string): void {
   rmSync(join(dir, file), { force: true })
+}
+
+/** The sync config file name, split like the database between dev and the installed app. */
+export function syncConfigFileName(dev: boolean): string {
+  return dev ? SYNC_CONFIG_FILE_DEV : SYNC_CONFIG_FILE
 }

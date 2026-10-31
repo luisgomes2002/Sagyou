@@ -35,5 +35,30 @@ export default defineConfig(
       '@typescript-eslint/explicit-function-return-type': 'off'
     }
   },
+  {
+    // packages/core also runs on the phone (Hermes): no Node, Electron or UI here.
+    files: ['packages/core/src/**/*.ts'],
+    ignores: ['packages/core/src/**/__tests__/**'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            'crypto',
+            'zlib',
+            'fs',
+            'path',
+            'os',
+            'buffer',
+            'electron',
+            'react',
+            'react-native'
+          ],
+          patterns: ['node:*']
+        }
+      ],
+      'no-restricted-globals': ['error', 'Buffer', 'process', 'require', '__dirname']
+    }
+  },
   eslintConfigPrettier
 )

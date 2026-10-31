@@ -684,6 +684,11 @@ function device(server: FakeServer, clock: Clock, localId: string, hold?: { on: 
     wipe,
     emitStatus: (s) => statuses.push(s),
     emitRemoteChanges: (c) => remote.push(c),
+    log: {
+      info: (_area, event, data) => logged.push({ level: 'info', event, data }),
+      warn: (_area, event, data) => logged.push({ level: 'warn', event, data }),
+      error: (_area, event, data) => logged.push({ level: 'error', event, data })
+    },
     ...(hold ? { isHeld: () => hold.on } : {})
   })
   engine.start()

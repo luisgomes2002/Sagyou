@@ -22,7 +22,11 @@ describe('addSprint', () => {
     const result = addSprint(existing, 'p2', 'Sprint 1', now)
     if ('error' in result) throw new Error(result.error)
     const created = result.sprints.find((s) => s.id === result.sprintId)
-    expect(created).toMatchObject({ projectId: 'p2', name: 'Sprint 1', createdAt: now.toISOString() })
+    expect(created).toMatchObject({
+      projectId: 'p2',
+      name: 'Sprint 1',
+      createdAt: now.toISOString()
+    })
     expect(result.sprints).toHaveLength(2)
   })
 })
