@@ -55,9 +55,12 @@ describe('bloqueio do app', () => {
     h.allow(false)
     await mount(h)
     expect(screen.queryByText(SECRET)).toBeNull()
+    // The first prompt fails: the lock screen stays, with a button to try again.
+    const retry = await screen.findByRole('button', { name: 'Desbloquear' })
     expect(h.authenticate).toHaveBeenCalledWith({ promptMessage: UNLOCK_PROMPT })
+    expect(screen.queryByText(SECRET)).toBeNull()
     h.allow(true)
-    await fireEvent.press(await screen.findByRole('button', { name: 'Desbloquear' }))
+    await fireEvent.press(retry)
     expect(await screen.findByText(SECRET)).toBeTruthy()
   })
 
