@@ -40,6 +40,13 @@ describe('layout do monorepo', () => {
     expect(root.scripts.postinstall).toBe('npm run rebuild:native -w sagyou')
   })
 
+  // In a workspace electron is hoisted to the root node_modules, where
+  // electron-builder does not look; it then refuses a version range.
+  it('fixa a versão exata do electron para o electron-builder', () => {
+    const pkg = json(join(desktop, 'package.json')) as { devDependencies: Record<string, string> }
+    expect(pkg.devDependencies.electron).toMatch(/^\d+\.\d+\.\d+$/)
+  })
+
   it('leva a configuração de build junto com o desktop', () => {
     expect(existsSync(join(desktop, 'electron-builder.yml'))).toBe(true)
     expect(existsSync(join(desktop, 'electron.vite.config.ts'))).toBe(true)
