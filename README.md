@@ -140,6 +140,15 @@ npx wrangler deploy                           # mostra a URL do Worker
 
 O `SETUP_TOKEN` registra o primeiro aparelho. Para recuperar um aparelho com o código de recuperação quando ainda há aparelhos ativos, também são exigidos a prova da chave e o código do autenticador. Os demais entram por convite, gerado num aparelho já pareado. O segredo `TOTP_ENC_KEY` deve ser uma chave nova de 32 bytes, codificada em base64url (por exemplo, gerada com `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`). Sem ele, o cadastro do autenticador não funciona.
 
+Para parear, no app, em **Configurações → Sincronização**:
+
+1. No primeiro PC, preencha a URL do Worker e o `SETUP_TOKEN` e clique em **Ativar**. Guarde o código de recuperação que aparece: ele é a única forma de recuperar a chave se você perder todos os aparelhos.
+2. Ainda no primeiro PC, cadastre o autenticador (Google Authenticator ou outro app TOTP) e guarde os códigos reserva. Ele é pedido para apagar os dados de um aparelho perdido.
+3. Clique em **Parear novo aparelho**. Aparecem um texto e um QR que valem por 10 minutos.
+4. No segundo PC, use **Entrar com código** e cole o texto. Se esse PC já tiver dados, escolha **Juntar** (fica tudo dos dois lados) ou **Substituir** (fica só o que está na nuvem, com um backup antes).
+
+Quando a mesma coisa é editada nos dois PCs sem conexão, a versão mais recente vale e a outra aparece em **Conflitos**, com **Usar esta** para trocar. Uma dívida editada nos dois lados nunca muda sozinha: ela fica marcada como "conflito: escolha a versão" até você escolher.
+
 ---
 
 ## Desenvolvimento
