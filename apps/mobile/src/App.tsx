@@ -8,6 +8,7 @@ import { bootstrap } from './bootstrap'
 import { StatusBanner } from './components/StatusBanner'
 import { FinanceScreen } from './screens/FinanceScreen'
 import { HabitsScreen } from './screens/HabitsScreen'
+import { NotesScreen } from './screens/NotesScreen'
 import { PairScreen } from './screens/PairScreen'
 import { Placeholder } from './screens/Placeholder'
 import { SettingsScreen } from './screens/SettingsScreen'
@@ -21,7 +22,8 @@ export const TAB_LABELS = ['Tarefas', 'Hábitos', 'Finanças', 'Notas', 'Busca']
 const TAB_SCREENS: Partial<Record<(typeof TAB_LABELS)[number], ComponentType>> = {
   Tarefas: TasksStack,
   Hábitos: HabitsScreen,
-  Finanças: FinanceScreen
+  Finanças: FinanceScreen,
+  Notas: NotesScreen
 }
 
 export type RootStackParams = {
