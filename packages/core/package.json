@@ -14,5 +14,10 @@
   "devDependencies": {
     "typescript": "^5.9.3",
     "vitest": "^4.1.8"
+  },
+  "dependencies": {
+    "date-fns": "^4.4.0",
+    "decimal.js": "^10.6.0",
+    "uuid": "^14.0.0"
   }
 }

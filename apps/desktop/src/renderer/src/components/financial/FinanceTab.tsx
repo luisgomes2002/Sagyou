@@ -3,7 +3,14 @@ import Decimal from 'decimal.js'
 import type { FinancialTable, FinancialTransaction, FinancialGoal } from '../../types'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { useKanbanStore } from '../../store/kanban'
-import { MONTH_NAMES, financialCategories, formatCurrency, D, todayISO } from './shared'
+import {
+  MONTH_NAMES,
+  financialCategories,
+  formatCurrency,
+  D,
+  tableBalance,
+  todayISO
+} from './shared'
 import { GoalModal, FinancialGoalCard } from './FinancialGoalCard'
 import { GoalHistoryModal } from './GoalHistoryModal'
 import { AddTransactionRow, TransactionRow } from './TransactionRow'
@@ -147,12 +154,8 @@ export function FinanceTab({
   const today = todayISO()
   const selectedMonthEnd = `${activeMonth.year}-${String(activeMonth.month).padStart(2, '0')}-31`
   const currentCutoff = today < selectedMonthEnd ? today : selectedMonthEnd
-  const currentBalance = list.transactions
-    .filter((t) => t.date <= currentCutoff)
-    .reduce((s, t) => (t.type === 'income' ? s.plus(t.amount) : s.minus(t.amount)), new Decimal(0))
-  const projectedBalance = list.transactions
-    .filter((t) => t.date <= selectedMonthEnd)
-    .reduce((s, t) => (t.type === 'income' ? s.plus(t.amount) : s.minus(t.amount)), new Decimal(0))
+  const currentBalance = tableBalance(list.transactions, currentCutoff)
+  const projectedBalance = tableBalance(list.transactions, selectedMonthEnd)
 
   const visibleGoals = list.goals.filter((goal) => {
     const deadlineBeforeActiveMonth =
