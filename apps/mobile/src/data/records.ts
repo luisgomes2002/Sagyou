@@ -1,6 +1,11 @@
 import { recordKey, type WireRecord } from '@sagyou/core/sync/batch'
 import { randomBytes, toHex } from '@sagyou/core/sync/bytes'
-import { buildSyncRows, captureBaseHlc, planSyncChanges } from '@sagyou/core/sync/plan'
+import {
+  buildSyncRows,
+  captureBaseHlc,
+  planSyncChanges,
+  type SyncScope
+} from '@sagyou/core/sync/plan'
 import {
   DATA_KINDS,
   canonicalJson,
@@ -52,6 +57,67 @@ export function writeSyncState(db: SqlDb, key: string, value: string): void {
     'INSERT INTO sync_state (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=?',
     [key, value, value]
   )
+}
+
+interface StoredRow {
+  kind: SyncKind
+  id: string
+  hlc: string
+  hash: string
+  deleted: number
+  device_id: string
+  base_hlc: string | null
+  seq: number
+}
+
+/**
+ * Mint a local version for every record in scope whose content changed since
+ * the version sync_records holds (same rule as the desktop's captureSyncVersions).
+ */
+export function captureVersions(
+  db: SqlDb,
+  me: string,
+  records: SyncRecord[],
+  scope: SyncScope,
+  now: number
+): number {
+  const placeholders = scope.kinds.map(() => '?').join(',')
+  const stored = db
+    .all<StoredRow>(
+      'SELECT kind, id, hlc, hash, deleted, device_id, base_hlc, seq FROM sync_records ' +
+        `WHERE kind IN (${placeholders})`,
+      [...scope.kinds]
+    )
+    .map((r) => ({
+      kind: r.kind,
+      id: r.id,
+      hlc: r.hlc,
+      hash: r.hash,
+      deleted: r.deleted === 1,
+      deviceId: r.device_id,
+      baseHlc: r.base_hlc,
+      seq: r.seq
+    }))
+  const plan = planSyncChanges(records, stored, scope)
+  if (!plan.upserts.length && !plan.deletes.length) return 0
+  const state = db.get<{ maxHlc: string | null; maxSeq: number }>(
+    'SELECT MAX(hlc) AS maxHlc, COALESCE(MAX(seq), 0) AS maxSeq FROM sync_records'
+  ) ?? { maxHlc: null, maxSeq: 0 }
+  const rows = buildSyncRows(plan, state, me, now)
+  const pushedSeq = syncStateNumber(db, 'pushed_seq')
+  const previous = new Map(stored.map((v) => [recordKey(v.kind, v.id), v]))
+  for (const row of rows) {
+    const base = captureBaseHlc(previous.get(recordKey(row.kind, row.id)), me, pushedSeq)
+    db.run(
+      'INSERT INTO sync_records (kind, id, hlc, device_id, hash, deleted, seq, base_hlc, server_seq) ' +
+        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL) ' +
+        'ON CONFLICT(kind, id) DO UPDATE SET hlc=excluded.hlc, device_id=excluded.device_id, ' +
+        'hash=excluded.hash, deleted=excluded.deleted, seq=excluded.seq, ' +
+        'base_hlc=excluded.base_hlc, server_seq=NULL',
+      [row.kind, row.id, row.hlc, row.deviceId, row.hash, row.deleted ? 1 : 0, row.seq, base]
+    )
+  }
+  return rows.length
 }
 
 export function createRecordRepo(
@@ -151,53 +217,13 @@ export function createRecordRepo(
     save(next: MobileState, now: number): number {
       return db.tx(() => {
         persist(next)
-        const records = extractDataRecords(next)
-        const stored = db
-          .all<{
-            kind: SyncKind
-            id: string
-            hlc: string
-            hash: string
-            deleted: number
-            device_id: string
-            base_hlc: string | null
-            seq: number
-          }>(
-            `SELECT kind, id, hlc, hash, deleted, device_id, base_hlc, seq FROM sync_records
-             WHERE kind <> 'memory'`
-          )
-          .map((r) => ({
-            kind: r.kind,
-            id: r.id,
-            hlc: r.hlc,
-            hash: r.hash,
-            deleted: r.deleted === 1,
-            deviceId: r.device_id,
-            baseHlc: r.base_hlc,
-            seq: r.seq
-          }))
-        const plan = planSyncChanges(records, stored, { kinds: DATA_KINDS, complete: true })
-        if (!plan.upserts.length && !plan.deletes.length) return 0
-        const state = db.get<{ maxHlc: string | null; maxSeq: number }>(
-          'SELECT MAX(hlc) AS maxHlc, COALESCE(MAX(seq), 0) AS maxSeq FROM sync_records'
-        ) ?? { maxHlc: null, maxSeq: 0 }
-        const me = deviceId()
-        const rows = buildSyncRows(plan, state, me, now)
-        const pushedSeq = syncStateNumber(db, 'pushed_seq')
-        const previous = new Map(stored.map((v) => [recordKey(v.kind, v.id), v]))
-        for (const row of rows) {
-          const base = captureBaseHlc(previous.get(recordKey(row.kind, row.id)), me, pushedSeq)
-          db.run(
-            `INSERT INTO sync_records (kind, id, hlc, device_id, hash, deleted, seq, base_hlc, server_seq)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
-             ON CONFLICT(kind, id) DO UPDATE SET
-               hlc=excluded.hlc, device_id=excluded.device_id, hash=excluded.hash,
-               deleted=excluded.deleted, seq=excluded.seq, base_hlc=excluded.base_hlc,
-               server_seq=NULL`,
-            [row.kind, row.id, row.hlc, row.deviceId, row.hash, row.deleted ? 1 : 0, row.seq, base]
-          )
-        }
-        return rows.length
+        return captureVersions(
+          db,
+          deviceId(),
+          extractDataRecords(next),
+          { kinds: DATA_KINDS, complete: true },
+          now
+        )
       })
     },
 
