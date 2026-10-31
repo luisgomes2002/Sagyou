@@ -67,7 +67,17 @@ const UNKNOWN_DEVICE = 'outro aparelho'
 
 // ── Public types ─────────────────────────────────────────────────────────────
 
-export type SyncStateName = 'off' | 'no-keychain' | 'ok' | 'offline' | 'paused' | 'disconnected'
+export type SyncStateName =
+  | 'off'
+  | 'no-keychain'
+  | 'ok'
+  | 'offline'
+  | 'paused'
+  | 'disconnected'
+  | 'update-pending'
+
+/** Shown when an action needs the server while an app update holds sync. */
+export const UPDATE_PENDING_MESSAGE = 'Sincronização em espera: começa depois da atualização'
 
 export interface SyncStatus {
   state: SyncStateName
@@ -217,6 +227,8 @@ export interface SyncEngineDeps {
     route: 'setup' | 'revoke',
     ctx: { idKey: Uint8Array; factor?: SyncSecondFactor }
   ) => Record<string, string>
+  /** True while an app update must be installed before talking to the server. */
+  isHeld?: () => boolean
 }
 
 export interface SyncEngine {
@@ -481,6 +493,8 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
 
   // ── status ──
 
+  const held = (): boolean => deps.isHeld?.() === true
+
   const status = (): SyncStatus => {
     let state: SyncStateName
     if (!session) {
@@ -489,6 +503,7 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
         state = 'no-keychain'
       else state = 'off'
     } else if (session.config.paused) state = 'paused'
+    else if (held()) state = 'update-pending'
     else if (offline) state = 'offline'
     else state = 'ok'
     const now = deps.now()
@@ -543,6 +558,8 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       body?: unknown
     }
   ): Promise<Record<string, unknown>> => {
+    // Every route goes through here, so an update hold stops all traffic to the server.
+    if (held()) throw new SyncUserError(UPDATE_PENDING_MESSAGE)
     const headers: Record<string, string> = { accept: 'application/json', ...init.headers }
     if (init.token) headers.authorization = `Bearer ${init.token}`
     if (init.body !== undefined) headers['content-type'] = 'application/json'
@@ -844,7 +861,7 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
 
   const runOnce = async (): Promise<boolean> => {
     const s = session
-    if (!s || s.config.paused || holding || wiped) return false
+    if (!s || s.config.paused || holding || wiped || held()) return false
     const t0 = deps.now()
     try {
       // Received first, then local: "Juntar" applies the cloud by the rule, then sends.

@@ -32,7 +32,13 @@ describe('configuração de release do atualizador', () => {
   })
 
   it('anexa instaladores e manifestos e falha se faltar algum', () => {
-    for (const file of ['latest.yml', 'latest-mac.yml', 'latest-linux.yml', '*.blockmap', 'sagyou-*-mac.zip']) {
+    for (const file of [
+      'latest.yml',
+      'latest-mac.yml',
+      'latest-linux.yml',
+      '*.blockmap',
+      'sagyou-*-mac.zip'
+    ]) {
       expect(workflow).toContain(file)
     }
     expect(workflow).toContain('if-no-files-found: error')

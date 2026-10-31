@@ -620,7 +620,7 @@ interface Device {
   backup: Mock<() => Promise<boolean>>
 }
 
-function device(server: FakeServer, clock: Clock, localId: string): Device {
+function device(server: FakeServer, clock: Clock, localId: string, hold?: { on: boolean }): Device {
   const store = new FakeStore(localId, clock.now)
   const config: { stored: SyncConfig | null } = { stored: null }
   const statuses: SyncStatus[] = []
@@ -647,7 +647,8 @@ function device(server: FakeServer, clock: Clock, localId: string): Device {
     forcedBackup: backup,
     wipe,
     emitStatus: (s) => statuses.push(s),
-    emitRemoteChanges: (c) => remote.push(c)
+    emitRemoteChanges: (c) => remote.push(c),
+    ...(hold ? { isHeld: () => hold.on } : {})
   })
   engine.start()
   return { store, engine, config, statuses, remote, wipe, backup }
@@ -746,6 +747,50 @@ describe('pareamento e convergência', () => {
     expect([...parsed.syncKey]).toEqual([...key])
     expect(parsed.invite).toBe('convite_abcdefghijklmnop')
     expect(() => parsePairCode('sagyou-sync:1:xx')).toThrow('Código de pareamento inválido.')
+  })
+})
+
+describe('espera da atualização', () => {
+  it('segurado, não fala com o servidor em ciclo nem em sincronizar agora', async () => {
+    const hold = { on: false }
+    const a = device(server, clock, ID_A, hold)
+    a.store.save(withData({ projects: [project('p1', 'Casa')] }))
+    await a.engine.activate(SERVER_URL, SETUP, 'PC de casa')
+    await clock.advance(0)
+    hold.on = true
+    const before = server.requests.length
+    a.store.save({ ...a.store.state, projects: [project('p1', 'Casa nova')] })
+    a.engine.notifySaved()
+    await clock.advance(PUSH_DEBOUNCE_MS)
+    await clock.advance(POLL_MS)
+    const status = await a.engine.syncNow()
+    expect(server.requests.length).toBe(before)
+    expect(status.state).toBe('update-pending')
+    expect(status.pendingCount).toBeGreaterThan(0)
+
+    hold.on = false
+    const released = await a.engine.syncNow()
+    expect(server.requests.length).toBeGreaterThan(before)
+    expect(released.state).toBe('ok')
+    expect(released.pendingCount).toBe(0)
+  })
+
+  it('segurado, ativar e entrar com código não chamam o servidor', async () => {
+    const a = device(server, clock, ID_A, { on: true })
+    await expect(a.engine.activate(SERVER_URL, SETUP, 'PC de casa')).rejects.toThrow(
+      'Sincronização em espera: começa depois da atualização'
+    )
+    const b = device(server, clock, ID_B, { on: true })
+    const code = encodePairCode(SERVER_URL, new Uint8Array(32).fill(7), 'convite_abcdefghijklmnop')
+    await expect(b.engine.join(code, 'merge', 'PC do trabalho')).rejects.toThrow(
+      'Sincronização em espera: começa depois da atualização'
+    )
+    expect(server.requests).toEqual([])
+  })
+
+  it('sem sync configurado, a espera não aparece', () => {
+    const a = device(server, clock, ID_A, { on: true })
+    expect(a.engine.status().state).toBe('off')
   })
 })
 
