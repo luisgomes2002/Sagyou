@@ -47,6 +47,7 @@ import { SettingsView } from './components/views/SettingsView'
 import { UnlockScreen } from './components/security/UnlockScreen'
 import { ViewErrorBoundary } from './components/ViewErrorBoundary'
 import { applyMcpAction, prepareMcpAction } from './services/mcpActions'
+import { useSyncOnReconnect } from './hooks/useSync'
 import type { GlobalSearchHit } from '../../main/modules/search/global-search-query'
 
 interface TaskModalState {
@@ -160,6 +161,8 @@ export default function App() {
       importAIJson: s.importAIJson
     }))
   )
+
+  useSyncOnReconnect()
 
   useEffect(() => {
     if (!window.electronAPI.store.onReload) return

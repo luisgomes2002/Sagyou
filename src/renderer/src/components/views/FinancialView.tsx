@@ -12,6 +12,7 @@ import { ConsolidatedTab } from '../financial/ConsolidatedTab'
 import { YieldsTab } from '../financial/YieldsTab'
 import { ReceiptsTab } from '../financial/ReceiptsTab'
 import { DebtsTab } from '../financial/DebtsTab'
+import { useDebtConflictIds } from '../../hooks/useSync'
 import type { GlobalSearchHit } from '../../../../main/modules/search/global-search-query'
 
 type ActiveTab =
@@ -53,6 +54,7 @@ export function FinancialView({
 }): React.JSX.Element {
   const lists = useKanbanStore((s) => s.lists)
   const files = useKanbanStore((s) => s.files)
+  const debtConflictIds = useDebtConflictIds()
   const financialProfiles = useKanbanStore((s) => s.financialProfiles)
   const activeFinancialProfileId = useKanbanStore((s) => s.activeFinancialProfileId)
   const createFinancialProfile = useKanbanStore((s) => s.createFinancialProfile)
@@ -442,6 +444,7 @@ export function FinancialView({
             {ts.activeTab === 'debts' && (
               <DebtsTab
                 list={activeList}
+                conflictDebtIds={debtConflictIds}
                 onAdd={(name, amount) => addFinancialDebt(activeListId!, name, amount)}
                 onPay={(debtId, amount, date) =>
                   payFinancialDebt(activeListId!, debtId, amount, date)

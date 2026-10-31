@@ -7,9 +7,17 @@ interface DebtsTabProps {
   onAdd: (name: string, amount: string) => void
   onPay: (debtId: string, amount: string, date: string) => boolean
   onDelete: (debtId: string) => void
+  /** Debts edited on two devices, waiting for a choice on the Sincronização screen. */
+  conflictDebtIds?: ReadonlySet<string>
 }
 
-export function DebtsTab({ list, onAdd, onPay, onDelete }: DebtsTabProps): React.JSX.Element {
+export function DebtsTab({
+  list,
+  onAdd,
+  onPay,
+  onDelete,
+  conflictDebtIds
+}: DebtsTabProps): React.JSX.Element {
   const [name, setName] = useState('')
   const [amount, setAmount] = useState('')
   const [addError, setAddError] = useState('')
@@ -78,6 +86,9 @@ export function DebtsTab({ list, onAdd, onPay, onDelete }: DebtsTabProps): React
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h3 className="truncate text-sm font-semibold text-[#d4d4d4]">{debt.name}</h3>
+            {conflictDebtIds?.has(debt.id) && (
+              <p className="mt-1 text-xs font-medium text-[#d9a640]">conflito: escolha a versão</p>
+            )}
             <p className="mt-1 text-xs text-[#999999]">
               Valor original: {formatCurrency(debt.originalAmount, list.currency)}
             </p>

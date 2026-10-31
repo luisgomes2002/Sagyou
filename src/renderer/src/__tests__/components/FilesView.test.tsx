@@ -217,4 +217,18 @@ describe('FilesView rename', () => {
     expect(nameOf('r1')).toBe('IMG_1422.jpg')
     expect(screen.getByRole('textbox', { name: 'Novo nome do arquivo' })).toBeTruthy()
   })
+
+  it('marks a file whose bytes are on another device and disables opening it', async () => {
+    const api = (window as unknown as { electronAPI: { files: Record<string, unknown> } })
+      .electronAPI
+    api.files.availability = vi.fn(async () => ({ r1: 'Trabalho', r2: null }))
+    render(<FilesView activeProjectId="p3" />)
+    expect(await screen.findByText('Disponível só em Trabalho')).toBeInTheDocument()
+    const away = row('IMG_1422.jpg')
+    expect(within(away).getByText('Disponível só em Trabalho')).toBeInTheDocument()
+    expect(within(away).getByRole('button', { name: 'Abrir' })).toBeDisabled()
+    expect(within(away).getByRole('button', { name: 'Navegador' })).toBeDisabled()
+    expect(within(away).getByRole('button', { name: 'Baixar' })).toBeDisabled()
+    expect(within(row('Recibo.jpg')).getByRole('button', { name: 'Abrir' })).toBeEnabled()
+  })
 })
