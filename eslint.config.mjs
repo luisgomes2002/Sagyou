@@ -36,6 +36,13 @@ export default defineConfig(
     }
   },
   {
+    // Expo/Metro/Jest config files are CommonJS by convention.
+    files: ['apps/mobile/*.js', 'apps/mobile/plugins/*.js'],
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off'
+    }
+  },
+  {
     // packages/core also runs on the phone (Hermes): no Node, Electron or UI here.
     files: ['packages/core/src/**/*.ts'],
     ignores: ['packages/core/src/**/__tests__/**'],

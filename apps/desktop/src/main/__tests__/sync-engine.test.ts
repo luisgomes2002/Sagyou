@@ -1085,6 +1085,25 @@ describe('revogar e apagar', () => {
     expect(fromB()).toBe(count)
   })
 
+  // The phone does not relaunch after a remote wipe (the desktop does): the
+  // same engine pairs again and must sync again, not stay "wiped" for good.
+  it('apagado e pareado de novo no mesmo processo, volta a sincronizar', async () => {
+    const { a, b } = await pairedDevices(withData({ projects: [project('p1', 'Casa')] }))
+    const other = (await a.engine.devices()).find((d) => !d.current)
+    await a.engine.revoke(other!.id, true)
+    await b.engine.syncNow()
+    expect(b.wipe).toHaveBeenCalledTimes(1)
+
+    vi.spyOn(b.store, 'getSyncDeviceId').mockReturnValue('c'.repeat(32))
+    const { code } = await a.engine.createInvite()
+    await b.engine.join(code, 'replace', 'Celular')
+    await clock.advance(0)
+    a.store.save(withData({ projects: [project('p1', 'Casa'), project('p2', 'Novo')] }))
+    await a.engine.syncNow()
+    await b.engine.syncNow()
+    expect(b.store.state.projects.map((p) => (p as { id: string }).id)).toContain('p2')
+  })
+
   it('revogar a si mesmo é recusado (use Desativar)', async () => {
     const { a } = await pairedDevices(withData({}))
     const me = (await a.engine.devices()).find((d) => d.current)
