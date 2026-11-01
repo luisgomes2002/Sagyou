@@ -96,6 +96,7 @@ vi.mock('electron', () => ({
     loadFile = vi.fn()
     show = vi.fn()
     isMaximized = (): boolean => false
+    isDestroyed = (): boolean => false
   },
   shell: { openExternal: vi.fn(), openPath: vi.fn() },
   safeStorage: {
@@ -192,6 +193,37 @@ describe('motor na bandeja', () => {
       Object.defineProperty(process, 'platform', platform)
     }
     expect(desktop.loginItems).toContainEqual({ openAtLogin: true, args: ['--hidden'] })
+  })
+
+  it('does not lock on the Windows lock screen without a password', () => {
+    winSent.length = 0
+    desktop.power.get('lock-screen')?.()
+    expect(winSent.some((m) => m.channel === 'security:lock-request')).toBe(false)
+  })
+
+  it('locks on the Windows lock screen: renderer saves, then data IPC closes', async () => {
+    expect(desktop.power.has('lock-screen')).toBe(true)
+    expect(desktop.power.has('suspend')).toBe(true)
+    await expect(invoke('security:enable', 'senha-de-teste-1')).resolves.toEqual({
+      success: true
+    })
+    try {
+      winSent.length = 0
+      desktop.power.get('lock-screen')?.()
+      expect(winSent.some((m) => m.channel === 'security:lock-request')).toBe(true)
+      // Still saving: data IPC stays open for the renderer's flush.
+      await expect(invoke('desktop:prefs:get')).resolves.toBeDefined()
+      await invoke('security:lock-ready')
+      await expect(invoke('desktop:prefs:get')).rejects.toThrow(
+        'Desbloqueie o Sagyou para acessar os dados.'
+      )
+      await expect(invoke('security:unlock', 'senha-de-teste-1')).resolves.toEqual({
+        success: true
+      })
+      await expect(invoke('desktop:prefs:get')).resolves.toBeDefined()
+    } finally {
+      await invoke('security:disable', 'senha-de-teste-1')
+    }
   })
 
   it('keeps the desktop prefs behind the renderer check', () => {

@@ -13,6 +13,7 @@ import {
   Menu,
   Notification,
   Tray,
+  powerMonitor,
   type IpcMain,
   type IpcMainEvent,
   type IpcMainInvokeEvent
@@ -164,6 +165,8 @@ import {
   type DesktopPrefsView
 } from './modules/desktop/desktop-prefs'
 import { buildTrayMenu } from './modules/desktop/tray-menu'
+import { createAutoLock } from './modules/desktop/auto-lock'
+import { createAppLock, type LockReason } from './modules/security/app-lock'
 import { DesktopReleaseProvider } from './modules/update/release-provider'
 import { EventEmitter } from 'events'
 import {
@@ -237,6 +240,7 @@ function protectDataIpc(ipc: IpcMain): void {
 const sagyouMcp = startSagyouMcpBroker({
   // Called per request, long after codeRuns (declared below) exists.
   isRunLive: (runId) => isMcpRunLive(runId),
+  isLocked: () => isAppLocked(),
   readLogs: (query) => log.readLogs(query),
   onToolCall: (call) => log.info('mcp', 'tool_call', call),
   readScopedData: (domain, session, projectId) => {
@@ -939,6 +943,39 @@ let passwordConfig: PasswordConfig | null = null
 let passwordConfigCorrupt = false
 let passwordUnlocked = false
 
+// Locking an unlocked app (idle, Windows lock, sleep, "Bloquear agora"): the
+// renderer saves first, then the same flag the startup lock uses closes every
+// data IPC again.
+const appLock = createAppLock({
+  isUnlocked: () => passwordUnlocked,
+  setUnlocked: (value) => {
+    passwordUnlocked = value
+  },
+  askRenderer: () => {
+    if (mainWindow && !mainWindow.isDestroyed())
+      mainWindow.webContents.send('security:lock-request')
+  },
+  onLocked: (reason) => onAppLocked(reason),
+  setTimer: (fn, ms) => setTimeout(fn, ms),
+  clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>)
+})
+
+/** Fail closed: every queued MCP write and every pending approval card is refused. */
+function onAppLocked(reason: LockReason): void {
+  for (const run of codeRuns.values()) {
+    mcpWriteQueue.rejectRun(run.id, 'O Sagyou foi bloqueado.')
+    for (const { resolve } of run.pendingApprovals.values()) resolve(false)
+    run.pendingApprovals.clear()
+  }
+  refreshTrayMenu()
+  log.info('app', 'locked', { reason })
+}
+
+/** Locked, or saving on the way to locked: MCP reads nothing and writes nothing. */
+function isAppLocked(): boolean {
+  return !passwordUnlocked || appLock.isLocking()
+}
+
 function loadPasswordConfig(): { config: PasswordConfig | null; corrupt: boolean } {
   if (!existsSync(passwordConfigPath())) return { config: null, corrupt: false }
   try {
@@ -1275,12 +1312,14 @@ function createTray(): void {
   }
 }
 
-/** Filled in by the app lock (Task 4); until then nothing can lock from the tray. */
+/** Only a password can lock, and only an unlocked app needs locking. */
 function canLockNow(): boolean {
-  return false
+  return (
+    passwordConfig !== null && !passwordConfigCorrupt && passwordUnlocked && !appLock.isLocking()
+  )
 }
 function lockAppNow(): void {
-  // Wired to the app lock in Task 4.
+  if (canLockNow()) appLock.lock('manual')
 }
 
 function createWindow(): void {
@@ -1407,6 +1446,7 @@ app.whenReady().then(() => {
     }
     if (!passwordConfig || verifyPassword(passwordConfig, password)) {
       passwordUnlocked = true
+      refreshTrayMenu()
       return { success: true }
     }
     return { success: false, error: 'Senha incorreta.' }
@@ -1422,6 +1462,7 @@ app.whenReady().then(() => {
     savePasswordConfig(next)
     passwordConfig = next
     passwordUnlocked = true
+    refreshTrayMenu()
     return { success: true }
   })
   ipcMain.handle('security:change', (event, current: unknown, nextPassword: unknown) => {
@@ -1451,6 +1492,7 @@ app.whenReady().then(() => {
     }
     passwordConfig = null
     passwordUnlocked = true
+    refreshTrayMenu()
     return { success: true }
   })
   ipcMain.handle('security:recover', (event, confirmed: unknown) => {
@@ -1468,8 +1510,27 @@ app.whenReady().then(() => {
     passwordConfig = null
     passwordConfigCorrupt = false
     passwordUnlocked = true
+    refreshTrayMenu()
     return { success: true }
   })
+  // The renderer saved and shows the password screen; main locks now. Before
+  // protectDataIpc: the answer arrives while main is the one closing the gate.
+  ipcMain.handle('security:lock-ready', (event) => {
+    assertTrustedRenderer(event)
+    appLock.rendererReady()
+  })
+  const autoLock = createAutoLock({
+    idleSeconds: () => powerMonitor.getSystemIdleTime(),
+    prefs: () =>
+      desktopPrefs ?? loadDesktopPrefs(app.getPath('userData'), is.dev, process.platform),
+    canLock: canLockNow,
+    lock: (reason) => appLock.lock(reason),
+    setInterval: (fn, ms) => setInterval(fn, ms),
+    clearInterval: (handle) => clearInterval(handle as ReturnType<typeof setInterval>)
+  })
+  powerMonitor.on('lock-screen', () => autoLock.onSystemLock())
+  powerMonitor.on('suspend', () => autoLock.onSuspend())
+  autoLock.start()
   protectDataIpc(ipcMain)
   registerFilesHandlers(ipcMain, {
     mainWindow,

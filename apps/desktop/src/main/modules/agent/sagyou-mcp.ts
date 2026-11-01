@@ -94,7 +94,11 @@ export interface McpBrokerDeps {
   ) => Promise<McpActionResult>
   /** Whether the run owning a capability is still live; absent means always. */
   isRunLive?: (runId: string) => boolean
+  /** The app is locked: every tools/call is refused before reading or writing anything. */
+  isLocked?: () => boolean
 }
+
+export const MCP_LOCKED_MESSAGE = 'O Sagyou está bloqueado. Desbloqueie no PC para continuar.'
 
 /** Source for a disposable stdio adapter written only into an agent worktree. */
 export const MCP_STDIO_BRIDGE_SOURCE = `const net=require('net');
@@ -638,6 +642,11 @@ export function startSagyouMcpBroker(deps: McpBrokerDeps): {
               !session.permissions.includes(name as McpPermission)
             ) {
               failure(call, request.id, TOOL_UNAVAILABLE)
+              continue
+            }
+            // Locked: nothing is read or written until the user unlocks on the PC.
+            if (deps.isLocked?.()) {
+              failure(call, request.id, MCP_LOCKED_MESSAGE)
               continue
             }
             if (WRITE_TOOL_NAMES.has(name)) {

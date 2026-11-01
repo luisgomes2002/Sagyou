@@ -13,6 +13,7 @@ import {
 } from '../modules/agent/sagyou-mcp'
 import { McpWriteQueue, RendererMcpActionBridge } from '../modules/agent/mcp-write-queue'
 import type { AiMemory } from '../modules/ai/memory'
+import type { McpActionResult } from '../modules/agent/mcp-write-types'
 import type { MemorySearchHit } from '../store'
 
 const memoryHit = (over: Record<string, unknown> = {}): MemorySearchHit =>
@@ -318,6 +319,62 @@ describe('Sagyou MCP broker', () => {
     const again = await call(2)
     expect(again.error).toMatchObject({ message: 'Sessão MCP inválida ou expirada.' })
     expect(reads).toBe(0)
+  })
+
+  it('answers every call with the lock message while the app is locked', async () => {
+    let locked = true
+    let reads = 0
+    let writes = 0
+    const broker = startSagyouMcpBroker({
+      readTasks: () => {
+        reads += 1
+        return [{ id: 'task-1' }]
+      },
+      readFinancial: () => [],
+      readProjectData: () => ({}),
+      searchMemory: () => [],
+      readMemory: () => null,
+      touchMemory: () => {},
+      memoriesForConflict: () => [],
+      saveMemory: async () => ({ ok: false }),
+      createTask: async () => ({ ok: true }),
+      write: async () => {
+        writes += 1
+        return { ok: true, resumo: 'ok' } as McpActionResult
+      },
+      isLocked: () => locked
+    })
+    servers.push(broker.server)
+    await new Promise<void>((resolve) => broker.server.once('listening', resolve))
+    broker.grant({
+      token: 'locked-run',
+      runId: 'run-locked',
+      projectId: 'project-1',
+      financialProfileId: 'personal',
+      permissions: MCP_PERMISSIONS
+    })
+    const call = (id: number, name: string): Promise<Record<string, unknown>> =>
+      request(broker.port(), {
+        jsonrpc: '2.0',
+        id,
+        method: 'tools/call',
+        params: { token: 'locked-run', name, arguments: { id: 'task-1', title: 'x' } }
+      })
+
+    const read = await call(1, 'ler_tasks')
+    const write = await call(2, 'update_task')
+    expect(JSON.stringify(read)).toContain(
+      'O Sagyou está bloqueado. Desbloqueie no PC para continuar.'
+    )
+    expect(JSON.stringify(write)).toContain(
+      'O Sagyou está bloqueado. Desbloqueie no PC para continuar.'
+    )
+    expect(reads).toBe(0)
+    expect(writes).toBe(0)
+
+    // The capability survives the lock: unlocked again, the same token works.
+    locked = false
+    expect(JSON.stringify(await call(3, 'ler_tasks'))).toContain('task-1')
   })
 
   it('rejects forged, revoked and unpermitted capabilities immediately on loopback', async () => {
