@@ -5,6 +5,7 @@ import { AppMark } from '../components/AppMark'
 import { ACTION_ICONS } from '../components/icons'
 import { Button } from '../components/ui'
 import { FONT, SPACE, useTheme } from '../theme'
+import { useLockState } from './lockState'
 import { LOCKED_TITLE, LOCK_AFTER_MS, NO_DEVICE_LOCK_TEXT, UNLOCK_PROMPT } from './texts'
 
 export interface LockDeps {
@@ -43,6 +44,8 @@ export function LockGate({
   const backgroundAt = useRef<number | null>(null)
   const prompting = useRef(false)
   const [everOpened, setEverOpened] = useState(false)
+  // In the background (or on the way back, before the 5 min check ran).
+  const [away, setAway] = useState(false)
 
   const unlock = useCallback(async (): Promise<void> => {
     if (prompting.current) return
@@ -70,8 +73,11 @@ export function LockGate({
     // Asked right after the first paint (never during the effect itself).
     const first = setTimeout(() => void unlock(), 0)
     const sub = deps.appState.addEventListener('change', (state) => {
-      if (state === 'background') backgroundAt.current = deps.now()
-      else if (state === 'active' && backgroundAt.current !== null) {
+      if (state === 'background') {
+        backgroundAt.current = deps.now()
+        setAway(true)
+      } else if (state === 'active') setAway(false)
+      if (state === 'active' && backgroundAt.current !== null) {
         const away = deps.now() - backgroundAt.current
         backgroundAt.current = null
         if (away >= LOCK_AFTER_MS) {
@@ -87,6 +93,13 @@ export function LockGate({
   }, [deps, unlock])
 
   const covered = lock !== 'open'
+  // Sheets (RN Modal = their own Android window, above this cover) close and
+  // writes are refused whenever the cover is up or the app is away.
+  const hidden = covered || away
+  useEffect(() => {
+    useLockState.setState({ hidden })
+  }, [hidden])
+  useEffect(() => () => useLockState.setState({ hidden: false }), [])
   return (
     <View style={styles.fill}>
       {/* Never mounted before the first unlock; afterwards it stays mounted

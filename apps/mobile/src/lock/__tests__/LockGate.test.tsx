@@ -1,7 +1,12 @@
-import { act, fireEvent, render, screen } from '@testing-library/react-native'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native'
 import { useState } from 'react'
 import { Pressable, Text } from 'react-native'
+import { BottomSheet } from '../../components/BottomSheet'
+import { emptyState } from '../../data/state'
+import { seedApp } from '../../__tests__/seed'
+import { useApp } from '../../store/app'
 import { LockGate, type LockDeps } from '../LockGate'
+import { useLockState } from '../lockState'
 import { LOCKED_TITLE, NO_DEVICE_LOCK_TEXT, UNLOCK_PROMPT } from '../texts'
 
 const SECRET = 'Saldo: R$ 950,00'
@@ -147,5 +152,58 @@ describe('bloqueio do app', () => {
     level = 3
     await fireEvent.press(screen.getByRole('button', { name: 'Tentar de novo' }))
     expect(await screen.findByText(SECRET)).toBeTruthy()
+  })
+})
+
+// Security review: an RN Modal is its own Android window, above the lock
+// cover. A sheet left open must close while the app is away or locked.
+describe('folhas abertas e o bloqueio', () => {
+  afterEach(() => useLockState.setState({ hidden: false }))
+
+  async function withSheet(h: Harness): Promise<void> {
+    await render(
+      <LockGate deps={h.deps}>
+        <BottomSheet visible onClose={() => undefined}>
+          <Text>{SECRET}</Text>
+        </BottomSheet>
+      </LockGate>
+    )
+  }
+
+  // The test Modal renders nothing while invisible: absent means closed.
+  const sheetVisible = (): boolean => screen.queryByTestId('bottom-sheet')?.props.visible === true
+
+  it('some ao ir para segundo plano e volta se a ausência foi curta', async () => {
+    const h = harness()
+    await withSheet(h)
+    expect(await screen.findByText(SECRET)).toBeTruthy()
+    await waitFor(() => expect(sheetVisible()).toBe(true))
+    await act(async () => h.emit('background'))
+    await waitFor(() => expect(sheetVisible()).toBe(false))
+    await act(async () => {
+      h.advance(10_000)
+      h.emit('active')
+    })
+    await waitFor(() => expect(sheetVisible()).toBe(true))
+  })
+
+  it('depois do re-bloqueio fica fechada até desbloquear, e nada grava', async () => {
+    const h = harness()
+    await withSheet(h)
+    await screen.findByText(SECRET)
+    seedApp({})
+    h.allow(false)
+    await act(async () => {
+      h.emit('background')
+      h.advance(300_000)
+      h.emit('active')
+    })
+    await waitFor(() => expect(sheetVisible()).toBe(false))
+    expect(useApp.getState().commit(emptyState())).toBe(false)
+    h.allow(true)
+    await fireEvent.press(await screen.findByRole('button', { name: 'Desbloquear' }))
+    await screen.findByText(SECRET)
+    await waitFor(() => expect(sheetVisible()).toBe(true))
+    expect(useApp.getState().commit(emptyState())).toBe(true)
   })
 })

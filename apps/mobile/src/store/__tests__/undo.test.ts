@@ -1,3 +1,4 @@
+import { useApp } from '../app'
 import { UNDO_MS, useUndo } from '../undo'
 
 describe('desfazer', () => {
@@ -43,5 +44,16 @@ describe('desfazer', () => {
     expect(useUndo.getState().canUndo).toBe(false)
     useUndo.getState().show('Com ação', jest.fn())
     expect(useUndo.getState().canUndo).toBe(true)
+  })
+})
+
+describe('desfazer e o wipe', () => {
+  it('apagar os dados do aparelho descarta o Desfazer pendente', () => {
+    const revert = jest.fn()
+    useUndo.getState().show('Tarefa concluída', revert)
+    useApp.getState().wiped()
+    expect(useUndo.getState().message).toBeNull()
+    useUndo.getState().run()
+    expect(revert).not.toHaveBeenCalled()
   })
 })

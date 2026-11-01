@@ -3,6 +3,7 @@ import { formatDateBR } from '@sagyou/core/dates'
 import { format } from 'date-fns'
 import { useState } from 'react'
 import { StyleSheet, Text, View } from 'react-native'
+import { useLockState } from '../lock/lockState'
 import { dueChoice } from '../store/quick'
 import { FONT, SPACE, useTheme } from '../theme'
 import { Chip } from './Chip'
@@ -33,6 +34,7 @@ export function DateField({
   const theme = useTheme()
   const [today] = useState(() => todayProp ?? new Date())
   const [picking, setPicking] = useState(false)
+  const locked = useLockState((st) => st.hidden)
   const todayIso = dueChoice('today', today)
   const tomorrowIso = dueChoice('tomorrow', today)
   const custom = value && value !== todayIso && value !== tomorrowIso ? value : null
@@ -70,7 +72,7 @@ export function DateField({
           />
         ) : null}
       </View>
-      {picking ? (
+      {picking && !locked ? (
         <DateTimePicker
           value={pickerValue}
           mode="date"

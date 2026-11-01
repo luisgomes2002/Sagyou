@@ -10,6 +10,7 @@ import {
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useReducedMotion } from '../hooks/useReducedMotion'
+import { useLockState } from '../lock/lockState'
 import { FONT, RADIUS, SPACE, useTheme } from '../theme'
 
 /**
@@ -37,16 +38,20 @@ export function BottomSheet({
   const insets = useSafeAreaInsets()
   const reduced = useReducedMotion()
   const slide = animated ?? !reduced
+  // Behind the lock (or in the background) every sheet closes; its form state
+  // lives in the parent and survives.
+  const locked = useLockState((st) => st.hidden)
+  const shown = visible && !locked
   return (
     <Modal
       testID="bottom-sheet"
-      visible={visible}
+      visible={shown}
       transparent
       animationType={slide ? 'slide' : 'none'}
       onRequestClose={onClose}
       statusBarTranslucent
     >
-      {visible ? (
+      {shown ? (
         <KeyboardAvoidingView behavior="height" style={styles.root}>
           <Pressable
             accessibilityRole="button"
