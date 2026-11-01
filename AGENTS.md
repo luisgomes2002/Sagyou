@@ -9,6 +9,9 @@ Copilot, Gemini, OpenCode…). Leia, nesta ordem:
 3. **`docs/workflow.md`** — o fluxo completo (estágios, portões, Git, bugs).
 4. `CLAUDE.md` — fonte da verdade sobre arquitetura, em detalhe (sob demanda).
 
+O repositório é um monorepo (workspaces npm): o desktop fica em `apps/desktop/`, e os
+caminhos de código citados nos documentos são relativos a essa pasta.
+
 ## Regras de processo (resumo; detalhe em `docs/workflow.md`)
 
 - **Estágios:** spec (`docs/specs/`) → plano (`docs/plans/`) → build → review → PR.

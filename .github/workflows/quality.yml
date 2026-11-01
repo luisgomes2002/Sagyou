@@ -24,14 +24,19 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # Vitest never loads better-sqlite3, so only this proves the postinstall
+      # rebuilt it for Electron's ABI (otherwise `npm run dev` cannot open the DB).
+      - name: better-sqlite3 loads inside Electron
+        run: ELECTRON_RUN_AS_NODE=1 npx electron -e "require('better-sqlite3')(':memory:').close()"
       - run: npm run typecheck
+      - run: npm run typecheck -w sagyou-sync-server
       - run: npm test
       - run: npm run test:coverage
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: coverage-${{ github.run_id }}
-          path: coverage/
+          path: apps/desktop/coverage/
           if-no-files-found: warn
           retention-days: 14
 

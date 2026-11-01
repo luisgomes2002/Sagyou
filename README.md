@@ -24,6 +24,8 @@ Baixe o instalador da sua plataforma na página de [Releases](https://github.com
 | macOS      | `.dmg`            |
 | Linux      | `.AppImage`, `.deb` |
 
+Depois de instalado, o Sagyou procura uma versão nova toda vez que abre, baixa em segundo plano e mostra **"Reiniciar e instalar"** quando ela estiver pronta. Seus dados ficam onde estão. A primeira versão com esse recurso precisa ser instalada à mão. No macOS, enquanto o app não tem assinatura da Apple, ele só avisa e abre a página do Release. Com a sincronização ligada, ela espera a atualização terminar antes de falar com a nuvem.
+
 Não é preciso instalar Python, Node nem nada além do app. Para usar as sessões de código, tenha ao menos um dos CLIs (Codex, Claude Code ou OpenCode) instalado e autenticado.
 
 ---
@@ -116,6 +118,36 @@ Tudo fica no diretório de dados do app (`userData`):
 | `logs/`                  | logs de diagnóstico por dia (14 dias), sem conteúdo seu; fora dos backups  |
 
 O Sagyou não envia nada a lugar nenhum por conta própria. Os CLIs de código são programas externos, com a própria conta e política de dados.
+
+---
+
+## Servidor de sincronização
+
+A sincronização entre dois PCs usa um servidor seu: um Worker da Cloudflare com um banco D1, no plano gratuito. O código fica em [`sync-server/`](sync-server/). O servidor só guarda lotes cifrados antes de sair do seu PC, ids opacos de aparelho e números; a chave nunca sai dos aparelhos.
+
+Para publicar (precisa de uma conta Cloudflare e do Node):
+
+```bash
+cd sync-server
+npm install                                   # instala o wrangler
+npx wrangler login
+npx wrangler d1 create sagyou-sync            # copie o database_id para o wrangler.toml
+npx wrangler d1 execute sagyou-sync --remote --file schema.sql
+npx wrangler secret put SETUP_TOKEN           # um segredo longo, usado só para registrar o primeiro aparelho
+npx wrangler secret put TOTP_ENC_KEY          # 32 bytes aleatórios em base64url; guarde fora do repositório
+npx wrangler deploy                           # mostra a URL do Worker
+```
+
+O `SETUP_TOKEN` registra o primeiro aparelho. Para recuperar um aparelho com o código de recuperação quando ainda há aparelhos ativos, também são exigidos a prova da chave e o código do autenticador. Os demais entram por convite, gerado num aparelho já pareado. O segredo `TOTP_ENC_KEY` deve ser uma chave nova de 32 bytes, codificada em base64url (por exemplo, gerada com `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`). Sem ele, o cadastro do autenticador não funciona.
+
+Para parear, no app, em **Configurações → Sincronização**:
+
+1. No primeiro PC, preencha a URL do Worker e o `SETUP_TOKEN` e clique em **Ativar**. Guarde o código de recuperação que aparece: ele é a única forma de recuperar a chave se você perder todos os aparelhos.
+2. Ainda no primeiro PC, cadastre o autenticador (Google Authenticator ou outro app TOTP) e guarde os códigos reserva. Ele é pedido para apagar os dados de um aparelho perdido.
+3. Clique em **Parear novo aparelho**. Aparecem um texto e um QR que valem por 10 minutos.
+4. No segundo PC, use **Entrar com código** e cole o texto. Se esse PC já tiver dados, escolha **Juntar** (fica tudo dos dois lados) ou **Substituir** (fica só o que está na nuvem, com um backup antes).
+
+Quando a mesma coisa é editada nos dois PCs sem conexão, a versão mais recente vale e a outra aparece em **Conflitos**, com **Usar esta** para trocar. Uma dívida editada nos dois lados nunca muda sozinha: ela fica marcada como "conflito: escolha a versão" até você escolher.
 
 ---
 

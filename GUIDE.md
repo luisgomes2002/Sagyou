@@ -80,7 +80,7 @@ npm run typecheck    # checa main e renderer
 npm run lint         # ESLint
 npm test             # roda tudo uma vez
 npm run test:coverage # testes + relatório de cobertura de main e renderer
-npx vitest run src/main/__tests__/web-fetch.test.ts   # um arquivo só
+npm test -w sagyou -- src/main/__tests__/web-fetch.test.ts   # um arquivo só
 npm run build:linux  # (ou :win / :mac) gera o distribuível
 ```
 
@@ -91,6 +91,8 @@ nas PRs o lint é bloqueante para erros introduzidos no diff, para a dívida ant
 não mascarar uma regressão nova.
 
 ## Estrutura
+
+Monorepo com workspaces npm: o desktop em `apps/desktop/` (pacote `sagyou`; o nome define a pasta `userData` em dev e o nome dos instaladores, não mude), o código compartilhado em `packages/core/` (`@sagyou/core`) e o Worker em `sync-server/`. **Os caminhos abaixo são relativos a `apps/desktop/`.** Os comandos rodam na raiz.
 
 ```
 src/
@@ -354,6 +356,25 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
     nunca ganha versão. Caminhos de código, timers, tema e perfil ativo são do
     aparelho e nunca entram. O id do aparelho (`sync-device.json`) fica fora do
     SQLite e de todo backup.
+
+18. 🔴 **Nunca mude `appId` nem `productName` no `electron-builder.yml`.**
+    Eles dão nome à pasta `userData`: trocar faz o app atualizado abrir sem o
+    banco, os anexos e os backups. Todo Release precisa levar os `latest*.yml`
+    e `.blockmap` junto dos instaladores (cada build confere arquivo por
+    arquivo), senão nenhuma cópia instalada acha a versão seguinte. O Release
+    sai como **rascunho**: publique só depois de conferir os arquivos, porque
+    toda cópia instalada baixa o último Release publicado. "Reiniciar e instalar" só
+    instala depois de o renderer confirmar o salvamento (`app:flush-before-install`).
+
+19. 🔴 **As tabelas `sync_*` ficam fora de `persistAll`/`persistDiff` e do backup.**
+    `sync_state`, `sync_conflicts` e `sync_pending` são locais do aparelho; um
+    restore nunca as traz. A chave e o token do sync só existem em
+    `sync-config.json`, cifrados pelo `safeStorage` — nunca no SQLite, no log
+    ou no backup. O `saveData` passa por `guardStaleSave`: um salvamento do
+    renderer feito antes de ele ver uma mudança recebida não pode desfazê-la
+    (o renderer devolve o `syncGeneration` que recebeu no `store:load`). O
+    que chega pelo sync é aplicado por `persistDiff`, sem capturar versão de
+    novo.
 
 ## Memória — fronteira de confiança
 
