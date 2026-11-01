@@ -68,10 +68,17 @@ import {
   type HarnessId
 } from './modules/agent/harness-adapter'
 import { detectHarnessModel } from './modules/agent/harness-model'
-import { collectAgentPatch, agentPatchPreview, validatePatchScope } from './modules/agent/agent-diff'
+import {
+  collectAgentPatch,
+  agentPatchPreview,
+  validatePatchScope
+} from './modules/agent/agent-diff'
 import { deliverApprovedPatch } from './modules/agent/agent-delivery'
 import { createRunTaskTimers } from './modules/agent/agent-task-timers'
-import { CODE_EXECUTOR_MCP_PERMISSIONS, prepareAgentMcpSession } from './modules/agent/agent-mcp-session'
+import {
+  CODE_EXECUTOR_MCP_PERMISSIONS,
+  prepareAgentMcpSession
+} from './modules/agent/agent-mcp-session'
 import { buildExternalAgentBrief, scrubExternalBriefSecrets } from './modules/agent/agent-briefing'
 import { buildTerminalHandoff } from './modules/agent/terminal-handoff'
 import {
@@ -153,7 +160,8 @@ import { autoUpdater } from 'electron-updater'
 import {
   loadDesktopPrefs,
   saveDesktopPrefs,
-  type DesktopPrefs
+  type DesktopPrefs,
+  type DesktopPrefsView
 } from './modules/desktop/desktop-prefs'
 import { buildTrayMenu } from './modules/desktop/tray-menu'
 import { DesktopReleaseProvider } from './modules/update/release-provider'
@@ -643,8 +651,7 @@ function requestMcpWriteApproval(
 }
 
 const mcpWriteQueue = new McpWriteQueue(
-  (request) =>
-    requestMcpWriteApproval(request.runId, request.name, request.args, request.resumo),
+  (request) => requestMcpWriteApproval(request.runId, request.name, request.args, request.resumo),
   isMcpRunLive,
   recordRunActivity
 )
@@ -980,7 +987,11 @@ function saveAIConfig(config: unknown): void {
     typeof merged.userName === 'string' ? merged.userName.trim().slice(0, 80) : undefined
   const path = aiConfigPath()
   const tmp = `${path}.tmp`
-  writeFileSync(tmp, JSON.stringify({ ...merged, userName: userName || undefined }, null, 2), 'utf-8')
+  writeFileSync(
+    tmp,
+    JSON.stringify({ ...merged, userName: userName || undefined }, null, 2),
+    'utf-8'
+  )
   renameSync(tmp, path)
 }
 
@@ -1198,6 +1209,17 @@ let desktopPrefs: DesktopPrefs | null = null
 let tray: Tray | null = null
 // Set at the start of before-quit: from then on a close really closes.
 let isQuitting = false
+const LOGIN_ITEM_ARG = '--hidden'
+
+/** What Configurações shows: this machine's prefs plus what the OS knows. */
+function desktopPrefsView(): DesktopPrefsView {
+  const prefs = desktopPrefs ?? loadDesktopPrefs(app.getPath('userData'), is.dev, process.platform)
+  const openAtLogin =
+    process.platform === 'win32'
+      ? app.getLoginItemSettings({ args: [LOGIN_ITEM_ARG] }).openAtLogin
+      : false
+  return { ...prefs, platform: process.platform, openAtLogin }
+}
 
 function updateDesktopPrefs(patch: Partial<DesktopPrefs>): DesktopPrefs {
   desktopPrefs = saveDesktopPrefs(app.getPath('userData'), is.dev, process.platform, patch)
@@ -1257,7 +1279,9 @@ function createTray(): void {
 function canLockNow(): boolean {
   return false
 }
-function lockAppNow(): void {}
+function lockAppNow(): void {
+  // Wired to the app lock in Task 4.
+}
 
 function createWindow(): void {
   managedWindow = createManagedWindow({
@@ -1267,7 +1291,9 @@ function createWindow(): void {
     isDev: is.dev,
     rendererUrl: process.env['ELECTRON_RENDERER_URL'],
     hideOnClose: () => (desktopPrefs?.closeToTray ?? false) && !isQuitting,
-    onHidden: showTrayNoticeOnce
+    onHidden: showTrayNoticeOnce,
+    // Launched by the Windows login item: everything loads, the window stays in the tray.
+    startHidden: process.argv.includes(LOGIN_ITEM_ARG)
   })
   mainWindow = managedWindow.window
   // Windows is ending the session (shutdown, restart, sign out): quit like
@@ -1512,6 +1538,26 @@ app.whenReady().then(() => {
     taskImagePath
   })
 
+  // This machine's tray, startup and lock preferences (Configurações), after protectDataIpc.
+  ipcMain.handle('desktop:prefs:get', () => desktopPrefsView())
+  ipcMain.handle('desktop:prefs:set', (_, patch: unknown) => {
+    const input = patch && typeof patch === 'object' ? (patch as Record<string, unknown>) : {}
+    // trayNoticeShown is main's own bookkeeping; the renderer never sets it.
+    const allowed: Partial<DesktopPrefs> = {}
+    if ('closeToTray' in input) allowed.closeToTray = input.closeToTray as boolean
+    if ('idleLockMinutes' in input)
+      allowed.idleLockMinutes = input.idleLockMinutes as DesktopPrefs['idleLockMinutes']
+    if ('lockOnSystemLock' in input) allowed.lockOnSystemLock = input.lockOnSystemLock as boolean
+    updateDesktopPrefs(allowed)
+    return desktopPrefsView()
+  })
+  ipcMain.handle('desktop:open-at-login:set', (_, on: unknown) => {
+    if (process.platform === 'win32') {
+      app.setLoginItemSettings({ openAtLogin: on === true, args: [LOGIN_ITEM_ARG] })
+    }
+    return desktopPrefsView()
+  })
+
   // Sync: the engine and its channels, after protectDataIpc like every data handler.
   const userDataDir = app.getPath('userData')
   const syncFile = syncConfigFileName(is.dev)
@@ -1743,7 +1789,8 @@ app.whenReady().then(() => {
       const externalHarness =
         (await getHarnessStatuses()).find((status) => status.id === harness) ?? null
       if (!externalHarness?.installed || !externalHarness.path) {
-        const label = harness === 'claude-code' ? 'Claude Code' : harness === 'opencode' ? 'OpenCode' : 'Codex'
+        const label =
+          harness === 'claude-code' ? 'Claude Code' : harness === 'opencode' ? 'OpenCode' : 'Codex'
         return {
           success: false,
           error:
@@ -2017,19 +2064,19 @@ app.whenReady().then(() => {
         const scopedTask = blankSession
           ? ''
           : scrubExternalBriefSecrets(
-          [
-            agentBrief,
-            referenceBrief,
-            appBrief,
-            localSkillsBrief,
-            localHarnessContext.instructions.length || localHarnessContext.skills.length
-              ? `## INSTRUÇÕES LOCAIS\nConsulte no worktree as instruções nativas detectadas: ${[...localHarnessContext.instructions, ...localHarnessContext.skills].join(', ')}. Não copie seu conteúdo para logs ou respostas sem necessidade.`
-              : '',
-            'Use esta worktree para alterações de código. Para dados do Sagyou, use list_projects no MCP e consulte outros projetos quando necessário. Ao terminar, explique brevemente o que fez.'
-          ]
-            .filter(Boolean)
-            .join('\n\n')
-        )
+              [
+                agentBrief,
+                referenceBrief,
+                appBrief,
+                localSkillsBrief,
+                localHarnessContext.instructions.length || localHarnessContext.skills.length
+                  ? `## INSTRUÇÕES LOCAIS\nConsulte no worktree as instruções nativas detectadas: ${[...localHarnessContext.instructions, ...localHarnessContext.skills].join(', ')}. Não copie seu conteúdo para logs ou respostas sem necessidade.`
+                  : '',
+                'Use esta worktree para alterações de código. Para dados do Sagyou, use list_projects no MCP e consulte outros projetos quando necessário. Ao terminar, explique brevemente o que fez.'
+              ]
+                .filter(Boolean)
+                .join('\n\n')
+            )
         const externalWorktree = worktreeDir
         const externalRuntime = { env: process.env }
         // A capability token is not an identifier: use 256 bits of entropy and
@@ -2508,17 +2555,22 @@ app.whenReady().then(() => {
   // dev suffix, so the rest of this migration would hit the real user data.
   const openWindows = (): void => {
     createWindow()
-    // In the background: the window never waits for the network.
-    appUpdater?.start()
     // Always there, even with "close hides" off: "Bloquear agora" and "Sair" live in it.
     createTray()
+    // In the background: the window never waits for the network.
+    appUpdater?.start()
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
       else managedWindow?.show()
     })
   }
-  if (!shouldRunLegacyChatRemoval({ isDev: is.dev, optIn: process.env.SAGYOU_RUN_LEGACY_CHAT_REMOVAL })) {
+  if (
+    !shouldRunLegacyChatRemoval({
+      isDev: is.dev,
+      optIn: process.env.SAGYOU_RUN_LEGACY_CHAT_REMOVAL
+    })
+  ) {
     log.warn('app', 'legacy_chat_removal_skipped', {
       msg: 'dev build: removal skipped (set SAGYOU_RUN_LEGACY_CHAT_REMOVAL=1 to run it)'
     })

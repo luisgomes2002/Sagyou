@@ -164,6 +164,42 @@ describe('motor na bandeja', () => {
     expect(desktop.trays).toHaveLength(1)
     expect(desktop.trays[0].tooltip).toBe('Sagyou')
   })
+
+  it('stores only the prefs the renderer may change', async () => {
+    const view = await invoke<Record<string, unknown>>('desktop:prefs:set', {
+      trayNoticeShown: true,
+      foo: 1,
+      idleLockMinutes: 30
+    })
+    expect(view.idleLockMinutes).toBe(30)
+    expect(view.trayNoticeShown).toBe(false)
+    const stored = JSON.parse(await readFile(join(userData, 'desktop-prefs.json'), 'utf-8'))
+    expect(stored).toEqual({
+      closeToTray: process.platform === 'win32',
+      idleLockMinutes: 30,
+      lockOnSystemLock: true,
+      trayNoticeShown: false
+    })
+    expect(view).toHaveProperty('platform', process.platform)
+  })
+
+  it('registers the Windows login item with the hidden flag', async () => {
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
+    Object.defineProperty(process, 'platform', { value: 'win32' })
+    try {
+      await invoke('desktop:open-at-login:set', true)
+    } finally {
+      Object.defineProperty(process, 'platform', platform)
+    }
+    expect(desktop.loginItems).toContainEqual({ openAtLogin: true, args: ['--hidden'] })
+  })
+
+  it('keeps the desktop prefs behind the renderer check', () => {
+    const foreign = { sender: { getURL: () => 'https://evil.example/' } }
+    for (const channel of ['desktop:prefs:get', 'desktop:prefs:set', 'desktop:open-at-login:set']) {
+      expect(() => handlers.get(channel)?.(foreign)).toThrow('Solicitação IPC recusada.')
+    }
+  })
 })
 
 describe('atualização automática', () => {

@@ -10,6 +10,7 @@ import type {
 } from '../main/modules/ai/memory'
 import type { McpActionRequest, McpActionResult } from '../main/modules/agent/mcp-write-types'
 import type { UpdateStatus } from '../main/modules/update/app-updater'
+import type { DesktopPrefsView } from '../main/modules/desktop/desktop-prefs'
 import type {
   GlobalSearchHit,
   GlobalSearchLookup,
@@ -198,6 +199,17 @@ export const api = {
       ipcRenderer.invoke('security:disable', current),
     recover: (confirmed: boolean): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('security:recover', confirmed)
+  },
+  // This machine's tray, startup and automatic-lock preferences.
+  desktop: {
+    getPrefs: (): Promise<DesktopPrefsView> => ipcRenderer.invoke('desktop:prefs:get'),
+    setPrefs: (patch: {
+      closeToTray?: boolean
+      idleLockMinutes?: 0 | 5 | 15 | 30 | 60
+      lockOnSystemLock?: boolean
+    }): Promise<DesktopPrefsView> => ipcRenderer.invoke('desktop:prefs:set', patch),
+    setOpenAtLogin: (on: boolean): Promise<DesktopPrefsView> =>
+      ipcRenderer.invoke('desktop:open-at-login:set', on)
   },
   // One-time notice that the retired chat's data was removed (pulled when the Fleet opens).
   legacyChat: {

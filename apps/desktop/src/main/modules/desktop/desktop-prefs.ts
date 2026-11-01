@@ -17,6 +17,13 @@ export interface DesktopPrefs {
   trayNoticeShown: boolean
 }
 
+/** What `desktop:prefs:get` answers: the prefs plus what the OS knows. */
+export type DesktopPrefsView = DesktopPrefs & {
+  platform: NodeJS.Platform
+  /** The Windows login item ("Iniciar com o Windows"); always false elsewhere. */
+  openAtLogin: boolean
+}
+
 export function desktopPrefsFileName(isDev: boolean): string {
   return isDev ? 'desktop-prefs-dev.json' : 'desktop-prefs.json'
 }

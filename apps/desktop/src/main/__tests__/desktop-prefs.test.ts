@@ -45,7 +45,9 @@ describe('desktop prefs', () => {
   })
 
   it('replaces unexpected values with the default and drops unknown keys', () => {
-    write(JSON.stringify({ idleLockMinutes: 7, closeToTray: 'sim', foo: 1, lockOnSystemLock: false }))
+    write(
+      JSON.stringify({ idleLockMinutes: 7, closeToTray: 'sim', foo: 1, lockOnSystemLock: false })
+    )
     const prefs = loadDesktopPrefs(dir, false, 'win32')
     expect(prefs).toEqual({
       closeToTray: true,
