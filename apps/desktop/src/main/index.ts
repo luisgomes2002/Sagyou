@@ -147,6 +147,7 @@ import {
 } from './modules/update/app-updater'
 import { safeExternalUrl } from './modules/web/external-links'
 import { autoUpdater } from 'electron-updater'
+import { DesktopReleaseProvider } from './modules/update/release-provider'
 import { EventEmitter } from 'events'
 import {
   createSyncEngine,
@@ -1449,6 +1450,8 @@ app.whenReady().then(() => {
     updater: updateEnabled
       ? (autoUpdater as unknown as UpdaterLike)
       : (new EventEmitter() as unknown as UpdaterLike),
+    // Highest published vX.Y.Z, never GitHub's Latest (shared with the Android app).
+    feed: { provider: 'custom', updateProvider: DesktopReleaseProvider },
     enabled: updateEnabled,
     platform: process.platform,
     isDeb: updateEnabled && packageType() === 'deb',
