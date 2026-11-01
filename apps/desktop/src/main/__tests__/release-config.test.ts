@@ -131,7 +131,7 @@ describe('configuração de release do atualizador', () => {
   it('o workflow do APK só lê o repositório e só os quatro secrets da assinatura', () => {
     const apk = readRepo('.github/workflows/mobile-apk.yml')
     expect(apk).toMatch(/^permissions:\r?\n {2}contents: read\r?$/m)
-    expect(apk).not.toContain('contents: write')
+    expect(apk.slice(0, apk.indexOf('\n  release:'))).not.toContain('contents: write')
     const checkouts = apk.match(/uses: actions\/checkout@/g)?.length ?? 0
     expect(checkouts).toBeGreaterThan(0)
     expect(apk.match(/persist-credentials: false/g)?.length).toBe(checkouts)
@@ -159,6 +159,45 @@ describe('configuração de release do atualizador', () => {
     expect(validation).toBeGreaterThan(prebuild)
     expect(keystore).toBeGreaterThan(validation)
     expect(gradle).toBeGreaterThan(keystore)
+  })
+
+  // The release job is the only one that can write, so it must not see the
+  // signing key, the protected environment or a checkout of the code.
+  it('o APK vira release rascunho só pela tag mobile-v*, num job separado que escreve', () => {
+    const apk = readRepo('.github/workflows/mobile-apk.yml')
+    expect(apk).toMatch(/^permissions:\r?\n {2}contents: read\r?$/m)
+    expect(apk.match(/contents: write/g)?.length).toBe(1)
+    const start = apk.indexOf('\n  release:')
+    expect(start).toBeGreaterThan(0)
+    const release = apk.slice(start)
+    expect(release).toContain('contents: write')
+    expect(release).toContain('needs: apk')
+    expect(release).toContain("if: startsWith(github.ref, 'refs/tags/mobile-v')")
+    expect(release).toContain('--draft')
+    expect(release).toContain('--latest=false')
+    expect(release).toContain('--title "Sagyou Android $v"')
+    expect(release).not.toContain('secrets.')
+    expect(release).not.toContain('environment:')
+    expect(release).not.toContain('actions/checkout')
+  })
+
+  it('a tag mobile-v* e a do desktop não disparam o workflow uma da outra', () => {
+    const apk = readRepo('.github/workflows/mobile-apk.yml')
+    const apkOn = apk.slice(apk.indexOf('\non:'), apk.indexOf('\npermissions:'))
+    expect(apkOn).toContain('workflow_dispatch:')
+    expect(apkOn.match(/^ {6}- '.*'\r?$/gm)?.map((t) => t.trim())).toEqual(["- 'mobile-v*'"])
+    const deskOn = workflow.slice(workflow.indexOf('\non:'), workflow.indexOf('\npermissions:'))
+    expect(deskOn).toContain('workflow_dispatch:')
+    expect(deskOn.match(/^ {6}- '.*'\r?$/gm)?.map((t) => t.trim())).toEqual(["- 'v*.*.*'"])
+  })
+
+  it('o APK confere a tag contra o app.json antes de instalar dependências', () => {
+    const apk = readRepo('.github/workflows/mobile-apk.yml')
+    const check = apk.indexOf('não bate com a versão do app.json')
+    expect(check).toBeGreaterThan(0)
+    expect(check).toBeLessThan(apk.indexOf('npm ci'))
+    const step = apk.slice(apk.lastIndexOf('- name: Tag matches app.json', check), check)
+    expect(step).toContain("if: startsWith(github.ref, 'refs/tags/mobile-v')")
   })
 
   it('os builds do desktop não instalam o app do celular', () => {

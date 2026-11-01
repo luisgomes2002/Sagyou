@@ -6,8 +6,10 @@ on:
     tags:
       - 'mobile-v*'
 
-# Builds and uploads the signed APK as an artifact. It never creates a
-# Release and never writes to the repository.
+# Builds and uploads the signed APK as an artifact. A mobile-v* tag also
+# creates a draft Release with it, in a separate job: the only one that can
+# write, and one that never sees the signing key or the code. A manual run
+# never creates a Release.
 permissions:
   contents: read
 
@@ -23,6 +25,13 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+      # Fails before anything is built: the APK name and the Release come from the tag.
+      - name: Tag matches app.json
+        if: startsWith(github.ref, 'refs/tags/mobile-v')
+        run: |
+          tag="${GITHUB_REF_NAME#mobile-v}"
+          app="$(node -p "require('./apps/mobile/app.json').expo.version")"
+          [ "$tag" = "$app" ] || { echo "A tag mobile-v$tag não bate com a versão do app.json ($app)."; exit 1; }
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
@@ -64,3 +73,29 @@ jobs:
           name: sagyou-mobile-apk
           path: sagyou-mobile-*.apk
           if-no-files-found: error
+
+  release:
+    needs: apk
+    if: startsWith(github.ref, 'refs/tags/mobile-v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: sagyou-mobile-apk
+          path: apk
+      # Draft and never Latest: a person publishes it, and Latest belongs to the desktop.
+      - name: Draft Release with the APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${GITHUB_REF_NAME#mobile-v}"
+          f="apk/sagyou-mobile-$v.apk"
+          test -f "$f" || { echo "Falta $f"; exit 1; }
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "O release $GITHUB_REF_NAME já existe."
+            exit 1
+          fi
+          gh release create "$GITHUB_REF_NAME" "$f" --repo "$GITHUB_REPOSITORY" --draft --latest=false --title "Sagyou Android $v" --notes "APK do Sagyou para Android. Publique com --latest=false: o Latest é do desktop."
