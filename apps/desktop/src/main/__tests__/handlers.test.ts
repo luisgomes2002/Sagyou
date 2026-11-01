@@ -433,7 +433,7 @@ describe('ai:code:* handlers', () => {
     await mkdir(join(root, 'src'), { recursive: true })
     await writeFile(join(root, 'src', 'a.ts'), 'const alvo = 1\nconst outro = 2\n')
     await writeFile(join(root, 'src', 'b.ts'), 'nada aqui\n')
-    await writeFile(join(root, 'bin.dat'), 'antes depois alvo\n')
+    await writeFile(join(root, 'bin.dat'), 'antes\u0000depois alvo\n')
   })
   afterAll(async () => rm(container, { recursive: true, force: true }))
 
