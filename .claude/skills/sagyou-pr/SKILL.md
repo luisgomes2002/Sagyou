@@ -18,6 +18,7 @@ Vermelho para aqui: corrija (com teste) ou relate com honestidade. Nunca afirme 
 `git push -u origin <branch>`, depois `gh pr create --base main --title "<título convencional>" --body-file <template preenchido>`, usando `.github/pull_request_template.md`. Preencha toda seção:
 - **Summary:** o que muda para o usuário, e links da spec e do plano.
 - **Dados persistidos:** se muda formato, e como o usuário existente é migrado.
+- **Versão:** qual app subiu e por quê (SemVer, `docs/workflow.md`). Mudança que chega ao usuário sem subir a versão: suba antes de abrir o PR.
 - **Testes:** os comandos que rodaram e as contagens.
 - **Decisões e pendências:** do registro de progresso, todas as linhas.
 - **Causa raiz:** em fix.

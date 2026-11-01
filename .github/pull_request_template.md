@@ -8,6 +8,11 @@
 - Muda formato persistido: sim / não
 - Migração / compatibilidade com dados existentes: <!-- ou "n/a" -->
 
+## Versão
+<!-- Regra em docs/workflow.md (SemVer por app). Doc/CI/testes: "não muda". -->
+- Desktop: <!-- ex.: 1.0.0 → 1.0.1 (PATCH: …) ou não muda -->
+- Celular: <!-- ex.: 0.0.1 → 0.1.0 (MINOR: …) ou não muda -->
+
 ## Testes
 <!-- Comandos que rodaram nesta branch e o resultado. -->
 - [ ] `npm run typecheck`

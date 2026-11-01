@@ -13,7 +13,7 @@ Procure, nesta ordem:
 1. **Dados do usuário:** campo persistido removido/renomeado sem migração, forma de array/objeto alterada, caminho de load/import sem os normalizadores, valor monetário fora de decimal string, restauração de backup que muta antes de validar. Há dados reais em produção.
 2. **Comportamento errado:** o que um usuário real encontraria: erro não exibido, estado vazio/duplicado/lento quebrado, dado salvo errado, fluxo sem saída. Confira cada item do Foco de Review.
 3. **Testes que não provam o que dizem:** asserção que não pode falhar, mock que substitui o objeto testado, falta de caso negativo, teste de confinamento de caminho cujo arquivo fora da raiz não existe de verdade.
-4. **Desvios de `docs/workflow.md`:** commit na `main`, dependência nova sem aprovação, `CLAUDE.md`/`GUIDE.md` não atualizados após mudar arquitetura, PR sem a linha de dados persistidos.
+4. **Desvios de `docs/workflow.md`:** commit na `main`, dependência nova sem aprovação, `CLAUDE.md`/`GUIDE.md` não atualizados após mudar arquitetura, PR sem a linha de dados persistidos, mudança que chega ao usuário sem subir a versão SemVer do app afetado (ou subida inconsistente entre `app.json`, `package.json`, lock e `versionCode`).
 5. **Decisões:** cada uma se sustenta frente à spec?
 
 Saída:
