@@ -1,0 +1,17 @@
+{
+  "name": "sagyou-sync-server",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Worker Cloudflare + D1 que guarda os lotes cifrados do sync do Sagyou",
+  "type": "module",
+  "scripts": {
+    "db:create": "wrangler d1 create sagyou-sync",
+    "db:schema": "wrangler d1 execute sagyou-sync --remote --file schema.sql",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "wrangler": "^4.40.0"
+  }
+}

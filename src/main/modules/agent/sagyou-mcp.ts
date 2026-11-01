@@ -287,7 +287,7 @@ const TOOLS: { name: McpPermission; description: string; inputSchema: Record<str
           },
           area: {
             type: 'string',
-            enum: ['app', 'store', 'backup', 'pty', 'mcp', 'delivery', 'sync']
+            enum: ['app', 'store', 'backup', 'pty', 'mcp', 'delivery', 'sync', 'update']
           },
           since: {
             type: 'string',

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DebtsTab } from '../../components/financial/DebtsTab'
 import type { FinancialTable } from '../../types'
@@ -80,5 +80,22 @@ describe('DebtsTab', () => {
       'O pagamento não pode ultrapassar R$ 800,00.'
     )
     expect(onPay).not.toHaveBeenCalled()
+  })
+
+  it('marca a dívida com conflito de sincronização', () => {
+    render(
+      <DebtsTab
+        list={list}
+        conflictDebtIds={new Set(['notebook'])}
+        onAdd={vi.fn()}
+        onPay={vi.fn(() => true)}
+        onDelete={vi.fn()}
+      />
+    )
+
+    const notebook = screen.getByRole('heading', { name: 'Notebook' }).closest('article')!
+    const course = screen.getByRole('heading', { name: 'Curso' }).closest('article')!
+    expect(within(notebook).getByText('conflito: escolha a versão')).toBeInTheDocument()
+    expect(within(course).queryByText('conflito: escolha a versão')).not.toBeInTheDocument()
   })
 })

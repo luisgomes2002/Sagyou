@@ -38,6 +38,9 @@ type SaveData = {
   // Legacy single-timer mirror (activeTimers[0]); kept so an older app version
   // reading the same DB still resolves one running timer.
   activeTimer?: { taskId: string; startedAt: number } | null
+  // Sync generation: returned by load, echoed on every save so main can keep
+  // records changed remotely after the state this save was built from.
+  syncGeneration?: number
 }
 
 export interface IStorageAdapter {

@@ -9,12 +9,20 @@ import type {
   MemoryConflict
 } from '../main/modules/ai/memory'
 import type { McpActionRequest, McpActionResult } from '../main/modules/agent/mcp-write-types'
+import type { UpdateStatus } from '../main/modules/update/app-updater'
 import type {
   GlobalSearchHit,
   GlobalSearchLookup,
   GlobalSearchOptions,
   GlobalSearchResponse
 } from '../main/modules/search/global-search-query'
+import type {
+  SyncConflictView,
+  SyncDevice,
+  SyncResult,
+  SyncSecondFactor,
+  SyncStatus
+} from '../main/modules/sync/sync-engine'
 
 /** A user-written Skill (.md file in userData/skills/). */
 interface Skill {
@@ -146,7 +154,36 @@ export const api = {
       }
     },
     flushBeforeCloseComplete: (): Promise<void> =>
-      ipcRenderer.invoke('app:flush-before-close:complete')
+      ipcRenderer.invoke('app:flush-before-close:complete'),
+    onFlushBeforeInstall: (cb: () => void) => {
+      const handler = (): void => cb()
+      ipcRenderer.on('app:flush-before-install', handler)
+      return (): void => {
+        ipcRenderer.removeListener('app:flush-before-install', handler)
+      }
+    },
+    flushBeforeInstallComplete: (ok: boolean): Promise<void> =>
+      ipcRenderer.invoke('app:flush-before-install:complete', ok),
+    onInstallAborted: (cb: () => void) => {
+      const handler = (): void => cb()
+      ipcRenderer.on('app:install-aborted', handler)
+      return (): void => {
+        ipcRenderer.removeListener('app:install-aborted', handler)
+      }
+    }
+  },
+  update: {
+    status: (): Promise<UpdateStatus> => ipcRenderer.invoke('update:status'),
+    check: (): Promise<UpdateStatus> => ipcRenderer.invoke('update:check'),
+    install: (): Promise<UpdateStatus> => ipcRenderer.invoke('update:install'),
+    openRelease: (): Promise<void> => ipcRenderer.invoke('update:open-release'),
+    onStatusChanged: (cb: (status: UpdateStatus) => void) => {
+      const handler = (_: Electron.IpcRendererEvent, status: UpdateStatus): void => cb(status)
+      ipcRenderer.on('update:status-changed', handler)
+      return (): void => {
+        ipcRenderer.removeListener('update:status-changed', handler)
+      }
+    }
   },
   security: {
     status: (): Promise<{ enabled: boolean; corrupt: boolean; userName?: string }> =>
@@ -195,9 +232,7 @@ export const api = {
     respondMcpCreateTask: (requestId: string, result: { id?: string; error?: string }): void => {
       ipcRenderer.send('store:mcp:create-task:response', { requestId, ...result })
     },
-    onMcpAction: (
-      cb: (message: { requestId: string; request: McpActionRequest }) => void
-    ) => {
+    onMcpAction: (cb: (message: { requestId: string; request: McpActionRequest }) => void) => {
       const handler = (_: Electron.IpcRendererEvent, message: Parameters<typeof cb>[0]): void =>
         cb(message)
       ipcRenderer.on('store:mcp:action', handler)
@@ -208,6 +243,70 @@ export const api = {
     respondMcpAction: (requestId: string, result: McpActionResult): void => {
       ipcRenderer.send('store:mcp:action:response', { requestId, result })
     }
+  },
+  sync: {
+    // A pull changed data records: the renderer takes the state without saving it.
+    onRemoteChanges: (
+      cb: (payload: { generation: number; state: Record<string, unknown> }) => void
+    ) => {
+      const handler = (_: Electron.IpcRendererEvent, payload: Parameters<typeof cb>[0]): void =>
+        cb(payload)
+      ipcRenderer.on('sync:remote-changes', handler)
+      return (): void => {
+        ipcRenderer.removeListener('sync:remote-changes', handler)
+      }
+    },
+    onStatusChanged: (cb: (status: SyncStatus) => void) => {
+      const handler = (_: Electron.IpcRendererEvent, status: SyncStatus): void => cb(status)
+      ipcRenderer.on('sync:status-changed', handler)
+      return (): void => {
+        ipcRenderer.removeListener('sync:status-changed', handler)
+      }
+    },
+    status: (): Promise<SyncStatus> => ipcRenderer.invoke('sync:status'),
+    // Returns the recovery code once; the screen must show it with "Guardei o código".
+    activate: (
+      url: string,
+      setupToken: string,
+      deviceName?: string,
+      factor?: SyncSecondFactor
+    ): Promise<SyncResult<{ recoveryCode: string }>> =>
+      ipcRenderer.invoke('sync:activate', url, setupToken, deviceName, factor),
+    invite: (): Promise<SyncResult<{ code: string; expiresAt: number }>> =>
+      ipcRenderer.invoke('sync:invite'),
+    recover: (
+      code: string,
+      setupToken: string,
+      deviceName?: string,
+      factor?: SyncSecondFactor
+    ): Promise<SyncResult<{ status: SyncStatus }>> =>
+      ipcRenderer.invoke('sync:recover', code, setupToken, deviceName, factor),
+    join: (
+      code: string,
+      mode: 'merge' | 'replace',
+      deviceName?: string
+    ): Promise<SyncResult<{ status: SyncStatus }>> =>
+      ipcRenderer.invoke('sync:join', code, mode, deviceName),
+    now: (): Promise<SyncStatus> => ipcRenderer.invoke('sync:now'),
+    devices: (): Promise<SyncResult<{ devices: SyncDevice[] }>> =>
+      ipcRenderer.invoke('sync:devices'),
+    revoke: (id: string, wipe: boolean, factor?: SyncSecondFactor): Promise<SyncResult> =>
+      ipcRenderer.invoke('sync:revoke', id, wipe, factor),
+    enrollTotp: (): Promise<SyncResult<{ uri: string }>> => ipcRenderer.invoke('sync:totp:enroll'),
+    confirmTotp: (code: string): Promise<SyncResult<{ backupCodes: string[] }>> =>
+      ipcRenderer.invoke('sync:totp:confirm', code),
+    conflicts: (): Promise<SyncResult<{ conflicts: SyncConflictView[] }>> =>
+      ipcRenderer.invoke('sync:conflicts'),
+    // 'local' = the version this device made or holds; 'remote' = the other device's.
+    resolve: (conflictId: string, choice: 'local' | 'remote'): Promise<SyncResult> =>
+      ipcRenderer.invoke('sync:resolve', conflictId, choice),
+    recoveryCode: (password?: string): Promise<SyncResult<{ code: string }>> =>
+      ipcRenderer.invoke('sync:recovery-code', password),
+    disable: (): Promise<SyncResult> => ipcRenderer.invoke('sync:disable'),
+    resume: (choice: 'push-local' | 'take-cloud'): Promise<SyncResult<{ status: SyncStatus }>> =>
+      ipcRenderer.invoke('sync:resume', choice),
+    afterRestore: (choice: 'propagate' | 'pause'): Promise<SyncResult<{ status: SyncStatus }>> =>
+      ipcRenderer.invoke('sync:after-restore', choice)
   },
   search: {
     global: (options: GlobalSearchOptions): Promise<GlobalSearchResponse> =>
@@ -354,8 +453,13 @@ export const api = {
         ipcRenderer.invoke('ai:code-agent:terminal-resize', runId, cols, rows),
       terminalReconnect: (
         runId: string
-      ): Promise<{ success: boolean; error?: string; log?: string; cols?: number; rows?: number }> =>
-        ipcRenderer.invoke('ai:code-agent:terminal-reconnect', runId),
+      ): Promise<{
+        success: boolean
+        error?: string
+        log?: string
+        cols?: number
+        rows?: number
+      }> => ipcRenderer.invoke('ai:code-agent:terminal-reconnect', runId),
       // Answer an approval card the loop is parked on (native agent).
       approve: (id: string, approved: boolean): Promise<void> =>
         ipcRenderer.invoke('ai:code-agent:approve-response', id, approved),
@@ -420,7 +524,9 @@ export const api = {
       },
       // Fires once a finished run has been written to the archive — later than
       // onExit, which doesn't wait for the diff that snapshot needs.
-      onArchived: (cb: (payload: { runId: string; id: string; sessionId: string | null }) => void) => {
+      onArchived: (
+        cb: (payload: { runId: string; id: string; sessionId: string | null }) => void
+      ) => {
         const handler = (
           _: Electron.IpcRendererEvent,
           payload: { runId: string; id: string; sessionId: string | null }
@@ -648,7 +754,10 @@ export const api = {
       name: string,
       ext: string
     ): Promise<{ success: boolean; cancelled?: boolean; error?: string }> =>
-      ipcRenderer.invoke('files:download', id, name, ext)
+      ipcRenderer.invoke('files:download', id, name, ext),
+    // {fileId: null} when the bytes are here; otherwise the device that has them.
+    availability: (): Promise<Record<string, string | null>> =>
+      ipcRenderer.invoke('files:availability')
   },
   // Task images: the renderer downscales and hands over a dataUrl; main stores
   // the bytes as files under task-images/ and returns id+ext. The DB keeps only

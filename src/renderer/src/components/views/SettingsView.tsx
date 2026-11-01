@@ -1,5 +1,7 @@
 import { useEffect, useState, type JSX } from 'react'
 import { ALL_FEATURE_IDS, type FeatureId, type UiPreferences } from '../../types'
+import { SyncSettings } from '../settings/SyncSettings'
+import { UpdateSettings } from '../settings/UpdateSettings'
 
 interface Props {
   featurePreferences?: FeatureId[]
@@ -170,6 +172,10 @@ export function SettingsView({
         </section>
 
         <PasswordSettings onToast={onToast} />
+
+        <UpdateSettings />
+
+        <SyncSettings onToast={onToast} />
 
         <section className="rounded-xl border border-[#2b2b31] bg-[#16161a]">
           <SectionTitle

@@ -12,7 +12,9 @@ import {
   type SyncRecord
 } from '../modules/sync/sync-records'
 import {
+  buildRebasedRow,
   buildSyncRows,
+  captureBaseHlc,
   memoryCaptureScope,
   planSyncChanges,
   type StoredVersion
@@ -221,5 +223,34 @@ describe('memoryCaptureScope', () => {
     const old = [stored(rec('memory', 'm1')), stored(rec('memory', 'm2'))]
     const plan = planSyncChanges([rec('memory', 'm1')], old, memoryCaptureScope('replace', []))
     expect(keys(plan.deletes)).toEqual(['memory:m2'])
+  })
+})
+
+describe('captureBaseHlc', () => {
+  const prev = { hlc: 'h2', baseHlc: 'h1', deviceId: 'me', seq: 5 }
+  it('keeps the base of a local version that has not been pushed', () => {
+    expect(captureBaseHlc(prev, 'me', 4)).toBe('h1')
+  })
+  it('builds on a pushed or received version', () => {
+    expect(captureBaseHlc(prev, 'me', 5)).toBe('h2')
+    expect(captureBaseHlc({ ...prev, deviceId: 'other' }, 'me', 0)).toBe('h2')
+  })
+  it('has no base for a first version', () => {
+    expect(captureBaseHlc(undefined, 'me', 0)).toBeNull()
+  })
+})
+
+describe('buildRebasedRow', () => {
+  it('passes the received version even when the stored maximum is behind it', () => {
+    const base = '000000000009000-0000-other'
+    const row = buildRebasedRow(
+      { kind: 'financial_debt', id: 'd1', hash: 'h', deleted: false },
+      base,
+      { maxHlc: '000000000002000-0000-me', maxSeq: 3 },
+      'me',
+      1000
+    )
+    expect(row.hlc > base).toBe(true)
+    expect(row).toMatchObject({ baseHlc: base, seq: 4, deviceId: 'me', hash: 'h', deleted: false })
   })
 })

@@ -120,6 +120,16 @@ beforeEach(() => {
   vi.mocked(listMemories).mockReturnValue([])
 })
 
+describe('atualização automática', () => {
+  it('fora do app instalado fica desligada e não segura o sync', async () => {
+    const status = await invoke<{ state: string }>('update:status')
+    expect(status.state).toBe('disabled')
+    expect(handlers.has('update:install')).toBe(true)
+    expect(handlers.has('update:open-release')).toBe(true)
+    expect(handlers.has('app:flush-before-install:complete')).toBe(true)
+  })
+})
+
 describe('legacy chat removal on startup', () => {
   it('snapshots and removes the chat data before the first window is created', async () => {
     expect(startupOrder.slice(0, 2)).toEqual(['migration', 'createWindow'])
@@ -216,7 +226,9 @@ describe('ai:config:*', () => {
         apiKey: 'segredo',
         baseUrl: 'http://x',
         model: 'm',
-        providerProfiles: [{ id: 'a', name: 'A', kind: 'api', baseUrl: 'u', apiKey: 'k2', model: 'm' }],
+        providerProfiles: [
+          { id: 'a', name: 'A', kind: 'api', baseUrl: 'u', apiKey: 'k2', model: 'm' }
+        ],
         codeHarness: 'claude-code',
         userName: 'Ana'
       })
@@ -469,7 +481,6 @@ describe('ai:code:* handlers', () => {
     })
   })
 })
-
 
 // -----------------------------------------------------------------------------
 

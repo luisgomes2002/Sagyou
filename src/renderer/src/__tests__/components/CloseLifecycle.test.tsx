@@ -6,6 +6,9 @@ import { useKanbanStore } from '../../store/kanban'
 vi.mock('../../store/kanban', () => ({ useKanbanStore: { getState: vi.fn() } }))
 
 let onClose: (() => void) | undefined
+let onInstall: (() => void) | undefined
+let onAborted: (() => void) | undefined
+const installComplete = vi.fn<(ok: boolean) => Promise<void>>()
 let paint: FrameRequestCallback | undefined
 const flush = vi.fn<() => Promise<void>>()
 const complete = vi.fn<() => Promise<void>>()
@@ -14,6 +17,9 @@ const unsubscribe = vi.fn()
 beforeEach(() => {
   vi.useFakeTimers()
   onClose = undefined
+  onInstall = undefined
+  onAborted = undefined
+  installComplete.mockReset().mockResolvedValue(undefined)
   paint = undefined
   flush.mockReset().mockResolvedValue(undefined)
   complete.mockReset().mockResolvedValue(undefined)
@@ -28,7 +34,16 @@ beforeEach(() => {
         onClose = callback
         return unsubscribe
       }),
-      flushBeforeCloseComplete: complete
+      flushBeforeCloseComplete: complete,
+      onFlushBeforeInstall: vi.fn((callback: () => void) => {
+        onInstall = callback
+        return vi.fn()
+      }),
+      flushBeforeInstallComplete: installComplete,
+      onInstallAborted: vi.fn((callback: () => void) => {
+        onAborted = callback
+        return vi.fn()
+      })
     }
   }
   vi.stubGlobal(
@@ -146,5 +161,45 @@ describe('CloseLifecycle', () => {
     } finally {
       window.removeEventListener('keydown', shortcut)
     }
+  })
+})
+
+describe('CloseLifecycle before an update install', () => {
+  it('saves, confirms ok and keeps the closing screen while the app restarts', async () => {
+    render(<CloseLifecycle />)
+    await act(async () => onInstall?.())
+    expect(flush).toHaveBeenCalledTimes(1)
+    expect(installComplete).toHaveBeenCalledWith(true)
+    expect(complete).not.toHaveBeenCalled()
+    expect(screen.getByRole('status')).toHaveTextContent('Fechando Sagyou…')
+  })
+
+  it('a failed save reports false and gives the app back', async () => {
+    flush.mockRejectedValueOnce(new Error('disk full'))
+    render(<CloseLifecycle />)
+    await act(async () => onInstall?.())
+    expect(installComplete).toHaveBeenCalledWith(false)
+    expect(screen.queryByRole('status')).toBeNull()
+    const typed = new KeyboardEvent('keydown', { key: 'a', cancelable: true })
+    window.dispatchEvent(typed)
+    expect(typed.defaultPrevented).toBe(false)
+  })
+
+  it('an install aborted by main gives the app back', async () => {
+    render(<CloseLifecycle />)
+    await act(async () => onInstall?.())
+    await act(async () => onAborted?.())
+    expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it('before load it confirms without saving an empty store', async () => {
+    vi.mocked(useKanbanStore.getState).mockReturnValue({
+      isLoaded: false,
+      _flushPersist: flush
+    } as unknown as ReturnType<typeof useKanbanStore.getState>)
+    render(<CloseLifecycle />)
+    await act(async () => onInstall?.())
+    expect(flush).not.toHaveBeenCalled()
+    expect(installComplete).toHaveBeenCalledWith(true)
   })
 })

@@ -88,24 +88,29 @@ function ActionBtn({
   title,
   onClick,
   children,
-  danger
+  danger,
+  disabled
 }: {
   title: string
   onClick: (e: React.MouseEvent) => void
   children: React.ReactNode
   danger?: boolean
-}) {
+  disabled?: boolean
+}): React.JSX.Element {
   return (
     <button
+      disabled={disabled}
       onClick={(e) => {
         e.stopPropagation()
         onClick(e)
       }}
       title={title}
       className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium transition-colors opacity-0 group-hover:opacity-100 ${
-        danger
-          ? 'text-[#999999] hover:text-[#e04040] hover:bg-[#222227]'
-          : 'text-[#999999] hover:text-[#a080f0] hover:bg-[#222227]'
+        disabled
+          ? 'text-[#555555] cursor-not-allowed'
+          : danger
+            ? 'text-[#999999] hover:text-[#e04040] hover:bg-[#222227]'
+            : 'text-[#999999] hover:text-[#a080f0] hover:bg-[#222227]'
       }`}
     >
       {children}
@@ -123,7 +128,8 @@ function FileRow({
   onDelete,
   highlighted,
   repeated,
-  searchRef
+  searchRef,
+  onlyOn
 }: {
   file: StoredFile
   /** Files of the same scope; a name taken among them is refused. */
@@ -136,7 +142,10 @@ function FileRow({
   highlighted?: boolean
   repeated?: boolean
   searchRef?: React.RefObject<HTMLDivElement | null>
-}) {
+  /** Name of the device that has the bytes, when this one does not (sync). */
+  onlyOn?: string | null
+}): React.JSX.Element {
+  const away = typeof onlyOn === 'string'
   // null = not editing; otherwise the stem being typed (the extension is fixed).
   const [draft, setDraft] = useState<string | null>(null)
   const [renameError, setRenameError] = useState<string | null>(null)
@@ -228,6 +237,9 @@ function FileRow({
         <p className="text-[11px] text-[#666666] mt-0.5">
           {formatSize(file.size)} · {formatDateBR(file.createdAt)}
         </p>
+        {away && (
+          <p className="text-[11px] text-[#d9a640] mt-0.5">{`Disponível só em ${onlyOn}`}</p>
+        )}
       </div>
 
       <span className="text-[10px] text-[#666666] font-mono shrink-0 uppercase group-hover:hidden">
@@ -236,7 +248,7 @@ function FileRow({
 
       {/* Actions — visible on hover */}
       <div className="hidden group-hover:flex items-center gap-0.5 shrink-0">
-        <ActionBtn title="Abrir com programa" onClick={onOpen}>
+        <ActionBtn title="Abrir com programa" onClick={onOpen} disabled={away}>
           <svg
             width="11"
             height="11"
@@ -252,7 +264,7 @@ function FileRow({
           Abrir
         </ActionBtn>
 
-        <ActionBtn title="Abrir no navegador" onClick={onOpenInBrowser}>
+        <ActionBtn title="Abrir no navegador" onClick={onOpenInBrowser} disabled={away}>
           <svg
             width="11"
             height="11"
@@ -268,7 +280,7 @@ function FileRow({
           Navegador
         </ActionBtn>
 
-        <ActionBtn title="Baixar cópia" onClick={onDownload}>
+        <ActionBtn title="Baixar cópia" onClick={onDownload} disabled={away}>
           <svg
             width="11"
             height="11"
@@ -340,6 +352,23 @@ export function FilesView({
   const [dragCount, setDragCount] = useState<number | null>(null)
   const dragDepth = useRef(0)
   const [notice, setNotice] = useState<string | null>(null)
+  // {fileId: device name} for files whose bytes are only on another device.
+  const [availability, setAvailability] = useState<Record<string, string | null>>({})
+
+  useEffect(() => {
+    // The preload is absent in tests and in a browser build.
+    const load = window.electronAPI?.files?.availability
+    if (!load) return
+    let mounted = true
+    void load()
+      .then((result) => {
+        if (mounted) setAvailability(result)
+      })
+      .catch(() => {})
+    return () => {
+      mounted = false
+    }
+  }, [files])
 
   useEffect(() => {
     if (!notice) return
@@ -563,6 +592,7 @@ export function FilesView({
                   highlighted={file.id === searchTargetId}
                   repeated={repeated.has(file.id)}
                   searchRef={file.id === searchTargetId ? searchRef : undefined}
+                  onlyOn={availability[file.id]}
                   onOpen={() => handleOpen(file)}
                   onOpenInBrowser={() => handleOpenInBrowser(file)}
                   onDownload={() => handleDownload(file)}

@@ -6,6 +6,7 @@ directories:
 files:
   - '!**/.vscode/*'
   - '!src/*'
+  - '!sync-server/**'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
@@ -24,6 +25,11 @@ nsis:
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
 mac:
+  target:
+    - dmg
+    - zip
+  # The updater needs the zip; without this name it would follow productName (Sagyou-…).
+  artifactName: ${name}-${version}-mac.${ext}
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
     - NSCameraUsageDescription: Application requests access to the device's camera.
@@ -42,9 +48,14 @@ linux:
   category: Utility
 appImage:
   artifactName: ${name}-${version}.${ext}
+deb:
+  # The default (sagyou_<v>_amd64.deb) never matched the release workflow's glob.
+  artifactName: ${name}-${version}.${ext}
 # Native dependencies used here ship N-API prebuilds for the supported platforms.
 # Rebuilding node-pty on Windows needlessly requires the MSVC Spectre toolchain.
 npmRebuild: false
 publish:
-  provider: generic
-  url: https://example.com/auto-updates
+  provider: github
+  owner: luisgomes2002
+  repo: Sagyou
+  releaseType: release

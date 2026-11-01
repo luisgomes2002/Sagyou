@@ -31,7 +31,12 @@ interface BackupDeps {
   backupDir: string
 }
 
-export function registerBackupHandlers(ipcMain: IpcMain, deps: BackupDeps): void {
+export interface BackupHandlers {
+  /** The `backup:auto-save` writer, also used by sync for its forced snapshot. */
+  autoSave: (backup: unknown, force: boolean) => Promise<{ success: boolean }>
+}
+
+export function registerBackupHandlers(ipcMain: IpcMain, deps: BackupDeps): BackupHandlers {
   const { dialog, filesDir, taskImagesDir, sep, taskImagePath } = deps
 
   let pendingBlobs: { fileBlobs?: unknown; taskImages?: unknown } | null = null
@@ -203,7 +208,7 @@ export function registerBackupHandlers(ipcMain: IpcMain, deps: BackupDeps): void
   // The latest seven snapshots stay available even when the user never exports manually.
   // The snapshot keeps the state as it is: it is repaired only to decide whether
   // it can be restored (import repairs it again), so no restore point loses data.
-  ipcMain.handle('backup:auto-save', async (_, backup: unknown, force = false) => {
+  const autoSave = async (backup: unknown, force: boolean): Promise<{ success: boolean }> => {
     if (!isValidBackup(repairBackup(backup))) {
       log.warn('backup', 'auto_snapshot_invalid', { beforeImport: Boolean(force) })
       return { success: false }
@@ -230,7 +235,10 @@ export function registerBackupHandlers(ipcMain: IpcMain, deps: BackupDeps): void
       log.error('backup', 'auto_snapshot_failed', { msg: errorMessage(error) })
       return { success: false }
     }
-  })
+  }
+  ipcMain.handle('backup:auto-save', (_, backup: unknown, force = false) =>
+    autoSave(backup, Boolean(force))
+  )
 
   ipcMain.handle('backup:import', async () => {
     pendingBlobs = null
@@ -298,4 +306,6 @@ export function registerBackupHandlers(ipcMain: IpcMain, deps: BackupDeps): void
       return { success: false, error: 'Arquivo inválido' }
     }
   })
+
+  return { autoSave }
 }

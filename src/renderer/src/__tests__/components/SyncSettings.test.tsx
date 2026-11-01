@@ -1,0 +1,366 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { SyncSettings } from '../../components/settings/SyncSettings'
+import { useKanbanStore } from '../../store/kanban'
+
+vi.mock('qrcode', () => ({
+  default: { toDataURL: vi.fn().mockResolvedValue('data:image/png;base64,AA==') }
+}))
+
+vi.mock('../../services/ElectronStorage', () => ({
+  ElectronStorage: vi.fn(function ElectronStorage(this: Record<string, unknown>) {
+    this.load = vi.fn().mockResolvedValue(null)
+    this.save = vi.fn().mockResolvedValue(undefined)
+  })
+}))
+
+const status = {
+  state: 'ok' as const,
+  lastSyncAt: null,
+  pendingCount: 0,
+  paused: null,
+  deviceName: 'Casa',
+  conflictCount: 0
+}
+
+const revoke = vi.fn().mockResolvedValue({ ok: true })
+
+const conflict = {
+  id: 'c1',
+  type: 'lww' as const,
+  kind: 'task' as const,
+  recordId: 't1',
+  createdAt: 0,
+  local: {
+    hlc: 'h1',
+    at: Date.UTC(2026, 9, 30, 12),
+    deviceName: 'Casa',
+    deleted: false,
+    payload: { id: 't1', title: 'Comprar pão' }
+  },
+  remote: {
+    hlc: 'h2',
+    at: Date.UTC(2026, 9, 30, 13),
+    deviceName: 'Trabalho',
+    deleted: false,
+    payload: { id: 't1', title: 'Comprar pão integral' }
+  }
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  useKanbanStore.setState({ projects: [], tasks: [], notes: [], goals: [], habits: [], lists: [] })
+  Object.defineProperty(window, 'electronAPI', {
+    configurable: true,
+    value: {
+      security: { status: vi.fn().mockResolvedValue({ enabled: false, corrupt: false }) },
+      sync: {
+        status: vi.fn().mockResolvedValue(status),
+        onStatusChanged: vi.fn(() => () => {}),
+        devices: vi.fn().mockResolvedValue({
+          ok: true,
+          devices: [
+            {
+              id: 'a'.repeat(32),
+              name: 'Casa',
+              current: true,
+              lastSeen: 0,
+              revokedAt: null,
+              wipe: false,
+              cursor: 0
+            },
+            {
+              id: 'b'.repeat(32),
+              name: 'Trabalho',
+              current: false,
+              lastSeen: 0,
+              revokedAt: null,
+              wipe: false,
+              cursor: 0
+            }
+          ]
+        }),
+        conflicts: vi.fn().mockResolvedValue({ ok: true, conflicts: [] }),
+        resolve: vi.fn().mockResolvedValue({ ok: true }),
+        now: vi.fn().mockResolvedValue(status),
+        invite: vi.fn().mockResolvedValue({
+          ok: true,
+          code: 'sagyou-pair:CODIGO',
+          expiresAt: Date.UTC(2026, 9, 31, 12, 10)
+        }),
+        recoveryCode: vi.fn().mockResolvedValue({ ok: true, code: 'AAAA-BBBB\nhttps://x.dev' }),
+        disable: vi.fn().mockResolvedValue({ ok: true }),
+        resume: vi.fn().mockResolvedValue({ ok: true, status }),
+        activate: vi.fn().mockResolvedValue({ ok: true, recoveryCode: 'CCCC-DDDD\nhttps://x.dev' }),
+        join: vi.fn().mockResolvedValue({ ok: true, status }),
+        enrollTotp: vi.fn().mockResolvedValue({
+          ok: true,
+          uri: 'otpauth://totp/Sagyou?secret=AAAAAAAA&issuer=Sagyou'
+        }),
+        confirmTotp: vi.fn().mockResolvedValue({ ok: true, backupCodes: ['ABCDEF0123456789'] }),
+        revoke
+      }
+    }
+  })
+})
+
+const withStatus = (next: Partial<typeof status> | Record<string, unknown>): void => {
+  vi.mocked(window.electronAPI.sync.status).mockResolvedValue({
+    ...status,
+    ...next
+  } as never)
+}
+
+describe('Sincronização em espera pela atualização', () => {
+  it('avisa que começa depois da atualização', async () => {
+    vi.mocked(window.electronAPI.sync.status).mockResolvedValueOnce({
+      ...status,
+      state: 'update-pending'
+    })
+    render(<SyncSettings onToast={vi.fn()} />)
+    expect(
+      await screen.findByText('Sincronização em espera: começa depois da atualização')
+    ).toBeInTheDocument()
+  })
+})
+
+describe('Sincronização: estados', () => {
+  it('mostra há quanto tempo sincronizou e o que falta enviar', async () => {
+    withStatus({ lastSyncAt: Date.now() - 5 * 60000 - 1000, pendingCount: 3 })
+    render(<SyncSettings onToast={vi.fn()} />)
+    expect(await screen.findByText('Sincronizado há 5 min')).toBeInTheDocument()
+    expect(screen.getByText('3 alterações aguardando envio')).toBeInTheDocument()
+  })
+
+  it('sem conexão', async () => {
+    withStatus({ state: 'offline' })
+    render(<SyncSettings onToast={vi.fn()} />)
+    expect(
+      await screen.findByText('Sem conexão: as alterações ficam guardadas')
+    ).toBeInTheDocument()
+  })
+
+  it('pausado oferece as duas escolhas', async () => {
+    withStatus({ state: 'paused', paused: 'restore' })
+    render(<SyncSettings onToast={vi.fn()} />)
+    expect(await screen.findByText('Pausado: escolha o que vale')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'A nuvem manda' }))
+    await waitFor(() => expect(window.electronAPI.sync.resume).toHaveBeenCalledWith('take-cloud'))
+  })
+
+  it('desconectado', async () => {
+    withStatus({ state: 'disconnected' })
+    render(<SyncSettings onToast={vi.fn()} />)
+    expect(
+      await screen.findByText('Este aparelho foi desconectado da sincronização')
+    ).toBeInTheDocument()
+  })
+
+  it('sem chaveiro diz por que não liga', async () => {
+    withStatus({ state: 'no-keychain' })
+    render(<SyncSettings onToast={vi.fn()} />)
+    expect(
+      await screen.findByText(
+        'O chaveiro do sistema não está disponível; a sincronização não liga.'
+      )
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Ativar' })).not.toBeInTheDocument()
+  })
+
+  it('"Sincronizar agora" chama o main', async () => {
+    render(<SyncSettings onToast={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Sincronizar agora' }))
+    await waitFor(() => expect(window.electronAPI.sync.now).toHaveBeenCalled())
+  })
+
+  it('acompanha o estado empurrado pelo main', async () => {
+    let push: (next: unknown) => void = () => {}
+    vi.mocked(window.electronAPI.sync.onStatusChanged).mockImplementation((cb) => {
+      push = cb as (next: unknown) => void
+      return () => {}
+    })
+    render(<SyncSettings onToast={vi.fn()} />)
+    await screen.findByRole('button', { name: 'Sincronizar agora' })
+    push({ ...status, state: 'offline' })
+    expect(
+      await screen.findByText('Sem conexão: as alterações ficam guardadas')
+    ).toBeInTheDocument()
+  })
+})
+
+describe('Sincronização: conflitos', () => {
+  it('"Usar esta" chama resolve com a versão escolhida', async () => {
+    vi.mocked(window.electronAPI.sync.conflicts).mockResolvedValue({
+      ok: true,
+      conflicts: [conflict]
+    })
+    render(<SyncSettings onToast={vi.fn()} />)
+    const remote = await screen.findByRole('group', { name: 'Versão de Trabalho' })
+    expect(within(remote).getByText(/Comprar pão integral/)).toBeInTheDocument()
+    fireEvent.click(within(remote).getByRole('button', { name: 'Usar esta' }))
+    await waitFor(() =>
+      expect(window.electronAPI.sync.resolve).toHaveBeenCalledWith('c1', 'remote')
+    )
+  })
+
+  it('um órfão só pode ser dispensado', async () => {
+    vi.mocked(window.electronAPI.sync.conflicts).mockResolvedValue({
+      ok: true,
+      conflicts: [{ ...conflict, type: 'orphan' }]
+    })
+    render(<SyncSettings onToast={vi.fn()} />)
+    expect(
+      await screen.findByText('Removido: o item de origem foi apagado em outro aparelho')
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Usar esta' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Dispensar' }))
+    await waitFor(() => expect(window.electronAPI.sync.resolve).toHaveBeenCalledWith('c1', 'local'))
+  })
+})
+
+describe('Sincronização: pareamento e código', () => {
+  it('"Parear novo aparelho" mostra o QR e o texto do convite', async () => {
+    render(<SyncSettings onToast={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Parear novo aparelho' }))
+    expect(await screen.findByAltText('QR para parear um aparelho')).toBeInTheDocument()
+    expect(screen.getByLabelText('Código de pareamento')).toHaveValue('sagyou-pair:CODIGO')
+  })
+
+  it('"Ver código de recuperação" pede a senha do app quando há uma', async () => {
+    vi.mocked(window.electronAPI.security.status).mockResolvedValue({
+      enabled: true,
+      corrupt: false
+    })
+    render(<SyncSettings onToast={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Ver código de recuperação' }))
+    fireEvent.change(await screen.findByLabelText('Senha do app'), {
+      target: { value: 'segredo' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Mostrar código' }))
+    await waitFor(() =>
+      expect(window.electronAPI.sync.recoveryCode).toHaveBeenCalledWith('segredo')
+    )
+    expect(await screen.findByText(/AAAA-BBBB/)).toBeInTheDocument()
+  })
+
+  it('"Ver código de recuperação" sem senha mostra direto', async () => {
+    render(<SyncSettings onToast={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Ver código de recuperação' }))
+    expect(await screen.findByText(/AAAA-BBBB/)).toBeInTheDocument()
+    expect(window.electronAPI.sync.recoveryCode).toHaveBeenCalledWith(undefined)
+  })
+
+  it('"Desativar sincronização" confirma antes', async () => {
+    render(<SyncSettings onToast={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Desativar sincronização' }))
+    expect(window.electronAPI.sync.disable).not.toHaveBeenCalled()
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Desativar' }))
+    await waitFor(() => expect(window.electronAPI.sync.disable).toHaveBeenCalled())
+  })
+})
+
+describe('Sincronização: ligar', () => {
+  it('ativar mostra o código e só conclui com "Guardei o código"', async () => {
+    withStatus({ state: 'off' })
+    render(<SyncSettings onToast={vi.fn()} />)
+    fireEvent.change(await screen.findByLabelText('URL do servidor'), {
+      target: { value: 'https://sync.example.dev' }
+    })
+    fireEvent.change(screen.getByLabelText('Token de configuração'), {
+      target: { value: 'setup' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Ativar' }))
+    await waitFor(() =>
+      expect(window.electronAPI.sync.activate).toHaveBeenCalledWith(
+        'https://sync.example.dev',
+        'setup',
+        undefined
+      )
+    )
+    expect(await screen.findByText(/CCCC-DDDD/)).toBeInTheDocument()
+    const done = screen.getByRole('button', { name: 'Concluir' })
+    expect(done).toBeDisabled()
+    fireEvent.click(screen.getByLabelText('Guardei o código'))
+    expect(done).toBeEnabled()
+  })
+
+  it('entrar com código num aparelho com dados pergunta juntar ou substituir', async () => {
+    withStatus({ state: 'off' })
+    useKanbanStore.setState({
+      notes: [{ id: 'n1' } as never]
+    })
+    render(<SyncSettings onToast={vi.fn()} />)
+    fireEvent.change(await screen.findByLabelText('Código para entrar'), {
+      target: { value: 'sagyou-pair:CODIGO' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Entrar com código' }))
+    expect(
+      await screen.findByText(
+        'Este aparelho já tem dados. Juntar com a nuvem ou substituir pelos da nuvem?'
+      )
+    ).toBeInTheDocument()
+    expect(window.electronAPI.sync.join).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Juntar' }))
+    await waitFor(() =>
+      expect(window.electronAPI.sync.join).toHaveBeenCalledWith(
+        'sagyou-pair:CODIGO',
+        'merge',
+        undefined
+      )
+    )
+  })
+
+  it('entrar com código num aparelho vazio junta direto', async () => {
+    withStatus({ state: 'off' })
+    render(<SyncSettings onToast={vi.fn()} />)
+    fireEvent.change(await screen.findByLabelText('Código para entrar'), {
+      target: { value: 'sagyou-pair:CODIGO' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Entrar com código' }))
+    await waitFor(() =>
+      expect(window.electronAPI.sync.join).toHaveBeenCalledWith(
+        'sagyou-pair:CODIGO',
+        'merge',
+        undefined
+      )
+    )
+  })
+})
+
+describe('Sincronização: autenticação e revogação', () => {
+  it('mostra o QR e entrega os códigos reserva só depois da confirmação', async () => {
+    render(<SyncSettings onToast={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Cadastrar ou trocar autenticador' }))
+    expect(await screen.findByAltText('QR para cadastrar o autenticador')).toBeInTheDocument()
+    expect(screen.queryByText(/Guarde estes códigos reserva/)).not.toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Código de confirmação'), {
+      target: { value: '123456' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar código' }))
+    expect(await screen.findByText(/Guarde estes códigos reserva/)).toBeInTheDocument()
+    expect(screen.getByText('ABCDEF0123456789')).toBeInTheDocument()
+  })
+
+  it('apagar um aparelho pede código antes de chamar a revogação', async () => {
+    render(<SyncSettings onToast={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Revogar Trabalho' }))
+    fireEvent.click(screen.getByLabelText('Também apagar os dados dele'))
+    expect(screen.getByLabelText('Código do autenticador ou reserva')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Confirmar revogação' })).toBeDisabled()
+    fireEvent.change(screen.getByLabelText('Código do autenticador ou reserva'), {
+      target: { value: '123456' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar revogação' }))
+    await waitFor(() =>
+      expect(revoke).toHaveBeenCalledWith('b'.repeat(32), true, { totp: '123456' })
+    )
+  })
+
+  it('revogar sem apagar não pede código', async () => {
+    render(<SyncSettings onToast={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Revogar Trabalho' }))
+    expect(screen.queryByLabelText('Código do autenticador ou reserva')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar revogação' }))
+    await waitFor(() => expect(revoke).toHaveBeenCalledWith('b'.repeat(32), false, undefined))
+  })
+})

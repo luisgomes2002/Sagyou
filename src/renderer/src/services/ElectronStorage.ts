@@ -42,7 +42,8 @@ export class ElectronStorage implements IStorageAdapter {
       activeTimer: (data.activeTimer ?? null) as { taskId: string; startedAt: number } | null,
       files: (data.files || []) as StoredFile[],
       timeBlocks: (data.timeBlocks || []) as TimeBlock[],
-      routines: (data.routines || []) as Routine[]
+      routines: (data.routines || []) as Routine[],
+      syncGeneration: typeof data.syncGeneration === 'number' ? data.syncGeneration : 0
     }
   }
 
