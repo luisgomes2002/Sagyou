@@ -38,6 +38,11 @@ describe('layout do monorepo', () => {
   it('recompila o better-sqlite3 para o Electron a partir do postinstall da raiz', () => {
     const root = json(join(repo, 'package.json')) as { scripts: Record<string, string> }
     expect(root.scripts.postinstall).toBe('npm run rebuild:native -w sagyou')
+    // electron-rebuild reads the dependency list of --module-dir: the root lists
+    // no better-sqlite3, so `../..` "succeeded" without building anything. The
+    // Quality step that loads it inside Electron is the real proof.
+    const desktopPkg = json(join(desktop, 'package.json')) as { scripts: Record<string, string> }
+    expect(desktopPkg.scripts['rebuild:native']).toMatch(/--module-dir \.$/)
   })
 
   // In a workspace electron is hoisted to the root node_modules, where

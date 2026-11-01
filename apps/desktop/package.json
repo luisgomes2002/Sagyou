@@ -14,7 +14,7 @@
     "dev": "npm run prepare:markitdown && electron-vite dev -- --no-sandbox",
     "build": "npm run typecheck && electron-vite build",
     "prepare:markitdown": "node scripts/build-markitdown-runtime.mjs",
-    "rebuild:native": "electron-rebuild --force --only better-sqlite3 --module-dir ../..",
+    "rebuild:native": "electron-rebuild --force --only better-sqlite3 --module-dir .",
     "build:unpack": "npm run prepare:markitdown && npm run build && electron-builder --dir",
     "build:win": "npm run prepare:markitdown && npm run build && electron-builder --win --publish never",
     "build:mac": "npm run prepare:markitdown && electron-vite build && electron-builder --mac --publish never",
