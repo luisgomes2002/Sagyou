@@ -28,6 +28,26 @@ describe('run task timers', () => {
     expect(stop.mock.calls).toEqual([['c', 300, scope]])
   })
 
+  it('on app lock stops every timer but keeps the runs live', async () => {
+    const stop = vi.fn(async () => ({ ok: true }))
+    const timers = createRunTaskTimers(stop)
+    timers.record('run-1', scope, 'start_task_timer', started('a', 100))
+    timers.record('run-2', scope, 'start_task_timer', started('b', 200))
+
+    await timers.stopTimersKeepRuns()
+    expect(stop.mock.calls).toEqual([
+      ['a', 100, scope],
+      ['b', 200, scope]
+    ])
+    expect(timers.hasRunning()).toBe(false)
+
+    // After the unlock the run starts a timer again: tracked, not stopped at once.
+    stop.mockClear()
+    timers.record('run-1', scope, 'start_task_timer', started('a', 900))
+    expect(stop).not.toHaveBeenCalled()
+    expect(timers.hasRunning()).toBe(true)
+  })
+
   it('does not own a timer that was already running (started by the user)', async () => {
     const stop = vi.fn(async () => ({ ok: true }))
     const timers = createRunTaskTimers(stop)

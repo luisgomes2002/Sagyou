@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { PropsWithChildren, ReactElement } from 'react'
 import { useKanbanStore } from '../../store/kanban'
 import { ClosingScreen } from './ClosingScreen'
+import { isDataLocked } from '../../services/lockState'
 
 export function CloseLifecycle({ children }: PropsWithChildren): ReactElement {
   const closingRef = useRef(false)
@@ -23,8 +24,9 @@ export function CloseLifecycle({ children }: PropsWithChildren): ReactElement {
       const state = useKanbanStore.getState()
       try {
         // Before load or unlock, the in-memory store is empty; saving it would
-        // replace the user's persisted data with that empty state.
-        if (state.isLoaded) await state._flushPersist()
+        // replace the user's persisted data with that empty state. Locked after
+        // use, the lock already saved and the save IPC is closed.
+        if (state.isLoaded && !isDataLocked()) await state._flushPersist()
       } catch {
         if (!cancelled) setError(true)
         return
@@ -72,7 +74,7 @@ export function CloseLifecycle({ children }: PropsWithChildren): ReactElement {
         let ok = true
         try {
           const state = useKanbanStore.getState()
-          if (state.isLoaded) await state._flushPersist()
+          if (state.isLoaded && !isDataLocked()) await state._flushPersist()
         } catch {
           ok = false
         }

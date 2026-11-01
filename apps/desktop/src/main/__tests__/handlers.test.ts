@@ -26,6 +26,32 @@ const winSent = vi.hoisted(() => [] as { channel: string; payload: unknown }[])
 /** Startup milestones in order, to prove the chat data is removed before a window exists. */
 const startupOrder = vi.hoisted(() => [] as string[])
 
+/** Desktop-shell mocks: tray, single-instance lock, login item and power events. */
+const desktop = vi.hoisted(() => ({
+  requestSingleInstanceLock: { calls: 0 },
+  trays: [] as { tooltip?: string; menu?: unknown }[],
+  loginItems: [] as unknown[],
+  power: new Map<string, () => void>(),
+  syncStarts: 0
+}))
+
+// The real engine, with its start() counted: sync must start at launch, locked or not.
+vi.mock('../modules/sync/sync-engine', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../modules/sync/sync-engine')>()
+  return {
+    ...actual,
+    createSyncEngine: (deps: Parameters<typeof actual.createSyncEngine>[0]) => {
+      const engine = actual.createSyncEngine(deps)
+      const start = engine.start.bind(engine)
+      engine.start = () => {
+        desktop.syncStarts++
+        start()
+      }
+      return engine
+    }
+  }
+})
+
 let userData: string
 
 vi.mock('electron', () => ({
@@ -34,8 +60,40 @@ vi.mock('electron', () => ({
     whenReady: () => Promise.resolve(),
     getPath: (name: string) => (name === 'userData' ? userData : tmpdir()),
     getVersion: () => '0.0.0-test',
+    // The installed app (the updater still stays off: no app-update.yml here).
+    isPackaged: true,
     on: vi.fn(),
-    quit: vi.fn()
+    quit: vi.fn(),
+    requestSingleInstanceLock: () => {
+      desktop.requestSingleInstanceLock.calls++
+      return true
+    },
+    getLoginItemSettings: () => ({ openAtLogin: false }),
+    setLoginItemSettings: (settings: unknown) => desktop.loginItems.push(settings)
+  },
+  Tray: class {
+    private state: { tooltip?: string; menu?: unknown } = {}
+    constructor() {
+      desktop.trays.push(this.state)
+    }
+    setToolTip(text: string): void {
+      this.state.tooltip = text
+    }
+    setContextMenu(menu: unknown): void {
+      this.state.menu = menu
+    }
+    on = vi.fn()
+  },
+  Menu: { buildFromTemplate: (items: unknown) => items },
+  Notification: class {
+    static isSupported(): boolean {
+      return false
+    }
+    show = vi.fn()
+  },
+  powerMonitor: {
+    on: (name: string, fn: () => void) => desktop.power.set(name, fn),
+    getSystemIdleTime: () => 0
   },
   ipcMain: {
     handle: (channel: string, fn: (event: unknown, ...args: never[]) => unknown) =>
@@ -58,6 +116,7 @@ vi.mock('electron', () => ({
     loadFile = vi.fn()
     show = vi.fn()
     isMaximized = (): boolean => false
+    isDestroyed = (): boolean => false
   },
   shell: { openExternal: vi.fn(), openPath: vi.fn() },
   safeStorage: {
@@ -118,6 +177,88 @@ afterAll(async () => {
 beforeEach(() => {
   sent.length = 0
   vi.mocked(listMemories).mockReturnValue([])
+})
+
+describe('motor na bandeja', () => {
+  it('takes the single-instance lock outside dev and puts an icon in the tray', () => {
+    expect(desktop.requestSingleInstanceLock.calls).toBe(1)
+    expect(desktop.trays).toHaveLength(1)
+    expect(desktop.trays[0].tooltip).toBe('Sagyou')
+  })
+
+  it('starts sync at launch, before any store:load or unlock', () => {
+    expect(desktop.syncStarts).toBe(1)
+  })
+
+  it('stores only the prefs the renderer may change', async () => {
+    const view = await invoke<Record<string, unknown>>('desktop:prefs:set', {
+      trayNoticeShown: true,
+      foo: 1,
+      idleLockMinutes: 30
+    })
+    expect(view.idleLockMinutes).toBe(30)
+    expect(view.trayNoticeShown).toBe(false)
+    const stored = JSON.parse(await readFile(join(userData, 'desktop-prefs.json'), 'utf-8'))
+    expect(stored).toEqual({
+      closeToTray: process.platform === 'win32',
+      idleLockMinutes: 30,
+      lockOnSystemLock: true,
+      trayNoticeShown: false
+    })
+    expect(view).toHaveProperty('platform', process.platform)
+  })
+
+  it('registers the Windows login item with the hidden flag', async () => {
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
+    Object.defineProperty(process, 'platform', { value: 'win32' })
+    try {
+      await invoke('desktop:open-at-login:set', true)
+    } finally {
+      Object.defineProperty(process, 'platform', platform)
+    }
+    expect(desktop.loginItems).toContainEqual({ openAtLogin: true, args: ['--hidden'] })
+  })
+
+  it('does not lock on the Windows lock screen without a password', async () => {
+    winSent.length = 0
+    desktop.power.get('lock-screen')?.()
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(winSent.some((m) => m.channel === 'security:lock-request')).toBe(false)
+  })
+
+  it('locks on the Windows lock screen: renderer saves, then data IPC closes', async () => {
+    expect(desktop.power.has('lock-screen')).toBe(true)
+    expect(desktop.power.has('suspend')).toBe(true)
+    await expect(invoke('security:enable', 'senha-de-teste-1')).resolves.toEqual({
+      success: true
+    })
+    try {
+      winSent.length = 0
+      desktop.power.get('lock-screen')?.()
+      // Prepare (cards denied, run timers stopped) runs before the renderer is asked.
+      await new Promise((resolve) => setImmediate(resolve))
+      expect(winSent.some((m) => m.channel === 'security:lock-request')).toBe(true)
+      // Still saving: data IPC stays open for the renderer's flush.
+      await expect(invoke('desktop:prefs:get')).resolves.toBeDefined()
+      await invoke('security:lock-ready')
+      await expect(invoke('desktop:prefs:get')).rejects.toThrow(
+        'Desbloqueie o Sagyou para acessar os dados.'
+      )
+      await expect(invoke('security:unlock', 'senha-de-teste-1')).resolves.toEqual({
+        success: true
+      })
+      await expect(invoke('desktop:prefs:get')).resolves.toBeDefined()
+    } finally {
+      await invoke('security:disable', 'senha-de-teste-1')
+    }
+  })
+
+  it('keeps the desktop prefs behind the renderer check', () => {
+    const foreign = { sender: { getURL: () => 'https://evil.example/' } }
+    for (const channel of ['desktop:prefs:get', 'desktop:prefs:set', 'desktop:open-at-login:set']) {
+      expect(() => handlers.get(channel)?.(foreign)).toThrow('Solicitação IPC recusada.')
+    }
+  })
 })
 
 describe('atualização automática', () => {
@@ -319,7 +460,7 @@ describe('ai:code:* handlers', () => {
     await mkdir(join(root, 'src'), { recursive: true })
     await writeFile(join(root, 'src', 'a.ts'), 'const alvo = 1\nconst outro = 2\n')
     await writeFile(join(root, 'src', 'b.ts'), 'nada aqui\n')
-    await writeFile(join(root, 'bin.dat'), 'antes depois alvo\n')
+    await writeFile(join(root, 'bin.dat'), 'antes\u0000depois alvo\n')
   })
   afterAll(async () => rm(container, { recursive: true, force: true }))
 

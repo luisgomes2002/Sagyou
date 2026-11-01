@@ -173,6 +173,14 @@ nunca ausência de senha: mantenha o app bloqueado e só remova essa configuraç
 pelo fluxo explícito `security:recover`, que não altera dados nem backups.
 `security:status` pode expor somente o nome de exibição escolhido para a saudação
 antes do desbloqueio; nunca devolva configuração de IA ou dados do app nesse ponto.
+Com senha, o app também **bloqueia depois de usado** (inatividade do sistema,
+tela do Windows, suspensão, "Bloquear agora" na bandeja): o main manda
+`security:lock-request`, o renderer salva e responde `security:lock-ready` (o main
+bloqueia sozinho em 5 s), e então `passwordUnlocked` volta a `false`. Bloqueado, o
+broker MCP recusa toda chamada e os cartões pendentes são negados. ⚠️ Desbloquear
+**não** chama `loadData` de novo (ele credita o tempo de cada cronômetro salvo —
+contaria em dobro): o estado fica em memória e a `UnlockScreen` só cobre o app. O
+sync roda bloqueado (começa ao abrir as janelas, não no `store:load`).
 A consulta `search:global` roda no main, usa o perfil financeiro ativo e devolve
 trechos limitados com total; título, tags e conteúdo têm pesos distintos.
 O acesso direto `search:global:get` por tipo e ID aplica o mesmo filtro: registros
@@ -510,6 +518,12 @@ Não "simplifique" nenhuma destas sem ler o comentário que as acompanha:
 
 - **`await` em série no `main/modules/code/code-files.ts`** — de propósito. A versão síncrona
   travava o event loop do main (que também serve o IPC) por ~70ms.
+- **O X esconde a janela (bandeja) em vez de fechar.** `hideOnClose` olha
+  `closeToTray` e `isQuitting` (ligado no início do `before-quit`): Sair, instalar
+  atualização e o fim de sessão do Windows fecham de verdade, com o salvamento.
+  `backgroundThrottling: false` é de propósito: escondida, a janela ainda serve o
+  MCP. O single-instance fica desligado em dev (a pasta de dados do dev é a do app
+  instalado no Windows).
 - **A chave de view `'ai'` é o Fleet** ("Sessões de código"). Renomear seria churn
   em `App`, `Sidebar` e feature flags; não há view de Chat nem `agents`.
 - **As sessões do Fleet ficam em abas no topo.** `SessionTabs` só navega entre runs;

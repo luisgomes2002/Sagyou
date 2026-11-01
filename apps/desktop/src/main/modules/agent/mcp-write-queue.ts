@@ -83,6 +83,22 @@ export class McpWriteQueue {
     }
   }
 
+  /**
+   * Rejects only the writes still waiting their turn. The active one is left to
+   * settle on its own: once its `apply` reached the renderer it may already be
+   * written, and telling the agent it failed would make it retry (a duplicate
+   * transaction). Used when the app locks; its card is denied separately.
+   */
+  rejectQueued(runId: string, reason: string): void {
+    const error = new Error(reason)
+    const queued = this.queues.get(runId) ?? []
+    this.queues.delete(runId)
+    for (const write of queued) {
+      write.cancelled = true
+      write.reject(error)
+    }
+  }
+
   private observe(write: QueuedWrite<unknown>, value: unknown): void {
     try {
       this.onApplied?.(

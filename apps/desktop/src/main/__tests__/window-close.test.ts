@@ -23,9 +23,16 @@ vi.mock('electron', () => ({
     isDestroyed(): boolean {
       return this.destroyed
     }
+    emit(name: string): void {
+      this.listeners.get(name)?.()
+    }
     loadFile = vi.fn()
     loadURL = vi.fn()
     show = vi.fn()
+    hide = vi.fn()
+    focus = vi.fn()
+    restore = vi.fn()
+    isMinimized = vi.fn(() => false)
   },
   shell: { openExternal: vi.fn() }
 }))
@@ -102,6 +109,84 @@ describe('window close handshake', () => {
     expect(managed.window.isDestroyed()).toBe(false)
     complete?.({ sender: managed.window.webContents } as IpcMainInvokeEvent)
     expect(managed.window.isDestroyed()).toBe(true)
+  })
+})
+
+describe('tray mode', () => {
+  type FakeWindow = ManagedWindow['window'] & {
+    emit: (name: string) => void
+    hide: ReturnType<typeof vi.fn>
+    show: ReturnType<typeof vi.fn>
+  }
+
+  it('hides on close instead of closing, without the save handshake', () => {
+    const onHidden = vi.fn()
+    const managed = createManagedWindow({
+      preloadPath: '/preload.js',
+      productionPagePath: '/index.html',
+      isDev: false,
+      hideOnClose: () => true,
+      onHidden
+    })
+    const window = managed.window as FakeWindow
+    window.close()
+    expect(window.hide).toHaveBeenCalledTimes(1)
+    expect(onHidden).toHaveBeenCalledTimes(1)
+    expect(window.webContents.send).not.toHaveBeenCalledWith('app:flush-before-close')
+    expect(window.isDestroyed()).toBe(false)
+  })
+
+  it('a real quit (hideOnClose false) still saves before closing', () => {
+    vi.useFakeTimers()
+    let quitting = false
+    const managed = createManagedWindow({
+      preloadPath: '/preload.js',
+      productionPagePath: '/index.html',
+      isDev: false,
+      hideOnClose: () => !quitting
+    })
+    const window = managed.window as FakeWindow
+    quitting = true
+    window.close()
+    expect(window.hide).not.toHaveBeenCalled()
+    expect(window.webContents.send).toHaveBeenCalledWith('app:flush-before-close')
+    managed.completeClose()
+    expect(window.isDestroyed()).toBe(true)
+  })
+
+  it('an update install closes even in tray mode', () => {
+    const managed = createManagedWindow({
+      preloadPath: '/preload.js',
+      productionPagePath: '/index.html',
+      isDev: false,
+      hideOnClose: () => true
+    })
+    const window = managed.window as FakeWindow
+    managed.allowCloseForInstall(true)
+    window.close()
+    expect(window.hide).not.toHaveBeenCalled()
+    expect(window.isDestroyed()).toBe(true)
+  })
+
+  it('never shows a window started hidden', () => {
+    const managed = createManagedWindow({
+      preloadPath: '/preload.js',
+      productionPagePath: '/index.html',
+      isDev: false,
+      startHidden: true
+    })
+    const window = managed.window as FakeWindow
+    window.emit('ready-to-show')
+    expect(window.show).not.toHaveBeenCalled()
+    managed.show()
+    expect(window.show).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows a normal window when ready', () => {
+    const managed = makeWindow()
+    const window = managed.window as FakeWindow
+    window.emit('ready-to-show')
+    expect(window.show).toHaveBeenCalledTimes(1)
   })
 })
 

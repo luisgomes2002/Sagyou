@@ -12,6 +12,8 @@ export interface ManagedWindow {
   allowCloseForInstall: (on: boolean) => void
   /** Restores the normal close and the renderer's screen after a failed install. */
   abortInstall: () => void
+  /** Shows, restores and focuses the window (tray click, second launch). */
+  show: () => void
 }
 
 interface CreateManagedWindowOptions {
@@ -20,6 +22,12 @@ interface CreateManagedWindowOptions {
   icon?: string
   isDev: boolean
   rendererUrl?: string
+  /** True hides the window on close instead of closing it (tray mode, not quitting). */
+  hideOnClose?: () => boolean
+  /** Called each time a close hid the window. */
+  onHidden?: () => void
+  /** Started by the OS at login: load everything but never show the window. */
+  startHidden?: boolean
 }
 
 /** Owns window navigation policy and the async renderer-flush close protocol. */
@@ -34,7 +42,14 @@ export function createManagedWindow(options: CreateManagedWindowOptions): Manage
     title: 'Sagyou',
     frame: false,
     ...(process.platform === 'linux' && options.icon ? { icon: options.icon } : {}),
-    webPreferences: { preload: options.preloadPath, sandbox: false, spellcheck: false }
+    webPreferences: {
+      preload: options.preloadPath,
+      sandbox: false,
+      spellcheck: false,
+      // Hidden in the tray, the renderer still serves MCP writes and the save
+      // debounce; Chromium's background throttling would delay those timers.
+      backgroundThrottling: false
+    }
   })
   let allowClose = false
   let closePending = false
@@ -63,10 +78,17 @@ export function createManagedWindow(options: CreateManagedWindowOptions): Manage
       window.webContents.send('app:flush-before-install')
     })
 
-  window.on('ready-to-show', () => window.show())
+  window.on('ready-to-show', () => {
+    if (!options.startHidden) window.show()
+  })
   window.on('close', (event) => {
     if (allowClose) return
     event.preventDefault()
+    if (!closePending && options.hideOnClose?.()) {
+      window.hide()
+      options.onHidden?.()
+      return
+    }
     if (closePending) return
     closePending = true
     window.webContents.send('app:flush-before-close')
@@ -95,6 +117,12 @@ export function createManagedWindow(options: CreateManagedWindowOptions): Manage
     abortInstall: () => {
       allowClose = false
       if (!window.isDestroyed()) window.webContents.send('app:install-aborted')
+    },
+    show: () => {
+      if (window.isDestroyed()) return
+      if (window.isMinimized()) window.restore()
+      window.show()
+      window.focus()
     }
   }
 }

@@ -10,6 +10,10 @@ import {
   ipcMain,
   dialog,
   safeStorage,
+  Menu,
+  Notification,
+  Tray,
+  powerMonitor,
   type IpcMain,
   type IpcMainEvent,
   type IpcMainInvokeEvent
@@ -65,10 +69,17 @@ import {
   type HarnessId
 } from './modules/agent/harness-adapter'
 import { detectHarnessModel } from './modules/agent/harness-model'
-import { collectAgentPatch, agentPatchPreview, validatePatchScope } from './modules/agent/agent-diff'
+import {
+  collectAgentPatch,
+  agentPatchPreview,
+  validatePatchScope
+} from './modules/agent/agent-diff'
 import { deliverApprovedPatch } from './modules/agent/agent-delivery'
 import { createRunTaskTimers } from './modules/agent/agent-task-timers'
-import { CODE_EXECUTOR_MCP_PERMISSIONS, prepareAgentMcpSession } from './modules/agent/agent-mcp-session'
+import {
+  CODE_EXECUTOR_MCP_PERMISSIONS,
+  prepareAgentMcpSession
+} from './modules/agent/agent-mcp-session'
 import { buildExternalAgentBrief, scrubExternalBriefSecrets } from './modules/agent/agent-briefing'
 import { buildTerminalHandoff } from './modules/agent/terminal-handoff'
 import {
@@ -147,6 +158,15 @@ import {
 } from './modules/update/app-updater'
 import { safeExternalUrl } from './modules/web/external-links'
 import { autoUpdater } from 'electron-updater'
+import {
+  loadDesktopPrefs,
+  saveDesktopPrefs,
+  type DesktopPrefs,
+  type DesktopPrefsView
+} from './modules/desktop/desktop-prefs'
+import { buildTrayMenu } from './modules/desktop/tray-menu'
+import { createAutoLock } from './modules/desktop/auto-lock'
+import { createAppLock, type LockReason } from './modules/security/app-lock'
 import { DesktopReleaseProvider } from './modules/update/release-provider'
 import { EventEmitter } from 'events'
 import {
@@ -171,11 +191,14 @@ import icon from '../../resources/icon.png?asset'
 
 let mainWindow: BrowserWindow | null = null
 let managedWindow: ManagedWindow | null = null
-// Created after protectDataIpc; started on the first store:load (only after unlock).
+// Created after protectDataIpc; started with the windows, right after the update
+// check begins, locked or not (sync needs only the OS keychain, never the UI).
 let syncEngine: SyncEngine | null = null
 let appUpdater: AppUpdater | null = null
-// Set once store:load runs, which only answers after unlock.
-let syncStartedByLoad = false
+// Set once the engine starts (openWindows), before or without any unlock.
+let syncStarted = false
+// Set by the first store:load, which only answers after an unlock.
+let rendererHasData = false
 
 /** Only the app's own renderer may invoke privileged IPC handlers. */
 function assertTrustedRenderer(event: IpcMainInvokeEvent | IpcMainEvent): void {
@@ -220,6 +243,7 @@ function protectDataIpc(ipc: IpcMain): void {
 const sagyouMcp = startSagyouMcpBroker({
   // Called per request, long after codeRuns (declared below) exists.
   isRunLive: (runId) => isMcpRunLive(runId),
+  isLocked: () => isAppLocked(),
   readLogs: (query) => log.readLogs(query),
   onToolCall: (call) => log.info('mcp', 'tool_call', call),
   readScopedData: (domain, session, projectId) => {
@@ -612,7 +636,8 @@ function requestMcpWriteApproval(
   resumo?: string
 ): Promise<boolean> {
   const run = codeRuns.get(runId)
-  if (!run || !isMcpRunLive(runId)) return Promise.resolve(false)
+  // Locked or locking: no new card reaches a screen nobody may answer.
+  if (!run || !isMcpRunLive(runId) || isAppLocked()) return Promise.resolve(false)
   const request: CodeApprovalRequest = {
     runId,
     id: randomUUID(),
@@ -634,8 +659,7 @@ function requestMcpWriteApproval(
 }
 
 const mcpWriteQueue = new McpWriteQueue(
-  (request) =>
-    requestMcpWriteApproval(request.runId, request.name, request.args, request.resumo),
+  (request) => requestMcpWriteApproval(request.runId, request.name, request.args, request.resumo),
   isMcpRunLive,
   recordRunActivity
 )
@@ -923,6 +947,59 @@ let passwordConfig: PasswordConfig | null = null
 let passwordConfigCorrupt = false
 let passwordUnlocked = false
 
+// Locking an unlocked app (idle, Windows lock, sleep, "Bloquear agora"): the
+// renderer saves first, then the same flag the startup lock uses closes every
+// data IPC again.
+const appLock = createAppLock({
+  isUnlocked: () => passwordUnlocked,
+  setUnlocked: (value) => {
+    passwordUnlocked = value
+  },
+  // Before the renderer's save: deny every card and queued write, then stop the
+  // timers agent runs started, so that save already holds them stopped. Locked,
+  // the renderer could not save a stop any more, and the next launch would
+  // credit every hour the timer stayed "running".
+  prepare: async () => {
+    refuseRunWritesForLock()
+    await Promise.race([
+      runTaskTimers.stopTimersKeepRuns(),
+      new Promise((resolve) => setTimeout(resolve, 3000))
+    ])
+  },
+  askRenderer: () => {
+    if (mainWindow && !mainWindow.isDestroyed())
+      mainWindow.webContents.send('security:lock-request')
+  },
+  onLocked: (reason) => onAppLocked(reason),
+  setTimer: (fn, ms) => setTimeout(fn, ms),
+  clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>)
+})
+
+/**
+ * Fail closed: every pending approval card is denied and every write still
+ * waiting its turn is refused. A write already executing is left to settle:
+ * its apply may already be in the renderer, and a false failure would make the
+ * agent retry it (a duplicated transaction).
+ */
+function refuseRunWritesForLock(): void {
+  for (const run of codeRuns.values()) {
+    mcpWriteQueue.rejectQueued(run.id, 'O Sagyou foi bloqueado.')
+    for (const { resolve } of run.pendingApprovals.values()) resolve(false)
+    run.pendingApprovals.clear()
+  }
+}
+
+function onAppLocked(reason: LockReason): void {
+  refuseRunWritesForLock()
+  refreshTrayMenu()
+  log.info('app', 'locked', { reason })
+}
+
+/** Locked, or saving on the way to locked: MCP reads nothing and writes nothing. */
+function isAppLocked(): boolean {
+  return !passwordUnlocked || appLock.isLocking()
+}
+
 function loadPasswordConfig(): { config: PasswordConfig | null; corrupt: boolean } {
   if (!existsSync(passwordConfigPath())) return { config: null, corrupt: false }
   try {
@@ -971,7 +1048,11 @@ function saveAIConfig(config: unknown): void {
     typeof merged.userName === 'string' ? merged.userName.trim().slice(0, 80) : undefined
   const path = aiConfigPath()
   const tmp = `${path}.tmp`
-  writeFileSync(tmp, JSON.stringify({ ...merged, userName: userName || undefined }, null, 2), 'utf-8')
+  writeFileSync(
+    tmp,
+    JSON.stringify({ ...merged, userName: userName || undefined }, null, 2),
+    'utf-8'
+  )
   renameSync(tmp, path)
 }
 
@@ -1184,20 +1265,117 @@ function persistTerminalHandoff(
 
 const skillsPath = (): string => skillsDir(app.getPath('userData'))
 
+// This machine's tray and lock preferences (userData/desktop-prefs.json), read in whenReady.
+let desktopPrefs: DesktopPrefs | null = null
+let tray: Tray | null = null
+// Set at the start of before-quit: from then on a close really closes.
+let isQuitting = false
+const LOGIN_ITEM_ARG = '--hidden'
+
+/** What Configurações shows: this machine's prefs plus what the OS knows. */
+function desktopPrefsView(): DesktopPrefsView {
+  const prefs = desktopPrefs ?? loadDesktopPrefs(app.getPath('userData'), is.dev, process.platform)
+  const openAtLogin =
+    process.platform === 'win32'
+      ? app.getLoginItemSettings({ args: [LOGIN_ITEM_ARG] }).openAtLogin
+      : false
+  return { ...prefs, platform: process.platform, openAtLogin }
+}
+
+function updateDesktopPrefs(patch: Partial<DesktopPrefs>): DesktopPrefs {
+  desktopPrefs = saveDesktopPrefs(app.getPath('userData'), is.dev, process.platform, patch)
+  return desktopPrefs
+}
+
+/** The first close that hides the window says where the app went, once. */
+function showTrayNoticeOnce(): void {
+  if (!desktopPrefs || desktopPrefs.trayNoticeShown) return
+  try {
+    // Marked only once it was really shown, so a system without notifications
+    // does not lose it for good.
+    if (!Notification.isSupported()) return
+    new Notification({
+      title: 'Sagyou',
+      body: 'O Sagyou continua rodando na bandeja. Use Sair no ícone para encerrar.'
+    }).show()
+    updateDesktopPrefs({ trayNoticeShown: true })
+  } catch (error) {
+    log.warn('app', 'tray_notice_failed', { msg: errorMessage(error) })
+  }
+}
+
+/** Menu items depend on the lock state, so the menu is rebuilt when it changes. */
+function refreshTrayMenu(): void {
+  if (!tray) return
+  const items = buildTrayMenu({ canLock: canLockNow() }).map((item) =>
+    item.id === 'sep'
+      ? { type: 'separator' as const }
+      : {
+          label: item.label,
+          click: () => {
+            if (item.id === 'open') managedWindow?.show()
+            else if (item.id === 'lock') lockAppNow()
+            else app.quit()
+          }
+        }
+  )
+  tray.setContextMenu(Menu.buildFromTemplate(items))
+}
+
+function createTray(): void {
+  if (tray) return
+  try {
+    tray = new Tray(icon)
+    tray.setToolTip('Sagyou')
+    tray.on('click', () => managedWindow?.show())
+    tray.on('double-click', () => managedWindow?.show())
+    refreshTrayMenu()
+  } catch (error) {
+    // Some Linux desktops have no tray; the app keeps working without it.
+    log.warn('app', 'tray_failed', { msg: errorMessage(error) })
+    tray = null
+  }
+}
+
+/** Only a password can lock, and only an unlocked app needs locking. */
+function canLockNow(): boolean {
+  return (
+    passwordConfig !== null && !passwordConfigCorrupt && passwordUnlocked && !appLock.isLocking()
+  )
+}
+function lockAppNow(): void {
+  if (canLockNow()) appLock.lock('manual')
+}
+
 function createWindow(): void {
   managedWindow = createManagedWindow({
     preloadPath: join(__dirname, '../preload/index.js'),
     productionPagePath: join(__dirname, '../renderer/index.html'),
     icon,
     isDev: is.dev,
-    rendererUrl: process.env['ELECTRON_RENDERER_URL']
+    rendererUrl: process.env['ELECTRON_RENDERER_URL'],
+    hideOnClose: () => (desktopPrefs?.closeToTray ?? false) && !isQuitting,
+    onHidden: showTrayNoticeOnce,
+    // Launched by the Windows login item: everything loads, the window stays in the tray.
+    startHidden: process.argv.includes(LOGIN_ITEM_ARG)
   })
   mainWindow = managedWindow.window
+  // Windows is ending the session (shutdown, restart, sign out): quit like
+  // "Sair" so before-quit stops the run timers and the close handshake saves.
+  mainWindow.on('session-end', () => app.quit())
 }
 
 app.commandLine.appendSwitch('lang', 'pt-BR')
 
+// One app per user: a second launch (shortcut, Start menu, login item) shows
+// the running window. Off in dev, whose userData folder on Windows is the
+// installed app's one with another case, so the lock would block `npm run dev`.
+const gotSingleInstanceLock = is.dev || app.requestSingleInstanceLock()
+if (!gotSingleInstanceLock) app.quit()
+else app.on('second-instance', () => managedWindow?.show())
+
 app.whenReady().then(() => {
+  if (!gotSingleInstanceLock) return
   // Diagnostic log first, so migrations and startup failures are recorded.
   // Lives in userData/logs (outside the backup); in dev it also echoes to the console.
   configureLog(
@@ -1215,6 +1393,7 @@ app.whenReady().then(() => {
     })
   )
   log.prune()
+  desktopPrefs = loadDesktopPrefs(app.getPath('userData'), is.dev, process.platform)
   log.info('app', 'started', { version: app.getVersion(), platform: process.platform, dev: is.dev })
   // The monitor only observes: Electron still handles the crash as before.
   process.on('uncaughtExceptionMonitor', (error) =>
@@ -1292,6 +1471,7 @@ app.whenReady().then(() => {
     }
     if (!passwordConfig || verifyPassword(passwordConfig, password)) {
       passwordUnlocked = true
+      refreshTrayMenu()
       return { success: true }
     }
     return { success: false, error: 'Senha incorreta.' }
@@ -1307,6 +1487,7 @@ app.whenReady().then(() => {
     savePasswordConfig(next)
     passwordConfig = next
     passwordUnlocked = true
+    refreshTrayMenu()
     return { success: true }
   })
   ipcMain.handle('security:change', (event, current: unknown, nextPassword: unknown) => {
@@ -1336,6 +1517,7 @@ app.whenReady().then(() => {
     }
     passwordConfig = null
     passwordUnlocked = true
+    refreshTrayMenu()
     return { success: true }
   })
   ipcMain.handle('security:recover', (event, confirmed: unknown) => {
@@ -1353,36 +1535,35 @@ app.whenReady().then(() => {
     passwordConfig = null
     passwordConfigCorrupt = false
     passwordUnlocked = true
+    refreshTrayMenu()
     return { success: true }
   })
-  protectDataIpc(ipcMain)
-  registerFilesHandlers(ipcMain, {
-    mainWindow,
-    dialog,
-    shell,
-    filesDir,
-    taskImagesDir: taskImagesDir(),
-    userDataPath: app.getPath('userData'),
-    sep
+  // The renderer saved and shows the password screen; main locks now. Before
+  // protectDataIpc: the answer arrives while main is the one closing the gate.
+  ipcMain.handle('security:lock-ready', (event) => {
+    assertTrustedRenderer(event)
+    appLock.rendererReady()
   })
-
-  // The renderer echoes syncGeneration on every save, so a save it builds from
-  // this load never undoes a remote change already in it.
-  ipcMain.handle('store:load', () => {
-    const data = { ...loadData(), syncGeneration: currentSyncGeneration() }
-    // store:load only answers once the app is unlocked, so sync never runs locked.
-    syncStartedByLoad = true
-    syncEngine?.start()
-    return data
+  const autoLock = createAutoLock({
+    idleSeconds: () => powerMonitor.getSystemIdleTime(),
+    prefs: () =>
+      desktopPrefs ?? loadDesktopPrefs(app.getPath('userData'), is.dev, process.platform),
+    canLock: canLockNow,
+    lock: (reason) => appLock.lock(reason),
+    setInterval: (fn, ms) => setInterval(fn, ms),
+    clearInterval: (handle) => clearInterval(handle as ReturnType<typeof setInterval>)
   })
-
-  ipcMain.handle('store:save', (_, data) => {
-    saveData(data)
-    syncEngine?.notifySaved()
-  })
+  powerMonitor.on('lock-screen', () => autoLock.onSystemLock())
+  powerMonitor.on('suspend', () => autoLock.onSuspend())
+  autoLock.start()
+  // Answers to requests main itself sent (MCP actions, the run timers' stop),
+  // before protectDataIpc: while the app locks, the stop of the agent runs'
+  // timers is answered after the gate may already be closed. They carry no
+  // user data out, only the outcome main asked for.
   ipcMain.on(
     'store:mcp:create-task:response',
-    (_, response: { requestId?: unknown; id?: unknown; error?: unknown }) => {
+    (event, response: { requestId?: unknown; id?: unknown; error?: unknown }) => {
+      assertTrustedRenderer(event)
       if (typeof response.requestId !== 'string') return
       if (typeof response.id === 'string') rendererMcpTasks.resolve(response.requestId, response.id)
       else
@@ -1398,7 +1579,8 @@ app.whenReady().then(() => {
   )
   ipcMain.on(
     'store:mcp:action:response',
-    (_, response: { requestId?: unknown; result?: unknown }) => {
+    (event, response: { requestId?: unknown; result?: unknown }) => {
+      assertTrustedRenderer(event)
       if (typeof response.requestId !== 'string') return
       const result = response.result as McpActionResult | undefined
       if (result && typeof result === 'object' && typeof result.ok === 'boolean')
@@ -1410,6 +1592,28 @@ app.whenReady().then(() => {
         )
     }
   )
+  protectDataIpc(ipcMain)
+  registerFilesHandlers(ipcMain, {
+    mainWindow,
+    dialog,
+    shell,
+    filesDir,
+    taskImagesDir: taskImagesDir(),
+    userDataPath: app.getPath('userData'),
+    sep
+  })
+
+  // The renderer echoes syncGeneration on every save, so a save it builds from
+  // this load never undoes a remote change already in it.
+  ipcMain.handle('store:load', () => {
+    rendererHasData = true
+    return { ...loadData(), syncGeneration: currentSyncGeneration() }
+  })
+
+  ipcMain.handle('store:save', (_, data) => {
+    saveData(data)
+    syncEngine?.notifySaved()
+  })
   ipcMain.handle('store:rebuild-search-index', () => rebuildSearchIndex())
   ipcMain.handle('search:global', (_, options: unknown) => searchGlobalIndex(options))
   ipcMain.handle('search:global:get', (_, options: unknown) => getGlobalSearchIndexHit(options))
@@ -1421,6 +1625,27 @@ app.whenReady().then(() => {
     backupDir: join(app.getPath('userData'), 'backups'),
     sep,
     taskImagePath
+  })
+
+  // This machine's tray, startup and lock preferences (Configurações), after protectDataIpc.
+  ipcMain.handle('desktop:prefs:get', () => desktopPrefsView())
+  ipcMain.handle('desktop:prefs:set', (_, patch: unknown) => {
+    const input = patch && typeof patch === 'object' ? (patch as Record<string, unknown>) : {}
+    // trayNoticeShown is main's own bookkeeping; the renderer never sets it.
+    const allowed: Partial<DesktopPrefs> = {}
+    if ('closeToTray' in input) allowed.closeToTray = input.closeToTray as boolean
+    if ('idleLockMinutes' in input)
+      allowed.idleLockMinutes = input.idleLockMinutes as DesktopPrefs['idleLockMinutes']
+    if ('lockOnSystemLock' in input) allowed.lockOnSystemLock = input.lockOnSystemLock as boolean
+    updateDesktopPrefs(allowed)
+    return desktopPrefsView()
+  })
+  ipcMain.handle('desktop:open-at-login:set', (_, on: unknown) => {
+    // Only the installed app: in dev or unpacked, execPath is a bare electron.exe.
+    if (process.platform === 'win32' && app.isPackaged) {
+      app.setLoginItemSettings({ openAtLogin: on === true, args: [LOGIN_ITEM_ARG] })
+    }
+    return desktopPrefsView()
   })
 
   // Sync: the engine and its channels, after protectDataIpc like every data handler.
@@ -1460,7 +1685,7 @@ app.whenReady().then(() => {
     emitStatus: (status) => sendToRenderer('update:status-changed', status),
     // A hold change republishes the sync status; released, it also syncs.
     onSyncHoldChanged: () => {
-      if (syncStartedByLoad) void syncEngine?.syncNow()
+      if (syncStarted) void syncEngine?.syncNow()
     },
     log
   })
@@ -1522,7 +1747,11 @@ app.whenReady().then(() => {
       app.exit(0)
     },
     emitStatus: (status) => sendToRenderer('sync:status-changed', status),
-    emitRemoteChanges: (change) => sendToRenderer('sync:remote-changes', change),
+    // Synced data reaches the renderer only once it loaded the store (after an
+    // unlock); before that, the first store:load reads it from the database.
+    emitRemoteChanges: (change) => {
+      if (rendererHasData) sendToRenderer('sync:remote-changes', change)
+    },
     isHeld: () => updater.isSyncHeld(),
     log
   })
@@ -1553,6 +1782,8 @@ app.whenReady().then(() => {
     allowCloseForInstall: (on) => managedWindow?.allowCloseForInstall(on),
     abortInstall: () => {
       runTimersStoppedForQuit = false
+      // The current version keeps running: the X hides to the tray again.
+      isQuitting = false
       managedWindow?.abortInstall()
     },
     openExternal: (url) => {
@@ -1652,7 +1883,8 @@ app.whenReady().then(() => {
       const externalHarness =
         (await getHarnessStatuses()).find((status) => status.id === harness) ?? null
       if (!externalHarness?.installed || !externalHarness.path) {
-        const label = harness === 'claude-code' ? 'Claude Code' : harness === 'opencode' ? 'OpenCode' : 'Codex'
+        const label =
+          harness === 'claude-code' ? 'Claude Code' : harness === 'opencode' ? 'OpenCode' : 'Codex'
         return {
           success: false,
           error:
@@ -1926,19 +2158,19 @@ app.whenReady().then(() => {
         const scopedTask = blankSession
           ? ''
           : scrubExternalBriefSecrets(
-          [
-            agentBrief,
-            referenceBrief,
-            appBrief,
-            localSkillsBrief,
-            localHarnessContext.instructions.length || localHarnessContext.skills.length
-              ? `## INSTRUÇÕES LOCAIS\nConsulte no worktree as instruções nativas detectadas: ${[...localHarnessContext.instructions, ...localHarnessContext.skills].join(', ')}. Não copie seu conteúdo para logs ou respostas sem necessidade.`
-              : '',
-            'Use esta worktree para alterações de código. Para dados do Sagyou, use list_projects no MCP e consulte outros projetos quando necessário. Ao terminar, explique brevemente o que fez.'
-          ]
-            .filter(Boolean)
-            .join('\n\n')
-        )
+              [
+                agentBrief,
+                referenceBrief,
+                appBrief,
+                localSkillsBrief,
+                localHarnessContext.instructions.length || localHarnessContext.skills.length
+                  ? `## INSTRUÇÕES LOCAIS\nConsulte no worktree as instruções nativas detectadas: ${[...localHarnessContext.instructions, ...localHarnessContext.skills].join(', ')}. Não copie seu conteúdo para logs ou respostas sem necessidade.`
+                  : '',
+                'Use esta worktree para alterações de código. Para dados do Sagyou, use list_projects no MCP e consulte outros projetos quando necessário. Ao terminar, explique brevemente o que fez.'
+              ]
+                .filter(Boolean)
+                .join('\n\n')
+            )
         const externalWorktree = worktreeDir
         const externalRuntime = { env: process.env }
         // A capability token is not an identifier: use 256 bits of entropy and
@@ -2417,14 +2649,27 @@ app.whenReady().then(() => {
   // dev suffix, so the rest of this migration would hit the real user data.
   const openWindows = (): void => {
     createWindow()
+    // Always there, even with "close hides" off: "Bloquear agora" and "Sair" live in it.
+    createTray()
     // In the background: the window never waits for the network.
     appUpdater?.start()
+    // Sync runs locked too: pushes, pulls, applies remote changes to SQLite and
+    // obeys a remote wipe on the password screen; the renderer reads them on
+    // its first store:load. Started after the update check so the hold applies.
+    syncStarted = true
+    syncEngine?.start()
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
+      else managedWindow?.show()
     })
   }
-  if (!shouldRunLegacyChatRemoval({ isDev: is.dev, optIn: process.env.SAGYOU_RUN_LEGACY_CHAT_REMOVAL })) {
+  if (
+    !shouldRunLegacyChatRemoval({
+      isDev: is.dev,
+      optIn: process.env.SAGYOU_RUN_LEGACY_CHAT_REMOVAL
+    })
+  ) {
     log.warn('app', 'legacy_chat_removal_skipped', {
       msg: 'dev build: removal skipped (set SAGYOU_RUN_LEGACY_CHAT_REMOVAL=1 to run it)'
     })
@@ -2464,6 +2709,8 @@ app.on('window-all-closed', () => {
 let runTimersStoppedForQuit = false
 
 app.on('before-quit', (event) => {
+  // From here on a window close is part of quitting, never a hide to the tray.
+  isQuitting = true
   // Stop the timers agent runs created while the renderer can still save them;
   // otherwise the next launch would credit every hour the app stayed closed.
   if (!runTimersStoppedForQuit && runTaskTimers.hasRunning()) {

@@ -2,6 +2,8 @@ import { useEffect, useState, type JSX } from 'react'
 import { ALL_FEATURE_IDS, type FeatureId, type UiPreferences } from '../../types'
 import { SyncSettings } from '../settings/SyncSettings'
 import { UpdateSettings } from '../settings/UpdateSettings'
+import { WindowSettings } from '../settings/WindowSettings'
+import { AutoLockSettings } from '../settings/AutoLockSettings'
 
 interface Props {
   featurePreferences?: FeatureId[]
@@ -170,6 +172,8 @@ export function SettingsView({
             </div>
           </div>
         </section>
+
+        <WindowSettings />
 
         <PasswordSettings onToast={onToast} />
 
@@ -372,6 +376,7 @@ function PasswordSettings({ onToast }: { onToast: Props['onToast'] }): JSX.Eleme
             </div>
           </>
         )}
+        {enabled !== null && <AutoLockSettings passwordEnabled={enabled} />}
       </div>
     </section>
   )

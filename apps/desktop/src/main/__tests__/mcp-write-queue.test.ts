@@ -85,6 +85,32 @@ describe('McpWriteQueue', () => {
   })
 })
 
+describe('McpWriteQueue on app lock', () => {
+  it('lets the executing write finish and refuses only the queued ones', async () => {
+    const applying = deferred<string>()
+    const queue = new McpWriteQueue(async () => true)
+    const first = queue.enqueue(
+      { runId: 'run-1', name: 'create_transaction', args: {}, approval: false },
+      () => applying.promise
+    )
+    const secondWrite = vi.fn(async () => 'second')
+    const second = queue.enqueue(
+      { runId: 'run-1', name: 'update_task', args: {}, approval: false },
+      secondWrite
+    )
+    for (let i = 0; i < 5; i++) await Promise.resolve()
+
+    queue.rejectQueued('run-1', 'O Sagyou foi bloqueado.')
+    await expect(second).rejects.toThrow('O Sagyou foi bloqueado.')
+
+    // The apply already sent to the renderer settles normally: the agent is
+    // told the truth, so it never retries a write that happened.
+    applying.resolve('applied')
+    await expect(first).resolves.toEqual({ approved: true, value: 'applied' })
+    expect(secondWrite).not.toHaveBeenCalled()
+  })
+})
+
 describe('McpWriteQueue preparation and optional approval', () => {
   it('skips the approval callback when approval is false', async () => {
     const approve = vi.fn(async () => true)
