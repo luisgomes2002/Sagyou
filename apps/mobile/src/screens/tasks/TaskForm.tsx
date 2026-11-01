@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { ScrollView, StyleSheet, Text } from 'react-native'
 import { Button, Chip, Field, Row, Screen } from '../../components/ui'
 import { useApp } from '../../store/app'
-import { DATE_FORMAT_ERROR, parseBRDate, toBRDate } from '../../store/dates'
+import { DateField } from '../../components/DateField'
 import { PRIORITY_LABELS, createSprint, createTask, updateTask } from '../../store/tasks'
 import { useTheme } from '../../theme'
 
@@ -40,7 +40,7 @@ export function TaskForm({
   const [title, setTitle] = useState(existing?.title ?? draftTitle ?? '')
   const [description, setDescription] = useState(existing?.description ?? '')
   const [priority, setPriority] = useState<Priority>(existing?.priority ?? 'medium')
-  const [dueDate, setDueDate] = useState(toBRDate(existing?.dueDate))
+  const [dueDate, setDueDate] = useState<string | undefined>(existing?.dueDate || undefined)
   const [tags, setTags] = useState<string[]>(existing?.tags ?? [])
   const [column, setColumn] = useState(
     existing?.columnId ?? columnId ?? columns.find((c) => !isDoneColumn(c))?.id ?? columns[0]?.id
@@ -68,8 +68,6 @@ export function TaskForm({
 
   const save = (): void => {
     if (!title.trim()) return setError('Dê um título à tarefa.')
-    const due = dueDate.trim() ? parseBRDate(dueDate) : null
-    if (dueDate.trim() && !due) return setError(DATE_FORMAT_ERROR)
     if (!column) return setError('Este projeto não tem colunas.')
     const current = useApp.getState().state
     const now = new Date()
@@ -77,7 +75,7 @@ export function TaskForm({
       title: title.trim(),
       description: description.trim() || undefined,
       priority,
-      dueDate: due ?? undefined,
+      dueDate,
       tags,
       sprintId
     }
@@ -103,12 +101,7 @@ export function TaskForm({
             />
           ))}
         </Row>
-        <Field
-          label="Prazo (DD/MM/AAAA)"
-          value={dueDate}
-          onChangeText={setDueDate}
-          keyboardType="numbers-and-punctuation"
-        />
+        <DateField label="Prazo" value={dueDate} onChange={setDueDate} clearable />
         <Text style={[styles.label, { color: theme.muted }]}>Coluna</Text>
         <Row>
           {columns.map((c) => (
@@ -158,7 +151,7 @@ export function TaskForm({
             {error}
           </Text>
         ) : null}
-        <Button primary label="Salvar" onPress={save} disabled={readOnly} />
+        <Button variant="primary" label="Salvar" onPress={save} disabled={readOnly} />
       </Screen>
     </ScrollView>
   )

@@ -1,55 +1,186 @@
 import { fireEvent, render, screen } from '@testing-library/react-native'
+import * as Haptics from 'expo-haptics'
+import { StyleSheet } from 'react-native'
+import { createRecordRepo } from '../../data/records'
+import { migrate } from '../../data/schema'
 import { emptyState, type MobileState } from '../../data/state'
+import { openNodeDb } from '../../data/__tests__/node-db'
+import { T, project, seedApp } from '../../__tests__/seed'
 import { type AppServices, useApp } from '../../store/app'
+import { NO_DONE_COLUMN_TEXT } from '../../store/tasks'
+import { useUndo } from '../../store/undo'
+import { lightTheme } from '../../theme'
 import { NEW_SPRINT, TaskForm } from '../tasks/TaskForm'
-import { UpcomingList } from '../tasks/TaskLists'
+import { ProjectBoard, ProjectList, UpcomingList } from '../tasks/TaskLists'
 
-const T = '2026-10-01T00:00:00.000Z'
+type TaskT = MobileState['tasks'][number]
 
-function seed(extra: Partial<MobileState> = {}): void {
-  const state = emptyState()
-  state.projects = [
-    {
-      id: 'p1',
-      name: 'Sagyou',
-      color: '#6366f1',
-      order: 0,
-      createdAt: T,
-      updatedAt: T,
-      columns: [
-        { id: 'todo', name: 'A fazer', order: 0 },
-        { id: 'done', name: 'Done', order: 1 }
-      ]
-    } as unknown as MobileState['projects'][number]
-  ]
-  state.sprints = [
-    { id: 's1', projectId: 'p1', name: 'Sprint 1', createdAt: '2026-10-01T00:00:00.000Z' },
-    { id: 's2', projectId: 'p1', name: 'Sprint 2', createdAt: '2026-10-15T00:00:00.000Z' }
-  ]
-  useApp.setState({
-    state: { ...state, ...extra },
-    readOnly: false,
-    services: {
-      repo: { save: jest.fn() },
-      runtime: { engine: { notifySaved: jest.fn() } }
-    } as unknown as AppServices
-  })
-}
-
-const task = (id: string, dueDate: string): MobileState['tasks'][number] => ({
+const task = (id: string, extra: Partial<TaskT> = {}): TaskT => ({
   id,
   projectId: 'p1',
-  columnId: 'todo',
+  columnId: 'p1-todo',
   title: id,
   priority: 'medium',
   tags: [],
   order: 0,
   createdAt: T,
   updatedAt: T,
-  dueDate
+  ...extra
 })
 
-describe('tarefas no celular', () => {
+const sprints: MobileState['sprints'] = [
+  { id: 's1', projectId: 'p1', name: 'Sprint 1', createdAt: '2026-10-01T00:00:00.000Z' },
+  { id: 's2', projectId: 'p1', name: 'Sprint 2', createdAt: '2026-10-15T00:00:00.000Z' }
+]
+
+function seed(extra: Partial<MobileState> = {}, readOnly = false): ReturnType<typeof seedApp> {
+  return seedApp({ projects: [project('p1', 'Sagyou')], sprints, ...extra }, { readOnly })
+}
+
+const color = (testID: string): string | undefined =>
+  StyleSheet.flatten(screen.getByTestId(testID).props.style)?.color
+
+describe('Tarefas no celular', () => {
+  beforeEach(() => {
+    useUndo.getState().dismiss()
+    jest.clearAllMocks()
+  })
+
+  it('o cartão Hoje resume os prazos e abre Próximas', async () => {
+    seed({ tasks: [task('a', { dueDate: '2026-11-04' }), task('b', { dueDate: '2026-11-03' })] })
+    const onUpcoming = jest.fn()
+    await render(<ProjectList onOpen={jest.fn()} onUpcoming={onUpcoming} today="2026-11-04" />)
+    expect(screen.getByText('1 para hoje · 1 atrasada')).toBeTruthy()
+    await fireEvent.press(screen.getByRole('button', { name: /^Hoje/ }))
+    expect(onUpcoming).toHaveBeenCalled()
+  })
+
+  it('cada projeto mostra as abertas e a barra de progresso', async () => {
+    seed({ tasks: [task('a'), task('b'), task('c', { columnId: 'p1-done' })] })
+    await render(<ProjectList onOpen={jest.fn()} onUpcoming={jest.fn()} today="2026-11-04" />)
+    expect(screen.getByText('2 abertas')).toBeTruthy()
+    expect(screen.getByTestId('progress-p1').props.accessibilityValue).toEqual({
+      min: 0,
+      max: 3,
+      now: 1
+    })
+  })
+
+  it('as colunas viram chips com contagem, e Done fica por último', async () => {
+    const p = project('p1', 'Sagyou', [
+      { id: 'p1-done', name: 'Done', order: 0 },
+      { id: 'p1-todo', name: 'A fazer', order: 1 },
+      { id: 'p1-doing', name: 'Fazendo', order: 2 }
+    ])
+    seed({ projects: [p], tasks: [task('a'), task('b', { columnId: 'p1-doing' })] })
+    await render(
+      <ProjectBoard
+        projectId="p1"
+        onOpenTask={jest.fn()}
+        onNewTask={jest.fn()}
+        today="2026-11-04"
+      />
+    )
+    const chips = screen
+      .getAllByRole('button')
+      .map((b) => b.props.accessibilityLabel as string)
+      .filter((l) => / · \d+$/.test(l))
+    expect(chips).toEqual(['A fazer · 1', 'Fazendo · 1', 'Done · 0'])
+    expect(screen.getByRole('button', { name: 'A fazer · 1' })).toBeSelected()
+    expect(screen.getByRole('button', { name: 'a' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'b' })).toBeNull()
+    await fireEvent.press(screen.getByRole('button', { name: 'Fazendo · 1' }))
+    expect(screen.getByRole('button', { name: 'b' })).toBeTruthy()
+  })
+
+  it('prazo atrasado em vermelho e de hoje em atenção', async () => {
+    seed({
+      tasks: [task('velha', { dueDate: '2026-11-03' }), task('hoje', { dueDate: '2026-11-04' })]
+    })
+    await render(
+      <ProjectBoard
+        projectId="p1"
+        onOpenTask={jest.fn()}
+        onNewTask={jest.fn()}
+        today="2026-11-04"
+      />
+    )
+    expect(color('due-velha')).toBe(lightTheme.red)
+    expect(color('due-hoje')).toBe(lightTheme.attention)
+  })
+
+  it('"Concluir" conclui, vibra e oferece Desfazer, que volta a tarefa', async () => {
+    const { save } = seed({ tasks: [task('a')] })
+    await render(
+      <ProjectBoard
+        projectId="p1"
+        onOpenTask={jest.fn()}
+        onNewTask={jest.fn()}
+        today="2026-11-04"
+      />
+    )
+    await fireEvent(screen.getByRole('button', { name: 'a' }), 'accessibilityAction', {
+      nativeEvent: { actionName: 'concluir' }
+    })
+    expect(useApp.getState().state.tasks[0].columnId).toBe('p1-done')
+    expect(Haptics.impactAsync).toHaveBeenCalled()
+    expect(useUndo.getState()).toMatchObject({ message: 'Tarefa concluída', canUndo: true })
+    useUndo.getState().run()
+    expect(useApp.getState().state.tasks[0]).toMatchObject({ columnId: 'p1-todo', order: 0 })
+    expect(useApp.getState().state.tasks[0].completedAt).toBeUndefined()
+    expect(save).toHaveBeenCalledTimes(2)
+  })
+
+  it('sem coluna Done, avisa e não grava nem vibra', async () => {
+    const p = project('p1', 'Sagyou', [{ id: 'p1-todo', name: 'A fazer', order: 0 }])
+    const { save } = seed({ projects: [p], tasks: [task('a')] })
+    await render(
+      <ProjectBoard
+        projectId="p1"
+        onOpenTask={jest.fn()}
+        onNewTask={jest.fn()}
+        today="2026-11-04"
+      />
+    )
+    await fireEvent(screen.getByRole('button', { name: 'a' }), 'accessibilityAction', {
+      nativeEvent: { actionName: 'concluir' }
+    })
+    expect(useUndo.getState()).toMatchObject({ message: NO_DONE_COLUMN_TEXT, canUndo: false })
+    expect(NO_DONE_COLUMN_TEXT).toBe('Este projeto não tem coluna Done.')
+    expect(save).not.toHaveBeenCalled()
+    expect(Haptics.impactAsync).not.toHaveBeenCalled()
+  })
+
+  it('somente leitura: não há ação de concluir', async () => {
+    seed({ tasks: [task('a')] }, true)
+    await render(
+      <ProjectBoard
+        projectId="p1"
+        onOpenTask={jest.fn()}
+        onNewTask={jest.fn()}
+        today="2026-11-04"
+      />
+    )
+    expect(screen.getByRole('button', { name: 'a' }).props.accessibilityActions ?? []).toEqual([])
+  })
+
+  it('Próximas mostra só as seções com tarefas, em ordem', async () => {
+    seed({
+      tasks: [
+        task('depois', { dueDate: '2026-11-30' }),
+        task('amanha', { dueDate: '2026-11-05' }),
+        task('vencida', { dueDate: '2026-10-20' })
+      ]
+    })
+    await render(<UpcomingList onOpenTask={jest.fn()} today="2026-11-04" />)
+    expect(screen.getAllByRole('header').map((h) => h.props.children)).toEqual([
+      'Atrasadas',
+      'Amanhã',
+      'Mais tarde'
+    ])
+    expect(screen.getByRole('button', { name: 'vencida' })).toBeTruthy()
+  })
+
   it('a sprint vem preenchida com a aberta mais recente', async () => {
     seed()
     await render(<TaskForm projectId="p1" onDone={jest.fn()} />)
@@ -67,31 +198,55 @@ describe('tarefas no celular', () => {
     expect(screen.getByRole('button', { name: 'Sprint 3' })).toBeSelected()
   })
 
-  it('salvar cria a tarefa na sprint escolhida e volta', async () => {
+  it('o formulário traz o título do (+) e o prazo vem dos chips', async () => {
     seed()
     const onDone = jest.fn()
-    await render(<TaskForm projectId="p1" onDone={onDone} />)
-    await fireEvent.changeText(screen.getByLabelText('Título'), 'Comprar pão')
+    await render(<TaskForm projectId="p1" draftTitle="Comprar pão" onDone={onDone} />)
+    expect(screen.getByLabelText('Título').props.value).toBe('Comprar pão')
+    await fireEvent.press(screen.getByRole('button', { name: 'Hoje' }))
     await fireEvent.press(screen.getByRole('button', { name: 'Salvar' }))
     expect(useApp.getState().state.tasks).toEqual([
-      expect.objectContaining({ title: 'Comprar pão', sprintId: 's2', columnId: 'todo' })
+      expect.objectContaining({ title: 'Comprar pão', sprintId: 's2', columnId: 'p1-todo' })
     ])
+    expect(useApp.getState().state.tasks[0].dueDate).toMatch(/^\d{4}-\d{2}-\d{2}$/)
     expect(onDone).toHaveBeenCalled()
   })
 
-  it('Próximas: vencida primeiro, e a de daqui a 30 dias também aparece', async () => {
-    seed({
-      tasks: [
-        task('daqui-30-dias', '2026-11-30'),
-        task('amanha', '2026-11-01'),
-        task('vencida', '2026-10-20')
-      ]
+  it('"Sem prazo" tira o prazo de uma tarefa', async () => {
+    seed({ tasks: [task('a', { dueDate: '2026-11-04' })] })
+    await render(<TaskForm projectId="p1" taskId="a" onDone={jest.fn()} />)
+    await fireEvent.press(screen.getByRole('button', { name: 'Sem prazo' }))
+    await fireEvent.press(screen.getByRole('button', { name: 'Salvar' }))
+    expect(useApp.getState().state.tasks[0].dueDate).toBeUndefined()
+  })
+
+  it('abrir as listas sobre os dados do banco não gera versão', async () => {
+    const db = openNodeDb()
+    migrate(db)
+    const repo = createRecordRepo(db)
+    const base = emptyState()
+    base.projects = [project('p1', 'Sagyou')]
+    base.tasks = [task('a', { dueDate: '2026-11-04', tags: ['x', 'y', 'z'] })]
+    repo.save(base, Date.now())
+    useApp.setState({
+      state: repo.loadState(),
+      readOnly: false,
+      services: {
+        repo,
+        runtime: { engine: { notifySaved: jest.fn() } },
+        search: () => []
+      } as unknown as AppServices
     })
-    await render(<UpcomingList onOpenTask={jest.fn()} today="2026-10-31" />)
-    expect(screen.getAllByRole('button').map((b) => b.props.accessibilityLabel)).toEqual([
-      'vencida',
-      'amanha',
-      'daqui-30-dias'
-    ])
+    await render(<ProjectList onOpen={jest.fn()} onUpcoming={jest.fn()} today="2026-11-04" />)
+    await render(
+      <ProjectBoard
+        projectId="p1"
+        onOpenTask={jest.fn()}
+        onNewTask={jest.fn()}
+        today="2026-11-04"
+      />
+    )
+    await render(<UpcomingList onOpenTask={jest.fn()} today="2026-11-04" />)
+    expect(repo.save(useApp.getState().state, Date.now() + 1000)).toBe(0)
   })
 })

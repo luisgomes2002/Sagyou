@@ -68,7 +68,11 @@ export function TasksStack(): React.JSX.Element {
     <Stack.Navigator>
       <Stack.Screen name="Projetos" component={ProjectsRoute} options={{ headerShown: false }} />
       <Stack.Screen name="Projeto" component={ProjectRoute} />
-      <Stack.Screen name="Tarefa" component={TaskRoute} />
+      <Stack.Screen
+        name="Tarefa"
+        component={TaskRoute}
+        options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+      />
       <Stack.Screen name={UPCOMING_TITLE} component={UpcomingRoute} />
     </Stack.Navigator>
   )

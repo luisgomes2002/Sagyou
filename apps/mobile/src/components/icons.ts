@@ -13,6 +13,7 @@ import {
   CreditCard,
   Droplet,
   Dumbbell,
+  Flag,
   Flame,
   Fuel,
   Gift,
@@ -77,7 +78,8 @@ export const ACTION_ICONS = {
   offline: CloudOff,
   readOnly: Lock,
   search: Search,
-  undo: Undo2
+  undo: Undo2,
+  priority: Flag
 } satisfies Record<string, LucideIcon>
 
 // Exact names from the core's FINANCIAL_CATEGORIES; anything else gets a tag.
