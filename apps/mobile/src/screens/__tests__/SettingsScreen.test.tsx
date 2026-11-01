@@ -3,8 +3,15 @@ import { Linking } from 'react-native'
 import { useApp, type AppServices } from '../../store/app'
 import { useUpdate } from '../../store/update'
 import { DOWNLOAD_PREFIX } from '../../update/check'
+import { installedVersion } from '../../update/installed'
 import { conflictsText } from '../../sync/status-text'
 import { SettingsScreen } from '../SettingsScreen'
+
+// Derived from app.json, so bumping the app's version never breaks these tests.
+const NEXT = ((v: string): string => {
+  const [a, b, c] = v.split('.').map(Number)
+  return `${a}.${b}.${c + 1}`
+})(installedVersion())
 
 describe('SettingsScreen', () => {
   it('com um conflito aberto pede para resolver no PC', async () => {
@@ -25,7 +32,7 @@ describe('SettingsScreen', () => {
   })
 
   describe('Versão do app', () => {
-    const URL_002 = `${DOWNLOAD_PREFIX}mobile-v0.0.2/sagyou-mobile-0.0.2.apk`
+    const URL_NEXT = `${DOWNLOAD_PREFIX}mobile-v${NEXT}/sagyou-mobile-${NEXT}.apk`
     let finish: (r: Response | Error) => void = () => undefined
 
     beforeEach(() => {
@@ -52,7 +59,7 @@ describe('SettingsScreen', () => {
     it('mostra a versão instalada', async () => {
       await render(<SettingsScreen />)
       expect(screen.getByText('Versão do app')).toBeTruthy()
-      expect(screen.getByText('Instalada: 0.0.1')).toBeTruthy()
+      expect(screen.getByText(`Instalada: ${installedVersion()}`)).toBeTruthy()
     })
 
     it('procura, desabilita enquanto procura e diz que está atualizado', async () => {
@@ -81,19 +88,19 @@ describe('SettingsScreen', () => {
         finish(
           body([
             {
-              tag_name: 'mobile-v0.0.2',
+              tag_name: `mobile-v${NEXT}`,
               draft: false,
               prerelease: false,
               assets: [
-                { name: 'sagyou-mobile-0.0.2.apk', state: 'uploaded', browser_download_url: URL_002 }
+                { name: `sagyou-mobile-${NEXT}.apk`, state: 'uploaded', browser_download_url: URL_NEXT }
               ]
             }
           ])
         )
       )
-      expect(screen.getByText('Versão 0.0.2 disponível')).toBeTruthy()
-      await fireEvent.press(screen.getByLabelText('Baixar a versão 0.0.2'))
-      expect(open).toHaveBeenCalledWith(URL_002)
+      expect(screen.getByText(`Versão ${NEXT} disponível`)).toBeTruthy()
+      await fireEvent.press(screen.getByLabelText(`Baixar a versão ${NEXT}`))
+      expect(open).toHaveBeenCalledWith(URL_NEXT)
     })
   })
 })

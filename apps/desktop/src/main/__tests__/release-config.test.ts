@@ -180,7 +180,10 @@ describe('configuração de release do atualizador', () => {
     const release = apk.slice(start)
     expect(release).toContain('contents: write')
     expect(release).toContain('needs: apk')
-    expect(release).toContain("if: startsWith(github.ref, 'refs/tags/mobile-v')")
+    // Run by hand from a tag, github.ref is that tag too: only the push may release.
+    expect(release).toContain(
+      "if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/mobile-v')"
+    )
     expect(release).toContain('--draft')
     expect(release).toContain('--latest=false')
     expect(release).toContain('--title "Sagyou Android $v"')

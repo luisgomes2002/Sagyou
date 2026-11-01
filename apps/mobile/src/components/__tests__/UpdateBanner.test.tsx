@@ -8,7 +8,12 @@ import { DOWNLOAD_PREFIX } from '../../update/check'
 import { installedVersion } from '../../update/installed'
 import { UpdateBanner } from '../UpdateBanner'
 
-const URL_002 = `${DOWNLOAD_PREFIX}mobile-v0.0.2/sagyou-mobile-0.0.2.apk`
+// Derived from app.json, so bumping the app's version never breaks these tests.
+const NEXT = ((v: string): string => {
+  const [a, b, c] = v.split('.').map(Number)
+  return `${a}.${b}.${c + 1}`
+})(installedVersion())
+const URL_NEXT = `${DOWNLOAD_PREFIX}mobile-v${NEXT}/sagyou-mobile-${NEXT}.apk`
 
 function withRepo(): Map<string, string> {
   const prefs = new Map<string, string>()
@@ -39,34 +44,30 @@ describe('UpdateBanner', () => {
   })
   afterEach(() => jest.restoreAllMocks())
 
-  it('a versão instalada é a do app.json', () => {
-    expect(installedVersion()).toBe('0.0.1')
-  })
-
   it('mostra a versão nova e Baixar abre o APK pelo navegador', async () => {
     withRepo()
     const open = jest.spyOn(Linking, 'openURL').mockResolvedValue(true)
-    useUpdate.setState({ available: { version: '0.0.2', url: URL_002 } })
+    useUpdate.setState({ available: { version: NEXT, url: URL_NEXT } })
     await renderBanner()
-    expect(screen.getByText('Versão 0.0.2 disponível')).toBeTruthy()
-    await fireEvent.press(screen.getByLabelText('Baixar a versão 0.0.2'))
-    expect(open).toHaveBeenCalledWith(URL_002)
+    expect(screen.getByText(`Versão ${NEXT} disponível`)).toBeTruthy()
+    await fireEvent.press(screen.getByLabelText(`Baixar a versão ${NEXT}`))
+    expect(open).toHaveBeenCalledWith(URL_NEXT)
   })
 
   it('"Agora não" grava a versão e a faixa some', async () => {
     const prefs = withRepo()
-    useUpdate.setState({ available: { version: '0.0.2', url: URL_002 } })
+    useUpdate.setState({ available: { version: NEXT, url: URL_NEXT } })
     await renderBanner()
     await fireEvent.press(screen.getByText('Agora não'))
-    expect(prefs.get(PREF_UPDATE_DISMISSED)).toBe('0.0.2')
-    expect(screen.queryByText('Versão 0.0.2 disponível')).toBeNull()
+    expect(prefs.get(PREF_UPDATE_DISMISSED)).toBe(NEXT)
+    expect(screen.queryByText(`Versão ${NEXT} disponível`)).toBeNull()
   })
 
   it('sem atualização, ou com ela dispensada, não mostra nada', async () => {
     withRepo()
     await renderBanner()
     expect(screen.queryByText(/disponível/)).toBeNull()
-    useUpdate.setState({ available: { version: '0.0.2', url: URL_002 }, dismissed: '0.0.2' })
+    useUpdate.setState({ available: { version: NEXT, url: URL_NEXT }, dismissed: NEXT })
     await renderBanner()
     expect(screen.queryByText(/disponível/)).toBeNull()
   })

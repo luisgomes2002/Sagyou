@@ -58,9 +58,11 @@ export const useUpdate = create<UpdateStore>((set, get) => ({
       try {
         const found = await fetchLatest(deps.fetch, deps.installed)
         set({ available: found })
-        // Only a check that found nothing counts: a pending update is checked
-        // again on every open, so the banner comes back until dismissed.
-        if (!found) deps.repo.writePref(PREF_UPDATE_LAST_CHECK, new Date(deps.now()).toISOString())
+        // A check that found something still pending is not counted, so the
+        // banner comes back on every open until "Agora não"; once that version
+        // is dismissed, the 24 h gate applies again.
+        if (!found || found.version === get().dismissed)
+          deps.repo.writePref(PREF_UPDATE_LAST_CHECK, new Date(deps.now()).toISOString())
       } catch {
         // A failed check is not a check: try again on the next open.
       } finally {
@@ -85,6 +87,8 @@ export const useUpdate = create<UpdateStore>((set, get) => ({
     const version = get().available?.version
     if (!version) return
     deps.repo.writePref(PREF_UPDATE_DISMISSED, version)
+    // Dismissed: no reason to ask GitHub again before the next 24 h.
+    deps.repo.writePref(PREF_UPDATE_LAST_CHECK, new Date(deps.now()).toISOString())
     set({ dismissed: version })
   },
 

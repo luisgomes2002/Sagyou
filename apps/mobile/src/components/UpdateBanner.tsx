@@ -57,7 +57,7 @@ export function UpdateBanner(): React.JSX.Element | null {
   const style = [styles.banner, { backgroundColor: theme.surface, borderColor: theme.border }]
   const content = (
     <>
-      <Text accessibilityRole="header" style={[styles.text, { color: theme.text }]}>
+      <Text style={[styles.text, { color: theme.text }]}>
         {availableText(update.version)}
       </Text>
       <View style={styles.actions}>
@@ -77,9 +77,11 @@ export function UpdateBanner(): React.JSX.Element | null {
     </>
   )
   return statusShown ? (
-    <View style={style}>{content}</View>
+    <View accessibilityLiveRegion="polite" style={style}>
+      {content}
+    </View>
   ) : (
-    <SafeAreaView edges={['top']} style={style}>
+    <SafeAreaView edges={['top']} accessibilityLiveRegion="polite" style={style}>
       {content}
     </SafeAreaView>
   )
@@ -88,5 +90,6 @@ export function UpdateBanner(): React.JSX.Element | null {
 const styles = StyleSheet.create({
   banner: { paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: 1, gap: 8 },
   text: { fontWeight: '600' },
-  actions: { flexDirection: 'row', gap: 8 }
+  // Wraps with a large system font instead of pushing "Agora não" off screen.
+  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }
 })

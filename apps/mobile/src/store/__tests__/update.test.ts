@@ -111,6 +111,23 @@ describe('faixa e "Agora não"', () => {
     })
   })
 
+  // Review finding: after "Agora não" every open still asked GitHub, forever.
+  it('depois do "Agora não" volta a consultar só a cada 24 h', async () => {
+    const { deps, fetch, now } = setup(releases('0.0.2'))
+    await useUpdate.getState().autoCheck(deps)
+    useUpdate.getState().dismiss(deps)
+    now.mockReturnValue(NOW + HOUR)
+    await useUpdate.getState().autoCheck(deps)
+    expect(fetch).toHaveBeenCalledTimes(1)
+    now.mockReturnValue(NOW + AUTO_CHECK_INTERVAL_MS)
+    await useUpdate.getState().autoCheck(deps)
+    expect(fetch).toHaveBeenCalledTimes(2)
+    // Still only the dismissed version: the gate stays.
+    now.mockReturnValue(NOW + AUTO_CHECK_INTERVAL_MS + HOUR)
+    await useUpdate.getState().autoCheck(deps)
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
   it('não mostra versão igual ou menor que a instalada', () => {
     expect(bannerUpdate({ available: { version: '0.0.1', url: 'x' }, dismissed: null }, '0.0.1')).toBeNull()
     expect(bannerUpdate({ available: { version: '0.0.1', url: 'x' }, dismissed: null }, '0.1.0')).toBeNull()
