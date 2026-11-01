@@ -1468,6 +1468,22 @@ describe('read_logs over MCP', () => {
     ])
   })
 
+  it('lets the agent filter the sync area', async () => {
+    const broker = await startWith({ readLogs: () => ({ entries: [], truncated: false }) })
+    const listed = await request(broker.port(), {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/list',
+      params: { token: 'logs-run' }
+    })
+    const tool = (
+      listed.result as {
+        tools: { name: string; inputSchema: { properties: { area?: { enum?: string[] } } } }[]
+      }
+    ).tools.find((t) => t.name === 'read_logs')
+    expect(tool?.inputSchema.properties.area?.enum).toContain('sync')
+  })
+
   it('returns the log entries with normalized arguments', async () => {
     const readLogs = vi.fn(() => ({
       entries: [{ ts: '2026-10-27T00:00:00.000Z', level: 'error', area: 'pty', event: 'crashed' }],

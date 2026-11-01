@@ -27,7 +27,7 @@ const FORBIDDEN_KEYS = new Set([
 ])
 
 export type LogLevel = 'info' | 'warn' | 'error'
-export type LogArea = 'app' | 'store' | 'backup' | 'pty' | 'mcp' | 'delivery'
+export type LogArea = 'app' | 'store' | 'backup' | 'pty' | 'mcp' | 'delivery' | 'sync'
 export type LogData = Record<string, string | number | boolean | null | undefined>
 
 export interface LogEntry {

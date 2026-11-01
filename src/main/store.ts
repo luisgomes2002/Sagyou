@@ -17,7 +17,7 @@ import {
   createGlobalSearchIndex,
   rebuildGlobalSearchIndex,
   syncGlobalSearchIndex,
-  syncSupplementalSearchIndex,
+  syncSupplementalSearchIndex
 } from './modules/search/global-search-index'
 import {
   getGlobalSearchHit,
@@ -26,6 +26,26 @@ import {
   type GlobalSearchResponse
 } from './modules/search/global-search-query'
 import { errorMessage, log } from './modules/logs/logger'
+import { moneyText, transactionDetails } from './modules/financial/money-text'
+import {
+  loadOrCreateDeviceId,
+  SYNC_DEVICE_FILE,
+  SYNC_DEVICE_FILE_DEV
+} from './modules/sync/device-id'
+import {
+  DATA_KINDS,
+  extractDataRecords,
+  extractMemoryRecords,
+  MEMORY_KINDS,
+  type SyncRecord
+} from './modules/sync/sync-records'
+import {
+  buildSyncRows,
+  memoryCaptureScope,
+  planSyncChanges,
+  type StoredVersion,
+  type SyncScope
+} from './modules/sync/sync-plan'
 
 // ── Inline types (mirrors src/renderer/src/types/index.ts) ──────────────────
 
@@ -337,6 +357,7 @@ function getDb(): Database.Database {
   _db.pragma('journal_mode = WAL')
   _db.pragma('foreign_keys = ON')
   initSchema(_db)
+  migrateSyncRecordsTable(_db)
   migrateMoneyColumnsToText(_db)
   migrateTransactionsLinkedColumn(_db)
   migrateFinancialPlanningColumns(_db)
@@ -353,6 +374,7 @@ function getDb(): Database.Database {
   migrateTaskImagesToDisk(_db)
   migrateNotesTaskIdsGoalIds(_db)
   migrateFromJson(_db)
+  reconcileSyncRecords(_db)
   trimEventLog(_db)
   createGlobalSearchIndex(_db)
   // FTS is disposable: startup also repairs an index left stale by an older build.
@@ -498,19 +520,6 @@ function syncMemorySearchRows(db: Database.Database, archivedProjects?: Set<stri
   syncSupplementalSearchIndex(db, 'memory', buildMemoryDocuments(memoryRows(db), archived))
 }
 
-// Coerce a monetary value (legacy number or current string) to a canonical
-// decimal string for storage in the TEXT columns.
-function moneyText(v: unknown): string {
-  if (typeof v === 'number' && isFinite(v)) return String(v)
-  if (typeof v === 'string') {
-    const trimmed = v.trim()
-    if (trimmed === '') return '0'
-    const n = Number(trimmed)
-    return isFinite(n) ? String(n) : '0'
-  }
-  return '0'
-}
-
 function financialMetadata(value: unknown): Record<string, unknown> {
   if (typeof value !== 'string' || !value) return {}
   try {
@@ -571,41 +580,6 @@ function parseFinancialProfiles(value: unknown): FinancialProfile[] {
           : {})
       }))
     : defaultFinancialProfiles()
-}
-
-function transactionDetails(value: unknown): FinancialTransactionDetail[] {
-  const parsed =
-    typeof value === 'string'
-      ? (() => {
-          try {
-            return JSON.parse(value)
-          } catch {
-            return []
-          }
-        })()
-      : value
-  if (!Array.isArray(parsed)) return []
-  return parsed.flatMap((detail) => {
-    if (!detail || typeof detail !== 'object') return []
-    const item = detail as Partial<FinancialTransactionDetail>
-    if (typeof item.id !== 'string' || typeof item.description !== 'string') return []
-    return [
-      {
-        id: item.id,
-        description: item.description,
-        amount: moneyText(item.amount),
-        ...(typeof item.category === 'string' && item.category.trim()
-          ? { category: item.category.trim() }
-          : {}),
-        ...(typeof item.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(item.date)
-          ? { date: item.date }
-          : {}),
-        ...(typeof item.linkedTransactionId === 'string' && item.linkedTransactionId
-          ? { linkedTransactionId: item.linkedTransactionId }
-          : {})
-      }
-    ]
-  })
 }
 
 // One-time migration for existing DBs: the money columns (price, amount,
@@ -1253,6 +1227,162 @@ function initSchema(db: Database.Database): void {
       updated_at TEXT NOT NULL
     );
   `)
+}
+
+// ── Sync versions ────────────────────────────────────────────────────────────
+//
+// One row per syncable record (see modules/sync/sync-records.ts): its version
+// (hybrid clock), the device that made it, a hash of its stored form and
+// whether it is a tombstone. A table of its own on purpose: persistAll and
+// persistDiff delete and reinsert data rows, and nothing in them touches this
+// one. Capture runs in a savepoint, so a failure here never undoes a save; the
+// next save re-captures whatever was missed, because detection is by hash.
+
+function migrateSyncRecordsTable(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sync_records (
+      kind TEXT NOT NULL,
+      id TEXT NOT NULL,
+      hlc TEXT NOT NULL,
+      device_id TEXT NOT NULL,
+      hash TEXT NOT NULL,
+      deleted INTEGER NOT NULL DEFAULT 0,
+      seq INTEGER NOT NULL,
+      PRIMARY KEY (kind, id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_sync_records_seq ON sync_records(seq);
+    CREATE INDEX IF NOT EXISTS idx_sync_records_hlc ON sync_records(hlc);
+  `)
+}
+
+let syncDeviceId: string | null = null
+
+function getSyncDeviceId(): string {
+  syncDeviceId ??= loadOrCreateDeviceId(
+    app.getPath('userData'),
+    is.dev ? SYNC_DEVICE_FILE_DEV : SYNC_DEVICE_FILE,
+    (reason) =>
+      reason === 'missing'
+        ? log.info('sync', 'device_id_created')
+        : log.warn('sync', 'device_id_reset')
+  )
+  return syncDeviceId
+}
+
+/** Write a new version for every record of `scope` whose hash changed; returns how many rows. */
+function captureSyncVersions(
+  db: Database.Database,
+  extract: () => SyncRecord[],
+  scope: SyncScope
+): number {
+  const started = Date.now()
+  const records = extract()
+  const placeholders = scope.kinds.map(() => '?').join(',')
+  const stored = (
+    db
+      .prepare(`SELECT kind, id, hash, deleted FROM sync_records WHERE kind IN (${placeholders})`)
+      .all(...scope.kinds) as {
+      kind: StoredVersion['kind']
+      id: string
+      hash: string
+      deleted: number
+    }[]
+  ).map((r) => ({ kind: r.kind, id: r.id, hash: r.hash, deleted: r.deleted === 1 }))
+  const plan = planSyncChanges(records, stored, scope)
+  if (!plan.upserts.length && !plan.deletes.length) {
+    logSlowCapture(started, records.length)
+    return 0
+  }
+
+  const state = db
+    .prepare('SELECT MAX(hlc) AS maxHlc, COALESCE(MAX(seq), 0) AS maxSeq FROM sync_records')
+    .get() as { maxHlc: string | null; maxSeq: number }
+  const rows = buildSyncRows(plan, state, getSyncDeviceId(), Date.now())
+  const write = db.prepare(
+    `INSERT INTO sync_records (kind, id, hlc, device_id, hash, deleted, seq)
+     VALUES (@kind, @id, @hlc, @deviceId, @hash, @deleted, @seq)
+     ON CONFLICT(kind, id) DO UPDATE SET
+       hlc=@hlc, device_id=@deviceId, hash=@hash, deleted=@deleted, seq=@seq`
+  )
+  for (const row of rows) write.run({ ...row, deleted: row.deleted ? 1 : 0 })
+
+  logSlowCapture(started, records.length)
+  return rows.length
+}
+
+/** Timed from before extraction: hashing every record is the expensive part. */
+function logSlowCapture(started: number, records: number): void {
+  const ms = Date.now() - started
+  if (ms > 50) log.info('sync', 'capture_slow', { ms, records })
+}
+
+/** Run a capture in a savepoint: on failure only the capture rolls back, never the caller's write. */
+function captureSafely(db: Database.Database, capture: () => unknown): void {
+  try {
+    db.transaction(capture)()
+  } catch (err) {
+    // SQLITE_FULL/IOERR/NOMEM roll back the caller's whole transaction, not just
+    // the savepoint: swallowing them would let the rest of the save autocommit.
+    if (!db.inTransaction) throw err
+    log.error('sync', 'capture_failed', { msg: errorMessage(err) })
+  }
+}
+
+/**
+ * Re-read the given memory rows and capture them: archive changes them in SQL,
+ * and an upsert keeps the stored created_at, so only the row hashes like loadData.
+ */
+function captureMemoryRows(
+  db: Database.Database,
+  ids: string[],
+  op: 'archive' | 'upsert'
+): number {
+  const select = db.prepare('SELECT * FROM memory WHERE id=?')
+  const rows = ids.flatMap((id) => {
+    const row = select.get(id) as Record<string, unknown> | undefined
+    return row ? [memRowToMemory(row)] : []
+  })
+  return captureSyncVersions(db, () => extractMemoryRecords(rows), memoryCaptureScope(op, ids))
+}
+
+function allMemories(db: Database.Database): AiMemory[] {
+  return (db.prepare('SELECT * FROM memory').all() as Record<string, unknown>[]).map(memRowToMemory)
+}
+
+/**
+ * On open: version the existing data once (first run after the update, or a
+ * first capture that failed), and always reconcile memories, whose writes are
+ * partial captures. With nothing edited every hash matches and nothing is written.
+ */
+function reconcileSyncRecords(db: Database.Database): void {
+  let data = 0
+  let memory = 0
+  try {
+    const { c } = db
+      .prepare("SELECT COUNT(*) AS c FROM sync_records WHERE kind != 'memory'")
+      .get() as { c: number }
+    if (c === 0) {
+      data = db.transaction(() =>
+        captureSyncVersions(db, () => extractDataRecords(loadData(db)), {
+          kinds: DATA_KINDS,
+          complete: true
+        })
+      )()
+    }
+  } catch (err) {
+    log.error('sync', 'reconcile_failed', { scope: 'data', msg: errorMessage(err) })
+  }
+  try {
+    memory = db.transaction(() =>
+      captureSyncVersions(db, () => extractMemoryRecords(allMemories(db)), {
+        kinds: MEMORY_KINDS,
+        complete: true
+      })
+    )()
+  } catch (err) {
+    log.error('sync', 'reconcile_failed', { scope: 'memory', msg: errorMessage(err) })
+  }
+  if (data || memory) log.info('sync', 'reconcile', { data, memory })
 }
 
 // ── JSON migration ────────────────────────────────────────────────────────────
@@ -2133,6 +2263,12 @@ export function saveData(data: unknown): void {
   db.transaction(() => {
     if (prev) persistDiff(db, prev, next)
     else persistAll(db, next)
+    captureSafely(db, () =>
+      captureSyncVersions(db, () => extractDataRecords(next), {
+        kinds: DATA_KINDS,
+        complete: true
+      })
+    )
     // Generate entity events from the diff between prev and next. The source
     // is 'user' for auto-generated events (the renderer doesn't tag saves by
     // origin); AI events ride on `entityEvents` and are appended separately.
@@ -2459,6 +2595,7 @@ export function upsertMemory(m: AiMemory): void {
   db.transaction(() => {
     writeMemoryRow(db, m)
     syncMemorySearchRows(db)
+    captureSafely(db, () => captureMemoryRows(db, [m.id], 'upsert'))
   })()
 }
 
@@ -2513,6 +2650,7 @@ export function archiveMemories(ids: string[], nowIso: string): void {
   db.transaction((list: string[]) => {
     for (const id of list) stmt.run(nowIso, nowIso, id)
     syncMemorySearchRows(db)
+    captureSafely(db, () => captureMemoryRows(db, list, 'archive'))
   })(ids)
 }
 
@@ -2522,6 +2660,7 @@ export function deleteMemory(id: string): void {
   db.transaction(() => {
     db.prepare('DELETE FROM memory WHERE id=?').run(id)
     syncMemorySearchRows(db)
+    captureSafely(db, () => captureSyncVersions(db, () => [], memoryCaptureScope('delete', [id])))
   })()
 }
 
@@ -2547,6 +2686,13 @@ export function replaceMemories(memories: AiMemory[]): void {
       writeMemoryRow(db, m)
     }
     syncMemorySearchRows(db)
+    captureSafely(db, () =>
+      captureSyncVersions(
+        db,
+        () => extractMemoryRecords(allMemories(db)),
+        memoryCaptureScope('replace', [])
+      )
+    )
   })()
 }
 
@@ -2569,10 +2715,19 @@ export function scrubMemoryConversationLinks(): number {
       'UPDATE memory SET source_conversation_id=NULL WHERE source_conversation_id IS NOT NULL'
     ).run()
     // scrubConversationLinks returns the very same object for an untouched memory.
-    memories.forEach((memory, index) => {
-      if (memory !== current[index]) writeMemoryRow(db, memory)
-    })
+    const rewritten = memories.filter((memory, index) => memory !== current[index])
+    for (const memory of rewritten) writeMemoryRow(db, memory)
     if (changed) syncMemorySearchRows(db)
+    captureSafely(db, () =>
+      captureSyncVersions(
+        db,
+        () => extractMemoryRecords(rewritten),
+        memoryCaptureScope(
+          'scrub',
+          rewritten.map((m) => m.id)
+        )
+      )
+    )
   })()
   return changed
 }

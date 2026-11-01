@@ -345,6 +345,15 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
     assíncrona e cooperativa; mantenha progresso/cancelamento. O app atualiza um
     snapshot diário ao abrir e a cada hora, com retenção dos sete mais recentes.
     Bytes dos anexos continuam fora do IPC.
+17. 🔴 **`sync_records` guarda as versões do sync e o salvamento nunca a apaga.**
+    Uma linha por registro (transação, dia de hábito, coluna… cada um o seu), com
+    relógio híbrido, aparelho, hash e tombstone; `persistAll`/`persistDiff` não a
+    tocam e a captura roda num savepoint que nunca desfaz o salvamento. O hash usa
+    a lista de campos de cada kind em `modules/sync/sync-records.ts`, sem
+    `updatedAt`: **campo novo persistido precisa entrar ali**, ou a edição dele
+    nunca ganha versão. Caminhos de código, timers, tema e perfil ativo são do
+    aparelho e nunca entram. O id do aparelho (`sync-device.json`) fica fora do
+    SQLite e de todo backup.
 
 ## Memória — fronteira de confiança
 
