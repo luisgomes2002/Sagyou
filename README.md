@@ -24,7 +24,7 @@ Baixe o instalador da sua plataforma na página de [Releases](https://github.com
 | macOS      | `.dmg`              |
 | Linux      | `.AppImage`, `.deb` |
 
-Depois de instalado, o Sagyou procura uma versão nova toda vez que abre, baixa em segundo plano e mostra **"Reiniciar e instalar"** quando ela estiver pronta. Seus dados ficam onde estão. A primeira versão com esse recurso precisa ser instalada à mão. No macOS, enquanto o app não tem assinatura da Apple, ele só avisa e abre a página do Release. Com a sincronização ligada, ela espera a atualização terminar antes de falar com a nuvem.
+Depois de instalado, o Sagyou procura uma versão nova toda vez que abre, baixa em segundo plano e mostra **"Reiniciar e instalar"** quando ela estiver pronta. Seus dados ficam onde estão. O app procura a maior versão `vX.Y.Z` publicada nos Releases (o selo "Latest" e os releases do celular não interferem). A primeira versão com esse recurso precisa ser instalada à mão. No macOS, enquanto o app não tem assinatura da Apple, ele só avisa e abre a página do Release. Com a sincronização ligada, ela espera a atualização terminar antes de falar com a nuvem.
 
 Não é preciso instalar Python, Node nem nada além do app. Para usar as sessões de código, tenha ao menos um dos CLIs (Codex, Claude Code ou OpenCode) instalado e autenticado.
 
@@ -173,6 +173,14 @@ Em **Settings → Environments** do repositório, crie o ambiente **`mobile-rele
 | `ANDROID_KEY_PASSWORD`      | a senha da chave               |
 
 Depois, rode o workflow **Android APK** (aba Actions → Run workflow, ou empurre uma tag `mobile-v*`) e baixe o artefato `sagyou-mobile-apk`. Para instalar, copie o `.apk` para o celular, abra-o e permita a instalação de apps dessa origem quando o Android pedir.
+
+### Lançar uma versão do celular
+
+1. Suba a versão do app seguindo a regra de [`docs/workflow.md`](docs/workflow.md) (SemVer): `expo.version` e `android.versionCode` no `apps/mobile/app.json`, a versão no `apps/mobile/package.json` e no `package-lock.json`. Faça o merge.
+2. Crie e envie a tag: `git tag mobile-vX.Y.Z && git push origin mobile-vX.Y.Z`. O workflow confere que a tag bate com o `app.json`, gera o APK e cria um Release **rascunho** com `sagyou-mobile-X.Y.Z.apk`.
+3. Confira o rascunho e publique-o, de preferência sem marcar "Latest" (que fica para o desktop; marcar por engano não quebra nada).
+
+O celular procura uma versão nova ao abrir (no máximo uma vez por dia) e mostra a faixa **"Versão X.Y.Z disponível"**: **Baixar** abre o APK no navegador e o Android pede para instalar por cima, sem perder o pareamento; **Agora não** esconde aquela versão. Em **Ajustes → Versão do app** aparecem a versão instalada e o botão **Procurar atualização**.
 
 > ⚠️ **Não perca o keystore.** Um APK assinado com outra chave não instala por cima do anterior: seria preciso desinstalar o app (e parear de novo).
 
