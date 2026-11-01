@@ -5,7 +5,8 @@ import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { AppShell, TAB_LABELS } from '../App'
 import { StatusBanner } from '../components/StatusBanner'
 import { PAIR_TITLE } from '../screens/PairScreen'
-import { OFFLINE_TEXT, useApp } from '../store/app'
+import { OFFLINE_TEXT, useApp, type AppServices } from '../store/app'
+import { useUpdate } from '../store/update'
 import { darkTheme, lightTheme, useTheme } from '../theme'
 
 function Probe(): React.JSX.Element {
@@ -33,6 +34,44 @@ describe('App', () => {
     )
     expect(screen.getByText(PAIR_TITLE)).toBeTruthy()
     for (const label of TAB_LABELS) expect(screen.queryByText(label)).toBeNull()
+  })
+
+  describe('procura de atualização', () => {
+    const autoCheck = jest.fn(async () => undefined)
+    beforeEach(() => {
+      autoCheck.mockClear()
+      useUpdate.getState().reset()
+      useUpdate.setState({ autoCheck })
+      const repo = { readPref: () => null, writePref: () => undefined }
+      useApp.setState({ services: { repo } as unknown as AppServices, status: null })
+    })
+    afterEach(() => useApp.setState({ services: null, readOnly: false }))
+
+    it('consulta uma vez ao abrir o app, também só leitura', async () => {
+      for (const readOnly of [false, true]) {
+        autoCheck.mockClear()
+        useApp.setState({ readOnly })
+        const view = await render(
+          <SafeAreaProvider>
+            <AppShell mode="app" />
+          </SafeAreaProvider>
+        )
+        expect(autoCheck).toHaveBeenCalledTimes(1)
+        await view.unmount()
+      }
+    })
+
+    it('não consulta antes de parear nem carregando', async () => {
+      for (const mode of ['pair', 'loading'] as const) {
+        const view = await render(
+          <SafeAreaProvider>
+            <AppShell mode={mode} />
+          </SafeAreaProvider>
+        )
+        await view.unmount()
+      }
+      expect(autoCheck).not.toHaveBeenCalled()
+    })
   })
 
   it('sem conexão e com alterações esperando, avisa no topo', async () => {

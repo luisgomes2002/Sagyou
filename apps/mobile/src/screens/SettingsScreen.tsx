@@ -1,11 +1,62 @@
 import { useState } from 'react'
-import { Alert, Pressable, ScrollView, StyleSheet, Text } from 'react-native'
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import {
+  availableText,
+  DOWNLOAD_LABEL,
+  openDownload,
+  updateDeps
+} from '../components/UpdateBanner'
 import { Button, Card, Screen } from '../components/ui'
 import { useApp } from '../store/app'
+import { useUpdate } from '../store/update'
 import { conflictsText, statusLines } from '../sync/status-text'
 import { useTheme } from '../theme'
+import { installedVersion } from '../update/installed'
 
 export const DISCONNECT_LABEL = 'Desconectar este aparelho'
+export const CHECK_UPDATE_LABEL = 'Procurar atualização'
+export const CHECKING_LABEL = 'Procurando…'
+export const LATEST_TEXT = 'Você já está na versão mais recente.'
+export const CHECK_ERROR_TEXT = 'Não foi possível verificar agora. Tente de novo mais tarde.'
+
+/** "Versão do app": what is installed, and a check on demand. */
+function VersionCard(): React.JSX.Element {
+  const theme = useTheme()
+  const repo = useApp((s) => s.services?.repo)
+  const manual = useUpdate((s) => s.manual)
+  const available = useUpdate((s) => s.available)
+  const checking = manual === 'checking'
+  return (
+    <Card>
+      <Text style={[styles.label, { color: theme.muted }]}>Versão do app</Text>
+      <Text style={{ color: theme.text }}>{`Instalada: ${installedVersion()}`}</Text>
+      <Button
+        label={checking ? CHECKING_LABEL : CHECK_UPDATE_LABEL}
+        disabled={checking || !repo}
+        onPress={() => {
+          if (repo) void useUpdate.getState().manualCheck(updateDeps(repo))
+        }}
+      />
+      <View accessibilityLiveRegion="polite" style={{ gap: 8 }}>
+        {manual === 'latest' ? <Text style={{ color: theme.text }}>{LATEST_TEXT}</Text> : null}
+        {manual === 'error' ? (
+          <Text style={{ color: theme.attention }}>{CHECK_ERROR_TEXT}</Text>
+        ) : null}
+        {manual === 'available' && available ? (
+          <>
+            <Text style={{ color: theme.text }}>{availableText(available.version)}</Text>
+            <Button
+              primary
+              label={DOWNLOAD_LABEL}
+              a11yLabel={`Baixar a versão ${available.version}`}
+              onPress={() => openDownload(available.url)}
+            />
+          </>
+        ) : null}
+      </View>
+    </Card>
+  )
+}
 
 export function SettingsScreen(): React.JSX.Element {
   const theme = useTheme()
@@ -75,6 +126,7 @@ export function SettingsScreen(): React.JSX.Element {
             </Pressable>
           ))}
         </Card>
+        <VersionCard />
         <Button danger label={DISCONNECT_LABEL} onPress={disconnect} disabled={busy} />
       </Screen>
     </ScrollView>

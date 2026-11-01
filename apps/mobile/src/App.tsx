@@ -11,6 +11,7 @@ import { ActivityIndicator, Pressable, Text, View } from 'react-native'
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context'
 import { bootstrap } from './bootstrap'
 import { StatusBanner } from './components/StatusBanner'
+import { UpdateBanner } from './components/UpdateBanner'
 import { LockGate } from './lock/LockGate'
 import { FinanceScreen } from './screens/FinanceScreen'
 import { HabitsScreen } from './screens/HabitsScreen'
@@ -139,6 +140,7 @@ export function AppShell({ mode }: { mode: AppMode }): React.JSX.Element {
   return (
     <NavigationContainer theme={navigationTheme(theme)}>
       <StatusBanner />
+      <UpdateBanner />
       <Stack.Navigator>
         <Stack.Screen name="Abas" component={TabsScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Ajustes" component={SettingsScreen} />
