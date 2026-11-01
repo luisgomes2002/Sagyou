@@ -6,6 +6,7 @@ import { ScrollView, StyleSheet, Text } from 'react-native'
 import { Button, Chip, Field, Row, Screen } from '../../components/ui'
 import { useApp } from '../../store/app'
 import { DateField } from '../../components/DateField'
+import { useEditorOpen } from '../../store/editing'
 import { PRIORITY_LABELS, createSprint, createTask, updateTask } from '../../store/tasks'
 import { useTheme } from '../../theme'
 
@@ -29,6 +30,7 @@ export function TaskForm({
   onDone
 }: TaskFormProps): React.JSX.Element {
   const theme = useTheme()
+  useEditorOpen()
   const app = useApp((s) => s.state)
   const readOnly = useApp((s) => s.readOnly)
   const commit = useApp((s) => s.commit)
@@ -86,7 +88,7 @@ export function TaskForm({
   }
 
   return (
-    <ScrollView>
+    <ScrollView contentContainerStyle={{ paddingBottom: 96 }}>
       <Screen>
         <Field label="Título" value={title} onChangeText={setTitle} />
         <Field label="Descrição" value={description} onChangeText={setDescription} multiline />

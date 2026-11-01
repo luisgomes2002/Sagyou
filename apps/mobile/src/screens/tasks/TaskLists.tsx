@@ -12,6 +12,8 @@ import { awaitingFirstSync, useApp } from '../../store/app'
 import { completeFromList } from '../../store/complete'
 import {
   UPCOMING_SECTION_TITLES,
+  projectA11yLabel,
+  taskA11yLabel,
   projectProgress,
   todaySummary,
   todayText,
@@ -67,7 +69,7 @@ function TaskRow({
     <SwipeToComplete enabled={canComplete} onComplete={() => completeFromList(task.id)}>
       <ListItem
         title={task.title}
-        a11yLabel={task.title}
+        a11yLabel={taskA11yLabel(task, today, projectName)}
         onPress={onOpen}
         a11yActions={canComplete ? [{ name: 'concluir', label: 'Concluir' }] : undefined}
         onA11yAction={(e) => {
@@ -136,7 +138,7 @@ export function ProjectList({
             <ListItem
               key={p.id}
               title={p.name}
-              a11yLabel={p.name}
+              a11yLabel={projectA11yLabel(p.name, progress)}
               onPress={() => onOpen(p.id)}
               left={<View style={[styles.dot, { backgroundColor: p.color }]} />}
               subtitle={`${progress.open} ${progress.open === 1 ? 'aberta' : 'abertas'}`}

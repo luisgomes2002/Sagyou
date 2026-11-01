@@ -8,6 +8,7 @@ import { openNodeDb } from '../../data/__tests__/node-db'
 import { T, project, seedApp } from '../../__tests__/seed'
 import { type AppServices, useApp } from '../../store/app'
 import { NO_DONE_COLUMN_TEXT } from '../../store/tasks'
+import { useEditing } from '../../store/editing'
 import { useUndo } from '../../store/undo'
 import { lightTheme } from '../../theme'
 import { NEW_SPRINT, TaskForm } from '../tasks/TaskForm'
@@ -37,6 +38,9 @@ function seed(extra: Partial<MobileState> = {}, readOnly = false): ReturnType<ty
   return seedApp({ projects: [project('p1', 'Sagyou')], sprints, ...extra }, { readOnly })
 }
 
+/** A task row's label starts with its title (then priority, due date, project…). */
+const row = (title: string): RegExp => new RegExp(`^${title}(,|$)`)
+
 const color = (testID: string): string | undefined =>
   StyleSheet.flatten(screen.getByTestId(testID).props.style)?.color
 
@@ -52,6 +56,9 @@ describe('Tarefas no celular', () => {
     await render(<ProjectList onOpen={jest.fn()} onUpcoming={onUpcoming} today="2026-11-04" />)
     expect(screen.getByText('1 para hoje · 1 atrasada')).toBeTruthy()
     await fireEvent.press(screen.getByRole('button', { name: /^Hoje/ }))
+    expect(
+      screen.getByRole('button', { name: 'Sagyou, 2 abertas, 0 de 2 concluídas' })
+    ).toBeTruthy()
     expect(onUpcoming).toHaveBeenCalled()
   })
 
@@ -84,13 +91,13 @@ describe('Tarefas no celular', () => {
     const chips = screen
       .getAllByRole('button')
       .map((b) => b.props.accessibilityLabel as string)
-      .filter((l) => / · \d+$/.test(l))
+      .filter((l) => / · \d+$/.test(l ?? ''))
     expect(chips).toEqual(['A fazer · 1', 'Fazendo · 1', 'Done · 0'])
     expect(screen.getByRole('button', { name: 'A fazer · 1' })).toBeSelected()
-    expect(screen.getByRole('button', { name: 'a' })).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'b' })).toBeNull()
+    expect(screen.getByRole('button', { name: row('a') })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: row('b') })).toBeNull()
     await fireEvent.press(screen.getByRole('button', { name: 'Fazendo · 1' }))
-    expect(screen.getByRole('button', { name: 'b' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: row('b') })).toBeTruthy()
   })
 
   it('prazo atrasado em vermelho e de hoje em atenção', async () => {
@@ -119,7 +126,7 @@ describe('Tarefas no celular', () => {
         today="2026-11-04"
       />
     )
-    await fireEvent(screen.getByRole('button', { name: 'a' }), 'accessibilityAction', {
+    await fireEvent(screen.getByRole('button', { name: row('a') }), 'accessibilityAction', {
       nativeEvent: { actionName: 'concluir' }
     })
     expect(useApp.getState().state.tasks[0].columnId).toBe('p1-done')
@@ -142,7 +149,7 @@ describe('Tarefas no celular', () => {
         today="2026-11-04"
       />
     )
-    await fireEvent(screen.getByRole('button', { name: 'a' }), 'accessibilityAction', {
+    await fireEvent(screen.getByRole('button', { name: row('a') }), 'accessibilityAction', {
       nativeEvent: { actionName: 'concluir' }
     })
     expect(useUndo.getState()).toMatchObject({ message: NO_DONE_COLUMN_TEXT, canUndo: false })
@@ -161,7 +168,9 @@ describe('Tarefas no celular', () => {
         today="2026-11-04"
       />
     )
-    expect(screen.getByRole('button', { name: 'a' }).props.accessibilityActions ?? []).toEqual([])
+    expect(screen.getByRole('button', { name: row('a') }).props.accessibilityActions ?? []).toEqual(
+      []
+    )
   })
 
   it('Próximas mostra só as seções com tarefas, em ordem', async () => {
@@ -178,7 +187,15 @@ describe('Tarefas no celular', () => {
       'Amanhã',
       'Mais tarde'
     ])
-    expect(screen.getByRole('button', { name: 'vencida' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: row('vencida') })).toBeTruthy()
+  })
+
+  it('o formulário completo esconde o (+) enquanto está aberto', async () => {
+    seed()
+    const view = await render(<TaskForm projectId="p1" onDone={jest.fn()} />)
+    expect(useEditing.getState().count).toBe(1)
+    await view.unmount()
+    expect(useEditing.getState().count).toBe(0)
   })
 
   it('a sprint vem preenchida com a aberta mais recente', async () => {

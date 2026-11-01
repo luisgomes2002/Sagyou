@@ -47,6 +47,8 @@ describe('PairScreen', () => {
     expect(screen.getByRole('button', { name: 'Ler QR' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Colar código' })).toBeTruthy()
     expect(PAIR_STEPS).toEqual(['Boas-vindas', 'No PC', 'Conectando'])
+    // With 200% text or the keyboard up, the code step must scroll.
+    expect(screen.getByTestId('pair-scroll').props.keyboardShouldPersistTaps).toBe('handled')
   })
 
   it('colar um código pareia substituindo os dados e mostra o download', async () => {

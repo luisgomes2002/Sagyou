@@ -6,8 +6,10 @@ import {
   createSprint,
   createTask,
   moveTask,
+  projectA11yLabel,
   projectProgress,
   revertCompletion,
+  taskA11yLabel,
   todaySummary,
   todayText,
   updateTask,
@@ -29,6 +31,35 @@ const due = (id: string, dueDate: string, columnId = 'todo'): TaskT =>
     updatedAt: T,
     dueDate
   }) as TaskT
+
+describe('o que o TalkBack lê', () => {
+  it('a linha da tarefa diz prioridade, prazo, projeto e tags', () => {
+    const t = {
+      ...due('Pagar conta', '2026-11-03'),
+      priority: 'urgent',
+      tags: ['casa', 'contas']
+    } as TaskT
+    expect(taskA11yLabel(t, '2026-11-04', 'Casa')).toBe(
+      'Pagar conta, prioridade urgente, atrasada desde 03/11/2026, projeto Casa, tags casa, contas'
+    )
+    expect(taskA11yLabel(due('Ler', '2026-11-04'), '2026-11-04')).toBe('Ler, vence hoje')
+    expect(taskA11yLabel({ ...due('Sem', ''), dueDate: undefined } as TaskT, '2026-11-04')).toBe(
+      'Sem'
+    )
+    expect(taskA11yLabel(due('Depois', '2026-11-20'), '2026-11-04')).toBe(
+      'Depois, prazo 20/11/2026'
+    )
+  })
+
+  it('a linha do projeto diz abertas e o progresso', () => {
+    expect(projectA11yLabel('Casa', { open: 4, done: 2, total: 6 })).toBe(
+      'Casa, 4 abertas, 2 de 6 concluídas'
+    )
+    expect(projectA11yLabel('Casa', { open: 1, done: 0, total: 1 })).toBe(
+      'Casa, 1 aberta, 0 de 1 concluídas'
+    )
+  })
+})
 
 describe('Próximas e resumo de hoje', () => {
   // 2026-11-04 is a Wednesday; that week ends on Sunday 2026-11-08.

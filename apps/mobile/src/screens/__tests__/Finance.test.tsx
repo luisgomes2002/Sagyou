@@ -87,6 +87,20 @@ describe('Finanças no celular', () => {
     expect(screen.getByTestId('saidas')).toHaveTextContent(/80,00/)
   })
 
+  it('com fonte grande os valores encolhem até 0,85 e a descrição quebra', async () => {
+    seed()
+    await render(<FinanceScreen today="2026-10-31" />)
+    for (const id of ['saldo', 'entradas', 'saidas']) {
+      const el = screen.getByTestId(id)
+      expect([id, el.props.adjustsFontSizeToFit, el.props.minimumFontScale]).toEqual([
+        id,
+        true,
+        0.85
+      ])
+    }
+    expect(screen.getByText('Almoço').props.numberOfLines).toBe(2)
+  })
+
   it('saldo negativo fica vermelho', async () => {
     seed({ [lastTablePref('personal')]: 'cartao' })
     await render(<FinanceScreen today="2026-10-31" />)

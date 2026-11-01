@@ -71,6 +71,9 @@ export function FinanceScreen({ today = todayLocalISO() }: { today?: string }): 
           <Text style={[styles.caption, { color: theme.muted }]}>Saldo atual</Text>
           <Text
             testID="saldo"
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.85}
             style={[styles.balance, { color: balance.gte(0) ? theme.text : theme.red }]}
           >
             {formatCurrency(balance, table.currency)}
@@ -78,13 +81,25 @@ export function FinanceScreen({ today = todayLocalISO() }: { today?: string }): 
           <View style={styles.totals}>
             <View style={styles.total}>
               <Text style={[styles.caption, { color: theme.muted }]}>Entradas do mês</Text>
-              <Text testID="entradas" style={[styles.value, { color: theme.green }]}>
+              <Text
+                testID="entradas"
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.85}
+                style={[styles.value, { color: theme.green }]}
+              >
                 {formatCurrency(totals.income, table.currency)}
               </Text>
             </View>
             <View style={styles.total}>
               <Text style={[styles.caption, { color: theme.muted }]}>Saídas do mês</Text>
-              <Text testID="saidas" style={[styles.value, { color: theme.red }]}>
+              <Text
+                testID="saidas"
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.85}
+                style={[styles.value, { color: theme.red }]}
+              >
                 {formatCurrency(totals.expense, table.currency)}
               </Text>
             </View>
@@ -127,7 +142,7 @@ export function FinanceScreen({ today = todayLocalISO() }: { today?: string }): 
                     <Icon size={18} color={theme.onSurfaceIcon} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={{ color: theme.text, fontSize: FONT.bodyLg }} numberOfLines={1}>
+                    <Text style={{ color: theme.text, fontSize: FONT.bodyLg }} numberOfLines={2}>
                       {tx.description || tx.category || '—'}
                     </Text>
                     {tx.category && tx.description ? (

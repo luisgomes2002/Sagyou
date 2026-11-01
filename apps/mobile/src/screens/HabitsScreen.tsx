@@ -2,8 +2,8 @@ import { computeHabitSummary } from '@sagyou/core/habits'
 import { addDays, format } from 'date-fns'
 import * as Haptics from 'expo-haptics'
 import { Repeat } from 'lucide-react-native'
-import { useState } from 'react'
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { useEffect, useState } from 'react'
+import { AppState, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { Skeleton } from '../components/Skeleton'
 import { ACTION_ICONS } from '../components/icons'
 import { Card, EmptyState, Screen } from '../components/ui'
@@ -51,7 +51,16 @@ export function HabitsScreen({ today: todayProp }: { today?: Date }): React.JSX.
   const habits = useApp((s) => s.state.habits)
   const readOnly = useApp((s) => s.readOnly)
   const waiting = useApp((s) => awaitingFirstSync(s.status))
-  const [today] = useState(() => todayProp ?? new Date())
+  // The tab stays mounted for days: "Hoje" is read from the clock on every
+  // render, and coming back to the app re-renders.
+  const [, setWoke] = useState(0)
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (st) => {
+      if (st === 'active') setWoke((n) => n + 1)
+    })
+    return () => sub.remove()
+  }, [])
+  const today = todayProp ?? new Date()
   const week = lastWeek(today)
   const todayIso = week[6].iso
   const summary = computeHabitSummary(habits, today)
@@ -116,6 +125,8 @@ export function HabitsScreen({ today: todayProp }: { today?: Date }): React.JSX.
                       accessibilityLabel={`${habit.name}, ${day.spoken}`}
                       accessibilityState={{ checked: done, disabled: readOnly }}
                       disabled={readOnly}
+                      // 7 days must fit a 360 dp phone: 44 dp drawn, 48 dp touchable.
+                      hitSlop={{ left: 2, right: 2 }}
                       onPress={() => toggle(habit.id, day.iso)}
                       style={[
                         styles.day,
@@ -125,10 +136,12 @@ export function HabitsScreen({ today: todayProp }: { today?: Date }): React.JSX.
                         }
                       ]}
                     >
-                      <Text style={{ color: done ? theme.text : theme.muted, fontSize: 11 }}>
+                      <Text
+                        style={{ color: done ? theme.text : theme.muted, fontSize: FONT.caption }}
+                      >
                         {day.label}
                       </Text>
-                      <Text style={{ color: done ? theme.text : theme.muted, fontSize: 13 }}>
+                      <Text style={{ color: done ? theme.text : theme.muted, fontSize: FONT.body }}>
                         {day.day}
                       </Text>
                     </Pressable>

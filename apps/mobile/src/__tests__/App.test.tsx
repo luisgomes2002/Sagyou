@@ -61,6 +61,38 @@ describe('App', () => {
     expect(screen.queryByRole('button', { name: 'Criar' })).toBeNull()
   })
 
+  // Review: the (+) sat on top of the note editor's "Salvar".
+  it('o (+) some enquanto uma nota está em edição', async () => {
+    seedApp({
+      projects: [project('p1', 'Sagyou')],
+      notes: [
+        {
+          id: 'n1',
+          projectId: 'p1',
+          content: 'Ideia',
+          color: '#fef08a',
+          x: 0,
+          y: 0,
+          width: 200,
+          height: 150,
+          createdAt: '2026-10-01T00:00:00.000Z',
+          updatedAt: '2026-10-01T00:00:00.000Z'
+        }
+      ]
+    })
+    await render(
+      <SafeAreaProvider>
+        <AppShell mode="app" />
+      </SafeAreaProvider>
+    )
+    await fireEvent.press(screen.getByTestId('tab-Notas'))
+    expect(screen.getByRole('button', { name: 'Criar' })).toBeTruthy()
+    await fireEvent.press(screen.getByRole('button', { name: 'Ideia' }))
+    expect(screen.queryByRole('button', { name: 'Criar' })).toBeNull()
+    await fireEvent.press(screen.getByRole('button', { name: 'Cancelar' }))
+    expect(screen.getByRole('button', { name: 'Criar' })).toBeTruthy()
+  })
+
   it('somente leitura: o (+) fica desabilitado e a faixa explica', async () => {
     seedApp({ projects: [project('p1', 'Sagyou')] }, { readOnly: true })
     await render(

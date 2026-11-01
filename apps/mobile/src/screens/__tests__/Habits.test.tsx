@@ -1,5 +1,6 @@
-import { fireEvent, render, screen } from '@testing-library/react-native'
+import { act, fireEvent, render, screen } from '@testing-library/react-native'
 import * as Haptics from 'expo-haptics'
+import { StyleSheet } from 'react-native'
 import { emptyState, type MobileState } from '../../data/state'
 import { T, seedApp } from '../../__tests__/seed'
 import { useApp } from '../../store/app'
@@ -95,6 +96,13 @@ describe('hábitos no celular', () => {
       'Água, sexta, 30/10',
       'Água, sábado, 31/10'
     ])
+    for (const day of screen
+      .getAllByRole('checkbox')
+      .filter((d) => !d.props.accessibilityLabel.endsWith(', hoje'))) {
+      const style = StyleSheet.flatten(day.props.style)
+      const slop = day.props.hitSlop ?? {}
+      expect((style.width ?? 0) + (slop.left ?? 0) + (slop.right ?? 0)).toBeGreaterThanOrEqual(48)
+    }
     await fireEvent.press(screen.getByLabelText('Água, quinta, 29/10'))
     expect(useApp.getState().state.habits[0].completions).toEqual(['2026-10-29'])
   })
@@ -106,5 +114,26 @@ describe('hábitos no celular', () => {
     expect(useApp.getState().state.habits[0].completions).toEqual([])
     expect(save).not.toHaveBeenCalled()
     expect(useUndo.getState().message).toBeNull()
+  })
+
+  // Review: the tab stays mounted for days; "Hoje" must follow the clock.
+  it('"Hoje" acompanha o relógio mesmo com a aba montada desde ontem', async () => {
+    jest.useFakeTimers({ now: new Date(2026, 9, 31, 23, 0) })
+    try {
+      seed([habit('h1', 'Ler')])
+      await render(<HabitsScreen />)
+      jest.setSystemTime(new Date(2026, 10, 1, 8, 0))
+      // Any re-render (here: another habit synced in) must use the new day.
+      await act(async () => {
+        const app = useApp.getState()
+        useApp.setState({
+          state: { ...app.state, habits: [...app.state.habits, habit('h2', 'Correr')] }
+        })
+      })
+      await fireEvent.press(screen.getByRole('checkbox', { name: 'Ler, hoje' }))
+      expect(useApp.getState().state.habits[0].completions).toEqual(['2026-11-01'])
+    } finally {
+      jest.useRealTimers()
+    }
   })
 })

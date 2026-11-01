@@ -17,6 +17,7 @@ import { StatusBanner } from './components/StatusBanner'
 import { TabIcon } from './components/TabIcon'
 import { ACTION_ICONS } from './components/icons'
 import { Fab, Snackbar } from './components/ui'
+import { useEditing } from './store/editing'
 import { useUndo } from './store/undo'
 import { MIN_TOUCH, SPACE } from './theme'
 import { LockGate } from './lock/LockGate'
@@ -113,12 +114,13 @@ function TabPage({ label }: { label: (typeof TAB_LABELS)[number] }): React.JSX.E
   const openCreate = useContext(OpenCreate)
   const readOnly = useApp((s) => s.readOnly)
   const notice = useUndo((s) => s.message)
+  const editing = useEditing((s) => s.count > 0)
   return (
     <View style={styles.page}>
       <StatusBanner />
       <View style={styles.page}>{Content ? <Content /> : <Placeholder title={label} />}</View>
       <View pointerEvents="box-none" style={styles.overlay}>
-        {FAB_TABS.has(label) ? (
+        {FAB_TABS.has(label) && !editing ? (
           <View style={styles.fab}>
             <Fab a11yLabel="Criar" onPress={openCreate} disabled={readOnly} />
           </View>

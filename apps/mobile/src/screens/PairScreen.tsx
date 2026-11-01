@@ -3,7 +3,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera'
 import * as Device from 'expo-device'
 import { useRef, useState } from 'react'
 import { ScanQrCode } from 'lucide-react-native'
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native'
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { AppMark } from '../components/AppMark'
 import { Button, Field, Screen } from '../components/ui'
 import { useApp } from '../store/app'
@@ -142,54 +142,57 @@ export function PairScreen(): React.JSX.Element {
     )
 
   return (
-    <Screen>
-      <StepHeader step={2} />
-      <Text accessibilityRole="header" style={[styles.title, { color: theme.text }]}>
-        {PAIR_STEPS[1]}
-      </Text>
-      <Text style={[styles.lead, { color: theme.muted }]}>{ON_PC_TEXT}</Text>
-      <Field label="Nome deste aparelho" value={name} onChangeText={setName} maxLength={80} />
-      {scanning && permission?.granted ? (
-        <CameraView
-          style={styles.camera}
-          barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-          onBarcodeScanned={({ data }) => {
-            if (used.current) return
-            used.current = true
-            setScanning(false)
-            void join(data)
-          }}
-        />
-      ) : (
-        <Button
-          variant="primary"
-          label="Ler QR"
-          icon={ScanQrCode}
-          onPress={async () => {
-            const granted = permission?.granted || (await requestPermission()).granted
-            if (granted) setScanning(true)
-            else setError('Sem permissão para a câmera. Use "Colar código".')
-          }}
-        />
-      )}
-      <Field
-        label="Código de pareamento"
-        value={code}
-        onChangeText={setCode}
-        autoCapitalize="none"
-        autoCorrect={false}
-        // The code holds the sync key: keep it out of keyboard learning and autofill.
-        keyboardType="visible-password"
-        importantForAutofill="no"
-        multiline
-      />
-      <Button label="Colar código" onPress={() => void join(code)} disabled={!code.trim()} />
-      {error ? (
-        <Text accessibilityRole="alert" style={{ color: theme.red, fontSize: FONT.body }}>
-          {error}
+    // With 200% text or the keyboard up the code step is taller than the screen.
+    <ScrollView testID="pair-scroll" keyboardShouldPersistTaps="handled">
+      <Screen>
+        <StepHeader step={2} />
+        <Text accessibilityRole="header" style={[styles.title, { color: theme.text }]}>
+          {PAIR_STEPS[1]}
         </Text>
-      ) : null}
-    </Screen>
+        <Text style={[styles.lead, { color: theme.muted }]}>{ON_PC_TEXT}</Text>
+        <Field label="Nome deste aparelho" value={name} onChangeText={setName} maxLength={80} />
+        {scanning && permission?.granted ? (
+          <CameraView
+            style={styles.camera}
+            barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+            onBarcodeScanned={({ data }) => {
+              if (used.current) return
+              used.current = true
+              setScanning(false)
+              void join(data)
+            }}
+          />
+        ) : (
+          <Button
+            variant="primary"
+            label="Ler QR"
+            icon={ScanQrCode}
+            onPress={async () => {
+              const granted = permission?.granted || (await requestPermission()).granted
+              if (granted) setScanning(true)
+              else setError('Sem permissão para a câmera. Use "Colar código".')
+            }}
+          />
+        )}
+        <Field
+          label="Código de pareamento"
+          value={code}
+          onChangeText={setCode}
+          autoCapitalize="none"
+          autoCorrect={false}
+          // The code holds the sync key: keep it out of keyboard learning and autofill.
+          keyboardType="visible-password"
+          importantForAutofill="no"
+          multiline
+        />
+        <Button label="Colar código" onPress={() => void join(code)} disabled={!code.trim()} />
+        {error ? (
+          <Text accessibilityRole="alert" style={{ color: theme.red, fontSize: FONT.body }}>
+            {error}
+          </Text>
+        ) : null}
+      </Screen>
+    </ScrollView>
   )
 }
 

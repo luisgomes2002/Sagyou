@@ -1,4 +1,5 @@
 import { isDoneColumn } from '@sagyou/core/columns'
+import { formatDateBR } from '@sagyou/core/dates'
 import { upcomingTasks } from '@sagyou/core/dueDates'
 import { addSprint } from '@sagyou/core/sprints'
 import { randomUUID } from '@sagyou/core/sync/bytes'
@@ -204,6 +205,35 @@ export function projectProgress(
   const tasks = state.tasks.filter((t) => t.projectId === projectId)
   const done = tasks.filter((t) => doneColumns.has(t.columnId)).length
   return { open: tasks.length - done, done, total: tasks.length }
+}
+
+const PRIORITY_SPOKEN: Partial<Record<Priority, string>> = {
+  high: 'prioridade alta',
+  urgent: 'prioridade urgente'
+}
+
+/** What TalkBack reads for a task row: everything the row shows, not just the title. */
+export function taskA11yLabel(task: Task, today: string, projectName?: string): string {
+  const parts = [task.title]
+  const priority = PRIORITY_SPOKEN[task.priority]
+  if (priority) parts.push(priority)
+  if (task.dueDate) {
+    const br = formatDateBR(task.dueDate)
+    if (task.dueDate < today) parts.push(`atrasada desde ${br}`)
+    else if (task.dueDate === today) parts.push('vence hoje')
+    else parts.push(`prazo ${br}`)
+  }
+  if (projectName) parts.push(`projeto ${projectName}`)
+  if (task.tags?.length) parts.push(`tags ${task.tags.join(', ')}`)
+  return parts.join(', ')
+}
+
+/** What TalkBack reads for a project row: its open tasks and the progress bar. */
+export function projectA11yLabel(
+  name: string,
+  { open, done, total }: { open: number; done: number; total: number }
+): string {
+  return `${name}, ${open} ${open === 1 ? 'aberta' : 'abertas'}, ${done} de ${total} concluídas`
 }
 
 export function createSprint(

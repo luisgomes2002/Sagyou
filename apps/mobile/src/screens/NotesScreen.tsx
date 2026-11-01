@@ -6,11 +6,18 @@ import { Skeleton } from '../components/Skeleton'
 import { closeOrConfirm } from '../components/discard'
 import { Button, EmptyState, Field, Screen } from '../components/ui'
 import { awaitingFirstSync, useApp } from '../store/app'
+import { useEditorOpen } from '../store/editing'
 import { editedText, projectNotes, updateNoteContent } from '../store/notes'
 import { PREF_QUICK_PROJECT, activeProjects, quickProject } from '../store/quick'
 import { FONT, MIN_TOUCH, RADIUS, SPACE, useTheme } from '../theme'
 
 type Editing = { id: string; original: string; content: string } | null
+
+/** Mounted with the editor: hides the tab's (+) over the footer. */
+function EditorOpen(): null {
+  useEditorOpen()
+  return null
+}
 
 /** Notes of one project at a time, as readable cards; tap to edit the text full screen. */
 export function NotesScreen({ now: nowProp }: { now?: Date }): React.JSX.Element {
@@ -51,6 +58,7 @@ export function NotesScreen({ now: nowProp }: { now?: Date }): React.JSX.Element
     }
     return (
       <View style={[styles.editor, { backgroundColor: theme.bg }]}>
+        <EditorOpen />
         <ScrollView contentContainerStyle={styles.editorBody} keyboardShouldPersistTaps="handled">
           <Field
             label="Nota"
