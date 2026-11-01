@@ -5,6 +5,7 @@ import type { RecordRepo } from '../data/records'
 import type { SearchHit } from '../data/search'
 import { emptyState, type MobileState } from '../data/state'
 import type { SyncRuntime } from '../sync/runtime'
+import { useUpdate } from './update'
 
 export const DISCONNECTED_TEXT = 'Este aparelho foi desconectado da sincronização'
 export const OFFLINE_TEXT = 'Sem conexão: as alterações ficam guardadas'
@@ -88,6 +89,8 @@ export const useApp = create<AppStore>((set, get) => ({
   },
 
   wiped() {
+    // A dismissed version from before the wipe must not hide the banner after pairing again.
+    useUpdate.getState().reset()
     set({
       mode: 'pair',
       state: emptyState(),
