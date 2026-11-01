@@ -52,6 +52,14 @@ describe('configuração de release do atualizador', () => {
     expect(workflow).toMatch(/require\('\.\/apps\/desktop\/package\.json'\)\.version/)
   })
 
+  it('a versão do desktop é a mesma no package.json e no package-lock', () => {
+    const version = (JSON.parse(read('package.json')) as { version: string }).version
+    const lock = JSON.parse(readRepo('package-lock.json')) as {
+      packages: Record<string, { version?: string }>
+    }
+    expect(lock.packages['apps/desktop'].version).toBe(version)
+  })
+
   it('não deixa o electron-builder publicar sozinho', () => {
     for (const script of ['build:win', 'build:mac', 'build:linux']) {
       expect(pkg.scripts[script]).toContain('--publish never')
