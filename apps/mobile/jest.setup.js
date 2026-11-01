@@ -28,3 +28,21 @@ jest.mock('expo-local-authentication', () => ({
 jest.mock('expo-screen-capture', () => ({
   preventScreenCaptureAsync: jest.fn(async () => undefined)
 }))
+require('react-native-gesture-handler/jestSetup')
+jest.mock('react-native-reanimated', () => require('react-native-reanimated/mock'))
+jest.mock('expo-haptics', () => ({
+  ImpactFeedbackStyle: { Light: 'light', Medium: 'medium', Heavy: 'heavy' },
+  NotificationFeedbackType: { Success: 'success', Warning: 'warning', Error: 'error' },
+  impactAsync: jest.fn(async () => undefined),
+  notificationAsync: jest.fn(async () => undefined),
+  selectionAsync: jest.fn(async () => undefined)
+}))
+// The native date dialog: a View the tests can find and drive through its props.
+jest.mock('@react-native-community/datetimepicker', () => {
+  const { createElement } = require('react')
+  const { View } = require('react-native')
+  return {
+    __esModule: true,
+    default: (props) => createElement(View, { testID: 'date-picker', ...props })
+  }
+})

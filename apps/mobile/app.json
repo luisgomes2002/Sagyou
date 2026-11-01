@@ -28,7 +28,9 @@
           "recordAudioAndroid": false
         }
       ],
-      "./plugins/withReleaseSigning"
+      "./plugins/withReleaseSigning",
+      "@react-native-community/datetimepicker",
+      "expo-splash-screen"
     ]
   }
 }
