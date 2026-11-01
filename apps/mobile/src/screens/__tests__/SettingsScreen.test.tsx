@@ -1,11 +1,21 @@
-import { act, fireEvent, render, screen } from '@testing-library/react-native'
+import { act, fireEvent, render, screen, within } from '@testing-library/react-native'
 import { Linking } from 'react-native'
-import { useApp, type AppServices } from '../../store/app'
+import { seedApp } from '../../__tests__/seed'
+import { useApp } from '../../store/app'
 import { useUpdate } from '../../store/update'
 import { DOWNLOAD_PREFIX } from '../../update/check'
 import { installedVersion } from '../../update/installed'
 import { conflictsText } from '../../sync/status-text'
-import { SettingsScreen } from '../SettingsScreen'
+import { DISCONNECT_LABEL, SettingsScreen } from '../SettingsScreen'
+
+const STATUS = {
+  state: 'ok' as const,
+  lastSyncAt: Date.now(),
+  pendingCount: 0,
+  paused: null,
+  deviceName: 'Pixel',
+  conflictCount: 1
+}
 
 // Derived from app.json, so bumping the app's version never breaks these tests.
 const NEXT = ((v: string): string => {
@@ -15,30 +25,43 @@ const NEXT = ((v: string): string => {
 
 describe('SettingsScreen', () => {
   it('com um conflito aberto pede para resolver no PC', async () => {
-    useApp.setState({
-      readOnly: false,
-      status: {
-        state: 'ok',
-        lastSyncAt: Date.now(),
-        pendingCount: 0,
-        paused: null,
-        deviceName: 'Pixel',
-        conflictCount: 1
-      }
-    })
+    seedApp()
+    useApp.setState({ status: STATUS })
     await render(<SettingsScreen />)
     expect(screen.getByText('1 conflito — resolva no PC')).toBeTruthy()
     expect(conflictsText(3)).toBe('3 conflitos — resolva no PC')
   })
 
+  it('as seções aparecem na ordem e desconectar fica na zona de perigo', async () => {
+    seedApp({
+      financialProfiles: [
+        { id: 'personal', name: 'Minhas finanças' },
+        { id: 'trabalho', name: 'Trabalho' }
+      ] as never
+    })
+    useApp.setState({ status: STATUS })
+    await render(<SettingsScreen />)
+    expect(screen.getAllByRole('header').map((h) => h.props.children)).toEqual([
+      'Este aparelho',
+      'Sincronização',
+      'Perfil financeiro',
+      'Versão do app',
+      'Zona de perigo'
+    ])
+    const danger = screen.getByTestId('zona-de-perigo')
+    expect(within(danger).getByRole('button', { name: DISCONNECT_LABEL })).toBeTruthy()
+    expect(screen.getByRole('radio', { name: 'Minhas finanças' })).toBeChecked()
+    expect(screen.getByRole('radio', { name: 'Trabalho' })).not.toBeChecked()
+  })
+
   describe('Versão do app', () => {
     const URL_NEXT = `${DOWNLOAD_PREFIX}mobile-v${NEXT}/sagyou-mobile-${NEXT}.apk`
     let finish: (r: Response | Error) => void = () => undefined
+    const realFetch = globalThis.fetch
 
     beforeEach(() => {
       useUpdate.getState().reset()
-      const repo = { readPref: () => null, writePref: () => undefined }
-      useApp.setState({ services: { repo } as unknown as AppServices, status: null })
+      seedApp()
       globalThis.fetch = jest.fn(
         () =>
           new Promise<Response>((resolve, reject) => {
@@ -46,11 +69,9 @@ describe('SettingsScreen', () => {
           })
       ) as unknown as typeof fetch
     })
-    const realFetch = globalThis.fetch
     afterEach(() => {
       globalThis.fetch = realFetch
       jest.restoreAllMocks()
-      useApp.setState({ services: null })
     })
 
     const body = (b: unknown): Response =>
@@ -58,14 +79,12 @@ describe('SettingsScreen', () => {
 
     it('mostra a versão instalada', async () => {
       await render(<SettingsScreen />)
-      expect(screen.getByText('Versão do app')).toBeTruthy()
       expect(screen.getByText(`Instalada: ${installedVersion()}`)).toBeTruthy()
     })
 
     it('procura, desabilita enquanto procura e diz que está atualizado', async () => {
       await render(<SettingsScreen />)
       await fireEvent.press(screen.getByText('Procurar atualização'))
-      expect(screen.getByText('Procurando…')).toBeTruthy()
       expect(screen.getByRole('button', { name: 'Procurando…' })).toBeDisabled()
       await act(async () => finish(body([])))
       expect(screen.getByText('Você já está na versão mais recente.')).toBeTruthy()
@@ -84,24 +103,15 @@ describe('SettingsScreen', () => {
       const open = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined)
       await render(<SettingsScreen />)
       await fireEvent.press(screen.getByText('Procurar atualização'))
-      await act(async () =>
-        finish(
-          body([
-            {
-              tag_name: `mobile-v${NEXT}`,
-              draft: false,
-              prerelease: false,
-              assets: [
-                {
-                  name: `sagyou-mobile-${NEXT}.apk`,
-                  state: 'uploaded',
-                  browser_download_url: URL_NEXT
-                }
-              ]
-            }
-          ])
-        )
-      )
+      const release = {
+        tag_name: `mobile-v${NEXT}`,
+        draft: false,
+        prerelease: false,
+        assets: [
+          { name: `sagyou-mobile-${NEXT}.apk`, state: 'uploaded', browser_download_url: URL_NEXT }
+        ]
+      }
+      await act(async () => finish(body([release])))
       expect(screen.getByText(`Versão ${NEXT} disponível`)).toBeTruthy()
       await fireEvent.press(screen.getByLabelText(`Baixar a versão ${NEXT}`))
       expect(open).toHaveBeenCalledWith(URL_NEXT)

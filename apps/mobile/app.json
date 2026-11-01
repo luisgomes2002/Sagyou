@@ -29,7 +29,18 @@
           "recordAudioAndroid": false
         }
       ],
-      "./plugins/withReleaseSigning"
+      "./plugins/withReleaseSigning",
+      "@react-native-community/datetimepicker",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "backgroundColor": "#0b0b0f",
+          "dark": { "backgroundColor": "#0b0b0f" },
+          "light": { "backgroundColor": "#f5f4f1" }
+        }
+      ]
     ]
   }
 }

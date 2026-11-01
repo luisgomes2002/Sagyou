@@ -2,10 +2,48 @@ import { emptyState, type MobileState } from '../../data/state'
 import {
   LOCKED_TEXT,
   addTransaction,
+  groupByDay,
+  monthSummary,
   parseAmount,
   tablesOfProfile,
   updateTransaction
 } from '../finance'
+
+type Tx = MobileState['lists'][number]['transactions'][number]
+const tx = (id: string, type: Tx['type'], amount: string, date: string): Tx => ({
+  id,
+  description: id,
+  amount,
+  type,
+  date
+})
+
+describe('resumo do mês e lista por dia', () => {
+  it('soma entradas e saídas do mês civil em decimal, sem outros meses', () => {
+    const txs = [
+      tx('a', 'income', '10.10', '2026-11-01'),
+      tx('b', 'income', '0.2', '2026-11-30'),
+      tx('c', 'expense', '1500.5', '2026-11-15'),
+      tx('d', 'expense', '999', '2026-10-31')
+    ]
+    expect(monthSummary(txs, '2026-11-01')).toEqual({ income: '10.3', expense: '1500.5' })
+    expect(monthSummary([], '2026-11-01')).toEqual({ income: '0', expense: '0' })
+  })
+
+  it('agrupa por dia, mais recente primeiro, com Hoje e Ontem', () => {
+    const txs = [
+      tx('sexta', 'expense', '1', '2026-10-30'),
+      tx('hoje1', 'expense', '1', '2026-11-01'),
+      tx('ontem', 'income', '1', '2026-10-31'),
+      tx('hoje2', 'income', '1', '2026-11-01')
+    ]
+    expect(groupByDay(txs, '2026-11-01').map((g) => [g.label, g.txs.map((t) => t.id)])).toEqual([
+      ['Hoje', ['hoje1', 'hoje2']],
+      ['Ontem', ['ontem']],
+      ['sex., 30/10', ['sexta']]
+    ])
+  })
+})
 
 const T = '2026-10-01T00:00:00.000Z'
 const NOW = new Date('2026-10-31T12:00:00.000Z')

@@ -1,12 +1,15 @@
-import { render, screen } from '@testing-library/react-native'
+import { fireEvent, render, screen } from '@testing-library/react-native'
 import { Text } from 'react-native'
 import * as RN from 'react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { AppShell, TAB_LABELS } from '../App'
 import { StatusBanner } from '../components/StatusBanner'
+import { LockGate, type LockDeps } from '../lock/LockGate'
+import { LOCKED_TITLE } from '../lock/texts'
 import { PAIR_TITLE } from '../screens/PairScreen'
-import { OFFLINE_TEXT, useApp, type AppServices } from '../store/app'
+import { DISCONNECTED_TEXT, OFFLINE_TEXT, useApp } from '../store/app'
 import { useUpdate } from '../store/update'
+import { project, seedApp } from './seed'
 import { darkTheme, lightTheme, useTheme } from '../theme'
 
 function Probe(): React.JSX.Element {
@@ -14,7 +17,41 @@ function Probe(): React.JSX.Element {
 }
 
 describe('App', () => {
+  // The shell checks GitHub for a newer APK; no test may reach the network.
+  const autoCheck = jest.fn(async () => undefined)
+  beforeEach(() => {
+    autoCheck.mockClear()
+    useUpdate.getState().reset()
+    useUpdate.setState({ autoCheck })
+  })
   afterEach(() => jest.restoreAllMocks())
+
+  it('procura atualização uma vez ao abrir o app, também só leitura', async () => {
+    for (const readOnly of [false, true]) {
+      autoCheck.mockClear()
+      seedApp({}, { readOnly })
+      const view = await render(
+        <SafeAreaProvider>
+          <AppShell mode="app" />
+        </SafeAreaProvider>
+      )
+      expect(autoCheck).toHaveBeenCalledTimes(1)
+      await view.unmount()
+    }
+  })
+
+  it('não procura atualização antes de parear nem carregando', async () => {
+    seedApp()
+    for (const mode of ['pair', 'loading'] as const) {
+      const view = await render(
+        <SafeAreaProvider>
+          <AppShell mode={mode} />
+        </SafeAreaProvider>
+      )
+      await view.unmount()
+    }
+    expect(autoCheck).not.toHaveBeenCalled()
+  })
 
   it('mostra as cinco abas com os rótulos exatos', async () => {
     await render(
@@ -26,6 +63,122 @@ describe('App', () => {
     for (const label of TAB_LABELS) expect(screen.getAllByText(label).length).toBeGreaterThan(0)
   })
 
+  it('cada aba tem ícone e o header abre Ajustes pela engrenagem', async () => {
+    seedApp({ projects: [project('p1', 'Sagyou')] })
+    await render(
+      <SafeAreaProvider>
+        <AppShell mode="app" />
+      </SafeAreaProvider>
+    )
+    // The tab bar draws each icon twice (active and inactive, for the crossfade).
+    for (const label of TAB_LABELS)
+      expect(screen.getAllByTestId(`tab-icon-${label}`).length).toBeGreaterThan(0)
+    await fireEvent.press(screen.getByRole('button', { name: 'Ajustes' }))
+    expect(await screen.findByText('Perfil financeiro')).toBeTruthy()
+  })
+
+  it('o (+) aparece nas abas de conteúdo e some na Busca', async () => {
+    seedApp({ projects: [project('p1', 'Sagyou')] })
+    await render(
+      <SafeAreaProvider>
+        <AppShell mode="app" />
+      </SafeAreaProvider>
+    )
+    for (const label of ['Hábitos', 'Finanças', 'Notas', 'Tarefas']) {
+      // The tab's role is "tab" on Android and "button" on iOS (the test platform).
+      await fireEvent.press(screen.getByTestId(`tab-${label}`))
+      expect([label, screen.queryByRole('button', { name: 'Criar' }) !== null]).toEqual([
+        label,
+        true
+      ])
+    }
+    await fireEvent.press(screen.getByTestId('tab-Busca'))
+    expect(screen.queryByRole('button', { name: 'Criar' })).toBeNull()
+  })
+
+  // Review: the (+) sat on top of the note editor's "Salvar".
+  it('o (+) some enquanto uma nota está em edição', async () => {
+    seedApp({
+      projects: [project('p1', 'Sagyou')],
+      notes: [
+        {
+          id: 'n1',
+          projectId: 'p1',
+          content: 'Ideia',
+          color: '#fef08a',
+          x: 0,
+          y: 0,
+          width: 200,
+          height: 150,
+          createdAt: '2026-10-01T00:00:00.000Z',
+          updatedAt: '2026-10-01T00:00:00.000Z'
+        }
+      ]
+    })
+    await render(
+      <SafeAreaProvider>
+        <AppShell mode="app" />
+      </SafeAreaProvider>
+    )
+    await fireEvent.press(screen.getByTestId('tab-Notas'))
+    expect(screen.getByRole('button', { name: 'Criar' })).toBeTruthy()
+    await fireEvent.press(screen.getByRole('button', { name: 'Ideia' }))
+    expect(screen.queryByRole('button', { name: 'Criar' })).toBeNull()
+    await fireEvent.press(screen.getByRole('button', { name: 'Cancelar' }))
+    expect(screen.getByRole('button', { name: 'Criar' })).toBeTruthy()
+  })
+
+  it('somente leitura: o (+) fica desabilitado e a faixa explica', async () => {
+    seedApp({ projects: [project('p1', 'Sagyou')] }, { readOnly: true })
+    await render(
+      <SafeAreaProvider>
+        <AppShell mode="app" />
+      </SafeAreaProvider>
+    )
+    expect(screen.getByRole('button', { name: 'Criar' })).toBeDisabled()
+    expect(screen.getByText(DISCONNECTED_TEXT)).toBeTruthy()
+  })
+
+  it('nada do app, nem o (+), aparece antes de desbloquear', async () => {
+    seedApp({ projects: [project('p1', 'Sagyou')] })
+    const deps: LockDeps = {
+      getEnrolledLevelAsync: async () => 3,
+      authenticateAsync: () => new Promise(() => undefined),
+      appState: { addEventListener: () => ({ remove: () => undefined }) },
+      now: () => 0
+    }
+    await render(
+      <SafeAreaProvider>
+        <LockGate deps={deps}>
+          <AppShell mode="app" />
+        </LockGate>
+      </SafeAreaProvider>
+    )
+    expect(screen.queryByRole('button', { name: 'Criar' })).toBeNull()
+    expect(await screen.findByText(LOCKED_TITLE)).toBeTruthy()
+  })
+
+  it('carregando mostra o ícone do Sagyou', async () => {
+    await render(
+      <SafeAreaProvider>
+        <AppShell mode="loading" />
+      </SafeAreaProvider>
+    )
+    expect(screen.getByLabelText('Carregando o Sagyou')).toBeTruthy()
+  })
+
+  it('com "Remover animações" ligado, as folhas abrem sem animação', async () => {
+    jest.spyOn(RN.AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(true)
+    seedApp({ projects: [project('p1', 'Sagyou')] })
+    await render(
+      <SafeAreaProvider>
+        <AppShell mode="app" />
+      </SafeAreaProvider>
+    )
+    await fireEvent.press(screen.getByRole('button', { name: 'Criar' }))
+    expect(screen.getByTestId('bottom-sheet').props.animationType).toBe('none')
+  })
+
   it('sem pareamento só existe a tela de parear', async () => {
     await render(
       <SafeAreaProvider>
@@ -34,44 +187,6 @@ describe('App', () => {
     )
     expect(screen.getByText(PAIR_TITLE)).toBeTruthy()
     for (const label of TAB_LABELS) expect(screen.queryByText(label)).toBeNull()
-  })
-
-  describe('procura de atualização', () => {
-    const autoCheck = jest.fn(async () => undefined)
-    beforeEach(() => {
-      autoCheck.mockClear()
-      useUpdate.getState().reset()
-      useUpdate.setState({ autoCheck })
-      const repo = { readPref: () => null, writePref: () => undefined }
-      useApp.setState({ services: { repo } as unknown as AppServices, status: null })
-    })
-    afterEach(() => useApp.setState({ services: null, readOnly: false }))
-
-    it('consulta uma vez ao abrir o app, também só leitura', async () => {
-      for (const readOnly of [false, true]) {
-        autoCheck.mockClear()
-        useApp.setState({ readOnly })
-        const view = await render(
-          <SafeAreaProvider>
-            <AppShell mode="app" />
-          </SafeAreaProvider>
-        )
-        expect(autoCheck).toHaveBeenCalledTimes(1)
-        await view.unmount()
-      }
-    })
-
-    it('não consulta antes de parear nem carregando', async () => {
-      for (const mode of ['pair', 'loading'] as const) {
-        const view = await render(
-          <SafeAreaProvider>
-            <AppShell mode={mode} />
-          </SafeAreaProvider>
-        )
-        await view.unmount()
-      }
-      expect(autoCheck).not.toHaveBeenCalled()
-    })
   })
 
   it('sem conexão e com alterações esperando, avisa no topo', async () => {

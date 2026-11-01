@@ -1,96 +1,136 @@
+import { StickyNote } from 'lucide-react-native'
 import { useState } from 'react'
-import { Pressable, ScrollView, StyleSheet, Text } from 'react-native'
-import { Button, Chip, Field, Row, Screen } from '../components/ui'
-import { useApp } from '../store/app'
-import { createNote, projectNotes, updateNoteContent } from '../store/notes'
-import { useTheme } from '../theme'
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Picker } from '../components/Picker'
+import { Skeleton } from '../components/Skeleton'
+import { closeOrConfirm } from '../components/discard'
+import { Button, EmptyState, Field, Screen } from '../components/ui'
+import { awaitingFirstSync, useApp } from '../store/app'
+import { useEditorOpen } from '../store/editing'
+import { editedText, projectNotes, updateNoteContent } from '../store/notes'
+import { PREF_QUICK_PROJECT, activeProjects, quickProject } from '../store/quick'
+import { FONT, MIN_TOUCH, RADIUS, SPACE, useTheme } from '../theme'
 
-type Editing = { id?: string; content: string } | null
+type Editing = { id: string; original: string; content: string } | null
 
-/** Notes of one project at a time: read, create and edit the text. */
-export function NotesScreen(): React.JSX.Element {
+/** Mounted with the editor: hides the tab's (+) over the footer. */
+function EditorOpen(): null {
+  useEditorOpen()
+  return null
+}
+
+/** Notes of one project at a time, as readable cards; tap to edit the text full screen. */
+export function NotesScreen({ now: nowProp }: { now?: Date }): React.JSX.Element {
   const theme = useTheme()
   const state = useApp((s) => s.state)
+  const services = useApp((s) => s.services)
   const readOnly = useApp((s) => s.readOnly)
   const commit = useApp((s) => s.commit)
-  const projects = state.projects
-    .filter((p) => !p.archivedAt)
-    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-  const [chosen, setChosen] = useState<string | null>(null)
+  const waiting = useApp((s) => awaitingFirstSync(s.status))
+  const projects = activeProjects(state)
+  const [chosen, setChosen] = useState<string | null>(
+    () => services?.repo.readPref(PREF_QUICK_PROJECT) ?? null
+  )
   const [editing, setEditing] = useState<Editing>(null)
-  const project = projects.find((p) => p.id === chosen) ?? projects[0]
+  const project = quickProject(state, chosen)
+  const now = nowProp ?? new Date()
 
   if (!project)
     return (
       <Screen>
-        <Text style={{ color: theme.muted }}>Nenhum projeto ainda. Crie um no Sagyou do PC.</Text>
+        {waiting ? (
+          <Skeleton />
+        ) : (
+          <EmptyState icon={StickyNote} text="Nenhum projeto ainda. Crie um no Sagyou do PC." />
+        )}
       </Screen>
     )
 
   if (editing) {
     const save = (): void => {
-      const current = useApp.getState().state
-      const now = new Date()
-      const next = editing.id
-        ? updateNoteContent(current, editing.id, editing.content, now)
-        : createNote(current, project.id, editing.content, now).state
+      const next = updateNoteContent(
+        useApp.getState().state,
+        editing.id,
+        editing.content,
+        new Date()
+      )
       if (commit(next)) setEditing(null)
     }
     return (
-      <ScrollView>
-        <Screen>
+      <View style={[styles.editor, { backgroundColor: theme.bg }]}>
+        <EditorOpen />
+        <ScrollView contentContainerStyle={styles.editorBody} keyboardShouldPersistTaps="handled">
           <Field
             label="Nota"
             value={editing.content}
             onChangeText={(content) => setEditing({ ...editing, content })}
             multiline
-            style={{ minHeight: 160, textAlignVertical: 'top' }}
+            autoFocus
+            style={styles.noteInput}
           />
-          <Button
-            primary
-            label="Salvar"
-            onPress={save}
-            disabled={readOnly || !editing.content.trim()}
-          />
-          <Button label="Cancelar" onPress={() => setEditing(null)} />
-        </Screen>
-      </ScrollView>
+        </ScrollView>
+        <View
+          style={[styles.footer, { borderColor: theme.border, backgroundColor: theme.surface }]}
+        >
+          <View style={{ flex: 1 }}>
+            <Button
+              variant="ghost"
+              label="Cancelar"
+              onPress={() =>
+                closeOrConfirm(editing.content !== editing.original, () => setEditing(null))
+              }
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Button
+              variant="primary"
+              label="Salvar"
+              onPress={save}
+              disabled={readOnly || !editing.content.trim()}
+            />
+          </View>
+        </View>
+      </View>
     )
   }
 
   const notes = projectNotes(state, project.id)
   return (
-    <ScrollView>
+    <ScrollView contentContainerStyle={styles.bottomRoom}>
       <Screen>
-        <Row>
-          {projects.map((p) => (
-            <Chip
-              key={p.id}
-              label={p.name}
-              selected={p.id === project.id}
-              onPress={() => setChosen(p.id)}
-            />
-          ))}
-        </Row>
-        <Button
-          primary
-          label="Nova nota"
-          onPress={() => setEditing({ content: '' })}
-          disabled={readOnly}
+        <Picker
+          label="Projeto"
+          value={project.id}
+          options={projects.map((p) => ({ id: p.id, label: p.name }))}
+          onChange={(id) => {
+            setChosen(id)
+            services?.repo.writePref(PREF_QUICK_PROJECT, id)
+          }}
         />
         {notes.length === 0 ? (
-          <Text style={{ color: theme.muted }}>Nenhuma nota neste projeto.</Text>
+          <EmptyState icon={StickyNote} text="Nenhuma nota neste projeto." />
         ) : null}
         {notes.map((note) => (
           <Pressable
             key={note.id}
             accessibilityRole="button"
             accessibilityLabel={note.content.split('\n')[0] || 'Nota vazia'}
-            onPress={() => setEditing({ id: note.id, content: note.content })}
-            style={[styles.note, { backgroundColor: theme.surface, borderColor: theme.border }]}
+            onPress={() =>
+              setEditing({ id: note.id, original: note.content, content: note.content })
+            }
+            style={({ pressed }) => [
+              styles.note,
+              {
+                backgroundColor: pressed ? theme.selected : theme.surface,
+                borderColor: theme.border
+              }
+            ]}
           >
-            <Text style={{ color: theme.text }} numberOfLines={6}>
+            <Text style={[styles.text, { color: theme.text }]} numberOfLines={6}>
               {note.content || '—'}
+            </Text>
+            <Text style={[styles.meta, { color: theme.muted }]}>
+              {editedText(note.updatedAt, now)}
             </Text>
           </Pressable>
         ))}
@@ -100,5 +140,23 @@ export function NotesScreen(): React.JSX.Element {
 }
 
 const styles = StyleSheet.create({
-  note: { borderWidth: 1, borderRadius: 8, padding: 12 }
+  bottomRoom: { paddingBottom: 96 },
+  note: {
+    borderWidth: 1,
+    borderRadius: RADIUS.card,
+    padding: SPACE.lg,
+    gap: SPACE.sm,
+    minHeight: MIN_TOUCH
+  },
+  text: { fontSize: FONT.bodyLg, lineHeight: 22 },
+  meta: { fontSize: FONT.caption },
+  editor: { flex: 1 },
+  editorBody: { padding: SPACE.lg, flexGrow: 1 },
+  noteInput: { minHeight: 280, textAlignVertical: 'top' },
+  footer: {
+    flexDirection: 'row',
+    gap: SPACE.md,
+    padding: SPACE.lg,
+    borderTopWidth: 1
+  }
 })

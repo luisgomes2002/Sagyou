@@ -1,34 +1,39 @@
-import { fireEvent, render, screen } from '@testing-library/react-native'
-import { emptyState } from '../../data/state'
-import { type AppServices, useApp } from '../../store/app'
+import { act, fireEvent, render, screen } from '@testing-library/react-native'
+import * as Haptics from 'expo-haptics'
+import { StyleSheet } from 'react-native'
+import { emptyState, type MobileState } from '../../data/state'
+import { T, seedApp } from '../../__tests__/seed'
+import { useApp } from '../../store/app'
 import { toggleHabit } from '../../store/habits'
+import { useUndo } from '../../store/undo'
 import { HabitsScreen } from '../HabitsScreen'
 
-const T = '2026-10-01T00:00:00.000Z'
 // Noon local time (TZ pinned to America/Sao_Paulo in jest.config.js).
 const TODAY = new Date(2026, 9, 31, 12)
 
-function seed(completions: string[]): void {
-  const state = emptyState()
-  state.habits = [
-    { id: 'h1', name: 'Água', color: '#46d478', completions, createdAt: T, updatedAt: T }
-  ]
-  useApp.setState({
-    state,
-    readOnly: false,
-    services: {
-      repo: { save: jest.fn() },
-      runtime: { engine: { notifySaved: jest.fn() } }
-    } as unknown as AppServices
-  })
+type Habit = MobileState['habits'][number]
+const habit = (id: string, name: string, completions: string[] = []): Habit => ({
+  id,
+  name,
+  color: '#46d478',
+  completions,
+  createdAt: T,
+  updatedAt: T
+})
+
+function seed(habits: Habit[], readOnly = false): ReturnType<typeof seedApp> {
+  return seedApp({ habits }, { readOnly })
 }
 
 describe('hábitos no celular', () => {
+  beforeEach(() => {
+    useUndo.getState().dismiss()
+    jest.clearAllMocks()
+  })
+
   it('marca e desmarca o dia sem duplicar a data', () => {
     const base = emptyState()
-    base.habits = [
-      { id: 'h1', name: 'Água', color: '#000', completions: [], createdAt: T, updatedAt: T }
-    ]
+    base.habits = [habit('h1', 'Água')]
     const on = toggleHabit(base, 'h1', '2026-10-31', TODAY)
     expect(on.habits[0].completions).toEqual(['2026-10-31'])
     const off = toggleHabit(on, 'h1', '2026-10-31', TODAY)
@@ -42,17 +47,47 @@ describe('hábitos no celular', () => {
     expect(again.habits[0].completions).toEqual(['2026-10-31', '2026-10-30'])
   })
 
-  it('mostra a sequência de 3 para três dias seguidos até hoje', async () => {
-    seed(['2026-10-29', '2026-10-30', '2026-10-31'])
+  it('mostra quantos foram feitos hoje e a sequência em dias', async () => {
+    seed([
+      habit('h1', 'Água', ['2026-10-29', '2026-10-30', '2026-10-31']),
+      habit('h2', 'Ler'),
+      habit('h3', 'Correr', ['2026-10-31'])
+    ])
     await render(<HabitsScreen today={TODAY} />)
-    expect(screen.getByText('3 dias seguidos')).toBeTruthy()
+    expect(screen.getByText('2 de 3 hoje')).toBeTruthy()
+    expect(screen.getByText('3 dias')).toBeTruthy()
   })
 
-  it('só os últimos 7 dias podem ser marcados, e tocar marca o dia', async () => {
-    seed([])
+  it('o botão Hoje marca com um toque, vibra e oferece Desfazer', async () => {
+    seed([habit('h1', 'Ler')])
     await render(<HabitsScreen today={TODAY} />)
-    const days = screen.getAllByRole('checkbox')
-    expect(days.map((d) => d.props.accessibilityLabel)).toEqual([
+    const hoje = screen.getByRole('checkbox', { name: 'Ler, hoje' })
+    expect(hoje).not.toBeChecked()
+    await fireEvent.press(hoje)
+    expect(useApp.getState().state.habits[0].completions).toEqual(['2026-10-31'])
+    expect(Haptics.impactAsync).toHaveBeenCalled()
+    expect(useUndo.getState()).toMatchObject({ message: 'Hábito marcado', canUndo: true })
+    useUndo.getState().run()
+    expect(useApp.getState().state.habits[0].completions).toEqual([])
+  })
+
+  it('desmarcar também oferece Desfazer', async () => {
+    seed([habit('h1', 'Ler', ['2026-10-31'])])
+    await render(<HabitsScreen today={TODAY} />)
+    await fireEvent.press(screen.getByRole('checkbox', { name: 'Ler, hoje' }))
+    expect(useUndo.getState().message).toBe('Hábito desmarcado')
+    useUndo.getState().run()
+    expect(useApp.getState().state.habits[0].completions).toEqual(['2026-10-31'])
+  })
+
+  it('a mini-semana continua tocável nos últimos 7 dias', async () => {
+    seed([habit('h1', 'Água')])
+    await render(<HabitsScreen today={TODAY} />)
+    const days = screen
+      .getAllByRole('checkbox')
+      .map((d) => d.props.accessibilityLabel as string)
+      .filter((l) => !l.endsWith(', hoje'))
+    expect(days).toEqual([
       'Água, domingo, 25/10',
       'Água, segunda, 26/10',
       'Água, terça, 27/10',
@@ -61,7 +96,44 @@ describe('hábitos no celular', () => {
       'Água, sexta, 30/10',
       'Água, sábado, 31/10'
     ])
-    await fireEvent.press(screen.getByLabelText('Água, sábado, 31/10'))
-    expect(useApp.getState().state.habits[0].completions).toEqual(['2026-10-31'])
+    for (const day of screen
+      .getAllByRole('checkbox')
+      .filter((d) => !d.props.accessibilityLabel.endsWith(', hoje'))) {
+      const style = StyleSheet.flatten(day.props.style)
+      const slop = day.props.hitSlop ?? {}
+      expect((style.width ?? 0) + (slop.left ?? 0) + (slop.right ?? 0)).toBeGreaterThanOrEqual(48)
+    }
+    await fireEvent.press(screen.getByLabelText('Água, quinta, 29/10'))
+    expect(useApp.getState().state.habits[0].completions).toEqual(['2026-10-29'])
+  })
+
+  it('somente leitura: nada muda', async () => {
+    const { save } = seed([habit('h1', 'Ler')], true)
+    await render(<HabitsScreen today={TODAY} />)
+    await fireEvent.press(screen.getByRole('checkbox', { name: 'Ler, hoje' }))
+    expect(useApp.getState().state.habits[0].completions).toEqual([])
+    expect(save).not.toHaveBeenCalled()
+    expect(useUndo.getState().message).toBeNull()
+  })
+
+  // Review: the tab stays mounted for days; "Hoje" must follow the clock.
+  it('"Hoje" acompanha o relógio mesmo com a aba montada desde ontem', async () => {
+    jest.useFakeTimers({ now: new Date(2026, 9, 31, 23, 0) })
+    try {
+      seed([habit('h1', 'Ler')])
+      await render(<HabitsScreen />)
+      jest.setSystemTime(new Date(2026, 10, 1, 8, 0))
+      // Any re-render (here: another habit synced in) must use the new day.
+      await act(async () => {
+        const app = useApp.getState()
+        useApp.setState({
+          state: { ...app.state, habits: [...app.state.habits, habit('h2', 'Correr')] }
+        })
+      })
+      await fireEvent.press(screen.getByRole('checkbox', { name: 'Ler, hoje' }))
+      expect(useApp.getState().state.habits[0].completions).toEqual(['2026-11-01'])
+    } finally {
+      jest.useRealTimers()
+    }
   })
 })

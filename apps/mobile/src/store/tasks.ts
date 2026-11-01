@@ -1,7 +1,10 @@
 import { isDoneColumn } from '@sagyou/core/columns'
+import { formatDateBR } from '@sagyou/core/dates'
+import { upcomingTasks } from '@sagyou/core/dueDates'
 import { addSprint } from '@sagyou/core/sprints'
 import { randomUUID } from '@sagyou/core/sync/bytes'
-import type { Column, Priority, Task } from '@sagyou/core/types'
+import type { Column, Priority, Project, Task } from '@sagyou/core/types'
+import { addDays, endOfWeek, format, parseISO } from 'date-fns'
 import type { MobileState } from '../data/state'
 
 // Pure edits of the synced state, mirroring the desktop's tasks slice
@@ -102,6 +105,135 @@ export function completeTask(state: MobileState, id: string, now: Date): MobileS
     .find((c) => isDoneColumn(c))
   if (!done || done.id === task.columnId) return state
   return moveTask(state, id, done.id, now)
+}
+
+export const NO_DONE_COLUMN_TEXT = 'Este projeto não tem coluna Done.'
+
+/**
+ * Desfazer a conclusão: puts back the column, position and completion the task
+ * had before, on top of the task as it is NOW, so an edit that arrived in the
+ * meantime (title from the PC, a tag) survives.
+ */
+export function revertCompletion(state: MobileState, before: Task, now: Date): MobileState {
+  return {
+    ...state,
+    tasks: state.tasks.map((t) =>
+      t.id === before.id
+        ? {
+            ...t,
+            columnId: before.columnId,
+            order: before.order,
+            completedAt: before.completedAt,
+            updatedAt: now.toISOString()
+          }
+        : t
+    )
+  }
+}
+
+export type UpcomingKey = 'overdue' | 'today' | 'tomorrow' | 'week' | 'later'
+
+export const UPCOMING_SECTION_TITLES: Record<UpcomingKey, string> = {
+  overdue: 'Atrasadas',
+  today: 'Hoje',
+  tomorrow: 'Amanhã',
+  week: 'Esta semana',
+  later: 'Mais tarde'
+}
+
+const UPCOMING_ORDER: UpcomingKey[] = ['overdue', 'today', 'tomorrow', 'week', 'later']
+
+const iso = (d: Date): string => format(d, 'yyyy-MM-dd')
+
+/** "Esta semana" runs from the day after tomorrow up to this week's Sunday. */
+function sectionOf(dueDate: string, today: string): UpcomingKey {
+  const day = parseISO(today)
+  const tomorrow = iso(addDays(day, 1))
+  const sunday = iso(endOfWeek(day, { weekStartsOn: 1 }))
+  if (dueDate < today) return 'overdue'
+  if (dueDate === today) return 'today'
+  if (dueDate === tomorrow) return 'tomorrow'
+  if (dueDate <= sunday) return 'week'
+  return 'later'
+}
+
+/** Próximas, grouped; empty sections are left out. Same tasks as the core's upcomingTasks. */
+export function upcomingSections(
+  tasks: Task[],
+  projects: Project[],
+  today: string
+): { key: UpcomingKey; tasks: Task[] }[] {
+  const groups = new Map<UpcomingKey, Task[]>()
+  for (const task of upcomingTasks(tasks, projects)) {
+    const key = sectionOf(task.dueDate!, today)
+    groups.set(key, [...(groups.get(key) ?? []), task])
+  }
+  return UPCOMING_ORDER.filter((k) => groups.has(k)).map((key) => ({
+    key,
+    tasks: groups.get(key)!
+  }))
+}
+
+export function todaySummary(
+  tasks: Task[],
+  projects: Project[],
+  today: string
+): { today: number; overdue: number } {
+  let dueToday = 0
+  let overdue = 0
+  for (const t of upcomingTasks(tasks, projects)) {
+    if (t.dueDate === today) dueToday++
+    else if (t.dueDate! < today) overdue++
+  }
+  return { today: dueToday, overdue }
+}
+
+export function todayText({ today, overdue }: { today: number; overdue: number }): string {
+  const parts: string[] = []
+  if (today) parts.push(`${today} para hoje`)
+  if (overdue) parts.push(`${overdue} ${overdue === 1 ? 'atrasada' : 'atrasadas'}`)
+  return parts.length ? parts.join(' · ') : 'Nada vence hoje'
+}
+
+/** Open = not in a Done column; the bar shows done out of total. */
+export function projectProgress(
+  state: MobileState,
+  projectId: string
+): { open: number; done: number; total: number } {
+  const project = state.projects.find((p) => p.id === projectId)
+  const doneColumns = new Set(project?.columns.filter((c) => isDoneColumn(c)).map((c) => c.id))
+  const tasks = state.tasks.filter((t) => t.projectId === projectId)
+  const done = tasks.filter((t) => doneColumns.has(t.columnId)).length
+  return { open: tasks.length - done, done, total: tasks.length }
+}
+
+const PRIORITY_SPOKEN: Partial<Record<Priority, string>> = {
+  high: 'prioridade alta',
+  urgent: 'prioridade urgente'
+}
+
+/** What TalkBack reads for a task row: everything the row shows, not just the title. */
+export function taskA11yLabel(task: Task, today: string, projectName?: string): string {
+  const parts = [task.title]
+  const priority = PRIORITY_SPOKEN[task.priority]
+  if (priority) parts.push(priority)
+  if (task.dueDate) {
+    const br = formatDateBR(task.dueDate)
+    if (task.dueDate < today) parts.push(`atrasada desde ${br}`)
+    else if (task.dueDate === today) parts.push('vence hoje')
+    else parts.push(`prazo ${br}`)
+  }
+  if (projectName) parts.push(`projeto ${projectName}`)
+  if (task.tags?.length) parts.push(`tags ${task.tags.join(', ')}`)
+  return parts.join(', ')
+}
+
+/** What TalkBack reads for a project row: its open tasks and the progress bar. */
+export function projectA11yLabel(
+  name: string,
+  { open, done, total }: { open: number; done: number; total: number }
+): string {
+  return `${name}, ${open} ${open === 1 ? 'aberta' : 'abertas'}, ${done} de ${total} concluídas`
 }
 
 export function createSprint(

@@ -1,6 +1,120 @@
 import { SPRINT_NAME_TAKEN } from '@sagyou/core/sprints'
 import { emptyState, type MobileState } from '../../data/state'
-import { completeTask, createSprint, createTask, moveTask, updateTask } from '../tasks'
+import {
+  UPCOMING_SECTION_TITLES,
+  completeTask,
+  createSprint,
+  createTask,
+  moveTask,
+  projectA11yLabel,
+  projectProgress,
+  revertCompletion,
+  taskA11yLabel,
+  todaySummary,
+  todayText,
+  updateTask,
+  upcomingSections
+} from '../tasks'
+
+type TaskT = MobileState['tasks'][number]
+
+const due = (id: string, dueDate: string, columnId = 'todo'): TaskT =>
+  ({
+    id,
+    projectId: 'p1',
+    columnId,
+    title: id,
+    priority: 'medium',
+    tags: [],
+    order: 0,
+    createdAt: T,
+    updatedAt: T,
+    dueDate
+  }) as TaskT
+
+describe('o que o TalkBack lê', () => {
+  it('a linha da tarefa diz prioridade, prazo, projeto e tags', () => {
+    const t = {
+      ...due('Pagar conta', '2026-11-03'),
+      priority: 'urgent',
+      tags: ['casa', 'contas']
+    } as TaskT
+    expect(taskA11yLabel(t, '2026-11-04', 'Casa')).toBe(
+      'Pagar conta, prioridade urgente, atrasada desde 03/11/2026, projeto Casa, tags casa, contas'
+    )
+    expect(taskA11yLabel(due('Ler', '2026-11-04'), '2026-11-04')).toBe('Ler, vence hoje')
+    expect(taskA11yLabel({ ...due('Sem', ''), dueDate: undefined } as TaskT, '2026-11-04')).toBe(
+      'Sem'
+    )
+    expect(taskA11yLabel(due('Depois', '2026-11-20'), '2026-11-04')).toBe(
+      'Depois, prazo 20/11/2026'
+    )
+  })
+
+  it('a linha do projeto diz abertas e o progresso', () => {
+    expect(projectA11yLabel('Casa', { open: 4, done: 2, total: 6 })).toBe(
+      'Casa, 4 abertas, 2 de 6 concluídas'
+    )
+    expect(projectA11yLabel('Casa', { open: 1, done: 0, total: 1 })).toBe(
+      'Casa, 1 aberta, 0 de 1 concluídas'
+    )
+  })
+})
+
+describe('Próximas e resumo de hoje', () => {
+  // 2026-11-04 is a Wednesday; that week ends on Sunday 2026-11-08.
+  const WED = '2026-11-04'
+
+  it('agrupa em Atrasadas, Hoje, Amanhã, Esta semana e Mais tarde', () => {
+    const s = state()
+    s.tasks = [
+      due('ontem', '2026-11-03'),
+      due('hoje', '2026-11-04'),
+      due('amanha', '2026-11-05'),
+      due('sexta', '2026-11-06'),
+      due('domingo', '2026-11-08'),
+      due('segunda', '2026-11-09'),
+      due('feita', '2026-11-04', 'done')
+    ]
+    const sections = upcomingSections(s.tasks, s.projects, WED)
+    expect(sections.map((x) => [x.key, x.tasks.map((t) => t.id)])).toEqual([
+      ['overdue', ['ontem']],
+      ['today', ['hoje']],
+      ['tomorrow', ['amanha']],
+      ['week', ['sexta', 'domingo']],
+      ['later', ['segunda']]
+    ])
+    expect(UPCOMING_SECTION_TITLES).toEqual({
+      overdue: 'Atrasadas',
+      today: 'Hoje',
+      tomorrow: 'Amanhã',
+      week: 'Esta semana',
+      later: 'Mais tarde'
+    })
+  })
+
+  it('num domingo não há "Esta semana" e as seções vazias somem', () => {
+    const s = state()
+    s.tasks = [due('terca', '2026-11-10')]
+    expect(upcomingSections(s.tasks, s.projects, '2026-11-08').map((x) => x.key)).toEqual(['later'])
+  })
+
+  it('conta o que vence hoje e o que está atrasado', () => {
+    const s = state()
+    s.tasks = [due('a', '2026-11-04'), due('b', '2026-11-03'), due('c', '2026-11-05')]
+    expect(todaySummary(s.tasks, s.projects, WED)).toEqual({ today: 1, overdue: 1 })
+    expect(todayText({ today: 3, overdue: 1 })).toBe('3 para hoje · 1 atrasada')
+    expect(todayText({ today: 0, overdue: 2 })).toBe('2 atrasadas')
+    expect(todayText({ today: 1, overdue: 0 })).toBe('1 para hoje')
+    expect(todayText({ today: 0, overdue: 0 })).toBe('Nada vence hoje')
+  })
+
+  it('progresso do projeto conta Done pelo nome da coluna', () => {
+    const s = state()
+    s.tasks = [due('a', '2026-11-04'), due('b', '2026-11-04', 'done'), due('c', '2026-11-04')]
+    expect(projectProgress(s, 'p1')).toEqual({ open: 2, done: 1, total: 3 })
+  })
+})
 
 const T = '2026-10-30T12:00:00.000Z'
 const NOW = new Date('2026-10-31T12:00:00.000Z')
@@ -75,6 +189,23 @@ describe('tarefas no celular', () => {
       priority: 'medium',
       tags: []
     })
+  })
+
+  it('desfazer a conclusão volta coluna, ordem e conclusão e mantém o resto', () => {
+    const before = state().tasks[0]
+    const done = completeTask(state(), 't1', NOW)
+    // A remote edit lands on the same task while the notice is up.
+    const edited = updateTask(done, 't1', { title: 'Título do PC' }, NOW)
+    const back = revertCompletion(edited, before, new Date('2026-10-31T12:00:05.000Z'))
+    expect(back.tasks[0]).toMatchObject({
+      columnId: 'todo',
+      order: 0,
+      title: 'Título do PC',
+      timeSpent: 3600,
+      updatedAt: '2026-10-31T12:00:05.000Z'
+    })
+    expect(back.tasks[0].completedAt).toBeUndefined()
+    expect(back.tasks[0].images).toEqual(before.images)
   })
 
   it('recusa sprint com nome repetido no projeto', () => {

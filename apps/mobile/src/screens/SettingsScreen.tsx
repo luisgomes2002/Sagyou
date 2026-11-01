@@ -1,10 +1,10 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { Button, Card, Screen } from '../components/ui'
 import { useApp } from '../store/app'
 import { useUpdate } from '../store/update'
 import { conflictsText, statusLines } from '../sync/status-text'
-import { useTheme } from '../theme'
+import { FONT, MIN_TOUCH, RADIUS, SPACE, useTheme } from '../theme'
 import { availableText, DOWNLOAD_LABEL, openDownload, updateDeps } from '../update/actions'
 import { installedVersion } from '../update/installed'
 
@@ -14,6 +14,26 @@ export const CHECKING_LABEL = 'Procurando…'
 export const LATEST_TEXT = 'Você já está na versão mais recente.'
 export const CHECK_ERROR_TEXT = 'Não foi possível verificar agora. Tente de novo mais tarde.'
 
+function Section({
+  title,
+  children,
+  testID
+}: {
+  title: string
+  children: ReactNode
+  testID?: string
+}): React.JSX.Element {
+  const theme = useTheme()
+  return (
+    <View testID={testID} style={styles.section}>
+      <Text accessibilityRole="header" style={[styles.sectionTitle, { color: theme.muted }]}>
+        {title}
+      </Text>
+      <Card>{children}</Card>
+    </View>
+  )
+}
+
 /** "Versão do app": what is installed, and a check on demand. */
 function VersionCard(): React.JSX.Element {
   const theme = useTheme()
@@ -22,9 +42,10 @@ function VersionCard(): React.JSX.Element {
   const available = useUpdate((s) => s.available)
   const checking = manual === 'checking'
   return (
-    <Card>
-      <Text style={[styles.label, { color: theme.muted }]}>Versão do app</Text>
-      <Text style={{ color: theme.text }}>{`Instalada: ${installedVersion()}`}</Text>
+    <View style={{ gap: SPACE.sm }}>
+      <Text
+        style={[styles.value, { color: theme.text }]}
+      >{`Instalada: ${installedVersion()}`}</Text>
       <Button
         label={checking ? CHECKING_LABEL : CHECK_UPDATE_LABEL}
         disabled={checking || !repo}
@@ -32,16 +53,20 @@ function VersionCard(): React.JSX.Element {
           if (repo) void useUpdate.getState().manualCheck(updateDeps(repo))
         }}
       />
-      <View accessibilityLiveRegion="polite" style={{ gap: 8 }}>
-        {manual === 'latest' ? <Text style={{ color: theme.text }}>{LATEST_TEXT}</Text> : null}
+      <View accessibilityLiveRegion="polite" style={{ gap: SPACE.sm }}>
+        {manual === 'latest' ? (
+          <Text style={{ color: theme.text, fontSize: FONT.body }}>{LATEST_TEXT}</Text>
+        ) : null}
         {manual === 'error' ? (
-          <Text style={{ color: theme.attention }}>{CHECK_ERROR_TEXT}</Text>
+          <Text style={{ color: theme.attention, fontSize: FONT.body }}>{CHECK_ERROR_TEXT}</Text>
         ) : null}
         {manual === 'available' && available ? (
           <>
-            <Text style={{ color: theme.text }}>{availableText(available.version)}</Text>
+            <Text style={{ color: theme.text, fontSize: FONT.body }}>
+              {availableText(available.version)}
+            </Text>
             <Button
-              primary
+              variant="primary"
               label={DOWNLOAD_LABEL}
               a11yLabel={`Baixar a versão ${available.version}`}
               onPress={() => openDownload(available.url)}
@@ -49,7 +74,7 @@ function VersionCard(): React.JSX.Element {
           </>
         ) : null}
       </View>
-    </Card>
+    </View>
   )
 }
 
@@ -89,51 +114,77 @@ export function SettingsScreen(): React.JSX.Element {
   }
 
   const conflicts = status?.conflictCount ?? 0
+  const lines = statusLines(status, readOnly, now)
   return (
     <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
       <Screen>
-        <Card>
-          <Text style={[styles.label, { color: theme.muted }]}>Este aparelho</Text>
-          <Text style={{ color: theme.text }}>{status?.deviceName || '—'}</Text>
-        </Card>
-        <Card>
-          <Text style={[styles.label, { color: theme.muted }]}>Sincronização</Text>
-          {statusLines(status, readOnly, now).map((line) => (
-            <Text key={line} style={{ color: theme.text }}>
+        <Section title="Este aparelho">
+          <Text style={[styles.value, { color: theme.text }]}>{status?.deviceName || '—'}</Text>
+        </Section>
+        <Section title="Sincronização">
+          {lines.length === 0 ? <Text style={{ color: theme.muted }}>—</Text> : null}
+          {lines.map((line) => (
+            <Text key={line} style={[styles.value, { color: theme.text }]}>
               {line}
             </Text>
           ))}
           {conflicts > 0 ? (
-            <Text style={{ color: theme.attention }}>{conflictsText(conflicts)}</Text>
+            <Text style={{ color: theme.attention, fontSize: FONT.body }}>
+              {conflictsText(conflicts)}
+            </Text>
           ) : null}
-        </Card>
-        <Card>
-          <Text style={[styles.label, { color: theme.muted }]}>Perfil financeiro</Text>
-          {profiles.map((p) => (
-            <Pressable
-              key={p.id}
-              accessibilityRole="radio"
-              accessibilityState={{ checked: p.id === profileId }}
-              onPress={() => setProfile(p.id)}
-              style={[styles.option, p.id === profileId && { backgroundColor: theme.selected }]}
-            >
-              <Text style={{ color: theme.text }}>{p.name}</Text>
-            </Pressable>
-          ))}
-        </Card>
-        <VersionCard />
-        <Button danger label={DISCONNECT_LABEL} onPress={disconnect} disabled={busy} />
+        </Section>
+        <Section title="Perfil financeiro">
+          <View accessibilityRole="radiogroup">
+            {profiles.map((p) => {
+              const checked = p.id === profileId
+              return (
+                <Pressable
+                  key={p.id}
+                  accessibilityRole="radio"
+                  accessibilityLabel={p.name}
+                  accessibilityState={{ checked }}
+                  onPress={() => setProfile(p.id)}
+                  style={[styles.option, checked && { backgroundColor: theme.selected }]}
+                >
+                  <View
+                    style={[
+                      styles.radio,
+                      { borderColor: checked ? theme.purple : theme.border },
+                      checked && { borderWidth: 6 }
+                    ]}
+                  />
+                  <Text style={[styles.value, { color: theme.text }]}>{p.name}</Text>
+                </Pressable>
+              )
+            })}
+          </View>
+        </Section>
+        <Section title="Versão do app">
+          <VersionCard />
+        </Section>
+        <Section title="Zona de perigo" testID="zona-de-perigo">
+          <Text style={{ color: theme.muted, fontSize: FONT.body }}>
+            Apaga os dados deste celular. Eles continuam na nuvem e nos PCs.
+          </Text>
+          <Button variant="danger" label={DISCONNECT_LABEL} onPress={disconnect} disabled={busy} />
+        </Section>
       </Screen>
     </ScrollView>
   )
 }
 
 const styles = StyleSheet.create({
-  label: { fontSize: 12 },
+  section: { gap: SPACE.sm },
+  sectionTitle: { fontSize: FONT.caption, fontWeight: '600', textTransform: 'uppercase' },
+  value: { fontSize: FONT.bodyLg },
   option: {
-    minHeight: 44,
-    justifyContent: 'center',
-    paddingHorizontal: 8,
-    borderRadius: 6
-  }
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACE.md,
+    minHeight: MIN_TOUCH,
+    paddingHorizontal: SPACE.sm,
+    borderRadius: RADIUS.control
+  },
+  radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 2 }
 })

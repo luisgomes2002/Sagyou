@@ -1,7 +1,16 @@
 import { NOTE_DEFAULTS, mobileNotePosition } from '@sagyou/core/notes'
 import { randomUUID } from '@sagyou/core/sync/bytes'
 import type { StickyNote } from '@sagyou/core/types'
+import { formatDistanceStrict } from 'date-fns'
+import { ptBR } from 'date-fns/locale'
 import type { MobileState } from '../data/state'
+
+/** "editada agora" under a minute, otherwise "editada há 2 horas". */
+export function editedText(iso: string, now: Date): string {
+  const at = new Date(iso)
+  if (now.getTime() - at.getTime() < 60_000) return 'editada agora'
+  return `editada há ${formatDistanceStrict(at, now, { locale: ptBR })}`
+}
 
 /** Canvas notes the phone lists: text blocks are visual-only on the desktop canvas. */
 export function projectNotes(state: MobileState, projectId: string): StickyNote[] {

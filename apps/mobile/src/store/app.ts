@@ -4,7 +4,9 @@ import { create } from 'zustand'
 import type { RecordRepo } from '../data/records'
 import type { SearchHit } from '../data/search'
 import { emptyState, type MobileState } from '../data/state'
+import { useLockState } from '../lock/lockState'
 import type { SyncRuntime } from '../sync/runtime'
+import { useUndo } from './undo'
 import { useUpdate } from './update'
 
 export const DISCONNECTED_TEXT = 'Este aparelho foi desconectado da sincronização'
@@ -21,6 +23,11 @@ export interface AppServices {
 }
 
 export type AppMode = 'loading' | 'pair' | 'app'
+
+/** No sync has finished on this phone yet: an empty list may just not have arrived. */
+export function awaitingFirstSync(status: SyncStatus | null): boolean {
+  return status === null || status.lastSyncAt === null
+}
 
 export interface AppStore {
   mode: AppMode
@@ -62,7 +69,8 @@ export const useApp = create<AppStore>((set, get) => ({
 
   commit(next) {
     const { services, readOnly } = get()
-    if (!services || readOnly) return false
+    // Nothing is written behind the lock screen (a sheet could outlive it).
+    if (!services || readOnly || useLockState.getState().hidden) return false
     services.repo.save(next, Date.now())
     set({ state: next })
     services.runtime.engine.notifySaved()
@@ -89,6 +97,8 @@ export const useApp = create<AppStore>((set, get) => ({
   },
 
   wiped() {
+    // A pending "Desfazer" holds records of the wiped set: never replay it.
+    useUndo.getState().dismiss()
     // A dismissed version from before the wipe must not hide the banner after pairing again.
     useUpdate.getState().reset()
     set({
@@ -105,14 +115,3 @@ export const useApp = create<AppStore>((set, get) => ({
     set({ profileId: id })
   }
 }))
-
-/** The status line's text (read-only, or offline with changes waiting), or null. */
-export function useStatusBannerText(): string | null {
-  const readOnly = useApp((s) => s.readOnly)
-  const status = useApp((s) => s.status)
-  return readOnly
-    ? DISCONNECTED_TEXT
-    : status?.state === 'offline' && status.pendingCount > 0
-      ? OFFLINE_TEXT
-      : null
-}
