@@ -155,6 +155,10 @@ Quando a mesma coisa é editada nos dois PCs sem conexão, a versão mais recent
 
 O app do celular (em [`apps/mobile/`](apps/mobile/)) entra na mesma sincronização como mais um aparelho. Na v1 ele tem tarefas (com **Próximas**), hábitos, gastos e receitas, notas dos projetos e busca. Tudo funciona sem internet e sincroniza quando o app está aberto. Ele abre com biometria, ou com o PIN/padrão/senha do Android, e pede de novo depois de 5 minutos fora. Para usar, o Android precisa ter um bloqueio de tela configurado.
 
+O visual segue o do PC (tema escuro ou claro, conforme o sistema). O botão **(+)** cria uma tarefa, um gasto, uma receita ou uma nota com um toque, já no último projeto ou tabela usado. Tarefas mostram primeiro o que vence hoje, e deslizar uma tarefa para a direita a conclui (com **Desfazer** por 5 segundos). Hábitos têm um botão **Hoje**, e Finanças abrem com o saldo, as entradas e as saídas do mês. O app respeita o tamanho de fonte do Android, o TalkBack e a opção **Remover animações**.
+
+> Quem já tem uma versão anterior instalada precisa instalar o APK novo por cima: esta versão traz bibliotecas nativas novas (ícones, gestos e o seletor de data).
+
 O APK é gerado pelo GitHub Actions e assinado com uma chave sua. Prepare uma vez:
 
 ```bash

@@ -6,11 +6,20 @@ import {
 } from '@react-navigation/native'
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
 import { createNativeStackNavigator } from '@react-navigation/native-stack'
-import { useEffect, type ComponentType } from 'react'
-import { ActivityIndicator, Pressable, Text, View } from 'react-native'
+import { createContext, useContext, useEffect, useState, type ComponentType } from 'react'
+import { Pressable, StyleSheet, View } from 'react-native'
+import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context'
 import { bootstrap } from './bootstrap'
+import { AppMark } from './components/AppMark'
+import { QuickCreate } from './components/QuickCreate'
 import { StatusBanner } from './components/StatusBanner'
+import { TabIcon } from './components/TabIcon'
+import { ACTION_ICONS } from './components/icons'
+import { Fab, Snackbar } from './components/ui'
+import { useEditing } from './store/editing'
+import { useUndo } from './store/undo'
+import { MIN_TOUCH, SPACE } from './theme'
 import { LockGate } from './lock/LockGate'
 import { FinanceScreen } from './screens/FinanceScreen'
 import { HabitsScreen } from './screens/HabitsScreen'
@@ -79,38 +88,106 @@ function navigationTheme(theme: Theme): typeof DefaultTheme {
   }
 }
 
+/** Tabs where the (+) shows; in Busca the keyboard owns the bottom of the screen. */
+const FAB_TABS: ReadonlySet<string> = new Set(['Tarefas', 'Hábitos', 'Finanças', 'Notas'])
+
+const OpenCreate = createContext<() => void>(() => undefined)
+
+/** The bottom notice ("Tarefa concluída · Desfazer") shared by every tab. */
+function UndoBar(): React.JSX.Element {
+  const message = useUndo((s) => s.message)
+  const canUndo = useUndo((s) => s.canUndo)
+  const run = useUndo((s) => s.run)
+  return (
+    <Snackbar
+      visible={!!message}
+      message={message}
+      actionLabel={canUndo ? 'Desfazer' : undefined}
+      onAction={canUndo ? run : undefined}
+    />
+  )
+}
+
+/** One tab's page: status line on top, content, then the (+) and the notice over it. */
+function TabPage({ label }: { label: (typeof TAB_LABELS)[number] }): React.JSX.Element {
+  const Content = TAB_SCREENS[label]
+  const openCreate = useContext(OpenCreate)
+  const readOnly = useApp((s) => s.readOnly)
+  const notice = useUndo((s) => s.message)
+  const editing = useEditing((s) => s.count > 0)
+  return (
+    <View style={styles.page}>
+      <StatusBanner />
+      <View style={styles.page}>{Content ? <Content /> : <Placeholder title={label} />}</View>
+      <View pointerEvents="box-none" style={styles.overlay}>
+        {FAB_TABS.has(label) && !editing ? (
+          <View style={styles.fab}>
+            <Fab a11yLabel="Criar" onPress={openCreate} disabled={readOnly} />
+          </View>
+        ) : null}
+        {notice ? (
+          <View style={styles.notice}>
+            <UndoBar />
+          </View>
+        ) : null}
+      </View>
+    </View>
+  )
+}
+
 function TabsScreen({
   navigation
 }: {
-  navigation: { navigate(route: 'Ajustes'): void }
+  navigation: {
+    navigate(route: 'Ajustes'): void
+    navigate(route: 'Abas', params: object): void
+  }
 }): React.JSX.Element {
   const theme = useTheme()
+  const [creating, setCreating] = useState(false)
+  const Gear = ACTION_ICONS.settings
   return (
-    <Tabs.Navigator
-      screenOptions={{
-        tabBarActiveTintColor: theme.purple,
-        tabBarInactiveTintColor: theme.muted,
-        headerRight: () => (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Ajustes"
-            onPress={() => navigation.navigate('Ajustes')}
-            style={{ paddingHorizontal: 16, minHeight: 44, justifyContent: 'center' }}
-          >
-            <Text style={{ color: theme.muted }}>Ajustes</Text>
-          </Pressable>
-        )
-      }}
-    >
-      {TAB_LABELS.map((label) => {
-        const Content = TAB_SCREENS[label]
-        return (
+    <OpenCreate.Provider value={() => setCreating(true)}>
+      <Tabs.Navigator
+        screenOptions={({ route }) => ({
+          tabBarActiveTintColor: theme.purple,
+          tabBarInactiveTintColor: theme.muted,
+          tabBarActiveBackgroundColor: theme.selected,
+          tabBarItemStyle: { borderRadius: 999, marginHorizontal: 4, marginVertical: 4 },
+          tabBarAccessibilityLabel: route.name,
+          tabBarButtonTestID: `tab-${route.name}`,
+          tabBarIcon: ({ color }) => (
+            <TabIcon label={route.name as (typeof TAB_LABELS)[number]} color={color} />
+          ),
+          headerRight: () => (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Ajustes"
+              onPress={() => navigation.navigate('Ajustes')}
+              style={styles.gear}
+            >
+              <Gear size={22} color={theme.onSurfaceIcon} />
+            </Pressable>
+          )
+        })}
+      >
+        {TAB_LABELS.map((label) => (
           <Tabs.Screen key={label} name={label}>
-            {() => (Content ? <Content /> : <Placeholder title={label} />)}
+            {() => <TabPage label={label} />}
           </Tabs.Screen>
-        )
-      })}
-    </Tabs.Navigator>
+        ))}
+      </Tabs.Navigator>
+      <QuickCreate
+        visible={creating}
+        onClose={() => setCreating(false)}
+        onMoreFields={(projectId, draftTitle) =>
+          navigation.navigate('Abas', {
+            screen: 'Tarefas',
+            params: { screen: 'Tarefa', params: { projectId, draftTitle } }
+          })
+        }
+      />
+    </OpenCreate.Provider>
   )
 }
 
@@ -127,7 +204,7 @@ export function AppShell({ mode }: { mode: AppMode }): React.JSX.Element {
           backgroundColor: theme.bg
         }}
       >
-        <ActivityIndicator color={theme.purple} />
+        <AppMark size={88} a11yLabel="Carregando o Sagyou" />
       </View>
     )
   if (mode === 'pair')
@@ -138,7 +215,6 @@ export function AppShell({ mode }: { mode: AppMode }): React.JSX.Element {
     )
   return (
     <NavigationContainer theme={navigationTheme(theme)}>
-      <StatusBanner />
       <Stack.Navigator>
         <Stack.Screen name="Abas" component={TabsScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Ajustes" component={SettingsScreen} />
@@ -151,10 +227,31 @@ export default function App(): React.JSX.Element {
   const mode = useApp((s) => s.mode)
   useEffect(() => bootstrap(), [])
   return (
-    <SafeAreaProvider>
-      <LockGate>
-        <AppShell mode={mode} />
-      </LockGate>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={styles.page}>
+      <SafeAreaProvider>
+        <LockGate>
+          <AppShell mode={mode} />
+        </LockGate>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   )
 }
+
+const styles = StyleSheet.create({
+  page: { flex: 1 },
+  overlay: { position: 'absolute', left: 0, right: 0, bottom: 0, top: 0 },
+  fab: { position: 'absolute', right: SPACE.lg, bottom: SPACE.lg },
+  notice: {
+    position: 'absolute',
+    left: SPACE.lg,
+    right: SPACE.lg + 56 + SPACE.md,
+    bottom: SPACE.lg
+  },
+  gear: {
+    minWidth: MIN_TOUCH,
+    minHeight: MIN_TOUCH,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: SPACE.sm
+  }
+})

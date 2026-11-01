@@ -1,5 +1,7 @@
 import { newTransaction, parseDecimalInput, type NewTransactionInput } from '@sagyou/core/finance'
 import { applyFinancialTransactionEdit } from '@sagyou/core/financialRecord'
+import { D } from '@sagyou/core/money'
+import { format, parseISO, subDays } from 'date-fns'
 import {
   DEFAULT_FINANCIAL_PROFILE_ID,
   type Currency,
@@ -55,6 +57,49 @@ export function addTransaction(
     state: withTable(state, tableId, (t) => ({ ...t, transactions: [...t.transactions, tx] })),
     id: tx.id
   }
+}
+
+/**
+ * Income and expense of the calendar month of `today`, registered future
+ * days included (same rows as the month list). Decimal strings, one table:
+ * currencies are never mixed.
+ */
+export function monthSummary(
+  txs: FinancialTransaction[],
+  today: string
+): { income: string; expense: string } {
+  const month = today.slice(0, 7)
+  let income = D(0)
+  let expense = D(0)
+  for (const tx of txs) {
+    if (!tx.date.startsWith(month)) continue
+    if (tx.type === 'income') income = income.plus(D(tx.amount))
+    else expense = expense.plus(D(tx.amount))
+  }
+  return { income: income.toString(), expense: expense.toString() }
+}
+
+// date-fns' ptBR abbreviates to "sexta", not "sex": the short names are fixed here.
+const WEEKDAY_ABBR = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb']
+
+/** A day of the month list: "Hoje", "Ontem" or "sex., 30/10". */
+function dayLabel(day: string, today: string): string {
+  if (day === today) return 'Hoje'
+  if (day === format(subDays(parseISO(today), 1), 'yyyy-MM-dd')) return 'Ontem'
+  const date = parseISO(day)
+  return `${WEEKDAY_ABBR[date.getDay()]}., ${format(date, 'dd/MM')}`
+}
+
+/** The month's transactions (already filtered) grouped by day, newest first. */
+export function groupByDay(
+  txs: FinancialTransaction[],
+  today: string
+): { day: string; label: string; txs: FinancialTransaction[] }[] {
+  const days = new Map<string, FinancialTransaction[]>()
+  for (const tx of txs) days.set(tx.date, [...(days.get(tx.date) ?? []), tx])
+  return [...days.keys()]
+    .sort((a, b) => b.localeCompare(a))
+    .map((day) => ({ day, label: dayLabel(day, today), txs: days.get(day)! }))
 }
 
 export type TransactionPatch = Partial<
