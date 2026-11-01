@@ -31,8 +31,26 @@ const desktop = vi.hoisted(() => ({
   requestSingleInstanceLock: { calls: 0 },
   trays: [] as { tooltip?: string; menu?: unknown }[],
   loginItems: [] as unknown[],
-  power: new Map<string, () => void>()
+  power: new Map<string, () => void>(),
+  syncStarts: 0
 }))
+
+// The real engine, with its start() counted: sync must start at launch, locked or not.
+vi.mock('../modules/sync/sync-engine', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../modules/sync/sync-engine')>()
+  return {
+    ...actual,
+    createSyncEngine: (deps: Parameters<typeof actual.createSyncEngine>[0]) => {
+      const engine = actual.createSyncEngine(deps)
+      const start = engine.start.bind(engine)
+      engine.start = () => {
+        desktop.syncStarts++
+        start()
+      }
+      return engine
+    }
+  }
+})
 
 let userData: string
 
@@ -164,6 +182,10 @@ describe('motor na bandeja', () => {
     expect(desktop.requestSingleInstanceLock.calls).toBe(1)
     expect(desktop.trays).toHaveLength(1)
     expect(desktop.trays[0].tooltip).toBe('Sagyou')
+  })
+
+  it('starts sync at launch, before any store:load or unlock', () => {
+    expect(desktop.syncStarts).toBe(1)
   })
 
   it('stores only the prefs the renderer may change', async () => {

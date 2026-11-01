@@ -191,11 +191,12 @@ import icon from '../../resources/icon.png?asset'
 
 let mainWindow: BrowserWindow | null = null
 let managedWindow: ManagedWindow | null = null
-// Created after protectDataIpc; started on the first store:load (only after unlock).
+// Created after protectDataIpc; started with the windows, right after the update
+// check begins, locked or not (sync needs only the OS keychain, never the UI).
 let syncEngine: SyncEngine | null = null
 let appUpdater: AppUpdater | null = null
-// Set once store:load runs, which only answers after unlock.
-let syncStartedByLoad = false
+// Set once the engine starts (openWindows), before or without any unlock.
+let syncStarted = false
 
 /** Only the app's own renderer may invoke privileged IPC handlers. */
 function assertTrustedRenderer(event: IpcMainInvokeEvent | IpcMainEvent): void {
@@ -1545,11 +1546,7 @@ app.whenReady().then(() => {
   // The renderer echoes syncGeneration on every save, so a save it builds from
   // this load never undoes a remote change already in it.
   ipcMain.handle('store:load', () => {
-    const data = { ...loadData(), syncGeneration: currentSyncGeneration() }
-    // store:load only answers once the app is unlocked, so sync never runs locked.
-    syncStartedByLoad = true
-    syncEngine?.start()
-    return data
+    return { ...loadData(), syncGeneration: currentSyncGeneration() }
   })
 
   ipcMain.handle('store:save', (_, data) => {
@@ -1656,7 +1653,7 @@ app.whenReady().then(() => {
     emitStatus: (status) => sendToRenderer('update:status-changed', status),
     // A hold change republishes the sync status; released, it also syncs.
     onSyncHoldChanged: () => {
-      if (syncStartedByLoad) void syncEngine?.syncNow()
+      if (syncStarted) void syncEngine?.syncNow()
     },
     log
   })
@@ -2620,6 +2617,11 @@ app.whenReady().then(() => {
     createTray()
     // In the background: the window never waits for the network.
     appUpdater?.start()
+    // Sync runs locked too: pushes, pulls, applies remote changes to SQLite and
+    // obeys a remote wipe on the password screen; the renderer reads them on
+    // its first store:load. Started after the update check so the hold applies.
+    syncStarted = true
+    syncEngine?.start()
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
