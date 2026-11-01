@@ -2,10 +2,17 @@ import { useState, type ReactNode } from 'react'
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { Button, Card, Screen } from '../components/ui'
 import { useApp } from '../store/app'
+import { useUpdate } from '../store/update'
 import { conflictsText, statusLines } from '../sync/status-text'
 import { FONT, MIN_TOUCH, RADIUS, SPACE, useTheme } from '../theme'
+import { availableText, DOWNLOAD_LABEL, openDownload, updateDeps } from '../update/actions'
+import { installedVersion } from '../update/installed'
 
 export const DISCONNECT_LABEL = 'Desconectar este aparelho'
+export const CHECK_UPDATE_LABEL = 'Procurar atualização'
+export const CHECKING_LABEL = 'Procurando…'
+export const LATEST_TEXT = 'Você já está na versão mais recente.'
+export const CHECK_ERROR_TEXT = 'Não foi possível verificar agora. Tente de novo mais tarde.'
 
 function Section({
   title,
@@ -23,6 +30,50 @@ function Section({
         {title}
       </Text>
       <Card>{children}</Card>
+    </View>
+  )
+}
+
+/** "Versão do app": what is installed, and a check on demand. */
+function VersionCard(): React.JSX.Element {
+  const theme = useTheme()
+  const repo = useApp((s) => s.services?.repo)
+  const manual = useUpdate((s) => s.manual)
+  const available = useUpdate((s) => s.available)
+  const checking = manual === 'checking'
+  return (
+    <View style={{ gap: SPACE.sm }}>
+      <Text
+        style={[styles.value, { color: theme.text }]}
+      >{`Instalada: ${installedVersion()}`}</Text>
+      <Button
+        label={checking ? CHECKING_LABEL : CHECK_UPDATE_LABEL}
+        disabled={checking || !repo}
+        onPress={() => {
+          if (repo) void useUpdate.getState().manualCheck(updateDeps(repo))
+        }}
+      />
+      <View accessibilityLiveRegion="polite" style={{ gap: SPACE.sm }}>
+        {manual === 'latest' ? (
+          <Text style={{ color: theme.text, fontSize: FONT.body }}>{LATEST_TEXT}</Text>
+        ) : null}
+        {manual === 'error' ? (
+          <Text style={{ color: theme.attention, fontSize: FONT.body }}>{CHECK_ERROR_TEXT}</Text>
+        ) : null}
+        {manual === 'available' && available ? (
+          <>
+            <Text style={{ color: theme.text, fontSize: FONT.body }}>
+              {availableText(available.version)}
+            </Text>
+            <Button
+              variant="primary"
+              label={DOWNLOAD_LABEL}
+              a11yLabel={`Baixar a versão ${available.version}`}
+              onPress={() => openDownload(available.url)}
+            />
+          </>
+        ) : null}
+      </View>
     </View>
   )
 }
@@ -109,7 +160,9 @@ export function SettingsScreen(): React.JSX.Element {
             })}
           </View>
         </Section>
-        {/* Versão do app: spec mobile-releases */}
+        <Section title="Versão do app">
+          <VersionCard />
+        </Section>
         <Section title="Zona de perigo" testID="zona-de-perigo">
           <Text style={{ color: theme.muted, fontSize: FONT.body }}>
             Apaga os dados deste celular. Eles continuam na nuvem e nos PCs.

@@ -14,6 +14,7 @@ import { bootstrap } from './bootstrap'
 import { AppMark } from './components/AppMark'
 import { QuickCreate } from './components/QuickCreate'
 import { StatusBanner } from './components/StatusBanner'
+import { UpdateBanner } from './components/UpdateBanner'
 import { TabIcon } from './components/TabIcon'
 import { ACTION_ICONS } from './components/icons'
 import { Fab, Snackbar } from './components/ui'
@@ -21,6 +22,7 @@ import { useEditing } from './store/editing'
 import { useUndo } from './store/undo'
 import { MIN_TOUCH, SPACE } from './theme'
 import { LockGate } from './lock/LockGate'
+import { useAutoUpdateCheck } from './update/useAutoUpdateCheck'
 import { FinanceScreen } from './screens/FinanceScreen'
 import { HabitsScreen } from './screens/HabitsScreen'
 import { NotesScreen } from './screens/NotesScreen'
@@ -118,6 +120,7 @@ function TabPage({ label }: { label: (typeof TAB_LABELS)[number] }): React.JSX.E
   return (
     <View style={styles.page}>
       <StatusBanner />
+      <UpdateBanner />
       <View style={styles.page}>{Content ? <Content /> : <Placeholder title={label} />}</View>
       <View pointerEvents="box-none" style={styles.overlay}>
         {FAB_TABS.has(label) && !editing ? (
@@ -192,6 +195,12 @@ function TabsScreen({
 }
 
 /** What is on screen for each mode; no tab exists before the phone is paired. */
+/** Looks for a newer APK once the app is in use (read-only too), never before pairing. */
+function AutoUpdateCheck(): null {
+  useAutoUpdateCheck()
+  return null
+}
+
 export function AppShell({ mode }: { mode: AppMode }): React.JSX.Element {
   const theme = useTheme()
   if (mode === 'loading')
@@ -215,6 +224,7 @@ export function AppShell({ mode }: { mode: AppMode }): React.JSX.Element {
     )
   return (
     <NavigationContainer theme={navigationTheme(theme)}>
+      <AutoUpdateCheck />
       <Stack.Navigator>
         <Stack.Screen name="Abas" component={TabsScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Ajustes" component={SettingsScreen} />

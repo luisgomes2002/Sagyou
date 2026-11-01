@@ -34,7 +34,7 @@ dados, funcionando offline, sem que nada fique legível fora dos aparelhos dele.
 - iPhone, site, Play Store.
 - Ser o **primeiro** aparelho do sync ou recuperar pelo código de recuperação: isso
   continua no desktop. O celular só entra pareando com um aparelho já ativo.
-- Atualização automática do app Android (instala-se o APK novo à mão).
+- Atualização automática do app Android (instala-se o APK novo à mão) — coberto em `docs/specs/2026-11-01-mobile-releases.md` (aviso + download pelo navegador).
 - Controle remoto do PC, desbloqueio pelo celular e aprovação de escritas (etapa 6).
 - Bytes de anexos (a etapa 2 já não sincroniza).
 

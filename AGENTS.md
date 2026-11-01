@@ -37,6 +37,9 @@ caminhos de código citados nos documentos são relativos a essa pasta.
 - **Dados persistidos:** há dados reais de usuários. Nunca remova nem renomeie
   campos sem migração; avise `⚠️ Breaking schema change — existing data may be
   affected.` (regras completas no `GUIDE.md`).
+- **Versão:** PR que muda o que chega ao usuário sobe a versão SemVer do app
+  afetado (desktop: `package.json` + lock; celular: `app.json`, `package.json`,
+  lock e `versionCode`). Tag e release são humanas, depois do merge.
 - **PR:** use `.github/pull_request_template.md` (Summary, dados persistidos,
   testes, causa raiz, decisões).
 

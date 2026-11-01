@@ -7,6 +7,7 @@ import { emptyState, type MobileState } from '../data/state'
 import { useLockState } from '../lock/lockState'
 import type { SyncRuntime } from '../sync/runtime'
 import { useUndo } from './undo'
+import { useUpdate } from './update'
 
 export const DISCONNECTED_TEXT = 'Este aparelho foi desconectado da sincronização'
 export const OFFLINE_TEXT = 'Sem conexão: as alterações ficam guardadas'
@@ -98,6 +99,8 @@ export const useApp = create<AppStore>((set, get) => ({
   wiped() {
     // A pending "Desfazer" holds records of the wiped set: never replay it.
     useUndo.getState().dismiss()
+    // A dismissed version from before the wipe must not hide the banner after pairing again.
+    useUpdate.getState().reset()
     set({
       mode: 'pair',
       state: emptyState(),

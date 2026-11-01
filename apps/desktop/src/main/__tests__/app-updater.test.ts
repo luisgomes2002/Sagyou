@@ -19,6 +19,7 @@ class FakeUpdater extends EventEmitter implements UpdaterLike {
   allowPrerelease = true
   allowDowngrade = true
   checkForUpdates = vi.fn(async () => null)
+  setFeedURL = vi.fn<(options: unknown) => void>()
   quitAndInstall = vi.fn<(isSilent?: boolean, isForceRunAfter?: boolean) => void>()
 }
 
@@ -43,6 +44,7 @@ class Clock {
   }
 }
 
+const FEED = { provider: 'custom', updateProvider: class {} }
 let updater: FakeUpdater
 let clock: Clock
 let statuses: UpdateStatus[]
@@ -54,6 +56,7 @@ function make(
 ): ReturnType<typeof createAppUpdater> {
   return createAppUpdater({
     updater,
+    feed: FEED,
     enabled: opts.enabled ?? true,
     platform: opts.platform ?? 'win32',
     isDeb: opts.isDeb ?? false,
@@ -99,6 +102,24 @@ describe('createAppUpdater', () => {
     expect(updater.allowDowngrade).toBe(false)
     expect(updater.autoDownload).toBe(true)
     expect(updater.autoInstallOnAppQuit).toBe(true)
+  })
+
+  it('aponta para o provedor próprio antes da primeira consulta', () => {
+    let fedBeforeCheck = false
+    updater.checkForUpdates.mockImplementation(async () => {
+      fedBeforeCheck = updater.setFeedURL.mock.calls.length === 1
+      return null
+    })
+    make().start()
+    expect(updater.setFeedURL).toHaveBeenCalledTimes(1)
+    expect(updater.setFeedURL).toHaveBeenCalledWith(FEED)
+    expect(fedBeforeCheck).toBe(true)
+  })
+
+  it('desligado: nunca troca o provedor', () => {
+    make({ enabled: false }).start()
+    expect(updater.setFeedURL).not.toHaveBeenCalled()
+    expect(updater.checkForUpdates).not.toHaveBeenCalled()
   })
 
   it('no .deb não instala sozinho ao fechar', () => {

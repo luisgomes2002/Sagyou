@@ -36,6 +36,16 @@ Caminhos menores:
 - Não misture trabalho alheio no commit: se a árvore tem mudanças que não são suas, não as toque. Pergunte, ou trabalhe num `git worktree` separado.
 - Não pule hooks (`--no-verify`) nem assinatura.
 
+## Versão dos apps (SemVer)
+
+Cada app tem a própria versão `MAJOR.MINOR.PATCH`, e o PR que muda o que vai para o usuário sobe a do app afetado (doc, CI e testes não sobem nada):
+
+- **PATCH** para correção; **MINOR** para feature ou mudança visível compatível; **MAJOR** para quebra (formato de dados sem migração, sync que não conversa com a versão anterior).
+- **Desktop:** `apps/desktop/package.json` e `packages["apps/desktop"]` do `package-lock.json`. A tag é `vX.Y.Z`.
+- **Celular:** `expo.version` do `apps/mobile/app.json`, `apps/mobile/package.json`, `packages["apps/mobile"]` do lock e `expo.android.versionCode = MAJOR×10000 + MINOR×100 + PATCH` (MINOR e PATCH < 100; o Android recusa instalar um `versionCode` menor). A tag é `mobile-vX.Y.Z`.
+- Testes amarram os arquivos de cada app (`release-config.test.ts`, `app-config.test.ts`). O PR diz qual versão subiu e por quê.
+- Tag e publicação do Release são humanas, depois do merge. O Latest do GitHub fica para o desktop (o celular sai com `--latest=false`), mas nenhum dos dois depende dele.
+
 ## Definition of done
 
 - `npm run typecheck` limpo, `npm test` passando, nenhum erro novo de `npm run lint`.

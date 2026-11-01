@@ -8,6 +8,7 @@ import { LockGate, type LockDeps } from '../lock/LockGate'
 import { LOCKED_TITLE } from '../lock/texts'
 import { PAIR_TITLE } from '../screens/PairScreen'
 import { DISCONNECTED_TEXT, OFFLINE_TEXT, useApp } from '../store/app'
+import { useUpdate } from '../store/update'
 import { project, seedApp } from './seed'
 import { darkTheme, lightTheme, useTheme } from '../theme'
 
@@ -16,7 +17,41 @@ function Probe(): React.JSX.Element {
 }
 
 describe('App', () => {
+  // The shell checks GitHub for a newer APK; no test may reach the network.
+  const autoCheck = jest.fn(async () => undefined)
+  beforeEach(() => {
+    autoCheck.mockClear()
+    useUpdate.getState().reset()
+    useUpdate.setState({ autoCheck })
+  })
   afterEach(() => jest.restoreAllMocks())
+
+  it('procura atualização uma vez ao abrir o app, também só leitura', async () => {
+    for (const readOnly of [false, true]) {
+      autoCheck.mockClear()
+      seedApp({}, { readOnly })
+      const view = await render(
+        <SafeAreaProvider>
+          <AppShell mode="app" />
+        </SafeAreaProvider>
+      )
+      expect(autoCheck).toHaveBeenCalledTimes(1)
+      await view.unmount()
+    }
+  })
+
+  it('não procura atualização antes de parear nem carregando', async () => {
+    seedApp()
+    for (const mode of ['pair', 'loading'] as const) {
+      const view = await render(
+        <SafeAreaProvider>
+          <AppShell mode={mode} />
+        </SafeAreaProvider>
+      )
+      await view.unmount()
+    }
+    expect(autoCheck).not.toHaveBeenCalled()
+  })
 
   it('mostra as cinco abas com os rótulos exatos', async () => {
     await render(

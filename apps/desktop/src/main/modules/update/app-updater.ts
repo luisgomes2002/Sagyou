@@ -34,6 +34,7 @@ export interface UpdaterLike extends EventEmitter {
   allowPrerelease: boolean
   allowDowngrade: boolean
   checkForUpdates(): Promise<unknown>
+  setFeedURL(options: unknown): void
   quitAndInstall(isSilent?: boolean, isForceRunAfter?: boolean): void
 }
 
@@ -41,6 +42,8 @@ type LogFn = (area: LogArea, event: string, data?: LogData) => void
 
 export interface AppUpdaterDeps {
   updater: UpdaterLike
+  /** Where to look for releases, set before the first check (see release-provider.ts). */
+  feed: unknown
   enabled: boolean
   platform: NodeJS.Platform
   isDeb: boolean
@@ -96,6 +99,7 @@ export function createAppUpdater(deps: AppUpdaterDeps): AppUpdater {
   let percent: number | null = null
   let installError = false
   let started = false
+  let feedSet = false
   // Only the first check holds sync; a retry never pauses a running sync again.
   let graceOver = !deps.enabled
   let graceTimer: unknown = null
@@ -204,6 +208,11 @@ export function createAppUpdater(deps: AppUpdaterDeps): AppUpdater {
     if (state === 'checking' && started) return status()
     if (state === 'downloading' || state === 'ready') return status()
     started = true
+    // Before the first request, whichever path asks first (start or a manual check).
+    if (!feedSet) {
+      updater.setFeedURL(deps.feed)
+      feedSet = true
+    }
     state = 'checking'
     publish()
     try {
