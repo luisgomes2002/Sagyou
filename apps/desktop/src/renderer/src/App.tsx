@@ -1,4 +1,4 @@
-﻿import { useEffect, useState, useCallback, useMemo } from 'react'
+﻿import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 import { useShallow } from 'zustand/react/shallow'
 import { useKanbanStore } from './store/kanban'
@@ -50,6 +50,8 @@ import { UnlockScreen } from './components/security/UnlockScreen'
 import { ViewErrorBoundary } from './components/ViewErrorBoundary'
 import { applyMcpAction, prepareMcpAction } from './services/mcpActions'
 import { useSyncOnReconnect } from './hooks/useSync'
+import { useAppLock } from './hooks/useAppLock'
+import { isDataLocked, setDataLocked } from './services/lockState'
 import type { GlobalSearchHit } from '../../main/modules/search/global-search-query'
 
 interface TaskModalState {
@@ -166,9 +168,14 @@ export default function App() {
 
   useSyncOnReconnect()
 
+  // A reload asked while locked (its IPC would be refused) waits for the unlock.
+  const reloadPendingRef = useRef(false)
   useEffect(() => {
     if (!window.electronAPI.store.onReload) return
-    return window.electronAPI.store.onReload(() => void loadData())
+    return window.electronAPI.store.onReload(() => {
+      if (isDataLocked()) reloadPendingRef.current = true
+      else void loadData()
+    })
   }, [loadData])
 
   useEffect(() => {
@@ -303,19 +310,25 @@ export default function App() {
     })
   }, [])
 
+  // Locked after use: the renderer saves, then shows the password screen over
+  // the same in-memory state (terminals included).
+  useAppLock(() => setSecurityState('locked'))
+
   useEffect(() => {
-    if (securityState !== 'unlocked') return
+    // Only the first unlock loads: loadData credits every saved timer, so
+    // calling it again after a lock would count that time twice.
+    if (securityState !== 'unlocked' || useKanbanStore.getState().isLoaded) return
     loadData()
   }, [loadData, securityState])
 
   useEffect(() => {
-    if (!isLoaded) return
+    if (!isLoaded || securityState !== 'unlocked') return
     // The main process keeps one snapshot per day; retry while the app is open
     // so a long-running session is covered without a manual export.
     void exportBackup(true)
     const timer = setInterval(() => void exportBackup(true), 60 * 60 * 1000)
     return () => clearInterval(timer)
-  }, [isLoaded, exportBackup])
+  }, [isLoaded, exportBackup, securityState])
 
   // Track the code agent across all views (App never unmounts, unlike the views).
   useEffect(() => {
@@ -656,7 +669,14 @@ export default function App() {
       <UnlockScreen
         userName={unlockUserName}
         corrupt={passwordConfigCorrupt}
-        onUnlocked={() => setSecurityState('unlocked')}
+        onUnlocked={() => {
+          setDataLocked(false)
+          setSecurityState('unlocked')
+          if (reloadPendingRef.current) {
+            reloadPendingRef.current = false
+            void loadData()
+          }
+        }}
       />
     )
   }

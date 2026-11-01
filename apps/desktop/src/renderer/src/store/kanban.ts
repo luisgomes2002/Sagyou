@@ -50,6 +50,7 @@ import type { FinancialSlice } from './slices/financial'
 import { createFinancialSlice } from './slices/financial'
 import type { BackupSlice } from './slices/backup'
 import { createBackupSlice } from './slices/backup'
+import { isDataLocked } from '../services/lockState'
 
 const storage = new ElectronStorage()
 let _persistTimer: ReturnType<typeof setTimeout> | null = null
@@ -208,6 +209,12 @@ const createCoreSlice: StateCreator<KanbanStore, [], [], CoreSlice> = (set, get)
   applyRemoteChanges: async ({ generation, state }) => {
     // Locked or not loaded yet: loadData will read the database, changes included.
     if (!get().isLoaded || generation <= get().syncGeneration) return
+    if (isDataLocked()) {
+      // Locked: the lock already saved, and storage.* would be refused. Keep
+      // the state in memory; nothing shows it until the unlock.
+      set({ ...syncedCollections(state, get()), syncGeneration: generation })
+      return
+    }
     if (_persistTimer !== null || _savesInFlight > 0) {
       // A local edit is waiting to be saved, or its save is still on the way,
       // so it may be missing from this state. Save (main keeps the remote

@@ -152,6 +152,25 @@ describe('sync remote changes', () => {
     expect(useKanbanStore.getState().syncGeneration).toBe(5)
   })
 
+  it('locked after use, takes the change in memory without touching storage', async () => {
+    const { setDataLocked } = await import('../../services/lockState')
+    setDataLocked(true)
+    try {
+      // Even with a local edit waiting: the lock saved before closing the IPC.
+      useKanbanStore.getState()._persist()
+      emit({ generation: 7, state: remoteState([task('Remota bloqueada')]) })
+      await settle()
+      expect(useKanbanStore.getState().tasks.map((t) => t.title)).toEqual(['Remota bloqueada'])
+      expect(useKanbanStore.getState().syncGeneration).toBe(7)
+      expect(mocks.load).not.toHaveBeenCalled()
+      expect(mocks.save).not.toHaveBeenCalled()
+    } finally {
+      setDataLocked(false)
+      // Drain the pending save so the next test starts with none.
+      await useKanbanStore.getState()._flushPersist()
+    }
+  })
+
   it('does not take a state that may predate a save still on the way', async () => {
     let release: () => void = () => undefined
     mocks.save.mockImplementationOnce(

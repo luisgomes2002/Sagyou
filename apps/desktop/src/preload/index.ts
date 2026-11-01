@@ -198,7 +198,16 @@ export const api = {
     disable: (current: string): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('security:disable', current),
     recover: (confirmed: boolean): Promise<{ success: boolean; error?: string }> =>
-      ipcRenderer.invoke('security:recover', confirmed)
+      ipcRenderer.invoke('security:recover', confirmed),
+    /** Main is locking the app (idle, Windows lock, "Bloquear agora"): save, then lockReady. */
+    onLockRequest: (cb: () => void) => {
+      const handler = (): void => cb()
+      ipcRenderer.on('security:lock-request', handler)
+      return (): void => {
+        ipcRenderer.removeListener('security:lock-request', handler)
+      }
+    },
+    lockReady: (): Promise<void> => ipcRenderer.invoke('security:lock-ready')
   },
   // This machine's tray, startup and automatic-lock preferences.
   desktop: {

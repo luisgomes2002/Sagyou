@@ -2,6 +2,7 @@ import { act, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CloseLifecycle } from '../../components/layout/CloseLifecycle'
 import { useKanbanStore } from '../../store/kanban'
+import { setDataLocked } from '../../services/lockState'
 
 vi.mock('../../store/kanban', () => ({ useKanbanStore: { getState: vi.fn() } }))
 
@@ -111,6 +112,19 @@ describe('CloseLifecycle', () => {
 
     expect(flush).not.toHaveBeenCalled()
     expect(complete).toHaveBeenCalledOnce()
+  })
+
+  it('locked after use, closes without a save (the lock already saved)', async () => {
+    setDataLocked(true)
+    try {
+      render(<CloseLifecycle />)
+      await requestClose()
+      await paintFrame()
+      expect(flush).not.toHaveBeenCalled()
+      expect(complete).toHaveBeenCalledOnce()
+    } finally {
+      setDataLocked(false)
+    }
   })
 
   it('shows a save error without confirming success', async () => {
