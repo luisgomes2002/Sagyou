@@ -53,7 +53,8 @@ export const useUpdate = create<UpdateStore>((set, get) => ({
     set({ dismissed: deps.repo.readPref(PREF_UPDATE_DISMISSED) })
     if (autoInFlight) return autoInFlight
     const last = Date.parse(deps.repo.readPref(PREF_UPDATE_LAST_CHECK) ?? '')
-    if (Number.isFinite(last) && deps.now() - last < AUTO_CHECK_INTERVAL_MS) return Promise.resolve()
+    if (Number.isFinite(last) && deps.now() - last < AUTO_CHECK_INTERVAL_MS)
+      return Promise.resolve()
     autoInFlight = (async () => {
       try {
         const found = await fetchLatest(deps.fetch, deps.installed)

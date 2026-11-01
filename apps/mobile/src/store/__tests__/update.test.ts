@@ -27,7 +27,14 @@ function releases(...versions: string[]): unknown[] {
   }))
 }
 
-function setup(body: unknown[] = [], prefs: Record<string, string> = {}) {
+interface Setup {
+  deps: UpdateDeps
+  store: Map<string, string>
+  fetch: jest.Mock
+  now: jest.Mock<number, []>
+}
+
+function setup(body: unknown[] = [], prefs: Record<string, string> = {}): Setup {
   const store = new Map(Object.entries(prefs))
   const repo = {
     readPref: jest.fn((k: string) => store.get(k) ?? null),
@@ -36,9 +43,16 @@ function setup(body: unknown[] = [], prefs: Record<string, string> = {}) {
       else store.set(k, v)
     })
   }
-  const fetch = jest.fn(async () => ({ status: 200, json: async () => body }) as unknown as Response)
+  const fetch = jest.fn(
+    async () => ({ status: 200, json: async () => body }) as unknown as Response
+  )
   const now = jest.fn(() => NOW)
-  const deps: UpdateDeps = { repo, fetch: fetch as unknown as typeof globalThis.fetch, now, installed: '0.0.1' }
+  const deps: UpdateDeps = {
+    repo,
+    fetch: fetch as unknown as typeof globalThis.fetch,
+    now,
+    installed: '0.0.1'
+  }
   return { deps, store, fetch, now }
 }
 
@@ -77,7 +91,9 @@ describe('consulta automática', () => {
     const recent = setup([], { [PREF_UPDATE_LAST_CHECK]: new Date(NOW - 23 * HOUR).toISOString() })
     await useUpdate.getState().autoCheck(recent.deps)
     expect(recent.fetch).not.toHaveBeenCalled()
-    const old = setup([], { [PREF_UPDATE_LAST_CHECK]: new Date(NOW - AUTO_CHECK_INTERVAL_MS).toISOString() })
+    const old = setup([], {
+      [PREF_UPDATE_LAST_CHECK]: new Date(NOW - AUTO_CHECK_INTERVAL_MS).toISOString()
+    })
     await useUpdate.getState().autoCheck(old.deps)
     expect(old.fetch).toHaveBeenCalledTimes(1)
   })
@@ -105,7 +121,9 @@ describe('faixa e "Agora não"', () => {
     expect(store.get(PREF_UPDATE_DISMISSED)).toBe('0.0.2')
     expect(bannerUpdate(useUpdate.getState(), '0.0.1')).toBeNull()
     const url = `${DOWNLOAD_PREFIX}mobile-v0.0.3/sagyou-mobile-0.0.3.apk`
-    expect(bannerUpdate({ available: { version: '0.0.3', url }, dismissed: '0.0.2' }, '0.0.1')).toEqual({
+    expect(
+      bannerUpdate({ available: { version: '0.0.3', url }, dismissed: '0.0.2' }, '0.0.1')
+    ).toEqual({
       version: '0.0.3',
       url
     })
@@ -129,8 +147,12 @@ describe('faixa e "Agora não"', () => {
   })
 
   it('não mostra versão igual ou menor que a instalada', () => {
-    expect(bannerUpdate({ available: { version: '0.0.1', url: 'x' }, dismissed: null }, '0.0.1')).toBeNull()
-    expect(bannerUpdate({ available: { version: '0.0.1', url: 'x' }, dismissed: null }, '0.1.0')).toBeNull()
+    expect(
+      bannerUpdate({ available: { version: '0.0.1', url: 'x' }, dismissed: null }, '0.0.1')
+    ).toBeNull()
+    expect(
+      bannerUpdate({ available: { version: '0.0.1', url: 'x' }, dismissed: null }, '0.1.0')
+    ).toBeNull()
   })
 
   it('apagar os dados do aparelho zera a atualização', async () => {

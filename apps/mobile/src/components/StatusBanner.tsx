@@ -1,18 +1,7 @@
 import { StyleSheet, Text } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { DISCONNECTED_TEXT, OFFLINE_TEXT, useApp } from '../store/app'
+import { useApp, useStatusBannerText } from '../store/app'
 import { useTheme } from '../theme'
-
-/** The status line's text, or null when there is nothing to say. */
-export function useStatusBannerText(): string | null {
-  const readOnly = useApp((s) => s.readOnly)
-  const status = useApp((s) => s.status)
-  return readOnly
-    ? DISCONNECTED_TEXT
-    : status?.state === 'offline' && status.pendingCount > 0
-      ? OFFLINE_TEXT
-      : null
-}
 
 /**
  * One line at the top: read-only after a revoke, or offline with changes

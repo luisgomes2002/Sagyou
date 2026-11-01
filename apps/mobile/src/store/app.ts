@@ -105,3 +105,14 @@ export const useApp = create<AppStore>((set, get) => ({
     set({ profileId: id })
   }
 }))
+
+/** The status line's text (read-only, or offline with changes waiting), or null. */
+export function useStatusBannerText(): string | null {
+  const readOnly = useApp((s) => s.readOnly)
+  const status = useApp((s) => s.status)
+  return readOnly
+    ? DISCONNECTED_TEXT
+    : status?.state === 'offline' && status.pendingCount > 0
+      ? OFFLINE_TEXT
+      : null
+}

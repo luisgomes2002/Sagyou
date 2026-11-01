@@ -81,7 +81,7 @@ describe('SettingsScreen', () => {
     })
 
     it('com versão nova mostra e oferece Baixar', async () => {
-      const open = jest.spyOn(Linking, 'openURL').mockResolvedValue(true)
+      const open = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined)
       await render(<SettingsScreen />)
       await fireEvent.press(screen.getByText('Procurar atualização'))
       await act(async () =>
@@ -92,7 +92,11 @@ describe('SettingsScreen', () => {
               draft: false,
               prerelease: false,
               assets: [
-                { name: `sagyou-mobile-${NEXT}.apk`, state: 'uploaded', browser_download_url: URL_NEXT }
+                {
+                  name: `sagyou-mobile-${NEXT}.apk`,
+                  state: 'uploaded',
+                  browser_download_url: URL_NEXT
+                }
               ]
             }
           ])

@@ -1,16 +1,11 @@
 import { useState } from 'react'
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
-import {
-  availableText,
-  DOWNLOAD_LABEL,
-  openDownload,
-  updateDeps
-} from '../components/UpdateBanner'
 import { Button, Card, Screen } from '../components/ui'
 import { useApp } from '../store/app'
 import { useUpdate } from '../store/update'
 import { conflictsText, statusLines } from '../sync/status-text'
 import { useTheme } from '../theme'
+import { availableText, DOWNLOAD_LABEL, openDownload, updateDeps } from '../update/actions'
 import { installedVersion } from '../update/installed'
 
 export const DISCONNECT_LABEL = 'Desconectar este aparelho'

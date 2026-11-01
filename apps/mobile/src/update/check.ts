@@ -1,7 +1,8 @@
 // Decides whether a newer Android build is published on GitHub Releases.
 // Pure: the network comes in as `fetchFn`, so the rules are testable.
 
-export const RELEASES_URL = 'https://api.github.com/repos/luisgomes2002/Sagyou/releases?per_page=100'
+export const RELEASES_URL =
+  'https://api.github.com/repos/luisgomes2002/Sagyou/releases?per_page=100'
 // Only a file in this repository's releases is ever offered for download: a
 // tampered response must not send the user to another site or repository.
 export const DOWNLOAD_PREFIX = 'https://github.com/luisgomes2002/Sagyou/releases/download/'

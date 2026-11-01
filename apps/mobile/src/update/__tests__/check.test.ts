@@ -57,9 +57,9 @@ describe('pickUpdate', () => {
   it('escolhe a maior versão', () => {
     const list = [release('mobile-v0.0.2'), release('mobile-v0.1.0'), release('mobile-v0.0.10')]
     expect(pickUpdate(list, '0.0.1')?.version).toBe('0.1.0')
-    expect(pickUpdate([release('mobile-v0.0.9'), release('mobile-v0.0.10')], '0.0.1')?.version).toBe(
-      '0.0.10'
-    )
+    expect(
+      pickUpdate([release('mobile-v0.0.9'), release('mobile-v0.0.10')], '0.0.1')?.version
+    ).toBe('0.0.10')
   })
 
   it('ignora rascunho, prerelease, tag do desktop e tags tortas', () => {
@@ -79,7 +79,9 @@ describe('pickUpdate', () => {
 
   it('não conta anexo ainda subindo nem só a URL da API', () => {
     const starter = release('mobile-v0.0.2', {
-      assets: [{ name: 'sagyou-mobile-0.0.2.apk', state: 'starter', browser_download_url: apkUrl('0.0.2') }]
+      assets: [
+        { name: 'sagyou-mobile-0.0.2.apk', state: 'starter', browser_download_url: apkUrl('0.0.2') }
+      ]
     })
     const apiOnly = release('mobile-v0.0.2', {
       assets: [
@@ -99,8 +101,12 @@ describe('pickUpdate', () => {
       release('mobile-v0.0.3', { assets: [{ name, state: 'uploaded', browser_download_url: url }] })
     for (const bad of [
       asset('https://evil.example/mobile-v0.0.3/sagyou-mobile-0.0.3.apk'),
-      asset('http://github.com/luisgomes2002/Sagyou/releases/download/mobile-v0.0.3/sagyou-mobile-0.0.3.apk'),
-      asset('https://github.com/outro/Sagyou/releases/download/mobile-v0.0.3/sagyou-mobile-0.0.3.apk'),
+      asset(
+        'http://github.com/luisgomes2002/Sagyou/releases/download/mobile-v0.0.3/sagyou-mobile-0.0.3.apk'
+      ),
+      asset(
+        'https://github.com/outro/Sagyou/releases/download/mobile-v0.0.3/sagyou-mobile-0.0.3.apk'
+      ),
       asset(apkUrl('0.0.3'), 'outro.apk'),
       release('mobile-v0.0.3', { assets: [] })
     ])
@@ -131,7 +137,9 @@ describe('fetchLatest', () => {
   })
 
   it('lança em status diferente de 200', async () => {
-    const fetchFn = jest.fn(async () => ({ status: 403, json: async () => ({}) }) as unknown as Response)
+    const fetchFn = jest.fn(
+      async () => ({ status: 403, json: async () => ({}) }) as unknown as Response
+    )
     await expect(fetchLatest(fetchFn as unknown as typeof fetch, '0.0.1')).rejects.toThrow()
   })
 

@@ -71,7 +71,8 @@ export class DesktopReleaseProvider extends Provider<DesktopUpdateInfo> {
       throw codedError('Invalid GitHub releases response', 'ERR_UPDATER_INVALID_RELEASE_FEED')
     }
     const tag = pickDesktopTag(releases)
-    if (!tag) throw codedError('No published versions on GitHub', 'ERR_UPDATER_NO_PUBLISHED_VERSIONS')
+    if (!tag)
+      throw codedError('No published versions on GitHub', 'ERR_UPDATER_NO_PUBLISHED_VERSIONS')
     const channelFile = `${this.getDefaultChannelName()}.yml`
     const channelUrl = new URL(downloadPath(tag, channelFile), this.baseUrl)
     const raw = await this.httpRequest(channelUrl)

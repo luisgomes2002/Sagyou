@@ -46,7 +46,7 @@ describe('UpdateBanner', () => {
 
   it('mostra a versão nova e Baixar abre o APK pelo navegador', async () => {
     withRepo()
-    const open = jest.spyOn(Linking, 'openURL').mockResolvedValue(true)
+    const open = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined)
     useUpdate.setState({ available: { version: NEXT, url: URL_NEXT } })
     await renderBanner()
     expect(screen.getByText(`Versão ${NEXT} disponível`)).toBeTruthy()
