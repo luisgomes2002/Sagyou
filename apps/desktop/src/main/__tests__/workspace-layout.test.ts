@@ -27,7 +27,9 @@ describe('layout do monorepo', () => {
       scripts: Record<string, string>
     }
     expect(pkg.name).toBe('sagyou')
-    expect(pkg.version).toBe('1.0.0')
+    // The version moves with each release (SemVer, docs/workflow.md); the
+    // lock is kept in step by release-config.test.ts.
+    expect(pkg.version).toMatch(/^\d+\.\d+\.\d+$/)
     expect(pkg.scripts['rebuild:native']).toContain('better-sqlite3')
   })
 
