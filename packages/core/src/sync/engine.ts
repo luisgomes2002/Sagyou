@@ -76,6 +76,9 @@ export type SyncStateName =
 
 /** Shown when an action needs the server while an app update holds sync. */
 export const UPDATE_PENDING_MESSAGE = 'Sincronização em espera: começa depois da atualização'
+/** A 5xx on an action the user started: the server failed, not the network. */
+export const SERVER_ERROR_MESSAGE =
+  'O servidor de sincronização teve um erro. Tente de novo em alguns minutos.'
 const DATA_ROUTE = /^\/(push|pull|snapshot)(\/|\?|$)/
 
 export interface SyncStatus {

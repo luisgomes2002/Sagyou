@@ -34,6 +34,7 @@ import {
   POLL_MS,
   PUSH_DEBOUNCE_MS,
   wipeLocalData,
+  SERVER_ERROR_MESSAGE,
   wipeTargets,
   type FetchInit,
   type SyncApplyCtx,
@@ -1025,6 +1026,18 @@ describe('revogar e apagar', () => {
     const { a } = await pairedDevices(withData({}))
     expect(await a.engine.enrollTotp()).toContain('otpauth://totp/')
     expect(await a.engine.confirmTotp('123456')).toEqual(['ABCDEF0123456789'])
+  })
+
+  // A Worker without TOTP_ENC_KEY answered 500 and the screen said "Sem conexão",
+  // sending the user after their network instead of the server.
+  it('um 5xx numa ação do usuário diz que o erro é do servidor, não da conexão', async () => {
+    const { a } = await pairedDevices(withData({}))
+    server.mode = 'error500'
+    await expect(a.engine.enrollTotp()).rejects.toThrow(SERVER_ERROR_MESSAGE)
+    server.mode = 'down'
+    await expect(a.engine.enrollTotp()).rejects.toThrow(
+      'Sem conexão com o servidor de sincronização.'
+    )
   })
 
   it('um TypeError de rede ou um 5xx nunca apaga nada', async () => {
