@@ -1,11 +1,13 @@
-import { render, screen } from '@testing-library/react-native'
+import { fireEvent, render, screen } from '@testing-library/react-native'
 import { Text } from 'react-native'
 import * as RN from 'react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { AppShell, TAB_LABELS } from '../App'
 import { StatusBanner } from '../components/StatusBanner'
+import { LockGate, type LockDeps } from '../lock/LockGate'
 import { PAIR_TITLE } from '../screens/PairScreen'
-import { OFFLINE_TEXT, useApp } from '../store/app'
+import { DISCONNECTED_TEXT, OFFLINE_TEXT, useApp } from '../store/app'
+import { project, seedApp } from './seed'
 import { darkTheme, lightTheme, useTheme } from '../theme'
 
 function Probe(): React.JSX.Element {
@@ -23,6 +25,69 @@ describe('App', () => {
     )
     expect(TAB_LABELS).toEqual(['Tarefas', 'Hábitos', 'Finanças', 'Notas', 'Busca'])
     for (const label of TAB_LABELS) expect(screen.getAllByText(label).length).toBeGreaterThan(0)
+  })
+
+  it('cada aba tem ícone e o header abre Ajustes pela engrenagem', async () => {
+    seedApp({ projects: [project('p1', 'Sagyou')] })
+    await render(
+      <SafeAreaProvider>
+        <AppShell mode="app" />
+      </SafeAreaProvider>
+    )
+    // The tab bar draws each icon twice (active and inactive, for the crossfade).
+    for (const label of TAB_LABELS)
+      expect(screen.getAllByTestId(`tab-icon-${label}`).length).toBeGreaterThan(0)
+    await fireEvent.press(screen.getByRole('button', { name: 'Ajustes' }))
+    expect(await screen.findByText('Perfil financeiro')).toBeTruthy()
+  })
+
+  it('o (+) aparece nas abas de conteúdo e some na Busca', async () => {
+    seedApp({ projects: [project('p1', 'Sagyou')] })
+    await render(
+      <SafeAreaProvider>
+        <AppShell mode="app" />
+      </SafeAreaProvider>
+    )
+    for (const label of ['Hábitos', 'Finanças', 'Notas', 'Tarefas']) {
+      // The tab's role is "tab" on Android and "button" on iOS (the test platform).
+      await fireEvent.press(screen.getByTestId(`tab-${label}`))
+      expect([label, screen.queryByRole('button', { name: 'Criar' }) !== null]).toEqual([
+        label,
+        true
+      ])
+    }
+    await fireEvent.press(screen.getByTestId('tab-Busca'))
+    expect(screen.queryByRole('button', { name: 'Criar' })).toBeNull()
+  })
+
+  it('somente leitura: o (+) fica desabilitado e a faixa explica', async () => {
+    seedApp({ projects: [project('p1', 'Sagyou')] }, { readOnly: true })
+    await render(
+      <SafeAreaProvider>
+        <AppShell mode="app" />
+      </SafeAreaProvider>
+    )
+    expect(screen.getByRole('button', { name: 'Criar' })).toBeDisabled()
+    expect(screen.getByText(DISCONNECTED_TEXT)).toBeTruthy()
+  })
+
+  it('nada do app, nem o (+), aparece antes de desbloquear', async () => {
+    seedApp({ projects: [project('p1', 'Sagyou')] })
+    const deps: LockDeps = {
+      getEnrolledLevelAsync: async () => 3,
+      authenticateAsync: () => new Promise(() => undefined),
+      appState: { addEventListener: () => ({ remove: () => undefined }) },
+      now: () => 0
+    }
+    await render(
+      <SafeAreaProvider>
+        <LockGate deps={deps}>
+          <AppShell mode="app" />
+        </LockGate>
+      </SafeAreaProvider>
+    )
+    expect(screen.queryByRole('button', { name: 'Criar' })).toBeNull()
+    expect(screen.queryByText('Sagyou')).toBeTruthy()
   })
 
   it('sem pareamento só existe a tela de parear', async () => {

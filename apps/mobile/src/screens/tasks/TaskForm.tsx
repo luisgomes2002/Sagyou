@@ -15,6 +15,8 @@ export interface TaskFormProps {
   projectId: string
   taskId?: string
   columnId?: string
+  /** What was typed in the (+) sheet before "Mais campos". */
+  draftTitle?: string
   onDone: () => void
 }
 
@@ -23,6 +25,7 @@ export function TaskForm({
   projectId,
   taskId,
   columnId,
+  draftTitle,
   onDone
 }: TaskFormProps): React.JSX.Element {
   const theme = useTheme()
@@ -34,7 +37,7 @@ export function TaskForm({
   const columns = [...(project?.columns ?? [])].sort((a, b) => a.order - b.order)
   const openSprints = app.sprints.filter((s) => s.projectId === projectId && !s.closedAt)
 
-  const [title, setTitle] = useState(existing?.title ?? '')
+  const [title, setTitle] = useState(existing?.title ?? draftTitle ?? '')
   const [description, setDescription] = useState(existing?.description ?? '')
   const [priority, setPriority] = useState<Priority>(existing?.priority ?? 'medium')
   const [dueDate, setDueDate] = useState(toBRDate(existing?.dueDate))
