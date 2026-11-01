@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen } from '@testing-library/react-native'
-import { Text } from 'react-native'
+import { useState } from 'react'
+import { Pressable, Text } from 'react-native'
 import { LockGate, type LockDeps } from '../LockGate'
 import { NO_DEVICE_LOCK_TEXT, UNLOCK_PROMPT } from '../texts'
 
@@ -95,5 +96,46 @@ describe('bloqueio do app', () => {
     expect(NO_DEVICE_LOCK_TEXT).toBe('Configure um bloqueio de tela no Android para usar o Sagyou.')
     expect(screen.queryByText(SECRET)).toBeNull()
     expect(h.authenticate).not.toHaveBeenCalled()
+  })
+
+  // Review finding: re-locking unmounted the app, losing a form in progress.
+  it('travar de novo não perde o que estava sendo digitado', async () => {
+    function Draft(): React.JSX.Element {
+      const [count, setCount] = useState(0)
+      return (
+        <Pressable accessibilityRole="button" onPress={() => setCount((c) => c + 1)}>
+          <Text>{`rascunho ${count}`}</Text>
+        </Pressable>
+      )
+    }
+    const h = harness()
+    await render(
+      <LockGate deps={h.deps}>
+        <Draft />
+      </LockGate>
+    )
+    await fireEvent.press(await screen.findByText('rascunho 0'))
+    expect(screen.getByText('rascunho 1')).toBeTruthy()
+    h.allow(false)
+    await act(async () => {
+      h.emit('background')
+      h.advance(300_000)
+      h.emit('active')
+    })
+    expect(screen.queryByText('rascunho 1')).toBeNull()
+    h.allow(true)
+    await fireEvent.press(await screen.findByRole('button', { name: 'Desbloquear' }))
+    expect(await screen.findByText('rascunho 1')).toBeTruthy()
+  })
+
+  it('sem bloqueio de tela, "Tentar de novo" confere de novo depois de configurar', async () => {
+    let level = 0
+    const h = harness()
+    h.deps.getEnrolledLevelAsync = async () => level
+    await mount(h)
+    expect(await screen.findByText(NO_DEVICE_LOCK_TEXT)).toBeTruthy()
+    level = 3
+    await fireEvent.press(screen.getByRole('button', { name: 'Tentar de novo' }))
+    expect(await screen.findByText(SECRET)).toBeTruthy()
   })
 })

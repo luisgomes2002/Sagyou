@@ -32,7 +32,9 @@ function TaskRow({
           <Text style={{ color: overdue ? theme.red : theme.muted, fontSize: 12 }}>{subtitle}</Text>
         ) : null}
       </Pressable>
-      {onComplete ? <Button label="Concluir" onPress={onComplete} /> : null}
+      {onComplete ? (
+        <Button label="Concluir" a11yLabel={`Concluir ${task.title}`} onPress={onComplete} />
+      ) : null}
     </Card>
   )
 }

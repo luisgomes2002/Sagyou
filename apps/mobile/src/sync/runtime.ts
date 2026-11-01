@@ -59,13 +59,23 @@ export function createSyncRuntime(deps: RuntimeDeps): SyncRuntime {
   const store = createMobileSyncStore(deps.db, deps.repo, deps.getState)
   const config = createConfigStore(deps.secure)
 
+  // Fail closed: the secret goes first (a synchronous sentinel), then what is
+  // on screen, then the rows. Compacting the file is best effort; a failure
+  // there must not leave the data visible or the device still paired.
   const wipeLocal = (): void => {
+    config.clear()
+    deps.onWiped()
     deps.db.tx(() => {
       for (const table of TABLES) deps.db.run(`DELETE FROM ${table}`)
     })
-    deps.db.exec('VACUUM')
-    config.clear()
-    deps.onWiped()
+    deps.repo.resetDeviceId()
+    for (const step of ['VACUUM', 'PRAGMA wal_checkpoint(TRUNCATE)']) {
+      try {
+        deps.db.exec(step)
+      } catch {
+        // Rows are gone and secure_delete zeroed their pages; this only shrinks the file.
+      }
+    }
   }
 
   const engine = createSyncEngine({

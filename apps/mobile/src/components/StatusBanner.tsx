@@ -1,8 +1,13 @@
-import { StyleSheet, Text, View } from 'react-native'
+import { StyleSheet, Text } from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
 import { DISCONNECTED_TEXT, OFFLINE_TEXT, useApp } from '../store/app'
 import { useTheme } from '../theme'
 
-/** One line at the top: read-only after a revoke, or offline with changes waiting. */
+/**
+ * One line at the top: read-only after a revoke, or offline with changes
+ * waiting. It takes the status-bar inset only while it shows, so there is no
+ * empty band above the header the rest of the time.
+ */
 export function StatusBanner(): React.JSX.Element | null {
   const theme = useTheme()
   const readOnly = useApp((s) => s.readOnly)
@@ -14,12 +19,13 @@ export function StatusBanner(): React.JSX.Element | null {
       : null
   if (!text) return null
   return (
-    <View
+    <SafeAreaView
+      edges={['top']}
       accessibilityRole="alert"
       style={[styles.banner, { backgroundColor: theme.surface, borderColor: theme.border }]}
     >
       <Text style={{ color: readOnly ? theme.attention : theme.muted }}>{text}</Text>
-    </View>
+    </SafeAreaView>
   )
 }
 

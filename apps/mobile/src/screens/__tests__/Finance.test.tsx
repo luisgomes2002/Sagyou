@@ -99,7 +99,7 @@ describe('Finanças no celular', () => {
   it('um pagamento de dívida não abre para edição', async () => {
     seed()
     await render(<FinanceScreen today="2026-10-31" />)
-    await fireEvent.press(screen.getByRole('button', { name: 'Parcela' }))
+    await fireEvent.press(screen.getByRole('button', { name: /^Parcela,/ }))
     expect(screen.getByText(LOCKED_TEXT)).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Salvar' })).toBeNull()
   })

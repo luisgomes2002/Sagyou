@@ -10,6 +10,7 @@ import { useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { Button, Card, Chip, Field, Row, Screen } from '../components/ui'
 import { useApp } from '../store/app'
+import { DATE_FORMAT_ERROR, parseBRDate, toBRDate } from '../store/dates'
 import {
   INVALID_AMOUNT_TEXT,
   LOCKED_TEXT,
@@ -23,7 +24,6 @@ import {
 import { useTheme } from '../theme'
 
 type Form = { type: 'income' | 'expense'; tx?: FinancialTransaction } | null
-const DATE = /^\d{4}-\d{2}-\d{2}$/
 
 function TransactionForm({
   table,
@@ -41,7 +41,7 @@ function TransactionForm({
   const commit = useApp((s) => s.commit)
   const { tx } = form
   const [amount, setAmount] = useState(tx ? formatAmountInput(tx.amount, table.currency) : '')
-  const [date, setDate] = useState(tx?.date ?? todayLocalISO())
+  const [date, setDate] = useState(toBRDate(tx?.date ?? todayLocalISO()))
   const [category, setCategory] = useState(tx?.category ?? '')
   const [description, setDescription] = useState(tx?.description ?? '')
   const [error, setError] = useState<string | null>(null)
@@ -53,28 +53,34 @@ function TransactionForm({
   const save = (): void => {
     const value = parseAmount(amount, table.currency)
     if (!value) return setError(INVALID_AMOUNT_TEXT)
-    if (!DATE.test(date)) return setError('Use o formato AAAA-MM-DD.')
+    const iso = parseBRDate(date)
+    if (!iso) return setError(DATE_FORMAT_ERROR)
     const current = useApp.getState().state
     const now = new Date()
+    // "Last table used" means last table a transaction was saved in, too.
+    const done = (): void => {
+      useApp.getState().services?.repo.writePref(lastTablePref(profileId), table.id)
+      onDone()
+    }
     if (tx) {
       const result = updateTransaction(
         current,
         table.id,
         tx.id,
-        { amount: value, date, category, description: description.trim() },
+        { amount: value, date: iso, category, description: description.trim() },
         now
       )
       if ('error' in result) return setError(result.error)
-      if (commit(result.state)) onDone()
+      if (commit(result.state)) done()
       return
     }
     const next = addTransaction(
       current,
       table.id,
-      { type: form.type, amount: value, date, category, description },
+      { type: form.type, amount: value, date: iso, category, description },
       now
     ).state
-    if (commit(next)) onDone()
+    if (commit(next)) done()
   }
 
   return (
@@ -90,7 +96,7 @@ function TransactionForm({
           onChangeText={setAmount}
           keyboardType="decimal-pad"
         />
-        <Field label="Data (AAAA-MM-DD)" value={date} onChangeText={setDate} />
+        <Field label="Data (DD/MM/AAAA)" value={date} onChangeText={setDate} />
         <Field label="Descrição" value={description} onChangeText={setDescription} />
         <Text style={{ color: theme.muted, fontSize: 12 }}>Categoria</Text>
         <Row>
@@ -188,7 +194,9 @@ export function FinanceScreen({ today = todayLocalISO() }: { today?: string }): 
           <Pressable
             key={tx.id}
             accessibilityRole="button"
-            accessibilityLabel={tx.description || tx.category || 'Lançamento'}
+            accessibilityLabel={`${tx.description || tx.category || 'Lançamento'}, ${
+              tx.type === 'income' ? 'receita' : 'gasto'
+            } de ${formatCurrency(tx.amount, table.currency)}, ${toBRDate(tx.date)}`}
             onPress={() => {
               if (isLockedTransaction(table, tx)) return setNotice(LOCKED_TEXT)
               setNotice(null)

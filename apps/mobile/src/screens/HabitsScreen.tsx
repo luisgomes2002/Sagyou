@@ -8,12 +8,18 @@ import { streakText, toggleHabit } from '../store/habits'
 import { useTheme } from '../theme'
 
 const WEEKDAYS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S']
+const WEEKDAY_NAMES = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado']
 
 /** The last 7 local days, oldest first, ending today. */
-function lastWeek(today: Date): { iso: string; label: string }[] {
+function lastWeek(today: Date): { iso: string; label: string; day: string; spoken: string }[] {
   return Array.from({ length: 7 }, (_, i) => {
     const day = addDays(today, i - 6)
-    return { iso: format(day, 'yyyy-MM-dd'), label: WEEKDAYS[day.getDay()] }
+    return {
+      iso: format(day, 'yyyy-MM-dd'),
+      label: WEEKDAYS[day.getDay()],
+      day: format(day, 'd'),
+      spoken: `${WEEKDAY_NAMES[day.getDay()]}, ${format(day, 'dd/MM')}`
+    }
   })
 }
 
@@ -48,7 +54,7 @@ export function HabitsScreen({ today: todayProp }: { today?: Date }): React.JSX.
                   <Pressable
                     key={day.iso}
                     accessibilityRole="checkbox"
-                    accessibilityLabel={`${habit.name} ${day.iso}`}
+                    accessibilityLabel={`${habit.name}, ${day.spoken}`}
                     accessibilityState={{ checked: done, disabled: readOnly }}
                     disabled={readOnly}
                     onPress={() =>
@@ -62,8 +68,11 @@ export function HabitsScreen({ today: todayProp }: { today?: Date }): React.JSX.
                       }
                     ]}
                   >
-                    <Text style={{ color: done ? theme.text : theme.muted, fontSize: 12 }}>
+                    <Text style={{ color: done ? theme.text : theme.muted, fontSize: 11 }}>
                       {day.label}
+                    </Text>
+                    <Text style={{ color: done ? theme.text : theme.muted, fontSize: 13 }}>
+                      {day.day}
                     </Text>
                   </Pressable>
                 )
@@ -81,9 +90,9 @@ const styles = StyleSheet.create({
   dot: { width: 10, height: 10, borderRadius: 5 },
   week: { flexDirection: 'row', justifyContent: 'space-between' },
   day: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center'

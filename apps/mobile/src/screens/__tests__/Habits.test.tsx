@@ -53,15 +53,15 @@ describe('hábitos no celular', () => {
     await render(<HabitsScreen today={TODAY} />)
     const days = screen.getAllByRole('checkbox')
     expect(days.map((d) => d.props.accessibilityLabel)).toEqual([
-      'Água 2026-10-25',
-      'Água 2026-10-26',
-      'Água 2026-10-27',
-      'Água 2026-10-28',
-      'Água 2026-10-29',
-      'Água 2026-10-30',
-      'Água 2026-10-31'
+      'Água, domingo, 25/10',
+      'Água, segunda, 26/10',
+      'Água, terça, 27/10',
+      'Água, quarta, 28/10',
+      'Água, quinta, 29/10',
+      'Água, sexta, 30/10',
+      'Água, sábado, 31/10'
     ])
-    await fireEvent.press(screen.getByLabelText('Água 2026-10-31'))
+    await fireEvent.press(screen.getByLabelText('Água, sábado, 31/10'))
     expect(useApp.getState().state.habits[0].completions).toEqual(['2026-10-31'])
   })
 })

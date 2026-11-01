@@ -25,3 +25,6 @@ jest.mock('expo-local-authentication', () => ({
   getEnrolledLevelAsync: jest.fn(async () => 3),
   authenticateAsync: jest.fn(async () => ({ success: true }))
 }))
+jest.mock('expo-screen-capture', () => ({
+  preventScreenCaptureAsync: jest.fn(async () => undefined)
+}))

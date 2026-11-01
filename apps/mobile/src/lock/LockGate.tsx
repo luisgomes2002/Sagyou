@@ -40,6 +40,7 @@ export function LockGate({
   const [lock, setLock] = useState<Lock>('checking')
   const backgroundAt = useRef<number | null>(null)
   const prompting = useRef(false)
+  const [everOpened, setEverOpened] = useState(false)
 
   const unlock = useCallback(async (): Promise<void> => {
     if (prompting.current) return
@@ -52,7 +53,10 @@ export function LockGate({
       }
       setLock('locked')
       const result = await deps.authenticateAsync({ promptMessage: UNLOCK_PROMPT })
-      if (result.success) setLock('open')
+      if (result.success) {
+        setLock('open')
+        setEverOpened(true)
+      }
     } catch {
       setLock('locked')
     } finally {
@@ -80,27 +84,58 @@ export function LockGate({
     }
   }, [deps, unlock])
 
-  if (lock === 'open') return <>{children}</>
+  const covered = lock !== 'open'
   return (
-    <View style={[styles.root, { backgroundColor: theme.bg }]}>
-      {lock === 'no-device-lock' ? (
-        <Text accessibilityRole="alert" style={[styles.text, { color: theme.text }]}>
-          {NO_DEVICE_LOCK_TEXT}
-        </Text>
-      ) : (
-        <>
-          <Text style={[styles.title, { color: theme.text }]}>Sagyou</Text>
-          {lock === 'locked' ? (
-            <Button primary label="Desbloquear" onPress={() => void unlock()} />
-          ) : null}
-        </>
-      )}
+    <View style={styles.fill}>
+      {/* Never mounted before the first unlock; afterwards it stays mounted
+          (a form in progress survives a re-lock) but hidden from screen readers. */}
+      {everOpened ? (
+        <View
+          style={styles.fill}
+          importantForAccessibility={covered ? 'no-hide-descendants' : 'auto'}
+          accessibilityElementsHidden={covered}
+        >
+          {children}
+        </View>
+      ) : null}
+      {covered ? (
+        <View style={[styles.cover, { backgroundColor: theme.bg }]}>
+          {lock === 'no-device-lock' ? (
+            <>
+              <Text accessibilityRole="alert" style={[styles.text, { color: theme.text }]}>
+                {NO_DEVICE_LOCK_TEXT}
+              </Text>
+              <Button label="Tentar de novo" onPress={() => void unlock()} />
+            </>
+          ) : (
+            <>
+              <Text accessibilityRole="header" style={[styles.title, { color: theme.text }]}>
+                Sagyou
+              </Text>
+              {lock === 'locked' ? (
+                <Button primary label="Desbloquear" onPress={() => void unlock()} />
+              ) : null}
+            </>
+          )}
+        </View>
+      ) : null}
     </View>
   )
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 16 },
+  fill: { flex: 1 },
+  cover: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    gap: 16
+  },
   title: { fontSize: 22, fontWeight: '700' },
   text: { fontSize: 15, textAlign: 'center' }
 })

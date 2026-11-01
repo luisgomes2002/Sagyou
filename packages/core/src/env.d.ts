@@ -34,3 +34,5 @@ declare class AbortController {
 }
 
 declare function setTimeout(fn: () => void, ms: number): unknown
+
+declare function clearTimeout(handle: unknown): void

@@ -5,11 +5,11 @@ import { useState } from 'react'
 import { ScrollView, StyleSheet, Text } from 'react-native'
 import { Button, Chip, Field, Row, Screen } from '../../components/ui'
 import { useApp } from '../../store/app'
+import { DATE_FORMAT_ERROR, parseBRDate, toBRDate } from '../../store/dates'
 import { PRIORITY_LABELS, createSprint, createTask, updateTask } from '../../store/tasks'
 import { useTheme } from '../../theme'
 
 export const NEW_SPRINT = 'Nova sprint…'
-const DATE = /^\d{4}-\d{2}-\d{2}$/
 
 export interface TaskFormProps {
   projectId: string
@@ -37,7 +37,7 @@ export function TaskForm({
   const [title, setTitle] = useState(existing?.title ?? '')
   const [description, setDescription] = useState(existing?.description ?? '')
   const [priority, setPriority] = useState<Priority>(existing?.priority ?? 'medium')
-  const [dueDate, setDueDate] = useState(existing?.dueDate ?? '')
+  const [dueDate, setDueDate] = useState(toBRDate(existing?.dueDate))
   const [tags, setTags] = useState<string[]>(existing?.tags ?? [])
   const [column, setColumn] = useState(
     existing?.columnId ?? columnId ?? columns.find((c) => !isDoneColumn(c))?.id ?? columns[0]?.id
@@ -65,7 +65,8 @@ export function TaskForm({
 
   const save = (): void => {
     if (!title.trim()) return setError('Dê um título à tarefa.')
-    if (dueDate && !DATE.test(dueDate)) return setError('Use o formato AAAA-MM-DD.')
+    const due = dueDate.trim() ? parseBRDate(dueDate) : null
+    if (dueDate.trim() && !due) return setError(DATE_FORMAT_ERROR)
     if (!column) return setError('Este projeto não tem colunas.')
     const current = useApp.getState().state
     const now = new Date()
@@ -73,7 +74,7 @@ export function TaskForm({
       title: title.trim(),
       description: description.trim() || undefined,
       priority,
-      dueDate: dueDate || undefined,
+      dueDate: due ?? undefined,
       tags,
       sprintId
     }
@@ -100,7 +101,7 @@ export function TaskForm({
           ))}
         </Row>
         <Field
-          label="Prazo (AAAA-MM-DD)"
+          label="Prazo (DD/MM/AAAA)"
           value={dueDate}
           onChangeText={setDueDate}
           keyboardType="numbers-and-punctuation"

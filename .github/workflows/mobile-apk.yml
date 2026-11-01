@@ -14,6 +14,11 @@ permissions:
 jobs:
   apk:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # The signing secrets live in this environment (Settings → Environments),
+    # not at repository level, so a run from any branch cannot read them
+    # unless the environment allows it.
+    environment: mobile-release
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -28,14 +33,18 @@ jobs:
           java-version: '17'
       # Electron's native rebuild and downloads are not needed for the phone.
       - run: npm ci --ignore-scripts
+      # Pinned template: the native project comes from a known version, not a dist-tag.
+      - run: npx expo prebuild -p android --no-install --template expo-template-bare-minimum@58.0.31
+        working-directory: apps/mobile
+      # The template ships gradle-wrapper.jar, which runs with the keystore around.
+      - uses: gradle/actions/wrapper-validation@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+      # Decoded only now: prebuild and the template never run with the key on disk.
       - name: Keystore from secrets
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
           test -n "$ANDROID_KEYSTORE_BASE64" || { echo "Falta o secret ANDROID_KEYSTORE_BASE64"; exit 1; }
           echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/sagyou.jks"
-      - run: npx expo prebuild -p android --no-install
-        working-directory: apps/mobile
       - run: ./gradlew assembleRelease --no-daemon
         working-directory: apps/mobile/android
         env:

@@ -163,7 +163,7 @@ keytool -genkeypair -v -keystore sagyou.jks -alias sagyou -keyalg RSA -keysize 2
 base64 -w0 sagyou.jks > sagyou.jks.b64       # no macOS: base64 -i sagyou.jks -o sagyou.jks.b64
 ```
 
-Em **Settings → Secrets and variables → Actions** do repositório, cadastre:
+Em **Settings → Environments** do repositório, crie o ambiente **`mobile-release`**. É recomendável limitá-lo às tags `mobile-v*` ou exigir sua aprovação, para que nenhuma execução a partir de outra branch leia a chave. Nesse ambiente, cadastre os secrets:
 
 | Secret                      | Valor                          |
 | --------------------------- | ------------------------------ |

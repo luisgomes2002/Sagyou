@@ -145,6 +145,30 @@ describe('configuração de release do atualizador', () => {
     for (const use of apk.match(/uses: \S+/g) ?? []) expect(use).toMatch(/@[0-9a-f]{40}$/)
   })
 
+  // Security review: secrets in a protected environment, a pinned native
+  // template, a validated Gradle wrapper, and the key decoded last.
+  it('o APK usa ambiente protegido, template fixado e wrapper validado antes da chave', () => {
+    const apk = readRepo('.github/workflows/mobile-apk.yml')
+    expect(apk).toMatch(/^ {4}environment: mobile-release\r?$/m)
+    expect(apk).toMatch(/--template expo-template-bare-minimum@\d+\.\d+\.\d+/)
+    const validation = apk.indexOf('gradle/actions/wrapper-validation@')
+    const prebuild = apk.indexOf('expo prebuild')
+    const keystore = apk.indexOf('base64 -d')
+    const gradle = apk.indexOf('./gradlew')
+    expect(prebuild).toBeGreaterThan(0)
+    expect(validation).toBeGreaterThan(prebuild)
+    expect(keystore).toBeGreaterThan(validation)
+    expect(gradle).toBeGreaterThan(keystore)
+  })
+
+  it('os builds do desktop não instalam o app do celular', () => {
+    const builds = workflow.slice(workflow.indexOf('\n  build-windows:'))
+    expect(builds).not.toMatch(/- run: npm ci\r?$/m)
+    expect(
+      builds.match(/npm ci -w sagyou -w @sagyou\/core --include-workspace-root/g)
+    ).toHaveLength(3)
+  })
+
   it('o Quality confere o tipo do Worker', () => {
     expect(readRepo('.github/workflows/quality.yml')).toContain(
       'npm run typecheck -w sagyou-sync-server'

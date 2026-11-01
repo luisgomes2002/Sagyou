@@ -1,7 +1,7 @@
-import { toBase64 } from '@sagyou/core/sync/bytes'
+import { toBase64, toBase64Url, toHex } from '@sagyou/core/sync/bytes'
 import { newSyncKey } from '@sagyou/core/sync/crypto'
 import type { FetchLike, SyncStatus } from '@sagyou/core/sync/engine'
-import { createRecordRepo } from '../../data/records'
+import { createRecordRepo, type RecordRepo } from '../../data/records'
 import { migrate } from '../../data/schema'
 import type { SqlDb } from '../../data/sql'
 import { emptyState } from '../../data/state'
@@ -39,6 +39,7 @@ function emitter<T>(): Emitter<T> {
 
 interface Setup {
   db: SqlDb
+  repo: RecordRepo
   secure: FakeSecure
   runtime: SyncRuntime
   statuses: SyncStatus[]
@@ -48,8 +49,8 @@ interface Setup {
   key: Uint8Array
 }
 
-function setup(fetch: FetchLike): Setup {
-  const db = openNodeDb()
+function setup(fetch: FetchLike, wrap: (db: SqlDb) => SqlDb = (db) => db): Setup {
+  const db = wrap(openNodeDb())
   migrate(db)
   const repo = createRecordRepo(db)
   const secure = fakeSecure()
@@ -92,7 +93,7 @@ function setup(fetch: FetchLike): Setup {
     onRemote: () => undefined,
     onWiped: wiped
   })
-  return { db, secure, runtime, statuses, wiped, app, net, key }
+  return { db, repo, secure, runtime, statuses, wiped, app, net, key }
 }
 
 const answer =
@@ -129,7 +130,8 @@ describe('runtime do sync no celular', () => {
     const s = setup(answer(503, {}))
     s.runtime.engine.start()
     await s.runtime.engine.syncNow().catch(() => undefined)
-    const secrets = [toBase64(s.key), TOKEN]
+    // Every encoding the key could leak in: base64 (secure store), base64url (pair code), hex.
+    const secrets = [toBase64(s.key), toBase64Url(s.key), toHex(s.key), TOKEN]
     const tables = s.db
       .all<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table'")
       .map((t) => t.name)
@@ -155,5 +157,49 @@ describe('runtime do sync no celular', () => {
     expect(syncNow).not.toHaveBeenCalled()
     s.net.emit({ isConnected: true })
     expect(syncNow).toHaveBeenCalledTimes(1)
+  })
+
+  // Review finding: the wipe deleted prefs.device_id but the repo kept the id
+  // in memory. Pairing again in the same process used it, the next launch
+  // minted another one, and every batch from the phone failed to decrypt.
+  it('depois de apagar, o id usado no novo pareamento é o mesmo depois de reabrir', () => {
+    const s = setup(answer(503, {}))
+    const before = s.repo.deviceId()
+    s.runtime.wipeLocal()
+    const usedToPair = s.repo.deviceId()
+    expect(usedToPair).not.toBe(before)
+    expect(createRecordRepo(s.db).deviceId()).toBe(usedToPair)
+  })
+
+  it('se compactar o arquivo falha, o cofre e a tela já foram limpos', () => {
+    const s = setup(answer(503, {}), (db) => ({
+      ...db,
+      exec: (sql: string) => {
+        if (sql === 'VACUUM') throw new Error('SQLITE_FULL')
+        db.exec(sql)
+      }
+    }))
+    expect(() => s.runtime.wipeLocal()).not.toThrow()
+    expect(createConfigStore(s.secure).load()).toEqual({ status: 'none' })
+    expect(s.wiped).toHaveBeenCalled()
+    expect(rows(s.db, 'records')).toBe(0)
+  })
+
+  it('a chave sai do cofre na hora, mesmo se a exclusão assíncrona falhar', () => {
+    const secure = fakeSecure()
+    secure.deleteItemAsync = async () => {
+      throw new Error('keystore')
+    }
+    const store = createConfigStore(secure)
+    store.save({
+      url: 'https://sync.exemplo.workers.dev',
+      syncKey: newSyncKey(),
+      token: TOKEN,
+      deviceName: 'Pixel',
+      paused: null
+    })
+    store.clear()
+    expect(secure.data.get(SECURE_KEY)).not.toContain(TOKEN)
+    expect(createConfigStore(secure).load()).toEqual({ status: 'none' })
   })
 })

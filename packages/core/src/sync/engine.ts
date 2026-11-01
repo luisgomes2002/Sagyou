@@ -353,11 +353,13 @@ export function parsePairCode(text: string): { url: string; syncKey: Uint8Array;
 }
 
 /** AbortSignal.timeout where it exists (Node, Electron); an AbortController otherwise (React Native). */
-function timeoutSignal(ms: number): AbortSignal {
-  if (typeof AbortSignal.timeout === 'function') return AbortSignal.timeout(ms)
+function timeoutSignal(ms: number): { signal: AbortSignal; done: () => void } {
+  if (typeof AbortSignal.timeout === 'function')
+    return { signal: AbortSignal.timeout(ms), done: () => undefined }
   const controller = new AbortController()
-  setTimeout(() => controller.abort(), ms)
-  return controller.signal
+  const timer = setTimeout(() => controller.abort(), ms)
+  // Cleared once the response is in, so timers do not pile up per request.
+  return { signal: controller.signal, done: () => clearTimeout(timer) }
 }
 
 // ── Errors ───────────────────────────────────────────────────────────────────
@@ -529,17 +531,23 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
     if (init.token) headers.authorization = `Bearer ${init.token}`
     if (init.body !== undefined) headers['content-type'] = 'application/json'
     let res: { status: number; json(): Promise<unknown> }
+    const timeout = timeoutSignal(REQUEST_TIMEOUT_MS)
+    let body: Record<string, unknown>
     try {
-      res = await deps.fetch(`${base}${path}`, {
-        method: init.method,
-        headers,
-        body: init.body === undefined ? undefined : JSON.stringify(init.body),
-        signal: timeoutSignal(REQUEST_TIMEOUT_MS)
-      })
-    } catch {
-      throw new SyncOfflineError(null)
+      try {
+        res = await deps.fetch(`${base}${path}`, {
+          method: init.method,
+          headers,
+          body: init.body === undefined ? undefined : JSON.stringify(init.body),
+          signal: timeout.signal
+        })
+      } catch {
+        throw new SyncOfflineError(null)
+      }
+      body = asObject(await res.json().catch(() => ({})))
+    } finally {
+      timeout.done()
     }
-    const body = asObject(await res.json().catch(() => ({})))
     if (res.status === 401) {
       if (body.revoked === true) throw new SyncAuthError(body.wipe === true)
       // A bad setup proof or second factor is an action error. A 401 on the
@@ -977,6 +985,7 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       resetCursors()
       session = sessionFrom(config)
       disconnected = false
+      wiped = false
       loadState = 'ok'
       log.info('sync', 'activated')
       return { recoveryCode: toRecoveryCode(syncKey, base) }
@@ -1171,6 +1180,9 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
         const s = sessionFrom(config)
         session = s
         disconnected = false
+        // A device paired again in the same process (the phone does not relaunch
+        // after a wipe, unlike the desktop) must sync again.
+        wiped = false
         loadState = 'ok'
         log.info('sync', 'paired', { mode })
         if (mode === 'replace') {

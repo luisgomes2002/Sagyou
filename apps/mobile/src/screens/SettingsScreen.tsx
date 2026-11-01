@@ -83,5 +83,10 @@ export function SettingsScreen(): React.JSX.Element {
 
 const styles = StyleSheet.create({
   label: { fontSize: 12 },
-  option: { paddingVertical: 8, paddingHorizontal: 8, borderRadius: 6 }
+  option: {
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    borderRadius: 6
+  }
 })

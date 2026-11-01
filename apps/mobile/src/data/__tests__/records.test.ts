@@ -176,4 +176,23 @@ describe('banco do celular', () => {
     expect(id).toMatch(/^[0-9a-f]{32}$/)
     expect(createRecordRepo(db).deviceId()).toBe(id)
   })
+
+  // Review finding: loadState relied on the physical row order. A child read
+  // before its parent was dropped, and the next save tombstoned it everywhere.
+  it('carrega o filho mesmo quando a linha dele está antes da do pai', () => {
+    const { db, repo } = setup()
+    repo.save(withTask(), NOW)
+    const project = db.get<{ payload: string; hash: string }>(
+      "SELECT payload, hash FROM records WHERE kind='project' AND id='p1'"
+    )!
+    // Re-insert the project last, so a plain SELECT returns the task first.
+    db.run("DELETE FROM records WHERE kind='project' AND id='p1'")
+    db.run("INSERT INTO records (kind, id, payload, hash) VALUES ('project', 'p1', ?, ?)", [
+      project.payload,
+      project.hash
+    ])
+    const loaded = repo.loadState()
+    expect(loaded.tasks.map((t) => t.id)).toEqual(['t1'])
+    expect(repo.save(loaded, NOW + 1000)).toBe(0)
+  })
 })

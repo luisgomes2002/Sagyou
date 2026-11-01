@@ -95,7 +95,7 @@ function TabsScreen({
             accessibilityRole="button"
             accessibilityLabel="Ajustes"
             onPress={() => navigation.navigate('Ajustes')}
-            style={{ paddingHorizontal: 16, paddingVertical: 8 }}
+            style={{ paddingHorizontal: 16, minHeight: 44, justifyContent: 'center' }}
           >
             <Text style={{ color: theme.muted }}>Ajustes</Text>
           </Pressable>
@@ -138,9 +138,7 @@ export function AppShell({ mode }: { mode: AppMode }): React.JSX.Element {
     )
   return (
     <NavigationContainer theme={navigationTheme(theme)}>
-      <SafeAreaView edges={['top']} style={{ backgroundColor: theme.bg }}>
-        <StatusBanner />
-      </SafeAreaView>
+      <StatusBanner />
       <Stack.Navigator>
         <Stack.Screen name="Abas" component={TabsScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Ajustes" component={SettingsScreen} />

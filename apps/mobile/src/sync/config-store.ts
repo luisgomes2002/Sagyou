@@ -20,6 +20,8 @@ interface Stored {
 }
 
 const PAUSES: readonly SyncPause[] = [null, 'restore', 'join']
+/** What a cleared config holds until the asynchronous delete lands. */
+const CLEARED = '{"cleared":true}'
 
 /**
  * The sync key and the device token live only in the secure store: never in
@@ -34,7 +36,7 @@ export function createConfigStore(secure: SecureStoreLike): SyncConfigStore {
     load(): SyncConfigLoad {
       if (cleared) return { status: 'none' }
       const raw = secure.getItem(SECURE_KEY)
-      if (!raw) return { status: 'none' }
+      if (!raw || raw === CLEARED) return { status: 'none' }
       try {
         const s = JSON.parse(raw) as Partial<Stored>
         if (
@@ -74,6 +76,9 @@ export function createConfigStore(secure: SecureStoreLike): SyncConfigStore {
 
     clear(): void {
       cleared = true
+      // The synchronous overwrite drops the key and token right away, even if
+      // the app dies before (or the OS refuses) the asynchronous delete.
+      secure.setItem(SECURE_KEY, CLEARED)
       void secure.deleteItemAsync(SECURE_KEY).catch(() => undefined)
     }
   }

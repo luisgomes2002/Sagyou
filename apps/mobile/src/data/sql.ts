@@ -42,6 +42,8 @@ export const DB_NAME = 'sagyou.db'
 export function openExpoDb(name = DB_NAME): SqlDb {
   const db = openDatabaseSync(name)
   db.execSync('PRAGMA journal_mode = WAL')
+  // Deleted rows are overwritten with zeros, so a wipe leaves nothing readable in the file.
+  db.execSync('PRAGMA secure_delete = ON')
   const exec = (sql: string): void => db.execSync(sql)
   return {
     exec,

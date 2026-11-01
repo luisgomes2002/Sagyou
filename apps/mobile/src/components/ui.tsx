@@ -7,13 +7,16 @@ export function Button({
   onPress,
   primary,
   danger,
-  disabled
+  disabled,
+  a11yLabel
 }: {
   label: string
   onPress: () => void
   primary?: boolean
   danger?: boolean
   disabled?: boolean
+  /** What a screen reader says when the visible label repeats (e.g. one per row). */
+  a11yLabel?: string
 }): React.JSX.Element {
   const theme = useTheme()
   const background = primary ? theme.primary : theme.selected
@@ -21,7 +24,7 @@ export function Button({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={a11yLabel ?? label}
       accessibilityState={{ disabled: !!disabled }}
       disabled={disabled}
       onPress={onPress}
@@ -101,7 +104,14 @@ export function Screen({ children }: { children: ReactNode }): React.JSX.Element
 }
 
 const styles = StyleSheet.create({
-  button: { borderRadius: 8, paddingVertical: 12, paddingHorizontal: 16, alignItems: 'center' },
+  button: {
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
   buttonText: { fontSize: 15, fontWeight: '600' },
   field: { gap: 4 },
   label: { fontSize: 12 },
@@ -113,7 +123,13 @@ const styles = StyleSheet.create({
     fontSize: 15
   },
   card: { borderWidth: 1, borderRadius: 8, padding: 12, gap: 6 },
-  chip: { borderWidth: 1, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 6 },
+  chip: {
+    borderWidth: 1,
+    borderRadius: 22,
+    paddingHorizontal: 14,
+    minHeight: 44,
+    justifyContent: 'center'
+  },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   screen: { flex: 1, padding: 16, gap: 12 }
 })

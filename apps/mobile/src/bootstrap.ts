@@ -1,4 +1,5 @@
 import NetInfo from '@react-native-community/netinfo'
+import * as ScreenCapture from 'expo-screen-capture'
 import * as SecureStore from 'expo-secure-store'
 import { AppState } from 'react-native'
 import { createRecordRepo } from './data/records'
@@ -14,6 +15,8 @@ let started = false
 export function bootstrap(): void {
   if (started) return
   started = true
+  // FLAG_SECURE: no screenshot, recording or Recents thumbnail of tasks and finances.
+  void ScreenCapture.preventScreenCaptureAsync().catch(() => undefined)
   const db = openExpoDb()
   migrate(db)
   const repo = createRecordRepo(db, (_change, state) => rebuildSearchIndex(db, state))

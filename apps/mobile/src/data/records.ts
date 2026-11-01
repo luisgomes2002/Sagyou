@@ -21,6 +21,7 @@ import { emptyState, type MobileState } from './state'
 type Row = Record<string, unknown>
 
 const DATA_KIND_SET = new Set<string>(DATA_KINDS)
+const KIND_RANK = new Map<string, number>(DATA_KINDS.map((kind, index) => [kind, index]))
 
 /** Keys (`kind:id`) a persist wrote or removed, for the search index. */
 export interface PersistChange {
@@ -31,6 +32,12 @@ export interface PersistChange {
 export interface RecordRepo {
   /** This installation's stage-1 sync id (32 hex), created once; never leaves the phone. */
   deviceId(): string
+  /**
+   * After a wipe: forget the cached id, so the next deviceId() mints a new one
+   * and stores it before any /pair. A cached id with no row behind it would
+   * change on the next launch and every batch would then fail to decrypt.
+   */
+  resetDeviceId(): void
   /** The state rebuilt from the stored payloads, exactly as they came (no re-normalizing). */
   loadState(): MobileState
   /** A local edit: write what changed and mint a version for it. Returns the versions made. */
@@ -195,12 +202,20 @@ export function createRecordRepo(
     readPref,
     writePref,
 
+    resetDeviceId(): void {
+      cachedDeviceId = null
+    },
+
     loadState(): MobileState {
       const rows = db.all<{ kind: string; id: string; payload: string }>(
         "SELECT kind, id, payload FROM records WHERE kind <> 'memory'"
       )
+      // Parents before children (DATA_KINDS order): applying a child whose
+      // parent is not in the state yet drops it, and the next save would
+      // then turn it into a tombstone on every device.
       const wire: WireRecord[] = rows
         .filter((r) => DATA_KIND_SET.has(r.kind))
+        .sort((a, b) => (KIND_RANK.get(a.kind) ?? 0) - (KIND_RANK.get(b.kind) ?? 0))
         .map((r) => ({
           kind: r.kind as SyncKind,
           id: r.id,
