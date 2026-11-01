@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react-native'
 import { useState } from 'react'
 import { Pressable, Text } from 'react-native'
 import { LockGate, type LockDeps } from '../LockGate'
-import { NO_DEVICE_LOCK_TEXT, UNLOCK_PROMPT } from '../texts'
+import { LOCKED_TITLE, NO_DEVICE_LOCK_TEXT, UNLOCK_PROMPT } from '../texts'
 
 const SECRET = 'Saldo: R$ 950,00'
 
@@ -51,6 +51,16 @@ async function mount(h: Harness): Promise<void> {
 }
 
 describe('bloqueio do app', () => {
+  it('a tela de bloqueio tem a marca do Sagyou e o título', async () => {
+    const h = harness()
+    h.allow(false)
+    await mount(h)
+    expect(await screen.findByText(LOCKED_TITLE)).toBeTruthy()
+    expect(LOCKED_TITLE).toBe('Sagyou bloqueado')
+    expect(screen.getByLabelText('Sagyou')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Desbloquear' })).toBeTruthy()
+  })
+
   it('ao abrir mostra o bloqueio, não o conteúdo, e libera com sucesso', async () => {
     const h = harness()
     h.allow(false)

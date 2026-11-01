@@ -1,7 +1,9 @@
 import { fireEvent, render, screen } from '@testing-library/react-native'
 import { emptyState, type MobileState } from '../../data/state'
-import { type AppServices, useApp } from '../../store/app'
-import { createNote, updateNoteContent } from '../../store/notes'
+import { project, seedApp } from '../../__tests__/seed'
+import { useApp } from '../../store/app'
+import { createNote, editedText, updateNoteContent } from '../../store/notes'
+import { PREF_QUICK_PROJECT } from '../../store/quick'
 import { NotesScreen } from '../NotesScreen'
 
 const T = '2026-10-01T00:00:00.000Z'
@@ -71,21 +73,43 @@ describe('notas no celular', () => {
     })
   })
 
-  it('blocos de texto do canvas não aparecem na lista', async () => {
-    useApp.setState({
-      state: state(),
-      readOnly: false,
-      services: {
-        repo: { save: jest.fn() },
-        runtime: { engine: { notifySaved: jest.fn() } }
-      } as unknown as AppServices
-    })
-    await render(<NotesScreen />)
+  it('blocos de texto do canvas não aparecem; criar vem do (+)', async () => {
+    seedApp(state())
+    await render(<NotesScreen now={NOW} />)
     expect(screen.getByRole('button', { name: 'Ideia do PC' })).toBeTruthy()
     expect(screen.queryByText('Título do canvas')).toBeNull()
-    await fireEvent.press(screen.getByRole('button', { name: 'Nova nota' }))
+    expect(screen.queryByRole('button', { name: 'Nova nota' })).toBeNull()
+  })
+
+  it('o cartão diz quando a nota foi editada', async () => {
+    const s = state()
+    s.notes[0] = { ...s.notes[0], updatedAt: '2026-10-31T10:00:00.000Z' }
+    seedApp(s)
+    await render(<NotesScreen now={NOW} />)
+    expect(screen.getByText('editada há 2 horas')).toBeTruthy()
+    expect(editedText('2026-10-31T11:59:40.000Z', NOW)).toBe('editada agora')
+  })
+
+  it('o seletor começa no último projeto e trocar grava o pref', async () => {
+    const s = state()
+    s.projects = [...s.projects, project('p2', 'Casa', [], { order: 1 })]
+    s.notes = [...s.notes, note('Da casa', { projectId: 'p2' })]
+    const { writePref } = seedApp(s, { prefs: { [PREF_QUICK_PROJECT]: 'p2' } })
+    await render(<NotesScreen now={NOW} />)
+    expect(screen.getByRole('button', { name: 'Projeto ▸ Casa' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Da casa' })).toBeTruthy()
+    await fireEvent.press(screen.getByRole('button', { name: 'Projeto ▸ Casa' }))
+    await fireEvent.press(screen.getByRole('radio', { name: 'Sagyou' }))
+    expect(writePref).toHaveBeenCalledWith(PREF_QUICK_PROJECT, 'p1')
+    expect(screen.getByRole('button', { name: 'Ideia do PC' })).toBeTruthy()
+  })
+
+  it('tocar abre a edição em tela cheia e salvar grava o texto', async () => {
+    seedApp(state())
+    await render(<NotesScreen now={NOW} />)
+    await fireEvent.press(screen.getByRole('button', { name: 'Ideia do PC' }))
     await fireEvent.changeText(screen.getByLabelText('Nota'), 'Lembrar do pão')
     await fireEvent.press(screen.getByRole('button', { name: 'Salvar' }))
-    expect(useApp.getState().state.notes.map((n) => n.content)).toContain('Lembrar do pão')
+    expect(useApp.getState().state.notes[0].content).toBe('Lembrar do pão')
   })
 })

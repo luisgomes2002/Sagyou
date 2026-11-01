@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { AppShell, TAB_LABELS } from '../App'
 import { StatusBanner } from '../components/StatusBanner'
 import { LockGate, type LockDeps } from '../lock/LockGate'
+import { LOCKED_TITLE } from '../lock/texts'
 import { PAIR_TITLE } from '../screens/PairScreen'
 import { DISCONNECTED_TEXT, OFFLINE_TEXT, useApp } from '../store/app'
 import { project, seedApp } from './seed'
@@ -87,7 +88,7 @@ describe('App', () => {
       </SafeAreaProvider>
     )
     expect(screen.queryByRole('button', { name: 'Criar' })).toBeNull()
-    expect(screen.queryByText('Sagyou')).toBeTruthy()
+    expect(await screen.findByText(LOCKED_TITLE)).toBeTruthy()
   })
 
   it('sem pareamento só existe a tela de parear', async () => {

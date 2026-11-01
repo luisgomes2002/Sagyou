@@ -1,9 +1,11 @@
 import * as LocalAuthentication from 'expo-local-authentication'
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { AppState, StyleSheet, Text, View } from 'react-native'
+import { AppMark } from '../components/AppMark'
+import { ACTION_ICONS } from '../components/icons'
 import { Button } from '../components/ui'
-import { useTheme } from '../theme'
-import { LOCK_AFTER_MS, NO_DEVICE_LOCK_TEXT, UNLOCK_PROMPT } from './texts'
+import { FONT, SPACE, useTheme } from '../theme'
+import { LOCKED_TITLE, LOCK_AFTER_MS, NO_DEVICE_LOCK_TEXT, UNLOCK_PROMPT } from './texts'
 
 export interface LockDeps {
   getEnrolledLevelAsync: () => Promise<number>
@@ -109,11 +111,19 @@ export function LockGate({
             </>
           ) : (
             <>
+              <AppMark size={88} />
               <Text accessibilityRole="header" style={[styles.title, { color: theme.text }]}>
-                Sagyou
+                {lock === 'locked' ? LOCKED_TITLE : 'Sagyou'}
               </Text>
               {lock === 'locked' ? (
-                <Button primary label="Desbloquear" onPress={() => void unlock()} />
+                <View style={styles.action}>
+                  <Button
+                    variant="primary"
+                    label="Desbloquear"
+                    icon={ACTION_ICONS.readOnly}
+                    onPress={() => void unlock()}
+                  />
+                </View>
               ) : null}
             </>
           )}
@@ -136,6 +146,7 @@ const styles = StyleSheet.create({
     padding: 24,
     gap: 16
   },
-  title: { fontSize: 22, fontWeight: '700' },
-  text: { fontSize: 15, textAlign: 'center' }
+  title: { fontSize: FONT.title, fontWeight: '700' },
+  text: { fontSize: FONT.bodyLg, textAlign: 'center' },
+  action: { alignSelf: 'stretch', marginTop: SPACE.sm }
 })
