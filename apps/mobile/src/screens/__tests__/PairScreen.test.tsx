@@ -1,4 +1,4 @@
-import { INVITE_EXPIRED_MESSAGE } from '@sagyou/core/sync/engine'
+import { INVITE_EXPIRED_MESSAGE, SyncUserError } from '@sagyou/core/sync/engine'
 import { act, fireEvent, render, screen } from '@testing-library/react-native'
 import { type AppServices, useApp } from '../../store/app'
 import {
@@ -41,7 +41,7 @@ describe('PairScreen', () => {
   })
 
   it('convite vencido mostra o texto do celular', async () => {
-    withJoin(jest.fn(async () => Promise.reject(new Error(INVITE_EXPIRED_MESSAGE))))
+    withJoin(jest.fn(async () => Promise.reject(new SyncUserError(INVITE_EXPIRED_MESSAGE))))
     await render(<PairScreen />)
     await fireEvent.changeText(screen.getByLabelText('Código de pareamento'), 'sagyou-sync:1:abc')
     await fireEvent.press(screen.getByRole('button', { name: 'Colar código' }))
