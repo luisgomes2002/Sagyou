@@ -27,7 +27,7 @@ describe('layout do monorepo', () => {
       scripts: Record<string, string>
     }
     expect(pkg.name).toBe('sagyou')
-    expect(pkg.version).toBe('1.0.1')
+    expect(pkg.version).toBe('1.0.0')
     expect(pkg.scripts['rebuild:native']).toContain('better-sqlite3')
   })
 
