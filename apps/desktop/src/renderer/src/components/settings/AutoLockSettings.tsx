@@ -35,7 +35,14 @@ export function AutoLockSettings({ passwordEnabled }: { passwordEnabled: boolean
     }
   }
 
-  if (prefs === null) return <></>
+  if (prefs === null)
+    return error ? (
+      <p role="alert" className="border-t border-[#2b2b31] pt-4 text-xs text-[#ef6b73]">
+        Não foi possível carregar o bloqueio automático.
+      </p>
+    ) : (
+      <></>
+    )
   const disabled = !passwordEnabled
 
   return (
@@ -50,7 +57,7 @@ export function AutoLockSettings({ passwordEnabled }: { passwordEnabled: boolean
           onChange={(event) =>
             void save({ idleLockMinutes: Number(event.target.value) as Minutes })
           }
-          className="w-full rounded-lg border border-[#2b2b31] bg-[#101014] px-3 py-2 text-sm text-[#d4d4d4] focus:border-[#7c3aed] focus:outline-none disabled:opacity-50"
+          className="w-full rounded-lg border border-[#2b2b31] bg-[#101014] px-3 py-2 text-sm text-[#d4d4d4] focus:outline-none focus-visible:border-[#6d5bb8] focus-visible:ring-1 focus-visible:ring-[#6d5bb8] disabled:opacity-50"
         >
           {OPTIONS.map((option) => (
             <option key={option.value} value={option.value}>

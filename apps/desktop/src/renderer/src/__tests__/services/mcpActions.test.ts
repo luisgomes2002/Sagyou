@@ -84,6 +84,26 @@ function seedProject(name = 'Sagyou'): { id: string; scope: McpScope } {
 const general: McpScope = { projectId: null, financialProfileId: DEFAULT_FINANCIAL_PROFILE_ID }
 const project = (id: string): Project => state().projects.find((item) => item.id === id)!
 
+describe('MCP writes while the app is locked', () => {
+  beforeEach(resetStore)
+
+  it('refuses to apply anything: the lock already saved and the save IPC is closed', async () => {
+    const { setDataLocked } = await import('../../services/lockState')
+    const { scope } = seedProject()
+    setDataLocked(true)
+    try {
+      expect(applyMcpAction('create_column', { name: 'Testes' }, scope)).toEqual({
+        ok: false,
+        error: 'O Sagyou está bloqueado. Desbloqueie no PC para continuar.'
+      })
+      expect(state().projects[0].columns.map((c) => c.name)).not.toContain('Testes')
+    } finally {
+      setDataLocked(false)
+    }
+    expect(applyMcpAction('create_column', { name: 'Testes' }, scope).ok).toBe(true)
+  })
+})
+
 describe('MCP project and column writes', () => {
   beforeEach(resetStore)
 

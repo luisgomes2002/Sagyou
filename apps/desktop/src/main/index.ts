@@ -197,6 +197,8 @@ let syncEngine: SyncEngine | null = null
 let appUpdater: AppUpdater | null = null
 // Set once the engine starts (openWindows), before or without any unlock.
 let syncStarted = false
+// Set by the first store:load, which only answers after an unlock.
+let rendererHasData = false
 
 /** Only the app's own renderer may invoke privileged IPC handlers. */
 function assertTrustedRenderer(event: IpcMainInvokeEvent | IpcMainEvent): void {
@@ -634,7 +636,8 @@ function requestMcpWriteApproval(
   resumo?: string
 ): Promise<boolean> {
   const run = codeRuns.get(runId)
-  if (!run || !isMcpRunLive(runId)) return Promise.resolve(false)
+  // Locked or locking: no new card reaches a screen nobody may answer.
+  if (!run || !isMcpRunLive(runId) || isAppLocked()) return Promise.resolve(false)
   const request: CodeApprovalRequest = {
     runId,
     id: randomUUID(),
@@ -952,6 +955,17 @@ const appLock = createAppLock({
   setUnlocked: (value) => {
     passwordUnlocked = value
   },
+  // Before the renderer's save: deny every card and queued write, then stop the
+  // timers agent runs started, so that save already holds them stopped. Locked,
+  // the renderer could not save a stop any more, and the next launch would
+  // credit every hour the timer stayed "running".
+  prepare: async () => {
+    refuseRunWritesForLock()
+    await Promise.race([
+      runTaskTimers.stopTimersKeepRuns(),
+      new Promise((resolve) => setTimeout(resolve, 3000))
+    ])
+  },
   askRenderer: () => {
     if (mainWindow && !mainWindow.isDestroyed())
       mainWindow.webContents.send('security:lock-request')
@@ -961,13 +975,22 @@ const appLock = createAppLock({
   clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>)
 })
 
-/** Fail closed: every queued MCP write and every pending approval card is refused. */
-function onAppLocked(reason: LockReason): void {
+/**
+ * Fail closed: every pending approval card is denied and every write still
+ * waiting its turn is refused. A write already executing is left to settle:
+ * its apply may already be in the renderer, and a false failure would make the
+ * agent retry it (a duplicated transaction).
+ */
+function refuseRunWritesForLock(): void {
   for (const run of codeRuns.values()) {
-    mcpWriteQueue.rejectRun(run.id, 'O Sagyou foi bloqueado.')
+    mcpWriteQueue.rejectQueued(run.id, 'O Sagyou foi bloqueado.')
     for (const { resolve } of run.pendingApprovals.values()) resolve(false)
     run.pendingApprovals.clear()
   }
+}
+
+function onAppLocked(reason: LockReason): void {
+  refuseRunWritesForLock()
   refreshTrayMenu()
   log.info('app', 'locked', { reason })
 }
@@ -1268,12 +1291,13 @@ function updateDesktopPrefs(patch: Partial<DesktopPrefs>): DesktopPrefs {
 function showTrayNoticeOnce(): void {
   if (!desktopPrefs || desktopPrefs.trayNoticeShown) return
   try {
-    if (Notification.isSupported()) {
-      new Notification({
-        title: 'Sagyou',
-        body: 'O Sagyou continua rodando na bandeja. Use Sair no ícone para encerrar.'
-      }).show()
-    }
+    // Marked only once it was really shown, so a system without notifications
+    // does not lose it for good.
+    if (!Notification.isSupported()) return
+    new Notification({
+      title: 'Sagyou',
+      body: 'O Sagyou continua rodando na bandeja. Use Sair no ícone para encerrar.'
+    }).show()
     updateDesktopPrefs({ trayNoticeShown: true })
   } catch (error) {
     log.warn('app', 'tray_notice_failed', { msg: errorMessage(error) })
@@ -1532,30 +1556,14 @@ app.whenReady().then(() => {
   powerMonitor.on('lock-screen', () => autoLock.onSystemLock())
   powerMonitor.on('suspend', () => autoLock.onSuspend())
   autoLock.start()
-  protectDataIpc(ipcMain)
-  registerFilesHandlers(ipcMain, {
-    mainWindow,
-    dialog,
-    shell,
-    filesDir,
-    taskImagesDir: taskImagesDir(),
-    userDataPath: app.getPath('userData'),
-    sep
-  })
-
-  // The renderer echoes syncGeneration on every save, so a save it builds from
-  // this load never undoes a remote change already in it.
-  ipcMain.handle('store:load', () => {
-    return { ...loadData(), syncGeneration: currentSyncGeneration() }
-  })
-
-  ipcMain.handle('store:save', (_, data) => {
-    saveData(data)
-    syncEngine?.notifySaved()
-  })
+  // Answers to requests main itself sent (MCP actions, the run timers' stop),
+  // before protectDataIpc: while the app locks, the stop of the agent runs'
+  // timers is answered after the gate may already be closed. They carry no
+  // user data out, only the outcome main asked for.
   ipcMain.on(
     'store:mcp:create-task:response',
-    (_, response: { requestId?: unknown; id?: unknown; error?: unknown }) => {
+    (event, response: { requestId?: unknown; id?: unknown; error?: unknown }) => {
+      assertTrustedRenderer(event)
       if (typeof response.requestId !== 'string') return
       if (typeof response.id === 'string') rendererMcpTasks.resolve(response.requestId, response.id)
       else
@@ -1571,7 +1579,8 @@ app.whenReady().then(() => {
   )
   ipcMain.on(
     'store:mcp:action:response',
-    (_, response: { requestId?: unknown; result?: unknown }) => {
+    (event, response: { requestId?: unknown; result?: unknown }) => {
+      assertTrustedRenderer(event)
       if (typeof response.requestId !== 'string') return
       const result = response.result as McpActionResult | undefined
       if (result && typeof result === 'object' && typeof result.ok === 'boolean')
@@ -1583,6 +1592,28 @@ app.whenReady().then(() => {
         )
     }
   )
+  protectDataIpc(ipcMain)
+  registerFilesHandlers(ipcMain, {
+    mainWindow,
+    dialog,
+    shell,
+    filesDir,
+    taskImagesDir: taskImagesDir(),
+    userDataPath: app.getPath('userData'),
+    sep
+  })
+
+  // The renderer echoes syncGeneration on every save, so a save it builds from
+  // this load never undoes a remote change already in it.
+  ipcMain.handle('store:load', () => {
+    rendererHasData = true
+    return { ...loadData(), syncGeneration: currentSyncGeneration() }
+  })
+
+  ipcMain.handle('store:save', (_, data) => {
+    saveData(data)
+    syncEngine?.notifySaved()
+  })
   ipcMain.handle('store:rebuild-search-index', () => rebuildSearchIndex())
   ipcMain.handle('search:global', (_, options: unknown) => searchGlobalIndex(options))
   ipcMain.handle('search:global:get', (_, options: unknown) => getGlobalSearchIndexHit(options))
@@ -1610,7 +1641,8 @@ app.whenReady().then(() => {
     return desktopPrefsView()
   })
   ipcMain.handle('desktop:open-at-login:set', (_, on: unknown) => {
-    if (process.platform === 'win32') {
+    // Only the installed app: in dev or unpacked, execPath is a bare electron.exe.
+    if (process.platform === 'win32' && app.isPackaged) {
       app.setLoginItemSettings({ openAtLogin: on === true, args: [LOGIN_ITEM_ARG] })
     }
     return desktopPrefsView()
@@ -1715,7 +1747,11 @@ app.whenReady().then(() => {
       app.exit(0)
     },
     emitStatus: (status) => sendToRenderer('sync:status-changed', status),
-    emitRemoteChanges: (change) => sendToRenderer('sync:remote-changes', change),
+    // Synced data reaches the renderer only once it loaded the store (after an
+    // unlock); before that, the first store:load reads it from the database.
+    emitRemoteChanges: (change) => {
+      if (rendererHasData) sendToRenderer('sync:remote-changes', change)
+    },
     isHeld: () => updater.isSyncHeld(),
     log
   })

@@ -51,6 +51,7 @@ import { ViewErrorBoundary } from './components/ViewErrorBoundary'
 import { applyMcpAction, prepareMcpAction } from './services/mcpActions'
 import { useSyncOnReconnect } from './hooks/useSync'
 import { useAppLock } from './hooks/useAppLock'
+import { useLoadOnFirstUnlock } from './hooks/useLoadOnFirstUnlock'
 import { isDataLocked, setDataLocked } from './services/lockState'
 import type { GlobalSearchHit } from '../../main/modules/search/global-search-query'
 
@@ -314,12 +315,7 @@ export default function App() {
   // the same in-memory state (terminals included).
   useAppLock(() => setSecurityState('locked'))
 
-  useEffect(() => {
-    // Only the first unlock loads: loadData credits every saved timer, so
-    // calling it again after a lock would count that time twice.
-    if (securityState !== 'unlocked' || useKanbanStore.getState().isLoaded) return
-    loadData()
-  }, [loadData, securityState])
+  useLoadOnFirstUnlock(securityState === 'unlocked', loadData)
 
   useEffect(() => {
     if (!isLoaded || securityState !== 'unlocked') return

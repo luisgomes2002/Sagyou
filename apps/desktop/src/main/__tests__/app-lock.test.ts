@@ -51,6 +51,49 @@ describe('app lock', () => {
     expect(deps.onLocked).toHaveBeenCalledTimes(1)
   })
 
+  it('prepares first (run timers, cards) and only then asks the renderer to save', async () => {
+    const { state, deps } = setup()
+    const order: string[] = []
+    let release: () => void = () => {}
+    const lock = createAppLock({
+      ...deps,
+      isUnlocked: () => state.unlocked,
+      setTimer: (fn: () => void, ms: number) => setTimeout(fn, ms),
+      clearTimer: (handle: unknown) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+      prepare: (reason) => {
+        order.push(`prepare:${reason}`)
+        return new Promise<void>((resolve) => (release = resolve))
+      },
+      askRenderer: () => order.push('ask')
+    })
+    lock.lock('idle')
+    expect(order).toEqual(['prepare:idle'])
+    // A lock-ready before the request was sent cannot skip the save.
+    lock.rendererReady()
+    expect(state.unlocked).toBe(true)
+    release()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(order).toEqual(['prepare:idle', 'ask'])
+    lock.rendererReady()
+    expect(state.unlocked).toBe(false)
+  })
+
+  it('a prepare that hangs still locks at the deadline', () => {
+    const { state, deps } = setup()
+    const lock = createAppLock({
+      ...deps,
+      isUnlocked: () => state.unlocked,
+      setTimer: (fn: () => void, ms: number) => setTimeout(fn, ms),
+      clearTimer: (handle: unknown) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+      prepare: () => new Promise<void>(() => {})
+    })
+    lock.lock('manual')
+    vi.advanceTimersByTime(LOCK_RENDERER_TIMEOUT_MS)
+    expect(state.unlocked).toBe(false)
+    expect(deps.askRenderer).not.toHaveBeenCalled()
+  })
+
   it('does nothing when already locked', () => {
     const { deps, lock } = setup(false)
     lock.lock('manual')

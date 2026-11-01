@@ -95,7 +95,7 @@ export function SettingToggle({
         checked={checked}
         disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}
-        className="h-4 w-4 accent-[#7c3aed]"
+        className="h-4 w-4 accent-[#6d5bb8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#6d5bb8]"
       />
     </label>
   )

@@ -60,6 +60,8 @@ vi.mock('electron', () => ({
     whenReady: () => Promise.resolve(),
     getPath: (name: string) => (name === 'userData' ? userData : tmpdir()),
     getVersion: () => '0.0.0-test',
+    // The installed app (the updater still stays off: no app-update.yml here).
+    isPackaged: true,
     on: vi.fn(),
     quit: vi.fn(),
     requestSingleInstanceLock: () => {
@@ -217,9 +219,10 @@ describe('motor na bandeja', () => {
     expect(desktop.loginItems).toContainEqual({ openAtLogin: true, args: ['--hidden'] })
   })
 
-  it('does not lock on the Windows lock screen without a password', () => {
+  it('does not lock on the Windows lock screen without a password', async () => {
     winSent.length = 0
     desktop.power.get('lock-screen')?.()
+    await new Promise((resolve) => setImmediate(resolve))
     expect(winSent.some((m) => m.channel === 'security:lock-request')).toBe(false)
   })
 
@@ -232,6 +235,8 @@ describe('motor na bandeja', () => {
     try {
       winSent.length = 0
       desktop.power.get('lock-screen')?.()
+      // Prepare (cards denied, run timers stopped) runs before the renderer is asked.
+      await new Promise((resolve) => setImmediate(resolve))
       expect(winSent.some((m) => m.channel === 'security:lock-request')).toBe(true)
       // Still saving: data IPC stays open for the renderer's flush.
       await expect(invoke('desktop:prefs:get')).resolves.toBeDefined()

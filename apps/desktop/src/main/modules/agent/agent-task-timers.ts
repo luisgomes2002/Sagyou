@@ -22,6 +22,7 @@ export function createRunTaskTimers(
   record: (runId: string, scope: McpScope, tool: string, result: McpActionResult) => void
   stopAll: (runId: string) => Promise<void>
   stopEverything: () => Promise<void>
+  stopTimersKeepRuns: () => Promise<void>
   hasRunning: () => boolean
 } {
   const runs = new Map<string, { scope: McpScope; timers: Map<string, number> }>()
@@ -74,7 +75,22 @@ export function createRunTaskTimers(
     await Promise.allSettled([...runs.keys()].map((runId) => stopAll(runId)))
   }
 
+  /**
+   * Stops every run's timers but keeps the runs live (the app is locking, not
+   * quitting): a timer the run starts after the unlock is tracked as usual.
+   */
+  const stopTimersKeepRuns = async (): Promise<void> => {
+    const stops: Promise<void>[] = []
+    for (const [runId, run] of runs) {
+      const timers = [...run.timers]
+      run.timers.clear()
+      for (const [taskId, startedAt] of timers)
+        stops.push(stopOne(runId, taskId, startedAt, run.scope))
+    }
+    await Promise.allSettled(stops)
+  }
+
   const hasRunning = (): boolean => [...runs.values()].some((run) => run.timers.size > 0)
 
-  return { record, stopAll, stopEverything, hasRunning }
+  return { record, stopAll, stopEverything, stopTimersKeepRuns, hasRunning }
 }

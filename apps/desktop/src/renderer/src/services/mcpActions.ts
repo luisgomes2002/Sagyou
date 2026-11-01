@@ -1,6 +1,7 @@
 import Decimal from 'decimal.js'
 import { v4 as uuidv4 } from 'uuid'
 import { useKanbanStore } from '../store/kanban'
+import { isDataLocked } from './lockState'
 import {
   CURRENCY_CONFIG,
   DEFAULT_FINANCIAL_PROFILE_ID,
@@ -1132,6 +1133,11 @@ function run(name: string, args: Args, scope: McpScope, phase: Phase): McpAction
       ok: false,
       error: 'O Sagyou ainda está carregando ou bloqueado; tente de novo em instantes.'
     }
+  // Locked after use: the lock already saved and the save IPC is closed, so a
+  // write would live only in memory and reach the database after the unlock
+  // while the agent was told it failed (and retried it).
+  if (isDataLocked())
+    return { ok: false, error: 'O Sagyou está bloqueado. Desbloqueie no PC para continuar.' }
   try {
     return handler(args ?? {}, scope, phase, useKanbanStore.getState())
   } catch (error) {
