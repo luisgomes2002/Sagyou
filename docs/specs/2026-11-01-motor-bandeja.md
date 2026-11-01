@@ -111,7 +111,7 @@ não funciona porque:
   Windows bloqueada (`powerMonitor` `lock-screen`); sistema suspenso (`suspend`), estes
   dois quando "Bloquear quando o Windows bloquear a tela" estiver ligado (padrão
   ligado); "Bloquear agora" na bandeja.
-- Ordem ao bloquear: o main avisa o renderer (`security:locking`); o renderer salva o
+- Ordem ao bloquear: o main avisa o renderer (`security:lock-request`); o renderer salva o
   que está pendente e responde; o main marca bloqueado (o mesmo `passwordUnlocked` de
   hoje, que já fecha todo IPC de dados) e nega os cartões MCP pendentes. Se o renderer
   não responder em 5 s, o main bloqueia assim mesmo.
@@ -133,8 +133,8 @@ não funciona porque:
 
 ### Desligar o Windows
 
-- No aviso de fim de sessão (`query-session-end` / `session-end`), o app para os
-  cronômetros das runs e pede o salvamento ao renderer, sem esconder nem perguntar nada.
+- No fim de sessão do Windows (`session-end`), o app para os cronômetros das runs e
+  pede o salvamento ao renderer, sem esconder nem perguntar nada.
 
 ## Dados
 
