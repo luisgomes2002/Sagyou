@@ -19,6 +19,15 @@ export function toggleHabit(
   }
 }
 
-export function streakText(streak: number): string {
-  return streak === 1 ? '1 dia seguido' : `${streak} dias seguidos`
+/** The streak next to the flame icon: "1 dia", "5 dias". */
+export function streakDaysText(streak: number): string {
+  return streak === 1 ? '1 dia' : `${streak} dias`
+}
+
+export function todayDoneText(done: number, total: number): string {
+  return `${done} de ${total} hoje`
+}
+
+export function habitUndoText(marked: boolean): string {
+  return marked ? 'Hábito marcado' : 'Hábito desmarcado'
 }

@@ -1,145 +1,45 @@
 import { todayLocalISO } from '@sagyou/core/dates'
-import {
-  financialCategories,
-  formatAmountInput,
-  formatCurrency,
-  tableBalance
-} from '@sagyou/core/finance'
-import type { FinancialTable, FinancialTransaction } from '@sagyou/core/types'
+import { formatCurrency, tableBalance } from '@sagyou/core/finance'
+import type { FinancialTransaction } from '@sagyou/core/types'
+import { Wallet } from 'lucide-react-native'
 import { useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
-import { Button, Card, Chip, Field, Row, Screen } from '../components/ui'
+import { Picker } from '../components/Picker'
+import { TransactionSheet } from '../components/TransactionSheet'
+import { categoryIcon } from '../components/icons'
+import { Card, EmptyState, Screen } from '../components/ui'
 import { useApp } from '../store/app'
-import { DATE_FORMAT_ERROR, parseBRDate, toBRDate } from '../store/dates'
+import { toBRDate } from '../store/dates'
 import {
-  INVALID_AMOUNT_TEXT,
   LOCKED_TEXT,
-  addTransaction,
+  groupByDay,
   isLockedTransaction,
   lastTablePref,
-  parseAmount,
-  tablesOfProfile,
-  updateTransaction
+  monthSummary,
+  tablesOfProfile
 } from '../store/finance'
-import { useTheme } from '../theme'
+import { useUndo } from '../store/undo'
+import { FONT, MIN_TOUCH, RADIUS, SPACE, useTheme } from '../theme'
 
-type Form = { type: 'income' | 'expense'; tx?: FinancialTransaction } | null
-
-function TransactionForm({
-  table,
-  form,
-  onDone
-}: {
-  table: FinancialTable
-  form: NonNullable<Form>
-  onDone: () => void
-}): React.JSX.Element {
-  const theme = useTheme()
-  const app = useApp((s) => s.state)
-  const profileId = useApp((s) => s.profileId)
-  const readOnly = useApp((s) => s.readOnly)
-  const commit = useApp((s) => s.commit)
-  const { tx } = form
-  const [amount, setAmount] = useState(tx ? formatAmountInput(tx.amount, table.currency) : '')
-  const [date, setDate] = useState(toBRDate(tx?.date ?? todayLocalISO()))
-  const [category, setCategory] = useState(tx?.category ?? '')
-  const [description, setDescription] = useState(tx?.description ?? '')
-  const [error, setError] = useState<string | null>(null)
-  const categories = financialCategories(
-    app.financialProfiles.find((p) => p.id === profileId),
-    tablesOfProfile(app, profileId)
-  )
-
-  const save = (): void => {
-    const value = parseAmount(amount, table.currency)
-    if (!value) return setError(INVALID_AMOUNT_TEXT)
-    const iso = parseBRDate(date)
-    if (!iso) return setError(DATE_FORMAT_ERROR)
-    const current = useApp.getState().state
-    const now = new Date()
-    // "Last table used" means last table a transaction was saved in, too.
-    const done = (): void => {
-      useApp.getState().services?.repo.writePref(lastTablePref(profileId), table.id)
-      onDone()
-    }
-    if (tx) {
-      const result = updateTransaction(
-        current,
-        table.id,
-        tx.id,
-        { amount: value, date: iso, category, description: description.trim() },
-        now
-      )
-      if ('error' in result) return setError(result.error)
-      if (commit(result.state)) done()
-      return
-    }
-    const next = addTransaction(
-      current,
-      table.id,
-      { type: form.type, amount: value, date: iso, category, description },
-      now
-    ).state
-    if (commit(next)) done()
-  }
-
-  return (
-    <ScrollView>
-      <Screen>
-        <Text accessibilityRole="header" style={[styles.title, { color: theme.text }]}>
-          {tx ? 'Editar lançamento' : form.type === 'expense' ? 'Novo gasto' : 'Nova receita'} ·{' '}
-          {table.name}
-        </Text>
-        <Field
-          label={`Valor (${table.currency})`}
-          value={amount}
-          onChangeText={setAmount}
-          keyboardType="decimal-pad"
-        />
-        <Field label="Data (DD/MM/AAAA)" value={date} onChangeText={setDate} />
-        <Field label="Descrição" value={description} onChangeText={setDescription} />
-        <Text style={{ color: theme.muted, fontSize: 12 }}>Categoria</Text>
-        <Row>
-          {categories.map((c) => (
-            <Chip key={c} label={c} selected={category === c} onPress={() => setCategory(c)} />
-          ))}
-        </Row>
-        {error ? (
-          <Text accessibilityRole="alert" style={{ color: theme.red }}>
-            {error}
-          </Text>
-        ) : null}
-        <Button primary label="Salvar" onPress={save} disabled={readOnly} />
-        <Button label="Cancelar" onPress={onDone} />
-      </Screen>
-    </ScrollView>
-  )
-}
-
-/** One table of the phone's profile at a time: its balance, this month, and quick entry. */
+/** One table of the phone's profile at a time: the month at a glance, then its days. */
 export function FinanceScreen({ today = todayLocalISO() }: { today?: string }): React.JSX.Element {
   const theme = useTheme()
   const app = useApp((s) => s.state)
   const profileId = useApp((s) => s.profileId)
   const services = useApp((s) => s.services)
-  const readOnly = useApp((s) => s.readOnly)
   const tables = tablesOfProfile(app, profileId)
   const [chosen, setChosen] = useState<string | null>(
     () => services?.repo.readPref(lastTablePref(profileId)) ?? null
   )
-  const [form, setForm] = useState<Form>(null)
-  const [notice, setNotice] = useState<string | null>(null)
+  const [editing, setEditing] = useState<FinancialTransaction | null>(null)
   const table = tables.find((t) => t.id === chosen) ?? tables[0]
 
   if (!table)
     return (
       <Screen>
-        <Text style={{ color: theme.muted }}>
-          Nenhuma tabela neste perfil. Crie uma no Sagyou do PC.
-        </Text>
+        <EmptyState icon={Wallet} text="Nenhuma tabela neste perfil. Crie uma no Sagyou do PC." />
       </Screen>
     )
-  if (form) return <TransactionForm table={table} form={form} onDone={() => setForm(null)} />
 
   const choose = (id: string): void => {
     setChosen(id)
@@ -150,88 +50,129 @@ export function FinanceScreen({ today = todayLocalISO() }: { today?: string }): 
   const monthTxs = table.transactions
     .filter((t) => t.date.startsWith(month))
     .sort((a, b) => b.date.localeCompare(a.date))
+  const totals = monthSummary(table.transactions, today)
 
   return (
-    <ScrollView>
+    <ScrollView contentContainerStyle={styles.bottomRoom}>
       <Screen>
-        <Row>
-          {tables.map((t) => (
-            <Chip
-              key={t.id}
-              label={t.name}
-              selected={t.id === table.id}
-              onPress={() => choose(t.id)}
-            />
-          ))}
-        </Row>
+        <Picker
+          label="Tabela"
+          value={table.id}
+          options={tables.map((t) => ({ id: t.id, label: t.name }))}
+          onChange={choose}
+        />
         <Card>
-          <Text style={{ color: theme.muted, fontSize: 12 }}>Saldo atual</Text>
+          <Text style={[styles.caption, { color: theme.muted }]}>Saldo atual</Text>
           <Text
             testID="saldo"
-            style={[styles.balance, { color: balance.gte(0) ? theme.purple : theme.red }]}
+            style={[styles.balance, { color: balance.gte(0) ? theme.text : theme.red }]}
           >
             {formatCurrency(balance, table.currency)}
           </Text>
-        </Card>
-        <View style={styles.actions}>
-          <View style={{ flex: 1 }}>
-            <Button
-              label="Novo gasto"
-              onPress={() => setForm({ type: 'expense' })}
-              disabled={readOnly}
-            />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Button
-              label="Nova receita"
-              onPress={() => setForm({ type: 'income' })}
-              disabled={readOnly}
-            />
-          </View>
-        </View>
-        {notice ? <Text style={{ color: theme.attention }}>{notice}</Text> : null}
-        {monthTxs.map((tx) => (
-          <Pressable
-            key={tx.id}
-            accessibilityRole="button"
-            accessibilityLabel={`${tx.description || tx.category || 'Lançamento'}, ${
-              tx.type === 'income' ? 'receita' : 'gasto'
-            } de ${formatCurrency(tx.amount, table.currency)}, ${toBRDate(tx.date)}`}
-            onPress={() => {
-              if (isLockedTransaction(table, tx)) return setNotice(LOCKED_TEXT)
-              setNotice(null)
-              setForm({ type: tx.type, tx })
-            }}
-            style={[styles.tx, { backgroundColor: theme.surface, borderColor: theme.border }]}
-          >
-            <View style={{ flex: 1 }}>
-              <Text style={{ color: theme.text }}>{tx.description || tx.category || '—'}</Text>
-              <Text style={{ color: theme.muted, fontSize: 12 }}>
-                {tx.date.split('-').reverse().join('/')}
-                {tx.category ? ` · ${tx.category}` : ''}
+          <View style={styles.totals}>
+            <View style={styles.total}>
+              <Text style={[styles.caption, { color: theme.muted }]}>Entradas do mês</Text>
+              <Text testID="entradas" style={[styles.value, { color: theme.green }]}>
+                {formatCurrency(totals.income, table.currency)}
               </Text>
             </View>
-            <Text style={{ color: tx.type === 'income' ? theme.green : theme.red }}>
-              {tx.type === 'income' ? '+' : '−'}
-              {formatCurrency(tx.amount, table.currency)}
+            <View style={styles.total}>
+              <Text style={[styles.caption, { color: theme.muted }]}>Saídas do mês</Text>
+              <Text testID="saidas" style={[styles.value, { color: theme.red }]}>
+                {formatCurrency(totals.expense, table.currency)}
+              </Text>
+            </View>
+          </View>
+        </Card>
+        {monthTxs.length === 0 ? (
+          <EmptyState icon={Wallet} text="Nenhum lançamento neste mês." />
+        ) : null}
+        {groupByDay(monthTxs, today).map((group) => (
+          <View key={group.day} style={styles.group}>
+            <Text accessibilityRole="header" style={[styles.dayTitle, { color: theme.muted }]}>
+              {group.label}
             </Text>
-          </Pressable>
+            {group.txs.map((tx) => {
+              const Icon = categoryIcon(tx.category)
+              const income = tx.type === 'income'
+              return (
+                <Pressable
+                  key={tx.id}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${tx.description || tx.category || 'Lançamento'}, ${
+                    income ? 'receita' : 'gasto'
+                  } de ${formatCurrency(tx.amount, table.currency)}, ${toBRDate(tx.date)}`}
+                  onPress={() => {
+                    if (isLockedTransaction(table, tx)) return useUndo.getState().show(LOCKED_TEXT)
+                    setEditing(tx)
+                  }}
+                  style={({ pressed }) => [
+                    styles.tx,
+                    {
+                      backgroundColor: pressed ? theme.selected : theme.surface,
+                      borderColor: theme.border
+                    }
+                  ]}
+                >
+                  <View
+                    testID={`cat-${tx.category || 'none'}`}
+                    style={[styles.icon, { backgroundColor: theme.selected }]}
+                  >
+                    <Icon size={18} color={theme.onSurfaceIcon} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: theme.text, fontSize: FONT.bodyLg }} numberOfLines={1}>
+                      {tx.description || tx.category || '—'}
+                    </Text>
+                    {tx.category && tx.description ? (
+                      <Text style={[styles.caption, { color: theme.muted }]}>{tx.category}</Text>
+                    ) : null}
+                  </View>
+                  <Text style={[styles.value, { color: income ? theme.green : theme.red }]}>
+                    {income ? '+' : '−'}
+                    {formatCurrency(tx.amount, table.currency)}
+                  </Text>
+                </Pressable>
+              )
+            })}
+          </View>
         ))}
       </Screen>
+      <TransactionSheet
+        visible={!!editing}
+        type={editing?.type ?? 'expense'}
+        tx={editing ?? undefined}
+        tableId={table.id}
+        onClose={() => setEditing(null)}
+      />
     </ScrollView>
   )
 }
 
 const styles = StyleSheet.create({
-  title: { fontSize: 17, fontWeight: '600' },
-  balance: { fontSize: 22, fontWeight: '700' },
-  actions: { flexDirection: 'row', gap: 8 },
+  bottomRoom: { paddingBottom: 96 },
+  caption: { fontSize: FONT.caption },
+  balance: { fontSize: FONT.display, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  totals: { flexDirection: 'row', gap: SPACE.md },
+  total: { flex: 1, gap: 2 },
+  value: { fontSize: FONT.bodyLg, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  group: { gap: SPACE.sm },
+  dayTitle: { fontSize: FONT.caption, fontWeight: '600', textTransform: 'uppercase' },
   tx: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: SPACE.md,
     borderWidth: 1,
-    borderRadius: 8,
-    padding: 12
+    borderRadius: RADIUS.card,
+    paddingHorizontal: SPACE.lg,
+    paddingVertical: SPACE.md,
+    minHeight: MIN_TOUCH
+  },
+  icon: {
+    width: 36,
+    height: 36,
+    borderRadius: RADIUS.pill,
+    alignItems: 'center',
+    justifyContent: 'center'
   }
 })
