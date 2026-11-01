@@ -79,6 +79,9 @@ export const INVITE_EXPIRED_MESSAGE = 'O convite expirou ou já foi usado.'
 
 /** Shown when an action needs the server while an app update holds sync. */
 export const UPDATE_PENDING_MESSAGE = 'Sincronização em espera: começa depois da atualização'
+/** A 5xx on an action the user started: the server failed, not the network. */
+export const SERVER_ERROR_MESSAGE =
+  'O servidor de sincronização teve um erro. Tente de novo em alguns minutos.'
 const DATA_ROUTE = /^\/(push|pull|snapshot)(\/|\?|$)/
 
 export interface SyncStatus {
@@ -924,7 +927,9 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
   const userError = (err: unknown, fallback: string): SyncUserError => {
     if (err instanceof SyncUserError) return err
     if (err instanceof SyncOfflineError)
-      return new SyncUserError('Sem conexão com o servidor de sincronização.')
+      return new SyncUserError(
+        err.status === null ? 'Sem conexão com o servidor de sincronização.' : SERVER_ERROR_MESSAGE
+      )
     if (err instanceof SyncAuthError) return new SyncUserError('O servidor recusou o acesso.')
     if (err instanceof SyncHttpError && err.status === 401)
       return new SyncUserError('Prova da chave ou código do autenticador inválido.')
