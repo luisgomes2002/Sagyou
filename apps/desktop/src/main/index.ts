@@ -10,6 +10,9 @@ import {
   ipcMain,
   dialog,
   safeStorage,
+  Menu,
+  Notification,
+  Tray,
   type IpcMain,
   type IpcMainEvent,
   type IpcMainInvokeEvent
@@ -147,6 +150,12 @@ import {
 } from './modules/update/app-updater'
 import { safeExternalUrl } from './modules/web/external-links'
 import { autoUpdater } from 'electron-updater'
+import {
+  loadDesktopPrefs,
+  saveDesktopPrefs,
+  type DesktopPrefs
+} from './modules/desktop/desktop-prefs'
+import { buildTrayMenu } from './modules/desktop/tray-menu'
 import { DesktopReleaseProvider } from './modules/update/release-provider'
 import { EventEmitter } from 'events'
 import {
@@ -1184,20 +1193,99 @@ function persistTerminalHandoff(
 
 const skillsPath = (): string => skillsDir(app.getPath('userData'))
 
+// This machine's tray and lock preferences (userData/desktop-prefs.json), read in whenReady.
+let desktopPrefs: DesktopPrefs | null = null
+let tray: Tray | null = null
+// Set at the start of before-quit: from then on a close really closes.
+let isQuitting = false
+
+function updateDesktopPrefs(patch: Partial<DesktopPrefs>): DesktopPrefs {
+  desktopPrefs = saveDesktopPrefs(app.getPath('userData'), is.dev, process.platform, patch)
+  return desktopPrefs
+}
+
+/** The first close that hides the window says where the app went, once. */
+function showTrayNoticeOnce(): void {
+  if (!desktopPrefs || desktopPrefs.trayNoticeShown) return
+  try {
+    if (Notification.isSupported()) {
+      new Notification({
+        title: 'Sagyou',
+        body: 'O Sagyou continua rodando na bandeja. Use Sair no ícone para encerrar.'
+      }).show()
+    }
+    updateDesktopPrefs({ trayNoticeShown: true })
+  } catch (error) {
+    log.warn('app', 'tray_notice_failed', { msg: errorMessage(error) })
+  }
+}
+
+/** Menu items depend on the lock state, so the menu is rebuilt when it changes. */
+function refreshTrayMenu(): void {
+  if (!tray) return
+  const items = buildTrayMenu({ canLock: canLockNow() }).map((item) =>
+    item.id === 'sep'
+      ? { type: 'separator' as const }
+      : {
+          label: item.label,
+          click: () => {
+            if (item.id === 'open') managedWindow?.show()
+            else if (item.id === 'lock') lockAppNow()
+            else app.quit()
+          }
+        }
+  )
+  tray.setContextMenu(Menu.buildFromTemplate(items))
+}
+
+function createTray(): void {
+  if (tray) return
+  try {
+    tray = new Tray(icon)
+    tray.setToolTip('Sagyou')
+    tray.on('click', () => managedWindow?.show())
+    tray.on('double-click', () => managedWindow?.show())
+    refreshTrayMenu()
+  } catch (error) {
+    // Some Linux desktops have no tray; the app keeps working without it.
+    log.warn('app', 'tray_failed', { msg: errorMessage(error) })
+    tray = null
+  }
+}
+
+/** Filled in by the app lock (Task 4); until then nothing can lock from the tray. */
+function canLockNow(): boolean {
+  return false
+}
+function lockAppNow(): void {}
+
 function createWindow(): void {
   managedWindow = createManagedWindow({
     preloadPath: join(__dirname, '../preload/index.js'),
     productionPagePath: join(__dirname, '../renderer/index.html'),
     icon,
     isDev: is.dev,
-    rendererUrl: process.env['ELECTRON_RENDERER_URL']
+    rendererUrl: process.env['ELECTRON_RENDERER_URL'],
+    hideOnClose: () => (desktopPrefs?.closeToTray ?? false) && !isQuitting,
+    onHidden: showTrayNoticeOnce
   })
   mainWindow = managedWindow.window
+  // Windows is ending the session (shutdown, restart, sign out): quit like
+  // "Sair" so before-quit stops the run timers and the close handshake saves.
+  mainWindow.on('session-end', () => app.quit())
 }
 
 app.commandLine.appendSwitch('lang', 'pt-BR')
 
+// One app per user: a second launch (shortcut, Start menu, login item) shows
+// the running window. Off in dev, whose userData folder on Windows is the
+// installed app's one with another case, so the lock would block `npm run dev`.
+const gotSingleInstanceLock = is.dev || app.requestSingleInstanceLock()
+if (!gotSingleInstanceLock) app.quit()
+else app.on('second-instance', () => managedWindow?.show())
+
 app.whenReady().then(() => {
+  if (!gotSingleInstanceLock) return
   // Diagnostic log first, so migrations and startup failures are recorded.
   // Lives in userData/logs (outside the backup); in dev it also echoes to the console.
   configureLog(
@@ -1215,6 +1303,7 @@ app.whenReady().then(() => {
     })
   )
   log.prune()
+  desktopPrefs = loadDesktopPrefs(app.getPath('userData'), is.dev, process.platform)
   log.info('app', 'started', { version: app.getVersion(), platform: process.platform, dev: is.dev })
   // The monitor only observes: Electron still handles the crash as before.
   process.on('uncaughtExceptionMonitor', (error) =>
@@ -1553,6 +1642,8 @@ app.whenReady().then(() => {
     allowCloseForInstall: (on) => managedWindow?.allowCloseForInstall(on),
     abortInstall: () => {
       runTimersStoppedForQuit = false
+      // The current version keeps running: the X hides to the tray again.
+      isQuitting = false
       managedWindow?.abortInstall()
     },
     openExternal: (url) => {
@@ -2419,9 +2510,12 @@ app.whenReady().then(() => {
     createWindow()
     // In the background: the window never waits for the network.
     appUpdater?.start()
+    // Always there, even with "close hides" off: "Bloquear agora" and "Sair" live in it.
+    createTray()
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
+      else managedWindow?.show()
     })
   }
   if (!shouldRunLegacyChatRemoval({ isDev: is.dev, optIn: process.env.SAGYOU_RUN_LEGACY_CHAT_REMOVAL })) {
@@ -2464,6 +2558,8 @@ app.on('window-all-closed', () => {
 let runTimersStoppedForQuit = false
 
 app.on('before-quit', (event) => {
+  // From here on a window close is part of quitting, never a hide to the tray.
+  isQuitting = true
   // Stop the timers agent runs created while the renderer can still save them;
   // otherwise the next launch would credit every hour the app stayed closed.
   if (!runTimersStoppedForQuit && runTaskTimers.hasRunning()) {

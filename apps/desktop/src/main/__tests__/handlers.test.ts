@@ -26,6 +26,14 @@ const winSent = vi.hoisted(() => [] as { channel: string; payload: unknown }[])
 /** Startup milestones in order, to prove the chat data is removed before a window exists. */
 const startupOrder = vi.hoisted(() => [] as string[])
 
+/** Desktop-shell mocks: tray, single-instance lock, login item and power events. */
+const desktop = vi.hoisted(() => ({
+  requestSingleInstanceLock: { calls: 0 },
+  trays: [] as { tooltip?: string; menu?: unknown }[],
+  loginItems: [] as unknown[],
+  power: new Map<string, () => void>()
+}))
+
 let userData: string
 
 vi.mock('electron', () => ({
@@ -35,7 +43,37 @@ vi.mock('electron', () => ({
     getPath: (name: string) => (name === 'userData' ? userData : tmpdir()),
     getVersion: () => '0.0.0-test',
     on: vi.fn(),
-    quit: vi.fn()
+    quit: vi.fn(),
+    requestSingleInstanceLock: () => {
+      desktop.requestSingleInstanceLock.calls++
+      return true
+    },
+    getLoginItemSettings: () => ({ openAtLogin: false }),
+    setLoginItemSettings: (settings: unknown) => desktop.loginItems.push(settings)
+  },
+  Tray: class {
+    private state: { tooltip?: string; menu?: unknown } = {}
+    constructor() {
+      desktop.trays.push(this.state)
+    }
+    setToolTip(text: string): void {
+      this.state.tooltip = text
+    }
+    setContextMenu(menu: unknown): void {
+      this.state.menu = menu
+    }
+    on = vi.fn()
+  },
+  Menu: { buildFromTemplate: (items: unknown) => items },
+  Notification: class {
+    static isSupported(): boolean {
+      return false
+    }
+    show = vi.fn()
+  },
+  powerMonitor: {
+    on: (name: string, fn: () => void) => desktop.power.set(name, fn),
+    getSystemIdleTime: () => 0
   },
   ipcMain: {
     handle: (channel: string, fn: (event: unknown, ...args: never[]) => unknown) =>
@@ -118,6 +156,14 @@ afterAll(async () => {
 beforeEach(() => {
   sent.length = 0
   vi.mocked(listMemories).mockReturnValue([])
+})
+
+describe('motor na bandeja', () => {
+  it('takes the single-instance lock outside dev and puts an icon in the tray', () => {
+    expect(desktop.requestSingleInstanceLock.calls).toBe(1)
+    expect(desktop.trays).toHaveLength(1)
+    expect(desktop.trays[0].tooltip).toBe('Sagyou')
+  })
 })
 
 describe('atualização automática', () => {
