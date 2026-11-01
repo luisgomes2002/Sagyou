@@ -100,6 +100,32 @@ describe('configuração de release do atualizador', () => {
     expect(release).toContain("if: startsWith(github.ref, 'refs/tags/')")
   })
 
+  // @sagyou/core is TypeScript source: left external, the packaged app would
+  // require() a .ts file that is not even in the package.
+  it('empacota o @sagyou/core dentro do bundle do main e do preload', () => {
+    const config = read('electron.vite.config.ts')
+    const main = config.slice(config.indexOf('main:'), config.indexOf('preload:'))
+    const preload = config.slice(config.indexOf('preload:'), config.indexOf('renderer:'))
+    for (const section of [main, preload])
+      expect(section).toMatch(/externalizeDeps:\s*\{\s*exclude:\s*\['@sagyou\/core'\]\s*\}/)
+  })
+
+  // The core is bundled but its own imports stay external, so the installer
+  // must carry them as dependencies of the desktop or the app breaks on launch.
+  it('leva no instalador cada dependência do @sagyou/core', () => {
+    const core = JSON.parse(readRepo('packages/core/package.json')) as {
+      dependencies: Record<string, string>
+    }
+    const desktop = JSON.parse(read('package.json')) as {
+      dependencies: Record<string, string>
+      devDependencies: Record<string, string>
+    }
+    for (const dep of Object.keys(core.dependencies))
+      expect(desktop.dependencies[dep]).toBeDefined()
+    expect(desktop.dependencies['@sagyou/core']).toBeUndefined()
+    expect(desktop.devDependencies['@sagyou/core']).toBeDefined()
+  })
+
   it('o Quality confere o tipo do Worker', () => {
     expect(readRepo('.github/workflows/quality.yml')).toContain(
       'npm run typecheck -w sagyou-sync-server'
