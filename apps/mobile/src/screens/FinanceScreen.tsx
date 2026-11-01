@@ -5,10 +5,11 @@ import { Wallet } from 'lucide-react-native'
 import { useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { Picker } from '../components/Picker'
+import { Skeleton } from '../components/Skeleton'
 import { TransactionSheet } from '../components/TransactionSheet'
 import { categoryIcon } from '../components/icons'
 import { Card, EmptyState, Screen } from '../components/ui'
-import { useApp } from '../store/app'
+import { awaitingFirstSync, useApp } from '../store/app'
 import { toBRDate } from '../store/dates'
 import {
   LOCKED_TEXT,
@@ -27,6 +28,7 @@ export function FinanceScreen({ today = todayLocalISO() }: { today?: string }): 
   const app = useApp((s) => s.state)
   const profileId = useApp((s) => s.profileId)
   const services = useApp((s) => s.services)
+  const waiting = useApp((s) => awaitingFirstSync(s.status))
   const tables = tablesOfProfile(app, profileId)
   const [chosen, setChosen] = useState<string | null>(
     () => services?.repo.readPref(lastTablePref(profileId)) ?? null
@@ -37,7 +39,11 @@ export function FinanceScreen({ today = todayLocalISO() }: { today?: string }): 
   if (!table)
     return (
       <Screen>
-        <EmptyState icon={Wallet} text="Nenhuma tabela neste perfil. Crie uma no Sagyou do PC." />
+        {waiting ? (
+          <Skeleton />
+        ) : (
+          <EmptyState icon={Wallet} text="Nenhuma tabela neste perfil. Crie uma no Sagyou do PC." />
+        )}
       </Screen>
     )
 

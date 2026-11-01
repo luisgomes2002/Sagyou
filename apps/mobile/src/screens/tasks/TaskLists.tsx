@@ -4,10 +4,11 @@ import type { Column, Task } from '@sagyou/core/types'
 import { ListChecks } from 'lucide-react-native'
 import { useState } from 'react'
 import { ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Skeleton } from '../../components/Skeleton'
 import { SwipeToComplete } from '../../components/SwipeToComplete'
 import { ACTION_ICONS } from '../../components/icons'
 import { Badge, Button, Card, Chip, EmptyState, ListItem, Screen } from '../../components/ui'
-import { useApp } from '../../store/app'
+import { awaitingFirstSync, useApp } from '../../store/app'
 import { completeFromList } from '../../store/complete'
 import {
   UPCOMING_SECTION_TITLES,
@@ -107,6 +108,7 @@ export function ProjectList({
   const active = state.projects
     .filter((p) => !p.archivedAt)
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+  const waiting = useApp((s) => awaitingFirstSync(s.status))
   const summary = todayText(todaySummary(state.tasks, state.projects, today))
   const Chevron = ACTION_ICONS.chevron
   return (
@@ -122,7 +124,11 @@ export function ProjectList({
           </View>
         </Card>
         {active.length === 0 ? (
-          <EmptyState icon={ListChecks} text="Nenhum projeto ainda. Crie um no Sagyou do PC." />
+          waiting ? (
+            <Skeleton />
+          ) : (
+            <EmptyState icon={ListChecks} text="Nenhum projeto ainda. Crie um no Sagyou do PC." />
+          )
         ) : null}
         {active.map((p) => {
           const progress = projectProgress(state, p.id)

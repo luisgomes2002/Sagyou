@@ -2,9 +2,10 @@ import { StickyNote } from 'lucide-react-native'
 import { useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { Picker } from '../components/Picker'
+import { Skeleton } from '../components/Skeleton'
 import { closeOrConfirm } from '../components/discard'
 import { Button, EmptyState, Field, Screen } from '../components/ui'
-import { useApp } from '../store/app'
+import { awaitingFirstSync, useApp } from '../store/app'
 import { editedText, projectNotes, updateNoteContent } from '../store/notes'
 import { PREF_QUICK_PROJECT, activeProjects, quickProject } from '../store/quick'
 import { FONT, MIN_TOUCH, RADIUS, SPACE, useTheme } from '../theme'
@@ -18,6 +19,7 @@ export function NotesScreen({ now: nowProp }: { now?: Date }): React.JSX.Element
   const services = useApp((s) => s.services)
   const readOnly = useApp((s) => s.readOnly)
   const commit = useApp((s) => s.commit)
+  const waiting = useApp((s) => awaitingFirstSync(s.status))
   const projects = activeProjects(state)
   const [chosen, setChosen] = useState<string | null>(
     () => services?.repo.readPref(PREF_QUICK_PROJECT) ?? null
@@ -29,7 +31,11 @@ export function NotesScreen({ now: nowProp }: { now?: Date }): React.JSX.Element
   if (!project)
     return (
       <Screen>
-        <EmptyState icon={StickyNote} text="Nenhum projeto ainda. Crie um no Sagyou do PC." />
+        {waiting ? (
+          <Skeleton />
+        ) : (
+          <EmptyState icon={StickyNote} text="Nenhum projeto ainda. Crie um no Sagyou do PC." />
+        )}
       </Screen>
     )
 

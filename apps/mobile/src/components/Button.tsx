@@ -12,10 +12,6 @@ export interface ButtonProps {
   disabled?: boolean
   /** What a screen reader says when the visible label repeats (e.g. one per row). */
   a11yLabel?: string
-  /** @deprecated use variant="primary" (removed in Task 7 of the redesign). */
-  primary?: boolean
-  /** @deprecated use variant="danger". */
-  danger?: boolean
 }
 
 /**
@@ -29,12 +25,10 @@ export function Button({
   variant,
   icon: Icon,
   disabled,
-  a11yLabel,
-  primary,
-  danger
+  a11yLabel
 }: ButtonProps): React.JSX.Element {
   const theme = useTheme()
-  const kind: ButtonVariant = variant ?? (primary ? 'primary' : danger ? 'danger' : 'secondary')
+  const kind: ButtonVariant = variant ?? 'secondary'
   const color = kind === 'primary' ? theme.onPrimary : kind === 'danger' ? theme.red : theme.text
   return (
     <Pressable

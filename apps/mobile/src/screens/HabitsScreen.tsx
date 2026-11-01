@@ -4,9 +4,10 @@ import * as Haptics from 'expo-haptics'
 import { Repeat } from 'lucide-react-native'
 import { useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Skeleton } from '../components/Skeleton'
 import { ACTION_ICONS } from '../components/icons'
 import { Card, EmptyState, Screen } from '../components/ui'
-import { useApp } from '../store/app'
+import { awaitingFirstSync, useApp } from '../store/app'
 import { habitUndoText, streakDaysText, todayDoneText, toggleHabit } from '../store/habits'
 import { useUndo } from '../store/undo'
 import { FONT, MIN_TOUCH, RADIUS, SPACE, useTheme } from '../theme'
@@ -49,6 +50,7 @@ export function HabitsScreen({ today: todayProp }: { today?: Date }): React.JSX.
   const theme = useTheme()
   const habits = useApp((s) => s.state.habits)
   const readOnly = useApp((s) => s.readOnly)
+  const waiting = useApp((s) => awaitingFirstSync(s.status))
   const [today] = useState(() => todayProp ?? new Date())
   const week = lastWeek(today)
   const todayIso = week[6].iso
@@ -60,7 +62,11 @@ export function HabitsScreen({ today: todayProp }: { today?: Date }): React.JSX.
     <ScrollView contentContainerStyle={styles.bottomRoom}>
       <Screen>
         {summary.length === 0 ? (
-          <EmptyState icon={Repeat} text="Nenhum hábito ainda. Crie um no Sagyou do PC." />
+          waiting ? (
+            <Skeleton />
+          ) : (
+            <EmptyState icon={Repeat} text="Nenhum hábito ainda. Crie um no Sagyou do PC." />
+          )
         ) : (
           <Text style={[styles.summary, { color: theme.muted }]}>
             {todayDoneText(doneToday, summary.length)}

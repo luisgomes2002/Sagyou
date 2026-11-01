@@ -21,6 +21,11 @@ export interface AppServices {
 
 export type AppMode = 'loading' | 'pair' | 'app'
 
+/** No sync has finished on this phone yet: an empty list may just not have arrived. */
+export function awaitingFirstSync(status: SyncStatus | null): boolean {
+  return status === null || status.lastSyncAt === null
+}
+
 export interface AppStore {
   mode: AppMode
   state: MobileState

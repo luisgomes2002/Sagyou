@@ -9,6 +9,7 @@ import {
   View
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { useReducedMotion } from '../hooks/useReducedMotion'
 import { FONT, RADIUS, SPACE, useTheme } from '../theme'
 
 /**
@@ -22,23 +23,26 @@ export function BottomSheet({
   title,
   children,
   full,
-  animated = true
+  animated
 }: {
   visible: boolean
   onClose: () => void
   title?: string
   children: ReactNode
   full?: boolean
-  /** False when the user turned animations off (Task 7). */
+  /** Forces the slide on or off; by default it follows "Remover animações". */
   animated?: boolean
 }): React.JSX.Element {
   const theme = useTheme()
   const insets = useSafeAreaInsets()
+  const reduced = useReducedMotion()
+  const slide = animated ?? !reduced
   return (
     <Modal
+      testID="bottom-sheet"
       visible={visible}
       transparent
-      animationType={animated ? 'slide' : 'none'}
+      animationType={slide ? 'slide' : 'none'}
       onRequestClose={onClose}
       statusBarTranslucent
     >

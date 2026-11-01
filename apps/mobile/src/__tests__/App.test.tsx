@@ -91,6 +91,27 @@ describe('App', () => {
     expect(await screen.findByText(LOCKED_TITLE)).toBeTruthy()
   })
 
+  it('carregando mostra o ícone do Sagyou', async () => {
+    await render(
+      <SafeAreaProvider>
+        <AppShell mode="loading" />
+      </SafeAreaProvider>
+    )
+    expect(screen.getByLabelText('Carregando o Sagyou')).toBeTruthy()
+  })
+
+  it('com "Remover animações" ligado, as folhas abrem sem animação', async () => {
+    jest.spyOn(RN.AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(true)
+    seedApp({ projects: [project('p1', 'Sagyou')] })
+    await render(
+      <SafeAreaProvider>
+        <AppShell mode="app" />
+      </SafeAreaProvider>
+    )
+    await fireEvent.press(screen.getByRole('button', { name: 'Criar' }))
+    expect(screen.getByTestId('bottom-sheet').props.animationType).toBe('none')
+  })
+
   it('sem pareamento só existe a tela de parear', async () => {
     await render(
       <SafeAreaProvider>

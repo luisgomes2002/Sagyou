@@ -7,10 +7,11 @@ import {
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
 import { createNativeStackNavigator } from '@react-navigation/native-stack'
 import { createContext, useContext, useEffect, useState, type ComponentType } from 'react'
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native'
+import { Pressable, StyleSheet, View } from 'react-native'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context'
 import { bootstrap } from './bootstrap'
+import { AppMark } from './components/AppMark'
 import { QuickCreate } from './components/QuickCreate'
 import { StatusBanner } from './components/StatusBanner'
 import { TabIcon } from './components/TabIcon'
@@ -201,7 +202,7 @@ export function AppShell({ mode }: { mode: AppMode }): React.JSX.Element {
           backgroundColor: theme.bg
         }}
       >
-        <ActivityIndicator color={theme.purple} />
+        <AppMark size={88} a11yLabel="Carregando o Sagyou" />
       </View>
     )
   if (mode === 'pair')
