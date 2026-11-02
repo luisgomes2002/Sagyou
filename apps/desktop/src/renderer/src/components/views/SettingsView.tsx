@@ -97,6 +97,14 @@ export function SettingsView({
   onOpenGuide
 }: Props): JSX.Element {
   const [section, setSection] = useState<SettingsSectionId>(initialSection)
+  // Once opened, Sincronização stays mounted (hidden) while you visit other
+  // sections: its backup codes and first recovery code are shown only once.
+  const [syncMounted, setSyncMounted] = useState(initialSection === 'sincronizacao')
+  const [secretShown, setSecretShown] = useState(false)
+  const select = (id: SettingsSectionId): void => {
+    if (id === 'sincronizacao') setSyncMounted(true)
+    setSection(id)
+  }
   const current = SETTINGS_SECTIONS.find((item) => item.id === section) ?? SETTINGS_SECTIONS[0]
 
   return (
@@ -104,7 +112,7 @@ export function SettingsView({
       title="Configurações"
       items={SETTINGS_SECTIONS}
       activeId={current.id}
-      onSelect={setSection}
+      onSelect={select}
       heading={current.label}
       description={current.description}
     >
@@ -123,17 +131,25 @@ export function SettingsView({
           />
         )}
         {current.id === 'seguranca' && <PasswordSettings onToast={onToast} />}
-        {current.id === 'sincronizacao' && (
-          <>
-            <button
-              type="button"
-              onClick={() => onOpenGuide('sync-o-que-e')}
-              className="text-sm text-[#a080f0] hover:underline"
-            >
-              Como funciona a sincronização
-            </button>
-            <SyncSettings onToast={onToast} />
-          </>
+        {syncMounted && (
+          <div hidden={current.id !== 'sincronizacao'} className="space-y-5">
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                disabled={secretShown}
+                onClick={() => onOpenGuide('sync-o-que-e')}
+                className="text-sm text-[#a080f0] hover:underline disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:no-underline"
+              >
+                Como funciona a sincronização
+              </button>
+              {secretShown && (
+                <span className="text-xs text-[#d9a640]">
+                  Anote os códigos abaixo antes de sair: eles aparecem uma vez só.
+                </span>
+              )}
+            </div>
+            <SyncSettings onToast={onToast} onOneTimeSecretChange={setSecretShown} />
+          </div>
         )}
         {current.id === 'sistema' && (
           <>
@@ -443,7 +459,11 @@ function PasswordSettings({ onToast }: { onToast: Props['onToast'] }): JSX.Eleme
             <PasswordField label="Senha atual" value={current} onChange={setCurrent} />
             <PasswordField label="Nova senha" value={next} onChange={setNext} />
             <PasswordField label="Confirmar nova senha" value={confirm} onChange={setConfirm} />
-            {error && <p className="text-xs text-[#ec6a6a]">{error}</p>}
+            {error && (
+              <p role="alert" className="text-xs text-[#ec6a6a]">
+                {error}
+              </p>
+            )}
             <div className="flex justify-between gap-3">
               <button
                 type="button"
@@ -470,7 +490,11 @@ function PasswordSettings({ onToast }: { onToast: Props['onToast'] }): JSX.Eleme
             </p>
             <PasswordField label="Nova senha" value={next} onChange={setNext} />
             <PasswordField label="Confirmar senha" value={confirm} onChange={setConfirm} />
-            {error && <p className="text-xs text-[#ec6a6a]">{error}</p>}
+            {error && (
+              <p role="alert" className="text-xs text-[#ec6a6a]">
+                {error}
+              </p>
+            )}
             <div className="flex justify-end">
               <button
                 type="button"

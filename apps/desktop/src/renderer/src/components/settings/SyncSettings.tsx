@@ -18,6 +18,12 @@ import { ConfirmDialog } from '../ConfirmDialog'
 
 interface Props {
   onToast: (message: string, type?: 'success' | 'error') => void
+  /**
+   * True while a secret shown only once is on screen (the authenticator's backup
+   * codes, or the recovery code right after activation), so the page around it
+   * can avoid unmounting it.
+   */
+  onOneTimeSecretChange?: (shown: boolean) => void
 }
 
 interface Device {
@@ -99,7 +105,7 @@ function VersionCard({
   )
 }
 
-export function SyncSettings({ onToast }: Props): JSX.Element {
+export function SyncSettings({ onToast, onOneTimeSecretChange }: Props): JSX.Element {
   const hasData = useKanbanStore((s) => hasLocalData(s))
   const [status, setStatus] = useState<SyncStatus | null>(null)
   const [now, setNow] = useState(() => Date.now())
@@ -130,6 +136,11 @@ export function SyncSettings({ onToast }: Props): JSX.Element {
   const [factor, setFactor] = useState('')
   const mounted = useRef(true)
   const conflictCount = useRef(-1)
+
+  const oneTimeSecretShown = backupCodes.length > 0 || recovery?.mustConfirm === true
+  useEffect(() => {
+    onOneTimeSecretChange?.(oneTimeSecretShown)
+  }, [oneTimeSecretShown, onOneTimeSecretChange])
 
   const loadConflicts = useCallback(async (): Promise<void> => {
     const result = await window.electronAPI.sync.conflicts()

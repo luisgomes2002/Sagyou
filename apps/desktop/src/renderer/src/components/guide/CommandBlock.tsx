@@ -37,7 +37,7 @@ export function CommandBlock({ command, label }: { command: string; label?: stri
         </button>
       </div>
       {state === 'error' && (
-        <p role="status" className="text-xs text-[#ec6a6a]">
+        <p role="alert" className="text-xs text-[#ec6a6a]">
           Não foi possível copiar.
         </p>
       )}

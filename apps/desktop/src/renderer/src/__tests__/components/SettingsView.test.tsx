@@ -1,3 +1,4 @@
+import type { JSX } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { SettingsView } from '../../components/views/SettingsView'
@@ -5,7 +6,19 @@ import { ALL_FEATURE_IDS, type UiPreferences } from '../../types'
 
 // Sync and updates have their own suites; here only their placement matters.
 vi.mock('../../components/settings/SyncSettings', () => ({
-  SyncSettings: () => <p>controles de sincronização</p>
+  SyncSettings: ({
+    onOneTimeSecretChange
+  }: {
+    onOneTimeSecretChange?: (shown: boolean) => void
+  }): JSX.Element => (
+    <div>
+      <p>controles de sincronização</p>
+      <input aria-label="campo de sincronização" />
+      <button type="button" onClick={() => onOneTimeSecretChange?.(true)}>
+        mostrar códigos reserva
+      </button>
+    </div>
+  )
 }))
 vi.mock('../../components/settings/UpdateSettings', () => ({
   UpdateSettings: () => <p>controles de atualização</p>
@@ -153,6 +166,30 @@ describe('SettingsView', () => {
     expect(onSetFeaturePreferences).toHaveBeenCalledWith(
       ALL_FEATURE_IDS.filter((feature) => feature !== 'habits')
     )
+  })
+
+  it('keeps Sincronização mounted across sections, so codes shown once survive', () => {
+    renderSettings()
+    openSection('Sincronização')
+    fireEvent.change(screen.getByLabelText('campo de sincronização'), {
+      target: { value: 'códigos na tela' }
+    })
+    openSection('Geral')
+    openSection('Sincronização')
+    expect(screen.getByLabelText('campo de sincronização')).toHaveValue('códigos na tela')
+  })
+
+  it('does not leave for the guide while a one-time code is on screen', () => {
+    const { onOpenGuide } = renderSettings()
+    openSection('Sincronização')
+    fireEvent.click(screen.getByRole('button', { name: 'mostrar códigos reserva' }))
+    const link = screen.getByRole('button', { name: 'Como funciona a sincronização' })
+    expect(link).toBeDisabled()
+    expect(
+      screen.getByText('Anote os códigos abaixo antes de sair: eles aparecem uma vez só.')
+    ).toBeInTheDocument()
+    fireEvent.click(link)
+    expect(onOpenGuide).not.toHaveBeenCalled()
   })
 
   it('drops a half-typed password when leaving the section, without saving it', async () => {

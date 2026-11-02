@@ -10,7 +10,8 @@ const LABELS: Record<GuideVisualId, string> = {
   saldo: 'Exemplo: como lançamentos de hoje e futuros mudam o saldo.',
   vinculos: 'Exemplo: fatura com espelho e câmbio entre tabelas.',
   leitura: 'Exemplo: saldos separados por moeda e a equivalência só para consulta.',
-  sessoes: 'Exemplo: você pede no terminal, revisa o cartão de aprovação e o registro é gravado.'
+  sessoes:
+    'Exemplo: você pede uma exclusão no terminal, revisa o cartão de aprovação e só então ela acontece.'
 }
 
 function Box({
@@ -72,17 +73,16 @@ function Visual({ id }: { id: GuideVisualId }): JSX.Element {
       return (
         <div className="space-y-2">
           {[
-            ['09:00', 'Bloco: trabalhar na tarefa', 'border-[#a080f0]'],
-            ['11:00', 'Rotina: fazer uma pausa', 'border-[#46d478]']
-          ].map(([time, text, border]) => (
+            ['09:00', 'Bloco: trabalhar na tarefa', 'bg-[#a080f0]'],
+            ['11:00', 'Rotina: fazer uma pausa', 'bg-[#46d478]']
+          ].map(([time, text, dot]) => (
             <div
               key={time}
               className="flex items-center gap-3 rounded-lg border border-[#2b2b31] bg-[#101014] p-3"
             >
               <span className="w-16 shrink-0 text-xs text-[#999999]">{time}</span>
-              <div
-                className={`flex-1 rounded border-l-2 ${border} bg-[#16161a] px-3 py-2 text-xs text-[#d4d4d4]`}
-              >
+              <div className="flex flex-1 items-center gap-2 rounded bg-[#16161a] px-3 py-2 text-xs text-[#d4d4d4]">
+                <span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-full ${dot}`} />
                 {text}
               </div>
             </div>
@@ -255,7 +255,7 @@ function Visual({ id }: { id: GuideVisualId }): JSX.Element {
         <Flow>
           <Box
             label="Você pede no terminal"
-            value="“Crie uma tarefa…”"
+            value="“Apague a tarefa antiga”"
             detail="Ao Codex, Claude Code ou OpenCode"
           />
           <Arrow />
@@ -266,7 +266,7 @@ function Visual({ id }: { id: GuideVisualId }): JSX.Element {
             color="text-[#d9a640]"
           />
           <Arrow />
-          <Box label="Depois de aprovar" value="Registro gravado" color="text-[#46d478]" />
+          <Box label="Depois de aprovar" value="Tarefa apagada" color="text-[#46d478]" />
         </Flow>
       )
   }

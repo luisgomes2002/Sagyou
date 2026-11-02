@@ -135,7 +135,7 @@ export const SYNC_ARTICLES: GuideArticle[] = [
           'Em Configurações → Sincronização → Google Authenticator, clique em Cadastrar ou trocar autenticador.',
           'No app do celular, escaneie o QR (ou digite o segredo mostrado abaixo dele).',
           'Digite o código de 6 dígitos em Código de confirmação e clique em Confirmar código.',
-          'Guarde os códigos reserva que aparecem. Cada um funciona uma vez, se você estiver sem o celular.'
+          'Guarde os códigos reserva que aparecem: eles são mostrados uma vez só. Cada um funciona uma vez, se você estiver sem o celular.'
         ]
       },
       {
@@ -183,7 +183,7 @@ export const SYNC_ARTICLES: GuideArticle[] = [
         items: [
           'Instale o APK do Sagyou no celular. O Android precisa ter um bloqueio de tela (PIN, padrão, senha ou biometria).',
           'No PC, abra Configurações → Sincronização → Parear novo aparelho.',
-          'No celular, toque em Escanear QR e aponte para a tela do PC (ou cole o texto em Colar código).',
+          'No celular, toque em Começar e depois em Ler QR, e aponte para a tela do PC. Sem câmera: cole o texto em Código de pareamento e toque em Colar código.',
           'O celular baixa tudo da nuvem e passa a sincronizar.'
         ]
       },
@@ -256,6 +256,11 @@ export const SYNC_ARTICLES: GuideArticle[] = [
         type: 'callout',
         tone: 'danger',
         text: 'Esta versão do app ainda não tem uma tela para recuperar a sincronização com o código de recuperação. Guarde o código mesmo assim e faça backups regulares em Dados e segurança: um backup restaura tudo num computador novo.'
+      },
+      {
+        type: 'callout',
+        tone: 'warning',
+        text: 'Depois de restaurar o backup, ativar de novo no mesmo Worker não funciona sem a chave antiga. Para voltar a sincronizar, crie um banco D1 novo (refaça "Criar o servidor na Cloudflare") e ative nele.'
       }
     ],
     target: { view: 'guide', articleId: 'dados-backup' }
@@ -272,7 +277,7 @@ export const SYNC_ARTICLES: GuideArticle[] = [
         type: 'steps',
         items: [
           'Sim, restaurar nos outros: o backup restaurado vai para a nuvem e para os aparelhos pareados.',
-          'Não: a sincronização fica pausada neste aparelho até você escolher.',
+          'Não, só neste aparelho: a sincronização fica pausada aqui até você escolher. Fechar a pergunta sem responder também pausa.',
           'Na pausa, Configurações → Sincronização mostra "Pausado: escolha o que vale". Este aparelho manda envia o que está aqui; A nuvem manda troca pelo que está na nuvem, com um backup daqui antes.'
         ]
       }

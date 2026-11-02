@@ -44,6 +44,14 @@ export function GuideView({
     setArticleId(id)
     setPicks((n) => n + 1)
   }
+  // Leaving a search keeps the article it showed, instead of jumping back to
+  // the one open before typing.
+  const changeQuery = (next: string): void => {
+    if (!next.trim()) setArticleId(visibleId)
+    setQuery(next)
+  }
+  const clearSearch = (): void => changeQuery('')
+
   const openArticle = (id: string): void => {
     setQuery('')
     pick(id)
@@ -57,11 +65,11 @@ export function GuideView({
         value={query}
         aria-label="Buscar no guia"
         placeholder="Buscar no guia"
-        onChange={(event) => setQuery(event.target.value)}
+        onChange={(event) => changeQuery(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === 'Escape') {
             event.preventDefault()
-            setQuery('')
+            clearSearch()
           }
         }}
         className="min-w-0 flex-1 bg-transparent text-sm text-[#d4d4d4] outline-none placeholder:text-[#999999]"
@@ -74,7 +82,7 @@ export function GuideView({
       <p className="text-sm text-[#999999]">Nada encontrado para &quot;{query.trim()}&quot;.</p>
       <button
         type="button"
-        onClick={() => setQuery('')}
+        onClick={clearSearch}
         className="rounded-lg bg-[#2a2a30] px-3 py-1.5 text-sm text-[#d4d4d4] hover:bg-[#303036]"
       >
         Limpar busca

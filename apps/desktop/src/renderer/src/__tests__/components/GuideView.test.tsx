@@ -64,11 +64,21 @@ describe('GuideView', () => {
     expect(within(nav()).getByRole('button', { name: 'Hábitos' })).toBeInTheDocument()
   })
 
-  it('clears the search with Escape', () => {
+  it('clears the search with Escape and keeps the article it found', () => {
     renderGuide()
     fireEvent.change(search(), { target: { value: 'wrangler' } })
+    expect(heading()).toHaveTextContent('Criar o servidor na Cloudflare')
     fireEvent.keyDown(search(), { key: 'Escape' })
     expect(search()).toHaveValue('')
+    expect(heading()).toHaveTextContent('Criar o servidor na Cloudflare')
+    expect(within(nav()).getByRole('button', { name: 'Hábitos' })).toBeInTheDocument()
+  })
+
+  it('keeps the found article when the field is erased by hand', () => {
+    renderGuide()
+    fireEvent.change(search(), { target: { value: 'wrangler' } })
+    fireEvent.change(search(), { target: { value: '' } })
+    expect(heading()).toHaveTextContent('Criar o servidor na Cloudflare')
   })
 
   it('copies a command and says so for two seconds', async () => {
@@ -93,7 +103,8 @@ describe('GuideView', () => {
     await act(async () => {
       fireEvent.click(screen.getAllByRole('button', { name: 'Copiar comando' })[0])
     })
-    expect(screen.getByText('Não foi possível copiar.')).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent('Não foi possível copiar.')
+    expect(screen.getAllByRole('button', { name: 'Copiar comando' })[0]).toHaveTextContent('Copiar')
   })
 
   it('opens the screen an article describes', () => {

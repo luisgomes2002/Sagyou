@@ -42,14 +42,14 @@ export function SectionedPage<T extends string>({
   children
 }: SectionedPageProps<T>): JSX.Element {
   const headingRef = useRef<HTMLHeadingElement>(null)
-  const firstRender = useRef(true)
   const focusTrigger = focusKey === undefined ? activeId : focusKey
+  // Compare with the last value rather than a "first render" flag: StrictMode
+  // runs effects twice on mount, which a flag would read as a change.
+  const lastFocusTrigger = useRef(focusTrigger)
 
   useEffect(() => {
-    if (firstRender.current) {
-      firstRender.current = false
-      return
-    }
+    if (Object.is(lastFocusTrigger.current, focusTrigger)) return
+    lastFocusTrigger.current = focusTrigger
     headingRef.current?.focus()
   }, [focusTrigger])
 

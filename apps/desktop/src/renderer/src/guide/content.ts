@@ -190,7 +190,7 @@ const organizacao: GuideArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'O Grafo mostra as relações entre projetos, tarefas, notas, metas, hábitos, arquivos e memórias. O que não tem projeto fica ligado ao nó Geral. Clique num nó para ir até o registro.'
+        text: 'O Grafo mostra as relações entre projetos, tarefas, notas, metas, hábitos, arquivos e memórias. O que não tem projeto fica ligado ao nó Geral. Dê dois cliques num nó para ir até o registro.'
       }
     ],
     target: { view: 'graph' }
