@@ -16,6 +16,12 @@ interface SectionedPageProps<T extends string> {
   emptyNav?: JSX.Element
   heading: string
   description?: string
+  /**
+   * The heading takes focus whenever this changes (default: `activeId`). The
+   * guide passes a counter of explicit picks, so typing in its search box —
+   * which can change the open article — never steals focus from the field.
+   */
+  focusKey?: unknown
   children: ReactNode
 }
 
@@ -32,10 +38,12 @@ export function SectionedPage<T extends string>({
   emptyNav,
   heading,
   description,
+  focusKey,
   children
 }: SectionedPageProps<T>): JSX.Element {
   const headingRef = useRef<HTMLHeadingElement>(null)
   const firstRender = useRef(true)
+  const focusTrigger = focusKey === undefined ? activeId : focusKey
 
   useEffect(() => {
     if (firstRender.current) {
@@ -43,7 +51,7 @@ export function SectionedPage<T extends string>({
       return
     }
     headingRef.current?.focus()
-  }, [activeId])
+  }, [focusTrigger])
 
   const onNavKeyDown = (event: KeyboardEvent<HTMLElement>): void => {
     if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
