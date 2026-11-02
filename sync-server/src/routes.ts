@@ -229,6 +229,9 @@ async function checkFactor(request: Request, deps: RouteDeps, auth: AuthRow): Pr
   if (!auth.totpConfirmed || !auth.totpCipher) throw new HttpError(401, { error: 'totp required' })
   if (auth.lockedUntil > deps.now()) throw new HttpError(429, { error: 'temporarily locked' })
   const input = request.headers.get('x-totp-code') ?? ''
+  // No factor at all is a missing field, not a guess: refusing it without
+  // counting keeps a client that forgot to ask for the code from locking the user out.
+  if (input === '') throw new HttpError(401, { error: 'factor required' })
   let valid = false
   let usedBackup = -1
   if (/^\d{6}$/.test(input)) {

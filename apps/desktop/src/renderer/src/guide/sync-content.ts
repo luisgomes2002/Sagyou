@@ -139,6 +139,10 @@ export const SYNC_ARTICLES: GuideArticle[] = [
         ]
       },
       {
+        type: 'p',
+        text: 'Para trocar um autenticador já cadastrado (celular novo, por exemplo), digite antes o código atual dele, ou um código reserva, em Código atual do autenticador ou reserva. No primeiro cadastro, deixe esse campo em branco.'
+      },
+      {
         type: 'callout',
         tone: 'warning',
         text: 'Cinco códigos errados seguidos bloqueiam o autenticador por 15 minutos.'

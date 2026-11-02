@@ -281,7 +281,8 @@ export interface SyncEngine {
   join(code: string, mode: 'merge' | 'replace', deviceName: string): Promise<SyncStatus>
   devices(): Promise<SyncDevice[]>
   revoke(id: string, wipe: boolean, factor?: SyncSecondFactor): Promise<void>
-  enrollTotp(): Promise<string>
+  /** `factor` is the current code: required by the Worker to replace a confirmed authenticator. */
+  enrollTotp(factor?: SyncSecondFactor): Promise<string>
   confirmTotp(code: string): Promise<string[]>
   conflicts(): SyncConflictView[]
   resolve(conflictId: string, choice: 'local' | 'remote'): void
@@ -1244,17 +1245,28 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       await refreshDevices(s).catch(() => undefined)
     },
 
-    async enrollTotp(): Promise<string> {
+    async enrollTotp(factor): Promise<string> {
       const s = requireSession()
       try {
         const res = await authed(s, '/totp/enroll', {
           method: 'POST',
-          headers: { 'x-key-proof': keyProof(s.idKey) }
+          headers: {
+            'x-key-proof': keyProof(s.idKey),
+            ...(factor?.totp ? { 'x-totp-code': factor.totp } : {})
+          }
         })
         if (typeof res.uri !== 'string' || !res.uri.startsWith('otpauth://totp/'))
           throw new SyncUserError('Resposta inválida do servidor.')
         return res.uri
       } catch (err) {
+        if (
+          err instanceof SyncHttpError &&
+          err.status === 401 &&
+          err.body.error === 'factor required'
+        )
+          throw new SyncUserError(
+            'Para trocar o autenticador, digite o código atual dele (ou um código reserva).'
+          )
         throw userError(err, 'Não foi possível cadastrar o autenticador.')
       }
     },
@@ -1358,7 +1370,11 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
         await exclusive(() =>
           authed(s, `/devices/${s.opaqueId}/revoke`, {
             method: 'POST',
-            headers: deps.extraHeaders?.('revoke', { idKey: s.idKey }),
+            // revokeRoute refuses a revoke without the key proof, self included.
+            headers: {
+              'x-key-proof': keyProof(s.idKey),
+              ...deps.extraHeaders?.('revoke', { idKey: s.idKey })
+            },
             body: { wipe: false }
           }).catch((err) => log.warn('sync', 'self_revoke_failed', { msg: errorMessage(err) }))
         )

@@ -130,6 +130,8 @@ export function SyncSettings({ onToast, onOneTimeSecretChange }: Props): JSX.Ele
   const [uri, setUri] = useState('')
   const [qr, setQr] = useState('')
   const [confirmCode, setConfirmCode] = useState('')
+  // The Worker asks for the current factor to replace a confirmed authenticator.
+  const [currentFactor, setCurrentFactor] = useState('')
   const [backupCodes, setBackupCodes] = useState<string[]>([])
   const [target, setTarget] = useState<Device | null>(null)
   const [wipe, setWipe] = useState(false)
@@ -300,7 +302,10 @@ export function SyncSettings({ onToast, onOneTimeSecretChange }: Props): JSX.Ele
 
   const enroll = (): Promise<void> =>
     act('Não foi possível cadastrar o autenticador.', async () => {
-      const result = await window.electronAPI.sync.enrollTotp()
+      const current = currentFactor.trim()
+      const result = await window.electronAPI.sync.enrollTotp(
+        current ? { totp: current } : undefined
+      )
       if (!result.ok) throw new Error(result.error)
       const parsed = new URL(result.uri)
       if (parsed.protocol !== 'otpauth:' || !parsed.searchParams.get('secret'))
@@ -308,6 +313,7 @@ export function SyncSettings({ onToast, onOneTimeSecretChange }: Props): JSX.Ele
       setUri(result.uri)
       setQr(await QRCode.toDataURL(result.uri, { margin: 2, width: 192 }))
       setBackupCodes([])
+      setCurrentFactor('')
     })
 
   const confirmTotp = (): Promise<void> =>
@@ -756,6 +762,19 @@ export function SyncSettings({ onToast, onOneTimeSecretChange }: Props): JSX.Ele
               </Subsection>
 
               <Subsection title="Google Authenticator">
+                <label className="block text-sm text-[#d4d4d4]">
+                  Código atual do autenticador ou reserva
+                  <input
+                    value={currentFactor}
+                    onChange={(event) => setCurrentFactor(event.target.value)}
+                    autoComplete="one-time-code"
+                    className={fieldClass}
+                  />
+                  <span className="mt-1 block text-xs text-[#999999]">
+                    Só para trocar um autenticador já cadastrado. No primeiro cadastro, deixe em
+                    branco.
+                  </span>
+                </label>
                 <button
                   type="button"
                   disabled={busy}

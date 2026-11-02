@@ -1149,6 +1149,25 @@ describe('achados de revisão', () => {
     expect((await reenroll({ 'x-totp-code': fresh[0] })).status).toBe(401)
   })
 
+  // The desktop sent no factor when replacing the authenticator, and every click
+  // counted toward the lock. An absent factor is refused without counting.
+  it('pedir troca sem mandar fator nenhum não conta como erro', async () => {
+    const { deps } = setup()
+    const a = await registerFirst(deps)
+    const { code } = await enroll(deps, a)
+    const reenroll = (headers: Record<string, string>): Promise<Response> =>
+      handle(
+        req('POST', '/totp/enroll', { token: a, headers: { 'x-key-proof': PROOF, ...headers } }),
+        deps
+      )
+    for (let i = 0; i < 6; i++) {
+      const res = await reenroll({})
+      expect(res.status).toBe(401)
+      expect((await json(res)).error).toBe('factor required')
+    }
+    expect((await reenroll({ 'x-totp-code': code })).status).toBe(200)
+  })
+
   it('reenrolar errando cinco vezes bloqueia', async () => {
     const { deps } = setup()
     const a = await registerFirst(deps)
