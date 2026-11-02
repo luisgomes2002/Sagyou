@@ -142,6 +142,8 @@ npx wrangler deploy                           # mostra a URL do Worker
 
 O `SETUP_TOKEN` registra o primeiro aparelho. Para recuperar um aparelho com o código de recuperação quando ainda há aparelhos ativos, também são exigidos a prova da chave e o código do autenticador. Os demais entram por convite, gerado num aparelho já pareado. O segredo `TOTP_ENC_KEY` deve ser uma chave nova de 32 bytes, codificada em base64url (por exemplo, gerada com `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`). Sem ele, o cadastro do autenticador não funciona.
 
+O app traz este passo a passo, com os comandos para copiar, em **Como funciona → Sincronização e celular** (atalho em **Configurações → Sincronização → Como funciona a sincronização**).
+
 Para parear, no app, em **Configurações → Sincronização**:
 
 1. No primeiro PC, preencha a URL do Worker e o `SETUP_TOKEN` e clique em **Ativar**. Guarde o código de recuperação que aparece: ele é a única forma de recuperar a chave se você perder todos os aparelhos.
