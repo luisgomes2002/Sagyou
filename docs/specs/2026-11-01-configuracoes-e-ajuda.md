@@ -39,7 +39,7 @@ Branch: feature/configuracoes-e-ajuda
   2. **Aparência:** tema, tamanho do texto e opções de acessibilidade.
   3. **Barra lateral:** áreas visíveis.
   4. **Segurança:** senha do app e bloqueio automático (do #36).
-  5. **Sincronização:** o conteúdo atual de `SyncSettings`, dividido em blocos com títulos (Este aparelho, Aparelhos, Autenticador, Conflitos, Avançado). Os controles e os textos de cada ação não mudam.
+  5. **Sincronização:** o conteúdo atual de `SyncSettings`, mantendo os blocos e nomes de hoje, só reordenados (Este aparelho, Aparelhos, Google Authenticator, Conflitos). Os controles e os textos de cada ação não mudam. *(Ajustado por Luis no plano, 2026-11-01.)*
   6. **Sistema:** janela e bandeja (do #36) e atualização do app.
   7. **Sobre:** versão do app e atalho para o Como funciona.
 - O cartão **Criptografia** sai. Ele não tinha controle e só dizia que a função não existe.
