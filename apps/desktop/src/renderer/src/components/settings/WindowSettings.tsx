@@ -27,7 +27,7 @@ export function WindowSettings(): JSX.Element {
   return (
     <section className="rounded-xl border border-[#2b2b31] bg-[#16161a]">
       <div className="border-b border-[#2b2b31] px-5 py-4">
-        <h2 className="text-base font-semibold text-[#d4d4d4]">Janela e inicialização</h2>
+        <h3 className="text-sm font-semibold text-[#d4d4d4]">Janela e inicialização</h3>
         <p className="mt-1 text-xs text-[#999999]">
           Como o Sagyou se comporta ao fechar a janela e ao ligar o computador.
         </p>

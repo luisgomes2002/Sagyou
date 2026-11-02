@@ -443,13 +443,6 @@ export function SyncSettings({ onToast }: Props): JSX.Element {
 
   return (
     <section className="rounded-xl border border-[#2b2b31] bg-[#16161a] p-5 space-y-5">
-      <div>
-        <h2 className="text-sm font-semibold text-[#d4d4d4]">Sincronização</h2>
-        <p className="mt-1 text-xs text-[#999999]">
-          Mantém os dados iguais entre os seus aparelhos, cifrados de ponta a ponta.
-        </p>
-      </div>
-
       <div role="status" className="space-y-2">
         {stateLines()}
       </div>
@@ -572,52 +565,65 @@ export function SyncSettings({ onToast }: Props): JSX.Element {
             </button>
           )}
 
-          {active && conflicts.length > 0 && (
-            <Subsection title="Conflitos">
-              <ul className="space-y-3">
-                {conflicts.map((conflict) => {
-                  const name =
-                    recordName(conflict.remote.payload) ?? recordName(conflict.local.payload)
-                  return (
-                    <li key={conflict.id} className={panelClass}>
-                      <p className="break-words text-sm text-[#d4d4d4]">
-                        {syncKindLabel(conflict.kind)}
-                        {name ? `: ${name}` : ''}
-                      </p>
-                      {conflict.type === 'orphan' ? (
-                        <>
-                          <p className="text-sm text-[#d9a640]">
-                            Removido: o item de origem foi apagado em outro aparelho
-                          </p>
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() => void resolve(conflict, 'local')}
-                            className={secondaryClass}
-                          >
-                            Dispensar
-                          </button>
-                        </>
-                      ) : (
-                        <div className="flex flex-col gap-3 sm:flex-row">
-                          <VersionCard
-                            label="Versão deste aparelho"
-                            version={conflict.local}
-                            busy={busy}
-                            onUse={() => void resolve(conflict, 'local')}
-                          />
-                          <VersionCard
-                            label={`Versão de ${conflict.remote.deviceName}`}
-                            version={conflict.remote}
-                            busy={busy}
-                            onUse={() => void resolve(conflict, 'remote')}
-                          />
-                        </div>
-                      )}
-                    </li>
-                  )
-                })}
-              </ul>
+          {(active || state === 'disconnected') && (
+            <Subsection title="Este aparelho">
+              <div className="flex flex-wrap gap-2">
+                {active && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void askRecoveryCode()}
+                    className={secondaryClass}
+                  >
+                    Ver código de recuperação
+                  </button>
+                )}
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setConfirmDisable(true)}
+                  className="rounded-lg bg-[#2a2a30] px-3 py-2 text-sm text-[#ec6a6a] hover:bg-[#303036] disabled:opacity-50"
+                >
+                  Desativar sincronização
+                </button>
+              </div>
+              {askPassword && (
+                <div className={panelClass}>
+                  <label className="block text-sm text-[#d4d4d4]">
+                    Senha do app
+                    <input
+                      type="password"
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' && password) void showRecoveryCode(password)
+                      }}
+                      className={fieldClass}
+                    />
+                  </label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      disabled={busy || !password}
+                      onClick={() => void showRecoveryCode(password)}
+                      className={primaryClass}
+                    >
+                      Mostrar código
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAskPassword(false)
+                        setPassword('')
+                      }}
+                      className={secondaryClass}
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              )}
+              {recoveryPanel}
             </Subsection>
           )}
 
@@ -789,65 +795,52 @@ export function SyncSettings({ onToast }: Props): JSX.Element {
             </>
           )}
 
-          {(active || state === 'disconnected') && (
-            <Subsection title="Este aparelho">
-              <div className="flex flex-wrap gap-2">
-                {active && (
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => void askRecoveryCode()}
-                    className={secondaryClass}
-                  >
-                    Ver código de recuperação
-                  </button>
-                )}
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => setConfirmDisable(true)}
-                  className="rounded-lg bg-[#2a2a30] px-3 py-2 text-sm text-[#ec6a6a] hover:bg-[#303036] disabled:opacity-50"
-                >
-                  Desativar sincronização
-                </button>
-              </div>
-              {askPassword && (
-                <div className={panelClass}>
-                  <label className="block text-sm text-[#d4d4d4]">
-                    Senha do app
-                    <input
-                      type="password"
-                      value={password}
-                      onChange={(event) => setPassword(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' && password) void showRecoveryCode(password)
-                      }}
-                      className={fieldClass}
-                    />
-                  </label>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      disabled={busy || !password}
-                      onClick={() => void showRecoveryCode(password)}
-                      className={primaryClass}
-                    >
-                      Mostrar código
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAskPassword(false)
-                        setPassword('')
-                      }}
-                      className={secondaryClass}
-                    >
-                      Cancelar
-                    </button>
-                  </div>
-                </div>
-              )}
-              {recoveryPanel}
+          {active && conflicts.length > 0 && (
+            <Subsection title="Conflitos">
+              <ul className="space-y-3">
+                {conflicts.map((conflict) => {
+                  const name =
+                    recordName(conflict.remote.payload) ?? recordName(conflict.local.payload)
+                  return (
+                    <li key={conflict.id} className={panelClass}>
+                      <p className="break-words text-sm text-[#d4d4d4]">
+                        {syncKindLabel(conflict.kind)}
+                        {name ? `: ${name}` : ''}
+                      </p>
+                      {conflict.type === 'orphan' ? (
+                        <>
+                          <p className="text-sm text-[#d9a640]">
+                            Removido: o item de origem foi apagado em outro aparelho
+                          </p>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => void resolve(conflict, 'local')}
+                            className={secondaryClass}
+                          >
+                            Dispensar
+                          </button>
+                        </>
+                      ) : (
+                        <div className="flex flex-col gap-3 sm:flex-row">
+                          <VersionCard
+                            label="Versão deste aparelho"
+                            version={conflict.local}
+                            busy={busy}
+                            onUse={() => void resolve(conflict, 'local')}
+                          />
+                          <VersionCard
+                            label={`Versão de ${conflict.remote.deviceName}`}
+                            version={conflict.remote}
+                            busy={busy}
+                            onUse={() => void resolve(conflict, 'remote')}
+                          />
+                        </div>
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
             </Subsection>
           )}
         </>

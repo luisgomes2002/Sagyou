@@ -11,7 +11,7 @@ import {
   type TaskImage,
   type FeatureId
 } from './types'
-import { isViewEnabled, type AppView } from './navigation'
+import { isViewEnabled, type AppView, type NavTarget, type SettingsSectionId } from './navigation'
 import { isDoneColumn, isTaskDone } from './utils/columns'
 import { isGoalComplete } from './utils/goals'
 import { TitleBar } from './components/layout/TitleBar'
@@ -220,6 +220,9 @@ export default function App() {
   const [projectModal, setProjectModal] = useState<ProjectModalState>({ open: false })
   const [columnModal, setColumnModal] = useState<ColumnModalState>({ open: false })
   const [activeView, setActiveView] = useState<AppView>('home')
+  // Where an in-app link asked the guide / settings to open (screen state only).
+  const [guideArticleId, setGuideArticleId] = useState<string | undefined>()
+  const [settingsSection, setSettingsSection] = useState<SettingsSectionId>('geral')
   const [searchOpen, setSearchOpen] = useState(false)
   const [financialSearchTarget, setFinancialSearchTarget] = useState<GlobalSearchHit | null>(null)
   const [financialSearchSerial, setFinancialSearchSerial] = useState(0)
@@ -249,6 +252,15 @@ export default function App() {
   const enabledFeatures = featurePreferences ?? ALL_FEATURE_IDS
   const saveFeaturePreferences = (features: FeatureId[]) => {
     setFeaturePreferences(features)
+  }
+
+  /** In-app links from the guide and settings (e.g. "Abrir esta tela"). */
+  const navigateTo = (target: NavTarget): void => {
+    setSearchTarget(null)
+    setFinancialSearchTarget(null)
+    if (target.view === 'guide') setGuideArticleId(target.articleId)
+    else if (target.view === 'settings') setSettingsSection(target.section)
+    setActiveView(target.view)
   }
 
   useEffect(() => {
@@ -681,6 +693,9 @@ export default function App() {
           onChangeView={(view) => {
             setSearchTarget(null)
             setFinancialSearchTarget(null)
+            // From the sidebar, the guide opens on its first article and settings on Geral.
+            setGuideArticleId(undefined)
+            setSettingsSection('geral')
             setActiveView(view)
           }}
           onOpenSearch={() => setSearchOpen(true)}
@@ -704,6 +719,9 @@ export default function App() {
           <ViewErrorBoundary key={activeView} area={activeView}>
             {activeView === 'settings' ? (
               <SettingsView
+                key={settingsSection}
+                initialSection={settingsSection}
+                onOpenGuide={(articleId) => navigateTo({ view: 'guide', articleId })}
                 featurePreferences={featurePreferences}
                 onSetFeaturePreferences={saveFeaturePreferences}
                 uiPreferences={uiPreferences}
@@ -728,7 +746,12 @@ export default function App() {
             ) : activeView === 'financial' ? (
               <FinancialView key={financialSearchSerial} searchTarget={financialSearchTarget} />
             ) : activeView === 'guide' ? (
-              <GuideView />
+              <GuideView
+                key={guideArticleId ?? 'inicio'}
+                initialArticleId={guideArticleId}
+                enabledFeatures={enabledFeatures}
+                onNavigate={navigateTo}
+              />
             ) : activeView === 'ai' ? (
               <FleetView projects={projects} retainThread />
             ) : activeView === 'memory' ? (
