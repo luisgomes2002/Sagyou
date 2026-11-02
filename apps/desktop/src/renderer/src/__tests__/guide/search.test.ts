@@ -53,4 +53,12 @@ describe('searchGuide', () => {
       resultOrder
     )
   })
+
+  it('finds the keys article by what each key is, never by an example value', () => {
+    expect(ids(searchGuide(GUIDE_CHAPTERS, 'chaves'))).toContain('sync-chaves')
+    expect(ids(searchGuide(GUIDE_CHAPTERS, 'codigos reserva'))).toContain('sync-chaves')
+    expect(ids(searchGuide(GUIDE_CHAPTERS, 'Perdeu'))).toContain('sync-chaves')
+    expect(ids(searchGuide(GUIDE_CHAPTERS, 'CONVITE-DE-EXEMPLO'))).toEqual([])
+    expect(ids(searchGuide(GUIDE_CHAPTERS, '0A1B2C3D4E5F60718293'))).toEqual([])
+  })
 })

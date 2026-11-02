@@ -1,4 +1,5 @@
 import type { JSX } from 'react'
+import { EXAMPLE_LABEL, exampleA11yLabel } from '@sagyou/core/sync/guide'
 import type { GuideBlock } from '../../guide/types'
 import { CommandBlock } from './CommandBlock'
 import { GuideVisual } from './GuideVisuals'
@@ -44,6 +45,73 @@ function Callout({ tone, text }: { tone: keyof typeof CALLOUTS; text: string }):
   )
 }
 
+type KeyExampleBlock = Extract<GuideBlock, { type: 'keyExample' }>
+type TableBlock = Extract<GuideBlock, { type: 'table' }>
+
+/** A sync key with a fake value: marked as an example and never copyable. */
+function KeyExample({ block }: { block: KeyExampleBlock }): JSX.Element {
+  return (
+    <section
+      aria-label={block.name}
+      className="space-y-3 rounded-lg border border-[#2b2b31] bg-[#16161a] p-4"
+    >
+      <h3 className="text-sm font-medium text-[#d4d4d4]">{block.name}</h3>
+      <div
+        role="group"
+        aria-label={exampleA11yLabel(block.name)}
+        className="flex items-start gap-3 rounded-lg border border-dashed border-[#2b2b31] bg-[#101014] p-3"
+      >
+        <span className="shrink-0 rounded bg-[#2a2a30] px-2 py-0.5 text-[11px] font-semibold text-[#d9a640]">
+          {EXAMPLE_LABEL}
+        </span>
+        <code className="min-w-0 whitespace-pre-wrap break-all font-mono text-xs text-[#999999]">
+          {block.example}
+        </code>
+      </div>
+      <dl className="space-y-2">
+        {block.lines.map((line) => (
+          <div key={line.label}>
+            <dt className="text-xs text-[#999999]">{line.label}</dt>
+            <dd className="text-sm leading-6 text-[#d4d4d4]">{line.text}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  )
+}
+
+function GuideTable({ block }: { block: TableBlock }): JSX.Element {
+  return (
+    <table className="w-full border-collapse text-left text-sm">
+      <thead>
+        <tr>
+          {block.head.map((cell) => (
+            <th
+              key={cell}
+              scope="col"
+              className="border-b border-[#2b2b31] py-2 pr-4 font-medium text-[#999999]"
+            >
+              {cell}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {block.rows.map(([lost, use]) => (
+          <tr key={lost}>
+            <td className="border-b border-[#2b2b31] py-2 pr-4 align-top text-[#d4d4d4]">
+              {lost}
+            </td>
+            <td className="border-b border-[#2b2b31] py-2 align-top leading-6 text-[#d4d4d4]">
+              {use}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
 function Block({ block }: { block: GuideBlock }): JSX.Element {
   switch (block.type) {
     case 'p':
@@ -72,6 +140,10 @@ function Block({ block }: { block: GuideBlock }): JSX.Element {
       return <SyncDiagram />
     case 'visual':
       return <GuideVisual id={block.id} />
+    case 'keyExample':
+      return <KeyExample block={block} />
+    case 'table':
+      return <GuideTable block={block} />
   }
 }
 

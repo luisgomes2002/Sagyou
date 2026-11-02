@@ -1,3 +1,4 @@
+import type { SyncGuideBlock } from '@sagyou/core/sync/guide'
 import type { NavTarget } from '../navigation'
 
 export type GuideVisualId =
@@ -18,6 +19,7 @@ export type GuideBlock =
   | { type: 'command'; command: string; label?: string }
   | { type: 'diagram'; id: 'sync' }
   | { type: 'visual'; id: GuideVisualId }
+  | Extract<SyncGuideBlock, { type: 'keyExample' | 'table' }>
 
 export interface GuideArticle {
   id: string

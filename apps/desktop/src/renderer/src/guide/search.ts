@@ -7,6 +7,10 @@ export function articleText(article: GuideArticle): string {
     if (block.type === 'p' || block.type === 'callout') parts.push(block.text)
     else if (block.type === 'steps') parts.push(...block.items)
     else if (block.type === 'command') parts.push(block.command, block.label ?? '')
+    // An example's value is fake: searchable by what it is, never by the value.
+    else if (block.type === 'keyExample')
+      parts.push(block.name, ...block.lines.map((line) => `${line.label} ${line.text}`))
+    else if (block.type === 'table') parts.push(...block.head, ...block.rows.flat())
   }
   return parts.join(' ')
 }

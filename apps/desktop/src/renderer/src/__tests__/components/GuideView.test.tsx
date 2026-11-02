@@ -135,4 +135,18 @@ describe('GuideView', () => {
     fireEvent.click(within(nav()).getByRole('button', { name: 'Conflitos' }))
     expect(heading()).toHaveTextContent('Conflitos')
   })
+
+  it('shows the sync keys as marked examples that cannot be copied', () => {
+    renderGuide({ initialArticleId: 'sync-chaves' })
+    expect(heading()).toHaveTextContent('As chaves da sincronização')
+    expect(screen.getAllByText('Exemplo')).toHaveLength(5)
+    const recovery = screen.getByRole('group', {
+      name: 'Exemplo de Código de recuperação, não é um valor real'
+    })
+    expect(within(recovery).queryByRole('button')).toBeNull()
+    expect(screen.queryByRole('button', { name: /Copiar/ })).toBeNull()
+    expect(screen.getByRole('columnheader', { name: 'Perdeu…' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Usa…' })).toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: 'Os códigos reserva' })).toBeInTheDocument()
+  })
 })
