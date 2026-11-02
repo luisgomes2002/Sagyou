@@ -127,6 +127,11 @@ function remote(
   }
 }
 
+/** A version another device made on top of `base`. */
+function onTop(base: string, at: number, title: string): WireRecord {
+  return { ...remote('task', 't1', at, { title }), baseHlc: base }
+}
+
 const count = (db: SqlDb, table: string): number =>
   db.get<{ c: number }>(`SELECT COUNT(*) AS c FROM ${table}`)?.c ?? 0
 
@@ -180,5 +185,81 @@ describe('SyncStoreLike do celular', () => {
     h.apply([remote('project', 'p1', NOW), remote('project_column', 'c1', NOW)])
     expect(h.store.pendingOutgoing()).toEqual([])
     expect(h.store.syncRecordVersion('project', 'p1')?.deviceId).toBe('opaco-do-pc')
+  })
+
+  it('fecha sozinho o conflito quando chega uma versão feita por cima da vencedora', () => {
+    const h = harness()
+    h.save(sample(), NOW)
+    const winner = remote('task', 't1', NOW + 60000, { title: 'Do PC' })
+    h.apply([winner])
+    expect(h.store.openSyncConflictCount(NOW)).toBe(1)
+    h.apply([onTop(winner.hlc, NOW + 120000, 'Decidida')])
+    expect(h.store.openSyncConflictCount(NOW)).toBe(0)
+    expect(h.store.listSyncConflicts(NOW)).toEqual([])
+    expect(h.state().tasks[0].title).toBe('Decidida')
+  })
+
+  it('conflito criado e assentado na mesma busca já sai fechado', () => {
+    const h = harness()
+    h.save(sample(), NOW)
+    const winner = remote('task', 't1', NOW + 60000, { title: 'Do PC' })
+    const result = h.apply([winner, onTop(winner.hlc, NOW + 120000, 'Decidida')])
+    expect(result.conflicts).toBe(1)
+    expect(h.store.openSyncConflictCount(NOW)).toBe(0)
+  })
+
+  it('uma versão que gera conflito novo não fecha o antigo', () => {
+    const h = harness()
+    h.save(sample(), NOW)
+    h.apply([remote('task', 't1', NOW + 60000, { title: 'Do PC' })])
+    h.apply([remote('task', 't1', NOW + 120000, { title: 'Sem ver a anterior' })])
+    expect(h.store.openSyncConflictCount(NOW)).toBe(2)
+  })
+
+  it('conflito órfão e conflito com versão guardada mais nova continuam abertos', () => {
+    const h = harness()
+    h.save(sample(), NOW)
+    const current = h.store.syncRecordVersion('task', 't1')!.hlc
+    const later = nextHlc(NOW + 600000, null, REMOTE)
+    const insert = (id: string, type: string, loserHlc: string): void =>
+      h.db.run(
+        'INSERT INTO sync_conflicts (id, kind, record_id, type, loser_cipher, winner_hlc, ' +
+          'loser_hlc, loser_device, created_at, resolved_at) ' +
+          "VALUES (?, 'task', 't1', ?, 'x', ?, ?, 'outro', ?, NULL)",
+        [id, type, current, loserHlc, NOW]
+      )
+    insert('orfao', 'orphan', current)
+    insert('mais-novo', 'lww', later)
+    h.apply([onTop(current, NOW + 120000, 'Decidida')])
+    expect(h.store.listSyncConflicts(NOW).map((c) => c.id).sort()).toEqual(['mais-novo', 'orfao'])
+  })
+
+  it('fecha sozinho o conflito de uma memória', () => {
+    const h = harness()
+    const first: WireRecord = {
+      kind: 'memory',
+      id: 'm1',
+      hlc: nextHlc(NOW, null, REMOTE),
+      baseHlc: null,
+      deleted: false,
+      payload: { id: 'm1', title: 'Decisão', body: 'antes' }
+    }
+    h.apply([first])
+    h.db.run(
+      'INSERT INTO sync_conflicts (id, kind, record_id, type, loser_cipher, winner_hlc, ' +
+        'loser_hlc, loser_device, created_at, resolved_at) ' +
+        "VALUES ('c1', 'memory', 'm1', 'lww', 'x', ?, ?, 'outro', ?, NULL)",
+      [first.hlc, nextHlc(NOW - 1000, null, 'c'.repeat(32)), NOW]
+    )
+    expect(h.store.openSyncConflictCount(NOW)).toBe(1)
+    h.apply([
+      {
+        ...first,
+        hlc: nextHlc(NOW + 60000, null, REMOTE),
+        baseHlc: first.hlc,
+        payload: { id: 'm1', title: 'Decisão', body: 'depois' }
+      }
+    ])
+    expect(h.store.openSyncConflictCount(NOW)).toBe(0)
   })
 })
