@@ -47,6 +47,7 @@ export type SettingsSectionId =
   | 'barra-lateral'
   | 'seguranca'
   | 'sincronizacao'
+  | 'mcp-externo'
   | 'sistema'
   | 'sobre'
 

@@ -96,7 +96,7 @@ describe('SettingsView', () => {
     expect(await screen.findByDisplayValue('Luis')).toBeInTheDocument()
   })
 
-  it('lists the seven sections in order', () => {
+  it('lists the eight sections in order', () => {
     renderSettings()
     expect(
       within(nav())
@@ -108,6 +108,7 @@ describe('SettingsView', () => {
       'Barra lateral',
       'Segurança',
       'Sincronização',
+      'Acesso MCP externo',
       'Sistema',
       'Sobre'
     ])

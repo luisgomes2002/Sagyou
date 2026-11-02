@@ -60,6 +60,12 @@ export const SECTION_ICONS = {
       <path d="M8 20h8M12 16v4" />
     </Icon>
   ),
+  key: (
+    <Icon>
+      <circle cx="8" cy="15" r="4" />
+      <path d="M10.8 12.2 20 3M16 7l3 3M14 9l2 2" />
+    </Icon>
+  ),
   info: (
     <Icon>
       <circle cx="12" cy="12" r="9" />
