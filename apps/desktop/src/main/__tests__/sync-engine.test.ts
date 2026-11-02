@@ -494,6 +494,18 @@ class FakeStore implements SyncStoreLike {
         resolvedAt: null
       })
     }
+    // Same rule as CLOSE_SETTLED_CONFLICTS_SQL in both real stores.
+    for (const settled of plan.settled)
+      for (const c of this.conflicts)
+        if (
+          c.resolvedAt === null &&
+          c.type !== 'orphan' &&
+          c.kind === settled.kind &&
+          c.recordId === settled.recordId &&
+          c.loserHlc < settled.hlc &&
+          (c.winnerHlc === null || c.winnerHlc < settled.hlc)
+        )
+          c.resolvedAt = this.now()
     this.pending = plan.pending
     if (plan.applied.length) this.generation += 1
     return {
@@ -995,6 +1007,82 @@ describe('ritmo', () => {
   })
 })
 
+describe('flush (celular indo para segundo plano)', () => {
+  async function single(): Promise<Device> {
+    const a = device(server, clock, ID_A)
+    a.store.save(withData({ projects: [project('p1', 'Casa')] }))
+    await a.engine.activate(SERVER_URL, SETUP, 'PC de casa')
+    await clock.advance(0)
+    return a
+  }
+
+  it('envia na hora o que esperava os 5 s e não deixa timer', async () => {
+    const a = await single()
+    a.store.save({ ...a.store.state, tasks: [task('t1', 'p1', 'Antes de sair')] })
+    a.engine.notifySaved()
+    expect(clock.pending()).toContain(PUSH_DEBOUNCE_MS)
+    const before = server.pushes()
+    await a.engine.flush()
+    expect(server.pushes()).toBe(before + 1)
+    expect(a.store.pendingOutgoingCount()).toBe(0)
+    expect(clock.pending()).toEqual([])
+  })
+
+  it('sem sessão não chama o servidor e só para', async () => {
+    const a = device(server, clock, ID_A)
+    await a.engine.flush()
+    expect(server.requests).toEqual([])
+    expect(clock.pending()).toEqual([])
+  })
+
+  it('sem rede não lança, guarda o pendente e para', async () => {
+    const a = await single()
+    a.store.save({ ...a.store.state, tasks: [task('t1', 'p1', 'Offline')] })
+    a.engine.notifySaved()
+    server.mode = 'down'
+    await expect(a.engine.flush()).resolves.toBeUndefined()
+    expect(a.store.pendingOutgoingCount()).toBe(1)
+    expect(clock.pending()).toEqual([])
+  })
+
+  it('se o app volta durante o envio, continua ligado e sem ciclo em paralelo', async () => {
+    const real = server.fetch
+    let open = 0
+    let most = 0
+    const ctl: { gate: Promise<void> | null; release: () => void } = {
+      gate: null,
+      release: () => undefined
+    }
+    server.fetch = async (url, init) => {
+      open += 1
+      most = Math.max(most, open)
+      try {
+        if (ctl.gate) await ctl.gate
+        return await real(url, init)
+      } finally {
+        open -= 1
+      }
+    }
+    const a = await single()
+    a.store.save({ ...a.store.state, tasks: [task('t1', 'p1', 'Saindo')] })
+    a.engine.notifySaved()
+    ctl.gate = new Promise<void>((resolve) => {
+      ctl.release = resolve
+    })
+    const flushing = a.engine.flush()
+    await flush()
+    a.engine.start()
+    await clock.advance(0)
+    ctl.gate = null
+    ctl.release()
+    await flushing
+    await clock.advance(0)
+    expect(most).toBe(1)
+    expect(a.store.pendingOutgoingCount()).toBe(0)
+    expect(clock.pending()).toEqual([POLL_MS])
+  })
+})
+
 describe('revogar e apagar', () => {
   it('manda a prova da chave e o código somente na ação protegida', async () => {
     const { a, b } = await pairedDevices(withData({}))
@@ -1385,9 +1473,98 @@ describe('conflitos', () => {
     a.engine.resolve(conflict.id, 'local')
     expect((a.store.state.tasks[0] as Row).title).toBe('Versão de A')
     expect(a.engine.conflicts()).toEqual([])
+    expect(b.engine.conflicts()).toHaveLength(1)
     await clock.advance(PUSH_DEBOUNCE_MS)
     await b.engine.syncNow()
     expect((b.store.state.tasks[0] as Row).title).toBe('Versão de A')
+    // B detected the same conflict; A's decision closes it there too.
+    expect(b.engine.conflicts()).toEqual([])
+    expect(b.engine.status().conflictCount).toBe(0)
+  })
+
+  it('manter a versão atual também avisa o outro aparelho, que fecha o conflito sem eco', async () => {
+    const { a, b } = await pairedDevices(
+      withData({ projects: [project('p1', 'Casa')], tasks: [task('t1', 'p1', 'Original')] })
+    )
+    server.mode = 'down'
+    a.store.save({ ...a.store.state, tasks: [task('t1', 'p1', 'Versão de A')] })
+    clock.t += 10
+    b.store.save({ ...b.store.state, tasks: [task('t1', 'p1', 'Versão de B')] })
+    server.mode = 'up'
+    await a.engine.syncNow()
+    await b.engine.syncNow()
+    await a.engine.syncNow()
+    expect(b.engine.conflicts()).toHaveLength(1)
+    const winner = a.store.syncRecordVersion('task', 't1')!.hlc
+    const rebase = vi.spyOn(a.store, 'rebaseSyncVersion')
+
+    const [conflict] = a.engine.conflicts()
+    a.engine.resolve(conflict.id, 'remote')
+    expect(rebase).toHaveBeenCalledWith('task', 't1', winner, clock.now())
+    expect((a.store.state.tasks[0] as Row).title).toBe('Versão de B')
+    expect(a.store.pendingOutgoingCount()).toBe(1)
+    await clock.advance(PUSH_DEBOUNCE_MS)
+    expect(a.store.pendingOutgoingCount()).toBe(0)
+
+    await b.engine.syncNow()
+    expect(b.engine.conflicts()).toEqual([])
+    expect((b.store.state.tasks[0] as Row).title).toBe('Versão de B')
+    // Closing on its own sends nothing back.
+    expect(b.store.pendingOutgoingCount()).toBe(0)
+    expect(dataHashes(a.store)).toEqual(dataHashes(b.store))
+  })
+
+  // Review finding: rebasing a local edit that had not gone out yet put it on
+  // top of a version nobody else knew, and the other device saw a new conflict.
+  it('manter a atual depois de uma correção à mão ainda não enviada não cria conflito no outro', async () => {
+    const { a, b } = await pairedDevices(
+      withData({ projects: [project('p1', 'Casa')], tasks: [task('t1', 'p1', 'Original')] })
+    )
+    server.mode = 'down'
+    a.store.save({ ...a.store.state, tasks: [task('t1', 'p1', 'Versão de A')] })
+    clock.t += 10
+    b.store.save({ ...b.store.state, tasks: [task('t1', 'p1', 'Versão de B')] })
+    server.mode = 'up'
+    await a.engine.syncNow()
+    await b.engine.syncNow()
+    await a.engine.syncNow()
+    expect(b.engine.conflicts()).toHaveLength(1)
+
+    server.mode = 'down'
+    clock.t += 10
+    a.store.save({ ...a.store.state, tasks: [task('t1', 'p1', 'Corrigida à mão')] })
+    const rebase = vi.spyOn(a.store, 'rebaseSyncVersion')
+    const [conflict] = a.engine.conflicts()
+    a.engine.resolve(conflict.id, 'remote')
+    expect(rebase).not.toHaveBeenCalled()
+    expect(a.engine.conflicts()).toEqual([])
+
+    server.mode = 'up'
+    await a.engine.syncNow()
+    await b.engine.syncNow()
+    expect((b.store.state.tasks[0] as Row).title).toBe('Corrigida à mão')
+    expect(b.engine.conflicts()).toEqual([])
+  })
+
+  it('manter a versão atual sem versão local só marca o conflito resolvido', async () => {
+    const { a } = await pairedDevices(withData({ projects: [project('p1', 'Casa')] }))
+    a.store.conflicts.push({
+      id: 'sem-versao',
+      kind: 'task',
+      recordId: 't-nenhuma',
+      type: 'lww',
+      loserCipher: '',
+      winnerHlc: null,
+      loserHlc: '000000000001000-0000-' + 'c'.repeat(32),
+      loserDevice: 'c'.repeat(32),
+      createdAt: clock.now(),
+      resolvedAt: null
+    })
+    const rebase = vi.spyOn(a.store, 'rebaseSyncVersion')
+    a.engine.resolve('sem-versao', 'local')
+    expect(rebase).not.toHaveBeenCalled()
+    expect(a.store.listSyncConflicts()).toEqual([])
+    expect(a.store.pendingOutgoingCount()).toBe(0)
   })
 
   it('duas edições antes do envio chegam ao outro lado sem conflito', async () => {
@@ -1452,6 +1629,15 @@ describe('conflitos', () => {
     expect(b.store.pendingOutgoingCount()).toBe(0)
     expect(a.store.versions.has(recordKey('transaction', 'tx-offline'))).toBe(false)
     expect(a.engine.conflicts()).toEqual([])
+
+    // "Dispensar" sends 'local', and the kept side is this device's: it used
+    // to read as "adopt the kept version" and throw instead of dismissing.
+    const rebase = vi.spyOn(b.store, 'rebaseSyncVersion')
+    expect(() => b.engine.resolve(orphans[0].id, 'local')).not.toThrow()
+    expect(b.engine.conflicts()).toEqual([])
+    expect(b.store.state.lists).toEqual([])
+    expect(rebase).not.toHaveBeenCalled()
+    expect(b.store.pendingOutgoingCount()).toBe(0)
   })
 
   it('uma tarefa criada offline num projeto apagado no outro aparelho vira conflito de órfão', async () => {

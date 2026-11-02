@@ -151,7 +151,7 @@ Para parear, no app, em **Configurações → Sincronização**:
 3. Clique em **Parear novo aparelho**. Aparecem um texto e um QR que valem por 10 minutos.
 4. No segundo PC, use **Entrar com código** e cole o texto. Se esse PC já tiver dados, escolha **Juntar** (fica tudo dos dois lados) ou **Substituir** (fica só o que está na nuvem, com um backup antes).
 
-Quando a mesma coisa é editada nos dois PCs sem conexão, a versão mais recente vale e a outra aparece em **Conflitos**, com **Usar esta** para trocar. Uma dívida editada nos dois lados nunca muda sozinha: ela fica marcada como "conflito: escolha a versão" até você escolher.
+Quando a mesma coisa é editada nos dois PCs sem conexão, a versão mais recente vale e a outra aparece em **Conflitos**, com **Usar esta** para trocar. Escolher num aparelho (inclusive manter a versão atual) avisa os outros, e o mesmo conflito fecha sozinho neles na próxima sincronização. Uma dívida editada nos dois lados nunca muda sozinha: ela fica marcada como "conflito: escolha a versão" até você escolher.
 
 ---
 
@@ -192,7 +192,7 @@ O celular procura uma versão nova ao abrir (no máximo uma vez por dia) e mostr
 
 > ⚠️ **Não perca o keystore.** Um APK assinado com outra chave não instala por cima do anterior: seria preciso desinstalar o app (e parear de novo).
 
-Para parear, no PC, abra **Configurações → Sincronização → Parear novo aparelho**. No celular, toque em **Escanear QR** (ou cole o texto em **Colar código**). O celular baixa tudo da nuvem e passa a sincronizar. Conflitos aparecem no celular só como aviso ("N conflitos — resolva no PC"). Em **Ajustes**, **Desconectar este aparelho** apaga os dados do celular, que continuam na nuvem e nos PCs.
+Para parear, no PC, abra **Configurações → Sincronização → Parear novo aparelho**. No celular, toque em **Escanear QR** (ou cole o texto em **Colar código**). O celular baixa tudo da nuvem e passa a sincronizar. Conflitos detectados no celular se resolvem nele mesmo: **Ajustes → N conflitos** mostra as duas versões, com **Usar esta** (ou **Dispensar**, quando o item de origem foi apagado). Ao sair do app, o celular envia na hora o que estava esperando, em vez de deixar para a próxima abertura. **Ajustes → Como funciona a sincronização** (também no pareamento) explica quando cada aparelho sincroniza, como evitar conflitos e para que serve cada chave, com o mesmo texto do Como funciona do PC. Em **Ajustes**, **Desconectar este aparelho** apaga os dados do celular, que continuam na nuvem e nos PCs.
 
 ---
 

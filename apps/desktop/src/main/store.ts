@@ -41,6 +41,7 @@ import {
   type SyncRecord
 } from './modules/sync/sync-records'
 import {
+  CLOSE_SETTLED_CONFLICTS_SQL,
   decodeIncoming,
   encodeIncoming,
   guardStaleSave,
@@ -50,9 +51,11 @@ import {
   planRemoteApply,
   type ConflictWrite,
   type IncomingRecord,
+  type SettledVersion,
   type StoredSyncVersion,
   type VersionWrite,
   applyRecordsToState,
+  settledConflictParams,
   type ConflictType
 } from './modules/sync/sync-apply'
 import { latestVersions, replaceSyncableState } from './modules/sync/sync-replace'
@@ -1639,6 +1642,17 @@ function writeConflicts(
   }
 }
 
+/** After writeConflicts: a conflict made and settled in the same pull closes too. */
+function closeSettledConflicts(
+  db: Database.Database,
+  settled: SettledVersion[],
+  now: number
+): void {
+  if (!settled.length) return
+  const close = db.prepare(CLOSE_SETTLED_CONFLICTS_SQL)
+  for (const item of settled) close.run(...settledConflictParams(item, now))
+}
+
 function pendingBatchId(kind: string, id: string): string {
   return `pending:${kind}:${id}`
 }
@@ -1711,6 +1725,7 @@ function applyMemoriesIn(
   if (plan.applied.length) syncMemorySearchRows(db)
   writeReceivedVersions(db, plan.versions)
   writeConflicts(db, plan.conflicts, ctx, now)
+  closeSettledConflicts(db, plan.settled, now)
   return { applied: plan.applied.length, conflicts: plan.conflicts.length }
 }
 
@@ -1778,6 +1793,7 @@ export function applyRemoteRecords(
       }
       writeReceivedVersions(db, plan.versions)
       writeConflicts(db, plan.conflicts, ctx, now)
+      closeSettledConflicts(db, plan.settled, now)
       writePending(db, plan.pending, ctx, now)
       const memory = applyMemoriesIn(db, memories, ctx, now)
       return {

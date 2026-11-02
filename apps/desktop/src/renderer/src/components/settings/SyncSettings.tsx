@@ -12,7 +12,8 @@ import {
   recordName,
   syncKindLabel,
   syncedAgoText,
-  versionLines
+  versionLines,
+  versionTimeText
 } from '../../utils/sync-view'
 import { ConfirmDialog } from '../ConfirmDialog'
 
@@ -49,10 +50,6 @@ const secondaryClass =
   'rounded-lg bg-[#2a2a30] px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#303036] disabled:opacity-50'
 const panelClass = 'space-y-3 rounded-lg border border-[#2b2b31] bg-[#101014] p-4'
 
-function formatTime(ms: number | null): string {
-  return ms === null ? 'hora desconhecida' : new Date(ms).toLocaleString('pt-BR')
-}
-
 function messageOf(cause: unknown, fallback: string): string {
   return cause instanceof Error && cause.message ? cause.message : fallback
 }
@@ -85,7 +82,7 @@ function VersionCard({
       className="min-w-0 flex-1 space-y-2 rounded-lg border border-[#2b2b31] bg-[#16161a] p-3"
     >
       <p className="text-xs text-[#999999]">
-        {label} · {formatTime(version.at)}
+        {label} · {versionTimeText(version.at)}
       </p>
       {version.deleted || !version.payload ? (
         <p className="text-sm text-[#ec6a6a]">Apagado</p>
@@ -172,7 +169,12 @@ export function SyncSettings({ onToast, onOneTimeSecretChange }: Props): JSX.Ele
     const unsubscribe = window.electronAPI.sync.onStatusChanged?.((next) => {
       if (!mounted.current) return
       setStatus(next)
-      if (ACTIVE_STATES.has(next.state) && next.conflictCount !== conflictCount.current) {
+      // With conflicts open, every status may have closed one and opened
+      // another (same count): read the list again.
+      if (
+        ACTIVE_STATES.has(next.state) &&
+        (next.conflictCount !== conflictCount.current || next.conflictCount > 0)
+      ) {
         conflictCount.current = next.conflictCount
         void loadConflicts().catch(() => {})
       }

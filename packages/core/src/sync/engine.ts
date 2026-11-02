@@ -262,6 +262,11 @@ export function errorMessage(error: unknown): string {
 export interface SyncEngine {
   start(): void
   stop(): void
+  /**
+   * Stop, after one last cycle that sends what is waiting (the phone going to
+   * the background). Never throws; a `start()` meanwhile keeps the engine on.
+   */
+  flush(): Promise<void>
   notifySaved(): void
   syncNow(): Promise<SyncStatus>
   status(): SyncStatus
@@ -1097,6 +1102,16 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       clearTimers()
     },
 
+    async flush(): Promise<void> {
+      // Stopped first: if the app comes back during the cycle, start() turns
+      // it on again and the cycle's own end schedules the next poll.
+      const wasStarted = started
+      started = false
+      clearTimers()
+      if (!wasStarted || !session || session.config.paused || wiped) return
+      await cycle().catch(() => undefined)
+    },
+
     notifySaved,
 
     async syncNow(): Promise<SyncStatus> {
@@ -1333,10 +1348,9 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       const row = store.listSyncConflicts(now).find((c) => c.id === conflictId)
       if (!row) throw new SyncUserError('Conflito não encontrado.')
       const keptIsLocal = localSide(s, row) === 'kept-is-local'
-      const adoptKept = (choice === 'local') === keptIsLocal
+      // An orphan's item is gone here: either choice only dismisses it.
+      const adoptKept = row.type !== 'orphan' && (choice === 'local') === keptIsLocal
       if (adoptKept) {
-        if (row.type === 'orphan')
-          throw new SyncUserError('O item de origem foi apagado; só dá para dispensar.')
         const kept = openConflict(s, row)
         if (!kept) throw new SyncUserError('Não foi possível ler a versão guardada.')
         try {
@@ -1346,15 +1360,27 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
           throw new SyncUserError('Não foi possível usar esta versão.')
         }
       }
-      // Keeping this side of a debt choice: the other device still holds its
-      // own version, so ours goes out again as an edit made on top of it.
+      // Keeping the current version still tells the other devices, so their
+      // copy of this conflict closes (CLOSE_SETTLED_CONFLICTS_SQL). A debt
+      // choice: the other device holds its own version, so ours goes out on
+      // top of it. Otherwise both hold the winner, so it goes out on top of
+      // that, with the same content (received as "same content, newer").
+      // An edit made here and not sent yet already goes out on top of the
+      // winner: rebasing it would hide that base from the other device.
+      const unsent = (): boolean =>
+        store.pendingOutgoing().some((p) => p.kind === row.kind && p.id === row.recordId)
+      const current =
+        !adoptKept && row.type === 'lww' && !unsent()
+          ? store.syncRecordVersion(row.kind, row.recordId)
+          : null
       const rebased =
-        !adoptKept &&
-        row.type === 'pending_choice' &&
-        store.rebaseSyncVersion(row.kind, row.recordId, row.loserHlc, now)
+        (!adoptKept &&
+          row.type === 'pending_choice' &&
+          store.rebaseSyncVersion(row.kind, row.recordId, row.loserHlc, now)) ||
+        (current !== null && store.rebaseSyncVersion(row.kind, row.recordId, current.hlc, now))
       store.markSyncConflictResolved(conflictId, now)
       log.info('sync', 'conflict_resolved', { adopted: adoptKept })
-      if (adoptKept || rebased) notifySaved()
+      if (adoptKept || rebased || (row.type === 'lww' && current === null)) notifySaved()
       publish()
     },
 

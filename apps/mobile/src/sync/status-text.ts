@@ -3,7 +3,7 @@ import { pendingText, syncedAgoText } from '@sagyou/core/sync/view'
 import { DISCONNECTED_TEXT, OFFLINE_TEXT } from '../store/app'
 
 export function conflictsText(count: number): string {
-  return count === 1 ? '1 conflito — resolva no PC' : `${count} conflitos — resolva no PC`
+  return count === 1 ? '1 conflito' : `${count} conflitos`
 }
 
 /** The same status lines as the desktop's Sincronização screen. */

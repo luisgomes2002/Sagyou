@@ -24,12 +24,27 @@ const NEXT = ((v: string): string => {
 })(installedVersion())
 
 describe('SettingsScreen', () => {
-  it('com um conflito aberto pede para resolver no PC', async () => {
+  it('com conflito aberto mostra a linha que abre a tela de conflitos, sem "resolva no PC"', async () => {
     seedApp()
+    useApp.setState({ status: { ...STATUS, conflictCount: 2 } })
+    const navigate = jest.fn()
+    await render(<SettingsScreen navigation={{ navigate }} />)
+    expect(screen.queryByText(/resolva no PC/)).toBeNull()
+    await fireEvent.press(screen.getByRole('button', { name: '2 conflitos, ver e resolver' }))
+    expect(navigate).toHaveBeenCalledWith('Conflitos')
+    expect(conflictsText(1)).toBe('1 conflito')
+    expect(conflictsText(3)).toBe('3 conflitos')
+  })
+
+  it('sem conflito, ou desconectado, a linha de conflitos não aparece', async () => {
+    seedApp()
+    useApp.setState({ status: { ...STATUS, conflictCount: 0 } })
+    await render(<SettingsScreen />)
+    expect(screen.queryByText(/conflito/)).toBeNull()
+    seedApp({}, { readOnly: true })
     useApp.setState({ status: STATUS })
     await render(<SettingsScreen />)
-    expect(screen.getByText('1 conflito — resolva no PC')).toBeTruthy()
-    expect(conflictsText(3)).toBe('3 conflitos — resolva no PC')
+    expect(screen.queryByText('1 conflito')).toBeNull()
   })
 
   it('as seções aparecem na ordem e desconectar fica na zona de perigo', async () => {

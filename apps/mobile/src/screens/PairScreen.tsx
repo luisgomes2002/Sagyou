@@ -1,10 +1,11 @@
 import { INVITE_EXPIRED_MESSAGE, SyncUserError } from '@sagyou/core/sync/engine'
 import { CameraView, useCameraPermissions } from 'expo-camera'
 import * as Device from 'expo-device'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ScanQrCode } from 'lucide-react-native'
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { ActivityIndicator, BackHandler, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { AppMark } from '../components/AppMark'
+import { SYNC_GUIDE_LINK, SyncGuideContent } from '../components/SyncGuideContent'
 import { Button, Field, Screen } from '../components/ui'
 import { useApp } from '../store/app'
 import { FONT, RADIUS, SPACE, useTheme } from '../theme'
@@ -60,6 +61,17 @@ export function PairScreen(): React.JSX.Element {
   // ('join') and must take the cloud before this phone can be used.
   const [downloadPending, setDownloadPending] = useState(false)
   const [started, setStarted] = useState(false)
+  // Before pairing there is no navigator: the guide opens in place, and the
+  // system back closes it instead of leaving the app.
+  const [guide, setGuide] = useState(false)
+  useEffect(() => {
+    if (!guide) return
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      setGuide(false)
+      return true
+    })
+    return () => sub.remove()
+  }, [guide])
   const used = useRef(false)
 
   const finish = (): void => {
@@ -141,6 +153,17 @@ export function PairScreen(): React.JSX.Element {
       </Screen>
     )
 
+  if (guide)
+    return (
+      <ScrollView testID="pair-guide">
+        <Screen>
+          <Button label="Voltar" onPress={() => setGuide(false)} />
+          <SyncGuideContent />
+          <Button label="Voltar" onPress={() => setGuide(false)} />
+        </Screen>
+      </ScrollView>
+    )
+
   return (
     // With 200% text or the keyboard up the code step is taller than the screen.
     <ScrollView testID="pair-scroll" keyboardShouldPersistTaps="handled">
@@ -150,6 +173,7 @@ export function PairScreen(): React.JSX.Element {
           {PAIR_STEPS[1]}
         </Text>
         <Text style={[styles.lead, { color: theme.muted }]}>{ON_PC_TEXT}</Text>
+        <Button variant="ghost" label={SYNC_GUIDE_LINK} onPress={() => setGuide(true)} />
         <Field label="Nome deste aparelho" value={name} onChangeText={setName} maxLength={80} />
         {scanning && permission?.granted ? (
           <CameraView

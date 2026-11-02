@@ -4,6 +4,7 @@
 // children wait in sync_pending for their parent. The phone is single-threaded,
 // so there is no stale-save guard: every action reads the latest state.
 import {
+  CLOSE_SETTLED_CONFLICTS_SQL,
   PENDING_TTL_MS,
   applyRecordsToState,
   decodeIncoming,
@@ -11,7 +12,9 @@ import {
   planMemoryApply,
   planRemoteApply,
   type ConflictWrite,
+  settledConflictParams,
   type IncomingRecord,
+  type SettledVersion,
   type StoredSyncVersion,
   type VersionWrite
 } from '@sagyou/core/sync/apply'
@@ -122,6 +125,12 @@ export function createMobileSyncStore(
     }
   }
 
+  /** After writeConflicts: a conflict made and settled in the same pull closes too. */
+  const closeSettled = (settled: SettledVersion[], now: number): void => {
+    for (const item of settled)
+      db.run(CLOSE_SETTLED_CONFLICTS_SQL, settledConflictParams(item, now))
+  }
+
   const pendingBatchId = (kind: string, id: string): string => `pending:${kind}:${id}`
 
   const writePending = (pending: IncomingRecord[], ctx: SyncApplyCtx, now: number): void => {
@@ -174,6 +183,7 @@ export function createMobileSyncStore(
     for (const record of plan.applied) repo.writeMemory(record)
     writeReceivedVersions(plan.versions)
     writeConflicts(plan.conflicts, ctx, now)
+    closeSettled(plan.settled, now)
     return { applied: plan.applied.length, conflicts: plan.conflicts.length }
   }
 
@@ -313,6 +323,7 @@ export function createMobileSyncStore(
         }
         writeReceivedVersions(plan.versions)
         writeConflicts(plan.conflicts, ctx, now)
+        closeSettled(plan.settled, now)
         writePending(plan.pending, ctx, now)
         const memory = applyMemories(memories, ctx, now)
         return {

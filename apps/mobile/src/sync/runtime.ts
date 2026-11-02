@@ -95,7 +95,8 @@ export function createSyncRuntime(deps: RuntimeDeps): SyncRuntime {
   let online: boolean | null = null
   const appSub = deps.appState.addEventListener('change', (state) => {
     if (state === 'active') engine.start()
-    else if (state === 'background') engine.stop()
+    // Send what is waiting before stopping (an edit made < 5 s before leaving).
+    else if (state === 'background') void engine.flush()
   })
   const netUnsub = deps.netInfo.addEventListener(({ isConnected }) => {
     const wasOffline = online === false

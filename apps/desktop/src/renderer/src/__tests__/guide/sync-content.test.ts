@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { SYNC_BEHAVIOR_ARTICLE, SYNC_KEYS_ARTICLE } from '@sagyou/core/sync/guide'
 import { GUIDE_CHAPTERS, searchGuide } from '../../guide/content'
 import type { GuideArticle, GuideBlock } from '../../guide/types'
 
@@ -11,7 +12,7 @@ const blocksOf = <T extends GuideBlock['type']>(
   a.blocks.filter((b): b is Extract<GuideBlock, { type: T }> => b.type === type)
 
 describe('sync chapter', () => {
-  it('has the eleven articles in order', () => {
+  it('has the thirteen articles in order', () => {
     expect(chapter.articles.map((a) => [a.id, a.title])).toEqual([
       ['sync-o-que-e', 'O que é e o que o servidor vê'],
       ['sync-servidor', 'Criar o servidor na Cloudflare'],
@@ -19,12 +20,28 @@ describe('sync chapter', () => {
       ['sync-autenticador', 'Cadastrar o autenticador'],
       ['sync-parear-pc', 'Parear outro PC'],
       ['sync-parear-celular', 'Parear o celular'],
+      ['sync-comportamento', 'Como a sincronização se comporta'],
+      ['sync-chaves', 'As chaves da sincronização'],
       ['sync-conflitos', 'Conflitos'],
       ['sync-perdi-aparelho', 'Perdi um aparelho'],
       ['sync-perdi-todos', 'Perdi todos os aparelhos'],
       ['sync-restaurar-backup', 'Restaurar um backup com a sincronização ligada'],
       ['sync-problemas', 'Problemas comuns']
     ])
+  })
+
+  it('says exactly what the phone says about behavior and keys', () => {
+    expect(article('sync-comportamento').blocks).toEqual(SYNC_BEHAVIOR_ARTICLE.blocks)
+    expect(article('sync-chaves').blocks).toEqual(SYNC_KEYS_ARTICLE.blocks)
+    expect(article('sync-chaves').target).toEqual({ view: 'settings', section: 'sincronizacao' })
+  })
+
+  it('no longer tells the phone to resolve on the PC', () => {
+    const conflicts = article('sync-conflitos')
+      .blocks.map((b) => JSON.stringify(b))
+      .join(' ')
+    expect(conflicts).not.toMatch(/resolva no PC/)
+    expect(conflicts).toMatch(/fecha sozinho/)
   })
 
   it('opens with the diagram', () => {

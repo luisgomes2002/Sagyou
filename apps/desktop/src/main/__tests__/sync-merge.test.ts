@@ -32,6 +32,14 @@ function local(over: Partial<LocalVersion> = {}): LocalVersion {
 const parentOk = { present: true, deleted: false }
 
 describe('decideIncoming', () => {
+  it('adopts, without a conflict, the version re-sent when another device kept the winner', () => {
+    const payload = { id: 't1', projectId: 'p1', columnId: 'c1', title: 'Vencedora' }
+    const kept = incoming({ hlc: NEW, baseHlc: MID, payload })
+    expect(decideIncoming(kept, local({ hlc: MID, hash: hashPayload(payload) }), parentOk)).toEqual(
+      { type: 'skip' }
+    )
+  })
+
   it('applies a record this device has never seen', () => {
     expect(decideIncoming(incoming(), null, parentOk)).toEqual({ type: 'apply' })
   })

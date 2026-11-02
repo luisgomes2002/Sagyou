@@ -189,6 +189,27 @@ describe('Sincronização: estados', () => {
 })
 
 describe('Sincronização: conflitos', () => {
+  // Review finding: a pull that closed one conflict and opened another kept
+  // the count, so the list stayed stale and the closed card said "não encontrado".
+  it('relê a lista a cada estado com conflitos, mesmo com o mesmo número', async () => {
+    let push: (next: unknown) => void = () => {}
+    vi.mocked(window.electronAPI.sync.onStatusChanged).mockImplementation((cb) => {
+      push = cb as (next: unknown) => void
+      return () => {}
+    })
+    vi.mocked(window.electronAPI.sync.conflicts)
+      .mockResolvedValueOnce({ ok: true, conflicts: [conflict] })
+      .mockResolvedValue({ ok: true, conflicts: [{ ...conflict, id: 'c2' }] })
+    vi.mocked(window.electronAPI.sync.status).mockResolvedValue({ ...status, conflictCount: 1 })
+    render(<SyncSettings onToast={vi.fn()} />)
+    await screen.findByRole('group', { name: 'Versão de Trabalho' })
+    const before = vi.mocked(window.electronAPI.sync.conflicts).mock.calls.length
+    push({ ...status, conflictCount: 1 })
+    await waitFor(() =>
+      expect(vi.mocked(window.electronAPI.sync.conflicts).mock.calls.length).toBeGreaterThan(before)
+    )
+  })
+
   it('"Usar esta" chama resolve com a versão escolhida', async () => {
     vi.mocked(window.electronAPI.sync.conflicts).mockResolvedValue({
       ok: true,
