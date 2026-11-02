@@ -341,6 +341,23 @@ describe('Sincronização: autenticação e revogação', () => {
     expect(screen.getByText('ABCDEF0123456789')).toBeInTheDocument()
   })
 
+  it('trocar o autenticador manda o código atual digitado', async () => {
+    render(<SyncSettings onToast={vi.fn()} />)
+    fireEvent.change(await screen.findByLabelText(/Código atual do autenticador/), {
+      target: { value: ' 654321 ' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Cadastrar ou trocar autenticador' }))
+    await waitFor(() =>
+      expect(window.electronAPI.sync.enrollTotp).toHaveBeenCalledWith({ totp: '654321' })
+    )
+  })
+
+  it('o primeiro cadastro vai sem código', async () => {
+    render(<SyncSettings onToast={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Cadastrar ou trocar autenticador' }))
+    await waitFor(() => expect(window.electronAPI.sync.enrollTotp).toHaveBeenCalledWith(undefined))
+  })
+
   it('apagar um aparelho pede código antes de chamar a revogação', async () => {
     render(<SyncSettings onToast={vi.fn()} />)
     fireEvent.click(await screen.findByRole('button', { name: 'Revogar Trabalho' }))

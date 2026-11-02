@@ -134,6 +134,8 @@ class FakeServer {
   /** Every request as sent: URL, headers and body, for the leak test. */
   requests: { url: string; init: FetchInit }[] = []
   mode: 'up' | 'down' | 'error500' | 'unauthorized' = 'up'
+  /** Like the Worker once an authenticator is confirmed: enroll needs the current factor. */
+  totpConfirmed = false
   private seq = 0
   snapshot: { id: string; seqUntil: number; device: string; parts: string[] } | null = null
   pendingParts = new Map<string, { device: string; parts: Map<number, string> }>()
@@ -189,8 +191,11 @@ class FakeServer {
       this.invites.add(String(body.inviteHash))
       return reply(200, { expiresAt: 0 })
     }
-    if (u.pathname === '/totp/enroll')
+    if (u.pathname === '/totp/enroll') {
+      if (this.totpConfirmed && !init.headers['x-totp-code'])
+        return reply(401, { error: 'factor required' })
       return reply(200, { uri: 'otpauth://totp/Sagyou?secret=AAAAAAAA&issuer=Sagyou' })
+    }
     if (u.pathname === '/totp/confirm') return reply(200, { backupCodes: ['ABCDEF0123456789'] })
     if (u.pathname === '/push') {
       const seqs = (body.batches as Row[]).map((b) => {
@@ -263,6 +268,8 @@ class FakeServer {
       return reply(200, { ciphertext: this.snapshot.parts[Number(part[1])] })
     const revoke = /^\/devices\/([0-9a-f]{32})\/revoke$/.exec(u.pathname)
     if (revoke) {
+      // The Worker's revokeRoute refuses any revoke without the key proof.
+      if (!init.headers['x-key-proof']) return reply(401, { error: 'unauthorized' })
       const target = this.devices.find((d) => d.id === revoke[1])
       if (!target) return reply(404, { error: 'not found' })
       target.revoked = true
@@ -1020,6 +1027,33 @@ describe('revogar e apagar', () => {
     await a.engine.syncNow()
     expect(a.config.stored).toBeNull()
     expect(a.engine.status().state).toBe('disconnected')
+  })
+
+  // Replacing a confirmed authenticator sent no factor: the Worker refused it and
+  // counted each click as a wrong code, locking wipe-revoke after five.
+  it('trocar o autenticador manda o código atual, e sem ele explica o que falta', async () => {
+    const { a } = await pairedDevices(withData({}))
+    server.totpConfirmed = true
+    await expect(a.engine.enrollTotp()).rejects.toThrow(
+      'Para trocar o autenticador, digite o código atual dele (ou um código reserva).'
+    )
+    expect(await a.engine.enrollTotp({ totp: '654321' })).toContain('otpauth://totp/')
+    const request = server.requests.findLast((r) => r.url.endsWith('/totp/enroll'))
+    expect(request?.init.headers['x-totp-code']).toBe('654321')
+    expect(request?.init.body ?? '').not.toContain('654321')
+  })
+
+  // disable() revoked itself without the key proof: the Worker answered 401, the
+  // engine swallowed it and the device stayed in everyone's list.
+  it('desativar tira este aparelho da lista do servidor', async () => {
+    const { a } = await pairedDevices(withData({}))
+    const key = deriveKeys(a.config.stored!.syncKey).id
+    expect(server.devices.filter((d) => d.revoked)).toHaveLength(0)
+    await a.engine.disable()
+    const request = server.requests.findLast((r) => r.url.endsWith('/revoke'))
+    expect(request?.init.headers['x-key-proof']).toBe(keyProof(key))
+    expect(server.devices.filter((d) => d.revoked)).toHaveLength(1)
+    expect(logged.some((l) => l.event === 'self_revoke_failed')).toBe(false)
   })
 
   it('cadastro do autenticador entrega QR e códigos reserva ao confirmar', async () => {
