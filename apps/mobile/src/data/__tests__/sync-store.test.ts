@@ -221,13 +221,14 @@ describe('SyncStoreLike do celular', () => {
     h.save(sample(), NOW)
     const current = h.store.syncRecordVersion('task', 't1')!.hlc
     const later = nextHlc(NOW + 600000, null, REMOTE)
-    const insert = (id: string, type: string, loserHlc: string): void =>
+    const insert = (id: string, type: string, loserHlc: string): void => {
       h.db.run(
         'INSERT INTO sync_conflicts (id, kind, record_id, type, loser_cipher, winner_hlc, ' +
           'loser_hlc, loser_device, created_at, resolved_at) ' +
           "VALUES (?, 'task', 't1', ?, 'x', ?, ?, 'outro', ?, NULL)",
         [id, type, current, loserHlc, NOW]
       )
+    }
     insert('orfao', 'orphan', current)
     insert('mais-novo', 'lww', later)
     h.apply([onTop(current, NOW + 120000, 'Decidida')])
