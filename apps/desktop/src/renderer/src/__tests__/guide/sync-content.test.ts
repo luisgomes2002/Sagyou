@@ -37,7 +37,9 @@ describe('sync chapter', () => {
   })
 
   it('no longer tells the phone to resolve on the PC', () => {
-    const conflicts = article('sync-conflitos').blocks.map((b) => JSON.stringify(b)).join(' ')
+    const conflicts = article('sync-conflitos')
+      .blocks.map((b) => JSON.stringify(b))
+      .join(' ')
     expect(conflicts).not.toMatch(/resolva no PC/)
     expect(conflicts).toMatch(/fecha sozinho/)
   })

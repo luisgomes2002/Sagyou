@@ -99,9 +99,7 @@ function GuideTable({ block }: { block: TableBlock }): JSX.Element {
       <tbody>
         {block.rows.map(([lost, use]) => (
           <tr key={lost}>
-            <td className="border-b border-[#2b2b31] py-2 pr-4 align-top text-[#d4d4d4]">
-              {lost}
-            </td>
+            <td className="border-b border-[#2b2b31] py-2 pr-4 align-top text-[#d4d4d4]">{lost}</td>
             <td className="border-b border-[#2b2b31] py-2 align-top leading-6 text-[#d4d4d4]">
               {use}
             </td>

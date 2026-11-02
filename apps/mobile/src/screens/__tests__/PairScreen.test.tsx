@@ -1,5 +1,6 @@
 import { INVITE_EXPIRED_MESSAGE, SyncUserError } from '@sagyou/core/sync/engine'
 import { act, fireEvent, render, screen } from '@testing-library/react-native'
+import { BackHandler } from 'react-native'
 import { type AppServices, useApp } from '../../store/app'
 import {
   DOWNLOAD_FAILED_TEXT,
@@ -114,5 +115,25 @@ describe('PairScreen', () => {
     expect(screen.getByRole('header', { name: 'As chaves da sincronização' })).toBeTruthy()
     await fireEvent.press(screen.getAllByRole('button', { name: 'Voltar' })[0])
     expect(screen.getByText(ON_PC_TEXT)).toBeTruthy()
+  })
+
+  // Review finding: without a navigator, the system back left the app.
+  it('o voltar do Android fecha o guia em vez de sair do app', async () => {
+    withJoin(jest.fn())
+    let onBack: (() => boolean) | undefined
+    const add = jest.spyOn(BackHandler, 'addEventListener').mockImplementation((_e, handler) => {
+      onBack = handler as () => boolean
+      return { remove: jest.fn() }
+    })
+    await toCodeStep()
+    await fireEvent.press(screen.getByRole('button', { name: 'Como funciona a sincronização' }))
+    expect(add).toHaveBeenCalledWith('hardwareBackPress', expect.any(Function))
+    let handled = false
+    await act(async () => {
+      handled = onBack?.() ?? false
+    })
+    expect(handled).toBe(true)
+    expect(screen.getByText(ON_PC_TEXT)).toBeTruthy()
+    add.mockRestore()
   })
 })

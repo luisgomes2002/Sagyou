@@ -630,7 +630,11 @@ describe('settled versions', () => {
 
   it('does not settle when the incoming version makes a new conflict, either way', () => {
     const state = remote()
-    const wins = planRemoteApply(state, [from(taskEdit({ baseHlc: OLD }, state))], versionsOf(state))
+    const wins = planRemoteApply(
+      state,
+      [from(taskEdit({ baseHlc: OLD }, state))],
+      versionsOf(state)
+    )
     expect(wins.conflicts).toHaveLength(1)
     expect(wins.settled).toEqual([])
     const loses = planRemoteApply(

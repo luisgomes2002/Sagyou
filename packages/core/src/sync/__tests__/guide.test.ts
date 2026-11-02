@@ -39,7 +39,8 @@ describe('guia do sync', () => {
     expect(POLL_MS).toBe(60000)
     expect(MAX_BACKOFF_MS).toBe(15 * 60000)
     const text = textOf(SYNC_BEHAVIOR_ARTICLE.blocks)
-    for (const fragment of ['5 s', '60 s', '15 min', '30 dias', '1 min']) expect(text).toContain(fragment)
+    for (const fragment of ['5 s', '60 s', '15 min', '30 dias', '1 min'])
+      expect(text).toContain(fragment)
     expect(textOf(SYNC_KEYS_ARTICLE.blocks)).toContain('10 min')
   })
 

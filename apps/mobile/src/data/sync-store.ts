@@ -127,7 +127,8 @@ export function createMobileSyncStore(
 
   /** After writeConflicts: a conflict made and settled in the same pull closes too. */
   const closeSettled = (settled: SettledVersion[], now: number): void => {
-    for (const item of settled) db.run(CLOSE_SETTLED_CONFLICTS_SQL, settledConflictParams(item, now))
+    for (const item of settled)
+      db.run(CLOSE_SETTLED_CONFLICTS_SQL, settledConflictParams(item, now))
   }
 
   const pendingBatchId = (kind: string, id: string): string => `pending:${kind}:${id}`

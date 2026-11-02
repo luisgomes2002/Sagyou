@@ -1514,6 +1514,38 @@ describe('conflitos', () => {
     expect(dataHashes(a.store)).toEqual(dataHashes(b.store))
   })
 
+  // Review finding: rebasing a local edit that had not gone out yet put it on
+  // top of a version nobody else knew, and the other device saw a new conflict.
+  it('manter a atual depois de uma correção à mão ainda não enviada não cria conflito no outro', async () => {
+    const { a, b } = await pairedDevices(
+      withData({ projects: [project('p1', 'Casa')], tasks: [task('t1', 'p1', 'Original')] })
+    )
+    server.mode = 'down'
+    a.store.save({ ...a.store.state, tasks: [task('t1', 'p1', 'Versão de A')] })
+    clock.t += 10
+    b.store.save({ ...b.store.state, tasks: [task('t1', 'p1', 'Versão de B')] })
+    server.mode = 'up'
+    await a.engine.syncNow()
+    await b.engine.syncNow()
+    await a.engine.syncNow()
+    expect(b.engine.conflicts()).toHaveLength(1)
+
+    server.mode = 'down'
+    clock.t += 10
+    a.store.save({ ...a.store.state, tasks: [task('t1', 'p1', 'Corrigida à mão')] })
+    const rebase = vi.spyOn(a.store, 'rebaseSyncVersion')
+    const [conflict] = a.engine.conflicts()
+    a.engine.resolve(conflict.id, 'remote')
+    expect(rebase).not.toHaveBeenCalled()
+    expect(a.engine.conflicts()).toEqual([])
+
+    server.mode = 'up'
+    await a.engine.syncNow()
+    await b.engine.syncNow()
+    expect((b.store.state.tasks[0] as Row).title).toBe('Corrigida à mão')
+    expect(b.engine.conflicts()).toEqual([])
+  })
+
   it('manter a versão atual sem versão local só marca o conflito resolvido', async () => {
     const { a } = await pairedDevices(withData({ projects: [project('p1', 'Casa')] }))
     a.store.conflicts.push({

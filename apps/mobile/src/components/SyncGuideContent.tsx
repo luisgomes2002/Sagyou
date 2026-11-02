@@ -37,7 +37,9 @@ function Block({ block }: { block: SyncGuideBlock }): React.JSX.Element {
           ]}
         >
           <Text style={[styles.body, { color: theme.text }]}>
-            <Text style={{ fontWeight: '600' }}>{block.tone === 'tip' ? 'Dica: ' : 'Atenção: '}</Text>
+            <Text style={{ fontWeight: '600' }}>
+              {block.tone === 'tip' ? 'Dica: ' : 'Atenção: '}
+            </Text>
             {block.text}
           </Text>
         </View>
@@ -108,7 +110,13 @@ const styles = StyleSheet.create({
   caption: { fontSize: FONT.caption },
   list: { gap: SPACE.sm },
   callout: { borderWidth: 1, borderRadius: RADIUS.control, padding: SPACE.md },
-  example: { borderWidth: 1, borderStyle: 'dashed', borderRadius: RADIUS.control, padding: SPACE.sm, gap: 2 },
+  example: {
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderRadius: RADIUS.control,
+    padding: SPACE.sm,
+    gap: 2
+  },
   badge: { fontSize: FONT.caption, fontWeight: '600' },
   mono: { fontSize: FONT.caption, fontFamily: 'monospace' },
   row: { gap: 2, paddingVertical: SPACE.xs }

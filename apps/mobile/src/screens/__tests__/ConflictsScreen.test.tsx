@@ -51,12 +51,19 @@ function orphan(): SyncConflictView {
   }
 }
 
-function withEngine(list: SyncConflictView[], resolve = jest.fn()): {
+/** Like the real engine: a resolved conflict is no longer listed. */
+function withEngine(
+  list: SyncConflictView[],
+  resolve: jest.Mock = jest.fn((id: string) => {
+    const i = list.findIndex((c) => c.id === id)
+    if (i >= 0) list.splice(i, 1)
+  })
+): {
   conflicts: jest.Mock
   resolve: jest.Mock
 } {
   seedApp()
-  const conflicts = jest.fn(() => list)
+  const conflicts = jest.fn(() => [...list])
   const services = useApp.getState().services as AppServices
   useApp.setState({
     status: STATUS,

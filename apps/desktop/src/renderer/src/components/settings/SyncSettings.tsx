@@ -169,7 +169,12 @@ export function SyncSettings({ onToast, onOneTimeSecretChange }: Props): JSX.Ele
     const unsubscribe = window.electronAPI.sync.onStatusChanged?.((next) => {
       if (!mounted.current) return
       setStatus(next)
-      if (ACTIVE_STATES.has(next.state) && next.conflictCount !== conflictCount.current) {
+      // With conflicts open, every status may have closed one and opened
+      // another (same count): read the list again.
+      if (
+        ACTIVE_STATES.has(next.state) &&
+        (next.conflictCount !== conflictCount.current || next.conflictCount > 0)
+      ) {
         conflictCount.current = next.conflictCount
         void loadConflicts().catch(() => {})
       }

@@ -226,7 +226,7 @@ export const SYNC_ARTICLES: GuideArticle[] = [
       },
       {
         type: 'p',
-        text: 'Cada aparelho guarda os conflitos que ele mesmo viu. No celular, toque em Ajustes → "N conflitos" para ver as duas versões. Ao escolher num aparelho, a escolha viaja e o mesmo conflito fecha sozinho nos outros na próxima sincronização.'
+        text: 'Cada aparelho guarda os conflitos que ele mesmo viu. No celular, toque em Ajustes → "N conflitos" para ver as duas versões. Ao escolher num aparelho, a escolha viaja e, em geral, o mesmo conflito fecha sozinho nos outros na próxima sincronização.'
       }
     ],
     target: SYNC_SETTINGS

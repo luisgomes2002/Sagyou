@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ScrollView, StyleSheet, Text, View } from 'react-native'
 import type { SyncConflictView, SyncVersionView } from '@sagyou/core/sync/engine'
 import { recordName, syncKindLabel, versionLines, versionTimeText } from '@sagyou/core/sync/view'
@@ -68,22 +68,23 @@ export function ConflictsScreen(): React.JSX.Element {
   const theme = useTheme()
   const engine = useApp((s) => s.services?.runtime.engine)
   const status = useApp((s) => s.status)
-  const [conflicts, setConflicts] = useState<SyncConflictView[]>([])
+  // Bumped after each choice so the list is read again from the engine.
+  const [version, setVersion] = useState(0)
   const [busy, setBusy] = useState(false)
   const [snack, setSnack] = useState<string | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const reload = useCallback(() => {
-    if (!engine) return
-    try {
-      setConflicts(engine.conflicts())
-    } catch {
-      setConflicts([])
-    }
-  }, [engine])
-
   // Every published status (after each pull) may have closed some on its own.
-  useEffect(reload, [reload, status])
+  const conflicts = useMemo((): SyncConflictView[] => {
+    void status
+    void version
+    if (!engine) return []
+    try {
+      return engine.conflicts()
+    } catch {
+      return []
+    }
+  }, [engine, status, version])
   useEffect(
     () => () => {
       if (timer.current) clearTimeout(timer.current)
@@ -102,7 +103,7 @@ export function ConflictsScreen(): React.JSX.Element {
     setBusy(true)
     try {
       engine.resolve(conflict.id, choice)
-      setConflicts((current) => current.filter((c) => c.id !== conflict.id))
+      setVersion((v) => v + 1)
       show(conflict.type === 'orphan' ? 'Conflito dispensado.' : 'Versão escolhida.')
     } catch (cause) {
       show(messageOf(cause, 'Não foi possível usar esta versão.'))
@@ -124,8 +125,7 @@ export function ConflictsScreen(): React.JSX.Element {
             </View>
           ) : (
             conflicts.map((conflict) => {
-              const name =
-                recordName(conflict.remote.payload) ?? recordName(conflict.local.payload)
+              const name = recordName(conflict.remote.payload) ?? recordName(conflict.local.payload)
               const other = conflict.remote.deviceName
               return (
                 <Card key={conflict.id}>

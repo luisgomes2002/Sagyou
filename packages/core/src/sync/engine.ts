@@ -1365,8 +1365,14 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       // choice: the other device holds its own version, so ours goes out on
       // top of it. Otherwise both hold the winner, so it goes out on top of
       // that, with the same content (received as "same content, newer").
+      // An edit made here and not sent yet already goes out on top of the
+      // winner: rebasing it would hide that base from the other device.
+      const unsent = (): boolean =>
+        store.pendingOutgoing().some((p) => p.kind === row.kind && p.id === row.recordId)
       const current =
-        !adoptKept && row.type === 'lww' ? store.syncRecordVersion(row.kind, row.recordId) : null
+        !adoptKept && row.type === 'lww' && !unsent()
+          ? store.syncRecordVersion(row.kind, row.recordId)
+          : null
       const rebased =
         (!adoptKept &&
           row.type === 'pending_choice' &&
@@ -1374,7 +1380,7 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
         (current !== null && store.rebaseSyncVersion(row.kind, row.recordId, current.hlc, now))
       store.markSyncConflictResolved(conflictId, now)
       log.info('sync', 'conflict_resolved', { adopted: adoptKept })
-      if (adoptKept || rebased) notifySaved()
+      if (adoptKept || rebased || (row.type === 'lww' && current === null)) notifySaved()
       publish()
     },
 

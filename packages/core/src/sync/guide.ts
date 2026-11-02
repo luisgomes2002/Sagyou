@@ -84,11 +84,11 @@ export const SYNC_BEHAVIOR_ARTICLE: SyncGuideArticle = {
     },
     {
       type: 'p',
-      text: 'Conflito é o mesmo item alterado em dois aparelhos antes de um receber a mudança do outro. A versão mais recente vale nos dois, e a outra fica guardada por 30 dias em Conflitos para você trocar se quiser. A comparação é do item inteiro, não campo a campo; itens diferentes nunca conflitam.'
+      text: 'Conflito é o mesmo item alterado em dois aparelhos antes de um receber a mudança do outro. A versão mais recente vale nos dois, e a outra fica guardada por 30 dias em Conflitos para você trocar se quiser. Uma dívida é a exceção: cada aparelho mantém o próprio valor até você escolher. A comparação é do item inteiro, não campo a campo; itens diferentes nunca conflitam.'
     },
     {
       type: 'p',
-      text: 'Cada aparelho mostra os conflitos que ele mesmo viu: no PC em Configurações → Sincronização → Conflitos, no celular em Ajustes → N conflitos. Escolher num aparelho avisa os outros, e o mesmo conflito fecha sozinho neles na próxima sincronização.'
+      text: 'Cada aparelho mostra os conflitos que ele mesmo viu: no PC em Configurações → Sincronização → Conflitos, no celular em Ajustes → N conflitos. Escolher num aparelho avisa os outros, e em geral o mesmo conflito fecha sozinho neles na próxima sincronização; um item removido (órfão) se dispensa em cada aparelho.'
     },
     {
       type: 'callout',

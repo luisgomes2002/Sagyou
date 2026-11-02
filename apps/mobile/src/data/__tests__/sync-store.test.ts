@@ -232,7 +232,12 @@ describe('SyncStoreLike do celular', () => {
     insert('orfao', 'orphan', current)
     insert('mais-novo', 'lww', later)
     h.apply([onTop(current, NOW + 120000, 'Decidida')])
-    expect(h.store.listSyncConflicts(NOW).map((c) => c.id).sort()).toEqual(['mais-novo', 'orfao'])
+    expect(
+      h.store
+        .listSyncConflicts(NOW)
+        .map((c) => c.id)
+        .sort()
+    ).toEqual(['mais-novo', 'orfao'])
   })
 
   it('fecha sozinho o conflito de uma memória', () => {

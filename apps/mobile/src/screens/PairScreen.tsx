@@ -1,9 +1,9 @@
 import { INVITE_EXPIRED_MESSAGE, SyncUserError } from '@sagyou/core/sync/engine'
 import { CameraView, useCameraPermissions } from 'expo-camera'
 import * as Device from 'expo-device'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ScanQrCode } from 'lucide-react-native'
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { ActivityIndicator, BackHandler, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { AppMark } from '../components/AppMark'
 import { SYNC_GUIDE_LINK, SyncGuideContent } from '../components/SyncGuideContent'
 import { Button, Field, Screen } from '../components/ui'
@@ -61,8 +61,17 @@ export function PairScreen(): React.JSX.Element {
   // ('join') and must take the cloud before this phone can be used.
   const [downloadPending, setDownloadPending] = useState(false)
   const [started, setStarted] = useState(false)
-  // Before pairing there is no navigator: the guide opens in place.
+  // Before pairing there is no navigator: the guide opens in place, and the
+  // system back closes it instead of leaving the app.
   const [guide, setGuide] = useState(false)
+  useEffect(() => {
+    if (!guide) return
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      setGuide(false)
+      return true
+    })
+    return () => sub.remove()
+  }, [guide])
   const used = useRef(false)
 
   const finish = (): void => {
