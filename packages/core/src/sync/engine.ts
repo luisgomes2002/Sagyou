@@ -1333,10 +1333,9 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       const row = store.listSyncConflicts(now).find((c) => c.id === conflictId)
       if (!row) throw new SyncUserError('Conflito não encontrado.')
       const keptIsLocal = localSide(s, row) === 'kept-is-local'
-      const adoptKept = (choice === 'local') === keptIsLocal
+      // An orphan's item is gone here: either choice only dismisses it.
+      const adoptKept = row.type !== 'orphan' && (choice === 'local') === keptIsLocal
       if (adoptKept) {
-        if (row.type === 'orphan')
-          throw new SyncUserError('O item de origem foi apagado; só dá para dispensar.')
         const kept = openConflict(s, row)
         if (!kept) throw new SyncUserError('Não foi possível ler a versão guardada.')
         try {
@@ -1346,12 +1345,18 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
           throw new SyncUserError('Não foi possível usar esta versão.')
         }
       }
-      // Keeping this side of a debt choice: the other device still holds its
-      // own version, so ours goes out again as an edit made on top of it.
+      // Keeping the current version still tells the other devices, so their
+      // copy of this conflict closes (CLOSE_SETTLED_CONFLICTS_SQL). A debt
+      // choice: the other device holds its own version, so ours goes out on
+      // top of it. Otherwise both hold the winner, so it goes out on top of
+      // that, with the same content (received as "same content, newer").
+      const current =
+        !adoptKept && row.type === 'lww' ? store.syncRecordVersion(row.kind, row.recordId) : null
       const rebased =
-        !adoptKept &&
-        row.type === 'pending_choice' &&
-        store.rebaseSyncVersion(row.kind, row.recordId, row.loserHlc, now)
+        (!adoptKept &&
+          row.type === 'pending_choice' &&
+          store.rebaseSyncVersion(row.kind, row.recordId, row.loserHlc, now)) ||
+        (current !== null && store.rebaseSyncVersion(row.kind, row.recordId, current.hlc, now))
       store.markSyncConflictResolved(conflictId, now)
       log.info('sync', 'conflict_resolved', { adopted: adoptKept })
       if (adoptKept || rebased) notifySaved()
