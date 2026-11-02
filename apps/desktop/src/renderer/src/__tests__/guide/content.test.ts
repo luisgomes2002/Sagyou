@@ -26,6 +26,7 @@ const SETTINGS_SECTIONS: SettingsSectionId[] = [
   'barra-lateral',
   'seguranca',
   'sincronizacao',
+  'mcp-externo',
   'sistema',
   'sobre'
 ]

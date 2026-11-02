@@ -1268,6 +1268,7 @@ describe('wipeLocalData', () => {
         'kanban.db',
         'kanban.db-shm',
         'kanban.db-wal',
+        'mcp-external.json',
         'sync-config.json',
         'sync-device.json',
         'task-images'
@@ -1280,6 +1281,10 @@ describe('wipeLocalData', () => {
     expect(existsSync(join(parent, 'files'))).toBe(true)
     expect(existsSync(join(parent, 'kanban.db'))).toBe(true)
     for (const path of result.removed) expect(path.startsWith(userData)).toBe(true)
+  })
+
+  it('em dev o token MCP externo de dev também sai', () => {
+    expect(wipeTargets(true)).toContain('mcp-external-dev.json')
   })
 
   it('em dev só apaga os arquivos com nome de dev (files/ e backups/ são do app instalado)', () => {

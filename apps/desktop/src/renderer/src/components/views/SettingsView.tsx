@@ -2,6 +2,7 @@ import { useEffect, useState, type JSX, type ReactNode } from 'react'
 import { ALL_FEATURE_IDS, type FeatureId, type UiPreferences } from '../../types'
 import type { SettingsSectionId } from '../../navigation'
 import { SyncSettings } from '../settings/SyncSettings'
+import { McpExternalSettings } from '../settings/McpExternalSettings'
 import { UpdateSettings } from '../settings/UpdateSettings'
 import { WindowSettings } from '../settings/WindowSettings'
 import { AutoLockSettings } from '../settings/AutoLockSettings'
@@ -54,6 +55,13 @@ const SETTINGS_SECTIONS: {
     label: 'Sincronização',
     description: 'Mantenha seus PCs e o celular com os mesmos dados.',
     icon: SECTION_ICONS.sync
+  },
+  {
+    id: 'mcp-externo',
+    label: 'Acesso MCP externo',
+    description:
+      'Um token de 30 dias para um Claude Code fora do Fleet ler e editar o Sagyou neste PC.',
+    icon: SECTION_ICONS.key
   },
   {
     id: 'sistema',
@@ -151,6 +159,7 @@ export function SettingsView({
             <SyncSettings onToast={onToast} onOneTimeSecretChange={setSecretShown} />
           </div>
         )}
+        {current.id === 'mcp-externo' && <McpExternalSettings onToast={onToast} />}
         {current.id === 'sistema' && (
           <>
             <WindowSettings />

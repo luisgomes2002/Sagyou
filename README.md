@@ -84,6 +84,8 @@ As sessões abertas aparecem em abas acima do terminal. Se houver muitas, role a
 
 **Acesso aos seus dados por MCP.** O agente consulta e altera tarefas, projetos, notas, metas, finanças e memórias por um servidor MCP local, com credencial temporária limitada àquela sessão, ao projeto e ao perfil financeiro escolhidos.
 
+**Acesso MCP externo.** Para um Claude Code fora das Sessões de código (como o Remote Control pelo celular), **Configurações → Acesso MCP externo** gera um token de 30 dias com projeto padrão, perfil financeiro e "Só leitura" ou "Leitura e escrita", e um comando `claude mcp add sagyou-externo …` pronto para copiar. O token aparece uma vez, só o hash fica no PC (fora do banco e do backup), renovar troca na hora e revogar corta o acesso. Criar tarefas (`criar_task`) e editar funcionam; escritas arriscadas (excluir, dinheiro, arquivar, tabelas e perfis financeiros, `save_memory`) são sempre recusadas por esse acesso. Só funciona neste PC (`127.0.0.1`), com o Sagyou aberto e desbloqueado.
+
 Ao lançar ou editar uma transação, o agente também preenche os detalhes da fatura (item, valor, categoria e data da compra), a origem, a contraparte e a referência bancária. Valem as mesmas regras do app: a soma dos detalhes nunca passa do valor, e a edição entra na auditoria.
 
 | Sem aprovação                                          | Pede sua aprovação                                   | Só você faz                         |

@@ -454,6 +454,40 @@ const sessoesCodigo: GuideArticle[] = [
       }
     ],
     target: { view: 'memory' }
+  },
+  {
+    id: 'mcp-externo',
+    title: 'Acesso MCP externo (Claude fora do Fleet)',
+    blocks: [
+      {
+        type: 'p',
+        text: 'Para um Claude Code aberto fora das Sessões de código (por exemplo, com o Remote Control pelo app do Claude no celular) ler e editar o Sagyou neste PC. O acesso usa um token de 30 dias, com projeto padrão, perfil financeiro e "Só leitura" ou "Leitura e escrita".'
+      },
+      {
+        type: 'steps',
+        items: [
+          'Abra Configurações → Acesso MCP externo e escolha o escopo.',
+          'Clique em Gerar acesso e em Copiar comando: o token só aparece agora.',
+          'Cole o comando num terminal do PC. Ele registra o servidor sagyou-externo no Claude Code.',
+          'Abra o Claude Code e peça, por exemplo, as tarefas do projeto.'
+        ]
+      },
+      {
+        type: 'callout',
+        tone: 'warning',
+        text: 'Criar e editar tarefas funciona. Excluir, mexer em dinheiro, arquivar projeto, criar tabelas ou perfis financeiros e salvar memória são sempre recusados por este acesso: faça pelo Sagyou ou por uma sessão de código.'
+      },
+      {
+        type: 'p',
+        text: 'O Sagyou precisa estar aberto e desbloqueado. Três dias antes de vencer, o Sagyou avisa; Renovar gera outro token e o antigo para na hora. Revogar corta o acesso imediatamente.'
+      },
+      {
+        type: 'callout',
+        tone: 'tip',
+        text: 'O token fica salvo em texto na configuração do Claude Code (~/.claude.json). Se o PC sumir, revogue o aparelho na sincronização com apagar dados: o token vai junto.'
+      }
+    ],
+    target: { view: 'settings', section: 'mcp-externo' }
   }
 ]
 

@@ -391,6 +391,16 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
     manter a atual) e os dois armazenamentos rodam `CLOSE_SETTLED_CONFLICTS_SQL`
     do core depois de gravar conflitos. Fechar sozinho nunca envia nada.
 
+20. 🔴 **O token MCP externo é a única credencial MCP com prazo fixo.** Só o hash
+    fica em `userData/mcp-external.json` (fora do SQLite e do backup); o token
+    aparece uma vez. As escritas arriscadas (`MCP_APPROVAL_REQUIRED` +
+    `save_memory`) são recusadas no broker para a run `external`, antes de
+    qualquer caminho de escrita; `criar_task` passa sem cartão. A ponte só
+    manda o token depois de o broker provar o segredo desta abertura (o
+    arquivo de porta pode sobrar). Sessões Claude Code do Fleet rodam com
+    `--disallowedTools mcp__sagyou-externo`. Nunca logue o token nem o hash.
+    Detalhes no `CLAUDE.md`.
+
 ## Memória — fronteira de confiança
 
 Memória é **evidência histórica não confiável**, nunca instrução. O conteúdo
