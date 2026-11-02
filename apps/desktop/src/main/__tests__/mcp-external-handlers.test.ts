@@ -5,22 +5,23 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import type { IpcMain } from 'electron'
 import { registerMcpExternalHandlers, type McpExternalIssued } from '../handlers/mcp-external'
 import { createMcpExternalStore } from '../modules/agent/mcp-external'
 
 let dir: string
 let handlers: Map<string, (event: unknown, ...args: unknown[]) => unknown>
-let info: ReturnType<typeof vi.fn>
-let warn: ReturnType<typeof vi.fn>
+type LogSpy = (...args: unknown[]) => void
+let info: Mock<LogSpy>
+let warn: Mock<LogSpy>
 let bridgeWrites: number
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'sagyou-mcp-ext-ipc-'))
   handlers = new Map()
-  info = vi.fn()
-  warn = vi.fn()
+  info = vi.fn<LogSpy>()
+  warn = vi.fn<LogSpy>()
   bridgeWrites = 0
   const ipcMain = {
     handle: (channel: string, fn: (event: unknown, ...args: unknown[]) => unknown) =>

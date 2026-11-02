@@ -218,7 +218,7 @@ describe('escritas arriscadas pelo token externo', () => {
   const RW: McpExternalScope = { ...READ_SCOPE, mode: 'read-write' }
 
   it('toda arriscada é recusada com a mensagem, sem chegar a nenhuma escrita', async () => {
-    const write = vi.fn(async () => ({ ok: true }))
+    const write = vi.fn<NonNullable<McpBrokerDeps['write']>>(async () => ({ ok: true, id: 'x' }))
     const saveMemory = vi.fn(async () => ({ ok: true }))
     const createTask = vi.fn(async () => ({ ok: true }))
     const refused = vi.fn()
@@ -241,7 +241,7 @@ describe('escritas arriscadas pelo token externo', () => {
   })
 
   it('uma escrita sem cartão chega à escrita com a run externa', async () => {
-    const write = vi.fn(async () => ({ ok: true }))
+    const write = vi.fn<NonNullable<McpBrokerDeps['write']>>(async () => ({ ok: true, id: 'x' }))
     const broker = await brokerWith(() => sessionFor(RW), { write })
     await call(broker.port(), 'ok', 'update_task', { id: 't1', titulo: 'Novo' })
     expect(write).toHaveBeenCalledWith(
@@ -252,7 +252,7 @@ describe('escritas arriscadas pelo token externo', () => {
   })
 
   it('uma sessão do Fleet continua levando delete_task à escrita (com o cartão de lá)', async () => {
-    const write = vi.fn(async () => ({ ok: true }))
+    const write = vi.fn<NonNullable<McpBrokerDeps['write']>>(async () => ({ ok: true, id: 'x' }))
     const broker = await brokerWith(() => null, { write })
     broker.grant({
       token: 'run-token',
