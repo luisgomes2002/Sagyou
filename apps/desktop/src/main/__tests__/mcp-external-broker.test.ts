@@ -10,7 +10,12 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createMcpExternalStore, type McpExternalScope } from '../modules/agent/mcp-external'
-import { EXTERNAL_EXPIRED_MESSAGE, EXTERNAL_RUN_ID } from '../modules/agent/mcp-external-policy'
+import {
+  EXTERNAL_EXPIRED_MESSAGE,
+  EXTERNAL_RISKY_MESSAGE,
+  EXTERNAL_RUN_ID
+} from '../modules/agent/mcp-external-policy'
+import { MCP_APPROVAL_REQUIRED } from '../modules/agent/mcp-write-tools'
 import {
   MCP_EXTERNAL_BRIDGE_SOURCE,
   externalPermissions,
@@ -206,6 +211,60 @@ describe('broker com o token externo', () => {
     })
     expect(errorOf(await call(broker.port(), 'run-token', 'list_projects'))).toBe('')
     expect(external).not.toHaveBeenCalled()
+  })
+})
+
+describe('escritas arriscadas pelo token externo', () => {
+  const RW: McpExternalScope = { ...READ_SCOPE, mode: 'read-write' }
+
+  it('toda arriscada é recusada com a mensagem, sem chegar a nenhuma escrita', async () => {
+    const write = vi.fn(async () => ({ ok: true }))
+    const saveMemory = vi.fn(async () => ({ ok: true }))
+    const createTask = vi.fn(async () => ({ ok: true }))
+    const refused = vi.fn()
+    const broker = await brokerWith(() => sessionFor(RW), {
+      write,
+      saveMemory,
+      createTask,
+      onExternalRefused: refused
+    })
+    const risky = [...MCP_APPROVAL_REQUIRED, 'save_memory', 'criar_task']
+    for (const name of risky)
+      expect([name, errorOf(await call(broker.port(), 'ok', name, { id: 'x' }))]).toEqual([
+        name,
+        EXTERNAL_RISKY_MESSAGE
+      ])
+    expect(write).not.toHaveBeenCalled()
+    expect(saveMemory).not.toHaveBeenCalled()
+    expect(createTask).not.toHaveBeenCalled()
+    expect(refused).toHaveBeenCalledWith('risky')
+  })
+
+  it('uma escrita sem cartão chega à escrita com a run externa', async () => {
+    const write = vi.fn(async () => ({ ok: true }))
+    const broker = await brokerWith(() => sessionFor(RW), { write })
+    await call(broker.port(), 'ok', 'update_task', { id: 't1', titulo: 'Novo' })
+    expect(write).toHaveBeenCalledWith(
+      expect.objectContaining({ runId: EXTERNAL_RUN_ID }),
+      'update_task',
+      { id: 't1', titulo: 'Novo' }
+    )
+  })
+
+  it('uma sessão do Fleet continua levando delete_task à escrita (com o cartão de lá)', async () => {
+    const write = vi.fn(async () => ({ ok: true }))
+    const broker = await brokerWith(() => null, { write })
+    broker.grant({
+      token: 'run-token',
+      runId: 'run-1',
+      projectId: null,
+      financialProfileId: 'personal',
+      permissions: externalPermissions('read-write')
+    })
+    await call(broker.port(), 'run-token', 'delete_task', { id: 't1' })
+    expect(write).toHaveBeenCalledWith(expect.objectContaining({ runId: 'run-1' }), 'delete_task', {
+      id: 't1'
+    })
   })
 })
 

@@ -11,7 +11,12 @@ import {
 import { randomUUID } from 'crypto'
 import type { MemorySearchHit } from '../../store'
 import { MCP_WRITE_TOOLS } from './mcp-write-tools'
-import { EXTERNAL_EXPIRED_MESSAGE, EXTERNAL_RUN_ID } from './mcp-external-policy'
+import {
+  EXTERNAL_EXPIRED_MESSAGE,
+  EXTERNAL_RISKY_MESSAGE,
+  EXTERNAL_RUN_ID,
+  isExternalRisky
+} from './mcp-external-policy'
 import {
   MCP_MEMORY_WRITE_TOOLS,
   MCP_RENDERER_WRITE_TOOLS,
@@ -698,7 +703,16 @@ export function startSagyouMcpBroker(deps: McpBrokerDeps): {
               failure(call, request.id, MCP_LOCKED_MESSAGE)
               continue
             }
-            if (session.runId === EXTERNAL_RUN_ID) deps.onExternalUse?.()
+            if (session.runId === EXTERNAL_RUN_ID) {
+              // No card can be answered for this token until the phone approves (stage 6):
+              // refused here, before any write path is reached.
+              if (isExternalRisky(name)) {
+                deps.onExternalRefused?.('risky')
+                failure(call, request.id, EXTERNAL_RISKY_MESSAGE)
+                continue
+              }
+              deps.onExternalUse?.()
+            }
             if (WRITE_TOOL_NAMES.has(name)) {
               const args = request.params?.arguments
               if (!deps.write) {
