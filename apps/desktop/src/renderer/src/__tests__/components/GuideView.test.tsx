@@ -17,15 +17,17 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-function renderGuide(props: Partial<Parameters<typeof GuideView>[0]> = {}) {
+function renderGuide(props: Partial<Parameters<typeof GuideView>[0]> = {}): {
+  onNavigate: ReturnType<typeof vi.fn>
+} {
   const onNavigate = vi.fn()
   render(<GuideView enabledFeatures={ALL_FEATURE_IDS} onNavigate={onNavigate} {...props} />)
   return { onNavigate }
 }
 
-const heading = () => screen.getByRole('heading', { level: 2 })
-const nav = () => screen.getByRole('navigation', { name: 'Como funciona' })
-const search = () => screen.getByRole('searchbox', { name: 'Buscar no guia' })
+const heading = (): HTMLElement => screen.getByRole('heading', { level: 2 })
+const nav = (): HTMLElement => screen.getByRole('navigation', { name: 'Como funciona' })
+const search = (): HTMLElement => screen.getByRole('searchbox', { name: 'Buscar no guia' })
 
 describe('GuideView', () => {
   it('opens on the first article of Primeiros passos', () => {

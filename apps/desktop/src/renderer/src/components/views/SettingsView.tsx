@@ -18,7 +18,7 @@ interface Props {
   onOpenGuide: (articleId?: string) => void
 }
 
-export const SETTINGS_SECTIONS: {
+const SETTINGS_SECTIONS: {
   id: SettingsSectionId
   label: string
   description: string

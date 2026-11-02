@@ -48,7 +48,12 @@ beforeEach(() => {
   }
 })
 
-function renderSettings(props: Partial<Parameters<typeof SettingsView>[0]> = {}) {
+type Handlers = Record<
+  'onSetFeaturePreferences' | 'onSetUiPreferences' | 'onToast' | 'onOpenGuide',
+  ReturnType<typeof vi.fn>
+>
+
+function renderSettings(props: Partial<Parameters<typeof SettingsView>[0]> = {}): Handlers {
   const handlers = {
     onSetFeaturePreferences: vi.fn(),
     onSetUiPreferences: vi.fn(),
@@ -66,10 +71,10 @@ function renderSettings(props: Partial<Parameters<typeof SettingsView>[0]> = {})
   return handlers
 }
 
-const nav = () => screen.getByRole('navigation', { name: 'Configurações' })
-const openSection = (label: string) =>
+const nav = (): HTMLElement => screen.getByRole('navigation', { name: 'Configurações' })
+const openSection = (label: string): boolean =>
   fireEvent.click(within(nav()).getByRole('button', { name: label }))
-const heading = () => screen.getByRole('heading', { level: 2 })
+const heading = (): HTMLElement => screen.getByRole('heading', { level: 2 })
 
 describe('SettingsView', () => {
   it('opens on Geral', async () => {

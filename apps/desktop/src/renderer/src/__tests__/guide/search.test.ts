@@ -3,7 +3,8 @@ import { GUIDE_CHAPTERS } from '../../guide/content'
 import { normalizeForSearch, searchGuide } from '../../guide/search'
 import type { GuideChapter } from '../../guide/types'
 
-const ids = (chapters: GuideChapter[]) => chapters.flatMap((c) => c.articles.map((a) => a.id))
+const ids = (chapters: GuideChapter[]): string[] =>
+  chapters.flatMap((c) => c.articles.map((a) => a.id))
 
 describe('searchGuide', () => {
   it('returns the same chapters for an empty or blank query', () => {

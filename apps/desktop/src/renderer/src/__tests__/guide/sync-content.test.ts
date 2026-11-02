@@ -4,7 +4,10 @@ import type { GuideArticle, GuideBlock } from '../../guide/types'
 
 const chapter = GUIDE_CHAPTERS.find((c) => c.id === 'sincronizacao')!
 const article = (id: string): GuideArticle => chapter.articles.find((a) => a.id === id)!
-const blocksOf = <T extends GuideBlock['type']>(a: GuideArticle, type: T) =>
+const blocksOf = <T extends GuideBlock['type']>(
+  a: GuideArticle,
+  type: T
+): Extract<GuideBlock, { type: T }>[] =>
   a.blocks.filter((b): b is Extract<GuideBlock, { type: T }> => b.type === type)
 
 describe('sync chapter', () => {

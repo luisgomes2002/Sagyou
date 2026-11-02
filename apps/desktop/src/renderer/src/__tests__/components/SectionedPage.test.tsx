@@ -9,7 +9,10 @@ const items: SectionedPageItem<Id>[] = [
   { id: 'c', label: 'Gama', group: 'Segundo' }
 ]
 
-function renderPage(activeId: Id = 'a', onSelect = vi.fn()) {
+function renderPage(
+  activeId: Id = 'a',
+  onSelect = vi.fn()
+): ReturnType<typeof render> & { onSelect: ReturnType<typeof vi.fn> } {
   const utils = render(
     <SectionedPage
       title="Configurações"
@@ -24,7 +27,7 @@ function renderPage(activeId: Id = 'a', onSelect = vi.fn()) {
   return { ...utils, onSelect }
 }
 
-const navButtons = () =>
+const navButtons = (): HTMLButtonElement[] =>
   Array.from(screen.getByRole('navigation', { name: 'Configurações' }).querySelectorAll('button'))
 
 describe('SectionedPage', () => {
