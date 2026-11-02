@@ -5,6 +5,7 @@ import { useRef, useState } from 'react'
 import { ScanQrCode } from 'lucide-react-native'
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { AppMark } from '../components/AppMark'
+import { SYNC_GUIDE_LINK, SyncGuideContent } from '../components/SyncGuideContent'
 import { Button, Field, Screen } from '../components/ui'
 import { useApp } from '../store/app'
 import { FONT, RADIUS, SPACE, useTheme } from '../theme'
@@ -60,6 +61,8 @@ export function PairScreen(): React.JSX.Element {
   // ('join') and must take the cloud before this phone can be used.
   const [downloadPending, setDownloadPending] = useState(false)
   const [started, setStarted] = useState(false)
+  // Before pairing there is no navigator: the guide opens in place.
+  const [guide, setGuide] = useState(false)
   const used = useRef(false)
 
   const finish = (): void => {
@@ -141,6 +144,17 @@ export function PairScreen(): React.JSX.Element {
       </Screen>
     )
 
+  if (guide)
+    return (
+      <ScrollView testID="pair-guide">
+        <Screen>
+          <Button label="Voltar" onPress={() => setGuide(false)} />
+          <SyncGuideContent />
+          <Button label="Voltar" onPress={() => setGuide(false)} />
+        </Screen>
+      </ScrollView>
+    )
+
   return (
     // With 200% text or the keyboard up the code step is taller than the screen.
     <ScrollView testID="pair-scroll" keyboardShouldPersistTaps="handled">
@@ -150,6 +164,7 @@ export function PairScreen(): React.JSX.Element {
           {PAIR_STEPS[1]}
         </Text>
         <Text style={[styles.lead, { color: theme.muted }]}>{ON_PC_TEXT}</Text>
+        <Button variant="ghost" label={SYNC_GUIDE_LINK} onPress={() => setGuide(true)} />
         <Field label="Nome deste aparelho" value={name} onChangeText={setName} maxLength={80} />
         {scanning && permission?.granted ? (
           <CameraView

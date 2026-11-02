@@ -106,4 +106,13 @@ describe('PairScreen', () => {
     expect(await screen.findByText(PAIR_FAILED_TEXT)).toBeTruthy()
     expect(screen.queryByText('Network request failed')).toBeNull()
   })
+
+  it('o link Como funciona abre o guia ali mesmo e Voltar volta ao passo', async () => {
+    withJoin(jest.fn())
+    await toCodeStep()
+    await fireEvent.press(screen.getByRole('button', { name: 'Como funciona a sincronização' }))
+    expect(screen.getByRole('header', { name: 'As chaves da sincronização' })).toBeTruthy()
+    await fireEvent.press(screen.getAllByRole('button', { name: 'Voltar' })[0])
+    expect(screen.getByText(ON_PC_TEXT)).toBeTruthy()
+  })
 })

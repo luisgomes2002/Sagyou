@@ -31,6 +31,7 @@ import { SearchScreen } from './screens/SearchScreen'
 import type { SearchHit } from './data/search'
 import { Placeholder } from './screens/Placeholder'
 import { ConflictsScreen } from './screens/ConflictsScreen'
+import { SyncGuideScreen } from './screens/SyncGuideScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
 import { TasksStack } from './screens/tasks/TasksStack'
 import { useApp, type AppMode } from './store/app'
@@ -71,6 +72,7 @@ export type RootStackParams = {
   Abas: undefined
   Ajustes: undefined
   Conflitos: undefined
+  ComoFunciona: undefined
 }
 
 const Tabs = createBottomTabNavigator()
@@ -231,6 +233,11 @@ export function AppShell({ mode }: { mode: AppMode }): React.JSX.Element {
         <Stack.Screen name="Abas" component={TabsScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Ajustes" component={SettingsScreen} />
         <Stack.Screen name="Conflitos" component={ConflictsScreen} />
+        <Stack.Screen
+          name="ComoFunciona"
+          component={SyncGuideScreen}
+          options={{ title: 'Como funciona' }}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   )

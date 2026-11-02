@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { ACTION_ICONS } from '../components/icons'
+import { SYNC_GUIDE_LINK } from '../components/SyncGuideContent'
 import { Button, Card, ListItem, Screen } from '../components/ui'
 import { useApp } from '../store/app'
 import { useUpdate } from '../store/update'
@@ -81,7 +82,7 @@ function VersionCard(): React.JSX.Element {
 
 /** What the root stack hands the screen; absent when rendered alone (tests). */
 export interface SettingsScreenProps {
-  navigation?: { navigate(screen: 'Conflitos'): void }
+  navigation?: { navigate(screen: 'Conflitos' | 'ComoFunciona'): void }
 }
 
 export function SettingsScreen({ navigation }: SettingsScreenProps = {}): React.JSX.Element {
@@ -142,6 +143,11 @@ export function SettingsScreen({ navigation }: SettingsScreenProps = {}): React.
               onPress={() => navigation?.navigate('Conflitos')}
             />
           ) : null}
+          <ListItem
+            title={SYNC_GUIDE_LINK}
+            right={<ACTION_ICONS.chevron size={18} color={theme.muted} />}
+            onPress={() => navigation?.navigate('ComoFunciona')}
+          />
         </Section>
         <Section title="Perfil financeiro">
           <View accessibilityRole="radiogroup">

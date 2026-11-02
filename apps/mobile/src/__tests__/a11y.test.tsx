@@ -6,6 +6,7 @@ import { HabitsScreen } from '../screens/HabitsScreen'
 import { NotesScreen } from '../screens/NotesScreen'
 import { SearchScreen } from '../screens/SearchScreen'
 import { SettingsScreen } from '../screens/SettingsScreen'
+import { SyncGuideScreen } from '../screens/SyncGuideScreen'
 import { ProjectBoard, ProjectList, UpcomingList } from '../screens/tasks/TaskLists'
 import type { MobileState } from '../data/state'
 import { useApp } from '../store/app'
@@ -87,7 +88,8 @@ const SCREENS: [string, ComponentType][] = [
   ['Finanças', () => <FinanceScreen today="2026-11-01" />],
   ['Notas', () => <NotesScreen now={new Date('2026-11-01T12:00:00.000Z')} />],
   ['Busca', () => <SearchScreen onOpen={jest.fn()} />],
-  ['Ajustes', () => <SettingsScreen />]
+  ['Ajustes', () => <SettingsScreen />],
+  ['Como funciona', () => <SyncGuideScreen />]
 ]
 
 const INTERACTIVE = ['button', 'checkbox', 'radio', 'tab'] as const
