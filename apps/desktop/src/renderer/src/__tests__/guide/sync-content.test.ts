@@ -42,7 +42,9 @@ describe('sync chapter', () => {
   })
 
   it('warns about the secrets and the recovery code', () => {
-    const serverWarning = blocksOf(article('sync-servidor'), 'callout').find((b) => b.tone === 'warning')
+    const serverWarning = blocksOf(article('sync-servidor'), 'callout').find(
+      (b) => b.tone === 'warning'
+    )
     expect(serverWarning?.text).toMatch(/SETUP_TOKEN/)
     expect(serverWarning?.text).toMatch(/TOTP_ENC_KEY/)
     const danger = blocksOf(article('sync-ativar'), 'callout').find((b) => b.tone === 'danger')
@@ -50,7 +52,9 @@ describe('sync chapter', () => {
   })
 
   it('is found by searching for the authenticator', () => {
-    const ids = searchGuide(GUIDE_CHAPTERS, 'autenticador').flatMap((c) => c.articles.map((a) => a.id))
+    const ids = searchGuide(GUIDE_CHAPTERS, 'autenticador').flatMap((c) =>
+      c.articles.map((a) => a.id)
+    )
     expect(ids).toContain('sync-autenticador')
   })
 })

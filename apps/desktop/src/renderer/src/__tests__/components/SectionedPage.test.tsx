@@ -11,7 +11,13 @@ const items: SectionedPageItem<Id>[] = [
 
 function renderPage(activeId: Id = 'a', onSelect = vi.fn()) {
   const utils = render(
-    <SectionedPage title="Configurações" items={items} activeId={activeId} onSelect={onSelect} heading={`Seção ${activeId}`}>
+    <SectionedPage
+      title="Configurações"
+      items={items}
+      activeId={activeId}
+      onSelect={onSelect}
+      heading={`Seção ${activeId}`}
+    >
       <p>conteúdo</p>
     </SectionedPage>
   )
@@ -58,7 +64,13 @@ describe('SectionedPage', () => {
     const { rerender } = renderPage('a')
     expect(screen.getByRole('heading', { name: 'Seção a' })).not.toHaveFocus()
     rerender(
-      <SectionedPage title="Configurações" items={items} activeId="c" onSelect={vi.fn()} heading="Seção c">
+      <SectionedPage
+        title="Configurações"
+        items={items}
+        activeId="c"
+        onSelect={vi.fn()}
+        heading="Seção c"
+      >
         <p>conteúdo</p>
       </SectionedPage>
     )

@@ -44,8 +44,16 @@ export const SYNC_ARTICLES: GuideArticle[] = [
         type: 'p',
         text: 'Você precisa de uma conta gratuita na Cloudflare (cloudflare.com), do Node.js instalado e da pasta sync-server do repositório do Sagyou no GitHub. Abra um terminal dentro dessa pasta e rode os comandos abaixo, em ordem.'
       },
-      { type: 'command', command: 'npm install', label: 'Instala o wrangler, a ferramenta da Cloudflare.' },
-      { type: 'command', command: 'npx wrangler login', label: 'Abre o navegador para você entrar na sua conta Cloudflare.' },
+      {
+        type: 'command',
+        command: 'npm install',
+        label: 'Instala o wrangler, a ferramenta da Cloudflare.'
+      },
+      {
+        type: 'command',
+        command: 'npx wrangler login',
+        label: 'Abre o navegador para você entrar na sua conta Cloudflare.'
+      },
       {
         type: 'command',
         command: 'npx wrangler d1 create sagyou-sync',
@@ -71,7 +79,11 @@ export const SYNC_ARTICLES: GuideArticle[] = [
         command: 'npx wrangler secret put TOTP_ENC_KEY',
         label: 'Cole a chave gerada acima. Sem ela, o cadastro do autenticador não funciona.'
       },
-      { type: 'command', command: 'npx wrangler deploy', label: 'Publica o Worker e mostra a URL dele.' },
+      {
+        type: 'command',
+        command: 'npx wrangler deploy',
+        label: 'Publica o Worker e mostra a URL dele.'
+      },
       {
         type: 'callout',
         tone: 'warning',

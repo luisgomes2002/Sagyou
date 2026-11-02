@@ -13,12 +13,7 @@ export function articleText(article: GuideArticle): string {
 
 /** Lowercase, accents removed, whitespace collapsed: "Sincronização" → "sincronizacao". */
 export function normalizeForSearch(text: string): string {
-  return text
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .replace(/\s+/g, ' ')
-    .trim()
+  return text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/\s+/g, ' ').trim()
 }
 
 /**

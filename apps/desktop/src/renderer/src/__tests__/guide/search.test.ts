@@ -18,7 +18,9 @@ describe('searchGuide', () => {
   })
 
   it('ignores case', () => {
-    expect(ids(searchGuide(GUIDE_CHAPTERS, 'BACKUP'))).toEqual(ids(searchGuide(GUIDE_CHAPTERS, 'backup')))
+    expect(ids(searchGuide(GUIDE_CHAPTERS, 'BACKUP'))).toEqual(
+      ids(searchGuide(GUIDE_CHAPTERS, 'backup'))
+    )
     expect(ids(searchGuide(GUIDE_CHAPTERS, 'backup')).length).toBeGreaterThan(0)
   })
 
@@ -46,6 +48,8 @@ describe('searchGuide', () => {
     expect(result.every((c) => c.articles.length > 0)).toBe(true)
     const order = GUIDE_CHAPTERS.map((c) => c.id)
     const resultOrder = result.map((c) => c.id)
-    expect([...resultOrder].sort((a, b) => order.indexOf(a) - order.indexOf(b))).toEqual(resultOrder)
+    expect([...resultOrder].sort((a, b) => order.indexOf(a) - order.indexOf(b))).toEqual(
+      resultOrder
+    )
   })
 })

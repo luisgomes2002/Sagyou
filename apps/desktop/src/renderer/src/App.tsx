@@ -268,6 +268,9 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    // Hiding the open area in Configurações sends the user home; this effect predates the
+    // rule and only fires on that rare toggle, so no cascade in practice.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!isViewEnabled(activeView, enabledFeatures)) setActiveView('home')
   }, [activeView, enabledFeatures])
 

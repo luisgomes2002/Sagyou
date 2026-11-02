@@ -63,7 +63,6 @@ export function SectionedPage<T extends string>({
     buttons[next].focus()
   }
 
-  let lastGroup: string | undefined
   return (
     <div className="flex h-full flex-col overflow-hidden bg-[#0b0b0f] md:flex-row">
       <aside className="shrink-0 border-b border-[#2b2b31] bg-[#121216] md:flex md:w-60 md:flex-col md:border-b-0 md:border-r">
@@ -77,9 +76,9 @@ export function SectionedPage<T extends string>({
           className="flex gap-1 overflow-x-auto px-3 pb-3 md:flex-1 md:flex-col md:overflow-y-auto md:overflow-x-visible"
         >
           {items.length === 0 && emptyNav}
-          {items.map((item) => {
-            const showGroup = item.group !== undefined && item.group !== lastGroup
-            lastGroup = item.group
+          {items.map((item, index) => {
+            const showGroup =
+              item.group !== undefined && (index === 0 || items[index - 1].group !== item.group)
             const active = item.id === activeId
             return (
               <div key={item.id} className="shrink-0 md:shrink">
@@ -100,7 +99,10 @@ export function SectionedPage<T extends string>({
                   }`}
                 >
                   {item.icon && (
-                    <span className={active ? 'text-[#a080f0]' : 'text-[#999999]'} aria-hidden="true">
+                    <span
+                      className={active ? 'text-[#a080f0]' : 'text-[#999999]'}
+                      aria-hidden="true"
+                    >
                       {item.icon}
                     </span>
                   )}

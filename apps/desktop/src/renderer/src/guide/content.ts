@@ -531,9 +531,7 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
   { id: 'dados-seguranca', label: 'Dados e segurança', articles: dadosSeguranca }
 ]
 
-export function findArticle(
-  id: string
-): { chapter: GuideChapter; article: GuideArticle } | null {
+export function findArticle(id: string): { chapter: GuideChapter; article: GuideArticle } | null {
   for (const chapter of GUIDE_CHAPTERS) {
     const article = chapter.articles.find((candidate) => candidate.id === id)
     if (article) return { chapter, article }

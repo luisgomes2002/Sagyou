@@ -46,7 +46,9 @@ export function SyncDiagram(): JSX.Element {
         <Link x={370} />
         <Node x={440} title="Celular / outro PC" detail="tem a chave" />
       </svg>
-      <figcaption className="mt-2 text-center text-xs text-[#999999]">{SYNC_DIAGRAM_LABEL}</figcaption>
+      <figcaption className="mt-2 text-center text-xs text-[#999999]">
+        {SYNC_DIAGRAM_LABEL}
+      </figcaption>
     </figure>
   )
 }
