@@ -184,7 +184,7 @@ Depois, rode o workflow **Android APK** (aba Actions → Run workflow, ou empurr
 
 1. Suba a versão do app seguindo a regra de [`docs/workflow.md`](docs/workflow.md) (SemVer): `expo.version` e `android.versionCode` no `apps/mobile/app.json`, a versão no `apps/mobile/package.json` e no `package-lock.json`. Faça o merge.
 2. Crie e envie a tag: `git tag mobile-vX.Y.Z && git push origin mobile-vX.Y.Z`. O workflow confere que a tag bate com o `app.json`, gera o APK e cria um Release **rascunho** com `sagyou-mobile-X.Y.Z.apk`.
-3. Confira o rascunho e publique-o, de preferência sem marcar "Latest" (que fica para o desktop; marcar por engano não quebra nada).
+3. Confira o rascunho, troque a linha **"✍️ Antes de publicar"** por um resumo do que mudou no app (a lista abaixo dela já traz só os PRs que mexeram no celular) e publique-o, de preferência sem marcar "Latest" (que fica para o desktop; marcar por engano não quebra nada). O Release do desktop (tag `vX.Y.Z`) funciona igual, com os PRs do desktop.
 
 O celular procura uma versão nova ao abrir (no máximo uma vez por dia) e mostra a faixa **"Versão X.Y.Z disponível"**: **Baixar** abre o APK no navegador e o Android pede para instalar por cima, sem perder o pareamento; **Agora não** esconde aquela versão. Em **Ajustes → Versão do app** aparecem a versão instalada e o botão **Procurar atualização**.
 

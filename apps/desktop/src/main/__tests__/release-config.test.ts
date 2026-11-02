@@ -179,7 +179,7 @@ describe('configuração de release do atualizador', () => {
     expect(start).toBeGreaterThan(0)
     const release = apk.slice(start)
     expect(release).toContain('contents: write')
-    expect(release).toContain('needs: apk')
+    expect(release).toContain('needs: [apk, notes]')
     // Run by hand from a tag, github.ref is that tag too: only the push may release.
     expect(release).toContain(
       "if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/mobile-v')"
@@ -190,6 +190,31 @@ describe('configuração de release do atualizador', () => {
     expect(release).not.toContain('secrets.')
     expect(release).not.toContain('environment:')
     expect(release).not.toContain('actions/checkout')
+  })
+
+  // One repository, two apps: each release lists only its own app's pull requests.
+  it('as notas de cada release vêm do script, só com as PRs do próprio app', () => {
+    const desktopNotes = workflow.slice(
+      workflow.indexOf('\n  notes:'),
+      workflow.indexOf('\n  release:')
+    )
+    expect(desktopNotes).toContain('node apps/desktop/scripts/release-notes.mjs "$GITHUB_REF_NAME"')
+    expect(desktopNotes).toContain('fetch-depth: 0')
+    expect(desktopNotes).not.toContain('contents: write')
+    const desktopRelease = workflow.slice(workflow.indexOf('\n  release:'))
+    expect(desktopRelease).toContain('needs: [build-windows, build-mac, build-linux, notes]')
+    expect(desktopRelease).toContain('body_path: artifacts/release-notes/release-notes.md')
+    expect(workflow).not.toContain('generate_release_notes')
+    // The notes are the body, never an uploaded asset.
+    expect(desktopRelease).not.toContain('artifacts/**/*')
+
+    const apk = readRepo('.github/workflows/mobile-apk.yml')
+    const apkNotes = apk.slice(apk.indexOf('\n  notes:'), apk.indexOf('\n  release:'))
+    expect(apkNotes).toContain('node apps/desktop/scripts/release-notes.mjs "$GITHUB_REF_NAME"')
+    expect(apkNotes).toContain('fetch-depth: 0')
+    expect(apkNotes).not.toContain('secrets.')
+    expect(apkNotes).not.toContain('environment:')
+    expect(apk.slice(apk.indexOf('\n  release:'))).toContain('--notes-file notes/release-notes.md')
   })
 
   it('a tag mobile-v* e a do desktop não disparam o workflow uma da outra', () => {

@@ -142,8 +142,31 @@ jobs:
             apps/desktop/dist/sagyou-*.deb
             apps/desktop/dist/latest-linux.yml
 
+  # The repository also ships the Android app (mobile-v* tags): GitHub's
+  # generated notes would list its pull requests too. These list only the ones
+  # that changed the desktop or the shared core, since the previous v* tag.
+  notes:
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          # The whole history and its tags: the previous v* tag and the merges since.
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+      - name: Notes with only the desktop's pull requests
+        run: node apps/desktop/scripts/release-notes.mjs "$GITHUB_REF_NAME" "$GITHUB_REPOSITORY" > release-notes.md
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-notes
+          path: release-notes.md
+          if-no-files-found: error
+
   release:
-    needs: [build-windows, build-mac, build-linux]
+    needs: [build-windows, build-mac, build-linux, notes]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
@@ -154,9 +177,14 @@ jobs:
           path: artifacts
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
-          files: artifacts/**/*
+          # The installers only: the notes artifact is the body, not an asset.
+          files: |
+            artifacts/windows/*
+            artifacts/mac/*
+            artifacts/linux/*
           fail_on_unmatched_files: true
           # Published by hand after checking the assets: installed copies update
           # from the latest published release, so a half-uploaded one must never be it.
+          # Before publishing, replace the "Antes de publicar" line with what changed.
           draft: true
-          generate_release_notes: true
+          body_path: artifacts/release-notes/release-notes.md

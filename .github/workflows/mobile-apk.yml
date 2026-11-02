@@ -74,8 +74,28 @@ jobs:
           path: sagyou-mobile-*.apk
           if-no-files-found: error
 
+  # Only the pull requests that changed the Android app or the shared core
+  # since the previous mobile-v* tag (the desktop's v* releases come from the
+  # same repository). No secrets and no write access here.
+  notes:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/mobile-v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Notes with only the Android app's pull requests
+        run: node apps/desktop/scripts/release-notes.mjs "$GITHUB_REF_NAME" "$GITHUB_REPOSITORY" > release-notes.md
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-notes
+          path: release-notes.md
+          if-no-files-found: error
+
   release:
-    needs: apk
+    needs: [apk, notes]
     # A manual run started on a tag also has refs/tags/… as its ref: only the tag push releases.
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/mobile-v')
     runs-on: ubuntu-latest
@@ -87,6 +107,10 @@ jobs:
         with:
           name: sagyou-mobile-apk
           path: apk
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-notes
+          path: notes
       # Draft and never Latest: a person publishes it, and Latest belongs to the desktop.
       - name: Draft Release with the APK
         env:
@@ -99,4 +123,4 @@ jobs:
             echo "O release $GITHUB_REF_NAME já existe."
             exit 1
           fi
-          gh release create "$GITHUB_REF_NAME" "$f" --repo "$GITHUB_REPOSITORY" --draft --latest=false --title "Sagyou Android $v" --notes "APK do Sagyou para Android. Publique com --latest=false: o Latest é do desktop."
+          gh release create "$GITHUB_REF_NAME" "$f" --repo "$GITHUB_REPOSITORY" --draft --latest=false --title "Sagyou Android $v" --notes-file notes/release-notes.md

@@ -45,6 +45,7 @@ Cada app tem a própria versão `MAJOR.MINOR.PATCH`, e o PR que muda o que vai p
 - **Celular:** `expo.version` do `apps/mobile/app.json`, `apps/mobile/package.json`, `packages["apps/mobile"]` do lock e `expo.android.versionCode = MAJOR×10000 + MINOR×100 + PATCH` (MINOR e PATCH < 100; o Android recusa instalar um `versionCode` menor). A tag é `mobile-vX.Y.Z`.
 - Testes amarram os arquivos de cada app (`release-config.test.ts`, `app-config.test.ts`). O PR diz qual versão subiu e por quê.
 - Tag e publicação do Release são humanas, depois do merge. O Latest do GitHub fica para o desktop (o celular sai com `--latest=false`), mas nenhum dos dois depende dele.
+- **Descrição do Release:** os workflows geram as notas com `apps/desktop/scripts/release-notes.mjs`, que lista **só os PRs que mexeram no app daquela tag** (`apps/desktop/` ou `apps/mobile/`, mais `packages/core/`, que vale para os dois) desde a tag anterior do mesmo app; um Release do desktop não traz PRs só do celular, e vice-versa. ⚠️ **Antes de publicar**, troque a linha "✍️ Antes de publicar" do rascunho por um resumo, em linguagem de quem usa, do que muda nesta versão. Para (re)gerar à mão: `node apps/desktop/scripts/release-notes.mjs <tag> luisgomes2002/Sagyou`.
 
 ## Definition of done
 
