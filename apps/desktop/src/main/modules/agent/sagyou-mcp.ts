@@ -11,6 +11,7 @@ import {
 import { randomUUID } from 'crypto'
 import type { MemorySearchHit } from '../../store'
 import { MCP_WRITE_TOOLS } from './mcp-write-tools'
+import { EXTERNAL_EXPIRED_MESSAGE, EXTERNAL_RUN_ID } from './mcp-external-policy'
 import {
   MCP_MEMORY_WRITE_TOOLS,
   MCP_RENDERER_WRITE_TOOLS,
@@ -44,6 +45,20 @@ const WRITE_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
 ])
 
 export type McpPermission = (typeof MCP_PERMISSIONS)[number]
+
+/** Every write the external token can be granted, the legacy card writes included. */
+const EXTERNAL_WRITE_NAMES: ReadonlySet<string> = new Set<string>([
+  ...WRITE_TOOL_NAMES,
+  'save_memory',
+  'criar_task'
+])
+
+/** What the external token's mode lists: reads only, or everything (risky ones refused later). */
+export function externalPermissions(mode: 'read' | 'read-write'): McpPermission[] {
+  return mode === 'read-write'
+    ? [...MCP_PERMISSIONS]
+    : MCP_PERMISSIONS.filter((name) => !EXTERNAL_WRITE_NAMES.has(name))
+}
 
 export interface McpSession {
   token: string
@@ -96,6 +111,15 @@ export interface McpBrokerDeps {
   isRunLive?: (runId: string) => boolean
   /** The app is locked: every tools/call is refused before reading or writing anything. */
   isLocked?: () => boolean
+  /**
+   * The external token (Configurações → Acesso MCP externo), asked only when no
+   * Fleet run owns the token: its session, 'expired', or null when unknown.
+   */
+  externalSession?: (token: string) => McpSession | 'expired' | null
+  /** An authorized call with the external token (its "último uso"). */
+  onExternalUse?: () => void
+  /** The external token was refused; only the reason, never the token. */
+  onExternalRefused?: (reason: 'expired' | 'risky') => void
 }
 
 export const MCP_LOCKED_MESSAGE = 'O Sagyou está bloqueado. Desbloqueie no PC para continuar.'
@@ -103,6 +127,22 @@ export const MCP_LOCKED_MESSAGE = 'O Sagyou está bloqueado. Desbloqueie no PC p
 /** Source for a disposable stdio adapter written only into an agent worktree. */
 export const MCP_STDIO_BRIDGE_SOURCE = `const net=require('net');
 const port=Number(process.env.SAGYOU_MCP_PORT),token=process.env.SAGYOU_MCP_TOKEN;
+if(!port||!token) process.exit(2);
+const socket=net.createConnection({host:'127.0.0.1',port});
+let buffer='',input='';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data',chunk=>{input+=chunk;const lines=input.split('\\n');input=lines.pop()||'';for(const line of lines){if(!line)continue;try{const msg=JSON.parse(line);msg.params={...(msg.params||{}),token};socket.write(JSON.stringify(msg)+'\\n')}catch{}}});
+socket.on('data',chunk=>{buffer+=chunk;const lines=buffer.split('\\n');buffer=lines.pop()||'';for(const line of lines)if(line)process.stdout.write(line+'\\n')});
+socket.on('error',()=>process.exit(1));`
+
+/**
+ * The external token's bridge, written once into userData and run by the app's
+ * own executable (ELECTRON_RUN_AS_NODE). The broker's port changes every launch,
+ * so it is read from SAGYOU_MCP_PORT_FILE; the token comes from the client's env.
+ */
+export const MCP_EXTERNAL_BRIDGE_SOURCE = `const net=require('net'),fs=require('fs');
+const file=process.env.SAGYOU_MCP_PORT_FILE,token=process.env.SAGYOU_MCP_TOKEN;
+let port=0;try{port=Number(fs.readFileSync(String(file),'utf8').trim())}catch{}
 if(!port||!token) process.exit(2);
 const socket=net.createConnection({host:'127.0.0.1',port});
 let buffer='',input='';
@@ -599,7 +639,16 @@ export function startSagyouMcpBroker(deps: McpBrokerDeps): {
             params?: Record<string, unknown>
           }
           const token = typeof request.params?.token === 'string' ? request.params.token : ''
-          const session = sessions.get(token)
+          let session = sessions.get(token)
+          if (!session && token && deps.externalSession) {
+            const external = deps.externalSession(token)
+            if (external === 'expired') {
+              deps.onExternalRefused?.('expired')
+              failure(socket, request.id, EXTERNAL_EXPIRED_MESSAGE)
+              continue
+            }
+            if (external) session = external
+          }
           if (
             !session ||
             (session.expiresAt !== undefined && session.expiresAt <= Date.now()) ||
@@ -649,6 +698,7 @@ export function startSagyouMcpBroker(deps: McpBrokerDeps): {
               failure(call, request.id, MCP_LOCKED_MESSAGE)
               continue
             }
+            if (session.runId === EXTERNAL_RUN_ID) deps.onExternalUse?.()
             if (WRITE_TOOL_NAMES.has(name)) {
               const args = request.params?.arguments
               if (!deps.write) {
