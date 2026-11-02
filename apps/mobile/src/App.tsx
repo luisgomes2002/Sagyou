@@ -30,6 +30,7 @@ import { PairScreen } from './screens/PairScreen'
 import { SearchScreen } from './screens/SearchScreen'
 import type { SearchHit } from './data/search'
 import { Placeholder } from './screens/Placeholder'
+import { ConflictsScreen } from './screens/ConflictsScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
 import { TasksStack } from './screens/tasks/TasksStack'
 import { useApp, type AppMode } from './store/app'
@@ -69,6 +70,7 @@ const TAB_SCREENS: Partial<Record<(typeof TAB_LABELS)[number], ComponentType>> =
 export type RootStackParams = {
   Abas: undefined
   Ajustes: undefined
+  Conflitos: undefined
 }
 
 const Tabs = createBottomTabNavigator()
@@ -228,6 +230,7 @@ export function AppShell({ mode }: { mode: AppMode }): React.JSX.Element {
       <Stack.Navigator>
         <Stack.Screen name="Abas" component={TabsScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Ajustes" component={SettingsScreen} />
+        <Stack.Screen name="Conflitos" component={ConflictsScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   )

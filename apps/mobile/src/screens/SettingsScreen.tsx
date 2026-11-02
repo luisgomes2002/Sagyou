@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
-import { Button, Card, Screen } from '../components/ui'
+import { ACTION_ICONS } from '../components/icons'
+import { Button, Card, ListItem, Screen } from '../components/ui'
 import { useApp } from '../store/app'
 import { useUpdate } from '../store/update'
 import { conflictsText, statusLines } from '../sync/status-text'
@@ -78,7 +79,12 @@ function VersionCard(): React.JSX.Element {
   )
 }
 
-export function SettingsScreen(): React.JSX.Element {
+/** What the root stack hands the screen; absent when rendered alone (tests). */
+export interface SettingsScreenProps {
+  navigation?: { navigate(screen: 'Conflitos'): void }
+}
+
+export function SettingsScreen({ navigation }: SettingsScreenProps = {}): React.JSX.Element {
   const theme = useTheme()
   const status = useApp((s) => s.status)
   const readOnly = useApp((s) => s.readOnly)
@@ -128,10 +134,13 @@ export function SettingsScreen(): React.JSX.Element {
               {line}
             </Text>
           ))}
-          {conflicts > 0 ? (
-            <Text style={{ color: theme.attention, fontSize: FONT.body }}>
-              {conflictsText(conflicts)}
-            </Text>
+          {conflicts > 0 && !readOnly ? (
+            <ListItem
+              title={conflictsText(conflicts)}
+              a11yLabel={`${conflictsText(conflicts)}, ver e resolver`}
+              right={<ACTION_ICONS.chevron size={18} color={theme.attention} />}
+              onPress={() => navigation?.navigate('Conflitos')}
+            />
           ) : null}
         </Section>
         <Section title="Perfil financeiro">
