@@ -73,12 +73,40 @@ export interface ConflictWrite {
   loserHlc: string
 }
 
+/**
+ * A received version newer than this device's, that made no new conflict: the
+ * item was decided (or moved on) on another device, so an open conflict about
+ * it here is settled.
+ */
+export interface SettledVersion {
+  kind: SyncKind
+  recordId: string
+  hlc: string
+}
+
+/**
+ * Close every open conflict a settled version supersedes. Orphans never close
+ * on their own (the item is gone here). Params: `settledConflictParams`.
+ */
+export const CLOSE_SETTLED_CONFLICTS_SQL =
+  'UPDATE sync_conflicts SET resolved_at=? WHERE kind=? AND record_id=? AND resolved_at IS NULL ' +
+  "AND type <> 'orphan' AND loser_hlc < ? AND (winner_hlc IS NULL OR winner_hlc < ?)"
+
+export function settledConflictParams(
+  s: SettledVersion,
+  now: number
+): [number, string, string, string, string] {
+  return [now, s.kind, s.recordId, s.hlc, s.hlc]
+}
+
 export interface ApplyPlan<T> {
   state: T
   /** Records written into `state`, in order. */
   applied: WireRecord[]
   versions: VersionWrite[]
   conflicts: ConflictWrite[]
+  /** Versions that settle an open conflict about the same item. */
+  settled: SettledVersion[]
   /** Children whose parent has not arrived yet. */
   pending: IncomingRecord[]
 }
@@ -368,6 +396,7 @@ const PARENT_COLLECTION: Partial<Record<SyncKind, string>> = {
 interface Resolver {
   versions: VersionWrite[]
   conflicts: ConflictWrite[]
+  settled: SettledVersion[]
   applied: WireRecord[]
   /** Returns false when the record must wait for its parent. */
   resolve(item: IncomingRecord): boolean
@@ -383,7 +412,12 @@ function createResolver(
   const overlay = new Map<string, WireRecord>()
   const versions: VersionWrite[] = []
   const conflicts: ConflictWrite[] = []
+  const settled: SettledVersion[] = []
   const applied: WireRecord[] = []
+
+  const settle = (record: WireRecord): void => {
+    settled.push({ kind: record.kind, recordId: record.id, hlc: record.hlc })
+  }
 
   const parentState = (record: WireRecord): ParentState => {
     const ref = parentOf(record)
@@ -469,6 +503,7 @@ function createResolver(
     switch (decision.type) {
       case 'apply':
         apply(item, local)
+        if (local && record.hlc > local.hlc) settle(record)
         return true
       case 'skip':
         // Same content minted twice (two devices joining with equal data):
@@ -478,8 +513,10 @@ function createResolver(
           record.hlc > local.hlc &&
           record.deleted === local.deleted &&
           (record.deleted || (record.payload && hashPayload(record.payload) === local.hash))
-        )
+        ) {
           writeVersion(item, local.hash)
+          settle(record)
+        }
         return true
       case 'apply-and-keep-loser':
         if (local) keep('lww', localWire(record, local), local.deviceId, record.hlc)
@@ -499,7 +536,7 @@ function createResolver(
     }
   }
 
-  return { versions, conflicts, applied, resolve }
+  return { versions, conflicts, settled, applied, resolve }
 }
 
 /** Run the records again while any of them waits for a parent that a later one brought. */
@@ -625,6 +662,7 @@ export function planRemoteApply<T extends SyncableState>(
     applied: resolver.applied,
     versions: resolver.versions,
     conflicts: resolver.conflicts,
+    settled: resolver.settled,
     pending
   }
 }
@@ -633,6 +671,7 @@ export interface MemoryApplyPlan {
   applied: WireRecord[]
   versions: VersionWrite[]
   conflicts: ConflictWrite[]
+  settled: SettledVersion[]
 }
 
 /** Same rule for memories, which have no parent and live outside the save payload. */
@@ -650,7 +689,8 @@ export function planMemoryApply(
   return {
     applied: resolver.applied,
     versions: resolver.versions,
-    conflicts: resolver.conflicts
+    conflicts: resolver.conflicts,
+    settled: resolver.settled
   }
 }
 

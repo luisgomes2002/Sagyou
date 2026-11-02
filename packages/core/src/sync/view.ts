@@ -40,6 +40,11 @@ export function syncedAgoText(lastSyncAt: number, now: number): string {
   return `Sincronizado há ${Math.max(0, Math.floor((now - lastSyncAt) / 60000))} min`
 }
 
+/** When a conflict version was made, as both apps show it. */
+export function versionTimeText(at: number | null): string {
+  return at === null ? 'hora desconhecida' : new Date(at).toLocaleString('pt-BR')
+}
+
 export function pendingText(count: number): string {
   return count === 1 ? '1 alteração aguardando envio' : `${count} alterações aguardando envio`
 }

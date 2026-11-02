@@ -12,7 +12,9 @@ import {
   encodeIncoming,
   guardStaleSave,
   memoryFromPayload,
+  planMemoryApply,
   planRemoteApply,
+  settledConflictParams,
   type IncomingRecord,
   type StoredSyncVersion,
   type SyncableState
@@ -594,6 +596,88 @@ describe('planRemoteApply', () => {
     expect(plan.applied).toEqual([])
     expect(plan.versions).toHaveLength(1)
     expect(plan.versions[0]).toMatchObject({ hlc: NEW, hash: same.hash })
+  })
+})
+
+describe('settled versions', () => {
+  const taskOf = (state: Row): SyncRecord =>
+    extractDataRecords(state).find((r) => r.kind === 'task' && r.id === 't1')!
+  const taskEdit = (over: Partial<WireRecord>, state: Row): WireRecord => ({
+    kind: 'task',
+    id: 't1',
+    hlc: NEW,
+    baseHlc: MID,
+    deleted: false,
+    payload: { ...taskOf(state).payload, title: 'Decidida em outro aparelho' },
+    ...over
+  })
+
+  it('settles the item when a newer version made on top of the current one arrives', () => {
+    const state = remote()
+    const plan = planRemoteApply(state, [from(taskEdit({}, state))], versionsOf(state))
+    expect(plan.conflicts).toEqual([])
+    expect(plan.settled).toEqual([{ kind: 'task', recordId: 't1', hlc: NEW }])
+  })
+
+  it('settles the item when a newer version with the same content arrives from elsewhere', () => {
+    const state = remote()
+    const same = taskEdit({ baseHlc: OLD, payload: taskOf(state).payload }, state)
+    const plan = planRemoteApply(state, [from(same)], versionsOf(state))
+    expect(plan.conflicts).toEqual([])
+    expect(plan.settled).toEqual([{ kind: 'task', recordId: 't1', hlc: NEW }])
+    expect(plan.versions[0]).toMatchObject({ kind: 'task', id: 't1', hlc: NEW })
+  })
+
+  it('does not settle when the incoming version makes a new conflict, either way', () => {
+    const state = remote()
+    const wins = planRemoteApply(state, [from(taskEdit({ baseHlc: OLD }, state))], versionsOf(state))
+    expect(wins.conflicts).toHaveLength(1)
+    expect(wins.settled).toEqual([])
+    const loses = planRemoteApply(
+      state,
+      [from(taskEdit({ hlc: OLD, baseHlc: null }, state))],
+      versionsOf(state)
+    )
+    expect(loses.conflicts).toHaveLength(1)
+    expect(loses.settled).toEqual([])
+  })
+
+  it('does not settle an item this device never had, nor a version it already holds', () => {
+    const state = remote()
+    const fresh = planRemoteApply(state, [from(taskEdit({ baseHlc: null }, state))], new Map())
+    expect(fresh.settled).toEqual([])
+    const held = planRemoteApply(state, [from(taskEdit({ hlc: MID }, state))], versionsOf(state))
+    expect(held.settled).toEqual([])
+  })
+
+  it('settles a memory the same way', () => {
+    const payload = { id: 'm1', title: 'Decisão', body: 'antes', type: 'decisao' }
+    const stored = new Map<string, StoredSyncVersion>([
+      [
+        'memory:m1',
+        { hlc: MID, hash: hashPayload(payload), deleted: false, deviceId: 'local', baseHlc: null }
+      ]
+    ])
+    const edit: WireRecord = {
+      kind: 'memory',
+      id: 'm1',
+      hlc: NEW,
+      baseHlc: MID,
+      deleted: false,
+      payload: { ...payload, body: 'depois' }
+    }
+    const plan = planMemoryApply([from(edit)], stored, () => payload)
+    expect(plan.settled).toEqual([{ kind: 'memory', recordId: 'm1', hlc: NEW }])
+  })
+
+  it('binds the close statement in the order of its placeholders', () => {
+    expect(settledConflictParams({ kind: 'task', recordId: 't1', hlc: NEW }, 42)).toEqual([
+      42,
+      'task',
+      't1',
+      NEW,
+      NEW
+    ])
   })
 })
 
