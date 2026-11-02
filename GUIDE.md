@@ -386,7 +386,10 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
     renderer feito antes de ele ver uma mudança recebida não pode desfazê-la
     (o renderer devolve o `syncGeneration` que recebeu no `store:load`). O
     que chega pelo sync é aplicado por `persistDiff`, sem capturar versão de
-    novo.
+    novo. Cada aparelho guarda os próprios conflitos; eles fecham sozinhos nos
+    outros porque `engine.resolve` sempre envia uma versão nova (inclusive ao
+    manter a atual) e os dois armazenamentos rodam `CLOSE_SETTLED_CONFLICTS_SQL`
+    do core depois de gravar conflitos. Fechar sozinho nunca envia nada.
 
 ## Memória — fronteira de confiança
 

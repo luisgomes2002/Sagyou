@@ -218,7 +218,11 @@ export const SYNC_ARTICLES: GuideArticle[] = [
       },
       {
         type: 'p',
-        text: 'Se um item foi apagado num aparelho enquanto outro mexia num item ligado a ele, aparece "Removido: o item de origem foi apagado em outro aparelho", com Dispensar. No celular, conflitos aparecem só como aviso; resolva no PC.'
+        text: 'Se um item foi apagado num aparelho enquanto outro mexia num item ligado a ele, aparece "Removido: o item de origem foi apagado em outro aparelho", com Dispensar.'
+      },
+      {
+        type: 'p',
+        text: 'Cada aparelho guarda os conflitos que ele mesmo viu. No celular, toque em Ajustes → "N conflitos" para ver as duas versões. Ao escolher num aparelho, a escolha viaja e o mesmo conflito fecha sozinho nos outros na próxima sincronização.'
       }
     ],
     target: SYNC_SETTINGS
