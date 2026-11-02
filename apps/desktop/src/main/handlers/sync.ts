@@ -102,8 +102,8 @@ export function registerSyncHandlers(ipcMain: IpcMain, deps: SyncHandlerDeps): v
     })
   )
 
-  ipcMain.handle('sync:totp:enroll', () =>
-    run('totp-enroll', async () => ({ uri: await engine.enrollTotp() }))
+  ipcMain.handle('sync:totp:enroll', (_, factor: unknown) =>
+    run('totp-enroll', async () => ({ uri: await engine.enrollTotp(factorOf(factor)) }))
   )
 
   ipcMain.handle('sync:totp:confirm', (_, code: unknown) =>

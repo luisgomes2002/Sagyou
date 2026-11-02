@@ -313,7 +313,8 @@ export const api = {
       ipcRenderer.invoke('sync:devices'),
     revoke: (id: string, wipe: boolean, factor?: SyncSecondFactor): Promise<SyncResult> =>
       ipcRenderer.invoke('sync:revoke', id, wipe, factor),
-    enrollTotp: (): Promise<SyncResult<{ uri: string }>> => ipcRenderer.invoke('sync:totp:enroll'),
+    enrollTotp: (factor?: SyncSecondFactor): Promise<SyncResult<{ uri: string }>> =>
+      ipcRenderer.invoke('sync:totp:enroll', factor),
     confirmTotp: (code: string): Promise<SyncResult<{ backupCodes: string[] }>> =>
       ipcRenderer.invoke('sync:totp:confirm', code),
     conflicts: (): Promise<SyncResult<{ conflicts: SyncConflictView[] }>> =>
