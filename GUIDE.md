@@ -532,7 +532,9 @@ Não "simplifique" nenhuma destas sem ler o comentário que as acompanha:
 - **O "Como funciona" é conteúdo em dados** (`guide/content.ts`, `guide/sync-content.ts`).
   Mudou um comportamento que o guia descreve? Mude o artigo na mesma branch; os testes
   prendem alvos, comandos `wrangler` e a ausência de "chat". Telas e links internos
-  usam `AppView`/`NavTarget` de `navigation.ts`.
+  usam `AppView`/`NavTarget` de `navigation.ts`. Os artigos "Como a sincronização se
+  comporta" e "As chaves da sincronização" vivem no core (`sync/guide.ts`), porque o
+  celular mostra o mesmo texto; os exemplos de chave são falsos e nunca copiáveis.
 - **As sessões do Fleet ficam em abas no topo.** `SessionTabs` só navega entre runs;
   o xterm vivo continua com `liveTerminals.ts` quando a aba muda.
 - **`AiMemory.sourceConversationId` e a coluna `memory.source_conversation_id`

@@ -192,7 +192,7 @@ O celular procura uma versão nova ao abrir (no máximo uma vez por dia) e mostr
 
 > ⚠️ **Não perca o keystore.** Um APK assinado com outra chave não instala por cima do anterior: seria preciso desinstalar o app (e parear de novo).
 
-Para parear, no PC, abra **Configurações → Sincronização → Parear novo aparelho**. No celular, toque em **Escanear QR** (ou cole o texto em **Colar código**). O celular baixa tudo da nuvem e passa a sincronizar. Conflitos detectados no celular se resolvem nele mesmo: **Ajustes → N conflitos** mostra as duas versões, com **Usar esta** (ou **Dispensar**, quando o item de origem foi apagado). Ao sair do app, o celular envia na hora o que estava esperando, em vez de deixar para a próxima abertura. Em **Ajustes**, **Desconectar este aparelho** apaga os dados do celular, que continuam na nuvem e nos PCs.
+Para parear, no PC, abra **Configurações → Sincronização → Parear novo aparelho**. No celular, toque em **Escanear QR** (ou cole o texto em **Colar código**). O celular baixa tudo da nuvem e passa a sincronizar. Conflitos detectados no celular se resolvem nele mesmo: **Ajustes → N conflitos** mostra as duas versões, com **Usar esta** (ou **Dispensar**, quando o item de origem foi apagado). Ao sair do app, o celular envia na hora o que estava esperando, em vez de deixar para a próxima abertura. **Ajustes → Como funciona a sincronização** (também no pareamento) explica quando cada aparelho sincroniza, como evitar conflitos e para que serve cada chave, com o mesmo texto do Como funciona do PC. Em **Ajustes**, **Desconectar este aparelho** apaga os dados do celular, que continuam na nuvem e nos PCs.
 
 ---
 
