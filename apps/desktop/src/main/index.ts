@@ -30,6 +30,7 @@ import {
   chmodSync,
   statSync,
   accessSync,
+  rmSync,
   constants
 } from 'fs'
 import * as codeFileFs from 'fs'
@@ -120,7 +121,20 @@ import * as codeFiles from './modules/code/code-files'
 import { fetchWeb } from './modules/web/web-fetch'
 import { renderWeb } from './modules/web/web-render'
 import { getExchangeRate } from './modules/financial/financial-exchange'
-import { startSagyouMcpBroker } from './modules/agent/sagyou-mcp'
+import {
+  MCP_EXTERNAL_BRIDGE_SOURCE,
+  externalPermissions,
+  startSagyouMcpBroker
+} from './modules/agent/sagyou-mcp'
+import {
+  MCP_EXTERNAL_FILE,
+  MCP_EXTERNAL_FILE_DEV,
+  createMcpExternalStore,
+  expiryNotice,
+  type McpExternalStore
+} from './modules/agent/mcp-external'
+import { EXTERNAL_RUN_ID, tracksRunState } from './modules/agent/mcp-external-policy'
+import { registerMcpExternalHandlers } from './handlers/mcp-external'
 import { configureLog, createLogger, errorMessage, log } from './modules/logs/logger'
 import { captureBase, diffSince, type AgentBase, type DiffLineItem } from './modules/code/code-diff'
 import { safeAttachmentName } from './modules/files/backup-files'
@@ -190,6 +204,9 @@ import {
 import icon from '../../resources/icon.png?asset'
 
 let mainWindow: BrowserWindow | null = null
+// The external MCP token (Configurações → Acesso MCP externo); set in whenReady.
+let mcpExternal: McpExternalStore | null = null
+let mcpExternalPortFile: string | null = null
 let managedWindow: ManagedWindow | null = null
 // Created after protectDataIpc; started with the windows, right after the update
 // check begins, locked or not (sync needs only the OS keychain, never the UI).
@@ -241,6 +258,21 @@ function protectDataIpc(ipc: IpcMain): void {
     })) as IpcMain['on']
 }
 const sagyouMcp = startSagyouMcpBroker({
+  // Asked only when no Fleet run owns the token.
+  externalSession: (token) => {
+    const verified = mcpExternal?.verify(token)
+    if (!verified) return null
+    if (!verified.ok) return verified.reason === 'expired' ? 'expired' : null
+    return {
+      token,
+      runId: EXTERNAL_RUN_ID,
+      projectId: verified.scope.projectId,
+      financialProfileId: verified.scope.financialProfileId,
+      permissions: externalPermissions(verified.scope.mode)
+    }
+  },
+  onExternalUse: () => mcpExternal?.touch(),
+  onExternalRefused: (reason) => log.info('mcp', 'external_refused', { reason }),
   // Called per request, long after codeRuns (declared below) exists.
   isRunLive: (runId) => isMcpRunLive(runId),
   isLocked: () => isAppLocked(),
@@ -404,7 +436,9 @@ const sagyouMcp = startSagyouMcpBroker({
         rendererMcpActions.request({ phase: 'apply', name, args, scope }).then((result) => {
           // Recorded when the renderer answers, even if the run ended meanwhile
           // (the queue rejects the caller, but the timer was started all the same).
-          runTaskTimers.record(session.runId, scope, name, result)
+          // The external token has no end to stop its timers at: they stay the user's.
+          if (tracksRunState(session.runId))
+            runTaskTimers.record(session.runId, scope, name, result)
           return result
         }),
       async () => {
@@ -609,6 +643,7 @@ function applyMemoryOp(op: McpMemoryOp): McpActionResult {
 
 /** A run can only write while it exists, was not stopped and still has its terminal. */
 function isMcpRunLive(runId: string): boolean {
+  if (runId === EXTERNAL_RUN_ID) return mcpExternal?.status().state === 'active'
   const run = codeRuns.get(runId)
   return Boolean(run && !run.abort && !(run.interactive && !run.externalChild))
 }
@@ -624,6 +659,7 @@ function mcpCardResumo(name: string, args: Record<string, unknown>): string {
 const runActivity = createRunActivity()
 
 function recordRunActivity(request: McpWriteRequest, value: unknown): void {
+  if (!tracksRunState(request.runId)) return
   const entry = runActivityEntry(request, value, () => mcpCardResumo(request.name, request.args))
   if (entry) runActivity.record(request.runId, entry)
 }
@@ -1593,6 +1629,47 @@ app.whenReady().then(() => {
     }
   )
   protectDataIpc(ipcMain)
+  {
+    const userData = app.getPath('userData')
+    const bridgePath = join(userData, 'mcp-external-bridge.cjs')
+    mcpExternal = createMcpExternalStore({
+      file: join(userData, is.dev ? MCP_EXTERNAL_FILE_DEV : MCP_EXTERNAL_FILE),
+      now: Date.now
+    })
+    mcpExternalPortFile = join(userData, is.dev ? 'mcp-external-port-dev' : 'mcp-external-port')
+    const portFile = mcpExternalPortFile
+    // The port changes every launch; the bridge reads it from here (not a secret).
+    const writePort = (): void => {
+      try {
+        writeFileSync(portFile, String(sagyouMcp.port()), 'utf8')
+      } catch {
+        log.warn('mcp', 'external_port_write_failed')
+      }
+    }
+    if (sagyouMcp.server.listening) writePort()
+    else sagyouMcp.server.once('listening', writePort)
+    registerMcpExternalHandlers(ipcMain, {
+      store: mcpExternal,
+      execPath: process.execPath,
+      bridgePath,
+      portFile,
+      writeBridge: () => writeFileSync(bridgePath, MCP_EXTERNAL_BRIDGE_SOURCE, 'utf8'),
+      log
+    })
+    // At most once a day, from 3 days before it expires.
+    const noticeExpiry = (): void => {
+      const store = mcpExternal
+      const expiresAt = store?.expiresAt()
+      if (!store || !expiresAt) return
+      const notice = expiryNotice(Date.now(), expiresAt, store.lastNoticeDay())
+      if (!notice) return
+      store.markNoticed(notice.day)
+      if (Notification.isSupported())
+        new Notification({ title: 'Sagyou', body: notice.text }).show()
+    }
+    noticeExpiry()
+    setInterval(noticeExpiry, 12 * 60 * 60 * 1000).unref()
+  }
   registerFilesHandlers(ipcMain, {
     mainWindow,
     dialog,
@@ -2724,6 +2801,8 @@ app.on('before-quit', (event) => {
   }
   rendererMcpTasks.close()
   rendererMcpActions.close()
+  // A stale port could later belong to another local program: the bridge must not find it.
+  if (mcpExternalPortFile) rmSync(mcpExternalPortFile, { force: true })
   syncEngine?.stop()
   stopCodeAgent()
 })

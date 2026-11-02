@@ -10,6 +10,8 @@ import type {
 } from '../main/modules/ai/memory'
 import type { McpActionRequest, McpActionResult } from '../main/modules/agent/mcp-write-types'
 import type { UpdateStatus } from '../main/modules/update/app-updater'
+import type { McpExternalStatus } from '../main/modules/agent/mcp-external'
+import type { McpExternalIssued } from '../main/handlers/mcp-external'
 import type { DesktopPrefsView } from '../main/modules/desktop/desktop-prefs'
 import type {
   GlobalSearchHit,
@@ -264,6 +266,17 @@ export const api = {
     respondMcpAction: (requestId: string, result: McpActionResult): void => {
       ipcRenderer.send('store:mcp:action:response', { requestId, result })
     }
+  },
+  // Configurações → Acesso MCP externo. The token comes back only from create/renew, once.
+  mcpExternal: {
+    status: (): Promise<McpExternalStatus> => ipcRenderer.invoke('mcp-external:status'),
+    create: (scope: {
+      projectId: string | null
+      financialProfileId: string
+      mode: 'read' | 'read-write'
+    }): Promise<McpExternalIssued> => ipcRenderer.invoke('mcp-external:create', scope),
+    renew: (): Promise<McpExternalIssued> => ipcRenderer.invoke('mcp-external:renew'),
+    revoke: (): Promise<McpExternalStatus> => ipcRenderer.invoke('mcp-external:revoke')
   },
   sync: {
     // A pull changed data records: the renderer takes the state without saving it.

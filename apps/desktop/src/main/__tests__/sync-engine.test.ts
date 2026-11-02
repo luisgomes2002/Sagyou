@@ -1268,6 +1268,7 @@ describe('wipeLocalData', () => {
         'kanban.db',
         'kanban.db-shm',
         'kanban.db-wal',
+        'mcp-external.json',
         'sync-config.json',
         'sync-device.json',
         'task-images'
