@@ -526,6 +526,10 @@ Não "simplifique" nenhuma destas sem ler o comentário que as acompanha:
   instalado no Windows).
 - **A chave de view `'ai'` é o Fleet** ("Sessões de código"). Renomear seria churn
   em `App`, `Sidebar` e feature flags; não há view de Chat nem `agents`.
+- **O "Como funciona" é conteúdo em dados** (`guide/content.ts`, `guide/sync-content.ts`).
+  Mudou um comportamento que o guia descreve? Mude o artigo na mesma branch; os testes
+  prendem alvos, comandos `wrangler` e a ausência de "chat". Telas e links internos
+  usam `AppView`/`NavTarget` de `navigation.ts`.
 - **As sessões do Fleet ficam em abas no topo.** `SessionTabs` só navega entre runs;
   o xterm vivo continua com `liveTerminals.ts` quando a aba muda.
 - **`AiMemory.sourceConversationId` e a coluna `memory.source_conversation_id`

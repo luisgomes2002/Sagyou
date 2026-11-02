@@ -7,7 +7,7 @@ export function UpdateSettings(): JSX.Element {
   return (
     <section className="space-y-3 rounded-xl border border-[#2b2b31] bg-[#16161a] p-5">
       <div>
-        <h2 className="text-sm font-semibold text-[#d4d4d4]">Atualizações</h2>
+        <h3 className="text-sm font-semibold text-[#d4d4d4]">Atualizações</h3>
         <p className="mt-1 text-xs text-[#999999]">
           O Sagyou procura uma versão nova no GitHub sempre que abre.
         </p>
