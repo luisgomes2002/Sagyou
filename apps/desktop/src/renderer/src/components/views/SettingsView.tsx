@@ -1,9 +1,12 @@
-import { useEffect, useState, type JSX } from 'react'
+import { useEffect, useState, type JSX, type ReactNode } from 'react'
 import { ALL_FEATURE_IDS, type FeatureId, type UiPreferences } from '../../types'
+import type { SettingsSectionId } from '../../navigation'
 import { SyncSettings } from '../settings/SyncSettings'
 import { UpdateSettings } from '../settings/UpdateSettings'
 import { WindowSettings } from '../settings/WindowSettings'
 import { AutoLockSettings } from '../settings/AutoLockSettings'
+import { SectionedPage } from '../layout/SectionedPage'
+import { SECTION_ICONS } from '../layout/sectionIcons'
 
 interface Props {
   featurePreferences?: FeatureId[]
@@ -11,7 +14,60 @@ interface Props {
   uiPreferences: UiPreferences
   onSetUiPreferences: (preferences: UiPreferences) => void
   onToast: (message: string, type?: 'success' | 'error') => void
+  initialSection?: SettingsSectionId
+  onOpenGuide: (articleId?: string) => void
 }
+
+const SETTINGS_SECTIONS: {
+  id: SettingsSectionId
+  label: string
+  description: string
+  icon: JSX.Element
+}[] = [
+  {
+    id: 'geral',
+    label: 'Geral',
+    description: 'Como o Sagyou deve chamar você.',
+    icon: SECTION_ICONS.user
+  },
+  {
+    id: 'aparencia',
+    label: 'Aparência',
+    description: 'Tema, tamanho do texto e acessibilidade.',
+    icon: SECTION_ICONS.palette
+  },
+  {
+    id: 'barra-lateral',
+    label: 'Barra lateral',
+    description:
+      'Escolha as áreas que aparecem na navegação. Seus dados não são apagados ao ocultar uma área.',
+    icon: SECTION_ICONS.sidebar
+  },
+  {
+    id: 'seguranca',
+    label: 'Segurança',
+    description: 'Senha do app e bloqueio automático.',
+    icon: SECTION_ICONS.lock
+  },
+  {
+    id: 'sincronizacao',
+    label: 'Sincronização',
+    description: 'Mantenha seus PCs e o celular com os mesmos dados.',
+    icon: SECTION_ICONS.sync
+  },
+  {
+    id: 'sistema',
+    label: 'Sistema',
+    description: 'Janela, bandeja e atualizações do app.',
+    icon: SECTION_ICONS.system
+  },
+  {
+    id: 'sobre',
+    label: 'Sobre',
+    description: 'Versão e ajuda.',
+    icon: SECTION_ICONS.info
+  }
+]
 
 const FEATURE_LABELS: Record<FeatureId, { label: string; description: string }> = {
   kanban: { label: 'Kanban', description: 'Board, próximas, concluídas e projetos.' },
@@ -23,20 +79,98 @@ const FEATURE_LABELS: Record<FeatureId, { label: string; description: string }> 
   canvas: { label: 'Canvas', description: 'Notas visuais por projeto.' },
   files: { label: 'Arquivos', description: 'Biblioteca e anexos.' },
   graph: { label: 'Grafo', description: 'Relações entre registros.' },
-  ai: { label: 'Assistente IA', description: 'Chat, memória e agentes.' }
+  ai: { label: 'Sessões de código', description: 'Agentes de código no terminal e memória.' }
 }
+
+const primaryButton =
+  'rounded-lg bg-[#6d5bb8] px-4 py-2 text-sm font-medium text-white hover:bg-[#7b69c6] disabled:cursor-not-allowed disabled:opacity-50'
+const fieldClass =
+  'w-full rounded-lg border border-[#2b2b31] bg-[#101014] px-3 py-2 text-sm text-[#d4d4d4] outline-none focus:border-[#6d5bb8] disabled:opacity-50'
 
 export function SettingsView({
   featurePreferences,
   onSetFeaturePreferences,
   uiPreferences,
   onSetUiPreferences,
-  onToast
+  onToast,
+  initialSection = 'geral',
+  onOpenGuide
 }: Props): JSX.Element {
+  const [section, setSection] = useState<SettingsSectionId>(initialSection)
+  // Once opened, Sincronização stays mounted (hidden) while you visit other
+  // sections: its backup codes and first recovery code are shown only once.
+  const [syncMounted, setSyncMounted] = useState(initialSection === 'sincronizacao')
+  const [secretShown, setSecretShown] = useState(false)
+  const select = (id: SettingsSectionId): void => {
+    if (id === 'sincronizacao') setSyncMounted(true)
+    setSection(id)
+  }
+  const current = SETTINGS_SECTIONS.find((item) => item.id === section) ?? SETTINGS_SECTIONS[0]
+
+  return (
+    <SectionedPage
+      title="Configurações"
+      items={SETTINGS_SECTIONS}
+      activeId={current.id}
+      onSelect={select}
+      heading={current.label}
+      description={current.description}
+    >
+      <div className="space-y-5">
+        {current.id === 'geral' && <GeneralSection onToast={onToast} />}
+        {current.id === 'aparencia' && (
+          <AppearanceSection
+            uiPreferences={uiPreferences}
+            onSetUiPreferences={onSetUiPreferences}
+          />
+        )}
+        {current.id === 'barra-lateral' && (
+          <SidebarSection
+            enabledFeatures={featurePreferences ?? ALL_FEATURE_IDS}
+            onSetFeaturePreferences={onSetFeaturePreferences}
+          />
+        )}
+        {current.id === 'seguranca' && <PasswordSettings onToast={onToast} />}
+        {syncMounted && (
+          <div hidden={current.id !== 'sincronizacao'} className="space-y-5">
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                disabled={secretShown}
+                onClick={() => onOpenGuide('sync-o-que-e')}
+                className="text-sm text-[#a080f0] hover:underline disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:no-underline"
+              >
+                Como funciona a sincronização
+              </button>
+              {secretShown && (
+                <span className="text-xs text-[#d9a640]">
+                  Anote os códigos abaixo antes de sair: eles aparecem uma vez só.
+                </span>
+              )}
+            </div>
+            <SyncSettings onToast={onToast} onOneTimeSecretChange={setSecretShown} />
+          </div>
+        )}
+        {current.id === 'sistema' && (
+          <>
+            <WindowSettings />
+            <UpdateSettings />
+          </>
+        )}
+        {current.id === 'sobre' && <AboutSection onOpenGuide={onOpenGuide} />}
+      </div>
+    </SectionedPage>
+  )
+}
+
+function Card({ children }: { children: ReactNode }): JSX.Element {
+  return <section className="rounded-xl border border-[#2b2b31] bg-[#16161a]">{children}</section>
+}
+
+function GeneralSection({ onToast }: { onToast: Props['onToast'] }): JSX.Element {
   const [userName, setUserName] = useState('')
   const [savedName, setSavedName] = useState('')
   const [loadingName, setLoadingName] = useState(true)
-  const enabledFeatures = featurePreferences ?? ALL_FEATURE_IDS
 
   useEffect(() => {
     window.electronAPI.ai.config.get().then((config) => {
@@ -56,175 +190,161 @@ export function SettingsView({
     onToast(name ? 'Nome salvo.' : 'Nome removido.')
   }
 
-  const toggleFeature = (feature: FeatureId): void => {
-    const next = enabledFeatures.includes(feature)
-      ? enabledFeatures.filter((item) => item !== feature)
-      : [...enabledFeatures, feature]
-    onSetFeaturePreferences(next)
-  }
+  return (
+    <Card>
+      <div className="flex items-end gap-3 p-5">
+        <label className="block flex-1">
+          <span className="mb-1.5 block text-xs font-medium text-[#999999]">Nome</span>
+          <input
+            type="text"
+            value={userName}
+            maxLength={80}
+            onChange={(event) => setUserName(event.target.value)}
+            placeholder="Ex.: Luísa"
+            disabled={loadingName}
+            className={fieldClass}
+          />
+        </label>
+        <button
+          type="button"
+          onClick={() => void saveUserName()}
+          disabled={loadingName || userName.trim() === savedName}
+          className={primaryButton}
+        >
+          Salvar
+        </button>
+      </div>
+    </Card>
+  )
+}
 
-  const updateUiPreference = <Key extends keyof UiPreferences>(
-    key: Key,
-    value: UiPreferences[Key]
-  ): void => {
+function AppearanceSection({
+  uiPreferences,
+  onSetUiPreferences
+}: {
+  uiPreferences: UiPreferences
+  onSetUiPreferences: (preferences: UiPreferences) => void
+}): JSX.Element {
+  const update = <Key extends keyof UiPreferences>(key: Key, value: UiPreferences[Key]): void => {
     onSetUiPreferences({ ...uiPreferences, [key]: value })
   }
 
   return (
-    <div className="flex flex-1 min-h-0 overflow-y-auto">
-      <div className="w-full max-w-3xl mx-auto px-6 py-7 space-y-7">
-        <div>
-          <h1 className="text-xl font-semibold text-[#d4d4d4]">Configurações</h1>
-          <p className="mt-1 text-sm text-[#999999]">Personalize o Sagyou para a sua rotina.</p>
-        </div>
-
-        <section className="rounded-xl border border-[#2b2b31] bg-[#16161a]">
-          <SectionTitle title="Perfil" description="Como o assistente deve chamar você." />
-          <div className="p-5 flex gap-3 items-end">
-            <label className="block flex-1">
-              <span className="mb-1.5 block text-xs font-medium text-[#999999]">Nome</span>
-              <input
-                type="text"
-                value={userName}
-                maxLength={80}
-                onChange={(event) => setUserName(event.target.value)}
-                placeholder="Ex.: Luísa"
-                disabled={loadingName}
-                className="w-full rounded-lg border border-[#2b2b31] bg-[#101014] px-3 py-2 text-sm text-[#d4d4d4] outline-none focus:border-[#7c3aed] disabled:opacity-50"
-              />
-            </label>
-            <button
-              type="button"
-              onClick={() => void saveUserName()}
-              disabled={loadingName || userName.trim() === savedName}
-              className="rounded-lg bg-[#7c3aed] px-4 py-2 text-sm font-medium text-white hover:bg-[#6d28d9] disabled:cursor-not-allowed disabled:opacity-50"
+    <Card>
+      <div className="space-y-5 p-5">
+        <fieldset>
+          <legend className="mb-2 text-sm font-medium text-[#d4d4d4]">Tema</legend>
+          <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Tema do aplicativo">
+            <PreferenceButton
+              active={uiPreferences.theme === 'dark'}
+              onClick={() => update('theme', 'dark')}
             >
-              Salvar
-            </button>
+              Escuro
+            </PreferenceButton>
+            <PreferenceButton
+              active={uiPreferences.theme === 'light'}
+              onClick={() => update('theme', 'light')}
+            >
+              Claro
+            </PreferenceButton>
           </div>
-        </section>
+        </fieldset>
 
-        <section className="rounded-xl border border-[#2b2b31] bg-[#16161a]">
-          <SectionTitle
-            title="Aparência e acessibilidade"
-            description="Ajuste a leitura e o comportamento visual do app. As mudanças são aplicadas na hora."
+        <fieldset>
+          <legend className="mb-2 text-sm font-medium text-[#d4d4d4]">Tamanho do texto</legend>
+          <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Tamanho do texto">
+            <PreferenceButton
+              active={uiPreferences.fontSize === 'small'}
+              onClick={() => update('fontSize', 'small')}
+            >
+              Menor
+            </PreferenceButton>
+            <PreferenceButton
+              active={uiPreferences.fontSize === 'default'}
+              onClick={() => update('fontSize', 'default')}
+            >
+              Padrão
+            </PreferenceButton>
+            <PreferenceButton
+              active={uiPreferences.fontSize === 'large'}
+              onClick={() => update('fontSize', 'large')}
+            >
+              Maior
+            </PreferenceButton>
+          </div>
+        </fieldset>
+
+        <div className="divide-y divide-[#2b2b31] rounded-lg border border-[#2b2b31] bg-[#101014]">
+          <TogglePreference
+            label="Reduzir movimentos"
+            description="Desativa animações e transições que não são essenciais."
+            checked={uiPreferences.reduceMotion}
+            onChange={(checked) => update('reduceMotion', checked)}
           />
-          <div className="space-y-5 p-5">
-            <fieldset>
-              <legend className="mb-2 text-sm font-medium text-[#d4d4d4]">Tema</legend>
-              <div
-                className="flex flex-wrap gap-2"
-                role="radiogroup"
-                aria-label="Tema do aplicativo"
-              >
-                <PreferenceButton
-                  active={uiPreferences.theme === 'dark'}
-                  onClick={() => updateUiPreference('theme', 'dark')}
-                >
-                  Escuro
-                </PreferenceButton>
-                <PreferenceButton
-                  active={uiPreferences.theme === 'light'}
-                  onClick={() => updateUiPreference('theme', 'light')}
-                >
-                  Claro
-                </PreferenceButton>
-              </div>
-            </fieldset>
-
-            <fieldset>
-              <legend className="mb-2 text-sm font-medium text-[#d4d4d4]">Tamanho do texto</legend>
-              <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Tamanho do texto">
-                <PreferenceButton
-                  active={uiPreferences.fontSize === 'small'}
-                  onClick={() => updateUiPreference('fontSize', 'small')}
-                >
-                  Menor
-                </PreferenceButton>
-                <PreferenceButton
-                  active={uiPreferences.fontSize === 'default'}
-                  onClick={() => updateUiPreference('fontSize', 'default')}
-                >
-                  Padrão
-                </PreferenceButton>
-                <PreferenceButton
-                  active={uiPreferences.fontSize === 'large'}
-                  onClick={() => updateUiPreference('fontSize', 'large')}
-                >
-                  Maior
-                </PreferenceButton>
-              </div>
-            </fieldset>
-
-            <div className="divide-y divide-[#2b2b31] rounded-lg border border-[#2b2b31] bg-[#101014]">
-              <TogglePreference
-                label="Reduzir movimentos"
-                description="Desativa animações e transições que não são essenciais."
-                checked={uiPreferences.reduceMotion}
-                onChange={(checked) => updateUiPreference('reduceMotion', checked)}
-              />
-              <TogglePreference
-                label="Alto contraste"
-                description="Aumenta a diferença entre texto, fundos e bordas."
-                checked={uiPreferences.highContrast}
-                onChange={(checked) => updateUiPreference('highContrast', checked)}
-              />
-            </div>
-          </div>
-        </section>
-
-        <WindowSettings />
-
-        <PasswordSettings onToast={onToast} />
-
-        <UpdateSettings />
-
-        <SyncSettings onToast={onToast} />
-
-        <section className="rounded-xl border border-[#2b2b31] bg-[#16161a]">
-          <SectionTitle
-            title="Barra lateral"
-            description="Escolha as áreas que aparecem na navegação. Seus dados não são apagados ao ocultar uma área."
+          <TogglePreference
+            label="Alto contraste"
+            description="Aumenta a diferença entre texto, fundos e bordas."
+            checked={uiPreferences.highContrast}
+            onChange={(checked) => update('highContrast', checked)}
           />
-          <div className="divide-y divide-[#2b2b31]">
-            {ALL_FEATURE_IDS.map((feature) => {
-              const info = FEATURE_LABELS[feature]
-              const checked = enabledFeatures.includes(feature)
-              return (
-                <label
-                  key={feature}
-                  className="flex cursor-pointer items-center gap-4 px-5 py-3 hover:bg-[#222227]"
-                >
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => toggleFeature(feature)}
-                    className="h-4 w-4 accent-[#7c3aed]"
-                  />
-                  <span className="flex-1">
-                    <span className="block text-sm text-[#d4d4d4]">{info.label}</span>
-                    <span className="block text-xs text-[#999999]">{info.description}</span>
-                  </span>
-                </label>
-              )
-            })}
-          </div>
-        </section>
-
-        <section className="rounded-xl border border-[#2b2b31] bg-[#16161a]">
-          <SectionTitle
-            title="Criptografia"
-            description="Proteção dos dados armazenados neste computador."
-          />
-          <div className="p-5">
-            <p className="rounded-lg border border-[#2b2b31] bg-[#101014] px-3 py-2 text-sm text-[#999999]">
-              A criptografia em repouso não está ativa. Ela foi adiada para evitar uma migração de
-              dados de alto risco.
-            </p>
-          </div>
-        </section>
+        </div>
       </div>
-    </div>
+    </Card>
+  )
+}
+
+function SidebarSection({
+  enabledFeatures,
+  onSetFeaturePreferences
+}: {
+  enabledFeatures: FeatureId[]
+  onSetFeaturePreferences: (features: FeatureId[]) => void
+}): JSX.Element {
+  const toggle = (feature: FeatureId): void => {
+    onSetFeaturePreferences(
+      enabledFeatures.includes(feature)
+        ? enabledFeatures.filter((item) => item !== feature)
+        : [...enabledFeatures, feature]
+    )
+  }
+
+  return (
+    <Card>
+      <div className="divide-y divide-[#2b2b31]">
+        {ALL_FEATURE_IDS.map((feature) => {
+          const info = FEATURE_LABELS[feature]
+          return (
+            <TogglePreference
+              key={feature}
+              label={info.label}
+              description={info.description}
+              checked={enabledFeatures.includes(feature)}
+              onChange={() => toggle(feature)}
+            />
+          )
+        })}
+      </div>
+    </Card>
+  )
+}
+
+function AboutSection({ onOpenGuide }: { onOpenGuide: Props['onOpenGuide'] }): JSX.Element {
+  return (
+    <Card>
+      <div className="flex flex-wrap items-center justify-between gap-3 p-5">
+        <div>
+          <p className="text-sm font-medium text-[#d4d4d4]">Sagyou</p>
+          <p className="text-sm text-[#999999]">Versão {__APP_VERSION__}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => onOpenGuide(undefined)}
+          className="rounded-lg bg-[#2a2a30] px-4 py-2 text-sm text-[#d4d4d4] hover:bg-[#303036]"
+        >
+          Abrir o Como funciona
+        </button>
+      </div>
+    </Card>
   )
 }
 
@@ -245,7 +365,7 @@ function PreferenceButton({
       onClick={onClick}
       className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
         active
-          ? 'border-[#7c3aed] bg-[#7c3aed] text-white'
+          ? 'border-[#6d5bb8] bg-[#6d5bb8] text-white'
           : 'border-[#2b2b31] bg-[#16161a] text-[#d4d4d4] hover:bg-[#222227]'
       }`}
     >
@@ -275,7 +395,7 @@ function TogglePreference({
         type="checkbox"
         checked={checked}
         onChange={(event) => onChange(event.target.checked)}
-        className="h-4 w-4 accent-[#7c3aed]"
+        className="h-4 w-4 accent-[#6d5bb8]"
       />
     </label>
   )
@@ -325,8 +445,11 @@ function PasswordSettings({ onToast }: { onToast: Props['onToast'] }): JSX.Eleme
   }
 
   return (
-    <section className="rounded-xl border border-[#2b2b31] bg-[#16161a]">
-      <SectionTitle title="Senha" description="Bloqueia o acesso ao app ao abri-lo." />
+    <Card>
+      <div className="border-b border-[#2b2b31] px-5 py-4">
+        <h3 className="text-sm font-semibold text-[#d4d4d4]">Senha</h3>
+        <p className="mt-1 text-xs text-[#999999]">Bloqueia o acesso ao app ao abri-lo.</p>
+      </div>
       <div className="space-y-4 p-5">
         {enabled === null ? (
           <p className="text-sm text-[#999999]">Carregando...</p>
@@ -336,13 +459,17 @@ function PasswordSettings({ onToast }: { onToast: Props['onToast'] }): JSX.Eleme
             <PasswordField label="Senha atual" value={current} onChange={setCurrent} />
             <PasswordField label="Nova senha" value={next} onChange={setNext} />
             <PasswordField label="Confirmar nova senha" value={confirm} onChange={setConfirm} />
-            {error && <p className="text-xs text-[#ef6b73]">{error}</p>}
+            {error && (
+              <p role="alert" className="text-xs text-[#ec6a6a]">
+                {error}
+              </p>
+            )}
             <div className="flex justify-between gap-3">
               <button
                 type="button"
                 onClick={() => void save('disable')}
                 disabled={!current || saving}
-                className="text-sm text-[#ef6b73] hover:text-[#ff8890] disabled:opacity-50"
+                className="text-sm text-[#ec6a6a] hover:text-[#e04040] disabled:opacity-50"
               >
                 Desativar senha
               </button>
@@ -350,7 +477,7 @@ function PasswordSettings({ onToast }: { onToast: Props['onToast'] }): JSX.Eleme
                 type="button"
                 onClick={() => void save('change')}
                 disabled={!current || !next || !confirm || saving}
-                className="rounded-lg bg-[#7c3aed] px-4 py-2 text-sm font-medium text-white hover:bg-[#6d28d9] disabled:opacity-50"
+                className={primaryButton}
               >
                 Alterar senha
               </button>
@@ -363,13 +490,17 @@ function PasswordSettings({ onToast }: { onToast: Props['onToast'] }): JSX.Eleme
             </p>
             <PasswordField label="Nova senha" value={next} onChange={setNext} />
             <PasswordField label="Confirmar senha" value={confirm} onChange={setConfirm} />
-            {error && <p className="text-xs text-[#ef6b73]">{error}</p>}
+            {error && (
+              <p role="alert" className="text-xs text-[#ec6a6a]">
+                {error}
+              </p>
+            )}
             <div className="flex justify-end">
               <button
                 type="button"
                 onClick={() => void save('enable')}
                 disabled={!next || !confirm || saving}
-                className="rounded-lg bg-[#7c3aed] px-4 py-2 text-sm font-medium text-white hover:bg-[#6d28d9] disabled:opacity-50"
+                className={primaryButton}
               >
                 Ativar senha
               </button>
@@ -378,16 +509,7 @@ function PasswordSettings({ onToast }: { onToast: Props['onToast'] }): JSX.Eleme
         )}
         {enabled !== null && <AutoLockSettings passwordEnabled={enabled} />}
       </div>
-    </section>
-  )
-}
-
-function SectionTitle({ title, description }: { title: string; description: string }): JSX.Element {
-  return (
-    <div className="border-b border-[#2b2b31] px-5 py-4">
-      <h2 className="text-base font-semibold text-[#d4d4d4]">{title}</h2>
-      <p className="mt-1 text-xs text-[#999999]">{description}</p>
-    </div>
+    </Card>
   )
 }
 
@@ -408,7 +530,7 @@ function PasswordField({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         autoComplete="new-password"
-        className="w-full rounded-lg border border-[#2b2b31] bg-[#101014] px-3 py-2 text-sm text-[#d4d4d4] outline-none focus:border-[#7c3aed]"
+        className={fieldClass}
       />
     </label>
   )
