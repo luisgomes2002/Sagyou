@@ -8,6 +8,9 @@ import {
 } from './sagyou-mcp'
 import { MCP_CLIENT_TOOL_TIMEOUT_SEC } from './mcp-approval'
 
+/** Every tool of the external token's Claude Code server (`claude mcp add sagyou-externo`). */
+export const EXTERNAL_MCP_SERVER_TOOLS = 'mcp__sagyou-externo'
+
 export type McpExecutorId = 'codex' | 'claude-code' | 'opencode'
 
 export interface McpCapabilityBroker {
@@ -79,7 +82,12 @@ export async function prepareAgentMcpSession(
     SAGYOU_MCP_PORT: String(options.broker.port()),
     SAGYOU_MCP_TOKEN: options.token
   }
-  if (options.executor === 'claude-code') args.unshift('--mcp-config', claudeConfigPath)
+  // The user's Claude Code may also have the external token's server (user scope,
+  // Configurações → Acesso MCP externo). A Fleet run must use only its own
+  // capability, so that server's tools are disallowed here. The flag goes right
+  // before --mcp-config, so the next option ends its list.
+  if (options.executor === 'claude-code')
+    args.unshift('--disallowedTools', EXTERNAL_MCP_SERVER_TOOLS, '--mcp-config', claudeConfigPath)
   if (options.executor === 'codex') {
     args.unshift(
       '--config',

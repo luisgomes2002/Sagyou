@@ -5,7 +5,7 @@
 // and renewed tokens, and the fixed bridge that reads the port from a file.
 import { spawn } from 'child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'fs'
-import { connect, type Socket } from 'net'
+import { connect, createServer, type AddressInfo, type Socket } from 'net'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -18,6 +18,7 @@ import {
 import { MCP_APPROVAL_REQUIRED } from '../modules/agent/mcp-write-tools'
 import {
   MCP_EXTERNAL_BRIDGE_SOURCE,
+  externalHelloProof,
   externalPermissions,
   startSagyouMcpBroker,
   type McpBrokerDeps,
@@ -120,7 +121,7 @@ describe('broker com o token externo', () => {
     const names = await listTools(broker.port(), 'ok')
     expect(names).toContain('read_tasks')
     expect(names).toContain('list_projects')
-    for (const name of ['update_task', 'create_task', 'save_memory', 'criar_task', 'delete_task'])
+    for (const name of ['update_task', 'save_memory', 'criar_task', 'delete_task'])
       expect([name, names.includes(name)]).toEqual([name, false])
     expect(errorOf(await call(broker.port(), 'ok', 'update_task', { id: 't1' }))).toBe(
       'Ferramenta indisponível nesta sessão MCP.'
@@ -228,7 +229,7 @@ describe('escritas arriscadas pelo token externo', () => {
       createTask,
       onExternalRefused: refused
     })
-    const risky = [...MCP_APPROVAL_REQUIRED, 'save_memory', 'criar_task']
+    const risky = [...MCP_APPROVAL_REQUIRED, 'save_memory']
     for (const name of risky)
       expect([name, errorOf(await call(broker.port(), 'ok', name, { id: 'x' }))]).toEqual([
         name,
@@ -238,6 +239,17 @@ describe('escritas arriscadas pelo token externo', () => {
     expect(saveMemory).not.toHaveBeenCalled()
     expect(createTask).not.toHaveBeenCalled()
     expect(refused).toHaveBeenCalledWith('risky')
+  })
+
+  it('criar_task passa para o token externo (decisão de 2026-11-02)', async () => {
+    const createTask = vi.fn(async () => ({ ok: true, id: 't9' }))
+    const broker = await brokerWith(() => sessionFor(RW), { createTask })
+    const reply = await call(broker.port(), 'ok', 'criar_task', { titulo: 'Pelo celular' })
+    expect(errorOf(reply)).toBe('')
+    expect(createTask).toHaveBeenCalledWith(
+      expect.objectContaining({ runId: EXTERNAL_RUN_ID }),
+      expect.objectContaining({ titulo: 'Pelo celular' })
+    )
   })
 
   it('uma escrita sem cartão chega à escrita com a run externa', async () => {
@@ -269,26 +281,15 @@ describe('escritas arriscadas pelo token externo', () => {
 })
 
 describe('ponte do token externo', () => {
-  it('não carrega segredo e lê a porta do arquivo a cada conexão', async () => {
-    expect(MCP_EXTERNAL_BRIDGE_SOURCE).toContain('SAGYOU_MCP_PORT_FILE')
-    expect(MCP_EXTERNAL_BRIDGE_SOURCE).toContain('SAGYOU_MCP_TOKEN')
-    const broker = await brokerWith(
-      (token) => (token === 'segredo' ? sessionFor(READ_SCOPE) : null),
-      {
-        listProjects: () => [{ id: 'p1', name: 'Pela ponte' }]
-      }
-    )
-    const dir = mkdtempSync(join(tmpdir(), 'sagyou-mcp-bridge-'))
-    dirs.push(dir)
-    const bridge = join(dir, 'mcp-external-bridge.cjs')
-    const portFile = join(dir, 'mcp-external-port')
-    writeFileSync(bridge, MCP_EXTERNAL_BRIDGE_SOURCE)
-    writeFileSync(portFile, String(broker.port()))
-    const output = await new Promise<string>((resolve, reject) => {
-      const child = spawn(process.execPath, [bridge], {
-        env: { ...process.env, SAGYOU_MCP_PORT_FILE: portFile, SAGYOU_MCP_TOKEN: 'segredo' },
-        stdio: ['pipe', 'pipe', 'pipe']
-      })
+  const SECRET = 'segredo-desta-abertura'
+
+  function runBridge(
+    bridge: string,
+    env: NodeJS.ProcessEnv,
+    stdin: string
+  ): Promise<{ out: string; code: number | null }> {
+    return new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, [bridge], { env, stdio: ['pipe', 'pipe', 'pipe'] })
       let out = ''
       const timeout = setTimeout(() => {
         child.kill()
@@ -297,39 +298,110 @@ describe('ponte do token externo', () => {
       child.stdout.setEncoding('utf8')
       child.stdout.on('data', (chunk: string) => {
         out += chunk
-        if (out.includes('\n')) {
-          clearTimeout(timeout)
-          child.kill()
-          resolve(out)
-        }
+        if (out.includes('\n')) child.kill()
       })
-      child.stdin.write(
-        JSON.stringify({
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'tools/call',
-          params: { name: 'list_projects', arguments: {} }
-        }) + '\n'
-      )
+      child.once('close', (code) => {
+        clearTimeout(timeout)
+        resolve({ out, code })
+      })
+      child.stdin.write(stdin)
     })
-    expect(output).toContain('Pela ponte')
+  }
+
+  const listCall =
+    JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: 'list_projects', arguments: {} }
+    }) + '\n'
+
+  it('o broker responde o desafio só com o segredo desta abertura', async () => {
+    const broker = await brokerWith(() => null, { externalHelloSecret: () => SECRET })
+    const reply = await request(broker.port(), {
+      jsonrpc: '2.0',
+      id: 'sagyou-hello',
+      method: 'sagyou/hello',
+      params: { nonce: 'abc' }
+    })
+    expect((reply.result as { proof: string }).proof).toBe(externalHelloProof(SECRET, 'abc'))
+    const without = await brokerWith(() => null)
+    const refused = await request(without.port(), {
+      jsonrpc: '2.0',
+      id: 'sagyou-hello',
+      method: 'sagyou/hello',
+      params: { nonce: 'abc' }
+    })
+    expect(errorOf(refused)).toBe('Sessão MCP inválida ou expirada.')
   })
 
-  it('sem arquivo de porta, sai sem conectar', async () => {
+  it('confere o broker e só então manda o token', async () => {
+    const broker = await brokerWith(
+      (token) => (token === 'segredo' ? sessionFor(READ_SCOPE) : null),
+      {
+        externalHelloSecret: () => SECRET,
+        listProjects: () => [{ id: 'p1', name: 'Pela ponte' }]
+      }
+    )
+    const dir = mkdtempSync(join(tmpdir(), 'sagyou-mcp-bridge-'))
+    dirs.push(dir)
+    const bridge = join(dir, 'mcp-external-bridge.cjs')
+    const portFile = join(dir, 'mcp-external-port')
+    writeFileSync(bridge, MCP_EXTERNAL_BRIDGE_SOURCE)
+    writeFileSync(portFile, `${broker.port()}\n${SECRET}`)
+    const { out } = await runBridge(
+      bridge,
+      { ...process.env, SAGYOU_MCP_PORT_FILE: portFile, SAGYOU_MCP_TOKEN: 'segredo' },
+      listCall
+    )
+    expect(out).toContain('Pela ponte')
+    expect(out).not.toContain('sagyou-hello')
+  })
+
+  // Security review: a stale port file (Windows shutdown skips before-quit) let
+  // whoever took the port receive the token.
+  it('numa porta velha tomada por outro programa, sai sem mandar o token', async () => {
+    const received: string[] = []
+    const impostor = createServer((socket) => {
+      socket.on('error', () => {})
+      socket.on('data', (chunk) => {
+        received.push(chunk.toString('utf8'))
+        socket.write(
+          JSON.stringify({ jsonrpc: '2.0', id: 'sagyou-hello', result: { proof: 'falsa' } }) + '\n'
+        )
+      })
+    })
+    servers.push(impostor)
+    await new Promise<void>((resolve) => impostor.listen(0, '127.0.0.1', resolve))
+    const dir = mkdtempSync(join(tmpdir(), 'sagyou-mcp-bridge-'))
+    dirs.push(dir)
+    const bridge = join(dir, 'mcp-external-bridge.cjs')
+    const portFile = join(dir, 'mcp-external-port')
+    writeFileSync(bridge, MCP_EXTERNAL_BRIDGE_SOURCE)
+    writeFileSync(portFile, `${(impostor.address() as AddressInfo).port}\n${SECRET}`)
+    const { code } = await runBridge(
+      bridge,
+      { ...process.env, SAGYOU_MCP_PORT_FILE: portFile, SAGYOU_MCP_TOKEN: 'token-secreto' },
+      listCall
+    )
+    expect(code).toBe(3)
+    expect(received.join('')).not.toContain('token-secreto')
+  })
+
+  it('sem arquivo de porta ou sem segredo, sai sem conectar', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'sagyou-mcp-bridge-'))
     dirs.push(dir)
     const bridge = join(dir, 'mcp-external-bridge.cjs')
     writeFileSync(bridge, MCP_EXTERNAL_BRIDGE_SOURCE)
-    const code = await new Promise<number | null>((resolve) => {
-      const child = spawn(process.execPath, [bridge], {
-        env: {
-          ...process.env,
-          SAGYOU_MCP_PORT_FILE: join(dir, 'nao-existe'),
-          SAGYOU_MCP_TOKEN: 'x'
-        }
-      })
-      child.once('close', resolve)
-    })
-    expect(code).toBe(2)
+    const onlyPort = join(dir, 'so-porta')
+    writeFileSync(onlyPort, '4567')
+    for (const file of [join(dir, 'nao-existe'), onlyPort]) {
+      const { code } = await runBridge(
+        bridge,
+        { ...process.env, SAGYOU_MCP_PORT_FILE: file, SAGYOU_MCP_TOKEN: 'x' },
+        ''
+      )
+      expect(code).toBe(2)
+    }
   })
 })

@@ -8,7 +8,7 @@ import {
   type MemoryType,
   type RecentMemoryFilter
 } from '../ai/memory'
-import { randomUUID } from 'crypto'
+import { createHmac, randomUUID } from 'crypto'
 import type { MemorySearchHit } from '../../store'
 import { MCP_WRITE_TOOLS } from './mcp-write-tools'
 import {
@@ -125,6 +125,8 @@ export interface McpBrokerDeps {
   onExternalUse?: () => void
   /** The external token was refused; only the reason, never the token. */
   onExternalRefused?: (reason: 'expired' | 'risky') => void
+  /** This launch's secret, written next to the port for the external bridge's challenge. */
+  externalHelloSecret?: () => string | null
 }
 
 export const MCP_LOCKED_MESSAGE = 'O Sagyou está bloqueado. Desbloqueie no PC para continuar.'
@@ -143,18 +145,30 @@ socket.on('error',()=>process.exit(1));`
 /**
  * The external token's bridge, written once into userData and run by the app's
  * own executable (ELECTRON_RUN_AS_NODE). The broker's port changes every launch,
- * so it is read from SAGYOU_MCP_PORT_FILE; the token comes from the client's env.
+ * so it is read from SAGYOU_MCP_PORT_FILE, next to a secret made for this launch.
+ * The port file can outlive the app (Windows shutdown skips before-quit), so
+ * before sending the token the bridge makes whoever listens on that port prove
+ * it knows the secret (HMAC of a fresh nonce); a stale port gets nothing.
  */
-export const MCP_EXTERNAL_BRIDGE_SOURCE = `const net=require('net'),fs=require('fs');
+export const MCP_EXTERNAL_BRIDGE_SOURCE = `const net=require('net'),fs=require('fs'),crypto=require('crypto');
 const file=process.env.SAGYOU_MCP_PORT_FILE,token=process.env.SAGYOU_MCP_TOKEN;
-let port=0;try{port=Number(fs.readFileSync(String(file),'utf8').trim())}catch{}
-if(!port||!token) process.exit(2);
+let port=0,secret='';try{const parts=fs.readFileSync(String(file),'utf8').split('\\n');port=Number(parts[0]);secret=String(parts[1]||'').trim()}catch{}
+if(!port||!secret||!token) process.exit(2);
+const nonce=crypto.randomBytes(16).toString('hex');
+const expected=crypto.createHmac('sha256',secret).update(nonce).digest('hex');
 const socket=net.createConnection({host:'127.0.0.1',port});
-let buffer='',input='';
+let buffer='',input='',verified=false;const pending=[];
+const send=line=>{try{const msg=JSON.parse(line);msg.params={...(msg.params||{}),token};socket.write(JSON.stringify(msg)+'\\n')}catch{}};
+socket.on('connect',()=>socket.write(JSON.stringify({jsonrpc:'2.0',id:'sagyou-hello',method:'sagyou/hello',params:{nonce}})+'\\n'));
 process.stdin.setEncoding('utf8');
-process.stdin.on('data',chunk=>{input+=chunk;const lines=input.split('\\n');input=lines.pop()||'';for(const line of lines){if(!line)continue;try{const msg=JSON.parse(line);msg.params={...(msg.params||{}),token};socket.write(JSON.stringify(msg)+'\\n')}catch{}}});
-socket.on('data',chunk=>{buffer+=chunk;const lines=buffer.split('\\n');buffer=lines.pop()||'';for(const line of lines)if(line)process.stdout.write(line+'\\n')});
+process.stdin.on('data',chunk=>{input+=chunk;const lines=input.split('\\n');input=lines.pop()||'';for(const line of lines){if(!line)continue;if(verified)send(line);else pending.push(line)}});
+socket.on('data',chunk=>{buffer+=chunk;const lines=buffer.split('\\n');buffer=lines.pop()||'';for(const line of lines){if(!line)continue;if(!verified){let proof='';try{const m=JSON.parse(line);if(m.id==='sagyou-hello'&&m.result)proof=String(m.result.proof||'')}catch{}const a=Buffer.from(proof),b=Buffer.from(expected);if(a.length!==b.length||!crypto.timingSafeEqual(a,b))process.exit(3);verified=true;for(const p of pending.splice(0))send(p);continue}process.stdout.write(line+'\\n')}});
 socket.on('error',()=>process.exit(1));`
+
+/** The broker's answer to the external bridge's challenge: HMAC-SHA256(secret, nonce). */
+export function externalHelloProof(secret: string, nonce: string): string {
+  return createHmac('sha256', secret).update(nonce).digest('hex')
+}
 
 const LOG_READ_LIMIT = 200
 const TOOL_UNAVAILABLE = 'Ferramenta indisponível nesta sessão MCP.'
@@ -642,6 +656,18 @@ export function startSagyouMcpBroker(deps: McpBrokerDeps): {
             id?: unknown
             method?: string
             params?: Record<string, unknown>
+          }
+          // The external bridge's challenge, before it sends any token. Answers only
+          // with this launch's secret; never touches a session or the data.
+          if (request.method === 'sagyou/hello') {
+            const nonce = request.params?.nonce
+            const secret = deps.externalHelloSecret?.()
+            if (!secret || typeof nonce !== 'string' || !nonce || nonce.length > 128) {
+              failure(socket, request.id, 'Sessão MCP inválida ou expirada.')
+              continue
+            }
+            reply(socket, request.id, { proof: externalHelloProof(secret, nonce) })
+            continue
           }
           const token = typeof request.params?.token === 'string' ? request.params.token : ''
           let session = sessions.get(token)

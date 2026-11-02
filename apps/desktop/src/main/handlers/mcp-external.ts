@@ -17,6 +17,8 @@ export interface McpExternalHandlerDeps {
   portFile: string
   /** Writes the bridge source next to the token (idempotent). */
   writeBridge: () => void
+  /** The token changed (created, renewed, revoked): writes queued by the old one are refused. */
+  onTokenChanged?: () => void
   log: { info: LogFn; warn: LogFn }
 }
 
@@ -25,6 +27,7 @@ export type McpExternalIssued =
   | { ok: false; error: string }
 
 const MODES: readonly McpExternalMode[] = ['read', 'read-write']
+const MAX_ID = 200
 
 function scopeOf(input: unknown): McpExternalScope | null {
   if (!input || typeof input !== 'object') return null
@@ -32,11 +35,18 @@ function scopeOf(input: unknown): McpExternalScope | null {
   const projectId =
     value.projectId === null || value.projectId === undefined
       ? null
-      : typeof value.projectId === 'string' && value.projectId.trim()
+      : typeof value.projectId === 'string' &&
+          value.projectId.trim() &&
+          value.projectId.length <= MAX_ID
         ? value.projectId.trim()
         : undefined
   if (projectId === undefined) return null
-  if (typeof value.financialProfileId !== 'string' || !value.financialProfileId.trim()) return null
+  if (
+    typeof value.financialProfileId !== 'string' ||
+    !value.financialProfileId.trim() ||
+    value.financialProfileId.length > MAX_ID
+  )
+    return null
   if (!MODES.includes(value.mode as McpExternalMode)) return null
   return {
     projectId,
@@ -67,6 +77,7 @@ export function registerMcpExternalHandlers(ipcMain: IpcMain, deps: McpExternalH
     try {
       deps.writeBridge()
       const { token, status } = deps.store.create(scope)
+      deps.onTokenChanged?.()
       deps.log.info('mcp', 'external_token_created', { mode: scope.mode })
       return issued(token, status)
     } catch {
@@ -80,6 +91,7 @@ export function registerMcpExternalHandlers(ipcMain: IpcMain, deps: McpExternalH
       deps.writeBridge()
       const renewed = deps.store.renew()
       if (!renewed) return fail('Nenhum acesso externo para renovar.')
+      deps.onTokenChanged?.()
       deps.log.info('mcp', 'external_token_created', { mode: renewed.status.scope?.mode ?? '' })
       return issued(renewed.token, renewed.status)
     } catch {
@@ -90,6 +102,7 @@ export function registerMcpExternalHandlers(ipcMain: IpcMain, deps: McpExternalH
 
   ipcMain.handle('mcp-external:revoke', (): McpExternalStatus => {
     deps.store.revoke()
+    deps.onTokenChanged?.()
     deps.log.info('mcp', 'external_token_revoked')
     return deps.store.status()
   })

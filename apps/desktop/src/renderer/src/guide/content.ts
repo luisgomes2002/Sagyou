@@ -475,7 +475,7 @@ const sessoesCodigo: GuideArticle[] = [
       {
         type: 'callout',
         tone: 'warning',
-        text: 'Excluir, mexer em dinheiro, arquivar projeto, criar tabelas ou perfis financeiros, salvar memória e criar_task são sempre recusados por este acesso: faça pelo Sagyou ou por uma sessão de código.'
+        text: 'Criar e editar tarefas funciona. Excluir, mexer em dinheiro, arquivar projeto, criar tabelas ou perfis financeiros e salvar memória são sempre recusados por este acesso: faça pelo Sagyou ou por uma sessão de código.'
       },
       {
         type: 'p',

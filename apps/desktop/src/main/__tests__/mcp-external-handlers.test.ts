@@ -16,6 +16,7 @@ type LogSpy = (...args: unknown[]) => void
 let info: Mock<LogSpy>
 let warn: Mock<LogSpy>
 let bridgeWrites: number
+let changes: number
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'sagyou-mcp-ext-ipc-'))
@@ -23,6 +24,7 @@ beforeEach(() => {
   info = vi.fn<LogSpy>()
   warn = vi.fn<LogSpy>()
   bridgeWrites = 0
+  changes = 0
   const ipcMain = {
     handle: (channel: string, fn: (event: unknown, ...args: unknown[]) => unknown) =>
       handlers.set(channel, fn)
@@ -34,6 +36,9 @@ beforeEach(() => {
     portFile: join(dir, 'mcp-external-port'),
     writeBridge: () => {
       bridgeWrites += 1
+    },
+    onTokenChanged: () => {
+      changes += 1
     },
     log: { info, warn }
   })
@@ -109,5 +114,23 @@ describe('mcp-external:*', () => {
     expect(invoke('mcp-external:revoke')).toEqual({ state: 'none' })
     expect(existsSync(join(dir, 'mcp-external.json'))).toBe(false)
     expect(info).toHaveBeenCalledWith('mcp', 'external_token_revoked')
+  })
+
+  it('avisa a troca do token (fila do token antigo) ao gerar, renovar e revogar', () => {
+    invoke('mcp-external:create', { projectId: null, financialProfileId: 'p', mode: 'read' })
+    invoke('mcp-external:renew')
+    invoke('mcp-external:revoke')
+    expect(changes).toBe(3)
+  })
+
+  it('recusa ids enormes vindos do renderer', () => {
+    expect(
+      invoke('mcp-external:create', {
+        projectId: 'x'.repeat(201),
+        financialProfileId: 'p',
+        mode: 'read'
+      })
+    ).toEqual({ ok: false, error: 'Escolha o perfil financeiro e o tipo de acesso.' })
+    expect(changes).toBe(0)
   })
 })

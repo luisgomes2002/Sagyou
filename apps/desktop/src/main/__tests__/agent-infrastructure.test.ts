@@ -18,7 +18,11 @@ import {
 } from '../modules/agent/agent-pty'
 import { AgentWorktreeManager } from '../modules/agent/agent-worktree'
 import { ensurePrivateWorkspaceRepository, listWorktrees } from '../modules/agent/git-worktree'
-import { collectAgentPatch, patchWithinScope, validatePatchScope } from '../modules/agent/agent-diff'
+import {
+  collectAgentPatch,
+  patchWithinScope,
+  validatePatchScope
+} from '../modules/agent/agent-diff'
 import { deliverApprovedPatch, type DeliveryCoordinator } from '../modules/agent/agent-delivery'
 import { prepareAgentMcpSession } from '../modules/agent/agent-mcp-session'
 import { MCP_PERMISSIONS, type McpSession } from '../modules/agent/sagyou-mcp'
@@ -397,12 +401,12 @@ describe('agent infrastructure', () => {
     expect(existsSync(join(originalDir, '.git'))).toBe(true)
     expect(await readFile(join(originalDir, 'draft.txt'), 'utf8')).toBe('keep this file\n')
     expect(first.worktreeDir).not.toBe(second.worktreeDir)
-    expect((await readFile(join(first.worktreeDir, 'draft.txt'), 'utf8')).replace(/\r\n/g, '\n')).toBe(
-      'keep this file\n'
-    )
-    expect((await readFile(join(second.worktreeDir, 'draft.txt'), 'utf8')).replace(/\r\n/g, '\n')).toBe(
-      'keep this file\n'
-    )
+    expect(
+      (await readFile(join(first.worktreeDir, 'draft.txt'), 'utf8')).replace(/\r\n/g, '\n')
+    ).toBe('keep this file\n')
+    expect(
+      (await readFile(join(second.worktreeDir, 'draft.txt'), 'utf8')).replace(/\r\n/g, '\n')
+    ).toBe('keep this file\n')
 
     await worktrees.remove(first)
     await worktrees.remove(second)
@@ -548,6 +552,34 @@ describe('agent infrastructure', () => {
     expect(existsSync(join(dir, '.sagyou-mcp.json'))).toBe(false)
   })
 
+  // Security review: Claude Code merges --mcp-config with the user-scope
+  // servers, so a Fleet run also got the 30-day external token's tools.
+  it('a Claude Code Fleet run never gets the external token server', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'sagyou-agent-mcp-'))
+    made.push(dir)
+    const prepared = await prepareAgentMcpSession({
+      broker: { port: () => 4567, grant: () => {}, revoke: () => {} },
+      token: 'secret',
+      runId: 'run-claude',
+      projectId: null,
+      financialProfileId: 'personal',
+      permissions: MCP_PERMISSIONS,
+      worktreeDir: dir,
+      executor: 'claude-code',
+      executable: process.execPath,
+      args: ['--permission-mode', 'default'],
+      env: {}
+    })
+    expect(prepared.args.slice(0, 4)).toEqual([
+      '--disallowedTools',
+      'mcp__sagyou-externo',
+      '--mcp-config',
+      join(dir, '.sagyou-mcp.json')
+    ])
+    expect(prepared.args.slice(4)).toEqual(['--permission-mode', 'default'])
+    await prepared.cleanup()
+  })
+
   it('connects the disposable stdio bridge to loopback without exposing its token', async () => {
     const token = 'test-capability'
     let authorized = false
@@ -619,7 +651,11 @@ describe('agent infrastructure', () => {
           jsonrpc: '2.0',
           id: 1,
           method: 'initialize',
-          params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'test', version: '1' } }
+          params: {
+            protocolVersion: '2024-11-05',
+            capabilities: {},
+            clientInfo: { name: 'test', version: '1' }
+          }
         }) + '\n'
       )
       const line = await Promise.race([

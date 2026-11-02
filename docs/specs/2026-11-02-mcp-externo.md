@@ -144,3 +144,14 @@ backup: `mcp-external.json` (hash e metadados, 0600), `mcp-external-bridge.cjs`
 ## Perguntas em aberto
 
 (nenhuma)
+
+## Adendo (Luis, 2026-11-02, depois do review)
+
+- `criar_task` **passa** pelo token externo, sem cartão: criar tarefa é o uso principal
+  (teste da 5.5) e era a única ferramenta que cria tarefa. `save_memory` continua
+  recusado.
+- O arquivo de porta leva também um segredo por abertura; a ponte só manda o token
+  depois de o broker provar que o conhece (desafio HMAC). Isso fecha o risco da porta
+  velha, que no Windows sobra a cada desligamento, não só em crash.
+- Sessões Claude Code do Fleet rodam com `--disallowedTools mcp__sagyou-externo`, para
+  nunca usarem o token de 30 dias no lugar da credencial da run.

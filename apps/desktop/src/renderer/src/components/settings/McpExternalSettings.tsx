@@ -20,7 +20,7 @@ export const NONE_TEXT = 'Nenhum acesso externo.'
 export const ONCE_TEXT =
   'Este é o único momento em que o token aparece. Guarde o comando ou gere outro depois.'
 export const PLAIN_TEXT_WARNING =
-  'O Claude Code guarda o token em texto na configuração dele (~/.claude.json). Revogar aqui o invalida na hora.'
+  'O Claude Code guarda o token em texto na configuração dele (~/.claude.json), e o comando colado fica no histórico do terminal e da área de transferência (Win+V). Revogar aqui o invalida na hora.'
 export const REVOKE_MESSAGE =
   'Revogar o acesso MCP externo? O Claude que usa este token perde o acesso na hora.'
 
@@ -61,11 +61,13 @@ export function McpExternalSettings({ onToast }: Props): JSX.Element {
     void refresh().catch(() => setError('Não foi possível ler o acesso MCP externo.'))
   }, [refresh])
 
-  const run = async (action: () => Promise<void>): Promise<void> => {
+  const run = async (action: () => Promise<void>, fallback: string): Promise<void> => {
     setBusy(true)
     setError('')
     try {
       await action()
+    } catch {
+      setError(fallback)
     } finally {
       setBusy(false)
     }
@@ -83,18 +85,23 @@ export function McpExternalSettings({ onToast }: Props): JSX.Element {
   }
 
   const create = (): Promise<void> =>
-    run(async () =>
-      take(
-        await window.electronAPI.mcpExternal.create({
-          projectId: projectId || null,
-          financialProfileId: profileId,
-          mode
-        })
-      )
+    run(
+      async () =>
+        take(
+          await window.electronAPI.mcpExternal.create({
+            projectId: projectId || null,
+            financialProfileId: profileId,
+            mode
+          })
+        ),
+      'Não foi possível gerar o acesso MCP externo.'
     )
 
   const renew = (): Promise<void> =>
-    run(async () => take(await window.electronAPI.mcpExternal.renew()))
+    run(
+      async () => take(await window.electronAPI.mcpExternal.renew()),
+      'Não foi possível renovar o acesso MCP externo.'
+    )
 
   const revoke = (): Promise<void> =>
     run(async () => {
@@ -102,7 +109,7 @@ export function McpExternalSettings({ onToast }: Props): JSX.Element {
       setIssued(null)
       setStatus(await window.electronAPI.mcpExternal.revoke())
       onToast('Acesso MCP externo revogado.')
-    })
+    }, 'Não foi possível revogar o acesso MCP externo.')
 
   const copy = async (): Promise<void> => {
     if (!issued) return

@@ -134,4 +134,18 @@ describe('Acesso MCP externo', () => {
       'Não foi possível gerar o acesso MCP externo.'
     )
   })
+
+  // Review: a failing IPC closed the dialog, changed nothing and said nothing.
+  it('se revogar falha, mostra o erro e mantém o acesso na tela', async () => {
+    api.status.mockResolvedValue(ACTIVE)
+    api.revoke.mockRejectedValue(new Error('EPERM'))
+    render(<McpExternalSettings onToast={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Revogar' }))
+    const buttons = screen.getAllByRole('button', { name: 'Revogar' })
+    fireEvent.click(buttons[buttons.length - 1])
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Não foi possível revogar o acesso MCP externo.'
+    )
+    expect(screen.getByText('Nunca usado')).toBeInTheDocument()
+  })
 })

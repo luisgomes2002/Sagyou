@@ -15,6 +15,7 @@ import {
 } from '../modules/agent/mcp-external'
 import {
   EXTERNAL_RUN_ID,
+  externalSkipsCard,
   isExternalRisky,
   tracksRunState
 } from '../modules/agent/mcp-external-policy'
@@ -123,7 +124,11 @@ describe('política do token externo', () => {
     for (const name of MCP_APPROVAL_REQUIRED)
       expect([name, isExternalRisky(name)]).toEqual([name, true])
     expect(isExternalRisky('save_memory')).toBe(true)
-    expect(isExternalRisky('criar_task')).toBe(true)
+    // Decided 2026-11-02: creating tasks is the external token's main use.
+    expect(isExternalRisky('criar_task')).toBe(false)
+    expect(externalSkipsCard(EXTERNAL_RUN_ID, 'criar_task')).toBe(true)
+    expect(externalSkipsCard('run-do-fleet', 'criar_task')).toBe(false)
+    expect(externalSkipsCard(EXTERNAL_RUN_ID, 'update_task')).toBe(false)
     expect(isExternalRisky('update_task')).toBe(false)
     expect(isExternalRisky('read_tasks')).toBe(false)
   })

@@ -100,19 +100,28 @@ export function createMcpExternalStore(deps: {
   file: string
   now: () => number
 }): McpExternalStore {
+  // This store is the file's only writer, so it is read once and then kept in
+  // memory: a local process flooding the broker with bad tokens costs no disk I/O.
   // An unreadable or malformed file reads as "no token": access stays refused.
+  let cache: { value: StoredToken | null } | null = null
   const read = (): StoredToken | null => {
+    if (cache) return cache.value
+    let value: StoredToken | null = null
     try {
-      return existsSync(deps.file) ? parse(readFileSync(deps.file, 'utf8')) : null
+      value = existsSync(deps.file) ? parse(readFileSync(deps.file, 'utf8')) : null
     } catch {
-      return null
+      value = null
     }
+    cache = { value }
+    return value
   }
 
   const write = (stored: StoredToken): void => {
     const tmp = `${deps.file}.tmp`
+    // 0600 holds on POSIX; on Windows the file inherits userData's ACL (only a hash is in it).
     writeFileSync(tmp, JSON.stringify(stored), { encoding: 'utf8', mode: 0o600 })
     renameSync(tmp, deps.file)
+    cache = { value: stored }
   }
 
   const statusOf = (stored: StoredToken | null): McpExternalStatus => {
@@ -164,6 +173,7 @@ export function createMcpExternalStore(deps: {
     },
     revoke: () => {
       rmSync(deps.file, { force: true })
+      cache = { value: null }
     },
     verify: (token) => {
       const stored = read()
@@ -188,13 +198,24 @@ export function createMcpExternalStore(deps: {
       const stored = read()
       if (!stored) return
       lastWrittenUse = now
-      write({ ...stored, lastUsedAt: now })
+      // Only informative: a locked file must never fail the MCP call that used the token.
+      try {
+        write({ ...stored, lastUsedAt: now })
+      } catch {
+        cache = { value: { ...stored, lastUsedAt: now } }
+      }
     },
     expiresAt: () => read()?.expiresAt ?? null,
     lastNoticeDay: () => read()?.lastNoticeDay ?? null,
     markNoticed: (day) => {
       const stored = read()
-      if (stored) write({ ...stored, lastNoticeDay: day })
+      if (!stored) return
+      try {
+        write({ ...stored, lastNoticeDay: day })
+      } catch {
+        // Best effort: at worst the notice repeats after the next launch.
+        cache = { value: { ...stored, lastNoticeDay: day } }
+      }
     }
   }
 }
