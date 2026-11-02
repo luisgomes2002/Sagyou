@@ -11,6 +11,7 @@ import {
   type TaskImage,
   type FeatureId
 } from './types'
+import { isViewEnabled, type AppView } from './navigation'
 import { isDoneColumn, isTaskDone } from './utils/columns'
 import { isGoalComplete } from './utils/goals'
 import { TitleBar } from './components/layout/TitleBar'
@@ -218,24 +219,7 @@ export default function App() {
   const [viewTask, setViewTask] = useState<Task | null>(null)
   const [projectModal, setProjectModal] = useState<ProjectModalState>({ open: false })
   const [columnModal, setColumnModal] = useState<ColumnModalState>({ open: false })
-  const [activeView, setActiveView] = useState<
-    | 'home'
-    | 'board'
-    | 'canvas'
-    | 'done'
-    | 'goals'
-    | 'habits'
-    | 'financial'
-    | 'upcoming'
-    | 'reports'
-    | 'files'
-    | 'ai'
-    | 'memory'
-    | 'planejamento'
-    | 'graph'
-    | 'guide'
-    | 'settings'
-  >('home')
+  const [activeView, setActiveView] = useState<AppView>('home')
   const [searchOpen, setSearchOpen] = useState(false)
   const [financialSearchTarget, setFinancialSearchTarget] = useState<GlobalSearchHit | null>(null)
   const [financialSearchSerial, setFinancialSearchSerial] = useState(0)
@@ -284,23 +268,7 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    const viewFeatures: Partial<Record<typeof activeView, FeatureId>> = {
-      board: 'kanban',
-      upcoming: 'kanban',
-      done: 'kanban',
-      goals: 'goals',
-      habits: 'habits',
-      financial: 'financial',
-      planejamento: 'planning',
-      reports: 'reports',
-      canvas: 'canvas',
-      files: 'files',
-      graph: 'graph',
-      ai: 'ai',
-      memory: 'ai'
-    }
-    const feature = viewFeatures[activeView]
-    if (feature && !enabledFeatures.includes(feature)) setActiveView('home')
+    if (!isViewEnabled(activeView, enabledFeatures)) setActiveView('home')
   }, [activeView, enabledFeatures])
 
   useEffect(() => {
@@ -745,7 +713,7 @@ export default function App() {
                 onNavigate={(view) => {
                   setSearchTarget(null)
                   setFinancialSearchTarget(null)
-                  setActiveView(view as typeof activeView)
+                  setActiveView(view as AppView)
                 }}
               />
             ) : activeView === 'reports' ? (

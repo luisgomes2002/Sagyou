@@ -1,24 +1,9 @@
 ﻿import { useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import type { FeatureId, Project } from '../../types'
+import type { AppView } from '../../navigation'
 
-type ActiveView =
-  | 'home'
-  | 'board'
-  | 'canvas'
-  | 'done'
-  | 'goals'
-  | 'habits'
-  | 'financial'
-  | 'upcoming'
-  | 'reports'
-  | 'files'
-  | 'ai'
-  | 'memory'
-  | 'planejamento'
-  | 'graph'
-  | 'guide'
-  | 'settings'
+type ActiveView = AppView
 
 interface Props {
   projects: Project[]
