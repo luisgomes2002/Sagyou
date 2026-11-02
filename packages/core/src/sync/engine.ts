@@ -262,6 +262,11 @@ export function errorMessage(error: unknown): string {
 export interface SyncEngine {
   start(): void
   stop(): void
+  /**
+   * Stop, after one last cycle that sends what is waiting (the phone going to
+   * the background). Never throws; a `start()` meanwhile keeps the engine on.
+   */
+  flush(): Promise<void>
   notifySaved(): void
   syncNow(): Promise<SyncStatus>
   status(): SyncStatus
@@ -1095,6 +1100,16 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
     stop(): void {
       started = false
       clearTimers()
+    },
+
+    async flush(): Promise<void> {
+      // Stopped first: if the app comes back during the cycle, start() turns
+      // it on again and the cycle's own end schedules the next poll.
+      const wasStarted = started
+      started = false
+      clearTimers()
+      if (!wasStarted || !session || session.config.paused || wiped) return
+      await cycle().catch(() => undefined)
     },
 
     notifySaved,

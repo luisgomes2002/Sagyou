@@ -1007,6 +1007,82 @@ describe('ritmo', () => {
   })
 })
 
+describe('flush (celular indo para segundo plano)', () => {
+  async function single(): Promise<Device> {
+    const a = device(server, clock, ID_A)
+    a.store.save(withData({ projects: [project('p1', 'Casa')] }))
+    await a.engine.activate(SERVER_URL, SETUP, 'PC de casa')
+    await clock.advance(0)
+    return a
+  }
+
+  it('envia na hora o que esperava os 5 s e não deixa timer', async () => {
+    const a = await single()
+    a.store.save({ ...a.store.state, tasks: [task('t1', 'p1', 'Antes de sair')] })
+    a.engine.notifySaved()
+    expect(clock.pending()).toContain(PUSH_DEBOUNCE_MS)
+    const before = server.pushes()
+    await a.engine.flush()
+    expect(server.pushes()).toBe(before + 1)
+    expect(a.store.pendingOutgoingCount()).toBe(0)
+    expect(clock.pending()).toEqual([])
+  })
+
+  it('sem sessão não chama o servidor e só para', async () => {
+    const a = device(server, clock, ID_A)
+    await a.engine.flush()
+    expect(server.requests).toEqual([])
+    expect(clock.pending()).toEqual([])
+  })
+
+  it('sem rede não lança, guarda o pendente e para', async () => {
+    const a = await single()
+    a.store.save({ ...a.store.state, tasks: [task('t1', 'p1', 'Offline')] })
+    a.engine.notifySaved()
+    server.mode = 'down'
+    await expect(a.engine.flush()).resolves.toBeUndefined()
+    expect(a.store.pendingOutgoingCount()).toBe(1)
+    expect(clock.pending()).toEqual([])
+  })
+
+  it('se o app volta durante o envio, continua ligado e sem ciclo em paralelo', async () => {
+    const real = server.fetch
+    let open = 0
+    let most = 0
+    const ctl: { gate: Promise<void> | null; release: () => void } = {
+      gate: null,
+      release: () => undefined
+    }
+    server.fetch = async (url, init) => {
+      open += 1
+      most = Math.max(most, open)
+      try {
+        if (ctl.gate) await ctl.gate
+        return await real(url, init)
+      } finally {
+        open -= 1
+      }
+    }
+    const a = await single()
+    a.store.save({ ...a.store.state, tasks: [task('t1', 'p1', 'Saindo')] })
+    a.engine.notifySaved()
+    ctl.gate = new Promise<void>((resolve) => {
+      ctl.release = resolve
+    })
+    const flushing = a.engine.flush()
+    await flush()
+    a.engine.start()
+    await clock.advance(0)
+    ctl.gate = null
+    ctl.release()
+    await flushing
+    await clock.advance(0)
+    expect(most).toBe(1)
+    expect(a.store.pendingOutgoingCount()).toBe(0)
+    expect(clock.pending()).toEqual([POLL_MS])
+  })
+})
+
 describe('revogar e apagar', () => {
   it('manda a prova da chave e o código somente na ação protegida', async () => {
     const { a, b } = await pairedDevices(withData({}))

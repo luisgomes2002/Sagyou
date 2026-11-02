@@ -142,15 +142,18 @@ describe('runtime do sync no celular', () => {
     s.runtime.dispose()
   })
 
-  it('para em segundo plano, volta em primeiro plano e sincroniza quando a rede volta', () => {
+  it('envia e para em segundo plano, volta em primeiro plano e sincroniza quando a rede volta', () => {
     const s = setup(answer(503, {}))
     const start = jest.spyOn(s.runtime.engine, 'start').mockImplementation(() => undefined)
     const stop = jest.spyOn(s.runtime.engine, 'stop').mockImplementation(() => undefined)
+    const flush = jest.spyOn(s.runtime.engine, 'flush').mockImplementation(async () => undefined)
     const syncNow = jest
       .spyOn(s.runtime.engine, 'syncNow')
       .mockImplementation(async () => s.runtime.engine.status())
     s.app.emit('background')
-    expect(stop).toHaveBeenCalledTimes(1)
+    // Sends what is waiting before stopping, instead of dropping the timers.
+    expect(flush).toHaveBeenCalledTimes(1)
+    expect(stop).not.toHaveBeenCalled()
     s.app.emit('active')
     expect(start).toHaveBeenCalledTimes(1)
     s.net.emit({ isConnected: false })
