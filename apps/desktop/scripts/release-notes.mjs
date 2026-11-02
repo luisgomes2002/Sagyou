@@ -58,7 +58,11 @@ export function touchesApp(files, app) {
 export function pullRequestOf(subject, body) {
   const merge = /^Merge pull request #(\d+)\b/.exec(subject)
   if (merge) {
-    const title = body.split('\n').find((line) => line.trim())?.trim() ?? subject
+    const title =
+      body
+        .split('\n')
+        .find((line) => line.trim())
+        ?.trim() ?? subject
     return { number: Number(merge[1]), title }
   }
   const squash = /^(.*) \(#(\d+)\)$/.exec(subject)
@@ -74,7 +78,8 @@ export function renderNotes({ app, tag, previous, repo, prs }) {
     '## Pull requests',
     ''
   ]
-  if (prs.length === 0) lines.push(`Nenhum pull request mexeu no app ${APP_LABEL[app]} desde a versão anterior.`)
+  if (prs.length === 0)
+    lines.push(`Nenhum pull request mexeu no app ${APP_LABEL[app]} desde a versão anterior.`)
   for (const pr of prs) lines.push(`- ${pr.title} (#${pr.number})`)
   if (app === 'mobile') {
     lines.push('', 'Publique sem marcar como Latest: o Latest é do desktop.')
@@ -104,7 +109,9 @@ export function collect(tag, repo) {
     if (!hash) continue
     const pr = pullRequestOf(subject, body)
     if (!pr) continue
-    const files = git(['diff', '--name-only', `${hash}^1`, hash]).split('\n').filter(Boolean)
+    const files = git(['diff', '--name-only', `${hash}^1`, hash])
+      .split('\n')
+      .filter(Boolean)
     if (touchesApp(files, info.app)) prs.push(pr)
   }
   // git log is newest first; the notes read oldest first, like GitHub's.
