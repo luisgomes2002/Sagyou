@@ -67,6 +67,16 @@ describe('guide content', () => {
     }
   })
 
+  // Spec 2026-11-03-acesso-remoto: no expiry, full access, optional locked mode.
+  it('describes the external MCP token as it is now', () => {
+    const text = articleText(findArticle('mcp-externo')!.article)
+    for (const gone of ['30 dias', 'Renovar', 'Só leitura', 'vencer', 'Três dias'])
+      expect([gone, text.includes(gone)]).toEqual([gone, false])
+    expect(text).toContain('não vence')
+    expect(text).toContain('Funcionar com o Sagyou bloqueado')
+    expect(text).toContain('Gerar novo token')
+  })
+
   it('no longer talks about the removed chat', () => {
     for (const article of allArticles) {
       const text = articleText(article)
