@@ -26,6 +26,8 @@ import type {
   SyncSecondFactor,
   SyncStatus
 } from '../main/modules/sync/sync-engine'
+import type { RemoteResult, RemoteStatusView } from '../main/handlers/remote'
+import type { PendingAuthorization } from '../main/modules/remote/remote-service'
 
 /** A user-written Skill (.md file in userData/skills/). */
 interface Skill {
@@ -209,7 +211,40 @@ export const api = {
         ipcRenderer.removeListener('security:lock-request', handler)
       }
     },
-    lockReady: (): Promise<void> => ipcRenderer.invoke('security:lock-ready')
+    lockReady: (): Promise<void> => ipcRenderer.invoke('security:lock-ready'),
+    /** The authorized phone unlocked the app: leave the lock screen (the store is not reloaded). */
+    onRemoteUnlocked: (cb: () => void) => {
+      const handler = (): void => cb()
+      ipcRenderer.on('security:remote-unlocked', handler)
+      return (): void => {
+        ipcRenderer.removeListener('security:remote-unlocked', handler)
+      }
+    }
+  },
+  // Remote control of this PC from the authorized phone (Configurações → Controle remoto).
+  remote: {
+    status: (): Promise<RemoteStatusView> => ipcRenderer.invoke('remote:status'),
+    enable: (factor?: SyncSecondFactor): Promise<RemoteResult> =>
+      ipcRenderer.invoke('remote:enable', factor),
+    disable: (): Promise<RemoteResult> => ipcRenderer.invoke('remote:disable'),
+    authorizations: (): Promise<PendingAuthorization[]> =>
+      ipcRenderer.invoke('remote:authorizations'),
+    authorize: (id: string, password: string): Promise<RemoteResult> =>
+      ipcRenderer.invoke('remote:authorize', id, password),
+    refuse: (id: string): Promise<RemoteResult> => ipcRenderer.invoke('remote:refuse', id),
+    revoke: (controllerId: string): Promise<RemoteResult> =>
+      ipcRenderer.invoke('remote:revoke', controllerId),
+    setServers: (names: string[]): Promise<RemoteResult> =>
+      ipcRenderer.invoke('remote:servers:set', names),
+    createEsp32: (factor?: SyncSecondFactor): Promise<RemoteResult<{ token: string; key: string }>> =>
+      ipcRenderer.invoke('remote:esp32:create', factor),
+    onStatusChanged: (cb: (status: RemoteStatusView) => void) => {
+      const handler = (_: Electron.IpcRendererEvent, status: RemoteStatusView): void => cb(status)
+      ipcRenderer.on('remote:status-changed', handler)
+      return (): void => {
+        ipcRenderer.removeListener('remote:status-changed', handler)
+      }
+    }
   },
   // This machine's tray, startup and automatic-lock preferences.
   desktop: {
@@ -621,6 +656,14 @@ export const api = {
         ipcRenderer.on('ai:code-agent:approve-request', handler)
         return (): void => {
           ipcRenderer.removeListener('ai:code-agent:approve-request', handler)
+        }
+      },
+      // A card was answered (here or on the phone), expired or dropped: remove it.
+      onApprovalClosed: (cb: (id: string) => void) => {
+        const handler = (_: Electron.IpcRendererEvent, id: string): void => cb(id)
+        ipcRenderer.on('ai:code-agent:approval-closed', handler)
+        return (): void => {
+          ipcRenderer.removeListener('ai:code-agent:approval-closed', handler)
         }
       },
       // A recognised environment failure hit mid-run (e.g. the sandbox couldn't

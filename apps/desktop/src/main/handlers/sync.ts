@@ -17,6 +17,8 @@ interface SyncHandlerDeps {
   verifyAppPassword: (password: unknown) => boolean
   /** Used when the renderer sends no device name (the OS host name). */
   defaultDeviceName: () => string
+  /** After a revoke: the remote control drops that device if it was a controller. */
+  onRevoked?: () => void
 }
 
 const GENERIC_ERROR = 'Não foi possível concluir a operação de sincronização.'
@@ -98,6 +100,7 @@ export function registerSyncHandlers(ipcMain: IpcMain, deps: SyncHandlerDeps): v
     run('revoke', async () => {
       if (typeof wipe !== 'boolean') throw new SyncUserError('Dados inválidos.')
       await engine.revoke(text(id, 64), wipe, factorOf(factor))
+      deps.onRevoked?.()
       return {}
     })
   )

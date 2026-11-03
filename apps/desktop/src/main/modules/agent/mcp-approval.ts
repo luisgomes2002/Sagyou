@@ -47,3 +47,23 @@ export function parkMcpApproval<R extends { id: string; expiresAt?: string }>(
     send(card)
   })
 }
+
+/**
+ * Answers a parked card by id, from the PC or the phone. Only the first answer
+ * for an id still pending counts; a second one, a late one or a made-up id
+ * finds nothing and returns false.
+ */
+export function resolveMcpApproval(
+  maps: Iterable<Map<string, { resolve: (approved: boolean) => void }>>,
+  id: string,
+  approved: boolean
+): boolean {
+  for (const pending of maps) {
+    const entry = pending.get(id)
+    if (!entry) continue
+    pending.delete(id)
+    entry.resolve(approved === true)
+    return true
+  }
+  return false
+}

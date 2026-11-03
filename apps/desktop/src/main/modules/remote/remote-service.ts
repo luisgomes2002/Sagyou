@@ -81,6 +81,8 @@ export interface RemoteServiceDeps {
   devices: () => Promise<{ id: string; revoked: boolean }[]>
   esp32Key: () => Uint8Array | null
   log: Pick<Logger, 'info' | 'warn'>
+  /** After a cycle that changed what the settings screen shows. */
+  onChange?: () => void
 }
 
 export interface RemoteService {
@@ -118,12 +120,14 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
   let lastStatusAt = Number.NEGATIVE_INFINITY
   let lastDevicesAt = Number.NEGATIVE_INFINITY
   let lastError: ControlErrorCode | null = null
+  let dirty = false
   const pending = new Map<string, Pending>()
 
   const isActive = (): boolean => wanted && syncActive && deps.config().enabled
 
   const update = (fn: (c: RemoteConfig) => RemoteConfig): void => {
     deps.save(fn(deps.config()))
+    dirty = true
   }
 
   const suspendedUntil = (now: number): number | null => {
@@ -203,6 +207,7 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
     accepted()
     const priv = deps.pcPrivateKey()
     if (!priv) return
+    dirty = true
     pending.set(msg.from, {
       id: msg.from,
       name: body.name,
@@ -349,7 +354,10 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
 
   const noteError = (error: unknown): void => {
     const code: ControlErrorCode = error instanceof ControlError ? error.code : 'offline'
-    if (code !== lastError) log.warn('remote', 'cycle_failed', { code })
+    if (code !== lastError) {
+      log.warn('remote', 'cycle_failed', { code })
+      dirty = true
+    }
     lastError = code
   }
 
@@ -369,7 +377,12 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
     busy = true
     try {
       const now = deps.now()
-      for (const [id, p] of pending) if (p.expiresAt <= now) pending.delete(id)
+      for (const [id, p] of pending) {
+        if (p.expiresAt <= now) {
+          pending.delete(id)
+          dirty = true
+        }
+      }
       const cfg = deps.config()
       if (cfg.suspendedUntil !== null && now >= cfg.suspendedUntil) {
         update((c) => ({ ...c, suspendedUntil: null, failures: 0 }))
@@ -407,9 +420,16 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
           failed = true
         }
       }
-      if (!failed) lastError = null
+      if (!failed && lastError !== null) {
+        lastError = null
+        dirty = true
+      }
     } finally {
       busy = false
+      if (dirty) {
+        dirty = false
+        deps.onChange?.()
+      }
     }
   }
 

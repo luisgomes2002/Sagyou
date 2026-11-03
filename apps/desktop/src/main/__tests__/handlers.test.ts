@@ -299,6 +299,33 @@ describe('legacy chat removal on startup', () => {
   })
 })
 
+describe('controle remoto', () => {
+  it('registra os canais remote:* atrás do desbloqueio', () => {
+    for (const ch of [
+      'remote:status',
+      'remote:enable',
+      'remote:disable',
+      'remote:authorizations',
+      'remote:authorize',
+      'remote:refuse',
+      'remote:revoke',
+      'remote:servers:set',
+      'remote:esp32:create'
+    ]) {
+      expect(handlers.has(ch)).toBe(true)
+    }
+    const foreign = { sender: { getURL: () => 'https://evil.example/' } }
+    expect(() => handlers.get('remote:status')?.(foreign)).toThrow('Solicitação IPC recusada.')
+  })
+
+  it('o estado começa desligado e sem chaves', async () => {
+    const status = await invoke<{ enabled: boolean; controllers: unknown[]; hasEsp32Key: boolean }>(
+      'remote:status'
+    )
+    expect(status).toMatchObject({ enabled: false, controllers: [], hasEsp32Key: false })
+  })
+})
+
 describe('main handlers are registered', () => {
   it('exposes the code and config channels that remain', () => {
     for (const ch of [
