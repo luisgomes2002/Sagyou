@@ -48,7 +48,6 @@ import {
 } from './modules/agent/mcp-write-queue'
 import { parkMcpApproval } from './modules/agent/mcp-approval'
 import {
-  MCP_APPROVAL_REQUIRED,
   MCP_MEMORY_TOOLS,
   autoApprovesPending,
   mcpWriteResult,
@@ -122,23 +121,24 @@ import { fetchWeb } from './modules/web/web-fetch'
 import { renderWeb } from './modules/web/web-render'
 import { getExchangeRate } from './modules/financial/financial-exchange'
 import {
+  EXTERNAL_PERMISSIONS,
   MCP_EXTERNAL_BRIDGE_SOURCE,
-  externalPermissions,
   startSagyouMcpBroker
 } from './modules/agent/sagyou-mcp'
 import {
   MCP_EXTERNAL_FILE,
   MCP_EXTERNAL_FILE_DEV,
   createMcpExternalStore,
-  expiryNotice,
   type McpExternalStore
 } from './modules/agent/mcp-external'
 import {
   EXTERNAL_RUN_ID,
-  externalSkipsCard,
+  externalApproval,
   tracksRunState
 } from './modules/agent/mcp-external-policy'
 import { registerMcpExternalHandlers } from './handlers/mcp-external'
+import { mcpFinancialTables } from './modules/agent/mcp-financial-scope'
+import { createLockedSaveGate, externalBlockedByLock } from './modules/agent/mcp-external-lock'
 import { configureLog, createLogger, errorMessage, log } from './modules/logs/logger'
 import { captureBase, diffSince, type AgentBase, type DiffLineItem } from './modules/code/code-diff'
 import { safeAttachmentName } from './modules/files/backup-files'
@@ -236,9 +236,12 @@ function assertTrustedRenderer(event: IpcMainInvokeEvent | IpcMainEvent): void {
 }
 
 /** All user data stays unavailable until the password screen unlocks the app. */
-function assertUnlockedDataAccess(event: IpcMainInvokeEvent | IpcMainEvent): void {
+function assertUnlockedDataAccess(event: IpcMainInvokeEvent | IpcMainEvent, channel: string): void {
   assertTrustedRenderer(event)
-  if (!passwordUnlocked) throw new Error('Desbloqueie o Sagyou para acessar os dados.')
+  // The one exception: the flush of an external write main itself asked for
+  // while locked ("Funcionar com o Sagyou bloqueado"). Never any other channel.
+  if (!passwordUnlocked && !lockedSaveGate.allows(channel))
+    throw new Error('Desbloqueie o Sagyou para acessar os dados.')
 }
 
 /**
@@ -254,38 +257,42 @@ function protectDataIpc(ipc: IpcMain): void {
     listener: (event: IpcMainInvokeEvent, ...args: never[]) => unknown
   ) =>
     registerHandle(channel, (event, ...args) => {
-      assertUnlockedDataAccess(event)
+      assertUnlockedDataAccess(event, channel)
       return listener(event, ...(args as never[]))
     })) as IpcMain['handle']
   ipc.on = ((channel: string, listener: (event: IpcMainEvent, ...args: never[]) => unknown) =>
     registerOn(channel, (event, ...args) => {
-      assertUnlockedDataAccess(event)
+      assertUnlockedDataAccess(event, channel)
       return listener(event, ...(args as never[]))
     })) as IpcMain['on']
 }
 const sagyouMcp = startSagyouMcpBroker({
   // Asked only when no Fleet run owns the token.
+  // Full access, no expiry: every project, every financial profile, every tool.
   externalSession: (token) => {
-    const verified = mcpExternal?.verify(token)
-    if (!verified) return null
-    if (!verified.ok) return verified.reason === 'expired' ? 'expired' : null
+    if (!mcpExternal?.verify(token).ok) return null
     return {
       token,
       runId: EXTERNAL_RUN_ID,
-      projectId: verified.scope.projectId,
-      financialProfileId: verified.scope.financialProfileId,
-      permissions: externalPermissions(verified.scope.mode)
+      projectId: null,
+      financialProfileId: null,
+      permissions: EXTERNAL_PERMISSIONS
     }
   },
   onExternalUse: () => mcpExternal?.touch(),
   externalHelloSecret: () => (mcpExternalPortFile ? mcpExternalHelloSecret : null),
-  onExternalRefused: (reason) => log.info('mcp', 'external_refused', { reason }),
   // Called per request, long after codeRuns (declared below) exists.
   isRunLive: (runId) => isMcpRunLive(runId),
-  isLocked: () => isAppLocked(),
+  isLocked: (runId, kind) => {
+    if (runId !== EXTERNAL_RUN_ID) return isAppLocked()
+    if (externalLocked()) return true
+    // Served on the password screen: only the kind is logged, never the tool.
+    if (isAppLocked()) log.info('mcp', 'external_locked_call', { kind })
+    return false
+  },
   readLogs: (query) => log.readLogs(query),
   onToolCall: (call) => log.info('mcp', 'tool_call', call),
-  readScopedData: (domain, session, projectId) => {
+  readScopedData: (domain, session, projectId, profileFilter) => {
     const data = loadData()
     if (domain === 'tasks')
       return projectId ? data.tasks.filter((item) => item.projectId === projectId) : data.tasks
@@ -302,16 +309,17 @@ const sagyouMcp = startSagyouMcpBroker({
       return projectId ? data.notes.filter((item) => item.projectId === projectId) : data.notes
     if (domain === 'goals')
       return projectId ? data.goals.filter((item) => item.projectId === projectId) : data.goals
-    return data.lists
-      .filter((list) => list.profileId === session.financialProfileId)
-      .flatMap((list) =>
-        list.transactions.map((transaction) => ({
-          ...transaction,
-          listId: list.id,
-          listName: list.name,
-          currency: list.currency
-        }))
-      )
+    return mcpFinancialTables(data, session.financialProfileId, profileFilter).flatMap((list) =>
+      list.transactions.map((transaction) => ({
+        ...transaction,
+        listId: list.id,
+        listName: list.name,
+        currency: list.currency,
+        ...(session.financialProfileId === null
+          ? { profileId: list.profileId, profileName: list.profileName }
+          : {})
+      }))
+    )
   },
   listProjects: () =>
     loadData().projects.map(({ id, name, description, archivedAt }) => ({
@@ -334,12 +342,16 @@ const sagyouMcp = startSagyouMcpBroker({
         columnId
       }))
   },
-  readFinancial: (profileId) => {
-    const data = loadData()
-    return data.lists
-      .filter((list) => list.profileId === profileId)
-      .map(({ id, name, currency, transactions }) => ({ id, name, currency, transactions }))
-  },
+  readFinancial: (profileId, filter) =>
+    mcpFinancialTables(loadData(), profileId, filter).map(
+      ({ id, name, currency, transactions, profileId: tableProfile, profileName }) => ({
+        id,
+        name,
+        currency,
+        transactions,
+        ...(profileId === null ? { profileId: tableProfile, profileName } : {})
+      })
+    ),
   readProjectData: (projectId) => {
     const data = loadData()
     return {
@@ -370,7 +382,8 @@ const sagyouMcp = startSagyouMcpBroker({
       {
         runId: session.runId,
         name: 'save_memory',
-        args: { tipo: memory.type, titulo: memory.title, corpo: memory.body, tags: memory.tags }
+        args: { tipo: memory.type, titulo: memory.title, corpo: memory.body, tags: memory.tags },
+        approval: externalApproval(session.runId, 'save_memory')
       },
       async () => {
         // Memory is main-owned SQLite data; upsert completes before the reply.
@@ -401,17 +414,20 @@ const sagyouMcp = startSagyouMcpBroker({
         name: 'criar_task',
         args: { projectId, titulo: title },
         // No run can answer a card for the external token: it creates tasks directly.
-        ...(externalSkipsCard(session.runId, 'criar_task') ? { approval: false } : {})
+        approval: externalApproval(session.runId, 'criar_task')
       },
       async () => {
-        const id = await requestRendererMcpTask({
-          projectId: project.id,
-          columnId: column.id,
-          title,
-          ...(typeof args.descricao === 'string' && args.descricao.trim()
-            ? { description: args.descricao.trim().slice(0, 5000) }
-            : {})
-        })
+        const id = await withExternalLockedSave(session.runId, (lockedExternal) =>
+          requestRendererMcpTask({
+            projectId: project.id,
+            columnId: column.id,
+            title,
+            ...(typeof args.descricao === 'string' && args.descricao.trim()
+              ? { description: args.descricao.trim().slice(0, 5000) }
+              : {}),
+            ...(lockedExternal ? { lockedExternal } : {})
+          })
+        )
         return { ok: true, id, titulo: title }
       }
     )
@@ -428,7 +444,7 @@ const sagyouMcp = startSagyouMcpBroker({
           now: new Date().toISOString()
         })
       const outcome = await mcpWriteQueue.enqueue<McpActionResult>(
-        { runId: session.runId, name, args, approval: MCP_APPROVAL_REQUIRED.has(name) },
+        { runId: session.runId, name, args, approval: externalApproval(session.runId, name) },
         async () => {
           // Re-validate: the memory may have changed while the card was up.
           const prepared = prepareMemory()
@@ -444,9 +460,17 @@ const sagyouMcp = startSagyouMcpBroker({
     }
     const scope = { projectId: session.projectId, financialProfileId: session.financialProfileId }
     const outcome = await mcpWriteQueue.enqueue<McpActionResult>(
-      { runId: session.runId, name, args, approval: MCP_APPROVAL_REQUIRED.has(name) },
+      { runId: session.runId, name, args, approval: externalApproval(session.runId, name) },
       () =>
-        rendererMcpActions.request({ phase: 'apply', name, args, scope }).then((result) => {
+        withExternalLockedSave(session.runId, (lockedExternal) =>
+          rendererMcpActions.request({
+            phase: 'apply',
+            name,
+            args,
+            scope,
+            ...(lockedExternal ? { lockedExternal } : {})
+          })
+        ).then((result) => {
           // Recorded when the renderer answers, even if the run ended meanwhile
           // (the queue rejects the caller, but the timer was started all the same).
           // The external token has no end to stop its timers at: they stay the user's.
@@ -455,7 +479,15 @@ const sagyouMcp = startSagyouMcpBroker({
           return result
         }),
       async () => {
-        const prepared = await rendererMcpActions.request({ phase: 'prepare', name, args, scope })
+        // prepare writes nothing, but the renderer must know a locked store may answer it.
+        const lockedExternal = session.runId === EXTERNAL_RUN_ID && isAppLocked()
+        const prepared = await rendererMcpActions.request({
+          phase: 'prepare',
+          name,
+          args,
+          scope,
+          ...(lockedExternal ? { lockedExternal } : {})
+        })
         return prepared.ok ? { resumo: String(prepared.resumo ?? name) } : { refuse: prepared }
       }
     )
@@ -582,6 +614,8 @@ interface McpTaskRequest {
   columnId: string
   title: string
   description?: string
+  /** External token, app locked with "Funcionar com o Sagyou bloqueado" on. */
+  lockedExternal?: boolean
 }
 
 /**
@@ -654,12 +688,56 @@ function applyMemoryOp(op: McpMemoryOp): McpActionResult {
   return { ok: true, id: op.id }
 }
 
-/** A run can only write while it exists, was not stopped and still has its terminal. */
+/**
+ * A run's capability is valid: the run exists, was not stopped and still has
+ * its terminal; for the external token, the token exists. The lock is not
+ * part of this (the broker asks it before anything else and would answer
+ * "Sessão MCP inválida" to a locked external call): see isMcpWriteLive.
+ */
 function isMcpRunLive(runId: string): boolean {
-  // Locked: the queue re-checks this before executing, so nothing external runs.
-  if (runId === EXTERNAL_RUN_ID) return !isAppLocked() && mcpExternal?.status().state === 'active'
+  if (runId === EXTERNAL_RUN_ID) return mcpExternal?.status().state === 'active'
   const run = codeRuns.get(runId)
   return Boolean(run && !run.abort && !(run.interactive && !run.externalChild))
+}
+
+/** The lock stops the external token now (off, or the app is locking). */
+function externalLocked(): boolean {
+  return externalBlockedByLock({
+    locked: !passwordUnlocked,
+    locking: appLock.isLocking(),
+    allowWhileLocked: mcpExternal?.allowWhileLocked() ?? false
+  })
+}
+
+/**
+ * Whether a queued write may still execute: the queue asks right before. A
+ * Fleet run is already refused by the lock elsewhere (its card, its queue);
+ * an external write that waited past a lock without the option stops here.
+ */
+function isMcpWriteLive(runId: string): boolean {
+  if (runId === EXTERNAL_RUN_ID) return isMcpRunLive(runId) && !externalLocked()
+  return isMcpRunLive(runId)
+}
+
+/** Opened around an external write's renderer request while the app is locked. */
+const lockedSaveGate = createLockedSaveGate()
+
+/**
+ * Sends one renderer request of an external write. Locked (option on): the
+ * request says so, so the renderer applies on its locked store, and the
+ * renderer's flush (store:save) may pass the data IPC lock until it answers.
+ */
+async function withExternalLockedSave<T>(
+  runId: string,
+  send: (lockedExternal: boolean) => Promise<T>
+): Promise<T> {
+  if (runId !== EXTERNAL_RUN_ID || !isAppLocked()) return send(false)
+  const end = lockedSaveGate.begin()
+  try {
+    return await send(true)
+  } finally {
+    end()
+  }
 }
 
 /** Card text for the writes whose tool does not prepare a resumo of its own. */
@@ -710,7 +788,7 @@ function requestMcpWriteApproval(
 
 const mcpWriteQueue = new McpWriteQueue(
   (request) => requestMcpWriteApproval(request.runId, request.name, request.args, request.resumo),
-  isMcpRunLive,
+  isMcpWriteLive,
   recordRunActivity
 )
 
@@ -1032,7 +1110,9 @@ const appLock = createAppLock({
  * agent retry it (a duplicated transaction).
  */
 function refuseRunWritesForLock(): void {
-  mcpWriteQueue.rejectQueued(EXTERNAL_RUN_ID, 'O Sagyou foi bloqueado.')
+  // "Funcionar com o Sagyou bloqueado": the external token's writes keep going.
+  if (!mcpExternal?.allowWhileLocked())
+    mcpWriteQueue.rejectQueued(EXTERNAL_RUN_ID, 'O Sagyou foi bloqueado.')
   for (const run of codeRuns.values()) {
     mcpWriteQueue.rejectQueued(run.id, 'O Sagyou foi bloqueado.')
     for (const { resolve } of run.pendingApprovals.values()) resolve(false)
@@ -1678,24 +1758,6 @@ app.whenReady().then(() => {
         mcpWriteQueue.rejectQueued(EXTERNAL_RUN_ID, 'O acesso MCP externo mudou.'),
       log
     })
-    // At most once a day, from 3 days before it expires.
-    // Never allowed to break startup: it runs before store:load is registered.
-    const noticeExpiry = (): void => {
-      try {
-        const store = mcpExternal
-        const expiresAt = store?.expiresAt()
-        if (!store || !expiresAt) return
-        const notice = expiryNotice(Date.now(), expiresAt, store.lastNoticeDay())
-        if (!notice) return
-        store.markNoticed(notice.day)
-        if (Notification.isSupported())
-          new Notification({ title: 'Sagyou', body: notice.text }).show()
-      } catch {
-        log.warn('mcp', 'external_notice_failed')
-      }
-    }
-    noticeExpiry()
-    setInterval(noticeExpiry, 12 * 60 * 60 * 1000).unref()
   }
   registerFilesHandlers(ipcMain, {
     mainWindow,

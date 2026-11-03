@@ -49,7 +49,7 @@ import { GuideView } from './components/views/GuideView'
 import { SettingsView } from './components/views/SettingsView'
 import { UnlockScreen } from './components/security/UnlockScreen'
 import { ViewErrorBoundary } from './components/ViewErrorBoundary'
-import { applyMcpAction, prepareMcpAction } from './services/mcpActions'
+import { applyMcpAction, mcpWriteBlocked, prepareMcpAction } from './services/mcpActions'
 import { useSyncOnReconnect } from './hooks/useSync'
 import { useAppLock } from './hooks/useAppLock'
 import { useLoadOnFirstUnlock } from './hooks/useLoadOnFirstUnlock'
@@ -184,7 +184,18 @@ export default function App() {
     if (!window.electronAPI.store.onMcpCreateTask) return
     return window.electronAPI.store.onMcpCreateTask(async ({ requestId, task }) => {
       try {
-        const id = createTask(task)
+        // Same guard as every other MCP write: never flush an empty or locked store.
+        const blocked = mcpWriteBlocked(task.lockedExternal === true)
+        if (blocked) {
+          window.electronAPI.store.respondMcpCreateTask(requestId, { error: blocked })
+          return
+        }
+        const id = createTask({
+          projectId: task.projectId,
+          columnId: task.columnId,
+          title: task.title,
+          ...(task.description ? { description: task.description } : {})
+        })
         await useKanbanStore.getState()._flushPersist()
         window.electronAPI.store.respondMcpCreateTask(requestId, { id })
       } catch (error) {
@@ -199,10 +210,11 @@ export default function App() {
     if (!window.electronAPI.store.onMcpAction) return
     return window.electronAPI.store.onMcpAction(async ({ requestId, request }) => {
       try {
+        const lockedExternal = request.lockedExternal === true
         const result =
           request.phase === 'prepare'
-            ? prepareMcpAction(request.name, request.args, request.scope)
-            : applyMcpAction(request.name, request.args, request.scope)
+            ? prepareMcpAction(request.name, request.args, request.scope, lockedExternal)
+            : applyMcpAction(request.name, request.args, request.scope, lockedExternal)
         if (request.phase === 'apply' && result.ok) await useKanbanStore.getState()._flushPersist()
         window.electronAPI.store.respondMcpAction(requestId, result)
       } catch (error) {

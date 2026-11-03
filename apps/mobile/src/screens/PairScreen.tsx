@@ -19,7 +19,7 @@ export const PAIR_FAILED_TEXT = 'Não deu para parear. Confira o código e a con
 export const PAIR_STEPS = ['Boas-vindas', 'No PC', 'Conectando'] as const
 export const WELCOME_TEXT = 'Leve suas tarefas, hábitos e finanças no bolso'
 export const ON_PC_TEXT =
-  'Abra Configurações → Sincronização → Parear novo aparelho no Sagyou do PC'
+  'Abra Configurações → Sincronização → Parear novo aparelho no Sagyou do PC, ou Ajustes → Parear outro aparelho num celular já pareado'
 
 /** "2 de 3" above each step, read as one line. */
 function StepHeader({ step }: { step: 1 | 2 | 3 }): React.JSX.Element {

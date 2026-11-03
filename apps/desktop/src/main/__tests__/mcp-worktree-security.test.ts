@@ -212,7 +212,7 @@ describe('MCP broker: malformed messages', () => {
 
 describe('MCP broker: profile and project isolation', () => {
   it('resolves the financial profile from the capability, never from arguments', async () => {
-    const seen: { profile: string; projectId: unknown }[] = []
+    const seen: { profile: string | null; projectId: unknown }[] = []
     const broker = await startBroker(
       brokerDeps({
         readScopedData: (domain, granted, projectId) => {

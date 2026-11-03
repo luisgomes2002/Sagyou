@@ -11,12 +11,7 @@ import {
 import { createHmac, randomUUID } from 'crypto'
 import type { MemorySearchHit } from '../../store'
 import { MCP_WRITE_TOOLS } from './mcp-write-tools'
-import {
-  EXTERNAL_EXPIRED_MESSAGE,
-  EXTERNAL_RISKY_MESSAGE,
-  EXTERNAL_RUN_ID,
-  isExternalRisky
-} from './mcp-external-policy'
+import { EXTERNAL_RUN_ID } from './mcp-external-policy'
 import {
   MCP_MEMORY_WRITE_TOOLS,
   MCP_RENDERER_WRITE_TOOLS,
@@ -51,25 +46,21 @@ const WRITE_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
 
 export type McpPermission = (typeof MCP_PERMISSIONS)[number]
 
-/** Every write the external token can be granted, the legacy card writes included. */
-const EXTERNAL_WRITE_NAMES: ReadonlySet<string> = new Set<string>([
-  ...WRITE_TOOL_NAMES,
-  'save_memory',
-  'criar_task'
-])
-
-/** What the external token's mode lists: reads only, or everything (risky ones refused later). */
-export function externalPermissions(mode: 'read' | 'read-write'): McpPermission[] {
-  return mode === 'read-write'
-    ? [...MCP_PERMISSIONS]
-    : MCP_PERMISSIONS.filter((name) => !EXTERNAL_WRITE_NAMES.has(name))
-}
+/**
+ * The external token reaches every tool, writes and risky ones included, with
+ * no card (spec docs/specs/2026-11-03-acesso-remoto.md).
+ */
+export const EXTERNAL_PERMISSIONS: readonly McpPermission[] = [...MCP_PERMISSIONS]
 
 export interface McpSession {
   token: string
   runId: string
   projectId: string | null
-  financialProfileId: string
+  /**
+   * The financial profile captured at launch. Only the external token uses
+   * null: every profile, chosen per call (a table's own, or a `profileId`).
+   */
+  financialProfileId: string | null
   permissions: readonly McpPermission[]
   /** Absent means no fixed expiry: the capability lives as long as its run. */
   expiresAt?: number
@@ -79,11 +70,13 @@ export interface McpBrokerDeps {
   readScopedData?: (
     domain: 'tasks' | 'project' | 'notes' | 'goals' | 'financial',
     session: McpSession,
-    projectId: string | null | undefined
+    projectId: string | null | undefined,
+    /** Financial only, and only for a session with no captured profile. */
+    profileFilter?: string
   ) => unknown[]
   listProjects?: () => unknown[]
   readTasks: (projectId: string | null | undefined) => unknown[]
-  readFinancial: (profileId: string) => unknown
+  readFinancial: (profileId: string | null, filter?: string) => unknown
   readProjectData: (projectId: string | null | undefined) => unknown
   searchMemory: (projectId: string | null | undefined, term: string) => MemorySearchHit[]
   readMemory: (id: string) => AiMemory | null
@@ -114,17 +107,19 @@ export interface McpBrokerDeps {
   ) => Promise<McpActionResult>
   /** Whether the run owning a capability is still live; absent means always. */
   isRunLive?: (runId: string) => boolean
-  /** The app is locked: every tools/call is refused before reading or writing anything. */
-  isLocked?: () => boolean
+  /**
+   * The lock stops this run's tools/call: refused before reading or writing
+   * anything. Asked per run because the external token may keep working while
+   * the app is locked ("Funcionar com o Sagyou bloqueado"); Fleet runs never do.
+   */
+  isLocked?: (runId: string, kind: 'read' | 'write') => boolean
   /**
    * The external token (Configurações → Acesso MCP externo), asked only when no
-   * Fleet run owns the token: its session, 'expired', or null when unknown.
+   * Fleet run owns the token: its session, or null when unknown or revoked.
    */
-  externalSession?: (token: string) => McpSession | 'expired' | null
+  externalSession?: (token: string) => McpSession | null
   /** An authorized call with the external token (its "último uso"). */
   onExternalUse?: () => void
-  /** The external token was refused; only the reason, never the token. */
-  onExternalRefused?: (reason: 'expired' | 'risky') => void
   /** This launch's secret, written next to the port for the external bridge's challenge. */
   externalHelloSecret?: () => string | null
 }
@@ -170,6 +165,11 @@ export function externalHelloProof(secret: string, nonce: string): string {
   return createHmac('sha256', secret).update(nonce).digest('hex')
 }
 
+const PROFILE_FILTER_SCHEMA = {
+  type: 'string',
+  description: 'Só no acesso externo: ID do perfil financeiro para filtrar; omita para todos.'
+} as const
+
 const LOG_READ_LIMIT = 200
 const TOOL_UNAVAILABLE = 'Ferramenta indisponível nesta sessão MCP.'
 
@@ -187,13 +187,13 @@ const TOOLS: { name: McpPermission; description: string; inputSchema: Record<str
       name,
       description:
         domain === 'financial'
-          ? 'Lê dados financeiros somente do perfil capturado na sessão, com paginação.'
+          ? 'Lê transações com paginação: numa sessão do Fleet, só do perfil capturado; no acesso externo, de todos os perfis (cada linha traz profileId e profileName).'
           : `Lê ${domain} do projeto indicado, com paginação. Sem projeto na sessão, lê todos os projetos.`,
       inputSchema: {
         type: 'object',
         properties: {
           ...(domain === 'financial'
-            ? {}
+            ? { profileId: PROFILE_FILTER_SCHEMA }
             : {
                 projectId: {
                   type: 'string',
@@ -324,8 +324,13 @@ const TOOLS: { name: McpPermission; description: string; inputSchema: Record<str
     },
     {
       name: 'ler_financeiro',
-      description: 'Lê dados financeiros somente do perfil financeiro autorizado.',
-      inputSchema: { type: 'object', properties: {}, additionalProperties: false }
+      description:
+        'Lê dados financeiros: numa sessão do Fleet, só do perfil autorizado; no acesso externo, de todos os perfis.',
+      inputSchema: {
+        type: 'object',
+        properties: { profileId: PROFILE_FILTER_SCHEMA },
+        additionalProperties: false
+      }
     },
     {
       name: 'ler_projeto',
@@ -552,6 +557,19 @@ function memoryConflictResult(memories: AiMemory[]): Record<string, unknown> {
   }
 }
 
+/**
+ * The `profileId` filter of a financial read. Only a session with no captured
+ * profile (the external token) may choose one: a Fleet run stays in its own
+ * profile whatever it asks for.
+ */
+function readProfileFilter(args: unknown, session: McpSession): string | undefined {
+  if (session.financialProfileId !== null || !args || typeof args !== 'object') return undefined
+  const requested = (args as Record<string, unknown>).profileId
+  return typeof requested === 'string' && requested.trim()
+    ? requested.trim().slice(0, 200)
+    : undefined
+}
+
 function readProjectId(args: unknown, session: McpSession): string | null | undefined {
   if (args && typeof args === 'object') {
     const requested = (args as Record<string, unknown>).projectId
@@ -673,11 +691,6 @@ export function startSagyouMcpBroker(deps: McpBrokerDeps): {
           let session = sessions.get(token)
           if (!session && token && deps.externalSession) {
             const external = deps.externalSession(token)
-            if (external === 'expired') {
-              deps.onExternalRefused?.('expired')
-              failure(socket, request.id, EXTERNAL_EXPIRED_MESSAGE)
-              continue
-            }
             if (external) session = external
           }
           if (
@@ -724,21 +737,17 @@ export function startSagyouMcpBroker(deps: McpBrokerDeps): {
               failure(call, request.id, TOOL_UNAVAILABLE)
               continue
             }
-            // Locked: nothing is read or written until the user unlocks on the PC.
-            if (deps.isLocked?.()) {
+            // Locked: nothing is read or written until the user unlocks on the PC
+            // (the external token excepted, when its option is on).
+            const kind =
+              WRITE_TOOL_NAMES.has(name) || name === 'save_memory' || name === 'criar_task'
+                ? 'write'
+                : 'read'
+            if (deps.isLocked?.(session.runId, kind)) {
               failure(call, request.id, MCP_LOCKED_MESSAGE)
               continue
             }
-            if (session.runId === EXTERNAL_RUN_ID) {
-              // No card can be answered for this token until the phone approves (stage 6):
-              // refused here, before any write path is reached.
-              if (isExternalRisky(name)) {
-                deps.onExternalRefused?.('risky')
-                failure(call, request.id, EXTERNAL_RISKY_MESSAGE)
-                continue
-              }
-              deps.onExternalUse?.()
-            }
+            if (session.runId === EXTERNAL_RUN_ID) deps.onExternalUse?.()
             if (WRITE_TOOL_NAMES.has(name)) {
               const args = request.params?.arguments
               if (!deps.write) {
@@ -783,7 +792,10 @@ export function startSagyouMcpBroker(deps: McpBrokerDeps): {
                         deps.readScopedData?.(
                           domain,
                           session,
-                          readProjectId(request.params?.arguments, session)
+                          readProjectId(request.params?.arguments, session),
+                          domain === 'financial'
+                            ? readProfileFilter(request.params?.arguments, session)
+                            : undefined
                         ) ?? [],
                         request.params?.arguments
                       )
@@ -910,7 +922,12 @@ export function startSagyouMcpBroker(deps: McpBrokerDeps): {
                 content: [
                   {
                     type: 'text',
-                    text: JSON.stringify(deps.readFinancial(session.financialProfileId))
+                    text: JSON.stringify(
+                      deps.readFinancial(
+                        session.financialProfileId,
+                        readProfileFilter(request.params?.arguments, session)
+                      )
+                    )
                   }
                 ]
               })

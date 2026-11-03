@@ -36,6 +36,20 @@ describe('sync chapter', () => {
     expect(article('sync-chaves').target).toEqual({ view: 'settings', section: 'sincronizacao' })
   })
 
+  // Spec 2026-11-03-acesso-remoto: the phone generates invites too.
+  it('says the pairing code may come from a PC or from the phone', () => {
+    for (const id of ['sync-parear-pc', 'sync-parear-celular'])
+      expect([
+        id,
+        blocksOf(article(id), 'steps')
+          .flatMap((s) => s.items)
+          .join(' ')
+      ]).toEqual([
+        id,
+        expect.stringContaining('um PC ou do celular (Ajustes → Parear outro aparelho)')
+      ])
+  })
+
   it('no longer tells the phone to resolve on the PC', () => {
     const conflicts = article('sync-conflitos')
       .blocks.map((b) => JSON.stringify(b))

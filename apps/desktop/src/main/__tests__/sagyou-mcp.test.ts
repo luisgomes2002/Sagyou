@@ -542,7 +542,7 @@ describe('Sagyou MCP broker', () => {
     const scopedReads: {
       domain: string
       projectId: string | null | undefined
-      profileId: string
+      profileId: string | null
     }[] = []
     const broker = startSagyouMcpBroker({
       readScopedData: (domain, session, projectId) => {

@@ -461,12 +461,12 @@ const sessoesCodigo: GuideArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Para um Claude Code aberto fora das Sessões de código (por exemplo, com o Remote Control pelo app do Claude no celular) ler e editar o Sagyou neste PC. O acesso usa um token de 30 dias, com projeto padrão, perfil financeiro e "Só leitura" ou "Leitura e escrita".'
+        text: 'Para um Claude Code aberto fora das Sessões de código (por exemplo, com o Remote Control pelo app do Claude no celular) ler e editar o Sagyou neste PC. O token dá acesso total: todos os projetos, todos os perfis financeiros e todas as ações. Ele não vence: vale até você gerar outro ou revogar.'
       },
       {
         type: 'steps',
         items: [
-          'Abra Configurações → Acesso MCP externo e escolha o escopo.',
+          'Abra Configurações → Acesso MCP externo.',
           'Clique em Gerar acesso e em Copiar comando: o token só aparece agora.',
           'Cole o comando num terminal do PC. Ele registra o servidor sagyou-externo no Claude Code.',
           'Abra o Claude Code e peça, por exemplo, as tarefas do projeto.'
@@ -475,11 +475,20 @@ const sessoesCodigo: GuideArticle[] = [
       {
         type: 'callout',
         tone: 'warning',
-        text: 'Criar e editar tarefas funciona. Excluir, mexer em dinheiro, arquivar projeto, criar tabelas ou perfis financeiros e salvar memória são sempre recusados por este acesso: faça pelo Sagyou ou por uma sessão de código.'
+        text: 'Nada pede aprovação por este acesso: excluir, mexer em dinheiro, arquivar projeto e criar tabelas ou perfis financeiros acontecem direto. Nas finanças, o Claude escolhe o perfil pela tabela ou pelo profileId; sem ele, usa o perfil ativo no PC.'
       },
       {
         type: 'p',
-        text: 'O Sagyou precisa estar aberto e desbloqueado. Três dias antes de vencer, o Sagyou avisa; Renovar gera outro token e o antigo para na hora. Revogar corta o acesso imediatamente.'
+        text: 'O Sagyou precisa estar aberto. Gerar novo token troca o token na hora (o comando do Claude Code precisa ser trocado também), e Revogar corta o acesso imediatamente.'
+      },
+      {
+        type: 'p',
+        text: 'Com senha no Sagyou, o token para quando a tela bloqueia, a não ser que você ligue Funcionar com o Sagyou bloqueado. Ligado, o Claude continua lendo e escrevendo com a tela na senha; se o Sagyou abriu bloqueado e nunca foi desbloqueado, só as leituras e as memórias funcionam (tarefas, notas, metas e finanças voltam depois do primeiro desbloqueio). A proteção do token passa a ser a senha do Windows.'
+      },
+      {
+        type: 'callout',
+        tone: 'tip',
+        text: 'Para usar de longe, deixe o PC ligado sem suspender (Windows → Energia) e o Sagyou aberto, e desligue o bloqueio por inatividade ou ligue Funcionar com o Sagyou bloqueado.'
       },
       {
         type: 'callout',

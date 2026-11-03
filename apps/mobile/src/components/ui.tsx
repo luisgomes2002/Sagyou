@@ -14,6 +14,7 @@ export { Fab } from './Fab'
 export { Field, type FieldProps } from './Field'
 export { Header } from './Header'
 export { ListItem, type ListItemProps } from './ListItem'
+export { QrCode } from './QrCode'
 export { Snackbar } from './Snackbar'
 
 export function Row({ children }: { children: ReactNode }): React.JSX.Element {

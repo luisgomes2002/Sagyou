@@ -89,6 +89,22 @@ describe('MCP write tool classification', () => {
     expect(update.required).toEqual(['tableId', 'id'])
   })
 
+  it('profile-level finance tools take an optional profileId (external token)', () => {
+    for (const name of [
+      'create_financial_table',
+      'add_financial_category',
+      'remove_financial_category',
+      'rename_financial_profile'
+    ]) {
+      const schema = MCP_WRITE_TOOLS.find((tool) => tool.name === name)?.inputSchema ?? {}
+      expect([name, Object.keys(schema.properties as object)]).toEqual([
+        name,
+        expect.arrayContaining(['profileId'])
+      ])
+      expect([name, schema.required]).not.toEqual([name, expect.arrayContaining(['profileId'])])
+    }
+  })
+
   it('has a denial message for every approval tool', () => {
     for (const name of MCP_APPROVAL_REQUIRED)
       expect(MCP_DENIAL_MESSAGE[name]).toMatch(/não aprovad/)

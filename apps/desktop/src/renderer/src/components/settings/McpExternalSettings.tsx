@@ -1,15 +1,11 @@
-import { useCallback, useEffect, useState, type JSX } from 'react'
-import { useKanbanStore } from '../../store/kanban'
+import { useEffect, useState, type JSX } from 'react'
 import { ConfirmDialog } from '../ConfirmDialog'
 
-type Mode = 'read' | 'read-write'
-
 interface ExternalStatus {
-  state: 'none' | 'active' | 'expired'
+  state: 'none' | 'active'
   createdAt?: number
-  expiresAt?: number
   lastUsedAt?: number | null
-  scope?: { projectId: string | null; financialProfileId: string; mode: Mode }
+  allowWhileLocked?: boolean
 }
 
 interface Props {
@@ -17,20 +13,21 @@ interface Props {
 }
 
 export const NONE_TEXT = 'Nenhum acesso externo.'
+export const FULL_ACCESS_WARNING =
+  'O token dá leitura e escrita de tudo no Sagyou, inclusive excluir e mexer em dinheiro, sem pedir aprovação. Não vence: vale até você revogar.'
+export const ACTIVE_SCOPE_TEXT = 'Acesso total, sem prazo'
 export const ONCE_TEXT =
   'Este é o único momento em que o token aparece. Guarde o comando ou gere outro depois.'
 export const PLAIN_TEXT_WARNING =
   'O Claude Code guarda o token em texto na configuração dele (~/.claude.json), e o comando colado fica no histórico do terminal e da área de transferência (Win+V). Revogar aqui o invalida na hora.'
 export const REVOKE_MESSAGE =
   'Revogar o acesso MCP externo? O Claude que usa este token perde o acesso na hora.'
+export const NEW_TOKEN_MESSAGE =
+  'Gerar um token novo? O atual para de valer na hora e o comando do Claude Code precisa ser trocado.'
+export const ALLOW_LOCKED_LABEL = 'Funcionar com o Sagyou bloqueado'
+export const ALLOW_LOCKED_WARNING =
+  'Com isto ligado, o Claude continua lendo e editando o Sagyou mesmo com a tela na senha. Quem usar sua conta do Windows consegue usar o token (ele fica salvo na configuração do Claude Code), então a proteção passa a ser a senha do Windows.'
 
-const MODE_LABELS: Record<Mode, string> = {
-  read: 'Só leitura',
-  'read-write': 'Leitura e escrita'
-}
-
-const fieldClass =
-  'mt-1 block w-full rounded-lg border border-[#2b2b31] bg-[#101014] px-3 py-2 text-sm text-[#d4d4d4]'
 const primaryClass =
   'rounded-lg bg-[#6d5bb8] px-3 py-2 text-sm text-white hover:bg-[#7b69c6] disabled:opacity-50'
 const secondaryClass =
@@ -39,27 +36,30 @@ const panelClass = 'space-y-3 rounded-lg border border-[#2b2b31] bg-[#101014] p-
 
 const formatDate = (ms: number): string => new Date(ms).toLocaleString('pt-BR')
 
-/** Configurações → Acesso MCP externo: a 30-day token for a Claude outside the Fleet. */
+/**
+ * Configurações → Acesso MCP externo: one token, no expiry and full access,
+ * for a Claude outside the Fleet (spec docs/specs/2026-11-03-acesso-remoto.md).
+ */
 export function McpExternalSettings({ onToast }: Props): JSX.Element {
-  const projects = useKanbanStore((s) => s.projects)
-  const profiles = useKanbanStore((s) => s.financialProfiles)
-  const activeProfileId = useKanbanStore((s) => s.activeFinancialProfileId)
   const [status, setStatus] = useState<ExternalStatus | null>(null)
-  const [projectId, setProjectId] = useState('')
-  const [profileId, setProfileId] = useState(activeProfileId)
-  const [mode, setMode] = useState<Mode>('read')
+  const [hasPassword, setHasPassword] = useState(false)
   const [issued, setIssued] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [confirmRevoke, setConfirmRevoke] = useState(false)
-
-  const refresh = useCallback(async (): Promise<void> => {
-    setStatus(await window.electronAPI.mcpExternal.status())
-  }, [])
+  const [confirmNew, setConfirmNew] = useState(false)
 
   useEffect(() => {
-    void refresh().catch(() => setError('Não foi possível ler o acesso MCP externo.'))
-  }, [refresh])
+    window.electronAPI.mcpExternal
+      .status()
+      .then(setStatus)
+      .catch(() => setError('Não foi possível ler o acesso MCP externo.'))
+    // The option only matters with an app password: without one, nothing locks.
+    void window.electronAPI.security
+      ?.status()
+      .then((security) => setHasPassword(security.enabled))
+      .catch(() => setHasPassword(false))
+  }, [])
 
   const run = async (action: () => Promise<void>, fallback: string): Promise<void> => {
     setBusy(true)
@@ -73,35 +73,17 @@ export function McpExternalSettings({ onToast }: Props): JSX.Element {
     }
   }
 
-  const take = (
-    result: { ok: true; command: string; status: ExternalStatus } | { ok: false; error: string }
-  ): void => {
-    if (!result.ok) {
-      setError(result.error)
-      return
-    }
-    setIssued(result.command)
-    setStatus(result.status)
-  }
-
   const create = (): Promise<void> =>
-    run(
-      async () =>
-        take(
-          await window.electronAPI.mcpExternal.create({
-            projectId: projectId || null,
-            financialProfileId: profileId,
-            mode
-          })
-        ),
-      'Não foi possível gerar o acesso MCP externo.'
-    )
-
-  const renew = (): Promise<void> =>
-    run(
-      async () => take(await window.electronAPI.mcpExternal.renew()),
-      'Não foi possível renovar o acesso MCP externo.'
-    )
+    run(async () => {
+      setConfirmNew(false)
+      const result = await window.electronAPI.mcpExternal.create()
+      if (!result.ok) {
+        setError(result.error)
+        return
+      }
+      setIssued(result.command)
+      setStatus(result.status)
+    }, 'Não foi possível gerar o acesso MCP externo.')
 
   const revoke = (): Promise<void> =>
     run(async () => {
@@ -110,6 +92,11 @@ export function McpExternalSettings({ onToast }: Props): JSX.Element {
       setStatus(await window.electronAPI.mcpExternal.revoke())
       onToast('Acesso MCP externo revogado.')
     }, 'Não foi possível revogar o acesso MCP externo.')
+
+  const setAllowLocked = (value: boolean): Promise<void> =>
+    run(async () => {
+      setStatus(await window.electronAPI.mcpExternal.setAllowLocked(value))
+    }, 'Não foi possível mudar o acesso com o Sagyou bloqueado.')
 
   const copy = async (): Promise<void> => {
     if (!issued) return
@@ -121,16 +108,11 @@ export function McpExternalSettings({ onToast }: Props): JSX.Element {
     }
   }
 
-  const projectName = (id: string | null): string =>
-    id ? (projects.find((p) => p.id === id)?.name ?? 'projeto removido') : 'Nenhum'
-  const profileName = (id: string): string => profiles.find((p) => p.id === id)?.name ?? id
-
   return (
     <div className="space-y-5">
       <p className="text-sm text-[#999999]">
         Para um Claude Code fora do Fleet (por exemplo, com o Remote Control) ler e editar o Sagyou
-        neste PC. Só funciona com o Sagyou aberto e desbloqueado, e escritas arriscadas (excluir,
-        dinheiro, arquivar) são sempre recusadas por este acesso.
+        neste PC. Só funciona com o Sagyou aberto.
       </p>
 
       {issued && (
@@ -152,51 +134,10 @@ export function McpExternalSettings({ onToast }: Props): JSX.Element {
       {status?.state === 'none' && (
         <div className={panelClass}>
           <p className="text-sm text-[#d4d4d4]">{NONE_TEXT}</p>
-          <label className="block text-sm text-[#999999]">
-            Projeto padrão
-            <select
-              value={projectId}
-              onChange={(e) => setProjectId(e.target.value)}
-              className={fieldClass}
-            >
-              <option value="">Nenhum</option>
-              {projects
-                .filter((p) => !p.archivedAt)
-                .map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-            </select>
-          </label>
-          <label className="block text-sm text-[#999999]">
-            Perfil financeiro
-            <select
-              value={profileId}
-              onChange={(e) => setProfileId(e.target.value)}
-              className={fieldClass}
-            >
-              {profiles.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="block text-sm text-[#999999]">
-            Acesso
-            <select
-              value={mode}
-              onChange={(e) => setMode(e.target.value as Mode)}
-              className={fieldClass}
-            >
-              <option value="read">{MODE_LABELS.read}</option>
-              <option value="read-write">{MODE_LABELS['read-write']}</option>
-            </select>
-          </label>
+          <p className="text-sm text-[#d9a640]">{FULL_ACCESS_WARNING}</p>
           <button
             type="button"
-            disabled={busy || !profileId}
+            disabled={busy}
             onClick={() => void create()}
             className={primaryClass}
           >
@@ -205,29 +146,36 @@ export function McpExternalSettings({ onToast }: Props): JSX.Element {
         </div>
       )}
 
-      {status && status.state !== 'none' && status.scope && (
+      {status?.state === 'active' && (
         <div className={panelClass}>
-          <p className="text-sm text-[#d4d4d4]">
-            {status.state === 'active'
-              ? `Válido até ${formatDate(status.expiresAt ?? 0)}`
-              : `Vencido em ${formatDate(status.expiresAt ?? 0)}`}
-          </p>
+          <p className="text-sm text-[#d4d4d4]">{`Ativo desde ${formatDate(status.createdAt ?? 0)}`}</p>
           <p className="text-sm text-[#999999]">
             {status.lastUsedAt ? `Último uso: ${formatDate(status.lastUsedAt)}` : 'Nunca usado'}
           </p>
-          <p className="text-sm text-[#999999]">
-            {`Projeto: ${projectName(status.scope.projectId)} · Perfil: ${profileName(
-              status.scope.financialProfileId
-            )} · ${MODE_LABELS[status.scope.mode]}`}
-          </p>
+          <p className="text-sm text-[#999999]">{ACTIVE_SCOPE_TEXT}</p>
+          {hasPassword && (
+            <div className="space-y-1">
+              <label className="flex items-center gap-2 text-sm text-[#d4d4d4]">
+                <input
+                  type="checkbox"
+                  checked={status.allowWhileLocked === true}
+                  disabled={busy}
+                  onChange={(event) => void setAllowLocked(event.target.checked)}
+                  className="h-3.5 w-3.5 accent-[#6d5bb8]"
+                />
+                {ALLOW_LOCKED_LABEL}
+              </label>
+              <p className="text-xs text-[#999999]">{ALLOW_LOCKED_WARNING}</p>
+            </div>
+          )}
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
               disabled={busy}
-              onClick={() => void renew()}
+              onClick={() => setConfirmNew(true)}
               className={primaryClass}
             >
-              Renovar
+              Gerar novo token
             </button>
             <button
               type="button"
@@ -247,6 +195,14 @@ export function McpExternalSettings({ onToast }: Props): JSX.Element {
         </p>
       )}
 
+      <ConfirmDialog
+        open={confirmNew}
+        title="Gerar novo token"
+        message={NEW_TOKEN_MESSAGE}
+        confirmLabel="Gerar novo token"
+        onConfirm={() => void create()}
+        onCancel={() => setConfirmNew(false)}
+      />
       <ConfirmDialog
         open={confirmRevoke}
         title="Revogar acesso"

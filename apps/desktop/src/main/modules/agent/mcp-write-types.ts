@@ -53,7 +53,8 @@ export type McpWriteTool = McpRendererWriteTool | McpMemoryWriteTool
 
 export interface McpScope {
   projectId: string | null
-  financialProfileId: string
+  /** null = every profile (only the external token): a table's own, or `profileId`. */
+  financialProfileId: string | null
 }
 
 export interface McpActionRequest {
@@ -61,6 +62,11 @@ export interface McpActionRequest {
   name: string
   args: Record<string, unknown>
   scope: McpScope
+  /**
+   * External token, app locked with "Funcionar com o Sagyou bloqueado" on: the
+   * renderer applies on its locked store, and main lets that flush through.
+   */
+  lockedExternal?: boolean
 }
 
 export type McpActionResult =
