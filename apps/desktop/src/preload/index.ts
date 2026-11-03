@@ -267,15 +267,12 @@ export const api = {
       ipcRenderer.send('store:mcp:action:response', { requestId, result })
     }
   },
-  // Configurações → Acesso MCP externo. The token comes back only from create/renew, once.
+  // Configurações → Acesso MCP externo. The token comes back only from create, once.
   mcpExternal: {
     status: (): Promise<McpExternalStatus> => ipcRenderer.invoke('mcp-external:status'),
-    create: (scope: {
-      projectId: string | null
-      financialProfileId: string
-      mode: 'read' | 'read-write'
-    }): Promise<McpExternalIssued> => ipcRenderer.invoke('mcp-external:create', scope),
-    renew: (): Promise<McpExternalIssued> => ipcRenderer.invoke('mcp-external:renew'),
+    create: (): Promise<McpExternalIssued> => ipcRenderer.invoke('mcp-external:create'),
+    setAllowLocked: (value: boolean): Promise<McpExternalStatus> =>
+      ipcRenderer.invoke('mcp-external:set-allow-locked', value),
     revoke: (): Promise<McpExternalStatus> => ipcRenderer.invoke('mcp-external:revoke')
   },
   sync: {

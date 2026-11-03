@@ -130,7 +130,6 @@ import {
   MCP_EXTERNAL_FILE,
   MCP_EXTERNAL_FILE_DEV,
   createMcpExternalStore,
-  expiryNotice,
   type McpExternalStore
 } from './modules/agent/mcp-external'
 import {
@@ -1678,24 +1677,6 @@ app.whenReady().then(() => {
         mcpWriteQueue.rejectQueued(EXTERNAL_RUN_ID, 'O acesso MCP externo mudou.'),
       log
     })
-    // At most once a day, from 3 days before it expires.
-    // Never allowed to break startup: it runs before store:load is registered.
-    const noticeExpiry = (): void => {
-      try {
-        const store = mcpExternal
-        const expiresAt = store?.expiresAt()
-        if (!store || !expiresAt) return
-        const notice = expiryNotice(Date.now(), expiresAt, store.lastNoticeDay())
-        if (!notice) return
-        store.markNoticed(notice.day)
-        if (Notification.isSupported())
-          new Notification({ title: 'Sagyou', body: notice.text }).show()
-      } catch {
-        log.warn('mcp', 'external_notice_failed')
-      }
-    }
-    noticeExpiry()
-    setInterval(noticeExpiry, 12 * 60 * 60 * 1000).unref()
   }
   registerFilesHandlers(ipcMain, {
     mainWindow,
