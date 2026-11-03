@@ -7,6 +7,7 @@ import {
   powerStateMac
 } from '@sagyou/core/control/crypto'
 import {
+  MAX_TTL_MS,
   checkEnvelope,
   signEnvelope,
   type ControlKind,
@@ -47,7 +48,7 @@ function fakePc(): FakePc {
     msg: (kind, body, key) => ({
       from: PC,
       msgId: `m-${Math.random()}`,
-      env: signEnvelope(key ?? pc.keys.privateKey, kind, body, NOW, 10 * 60_000)
+      env: signEnvelope(key ?? pc.keys.privateKey, kind, body, NOW, MAX_TTL_MS[kind])
     })
   }
   pc.client = {
