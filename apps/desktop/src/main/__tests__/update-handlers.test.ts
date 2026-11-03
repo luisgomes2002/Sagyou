@@ -20,6 +20,7 @@ let calls: string[]
 let lateFailure: (() => void) | undefined
 let deps: UpdateHandlerDeps
 let handlers: Map<string, (...args: unknown[]) => unknown>
+let exposed: ReturnType<typeof registerUpdateHandlers>
 
 const invoke = <T>(channel: string, ...args: unknown[]): Promise<T> =>
   Promise.resolve(handlers.get(channel)?.({}, ...args) as T)
@@ -52,12 +53,19 @@ beforeEach(() => {
     log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
   }
   handlers = new Map()
-  registerUpdateHandlers(
+  exposed = registerUpdateHandlers(
     {
       handle: (channel: string, fn: (...args: unknown[]) => unknown) => handlers.set(channel, fn)
     } as unknown as IpcMain,
     deps
   )
+})
+
+describe('install devolvido (celular)', () => {
+  it('faz o mesmo caminho do update:install', async () => {
+    await exposed.install()
+    expect(calls).toEqual(['stopAgentTimers', 'flush', 'allowClose:true', 'quitAndInstall'])
+  })
 })
 
 describe('update:install', () => {

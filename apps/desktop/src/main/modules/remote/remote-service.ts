@@ -80,6 +80,10 @@ export interface RemoteServiceDeps {
   answerCard: (id: string, approved: boolean) => boolean
   devices: () => Promise<{ id: string; revoked: boolean }[]>
   esp32Key: () => Uint8Array | null
+  /** A downloaded version ready to install, or null. */
+  updateVersion: () => string | null
+  /** The same path as update:install: stop run timers, save, restart in the new version. */
+  installUpdate: () => Promise<'ok' | 'none' | 'failed'>
   log: Pick<Logger, 'info' | 'warn'>
   /** After a cycle that changed what the settings screen shows. */
   onChange?: () => void
@@ -216,6 +220,8 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
       code: pairingCode(publicKeyOf(priv), body.key),
       expiresAt: now + AUTHORIZATION_TTL_MS
     })
+    // The phone needs this key to show the same 6 digits before the PC authorizes it.
+    await client.send(msg.from, sign('pc-key', { pcPublicKey: pcPublicKey() }, NOTICE_TTL_MS))
   }
 
   async function authorizeRemote(msg: InboxMessage, now: number): Promise<void> {
@@ -301,6 +307,15 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
         log.info('remote', 'shutdown', { result: 'ok' })
         return reply(from, env.nonce, true)
       }
+      case 'install-update': {
+        if (until !== null) return reply(from, env.nonce, false, { reason: 'suspended', until })
+        accepted()
+        const result = await deps.installUpdate()
+        log.info('remote', 'install_update', { result })
+        if (result === 'none') return reply(from, env.nonce, false, { reason: 'no-update' })
+        if (result === 'failed') return reply(from, env.nonce, false, { reason: 'install-failed' })
+        return reply(from, env.nonce, true)
+      }
       case 'abort-shutdown': {
         accepted()
         await deps.abortShutdown()
@@ -342,7 +357,8 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
       servers,
       pendingCards: deps.pendingCards(),
       shutdownAt: deps.shutdownAt(),
-      suspendedUntil: suspendedUntil(now)
+      suspendedUntil: suspendedUntil(now),
+      updateVersion: deps.updateVersion()
     }
     const env = sign('status', status, STATUS_TTL_MS)
     await client.putStatus(env)

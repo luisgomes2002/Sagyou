@@ -83,11 +83,19 @@ describe('parsePcStatus', () => {
     servers: [{ name: 'Sagyou', up: true }],
     pendingCards: 0,
     shutdownAt: null,
-    suspendedUntil: null
+    suspendedUntil: null,
+    updateVersion: '1.6.1'
   }
 
   it('lê um status válido', () => {
     expect(parsePcStatus(valid)).toEqual(valid)
+  })
+
+  it('sem updateVersion (PC antigo) lê como null', () => {
+    const old: Record<string, unknown> = { ...valid }
+    delete old.updateVersion
+    expect(parsePcStatus(old)?.updateVersion).toBeNull()
+    expect(parsePcStatus({ ...valid, updateVersion: 'x'.repeat(41) })?.updateVersion).toBeNull()
   })
 
   it('recusa campos com tipo errado', () => {

@@ -2,7 +2,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ControlClient, InboxMessage } from '@sagyou/core/control/client'
 import { newSigningKeys, pairingCode, publicKeyOf } from '@sagyou/core/control/crypto'
-import { signEnvelope, type ControlKind, type SignedEnvelope } from '@sagyou/core/control/messages'
+import {
+  checkEnvelope,
+  signEnvelope,
+  type ControlKind,
+  type SignedEnvelope
+} from '@sagyou/core/control/messages'
 import { toBase64 } from '@sagyou/core/sync/bytes'
 import type { SyncStatus } from '@sagyou/core/sync/engine'
 import { defaultRemoteConfig, type RemoteConfig } from '../modules/remote/remote-config'
@@ -142,6 +147,8 @@ function setup(
     answerCard: vi.fn(() => true),
     devices: async () => devices,
     esp32Key: () => esp,
+    updateVersion: () => '1.6.1',
+    installUpdate: vi.fn(async () => 'ok' as const),
     log: { info: vi.fn(), warn: vi.fn() }
   }
   const service = createRemoteService(deps)
@@ -322,6 +329,28 @@ describe('remote-service: pedidos de um controle', () => {
     expect(t.config().failures).toBe(0)
   })
 
+  it('instalar atualização: ok, nada pronto e falha', async () => {
+    const t = setup()
+    await t.deliver(t.request('install-update'))
+    expect(t.deps.installUpdate).toHaveBeenCalledTimes(1)
+    expect(t.lastResult()?.ok).toBe(true)
+    vi.mocked(t.deps.installUpdate).mockResolvedValueOnce('none')
+    await t.deliver(t.request('install-update'))
+    expect(t.lastResult()).toMatchObject({ ok: false, reason: 'no-update' })
+    vi.mocked(t.deps.installUpdate).mockResolvedValueOnce('failed')
+    await t.deliver(t.request('install-update'))
+    expect(t.lastResult()).toMatchObject({ ok: false, reason: 'install-failed' })
+    expect(t.config().failures).toBe(0)
+  })
+
+  it('instalar atualização respeita a suspensão', async () => {
+    const t = setup()
+    t.setConfig({ ...t.config(), suspendedUntil: T0 + 60_000 })
+    await t.deliver(t.request('install-update'))
+    expect(t.deps.installUpdate).not.toHaveBeenCalled()
+    expect(t.lastResult()).toMatchObject({ ok: false, reason: 'suspended' })
+  })
+
   it('resposta a cartão pendente resolve', async () => {
     const t = setup()
     await t.deliver(t.request('approval-answer', { id: 'card-1', approved: false }))
@@ -345,6 +374,10 @@ describe('remote-service: autorização', () => {
         key: newPhone.privateKey
       })
     )
+    // The phone gets the PC's key, signed by it, to show the same code.
+    const pcKey = t.sent.find((s) => s.to === OTHER && s.env.kind === 'pc-key')!
+    expect(pcKey.env.body).toEqual({ pcPublicKey: toBase64(t.pc.publicKey) })
+    expect(checkEnvelope(pcKey.env, t.pc.publicKey, T0, () => false)).toEqual({ ok: true })
     expect(t.service.pendingAuthorizations()).toEqual([
       {
         id: OTHER,
@@ -374,7 +407,7 @@ describe('remote-service: autorização', () => {
     expect(t.client.addController).toHaveBeenCalledWith(OTHER)
     expect(t.config().controllers.map((c) => c.id)).toEqual([OTHER])
     const kinds = t.sent.filter((s) => s.to === OTHER).map((s) => s.env.kind)
-    expect(kinds).toEqual(['authorized', 'esp32-key'])
+    expect(kinds).toEqual(['pc-key', 'authorized', 'esp32-key'])
     const authorized = t.sent.find((s) => s.env.kind === 'authorized')!
     expect(authorized.env.body).toEqual({ pcPublicKey: toBase64(t.pc.publicKey) })
     expect(t.service.pendingAuthorizations()).toEqual([])
@@ -477,7 +510,13 @@ describe('remote-service: ciclo', () => {
     await t.service.tick()
     expect(t.statuses).toHaveLength(1)
     expect(t.statuses[0].kind).toBe('status')
-    expect(t.statuses[0].body).toMatchObject({ v: 1, at: T0, locked: true, pendingCards: 0 })
+    expect(t.statuses[0].body).toMatchObject({
+      v: 1,
+      at: T0,
+      locked: true,
+      pendingCards: 0,
+      updateVersion: '1.6.1'
+    })
     expect(t.sent.filter((s) => s.notify === 'ready').map((s) => s.to)).toEqual([PHONE])
 
     t.advance(30_000)

@@ -15,8 +15,14 @@ export interface UpdateHandlerDeps {
   log: { info: LogFn; warn: LogFn; error: LogFn }
 }
 
-/** `update:*`. Register after protectDataIpc: installing flushes the user's data. */
-export function registerUpdateHandlers(ipcMain: IpcMain, deps: UpdateHandlerDeps): void {
+/**
+ * `update:*`. Register after protectDataIpc: installing flushes the user's data.
+ * Returns the install path itself, so the phone can ask for the same thing.
+ */
+export function registerUpdateHandlers(
+  ipcMain: IpcMain,
+  deps: UpdateHandlerDeps
+): { install: () => Promise<UpdateStatus> } {
   const { updater } = deps
   let installing = false
 
@@ -30,7 +36,7 @@ export function registerUpdateHandlers(ipcMain: IpcMain, deps: UpdateHandlerDeps
   ipcMain.handle('update:status', () => updater.status())
   ipcMain.handle('update:check', () => updater.check())
 
-  ipcMain.handle('update:install', async () => {
+  const install = async (): Promise<UpdateStatus> => {
     if (installing || updater.status().state !== 'ready') return updater.status()
     installing = true
     try {
@@ -51,11 +57,15 @@ export function registerUpdateHandlers(ipcMain: IpcMain, deps: UpdateHandlerDeps
     } finally {
       installing = false
     }
-  })
+  }
+
+  ipcMain.handle('update:install', () => install())
 
   // Only the Release URL the updater built; never one from the renderer.
   ipcMain.handle('update:open-release', () => {
     const url = updater.status().releaseUrl
     if (url) void deps.openExternal(url)
   })
+
+  return { install }
 }

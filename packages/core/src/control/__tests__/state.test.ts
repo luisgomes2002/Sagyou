@@ -17,6 +17,7 @@ const status = (over: Partial<PcStatus> = {}): PcStatus => ({
   pendingCards: 0,
   shutdownAt: null,
   suspendedUntil: null,
+  updateVersion: null,
   ...over
 })
 

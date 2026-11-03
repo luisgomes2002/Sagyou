@@ -1,6 +1,9 @@
 # Plano de implementação: Controle remoto do PC pelo app
 
 Status: approved by Luis on 2026-11-03
+Adendo aprovado por Luis em 2026-11-03: chave do PC antes de autorizar (`pc-key`) e
+instalar a atualização pelo celular (Task 10b; botão na Task 16). Substitui a restrição
+"Hold da atualização" abaixo.
 Spec: docs/specs/2026-11-03-controle-remoto-app.md
 Branch: feature/controle-remoto-app
 
@@ -50,9 +53,9 @@ cartões); no celular um store `src/remote/`, a aba "PC" e as telas de autoriza�
   `|at − agora NTP| ≤ 5 min` e `exp > agora`. Cada recusa fica no estado assinado que o
   ESP32 informa (`lastResult: 'ok'|'mac'|'old'|'clock'|'expired'`), e o app mostra
   "O ESP32 recusou o comando: relógio do celular errado." / "O ESP32 recusou o comando."
-- **Hold da atualização**: o desktop embrulha o `fetch` do `ControlClient` e recusa
-  (`offline`) as rotas `/control/*`, `/roles*` e `/esp32-key` enquanto `updater.isSyncHeld()`;
-  `/power/*` passa sempre.
+- **Hold da atualização (revisto no adendo)**: o controle remoto não fica segurado por uma
+  atualização pendente; o sinal de vida leva `updateVersion` e o celular pode pedir
+  `install-update`. O sync de dados continua segurado como antes.
 
 ## Respostas à checagem do construtor
 
@@ -401,6 +404,21 @@ Teste `apps/desktop/src/main/__tests__/remote-handlers.test.ts`, `shutdown.test.
 - [ ] Passo 2–4: push FALHA → implementar → push PASSA.
 - [ ] Passo 5: commit `feat(remote): controle remoto no processo main`
 
+### Task 10b: Desktop — chave do PC e instalar atualização pelo celular (adendo)
+
+**Arquivos:** Modificar `packages/core/src/control/messages.ts` (kinds `pc-key` e
+`install-update`; `PcStatus.updateVersion: string | null`, opcional na leitura),
+`modules/remote/remote-service.ts`, `handlers/update.ts` (devolve `install()` para reuso),
+`main/index.ts`; remover `modules/remote/remote-fetch.ts`. Teste `remote-service.test.ts`,
+`update-handlers.test.ts`, `messages.test.ts`, `remote-handlers.test.ts`.
+Regras: `authorize-request` aceito → `pc-key { pcPublicKey }` ao celular;
+`install-update` de controle autorizado, sujeito à suspensão; `'ok'` → `result ok`;
+`'none'` (nada pronto) → `result {ok:false, reason:'no-update'}` sem contar erro;
+`'failed'` → `result {ok:false, reason:'install-failed'}`.
+- [ ] Passo 1: testes de cada regra; status com `updateVersion`.
+- [ ] Passo 2–4: push FALHA → implementar → push PASSA.
+- [ ] Passo 5: commit `feat(remote): chave do PC e atualização pelo celular`
+
 ### Task 11: Desktop — tela Configurações → Controle remoto e renderer
 
 **Arquivos:** Criar `apps/desktop/src/renderer/src/components/settings/RemoteControlSettings.tsx`;
@@ -518,7 +536,10 @@ por estado: Desligado → **Ligar**; Pronto/RC fora/Aguardando → **Desligar**,
 **Desbloquear** ou **Bloquear agora**; aguardando o Sagyou há ≥ 2 min com ping →
 **Forçar pelo ESP32** com a confirmação exata da spec; Desligando → contagem e
 **Cancelar**. Lista de cartões com contagem regressiva, **Aprovar**/**Recusar**. Polling só
-com a aba em foco (`useFocusEffect`).
+com a aba em foco (`useFocusEffect`). Adendo: com `updateVersion`, "Atualização <versão>
+pronta" e **Instalar atualização** (confirmação "Instalar a atualização agora? O Sagyou
+salva tudo e reinicia."); falha mostra "Não foi possível instalar a atualização; o Sagyou
+continua na versão atual.".
 - [ ] Passo 1: testes: cada estado mostra os botões certos e nenhum outro; confirmação de
   forçar; cartão vencido desabilita os botões; polling para ao sair da aba; TalkBack lê o
   estado (`accessibilityLiveRegion`).

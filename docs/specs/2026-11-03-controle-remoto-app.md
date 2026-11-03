@@ -3,6 +3,10 @@
 Status: approved by Luis on 2026-11-03
 Branch: feature/controle-remoto-app
 
+Adendo aprovado por Luis em 2026-11-03 (durante o build): **chave do PC antes de autorizar**
+e **instalar a atualização do Sagyou pelo celular** (seções "Autorizar o celular" e
+"Atualizar o Sagyou pelo celular").
+
 Etapa 6 do roteiro `docs/specs/2026-10-30-sync-mobile-roteiro.md`. Depende das etapas 3
 (app Android), 4 (motor na bandeja) e 5 (MCP externo / acesso remoto), todas entregues.
 
@@ -126,6 +130,15 @@ desligar o PC sem perder nada. Hoje isso depende do RustDesk ou de estar na fren
    também tira a autorização. Trocar ou formatar o celular exige autorizar de novo.
 6. Pedido de autorização vale 10 min; depois some.
 
+**Chave do PC antes de autorizar (adendo).** Ao receber o pedido de autorização, o PC
+responde ao celular com a própria chave pública (mensagem `pc-key`, assinada por ela). O
+celular só a aceita vinda do aparelho que o Worker marca como PC controlado
+(`GET /roles/pc`), calcula o código de 6 dígitos com ela e, depois do `authorized`, só
+aceita mensagens assinadas por essa mesma chave (o `authorized` precisa trazer a mesma
+chave). Quem trocasse a chave no caminho mudaria o código, e Luis recusaria. No pedido à
+distância não há código: a chave vem no `authorized`, e as mensagens já vão cifradas com a
+chave de sync, que o Worker não tem.
+
 ### Trocar de celular à distância
 
 Para quando o celular autorizado foi perdido, roubado ou trocado e Luis está longe do
@@ -224,6 +237,20 @@ desbloqueado") e quantos cartões esperam resposta.
   `id` ainda pendente. Primeira resposta vence; a outra tela fecha o cartão.
 - Cartão expirado ou já respondido: "Este cartão já foi respondido ou expirou."
 - O auto da run continua não respondendo cartões arriscados.
+
+### Atualizar o Sagyou pelo celular (adendo)
+
+- Uma atualização encontrada segura a sincronização até ser instalada (regra da etapa 4).
+  Longe de casa isso parava o celular e o PC de trocarem dados. O controle remoto **não**
+  fica segurado: o sinal de vida informa a versão pendente (`updateVersion`).
+- Com uma versão pronta para instalar, a aba "PC" mostra "Atualização <versão> pronta" e
+  **Instalar atualização** (biometria; pedido assinado `install-update`, conta no limite
+  de 5 recusas como desligar). O PC faz o mesmo caminho do `update:install`: para os
+  cronômetros das runs, salva o renderer e reinicia na versão nova. Falhou ao salvar ou ao
+  instalar: nada muda e o celular mostra "Não foi possível instalar a atualização; o
+  Sagyou continua na versão atual."
+- Depois de reiniciar, o Sagyou abre bloqueado (se tem senha) e manda o sinal de vida de
+  novo; o celular desbloqueia como sempre.
 
 ### Push
 

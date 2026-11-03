@@ -23,6 +23,8 @@ export type ControlKind =
   | 'approval-closed'
   | 'result'
   | 'status'
+  | 'pc-key'
+  | 'install-update'
 
 const MINUTE = 60_000
 
@@ -41,7 +43,9 @@ export const MAX_TTL_MS: Record<ControlKind, number> = {
   'approval-answer': MINUTE,
   'approval-closed': 10 * MINUTE,
   result: 10 * MINUTE,
-  status: 2 * MINUTE
+  status: 2 * MINUTE,
+  'pc-key': 10 * MINUTE,
+  'install-update': MINUTE
 }
 
 /** A request may come from a clock up to 30 s ahead, and may arrive 30 s after it expired. */
@@ -133,6 +137,8 @@ export interface PcStatus {
   pendingCards: number
   shutdownAt: number | null
   suspendedUntil: number | null
+  /** A downloaded Sagyou version waiting to be installed (absent in older PCs: null). */
+  updateVersion: string | null
 }
 
 const nullableTime = (v: unknown): v is number | null => v === null || Number.isSafeInteger(v)
@@ -150,6 +156,8 @@ export function parsePcStatus(body: unknown): PcStatus | null {
   }
   if (!Number.isSafeInteger(b.pendingCards) || (b.pendingCards as number) < 0) return null
   if (!nullableTime(b.shutdownAt) || !nullableTime(b.suspendedUntil)) return null
+  const updateVersion =
+    typeof b.updateVersion === 'string' && b.updateVersion.length <= 40 ? b.updateVersion : null
   return {
     v: 1,
     at: b.at as number,
@@ -157,6 +165,7 @@ export function parsePcStatus(body: unknown): PcStatus | null {
     servers,
     pendingCards: b.pendingCards as number,
     shutdownAt: b.shutdownAt,
-    suspendedUntil: b.suspendedUntil
+    suspendedUntil: b.suspendedUntil,
+    updateVersion
   }
 }

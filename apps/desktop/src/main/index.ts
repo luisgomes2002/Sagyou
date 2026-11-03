@@ -214,7 +214,6 @@ import {
   type RemoteConfig
 } from './modules/remote/remote-config'
 import { createRemoteService, type RemoteService } from './modules/remote/remote-service'
-import { heldControlFetch } from './modules/remote/remote-fetch'
 import { listCommandLines, matchServers } from './modules/remote/rc-servers'
 import { createShutdown } from './modules/remote/shutdown'
 import {
@@ -1972,7 +1971,7 @@ app.whenReady().then(() => {
     defaultDeviceName: () => hostname().slice(0, 80) || 'Aparelho',
     onRevoked: () => void remoteService?.checkDevices().catch(() => {})
   })
-  registerUpdateHandlers(ipcMain, {
+  const updateInstall = registerUpdateHandlers(ipcMain, {
     updater,
     // Same as before-quit: the renderer must still be there to save their time.
     stopAgentTimers: async () => {
@@ -2028,10 +2027,8 @@ app.whenReady().then(() => {
       now: () => Date.now()
     })
     const client = createControlClient({
-      fetch: heldControlFetch(
-        (url, init) => fetch(url, init),
-        () => updater.isSyncHeld()
-      ),
+      // Not held by a pending update (unlike sync): the phone is how it gets installed.
+      fetch: (url, init) => fetch(url, init),
       config: () => {
         const loaded = loadSyncConfig(userDataDir, syncFile, safeStorage)
         return loaded.status === 'ok' ? loaded.config : null
@@ -2082,6 +2079,15 @@ app.whenReady().then(() => {
       devices: async () =>
         (await engine.devices()).map((d) => ({ id: d.id, revoked: d.revokedAt !== null })),
       esp32Key: () => remoteEsp32Key(remoteConfig, safeStorage),
+      updateVersion: () => {
+        const status = updater.status()
+        return status.state === 'ready' ? status.version : null
+      },
+      installUpdate: async () => {
+        if (updater.status().state !== 'ready') return 'none'
+        const status = await updateInstall.install()
+        return status.installError ? 'failed' : 'ok'
+      },
       log,
       onChange: () => emitRemote()
     })

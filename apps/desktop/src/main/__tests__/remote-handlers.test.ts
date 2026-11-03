@@ -14,7 +14,6 @@ import {
 } from '../handlers/remote'
 import type { PendingMcpApproval } from '../modules/agent/mcp-approval'
 import { defaultRemoteConfig, esp32Key, type RemoteConfig } from '../modules/remote/remote-config'
-import { heldControlFetch } from '../modules/remote/remote-fetch'
 import type { RemoteService } from '../modules/remote/remote-service'
 import type { SafeStorageLike } from '../modules/sync/sync-config'
 
@@ -178,31 +177,6 @@ describe('remote:authorize', () => {
       ok: false,
       error: 'Senha incorreta.'
     })
-  })
-})
-
-describe('heldControlFetch', () => {
-  it('com a atualização pendente recusa /control, /roles e /esp32-key e deixa /power passar', async () => {
-    let held = true
-    const inner = vi.fn(async () => ({ status: 200, json: async () => ({}) }))
-    const f = heldControlFetch(inner, () => held)
-    const base = 'https://sync.example.workers.dev'
-    for (const path of [
-      '/control/inbox',
-      '/control/status',
-      '/roles/pc',
-      '/roles/controllers/x',
-      '/esp32-key'
-    ]) {
-      await expect(f(base + path, { method: 'GET', headers: {} })).rejects.toThrow()
-    }
-    expect(inner).not.toHaveBeenCalled()
-    await f(base + '/power/state', { method: 'GET', headers: {} })
-    await f(base + '/power-token', { method: 'POST', headers: {} })
-    expect(inner).toHaveBeenCalledTimes(2)
-    held = false
-    await f(base + '/control/inbox', { method: 'GET', headers: {} })
-    expect(inner).toHaveBeenCalledTimes(3)
   })
 })
 

@@ -29,11 +29,17 @@ export const CONTROL_TEXT = {
     'Use um código novo do autenticador ou outro código reserva (o anterior já foi usado para entrar).',
   offline: 'Sem conexão com o servidor.',
   syncInactive: 'O controle remoto está parado: a sincronização não está ativa.',
+  installConfirm: 'Instalar a atualização agora? O Sagyou salva tudo e reinicia.',
+  installFailed: 'Não foi possível instalar a atualização; o Sagyou continua na versão atual.',
   forceConfirm:
     'O Sagyou não está respondendo. Forçar o desligamento pelo ESP32? O que não foi salvo no Sagyou pode se perder.'
 } as const
 
 const pad = (n: number): string => n.toString().padStart(2, '0')
+
+export function updateReadyText(version: string): string {
+  return `Atualização ${version} pronta`
+}
 
 export function rcDownText(names: string[]): string {
   return `PC ligado, Remote Control fora do ar: ${names.join(', ')}.`

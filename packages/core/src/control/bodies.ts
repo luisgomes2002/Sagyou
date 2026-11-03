@@ -64,6 +64,12 @@ export function parseAuthorized(body: unknown): { key: Uint8Array } | null {
   return key ? { key } : null
 }
 
+/**
+ * PC → phone, in answer to `authorize-request`: the PC's public key, signed by it,
+ * so the phone can show the pairing code before the PC authorizes it.
+ */
+export const parsePcKey = parseAuthorized
+
 /** PC → phone: the ESP32 key (base64), to sign power commands. */
 export interface Esp32KeyBody {
   key: string
@@ -85,6 +91,8 @@ export type ResultReason =
   | 'flush-failed'
   | 'gone'
   | 'refused'
+  | 'no-update'
+  | 'install-failed'
 
 /** PC → phone: the answer to one request, by its nonce. */
 export interface ResultBody {
