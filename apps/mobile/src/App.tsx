@@ -32,6 +32,7 @@ import type { SearchHit } from './data/search'
 import { Placeholder } from './screens/Placeholder'
 import { ConflictsScreen } from './screens/ConflictsScreen'
 import { PAIR_DEVICE_TITLE, PairDeviceScreen } from './screens/PairDeviceScreen'
+import { CONTROL_TITLE, ControlSetupScreen } from './screens/ControlSetupScreen'
 import { SyncGuideScreen } from './screens/SyncGuideScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
 import { TasksStack } from './screens/tasks/TasksStack'
@@ -75,6 +76,7 @@ export type RootStackParams = {
   Conflitos: undefined
   ComoFunciona: undefined
   ParearAparelho: undefined
+  ControlarPC: undefined
 }
 
 const Tabs = createBottomTabNavigator()
@@ -244,6 +246,11 @@ export function AppShell({ mode }: { mode: AppMode }): React.JSX.Element {
           name="ParearAparelho"
           component={PairDeviceScreen}
           options={{ title: PAIR_DEVICE_TITLE }}
+        />
+        <Stack.Screen
+          name="ControlarPC"
+          component={ControlSetupScreen}
+          options={{ title: CONTROL_TITLE }}
         />
       </Stack.Navigator>
     </NavigationContainer>

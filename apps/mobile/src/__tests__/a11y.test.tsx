@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react-native'
 import type { ComponentType } from 'react'
 import { StyleSheet } from 'react-native'
+import { ControlSetupScreen } from '../screens/ControlSetupScreen'
 import { FinanceScreen } from '../screens/FinanceScreen'
 import { HabitsScreen } from '../screens/HabitsScreen'
 import { NotesScreen } from '../screens/NotesScreen'
@@ -93,6 +94,7 @@ const SCREENS: [string, ComponentType][] = [
   ['Ajustes', () => <SettingsScreen />],
   ['Como funciona', () => <SyncGuideScreen />],
   ['Parear outro aparelho', () => <PairDeviceScreen />],
+  ['Controlar o PC', () => <ControlSetupScreen />],
   [
     'Entrar com código de recuperação',
     () => <RecoverSync busy={false} error={null} onSubmit={jest.fn()} onBack={jest.fn()} />

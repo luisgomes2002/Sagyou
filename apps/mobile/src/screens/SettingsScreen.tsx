@@ -3,6 +3,7 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import { ACTION_ICONS } from '../components/icons'
 import { SYNC_GUIDE_LINK } from '../components/SyncGuideContent'
 import { Button, Card, ListItem, Screen } from '../components/ui'
+import { CONTROL_TITLE } from './ControlSetupScreen'
 import { useApp } from '../store/app'
 import { useUpdate } from '../store/update'
 import { PAIR_DEVICE_TITLE } from './PairDeviceScreen'
@@ -83,7 +84,9 @@ function VersionCard(): React.JSX.Element {
 
 /** What the root stack hands the screen; absent when rendered alone (tests). */
 export interface SettingsScreenProps {
-  navigation?: { navigate(screen: 'Conflitos' | 'ComoFunciona' | 'ParearAparelho'): void }
+  navigation?: {
+    navigate(screen: 'Conflitos' | 'ComoFunciona' | 'ParearAparelho' | 'ControlarPC'): void
+  }
 }
 
 export function SettingsScreen({ navigation }: SettingsScreenProps = {}): React.JSX.Element {
@@ -155,6 +158,14 @@ export function SettingsScreen({ navigation }: SettingsScreenProps = {}): React.
               title={PAIR_DEVICE_TITLE}
               right={<ACTION_ICONS.chevron size={18} color={theme.muted} />}
               onPress={() => navigation?.navigate('ParearAparelho')}
+            />
+          ) : null}
+          {/* Read-only: nothing may be sent to the PC either. */}
+          {!readOnly && services?.runtime.engine ? (
+            <ListItem
+              title={CONTROL_TITLE}
+              right={<ACTION_ICONS.chevron size={18} color={theme.muted} />}
+              onPress={() => navigation?.navigate('ControlarPC')}
             />
           ) : null}
         </Section>

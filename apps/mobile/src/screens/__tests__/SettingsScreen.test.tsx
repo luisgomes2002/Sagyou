@@ -47,6 +47,19 @@ describe('SettingsScreen', () => {
     expect(screen.queryByText('1 conflito')).toBeNull()
   })
 
+  it('Controlar o PC abre a tela e some no modo só leitura', async () => {
+    seedApp()
+    useApp.setState({ status: STATUS })
+    const navigate = jest.fn()
+    await render(<SettingsScreen navigation={{ navigate }} />)
+    await fireEvent.press(screen.getByText('Controlar o PC'))
+    expect(navigate).toHaveBeenCalledWith('ControlarPC')
+    seedApp({}, { readOnly: true })
+    useApp.setState({ status: STATUS })
+    await render(<SettingsScreen navigation={{ navigate }} />)
+    expect(screen.queryByText('Controlar o PC')).toBeNull()
+  })
+
   it('as seções aparecem na ordem e desconectar fica na zona de perigo', async () => {
     seedApp({
       financialProfiles: [
