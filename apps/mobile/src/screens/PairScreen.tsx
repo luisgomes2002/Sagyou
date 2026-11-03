@@ -7,6 +7,7 @@ import { ActivityIndicator, BackHandler, ScrollView, StyleSheet, Text, View } fr
 import { AppMark } from '../components/AppMark'
 import { SYNC_GUIDE_LINK, SyncGuideContent } from '../components/SyncGuideContent'
 import { Button, Field, Screen } from '../components/ui'
+import { RECOVER_TITLE, RecoverSync } from './RecoverSync'
 import { useApp } from '../store/app'
 import { FONT, RADIUS, SPACE, useTheme } from '../theme'
 
@@ -64,14 +65,17 @@ export function PairScreen(): React.JSX.Element {
   // Before pairing there is no navigator: the guide opens in place, and the
   // system back closes it instead of leaving the app.
   const [guide, setGuide] = useState(false)
+  // "Entrar com código de recuperação": the phone was lost and no paired device is at hand.
+  const [recovering, setRecovering] = useState(false)
   useEffect(() => {
-    if (!guide) return
+    if (!guide && !recovering) return
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       setGuide(false)
+      setRecovering(false)
       return true
     })
     return () => sub.remove()
-  }, [guide])
+  }, [guide, recovering])
   const used = useRef(false)
 
   const finish = (): void => {
@@ -106,10 +110,28 @@ export function PairScreen(): React.JSX.Element {
     await run(() => services.runtime.engine.join(text.trim(), 'replace', name))
   }
 
+  const recover = async (recoveryCode: string, setupToken: string, totp: string): Promise<void> => {
+    if (!services || busy) return
+    await run(() => services.runtime.engine.recover(recoveryCode, setupToken, name, { totp }))
+  }
+
   const retryDownload = async (): Promise<void> => {
     if (!services || busy) return
     await run(() => services.runtime.engine.resume('take-cloud'))
   }
+
+  if (recovering && !downloadPending)
+    return (
+      <RecoverSync
+        busy={busy}
+        error={error}
+        onSubmit={(code, token, factor) => void recover(code, token, factor)}
+        onBack={() => {
+          setRecovering(false)
+          setError(null)
+        }}
+      />
+    )
 
   if (busy)
     return (
@@ -210,6 +232,14 @@ export function PairScreen(): React.JSX.Element {
           multiline
         />
         <Button label="Colar código" onPress={() => void join(code)} disabled={!code.trim()} />
+        <Button
+          variant="ghost"
+          label={RECOVER_TITLE}
+          onPress={() => {
+            setError(null)
+            setRecovering(true)
+          }}
+        />
         {error ? (
           <Text accessibilityRole="alert" style={{ color: theme.red, fontSize: FONT.body }}>
             {error}

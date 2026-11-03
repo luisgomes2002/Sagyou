@@ -12,6 +12,7 @@ import {
   PairScreen,
   WELCOME_TEXT
 } from '../PairScreen'
+import { RECOVER_TITLE } from '../RecoverSync'
 
 function withJoin(
   join: jest.Mock,
@@ -135,5 +136,62 @@ describe('PairScreen', () => {
     expect(handled).toBe(true)
     expect(screen.getByText(ON_PC_TEXT)).toBeTruthy()
     add.mockRestore()
+  })
+
+  describe('entrar com código de recuperação', () => {
+    const CODE = 'ABCD-EFGH-IJKL'
+    const TOKEN = 'senha-do-worker'
+
+    async function fill(): Promise<void> {
+      await toCodeStep()
+      await fireEvent.press(screen.getByRole('button', { name: RECOVER_TITLE }))
+      await fireEvent.changeText(screen.getByLabelText('Código de recuperação'), ` ${CODE} `)
+      await fireEvent.changeText(screen.getByLabelText('Senha de configuração do Worker'), TOKEN)
+      await fireEvent.changeText(
+        screen.getByLabelText('Código do autenticador ou reserva'),
+        ' 123456 '
+      )
+    }
+
+    it('chama recover com os três valores e o nome do aparelho', async () => {
+      const recover = jest.fn(async () => ({ state: 'ok' }))
+      withJoin(jest.fn(), { status: () => ({ state: 'ok' }), recover })
+      const paired = jest.fn()
+      useApp.setState({ paired })
+      await fill()
+      await fireEvent.press(screen.getByRole('button', { name: 'Entrar' }))
+      expect(recover).toHaveBeenCalledWith(CODE, TOKEN, 'Pixel de teste', { totp: '123456' })
+      expect(paired).toHaveBeenCalled()
+    })
+
+    it('fator errado mostra a mensagem e mantém os campos, sem log', async () => {
+      const log = jest.spyOn(console, 'log').mockImplementation(() => undefined)
+      const message = 'Prova da chave ou código do autenticador inválido.'
+      const recover = jest.fn(async () => {
+        throw new SyncUserError(message)
+      })
+      withJoin(jest.fn(), { status: () => ({ state: 'ok' }), recover })
+      await fill()
+      await fireEvent.press(screen.getByRole('button', { name: 'Entrar' }))
+      expect(await screen.findByText(message)).toBeTruthy()
+      expect(screen.getByLabelText('Código de recuperação').props.value).toBe(` ${CODE} `)
+      expect(screen.getByLabelText('Senha de configuração do Worker').props.value).toBe(TOKEN)
+      expect(screen.getByLabelText('Senha de configuração do Worker').props.secureTextEntry).toBe(
+        true
+      )
+      expect(log).not.toHaveBeenCalled()
+      log.mockRestore()
+    })
+
+    it('Entrar fica desligado até os três campos estarem preenchidos', async () => {
+      withJoin(jest.fn())
+      await toCodeStep()
+      await fireEvent.press(screen.getByRole('button', { name: RECOVER_TITLE }))
+      expect(screen.getByRole('button', { name: 'Entrar' }).props.accessibilityState).toMatchObject(
+        { disabled: true }
+      )
+      await fireEvent.press(screen.getByRole('button', { name: 'Voltar' }))
+      expect(screen.getByRole('button', { name: 'Colar código' })).toBeTruthy()
+    })
   })
 })

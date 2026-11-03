@@ -5,6 +5,7 @@ import { FinanceScreen } from '../screens/FinanceScreen'
 import { HabitsScreen } from '../screens/HabitsScreen'
 import { NotesScreen } from '../screens/NotesScreen'
 import { PairDeviceScreen } from '../screens/PairDeviceScreen'
+import { RecoverSync } from '../screens/RecoverSync'
 import { SearchScreen } from '../screens/SearchScreen'
 import { SettingsScreen } from '../screens/SettingsScreen'
 import { SyncGuideScreen } from '../screens/SyncGuideScreen'
@@ -91,7 +92,11 @@ const SCREENS: [string, ComponentType][] = [
   ['Busca', () => <SearchScreen onOpen={jest.fn()} />],
   ['Ajustes', () => <SettingsScreen />],
   ['Como funciona', () => <SyncGuideScreen />],
-  ['Parear outro aparelho', () => <PairDeviceScreen />]
+  ['Parear outro aparelho', () => <PairDeviceScreen />],
+  [
+    'Entrar com código de recuperação',
+    () => <RecoverSync busy={false} error={null} onSubmit={jest.fn()} onBack={jest.fn()} />
+  ]
 ]
 
 const INTERACTIVE = ['button', 'checkbox', 'radio', 'tab'] as const
