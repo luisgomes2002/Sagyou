@@ -22,6 +22,8 @@ import {
   applyMcpAction,
   formatMcpMoney,
   freeNotePosition,
+  MCP_LOCKED_START_MESSAGE,
+  mcpWriteBlocked,
   parseMcpMoney,
   prepareMcpAction
 } from '../../services/mcpActions'
@@ -101,6 +103,47 @@ describe('MCP writes while the app is locked', () => {
       setDataLocked(false)
     }
     expect(applyMcpAction('create_column', { name: 'Testes' }, scope).ok).toBe(true)
+  })
+
+  // Spec 2026-11-03-acesso-remoto: "Funcionar com o Sagyou bloqueado".
+  const external: McpScope = { projectId: null, financialProfileId: null }
+
+  it('the external token on a locked, loaded store applies (main lets its flush through)', async () => {
+    const { setDataLocked } = await import('../../services/lockState')
+    const { id } = seedProject()
+    setDataLocked(true)
+    try {
+      const args = { projectId: id, name: 'Pelo celular' }
+      expect(prepareMcpAction('create_column', args, external, true).ok).toBe(true)
+      expect(applyMcpAction('create_column', args, external, true).ok).toBe(true)
+      expect(project(id).columns.map((c) => c.name)).toContain('Pelo celular')
+      expect(mcpWriteBlocked(true)).toBeNull()
+      expect(mcpWriteBlocked(false)).toBe(
+        'O Sagyou está bloqueado. Desbloqueie no PC para continuar.'
+      )
+    } finally {
+      setDataLocked(false)
+    }
+  })
+
+  it('opened locked and never unlocked: the external token still writes nothing', async () => {
+    const { setDataLocked } = await import('../../services/lockState')
+    const { id } = seedProject()
+    useKanbanStore.setState({ isLoaded: false })
+    setDataLocked(true)
+    try {
+      const refusal = { ok: false, error: MCP_LOCKED_START_MESSAGE }
+      expect(MCP_LOCKED_START_MESSAGE).toBe(
+        'O Sagyou abriu bloqueado: as escritas voltam depois do primeiro desbloqueio no PC. Leituras funcionam.'
+      )
+      expect(
+        applyMcpAction('create_column', { projectId: id, name: 'X' }, external, true)
+      ).toEqual(refusal)
+      expect(mcpWriteBlocked(true)).toBe(MCP_LOCKED_START_MESSAGE)
+      expect(project(id).columns.map((c) => c.name)).not.toContain('X')
+    } finally {
+      setDataLocked(false)
+    }
   })
 })
 
