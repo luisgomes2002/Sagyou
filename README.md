@@ -84,7 +84,7 @@ As sessões abertas aparecem em abas acima do terminal. Se houver muitas, role a
 
 **Acesso aos seus dados por MCP.** O agente consulta e altera tarefas, projetos, notas, metas, finanças e memórias por um servidor MCP local, com credencial temporária limitada àquela sessão, ao projeto e ao perfil financeiro escolhidos.
 
-**Acesso MCP externo.** Para um Claude Code fora das Sessões de código (como o Remote Control pelo celular), **Configurações → Acesso MCP externo** gera um token de 30 dias com projeto padrão, perfil financeiro e "Só leitura" ou "Leitura e escrita", e um comando `claude mcp add sagyou-externo …` pronto para copiar. O token aparece uma vez, só o hash fica no PC (fora do banco e do backup), renovar troca na hora e revogar corta o acesso. Criar tarefas (`criar_task`) e editar funcionam; escritas arriscadas (excluir, dinheiro, arquivar, tabelas e perfis financeiros, `save_memory`) são sempre recusadas por esse acesso. Só funciona neste PC (`127.0.0.1`), com o Sagyou aberto e desbloqueado.
+**Acesso MCP externo.** Para um Claude Code fora das Sessões de código (como o Remote Control pelo celular), **Configurações → Acesso MCP externo** gera um token **sem prazo e com acesso total** — todos os projetos, todos os perfis financeiros e todas as ações, inclusive excluir e mexer em dinheiro, sem cartão de aprovação — e um comando `claude mcp add sagyou-externo …` pronto para copiar. O token aparece uma vez, só o hash fica no PC (fora do banco e do backup), **Gerar novo token** troca na hora e **Revogar** corta o acesso. Só funciona neste PC (`127.0.0.1`), com o Sagyou aberto. Com senha no app, o token para quando a tela bloqueia, a não ser que você ligue **Funcionar com o Sagyou bloqueado** (aí a proteção do token passa a ser a senha do Windows). Para usar de longe, deixe o PC sem suspender.
 
 Ao lançar ou editar uma transação, o agente também preenche os detalhes da fatura (item, valor, categoria e data da compra), a origem, a contraparte e a referência bancária. Valem as mesmas regras do app: a soma dos detalhes nunca passa do valor, e a edição entra na auditoria.
 
@@ -150,7 +150,7 @@ Para parear, no app, em **Configurações → Sincronização**:
 
 1. No primeiro PC, preencha a URL do Worker e o `SETUP_TOKEN` e clique em **Ativar**. Guarde o código de recuperação que aparece: ele é a única forma de recuperar a chave se você perder todos os aparelhos.
 2. Ainda no primeiro PC, cadastre o autenticador (Google Authenticator ou outro app TOTP) e guarde os códigos reserva. Ele é pedido para apagar os dados de um aparelho perdido.
-3. Clique em **Parear novo aparelho**. Aparecem um texto e um QR que valem por 10 minutos.
+3. Clique em **Parear novo aparelho**. Aparecem um texto e um QR que valem por 10 minutos. Um celular já pareado também gera esse código, em **Ajustes → Parear outro aparelho** (útil longe do PC).
 4. No segundo PC, use **Entrar com código** e cole o texto. Se esse PC já tiver dados, escolha **Juntar** (fica tudo dos dois lados) ou **Substituir** (fica só o que está na nuvem, com um backup antes).
 
 Quando a mesma coisa é editada nos dois PCs sem conexão, a versão mais recente vale e a outra aparece em **Conflitos**, com **Usar esta** para trocar. Escolher num aparelho (inclusive manter a versão atual) avisa os outros, e o mesmo conflito fecha sozinho neles na próxima sincronização. Uma dívida editada nos dois lados nunca muda sozinha: ela fica marcada como "conflito: escolha a versão" até você escolher.
