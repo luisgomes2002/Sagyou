@@ -263,7 +263,7 @@ describe('remote-service: pedidos de um controle', () => {
     const t = setup()
     ;(t.deps.shutdown as ReturnType<typeof vi.fn>).mockResolvedValueOnce('flush-failed')
     await t.deliver(t.request('shutdown'))
-    const last = t.sent.at(-1)!
+    const last = t.sent.filter((s) => s.env.kind === 'result').at(-1)!
     expect(last.env.body).toMatchObject({ ok: false, reason: 'flush-failed' })
     expect(last.notify).toBe('shutdown-failed')
   })
@@ -353,7 +353,12 @@ describe('remote-service: autorização', () => {
     expect(t.config().controllers.map((c) => c.id)).toEqual([OTHER])
     // The Worker already cleared the former controllers.
     expect(t.client.removeController).not.toHaveBeenCalled()
-    expect(t.sent.filter((s) => s.to === OTHER).map((s) => s.env.kind)).toEqual(['authorized', 'esp32-key'])
+    // Then the first heartbeat of this start tells it the PC is ready.
+    expect(t.sent.filter((s) => s.to === OTHER).map((s) => s.env.kind)).toEqual([
+      'authorized',
+      'esp32-key',
+      'status'
+    ])
     expect(t.deps.log.info).toHaveBeenCalledWith('remote', 'authorize_remote', { result: 'ok' })
   })
 
