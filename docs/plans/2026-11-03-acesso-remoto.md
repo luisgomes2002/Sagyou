@@ -1,6 +1,6 @@
 # Plano de implementação: Acesso remoto (parear pelo celular + MCP externo total)
 
-Status: draft
+Status: approved by Luis on 2026-11-03
 Spec: docs/specs/2026-11-03-acesso-remoto.md
 Branch: feature/acesso-remoto
 
