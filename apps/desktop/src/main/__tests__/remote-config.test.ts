@@ -54,7 +54,9 @@ describe('remote-control.json', () => {
     expect(loaded).toEqual(config)
     expect(pcPrivateKey(loaded, safe)).toEqual(priv)
     expect(esp32Key(loaded, safe)).toEqual(esp)
-    expect(readFileSync(join(dir, file), 'utf-8')).not.toContain(Buffer.from(priv).toString('base64'))
+    expect(readFileSync(join(dir, file), 'utf-8')).not.toContain(
+      Buffer.from(priv).toString('base64')
+    )
   })
 
   it('JSON malformado volta ao padrão', () => {

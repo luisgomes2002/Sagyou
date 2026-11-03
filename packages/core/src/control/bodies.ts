@@ -20,7 +20,9 @@ function key32(v: unknown): Uint8Array | null {
 }
 
 const obj = (body: unknown): Record<string, unknown> | null =>
-  body && typeof body === 'object' && !Array.isArray(body) ? (body as Record<string, unknown>) : null
+  body && typeof body === 'object' && !Array.isArray(body)
+    ? (body as Record<string, unknown>)
+    : null
 
 /** Phone → PC, signed by the key it carries (proof of possession). */
 export interface AuthorizeRequestBody {

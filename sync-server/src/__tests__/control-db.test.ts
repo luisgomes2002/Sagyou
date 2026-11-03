@@ -9,7 +9,11 @@ const A = 'a'.repeat(32)
 const B = 'b'.repeat(32)
 const C = 'c'.repeat(32)
 
-const msg = (to: string, msgId: string, expiresAt = 10_000): {
+const msg = (
+  to: string,
+  msgId: string,
+  expiresAt = 10_000
+): {
   to: string
   from: string
   msgId: string

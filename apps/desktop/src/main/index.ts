@@ -2050,10 +2050,13 @@ app.whenReady().then(() => {
       clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
       isLocked: () => passwordConfig !== null && isAppLocked(),
       verifyPassword: (password) =>
-        !passwordConfigCorrupt && passwordConfig !== null && verifyPassword(passwordConfig, password),
+        !passwordConfigCorrupt &&
+        passwordConfig !== null &&
+        verifyPassword(passwordConfig, password),
       unlock: () =>
         remoteUnlock({
-          canUnlock: () => !passwordConfigCorrupt && passwordConfig !== null && !appLock.isLocking(),
+          canUnlock: () =>
+            !passwordConfigCorrupt && passwordConfig !== null && !appLock.isLocking(),
           setUnlocked: () => {
             passwordUnlocked = true
           },

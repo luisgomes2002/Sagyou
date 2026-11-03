@@ -76,7 +76,8 @@ function parse(raw: unknown): RemoteConfig {
       : [],
     servers: Array.isArray(r.servers) ? (r.servers as unknown[]).filter(isString).slice(0, 50) : [],
     esp32KeyCipher: isString(r.esp32KeyCipher) ? r.esp32KeyCipher : null,
-    failures: Number.isSafeInteger(r.failures) && (r.failures as number) >= 0 ? (r.failures as number) : 0,
+    failures:
+      Number.isSafeInteger(r.failures) && (r.failures as number) >= 0 ? (r.failures as number) : 0,
     suspendedUntil: Number.isSafeInteger(r.suspendedUntil) ? (r.suspendedUntil as number) : null,
     seenNonces: Array.isArray(r.seenNonces)
       ? (r.seenNonces as Record<string, unknown>[]).flatMap((n) =>
@@ -100,7 +101,12 @@ export function loadRemoteConfig(dir: string, file: string): RemoteConfig {
   }
 }
 
-export function saveRemoteConfig(dir: string, file: string, config: RemoteConfig, now = Date.now()): void {
+export function saveRemoteConfig(
+  dir: string,
+  file: string,
+  config: RemoteConfig,
+  now = Date.now()
+): void {
   const pruned: RemoteConfig = {
     ...config,
     seenNonces: config.seenNonces.filter((n) => n.until > now)

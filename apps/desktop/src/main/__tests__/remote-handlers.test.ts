@@ -46,7 +46,17 @@ function fakeService(): RemoteService & Record<string, ReturnType<typeof vi.fn>>
   } as unknown as RemoteService & Record<string, ReturnType<typeof vi.fn>>
 }
 
-function setup(over: Partial<RemoteHandlerDeps> = {}) {
+type FakeClient = ControlClient & Record<string, ReturnType<typeof vi.fn>>
+
+interface HandlerSetup {
+  invoke: <T = Record<string, unknown>>(channel: string, ...args: unknown[]) => Promise<T>
+  service: ReturnType<typeof fakeService>
+  client: FakeClient
+  emitStatus: ReturnType<typeof vi.fn>
+  config: () => RemoteConfig
+}
+
+function setup(over: Partial<RemoteHandlerDeps> = {}): HandlerSetup {
   const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>()
   const ipcMain = {
     handle: (channel: string, fn: (event: unknown, ...args: unknown[]) => unknown) =>
@@ -57,7 +67,7 @@ function setup(over: Partial<RemoteHandlerDeps> = {}) {
   const client = {
     setPc: vi.fn(async () => {}),
     createPowerToken: vi.fn(async () => 'token-do-esp32-123')
-  } as unknown as ControlClient & Record<string, ReturnType<typeof vi.fn>>
+  } as unknown as FakeClient
   const emitStatus = vi.fn()
   registerRemoteHandlers(ipcMain, {
     service,
@@ -75,8 +85,10 @@ function setup(over: Partial<RemoteHandlerDeps> = {}) {
     emitStatus,
     ...over
   })
-  const invoke = async <T = Record<string, unknown>>(channel: string, ...args: unknown[]): Promise<T> =>
-    (await handlers.get(channel)!({}, ...args)) as T
+  const invoke = async <T = Record<string, unknown>>(
+    channel: string,
+    ...args: unknown[]
+  ): Promise<T> => (await handlers.get(channel)!({}, ...args)) as T
   return { invoke, service, client, emitStatus, config: () => config }
 }
 
@@ -175,7 +187,13 @@ describe('heldControlFetch', () => {
     const inner = vi.fn(async () => ({ status: 200, json: async () => ({}) }))
     const f = heldControlFetch(inner, () => held)
     const base = 'https://sync.example.workers.dev'
-    for (const path of ['/control/inbox', '/control/status', '/roles/pc', '/roles/controllers/x', '/esp32-key']) {
+    for (const path of [
+      '/control/inbox',
+      '/control/status',
+      '/roles/pc',
+      '/roles/controllers/x',
+      '/esp32-key'
+    ]) {
       await expect(f(base + path, { method: 'GET', headers: {} })).rejects.toThrow()
     }
     expect(inner).not.toHaveBeenCalled()
@@ -217,11 +235,21 @@ describe('createRemoteCards', () => {
     const send = vi.fn()
     const cards = createRemoteCards({ maps: () => [pending], service: () => service, send })
     const toRenderer = vi.fn()
-    const decision = cards.park(pending, { id: 'c1', name: 'mcp:delete_task', resumo: 'Apagar' }, toRenderer, 'Claude Code')
+    const decision = cards.park(
+      pending,
+      { id: 'c1', name: 'mcp:delete_task', resumo: 'Apagar' },
+      toRenderer,
+      'Claude Code'
+    )
 
     expect(toRenderer).toHaveBeenCalled()
     expect(service.sendCard).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'c1', tool: 'delete_task', resumo: 'Apagar', session: 'Claude Code' })
+      expect.objectContaining({
+        id: 'c1',
+        tool: 'delete_task',
+        resumo: 'Apagar',
+        session: 'Claude Code'
+      })
     )
     expect(cards.answer('c1', true)).toBe(true)
     await expect(decision).resolves.toBe(true)

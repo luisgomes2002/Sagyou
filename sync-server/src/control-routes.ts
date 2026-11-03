@@ -109,7 +109,10 @@ async function espAuth(request: Request, db: ControlDb, h: ControlHelpers): Prom
   }
 }
 
-function sealedSlot(h: ControlHelpers, body: Record<string, unknown>): { msgId: string; ciphertext: string } {
+function sealedSlot(
+  h: ControlHelpers,
+  body: Record<string, unknown>
+): { msgId: string; ciphertext: string } {
   return {
     msgId: field(h, body, 'msgId', MSG_ID, 64),
     ciphertext: field(h, body, 'ciphertext', BASE64, CONTROL_MAX_BODY_BYTES)
@@ -192,7 +195,12 @@ const send: ControlHandler = async (request, _p, db, deps, h) => {
   const to = field(h, body, 'to', OPAQUE_ID, 32)
   const sealed = sealedSlot(h, body)
   const ttl = body.ttlMs
-  if (typeof ttl !== 'number' || !Number.isSafeInteger(ttl) || ttl < 1000 || ttl > MESSAGE_MAX_TTL_MS) {
+  if (
+    typeof ttl !== 'number' ||
+    !Number.isSafeInteger(ttl) ||
+    ttl < 1000 ||
+    ttl > MESSAGE_MAX_TTL_MS
+  ) {
     throw h.fail(400, { error: 'invalid ttlMs' })
   }
   const notify = body.notify
@@ -265,7 +273,13 @@ const getEsp32Key: ControlHandler = async (request, _p, db, _d, h) => {
 const putPushToken: ControlHandler = async (request, _p, db, deps, h) => {
   const me = await h.authenticate(request)
   await requireRole(db, h, me.id, ['controller'])
-  const token = field(h, await h.readJson(request, CONTROL_MAX_BODY_BYTES), 'token', FCM_TOKEN, 4096)
+  const token = field(
+    h,
+    await h.readJson(request, CONTROL_MAX_BODY_BYTES),
+    'token',
+    FCM_TOKEN,
+    4096
+  )
   await db.putPushToken(me.id, token, deps.now())
   return h.reply(200, { ok: true })
 }
@@ -286,7 +300,8 @@ const powerCommand: ControlHandler = async (request, _p, db, deps, h) => {
   await requireRole(db, h, me.id, ['controller'])
   const body = await h.readJson(request, CONTROL_MAX_BODY_BYTES)
   const cmd = body.cmd
-  if (typeof cmd !== 'string' || !POWER_COMMANDS.includes(cmd)) throw h.fail(400, { error: 'invalid cmd' })
+  if (typeof cmd !== 'string' || !POWER_COMMANDS.includes(cmd))
+    throw h.fail(400, { error: 'invalid cmd' })
   const at = time(h, body, 'at')
   const exp = time(h, body, 'exp')
   if (exp <= at || exp > at + POWER_COMMAND_MAX_MS) throw h.fail(400, { error: 'invalid exp' })

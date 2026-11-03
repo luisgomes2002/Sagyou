@@ -63,7 +63,13 @@ export async function serviceJwt(account: ServiceAccount, nowMs: number): Promis
   const iat = Math.floor(nowMs / 1000)
   const header = base64Url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))
   const claims = base64Url(
-    JSON.stringify({ iss: account.client_email, scope: SCOPE, aud: TOKEN_URL, iat, exp: iat + 3600 })
+    JSON.stringify({
+      iss: account.client_email,
+      scope: SCOPE,
+      aud: TOKEN_URL,
+      iat,
+      exp: iat + 3600
+    })
   )
   const key = await crypto.subtle.importKey(
     'pkcs8',
@@ -73,7 +79,11 @@ export async function serviceJwt(account: ServiceAccount, nowMs: number): Promis
     ['sign']
   )
   const signed = new Uint8Array(
-    await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(`${header}.${claims}`))
+    await crypto.subtle.sign(
+      'RSASSA-PKCS1-v1_5',
+      key,
+      new TextEncoder().encode(`${header}.${claims}`)
+    )
   )
   return `${header}.${claims}.${base64Url(signed)}`
 }

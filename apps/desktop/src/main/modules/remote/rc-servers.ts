@@ -20,7 +20,10 @@ function namesIn(line: string): string[] {
 }
 
 /** Exact name match, case-insensitive, in the configured order. */
-export function matchServers(commandLines: string[], names: string[]): { name: string; up: boolean }[] {
+export function matchServers(
+  commandLines: string[],
+  names: string[]
+): { name: string; up: boolean }[] {
   const running = new Set(commandLines.flatMap(namesIn).map((n) => n.toLowerCase()))
   return names.map((name) => ({ name, up: running.has(name.trim().toLowerCase()) }))
 }
@@ -35,7 +38,12 @@ export async function listCommandLines(
 ): Promise<string[]> {
   if (platform !== 'win32') return []
   try {
-    const out = await exec('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', PS_SCRIPT])
+    const out = await exec('powershell.exe', [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      PS_SCRIPT
+    ])
     return out
       .split(/\r?\n/)
       .map((l) => l.trim())

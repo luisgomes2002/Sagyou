@@ -236,7 +236,9 @@ export const api = {
       ipcRenderer.invoke('remote:revoke', controllerId),
     setServers: (names: string[]): Promise<RemoteResult> =>
       ipcRenderer.invoke('remote:servers:set', names),
-    createEsp32: (factor?: SyncSecondFactor): Promise<RemoteResult<{ token: string; key: string }>> =>
+    createEsp32: (
+      factor?: SyncSecondFactor
+    ): Promise<RemoteResult<{ token: string; key: string }>> =>
       ipcRenderer.invoke('remote:esp32:create', factor),
     onStatusChanged: (cb: (status: RemoteStatusView) => void) => {
       const handler = (_: Electron.IpcRendererEvent, status: RemoteStatusView): void => cb(status)

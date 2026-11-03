@@ -27,13 +27,7 @@ export function createShutdown(deps: ShutdownDeps): Shutdown {
     async start() {
       if (!(await deps.flush())) return 'flush-failed'
       await deps.stopRunTimers()
-      await deps.exec('shutdown', [
-        '/s',
-        '/t',
-        String(SHUTDOWN_DELAY_S),
-        '/c',
-        SHUTDOWN_COMMENT
-      ])
+      await deps.exec('shutdown', ['/s', '/t', String(SHUTDOWN_DELAY_S), '/c', SHUTDOWN_COMMENT])
       scheduledAt = deps.now() + SHUTDOWN_DELAY_S * 1000
       return 'ok'
     },

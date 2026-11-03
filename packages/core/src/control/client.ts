@@ -93,7 +93,9 @@ function errorFor(status: number, body: Record<string, unknown>): ControlError {
   if (status === 403) return new ControlError('forbidden')
   if (status === 401) {
     return new ControlError(
-      body.error === 'invalid factor' || body.error === 'factor required' ? 'factor' : 'unauthorized'
+      body.error === 'invalid factor' || body.error === 'factor required'
+        ? 'factor'
+        : 'unauthorized'
     )
   }
   return new ControlError('offline')
@@ -144,7 +146,9 @@ export function createControlClient(deps: ControlClientDeps): ControlClient {
   }
 
   const open = (from: string, to: string, msgId: string, ciphertext: string): SignedEnvelope => {
-    const parsed: unknown = JSON.parse(fromUtf8(openControl(session().ck, from, to, msgId, ciphertext)))
+    const parsed: unknown = JSON.parse(
+      fromUtf8(openControl(session().ck, from, to, msgId, ciphertext))
+    )
     if (!isEnvelope(parsed)) throw new ControlDecryptError()
     return parsed
   }

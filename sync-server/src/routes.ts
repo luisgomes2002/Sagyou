@@ -6,7 +6,12 @@
 // revoked token gets 401 `{revoked: true, wipe}`. Only Web APIs are used
 // (crypto.subtle, Request/Response), so this runs both on Workers and Node.
 import type { AuthRow, DeviceRow, SyncDb } from './db'
-import { handleControl, isMissingTable, type ControlDeps, type ControlHelpers } from './control-routes'
+import {
+  handleControl,
+  isMissingTable,
+  type ControlDeps,
+  type ControlHelpers
+} from './control-routes'
 
 export const MAX_BODY_BYTES = 2 * 1024 * 1024
 export const INVITE_TTL_MS = 10 * 60 * 1000

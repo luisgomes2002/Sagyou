@@ -4,7 +4,18 @@ import { createShutdown } from '../modules/remote/shutdown'
 
 const T0 = 1_800_000_000_000
 
-function setup(flushOk: boolean) {
+interface Setup {
+  deps: {
+    flush: ReturnType<typeof vi.fn>
+    stopRunTimers: ReturnType<typeof vi.fn>
+    exec: ReturnType<typeof vi.fn>
+    now: () => number
+  }
+  calls: string[]
+  shutdown: ReturnType<typeof createShutdown>
+}
+
+function setup(flushOk: boolean): Setup {
   const calls: string[] = []
   const deps = {
     flush: vi.fn(async () => {
@@ -34,7 +45,11 @@ describe('createShutdown', () => {
   it('salva, para os cronômetros e só então agenda o desligamento de 60 s', async () => {
     const t = setup(true)
     expect(await t.shutdown.start()).toBe('ok')
-    expect(t.calls).toEqual(['flush', 'timers', 'shutdown /s /t 60 /c Sagyou: desligando pelo celular'])
+    expect(t.calls).toEqual([
+      'flush',
+      'timers',
+      'shutdown /s /t 60 /c Sagyou: desligando pelo celular'
+    ])
     expect(t.deps.exec).toHaveBeenCalledWith('shutdown', [
       '/s',
       '/t',

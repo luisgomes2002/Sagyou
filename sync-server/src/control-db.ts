@@ -183,7 +183,9 @@ export class D1ControlDb implements ControlDb {
     const row = await this.db
       .prepare(`SELECT from_device, msg_id, ciphertext, at FROM ${table} WHERE id = 1`)
       .first<{ from_device: string; msg_id: string; ciphertext: string; at: number }>()
-    return row ? { from: row.from_device, msgId: row.msg_id, ciphertext: row.ciphertext, at: row.at } : null
+    return row
+      ? { from: row.from_device, msgId: row.msg_id, ciphertext: row.ciphertext, at: row.at }
+      : null
   }
 
   putStatus(s: SealedSlot): Promise<void> {
@@ -204,7 +206,9 @@ export class D1ControlDb implements ControlDb {
 
   async setPowerToken(hash: string, now: number): Promise<void> {
     await this.db
-      .prepare('INSERT OR REPLACE INTO power_tokens (id, token_hash, created_at) VALUES (1, ?1, ?2)')
+      .prepare(
+        'INSERT OR REPLACE INTO power_tokens (id, token_hash, created_at) VALUES (1, ?1, ?2)'
+      )
       .bind(hash, now)
       .run()
   }
@@ -235,14 +239,18 @@ export class D1ControlDb implements ControlDb {
       )
       .bind(now)
       .first<{ cmd: string; at: number; exp: number; mac: string; taken_at: number }>()
-    return row ? { cmd: row.cmd, at: row.at, exp: row.exp, mac: row.mac, takenAt: row.taken_at } : null
+    return row
+      ? { cmd: row.cmd, at: row.at, exp: row.exp, mac: row.mac, takenAt: row.taken_at }
+      : null
   }
 
   async lastPowerCommand(): Promise<PowerCommandRow | null> {
     const row = await this.db
       .prepare('SELECT cmd, at, exp, mac, taken_at FROM power_commands WHERE id = 1')
       .first<{ cmd: string; at: number; exp: number; mac: string; taken_at: number | null }>()
-    return row ? { cmd: row.cmd, at: row.at, exp: row.exp, mac: row.mac, takenAt: row.taken_at } : null
+    return row
+      ? { cmd: row.cmd, at: row.at, exp: row.exp, mac: row.mac, takenAt: row.taken_at }
+      : null
   }
 
   async putPowerState(s: Omit<PowerStateRow, 'lastPoll'>, now: number): Promise<void> {
@@ -291,7 +299,9 @@ export class D1ControlDb implements ControlDb {
   async pushTokens(ids: string[]): Promise<string[]> {
     if (ids.length === 0) return []
     const res = await this.db
-      .prepare(`SELECT token FROM push_tokens WHERE id IN (${ids.map((_, i) => `?${i + 1}`).join(',')})`)
+      .prepare(
+        `SELECT token FROM push_tokens WHERE id IN (${ids.map((_, i) => `?${i + 1}`).join(',')})`
+      )
       .bind(...ids)
       .all<{ token: string }>()
     return res.results.map((r) => r.token)
@@ -356,7 +366,13 @@ export class MemoryControlDb implements ControlDb {
     return mine
       .filter((x) => x.expiresAt > now)
       .sort((a, b) => a.createdAt - b.createdAt)
-      .map(({ createdAt: _createdAt, ...row }) => row)
+      .map(({ to: rowTo, from, msgId, ciphertext, expiresAt }) => ({
+        to: rowTo,
+        from,
+        msgId,
+        ciphertext,
+        expiresAt
+      }))
   }
 
   async putStatus(s: SealedSlot): Promise<void> {

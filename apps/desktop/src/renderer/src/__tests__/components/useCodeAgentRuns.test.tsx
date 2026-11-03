@@ -90,7 +90,13 @@ describe('useCodeAgentRuns', () => {
     const { result } = renderHook(() => useCodeAgentRuns())
     await waitFor(() => expect(result.current.runs).toHaveLength(2))
     act(() => {
-      approve?.({ runId: 'run-A', id: 'card-1', name: 'mcp:delete_task', args: {}, resumo: 'Apagar' })
+      approve?.({
+        runId: 'run-A',
+        id: 'card-1',
+        name: 'mcp:delete_task',
+        args: {},
+        resumo: 'Apagar'
+      })
     })
     expect(result.current.runs.find((r) => r.id === 'run-A')?.approvals).toHaveLength(1)
     act(() => closed?.('card-1'))

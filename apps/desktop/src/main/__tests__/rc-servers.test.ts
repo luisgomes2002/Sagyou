@@ -7,12 +7,16 @@ import { listCommandLines, matchServers } from '../modules/remote/rc-servers'
 
 describe('matchServers', () => {
   it('reconhece o executável nativo com nome entre aspas', () => {
-    const lines = ['"C:\\Users\\luis\\.local\\bin\\claude.exe" remote-control --spawn worktree --name "Sagyou"']
+    const lines = [
+      '"C:\\Users\\luis\\.local\\bin\\claude.exe" remote-control --spawn worktree --name "Sagyou"'
+    ]
     expect(matchServers(lines, ['Sagyou'])).toEqual([{ name: 'Sagyou', up: true }])
   })
 
   it('reconhece o node rodando o cli.js com nome sem aspas', () => {
-    const lines = ['node.exe C:\\npm\\node_modules\\@anthropic-ai\\claude-code\\cli.js remote-control --name Murasaki']
+    const lines = [
+      'node.exe C:\\npm\\node_modules\\@anthropic-ai\\claude-code\\cli.js remote-control --name Murasaki'
+    ]
     expect(matchServers(lines, ['Murasaki'])).toEqual([{ name: 'Murasaki', up: true }])
   })
 
@@ -53,7 +57,10 @@ describe('listCommandLines', () => {
       'a remote-control --name X',
       'b remote-control --name Y'
     ])
-    expect(exec).toHaveBeenCalledWith('powershell.exe', expect.arrayContaining(['-NoProfile', '-Command']))
+    expect(exec).toHaveBeenCalledWith(
+      'powershell.exe',
+      expect.arrayContaining(['-NoProfile', '-Command'])
+    )
   })
 
   it('erro vira lista vazia', async () => {

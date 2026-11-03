@@ -69,7 +69,11 @@ describe('sendPush', () => {
       sendPush({ serviceAccount: JSON.stringify(account), fetch, now: () => 0 }, ['t'], 'ready')
     ).resolves.toBeUndefined()
     const refused = fakeFetch({ tokenOk: false })
-    await sendPush({ serviceAccount: JSON.stringify(account), fetch: refused.fetch, now: () => 0 }, ['t'], 'ready')
+    await sendPush(
+      { serviceAccount: JSON.stringify(account), fetch: refused.fetch, now: () => 0 },
+      ['t'],
+      'ready'
+    )
     expect(refused.sent.some((s) => s.url.includes('fcm'))).toBe(false)
   })
 

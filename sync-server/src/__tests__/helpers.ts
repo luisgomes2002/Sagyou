@@ -305,7 +305,11 @@ export async function enroll(
   return { uri, code, backupCodes: (await json(confirmed)).backupCodes as string[] }
 }
 
-export async function pairSecond(deps: RouteDeps, tokenA: string, deviceId = DEV_B): Promise<string> {
+export async function pairSecond(
+  deps: RouteDeps,
+  tokenA: string,
+  deviceId = DEV_B
+): Promise<string> {
   const invite = `convite-${deviceId}`
   const inv = await handle(
     req('POST', '/invites', { token: tokenA, body: { inviteHash: await sha256Hex(invite) } }),
@@ -319,4 +323,3 @@ export async function pairSecond(deps: RouteDeps, tokenA: string, deviceId = DEV
   expect(res.status).toBe(200)
   return (await json(res)).token as string
 }
-

@@ -70,7 +70,11 @@ async function makePc(w: World): Promise<void> {
 }
 
 async function makeController(w: World, id: string): Promise<void> {
-  const res = await call(w, 'POST', '/roles/controllers', { token: w.a, headers: proof, body: { id } })
+  const res = await call(w, 'POST', '/roles/controllers', {
+    token: w.a,
+    headers: proof,
+    body: { id }
+  })
   expect(res.status).toBe(200)
 }
 
@@ -109,7 +113,8 @@ describe('papéis', () => {
       controllers: [DEV_B]
     })
     expect(
-      (await call(w, 'DELETE', `/roles/controllers/${DEV_B}`, { token: w.a, headers: proof })).status
+      (await call(w, 'DELETE', `/roles/controllers/${DEV_B}`, { token: w.a, headers: proof }))
+        .status
     ).toBe(200)
     expect((await w.control.getRoles()).controllers).toEqual([])
   })
@@ -177,10 +182,18 @@ describe('mensagens', () => {
     const w = await world()
     await makePc(w)
     await makeController(w, DEV_B)
-    expect((await call(w, 'POST', '/control/send', { token: w.b, body: message(DEV_A) })).status).toBe(200)
-    expect((await call(w, 'POST', '/control/send', { token: w.c, body: message(DEV_A) })).status).toBe(200)
-    expect((await call(w, 'POST', '/control/send', { token: w.b, body: message(DEV_C) })).status).toBe(403)
-    expect((await call(w, 'POST', '/control/send', { token: w.a, body: message(DEV_B) })).status).toBe(200)
+    expect(
+      (await call(w, 'POST', '/control/send', { token: w.b, body: message(DEV_A) })).status
+    ).toBe(200)
+    expect(
+      (await call(w, 'POST', '/control/send', { token: w.c, body: message(DEV_A) })).status
+    ).toBe(200)
+    expect(
+      (await call(w, 'POST', '/control/send', { token: w.b, body: message(DEV_C) })).status
+    ).toBe(403)
+    expect(
+      (await call(w, 'POST', '/control/send', { token: w.a, body: message(DEV_B) })).status
+    ).toBe(200)
   })
 
   it('só o PC pode pedir notificação, e com um dos códigos fixos', async () => {
@@ -272,7 +285,8 @@ describe('energia e ESP32', () => {
         .status
     ).toBe(400)
     expect(
-      (await call(w, 'POST', '/power/command', { token: w.b, body: { ...cmd, cmd: 'format' } })).status
+      (await call(w, 'POST', '/power/command', { token: w.b, body: { ...cmd, cmd: 'format' } }))
+        .status
     ).toBe(400)
     expect((await call(w, 'POST', '/power/command', { token: w.b, body: cmd })).status).toBe(200)
 

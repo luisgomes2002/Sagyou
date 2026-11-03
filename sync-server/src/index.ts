@@ -28,7 +28,11 @@ export default {
       defer: (p) => ctx.waitUntil(p),
       notify: async (ids, code) =>
         sendPush(
-          { serviceAccount: env.FCM_SERVICE_ACCOUNT, fetch: (u, i) => fetch(u, i), now: () => Date.now() },
+          {
+            serviceAccount: env.FCM_SERVICE_ACCOUNT,
+            fetch: (u, i) => fetch(u, i),
+            now: () => Date.now()
+          },
           await control.pushTokens(ids),
           code
         )

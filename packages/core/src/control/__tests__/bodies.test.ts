@@ -42,7 +42,13 @@ describe('corpos das mensagens do controle', () => {
       until: 5
     })
     expect(parseResult({ ok: true })).toBeNull()
-    const card = { id: 'c1', session: 'Sagyou', tool: 'delete_task', resumo: 'Apagar', expiresAt: 10 }
+    const card = {
+      id: 'c1',
+      session: 'Sagyou',
+      tool: 'delete_task',
+      resumo: 'Apagar',
+      expiresAt: 10
+    }
     expect(parseApprovalCard(card)).toEqual(card)
     expect(parseApprovalCard({ ...card, expiresAt: 'x' })).toBeNull()
     expect(parseApprovalAnswer({ id: 'c1', approved: true })).toEqual({ id: 'c1', approved: true })

@@ -75,9 +75,9 @@ describe('pcState', () => {
       'booting'
     )
     expect(pcState({ ...base, power: noPing, lastCommand: wake(5 * MIN) }).state).toBe('off')
-    expect(pcState({ ...base, power: noPing, lastCommand: { cmd: 'shutdown', at: NOW } }).state).toBe(
-      'off'
-    )
+    expect(
+      pcState({ ...base, power: noPing, lastCommand: { cmd: 'shutdown', at: NOW } }).state
+    ).toBe('off')
   })
 
   it('Desligado sem ping e sem sinal de vida', () => {

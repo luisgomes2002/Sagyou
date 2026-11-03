@@ -156,10 +156,10 @@ describe('RemoteControlSettings', () => {
     const until = new Date(2026, 10, 3, 14, 32).getTime()
     mount({ suspendedUntil: until })
     expect(await screen.findByText(suspendedText(until))).toBeInTheDocument()
-    expect(suspendedText(until)).toBe(
-      'Controle remoto suspenso até 14:32 por pedidos recusados.'
+    expect(suspendedText(until)).toBe('Controle remoto suspenso até 14:32 por pedidos recusados.')
+    act(() =>
+      statusListener?.({ ...base, error: 'Atualize o Worker para usar o controle remoto.' })
     )
-    act(() => statusListener?.({ ...base, error: 'Atualize o Worker para usar o controle remoto.' }))
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Atualize o Worker para usar o controle remoto.'
     )

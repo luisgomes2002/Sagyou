@@ -33,7 +33,9 @@ export const REMOTE_TEXT = {
 export const MAX_SERVER_NAME = 64
 export const MAX_SERVERS = 50
 
-export type RemoteResult<T extends object = object> = ({ ok: true } & T) | { ok: false; error: string }
+export type RemoteResult<T extends object = object> =
+  | ({ ok: true } & T)
+  | { ok: false; error: string }
 
 export interface RemoteStatusView {
   supported: boolean
@@ -113,7 +115,10 @@ export function serverNames(value: unknown): string[] | null {
   return out
 }
 
-export function registerRemoteHandlers(ipcMain: IpcMain, deps: RemoteHandlerDeps): () => RemoteStatusView {
+export function registerRemoteHandlers(
+  ipcMain: IpcMain,
+  deps: RemoteHandlerDeps
+): () => RemoteStatusView {
   const { service, client } = deps
 
   const view = (): RemoteStatusView => {
@@ -133,7 +138,8 @@ export function registerRemoteHandlers(ipcMain: IpcMain, deps: RemoteHandlerDeps
           : code
             ? errorText(new ControlError(code))
             : null,
-      suspendedUntil: cfg.suspendedUntil !== null && cfg.suspendedUntil > now ? cfg.suspendedUntil : null,
+      suspendedUntil:
+        cfg.suspendedUntil !== null && cfg.suspendedUntil > now ? cfg.suspendedUntil : null,
       controllers: cfg.controllers.map(({ id: cid, name, since }) => ({ id: cid, name, since })),
       servers: deps.servers(),
       pending: service.pendingAuthorizations(),
@@ -309,7 +315,10 @@ export function createRemoteCards(deps: {
           .catch(() => {})
       }).then((approved) => {
         deps.send('ai:code-agent:approval-closed', request.id)
-        void deps.service()?.closeCard(request.id).catch(() => {})
+        void deps
+          .service()
+          ?.closeCard(request.id)
+          .catch(() => {})
         return approved
       })
     },

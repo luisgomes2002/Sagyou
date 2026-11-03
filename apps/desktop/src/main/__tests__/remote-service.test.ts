@@ -10,6 +10,7 @@ import {
   AUTHORIZATION_TTL_MS,
   REMOTE_SUSPEND_MS,
   createRemoteService,
+  type RemoteService,
   type RemoteServiceDeps
 } from '../modules/remote/remote-service'
 
@@ -33,7 +34,45 @@ interface Sent {
   notify?: string
 }
 
-function setup(opts: { controllers?: 'phone' | 'none'; locked?: boolean; esp32?: boolean } = {}) {
+type FakeClient = ControlClient & {
+  send: ReturnType<typeof vi.fn>
+  inbox: ReturnType<typeof vi.fn>
+  addController: ReturnType<typeof vi.fn>
+  removeController: ReturnType<typeof vi.fn>
+  putEsp32Key: ReturnType<typeof vi.fn>
+}
+
+interface Keys {
+  privateKey: Uint8Array
+  publicKey: Uint8Array
+}
+
+interface Setup {
+  pc: Keys
+  phone: Keys
+  deps: RemoteServiceDeps
+  service: RemoteService
+  client: FakeClient
+  sent: Sent[]
+  statuses: SignedEnvelope[]
+  timers: { fn: () => void; ms: number }[]
+  request: (
+    kind: ControlKind,
+    body?: Record<string, unknown>,
+    o?: { from?: string; key?: Uint8Array; at?: number }
+  ) => InboxMessage
+  deliver: (...msgs: InboxMessage[]) => Promise<void>
+  results: () => Record<string, unknown>[]
+  lastResult: () => Record<string, unknown> | undefined
+  config: () => RemoteConfig
+  setConfig: (c: RemoteConfig) => void
+  advance: (ms: number) => void
+  setDevices: (d: { id: string; revoked: boolean }[]) => void
+}
+
+function setup(
+  opts: { controllers?: 'phone' | 'none'; locked?: boolean; esp32?: boolean } = {}
+): Setup {
   const pc = newSigningKeys()
   const phone = newSigningKeys()
   let now = T0
@@ -65,13 +104,7 @@ function setup(opts: { controllers?: 'phone' | 'none'; locked?: boolean; esp32?:
     addController: vi.fn(async () => {}),
     removeController: vi.fn(async () => {}),
     putEsp32Key: vi.fn(async () => {})
-  } as unknown as ControlClient & {
-    send: ReturnType<typeof vi.fn>
-    inbox: ReturnType<typeof vi.fn>
-    addController: ReturnType<typeof vi.fn>
-    removeController: ReturnType<typeof vi.fn>
-    putEsp32Key: ReturnType<typeof vi.fn>
-  }
+  } as unknown as FakeClient
   let locked = opts.locked ?? true
   const timers: { fn: () => void; ms: number }[] = []
   const esp = opts.esp32 ? new Uint8Array(32).fill(7) : null
@@ -187,7 +220,10 @@ describe('remote-service: pedidos de um controle', () => {
     const again = createRemoteService({ ...t.deps, unlock: vi.fn() })
     again.syncStatusChanged(okSync)
     again.start()
-    ;(t.client.inbox as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ messages: [req], dropped: 0 })
+    ;(t.client.inbox as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      messages: [req],
+      dropped: 0
+    })
     await again.tick()
     expect(t.lastResult()).toMatchObject({ ok: false, reason: 'replay' })
   })
@@ -303,7 +339,12 @@ describe('remote-service: autorização', () => {
   it('pedido de autorização cria pendência com o código e some em 10 min', async () => {
     const t = setup({ controllers: 'none' })
     const newPhone = newSigningKeys()
-    await t.deliver(t.request('authorize-request', authBody(newPhone.privateKey), { from: OTHER, key: newPhone.privateKey }))
+    await t.deliver(
+      t.request('authorize-request', authBody(newPhone.privateKey), {
+        from: OTHER,
+        key: newPhone.privateKey
+      })
+    )
     expect(t.service.pendingAuthorizations()).toEqual([
       {
         id: OTHER,
@@ -320,7 +361,12 @@ describe('remote-service: autorização', () => {
   it('autorizar localmente confere a senha, registra no Worker e envia authorized e esp32-key', async () => {
     const t = setup({ controllers: 'none', esp32: true })
     const newPhone = newSigningKeys()
-    await t.deliver(t.request('authorize-request', authBody(newPhone.privateKey), { from: OTHER, key: newPhone.privateKey }))
+    await t.deliver(
+      t.request('authorize-request', authBody(newPhone.privateKey), {
+        from: OTHER,
+        key: newPhone.privateKey
+      })
+    )
     expect(await t.service.authorize(OTHER, 'errada')).toBe('wrong-password')
     expect(t.client.addController).not.toHaveBeenCalled()
 
@@ -338,7 +384,10 @@ describe('remote-service: autorização', () => {
     const t = setup({ controllers: 'none' })
     const newPhone = newSigningKeys()
     await t.deliver(
-      t.request('authorize-request', authBody(newPhone.privateKey), { from: OTHER, key: newSigningKeys().privateKey })
+      t.request('authorize-request', authBody(newPhone.privateKey), {
+        from: OTHER,
+        key: newSigningKeys().privateKey
+      })
     )
     expect(t.service.pendingAuthorizations()).toEqual([])
     expect(t.config().failures).toBe(1)
@@ -348,7 +397,11 @@ describe('remote-service: autorização', () => {
     const t = setup({ esp32: true })
     const newPhone = newSigningKeys()
     await t.deliver(
-      t.request('authorize-remote', { ...authBody(newPhone.privateKey), password: PASSWORD }, { from: OTHER, key: newPhone.privateKey })
+      t.request(
+        'authorize-remote',
+        { ...authBody(newPhone.privateKey), password: PASSWORD },
+        { from: OTHER, key: newPhone.privateKey }
+      )
     )
     expect(t.config().controllers.map((c) => c.id)).toEqual([OTHER])
     // The Worker already cleared the former controllers.
@@ -366,7 +419,11 @@ describe('remote-service: autorização', () => {
     const t = setup()
     const newPhone = newSigningKeys()
     await t.deliver(
-      t.request('authorize-remote', { ...authBody(newPhone.privateKey), password: 'errada' }, { from: OTHER, key: newPhone.privateKey })
+      t.request(
+        'authorize-remote',
+        { ...authBody(newPhone.privateKey), password: 'errada' },
+        { from: OTHER, key: newPhone.privateKey }
+      )
     )
     expect(t.client.removeController).toHaveBeenCalledWith(OTHER)
     expect(t.lastResult()).toMatchObject({ ok: false, reason: 'wrong-password' })
@@ -380,7 +437,11 @@ describe('remote-service: autorização', () => {
     const verify = vi.spyOn(t.deps, 'verifyPassword')
     const newPhone = newSigningKeys()
     await t.deliver(
-      t.request('authorize-remote', { ...authBody(newPhone.privateKey), password: PASSWORD }, { from: OTHER, key: newPhone.privateKey })
+      t.request(
+        'authorize-remote',
+        { ...authBody(newPhone.privateKey), password: PASSWORD },
+        { from: OTHER, key: newPhone.privateKey }
+      )
     )
     expect(verify).not.toHaveBeenCalled()
     expect(t.lastResult()).toMatchObject({ ok: false, reason: 'suspended' })
@@ -445,7 +506,13 @@ describe('remote-service: ciclo', () => {
 
   it('cartão vai a cada controle com push de aprovação; fechar avisa', async () => {
     const t = setup()
-    const card = { id: 'c1', session: 'Sagyou', tool: 'delete_task', resumo: 'Apagar', expiresAt: T0 + 300_000 }
+    const card = {
+      id: 'c1',
+      session: 'Sagyou',
+      tool: 'delete_task',
+      resumo: 'Apagar',
+      expiresAt: T0 + 300_000
+    }
     await t.service.sendCard(card)
     const sentCard = t.sent.at(-1)!
     expect(sentCard).toMatchObject({ to: PHONE, notify: 'approval' })
