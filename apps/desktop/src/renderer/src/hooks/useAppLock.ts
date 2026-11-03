@@ -8,11 +8,24 @@ import { setDataLocked } from '../services/lockState'
  * The store stays in memory: unlocking returns to the same place without
  * loadData (which would credit every saved timer again).
  */
-export function useAppLock(onLocked: () => void): void {
+export function useAppLock(onLocked: () => void, onRemoteUnlocked?: () => void): void {
   const onLockedRef = useRef(onLocked)
+  const onRemoteUnlockedRef = useRef(onRemoteUnlocked)
   useEffect(() => {
     onLockedRef.current = onLocked
-  }, [onLocked])
+    onRemoteUnlockedRef.current = onRemoteUnlocked
+  }, [onLocked, onRemoteUnlocked])
+
+  // The authorized phone unlocked the app: leave the password screen like a
+  // right password would. The store is not reloaded here either; App loads it
+  // only while it was never loaded.
+  useEffect(() => {
+    const unsubscribe = window.electronAPI.security.onRemoteUnlocked?.(() => {
+      setDataLocked(false)
+      onRemoteUnlockedRef.current?.()
+    })
+    return unsubscribe
+  }, [])
 
   useEffect(() => {
     const unsubscribe = window.electronAPI.security.onLockRequest?.(() => {

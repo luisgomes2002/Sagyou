@@ -27,6 +27,7 @@ const SETTINGS_SECTIONS: SettingsSectionId[] = [
   'seguranca',
   'sincronizacao',
   'mcp-externo',
+  'controle-remoto',
   'sistema',
   'sobre'
 ]

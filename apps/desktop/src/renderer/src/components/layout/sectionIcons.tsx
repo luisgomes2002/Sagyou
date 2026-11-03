@@ -66,6 +66,12 @@ export const SECTION_ICONS = {
       <path d="M10.8 12.2 20 3M16 7l3 3M14 9l2 2" />
     </Icon>
   ),
+  phone: (
+    <Icon>
+      <rect x="7" y="2" width="10" height="20" rx="2" />
+      <path d="M11 18h2" />
+    </Icon>
+  ),
   info: (
     <Icon>
       <circle cx="12" cy="12" r="9" />

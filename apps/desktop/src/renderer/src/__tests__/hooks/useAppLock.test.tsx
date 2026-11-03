@@ -8,13 +8,20 @@ import { useKanbanStore } from '../../store/kanban'
 vi.mock('../../store/kanban', () => ({ useKanbanStore: { getState: vi.fn() } }))
 
 let request: (() => void) | undefined
+let remoteUnlocked: (() => void) | undefined
 const order: string[] = []
 const flush = vi.fn<() => Promise<void>>()
 const lockReady = vi.fn<() => Promise<void>>()
 const load = vi.fn()
 
-function Harness({ onLocked }: { onLocked: () => void }): JSX.Element {
-  useAppLock(onLocked)
+function Harness({
+  onLocked,
+  onRemote
+}: {
+  onLocked: () => void
+  onRemote?: () => void
+}): JSX.Element {
+  useAppLock(onLocked, onRemote)
   return <div />
 }
 
@@ -45,7 +52,11 @@ beforeEach(() => {
         request = cb
         return vi.fn()
       }),
-      lockReady
+      lockReady,
+      onRemoteUnlocked: vi.fn((cb: () => void) => {
+        remoteUnlocked = cb
+        return vi.fn()
+      })
     }
   }
 })
@@ -84,5 +95,17 @@ describe('useAppLock', () => {
     await settle()
     expect(lockReady).toHaveBeenCalledOnce()
     expect(onLocked).toHaveBeenCalledOnce()
+  })
+
+  it('o desbloqueio pelo celular sai da tela de senha sem recarregar a loja', async () => {
+    const onRemote = vi.fn()
+    render(<Harness onLocked={vi.fn()} onRemote={onRemote} />)
+    request?.()
+    await settle()
+    expect(isDataLocked()).toBe(true)
+    act(() => remoteUnlocked?.())
+    expect(isDataLocked()).toBe(false)
+    expect(onRemote).toHaveBeenCalledOnce()
+    expect(load).not.toHaveBeenCalled()
   })
 })

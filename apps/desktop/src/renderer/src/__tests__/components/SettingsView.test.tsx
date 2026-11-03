@@ -20,6 +20,15 @@ vi.mock('../../components/settings/SyncSettings', () => ({
     </div>
   )
 }))
+vi.mock('../../services/ElectronStorage', () => ({
+  ElectronStorage: vi.fn(function ElectronStorage(this: Record<string, unknown>) {
+    this.load = vi.fn().mockResolvedValue(null)
+    this.save = vi.fn().mockResolvedValue(undefined)
+  })
+}))
+vi.mock('../../components/settings/RemoteControlSettings', () => ({
+  RemoteControlSettings: () => <p>controles do controle remoto</p>
+}))
 vi.mock('../../components/settings/UpdateSettings', () => ({
   UpdateSettings: () => <p>controles de atualização</p>
 }))
@@ -96,7 +105,7 @@ describe('SettingsView', () => {
     expect(await screen.findByDisplayValue('Luis')).toBeInTheDocument()
   })
 
-  it('lists the eight sections in order', () => {
+  it('lists the nine sections in order', () => {
     renderSettings()
     expect(
       within(nav())
@@ -109,6 +118,7 @@ describe('SettingsView', () => {
       'Segurança',
       'Sincronização',
       'Acesso MCP externo',
+      'Controle remoto',
       'Sistema',
       'Sobre'
     ])

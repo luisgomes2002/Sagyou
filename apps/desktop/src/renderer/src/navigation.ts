@@ -48,6 +48,7 @@ export type SettingsSectionId =
   | 'seguranca'
   | 'sincronizacao'
   | 'mcp-externo'
+  | 'controle-remoto'
   | 'sistema'
   | 'sobre'
 

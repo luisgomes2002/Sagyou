@@ -74,4 +74,26 @@ describe('useCodeAgentRuns', () => {
       'inicio ' + 'b'.repeat(50)
     )
   })
+
+  it('remove o cartão quando ele fecha em outro lugar (celular, prazo)', async () => {
+    let approve: ((req: Record<string, unknown>) => void) | undefined
+    let closed: ((id: string) => void) | undefined
+    const api = window.electronAPI.ai.codeAgent as unknown as Record<string, unknown>
+    api.onApproveRequest = vi.fn((cb: typeof approve) => {
+      approve = cb
+      return vi.fn()
+    })
+    api.onApprovalClosed = vi.fn((cb: typeof closed) => {
+      closed = cb
+      return vi.fn()
+    })
+    const { result } = renderHook(() => useCodeAgentRuns())
+    await waitFor(() => expect(result.current.runs).toHaveLength(2))
+    act(() => {
+      approve?.({ runId: 'run-A', id: 'card-1', name: 'mcp:delete_task', args: {}, resumo: 'Apagar' })
+    })
+    expect(result.current.runs.find((r) => r.id === 'run-A')?.approvals).toHaveLength(1)
+    act(() => closed?.('card-1'))
+    expect(result.current.runs.find((r) => r.id === 'run-A')?.approvals).toHaveLength(0)
+  })
 })
