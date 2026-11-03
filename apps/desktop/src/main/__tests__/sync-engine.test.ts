@@ -1269,6 +1269,7 @@ describe('wipeLocalData', () => {
         'kanban.db-shm',
         'kanban.db-wal',
         'mcp-external.json',
+        'remote-control.json',
         'sync-config.json',
         'sync-device.json',
         'task-images'
@@ -1285,6 +1286,11 @@ describe('wipeLocalData', () => {
 
   it('em dev o token MCP externo de dev também sai', () => {
     expect(wipeTargets(true)).toContain('mcp-external-dev.json')
+  })
+
+  it('o controle remoto sai junto (celulares autorizados e chave do PC)', () => {
+    expect(wipeTargets(false)).toContain('remote-control.json')
+    expect(wipeTargets(true)).toContain('remote-control-dev.json')
   })
 
   it('em dev só apaga os arquivos com nome de dev (files/ e backups/ são do app instalado)', () => {
