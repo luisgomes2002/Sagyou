@@ -54,7 +54,6 @@ export function PairDeviceScreen({
 }: PairDeviceScreenProps = {}): React.JSX.Element {
   const theme = useTheme()
   const engine = useApp((s) => s.services?.runtime.engine)
-  const hidden = useLockState((s) => s.hidden)
   const [invite, setInvite] = useState<InviteState>({ kind: 'loading' })
   const [clock, setClock] = useState(now)
   const [snack, setSnack] = useState<string | null>(null)
@@ -62,10 +61,10 @@ export function PairDeviceScreen({
   // A late answer for a screen already gone (or a newer request) is dropped.
   const request = useRef(0)
 
-  const generate = useCallback(async (): Promise<void> => {
+  // Only sets state once the engine answers, so the first request can run from an effect.
+  const load = useCallback(async (): Promise<void> => {
     if (!engine) return
     const id = ++request.current
-    setInvite({ kind: 'loading' })
     try {
       const { code, expiresAt } = await engine.createInvite()
       if (id !== request.current) return
@@ -81,22 +80,32 @@ export function PairDeviceScreen({
     }
   }, [engine, now])
 
+  /** "Gerar outro" / "Tentar de novo": back to the skeleton, then a new invite. */
+  const generate = (): void => {
+    setInvite({ kind: 'loading' })
+    void load()
+  }
+
   useEffect(() => {
-    void generate()
+    void load()
     return () => {
       // Closing the screen forgets the code and ignores a request still on the way.
       request.current += 1
       if (snackTimer.current) clearTimeout(snackTimer.current)
     }
-  }, [generate])
+  }, [load])
 
   // Locked or in the background: the code goes away with the screen.
-  useEffect(() => {
-    if (!hidden) return
-    request.current += 1
-    setInvite({ kind: 'expired' })
-    navigation?.goBack()
-  }, [hidden, navigation])
+  useEffect(
+    () =>
+      useLockState.subscribe((state) => {
+        if (!state.hidden) return
+        request.current += 1
+        setInvite({ kind: 'expired' })
+        navigation?.goBack()
+      }),
+    [navigation]
+  )
 
   const ready = invite.kind === 'ready'
   const expiresAt = ready ? invite.expiresAt : 0
@@ -140,15 +149,15 @@ export function PairDeviceScreen({
             {invite.kind === 'expired' ? (
               <View style={styles.code}>
                 <Text style={[styles.body, { color: theme.attention }]}>{EXPIRED_TEXT}</Text>
-                <Button label={NEW_CODE_LABEL} onPress={() => void generate()} />
+                <Button label={NEW_CODE_LABEL} onPress={generate} />
               </View>
             ) : null}
             {invite.kind === 'error' ? (
               <View style={styles.code}>
-                <Text accessibilityRole="alert" style={[styles.body, { color: theme.attention }]}>
+                <Text accessibilityRole="alert" style={[styles.body, { color: theme.red }]}>
                   {invite.message}
                 </Text>
-                <Button label={RETRY_LABEL} onPress={() => void generate()} />
+                <Button label={RETRY_LABEL} onPress={generate} />
               </View>
             ) : null}
           </Card>
