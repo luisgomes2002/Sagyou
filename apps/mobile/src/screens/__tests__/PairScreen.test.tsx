@@ -43,7 +43,7 @@ describe('PairScreen', () => {
     expect(screen.getByText('2 de 3')).toBeTruthy()
     expect(screen.getByText(ON_PC_TEXT)).toBeTruthy()
     expect(ON_PC_TEXT).toBe(
-      'Abra Configurações → Sincronização → Parear novo aparelho no Sagyou do PC'
+      'Abra Configurações → Sincronização → Parear novo aparelho no Sagyou do PC, ou Ajustes → Parear outro aparelho num celular já pareado'
     )
     expect(screen.getByRole('button', { name: 'Ler QR' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Colar código' })).toBeTruthy()

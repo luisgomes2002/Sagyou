@@ -146,7 +146,7 @@ export const SYNC_KEYS_ARTICLE: SyncGuideArticle = {
     keyExample('Código de pareamento / QR', EXAMPLE_PAIR_CODE, [
       'Adiciona um aparelho.',
       'Ao parear outro PC ou o celular.',
-      'Gere outro em Parear novo aparelho.',
+      'Gere outro em Parear novo aparelho (PC) ou Parear outro aparelho (celular).',
       'Gere outro: vale 10 min e uma vez só.',
       'Expira em 10 min e serve uma vez; se suspeitar, revogue o aparelho que entrou.',
       'Não guarde: use na hora.'
