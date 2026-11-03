@@ -3,10 +3,7 @@
 // "Funcionar com o Sagyou bloqueado": when the lock stops the external token,
 // and the narrow store:save window its writes open (spec 2026-11-03-acesso-remoto).
 import { describe, expect, it } from 'vitest'
-import {
-  createLockedSaveGate,
-  externalBlockedByLock
-} from '../modules/agent/mcp-external-lock'
+import { createLockedSaveGate, externalBlockedByLock } from '../modules/agent/mcp-external-lock'
 
 describe('externalBlockedByLock', () => {
   it('desbloqueado nunca bloqueia', () => {

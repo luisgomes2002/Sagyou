@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type JSX } from 'react'
+import { useEffect, useState, type JSX } from 'react'
 import { ConfirmDialog } from '../ConfirmDialog'
 
 interface ExternalStatus {
@@ -49,18 +49,17 @@ export function McpExternalSettings({ onToast }: Props): JSX.Element {
   const [confirmRevoke, setConfirmRevoke] = useState(false)
   const [confirmNew, setConfirmNew] = useState(false)
 
-  const refresh = useCallback(async (): Promise<void> => {
-    setStatus(await window.electronAPI.mcpExternal.status())
-  }, [])
-
   useEffect(() => {
-    void refresh().catch(() => setError('Não foi possível ler o acesso MCP externo.'))
+    window.electronAPI.mcpExternal
+      .status()
+      .then(setStatus)
+      .catch(() => setError('Não foi possível ler o acesso MCP externo.'))
     // The option only matters with an app password: without one, nothing locks.
     void window.electronAPI.security
       ?.status()
       .then((security) => setHasPassword(security.enabled))
       .catch(() => setHasPassword(false))
-  }, [refresh])
+  }, [])
 
   const run = async (action: () => Promise<void>, fallback: string): Promise<void> => {
     setBusy(true)

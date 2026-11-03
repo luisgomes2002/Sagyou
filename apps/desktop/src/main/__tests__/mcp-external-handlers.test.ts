@@ -101,9 +101,9 @@ describe('mcp-external:*', () => {
       allowWhileLocked: true
     })
     expect(info).toHaveBeenCalledWith('mcp', 'external_allow_locked', { value: true })
-    expect(
-      JSON.parse(readFileSync(join(dir, 'mcp-external.json'), 'utf8')).allowWhileLocked
-    ).toBe(true)
+    expect(JSON.parse(readFileSync(join(dir, 'mcp-external.json'), 'utf8')).allowWhileLocked).toBe(
+      true
+    )
   })
 
   it('"funcionar bloqueado" sem token não cria nada', () => {

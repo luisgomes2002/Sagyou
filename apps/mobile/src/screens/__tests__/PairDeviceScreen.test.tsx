@@ -14,10 +14,9 @@ import {
   PAIR_HINT,
   PairDeviceScreen,
   QR_LABEL,
-  RETRY_LABEL,
-  UNEXPECTED_ERROR_TEXT,
-  countdownText
+  RETRY_LABEL
 } from '../PairDeviceScreen'
+import { UNEXPECTED_ERROR_TEXT, countdownText } from '../../sync/invite'
 import { SettingsScreen } from '../SettingsScreen'
 
 const CODE = 'sagyou-sync:1:aHR0cHM6Ly9leGVtcGxvLndvcmtlcnMuZGV2:QUJD:convite-de-teste-1234'
@@ -25,6 +24,8 @@ const START = Date.UTC(2026, 10, 3, 12)
 const TEN_MIN = 10 * 60 * 1000
 
 let clock: number
+// Stable across renders, like Date.now: the screen's effects depend on it.
+const NOW = (): number => clock
 let createInvite: jest.Mock
 
 function withEngine(): { writePref: jest.Mock; save: jest.Mock } {
@@ -60,7 +61,7 @@ const advance = async (ms: number): Promise<void> => {
 describe('PairDeviceScreen', () => {
   it('gera o convite ao abrir e mostra QR, instrução e contagem', async () => {
     withEngine()
-    await render(<PairDeviceScreen now={() => clock} />)
+    await render(<PairDeviceScreen now={NOW} />)
     expect(createInvite).toHaveBeenCalledTimes(1)
     expect(await screen.findByLabelText(QR_LABEL)).toBeTruthy()
     expect(screen.getByText(PAIR_HINT)).toBeTruthy()
@@ -74,7 +75,7 @@ describe('PairDeviceScreen', () => {
 
   it('expirado: some o QR e "Gerar outro" pede um convite novo', async () => {
     withEngine()
-    await render(<PairDeviceScreen now={() => clock} />)
+    await render(<PairDeviceScreen now={NOW} />)
     await screen.findByLabelText(QR_LABEL)
     await advance(TEN_MIN)
     expect(screen.getByText(EXPIRED_TEXT)).toBeTruthy()
@@ -86,7 +87,7 @@ describe('PairDeviceScreen', () => {
 
   it('Copiar código copia o texto do convite e avisa', async () => {
     withEngine()
-    await render(<PairDeviceScreen now={() => clock} />)
+    await render(<PairDeviceScreen now={NOW} />)
     await screen.findByLabelText(QR_LABEL)
     await fireEvent.press(screen.getByRole('button', { name: COPY_LABEL }))
     expect(Clipboard.setStringAsync).toHaveBeenCalledWith(CODE)
@@ -98,7 +99,7 @@ describe('PairDeviceScreen', () => {
       new SyncUserError('Sem conexão com o servidor de sincronização.')
     )
     withEngine()
-    await render(<PairDeviceScreen now={() => clock} />)
+    await render(<PairDeviceScreen now={NOW} />)
     expect(await screen.findByText('Sem conexão com o servidor de sincronização.')).toBeTruthy()
     await fireEvent.press(screen.getByRole('button', { name: RETRY_LABEL }))
     expect(createInvite).toHaveBeenCalledTimes(2)
@@ -108,7 +109,7 @@ describe('PairDeviceScreen', () => {
   it('um erro inesperado mostra a mensagem genérica', async () => {
     createInvite.mockRejectedValueOnce(new Error('x'))
     withEngine()
-    await render(<PairDeviceScreen now={() => clock} />)
+    await render(<PairDeviceScreen now={NOW} />)
     expect(await screen.findByText(UNEXPECTED_ERROR_TEXT)).toBeTruthy()
     expect(screen.queryByText('x')).toBeNull()
   })
@@ -116,16 +117,54 @@ describe('PairDeviceScreen', () => {
   it('bloquear ou ir para o fundo fecha a tela e apaga o código', async () => {
     withEngine()
     const goBack = jest.fn()
-    await render(<PairDeviceScreen navigation={{ goBack }} now={() => clock} />)
+    await render(<PairDeviceScreen navigation={{ goBack }} now={NOW} />)
     await screen.findByLabelText(QR_LABEL)
     await act(async () => useLockState.setState({ hidden: true }))
     expect(goBack).toHaveBeenCalled()
     expect(screen.queryByLabelText(QR_LABEL)).toBeNull()
   })
 
+  // Security review: the copied code (it carries the sync key) stayed in the
+  // Android clipboard, and the keyboard history, after the screen closed.
+  it('bloquear apaga do clipboard o código copiado', async () => {
+    withEngine()
+    await render(<PairDeviceScreen navigation={{ goBack: jest.fn() }} now={NOW} />)
+    await screen.findByLabelText(QR_LABEL)
+    await fireEvent.press(screen.getByRole('button', { name: COPY_LABEL }))
+    expect(await Clipboard.getStringAsync()).toBe(CODE)
+    await act(async () => useLockState.setState({ hidden: true }))
+    expect(await Clipboard.getStringAsync()).toBe('')
+  })
+
+  it('expirar e fechar a tela também apagam o código do clipboard', async () => {
+    withEngine()
+    const first = await render(<PairDeviceScreen now={NOW} />)
+    await screen.findByLabelText(QR_LABEL)
+    await fireEvent.press(screen.getByRole('button', { name: COPY_LABEL }))
+    await advance(TEN_MIN)
+    expect(await Clipboard.getStringAsync()).toBe('')
+    await first.unmount()
+    const second = await render(<PairDeviceScreen now={NOW} />)
+    await screen.findByLabelText(QR_LABEL)
+    await fireEvent.press(screen.getByRole('button', { name: COPY_LABEL }))
+    await second.unmount()
+    await act(async () => undefined)
+    expect(await Clipboard.getStringAsync()).toBe('')
+  })
+
+  it('não apaga o que o usuário copiou depois', async () => {
+    withEngine()
+    await render(<PairDeviceScreen navigation={{ goBack: jest.fn() }} now={NOW} />)
+    await screen.findByLabelText(QR_LABEL)
+    await fireEvent.press(screen.getByRole('button', { name: COPY_LABEL }))
+    await Clipboard.setStringAsync('lista de compras')
+    await act(async () => useLockState.setState({ hidden: true }))
+    expect(await Clipboard.getStringAsync()).toBe('lista de compras')
+  })
+
   it('o código nunca vai para as prefs nem para o banco', async () => {
     const { writePref, save } = withEngine()
-    await render(<PairDeviceScreen now={() => clock} />)
+    await render(<PairDeviceScreen now={NOW} />)
     await screen.findByLabelText(QR_LABEL)
     await fireEvent.press(screen.getByRole('button', { name: COPY_LABEL }))
     expect(JSON.stringify(writePref.mock.calls)).not.toContain('sagyou-sync:')

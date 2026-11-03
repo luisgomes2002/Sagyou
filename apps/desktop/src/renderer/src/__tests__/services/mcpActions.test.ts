@@ -136,9 +136,9 @@ describe('MCP writes while the app is locked', () => {
       expect(MCP_LOCKED_START_MESSAGE).toBe(
         'O Sagyou abriu bloqueado: as escritas voltam depois do primeiro desbloqueio no PC. Leituras funcionam.'
       )
-      expect(
-        applyMcpAction('create_column', { projectId: id, name: 'X' }, external, true)
-      ).toEqual(refusal)
+      expect(applyMcpAction('create_column', { projectId: id, name: 'X' }, external, true)).toEqual(
+        refusal
+      )
       expect(mcpWriteBlocked(true)).toBe(MCP_LOCKED_START_MESSAGE)
       expect(project(id).columns.map((c) => c.name)).not.toContain('X')
     } finally {
@@ -874,9 +874,9 @@ describe('MCP financial writes with the external token (every profile)', () => {
       profileId: otherProfile
     })
     expect(both('add_financial_category', inProfile({ category: 'Pets' }), external).ok).toBe(true)
-    expect(
-      state().financialProfiles.find((p) => p.id === otherProfile)!.customCategories
-    ).toEqual(['Pets'])
+    expect(state().financialProfiles.find((p) => p.id === otherProfile)!.customCategories).toEqual([
+      'Pets'
+    ])
     expect(both('rename_financial_profile', inProfile({ name: 'PJ' }), external).ok).toBe(true)
     expect(state().financialProfiles.find((p) => p.id === otherProfile)!.name).toBe('PJ')
   })

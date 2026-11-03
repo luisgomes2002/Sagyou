@@ -236,10 +236,7 @@ function assertTrustedRenderer(event: IpcMainInvokeEvent | IpcMainEvent): void {
 }
 
 /** All user data stays unavailable until the password screen unlocks the app. */
-function assertUnlockedDataAccess(
-  event: IpcMainInvokeEvent | IpcMainEvent,
-  channel: string
-): void {
+function assertUnlockedDataAccess(event: IpcMainInvokeEvent | IpcMainEvent, channel: string): void {
   assertTrustedRenderer(event)
   // The one exception: the flush of an external write main itself asked for
   // while locked ("Funcionar com o Sagyou bloqueado"). Never any other channel.

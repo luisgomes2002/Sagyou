@@ -122,6 +122,7 @@ describe('broker com o token externo', () => {
     expect(scoped).toHaveBeenCalledWith(
       'tasks',
       expect.objectContaining({ runId: EXTERNAL_RUN_ID, projectId: null }),
+      undefined,
       undefined
     )
   })
@@ -298,9 +299,9 @@ describe('escritas pelo token externo', () => {
         { id: 'x' }
       )
     await call(broker.port(), 'ok', 'save_memory', {
-      tipo: 'decisao',
-      titulo: 'Pelo celular',
-      corpo: 'Decidido fora de casa.'
+      type: 'decisao',
+      title: 'Pelo celular',
+      body: 'Decidido fora de casa.'
     })
     expect(saveMemory).toHaveBeenCalledWith(
       expect.objectContaining({ runId: EXTERNAL_RUN_ID }),

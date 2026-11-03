@@ -1,11 +1,11 @@
-import { SyncUserError } from '@sagyou/core/sync/engine'
 import * as Clipboard from 'expo-clipboard'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ScrollView, StyleSheet, Text, View } from 'react-native'
 import { Skeleton } from '../components/Skeleton'
 import { Button, Card, QrCode, Screen, Snackbar } from '../components/ui'
 import { useLockState } from '../lock/lockState'
 import { useApp } from '../store/app'
+import { countdownText, fetchInvite, forgetCopiedCode, type InviteState } from '../sync/invite'
 import { FONT, SPACE, useTheme } from '../theme'
 
 export const PAIR_DEVICE_TITLE = 'Parear outro aparelho'
@@ -16,24 +16,9 @@ export const COPIED_TEXT = 'Código copiado.'
 export const EXPIRED_TEXT = 'O código expirou.'
 export const NEW_CODE_LABEL = 'Gerar outro'
 export const RETRY_LABEL = 'Tentar de novo'
-export const UNEXPECTED_ERROR_TEXT = 'Não foi possível gerar o código.'
 export const QR_LABEL = 'Código de pareamento'
 const SNACK_MS = 4000
 const QR_SIZE = 240
-
-/** "M:SS" until `expiresAt`; never negative. */
-export function countdownText(expiresAt: number, now: number): string {
-  const left = Math.max(0, Math.ceil((expiresAt - now) / 1000))
-  const minutes = Math.floor(left / 60)
-  const seconds = String(left % 60).padStart(2, '0')
-  return `${minutes}:${seconds}`
-}
-
-type InviteState =
-  | { kind: 'loading' }
-  | { kind: 'ready'; code: string; expiresAt: number }
-  | { kind: 'expired' }
-  | { kind: 'error'; message: string }
 
 export interface PairDeviceScreenProps {
   navigation?: { goBack(): void }
@@ -60,40 +45,46 @@ export function PairDeviceScreen({
   const snackTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // A late answer for a screen already gone (or a newer request) is dropped.
   const request = useRef(0)
+  // The code put in the system clipboard, cleared again when it stops being valid here.
+  const copied = useRef<string | null>(null)
+  const forget = (): void => {
+    const code = copied.current
+    copied.current = null
+    void forgetCopiedCode(code)
+  }
 
-  // Only sets state once the engine answers, so the first request can run from an effect.
-  const load = useCallback(async (): Promise<void> => {
+  /** Starts a request; only its own answer (the latest) lands on screen. */
+  const startRequest = (): void => {
     if (!engine) return
     const id = ++request.current
-    try {
-      const { code, expiresAt } = await engine.createInvite()
+    void fetchInvite(engine).then((next) => {
       if (id !== request.current) return
       setClock(now())
-      setInvite({ kind: 'ready', code, expiresAt })
-    } catch (cause) {
-      if (id !== request.current) return
-      setInvite({
-        kind: 'error',
-        message:
-          cause instanceof SyncUserError && cause.message ? cause.message : UNEXPECTED_ERROR_TEXT
-      })
-    }
-  }, [engine, now])
+      setInvite(next)
+    })
+  }
 
   /** "Gerar outro" / "Tentar de novo": back to the skeleton, then a new invite. */
   const generate = (): void => {
     setInvite({ kind: 'loading' })
-    void load()
+    startRequest()
   }
 
   useEffect(() => {
-    void load()
+    if (!engine) return
+    const id = ++request.current
+    void fetchInvite(engine).then((next) => {
+      if (id !== request.current) return
+      setClock(now())
+      setInvite(next)
+    })
     return () => {
       // Closing the screen forgets the code and ignores a request still on the way.
       request.current += 1
       if (snackTimer.current) clearTimeout(snackTimer.current)
+      void forgetCopiedCode(copied.current)
     }
-  }, [load])
+  }, [engine, now])
 
   // Locked or in the background: the code goes away with the screen.
   useEffect(
@@ -101,6 +92,7 @@ export function PairDeviceScreen({
       useLockState.subscribe((state) => {
         if (!state.hidden) return
         request.current += 1
+        forget()
         setInvite({ kind: 'expired' })
         navigation?.goBack()
       }),
@@ -114,7 +106,10 @@ export function PairDeviceScreen({
     const tick = setInterval(() => {
       const current = now()
       setClock(current)
-      if (current >= expiresAt) setInvite({ kind: 'expired' })
+      if (current >= expiresAt) {
+        forget()
+        setInvite({ kind: 'expired' })
+      }
     }, 1000)
     return () => clearInterval(tick)
   }, [ready, expiresAt, now])
@@ -122,6 +117,7 @@ export function PairDeviceScreen({
   const copy = async (): Promise<void> => {
     if (invite.kind !== 'ready') return
     await Clipboard.setStringAsync(invite.code)
+    copied.current = invite.code
     setSnack(COPIED_TEXT)
     if (snackTimer.current) clearTimeout(snackTimer.current)
     snackTimer.current = setTimeout(() => setSnack(null), SNACK_MS)

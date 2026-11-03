@@ -1,6 +1,7 @@
 import { create as createQr } from 'qrcode'
 import { render, screen } from '@testing-library/react-native'
-import { QR_MARGIN, QrCode, qrPath } from '../QrCode'
+import { QrCode } from '../QrCode'
+import { QR_MARGIN, qrPath } from '../qr'
 
 const CODE = 'sagyou-sync:1:aHR0cHM6Ly9leGVtcGxvLndvcmtlcnMuZGV2:QUJD:convite-de-teste-1234'
 
