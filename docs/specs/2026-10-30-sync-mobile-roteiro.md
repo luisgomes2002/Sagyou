@@ -55,13 +55,31 @@ do celular.
   moedas, conciliação), metas, planejamento, lista de compras, anexos e imagens.
 - **IA:** Claude Code (plano Pro). Conversa pelo app do Claude, com Remote Control no
   modo `worktree`.
+- **Um servidor de Remote Control por projeto, iniciado no logon** (2026-11-03). O
+  `claude remote-control` atende só a pasta onde foi aberto, e o app do Claude não
+  escolhe pasta. Então uma tarefa do Agendador do Windows ("ao fazer logon", reiniciar
+  se falhar) sobe um `claude remote-control --spawn worktree --name "<projeto>"` em
+  cada pasta de projeto usada com frequência (`--spawn same-dir` numa pasta sem git).
+  No app do Claude, cada servidor aparece pelo nome; dentro dele se abrem e se
+  encerram quantas sessões forem precisas, cada uma no próprio worktree. O
+  `sagyou-externo` está no escopo do usuário, então vale em todas. Um projeto sem
+  servidor só entra iniciando um no PC. Fleet remoto continua fora do escopo.
 - **Desbloqueio do Sagyou:** (A) senha no PC, sempre disponível; (B) pelo celular,
   com biometria ou senha, cifrado e assinado; bloqueio automático por inatividade e
   quando a tela do Windows bloqueia; "lembrar neste PC" desligado. Até o app existir,
-  o desbloqueio remoto é pelo RustDesk.
-- **MCP externo:** token de 30 dias, renovado à mão, só em `127.0.0.1`, guardado como
-  hash fora do SQLite e do backup. Escritas arriscadas pelo token externo são
-  aprovadas pelo app mobile; até o app existir, são recusadas.
+  o desbloqueio remoto é pelo RustDesk. Com "Funcionar com o Sagyou bloqueado" ligado
+  (spec `acesso-remoto`), o MCP externo lê e escreve sem desbloquear.
+- **MCP externo:** decisão original (token de 30 dias, escritas arriscadas recusadas
+  até a etapa 6) substituída em 2026-11-03 pela spec `acesso-remoto`: o token não
+  vence, dá acesso total (todos os projetos, perfis financeiros e ferramentas) sem
+  cartão de aprovação, e pode funcionar com o Sagyou bloqueado. Continua só em
+  `127.0.0.1`, guardado como hash fora do SQLite e do backup, revogável no PC.
+- **Login do Windows sem ninguém na frente** (aceito por Luis em 2026-11-03): ligado
+  pelo ESP32, o PC precisa entrar sozinho na conta para o Sagyou e os servidores de
+  Remote Control subirem. Usa o login automático do Windows; a tela pode ser bloqueada
+  logo depois por uma tarefa de logon, e os processos continuam rodando. Risco aceito:
+  quem estiver na frente do PC entra no Windows; o Sagyou continua protegido pela
+  própria senha.
 - **Ligar o PC:** ESP32 com Wake-on-LAN, alimentado por carregador próprio. **Desligar:**
   o ESP32 envia um comando pela rede local e um script no Windows executa
   `shutdown /s /t 60`, que pode ser cancelado. O comando remoto vem só pelo app, via
@@ -75,8 +93,8 @@ do celular.
 | 2 | `sync-cloudflare` | Worker + D1, cifra, pareamento por QR, código de recuperação, aplicar mudanças recebidas, conflitos, revogar e apagar aparelho, tela "Sincronização". Dois PCs sincronizando. | 1 |
 | 3 | `mobile-app` | `packages/core` compartilhado (tipos, normalização, dinheiro, regras), app Expo Android v1, APK. | 2 |
 | 4 | `motor-bandeja` | Fechar a janela esconde; inicia com o Windows já na bandeja; sync e sinal de vida funcionam com o Sagyou bloqueado. | — |
-| 5 | `mcp-externo` | Token de 30 dias para um Claude fora do Fleet (Remote Control); escritas arriscadas recusadas até a etapa 6. | 4 |
-| 6 | `controle-remoto-app` | Ligar e desligar o PC pelo app (Worker + ESP32), "PC pronto", desbloquear e bloquear o Sagyou, aprovar escritas arriscadas. | 3, 4, 5 e o ESP32 |
+| 5 | `mcp-externo` → `acesso-remoto` | Token para um Claude fora do Fleet (Remote Control). Entregue como 30 dias e escopo fechado; a spec `acesso-remoto` o tornou permanente, total, sem cartão e capaz de funcionar com o Sagyou bloqueado, e trouxe parear outro aparelho pelo celular. | 4 |
+| 6 | `controle-remoto-app` | Ligar e desligar o PC pelo app (Worker + ESP32), "PC pronto" (Sagyou **e** servidores de Remote Control de pé), desbloquear e bloquear o Sagyou, aprovar pelo celular as escritas arriscadas das sessões do Fleet (o token externo não pede mais cartão). | 3, 4, 5 e o ESP32 |
 
 As etapas 4 e 5 não dependem do sync e podem entrar antes, se o ESP32 chegar cedo.
 
@@ -98,6 +116,10 @@ As etapas 4 e 5 não dependem do sync e podem entrar antes, se o ESP32 chegar ce
 
 - Testar `claude remote-control` no Windows de casa (modo `worktree`) e abrir a sessão
   pelo app do Claude.
+- Tarefa de logon no Agendador do Windows que sobe um `claude remote-control` por
+  projeto (ver Decisões). Antes, rodar cada um uma vez à mão para responder ao "Enable
+  Remote Control?" e ao "Trust <pasta>?": sem terminal, o comando não consegue perguntar
+  e sai. Nunca na pasta do usuário (a confiança ali não fica salva).
 - Criar a conta gratuita na Cloudflare.
 - Wake-on-LAN no Windows: BIOS (Wake on LAN ligado, ErP desligado), placa de rede
   ("pacote mágico"), Inicialização Rápida desligada, IPs fixos para o PC e para o ESP32.
@@ -105,6 +127,8 @@ As etapas 4 e 5 não dependem do sync e podem entrar antes, se o ESP32 chegar ce
 - Firmware básico do ESP32 (Wake-on-LAN e desligar pela rede local); script de escuta
   no Windows (`C:\Program Files\esp32\`, tarefa como SYSTEM, firewall só para o IP do
   ESP32).
-- Autologon + tarefa de logon que bloqueia a tela.
+- Autologon + tarefa de logon que bloqueia a tela. Com a tela bloqueada o Sagyou
+  também bloqueia (`lockOnSystemLock`), então ligar "Funcionar com o Sagyou bloqueado"
+  em Configurações → Acesso MCP externo; e desligar a suspensão do Windows.
 
 ## Perguntas em aberto
