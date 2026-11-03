@@ -162,7 +162,7 @@ describe('store do controle remoto', () => {
       { totp: '123456' },
       expect.objectContaining({ kind: 'authorize-remote' })
     )
-    const env = t.pc.client.remoteRole.mock.calls[0][1] as SignedEnvelope
+    const env = jest.mocked(t.pc.client.remoteRole).mock.calls[0][1] as SignedEnvelope
     expect(env.expiresAt - env.issuedAt).toBe(24 * 60 * 60_000)
     expect(useRemote.getState()).toMatchObject({
       authorized: 'waiting-pc',
@@ -177,7 +177,7 @@ describe('store do controle remoto', () => {
   it('senha do Sagyou errada à distância volta com o texto', async () => {
     const t = setup()
     await useRemote.getState().requestRemote('errada', '123456')
-    const nonce = (t.pc.client.remoteRole.mock.calls[0][1] as SignedEnvelope).nonce
+    const nonce = (jest.mocked(t.pc.client.remoteRole).mock.calls[0][1] as SignedEnvelope).nonce
     t.pc.queue.push(t.pc.msg('result', { replyTo: nonce, ok: false, reason: 'wrong-password' }))
     await useRemote.getState().refresh()
     expect(useRemote.getState()).toMatchObject({
@@ -188,7 +188,7 @@ describe('store do controle remoto', () => {
 
   it('fator errado no Worker mostra o texto', async () => {
     const t = setup()
-    t.pc.client.remoteRole.mockRejectedValueOnce(new ControlError('factor'))
+    jest.mocked(t.pc.client.remoteRole).mockRejectedValueOnce(new ControlError('factor'))
     await useRemote.getState().requestRemote('senha', '000000')
     expect(useRemote.getState()).toMatchObject({ authorized: 'none', error: REMOTE_TEXT.factor })
   })
@@ -276,7 +276,7 @@ describe('store do controle remoto', () => {
   it('Worker antigo (501) mostra o texto de atualizar', async () => {
     const t = setup()
     await authorize(t)
-    t.pc.client.inbox.mockRejectedValueOnce(new ControlError('not-deployed'))
+    jest.mocked(t.pc.client.inbox).mockRejectedValueOnce(new ControlError('not-deployed'))
     await useRemote.getState().refresh()
     expect(useRemote.getState().connection).toBe(CONTROL_TEXT.notDeployed)
   })
