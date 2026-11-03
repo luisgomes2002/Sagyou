@@ -1,12 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import {
+  ACTIVE_SCOPE_TEXT,
+  ALLOW_LOCKED_LABEL,
+  ALLOW_LOCKED_WARNING,
+  FULL_ACCESS_WARNING,
   McpExternalSettings,
+  NEW_TOKEN_MESSAGE,
   NONE_TEXT,
   ONCE_TEXT,
   REVOKE_MESSAGE
 } from '../../components/settings/McpExternalSettings'
-import { useKanbanStore } from '../../store/kanban'
 
 vi.mock('../../services/ElectronStorage', () => ({
   ElectronStorage: vi.fn(function ElectronStorage(this: Record<string, unknown>) {
@@ -15,70 +19,51 @@ vi.mock('../../services/ElectronStorage', () => ({
   })
 }))
 
-const EXPIRES = Date.UTC(2026, 11, 2, 12)
-const SCOPE = { projectId: 'p1', financialProfileId: 'personal', mode: 'read' as const }
-const ACTIVE = { state: 'active', createdAt: 1, expiresAt: EXPIRES, lastUsedAt: null, scope: SCOPE }
+const CREATED = Date.UTC(2026, 10, 3, 12)
+const ACTIVE = { state: 'active', createdAt: CREATED, lastUsedAt: null, allowWhileLocked: false }
 const COMMAND = 'claude mcp add sagyou-externo --scope user -e SAGYOU_MCP_TOKEN=abc'
 
 let api: Record<string, ReturnType<typeof vi.fn>>
+let security: { status: ReturnType<typeof vi.fn> }
 let writeText: ReturnType<typeof vi.fn>
 
 beforeEach(() => {
   vi.clearAllMocks()
-  useKanbanStore.setState({
-    projects: [
-      { id: 'p1', name: 'Sagyou', columns: [] },
-      { id: 'p2', name: 'Arquivado', columns: [], archivedAt: '2026-01-01' }
-    ] as never,
-    financialProfiles: [
-      { id: 'personal', name: 'Minhas finanças' },
-      { id: 'trabalho', name: 'Trabalho' }
-    ] as never,
-    activeFinancialProfileId: 'trabalho'
-  })
   api = {
     status: vi.fn().mockResolvedValue({ state: 'none' }),
     create: vi.fn().mockResolvedValue({ ok: true, token: 'abc', command: COMMAND, status: ACTIVE }),
-    renew: vi.fn().mockResolvedValue({
-      ok: true,
-      token: 'def',
-      command: COMMAND.replace('abc', 'def'),
-      status: ACTIVE
-    }),
+    setAllowLocked: vi.fn().mockResolvedValue({ ...ACTIVE, allowWhileLocked: true }),
     revoke: vi.fn().mockResolvedValue({ state: 'none' })
   }
+  security = { status: vi.fn().mockResolvedValue({ enabled: true, corrupt: false }) }
   writeText = vi.fn().mockResolvedValue(undefined)
   Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
   Object.defineProperty(window, 'electronAPI', {
     configurable: true,
-    value: { mcpExternal: api }
+    value: { mcpExternal: api, security }
   })
 })
 
 describe('Acesso MCP externo', () => {
-  it('sem token mostra o formulário com o perfil ativo e "Só leitura"', async () => {
+  it('sem token: aviso de acesso total e Gerar acesso, sem escolher projeto/perfil/acesso', async () => {
     render(<McpExternalSettings onToast={vi.fn()} />)
     expect(await screen.findByText(NONE_TEXT)).toBeInTheDocument()
-    expect(screen.getByLabelText('Perfil financeiro')).toHaveValue('trabalho')
-    expect(screen.getByLabelText('Acesso')).toHaveValue('read')
-    expect(screen.getByLabelText('Projeto padrão')).toHaveValue('')
-    expect(screen.queryByRole('option', { name: 'Arquivado' })).toBeNull()
+    expect(screen.getByText(FULL_ACCESS_WARNING)).toBeInTheDocument()
+    expect(FULL_ACCESS_WARNING).toBe(
+      'O token dá leitura e escrita de tudo no Sagyou, inclusive excluir e mexer em dinheiro, sem pedir aprovação. Não vence: vale até você revogar.'
+    )
+    expect(screen.queryByLabelText('Projeto padrão')).toBeNull()
+    expect(screen.queryByLabelText('Perfil financeiro')).toBeNull()
+    expect(screen.queryByLabelText('Acesso')).toBeNull()
+    expect(screen.queryByRole('combobox')).toBeNull()
   })
 
   it('gerar mostra o comando uma vez, copia e some com Pronto', async () => {
     const onToast = vi.fn()
     render(<McpExternalSettings onToast={onToast} />)
     await screen.findByText(NONE_TEXT)
-    fireEvent.change(screen.getByLabelText('Projeto padrão'), { target: { value: 'p1' } })
-    fireEvent.change(screen.getByLabelText('Acesso'), { target: { value: 'read-write' } })
     fireEvent.click(screen.getByRole('button', { name: 'Gerar acesso' }))
-    await waitFor(() =>
-      expect(api.create).toHaveBeenCalledWith({
-        projectId: 'p1',
-        financialProfileId: 'trabalho',
-        mode: 'read-write'
-      })
-    )
+    await waitFor(() => expect(api.create).toHaveBeenCalledWith())
     expect(await screen.findByText(COMMAND)).toBeInTheDocument()
     expect(screen.getByText(ONCE_TEXT)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Copiar comando' }))
@@ -88,25 +73,53 @@ describe('Acesso MCP externo', () => {
     expect(screen.queryByText(COMMAND)).toBeNull()
   })
 
-  it('ativo mostra validade, nunca usado e o escopo', async () => {
+  it('ativo mostra desde quando, nunca usado e "Acesso total, sem prazo"', async () => {
     api.status.mockResolvedValue(ACTIVE)
     render(<McpExternalSettings onToast={vi.fn()} />)
     expect(
-      await screen.findByText(`Válido até ${new Date(EXPIRES).toLocaleString('pt-BR')}`)
+      await screen.findByText(`Ativo desde ${new Date(CREATED).toLocaleString('pt-BR')}`)
     ).toBeInTheDocument()
     expect(screen.getByText('Nunca usado')).toBeInTheDocument()
-    expect(
-      screen.getByText('Projeto: Sagyou · Perfil: Minhas finanças · Só leitura')
-    ).toBeInTheDocument()
+    expect(screen.getByText(ACTIVE_SCOPE_TEXT)).toBeInTheDocument()
+    expect(ACTIVE_SCOPE_TEXT).toBe('Acesso total, sem prazo')
+    expect(screen.queryByText(/Válido até|Vencido em/)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Renovar' })).toBeNull()
   })
 
-  it('vencido mostra "Vencido em" e Renovar mostra o comando novo', async () => {
-    api.status.mockResolvedValue({ ...ACTIVE, state: 'expired', lastUsedAt: EXPIRES - 1000 })
+  it('Gerar novo token pede confirmação antes de trocar', async () => {
+    api.status.mockResolvedValue({ ...ACTIVE, lastUsedAt: CREATED + 1000 })
     render(<McpExternalSettings onToast={vi.fn()} />)
-    expect(await screen.findByText(/^Vencido em /)).toBeInTheDocument()
-    expect(screen.getByText(/^Último uso: /)).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Renovar' }))
-    expect(await screen.findByText(COMMAND.replace('abc', 'def'))).toBeInTheDocument()
+    expect(await screen.findByText(/^Último uso: /)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Gerar novo token' }))
+    expect(screen.getByText(NEW_TOKEN_MESSAGE)).toBeInTheDocument()
+    expect(NEW_TOKEN_MESSAGE).toBe(
+      'Gerar um token novo? O atual para de valer na hora e o comando do Claude Code precisa ser trocado.'
+    )
+    expect(api.create).not.toHaveBeenCalled()
+    const buttons = screen.getAllByRole('button', { name: 'Gerar novo token' })
+    fireEvent.click(buttons[buttons.length - 1])
+    await waitFor(() => expect(api.create).toHaveBeenCalled())
+    expect(await screen.findByText(COMMAND)).toBeInTheDocument()
+  })
+
+  it('"Funcionar com o Sagyou bloqueado" aparece com senha, com o aviso, e grava', async () => {
+    api.status.mockResolvedValue(ACTIVE)
+    render(<McpExternalSettings onToast={vi.fn()} />)
+    const toggle = await screen.findByLabelText(ALLOW_LOCKED_LABEL)
+    expect(toggle).not.toBeChecked()
+    expect(screen.getByText(ALLOW_LOCKED_WARNING)).toBeInTheDocument()
+    fireEvent.click(toggle)
+    await waitFor(() => expect(api.setAllowLocked).toHaveBeenCalledWith(true))
+    await waitFor(() => expect(screen.getByLabelText(ALLOW_LOCKED_LABEL)).toBeChecked())
+  })
+
+  it('sem senha no app, a opção de funcionar bloqueado não aparece', async () => {
+    security.status.mockResolvedValue({ enabled: false, corrupt: false })
+    api.status.mockResolvedValue(ACTIVE)
+    render(<McpExternalSettings onToast={vi.fn()} />)
+    await screen.findByText(ACTIVE_SCOPE_TEXT)
+    await waitFor(() => expect(security.status).toHaveBeenCalled())
+    expect(screen.queryByLabelText(ALLOW_LOCKED_LABEL)).toBeNull()
   })
 
   it('revogar pede confirmação e volta ao estado sem token', async () => {

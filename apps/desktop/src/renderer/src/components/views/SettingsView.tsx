@@ -60,7 +60,7 @@ const SETTINGS_SECTIONS: {
     id: 'mcp-externo',
     label: 'Acesso MCP externo',
     description:
-      'Um token de 30 dias para um Claude Code fora do Fleet ler e editar o Sagyou neste PC.',
+      'Um token sem prazo para um Claude Code fora do Fleet ler e editar tudo no Sagyou neste PC.',
     icon: SECTION_ICONS.key
   },
   {
