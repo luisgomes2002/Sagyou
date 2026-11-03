@@ -92,7 +92,7 @@ pareado. Falta a tela no celular.
 ### Parte 1 — Parear outro aparelho pelo celular
 
 - Ajustes → seção **Sincronização** ganha a linha **Parear outro aparelho**
-  (abaixo de "Como funciona"). Desabilitada quando `readOnly` (sessão perdida,
+  (abaixo de "Como funciona"). Não aparece quando `readOnly` (sessão perdida,
   401) ou sem sync ativo.
 - Tocar abre uma tela (stack raiz `ParearAparelho`) que chama
   `engine.createInvite()` e mostra:
@@ -104,9 +104,10 @@ pareado. Falta a tela no celular.
   - "Vale uma vez só e expira em M:SS" com contagem regressiva a partir do
     `expiresAt` devolvido;
   - expirado: o QR some, aparece "O código expirou." e o botão **Gerar outro**.
-- Gerando: `Skeleton` no lugar do QR. Erro de rede: "Não foi possível gerar o
-  código. Verifique a conexão." + **Tentar de novo**. Erro do Worker: a mensagem
-  do engine (`SyncUserError`), como nas outras telas.
+- Gerando: `Skeleton` no lugar do QR. Erro (offline incluído): a mensagem do
+  engine (`SyncUserError`, ex.: "Sem conexão com o servidor de sincronização.")
+  + **Tentar de novo**, como nas outras telas; um erro inesperado mostra "Não
+  foi possível gerar o código.".
 - O código nunca vai para log, SQLite, prefs ou snapshot; sai da memória ao
   fechar a tela. A tela fecha (e o código some) quando `useLockState.hidden`
   fica ativo, como os `BottomSheet`. `FLAG_SECURE` já impede captura de tela.
