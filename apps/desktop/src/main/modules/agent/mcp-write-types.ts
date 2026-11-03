@@ -53,7 +53,8 @@ export type McpWriteTool = McpRendererWriteTool | McpMemoryWriteTool
 
 export interface McpScope {
   projectId: string | null
-  financialProfileId: string
+  /** null = every profile (only the external token): a table's own, or `profileId`. */
+  financialProfileId: string | null
 }
 
 export interface McpActionRequest {

@@ -138,6 +138,7 @@ import {
   tracksRunState
 } from './modules/agent/mcp-external-policy'
 import { registerMcpExternalHandlers } from './handlers/mcp-external'
+import { mcpFinancialTables } from './modules/agent/mcp-financial-scope'
 import { configureLog, createLogger, errorMessage, log } from './modules/logs/logger'
 import { captureBase, diffSince, type AgentBase, type DiffLineItem } from './modules/code/code-diff'
 import { safeAttachmentName } from './modules/files/backup-files'
@@ -282,7 +283,7 @@ const sagyouMcp = startSagyouMcpBroker({
   isLocked: () => isAppLocked(),
   readLogs: (query) => log.readLogs(query),
   onToolCall: (call) => log.info('mcp', 'tool_call', call),
-  readScopedData: (domain, session, projectId) => {
+  readScopedData: (domain, session, projectId, profileFilter) => {
     const data = loadData()
     if (domain === 'tasks')
       return projectId ? data.tasks.filter((item) => item.projectId === projectId) : data.tasks
@@ -299,16 +300,17 @@ const sagyouMcp = startSagyouMcpBroker({
       return projectId ? data.notes.filter((item) => item.projectId === projectId) : data.notes
     if (domain === 'goals')
       return projectId ? data.goals.filter((item) => item.projectId === projectId) : data.goals
-    return data.lists
-      .filter((list) => list.profileId === session.financialProfileId)
-      .flatMap((list) =>
-        list.transactions.map((transaction) => ({
-          ...transaction,
-          listId: list.id,
-          listName: list.name,
-          currency: list.currency
-        }))
-      )
+    return mcpFinancialTables(data, session.financialProfileId, profileFilter).flatMap((list) =>
+      list.transactions.map((transaction) => ({
+        ...transaction,
+        listId: list.id,
+        listName: list.name,
+        currency: list.currency,
+        ...(session.financialProfileId === null
+          ? { profileId: list.profileId, profileName: list.profileName }
+          : {})
+      }))
+    )
   },
   listProjects: () =>
     loadData().projects.map(({ id, name, description, archivedAt }) => ({
@@ -331,12 +333,16 @@ const sagyouMcp = startSagyouMcpBroker({
         columnId
       }))
   },
-  readFinancial: (profileId) => {
-    const data = loadData()
-    return data.lists
-      .filter((list) => list.profileId === profileId)
-      .map(({ id, name, currency, transactions }) => ({ id, name, currency, transactions }))
-  },
+  readFinancial: (profileId, filter) =>
+    mcpFinancialTables(loadData(), profileId, filter).map(
+      ({ id, name, currency, transactions, profileId: tableProfile, profileName }) => ({
+        id,
+        name,
+        currency,
+        transactions,
+        ...(profileId === null ? { profileId: tableProfile, profileName } : {})
+      })
+    ),
   readProjectData: (projectId) => {
     const data = loadData()
     return {

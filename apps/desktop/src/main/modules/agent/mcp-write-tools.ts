@@ -83,6 +83,10 @@ function tool(
 }
 
 const APPROVAL_NOTE = ' Exige aprovação no Sagyou.'
+/** Only the external token picks a profile; a Fleet session stays in its own. */
+const PROFILE_ID = text(
+  'Só no acesso externo: ID do perfil financeiro; sem ele, o perfil ativo no PC.'
+)
 
 export const MCP_WRITE_TOOLS: McpToolDefinition[] = [
   tool(
@@ -289,20 +293,24 @@ export const MCP_WRITE_TOOLS: McpToolDefinition[] = [
   tool(
     'create_financial_table',
     'Cria uma tabela financeira no perfil da sessão.' + APPROVAL_NOTE,
-    { name: text('Nome da tabela.'), currency: { type: 'string', enum: ['BRL', 'USD', 'JPY'] } },
+    {
+      name: text('Nome da tabela.'),
+      currency: { type: 'string', enum: ['BRL', 'USD', 'JPY'] },
+      profileId: PROFILE_ID
+    },
     ['name', 'currency']
   ),
   tool(
     'add_financial_category',
     'Adiciona uma categoria personalizada ao perfil da sessão.',
-    { category: text('Categoria.') },
+    { category: text('Categoria.'), profileId: PROFILE_ID },
     ['category']
   ),
   tool(
     'remove_financial_category',
     'Remove uma categoria sugerida do perfil; transações antigas mantêm a categoria.' +
       APPROVAL_NOTE,
-    { category: text('Categoria.') },
+    { category: text('Categoria.'), profileId: PROFILE_ID },
     ['category']
   ),
   tool(
@@ -314,7 +322,7 @@ export const MCP_WRITE_TOOLS: McpToolDefinition[] = [
   tool(
     'rename_financial_profile',
     'Renomeia o perfil financeiro da sessão.' + APPROVAL_NOTE,
-    { name: text('Novo nome.') },
+    { name: text('Novo nome.'), profileId: PROFILE_ID },
     ['name']
   ),
   tool(

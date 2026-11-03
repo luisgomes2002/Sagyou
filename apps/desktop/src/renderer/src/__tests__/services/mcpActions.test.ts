@@ -769,6 +769,81 @@ describe('MCP financial writes', () => {
     expect(names[DEFAULT_FINANCIAL_PROFILE_ID]).toBe('Casa')
     expect(names[otherProfile]).toBe('Empresa')
   })
+
+  it('a Fleet session ignores profileId and stays in its profile', () => {
+    const { otherProfile } = seedTables()
+    const created = both(
+      'create_financial_table',
+      { name: 'Wise', currency: 'BRL', profileId: otherProfile },
+      scope
+    )
+    expect(table((created as { id: string }).id).profileId).toBe(DEFAULT_FINANCIAL_PROFILE_ID)
+  })
+})
+
+// Spec 2026-11-03-acesso-remoto: the external token reaches every profile.
+describe('MCP financial writes with the external token (every profile)', () => {
+  beforeEach(resetStore)
+
+  const external: McpScope = { projectId: null, financialProfileId: null }
+
+  it('writes to a table of any profile, and bank suggestions go to that profile', () => {
+    const { other, otherProfile } = seedTables()
+    const args = {
+      tableId: other,
+      type: 'receita',
+      amount: '10',
+      description: 'Nota fiscal',
+      source: 'Itaú PJ'
+    }
+    expect(both('create_transaction', args, external).ok).toBe(true)
+    expect(table(other).transactions).toHaveLength(1)
+    const profile = state().financialProfiles.find((p) => p.id === otherProfile)!
+    expect(JSON.stringify(profile)).toContain('Itaú PJ')
+    const personal = state().financialProfiles.find((p) => p.id === DEFAULT_FINANCIAL_PROFILE_ID)!
+    expect(JSON.stringify(personal)).not.toContain('Itaú PJ')
+  })
+
+  it('a missing table still gets the table refusal', () => {
+    seedTables()
+    expect(
+      both(
+        'create_transaction',
+        { tableId: 'nope', type: 'receita', amount: '10', description: 'X' },
+        external
+      )
+    ).toEqual({ ok: false, error: 'Tabela indisponível nesta sessão MCP.' })
+  })
+
+  it('profile-level writes use profileId, else the profile active on the PC', () => {
+    const { otherProfile } = seedTables()
+    const inOther = both(
+      'create_financial_table',
+      { name: 'Wise', currency: 'USD', profileId: otherProfile },
+      external
+    )
+    expect(table((inOther as { id: string }).id).profileId).toBe(otherProfile)
+    useKanbanStore.setState({ activeFinancialProfileId: DEFAULT_FINANCIAL_PROFILE_ID })
+    const inActive = both('create_financial_table', { name: 'Cofre', currency: 'BRL' }, external)
+    expect(table((inActive as { id: string }).id).profileId).toBe(DEFAULT_FINANCIAL_PROFILE_ID)
+    const inProfile = (args: Record<string, unknown>): Record<string, unknown> => ({
+      ...args,
+      profileId: otherProfile
+    })
+    expect(both('add_financial_category', inProfile({ category: 'Pets' }), external).ok).toBe(true)
+    expect(
+      state().financialProfiles.find((p) => p.id === otherProfile)!.customCategories
+    ).toEqual(['Pets'])
+    expect(both('rename_financial_profile', inProfile({ name: 'PJ' }), external).ok).toBe(true)
+    expect(state().financialProfiles.find((p) => p.id === otherProfile)!.name).toBe('PJ')
+  })
+
+  it('an unknown profileId is refused', () => {
+    seedTables()
+    expect(
+      both('create_financial_table', { name: 'X', currency: 'BRL', profileId: 'x' }, external)
+    ).toEqual({ ok: false, error: 'Perfil financeiro não encontrado.' })
+  })
 })
 
 describe('MCP transaction bank fields', () => {

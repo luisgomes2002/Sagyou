@@ -42,7 +42,8 @@ export type McpRendererWriteTool = (typeof MCP_RENDERER_WRITE_TOOLS)[number]
 
 export interface McpScope {
   projectId: string | null
-  financialProfileId: string
+  /** null = every profile (only the external token): a table's own, or `profileId`. */
+  financialProfileId: string | null
 }
 
 export interface McpActionRequest {

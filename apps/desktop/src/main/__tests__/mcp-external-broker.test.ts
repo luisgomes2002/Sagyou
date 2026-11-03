@@ -124,6 +124,42 @@ describe('broker com o token externo', () => {
     )
   })
 
+  it('finanças: todos os perfis, com filtro opcional profileId', async () => {
+    const scoped = vi.fn(() => [])
+    const financial = vi.fn(() => [])
+    const broker = await brokerWith(() => externalSessionFor(), {
+      readScopedData: scoped,
+      readFinancial: financial
+    })
+    await call(broker.port(), 'ok', 'read_financial_data')
+    expect(scoped).toHaveBeenLastCalledWith(
+      'financial',
+      expect.objectContaining({ financialProfileId: null }),
+      undefined,
+      undefined
+    )
+    await call(broker.port(), 'ok', 'read_financial_data', { profileId: 'trabalho' })
+    expect(scoped).toHaveBeenLastCalledWith('financial', expect.anything(), undefined, 'trabalho')
+    await call(broker.port(), 'ok', 'ler_financeiro')
+    expect(financial).toHaveBeenLastCalledWith(null, undefined)
+    await call(broker.port(), 'ok', 'ler_financeiro', { profileId: 'trabalho' })
+    expect(financial).toHaveBeenLastCalledWith(null, 'trabalho')
+  })
+
+  it('uma run do Fleet não escolhe outro perfil financeiro', async () => {
+    const financial = vi.fn(() => [])
+    const broker = await brokerWith(() => null, { readFinancial: financial })
+    broker.grant({
+      token: 'run-token',
+      runId: 'run-1',
+      projectId: null,
+      financialProfileId: 'personal',
+      permissions: CODE_EXECUTOR_MCP_PERMISSIONS
+    })
+    await call(broker.port(), 'run-token', 'ler_financeiro', { profileId: 'trabalho' })
+    expect(financial).toHaveBeenLastCalledWith('personal', undefined)
+  })
+
   it('registra o uso de cada chamada autorizada', async () => {
     const used = vi.fn()
     const broker = await brokerWith(() => externalSessionFor(), { onExternalUse: used })

@@ -771,17 +771,36 @@ const TABLE_REFUSAL = 'Tabela indisponível nesta sessão MCP.'
 const TRANSACTION_REFUSAL = 'Transação indisponível nesta sessão MCP.'
 const DEBT_REFUSAL = 'Esta transação pertence a uma dívida; altere-a no Sagyou.'
 
-function sessionProfile(scope: McpScope, store: Store): FinancialProfile {
-  const profile = store.financialProfiles.find((item) => item.id === scope.financialProfileId)
-  if (!profile) refuse('O perfil financeiro da sessão não existe mais.')
+/**
+ * The profile a profile-level write targets. A Fleet run: its captured one
+ * (`profileId` is ignored). The external token (no captured profile): the
+ * `profileId` argument, or the profile active on the PC.
+ */
+function sessionProfile(scope: McpScope, store: Store, args: Args): FinancialProfile {
+  if (scope.financialProfileId !== null) {
+    const profile = store.financialProfiles.find((item) => item.id === scope.financialProfileId)
+    if (!profile) refuse('O perfil financeiro da sessão não existe mais.')
+    return profile as FinancialProfile
+  }
+  const id = optionalText(args, 'profileId', 200) || store.activeFinancialProfileId
+  const profile = store.financialProfiles.find((item) => item.id === id)
+  if (!profile) refuse('Perfil financeiro não encontrado.')
   return profile as FinancialProfile
 }
 
-/** Another profile's table and a missing one get the same answer, so existence never leaks. */
+/**
+ * Another profile's table and a missing one get the same answer, so existence
+ * never leaks. With no captured profile (the external token) every table is
+ * reachable, and the write lands in the table's own profile.
+ */
 function resolveTable(args: Args, scope: McpScope, store: Store): FinancialTable {
   const id = optionalText(args, 'tableId', 200)
   const table = store.lists.find((item) => item.id === id)
-  if (!table || (table.profileId ?? DEFAULT_FINANCIAL_PROFILE_ID) !== scope.financialProfileId)
+  if (
+    !table ||
+    (scope.financialProfileId !== null &&
+      (table.profileId ?? DEFAULT_FINANCIAL_PROFILE_ID) !== scope.financialProfileId)
+  )
     refuse(TABLE_REFUSAL)
   return table as FinancialTable
 }
@@ -839,11 +858,15 @@ const bankResumo = (fields: BankFields): string =>
     .map(([key, , label]) => ` · ${label} ${fields[key] ?? 'removida'}`)
     .join('')
 
-/** Same autocomplete suggestions the transaction panel saves, in the session's profile. */
-function saveBankSuggestions(store: Store, scope: McpScope, fields: BankFields): void {
-  if (fields.source) store.addFinancialSource(scope.financialProfileId, fields.source)
-  if (fields.counterparty)
-    store.addFinancialCounterparty(scope.financialProfileId, fields.counterparty)
+/**
+ * Same autocomplete suggestions the transaction panel saves, in the table's
+ * profile (for a Fleet run that is always its captured one: resolveTable
+ * refuses any other).
+ */
+function saveBankSuggestions(store: Store, table: FinancialTable, fields: BankFields): void {
+  const profileId = table.profileId ?? DEFAULT_FINANCIAL_PROFILE_ID
+  if (fields.source) store.addFinancialSource(profileId, fields.source)
+  if (fields.counterparty) store.addFinancialCounterparty(profileId, fields.counterparty)
 }
 
 const DETAIL_KEYS = new Set(['id', 'description', 'amount', 'category', 'date'])
@@ -975,7 +998,7 @@ const createTransaction: Handler = (args, scope, phase, store) => {
     ...bank,
     ...(details?.length ? { details } : {})
   })
-  saveBankSuggestions(store, scope, bank)
+  saveBankSuggestions(store, table, bank)
   return done(id, resumo)
 }
 
@@ -1022,7 +1045,7 @@ const updateTransaction: Handler = (args, scope, phase, store) => {
     (details ? detailsResumo(details, total, table.currency) : '')
   if (phase === 'apply') {
     store.updateTransaction(table.id, transaction.id, updates)
-    saveBankSuggestions(store, scope, bank)
+    saveBankSuggestions(store, table, bank)
   }
   return done(transaction.id, resumo)
 }
@@ -1038,7 +1061,7 @@ const deleteTransaction: Handler = (args, scope, phase, store) => {
 }
 
 const createFinancialTable: Handler = (args, scope, phase, store) => {
-  const profile = sessionProfile(scope, store)
+  const profile = sessionProfile(scope, store, args)
   const name = requiredText(args, 'name', LIMITS.financialName)
   const currency = optionalText(args, 'currency', 3) ?? ''
   if (!(currency in CURRENCY_CONFIG))
@@ -1049,7 +1072,7 @@ const createFinancialTable: Handler = (args, scope, phase, store) => {
 }
 
 const addFinancialCategory: Handler = (args, scope, phase, store) => {
-  const profile = sessionProfile(scope, store)
+  const profile = sessionProfile(scope, store, args)
   const category = requiredText(args, 'category', LIMITS.category)
   const resumo = `Adicionar categoria "${category}" em ${profile.name}`
   if (profile.customCategories?.some((item) => sameName(item, category)))
@@ -1059,7 +1082,7 @@ const addFinancialCategory: Handler = (args, scope, phase, store) => {
 }
 
 const removeFinancialCategory: Handler = (args, scope, phase, store) => {
-  const profile = sessionProfile(scope, store)
+  const profile = sessionProfile(scope, store, args)
   const requested = requiredText(args, 'category', LIMITS.category)
   const stored = profile.customCategories?.find((item) => sameName(item, requested))
   if (!stored)
@@ -1078,7 +1101,7 @@ const createFinancialProfile: Handler = (args, _scope, phase, store) => {
 }
 
 const renameFinancialProfile: Handler = (args, scope, phase, store) => {
-  const profile = sessionProfile(scope, store)
+  const profile = sessionProfile(scope, store, args)
   const name = requiredText(args, 'name', LIMITS.financialName)
   if (store.financialProfiles.some((item) => item.id !== profile.id && sameName(item.name, name)))
     refuse(`Já existe um perfil financeiro chamado "${name}".`)

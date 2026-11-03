@@ -70,7 +70,9 @@ export interface McpBrokerDeps {
   readScopedData?: (
     domain: 'tasks' | 'project' | 'notes' | 'goals' | 'financial',
     session: McpSession,
-    projectId: string | null | undefined
+    projectId: string | null | undefined,
+    /** Financial only, and only for a session with no captured profile. */
+    profileFilter?: string
   ) => unknown[]
   listProjects?: () => unknown[]
   readTasks: (projectId: string | null | undefined) => unknown[]
@@ -159,6 +161,11 @@ export function externalHelloProof(secret: string, nonce: string): string {
   return createHmac('sha256', secret).update(nonce).digest('hex')
 }
 
+const PROFILE_FILTER_SCHEMA = {
+  type: 'string',
+  description: 'Só no acesso externo: ID do perfil financeiro para filtrar; omita para todos.'
+} as const
+
 const LOG_READ_LIMIT = 200
 const TOOL_UNAVAILABLE = 'Ferramenta indisponível nesta sessão MCP.'
 
@@ -176,13 +183,13 @@ const TOOLS: { name: McpPermission; description: string; inputSchema: Record<str
       name,
       description:
         domain === 'financial'
-          ? 'Lê dados financeiros somente do perfil capturado na sessão, com paginação.'
+          ? 'Lê transações com paginação: numa sessão do Fleet, só do perfil capturado; no acesso externo, de todos os perfis (cada linha traz profileId e profileName).'
           : `Lê ${domain} do projeto indicado, com paginação. Sem projeto na sessão, lê todos os projetos.`,
       inputSchema: {
         type: 'object',
         properties: {
           ...(domain === 'financial'
-            ? {}
+            ? { profileId: PROFILE_FILTER_SCHEMA }
             : {
                 projectId: {
                   type: 'string',
@@ -313,8 +320,13 @@ const TOOLS: { name: McpPermission; description: string; inputSchema: Record<str
     },
     {
       name: 'ler_financeiro',
-      description: 'Lê dados financeiros somente do perfil financeiro autorizado.',
-      inputSchema: { type: 'object', properties: {}, additionalProperties: false }
+      description:
+        'Lê dados financeiros: numa sessão do Fleet, só do perfil autorizado; no acesso externo, de todos os perfis.',
+      inputSchema: {
+        type: 'object',
+        properties: { profileId: PROFILE_FILTER_SCHEMA },
+        additionalProperties: false
+      }
     },
     {
       name: 'ler_projeto',
@@ -541,6 +553,19 @@ function memoryConflictResult(memories: AiMemory[]): Record<string, unknown> {
   }
 }
 
+/**
+ * The `profileId` filter of a financial read. Only a session with no captured
+ * profile (the external token) may choose one: a Fleet run stays in its own
+ * profile whatever it asks for.
+ */
+function readProfileFilter(args: unknown, session: McpSession): string | undefined {
+  if (session.financialProfileId !== null || !args || typeof args !== 'object') return undefined
+  const requested = (args as Record<string, unknown>).profileId
+  return typeof requested === 'string' && requested.trim()
+    ? requested.trim().slice(0, 200)
+    : undefined
+}
+
 function readProjectId(args: unknown, session: McpSession): string | null | undefined {
   if (args && typeof args === 'object') {
     const requested = (args as Record<string, unknown>).projectId
@@ -758,7 +783,10 @@ export function startSagyouMcpBroker(deps: McpBrokerDeps): {
                         deps.readScopedData?.(
                           domain,
                           session,
-                          readProjectId(request.params?.arguments, session)
+                          readProjectId(request.params?.arguments, session),
+                          domain === 'financial'
+                            ? readProfileFilter(request.params?.arguments, session)
+                            : undefined
                         ) ?? [],
                         request.params?.arguments
                       )
@@ -885,7 +913,12 @@ export function startSagyouMcpBroker(deps: McpBrokerDeps): {
                 content: [
                   {
                     type: 'text',
-                    text: JSON.stringify(deps.readFinancial(session.financialProfileId))
+                    text: JSON.stringify(
+                      deps.readFinancial(
+                        session.financialProfileId,
+                        readProfileFilter(request.params?.arguments, session)
+                      )
+                    )
                   }
                 ]
               })
