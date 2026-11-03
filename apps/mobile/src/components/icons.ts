@@ -23,12 +23,16 @@ import {
   Landmark,
   ListChecks,
   Lock,
+  LockOpen,
   type LucideIcon,
+  Monitor,
   Paintbrush,
   PawPrint,
   Percent,
   Plane,
   Plus,
+  Power,
+  PowerOff,
   Receipt,
   Repeat,
   Scale,
@@ -52,14 +56,15 @@ import {
   Zap
 } from 'lucide-react-native'
 
-export type TabLabel = 'Tarefas' | 'Hábitos' | 'Finanças' | 'Notas' | 'Busca'
+export type TabLabel = 'Tarefas' | 'Hábitos' | 'Finanças' | 'Notas' | 'Busca' | 'PC'
 
 export const TAB_ICONS: Record<TabLabel, LucideIcon> = {
   Tarefas: ListChecks,
   Hábitos: Repeat,
   Finanças: Wallet,
   Notas: StickyNote,
-  Busca: Search
+  Busca: Search,
+  PC: Monitor
 }
 
 /** Icons named by what they do, so screens never pick a glyph ad hoc. */
@@ -79,7 +84,12 @@ export const ACTION_ICONS = {
   readOnly: Lock,
   search: Search,
   undo: Undo2,
-  priority: Flag
+  priority: Flag,
+  power: Power,
+  powerOff: PowerOff,
+  lock: Lock,
+  unlock: LockOpen,
+  pc: Monitor
 } satisfies Record<string, LucideIcon>
 
 // Exact names from the core's FINANCIAL_CATEGORIES; anything else gets a tag.

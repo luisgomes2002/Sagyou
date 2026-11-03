@@ -2,6 +2,7 @@ import {
   DarkTheme,
   DefaultTheme,
   NavigationContainer,
+  useIsFocused,
   useNavigation
 } from '@react-navigation/native'
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
@@ -16,7 +17,10 @@ import { QuickCreate } from './components/QuickCreate'
 import { StatusBanner } from './components/StatusBanner'
 import { UpdateBanner } from './components/UpdateBanner'
 import { TabIcon } from './components/TabIcon'
-import { ACTION_ICONS } from './components/icons'
+import { ACTION_ICONS, type TabLabel } from './components/icons'
+import { useLockState } from './lock/lockState'
+import { useRemote } from './remote/store'
+import { PcScreen } from './screens/PcScreen'
 import { Fab, Snackbar } from './components/ui'
 import { useEditing } from './store/editing'
 import { useUndo } from './store/undo'
@@ -61,13 +65,21 @@ function SearchTab(): React.JSX.Element {
   return <SearchScreen onOpen={open} />
 }
 
+/** The PC tab asks the Worker only while it is on screen and the app is unlocked. */
+function PcTab(): React.JSX.Element {
+  const focused = useIsFocused()
+  const hidden = useLockState((s) => s.hidden)
+  return <PcScreen focused={focused && !hidden} />
+}
+
 /** Each tab's content; a tab without one shows a placeholder until its task lands. */
-const TAB_SCREENS: Partial<Record<(typeof TAB_LABELS)[number], ComponentType>> = {
+const TAB_SCREENS: Partial<Record<TabLabel, ComponentType>> = {
   Tarefas: TasksStack,
   Hábitos: HabitsScreen,
   Finanças: FinanceScreen,
   Notas: NotesScreen,
-  Busca: SearchTab
+  Busca: SearchTab,
+  PC: PcTab
 }
 
 export type RootStackParams = {
@@ -119,7 +131,7 @@ function UndoBar(): React.JSX.Element {
 }
 
 /** One tab's page: status line on top, content, then the (+) and the notice over it. */
-function TabPage({ label }: { label: (typeof TAB_LABELS)[number] }): React.JSX.Element {
+function TabPage({ label }: { label: TabLabel }): React.JSX.Element {
   const Content = TAB_SCREENS[label]
   const openCreate = useContext(OpenCreate)
   const readOnly = useApp((s) => s.readOnly)
@@ -157,6 +169,11 @@ function TabsScreen({
   const theme = useTheme()
   const [creating, setCreating] = useState(false)
   const Gear = ACTION_ICONS.settings
+  // The PC tab exists only on an authorized phone that may still send (not read-only).
+  const authorized = useRemote((s) => s.authorized)
+  const readOnly = useApp((s) => s.readOnly)
+  const labels: readonly TabLabel[] =
+    authorized === 'yes' && !readOnly ? [...TAB_LABELS, 'PC'] : TAB_LABELS
   return (
     <OpenCreate.Provider value={() => setCreating(true)}>
       <Tabs.Navigator
@@ -167,9 +184,7 @@ function TabsScreen({
           tabBarItemStyle: { borderRadius: 999, marginHorizontal: 4, marginVertical: 4 },
           tabBarAccessibilityLabel: route.name,
           tabBarButtonTestID: `tab-${route.name}`,
-          tabBarIcon: ({ color }) => (
-            <TabIcon label={route.name as (typeof TAB_LABELS)[number]} color={color} />
-          ),
+          tabBarIcon: ({ color }) => <TabIcon label={route.name as TabLabel} color={color} />,
           headerRight: () => (
             <Pressable
               accessibilityRole="button"
@@ -182,7 +197,7 @@ function TabsScreen({
           )
         })}
       >
-        {TAB_LABELS.map((label) => (
+        {labels.map((label) => (
           <Tabs.Screen key={label} name={label}>
             {() => <TabPage label={label} />}
           </Tabs.Screen>
