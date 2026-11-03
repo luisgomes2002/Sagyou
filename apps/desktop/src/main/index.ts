@@ -48,7 +48,6 @@ import {
 } from './modules/agent/mcp-write-queue'
 import { parkMcpApproval } from './modules/agent/mcp-approval'
 import {
-  MCP_APPROVAL_REQUIRED,
   MCP_MEMORY_TOOLS,
   autoApprovesPending,
   mcpWriteResult,
@@ -134,7 +133,7 @@ import {
 } from './modules/agent/mcp-external'
 import {
   EXTERNAL_RUN_ID,
-  externalSkipsCard,
+  externalApproval,
   tracksRunState
 } from './modules/agent/mcp-external-policy'
 import { registerMcpExternalHandlers } from './handlers/mcp-external'
@@ -373,7 +372,8 @@ const sagyouMcp = startSagyouMcpBroker({
       {
         runId: session.runId,
         name: 'save_memory',
-        args: { tipo: memory.type, titulo: memory.title, corpo: memory.body, tags: memory.tags }
+        args: { tipo: memory.type, titulo: memory.title, corpo: memory.body, tags: memory.tags },
+        approval: externalApproval(session.runId, 'save_memory')
       },
       async () => {
         // Memory is main-owned SQLite data; upsert completes before the reply.
@@ -404,7 +404,7 @@ const sagyouMcp = startSagyouMcpBroker({
         name: 'criar_task',
         args: { projectId, titulo: title },
         // No run can answer a card for the external token: it creates tasks directly.
-        ...(externalSkipsCard(session.runId, 'criar_task') ? { approval: false } : {})
+        approval: externalApproval(session.runId, 'criar_task')
       },
       async () => {
         const id = await requestRendererMcpTask({
@@ -431,7 +431,7 @@ const sagyouMcp = startSagyouMcpBroker({
           now: new Date().toISOString()
         })
       const outcome = await mcpWriteQueue.enqueue<McpActionResult>(
-        { runId: session.runId, name, args, approval: MCP_APPROVAL_REQUIRED.has(name) },
+        { runId: session.runId, name, args, approval: externalApproval(session.runId, name) },
         async () => {
           // Re-validate: the memory may have changed while the card was up.
           const prepared = prepareMemory()
@@ -447,7 +447,7 @@ const sagyouMcp = startSagyouMcpBroker({
     }
     const scope = { projectId: session.projectId, financialProfileId: session.financialProfileId }
     const outcome = await mcpWriteQueue.enqueue<McpActionResult>(
-      { runId: session.runId, name, args, approval: MCP_APPROVAL_REQUIRED.has(name) },
+      { runId: session.runId, name, args, approval: externalApproval(session.runId, name) },
       () =>
         rendererMcpActions.request({ phase: 'apply', name, args, scope }).then((result) => {
           // Recorded when the renderer answers, even if the run ended meanwhile

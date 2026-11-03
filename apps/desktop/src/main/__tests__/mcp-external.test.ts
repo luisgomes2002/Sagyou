@@ -9,7 +9,12 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createMcpExternalStore, externalMcpCommand } from '../modules/agent/mcp-external'
-import { EXTERNAL_RUN_ID, externalSkipsCard, tracksRunState } from '../modules/agent/mcp-external-policy'
+import {
+  EXTERNAL_RUN_ID,
+  externalApproval,
+  tracksRunState
+} from '../modules/agent/mcp-external-policy'
+import { MCP_APPROVAL_REQUIRED, MCP_NO_APPROVAL } from '../modules/agent/mcp-write-tools'
 
 const DAY = 86400000
 const HASH = 'a'.repeat(64)
@@ -174,9 +179,19 @@ describe('token MCP externo', () => {
 })
 
 describe('política do token externo', () => {
-  it('criar_task do token externo não pede cartão; o do Fleet pede', () => {
-    expect(externalSkipsCard(EXTERNAL_RUN_ID, 'criar_task')).toBe(true)
-    expect(externalSkipsCard('run-do-fleet', 'criar_task')).toBe(false)
+  it('o token externo nunca pede cartão', () => {
+    for (const name of [...MCP_APPROVAL_REQUIRED, ...MCP_NO_APPROVAL, 'save_memory', 'criar_task'])
+      expect([name, externalApproval(EXTERNAL_RUN_ID, name)]).toEqual([name, false])
+  })
+
+  it('uma run do Fleet continua com os cartões de antes', () => {
+    expect(externalApproval('abc', 'delete_project')).toBe(true)
+    expect(externalApproval('abc', 'create_transaction')).toBe(true)
+    expect(externalApproval('abc', 'delete_memory')).toBe(true)
+    expect(externalApproval('abc', 'save_memory')).toBe(true)
+    expect(externalApproval('abc', 'criar_task')).toBe(true)
+    expect(externalApproval('abc', 'update_task')).toBe(false)
+    expect(externalApproval('abc', 'archive_memory')).toBe(false)
   })
 
   it('a run externa não guarda cronômetros nem atividade de sessão', () => {
