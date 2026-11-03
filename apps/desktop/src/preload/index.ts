@@ -242,7 +242,13 @@ export const api = {
     onMcpCreateTask: (
       cb: (request: {
         requestId: string
-        task: { projectId: string; columnId: string; title: string; description?: string }
+        task: {
+          projectId: string
+          columnId: string
+          title: string
+          description?: string
+          lockedExternal?: boolean
+        }
       }) => void
     ) => {
       const handler = (_: Electron.IpcRendererEvent, request: Parameters<typeof cb>[0]): void =>

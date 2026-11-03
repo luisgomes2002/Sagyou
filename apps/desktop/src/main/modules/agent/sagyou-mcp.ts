@@ -107,8 +107,12 @@ export interface McpBrokerDeps {
   ) => Promise<McpActionResult>
   /** Whether the run owning a capability is still live; absent means always. */
   isRunLive?: (runId: string) => boolean
-  /** The app is locked: every tools/call is refused before reading or writing anything. */
-  isLocked?: () => boolean
+  /**
+   * The lock stops this run's tools/call: refused before reading or writing
+   * anything. Asked per run because the external token may keep working while
+   * the app is locked ("Funcionar com o Sagyou bloqueado"); Fleet runs never do.
+   */
+  isLocked?: (runId: string, kind: 'read' | 'write') => boolean
   /**
    * The external token (Configurações → Acesso MCP externo), asked only when no
    * Fleet run owns the token: its session, or null when unknown or revoked.
@@ -733,8 +737,13 @@ export function startSagyouMcpBroker(deps: McpBrokerDeps): {
               failure(call, request.id, TOOL_UNAVAILABLE)
               continue
             }
-            // Locked: nothing is read or written until the user unlocks on the PC.
-            if (deps.isLocked?.()) {
+            // Locked: nothing is read or written until the user unlocks on the PC
+            // (the external token excepted, when its option is on).
+            const kind =
+              WRITE_TOOL_NAMES.has(name) || name === 'save_memory' || name === 'criar_task'
+                ? 'write'
+                : 'read'
+            if (deps.isLocked?.(session.runId, kind)) {
               failure(call, request.id, MCP_LOCKED_MESSAGE)
               continue
             }

@@ -12,10 +12,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CODE_EXECUTOR_MCP_PERMISSIONS } from '../modules/agent/agent-mcp-session'
 import { createMcpExternalStore } from '../modules/agent/mcp-external'
 import { EXTERNAL_RUN_ID } from '../modules/agent/mcp-external-policy'
+import { externalBlockedByLock } from '../modules/agent/mcp-external-lock'
 import { MCP_APPROVAL_REQUIRED } from '../modules/agent/mcp-write-tools'
 import {
   EXTERNAL_PERMISSIONS,
   MCP_EXTERNAL_BRIDGE_SOURCE,
+  MCP_LOCKED_MESSAGE,
   MCP_PERMISSIONS,
   externalHelloProof,
   startSagyouMcpBroker,
@@ -211,6 +213,71 @@ describe('broker com o token externo', () => {
     })
     expect(errorOf(await call(broker.port(), 'run-token', 'list_projects'))).toBe('')
     expect(external).not.toHaveBeenCalled()
+  })
+})
+
+describe('Sagyou bloqueado ("Funcionar com o Sagyou bloqueado")', () => {
+  // What index.ts wires: the external token follows its option, Fleet runs the lock.
+  const lockedDeps = (
+    allowWhileLocked: boolean
+  ): Pick<McpBrokerDeps, 'isRunLive' | 'isLocked'> => ({
+    isRunLive: () => true,
+    isLocked: (runId) =>
+      runId === EXTERNAL_RUN_ID
+        ? externalBlockedByLock({ locked: true, locking: false, allowWhileLocked })
+        : true
+  })
+
+  it('com a opção, o token externo lê e escreve com o app bloqueado', async () => {
+    const write = vi.fn<NonNullable<McpBrokerDeps['write']>>(async () => ({ ok: true, id: 'x' }))
+    const broker = await brokerWith(() => externalSessionFor(), {
+      ...lockedDeps(true),
+      listProjects: () => [{ id: 'p1' }],
+      write
+    })
+    expect(errorOf(await call(broker.port(), 'ok', 'list_projects'))).toBe('')
+    expect(errorOf(await call(broker.port(), 'ok', 'update_task', { id: 't1' }))).toBe('')
+    expect(write).toHaveBeenCalled()
+  })
+
+  it('sem a opção, recebe a mensagem de bloqueio (não "Sessão inválida")', async () => {
+    const broker = await brokerWith(() => externalSessionFor(), {
+      ...lockedDeps(false),
+      listProjects: () => [{ id: 'p1' }]
+    })
+    expect(errorOf(await call(broker.port(), 'ok', 'list_projects'))).toBe(MCP_LOCKED_MESSAGE)
+  })
+
+  it('uma run do Fleet bloqueada recusa mesmo com a opção ligada', async () => {
+    const broker = await brokerWith(() => null, {
+      ...lockedDeps(true),
+      listProjects: () => [{ id: 'p1' }]
+    })
+    broker.grant({
+      token: 'run-token',
+      runId: 'run-1',
+      projectId: null,
+      financialProfileId: 'personal',
+      permissions: CODE_EXECUTOR_MCP_PERMISSIONS
+    })
+    expect(errorOf(await call(broker.port(), 'run-token', 'list_projects'))).toBe(
+      MCP_LOCKED_MESSAGE
+    )
+  })
+
+  it('informa se a chamada bloqueada é leitura ou escrita', async () => {
+    const isLocked = vi.fn<NonNullable<McpBrokerDeps['isLocked']>>(() => false)
+    const broker = await brokerWith(() => externalSessionFor(), {
+      isLocked,
+      listProjects: () => [],
+      write: async () => ({ ok: true, id: 'x' })
+    })
+    await call(broker.port(), 'ok', 'list_projects')
+    expect(isLocked).toHaveBeenLastCalledWith(EXTERNAL_RUN_ID, 'read')
+    await call(broker.port(), 'ok', 'update_task', { id: 't1' })
+    expect(isLocked).toHaveBeenLastCalledWith(EXTERNAL_RUN_ID, 'write')
+    await call(broker.port(), 'ok', 'criar_task', { titulo: 'X' })
+    expect(isLocked).toHaveBeenLastCalledWith(EXTERNAL_RUN_ID, 'write')
   })
 })
 
