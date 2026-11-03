@@ -50,7 +50,7 @@ function base64Url(data: Uint8Array | string): string {
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
-function pemToDer(pem: string): Uint8Array {
+function pemToDer(pem: string): Uint8Array<ArrayBuffer> {
   const body = pem.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '')
   const bin = atob(body)
   const out = new Uint8Array(bin.length)
