@@ -4,6 +4,7 @@ import { StyleSheet } from 'react-native'
 import { FinanceScreen } from '../screens/FinanceScreen'
 import { HabitsScreen } from '../screens/HabitsScreen'
 import { NotesScreen } from '../screens/NotesScreen'
+import { PairDeviceScreen } from '../screens/PairDeviceScreen'
 import { SearchScreen } from '../screens/SearchScreen'
 import { SettingsScreen } from '../screens/SettingsScreen'
 import { SyncGuideScreen } from '../screens/SyncGuideScreen'
@@ -89,7 +90,8 @@ const SCREENS: [string, ComponentType][] = [
   ['Notas', () => <NotesScreen now={new Date('2026-11-01T12:00:00.000Z')} />],
   ['Busca', () => <SearchScreen onOpen={jest.fn()} />],
   ['Ajustes', () => <SettingsScreen />],
-  ['Como funciona', () => <SyncGuideScreen />]
+  ['Como funciona', () => <SyncGuideScreen />],
+  ['Parear outro aparelho', () => <PairDeviceScreen />]
 ]
 
 const INTERACTIVE = ['button', 'checkbox', 'radio', 'tab'] as const

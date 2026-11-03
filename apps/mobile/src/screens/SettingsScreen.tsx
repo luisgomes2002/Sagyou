@@ -5,6 +5,7 @@ import { SYNC_GUIDE_LINK } from '../components/SyncGuideContent'
 import { Button, Card, ListItem, Screen } from '../components/ui'
 import { useApp } from '../store/app'
 import { useUpdate } from '../store/update'
+import { PAIR_DEVICE_TITLE } from './PairDeviceScreen'
 import { conflictsText, statusLines } from '../sync/status-text'
 import { FONT, MIN_TOUCH, RADIUS, SPACE, useTheme } from '../theme'
 import { availableText, DOWNLOAD_LABEL, openDownload, updateDeps } from '../update/actions'
@@ -82,7 +83,7 @@ function VersionCard(): React.JSX.Element {
 
 /** What the root stack hands the screen; absent when rendered alone (tests). */
 export interface SettingsScreenProps {
-  navigation?: { navigate(screen: 'Conflitos' | 'ComoFunciona'): void }
+  navigation?: { navigate(screen: 'Conflitos' | 'ComoFunciona' | 'ParearAparelho'): void }
 }
 
 export function SettingsScreen({ navigation }: SettingsScreenProps = {}): React.JSX.Element {
@@ -148,6 +149,14 @@ export function SettingsScreen({ navigation }: SettingsScreenProps = {}): React.
             right={<ACTION_ICONS.chevron size={18} color={theme.muted} />}
             onPress={() => navigation?.navigate('ComoFunciona')}
           />
+          {/* A lost session (read-only) cannot invite anyone: the row goes, like conflicts. */}
+          {!readOnly && services?.runtime.engine ? (
+            <ListItem
+              title={PAIR_DEVICE_TITLE}
+              right={<ACTION_ICONS.chevron size={18} color={theme.muted} />}
+              onPress={() => navigation?.navigate('ParearAparelho')}
+            />
+          ) : null}
         </Section>
         <Section title="Perfil financeiro">
           <View accessibilityRole="radiogroup">
