@@ -109,7 +109,7 @@ describe('remote:enable', () => {
   it('erro de fator vira texto da tela', async () => {
     const t = setup()
     const { ControlError } = await import('@sagyou/core/control/client')
-    t.client.setPc.mockRejectedValueOnce(new ControlError('factor'))
+    vi.mocked(t.client.setPc).mockRejectedValueOnce(new ControlError('factor'))
     expect(await t.invoke('remote:enable', { totp: '000000' })).toEqual({
       ok: false,
       error: REMOTE_TEXT.factor
@@ -161,7 +161,7 @@ describe('remote:servers:set', () => {
 describe('remote:authorize', () => {
   it('senha errada mostra "Senha incorreta."', async () => {
     const t = setup()
-    t.service.authorize.mockResolvedValueOnce('wrong-password')
+    vi.mocked(t.service.authorize).mockResolvedValueOnce('wrong-password')
     expect(await t.invoke('remote:authorize', 'a'.repeat(32), 'x')).toEqual({
       ok: false,
       error: 'Senha incorreta.'

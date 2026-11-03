@@ -73,10 +73,10 @@ function errorText(error: unknown): string {
   return REMOTE_TEXT.generic
 }
 
-async function run<T extends object>(
+async function run<R extends RemoteResult<object>>(
   action: string,
-  fn: () => Promise<RemoteResult<T>> | RemoteResult<T>
-): Promise<RemoteResult<T>> {
+  fn: () => Promise<R> | R
+): Promise<R | { ok: false; error: string }> {
   try {
     return await fn()
   } catch (error) {
@@ -228,7 +228,7 @@ export function registerRemoteHandlers(ipcMain: IpcMain, deps: RemoteHandlerDeps
 
   /** Token and key are returned once; only the key is kept, encrypted. */
   ipcMain.handle('remote:esp32:create', (_, factor: unknown) =>
-    run<{ token: string; key: string }>('esp32', async () => {
+    run('esp32', async () => {
       const token = await client.createPowerToken(factorOf(factor) ?? {})
       const key = newEsp32Key()
       deps.save({ ...deps.config(), esp32KeyCipher: sealSecret(deps.safe, key) })
