@@ -1,3 +1,4 @@
+import { createControlClient, type ControlClient } from '@sagyou/core/control/client'
 import {
   createSyncEngine,
   type FetchLike,
@@ -8,6 +9,7 @@ import type { RecordRepo } from '../data/records'
 import type { SqlDb } from '../data/sql'
 import type { MobileState } from '../data/state'
 import { createMobileSyncStore } from '../data/sync-store'
+import { CONTROL_SECURE_KEYS } from '../remote/keys'
 import { createConfigStore, type SecureStoreLike } from './config-store'
 
 export interface AppStateLike {
@@ -35,6 +37,8 @@ export interface RuntimeDeps {
 
 export interface SyncRuntime {
   engine: SyncEngine
+  /** The remote-control routes of the same Worker, with the same session. */
+  control: ControlClient
   /** Delete every local row and the secrets (remote wipe and "Desconectar"). */
   wipeLocal(): void
   dispose(): void
@@ -64,6 +68,15 @@ export function createSyncRuntime(deps: RuntimeDeps): SyncRuntime {
   // there must not leave the data visible or the device still paired.
   const wipeLocal = (): void => {
     config.clear()
+    // The control keys too: overwritten synchronously, then deleted.
+    for (const key of CONTROL_SECURE_KEYS) {
+      try {
+        deps.secure.setItem(key, '')
+      } catch {
+        // Deleted below anyway.
+      }
+      void deps.secure.deleteItemAsync(key).catch(() => undefined)
+    }
     deps.onWiped()
     deps.db.tx(() => {
       for (const table of TABLES) deps.db.run(`DELETE FROM ${table}`)
@@ -92,6 +105,16 @@ export function createSyncRuntime(deps: RuntimeDeps): SyncRuntime {
     emitRemoteChanges: (change) => deps.onRemote(change.state as MobileState)
   })
 
+  const control = createControlClient({
+    fetch: deps.fetch,
+    config: () => {
+      const loaded = config.load()
+      return loaded.status === 'ok' ? loaded.config : null
+    },
+    deviceId: () => deps.repo.deviceId(),
+    now: deps.now ?? Date.now
+  })
+
   let online: boolean | null = null
   const appSub = deps.appState.addEventListener('change', (state) => {
     if (state === 'active') engine.start()
@@ -106,6 +129,7 @@ export function createSyncRuntime(deps: RuntimeDeps): SyncRuntime {
 
   return {
     engine,
+    control,
     wipeLocal,
     dispose(): void {
       appSub.remove()

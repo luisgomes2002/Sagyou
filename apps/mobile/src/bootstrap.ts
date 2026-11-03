@@ -1,7 +1,10 @@
 import NetInfo from '@react-native-community/netinfo'
 import * as ScreenCapture from 'expo-screen-capture'
 import * as SecureStore from 'expo-secure-store'
+import * as LocalAuthentication from 'expo-local-authentication'
 import { AppState } from 'react-native'
+import { createControllerKeys } from './remote/keys'
+import { configureRemote, useRemote } from './remote/store'
 import { createRecordRepo } from './data/records'
 import { migrate } from './data/schema'
 import { rebuildSearchIndex, searchRecords } from './data/search'
@@ -33,6 +36,24 @@ export function bootstrap(): void {
     onRemote: (state) => useApp.getState().receive(state),
     onWiped: () => useApp.getState().wiped()
   })
+  configureRemote({
+    client: runtime.control,
+    keys: createControllerKeys(SecureStore),
+    now: Date.now,
+    deviceName: () => runtime.engine.status().deviceName,
+    authenticate: async () =>
+      (
+        await LocalAuthentication.authenticateAsync({
+          promptMessage: 'Confirme para controlar o PC'
+        })
+      ).success,
+    setTimer: (fn, ms) => setTimeout(fn, ms),
+    clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>)
+  })
+  void useRemote
+    .getState()
+    .init()
+    .catch(() => undefined)
   // start() reads the secure store first; before it the engine always says 'off'.
   runtime.engine.start()
   const paired = runtime.engine.status().state !== 'off'
