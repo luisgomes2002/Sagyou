@@ -7,6 +7,7 @@ import {
   KEY_LINE_LABELS,
   SYNC_BEHAVIOR_ARTICLE,
   SYNC_GUIDE_ARTICLES,
+  SYNC_SWITCH_PHONE_ARTICLE,
   SYNC_KEYS_ARTICLE,
   exampleA11yLabel,
   type SyncGuideBlock
@@ -29,7 +30,8 @@ describe('guia do sync', () => {
   it('tem os dois artigos, nesta ordem', () => {
     expect(SYNC_GUIDE_ARTICLES.map((a) => [a.id, a.title])).toEqual([
       ['sync-comportamento', 'Como a sincronização se comporta'],
-      ['sync-chaves', 'As chaves da sincronização']
+      ['sync-chaves', 'As chaves da sincronização'],
+      ['sync-trocar-celular', 'Trocar de celular longe de casa']
     ])
     expect(SYNC_BEHAVIOR_ARTICLE.blocks).toHaveLength(9)
   })
@@ -77,7 +79,7 @@ describe('guia do sync', () => {
     expect(EXAMPLE_BACKUP_CODE).toMatch(/^[0-9A-F]{20}$/)
   })
 
-  it('a tabela Perdeu → Usa cobre as seis perdas', () => {
+  it('a tabela Perdeu → Usa cobre as sete perdas', () => {
     const table = SYNC_KEYS_ARTICLE.blocks.find(
       (b): b is Extract<SyncGuideBlock, { type: 'table' }> => b.type === 'table'
     )
@@ -88,7 +90,26 @@ describe('guia do sync', () => {
       'Todos os aparelhos',
       'O código de recuperação',
       'Os códigos reserva',
-      'A senha de configuração'
+      'A senha de configuração',
+      'O celular autorizado a controlar o PC'
     ])
+    expect(table?.rows.at(-1)?.[1]).toMatch(
+      /código de recuperação.*senha do Worker.*código reserva.*senha do Sagyou/
+    )
+  })
+
+  it('trocar de celular cita as telas e o que guardar fora do celular', () => {
+    const text = JSON.stringify(SYNC_SWITCH_PHONE_ARTICLE.blocks)
+    for (const part of [
+      'Entrar com código de recuperação',
+      'Estou longe do PC',
+      'guarde fora do celular',
+      'código de recuperação',
+      'senha de configuração do Worker',
+      'códigos reserva'
+    ]) {
+      expect(text).toContain(part)
+    }
+    expect(text).not.toMatch(/chat|conversas/i)
   })
 })

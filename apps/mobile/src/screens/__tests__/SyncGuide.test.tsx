@@ -20,6 +20,8 @@ describe('Como funciona a sincronização', () => {
     await render(<SyncGuideScreen />)
     expect(screen.getByRole('header', { name: 'Como a sincronização se comporta' })).toBeTruthy()
     expect(screen.getByRole('header', { name: 'As chaves da sincronização' })).toBeTruthy()
+    expect(screen.getByRole('header', { name: 'Trocar de celular longe de casa' })).toBeTruthy()
+    expect(screen.getByText(/Estou longe do PC/)).toBeTruthy()
     expect(screen.getAllByText('Exemplo')).toHaveLength(5)
     expect(screen.getByLabelText(exampleA11yLabel('Código de recuperação'))).toBeTruthy()
     expect(screen.getByLabelText(exampleA11yLabel('Códigos reserva'))).toBeTruthy()

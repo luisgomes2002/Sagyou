@@ -497,6 +497,44 @@ const sessoesCodigo: GuideArticle[] = [
       }
     ],
     target: { view: 'settings', section: 'mcp-externo' }
+  },
+  {
+    id: 'controle-remoto',
+    title: 'Controle remoto pelo celular',
+    blocks: [
+      {
+        type: 'p',
+        text: 'Com o modo controlado ligado, o celular autorizado liga, desliga, desbloqueia e bloqueia este PC, e aprova os cartões do Fleet. Só funciona no Windows, com a sincronização ativa e a senha do Sagyou configurada.'
+      },
+      {
+        type: 'steps',
+        items: [
+          'Abra Configurações → Controle remoto e ligue Controlar este PC pelo celular (pede o código do autenticador).',
+          'No celular, abra Ajustes → Controlar o PC → Pedir autorização.',
+          'Confira se o código de 6 dígitos é o mesmo nas duas telas e clique em Autorizar, com a senha do Sagyou.',
+          'Em Servidores de Remote Control, adicione os nomes usados em --name: o PC só aparece Pronto com todos rodando.'
+        ]
+      },
+      {
+        type: 'p',
+        text: 'Os pedidos passam cifrados pelo seu Worker, que não lê os dados: ele só vê identificadores de aparelho, tamanhos e horários. Cada pedido é assinado pela chave do celular e vale 60 segundos, e repetir um pedido não funciona. Cinco pedidos recusados seguidos suspendem o desbloqueio e o desligamento remotos por 15 minutos.'
+      },
+      {
+        type: 'p',
+        text: 'Para ligar o PC desligado, um ESP32 na mesma rede envia o pacote mágico. Em Token do ESP32, gere o token e a chave e cole os dois no secrets.h. O comando do ESP32 é assinado com essa chave: nem o Worker consegue forjar ou repetir um comando.'
+      },
+      {
+        type: 'callout',
+        tone: 'warning',
+        text: 'Desligar salva o Sagyou e agenda o desligamento do Windows em 60 segundos, que o celular pode cancelar. Se o Sagyou não conseguir salvar, o PC não desliga.'
+      },
+      {
+        type: 'callout',
+        tone: 'tip',
+        text: 'Perdeu o celular autorizado longe de casa? Veja Trocar de celular longe de casa, na sincronização.'
+      }
+    ],
+    target: { view: 'settings', section: 'controle-remoto' }
   }
 ]
 
