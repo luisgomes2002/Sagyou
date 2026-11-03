@@ -2,73 +2,57 @@ import { createHash, randomBytes, timingSafeEqual } from 'crypto'
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'fs'
 
 /**
- * The external MCP token: one at a time, 30 days, renewed by hand. Only its
- * SHA-256 lives on disk, in its own file outside SQLite and every backup;
- * the token itself is shown once and never stored, returned by status() or
- * logged. A deliberate exception to "an MCP capability lives as long as its
- * terminal" (spec docs/specs/2026-11-02-mcp-externo.md).
+ * The external MCP token: one at a time, no expiry, full access (spec
+ * docs/specs/2026-11-03-acesso-remoto.md). Only its SHA-256 lives on disk, in
+ * its own file outside SQLite and every backup; the token itself is shown once
+ * and never stored, returned by status() or logged. It lives until it is
+ * revoked or replaced on this PC (or the PC is wiped remotely). A deliberate
+ * exception to "an MCP capability lives as long as its terminal".
  */
 
 export const MCP_EXTERNAL_FILE = 'mcp-external.json'
 export const MCP_EXTERNAL_FILE_DEV = 'mcp-external-dev.json'
-export const EXTERNAL_TOKEN_TTL_MS = 30 * 86400000
 const TOUCH_EVERY_MS = 60000
-const DAY_MS = 86400000
-export const EXPIRY_NOTICE_DAYS = 3
-
-export type McpExternalMode = 'read' | 'read-write'
-
-export interface McpExternalScope {
-  projectId: string | null
-  financialProfileId: string
-  mode: McpExternalMode
-}
 
 export interface McpExternalStatus {
-  state: 'none' | 'active' | 'expired'
+  state: 'none' | 'active'
   createdAt?: number
-  expiresAt?: number
   lastUsedAt?: number | null
-  scope?: McpExternalScope
+  /** The external token keeps working while the Sagyou is on its password screen. */
+  allowWhileLocked?: boolean
 }
 
-interface StoredToken extends McpExternalScope {
+interface StoredToken {
   hash: string
   createdAt: number
-  expiresAt: number
   lastUsedAt: number | null
-  lastNoticeDay: string | null
+  allowWhileLocked: boolean
 }
 
-export type McpExternalVerify =
-  | { ok: true; scope: McpExternalScope }
-  | { ok: false; reason: 'invalid' | 'expired' }
+export type McpExternalVerify = { ok: true } | { ok: false; reason: 'invalid' }
 
 export interface McpExternalStore {
   status(): McpExternalStatus
-  create(scope: McpExternalScope): { token: string; status: McpExternalStatus }
-  renew(): { token: string; status: McpExternalStatus } | null
+  /** A new token; the previous one stops at once. Keeps "allowWhileLocked". */
+  create(): { token: string; status: McpExternalStatus }
   revoke(): void
   verify(token: string): McpExternalVerify
   /** Records a use; written at most once a minute. */
   touch(): void
-  expiresAt(): number | null
-  lastNoticeDay(): string | null
-  markNoticed(day: string): void
+  allowWhileLocked(): boolean
+  /** Without a token nothing is written: the option belongs to the token. */
+  setAllowWhileLocked(value: boolean): McpExternalStatus
 }
 
 function hashToken(token: string): string {
   return createHash('sha256').update(token, 'utf8').digest('hex')
 }
 
-function isScope(value: Record<string, unknown>): boolean {
-  return (
-    (value.projectId === null || typeof value.projectId === 'string') &&
-    typeof value.financialProfileId === 'string' &&
-    (value.mode === 'read' || value.mode === 'read-write')
-  )
-}
-
+/**
+ * A file the 30-day build wrote (expiresAt, projectId, financialProfileId,
+ * mode, lastNoticeDay) is read as is: those fields are ignored, so that token
+ * keeps working with no expiry and full access, and they vanish on the next write.
+ */
 function parse(text: string): StoredToken | null {
   try {
     const value = JSON.parse(text) as Record<string, unknown>
@@ -76,20 +60,14 @@ function parse(text: string): StoredToken | null {
       !value ||
       typeof value.hash !== 'string' ||
       !/^[0-9a-f]{64}$/.test(value.hash) ||
-      typeof value.createdAt !== 'number' ||
-      typeof value.expiresAt !== 'number' ||
-      !isScope(value)
+      typeof value.createdAt !== 'number'
     )
       return null
     return {
       hash: value.hash,
       createdAt: value.createdAt,
-      expiresAt: value.expiresAt,
       lastUsedAt: typeof value.lastUsedAt === 'number' ? value.lastUsedAt : null,
-      lastNoticeDay: typeof value.lastNoticeDay === 'string' ? value.lastNoticeDay : null,
-      projectId: (value.projectId as string | null) ?? null,
-      financialProfileId: value.financialProfileId as string,
-      mode: value.mode as McpExternalMode
+      allowWhileLocked: value.allowWhileLocked === true
     }
   } catch {
     return null
@@ -118,42 +96,26 @@ export function createMcpExternalStore(deps: {
 
   const write = (stored: StoredToken): void => {
     const tmp = `${deps.file}.tmp`
+    const record: StoredToken = {
+      hash: stored.hash,
+      createdAt: stored.createdAt,
+      lastUsedAt: stored.lastUsedAt,
+      allowWhileLocked: stored.allowWhileLocked
+    }
     // 0600 holds on POSIX; on Windows the file inherits userData's ACL (only a hash is in it).
-    writeFileSync(tmp, JSON.stringify(stored), { encoding: 'utf8', mode: 0o600 })
+    writeFileSync(tmp, JSON.stringify(record), { encoding: 'utf8', mode: 0o600 })
     renameSync(tmp, deps.file)
-    cache = { value: stored }
+    cache = { value: record }
   }
 
   const statusOf = (stored: StoredToken | null): McpExternalStatus => {
     if (!stored) return { state: 'none' }
     return {
-      state: stored.expiresAt > deps.now() ? 'active' : 'expired',
+      state: 'active',
       createdAt: stored.createdAt,
-      expiresAt: stored.expiresAt,
       lastUsedAt: stored.lastUsedAt,
-      scope: {
-        projectId: stored.projectId,
-        financialProfileId: stored.financialProfileId,
-        mode: stored.mode
-      }
+      allowWhileLocked: stored.allowWhileLocked
     }
-  }
-
-  const issue = (scope: McpExternalScope): { token: string; status: McpExternalStatus } => {
-    const token = randomBytes(32).toString('base64url')
-    const now = deps.now()
-    const stored: StoredToken = {
-      hash: hashToken(token),
-      createdAt: now,
-      expiresAt: now + EXTERNAL_TOKEN_TTL_MS,
-      lastUsedAt: null,
-      lastNoticeDay: null,
-      projectId: scope.projectId,
-      financialProfileId: scope.financialProfileId,
-      mode: scope.mode
-    }
-    write(stored)
-    return { token, status: statusOf(stored) }
   }
 
   // Cached between touches so a busy agent does not rewrite the file per call.
@@ -161,15 +123,16 @@ export function createMcpExternalStore(deps: {
 
   return {
     status: () => statusOf(read()),
-    create: (scope) => issue(scope),
-    renew: () => {
-      const stored = read()
-      if (!stored) return null
-      return issue({
-        projectId: stored.projectId,
-        financialProfileId: stored.financialProfileId,
-        mode: stored.mode
-      })
+    create: () => {
+      const token = randomBytes(32).toString('base64url')
+      const stored: StoredToken = {
+        hash: hashToken(token),
+        createdAt: deps.now(),
+        lastUsedAt: null,
+        allowWhileLocked: read()?.allowWhileLocked ?? false
+      }
+      write(stored)
+      return { token, status: statusOf(stored) }
     },
     revoke: () => {
       rmSync(deps.file, { force: true })
@@ -182,15 +145,7 @@ export function createMcpExternalStore(deps: {
       const expected = Buffer.from(stored.hash, 'hex')
       if (given.length !== expected.length || !timingSafeEqual(given, expected))
         return { ok: false, reason: 'invalid' }
-      if (stored.expiresAt <= deps.now()) return { ok: false, reason: 'expired' }
-      return {
-        ok: true,
-        scope: {
-          projectId: stored.projectId,
-          financialProfileId: stored.financialProfileId,
-          mode: stored.mode
-        }
-      }
+      return { ok: true }
     },
     touch: () => {
       const now = deps.now()
@@ -205,42 +160,13 @@ export function createMcpExternalStore(deps: {
         cache = { value: { ...stored, lastUsedAt: now } }
       }
     },
-    expiresAt: () => read()?.expiresAt ?? null,
-    lastNoticeDay: () => read()?.lastNoticeDay ?? null,
-    markNoticed: (day) => {
+    allowWhileLocked: () => read()?.allowWhileLocked ?? false,
+    setAllowWhileLocked: (value) => {
       const stored = read()
-      if (!stored) return
-      try {
-        write({ ...stored, lastNoticeDay: day })
-      } catch {
-        // Best effort: at worst the notice repeats after the next launch.
-        cache = { value: { ...stored, lastNoticeDay: day } }
-      }
+      if (!stored) return statusOf(null)
+      write({ ...stored, allowWhileLocked: value })
+      return statusOf(read())
     }
-  }
-}
-
-function localDay(ms: number): string {
-  const d = new Date(ms)
-  const pad = (n: number): string => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-}
-
-/** The tray/system notice when the token is about to expire; at most once a day. */
-export function expiryNotice(
-  now: number,
-  expiresAt: number,
-  lastNoticeDay: string | null
-): { text: string; day: string } | null {
-  const left = expiresAt - now
-  if (left <= 0 || left > EXPIRY_NOTICE_DAYS * DAY_MS) return null
-  const day = localDay(now)
-  if (lastNoticeDay === day) return null
-  const days = Math.floor(left / DAY_MS)
-  const when = days === 0 ? 'vence hoje' : days === 1 ? 'vence em 1 dia' : `vence em ${days} dias`
-  return {
-    text: `O acesso MCP externo ${when}. Renove em Configurações → Acesso MCP externo.`,
-    day
   }
 }
 
