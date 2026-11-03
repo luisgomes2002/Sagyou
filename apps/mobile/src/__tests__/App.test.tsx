@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { AppShell, TAB_LABELS } from '../App'
 import { StatusBanner } from '../components/StatusBanner'
 import { LockGate, type LockDeps } from '../lock/LockGate'
+import { useRemote } from '../remote/store'
 import { LOCKED_TITLE } from '../lock/texts'
 import { PAIR_TITLE } from '../screens/PairScreen'
 import { DISCONNECTED_TEXT, OFFLINE_TEXT, useApp } from '../store/app'
@@ -61,6 +62,28 @@ describe('App', () => {
     )
     expect(TAB_LABELS).toEqual(['Tarefas', 'Hábitos', 'Finanças', 'Notas', 'Busca'])
     for (const label of TAB_LABELS) expect(screen.getAllByText(label).length).toBeGreaterThan(0)
+  })
+
+  it('a aba PC só aparece num celular autorizado que pode enviar', async () => {
+    const polling = { startPolling: jest.fn(), stopPolling: jest.fn() }
+    const cases: [string, 'none' | 'pending' | 'yes', boolean, boolean][] = [
+      ['sem autorização', 'none', false, false],
+      ['pendente', 'pending', false, false],
+      ['autorizado', 'yes', false, true],
+      ['autorizado, só leitura', 'yes', true, false]
+    ]
+    for (const [name, authorized, readOnly, shown] of cases) {
+      seedApp({}, { readOnly })
+      useRemote.setState({ authorized, view: null, status: null, cards: [], ...polling })
+      const view = await render(
+        <SafeAreaProvider>
+          <AppShell mode="app" />
+        </SafeAreaProvider>
+      )
+      expect([name, screen.queryByTestId('tab-PC') !== null]).toEqual([name, shown])
+      await view.unmount()
+    }
+    useRemote.setState({ authorized: 'none' })
   })
 
   it('cada aba tem ícone e o header abre Ajustes pela engrenagem', async () => {
