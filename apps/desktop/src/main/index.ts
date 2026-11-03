@@ -122,8 +122,8 @@ import { fetchWeb } from './modules/web/web-fetch'
 import { renderWeb } from './modules/web/web-render'
 import { getExchangeRate } from './modules/financial/financial-exchange'
 import {
+  EXTERNAL_PERMISSIONS,
   MCP_EXTERNAL_BRIDGE_SOURCE,
-  externalPermissions,
   startSagyouMcpBroker
 } from './modules/agent/sagyou-mcp'
 import {
@@ -264,21 +264,19 @@ function protectDataIpc(ipc: IpcMain): void {
 }
 const sagyouMcp = startSagyouMcpBroker({
   // Asked only when no Fleet run owns the token.
+  // Full access, no expiry: every project, every financial profile, every tool.
   externalSession: (token) => {
-    const verified = mcpExternal?.verify(token)
-    if (!verified) return null
-    if (!verified.ok) return verified.reason === 'expired' ? 'expired' : null
+    if (!mcpExternal?.verify(token).ok) return null
     return {
       token,
       runId: EXTERNAL_RUN_ID,
-      projectId: verified.scope.projectId,
-      financialProfileId: verified.scope.financialProfileId,
-      permissions: externalPermissions(verified.scope.mode)
+      projectId: null,
+      financialProfileId: null,
+      permissions: EXTERNAL_PERMISSIONS
     }
   },
   onExternalUse: () => mcpExternal?.touch(),
   externalHelloSecret: () => (mcpExternalPortFile ? mcpExternalHelloSecret : null),
-  onExternalRefused: (reason) => log.info('mcp', 'external_refused', { reason }),
   // Called per request, long after codeRuns (declared below) exists.
   isRunLive: (runId) => isMcpRunLive(runId),
   isLocked: () => isAppLocked(),

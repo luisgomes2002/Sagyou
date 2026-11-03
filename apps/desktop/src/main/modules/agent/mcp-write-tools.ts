@@ -307,7 +307,7 @@ export const MCP_WRITE_TOOLS: McpToolDefinition[] = [
   ),
   tool(
     'create_financial_profile',
-    'Cria um perfil financeiro. A sessão continua escrevendo só no perfil atual.' + APPROVAL_NOTE,
+    'Cria um perfil financeiro.' + APPROVAL_NOTE,
     { name: text('Nome do perfil.') },
     ['name']
   ),

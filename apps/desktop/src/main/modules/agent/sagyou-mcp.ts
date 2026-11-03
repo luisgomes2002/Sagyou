@@ -11,12 +11,7 @@ import {
 import { createHmac, randomUUID } from 'crypto'
 import type { MemorySearchHit } from '../../store'
 import { MCP_WRITE_TOOLS } from './mcp-write-tools'
-import {
-  EXTERNAL_EXPIRED_MESSAGE,
-  EXTERNAL_RISKY_MESSAGE,
-  EXTERNAL_RUN_ID,
-  isExternalRisky
-} from './mcp-external-policy'
+import { EXTERNAL_RUN_ID } from './mcp-external-policy'
 import {
   MCP_MEMORY_WRITE_TOOLS,
   MCP_RENDERER_WRITE_TOOLS,
@@ -51,25 +46,21 @@ const WRITE_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
 
 export type McpPermission = (typeof MCP_PERMISSIONS)[number]
 
-/** Every write the external token can be granted, the legacy card writes included. */
-const EXTERNAL_WRITE_NAMES: ReadonlySet<string> = new Set<string>([
-  ...WRITE_TOOL_NAMES,
-  'save_memory',
-  'criar_task'
-])
-
-/** What the external token's mode lists: reads only, or everything (risky ones refused later). */
-export function externalPermissions(mode: 'read' | 'read-write'): McpPermission[] {
-  return mode === 'read-write'
-    ? [...MCP_PERMISSIONS]
-    : MCP_PERMISSIONS.filter((name) => !EXTERNAL_WRITE_NAMES.has(name))
-}
+/**
+ * The external token reaches every tool, writes and risky ones included, with
+ * no card (spec docs/specs/2026-11-03-acesso-remoto.md).
+ */
+export const EXTERNAL_PERMISSIONS: readonly McpPermission[] = [...MCP_PERMISSIONS]
 
 export interface McpSession {
   token: string
   runId: string
   projectId: string | null
-  financialProfileId: string
+  /**
+   * The financial profile captured at launch. Only the external token uses
+   * null: every profile, chosen per call (a table's own, or a `profileId`).
+   */
+  financialProfileId: string | null
   permissions: readonly McpPermission[]
   /** Absent means no fixed expiry: the capability lives as long as its run. */
   expiresAt?: number
@@ -83,7 +74,7 @@ export interface McpBrokerDeps {
   ) => unknown[]
   listProjects?: () => unknown[]
   readTasks: (projectId: string | null | undefined) => unknown[]
-  readFinancial: (profileId: string) => unknown
+  readFinancial: (profileId: string | null, filter?: string) => unknown
   readProjectData: (projectId: string | null | undefined) => unknown
   searchMemory: (projectId: string | null | undefined, term: string) => MemorySearchHit[]
   readMemory: (id: string) => AiMemory | null
@@ -118,13 +109,11 @@ export interface McpBrokerDeps {
   isLocked?: () => boolean
   /**
    * The external token (Configurações → Acesso MCP externo), asked only when no
-   * Fleet run owns the token: its session, 'expired', or null when unknown.
+   * Fleet run owns the token: its session, or null when unknown or revoked.
    */
-  externalSession?: (token: string) => McpSession | 'expired' | null
+  externalSession?: (token: string) => McpSession | null
   /** An authorized call with the external token (its "último uso"). */
   onExternalUse?: () => void
-  /** The external token was refused; only the reason, never the token. */
-  onExternalRefused?: (reason: 'expired' | 'risky') => void
   /** This launch's secret, written next to the port for the external bridge's challenge. */
   externalHelloSecret?: () => string | null
 }
@@ -673,11 +662,6 @@ export function startSagyouMcpBroker(deps: McpBrokerDeps): {
           let session = sessions.get(token)
           if (!session && token && deps.externalSession) {
             const external = deps.externalSession(token)
-            if (external === 'expired') {
-              deps.onExternalRefused?.('expired')
-              failure(socket, request.id, EXTERNAL_EXPIRED_MESSAGE)
-              continue
-            }
             if (external) session = external
           }
           if (
@@ -729,16 +713,7 @@ export function startSagyouMcpBroker(deps: McpBrokerDeps): {
               failure(call, request.id, MCP_LOCKED_MESSAGE)
               continue
             }
-            if (session.runId === EXTERNAL_RUN_ID) {
-              // No card can be answered for this token until the phone approves (stage 6):
-              // refused here, before any write path is reached.
-              if (isExternalRisky(name)) {
-                deps.onExternalRefused?.('risky')
-                failure(call, request.id, EXTERNAL_RISKY_MESSAGE)
-                continue
-              }
-              deps.onExternalUse?.()
-            }
+            if (session.runId === EXTERNAL_RUN_ID) deps.onExternalUse?.()
             if (WRITE_TOOL_NAMES.has(name)) {
               const args = request.params?.arguments
               if (!deps.write) {

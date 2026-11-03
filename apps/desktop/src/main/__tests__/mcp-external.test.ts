@@ -9,13 +9,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createMcpExternalStore, externalMcpCommand } from '../modules/agent/mcp-external'
-import {
-  EXTERNAL_RUN_ID,
-  externalSkipsCard,
-  isExternalRisky,
-  tracksRunState
-} from '../modules/agent/mcp-external-policy'
-import { MCP_APPROVAL_REQUIRED } from '../modules/agent/mcp-write-tools'
+import { EXTERNAL_RUN_ID, externalSkipsCard, tracksRunState } from '../modules/agent/mcp-external-policy'
 
 const DAY = 86400000
 const HASH = 'a'.repeat(64)
@@ -180,17 +174,9 @@ describe('token MCP externo', () => {
 })
 
 describe('política do token externo', () => {
-  it('toda escrita com cartão é arriscada; o resto não', () => {
-    for (const name of MCP_APPROVAL_REQUIRED)
-      expect([name, isExternalRisky(name)]).toEqual([name, true])
-    expect(isExternalRisky('save_memory')).toBe(true)
-    // Decided 2026-11-02: creating tasks is the external token's main use.
-    expect(isExternalRisky('criar_task')).toBe(false)
+  it('criar_task do token externo não pede cartão; o do Fleet pede', () => {
     expect(externalSkipsCard(EXTERNAL_RUN_ID, 'criar_task')).toBe(true)
     expect(externalSkipsCard('run-do-fleet', 'criar_task')).toBe(false)
-    expect(externalSkipsCard(EXTERNAL_RUN_ID, 'update_task')).toBe(false)
-    expect(isExternalRisky('update_task')).toBe(false)
-    expect(isExternalRisky('read_tasks')).toBe(false)
   })
 
   it('a run externa não guarda cronômetros nem atividade de sessão', () => {
