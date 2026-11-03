@@ -483,7 +483,7 @@ const sessoesCodigo: GuideArticle[] = [
       },
       {
         type: 'p',
-        text: 'Com senha no Sagyou, o token para quando a tela bloqueia, a não ser que você ligue Funcionar com o Sagyou bloqueado. Ligado, o Claude continua lendo e escrevendo com a tela na senha; se o Sagyou abriu bloqueado e nunca foi desbloqueado, só as leituras funcionam. A proteção do token passa a ser a senha do Windows.'
+        text: 'Com senha no Sagyou, o token para quando a tela bloqueia, a não ser que você ligue Funcionar com o Sagyou bloqueado. Ligado, o Claude continua lendo e escrevendo com a tela na senha; se o Sagyou abriu bloqueado e nunca foi desbloqueado, só as leituras e as memórias funcionam (tarefas, notas, metas e finanças voltam depois do primeiro desbloqueio). A proteção do token passa a ser a senha do Windows.'
       },
       {
         type: 'callout',
