@@ -131,4 +131,55 @@ As etapas 4 e 5 não dependem do sync e podem entrar antes, se o ESP32 chegar ce
   também bloqueia (`lockOnSystemLock`), então ligar "Funcionar com o Sagyou bloqueado"
   em Configurações → Acesso MCP externo; e desligar a suspensão do Windows.
 
+## Requisitos para operar do exterior (proposta de 2026-11-04, a debater)
+
+Cenário: o PC fica no Brasil e o Luis passa meses no Japão (UTC−3 × UTC+9), sem
+ninguém para tocar no PC. Ainda não aprovado; a análise completa, com os caminhos
+de ataque e as alternativas avaliadas (ai-jail, Docker, conta bot no GitHub), está
+em [`docs/seguranca/2026-11-04-ameacas-acesso-remoto.md`](../seguranca/2026-11-04-ameacas-acesso-remoto.md).
+
+**Para a spec da etapa 6 (`controle-remoto-app`):**
+
+- Todo comando remoto (ligar, desligar, desbloquear, aprovar) sai assinado pela chave
+  do celular e é verificado no destino (ESP32 ou PC), com prazo curto e nonce contra
+  replay. O Worker só repassa e nunca é quem autoriza.
+- O comando de rede local do ESP32 leva HMAC com segredo compartilhado + nonce
+  (filtrar pelo IP de origem não autentica). O script que roda como SYSTEM aceita um
+  único comando fixo, sem argumentos. A atualização OTA do ESP32 fica desligada ou
+  com senha.
+- **Kill switch pelo celular:** revogar o token MCP externo, parar os servidores de
+  Remote Control e desligar o PC. Do exterior, é a única defesa.
+- Cards no celular para deletes e dinheiro também no token externo, revendo a
+  decisão de 2026-11-03 de não pedir cartão.
+- TOTP para gerar convite de pareamento, em qualquer aparelho.
+
+**Datas (12 h de fuso):** `todayLocalISO()` usa o relógio de cada aparelho, então o
+PC e o celular discordam de qual é o dia de hoje durante metade do dia. Hábitos,
+saldo atual, prazos e o "hoje" dos agentes do Remote Control (que rodam no PC) se
+deslocam. A spec do MCP de hábitos (e as tools de transação e prazo) deve exigir a
+data explícita, ou ao menos devolver a data usada, em vez de assumir o hoje do PC.
+
+**Fora do código (antes de viajar):**
+
+- Conta Windows padrão, sem admin, para o login automático, o Sagyou e os servidores
+  de Remote Control. O script do ESP32 fica fora do alcance dela.
+- BIOS com "Restore on AC power loss = Power On", IP fixo do ESP32, roteador que se
+  religa sozinho (tomada inteligente), nobreak, e um relé no botão de power ou
+  tomada inteligente para um PC travado.
+- Windows Update sob controle (horário ativo ou pausa).
+- 2FA sem SMS (passkey ou TOTP) na Anthropic, no GitHub e na Cloudflare; código de
+  recuperação do sync e códigos de backup do TOTP impressos, longe do celular; um
+  segundo aparelho pareado e o RustDesk funcionando a partir dele.
+- GitHub: conta bot com papel Write no PC dos agentes, ruleset na `main` (PR com
+  1 aprovação, checks, sem force-push), tags `v*`/`mobile-v*` só por admin,
+  `mobile-release` restrito às tags `mobile-v*` e exigência de actions fixadas por SHA.
+- Ensaio: uma semana operando só pelo celular, em 4G, incluindo uma queda de
+  energia simulada.
+
 ## Perguntas em aberto
+
+- Manter o token MCP externo sem cartão para deletes e dinheiro, ou exigir aprovação
+  pelo celular? (ver o documento de ameaças)
+- Rodar os servidores de Remote Control isolados (devcontainer com firewall de
+  saída ou ai-jail no WSL2)? Falta testar se o MCP do Sagyou funciona de dentro deles.
+- O PC Linux do trabalho precisa das finanças? Hoje o sync não tem escopo por aparelho.
