@@ -25,7 +25,7 @@ Caminhos menores:
 - **O merge precisa da aprovação do dono do repositório.** O agente abre o PR, pede a revisão e espera. Agentes nunca fazem merge.
 - **Urgência não pula portão.** "Preciso disso agora" significa: pedir aprovação rápida, cortar o escopo. Não significa construir sem spec e plano aprovados.
 - Fique dentro do plano aprovado. Surgiu algo novo e necessário no meio do build: pare, atualize o plano (volta a `draft`) e peça aprovação de novo.
-- Antes de começar, veja o trabalho em andamento: `git fetch && git branch -a` e `gh pr list`. Não construa o que outro já está construindo; se depende, parta da branch dele.
+- Antes de começar, veja o trabalho em andamento (`/sagyou-status`, ou `git fetch && git branch -a` e `gh pr list`). Não construa o que outro já está construindo; se depende, parta da branch dele.
 - **Mudanças que tocam dados persistidos** (schema SQLite, backup, normalização, `userData`) exigem, na spec, a seção "Dados" e o aviso `⚠️ Breaking schema change — existing data may be affected.` quando for o caso (veja `CLAUDE.md` → Data / Schema safety).
 
 ## Git
@@ -72,7 +72,7 @@ Usuários do Claude Code têm o fluxo automatizado por skills e subagentes em `.
 
 Crie uma skill ou agente novo quando **um fluxo foi feito duas vezes do mesmo jeito** ou **o mesmo erro aconteceu duas vezes**. Mantenha curto, aponte para este arquivo em vez de repetir, e liste-o abaixo no mesmo PR.
 
-**Skills:** `/sagyou-spec`, `/sagyou-plan`, `/sagyou-build`, `/sagyou-review`, `/sagyou-pr`, `/sagyou-fix` (os estágios acima), e `sagyou-ui` (padrão visual, carregada sozinha ao mexer no renderer).
+**Skills:** `/sagyou-spec`, `/sagyou-plan`, `/sagyou-build`, `/sagyou-review`, `/sagyou-pr`, `/sagyou-fix` (os estágios acima), `sagyou-ui` (padrão visual, carregada sozinha ao mexer no renderer), `sagyou-migration` (mudança em SQLite, D1, arquivos de `userData` ou formato do backup) e `/sagyou-status` (o que está em andamento; rode antes de começar spec, plano, build ou fix).
 
 **Agentes** (cada um com um papel só; revisores são somente leitura):
 
