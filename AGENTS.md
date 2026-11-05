@@ -44,7 +44,8 @@ caminhos de código citados nos documentos são relativos a essa pasta.
   testes, causa raiz, decisões).
 
 No Claude Code, cada estágio tem uma skill (`/sagyou-spec`, `/sagyou-plan`,
-`/sagyou-build`, `/sagyou-review`, `/sagyou-pr`, `/sagyou-fix`) e há subagentes em
+`/sagyou-build`, `/sagyou-review`, `/sagyou-pr`, `/sagyou-fix`), skills de apoio
+(`/sagyou-status`, `sagyou-ui`, `sagyou-migration`) e há subagentes em
 `.claude/agents/`. Nas outras ferramentas, siga os mesmos estágios à mão: os
 arquivos em `.claude/skills/` são Markdown puro e servem de checklist.
 
