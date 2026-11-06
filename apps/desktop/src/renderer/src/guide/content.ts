@@ -529,6 +529,10 @@ const sessoesCodigo: GuideArticle[] = [
         text: 'Desligar salva o Sagyou e agenda o desligamento do Windows em 60 segundos, que o celular pode cancelar. Se o Sagyou não conseguir salvar, o PC não desliga.'
       },
       {
+        type: 'p',
+        text: 'As notificações no celular (PC pronto, aprovação pendente, PC não desligado) são opcionais: precisam de um projeto no Firebase, do segredo FCM_SERVICE_ACCOUNT no Worker e de um APK gerado com o google-services.json. Sem isso, tudo funciona, só sem notificações.'
+      },
+      {
         type: 'callout',
         tone: 'tip',
         text: 'Perdeu o celular autorizado longe de casa? Veja Trocar de celular longe de casa, na sincronização.'
