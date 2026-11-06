@@ -32,3 +32,4 @@ Task 16: Decisão: código escrito antes dos testes (WIP de 2026-11-03), então 
 Task 17: Decisão: GOOGLE_SERVICES_JSON no plugin é o CAMINHO do arquivo (o workflow escreve o secret em $RUNNER_TEMP e exporta o caminho); o plugin só aponta android.googleServicesFile, e o prebuild copia — custo: um build local precisa da variável com um caminho, não do conteúdo.
 Task 17: Decisão: o token é registrado a cada abertura do app autorizado (PushBridge em App.tsx), sem ouvir rotação de token — custo: um token rotacionado no meio da sessão só chega ao Worker na próxima abertura.
 Task 17: Decisão: com o app aberto a notificação também aparece (setNotificationHandler no bootstrap).
+Task 18: Decisão: o teste confere o MAC do simulador contra powerCommandMac/powerStateMac do core (import relativo), e o simulador usa node:crypto — custo: nenhum, o core continua sem Node.
