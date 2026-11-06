@@ -33,3 +33,5 @@ Task 17: Decisão: GOOGLE_SERVICES_JSON no plugin é o CAMINHO do arquivo (o wor
 Task 17: Decisão: o token é registrado a cada abertura do app autorizado (PushBridge em App.tsx), sem ouvir rotação de token — custo: um token rotacionado no meio da sessão só chega ao Worker na próxima abertura.
 Task 17: Decisão: com o app aberto a notificação também aparece (setNotificationHandler no bootstrap).
 Task 18: Decisão: o teste confere o MAC do simulador contra powerCommandMac/powerStateMac do core (import relativo), e o simulador usa node:crypto — custo: nenhum, o core continua sem Node.
+Task 16: complete (85059d5, CI run 42270338092 → passa)
+Task 17: complete (d1c5cec, CI run 42270338092 → passa)
