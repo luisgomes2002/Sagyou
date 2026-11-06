@@ -5,7 +5,9 @@
 // expose its command line, and every server is started with `--name "<projeto>"`
 // (roadmap, "Um servidor de Remote Control por projeto"). So the configured list
 // is of names, matched against the command lines of running processes.
+import { win32 } from 'path'
 import { log } from '../logs/logger'
+import { systemExe } from './shutdown'
 
 export type ExecText = (file: string, args: string[]) => Promise<string>
 
@@ -34,11 +36,14 @@ const PS_SCRIPT =
 /** Command lines that mention remote-control; [] off Windows or on any error. */
 export async function listCommandLines(
   exec: ExecText,
-  platform: NodeJS.Platform = process.platform
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env
 ): Promise<string[]> {
   if (platform !== 'win32') return []
   try {
-    const out = await exec('powershell.exe', [
+    // Absolute path: never a powershell.exe found in the working folder or on PATH.
+    const powershell = systemExe(win32.join('WindowsPowerShell', 'v1.0', 'powershell.exe'), env)
+    const out = await exec(powershell, [
       '-NoProfile',
       '-NonInteractive',
       '-Command',

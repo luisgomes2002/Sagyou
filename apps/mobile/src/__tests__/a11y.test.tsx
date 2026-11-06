@@ -82,7 +82,13 @@ function PcSample(): React.JSX.Element {
   useState(() =>
     useRemote.setState({
       authorized: 'yes',
-      view: { state: 'ready', esp32Offline: true, missing: [] },
+      view: {
+        state: 'ready',
+        esp32Offline: true,
+        esp32NoAnswer: false,
+        forcedShutdownUntil: null,
+        missing: []
+      },
       status: {
         v: 1,
         at: PC_NOW,

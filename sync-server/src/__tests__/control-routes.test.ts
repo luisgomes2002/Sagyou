@@ -166,6 +166,21 @@ describe('autorização à distância', () => {
     expect(w.control.messages[0].expiresAt - w.clock.now).toBe(24 * 3_600_000)
   })
 
+  it('caixa do PC cheia: 409 inbox full e os papéis ficam como estavam', async () => {
+    const w = await world()
+    await makePc(w)
+    await makeController(w, DEV_B)
+    w.control.putMessage = async () => false
+    const res = await call(w, 'POST', '/roles/remote', {
+      token: w.c,
+      headers: { ...proof, 'x-totp-code': w.totp() },
+      body: { msgId: 'pedido-remoto-1', ciphertext: CIPHER }
+    })
+    expect(res.status).toBe(409)
+    expect((await json(res)).error).toBe('inbox full')
+    expect((await w.control.getRoles()).controllers).toEqual([DEV_B])
+  })
+
   it('sem PC configurado responde 409 sem gastar o fator', async () => {
     const w = await world()
     const res = await call(w, 'POST', '/roles/remote', {
@@ -298,7 +313,25 @@ describe('energia e ESP32', () => {
     expect((await call(w, 'POST', '/power/state', { token: esp, body: report })).status).toBe(200)
     const state = await json(await call(w, 'GET', '/power/state', { token: w.b }))
     expect(state.state).toMatchObject({ pcPing: true, lastResult: 'ok', mac: MAC })
-    expect(state.lastCommand).toEqual({ cmd: 'wake', at })
+    expect(state.lastCommand).toEqual({ cmd: 'wake', at, takenAt: at })
+  })
+
+  it('/power/state diz se o ESP32 já buscou o último comando (takenAt)', async () => {
+    const w = await world()
+    await makePc(w)
+    await makeController(w, DEV_B)
+    const esp = await powerToken(w)
+    const at = w.clock.now
+    await call(w, 'POST', '/power/command', {
+      token: w.b,
+      body: { cmd: 'shutdown', at, exp: at + 120_000, mac: MAC }
+    })
+    const before = await json(await call(w, 'GET', '/power/state', { token: w.b }))
+    expect(before.lastCommand).toEqual({ cmd: 'shutdown', at, takenAt: null })
+    w.clock.now += 3000
+    await call(w, 'GET', '/power/next', { token: esp })
+    const after = await json(await call(w, 'GET', '/power/state', { token: w.b }))
+    expect(after.lastCommand).toEqual({ cmd: 'shutdown', at, takenAt: at + 3000 })
   })
 
   it('comando vencido não sai para o ESP32', async () => {

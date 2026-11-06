@@ -22,7 +22,7 @@ import { UpdateBanner } from './components/UpdateBanner'
 import { TabIcon } from './components/TabIcon'
 import { ACTION_ICONS, type TabLabel } from './components/icons'
 import { useLockState } from './lock/lockState'
-import { notificationTarget, registerPush } from './remote/push'
+import { createResponseGate, registerPush } from './remote/push'
 import { useRemote } from './remote/store'
 import { PcScreen } from './screens/PcScreen'
 import { Fab, Snackbar } from './components/ui'
@@ -233,6 +233,9 @@ function AutoUpdateCheck(): null {
  * Notifications of the remote control: on an authorized phone, hands the FCM
  * token to the Worker once per launch; a tapped notification opens the PC tab.
  */
+/** Module-wide: a notification already handled never reopens the tab, even after a remount. */
+const pushTarget = createResponseGate()
+
 function PushBridge(): null {
   const authorized = useRemote((s) => s.authorized)
   const readOnly = useApp((s) => s.readOnly)
@@ -250,7 +253,7 @@ function PushBridge(): null {
     if (!controls) return
     let live = true
     const open = (response: unknown): void => {
-      if (!live || notificationTarget(response) !== 'pc' || !navigationRef.isReady()) return
+      if (!live || !navigationRef.isReady() || pushTarget(response) !== 'pc') return
       navigationRef.navigate('Abas', { screen: 'PC' })
     }
     // The tap that launched the app, then every later one.

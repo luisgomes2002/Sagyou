@@ -21,6 +21,8 @@ export const CONTROL_TEXT = {
   flushFailed: 'Não foi possível salvar o Sagyou; o PC não foi desligado.',
   notDeployed: 'Atualize o Worker para usar o controle remoto.',
   waitingPc: 'Aguardando o PC concluir a autorização',
+  cancelRequest: 'Cancelar pedido',
+  alreadyShuttingDown: 'O PC já está desligando.',
   previousRevoked:
     'Celulares anteriores perderam o controle do PC. Revogue também o aparelho perdido na sincronização, apagando os dados dele.',
   biometricsChanged: 'A biometria do celular mudou. Autorize este celular de novo.',

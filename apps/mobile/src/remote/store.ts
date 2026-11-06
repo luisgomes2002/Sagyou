@@ -68,6 +68,8 @@ export interface RemoteStore {
   init(): Promise<void>
   requestAuthorization(): Promise<void>
   requestRemote(password: string, factor: string): Promise<void>
+  /** Gives up a request the PC never answered: deletes the keys, back to 'none'. */
+  cancelRequest(): Promise<void>
   refresh(): Promise<void>
   startPolling(): void
   stopPolling(): void
@@ -338,7 +340,9 @@ export const useRemote = create<RemoteStore>((set, get) => {
             !!esp && powerStateMac(esp, report.pcPing, report.lastResult, report.at) === report.mac
         }
       : null
-    const view = pcState({ now, status, power, lastCommand: powerView.lastCommand })
+    const lc = powerView.lastCommand
+    const lastCommand = lc ? { cmd: lc.cmd, at: lc.at, takenAt: lc.takenAt ?? null } : null
+    const view = pcState({ now, status, power, lastCommand })
     const espError =
       report && power?.verified && powerView.lastCommand && report.at >= powerView.lastCommand.at
         ? report.lastResult === 'clock'
@@ -457,8 +461,9 @@ export const useRemote = create<RemoteStore>((set, get) => {
     forceShutdown: () => run(() => power('shutdown')),
     abortShutdown: () =>
       run(async () => {
-        // Scheduled by the Sagyou: cancel there; forced through the ESP32: cancel there.
-        if (get().status?.shutdownAt) await sendToPc('abort-shutdown', {})
+        // Scheduled by the Sagyou (the PC is alive and counting down): cancel there;
+        // forced through the ESP32 (no heartbeat, a stale shutdownAt says nothing): cancel there.
+        if (get().view?.state === 'shutting-down') await sendToPc('abort-shutdown', {})
         else await power('abort-shutdown')
       }),
     shutdown: () => run(() => sendToPc('shutdown', {})),
@@ -476,6 +481,13 @@ export const useRemote = create<RemoteStore>((set, get) => {
         await sendToPc('approval-answer', { id, approved })
         set({ cards: get().cards.filter((c) => c.id !== id) })
       }),
+
+    async cancelRequest() {
+      const state = get().authorized
+      if (state !== 'pending' && state !== 'waiting-pc') return
+      get().stopPolling()
+      await forget({})
+    },
 
     async removeThisPhone() {
       get().stopPolling()

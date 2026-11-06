@@ -54,3 +54,23 @@ export function notificationTarget(response: unknown): 'pc' | null {
     ? 'pc'
     : null
 }
+
+/**
+ * notificationTarget, but each notification only once: the last tap stays in
+ * getLastNotificationResponseAsync and comes back on every mount of the bridge
+ * (pairing again, leaving read-only), which would reopen the PC tab by itself.
+ */
+export function createResponseGate(): (response: unknown) => 'pc' | null {
+  let last: string | null = null
+  return (response) => {
+    const target = notificationTarget(response)
+    if (!target) return null
+    const id = (response as { notification?: { request?: { identifier?: unknown } } })
+      .notification?.request?.identifier
+    if (typeof id === 'string') {
+      if (id === last) return null
+      last = id
+    }
+    return target
+  }
+}

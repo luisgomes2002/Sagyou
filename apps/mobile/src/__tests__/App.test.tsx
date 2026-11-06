@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react-native'
+import { act, fireEvent, render, screen } from '@testing-library/react-native'
 import * as Notifications from 'expo-notifications'
 import { Text } from 'react-native'
 import * as RN from 'react-native'
@@ -115,6 +115,48 @@ describe('App', () => {
     )
     expect(await screen.findByText(LOADING_TEXT)).toBeTruthy()
     expect(putPushToken).toHaveBeenCalledWith('fcm-token')
+    useRemote.setState({ authorized: 'none' })
+  })
+
+  it('a mesma notificação já tratada não reabre a aba PC ao montar de novo', async () => {
+    const tap = {
+      notification: {
+        request: { identifier: 'app-test-tap-1', content: { data: { open: 'pc' } } }
+      }
+    }
+    seedApp({ projects: [project('p1', 'Sagyou')] })
+    useRemote.setState({
+      authorized: 'yes',
+      view: null,
+      status: null,
+      cards: [],
+      connection: null,
+      startPolling: jest.fn(),
+      stopPolling: jest.fn(),
+      putPushToken: jest.fn(async () => undefined)
+    })
+    jest.mocked(Notifications.getLastNotificationResponseAsync).mockResolvedValueOnce(tap as never)
+    const first = await render(
+      <SafeAreaProvider>
+        <AppShell mode="app" />
+      </SafeAreaProvider>
+    )
+    expect(await screen.findByText(LOADING_TEXT)).toBeTruthy()
+    await first.unmount()
+
+    let asked = false
+    jest.mocked(Notifications.getLastNotificationResponseAsync).mockImplementationOnce(async () => {
+      asked = true
+      return tap as never
+    })
+    await render(
+      <SafeAreaProvider>
+        <AppShell mode="app" />
+      </SafeAreaProvider>
+    )
+    await act(async () => undefined)
+    expect(asked).toBe(true)
+    expect(screen.queryByText(LOADING_TEXT)).toBeNull()
     useRemote.setState({ authorized: 'none' })
   })
 

@@ -112,6 +112,14 @@ export function createControllerKeys(
         throw classify(error)
       }
       await secure.setItemAsync(KEY_PUBLIC, toBase64(publicKey))
+      // A new pair starts a new authorization: the old PC and ESP32 keys belong to the old one.
+      for (const key of [KEY_PCPUB, KEY_ESP32]) {
+        try {
+          await secure.deleteItemAsync(key)
+        } catch {
+          // A missing entry is already what we want.
+        }
+      }
       return {
         publicKey,
         sign: (kind, body, ttlMs) => signEnvelope(privateKey, kind, body, now(), ttlMs)

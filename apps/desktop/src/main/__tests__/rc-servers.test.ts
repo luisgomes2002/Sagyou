@@ -53,13 +53,23 @@ describe('listCommandLines', () => {
 
   it('no Windows usa o PowerShell e separa as linhas', async () => {
     const exec = vi.fn(async () => 'a remote-control --name X\r\n\r\nb remote-control --name Y\r\n')
-    expect(await listCommandLines(exec, 'win32')).toEqual([
+    expect(await listCommandLines(exec, 'win32', { SystemRoot: 'D:\\Win' })).toEqual([
       'a remote-control --name X',
       'b remote-control --name Y'
     ])
+    // Absolute path: a powershell.exe dropped in the working folder or on PATH never runs.
     expect(exec).toHaveBeenCalledWith(
-      'powershell.exe',
+      'D:\\Win\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
       expect.arrayContaining(['-NoProfile', '-Command'])
+    )
+  })
+
+  it('sem SystemRoot usa C:\\Windows', async () => {
+    const exec = vi.fn(async () => '')
+    await listCommandLines(exec, 'win32', {})
+    expect(exec).toHaveBeenCalledWith(
+      'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
+      expect.anything()
     )
   })
 

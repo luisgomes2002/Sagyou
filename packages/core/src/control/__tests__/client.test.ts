@@ -141,6 +141,36 @@ describe('createControlClient', () => {
     await expect(client.pcId()).rejects.toEqual(new ControlError(code as never))
   })
 
+  it('powerState lê takenAt; resposta de Worker antigo sem takenAt vira null', async () => {
+    const taken = setup(() => ({
+      status: 200,
+      body: { state: null, lastCommand: { cmd: 'shutdown', at: NOW, takenAt: NOW + 3000 } }
+    }))
+    expect((await taken.client.powerState()).lastCommand).toEqual({
+      cmd: 'shutdown',
+      at: NOW,
+      takenAt: NOW + 3000
+    })
+    const pending = setup(() => ({
+      status: 200,
+      body: { state: null, lastCommand: { cmd: 'wake', at: NOW, takenAt: null } }
+    }))
+    expect((await pending.client.powerState()).lastCommand).toEqual({
+      cmd: 'wake',
+      at: NOW,
+      takenAt: null
+    })
+    const old = setup(() => ({
+      status: 200,
+      body: { state: null, lastCommand: { cmd: 'wake', at: NOW } }
+    }))
+    expect((await old.client.powerState()).lastCommand).toEqual({
+      cmd: 'wake',
+      at: NOW,
+      takenAt: null
+    })
+  })
+
   it('rede fora do ar vira offline', async () => {
     const { client } = setup(() => new Error('ECONNREFUSED'))
     await expect(client.inbox()).rejects.toMatchObject({ code: 'offline' })

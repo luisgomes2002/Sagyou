@@ -1,4 +1,9 @@
-import { notificationTarget, registerPush, type NotificationsApi } from '../push'
+import {
+  createResponseGate,
+  notificationTarget,
+  registerPush,
+  type NotificationsApi
+} from '../push'
 
 interface Fakes {
   notifications: Record<keyof NotificationsApi, jest.Mock>
@@ -77,5 +82,29 @@ describe('notificationTarget', () => {
   it('qualquer outra coisa não navega', () => {
     for (const r of [null, undefined, {}, response(null), response({}), response({ open: 'x' })])
       expect(notificationTarget(r)).toBeNull()
+  })
+})
+
+describe('createResponseGate', () => {
+  const response = (identifier: unknown): unknown => ({
+    notification: { request: { identifier, content: { data: { open: 'pc' } } } }
+  })
+
+  it('a mesma notificação tratada não reabre a aba; uma nova reabre', () => {
+    const gate = createResponseGate()
+    expect(gate(response('n1'))).toBe('pc')
+    // getLastNotificationResponseAsync keeps returning the last tap on every mount.
+    expect(gate(response('n1'))).toBeNull()
+    expect(gate(response('n2'))).toBe('pc')
+    expect(gate(response('n2'))).toBeNull()
+  })
+
+  it('o que não leva à aba PC não conta como tratado', () => {
+    const gate = createResponseGate()
+    expect(gate(null)).toBeNull()
+    expect(
+      gate({ notification: { request: { identifier: 'n1', content: { data: {} } } } })
+    ).toBeNull()
+    expect(gate(response('n1'))).toBe('pc')
   })
 })

@@ -5,8 +5,13 @@
 // controller, inside its time window, with a nonce never accepted before (kept
 // in remote-control.json, so a restart does not reopen a replay). Five refused
 // requests in a row suspend unlock, shutdown and remote authorization for
-// 15 minutes. Effects go through injected functions: this module never touches
-// the window, the lock or the OS itself.
+// 15 minutes. Only a refusal of someone already authenticated counts (a known
+// controller's request out of its window or replayed, a wrong password from the
+// holder of the Worker's controller role); an unknown sender or a bad signature
+// never does, or anyone in the sync could keep the real phone suspended. Only an
+// authenticated request clears the count. Counters and nonces are written once
+// per cycle, not per message. Effects go through injected functions: this
+// module never touches the window, the lock or the OS itself.
 import {
   parseApprovalAnswer,
   parseAuthorizeRemote,
@@ -42,6 +47,12 @@ export const REMOTE_TICK_MS = 5_000
 export const REMOTE_STATUS_MS = 30_000
 export const REMOTE_DEVICES_MS = 5 * 60_000
 export const AUTHORIZATION_TTL_MS = 10 * 60_000
+/** Nonces kept at most; past it, the ones that expire first go. */
+export const REMOTE_MAX_NONCES = 2000
+/** New authorize-request handled per inbox read; the rest are dropped. */
+export const MAX_AUTHORIZE_REQUESTS_PER_CYCLE = 3
+/** authorize-remote whose password is checked per inbox read. */
+export const MAX_AUTHORIZE_REMOTE_PER_CYCLE = 1
 const STATUS_TTL_MS = MAX_TTL_MS.status
 const NOTICE_TTL_MS = 10 * 60_000
 
@@ -68,10 +79,12 @@ export interface RemoteServiceDeps {
   setTimer: (fn: () => void, ms: number) => unknown
   clearTimer: (handle: unknown) => void
   isLocked: () => boolean
+  /** The Sagyou password exists: without it the PC is never controlled. */
+  hasPassword: () => boolean
   verifyPassword: (password: string) => boolean
   unlock: () => void
   lock: () => void
-  shutdown: () => Promise<'ok' | 'flush-failed'>
+  shutdown: () => Promise<'ok' | 'flush-failed' | 'failed'>
   abortShutdown: () => Promise<void>
   shutdownAt: () => number | null
   servers: () => Promise<{ name: string; up: boolean }[]>
@@ -109,6 +122,8 @@ export interface RemoteService {
   checkDevices(): Promise<void>
 }
 
+type Counters = Pick<RemoteConfig, 'failures' | 'suspendedUntil' | 'seenNonces'>
+
 interface Pending extends PendingAuthorization {
   publicKey: string
   nonce: string
@@ -126,41 +141,86 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
   let lastError: ControlErrorCode | null = null
   let dirty = false
   const pending = new Map<string, Pending>()
+  // Within a cycle, counters and nonces wait here and are written once at the end.
+  let inCycle = false
+  let draft: Counters | null = null
+  // Per inbox read: the Worker's controller role and the request budgets.
+  let roles: Promise<Set<string>> | null = null
+  let authorizeRequests = 0
+  let authorizeRemotes = 0
 
-  const isActive = (): boolean => wanted && syncActive && deps.config().enabled
+  const isActive = (): boolean =>
+    wanted && syncActive && deps.hasPassword() && deps.config().enabled
 
+  /** The saved config plus this cycle's unsaved counters. */
+  const cfg = (): RemoteConfig => (draft ? { ...deps.config(), ...draft } : deps.config())
+
+  /** Written now (with any pending counters). */
   const update = (fn: (c: RemoteConfig) => RemoteConfig): void => {
-    deps.save(fn(deps.config()))
+    const next = fn(cfg())
+    draft = null
+    deps.save(next)
     dirty = true
   }
 
+  /** Counters and nonces: batched while a cycle runs. */
+  const updateCounters = (fn: (c: Counters) => Counters): void => {
+    const c = cfg()
+    const next = fn({
+      failures: c.failures,
+      suspendedUntil: c.suspendedUntil,
+      seenNonces: c.seenNonces
+    })
+    if (!inCycle) return update((full) => ({ ...full, ...next }))
+    draft = next
+    dirty = true
+  }
+
+  /** Merged over the config as it is now, so a change made meanwhile (remote:disable) survives. */
+  const flushDraft = (): void => {
+    if (!draft) return
+    const next = { ...deps.config(), ...draft }
+    draft = null
+    deps.save(next)
+  }
+
   const suspendedUntil = (now: number): number | null => {
-    const until = deps.config().suspendedUntil
+    const until = cfg().suspendedUntil
     return until !== null && now < until ? until : null
   }
 
   const seen =
     (now: number) =>
     (nonce: string): boolean =>
-      deps.config().seenNonces.some((n) => n.nonce === nonce && n.until > now)
+      cfg().seenNonces.some((n) => n.nonce === nonce && n.until > now)
 
   /** A signature-valid envelope: its nonce can never be accepted again. */
   const markSeen = (env: SignedEnvelope, now: number): void =>
-    update((c) => ({
-      ...c,
-      seenNonces: [
+    updateCounters((c) => {
+      let seenNonces = [
         ...c.seenNonces.filter((n) => n.until > now),
         { nonce: env.nonce, until: env.expiresAt + CLOCK_SKEW_MS }
       ]
-    }))
+      if (seenNonces.length > REMOTE_MAX_NONCES) {
+        // Keep the ones valid the longest; those dropped are the first to expire anyway.
+        seenNonces = seenNonces.sort((a, b) => b.until - a.until).slice(0, REMOTE_MAX_NONCES)
+      }
+      return { ...c, seenNonces }
+    })
 
+  /** Only after an authenticated request. */
   const accepted = (): void => {
-    if (deps.config().failures !== 0) update((c) => ({ ...c, failures: 0 }))
+    if (cfg().failures !== 0) updateCounters((c) => ({ ...c, failures: 0 }))
+  }
+
+  /** A request that does not count (unknown sender, bad signature or shape). */
+  const ignored = (reason: ResultReason): void => {
+    log.warn('remote', 'refused', { reason, counted: false })
   }
 
   const refused = (now: number, reason: ResultReason): void => {
     log.warn('remote', 'refused', { reason })
-    update((c) => {
+    updateCounters((c) => {
       const failures = c.failures + 1
       if (failures < REMOTE_FAIL_LIMIT) return { ...c, failures }
       log.warn('remote', 'suspended', { minutes: REMOTE_SUSPEND_MS / 60_000 })
@@ -185,8 +245,8 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
   }
 
   const pcPublicKey = (): string => {
-    const cfg = deps.config()
-    if (cfg.pcKeys) return cfg.pcKeys.publicKey
+    const keys = cfg().pcKeys
+    if (keys) return keys.publicKey
     const key = deps.pcPrivateKey()
     if (!key) throw new ControlError('not-configured')
     return toBase64(publicKeyOf(key))
@@ -198,17 +258,27 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
     if (esp) await client.send(to, sign('esp32-key', { key: toBase64(esp) }, NOTICE_TTL_MS))
   }
 
-  const controllers = (): RemoteController[] => deps.config().controllers
+  const controllers = (): RemoteController[] => cfg().controllers
+
+  /** Who holds the controller role in the Worker, read once per inbox read. */
+  const roleHolders = (): Promise<Set<string>> => {
+    roles ??= client.controllers().then((ids) => new Set(ids))
+    return roles
+  }
+
+  /** Not counted: the envelope was not authenticated. */
+  const countable = (reason: ResultReason): boolean => reason !== 'signature' && reason !== 'shape'
 
   // ── Incoming requests ────────────────────────────────────────────────────────
 
   async function authorizeRequest(msg: InboxMessage, now: number): Promise<void> {
+    // Anyone in the sync can send one: never counted, never clears the count.
+    if (++authorizeRequests > MAX_AUTHORIZE_REQUESTS_PER_CYCLE) return ignored('refused')
     const body = parseAuthorizeRequest(msg.env.body)
-    if (!body) return refused(now, 'shape')
+    if (!body) return ignored('shape')
     const check = checkEnvelope(msg.env, body.key, now, seen(now))
-    if (!check.ok) return refused(now, check.reason)
+    if (!check.ok) return ignored(check.reason)
     markSeen(msg.env, now)
-    accepted()
     const priv = deps.pcPrivateKey()
     if (!priv) return
     dirty = true
@@ -226,25 +296,48 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
 
   async function authorizeRemote(msg: InboxMessage, now: number): Promise<void> {
     const { from, env } = msg
+    // Only who got the role from /roles/remote (with the authenticator) may try
+    // the password; anyone else is dropped without a check, a count or a reply.
+    let holders: Set<string>
+    try {
+      holders = await roleHolders()
+    } catch {
+      log.warn('remote', 'roles_failed')
+      return
+    }
+    if (!holders.has(from)) return ignored('unknown-controller')
+    if (++authorizeRemotes > MAX_AUTHORIZE_REMOTE_PER_CYCLE) return ignored('refused')
+
+    // The Worker already made it a controller; refused here, it is not one.
+    const refuse = async (reason: ResultReason, extra: { until?: number } = {}): Promise<void> => {
+      // An already authorized phone (a retried request) keeps its role.
+      if (!controllers().some((c) => c.id === from)) {
+        try {
+          await client.removeController(from)
+        } catch {
+          log.warn('remote', 'remove_controller_failed')
+        }
+      }
+      return reply(from, env.nonce, false, { reason, ...extra })
+    }
+
     const body = parseAuthorizeRemote(env.body)
-    if (!body) return refused(now, 'shape')
+    if (!body) {
+      ignored('shape')
+      return refuse('shape')
+    }
     const check = checkEnvelope(env, body.key, now, seen(now))
     if (!check.ok) {
-      refused(now, check.reason)
-      return reply(from, env.nonce, false, { reason: check.reason })
+      if (countable(check.reason)) refused(now, check.reason)
+      else ignored(check.reason)
+      return refuse(check.reason)
     }
     markSeen(env, now)
     const until = suspendedUntil(now)
-    if (until !== null) return reply(from, env.nonce, false, { reason: 'suspended', until })
+    if (until !== null) return refuse('suspended', { until })
     if (!deps.verifyPassword(body.password)) {
       refused(now, 'wrong-password')
-      // The Worker already made it a controller; without the password it is not one.
-      try {
-        await client.removeController(from)
-      } catch {
-        log.warn('remote', 'remove_controller_failed')
-      }
-      return reply(from, env.nonce, false, { reason: 'wrong-password' })
+      return refuse('wrong-password')
     }
     accepted()
     // The Worker already removed every former controller (/roles/remote); here
@@ -264,19 +357,20 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
     const { from, env } = msg
     const ctrl = controllers().find((c) => c.id === from)
     if (!ctrl) {
-      refused(now, 'unknown-controller')
+      ignored('unknown-controller')
       return reply(from, env.nonce, false, { reason: 'unknown-controller' })
     }
     let key: Uint8Array
     try {
       key = fromBase64(ctrl.publicKey)
     } catch {
-      refused(now, 'signature')
+      ignored('signature')
       return reply(from, env.nonce, false, { reason: 'signature' })
     }
     const check = checkEnvelope(env, key, now, seen(now))
     if (!check.ok) {
-      refused(now, check.reason)
+      if (countable(check.reason)) refused(now, check.reason)
+      else ignored(check.reason)
       return reply(from, env.nonce, false, { reason: check.reason })
     }
     markSeen(env, now)
@@ -299,10 +393,22 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
       case 'shutdown': {
         if (until !== null) return reply(from, env.nonce, false, { reason: 'suspended', until })
         accepted()
-        const result = await deps.shutdown()
+        // Already scheduled: no second flush; the phone shows the countdown.
+        if (deps.shutdownAt() !== null) return reply(from, env.nonce, true)
+        let result: 'ok' | 'flush-failed' | 'failed'
+        try {
+          result = await deps.shutdown()
+        } catch {
+          result = 'failed'
+        }
         if (result === 'flush-failed') {
           log.warn('remote', 'shutdown', { result: 'flush-failed' })
           return reply(from, env.nonce, false, { reason: 'flush-failed' }, 'shutdown-failed')
+        }
+        if (result === 'failed') {
+          log.warn('remote', 'shutdown', { result: 'failed' })
+          // No reason: the phone shows its generic refusal.
+          return reply(from, env.nonce, false)
         }
         log.info('remote', 'shutdown', { result: 'ok' })
         return reply(from, env.nonce, true)
@@ -310,15 +416,24 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
       case 'install-update': {
         if (until !== null) return reply(from, env.nonce, false, { reason: 'suspended', until })
         accepted()
+        if (deps.updateVersion() === null) {
+          log.info('remote', 'install_update', { result: 'none' })
+          return reply(from, env.nonce, false, { reason: 'no-update' })
+        }
+        // Answered first: installing quits this app, and the answer would never leave.
+        await reply(from, env.nonce, true)
         const result = await deps.installUpdate()
         log.info('remote', 'install_update', { result })
-        if (result === 'none') return reply(from, env.nonce, false, { reason: 'no-update' })
-        if (result === 'failed') return reply(from, env.nonce, false, { reason: 'install-failed' })
-        return reply(from, env.nonce, true)
+        return
       }
       case 'abort-shutdown': {
         accepted()
-        await deps.abortShutdown()
+        try {
+          await deps.abortShutdown()
+        } catch {
+          log.warn('remote', 'abort_shutdown', { result: 'failed' })
+          return reply(from, env.nonce, false)
+        }
         log.info('remote', 'abort_shutdown', { result: 'ok' })
         return reply(from, env.nonce, true)
       }
@@ -386,11 +501,24 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
       log.info('remote', 'revoke', { reason: 'sync', count: gone.length })
     }
     for (const id of [...pending.keys()]) if (!live.has(id)) pending.delete(id)
+
+    // A controller the Worker no longer has (removed there, or replaced by
+    // /roles/remote) is not one here either.
+    const holders = new Set(await client.controllers())
+    const lost = controllers().filter((c) => !holders.has(c.id))
+    if (lost.length) {
+      update((c) => ({ ...c, controllers: c.controllers.filter((x) => holders.has(x.id)) }))
+      log.info('remote', 'revoke', { reason: 'role', count: lost.length })
+    }
   }
 
   async function tick(): Promise<void> {
     if (busy || !isActive() || !deps.pcPrivateKey()) return
     busy = true
+    inCycle = true
+    roles = null
+    authorizeRequests = 0
+    authorizeRemotes = 0
     try {
       const now = deps.now()
       for (const [id, p] of pending) {
@@ -399,9 +527,9 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
           dirty = true
         }
       }
-      const cfg = deps.config()
-      if (cfg.suspendedUntil !== null && now >= cfg.suspendedUntil) {
-        update((c) => ({ ...c, suspendedUntil: null, failures: 0 }))
+      const current = cfg()
+      if (current.suspendedUntil !== null && now >= current.suspendedUntil) {
+        updateCounters((c) => ({ ...c, suspendedUntil: null, failures: 0 }))
       }
       if (now - lastDevicesAt >= REMOTE_DEVICES_MS) {
         lastDevicesAt = now
@@ -441,6 +569,13 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
         dirty = true
       }
     } finally {
+      inCycle = false
+      roles = null
+      try {
+        flushDraft()
+      } catch {
+        log.warn('remote', 'config_save_failed')
+      }
       busy = false
       if (dirty) {
         dirty = false
@@ -495,7 +630,7 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
 
     tick,
 
-    running: () => timer !== null || (busy && isActive()),
+    running: () => isActive() && (timer !== null || busy),
 
     lastError: () => lastError,
 

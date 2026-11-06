@@ -79,6 +79,9 @@ Na ordem; a primeira que falhar define o `lastResult` e o comando é ignorado:
 2. **Contador**: `at` é **estritamente maior** que o último `at` executado → senão `old`.
    O último `at` fica guardado **na flash** (sobrevive a reinício e falta de luz), assim
    ninguém consegue repetir um comando capturado.
+   O `at` vem do relógio do celular que mandou o comando: um celular adiantado (até 5 min,
+   o limite da regra 3) faz os comandos seguintes de outro celular serem recusados como `old`
+   por esse tempo.
 3. **Relógio**: `|at − agora NTP| ≤ 5 min` → senão `clock` (o app mostra "O ESP32 recusou o
    comando: relógio do celular errado.").
 4. **Prazo**: `exp > agora NTP` → senão `expired`.

@@ -174,9 +174,9 @@ const remoteRole: ControlHandler = async (request, _p, db, deps, h) => {
   if (pc === me.id) throw h.fail(409, { error: 'is pc' })
   await h.requireProofAndFactor(request)
   const now = deps.now()
-  await db.addController(me.id, now)
-  await db.clearControllers(me.id)
-  await db.putMessage({
+  // The request goes into the PC's inbox first: with the inbox full, the roles
+  // stay as they were (otherwise the old phones lose control for nothing).
+  const stored = await db.putMessage({
     to: pc,
     from: me.id,
     msgId: sealed.msgId,
@@ -184,6 +184,9 @@ const remoteRole: ControlHandler = async (request, _p, db, deps, h) => {
     expiresAt: now + REMOTE_REQUEST_TTL_MS,
     now
   })
+  if (!stored) throw h.fail(409, { error: 'inbox full' })
+  await db.addController(me.id, now)
+  await db.clearControllers(me.id)
   return h.reply(200, { ok: true })
 }
 
@@ -316,7 +319,10 @@ const getPowerState: ControlHandler = async (request, _p, db, _d, h) => {
   await requireRole(db, h, me.id, ['pc', 'controller'])
   const state = await db.getPowerState()
   const last = await db.lastPowerCommand()
-  return h.reply(200, { state, lastCommand: last ? { cmd: last.cmd, at: last.at } : null })
+  return h.reply(200, {
+    state,
+    lastCommand: last ? { cmd: last.cmd, at: last.at, takenAt: last.takenAt } : null
+  })
 }
 
 const powerNext: ControlHandler = async (request, _p, db, deps, h) => {

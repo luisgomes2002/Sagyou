@@ -49,6 +49,19 @@ describe('chaves do controle', () => {
     await expect(keys.sign('unlock', {})).rejects.toBeInstanceOf(KeyCancelledError)
   })
 
+  it('renovar apaga a chave do PC e a do ESP32 de uma autorização anterior', async () => {
+    const secure = fakeSecure()
+    const keys = createControllerKeys(secure, () => NOW)
+    await keys.renew()
+    await keys.setPcPublicKey(new Uint8Array(32).fill(1))
+    await keys.setEsp32Key(new Uint8Array(32).fill(2))
+    await keys.renew()
+    expect(secure.data.has(KEY_PCPUB)).toBe(false)
+    expect(secure.data.has(KEY_ESP32)).toBe(false)
+    expect(await keys.pcPublicKey()).toBeNull()
+    expect(await keys.esp32Key()).toBeNull()
+  })
+
   it('limpar apaga tudo', async () => {
     const secure = fakeSecure()
     const keys = createControllerKeys(secure, () => NOW)

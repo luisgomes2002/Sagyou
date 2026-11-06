@@ -314,6 +314,61 @@ describe('store do controle remoto', () => {
     })
   })
 
+  it('cancelar pedido pendente ou aguardando o PC apaga as chaves e volta a nenhum', async () => {
+    for (const ask of ['pending', 'waiting-pc'] as const) {
+      const t = setup()
+      if (ask === 'pending') await useRemote.getState().requestAuthorization()
+      else await useRemote.getState().requestRemote('senha', '123456')
+      expect(useRemote.getState().authorized).toBe(ask)
+      expect(t.secure.data.size).toBeGreaterThan(0)
+      await useRemote.getState().cancelRequest()
+      expect(useRemote.getState()).toMatchObject({ authorized: 'none', notice: null })
+      expect(t.secure.data.size).toBe(0)
+    }
+  })
+
+  it('aguardando o PC à distância: lê o estado do PC e liga pelo ESP32', async () => {
+    const t = setup()
+    await useRemote.getState().requestRemote('senha', '123456')
+    await useRemote.getState().refresh()
+    expect(useRemote.getState().view?.state).toBe('off')
+    await useRemote.getState().wake()
+    expect(t.pc.power[0]).toMatchObject({ cmd: 'wake', at: NOW })
+    expect(t.pc.power[0].mac).toBe(powerCommandMac(t.pc.esp32, 'wake', NOW, NOW + 120_000))
+  })
+
+  it('comando não buscado pelo ESP32 há 2 min: o takenAt chega ao estado', async () => {
+    const t = setup()
+    await authorize(t)
+    t.pc.powerView = {
+      state: null,
+      lastCommand: { cmd: 'wake', at: NOW - 3 * 60_000, takenAt: null }
+    }
+    await useRemote.getState().refresh()
+    expect(useRemote.getState().view?.esp32NoAnswer).toBe(true)
+    t.pc.powerView = {
+      state: null,
+      lastCommand: { cmd: 'wake', at: NOW - 3 * 60_000, takenAt: NOW - 3 * 60_000 + 5_000 }
+    }
+    await useRemote.getState().refresh()
+    expect(useRemote.getState().view?.esp32NoAnswer).toBe(false)
+  })
+
+  it('cancelar desligamento forçado pelo ESP32 manda abort-shutdown ao ESP32, não ao PC', async () => {
+    const t = setup()
+    await authorize(t)
+    t.pc.powerView = {
+      state: null,
+      lastCommand: { cmd: 'shutdown', at: NOW - 10_000, takenAt: NOW - 5_000 }
+    }
+    await useRemote.getState().refresh()
+    expect(useRemote.getState().view?.forcedShutdownUntil).toBe(NOW - 5_000 + 60_000)
+    const sentBefore = t.pc.sent.length
+    await useRemote.getState().abortShutdown()
+    expect(t.pc.power.at(-1)).toMatchObject({ cmd: 'abort-shutdown' })
+    expect(t.pc.sent).toHaveLength(sentBefore)
+  })
+
   it('nenhum segredo no estado em memória', async () => {
     const t = setup()
     await authorize(t)

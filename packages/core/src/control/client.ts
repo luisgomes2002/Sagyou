@@ -53,7 +53,8 @@ export interface PowerStateReport {
 
 export interface PowerStateView {
   state: PowerStateReport | null
-  lastCommand: { cmd: string; at: number } | null
+  /** `takenAt`: when the ESP32 fetched it; null = not yet (or an older Worker). */
+  lastCommand: { cmd: string; at: number; takenAt: number | null } | null
 }
 
 export interface ControlClient {
@@ -284,7 +285,13 @@ export function createControlClient(deps: ControlClientDeps): ControlClient {
               }
             : null,
         lastCommand:
-          lc && typeof lc === 'object' ? { cmd: String(lc.cmd), at: Number(lc.at) } : null
+          lc && typeof lc === 'object'
+            ? {
+                cmd: String(lc.cmd),
+                at: Number(lc.at),
+                takenAt: typeof lc.takenAt === 'number' ? lc.takenAt : null
+              }
+            : null
       }
     },
 

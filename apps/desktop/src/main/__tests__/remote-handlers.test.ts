@@ -8,6 +8,7 @@ import type { ControlClient } from '@sagyou/core/control/client'
 import {
   REMOTE_TEXT,
   createRemoteCards,
+  disableRemoteControl,
   registerRemoteHandlers,
   remoteUnlock,
   type RemoteHandlerDeps
@@ -126,6 +127,31 @@ describe('remote:enable', () => {
       error: REMOTE_TEXT.factor
     })
     expect(t.config().enabled).toBe(false)
+  })
+})
+
+describe('desligar o controle remoto', () => {
+  it('remote:disable grava desligado e para o serviço', async () => {
+    const t = setup()
+    await t.invoke('remote:enable', {})
+    expect(await t.invoke('remote:disable')).toEqual({ ok: true })
+    expect(t.config().enabled).toBe(false)
+    expect(t.service.stop).toHaveBeenCalled()
+  })
+
+  it('remover a senha do Sagyou tira o PC do modo controlado (M3)', () => {
+    let config: RemoteConfig = { ...defaultRemoteConfig(), enabled: true }
+    const service = fakeService()
+    disableRemoteControl({
+      config: () => config,
+      save: (c) => {
+        config = c
+      },
+      service,
+      reason: 'password-removed'
+    })
+    expect(config.enabled).toBe(false)
+    expect(service.stop).toHaveBeenCalledTimes(1)
   })
 })
 

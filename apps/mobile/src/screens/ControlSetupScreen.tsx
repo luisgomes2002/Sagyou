@@ -1,6 +1,7 @@
-import { CONTROL_TEXT } from '@sagyou/core/control/texts'
+import { CONTROL_TEXT, PC_STATE_TEXT, rcDownText } from '@sagyou/core/control/texts'
 import { useEffect, useState } from 'react'
 import { Alert, ScrollView, StyleSheet, Text } from 'react-native'
+import { ACTION_ICONS } from '../components/icons'
 import { Button, Card, Field, Screen } from '../components/ui'
 import { useLockState } from '../lock/lockState'
 import { useRemote } from '../remote/store'
@@ -35,14 +36,15 @@ export function ControlSetupScreen({
   const error = useRemote((s) => s.error)
   const notice = useRemote((s) => s.notice)
   const busy = useRemote((s) => s.busy)
+  const view = useRemote((s) => s.view)
   const [away, setAway] = useState(false)
   // The Sagyou password and the second factor live only here, and go with the screen.
   const [password, setPassword] = useState('')
   const [factor, setFactor] = useState('')
 
-  // Waiting for the PC: read its answers while this screen is open.
+  // Waiting for the PC (or authorized): read its answers and its state while this screen is open.
   useEffect(() => {
-    if (authorized !== 'pending' && authorized !== 'waiting-pc') return
+    if (authorized === 'none') return
     useRemote.getState().startPolling()
     return () => useRemote.getState().stopPolling()
   }, [authorized])
@@ -79,6 +81,44 @@ export function ControlSetupScreen({
       }
     ])
   }
+
+  const cancel = (
+    <Button
+      label={CONTROL_TEXT.cancelRequest}
+      disabled={busy}
+      onPress={() => void useRemote.getState().cancelRequest()}
+    />
+  )
+
+  // Switching phones from afar: the PC may be off, and only the ESP32 turns it on.
+  // Unlock, shutdown and the cards stay in the PC tab, for an authorized phone.
+  const pcCard =
+    (authorized === 'waiting-pc' || authorized === 'yes') && view ? (
+      <Card>
+        <Text accessibilityLiveRegion="polite" style={{ color: theme.text, fontSize: FONT.bodyLg }}>
+          {view.state === 'rc-down' ? rcDownText(view.missing) : PC_STATE_TEXT[view.state]}
+        </Text>
+        {view.esp32Offline ? (
+          <Text style={{ color: theme.attention, fontSize: FONT.body }}>
+            {CONTROL_TEXT.esp32Offline}
+          </Text>
+        ) : null}
+        {view.esp32NoAnswer ? (
+          <Text style={{ color: theme.attention, fontSize: FONT.body }}>
+            {CONTROL_TEXT.esp32NoAnswer}
+          </Text>
+        ) : null}
+        {view.state === 'off' ? (
+          <Button
+            variant="primary"
+            label="Ligar"
+            icon={ACTION_ICONS.power}
+            disabled={busy}
+            onPress={() => void useRemote.getState().wake()}
+          />
+        ) : null}
+      </Card>
+    ) : null
 
   const alert = error ? (
     <Text accessibilityRole="alert" style={{ color: theme.red, fontSize: FONT.body }}>
@@ -162,6 +202,7 @@ export function ControlSetupScreen({
             </Text>
             <Text style={{ color: theme.muted, fontSize: FONT.body }}>{WAITING_TEXT}</Text>
             {alert}
+            {cancel}
           </Card>
         ) : null}
 
@@ -174,8 +215,10 @@ export function ControlSetupScreen({
               <Text style={{ color: theme.attention, fontSize: FONT.body }}>{notice}</Text>
             ) : null}
             {alert}
+            {cancel}
           </Card>
         ) : null}
+        {authorized === 'waiting-pc' ? pcCard : null}
 
         {authorized === 'yes' ? (
           <>
@@ -185,6 +228,7 @@ export function ControlSetupScreen({
                 <Text style={{ color: theme.attention, fontSize: FONT.body }}>{notice}</Text>
               ) : null}
             </Card>
+            {pcCard}
             {alert}
             <Button variant="danger" label={REMOVE_LABEL} onPress={remove} />
           </>

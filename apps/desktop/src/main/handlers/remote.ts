@@ -115,6 +115,22 @@ export function serverNames(value: unknown): string[] | null {
   return out
 }
 
+/**
+ * Takes the PC out of the controlled mode: Configurações → Controle remoto and
+ * removing the Sagyou password (security:disable) go through here.
+ */
+export function disableRemoteControl(deps: {
+  config: () => RemoteConfig
+  save: (config: RemoteConfig) => void
+  service: Pick<RemoteService, 'stop'>
+  reason: 'user' | 'password-removed'
+}): void {
+  const wasEnabled = deps.config().enabled
+  if (wasEnabled) deps.save({ ...deps.config(), enabled: false })
+  deps.service.stop()
+  log.info('remote', 'disabled', { reason: deps.reason })
+}
+
 export function registerRemoteHandlers(
   ipcMain: IpcMain,
   deps: RemoteHandlerDeps
@@ -177,9 +193,7 @@ export function registerRemoteHandlers(
 
   ipcMain.handle('remote:disable', () =>
     run('disable', () => {
-      deps.save({ ...deps.config(), enabled: false })
-      service.stop()
-      log.info('remote', 'disabled')
+      disableRemoteControl({ ...deps, reason: 'user' })
       changed()
       return { ok: true }
     })

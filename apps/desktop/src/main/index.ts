@@ -218,6 +218,7 @@ import { listCommandLines, matchServers } from './modules/remote/rc-servers'
 import { createShutdown } from './modules/remote/shutdown'
 import {
   createRemoteCards,
+  disableRemoteControl,
   registerRemoteHandlers,
   remoteUnlock,
   type RemoteStatusView
@@ -241,6 +242,8 @@ let syncStarted = false
 let rendererHasData = false
 // The remote control (modules/remote/); created after the sync engine.
 let remoteService: RemoteService | null = null
+// Removing the Sagyou password takes the PC out of the controlled mode (set with the service).
+let disableRemoteForNoPassword: () => void = () => {}
 
 /** Only the app's own renderer may invoke privileged IPC handlers. */
 function assertTrustedRenderer(event: IpcMainInvokeEvent | IpcMainEvent): void {
@@ -1681,6 +1684,12 @@ app.whenReady().then(() => {
     }
     passwordConfig = null
     passwordUnlocked = true
+    // The controlled mode needs the password: without it, the PC leaves that mode.
+    try {
+      disableRemoteForNoPassword()
+    } catch (error) {
+      log.warn('remote', 'disable_failed', { msg: errorMessage(error) })
+    }
     refreshTrayMenu()
     return { success: true }
   })
@@ -2024,6 +2033,11 @@ app.whenReady().then(() => {
       exec: async (file, args) => {
         await execFileAsync(file, args, { timeout: 15_000, windowsHide: true })
       },
+      // A failed shutdown or a cancel: the session goes on, give the screen and the X back.
+      restore: () => {
+        runTimersStoppedForQuit = false
+        managedWindow?.abortInstall()
+      },
       now: () => Date.now()
     })
     const client = createControlClient({
@@ -2046,6 +2060,7 @@ app.whenReady().then(() => {
       setTimer: (fn, ms) => setTimeout(fn, ms),
       clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
       isLocked: () => passwordConfig !== null && isAppLocked(),
+      hasPassword: () => passwordConfig !== null && !passwordConfigCorrupt,
       verifyPassword: (password) =>
         !passwordConfigCorrupt &&
         passwordConfig !== null &&
@@ -2062,12 +2077,8 @@ app.whenReady().then(() => {
         }),
       lock: () => appLock.lock('remote'),
       shutdown: () => shutdown.start(),
-      abortShutdown: async () => {
-        await shutdown.abort()
-        // The current session goes on: give the screen and the X back.
-        runTimersStoppedForQuit = false
-        managedWindow?.abortInstall()
-      },
+      // Gives the screen and the X back even when `shutdown /a` fails (restore).
+      abortShutdown: () => shutdown.abort(),
       shutdownAt: () => shutdown.at(),
       servers: async () => {
         remoteServers = matchServers(await listCommandLines(execText), remoteConfig.servers)
@@ -2113,6 +2124,15 @@ app.whenReady().then(() => {
       emitStatus: (status: RemoteStatusView) => sendToRenderer('remote:status-changed', status)
     })
     emitRemote = () => sendToRenderer('remote:status-changed', remoteView())
+    disableRemoteForNoPassword = () => {
+      disableRemoteControl({
+        config: () => remoteConfig,
+        save: saveRemote,
+        service,
+        reason: 'password-removed'
+      })
+      emitRemote()
+    }
     service.syncStatusChanged(engine.status())
     // Only Windows is controlled; elsewhere the saved switch stays off.
     if (process.platform === 'win32' && remoteConfig.enabled) service.start()

@@ -38,7 +38,14 @@ function status(over: Partial<PcStatus> = {}): PcStatus {
 }
 
 function view(state: PcState, over: Partial<PcView> = {}): PcView {
-  return { state, esp32Offline: false, missing: [], ...over }
+  return {
+    state,
+    esp32Offline: false,
+    esp32NoAnswer: false,
+    forcedShutdownUntil: null,
+    missing: [],
+    ...over
+  }
 }
 
 function seed(over: Record<string, unknown>): void {
@@ -141,6 +148,49 @@ describe('PcScreen', () => {
     seed({ view: view('ready'), status: status() })
     await render(<PcScreen now={clock} />)
     expect(screen.getByText(PC_STATE_TEXT.ready).props.accessibilityLiveRegion).toBe('polite')
+  })
+
+  it('a contagem do desligamento fica fora da live region (o TalkBack não lê a cada segundo)', async () => {
+    seed({ view: view('shutting-down'), status: status({ shutdownAt: NOW + 58_000 }) })
+    await render(<PcScreen now={clock} />)
+    expect(
+      screen.getByText(PC_STATE_TEXT['shutting-down']).props.accessibilityLiveRegion
+    ).toBe('polite')
+    expect(screen.getByText('Desligando em 0:58').props.accessibilityLiveRegion).toBeUndefined()
+  })
+
+  it('desligamento forçado pelo ESP32: contagem e Cancelar manda abort-shutdown', async () => {
+    seed({ view: view('off', { forcedShutdownUntil: NOW + 42_000 }) })
+    await render(<PcScreen now={clock} />)
+    expect(screen.getByText('Desligando em 0:42')).toBeTruthy()
+    expect(shownActions()).toEqual(['Cancelar'])
+    await fireEvent.press(screen.getByRole('button', { name: 'Cancelar' }))
+    expect(actions.abortShutdown).toHaveBeenCalledTimes(1)
+  })
+
+  it('janela do desligamento forçado vencida: volta aos botões do estado', async () => {
+    seed({ view: view('off', { forcedShutdownUntil: NOW - 1 }) })
+    await render(<PcScreen now={clock} />)
+    expect(screen.queryByText(/Desligando em/)).toBeNull()
+    expect(shownActions()).toEqual(['Ligar'])
+  })
+
+  it('o ESP32 não buscou o comando: mostra que não respondeu', async () => {
+    seed({ view: view('off', { esp32NoAnswer: true }) })
+    await render(<PcScreen now={clock} />)
+    expect(screen.getByText(CONTROL_TEXT.esp32NoAnswer)).toBeTruthy()
+  })
+
+  it('sem conexão, o erro da última ação não aparece junto', async () => {
+    seed({
+      view: view('ready'),
+      status: status(),
+      connection: CONTROL_TEXT.offline,
+      error: CONTROL_TEXT.refused
+    })
+    await render(<PcScreen now={clock} />)
+    expect(screen.getByText(CONTROL_TEXT.offline)).toBeTruthy()
+    expect(screen.queryByText(CONTROL_TEXT.refused)).toBeNull()
   })
 
   it('bloqueado ou desbloqueado só aparece com o PC ligado', async () => {

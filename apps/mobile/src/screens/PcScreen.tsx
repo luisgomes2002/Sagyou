@@ -43,8 +43,13 @@ export function PcScreen({ focused = true, now = Date.now }: PcScreenProps): Rea
     return () => useRemote.getState().stopPolling()
   }, [focused])
 
+  // A shutdown forced through the ESP32 can still be cancelled until this instant.
+  const forcedUntil = view?.forcedShutdownUntil ?? null
   // Countdowns (shutdown, cards) tick once a second while the tab is open.
-  const ticking = view?.state === 'shutting-down' || cards.length > 0
+  const ticking =
+    view?.state === 'shutting-down' ||
+    (forcedUntil !== null && forcedUntil > clock) ||
+    cards.length > 0
   useEffect(() => {
     if (!focused || !ticking) return
     const id = setInterval(() => setClock(now()), 1000)
@@ -82,12 +87,15 @@ export function PcScreen({ focused = true, now = Date.now }: PcScreenProps): Rea
 
   const state: PcState = view.state
   const alive = state === 'ready' || state === 'rc-down' || state === 'shutting-down'
-  const title =
-    state === 'rc-down'
-      ? rcDownText(view.missing)
-      : state === 'shutting-down' && status?.shutdownAt
-        ? shuttingDownText(status.shutdownAt - clock)
-        : PC_STATE_TEXT[state]
+  const forcing = forcedUntil !== null && forcedUntil > clock
+  // Only the state is a live region; the countdown below it would be read every second.
+  const title = state === 'rc-down' ? rcDownText(view.missing) : PC_STATE_TEXT[state]
+  const countdown =
+    state === 'shutting-down' && status?.shutdownAt
+      ? shuttingDownText(status.shutdownAt - clock)
+      : forcing && forcedUntil !== null
+        ? shuttingDownText(forcedUntil - clock)
+        : null
   const stateColor =
     state === 'ready' ? theme.green : state === 'off' ? theme.muted : theme.attention
   const Icon = state === 'off' ? ACTION_ICONS.powerOff : ACTION_ICONS.pc
@@ -106,6 +114,9 @@ export function PcScreen({ focused = true, now = Date.now }: PcScreenProps): Rea
               {title}
             </Text>
           </View>
+          {countdown ? (
+            <Text style={{ color: theme.text, fontSize: FONT.bodyLg }}>{countdown}</Text>
+          ) : null}
           {alive && status ? (
             <Text style={{ color: theme.muted, fontSize: FONT.body }}>
               {status.locked ? LOCKED_TEXT : UNLOCKED_TEXT}
@@ -116,20 +127,20 @@ export function PcScreen({ focused = true, now = Date.now }: PcScreenProps): Rea
               {CONTROL_TEXT.esp32Offline}
             </Text>
           ) : null}
+          {view.esp32NoAnswer ? (
+            <Text style={{ color: theme.attention, fontSize: FONT.body }}>
+              {CONTROL_TEXT.esp32NoAnswer}
+            </Text>
+          ) : null}
         </Card>
 
-        {connection ? (
+        {connection || error ? (
           <Text accessibilityRole="alert" style={{ color: theme.red, fontSize: FONT.body }}>
-            {connection}
-          </Text>
-        ) : null}
-        {error ? (
-          <Text accessibilityRole="alert" style={{ color: theme.red, fontSize: FONT.body }}>
-            {error}
+            {connection || error}
           </Text>
         ) : null}
 
-        {state === 'off' ? (
+        {state === 'off' && !forcing ? (
           <Button
             variant="primary"
             label="Ligar"
@@ -165,7 +176,7 @@ export function PcScreen({ focused = true, now = Date.now }: PcScreenProps): Rea
             />
           </>
         ) : null}
-        {state === 'waiting-sagyou' ? (
+        {state === 'waiting-sagyou' && !forcing ? (
           <Button
             variant="danger"
             label="Forçar pelo ESP32"
@@ -174,7 +185,7 @@ export function PcScreen({ focused = true, now = Date.now }: PcScreenProps): Rea
             onPress={confirmForce}
           />
         ) : null}
-        {state === 'shutting-down' ? (
+        {state === 'shutting-down' || forcing ? (
           <Button
             variant="primary"
             label="Cancelar"
