@@ -7,10 +7,17 @@ const KEY_HEX = '0f'.repeat(32)
 const KEY = Uint8Array.from({ length: 32 }, () => 0x0f)
 const NOW = 1_800_000_000_000
 
-function command(over: Record<string, unknown> = {}) {
-  const at = (over.at as number) ?? NOW - 1_000
-  const exp = (over.exp as number) ?? at + 120_000
-  const cmd = (over.cmd as string) ?? 'wake'
+interface Command {
+  cmd: string
+  at: number
+  exp: number
+  mac: string
+}
+
+function command(over: Partial<Command> = {}): Command {
+  const at = over.at ?? NOW - 1_000
+  const exp = over.exp ?? at + 120_000
+  const cmd = over.cmd ?? 'wake'
   return { cmd, at, exp, mac: powerCommandMac(KEY, cmd, at, exp), ...over }
 }
 
@@ -55,9 +62,9 @@ describe('ESP32 simulado', () => {
       lastAt: 0
     })
     const wrongKey = command()
-    expect(decideCommand(wrongKey, { key: parseKey('aa'.repeat(32)), lastAt: 0, now: NOW }).result).toBe(
-      'mac'
-    )
+    expect(
+      decideCommand(wrongKey, { key: parseKey('aa'.repeat(32)), lastAt: 0, now: NOW }).result
+    ).toBe('mac')
   })
 
   it('exp passado: ignora', () => {
@@ -71,9 +78,13 @@ describe('ESP32 simulado', () => {
 
   it('relógio do celular a mais de 5 min do NTP: ignora', () => {
     const ahead = command({ at: NOW + 6 * 60_000, exp: NOW + 7 * 60_000 })
-    expect(decideCommand(ahead, { key: parseKey(KEY_HEX), lastAt: 0, now: NOW }).result).toBe('clock')
+    expect(decideCommand(ahead, { key: parseKey(KEY_HEX), lastAt: 0, now: NOW }).result).toBe(
+      'clock'
+    )
     const behind = command({ at: NOW - 6 * 60_000, exp: NOW + 60_000 })
-    expect(decideCommand(behind, { key: parseKey(KEY_HEX), lastAt: 0, now: NOW }).result).toBe('clock')
+    expect(decideCommand(behind, { key: parseKey(KEY_HEX), lastAt: 0, now: NOW }).result).toBe(
+      'clock'
+    )
   })
 
   it('comando desconhecido nunca executa', () => {

@@ -9,3 +9,14 @@ export const REMOTE_TEXT = {
   noUpdate: 'Não há atualização pronta para instalar.',
   generic: 'Não foi possível concluir. Tente de novo.'
 } as const
+
+/** "Compare este código com o do PC: 482 913". */
+export function compareText(code: string): string {
+  return `Compare este código com o do PC: ${code.slice(0, 3)} ${code.slice(3)}`
+}
+
+/** Time left on an approval card, "4:59". */
+export function cardCountdown(msLeft: number): string {
+  const s = Math.max(0, Math.ceil(msLeft / 1000))
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}

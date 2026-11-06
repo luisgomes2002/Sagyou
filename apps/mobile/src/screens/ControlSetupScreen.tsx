@@ -4,6 +4,7 @@ import { Alert, ScrollView, StyleSheet, Text } from 'react-native'
 import { Button, Card, Field, Screen } from '../components/ui'
 import { useLockState } from '../lock/lockState'
 import { useRemote } from '../remote/store'
+import { compareText } from '../remote/texts'
 import { FONT, SPACE, useTheme } from '../theme'
 
 export const CONTROL_TITLE = 'Controlar o PC'
@@ -19,10 +20,6 @@ export const INTRO_TEXT =
   'Ligue, desligue, desbloqueie o Sagyou e aprove os cartões do Fleet pelo celular. No PC, ative Configurações → Controle remoto antes.'
 export const AWAY_TEXT =
   'Para trocar de celular longe de casa. Os celulares autorizados antes perdem o controle do PC.'
-
-export function compareText(code: string): string {
-  return `Compare este código com o do PC: ${code.slice(0, 3)} ${code.slice(3)}`
-}
 
 export interface ControlSetupScreenProps {
   navigation?: { goBack(): void }

@@ -90,9 +90,7 @@ describe('App', () => {
 
   it('tocar na notificação do PC abre a aba PC e o token vai para o Worker', async () => {
     const putPushToken = jest.fn(async () => undefined)
-    jest
-      .mocked(Notifications.getPermissionsAsync)
-      .mockResolvedValueOnce({ granted: true } as never)
+    jest.mocked(Notifications.getPermissionsAsync).mockResolvedValueOnce({ granted: true } as never)
     jest
       .mocked(Notifications.getDevicePushTokenAsync)
       .mockResolvedValueOnce({ type: 'android', data: 'fcm-token' } as never)

@@ -15,7 +15,9 @@ describe('google-services.json do Firebase', () => {
   })
 
   it('com a variável, aponta o googleServicesFile para o arquivo escrito pelo workflow', () => {
-    const out = applyGoogleServices(BASE, { GOOGLE_SERVICES_JSON: '/tmp/runner/google-services.json' })
+    const out = applyGoogleServices(BASE, {
+      GOOGLE_SERVICES_JSON: '/tmp/runner/google-services.json'
+    })
     expect(out.android).toEqual({
       package: 'com.sagyou.mobile',
       versionCode: 300,

@@ -37,12 +37,12 @@ interface Props {
 }
 
 const primaryClass =
-  'rounded-lg bg-[#6d5bb8] px-3 py-2 text-sm text-white hover:bg-[#7b69c6] disabled:opacity-50'
+  'rounded-lg bg-[#6d5bb8] px-3 py-2 text-sm text-white hover:bg-[#7b69c6] focus:outline-none focus-visible:ring-1 focus-visible:ring-[#6d5bb8] disabled:opacity-50'
 const secondaryClass =
-  'rounded-lg bg-[#2a2a30] px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#303036] disabled:opacity-50'
+  'rounded-lg bg-[#2a2a30] px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#303036] focus:outline-none focus-visible:ring-1 focus-visible:ring-[#6d5bb8] disabled:opacity-50'
 const panelClass = 'space-y-3 rounded-lg border border-[#2b2b31] bg-[#101014] p-4'
 const inputClass =
-  'w-full rounded-lg border border-[#2b2b31] bg-[#101014] px-3 py-2 text-sm text-[#d4d4d4] placeholder:text-[#666666] focus:border-[#6d5bb8] focus:outline-none'
+  'w-full rounded-lg border border-[#2b2b31] bg-[#101014] px-3 py-2 text-sm text-[#d4d4d4] placeholder:text-[#666666] focus:outline-none focus-visible:border-[#6d5bb8] focus-visible:ring-1 focus-visible:ring-[#6d5bb8]'
 const headingClass = 'text-sm font-medium text-[#d4d4d4]'
 
 /** Configurações → Controle remoto (spec docs/specs/2026-11-03-controle-remoto-app.md). */
@@ -204,7 +204,7 @@ export function RemoteControlSettings({ onToast, suggestions = [] }: Props): JSX
               else if (status.enabled) void disable()
               else setAskEnable(false)
             }}
-            className="h-3.5 w-3.5 accent-[#6d5bb8]"
+            className="h-3.5 w-3.5 accent-[#6d5bb8] focus:outline-none focus-visible:ring-1 focus-visible:ring-[#6d5bb8]"
           />
           {ENABLE_LABEL}
         </label>
@@ -346,7 +346,7 @@ export function RemoteControlSettings({ onToast, suggestions = [] }: Props): JSX
                             status.servers.map((x) => x.name).filter((n) => n !== s.name)
                           )
                         }
-                        className="rounded px-2 py-1 text-xs text-[#999999] hover:bg-[#222227] hover:text-[#d4d4d4]"
+                        className="rounded px-2 py-1 text-xs text-[#999999] hover:bg-[#222227] hover:text-[#d4d4d4] focus:outline-none focus-visible:ring-1 focus-visible:ring-[#6d5bb8]"
                       >
                         Remover
                       </button>

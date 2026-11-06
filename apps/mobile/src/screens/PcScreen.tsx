@@ -11,18 +11,13 @@ import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { ACTION_ICONS } from '../components/icons'
 import { Button, Card, EmptyState, Screen } from '../components/ui'
 import { useRemote } from '../remote/store'
+import { cardCountdown } from '../remote/texts'
 import { FONT, SPACE, useTheme } from '../theme'
 
 export const LOCKED_TEXT = 'Sagyou bloqueado'
 export const UNLOCKED_TEXT = 'Sagyou desbloqueado'
 export const CARDS_TITLE = 'Aprovações pendentes'
 export const LOADING_TEXT = 'Buscando o estado do PC…'
-
-/** Seconds left on a card, "4:59". */
-export function cardCountdown(msLeft: number): string {
-  const s = Math.max(0, Math.ceil(msLeft / 1000))
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
-}
 
 export interface PcScreenProps {
   /** The tab is on screen: only then the app asks the Worker every 5 s. */

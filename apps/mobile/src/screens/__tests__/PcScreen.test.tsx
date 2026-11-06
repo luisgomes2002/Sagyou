@@ -5,14 +5,8 @@ import { CONTROL_TEXT, PC_STATE_TEXT } from '@sagyou/core/control/texts'
 import { act, fireEvent, render, screen } from '@testing-library/react-native'
 import { Alert } from 'react-native'
 import { useRemote } from '../../remote/store'
-import {
-  CARDS_TITLE,
-  LOADING_TEXT,
-  LOCKED_TEXT,
-  PcScreen,
-  UNLOCKED_TEXT,
-  cardCountdown
-} from '../PcScreen'
+import { cardCountdown } from '../../remote/texts'
+import { CARDS_TITLE, LOADING_TEXT, LOCKED_TEXT, PcScreen, UNLOCKED_TEXT } from '../PcScreen'
 
 const NOW = 1_800_000_000_000
 

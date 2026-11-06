@@ -1,13 +1,18 @@
 import { notificationTarget, registerPush, type NotificationsApi } from '../push'
 
-function api(over: Partial<Record<keyof NotificationsApi, jest.Mock>> = {}) {
+interface Fakes {
+  notifications: Record<keyof NotificationsApi, jest.Mock>
+  putPushToken: jest.Mock
+}
+
+function api(over: Partial<Record<keyof NotificationsApi, jest.Mock>> = {}): Fakes {
   const notifications = {
     getPermissionsAsync: jest.fn(async () => ({ granted: true })),
     requestPermissionsAsync: jest.fn(async () => ({ granted: true })),
     getDevicePushTokenAsync: jest.fn(async () => ({ type: 'android', data: 'fcm-token' })),
     ...over
   }
-  const putPushToken = jest.fn(async (_token: string) => undefined)
+  const putPushToken = jest.fn(async () => undefined)
   return { notifications, putPushToken }
 }
 
@@ -52,14 +57,18 @@ describe('registerPush', () => {
     offline.putPushToken.mockRejectedValueOnce(new Error('offline'))
     expect(await registerPush(offline, 'yes')).toBe('failed')
 
-    const empty = api({ getDevicePushTokenAsync: jest.fn(async () => ({ type: 'android', data: '' })) })
+    const empty = api({
+      getDevicePushTokenAsync: jest.fn(async () => ({ type: 'android', data: '' }))
+    })
     expect(await registerPush(empty, 'yes')).toBe('failed')
     expect(empty.putPushToken).not.toHaveBeenCalled()
   })
 })
 
 describe('notificationTarget', () => {
-  const response = (data: unknown) => ({ notification: { request: { content: { data } } } })
+  const response = (data: unknown): unknown => ({
+    notification: { request: { content: { data } } }
+  })
 
   it("open: 'pc' leva à aba PC", () => {
     expect(notificationTarget(response({ open: 'pc' }))).toBe('pc')
