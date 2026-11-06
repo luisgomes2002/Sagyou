@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react-native'
+import * as Notifications from 'expo-notifications'
 import { Text } from 'react-native'
 import * as RN from 'react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
@@ -6,6 +7,7 @@ import { AppShell, TAB_LABELS } from '../App'
 import { StatusBanner } from '../components/StatusBanner'
 import { LockGate, type LockDeps } from '../lock/LockGate'
 import { useRemote } from '../remote/store'
+import { LOADING_TEXT } from '../screens/PcScreen'
 import { LOCKED_TITLE } from '../lock/texts'
 import { PAIR_TITLE } from '../screens/PairScreen'
 import { DISCONNECTED_TEXT, OFFLINE_TEXT, useApp } from '../store/app'
@@ -84,6 +86,53 @@ describe('App', () => {
       await view.unmount()
     }
     useRemote.setState({ authorized: 'none' })
+  })
+
+  it('tocar na notificação do PC abre a aba PC e o token vai para o Worker', async () => {
+    const putPushToken = jest.fn(async () => undefined)
+    jest
+      .mocked(Notifications.getPermissionsAsync)
+      .mockResolvedValueOnce({ granted: true } as never)
+    jest
+      .mocked(Notifications.getDevicePushTokenAsync)
+      .mockResolvedValueOnce({ type: 'android', data: 'fcm-token' } as never)
+    jest.mocked(Notifications.getLastNotificationResponseAsync).mockResolvedValueOnce({
+      notification: { request: { content: { data: { open: 'pc' } } } }
+    } as never)
+    seedApp({ projects: [project('p1', 'Sagyou')] })
+    useRemote.setState({
+      authorized: 'yes',
+      view: null,
+      status: null,
+      cards: [],
+      connection: null,
+      startPolling: jest.fn(),
+      stopPolling: jest.fn(),
+      putPushToken
+    })
+    await render(
+      <SafeAreaProvider>
+        <AppShell mode="app" />
+      </SafeAreaProvider>
+    )
+    expect(await screen.findByText(LOADING_TEXT)).toBeTruthy()
+    expect(putPushToken).toHaveBeenCalledWith('fcm-token')
+    useRemote.setState({ authorized: 'none' })
+  })
+
+  it('sem autorização, nem token nem navegação pela notificação', async () => {
+    const putPushToken = jest.fn(async () => undefined)
+    jest.mocked(Notifications.getLastNotificationResponseAsync).mockClear()
+    seedApp({ projects: [project('p1', 'Sagyou')] })
+    useRemote.setState({ authorized: 'none', putPushToken })
+    await render(
+      <SafeAreaProvider>
+        <AppShell mode="app" />
+      </SafeAreaProvider>
+    )
+    expect(Notifications.getLastNotificationResponseAsync).not.toHaveBeenCalled()
+    expect(putPushToken).not.toHaveBeenCalled()
+    expect(screen.queryByText(LOADING_TEXT)).toBeNull()
   })
 
   it('cada aba tem ícone e o header abre Ajustes pela engrenagem', async () => {

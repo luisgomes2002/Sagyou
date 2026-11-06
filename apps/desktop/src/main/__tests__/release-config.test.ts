@@ -136,7 +136,7 @@ describe('configuração de release do atualizador', () => {
 
   // The APK workflow handles the signing key: it must not be able to write to
   // the repository, keep a token in the checkout, or read any other secret.
-  it('o workflow do APK só lê o repositório e só os quatro secrets da assinatura', () => {
+  it('o workflow do APK só lê o repositório, os quatro secrets da assinatura e o do Firebase', () => {
     const apk = readRepo('.github/workflows/mobile-apk.yml')
     expect(apk).toMatch(/^permissions:\r?\n {2}contents: read\r?$/m)
     expect(apk.slice(0, apk.indexOf('\n  release:'))).not.toContain('contents: write')
@@ -148,9 +148,25 @@ describe('configuração de release do atualizador', () => {
       'secrets.ANDROID_KEYSTORE_BASE64',
       'secrets.ANDROID_KEYSTORE_PASSWORD',
       'secrets.ANDROID_KEY_ALIAS',
-      'secrets.ANDROID_KEY_PASSWORD'
+      'secrets.ANDROID_KEY_PASSWORD',
+      'secrets.GOOGLE_SERVICES_JSON'
     ])
     for (const use of apk.match(/uses: \S+/g) ?? []) expect(use).toMatch(/@[0-9a-f]{40}$/)
+  })
+
+  // Push (Task 17 of controle-remoto-app): the Firebase file exists before
+  // prebuild copies it, lives outside the repository, is never printed and is
+  // removed with the keystore.
+  it('o google-services.json sai do secret para um arquivo fora do repositório antes do prebuild', () => {
+    const apk = readRepo('.github/workflows/mobile-apk.yml')
+    const write = apk.indexOf('> "$RUNNER_TEMP/google-services.json"')
+    const prebuild = apk.indexOf('expo prebuild')
+    expect(write).toBeGreaterThan(0)
+    expect(write).toBeLessThan(prebuild)
+    expect(apk).toContain('GOOGLE_SERVICES_JSON=$RUNNER_TEMP/google-services.json')
+    expect(apk).not.toMatch(/echo "\$GOOGLE_SERVICES_JSON_CONTENT"/)
+    expect(apk).not.toMatch(/cat "?\$RUNNER_TEMP\/google-services\.json/)
+    expect(apk).toMatch(/rm -f "\$RUNNER_TEMP\/sagyou\.jks" "\$RUNNER_TEMP\/google-services\.json"/)
   })
 
   // Security review: secrets in a protected environment, a pinned native

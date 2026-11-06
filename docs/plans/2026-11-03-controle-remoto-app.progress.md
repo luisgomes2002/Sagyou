@@ -29,3 +29,6 @@ Task 13: Decisão: a chave pública do celular também fica no secure store (sag
 Task 13: Decisão: antes de conhecer a chave do PC, o celular só aceita um "result" não verificado que responda ao próprio pedido de autorização (no pior caso, um falso só faz pedir de novo).
 Task 15: Decisão: o celular não tem lista de aparelhos; o aviso dos celulares anteriores aparece sem atalho (revogar o perdido fica pelo PC ou numa task futura).
 Task 16: Decisão: código escrito antes dos testes (WIP de 2026-11-03), então não houve rodada FALHA separada; os testes vieram no mesmo commit — custo: um teste que passaria sem o código não é detectado.
+Task 17: Decisão: GOOGLE_SERVICES_JSON no plugin é o CAMINHO do arquivo (o workflow escreve o secret em $RUNNER_TEMP e exporta o caminho); o plugin só aponta android.googleServicesFile, e o prebuild copia — custo: um build local precisa da variável com um caminho, não do conteúdo.
+Task 17: Decisão: o token é registrado a cada abertura do app autorizado (PushBridge em App.tsx), sem ouvir rotação de token — custo: um token rotacionado no meio da sessão só chega ao Worker na próxima abertura.
+Task 17: Decisão: com o app aberto a notificação também aparece (setNotificationHandler no bootstrap).

@@ -37,6 +37,15 @@ jest.mock('expo-clipboard', () => {
     getStringAsync: jest.fn(async () => text)
   }
 })
+// Tests drive the tap on a notification through getLastNotificationResponseAsync.
+jest.mock('expo-notifications', () => ({
+  setNotificationHandler: jest.fn(),
+  getPermissionsAsync: jest.fn(async () => ({ granted: false })),
+  requestPermissionsAsync: jest.fn(async () => ({ granted: false })),
+  getDevicePushTokenAsync: jest.fn(async () => ({ type: 'android', data: '' })),
+  getLastNotificationResponseAsync: jest.fn(async () => null),
+  addNotificationResponseReceivedListener: jest.fn(() => ({ remove: jest.fn() }))
+}))
 jest.mock('expo-screen-capture', () => ({
   preventScreenCaptureAsync: jest.fn(async () => undefined)
 }))

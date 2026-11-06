@@ -17,6 +17,7 @@
     "expo-device": "~58.0.5",
     "expo-haptics": "~58.0.7",
     "expo-local-authentication": "~58.0.2",
+    "expo-notifications": "~58.1.7",
     "expo-screen-capture": "~58.0.6",
     "expo-secure-store": "~58.0.2",
     "expo-splash-screen": "~58.0.12",

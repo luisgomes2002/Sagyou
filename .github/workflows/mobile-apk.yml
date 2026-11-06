@@ -42,6 +42,18 @@ jobs:
           java-version: '17'
       # Electron's native rebuild and downloads are not needed for the phone.
       - run: npm ci --ignore-scripts
+      # Firebase config for push (FCM). Optional: without the secret the APK is
+      # built without notifications. Written outside the repository and never printed.
+      - name: google-services.json from secrets
+        env:
+          GOOGLE_SERVICES_JSON_CONTENT: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON_CONTENT" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON_CONTENT" > "$RUNNER_TEMP/google-services.json"
+            echo "GOOGLE_SERVICES_JSON=$RUNNER_TEMP/google-services.json" >> "$GITHUB_ENV"
+          else
+            echo "Sem o secret GOOGLE_SERVICES_JSON: o APK sai sem notificações."
+          fi
       # Pinned template: the native project comes from a known version, not a dist-tag.
       - run: npx expo prebuild -p android --no-install --template expo-template-bare-minimum@58.0.31
         working-directory: apps/mobile
@@ -67,7 +79,7 @@ jobs:
           mv apps/mobile/android/app/build/outputs/apk/release/app-release.apk "sagyou-mobile-$v.apk"
       - name: Remove the keystore
         if: always()
-        run: rm -f "$RUNNER_TEMP/sagyou.jks"
+        run: rm -f "$RUNNER_TEMP/sagyou.jks" "$RUNNER_TEMP/google-services.json"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: sagyou-mobile-apk

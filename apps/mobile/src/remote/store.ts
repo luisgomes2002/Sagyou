@@ -80,6 +80,8 @@ export interface RemoteStore {
   installUpdate(): Promise<void>
   answer(id: string, approved: boolean): Promise<void>
   removeThisPhone(): Promise<void>
+  /** Hands this phone's FCM token to the Worker (push.ts decides when). */
+  putPushToken(token: string): Promise<void>
   clearError(): void
   /** After a wipe or when leaving: forget everything in memory. */
   reset(): void
@@ -478,6 +480,11 @@ export const useRemote = create<RemoteStore>((set, get) => {
     async removeThisPhone() {
       get().stopPolling()
       await forget({})
+    },
+
+    async putPushToken(token) {
+      if (!deps) throw new Error('remote not configured')
+      await deps.client.putPushToken(token)
     },
 
     clearError: () => set({ error: null }),

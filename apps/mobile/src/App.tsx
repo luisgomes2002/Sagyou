@@ -2,11 +2,14 @@ import {
   DarkTheme,
   DefaultTheme,
   NavigationContainer,
+  createNavigationContainerRef,
+  type NavigatorScreenParams,
   useIsFocused,
   useNavigation
 } from '@react-navigation/native'
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
 import { createNativeStackNavigator } from '@react-navigation/native-stack'
+import * as Notifications from 'expo-notifications'
 import { createContext, useContext, useEffect, useState, type ComponentType } from 'react'
 import { Pressable, StyleSheet, View } from 'react-native'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
@@ -19,6 +22,7 @@ import { UpdateBanner } from './components/UpdateBanner'
 import { TabIcon } from './components/TabIcon'
 import { ACTION_ICONS, type TabLabel } from './components/icons'
 import { useLockState } from './lock/lockState'
+import { notificationTarget, registerPush } from './remote/push'
 import { useRemote } from './remote/store'
 import { PcScreen } from './screens/PcScreen'
 import { Fab, Snackbar } from './components/ui'
@@ -83,7 +87,7 @@ const TAB_SCREENS: Partial<Record<TabLabel, ComponentType>> = {
 }
 
 export type RootStackParams = {
-  Abas: undefined
+  Abas: NavigatorScreenParams<Record<TabLabel, undefined>> | undefined
   Ajustes: undefined
   Conflitos: undefined
   ComoFunciona: undefined
@@ -93,6 +97,7 @@ export type RootStackParams = {
 
 const Tabs = createBottomTabNavigator()
 const Stack = createNativeStackNavigator<RootStackParams>()
+const navigationRef = createNavigationContainerRef<RootStackParams>()
 
 function navigationTheme(theme: Theme): typeof DefaultTheme {
   const base = theme.dark ? DarkTheme : DefaultTheme
@@ -224,6 +229,43 @@ function AutoUpdateCheck(): null {
   return null
 }
 
+/**
+ * Notifications of the remote control: on an authorized phone, hands the FCM
+ * token to the Worker once per launch; a tapped notification opens the PC tab.
+ */
+function PushBridge(): null {
+  const authorized = useRemote((s) => s.authorized)
+  const readOnly = useApp((s) => s.readOnly)
+  const controls = authorized === 'yes' && !readOnly
+
+  useEffect(() => {
+    if (!controls) return
+    void registerPush(
+      { notifications: Notifications, putPushToken: (t) => useRemote.getState().putPushToken(t) },
+      authorized
+    )
+  }, [controls, authorized])
+
+  useEffect(() => {
+    if (!controls) return
+    let live = true
+    const open = (response: unknown): void => {
+      if (!live || notificationTarget(response) !== 'pc' || !navigationRef.isReady()) return
+      navigationRef.navigate('Abas', { screen: 'PC' })
+    }
+    // The tap that launched the app, then every later one.
+    void Notifications.getLastNotificationResponseAsync()
+      .then(open)
+      .catch(() => undefined)
+    const sub = Notifications.addNotificationResponseReceivedListener(open)
+    return () => {
+      live = false
+      sub.remove()
+    }
+  }, [controls])
+  return null
+}
+
 export function AppShell({ mode }: { mode: AppMode }): React.JSX.Element {
   const theme = useTheme()
   if (mode === 'loading')
@@ -246,8 +288,9 @@ export function AppShell({ mode }: { mode: AppMode }): React.JSX.Element {
       </SafeAreaView>
     )
   return (
-    <NavigationContainer theme={navigationTheme(theme)}>
+    <NavigationContainer ref={navigationRef} theme={navigationTheme(theme)}>
       <AutoUpdateCheck />
+      <PushBridge />
       <Stack.Navigator>
         <Stack.Screen name="Abas" component={TabsScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Ajustes" component={SettingsScreen} />

@@ -1,4 +1,5 @@
 import NetInfo from '@react-native-community/netinfo'
+import * as Notifications from 'expo-notifications'
 import * as ScreenCapture from 'expo-screen-capture'
 import * as SecureStore from 'expo-secure-store'
 import * as LocalAuthentication from 'expo-local-authentication'
@@ -18,6 +19,15 @@ let started = false
 export function bootstrap(): void {
   if (started) return
   started = true
+  // A push that arrives with the app open still shows ("PC ligado, Sagyou pronto").
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowBanner: true,
+      shouldShowList: true,
+      shouldPlaySound: false,
+      shouldSetBadge: false
+    })
+  })
   // FLAG_SECURE: no screenshot, recording or Recents thumbnail of tasks and finances.
   void ScreenCapture.preventScreenCaptureAsync().catch(() => undefined)
   const db = openExpoDb()

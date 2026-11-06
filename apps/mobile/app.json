@@ -30,6 +30,8 @@
         }
       ],
       "./plugins/withReleaseSigning",
+      "expo-notifications",
+      "./plugins/withGoogleServices",
       "@react-native-community/datetimepicker",
       [
         "expo-splash-screen",
