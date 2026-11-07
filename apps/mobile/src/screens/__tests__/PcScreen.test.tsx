@@ -20,7 +20,9 @@ const actions = {
   unlock: jest.fn(async () => undefined),
   lock: jest.fn(async () => undefined),
   installUpdate: jest.fn(async () => undefined),
-  answer: jest.fn(async () => undefined)
+  answer: jest.fn(async () => undefined),
+  cutAccess: jest.fn(async () => undefined),
+  restoreAccess: jest.fn(async (_factor: string) => undefined)
 }
 
 function status(over: Partial<PcStatus> = {}): PcStatus {
