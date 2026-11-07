@@ -16,8 +16,8 @@ import {
 import { CONTROL_TEXT } from '@sagyou/core/control/texts'
 import { toBase64 } from '@sagyou/core/sync/bytes'
 import { KEY_PRIVATE, createControllerKeys } from '../keys'
-import { configureRemote, useRemote } from '../store'
-import { REMOTE_TEXT } from '../texts'
+import { CUT_WAIT_MS, configureRemote, useRemote } from '../store'
+import { REMOTE_TEXT, accessCutText } from '../texts'
 import { fakeSecure, type FakeSecure } from './fakes'
 
 const NOW = 1_800_000_000_000
@@ -384,5 +384,98 @@ describe('store do controle remoto', () => {
     await useRemote.getState().refresh()
     expect(useRemote.getState()).toMatchObject({ authorized: 'none', error: REMOTE_TEXT.revoked })
     expect(t.secure.data.size).toBe(0)
+  })
+
+  // Spec docs/specs/2026-11-07-endurecer-acesso-remoto.md, item 3.
+  describe('cortar e restaurar acesso', () => {
+    it('cortar manda cut-access assinado ao PC', async () => {
+      const t = setup()
+      await authorize(t)
+      await useRemote.getState().cutAccess()
+      const req = t.pc.sent.at(-1)!
+      expect(req.to).toBe(PC)
+      expect(req.env.kind).toBe('cut-access')
+      const phonePub = new Uint8Array(
+        Buffer.from(String(t.pc.sent[0].env.body.publicKey), 'base64')
+      )
+      expect(checkEnvelope(req.env, phonePub, NOW, () => false)).toEqual({ ok: true })
+    })
+
+    it('sem resposta em 60 s: oferece forçar pelo ESP32', async () => {
+      const t = setup()
+      await authorize(t)
+      jest.useFakeTimers()
+      try {
+        await useRemote.getState().cutAccess()
+        expect(useRemote.getState().error).toBeNull()
+        jest.advanceTimersByTime(CUT_WAIT_MS)
+        expect(useRemote.getState().error).toBe(REMOTE_TEXT.cutNoAnswer)
+        expect(REMOTE_TEXT.cutNoAnswer).toBe(
+          'O PC não respondeu. Forçar o desligamento pelo ESP32?'
+        )
+      } finally {
+        jest.useRealTimers()
+      }
+    })
+
+    it('resposta antes de 60 s: sem erro depois do prazo', async () => {
+      const t = setup()
+      await authorize(t)
+      jest.useFakeTimers()
+      try {
+        await useRemote.getState().cutAccess()
+        const req = t.pc.sent.at(-1)!
+        t.pc.queue.push(t.pc.msg('result', { replyTo: req.env.nonce, ok: true }))
+        await useRemote.getState().refresh()
+        jest.advanceTimersByTime(CUT_WAIT_MS)
+        expect(useRemote.getState().error).toBeNull()
+      } finally {
+        jest.useRealTimers()
+      }
+    })
+
+    it('restaurar sem código não envia nada', async () => {
+      const t = setup()
+      await authorize(t)
+      t.pc.client.restore = jest.fn(async () => undefined)
+      await useRemote.getState().restoreAccess('   ')
+      expect(t.pc.client.restore).not.toHaveBeenCalled()
+      expect(useRemote.getState().error).toBe(REMOTE_TEXT.needFactor)
+    })
+
+    it('restaurar manda o código ao Worker com o pedido assinado', async () => {
+      const t = setup()
+      await authorize(t)
+      t.pc.client.restore = jest.fn(async () => undefined)
+      await useRemote.getState().restoreAccess(' 123456 ')
+      expect(t.pc.client.restore).toHaveBeenCalledTimes(1)
+      const [factor, env] = jest.mocked(t.pc.client.restore).mock.calls[0] as unknown as [
+        { totp: string },
+        SignedEnvelope
+      ]
+      expect(factor).toEqual({ totp: '123456' })
+      expect(env.kind).toBe('restore-access')
+    })
+
+    it('código errado e bloqueio do Worker mostram os textos', async () => {
+      const t = setup()
+      await authorize(t)
+      t.pc.client.restore = jest.fn(async () => {
+        throw new ControlError('factor')
+      })
+      await useRemote.getState().restoreAccess('000000')
+      expect(useRemote.getState().error).toBe('Código do autenticador inválido.')
+      t.pc.client.restore = jest.fn(async () => {
+        throw new ControlError('locked')
+      })
+      await useRemote.getState().restoreAccess('000000')
+      expect(useRemote.getState().error).toBe('Muitas tentativas. Tente de novo em 15 minutos.')
+    })
+
+    it('hora do corte em HH:MM', () => {
+      expect(accessCutText(new Date(2026, 10, 7, 9, 5).getTime())).toBe(
+        'Acesso cortado em 09:05.'
+      )
+    })
   })
 })
