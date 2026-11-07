@@ -175,7 +175,7 @@ npx wrangler deploy
 
 Sem esses dois, tudo funciona, só sem notificações. As notificações levam só esses textos fixos: o conteúdo dos cartões é lido no app, decifrado no celular.
 
-**Ligar o PC desligado** exige um ESP32 na mesma rede, com Wake-on-LAN configurado no PC. Em **Configurações → Controle remoto → Token do ESP32**, gere o token e a chave para o `secrets.h` do firmware. O contrato do firmware está em [`docs/esp32-api.md`](docs/esp32-api.md), e `node sync-server/scripts/esp32-sim.mjs --url … --token … --key …` simula o ESP32 para testar sem o hardware.
+**Ligar o PC desligado** exige um ESP32 na mesma rede, com Wake-on-LAN configurado no PC. Em **Configurações → Controle remoto → Token do ESP32**, gere o token e a chave para o `secrets.h` do firmware. O firmware está em [`firmware/esp32/`](firmware/esp32/) (PlatformIO; como gravar no README de lá), o contrato em [`docs/esp32-api.md`](docs/esp32-api.md), e `node sync-server/scripts/esp32-sim.mjs --url … --token … --key …` simula o ESP32 para testar sem o hardware.
 
 ---
 
