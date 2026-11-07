@@ -159,6 +159,8 @@ function setup(
     esp32Key: () => esp,
     updateVersion: () => '1.6.1',
     installUpdate: vi.fn(async () => 'ok' as const),
+    onAccessCut: vi.fn(),
+    onAccessRestored: vi.fn(),
     log: { info: vi.fn(), warn: vi.fn() }
   }
   const service = createRemoteService(deps)
@@ -470,6 +472,97 @@ describe('remote-service: pedidos de um controle', () => {
     const t = setup()
     await t.deliver(t.request('approval-answer', { id: 'card-1', approved: false }))
     expect(t.deps.answerCard).toHaveBeenCalledWith('card-1', false)
+    expect(t.lastResult()?.ok).toBe(true)
+  })
+})
+
+// Spec docs/specs/2026-11-07-endurecer-acesso-remoto.md, item 3.
+describe('remote-service: cortar e restaurar acesso', () => {
+  const restore = (t: Setup, factor: boolean, at?: number): InboxMessage => ({
+    ...t.request('restore-access', {}, at === undefined ? {} : { at }),
+    factor
+  })
+
+  it('cortar grava a hora, chama o PC, responde ok e o status passa a dizer', async () => {
+    const t = setup()
+    const req = t.request('cut-access')
+    await t.deliver(req)
+    expect(t.config().accessCutAt).toBe(T0)
+    expect(t.deps.onAccessCut).toHaveBeenCalledTimes(1)
+    expect(t.lastResult()).toEqual({ replyTo: req.env.nonce, ok: true })
+    expect(t.deps.log.info).toHaveBeenCalledWith('remote', 'cut', { result: 'ok' })
+    expect(t.statuses.at(-1)?.body).toMatchObject({ accessCutAt: T0 })
+  })
+
+  it('cortar não é barrado pela suspensão', async () => {
+    const t = setup()
+    t.setConfig({ ...t.config(), suspendedUntil: T0 + REMOTE_SUSPEND_MS })
+    await t.deliver(t.request('cut-access'))
+    expect(t.deps.onAccessCut).toHaveBeenCalledTimes(1)
+    expect(t.config().accessCutAt).toBe(T0)
+  })
+
+  it('cortar de novo com o acesso já cortado responde ok sem repetir', async () => {
+    const t = setup()
+    await t.deliver(t.request('cut-access'))
+    t.advance(1000)
+    await t.deliver(t.request('cut-access'))
+    expect(t.deps.onAccessCut).toHaveBeenCalledTimes(1)
+    expect(t.config().accessCutAt).toBe(T0)
+    expect(t.lastResult()?.ok).toBe(true)
+  })
+
+  it('pedidos de cortar inválidos nunca contam para a suspensão', async () => {
+    const t = setup()
+    const stranger = newSigningKeys()
+    const valid = t.request('cut-access')
+    await t.deliver(valid)
+    t.setConfig({ ...t.config(), accessCutAt: null })
+    await t.deliver(
+      t.request('cut-access', {}, { key: stranger.privateKey }),
+      t.request('cut-access', {}, { at: T0 - 91_000 }),
+      valid
+    )
+    expect(t.config().failures).toBe(0)
+    expect(t.config().suspendedUntil).toBeNull()
+    expect(t.deps.onAccessCut).toHaveBeenCalledTimes(1)
+  })
+
+  it('restaurar sem a marca do Worker é recusado com factor e conta', async () => {
+    const t = setup()
+    await t.deliver(t.request('cut-access'))
+    const req = restore(t, false)
+    await t.deliver(req)
+    expect(t.config().accessCutAt).toBe(T0)
+    expect(t.deps.onAccessRestored).not.toHaveBeenCalled()
+    expect(t.lastResult()).toEqual({ replyTo: req.env.nonce, ok: false, reason: 'factor' })
+    expect(t.config().failures).toBe(1)
+  })
+
+  it('restaurar com a marca, durante a suspensão, responde suspended', async () => {
+    const t = setup()
+    await t.deliver(t.request('cut-access'))
+    t.setConfig({ ...t.config(), suspendedUntil: T0 + REMOTE_SUSPEND_MS })
+    await t.deliver(restore(t, true))
+    expect(t.config().accessCutAt).toBe(T0)
+    expect(t.lastResult()).toMatchObject({ ok: false, reason: 'suspended' })
+  })
+
+  it('restaurar com a marca tira o corte e chama o PC', async () => {
+    const t = setup()
+    await t.deliver(t.request('cut-access'))
+    const req = restore(t, true)
+    await t.deliver(req)
+    expect(t.config().accessCutAt).toBeNull()
+    expect(t.deps.onAccessRestored).toHaveBeenCalledTimes(1)
+    expect(t.lastResult()).toEqual({ replyTo: req.env.nonce, ok: true })
+    expect(t.deps.log.info).toHaveBeenCalledWith('remote', 'restore', { result: 'ok' })
+  })
+
+  it('restaurar sem corte responde ok sem efeito', async () => {
+    const t = setup()
+    await t.deliver(restore(t, true))
+    expect(t.deps.onAccessRestored).not.toHaveBeenCalled()
     expect(t.lastResult()?.ok).toBe(true)
   })
 })

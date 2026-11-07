@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { newSigningKeys } from '../crypto'
-import { checkEnvelope, parsePcStatus, signEnvelope, type SignedEnvelope } from '../messages'
+import {
+  checkEnvelope,
+  MAX_TTL_MS,
+  parsePcStatus,
+  signEnvelope,
+  type SignedEnvelope
+} from '../messages'
 
 const NOW = 1_800_000_000_000
 const never = (): boolean => false
@@ -84,11 +90,25 @@ describe('parsePcStatus', () => {
     pendingCards: 0,
     shutdownAt: null,
     suspendedUntil: null,
-    updateVersion: '1.6.1'
+    updateVersion: '1.6.1',
+    accessCutAt: null
   }
 
   it('lê um status válido', () => {
     expect(parsePcStatus(valid)).toEqual(valid)
+    expect(parsePcStatus({ ...valid, accessCutAt: NOW })?.accessCutAt).toBe(NOW)
+  })
+
+  it('sem accessCutAt (PC de antes do corte) ou com valor inválido lê como null', () => {
+    const old: Record<string, unknown> = { ...valid }
+    delete old.accessCutAt
+    expect(parsePcStatus(old)?.accessCutAt).toBeNull()
+    expect(parsePcStatus({ ...valid, accessCutAt: 'ontem' })?.accessCutAt).toBeNull()
+  })
+
+  it('cut-access e restore-access valem no máximo 1 minuto', () => {
+    expect(MAX_TTL_MS['cut-access']).toBe(60_000)
+    expect(MAX_TTL_MS['restore-access']).toBe(60_000)
   })
 
   it('sem updateVersion (PC antigo) lê como null', () => {
