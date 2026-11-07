@@ -284,7 +284,6 @@ export const api = {
           columnId: string
           title: string
           description?: string
-          lockedExternal?: boolean
         }
       }) => void
     ) => {

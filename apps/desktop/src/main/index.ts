@@ -618,8 +618,6 @@ interface McpTaskRequest {
   columnId: string
   title: string
   description?: string
-  /** External token, app locked with "Funcionar com o Sagyou bloqueado" on. */
-  lockedExternal?: boolean
 }
 
 /**

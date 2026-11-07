@@ -62,11 +62,6 @@ export interface McpActionRequest {
   name: string
   args: Record<string, unknown>
   scope: McpScope
-  /**
-   * External token, app locked with "Funcionar com o Sagyou bloqueado" on: the
-   * renderer applies on its locked store, and main lets that flush through.
-   */
-  lockedExternal?: boolean
 }
 
 export type McpActionResult =
