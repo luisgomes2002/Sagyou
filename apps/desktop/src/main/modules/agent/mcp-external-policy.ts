@@ -12,6 +12,13 @@ export const EXTERNAL_RUN_ID = 'external'
 /** The "session" an external card shows, on the PC and on the phone. */
 export const EXTERNAL_SESSION_NAME = 'Acesso externo'
 
+/** Every external tools/call while the phone's "Cortar acesso" holds. */
+export const EXTERNAL_CUT_MESSAGE = 'Acesso externo cortado pelo celular.'
+
+/** An external write with the Sagyou locked and "Ler com o Sagyou bloqueado" on. */
+export const EXTERNAL_LOCKED_WRITE_MESSAGE =
+  'O Sagyou está bloqueado: as escritas voltam depois de desbloquear (no PC ou pelo celular, aba PC). Leituras funcionam.'
+
 /** The legacy writes that always show a card in a Fleet session. */
 const LEGACY_CARD_WRITES: ReadonlySet<string> = new Set(['save_memory', 'criar_task'])
 
