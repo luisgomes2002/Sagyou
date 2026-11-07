@@ -138,6 +138,7 @@ import {
 import { registerMcpExternalHandlers } from './handlers/mcp-external'
 import { mcpFinancialTables } from './modules/agent/mcp-financial-scope'
 import { createLockedSaveGate, externalBlockedByLock } from './modules/agent/mcp-external-lock'
+import { createExternalCards } from './modules/agent/mcp-external-cards'
 import { configureLog, createLogger, errorMessage, log } from './modules/logs/logger'
 import { captureBase, diffSince, type AgentBase, type DiffLineItem } from './modules/code/code-diff'
 import { safeAttachmentName } from './modules/files/backup-files'
@@ -780,13 +781,21 @@ function recordRunActivity(request: McpWriteRequest, value: unknown): void {
 
 /** Routes MCP writes through the exact same approval UI as code-agent actions. */
 // Fleet cards also reach the authorized phones; the first answer wins.
+const sendToWindow = (channel: string, payload: unknown): void => {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload)
+}
+
 const remoteCards = createRemoteCards({
-  maps: () => [...codeRuns.values()].map((run) => run.pendingApprovals),
+  maps: () => [
+    ...[...codeRuns.values()].map((run) => run.pendingApprovals),
+    externalCards.pending
+  ],
   service: () => remoteService,
-  send: (channel, payload) => {
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload)
-  }
+  send: sendToWindow
 })
+
+// The external token's cards (spec 2026-11-07): a dialog on the PC, the phone's PC tab.
+const externalCards = createExternalCards({ park: remoteCards.park, send: sendToWindow })
 
 function requestMcpWriteApproval(
   runId: string,
@@ -794,6 +803,18 @@ function requestMcpWriteApproval(
   args: Record<string, unknown>,
   resumo?: string
 ): Promise<boolean> {
+  if (runId === EXTERNAL_RUN_ID) {
+    // Locked or locking: nobody may answer; the queue refuses the write.
+    if (!isMcpRunLive(runId) || isAppLocked()) return Promise.resolve(false)
+    return externalCards.request(name, args, resumo ?? mcpCardResumo(name, args)).then((approved) => {
+      log.info('mcp', 'approval', {
+        runId,
+        tool: name,
+        decision: approved ? 'approved' : 'not_approved'
+      })
+      return approved
+    })
+  }
   const run = codeRuns.get(runId)
   // Locked or locking: no new card reaches a screen nobody may answer.
   if (!run || !isMcpRunLive(runId) || isAppLocked()) return Promise.resolve(false)
@@ -1149,6 +1170,7 @@ function refuseRunWritesForLock(): void {
   // "Funcionar com o Sagyou bloqueado": the external token's writes keep going.
   if (!mcpExternal?.allowWhileLocked())
     mcpWriteQueue.rejectQueued(EXTERNAL_RUN_ID, 'O Sagyou foi bloqueado.')
+  externalCards.denyAll()
   for (const run of codeRuns.values()) {
     mcpWriteQueue.rejectQueued(run.id, 'O Sagyou foi bloqueado.')
     for (const { resolve } of run.pendingApprovals.values()) resolve(false)
@@ -1796,8 +1818,11 @@ app.whenReady().then(() => {
       portFile,
       writeBridge: () => writeFileSync(bridgePath, MCP_EXTERNAL_BRIDGE_SOURCE, 'utf8'),
       // Writes queued by the old token must not run under the new one.
-      onTokenChanged: () =>
-        mcpWriteQueue.rejectQueued(EXTERNAL_RUN_ID, 'O acesso MCP externo mudou.'),
+      onTokenChanged: () => {
+        mcpWriteQueue.rejectQueued(EXTERNAL_RUN_ID, 'O acesso MCP externo mudou.')
+        externalCards.denyAll()
+      },
+      answerCard: (id, approved) => remoteCards.answer(id, approved),
       log
     })
   }
@@ -2085,7 +2110,8 @@ app.whenReady().then(() => {
         return remoteServers
       },
       pendingCards: () =>
-        [...codeRuns.values()].reduce((n, run) => n + run.pendingApprovals.size, 0),
+        [...codeRuns.values()].reduce((n, run) => n + run.pendingApprovals.size, 0) +
+        externalCards.count(),
       answerCard: (id, approved) => remoteCards.answer(id, approved),
       devices: async () =>
         (await engine.devices()).map((d) => ({ id: d.id, revoked: d.revokedAt !== null })),

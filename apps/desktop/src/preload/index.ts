@@ -316,7 +316,28 @@ export const api = {
     create: (): Promise<McpExternalIssued> => ipcRenderer.invoke('mcp-external:create'),
     setAllowLocked: (value: boolean): Promise<McpExternalStatus> =>
       ipcRenderer.invoke('mcp-external:set-allow-locked', value),
-    revoke: (): Promise<McpExternalStatus> => ipcRenderer.invoke('mcp-external:revoke')
+    revoke: (): Promise<McpExternalStatus> => ipcRenderer.invoke('mcp-external:revoke'),
+    /** A risky write of the external token waits for an answer (spec 2026-11-07). */
+    onApproveRequest: (
+      cb: (card: { id: string; name: string; resumo: string; expiresAt?: string }) => void
+    ) => {
+      const handler = (_: Electron.IpcRendererEvent, card: Parameters<typeof cb>[0]): void =>
+        cb(card)
+      ipcRenderer.on('mcp-external:approve-request', handler)
+      return () => {
+        ipcRenderer.removeListener('mcp-external:approve-request', handler)
+      }
+    },
+    answer: (id: string, approved: boolean): Promise<boolean> =>
+      ipcRenderer.invoke('mcp-external:approve-response', id, approved),
+    /** Answered (here or on the phone), expired, or refused by a lock: drop it. */
+    onApprovalClosed: (cb: (id: string) => void) => {
+      const handler = (_: Electron.IpcRendererEvent, id: string): void => cb(id)
+      ipcRenderer.on('ai:code-agent:approval-closed', handler)
+      return () => {
+        ipcRenderer.removeListener('ai:code-agent:approval-closed', handler)
+      }
+    }
   },
   sync: {
     // A pull changed data records: the renderer takes the state without saving it.
