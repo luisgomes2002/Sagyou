@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { createRemoteCards } from '../handlers/remote'
 import { createExternalCards } from '../modules/agent/mcp-external-cards'
 import { MCP_APPROVAL_TIMEOUT_MS } from '../modules/agent/mcp-approval'
@@ -8,12 +8,22 @@ import type { RemoteService } from '../modules/remote/remote-service'
 // Spec docs/specs/2026-11-07-endurecer-acesso-remoto.md, item 1: the external
 // token's risky writes park a card on the PC and on the authorized phone.
 
-function setup() {
-  const service = {
-    sendCard: vi.fn(async () => {}),
-    closeCard: vi.fn(async () => {})
+interface Setup {
+  service: {
+    sendCard: Mock<(card: unknown) => Promise<void>>
+    closeCard: Mock<(id: string) => Promise<void>>
   }
-  const toWindow = vi.fn()
+  toWindow: Mock<(channel: string, payload: unknown) => void>
+  remoteCards: ReturnType<typeof createRemoteCards>
+  cards: ReturnType<typeof createExternalCards>
+}
+
+function setup(): Setup {
+  const service = {
+    sendCard: vi.fn<(card: unknown) => Promise<void>>(async () => {}),
+    closeCard: vi.fn<(id: string) => Promise<void>>(async () => {})
+  }
+  const toWindow = vi.fn<(channel: string, payload: unknown) => void>()
   const external = { current: null as ReturnType<typeof createExternalCards> | null }
   const remoteCards = createRemoteCards({
     maps: () => (external.current ? [external.current.pending] : []),

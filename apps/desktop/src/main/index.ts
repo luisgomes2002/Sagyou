@@ -786,10 +786,7 @@ const sendToWindow = (channel: string, payload: unknown): void => {
 }
 
 const remoteCards = createRemoteCards({
-  maps: () => [
-    ...[...codeRuns.values()].map((run) => run.pendingApprovals),
-    externalCards.pending
-  ],
+  maps: () => [...[...codeRuns.values()].map((run) => run.pendingApprovals), externalCards.pending],
   service: () => remoteService,
   send: sendToWindow
 })
@@ -806,14 +803,16 @@ function requestMcpWriteApproval(
   if (runId === EXTERNAL_RUN_ID) {
     // Locked or locking: nobody may answer; the queue refuses the write.
     if (!isMcpRunLive(runId) || isAppLocked()) return Promise.resolve(false)
-    return externalCards.request(name, args, resumo ?? mcpCardResumo(name, args)).then((approved) => {
-      log.info('mcp', 'approval', {
-        runId,
-        tool: name,
-        decision: approved ? 'approved' : 'not_approved'
+    return externalCards
+      .request(name, args, resumo ?? mcpCardResumo(name, args))
+      .then((approved) => {
+        log.info('mcp', 'approval', {
+          runId,
+          tool: name,
+          decision: approved ? 'approved' : 'not_approved'
+        })
+        return approved
       })
-      return approved
-    })
   }
   const run = codeRuns.get(runId)
   // Locked or locking: no new card reaches a screen nobody may answer.
