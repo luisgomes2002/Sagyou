@@ -161,7 +161,7 @@ acesso** → pede o código do autenticador (ou reserva) → biometria → o Wor
 fator e entrega o pedido assinado ao PC. O PC tira a suspensão do token e para de
 encerrar os servidores (a tarefa de logon os reinicia sozinha). **O Sagyou continua
 bloqueado**; desbloquear é o botão de sempre. Erros: "Código do autenticador inválido."
-(conta no limite do Worker) / "Muitas tentativas. Tente de novo às 14:47.".
+(conta no limite do Worker) / "Muitas tentativas. Tente de novo em 15 minutos.".
 
 **No PC.** Configurações → Acesso MCP externo e → Controle remoto mostram "Acesso cortado
 pelo celular em <data>." e **Restaurar acesso** (o Sagyou já está desbloqueado, porque
@@ -180,8 +180,9 @@ você está na frente dele). A bandeja mostra o mesmo aviso.
 - **PC (Configurações → Sincronização → Parear aparelho)** e **celular (Ajustes → Parear
   outro aparelho)** pedem o código do autenticador (6 dígitos) ou um código reserva antes
   de gerar o código/QR. Campo: "Código do autenticador"; ajuda: "Ou um código reserva."
-- Código errado: "Código do autenticador inválido." Bloqueio: "Muitas tentativas. Tente
-  de novo às 14:47."
+- Código errado: "Código do autenticador inválido." Bloqueio: o texto que o core já usa
+  para o 429, "Muitas tentativas. Aguarde 15 minutos e tente novamente." (o Worker não
+  devolve a hora do fim do bloqueio).
 - Grupo sem autenticador: "Cadastre o autenticador em Configurações → Sincronização para
   parear aparelhos." (no celular, o mesmo texto, que aponta para o PC). O botão de gerar
   fica desligado até o código ser digitado.
@@ -200,16 +201,18 @@ você está na frente dele). A bandeja mostra o mesmo aviso.
 
 Sem mudança no SQLite nem no backup. Nada desta spec sincroniza.
 
-- **`userData/mcp-external.json`:** campo novo opcional `cutAt` (ISO; ausente = acesso
-  normal). Um arquivo sem o campo vale como hoje; um build antigo que leia o arquivo
-  ignora o campo (a leitura já tolera campos desconhecidos). `allowWhileLocked` mantém o
-  nome e passa a significar só leitura.
-- **`userData/remote-control.json`:** sem campo novo (o corte mora no `mcp-external.json`,
-  junto do token que ele suspende).
-- **D1:** sem tabela nova. Se o pedido de restaurar precisar marcar "fator conferido" na
-  `control_messages`, é uma coluna aditiva (`ALTER TABLE … ADD COLUMN` com padrão 0, ou
-  um `kind` reservado), decidida no plano, sem mexer nas linhas existentes.
-- **Celular:** nada novo persistido. O código do autenticador vive só no estado da tela.
+- **`userData/remote-control.json`:** campo novo `accessCutAt: number | null` (ms; ausente
+  ou inválido = `null`, acesso normal). Mora aqui, e não no `mcp-external.json`, porque o
+  corte vale mesmo sem token externo (encerra os servidores) e o arquivo já sai no wipe
+  remoto. Um build antigo que leia o arquivo ignora o campo. (Ajuste do plano, 2026-11-07.)
+- **`userData/mcp-external.json`:** sem mudança. `allowWhileLocked` mantém o nome e passa
+  a significar só leitura.
+- **D1:** tabela nova `control_factor_checked (msg_id TEXT PRIMARY KEY, expires_at INTEGER
+  NOT NULL)`, `CREATE TABLE IF NOT EXISTS` (rodar o `schema.sql` de novo basta). Marca as
+  mensagens que passaram pelo fator na rota de restaurar; apagada junto com a mensagem.
+- **Celular, secure store:** `remoteRequestedAt` (ms do pedido "Estou longe do PC", para o
+  aviso de expirado; apagado com as chaves). O código do autenticador vive só no estado da
+  tela.
 
 ## Telas
 
