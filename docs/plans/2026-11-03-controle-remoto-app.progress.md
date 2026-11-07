@@ -1,0 +1,49 @@
+# plan: docs/plans/2026-11-03-controle-remoto-app.md
+Task 1: complete (46a5d6b)
+Task 2: complete (465c25c)
+Task 3: complete (b32b1af)
+Task 4: complete (ddaf3b2)
+Task 5: complete (e729468)
+Task 6: complete (ff59f04; typecheck fix e511406)
+Task 7: complete (fdae93e)
+Task 8: complete (ae99f39)
+Task 9: Decisão: corpos das mensagens (authorize-request/remote, authorized, esp32-key, result, approval-card/answer/closed) em packages/core/src/control/bodies.ts — o celular (Task 13) precisa dos mesmos formatos — custo se errada: mover/renomear parsers.
+Task 9: Decisão: authorize-remote certo NÃO chama removeController no Worker (a resposta da checagem diz que só o Worker limpa em /roles/remote, e o Worker já faz clearControllers) — custo: nenhum, o Worker é a fonte.
+Task 9: Decisão: authorize() é assíncrono (chama addController/send) — Task 10 deve aguardar.
+Task 9: Decisão: serviço só roda depois de syncStatusChanged com sync ativo (ok/offline/update-pending, sem pausa); Task 10 deve repassar o status atual logo após criar o serviço.
+Task 9: Decisão: extras checkDevices(), running(), lastError() para a Task 10 (revogar pela tela de sync e remote:status).
+Task 9: Nota: teste e implementação foram num único push (só CI), sem a rodada FALHA separada.
+Task 9: complete (b7c44cc..2adbd41, CI → aguardando)
+Task 10: Decisão: chave do ESP32 devolvida em hex (64 caracteres) para colar no secrets.h — custo: Task 18/firmware decodificar hex.
+Task 10: Decisão: ponte de cartões em handlers/remote.ts (createRemoteCards.park embrulha parkMcpApproval e fecha o cartão em qualquer desfecho); remoteUnlock puro testável — o teste de "não chama loadData" fica no remoteUnlock, que não tem acesso ao loadData.
+Task 10: Decisão: sessão do cartão = run.agent (nome do harness); sync:revoke chama remoteService.checkDevices().
+Task 11: Decisão: seção "Controle remoto" entra entre Acesso MCP externo e Sistema (nona seção, não oitava: já havia oito); textos em utils/remoteControlText.ts; código do pedido mostrado como "482 913".
+Task 12: Decisão: artigo sync-trocar-celular vive no core (SYNC_SWITCH_PHONE_ARTICLE, aparece também no celular); no desktop aponta para a seção controle-remoto.
+Task 10/11/12: commits a3ebb18, 3f084da, 4cb700d, ceaf79f — CI pendente.
+Task 9: complete (b7c44cc..792215e, CI run 41698584643 → passa)
+Task 10: complete (a3ebb18..792215e, CI run 41698584643 → passa)
+Task 11: complete (4cb700d..792215e, CI run 41698584643 → passa)
+Task 12: complete (ceaf79f..792215e, CI run 41698584643 → passa)
+Task 10b: complete (0c33292, CI run 41702667825 → passa) — adendo aprovado por Luis: pc-key + install-update; remote-fetch removido
+Task 13: Decisão: a chave pública do celular também fica no secure store (sagyou.control.public, sem biometria) e o estado da autorização em sagyou.control.state; renew() assina com a chave em memória (uma biometria só no pedido).
+Task 13: Decisão: antes de conhecer a chave do PC, o celular só aceita um "result" não verificado que responda ao próprio pedido de autorização (no pior caso, um falso só faz pedir de novo).
+Task 15: Decisão: o celular não tem lista de aparelhos; o aviso dos celulares anteriores aparece sem atalho (revogar o perdido fica pelo PC ou numa task futura).
+Task 16: Decisão: código escrito antes dos testes (WIP de 2026-11-03), então não houve rodada FALHA separada; os testes vieram no mesmo commit — custo: um teste que passaria sem o código não é detectado.
+Task 17: Decisão: GOOGLE_SERVICES_JSON no plugin é o CAMINHO do arquivo (o workflow escreve o secret em $RUNNER_TEMP e exporta o caminho); o plugin só aponta android.googleServicesFile, e o prebuild copia — custo: um build local precisa da variável com um caminho, não do conteúdo.
+Task 17: Decisão: o token é registrado a cada abertura do app autorizado (PushBridge em App.tsx), sem ouvir rotação de token — custo: um token rotacionado no meio da sessão só chega ao Worker na próxima abertura.
+Task 17: Decisão: com o app aberto a notificação também aparece (setNotificationHandler no bootstrap).
+Task 18: Decisão: o teste confere o MAC do simulador contra powerCommandMac/powerStateMac do core (import relativo), e o simulador usa node:crypto — custo: nenhum, o core continua sem Node.
+Task 16: complete (85059d5, CI run 42270338092 → passa)
+Task 17: complete (d1c5cec, CI run 42270338092 → passa)
+Task 18: complete (b256c89, CI run 42271164725 → testes passam; lint do diff falhou e foi corrigido em b7176d6)
+Task 19: docs, versões e Montagem (Firebase) feitos em 1e3e12c; verificação no app com Luis pendente (lista no PR).
+Final: Decisão: segurança M5 (senha do Sagyou no authorize-remote fica até 24 h no D1, selada só com a chave de sync) — selar para a chave pública do PC (X25519) muda o protocolo e o fluxo de "Estou longe do PC"; fica para decisão do Luis — custo: quem tem a chave de sync E leitura do D1 lê a senha.
+Final: Decisão: segurança M6 (chave do ESP32 no celular sem requireAuthentication; "Forçar pelo ESP32" só com a biometria do app) — coerente com a spec, a mesma chave sai de GET /esp32-key com a chave de sync — custo: celular desbloqueado força desligamento sem biometria criptográfica.
+Final: minor (adiado): segurança M7 — "Remover este celular" só apaga dados locais; a revogação de verdade é no PC (Configurações → Controle remoto) ou no sync.
+Final: minor (adiado): segurança M8 — anti-repetição do celular só em memória; um Worker malicioso pode repetir um "revoked"/cartão antigo dentro da validade após reiniciar o app (só negação de serviço).
+Final: minor (adiado): segurança C1(e) — scrypt síncrono na thread principal; com C1(a) só remetentes com papel do Worker (TOTP) chegam à senha, e no máximo 1 por ciclo.
+Final: minor (adiado): review 13 — teste de replay depois de reiniciar usa a config em memória; a persistência é coberta em remote-config.test.ts.
+Final: minor (adiado): UI 1-7, 9, 12-16 (desktop: erro geral longe da ação, rótulos "Gerar novo", role=alert da suspensão; celular: botão Tentar de novo sem conexão, quebra da linha do cartão, caption do aviso de segundo fator, teclado visible-password com multiline e texto centralizado no RecoverSync) — conferir no aparelho.
+Final: fixed (review + segurança) — triagem em .sagyou/work/controle-remoto-app/triage.md, corrigida em três áreas: A desktop (C1 só quem tem o papel do Worker tenta a senha, 1 por ciclo, authorize-request não zera; I1 controles sem papel saem; I2 remetente não autenticado não conta; I3 limite de nonces e gravação por ciclo; desligar/cancelar que falham devolvem a tela; toda recusa remove o papel; sem senha não há modo controlado; install responde antes; caminhos absolutos), B Worker/core (takenAt, esp32NoAnswer, forcedShutdownUntil, ESP32 com relatório antigo = sem contato, /roles/remote 409 com caixa cheia), C celular (Ligar em waiting-pc, Cancelar pedido, Cancelar desligamento forçado, "O ESP32 não respondeu.", renew limpa chaves do PC/ESP32, notificação tratada não reabre, live region só no estado, connection antes de error). Testes escritos antes do código, sem rodada local (só CI).
+Final: Decisão: Área A — authorize-remote de quem não tem o papel não recebe resposta; 2º authorize-remote do ciclo é descartado em silêncio; recusa não tira o papel de quem já é controle aqui (replay) — custo: um celular legítimo sem papel no Worker espera sem aviso.
+Final: Decisão: Área C — Cancelar pedido sem confirmação; durante o desligamento forçado, Ligar e Forçar somem — custo: baixo.

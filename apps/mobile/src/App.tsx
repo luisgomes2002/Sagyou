@@ -2,10 +2,14 @@ import {
   DarkTheme,
   DefaultTheme,
   NavigationContainer,
+  createNavigationContainerRef,
+  type NavigatorScreenParams,
+  useIsFocused,
   useNavigation
 } from '@react-navigation/native'
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
 import { createNativeStackNavigator } from '@react-navigation/native-stack'
+import * as Notifications from 'expo-notifications'
 import { createContext, useContext, useEffect, useState, type ComponentType } from 'react'
 import { Pressable, StyleSheet, View } from 'react-native'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
@@ -16,7 +20,11 @@ import { QuickCreate } from './components/QuickCreate'
 import { StatusBanner } from './components/StatusBanner'
 import { UpdateBanner } from './components/UpdateBanner'
 import { TabIcon } from './components/TabIcon'
-import { ACTION_ICONS } from './components/icons'
+import { ACTION_ICONS, type TabLabel } from './components/icons'
+import { useLockState } from './lock/lockState'
+import { createResponseGate, registerPush } from './remote/push'
+import { useRemote } from './remote/store'
+import { PcScreen } from './screens/PcScreen'
 import { Fab, Snackbar } from './components/ui'
 import { useEditing } from './store/editing'
 import { useUndo } from './store/undo'
@@ -32,6 +40,7 @@ import type { SearchHit } from './data/search'
 import { Placeholder } from './screens/Placeholder'
 import { ConflictsScreen } from './screens/ConflictsScreen'
 import { PAIR_DEVICE_TITLE, PairDeviceScreen } from './screens/PairDeviceScreen'
+import { CONTROL_TITLE, ControlSetupScreen } from './screens/ControlSetupScreen'
 import { SyncGuideScreen } from './screens/SyncGuideScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
 import { TasksStack } from './screens/tasks/TasksStack'
@@ -60,25 +69,35 @@ function SearchTab(): React.JSX.Element {
   return <SearchScreen onOpen={open} />
 }
 
+/** The PC tab asks the Worker only while it is on screen and the app is unlocked. */
+function PcTab(): React.JSX.Element {
+  const focused = useIsFocused()
+  const hidden = useLockState((s) => s.hidden)
+  return <PcScreen focused={focused && !hidden} />
+}
+
 /** Each tab's content; a tab without one shows a placeholder until its task lands. */
-const TAB_SCREENS: Partial<Record<(typeof TAB_LABELS)[number], ComponentType>> = {
+const TAB_SCREENS: Partial<Record<TabLabel, ComponentType>> = {
   Tarefas: TasksStack,
   Hábitos: HabitsScreen,
   Finanças: FinanceScreen,
   Notas: NotesScreen,
-  Busca: SearchTab
+  Busca: SearchTab,
+  PC: PcTab
 }
 
 export type RootStackParams = {
-  Abas: undefined
+  Abas: NavigatorScreenParams<Record<TabLabel, undefined>> | undefined
   Ajustes: undefined
   Conflitos: undefined
   ComoFunciona: undefined
   ParearAparelho: undefined
+  ControlarPC: undefined
 }
 
 const Tabs = createBottomTabNavigator()
 const Stack = createNativeStackNavigator<RootStackParams>()
+const navigationRef = createNavigationContainerRef<RootStackParams>()
 
 function navigationTheme(theme: Theme): typeof DefaultTheme {
   const base = theme.dark ? DarkTheme : DefaultTheme
@@ -117,7 +136,7 @@ function UndoBar(): React.JSX.Element {
 }
 
 /** One tab's page: status line on top, content, then the (+) and the notice over it. */
-function TabPage({ label }: { label: (typeof TAB_LABELS)[number] }): React.JSX.Element {
+function TabPage({ label }: { label: TabLabel }): React.JSX.Element {
   const Content = TAB_SCREENS[label]
   const openCreate = useContext(OpenCreate)
   const readOnly = useApp((s) => s.readOnly)
@@ -155,6 +174,11 @@ function TabsScreen({
   const theme = useTheme()
   const [creating, setCreating] = useState(false)
   const Gear = ACTION_ICONS.settings
+  // The PC tab exists only on an authorized phone that may still send (not read-only).
+  const authorized = useRemote((s) => s.authorized)
+  const readOnly = useApp((s) => s.readOnly)
+  const labels: readonly TabLabel[] =
+    authorized === 'yes' && !readOnly ? [...TAB_LABELS, 'PC'] : TAB_LABELS
   return (
     <OpenCreate.Provider value={() => setCreating(true)}>
       <Tabs.Navigator
@@ -165,9 +189,7 @@ function TabsScreen({
           tabBarItemStyle: { borderRadius: 999, marginHorizontal: 4, marginVertical: 4 },
           tabBarAccessibilityLabel: route.name,
           tabBarButtonTestID: `tab-${route.name}`,
-          tabBarIcon: ({ color }) => (
-            <TabIcon label={route.name as (typeof TAB_LABELS)[number]} color={color} />
-          ),
+          tabBarIcon: ({ color }) => <TabIcon label={route.name as TabLabel} color={color} />,
           headerRight: () => (
             <Pressable
               accessibilityRole="button"
@@ -180,7 +202,7 @@ function TabsScreen({
           )
         })}
       >
-        {TAB_LABELS.map((label) => (
+        {labels.map((label) => (
           <Tabs.Screen key={label} name={label}>
             {() => <TabPage label={label} />}
           </Tabs.Screen>
@@ -207,6 +229,46 @@ function AutoUpdateCheck(): null {
   return null
 }
 
+/**
+ * Notifications of the remote control: on an authorized phone, hands the FCM
+ * token to the Worker once per launch; a tapped notification opens the PC tab.
+ */
+/** Module-wide: a notification already handled never reopens the tab, even after a remount. */
+const pushTarget = createResponseGate()
+
+function PushBridge(): null {
+  const authorized = useRemote((s) => s.authorized)
+  const readOnly = useApp((s) => s.readOnly)
+  const controls = authorized === 'yes' && !readOnly
+
+  useEffect(() => {
+    if (!controls) return
+    void registerPush(
+      { notifications: Notifications, putPushToken: (t) => useRemote.getState().putPushToken(t) },
+      authorized
+    )
+  }, [controls, authorized])
+
+  useEffect(() => {
+    if (!controls) return
+    let live = true
+    const open = (response: unknown): void => {
+      if (!live || !navigationRef.isReady() || pushTarget(response) !== 'pc') return
+      navigationRef.navigate('Abas', { screen: 'PC' })
+    }
+    // The tap that launched the app, then every later one.
+    void Notifications.getLastNotificationResponseAsync()
+      .then(open)
+      .catch(() => undefined)
+    const sub = Notifications.addNotificationResponseReceivedListener(open)
+    return () => {
+      live = false
+      sub.remove()
+    }
+  }, [controls])
+  return null
+}
+
 export function AppShell({ mode }: { mode: AppMode }): React.JSX.Element {
   const theme = useTheme()
   if (mode === 'loading')
@@ -229,8 +291,9 @@ export function AppShell({ mode }: { mode: AppMode }): React.JSX.Element {
       </SafeAreaView>
     )
   return (
-    <NavigationContainer theme={navigationTheme(theme)}>
+    <NavigationContainer ref={navigationRef} theme={navigationTheme(theme)}>
       <AutoUpdateCheck />
+      <PushBridge />
       <Stack.Navigator>
         <Stack.Screen name="Abas" component={TabsScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Ajustes" component={SettingsScreen} />
@@ -244,6 +307,11 @@ export function AppShell({ mode }: { mode: AppMode }): React.JSX.Element {
           name="ParearAparelho"
           component={PairDeviceScreen}
           options={{ title: PAIR_DEVICE_TITLE }}
+        />
+        <Stack.Screen
+          name="ControlarPC"
+          component={ControlSetupScreen}
+          options={{ title: CONTROL_TITLE }}
         />
       </Stack.Navigator>
     </NavigationContainer>

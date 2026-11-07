@@ -58,3 +58,76 @@ CREATE TABLE IF NOT EXISTS auth (
   fail_count INTEGER NOT NULL DEFAULT 0,
   locked_until INTEGER NOT NULL DEFAULT 0
 );
+
+-- ── Remote control (spec docs/specs/2026-11-03-controle-remoto-app.md) ───────────
+-- Additive: running this file again on an existing D1 only creates these tables.
+
+-- One 'pc' (the controlled PC) and the authorized phones ('controller').
+CREATE TABLE IF NOT EXISTS device_roles (
+  id TEXT PRIMARY KEY,            -- opaque device id
+  role TEXT NOT NULL CHECK (role IN ('pc', 'controller')),
+  created_at INTEGER NOT NULL
+);
+
+-- Sealed with the control subkey; deleted when read or expired.
+CREATE TABLE IF NOT EXISTS control_messages (
+  msg_id TEXT PRIMARY KEY,        -- part of the AAD; needed to decrypt
+  to_device TEXT NOT NULL,
+  from_device TEXT NOT NULL,
+  ciphertext TEXT NOT NULL,
+  expires_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS control_messages_to ON control_messages (to_device);
+
+-- The PC's last heartbeat, sealed.
+CREATE TABLE IF NOT EXISTS control_status (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  from_device TEXT NOT NULL,
+  msg_id TEXT NOT NULL,
+  ciphertext TEXT NOT NULL,
+  at INTEGER NOT NULL
+);
+
+-- The ESP32 key, sealed by the PC; the Worker never reads it.
+CREATE TABLE IF NOT EXISTS esp32_key (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  from_device TEXT NOT NULL,
+  msg_id TEXT NOT NULL,
+  ciphertext TEXT NOT NULL,
+  at INTEGER NOT NULL
+);
+
+-- SHA-256 hex of the ESP32 token.
+CREATE TABLE IF NOT EXISTS power_tokens (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  token_hash TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
+-- The pending power command, HMAC'd by the phone with the ESP32 key.
+CREATE TABLE IF NOT EXISTS power_commands (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  cmd TEXT NOT NULL,
+  at INTEGER NOT NULL,
+  exp INTEGER NOT NULL,
+  mac TEXT NOT NULL,
+  taken_at INTEGER
+);
+
+-- The ESP32's last report, HMAC'd by the ESP32.
+CREATE TABLE IF NOT EXISTS power_state (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  pc_ping INTEGER NOT NULL,
+  last_result TEXT NOT NULL,
+  at INTEGER NOT NULL,
+  mac TEXT NOT NULL,
+  last_poll INTEGER NOT NULL
+);
+
+-- FCM registration token of each controller.
+CREATE TABLE IF NOT EXISTS push_tokens (
+  id TEXT PRIMARY KEY,
+  token TEXT NOT NULL,
+  at INTEGER NOT NULL
+);

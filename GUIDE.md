@@ -96,7 +96,7 @@ Monorepo com workspaces npm: o desktop em `apps/desktop/` (pacote `sagyou`; o no
 
 `packages/core` guarda o que desktop e celular fazem igual: tipos, dinheiro, normalização, regras puras e todo o sync, inclusive o motor. Os caminhos antigos do desktop reexportam dele; código novo importa de `@sagyou/core/<módulo>`. ⚠️ **Sem Node no core** (nada de `crypto`, `zlib`, `fs`, `Buffer`, Electron ou React; o ESLint e um teste barram). ⚠️ **Nunca regenere** `packages/core/src/__tests__/fixtures/sync-vectors.json` para um teste passar: ele prova que o formato do sync não mudou. Detalhes no `CLAUDE.md`.
 
-`apps/mobile` é o app Android (Expo). Ele guarda cada registro sincronizado como o próprio payload (`records`) e edita sempre o objeto completo, para não apagar campos que o celular não mostra. ⚠️ A chave de sync e o token ficam **só** no `expo-secure-store`. Para verificar, use o Jest do workspace (`npm test -w @sagyou/mobile`), em que `render`/`fireEvent` são assíncronos. Telas usam só os tokens de `theme.ts` e os componentes de `components/` (nada de hex solto), alvo de toque ≥ 48 dp (`MIN_TOUCH`; `a11y.test.tsx` varre as telas), e todo "Desfazer" é uma edição nova pelo `commit` (`revertCompletion` reverte só coluna, ordem e conclusão). A tag `mobile-vX.Y.Z` gera um Release rascunho com o APK (`--latest=false`, só por organização); o app consulta os releases `mobile-v*` publicados a cada 24 h (`src/update/check.ts`, `src/store/update.ts`) e abre o APK no navegador. O desktop escolhe o maior `vX.Y.Z` publicado (`DesktopReleaseProvider`), nunca o Latest. Versão por app em SemVer (`docs/workflow.md`). Detalhes no `CLAUDE.md`.
+`apps/mobile` é o app Android (Expo). Ele guarda cada registro sincronizado como o próprio payload (`records`) e edita sempre o objeto completo, para não apagar campos que o celular não mostra. ⚠️ A chave de sync e o token ficam **só** no `expo-secure-store`. Para verificar, use o Jest do workspace (`npm test -w @sagyou/mobile`), em que `render`/`fireEvent` são assíncronos. Telas usam só os tokens de `theme.ts` e os componentes de `components/` (nada de hex solto), alvo de toque ≥ 48 dp (`MIN_TOUCH`; `a11y.test.tsx` varre as telas), e todo "Desfazer" é uma edição nova pelo `commit` (`revertCompletion` reverte só coluna, ordem e conclusão). A tag `mobile-vX.Y.Z` gera um Release rascunho com o APK (`--latest=false`, só por organização); o app consulta os releases `mobile-v*` publicados a cada 24 h (`src/update/check.ts`, `src/store/update.ts`) e abre o APK no navegador. O desktop escolhe o maior `vX.Y.Z` publicado (`DesktopReleaseProvider`), nunca o Latest. Num celular autorizado pelo PC aparece a aba **PC** (`src/remote/`, `screens/PcScreen.tsx`): a chave do controle fica só no secure store com biometria, e as notificações (FCM) são opcionais. Versão por app em SemVer (`docs/workflow.md`). Detalhes no `CLAUDE.md`.
 
 ```
 src/
@@ -403,6 +403,19 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
     broker provar o segredo desta abertura. Sessões Claude Code do Fleet rodam
     com `--disallowedTools mcp__sagyou-externo`. Nunca logue o token nem o
     hash. Detalhes no `CLAUDE.md`.
+
+21. 🔴 **O controle remoto nunca abre um caminho novo para os dados**
+    (spec `2026-11-03-controle-remoto-app`). Desbloquear pelo celular liga o
+    mesmo `passwordUnlocked` da senha certa e o renderer sai da tela de
+    bloqueio **sem** `loadData`; desligar usa o flush do `update:install` e não
+    desliga se o salvamento falhar. Todo pedido é assinado por um celular
+    autorizado, vale 60 s e tem nonce de uso único guardado em
+    `remote-control.json` (fora do SQLite, do backup e do sync; apagado no wipe);
+    5 recusas seguidas suspendem 15 min. No celular, a chave privada do controle
+    fica só no `expo-secure-store` com biometria. Nunca logue senha, chave,
+    assinatura, token do ESP32, token FCM ou conteúdo de cartão. O protocolo é
+    o `packages/core/src/control/`; o firmware segue `docs/esp32-api.md`.
+    Detalhes no `CLAUDE.md`.
 
 ## Memória — fronteira de confiança
 

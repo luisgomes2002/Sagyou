@@ -46,7 +46,6 @@ import {
   RendererMcpActionBridge,
   type McpWriteRequest
 } from './modules/agent/mcp-write-queue'
-import { parkMcpApproval } from './modules/agent/mcp-approval'
 import {
   MCP_MEMORY_TOOLS,
   autoApprovesPending,
@@ -205,6 +204,25 @@ import {
   verifyPassword,
   type PasswordConfig
 } from './modules/security/security'
+import { createControlClient } from '@sagyou/core/control/client'
+import {
+  esp32Key as remoteEsp32Key,
+  loadRemoteConfig,
+  pcPrivateKey as remotePcPrivateKey,
+  remoteConfigFileName,
+  saveRemoteConfig,
+  type RemoteConfig
+} from './modules/remote/remote-config'
+import { createRemoteService, type RemoteService } from './modules/remote/remote-service'
+import { listCommandLines, matchServers } from './modules/remote/rc-servers'
+import { createShutdown } from './modules/remote/shutdown'
+import {
+  createRemoteCards,
+  disableRemoteControl,
+  registerRemoteHandlers,
+  remoteUnlock,
+  type RemoteStatusView
+} from './handlers/remote'
 import icon from '../../resources/icon.png?asset'
 
 let mainWindow: BrowserWindow | null = null
@@ -222,6 +240,10 @@ let appUpdater: AppUpdater | null = null
 let syncStarted = false
 // Set by the first store:load, which only answers after an unlock.
 let rendererHasData = false
+// The remote control (modules/remote/); created after the sync engine.
+let remoteService: RemoteService | null = null
+// Removing the Sagyou password takes the PC out of the controlled mode (set with the service).
+let disableRemoteForNoPassword: () => void = () => {}
 
 /** Only the app's own renderer may invoke privileged IPC handlers. */
 function assertTrustedRenderer(event: IpcMainInvokeEvent | IpcMainEvent): void {
@@ -757,6 +779,15 @@ function recordRunActivity(request: McpWriteRequest, value: unknown): void {
 }
 
 /** Routes MCP writes through the exact same approval UI as code-agent actions. */
+// Fleet cards also reach the authorized phones; the first answer wins.
+const remoteCards = createRemoteCards({
+  maps: () => [...codeRuns.values()].map((run) => run.pendingApprovals),
+  service: () => remoteService,
+  send: (channel, payload) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload)
+  }
+})
+
 function requestMcpWriteApproval(
   runId: string,
   name: string,
@@ -773,17 +804,22 @@ function requestMcpWriteApproval(
     args,
     resumo: resumo ?? mcpCardResumo(name, args)
   }
-  return parkMcpApproval(run.pendingApprovals, request, (card) =>
-    mainWindow?.webContents.send('ai:code-agent:approve-request', card)
-  ).then((approved) => {
-    // Refusal, closing and timeout all resolve false; only the outcome is logged.
-    log.info('mcp', 'approval', {
-      runId,
-      tool: name,
-      decision: approved ? 'approved' : 'not_approved'
+  return remoteCards
+    .park(
+      run.pendingApprovals,
+      request,
+      (card) => mainWindow?.webContents.send('ai:code-agent:approve-request', card),
+      run.agent
+    )
+    .then((approved) => {
+      // Refusal, closing and timeout all resolve false; only the outcome is logged.
+      log.info('mcp', 'approval', {
+        runId,
+        tool: name,
+        decision: approved ? 'approved' : 'not_approved'
+      })
+      return approved
     })
-    return approved
-  })
 }
 
 const mcpWriteQueue = new McpWriteQueue(
@@ -1648,6 +1684,12 @@ app.whenReady().then(() => {
     }
     passwordConfig = null
     passwordUnlocked = true
+    // The controlled mode needs the password: without it, the PC leaves that mode.
+    try {
+      disableRemoteForNoPassword()
+    } catch (error) {
+      log.warn('remote', 'disable_failed', { msg: errorMessage(error) })
+    }
     refreshTrayMenu()
     return { success: true }
   })
@@ -1912,7 +1954,10 @@ app.whenReady().then(() => {
       app.relaunch()
       app.exit(0)
     },
-    emitStatus: (status) => sendToRenderer('sync:status-changed', status),
+    emitStatus: (status) => {
+      sendToRenderer('sync:status-changed', status)
+      remoteService?.syncStatusChanged(status)
+    },
     // Synced data reaches the renderer only once it loaded the store (after an
     // unlock); before that, the first store:load reads it from the database.
     emitRemoteChanges: (change) => {
@@ -1932,9 +1977,10 @@ app.whenReady().then(() => {
     verifyAppPassword: (password) =>
       !passwordConfigCorrupt &&
       (passwordConfig === null || verifyPassword(passwordConfig, password)),
-    defaultDeviceName: () => hostname().slice(0, 80) || 'Aparelho'
+    defaultDeviceName: () => hostname().slice(0, 80) || 'Aparelho',
+    onRevoked: () => void remoteService?.checkDevices().catch(() => {})
   })
-  registerUpdateHandlers(ipcMain, {
+  const updateInstall = registerUpdateHandlers(ipcMain, {
     updater,
     // Same as before-quit: the renderer must still be there to save their time.
     stopAgentTimers: async () => {
@@ -1959,6 +2005,139 @@ app.whenReady().then(() => {
     },
     log
   })
+  // Remote control (spec docs/specs/2026-11-03-controle-remoto-app.md).
+  {
+    const remoteFile = remoteConfigFileName(is.dev)
+    let remoteConfig: RemoteConfig = loadRemoteConfig(userDataDir, remoteFile)
+    const saveRemote = (config: RemoteConfig): void => {
+      remoteConfig = config
+      try {
+        saveRemoteConfig(userDataDir, remoteFile, config)
+      } catch (error) {
+        log.error('remote', 'config_save_failed', { msg: errorMessage(error) })
+      }
+    }
+    let remoteServers: { name: string; up: boolean }[] = []
+    const execText = async (file: string, args: string[]): Promise<string> =>
+      (await execFileAsync(file, args, { timeout: 15_000, windowsHide: true })).stdout
+    const shutdown = createShutdown({
+      flush: () => managedWindow?.flushForInstall() ?? Promise.resolve(false),
+      // Same as before-quit: the renderer must still be there to save their time.
+      stopRunTimers: async () => {
+        runTimersStoppedForQuit = true
+        await Promise.race([
+          runTaskTimers.stopEverything(),
+          new Promise((resolve) => setTimeout(resolve, 3000))
+        ])
+      },
+      exec: async (file, args) => {
+        await execFileAsync(file, args, { timeout: 15_000, windowsHide: true })
+      },
+      // A failed shutdown or a cancel: the session goes on, give the screen and the X back.
+      restore: () => {
+        runTimersStoppedForQuit = false
+        managedWindow?.abortInstall()
+      },
+      now: () => Date.now()
+    })
+    const client = createControlClient({
+      // Not held by a pending update (unlike sync): the phone is how it gets installed.
+      fetch: (url, init) => fetch(url, init),
+      config: () => {
+        const loaded = loadSyncConfig(userDataDir, syncFile, safeStorage)
+        return loaded.status === 'ok' ? loaded.config : null
+      },
+      deviceId: () => memoryStore.getSyncDeviceId(),
+      now: () => Date.now()
+    })
+    let emitRemote: () => void = () => {}
+    const service = createRemoteService({
+      client,
+      config: () => remoteConfig,
+      save: saveRemote,
+      pcPrivateKey: () => remotePcPrivateKey(remoteConfig, safeStorage),
+      now: () => Date.now(),
+      setTimer: (fn, ms) => setTimeout(fn, ms),
+      clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+      isLocked: () => passwordConfig !== null && isAppLocked(),
+      hasPassword: () => passwordConfig !== null && !passwordConfigCorrupt,
+      verifyPassword: (password) =>
+        !passwordConfigCorrupt &&
+        passwordConfig !== null &&
+        verifyPassword(passwordConfig, password),
+      unlock: () =>
+        remoteUnlock({
+          canUnlock: () =>
+            !passwordConfigCorrupt && passwordConfig !== null && !appLock.isLocking(),
+          setUnlocked: () => {
+            passwordUnlocked = true
+          },
+          refreshTray: refreshTrayMenu,
+          send: (channel) => sendToRenderer(channel, null)
+        }),
+      lock: () => appLock.lock('remote'),
+      shutdown: () => shutdown.start(),
+      // Gives the screen and the X back even when `shutdown /a` fails (restore).
+      abortShutdown: () => shutdown.abort(),
+      shutdownAt: () => shutdown.at(),
+      servers: async () => {
+        remoteServers = matchServers(await listCommandLines(execText), remoteConfig.servers)
+        return remoteServers
+      },
+      pendingCards: () =>
+        [...codeRuns.values()].reduce((n, run) => n + run.pendingApprovals.size, 0),
+      answerCard: (id, approved) => remoteCards.answer(id, approved),
+      devices: async () =>
+        (await engine.devices()).map((d) => ({ id: d.id, revoked: d.revokedAt !== null })),
+      esp32Key: () => remoteEsp32Key(remoteConfig, safeStorage),
+      updateVersion: () => {
+        const status = updater.status()
+        return status.state === 'ready' ? status.version : null
+      },
+      installUpdate: async () => {
+        if (updater.status().state !== 'ready') return 'none'
+        const status = await updateInstall.install()
+        return status.installError ? 'failed' : 'ok'
+      },
+      log,
+      onChange: () => emitRemote()
+    })
+    remoteService = service
+    const syncActive = (): boolean => {
+      const status = engine.status()
+      return ['ok', 'offline', 'update-pending'].includes(status.state) && status.paused === null
+    }
+    const remoteView = registerRemoteHandlers(ipcMain, {
+      service,
+      client,
+      config: () => remoteConfig,
+      save: saveRemote,
+      safe: safeStorage,
+      platform: process.platform,
+      hasPassword: () => passwordConfig !== null && !passwordConfigCorrupt,
+      syncActive,
+      servers: () =>
+        remoteConfig.servers.map(
+          (name) => remoteServers.find((s) => s.name === name) ?? { name, up: false }
+        ),
+      now: () => Date.now(),
+      emitStatus: (status: RemoteStatusView) => sendToRenderer('remote:status-changed', status)
+    })
+    emitRemote = () => sendToRenderer('remote:status-changed', remoteView())
+    disableRemoteForNoPassword = () => {
+      disableRemoteControl({
+        config: () => remoteConfig,
+        save: saveRemote,
+        service,
+        reason: 'password-removed'
+      })
+      emitRemote()
+    }
+    service.syncStatusChanged(engine.status())
+    // Only Windows is controlled; elsewhere the saved switch stays off.
+    if (process.platform === 'win32' && remoteConfig.enabled) service.start()
+  }
+
   ipcMain.handle('backup:open-folder', async () => {
     const dir = join(app.getPath('userData'), 'backups')
     mkdirSync(dir, { recursive: true })
@@ -2579,14 +2758,7 @@ app.whenReady().then(() => {
   // the pending promise is what lets the run continue (or run the denied path).
   // UUIDs are unique, so search across all runs' pendingApprovals maps.
   ipcMain.handle('ai:code-agent:approve-response', (_, id: string, approved: boolean) => {
-    for (const run of codeRuns.values()) {
-      const pending = run.pendingApprovals.get(id)
-      if (pending) {
-        run.pendingApprovals.delete(id)
-        pending.resolve(approved === true)
-        return
-      }
-    }
+    remoteCards.answer(id, approved === true)
   })
   // The renderer's answer to a question card. An empty answer means the user
   // cancelled it; code-agent.ts returns that fact to the model so it can stop or

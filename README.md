@@ -119,6 +119,7 @@ Tudo fica no diretório de dados do app (`userData`):
 | `ai-config.json`         | preferências dos agentes; sem chaves, fora dos backups                    |
 | `password-security.json` | derivação da senha opcional (não a senha em si); fora dos backups         |
 | `desktop-prefs.json`     | bandeja e bloqueio automático deste computador; fora dos backups e do sync |
+| `remote-control.json`    | controle remoto deste PC (celulares autorizados, chaves cifradas); fora dos backups e do sync |
 | `logs/`                  | logs de diagnóstico por dia (14 dias), sem conteúdo seu; fora dos backups |
 
 O Sagyou não envia nada a lugar nenhum por conta própria. Os CLIs de código são programas externos, com a própria conta e política de dados.
@@ -155,6 +156,27 @@ Para parear, no app, em **Configurações → Sincronização**:
 
 Quando a mesma coisa é editada nos dois PCs sem conexão, a versão mais recente vale e a outra aparece em **Conflitos**, com **Usar esta** para trocar. Escolher num aparelho (inclusive manter a versão atual) avisa os outros, e o mesmo conflito fecha sozinho neles na próxima sincronização. Uma dívida editada nos dois lados nunca muda sozinha: ela fica marcada como "conflito: escolha a versão" até você escolher.
 
+### Controle remoto pelo celular
+
+Com a sincronização ativa e a senha do Sagyou configurada, um celular autorizado controla o PC de casa (Windows): ver se ele está **Pronto**, ligar, desligar (com 60 s para cancelar), desbloquear e bloquear o Sagyou, instalar uma atualização e aprovar os cartões das Sessões de código. No PC, ligue **Configurações → Controle remoto**; no celular, **Ajustes → Controlar o PC → Pedir autorização** e confira o código de 6 dígitos nas duas telas. Longe do PC, **Estou longe do PC** autoriza com a senha do Sagyou e o autenticador. A aba **PC** aparece no celular depois da autorização. Os pedidos passam cifrados e assinados pelo seu Worker, valem 60 s e não podem ser repetidos.
+
+Quem já publicou o Worker antes precisa aplicar o `schema.sql` de novo (ele só cria as tabelas novas) e publicar outra vez. Sem isso, o app avisa "Atualize o Worker para usar o controle remoto." e a sincronização continua normal:
+
+```bash
+cd sync-server
+npx wrangler d1 execute sagyou-sync --remote --file schema.sql
+npx wrangler deploy
+```
+
+**Notificações (opcional).** Para o celular receber "PC pronto.", "Aprovação pendente no Sagyou." e "O PC não foi desligado.", crie um projeto no [Firebase](https://console.firebase.google.com/) com um app Android de pacote `com.sagyou.mobile`, e então:
+
+1. Baixe a chave de uma conta de serviço (Configurações do projeto → Contas de serviço → Gerar nova chave privada) e guarde-a no Worker: `npx wrangler secret put FCM_SERVICE_ACCOUNT` (cole o JSON inteiro).
+2. Baixe o `google-services.json` do app Android e cadastre o conteúdo dele como o secret `GOOGLE_SERVICES_JSON` no ambiente `mobile-release` (veja App Android). Gere o APK de novo.
+
+Sem esses dois, tudo funciona, só sem notificações. As notificações levam só esses textos fixos: o conteúdo dos cartões é lido no app, decifrado no celular.
+
+**Ligar o PC desligado** exige um ESP32 na mesma rede, com Wake-on-LAN configurado no PC. Em **Configurações → Controle remoto → Token do ESP32**, gere o token e a chave para o `secrets.h` do firmware. O contrato do firmware está em [`docs/esp32-api.md`](docs/esp32-api.md), e `node sync-server/scripts/esp32-sim.mjs --url … --token … --key …` simula o ESP32 para testar sem o hardware.
+
 ---
 
 ## App Android
@@ -181,6 +203,7 @@ Em **Settings → Environments** do repositório, crie o ambiente **`mobile-rele
 | `ANDROID_KEYSTORE_PASSWORD` | a senha do keystore            |
 | `ANDROID_KEY_ALIAS`         | `sagyou` (o alias usado acima) |
 | `ANDROID_KEY_PASSWORD`      | a senha da chave               |
+| `GOOGLE_SERVICES_JSON`      | opcional: o conteúdo do `google-services.json` do Firebase, para as notificações do controle remoto |
 
 Depois, rode o workflow **Android APK** (aba Actions → Run workflow, ou empurre uma tag `mobile-v*`) e baixe o artefato `sagyou-mobile-apk`. Para instalar, copie o `.apk` para o celular, abra-o e permita a instalação de apps dessa origem quando o Android pedir.
 

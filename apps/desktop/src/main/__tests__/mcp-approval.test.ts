@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   MCP_APPROVAL_TIMEOUT_MS,
   parkMcpApproval,
+  resolveMcpApproval,
   type PendingMcpApproval
 } from '../modules/agent/mcp-approval'
 
@@ -50,5 +51,20 @@ describe('parkMcpApproval', () => {
     pending.get('a1')!.resolve(false)
     await expect(decision).resolves.toBe(false)
     expect(vi.getTimerCount()).toBe(0)
+  })
+})
+
+describe('resolveMcpApproval', () => {
+  it('só a primeira resposta a um id pendente resolve', async () => {
+    const a = new Map<string, PendingMcpApproval<Request>>()
+    const b = new Map<string, PendingMcpApproval<Request>>()
+    const resolve = vi.fn()
+    b.set('c1', { resolve, request: { id: 'c1', resumo: 'x' } })
+    expect(resolveMcpApproval([a, b], 'c1', true)).toBe(true)
+    expect(resolve).toHaveBeenCalledWith(true)
+    expect(b.has('c1')).toBe(false)
+    expect(resolveMcpApproval([a, b], 'c1', false)).toBe(false)
+    expect(resolveMcpApproval([a, b], 'inventado', true)).toBe(false)
+    expect(resolve).toHaveBeenCalledTimes(1)
   })
 })

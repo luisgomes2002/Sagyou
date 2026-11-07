@@ -27,6 +27,7 @@ const SETTINGS_SECTIONS: SettingsSectionId[] = [
   'seguranca',
   'sincronizacao',
   'mcp-externo',
+  'controle-remoto',
   'sistema',
   'sobre'
 ]
@@ -94,5 +95,17 @@ describe('guide content', () => {
   it('finds an article and its chapter by id', () => {
     expect(findArticle('sync-o-que-e')?.chapter.id).toBe('sincronizacao')
     expect(findArticle('nao-existe')).toBeNull()
+  })
+
+  it('controle remoto: assinado, o Worker não lê, e aponta para a seção', () => {
+    const found = findArticle('controle-remoto')
+    expect(found?.article.target).toEqual({ view: 'settings', section: 'controle-remoto' })
+    const text = articleText(found!.article)
+    expect(text).toContain('O comando do ESP32 é assinado')
+    expect(text).toContain('Worker, que não lê os dados')
+    expect(text).not.toMatch(/chat|conversas/i)
+    const troca = articleText(findArticle('sync-trocar-celular')!.article)
+    expect(troca).toContain('Estou longe do PC')
+    expect(troca).toContain('Entrar com código de recuperação')
   })
 })

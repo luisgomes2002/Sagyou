@@ -1,15 +1,19 @@
 import { render, screen } from '@testing-library/react-native'
-import type { ComponentType } from 'react'
+import { type ComponentType, useState } from 'react'
 import { StyleSheet } from 'react-native'
+import { ControlSetupScreen } from '../screens/ControlSetupScreen'
 import { FinanceScreen } from '../screens/FinanceScreen'
 import { HabitsScreen } from '../screens/HabitsScreen'
 import { NotesScreen } from '../screens/NotesScreen'
 import { PairDeviceScreen } from '../screens/PairDeviceScreen'
+import { PcScreen } from '../screens/PcScreen'
+import { RecoverSync } from '../screens/RecoverSync'
 import { SearchScreen } from '../screens/SearchScreen'
 import { SettingsScreen } from '../screens/SettingsScreen'
 import { SyncGuideScreen } from '../screens/SyncGuideScreen'
 import { ProjectBoard, ProjectList, UpcomingList } from '../screens/tasks/TaskLists'
 import type { MobileState } from '../data/state'
+import { useRemote } from '../remote/store'
 import { useApp } from '../store/app'
 import { MIN_TOUCH } from '../theme'
 import { T, project, seedApp, table } from './seed'
@@ -71,6 +75,47 @@ const FULL: Partial<MobileState> = {
   financialProfiles: [{ id: 'personal', name: 'Minhas finanças' }] as never
 }
 
+const PC_NOW = 1_800_000_000_000
+
+/** The PC tab with every kind of control on screen: lock, power, update and a card. */
+function PcSample(): React.JSX.Element {
+  useState(() =>
+    useRemote.setState({
+      authorized: 'yes',
+      view: {
+        state: 'ready',
+        esp32Offline: true,
+        esp32NoAnswer: false,
+        forcedShutdownUntil: null,
+        missing: []
+      },
+      status: {
+        v: 1,
+        at: PC_NOW,
+        locked: true,
+        servers: [],
+        pendingCards: 1,
+        shutdownAt: null,
+        suspendedUntil: null,
+        updateVersion: '1.6.0'
+      },
+      cards: [
+        {
+          id: 'c1',
+          session: 'claude',
+          tool: 'delete_task',
+          resumo: 'Excluir tarefa',
+          expiresAt: PC_NOW + 60_000
+        }
+      ],
+      error: null,
+      connection: null,
+      busy: false
+    })
+  )
+  return <PcScreen now={() => PC_NOW} />
+}
+
 const SCREENS: [string, ComponentType][] = [
   ['Tarefas', () => <ProjectList onOpen={jest.fn()} onUpcoming={jest.fn()} today="2026-11-01" />],
   [
@@ -91,12 +136,21 @@ const SCREENS: [string, ComponentType][] = [
   ['Busca', () => <SearchScreen onOpen={jest.fn()} />],
   ['Ajustes', () => <SettingsScreen />],
   ['Como funciona', () => <SyncGuideScreen />],
-  ['Parear outro aparelho', () => <PairDeviceScreen />]
+  ['Parear outro aparelho', () => <PairDeviceScreen />],
+  ['Controlar o PC', () => <ControlSetupScreen />],
+  ['PC', PcSample],
+  [
+    'Entrar com código de recuperação',
+    () => <RecoverSync busy={false} error={null} onSubmit={jest.fn()} onBack={jest.fn()} />
+  ]
 ]
 
 const INTERACTIVE = ['button', 'checkbox', 'radio', 'tab'] as const
 
 describe('varredura de acessibilidade', () => {
+  // PcSample seeds the remote store; the other screens start from a phone without control.
+  beforeEach(() => useRemote.setState({ authorized: 'none', view: null, status: null, cards: [] }))
+
   it.each(SCREENS)('%s: todo controle tem nome e alvo de 48 dp', async (_, Screen) => {
     seedApp(FULL)
     useApp.setState({ status: SYNCED })

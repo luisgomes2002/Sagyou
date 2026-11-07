@@ -174,10 +174,49 @@ export const SYNC_KEYS_ARTICLE: SyncGuideArticle = {
         ],
         ['O código de recuperação', 'Veja de novo num aparelho pareado.'],
         ['Os códigos reserva', 'Cadastre o autenticador de novo.'],
-        ['A senha de configuração', 'Defina outra com npx wrangler secret put SETUP_TOKEN.']
+        ['A senha de configuração', 'Defina outra com npx wrangler secret put SETUP_TOKEN.'],
+        [
+          'O celular autorizado a controlar o PC',
+          'O código de recuperação, a senha do Worker, um código reserva e a senha do Sagyou (veja Trocar de celular longe de casa).'
+        ]
       ]
     }
   ]
 }
 
-export const SYNC_GUIDE_ARTICLES: SyncGuideArticle[] = [SYNC_BEHAVIOR_ARTICLE, SYNC_KEYS_ARTICLE]
+/** The phone that controls the PC was lost and you are away (spec 2026-11-03-controle-remoto-app). */
+export const SYNC_SWITCH_PHONE_ARTICLE: SyncGuideArticle = {
+  id: 'sync-trocar-celular',
+  title: 'Trocar de celular longe de casa',
+  blocks: [
+    {
+      type: 'p',
+      text: 'Para quando o celular autorizado a controlar o PC foi perdido, roubado ou trocado e você está longe do PC. Antes de precisar, guarde fora do celular: o código de recuperação, a senha de configuração do Worker e os códigos reserva do autenticador. O Google Authenticator perdido junto com o celular só volta se tinha backup na conta Google.'
+    },
+    {
+      type: 'steps',
+      items: [
+        'No celular novo, instale o Sagyou e toque em Entrar com código de recuperação: cole o código de recuperação e digite a senha de configuração do Worker e um código do autenticador ou um código reserva.',
+        'Em Ajustes → Controlar o PC, toque em Estou longe do PC: digite a senha do Sagyou e um código novo do autenticador ou outro código reserva (o anterior já foi usado para entrar), e confirme com a biometria.',
+        'Assim que o Worker confere o código, o celular novo já liga o PC pelo ESP32. Desbloquear, desligar e aprovar cartões esperam o PC ligado conferir a senha do Sagyou.',
+        'Revogue o celular perdido na sincronização, apagando os dados dele (pede o código do autenticador).'
+      ]
+    },
+    {
+      type: 'callout',
+      tone: 'warning',
+      text: 'Os celulares autorizados antes perdem o controle do PC na hora. Senha do Sagyou errada conta para o limite de 5 erros seguidos: depois disso o controle remoto fica suspenso por 15 minutos.'
+    },
+    {
+      type: 'callout',
+      tone: 'tip',
+      text: 'Quem tiver o código de recuperação, a senha do Worker e um código do autenticador consegue ligar o PC; para desbloquear o Sagyou ainda precisa da senha dele.'
+    }
+  ]
+}
+
+export const SYNC_GUIDE_ARTICLES: SyncGuideArticle[] = [
+  SYNC_BEHAVIOR_ARTICLE,
+  SYNC_KEYS_ARTICLE,
+  SYNC_SWITCH_PHONE_ARTICLE
+]

@@ -1,4 +1,4 @@
-export type LockReason = 'idle' | 'system-lock' | 'suspend' | 'manual'
+export type LockReason = 'idle' | 'system-lock' | 'suspend' | 'manual' | 'remote'
 
 /** How long the renderer has to save before main locks anyway. */
 export const LOCK_RENDERER_TIMEOUT_MS = 5_000

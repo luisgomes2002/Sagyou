@@ -197,6 +197,17 @@ export function useCodeAgentRuns(): {
       )
     })
 
+    // 7b. A card closed elsewhere (answered on the phone, expired, run stopped).
+    const offApprovalClosed = window.electronAPI.ai.codeAgent.onApprovalClosed?.((id) => {
+      setRuns((prev) =>
+        prev.map((r) =>
+          r.approvals?.some((a) => a.id === id)
+            ? { ...r, approvals: (r.approvals ?? []).filter((a) => a.id !== id) }
+            : r
+        )
+      )
+    })
+
     // 8. Questions also appear on the run card, not only in the modal, so the
     // user can tell why that agent is paused when several are active.
     const offQuestion = window.electronAPI.ai.codeAgent.onQuestion((question) => {
@@ -236,6 +247,7 @@ export function useCodeAgentRuns(): {
       offExit()
       offAutoChanged()
       offApproveRequest()
+      offApprovalClosed?.()
       offQuestion()
       offHint()
     }

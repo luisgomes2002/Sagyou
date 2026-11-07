@@ -24,6 +24,7 @@ describe('sync chapter', () => {
       ['sync-chaves', 'As chaves da sincronização'],
       ['sync-conflitos', 'Conflitos'],
       ['sync-perdi-aparelho', 'Perdi um aparelho'],
+      ['sync-trocar-celular', 'Trocar de celular longe de casa'],
       ['sync-perdi-todos', 'Perdi todos os aparelhos'],
       ['sync-restaurar-backup', 'Restaurar um backup com a sincronização ligada'],
       ['sync-problemas', 'Problemas comuns']

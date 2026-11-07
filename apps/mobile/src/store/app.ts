@@ -8,6 +8,7 @@ import { useLockState } from '../lock/lockState'
 import type { SyncRuntime } from '../sync/runtime'
 import { useUndo } from './undo'
 import { useUpdate } from './update'
+import { useRemote } from '../remote/store'
 
 export const DISCONNECTED_TEXT = 'Este aparelho foi desconectado da sincronização'
 export const OFFLINE_TEXT = 'Sem conexão: as alterações ficam guardadas'
@@ -101,6 +102,8 @@ export const useApp = create<AppStore>((set, get) => ({
     useUndo.getState().dismiss()
     // A dismissed version from before the wipe must not hide the banner after pairing again.
     useUpdate.getState().reset()
+    // The control keys are deleted by the runtime; this drops what is on screen.
+    useRemote.getState().reset()
     set({
       mode: 'pair',
       state: emptyState(),

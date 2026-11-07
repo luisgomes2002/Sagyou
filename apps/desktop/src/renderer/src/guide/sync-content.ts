@@ -1,4 +1,8 @@
-import { SYNC_BEHAVIOR_ARTICLE, SYNC_KEYS_ARTICLE } from '@sagyou/core/sync/guide'
+import {
+  SYNC_BEHAVIOR_ARTICLE,
+  SYNC_KEYS_ARTICLE,
+  SYNC_SWITCH_PHONE_ARTICLE
+} from '@sagyou/core/sync/guide'
 import type { GuideArticle } from './types'
 
 // Every claim here must match the code (SyncSettings.tsx, RestoreSyncDialog.tsx,
@@ -256,6 +260,8 @@ export const SYNC_ARTICLES: GuideArticle[] = [
     ],
     target: SYNC_SETTINGS
   },
+  // Shared with the phone too; it points at the remote-control screen.
+  { ...SYNC_SWITCH_PHONE_ARTICLE, target: { view: 'settings', section: 'controle-remoto' } },
   {
     id: 'sync-perdi-todos',
     title: 'Perdi todos os aparelhos',

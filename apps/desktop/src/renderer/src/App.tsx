@@ -308,7 +308,16 @@ export default function App() {
 
   // Locked after use: the renderer saves, then shows the password screen over
   // the same in-memory state (terminals included).
-  useAppLock(() => setSecurityState('locked'))
+  // A right password or the authorized phone: the same way back to the app.
+  const finishUnlock = (): void => {
+    setDataLocked(false)
+    setSecurityState('unlocked')
+    if (reloadPendingRef.current) {
+      reloadPendingRef.current = false
+      void loadData()
+    }
+  }
+  useAppLock(() => setSecurityState('locked'), finishUnlock)
 
   useLoadOnFirstUnlock(securityState === 'unlocked', loadData)
 
@@ -660,14 +669,7 @@ export default function App() {
       <UnlockScreen
         userName={unlockUserName}
         corrupt={passwordConfigCorrupt}
-        onUnlocked={() => {
-          setDataLocked(false)
-          setSecurityState('unlocked')
-          if (reloadPendingRef.current) {
-            reloadPendingRef.current = false
-            void loadData()
-          }
-        }}
+        onUnlocked={finishUnlock}
       />
     )
   }

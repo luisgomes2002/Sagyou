@@ -1,10 +1,13 @@
-import { fireEvent, render, screen } from '@testing-library/react-native'
+import { act, fireEvent, render, screen } from '@testing-library/react-native'
+import * as Notifications from 'expo-notifications'
 import { Text } from 'react-native'
 import * as RN from 'react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { AppShell, TAB_LABELS } from '../App'
 import { StatusBanner } from '../components/StatusBanner'
 import { LockGate, type LockDeps } from '../lock/LockGate'
+import { useRemote } from '../remote/store'
+import { LOADING_TEXT } from '../screens/PcScreen'
 import { LOCKED_TITLE } from '../lock/texts'
 import { PAIR_TITLE } from '../screens/PairScreen'
 import { DISCONNECTED_TEXT, OFFLINE_TEXT, useApp } from '../store/app'
@@ -61,6 +64,115 @@ describe('App', () => {
     )
     expect(TAB_LABELS).toEqual(['Tarefas', 'Hábitos', 'Finanças', 'Notas', 'Busca'])
     for (const label of TAB_LABELS) expect(screen.getAllByText(label).length).toBeGreaterThan(0)
+  })
+
+  it('a aba PC só aparece num celular autorizado que pode enviar', async () => {
+    const polling = { startPolling: jest.fn(), stopPolling: jest.fn() }
+    const cases: [string, 'none' | 'pending' | 'yes', boolean, boolean][] = [
+      ['sem autorização', 'none', false, false],
+      ['pendente', 'pending', false, false],
+      ['autorizado', 'yes', false, true],
+      ['autorizado, só leitura', 'yes', true, false]
+    ]
+    for (const [name, authorized, readOnly, shown] of cases) {
+      seedApp({}, { readOnly })
+      useRemote.setState({ authorized, view: null, status: null, cards: [], ...polling })
+      const view = await render(
+        <SafeAreaProvider>
+          <AppShell mode="app" />
+        </SafeAreaProvider>
+      )
+      expect([name, screen.queryByTestId('tab-PC') !== null]).toEqual([name, shown])
+      await view.unmount()
+    }
+    useRemote.setState({ authorized: 'none' })
+  })
+
+  it('tocar na notificação do PC abre a aba PC e o token vai para o Worker', async () => {
+    const putPushToken = jest.fn(async () => undefined)
+    jest.mocked(Notifications.getPermissionsAsync).mockResolvedValueOnce({ granted: true } as never)
+    jest
+      .mocked(Notifications.getDevicePushTokenAsync)
+      .mockResolvedValueOnce({ type: 'android', data: 'fcm-token' } as never)
+    jest.mocked(Notifications.getLastNotificationResponseAsync).mockResolvedValueOnce({
+      notification: { request: { content: { data: { open: 'pc' } } } }
+    } as never)
+    seedApp({ projects: [project('p1', 'Sagyou')] })
+    useRemote.setState({
+      authorized: 'yes',
+      view: null,
+      status: null,
+      cards: [],
+      connection: null,
+      startPolling: jest.fn(),
+      stopPolling: jest.fn(),
+      putPushToken
+    })
+    await render(
+      <SafeAreaProvider>
+        <AppShell mode="app" />
+      </SafeAreaProvider>
+    )
+    expect(await screen.findByText(LOADING_TEXT)).toBeTruthy()
+    expect(putPushToken).toHaveBeenCalledWith('fcm-token')
+    useRemote.setState({ authorized: 'none' })
+  })
+
+  it('a mesma notificação já tratada não reabre a aba PC ao montar de novo', async () => {
+    const tap = {
+      notification: {
+        request: { identifier: 'app-test-tap-1', content: { data: { open: 'pc' } } }
+      }
+    }
+    seedApp({ projects: [project('p1', 'Sagyou')] })
+    useRemote.setState({
+      authorized: 'yes',
+      view: null,
+      status: null,
+      cards: [],
+      connection: null,
+      startPolling: jest.fn(),
+      stopPolling: jest.fn(),
+      putPushToken: jest.fn(async () => undefined)
+    })
+    jest.mocked(Notifications.getLastNotificationResponseAsync).mockResolvedValueOnce(tap as never)
+    const first = await render(
+      <SafeAreaProvider>
+        <AppShell mode="app" />
+      </SafeAreaProvider>
+    )
+    expect(await screen.findByText(LOADING_TEXT)).toBeTruthy()
+    await first.unmount()
+
+    let asked = false
+    jest.mocked(Notifications.getLastNotificationResponseAsync).mockImplementationOnce(async () => {
+      asked = true
+      return tap as never
+    })
+    await render(
+      <SafeAreaProvider>
+        <AppShell mode="app" />
+      </SafeAreaProvider>
+    )
+    await act(async () => undefined)
+    expect(asked).toBe(true)
+    expect(screen.queryByText(LOADING_TEXT)).toBeNull()
+    useRemote.setState({ authorized: 'none' })
+  })
+
+  it('sem autorização, nem token nem navegação pela notificação', async () => {
+    const putPushToken = jest.fn(async () => undefined)
+    jest.mocked(Notifications.getLastNotificationResponseAsync).mockClear()
+    seedApp({ projects: [project('p1', 'Sagyou')] })
+    useRemote.setState({ authorized: 'none', putPushToken })
+    await render(
+      <SafeAreaProvider>
+        <AppShell mode="app" />
+      </SafeAreaProvider>
+    )
+    expect(Notifications.getLastNotificationResponseAsync).not.toHaveBeenCalled()
+    expect(putPushToken).not.toHaveBeenCalled()
+    expect(screen.queryByText(LOADING_TEXT)).toBeNull()
   })
 
   it('cada aba tem ícone e o header abre Ajustes pela engrenagem', async () => {

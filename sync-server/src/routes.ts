@@ -6,6 +6,12 @@
 // revoked token gets 401 `{revoked: true, wipe}`. Only Web APIs are used
 // (crypto.subtle, Request/Response), so this runs both on Workers and Node.
 import type { AuthRow, DeviceRow, SyncDb } from './db'
+import {
+  handleControl,
+  isMissingTable,
+  type ControlDeps,
+  type ControlHelpers
+} from './control-routes'
 
 export const MAX_BODY_BYTES = 2 * 1024 * 1024
 export const INVITE_TTL_MS = 10 * 60 * 1000
@@ -19,7 +25,7 @@ export const MAX_SNAPSHOT_PART_CHARS = 1_500_000
 /** `last_seen` is rewritten at most once a minute per device. */
 const TOUCH_EVERY_MS = 60 * 1000
 
-export interface RouteDeps {
+export interface RouteDeps extends ControlDeps {
   db: SyncDb
   /** `env.SETUP_TOKEN`; when absent or empty, /setup refuses everyone. */
   setupToken: string | undefined
@@ -255,9 +261,12 @@ async function requireFactor(request: Request, deps: RouteDeps, auth: AuthRow): 
 
 // ---- Body reading -------------------------------------------------------------
 
-async function readJson(request: Request): Promise<Record<string, unknown>> {
+async function readJson(
+  request: Request,
+  max: number = MAX_BODY_BYTES
+): Promise<Record<string, unknown>> {
   const declared = request.headers.get('content-length')
-  if (declared !== null && Number(declared) > MAX_BODY_BYTES) {
+  if (declared !== null && Number(declared) > max) {
     throw new HttpError(413, { error: 'body too large' })
   }
   const chunks: Uint8Array[] = []
@@ -268,7 +277,7 @@ async function readJson(request: Request): Promise<Record<string, unknown>> {
       const { done, value } = await reader.read()
       if (done) break
       total += value.byteLength
-      if (total > MAX_BODY_BYTES) {
+      if (total > max) {
         await reader.cancel().catch(() => undefined)
         throw new HttpError(413, { error: 'body too large' })
       }
@@ -477,6 +486,13 @@ async function revokeRoute(request: Request, id: string, deps: RouteDeps): Promi
   if (!(await deps.db.revokeDevice(id, body.wipe, deps.now()))) {
     throw new HttpError(404, { error: 'not found' })
   }
+  // A revoked device also loses its remote-control role and push token. A D1
+  // without the control tables has nothing to forget.
+  try {
+    await deps.control?.forgetDevice(id)
+  } catch (err) {
+    if (!isMissingTable(err)) throw err
+  }
   await deps.db.pruneCoveredChanges()
   return reply(200, { ok: true })
 }
@@ -596,6 +612,29 @@ async function snapshotPartGet(
   return reply(200, { ciphertext })
 }
 
+function controlHelpers(deps: RouteDeps): ControlHelpers {
+  return {
+    fail: (status, body) => new HttpError(status, body),
+    reply,
+    readJson,
+    authenticate: (request) => authenticate(request, deps),
+    listDevices: () => deps.db.listDevices(),
+    requireProof: async (request) => {
+      const auth = await deps.db.getAuth()
+      if (!auth) throw new HttpError(401, { error: 'unauthorized' })
+      await requireProof(request, deps, auth)
+    },
+    requireProofAndFactor: async (request) => {
+      const auth = await deps.db.getAuth()
+      if (!auth) throw new HttpError(401, { error: 'unauthorized' })
+      await requireProof(request, deps, auth)
+      await requireFactor(request, deps, auth)
+    },
+    sha256Hex,
+    newToken: newDeviceToken
+  }
+}
+
 type Handler = (request: Request, url: URL, deps: RouteDeps, params: string[]) => Promise<Response>
 
 const ROUTES: { pattern: RegExp; methods: Record<string, Handler> }[] = [
@@ -623,6 +662,8 @@ const ROUTES: { pattern: RegExp; methods: Record<string, Handler> }[] = [
 export async function handle(request: Request, deps: RouteDeps): Promise<Response> {
   try {
     const url = new URL(request.url)
+    const control = await handleControl(request, url, deps, controlHelpers(deps))
+    if (control) return control
     for (const route of ROUTES) {
       const match = route.pattern.exec(url.pathname)
       if (!match) continue
