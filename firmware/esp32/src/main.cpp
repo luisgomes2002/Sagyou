@@ -19,6 +19,13 @@ static bool clockReady() { return time(nullptr) > VALID_AFTER; }
 
 static void connectWifi() {
   WiFi.mode(WIFI_STA);
+#ifdef ESP32_IP
+  // Fixed address: the PC's firewall accepts the ESP32 by it.
+  if (!WiFi.config(IPAddress(ESP32_IP), IPAddress(GATEWAY_IP), IPAddress(SUBNET_MASK),
+                   IPAddress(DNS_IP))) {
+    Serial.println("Não foi possível fixar o IP; seguindo pelo DHCP.");
+  }
+#endif
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.printf("Conectando em \"%s\"", WIFI_SSID);
   while (WiFi.status() != WL_CONNECTED) {
