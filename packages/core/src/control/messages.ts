@@ -25,6 +25,8 @@ export type ControlKind =
   | 'status'
   | 'pc-key'
   | 'install-update'
+  | 'cut-access'
+  | 'restore-access'
 
 const MINUTE = 60_000
 
@@ -45,7 +47,9 @@ export const MAX_TTL_MS: Record<ControlKind, number> = {
   result: 10 * MINUTE,
   status: 2 * MINUTE,
   'pc-key': 10 * MINUTE,
-  'install-update': MINUTE
+  'install-update': MINUTE,
+  'cut-access': MINUTE,
+  'restore-access': MINUTE
 }
 
 /** A request may come from a clock up to 30 s ahead, and may arrive 30 s after it expired. */
@@ -139,6 +143,11 @@ export interface PcStatus {
   suspendedUntil: number | null
   /** A downloaded Sagyou version waiting to be installed (absent in older PCs: null). */
   updateVersion: string | null
+  /**
+   * When the phone's "Cortar acesso" took effect (ms), or null. Optional in the
+   * type so callers built before it keep compiling; parsePcStatus always sets it.
+   */
+  accessCutAt?: number | null
 }
 
 const nullableTime = (v: unknown): v is number | null => v === null || Number.isSafeInteger(v)
@@ -166,6 +175,8 @@ export function parsePcStatus(body: unknown): PcStatus | null {
     pendingCards: b.pendingCards as number,
     shutdownAt: b.shutdownAt,
     suspendedUntil: b.suspendedUntil,
-    updateVersion
+    updateVersion,
+    // Absent from a PC built before "Cortar acesso": not cut.
+    accessCutAt: Number.isSafeInteger(b.accessCutAt) ? (b.accessCutAt as number) : null
   }
 }

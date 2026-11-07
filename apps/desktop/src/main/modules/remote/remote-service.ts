@@ -97,6 +97,14 @@ export interface RemoteServiceDeps {
   updateVersion: () => string | null
   /** The same path as update:install: stop run timers, save, restart in the new version. */
   installUpdate: () => Promise<'ok' | 'none' | 'failed'>
+  /**
+   * "Cortar acesso" was just accepted (accessCutAt is already saved): refuse the
+   * external token's queue and cards, start ending the Remote Control servers,
+   * lock the Sagyou (spec 2026-11-07-endurecer-acesso-remoto).
+   */
+  onAccessCut: () => void
+  /** "Restaurar acesso" was just accepted (accessCutAt is already null). */
+  onAccessRestored: () => void
   log: Pick<Logger, 'info' | 'warn'>
   /** After a cycle that changed what the settings screen shows. */
   onChange?: () => void
@@ -437,6 +445,22 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
         log.info('remote', 'abort_shutdown', { result: 'ok' })
         return reply(from, env.nonce, true)
       }
+      case 'restore-access': {
+        // Only through the Worker's restore route, which checked the second
+        // factor: the phone's signature alone does not lift a cut.
+        if (msg.factor !== true) {
+          refused(now, 'factor')
+          return reply(from, env.nonce, false, { reason: 'factor' })
+        }
+        if (until !== null) return reply(from, env.nonce, false, { reason: 'suspended', until })
+        accepted()
+        if (cfg().accessCutAt !== null) {
+          update((c) => ({ ...c, accessCutAt: null }))
+          deps.onAccessRestored()
+        }
+        log.info('remote', 'restore', { result: 'ok' })
+        return reply(from, env.nonce, true)
+      }
       case 'approval-answer': {
         const body = parseApprovalAnswer(env.body)
         if (!body) {
@@ -455,9 +479,43 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
     }
   }
 
+  /**
+   * "Cortar acesso" never counts toward the suspension and is never barred by
+   * it: otherwise whoever holds a phone could send bad requests to keep the
+   * real one from cutting. An invalid one is just ignored.
+   */
+  async function cutAccess(msg: InboxMessage, now: number): Promise<void> {
+    const { from, env } = msg
+    const ctrl = controllers().find((c) => c.id === from)
+    if (!ctrl) {
+      ignored('unknown-controller')
+      return reply(from, env.nonce, false, { reason: 'unknown-controller' })
+    }
+    let key: Uint8Array
+    try {
+      key = fromBase64(ctrl.publicKey)
+    } catch {
+      ignored('signature')
+      return reply(from, env.nonce, false, { reason: 'signature' })
+    }
+    const check = checkEnvelope(env, key, now, seen(now))
+    if (!check.ok) {
+      ignored(check.reason)
+      return reply(from, env.nonce, false, { reason: check.reason })
+    }
+    markSeen(env, now)
+    if (cfg().accessCutAt === null) {
+      update((c) => ({ ...c, accessCutAt: now }))
+      deps.onAccessCut()
+    }
+    log.info('remote', 'cut', { result: 'ok' })
+    return reply(from, env.nonce, true)
+  }
+
   async function handle(msg: InboxMessage, now: number): Promise<void> {
     if (msg.env.kind === 'authorize-request') return authorizeRequest(msg, now)
     if (msg.env.kind === 'authorize-remote') return authorizeRemote(msg, now)
+    if (msg.env.kind === 'cut-access') return cutAccess(msg, now)
     return controllerRequest(msg, now)
   }
 
@@ -473,7 +531,8 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
       pendingCards: deps.pendingCards(),
       shutdownAt: deps.shutdownAt(),
       suspendedUntil: suspendedUntil(now),
-      updateVersion: deps.updateVersion()
+      updateVersion: deps.updateVersion(),
+      accessCutAt: cfg().accessCutAt
     }
     const env = sign('status', status, STATUS_TTL_MS)
     await client.putStatus(env)

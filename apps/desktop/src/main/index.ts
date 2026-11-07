@@ -131,6 +131,7 @@ import {
   type McpExternalStore
 } from './modules/agent/mcp-external'
 import {
+  EXTERNAL_CUT_MESSAGE,
   EXTERNAL_RUN_ID,
   externalApproval,
   tracksRunState
@@ -215,7 +216,11 @@ import {
   type RemoteConfig
 } from './modules/remote/remote-config'
 import { createRemoteService, type RemoteService } from './modules/remote/remote-service'
-import { listCommandLines, matchServers } from './modules/remote/rc-servers'
+import {
+  killRemoteControlServers,
+  listCommandLines,
+  matchServers
+} from './modules/remote/rc-servers'
 import { createShutdown } from './modules/remote/shutdown'
 import {
   createRemoteCards,
@@ -702,9 +707,13 @@ function isMcpRunLive(runId: string): boolean {
   return Boolean(run && !run.abort && !(run.interactive && !run.externalChild))
 }
 
-/** The phone's "Cortar acesso" holds (Task 6 stores it; until then never). */
+/** Read from remote-control.json once the remote control block runs (whenReady). */
+let remoteAccessCutAt: () => number | null = () => null
+const REMOTE_KILL_EVERY_MS = 30_000
+
+/** The phone's "Cortar acesso" holds: the external token is suspended. */
 function externalAccessCut(): boolean {
-  return false
+  return remoteAccessCutAt() !== null
 }
 
 /** Why an external call may not run now (cut, locking, locked), or null. */
@@ -2088,10 +2097,29 @@ app.whenReady().then(() => {
         const status = await updateInstall.install()
         return status.installError ? 'failed' : 'ok'
       },
+      onAccessCut: () => {
+        mcpWriteQueue.rejectQueued(EXTERNAL_RUN_ID, EXTERNAL_CUT_MESSAGE)
+        externalCards.denyAll()
+        appLock.lock('remote')
+        void killServersWhileCut()
+        emitRemote()
+      },
+      onAccessRestored: () => emitRemote(),
       log,
       onChange: () => emitRemote()
     })
     remoteService = service
+    remoteAccessCutAt = () => remoteConfig.accessCutAt
+    // While the access is cut, every Remote Control server is ended again every
+    // 30 s, whether the controlled mode, the sync or the heartbeat are running:
+    // the logon task restarts a server that dies (spec 2026-11-07, decision 2).
+    const killServersWhileCut = async (): Promise<void> => {
+      if (remoteConfig.accessCutAt === null) return
+      const count = await killRemoteControlServers(execText)
+      if (count > 0) log.info('remote', 'rc_killed', { count })
+    }
+    setInterval(() => void killServersWhileCut(), REMOTE_KILL_EVERY_MS).unref?.()
+    void killServersWhileCut()
     const syncActive = (): boolean => {
       const status = engine.status()
       return ['ok', 'offline', 'update-pending'].includes(status.state) && status.paused === null

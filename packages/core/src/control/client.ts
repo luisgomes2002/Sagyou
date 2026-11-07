@@ -41,6 +41,11 @@ export interface InboxMessage {
   from: string
   msgId: string
   env: SignedEnvelope
+  /**
+   * The Worker checked the sender's second factor for this message (only the
+   * restore route sets it). Absent, as from an older Worker, means false.
+   */
+  factor?: boolean
 }
 
 export interface PowerStateReport {
