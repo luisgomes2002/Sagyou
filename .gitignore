@@ -11,6 +11,11 @@ coverage
 # Registro de progresso do workflow de agentes
 .sagyou/
 
+# Firmware do ESP32: o secrets.h tem Wi-Fi, token e chave do ESP32 (o repositório é
+# público). Também o build do PlatformIO. Um teste (firmware-secrets.test.ts) confere.
+firmware/**/secrets.h
+firmware/**/.pio/
+
 # Cópias de recuperação do banco: contêm dados pessoais, nunca versionar
 .recovery-*/
 *.db

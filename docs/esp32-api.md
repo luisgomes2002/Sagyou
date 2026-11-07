@@ -1,7 +1,9 @@
 # Contrato do firmware do ESP32
 
 Como o ESP32 que liga e desliga o PC de casa conversa com o Worker do Sagyou. O firmware
-mora no repositório privado `ESP32-PC-BOOT` (task "Sync 6.6") e deve seguir este documento.
+mora em [`firmware/esp32/`](../firmware/esp32/) (task "Sync 6.6") e deve seguir este
+documento. O repositório é público: o `secrets.h` fica fora do git (`.gitignore` e o teste
+`sync-server/src/__tests__/firmware-secrets.test.ts`).
 Spec: `docs/specs/2026-11-03-controle-remoto-app.md`. Para testar sem o hardware, use o
 simulador `sync-server/scripts/esp32-sim.mjs` (no fim deste documento).
 
