@@ -230,8 +230,7 @@ describe('Sagyou bloqueado ("Ler com o Sagyou bloqueado")', () => {
     isRunLive: () => true,
     isLocked: (runId, kind) =>
       runId === EXTERNAL_RUN_ID
-        ? (externalRefusal({ cut, locked: true, locking: false, allowWhileLocked, kind }) ??
-          false)
+        ? (externalRefusal({ cut, locked: true, locking: false, allowWhileLocked, kind }) ?? false)
         : true
   })
 

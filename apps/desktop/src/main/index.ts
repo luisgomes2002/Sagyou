@@ -724,8 +724,7 @@ function externalCallRefusal(kind: 'read' | 'write'): string | null {
  * an external write that waited past a lock or a cut stops here.
  */
 function isMcpWriteLive(runId: string): boolean {
-  if (runId === EXTERNAL_RUN_ID)
-    return isMcpRunLive(runId) && externalCallRefusal('write') === null
+  if (runId === EXTERNAL_RUN_ID) return isMcpRunLive(runId) && externalCallRefusal('write') === null
   return isMcpRunLive(runId)
 }
 

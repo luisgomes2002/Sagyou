@@ -92,15 +92,15 @@ describe('killRemoteControlServers', () => {
     const exec = vi.fn<ExecText>(async (file) =>
       file.endsWith('powershell.exe') ? '120\r\n4410\r\n' : ''
     )
-    expect(await killRemoteControlServers(exec, 'win32', { SystemRoot: 'D:\Win' })).toBe(2)
+    expect(await killRemoteControlServers(exec, 'win32', { SystemRoot: 'D:\\Win' })).toBe(2)
     const [listCall, ...kills] = exec.mock.calls
-    expect(listCall[0]).toBe('D:\Win\System32\WindowsPowerShell\v1.0\powershell.exe')
+    expect(listCall[0]).toBe('D:\\Win\\System32\\WindowsPowerShell\\v1.0\\powershell.exe')
     // The search excludes its own PowerShell, so it never kills itself.
     expect(listCall[1].join(' ')).toContain('$PID')
     expect(listCall[1].join(' ')).toContain('remote-control')
     expect(kills).toEqual([
-      ['D:\Win\System32\taskkill.exe', ['/PID', '120', '/T', '/F']],
-      ['D:\Win\System32\taskkill.exe', ['/PID', '4410', '/T', '/F']]
+      ['D:\\Win\\System32\\taskkill.exe', ['/PID', '120', '/T', '/F']],
+      ['D:\\Win\\System32\\taskkill.exe', ['/PID', '4410', '/T', '/F']]
     ])
   })
 
@@ -109,7 +109,7 @@ describe('killRemoteControlServers', () => {
       file.endsWith('powershell.exe') ? '12a\r\n\r\n-3\r\n77\r\n' : ''
     )
     expect(await killRemoteControlServers(exec, 'win32', {})).toBe(1)
-    expect(exec).toHaveBeenLastCalledWith('C:\Windows\System32\taskkill.exe', [
+    expect(exec).toHaveBeenLastCalledWith('C:\\Windows\\System32\\taskkill.exe', [
       '/PID',
       '77',
       '/T',

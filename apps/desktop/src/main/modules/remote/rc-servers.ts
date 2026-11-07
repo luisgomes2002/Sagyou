@@ -58,3 +58,50 @@ export async function listCommandLines(
     return []
   }
 }
+
+// Every Remote Control process, the logon task's parent shell included, but
+// never the PowerShell running this search.
+const KILL_SCAN_SCRIPT =
+  "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'remote-control' -and $_.ProcessId -ne $PID } | Select-Object -ExpandProperty ProcessId"
+
+/**
+ * "Cortar acesso" (spec docs/specs/2026-11-07-endurecer-acesso-remoto.md): ends
+ * every `claude remote-control` with its process tree, through the System32
+ * taskkill (never one found on PATH). Returns how many were ended; 0 off
+ * Windows or when the search fails. A process that is already gone is skipped.
+ */
+export async function killRemoteControlServers(
+  exec: ExecText,
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env
+): Promise<number> {
+  if (platform !== 'win32') return 0
+  let pids: string[]
+  try {
+    const powershell = systemExe(win32.join('WindowsPowerShell', 'v1.0', 'powershell.exe'), env)
+    const out = await exec(powershell, [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      KILL_SCAN_SCRIPT
+    ])
+    pids = out
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => /^\d+$/.test(l))
+  } catch {
+    log.warn('remote', 'rc_kill_failed')
+    return 0
+  }
+  const taskkill = systemExe('taskkill.exe', env)
+  let killed = 0
+  for (const pid of pids) {
+    try {
+      await exec(taskkill, ['/PID', pid, '/T', '/F'])
+      killed += 1
+    } catch {
+      // Ended between the search and the kill, or a child of one already killed.
+    }
+  }
+  return killed
+}

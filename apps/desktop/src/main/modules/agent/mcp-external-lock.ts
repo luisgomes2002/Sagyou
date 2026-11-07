@@ -29,6 +29,8 @@ export function externalRefusal(state: {
  * let the external token's `store:save` through the lock is gone, so no
  * renderer save ever happens on the password screen.
  */
-export function dataIpcAllowed(unlocked: boolean, _channel: string): boolean {
+export function dataIpcAllowed(unlocked: boolean, channel: string): boolean {
+  // The channel no longer matters; it stays so a future exception is named here.
+  void channel
   return unlocked
 }
