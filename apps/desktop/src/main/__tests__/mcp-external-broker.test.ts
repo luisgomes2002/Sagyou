@@ -11,8 +11,12 @@ import { join } from 'path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CODE_EXECUTOR_MCP_PERMISSIONS } from '../modules/agent/agent-mcp-session'
 import { createMcpExternalStore } from '../modules/agent/mcp-external'
-import { EXTERNAL_RUN_ID } from '../modules/agent/mcp-external-policy'
-import { externalBlockedByLock } from '../modules/agent/mcp-external-lock'
+import {
+  EXTERNAL_CUT_MESSAGE,
+  EXTERNAL_LOCKED_WRITE_MESSAGE,
+  EXTERNAL_RUN_ID
+} from '../modules/agent/mcp-external-policy'
+import { externalRefusal } from '../modules/agent/mcp-external-lock'
 import { MCP_APPROVAL_REQUIRED } from '../modules/agent/mcp-write-tools'
 import {
   EXTERNAL_PERMISSIONS,
@@ -217,28 +221,47 @@ describe('broker com o token externo', () => {
   })
 })
 
-describe('Sagyou bloqueado ("Funcionar com o Sagyou bloqueado")', () => {
+describe('Sagyou bloqueado ("Ler com o Sagyou bloqueado")', () => {
   // What index.ts wires: the external token follows its option, Fleet runs the lock.
   const lockedDeps = (
-    allowWhileLocked: boolean
+    allowWhileLocked: boolean,
+    cut = false
   ): Pick<McpBrokerDeps, 'isRunLive' | 'isLocked'> => ({
     isRunLive: () => true,
-    isLocked: (runId) =>
+    isLocked: (runId, kind) =>
       runId === EXTERNAL_RUN_ID
-        ? externalBlockedByLock({ locked: true, locking: false, allowWhileLocked })
+        ? (externalRefusal({ cut, locked: true, locking: false, allowWhileLocked, kind }) ??
+          false)
         : true
   })
 
-  it('com a opção, o token externo lê e escreve com o app bloqueado', async () => {
+  it('com a opção, o token externo lê mas não escreve com o app bloqueado', async () => {
     const write = vi.fn<NonNullable<McpBrokerDeps['write']>>(async () => ({ ok: true, id: 'x' }))
+    const createTask = vi.fn(async () => ({ ok: true }))
     const broker = await brokerWith(() => externalSessionFor(), {
       ...lockedDeps(true),
       listProjects: () => [{ id: 'p1' }],
-      write
+      write,
+      createTask
     })
     expect(errorOf(await call(broker.port(), 'ok', 'list_projects'))).toBe('')
-    expect(errorOf(await call(broker.port(), 'ok', 'update_task', { id: 't1' }))).toBe('')
-    expect(write).toHaveBeenCalled()
+    expect(errorOf(await call(broker.port(), 'ok', 'update_task', { id: 't1' }))).toBe(
+      EXTERNAL_LOCKED_WRITE_MESSAGE
+    )
+    expect(errorOf(await call(broker.port(), 'ok', 'criar_task', { titulo: 'X' }))).toBe(
+      EXTERNAL_LOCKED_WRITE_MESSAGE
+    )
+    expect(write).not.toHaveBeenCalled()
+    expect(createTask).not.toHaveBeenCalled()
+  })
+
+  it('com o acesso cortado, tools/call recusa com o texto do corte, mas tools/list responde', async () => {
+    const broker = await brokerWith(() => externalSessionFor(), {
+      ...lockedDeps(true, true),
+      listProjects: () => [{ id: 'p1' }]
+    })
+    expect(errorOf(await call(broker.port(), 'ok', 'list_projects'))).toBe(EXTERNAL_CUT_MESSAGE)
+    expect((await listTools(broker.port(), 'ok')).length).toBeGreaterThan(0)
   })
 
   it('sem a opção, recebe a mensagem de bloqueio (não "Sessão inválida")', async () => {
