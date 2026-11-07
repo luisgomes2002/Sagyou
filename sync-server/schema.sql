@@ -80,6 +80,13 @@ CREATE TABLE IF NOT EXISTS control_messages (
 );
 CREATE INDEX IF NOT EXISTS control_messages_to ON control_messages (to_device);
 
+-- Messages that passed the second factor on the restore route ("Restaurar
+-- acesso"); the mark leaves with its message.
+CREATE TABLE IF NOT EXISTS control_factor_checked (
+  msg_id TEXT PRIMARY KEY,
+  expires_at INTEGER NOT NULL
+);
+
 -- The PC's last heartbeat, sealed.
 CREATE TABLE IF NOT EXISTS control_status (
   id INTEGER PRIMARY KEY CHECK (id = 1),

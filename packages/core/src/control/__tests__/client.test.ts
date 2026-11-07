@@ -94,7 +94,7 @@ describe('createControlClient', () => {
       }
     }))
     const { messages, dropped } = await client.inbox()
-    expect(messages).toEqual([{ from: PC, msgId: 'm1', env }])
+    expect(messages).toEqual([{ from: PC, msgId: 'm1', env, factor: false }])
     expect(dropped).toBe(1)
   })
 

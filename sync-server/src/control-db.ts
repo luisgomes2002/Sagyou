@@ -17,6 +17,8 @@ export interface MessageRow {
   msgId: string
   ciphertext: string
   expiresAt: number
+  /** The Worker checked the sender's second factor (the restore route). */
+  factor?: boolean
 }
 
 export interface SealedSlot {
@@ -140,7 +142,18 @@ export class D1ControlDb implements ControlDb {
       )
       .bind(m.msgId, m.to, m.from, m.ciphertext, m.expiresAt, m.now, MAX_PENDING_MESSAGES)
       .run()
-    return (res.meta.changes ?? 0) > 0
+    const stored = (res.meta.changes ?? 0) > 0
+    if (stored && m.factor) {
+      await this.db
+        .prepare('DELETE FROM control_factor_checked WHERE expires_at <= ?1')
+        .bind(m.now)
+        .run()
+      await this.db
+        .prepare('INSERT OR REPLACE INTO control_factor_checked (msg_id, expires_at) VALUES (?1, ?2)')
+        .bind(m.msgId, m.expiresAt)
+        .run()
+    }
+    return stored
   }
 
   async takeMessages(to: string, now: number): Promise<MessageRow[]> {
@@ -158,6 +171,15 @@ export class D1ControlDb implements ControlDb {
         expires_at: number
         created_at: number
       }>()
+    // The factor marks leave with their messages.
+    const checked = new Set<string>()
+    for (const r of res.results) {
+      const mark = await this.db
+        .prepare('DELETE FROM control_factor_checked WHERE msg_id = ?1 RETURNING msg_id')
+        .bind(r.msg_id)
+        .all<{ msg_id: string }>()
+      if (mark.results.length > 0) checked.add(r.msg_id)
+    }
     return res.results
       .filter((r) => r.expires_at > now)
       .sort((a, b) => a.created_at - b.created_at)
@@ -166,7 +188,8 @@ export class D1ControlDb implements ControlDb {
         from: r.from_device,
         msgId: r.msg_id,
         ciphertext: r.ciphertext,
-        expiresAt: r.expires_at
+        expiresAt: r.expires_at,
+        ...(checked.has(r.msg_id) ? { factor: true } : {})
       }))
   }
 
@@ -366,12 +389,13 @@ export class MemoryControlDb implements ControlDb {
     return mine
       .filter((x) => x.expiresAt > now)
       .sort((a, b) => a.createdAt - b.createdAt)
-      .map(({ to: rowTo, from, msgId, ciphertext, expiresAt }) => ({
+      .map(({ to: rowTo, from, msgId, ciphertext, expiresAt, factor }) => ({
         to: rowTo,
         from,
         msgId,
         ciphertext,
-        expiresAt
+        expiresAt,
+        ...(factor === true ? { factor: true } : {})
       }))
   }
 
