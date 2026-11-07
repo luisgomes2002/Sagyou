@@ -3,7 +3,12 @@ import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('../modules/logs/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 
-import { listCommandLines, matchServers } from '../modules/remote/rc-servers'
+import {
+  killRemoteControlServers,
+  listCommandLines,
+  matchServers,
+  type ExecText
+} from '../modules/remote/rc-servers'
 
 describe('matchServers', () => {
   it('reconhece o executável nativo com nome entre aspas', () => {
@@ -78,5 +83,60 @@ describe('listCommandLines', () => {
       throw new Error('boom')
     })
     expect(await listCommandLines(exec, 'win32')).toEqual([])
+  })
+})
+
+// Spec 2026-11-07-endurecer-acesso-remoto: "Cortar acesso" ends every server.
+describe('killRemoteControlServers', () => {
+  it('lista os PIDs pelo PowerShell e encerra cada árvore com o taskkill do sistema', async () => {
+    const exec = vi.fn<ExecText>(async (file) =>
+      file.endsWith('powershell.exe') ? '120\r\n4410\r\n' : ''
+    )
+    expect(await killRemoteControlServers(exec, 'win32', { SystemRoot: 'D:\Win' })).toBe(2)
+    const [listCall, ...kills] = exec.mock.calls
+    expect(listCall[0]).toBe('D:\Win\System32\WindowsPowerShell\v1.0\powershell.exe')
+    // The search excludes its own PowerShell, so it never kills itself.
+    expect(listCall[1].join(' ')).toContain('$PID')
+    expect(listCall[1].join(' ')).toContain('remote-control')
+    expect(kills).toEqual([
+      ['D:\Win\System32\taskkill.exe', ['/PID', '120', '/T', '/F']],
+      ['D:\Win\System32\taskkill.exe', ['/PID', '4410', '/T', '/F']]
+    ])
+  })
+
+  it('ignora linhas que não são PIDs', async () => {
+    const exec = vi.fn<ExecText>(async (file) =>
+      file.endsWith('powershell.exe') ? '12a\r\n\r\n-3\r\n77\r\n' : ''
+    )
+    expect(await killRemoteControlServers(exec, 'win32', {})).toBe(1)
+    expect(exec).toHaveBeenLastCalledWith('C:\Windows\System32\taskkill.exe', [
+      '/PID',
+      '77',
+      '/T',
+      '/F'
+    ])
+  })
+
+  it('um taskkill que falha não para os outros e não conta', async () => {
+    const exec = vi.fn<ExecText>(async (file, args) => {
+      if (file.endsWith('powershell.exe')) return '1\r\n2\r\n'
+      if (args[1] === '1') throw new Error('já saiu')
+      return ''
+    })
+    expect(await killRemoteControlServers(exec, 'win32', {})).toBe(1)
+  })
+
+  it('erro na busca = 0, sem taskkill', async () => {
+    const exec = vi.fn<ExecText>(async () => {
+      throw new Error('boom')
+    })
+    expect(await killRemoteControlServers(exec, 'win32', {})).toBe(0)
+    expect(exec).toHaveBeenCalledTimes(1)
+  })
+
+  it('fora do Windows não faz nada', async () => {
+    const exec = vi.fn<ExecText>(async () => '')
+    expect(await killRemoteControlServers(exec, 'linux')).toBe(0)
+    expect(exec).not.toHaveBeenCalled()
   })
 })
