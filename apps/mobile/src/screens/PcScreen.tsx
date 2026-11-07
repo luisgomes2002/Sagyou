@@ -9,9 +9,9 @@ import {
 import { useEffect, useState } from 'react'
 import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { ACTION_ICONS } from '../components/icons'
-import { Button, Card, EmptyState, Screen } from '../components/ui'
+import { Button, Card, EmptyState, Field, Screen } from '../components/ui'
 import { useRemote } from '../remote/store'
-import { cardCountdown } from '../remote/texts'
+import { REMOTE_TEXT, accessCutText, cardCountdown } from '../remote/texts'
 import { FONT, SPACE, useTheme } from '../theme'
 
 export const LOCKED_TEXT = 'Sagyou bloqueado'
@@ -36,6 +36,7 @@ export function PcScreen({ focused = true, now = Date.now }: PcScreenProps): Rea
   const connection = useRemote((s) => s.connection)
   const busy = useRemote((s) => s.busy)
   const [clock, setClock] = useState(now)
+  const [factor, setFactor] = useState('')
 
   useEffect(() => {
     if (!focused) return
@@ -70,6 +71,20 @@ export function PcScreen({ focused = true, now = Date.now }: PcScreenProps): Rea
       { text: 'Cancelar', style: 'cancel' },
       { text: 'Instalar', onPress: () => void remote().installUpdate() }
     ])
+  }
+
+  const confirmCut = (): void => {
+    Alert.alert('Cortar acesso', REMOTE_TEXT.cutConfirm, [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Cortar', style: 'destructive', onPress: () => void remote().cutAccess() }
+    ])
+  }
+
+  const restore = (): void => {
+    const code = factor
+    // The code lives only on this screen, and only until it is sent.
+    setFactor('')
+    void remote().restoreAccess(code)
   }
 
   if (!view)
@@ -192,6 +207,38 @@ export function PcScreen({ focused = true, now = Date.now }: PcScreenProps): Rea
             disabled={busy}
             onPress={() => void remote().abortShutdown()}
           />
+        ) : null}
+
+        {alive && status ? (
+          status.accessCutAt ? (
+            <Card>
+              <Text style={{ color: theme.attention, fontSize: FONT.bodyLg }}>
+                {accessCutText(status.accessCutAt)}
+              </Text>
+              <Field
+                label="Código do autenticador ou reserva"
+                value={factor}
+                onChangeText={setFactor}
+                autoCapitalize="characters"
+                autoCorrect={false}
+              />
+              <Button
+                variant="primary"
+                label="Restaurar acesso"
+                icon={ACTION_ICONS.unlock}
+                disabled={busy || factor.trim() === ''}
+                onPress={restore}
+              />
+            </Card>
+          ) : (
+            <Button
+              variant="danger"
+              label="Cortar acesso"
+              icon={ACTION_ICONS.lock}
+              disabled={busy}
+              onPress={confirmCut}
+            />
+          )
         ) : null}
 
         {alive && status?.updateVersion ? (

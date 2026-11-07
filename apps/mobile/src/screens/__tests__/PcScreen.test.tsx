@@ -5,7 +5,7 @@ import { CONTROL_TEXT, PC_STATE_TEXT } from '@sagyou/core/control/texts'
 import { act, fireEvent, render, screen } from '@testing-library/react-native'
 import { Alert } from 'react-native'
 import { useRemote } from '../../remote/store'
-import { cardCountdown } from '../../remote/texts'
+import { REMOTE_TEXT, accessCutText, cardCountdown } from '../../remote/texts'
 import { CARDS_TITLE, LOADING_TEXT, LOCKED_TEXT, PcScreen, UNLOCKED_TEXT } from '../PcScreen'
 
 const NOW = 1_800_000_000_000
@@ -369,5 +369,50 @@ describe('cardCountdown', () => {
     expect(cardCountdown(299_000)).toBe('4:59')
     expect(cardCountdown(1_001)).toBe('0:02')
     expect(cardCountdown(-5_000)).toBe('0:00')
+  })
+
+  // Spec docs/specs/2026-11-07-endurecer-acesso-remoto.md, item 3.
+  describe('cortar e restaurar acesso', () => {
+    it('com sinal de vida mostra Cortar acesso, que confirma antes de enviar', async () => {
+      const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined)
+      seed({ view: view('ready'), status: status() })
+      await render(<PcScreen now={clock} />)
+      await fireEvent.press(screen.getByRole('button', { name: 'Cortar acesso' }))
+      expect(actions.cutAccess).not.toHaveBeenCalled()
+      const [title, message, buttons] = alert.mock.calls[0]
+      expect(title).toBe('Cortar acesso')
+      expect(message).toBe(REMOTE_TEXT.cutConfirm)
+      expect(REMOTE_TEXT.cutConfirm).toBe(
+        'Cortar o acesso remoto? O Claude externo para de funcionar, os servidores de Remote Control são encerrados e o Sagyou é bloqueado. O PC continua ligado.'
+      )
+      const cut = buttons?.find((b) => b.text === 'Cortar')
+      await act(async () => cut?.onPress?.())
+      expect(actions.cutAccess).toHaveBeenCalledTimes(1)
+      alert.mockRestore()
+    })
+
+    it('sem sinal de vida não mostra Cortar acesso', async () => {
+      seed({ view: view('off') })
+      await render(<PcScreen now={clock} />)
+      expect(screen.queryByRole('button', { name: 'Cortar acesso' })).toBeNull()
+    })
+
+    it('com o acesso cortado: faixa com a hora e Restaurar acesso com o código', async () => {
+      const cutAt = NOW - 60_000
+      seed({ view: view('ready'), status: status({ accessCutAt: cutAt }) })
+      await render(<PcScreen now={clock} />)
+      expect(screen.getByText(accessCutText(cutAt))).toBeTruthy()
+      expect(screen.queryByRole('button', { name: 'Cortar acesso' })).toBeNull()
+      const restore = screen.getByRole('button', { name: 'Restaurar acesso' })
+      expect(restore.props.accessibilityState?.disabled).toBe(true)
+      await fireEvent.changeText(
+        screen.getByLabelText('Código do autenticador ou reserva'),
+        '123456'
+      )
+      await fireEvent.press(screen.getByRole('button', { name: 'Restaurar acesso' }))
+      expect(actions.restoreAccess).toHaveBeenCalledWith('123456')
+      // The code is not kept on screen after it was sent.
+      expect(screen.getByLabelText('Código do autenticador ou reserva').props.value).toBe('')
+    })
   })
 })

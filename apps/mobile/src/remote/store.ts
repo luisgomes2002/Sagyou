@@ -51,6 +51,8 @@ export interface RemoteDeps {
 export const POLL_MS = 5_000
 /** A power command waits this long in the Worker for the ESP32. */
 export const POWER_TTL_MS = 120_000
+/** How long "Cortar acesso" waits for the PC's answer before offering the ESP32. */
+export const CUT_WAIT_MS = 60_000
 
 export interface RemoteStore {
   authorized: AuthorizationState
@@ -80,6 +82,10 @@ export interface RemoteStore {
   unlock(): Promise<void>
   lock(): Promise<void>
   installUpdate(): Promise<void>
+  /** "Cortar acesso": no answer in CUT_WAIT_MS offers the ESP32 shutdown. */
+  cutAccess(): Promise<void>
+  /** "Restaurar acesso": the Worker checks `factor` (6 digits or a backup code). */
+  restoreAccess(factor: string): Promise<void>
   answer(id: string, approved: boolean): Promise<void>
   removeThisPhone(): Promise<void>
   /** Hands this phone's FCM token to the Worker (push.ts decides when). */
@@ -153,6 +159,8 @@ function resultText(result: ResultBody): string {
       return REMOTE_TEXT.noUpdate
     case 'refused':
       return REMOTE_TEXT.refused
+    case 'factor':
+      return REMOTE_TEXT.factor
     default:
       return CONTROL_TEXT.refused
   }
@@ -199,7 +207,7 @@ export const useRemote = create<RemoteStore>((set, get) => {
     set({ busy: false, error: connectionText(error) })
   }
 
-  const run = async (action: () => Promise<void>): Promise<void> => {
+  const run = async (action: () => Promise<unknown>): Promise<void> => {
     if (get().busy) return
     set({ busy: true, error: null })
     try {
@@ -210,12 +218,14 @@ export const useRemote = create<RemoteStore>((set, get) => {
     }
   }
 
-  const sendToPc = async (kind: ControlKind, body: Record<string, unknown>): Promise<void> => {
+  /** Returns the request's nonce, which the PC's result answers. */
+  const sendToPc = async (kind: ControlKind, body: Record<string, unknown>): Promise<string> => {
     const d = need()
     const pc = await pcId()
     const env = await d.keys.sign(kind, body)
     requests.set(env.nonce, kind)
     await d.client.send(pc, env)
+    return env.nonce
   }
 
   const power = async (cmd: PowerCommand): Promise<void> => {
@@ -470,6 +480,37 @@ export const useRemote = create<RemoteStore>((set, get) => {
     unlock: () => run(() => sendToPc('unlock', {})),
     lock: () => run(() => sendToPc('lock', {})),
     installUpdate: () => run(() => sendToPc('install-update', {})),
+
+    cutAccess: () =>
+      run(async () => {
+        const nonce = await sendToPc('cut-access', {})
+        const d = need()
+        // Still unanswered: the PC (or its Sagyou) is not responding.
+        d.setTimer(() => {
+          if (!requests.has(nonce)) return
+          requests.delete(nonce)
+          set({ error: REMOTE_TEXT.cutNoAnswer })
+        }, CUT_WAIT_MS)
+      }),
+
+    restoreAccess: (factor) => {
+      const code = factor.trim()
+      if (!code) {
+        set({ error: REMOTE_TEXT.needFactor })
+        return Promise.resolve()
+      }
+      return run(async () => {
+        const d = need()
+        const env = await d.keys.sign('restore-access', {})
+        requests.set(env.nonce, 'restore-access')
+        try {
+          await d.client.restore({ totp: code }, env)
+        } catch (error) {
+          requests.delete(env.nonce)
+          throw error
+        }
+      })
+    },
 
     answer: (id, approved) =>
       run(async () => {

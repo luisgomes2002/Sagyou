@@ -7,8 +7,21 @@ export const REMOTE_TEXT = {
   locked: 'Muitas tentativas. Tente de novo em 15 minutos.',
   noEsp32Key: 'Este celular ainda não tem a chave do ESP32. Gere-a no PC.',
   noUpdate: 'Não há atualização pronta para instalar.',
-  generic: 'Não foi possível concluir. Tente de novo.'
+  generic: 'Não foi possível concluir. Tente de novo.',
+  // Spec docs/specs/2026-11-07-endurecer-acesso-remoto.md, item 3.
+  cutConfirm:
+    'Cortar o acesso remoto? O Claude externo para de funcionar, os servidores de Remote Control são encerrados e o Sagyou é bloqueado. O PC continua ligado.',
+  cutNoAnswer: 'O PC não respondeu. Forçar o desligamento pelo ESP32?',
+  needFactor: 'Digite o código do autenticador.'
 } as const
+
+/** "Acesso cortado em 14:32." in the phone's local time. */
+export function accessCutText(at: number): string {
+  const d = new Date(at)
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  return `Acesso cortado em ${hh}:${mm}.`
+}
 
 /** "Compare este código com o do PC: 482 913". */
 export function compareText(code: string): string {
