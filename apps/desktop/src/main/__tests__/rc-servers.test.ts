@@ -6,6 +6,7 @@ vi.mock('../modules/logs/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), 
 import {
   killRemoteControlServers,
   listCommandLines,
+  remoteControlTargets,
   matchServers,
   type ExecText
 } from '../modules/remote/rc-servers'
@@ -86,13 +87,74 @@ describe('listCommandLines', () => {
   })
 })
 
+const SELF = 999
+const row = (pid: number, ppid: number, cmd: string): string => `${pid}\t${ppid}\t${cmd}`
+const scan = (...rows: string[]): string => rows.map((r) => `${r}\r\n`).join('')
+
+// Review of PR #48: the cut used to end anything whose command line contained
+// "remote-control" (an editor in a folder named so, a build, a git).
+describe('remoteControlTargets', () => {
+  it('pega o claude remote-control e a shell da tarefa de logon', () => {
+    expect(
+      remoteControlTargets(
+        [
+          row(10, 1, '"C:\\Users\\l\\.local\\bin\\claude.exe" remote-control --name Sagyou'),
+          row(
+            11,
+            1,
+            '"C:\\nodejs\\node.exe" "C:\\npm\\node_modules\\@anthropic-ai\\claude-code\\cli.js" remote-control --name "Murasaki"'
+          ),
+          row(12, 1, 'cmd.exe /c claude remote-control --name Living'),
+          row(13, 1, 'powershell.exe -Command "claude remote-control --name X"')
+        ],
+        SELF
+      )
+    ).toEqual(['10', '11', '12', '13'])
+  })
+
+  it('não pega editor, build ou git numa pasta chamada remote-control', () => {
+    expect(
+      remoteControlTargets(
+        [
+          row(20, 1, '"C:\\VSCode\\Code.exe" E:\\Projetos\\esp32-remote-control'),
+          row(21, 1, 'node E:\\x\\remote-control\\server.js'),
+          row(22, 1, 'git -C E:\\claude\\remote-control status'),
+          row(23, 1, 'notepad.exe remote-control.txt'),
+          row(24, 1, 'node claude-remote-control.js')
+        ],
+        SELF
+      )
+    ).toEqual([])
+  })
+
+  it('nunca pega o próprio Sagyou nem um filho dele', () => {
+    expect(
+      remoteControlTargets(
+        [
+          row(SELF, 1, 'claude remote-control'),
+          row(30, SELF, "powershell.exe -Command claude remote-control 'x'"),
+          row(31, 1, 'claude remote-control --name A')
+        ],
+        SELF
+      )
+    ).toEqual(['31'])
+  })
+
+  it('ignora linhas malformadas', () => {
+    expect(remoteControlTargets(['12a\t1\tclaude remote-control', '', 'x'], SELF)).toEqual([])
+  })
+})
+
 // Spec 2026-11-07-endurecer-acesso-remoto: "Cortar acesso" ends every server.
 describe('killRemoteControlServers', () => {
-  it('lista os PIDs pelo PowerShell e encerra cada árvore com o taskkill do sistema', async () => {
+  it('lista pelo PowerShell e encerra cada árvore com o taskkill do sistema', async () => {
     const exec = vi.fn<ExecText>(async (file) =>
-      file.endsWith('powershell.exe') ? '120\r\n4410\r\n' : ''
+      file.endsWith('powershell.exe')
+        ? scan(row(120, 1, 'claude remote-control --name A'), row(4410, 1, 'claude remote-control'))
+        : ''
     )
-    expect(await killRemoteControlServers(exec, 'win32', { SystemRoot: 'D:\\Win' })).toBe(2)
+    const env = { SystemRoot: 'D:\\Win' }
+    expect(await killRemoteControlServers(exec, 'win32', env, SELF)).toBe(2)
     const [listCall, ...kills] = exec.mock.calls
     expect(listCall[0]).toBe('D:\\Win\\System32\\WindowsPowerShell\\v1.0\\powershell.exe')
     // The search excludes its own PowerShell, so it never kills itself.
@@ -104,11 +166,13 @@ describe('killRemoteControlServers', () => {
     ])
   })
 
-  it('ignora linhas que não são PIDs', async () => {
+  it('só encerra o que é claude remote-control', async () => {
     const exec = vi.fn<ExecText>(async (file) =>
-      file.endsWith('powershell.exe') ? '12a\r\n\r\n-3\r\n77\r\n' : ''
+      file.endsWith('powershell.exe')
+        ? scan(row(5, 1, 'Code.exe E:\\remote-control'), '', row(77, 1, 'claude remote-control'))
+        : ''
     )
-    expect(await killRemoteControlServers(exec, 'win32', {})).toBe(1)
+    expect(await killRemoteControlServers(exec, 'win32', {}, SELF)).toBe(1)
     expect(exec).toHaveBeenLastCalledWith('C:\\Windows\\System32\\taskkill.exe', [
       '/PID',
       '77',
@@ -119,7 +183,8 @@ describe('killRemoteControlServers', () => {
 
   it('um taskkill que falha não para os outros e não conta', async () => {
     const exec = vi.fn<ExecText>(async (file, args) => {
-      if (file.endsWith('powershell.exe')) return '1\r\n2\r\n'
+      if (file.endsWith('powershell.exe'))
+        return scan(row(1, 0, 'claude remote-control'), row(2, 0, 'claude remote-control'))
       if (args[1] === '1') throw new Error('já saiu')
       return ''
     })
