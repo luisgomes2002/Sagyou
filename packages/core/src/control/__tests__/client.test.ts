@@ -94,7 +94,7 @@ describe('createControlClient', () => {
       }
     }))
     const { messages, dropped } = await client.inbox()
-    expect(messages).toEqual([{ from: PC, msgId: 'm1', env }])
+    expect(messages).toEqual([{ from: PC, msgId: 'm1', env, factor: false }])
     expect(dropped).toBe(1)
   })
 
@@ -110,6 +110,39 @@ describe('createControlClient', () => {
     expect(post.init.headers['x-totp-code']).toBe('ABCD-EFGH-IJKL')
     const body = JSON.parse(post.init.body as string)
     expect(() => openControl(ck, ME, PC, body.msgId, body.ciphertext)).not.toThrow()
+  })
+
+  // Spec 2026-11-07-endurecer-acesso-remoto: "Restaurar acesso".
+  it('restore sela para o PC com a prova da chave, o código e prazo de 1 min', async () => {
+    const { client, calls } = setup((c) =>
+      c.url.endsWith('/roles/pc') && c.init.method === 'GET'
+        ? { status: 200, body: { pc: PC } }
+        : { status: 200 }
+    )
+    await client.restore({ totp: '123456' }, env)
+    const post = calls[1]
+    expect(post.url).toBe('https://sync.example.com/control/restore')
+    expect(post.init.headers['x-totp-code']).toBe('123456')
+    expect(post.init.headers['x-key-proof']).toBeTruthy()
+    const body = JSON.parse(post.init.body as string)
+    expect(body.ttlMs).toBe(60_000)
+    expect(() => openControl(ck, ME, PC, body.msgId, body.ciphertext)).not.toThrow()
+  })
+
+  it('inbox: factor vem do Worker; ausente (Worker antigo) é false', async () => {
+    const sealed = (msgId: string): string =>
+      sealControl(ck, PC, ME, msgId, utf8(JSON.stringify(env)))
+    const { client } = setup(() => ({
+      status: 200,
+      body: {
+        messages: [
+          { from: PC, msgId: 'm1', ciphertext: sealed('m1'), factor: true },
+          { from: PC, msgId: 'm2', ciphertext: sealed('m2') }
+        ]
+      }
+    }))
+    const { messages } = await client.inbox()
+    expect(messages.map((m) => m.factor)).toEqual([true, false])
   })
 
   it('a chave do ESP32 vai cifrada e volta igual', async () => {

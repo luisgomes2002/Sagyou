@@ -15,12 +15,17 @@ import {
 } from '@sagyou/core/control/messages'
 import { CONTROL_TEXT } from '@sagyou/core/control/texts'
 import { toBase64 } from '@sagyou/core/sync/bytes'
-import { KEY_PRIVATE, createControllerKeys } from '../keys'
-import { configureRemote, useRemote } from '../store'
-import { REMOTE_TEXT } from '../texts'
+import { KEY_PRIVATE, KEY_REQUESTED, KEY_STATE, createControllerKeys } from '../keys'
+import { CUT_WAIT_MS, configureRemote, useRemote } from '../store'
+import { REMOTE_TEXT, accessCutText } from '../texts'
 import { fakeSecure, type FakeSecure } from './fakes'
 
 const NOW = 1_800_000_000_000
+
+/** Lets a timer's async callback (an inbox read) run to the end. */
+const flush = async (): Promise<void> => {
+  for (let i = 0; i < 50; i++) await Promise.resolve()
+}
 const PC = 'p'.repeat(32)
 
 interface FakePc {
@@ -113,6 +118,53 @@ afterEach(() => {
 })
 
 describe('store do controle remoto', () => {
+  describe('pedido à distância vale 1 h', () => {
+    const waiting = (t: Setup, requestedAt?: number): void => {
+      t.secure.data.set(KEY_STATE, 'waiting-pc')
+      if (requestedAt !== undefined) t.secure.data.set(KEY_REQUESTED, String(requestedAt))
+    }
+
+    it('mais de 1 h esperando o PC: o pedido expirou', async () => {
+      const t = setup()
+      waiting(t, NOW - 3_600_001)
+      await useRemote.getState().init()
+      expect(useRemote.getState()).toMatchObject({
+        authorized: 'waiting-pc',
+        requestExpired: true
+      })
+      expect(REMOTE_TEXT.requestExpired).toBe('O pedido expirou. Ligue o PC e peça de novo.')
+      // "Pedir de novo" gives the request up: back to none, every key deleted.
+      await useRemote.getState().cancelRequest()
+      expect(useRemote.getState()).toMatchObject({ authorized: 'none', requestExpired: false })
+      expect(t.secure.data.size).toBe(0)
+    })
+
+    it('dentro de 1 h o pedido continua esperando', async () => {
+      const t = setup()
+      waiting(t, NOW - 59 * 60_000)
+      await useRemote.getState().init()
+      expect(useRemote.getState().requestExpired).toBe(false)
+    })
+
+    it('pedido de antes da atualização (sem a hora) não mostra o aviso', async () => {
+      const t = setup()
+      waiting(t)
+      await useRemote.getState().init()
+      expect(useRemote.getState()).toMatchObject({
+        authorized: 'waiting-pc',
+        requestExpired: false
+      })
+    })
+
+    it('esquecer o celular apaga a hora do pedido', async () => {
+      const t = setup()
+      await useRemote.getState().requestRemote('senha', '123456')
+      expect(t.secure.data.has(KEY_REQUESTED)).toBe(true)
+      await useRemote.getState().removeThisPhone()
+      expect(t.secure.data.has(KEY_REQUESTED)).toBe(false)
+    })
+  })
+
   it('pedido de autorização: assinado pela chave nova, código igual ao do PC e autorizado', async () => {
     const t = setup()
     await useRemote.getState().requestAuthorization()
@@ -164,7 +216,8 @@ describe('store do controle remoto', () => {
       expect.objectContaining({ kind: 'authorize-remote' })
     )
     const env = jest.mocked(t.pc.client.remoteRole).mock.calls[0][1] as SignedEnvelope
-    expect(env.expiresAt - env.issuedAt).toBe(24 * 60 * 60_000)
+    expect(env.expiresAt - env.issuedAt).toBe(60 * 60_000)
+    expect(t.secure.data.get(KEY_REQUESTED)).toBe(String(NOW))
     expect(useRemote.getState()).toMatchObject({
       authorized: 'waiting-pc',
       notice: CONTROL_TEXT.previousRevoked
@@ -384,5 +437,125 @@ describe('store do controle remoto', () => {
     await useRemote.getState().refresh()
     expect(useRemote.getState()).toMatchObject({ authorized: 'none', error: REMOTE_TEXT.revoked })
     expect(t.secure.data.size).toBe(0)
+  })
+
+  // Spec docs/specs/2026-11-07-endurecer-acesso-remoto.md, item 3.
+  describe('cortar e restaurar acesso', () => {
+    it('cortar manda cut-access assinado ao PC', async () => {
+      const t = setup()
+      await authorize(t)
+      await useRemote.getState().cutAccess()
+      const req = t.pc.sent.at(-1)!
+      expect(req.to).toBe(PC)
+      expect(req.env.kind).toBe('cut-access')
+      const phonePub = new Uint8Array(
+        Buffer.from(String(t.pc.sent[0].env.body.publicKey), 'base64')
+      )
+      expect(checkEnvelope(req.env, phonePub, NOW, () => false)).toEqual({ ok: true })
+    })
+
+    it('sem resposta em 60 s: oferece forçar pelo ESP32', async () => {
+      const t = setup()
+      await authorize(t)
+      jest.useFakeTimers()
+      try {
+        await useRemote.getState().cutAccess()
+        expect(useRemote.getState().error).toBeNull()
+        const reads = jest.mocked(t.pc.client.inbox).mock.calls.length
+        jest.advanceTimersByTime(CUT_WAIT_MS)
+        await flush()
+        // The inbox is read once more before saying the PC did not answer.
+        expect(jest.mocked(t.pc.client.inbox).mock.calls.length).toBeGreaterThan(reads)
+        expect(useRemote.getState()).toMatchObject({
+          error: REMOTE_TEXT.cutNoAnswer,
+          cutUnanswered: true
+        })
+        expect(REMOTE_TEXT.cutNoAnswer).toBe(
+          'O PC não respondeu. Forçar o desligamento pelo ESP32?'
+        )
+        await useRemote.getState().forceShutdown()
+        expect(useRemote.getState().cutUnanswered).toBe(false)
+      } finally {
+        jest.useRealTimers()
+      }
+    })
+
+    // Review of PR #48: with the PC tab out of focus nothing reads the inbox,
+    // so the PC's answer waited in the Worker and the phone said "no answer".
+    it('resposta que ficou no Worker (aba fora de foco) é lida antes do aviso', async () => {
+      const t = setup()
+      await authorize(t)
+      jest.useFakeTimers()
+      try {
+        await useRemote.getState().cutAccess()
+        const req = t.pc.sent.at(-1)!
+        t.pc.queue.push(t.pc.msg('result', { replyTo: req.env.nonce, ok: true }))
+        jest.advanceTimersByTime(CUT_WAIT_MS)
+        await flush()
+        expect(useRemote.getState()).toMatchObject({ error: null, cutUnanswered: false })
+      } finally {
+        jest.useRealTimers()
+      }
+    })
+
+    it('resposta antes de 60 s: sem erro depois do prazo', async () => {
+      const t = setup()
+      await authorize(t)
+      jest.useFakeTimers()
+      try {
+        await useRemote.getState().cutAccess()
+        const req = t.pc.sent.at(-1)!
+        t.pc.queue.push(t.pc.msg('result', { replyTo: req.env.nonce, ok: true }))
+        await useRemote.getState().refresh()
+        jest.advanceTimersByTime(CUT_WAIT_MS)
+        expect(useRemote.getState().error).toBeNull()
+      } finally {
+        jest.useRealTimers()
+      }
+    })
+
+    it('restaurar sem código não envia nada', async () => {
+      const t = setup()
+      await authorize(t)
+      t.pc.client.restore = jest.fn(async () => undefined)
+      await useRemote.getState().restoreAccess('   ')
+      expect(t.pc.client.restore).not.toHaveBeenCalled()
+      expect(useRemote.getState().error).toBe(REMOTE_TEXT.needFactor)
+    })
+
+    it('restaurar manda o código ao Worker com o pedido assinado', async () => {
+      const t = setup()
+      await authorize(t)
+      t.pc.client.restore = jest.fn(async () => undefined)
+      await useRemote.getState().restoreAccess(' 123456 ')
+      expect(t.pc.client.restore).toHaveBeenCalledTimes(1)
+      const [factor, env] = jest.mocked(t.pc.client.restore).mock.calls[0] as unknown as [
+        { totp: string },
+        SignedEnvelope
+      ]
+      expect(factor).toEqual({ totp: '123456' })
+      expect(env.kind).toBe('restore-access')
+    })
+
+    it('código errado e bloqueio do Worker mostram os textos', async () => {
+      const t = setup()
+      await authorize(t)
+      t.pc.client.restore = jest.fn(async () => {
+        throw new ControlError('factor')
+      })
+      await useRemote.getState().restoreAccess('000000')
+      expect(useRemote.getState().error).toBe('Código do autenticador inválido.')
+      t.pc.client.restore = jest.fn(async () => {
+        throw new ControlError('locked')
+      })
+      await useRemote.getState().restoreAccess('000000')
+      expect(useRemote.getState().error).toBe('Muitas tentativas. Tente de novo em 15 minutos.')
+    })
+
+    it('hora do corte em HH:MM', () => {
+      expect(accessCutText(new Date(2026, 10, 7, 9, 5).getTime())).toBe(
+        'Acesso cortado em 09:05.'
+      )
+    })
   })
 })

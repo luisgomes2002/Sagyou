@@ -27,6 +27,18 @@ const textOf = (blocks: SyncGuideBlock[]): string =>
     .join(' ')
 
 describe('guia do sync', () => {
+  // Spec 2026-11-07-endurecer-acesso-remoto, items 3 and 6.
+  it('celular perdido: Cortar acesso; código de pareamento pede o autenticador', () => {
+    const table = SYNC_KEYS_ARTICLE.blocks.find((b) => b.type === 'table')
+    const row =
+      table?.type === 'table' ? table.rows.find((r) => r[0].includes('controlar o PC')) : null
+    expect(row?.[1]).toContain('Cortar acesso')
+    const pair = SYNC_KEYS_ARTICLE.blocks.find(
+      (b) => b.type === 'keyExample' && b.name === 'Código de pareamento / QR'
+    )
+    expect(textOf(pair ? [pair] : [])).toContain('código do autenticador')
+  })
+
   it('tem os dois artigos, nesta ordem', () => {
     expect(SYNC_GUIDE_ARTICLES.map((a) => [a.id, a.title])).toEqual([
       ['sync-comportamento', 'Como a sincronização se comporta'],

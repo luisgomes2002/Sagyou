@@ -20,7 +20,8 @@ const POWER_RESULTS = ['ok', 'mac', 'old', 'clock', 'expired', '']
 
 export const CONTROL_MAX_BODY_BYTES = 64 * 1024
 export const MESSAGE_MAX_TTL_MS = 10 * 60_000
-export const REMOTE_REQUEST_TTL_MS = 24 * 60 * 60_000
+// Spec 2026-11-07, item 9 (was 24 h).
+export const REMOTE_REQUEST_TTL_MS = 60 * 60_000
 export const POWER_COMMAND_MAX_MS = 2 * 60_000
 
 const OPAQUE_ID = /^[0-9a-f]{32}$/
@@ -162,7 +163,7 @@ const removeController: ControlHandler = async (request, params, db, _d, h) => {
 /**
  * A new phone, far from the PC, becomes the only controller: every former one
  * loses the role at once (the old phone is presumably lost). Its request waits
- * up to 24 h for the PC, which still checks the Sagyou password before granting
+ * up to 1 h for the PC, which still checks the Sagyou password before granting
  * unlock, shutdown and approvals.
  */
 const remoteRole: ControlHandler = async (request, _p, db, deps, h) => {
@@ -237,11 +238,55 @@ const send: ControlHandler = async (request, _p, db, deps, h) => {
   return h.reply(200, { ok: true })
 }
 
+/** "Restaurar acesso" lives at most this long in the PC's inbox (its envelope: 1 min). */
+export const RESTORE_MAX_TTL_MS = 60_000
+
+/**
+ * "Restaurar acesso" (spec docs/specs/2026-11-07-endurecer-acesso-remoto.md):
+ * only a controller, only with the key proof and the second factor. The PC
+ * lifts a cut only for a message marked here, and only if the phone also signed it.
+ */
+const restore: ControlHandler = async (request, _p, db, deps, h) => {
+  const me = await h.authenticate(request)
+  await requireRole(db, h, me.id, ['controller'])
+  const body = await h.readJson(request, CONTROL_MAX_BODY_BYTES)
+  const sealed = sealedSlot(h, body)
+  const ttl = body.ttlMs
+  if (
+    typeof ttl !== 'number' ||
+    !Number.isSafeInteger(ttl) ||
+    ttl < 1000 ||
+    ttl > RESTORE_MAX_TTL_MS
+  ) {
+    throw h.fail(400, { error: 'invalid ttlMs' })
+  }
+  const { pc } = await db.getRoles()
+  if (!pc) throw h.fail(409, { error: 'no pc' })
+  await h.requireProofAndFactor(request)
+  const now = deps.now()
+  const stored = await db.putMessage({
+    to: pc,
+    from: me.id,
+    msgId: sealed.msgId,
+    ciphertext: sealed.ciphertext,
+    expiresAt: now + ttl,
+    factor: true,
+    now
+  })
+  if (!stored) throw h.fail(409, { error: 'inbox full' })
+  return h.reply(200, { ok: true })
+}
+
 const inbox: ControlHandler = async (request, _p, db, deps, h) => {
   const me = await h.authenticate(request)
   const rows = await db.takeMessages(me.id, deps.now())
   return h.reply(200, {
-    messages: rows.map((r) => ({ from: r.from, msgId: r.msgId, ciphertext: r.ciphertext }))
+    messages: rows.map((r) => ({
+      from: r.from,
+      msgId: r.msgId,
+      ciphertext: r.ciphertext,
+      factor: r.factor === true
+    }))
   })
 }
 
@@ -355,6 +400,7 @@ export const CONTROL_ROUTES: { pattern: RegExp; methods: Record<string, ControlH
   { pattern: /^\/roles\/controllers\/([0-9a-f]{32})$/, methods: { DELETE: removeController } },
   { pattern: /^\/roles\/remote$/, methods: { POST: remoteRole } },
   { pattern: /^\/control\/send$/, methods: { POST: send } },
+  { pattern: /^\/control\/restore$/, methods: { POST: restore } },
   { pattern: /^\/control\/inbox$/, methods: { GET: inbox } },
   { pattern: /^\/control\/status$/, methods: { GET: getStatus, PUT: putStatus } },
   { pattern: /^\/esp32-key$/, methods: { GET: getEsp32Key, PUT: putEsp32Key } },

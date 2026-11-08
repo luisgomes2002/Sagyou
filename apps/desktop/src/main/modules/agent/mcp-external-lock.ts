@@ -1,46 +1,36 @@
-/**
- * "Funcionar com o Sagyou bloqueado" (spec docs/specs/2026-11-03-acesso-remoto.md):
- * with the option on, the external token keeps reading and writing while the
- * app is on its password screen. Fleet runs never do.
- */
+import { EXTERNAL_CUT_MESSAGE, EXTERNAL_LOCKED_WRITE_MESSAGE } from './mcp-external-policy'
+import { MCP_LOCKED_MESSAGE } from './sagyou-mcp'
 
 /**
- * Whether the lock stops an external call right now. While locking, the
- * renderer is saving on its way to locked: nothing runs, option or not.
+ * What stops an external tools/call right now (spec
+ * docs/specs/2026-11-07-endurecer-acesso-remoto.md), in this order:
+ * 1. the phone cut the access;
+ * 2. the app is locking (the renderer saving on its way to locked);
+ * 3. the app is locked: without "Ler com o Sagyou bloqueado" nothing passes;
+ *    with it, reads pass and writes are refused (they come back after an unlock).
+ * Returns the message the call fails with, or null when it may run.
  */
-export function externalBlockedByLock(state: {
+export function externalRefusal(state: {
+  cut: boolean
   locked: boolean
   locking: boolean
   allowWhileLocked: boolean
-}): boolean {
-  if (state.locking) return true
-  return state.locked && !state.allowWhileLocked
+  kind: 'read' | 'write'
+}): string | null {
+  if (state.cut) return EXTERNAL_CUT_MESSAGE
+  if (state.locking) return MCP_LOCKED_MESSAGE
+  if (!state.locked) return null
+  if (!state.allowWhileLocked) return MCP_LOCKED_MESSAGE
+  return state.kind === 'write' ? EXTERNAL_LOCKED_WRITE_MESSAGE : null
 }
 
 /**
- * The one hole in the locked data IPC: while main is waiting for an external
- * write's apply, the renderer's `store:save` (its flush) is let through.
- * Nothing else is: every other channel, and every save outside that window,
- * still needs the unlock. Each begin() returns its own idempotent end(), so a
- * reply, an error or a timeout can all close it without going negative.
+ * Whether a data IPC channel may run. Locked, none does: the window that once
+ * let the external token's `store:save` through the lock is gone, so no
+ * renderer save ever happens on the password screen.
  */
-export interface LockedSaveGate {
-  begin(): () => void
-  allows(channel: string): boolean
-}
-
-export function createLockedSaveGate(): LockedSaveGate {
-  let open = 0
-  return {
-    begin: () => {
-      open += 1
-      let ended = false
-      return () => {
-        if (ended) return
-        ended = true
-        open -= 1
-      }
-    },
-    allows: (channel) => open > 0 && channel === 'store:save'
-  }
+export function dataIpcAllowed(unlocked: boolean, channel: string): boolean {
+  // The channel no longer matters; it stays so a future exception is named here.
+  void channel
+  return unlocked
 }

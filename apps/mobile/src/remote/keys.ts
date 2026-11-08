@@ -31,8 +31,17 @@ export const KEY_PUBLIC = 'sagyou.control.public'
 export const KEY_PCPUB = 'sagyou.control.pcpub'
 export const KEY_ESP32 = 'sagyou.control.esp32'
 export const KEY_STATE = 'sagyou.control.state'
+/** When "Estou longe do PC" was asked (ms), to tell an expired request. */
+export const KEY_REQUESTED = 'sagyou.control.requested'
 /** Every entry a wipe or "Remover este celular" deletes. */
-export const CONTROL_SECURE_KEYS = [KEY_PRIVATE, KEY_PUBLIC, KEY_PCPUB, KEY_ESP32, KEY_STATE]
+export const CONTROL_SECURE_KEYS = [
+  KEY_PRIVATE,
+  KEY_PUBLIC,
+  KEY_PCPUB,
+  KEY_ESP32,
+  KEY_STATE,
+  KEY_REQUESTED
+]
 
 const AUTH: SecureOptions = {
   requireAuthentication: true,
@@ -93,6 +102,9 @@ export interface ControllerKeys {
   setEsp32Key(key: Uint8Array): Promise<void>
   state(): Promise<AuthorizationState>
   setState(state: AuthorizationState): Promise<void>
+  /** "Estou longe do PC": null for a request made before this was kept. */
+  requestedAt(): Promise<number | null>
+  setRequestedAt(at: number): Promise<void>
   clear(): Promise<void>
 }
 
@@ -150,6 +162,13 @@ export function createControllerKeys(
       return STATES.includes(raw as AuthorizationState) ? (raw as AuthorizationState) : 'none'
     },
     setState: (state) => secure.setItemAsync(KEY_STATE, state),
+
+    async requestedAt() {
+      const raw = await secure.getItemAsync(KEY_REQUESTED)
+      const at = raw === null ? NaN : Number(raw)
+      return Number.isSafeInteger(at) && at > 0 ? at : null
+    },
+    setRequestedAt: (at) => secure.setItemAsync(KEY_REQUESTED, String(at)),
 
     async clear() {
       for (const key of CONTROL_SECURE_KEYS) {

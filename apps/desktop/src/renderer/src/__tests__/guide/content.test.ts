@@ -74,8 +74,26 @@ describe('guide content', () => {
     for (const gone of ['30 dias', 'Renovar', 'Só leitura', 'vencer', 'Três dias'])
       expect([gone, text.includes(gone)]).toEqual([gone, false])
     expect(text).toContain('não vence')
-    expect(text).toContain('Funcionar com o Sagyou bloqueado')
     expect(text).toContain('Gerar novo token')
+  })
+
+  // Spec 2026-11-07-endurecer-acesso-remoto: cards, read-only while locked, cut access.
+  it('external MCP asks for approval and only reads while locked', () => {
+    const text = articleText(findArticle('mcp-externo')!.article)
+    expect(text).toContain('pede aprovação')
+    expect(text).toContain('Ler com o Sagyou bloqueado')
+    for (const gone of [
+      'sem pedir aprovação',
+      'Nada pede aprovação',
+      'Funcionar com o Sagyou bloqueado'
+    ])
+      expect([gone, text.includes(gone)]).toEqual([gone, false])
+  })
+
+  it('remote control explains Cortar acesso and Restaurar acesso', () => {
+    const text = articleText(findArticle('controle-remoto')!.article)
+    expect(text).toContain('Cortar acesso')
+    expect(text).toContain('Restaurar acesso')
   })
 
   it('no longer talks about the removed chat', () => {

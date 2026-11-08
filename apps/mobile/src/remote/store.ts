@@ -51,6 +51,8 @@ export interface RemoteDeps {
 export const POLL_MS = 5_000
 /** A power command waits this long in the Worker for the ESP32. */
 export const POWER_TTL_MS = 120_000
+/** How long "Cortar acesso" waits for the PC's answer before offering the ESP32. */
+export const CUT_WAIT_MS = 60_000
 
 export interface RemoteStore {
   authorized: AuthorizationState
@@ -64,6 +66,10 @@ export interface RemoteStore {
   /** "Celulares anteriores perderam o controle…" after a remote authorization. */
   notice: string | null
   pairingCode: string | null
+  /** "Estou longe do PC" waited longer than the Worker keeps it (1 h). */
+  requestExpired: boolean
+  /** "Cortar acesso" got no answer in CUT_WAIT_MS: the PC tab offers the ESP32. */
+  cutUnanswered: boolean
   busy: boolean
   init(): Promise<void>
   requestAuthorization(): Promise<void>
@@ -80,6 +86,10 @@ export interface RemoteStore {
   unlock(): Promise<void>
   lock(): Promise<void>
   installUpdate(): Promise<void>
+  /** "Cortar acesso": no answer in CUT_WAIT_MS offers the ESP32 shutdown. */
+  cutAccess(): Promise<void>
+  /** "Restaurar acesso": the Worker checks `factor` (6 digits or a backup code). */
+  restoreAccess(factor: string): Promise<void>
   answer(id: string, approved: boolean): Promise<void>
   removeThisPhone(): Promise<void>
   /** Hands this phone's FCM token to the Worker (push.ts decides when). */
@@ -116,6 +126,8 @@ const initial = {
   connection: null,
   notice: null,
   pairingCode: null,
+  requestExpired: false,
+  cutUnanswered: false,
   busy: false
 }
 
@@ -153,6 +165,8 @@ function resultText(result: ResultBody): string {
       return REMOTE_TEXT.noUpdate
     case 'refused':
       return REMOTE_TEXT.refused
+    case 'factor':
+      return REMOTE_TEXT.factor
     default:
       return CONTROL_TEXT.refused
   }
@@ -199,7 +213,7 @@ export const useRemote = create<RemoteStore>((set, get) => {
     set({ busy: false, error: connectionText(error) })
   }
 
-  const run = async (action: () => Promise<void>): Promise<void> => {
+  const run = async (action: () => Promise<unknown>): Promise<void> => {
     if (get().busy) return
     set({ busy: true, error: null })
     try {
@@ -210,12 +224,14 @@ export const useRemote = create<RemoteStore>((set, get) => {
     }
   }
 
-  const sendToPc = async (kind: ControlKind, body: Record<string, unknown>): Promise<void> => {
+  /** Returns the request's nonce, which the PC's result answers. */
+  const sendToPc = async (kind: ControlKind, body: Record<string, unknown>): Promise<string> => {
     const d = need()
     const pc = await pcId()
     const env = await d.keys.sign(kind, body)
     requests.set(env.nonce, kind)
     await d.client.send(pc, env)
+    return env.nonce
   }
 
   const power = async (cmd: PowerCommand): Promise<void> => {
@@ -379,7 +395,13 @@ export const useRemote = create<RemoteStore>((set, get) => {
       const d = need()
       const state = await d.keys.state()
       const pcKey = await d.keys.pcPublicKey()
-      set({ authorized: state === 'yes' && !pcKey ? 'none' : state })
+      // A request from before this was kept has no time: no notice (decision 8).
+      const requestedAt = state === 'waiting-pc' ? await d.keys.requestedAt() : null
+      set({
+        authorized: state === 'yes' && !pcKey ? 'none' : state,
+        requestExpired:
+          requestedAt !== null && d.now() - requestedAt > MAX_TTL_MS['authorize-remote']
+      })
     },
 
     requestAuthorization: () =>
@@ -412,6 +434,7 @@ export const useRemote = create<RemoteStore>((set, get) => {
         )
         authNonce = env.nonce
         await d.client.remoteRole({ totp: factor.trim() }, env)
+        await d.keys.setRequestedAt(env.issuedAt)
         await d.keys.setState('waiting-pc')
         set({ authorized: 'waiting-pc', notice: CONTROL_TEXT.previousRevoked })
         // Already a controller in the Worker: the ESP32 key lets it turn the PC on now.
@@ -425,6 +448,12 @@ export const useRemote = create<RemoteStore>((set, get) => {
 
     async refresh() {
       if (!deps || get().authorized === 'none') return
+      if (get().authorized === 'waiting-pc' && !get().requestExpired) {
+        const at = await deps.keys.requestedAt()
+        if (at !== null && deps.now() - at > MAX_TTL_MS['authorize-remote']) {
+          set({ requestExpired: true })
+        }
+      }
       try {
         const pc = await pcId()
         const { messages } = await need().client.inbox()
@@ -458,7 +487,11 @@ export const useRemote = create<RemoteStore>((set, get) => {
     },
 
     wake: () => run(() => power('wake')),
-    forceShutdown: () => run(() => power('shutdown')),
+    forceShutdown: () =>
+      run(async () => {
+        await power('shutdown')
+        set({ cutUnanswered: false })
+      }),
     abortShutdown: () =>
       run(async () => {
         // Scheduled by the Sagyou (the PC is alive and counting down): cancel there;
@@ -470,6 +503,44 @@ export const useRemote = create<RemoteStore>((set, get) => {
     unlock: () => run(() => sendToPc('unlock', {})),
     lock: () => run(() => sendToPc('lock', {})),
     installUpdate: () => run(() => sendToPc('install-update', {})),
+
+    cutAccess: () =>
+      run(async () => {
+        set({ cutUnanswered: false })
+        const nonce = await sendToPc('cut-access', {})
+        const d = need()
+        d.setTimer(() => {
+          void (async () => {
+            if (!requests.has(nonce)) return
+            // The inbox is only polled with the PC tab in focus: read it once
+            // more, so an answer waiting in the Worker is not taken for silence.
+            await get().refresh()
+            if (!requests.has(nonce)) return
+            // Still unanswered: the PC (or its Sagyou) is not responding.
+            requests.delete(nonce)
+            set({ error: REMOTE_TEXT.cutNoAnswer, cutUnanswered: true })
+          })()
+        }, CUT_WAIT_MS)
+      }),
+
+    restoreAccess: (factor) => {
+      const code = factor.trim()
+      if (!code) {
+        set({ error: REMOTE_TEXT.needFactor })
+        return Promise.resolve()
+      }
+      return run(async () => {
+        const d = need()
+        const env = await d.keys.sign('restore-access', {})
+        requests.set(env.nonce, 'restore-access')
+        try {
+          await d.client.restore({ totp: code }, env)
+        } catch (error) {
+          requests.delete(env.nonce)
+          throw error
+        }
+      })
+    },
 
     answer: (id, approved) =>
       run(async () => {

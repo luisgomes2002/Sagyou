@@ -68,7 +68,10 @@ export function registerSyncHandlers(ipcMain: IpcMain, deps: SyncHandlerDeps): v
       )
   )
 
-  ipcMain.handle('sync:invite', () => run('invite', () => engine.createInvite()))
+  // The authenticator code (or a backup code) goes with every invite (spec 2026-11-07).
+  ipcMain.handle('sync:invite', (_, factor: unknown) =>
+    run('invite', () => engine.createInvite(factorOf(factor) ?? { totp: '' }))
+  )
 
   ipcMain.handle(
     'sync:recover',

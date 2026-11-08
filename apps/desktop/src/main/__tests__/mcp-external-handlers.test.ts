@@ -41,8 +41,17 @@ beforeEach(() => {
     onTokenChanged: () => {
       changes += 1
     },
+    answerCard: (id, approved) => {
+      answers.push([id, approved])
+      return id === 'conhecido'
+    },
     log: { info, warn }
   })
+})
+
+let answers: [string, boolean][] = []
+beforeEach(() => {
+  answers = []
 })
 
 afterEach(() => rmSync(dir, { recursive: true, force: true }))
@@ -50,13 +59,29 @@ afterEach(() => rmSync(dir, { recursive: true, force: true }))
 const invoke = (channel: string, ...args: unknown[]): unknown => handlers.get(channel)!({}, ...args)
 
 describe('mcp-external:*', () => {
-  it('registra os quatro canais, sem renew', () => {
+  it('registra os cinco canais, sem renew', () => {
     expect([...handlers.keys()].sort()).toEqual([
+      'mcp-external:approve-response',
       'mcp-external:create',
       'mcp-external:revoke',
       'mcp-external:set-allow-locked',
       'mcp-external:status'
     ])
+  })
+
+  it('a resposta a um cartão externo vai ao main; id desconhecido devolve false', () => {
+    expect(invoke('mcp-external:approve-response', 'conhecido', true)).toBe(true)
+    expect(invoke('mcp-external:approve-response', 'inventado', true)).toBe(false)
+    expect(answers).toEqual([
+      ['conhecido', true],
+      ['inventado', true]
+    ])
+  })
+
+  it('a resposta só aceita um id em texto e um booleano', () => {
+    expect(invoke('mcp-external:approve-response', 42, true)).toBe(false)
+    expect(invoke('mcp-external:approve-response', 'conhecido', 'sim')).toBe(false)
+    expect(answers).toEqual([])
   })
 
   it('gerar devolve o token e o comando uma vez; status, log e arquivo nunca o têm', () => {

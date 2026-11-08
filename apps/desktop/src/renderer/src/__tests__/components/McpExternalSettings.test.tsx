@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { accessCutPcText } from '../../utils/remoteControlText'
 import {
   ACTIVE_SCOPE_TEXT,
   ALLOW_LOCKED_LABEL,
   ALLOW_LOCKED_WARNING,
+  CARD_NOTICE,
   FULL_ACCESS_WARNING,
   McpExternalSettings,
   NEW_TOKEN_MESSAGE,
@@ -26,6 +28,8 @@ const COMMAND = 'claude mcp add sagyou-externo --scope user -e SAGYOU_MCP_TOKEN=
 let api: Record<string, ReturnType<typeof vi.fn>>
 let security: { status: ReturnType<typeof vi.fn> }
 let writeText: ReturnType<typeof vi.fn>
+let remote: Record<string, ReturnType<typeof vi.fn>>
+let remoteListener: ((status: { accessCutAt: number | null }) => void) | undefined
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -37,10 +41,19 @@ beforeEach(() => {
   }
   security = { status: vi.fn().mockResolvedValue({ enabled: true, corrupt: false }) }
   writeText = vi.fn().mockResolvedValue(undefined)
+  remoteListener = undefined
+  remote = {
+    status: vi.fn().mockResolvedValue({ accessCutAt: null }),
+    restoreAccess: vi.fn().mockResolvedValue({ ok: true }),
+    onStatusChanged: vi.fn((cb: (status: { accessCutAt: number | null }) => void) => {
+      remoteListener = cb
+      return vi.fn()
+    })
+  }
   Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
   Object.defineProperty(window, 'electronAPI', {
     configurable: true,
-    value: { mcpExternal: api, security }
+    value: { mcpExternal: api, security, remote }
   })
 })
 
@@ -50,7 +63,11 @@ describe('Acesso MCP externo', () => {
     expect(await screen.findByText(NONE_TEXT)).toBeInTheDocument()
     expect(screen.getByText(FULL_ACCESS_WARNING)).toBeInTheDocument()
     expect(FULL_ACCESS_WARNING).toBe(
-      'O token dá leitura e escrita de tudo no Sagyou, inclusive excluir e mexer em dinheiro, sem pedir aprovação. Não vence: vale até você revogar.'
+      'O token dá leitura e escrita de tudo no Sagyou. Não vence: vale até você revogar.'
+    )
+    expect(screen.getByText(CARD_NOTICE)).toBeInTheDocument()
+    expect(CARD_NOTICE).toBe(
+      'Excluir, mexer em dinheiro e em tabelas ou perfis financeiros pede aprovação no PC ou no celular.'
     )
     expect(screen.queryByLabelText('Projeto padrão')).toBeNull()
     expect(screen.queryByLabelText('Perfil financeiro')).toBeNull()
@@ -102,15 +119,46 @@ describe('Acesso MCP externo', () => {
     expect(await screen.findByText(COMMAND)).toBeInTheDocument()
   })
 
-  it('"Funcionar com o Sagyou bloqueado" aparece com senha, com o aviso, e grava', async () => {
+  it('"Ler com o Sagyou bloqueado" aparece com senha, com o texto, e grava', async () => {
     api.status.mockResolvedValue(ACTIVE)
     render(<McpExternalSettings onToast={vi.fn()} />)
     const toggle = await screen.findByLabelText(ALLOW_LOCKED_LABEL)
+    expect(ALLOW_LOCKED_LABEL).toBe('Ler com o Sagyou bloqueado')
+    expect(ALLOW_LOCKED_WARNING).toBe(
+      'Com o Sagyou bloqueado, o Claude externo continua lendo seus dados, mas não escreve. Para escrever, desbloqueie no PC ou pelo celular.'
+    )
+    expect(screen.getByText(CARD_NOTICE)).toBeInTheDocument()
     expect(toggle).not.toBeChecked()
     expect(screen.getByText(ALLOW_LOCKED_WARNING)).toBeInTheDocument()
     fireEvent.click(toggle)
     await waitFor(() => expect(api.setAllowLocked).toHaveBeenCalledWith(true))
     await waitFor(() => expect(screen.getByLabelText(ALLOW_LOCKED_LABEL)).toBeChecked())
+  })
+
+  it('acesso cortado pelo celular: faixa com a data e Restaurar acesso', async () => {
+    const at = Date.UTC(2026, 10, 7, 17, 32)
+    api.status.mockResolvedValue(ACTIVE)
+    remote.status.mockResolvedValue({ accessCutAt: at })
+    remote.restoreAccess.mockImplementation(async () => {
+      remote.status.mockResolvedValue({ accessCutAt: null })
+      return { ok: true }
+    })
+    render(<McpExternalSettings onToast={vi.fn()} />)
+    expect(await screen.findByText(accessCutPcText(at))).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Restaurar acesso' }))
+    await waitFor(() => expect(remote.restoreAccess).toHaveBeenCalled())
+    await waitFor(() => expect(screen.queryByText(accessCutPcText(at))).toBeNull())
+  })
+
+  it('o evento de status do controle remoto mostra e tira a faixa', async () => {
+    api.status.mockResolvedValue(ACTIVE)
+    render(<McpExternalSettings onToast={vi.fn()} />)
+    await screen.findByText(ACTIVE_SCOPE_TEXT)
+    const at = Date.UTC(2026, 10, 7, 17, 32)
+    act(() => remoteListener?.({ accessCutAt: at }))
+    expect(screen.getByText(accessCutPcText(at))).toBeInTheDocument()
+    act(() => remoteListener?.({ accessCutAt: null }))
+    expect(screen.queryByText(accessCutPcText(at))).toBeNull()
   })
 
   it('sem senha no app, a opção de funcionar bloqueado não aparece', async () => {

@@ -157,3 +157,34 @@ exigir a data explícita, ou ao menos devolver a data usada. Não quebram: a ord
 7. O PC do trabalho precisa das finanças (escopo de sync por aparelho)?
 8. Como tratar o fuso: data explícita nas tools, ou um "fuso do usuário" sincronizado em
    vez do relógio de cada aparelho?
+
+## 7. Decisões de 2026-11-07
+
+Decidido por Luis; construído na spec `docs/specs/2026-11-07-endurecer-acesso-remoto.md`
+(desktop 1.7.0, celular 0.4.0, Worker reimplantado junto).
+
+1. **Cartão no token externo: sim.** Excluir, dinheiro, arquivar projeto e tabelas ou
+   perfis financeiros pedem aprovação no PC (diálogo) ou no celular (aba PC); 5 min, a
+   primeira resposta vale, expirado = recusado. Criar e editar continuam sem cartão.
+2. **Bloqueado = só leitura.** "Ler com o Sagyou bloqueado" substitui "Funcionar com o
+   Sagyou bloqueado"; o portão que deixava o `store:save` passar pelo bloqueio saiu.
+3. **Kill switch: sim, nesta spec.** "Cortar acesso" no celular suspende o token externo,
+   encerra os `claude remote-control` (e de novo a cada 30 s), bloqueia o Sagyou e deixa o
+   PC ligado. "Restaurar acesso": celular com biometria + autenticador, ou no PC.
+4. **Isolar os servidores de Remote Control:** fora. Experimento com ai-jail v3.2 no WSL2;
+   só vira spec se o MCP funcionar de dentro do jail.
+5. **GitHub:** aplicado em 2026-11-07 (rulesets da `main` e das tags, environment
+   `mobile-release` só para `mobile-v*`, PATs fine-grained que vencem em 2027-02-05). Exigir
+   SHA nas actions entra depois do merge do PR #47. Renovar os PATs antes de julho de 2027
+   é uma tarefa no Sagyou.
+6. **Convite com autenticador: sim.** Gerar um código de pareamento (PC ou celular) pede o
+   código do autenticador ou um código reserva.
+7. **PC do trabalho com tudo:** risco aceito; sem escopo de sync por aparelho.
+8. **Fuso:** spec própria (Spec B).
+
+- **M5:** o pedido "Estou longe do PC" fica no Worker por no máximo 1 h (era 24 h).
+- **M6:** a chave do ESP32 no celular sem `requireAuthentication` foi aceita: ela só assina
+  ligar/desligar, e o app já pede biometria antes de mandar o comando.
+- **Dívida:** a senha do "Estou longe do PC" vai cifrada só com a chave de sync; selá-la
+  para a chave pública do PC muda o protocolo, e um celular novo ainda não conhece essa
+  chave. Fica para uma spec futura.

@@ -36,11 +36,18 @@ export const STATUS_SLOT = 'status'
 export const ESP32_KEY_SLOT = 'esp32-key'
 /** The Worker keeps a message at most this long (authorize-remote is the exception). */
 export const MAX_MESSAGE_TTL_MS = 10 * 60_000
+/** How long "Restaurar acesso" waits in the PC's inbox (the envelope's own validity). */
+export const RESTORE_TTL_MS = 60_000
 
 export interface InboxMessage {
   from: string
   msgId: string
   env: SignedEnvelope
+  /**
+   * The Worker checked the sender's second factor for this message (only the
+   * restore route sets it). Absent, as from an older Worker, means false.
+   */
+  factor?: boolean
 }
 
 export interface PowerStateReport {
@@ -69,8 +76,10 @@ export interface ControlClient {
   controllers(): Promise<string[]>
   addController(id: string): Promise<void>
   removeController(id: string): Promise<void>
-  /** Becomes a controller from afar; the envelope waits for the PC (24 h). */
+  /** Becomes a controller from afar; the envelope waits for the PC (1 h). */
   remoteRole(factor: SyncSecondFactor, env: SignedEnvelope): Promise<void>
+  /** "Restaurar acesso": the Worker checks the factor, then the PC gets the envelope. */
+  restore(factor: SyncSecondFactor, env: SignedEnvelope): Promise<void>
   putEsp32Key(key: Uint8Array): Promise<void>
   getEsp32Key(): Promise<Uint8Array | null>
   createPowerToken(factor: SyncSecondFactor): Promise<string>
@@ -175,7 +184,13 @@ export function createControlClient(deps: ControlClientDeps): ControlClient {
         try {
           const from = String(row.from)
           const msgId = String(row.msgId)
-          messages.push({ from, msgId, env: open(from, me, msgId, String(row.ciphertext)) })
+          messages.push({
+            from,
+            msgId,
+            env: open(from, me, msgId, String(row.ciphertext)),
+            // An older Worker sends no mark: nothing passed a second factor.
+            factor: row.factor === true
+          })
         } catch {
           dropped++
         }
@@ -230,6 +245,17 @@ export function createControlClient(deps: ControlClientDeps): ControlClient {
       const msgId = randomUUID()
       await call('POST', '/roles/remote', {
         body: { msgId, ciphertext: seal(pc, msgId, env) },
+        proof: true,
+        factor
+      })
+    },
+
+    async restore(factor, env) {
+      const pc = await this.pcId()
+      if (!pc) throw new ControlError('conflict')
+      const msgId = randomUUID()
+      await call('POST', '/control/restore', {
+        body: { msgId, ciphertext: seal(pc, msgId, env), ttlMs: RESTORE_TTL_MS },
         proof: true,
         factor
       })

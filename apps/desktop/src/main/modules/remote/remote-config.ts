@@ -35,6 +35,12 @@ export interface RemoteConfig {
   suspendedUntil: number | null
   /** Nonces of accepted requests, kept until they expire (survives a restart). */
   seenNonces: { nonce: string; until: number }[]
+  /**
+   * When the phone's "Cortar acesso" was accepted (ms), or null. While set, the
+   * external token is suspended and every Remote Control server is ended
+   * (spec docs/specs/2026-11-07-endurecer-acesso-remoto.md).
+   */
+  accessCutAt: number | null
 }
 
 export function defaultRemoteConfig(): RemoteConfig {
@@ -46,7 +52,8 @@ export function defaultRemoteConfig(): RemoteConfig {
     esp32KeyCipher: null,
     failures: 0,
     suspendedUntil: null,
-    seenNonces: []
+    seenNonces: [],
+    accessCutAt: null
   }
 }
 
@@ -85,7 +92,9 @@ function parse(raw: unknown): RemoteConfig {
             ? [{ nonce: n.nonce, until: n.until as number }]
             : []
         )
-      : []
+      : [],
+    // A file from before this field reads as "not cut".
+    accessCutAt: Number.isSafeInteger(r.accessCutAt) ? (r.accessCutAt as number) : null
   }
 }
 

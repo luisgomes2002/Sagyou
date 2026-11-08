@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createMcpExternalStore, externalMcpCommand } from '../modules/agent/mcp-external'
 import {
   EXTERNAL_RUN_ID,
+  EXTERNAL_SESSION_NAME,
   externalApproval,
   tracksRunState
 } from '../modules/agent/mcp-external-policy'
@@ -179,9 +180,25 @@ describe('token MCP externo', () => {
 })
 
 describe('política do token externo', () => {
-  it('o token externo nunca pede cartão', () => {
-    for (const name of [...MCP_APPROVAL_REQUIRED, ...MCP_NO_APPROVAL, 'save_memory', 'criar_task'])
+  // Spec docs/specs/2026-11-07-endurecer-acesso-remoto.md, item 1.
+  it('o token externo pede cartão exatamente para as escritas arriscadas', () => {
+    for (const name of MCP_APPROVAL_REQUIRED)
+      expect([name, externalApproval(EXTERNAL_RUN_ID, name)]).toEqual([name, true])
+    for (const name of [...MCP_NO_APPROVAL, 'save_memory', 'criar_task'])
       expect([name, externalApproval(EXTERNAL_RUN_ID, name)]).toEqual([name, false])
+  })
+
+  it('casos nomeados na spec', () => {
+    expect(externalApproval(EXTERNAL_RUN_ID, 'delete_project')).toBe(true)
+    expect(externalApproval(EXTERNAL_RUN_ID, 'create_transaction')).toBe(true)
+    expect(externalApproval(EXTERNAL_RUN_ID, 'create_financial_table')).toBe(true)
+    expect(externalApproval(EXTERNAL_RUN_ID, 'update_task')).toBe(false)
+    expect(externalApproval(EXTERNAL_RUN_ID, 'save_memory')).toBe(false)
+    expect(externalApproval(EXTERNAL_RUN_ID, 'criar_task')).toBe(false)
+  })
+
+  it('o cartão do token externo mostra a sessão "Acesso externo"', () => {
+    expect(EXTERNAL_SESSION_NAME).toBe('Acesso externo')
   })
 
   it('uma run do Fleet continua com os cartões de antes', () => {

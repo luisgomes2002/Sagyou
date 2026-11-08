@@ -131,13 +131,15 @@ import {
   type McpExternalStore
 } from './modules/agent/mcp-external'
 import {
+  EXTERNAL_CUT_MESSAGE,
   EXTERNAL_RUN_ID,
   externalApproval,
   tracksRunState
 } from './modules/agent/mcp-external-policy'
 import { registerMcpExternalHandlers } from './handlers/mcp-external'
 import { mcpFinancialTables } from './modules/agent/mcp-financial-scope'
-import { createLockedSaveGate, externalBlockedByLock } from './modules/agent/mcp-external-lock'
+import { dataIpcAllowed, externalRefusal } from './modules/agent/mcp-external-lock'
+import { createExternalCards } from './modules/agent/mcp-external-cards'
 import { configureLog, createLogger, errorMessage, log } from './modules/logs/logger'
 import { captureBase, diffSince, type AgentBase, type DiffLineItem } from './modules/code/code-diff'
 import { safeAttachmentName } from './modules/files/backup-files'
@@ -214,7 +216,11 @@ import {
   type RemoteConfig
 } from './modules/remote/remote-config'
 import { createRemoteService, type RemoteService } from './modules/remote/remote-service'
-import { listCommandLines, matchServers } from './modules/remote/rc-servers'
+import {
+  killRemoteControlServers,
+  listCommandLines,
+  matchServers
+} from './modules/remote/rc-servers'
 import { createShutdown } from './modules/remote/shutdown'
 import {
   createRemoteCards,
@@ -260,9 +266,8 @@ function assertTrustedRenderer(event: IpcMainInvokeEvent | IpcMainEvent): void {
 /** All user data stays unavailable until the password screen unlocks the app. */
 function assertUnlockedDataAccess(event: IpcMainInvokeEvent | IpcMainEvent, channel: string): void {
   assertTrustedRenderer(event)
-  // The one exception: the flush of an external write main itself asked for
-  // while locked ("Funcionar com o Sagyou bloqueado"). Never any other channel.
-  if (!passwordUnlocked && !lockedSaveGate.allows(channel))
+  // No exception: locked, not even a store:save passes (spec 2026-11-07).
+  if (!dataIpcAllowed(passwordUnlocked, channel))
     throw new Error('Desbloqueie o Sagyou para acessar os dados.')
 }
 
@@ -307,8 +312,9 @@ const sagyouMcp = startSagyouMcpBroker({
   isRunLive: (runId) => isMcpRunLive(runId),
   isLocked: (runId, kind) => {
     if (runId !== EXTERNAL_RUN_ID) return isAppLocked()
-    if (externalLocked()) return true
-    // Served on the password screen: only the kind is logged, never the tool.
+    const refusal = externalCallRefusal(kind)
+    if (refusal) return refusal
+    // A read served on the password screen: only the kind is logged, never the tool.
     if (isAppLocked()) log.info('mcp', 'external_locked_call', { kind })
     return false
   },
@@ -439,17 +445,14 @@ const sagyouMcp = startSagyouMcpBroker({
         approval: externalApproval(session.runId, 'criar_task')
       },
       async () => {
-        const id = await withExternalLockedSave(session.runId, (lockedExternal) =>
-          requestRendererMcpTask({
-            projectId: project.id,
-            columnId: column.id,
-            title,
-            ...(typeof args.descricao === 'string' && args.descricao.trim()
-              ? { description: args.descricao.trim().slice(0, 5000) }
-              : {}),
-            ...(lockedExternal ? { lockedExternal } : {})
-          })
-        )
+        const id = await requestRendererMcpTask({
+          projectId: project.id,
+          columnId: column.id,
+          title,
+          ...(typeof args.descricao === 'string' && args.descricao.trim()
+            ? { description: args.descricao.trim().slice(0, 5000) }
+            : {})
+        })
         return { ok: true, id, titulo: title }
       }
     )
@@ -484,15 +487,7 @@ const sagyouMcp = startSagyouMcpBroker({
     const outcome = await mcpWriteQueue.enqueue<McpActionResult>(
       { runId: session.runId, name, args, approval: externalApproval(session.runId, name) },
       () =>
-        withExternalLockedSave(session.runId, (lockedExternal) =>
-          rendererMcpActions.request({
-            phase: 'apply',
-            name,
-            args,
-            scope,
-            ...(lockedExternal ? { lockedExternal } : {})
-          })
-        ).then((result) => {
+        rendererMcpActions.request({ phase: 'apply', name, args, scope }).then((result) => {
           // Recorded when the renderer answers, even if the run ended meanwhile
           // (the queue rejects the caller, but the timer was started all the same).
           // The external token has no end to stop its timers at: they stay the user's.
@@ -501,15 +496,7 @@ const sagyouMcp = startSagyouMcpBroker({
           return result
         }),
       async () => {
-        // prepare writes nothing, but the renderer must know a locked store may answer it.
-        const lockedExternal = session.runId === EXTERNAL_RUN_ID && isAppLocked()
-        const prepared = await rendererMcpActions.request({
-          phase: 'prepare',
-          name,
-          args,
-          scope,
-          ...(lockedExternal ? { lockedExternal } : {})
-        })
+        const prepared = await rendererMcpActions.request({ phase: 'prepare', name, args, scope })
         return prepared.ok ? { resumo: String(prepared.resumo ?? name) } : { refuse: prepared }
       }
     )
@@ -636,8 +623,6 @@ interface McpTaskRequest {
   columnId: string
   title: string
   description?: string
-  /** External token, app locked with "Funcionar com o Sagyou bloqueado" on. */
-  lockedExternal?: boolean
 }
 
 /**
@@ -722,44 +707,34 @@ function isMcpRunLive(runId: string): boolean {
   return Boolean(run && !run.abort && !(run.interactive && !run.externalChild))
 }
 
-/** The lock stops the external token now (off, or the app is locking). */
-function externalLocked(): boolean {
-  return externalBlockedByLock({
+/** Read from remote-control.json once the remote control block runs (whenReady). */
+let remoteAccessCutAt: () => number | null = () => null
+const REMOTE_KILL_EVERY_MS = 30_000
+
+/** The phone's "Cortar acesso" holds: the external token is suspended. */
+function externalAccessCut(): boolean {
+  return remoteAccessCutAt() !== null
+}
+
+/** Why an external call may not run now (cut, locking, locked), or null. */
+function externalCallRefusal(kind: 'read' | 'write'): string | null {
+  return externalRefusal({
+    cut: externalAccessCut(),
     locked: !passwordUnlocked,
     locking: appLock.isLocking(),
-    allowWhileLocked: mcpExternal?.allowWhileLocked() ?? false
+    allowWhileLocked: mcpExternal?.allowWhileLocked() ?? false,
+    kind
   })
 }
 
 /**
  * Whether a queued write may still execute: the queue asks right before. A
  * Fleet run is already refused by the lock elsewhere (its card, its queue);
- * an external write that waited past a lock without the option stops here.
+ * an external write that waited past a lock or a cut stops here.
  */
 function isMcpWriteLive(runId: string): boolean {
-  if (runId === EXTERNAL_RUN_ID) return isMcpRunLive(runId) && !externalLocked()
+  if (runId === EXTERNAL_RUN_ID) return isMcpRunLive(runId) && externalCallRefusal('write') === null
   return isMcpRunLive(runId)
-}
-
-/** Opened around an external write's renderer request while the app is locked. */
-const lockedSaveGate = createLockedSaveGate()
-
-/**
- * Sends one renderer request of an external write. Locked (option on): the
- * request says so, so the renderer applies on its locked store, and the
- * renderer's flush (store:save) may pass the data IPC lock until it answers.
- */
-async function withExternalLockedSave<T>(
-  runId: string,
-  send: (lockedExternal: boolean) => Promise<T>
-): Promise<T> {
-  if (runId !== EXTERNAL_RUN_ID || !isAppLocked()) return send(false)
-  const end = lockedSaveGate.begin()
-  try {
-    return await send(true)
-  } finally {
-    end()
-  }
 }
 
 /** Card text for the writes whose tool does not prepare a resumo of its own. */
@@ -780,13 +755,18 @@ function recordRunActivity(request: McpWriteRequest, value: unknown): void {
 
 /** Routes MCP writes through the exact same approval UI as code-agent actions. */
 // Fleet cards also reach the authorized phones; the first answer wins.
+const sendToWindow = (channel: string, payload: unknown): void => {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload)
+}
+
 const remoteCards = createRemoteCards({
-  maps: () => [...codeRuns.values()].map((run) => run.pendingApprovals),
+  maps: () => [...[...codeRuns.values()].map((run) => run.pendingApprovals), externalCards.pending],
   service: () => remoteService,
-  send: (channel, payload) => {
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload)
-  }
+  send: sendToWindow
 })
+
+// The external token's cards (spec 2026-11-07): a dialog on the PC, the phone's PC tab.
+const externalCards = createExternalCards({ park: remoteCards.park, send: sendToWindow })
 
 function requestMcpWriteApproval(
   runId: string,
@@ -794,6 +774,20 @@ function requestMcpWriteApproval(
   args: Record<string, unknown>,
   resumo?: string
 ): Promise<boolean> {
+  if (runId === EXTERNAL_RUN_ID) {
+    // Locked or locking: nobody may answer; the queue refuses the write.
+    if (!isMcpRunLive(runId) || isAppLocked()) return Promise.resolve(false)
+    return externalCards
+      .request(name, args, resumo ?? mcpCardResumo(name, args))
+      .then((approved) => {
+        log.info('mcp', 'approval', {
+          runId,
+          tool: name,
+          decision: approved ? 'approved' : 'not_approved'
+        })
+        return approved
+      })
+  }
   const run = codeRuns.get(runId)
   // Locked or locking: no new card reaches a screen nobody may answer.
   if (!run || !isMcpRunLive(runId) || isAppLocked()) return Promise.resolve(false)
@@ -1146,9 +1140,9 @@ const appLock = createAppLock({
  * agent retry it (a duplicated transaction).
  */
 function refuseRunWritesForLock(): void {
-  // "Funcionar com o Sagyou bloqueado": the external token's writes keep going.
-  if (!mcpExternal?.allowWhileLocked())
-    mcpWriteQueue.rejectQueued(EXTERNAL_RUN_ID, 'O Sagyou foi bloqueado.')
+  // Locked, the external token only reads ("Ler com o Sagyou bloqueado").
+  mcpWriteQueue.rejectQueued(EXTERNAL_RUN_ID, 'O Sagyou foi bloqueado.')
+  externalCards.denyAll()
   for (const run of codeRuns.values()) {
     mcpWriteQueue.rejectQueued(run.id, 'O Sagyou foi bloqueado.')
     for (const { resolve } of run.pendingApprovals.values()) resolve(false)
@@ -1474,10 +1468,15 @@ function showTrayNoticeOnce(): void {
 /** Menu items depend on the lock state, so the menu is rebuilt when it changes. */
 function refreshTrayMenu(): void {
   if (!tray) return
-  const items = buildTrayMenu({ canLock: canLockNow() }).map((item) =>
+  const items = buildTrayMenu({
+    canLock: canLockNow(),
+    accessCut: remoteAccessCutAt() !== null
+  }).map((item) =>
     item.id === 'sep'
       ? { type: 'separator' as const }
-      : {
+      : item.id === 'cut'
+        ? { label: item.label, enabled: false }
+        : {
           label: item.label,
           click: () => {
             if (item.id === 'open') managedWindow?.show()
@@ -1796,8 +1795,11 @@ app.whenReady().then(() => {
       portFile,
       writeBridge: () => writeFileSync(bridgePath, MCP_EXTERNAL_BRIDGE_SOURCE, 'utf8'),
       // Writes queued by the old token must not run under the new one.
-      onTokenChanged: () =>
-        mcpWriteQueue.rejectQueued(EXTERNAL_RUN_ID, 'O acesso MCP externo mudou.'),
+      onTokenChanged: () => {
+        mcpWriteQueue.rejectQueued(EXTERNAL_RUN_ID, 'O acesso MCP externo mudou.')
+        externalCards.denyAll()
+      },
+      answerCard: (id, approved) => remoteCards.answer(id, approved),
       log
     })
   }
@@ -2085,7 +2087,8 @@ app.whenReady().then(() => {
         return remoteServers
       },
       pendingCards: () =>
-        [...codeRuns.values()].reduce((n, run) => n + run.pendingApprovals.size, 0),
+        [...codeRuns.values()].reduce((n, run) => n + run.pendingApprovals.size, 0) +
+        externalCards.count(),
       answerCard: (id, approved) => remoteCards.answer(id, approved),
       devices: async () =>
         (await engine.devices()).map((d) => ({ id: d.id, revoked: d.revokedAt !== null })),
@@ -2099,10 +2102,33 @@ app.whenReady().then(() => {
         const status = await updateInstall.install()
         return status.installError ? 'failed' : 'ok'
       },
+      onAccessCut: () => {
+        mcpWriteQueue.rejectQueued(EXTERNAL_RUN_ID, EXTERNAL_CUT_MESSAGE)
+        externalCards.denyAll()
+        appLock.lock('remote')
+        void killServersWhileCut()
+        refreshTrayMenu()
+        emitRemote()
+      },
+      onAccessRestored: () => {
+        refreshTrayMenu()
+        emitRemote()
+      },
       log,
       onChange: () => emitRemote()
     })
     remoteService = service
+    remoteAccessCutAt = () => remoteConfig.accessCutAt
+    // While the access is cut, every Remote Control server is ended again every
+    // 30 s, whether the controlled mode, the sync or the heartbeat are running:
+    // the logon task restarts a server that dies (spec 2026-11-07, decision 2).
+    const killServersWhileCut = async (): Promise<void> => {
+      if (remoteConfig.accessCutAt === null) return
+      const count = await killRemoteControlServers(execText)
+      if (count > 0) log.info('remote', 'rc_killed', { count })
+    }
+    setInterval(() => void killServersWhileCut(), REMOTE_KILL_EVERY_MS).unref?.()
+    void killServersWhileCut()
     const syncActive = (): boolean => {
       const status = engine.status()
       return ['ok', 'offline', 'update-pending'].includes(status.state) && status.paused === null
@@ -2121,7 +2147,8 @@ app.whenReady().then(() => {
           (name) => remoteServers.find((s) => s.name === name) ?? { name, up: false }
         ),
       now: () => Date.now(),
-      emitStatus: (status: RemoteStatusView) => sendToRenderer('remote:status-changed', status)
+      emitStatus: (status: RemoteStatusView) => sendToRenderer('remote:status-changed', status),
+      onAccessRestored: refreshTrayMenu
     })
     emitRemote = () => sendToRenderer('remote:status-changed', remoteView())
     disableRemoteForNoPassword = () => {

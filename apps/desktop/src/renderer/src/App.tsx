@@ -33,6 +33,7 @@ import { FilesView } from './components/views/FilesView'
 import { MemoryView } from './components/ai/MemoryView'
 import { FleetView } from './components/ai/FleetView'
 import { ExcelExportModal } from './components/modals/ExcelExportModal'
+import { ExternalApprovalDialog } from './components/modals/ExternalApprovalDialog'
 import { ProjectLinksDropdown } from './components/ProjectLinksDropdown'
 import { SearchModal } from './components/modals/SearchModal'
 import { SprintBadge } from './components/SprintBadge'
@@ -185,7 +186,7 @@ export default function App() {
     return window.electronAPI.store.onMcpCreateTask(async ({ requestId, task }) => {
       try {
         // Same guard as every other MCP write: never flush an empty or locked store.
-        const blocked = mcpWriteBlocked(task.lockedExternal === true)
+        const blocked = mcpWriteBlocked()
         if (blocked) {
           window.electronAPI.store.respondMcpCreateTask(requestId, { error: blocked })
           return
@@ -210,11 +211,10 @@ export default function App() {
     if (!window.electronAPI.store.onMcpAction) return
     return window.electronAPI.store.onMcpAction(async ({ requestId, request }) => {
       try {
-        const lockedExternal = request.lockedExternal === true
         const result =
           request.phase === 'prepare'
-            ? prepareMcpAction(request.name, request.args, request.scope, lockedExternal)
-            : applyMcpAction(request.name, request.args, request.scope, lockedExternal)
+            ? prepareMcpAction(request.name, request.args, request.scope)
+            : applyMcpAction(request.name, request.args, request.scope)
         if (request.phase === 'apply' && result.ok) await useKanbanStore.getState()._flushPersist()
         window.electronAPI.store.respondMcpAction(requestId, result)
       } catch (error) {
@@ -1051,6 +1051,8 @@ export default function App() {
       />
 
       <ToastContainer toasts={toasts} onRemove={removeToast} />
+
+      <ExternalApprovalDialog />
 
       <SearchModal
         open={searchOpen}

@@ -240,11 +240,34 @@ describe('Sincronização: conflitos', () => {
 })
 
 describe('Sincronização: pareamento e código', () => {
-  it('"Parear novo aparelho" mostra o QR e o texto do convite', async () => {
+  it('"Parear novo aparelho" pede o autenticador e mostra o QR e o texto do convite', async () => {
     render(<SyncSettings onToast={vi.fn()} />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Parear novo aparelho' }))
+    const pair = await screen.findByRole('button', { name: 'Parear novo aparelho' })
+    expect(pair).toBeDisabled()
+    expect(screen.getByText('Ou um código reserva.')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Código do autenticador'), {
+      target: { value: ' 123456 ' }
+    })
+    fireEvent.click(pair)
     expect(await screen.findByAltText('QR para parear um aparelho')).toBeInTheDocument()
+    expect(window.electronAPI.sync.invite).toHaveBeenCalledWith('123456')
     expect(screen.getByLabelText('Código de pareamento')).toHaveValue('sagyou-pair:CODIGO')
+    // A TOTP code is good once: the field is emptied after it was used.
+    expect(screen.getByLabelText('Código do autenticador')).toHaveValue('')
+  })
+
+  it('um erro do convite aparece como o engine escreveu', async () => {
+    vi.mocked(window.electronAPI.sync.invite).mockResolvedValueOnce({
+      ok: false,
+      error: 'Código do autenticador inválido.'
+    })
+    render(<SyncSettings onToast={vi.fn()} />)
+    fireEvent.change(await screen.findByLabelText('Código do autenticador'), {
+      target: { value: '000000' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Parear novo aparelho' }))
+    expect(await screen.findByText('Código do autenticador inválido.')).toBeInTheDocument()
+    expect(screen.queryByAltText('QR para parear um aparelho')).not.toBeInTheDocument()
   })
 
   it('"Ver código de recuperação" pede a senha do app quando há uma', async () => {

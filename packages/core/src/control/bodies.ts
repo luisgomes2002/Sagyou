@@ -93,6 +93,8 @@ export type ResultReason =
   | 'refused'
   | 'no-update'
   | 'install-failed'
+  /** restore-access that did not pass the Worker's second-factor check. */
+  | 'factor'
 
 /** PC → phone: the answer to one request, by its nonce. */
 export interface ResultBody {

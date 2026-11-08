@@ -5,6 +5,8 @@ import {
   ENABLE_LABEL,
   ESP32_ONCE_TEXT,
   ESP32_SUGGESTION,
+  RESTORE_ACCESS_LABEL,
+  accessCutPcText,
   requestText,
   revokeMessage,
   suspendedText
@@ -28,6 +30,7 @@ interface RemoteStatus {
   servers: { name: string; up: boolean }[]
   pending: PendingAuthorization[]
   hasEsp32Key: boolean
+  accessCutAt?: number | null
 }
 
 interface Props {
@@ -94,6 +97,13 @@ export function RemoteControlSettings({ onToast, suggestions = [] }: Props): JSX
       }
       setAskEnable(false)
       setEnableCode('')
+      await refresh()
+    })
+
+  const restoreAccess = (): Promise<void> =>
+    run(async () => {
+      const result = await window.electronAPI.remote.restoreAccess()
+      if (!result.ok) setError(result.error)
       await refresh()
     })
 
@@ -229,6 +239,21 @@ export function RemoteControlSettings({ onToast, suggestions = [] }: Props): JSX
               className={primaryClass}
             >
               Ativar
+            </button>
+          </div>
+        )}
+        {status.accessCutAt != null && (
+          <div className="space-y-2">
+            <p role="status" className="text-sm text-[#d9a640]">
+              {accessCutPcText(status.accessCutAt)}
+            </p>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void restoreAccess()}
+              className={primaryClass}
+            >
+              {RESTORE_ACCESS_LABEL}
             </button>
           </div>
         )}

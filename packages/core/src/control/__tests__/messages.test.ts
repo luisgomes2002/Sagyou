@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { newSigningKeys } from '../crypto'
-import { checkEnvelope, parsePcStatus, signEnvelope, type SignedEnvelope } from '../messages'
+import {
+  checkEnvelope,
+  MAX_TTL_MS,
+  parsePcStatus,
+  signEnvelope,
+  type SignedEnvelope
+} from '../messages'
 
 const NOW = 1_800_000_000_000
 const never = (): boolean => false
@@ -69,9 +75,12 @@ describe('checkEnvelope', () => {
     expect(checkEnvelope(long, publicKey, NOW, never)).toEqual({ ok: false, reason: 'shape' })
   })
 
-  it('authorize-remote pode valer 24 h', () => {
-    const env = signEnvelope(privateKey, 'authorize-remote', {}, NOW, 24 * 3_600_000)
-    expect(checkEnvelope(env, publicKey, NOW + 23 * 3_600_000, never)).toEqual({ ok: true })
+  // Spec 2026-11-07, item 9: the request from afar waits 1 h, no longer 24 h.
+  it('authorize-remote vale até 1 h', () => {
+    const env = signEnvelope(privateKey, 'authorize-remote', {}, NOW, 3_600_000)
+    expect(checkEnvelope(env, publicKey, NOW + 59 * 60_000, never)).toEqual({ ok: true })
+    const long = signEnvelope(privateKey, 'authorize-remote', {}, NOW, 2 * 3_600_000)
+    expect(checkEnvelope(long, publicKey, NOW, never)).toEqual({ ok: false, reason: 'shape' })
   })
 })
 
@@ -84,11 +93,25 @@ describe('parsePcStatus', () => {
     pendingCards: 0,
     shutdownAt: null,
     suspendedUntil: null,
-    updateVersion: '1.6.1'
+    updateVersion: '1.6.1',
+    accessCutAt: null
   }
 
   it('lê um status válido', () => {
     expect(parsePcStatus(valid)).toEqual(valid)
+    expect(parsePcStatus({ ...valid, accessCutAt: NOW })?.accessCutAt).toBe(NOW)
+  })
+
+  it('sem accessCutAt (PC de antes do corte) ou com valor inválido lê como null', () => {
+    const old: Record<string, unknown> = { ...valid }
+    delete old.accessCutAt
+    expect(parsePcStatus(old)?.accessCutAt).toBeNull()
+    expect(parsePcStatus({ ...valid, accessCutAt: 'ontem' })?.accessCutAt).toBeNull()
+  })
+
+  it('cut-access e restore-access valem no máximo 1 minuto', () => {
+    expect(MAX_TTL_MS['cut-access']).toBe(60_000)
+    expect(MAX_TTL_MS['restore-access']).toBe(60_000)
   })
 
   it('sem updateVersion (PC antigo) lê como null', () => {

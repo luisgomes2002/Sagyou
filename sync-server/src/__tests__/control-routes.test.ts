@@ -150,7 +150,7 @@ describe('autorização à distância', () => {
     expect(w.control.messages).toEqual([])
   })
 
-  it('fator certo deixa só o celular novo e guarda o pedido por 24 h', async () => {
+  it('fator certo deixa só o celular novo e guarda o pedido por 1 h', async () => {
     const w = await world()
     await makePc(w)
     await makeController(w, DEV_B)
@@ -163,7 +163,7 @@ describe('autorização à distância', () => {
     expect((await w.control.getRoles()).controllers).toEqual([DEV_C])
     expect(w.control.messages).toHaveLength(1)
     expect(w.control.messages[0]).toMatchObject({ to: DEV_A, from: DEV_C })
-    expect(w.control.messages[0].expiresAt - w.clock.now).toBe(24 * 3_600_000)
+    expect(w.control.messages[0].expiresAt - w.clock.now).toBe(3_600_000)
   })
 
   it('caixa do PC cheia: 409 inbox full e os papéis ficam como estavam', async () => {
@@ -189,6 +189,82 @@ describe('autorização à distância', () => {
       body: { msgId: 'pedido-remoto-1', ciphertext: CIPHER }
     })
     expect(res.status).toBe(409)
+  })
+})
+
+// Spec docs/specs/2026-11-07-endurecer-acesso-remoto.md: "Restaurar acesso".
+describe('restaurar acesso', () => {
+  const restoreBody = { msgId: 'restaurar-1', ciphertext: CIPHER, ttlMs: 60_000 }
+
+  it('só um controle pode pedir', async () => {
+    const w = await world()
+    await makePc(w)
+    await makeController(w, DEV_B)
+    const res = await call(w, 'POST', '/control/restore', {
+      token: w.c,
+      headers: { ...proof, 'x-totp-code': w.totp() },
+      body: restoreBody
+    })
+    expect(res.status).toBe(403)
+    expect(w.control.messages).toEqual([])
+  })
+
+  it('sem código responde factor required; código errado responde invalid factor', async () => {
+    const w = await world()
+    await makePc(w)
+    await makeController(w, DEV_B)
+    const none = await call(w, 'POST', '/control/restore', {
+      token: w.b,
+      headers: proof,
+      body: restoreBody
+    })
+    expect(none.status).toBe(401)
+    expect((await json(none)).error).toBe('factor required')
+    const wrong = await call(w, 'POST', '/control/restore', {
+      token: w.b,
+      headers: { ...proof, 'x-totp-code': '000000' },
+      body: restoreBody
+    })
+    expect(wrong.status).toBe(401)
+    expect((await json(wrong)).error).toBe('invalid factor')
+    expect(w.control.messages).toEqual([])
+  })
+
+  it('com o código certo, o PC recebe a mensagem marcada; as outras não vêm marcadas', async () => {
+    const w = await world()
+    await makePc(w)
+    await makeController(w, DEV_B)
+    const ok = await call(w, 'POST', '/control/restore', {
+      token: w.b,
+      headers: { ...proof, 'x-totp-code': w.totp() },
+      body: restoreBody
+    })
+    expect(ok.status).toBe(200)
+    await call(w, 'POST', '/control/send', { token: w.b, body: message(DEV_A) })
+    const inbox = (await json(await call(w, 'GET', '/control/inbox', { token: w.a }))) as {
+      messages: { msgId: string; factor: boolean }[]
+    }
+    expect(inbox.messages.map((m) => [m.msgId === 'restaurar-1', m.factor])).toEqual([
+      [true, true],
+      [false, false]
+    ])
+    // Read once: the mark goes with the message.
+    const again = (await json(await call(w, 'GET', '/control/inbox', { token: w.a }))) as {
+      messages: unknown[]
+    }
+    expect(again.messages).toEqual([])
+  })
+
+  it('prazo da mensagem: de 1 s a 1 min', async () => {
+    const w = await world()
+    await makePc(w)
+    await makeController(w, DEV_B)
+    const tooLong = await call(w, 'POST', '/control/restore', {
+      token: w.b,
+      headers: { ...proof, 'x-totp-code': w.totp() },
+      body: { ...restoreBody, ttlMs: 120_000 }
+    })
+    expect(tooLong.status).toBe(400)
   })
 })
 

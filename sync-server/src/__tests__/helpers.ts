@@ -1,7 +1,7 @@
 // Shared by the route tests: an in-memory SyncDb and request helpers.
 import { expect } from 'vitest'
 import { createHmac } from 'crypto'
-import { handle, type RouteDeps } from '../routes'
+import { INVITE_TTL_MS, handle, type RouteDeps } from '../routes'
 import type {
   ChangeInput,
   ChangeRow,
@@ -311,11 +311,11 @@ export async function pairSecond(
   deviceId = DEV_B
 ): Promise<string> {
   const invite = `convite-${deviceId}`
-  const inv = await handle(
-    req('POST', '/invites', { token: tokenA, body: { inviteHash: await sha256Hex(invite) } }),
-    deps
-  )
-  expect(inv.status).toBe(200)
+  // Straight into the database: /invites now needs the authenticator (spec
+  // 2026-11-07), and these tests are about pairing, not about the invite route,
+  // which has its own tests. tokenA stays in the signature for the callers.
+  void tokenA
+  await deps.db.insertInvite(await sha256Hex(invite), deps.now() + INVITE_TTL_MS, deps.now())
   const res = await handle(
     req('POST', '/pair', { body: { invite, deviceId, nameCipher: 'b3V0cm8=' } }),
     deps

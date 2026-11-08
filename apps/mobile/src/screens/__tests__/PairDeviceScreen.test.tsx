@@ -9,12 +9,14 @@ import {
   COPIED_TEXT,
   COPY_LABEL,
   EXPIRED_TEXT,
+  FACTOR_HINT,
+  FACTOR_LABEL,
+  GENERATE_LABEL,
   NEW_CODE_LABEL,
   PAIR_DEVICE_TITLE,
   PAIR_HINT,
   PairDeviceScreen,
-  QR_LABEL,
-  RETRY_LABEL
+  QR_LABEL
 } from '../PairDeviceScreen'
 import { UNEXPECTED_ERROR_TEXT, countdownText } from '../../sync/invite'
 import { SettingsScreen } from '../SettingsScreen'
@@ -51,6 +53,12 @@ afterEach(() => {
   jest.useRealTimers()
 })
 
+/** Types the authenticator code and asks for the invite. */
+const pair = async (totp = '123456'): Promise<void> => {
+  await fireEvent.changeText(screen.getByLabelText(FACTOR_LABEL), totp)
+  await fireEvent.press(screen.getByRole('button', { name: GENERATE_LABEL }))
+}
+
 const advance = async (ms: number): Promise<void> => {
   await act(async () => {
     clock += ms
@@ -59,9 +67,26 @@ const advance = async (ms: number): Promise<void> => {
 }
 
 describe('PairDeviceScreen', () => {
-  it('gera o convite ao abrir e mostra QR, instrução e contagem', async () => {
+  it('pede o código do autenticador antes de gerar; o QR só vem depois', async () => {
     withEngine()
     await render(<PairDeviceScreen now={NOW} />)
+    expect(createInvite).not.toHaveBeenCalled()
+    expect(screen.queryByLabelText(QR_LABEL)).toBeNull()
+    expect(screen.getByText(FACTOR_HINT)).toBeTruthy()
+    expect(FACTOR_LABEL).toBe('Código do autenticador')
+    expect(FACTOR_HINT).toBe('Ou um código reserva.')
+    expect(screen.getByRole('button', { name: GENERATE_LABEL })).toBeDisabled()
+    await pair(' 123456 ')
+    expect(createInvite).toHaveBeenCalledWith({ totp: '123456' })
+    expect(await screen.findByLabelText(QR_LABEL)).toBeTruthy()
+    // The field went away with its code: a TOTP code is good once.
+    expect(screen.queryByLabelText(FACTOR_LABEL)).toBeNull()
+  })
+
+  it('gera o convite e mostra QR, instrução e contagem', async () => {
+    withEngine()
+    await render(<PairDeviceScreen now={NOW} />)
+    await pair()
     expect(createInvite).toHaveBeenCalledTimes(1)
     expect(await screen.findByLabelText(QR_LABEL)).toBeTruthy()
     expect(screen.getByText(PAIR_HINT)).toBeTruthy()
@@ -73,14 +98,17 @@ describe('PairDeviceScreen', () => {
     expect(screen.getByText('Vale uma vez só e expira em 9:59')).toBeTruthy()
   })
 
-  it('expirado: some o QR e "Gerar outro" pede um convite novo', async () => {
+  it('expirado: some o QR e "Gerar outro" pede um código novo do autenticador', async () => {
     withEngine()
     await render(<PairDeviceScreen now={NOW} />)
+    await pair()
     await screen.findByLabelText(QR_LABEL)
     await advance(TEN_MIN)
     expect(screen.getByText(EXPIRED_TEXT)).toBeTruthy()
     expect(screen.queryByLabelText(QR_LABEL)).toBeNull()
     await fireEvent.press(screen.getByRole('button', { name: NEW_CODE_LABEL }))
+    expect(screen.getByLabelText(FACTOR_LABEL).props.value).toBe('')
+    await pair('654321')
     expect(createInvite).toHaveBeenCalledTimes(2)
     expect(await screen.findByLabelText(QR_LABEL)).toBeTruthy()
   })
@@ -88,20 +116,22 @@ describe('PairDeviceScreen', () => {
   it('Copiar código copia o texto do convite e avisa', async () => {
     withEngine()
     await render(<PairDeviceScreen now={NOW} />)
+    await pair()
     await screen.findByLabelText(QR_LABEL)
     await fireEvent.press(screen.getByRole('button', { name: COPY_LABEL }))
     expect(Clipboard.setStringAsync).toHaveBeenCalledWith(CODE)
     expect(await screen.findByText(COPIED_TEXT)).toBeTruthy()
   })
 
-  it('offline: mostra a mensagem do engine e "Tentar de novo"', async () => {
-    createInvite.mockRejectedValueOnce(
-      new SyncUserError('Sem conexão com o servidor de sincronização.')
-    )
+  it('erro do engine aparece como está no campo, que volta vazio para tentar de novo', async () => {
+    createInvite.mockRejectedValueOnce(new SyncUserError('Código do autenticador inválido.'))
     withEngine()
     await render(<PairDeviceScreen now={NOW} />)
-    expect(await screen.findByText('Sem conexão com o servidor de sincronização.')).toBeTruthy()
-    await fireEvent.press(screen.getByRole('button', { name: RETRY_LABEL }))
+    await pair('000000')
+    expect(await screen.findByText('Código do autenticador inválido.')).toBeTruthy()
+    expect(screen.queryByLabelText(QR_LABEL)).toBeNull()
+    expect(screen.getByLabelText(FACTOR_LABEL).props.value).toBe('')
+    await pair('123456')
     expect(createInvite).toHaveBeenCalledTimes(2)
     expect(await screen.findByLabelText(QR_LABEL)).toBeTruthy()
   })
@@ -110,6 +140,7 @@ describe('PairDeviceScreen', () => {
     createInvite.mockRejectedValueOnce(new Error('x'))
     withEngine()
     await render(<PairDeviceScreen now={NOW} />)
+    await pair()
     expect(await screen.findByText(UNEXPECTED_ERROR_TEXT)).toBeTruthy()
     expect(screen.queryByText('x')).toBeNull()
   })
@@ -118,6 +149,7 @@ describe('PairDeviceScreen', () => {
     withEngine()
     const goBack = jest.fn()
     await render(<PairDeviceScreen navigation={{ goBack }} now={NOW} />)
+    await pair()
     await screen.findByLabelText(QR_LABEL)
     await act(async () => useLockState.setState({ hidden: true }))
     expect(goBack).toHaveBeenCalled()
@@ -129,6 +161,7 @@ describe('PairDeviceScreen', () => {
   it('bloquear apaga do clipboard o código copiado', async () => {
     withEngine()
     await render(<PairDeviceScreen navigation={{ goBack: jest.fn() }} now={NOW} />)
+    await pair()
     await screen.findByLabelText(QR_LABEL)
     await fireEvent.press(screen.getByRole('button', { name: COPY_LABEL }))
     expect(await Clipboard.getStringAsync()).toBe(CODE)
@@ -139,12 +172,14 @@ describe('PairDeviceScreen', () => {
   it('expirar e fechar a tela também apagam o código do clipboard', async () => {
     withEngine()
     const first = await render(<PairDeviceScreen now={NOW} />)
+    await pair()
     await screen.findByLabelText(QR_LABEL)
     await fireEvent.press(screen.getByRole('button', { name: COPY_LABEL }))
     await advance(TEN_MIN)
     expect(await Clipboard.getStringAsync()).toBe('')
     await first.unmount()
     const second = await render(<PairDeviceScreen now={NOW} />)
+    await pair()
     await screen.findByLabelText(QR_LABEL)
     await fireEvent.press(screen.getByRole('button', { name: COPY_LABEL }))
     await second.unmount()
@@ -155,6 +190,7 @@ describe('PairDeviceScreen', () => {
   it('não apaga o que o usuário copiou depois', async () => {
     withEngine()
     await render(<PairDeviceScreen navigation={{ goBack: jest.fn() }} now={NOW} />)
+    await pair()
     await screen.findByLabelText(QR_LABEL)
     await fireEvent.press(screen.getByRole('button', { name: COPY_LABEL }))
     await Clipboard.setStringAsync('lista de compras')
@@ -165,6 +201,7 @@ describe('PairDeviceScreen', () => {
   it('o código nunca vai para as prefs nem para o banco', async () => {
     const { writePref, save } = withEngine()
     await render(<PairDeviceScreen now={NOW} />)
+    await pair()
     await screen.findByLabelText(QR_LABEL)
     await fireEvent.press(screen.getByRole('button', { name: COPY_LABEL }))
     expect(JSON.stringify(writePref.mock.calls)).not.toContain('sagyou-sync:')

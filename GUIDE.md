@@ -395,11 +395,12 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
     sem prazo e com acesso total** (spec `2026-11-03-acesso-remoto`). Só o hash
     fica em `userData/mcp-external.json` (fora do SQLite e do backup); o token
     aparece uma vez. A run `external` tem todas as ferramentas, perfil
-    financeiro `null` (todos) e **nunca** pede cartão (`externalApproval`);
-    as runs do Fleet não mudam. Com "Funcionar com o Sagyou bloqueado"
-    (`allowWhileLocked`), o `store:save` do renderer passa pelo bloqueio **só**
-    enquanto há um `apply` externo aberto (`createLockedSaveGate`), e nada é
-    escrito se o store não carregou. A ponte só manda o token depois de o
+    financeiro `null` (todos) e pede cartão nas mesmas escritas arriscadas do
+    Fleet (`MCP_APPROVAL_REQUIRED`: PC e celular, 5 min). Com "Ler com o Sagyou
+    bloqueado" (`allowWhileLocked`), bloqueado só lê: nenhuma IPC de dados passa
+    pelo bloqueio (`externalRefusal`, `dataIpcAllowed`). "Cortar acesso" pelo
+    celular (`accessCutAt`) suspende o token e encerra os `claude
+    remote-control` até "Restaurar acesso". A ponte só manda o token depois de o
     broker provar o segredo desta abertura. Sessões Claude Code do Fleet rodam
     com `--disallowedTools mcp__sagyou-externo`. Nunca logue o token nem o
     hash. Detalhes no `CLAUDE.md`.

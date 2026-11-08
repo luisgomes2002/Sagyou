@@ -1146,40 +1146,26 @@ const HANDLERS: Record<string, Handler> = {
   rename_financial_profile: renameFinancialProfile
 }
 
-export const MCP_LOCKED_START_MESSAGE =
-  'O Sagyou abriu bloqueado: as escritas voltam depois do primeiro desbloqueio no PC. Leituras funcionam.'
-
 /**
- * Why an MCP write cannot touch the store now, or null. `lockedExternal`: main
- * says this is the external token on a locked app with "Funcionar com o Sagyou
- * bloqueado" on, and it lets this write's flush through the locked save IPC.
+ * Why an MCP write cannot touch the store now, or null. No exception for the
+ * external token (spec 2026-11-07-endurecer-acesso-remoto): locked, it only reads.
  */
-export function mcpWriteBlocked(lockedExternal = false): string | null {
+export function mcpWriteBlocked(): string | null {
   // Before loadData (lock screen, reload) the store is empty: flushing it would
-  // save an empty state over the database, so nothing may be written yet — not
-  // even by the external token (loading needs the password).
+  // save an empty state over the database, so nothing may be written yet.
   if (!useKanbanStore.getState().isLoaded)
-    return lockedExternal
-      ? MCP_LOCKED_START_MESSAGE
-      : 'O Sagyou ainda está carregando ou bloqueado; tente de novo em instantes.'
+    return 'O Sagyou ainda está carregando ou bloqueado; tente de novo em instantes.'
   // Locked after use: the lock already saved and the save IPC is closed, so a
   // write would live only in memory and reach the database after the unlock
   // while the agent was told it failed (and retried it).
-  if (isDataLocked() && !lockedExternal)
-    return 'O Sagyou está bloqueado. Desbloqueie no PC para continuar.'
+  if (isDataLocked()) return 'O Sagyou está bloqueado. Desbloqueie no PC para continuar.'
   return null
 }
 
-function run(
-  name: string,
-  args: Args,
-  scope: McpScope,
-  phase: Phase,
-  lockedExternal: boolean
-): McpActionResult {
+function run(name: string, args: Args, scope: McpScope, phase: Phase): McpActionResult {
   const handler = HANDLERS[name]
   if (!handler) return { ok: false, error: 'Ferramenta indisponível nesta sessão MCP.' }
-  const blocked = mcpWriteBlocked(lockedExternal)
+  const blocked = mcpWriteBlocked()
   if (blocked) return { ok: false, error: blocked }
   try {
     return handler(args ?? {}, scope, phase, useKanbanStore.getState())
@@ -1195,21 +1181,11 @@ function run(
 }
 
 /** Validates and returns the approval summary; never writes. */
-export function prepareMcpAction(
-  name: string,
-  args: Args,
-  scope: McpScope,
-  lockedExternal = false
-): McpActionResult {
-  return run(name, args, scope, 'prepare', lockedExternal)
+export function prepareMcpAction(name: string, args: Args, scope: McpScope): McpActionResult {
+  return run(name, args, scope, 'prepare')
 }
 
 /** Re-validates against the live store, then writes through the existing slice action. */
-export function applyMcpAction(
-  name: string,
-  args: Args,
-  scope: McpScope,
-  lockedExternal = false
-): McpActionResult {
-  return run(name, args, scope, 'apply', lockedExternal)
+export function applyMcpAction(name: string, args: Args, scope: McpScope): McpActionResult {
+  return run(name, args, scope, 'apply')
 }

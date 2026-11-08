@@ -162,7 +162,7 @@ export const SYNC_ARTICLES: GuideArticle[] = [
       {
         type: 'steps',
         items: [
-          'Num aparelho que já sincroniza, gere o código: no PC, Configurações → Sincronização → Aparelhos → Parear novo aparelho; no celular, Ajustes → Parear outro aparelho.',
+          'Num aparelho que já sincroniza, gere o código com o código do autenticador (ou um código reserva): no PC, Configurações → Sincronização → Aparelhos → Parear novo aparelho; no celular, Ajustes → Parear outro aparelho.',
           'Aparecem um QR e um Código de pareamento. Ele vale uma vez só e expira em 10 minutos. O código pode vir de um PC ou do celular (Ajustes → Parear outro aparelho).',
           'No outro PC, abra Configurações → Sincronização, cole o código em Outro aparelho já sincroniza e clique em Entrar com código.'
         ]
@@ -191,7 +191,7 @@ export const SYNC_ARTICLES: GuideArticle[] = [
         type: 'steps',
         items: [
           'Instale o APK do Sagyou no celular. O Android precisa ter um bloqueio de tela (PIN, padrão, senha ou biometria).',
-          'Gere o código num aparelho que já sincroniza. O código pode vir de um PC ou do celular (Ajustes → Parear outro aparelho); no PC, Configurações → Sincronização → Parear novo aparelho.',
+          'Gere o código num aparelho que já sincroniza, com o código do autenticador (ou um código reserva). O código pode vir de um PC ou do celular (Ajustes → Parear outro aparelho); no PC, Configurações → Sincronização → Parear novo aparelho.',
           'No celular novo, toque em Começar e depois em Ler QR, e aponte para a tela do outro aparelho. Sem câmera: cole o texto em Código de pareamento e toque em Colar código.',
           'O celular baixa tudo da nuvem e passa a sincronizar.'
         ]

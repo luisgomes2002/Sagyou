@@ -17,6 +17,8 @@ export interface McpExternalHandlerDeps {
   writeBridge: () => void
   /** The token changed (created, replaced, revoked): writes queued by the old one are refused. */
   onTokenChanged?: () => void
+  /** The PC's answer to an external card; false for an id no longer pending. */
+  answerCard?: (id: string, approved: boolean) => boolean
   log: { info: LogFn; warn: LogFn }
 }
 
@@ -57,6 +59,14 @@ export function registerMcpExternalHandlers(ipcMain: IpcMain, deps: McpExternalH
     if (status.state === 'active') deps.log.info('mcp', 'external_allow_locked', { value })
     return status
   })
+
+  ipcMain.handle(
+    'mcp-external:approve-response',
+    (_event, id: unknown, approved: unknown): boolean => {
+      if (typeof id !== 'string' || id.length > 64 || typeof approved !== 'boolean') return false
+      return deps.answerCard?.(id, approved) ?? false
+    }
+  )
 
   ipcMain.handle('mcp-external:revoke', (): McpExternalStatus => {
     deps.store.revoke()

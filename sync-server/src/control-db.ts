@@ -17,6 +17,8 @@ export interface MessageRow {
   msgId: string
   ciphertext: string
   expiresAt: number
+  /** The Worker checked the sender's second factor (the restore route). */
+  factor?: boolean
 }
 
 export interface SealedSlot {
@@ -132,33 +134,74 @@ export class D1ControlDb implements ControlDb {
   async putMessage(m: MessageRow & { now: number }): Promise<boolean> {
     await this.db.prepare('DELETE FROM control_messages WHERE expires_at <= ?1').bind(m.now).run()
     // One conditional INSERT: the count and the write are the same statement.
-    const res = await this.db
+    const insert = this.db
       .prepare(
         `INSERT INTO control_messages (msg_id, to_device, from_device, ciphertext, expires_at, created_at)
          SELECT ?1, ?2, ?3, ?4, ?5, ?6
          WHERE (SELECT COUNT(*) FROM control_messages WHERE to_device = ?2) < ?7`
       )
       .bind(m.msgId, m.to, m.from, m.ciphertext, m.expiresAt, m.now, MAX_PENDING_MESSAGES)
-      .run()
+    if (!m.factor) return ((await insert.run()).meta.changes ?? 0) > 0
+    // The mark goes in the same batch (atomic), and only if the message was
+    // stored: the PC never reads a restore without it, which it would refuse
+    // and count toward the suspension. No marks table = the whole batch fails.
+    const [res] = await this.db.batch([
+      insert,
+      this.db
+        .prepare(
+          `INSERT OR REPLACE INTO control_factor_checked (msg_id, expires_at)
+           SELECT ?1, ?2 WHERE EXISTS (SELECT 1 FROM control_messages WHERE msg_id = ?1)`
+        )
+        .bind(m.msgId, m.expiresAt)
+    ])
     return (res.meta.changes ?? 0) > 0
   }
 
   async takeMessages(to: string, now: number): Promise<MessageRow[]> {
-    const res = await this.db
+    type Row = {
+      msg_id: string
+      to_device: string
+      from_device: string
+      ciphertext: string
+      expires_at: number
+      created_at: number
+    }
+    const take = this.db
       .prepare(
         `DELETE FROM control_messages WHERE to_device = ?1
          RETURNING msg_id, to_device, from_device, ciphertext, expires_at, created_at`
       )
       .bind(to)
-      .all<{
-        msg_id: string
-        to_device: string
-        from_device: string
-        ciphertext: string
-        expires_at: number
-        created_at: number
-      }>()
-    return res.results
+    // Marks are read before the messages are deleted, in one atomic batch, and
+    // leave with them (plus any expired one): a failure deletes nothing.
+    let rows: Row[]
+    const checked = new Set<string>()
+    try {
+      const [marks, taken] = await this.db.batch<Record<string, unknown>>([
+        this.db
+          .prepare(
+            `SELECT msg_id FROM control_factor_checked
+             WHERE msg_id IN (SELECT msg_id FROM control_messages WHERE to_device = ?1)`
+          )
+          .bind(to),
+        take,
+        this.db
+          .prepare(
+            `DELETE FROM control_factor_checked
+             WHERE expires_at <= ?1 OR msg_id NOT IN (SELECT msg_id FROM control_messages)`
+          )
+          .bind(now)
+      ])
+      for (const r of marks.results) checked.add(String(r.msg_id))
+      rows = taken.results as unknown as Row[]
+    } catch (err) {
+      // A D1 that never got control_factor_checked (schema.sql not applied
+      // again): the inbox still works and no message carries the factor, so a
+      // restore fails closed and everything else, a cut included, arrives.
+      if (!(err instanceof Error && /no such table/i.test(err.message))) throw err
+      rows = (await take.all<Row>()).results
+    }
+    return rows
       .filter((r) => r.expires_at > now)
       .sort((a, b) => a.created_at - b.created_at)
       .map((r) => ({
@@ -166,7 +209,8 @@ export class D1ControlDb implements ControlDb {
         from: r.from_device,
         msgId: r.msg_id,
         ciphertext: r.ciphertext,
-        expiresAt: r.expires_at
+        expiresAt: r.expires_at,
+        ...(checked.has(r.msg_id) ? { factor: true } : {})
       }))
   }
 
@@ -366,12 +410,13 @@ export class MemoryControlDb implements ControlDb {
     return mine
       .filter((x) => x.expiresAt > now)
       .sort((a, b) => a.createdAt - b.createdAt)
-      .map(({ to: rowTo, from, msgId, ciphertext, expiresAt }) => ({
+      .map(({ to: rowTo, from, msgId, ciphertext, expiresAt, factor }) => ({
         to: rowTo,
         from,
         msgId,
         ciphertext,
-        expiresAt
+        expiresAt,
+        ...(factor === true ? { factor: true } : {})
       }))
   }
 

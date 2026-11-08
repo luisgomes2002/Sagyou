@@ -59,6 +59,27 @@ describe('remote-control.json', () => {
     )
   })
 
+  // Spec 2026-11-07-endurecer-acesso-remoto: "Cortar acesso" survives restarts.
+  it('accessCutAt: padrão null, arquivo antigo sem o campo = null, valor inválido = null', () => {
+    expect(defaultRemoteConfig().accessCutAt).toBeNull()
+    const write = (body: object): void =>
+      writeFileSync(join(dir, file), JSON.stringify(body), 'utf-8')
+    write({ enabled: true, servers: ['Sagyou'] })
+    expect(loadRemoteConfig(dir, file).accessCutAt).toBeNull()
+    expect(loadRemoteConfig(dir, file).enabled).toBe(true)
+    write({ enabled: true, accessCutAt: 'x' })
+    expect(loadRemoteConfig(dir, file).accessCutAt).toBeNull()
+    write({ enabled: true, accessCutAt: 1.5 })
+    expect(loadRemoteConfig(dir, file).accessCutAt).toBeNull()
+    write({ enabled: true, accessCutAt: 123 })
+    expect(loadRemoteConfig(dir, file).accessCutAt).toBe(123)
+  })
+
+  it('accessCutAt faz ida e volta', () => {
+    saveRemoteConfig(dir, file, { ...defaultRemoteConfig(), accessCutAt: 1794077717884 }, 0)
+    expect(loadRemoteConfig(dir, file).accessCutAt).toBe(1794077717884)
+  })
+
   it('JSON malformado volta ao padrão', () => {
     writeFileSync(join(dir, file), '{ não é json')
     expect(loadRemoteConfig(dir, file)).toEqual(defaultRemoteConfig())

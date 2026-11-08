@@ -6,6 +6,7 @@ import {
   ENABLE_LABEL,
   ESP32_ONCE_TEXT,
   ESP32_SUGGESTION,
+  accessCutPcText,
   suspendedText
 } from '../../utils/remoteControlText'
 
@@ -25,7 +26,8 @@ const base = {
     { name: 'Murasaki', up: false }
   ],
   pending: [] as { id: string; name: string; code: string; expiresAt: number }[],
-  hasEsp32Key: false
+  hasEsp32Key: false,
+  accessCutAt: null as number | null
 }
 
 let api: Record<string, ReturnType<typeof vi.fn>>
@@ -48,6 +50,7 @@ beforeEach(() => {
     refuse: vi.fn().mockResolvedValue({ ok: true }),
     revoke: vi.fn().mockResolvedValue({ ok: true }),
     setServers: vi.fn().mockResolvedValue({ ok: true }),
+    restoreAccess: vi.fn().mockResolvedValue({ ok: true }),
     createEsp32: vi.fn().mockResolvedValue({ ok: true, token: 'tok-123', key: 'ab'.repeat(32) }),
     onStatusChanged: vi.fn((cb: (s: typeof base) => void) => {
       statusListener = cb
@@ -62,6 +65,27 @@ beforeEach(() => {
 })
 
 describe('RemoteControlSettings', () => {
+  it('acesso cortado: faixa "Acesso cortado pelo celular em …" e Restaurar acesso', async () => {
+    const at = Date.UTC(2026, 10, 7, 17, 32)
+    mount({ accessCutAt: at })
+    expect(await screen.findByText(accessCutPcText(at))).toBeInTheDocument()
+    const d = new Date(at)
+    const pad = (n: number): string => String(n).padStart(2, '0')
+    expect(accessCutPcText(at)).toBe(
+      `Acesso cortado pelo celular em ${pad(d.getDate())}/${pad(d.getMonth() + 1)} às ${pad(d.getHours())}:${pad(d.getMinutes())}.`
+    )
+    api.status.mockResolvedValue({ ...base, accessCutAt: null })
+    fireEvent.click(screen.getByRole('button', { name: 'Restaurar acesso' }))
+    await waitFor(() => expect(api.restoreAccess).toHaveBeenCalled())
+    await waitFor(() => expect(screen.queryByText(accessCutPcText(at))).toBeNull())
+  })
+
+  it('acesso cortado aparece mesmo com o controle remoto desligado', async () => {
+    const at = Date.UTC(2026, 10, 7, 17, 32)
+    mount({ enabled: false, controllers: [], servers: [], accessCutAt: at })
+    expect(await screen.findByText(accessCutPcText(at))).toBeInTheDocument()
+  })
+
   it('desligado: mostra o interruptor e pede o código do autenticador para ativar', async () => {
     mount({ enabled: false, controllers: [], servers: [] })
     const toggle = await screen.findByRole('checkbox', { name: ENABLE_LABEL })
