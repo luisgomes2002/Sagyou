@@ -51,6 +51,17 @@ describe('sync chapter', () => {
       ])
   })
 
+  // Spec 2026-11-07, item 6: generating a pairing code asks for the authenticator.
+  it('pairing asks for the authenticator code', () => {
+    for (const id of ['sync-parear-pc', 'sync-parear-celular'])
+      expect([
+        id,
+        blocksOf(article(id), 'steps')
+          .flatMap((s) => s.items)
+          .join(' ')
+      ]).toEqual([id, expect.stringContaining('código do autenticador')])
+  })
+
   it('no longer tells the phone to resolve on the PC', () => {
     const conflicts = article('sync-conflitos')
       .blocks.map((b) => JSON.stringify(b))
