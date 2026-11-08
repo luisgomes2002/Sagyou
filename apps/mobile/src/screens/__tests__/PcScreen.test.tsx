@@ -59,6 +59,7 @@ function seed(over: Record<string, unknown>): void {
     error: null,
     connection: null,
     busy: false,
+    cutUnanswered: false,
     ...actions,
     ...over
   })
@@ -390,6 +391,24 @@ describe('cardCountdown', () => {
       const cut = buttons?.find((b) => b.text === 'Cortar')
       await act(async () => cut?.onPress?.())
       expect(actions.cutAccess).toHaveBeenCalledTimes(1)
+      alert.mockRestore()
+    })
+
+    // Review of PR #48: "O PC não respondeu. Forçar…?" used to come with no button.
+    it('corte sem resposta: oferece Forçar pelo ESP32 mesmo com o PC "pronto"', async () => {
+      const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined)
+      seed({
+        view: view('ready'),
+        status: status(),
+        cutUnanswered: true,
+        error: REMOTE_TEXT.cutNoAnswer
+      })
+      await render(<PcScreen now={clock} />)
+      expect(screen.getByText(REMOTE_TEXT.cutNoAnswer)).toBeTruthy()
+      await fireEvent.press(screen.getByRole('button', { name: 'Forçar pelo ESP32' }))
+      const force = alert.mock.calls[0][2]?.find((b) => b.text === 'Forçar')
+      await act(async () => force?.onPress?.())
+      expect(actions.forceShutdown).toHaveBeenCalledTimes(1)
       alert.mockRestore()
     })
 

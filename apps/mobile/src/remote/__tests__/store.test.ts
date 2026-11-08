@@ -21,6 +21,11 @@ import { REMOTE_TEXT, accessCutText } from '../texts'
 import { fakeSecure, type FakeSecure } from './fakes'
 
 const NOW = 1_800_000_000_000
+
+/** Lets a timer's async callback (an inbox read) run to the end. */
+const flush = async (): Promise<void> => {
+  for (let i = 0; i < 50; i++) await Promise.resolve()
+}
 const PC = 'p'.repeat(32)
 
 interface FakePc {
@@ -456,11 +461,38 @@ describe('store do controle remoto', () => {
       try {
         await useRemote.getState().cutAccess()
         expect(useRemote.getState().error).toBeNull()
+        const reads = jest.mocked(t.pc.client.inbox).mock.calls.length
         jest.advanceTimersByTime(CUT_WAIT_MS)
-        expect(useRemote.getState().error).toBe(REMOTE_TEXT.cutNoAnswer)
+        await flush()
+        // The inbox is read once more before saying the PC did not answer.
+        expect(jest.mocked(t.pc.client.inbox).mock.calls.length).toBeGreaterThan(reads)
+        expect(useRemote.getState()).toMatchObject({
+          error: REMOTE_TEXT.cutNoAnswer,
+          cutUnanswered: true
+        })
         expect(REMOTE_TEXT.cutNoAnswer).toBe(
           'O PC não respondeu. Forçar o desligamento pelo ESP32?'
         )
+        await useRemote.getState().forceShutdown()
+        expect(useRemote.getState().cutUnanswered).toBe(false)
+      } finally {
+        jest.useRealTimers()
+      }
+    })
+
+    // Review of PR #48: with the PC tab out of focus nothing reads the inbox,
+    // so the PC's answer waited in the Worker and the phone said "no answer".
+    it('resposta que ficou no Worker (aba fora de foco) é lida antes do aviso', async () => {
+      const t = setup()
+      await authorize(t)
+      jest.useFakeTimers()
+      try {
+        await useRemote.getState().cutAccess()
+        const req = t.pc.sent.at(-1)!
+        t.pc.queue.push(t.pc.msg('result', { replyTo: req.env.nonce, ok: true }))
+        jest.advanceTimersByTime(CUT_WAIT_MS)
+        await flush()
+        expect(useRemote.getState()).toMatchObject({ error: null, cutUnanswered: false })
       } finally {
         jest.useRealTimers()
       }
