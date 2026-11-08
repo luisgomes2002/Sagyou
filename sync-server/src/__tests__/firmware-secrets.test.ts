@@ -35,8 +35,19 @@ describe('segredos do firmware do ESP32', () => {
     expect(ignore).toContain('firmware/**/.pio/')
   })
 
+  // The test vectors (firmware/esp32/test/vectors.h) are the one exception: MACs
+  // computed with the PUBLIC test key 00 01 02 … 1f. Checked to be exactly that key.
+  const VECTORS = 'firmware/esp32/test/vectors.h'
+  const TEST_KEY = Array.from({ length: 32 }, (_, i) => i.toString(16).padStart(2, '0')).join('')
+
+  it('os vetores de teste só usam a chave pública de teste', () => {
+    const text = readFileSync(join(ROOT, VECTORS), 'utf8')
+    expect(text).toContain(`#define TEST_KEY_HEX "${TEST_KEY}"`)
+    expect(text.match(/#define TEST_KEY_HEX/g)).toHaveLength(1)
+  })
+
   it('nenhum arquivo do firmware carrega algo com cara de chave ou token', () => {
-    for (const file of files) {
+    for (const file of files.filter((f) => f !== VECTORS)) {
       const text = readFileSync(join(ROOT, file), 'utf8')
       // ESP32_KEY: 64 hex characters (32 bytes).
       expect([file, /\b[0-9a-fA-F]{64}\b/.test(text)]).toEqual([file, false])
