@@ -44,7 +44,10 @@ no Brasil, um PC reinstalado ou novo sem nenhum aparelho pareado fica sem saída
 2. **Confirmação antes de enviar**, sempre: "Os dados deste PC serão substituídos pelos da
    nuvem. Um backup deste PC é feito antes." com **Recuperar e substituir** / **Cancelar**.
 3. **Os três segredos vivem só no estado da seção.** Um erro mantém os campos (para corrigir
-   um deles); sucesso, Cancelar ou sair da seção os limpa. Nunca vão a log.
+   um deles); sucesso ou Cancelar os limpa, e sair de Configurações também (o componente
+   desmonta). Trocar de seção dentro de Configurações mantém, como o código do "Entrar com
+   código" (a Sincronização fica montada escondida). Nunca vão a log. (Ajuste do plano,
+   2026-11-08.)
 4. **Rótulos iguais aos do celular:** "Código de recuperação", "Senha de configuração do
    Worker", "Código do autenticador ou reserva".
 5. **Depois de recuperar**, um toast: "Sincronização recuperada. Revogue os aparelhos
@@ -69,6 +72,10 @@ configuração do Worker (`type="password"`), Código do autenticador ou reserva
 2. Recuperar e substituir → backup forçado → `/setup` com a prova da chave e o fator →
    baixa tudo da nuvem e substitui os dados do PC → sincronização ativa.
 3. Sucesso: campos limpos, a tela passa ao estado ativo de sempre, toast da decisão 5.
+   Se o motor voltar com a sincronização pausada (o download falhou depois do `/setup`), os
+   campos também são limpos e **não** há toast: a faixa de pausa com **A nuvem manda** é o
+   próximo passo. Se voltar desligada (um 401 no download), mostra "Não foi possível
+   recuperar a sincronização." e mantém os campos. (Ajuste do plano, 2026-11-08.)
 
 **Erros** (texto do motor, mostrado na seção, campos mantidos):
 - código malformado ou checksum errado: "Código de recuperação inválido.";
