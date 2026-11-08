@@ -15,7 +15,7 @@ import {
 } from '@sagyou/core/control/messages'
 import { CONTROL_TEXT } from '@sagyou/core/control/texts'
 import { toBase64 } from '@sagyou/core/sync/bytes'
-import { KEY_PRIVATE, createControllerKeys } from '../keys'
+import { KEY_PRIVATE, KEY_REQUESTED, KEY_STATE, createControllerKeys } from '../keys'
 import { CUT_WAIT_MS, configureRemote, useRemote } from '../store'
 import { REMOTE_TEXT, accessCutText } from '../texts'
 import { fakeSecure, type FakeSecure } from './fakes'
@@ -113,6 +113,53 @@ afterEach(() => {
 })
 
 describe('store do controle remoto', () => {
+  describe('pedido à distância vale 1 h', () => {
+    const waiting = (t: Setup, requestedAt?: number): void => {
+      t.secure.data.set(KEY_STATE, 'waiting-pc')
+      if (requestedAt !== undefined) t.secure.data.set(KEY_REQUESTED, String(requestedAt))
+    }
+
+    it('mais de 1 h esperando o PC: o pedido expirou', async () => {
+      const t = setup()
+      waiting(t, NOW - 3_600_001)
+      await useRemote.getState().init()
+      expect(useRemote.getState()).toMatchObject({
+        authorized: 'waiting-pc',
+        requestExpired: true
+      })
+      expect(REMOTE_TEXT.requestExpired).toBe('O pedido expirou. Ligue o PC e peça de novo.')
+      // "Pedir de novo" gives the request up: back to none, every key deleted.
+      await useRemote.getState().cancelRequest()
+      expect(useRemote.getState()).toMatchObject({ authorized: 'none', requestExpired: false })
+      expect(t.secure.data.size).toBe(0)
+    })
+
+    it('dentro de 1 h o pedido continua esperando', async () => {
+      const t = setup()
+      waiting(t, NOW - 59 * 60_000)
+      await useRemote.getState().init()
+      expect(useRemote.getState().requestExpired).toBe(false)
+    })
+
+    it('pedido de antes da atualização (sem a hora) não mostra o aviso', async () => {
+      const t = setup()
+      waiting(t)
+      await useRemote.getState().init()
+      expect(useRemote.getState()).toMatchObject({
+        authorized: 'waiting-pc',
+        requestExpired: false
+      })
+    })
+
+    it('esquecer o celular apaga a hora do pedido', async () => {
+      const t = setup()
+      await useRemote.getState().requestRemote('senha', '123456')
+      expect(t.secure.data.has(KEY_REQUESTED)).toBe(true)
+      await useRemote.getState().removeThisPhone()
+      expect(t.secure.data.has(KEY_REQUESTED)).toBe(false)
+    })
+  })
+
   it('pedido de autorização: assinado pela chave nova, código igual ao do PC e autorizado', async () => {
     const t = setup()
     await useRemote.getState().requestAuthorization()
@@ -164,7 +211,8 @@ describe('store do controle remoto', () => {
       expect.objectContaining({ kind: 'authorize-remote' })
     )
     const env = jest.mocked(t.pc.client.remoteRole).mock.calls[0][1] as SignedEnvelope
-    expect(env.expiresAt - env.issuedAt).toBe(24 * 60 * 60_000)
+    expect(env.expiresAt - env.issuedAt).toBe(60 * 60_000)
+    expect(t.secure.data.get(KEY_REQUESTED)).toBe(String(NOW))
     expect(useRemote.getState()).toMatchObject({
       authorized: 'waiting-pc',
       notice: CONTROL_TEXT.previousRevoked

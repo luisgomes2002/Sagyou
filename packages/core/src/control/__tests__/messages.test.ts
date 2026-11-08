@@ -75,9 +75,12 @@ describe('checkEnvelope', () => {
     expect(checkEnvelope(long, publicKey, NOW, never)).toEqual({ ok: false, reason: 'shape' })
   })
 
-  it('authorize-remote pode valer 24 h', () => {
-    const env = signEnvelope(privateKey, 'authorize-remote', {}, NOW, 24 * 3_600_000)
-    expect(checkEnvelope(env, publicKey, NOW + 23 * 3_600_000, never)).toEqual({ ok: true })
+  // Spec 2026-11-07, item 9: the request from afar waits 1 h, no longer 24 h.
+  it('authorize-remote vale até 1 h', () => {
+    const env = signEnvelope(privateKey, 'authorize-remote', {}, NOW, 3_600_000)
+    expect(checkEnvelope(env, publicKey, NOW + 59 * 60_000, never)).toEqual({ ok: true })
+    const long = signEnvelope(privateKey, 'authorize-remote', {}, NOW, 2 * 3_600_000)
+    expect(checkEnvelope(long, publicKey, NOW, never)).toEqual({ ok: false, reason: 'shape' })
   })
 })
 

@@ -150,7 +150,7 @@ describe('autorização à distância', () => {
     expect(w.control.messages).toEqual([])
   })
 
-  it('fator certo deixa só o celular novo e guarda o pedido por 24 h', async () => {
+  it('fator certo deixa só o celular novo e guarda o pedido por 1 h', async () => {
     const w = await world()
     await makePc(w)
     await makeController(w, DEV_B)
@@ -163,7 +163,7 @@ describe('autorização à distância', () => {
     expect((await w.control.getRoles()).controllers).toEqual([DEV_C])
     expect(w.control.messages).toHaveLength(1)
     expect(w.control.messages[0]).toMatchObject({ to: DEV_A, from: DEV_C })
-    expect(w.control.messages[0].expiresAt - w.clock.now).toBe(24 * 3_600_000)
+    expect(w.control.messages[0].expiresAt - w.clock.now).toBe(3_600_000)
   })
 
   it('caixa do PC cheia: 409 inbox full e os papéis ficam como estavam', async () => {
