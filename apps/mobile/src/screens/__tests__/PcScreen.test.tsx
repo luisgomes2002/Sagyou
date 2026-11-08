@@ -22,7 +22,7 @@ const actions = {
   installUpdate: jest.fn(async () => undefined),
   answer: jest.fn(async () => undefined),
   cutAccess: jest.fn(async () => undefined),
-  restoreAccess: jest.fn(async (_factor: string) => undefined)
+  restoreAccess: jest.fn((factor: string) => Promise.resolve(void factor))
 }
 
 function status(over: Partial<PcStatus> = {}): PcStatus {

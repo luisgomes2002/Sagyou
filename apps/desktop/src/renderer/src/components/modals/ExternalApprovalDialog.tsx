@@ -68,12 +68,8 @@ export function ExternalApprovalDialog(): JSX.Element | null {
 
   return (
     <ModalBase open onClose={refuse}>
-      <div
-        className="relative z-10 mx-4 w-full max-w-md rounded-xl border border-[#2b2b31] bg-[#16161a] p-6 shadow-2xl"
-      >
-        <h3 className="mb-2 text-base font-semibold text-[#d4d4d4]">
-          {EXTERNAL_APPROVAL_TITLE}
-        </h3>
+      <div className="relative z-10 mx-4 w-full max-w-md rounded-xl border border-[#2b2b31] bg-[#16161a] p-6 shadow-2xl">
+        <h3 className="mb-2 text-base font-semibold text-[#d4d4d4]">{EXTERNAL_APPROVAL_TITLE}</h3>
         <p className="mb-2 whitespace-pre-line text-sm leading-relaxed text-[#d4d4d4]">
           {`O Claude externo quer: ${current.resumo}`}
         </p>
