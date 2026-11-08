@@ -5,7 +5,7 @@ import { ACTION_ICONS } from '../components/icons'
 import { Button, Card, Field, Screen } from '../components/ui'
 import { useLockState } from '../lock/lockState'
 import { useRemote } from '../remote/store'
-import { compareText } from '../remote/texts'
+import { REMOTE_TEXT, compareText } from '../remote/texts'
 import { FONT, SPACE, useTheme } from '../theme'
 
 export const CONTROL_TITLE = 'Controlar o PC'
@@ -14,6 +14,7 @@ export const AWAY_LABEL = 'Estou longe do PC'
 export const WAITING_TEXT = 'Aguardando o PC'
 export const WAITING_CODE_TEXT = 'Aguardando o código do PC…'
 export const AUTHORIZED_TEXT = 'Autorizado'
+export const ASK_AGAIN_LABEL = 'Pedir de novo'
 export const REMOVE_LABEL = 'Remover este celular'
 export const REMOVE_MESSAGE =
   'Este celular deixa de controlar o PC. Para voltar, peça autorização de novo.'
@@ -35,6 +36,7 @@ export function ControlSetupScreen({
   const pairing = useRemote((s) => s.pairingCode)
   const error = useRemote((s) => s.error)
   const notice = useRemote((s) => s.notice)
+  const requestExpired = useRemote((s) => s.requestExpired)
   const busy = useRemote((s) => s.busy)
   const view = useRemote((s) => s.view)
   const [away, setAway] = useState(false)
@@ -206,7 +208,20 @@ export function ControlSetupScreen({
           </Card>
         ) : null}
 
-        {authorized === 'waiting-pc' ? (
+        {authorized === 'waiting-pc' && requestExpired ? (
+          <Card>
+            <Text style={{ color: theme.attention, fontSize: FONT.bodyLg }}>
+              {REMOTE_TEXT.requestExpired}
+            </Text>
+            <Button
+              variant="primary"
+              label={ASK_AGAIN_LABEL}
+              disabled={busy}
+              onPress={() => void useRemote.getState().cancelRequest()}
+            />
+          </Card>
+        ) : null}
+        {authorized === 'waiting-pc' && !requestExpired ? (
           <Card>
             <Text style={{ color: theme.text, fontSize: FONT.bodyLg }}>
               {CONTROL_TEXT.waitingPc}
@@ -218,7 +233,7 @@ export function ControlSetupScreen({
             {cancel}
           </Card>
         ) : null}
-        {authorized === 'waiting-pc' ? pcCard : null}
+        {authorized === 'waiting-pc' && !requestExpired ? pcCard : null}
 
         {authorized === 'yes' ? (
           <>

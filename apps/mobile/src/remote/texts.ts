@@ -12,7 +12,9 @@ export const REMOTE_TEXT = {
   cutConfirm:
     'Cortar o acesso remoto? O Claude externo para de funcionar, os servidores de Remote Control são encerrados e o Sagyou é bloqueado. O PC continua ligado.',
   cutNoAnswer: 'O PC não respondeu. Forçar o desligamento pelo ESP32?',
-  needFactor: 'Digite o código do autenticador.'
+  needFactor: 'Digite o código do autenticador.',
+  // Item 9: the request from afar waits 1 h for the PC.
+  requestExpired: 'O pedido expirou. Ligue o PC e peça de novo.'
 } as const
 
 /** "Acesso cortado em 14:32." in the phone's local time. */

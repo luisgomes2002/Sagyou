@@ -66,6 +66,8 @@ export interface RemoteStore {
   /** "Celulares anteriores perderam o controle…" after a remote authorization. */
   notice: string | null
   pairingCode: string | null
+  /** "Estou longe do PC" waited longer than the Worker keeps it (1 h). */
+  requestExpired: boolean
   busy: boolean
   init(): Promise<void>
   requestAuthorization(): Promise<void>
@@ -122,6 +124,7 @@ const initial = {
   connection: null,
   notice: null,
   pairingCode: null,
+  requestExpired: false,
   busy: false
 }
 
@@ -389,7 +392,13 @@ export const useRemote = create<RemoteStore>((set, get) => {
       const d = need()
       const state = await d.keys.state()
       const pcKey = await d.keys.pcPublicKey()
-      set({ authorized: state === 'yes' && !pcKey ? 'none' : state })
+      // A request from before this was kept has no time: no notice (decision 8).
+      const requestedAt = state === 'waiting-pc' ? await d.keys.requestedAt() : null
+      set({
+        authorized: state === 'yes' && !pcKey ? 'none' : state,
+        requestExpired:
+          requestedAt !== null && d.now() - requestedAt > MAX_TTL_MS['authorize-remote']
+      })
     },
 
     requestAuthorization: () =>
@@ -422,6 +431,7 @@ export const useRemote = create<RemoteStore>((set, get) => {
         )
         authNonce = env.nonce
         await d.client.remoteRole({ totp: factor.trim() }, env)
+        await d.keys.setRequestedAt(env.issuedAt)
         await d.keys.setState('waiting-pc')
         set({ authorized: 'waiting-pc', notice: CONTROL_TEXT.previousRevoked })
         // Already a controller in the Worker: the ESP32 key lets it turn the PC on now.
@@ -435,6 +445,12 @@ export const useRemote = create<RemoteStore>((set, get) => {
 
     async refresh() {
       if (!deps || get().authorized === 'none') return
+      if (get().authorized === 'waiting-pc' && !get().requestExpired) {
+        const at = await deps.keys.requestedAt()
+        if (at !== null && deps.now() - at > MAX_TTL_MS['authorize-remote']) {
+          set({ requestExpired: true })
+        }
+      }
       try {
         const pc = await pcId()
         const { messages } = await need().client.inbox()

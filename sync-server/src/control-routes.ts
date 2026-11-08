@@ -20,7 +20,8 @@ const POWER_RESULTS = ['ok', 'mac', 'old', 'clock', 'expired', '']
 
 export const CONTROL_MAX_BODY_BYTES = 64 * 1024
 export const MESSAGE_MAX_TTL_MS = 10 * 60_000
-export const REMOTE_REQUEST_TTL_MS = 24 * 60 * 60_000
+// Spec 2026-11-07, item 9 (was 24 h).
+export const REMOTE_REQUEST_TTL_MS = 60 * 60_000
 export const POWER_COMMAND_MAX_MS = 2 * 60_000
 
 const OPAQUE_ID = /^[0-9a-f]{32}$/
@@ -162,7 +163,7 @@ const removeController: ControlHandler = async (request, params, db, _d, h) => {
 /**
  * A new phone, far from the PC, becomes the only controller: every former one
  * loses the role at once (the old phone is presumably lost). Its request waits
- * up to 24 h for the PC, which still checks the Sagyou password before granting
+ * up to 1 h for the PC, which still checks the Sagyou password before granting
  * unlock, shutdown and approvals.
  */
 const remoteRole: ControlHandler = async (request, _p, db, deps, h) => {

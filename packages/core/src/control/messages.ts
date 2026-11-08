@@ -33,7 +33,7 @@ const MINUTE = 60_000
 /** Longest validity each kind may carry; a longer envelope is refused as malformed. */
 export const MAX_TTL_MS: Record<ControlKind, number> = {
   'authorize-request': 10 * MINUTE,
-  'authorize-remote': 24 * 60 * MINUTE,
+  'authorize-remote': 60 * MINUTE,
   authorized: 10 * MINUTE,
   revoked: 10 * MINUTE,
   unlock: MINUTE,

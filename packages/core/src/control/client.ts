@@ -76,7 +76,7 @@ export interface ControlClient {
   controllers(): Promise<string[]>
   addController(id: string): Promise<void>
   removeController(id: string): Promise<void>
-  /** Becomes a controller from afar; the envelope waits for the PC (24 h). */
+  /** Becomes a controller from afar; the envelope waits for the PC (1 h). */
   remoteRole(factor: SyncSecondFactor, env: SignedEnvelope): Promise<void>
   /** "Restaurar acesso": the Worker checks the factor, then the PC gets the envelope. */
   restore(factor: SyncSecondFactor, env: SignedEnvelope): Promise<void>
