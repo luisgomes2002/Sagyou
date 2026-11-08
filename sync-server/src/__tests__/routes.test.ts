@@ -305,10 +305,16 @@ describe('convites e /pair', () => {
     const { deps, clock } = setup()
     const a = await registerFirst(deps)
     const invite = 'convite-velho'
-    await handle(
-      req('POST', '/invites', { token: a, body: { inviteHash: await sha256Hex(invite) } }),
+    const { uri } = await enroll(deps, a)
+    const created = await handle(
+      req('POST', '/invites', {
+        token: a,
+        headers: { 'x-totp-code': codeFromUri(uri, deps.now()) },
+        body: { inviteHash: await sha256Hex(invite) }
+      }),
       deps
     )
+    expect(created.status).toBe(200)
     clock.now += 10 * 60 * 1000 + 1
     const res = await handle(
       req('POST', '/pair', { body: { invite, deviceId: DEV_B, nameCipher: 'eA==' } }),
@@ -339,6 +345,53 @@ describe('convites e /pair', () => {
       (await handle(req('POST', '/invites', { token: a, body: { inviteHash: 'curto' } }), deps))
         .status
     ).toBe(400)
+  })
+
+  // Spec docs/specs/2026-11-07-endurecer-acesso-remoto.md, item 6.
+  describe('convite exige o autenticador', () => {
+    const create = (
+      deps: RouteDeps,
+      token: string,
+      headers: Record<string, string> = {}
+    ): Promise<Response> =>
+      handle(
+        req('POST', '/invites', { token, headers, body: { inviteHash: 'a'.repeat(64) } }),
+        deps
+      )
+
+    it('sem autenticador cadastrado: 401 totp required e nenhum convite', async () => {
+      const { db, deps } = setup()
+      const a = await registerFirst(deps)
+      const res = await create(deps, a, { 'x-totp-code': '123456' })
+      expect(res.status).toBe(401)
+      expect((await json(res)).error).toBe('totp required')
+      expect(db.invites.size).toBe(0)
+    })
+
+    it('sem código: factor required; código errado: invalid factor', async () => {
+      const { db, deps } = setup()
+      const a = await registerFirst(deps)
+      await enroll(deps, a)
+      const none = await create(deps, a)
+      expect(none.status).toBe(401)
+      expect((await json(none)).error).toBe('factor required')
+      const wrong = await create(deps, a, { 'x-totp-code': '000000' })
+      expect(wrong.status).toBe(401)
+      expect((await json(wrong)).error).toBe('invalid factor')
+      expect(db.invites.size).toBe(0)
+    })
+
+    it('código certo ou reserva criam o convite; a reserva vale uma vez', async () => {
+      const { db, deps } = setup()
+      const a = await registerFirst(deps)
+      const { uri, backupCodes } = await enroll(deps, a)
+      const ok = await create(deps, a, { 'x-totp-code': codeFromUri(uri, deps.now()) })
+      expect(ok.status).toBe(200)
+      expect(typeof (await json(ok)).expiresAt).toBe('number')
+      expect(db.invites.size).toBe(1)
+      expect((await create(deps, a, { 'x-totp-code': backupCodes[0] })).status).toBe(200)
+      expect((await create(deps, a, { 'x-totp-code': backupCodes[0] })).status).toBe(401)
+    })
   })
 })
 
@@ -886,11 +939,9 @@ describe('achados de revisão', () => {
   })
 
   async function invite(deps: RouteDeps, token: string, value: string): Promise<void> {
-    const res = await handle(
-      req('POST', '/invites', { token, body: { inviteHash: await sha256Hex(value) } }),
-      deps
-    )
-    expect(res.status).toBe(200)
+    // The invite route needs the authenticator now; these tests are about /pair.
+    void token
+    await deps.db.insertInvite(await sha256Hex(value), deps.now() + 600_000, deps.now())
   }
 
   function pair(deps: RouteDeps, value: string, deviceId: string): Promise<Response> {

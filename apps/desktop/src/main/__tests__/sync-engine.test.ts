@@ -136,6 +136,8 @@ class FakeServer {
   mode: 'up' | 'down' | 'error500' | 'unauthorized' = 'up'
   /** Like the Worker once an authenticator is confirmed: enroll needs the current factor. */
   totpConfirmed = false
+  /** The group has no authenticator yet: /invites answers "totp required". */
+  inviteWithoutTotp = false
   private seq = 0
   snapshot: { id: string; seqUntil: number; device: string; parts: string[] } | null = null
   pendingParts = new Map<string, { device: string; parts: Map<number, string> }>()
@@ -188,6 +190,12 @@ class FakeServer {
     if (!me) return reply(401, { error: 'unauthorized' })
     if (me.revoked) return reply(401, { revoked: true, wipe: me.wipe })
     if (u.pathname === '/invites') {
+      // Like the Worker (spec 2026-11-07): a group without an authenticator,
+      // no code and a wrong code are all 401s with their own error.
+      const factor = init.headers['x-totp-code']
+      if (this.inviteWithoutTotp) return reply(401, { error: 'totp required' })
+      if (!factor) return reply(401, { error: 'factor required' })
+      if (factor === '000000') return reply(401, { error: 'invalid factor' })
       this.invites.add(String(body.inviteHash))
       return reply(200, { expiresAt: 0 })
     }
@@ -738,13 +746,61 @@ async function pairedDevices(
   await clock.advance(0)
   const b = device(server, clock, ID_B)
   b.store.save(dataB)
-  const { code } = await a.engine.createInvite()
+  const { code } = await a.engine.createInvite({ totp: '123456' })
   await b.engine.join(code, 'merge', 'PC do trabalho')
   await clock.advance(0)
   return { a, b }
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
+
+// Spec docs/specs/2026-11-07-endurecer-acesso-remoto.md, item 6.
+describe('convite com o código do autenticador', () => {
+  async function activated(): Promise<ReturnType<typeof device>> {
+    const a = device(server, clock, ID_A)
+    a.store.save(withData({ projects: [project('p1', 'Casa')] }))
+    await a.engine.activate(SERVER_URL, SETUP, 'PC de casa')
+    await clock.advance(0)
+    return a
+  }
+
+  it('sem código: pede o código e não chama o servidor', async () => {
+    const a = await activated()
+    const before = server.requests.length
+    await expect(a.engine.createInvite({ totp: '  ' })).rejects.toThrow(
+      'Digite o código do autenticador.'
+    )
+    expect(server.requests.slice(before).some((r) => r.url.endsWith('/invites'))).toBe(false)
+  })
+
+  it('manda o código no cabeçalho x-totp-code', async () => {
+    const a = await activated()
+    await a.engine.createInvite({ totp: '123456' })
+    const request = server.requests.findLast((r) => r.url.endsWith('/invites'))
+    expect(request?.init.headers['x-totp-code']).toBe('123456')
+  })
+
+  it('grupo sem autenticador: texto próprio e o aparelho continua conectado', async () => {
+    const a = await activated()
+    server.inviteWithoutTotp = true
+    const state = a.engine.status().state
+    await expect(a.engine.createInvite({ totp: '123456' })).rejects.toThrow(
+      'Cadastre o autenticador em Configurações → Sincronização para parear aparelhos.'
+    )
+    expect(a.engine.status().state).toBe(state)
+    expect(a.config.stored).not.toBeNull()
+  })
+
+  it('código errado: texto próprio e o aparelho continua conectado', async () => {
+    const a = await activated()
+    const state = a.engine.status().state
+    await expect(a.engine.createInvite({ totp: '000000' })).rejects.toThrow(
+      'Código do autenticador inválido.'
+    )
+    expect(a.engine.status().state).toBe(state)
+    expect(a.config.stored).not.toBeNull()
+  })
+})
 
 describe('pareamento e convergência', () => {
   it('recupera com a mesma chave e envia a prova mais o segundo fator', async () => {
@@ -846,7 +902,7 @@ describe('espera da atualização', () => {
     a.store.save(withData({ projects: [project('p1', 'Casa')] }))
     await a.engine.activate(SERVER_URL, SETUP, 'PC de casa')
     await clock.advance(0)
-    const { code } = await a.engine.createInvite()
+    const { code } = await a.engine.createInvite({ totp: '123456' })
     const b = device(server, clock, ID_B, { on: true })
     await b.engine.join(code, 'merge', 'PC do trabalho').catch(() => {})
     await clock.advance(POLL_MS)
@@ -859,7 +915,7 @@ describe('espera da atualização', () => {
     const a = device(server, clock, ID_A, hold)
     await a.engine.activate(SERVER_URL, SETUP, 'PC de casa')
     await clock.advance(0)
-    const { code } = await a.engine.createInvite()
+    const { code } = await a.engine.createInvite({ totp: '123456' })
     const b = device(server, clock, ID_B)
     await b.engine.join(code, 'merge', 'Notebook perdido')
     await clock.advance(0)
@@ -933,7 +989,7 @@ describe('retrato e retenção', () => {
     )
     await a.engine.syncNow()
     const b = device(server, clock, ID_B)
-    const { code } = await a.engine.createInvite()
+    const { code } = await a.engine.createInvite({ totp: '123456' })
     await b.engine.join(code, 'merge', 'PC do trabalho')
     expect(dataHashes(b.store)).toEqual(dataHashes(a.store))
   })
@@ -1217,7 +1273,7 @@ describe('revogar e apagar', () => {
     expect(b.wipe).toHaveBeenCalledTimes(1)
 
     vi.spyOn(b.store, 'getSyncDeviceId').mockReturnValue('c'.repeat(32))
-    const { code } = await a.engine.createInvite()
+    const { code } = await a.engine.createInvite({ totp: '123456' })
     await b.engine.join(code, 'replace', 'Celular')
     await clock.advance(0)
     a.store.save(withData({ projects: [project('p1', 'Casa'), project('p2', 'Novo')] }))
@@ -1377,7 +1433,7 @@ describe('substituir', () => {
     b.store.save(withData({ projects: [project('pb', 'Só em B')] }))
     const before = dataHashes(b.store)
     b.backup.mockResolvedValue(false)
-    const { code } = await a.engine.createInvite()
+    const { code } = await a.engine.createInvite({ totp: '123456' })
     await expect(b.engine.join(code, 'replace', 'PC do trabalho')).rejects.toThrow('backup')
     expect(server.requests.some((r) => r.url.endsWith('/pair'))).toBe(false)
     expect(server.invites.size).toBe(1)
@@ -1392,7 +1448,7 @@ describe('substituir', () => {
     await clock.advance(0)
     const b = device(server, clock, ID_B)
     b.store.save(withData({ projects: [project('pb', 'Só em B')] }))
-    const { code } = await a.engine.createInvite()
+    const { code } = await a.engine.createInvite({ totp: '123456' })
     await b.engine.join(code, 'replace', 'PC do trabalho')
     await clock.advance(0)
     expect(b.backup).toHaveBeenCalledTimes(1)
