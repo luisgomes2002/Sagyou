@@ -116,6 +116,12 @@ export function SyncSettings({ onToast, onOneTimeSecretChange }: Props): JSX.Ele
   const [deviceName, setDeviceName] = useState('')
   const [joinCode, setJoinCode] = useState('')
   const [askJoinMode, setAskJoinMode] = useState(false)
+  // "Perdi todos os aparelhos" (spec 2026-11-08-recuperacao-codigo): the three
+  // secrets live only here, never in a log; success or Cancelar clears them.
+  const [recoverCode, setRecoverCode] = useState('')
+  const [recoverSetup, setRecoverSetup] = useState('')
+  const [recoverFactor, setRecoverFactor] = useState('')
+  const [askRecover, setAskRecover] = useState(false)
   // The recovery code: right after activation it needs "Guardei o código".
   const [recovery, setRecovery] = useState<{ code: string; mustConfirm: boolean } | null>(null)
   const [savedCode, setSavedCode] = useState(false)
@@ -247,6 +253,33 @@ export function SyncSettings({ onToast, onOneTimeSecretChange }: Props): JSX.Ele
       setJoinCode('')
       setStatus(result.status)
       onToast('Aparelho pareado.')
+      await refresh()
+    })
+
+  const clearRecover = (): void => {
+    setRecoverCode('')
+    setRecoverSetup('')
+    setRecoverFactor('')
+    setAskRecover(false)
+  }
+
+  const recover = (): Promise<void> =>
+    act('Não foi possível recuperar a sincronização.', async () => {
+      const result = await window.electronAPI.sync.recover(
+        recoverCode.trim(),
+        recoverSetup,
+        deviceName.trim() || undefined,
+        { totp: recoverFactor.trim() }
+      )
+      if (!result.ok) throw new Error(result.error)
+      // A 401 while downloading ends the session: nothing was recovered.
+      if (result.status.state === 'off' || result.status.state === 'disconnected')
+        throw new Error('Não foi possível recuperar a sincronização.')
+      clearRecover()
+      setStatus(result.status)
+      // Paused, the banner with "A nuvem manda" is the next step, not a success.
+      if (result.status.state !== 'paused')
+        onToast('Sincronização recuperada. Revogue os aparelhos perdidos em Aparelhos.')
       await refresh()
     })
 
@@ -573,6 +606,80 @@ export function SyncSettings({ onToast, onOneTimeSecretChange }: Props): JSX.Ele
                     className={secondaryClass}
                   >
                     Entrar com código
+                  </button>
+                )}
+              </Subsection>
+              <Subsection title="Perdi todos os aparelhos">
+                <p className="text-sm text-[#999999]">
+                  Use quando nenhum aparelho pareado está à mão. Os dados deste PC serão
+                  substituídos pelos da nuvem (um backup é feito antes).
+                </p>
+                <label className="block text-sm text-[#d4d4d4]">
+                  Código de recuperação
+                  <textarea
+                    value={recoverCode}
+                    onChange={(event) => setRecoverCode(event.target.value)}
+                    rows={3}
+                    autoComplete="off"
+                    spellCheck={false}
+                    className={`${fieldClass} font-mono text-xs`}
+                  />
+                </label>
+                <label className="block text-sm text-[#d4d4d4]">
+                  Senha de configuração do Worker
+                  <input
+                    value={recoverSetup}
+                    onChange={(event) => setRecoverSetup(event.target.value)}
+                    type="password"
+                    autoComplete="off"
+                    className={fieldClass}
+                  />
+                </label>
+                <label className="block text-sm text-[#d4d4d4]">
+                  Código do autenticador ou reserva
+                  <input
+                    value={recoverFactor}
+                    onChange={(event) => setRecoverFactor(event.target.value)}
+                    autoComplete="off"
+                    spellCheck={false}
+                    className={fieldClass}
+                  />
+                </label>
+                {askRecover ? (
+                  <div className={panelClass}>
+                    <p className="text-sm text-[#d4d4d4]">
+                      Os dados deste PC serão substituídos pelos da nuvem. Um backup deste PC é
+                      feito antes.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void recover()}
+                        className={primaryClass}
+                      >
+                        Recuperar e substituir
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => setAskRecover(false)}
+                        className={secondaryClass}
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={
+                      busy || !recoverCode.trim() || !recoverSetup || !recoverFactor.trim()
+                    }
+                    onClick={() => setAskRecover(true)}
+                    className={secondaryClass}
+                  >
+                    Recuperar
                   </button>
                 )}
               </Subsection>
