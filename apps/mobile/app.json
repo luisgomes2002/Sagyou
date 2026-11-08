@@ -2,7 +2,7 @@
   "expo": {
     "name": "Sagyou",
     "slug": "sagyou",
-    "version": "0.4.0",
+    "version": "0.4.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -16,7 +16,7 @@
       "predictiveBackGestureEnabled": false,
       "package": "com.sagyou.mobile",
       "allowBackup": false,
-      "versionCode": 400
+      "versionCode": 401
     },
     "plugins": [
       "expo-sqlite",
