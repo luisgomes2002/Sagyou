@@ -44,7 +44,8 @@ no Brasil, um PC reinstalado ou novo sem nenhum aparelho pareado fica sem saída
 2. **Confirmação antes de enviar**, sempre: "Os dados deste PC serão substituídos pelos da
    nuvem. Um backup deste PC é feito antes." com **Recuperar e substituir** / **Cancelar**.
 3. **Os três segredos vivem só no estado da seção.** Um erro mantém os campos (para corrigir
-   um deles); sucesso ou Cancelar os limpa, e sair de Configurações também (o componente
+   um deles); o sucesso os limpa (o Cancelar da confirmação os mantém, como diz o Fluxo), e
+   sair de Configurações também (o componente
    desmonta). Trocar de seção dentro de Configurações mantém, como o código do "Entrar com
    código" (a Sincronização fica montada escondida). Nunca vão a log. (Ajuste do plano,
    2026-11-08.)

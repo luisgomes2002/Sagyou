@@ -428,7 +428,10 @@ describe('Sincronização: recuperar', () => {
         totp: '123456'
       })
     )
-    await waitFor(() => expect(onToast).toHaveBeenCalledWith(TOAST))
+    await waitFor(() => expect(screen.getByLabelText('Código de recuperação')).toHaveValue(''))
+    expect(screen.getByLabelText('Senha de configuração do Worker')).toHaveValue('')
+    expect(screen.getByLabelText('Código do autenticador ou reserva')).toHaveValue('')
+    expect(onToast).toHaveBeenCalledWith(TOAST)
   })
 
   it('pausado depois do /setup limpa os campos sem dizer que recuperou', async () => {
@@ -443,7 +446,9 @@ describe('Sincronização: recuperar', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Recuperar' }))
     fireEvent.click(screen.getByRole('button', { name: 'Recuperar e substituir' }))
     await waitFor(() => expect(window.electronAPI.sync.recover).toHaveBeenCalled())
-    await waitFor(() => expect(onToast).not.toHaveBeenCalledWith(TOAST))
+    await waitFor(() => expect(screen.getByLabelText('Código de recuperação')).toHaveValue(''))
+    expect(screen.getByLabelText('Senha de configuração do Worker')).toHaveValue('')
+    expect(screen.getByLabelText('Código do autenticador ou reserva')).toHaveValue('')
     expect(onToast).not.toHaveBeenCalledWith(TOAST)
   })
 
@@ -476,7 +481,25 @@ describe('Sincronização: recuperar', () => {
       'Não foi possível recuperar a sincronização.'
     )
     expect(screen.getByLabelText('Código de recuperação')).toHaveValue('CODE')
+    // The Worker already took the factor (a backup code works once).
+    expect(screen.getByLabelText('Código do autenticador ou reserva')).toHaveValue('')
     expect(onToast).not.toHaveBeenCalled()
+  })
+
+  it('tira os espaços do código do autenticador', async () => {
+    withStatus({ state: 'off' })
+    render(<SyncSettings onToast={vi.fn()} />)
+    await fill()
+    fireEvent.change(screen.getByLabelText('Código do autenticador ou reserva'), {
+      target: { value: '123 456' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Recuperar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Recuperar e substituir' }))
+    await waitFor(() =>
+      expect(window.electronAPI.sync.recover).toHaveBeenCalledWith('CODE', 'setup', undefined, {
+        totp: '123456'
+      })
+    )
   })
 
   it("a pausa 'join' só oferece A nuvem manda", async () => {

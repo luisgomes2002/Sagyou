@@ -270,12 +270,16 @@ export function SyncSettings({ onToast, onOneTimeSecretChange }: Props): JSX.Ele
         recoverCode.trim(),
         recoverSetup.trim(),
         deviceName.trim() || undefined,
-        { totp: recoverFactor.trim() }
+        // "123 456" as typed: the handler only accepts the code without spaces.
+        { totp: recoverFactor.replace(/\s+/g, '') }
       )
       if (!result.ok) throw new Error(result.error)
-      // A 401 while downloading ends the session: nothing was recovered.
-      if (result.status.state === 'off' || result.status.state === 'disconnected')
+      // A 401 while downloading ends the session: nothing was recovered. The
+      // Worker already took the factor, and a backup code works only once.
+      if (result.status.state === 'off' || result.status.state === 'disconnected') {
+        setRecoverFactor('')
         throw new Error('Não foi possível recuperar a sincronização.')
+      }
       clearRecover()
       setStatus(result.status)
       // Paused, the banner with "A nuvem manda" is the next step, not a success.

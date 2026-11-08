@@ -149,7 +149,7 @@ O app traz este passo a passo, com os comandos para copiar, em **Como funciona �
 
 Para parear, no app, em **Configurações → Sincronização**:
 
-1. No primeiro PC, preencha a URL do Worker e o `SETUP_TOKEN` e clique em **Ativar**. Guarde o código de recuperação que aparece: ele é a única forma de recuperar a chave se você perder todos os aparelhos.
+1. No primeiro PC, preencha a URL do Worker e o `SETUP_TOKEN` e clique em **Ativar**. Guarde o código de recuperação que aparece: ele é a única forma de recuperar a chave se você perder todos os aparelhos (em **Configurações → Sincronização → Perdi todos os aparelhos**, que troca os dados do PC pelos da nuvem com um backup antes; no celular, **Entrar com código de recuperação**).
 2. Ainda no primeiro PC, cadastre o autenticador (Google Authenticator ou outro app TOTP) e guarde os códigos reserva. Ele é pedido para apagar os dados de um aparelho perdido.
 3. Clique em **Parear novo aparelho**. Aparecem um texto e um QR que valem por 10 minutos. Um celular já pareado também gera esse código, em **Ajustes → Parear outro aparelho** (útil longe do PC).
 4. No segundo PC, use **Entrar com código** e cole o texto. Se esse PC já tiver dados, escolha **Juntar** (fica tudo dos dois lados) ou **Substituir** (fica só o que está na nuvem, com um backup antes).
