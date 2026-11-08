@@ -122,6 +122,8 @@ export function SyncSettings({ onToast, onOneTimeSecretChange }: Props): JSX.Ele
   const [askPassword, setAskPassword] = useState(false)
   const [password, setPassword] = useState('')
   const [invite, setInvite] = useState<{ code: string; expiresAt: number; qr: string } | null>(null)
+  // Pairing asks for the authenticator (spec 2026-11-07, item 6).
+  const [inviteFactor, setInviteFactor] = useState('')
   const [confirmDisable, setConfirmDisable] = useState(false)
   // Authenticator and revocation (Task 7b).
   const [uri, setUri] = useState('')
@@ -256,7 +258,11 @@ export function SyncSettings({ onToast, onOneTimeSecretChange }: Props): JSX.Ele
 
   const createInvite = (): Promise<void> =>
     act('Não foi possível criar o convite.', async () => {
-      const result = await window.electronAPI.sync.invite()
+      const totp = inviteFactor.trim()
+      if (!totp) return
+      const result = await window.electronAPI.sync.invite(totp)
+      // A TOTP code is good once: never left in the field to be sent again.
+      setInviteFactor('')
       if (!result.ok) throw new Error(result.error)
       const image = await QRCode.toDataURL(result.code, { margin: 2, width: 256 })
       setInvite({ code: result.code, expiresAt: result.expiresAt, qr: image })
@@ -719,9 +725,22 @@ export function SyncSettings({ onToast, onOneTimeSecretChange }: Props): JSX.Ele
                     </div>
                   </div>
                 )}
+                <label className="block text-sm text-[#d4d4d4]">
+                  Código do autenticador
+                  <input
+                    value={inviteFactor}
+                    onChange={(event) => setInviteFactor(event.target.value)}
+                    autoComplete="one-time-code"
+                    aria-describedby="sync-invite-factor-help"
+                    className={fieldClass}
+                  />
+                </label>
+                <p id="sync-invite-factor-help" className="text-xs text-[#999999]">
+                  Ou um código reserva.
+                </p>
                 <button
                   type="button"
-                  disabled={busy}
+                  disabled={busy || !inviteFactor.trim()}
                   onClick={() => void createInvite()}
                   className={secondaryClass}
                 >

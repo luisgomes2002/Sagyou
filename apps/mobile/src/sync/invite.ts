@@ -5,6 +5,9 @@ export const UNEXPECTED_ERROR_TEXT = 'Não foi possível gerar o código.'
 
 /** What the "Parear outro aparelho" screen shows. */
 export type InviteState =
+  // Waiting for the authenticator code (spec 2026-11-07, item 6); `error` is
+  // the last attempt's message, shown on the field.
+  | { kind: 'factor'; error?: string }
   | { kind: 'loading' }
   | { kind: 'ready'; code: string; expiresAt: number }
   | { kind: 'expired' }

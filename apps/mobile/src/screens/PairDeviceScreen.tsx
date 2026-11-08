@@ -2,7 +2,7 @@ import * as Clipboard from 'expo-clipboard'
 import { useEffect, useRef, useState } from 'react'
 import { ScrollView, StyleSheet, Text, View } from 'react-native'
 import { Skeleton } from '../components/Skeleton'
-import { Button, Card, QrCode, Screen, Snackbar } from '../components/ui'
+import { Button, Card, Field, QrCode, Screen, Snackbar } from '../components/ui'
 import { useLockState } from '../lock/lockState'
 import { useApp } from '../store/app'
 import { countdownText, fetchInvite, forgetCopiedCode, type InviteState } from '../sync/invite'
@@ -15,7 +15,9 @@ export const COPY_LABEL = 'Copiar código'
 export const COPIED_TEXT = 'Código copiado.'
 export const EXPIRED_TEXT = 'O código expirou.'
 export const NEW_CODE_LABEL = 'Gerar outro'
-export const RETRY_LABEL = 'Tentar de novo'
+export const FACTOR_LABEL = 'Código do autenticador'
+export const FACTOR_HINT = 'Ou um código reserva.'
+export const GENERATE_LABEL = 'Gerar código'
 export const QR_LABEL = 'Código de pareamento'
 const SNACK_MS = 4000
 const QR_SIZE = 240
@@ -39,7 +41,9 @@ export function PairDeviceScreen({
 }: PairDeviceScreenProps = {}): React.JSX.Element {
   const theme = useTheme()
   const engine = useApp((s) => s.services?.runtime.engine)
-  const [invite, setInvite] = useState<InviteState>({ kind: 'loading' })
+  const [invite, setInvite] = useState<InviteState>({ kind: 'factor' })
+  // The TOTP or backup code; dropped as soon as it is sent (good once).
+  const [totp, setTotp] = useState('')
   const [clock, setClock] = useState(now)
   const [snack, setSnack] = useState<string | null>(null)
   const snackTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -53,38 +57,32 @@ export function PairDeviceScreen({
     void forgetCopiedCode(code)
   }
 
-  /** Starts a request; only its own answer (the latest) lands on screen. */
-  const startRequest = (): void => {
-    if (!engine) return
+  /** "Gerar código": the skeleton, then the invite; only the latest answer lands. */
+  const generate = (): void => {
+    const code = totp.trim()
+    if (!engine || !code) return
+    setTotp('')
+    setInvite({ kind: 'loading' })
     const id = ++request.current
-    void fetchInvite(engine).then((next) => {
+    void fetchInvite(engine, code).then((next) => {
       if (id !== request.current) return
       setClock(now())
-      setInvite(next)
+      // A refusal goes back to the field, with the engine's message as is.
+      setInvite(next.kind === 'error' ? { kind: 'factor', error: next.message } : next)
     })
   }
 
-  /** "Gerar outro" / "Tentar de novo": back to the skeleton, then a new invite. */
-  const generate = (): void => {
-    setInvite({ kind: 'loading' })
-    startRequest()
-  }
+  /** "Gerar outro": a new authenticator code is needed. */
+  const again = (): void => setInvite({ kind: 'factor' })
 
   useEffect(() => {
-    if (!engine) return
-    const id = ++request.current
-    void fetchInvite(engine).then((next) => {
-      if (id !== request.current) return
-      setClock(now())
-      setInvite(next)
-    })
     return () => {
       // Closing the screen forgets the code and ignores a request still on the way.
       request.current += 1
       if (snackTimer.current) clearTimeout(snackTimer.current)
       void forgetCopiedCode(copied.current)
     }
-  }, [engine, now])
+  }, [])
 
   // Locked or in the background: the code goes away with the screen.
   useEffect(
@@ -92,6 +90,7 @@ export function PairDeviceScreen({
       useLockState.subscribe((state) => {
         if (!state.hidden) return
         request.current += 1
+        setTotp('')
         forget()
         setInvite({ kind: 'expired' })
         navigation?.goBack()
@@ -129,6 +128,26 @@ export function PairDeviceScreen({
         <Screen>
           <Card>
             <Text style={[styles.body, { color: theme.text }]}>{PAIR_HINT}</Text>
+            {invite.kind === 'factor' ? (
+              <View style={styles.factor}>
+                <Field
+                  label={FACTOR_LABEL}
+                  value={totp}
+                  onChangeText={setTotp}
+                  error={invite.error}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  textContentType="oneTimeCode"
+                />
+                <Text style={[styles.hint, { color: theme.muted }]}>{FACTOR_HINT}</Text>
+                <Button
+                  variant="primary"
+                  label={GENERATE_LABEL}
+                  disabled={!engine || totp.trim() === ''}
+                  onPress={generate}
+                />
+              </View>
+            ) : null}
             {invite.kind === 'loading' ? <Skeleton lines={3} /> : null}
             {invite.kind === 'ready' ? (
               <View style={styles.code}>
@@ -145,15 +164,7 @@ export function PairDeviceScreen({
             {invite.kind === 'expired' ? (
               <View style={styles.code}>
                 <Text style={[styles.body, { color: theme.attention }]}>{EXPIRED_TEXT}</Text>
-                <Button label={NEW_CODE_LABEL} onPress={generate} />
-              </View>
-            ) : null}
-            {invite.kind === 'error' ? (
-              <View style={styles.code}>
-                <Text accessibilityRole="alert" style={[styles.body, { color: theme.red }]}>
-                  {invite.message}
-                </Text>
-                <Button label={RETRY_LABEL} onPress={generate} />
+                <Button label={NEW_CODE_LABEL} onPress={again} />
               </View>
             ) : null}
           </Card>
@@ -170,5 +181,7 @@ const styles = StyleSheet.create({
   page: { flex: 1 },
   body: { fontSize: FONT.body },
   code: { alignItems: 'center', gap: SPACE.md, paddingTop: SPACE.md },
+  factor: { gap: SPACE.sm, paddingTop: SPACE.md },
+  hint: { fontSize: FONT.caption },
   snack: { position: 'absolute', left: SPACE.md, right: SPACE.md, bottom: SPACE.md }
 })

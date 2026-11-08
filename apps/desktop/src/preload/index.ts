@@ -366,8 +366,9 @@ export const api = {
       factor?: SyncSecondFactor
     ): Promise<SyncResult<{ recoveryCode: string }>> =>
       ipcRenderer.invoke('sync:activate', url, setupToken, deviceName, factor),
-    invite: (): Promise<SyncResult<{ code: string; expiresAt: number }>> =>
-      ipcRenderer.invoke('sync:invite'),
+    // The authenticator code or a backup code (spec 2026-11-07, item 6).
+    invite: (totp: string): Promise<SyncResult<{ code: string; expiresAt: number }>> =>
+      ipcRenderer.invoke('sync:invite', { totp }),
     recover: (
       code: string,
       setupToken: string,
