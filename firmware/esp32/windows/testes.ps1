@@ -63,6 +63,21 @@ Assert-Equal $true (Test-SagyouSameText 'abc' 'abc') 'comparação: iguais'
 Assert-Equal $false (Test-SagyouSameText 'abc' 'abd') 'comparação: diferentes'
 Assert-Equal $false (Test-SagyouSameText 'abc' 'ab') 'comparação: tamanhos diferentes'
 
+# --- instalar.ps1 / desinstalar.ps1 (Task 5) ---
+. (Join-Path $PSScriptRoot 'instalar.ps1') -Test
+Assert-Equal $true (Test-SagyouIpv4 '192.168.15.251') 'IPv4 válido'
+Assert-Equal $false (Test-SagyouIpv4 '999.1.1.1') 'IPv4 com octeto acima de 255'
+Assert-Equal $false (Test-SagyouIpv4 '192.168.15') 'IPv4 com 3 octetos'
+Assert-Equal $false (Test-SagyouIpv4 'a.b.c.d') 'IPv4 com letras'
+Assert-Equal $false (Test-SagyouIpv4 '192.168.15.251; calc') 'IPv4 com sobra'
+foreach ($name in 'instalar.ps1', 'desinstalar.ps1', 'ouvir-esp32.ps1') {
+  $tokens = $null
+  $errors = $null
+  [System.Management.Automation.Language.Parser]::ParseFile(
+    (Join-Path $PSScriptRoot $name), [ref]$tokens, [ref]$errors) | Out-Null
+  Assert-Equal 0 $errors.Count "$name sem erro de sintaxe"
+}
+
 if ($script:failures -gt 0) {
   Write-Host "$script:failures teste(s) falharam."
   exit 1
