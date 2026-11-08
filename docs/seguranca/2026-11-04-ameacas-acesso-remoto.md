@@ -180,7 +180,9 @@ Decidido por Luis; construído na spec `docs/specs/2026-11-07-endurecer-acesso-r
 6. **Convite com autenticador: sim.** Gerar um código de pareamento (PC ou celular) pede o
    código do autenticador ou um código reserva.
 7. **PC do trabalho com tudo:** risco aceito; sem escopo de sync por aparelho.
-8. **Fuso:** spec própria (Spec B).
+8. **Fuso:** spec própria (Spec B), resolvida em `docs/specs/2026-11-08-fuso-horario.md`:
+   cada aparelho continua no próprio fuso, e `create_transaction`/`add_goal_progress`
+   exigem a data explícita (sem ela, recusam antes do cartão).
 
 - **M5:** o pedido "Estou longe do PC" fica no Worker por no máximo 1 h (era 24 h).
 - **M6:** a chave do ESP32 no celular sem `requireAuthentication` foi aceita: ela só assina
