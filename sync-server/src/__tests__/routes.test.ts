@@ -347,7 +347,9 @@ describe('convites e /pair', () => {
     ).toBe(400)
   })
 
-  // Spec docs/specs/2026-11-07-endurecer-acesso-remoto.md, item 6.
+  // Spec docs/specs/2026-11-07-endurecer-acesso-remoto.md, item 6. Every factor
+  // refusal is a 403, never a 401: an app from before 1.7 / 0.4 reads a 401 on
+  // /invites as "session gone" and deletes its sync key (review of PR #48).
   describe('convite exige o autenticador', () => {
     const create = (
       deps: RouteDeps,
@@ -359,11 +361,11 @@ describe('convites e /pair', () => {
         deps
       )
 
-    it('sem autenticador cadastrado: 401 totp required e nenhum convite', async () => {
+    it('sem autenticador cadastrado: 403 totp required e nenhum convite', async () => {
       const { db, deps } = setup()
       const a = await registerFirst(deps)
       const res = await create(deps, a, { 'x-totp-code': '123456' })
-      expect(res.status).toBe(401)
+      expect(res.status).toBe(403)
       expect((await json(res)).error).toBe('totp required')
       expect(db.invites.size).toBe(0)
     })
@@ -373,10 +375,10 @@ describe('convites e /pair', () => {
       const a = await registerFirst(deps)
       await enroll(deps, a)
       const none = await create(deps, a)
-      expect(none.status).toBe(401)
+      expect(none.status).toBe(403)
       expect((await json(none)).error).toBe('factor required')
       const wrong = await create(deps, a, { 'x-totp-code': '000000' })
-      expect(wrong.status).toBe(401)
+      expect(wrong.status).toBe(403)
       expect((await json(wrong)).error).toBe('invalid factor')
       expect(db.invites.size).toBe(0)
     })
@@ -390,7 +392,7 @@ describe('convites e /pair', () => {
       expect(typeof (await json(ok)).expiresAt).toBe('number')
       expect(db.invites.size).toBe(1)
       expect((await create(deps, a, { 'x-totp-code': backupCodes[0] })).status).toBe(200)
-      expect((await create(deps, a, { 'x-totp-code': backupCodes[0] })).status).toBe(401)
+      expect((await create(deps, a, { 'x-totp-code': backupCodes[0] })).status).toBe(403)
     })
   })
 })

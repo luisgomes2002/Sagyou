@@ -191,11 +191,12 @@ class FakeServer {
     if (me.revoked) return reply(401, { revoked: true, wipe: me.wipe })
     if (u.pathname === '/invites') {
       // Like the Worker (spec 2026-11-07): a group without an authenticator,
-      // no code and a wrong code are all 401s with their own error.
+      // no code and a wrong code are all 403s with their own error (a 401 here
+      // still means the session is gone, as for an app from before 1.7).
       const factor = init.headers['x-totp-code']
-      if (this.inviteWithoutTotp) return reply(401, { error: 'totp required' })
-      if (!factor) return reply(401, { error: 'factor required' })
-      if (factor === '000000') return reply(401, { error: 'invalid factor' })
+      if (this.inviteWithoutTotp) return reply(403, { error: 'totp required' })
+      if (!factor) return reply(403, { error: 'factor required' })
+      if (factor === '000000') return reply(403, { error: 'invalid factor' })
       this.invites.add(String(body.inviteHash))
       return reply(200, { expiresAt: 0 })
     }
