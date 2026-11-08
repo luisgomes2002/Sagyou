@@ -146,7 +146,7 @@ export const SYNC_KEYS_ARTICLE: SyncGuideArticle = {
     keyExample('Código de pareamento / QR', EXAMPLE_PAIR_CODE, [
       'Adiciona um aparelho.',
       'Ao parear outro PC ou o celular.',
-      'Gere outro em Parear novo aparelho (PC) ou Parear outro aparelho (celular).',
+      'Gere outro em Parear novo aparelho (PC) ou Parear outro aparelho (celular), com o código do autenticador.',
       'Gere outro: vale 10 min e uma vez só.',
       'Expira em 10 min e serve uma vez; se suspeitar, revogue o aparelho que entrou.',
       'Não guarde: use na hora.'
@@ -177,7 +177,7 @@ export const SYNC_KEYS_ARTICLE: SyncGuideArticle = {
         ['A senha de configuração', 'Defina outra com npx wrangler secret put SETUP_TOKEN.'],
         [
           'O celular autorizado a controlar o PC',
-          'O código de recuperação, a senha do Worker, um código reserva e a senha do Sagyou (veja Trocar de celular longe de casa).'
+          'Cortar acesso na aba PC de outro celular autorizado, se tiver; depois o código de recuperação, a senha do Worker, um código reserva e a senha do Sagyou (veja Trocar de celular longe de casa).'
         ]
       ]
     }
@@ -198,7 +198,7 @@ export const SYNC_SWITCH_PHONE_ARTICLE: SyncGuideArticle = {
       items: [
         'No celular novo, instale o Sagyou e toque em Entrar com código de recuperação: cole o código de recuperação e digite a senha de configuração do Worker e um código do autenticador ou um código reserva.',
         'Em Ajustes → Controlar o PC, toque em Estou longe do PC: digite a senha do Sagyou e um código novo do autenticador ou outro código reserva (o anterior já foi usado para entrar), e confirme com a biometria.',
-        'Assim que o Worker confere o código, o celular novo já liga o PC pelo ESP32. Desbloquear, desligar e aprovar cartões esperam o PC ligado conferir a senha do Sagyou.',
+        'Assim que o Worker confere o código, o celular novo já liga o PC pelo ESP32. Desbloquear, desligar e aprovar cartões esperam o PC ligado conferir a senha do Sagyou. O pedido espera o PC por 1 hora; depois disso, ligue o PC e peça de novo.',
         'Revogue o celular perdido na sincronização, apagando os dados dele (pede o código do autenticador).'
       ]
     },

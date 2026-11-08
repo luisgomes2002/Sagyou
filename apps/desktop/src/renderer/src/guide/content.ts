@@ -475,7 +475,7 @@ const sessoesCodigo: GuideArticle[] = [
       {
         type: 'callout',
         tone: 'warning',
-        text: 'Nada pede aprovação por este acesso: excluir, mexer em dinheiro, arquivar projeto e criar tabelas ou perfis financeiros acontecem direto. Nas finanças, o Claude escolhe o perfil pela tabela ou pelo profileId; sem ele, usa o perfil ativo no PC.'
+        text: 'Excluir, mexer em dinheiro, arquivar projeto e criar tabelas ou perfis financeiros pede aprovação: um cartão abre no PC e no celular autorizado (aba PC), e a primeira resposta vale. Sem resposta em 5 minutos, a ação é recusada. Criar e editar tarefas, notas, metas e memórias não pedem. Nas finanças, o Claude escolhe o perfil pela tabela ou pelo profileId; sem ele, usa o perfil ativo no PC.'
       },
       {
         type: 'p',
@@ -483,12 +483,16 @@ const sessoesCodigo: GuideArticle[] = [
       },
       {
         type: 'p',
-        text: 'Com senha no Sagyou, o token para quando a tela bloqueia, a não ser que você ligue Funcionar com o Sagyou bloqueado. Ligado, o Claude continua lendo e escrevendo com a tela na senha; se o Sagyou abriu bloqueado e nunca foi desbloqueado, só as leituras e as memórias funcionam (tarefas, notas, metas e finanças voltam depois do primeiro desbloqueio). A proteção do token passa a ser a senha do Windows.'
+        text: 'Com senha no Sagyou, o token para quando a tela bloqueia, a não ser que você ligue Ler com o Sagyou bloqueado. Ligado, o Claude continua lendo com a tela na senha, mas não escreve: para escrever, desbloqueie no PC ou pelo celular (aba PC).'
       },
       {
         type: 'callout',
         tone: 'tip',
-        text: 'Para usar de longe, deixe o PC ligado sem suspender (Windows → Energia) e o Sagyou aberto, e desligue o bloqueio por inatividade ou ligue Funcionar com o Sagyou bloqueado.'
+        text: 'Para usar de longe, deixe o PC ligado sem suspender (Windows → Energia) e o Sagyou aberto. Se ele bloquear, desbloqueie pelo celular (aba PC) para o Claude voltar a escrever.'
+      },
+      {
+        type: 'p',
+        text: 'Se o celular cortar o acesso (Cortar acesso, na aba PC), o token para de responder até alguém tocar em Restaurar acesso: no celular, com o código do autenticador, ou aqui, em Configurações → Acesso MCP externo. Gerar outro token não desfaz o corte.'
       },
       {
         type: 'callout',
@@ -504,7 +508,7 @@ const sessoesCodigo: GuideArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Com o modo controlado ligado, o celular autorizado liga, desliga, desbloqueia e bloqueia este PC, e aprova os cartões do Fleet. Só funciona no Windows, com a sincronização ativa e a senha do Sagyou configurada.'
+        text: 'Com o modo controlado ligado, o celular autorizado liga, desliga, desbloqueia e bloqueia este PC, e aprova os cartões do Fleet e do acesso MCP externo. Só funciona no Windows, com a sincronização ativa e a senha do Sagyou configurada.'
       },
       {
         type: 'steps',
@@ -527,6 +531,14 @@ const sessoesCodigo: GuideArticle[] = [
         type: 'callout',
         tone: 'warning',
         text: 'Desligar salva o Sagyou e agenda o desligamento do Windows em 60 segundos, que o celular pode cancelar. Se o Sagyou não conseguir salvar, o PC não desliga.'
+      },
+      {
+        type: 'p',
+        text: 'Cortar acesso, na aba PC do celular, é o botão de emergência: o acesso MCP externo para, os servidores de Remote Control são encerrados (e de novo a cada 30 segundos, se voltarem) e o Sagyou é bloqueado. O PC continua ligado. Se o PC não responder em 1 minuto, o celular oferece desligar pelo ESP32.'
+      },
+      {
+        type: 'p',
+        text: 'Para voltar, toque em Restaurar acesso no celular, com a biometria e o código do autenticador ou um código reserva, ou clique em Restaurar acesso no PC, em Configurações → Controle remoto. Enquanto o acesso está cortado, a bandeja mostra Acesso cortado pelo celular.'
       },
       {
         type: 'p',
