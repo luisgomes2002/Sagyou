@@ -92,7 +92,7 @@ não mascarar uma regressão nova.
 
 ## Estrutura
 
-Monorepo com workspaces npm: o desktop em `apps/desktop/` (pacote `sagyou`; o nome define a pasta `userData` em dev e o nome dos instaladores, não mude), o código compartilhado em `packages/core/` (`@sagyou/core`), o Worker em `sync-server/` e o firmware do ESP32 em `firmware/esp32/` (PlatformIO, fora dos workspaces). ⚠️ O repositório é público: nunca versione o `secrets.h` do firmware (há teste que barra). **Os caminhos abaixo são relativos a `apps/desktop/`.** Os comandos rodam na raiz.
+Monorepo com workspaces npm: o desktop em `apps/desktop/` (pacote `sagyou`; o nome define a pasta `userData` em dev e o nome dos instaladores, não mude), o código compartilhado em `packages/core/` (`@sagyou/core`), o Worker em `sync-server/` e o firmware do ESP32 em `firmware/esp32/` (PlatformIO, fora dos workspaces). ⚠️ O repositório é público: nunca versione o `secrets.h` do firmware (há teste que barra). Os testes do firmware rodam localmente (`pio test -e native` e `windows/testes.ps1`); veja `firmware/esp32/README.md`. **Os caminhos abaixo são relativos a `apps/desktop/`.** Os comandos rodam na raiz.
 
 `packages/core` guarda o que desktop e celular fazem igual: tipos, dinheiro, normalização, regras puras e todo o sync, inclusive o motor. Os caminhos antigos do desktop reexportam dele; código novo importa de `@sagyou/core/<módulo>`. ⚠️ **Sem Node no core** (nada de `crypto`, `zlib`, `fs`, `Buffer`, Electron ou React; o ESLint e um teste barram). ⚠️ **Nunca regenere** `packages/core/src/__tests__/fixtures/sync-vectors.json` para um teste passar: ele prova que o formato do sync não mudou. Detalhes no `CLAUDE.md`.
 

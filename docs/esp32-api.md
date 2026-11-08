@@ -90,7 +90,34 @@ Na ordem; a primeira que falhar define o `lastResult` e o comando é ignorado:
 
 Executou: grave o novo `at` na flash **antes** de agir e informe `lastResult: "ok"`.
 
-Sem NTP sincronizado, não execute nada (o relógio é a regra 3) e continue informando o estado.
+Sem NTP sincronizado, **não consulte `/power/next` nem informe o estado**: o comando é
+entregue uma vez só e não daria para conferi-lo (regra 3), e o `at` e o MAC do estado
+dependem da hora. O app mostra "ESP32 sem contato" até o relógio acertar (uns 10 s depois
+de ligar). (Spec `docs/specs/2026-11-07-esp32-firmware.md`.)
+
+## Rede local: o pedido de desligar ao PC
+
+`shutdown` e `abort-shutdown` não vão direto ao Windows: o ESP32 manda um pedido assinado ao
+ouvinte `ouvir-esp32.ps1` (`firmware/esp32/windows/`), que roda como SYSTEM.
+
+- **Transporte:** UDP para o IP fixo do PC, porta **9999**, 3 envios com 200 ms entre eles
+  (o contador descarta as cópias).
+- **Mensagem (texto):** `sagyou-lan|1|<cmd>|<at>|<hmac>`
+  - `cmd`: `shutdown` ou `abort-shutdown`;
+  - `at`: hora NTP do ESP32 em ms, 13 dígitos;
+  - `hmac`: HMAC-SHA256 hexadecimal minúsculo de `sagyou-lan|1|<cmd>|<at>` com a **`LAN_KEY`**
+    (32 bytes, gerada pelo `instalar.ps1` e mostrada uma vez; diferente da `ESP32_KEY`).
+- **O ouvinte**, nesta ordem: IP de origem igual ao do ESP32 (o firewall já filtra), no
+  máximo 200 bytes, a expressão exata
+  `^sagyou-lan\|1\|(shutdown|abort-shutdown)\|([0-9]{13})\|([0-9a-f]{64})$`, HMAC em tempo
+  constante, `at` maior que o último aceito (em `C:\ProgramData\Sagyou-ESP32\ultimo-at.txt`,
+  gravado antes de agir), `|at − agora| ≤ 60 s`. Aceito: roda só
+  `C:\Windows\System32\shutdown.exe /s /t 60 /c "Sagyou: desligando pelo ESP32"` ou
+  `shutdown.exe /a`.
+- **Log:** `C:\ProgramData\Sagyou-ESP32\ouvinte.log` (`recusado: origem|formato|assinatura|repetido|relógio`,
+  `executou: shutdown|abort-shutdown`), no máximo 1 MB; nunca a chave nem o datagrama.
+
+O ESP32 não escuta porta nenhuma e não tem OTA: só faz conexões de saída.
 
 ## Intervalos
 
