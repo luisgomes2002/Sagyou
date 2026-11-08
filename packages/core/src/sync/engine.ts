@@ -280,11 +280,16 @@ export interface SyncEngine {
     deviceName: string,
     factor?: SyncSecondFactor
   ): Promise<{ recoveryCode: string }>
+  /**
+   * `mode: 'replace'` (the desktop, spec 2026-11-08-recuperacao-codigo): forced
+   * backup, then this device keeps only the cloud's data. Absent = merge (the phone).
+   */
   recover(
     code: string,
     setupToken: string,
     deviceName: string,
-    factor?: SyncSecondFactor
+    factor?: SyncSecondFactor,
+    mode?: 'merge' | 'replace'
   ): Promise<SyncStatus>
   /** Needs the authenticator code or a backup code (spec 2026-11-07, item 6). */
   createInvite(factor: SyncSecondFactor): Promise<{ code: string; expiresAt: number }>
@@ -963,7 +968,8 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
     syncKey: Uint8Array,
     setupToken: string,
     deviceName: string,
-    factor?: SyncSecondFactor
+    factor?: SyncSecondFactor,
+    opts?: { replace?: boolean }
   ): Promise<{ recoveryCode: string }> => {
     if (session) throw new SyncUserError('A sincronização já está ativa neste aparelho.')
     if (deps.config.availability() !== 'ok')
@@ -972,6 +978,11 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       )
     const name = deviceName.trim().slice(0, 80) || 'Aparelho'
     return exclusive(async () => {
+      // The backup comes before the Worker hears of this device: if it fails, nothing changed.
+      if (opts?.replace && !(await deps.forcedBackup()))
+        throw new SyncUserError(
+          'Não foi possível fazer o backup antes de substituir. Nada foi alterado.'
+        )
       const keys = deriveKeys(syncKey)
       const opaqueId = opaqueDeviceId(keys.id, store.getSyncDeviceId())
       let res: Record<string, unknown>
@@ -995,15 +1006,26 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
         syncKey,
         token: res.token,
         deviceName: name,
-        paused: null
+        // As in join: a replace that cannot finish now stays paused as 'join', so
+        // no regular cycle merges (and pushes) what was meant to be replaced.
+        paused: opts?.replace ? 'join' : null
       }
       deps.config.save(config)
       resetCursors()
-      session = sessionFrom(config)
+      const s = sessionFrom(config)
+      session = s
       disconnected = false
       wiped = false
       loadState = 'ok'
       log.info('sync', 'activated')
+      if (opts?.replace) {
+        try {
+          await takeCloud(s)
+          saveConfig(s, { paused: null })
+        } catch (err) {
+          handleFailure(err)
+        }
+      }
       return { recoveryCode: toRecoveryCode(syncKey, base) }
     }).finally(() => {
       if (session && started) schedule(0)
@@ -1133,7 +1155,7 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       return activateWithKey(normalizeServerUrl(url), newSyncKey(), setupToken, deviceName, factor)
     },
 
-    async recover(code, setupToken, deviceName, factor): Promise<SyncStatus> {
+    async recover(code, setupToken, deviceName, factor, mode): Promise<SyncStatus> {
       let recovered: ReturnType<typeof fromRecoveryCode>
       try {
         recovered = fromRecoveryCode(code)
@@ -1141,8 +1163,12 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
         throw new SyncUserError('Código de recuperação inválido.')
       }
       const { url, key } = recovered
-      await activateWithKey(normalizeServerUrl(url), key, setupToken, deviceName, factor)
-      await cycle()
+      await activateWithKey(normalizeServerUrl(url), key, setupToken, deviceName, factor, {
+        replace: mode === 'replace'
+      })
+      // Assigned inside activateWithKey, which TypeScript's narrowing does not see.
+      const active = session as Session | null
+      if (active && !active.config.paused) await cycle()
       return publish()
     },
 
