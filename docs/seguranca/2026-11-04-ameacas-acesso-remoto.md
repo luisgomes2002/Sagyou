@@ -117,9 +117,9 @@ SHA. O custo é o merge e a tag passarem a ser feitos no navegador.
 ## 5. PC no Brasil, Luis no Japão
 
 **Segurança que fica mais grave:**
-- Perder o celular: sem outro aparelho para revogar ou parear, e a recuperação por código
-  ainda não tem tela ("Perdi todos os aparelhos"). Levar um segundo aparelho pareado e os
-  códigos impressos.
+- Perder o celular: sem outro aparelho para revogar ou parear. A recuperação por código
+  existe no PC (Configurações → Sincronização → Perdi todos os aparelhos, desde 2026-11-08)
+  e no celular. Levar um segundo aparelho pareado e os códigos impressos.
 - 2FA por SMS de número brasileiro pode não chegar, e um login de outro país dispara
   verificação. Passkey ou TOTP em tudo.
 - O kill switch remoto vira obrigatório. O script de desligar precisa sobreviver a um

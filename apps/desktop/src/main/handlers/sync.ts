@@ -77,11 +77,14 @@ export function registerSyncHandlers(ipcMain: IpcMain, deps: SyncHandlerDeps): v
     'sync:recover',
     (_, code: unknown, setupToken: unknown, name: unknown, factor: unknown) =>
       run('recover', async () => ({
+        // The PC always keeps only the cloud's data, after a forced backup
+        // (spec 2026-11-08-recuperacao-codigo).
         status: await engine.recover(
           text(code, 4096),
           text(setupToken, 512),
           deviceName(name),
-          factorOf(factor)
+          factorOf(factor),
+          'replace'
         )
       }))
   )

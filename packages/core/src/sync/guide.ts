@@ -170,7 +170,7 @@ export const SYNC_KEYS_ARTICLE: SyncGuideArticle = {
         ],
         [
           'Todos os aparelhos',
-          'O código de recuperação (a tela de recuperar ainda não existe; enquanto isso, um backup).'
+          'O código de recuperação: no PC, Configurações → Sincronização → Perdi todos os aparelhos; no celular, Entrar com código de recuperação.'
         ],
         ['O código de recuperação', 'Veja de novo num aparelho pareado.'],
         ['Os códigos reserva', 'Cadastre o autenticador de novo.'],

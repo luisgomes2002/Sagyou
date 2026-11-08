@@ -93,6 +93,7 @@ beforeEach(() => {
         resume: vi.fn().mockResolvedValue({ ok: true, status }),
         activate: vi.fn().mockResolvedValue({ ok: true, recoveryCode: 'CCCC-DDDD\nhttps://x.dev' }),
         join: vi.fn().mockResolvedValue({ ok: true, status }),
+        recover: vi.fn().mockResolvedValue({ ok: true, status }),
         enrollTotp: vi.fn().mockResolvedValue({
           ok: true,
           uri: 'otpauth://totp/Sagyou?secret=AAAAAAAA&issuer=Sagyou'
@@ -368,6 +369,159 @@ describe('Sincronização: ligar', () => {
         undefined
       )
     )
+  })
+})
+
+// Spec 2026-11-08-recuperacao-codigo.
+describe('Sincronização: recuperar', () => {
+  const CONFIRM =
+    'Os dados deste PC serão substituídos pelos da nuvem. Um backup deste PC é feito antes.'
+  const TOAST = 'Sincronização recuperada. Revogue os aparelhos perdidos em Aparelhos.'
+
+  const fill = async (): Promise<void> => {
+    fireEvent.change(await screen.findByLabelText('Código de recuperação'), {
+      target: { value: 'CODE' }
+    })
+    fireEvent.change(screen.getByLabelText('Senha de configuração do Worker'), {
+      target: { value: 'setup' }
+    })
+    fireEvent.change(screen.getByLabelText('Código do autenticador ou reserva'), {
+      target: { value: '123456' }
+    })
+  }
+
+  it('mostra a seção e só libera Recuperar com os três campos', async () => {
+    withStatus({ state: 'off' })
+    render(<SyncSettings onToast={vi.fn()} />)
+    expect(await screen.findByText('Perdi todos os aparelhos')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'Use quando nenhum aparelho pareado está à mão. Os dados deste PC serão substituídos pelos da nuvem (um backup é feito antes).'
+      )
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Recuperar' })).toBeDisabled()
+    await fill()
+    expect(screen.getByRole('button', { name: 'Recuperar' })).toBeEnabled()
+  })
+
+  it('confirma antes, e Cancelar não chama o motor e mantém os campos', async () => {
+    withStatus({ state: 'off' })
+    render(<SyncSettings onToast={vi.fn()} />)
+    await fill()
+    fireEvent.click(screen.getByRole('button', { name: 'Recuperar' }))
+    expect(screen.getByText(CONFIRM)).toBeInTheDocument()
+    expect(window.electronAPI.sync.recover).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+    expect(screen.queryByText(CONFIRM)).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Código de recuperação')).toHaveValue('CODE')
+  })
+
+  it('recupera, avisa e limpa os campos', async () => {
+    withStatus({ state: 'off' })
+    const onToast = vi.fn()
+    render(<SyncSettings onToast={onToast} />)
+    await fill()
+    fireEvent.click(screen.getByRole('button', { name: 'Recuperar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Recuperar e substituir' }))
+    await waitFor(() =>
+      expect(window.electronAPI.sync.recover).toHaveBeenCalledWith('CODE', 'setup', undefined, {
+        totp: '123456'
+      })
+    )
+    await waitFor(() => expect(screen.getByLabelText('Código de recuperação')).toHaveValue(''))
+    expect(screen.getByLabelText('Senha de configuração do Worker')).toHaveValue('')
+    expect(screen.getByLabelText('Código do autenticador ou reserva')).toHaveValue('')
+    expect(onToast).toHaveBeenCalledWith(TOAST)
+  })
+
+  it('pausado depois do /setup limpa os campos sem dizer que recuperou', async () => {
+    withStatus({ state: 'off' })
+    vi.mocked(window.electronAPI.sync.recover).mockResolvedValue({
+      ok: true,
+      status: { ...status, state: 'paused', paused: 'join' }
+    } as never)
+    const onToast = vi.fn()
+    render(<SyncSettings onToast={onToast} />)
+    await fill()
+    fireEvent.click(screen.getByRole('button', { name: 'Recuperar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Recuperar e substituir' }))
+    await waitFor(() => expect(window.electronAPI.sync.recover).toHaveBeenCalled())
+    await waitFor(() => expect(screen.getByLabelText('Código de recuperação')).toHaveValue(''))
+    expect(screen.getByLabelText('Senha de configuração do Worker')).toHaveValue('')
+    expect(screen.getByLabelText('Código do autenticador ou reserva')).toHaveValue('')
+    expect(onToast).not.toHaveBeenCalledWith(TOAST)
+  })
+
+  it('um erro mostra a mensagem e mantém os campos', async () => {
+    withStatus({ state: 'off' })
+    vi.mocked(window.electronAPI.sync.recover).mockResolvedValue({
+      ok: false,
+      error: 'Código de recuperação inválido.'
+    } as never)
+    render(<SyncSettings onToast={vi.fn()} />)
+    await fill()
+    fireEvent.click(screen.getByRole('button', { name: 'Recuperar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Recuperar e substituir' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Código de recuperação inválido.')
+    expect(screen.getByLabelText('Código de recuperação')).toHaveValue('CODE')
+  })
+
+  it('desligado de novo depois do /setup (401) mostra o erro e mantém os campos', async () => {
+    withStatus({ state: 'off' })
+    vi.mocked(window.electronAPI.sync.recover).mockResolvedValue({
+      ok: true,
+      status: { ...status, state: 'off' }
+    } as never)
+    const onToast = vi.fn()
+    render(<SyncSettings onToast={onToast} />)
+    await fill()
+    fireEvent.click(screen.getByRole('button', { name: 'Recuperar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Recuperar e substituir' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Não foi possível recuperar a sincronização.'
+    )
+    expect(screen.getByLabelText('Código de recuperação')).toHaveValue('CODE')
+    // The Worker already took the factor (a backup code works once).
+    expect(screen.getByLabelText('Código do autenticador ou reserva')).toHaveValue('')
+    expect(onToast).not.toHaveBeenCalled()
+  })
+
+  it('tira os espaços do código do autenticador', async () => {
+    withStatus({ state: 'off' })
+    render(<SyncSettings onToast={vi.fn()} />)
+    await fill()
+    fireEvent.change(screen.getByLabelText('Código do autenticador ou reserva'), {
+      target: { value: '123 456' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Recuperar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Recuperar e substituir' }))
+    await waitFor(() =>
+      expect(window.electronAPI.sync.recover).toHaveBeenCalledWith('CODE', 'setup', undefined, {
+        totp: '123456'
+      })
+    )
+  })
+
+  it("a pausa 'join' só oferece A nuvem manda", async () => {
+    withStatus({ state: 'paused', paused: 'join' })
+    render(<SyncSettings onToast={vi.fn()} />)
+    expect(await screen.findByRole('button', { name: 'A nuvem manda' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Este aparelho manda' })).not.toBeInTheDocument()
+  })
+
+  it('a confirmação leva o foco para Recuperar e substituir', async () => {
+    withStatus({ state: 'off' })
+    render(<SyncSettings onToast={vi.fn()} />)
+    await fill()
+    fireEvent.click(screen.getByRole('button', { name: 'Recuperar' }))
+    expect(screen.getByRole('button', { name: 'Recuperar e substituir' })).toHaveFocus()
+  })
+
+  it('com a sincronização ativa a seção não aparece', async () => {
+    withStatus({ state: 'ok' })
+    render(<SyncSettings onToast={vi.fn()} />)
+    await screen.findByRole('status')
+    expect(screen.queryByText('Perdi todos os aparelhos')).not.toBeInTheDocument()
   })
 })
 

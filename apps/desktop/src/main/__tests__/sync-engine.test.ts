@@ -138,6 +138,8 @@ class FakeServer {
   totpConfirmed = false
   /** The group has no authenticator yet: /invites answers "totp required". */
   inviteWithoutTotp = false
+  /** The next N /pull requests answer 500 (a download that fails mid-way). */
+  failPull = 0
   private seq = 0
   snapshot: { id: string; seqUntil: number; device: string; parts: string[] } | null = null
   pendingParts = new Map<string, { device: string; parts: Map<number, string> }>()
@@ -165,6 +167,10 @@ class FakeServer {
     })
     if (this.mode === 'error500') return reply(500, { error: 'internal error' })
     if (this.mode === 'unauthorized') return reply(401, { error: 'invalid factor' })
+    if (this.failPull > 0 && url.includes('/pull')) {
+      this.failPull--
+      return reply(500, { error: 'internal error' })
+    }
     const u = new URL(url)
     const body = init.body ? (JSON.parse(init.body) as Row) : {}
     const register = (
@@ -1457,6 +1463,79 @@ describe('substituir', () => {
     expect(b.config.stored?.paused).toBeNull()
     await clock.advance(POLL_MS)
     expect(a.store.state.projects.map((p) => p.id)).toEqual(['p1'])
+  })
+})
+
+// Spec 2026-11-08-recuperacao-codigo: the desktop recovers replacing its data.
+describe('recuperar substituindo', () => {
+  const ID_C = 'c'.repeat(32)
+  const setupHome = async (): Promise<Device> => {
+    const a = device(server, clock, ID_A)
+    a.store.save(withData({ projects: [project('p1', 'Casa')] }))
+    await a.engine.activate(SERVER_URL, SETUP, 'PC de casa')
+    await clock.advance(0)
+    return a
+  }
+
+  it('backup que falha impede a recuperação e não chama /setup', async () => {
+    const a = await setupHome()
+    const c = device(server, clock, ID_C)
+    c.store.save(withData({ projects: [project('pc', 'Só no PC novo')] }))
+    const before = dataHashes(c.store)
+    c.backup.mockResolvedValue(false)
+    const setups = server.requests.filter((r) => r.url.endsWith('/setup')).length
+    await expect(
+      c.engine.recover(a.engine.recoveryCode(), SETUP, 'PC novo', { totp: '123456' }, 'replace')
+    ).rejects.toThrow('Não foi possível fazer o backup antes de substituir. Nada foi alterado.')
+    expect(server.requests.filter((r) => r.url.endsWith('/setup')).length).toBe(setups)
+    expect(c.config.stored).toBeNull()
+    expect(dataHashes(c.store)).toEqual(before)
+  })
+
+  it('recuperar substituindo fica só com a nuvem, sem enviar o que era local', async () => {
+    const a = await setupHome()
+    const c = device(server, clock, ID_C)
+    c.store.save(withData({ projects: [project('pc', 'Só no PC novo')] }))
+    await c.engine.recover(a.engine.recoveryCode(), SETUP, 'PC novo', { totp: '123456' }, 'replace')
+    await clock.advance(0)
+    expect(c.backup).toHaveBeenCalledTimes(1)
+    expect(c.store.state.projects.map((p) => p.id)).toEqual(['p1'])
+    expect(c.config.stored?.paused).toBeNull()
+    await clock.advance(POLL_MS)
+    expect(a.store.state.projects.map((p) => p.id)).toEqual(['p1'])
+  })
+
+  it("download que falha deixa a pausa 'join' e não envia nada", async () => {
+    const a = await setupHome()
+    const c = device(server, clock, ID_C)
+    c.store.save(withData({ projects: [project('pc', 'Só no PC novo')] }))
+    const pushes = server.pushes()
+    server.failPull = 1
+    const status = await c.engine.recover(
+      a.engine.recoveryCode(),
+      SETUP,
+      'PC novo',
+      { totp: '123456' },
+      'replace'
+    )
+    await clock.advance(POLL_MS)
+    expect(status.state).toBe('paused')
+    expect(c.engine.status().paused).toBe('join')
+    expect(c.store.state.projects.map((p) => p.id)).toEqual(['pc'])
+    expect(server.pushes()).toBe(pushes)
+    // The pause is a replace: "Este aparelho manda" would push what was meant to go.
+    await expect(c.engine.resume('push-local')).rejects.toThrow('A nuvem manda')
+    expect(server.pushes()).toBe(pushes)
+    await c.engine.resume('take-cloud')
+    expect(c.store.state.projects.map((p) => p.id)).toEqual(['p1'])
+  })
+
+  it('com a sincronização já ativa recusa sem fazer backup', async () => {
+    const a = await setupHome()
+    await expect(
+      a.engine.recover(a.engine.recoveryCode(), SETUP, 'PC de casa', { totp: '123456' }, 'replace')
+    ).rejects.toThrow('A sincronização já está ativa neste aparelho.')
+    expect(a.backup).not.toHaveBeenCalled()
   })
 })
 
