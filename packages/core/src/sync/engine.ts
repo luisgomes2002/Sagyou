@@ -570,10 +570,7 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
         path === '/setup' ||
         path === '/pair' ||
         path.startsWith('/totp/') ||
-        path.endsWith('/revoke') ||
-        // A wrong authenticator code on an invite is an action error, never a
-        // reason to drop this device's session.
-        path === '/invites'
+        path.endsWith('/revoke')
       )
         throw new SyncHttpError(401, body)
       throw new SyncAuthError(false)
@@ -1167,12 +1164,12 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
           handleFailure(err)
           publish()
         }
-        if (err instanceof SyncHttpError && err.status === 401) {
-          throw new SyncUserError(
-            err.body.error === 'totp required'
-              ? INVITE_NO_TOTP_MESSAGE
-              : INVITE_FACTOR_INVALID_MESSAGE
-          )
+        // The Worker refuses the factor with a 403 (a 401 still means the
+        // session is gone, as it does for an app from before 1.7).
+        if (err instanceof SyncHttpError && err.status === 403) {
+          if (err.body.error === 'totp required') throw new SyncUserError(INVITE_NO_TOTP_MESSAGE)
+          if (err.body.error === 'invalid factor' || err.body.error === 'factor required')
+            throw new SyncUserError(INVITE_FACTOR_INVALID_MESSAGE)
         }
         throw userError(err, 'Não foi possível criar o convite.')
       }
