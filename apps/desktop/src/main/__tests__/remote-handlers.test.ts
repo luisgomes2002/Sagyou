@@ -92,6 +92,36 @@ function setup(over: Partial<RemoteHandlerDeps> = {}): HandlerSetup {
   return { invoke, service, client, emitStatus, config: () => config }
 }
 
+describe('remote:restore-access', () => {
+  it('limpa accessCutAt, avisa e aparece no status; funciona com o controle remoto desligado', async () => {
+    const onAccessRestored = vi.fn()
+    let config: RemoteConfig = { ...defaultRemoteConfig(), accessCutAt: 1_799_999_000_000 }
+    const t = setup({
+      onAccessRestored,
+      config: () => config,
+      save: (c) => {
+        config = c
+      }
+    })
+    expect(config.enabled).toBe(false)
+    expect((await t.invoke<{ accessCutAt: number | null }>('remote:status')).accessCutAt).toBe(
+      1_799_999_000_000
+    )
+    expect(await t.invoke('remote:restore-access')).toEqual({ ok: true })
+    expect(config.accessCutAt).toBeNull()
+    expect(onAccessRestored).toHaveBeenCalledTimes(1)
+    expect(t.emitStatus).toHaveBeenCalled()
+    expect((await t.invoke<{ accessCutAt: number | null }>('remote:status')).accessCutAt).toBeNull()
+  })
+
+  it('sem corte, responde ok e não avisa', async () => {
+    const onAccessRestored = vi.fn()
+    const t = setup({ onAccessRestored })
+    expect(await t.invoke('remote:restore-access')).toEqual({ ok: true })
+    expect(onAccessRestored).not.toHaveBeenCalled()
+  })
+})
+
 describe('remote:enable', () => {
   it('recusa fora do Windows, sem senha e sem sync ativo', async () => {
     expect(await setup({ platform: 'linux' }).invoke('remote:enable', { totp: '123456' })).toEqual({
