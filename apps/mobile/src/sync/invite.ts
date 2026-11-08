@@ -23,11 +23,15 @@ export function countdownText(expiresAt: number, now: number): string {
  * every failure (offline included) into a SyncUserError, whose message is
  * shown as is; anything else gets the generic text.
  */
-export async function fetchInvite(engine: {
-  createInvite(): Promise<{ code: string; expiresAt: number }>
-}): Promise<InviteState> {
+export async function fetchInvite(
+  engine: {
+    createInvite(factor: { totp: string }): Promise<{ code: string; expiresAt: number }>
+  },
+  // The authenticator code or a backup code (spec 2026-11-07, item 6).
+  totp = ''
+): Promise<InviteState> {
   try {
-    const { code, expiresAt } = await engine.createInvite()
+    const { code, expiresAt } = await engine.createInvite({ totp })
     return { kind: 'ready', code, expiresAt }
   } catch (cause) {
     return {

@@ -411,10 +411,19 @@ async function pairRoute(request: Request, deps: RouteDeps): Promise<Response> {
   return issueToken(deps, device)
 }
 
+/**
+ * A pairing invite needs the authenticator code (or a backup code): a paired
+ * device alone (an unlocked phone, a stolen token) cannot add a new device to
+ * the group. Without an authenticator in the group: 401 "totp required" (spec
+ * docs/specs/2026-11-07-endurecer-acesso-remoto.md, item 6).
+ */
 async function invitesRoute(request: Request, deps: RouteDeps): Promise<Response> {
   await authenticate(request, deps)
   const body = await readJson(request)
   const hash = str(body, 'inviteHash', HEX_SHA256, 64)
+  const auth = await deps.db.getAuth()
+  if (!auth) throw new HttpError(401, { error: 'totp required' })
+  await requireFactor(request, deps, auth)
   const now = deps.now()
   const expiresAt = now + INVITE_TTL_MS
   await deps.db.insertInvite(hash, expiresAt, now)

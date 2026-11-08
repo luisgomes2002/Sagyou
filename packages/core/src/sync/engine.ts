@@ -76,6 +76,10 @@ export type SyncStateName =
 
 /** What /pair answers (410) for an invite that expired or was already used. */
 export const INVITE_EXPIRED_MESSAGE = 'O convite expirou ou já foi usado.'
+export const INVITE_FACTOR_MISSING_MESSAGE = 'Digite o código do autenticador.'
+export const INVITE_FACTOR_INVALID_MESSAGE = 'Código do autenticador inválido.'
+export const INVITE_NO_TOTP_MESSAGE =
+  'Cadastre o autenticador em Configurações → Sincronização para parear aparelhos.'
 
 /** Shown when an action needs the server while an app update holds sync. */
 export const UPDATE_PENDING_MESSAGE = 'Sincronização em espera: começa depois da atualização'
@@ -282,7 +286,8 @@ export interface SyncEngine {
     deviceName: string,
     factor?: SyncSecondFactor
   ): Promise<SyncStatus>
-  createInvite(): Promise<{ code: string; expiresAt: number }>
+  /** Needs the authenticator code or a backup code (spec 2026-11-07, item 6). */
+  createInvite(factor: SyncSecondFactor): Promise<{ code: string; expiresAt: number }>
   join(code: string, mode: 'merge' | 'replace', deviceName: string): Promise<SyncStatus>
   devices(): Promise<SyncDevice[]>
   revoke(id: string, wipe: boolean, factor?: SyncSecondFactor): Promise<void>
@@ -565,7 +570,10 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
         path === '/setup' ||
         path === '/pair' ||
         path.startsWith('/totp/') ||
-        path.endsWith('/revoke')
+        path.endsWith('/revoke') ||
+        // A wrong authenticator code on an invite is an action error, never a
+        // reason to drop this device's session.
+        path === '/invites'
       )
         throw new SyncHttpError(401, body)
       throw new SyncAuthError(false)
@@ -1141,17 +1149,30 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       return publish()
     },
 
-    async createInvite(): Promise<{ code: string; expiresAt: number }> {
+    async createInvite(factor): Promise<{ code: string; expiresAt: number }> {
+      const totp = factor?.totp?.trim() ?? ''
+      if (!totp) throw new SyncUserError(INVITE_FACTOR_MISSING_MESSAGE)
       const s = requireSession()
       const invite = toBase64Url(randomBytes(32))
       const inviteHash = sha256Hex(invite)
       let res: Record<string, unknown>
       try {
-        res = await authed(s, '/invites', { method: 'POST', body: { inviteHash } })
+        res = await authed(s, '/invites', {
+          method: 'POST',
+          headers: { 'x-totp-code': totp },
+          body: { inviteHash }
+        })
       } catch (err) {
         if (err instanceof SyncAuthError) {
           handleFailure(err)
           publish()
+        }
+        if (err instanceof SyncHttpError && err.status === 401) {
+          throw new SyncUserError(
+            err.body.error === 'totp required'
+              ? INVITE_NO_TOTP_MESSAGE
+              : INVITE_FACTOR_INVALID_MESSAGE
+          )
         }
         throw userError(err, 'Não foi possível criar o convite.')
       }
