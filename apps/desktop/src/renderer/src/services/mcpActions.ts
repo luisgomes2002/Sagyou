@@ -23,7 +23,6 @@ import {
   type Task
 } from '../types'
 import { isDoneColumn } from '../utils/columns'
-import { todayLocalISO } from '../utils/dates'
 import { D } from '../utils/money'
 import { goalCurrent, goalKind, isGoalComplete, type GoalKind } from '../utils/goals'
 import type { McpActionResult, McpScope } from '../types/mcp-actions'
@@ -127,6 +126,17 @@ function optionalDate(args: Args, key: string): string | undefined {
   if (value === undefined || value === '') return value
   if (!isCalendarDate(value)) refuse(`${key} precisa ser uma data real no formato YYYY-MM-DD.`)
   return value
+}
+
+// Spec 2026-11-08-fuso-horario: the agent runs on the PC, whose "today" may be a
+// different calendar day from the user's (PC in Brazil, user in Japan).
+const DATE_REQUIRED =
+  'date é obrigatória (YYYY-MM-DD): use a data do usuário, que pode estar em outro fuso do PC. Se não souber, pergunte.'
+
+function requiredDate(args: Args, key: string): string {
+  const value = optionalDate(args, key)
+  if (!value) refuse(DATE_REQUIRED)
+  return value as string
 }
 
 function optionalTags(args: Args): string[] | undefined {
@@ -643,7 +653,7 @@ const addGoalProgress: Handler = (args, _scope, phase, store) => {
       refuse('value precisa ser um número maior que zero.')
     value = raw as number
   }
-  const date = optionalDate(args, 'date') || todayLocalISO()
+  const date = requiredDate(args, 'date')
   const label = optionalText(args, 'label', LIMITS.goalLabel)
   if (phase === 'prepare') return done(goal.id, resumo)
   store.addGoalEntry(goal.id, { date, value, ...(label ? { label } : {}) })
@@ -978,7 +988,7 @@ const createTransaction: Handler = (args, scope, phase, store) => {
   const type = readType(args, true) as FinancialTransaction['type']
   const amount = readAmount(args, true) as string
   const description = requiredText(args, 'description', LIMITS.transactionDescription)
-  const date = optionalDate(args, 'date') || todayLocalISO()
+  const date = requiredDate(args, 'date')
   const category = optionalText(args, 'category', LIMITS.category)
   const bank = readBankFields(args, 'create')
   const details = readDetails(args, null)

@@ -85,8 +85,23 @@ describe('MCP write tool classification', () => {
         .properties as object) ?? {}
     expect('id' in itemProps(update)).toBe(true)
     expect('id' in itemProps(create)).toBe(false)
-    expect(create.required).toEqual(['tableId', 'type', 'amount', 'description'])
+    expect(create.required).toEqual(['tableId', 'type', 'amount', 'description', 'date'])
     expect(update.required).toEqual(['tableId', 'id'])
+  })
+
+  // Spec 2026-11-08-fuso-horario.
+  it('date is required and explained on create_transaction and add_goal_progress', () => {
+    const schemaOf = (name: string): Record<string, unknown> =>
+      MCP_WRITE_TOOLS.find((tool) => tool.name === name)?.inputSchema ?? {}
+    for (const name of ['create_transaction', 'add_goal_progress']) {
+      const schema = schemaOf(name)
+      const properties = schema.properties as Record<string, Record<string, unknown>>
+      expect(properties.date.description).toBe(
+        'Data YYYY-MM-DD do usuário (obrigatória; o usuário pode estar em outro fuso do PC).'
+      )
+      expect(schema.required).toContain('date')
+    }
+    expect(schemaOf('update_transaction').required).toEqual(['tableId', 'id'])
   })
 
   it('profile-level finance tools take an optional profileId (external token)', () => {

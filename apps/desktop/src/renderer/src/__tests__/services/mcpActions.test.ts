@@ -528,7 +528,9 @@ describe('MCP goal writes', () => {
     )
     const id = (created as { id: string }).id
     expect(goal(id)!.target).toBe(1)
-    expect(both('add_goal_progress', { id, value: 5 }, scope)).toMatchObject({
+    expect(
+      both('add_goal_progress', { id, value: 5, date: '2026-10-25' }, scope)
+    ).toMatchObject({
       ok: true,
       concluida: true
     })
@@ -552,6 +554,42 @@ describe('MCP goal writes', () => {
       ok: true,
       jaConcluida: true
     })
+    expect(goal(id)!.entries).toHaveLength(1)
+  })
+
+  // Spec 2026-11-08-fuso-horario: the PC's "today" may not be the user's day.
+  const DATE_REQUIRED =
+    'date é obrigatória (YYYY-MM-DD): use a data do usuário, que pode estar em outro fuso do PC. Se não souber, pergunte.'
+
+  it('add_goal_progress refuses without a date and writes nothing', () => {
+    const { scope } = seedProject()
+    const quantity = (both('create_goal', { title: 'Ler', target: 10 }, scope) as { id: string })
+      .id
+    const refusal = { ok: false, error: DATE_REQUIRED }
+    expect(prepareMcpAction('add_goal_progress', { id: quantity, value: 1 }, scope)).toEqual(
+      refusal
+    )
+    expect(both('add_goal_progress', { id: quantity, value: 1, date: '' }, scope)).toEqual(refusal)
+    expect(applyMcpAction('add_goal_progress', { id: quantity, value: 1 }, scope)).toEqual(refusal)
+    expect(goal(quantity)!.entries).toHaveLength(0)
+    const completion = (
+      both('create_goal', { title: 'Lançar', kind: 'completion', target: 1 }, scope) as {
+        id: string
+      }
+    ).id
+    expect(both('add_goal_progress', { id: completion }, scope)).toEqual(refusal)
+    expect(goal(completion)!.entries).toHaveLength(0)
+  })
+
+  it('add_goal_progress on a completed goal still reports jaConcluida without a date', () => {
+    const { scope } = seedProject()
+    const id = (
+      both('create_goal', { title: 'Feita', kind: 'completion', target: 1 }, scope) as {
+        id: string
+      }
+    ).id
+    expect(both('add_goal_progress', { id, date: '2026-10-25' }, scope).ok).toBe(true)
+    expect(both('add_goal_progress', { id }, scope)).toMatchObject({ ok: true, jaConcluida: true })
     expect(goal(id)!.entries).toHaveLength(1)
   })
 
@@ -677,6 +715,33 @@ describe('MCP financial writes', () => {
       category: 'Alimentação'
     })
     expect(tx.createdAt).toBeDefined()
+  })
+
+  it('create_transaction refuses without a date and opens no card', () => {
+    const { mine } = seedTables()
+    const args = { tableId: mine, type: 'despesa', amount: '10', description: 'Mercado' }
+    const refusal = {
+      ok: false,
+      error:
+        'date é obrigatória (YYYY-MM-DD): use a data do usuário, que pode estar em outro fuso do PC. Se não souber, pergunte.'
+    }
+    expect(prepareMcpAction('create_transaction', args, scope)).toEqual(refusal)
+    expect(prepareMcpAction('create_transaction', { ...args, date: '' }, scope)).toEqual(refusal)
+    expect(applyMcpAction('create_transaction', args, scope)).toEqual(refusal)
+    expect(table(mine).transactions).toHaveLength(0)
+  })
+
+  it('create_transaction accepts a future date', () => {
+    const { mine } = seedTables()
+    const args = {
+      tableId: mine,
+      type: 'despesa',
+      amount: '10',
+      description: 'Aluguel',
+      date: '2099-01-01'
+    }
+    expect(both('create_transaction', args, scope).ok).toBe(true)
+    expect(table(mine).transactions[0].date).toBe('2099-01-01')
   })
 
   it('refuses "1.500" instead of reading it as 1.5', () => {
@@ -829,6 +894,7 @@ describe('MCP financial writes with the external token (every profile)', () => {
       type: 'receita',
       amount: '10',
       description: 'Nota fiscal',
+      date: '2026-10-25',
       source: 'Itaú PJ'
     }
     expect(both('create_transaction', args, external).ok).toBe(true)
@@ -928,7 +994,13 @@ describe('MCP transaction bank fields', () => {
     const { other, otherProfile } = seedTables()
     useKanbanStore.setState({ activeFinancialProfileId: DEFAULT_FINANCIAL_PROFILE_ID })
     const session: McpScope = { projectId: null, financialProfileId: otherProfile }
-    const args = { tableId: other, type: 'receita', amount: '10', description: 'X' }
+    const args = {
+      tableId: other,
+      type: 'receita',
+      amount: '10',
+      description: 'X',
+      date: '2026-10-25'
+    }
     expect(
       both('create_transaction', { ...args, source: 'Wise', counterparty: 'Cliente' }, session).ok
     ).toBe(true)
@@ -995,7 +1067,13 @@ describe('MCP transaction bank fields', () => {
 
   it('an oversized field refuses without writing the transaction or the suggestions', () => {
     const { mine } = seedTables()
-    const args = { tableId: mine, type: 'despesa', amount: '10', description: 'X' }
+    const args = {
+      tableId: mine,
+      type: 'despesa',
+      amount: '10',
+      description: 'X',
+      date: '2026-10-25'
+    }
     expect(
       both('create_transaction', { ...args, counterparty: 'C', source: 'x'.repeat(81) }, scope)
     ).toEqual({ ok: false, error: 'source excede 80 caracteres.' })

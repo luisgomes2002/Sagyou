@@ -300,7 +300,9 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
     que o modo auto da run nunca responde; recusa,
     timeout ou limpeza rejeitam sem escrever. Ferramenta MCP nova que muta estado
     **tem** que entrar nessa fila, ser classificada nesse conjunto (um teste exige)
-    e revalidar no `apply` (`services/mcpActions.ts`). O cartão espera
+    e revalidar no `apply` (`services/mcpActions.ts`). Data de calendário nunca vem
+    do "hoje" do PC (o usuário pode estar em outro fuso): `create_transaction` e
+    `add_goal_progress` exigem `date`. O cartão espera
     `MCP_APPROVAL_TIMEOUT_MS` (5 min) e mostra a contagem; o cliente MCP precisa
     esperar mais que isso, senão uma aprovação tardia grava enquanto o agente já
     ouviu "falhou" e repete a escrita. Por isso o Codex sobe com
