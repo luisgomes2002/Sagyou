@@ -227,6 +227,8 @@ export const api = {
     enable: (factor?: SyncSecondFactor): Promise<RemoteResult> =>
       ipcRenderer.invoke('remote:enable', factor),
     disable: (): Promise<RemoteResult> => ipcRenderer.invoke('remote:disable'),
+    /** Clears a "Cortar acesso" from a phone (spec 2026-11-07, item 3). */
+    restoreAccess: (): Promise<RemoteResult> => ipcRenderer.invoke('remote:restore-access'),
     authorizations: (): Promise<PendingAuthorization[]> =>
       ipcRenderer.invoke('remote:authorizations'),
     authorize: (id: string, password: string): Promise<RemoteResult> =>

@@ -48,6 +48,8 @@ export interface RemoteStatusView {
   servers: { name: string; up: boolean }[]
   pending: PendingAuthorization[]
   hasEsp32Key: boolean
+  /** "Cortar acesso" from a phone (spec 2026-11-07, item 3); null when not cut. */
+  accessCutAt: number | null
 }
 
 export interface RemoteHandlerDeps {
@@ -63,6 +65,8 @@ export interface RemoteHandlerDeps {
   servers: () => { name: string; up: boolean }[]
   now: () => number
   emitStatus: (status: RemoteStatusView) => void
+  /** "Restaurar acesso" on this PC just cleared the cut (the tray shows it). */
+  onAccessRestored?: () => void
 }
 
 function errorText(error: unknown): string {
@@ -159,7 +163,8 @@ export function registerRemoteHandlers(
       controllers: cfg.controllers.map(({ id: cid, name, since }) => ({ id: cid, name, since })),
       servers: deps.servers(),
       pending: service.pendingAuthorizations(),
-      hasEsp32Key: cfg.esp32KeyCipher !== null
+      hasEsp32Key: cfg.esp32KeyCipher !== null,
+      accessCutAt: cfg.accessCutAt ?? null
     }
   }
   const changed = (): void => deps.emitStatus(view())
@@ -194,6 +199,20 @@ export function registerRemoteHandlers(
   ipcMain.handle('remote:disable', () =>
     run('disable', () => {
       disableRemoteControl({ ...deps, reason: 'user' })
+      changed()
+      return { ok: true }
+    })
+  )
+
+  // The person at the PC restores what a phone cut. The Sagyou is unlocked (this
+  // runs after protectDataIpc), so no authenticator; it also works with the
+  // controlled mode off, because the cut outlives it (decision 1).
+  ipcMain.handle('remote:restore-access', () =>
+    run('restore', () => {
+      if ((deps.config().accessCutAt ?? null) === null) return { ok: true }
+      deps.save({ ...deps.config(), accessCutAt: null })
+      log.info('remote', 'restore_access', { by: 'pc' })
+      deps.onAccessRestored?.()
       changed()
       return { ok: true }
     })

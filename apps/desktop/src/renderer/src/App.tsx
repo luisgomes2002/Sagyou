@@ -33,6 +33,7 @@ import { FilesView } from './components/views/FilesView'
 import { MemoryView } from './components/ai/MemoryView'
 import { FleetView } from './components/ai/FleetView'
 import { ExcelExportModal } from './components/modals/ExcelExportModal'
+import { ExternalApprovalDialog } from './components/modals/ExternalApprovalDialog'
 import { ProjectLinksDropdown } from './components/ProjectLinksDropdown'
 import { SearchModal } from './components/modals/SearchModal'
 import { SprintBadge } from './components/SprintBadge'
@@ -1050,6 +1051,8 @@ export default function App() {
       />
 
       <ToastContainer toasts={toasts} onRemove={removeToast} />
+
+      <ExternalApprovalDialog />
 
       <SearchModal
         open={searchOpen}

@@ -14,6 +14,14 @@ function clock(ms: number): string {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
+/** "Acesso cortado pelo celular em 07/11 às 14:32." (spec 2026-11-07, item 3). */
+export function accessCutPcText(at: number): string {
+  const d = new Date(at)
+  return `Acesso cortado pelo celular em ${pad(d.getDate())}/${pad(d.getMonth() + 1)} às ${clock(at)}.`
+}
+
+export const RESTORE_ACCESS_LABEL = 'Restaurar acesso'
+
 export function suspendedText(until: number): string {
   return `Controle remoto suspenso até ${clock(until)} por pedidos recusados.`
 }

@@ -1,5 +1,6 @@
 import { useEffect, useState, type JSX } from 'react'
 import { ConfirmDialog } from '../ConfirmDialog'
+import { RESTORE_ACCESS_LABEL, accessCutPcText } from '../../utils/remoteControlText'
 
 interface ExternalStatus {
   state: 'none' | 'active'
@@ -14,7 +15,10 @@ interface Props {
 
 export const NONE_TEXT = 'Nenhum acesso externo.'
 export const FULL_ACCESS_WARNING =
-  'O token dá leitura e escrita de tudo no Sagyou, inclusive excluir e mexer em dinheiro, sem pedir aprovação. Não vence: vale até você revogar.'
+  'O token dá leitura e escrita de tudo no Sagyou. Não vence: vale até você revogar.'
+// Spec 2026-11-07, item 1: the risky writes of the external token ask first.
+export const CARD_NOTICE =
+  'Excluir, mexer em dinheiro e em tabelas ou perfis financeiros pede aprovação no PC ou no celular.'
 export const ACTIVE_SCOPE_TEXT = 'Acesso total, sem prazo'
 export const ONCE_TEXT =
   'Este é o único momento em que o token aparece. Guarde o comando ou gere outro depois.'
@@ -24,9 +28,9 @@ export const REVOKE_MESSAGE =
   'Revogar o acesso MCP externo? O Claude que usa este token perde o acesso na hora.'
 export const NEW_TOKEN_MESSAGE =
   'Gerar um token novo? O atual para de valer na hora e o comando do Claude Code precisa ser trocado.'
-export const ALLOW_LOCKED_LABEL = 'Funcionar com o Sagyou bloqueado'
+export const ALLOW_LOCKED_LABEL = 'Ler com o Sagyou bloqueado'
 export const ALLOW_LOCKED_WARNING =
-  'Com isto ligado, o Claude continua lendo e editando o Sagyou mesmo com a tela na senha. Quem usar sua conta do Windows consegue usar o token (ele fica salvo na configuração do Claude Code), então a proteção passa a ser a senha do Windows.'
+  'Com o Sagyou bloqueado, o Claude externo continua lendo seus dados, mas não escreve. Para escrever, desbloqueie no PC ou pelo celular.'
 
 const primaryClass =
   'rounded-lg bg-[#6d5bb8] px-3 py-2 text-sm text-white hover:bg-[#7b69c6] disabled:opacity-50'
@@ -48,6 +52,18 @@ export function McpExternalSettings({ onToast }: Props): JSX.Element {
   const [error, setError] = useState('')
   const [confirmRevoke, setConfirmRevoke] = useState(false)
   const [confirmNew, setConfirmNew] = useState(false)
+  // "Cortar acesso" from a phone suspends the token (read from the remote control).
+  const [accessCutAt, setAccessCutAt] = useState<number | null>(null)
+
+  useEffect(() => {
+    const remote = window.electronAPI.remote
+    if (!remote) return
+    remote
+      .status()
+      .then((s) => setAccessCutAt(s.accessCutAt ?? null))
+      .catch(() => setAccessCutAt(null))
+    return remote.onStatusChanged((s) => setAccessCutAt(s.accessCutAt ?? null))
+  }, [])
 
   useEffect(() => {
     window.electronAPI.mcpExternal
@@ -98,6 +114,17 @@ export function McpExternalSettings({ onToast }: Props): JSX.Element {
       setStatus(await window.electronAPI.mcpExternal.setAllowLocked(value))
     }, 'Não foi possível mudar o acesso com o Sagyou bloqueado.')
 
+  const restoreAccess = (): Promise<void> =>
+    run(async () => {
+      const result = await window.electronAPI.remote.restoreAccess()
+      if (!result.ok) {
+        setError(result.error)
+        return
+      }
+      const s = await window.electronAPI.remote.status()
+      setAccessCutAt(s.accessCutAt ?? null)
+    }, 'Não foi possível restaurar o acesso.')
+
   const copy = async (): Promise<void> => {
     if (!issued) return
     try {
@@ -114,6 +141,22 @@ export function McpExternalSettings({ onToast }: Props): JSX.Element {
         Para um Claude Code fora do Fleet (por exemplo, com o Remote Control) ler e editar o Sagyou
         neste PC. Só funciona com o Sagyou aberto.
       </p>
+
+      {accessCutAt !== null && (
+        <div className={panelClass}>
+          <p role="status" className="text-sm text-[#d9a640]">
+            {accessCutPcText(accessCutAt)}
+          </p>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void restoreAccess()}
+            className={primaryClass}
+          >
+            {RESTORE_ACCESS_LABEL}
+          </button>
+        </div>
+      )}
 
       {issued && (
         <div className={panelClass}>
@@ -135,6 +178,7 @@ export function McpExternalSettings({ onToast }: Props): JSX.Element {
         <div className={panelClass}>
           <p className="text-sm text-[#d4d4d4]">{NONE_TEXT}</p>
           <p className="text-sm text-[#d9a640]">{FULL_ACCESS_WARNING}</p>
+          <p className="text-sm text-[#999999]">{CARD_NOTICE}</p>
           <button
             type="button"
             disabled={busy}
@@ -153,6 +197,7 @@ export function McpExternalSettings({ onToast }: Props): JSX.Element {
             {status.lastUsedAt ? `Último uso: ${formatDate(status.lastUsedAt)}` : 'Nunca usado'}
           </p>
           <p className="text-sm text-[#999999]">{ACTIVE_SCOPE_TEXT}</p>
+          <p className="text-sm text-[#999999]">{CARD_NOTICE}</p>
           {hasPassword && (
             <div className="space-y-1">
               <label className="flex items-center gap-2 text-sm text-[#d4d4d4]">

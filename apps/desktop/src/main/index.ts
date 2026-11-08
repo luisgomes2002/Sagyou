@@ -1468,10 +1468,15 @@ function showTrayNoticeOnce(): void {
 /** Menu items depend on the lock state, so the menu is rebuilt when it changes. */
 function refreshTrayMenu(): void {
   if (!tray) return
-  const items = buildTrayMenu({ canLock: canLockNow() }).map((item) =>
+  const items = buildTrayMenu({
+    canLock: canLockNow(),
+    accessCut: remoteAccessCutAt() !== null
+  }).map((item) =>
     item.id === 'sep'
       ? { type: 'separator' as const }
-      : {
+      : item.id === 'cut'
+        ? { label: item.label, enabled: false }
+        : {
           label: item.label,
           click: () => {
             if (item.id === 'open') managedWindow?.show()
@@ -2102,9 +2107,13 @@ app.whenReady().then(() => {
         externalCards.denyAll()
         appLock.lock('remote')
         void killServersWhileCut()
+        refreshTrayMenu()
         emitRemote()
       },
-      onAccessRestored: () => emitRemote(),
+      onAccessRestored: () => {
+        refreshTrayMenu()
+        emitRemote()
+      },
       log,
       onChange: () => emitRemote()
     })
@@ -2138,7 +2147,8 @@ app.whenReady().then(() => {
           (name) => remoteServers.find((s) => s.name === name) ?? { name, up: false }
         ),
       now: () => Date.now(),
-      emitStatus: (status: RemoteStatusView) => sendToRenderer('remote:status-changed', status)
+      emitStatus: (status: RemoteStatusView) => sendToRenderer('remote:status-changed', status),
+      onAccessRestored: refreshTrayMenu
     })
     emitRemote = () => sendToRenderer('remote:status-changed', remoteView())
     disableRemoteForNoPassword = () => {
