@@ -88,6 +88,9 @@ export const SERVER_ERROR_MESSAGE =
   'O servidor de sincronização teve um erro. Tente de novo em alguns minutos.'
 const DATA_ROUTE = /^\/(push|pull|snapshot)(\/|\?|$)/
 
+export const JOIN_PUSH_LOCAL_MESSAGE =
+  'Este aparelho escolheu os dados da nuvem: use "A nuvem manda" para terminar a troca.'
+
 export interface SyncStatus {
   state: SyncStateName
   lastSyncAt: number | null
@@ -1460,6 +1463,10 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
 
     async resume(choice): Promise<SyncStatus> {
       const s = requireSession()
+      // A 'join' pause is a replace that did not finish (pairing or recovery):
+      // this device chose the cloud's data, so its own must never be pushed.
+      if (choice === 'push-local' && s.config.paused === 'join')
+        throw new SyncUserError(JOIN_PUSH_LOCAL_MESSAGE)
       if (choice === 'take-cloud') {
         if (!(await deps.forcedBackup()))
           throw new SyncUserError(

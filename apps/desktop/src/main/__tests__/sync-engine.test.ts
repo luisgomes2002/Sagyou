@@ -1523,6 +1523,11 @@ describe('recuperar substituindo', () => {
     expect(c.engine.status().paused).toBe('join')
     expect(c.store.state.projects.map((p) => p.id)).toEqual(['pc'])
     expect(server.pushes()).toBe(pushes)
+    // The pause is a replace: "Este aparelho manda" would push what was meant to go.
+    await expect(c.engine.resume('push-local')).rejects.toThrow('A nuvem manda')
+    expect(server.pushes()).toBe(pushes)
+    await c.engine.resume('take-cloud')
+    expect(c.store.state.projects.map((p) => p.id)).toEqual(['p1'])
   })
 
   it('com a sincronização já ativa recusa sem fazer backup', async () => {

@@ -479,6 +479,21 @@ describe('Sincronização: recuperar', () => {
     expect(onToast).not.toHaveBeenCalled()
   })
 
+  it("a pausa 'join' só oferece A nuvem manda", async () => {
+    withStatus({ state: 'paused', paused: 'join' })
+    render(<SyncSettings onToast={vi.fn()} />)
+    expect(await screen.findByRole('button', { name: 'A nuvem manda' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Este aparelho manda' })).not.toBeInTheDocument()
+  })
+
+  it('a confirmação leva o foco para Recuperar e substituir', async () => {
+    withStatus({ state: 'off' })
+    render(<SyncSettings onToast={vi.fn()} />)
+    await fill()
+    fireEvent.click(screen.getByRole('button', { name: 'Recuperar' }))
+    expect(screen.getByRole('button', { name: 'Recuperar e substituir' })).toHaveFocus()
+  })
+
   it('com a sincronização ativa a seção não aparece', async () => {
     withStatus({ state: 'ok' })
     render(<SyncSettings onToast={vi.fn()} />)

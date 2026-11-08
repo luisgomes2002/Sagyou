@@ -326,7 +326,7 @@ export const SYNC_ARTICLES: GuideArticle[] = [
       },
       {
         type: 'p',
-        text: '"Pausado: escolha o que vale": um backup foi restaurado só aqui, ou a troca pelos dados da nuvem não terminou. Escolha Este aparelho manda ou A nuvem manda.'
+        text: '"Pausado: escolha o que vale": um backup foi restaurado só aqui (escolha Este aparelho manda ou A nuvem manda), ou a troca pelos dados da nuvem não terminou (só A nuvem manda aparece: este aparelho já escolheu a nuvem).'
       },
       {
         type: 'p',

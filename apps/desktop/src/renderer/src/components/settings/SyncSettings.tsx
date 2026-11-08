@@ -117,7 +117,8 @@ export function SyncSettings({ onToast, onOneTimeSecretChange }: Props): JSX.Ele
   const [joinCode, setJoinCode] = useState('')
   const [askJoinMode, setAskJoinMode] = useState(false)
   // "Perdi todos os aparelhos" (spec 2026-11-08-recuperacao-codigo): the three
-  // secrets live only here, never in a log; success or Cancelar clears them.
+  // secrets live only here, never in a log; success clears them, the
+  // confirmation's Cancelar keeps them, and leaving Configurações unmounts them.
   const [recoverCode, setRecoverCode] = useState('')
   const [recoverSetup, setRecoverSetup] = useState('')
   const [recoverFactor, setRecoverFactor] = useState('')
@@ -267,7 +268,7 @@ export function SyncSettings({ onToast, onOneTimeSecretChange }: Props): JSX.Ele
     act('Não foi possível recuperar a sincronização.', async () => {
       const result = await window.electronAPI.sync.recover(
         recoverCode.trim(),
-        recoverSetup,
+        recoverSetup.trim(),
         deviceName.trim() || undefined,
         { totp: recoverFactor.trim() }
       )
@@ -425,14 +426,17 @@ export function SyncSettings({ onToast, onOneTimeSecretChange }: Props): JSX.Ele
               &quot;A nuvem manda&quot; faz um backup daqui antes de trocar.
             </p>
             <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void resume('push-local')}
-                className={secondaryClass}
-              >
-                Este aparelho manda
-              </button>
+              {/* A 'join' pause is an unfinished replace: only the cloud may win. */}
+              {status.paused !== 'join' && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void resume('push-local')}
+                  className={secondaryClass}
+                >
+                  Este aparelho manda
+                </button>
+              )}
               <button
                 type="button"
                 disabled={busy}
@@ -657,6 +661,7 @@ export function SyncSettings({ onToast, onOneTimeSecretChange }: Props): JSX.Ele
                         disabled={busy}
                         onClick={() => void recover()}
                         className={primaryClass}
+                        autoFocus
                       >
                         Recuperar e substituir
                       </button>
@@ -674,7 +679,10 @@ export function SyncSettings({ onToast, onOneTimeSecretChange }: Props): JSX.Ele
                   <button
                     type="button"
                     disabled={
-                      busy || !recoverCode.trim() || !recoverSetup || !recoverFactor.trim()
+                      busy ||
+                      !recoverCode.trim() ||
+                      !recoverSetup.trim() ||
+                      !recoverFactor.trim()
                     }
                     onClick={() => setAskRecover(true)}
                     className={secondaryClass}
