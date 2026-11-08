@@ -105,6 +105,11 @@ describe('guia do sync', () => {
       'A senha de configuração',
       'O celular autorizado a controlar o PC'
     ])
+    // Spec 2026-11-08-recuperacao-codigo: both apps have the recovery screen.
+    const allLost = table?.rows.find(([lost]) => lost === 'Todos os aparelhos')?.[1] ?? ''
+    expect(allLost).not.toContain('ainda não existe')
+    expect(allLost).toContain('Perdi todos os aparelhos')
+    expect(allLost).toContain('Entrar com código de recuperação')
     expect(table?.rows.at(-1)?.[1]).toMatch(
       /código de recuperação.*senha do Worker.*código reserva.*senha do Sagyou/
     )

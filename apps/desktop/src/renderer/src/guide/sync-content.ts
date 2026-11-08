@@ -271,17 +271,27 @@ export const SYNC_ARTICLES: GuideArticle[] = [
         text: 'Se todos os aparelhos se perderem, os dados continuam cifrados no seu Worker, e o código de recuperação é a única forma de abri-los. Sem ele, ninguém consegue ler os dados, nem você.'
       },
       {
-        type: 'callout',
-        tone: 'danger',
-        text: 'Esta versão do app ainda não tem uma tela para recuperar a sincronização com o código de recuperação. Guarde o código mesmo assim e faça backups regulares em Dados e segurança: um backup restaura tudo num computador novo.'
+        type: 'steps',
+        items: [
+          'No PC: instale o Sagyou e abra Configurações → Sincronização → Perdi todos os aparelhos.',
+          'Cole o código de recuperação e digite a senha de configuração do Worker e um código do autenticador ou um código reserva.',
+          'Clique em Recuperar e confirme. Os dados deste PC são substituídos pelos da nuvem; um backup deste PC é feito antes.',
+          'No celular, o caminho é Entrar com código de recuperação, na tela de pareamento.',
+          'Depois, revogue os aparelhos perdidos em Configurações → Sincronização → Aparelhos.'
+        ]
       },
       {
         type: 'callout',
         tone: 'warning',
-        text: 'Depois de restaurar o backup, ativar de novo no mesmo Worker não funciona sem a chave antiga. Para voltar a sincronizar, crie um banco D1 novo (refaça "Criar o servidor na Cloudflare") e ative nele.'
+        text: 'Se o download parar no meio, a sincronização fica pausada: clique em "A nuvem manda" para terminar.'
+      },
+      {
+        type: 'callout',
+        tone: 'danger',
+        text: 'Sem o código de recuperação, não há como abrir os dados da nuvem. Restaure um backup (Dados e segurança) e, para voltar a sincronizar, crie um banco D1 novo (refaça "Criar o servidor na Cloudflare") e ative nele: ativar de novo no mesmo Worker não funciona sem a chave antiga.'
       }
     ],
-    target: { view: 'guide', articleId: 'dados-backup' }
+    target: SYNC_SETTINGS
   },
   {
     id: 'sync-restaurar-backup',

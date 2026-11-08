@@ -12,7 +12,7 @@ const blocksOf = <T extends GuideBlock['type']>(
   a.blocks.filter((b): b is Extract<GuideBlock, { type: T }> => b.type === type)
 
 describe('sync chapter', () => {
-  it('has the thirteen articles in order', () => {
+  it('has the fourteen articles in order', () => {
     expect(chapter.articles.map((a) => [a.id, a.title])).toEqual([
       ['sync-o-que-e', 'O que é e o que o servidor vê'],
       ['sync-servidor', 'Criar o servidor na Cloudflare'],
@@ -29,6 +29,17 @@ describe('sync chapter', () => {
       ['sync-restaurar-backup', 'Restaurar um backup com a sincronização ligada'],
       ['sync-problemas', 'Problemas comuns']
     ])
+  })
+
+  // Spec 2026-11-08-recuperacao-codigo: the PC has the recovery screen now.
+  it('lost-every-device article points at the recovery section', () => {
+    const lost = article('sync-perdi-todos')
+    const text = JSON.stringify(lost.blocks)
+    expect(text).not.toContain('ainda não tem uma tela')
+    expect(text).toContain('Configurações → Sincronização → Perdi todos os aparelhos')
+    expect(text).toContain('Entrar com código de recuperação')
+    expect(text).toContain('A nuvem manda')
+    expect(lost.target).toEqual({ view: 'settings', section: 'sincronizacao' })
   })
 
   it('says exactly what the phone says about behavior and keys', () => {
