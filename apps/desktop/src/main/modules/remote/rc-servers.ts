@@ -59,10 +59,34 @@ export async function listCommandLines(
   }
 }
 
-// Every Remote Control process, the logon task's parent shell included, but
-// never the PowerShell running this search.
+// Candidates as "pid<TAB>parent<TAB>command line", never the PowerShell running
+// this search; remoteControlTargets decides which ones are really servers.
 const KILL_SCAN_SCRIPT =
-  "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'remote-control' -and $_.ProcessId -ne $PID } | Select-Object -ExpandProperty ProcessId"
+  "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'remote-control' -and $_.ProcessId -ne $PID } | ForEach-Object { \"$($_.ProcessId)`t$($_.ParentProcessId)`t$($_.CommandLine)\" }"
+
+// `remote-control` as a word of its own (not part of a path or a file name)...
+const RC_ARG = /(?:^|[\s"'])remote-control(?=[\s"']|$)/i
+// ...on a line that runs the Claude CLI: claude, claude.exe/.cmd/.ps1, or the
+// npm package's script.
+const CLAUDE_CLI = /(?:^|[\s"'\\/])claude(?:\.exe|\.cmd|\.ps1)?(?=[\s"']|$)|[\\/]@anthropic-ai[\\/]claude-code[\\/]/i
+
+/**
+ * PIDs to end for "Cortar acesso": a `claude remote-control` server, or the
+ * logon task's shell whose own line runs it. Never this Sagyou process or one
+ * of its children (review of PR #48: the old match on "remote-control" alone
+ * ended editors, builds and git commands in a folder named so).
+ */
+export function remoteControlTargets(rows: string[], selfPid: number): string[] {
+  const out: string[] = []
+  for (const line of rows) {
+    const m = /^(\d+)\t(\d+)\t(.*)$/.exec(line.trim())
+    if (!m) continue
+    const [, pid, parent, command] = m
+    if (Number(pid) === selfPid || Number(parent) === selfPid) continue
+    if (RC_ARG.test(command) && CLAUDE_CLI.test(command)) out.push(pid)
+  }
+  return out
+}
 
 /**
  * "Cortar acesso" (spec docs/specs/2026-11-07-endurecer-acesso-remoto.md): ends
@@ -73,7 +97,8 @@ const KILL_SCAN_SCRIPT =
 export async function killRemoteControlServers(
   exec: ExecText,
   platform: NodeJS.Platform = process.platform,
-  env: NodeJS.ProcessEnv = process.env
+  env: NodeJS.ProcessEnv = process.env,
+  selfPid: number = process.pid
 ): Promise<number> {
   if (platform !== 'win32') return 0
   let pids: string[]
@@ -85,10 +110,7 @@ export async function killRemoteControlServers(
       '-Command',
       KILL_SCAN_SCRIPT
     ])
-    pids = out
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .filter((l) => /^\d+$/.test(l))
+    pids = remoteControlTargets(out.split(/\r?\n/), selfPid)
   } catch {
     log.warn('remote', 'rc_kill_failed')
     return 0
