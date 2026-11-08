@@ -30,7 +30,9 @@ const amount = {
   type: ['string', 'number'],
   description: 'Valor positivo, sem separador de milhar (ex.: "1500.50" ou "1500,50").'
 }
-const date = text('Data YYYY-MM-DD; omita para hoje.')
+const date = text(
+  'Data YYYY-MM-DD do usuário (obrigatória; o usuário pode estar em outro fuso do PC).'
+)
 const bankFields = {
   source: text('Origem (banco, cartão ou app).'),
   counterparty: text('Contraparte.'),
@@ -231,12 +233,17 @@ export const MCP_WRITE_TOOLS: McpToolDefinition[] = [
     color: text('Cor hex.'),
     projectId: text('Novo projeto da meta.')
   }),
-  tool('add_goal_progress', 'Registra progresso numa meta; numa meta de conclusão, conclui.', {
-    ...goalRef,
-    value: { type: 'number', description: 'Incremento > 0 (metas de quantidade).' },
-    date,
-    label: text('Observação.')
-  }),
+  tool(
+    'add_goal_progress',
+    'Registra progresso numa meta; numa meta de conclusão, conclui.',
+    {
+      ...goalRef,
+      value: { type: 'number', description: 'Incremento > 0 (metas de quantidade).' },
+      date,
+      label: text('Observação.')
+    },
+    ['date']
+  ),
   tool('delete_goal', 'Exclui uma meta.' + APPROVAL_NOTE, goalRef),
   tool(
     'create_note',
@@ -264,7 +271,7 @@ export const MCP_WRITE_TOOLS: McpToolDefinition[] = [
       ...bankFields,
       details: transactionDetails(false)
     },
-    ['tableId', 'type', 'amount', 'description']
+    ['tableId', 'type', 'amount', 'description', 'date']
   ),
   tool(
     'update_transaction',
