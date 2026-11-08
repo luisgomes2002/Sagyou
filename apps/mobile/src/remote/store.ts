@@ -68,6 +68,8 @@ export interface RemoteStore {
   pairingCode: string | null
   /** "Estou longe do PC" waited longer than the Worker keeps it (1 h). */
   requestExpired: boolean
+  /** "Cortar acesso" got no answer in CUT_WAIT_MS: the PC tab offers the ESP32. */
+  cutUnanswered: boolean
   busy: boolean
   init(): Promise<void>
   requestAuthorization(): Promise<void>
@@ -125,6 +127,7 @@ const initial = {
   notice: null,
   pairingCode: null,
   requestExpired: false,
+  cutUnanswered: false,
   busy: false
 }
 
@@ -484,7 +487,11 @@ export const useRemote = create<RemoteStore>((set, get) => {
     },
 
     wake: () => run(() => power('wake')),
-    forceShutdown: () => run(() => power('shutdown')),
+    forceShutdown: () =>
+      run(async () => {
+        await power('shutdown')
+        set({ cutUnanswered: false })
+      }),
     abortShutdown: () =>
       run(async () => {
         // Scheduled by the Sagyou (the PC is alive and counting down): cancel there;
@@ -499,13 +506,20 @@ export const useRemote = create<RemoteStore>((set, get) => {
 
     cutAccess: () =>
       run(async () => {
+        set({ cutUnanswered: false })
         const nonce = await sendToPc('cut-access', {})
         const d = need()
-        // Still unanswered: the PC (or its Sagyou) is not responding.
         d.setTimer(() => {
-          if (!requests.has(nonce)) return
-          requests.delete(nonce)
-          set({ error: REMOTE_TEXT.cutNoAnswer })
+          void (async () => {
+            if (!requests.has(nonce)) return
+            // The inbox is only polled with the PC tab in focus: read it once
+            // more, so an answer waiting in the Worker is not taken for silence.
+            await get().refresh()
+            if (!requests.has(nonce)) return
+            // Still unanswered: the PC (or its Sagyou) is not responding.
+            requests.delete(nonce)
+            set({ error: REMOTE_TEXT.cutNoAnswer, cutUnanswered: true })
+          })()
         }, CUT_WAIT_MS)
       }),
 

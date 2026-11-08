@@ -35,6 +35,7 @@ export function PcScreen({ focused = true, now = Date.now }: PcScreenProps): Rea
   const error = useRemote((s) => s.error)
   const connection = useRemote((s) => s.connection)
   const busy = useRemote((s) => s.busy)
+  const cutUnanswered = useRemote((s) => s.cutUnanswered)
   const [clock, setClock] = useState(now)
   const [factor, setFactor] = useState('')
 
@@ -191,7 +192,7 @@ export function PcScreen({ focused = true, now = Date.now }: PcScreenProps): Rea
             />
           </>
         ) : null}
-        {state === 'waiting-sagyou' && !forcing ? (
+        {(state === 'waiting-sagyou' || cutUnanswered) && !forcing ? (
           <Button
             variant="danger"
             label="Forçar pelo ESP32"
