@@ -130,7 +130,7 @@ const getPc: ControlHandler = async (request, _p, db, _d, h) => {
   // A D1 without pc_key still answers who the PC is (spec 2026-11-09).
   let publicKey: string | null = null
   try {
-    publicKey = pc ? await db.getPcKey() : null
+    publicKey = pc ? await db.getPcKey(pc) : null
   } catch (err) {
     if (!isMissingTable(err)) throw err
   }

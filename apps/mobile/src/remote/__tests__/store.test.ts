@@ -17,6 +17,7 @@ import {
 import { CONTROL_TEXT } from '@sagyou/core/control/texts'
 import { toBase64 } from '@sagyou/core/sync/bytes'
 import {
+  KEY_PCPIN,
   KEY_PCPUB,
   KEY_PRIVATE,
   KEY_REQUESTED,
@@ -310,6 +311,62 @@ describe('store do controle remoto', () => {
       expect(useRemote.getState().authorized).toBe('waiting-pc')
     })
 
+    it('senha errada não esquece a chave fixada: Worker com outra chave dá pcKeyChanged', async () => {
+      const t = setup()
+      await useRemote.getState().requestRemote('senha', '123456')
+      const nonce = sentEnv(t).nonce
+      t.pc.queue.push(t.pc.msg('authorized', { pcPublicKey: toBase64(t.pc.keys.publicKey) }))
+      await useRemote.getState().refresh()
+      expect(t.secure.data.get(KEY_PCPIN)).toBe(toBase64(t.pc.keys.publicKey))
+      // Later, a fresh request is refused (wrong password): forget() runs.
+      await useRemote.getState().removeThisPhone()
+      await useRemote.getState().requestRemote('errada', '123456')
+      const retry = sentEnv(t).nonce
+      expect(retry).not.toBe(nonce)
+      t.pc.queue.push(t.pc.msg('result', { replyTo: retry, ok: false, reason: 'wrong-password' }))
+      await useRemote.getState().refresh()
+      expect(useRemote.getState().authorized).toBe('none')
+      // An attacker swaps the key in the Worker: the phone still refuses it.
+      t.pc.workerKey = newSigningKeys().publicKey
+      const calls = jest.mocked(t.pc.client.remoteRole).mock.calls.length
+      await useRemote.getState().requestRemote('senha', '123456')
+      expect(jest.mocked(t.pc.client.remoteRole).mock.calls).toHaveLength(calls)
+      expect(useRemote.getState().error).toBe(REMOTE_TEXT.pcKeyChanged)
+    })
+
+    it('cancelar e remover este celular mantêm a chave fixada', async () => {
+      const t = setup()
+      await authorize(t)
+      await useRemote.getState().removeThisPhone()
+      await useRemote.getState().requestRemote('senha', '123456')
+      await useRemote.getState().cancelRequest()
+      t.pc.workerKey = newSigningKeys().publicKey
+      await useRemote.getState().requestRemote('senha', '123456')
+      expect(useRemote.getState().error).toBe(REMOTE_TEXT.pcKeyChanged)
+    })
+
+    it('autorizar em casa comparando o código troca a chave fixada', async () => {
+      const t = setup()
+      await authorize(t)
+      const fresh = newSigningKeys()
+      t.pc.keys = fresh
+      t.pc.workerKey = fresh.publicKey
+      await useRemote.getState().removeThisPhone()
+      await authorize(t)
+      expect(t.secure.data.get(KEY_PCPIN)).toBe(toBase64(fresh.publicKey))
+      await useRemote.getState().removeThisPhone()
+      await useRemote.getState().requestRemote('senha', '123456')
+      expect(useRemote.getState()).toMatchObject({ authorized: 'waiting-pc', error: null })
+    })
+
+    it('celular autorizado antes da chave fixada passa a fixar a chave que já conhecia', async () => {
+      const t = setup()
+      t.secure.data.set(KEY_STATE, 'yes')
+      t.secure.data.set(KEY_PCPUB, toBase64(t.pc.keys.publicKey))
+      await useRemote.getState().init()
+      expect(t.secure.data.get(KEY_PCPIN)).toBe(toBase64(t.pc.keys.publicKey))
+    })
+
     it('PC responde outdated: texto de atualizar o celular', async () => {
       const t = setup()
       await useRemote.getState().requestRemote('senha', '123456')
@@ -528,7 +585,8 @@ describe('store do controle remoto', () => {
     t.pc.queue.push(t.pc.msg('revoked', {}))
     await useRemote.getState().refresh()
     expect(useRemote.getState()).toMatchObject({ authorized: 'none', error: REMOTE_TEXT.revoked })
-    expect(t.secure.data.size).toBe(0)
+    // Only the pinned PC key stays (spec 2026-11-09): a wipe or "Desconectar" deletes it.
+    expect([...t.secure.data.keys()]).toEqual([KEY_PCPIN])
   })
 
   // Spec docs/specs/2026-11-07-endurecer-acesso-remoto.md, item 3.

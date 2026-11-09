@@ -61,7 +61,8 @@ export function parseAuthorizeRemote(body: unknown): ParsedAuthorizeRemote | nul
   const base = parseAuthorizeRequest(body)
   const b = obj(body)
   if (!base || !b) return null
-  if (str(b.sealedPassword, SEALED_PASSWORD_MAX)) return { ...base, sealedPassword: b.sealedPassword }
+  if (str(b.sealedPassword, SEALED_PASSWORD_MAX))
+    return { ...base, sealedPassword: b.sealedPassword }
   if (b.sealedPassword === undefined && str(b.password, 1024)) return { ...base, outdated: true }
   return null
 }

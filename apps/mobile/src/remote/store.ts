@@ -293,6 +293,7 @@ export const useRemote = create<RemoteStore>((set, get) => {
       if (!pcKey || !sameKey(pcKey, parsed.key)) return
       seen.add(env.nonce)
       await d.keys.setPcPublicKey(parsed.key)
+      await d.keys.pinPcKey(parsed.key)
       await d.keys.setState('yes')
       authNonce = null
       set({ authorized: 'yes', pairingCode: null })
@@ -399,6 +400,8 @@ export const useRemote = create<RemoteStore>((set, get) => {
       const d = need()
       const state = await d.keys.state()
       const pcKey = await d.keys.pcPublicKey()
+      // A phone authorized before the pin existed pins the key it already trusts.
+      if (state === 'yes' && pcKey && !(await d.keys.pinnedPcKey())) await d.keys.pinPcKey(pcKey)
       // A request from before this was kept has no time: no notice (decision 8).
       const requestedAt = state === 'waiting-pc' ? await d.keys.requestedAt() : null
       set({
@@ -429,7 +432,9 @@ export const useRemote = create<RemoteStore>((set, get) => {
         // The password goes sealed to the PC's key (spec 2026-11-09). A phone that
         // already knew the PC trusts that key over the Worker's; a new one takes
         // the Worker's, which only the device holding the PC role can write.
-        const known = await d.keys.pcPublicKey()
+        // The pinned key survives refusals and "Cancelar"; pcpub covers a phone
+        // authorized before the pin existed.
+        const known = (await d.keys.pinnedPcKey()) ?? (await d.keys.pcPublicKey())
         const { publicKey: pcKey } = await d.client.pcKey()
         if (!pcKey) {
           set({ error: REMOTE_TEXT.noPcKey })

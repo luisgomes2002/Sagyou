@@ -689,11 +689,10 @@ describe('remote-service: autorização', () => {
     t.setRoles([PHONE])
     const newPhone = newSigningKeys()
     await t.deliver(
-      t.request(
-        'authorize-remote',
-        remoteBody(t, newPhone.privateKey, 'chute'),
-        { from: OTHER, key: newPhone.privateKey }
-      )
+      t.request('authorize-remote', remoteBody(t, newPhone.privateKey, 'chute'), {
+        from: OTHER,
+        key: newPhone.privateKey
+      })
     )
     expect(t.deps.verifyPassword).not.toHaveBeenCalled()
     expect(t.config().failures).toBe(0)
@@ -708,16 +707,14 @@ describe('remote-service: autorização', () => {
     const a = newSigningKeys()
     const b = newSigningKeys()
     await t.deliver(
-      t.request(
-        'authorize-remote',
-        remoteBody(t, a.privateKey, 'chute 1'),
-        { from: OTHER, key: a.privateKey }
-      ),
-      t.request(
-        'authorize-remote',
-        remoteBody(t, b.privateKey, 'chute 2'),
-        { from: THIRD, key: b.privateKey }
-      )
+      t.request('authorize-remote', remoteBody(t, a.privateKey, 'chute 1'), {
+        from: OTHER,
+        key: a.privateKey
+      }),
+      t.request('authorize-remote', remoteBody(t, b.privateKey, 'chute 2'), {
+        from: THIRD,
+        key: b.privateKey
+      })
     )
     expect(t.deps.verifyPassword).toHaveBeenCalledTimes(1)
     expect(t.config().failures).toBe(1)
@@ -727,11 +724,10 @@ describe('remote-service: autorização', () => {
     const t = setup()
     const newPhone = newSigningKeys()
     await t.deliver(
-      t.request(
-        'authorize-remote',
-        remoteBody(t, newPhone.privateKey, PASSWORD),
-        { from: OTHER, key: newSigningKeys().privateKey }
-      )
+      t.request('authorize-remote', remoteBody(t, newPhone.privateKey, PASSWORD), {
+        from: OTHER,
+        key: newSigningKeys().privateKey
+      })
     )
     expect(t.deps.verifyPassword).not.toHaveBeenCalled()
     expect(t.config().failures).toBe(0)
@@ -743,11 +739,10 @@ describe('remote-service: autorização', () => {
     const t = setup({ esp32: true })
     const newPhone = newSigningKeys()
     await t.deliver(
-      t.request(
-        'authorize-remote',
-        remoteBody(t, newPhone.privateKey, PASSWORD),
-        { from: OTHER, key: newPhone.privateKey }
-      )
+      t.request('authorize-remote', remoteBody(t, newPhone.privateKey, PASSWORD), {
+        from: OTHER,
+        key: newPhone.privateKey
+      })
     )
     expect(t.config().controllers.map((c) => c.id)).toEqual([OTHER])
     // The Worker already cleared the former controllers.
@@ -840,11 +835,10 @@ describe('remote-service: autorização', () => {
     const t = setup()
     const newPhone = newSigningKeys()
     await t.deliver(
-      t.request(
-        'authorize-remote',
-        remoteBody(t, newPhone.privateKey, 'errada'),
-        { from: OTHER, key: newPhone.privateKey }
-      )
+      t.request('authorize-remote', remoteBody(t, newPhone.privateKey, 'errada'), {
+        from: OTHER,
+        key: newPhone.privateKey
+      })
     )
     expect(t.client.removeController).toHaveBeenCalledWith(OTHER)
     expect(t.lastResult()).toMatchObject({ ok: false, reason: 'wrong-password' })
@@ -858,11 +852,10 @@ describe('remote-service: autorização', () => {
     const verify = vi.spyOn(t.deps, 'verifyPassword')
     const newPhone = newSigningKeys()
     await t.deliver(
-      t.request(
-        'authorize-remote',
-        remoteBody(t, newPhone.privateKey, PASSWORD),
-        { from: OTHER, key: newPhone.privateKey }
-      )
+      t.request('authorize-remote', remoteBody(t, newPhone.privateKey, PASSWORD), {
+        from: OTHER,
+        key: newPhone.privateKey
+      })
     )
     expect(verify).not.toHaveBeenCalled()
     expect(t.lastResult()).toMatchObject({ ok: false, reason: 'suspended' })

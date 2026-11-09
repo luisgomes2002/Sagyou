@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { fromBase64, hmacSha256Hex, toBase64, utf8 } from '../../sync/bytes'
+import { xchacha20poly1305 } from '@noble/ciphers/chacha'
+import { edwardsToMontgomeryPub, x25519 } from '@noble/curves/ed25519'
+import { fromBase64, hkdfSha256, hmacSha256Hex, toBase64, utf8 } from '../../sync/bytes'
 import { deriveKeys } from '../../sync/crypto'
 import {
   ControlDecryptError,
@@ -116,6 +118,33 @@ describe('senha selada para o PC', () => {
     )
     expect(() =>
       openPasswordFromPc(pc.privateKey, phone.publicKey, toBase64(raw.subarray(0, 72)))
+    ).toThrow(ControlDecryptError)
+  })
+
+  it('abrir recusa senha acima de 1024 bytes, mesmo selada por fora da função', () => {
+    // Built by hand (same construction), since sealPasswordToPc refuses it.
+    const ephemeral = seq(32, 9)
+    const ephemeralPub = x25519.getPublicKey(ephemeral)
+    const pcX = edwardsToMontgomeryPub(pc.publicKey)
+    const ikm = new Uint8Array([...x25519.getSharedSecret(ephemeral, pcX), ...ephemeralPub, ...pcX])
+    const key = hkdfSha256(ikm, 'sagyou-remote-password-v1', 32)
+    const aad = utf8(
+      `sagyou-remote-password|1|${toBase64(phone.publicKey)}|${toBase64(pc.publicKey)}`
+    )
+    const nonce = seq(24, 1)
+    const build = (password: string): string =>
+      toBase64(
+        new Uint8Array([
+          ...ephemeralPub,
+          ...nonce,
+          ...xchacha20poly1305(key, nonce, aad).encrypt(utf8(password))
+        ])
+      )
+    expect(
+      openPasswordFromPc(pc.privateKey, phone.publicKey, build('x'.repeat(1024)))
+    ).toHaveLength(1024)
+    expect(() =>
+      openPasswordFromPc(pc.privateKey, phone.publicKey, build('x'.repeat(1025)))
     ).toThrow(ControlDecryptError)
   })
 

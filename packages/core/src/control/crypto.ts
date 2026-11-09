@@ -226,6 +226,8 @@ export function openPasswordFromPc(
       raw.subarray(KEY_BYTES, KEY_BYTES + NONCE_BYTES),
       passwordAad(phonePublicKey, pcPublicKey)
     ).decrypt(raw.subarray(KEY_BYTES + NONCE_BYTES))
+    // Same rule as sealing: never hand an oversized password to the check.
+    if (plain.length === 0 || plain.length > PASSWORD_MAX_BYTES) throw new ControlDecryptError()
     return fromUtf8(plain)
   } catch {
     throw new ControlDecryptError()

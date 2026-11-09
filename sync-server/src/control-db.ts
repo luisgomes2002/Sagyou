@@ -51,8 +51,11 @@ export interface ControlDb {
   getRoles(): Promise<{ pc: string | null; controllers: string[] }>
   /** Makes `id` the only PC (a former PC loses the role and its published key). */
   setPc(id: string, now: number): Promise<void>
-  /** The PC's public key (base64), as the current PC published it; null if none. */
-  getPcKey(): Promise<string | null>
+  /**
+   * The key `pc` published (base64); null if none, or if it was written by a
+   * former PC (a late write racing a role change never counts).
+   */
+  getPcKey(pc: string): Promise<string | null>
   setPcKey(id: string, key: string, now: number): Promise<void>
   addController(id: string, now: number): Promise<void>
   removeController(id: string): Promise<void>
@@ -113,9 +116,10 @@ export class D1ControlDb implements ControlDb {
     }
   }
 
-  async getPcKey(): Promise<string | null> {
+  async getPcKey(pc: string): Promise<string | null> {
     const row = await this.db
-      .prepare('SELECT public_key FROM pc_key WHERE id = 1')
+      .prepare('SELECT public_key FROM pc_key WHERE id = 1 AND device_id = ?1')
+      .bind(pc)
       .first<{ public_key: string }>()
     return row?.public_key ?? null
   }
@@ -410,8 +414,8 @@ export class MemoryControlDb implements ControlDb {
     this.pcKey = null
   }
 
-  async getPcKey(): Promise<string | null> {
-    return this.pcKey?.key ?? null
+  async getPcKey(pc: string): Promise<string | null> {
+    return this.pcKey?.deviceId === pc ? this.pcKey.key : null
   }
 
   async setPcKey(id: string, key: string): Promise<void> {

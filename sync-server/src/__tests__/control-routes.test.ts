@@ -108,7 +108,7 @@ describe('papéis', () => {
     expect(byB.status).toBe(403)
     const byC = await call(w, 'PUT', '/roles/pc/key', { token: w.c, body: { publicKey: KEY } })
     expect(byC.status).toBe(403)
-    expect(await w.control.getPcKey()).toBeNull()
+    expect(await w.control.getPcKey(DEV_A)).toBeNull()
     const ok = await call(w, 'PUT', '/roles/pc/key', { token: w.a, body: { publicKey: KEY } })
     expect(ok.status).toBe(200)
     expect(await json(await call(w, 'GET', '/roles/pc', { token: w.c }))).toEqual({
@@ -131,7 +131,7 @@ describe('papéis', () => {
       const res = await call(w, 'PUT', '/roles/pc/key', { token: w.a, body: { publicKey } })
       expect(res.status).toBe(400)
     }
-    expect(await w.control.getPcKey()).toBeNull()
+    expect(await w.control.getPcKey(DEV_A)).toBeNull()
   })
 
   it('outro aparelho virar PC apaga a chave, e o PC antigo não a escreve mais', async () => {

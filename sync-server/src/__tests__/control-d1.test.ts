@@ -24,7 +24,7 @@ class FakeD1 implements D1Database {
   marks: { msg_id: string; expires_at: number }[] = []
   marksTable = true
   pcKeyTable = true
-  pcKey: string | null = null
+  pcKey: { device: string; key: string } | null = null
   batches: string[][] = []
 
   private exec(sql: string, args: unknown[]): D1Result<Record<string, unknown>> {
@@ -42,11 +42,12 @@ class FakeD1 implements D1Database {
       return ok()
     }
     if (sql.startsWith('INSERT INTO pc_key')) {
-      this.pcKey = String(a2)
+      this.pcKey = { device: String(a1), key: String(a2) }
       return ok([], 1)
     }
-    if (sql.startsWith('SELECT public_key FROM pc_key')) {
-      return ok(this.pcKey === null ? [] : [{ public_key: this.pcKey }])
+    if (sql.startsWith('SELECT public_key FROM pc_key WHERE id = 1 AND device_id = ?1')) {
+      const row = this.pcKey?.device === a1 ? [{ public_key: this.pcKey.key }] : []
+      return ok(row)
     }
     if (sql.startsWith('DELETE FROM control_messages WHERE expires_at')) {
       this.messages = this.messages.filter((m) => m.expires_at > Number(a1))
@@ -177,9 +178,12 @@ describe('D1ControlDb, chave do PC', () => {
     const db = new D1ControlDb(d1)
     await db.setPc(PC, 1)
     await db.setPcKey(PC, 'chave', 2)
-    expect(await db.getPcKey()).toBe('chave')
+    expect(await db.getPcKey(PC)).toBe('chave')
     await db.setPc(A, 3)
-    expect(await db.getPcKey()).toBeNull()
+    expect(await db.getPcKey(A)).toBeNull()
+    // A late write by the former PC does not count for the new one.
+    await db.setPcKey(PC, 'atrasada', 4)
+    expect(await db.getPcKey(A)).toBeNull()
   })
 
   it('sem a tabela pc_key o PC ainda pode ser trocado', async () => {
@@ -187,6 +191,6 @@ describe('D1ControlDb, chave do PC', () => {
     d1.pcKeyTable = false
     const db = new D1ControlDb(d1)
     await expect(db.setPc(PC, 1)).resolves.toBeUndefined()
-    await expect(db.getPcKey()).rejects.toThrow(/no such table/)
+    await expect(db.getPcKey(PC)).rejects.toThrow(/no such table/)
   })
 })

@@ -35,9 +35,17 @@ describe('MemoryControlDb', () => {
     const db = new MemoryControlDb()
     await db.setPc(A, 1)
     await db.setPcKey(A, 'chave-a', 2)
-    expect(await db.getPcKey()).toBe('chave-a')
+    expect(await db.getPcKey(A)).toBe('chave-a')
     await db.setPc(B, 3)
-    expect(await db.getPcKey()).toBeNull()
+    expect(await db.getPcKey(B)).toBeNull()
+  })
+
+  it('chave gravada pelo PC antigo depois da troca (corrida) não vale para o novo', async () => {
+    const db = new MemoryControlDb()
+    await db.setPc(A, 1)
+    await db.setPc(B, 2)
+    await db.setPcKey(A, 'chave-atrasada', 3)
+    expect(await db.getPcKey(B)).toBeNull()
   })
 
   it('controles entram, saem e clearControllers mantém só a exceção', async () => {
