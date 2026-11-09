@@ -445,9 +445,12 @@ export const MCP_RUN_ENDED = 'A execução MCP foi encerrada.'
 /**
  * Whether turning a run's auto mode on may answer this pending card. Auto mode
  * is about the code agent's own actions: a risky MCP write and the final patch
- * delivery always need the user's explicit answer.
+ * delivery always need the user's explicit answer. `risky` marks a card the
+ * prepare step asked for (a write risky only for its arguments), never answered
+ * by auto mode either.
  */
-export function autoApprovesPending(requestName: string): boolean {
+export function autoApprovesPending(requestName: string, risky?: boolean): boolean {
+  if (risky === true) return false
   if (requestName === 'aplicar_alteracoes_externas') return false
   return !(requestName.startsWith('mcp:') && MCP_APPROVAL_REQUIRED.has(requestName.slice(4)))
 }

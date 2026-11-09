@@ -316,4 +316,12 @@ describe('autoApprovesPending', () => {
     expect(autoApprovesPending('mcp:save_memory')).toBe(true)
     expect(autoApprovesPending('escrever_arquivo')).toBe(true)
   })
+
+  it('never answers a card the prepare step asked for', () => {
+    expect(autoApprovesPending('mcp:set_time_spent', true)).toBe(false)
+    expect(autoApprovesPending('mcp:set_time_spent')).toBe(true)
+    expect(autoApprovesPending('mcp:set_time_spent', false)).toBe(true)
+    expect(autoApprovesPending('mcp:delete_task')).toBe(false)
+    expect(autoApprovesPending('mcp:delete_task', false)).toBe(false)
+  })
 })
