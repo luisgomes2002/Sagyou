@@ -2,6 +2,7 @@ import { ControlError, type ControlClient, type InboxMessage } from '@sagyou/cor
 import {
   newEsp32Key,
   newSigningKeys,
+  openPasswordFromPc,
   pairingCode,
   powerCommandMac,
   powerStateMac
@@ -15,7 +16,13 @@ import {
 } from '@sagyou/core/control/messages'
 import { CONTROL_TEXT } from '@sagyou/core/control/texts'
 import { toBase64 } from '@sagyou/core/sync/bytes'
-import { KEY_PRIVATE, KEY_REQUESTED, KEY_STATE, createControllerKeys } from '../keys'
+import {
+  KEY_PCPUB,
+  KEY_PRIVATE,
+  KEY_REQUESTED,
+  KEY_STATE,
+  createControllerKeys
+} from '../keys'
 import { CUT_WAIT_MS, configureRemote, useRemote } from '../store'
 import { REMOTE_TEXT, accessCutText } from '../texts'
 import { fakeSecure, type FakeSecure } from './fakes'
@@ -36,6 +43,8 @@ interface FakePc {
   status: InboxMessage | null
   powerView: Awaited<ReturnType<ControlClient['powerState']>>
   esp32: Uint8Array
+  /** The PC key GET /roles/pc answers (null: the PC did not publish it). */
+  workerKey: Uint8Array | null
   client: ControlClient & Record<string, jest.Mock>
   msg(kind: ControlKind, body: Record<string, unknown>, key?: Uint8Array): InboxMessage
 }
@@ -49,6 +58,7 @@ function fakePc(): FakePc {
     status: null,
     powerView: { state: null, lastCommand: null },
     esp32: newEsp32Key(),
+    workerKey: null,
     client: {} as ControlClient & Record<string, jest.Mock>,
     msg: (kind, body, key) => ({
       from: PC,
@@ -56,9 +66,11 @@ function fakePc(): FakePc {
       env: signEnvelope(key ?? pc.keys.privateKey, kind, body, NOW, MAX_TTL_MS[kind])
     })
   }
+  pc.workerKey = pc.keys.publicKey
   pc.client = {
     me: () => 'm'.repeat(32),
     pcId: jest.fn(async () => PC),
+    pcKey: jest.fn(async () => ({ pc: PC, publicKey: pc.workerKey })),
     send: jest.fn(async (to: string, env: SignedEnvelope) => {
       pc.sent.push({ to, env })
     }),
@@ -226,6 +238,86 @@ describe('store do controle remoto', () => {
     t.pc.queue.push(t.pc.msg('authorized', { pcPublicKey: toBase64(t.pc.keys.publicKey) }))
     await useRemote.getState().refresh()
     expect(useRemote.getState().authorized).toBe('yes')
+  })
+
+  describe('senha selada para a chave do PC', () => {
+    const sentEnv = (t: Setup): SignedEnvelope =>
+      jest.mocked(t.pc.client.remoteRole).mock.calls.at(-1)?.[1] as SignedEnvelope
+    const phoneKey = (env: SignedEnvelope): Uint8Array =>
+      new Uint8Array(Buffer.from(String(env.body.publicKey), 'base64'))
+
+    it('celular novo: sela com a chave do Worker, sem a senha em claro, e guarda a chave', async () => {
+      const t = setup()
+      await useRemote.getState().requestRemote('senha çã', '123456')
+      const env = sentEnv(t)
+      expect(env.body).not.toHaveProperty('password')
+      expect(
+        openPasswordFromPc(t.pc.keys.privateKey, phoneKey(env), String(env.body.sealedPassword))
+      ).toBe('senha çã')
+      expect(t.secure.data.get(KEY_PCPUB)).toBe(toBase64(t.pc.keys.publicKey))
+      expect(useRemote.getState().authorized).toBe('waiting-pc')
+    })
+
+    it('sem chave no Worker: nada é enviado e aparece o texto', async () => {
+      const t = setup()
+      t.pc.workerKey = null
+      await useRemote.getState().requestRemote('senha', '123456')
+      expect(t.pc.client.remoteRole).not.toHaveBeenCalled()
+      expect(useRemote.getState()).toMatchObject({
+        authorized: 'none',
+        error: 'O PC ainda não publicou a chave dele. Atualize o Sagyou no PC e tente de novo.'
+      })
+    })
+
+    it('celular que conhecia outra chave: nada é enviado e aparece o texto', async () => {
+      const t = setup()
+      t.secure.data.set(KEY_PCPUB, toBase64(newSigningKeys().publicKey))
+      await useRemote.getState().requestRemote('senha', '123456')
+      expect(t.pc.client.remoteRole).not.toHaveBeenCalled()
+      expect(useRemote.getState().error).toBe(
+        'A chave do PC mudou. Autorize este celular em casa, comparando o código.'
+      )
+    })
+
+    it('celular que conhecia a mesma chave envia', async () => {
+      const t = setup()
+      t.secure.data.set(KEY_PCPUB, toBase64(t.pc.keys.publicKey))
+      await useRemote.getState().requestRemote('senha', '123456')
+      expect(t.pc.client.remoteRole).toHaveBeenCalledTimes(1)
+    })
+
+    it('fator errado e nova tentativa: continua conferindo contra a mesma chave', async () => {
+      const t = setup()
+      t.secure.data.set(KEY_PCPUB, toBase64(t.pc.keys.publicKey))
+      jest.mocked(t.pc.client.remoteRole).mockRejectedValueOnce(new ControlError('factor'))
+      await useRemote.getState().requestRemote('senha', '000000')
+      expect(useRemote.getState().error).toBe(REMOTE_TEXT.factor)
+      expect(t.secure.data.get(KEY_PCPUB)).toBe(toBase64(t.pc.keys.publicKey))
+      t.pc.workerKey = newSigningKeys().publicKey
+      await useRemote.getState().requestRemote('senha', '123456')
+      expect(t.pc.client.remoteRole).toHaveBeenCalledTimes(1)
+      expect(useRemote.getState().error).toBe(REMOTE_TEXT.pcKeyChanged)
+    })
+
+    it('aguardando o PC: authorized assinado por outra chave é ignorado', async () => {
+      const t = setup()
+      await useRemote.getState().requestRemote('senha', '123456')
+      const other = newSigningKeys()
+      t.pc.queue.push(
+        t.pc.msg('authorized', { pcPublicKey: toBase64(other.publicKey) }, other.privateKey)
+      )
+      await useRemote.getState().refresh()
+      expect(useRemote.getState().authorized).toBe('waiting-pc')
+    })
+
+    it('PC responde outdated: texto de atualizar o celular', async () => {
+      const t = setup()
+      await useRemote.getState().requestRemote('senha', '123456')
+      const nonce = sentEnv(t).nonce
+      t.pc.queue.push(t.pc.msg('result', { replyTo: nonce, ok: false, reason: 'outdated' }))
+      await useRemote.getState().refresh()
+      expect(useRemote.getState().error).toBe('Atualize o Sagyou no celular.')
+    })
   })
 
   it('senha do Sagyou errada à distância volta com o texto', async () => {

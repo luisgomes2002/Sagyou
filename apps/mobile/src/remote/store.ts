@@ -13,6 +13,7 @@ import {
   pairingCode,
   powerCommandMac,
   powerStateMac,
+  sealPasswordToPc,
   type PowerCommand
 } from '@sagyou/core/control/crypto'
 import {
@@ -167,6 +168,8 @@ function resultText(result: ResultBody): string {
       return REMOTE_TEXT.refused
     case 'factor':
       return REMOTE_TEXT.factor
+    case 'outdated':
+      return REMOTE_TEXT.outdated
     default:
       return CONTROL_TEXT.refused
   }
@@ -285,8 +288,9 @@ export const useRemote = create<RemoteStore>((set, get) => {
       const state = get().authorized
       if (!parsed || (state !== 'pending' && state !== 'waiting-pc')) return
       if (!checkEnvelope(env, parsed.key, now, once).ok) return
-      // Asked here at home: it must be the key whose code was compared on both screens.
-      if (state === 'pending' && (!pcKey || !sameKey(pcKey, parsed.key))) return
+      // Asked here at home: the key whose code was compared on both screens.
+      // Asked from afar: the key the password was sealed to.
+      if (!pcKey || !sameKey(pcKey, parsed.key)) return
       seen.add(env.nonce)
       await d.keys.setPcPublicKey(parsed.key)
       await d.keys.setState('yes')
@@ -422,13 +426,29 @@ export const useRemote = create<RemoteStore>((set, get) => {
     requestRemote: (password, factor) =>
       run(async () => {
         const d = need()
+        // The password goes sealed to the PC's key (spec 2026-11-09). A phone that
+        // already knew the PC trusts that key over the Worker's; a new one takes
+        // the Worker's, which only the device holding the PC role can write.
+        const known = await d.keys.pcPublicKey()
+        const { publicKey: pcKey } = await d.client.pcKey()
+        if (!pcKey) {
+          set({ error: REMOTE_TEXT.noPcKey })
+          return
+        }
+        if (known && !sameKey(known, pcKey)) {
+          set({ error: REMOTE_TEXT.pcKeyChanged })
+          return
+        }
         const fresh = await d.keys.renew()
+        // renew() forgets the PC key; keep it, so a failed try (wrong factor,
+        // network) still checks the next one against the same key.
+        await d.keys.setPcPublicKey(pcKey)
         const env = fresh.sign(
           'authorize-remote',
           {
             name: d.deviceName().slice(0, 80) || 'Celular',
             publicKey: toBase64(fresh.publicKey),
-            password
+            sealedPassword: sealPasswordToPc(pcKey, fresh.publicKey, password)
           },
           MAX_TTL_MS['authorize-remote']
         )
