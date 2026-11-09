@@ -191,6 +191,61 @@ describe('McpWriteQueue preparation and optional approval', () => {
     )
   })
 
+  it('a prepare can ask for the card, which then counts as risky', async () => {
+    const approve = vi.fn(async () => true)
+    const queue = new McpWriteQueue(approve)
+    const write = vi.fn(async () => 'set')
+    await expect(
+      queue.enqueue(
+        { runId: 'run-1', name: 'set_time_spent', args: {}, approval: false },
+        write,
+        async () => ({ resumo: 'Corrigir o tempo', approval: true })
+      )
+    ).resolves.toEqual({ approved: true, value: 'set' })
+    expect(approve).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'set_time_spent', resumo: 'Corrigir o tempo', risky: true })
+    )
+    expect(write).toHaveBeenCalledOnce()
+  })
+
+  it('a card asked for by the prepare and denied never executes', async () => {
+    const queue = new McpWriteQueue(async () => false)
+    const write = vi.fn(async () => 'set')
+    await expect(
+      queue.enqueue(
+        { runId: 'run-1', name: 'set_time_spent', args: {}, approval: false },
+        write,
+        async () => ({ resumo: 'Corrigir o tempo', approval: true })
+      )
+    ).resolves.toEqual({ approved: false })
+    expect(write).not.toHaveBeenCalled()
+  })
+
+  it('a prepare without approval keeps a no-approval write without a card', async () => {
+    const approve = vi.fn(async () => true)
+    const queue = new McpWriteQueue(approve)
+    await expect(
+      queue.enqueue(
+        { runId: 'run-1', name: 'set_time_spent', args: {}, approval: false },
+        async () => 'set',
+        async () => ({ resumo: 'Corrigir o tempo' })
+      )
+    ).resolves.toEqual({ approved: true, value: 'set' })
+    expect(approve).not.toHaveBeenCalled()
+  })
+
+  it('a prepare never drops a card the tool name requires', async () => {
+    const approve = vi.fn(async () => true)
+    const queue = new McpWriteQueue(approve)
+    await queue.enqueue(
+      { runId: 'run-1', name: 'delete_task', args: {}, approval: true },
+      async () => 'ok',
+      async () => ({ resumo: 'Excluir tarefa "X"', approval: false })
+    )
+    expect(approve).toHaveBeenCalledOnce()
+    expect(approve).toHaveBeenCalledWith(expect.not.objectContaining({ risky: true }))
+  })
+
   it('a run that ended before execute does not execute, even without approval', async () => {
     let live = true
     const queue = new McpWriteQueue(

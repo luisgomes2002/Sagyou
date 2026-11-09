@@ -5,6 +5,11 @@ export interface McpWriteRequest {
   /** Absent means the approval card is shown, as for every write before it existed. */
   approval?: boolean
   resumo?: string
+  /**
+   * The card was asked for by the prepare step (the write is risky only for
+   * these arguments), so the run's auto mode must not answer it.
+   */
+  risky?: boolean
 }
 
 export interface McpWriteOutcome<T> {
@@ -16,7 +21,13 @@ export interface McpWriteOutcome<T> {
   ended?: boolean
 }
 
-export type McpWritePrepare<T> = () => Promise<{ resumo: string } | { refuse: T }>
+/**
+ * `approval: true` asks for the card even when the tool name does not: the
+ * queue only ever adds a card, never drops one the name requires.
+ */
+export type McpWritePrepare<T> = () => Promise<
+  { resumo: string; approval?: boolean } | { refuse: T }
+>
 
 interface QueuedWrite<T> extends McpWriteRequest {
   execute: () => Promise<T>
@@ -132,6 +143,10 @@ export class McpWriteQueue {
           return
         }
         write.resumo = prepared.resumo
+        if (prepared.approval === true) {
+          write.approval = true
+          write.risky = true
+        }
       }
       const approved =
         write.approval === false
@@ -140,7 +155,8 @@ export class McpWriteQueue {
               runId: write.runId,
               name: write.name,
               args: write.args,
-              resumo: write.resumo
+              resumo: write.resumo,
+              ...(write.risky ? { risky: true } : {})
             })
       if (write.cancelled) return
       if (!approved) write.resolve({ approved: false })
