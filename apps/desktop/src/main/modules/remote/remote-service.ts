@@ -16,6 +16,7 @@ import {
   parseApprovalAnswer,
   parseAuthorizeRemote,
   parseAuthorizeRequest,
+  parseServerRequest,
   type ApprovalCardBody,
   type ResultReason
 } from '@sagyou/core/control/bodies'
@@ -33,12 +34,14 @@ import {
   checkEnvelope,
   signEnvelope,
   type ControlKind,
+  type PcServer,
   type PcStatus,
   type SignedEnvelope
 } from '@sagyou/core/control/messages'
 import { fromBase64, toBase64 } from '@sagyou/core/sync/bytes'
 import type { SyncStatus } from '@sagyou/core/sync/engine'
 import type { Logger } from '../logs/logger'
+import type { RcServerView, RcStartResult, RcStopResult } from './rc-manager'
 import type { RemoteConfig, RemoteController } from './remote-config'
 
 export const REMOTE_FAIL_LIMIT = 5
@@ -87,7 +90,15 @@ export interface RemoteServiceDeps {
   shutdown: () => Promise<'ok' | 'flush-failed' | 'failed'>
   abortShutdown: () => Promise<void>
   shutdownAt: () => number | null
-  servers: () => Promise<{ name: string; up: boolean }[]>
+  /**
+   * The Remote Control servers the Sagyou manages (rc-manager). May refresh
+   * them first: it is read once per heartbeat.
+   */
+  serverList: () => RcServerView[] | Promise<RcServerView[]>
+  /** server-start from a phone (spec 2026-11-09-servidores-remote-control). */
+  startServer: (projectId: string, origin: 'phone') => Promise<RcStartResult>
+  /** server-stop from a phone; never barred by the suspension. */
+  stopServer: (projectId: string) => Promise<RcStopResult>
   pendingCards: () => number
   /** False when the id is not (or no longer) pending. */
   answerCard: (id: string, approved: boolean) => boolean
@@ -128,6 +139,21 @@ export interface RemoteService {
   syncStatusChanged(status: SyncStatus): void
   /** Drops controllers revoked (or gone) in the sync. */
   checkDevices(): Promise<void>
+  /** The next cycle publishes the status (a server changed). */
+  statusSoon(): void
+}
+
+/** What the heartbeat says about one server: only those turned on for a project. */
+export function pcServers(list: RcServerView[]): PcServer[] {
+  return list
+    .filter((s) => s.enabled)
+    .map((s) => ({
+      name: s.name,
+      up: s.state === 'running' || s.state === 'external' || s.state === 'needs-confirm',
+      projectId: s.projectId,
+      state: s.state,
+      autostart: s.autostart
+    }))
 }
 
 type Counters = Pick<RemoteConfig, 'failures' | 'suspendedUntil' | 'seenNonces'>
@@ -461,6 +487,41 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
         log.info('remote', 'restore', { result: 'ok' })
         return reply(from, env.nonce, true)
       }
+      case 'server-start': {
+        // None of these refusals counts: the request was authenticated.
+        const body = parseServerRequest(env.body)
+        if (!body) {
+          ignored('shape')
+          return reply(from, env.nonce, false, { reason: 'shape' })
+        }
+        if (until !== null) return reply(from, env.nonce, false, { reason: 'suspended', until })
+        let result: RcStartResult
+        try {
+          result = await deps.startServer(body.projectId, 'phone')
+        } catch {
+          result = 'start-failed'
+        }
+        if (result !== 'ok') return reply(from, env.nonce, false, { reason: result })
+        accepted()
+        return reply(from, env.nonce, true)
+      }
+      case 'server-stop': {
+        // Turning a server off always passes, suspended or not.
+        const body = parseServerRequest(env.body)
+        if (!body) {
+          ignored('shape')
+          return reply(from, env.nonce, false, { reason: 'shape' })
+        }
+        let result: RcStopResult
+        try {
+          result = await deps.stopServer(body.projectId)
+        } catch {
+          result = 'unknown-server'
+        }
+        if (result !== 'ok') return reply(from, env.nonce, false, { reason: result })
+        accepted()
+        return reply(from, env.nonce, true)
+      }
       case 'approval-answer': {
         const body = parseApprovalAnswer(env.body)
         if (!body) {
@@ -522,7 +583,7 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
   // ── Cycle ────────────────────────────────────────────────────────────────────
 
   async function heartbeat(now: number): Promise<void> {
-    const servers = await deps.servers()
+    const servers = pcServers(await deps.serverList())
     const status: PcStatus = {
       v: 1,
       at: now,
@@ -536,7 +597,8 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
     }
     const env = sign('status', status, STATUS_TTL_MS)
     await client.putStatus(env)
-    if (!readySent && servers.every((s) => s.up)) {
+    // "PC pronto" waits only for the servers with "Iniciar com o Sagyou".
+    if (!readySent && servers.every((s) => !s.autostart || s.up)) {
       readySent = true
       for (const c of controllers()) await client.send(c.id, env, 'ready')
     }
@@ -768,6 +830,10 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
       refreshLoop()
     },
 
-    checkDevices
+    checkDevices,
+
+    statusSoon() {
+      lastStatusAt = Number.NEGATIVE_INFINITY
+    }
   }
 }
