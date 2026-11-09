@@ -1,6 +1,6 @@
 {
   "name": "@sagyou/mobile",
-  "version": "0.4.1",
+  "version": "0.6.0",
   "main": "index.ts",
   "dependencies": {
     "@react-native-community/datetimepicker": "9.2.1",

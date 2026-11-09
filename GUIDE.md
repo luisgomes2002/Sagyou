@@ -416,8 +416,10 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
     `remote-control.json` (fora do SQLite, do backup e do sync; apagado no wipe);
     5 recusas seguidas suspendem 15 min. No celular, a chave privada do controle
     fica só no `expo-secure-store` com biometria. Nunca logue senha, chave,
-    assinatura, token do ESP32, token FCM ou conteúdo de cartão. O protocolo é
-    o `packages/core/src/control/`; o firmware segue `docs/esp32-api.md`.
+    assinatura, token do ESP32, token FCM ou conteúdo de cartão. Os servidores de Remote
+    Control são do Sagyou (`rc-manager.ts`, um PTY por projeto): o celular só
+    liga um projeto já confirmado no PC, e nada sobe com o acesso cortado. O
+    protocolo é o `packages/core/src/control/`; o firmware segue `docs/esp32-api.md`.
     Detalhes no `CLAUDE.md`.
 
 ## Memória — fronteira de confiança
