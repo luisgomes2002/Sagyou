@@ -270,6 +270,14 @@ describe('store do controle remoto', () => {
       })
     })
 
+    it('sem PC no Worker: nada é enviado e pede para ativar o controle no PC', async () => {
+      const t = setup()
+      jest.mocked(t.pc.client.pcKey).mockResolvedValueOnce({ pc: null, publicKey: null })
+      await useRemote.getState().requestRemote('senha', '123456')
+      expect(t.pc.client.remoteRole).not.toHaveBeenCalled()
+      expect(useRemote.getState().error).toBe(REMOTE_TEXT.noPc)
+    })
+
     it('celular que conhecia outra chave: nada é enviado e aparece o texto', async () => {
       const t = setup()
       t.secure.data.set(KEY_PCPUB, toBase64(newSigningKeys().publicKey))

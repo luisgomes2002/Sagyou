@@ -108,8 +108,11 @@ O obstáculo é que um celular novo, pedindo de longe, ainda não conhece essa c
   updated_at)`. A escolha fica para o plano, via `sagyou-migration`. Migração aditiva em
   `schema.sql` mais um comando `wrangler d1 execute` no README, igual às anteriores.
 - **Desktop:** sem mudança de dados. `remote-control.json` mantém `pcKeys` como está.
-- **Celular:** sem chave nova no secure store. `sagyou.control.pcpub` passa também a ser
-  gravada a partir do Worker, quando o pedido de longe é aceito.
+- **Celular:** chave nova `sagyou.control.pcpin` no secure store (decisão do construtor, da
+  revisão de segurança): a chave do PC em que o celular confia, gravada quando o PC o
+  autoriza. Sobrevive a recusa, "Cancelar" e "Remover este celular"; só o wipe ou
+  "Desconectar" a apagam, e só comparar o código em casa a troca. `sagyou.control.pcpub`
+  passa também a ser gravada a partir do Worker no pedido de longe.
 - Backup e sync: não mudam.
 
 ## Telas

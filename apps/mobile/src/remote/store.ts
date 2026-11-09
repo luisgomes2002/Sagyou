@@ -435,7 +435,11 @@ export const useRemote = create<RemoteStore>((set, get) => {
         // The pinned key survives refusals and "Cancelar"; pcpub covers a phone
         // authorized before the pin existed.
         const known = (await d.keys.pinnedPcKey()) ?? (await d.keys.pcPublicKey())
-        const { publicKey: pcKey } = await d.client.pcKey()
+        const { pc, publicKey: pcKey } = await d.client.pcKey()
+        if (!pc) {
+          set({ error: REMOTE_TEXT.noPc })
+          return
+        }
         if (!pcKey) {
           set({ error: REMOTE_TEXT.noPcKey })
           return

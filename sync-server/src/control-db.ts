@@ -84,9 +84,6 @@ export interface ControlDb {
   pushTokens(ids: string[]): Promise<string[]>
 }
 
-const isMissingTableError = (err: unknown): boolean =>
-  err instanceof Error && /no such table/i.test(err.message)
-
 // ── D1 ────────────────────────────────────────────────────────────────────────────
 
 export class D1ControlDb implements ControlDb {
@@ -107,12 +104,13 @@ export class D1ControlDb implements ControlDb {
         .prepare("INSERT INTO device_roles (id, role, created_at) VALUES (?1, 'pc', ?2)")
         .bind(id, now)
     ])
-    // Apart from the batch: a D1 without pc_key (schema not applied yet) still
-    // changes the PC; the new one publishes its key once the table exists.
+    // Apart from the batch, and only tidying: getPcKey ignores a key another
+    // device wrote, so a failure here (or a D1 without pc_key yet) never fails
+    // the role change; the new PC publishes its key on its next heartbeat.
     try {
       await this.db.prepare('DELETE FROM pc_key').run()
-    } catch (err) {
-      if (!isMissingTableError(err)) throw err
+    } catch {
+      // Nothing to undo.
     }
   }
 
