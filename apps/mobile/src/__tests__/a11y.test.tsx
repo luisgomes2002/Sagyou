@@ -77,7 +77,7 @@ const FULL: Partial<MobileState> = {
 
 const PC_NOW = 1_800_000_000_000
 
-/** The PC tab with every kind of control on screen: lock, power, update and a card. */
+/** The PC tab with every kind of control on screen: lock, power, update, servers and a card. */
 function PcSample(): React.JSX.Element {
   useState(() =>
     useRemote.setState({
@@ -93,7 +93,11 @@ function PcSample(): React.JSX.Element {
         v: 1,
         at: PC_NOW,
         locked: true,
-        servers: [],
+        servers: [
+          { name: 'Sagyou', up: false, projectId: 'p1', state: 'stopped', autostart: true },
+          { name: 'Murasaki', up: true, projectId: 'p2', state: 'running' },
+          { name: 'Antigo', up: true }
+        ],
         pendingCards: 1,
         shutdownAt: null,
         suspendedUntil: null,

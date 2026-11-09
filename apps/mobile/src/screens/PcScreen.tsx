@@ -1,3 +1,4 @@
+import type { PcServer } from '@sagyou/core/control/messages'
 import type { PcState } from '@sagyou/core/control/state'
 import {
   CONTROL_TEXT,
@@ -9,15 +10,23 @@ import {
 import { useEffect, useState } from 'react'
 import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { ACTION_ICONS } from '../components/icons'
-import { Button, Card, EmptyState, Field, Screen } from '../components/ui'
+import { Button, Card, EmptyState, Field, ListItem, Screen } from '../components/ui'
 import { useRemote } from '../remote/store'
-import { REMOTE_TEXT, accessCutText, cardCountdown } from '../remote/texts'
+import { REMOTE_TEXT, accessCutText, cardCountdown, serverStateText } from '../remote/texts'
+import { useApp } from '../store/app'
 import { FONT, SPACE, useTheme } from '../theme'
 
 export const LOCKED_TEXT = 'Sagyou bloqueado'
 export const UNLOCKED_TEXT = 'Sagyou desbloqueado'
 export const CARDS_TITLE = 'Aprovações pendentes'
 export const LOADING_TEXT = 'Buscando o estado do PC…'
+export const SERVERS_TITLE = 'Servidores'
+
+/** Ligar or Desligar for a managed server; none for one only observed (a PC before 1.10). */
+export function serverAction(server: PcServer): 'start' | 'stop' | null {
+  if (!server.projectId || !server.state) return null
+  return server.state === 'stopped' ? 'start' : 'stop'
+}
 
 export interface PcScreenProps {
   /** The tab is on screen: only then the app asks the Worker every 5 s. */
@@ -36,6 +45,7 @@ export function PcScreen({ focused = true, now = Date.now }: PcScreenProps): Rea
   const connection = useRemote((s) => s.connection)
   const busy = useRemote((s) => s.busy)
   const cutUnanswered = useRemote((s) => s.cutUnanswered)
+  const readOnly = useApp((s) => s.readOnly)
   const [clock, setClock] = useState(now)
   const [factor, setFactor] = useState('')
 
@@ -249,6 +259,43 @@ export function PcScreen({ focused = true, now = Date.now }: PcScreenProps): Rea
             </Text>
             <Button label="Instalar atualização" disabled={busy} onPress={confirmInstall} />
           </Card>
+        ) : null}
+
+        {alive && status && status.servers.length > 0 ? (
+          <View style={{ gap: SPACE.sm }}>
+            <Text accessibilityRole="header" style={[styles.section, { color: theme.muted }]}>
+              {SERVERS_TITLE}
+            </Text>
+            {status.servers.map((server) => {
+              const action = serverAction(server)
+              const projectId = server.projectId
+              return (
+                <ListItem
+                  key={projectId ?? server.name}
+                  title={server.name}
+                  subtitle={serverStateText(server)}
+                  left={
+                    <ACTION_ICONS.server size={20} color={server.up ? theme.green : theme.muted} />
+                  }
+                  right={
+                    action && projectId ? (
+                      <Button
+                        variant={action === 'start' ? 'secondary' : 'danger'}
+                        label={action === 'start' ? 'Ligar' : 'Desligar'}
+                        a11yLabel={`${action === 'start' ? 'Ligar' : 'Desligar'} o servidor ${server.name}`}
+                        disabled={busy || readOnly}
+                        onPress={() =>
+                          void (action === 'start'
+                            ? remote().startServer(projectId)
+                            : remote().stopServer(projectId))
+                        }
+                      />
+                    ) : undefined
+                  }
+                />
+              )
+            })}
+          </View>
         ) : null}
 
         {cards.length > 0 ? (

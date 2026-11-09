@@ -89,7 +89,8 @@ export const ACTION_ICONS = {
   powerOff: PowerOff,
   lock: Lock,
   unlock: LockOpen,
-  pc: Monitor
+  pc: Monitor,
+  server: Server
 } satisfies Record<string, LucideIcon>
 
 // Exact names from the core's FINANCIAL_CATEGORIES; anything else gets a tag.

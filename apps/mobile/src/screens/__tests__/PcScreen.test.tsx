@@ -5,8 +5,16 @@ import { CONTROL_TEXT, PC_STATE_TEXT } from '@sagyou/core/control/texts'
 import { act, fireEvent, render, screen } from '@testing-library/react-native'
 import { Alert } from 'react-native'
 import { useRemote } from '../../remote/store'
-import { REMOTE_TEXT, accessCutText, cardCountdown } from '../../remote/texts'
-import { CARDS_TITLE, LOADING_TEXT, LOCKED_TEXT, PcScreen, UNLOCKED_TEXT } from '../PcScreen'
+import { REMOTE_TEXT, SERVER_STATE_TEXT, accessCutText, cardCountdown } from '../../remote/texts'
+import { useApp } from '../../store/app'
+import {
+  CARDS_TITLE,
+  LOADING_TEXT,
+  LOCKED_TEXT,
+  PcScreen,
+  SERVERS_TITLE,
+  UNLOCKED_TEXT
+} from '../PcScreen'
 
 const NOW = 1_800_000_000_000
 
@@ -22,7 +30,9 @@ const actions = {
   installUpdate: jest.fn(async () => undefined),
   answer: jest.fn(async () => undefined),
   cutAccess: jest.fn(async () => undefined),
-  restoreAccess: jest.fn((factor: string) => Promise.resolve(void factor))
+  restoreAccess: jest.fn((factor: string) => Promise.resolve(void factor)),
+  startServer: jest.fn((projectId: string) => Promise.resolve(void projectId)),
+  stopServer: jest.fn((projectId: string) => Promise.resolve(void projectId))
 }
 
 function status(over: Partial<PcStatus> = {}): PcStatus {
@@ -156,9 +166,9 @@ describe('PcScreen', () => {
   it('a contagem do desligamento fica fora da live region (o TalkBack não lê a cada segundo)', async () => {
     seed({ view: view('shutting-down'), status: status({ shutdownAt: NOW + 58_000 }) })
     await render(<PcScreen now={clock} />)
-    expect(
-      screen.getByText(PC_STATE_TEXT['shutting-down']).props.accessibilityLiveRegion
-    ).toBe('polite')
+    expect(screen.getByText(PC_STATE_TEXT['shutting-down']).props.accessibilityLiveRegion).toBe(
+      'polite'
+    )
     expect(screen.getByText('Desligando em 0:58').props.accessibilityLiveRegion).toBeUndefined()
   })
 
@@ -351,6 +361,112 @@ describe('PcScreen', () => {
     for (const name of ['Desbloquear', 'Desligar']) {
       expect(screen.getByRole('button', { name }).props.accessibilityState?.disabled).toBe(true)
     }
+  })
+
+  // Spec docs/specs/2026-11-09-servidores-remote-control.md.
+  describe('servidores', () => {
+    const SERVERS: PcStatus['servers'] = [
+      { name: 'Sagyou', up: false, projectId: 'p1', state: 'stopped', autostart: true },
+      { name: 'Murasaki', up: true, projectId: 'p2', state: 'running', autostart: true },
+      { name: 'Fora', up: true, projectId: 'p3', state: 'external' },
+      { name: 'Novo', up: true, projectId: 'p4', state: 'needs-confirm' },
+      { name: 'Subindo', up: false, projectId: 'p5', state: 'starting' },
+      // A PC before 1.10: only observed, no button.
+      { name: 'Antigo', up: true }
+    ]
+    const button = (
+      verb: 'Ligar' | 'Desligar',
+      name: string
+    ): ReturnType<typeof screen.queryByRole> =>
+      screen.queryByRole('button', { name: `${verb} o servidor ${name}` })
+
+    afterEach(() => useApp.setState({ readOnly: false }))
+
+    it('lista cada servidor com o estado e o botão dele', async () => {
+      seed({ view: view('ready'), status: status({ servers: SERVERS }) })
+      await render(<PcScreen now={clock} />)
+      expect(screen.getByText(SERVERS_TITLE)).toBeTruthy()
+      for (const name of ['Sagyou', 'Murasaki', 'Fora', 'Novo', 'Subindo', 'Antigo'])
+        expect(screen.getByText(name)).toBeTruthy()
+      expect(screen.getByText(SERVER_STATE_TEXT.stopped)).toBeTruthy()
+      // Murasaki and the old PC's Antigo.
+      expect(screen.getAllByText(SERVER_STATE_TEXT.running)).toHaveLength(2)
+      expect(screen.getByText(SERVER_STATE_TEXT.external)).toBeTruthy()
+      expect(screen.getByText(SERVER_STATE_TEXT['needs-confirm'])).toBeTruthy()
+      expect(screen.getByText(SERVER_STATE_TEXT.starting)).toBeTruthy()
+
+      expect(button('Ligar', 'Sagyou')).toBeTruthy()
+      expect(button('Desligar', 'Sagyou')).toBeNull()
+      for (const name of ['Murasaki', 'Fora', 'Novo', 'Subindo']) {
+        expect(button('Desligar', name)).toBeTruthy()
+        expect(button('Ligar', name)).toBeNull()
+      }
+      expect(button('Ligar', 'Antigo')).toBeNull()
+      expect(button('Desligar', 'Antigo')).toBeNull()
+      // The PC's own buttons are still there and unique.
+      expect(shownActions()).toEqual(['Desligar', 'Bloquear agora'])
+    })
+
+    it('os rótulos de estado são os combinados', () => {
+      expect(SERVER_STATE_TEXT).toEqual({
+        running: 'Rodando',
+        stopped: 'Parado',
+        starting: 'Iniciando…',
+        'needs-confirm': 'Confirme no PC',
+        external: 'Rodando (fora do Sagyou)'
+      })
+    })
+
+    it('Ligar e Desligar mandam o projeto do servidor', async () => {
+      seed({ view: view('ready'), status: status({ servers: SERVERS }) })
+      await render(<PcScreen now={clock} />)
+      await fireEvent.press(button('Ligar', 'Sagyou')!)
+      expect(actions.startServer).toHaveBeenCalledWith('p1')
+      await fireEvent.press(button('Desligar', 'Fora')!)
+      expect(actions.stopServer).toHaveBeenCalledWith('p3')
+      expect(actions.startServer).toHaveBeenCalledTimes(1)
+      expect(actions.stopServer).toHaveBeenCalledTimes(1)
+    })
+
+    it('ocupado ou só leitura: os botões dos servidores não respondem', async () => {
+      for (const [busy, readOnly] of [
+        [true, false],
+        [false, true]
+      ]) {
+        jest.clearAllMocks()
+        useApp.setState({ readOnly })
+        seed({ view: view('ready'), status: status({ servers: SERVERS }), busy })
+        const page = await render(<PcScreen now={clock} />)
+        for (const b of [button('Ligar', 'Sagyou')!, button('Desligar', 'Murasaki')!]) {
+          expect(b.props.accessibilityState?.disabled).toBe(true)
+          await fireEvent.press(b)
+        }
+        expect(actions.startServer).not.toHaveBeenCalled()
+        expect(actions.stopServer).not.toHaveBeenCalled()
+        await page.unmount()
+      }
+    })
+
+    it('a recusa do PC aparece como erro', async () => {
+      seed({
+        view: view('ready'),
+        status: status({ servers: SERVERS }),
+        error: REMOTE_TEXT.serverNotConfirmed
+      })
+      await render(<PcScreen now={clock} />)
+      expect(screen.getByText('Confirme este projeto uma vez no PC.')).toBeTruthy()
+    })
+
+    it('sem servidores ou com o PC desligado, a seção não aparece', async () => {
+      seed({ view: view('ready'), status: status() })
+      const empty = await render(<PcScreen now={clock} />)
+      expect(screen.queryByText(SERVERS_TITLE)).toBeNull()
+      await empty.unmount()
+
+      seed({ view: view('off'), status: status({ servers: SERVERS }) })
+      await render(<PcScreen now={clock} />)
+      expect(screen.queryByText(SERVERS_TITLE)).toBeNull()
+    })
   })
 
   it('consulta só com a aba em foco e para ao sair dela', async () => {
