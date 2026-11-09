@@ -42,7 +42,28 @@ describe('MCP write tool classification', () => {
     for (const name of names)
       expect(Number(MCP_APPROVAL_REQUIRED.has(name)) + Number(MCP_NO_APPROVAL.has(name))).toBe(1)
     expect([...MCP_APPROVAL_REQUIRED].sort()).toEqual([...APPROVAL_LIST].sort())
-    expect(MCP_APPROVAL_REQUIRED.size + MCP_NO_APPROVAL.size).toBe(38)
+    expect(MCP_APPROVAL_REQUIRED.size + MCP_NO_APPROVAL.size).toBe(39)
+  })
+
+  it('declares set_time_spent without a card by name (the prepare asks for it)', () => {
+    const schema = MCP_WRITE_TOOLS.find((tool) => tool.name === 'set_time_spent')?.inputSchema
+    expect(MCP_NO_APPROVAL.has('set_time_spent')).toBe(true)
+    expect(MCP_APPROVAL_REQUIRED.has('set_time_spent')).toBe(false)
+    expect(MCP_RENDERER_WRITE_TOOLS).toContain('set_time_spent')
+    expect(MCP_PERMISSIONS).toContain('set_time_spent')
+    const properties = schema?.properties as Record<string, unknown>
+    expect(Object.keys(properties)).toEqual(['projectId', 'id', 'title', 'seconds'])
+    expect(properties.seconds).toEqual({
+      type: 'integer',
+      minimum: 0,
+      maximum: 31536000,
+      description: 'Total em segundos (0 a 31536000).'
+    })
+    expect(schema?.required).toEqual(['seconds'])
+    expect(mcpWriteResult('set_time_spent', { approved: false })).toEqual({
+      ok: false,
+      error: 'Correção não aprovada pelo usuário.'
+    })
   })
 
   it('declares the task timer tools without an approval card', () => {

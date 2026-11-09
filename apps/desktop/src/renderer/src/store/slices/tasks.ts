@@ -31,6 +31,11 @@ export interface TasksSlice {
   deleteSprint: (sprintId: string) => void
   setTaskSprint: (taskId: string, sprintId: string | null) => void
   addTimeSpent: (taskId: string, seconds: number) => void
+  /**
+   * Sets the task's total time (MCP correction). A running timer of the task is
+   * removed without crediting what it counted.
+   */
+  setTimeSpent: (taskId: string, seconds: number) => { stoppedTimer: boolean }
   startTimer: (taskId: string) => void
   stopTimer: (taskId: string) => void
 }
@@ -275,6 +280,19 @@ export const createTasksSlice: StateCreator<
       )
     }))
     get()._persist()
+  },
+
+  setTimeSpent: (taskId, seconds) => {
+    const stoppedTimer = get().activeTimers.some((t) => t.taskId === taskId)
+    const now = new Date().toISOString()
+    set((s) => ({
+      activeTimers: s.activeTimers.filter((t) => t.taskId !== taskId),
+      tasks: s.tasks.map((t) =>
+        t.id === taskId ? { ...t, timeSpent: seconds, updatedAt: now } : t
+      )
+    }))
+    get()._persist()
+    return { stoppedTimer }
   },
 
   startTimer: (taskId) => {

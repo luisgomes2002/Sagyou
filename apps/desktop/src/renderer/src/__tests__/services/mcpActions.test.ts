@@ -20,6 +20,7 @@ vi.mock('../../services/ElectronStorage', () => {
 import { useKanbanStore } from '../../store/kanban'
 import {
   applyMcpAction,
+  formatDuration,
   formatMcpMoney,
   freeNotePosition,
   mcpWriteBlocked,
@@ -1507,6 +1508,107 @@ describe('MCP task timer', () => {
         error: 'seconds deve ser um inteiro entre 1 e 86400.'
       })
     expect(spent(taskId)).toBe(600)
+  })
+
+  it('formatDuration shows hours and minutes, seconds truncated', () => {
+    expect(formatDuration(0)).toBe('0 min')
+    expect(formatDuration(59)).toBe('0 min')
+    expect(formatDuration(2700)).toBe('45 min')
+    expect(formatDuration(7200)).toBe('2 h 00 min')
+    expect(formatDuration(7500)).toBe('2 h 05 min')
+    expect(formatDuration(7559)).toBe('2 h 05 min')
+  })
+
+  it('set_time_spent asks for the card only when it lowers the total', () => {
+    const { scope, taskId } = seedTimerTask()
+    state().addTimeSpent(taskId, 10800)
+    expect(prepareMcpAction('set_time_spent', { id: taskId, seconds: 7200 }, scope)).toEqual({
+      ok: true,
+      id: taskId,
+      resumo: 'Corrigir o tempo de "Cronometrar": 3 h 00 min → 2 h 00 min',
+      approval: true
+    })
+    const raising = prepareMcpAction('set_time_spent', { id: taskId, seconds: 14400 }, scope)
+    expect(raising).toEqual({
+      ok: true,
+      id: taskId,
+      resumo: 'Corrigir o tempo de "Cronometrar": 3 h 00 min → 4 h 00 min'
+    })
+    expect(raising).not.toHaveProperty('approval')
+    expect(
+      prepareMcpAction('set_time_spent', { id: taskId, seconds: 10800 }, scope)
+    ).not.toHaveProperty('approval')
+    expect(spent(taskId)).toBe(10800)
+    expect(applyMcpAction('set_time_spent', { id: taskId, seconds: 7200 }, scope)).toEqual({
+      ok: true,
+      id: taskId,
+      resumo: 'Corrigir o tempo de "Cronometrar": 3 h 00 min → 2 h 00 min',
+      timeSpent: 7200,
+      cronometroParado: false
+    })
+    expect(spent(taskId)).toBe(7200)
+  })
+
+  it('set_time_spent counts a running timer, and prepare changes nothing', () => {
+    const { scope, taskId } = seedTimerTask()
+    state().addTimeSpent(taskId, 3600)
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000_000)
+    both('start_task_timer', { id: taskId }, scope)
+    now.mockReturnValue(1_000_000 + 3 * 3600 * 1000)
+    try {
+      const timersBefore = state().activeTimers
+      expect(prepareMcpAction('set_time_spent', { id: taskId, seconds: 3600 }, scope)).toEqual({
+        ok: true,
+        id: taskId,
+        resumo: 'Corrigir o tempo de "Cronometrar": 4 h 00 min → 1 h 00 min (para o cronômetro)',
+        approval: true
+      })
+      // A denied or expired card never reaches apply: the prepare alone writes nothing.
+      expect(state().activeTimers).toEqual(timersBefore)
+      expect(running(taskId)).toBe(true)
+      expect(spent(taskId)).toBe(3600)
+    } finally {
+      now.mockRestore()
+    }
+  })
+
+  it('set_time_spent stops a running timer without crediting it', () => {
+    const { scope, taskId } = seedTimerTask()
+    state().addTimeSpent(taskId, 3600)
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000_000)
+    both('start_task_timer', { id: taskId }, scope)
+    now.mockReturnValue(1_000_000 + 3 * 3600 * 1000)
+    try {
+      expect(applyMcpAction('set_time_spent', { id: taskId, seconds: 3600 }, scope)).toEqual({
+        ok: true,
+        id: taskId,
+        resumo: 'Corrigir o tempo de "Cronometrar": 4 h 00 min → 1 h 00 min (para o cronômetro)',
+        timeSpent: 3600,
+        cronometroParado: true
+      })
+      expect(running(taskId)).toBe(false)
+      expect(spent(taskId)).toBe(3600)
+    } finally {
+      now.mockRestore()
+    }
+  })
+
+  it('set_time_spent refuses seconds outside 0..31536000 and accepts 0 on an old task', () => {
+    const { scope, taskId } = seedTimerTask()
+    for (const seconds of [-1, 31536001, 1.5, '60', undefined])
+      expect(both('set_time_spent', { id: taskId, seconds }, scope)).toEqual({
+        ok: false,
+        error: 'seconds deve ser um inteiro entre 0 e 31536000.'
+      })
+    expect(state().tasks.find((item) => item.id === taskId)?.timeSpent).toBeUndefined()
+    expect(both('set_time_spent', { id: taskId, seconds: 0 }, scope)).toEqual({
+      ok: true,
+      id: taskId,
+      resumo: 'Corrigir o tempo de "Cronometrar": 0 min → 0 min',
+      timeSpent: 0,
+      cronometroParado: false
+    })
+    expect(state().tasks.find((item) => item.id === taskId)?.timeSpent).toBe(0)
   })
 
   it('finds a task by title only inside the session project, like the other task tools', () => {

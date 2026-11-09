@@ -557,6 +557,46 @@ const addTimeSpent: Handler = (args, scope, phase, store) => {
   return done(task.id, resumo, { timeSpent: spentSeconds(task.id) })
 }
 
+const MAX_SET_TIME_SECONDS = 31_536_000
+
+/** `0 min`, `45 min`, `2 h 00 min`, `2 h 05 min`; seconds are truncated. */
+export function formatDuration(seconds: number): string {
+  const minutes = Math.floor(Math.max(0, seconds) / 60)
+  const hours = Math.floor(minutes / 60)
+  const rest = minutes % 60
+  if (hours === 0) return `${rest} min`
+  return `${hours} h ${String(rest).padStart(2, '0')} min`
+}
+
+/**
+ * Defines the task's total time. Lowering it (against the saved time plus what
+ * a running timer counted) asks for the card; a running timer is stopped
+ * without crediting it.
+ */
+const setTimeSpent: Handler = (args, scope, phase, store) => {
+  const task = resolveTask(args, scope, store)
+  const seconds = args.seconds
+  if (
+    typeof seconds !== 'number' ||
+    !Number.isInteger(seconds) ||
+    seconds < 0 ||
+    seconds > MAX_SET_TIME_SECONDS
+  )
+    return refuse(`seconds deve ser um inteiro entre 0 e ${MAX_SET_TIME_SECONDS}.`)
+  const timer = store.activeTimers.find((item) => item.taskId === task.id)
+  const counted = timer ? Math.max(0, Math.floor((Date.now() - timer.startedAt) / 1000)) : 0
+  const current = (task.timeSpent ?? 0) + counted
+  const resumo =
+    `Corrigir o tempo de "${task.title}": ${formatDuration(current)} → ${formatDuration(seconds)}` +
+    (timer ? ' (para o cronômetro)' : '')
+  if (phase === 'prepare') return done(task.id, resumo, seconds < current ? { approval: true } : {})
+  const { stoppedTimer } = store.setTimeSpent(task.id, seconds)
+  return done(task.id, resumo, {
+    timeSpent: spentSeconds(task.id),
+    cronometroParado: stoppedTimer
+  })
+}
+
 const deleteTask: Handler = (args, scope, phase, store) => {
   const task = resolveTask(args, scope, store)
   const project = taskProject(store, task)
@@ -1137,6 +1177,7 @@ const HANDLERS: Record<string, Handler> = {
   start_task_timer: startTaskTimer,
   stop_task_timer: stopTaskTimer,
   add_time_spent: addTimeSpent,
+  set_time_spent: setTimeSpent,
   stop_run_timer: stopRunTimer,
   create_sprint: createSprint,
   create_goal: createGoal,
