@@ -12,7 +12,7 @@ import {
 } from '../../utils/rcServers'
 
 const buttonClass =
-  'shrink-0 rounded-lg bg-[#2a2a30] px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#303036] focus:outline-none focus-visible:ring-1 focus-visible:ring-[#6d5bb8] disabled:opacity-50'
+  'shrink-0 rounded-lg bg-[#2a2a30] px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#222227] focus:outline-none focus-visible:ring-1 focus-visible:ring-[#6d5bb8] disabled:opacity-50'
 const checkboxClass =
   'h-3.5 w-3.5 accent-[#6d5bb8] focus:outline-none focus-visible:ring-1 focus-visible:ring-[#6d5bb8] disabled:opacity-50'
 

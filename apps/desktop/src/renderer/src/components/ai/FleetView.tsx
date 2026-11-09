@@ -224,7 +224,7 @@ export function FleetView({
     }
     if (kind === 'server') {
       const server = servers.find((item) => item.projectId === id)
-      if (!server) return <p className="p-6 text-sm text-[#8a8a92]">Conectando ao servidor…</p>
+      if (!server) return <p className="p-6 text-sm text-[#999999]">Conectando ao servidor…</p>
       return (
         <ServerTerminal
           server={server}

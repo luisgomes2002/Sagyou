@@ -45,7 +45,7 @@ export function ServerTerminal({
           type="button"
           disabled={stopping}
           onClick={() => onStop(server.projectId)}
-          className="shrink-0 rounded-lg bg-[#2a2a30] px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#303036] focus:outline-none focus-visible:ring-1 focus-visible:ring-[#6d5bb8] disabled:opacity-50"
+          className="shrink-0 rounded-lg bg-[#2a2a30] px-3 py-2 text-sm text-[#d4d4d4] hover:bg-[#222227] focus:outline-none focus-visible:ring-1 focus-visible:ring-[#6d5bb8] disabled:opacity-50"
         >
           Desligar
         </button>
