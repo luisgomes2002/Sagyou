@@ -6,11 +6,18 @@ export interface McpWriteRequest {
   approval?: boolean
   resumo?: string
   /**
-   * The card was asked for by the prepare step (the write is risky only for
-   * these arguments), so the run's auto mode must not answer it.
+   * "Card asked for by the prepare step": the tool name alone needs no card,
+   * but these arguments do (e.g. `set_time_spent` lowering the total). Such a
+   * card is never answered by the run's auto mode.
    */
   risky?: boolean
 }
+
+/**
+ * `approvedByCard` is true when the write went through a card the user
+ * approved, so the apply step can tell it from a write that never had one.
+ */
+export type McpWriteExecute<T> = (approvedByCard: boolean) => Promise<T>
 
 export interface McpWriteOutcome<T> {
   approved: boolean
@@ -30,7 +37,7 @@ export type McpWritePrepare<T> = () => Promise<
 >
 
 interface QueuedWrite<T> extends McpWriteRequest {
-  execute: () => Promise<T>
+  execute: McpWriteExecute<T>
   prepare?: McpWritePrepare<T>
   resolve: (outcome: McpWriteOutcome<T>) => void
   reject: (error: Error) => void
@@ -58,7 +65,7 @@ export class McpWriteQueue {
    */
   enqueue<T>(
     request: McpWriteRequest,
-    execute: () => Promise<T>,
+    execute: McpWriteExecute<T>,
     prepare?: McpWritePrepare<T>
   ): Promise<McpWriteOutcome<T>> {
     return new Promise((resolve, reject) => {
@@ -162,7 +169,8 @@ export class McpWriteQueue {
       if (!approved) write.resolve({ approved: false })
       else if (!this.isRunLive(runId)) write.resolve({ approved: false, ended: true })
       else {
-        const value = await write.execute()
+        // `approval: false` skipped the card; anything else reached here through an approved one.
+        const value = await write.execute(write.approval !== false)
         this.observe(write, value)
         write.resolve({ approved: true, value })
       }

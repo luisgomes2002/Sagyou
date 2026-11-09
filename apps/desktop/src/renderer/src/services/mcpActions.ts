@@ -40,7 +40,14 @@ import type { McpActionResult, McpScope } from '../types/mcp-actions'
 type Phase = 'prepare' | 'apply'
 type Args = Record<string, unknown>
 type Store = ReturnType<typeof useKanbanStore.getState>
-type Handler = (args: Args, scope: McpScope, phase: Phase, store: Store) => McpActionResult
+/** `approvedByCard`: apply only, the write went through a card the user approved. */
+type Handler = (
+  args: Args,
+  scope: McpScope,
+  phase: Phase,
+  store: Store,
+  approvedByCard: boolean
+) => McpActionResult
 
 /** Thrown by validators; becomes an `ok: false` reply. */
 class McpRefusal extends Error {
@@ -568,12 +575,60 @@ export function formatDuration(seconds: number): string {
   return `${hours} h ${String(rest).padStart(2, '0')} min`
 }
 
+/** `formatDuration` plus the seconds: `3 h 00 min 15 s`, `0 min 45 s`. */
+export function formatDurationPrecise(seconds: number): string {
+  const whole = Math.floor(Math.max(0, seconds))
+  return `${formatDuration(whole)} ${String(whole % 60).padStart(2, '0')} s`
+}
+
+const CARD_TITLE_MAX = 60
+
+/**
+ * The agent's task title as it goes on a card: control and format characters
+ * (line breaks, bidi overrides) and runs of white space become one space, and
+ * past 60 characters it is cut with `…`. It goes last on the card, so it can
+ * never pose as the numbers the user is approving.
+ */
+function cardTitle(title: string): string {
+  const flat = title
+    .replace(/[\p{Cc}\p{Cf}]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  const chars = Array.from(flat)
+  return chars.length > CARD_TITLE_MAX ? `${chars.slice(0, CARD_TITLE_MAX).join('')}…` : flat
+}
+
+/**
+ * The numbers first, the title last. When minutes alone would show the same
+ * value on both sides, both carry the seconds; a difference under a minute is
+ * shown in seconds.
+ */
+function setTimeSpentResumo(
+  current: number,
+  seconds: number,
+  title: string,
+  timerRunning: boolean
+): string {
+  const precise = formatDuration(current) === formatDuration(seconds)
+  const format = precise ? formatDurationPrecise : formatDuration
+  const values = `${format(current)} → ${format(seconds)}`
+  const diff = current - seconds
+  const head =
+    diff > 0
+      ? `Diminuir o tempo: ${values} (−${diff < 60 ? `${diff} s` : formatDuration(diff)})`
+      : `Definir o tempo: ${values}`
+  return `${head} · tarefa "${cardTitle(title)}"` + (timerRunning ? ' · para o cronômetro' : '')
+}
+
+const SET_TIME_CHANGED = 'O tempo mudou desde a confirmação; chame set_time_spent de novo.'
+
 /**
  * Defines the task's total time. Lowering it (against the saved time plus what
  * a running timer counted) asks for the card; a running timer is stopped
- * without crediting it.
+ * without crediting it. Apply decides again: a write that had no card and
+ * would now lower the total is refused, so a raise never turns into a cut.
  */
-const setTimeSpent: Handler = (args, scope, phase, store) => {
+const setTimeSpent: Handler = (args, scope, phase, store, approvedByCard) => {
   const task = resolveTask(args, scope, store)
   const seconds = args.seconds
   if (
@@ -586,10 +641,9 @@ const setTimeSpent: Handler = (args, scope, phase, store) => {
   const timer = store.activeTimers.find((item) => item.taskId === task.id)
   const counted = timer ? Math.max(0, Math.floor((Date.now() - timer.startedAt) / 1000)) : 0
   const current = (task.timeSpent ?? 0) + counted
-  const resumo =
-    `Corrigir o tempo de "${task.title}": ${formatDuration(current)} → ${formatDuration(seconds)}` +
-    (timer ? ' (para o cronômetro)' : '')
+  const resumo = setTimeSpentResumo(current, seconds, task.title, Boolean(timer))
   if (phase === 'prepare') return done(task.id, resumo, seconds < current ? { approval: true } : {})
+  if (seconds < current && !approvedByCard) refuse(SET_TIME_CHANGED)
   const { stoppedTimer } = store.setTimeSpent(task.id, seconds)
   return done(task.id, resumo, {
     timeSpent: spentSeconds(task.id),
@@ -1213,13 +1267,19 @@ export function mcpWriteBlocked(): string | null {
   return null
 }
 
-function run(name: string, args: Args, scope: McpScope, phase: Phase): McpActionResult {
+function run(
+  name: string,
+  args: Args,
+  scope: McpScope,
+  phase: Phase,
+  approvedByCard = false
+): McpActionResult {
   const handler = HANDLERS[name]
   if (!handler) return { ok: false, error: 'Ferramenta indisponível nesta sessão MCP.' }
   const blocked = mcpWriteBlocked()
   if (blocked) return { ok: false, error: blocked }
   try {
-    return handler(args ?? {}, scope, phase, useKanbanStore.getState())
+    return handler(args ?? {}, scope, phase, useKanbanStore.getState(), approvedByCard)
   } catch (error) {
     if (error instanceof McpRefusal)
       return {
@@ -1236,7 +1296,15 @@ export function prepareMcpAction(name: string, args: Args, scope: McpScope): Mcp
   return run(name, args, scope, 'prepare')
 }
 
-/** Re-validates against the live store, then writes through the existing slice action. */
-export function applyMcpAction(name: string, args: Args, scope: McpScope): McpActionResult {
-  return run(name, args, scope, 'apply')
+/**
+ * Re-validates against the live store, then writes through the existing slice
+ * action. `approvedByCard` says the write went through a card the user approved.
+ */
+export function applyMcpAction(
+  name: string,
+  args: Args,
+  scope: McpScope,
+  approvedByCard = false
+): McpActionResult {
+  return run(name, args, scope, 'apply', approvedByCard)
 }

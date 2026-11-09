@@ -63,6 +63,8 @@ export interface McpActionRequest {
   name: string
   args: Record<string, unknown>
   scope: McpScope
+  /** Apply only: the write went through a card the user approved. Absent = no card. */
+  approvedByCard?: boolean
 }
 
 export type McpActionResult =

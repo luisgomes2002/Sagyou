@@ -498,15 +498,17 @@ const sagyouMcp = startSagyouMcpBroker({
     const scope = { projectId: session.projectId, financialProfileId: session.financialProfileId }
     const outcome = await mcpWriteQueue.enqueue<McpActionResult>(
       { runId: session.runId, name, args, approval: externalApproval(session.runId, name) },
-      () =>
-        rendererMcpActions.request({ phase: 'apply', name, args, scope }).then((result) => {
-          // Recorded when the renderer answers, even if the run ended meanwhile
-          // (the queue rejects the caller, but the timer was started all the same).
-          // The external token has no end to stop its timers at: they stay the user's.
-          if (tracksRunState(session.runId))
-            runTaskTimers.record(session.runId, scope, name, result)
-          return result
-        }),
+      (approvedByCard) =>
+        rendererMcpActions
+          .request({ phase: 'apply', name, args, scope, approvedByCard })
+          .then((result) => {
+            // Recorded when the renderer answers, even if the run ended meanwhile
+            // (the queue rejects the caller, but the timer was started all the same).
+            // The external token has no end to stop its timers at: they stay the user's.
+            if (tracksRunState(session.runId))
+              runTaskTimers.record(session.runId, scope, name, result)
+            return result
+          }),
       async () => {
         const prepared = await rendererMcpActions.request({ phase: 'prepare', name, args, scope })
         return prepared.ok

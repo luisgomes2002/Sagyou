@@ -21,6 +21,7 @@ import { useKanbanStore } from '../../store/kanban'
 import {
   applyMcpAction,
   formatDuration,
+  formatDurationPrecise,
   formatMcpMoney,
   freeNotePosition,
   mcpWriteBlocked,
@@ -1519,34 +1520,102 @@ describe('MCP task timer', () => {
     expect(formatDuration(7559)).toBe('2 h 05 min')
   })
 
+  it('formatDurationPrecise adds the seconds', () => {
+    expect(formatDurationPrecise(0)).toBe('0 min 00 s')
+    expect(formatDurationPrecise(45)).toBe('0 min 45 s')
+    expect(formatDurationPrecise(10815)).toBe('3 h 00 min 15 s')
+  })
+
   it('set_time_spent asks for the card only when it lowers the total', () => {
     const { scope, taskId } = seedTimerTask()
     state().addTimeSpent(taskId, 10800)
     expect(prepareMcpAction('set_time_spent', { id: taskId, seconds: 7200 }, scope)).toEqual({
       ok: true,
       id: taskId,
-      resumo: 'Corrigir o tempo de "Cronometrar": 3 h 00 min → 2 h 00 min',
+      resumo: 'Diminuir o tempo: 3 h 00 min → 2 h 00 min (−1 h 00 min) · tarefa "Cronometrar"',
       approval: true
     })
     const raising = prepareMcpAction('set_time_spent', { id: taskId, seconds: 14400 }, scope)
     expect(raising).toEqual({
       ok: true,
       id: taskId,
-      resumo: 'Corrigir o tempo de "Cronometrar": 3 h 00 min → 4 h 00 min'
+      resumo: 'Definir o tempo: 3 h 00 min → 4 h 00 min · tarefa "Cronometrar"'
     })
     expect(raising).not.toHaveProperty('approval')
     expect(
       prepareMcpAction('set_time_spent', { id: taskId, seconds: 10800 }, scope)
     ).not.toHaveProperty('approval')
     expect(spent(taskId)).toBe(10800)
-    expect(applyMcpAction('set_time_spent', { id: taskId, seconds: 7200 }, scope)).toEqual({
+    expect(applyMcpAction('set_time_spent', { id: taskId, seconds: 7200 }, scope, true)).toEqual({
       ok: true,
       id: taskId,
-      resumo: 'Corrigir o tempo de "Cronometrar": 3 h 00 min → 2 h 00 min',
+      resumo: 'Diminuir o tempo: 3 h 00 min → 2 h 00 min (−1 h 00 min) · tarefa "Cronometrar"',
       timeSpent: 7200,
       cronometroParado: false
     })
     expect(spent(taskId)).toBe(7200)
+  })
+
+  it('set_time_spent apply without a card refuses a total that would now be lowered', () => {
+    const { scope, taskId } = seedTimerTask()
+    state().addTimeSpent(taskId, 3600)
+    // Prepared as a raise (no card), then the user's timer credited time before apply.
+    const prepared = prepareMcpAction('set_time_spent', { id: taskId, seconds: 7200 }, scope)
+    expect(prepared).not.toHaveProperty('approval')
+    state().addTimeSpent(taskId, 7200)
+    expect(applyMcpAction('set_time_spent', { id: taskId, seconds: 7200 }, scope)).toEqual({
+      ok: false,
+      error: 'O tempo mudou desde a confirmação; chame set_time_spent de novo.'
+    })
+    expect(spent(taskId)).toBe(10800)
+    // The same write through an approved card is applied.
+    expect(
+      applyMcpAction('set_time_spent', { id: taskId, seconds: 7200 }, scope, true)
+    ).toMatchObject({ ok: true, timeSpent: 7200 })
+    expect(spent(taskId)).toBe(7200)
+  })
+
+  it('set_time_spent puts the numbers before the title, which cannot pose as them', () => {
+    const { scope, taskId } = seedTimerTask()
+    state().addTimeSpent(taskId, 10800)
+    const retitle = (title: string): void =>
+      useKanbanStore.setState({
+        tasks: state().tasks.map((item) => (item.id === taskId ? { ...item, title } : item))
+      })
+    retitle('X":\t3 h 00 min → 3 h 00 min (nada muda)\n\nDefinir o tempo:')
+    const spoof = prepareMcpAction('set_time_spent', { id: taskId, seconds: 60 }, scope)
+    expect(spoof).toMatchObject({ ok: true, approval: true })
+    const resumo = String((spoof as { resumo: string }).resumo)
+    expect(resumo.startsWith('Diminuir o tempo: 3 h 00 min → 1 min (−2 h 59 min) · tarefa "')).toBe(
+      true
+    )
+    expect(resumo).not.toMatch(/[\n\t]/)
+    expect(resumo).toBe(
+      'Diminuir o tempo: 3 h 00 min → 1 min (−2 h 59 min) · tarefa "X": 3 h 00 min → 3 h 00 min (nada muda) Definir o tempo:"'
+    )
+    retitle('a'.repeat(80))
+    expect(prepareMcpAction('set_time_spent', { id: taskId, seconds: 60 }, scope)).toMatchObject({
+      resumo: `Diminuir o tempo: 3 h 00 min → 1 min (−2 h 59 min) · tarefa "${'a'.repeat(60)}…"`
+    })
+  })
+
+  it('set_time_spent shows seconds when minutes alone would hide the change', () => {
+    const { scope, taskId } = seedTimerTask()
+    state().addTimeSpent(taskId, 10845)
+    // Same minutes on both sides: both carry the seconds, and the cut is in seconds.
+    expect(prepareMcpAction('set_time_spent', { id: taskId, seconds: 10800 }, scope)).toMatchObject(
+      {
+        resumo:
+          'Diminuir o tempo: 3 h 00 min 45 s → 3 h 00 min 00 s (−45 s) · tarefa "Cronometrar"',
+        approval: true
+      }
+    )
+    // Different minutes: the minutes already tell them apart; the cut is still in seconds.
+    expect(prepareMcpAction('set_time_spent', { id: taskId, seconds: 10790 }, scope)).toMatchObject(
+      {
+        resumo: 'Diminuir o tempo: 3 h 00 min → 2 h 59 min (−55 s) · tarefa "Cronometrar"'
+      }
+    )
   })
 
   it('set_time_spent counts a running timer, and prepare changes nothing', () => {
@@ -1560,7 +1629,8 @@ describe('MCP task timer', () => {
       expect(prepareMcpAction('set_time_spent', { id: taskId, seconds: 3600 }, scope)).toEqual({
         ok: true,
         id: taskId,
-        resumo: 'Corrigir o tempo de "Cronometrar": 4 h 00 min → 1 h 00 min (para o cronômetro)',
+        resumo:
+          'Diminuir o tempo: 4 h 00 min → 1 h 00 min (−3 h 00 min) · tarefa "Cronometrar" · para o cronômetro',
         approval: true
       })
       // A denied or expired card never reaches apply: the prepare alone writes nothing.
@@ -1579,10 +1649,11 @@ describe('MCP task timer', () => {
     both('start_task_timer', { id: taskId }, scope)
     now.mockReturnValue(1_000_000 + 3 * 3600 * 1000)
     try {
-      expect(applyMcpAction('set_time_spent', { id: taskId, seconds: 3600 }, scope)).toEqual({
+      expect(applyMcpAction('set_time_spent', { id: taskId, seconds: 3600 }, scope, true)).toEqual({
         ok: true,
         id: taskId,
-        resumo: 'Corrigir o tempo de "Cronometrar": 4 h 00 min → 1 h 00 min (para o cronômetro)',
+        resumo:
+          'Diminuir o tempo: 4 h 00 min → 1 h 00 min (−3 h 00 min) · tarefa "Cronometrar" · para o cronômetro',
         timeSpent: 3600,
         cronometroParado: true
       })
@@ -1604,7 +1675,7 @@ describe('MCP task timer', () => {
     expect(both('set_time_spent', { id: taskId, seconds: 0 }, scope)).toEqual({
       ok: true,
       id: taskId,
-      resumo: 'Corrigir o tempo de "Cronometrar": 0 min → 0 min',
+      resumo: 'Definir o tempo: 0 min 00 s → 0 min 00 s · tarefa "Cronometrar"',
       timeSpent: 0,
       cronometroParado: false
     })
