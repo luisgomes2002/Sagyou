@@ -131,6 +131,22 @@ describe('ESP32 não respondeu', () => {
     expect(pcState({ ...base, power: noPing, lastCommand: taken }).esp32NoAnswer).toBe(false)
   })
 
+  it('servidor sem "Iniciar com o Sagyou" parado não tira o PC de pronto', () => {
+    const view = pcState({
+      ...base,
+      status: status({
+        servers: [
+          { name: 'Sagyou', up: true, autostart: true },
+          { name: 'Murasaki', up: false, autostart: false }
+        ]
+      })
+    })
+    expect(view.state).toBe('ready')
+    expect(view.missing).toEqual([])
+    const old = pcState({ ...base, status: status({ servers: [{ name: 'Murasaki', up: false }] }) })
+    expect(old).toMatchObject({ state: 'rc-down', missing: ['Murasaki'] })
+  })
+
   it('PC pronto, com Remote Control fora ou desligando não mostra o aviso', () => {
     const old = cmd(10 * MIN)
     expect(pcState({ ...base, status: status(), lastCommand: old }).esp32NoAnswer).toBe(false)

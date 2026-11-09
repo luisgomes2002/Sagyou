@@ -70,6 +70,16 @@ export function parseAuthorized(body: unknown): { key: Uint8Array } | null {
  */
 export const parsePcKey = parseAuthorized
 
+/** Phone → PC: start or stop the Remote Control server of one project. */
+export interface ServerRequestBody {
+  projectId: string
+}
+
+export function parseServerRequest(body: unknown): ServerRequestBody | null {
+  const b = obj(body)
+  return b && str(b.projectId, 64) ? { projectId: b.projectId } : null
+}
+
 /** PC → phone: the ESP32 key (base64), to sign power commands. */
 export interface Esp32KeyBody {
   key: string
@@ -95,6 +105,11 @@ export type ResultReason =
   | 'install-failed'
   /** restore-access that did not pass the Worker's second-factor check. */
   | 'factor'
+  // server-start / server-stop (spec 2026-11-09); none of them is counted.
+  | 'not-confirmed'
+  | 'cut'
+  | 'unknown-server'
+  | 'start-failed'
 
 /** PC → phone: the answer to one request, by its nonce. */
 export interface ResultBody {

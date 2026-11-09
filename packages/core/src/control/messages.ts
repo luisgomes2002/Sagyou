@@ -27,6 +27,9 @@ export type ControlKind =
   | 'install-update'
   | 'cut-access'
   | 'restore-access'
+  // Spec docs/specs/2026-11-09-servidores-remote-control.md.
+  | 'server-start'
+  | 'server-stop'
 
 const MINUTE = 60_000
 
@@ -49,7 +52,9 @@ export const MAX_TTL_MS: Record<ControlKind, number> = {
   'pc-key': 10 * MINUTE,
   'install-update': MINUTE,
   'cut-access': MINUTE,
-  'restore-access': MINUTE
+  'restore-access': MINUTE,
+  'server-start': MINUTE,
+  'server-stop': MINUTE
 }
 
 /** A request may come from a clock up to 30 s ahead, and may arrive 30 s after it expired. */
@@ -133,11 +138,25 @@ export function checkEnvelope(
 
 // ── PC status (the heartbeat body) ───────────────────────────────────────────────
 
+/** A Remote Control server the Sagyou manages (spec 2026-11-09). */
+export type ServerState = 'running' | 'stopped' | 'starting' | 'needs-confirm' | 'external'
+const SERVER_STATES: ServerState[] = ['running', 'stopped', 'starting', 'needs-confirm', 'external']
+
+export interface PcServer {
+  name: string
+  up: boolean
+  /** Absent from a PC built before the Sagyou managed the servers: only observed. */
+  projectId?: string
+  state?: ServerState
+  /** "Iniciar com o Sagyou"; only these count for "PC pronto". Absent = counts. */
+  autostart?: boolean
+}
+
 export interface PcStatus {
   v: 1
   at: number
   locked: boolean
-  servers: { name: string; up: boolean }[]
+  servers: PcServer[]
   pendingCards: number
   shutdownAt: number | null
   suspendedUntil: number | null
@@ -161,7 +180,12 @@ export function parsePcStatus(body: unknown): PcStatus | null {
   for (const s of b.servers) {
     const row = s as Record<string, unknown> | null
     if (!row || typeof row.name !== 'string' || typeof row.up !== 'boolean') return null
-    servers.push({ name: row.name, up: row.up })
+    const server: PcServer = { name: row.name, up: row.up }
+    if (typeof row.projectId === 'string' && row.projectId.length > 0 && row.projectId.length <= 64)
+      server.projectId = row.projectId
+    if (SERVER_STATES.includes(row.state as ServerState)) server.state = row.state as ServerState
+    if (typeof row.autostart === 'boolean') server.autostart = row.autostart
+    servers.push(server)
   }
   if (!Number.isSafeInteger(b.pendingCards) || (b.pendingCards as number) < 0) return null
   if (!nullableTime(b.shutdownAt) || !nullableTime(b.suspendedUntil)) return null
