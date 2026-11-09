@@ -139,12 +139,14 @@ interface InteractiveTerminalProps {
   initialCols?: number
   initialRows?: number
   compact?: boolean
+  /** Accessible name of the terminal area. */
+  ariaLabel?: string
 }
 
 /** A real terminal emulator attached to the harness' existing PTY. The xterm
  * itself outlives this panel (see liveTerminals): switching sessions hides it
  * instead of rebuilding it from main's truncated buffer. */
-function InteractiveTerminal({
+export function InteractiveTerminal({
   log,
   running,
   runId,
@@ -152,7 +154,8 @@ function InteractiveTerminal({
   onResize,
   initialCols,
   initialRows,
-  compact = false
+  compact = false,
+  ariaLabel = 'Terminal interativo do agente'
 }: InteractiveTerminalProps): React.JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
@@ -247,7 +250,7 @@ function InteractiveTerminal({
       <div
         ref={hostRef}
         className="min-h-0 flex-1 overflow-hidden p-2 focus-within:ring-1 focus-within:ring-[#7c3aed]"
-        aria-label="Terminal interativo do agente"
+        aria-label={ariaLabel}
       />
     </div>
   )

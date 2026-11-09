@@ -24,14 +24,10 @@ export const REMOTE_TEXT = {
   needSync: 'Ative a sincronização antes.',
   wrongPassword: 'Senha incorreta.',
   expired: 'O pedido expirou.',
-  invalidNames: 'Nomes inválidos.',
   factor: 'Código do autenticador inválido.',
   locked: 'Muitas tentativas. Tente de novo em 15 minutos.',
   generic: 'Não foi possível concluir a operação do controle remoto.'
 } as const
-
-export const MAX_SERVER_NAME = 64
-export const MAX_SERVERS = 50
 
 export type RemoteResult<T extends object = object> =
   | ({ ok: true } & T)
@@ -45,7 +41,6 @@ export interface RemoteStatusView {
   error: string | null
   suspendedUntil: number | null
   controllers: { id: string; name: string; since: string }[]
-  servers: { name: string; up: boolean }[]
   pending: PendingAuthorization[]
   hasEsp32Key: boolean
   /** "Cortar acesso" from a phone (spec 2026-11-07, item 3); null when not cut. */
@@ -61,8 +56,6 @@ export interface RemoteHandlerDeps {
   platform: NodeJS.Platform
   hasPassword: () => boolean
   syncActive: () => boolean
-  /** Last scan of the Remote Control servers (names in the configured order). */
-  servers: () => { name: string; up: boolean }[]
   now: () => number
   emitStatus: (status: RemoteStatusView) => void
   /** "Restaurar acesso" on this PC just cleared the cut (the tray shows it). */
@@ -102,22 +95,6 @@ function factorOf(value: unknown): SyncSecondFactor | undefined {
 
 const id = (value: unknown): string | null =>
   typeof value === 'string' && /^[0-9a-f]{32}$/.test(value) ? value : null
-
-/** Trimmed names, 1–64 characters, at most 50, without repeating (any case); null if invalid. */
-export function serverNames(value: unknown): string[] | null {
-  if (!Array.isArray(value) || value.length > MAX_SERVERS) return null
-  const out: string[] = []
-  const seen = new Set<string>()
-  for (const raw of value) {
-    if (typeof raw !== 'string') return null
-    const name = raw.trim()
-    if (!name || name.length > MAX_SERVER_NAME) return null
-    if (seen.has(name.toLowerCase())) continue
-    seen.add(name.toLowerCase())
-    out.push(name)
-  }
-  return out
-}
 
 /**
  * Takes the PC out of the controlled mode: Configurações → Controle remoto and
@@ -161,7 +138,6 @@ export function registerRemoteHandlers(
       suspendedUntil:
         cfg.suspendedUntil !== null && cfg.suspendedUntil > now ? cfg.suspendedUntil : null,
       controllers: cfg.controllers.map(({ id: cid, name, since }) => ({ id: cid, name, since })),
-      servers: deps.servers(),
       pending: service.pendingAuthorizations(),
       hasEsp32Key: cfg.esp32KeyCipher !== null,
       accessCutAt: cfg.accessCutAt ?? null
@@ -250,16 +226,6 @@ export function registerRemoteHandlers(
     run('revoke', async () => {
       const target = id(rawId)
       if (target) await service.revokeController(target)
-      changed()
-      return { ok: true }
-    })
-  )
-
-  ipcMain.handle('remote:servers:set', (_, names: unknown) =>
-    run('servers', () => {
-      const list = serverNames(names)
-      if (!list) return { ok: false, error: REMOTE_TEXT.invalidNames }
-      deps.save({ ...deps.config(), servers: list })
       changed()
       return { ok: true }
     })

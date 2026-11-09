@@ -5,6 +5,15 @@ import { SessionTabs, type SessionItem } from './fleet/SessionTabs'
 import { NewSessionPanel, type Harness, type SessionRequest } from './fleet/NewSessionPanel'
 import { LiveRunWorkspace } from './fleet/Workspaces'
 import { useCodeAgentRuns } from './fleet/useCodeAgentRuns'
+import { ServerTerminal } from './fleet/ServerTerminal'
+import { retainFleetSelection, retainedFleetSelection } from './fleet/fleetSelection'
+import { useRcServers } from '../../hooks/useRcServers'
+import {
+  SERVER_LIVE_STATES,
+  SERVER_STATE_TEXT,
+  SERVER_STOP_FAILED,
+  serverSessionKey
+} from '../../utils/rcServers'
 
 // ---------------------------------------------------------------------------
 // Code sessions
@@ -15,11 +24,6 @@ import { useCodeAgentRuns } from './fleet/useCodeAgentRuns'
 
 const NEW = 'new'
 
-// FleetView is unmounted when the user visits another area. The PTY belongs to
-// main, not React, so only the selection is remembered; the next mount selects
-// the same session again instead of treating navigation as a new request.
-let retainedSelection: string | null = null
-
 export function FleetView({
   projects,
   retainThread = false
@@ -28,11 +32,18 @@ export function FleetView({
   /** App opts in because it owns navigation; isolated mounts start clean. */
   retainThread?: boolean
 }): React.JSX.Element {
-  const [selected, setSelected] = useState<string | null>(retainThread ? retainedSelection : null)
+  const [selected, setSelected] = useState<string | null>(
+    retainThread ? retainedFleetSelection() : null
+  )
   const [starting, setStarting] = useState(false)
   const [startError, setStartError] = useState('')
   const [harnesses, setHarnesses] = useState<Harness[]>([])
   const [removalNotice, setRemovalNotice] = useState<string | null>(null)
+  const [stoppingServer, setStoppingServer] = useState<string | null>(null)
+  const [serverError, setServerError] = useState<{ projectId: string; message: string } | null>(
+    null
+  )
+  const { servers, loaded: serversLoaded, reload: reloadServers } = useRcServers()
 
   const {
     runs: codeRuns,
@@ -88,9 +99,19 @@ export function FleetView({
       subtitle: `${projectNameOf(run.dir, run.projectId)} · ${harnessLabelOf(run.harness, run.model)}`,
       status: run.approvals.length || run.questions.length ? 'attention' : 'running'
     }))
-    return live
+    // Remote Control servers the Sagyou runs: a tab while their terminal lives.
+    const serverTabs: SessionItem[] = servers
+      .filter((server) => SERVER_LIVE_STATES.includes(server.state))
+      .map((server) => ({
+        key: serverSessionKey(server.projectId),
+        kind: 'server',
+        title: `Servidor: ${server.name}`,
+        subtitle: SERVER_STATE_TEXT[server.state],
+        status: server.state === 'needs-confirm' ? 'attention' : 'running'
+      }))
+    return [...live, ...serverTabs]
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [codeRuns, projects, harnesses])
+  }, [codeRuns, projects, harnesses, servers])
 
   // Resolve what is on screen. A selection whose session ended falls back to
   // the first available one, but only once main has answered: an empty first
@@ -99,12 +120,31 @@ export function FleetView({
     if (selected === NEW) return NEW
     if (selected && items.some((item) => item.key === selected)) return selected
     if (selected?.startsWith('run:') && !hydrated) return selected
-    return items[0]?.key ?? NEW
-  }, [selected, items, hydrated])
+    if (selected?.startsWith('server:') && !serversLoaded) return selected
+    // Only a code session is a fallback: a server tab opens by a click or by
+    // the selection Configurações leaves, never on its own.
+    return items.find((item) => item.kind === 'run')?.key ?? NEW
+  }, [selected, items, hydrated, serversLoaded])
 
   useEffect(() => {
-    if (retainThread && hydrated) retainedSelection = effective === NEW ? null : effective
-  }, [effective, hydrated, retainThread])
+    if (retainThread && hydrated && serversLoaded)
+      retainFleetSelection(effective === NEW ? null : effective)
+  }, [effective, hydrated, serversLoaded, retainThread])
+
+  const stopServer = async (projectId: string): Promise<void> => {
+    if (stoppingServer) return
+    setStoppingServer(projectId)
+    setServerError(null)
+    try {
+      const result = await window.electronAPI.rcServers.stop(projectId)
+      if (!result.success) setServerError({ projectId, message: SERVER_STOP_FAILED })
+    } catch {
+      setServerError({ projectId, message: SERVER_STOP_FAILED })
+    } finally {
+      setStoppingServer(null)
+      void reloadServers()
+    }
+  }
 
   // ── Actions ────────────────────────────────────────────────────────────────
   const startSession = async (request: SessionRequest): Promise<void> => {
@@ -179,6 +219,18 @@ export function FleetView({
           onSetAuto={setAuto}
           onTerminalInput={terminalInput}
           onTerminalResize={terminalResize}
+        />
+      )
+    }
+    if (kind === 'server') {
+      const server = servers.find((item) => item.projectId === id)
+      if (!server) return <p className="p-6 text-sm text-[#999999]">Conectando ao servidor…</p>
+      return (
+        <ServerTerminal
+          server={server}
+          stopping={stoppingServer === id}
+          error={serverError?.projectId === id ? serverError.message : null}
+          onStop={(projectId) => void stopServer(projectId)}
         />
       )
     }

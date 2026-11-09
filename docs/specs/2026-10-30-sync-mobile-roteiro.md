@@ -116,8 +116,9 @@ As etapas 4 e 5 não dependem do sync e podem entrar antes, se o ESP32 chegar ce
 
 - Testar `claude remote-control` no Windows de casa (modo `worktree`) e abrir a sessão
   pelo app do Claude.
-- Tarefa de logon no Agendador do Windows que sobe um `claude remote-control` por
-  projeto (ver Decisões). Antes, rodar cada um uma vez à mão para responder ao "Enable
+- ~~Tarefa de logon no Agendador do Windows que sobe um `claude remote-control` por
+  projeto (ver Decisões).~~ Substituída em 2026-11-09: o Sagyou sobe os servidores
+  (spec `docs/specs/2026-11-09-servidores-remote-control.md`). Antes, rodar cada um uma vez à mão para responder ao "Enable
   Remote Control?" e ao "Trust <pasta>?": sem terminal, o comando não consegue perguntar
   e sai. Nunca na pasta do usuário (a confiança ali não fica salva).
 - Criar a conta gratuita na Cloudflare.

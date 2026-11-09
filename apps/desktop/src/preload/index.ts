@@ -28,6 +28,8 @@ import type {
 } from '../main/modules/sync/sync-engine'
 import type { RemoteResult, RemoteStatusView } from '../main/handlers/remote'
 import type { PendingAuthorization } from '../main/modules/remote/remote-service'
+import type { RcServerList, RcServerResult } from '../main/handlers/rc-servers'
+import type { RcStartResult, RcStopResult } from '../main/modules/remote/rc-manager'
 
 /** A user-written Skill (.md file in userData/skills/). */
 interface Skill {
@@ -236,8 +238,6 @@ export const api = {
     refuse: (id: string): Promise<RemoteResult> => ipcRenderer.invoke('remote:refuse', id),
     revoke: (controllerId: string): Promise<RemoteResult> =>
       ipcRenderer.invoke('remote:revoke', controllerId),
-    setServers: (names: string[]): Promise<RemoteResult> =>
-      ipcRenderer.invoke('remote:servers:set', names),
     createEsp32: (
       factor?: SyncSecondFactor
     ): Promise<RemoteResult<{ token: string; key: string }>> =>
@@ -247,6 +247,55 @@ export const api = {
       ipcRenderer.on('remote:status-changed', handler)
       return (): void => {
         ipcRenderer.removeListener('remote:status-changed', handler)
+      }
+    }
+  },
+  // The Remote Control servers the Sagyou manages, one per project (Configurações
+  // → Controle remoto and a Fleet tab each). Terminal ids are `server:<projectId>`.
+  rcServers: {
+    list: (): Promise<RcServerList> => ipcRenderer.invoke('rc-server:list'),
+    configure: (
+      projectId: string,
+      patch: { enabled?: boolean; autostart?: boolean }
+    ): Promise<RcServerResult> => ipcRenderer.invoke('rc-server:configure', projectId, patch),
+    /** "Ligar" at the PC (the only origin that confirms a project). */
+    start: (
+      projectId: string
+    ): Promise<{ success: boolean; result?: RcStartResult; error?: string }> =>
+      ipcRenderer.invoke('rc-server:start', projectId),
+    stop: (
+      projectId: string
+    ): Promise<{ success: boolean; result?: RcStopResult; error?: string }> =>
+      ipcRenderer.invoke('rc-server:stop', projectId),
+    terminalInput: (id: string, data: string): Promise<RcServerResult> =>
+      ipcRenderer.invoke('rc-server:terminal-input', id, data),
+    terminalResize: (id: string, cols: number, rows: number): Promise<RcServerResult> =>
+      ipcRenderer.invoke('rc-server:terminal-resize', id, cols, rows),
+    terminalReconnect: (
+      id: string
+    ): Promise<{ success: boolean; log?: string; cols?: number; rows?: number; error?: string }> =>
+      ipcRenderer.invoke('rc-server:terminal-reconnect', id),
+    onChanged: (cb: (list: RcServerList) => void) => {
+      const handler = (_: Electron.IpcRendererEvent, list: RcServerList): void => cb(list)
+      ipcRenderer.on('rc-server:changed', handler)
+      return (): void => {
+        ipcRenderer.removeListener('rc-server:changed', handler)
+      }
+    },
+    onOutput: (cb: (data: { id: string; chunk: string }) => void) => {
+      const handler = (_: Electron.IpcRendererEvent, data: { id: string; chunk: string }): void =>
+        cb(data)
+      ipcRenderer.on('rc-server:output', handler)
+      return (): void => {
+        ipcRenderer.removeListener('rc-server:output', handler)
+      }
+    },
+    /** The terminal is gone for good (not on a fall that will be restarted). */
+    onExit: (cb: (data: { id: string }) => void) => {
+      const handler = (_: Electron.IpcRendererEvent, data: { id: string }): void => cb(data)
+      ipcRenderer.on('rc-server:exit', handler)
+      return (): void => {
+        ipcRenderer.removeListener('rc-server:exit', handler)
       }
     }
   },

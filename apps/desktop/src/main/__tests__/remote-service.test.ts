@@ -15,6 +15,7 @@ import {
 } from '@sagyou/core/control/messages'
 import { toBase64 } from '@sagyou/core/sync/bytes'
 import type { SyncStatus } from '@sagyou/core/sync/engine'
+import type { RcServerView } from '../modules/remote/rc-manager'
 import { defaultRemoteConfig, type RemoteConfig } from '../modules/remote/remote-config'
 import {
   AUTHORIZATION_TTL_MS,
@@ -86,9 +87,21 @@ interface Setup {
   /** Who holds the controller role in the Worker. */
   setRoles: (ids: string[]) => void
   setHasPassword: (v: boolean) => void
+  setServers: (list: RcServerView[]) => void
   /** What GET /roles/pc answers: who the PC is and the key it published. */
   worker: { pc: string | null; publicKey: Uint8Array | null; fail: Error | null }
 }
+
+const server = (over: Partial<RcServerView> = {}): RcServerView => ({
+  projectId: 'p1',
+  name: 'Sagyou',
+  enabled: true,
+  autostart: true,
+  state: 'running',
+  confirmed: true,
+  error: null,
+  ...over
+})
 
 function setup(
   opts: { controllers?: 'phone' | 'none'; locked?: boolean; esp32?: boolean } = {}
@@ -139,6 +152,7 @@ function setup(
   let devices = [{ id: PHONE, revoked: false }]
   let roles = [PHONE, OTHER]
   let hasPassword = true
+  let servers: RcServerView[] = [server()]
   ;(client as unknown as { controllers: unknown }).controllers = vi.fn(async () => roles)
   const deps: RemoteServiceDeps = {
     client,
@@ -169,7 +183,9 @@ function setup(
     shutdown: vi.fn(async () => 'ok' as const),
     abortShutdown: vi.fn(async () => {}),
     shutdownAt: () => null,
-    servers: async () => [{ name: 'Sagyou', up: true }],
+    serverList: () => servers,
+    startServer: vi.fn(async () => 'ok' as const),
+    stopServer: vi.fn(async () => 'ok' as const),
     pendingCards: () => 0,
     answerCard: vi.fn(() => true),
     devices: async () => devices,
@@ -229,6 +245,9 @@ function setup(
     },
     setHasPassword: (v: boolean) => {
       hasPassword = v
+    },
+    setServers: (list: RcServerView[]) => {
+      servers = list
     },
     worker
   }
@@ -1023,5 +1042,115 @@ describe('remote-service: ciclo', () => {
     expect(t.client.putEsp32Key).toHaveBeenCalledTimes(1)
     expect(t.sent.at(-1)).toMatchObject({ to: PHONE })
     expect(t.sent.at(-1)?.env.kind).toBe('esp32-key')
+  })
+})
+
+describe('remote-service: servidores de Remote Control', () => {
+  it('server-start válido liga pelo celular e responde ok', async () => {
+    const t = setup()
+    const req = t.request('server-start', { projectId: 'p1' })
+    await t.deliver(req)
+    expect(t.deps.startServer).toHaveBeenCalledWith('p1', 'phone')
+    expect(t.lastResult()).toEqual({ replyTo: req.env.nonce, ok: true })
+  })
+
+  it('server-stop válido desliga e responde ok', async () => {
+    const t = setup()
+    await t.deliver(t.request('server-stop', { projectId: 'p1' }))
+    expect(t.deps.stopServer).toHaveBeenCalledWith('p1')
+    expect(t.lastResult()?.ok).toBe(true)
+  })
+
+  it.each(['not-confirmed', 'cut', 'unknown-server', 'start-failed'] as const)(
+    'recusa %s vira o mesmo motivo e não conta nem zera os erros',
+    async (reason) => {
+      const t = setup()
+      t.setConfig({ ...t.config(), failures: 2 })
+      ;(t.deps.startServer as ReturnType<typeof vi.fn>).mockResolvedValueOnce(reason)
+      await t.deliver(t.request('server-start', { projectId: 'p1' }))
+      expect(t.lastResult()).toMatchObject({ ok: false, reason })
+      expect(t.config().failures).toBe(2)
+      expect(t.config().suspendedUntil).toBeNull()
+    }
+  )
+
+  it('server-stop aceito não zera o contador de recusas', async () => {
+    const t = setup()
+    t.setConfig({ ...t.config(), failures: 3 })
+    await t.deliver(t.request('server-stop', { projectId: 'p1' }))
+    expect(t.lastResult()?.ok).toBe(true)
+    expect(t.config().failures).toBe(3)
+  })
+
+  it('server-stop de projeto desconhecido responde unknown-server sem contar', async () => {
+    const t = setup()
+    ;(t.deps.stopServer as ReturnType<typeof vi.fn>).mockResolvedValueOnce('unknown-server')
+    await t.deliver(t.request('server-stop', { projectId: 'p9' }))
+    expect(t.lastResult()).toMatchObject({ ok: false, reason: 'unknown-server' })
+    expect(t.config().failures).toBe(0)
+  })
+
+  it('suspenso: server-start é recusado sem ligar; server-stop passa', async () => {
+    const t = setup()
+    t.setConfig({ ...t.config(), suspendedUntil: T0 + 60_000 })
+    await t.deliver(t.request('server-start', { projectId: 'p1' }))
+    expect(t.deps.startServer).not.toHaveBeenCalled()
+    expect(t.lastResult()).toMatchObject({ ok: false, reason: 'suspended', until: T0 + 60_000 })
+
+    await t.deliver(t.request('server-stop', { projectId: 'p1' }))
+    expect(t.deps.stopServer).toHaveBeenCalledWith('p1')
+    expect(t.lastResult()?.ok).toBe(true)
+  })
+
+  it('corpo inválido responde shape sem chamar o gerenciador nem contar', async () => {
+    const t = setup()
+    await t.deliver(t.request('server-start', {}))
+    expect(t.lastResult()).toMatchObject({ ok: false, reason: 'shape' })
+    await t.deliver(t.request('server-stop', { projectId: 'x'.repeat(65) }))
+    expect(t.lastResult()).toMatchObject({ ok: false, reason: 'shape' })
+    expect(t.deps.startServer).not.toHaveBeenCalled()
+    expect(t.deps.stopServer).not.toHaveBeenCalled()
+    expect(t.config().failures).toBe(0)
+  })
+
+  it('o status traz só os servidores habilitados, com os campos novos', async () => {
+    const t = setup()
+    t.setServers([
+      server({ projectId: 'p1', name: 'Sagyou', state: 'needs-confirm' }),
+      server({ projectId: 'p2', name: 'Murasaki', state: 'stopped', autostart: false }),
+      server({ projectId: 'p3', name: 'Outro', enabled: false, state: 'stopped' }),
+      server({ projectId: 'p4', name: 'Fora', state: 'external' })
+    ])
+    await t.service.tick()
+    expect(t.statuses[0].body.servers).toEqual([
+      { name: 'Sagyou', up: true, projectId: 'p1', state: 'needs-confirm', autostart: true },
+      { name: 'Murasaki', up: false, projectId: 'p2', state: 'stopped', autostart: false },
+      { name: 'Fora', up: true, projectId: 'p4', state: 'external', autostart: true }
+    ])
+    // Only servers with "Iniciar com o Sagyou" hold back "PC pronto".
+    expect(t.sent.filter((s) => s.notify === 'ready')).toHaveLength(1)
+  })
+
+  it('PC pronto espera um servidor com iniciar com o Sagyou parado', async () => {
+    const t = setup()
+    t.setServers([server({ state: 'starting' })])
+    await t.service.tick()
+    expect(t.statuses[0].body.servers).toEqual([
+      { name: 'Sagyou', up: false, projectId: 'p1', state: 'starting', autostart: true }
+    ])
+    expect(t.sent.filter((s) => s.notify === 'ready')).toHaveLength(0)
+  })
+
+  it('statusSoon faz o próximo ciclo mandar o status antes de 30 s', async () => {
+    const t = setup()
+    await t.service.tick()
+    expect(t.statuses).toHaveLength(1)
+    t.advance(5_000)
+    await t.service.tick()
+    expect(t.statuses).toHaveLength(1)
+    t.service.statusSoon()
+    t.advance(5_000)
+    await t.service.tick()
+    expect(t.statuses).toHaveLength(2)
   })
 })

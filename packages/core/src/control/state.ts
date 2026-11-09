@@ -36,7 +36,7 @@ export interface PcStateInput {
 export interface PcView {
   state: PcState
   esp32Offline: boolean
-  /** Remote Control servers that are down, in the configured order. */
+  /** Remote Control servers that start with the Sagyou and are down, in order. */
   missing: string[]
   /** The last command was never fetched by the ESP32 within its 2 min and the PC is not up. */
   esp32NoAnswer: boolean
@@ -76,12 +76,11 @@ function baseState(
   const { now, status, power, lastCommand } = input
   // A stale report re-sent with a fresh poll is not contact either.
   const esp32Offline =
-    !power ||
-    !power.verified ||
-    now - power.lastPoll >= ALIVE_MS ||
-    now - power.at >= ALIVE_MS
+    !power || !power.verified || now - power.lastPoll >= ALIVE_MS || now - power.at >= ALIVE_MS
   if (alive && status) {
-    const missing = status.servers.filter((s) => !s.up).map((s) => s.name)
+    // A server only switched on when needed ("Iniciar com o Sagyou" off) never
+    // holds "PC pronto"; a PC from before that field lists only those that count.
+    const missing = status.servers.filter((s) => s.autostart !== false && !s.up).map((s) => s.name)
     if (status.shutdownAt !== null && status.shutdownAt > now) {
       return { state: 'shutting-down', esp32Offline, missing }
     }

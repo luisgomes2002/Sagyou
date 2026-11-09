@@ -97,7 +97,8 @@ import {
   getGlobalSearchIndexHit,
   copyDatabaseTo,
   scrubMemoryConversationLinks,
-  closeDatabase
+  closeDatabase,
+  listProjectCodeRoots
 } from './store'
 import {
   hasLegacyApiConfig,
@@ -210,6 +211,7 @@ import { createControlClient } from '@sagyou/core/control/client'
 import {
   esp32Key as remoteEsp32Key,
   loadRemoteConfig,
+  migrateServerNames,
   pcPrivateKey as remotePcPrivateKey,
   remoteConfigFileName,
   saveRemoteConfig,
@@ -217,10 +219,18 @@ import {
 } from './modules/remote/remote-config'
 import { createRemoteService, type RemoteService } from './modules/remote/remote-service'
 import {
+  killRemoteControlServerNamed,
   killRemoteControlServers,
-  listCommandLines,
-  matchServers
+  listRemoteControlNames
 } from './modules/remote/rc-servers'
+import {
+  createRcManager,
+  insideGitRepo,
+  projectServerPath,
+  type RcManager,
+  type RcProject
+} from './modules/remote/rc-manager'
+import { rcServerList, registerRcServerHandlers } from './handlers/rc-servers'
 import { createShutdown } from './modules/remote/shutdown'
 import {
   createRemoteCards,
@@ -248,6 +258,8 @@ let syncStarted = false
 let rendererHasData = false
 // The remote control (modules/remote/); created after the sync engine.
 let remoteService: RemoteService | null = null
+// The Remote Control servers (modules/remote/rc-manager.ts); created with the service.
+let rcManager: RcManager | null = null
 // Removing the Sagyou password takes the PC out of the controlled mode (set with the service).
 let disableRemoteForNoPassword: () => void = () => {}
 
@@ -1477,13 +1489,13 @@ function refreshTrayMenu(): void {
       : item.id === 'cut'
         ? { label: item.label, enabled: false }
         : {
-          label: item.label,
-          click: () => {
-            if (item.id === 'open') managedWindow?.show()
-            else if (item.id === 'lock') lockAppNow()
-            else app.quit()
+            label: item.label,
+            click: () => {
+              if (item.id === 'open') managedWindow?.show()
+              else if (item.id === 'lock') lockAppNow()
+              else app.quit()
+            }
           }
-        }
   )
   tray.setContextMenu(Menu.buildFromTemplate(items))
 }
@@ -1823,6 +1835,9 @@ app.whenReady().then(() => {
   ipcMain.handle('store:save', (_, data) => {
     saveData(data)
     syncEngine?.notifySaved()
+    // A project archived, removed, renamed or with another folder ends its
+    // server. No process scan here: that is the heartbeat's (refresh).
+    rcManager?.refreshProjects()
   })
   ipcMain.handle('store:rebuild-search-index', () => rebuildSearchIndex())
   ipcMain.handle('search:global', (_, options: unknown) => searchGlobalIndex(options))
@@ -1964,6 +1979,7 @@ app.whenReady().then(() => {
     // unlock); before that, the first store:load reads it from the database.
     emitRemoteChanges: (change) => {
       if (rendererHasData) sendToRenderer('sync:remote-changes', change)
+      rcManager?.refreshProjects()
     },
     isHeld: () => updater.isSyncHeld(),
     log
@@ -1999,6 +2015,9 @@ app.whenReady().then(() => {
       // The current version keeps running: the X hides to the tray again.
       isQuitting = false
       managedWindow?.abortInstall()
+      // before-quit already ended the servers and closed the manager.
+      rcManager?.reopen()
+      void rcManager?.startAutostart()
     },
     openExternal: (url) => {
       const safe = safeExternalUrl(url)
@@ -2019,7 +2038,6 @@ app.whenReady().then(() => {
         log.error('remote', 'config_save_failed', { msg: errorMessage(error) })
       }
     }
-    let remoteServers: { name: string; up: boolean }[] = []
     const execText = async (file: string, args: string[]): Promise<string> =>
       (await execFileAsync(file, args, { timeout: 15_000, windowsHide: true })).stdout
     const shutdown = createShutdown({
@@ -2052,6 +2070,59 @@ app.whenReady().then(() => {
       deviceId: () => memoryStore.getSyncDeviceId(),
       now: () => Date.now()
     })
+    // The Remote Control servers, one per project (spec 2026-11-09-servidores-remote-control).
+    const rcProjects = (): RcProject[] => {
+      try {
+        return listProjectCodeRoots().map((p) => ({
+          id: p.id,
+          name: p.name,
+          archived: p.archivedAt !== null,
+          path: p.archivedAt !== null ? null : projectServerPath(p, existsSync)
+        }))
+      } catch {
+        log.warn('remote', 'server_projects_failed')
+        return []
+      }
+    }
+    const manager = createRcManager({
+      platform: process.platform,
+      projects: rcProjects,
+      entries: () => remoteConfig.servers,
+      saveEntries: (servers) => saveRemote({ ...remoteConfig, servers }),
+      resolveClaude: () => resolveExecutable('claude'),
+      hasGit: (dir) => insideGitRepo(dir, existsSync),
+      spawn: (options) => startAgentPty(options),
+      externalNames: () => listRemoteControlNames(execText),
+      killExternal: (name) => killRemoteControlServerNamed(execText, name),
+      accessCut: () => remoteConfig.accessCutAt !== null,
+      now: () => Date.now(),
+      setTimer: (fn, ms) => setTimeout(fn, ms),
+      clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+      log,
+      onOutput: (id, chunk) => sendToRenderer('rc-server:output', { id, chunk }),
+      onExit: (id) => sendToRenderer('rc-server:exit', { id }),
+      onChange: () => {
+        // The phone sees the change on the next cycle (≤ 5 s), not in 30 s.
+        remoteService?.statusSoon()
+        sendToRenderer('rc-server:changed', rcServerList(rcDeps))
+      }
+    })
+    const rcDeps = { manager, platform: process.platform }
+    rcManager = manager
+    // A file from before the Sagyou managed the servers: its names become
+    // entries once, saved right away (spec 2026-11-09, "Dados").
+    if (remoteConfig.legacyServerNames.length > 0) {
+      const count = remoteConfig.legacyServerNames.length
+      try {
+        const projects = listProjectCodeRoots().map((p) => ({ id: p.id, name: p.name }))
+        const { config, dropped } = migrateServerNames(remoteConfig, projects)
+        saveRemote(config)
+        log.info('remote', 'server_migrated', { count, dropped })
+      } catch {
+        log.warn('remote', 'server_migrate_failed')
+      }
+    }
+    registerRcServerHandlers(ipcMain, rcDeps)
     let emitRemote: () => void = () => {}
     const service = createRemoteService({
       client,
@@ -2082,10 +2153,13 @@ app.whenReady().then(() => {
       // Gives the screen and the X back even when `shutdown /a` fails (restore).
       abortShutdown: () => shutdown.abort(),
       shutdownAt: () => shutdown.at(),
-      servers: async () => {
-        remoteServers = matchServers(await listCommandLines(execText), remoteConfig.servers)
-        return remoteServers
+      // Once per heartbeat: also notices a server started or ended outside the Sagyou.
+      serverList: async () => {
+        await manager.refresh()
+        return manager.list()
       },
+      startServer: (projectId, origin) => manager.start(projectId, origin),
+      stopServer: (projectId) => manager.stop(projectId),
       pendingCards: () =>
         [...codeRuns.values()].reduce((n, run) => n + run.pendingApprovals.size, 0) +
         externalCards.count(),
@@ -2106,12 +2180,15 @@ app.whenReady().then(() => {
         mcpWriteQueue.rejectQueued(EXTERNAL_RUN_ID, EXTERNAL_CUT_MESSAGE)
         externalCards.denyAll()
         appLock.lock('remote')
+        // Ours first, so none of them is restarted; the loop below also ends any from outside.
+        manager.stopAll('cut')
         void killServersWhileCut()
         refreshTrayMenu()
         emitRemote()
       },
       onAccessRestored: () => {
         refreshTrayMenu()
+        void manager.startAutostart()
         emitRemote()
       },
       log,
@@ -2142,13 +2219,12 @@ app.whenReady().then(() => {
       platform: process.platform,
       hasPassword: () => passwordConfig !== null && !passwordConfigCorrupt,
       syncActive,
-      servers: () =>
-        remoteConfig.servers.map(
-          (name) => remoteServers.find((s) => s.name === name) ?? { name, up: false }
-        ),
       now: () => Date.now(),
       emitStatus: (status: RemoteStatusView) => sendToRenderer('remote:status-changed', status),
-      onAccessRestored: refreshTrayMenu
+      onAccessRestored: () => {
+        refreshTrayMenu()
+        void manager.startAutostart()
+      }
     })
     emitRemote = () => sendToRenderer('remote:status-changed', remoteView())
     disableRemoteForNoPassword = () => {
@@ -2163,6 +2239,8 @@ app.whenReady().then(() => {
     service.syncStatusChanged(engine.status())
     // Only Windows is controlled; elsewhere the saved switch stays off.
     if (process.platform === 'win32' && remoteConfig.enabled) service.start()
+    // Locked too: a server reads nothing of the Sagyou (spec 2026-11-09, decision 2).
+    void manager.startAutostart()
   }
 
   ipcMain.handle('backup:open-folder', async () => {
@@ -3090,6 +3168,8 @@ app.on('before-quit', (event) => {
   rendererMcpTasks.close()
   rendererMcpActions.close()
   syncEngine?.stop()
+  // The servers this Sagyou started end with it; none starts from here on.
+  rcManager?.stopAll('quit')
   stopCodeAgent()
 })
 

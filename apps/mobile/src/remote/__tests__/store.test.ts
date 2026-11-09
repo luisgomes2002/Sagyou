@@ -597,6 +597,63 @@ describe('store do controle remoto', () => {
     expect([...t.secure.data.keys()]).toEqual([KEY_PCPIN])
   })
 
+  // Spec docs/specs/2026-11-09-servidores-remote-control.md.
+  describe('servidores de Remote Control', () => {
+    const phoneKey = (t: Setup): Uint8Array =>
+      new Uint8Array(Buffer.from(String(t.pc.sent[0].env.body.publicKey), 'base64'))
+
+    it('ligar manda server-start assinado com o projeto, sem biometria extra', async () => {
+      const t = setup()
+      await authorize(t)
+      t.authenticate.mockClear()
+      await useRemote.getState().startServer('p1')
+      const req = t.pc.sent.at(-1)!
+      expect(req.to).toBe(PC)
+      expect(req.env).toMatchObject({ kind: 'server-start', body: { projectId: 'p1' } })
+      expect(checkEnvelope(req.env, phoneKey(t), NOW, () => false)).toEqual({ ok: true })
+      expect(req.env.expiresAt - req.env.issuedAt).toBe(MAX_TTL_MS['server-start'])
+      expect(t.authenticate).not.toHaveBeenCalled()
+      expect(useRemote.getState()).toMatchObject({ busy: false, error: null })
+    })
+
+    it('desligar manda server-stop assinado com o projeto', async () => {
+      const t = setup()
+      await authorize(t)
+      await useRemote.getState().stopServer('p2')
+      const req = t.pc.sent.at(-1)!
+      expect(req.env).toMatchObject({ kind: 'server-stop', body: { projectId: 'p2' } })
+      expect(checkEnvelope(req.env, phoneKey(t), NOW, () => false)).toEqual({ ok: true })
+    })
+
+    const REASONS: [string, string][] = [
+      ['not-confirmed', 'Confirme este projeto uma vez no PC.'],
+      ['cut', 'O acesso está cortado. Restaure antes de ligar um servidor.'],
+      ['unknown-server', 'Este servidor não existe mais no PC.'],
+      ['start-failed', 'O servidor não subiu. Veja o terminal no PC.']
+    ]
+
+    it.each(REASONS)('recusa %s vira o texto exato', async (reason, text) => {
+      const t = setup()
+      await authorize(t)
+      await useRemote.getState().startServer('p1')
+      const req = t.pc.sent.at(-1)!
+      t.pc.queue.push(t.pc.msg('result', { replyTo: req.env.nonce, ok: false, reason }))
+      await useRemote.getState().refresh()
+      expect(useRemote.getState().error).toBe(text)
+    })
+
+    it('resultado ok não deixa erro', async () => {
+      const t = setup()
+      await authorize(t)
+      useRemote.setState({ error: 'antigo' })
+      await useRemote.getState().stopServer('p1')
+      const req = t.pc.sent.at(-1)!
+      t.pc.queue.push(t.pc.msg('result', { replyTo: req.env.nonce, ok: true }))
+      await useRemote.getState().refresh()
+      expect(useRemote.getState().error).toBeNull()
+    })
+  })
+
   // Spec docs/specs/2026-11-07-endurecer-acesso-remoto.md, item 3.
   describe('cortar e restaurar acesso', () => {
     it('cortar manda cut-access assinado ao PC', async () => {

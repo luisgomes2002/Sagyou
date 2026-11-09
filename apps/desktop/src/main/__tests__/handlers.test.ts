@@ -140,7 +140,8 @@ vi.mock('../store', () => ({
   listMemories: vi.fn(() => []),
   copyDatabaseTo: vi.fn(async () => void startupOrder.push('migration')),
   scrubMemoryConversationLinks: vi.fn(() => 0),
-  rebuildSearchIndex: vi.fn(async () => undefined)
+  rebuildSearchIndex: vi.fn(async () => undefined),
+  listProjectCodeRoots: vi.fn(() => [])
 }))
 vi.mock('../../../resources/icon.png?asset', () => ({ default: '/icon.png' }))
 
@@ -309,13 +310,34 @@ describe('controle remoto', () => {
       'remote:authorize',
       'remote:refuse',
       'remote:revoke',
-      'remote:servers:set',
       'remote:esp32:create'
     ]) {
       expect(handlers.has(ch)).toBe(true)
     }
+    // The server list comes from rc-server:list now.
+    expect(handlers.has('remote:servers:set')).toBe(false)
     const foreign = { sender: { getURL: () => 'https://evil.example/' } }
     expect(() => handlers.get('remote:status')?.(foreign)).toThrow('Solicitação IPC recusada.')
+  })
+
+  it('registra os canais rc-server:* atrás do desbloqueio', async () => {
+    const channels = [
+      'rc-server:list',
+      'rc-server:configure',
+      'rc-server:start',
+      'rc-server:stop',
+      'rc-server:terminal-input',
+      'rc-server:terminal-resize',
+      'rc-server:terminal-reconnect'
+    ]
+    const foreign = { sender: { getURL: () => 'https://evil.example/' } }
+    for (const ch of channels) {
+      expect(handlers.has(ch), ch).toBe(true)
+      expect(() => handlers.get(ch)?.(foreign), ch).toThrow('Solicitação IPC recusada.')
+    }
+    const list = await invoke<{ supported: boolean; servers: unknown[] }>('rc-server:list')
+    expect(list.supported).toBe(process.platform === 'win32')
+    expect(Array.isArray(list.servers)).toBe(true)
   })
 
   it('o estado começa desligado e sem chaves', async () => {

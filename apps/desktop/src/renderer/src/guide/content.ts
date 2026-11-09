@@ -516,7 +516,7 @@ const sessoesCodigo: GuideArticle[] = [
           'Abra Configurações → Controle remoto e ligue Controlar este PC pelo celular (pede o código do autenticador).',
           'No celular, abra Ajustes → Controlar o PC → Pedir autorização.',
           'Confira se o código de 6 dígitos é o mesmo nas duas telas e clique em Autorizar, com a senha do Sagyou.',
-          'Em Servidores de Remote Control, adicione os nomes usados em --name: o PC só aparece Pronto com todos rodando.'
+          'Em Servidores de Remote Control, marque Servidor de Remote Control nos projetos que o Claude do celular vai usar, e Iniciar com o Sagyou nos que devem subir sozinhos. Na primeira vez, clique em Ligar e responda às perguntas do Claude na aba do servidor, no Fleet. O PC só aparece Pronto com os que iniciam com o Sagyou rodando.'
         ]
       },
       {
@@ -534,7 +534,7 @@ const sessoesCodigo: GuideArticle[] = [
       },
       {
         type: 'p',
-        text: 'Cortar acesso, na aba PC do celular, é o botão de emergência: o acesso MCP externo para, os servidores de Remote Control são encerrados (e de novo a cada 30 segundos, se voltarem) e o Sagyou é bloqueado. O PC continua ligado. Se o PC não responder em 1 minuto, o celular oferece desligar pelo ESP32.'
+        text: 'Na aba PC, o celular liga e desliga cada servidor de Remote Control, com a biometria, mesmo com o Sagyou bloqueado; um projeto ainda não confirmado no PC não liga pelo celular. Cortar acesso, na aba PC do celular, é o botão de emergência: o acesso MCP externo para, os servidores de Remote Control são encerrados (e de novo a cada 30 segundos, se voltarem) e o Sagyou é bloqueado. O PC continua ligado. Se o PC não responder em 1 minuto, o celular oferece desligar pelo ESP32.'
       },
       {
         type: 'p',

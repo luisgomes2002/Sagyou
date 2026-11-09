@@ -109,6 +109,30 @@ describe('parsePcStatus', () => {
     expect(parsePcStatus({ ...valid, accessCutAt: 'ontem' })?.accessCutAt).toBeNull()
   })
 
+  it('servidor com os campos novos e servidor de PC antigo (só nome e up)', () => {
+    const row = {
+      name: 'Sagyou',
+      up: false,
+      projectId: 'p1',
+      state: 'needs-confirm',
+      autostart: false
+    }
+    expect(parsePcStatus({ ...valid, servers: [row] })?.servers).toEqual([row])
+    expect(parsePcStatus(valid)?.servers).toEqual([{ name: 'Sagyou', up: true }])
+    const odd = parsePcStatus({
+      ...valid,
+      servers: [
+        { name: 'X', up: true, projectId: 'p'.repeat(65), state: 'voando', autostart: 'sim' }
+      ]
+    })
+    expect(odd?.servers).toEqual([{ name: 'X', up: true }])
+  })
+
+  it('server-start e server-stop valem no máximo 1 minuto', () => {
+    expect(MAX_TTL_MS['server-start']).toBe(60_000)
+    expect(MAX_TTL_MS['server-stop']).toBe(60_000)
+  })
+
   it('cut-access e restore-access valem no máximo 1 minuto', () => {
     expect(MAX_TTL_MS['cut-access']).toBe(60_000)
     expect(MAX_TTL_MS['restore-access']).toBe(60_000)

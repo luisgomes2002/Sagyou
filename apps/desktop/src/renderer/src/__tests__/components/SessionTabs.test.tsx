@@ -35,4 +35,34 @@ describe('SessionTabs', () => {
     expect(screen.getByRole('button', { name: /^Última/ })).toHaveAttribute('aria-current', 'true')
     expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', inline: 'nearest' })
   })
+
+  it('shows a Remote Control server tab named after its project', () => {
+    const onSelect = vi.fn()
+    render(
+      <SessionTabs
+        items={[
+          ...items,
+          {
+            key: 'server:p1',
+            kind: 'server',
+            title: 'Servidor: Sagyou',
+            subtitle: 'Rodando',
+            status: 'running'
+          }
+        ]}
+        selectedKey="run:first"
+        onSelect={onSelect}
+        onNew={vi.fn()}
+        starting={false}
+      />
+    )
+
+    const tab = screen.getByRole('button', {
+      name: 'Servidor: Sagyou — Em execução — Rodando — p1'
+    })
+    tab.click()
+    expect(onSelect).toHaveBeenCalledWith('server:p1')
+    expect(screen.getByRole('button', { name: /^Primeira — .* — first$/ })).toBeInTheDocument()
+    expect(screen.getByText('Ativas · 3')).toBeInTheDocument()
+  })
 })

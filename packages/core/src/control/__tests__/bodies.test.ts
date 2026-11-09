@@ -8,7 +8,8 @@ import {
   parseAuthorizeRequest,
   parseAuthorized,
   parseEsp32Key,
-  parseResult
+  parseResult,
+  parseServerRequest
 } from '../bodies'
 
 const pub = toBase64(newSigningKeys().publicKey)
@@ -41,6 +42,14 @@ describe('corpos das mensagens do controle', () => {
     expect(old?.sealedPassword).toBeUndefined()
     expect(old).not.toHaveProperty('password')
     expect(parseAuthorizeRemote({ name: 'x', publicKey: '%%%', password: 's' })).toBeNull()
+  })
+
+  it('pedido de servidor exige o id do projeto', () => {
+    expect(parseServerRequest({ projectId: 'p1' })).toEqual({ projectId: 'p1' })
+    expect(parseServerRequest({ projectId: '' })).toBeNull()
+    expect(parseServerRequest({ projectId: 'p'.repeat(65) })).toBeNull()
+    expect(parseServerRequest({})).toBeNull()
+    expect(parseServerRequest(null)).toBeNull()
   })
 
   it('chaves do PC e do ESP32', () => {

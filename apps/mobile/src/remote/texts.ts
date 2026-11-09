@@ -1,3 +1,5 @@
+import type { PcServer, ServerState } from '@sagyou/core/control/messages'
+
 // Phone-only texts of the remote control; the shared ones live in @sagyou/core/control/texts.
 export const REMOTE_TEXT = {
   noPc: 'O PC ainda não está no modo controlado. Ative em Configurações → Controle remoto, no PC.',
@@ -18,8 +20,28 @@ export const REMOTE_TEXT = {
   // Spec docs/specs/2026-11-09-selar-senha-remota.md: the password is sealed to the PC's key.
   noPcKey: 'O PC ainda não publicou a chave dele. Atualize o Sagyou no PC e tente de novo.',
   pcKeyChanged: 'A chave do PC mudou. Autorize este celular em casa, comparando o código.',
-  outdated: 'Atualize o Sagyou no celular.'
+  outdated: 'Atualize o Sagyou no celular.',
+  // Spec docs/specs/2026-11-09-servidores-remote-control.md: the PC's answer to Ligar/Desligar.
+  serverNotConfirmed: 'Confirme este projeto uma vez no PC.',
+  serverCut: 'O acesso está cortado. Restaure antes de ligar um servidor.',
+  serverUnknown: 'Este servidor não existe mais no PC.',
+  serverFailed: 'O servidor não subiu. Veja o terminal no PC.'
 } as const
+
+/** A Remote Control server's state on the PC tab; "Confirme no PC", since the phone has no Fleet. */
+export const SERVER_STATE_TEXT: Record<ServerState, string> = {
+  running: 'Rodando',
+  stopped: 'Parado',
+  starting: 'Iniciando…',
+  'needs-confirm': 'Confirme no PC',
+  external: 'Rodando (fora do Sagyou)'
+}
+
+/** A server from a PC built before the Sagyou managed them: only whether it is up. */
+export function serverStateText(server: PcServer): string {
+  if (server.state) return SERVER_STATE_TEXT[server.state]
+  return server.up ? SERVER_STATE_TEXT.running : SERVER_STATE_TEXT.stopped
+}
 
 /** "Acesso cortado em 14:32." in the phone's local time. */
 export function accessCutText(at: number): string {

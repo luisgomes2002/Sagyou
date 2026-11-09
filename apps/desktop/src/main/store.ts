@@ -2676,6 +2676,48 @@ export function groupByKey<T extends Record<string, any>>(rows: T[], key: string
   return m
 }
 
+/** A project and its code folders, read without loading the whole store. */
+export interface ProjectCodeRoots {
+  id: string
+  name: string
+  archivedAt: string | null
+  codePaths: { id: string; path: string }[]
+  activeCodePathIds: string[]
+}
+
+/**
+ * Projects with their code folders and the selected ones (the Remote Control
+ * servers: rc-manager). The selection is read as loadData reads it: every
+ * `active` row, in the table's order.
+ */
+export function listProjectCodeRoots(): ProjectCodeRoots[] {
+  const db = getDb()
+  const paths = groupByKey(
+    db.prepare('SELECT id, project_id, path, active FROM project_code_paths').all() as {
+      id: string
+      project_id: string
+      path: string
+      active: number
+    }[],
+    'project_id'
+  )
+  const projects = db.prepare('SELECT id, name, archived_at FROM projects ORDER BY ord').all() as {
+    id: string
+    name: string
+    archived_at: string | null
+  }[]
+  return projects.map((p) => {
+    const rows = paths.get(p.id) ?? []
+    return {
+      id: p.id,
+      name: p.name,
+      archivedAt: p.archived_at != null ? String(p.archived_at) : null,
+      codePaths: rows.map((c) => ({ id: c.id, path: c.path })),
+      activeCodePathIds: rows.filter((c) => c.active).map((c) => c.id)
+    }
+  })
+}
+
 export function loadData(existingDb?: Database.Database): SaveData {
   const db = existingDb ?? getDb()
 

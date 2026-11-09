@@ -22,13 +22,33 @@ export interface RemoteController {
   since: string
 }
 
+/**
+ * One project's Remote Control server on this PC (spec
+ * docs/specs/2026-11-09-servidores-remote-control.md). `confirmedAt`/`path`: the
+ * first-run questions were answered at the PC for that folder; another folder
+ * needs them again. Turning the server off keeps the confirmation.
+ */
+export interface RcServerEntry {
+  projectId: string
+  enabled: boolean
+  autostart: boolean
+  confirmedAt: string | null
+  path: string | null
+}
+
+export const MAX_RC_SERVERS = 50
+
 export interface RemoteConfig {
   enabled: boolean
   /** publicKey base64; privateCipher = base64 of safeStorage.encryptString(base64 private key). */
   pcKeys: { publicKey: string; privateCipher: string } | null
   controllers: RemoteController[]
-  /** Names passed to `claude remote-control --name`, in the order shown. */
-  servers: string[]
+  servers: RcServerEntry[]
+  /**
+   * Server names from a file written before the Sagyou managed the servers;
+   * read only, turned into entries by `migrateServerNames` and never written.
+   */
+  legacyServerNames: string[]
   /** base64 of safeStorage.encryptString(base64 ESP32 key). */
   esp32KeyCipher: string | null
   failures: number
@@ -49,6 +69,7 @@ export function defaultRemoteConfig(): RemoteConfig {
     pcKeys: null,
     controllers: [],
     servers: [],
+    legacyServerNames: [],
     esp32KeyCipher: null,
     failures: 0,
     suspendedUntil: null,
@@ -62,6 +83,19 @@ export function remoteConfigFileName(dev: boolean): string {
 }
 
 const isString = (v: unknown): v is string => typeof v === 'string'
+
+function parseServer(v: unknown): RcServerEntry | null {
+  if (!v || typeof v !== 'object') return null
+  const s = v as Record<string, unknown>
+  if (!isString(s.projectId) || s.projectId.length === 0 || s.projectId.length > 64) return null
+  return {
+    projectId: s.projectId,
+    enabled: s.enabled !== false,
+    autostart: s.autostart === true,
+    confirmedAt: isString(s.confirmedAt) ? s.confirmedAt : null,
+    path: isString(s.path) ? s.path : null
+  }
+}
 
 function parse(raw: unknown): RemoteConfig {
   const base = defaultRemoteConfig()
@@ -81,7 +115,16 @@ function parse(raw: unknown): RemoteConfig {
             : []
         )
       : [],
-    servers: Array.isArray(r.servers) ? (r.servers as unknown[]).filter(isString).slice(0, 50) : [],
+    servers: Array.isArray(r.servers)
+      ? (r.servers as unknown[])
+          .map(parseServer)
+          .filter((s): s is RcServerEntry => s !== null)
+          .filter((s, i, all) => all.findIndex((x) => x.projectId === s.projectId) === i)
+          .slice(0, MAX_RC_SERVERS)
+      : [],
+    legacyServerNames: Array.isArray(r.servers)
+      ? (r.servers as unknown[]).filter(isString).slice(0, MAX_RC_SERVERS)
+      : [],
     esp32KeyCipher: isString(r.esp32KeyCipher) ? r.esp32KeyCipher : null,
     failures:
       Number.isSafeInteger(r.failures) && (r.failures as number) >= 0 ? (r.failures as number) : 0,
@@ -116,8 +159,11 @@ export function saveRemoteConfig(
   config: RemoteConfig,
   now = Date.now()
 ): void {
-  const pruned: RemoteConfig = {
-    ...config,
+  // The legacy names are never written back: migrateServerNames already used them.
+  const { legacyServerNames: _legacy, ...rest } = config
+  void _legacy
+  const pruned = {
+    ...rest,
     seenNonces: config.seenNonces.filter((n) => n.until > now)
   }
   const path = join(dir, file)
@@ -125,6 +171,42 @@ export function saveRemoteConfig(
   writeFileSync(tmp, JSON.stringify(pruned, null, 2), { encoding: 'utf-8', mode: 0o600 })
   chmodSync(tmp, 0o600)
   renameSync(tmp, path)
+}
+
+/**
+ * Turns the names of a file from before the Sagyou managed the servers into
+ * entries: the project with that name (case-insensitive, exactly one), started
+ * with the Sagyou as the logon task did, not confirmed yet. A name with no such
+ * project, or with two, is dropped (counted).
+ */
+export function migrateServerNames(
+  config: RemoteConfig,
+  projects: { id: string; name: string }[]
+): { config: RemoteConfig; dropped: number } {
+  if (config.legacyServerNames.length === 0) return { config, dropped: 0 }
+  const servers = [...config.servers]
+  let dropped = 0
+  for (const name of config.legacyServerNames) {
+    const key = name.trim().toLowerCase()
+    const matches = projects.filter((p) => p.name.trim().toLowerCase() === key)
+    if (matches.length !== 1) {
+      dropped++
+      continue
+    }
+    if (servers.some((s) => s.projectId === matches[0].id)) continue
+    if (servers.length >= MAX_RC_SERVERS) {
+      dropped++
+      continue
+    }
+    servers.push({
+      projectId: matches[0].id,
+      enabled: true,
+      autostart: true,
+      confirmedAt: null,
+      path: null
+    })
+  }
+  return { config: { ...config, servers, legacyServerNames: [] }, dropped }
 }
 
 export function sealSecret(safe: SafeStorageLike, bytes: Uint8Array): string {

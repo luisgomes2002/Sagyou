@@ -87,6 +87,10 @@ export interface RemoteStore {
   unlock(): Promise<void>
   lock(): Promise<void>
   installUpdate(): Promise<void>
+  /** "Ligar" a project's Remote Control server; the PC's status shows it within 5 s. */
+  startServer(projectId: string): Promise<void>
+  /** "Desligar" a project's Remote Control server (also one running outside the Sagyou). */
+  stopServer(projectId: string): Promise<void>
   /** "Cortar acesso": no answer in CUT_WAIT_MS offers the ESP32 shutdown. */
   cutAccess(): Promise<void>
   /** "Restaurar acesso": the Worker checks `factor` (6 digits or a backup code). */
@@ -170,6 +174,14 @@ function resultText(result: ResultBody): string {
       return REMOTE_TEXT.factor
     case 'outdated':
       return REMOTE_TEXT.outdated
+    case 'not-confirmed':
+      return REMOTE_TEXT.serverNotConfirmed
+    case 'cut':
+      return REMOTE_TEXT.serverCut
+    case 'unknown-server':
+      return REMOTE_TEXT.serverUnknown
+    case 'start-failed':
+      return REMOTE_TEXT.serverFailed
     default:
       return CONTROL_TEXT.refused
   }
@@ -532,6 +544,9 @@ export const useRemote = create<RemoteStore>((set, get) => {
     unlock: () => run(() => sendToPc('unlock', {})),
     lock: () => run(() => sendToPc('lock', {})),
     installUpdate: () => run(() => sendToPc('install-update', {})),
+    // The Keystore prompt of keys.sign is the biometrics (decision 10): no second prompt.
+    startServer: (projectId) => run(() => sendToPc('server-start', { projectId })),
+    stopServer: (projectId) => run(() => sendToPc('server-stop', { projectId })),
 
     cutAccess: () =>
       run(async () => {

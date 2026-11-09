@@ -2,11 +2,12 @@ import { useEffect, useRef } from 'react'
 import { STATUS_STYLE, type SessionStatus } from './format'
 
 export interface SessionItem {
-  /** Stable selection key: `run:<id>`. */
+  /** Stable selection key: `run:<id>` or `server:<projectId>`. */
   key: string
-  kind: 'run'
+  /** A code-agent session, or a Remote Control server the Sagyou runs. */
+  kind: 'run' | 'server'
   title: string
-  /** Project · harness, already resolved. */
+  /** Project · harness for a run; the state text for a server. */
   subtitle: string
   status: SessionStatus
   meta?: string
@@ -30,7 +31,7 @@ function SessionTab({
       type="button"
       onClick={() => onSelect(item.key)}
       aria-current={selected ? 'true' : undefined}
-      aria-label={`${item.title} — ${style.label} — ${item.subtitle} — ${item.key.slice(4)}`}
+      aria-label={`${item.title} — ${style.label} — ${item.subtitle} — ${item.key.slice(item.key.indexOf(':') + 1)}`}
       title={`${item.title} — ${item.subtitle}`}
       className={`flex w-44 shrink-0 items-center gap-2 rounded-md border px-2.5 py-1.5 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#a080f0] ${
         selected
