@@ -6,9 +6,13 @@ import {
   RC_BACKOFF_MS,
   RC_CONFIRM_MS,
   RC_MAX_LOG,
+  RC_SCAN_TTL_MS,
   RC_STABLE_MS,
+  RC_TEXT,
   createRcManager,
+  insideGitRepo,
   projectServerPath,
+  validServerName,
   type RcManagerDeps,
   type RcProject
 } from '../modules/remote/rc-manager'
@@ -472,12 +476,14 @@ describe('servidor de fora do Sagyou', () => {
   })
 
   it('o servidor do próprio Sagyou não aparece como de fora', async () => {
-    const { manager, deps, state, ptys, view } = setup()
+    const { manager, deps, clock, state, ptys, view } = setup()
     await manager.start('p1', 'pc')
     ptys[0].emit('x')
     state.external = ['Sagyou']
+    await clock.advance(RC_SCAN_TTL_MS)
     await manager.refresh()
     expect(view()?.state).toBe('running')
+    expect(view()?.error).toBeNull()
     await manager.stop('p1')
     expect(deps.killExternal).not.toHaveBeenCalled()
     expect(view()?.state).toBe('stopped')
@@ -628,5 +634,235 @@ describe('projectServerPath', () => {
     expect(projectServerPath({ codePaths, activeCodePathIds: ['a'] }, () => false)).toBeNull()
     expect(projectServerPath({ activeCodePathIds: ['a'] }, () => true)).toBeNull()
     expect(projectServerPath({ codePaths, activeCodePathIds: ['zz'] }, () => true)).toBeNull()
+  })
+})
+
+describe('nome e executável (injeção pela linha de comando)', () => {
+  it.each([`a b" & echo X & "`, 'P&calc', `"x" --permission-mode bypassPermissions`, 'P%PATH%'])(
+    'nome %s: não sobe, start-failed com o aviso e log server_refused',
+    async (name) => {
+      const { manager, deps, entries, view } = setup({
+        projects: [{ id: 'p1', name, path: DIR }],
+        entries: []
+      })
+      expect(await manager.start('p1', 'pc')).toBe('start-failed')
+      expect(deps.spawn).not.toHaveBeenCalled()
+      expect(deps.externalNames).not.toHaveBeenCalled()
+      expect(view()?.error).toBe(RC_TEXT.badName)
+      expect(deps.log.info).toHaveBeenCalledWith('remote', 'server_refused', {
+        projectId: 'p1',
+        reason: 'name'
+      })
+      // A refused "Ligar" does not turn the server on either.
+      expect(entries()).toEqual([])
+    }
+  )
+
+  it('nome inválido também não sobe pelo autostart', async () => {
+    const { manager, deps } = setup({
+      projects: [{ id: 'p1', name: 'P&calc', path: DIR }],
+      entries: [entry({ autostart: true })]
+    })
+    await manager.startAutostart()
+    expect(await manager.start('p1', 'phone')).toBe('start-failed')
+    expect(deps.spawn).not.toHaveBeenCalled()
+  })
+
+  it('nomes comuns passam; vazio, longo ou com aspas, &, % e quebra de linha não', () => {
+    for (const ok of [
+      'Sagyou',
+      'Mudança Japão',
+      'Sagyou (beta) 2.0_x-y',
+      '日本語',
+      'a'.repeat(64)
+    ]) {
+      expect(validServerName(ok)).toBe(true)
+    }
+    for (const bad of ['', 'a'.repeat(65), 'a"b', 'a&b', 'a%b', 'a\nb', 'a|b', 'a^b', 'a<b']) {
+      expect(validServerName(bad)).toBe(false)
+    }
+  })
+
+  it.each([
+    String.raw`C:\npm\claude.cmd`,
+    String.raw`C:\npm\claude.bat`,
+    String.raw`C:\npm\claude`
+  ])('claude resolvido em %s: start-failed com o aviso do nativo', async (claude) => {
+    const { manager, deps, state, view } = setup()
+    state.claude = claude
+    expect(await manager.start('p1', 'pc')).toBe('start-failed')
+    expect(deps.spawn).not.toHaveBeenCalled()
+    expect(view()).toMatchObject({ state: 'stopped', error: RC_TEXT.notNative })
+  })
+
+  it('claude.EXE em maiúsculas é aceito', async () => {
+    const { manager, deps, state } = setup()
+    state.claude = String.raw`C:\Users\l\.local\bin\CLAUDE.EXE`
+    expect(await manager.start('p1', 'pc')).toBe('ok')
+    expect(deps.spawn).toHaveBeenCalledTimes(1)
+  })
+
+  it('dois projetos com o mesmo nome: o segundo não sobe', async () => {
+    const { manager, deps, entries, view } = setup({
+      projects: [
+        { id: 'p1', name: 'Sagyou', path: DIR },
+        { id: 'p2', name: 'sagyou ', path: String.raw`E:\Outro\Sagyou` }
+      ]
+    })
+    expect(await manager.start('p2', 'pc')).toBe('start-failed')
+    expect(deps.spawn).not.toHaveBeenCalled()
+    expect(view('p2')?.error).toBe(RC_TEXT.sameName)
+    expect(entries().map((e) => e.projectId)).toEqual(['p1'])
+    expect(await manager.start('p1', 'pc')).toBe('ok')
+  })
+})
+
+describe('origem autostart', () => {
+  it('entrada migrada nunca vira confirmada só pelo autostart', async () => {
+    const { manager, deps, clock, ptys, view } = setup({
+      entries: [entry({ autostart: true, confirmedAt: null, path: null })]
+    })
+    await manager.startAutostart()
+    expect(deps.spawn).toHaveBeenCalledTimes(1)
+    ptys[0].emit('Enable Remote Control? (y/n)')
+    await clock.advance(RC_CONFIRM_MS * 3)
+    expect(deps.saveEntries).not.toHaveBeenCalled()
+    expect(view()).toMatchObject({ state: 'needs-confirm', confirmed: false })
+    expect(deps.log.info).toHaveBeenCalledWith('remote', 'server_start', {
+      projectId: 'p1',
+      origin: 'autostart'
+    })
+  })
+
+  it('autostart não liga um servidor desligado', async () => {
+    const { manager, deps } = setup({ entries: [entry({ enabled: false, autostart: true })] })
+    await manager.startAutostart()
+    expect(await manager.start('p1', 'autostart')).toBe('unknown-server')
+    expect(deps.spawn).not.toHaveBeenCalled()
+  })
+
+  it('o religar depois de uma queda não confirma', async () => {
+    const { manager, deps, clock, ptys, view } = setup({
+      entries: [entry({ autostart: true, confirmedAt: null, path: null })]
+    })
+    await manager.start('p1', 'pc')
+    ptys[0].emit('x')
+    await clock.advance(10_000)
+    ptys[0].exit(1)
+    await clock.advance(RC_BACKOFF_MS[0])
+    expect(deps.spawn).toHaveBeenCalledTimes(2)
+    ptys[1].emit('x')
+    await clock.advance(RC_CONFIRM_MS * 3)
+    expect(deps.saveEntries).not.toHaveBeenCalled()
+    expect(view()?.confirmed).toBe(false)
+  })
+})
+
+describe('insideGitRepo', () => {
+  const repo = String.raw`E:\Projetos\.git`
+
+  it('acha o .git na pasta ou num pai, de baixo para cima', () => {
+    const seen: string[] = []
+    const exists = (p: string): boolean => {
+      seen.push(p)
+      return p === repo
+    }
+    expect(insideGitRepo(String.raw`E:\Projetos`, exists)).toBe(true)
+    seen.length = 0
+    expect(insideGitRepo(String.raw`E:\Projetos\Sagyou\apps`, exists)).toBe(true)
+    expect(seen).toEqual([
+      String.raw`E:\Projetos\Sagyou\apps\.git`,
+      String.raw`E:\Projetos\Sagyou\.git`,
+      repo
+    ])
+  })
+
+  it('fora de um repositório = false, e para na raiz', () => {
+    const exists = (p: string): boolean => p === repo
+    expect(insideGitRepo(String.raw`E:\Outro\Sagyou`, exists)).toBe(false)
+    expect(insideGitRepo('E:\\', exists)).toBe(false)
+  })
+})
+
+describe('varredura de processos', () => {
+  it('duas chamadas seguidas = uma varredura; depois de 5 s, outra', async () => {
+    const { manager, deps, clock } = setup()
+    await manager.refresh()
+    await manager.refresh()
+    expect(deps.externalNames).toHaveBeenCalledTimes(1)
+    await clock.advance(RC_SCAN_TTL_MS)
+    await manager.refresh()
+    expect(deps.externalNames).toHaveBeenCalledTimes(2)
+  })
+
+  it('várias em voo ao mesmo tempo = uma varredura', async () => {
+    const { manager, deps } = setup()
+    await Promise.all([manager.refresh(), manager.refresh(), manager.start('p1', 'pc')])
+    expect(deps.externalNames).toHaveBeenCalledTimes(1)
+  })
+
+  it('refreshProjects não varre os processos', async () => {
+    const { manager, deps, ptys, setProjects } = setup()
+    await manager.start('p1', 'pc')
+    deps.externalNames.mockClear()
+    setProjects([])
+    manager.refreshProjects()
+    expect(ptys[0].killed).toBe(true)
+    expect(deps.externalNames).not.toHaveBeenCalled()
+  })
+
+  it('outro processo com o nome do nosso servidor: avisa da tarefa antiga', async () => {
+    const { manager, clock, ptys, state, view } = setup()
+    await manager.start('p1', 'pc')
+    ptys[0].emit('x')
+    state.external = ['Sagyou', 'sagyou']
+    await clock.advance(RC_SCAN_TTL_MS)
+    await manager.refresh()
+    expect(view()).toMatchObject({ state: 'running', error: RC_TEXT.doubled })
+    state.external = ['Sagyou']
+    await clock.advance(RC_SCAN_TTL_MS)
+    await manager.refresh()
+    expect(view()?.error).toBeNull()
+  })
+})
+
+describe('projeto renomeado', () => {
+  it('com autostart: encerra e religa com o nome novo', async () => {
+    const { manager, deps, ptys, setProjects } = setup({ entries: [entry({ autostart: true })] })
+    await manager.start('p1', 'pc')
+    setProjects([{ id: 'p1', name: 'Sagyou Novo', path: DIR }])
+    manager.refreshProjects()
+    expect(ptys[0].killed).toBe(true)
+    expect(deps.onExit).toHaveBeenCalledWith(ID)
+    expect(deps.log.info).toHaveBeenCalledWith('remote', 'server_stop', {
+      projectId: 'p1',
+      reason: 'name'
+    })
+    await flush()
+    await flush()
+    expect(deps.spawn).toHaveBeenCalledTimes(2)
+    expect(ptys[1].options.args.slice(0, 3)).toEqual(['remote-control', '--name', 'Sagyou Novo'])
+  })
+
+  it('sem autostart: só encerra', async () => {
+    const { manager, deps, ptys, setProjects } = setup()
+    await manager.start('p1', 'pc')
+    setProjects([{ id: 'p1', name: 'Sagyou Novo', path: DIR }])
+    manager.refreshProjects()
+    await flush()
+    expect(ptys[0].killed).toBe(true)
+    expect(deps.spawn).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('reopen', () => {
+  it('depois de stopAll(quit) e uma instalação abortada, volta a subir', async () => {
+    const { manager, deps } = setup({ entries: [entry({ autostart: true })] })
+    await manager.start('p1', 'pc')
+    manager.stopAll('quit')
+    expect(await manager.start('p1', 'pc')).not.toBe('ok')
+    manager.reopen()
+    await manager.startAutostart()
+    expect(deps.spawn).toHaveBeenCalledTimes(2)
   })
 })

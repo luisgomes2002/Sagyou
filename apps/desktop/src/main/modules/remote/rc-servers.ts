@@ -21,12 +21,29 @@ function namesIn(line: string): string[] {
   return out
 }
 
+// `remote-control` as a word of its own (not part of a path or a file name)...
+const RC_ARG = /(?:^|[\s"'])remote-control(?=[\s"']|$)/i
+// ...on a line that runs the Claude CLI: claude, claude.exe/.cmd/.ps1, or the
+// npm package's script.
+const CLAUDE_CLI =
+  /(?:^|[\s"'\\/])claude(?:\.exe|\.cmd|\.ps1)?(?=[\s"']|$)|[\\/]@anthropic-ai[\\/]claude-code[\\/]/i
+
+/**
+ * Names on a line that really runs a `claude remote-control` server: the same
+ * test as the kill, so another process that merely carries
+ * "remote-control --name X" on its line never counts as a server.
+ */
+function serverNamesIn(line: string): string[] {
+  if (!RC_ARG.test(line) || !CLAUDE_CLI.test(line)) return []
+  return namesIn(line)
+}
+
 /** Exact name match, case-insensitive, in the configured order. */
 export function matchServers(
   commandLines: string[],
   names: string[]
 ): { name: string; up: boolean }[] {
-  const running = new Set(commandLines.flatMap(namesIn).map((n) => n.toLowerCase()))
+  const running = new Set(commandLines.flatMap(serverNamesIn).map((n) => n.toLowerCase()))
   return names.map((name) => ({ name, up: running.has(name.trim().toLowerCase()) }))
 }
 
@@ -55,29 +72,25 @@ export async function listCommandLines(
 }
 
 /**
- * The --name of every `remote-control` running on this PC, as written on its
- * command line (servers this Sagyou started included: the manager tells them
- * apart). [] off Windows or on any error.
+ * The --name of every `claude remote-control` process running on this PC, as
+ * written on its command line, one per process: a name repeats when several
+ * processes carry it (servers this Sagyou started included: the manager tells
+ * them apart and counts them). [] off Windows or on any error.
  */
 export async function listRemoteControlNames(
   exec: ExecText,
   platform: NodeJS.Platform = process.platform,
   env: NodeJS.ProcessEnv = process.env
 ): Promise<string[]> {
-  return (await listCommandLines(exec, platform, env)).flatMap(namesIn)
+  return (await listCommandLines(exec, platform, env)).flatMap((line) =>
+    serverNamesIn(line).slice(0, 1)
+  )
 }
 
 // Candidates as "pid<TAB>parent<TAB>command line", never the PowerShell running
 // this search; remoteControlTargets decides which ones are really servers.
 const KILL_SCAN_SCRIPT =
   'Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match \'remote-control\' -and $_.ProcessId -ne $PID } | ForEach-Object { "$($_.ProcessId)`t$($_.ParentProcessId)`t$($_.CommandLine)" }'
-
-// `remote-control` as a word of its own (not part of a path or a file name)...
-const RC_ARG = /(?:^|[\s"'])remote-control(?=[\s"']|$)/i
-// ...on a line that runs the Claude CLI: claude, claude.exe/.cmd/.ps1, or the
-// npm package's script.
-const CLAUDE_CLI =
-  /(?:^|[\s"'\\/])claude(?:\.exe|\.cmd|\.ps1)?(?=[\s"']|$)|[\\/]@anthropic-ai[\\/]claude-code[\\/]/i
 
 /**
  * PIDs to end for "Cortar acesso": a `claude remote-control` server, or the

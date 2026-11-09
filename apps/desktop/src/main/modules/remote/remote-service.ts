@@ -519,7 +519,7 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
           result = 'unknown-server'
         }
         if (result !== 'ok') return reply(from, env.nonce, false, { reason: result })
-        accepted()
+        // Not accepted(): it passes while suspended, so it must not clear the count.
         return reply(from, env.nonce, true)
       }
       case 'approval-answer': {

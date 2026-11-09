@@ -5,8 +5,10 @@
 // with the project's folder as the working directory and no shell in between.
 // Its terminal (`server:<projectId>`) is shown in the Fleet, where the
 // first-run questions are answered at the PC: a project counts as confirmed for
-// a folder once a server started at the PC has run there for RC_CONFIRM_MS, and
-// only then may the phone start it. A server that falls is started again (only
+// a folder once a server started by "Ligar" at the PC (origin 'pc') has run
+// there for RC_CONFIRM_MS, and only then may the phone start it. A server
+// started on its own (origin 'autostart': "Iniciar com o Sagyou" or a restart)
+// never confirms: nobody is known to be at the PC. A server that falls is started again (only
 // with "Iniciar com o Sagyou") after a growing wait; one turned off by the user,
 // by the cut or by the Sagyou closing never is. A server already running outside
 // the Sagyou with the same --name is shown as such and never doubled.
@@ -14,6 +16,7 @@
 // Effects go through injected functions; this module never touches the disk,
 // the process list or node-pty itself. Logs carry the project id only: never
 // the command, the folder or the terminal output.
+import { win32 } from 'path'
 import type { ServerState } from '@sagyou/core/control/messages'
 import type { AgentPty, AgentPtyOptions } from '../agent/agent-pty'
 import type { Logger } from '../logs/logger'
@@ -27,13 +30,52 @@ export const RC_BACKOFF_MS: readonly number[] = [30_000, 60_000, 120_000, 240_00
 export const RC_STABLE_MS = 600_000
 /** Last characters of a server's terminal kept for a reconnect (as MAX_AGENT_LOG). */
 export const RC_MAX_LOG = 8000
+/** A process scan is reused this long (spec: at most one per heartbeat). */
+export const RC_SCAN_TTL_MS = 5_000
+
+/**
+ * The names a server may take. node-pty on Windows quotes an argument without
+ * escaping `"`, and `&`/`%` reach a shell through a `.cmd`: only plain names
+ * ever get to the command line.
+ */
+const SERVER_NAME = /^[\p{L}\p{N} ._()-]{1,64}$/u
+
+export function validServerName(name: string): boolean {
+  return SERVER_NAME.test(name)
+}
+
+/** Only the native executable: a `.cmd`/`.bat` runs through cmd.exe. */
+export function nativeClaude(path: string): boolean {
+  return /\.exe$/i.test(path)
+}
+
+/** `dir` or one of its parents holds a `.git` (folder, or file of a worktree). */
+export function insideGitRepo(dir: string, exists: (p: string) => boolean): boolean {
+  let current = dir
+  for (;;) {
+    if (exists(win32.join(current, '.git'))) return true
+    const parent = win32.dirname(current)
+    if (parent === current) return false
+    current = parent
+  }
+}
 
 export const RC_TEXT = {
   noClaude: 'Claude Code não encontrado',
-  startFailed: 'O servidor não subiu.'
+  startFailed: 'O servidor não subiu.',
+  badName:
+    'O nome do projeto tem caracteres que o servidor não aceita. Use letras, números, espaço, ponto, hífen, sublinhado e parênteses.',
+  notNative: 'Use o Claude Code nativo (claude.exe); o claude.cmd do npm não é aceito aqui.',
+  sameName: 'Outro projeto já usa este nome de servidor.',
+  doubled:
+    'Há outro servidor com este nome rodando (a tarefa antiga do Agendador do Windows?). Apague-a para não rodar em dobro.'
 } as const
 
-export type RcOrigin = 'pc' | 'phone'
+/**
+ * Who asked for a start: "Ligar" at the PC (the only one that confirms), the
+ * phone, or the Sagyou itself ("Iniciar com o Sagyou" and the restarts).
+ */
+export type RcOrigin = 'pc' | 'phone' | 'autostart'
 export type RcStartResult = 'ok' | 'not-confirmed' | 'cut' | 'unknown-server' | 'start-failed'
 export type RcStopResult = 'ok' | 'unknown-server'
 
@@ -63,9 +105,10 @@ export interface RcManagerDeps {
   entries: () => RcServerEntry[]
   saveEntries: (entries: RcServerEntry[]) => void
   resolveClaude: () => string | null
+  /** The folder is inside a Git repository (insideGitRepo). */
   hasGit: (dir: string) => boolean
   spawn: (options: AgentPtyOptions) => AgentPty
-  /** --name of every remote-control running on this PC (ours included). */
+  /** --name of every remote-control process on this PC (ours included), one per process. */
   externalNames: () => Promise<string[]>
   /** Ends the processes started with that --name; how many. */
   killExternal: (name: string) => Promise<number>
@@ -90,6 +133,11 @@ export interface RcManager {
   configure(projectId: string, patch: { enabled?: boolean; autostart?: boolean }): void
   startAutostart(): Promise<void>
   stopAll(reason: 'cut' | 'quit'): void
+  /** Undoes stopAll('quit') when the quit did not happen (an aborted install). */
+  reopen(): void
+  /** Cheap: ends the servers of projects removed, archived, moved or renamed. */
+  refreshProjects(): void
+  /** refreshProjects plus a process scan (reused for RC_SCAN_TTL_MS). */
   refresh(): Promise<void>
   input(id: string, data: string): boolean
   resize(id: string, cols: number, rows: number): boolean
@@ -174,6 +222,9 @@ export function createRcManager(deps: RcManagerDeps): RcManager {
   const errors = new Map<string, string>()
   const inflight = new Map<string, Promise<RcStartResult>>()
   let external = new Set<string>()
+  /** Processes per name (lowercase) in the last scan, ours included. */
+  let counts = new Map<string, number>()
+  let scan: { at: number; names: Promise<string[]> } | null = null
   let closed = false
   let lastView = ''
 
@@ -225,6 +276,9 @@ export function createRcManager(deps: RcManagerDeps): RcManager {
     const entries = deps.entries()
     return [...eligible().values()].map((p) => {
       const entry = entries.find((e) => e.projectId === p.id) ?? null
+      const t = terminals.get(p.id)
+      // Ours is one process with that name: any other one is a second server.
+      const doubled = !!t?.pty && (counts.get(key(t.name)) ?? 0) > 1
       return {
         projectId: p.id,
         name: p.name,
@@ -232,7 +286,7 @@ export function createRcManager(deps: RcManagerDeps): RcManager {
         autostart: entry?.autostart ?? false,
         state: stateOf(p, entry),
         confirmed: isConfirmed(entry, p.path),
-        error: errors.get(p.id) ?? null
+        error: errors.get(p.id) ?? (doubled ? RC_TEXT.doubled : null)
       }
     })
   }
@@ -250,12 +304,55 @@ export function createRcManager(deps: RcManagerDeps): RcManager {
     return reason
   }
 
+  /** At most one scan in flight; a result is reused for RC_SCAN_TTL_MS. */
+  function scanNames(): Promise<string[]> {
+    if (scan && deps.now() - scan.at < RC_SCAN_TTL_MS) return scan.names
+    const names = deps.externalNames().then(
+      (list) => list.map(key),
+      (): string[] => []
+    )
+    scan = { at: deps.now(), names }
+    return names
+  }
+
   async function runningNames(): Promise<Set<string>> {
-    try {
-      return new Set((await deps.externalNames()).map(key))
-    } catch {
-      return new Set()
+    const names = await scanNames()
+    counts = new Map()
+    for (const n of names) counts.set(n, (counts.get(n) ?? 0) + 1)
+    return new Set(names)
+  }
+
+  /** The project's name may not reach a command line, or another project uses it. */
+  function nameRefused(p: EligibleProject): boolean {
+    if (!validServerName(p.name)) {
+      errors.set(p.id, RC_TEXT.badName)
+      deps.log.info('remote', 'server_refused', { projectId: p.id, reason: 'name' })
+      return true
     }
+    const clash = [...eligible().values()].some(
+      (o) => o.id !== p.id && key(o.name) === key(p.name) && !!entryOf(o.id)?.enabled
+    )
+    if (clash) {
+      errors.set(p.id, RC_TEXT.sameName)
+      deps.log.info('remote', 'server_refused', { projectId: p.id, reason: 'same-name' })
+      return true
+    }
+    return false
+  }
+
+  /** The claude to run, or null with the error set. */
+  function serverClaude(projectId: string): string | null {
+    const claude = deps.resolveClaude()
+    if (!claude) {
+      errors.set(projectId, RC_TEXT.noClaude)
+      return null
+    }
+    if (!nativeClaude(claude)) {
+      errors.set(projectId, RC_TEXT.notNative)
+      deps.log.info('remote', 'server_refused', { projectId, reason: 'claude' })
+      return null
+    }
+    return claude
   }
 
   function append(t: Terminal, chunk: string): void {
@@ -284,6 +381,8 @@ export function createRcManager(deps: RcManagerDeps): RcManager {
   }
 
   function launch(t: Terminal, claude: string): boolean {
+    // The last gate before the command line, whatever the path that got here.
+    if (!validServerName(t.name) || !nativeClaude(claude)) return false
     t.gen += 1
     const gen = t.gen
     t.gotData = false
@@ -379,13 +478,14 @@ export function createRcManager(deps: RcManagerDeps): RcManager {
       notify()
       return
     }
-    const claude = deps.resolveClaude()
+    const claude = serverClaude(t.projectId)
     if (!claude) {
-      errors.set(t.projectId, RC_TEXT.noClaude)
       end(t)
       notify()
       return
     }
+    // A restart is the Sagyou's own: it never confirms the project.
+    t.origin = 'autostart'
     if (!launch(t, claude)) {
       errors.set(t.projectId, RC_TEXT.startFailed)
       end(t)
@@ -410,9 +510,8 @@ export function createRcManager(deps: RcManagerDeps): RcManager {
       return 'ok'
     }
     external.delete(key(p.name))
-    const claude = deps.resolveClaude()
+    const claude = serverClaude(p.id)
     if (!claude) {
-      errors.set(p.id, RC_TEXT.noClaude)
       if (existing) end(existing)
       return refused(p.id, 'start-failed')
     }
@@ -452,7 +551,7 @@ export function createRcManager(deps: RcManagerDeps): RcManager {
     const p = projectOf(projectId)
     if (!p) return refused(projectId, 'unknown-server')
     const entry = entryOf(projectId)
-    if (origin === 'phone' && !entry?.enabled) return refused(projectId, 'unknown-server')
+    if (origin !== 'pc' && !entry?.enabled) return refused(projectId, 'unknown-server')
     if (deps.accessCut()) return refused(projectId, 'cut')
     const pending = inflight.get(projectId)
     if (pending) return pending
@@ -460,6 +559,10 @@ export function createRcManager(deps: RcManagerDeps): RcManager {
     if (t?.pty) return 'ok'
     if (origin === 'phone' && !isConfirmed(entry, p.path)) {
       return refused(projectId, 'not-confirmed')
+    }
+    if (nameRefused(p)) {
+      notify()
+      return 'start-failed'
     }
     // "Ligar" at the PC turns the project's server on.
     if (origin === 'pc' && !entry?.enabled) updateEntry(projectId, { enabled: true })
@@ -497,6 +600,8 @@ export function createRcManager(deps: RcManagerDeps): RcManager {
         // The next refresh shows whether it is still there.
       }
       external.delete(key(p.name))
+      // The last scan still lists it: the next one must look again.
+      scan = null
       deps.log.info('remote', 'server_stop', { projectId, external: true })
       notify()
     }
@@ -527,7 +632,7 @@ export function createRcManager(deps: RcManagerDeps): RcManager {
     const projects = eligible()
     for (const entry of deps.entries()) {
       if (!entry.enabled || !entry.autostart || !projects.has(entry.projectId)) continue
-      await start(entry.projectId, 'pc')
+      await start(entry.projectId, 'autostart')
     }
   }
 
@@ -540,19 +645,32 @@ export function createRcManager(deps: RcManagerDeps): RcManager {
     notify()
   }
 
-  async function refresh(): Promise<void> {
+  function reopen(): void {
+    closed = false
+  }
+
+  function refreshProjects(): void {
     if (!supported || closed) return
     const projects = eligible()
     for (const t of [...terminals.values()]) {
       const p = projects.get(t.projectId)
-      if (p && p.path === t.path) continue
-      // Removed, archived, without a folder, or moved to another folder.
+      if (p && p.path === t.path && p.name === t.name) continue
+      // Removed, archived, without a folder, moved to another folder, or
+      // renamed: a server keeps the --name it started with.
       end(t)
-      deps.log.info('remote', 'server_stop', {
-        projectId: t.projectId,
-        reason: p ? 'path' : 'removed'
-      })
+      const reason = !p ? 'removed' : p.path !== t.path ? 'path' : 'name'
+      deps.log.info('remote', 'server_stop', { projectId: t.projectId, reason })
+      const entry = entryOf(t.projectId)
+      if (reason === 'name' && entry?.enabled && entry.autostart) {
+        void start(t.projectId, 'autostart')
+      }
     }
+    notify()
+  }
+
+  async function refresh(): Promise<void> {
+    if (!supported || closed) return
+    refreshProjects()
     const names = await runningNames()
     // A name of a terminal of ours is ours, not one from outside.
     const ours = new Set([...terminals.values()].filter((t) => t.pty).map((t) => key(t.name)))
@@ -603,6 +721,8 @@ export function createRcManager(deps: RcManagerDeps): RcManager {
     configure,
     startAutostart,
     stopAll,
+    reopen,
+    refreshProjects,
     refresh,
     input,
     resize,

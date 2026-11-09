@@ -225,6 +225,7 @@ import {
 } from './modules/remote/rc-servers'
 import {
   createRcManager,
+  insideGitRepo,
   projectServerPath,
   type RcManager,
   type RcProject
@@ -1834,8 +1835,9 @@ app.whenReady().then(() => {
   ipcMain.handle('store:save', (_, data) => {
     saveData(data)
     syncEngine?.notifySaved()
-    // A project archived, removed or with another folder ends its server.
-    void rcManager?.refresh()
+    // A project archived, removed, renamed or with another folder ends its
+    // server. No process scan here: that is the heartbeat's (refresh).
+    rcManager?.refreshProjects()
   })
   ipcMain.handle('store:rebuild-search-index', () => rebuildSearchIndex())
   ipcMain.handle('search:global', (_, options: unknown) => searchGlobalIndex(options))
@@ -1977,7 +1979,7 @@ app.whenReady().then(() => {
     // unlock); before that, the first store:load reads it from the database.
     emitRemoteChanges: (change) => {
       if (rendererHasData) sendToRenderer('sync:remote-changes', change)
-      void rcManager?.refresh()
+      rcManager?.refreshProjects()
     },
     isHeld: () => updater.isSyncHeld(),
     log
@@ -2013,6 +2015,9 @@ app.whenReady().then(() => {
       // The current version keeps running: the X hides to the tray again.
       isQuitting = false
       managedWindow?.abortInstall()
+      // before-quit already ended the servers and closed the manager.
+      rcManager?.reopen()
+      void rcManager?.startAutostart()
     },
     openExternal: (url) => {
       const safe = safeExternalUrl(url)
@@ -2085,7 +2090,7 @@ app.whenReady().then(() => {
       entries: () => remoteConfig.servers,
       saveEntries: (servers) => saveRemote({ ...remoteConfig, servers }),
       resolveClaude: () => resolveExecutable('claude'),
-      hasGit: (dir) => existsSync(join(dir, '.git')),
+      hasGit: (dir) => insideGitRepo(dir, existsSync),
       spawn: (options) => startAgentPty(options),
       externalNames: () => listRemoteControlNames(execText),
       killExternal: (name) => killRemoteControlServerNamed(execText, name),

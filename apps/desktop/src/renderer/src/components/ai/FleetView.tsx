@@ -121,7 +121,9 @@ export function FleetView({
     if (selected && items.some((item) => item.key === selected)) return selected
     if (selected?.startsWith('run:') && !hydrated) return selected
     if (selected?.startsWith('server:') && !serversLoaded) return selected
-    return items[0]?.key ?? NEW
+    // Only a code session is a fallback: a server tab opens by a click or by
+    // the selection Configurações leaves, never on its own.
+    return items.find((item) => item.kind === 'run')?.key ?? NEW
   }, [selected, items, hydrated, serversLoaded])
 
   useEffect(() => {

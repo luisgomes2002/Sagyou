@@ -934,6 +934,14 @@ describe('remote-service: servidores de Remote Control', () => {
     }
   )
 
+  it('server-stop aceito não zera o contador de recusas', async () => {
+    const t = setup()
+    t.setConfig({ ...t.config(), failures: 3 })
+    await t.deliver(t.request('server-stop', { projectId: 'p1' }))
+    expect(t.lastResult()?.ok).toBe(true)
+    expect(t.config().failures).toBe(3)
+  })
+
   it('server-stop de projeto desconhecido responde unknown-server sem contar', async () => {
     const t = setup()
     ;(t.deps.stopServer as ReturnType<typeof vi.fn>).mockResolvedValueOnce('unknown-server')

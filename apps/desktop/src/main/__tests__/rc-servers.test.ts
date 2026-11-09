@@ -256,9 +256,34 @@ describe('listRemoteControlNames', () => {
   it('devolve o --name de cada remote-control em execução', async () => {
     const exec = vi.fn<ExecText>(
       async () =>
-        'claude.exe remote-control --name "Sagyou Beta"\r\nnode cli.js remote-control --name Murasaki\r\nCode.exe E:\\remote-control\r\n'
+        'claude.exe remote-control --name "Sagyou Beta"\r\n' +
+        String.raw`node C:\npm\node_modules\@anthropic-ai\claude-code\cli.js remote-control --name Murasaki` +
+        '\r\n' +
+        String.raw`Code.exe E:\remote-control` +
+        '\r\n'
     )
     expect(await listRemoteControlNames(exec, 'win32', {})).toEqual(['Sagyou Beta', 'Murasaki'])
+  })
+
+  it('um nome por processo, com repetição', async () => {
+    const exec = vi.fn<ExecText>(
+      async () =>
+        'claude.exe remote-control --name "Sagyou"\r\n' +
+        'cmd.exe /c claude remote-control --name Sagyou\r\n' +
+        'claude.exe remote-control --name sagyou\r\n'
+    )
+    expect(await listRemoteControlNames(exec, 'win32', {})).toEqual(['Sagyou', 'Sagyou', 'sagyou'])
+  })
+
+  it('só conta a linha que roda o claude com remote-control como argumento', async () => {
+    const exec = vi.fn<ExecText>(
+      async () =>
+        'notepad.exe remote-control --name Sagyou\r\n' +
+        'node build.js remote-control --name Sagyou\r\n' +
+        String.raw`claude.exe E:\remote-control\x --name Sagyou` +
+        '\r\nclaude.exe remote-control --name Murasaki\r\n'
+    )
+    expect(await listRemoteControlNames(exec, 'win32', {})).toEqual(['Murasaki'])
   })
 
   it('fora do Windows não roda nada', async () => {

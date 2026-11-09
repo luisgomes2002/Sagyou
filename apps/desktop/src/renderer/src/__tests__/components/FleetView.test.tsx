@@ -441,15 +441,28 @@ describe('FleetView', () => {
         'group',
         { name: 'Sessões ativas' }
       )
-      expect(
+      // A server tab opens by a click, never on its own.
+      await userEvent.click(
         await within(tabs).findByRole('button', { name: /^Servidor: Sagyou — / })
-      ).toBeInTheDocument()
+      )
       expect(await screen.findByRole('heading', { name: 'Servidor: Sagyou' })).toBeInTheDocument()
       expect(screen.getByTestId('server-terminal')).toHaveTextContent('server:p-sagyou')
       expect(screen.queryByRole('complementary', { name: 'Inspetor' })).not.toBeInTheDocument()
 
       await userEvent.click(screen.getByRole('button', { name: 'Desligar' }))
       expect(window.electronAPI.rcServers.stop).toHaveBeenCalledWith('p-sagyou')
+    })
+
+    it('só com um servidor rodando, o Fleet abre em Nova sessão', async () => {
+      withServers([server()])
+      render(<FleetView projects={projects} />)
+
+      expect(
+        await screen.findByRole('button', { name: /^Servidor: Sagyou — / })
+      ).not.toHaveAttribute('aria-current', 'true')
+      expect(screen.getByRole('combobox', { name: 'Projeto da sessão' })).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: 'Servidor: Sagyou' })).not.toBeInTheDocument()
+      expect(screen.queryByTestId('server-terminal')).not.toBeInTheDocument()
     })
 
     it('servidor parado ou de fora do Sagyou não ganha aba', async () => {
@@ -469,11 +482,11 @@ describe('FleetView', () => {
       withServers([server({ state: 'needs-confirm', confirmed: false })])
       render(<FleetView projects={projects} />)
 
-      expect(
+      await userEvent.click(
         await screen.findByRole('button', { name: /^Servidor: Sagyou — Precisa de você/ })
-      ).toBeInTheDocument()
+      )
       expect(
-        screen.getByText(
+        await screen.findByText(
           'Responda às perguntas do Claude no Fleet. Depois disso, o celular também liga este servidor.'
         )
       ).toBeInTheDocument()
