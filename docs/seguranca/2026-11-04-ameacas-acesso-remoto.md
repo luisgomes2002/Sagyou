@@ -190,3 +190,21 @@ Decidido por Luis; construído na spec `docs/specs/2026-11-07-endurecer-acesso-r
 - **Dívida:** a senha do "Estou longe do PC" vai cifrada só com a chave de sync; selá-la
   para a chave pública do PC muda o protocolo, e um celular novo ainda não conhece essa
   chave. Fica para uma spec futura.
+
+## 8. 2026-11-09: o Sagyou sobe os servidores
+
+Spec `docs/specs/2026-11-09-servidores-remote-control.md`. A tarefa de logon do Agendador
+do Windows (decisão A) foi substituída: o próprio Sagyou sobe um
+`claude remote-control --name "<projeto>"` por projeto, num PTY sem shell no meio, e o
+celular só liga um projeto já confirmado na tela do PC (o autostart e o religar nunca
+confirmam). A tarefa antiga deve ser apagada; enquanto ela existir, o Sagyou avisa que há
+outro servidor com o mesmo nome rodando.
+
+- **C1 da revisão (corrigido):** o nome do projeto vai para a linha de comando, e o
+  node-pty no Windows não escapa `"`, `&` e `%` (um `claude.cmd` passa pelo cmd.exe).
+  Agora o nome só passa com letras, números, espaço, ponto, hífen, sublinhado e
+  parênteses (até 64), e só roda o `claude.exe` nativo; fora disso o servidor não sobe.
+- **Exceção consciente:** numa pasta fora de um repositório Git o servidor usa
+  `--spawn same-dir`, e as sessões escrevem direto na pasta. Isso foge da regra "o
+  executor só escreve na própria worktree" de propósito: o Remote Control é o Claude do
+  Luis, não um executor do Fleet.

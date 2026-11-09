@@ -418,7 +418,9 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
     fica só no `expo-secure-store` com biometria. Nunca logue senha, chave,
     assinatura, token do ESP32, token FCM ou conteúdo de cartão. Os servidores de Remote
     Control são do Sagyou (`rc-manager.ts`, um PTY por projeto): o celular só
-    liga um projeto já confirmado no PC, e nada sobe com o acesso cortado. O
+    liga um projeto já confirmado no PC (só o Ligar da tela confirma), e nada sobe com o
+    acesso cortado. O nome do projeto vai para a linha de comando: só passa a lista
+    branca de `validServerName` e só roda o `claude.exe` nativo. O
     protocolo é o `packages/core/src/control/`; o firmware segue `docs/esp32-api.md`.
     Detalhes no `CLAUDE.md`.
 
