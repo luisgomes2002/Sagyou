@@ -408,6 +408,28 @@ describe('timer actions', () => {
     expect(useKanbanStore.getState().activeTimers.map((t) => t.taskId)).toEqual([taskId2])
   })
 
+  it('setTimeSpent sets the total and drops a running timer without crediting it', () => {
+    const taskId2 = useKanbanStore.getState().createTask({ projectId, columnId, title: 'Task 2' })
+    useKanbanStore.getState().addTimeSpent(taskId, 3600)
+    useKanbanStore.setState({
+      activeTimers: [
+        { taskId, startedAt: Date.now() - 3 * 3600 * 1000 },
+        { taskId: taskId2, startedAt: Date.now() - 5000 }
+      ]
+    })
+    expect(useKanbanStore.getState().setTimeSpent(taskId, 1800)).toEqual({ stoppedTimer: true })
+    expect(useKanbanStore.getState().tasks.find((t) => t.id === taskId)!.timeSpent).toBe(1800)
+    expect(useKanbanStore.getState().activeTimers.map((t) => t.taskId)).toEqual([taskId2])
+    expect(useKanbanStore.getState().tasks.find((t) => t.id === taskId2)!.timeSpent).toBeUndefined()
+  })
+
+  it('setTimeSpent without a timer reports none stopped and accepts zero', () => {
+    useKanbanStore.getState().addTimeSpent(taskId, 120)
+    expect(useKanbanStore.getState().setTimeSpent(taskId, 0)).toEqual({ stoppedTimer: false })
+    expect(useKanbanStore.getState().tasks.find((t) => t.id === taskId)!.timeSpent).toBe(0)
+    expect(useKanbanStore.getState().activeTimers).toEqual([])
+  })
+
   it('starting an already-running task is a no-op (does not reset its clock)', () => {
     useKanbanStore.setState({ activeTimers: [{ taskId, startedAt: Date.now() - 5000 }] })
     useKanbanStore.getState().startTimer(taskId)

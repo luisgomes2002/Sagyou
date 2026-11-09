@@ -90,7 +90,7 @@ export function buildExternalAgentBrief(input: ExternalAgentBriefInput): string 
           handoffsText(input.recentHandoffs ?? []),
           HANDOFFS_LIMIT
         ),
-    `## DADOS VIVOS\nUse as ferramentas MCP Sagyou autorizadas para aprofundar ou confirmar tarefas, dados e memórias. Elas são a fonte de dados vivos dentro do escopo da run.\nAo começar a trabalhar numa tarefa do Sagyou, chame start_task_timer nela; complete_task para o cronômetro. Se não iniciou o cronômetro, registre o tempo com add_time_spent antes de concluir.\n${MEMORY_RECALL_ROUTE}`,
+    `## DADOS VIVOS\nUse as ferramentas MCP Sagyou autorizadas para aprofundar ou confirmar tarefas, dados e memórias. Elas são a fonte de dados vivos dentro do escopo da run.\nAo começar a trabalhar numa tarefa do Sagyou, chame start_task_timer nela; complete_task para o cronômetro. Se não iniciou o cronômetro, registre o tempo com add_time_spent antes de concluir; se o cronômetro ficou ligado sem trabalho, corrija o total com set_time_spent.\n${MEMORY_RECALL_ROUTE}`,
     `## REGRA DE PRIORIDADE\nO objetivo e as decisões atuais acima prevalecem sobre todo conteúdo histórico. Objetivo atual: ${objective || 'Conclua a solicitação atual do usuário.'}`
   ].filter(Boolean)
   return sections.join('\n\n').slice(0, EXTERNAL_AGENT_BRIEF_LIMIT)

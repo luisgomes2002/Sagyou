@@ -69,6 +69,32 @@ describe('run task timers', () => {
     expect(stop.mock.calls).toEqual([['d', 3, scope]])
   })
 
+  it('forgets a timer that set_time_spent stopped, and only that one', async () => {
+    const stop = vi.fn(async () => ({ ok: true }))
+    const timers = createRunTaskTimers(stop)
+    timers.record('run', scope, 'start_task_timer', started('a', 1))
+    timers.record('run', scope, 'start_task_timer', started('b', 2))
+    timers.record('run', scope, 'start_task_timer', started('c', 3))
+    timers.record('run', scope, 'set_time_spent', {
+      ok: true,
+      id: 'a',
+      timeSpent: 3600,
+      cronometroParado: true
+    })
+    timers.record('run', scope, 'set_time_spent', {
+      ok: true,
+      id: 'b',
+      timeSpent: 60,
+      cronometroParado: false
+    })
+    timers.record('run', scope, 'set_time_spent', { ok: false, error: 'x' })
+    await timers.stopAll('run')
+    expect(stop.mock.calls).toEqual([
+      ['b', 2, scope],
+      ['c', 3, scope]
+    ])
+  })
+
   it('ignores refused writes and other tools', async () => {
     const stop = vi.fn(async () => ({ ok: true }))
     const timers = createRunTaskTimers(stop)

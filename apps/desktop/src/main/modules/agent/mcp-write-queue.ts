@@ -5,7 +5,19 @@ export interface McpWriteRequest {
   /** Absent means the approval card is shown, as for every write before it existed. */
   approval?: boolean
   resumo?: string
+  /**
+   * "Card asked for by the prepare step": the tool name alone needs no card,
+   * but these arguments do (e.g. `set_time_spent` lowering the total). Such a
+   * card is never answered by the run's auto mode.
+   */
+  risky?: boolean
 }
+
+/**
+ * `approvedByCard` is true when the write went through a card the user
+ * approved, so the apply step can tell it from a write that never had one.
+ */
+export type McpWriteExecute<T> = (approvedByCard: boolean) => Promise<T>
 
 export interface McpWriteOutcome<T> {
   approved: boolean
@@ -16,10 +28,16 @@ export interface McpWriteOutcome<T> {
   ended?: boolean
 }
 
-export type McpWritePrepare<T> = () => Promise<{ resumo: string } | { refuse: T }>
+/**
+ * `approval: true` asks for the card even when the tool name does not: the
+ * queue only ever adds a card, never drops one the name requires.
+ */
+export type McpWritePrepare<T> = () => Promise<
+  { resumo: string; approval?: boolean } | { refuse: T }
+>
 
 interface QueuedWrite<T> extends McpWriteRequest {
-  execute: () => Promise<T>
+  execute: McpWriteExecute<T>
   prepare?: McpWritePrepare<T>
   resolve: (outcome: McpWriteOutcome<T>) => void
   reject: (error: Error) => void
@@ -47,7 +65,7 @@ export class McpWriteQueue {
    */
   enqueue<T>(
     request: McpWriteRequest,
-    execute: () => Promise<T>,
+    execute: McpWriteExecute<T>,
     prepare?: McpWritePrepare<T>
   ): Promise<McpWriteOutcome<T>> {
     return new Promise((resolve, reject) => {
@@ -132,6 +150,10 @@ export class McpWriteQueue {
           return
         }
         write.resumo = prepared.resumo
+        if (prepared.approval === true) {
+          write.approval = true
+          write.risky = true
+        }
       }
       const approved =
         write.approval === false
@@ -140,13 +162,15 @@ export class McpWriteQueue {
               runId: write.runId,
               name: write.name,
               args: write.args,
-              resumo: write.resumo
+              resumo: write.resumo,
+              ...(write.risky ? { risky: true } : {})
             })
       if (write.cancelled) return
       if (!approved) write.resolve({ approved: false })
       else if (!this.isRunLive(runId)) write.resolve({ approved: false, ended: true })
       else {
-        const value = await write.execute()
+        // `approval: false` skipped the card; anything else reached here through an approved one.
+        const value = await write.execute(write.approval !== false)
         this.observe(write, value)
         write.resolve({ approved: true, value })
       }

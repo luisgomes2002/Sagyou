@@ -498,18 +498,22 @@ const sagyouMcp = startSagyouMcpBroker({
     const scope = { projectId: session.projectId, financialProfileId: session.financialProfileId }
     const outcome = await mcpWriteQueue.enqueue<McpActionResult>(
       { runId: session.runId, name, args, approval: externalApproval(session.runId, name) },
-      () =>
-        rendererMcpActions.request({ phase: 'apply', name, args, scope }).then((result) => {
-          // Recorded when the renderer answers, even if the run ended meanwhile
-          // (the queue rejects the caller, but the timer was started all the same).
-          // The external token has no end to stop its timers at: they stay the user's.
-          if (tracksRunState(session.runId))
-            runTaskTimers.record(session.runId, scope, name, result)
-          return result
-        }),
+      (approvedByCard) =>
+        rendererMcpActions
+          .request({ phase: 'apply', name, args, scope, approvedByCard })
+          .then((result) => {
+            // Recorded when the renderer answers, even if the run ended meanwhile
+            // (the queue rejects the caller, but the timer was started all the same).
+            // The external token has no end to stop its timers at: they stay the user's.
+            if (tracksRunState(session.runId))
+              runTaskTimers.record(session.runId, scope, name, result)
+            return result
+          }),
       async () => {
         const prepared = await rendererMcpActions.request({ phase: 'prepare', name, args, scope })
-        return prepared.ok ? { resumo: String(prepared.resumo ?? name) } : { refuse: prepared }
+        return prepared.ok
+          ? { resumo: String(prepared.resumo ?? name), approval: prepared.approval === true }
+          : { refuse: prepared }
       }
     )
     return mcpWriteResult(name, outcome)
@@ -605,6 +609,8 @@ interface CodeApprovalRequest {
   irreversivel?: boolean
   /** MCP cards only: when main stops waiting and answers the agent with a denial. */
   expiresAt?: string
+  /** MCP cards the prepare step asked for: the run's auto mode never answers them. */
+  risky?: boolean
 }
 
 interface PendingCodeApproval {
@@ -784,7 +790,8 @@ function requestMcpWriteApproval(
   runId: string,
   name: string,
   args: Record<string, unknown>,
-  resumo?: string
+  resumo?: string,
+  risky?: boolean
 ): Promise<boolean> {
   if (runId === EXTERNAL_RUN_ID) {
     // Locked or locking: nobody may answer; the queue refuses the write.
@@ -808,7 +815,8 @@ function requestMcpWriteApproval(
     id: randomUUID(),
     name: `mcp:${name}`,
     args,
-    resumo: resumo ?? mcpCardResumo(name, args)
+    resumo: resumo ?? mcpCardResumo(name, args),
+    ...(risky === true ? { risky: true } : {})
   }
   return remoteCards
     .park(
@@ -829,7 +837,14 @@ function requestMcpWriteApproval(
 }
 
 const mcpWriteQueue = new McpWriteQueue(
-  (request) => requestMcpWriteApproval(request.runId, request.name, request.args, request.resumo),
+  (request) =>
+    requestMcpWriteApproval(
+      request.runId,
+      request.name,
+      request.args,
+      request.resumo,
+      request.risky
+    ),
   isMcpWriteLive,
   recordRunActivity
 )
@@ -2890,7 +2905,7 @@ app.whenReady().then(() => {
     const resolvedApprovalIds: string[] = []
     if (run.autoApprove) {
       for (const [id, pending] of run.pendingApprovals) {
-        if (!autoApprovesPending(pending.request.name)) continue
+        if (!autoApprovesPending(pending.request.name, pending.request.risky)) continue
         run.pendingApprovals.delete(id)
         resolvedApprovalIds.push(id)
         pending.resolve(true)

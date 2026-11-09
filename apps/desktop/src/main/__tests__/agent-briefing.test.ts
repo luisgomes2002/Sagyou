@@ -81,7 +81,7 @@ describe('buildExternalAgentBrief', () => {
       memories: []
     })
     expect(brief).toContain(
-      'Ao começar a trabalhar numa tarefa do Sagyou, chame start_task_timer nela; complete_task para o cronômetro. Se não iniciou o cronômetro, registre o tempo com add_time_spent antes de concluir.'
+      'Ao começar a trabalhar numa tarefa do Sagyou, chame start_task_timer nela; complete_task para o cronômetro. Se não iniciou o cronômetro, registre o tempo com add_time_spent antes de concluir; se o cronômetro ficou ligado sem trabalho, corrija o total com set_time_spent.'
     )
   })
 })

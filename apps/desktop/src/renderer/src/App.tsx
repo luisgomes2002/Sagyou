@@ -216,7 +216,12 @@ export default function App() {
         const result =
           request.phase === 'prepare'
             ? prepareMcpAction(request.name, request.args, request.scope)
-            : applyMcpAction(request.name, request.args, request.scope)
+            : applyMcpAction(
+                request.name,
+                request.args,
+                request.scope,
+                request.approvedByCard === true
+              )
         if (request.phase === 'apply' && result.ok) await useKanbanStore.getState()._flushPersist()
         window.electronAPI.store.respondMcpAction(requestId, result)
       } catch (error) {

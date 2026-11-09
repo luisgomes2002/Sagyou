@@ -191,6 +191,83 @@ describe('McpWriteQueue preparation and optional approval', () => {
     )
   })
 
+  it('a prepare can ask for the card, which then counts as risky', async () => {
+    const approve = vi.fn(async () => true)
+    const queue = new McpWriteQueue(approve)
+    const write = vi.fn(async () => 'set')
+    await expect(
+      queue.enqueue(
+        { runId: 'run-1', name: 'set_time_spent', args: {}, approval: false },
+        write,
+        async () => ({ resumo: 'Corrigir o tempo', approval: true })
+      )
+    ).resolves.toEqual({ approved: true, value: 'set' })
+    expect(approve).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'set_time_spent', resumo: 'Corrigir o tempo', risky: true })
+    )
+    expect(write).toHaveBeenCalledOnce()
+  })
+
+  it('a card asked for by the prepare and denied never executes', async () => {
+    const queue = new McpWriteQueue(async () => false)
+    const write = vi.fn(async () => 'set')
+    await expect(
+      queue.enqueue(
+        { runId: 'run-1', name: 'set_time_spent', args: {}, approval: false },
+        write,
+        async () => ({ resumo: 'Corrigir o tempo', approval: true })
+      )
+    ).resolves.toEqual({ approved: false })
+    expect(write).not.toHaveBeenCalled()
+  })
+
+  it('a prepare without approval keeps a no-approval write without a card', async () => {
+    const approve = vi.fn(async () => true)
+    const queue = new McpWriteQueue(approve)
+    await expect(
+      queue.enqueue(
+        { runId: 'run-1', name: 'set_time_spent', args: {}, approval: false },
+        async () => 'set',
+        async () => ({ resumo: 'Corrigir o tempo' })
+      )
+    ).resolves.toEqual({ approved: true, value: 'set' })
+    expect(approve).not.toHaveBeenCalled()
+  })
+
+  it('tells execute whether the write went through an approved card', async () => {
+    const queue = new McpWriteQueue(async () => true)
+    const seen: boolean[] = []
+    const execute = async (approvedByCard: boolean): Promise<string> => {
+      seen.push(approvedByCard)
+      return 'ok'
+    }
+    await queue.enqueue(
+      { runId: 'run-1', name: 'set_time_spent', args: {}, approval: false },
+      execute,
+      async () => ({ resumo: 'Definir o tempo' })
+    )
+    await queue.enqueue(
+      { runId: 'run-1', name: 'set_time_spent', args: {}, approval: false },
+      execute,
+      async () => ({ resumo: 'Diminuir o tempo', approval: true })
+    )
+    await queue.enqueue({ runId: 'run-1', name: 'delete_task', args: {}, approval: true }, execute)
+    await queue.enqueue({ runId: 'run-1', name: 'save_memory', args: {} }, execute)
+    expect(seen).toEqual([false, true, true, true])
+  })
+
+  it('a prepare never drops a card the tool name requires', async () => {
+    const approve = vi.fn(async () => true)
+    const queue = new McpWriteQueue(approve)
+    await queue.enqueue(
+      { runId: 'run-1', name: 'delete_task', args: {}, approval: true },
+      async () => 'ok',
+      async () => ({ resumo: 'Excluir tarefa "X"', approval: false })
+    )
+    expect(approve).toHaveBeenCalledOnce()
+    expect(approve).toHaveBeenCalledWith(expect.not.objectContaining({ risky: true }))
+  })
+
   it('a run that ended before execute does not execute, even without approval', async () => {
     let live = true
     const queue = new McpWriteQueue(

@@ -57,6 +57,9 @@ export function createRunTaskTimers(
       run.timers.set(result.id, result.startedAt)
       runs.set(runId, run)
     } else if (RELEASES_TIMER.has(tool)) runs.get(runId)?.timers.delete(result.id)
+    // A time correction stops the timer without crediting it: it is no longer the run's.
+    else if (tool === 'set_time_spent' && result.cronometroParado === true)
+      runs.get(runId)?.timers.delete(result.id)
   }
 
   const stopAll = async (runId: string): Promise<void> => {

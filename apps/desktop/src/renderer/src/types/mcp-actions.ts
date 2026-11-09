@@ -20,6 +20,7 @@ export const MCP_RENDERER_WRITE_TOOLS = [
   'start_task_timer',
   'stop_task_timer',
   'add_time_spent',
+  'set_time_spent',
   'create_sprint',
   'create_goal',
   'update_goal',
@@ -51,6 +52,8 @@ export interface McpActionRequest {
   name: string
   args: Record<string, unknown>
   scope: McpScope
+  /** Apply only: the write went through a card the user approved. Absent = no card. */
+  approvedByCard?: boolean
 }
 
 export type McpActionResult =

@@ -213,6 +213,21 @@ export const MCP_WRITE_TOOLS: McpToolDefinition[] = [
     ['seconds']
   ),
   tool(
+    'set_time_spent',
+    'Define o tempo gasto total de uma tarefa (corrige um cronômetro que ficou ligado à toa). Diminuir pede aprovação; com o cronômetro rodando, ele é parado sem somar.',
+    {
+      projectId,
+      ...taskRef,
+      seconds: {
+        type: 'integer',
+        minimum: 0,
+        maximum: 31536000,
+        description: 'Total em segundos (0 a 31536000).'
+      }
+    },
+    ['seconds']
+  ),
+  tool(
     'create_goal',
     'Cria uma meta de quantidade ou de conclusão única.',
     {
@@ -407,6 +422,7 @@ export const MCP_NO_APPROVAL: ReadonlySet<string> = new Set<McpWriteTool>([
   'start_task_timer',
   'stop_task_timer',
   'add_time_spent',
+  'set_time_spent',
   'create_sprint',
   'create_goal',
   'update_goal',
@@ -437,7 +453,9 @@ export const MCP_DENIAL_MESSAGE: Record<string, string> = {
   remove_financial_category: 'Exclusão não aprovada pelo usuário.',
   create_financial_profile: 'Criação não aprovada pelo usuário.',
   rename_financial_profile: 'Edição não aprovada pelo usuário.',
-  delete_memory: 'Exclusão não aprovada pelo usuário.'
+  delete_memory: 'Exclusão não aprovada pelo usuário.',
+  // No card by name: only when the prepare asks for one (lowering the time).
+  set_time_spent: 'Correção não aprovada pelo usuário.'
 }
 
 export const MCP_RUN_ENDED = 'A execução MCP foi encerrada.'
@@ -445,9 +463,12 @@ export const MCP_RUN_ENDED = 'A execução MCP foi encerrada.'
 /**
  * Whether turning a run's auto mode on may answer this pending card. Auto mode
  * is about the code agent's own actions: a risky MCP write and the final patch
- * delivery always need the user's explicit answer.
+ * delivery always need the user's explicit answer. `risky` marks a card the
+ * prepare step asked for (a write risky only for its arguments), never answered
+ * by auto mode either.
  */
-export function autoApprovesPending(requestName: string): boolean {
+export function autoApprovesPending(requestName: string, risky?: boolean): boolean {
+  if (risky === true) return false
   if (requestName === 'aplicar_alteracoes_externas') return false
   return !(requestName.startsWith('mcp:') && MCP_APPROVAL_REQUIRED.has(requestName.slice(4)))
 }
