@@ -703,9 +703,7 @@ describe('store do controle remoto', () => {
     })
 
     it('hora do corte em HH:MM', () => {
-      expect(accessCutText(new Date(2026, 10, 7, 9, 5).getTime())).toBe(
-        'Acesso cortado em 09:05.'
-      )
+      expect(accessCutText(new Date(2026, 10, 7, 9, 5).getTime())).toBe('Acesso cortado em 09:05.')
     })
   })
 })
