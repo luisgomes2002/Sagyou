@@ -1,7 +1,12 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
 import { ControlError, type ControlClient, type InboxMessage } from '@sagyou/core/control/client'
-import { newSigningKeys, pairingCode, publicKeyOf } from '@sagyou/core/control/crypto'
+import {
+  newSigningKeys,
+  pairingCode,
+  publicKeyOf,
+  sealPasswordToPc
+} from '@sagyou/core/control/crypto'
 import {
   checkEnvelope,
   signEnvelope,
@@ -585,6 +590,11 @@ describe('remote-service: autorização', () => {
     name: 'Pixel 9',
     publicKey: toBase64(publicKeyOf(key))
   })
+  /** authorize-remote as the phone sends it: the password sealed to this PC's key. */
+  const remoteBody = (t: Setup, key: Uint8Array, password: string): Record<string, unknown> => ({
+    ...authBody(key),
+    sealedPassword: sealPasswordToPc(t.pc.publicKey, publicKeyOf(key), password)
+  })
 
   it('pedido de autorização cria pendência com o código e some em 10 min', async () => {
     const t = setup({ controllers: 'none' })
@@ -681,7 +691,7 @@ describe('remote-service: autorização', () => {
     await t.deliver(
       t.request(
         'authorize-remote',
-        { ...authBody(newPhone.privateKey), password: 'chute' },
+        remoteBody(t, newPhone.privateKey, 'chute'),
         { from: OTHER, key: newPhone.privateKey }
       )
     )
@@ -700,12 +710,12 @@ describe('remote-service: autorização', () => {
     await t.deliver(
       t.request(
         'authorize-remote',
-        { ...authBody(a.privateKey), password: 'chute 1' },
+        remoteBody(t, a.privateKey, 'chute 1'),
         { from: OTHER, key: a.privateKey }
       ),
       t.request(
         'authorize-remote',
-        { ...authBody(b.privateKey), password: 'chute 2' },
+        remoteBody(t, b.privateKey, 'chute 2'),
         { from: THIRD, key: b.privateKey }
       )
     )
@@ -719,7 +729,7 @@ describe('remote-service: autorização', () => {
     await t.deliver(
       t.request(
         'authorize-remote',
-        { ...authBody(newPhone.privateKey), password: PASSWORD },
+        remoteBody(t, newPhone.privateKey, PASSWORD),
         { from: OTHER, key: newSigningKeys().privateKey }
       )
     )
@@ -735,7 +745,7 @@ describe('remote-service: autorização', () => {
     await t.deliver(
       t.request(
         'authorize-remote',
-        { ...authBody(newPhone.privateKey), password: PASSWORD },
+        remoteBody(t, newPhone.privateKey, PASSWORD),
         { from: OTHER, key: newPhone.privateKey }
       )
     )
@@ -751,13 +761,88 @@ describe('remote-service: autorização', () => {
     expect(t.deps.log.info).toHaveBeenCalledWith('remote', 'authorize_remote', { result: 'ok' })
   })
 
+  it('senha selada para outra chave de PC: shape, não conta e não confere a senha', async () => {
+    const t = setup()
+    const newPhone = newSigningKeys()
+    const sealedPassword = sealPasswordToPc(
+      newSigningKeys().publicKey,
+      publicKeyOf(newPhone.privateKey),
+      PASSWORD
+    )
+    await t.deliver(
+      t.request(
+        'authorize-remote',
+        { ...authBody(newPhone.privateKey), sealedPassword },
+        { from: OTHER, key: newPhone.privateKey }
+      )
+    )
+    expect(t.deps.verifyPassword).not.toHaveBeenCalled()
+    expect(t.config().failures).toBe(0)
+    expect(t.lastResult()).toMatchObject({ ok: false, reason: 'shape' })
+    expect(t.client.removeController).toHaveBeenCalledWith(OTHER)
+    expect(t.config().controllers.map((c) => c.id)).toEqual([PHONE])
+  })
+
+  it('selo copiado de outro celular não abre (AAD amarra a chave do pedido)', async () => {
+    const t = setup()
+    const victim = newSigningKeys()
+    const attacker = newSigningKeys()
+    const copied = sealPasswordToPc(t.pc.publicKey, publicKeyOf(victim.privateKey), PASSWORD)
+    await t.deliver(
+      t.request(
+        'authorize-remote',
+        { ...authBody(attacker.privateKey), sealedPassword: copied },
+        { from: OTHER, key: attacker.privateKey }
+      )
+    )
+    expect(t.deps.verifyPassword).not.toHaveBeenCalled()
+    expect(t.lastResult()).toMatchObject({ ok: false, reason: 'shape' })
+    expect(t.config().controllers.map((c) => c.id)).toEqual([PHONE])
+  })
+
+  it('celular antigo (senha sem selo): outdated, não confere, não conta e remove o papel', async () => {
+    const t = setup()
+    for (let i = 0; i < 6; i++) {
+      const old = newSigningKeys()
+      await t.deliver(
+        t.request(
+          'authorize-remote',
+          { ...authBody(old.privateKey), password: PASSWORD },
+          { from: OTHER, key: old.privateKey }
+        )
+      )
+      t.advance(1000)
+    }
+    expect(t.deps.verifyPassword).not.toHaveBeenCalled()
+    expect(t.config().failures).toBe(0)
+    expect(t.config().suspendedUntil).toBeNull()
+    expect(t.results().every((r) => r.ok === false && r.reason === 'outdated')).toBe(true)
+    expect(t.results()).toHaveLength(6)
+    expect(t.client.removeController).toHaveBeenCalledWith(OTHER)
+    expect(t.config().controllers.map((c) => c.id)).toEqual([PHONE])
+  })
+
+  it('celular antigo com assinatura inválida segue o caminho da assinatura, sem outdated', async () => {
+    const t = setup()
+    const old = newSigningKeys()
+    await t.deliver(
+      t.request(
+        'authorize-remote',
+        { ...authBody(old.privateKey), password: PASSWORD },
+        { from: OTHER, key: newSigningKeys().privateKey }
+      )
+    )
+    expect(t.lastResult()).toMatchObject({ ok: false, reason: 'signature' })
+    expect(t.config().failures).toBe(0)
+  })
+
   it('autorização à distância com senha errada remove o papel no Worker e responde wrong-password', async () => {
     const t = setup()
     const newPhone = newSigningKeys()
     await t.deliver(
       t.request(
         'authorize-remote',
-        { ...authBody(newPhone.privateKey), password: 'errada' },
+        remoteBody(t, newPhone.privateKey, 'errada'),
         { from: OTHER, key: newPhone.privateKey }
       )
     )
@@ -775,7 +860,7 @@ describe('remote-service: autorização', () => {
     await t.deliver(
       t.request(
         'authorize-remote',
-        { ...authBody(newPhone.privateKey), password: PASSWORD },
+        remoteBody(t, newPhone.privateKey, PASSWORD),
         { from: OTHER, key: newPhone.privateKey }
       )
     )

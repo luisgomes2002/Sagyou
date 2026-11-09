@@ -26,7 +26,12 @@ import {
   type InboxMessage,
   type NotifyCode
 } from '@sagyou/core/control/client'
-import { pairingCode, publicKeyOf } from '@sagyou/core/control/crypto'
+import {
+  ControlDecryptError,
+  openPasswordFromPc,
+  pairingCode,
+  publicKeyOf
+} from '@sagyou/core/control/crypto'
 import {
   CLOCK_SKEW_MS,
   MAX_TTL_MS,
@@ -343,7 +348,23 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
     markSeen(env, now)
     const until = suspendedUntil(now)
     if (until !== null) return refuse('suspended', { until })
-    if (!deps.verifyPassword(body.password)) {
+    // A phone from before the seal (spec 2026-11-09): signed, but its password
+    // travelled under the sync key only. Never checked, never counted.
+    if (body.outdated) {
+      ignored('outdated')
+      return refuse('outdated')
+    }
+    const priv = deps.pcPrivateKey()
+    let password: string
+    try {
+      if (!priv) throw new ControlDecryptError()
+      password = openPasswordFromPc(priv, body.key, body.sealedPassword)
+    } catch {
+      // Not sealed to this PC's key: shaped like a malformed body, not counted.
+      ignored('shape')
+      return refuse('shape')
+    }
+    if (!deps.verifyPassword(password)) {
       refused(now, 'wrong-password')
       return refuse('wrong-password')
     }
