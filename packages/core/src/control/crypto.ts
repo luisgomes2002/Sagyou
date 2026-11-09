@@ -10,10 +10,16 @@
  *   the PC and the authorized phones know (`docs/esp32-api.md` is the contract).
  */
 import { xchacha20poly1305 } from '@noble/ciphers/chacha'
-import { ed25519 } from '@noble/curves/ed25519'
+import {
+  ed25519,
+  edwardsToMontgomeryPriv,
+  edwardsToMontgomeryPub,
+  x25519
+} from '@noble/curves/ed25519'
 import {
   fromBase64,
   fromBase64Url,
+  fromUtf8,
   hkdfSha256,
   hmacSha256Hex,
   randomBytes,
@@ -124,6 +130,106 @@ function compare(a: Uint8Array, b: Uint8Array): number {
     if (a[i] !== b[i]) return a[i] - b[i]
   }
   return a.length - b.length
+}
+
+// ── Password sealed to the PC (spec docs/specs/2026-11-09-selar-senha-remota.md) ──
+//
+// The "Estou longe do PC" request carries the Sagyou password. The control subkey
+// comes from the sync key, which every paired device holds, so the password is
+// also sealed to the PC's own key: its Ed25519 key converted to X25519, an
+// ephemeral X25519 pair per request, HKDF over the shared secret and both public
+// keys, XChaCha20-Poly1305 with an AAD naming the phone and the PC. A seal copied
+// into another phone's request does not open.
+
+const PASSWORD_INFO = 'sagyou-remote-password-v1'
+const PASSWORD_MAX_BYTES = 1024
+
+function passwordAad(phonePublicKey: Uint8Array, pcPublicKey: Uint8Array): Uint8Array {
+  return utf8(
+    `sagyou-remote-password|${PROTOCOL_VERSION}|${toBase64(phonePublicKey)}|${toBase64(pcPublicKey)}`
+  )
+}
+
+function passwordKey(
+  shared: Uint8Array,
+  ephemeralPublic: Uint8Array,
+  pcX25519: Uint8Array
+): Uint8Array {
+  if (shared.every((b) => b === 0)) throw new ControlDecryptError()
+  const ikm = new Uint8Array(KEY_BYTES * 3)
+  ikm.set(shared)
+  ikm.set(ephemeralPublic, KEY_BYTES)
+  ikm.set(pcX25519, KEY_BYTES * 2)
+  return hkdfSha256(ikm, PASSWORD_INFO, KEY_BYTES)
+}
+
+function sharedSecret(privateKey: Uint8Array, publicKey: Uint8Array): Uint8Array {
+  try {
+    return x25519.getSharedSecret(privateKey, publicKey)
+  } catch {
+    throw new ControlDecryptError()
+  }
+}
+
+/**
+ * Seals the password to the PC's Ed25519 public key. Returns base64 of
+ * `ephemeral X25519 public (32) || nonce (24) || ciphertext+tag`.
+ * `random` exists only so a test can pin a vector.
+ */
+export function sealPasswordToPc(
+  pcPublicKey: Uint8Array,
+  phonePublicKey: Uint8Array,
+  password: string,
+  random: (n: number) => Uint8Array = randomBytes
+): string {
+  const plain = utf8(password)
+  if (plain.length === 0 || plain.length > PASSWORD_MAX_BYTES) {
+    throw new Error('password length out of range')
+  }
+  const pcX25519 = edwardsToMontgomeryPub(pcPublicKey)
+  const ephemeralPrivate = random(KEY_BYTES)
+  const ephemeralPublic = x25519.getPublicKey(ephemeralPrivate)
+  const key = passwordKey(sharedSecret(ephemeralPrivate, pcX25519), ephemeralPublic, pcX25519)
+  const nonce = random(NONCE_BYTES)
+  const sealed = xchacha20poly1305(key, nonce, passwordAad(phonePublicKey, pcPublicKey)).encrypt(
+    plain
+  )
+  const out = new Uint8Array(KEY_BYTES + NONCE_BYTES + sealed.length)
+  out.set(ephemeralPublic)
+  out.set(nonce, KEY_BYTES)
+  out.set(sealed, KEY_BYTES + NONCE_BYTES)
+  return toBase64(out)
+}
+
+/** Opens a password sealed by `sealPasswordToPc`; throws `ControlDecryptError`. */
+export function openPasswordFromPc(
+  pcPrivateKey: Uint8Array,
+  phonePublicKey: Uint8Array,
+  sealed: string
+): string {
+  let raw: Uint8Array
+  try {
+    raw = fromBase64(sealed)
+  } catch {
+    throw new ControlDecryptError()
+  }
+  // 16 = Poly1305 tag; an empty password never gets sealed.
+  if (raw.length <= KEY_BYTES + NONCE_BYTES + 16) throw new ControlDecryptError()
+  const pcPublicKey = ed25519.getPublicKey(pcPrivateKey)
+  const pcX25519 = edwardsToMontgomeryPub(pcPublicKey)
+  const ephemeralPublic = raw.subarray(0, KEY_BYTES)
+  const shared = sharedSecret(edwardsToMontgomeryPriv(pcPrivateKey), ephemeralPublic)
+  const key = passwordKey(shared, ephemeralPublic, pcX25519)
+  try {
+    const plain = xchacha20poly1305(
+      key,
+      raw.subarray(KEY_BYTES, KEY_BYTES + NONCE_BYTES),
+      passwordAad(phonePublicKey, pcPublicKey)
+    ).decrypt(raw.subarray(KEY_BYTES + NONCE_BYTES))
+    return fromUtf8(plain)
+  } catch {
+    throw new ControlDecryptError()
+  }
 }
 
 // ── ESP32 ───────────────────────────────────────────────────────────────────────

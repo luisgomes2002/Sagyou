@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { hmacSha256Hex, utf8 } from '../../sync/bytes'
+import { fromBase64, hmacSha256Hex, toBase64, utf8 } from '../../sync/bytes'
 import { deriveKeys } from '../../sync/crypto'
 import {
   ControlDecryptError,
@@ -7,10 +7,13 @@ import {
   newEsp32Key,
   newSigningKeys,
   openControl,
+  openPasswordFromPc,
   pairingCode,
   powerCommandMac,
   powerStateMac,
+  publicKeyOf,
   sealControl,
+  sealPasswordToPc,
   signBytes,
   verifyBytes
 } from '../crypto'
@@ -62,6 +65,79 @@ describe('assinatura Ed25519', () => {
     expect(verifyBytes(publicKey, data, flipped)).toBe(false)
     expect(verifyBytes(newSigningKeys().publicKey, data, sig)).toBe(false)
     expect(verifyBytes(publicKey, data, 'lixo')).toBe(false)
+  })
+})
+
+describe('senha selada para o PC', () => {
+  const seq = (n: number, start: number): Uint8Array =>
+    Uint8Array.from({ length: n }, (_, i) => (start + i) & 255)
+  const pc = newSigningKeys()
+  const phone = newSigningKeys()
+
+  it('selar e abrir devolve a senha', () => {
+    for (const password of ['s', 'senha çã 🔒', 'x'.repeat(1024)]) {
+      const sealed = sealPasswordToPc(pc.publicKey, phone.publicKey, password)
+      expect(openPasswordFromPc(pc.privateKey, phone.publicKey, sealed)).toBe(password)
+    }
+  })
+
+  it('dois selos da mesma senha são diferentes', () => {
+    const a = sealPasswordToPc(pc.publicKey, phone.publicKey, 'mesma')
+    const b = sealPasswordToPc(pc.publicKey, phone.publicKey, 'mesma')
+    expect(a).not.toBe(b)
+  })
+
+  it('não abre com outra chave de PC', () => {
+    const sealed = sealPasswordToPc(pc.publicKey, phone.publicKey, 'senha')
+    expect(() => openPasswordFromPc(newSigningKeys().privateKey, phone.publicKey, sealed)).toThrow(
+      ControlDecryptError
+    )
+  })
+
+  it('não abre com a chave de outro celular (selo copiado para outro pedido)', () => {
+    const sealed = sealPasswordToPc(pc.publicKey, phone.publicKey, 'senha')
+    expect(() => openPasswordFromPc(pc.privateKey, newSigningKeys().publicKey, sealed)).toThrow(
+      ControlDecryptError
+    )
+  })
+
+  it('não abre com um byte trocado, base64 inválido ou curto demais', () => {
+    const sealed = sealPasswordToPc(pc.publicKey, phone.publicKey, 'senha')
+    const raw = fromBase64(sealed)
+    for (const i of [0, 40, raw.length - 1]) {
+      const bad = raw.slice()
+      bad[i] ^= 1
+      expect(() => openPasswordFromPc(pc.privateKey, phone.publicKey, toBase64(bad))).toThrow(
+        ControlDecryptError
+      )
+    }
+    expect(() => openPasswordFromPc(pc.privateKey, phone.publicKey, '%%%')).toThrow(
+      ControlDecryptError
+    )
+    expect(() =>
+      openPasswordFromPc(pc.privateKey, phone.publicKey, toBase64(raw.subarray(0, 72)))
+    ).toThrow(ControlDecryptError)
+  })
+
+  it('recusa selar senha vazia ou acima de 1024 bytes', () => {
+    expect(() => sealPasswordToPc(pc.publicKey, phone.publicKey, '')).toThrow()
+    expect(() => sealPasswordToPc(pc.publicKey, phone.publicKey, 'x'.repeat(1025))).toThrow()
+  })
+
+  it('vetor fixo: o formato do selo não muda sem querer', () => {
+    // Computed once with an independent script over the same @noble libraries.
+    const pcFixed = seq(32, 0)
+    const phoneFixed = publicKeyOf(seq(32, 0x40))
+    const chunks = [seq(32, 0x80), seq(24, 0xc0)]
+    const sealed = sealPasswordToPc(publicKeyOf(pcFixed), phoneFixed, 'senha çã 🔒', () => {
+      const next = chunks.shift()
+      if (!next) throw new Error('random called too often')
+      return next
+    })
+    expect(sealed).toBe(
+      'ST6C/HRGSlkmiBdiPSBTxeuOLMSpiLT+4XnsawENUx3AwcLDxMXGx8jJysvMzc7P0NHS09TV1tdiwX8Aki2lvzXyRSUdHr+i/8/UwAQUweTzyDL6l5nF'
+    )
+    expect(openPasswordFromPc(pcFixed, phoneFixed, sealed)).toBe('senha çã 🔒')
   })
 })
 
