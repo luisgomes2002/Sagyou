@@ -138,3 +138,13 @@ CREATE TABLE IF NOT EXISTS push_tokens (
   token TEXT NOT NULL,
   at INTEGER NOT NULL
 );
+
+-- Public Ed25519 key of the controlled PC (spec docs/specs/2026-11-09-selar-senha-remota.md):
+-- a phone far from home seals the Sagyou password to it. Written only by the device
+-- that holds the 'pc' role; cleared when another device becomes the PC.
+CREATE TABLE IF NOT EXISTS pc_key (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  device_id TEXT NOT NULL,
+  public_key TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);

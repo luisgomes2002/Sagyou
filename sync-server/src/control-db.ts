@@ -49,8 +49,11 @@ export const MAX_PENDING_MESSAGES = 50
 
 export interface ControlDb {
   getRoles(): Promise<{ pc: string | null; controllers: string[] }>
-  /** Makes `id` the only PC (a former PC loses the role). */
+  /** Makes `id` the only PC (a former PC loses the role and its published key). */
   setPc(id: string, now: number): Promise<void>
+  /** The PC's public key (base64), as the current PC published it; null if none. */
+  getPcKey(): Promise<string | null>
+  setPcKey(id: string, key: string, now: number): Promise<void>
   addController(id: string, now: number): Promise<void>
   removeController(id: string): Promise<void>
   /** Removes every controller but `except`. */
@@ -78,6 +81,9 @@ export interface ControlDb {
   pushTokens(ids: string[]): Promise<string[]>
 }
 
+const isMissingTableError = (err: unknown): boolean =>
+  err instanceof Error && /no such table/i.test(err.message)
+
 // ── D1 ────────────────────────────────────────────────────────────────────────────
 
 export class D1ControlDb implements ControlDb {
@@ -98,6 +104,31 @@ export class D1ControlDb implements ControlDb {
         .prepare("INSERT INTO device_roles (id, role, created_at) VALUES (?1, 'pc', ?2)")
         .bind(id, now)
     ])
+    // Apart from the batch: a D1 without pc_key (schema not applied yet) still
+    // changes the PC; the new one publishes its key once the table exists.
+    try {
+      await this.db.prepare('DELETE FROM pc_key').run()
+    } catch (err) {
+      if (!isMissingTableError(err)) throw err
+    }
+  }
+
+  async getPcKey(): Promise<string | null> {
+    const row = await this.db
+      .prepare('SELECT public_key FROM pc_key WHERE id = 1')
+      .first<{ public_key: string }>()
+    return row?.public_key ?? null
+  }
+
+  async setPcKey(id: string, key: string, now: number): Promise<void> {
+    await this.db
+      .prepare(
+        `INSERT INTO pc_key (id, device_id, public_key, updated_at) VALUES (1, ?1, ?2, ?3)
+         ON CONFLICT(id) DO UPDATE SET device_id = excluded.device_id,
+           public_key = excluded.public_key, updated_at = excluded.updated_at`
+      )
+      .bind(id, key, now)
+      .run()
   }
 
   async addController(id: string, now: number): Promise<void> {
@@ -363,6 +394,7 @@ export class MemoryControlDb implements ControlDb {
   command: PowerCommandRow | null = null
   power: PowerStateRow | null = null
   push = new Map<string, string>()
+  pcKey: { deviceId: string; key: string } | null = null
 
   async getRoles(): Promise<{ pc: string | null; controllers: string[] }> {
     const rows = [...this.roles.entries()].sort((a, b) => a[1].createdAt - b[1].createdAt)
@@ -375,6 +407,15 @@ export class MemoryControlDb implements ControlDb {
   async setPc(id: string, now: number): Promise<void> {
     for (const [key, r] of this.roles) if (r.role === 'pc') this.roles.delete(key)
     this.roles.set(id, { role: 'pc', createdAt: now })
+    this.pcKey = null
+  }
+
+  async getPcKey(): Promise<string | null> {
+    return this.pcKey?.key ?? null
+  }
+
+  async setPcKey(id: string, key: string): Promise<void> {
+    this.pcKey = { deviceId: id, key }
   }
 
   async addController(id: string, now: number): Promise<void> {

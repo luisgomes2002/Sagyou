@@ -23,6 +23,8 @@ class FakeD1 implements D1Database {
   messages: Msg[] = []
   marks: { msg_id: string; expires_at: number }[] = []
   marksTable = true
+  pcKeyTable = true
+  pcKey: string | null = null
   batches: string[][] = []
 
   private exec(sql: string, args: unknown[]): D1Result<Record<string, unknown>> {
@@ -30,7 +32,22 @@ class FakeD1 implements D1Database {
       ({ results, success: true, meta: { changes } }) as unknown as D1Result<never>
     if (sql.includes('control_factor_checked') && !this.marksTable)
       throw new Error('D1_ERROR: no such table: control_factor_checked')
+    if (sql.includes('pc_key') && !this.pcKeyTable)
+      throw new Error('D1_ERROR: no such table: pc_key')
     const [a1, a2, a3, a4, a5, a6, a7] = args
+    if (sql.startsWith("DELETE FROM device_roles WHERE role = 'pc'")) return ok()
+    if (sql.startsWith('INSERT INTO device_roles')) return ok([], 1)
+    if (sql === 'DELETE FROM pc_key') {
+      this.pcKey = null
+      return ok()
+    }
+    if (sql.startsWith('INSERT INTO pc_key')) {
+      this.pcKey = String(a2)
+      return ok([], 1)
+    }
+    if (sql.startsWith('SELECT public_key FROM pc_key')) {
+      return ok(this.pcKey === null ? [] : [{ public_key: this.pcKey }])
+    }
     if (sql.startsWith('DELETE FROM control_messages WHERE expires_at')) {
       this.messages = this.messages.filter((m) => m.expires_at > Number(a1))
       return ok()
@@ -151,5 +168,25 @@ describe('D1ControlDb, caixa de entrada', () => {
     const db = new D1ControlDb(d1)
     await expect(put(db, 'restaurar', true)).rejects.toThrow(/no such table/)
     expect(d1.messages).toEqual([])
+  })
+})
+
+describe('D1ControlDb, chave do PC', () => {
+  it('trocar de PC apaga a chave publicada', async () => {
+    const d1 = new FakeD1()
+    const db = new D1ControlDb(d1)
+    await db.setPc(PC, 1)
+    await db.setPcKey(PC, 'chave', 2)
+    expect(await db.getPcKey()).toBe('chave')
+    await db.setPc(A, 3)
+    expect(await db.getPcKey()).toBeNull()
+  })
+
+  it('sem a tabela pc_key o PC ainda pode ser trocado', async () => {
+    const d1 = new FakeD1()
+    d1.pcKeyTable = false
+    const db = new D1ControlDb(d1)
+    await expect(db.setPc(PC, 1)).resolves.toBeUndefined()
+    await expect(db.getPcKey()).rejects.toThrow(/no such table/)
   })
 })

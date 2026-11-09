@@ -31,6 +31,15 @@ describe('MemoryControlDb', () => {
     expect(db.roles.has(A)).toBe(false)
   })
 
+  it('trocar de PC apaga a chave publicada pelo anterior', async () => {
+    const db = new MemoryControlDb()
+    await db.setPc(A, 1)
+    await db.setPcKey(A, 'chave-a', 2)
+    expect(await db.getPcKey()).toBe('chave-a')
+    await db.setPc(B, 3)
+    expect(await db.getPcKey()).toBeNull()
+  })
+
   it('controles entram, saem e clearControllers mantém só a exceção', async () => {
     const db = new MemoryControlDb()
     await db.setPc(A, 1)
@@ -96,7 +105,8 @@ describe('schema.sql', () => {
       'power_commands',
       'power_state',
       'push_tokens',
-      'control_factor_checked'
+      'control_factor_checked',
+      'pc_key'
     ]) {
       expect(sql).toContain(`CREATE TABLE IF NOT EXISTS ${table} (`)
     }
