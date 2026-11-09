@@ -31,10 +31,22 @@ export interface AuthorizeRequestBody {
   publicKey: string
 }
 
-/** Phone → PC through `/roles/remote`; the PC checks the Sagyou password. */
+/**
+ * Phone → PC through `/roles/remote`; the PC checks the Sagyou password, sealed
+ * to its own key (`sealPasswordToPc`), never sent under the control key alone.
+ */
 export interface AuthorizeRemoteBody extends AuthorizeRequestBody {
-  password: string
+  sealedPassword: string
 }
+
+/** base64 of ephemeral (32) + nonce (24) + up to 1024 bytes + tag (16). */
+const SEALED_PASSWORD_MAX = 2048
+
+export type ParsedAuthorizeRemote = AuthorizeRequestBody & { key: Uint8Array } & (
+    | { sealedPassword: string; outdated?: undefined }
+    /** A phone from before the seal: still signed, so it is checked, then refused. */
+    | { outdated: true; sealedPassword?: undefined }
+  )
 
 export function parseAuthorizeRequest(
   body: unknown
@@ -45,13 +57,14 @@ export function parseAuthorizeRequest(
   return key ? { name: b.name, publicKey: b.publicKey as string, key } : null
 }
 
-export function parseAuthorizeRemote(
-  body: unknown
-): (AuthorizeRemoteBody & { key: Uint8Array }) | null {
+export function parseAuthorizeRemote(body: unknown): ParsedAuthorizeRemote | null {
   const base = parseAuthorizeRequest(body)
   const b = obj(body)
-  if (!base || !b || !str(b.password, 1024)) return null
-  return { ...base, password: b.password }
+  if (!base || !b) return null
+  if (str(b.sealedPassword, SEALED_PASSWORD_MAX))
+    return { ...base, sealedPassword: b.sealedPassword }
+  if (b.sealedPassword === undefined && str(b.password, 1024)) return { ...base, outdated: true }
+  return null
 }
 
 /** PC → phone: the PC's public key, which signs everything the PC sends. */
@@ -95,6 +108,8 @@ export type ResultReason =
   | 'install-failed'
   /** restore-access that did not pass the Worker's second-factor check. */
   | 'factor'
+  /** authorize-remote from a phone that sends the password without the PC seal. */
+  | 'outdated'
 
 /** PC → phone: the answer to one request, by its nonce. */
 export interface ResultBody {

@@ -22,6 +22,8 @@ import {
 
 const CIPHER = 'Y2lmcmFkbw=='
 const MAC = 'f'.repeat(64)
+/** base64 of 32 bytes. */
+const KEY = 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8='
 
 interface World {
   deps: RouteDeps
@@ -92,7 +94,61 @@ describe('papéis', () => {
     expect((await call(w, 'POST', '/roles/pc', { token: w.a, headers: proof })).status).toBe(401)
     expect((await w.control.getRoles()).pc).toBeNull()
     await makePc(w)
-    expect(await json(await call(w, 'GET', '/roles/pc', { token: w.b }))).toEqual({ pc: DEV_A })
+    expect(await json(await call(w, 'GET', '/roles/pc', { token: w.b }))).toEqual({
+      pc: DEV_A,
+      publicKey: null
+    })
+  })
+
+  it('só o PC publica a chave pública dele, e qualquer aparelho a lê', async () => {
+    const w = await world()
+    await makePc(w)
+    await makeController(w, DEV_B)
+    const byB = await call(w, 'PUT', '/roles/pc/key', { token: w.b, body: { publicKey: KEY } })
+    expect(byB.status).toBe(403)
+    const byC = await call(w, 'PUT', '/roles/pc/key', { token: w.c, body: { publicKey: KEY } })
+    expect(byC.status).toBe(403)
+    expect(await w.control.getPcKey(DEV_A)).toBeNull()
+    const ok = await call(w, 'PUT', '/roles/pc/key', { token: w.a, body: { publicKey: KEY } })
+    expect(ok.status).toBe(200)
+    expect(await json(await call(w, 'GET', '/roles/pc', { token: w.c }))).toEqual({
+      pc: DEV_A,
+      publicKey: KEY
+    })
+  })
+
+  it('chave do PC que não tem 32 bytes em base64 é recusada', async () => {
+    const w = await world()
+    await makePc(w)
+    for (const publicKey of [
+      'AAAA',
+      `${KEY.slice(0, -2)}B=`,
+      KEY.replace('=', ''),
+      `${KEY}A`,
+      42,
+      null
+    ]) {
+      const res = await call(w, 'PUT', '/roles/pc/key', { token: w.a, body: { publicKey } })
+      expect(res.status).toBe(400)
+    }
+    expect(await w.control.getPcKey(DEV_A)).toBeNull()
+  })
+
+  it('outro aparelho virar PC apaga a chave, e o PC antigo não a escreve mais', async () => {
+    const w = await world()
+    await makePc(w)
+    await call(w, 'PUT', '/roles/pc/key', { token: w.a, body: { publicKey: KEY } })
+    const res = await call(w, 'POST', '/roles/pc', {
+      token: w.b,
+      headers: { ...proof, 'x-totp-code': w.totp() }
+    })
+    expect(res.status).toBe(200)
+    expect(await json(await call(w, 'GET', '/roles/pc', { token: w.c }))).toEqual({
+      pc: DEV_B,
+      publicKey: null
+    })
+    const old = await call(w, 'PUT', '/roles/pc/key', { token: w.a, body: { publicKey: KEY } })
+    expect(old.status).toBe(403)
   })
 
   it('só o PC adiciona, lista e remove controles', async () => {
@@ -441,5 +497,22 @@ describe('Worker sem as tabelas novas', () => {
       throw new Error('D1_ERROR: no such table: device_roles')
     }
     expect((await call(w, 'GET', '/roles/pc', { token: w.a })).status).toBe(501)
+  })
+
+  it('sem a tabela pc_key: GET /roles/pc responde sem chave e o PUT dá 501', async () => {
+    const w = await world()
+    await makePc(w)
+    const missing = async (): Promise<never> => {
+      throw new Error('D1_ERROR: no such table: pc_key')
+    }
+    w.control.getPcKey = missing
+    w.control.setPcKey = missing
+    expect(await json(await call(w, 'GET', '/roles/pc', { token: w.b }))).toEqual({
+      pc: DEV_A,
+      publicKey: null
+    })
+    const put = await call(w, 'PUT', '/roles/pc/key', { token: w.a, body: { publicKey: KEY } })
+    expect(put.status).toBe(501)
+    expect(await json(put)).toEqual({ error: 'control not deployed' })
   })
 })

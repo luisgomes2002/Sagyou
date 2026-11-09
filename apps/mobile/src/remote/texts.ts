@@ -14,7 +14,11 @@ export const REMOTE_TEXT = {
   cutNoAnswer: 'O PC não respondeu. Forçar o desligamento pelo ESP32?',
   needFactor: 'Digite o código do autenticador.',
   // Item 9: the request from afar waits 1 h for the PC.
-  requestExpired: 'O pedido expirou. Ligue o PC e peça de novo.'
+  requestExpired: 'O pedido expirou. Ligue o PC e peça de novo.',
+  // Spec docs/specs/2026-11-09-selar-senha-remota.md: the password is sealed to the PC's key.
+  noPcKey: 'O PC ainda não publicou a chave dele. Atualize o Sagyou no PC e tente de novo.',
+  pcKeyChanged: 'A chave do PC mudou. Autorize este celular em casa, comparando o código.',
+  outdated: 'Atualize o Sagyou no celular.'
 } as const
 
 /** "Acesso cortado em 14:32." in the phone's local time. */

@@ -1,6 +1,8 @@
 import { checkEnvelope } from '@sagyou/core/control/messages'
 import {
+  CONTROL_SECURE_KEYS,
   KEY_ESP32,
+  KEY_PCPIN,
   KEY_PCPUB,
   KEY_PRIVATE,
   KEY_PUBLIC,
@@ -62,14 +64,24 @@ describe('chaves do controle', () => {
     expect(await keys.esp32Key()).toBeNull()
   })
 
-  it('limpar apaga tudo', async () => {
+  it('limpar apaga a autorização e mantém só a chave fixada do PC', async () => {
     const secure = fakeSecure()
     const keys = createControllerKeys(secure, () => NOW)
+    const pin = new Uint8Array(32).fill(3)
     await keys.renew()
     await keys.setState('yes')
     await keys.setEsp32Key(new Uint8Array(32))
+    await keys.pinPcKey(pin)
     await keys.clear()
-    expect(secure.data.size).toBe(0)
+    expect([...secure.data.keys()]).toEqual([KEY_PCPIN])
     expect(await keys.state()).toBe('none')
+    expect(await keys.pinnedPcKey()).toEqual(pin)
+    // renew() keeps it too.
+    await keys.renew()
+    expect(await keys.pinnedPcKey()).toEqual(pin)
+  })
+
+  it('o wipe (CONTROL_SECURE_KEYS) inclui a chave fixada do PC', () => {
+    expect(CONTROL_SECURE_KEYS).toContain(KEY_PCPIN)
   })
 })

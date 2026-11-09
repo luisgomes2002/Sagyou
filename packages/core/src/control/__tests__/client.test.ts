@@ -174,6 +174,39 @@ describe('createControlClient', () => {
     await expect(client.pcId()).rejects.toEqual(new ControlError(code as never))
   })
 
+  it('pcKey decodifica a chave do PC e devolve null para ausente ou inválida', async () => {
+    const key = Uint8Array.from({ length: 32 }, (_, i) => i)
+    const b64 = 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8='
+    for (const [publicKey, expected] of [
+      [b64, key],
+      [null, null],
+      [undefined, null],
+      ['AAAA', null],
+      ['%%%', null],
+      [7, null]
+    ] as const) {
+      const { client } = setup(() => ({ status: 200, body: { pc: PC, publicKey } }))
+      expect(await client.pcKey()).toEqual({ pc: PC, publicKey: expected })
+    }
+    const none = setup(() => ({ status: 200, body: { pc: null } }))
+    expect(await none.client.pcKey()).toEqual({ pc: null, publicKey: null })
+  })
+
+  it('publishPcKey manda a chave em base64 por PUT, sem prova nem fator', async () => {
+    const key = Uint8Array.from({ length: 32 }, (_, i) => i)
+    const { client, calls } = setup(() => ({ status: 200, body: { ok: true } }))
+    await client.publishPcKey(key)
+    expect(calls).toHaveLength(1)
+    expect(`${calls[0].init.method} ${calls[0].url}`).toBe(
+      'PUT https://sync.example.com/roles/pc/key'
+    )
+    expect(JSON.parse(String(calls[0].init.body))).toEqual({
+      publicKey: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8='
+    })
+    expect(calls[0].init.headers['x-key-proof']).toBeUndefined()
+    expect(calls[0].init.headers['x-totp-code']).toBeUndefined()
+  })
+
   it('powerState lê takenAt; resposta de Worker antigo sem takenAt vira null', async () => {
     const taken = setup(() => ({
       status: 200,

@@ -415,7 +415,9 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
     autorizado, vale 60 s e tem nonce de uso único guardado em
     `remote-control.json` (fora do SQLite, do backup e do sync; apagado no wipe);
     5 recusas seguidas suspendem 15 min. No celular, a chave privada do controle
-    fica só no `expo-secure-store` com biometria. Nunca logue senha, chave,
+    fica só no `expo-secure-store` com biometria. A senha do "Estou longe do PC"
+    vai selada para a chave do PC (`sealPasswordToPc`), nunca só com a chave de
+    sync. Nunca logue senha, chave,
     assinatura, token do ESP32, token FCM ou conteúdo de cartão. O protocolo é
     o `packages/core/src/control/`; o firmware segue `docs/esp32-api.md`.
     Detalhes no `CLAUDE.md`.
