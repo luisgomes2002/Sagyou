@@ -4,8 +4,10 @@ import { describe, expect, it, vi } from 'vitest'
 vi.mock('../modules/logs/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 
 import {
+  killRemoteControlServerNamed,
   killRemoteControlServers,
   listCommandLines,
+  listRemoteControlNames,
   remoteControlTargets,
   matchServers,
   type ExecText
@@ -202,6 +204,66 @@ describe('killRemoteControlServers', () => {
   it('fora do Windows não faz nada', async () => {
     const exec = vi.fn<ExecText>(async () => '')
     expect(await killRemoteControlServers(exec, 'linux')).toBe(0)
+    expect(exec).not.toHaveBeenCalled()
+  })
+})
+
+// Spec 2026-11-09-servidores-remote-control: "Desligar" a server started outside
+// the Sagyou ends only the processes with that --name.
+describe('killRemoteControlServerNamed', () => {
+  const rows = scan(
+    row(10, 1, '"C:\Users\l\.local\bin\claude.exe" remote-control --name Sagyou'),
+    row(11, 1, 'claude remote-control --name "Sagyou Beta"'),
+    row(12, 1, 'cmd.exe /c claude remote-control --name "sagyou"'),
+    row(13, 1, 'claude remote-control --name Murasaki'),
+    row(14, SELF, 'claude remote-control --name Sagyou'),
+    row(SELF, 1, 'claude remote-control --name Sagyou'),
+    row(15, 1, 'Code.exe E:\remote-control --name Sagyou'),
+    row(16, 1, 'claude remote-control')
+  )
+
+  it('só as linhas claude remote-control com aquele --name, nunca o Sagyou nem filhos', async () => {
+    const exec = vi.fn<ExecText>(async (file) => (file.endsWith('powershell.exe') ? rows : ''))
+    expect(await killRemoteControlServerNamed(exec, 'Sagyou', SELF, 'win32', {})).toBe(2)
+    const kills = exec.mock.calls.slice(1)
+    expect(kills).toEqual([
+      ['C:\Windows\System32\taskkill.exe', ['/PID', '10', '/T', '/F']],
+      ['C:\Windows\System32\taskkill.exe', ['/PID', '12', '/T', '/F']]
+    ])
+  })
+
+  it('remoteControlTargets com nome filtra; sem nome continua pegando todos', () => {
+    const lines = rows.split(/\r?\n/)
+    expect(remoteControlTargets(lines, SELF, 'murasaki')).toEqual(['13'])
+    expect(remoteControlTargets(lines, SELF, 'Sagyou Beta')).toEqual(['11'])
+    expect(remoteControlTargets(lines, SELF)).toEqual(['10', '11', '12', '13', '16'])
+  })
+
+  it('nome vazio, fora do Windows ou erro na busca: 0', async () => {
+    const exec = vi.fn<ExecText>(async () => rows)
+    expect(await killRemoteControlServerNamed(exec, '  ', SELF, 'win32', {})).toBe(0)
+    expect(await killRemoteControlServerNamed(exec, 'Sagyou', SELF, 'linux', {})).toBe(0)
+    expect(exec).not.toHaveBeenCalled()
+    const failing = vi.fn<ExecText>(async () => {
+      throw new Error('boom')
+    })
+    expect(await killRemoteControlServerNamed(failing, 'Sagyou', SELF, 'win32', {})).toBe(0)
+    expect(failing).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('listRemoteControlNames', () => {
+  it('devolve o --name de cada remote-control em execução', async () => {
+    const exec = vi.fn<ExecText>(
+      async () =>
+        'claude.exe remote-control --name "Sagyou Beta"\r\nnode cli.js remote-control --name Murasaki\r\nCode.exe E:\remote-control\r\n'
+    )
+    expect(await listRemoteControlNames(exec, 'win32', {})).toEqual(['Sagyou Beta', 'Murasaki'])
+  })
+
+  it('fora do Windows não roda nada', async () => {
+    const exec = vi.fn<ExecText>(async () => '')
+    expect(await listRemoteControlNames(exec, 'linux', {})).toEqual([])
     expect(exec).not.toHaveBeenCalled()
   })
 })
