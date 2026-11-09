@@ -28,6 +28,8 @@ const OPAQUE_ID = /^[0-9a-f]{32}$/
 const MSG_ID = /^[A-Za-z0-9-]{8,64}$/
 const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/
 const HEX_SHA256 = /^[0-9a-f]{64}$/
+/** base64 of exactly 32 bytes (an Ed25519 public key). */
+const KEY_32_B64 = /^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$/
 const FCM_TOKEN = /^[A-Za-z0-9:_-]{1,4096}$/
 
 export interface ControlHelpers {
@@ -124,7 +126,25 @@ function sealedSlot(
 
 const getPc: ControlHandler = async (request, _p, db, _d, h) => {
   await h.authenticate(request)
-  return h.reply(200, { pc: (await db.getRoles()).pc })
+  const { pc } = await db.getRoles()
+  // A D1 without pc_key still answers who the PC is (spec 2026-11-09).
+  let publicKey: string | null = null
+  try {
+    publicKey = pc ? await db.getPcKey(pc) : null
+  } catch (err) {
+    if (!isMissingTable(err)) throw err
+  }
+  return h.reply(200, { pc, publicKey })
+}
+
+/** Only the current PC publishes its key; a phone far from home seals the password to it. */
+const setPcKey: ControlHandler = async (request, _p, db, deps, h) => {
+  const me = await h.authenticate(request)
+  await requireRole(db, h, me.id, ['pc'])
+  const body = await h.readJson(request, CONTROL_MAX_BODY_BYTES)
+  const key = field(h, body, 'publicKey', KEY_32_B64, 44)
+  await db.setPcKey(me.id, key, deps.now())
+  return h.reply(200, { ok: true })
 }
 
 const setPc: ControlHandler = async (request, _p, db, deps, h) => {
@@ -396,6 +416,7 @@ const powerReport: ControlHandler = async (request, _p, db, deps, h) => {
 
 export const CONTROL_ROUTES: { pattern: RegExp; methods: Record<string, ControlHandler> }[] = [
   { pattern: /^\/roles\/pc$/, methods: { GET: getPc, POST: setPc } },
+  { pattern: /^\/roles\/pc\/key$/, methods: { PUT: setPcKey } },
   { pattern: /^\/roles\/controllers$/, methods: { GET: listControllers, POST: addController } },
   { pattern: /^\/roles\/controllers\/([0-9a-f]{32})$/, methods: { DELETE: removeController } },
   { pattern: /^\/roles\/remote$/, methods: { POST: remoteRole } },

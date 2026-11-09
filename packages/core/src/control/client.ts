@@ -73,6 +73,13 @@ export interface ControlClient {
   getStatus(): Promise<InboxMessage | null>
   setPc(factor: SyncSecondFactor): Promise<void>
   pcId(): Promise<string | null>
+  /**
+   * Who the PC is and the Ed25519 public key it published (spec 2026-11-09);
+   * `publicKey` is null when there is none or it is not 32 bytes.
+   */
+  pcKey(): Promise<{ pc: string | null; publicKey: Uint8Array | null }>
+  /** Only the current PC may: a phone far from home seals the password to it. */
+  publishPcKey(key: Uint8Array): Promise<void>
   controllers(): Promise<string[]>
   addController(id: string): Promise<void>
   removeController(id: string): Promise<void>
@@ -224,6 +231,25 @@ export function createControlClient(deps: ControlClientDeps): ControlClient {
     async pcId() {
       const body = await call('GET', '/roles/pc')
       return typeof body.pc === 'string' ? body.pc : null
+    },
+
+    async pcKey() {
+      const body = await call('GET', '/roles/pc')
+      const pc = typeof body.pc === 'string' ? body.pc : null
+      let publicKey: Uint8Array | null = null
+      if (typeof body.publicKey === 'string') {
+        try {
+          const bytes = fromBase64(body.publicKey)
+          publicKey = bytes.length === 32 ? bytes : null
+        } catch {
+          publicKey = null
+        }
+      }
+      return { pc, publicKey }
+    },
+
+    async publishPcKey(key) {
+      await call('PUT', '/roles/pc/key', { body: { publicKey: toBase64(key) } })
     },
 
     async controllers() {

@@ -33,15 +33,17 @@ export const KEY_ESP32 = 'sagyou.control.esp32'
 export const KEY_STATE = 'sagyou.control.state'
 /** When "Estou longe do PC" was asked (ms), to tell an expired request. */
 export const KEY_REQUESTED = 'sagyou.control.requested'
-/** Every entry a wipe or "Remover este celular" deletes. */
-export const CONTROL_SECURE_KEYS = [
-  KEY_PRIVATE,
-  KEY_PUBLIC,
-  KEY_PCPUB,
-  KEY_ESP32,
-  KEY_STATE,
-  KEY_REQUESTED
-]
+/**
+ * The PC key this phone trusts (spec 2026-11-09): pinned when the PC authorizes
+ * it, replaced only by comparing the code at home. Survives a refusal, "Cancelar"
+ * and "Remover este celular", so a key swapped in the Worker is never trusted on
+ * the next try; only a wipe or "Desconectar" deletes it.
+ */
+export const KEY_PCPIN = 'sagyou.control.pcpin'
+/** Every entry a refusal, "Cancelar" or "Remover este celular" deletes (`clear`). */
+const AUTHORIZATION_KEYS = [KEY_PRIVATE, KEY_PUBLIC, KEY_PCPUB, KEY_ESP32, KEY_STATE, KEY_REQUESTED]
+/** Every entry a wipe or "Desconectar" deletes. */
+export const CONTROL_SECURE_KEYS = [...AUTHORIZATION_KEYS, KEY_PCPIN]
 
 const AUTH: SecureOptions = {
   requireAuthentication: true,
@@ -98,6 +100,9 @@ export interface ControllerKeys {
   sign(kind: ControlKind, body: Record<string, unknown>, ttlMs?: number): Promise<SignedEnvelope>
   pcPublicKey(): Promise<Uint8Array | null>
   setPcPublicKey(key: Uint8Array): Promise<void>
+  /** The PC key this phone trusts; kept by `clear`, deleted only by a wipe. */
+  pinnedPcKey(): Promise<Uint8Array | null>
+  pinPcKey(key: Uint8Array): Promise<void>
   esp32Key(): Promise<Uint8Array | null>
   setEsp32Key(key: Uint8Array): Promise<void>
   state(): Promise<AuthorizationState>
@@ -154,6 +159,8 @@ export function createControllerKeys(
 
     pcPublicKey: () => read(KEY_PCPUB),
     setPcPublicKey: (key) => secure.setItemAsync(KEY_PCPUB, toBase64(key)),
+    pinnedPcKey: () => read(KEY_PCPIN),
+    pinPcKey: (key) => secure.setItemAsync(KEY_PCPIN, toBase64(key)),
     esp32Key: () => read(KEY_ESP32),
     setEsp32Key: (key) => secure.setItemAsync(KEY_ESP32, toBase64(key)),
 
@@ -171,7 +178,7 @@ export function createControllerKeys(
     setRequestedAt: (at) => secure.setItemAsync(KEY_REQUESTED, String(at)),
 
     async clear() {
-      for (const key of CONTROL_SECURE_KEYS) {
+      for (const key of AUTHORIZATION_KEYS) {
         try {
           await secure.deleteItemAsync(key)
         } catch {

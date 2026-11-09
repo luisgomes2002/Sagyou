@@ -23,9 +23,25 @@ describe('corpos das mensagens do controle', () => {
     expect(parseAuthorizeRequest(null)).toBeNull()
   })
 
-  it('pedido à distância exige a senha', () => {
+  it('pedido à distância exige a senha selada', () => {
     expect(parseAuthorizeRemote({ name: 'x', publicKey: pub })).toBeNull()
-    expect(parseAuthorizeRemote({ name: 'x', publicKey: pub, password: 's' })?.password).toBe('s')
+    const sealed = parseAuthorizeRemote({ name: 'x', publicKey: pub, sealedPassword: 'abc' })
+    expect(sealed?.sealedPassword).toBe('abc')
+    expect(sealed?.key).toHaveLength(32)
+    expect(sealed?.outdated).toBeUndefined()
+    expect(
+      parseAuthorizeRemote({ name: 'x', publicKey: pub, sealedPassword: 'a'.repeat(2049) })
+    ).toBeNull()
+    expect(parseAuthorizeRemote({ name: '', publicKey: pub, sealedPassword: 'abc' })).toBeNull()
+  })
+
+  it('pedido à distância de um celular antigo (senha sem selo) vem marcado, com a chave', () => {
+    const old = parseAuthorizeRemote({ name: 'x', publicKey: pub, password: 's' })
+    expect(old?.outdated).toBe(true)
+    expect(old?.key).toHaveLength(32)
+    expect(old?.sealedPassword).toBeUndefined()
+    expect(old).not.toHaveProperty('password')
+    expect(parseAuthorizeRemote({ name: 'x', publicKey: '%%%', password: 's' })).toBeNull()
   })
 
   it('pedido de servidor exige o id do projeto', () => {

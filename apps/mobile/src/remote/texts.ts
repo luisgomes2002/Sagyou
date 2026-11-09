@@ -17,6 +17,10 @@ export const REMOTE_TEXT = {
   needFactor: 'Digite o código do autenticador.',
   // Item 9: the request from afar waits 1 h for the PC.
   requestExpired: 'O pedido expirou. Ligue o PC e peça de novo.',
+  // Spec docs/specs/2026-11-09-selar-senha-remota.md: the password is sealed to the PC's key.
+  noPcKey: 'O PC ainda não publicou a chave dele. Atualize o Sagyou no PC e tente de novo.',
+  pcKeyChanged: 'A chave do PC mudou. Autorize este celular em casa, comparando o código.',
+  outdated: 'Atualize o Sagyou no celular.',
   // Spec docs/specs/2026-11-09-servidores-remote-control.md: the PC's answer to Ligar/Desligar.
   serverNotConfirmed: 'Confirme este projeto uma vez no PC.',
   serverCut: 'O acesso está cortado. Restaure antes de ligar um servidor.',

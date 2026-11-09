@@ -1,7 +1,12 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
-import type { ControlClient, InboxMessage } from '@sagyou/core/control/client'
-import { newSigningKeys, pairingCode, publicKeyOf } from '@sagyou/core/control/crypto'
+import { ControlError, type ControlClient, type InboxMessage } from '@sagyou/core/control/client'
+import {
+  newSigningKeys,
+  pairingCode,
+  publicKeyOf,
+  sealPasswordToPc
+} from '@sagyou/core/control/crypto'
 import {
   checkEnvelope,
   signEnvelope,
@@ -49,6 +54,8 @@ type FakeClient = ControlClient & {
   removeController: ReturnType<typeof vi.fn>
   putEsp32Key: ReturnType<typeof vi.fn>
   controllers: ReturnType<typeof vi.fn>
+  pcKey: ReturnType<typeof vi.fn>
+  publishPcKey: ReturnType<typeof vi.fn>
 }
 
 interface Keys {
@@ -81,6 +88,8 @@ interface Setup {
   setRoles: (ids: string[]) => void
   setHasPassword: (v: boolean) => void
   setServers: (list: RcServerView[]) => void
+  /** What GET /roles/pc answers: who the PC is and the key it published. */
+  worker: { pc: string | null; publicKey: Uint8Array | null; fail: Error | null }
 }
 
 const server = (over: Partial<RcServerView> = {}): RcServerView => ({
@@ -110,6 +119,7 @@ function setup(
         : [{ id: PHONE, name: 'Pixel 8', publicKey: toBase64(phone.publicKey), since: 'x' }]
   }
   let queue: InboxMessage[] = []
+  const worker: Setup['worker'] = { pc: 'pc', publicKey: pc.publicKey, fail: null }
   const sent: Sent[] = []
   const statuses: SignedEnvelope[] = []
   const client = {
@@ -127,7 +137,14 @@ function setup(
     }),
     addController: vi.fn(async () => {}),
     removeController: vi.fn(async () => {}),
-    putEsp32Key: vi.fn(async () => {})
+    putEsp32Key: vi.fn(async () => {}),
+    pcKey: vi.fn(async () => {
+      if (worker.fail) throw worker.fail
+      return { pc: worker.pc, publicKey: worker.publicKey }
+    }),
+    publishPcKey: vi.fn(async (key: Uint8Array) => {
+      worker.publicKey = key
+    })
   } as unknown as FakeClient
   let locked = opts.locked ?? true
   const timers: { fn: () => void; ms: number }[] = []
@@ -231,7 +248,8 @@ function setup(
     },
     setServers: (list: RcServerView[]) => {
       servers = list
-    }
+    },
+    worker
   }
 }
 
@@ -591,6 +609,11 @@ describe('remote-service: autorização', () => {
     name: 'Pixel 9',
     publicKey: toBase64(publicKeyOf(key))
   })
+  /** authorize-remote as the phone sends it: the password sealed to this PC's key. */
+  const remoteBody = (t: Setup, key: Uint8Array, password: string): Record<string, unknown> => ({
+    ...authBody(key),
+    sealedPassword: sealPasswordToPc(t.pc.publicKey, publicKeyOf(key), password)
+  })
 
   it('pedido de autorização cria pendência com o código e some em 10 min', async () => {
     const t = setup({ controllers: 'none' })
@@ -685,11 +708,10 @@ describe('remote-service: autorização', () => {
     t.setRoles([PHONE])
     const newPhone = newSigningKeys()
     await t.deliver(
-      t.request(
-        'authorize-remote',
-        { ...authBody(newPhone.privateKey), password: 'chute' },
-        { from: OTHER, key: newPhone.privateKey }
-      )
+      t.request('authorize-remote', remoteBody(t, newPhone.privateKey, 'chute'), {
+        from: OTHER,
+        key: newPhone.privateKey
+      })
     )
     expect(t.deps.verifyPassword).not.toHaveBeenCalled()
     expect(t.config().failures).toBe(0)
@@ -704,16 +726,14 @@ describe('remote-service: autorização', () => {
     const a = newSigningKeys()
     const b = newSigningKeys()
     await t.deliver(
-      t.request(
-        'authorize-remote',
-        { ...authBody(a.privateKey), password: 'chute 1' },
-        { from: OTHER, key: a.privateKey }
-      ),
-      t.request(
-        'authorize-remote',
-        { ...authBody(b.privateKey), password: 'chute 2' },
-        { from: THIRD, key: b.privateKey }
-      )
+      t.request('authorize-remote', remoteBody(t, a.privateKey, 'chute 1'), {
+        from: OTHER,
+        key: a.privateKey
+      }),
+      t.request('authorize-remote', remoteBody(t, b.privateKey, 'chute 2'), {
+        from: THIRD,
+        key: b.privateKey
+      })
     )
     expect(t.deps.verifyPassword).toHaveBeenCalledTimes(1)
     expect(t.config().failures).toBe(1)
@@ -723,11 +743,10 @@ describe('remote-service: autorização', () => {
     const t = setup()
     const newPhone = newSigningKeys()
     await t.deliver(
-      t.request(
-        'authorize-remote',
-        { ...authBody(newPhone.privateKey), password: PASSWORD },
-        { from: OTHER, key: newSigningKeys().privateKey }
-      )
+      t.request('authorize-remote', remoteBody(t, newPhone.privateKey, PASSWORD), {
+        from: OTHER,
+        key: newSigningKeys().privateKey
+      })
     )
     expect(t.deps.verifyPassword).not.toHaveBeenCalled()
     expect(t.config().failures).toBe(0)
@@ -739,11 +758,10 @@ describe('remote-service: autorização', () => {
     const t = setup({ esp32: true })
     const newPhone = newSigningKeys()
     await t.deliver(
-      t.request(
-        'authorize-remote',
-        { ...authBody(newPhone.privateKey), password: PASSWORD },
-        { from: OTHER, key: newPhone.privateKey }
-      )
+      t.request('authorize-remote', remoteBody(t, newPhone.privateKey, PASSWORD), {
+        from: OTHER,
+        key: newPhone.privateKey
+      })
     )
     expect(t.config().controllers.map((c) => c.id)).toEqual([OTHER])
     // The Worker already cleared the former controllers.
@@ -757,15 +775,89 @@ describe('remote-service: autorização', () => {
     expect(t.deps.log.info).toHaveBeenCalledWith('remote', 'authorize_remote', { result: 'ok' })
   })
 
+  it('senha selada para outra chave de PC: shape, não conta e não confere a senha', async () => {
+    const t = setup()
+    const newPhone = newSigningKeys()
+    const sealedPassword = sealPasswordToPc(
+      newSigningKeys().publicKey,
+      publicKeyOf(newPhone.privateKey),
+      PASSWORD
+    )
+    await t.deliver(
+      t.request(
+        'authorize-remote',
+        { ...authBody(newPhone.privateKey), sealedPassword },
+        { from: OTHER, key: newPhone.privateKey }
+      )
+    )
+    expect(t.deps.verifyPassword).not.toHaveBeenCalled()
+    expect(t.config().failures).toBe(0)
+    expect(t.lastResult()).toMatchObject({ ok: false, reason: 'shape' })
+    expect(t.client.removeController).toHaveBeenCalledWith(OTHER)
+    expect(t.config().controllers.map((c) => c.id)).toEqual([PHONE])
+  })
+
+  it('selo copiado de outro celular não abre (AAD amarra a chave do pedido)', async () => {
+    const t = setup()
+    const victim = newSigningKeys()
+    const attacker = newSigningKeys()
+    const copied = sealPasswordToPc(t.pc.publicKey, publicKeyOf(victim.privateKey), PASSWORD)
+    await t.deliver(
+      t.request(
+        'authorize-remote',
+        { ...authBody(attacker.privateKey), sealedPassword: copied },
+        { from: OTHER, key: attacker.privateKey }
+      )
+    )
+    expect(t.deps.verifyPassword).not.toHaveBeenCalled()
+    expect(t.lastResult()).toMatchObject({ ok: false, reason: 'shape' })
+    expect(t.config().controllers.map((c) => c.id)).toEqual([PHONE])
+  })
+
+  it('celular antigo (senha sem selo): outdated, não confere, não conta e remove o papel', async () => {
+    const t = setup()
+    for (let i = 0; i < 6; i++) {
+      const old = newSigningKeys()
+      await t.deliver(
+        t.request(
+          'authorize-remote',
+          { ...authBody(old.privateKey), password: PASSWORD },
+          { from: OTHER, key: old.privateKey }
+        )
+      )
+      t.advance(1000)
+    }
+    expect(t.deps.verifyPassword).not.toHaveBeenCalled()
+    expect(t.config().failures).toBe(0)
+    expect(t.config().suspendedUntil).toBeNull()
+    expect(t.results().every((r) => r.ok === false && r.reason === 'outdated')).toBe(true)
+    expect(t.results()).toHaveLength(6)
+    expect(t.client.removeController).toHaveBeenCalledWith(OTHER)
+    expect(t.config().controllers.map((c) => c.id)).toEqual([PHONE])
+  })
+
+  it('celular antigo com assinatura inválida segue o caminho da assinatura, sem outdated', async () => {
+    const t = setup()
+    const old = newSigningKeys()
+    await t.deliver(
+      t.request(
+        'authorize-remote',
+        { ...authBody(old.privateKey), password: PASSWORD },
+        { from: OTHER, key: newSigningKeys().privateKey }
+      )
+    )
+    expect(t.lastResult()).toMatchObject({ ok: false, reason: 'signature' })
+    expect(t.config().failures).toBe(0)
+  })
+
   it('autorização à distância com senha errada remove o papel no Worker e responde wrong-password', async () => {
     const t = setup()
     const newPhone = newSigningKeys()
     await t.deliver(
-      t.request(
-        'authorize-remote',
-        { ...authBody(newPhone.privateKey), password: 'errada' },
-        { from: OTHER, key: newPhone.privateKey }
-      )
+      t.request('authorize-remote', remoteBody(t, newPhone.privateKey, 'errada'), {
+        from: OTHER,
+        key: newPhone.privateKey
+      })
     )
     expect(t.client.removeController).toHaveBeenCalledWith(OTHER)
     expect(t.lastResult()).toMatchObject({ ok: false, reason: 'wrong-password' })
@@ -779,11 +871,10 @@ describe('remote-service: autorização', () => {
     const verify = vi.spyOn(t.deps, 'verifyPassword')
     const newPhone = newSigningKeys()
     await t.deliver(
-      t.request(
-        'authorize-remote',
-        { ...authBody(newPhone.privateKey), password: PASSWORD },
-        { from: OTHER, key: newPhone.privateKey }
-      )
+      t.request('authorize-remote', remoteBody(t, newPhone.privateKey, PASSWORD), {
+        from: OTHER,
+        key: newPhone.privateKey
+      })
     )
     expect(verify).not.toHaveBeenCalled()
     expect(t.lastResult()).toMatchObject({ ok: false, reason: 'suspended' })
@@ -894,6 +985,55 @@ describe('remote-service: ciclo', () => {
     expect(sentCard.env.body).toEqual(card)
     await t.service.closeCard('c1')
     expect(t.sent.at(-1)?.env).toMatchObject({ kind: 'approval-closed', body: { id: 'c1' } })
+  })
+
+  it('publica a chave do PC no Worker quando falta ou difere, e só sendo o PC', async () => {
+    const t = setup()
+    await t.service.tick()
+    expect(t.client.publishPcKey).not.toHaveBeenCalled()
+
+    t.worker.publicKey = null
+    t.advance(30_000)
+    await t.service.tick()
+    expect(t.client.publishPcKey).toHaveBeenCalledTimes(1)
+    expect(t.client.publishPcKey.mock.calls[0][0]).toEqual(t.pc.publicKey)
+    expect(t.deps.log.info).toHaveBeenCalledWith('remote', 'pc_key_published')
+
+    t.worker.publicKey = newSigningKeys().publicKey
+    t.advance(30_000)
+    await t.service.tick()
+    expect(t.client.publishPcKey).toHaveBeenCalledTimes(2)
+    expect(t.worker.publicKey).toEqual(t.pc.publicKey)
+  })
+
+  it('outro aparelho é o PC: não publica; voltando a ser o PC, publica sem reiniciar', async () => {
+    const t = setup()
+    t.worker.pc = OTHER
+    t.worker.publicKey = null
+    await t.service.tick()
+    expect(t.client.publishPcKey).not.toHaveBeenCalled()
+
+    t.worker.pc = 'pc'
+    t.advance(30_000)
+    await t.service.tick()
+    expect(t.client.publishPcKey).toHaveBeenCalledTimes(1)
+  })
+
+  it('falha ao publicar só loga, não para o heartbeat, e tenta de novo', async () => {
+    const t = setup()
+    t.worker.publicKey = null
+    t.worker.fail = new ControlError('not-deployed')
+    await t.service.tick()
+    expect(t.statuses).toHaveLength(1)
+    expect(t.deps.log.warn).toHaveBeenCalledWith('remote', 'pc_key_publish_failed', {
+      code: 'not-deployed'
+    })
+    expect(t.sent.filter((s) => s.notify === 'ready')).toHaveLength(1)
+
+    t.worker.fail = null
+    t.advance(30_000)
+    await t.service.tick()
+    expect(t.client.publishPcKey).toHaveBeenCalledTimes(1)
   })
 
   it('publicar a chave do ESP32 grava no Worker e envia aos controles', async () => {

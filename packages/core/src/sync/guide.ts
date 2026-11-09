@@ -197,7 +197,7 @@ export const SYNC_SWITCH_PHONE_ARTICLE: SyncGuideArticle = {
       type: 'steps',
       items: [
         'No celular novo, instale o Sagyou e toque em Entrar com código de recuperação: cole o código de recuperação e digite a senha de configuração do Worker e um código do autenticador ou um código reserva.',
-        'Em Ajustes → Controlar o PC, toque em Estou longe do PC: digite a senha do Sagyou e um código novo do autenticador ou outro código reserva (o anterior já foi usado para entrar), e confirme com a biometria.',
+        'Em Ajustes → Controlar o PC, toque em Estou longe do PC: digite a senha do Sagyou e um código novo do autenticador ou outro código reserva (o anterior já foi usado para entrar), e confirme com a biometria. A senha vai selada para a chave do PC: só o PC de casa consegue lê-la.',
         'Assim que o Worker confere o código, o celular novo já liga o PC pelo ESP32. Desbloquear, desligar e aprovar cartões esperam o PC ligado conferir a senha do Sagyou. O pedido espera o PC por 1 hora; depois disso, ligue o PC e peça de novo.',
         'Revogue o celular perdido na sincronização, apagando os dados dele (pede o código do autenticador).'
       ]

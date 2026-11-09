@@ -7,7 +7,7 @@ import type { SqlDb } from '../../data/sql'
 import { emptyState } from '../../data/state'
 import { openNodeDb } from '../../data/__tests__/node-db'
 import { SECURE_KEY, createConfigStore, type SecureStoreLike } from '../config-store'
-import { KEY_ESP32, KEY_PCPUB, KEY_PRIVATE } from '../../remote/keys'
+import { KEY_ESP32, KEY_PCPIN, KEY_PCPUB, KEY_PRIVATE } from '../../remote/keys'
 import { createSyncRuntime, type SyncRuntime } from '../runtime'
 
 const TOKEN = 'token-secreto-do-aparelho'
@@ -209,11 +209,11 @@ describe('runtime do sync no celular', () => {
 
   it('apagar também tira as chaves do controle remoto do cofre', async () => {
     const s = setup(answer(503, {}))
-    for (const key of [KEY_PRIVATE, KEY_PCPUB, KEY_ESP32])
+    for (const key of [KEY_PRIVATE, KEY_PCPUB, KEY_PCPIN, KEY_ESP32])
       s.secure.data.set(key, 'segredo-do-controle')
     s.runtime.wipeLocal()
     await new Promise((resolve) => setTimeout(resolve, 0))
-    for (const key of [KEY_PRIVATE, KEY_PCPUB, KEY_ESP32]) {
+    for (const key of [KEY_PRIVATE, KEY_PCPUB, KEY_PCPIN, KEY_ESP32]) {
       expect(s.secure.data.get(key) ?? '').not.toContain('segredo-do-controle')
     }
     s.runtime.dispose()

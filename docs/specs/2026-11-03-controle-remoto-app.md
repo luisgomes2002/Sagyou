@@ -343,3 +343,9 @@ Desktop MINOR, celular MINOR (`app.json` + `versionCode`), Worker reimplantado c
 ## Perguntas em aberto
 
 (nenhuma)
+
+## Nota (2026-11-09)
+
+O corpo do `authorize-remote` mudou: `password` saiu e entrou `sealedPassword`, a senha selada
+para a chave do PC (spec `docs/specs/2026-11-09-selar-senha-remota.md`). O PC recusa o corpo
+antigo com `outdated`, sem contar para a suspensão.

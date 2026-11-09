@@ -27,7 +27,12 @@ import {
   type InboxMessage,
   type NotifyCode
 } from '@sagyou/core/control/client'
-import { pairingCode, publicKeyOf } from '@sagyou/core/control/crypto'
+import {
+  ControlDecryptError,
+  openPasswordFromPc,
+  pairingCode,
+  publicKeyOf
+} from '@sagyou/core/control/crypto'
 import {
   CLOCK_SKEW_MS,
   MAX_TTL_MS,
@@ -369,7 +374,23 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
     markSeen(env, now)
     const until = suspendedUntil(now)
     if (until !== null) return refuse('suspended', { until })
-    if (!deps.verifyPassword(body.password)) {
+    // A phone from before the seal (spec 2026-11-09): signed, but its password
+    // travelled under the sync key only. Never checked, never counted.
+    if (body.outdated) {
+      ignored('outdated')
+      return refuse('outdated')
+    }
+    const priv = deps.pcPrivateKey()
+    let password: string
+    try {
+      if (!priv) throw new ControlDecryptError()
+      password = openPasswordFromPc(priv, body.key, body.sealedPassword)
+    } catch {
+      // Not sealed to this PC's key: shaped like a malformed body, not counted.
+      ignored('shape')
+      return refuse('shape')
+    }
+    if (!deps.verifyPassword(password)) {
       refused(now, 'wrong-password')
       return refuse('wrong-password')
     }
@@ -597,10 +618,33 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
     }
     const env = sign('status', status, STATUS_TTL_MS)
     await client.putStatus(env)
+    await publishKey()
     // "PC pronto" waits only for the servers with "Iniciar com o Sagyou".
     if (!readySent && servers.every((s) => !s.autostart || s.up)) {
       readySent = true
       for (const c of controllers()) await client.send(c.id, env, 'ready')
+    }
+  }
+
+  /**
+   * Keeps this PC's public key in the Worker (spec 2026-11-09): a phone far from
+   * home seals the Sagyou password to it. Checked every heartbeat, so a PC that
+   * becomes the PC again publishes without a restart. Never stops the heartbeat.
+   */
+  const sameBytes = (a: Uint8Array, b: Uint8Array): boolean =>
+    a.length === b.length && a.every((v, i) => v === b[i])
+
+  async function publishKey(): Promise<void> {
+    try {
+      const { pc, publicKey } = await client.pcKey()
+      if (pc !== client.me()) return
+      const mine = fromBase64(pcPublicKey())
+      if (publicKey && sameBytes(publicKey, mine)) return
+      await client.publishPcKey(mine)
+      log.info('remote', 'pc_key_published')
+    } catch (error) {
+      const code = error instanceof ControlError ? error.code : 'offline'
+      log.warn('remote', 'pc_key_publish_failed', { code })
     }
   }
 

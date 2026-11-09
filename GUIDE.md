@@ -415,7 +415,9 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
     autorizado, vale 60 s e tem nonce de uso único guardado em
     `remote-control.json` (fora do SQLite, do backup e do sync; apagado no wipe);
     5 recusas seguidas suspendem 15 min. No celular, a chave privada do controle
-    fica só no `expo-secure-store` com biometria. Nunca logue senha, chave,
+    fica só no `expo-secure-store` com biometria. A senha do "Estou longe do PC"
+    vai selada para a chave do PC (`sealPasswordToPc`), nunca só com a chave de
+    sync. Nunca logue senha, chave,
     assinatura, token do ESP32, token FCM ou conteúdo de cartão. Os servidores de Remote
     Control são do Sagyou (`rc-manager.ts`, um PTY por projeto): o celular só
     liga um projeto já confirmado no PC (só o Ligar da tela confirma), e nada sobe com o
