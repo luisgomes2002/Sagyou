@@ -48,9 +48,19 @@ o detalhe da tarefa só mostra o total e o iniciar/pausar.
    cartão (`{ resumo, approval: true }`) quando o valor diminui. A fila nunca dispensa um
    cartão que o nome exige; só acrescenta. Um cartão pedido assim conta como arriscado: o
    modo automático da sessão (`autoApprovesPending`) **não** o responde.
-4. **Resumo do cartão:** `Corrigir o tempo de "<título>": <antes> → <depois>`, com horas e
-   minutos (`2 h 05 min`, `0 min`), e, com o cronômetro rodando, o sufixo
-   ` (para o cronômetro)`.
+4. **Resumo do cartão** (revisto na revisão de 2026-11-09: o título vem do agente e, antes
+   dos números, podia fingir "nada muda"): os números primeiro, o título por último.
+   - Diminuir: `Diminuir o tempo: <antes> → <depois> (−<diferença>) · tarefa "<título>"`.
+   - Aumentar ou igual (sem cartão): `Definir o tempo: <antes> → <depois> · tarefa "<título>"`.
+   - Com o cronômetro rodando, o sufixo ` · para o cronômetro`.
+   - Tempos em horas e minutos (`2 h 05 min`, `0 min`); quando os dois lados dariam o mesmo
+     texto, os dois levam os segundos (`3 h 00 min 15 s`); uma diferença menor que 1 min sai
+     em segundos (`45 s`).
+   - O título: caracteres de controle/formatação e espaços em sequência viram um espaço, e
+     passando de 60 caracteres é cortado com `…`.
+   - O `apply` decide de novo: se o total novo agora é menor que o atual e a escrita não
+     passou por cartão aprovado (`approvedByCard`), recusa com "O tempo mudou desde a
+     confirmação; chame set_time_spent de novo." e nada muda.
 5. **Resposta da ferramenta:** `{ ok: true, id, timeSpent, cronometroParado: boolean }`.
 6. **Cronômetro de uma sessão do Fleet:** se o cronômetro parado foi iniciado pela própria
    sessão (`agent-task-timers.ts`), ele sai do rastreamento dela, para o fim da sessão não
@@ -62,10 +72,11 @@ o detalhe da tarefa só mostra o total e o iniciar/pausar.
 ## Comportamento
 
 - `set_time_spent { id, seconds: 7200 }` numa tarefa com 3 h e sem cronômetro → cartão
-  "Corrigir o tempo de "Sync 6.7": 3 h 00 min → 2 h 00 min"; aprovado → total 7200 s.
+  "Diminuir o tempo: 3 h 00 min → 2 h 00 min (−1 h 00 min) · tarefa "Sync 6.7""; aprovado →
+  total 7200 s.
 - Mesma chamada com 1 h → sem cartão → total 7200 s.
 - Com o cronômetro rodando há 3 h sobre 1 h já gravada (total atual 4 h) e `seconds: 3600`
-  → cartão com " (para o cronômetro)"; aprovado → cronômetro parado, nada do tempo dele é
+  → cartão com " · para o cronômetro"; aprovado → cronômetro parado, nada do tempo dele é
   somado, total 3600 s.
 - Cartão negado ou expirado (5 min): nada muda, o cronômetro continua rodando.
 - Tarefa inexistente, ambígua ou de outro projeto fora do escopo: as mesmas recusas das
