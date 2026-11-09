@@ -212,13 +212,13 @@ describe('killRemoteControlServers', () => {
 // the Sagyou ends only the processes with that --name.
 describe('killRemoteControlServerNamed', () => {
   const rows = scan(
-    row(10, 1, '"C:\Users\l\.local\bin\claude.exe" remote-control --name Sagyou'),
+    row(10, 1, String.raw`"C:\Users\l\.local\bin\claude.exe" remote-control --name Sagyou`),
     row(11, 1, 'claude remote-control --name "Sagyou Beta"'),
     row(12, 1, 'cmd.exe /c claude remote-control --name "sagyou"'),
     row(13, 1, 'claude remote-control --name Murasaki'),
     row(14, SELF, 'claude remote-control --name Sagyou'),
     row(SELF, 1, 'claude remote-control --name Sagyou'),
-    row(15, 1, 'Code.exe E:\remote-control --name Sagyou'),
+    row(15, 1, String.raw`Code.exe E:\remote-control --name Sagyou`),
     row(16, 1, 'claude remote-control')
   )
 
@@ -227,8 +227,8 @@ describe('killRemoteControlServerNamed', () => {
     expect(await killRemoteControlServerNamed(exec, 'Sagyou', SELF, 'win32', {})).toBe(2)
     const kills = exec.mock.calls.slice(1)
     expect(kills).toEqual([
-      ['C:\Windows\System32\taskkill.exe', ['/PID', '10', '/T', '/F']],
-      ['C:\Windows\System32\taskkill.exe', ['/PID', '12', '/T', '/F']]
+      [String.raw`C:\Windows\System32\taskkill.exe`, ['/PID', '10', '/T', '/F']],
+      [String.raw`C:\Windows\System32\taskkill.exe`, ['/PID', '12', '/T', '/F']]
     ])
   })
 
@@ -256,7 +256,7 @@ describe('listRemoteControlNames', () => {
   it('devolve o --name de cada remote-control em execução', async () => {
     const exec = vi.fn<ExecText>(
       async () =>
-        'claude.exe remote-control --name "Sagyou Beta"\r\nnode cli.js remote-control --name Murasaki\r\nCode.exe E:\remote-control\r\n'
+        'claude.exe remote-control --name "Sagyou Beta"\r\nnode cli.js remote-control --name Murasaki\r\nCode.exe E:\\remote-control\r\n'
     )
     expect(await listRemoteControlNames(exec, 'win32', {})).toEqual(['Sagyou Beta', 'Murasaki'])
   })

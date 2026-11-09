@@ -18,6 +18,7 @@ const view: RcServerView = {
   error: null
 }
 
+// eslint-disable-next-line @typescript-eslint/explicit-function-return-type -- test helper; the inferred shape is the API
 function fakeManager() {
   return {
     list: vi.fn(() => [view]),
@@ -30,6 +31,7 @@ function fakeManager() {
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/explicit-function-return-type -- test helper; the inferred shape is the API
 function setup(platform: NodeJS.Platform = 'win32') {
   const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>()
   const ipcMain = {

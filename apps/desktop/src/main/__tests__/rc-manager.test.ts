@@ -34,10 +34,10 @@ class FakePty implements AgentPty {
     this.killed = true
   }
   onData(): { dispose(): void } {
-    return { dispose() {} }
+    return { dispose: (): void => undefined }
   }
   onExit(): { dispose(): void } {
-    return { dispose() {} }
+    return { dispose: (): void => undefined }
   }
   emit(chunk: string): void {
     this.options.onData(chunk)
@@ -49,6 +49,7 @@ class FakePty implements AgentPty {
 
 const flush = (): Promise<void> => new Promise((resolve) => setImmediate(resolve))
 
+// eslint-disable-next-line @typescript-eslint/explicit-function-return-type -- test helper; the inferred shape is the API
 function makeClock() {
   let now = Date.UTC(2026, 10, 9, 12, 0, 0)
   let seq = 0
@@ -99,6 +100,7 @@ function entry(patch: Partial<RcServerEntry> = {}): RcServerEntry {
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/explicit-function-return-type -- test helper; the inferred shape is the API
 function setup(
   opts: {
     projects?: RcProject[]
