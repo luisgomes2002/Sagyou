@@ -21,10 +21,6 @@ const base = {
   error: null as string | null,
   suspendedUntil: null as number | null,
   controllers: [{ id: PHONE, name: 'Pixel 8', since: '2026-11-03T12:00:00.000Z' }],
-  servers: [
-    { name: 'Sagyou', up: true },
-    { name: 'Murasaki', up: false }
-  ],
   pending: [] as { id: string; name: string; code: string; expiresAt: number }[],
   hasEsp32Key: false,
   accessCutAt: null as number | null
@@ -36,7 +32,7 @@ const toast = vi.fn()
 
 function mount(status: Partial<typeof base> = {}): ReturnType<typeof render> {
   api.status.mockResolvedValue({ ...base, ...status })
-  return render(<RemoteControlSettings onToast={toast} suggestions={['Sagyou', 'Living']} />)
+  return render(<RemoteControlSettings onToast={toast} />)
 }
 
 beforeEach(() => {
@@ -49,7 +45,6 @@ beforeEach(() => {
     authorize: vi.fn().mockResolvedValue({ ok: true }),
     refuse: vi.fn().mockResolvedValue({ ok: true }),
     revoke: vi.fn().mockResolvedValue({ ok: true }),
-    setServers: vi.fn().mockResolvedValue({ ok: true }),
     restoreAccess: vi.fn().mockResolvedValue({ ok: true }),
     createEsp32: vi.fn().mockResolvedValue({ ok: true, token: 'tok-123', key: 'ab'.repeat(32) }),
     onStatusChanged: vi.fn((cb: (s: typeof base) => void) => {
@@ -82,12 +77,12 @@ describe('RemoteControlSettings', () => {
 
   it('acesso cortado aparece mesmo com o controle remoto desligado', async () => {
     const at = Date.UTC(2026, 10, 7, 17, 32)
-    mount({ enabled: false, controllers: [], servers: [], accessCutAt: at })
+    mount({ enabled: false, controllers: [], accessCutAt: at })
     expect(await screen.findByText(accessCutPcText(at))).toBeInTheDocument()
   })
 
   it('desligado: mostra o interruptor e pede o código do autenticador para ativar', async () => {
-    mount({ enabled: false, controllers: [], servers: [] })
+    mount({ enabled: false, controllers: [] })
     const toggle = await screen.findByRole('checkbox', { name: ENABLE_LABEL })
     expect(screen.getByText(ENABLE_DESCRIPTION)).toBeInTheDocument()
     expect(screen.queryByText('Celulares autorizados')).not.toBeInTheDocument()
@@ -144,19 +139,6 @@ describe('RemoteControlSettings', () => {
     fireEvent.click(confirm)
     await waitFor(() => expect(api.revoke).toHaveBeenCalledWith(PHONE))
     expect(await screen.findByText(ESP32_SUGGESTION)).toBeInTheDocument()
-  })
-
-  it('servidores mostram Rodando/Parado, adicionam e removem', async () => {
-    mount()
-    expect(await screen.findByText('Rodando')).toBeInTheDocument()
-    expect(screen.getByText('Parado')).toBeInTheDocument()
-    fireEvent.change(screen.getByLabelText('Nome do servidor'), { target: { value: 'Living' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Adicionar' }))
-    await waitFor(() =>
-      expect(api.setServers).toHaveBeenCalledWith(['Sagyou', 'Murasaki', 'Living'])
-    )
-    fireEvent.click(screen.getByRole('button', { name: 'Remover Murasaki' }))
-    await waitFor(() => expect(api.setServers).toHaveBeenLastCalledWith(['Sagyou']))
   })
 
   it('token do ESP32 aparece uma vez e some ao sair da seção', async () => {

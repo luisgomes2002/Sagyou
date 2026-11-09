@@ -7,7 +7,6 @@ import { UpdateSettings } from '../settings/UpdateSettings'
 import { WindowSettings } from '../settings/WindowSettings'
 import { AutoLockSettings } from '../settings/AutoLockSettings'
 import { RemoteControlSettings } from '../settings/RemoteControlSettings'
-import { useKanbanStore } from '../../store/kanban'
 import { SectionedPage } from '../layout/SectionedPage'
 import { SECTION_ICONS } from '../layout/sectionIcons'
 
@@ -122,10 +121,6 @@ export function SettingsView({
     setSection(id)
   }
   const current = SETTINGS_SECTIONS.find((item) => item.id === section) ?? SETTINGS_SECTIONS[0]
-  const projects = useKanbanStore((s) => s.projects)
-  const codeProjectNames = projects
-    .filter((p) => !p.archivedAt && (p.codePaths?.length ?? 0) > 0)
-    .map((p) => p.name)
 
   return (
     <SectionedPage
@@ -172,9 +167,7 @@ export function SettingsView({
           </div>
         )}
         {current.id === 'mcp-externo' && <McpExternalSettings onToast={onToast} />}
-        {current.id === 'controle-remoto' && (
-          <RemoteControlSettings onToast={onToast} suggestions={codeProjectNames} />
-        )}
+        {current.id === 'controle-remoto' && <RemoteControlSettings onToast={onToast} />}
         {current.id === 'sistema' && (
           <>
             <WindowSettings />

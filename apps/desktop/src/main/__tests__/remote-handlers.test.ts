@@ -42,7 +42,8 @@ function fakeService(): RemoteService & Record<string, ReturnType<typeof vi.fn>>
     closeCard: vi.fn(async () => {}),
     publishEsp32Key: vi.fn(async () => {}),
     syncStatusChanged: vi.fn(),
-    checkDevices: vi.fn(async () => {})
+    checkDevices: vi.fn(async () => {}),
+    statusSoon: vi.fn()
   } as unknown as RemoteService & Record<string, ReturnType<typeof vi.fn>>
 }
 
@@ -80,7 +81,6 @@ function setup(over: Partial<RemoteHandlerDeps> = {}): HandlerSetup {
     platform: 'win32',
     hasPassword: () => true,
     syncActive: () => true,
-    servers: () => [],
     now: () => 1_800_000_000_000,
     emitStatus,
     ...over
@@ -207,21 +207,27 @@ describe('remote:esp32:create', () => {
   })
 })
 
-describe('remote:servers:set', () => {
-  it('rejeita não-array e nomes longos; aceita e tira repetidos', async () => {
+describe('servidores fora do status do controle remoto', () => {
+  it('remote:servers:set não existe e o status não traz servers', async () => {
+    const handlers = new Map<string, unknown>()
+    const ipcMain = {
+      handle: (channel: string, fn: unknown) => handlers.set(channel, fn)
+    } as unknown as IpcMain
+    registerRemoteHandlers(ipcMain, {
+      service: fakeService(),
+      client: {} as ControlClient,
+      config: () => defaultRemoteConfig(),
+      save: () => {},
+      safe,
+      platform: 'win32',
+      hasPassword: () => true,
+      syncActive: () => true,
+      now: () => 1_800_000_000_000,
+      emitStatus: vi.fn()
+    })
+    expect(handlers.has('remote:servers:set')).toBe(false)
     const t = setup()
-    expect(await t.invoke('remote:servers:set', 'Sagyou')).toEqual({
-      ok: false,
-      error: 'Nomes inválidos.'
-    })
-    expect(await t.invoke('remote:servers:set', ['x'.repeat(65)])).toEqual({
-      ok: false,
-      error: 'Nomes inválidos.'
-    })
-    expect(await t.invoke('remote:servers:set', [' Sagyou ', 'sagyou', 'Murasaki'])).toEqual({
-      ok: true
-    })
-    expect(t.config().servers).toEqual(['Sagyou', 'Murasaki'])
+    expect(await t.invoke('remote:status')).not.toHaveProperty('servers')
   })
 })
 

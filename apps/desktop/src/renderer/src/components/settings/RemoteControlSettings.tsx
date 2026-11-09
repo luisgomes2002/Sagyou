@@ -27,7 +27,6 @@ interface RemoteStatus {
   error: string | null
   suspendedUntil: number | null
   controllers: { id: string; name: string; since: string }[]
-  servers: { name: string; up: boolean }[]
   pending: PendingAuthorization[]
   hasEsp32Key: boolean
   accessCutAt?: number | null
@@ -35,8 +34,6 @@ interface RemoteStatus {
 
 interface Props {
   onToast: (message: string, type?: 'success' | 'error') => void
-  /** Names of the projects that have a code folder, offered as server names. */
-  suggestions?: string[]
 }
 
 const primaryClass =
@@ -49,7 +46,7 @@ const inputClass =
 const headingClass = 'text-sm font-medium text-[#d4d4d4]'
 
 /** Configurações → Controle remoto (spec docs/specs/2026-11-03-controle-remoto-app.md). */
-export function RemoteControlSettings({ onToast, suggestions = [] }: Props): JSX.Element {
+export function RemoteControlSettings({ onToast }: Props): JSX.Element {
   const [status, setStatus] = useState<RemoteStatus | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -59,7 +56,6 @@ export function RemoteControlSettings({ onToast, suggestions = [] }: Props): JSX
   const [requestErrors, setRequestErrors] = useState<Record<string, string>>({})
   const [revoking, setRevoking] = useState<{ id: string; name: string } | null>(null)
   const [revokedHint, setRevokedHint] = useState(false)
-  const [newServer, setNewServer] = useState('')
   const [espCode, setEspCode] = useState('')
   const [askEsp, setAskEsp] = useState(false)
   // Shown once; dropped when this section unmounts.
@@ -144,23 +140,6 @@ export function RemoteControlSettings({ onToast, suggestions = [] }: Props): JSX
       await refresh()
     })
 
-  const saveServers = (names: string[]): Promise<void> =>
-    run(async () => {
-      const result = await window.electronAPI.remote.setServers(names)
-      if (!result.ok) {
-        setError(result.error)
-        return
-      }
-      await refresh()
-    })
-
-  const addServer = async (): Promise<void> => {
-    const name = newServer.trim()
-    if (!name || !status) return
-    await saveServers([...status.servers.map((s) => s.name), name])
-    setNewServer('')
-  }
-
   const createEsp = (): Promise<void> =>
     run(async () => {
       const result = await window.electronAPI.remote.createEsp32({ totp: espCode.trim() })
@@ -197,9 +176,6 @@ export function RemoteControlSettings({ onToast, suggestions = [] }: Props): JSX
       </div>
     )
   }
-
-  const serverNames = status.servers.map((s) => s.name.toLowerCase())
-  const freeSuggestions = suggestions.filter((name) => !serverNames.includes(name.toLowerCase()))
 
   return (
     <div className="space-y-5">
@@ -343,71 +319,6 @@ export function RemoteControlSettings({ onToast, suggestions = [] }: Props): JSX
               </ul>
             )}
             {revokedHint && <p className="text-sm text-[#d9a640]">{ESP32_SUGGESTION}</p>}
-          </section>
-
-          <section className="space-y-3">
-            <h3 className={headingClass}>Servidores de Remote Control</h3>
-            <p className="text-xs text-[#999999]">
-              O PC só fica &quot;Pronto&quot; quando todos estes rodam (o nome passado em --name).
-            </p>
-            {status.servers.length > 0 && (
-              <ul className="space-y-2">
-                {status.servers.map((s) => (
-                  <li
-                    key={s.name}
-                    className="flex items-center justify-between gap-3 rounded-lg border border-[#2b2b31] bg-[#16161a] px-3 py-2"
-                  >
-                    <span className="min-w-0 truncate text-sm text-[#d4d4d4]">{s.name}</span>
-                    <span className="flex shrink-0 items-center gap-3">
-                      <span className={`text-xs ${s.up ? 'text-[#46d478]' : 'text-[#999999]'}`}>
-                        {s.up ? 'Rodando' : 'Parado'}
-                      </span>
-                      <button
-                        type="button"
-                        aria-label={`Remover ${s.name}`}
-                        disabled={busy}
-                        onClick={() =>
-                          void saveServers(
-                            status.servers.map((x) => x.name).filter((n) => n !== s.name)
-                          )
-                        }
-                        className="rounded px-2 py-1 text-xs text-[#999999] hover:bg-[#222227] hover:text-[#d4d4d4] focus:outline-none focus-visible:ring-1 focus-visible:ring-[#6d5bb8]"
-                      >
-                        Remover
-                      </button>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <div className="flex flex-wrap items-end gap-2">
-              <label className="min-w-0 flex-1 space-y-1 text-xs text-[#999999]">
-                <span>Nome do servidor</span>
-                <input
-                  value={newServer}
-                  maxLength={64}
-                  list="remote-server-suggestions"
-                  onChange={(event) => setNewServer(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') void addServer()
-                  }}
-                  className={inputClass}
-                />
-              </label>
-              <datalist id="remote-server-suggestions">
-                {freeSuggestions.map((name) => (
-                  <option key={name} value={name} />
-                ))}
-              </datalist>
-              <button
-                type="button"
-                disabled={busy || !newServer.trim()}
-                onClick={() => void addServer()}
-                className={secondaryClass}
-              >
-                Adicionar
-              </button>
-            </div>
           </section>
 
           <section className="space-y-3">
