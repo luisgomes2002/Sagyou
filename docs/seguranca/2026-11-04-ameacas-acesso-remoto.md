@@ -187,6 +187,10 @@ Decidido por Luis; construído na spec `docs/specs/2026-11-07-endurecer-acesso-r
 - **M5:** o pedido "Estou longe do PC" fica no Worker por no máximo 1 h (era 24 h).
 - **M6:** a chave do ESP32 no celular sem `requireAuthentication` foi aceita: ela só assina
   ligar/desligar, e o app já pede biometria antes de mandar o comando.
-- **Dívida:** a senha do "Estou longe do PC" vai cifrada só com a chave de sync; selá-la
-  para a chave pública do PC muda o protocolo, e um celular novo ainda não conhece essa
-  chave. Fica para uma spec futura.
+- **Dívida (resolvida em 2026-11-09, spec `docs/specs/2026-11-09-selar-senha-remota.md`,
+  desktop 1.9.0, celular 0.5.0):** a senha do "Estou longe do PC" ia cifrada só com a chave
+  de sync. Agora vai selada para a chave do PC (Ed25519 convertida para X25519, ECDH efêmero,
+  AAD com as chaves do celular e do PC). O celular novo obtém a chave pelo Worker, onde só o
+  aparelho com o papel de PC a escreve (e esse papel exige o autenticador); um celular que já
+  conhecia a chave não aceita outra. Risco que fica: quem controla a conta Cloudflare, ou tem
+  a chave de sync **e** o autenticador, pode trocar a chave no Worker.
