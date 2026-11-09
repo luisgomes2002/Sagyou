@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { RemoteControlSettings } from '../../components/settings/RemoteControlSettings'
 import {
   ENABLE_DESCRIPTION,
@@ -9,6 +9,7 @@ import {
   accessCutPcText,
   suspendedText
 } from '../../utils/remoteControlText'
+import type { RcServerView } from '../../utils/rcServers'
 
 const PHONE = 'a'.repeat(32)
 const NEW_PHONE = 'b'.repeat(32)
@@ -27,6 +28,7 @@ const base = {
 }
 
 let api: Record<string, ReturnType<typeof vi.fn>>
+let rc: Record<string, ReturnType<typeof vi.fn>>
 let statusListener: ((s: typeof base) => void) | undefined
 const toast = vi.fn()
 
@@ -34,6 +36,25 @@ function mount(status: Partial<typeof base> = {}): ReturnType<typeof render> {
   api.status.mockResolvedValue({ ...base, ...status })
   return render(<RemoteControlSettings onToast={toast} />)
 }
+
+function server(overrides: Partial<RcServerView> = {}): RcServerView {
+  return {
+    projectId: 'p-sagyou',
+    name: 'Sagyou',
+    enabled: true,
+    autostart: false,
+    state: 'stopped',
+    confirmed: true,
+    error: null,
+    ...overrides
+  }
+}
+
+function withServers(servers: RcServerView[], supported = true): void {
+  rc.list.mockResolvedValue({ supported, servers })
+}
+
+const row = (name: string): HTMLElement => screen.getByRole('listitem', { name })
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -52,7 +73,14 @@ beforeEach(() => {
       return vi.fn()
     })
   }
-  ;(window as unknown as { electronAPI: unknown }).electronAPI = { remote: api }
+  rc = {
+    list: vi.fn().mockResolvedValue({ supported: true, servers: [] }),
+    configure: vi.fn().mockResolvedValue({ success: true }),
+    start: vi.fn().mockResolvedValue({ success: true, result: 'ok' }),
+    stop: vi.fn().mockResolvedValue({ success: true, result: 'ok' }),
+    onChanged: vi.fn(() => vi.fn())
+  }
+  ;(window as unknown as { electronAPI: unknown }).electronAPI = { remote: api, rcServers: rc }
   Object.defineProperty(navigator, 'clipboard', {
     value: { writeText: vi.fn().mockResolvedValue(undefined) },
     configurable: true
@@ -169,5 +197,136 @@ describe('RemoteControlSettings', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Atualize o Worker para usar o controle remoto.'
     )
+  })
+
+  describe('Servidores de Remote Control', () => {
+    it('uma linha por projeto da lista, com os estados em texto exato, e o rodapé', async () => {
+      withServers([
+        server({ projectId: 'p1', name: 'Sagyou', state: 'running' }),
+        server({ projectId: 'p2', name: 'Murasaki', state: 'stopped' }),
+        server({ projectId: 'p3', name: 'Kanji', state: 'starting' }),
+        server({ projectId: 'p4', name: 'Blog', state: 'needs-confirm', confirmed: false }),
+        server({ projectId: 'p5', name: 'Site', state: 'external' })
+      ])
+      mount()
+      expect(await screen.findByText('Servidores de Remote Control')).toBeInTheDocument()
+      expect(within(row('Sagyou')).getByText('Rodando')).toBeInTheDocument()
+      expect(within(row('Murasaki')).getByText('Parado')).toBeInTheDocument()
+      expect(within(row('Kanji')).getByText('Iniciando…')).toBeInTheDocument()
+      expect(within(row('Blog')).getByText('Confirme no Fleet')).toBeInTheDocument()
+      expect(within(row('Site')).getByText('Rodando (fora do Sagyou)')).toBeInTheDocument()
+      expect(within(row('Murasaki')).getByRole('button', { name: 'Ligar' })).toBeInTheDocument()
+      expect(within(row('Sagyou')).getByRole('button', { name: 'Desligar' })).toBeInTheDocument()
+      expect(within(row('Site')).getByRole('button', { name: 'Desligar' })).toBeInTheDocument()
+      expect(screen.getByText('Só aparecem projetos com uma pasta de código.')).toBeInTheDocument()
+    })
+
+    it('"Servidor de Remote Control" e "Iniciar com o Sagyou" chamam configure', async () => {
+      withServers([server({ projectId: 'p1', name: 'Sagyou', enabled: true, autostart: false })])
+      mount()
+      await screen.findByText('Servidores de Remote Control')
+      fireEvent.click(within(row('Sagyou')).getByRole('checkbox', { name: 'Iniciar com o Sagyou' }))
+      await waitFor(() => expect(rc.configure).toHaveBeenCalledWith('p1', { autostart: true }))
+      await waitFor(() =>
+        expect(
+          within(row('Sagyou')).getByRole('checkbox', { name: 'Servidor de Remote Control' })
+        ).not.toBeDisabled()
+      )
+      fireEvent.click(
+        within(row('Sagyou')).getByRole('checkbox', { name: 'Servidor de Remote Control' })
+      )
+      await waitFor(() => expect(rc.configure).toHaveBeenCalledWith('p1', { enabled: false }))
+    })
+
+    it('Ligar chama start e abre a aba do servidor no Fleet', async () => {
+      withServers([server({ projectId: 'p1', name: 'Sagyou', state: 'stopped' })])
+      const onOpenServer = vi.fn()
+      render(<RemoteControlSettings onToast={toast} onOpenServer={onOpenServer} />)
+      await screen.findByText('Servidores de Remote Control')
+      fireEvent.click(within(row('Sagyou')).getByRole('button', { name: 'Ligar' }))
+      await waitFor(() => expect(rc.start).toHaveBeenCalledWith('p1'))
+      await waitFor(() => expect(onOpenServer).toHaveBeenCalledWith('p1'))
+    })
+
+    it('Ligar recusado não abre o Fleet e mostra o erro na linha', async () => {
+      withServers([server({ projectId: 'p1', name: 'Sagyou', state: 'stopped' })])
+      rc.start.mockResolvedValue({ success: false, result: 'cut' })
+      const onOpenServer = vi.fn()
+      render(<RemoteControlSettings onToast={toast} onOpenServer={onOpenServer} />)
+      await screen.findByText('Servidores de Remote Control')
+      fireEvent.click(within(row('Sagyou')).getByRole('button', { name: 'Ligar' }))
+      expect(await within(row('Sagyou')).findByRole('alert')).toHaveTextContent(
+        'O acesso está cortado. Restaure antes de ligar um servidor.'
+      )
+      expect(onOpenServer).not.toHaveBeenCalled()
+    })
+
+    it('Desligar chama stop', async () => {
+      withServers([server({ projectId: 'p1', name: 'Sagyou', state: 'running' })])
+      mount()
+      await screen.findByText('Servidores de Remote Control')
+      fireEvent.click(within(row('Sagyou')).getByRole('button', { name: 'Desligar' }))
+      await waitFor(() => expect(rc.stop).toHaveBeenCalledWith('p1'))
+    })
+
+    it('a dica da 1ª vez aparece em needs-confirm', async () => {
+      withServers([
+        server({ projectId: 'p1', name: 'Sagyou', state: 'needs-confirm', confirmed: false })
+      ])
+      mount()
+      expect(
+        await screen.findByText(
+          'Responda às perguntas do Claude no Fleet. Depois disso, o celular também liga este servidor.'
+        )
+      ).toBeInTheDocument()
+    })
+
+    it('o erro do servidor aparece na linha', async () => {
+      withServers([
+        server({ projectId: 'p1', name: 'Sagyou', error: 'Claude Code não encontrado' })
+      ])
+      mount()
+      await screen.findByText('Servidores de Remote Control')
+      expect(within(row('Sagyou')).getByRole('alert')).toHaveTextContent(
+        'Claude Code não encontrado'
+      )
+    })
+
+    it('fora do Windows (supported: false) a seção não aparece', async () => {
+      withServers([server()], false)
+      mount({ supported: false, enabled: false })
+      await screen.findByText('Só funciona no Windows.')
+      await waitFor(() => expect(rc.list).toHaveBeenCalled())
+      expect(screen.queryByText('Servidores de Remote Control')).not.toBeInTheDocument()
+      expect(
+        screen.queryByText('Só aparecem projetos com uma pasta de código.')
+      ).not.toBeInTheDocument()
+    })
+
+    it('com o controle remoto desligado e supported, a seção aparece', async () => {
+      withServers([server({ projectId: 'p1', name: 'Sagyou' })])
+      mount({ enabled: false, controllers: [] })
+      expect(await screen.findByText('Servidores de Remote Control')).toBeInTheDocument()
+      expect(within(row('Sagyou')).getByText('Parado')).toBeInTheDocument()
+      expect(screen.queryByText('Celulares autorizados')).not.toBeInTheDocument()
+    })
+
+    it('a lista acompanha rc-server:changed', async () => {
+      let changed: ((list: unknown) => void) | undefined
+      rc.onChanged.mockImplementation((cb: (list: unknown) => void) => {
+        changed = cb
+        return vi.fn()
+      })
+      withServers([server({ projectId: 'p1', name: 'Sagyou', state: 'stopped' })])
+      mount()
+      expect(await screen.findByText('Parado')).toBeInTheDocument()
+      act(() =>
+        changed?.({
+          supported: true,
+          servers: [server({ projectId: 'p1', name: 'Sagyou', state: 'running' })]
+        })
+      )
+      expect(await screen.findByText('Rodando')).toBeInTheDocument()
+    })
   })
 })

@@ -5,10 +5,15 @@ import userEvent from '@testing-library/user-event'
 import { FleetView } from '../../components/ai/FleetView'
 import type { Project } from '../../types'
 import { useKanbanStore } from '../../store/kanban'
+import { retainFleetSelection } from '../../components/ai/fleet/fleetSelection'
+import type { RcServerView } from '../../utils/rcServers'
 
 // xterm needs a real canvas/matchMedia; the terminal itself is covered by AgentTerminal.test.
 vi.mock('../../components/ai/AgentTerminal', () => ({
-  AgentTerminal: ({ log }: { log: string }) => <pre data-testid="terminal">{log}</pre>
+  AgentTerminal: ({ log }: { log: string }) => <pre data-testid="terminal">{log}</pre>,
+  InteractiveTerminal: ({ runId }: { runId: string }) => (
+    <pre data-testid="server-terminal">{runId}</pre>
+  )
 }))
 
 // FleetView is a pure view over the code-agent state from the main process.
@@ -66,6 +71,13 @@ beforeEach(() => {
       .fn()
       .mockResolvedValue({ patch: '', files: [], truncated: false, omittedNewFiles: [] }),
     approve: vi.fn()
+  } as never
+  window.electronAPI.rcServers = {
+    list: vi.fn().mockResolvedValue({ supported: true, servers: [] }),
+    stop: vi.fn().mockResolvedValue({ success: true, result: 'ok' }),
+    terminalInput: vi.fn().mockResolvedValue({ success: true }),
+    terminalResize: vi.fn().mockResolvedValue({ success: true }),
+    onChanged: vi.fn(() => vi.fn())
   } as never
   window.electronAPI.legacyChat = {
     notice: vi.fn().mockResolvedValue(null),
@@ -398,5 +410,90 @@ describe('FleetView', () => {
     await screen.findByText('Nenhum agente ativo')
     expect(window.electronAPI.legacyChat.notice).toHaveBeenCalledTimes(1)
     expect(screen.queryByText(/O histórico de conversas foi removido/)).not.toBeInTheDocument()
+  })
+
+  describe('servidores de Remote Control', () => {
+    function server(overrides: Partial<RcServerView> = {}): RcServerView {
+      return {
+        projectId: 'p-sagyou',
+        name: 'Sagyou',
+        enabled: true,
+        autostart: true,
+        state: 'running',
+        confirmed: true,
+        error: null,
+        ...overrides
+      }
+    }
+
+    function withServers(servers: RcServerView[]): void {
+      ;(window.electronAPI.rcServers.list as ReturnType<typeof vi.fn>).mockResolvedValue({
+        supported: true,
+        servers
+      })
+    }
+
+    it('mostra a aba "Servidor: Sagyou" com o servidor rodando e Desligar chama stop', async () => {
+      withServers([server()])
+      render(<FleetView projects={projects} />)
+
+      const tabs = within(await screen.findByRole('navigation', { name: 'Sessões' })).getByRole(
+        'group',
+        { name: 'Sessões ativas' }
+      )
+      expect(
+        await within(tabs).findByRole('button', { name: /^Servidor: Sagyou — / })
+      ).toBeInTheDocument()
+      expect(await screen.findByRole('heading', { name: 'Servidor: Sagyou' })).toBeInTheDocument()
+      expect(screen.getByTestId('server-terminal')).toHaveTextContent('server:p-sagyou')
+      expect(screen.queryByRole('complementary', { name: 'Inspetor' })).not.toBeInTheDocument()
+
+      await userEvent.click(screen.getByRole('button', { name: 'Desligar' }))
+      expect(window.electronAPI.rcServers.stop).toHaveBeenCalledWith('p-sagyou')
+    })
+
+    it('servidor parado ou de fora do Sagyou não ganha aba', async () => {
+      withServers([
+        server({ projectId: 'a', name: 'Parado', state: 'stopped' }),
+        server({ projectId: 'b', name: 'Fora', state: 'external' })
+      ])
+      render(<FleetView projects={projects} />)
+
+      expect(await screen.findByText('Nenhum agente ativo')).toBeInTheDocument()
+      await waitFor(() => expect(window.electronAPI.rcServers.list).toHaveBeenCalled())
+      expect(screen.getByText('Ativas · 0')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /^Servidor:/ })).not.toBeInTheDocument()
+    })
+
+    it('em needs-confirm a aba pede atenção e mostra a dica da 1ª vez', async () => {
+      withServers([server({ state: 'needs-confirm', confirmed: false })])
+      render(<FleetView projects={projects} />)
+
+      expect(
+        await screen.findByRole('button', { name: /^Servidor: Sagyou — Precisa de você/ })
+      ).toBeInTheDocument()
+      expect(
+        screen.getByText(
+          'Responda às perguntas do Claude no Fleet. Depois disso, o celular também liga este servidor.'
+        )
+      ).toBeInTheDocument()
+    })
+
+    it('abre na aba do servidor ligado nas Configurações', async () => {
+      oneRun()
+      withServers([server({ state: 'starting' })])
+      retainFleetSelection('server:p-sagyou')
+      try {
+        render(<FleetView projects={projects} retainThread />)
+
+        expect(await screen.findByRole('button', { name: /^Servidor: Sagyou — / })).toHaveAttribute(
+          'aria-current',
+          'true'
+        )
+        expect(screen.getByRole('heading', { name: 'Servidor: Sagyou' })).toBeInTheDocument()
+      } finally {
+        retainFleetSelection(null)
+      }
+    })
   })
 })

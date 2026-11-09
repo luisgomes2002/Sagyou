@@ -7,6 +7,7 @@
 
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
+import { isServerTerminalId } from '../../utils/rcServers'
 
 export interface LiveTerminal {
   terminal: Terminal
@@ -36,18 +37,36 @@ function writePreservingScroll(terminal: Terminal, data: string): void {
 /** One listener for every terminal, so N sessions don't add N IPC listeners. */
 function listen(): void {
   if (unsubscribe) return
-  const api = window.electronAPI.ai.codeAgent
-  const offOutput = api.onOutput(({ runId, chunk }) => {
-    const session = live.get(runId)
+  const receive = (id: string, chunk: string): void => {
+    const session = live.get(id)
     if (!session) return
     if (session.pending) session.pending.push(chunk)
     else writePreservingScroll(session.terminal, chunk)
-  })
+  }
+  const api = window.electronAPI.ai.codeAgent
+  const offOutput = api.onOutput(({ runId, chunk }) => receive(runId, chunk))
   const offExit = api.onExit(({ runId }) => disposeLiveTerminal(runId))
+  // Remote Control servers' terminals (`server:<projectId>`) share this map;
+  // their exit only comes when the server is gone for good, not on a restart.
+  const servers = window.electronAPI.rcServers
+  const offServerOutput = servers?.onOutput(({ id, chunk }) => receive(id, chunk))
+  const offServerExit = servers?.onExit(({ id }) => disposeLiveTerminal(id))
   unsubscribe = () => {
     offOutput()
     offExit()
+    offServerOutput?.()
+    offServerExit?.()
   }
+}
+
+/** Main's buffer of a terminal: a server's comes from its own channel. */
+function reconnect(
+  id: string
+): Promise<{ success: boolean; log?: string; cols?: number; rows?: number } | undefined> {
+  if (isServerTerminalId(id)) {
+    return Promise.resolve(window.electronAPI.rcServers?.terminalReconnect?.(id))
+  }
+  return Promise.resolve(window.electronAPI.ai.codeAgent.terminalReconnect?.(id))
 }
 
 const THEME = {
@@ -120,7 +139,7 @@ export function acquireLiveTerminal(
     session.connected = true
     markReady()
   }
-  void Promise.resolve(window.electronAPI.ai.codeAgent.terminalReconnect?.(runId))
+  void reconnect(runId)
     .then((result) => connect(result?.success ? result : null))
     .catch(() => connect(null))
 

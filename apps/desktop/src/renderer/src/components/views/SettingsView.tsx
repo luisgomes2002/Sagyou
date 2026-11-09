@@ -18,6 +18,8 @@ interface Props {
   onToast: (message: string, type?: 'success' | 'error') => void
   initialSection?: SettingsSectionId
   onOpenGuide: (articleId?: string) => void
+  /** After "Ligar" on a Remote Control server: show its tab in the Fleet. */
+  onOpenServer?: (projectId: string) => void
 }
 
 const SETTINGS_SECTIONS: {
@@ -109,7 +111,8 @@ export function SettingsView({
   onSetUiPreferences,
   onToast,
   initialSection = 'geral',
-  onOpenGuide
+  onOpenGuide,
+  onOpenServer
 }: Props): JSX.Element {
   const [section, setSection] = useState<SettingsSectionId>(initialSection)
   // Once opened, Sincronização stays mounted (hidden) while you visit other
@@ -167,7 +170,9 @@ export function SettingsView({
           </div>
         )}
         {current.id === 'mcp-externo' && <McpExternalSettings onToast={onToast} />}
-        {current.id === 'controle-remoto' && <RemoteControlSettings onToast={onToast} />}
+        {current.id === 'controle-remoto' && (
+          <RemoteControlSettings onToast={onToast} onOpenServer={onOpenServer} />
+        )}
         {current.id === 'sistema' && (
           <>
             <WindowSettings />

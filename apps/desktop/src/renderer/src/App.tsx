@@ -56,6 +56,8 @@ import { useAppLock } from './hooks/useAppLock'
 import { useLoadOnFirstUnlock } from './hooks/useLoadOnFirstUnlock'
 import { isDataLocked, setDataLocked } from './services/lockState'
 import type { GlobalSearchHit } from '../../main/modules/search/global-search-query'
+import { retainFleetSelection } from './components/ai/fleet/fleetSelection'
+import { serverSessionKey } from './utils/rcServers'
 
 interface TaskModalState {
   open: boolean
@@ -736,6 +738,12 @@ export default function App() {
                 key={settingsSection}
                 initialSection={settingsSection}
                 onOpenGuide={(articleId) => navigateTo({ view: 'guide', articleId })}
+                onOpenServer={(projectId) => {
+                  // With "Sessões de código" hidden in the sidebar, stay in Configurações.
+                  if (!isViewEnabled('ai', enabledFeatures)) return
+                  retainFleetSelection(serverSessionKey(projectId))
+                  navigateTo({ view: 'ai' })
+                }}
                 featurePreferences={featurePreferences}
                 onSetFeaturePreferences={saveFeaturePreferences}
                 uiPreferences={uiPreferences}

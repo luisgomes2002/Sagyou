@@ -11,6 +11,7 @@ import {
   revokeMessage,
   suspendedText
 } from '../../utils/remoteControlText'
+import { RcServersSection } from './RcServersSection'
 
 interface PendingAuthorization {
   id: string
@@ -34,6 +35,8 @@ interface RemoteStatus {
 
 interface Props {
   onToast: (message: string, type?: 'success' | 'error') => void
+  /** After "Ligar" on a server: show its tab in the Fleet. */
+  onOpenServer?: (projectId: string) => void
 }
 
 const primaryClass =
@@ -46,7 +49,7 @@ const inputClass =
 const headingClass = 'text-sm font-medium text-[#d4d4d4]'
 
 /** Configurações → Controle remoto (spec docs/specs/2026-11-03-controle-remoto-app.md). */
-export function RemoteControlSettings({ onToast }: Props): JSX.Element {
+export function RemoteControlSettings({ onToast, onOpenServer }: Props): JSX.Element {
   const [status, setStatus] = useState<RemoteStatus | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -399,6 +402,9 @@ export function RemoteControlSettings({ onToast }: Props): JSX.Element {
           </section>
         </>
       )}
+
+      {/* The servers serve the PC even without a phone: shown with the remote control off. */}
+      <RcServersSection onOpenServer={onOpenServer} />
 
       {error && (
         <p role="alert" className="text-sm text-[#ec6a6a]">
