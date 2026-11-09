@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
-import type { ControlClient, InboxMessage } from '@sagyou/core/control/client'
+import { ControlError, type ControlClient, type InboxMessage } from '@sagyou/core/control/client'
 import { newSigningKeys, pairingCode, publicKeyOf } from '@sagyou/core/control/crypto'
 import {
   checkEnvelope,
@@ -48,6 +48,8 @@ type FakeClient = ControlClient & {
   removeController: ReturnType<typeof vi.fn>
   putEsp32Key: ReturnType<typeof vi.fn>
   controllers: ReturnType<typeof vi.fn>
+  pcKey: ReturnType<typeof vi.fn>
+  publishPcKey: ReturnType<typeof vi.fn>
 }
 
 interface Keys {
@@ -79,6 +81,8 @@ interface Setup {
   /** Who holds the controller role in the Worker. */
   setRoles: (ids: string[]) => void
   setHasPassword: (v: boolean) => void
+  /** What GET /roles/pc answers: who the PC is and the key it published. */
+  worker: { pc: string | null; publicKey: Uint8Array | null; fail: Error | null }
 }
 
 function setup(
@@ -97,6 +101,7 @@ function setup(
         : [{ id: PHONE, name: 'Pixel 8', publicKey: toBase64(phone.publicKey), since: 'x' }]
   }
   let queue: InboxMessage[] = []
+  const worker: Setup['worker'] = { pc: 'pc', publicKey: pc.publicKey, fail: null }
   const sent: Sent[] = []
   const statuses: SignedEnvelope[] = []
   const client = {
@@ -114,7 +119,14 @@ function setup(
     }),
     addController: vi.fn(async () => {}),
     removeController: vi.fn(async () => {}),
-    putEsp32Key: vi.fn(async () => {})
+    putEsp32Key: vi.fn(async () => {}),
+    pcKey: vi.fn(async () => {
+      if (worker.fail) throw worker.fail
+      return { pc: worker.pc, publicKey: worker.publicKey }
+    }),
+    publishPcKey: vi.fn(async (key: Uint8Array) => {
+      worker.publicKey = key
+    })
   } as unknown as FakeClient
   let locked = opts.locked ?? true
   const timers: { fn: () => void; ms: number }[] = []
@@ -212,7 +224,8 @@ function setup(
     },
     setHasPassword: (v: boolean) => {
       hasPassword = v
-    }
+    },
+    worker
   }
 }
 
@@ -875,6 +888,55 @@ describe('remote-service: ciclo', () => {
     expect(sentCard.env.body).toEqual(card)
     await t.service.closeCard('c1')
     expect(t.sent.at(-1)?.env).toMatchObject({ kind: 'approval-closed', body: { id: 'c1' } })
+  })
+
+  it('publica a chave do PC no Worker quando falta ou difere, e só sendo o PC', async () => {
+    const t = setup()
+    await t.service.tick()
+    expect(t.client.publishPcKey).not.toHaveBeenCalled()
+
+    t.worker.publicKey = null
+    t.advance(30_000)
+    await t.service.tick()
+    expect(t.client.publishPcKey).toHaveBeenCalledTimes(1)
+    expect(t.client.publishPcKey.mock.calls[0][0]).toEqual(t.pc.publicKey)
+    expect(t.deps.log.info).toHaveBeenCalledWith('remote', 'pc_key_published')
+
+    t.worker.publicKey = newSigningKeys().publicKey
+    t.advance(30_000)
+    await t.service.tick()
+    expect(t.client.publishPcKey).toHaveBeenCalledTimes(2)
+    expect(t.worker.publicKey).toEqual(t.pc.publicKey)
+  })
+
+  it('outro aparelho é o PC: não publica; voltando a ser o PC, publica sem reiniciar', async () => {
+    const t = setup()
+    t.worker.pc = OTHER
+    t.worker.publicKey = null
+    await t.service.tick()
+    expect(t.client.publishPcKey).not.toHaveBeenCalled()
+
+    t.worker.pc = 'pc'
+    t.advance(30_000)
+    await t.service.tick()
+    expect(t.client.publishPcKey).toHaveBeenCalledTimes(1)
+  })
+
+  it('falha ao publicar só loga, não para o heartbeat, e tenta de novo', async () => {
+    const t = setup()
+    t.worker.publicKey = null
+    t.worker.fail = new ControlError('not-deployed')
+    await t.service.tick()
+    expect(t.statuses).toHaveLength(1)
+    expect(t.deps.log.warn).toHaveBeenCalledWith('remote', 'pc_key_publish_failed', {
+      code: 'not-deployed'
+    })
+    expect(t.sent.filter((s) => s.notify === 'ready')).toHaveLength(1)
+
+    t.worker.fail = null
+    t.advance(30_000)
+    await t.service.tick()
+    expect(t.client.publishPcKey).toHaveBeenCalledTimes(1)
   })
 
   it('publicar a chave do ESP32 grava no Worker e envia aos controles', async () => {

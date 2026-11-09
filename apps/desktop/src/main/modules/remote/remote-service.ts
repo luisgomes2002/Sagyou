@@ -536,9 +536,32 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
     }
     const env = sign('status', status, STATUS_TTL_MS)
     await client.putStatus(env)
+    await publishKey()
     if (!readySent && servers.every((s) => s.up)) {
       readySent = true
       for (const c of controllers()) await client.send(c.id, env, 'ready')
+    }
+  }
+
+  /**
+   * Keeps this PC's public key in the Worker (spec 2026-11-09): a phone far from
+   * home seals the Sagyou password to it. Checked every heartbeat, so a PC that
+   * becomes the PC again publishes without a restart. Never stops the heartbeat.
+   */
+  const sameBytes = (a: Uint8Array, b: Uint8Array): boolean =>
+    a.length === b.length && a.every((v, i) => v === b[i])
+
+  async function publishKey(): Promise<void> {
+    try {
+      const { pc, publicKey } = await client.pcKey()
+      if (pc !== client.me()) return
+      const mine = fromBase64(pcPublicKey())
+      if (publicKey && sameBytes(publicKey, mine)) return
+      await client.publishPcKey(mine)
+      log.info('remote', 'pc_key_published')
+    } catch (error) {
+      const code = error instanceof ControlError ? error.code : 'offline'
+      log.warn('remote', 'pc_key_publish_failed', { code })
     }
   }
 
