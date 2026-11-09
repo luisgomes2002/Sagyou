@@ -46,8 +46,8 @@ O obstáculo é que um celular novo, pedindo de longe, ainda não conhece essa c
 ## Decisões do construtor (o agente decidiu; o humano pode mudar)
 
 1. **Selo:** o PC já tem um par Ed25519 (`pcKeys` em `remote-control.json`). Para cifrar,
-   a chave é convertida para X25519 (`ed25519.utils.toMontgomery` /
-   `toMontgomerySecret` do `@noble/curves`, que o core já usa), sem criar uma segunda
+   a chave é convertida para X25519 (`edwardsToMontgomeryPub` /
+   `edwardsToMontgomeryPriv` do `@noble/curves`, que o core já usa), sem criar uma segunda
    chave nem mudar o arquivo. O celular gera um par X25519 efêmero por pedido; o segredo
    ECDH passa por HKDF-SHA256 (info `sagyou-remote-password-v1`) e cifra a senha com
    XChaCha20-Poly1305. O AAD amarra o selo ao pedido:
@@ -64,8 +64,8 @@ O obstáculo é que um celular novo, pedindo de longe, ainda não conhece essa c
    é o `pc` atual (403 para qualquer outro), 32 bytes em base64. `setPc` (outro aparelho
    vira o PC) apaga a chave antiga. Um D1 sem a coluna nova responde
    `501 {error:'control not deployed'}` nessa rota, como as outras de controle.
-4. **Quando o PC publica:** sempre que o controle remoto liga e roda (no início do
-   `remote-service` e depois de ganhar o papel `pc`), se a chave no Worker for diferente da
+4. **Quando o PC publica:** a cada heartbeat (30 s) do controle remoto, se ele é o `pc`
+   no Worker e a chave lá for diferente da
    dele. Falha de rede tenta de novo no ciclo seguinte. Não pede autenticador.
 5. **No celular:** antes de mandar, ele lê `GET /roles/pc`. Se já conhece uma chave do PC
    (de um pareamento anterior, guardada em `sagyou.control.pcpub`) e a do Worker for
@@ -88,8 +88,8 @@ O obstáculo é que um celular novo, pedindo de longe, ainda não conhece essa c
 **PC, ao ler um `authorize-remote`:**
 - `sealedPassword` válido → abre com a chave privada e confere a senha. O resto é como
   hoje: senha errada conta e remove o papel, certa autoriza.
-- Selo que não abre (cifra adulterada, outra chave, AAD diferente) → `shape`. Conta como
-  hoje conta um corpo malformado de um remetente autenticado.
+- Selo que não abre (cifra adulterada, outra chave, AAD diferente) → `shape`. Trata como
+  hoje um corpo malformado: não conta para a suspensão.
 - Corpo antigo com `password` → `outdated`, não conta. O celular atualizado mostra
   **"Atualize o Sagyou no celular."** (o antigo mostra a mensagem genérica dele).
 - A senha aberta nunca vai para log, estado ou arquivo, igual a hoje.
@@ -115,7 +115,7 @@ O obstáculo é que um celular novo, pedindo de longe, ainda não conhece essa c
 ## Telas
 
 - Celular, `ControlSetupScreen`: só os três textos novos acima, no mesmo lugar de erro de
-  hoje. Os textos ficam em `packages/core/src/control/texts.ts`.
+  hoje. Os textos ficam em `apps/mobile/src/remote/texts.ts` (`REMOTE_TEXT`, só o celular os mostra).
 - Desktop: nenhuma tela muda.
 - Guia (Como funciona) e `docs/seguranca`: o artigo do controle remoto diz que a senha vai
   selada para o PC, e a dívida sai da seção 7 e vira "resolvido em 2026-11-09".
