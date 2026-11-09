@@ -10,6 +10,7 @@ import {
   defaultRemoteConfig,
   esp32Key,
   loadRemoteConfig,
+  migrateServerNames,
   pcPrivateKey,
   remoteConfigFileName,
   saveRemoteConfig,
@@ -46,7 +47,16 @@ describe('remote-control.json', () => {
       enabled: true,
       pcKeys: { publicKey: 'cHVi', privateCipher: sealSecret(safe, priv) },
       controllers: [{ id: 'b'.repeat(32), name: 'Pixel', publicKey: 'cGs=', since: '2026-11-03' }],
-      servers: ['Sagyou', 'Murasaki'],
+      servers: [
+        {
+          projectId: 'p1',
+          enabled: true,
+          autostart: true,
+          confirmedAt: '2026-11-09',
+          path: 'E:/Sagyou'
+        },
+        { projectId: 'p2', enabled: false, autostart: false, confirmedAt: null, path: null }
+      ],
       esp32KeyCipher: sealSecret(safe, esp)
     }
     saveRemoteConfig(dir, file, config, 0)
@@ -119,5 +129,62 @@ describe('remote-control.json', () => {
   it('nome em dev é separado', () => {
     expect(remoteConfigFileName(true)).toBe('remote-control-dev.json')
     expect(remoteConfigFileName(false)).toBe('remote-control.json')
+  })
+})
+
+// Spec 2026-11-09-servidores-remote-control: servers become per project.
+describe('servidores por projeto', () => {
+  const projects = [
+    { id: 'p1', name: 'Sagyou' },
+    { id: 'p2', name: 'Murasaki' },
+    { id: 'p3', name: 'Dup' },
+    { id: 'p4', name: 'dup' }
+  ]
+
+  it('arquivo antigo (lista de nomes) vira nomes legados, sem entradas', () => {
+    writeFileSync(join(dir, file), JSON.stringify({ servers: ['Sagyou', 'Nada'] }))
+    const loaded = loadRemoteConfig(dir, file)
+    expect(loaded.servers).toEqual([])
+    expect(loaded.legacyServerNames).toEqual(['Sagyou', 'Nada'])
+  })
+
+  it('migra pelo nome do projeto (sem diferenciar maiúsculas) e conta os descartados', () => {
+    const old = {
+      ...defaultRemoteConfig(),
+      legacyServerNames: ['sagyou', 'Nada', 'Dup', 'Murasaki']
+    }
+    const { config, dropped } = migrateServerNames(old, projects)
+    expect(config.servers).toEqual([
+      { projectId: 'p1', enabled: true, autostart: true, confirmedAt: null, path: null },
+      { projectId: 'p2', enabled: true, autostart: true, confirmedAt: null, path: null }
+    ])
+    expect(config.legacyServerNames).toEqual([])
+    expect(dropped).toBe(2)
+    // Again: nothing is duplicated.
+    const twice = migrateServerNames({ ...config, legacyServerNames: ['Sagyou'] }, projects)
+    expect(twice.config.servers).toHaveLength(2)
+  })
+
+  it('o arquivo gravado nunca leva os nomes legados', () => {
+    saveRemoteConfig(dir, file, { ...defaultRemoteConfig(), legacyServerNames: ['Sagyou'] }, 0)
+    expect(readFileSync(join(dir, file), 'utf-8')).not.toContain('legacyServerNames')
+    expect(loadRemoteConfig(dir, file).legacyServerNames).toEqual([])
+  })
+
+  it('entrada malformada ou repetida é descartada; no máximo 50', () => {
+    const many = Array.from({ length: 60 }, (_, i) => ({ projectId: `p${i}` }))
+    writeFileSync(
+      join(dir, file),
+      JSON.stringify({ servers: [{ projectId: '' }, { nada: 1 }, { projectId: 'p0' }, ...many] })
+    )
+    const loaded = loadRemoteConfig(dir, file)
+    expect(loaded.servers).toHaveLength(50)
+    expect(loaded.servers[0]).toEqual({
+      projectId: 'p0',
+      enabled: true,
+      autostart: false,
+      confirmedAt: null,
+      path: null
+    })
   })
 })
