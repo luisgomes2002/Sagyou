@@ -734,6 +734,66 @@ describe('origem autostart', () => {
     })
   })
 
+  it('autostart que chega a "Connected" confirma: as perguntas já foram respondidas', async () => {
+    const { manager, ptys, entries, view, clock } = setup({
+      entries: [entry({ autostart: true, confirmedAt: null, path: null })]
+    })
+    await manager.startAutostart()
+    ptys[0].emit('Spawn mode: worktree\r\n')
+    expect(view()).toMatchObject({ state: 'needs-confirm', confirmed: false })
+    ptys[0].emit('\x1b[36m·✓·\x1b[39m \x1b[1mConnected\x1b[22m · Sagyou\r\n')
+    expect(entries()[0]).toMatchObject({
+      confirmedAt: new Date(clock.now()).toISOString(),
+      path: DIR
+    })
+    expect(view()).toMatchObject({ state: 'running', confirmed: true })
+  })
+
+  it('"Connected" partido entre dois pedaços também confirma', async () => {
+    const { manager, ptys, view } = setup({
+      entries: [entry({ autostart: true, confirmedAt: null, path: null })]
+    })
+    await manager.startAutostart()
+    ptys[0].emit('·✓· Conn')
+    expect(view()?.confirmed).toBe(false)
+    ptys[0].emit('ected · Sagyou')
+    expect(view()?.confirmed).toBe(true)
+  })
+
+  it('"Connected" sem o ✓ do Claude não confirma', async () => {
+    const { manager, deps, ptys, view } = setup({
+      entries: [entry({ autostart: true, confirmedAt: null, path: null })]
+    })
+    await manager.startAutostart()
+    ptys[0].emit('Disconnected\r\nNot Connected\r\nEnable Remote Control? (y/n)')
+    expect(deps.saveEntries).not.toHaveBeenCalled()
+    expect(view()?.confirmed).toBe(false)
+  })
+
+  it('a saída de antes de religar não conta para a execução nova', async () => {
+    const { manager, deps, clock, ptys, view } = setup({
+      entries: [entry({ autostart: true, confirmedAt: null, path: null })]
+    })
+    await manager.startAutostart()
+    ptys[0].emit('·✓· Conn')
+    ptys[0].exit(1)
+    await clock.advance(RC_BACKOFF_MS[0])
+    expect(deps.spawn).toHaveBeenCalledTimes(2)
+    ptys[1].emit('ected')
+    expect(deps.saveEntries).not.toHaveBeenCalled()
+    expect(view()?.confirmed).toBe(false)
+    ptys[1].emit(' ·✓· Connected · Sagyou')
+    expect(view()?.confirmed).toBe(true)
+  })
+
+  it('já confirmado: "Connected" não grava de novo', async () => {
+    const { manager, deps, ptys } = setup({ entries: [entry({ autostart: true })] })
+    await manager.startAutostart()
+    ptys[0].emit('·✓· Connected · Sagyou')
+    ptys[0].emit('·✓· Connected · Sagyou')
+    expect(deps.saveEntries).not.toHaveBeenCalled()
+  })
+
   it('autostart não liga um servidor desligado', async () => {
     const { manager, deps } = setup({ entries: [entry({ enabled: false, autostart: true })] })
     await manager.startAutostart()

@@ -8,7 +8,12 @@
 // a folder once a server started by "Ligar" at the PC (origin 'pc') has run
 // there for RC_CONFIRM_MS, and only then may the phone start it. A server
 // started on its own (origin 'autostart': "Iniciar com o Sagyou" or a restart)
-// never confirms: nobody is known to be at the PC. A server that falls is started again (only
+// never confirms by time alone: nobody is known to be at the PC, and it may sit
+// on an unanswered question. Any server of ours that prints Claude's
+// "✓ Connected" (RC_CONNECTED) confirms at once, whatever its origin: Claude
+// only gets there past the folder's questions, so someone answered them at this
+// PC already (a migrated server would otherwise wait for a "Ligar" that never
+// comes, and stay "Confirme no Fleet" while connected). A server that falls is started again (only
 // with "Iniciar com o Sagyou") after a growing wait; one turned off by the user,
 // by the cut or by the Sagyou closing never is. A server already running outside
 // the Sagyou with the same --name is shown as such and never doubled.
@@ -24,6 +29,16 @@ import { MAX_RC_SERVERS, type RcServerEntry } from './remote-config'
 
 /** A server started at the PC confirms its project after running this long. */
 export const RC_CONFIRM_MS = 60_000
+/**
+ * Claude's "✓ Connected" line, read after the ANSI escapes are taken out: the
+ * server got past the folder's questions, so it confirms whatever its origin.
+ * The check mark keeps "Disconnected" or a loose "Connected" from counting.
+ */
+export const RC_CONNECTED = /[✓✔]\S*\s*Connected\b/
+const RC_RUN_TAIL = 512
+// CSI (colours, cursor) and OSC (title) sequences.
+// eslint-disable-next-line no-control-regex -- matching terminal escapes is the point
+const ANSI = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g
 /** Waits before each restart of a server that fell; the last one is the ceiling. */
 export const RC_BACKOFF_MS: readonly number[] = [30_000, 60_000, 120_000, 240_000, 480_000, 900_000]
 /** A run this long sends the next restart back to the first wait. */
@@ -205,6 +220,8 @@ interface Terminal {
   gotData: boolean
   startedAt: number
   log: string
+  /** The end of this run's output only (reset on each launch), read for RC_CONNECTED. */
+  runTail: string
   confirmTimer: unknown
   restartTimer: unknown
   cols?: number
@@ -386,6 +403,7 @@ export function createRcManager(deps: RcManagerDeps): RcManager {
     t.gen += 1
     const gen = t.gen
     t.gotData = false
+    t.runTail = ''
     t.startedAt = deps.now()
     try {
       t.pty = deps.spawn({
@@ -414,6 +432,7 @@ export function createRcManager(deps: RcManagerDeps): RcManager {
 
   function confirm(t: Terminal, gen: number): void {
     if (!live(t, gen) || !t.pty) return
+    if (t.confirmTimer !== null) deps.clearTimer(t.confirmTimer)
     t.confirmTimer = null
     updateEntry(t.projectId, { confirmedAt: new Date(deps.now()).toISOString(), path: t.path })
     notify()
@@ -424,6 +443,15 @@ export function createRcManager(deps: RcManagerDeps): RcManager {
     if (!t.gotData) {
       t.gotData = true
       notify()
+    }
+    // This run's tail, not the chunk (the line may arrive in pieces) and not the
+    // whole log (a "Connected" from before a restart says nothing about this run).
+    t.runTail = (t.runTail + chunk).slice(-RC_RUN_TAIL)
+    if (
+      !isConfirmed(entryOf(t.projectId), t.path) &&
+      RC_CONNECTED.test(t.runTail.replace(ANSI, ''))
+    ) {
+      confirm(t, t.gen)
     }
   }
 
@@ -525,6 +553,7 @@ export function createRcManager(deps: RcManagerDeps): RcManager {
       gotData: false,
       startedAt: 0,
       log: '',
+      runTail: '',
       confirmTimer: null,
       restartTimer: null
     }

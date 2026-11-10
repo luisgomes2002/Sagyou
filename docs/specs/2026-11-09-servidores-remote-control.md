@@ -55,9 +55,13 @@ pronto") e o **encerra** no "Cortar acesso". Longe de casa isso tem dois problem
    manual`, com `--spawn same-dir` quando a pasta não tem Git. Roda num PTY do Sagyou
    (o mesmo `agent-pty` do Fleet), com a pasta do projeto como diretório de trabalho e o
    `claude` resolvido como no Fleet. Nada de shell intermediário.
-2. **"Confirmado":** um projeto fica confirmado quando o servidor dele, iniciado **no PC**
-   (pela tela ou ao abrir o Sagyou), passa 60 s rodando. Fica gravado com a data. Trocar a
-   pasta do projeto desfaz a confirmação.
+2. **"Confirmado":** um projeto fica confirmado quando o servidor dele, ligado **no PC** pela
+   tela (**Ligar**), passa 60 s rodando, ou quando qualquer servidor do Sagyou dele (inclusive
+   o que sobe ao abrir o Sagyou ou religa depois de cair) mostra o `✓ Connected` do Claude: o
+   Claude só chega lá depois de passar pelas perguntas da pasta, então alguém já as respondeu.
+   Só os 60 s de um servidor que subiu sozinho não bastam: ele pode estar parado numa pergunta
+   sem ninguém no PC (o PC pode ter sido ligado pelo celular). Fica gravado com a data. Trocar
+   a pasta do projeto desfaz a confirmação.
 3. **Religar depois de cair** (só com "Iniciar com o Sagyou"): espera 30 s, depois 1, 2, 4,
    8 e 15 min (teto). Depois de 10 min rodando, a espera volta para 30 s. Desligado pelo
    usuário (PC ou celular), não religa até alguém ligar de novo ou o Sagyou reabrir.
