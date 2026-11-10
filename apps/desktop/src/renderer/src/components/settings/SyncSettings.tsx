@@ -1,21 +1,19 @@
-import { useCallback, useEffect, useRef, useState, type JSX, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type JSX, type ReactNode } from 'react'
 import QRCode from 'qrcode'
 import type {
+  ConflictChoice,
   SyncConflictView,
-  SyncStatus,
-  SyncVersionView
+  SyncStatus
 } from '../../../../main/modules/sync/sync-engine'
+import { CONFLICT_TEXTS, conflictNames } from '@sagyou/core/sync/conflict-view'
 import { useKanbanStore } from '../../store/kanban'
 import {
   hasLocalData,
   pendingText,
-  recordName,
-  syncKindLabel,
-  syncedAgoText,
-  versionLines,
-  versionTimeText
+  syncedAgoText
 } from '../../utils/sync-view'
 import { ConfirmDialog } from '../ConfirmDialog'
+import { SyncConflictCard } from './SyncConflictCard'
 
 interface Props {
   onToast: (message: string, type?: 'success' | 'error') => void
@@ -59,45 +57,6 @@ function Subsection({ title, children }: { title: string; children: ReactNode })
     <div className="space-y-3">
       <h3 className="text-sm font-medium text-[#d4d4d4]">{title}</h3>
       {children}
-    </div>
-  )
-}
-
-function VersionCard({
-  label,
-  version,
-  onUse,
-  busy
-}: {
-  label: string
-  version: SyncVersionView
-  onUse: () => void
-  busy: boolean
-}): JSX.Element {
-  const lines = versionLines(version.payload)
-  return (
-    <div
-      role="group"
-      aria-label={label}
-      className="min-w-0 flex-1 space-y-2 rounded-lg border border-[#2b2b31] bg-[#16161a] p-3"
-    >
-      <p className="text-xs text-[#999999]">
-        {label} · {versionTimeText(version.at)}
-      </p>
-      {version.deleted || !version.payload ? (
-        <p className="text-sm text-[#ec6a6a]">Apagado</p>
-      ) : (
-        <ul className="space-y-0.5">
-          {lines.map((line) => (
-            <li key={line} className="break-words text-xs text-[#d4d4d4]">
-              {line}
-            </li>
-          ))}
-        </ul>
-      )}
-      <button type="button" disabled={busy} onClick={onUse} className={secondaryClass}>
-        Usar esta
-      </button>
     </div>
   )
 }
@@ -338,10 +297,23 @@ export function SyncSettings({ onToast, onOneTimeSecretChange }: Props): JSX.Ele
       await refresh()
     })
 
-  const resolve = (conflict: SyncConflictView, choice: 'local' | 'remote'): Promise<void> =>
+  // Ids in a conflict read as names; refreshed whenever the list is read again.
+  const names = useMemo(() => conflictNames(useKanbanStore.getState()), [conflicts])
+
+  const resolve = (conflict: SyncConflictView, choice: ConflictChoice): Promise<void> =>
     act('Não foi possível usar esta versão.', async () => {
       const result = await window.electronAPI.sync.resolve(conflict.id, choice)
-      if (!result.ok) throw new Error(result.error)
+      if (!result.ok) {
+        // The item changed or the conflict closed meanwhile: show it as it is now.
+        const stale =
+          result.error === CONFLICT_TEXTS.changed || result.error === CONFLICT_TEXTS.alreadyResolved
+        if (stale) await loadConflicts()
+        if (result.error === CONFLICT_TEXTS.alreadyResolved) {
+          onToast(result.error)
+          return
+        }
+        throw new Error(result.error)
+      }
       setConflicts((current) => current.filter((c) => c.id !== conflict.id))
       onToast(conflict.type === 'orphan' ? 'Conflito dispensado.' : 'Versão escolhida.')
     })
@@ -968,48 +940,16 @@ export function SyncSettings({ onToast, onOneTimeSecretChange }: Props): JSX.Ele
           {active && conflicts.length > 0 && (
             <Subsection title="Conflitos">
               <ul className="space-y-3">
-                {conflicts.map((conflict) => {
-                  const name =
-                    recordName(conflict.remote.payload) ?? recordName(conflict.local.payload)
-                  return (
-                    <li key={conflict.id} className={panelClass}>
-                      <p className="break-words text-sm text-[#d4d4d4]">
-                        {syncKindLabel(conflict.kind)}
-                        {name ? `: ${name}` : ''}
-                      </p>
-                      {conflict.type === 'orphan' ? (
-                        <>
-                          <p className="text-sm text-[#d9a640]">
-                            Removido: o item de origem foi apagado em outro aparelho
-                          </p>
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() => void resolve(conflict, 'local')}
-                            className={secondaryClass}
-                          >
-                            Dispensar
-                          </button>
-                        </>
-                      ) : (
-                        <div className="flex flex-col gap-3 sm:flex-row">
-                          <VersionCard
-                            label="Versão deste aparelho"
-                            version={conflict.local}
-                            busy={busy}
-                            onUse={() => void resolve(conflict, 'local')}
-                          />
-                          <VersionCard
-                            label={`Versão de ${conflict.remote.deviceName}`}
-                            version={conflict.remote}
-                            busy={busy}
-                            onUse={() => void resolve(conflict, 'remote')}
-                          />
-                        </div>
-                      )}
-                    </li>
-                  )
-                })}
+                {conflicts.map((conflict) => (
+                  <li key={conflict.id}>
+                    <SyncConflictCard
+                      conflict={conflict}
+                      names={names}
+                      busy={busy}
+                      onResolve={(choice) => void resolve(conflict, choice)}
+                    />
+                  </li>
+                ))}
               </ul>
             </Subsection>
           )}

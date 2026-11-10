@@ -1,6 +1,7 @@
 import type { SyncConflictView, SyncVersionView } from './engine'
 import { parseHlc } from './hlc'
-import type { SyncKind } from './records'
+import { extractDataRecords, type SyncKind, type SyncSourceData } from './records'
+import { recordName } from './view'
 
 /**
  * The conflict comparison both apps draw: Portuguese field names, readable
@@ -55,8 +56,8 @@ export const CONFLICT_TEXTS = {
   keepNewer: 'Ficar com a mais recente',
   keepThis: 'Ficar com a deste aparelho',
   keepOther: (device: string): string => `Ficar com a de ${device}`,
-  useThis: 'Usar a deste aparelho',
-  useOther: (device: string): string => `Usar a de ${device}`,
+  pickThis: 'Usar a deste aparelho',
+  pickOther: (device: string): string => `Usar a de ${device}`,
   deleted: 'Apagado',
   deletedIn: (device: string): string => `Apagado em ${device}`,
   missingRef: '(item não encontrado)',
@@ -406,7 +407,9 @@ function isEmpty(value: unknown): boolean {
     value === null ||
     value === '' ||
     (Array.isArray(value) && value.length === 0) ||
-    (typeof value === 'object' && !Array.isArray(value) && Object.keys(value as object).length === 0)
+    (typeof value === 'object' &&
+      !Array.isArray(value) &&
+      Object.keys(value as object).length === 0)
   )
 }
 
@@ -458,8 +461,10 @@ export function formatFieldValue(
   const enumLabels = KIND_ENUMS[kind]?.[field] ?? ENUMS[field]
   if (enumLabels && typeof value === 'string') return enumLabels[value] ?? value
   if (field === 'images' && Array.isArray(value)) return plural(value.length, 'imagem', 'imagens')
-  if (field === 'details' && Array.isArray(value)) return plural(value.length, 'detalhe', 'detalhes')
-  if (field === 'audit' && Array.isArray(value)) return plural(value.length, 'alteração', 'alterações')
+  if (field === 'details' && Array.isArray(value))
+    return plural(value.length, 'detalhe', 'detalhes')
+  if (field === 'audit' && Array.isArray(value))
+    return plural(value.length, 'alteração', 'alterações')
   if (field === 'daysOfWeek' && Array.isArray(value))
     return value.map((d) => WEEKDAYS[Number(d)] ?? String(d)).join(', ')
   if (field === 'size' && typeof value === 'number') return `${value} bytes`
@@ -551,7 +556,9 @@ export function newerSide(c: SyncConflictView): Side | null {
   const b = c.remote.hlc ? parseHlc(c.remote.hlc) : null
   if (!a || !b) return null
   const order =
-    a.ms - b.ms || a.counter - b.counter || (a.deviceId < b.deviceId ? -1 : a.deviceId > b.deviceId ? 1 : 0)
+    a.ms - b.ms ||
+    a.counter - b.counter ||
+    (a.deviceId < b.deviceId ? -1 : a.deviceId > b.deviceId ? 1 : 0)
   return order > 0 ? 'local' : order < 0 ? 'remote' : null
 }
 
@@ -572,7 +579,11 @@ function canonical(value: unknown): unknown {
 }
 
 /** The fields of a kind in display order: the listed ones, then unknown keys alphabetically. */
-function fieldsOf(kind: SyncKind, a: Record<string, unknown>, b: Record<string, unknown>): string[] {
+function fieldsOf(
+  kind: SyncKind,
+  a: Record<string, unknown>,
+  b: Record<string, unknown>
+): string[] {
   const listed = FIELD_ORDER[kind] ?? []
   const keys = new Set([...Object.keys(a), ...Object.keys(b)])
   keys.delete('id')
@@ -581,12 +592,7 @@ function fieldsOf(kind: SyncKind, a: Record<string, unknown>, b: Record<string, 
   return [...listed.filter((k) => keys.has(k)), ...extra]
 }
 
-function value(
-  kind: SyncKind,
-  field: string,
-  raw: unknown,
-  names: NameLookup
-): FieldValue {
+function value(kind: SyncKind, field: string, raw: unknown, names: NameLookup): FieldValue {
   return {
     text: formatFieldValue(kind, field, raw, names),
     present: BOOLEAN_FIELDS.has(field) || !isEmpty(raw)
@@ -652,4 +658,14 @@ export function conflictSummary(c: SyncConflictView, cmp: ConflictComparison): s
   if (!hasContent(c.remote)) return `${CONFLICT_TEXTS.deletedIn(c.remote.deviceName)}${newer}`
   const n = cmp.differing.length
   return `${plural(n, 'campo diferente', 'campos diferentes')}${newer}`
+}
+
+/** Names of every record in the app's data, for the ids a conflict shows. */
+export function conflictNames(data: SyncSourceData): NameLookup {
+  const names = new Map<string, string>()
+  for (const record of extractDataRecords(data)) {
+    const name = recordName(record.payload)
+    if (name) names.set(`${record.kind}:${record.id}`, name)
+  }
+  return (kind, id) => names.get(`${kind}:${id}`) ?? null
 }

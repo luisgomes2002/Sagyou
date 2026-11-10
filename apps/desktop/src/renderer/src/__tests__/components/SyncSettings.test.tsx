@@ -204,7 +204,7 @@ describe('Sincronização: conflitos', () => {
       .mockResolvedValue({ ok: true, conflicts: [{ ...conflict, id: 'c2' }] })
     vi.mocked(window.electronAPI.sync.status).mockResolvedValue({ ...status, conflictCount: 1 })
     render(<SyncSettings onToast={vi.fn()} />)
-    await screen.findByRole('group', { name: 'Versão de Trabalho' })
+    await screen.findByRole('button', { name: /Task: Comprar pão integral/ })
     const before = vi.mocked(window.electronAPI.sync.conflicts).mock.calls.length
     push({ ...status, conflictCount: 1 })
     await waitFor(() =>
@@ -212,18 +212,67 @@ describe('Sincronização: conflitos', () => {
     )
   })
 
-  it('"Usar esta" chama resolve com a versão escolhida', async () => {
+  it('abrir o conflito e ficar com a versão do outro aparelho', async () => {
     vi.mocked(window.electronAPI.sync.conflicts).mockResolvedValue({
       ok: true,
       conflicts: [conflict]
     })
-    render(<SyncSettings onToast={vi.fn()} />)
-    const remote = await screen.findByRole('group', { name: 'Versão de Trabalho' })
-    expect(within(remote).getByText(/Comprar pão integral/)).toBeInTheDocument()
-    fireEvent.click(within(remote).getByRole('button', { name: 'Usar esta' }))
+    const onToast = vi.fn()
+    render(<SyncSettings onToast={onToast} />)
+    const card = await screen.findByRole('button', { name: /Task: Comprar pão integral/ })
+    expect(card).toHaveTextContent('1 campo diferente')
+    fireEvent.click(card)
+    expect(screen.getByRole('radiogroup', { name: 'Título' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Ficar com a de Trabalho' }))
     await waitFor(() =>
-      expect(window.electronAPI.sync.resolve).toHaveBeenCalledWith('c1', 'remote')
+      expect(window.electronAPI.sync.resolve).toHaveBeenCalledWith('c1', {
+        fields: { title: 'remote' },
+        expectedHlc: 'h2'
+      })
     )
+    await waitFor(() => expect(onToast).toHaveBeenCalledWith('Versão escolhida.'))
+    expect(screen.queryByRole('button', { name: /Task: Comprar pão integral/ })).not.toBeInTheDocument()
+  })
+
+  it('o item mudou: relê o conflito, avisa e mantém o cartão', async () => {
+    vi.mocked(window.electronAPI.sync.conflicts).mockResolvedValue({
+      ok: true,
+      conflicts: [conflict]
+    })
+    vi.mocked(window.electronAPI.sync.resolve).mockResolvedValueOnce({
+      ok: false,
+      error: 'O item mudou enquanto você comparava. Confira de novo.'
+    })
+    render(<SyncSettings onToast={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button', { name: /Task: Comprar pão integral/ }))
+    const before = vi.mocked(window.electronAPI.sync.conflicts).mock.calls.length
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar escolha' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'O item mudou enquanto você comparava. Confira de novo.'
+    )
+    expect(vi.mocked(window.electronAPI.sync.conflicts).mock.calls.length).toBeGreaterThan(before)
+    expect(screen.getByRole('button', { name: /Task: Comprar pão integral/ })).toBeInTheDocument()
+  })
+
+  it('já resolvido em outro aparelho: relê a lista e o cartão some', async () => {
+    vi.mocked(window.electronAPI.sync.conflicts)
+      .mockResolvedValueOnce({ ok: true, conflicts: [conflict] })
+      .mockResolvedValue({ ok: true, conflicts: [] })
+    vi.mocked(window.electronAPI.sync.resolve).mockResolvedValueOnce({
+      ok: false,
+      error: 'Este conflito já foi resolvido em outro aparelho.'
+    })
+    const onToast = vi.fn()
+    render(<SyncSettings onToast={onToast} />)
+    fireEvent.click(await screen.findByRole('button', { name: /Task: Comprar pão integral/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar escolha' }))
+    await waitFor(() =>
+      expect(onToast).toHaveBeenCalledWith('Este conflito já foi resolvido em outro aparelho.')
+    )
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /Task: Comprar pão integral/ })).not.toBeInTheDocument()
+    )
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
   it('um órfão só pode ser dispensado', async () => {
@@ -235,7 +284,7 @@ describe('Sincronização: conflitos', () => {
     expect(
       await screen.findByText('Removido: o item de origem foi apagado em outro aparelho')
     ).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Usar esta' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Salvar escolha' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Dispensar' }))
     await waitFor(() => expect(window.electronAPI.sync.resolve).toHaveBeenCalledWith('c1', 'local'))
   })

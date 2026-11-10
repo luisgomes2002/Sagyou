@@ -5,6 +5,7 @@ import {
   FIELD_ORDER,
   canChooseFields,
   compareConflict,
+  conflictNames,
   conflictSummary,
   fieldLabel,
   formatFieldValue,
@@ -91,7 +92,14 @@ function everyField(): ReturnType<typeof extractDataRecords> {
       }
     ],
     habits: [
-      { id: 'h1', name: 'H', color: '#fff', createdAt: ISO, updatedAt: ISO, completions: ['2026-11-10'] }
+      {
+        id: 'h1',
+        name: 'H',
+        color: '#fff',
+        createdAt: ISO,
+        updatedAt: ISO,
+        completions: ['2026-11-10']
+      }
     ],
     financialProfiles: [
       {
@@ -175,7 +183,9 @@ function everyField(): ReturnType<typeof extractDataRecords> {
           }
         ],
         yieldSources: [{ id: 'ys1', name: 'Y', createdAt: ISO }],
-        yieldEntries: [{ id: 'ye1', sourceId: 'ys1', date: '2026-11-10', amount: '1', createdAt: ISO }]
+        yieldEntries: [
+          { id: 'ye1', sourceId: 'ys1', date: '2026-11-10', amount: '1', createdAt: ISO }
+        ]
       }
     ],
     files: [{ id: 'f1', name: 'F', ext: '.pdf', size: 10, createdAt: ISO, projectId: 'p1' }],
@@ -245,7 +255,11 @@ const NEW = '000001794400000-0000-bbbb'
 const LONG_A = `${'palavra '.repeat(12)}primeira versão da descrição`
 const LONG_B = `${'palavra '.repeat(12)}segunda versão da descrição`
 
-function taskConflict(localNewer: boolean, localTime: number, remoteTime: number): SyncConflictView {
+function taskConflict(
+  localNewer: boolean,
+  localTime: number,
+  remoteTime: number
+): SyncConflictView {
   const base = { id: 't1', projectId: 'p1', title: 'Coletor — Remotive', updatedAt: ISO }
   return {
     id: 'c1',
@@ -318,7 +332,8 @@ describe('valores legíveis', () => {
     expect(v('images', [{}, {}, {}])).toBe('3 imagens')
     expect(v('images', [{}])).toBe('1 imagem')
     expect(v('amount', '1500.5', 'transaction')).toBe('1500,5')
-    const names: NameLookup = (kind, id) => (kind === 'project_column' && id === 'c1' ? 'Feito' : null)
+    const names: NameLookup = (kind, id) =>
+      kind === 'project_column' && id === 'c1' ? 'Feito' : null
     expect(v('columnId', 'c1', 'task', names)).toBe('Feito')
     expect(v('columnId', 'c9', 'task', names)).toBe(CONFLICT_TEXTS.missingRef)
     expect(CONFLICT_TEXTS.missingRef).toBe('(item não encontrado)')
@@ -401,5 +416,19 @@ describe('comparação', () => {
     expect(conflictSummary(localNewer, compareConflict(localNewer, noNames))).toBe(
       '3 campos diferentes · mais recente: Este aparelho'
     )
+  })
+})
+
+describe('nomes das referências', () => {
+  it('acha o nome de qualquer registro pelo tipo e id', () => {
+    const names = conflictNames({
+      projects: [{ id: 'p1', name: 'Casa', columns: [{ id: 'c1', name: 'Feito' }] }],
+      tasks: [{ id: 't1', projectId: 'p1', title: 'Comprar pão' }],
+      lists: [{ id: 'ft1', name: 'Conta', transactions: [{ id: 'tx1', description: 'Mercado' }] }]
+    })
+    expect(names('project_column', 'c1')).toBe('Feito')
+    expect(names('task', 't1')).toBe('Comprar pão')
+    expect(names('transaction', 'tx1')).toBe('Mercado')
+    expect(names('task', 'nenhuma')).toBeNull()
   })
 })
