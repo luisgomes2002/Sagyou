@@ -217,7 +217,7 @@ export const SYNC_ARTICLES: GuideArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Quando a mesma coisa é editada em dois aparelhos sem conexão, a versão mais recente vale. A outra fica guardada em Configurações → Sincronização → Conflitos, lado a lado, com Usar esta para trocar.'
+        text: 'Quando a mesma coisa é editada em dois aparelhos sem conexão, a versão mais recente vale. A outra fica guardada em Configurações → Sincronização → Conflitos. Abra o conflito para ver só os campos que mudaram, com o trecho diferente destacado, e escolher campo a campo o que fica, ou ficar com uma das versões inteiras. A escolha vai para todos os aparelhos.'
       },
       {
         type: 'callout',

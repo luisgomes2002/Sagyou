@@ -12,6 +12,12 @@ const blocksOf = <T extends GuideBlock['type']>(
   a.blocks.filter((b): b is Extract<GuideBlock, { type: T }> => b.type === type)
 
 describe('sync chapter', () => {
+  it('Conflitos explains the field-by-field choice (spec 2026-11-10)', () => {
+    const text = JSON.stringify(article('sync-conflitos').blocks)
+    expect(text).toContain('escolher campo a campo')
+    expect(text).not.toContain('Usar esta')
+  })
+
   it('has the fourteen articles in order', () => {
     expect(chapter.articles.map((a) => [a.id, a.title])).toEqual([
       ['sync-o-que-e', 'O que é e o que o servidor vê'],

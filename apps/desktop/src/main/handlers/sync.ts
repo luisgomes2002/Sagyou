@@ -2,6 +2,7 @@ import type { IpcMain } from 'electron'
 import { log } from '../modules/logs/logger'
 import {
   SyncUserError,
+  type ConflictChoice,
   type SyncEngine,
   type SyncResult,
   type SyncSecondFactor,
@@ -41,6 +42,28 @@ async function run<T extends object>(
 function text(value: unknown, max: number): string {
   if (typeof value !== 'string' || value.length > max) throw new SyncUserError('Dados inválidos.')
   return value
+}
+
+const MAX_CHOICE_FIELDS = 64
+
+/** A whole side, or a pick per field (spec 2026-11-10); anything else is refused. */
+function conflictChoice(value: unknown): ConflictChoice {
+  if (value === 'local' || value === 'remote') return value
+  if (!value || typeof value !== 'object') throw new SyncUserError('Dados inválidos.')
+  const { fields, expectedHlc } = value as { fields?: unknown; expectedHlc?: unknown }
+  if (!fields || typeof fields !== 'object' || Array.isArray(fields))
+    throw new SyncUserError('Dados inválidos.')
+  if (expectedHlc !== null && (typeof expectedHlc !== 'string' || expectedHlc.length > 128))
+    throw new SyncUserError('Dados inválidos.')
+  const entries = Object.entries(fields as Record<string, unknown>)
+  if (entries.length > MAX_CHOICE_FIELDS) throw new SyncUserError('Dados inválidos.')
+  const picked: Record<string, 'local' | 'remote'> = {}
+  for (const [key, side] of entries) {
+    if (key.length > 64 || (side !== 'local' && side !== 'remote'))
+      throw new SyncUserError('Dados inválidos.')
+    picked[key] = side
+  }
+  return { fields: picked, expectedHlc }
 }
 
 function factorOf(value: unknown): SyncSecondFactor | undefined {
@@ -125,8 +148,7 @@ export function registerSyncHandlers(ipcMain: IpcMain, deps: SyncHandlerDeps): v
 
   ipcMain.handle('sync:resolve', (_, id: unknown, choice: unknown) =>
     run('resolve', () => {
-      if (choice !== 'local' && choice !== 'remote') throw new SyncUserError('Dados inválidos.')
-      engine.resolve(text(id, 64), choice)
+      engine.resolve(text(id, 64), conflictChoice(choice))
       return {}
     })
   )

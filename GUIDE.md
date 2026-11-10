@@ -392,6 +392,11 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
     outros porque `engine.resolve` sempre envia uma versão nova (inclusive ao
     manter a atual) e os dois armazenamentos rodam `CLOSE_SETTLED_CONFLICTS_SQL`
     do core depois de gravar conflitos. Fechar sozinho nunca envia nada.
+    A escolha campo a campo (`resolve(id, { fields, expectedHlc })`, spec
+    `2026-11-10-sync-conflitos-tela`) monta o payload mesclado e grava pelo
+    mesmo `adoptSyncVersion`; com uma edição local não enviada, rebaseia sobre
+    a versão que o outro aparelho tem. Rótulos e regras de tela ficam em
+    `packages/core/src/sync/conflict-view.ts`, iguais no PC e no celular.
 
 20. 🔴 **O token MCP externo é a única credencial MCP que vive fora de uma run:
     sem prazo e com acesso total** (spec `2026-11-03-acesso-remoto`). Só o hash
