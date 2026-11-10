@@ -50,6 +50,19 @@ Ajustes → "N conflitos") é difícil de entender e de decidir. Caso real: a ta
   recente (maior HLC), **exceto o tempo gasto** (`timeSpent`), que vem com o
   maior valor. Quando o maior tempo é da versão mais antiga, a tela avisa.
 
+### Depois da revisão (de Luis, 2026-11-10)
+
+- **"Lugar" é uma escolha só**: projeto, coluna, sprint e posição da task vêm
+  sempre da mesma versão (rótulo "Lugar", valor "Sagyou › Feito › Sprint 3 ›
+  Posição 2"). Na nota, projeto e ligações andam juntos ("Projeto e
+  ligações"). Motivo: uma coluna de outro projeto faz o backup ser recusado.
+- **Financeiro só versão inteira**: transação, item de compra, meta
+  financeira, rendimento e dívida mostram a comparação nova, mas só com "Usar
+  a deste aparelho" / "Usar a de <aparelho>". Perfil, tabela e fonte de
+  rendimento continuam campo a campo. Motivo: misturar campos podia deixar uma
+  conferência bancária cobrindo um valor não conferido ou um pagamento fora da
+  dívida.
+
 ## Decisões do construtor (o agente decidiu; o humano pode mudar)
 
 - **Unidade de escolha = campo de primeiro nível do payload** do registro

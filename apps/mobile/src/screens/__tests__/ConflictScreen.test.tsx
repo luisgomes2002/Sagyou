@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react-native'
+import { act, fireEvent, render, screen, within } from '@testing-library/react-native'
 import { SyncUserError } from '@sagyou/core/sync/engine'
 import { versionTimeText } from '@sagyou/core/sync/view'
 import { AT_LOCAL, AT_REMOTE, NEW_HLC, lww, withEngine } from '../../__tests__/conflicts'
@@ -34,6 +34,25 @@ describe('ConflictScreen (comparação)', () => {
     expect(screen.getByRole('radio', { name: 'Prioridade: usar a de PC de casa' })).toBeTruthy()
     expect(screen.queryByRole('radio', { name: /Título/ })).toBeNull()
     expect(screen.getAllByLabelText(/Trecho diferente destacado/).length).toBeGreaterThan(0)
+  })
+
+  it('o leitor de tela ouve o valor de cada opção, com o aviso do trecho destacado', async () => {
+    withEngine([lww()])
+    await open()
+    const remote = screen.getByRole('radio', { name: 'Descrição: usar a de PC de casa' })
+    expect(remote.props.accessibilityHint).toMatch(/^Trecho diferente destacado: palavra/)
+    expect(remote.props.accessibilityHint).toContain('segunda versão')
+    const priority = screen.getByRole('radio', { name: 'Prioridade: usar a de PC de casa' })
+    expect(priority.props.accessibilityHint).toBe('Alta')
+  })
+
+  it('só "Salvar escolha" fica fixo; os atalhos ficam no fim da comparação', async () => {
+    withEngine([lww()])
+    await open()
+    const footer = screen.getByTestId('conflict-footer')
+    expect(within(footer).getByRole('button', { name: 'Salvar escolha' })).toBeTruthy()
+    expect(within(footer).queryByRole('button', { name: 'Ficar com a mais recente' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Ficar com a mais recente' })).toBeTruthy()
   })
 
   it('pré-seleção e o aviso do tempo', async () => {

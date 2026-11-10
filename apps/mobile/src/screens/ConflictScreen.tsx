@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import type { ConflictChoice, SyncConflictView } from '@sagyou/core/sync/engine'
 import {
   CONFLICT_TEXTS,
@@ -42,6 +43,11 @@ function radioLabel(row: FieldRow, conflict: SyncConflictView, side: Side): stri
     : `${row.label}: usar a de ${conflict.remote.deviceName}`
 }
 
+/** What a screen reader hears after the radio's label: the value itself. */
+function hintOf(value: FieldValue): string {
+  return value.segments ? `${CONFLICT_TEXTS.diffHint}: ${value.text}` : value.text
+}
+
 function Value({ value, theme }: { value: FieldValue; theme: Theme }): React.JSX.Element {
   if (!value.segments)
     return <Text style={[styles.body, { color: theme.text }]}>{value.text}</Text>
@@ -82,6 +88,7 @@ export function ConflictScreen({
   navigation?: Nav
 }): React.JSX.Element | null {
   const theme = useTheme()
+  const insets = useSafeAreaInsets()
   const engine = useApp((s) => s.services?.runtime.engine)
   const status = useApp((s) => s.status)
   const readOnly = useApp((s) => s.readOnly)
@@ -234,6 +241,7 @@ export function ConflictScreen({
                     key={side}
                     accessibilityRole="radio"
                     accessibilityLabel={radioLabel(row, conflict, side)}
+                    accessibilityHint={hintOf(row[side])}
                     accessibilityState={{ checked, disabled: busy }}
                     disabled={busy}
                     onPress={() => setPick({ signature, fields: { ...picked, [row.field]: side } })}
@@ -273,42 +281,58 @@ export function ConflictScreen({
                 ))}
             </View>
           )}
+
+          {cmp.choosable && (
+            <View style={styles.field}>
+              {cmp.newer && (
+                <Button
+                  variant="secondary"
+                  label={CONFLICT_TEXTS.keepNewer}
+                  onPress={() => resolve(allFrom(cmp.newer as Side))}
+                  disabled={busy}
+                />
+              )}
+              {cmp.newer !== 'local' && (
+                <Button
+                  variant="secondary"
+                  label={CONFLICT_TEXTS.keepThis}
+                  onPress={() => resolve(allFrom('local'))}
+                  disabled={busy}
+                />
+              )}
+              {cmp.newer !== 'remote' && (
+                <Button
+                  variant="secondary"
+                  label={CONFLICT_TEXTS.keepOther(conflict.remote.deviceName)}
+                  onPress={() => resolve(allFrom('remote'))}
+                  disabled={busy}
+                />
+              )}
+            </View>
+          )}
         </Screen>
       </ScrollView>
 
-      <View style={[styles.footer, { borderColor: theme.border, backgroundColor: theme.bg }]}>
+      <View style={styles.snack}>
+        <Snackbar visible={snack !== null} message={snack} />
+      </View>
+      <View
+        testID="conflict-footer"
+        style={[
+          styles.footer,
+          {
+            borderColor: theme.border,
+            backgroundColor: theme.bg,
+            paddingBottom: SPACE.lg + insets.bottom
+          }
+        ]}
+      >
         {cmp.choosable ? (
-          <>
-            <Button
-              label={CONFLICT_TEXTS.save}
-              onPress={() => resolve({ fields: picked, expectedHlc: currentHlcOf(conflict) })}
-              disabled={busy}
-            />
-            {cmp.newer && (
-              <Button
-                variant="secondary"
-                label={CONFLICT_TEXTS.keepNewer}
-                onPress={() => resolve(allFrom(cmp.newer as Side))}
-                disabled={busy}
-              />
-            )}
-            {cmp.newer !== 'local' && (
-              <Button
-                variant="secondary"
-                label={CONFLICT_TEXTS.keepThis}
-                onPress={() => resolve(allFrom('local'))}
-                disabled={busy}
-              />
-            )}
-            {cmp.newer !== 'remote' && (
-              <Button
-                variant="secondary"
-                label={CONFLICT_TEXTS.keepOther(conflict.remote.deviceName)}
-                onPress={() => resolve(allFrom('remote'))}
-                disabled={busy}
-              />
-            )}
-          </>
+          <Button
+            label={CONFLICT_TEXTS.save}
+            onPress={() => resolve({ fields: picked, expectedHlc: currentHlcOf(conflict) })}
+            disabled={busy}
+          />
         ) : (
           <>
             <Button
@@ -325,9 +349,6 @@ export function ConflictScreen({
             />
           </>
         )}
-      </View>
-      <View style={styles.snack}>
-        <Snackbar visible={snack !== null} message={snack} />
       </View>
     </View>
   )
@@ -356,5 +377,5 @@ const styles = StyleSheet.create({
   },
   equalRow: { gap: 2 },
   footer: { padding: SPACE.lg, gap: SPACE.sm, borderTopWidth: 1 },
-  snack: { position: 'absolute', left: SPACE.lg, right: SPACE.lg, bottom: SPACE.lg }
+  snack: { paddingHorizontal: SPACE.lg, paddingBottom: SPACE.sm }
 })

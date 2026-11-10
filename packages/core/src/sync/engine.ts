@@ -44,8 +44,14 @@ import {
   sealBatch,
   toRecoveryCode
 } from './crypto'
-import { canonicalJson, hashPayload, type SyncKind, type SyncRecord } from './records'
-import { canChooseFields, CONFLICT_TEXTS, type Side } from './conflict-view'
+import { hashPayload, type SyncKind, type SyncRecord } from './records'
+import {
+  canChooseFields,
+  CONFLICT_TEXTS,
+  FIELD_GROUPS,
+  sameValue,
+  type Side
+} from './conflict-view'
 
 export const PUSH_DEBOUNCE_MS = 5000
 export const POLL_MS = 60000
@@ -1145,13 +1151,24 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
     const remote = view.remote.payload as Record<string, unknown>
     const merged: Record<string, unknown> = {}
     const keys = new Set([...Object.keys(local), ...Object.keys(remote)])
+    // A group (a task's project, column, sprint and position) is picked as one:
+    // its members never come from different sides.
+    const group = FIELD_GROUPS[row.kind]
+    const groupDiffers =
+      !!group && group.fields.some((f) => !sameValue(local[f], remote[f]))
+    const sideFor = (key: string): Side | undefined => {
+      const k = groupDiffers && group!.fields.includes(key) ? group!.key : key
+      const side = Object.hasOwn(choice.fields, k) ? choice.fields[k] : undefined
+      return side === 'local' || side === 'remote' ? side : undefined
+    }
     for (const key of keys) {
-      if (key === 'id' || key === 'updatedAt') continue
+      if (key === 'id' || key === 'updatedAt' || key === '__proto__') continue
       let picked: unknown
-      if (canonicalJson(local[key]) === canonicalJson(remote[key])) picked = local[key]
+      const grouped = groupDiffers && group!.fields.includes(key)
+      if (!grouped && sameValue(local[key], remote[key])) picked = local[key]
       else {
-        const side = choice.fields[key]
-        if (side !== 'local' && side !== 'remote') throw new SyncUserError(CONFLICT_TEXTS.chooseAll)
+        const side = sideFor(key)
+        if (!side) throw new SyncUserError(CONFLICT_TEXTS.chooseAll)
         picked = side === 'local' ? local[key] : remote[key]
       }
       if (picked !== undefined) merged[key] = picked

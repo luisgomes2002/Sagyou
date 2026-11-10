@@ -64,7 +64,7 @@ describe('SyncConflictCard', () => {
     ).toBeInTheDocument()
     expect(screen.getByRole('radiogroup', { name: 'Descrição' })).toBeInTheDocument()
     expect(screen.getByRole('radiogroup', { name: 'Tempo gasto' })).toBeInTheDocument()
-    expect(screen.getByRole('radiogroup', { name: 'Posição na coluna' })).toBeInTheDocument()
+    expect(screen.getByRole('radiogroup', { name: 'Lugar' })).toBeInTheDocument()
     expect(screen.queryByRole('radiogroup', { name: 'Título' })).not.toBeInTheDocument()
     expect(screen.getByText('Mais recente')).toBeInTheDocument()
     // The whole description, with what differs marked.
@@ -99,7 +99,7 @@ describe('SyncConflictCard', () => {
     fireEvent.click(within(description).getByRole('radio', { name: /Este aparelho/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Salvar escolha' }))
     expect(onResolve).toHaveBeenCalledWith({
-      fields: { description: 'local', timeSpent: 'local', order: 'remote' },
+      fields: { description: 'local', timeSpent: 'local', place: 'remote' },
       expectedHlc: NEW
     })
   })
@@ -108,12 +108,12 @@ describe('SyncConflictCard', () => {
     const onResolve = open(conflict())
     fireEvent.click(screen.getByRole('button', { name: 'Ficar com a mais recente' }))
     expect(onResolve).toHaveBeenLastCalledWith({
-      fields: { description: 'remote', timeSpent: 'remote', order: 'remote' },
+      fields: { description: 'remote', timeSpent: 'remote', place: 'remote' },
       expectedHlc: NEW
     })
     fireEvent.click(screen.getByRole('button', { name: 'Ficar com a deste aparelho' }))
     expect(onResolve).toHaveBeenLastCalledWith({
-      fields: { description: 'local', timeSpent: 'local', order: 'local' },
+      fields: { description: 'local', timeSpent: 'local', place: 'local' },
       expectedHlc: NEW
     })
   })

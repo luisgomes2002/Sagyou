@@ -2069,6 +2069,59 @@ describe('conflitos campo a campo', () => {
     expect(dataHashes(a.store)).toEqual(dataHashes(b.store))
   })
 
+  it('"Lugar" escolhe projeto e coluna juntos; campo a campo solto é recusado', async () => {
+    const twoProjects = withData({
+      projects: [project('p1', 'Casa'), project('p2', 'Sagyou')],
+      tasks: [task('t1', 'p1', 'Original')]
+    })
+    const { a, b } = await pairedDevices(twoProjects)
+    server.mode = 'down'
+    a.store.save({
+      ...a.store.state,
+      tasks: [{ ...task('t1', 'p2', 'Original'), columnId: 'p2-col', description: 'A' }]
+    })
+    clock.t += 10
+    b.store.save({ ...b.store.state, tasks: [{ ...task('t1', 'p1', 'Original'), description: 'B' }] })
+    server.mode = 'up'
+    await a.engine.syncNow()
+    await b.engine.syncNow()
+    await a.engine.syncNow()
+    const [conflict] = a.engine.conflicts()
+    expect(() =>
+      a.engine.resolve(conflict.id, {
+        fields: { projectId: 'local', columnId: 'remote', description: 'remote' },
+        expectedHlc: currentHlcOf(conflict)
+      })
+    ).toThrow('Escolha um valor para cada campo diferente.')
+    a.engine.resolve(conflict.id, {
+      fields: { place: 'local', description: 'remote' },
+      expectedHlc: currentHlcOf(conflict)
+    })
+    expect(taskOf(a.store)).toMatchObject({ projectId: 'p2', columnId: 'p2-col', description: 'B' })
+  })
+
+  it('transação não aceita escolha por campo', async () => {
+    const { a, b } = await pairedDevices(withData({ lists: [table('ft1', '10')] }))
+    const txOf = (amount: string): Row => {
+      const t = structuredClone(a.store.state.lists[0] as Row)
+      ;(t.transactions as Row[])[0].amount = amount
+      return t
+    }
+    server.mode = 'down'
+    a.store.save({ ...a.store.state, lists: [txOf('20')] })
+    clock.t += 10
+    b.store.save({ ...b.store.state, lists: [txOf('30')] })
+    server.mode = 'up'
+    await a.engine.syncNow()
+    await b.engine.syncNow()
+    await a.engine.syncNow()
+    const conflict = a.engine.conflicts().find((c) => c.kind === 'transaction')!
+    expect(() =>
+      a.engine.resolve(conflict.id, { fields: { amount: 'local' }, expectedHlc: currentHlcOf(conflict) })
+    ).toThrow('Dados inválidos.')
+    expect(a.engine.conflicts()).toHaveLength(1)
+  })
+
   it('uma linha guardada antes da mudança abre com o lado atual certo', async () => {
     const { a } = await pairedDevices(withData({ projects: [project('p1', 'Casa')] }))
     a.store.conflicts.push(orphanRow('antiga', 'lww'))

@@ -6,6 +6,7 @@ import {
   canChooseFields,
   compareConflict,
   conflictNames,
+  sameValue,
   conflictSummary,
   fieldLabel,
   formatFieldValue,
@@ -364,18 +365,18 @@ describe('comparação', () => {
     const cmp = compareConflict(taskConflict(true, 7200, 6000), noNames)
     expect(cmp.choosable).toBe(true)
     expect(cmp.newer).toBe('local')
-    expect(cmp.differing.map((r) => r.field)).toEqual(['description', 'timeSpent', 'order'])
+    expect(cmp.differing.map((r) => r.field)).toEqual(['description', 'timeSpent', 'place'])
     expect(cmp.equal.map((r) => r.field)).toContain('title')
     expect(cmp.equal.map((r) => r.field)).not.toContain('id')
     expect([...cmp.differing, ...cmp.equal].map((r) => r.field)).not.toContain('updatedAt')
-    expect(cmp.initial).toEqual({ description: 'local', timeSpent: 'local', order: 'local' })
+    expect(cmp.initial).toEqual({ description: 'local', timeSpent: 'local', place: 'local' })
     expect(cmp.timeNote).toBe(false)
   })
 
   it('remoto mais recente, mas o maior tempo é o local', () => {
     const cmp = compareConflict(taskConflict(false, 7200, 6000), noNames)
     expect(cmp.newer).toBe('remote')
-    expect(cmp.initial).toEqual({ description: 'remote', timeSpent: 'local', order: 'remote' })
+    expect(cmp.initial).toEqual({ description: 'remote', timeSpent: 'local', place: 'remote' })
     expect(cmp.timeNote).toBe(true)
   })
 
@@ -430,5 +431,58 @@ describe('nomes das referências', () => {
     expect(names('task', 't1')).toBe('Comprar pão')
     expect(names('transaction', 'tx1')).toBe('Mercado')
     expect(names('task', 'nenhuma')).toBeNull()
+  })
+})
+
+describe('grupos e exclusões da revisão', () => {
+  it('projeto, coluna, sprint e posição viram uma escolha só, "Lugar"', () => {
+    const c = taskConflict(false, 1, 1)
+    c.local.payload = { ...c.local.payload, projectId: 'p2', columnId: 'c2', order: 0 }
+    c.remote.payload = { ...c.remote.payload, projectId: 'p1', columnId: 'c1', sprintId: 's1', order: 3 }
+    const names: NameLookup = (kind, id) =>
+      ({ project: { p1: 'Casa', p2: 'Sagyou' }, project_column: { c1: 'Feito', c2: 'Backlog' }, sprint: { s1: 'Sprint 3' } } as Record<string, Record<string, string>>)[kind]?.[id] ?? null
+    const cmp = compareConflict(c, names)
+    const fields = cmp.differing.map((r) => r.field)
+    expect(fields).toContain('place')
+    for (const member of ['projectId', 'columnId', 'sprintId', 'order']) expect(fields).not.toContain(member)
+    const place = cmp.differing.find((r) => r.field === 'place')!
+    expect(place.label).toBe('Lugar')
+    expect(place.local.text).toBe('Sagyou › Backlog › Posição 1')
+    expect(place.remote.text).toBe('Casa › Feito › Sprint 3 › Posição 4')
+    expect(cmp.initial.place).toBe('remote')
+  })
+
+  it('com o lugar igual, os campos ficam em "Igual nos dois" um a um', () => {
+    const c = taskConflict(false, 1, 1)
+    c.remote.payload = { ...c.remote.payload, order: 1 }
+    const cmp = compareConflict(c, noNames)
+    expect(cmp.differing.map((r) => r.field)).not.toContain('place')
+    expect(cmp.equal.map((r) => r.field)).toContain('projectId')
+  })
+
+  it('nota: projeto e ligações andam juntos', () => {
+    const c = taskConflict(false, 1, 1)
+    c.kind = 'note'
+    c.local.payload = { id: 'n1', projectId: 'p1', content: 'a', taskIds: ['t1'] }
+    c.remote.payload = { id: 'n1', projectId: 'p2', content: 'a', taskIds: ['t2'] }
+    const cmp = compareConflict(c, noNames)
+    expect(cmp.differing.map((r) => r.field)).toEqual(['links'])
+    expect(cmp.differing[0].label).toBe('Projeto e ligações')
+  })
+
+  it('financeiro é só versão inteira; perfil, tabela e fonte de rendimento continuam campo a campo', () => {
+    const c = taskConflict(true, 1, 2)
+    for (const kind of ['transaction', 'shopping_item', 'financial_goal', 'yield_entry', 'financial_debt'] as const)
+      expect(canChooseFields({ ...c, kind }), kind).toBe(false)
+    for (const kind of ['financial_profile', 'financial_table', 'yield_source'] as const)
+      expect(canChooseFields({ ...c, kind }), kind).toBe(true)
+  })
+
+  it('a mesma igualdade da tela vale para o motor', () => {
+    expect(sameValue('', undefined)).toBe(true)
+    expect(sameValue([], undefined)).toBe(true)
+    expect(sameValue({ a: [] }, {})).toBe(true)
+    expect(sameValue('a', 'b')).toBe(false)
+    expect(sameValue(['a'], ['a'])).toBe(true)
   })
 })

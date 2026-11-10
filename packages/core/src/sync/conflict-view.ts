@@ -529,7 +529,35 @@ export function wordDiff(a: string, b: string): { local: Segment[]; remote: Segm
 
 // ---- comparison ----
 
-const NO_FIELD_CHOICE: ReadonlySet<SyncKind> = new Set(['financial_debt', 'memory'])
+/**
+ * Whole-version only. Money records: mixing fields could leave a bank check
+ * covering an unchecked amount, or a debt payment out of step with its debt
+ * (decided by Luis, 2026-11-10). A debt's balance is tied to its payments; a
+ * memory has its own write rules.
+ */
+const NO_FIELD_CHOICE: ReadonlySet<SyncKind> = new Set([
+  'financial_debt',
+  'transaction',
+  'shopping_item',
+  'financial_goal',
+  'yield_entry',
+  'memory'
+])
+
+/**
+ * Fields that only make sense together, picked as one: a task's column must
+ * belong to its project (the backup validator refuses anything else).
+ */
+export const FIELD_GROUPS: Partial<
+  Record<SyncKind, { key: string; label: string; fields: readonly string[] }>
+> = {
+  task: { key: 'place', label: 'Lugar', fields: ['projectId', 'columnId', 'sprintId', 'order'] },
+  note: {
+    key: 'links',
+    label: 'Projeto e ligações',
+    fields: ['projectId', 'taskId', 'taskIds', 'goalIds', 'connections']
+  }
+}
 
 function hasContent(v: SyncVersionView): boolean {
   return !v.deleted && v.payload !== null
@@ -562,19 +590,21 @@ export function newerSide(c: SyncConflictView): Side | null {
   return order > 0 ? 'local' : order < 0 ? 'remote' : null
 }
 
-function same(a: unknown, b: unknown): boolean {
+/** One rule for "the same value" in the screen and the engine: empty equals absent. */
+export function sameValue(a: unknown, b: unknown): boolean {
   return JSON.stringify(canonical(a)) === JSON.stringify(canonical(b))
 }
 
 function canonical(value: unknown): unknown {
   if (isEmpty(value)) return null
   if (Array.isArray(value)) return value.map(canonical)
-  if (value && typeof value === 'object')
-    return Object.fromEntries(
-      Object.keys(value as Record<string, unknown>)
-        .sort()
-        .map((k) => [k, canonical((value as Record<string, unknown>)[k])])
-    )
+  if (value && typeof value === 'object') {
+    const entries = Object.keys(value as Record<string, unknown>)
+      .sort()
+      .map((k) => [k, canonical((value as Record<string, unknown>)[k])] as const)
+      .filter(([, v]) => v !== null)
+    return entries.length ? Object.fromEntries(entries) : null
+  }
   return value
 }
 
@@ -619,7 +649,7 @@ export function compareConflict(c: SyncConflictView, names: NameLookup): Conflic
       local: value(c.kind, field, a[field], names),
       remote: value(c.kind, field, b[field], names)
     }
-    if (same(a[field], b[field])) {
+    if (sameValue(a[field], b[field])) {
       equal.push(row)
       continue
     }
@@ -631,6 +661,23 @@ export function compareConflict(c: SyncConflictView, names: NameLookup): Conflic
       }
     }
     differing.push(row)
+  }
+  const group = FIELD_GROUPS[c.kind]
+  if (group && differing.some((row) => group.fields.includes(row.field))) {
+    // One row for the whole group, built from every member on each side.
+    const text = (payload: Record<string, unknown>): FieldValue => {
+      const parts = group.fields
+        .filter((f) => !isEmpty(payload[f]))
+        .map((f) => formatFieldValue(c.kind, f, payload[f], names))
+      return { text: parts.length ? parts.join(' › ') : CONFLICT_TEXTS.empty, present: parts.length > 0 }
+    }
+    const row: FieldRow = { field: group.key, label: group.label, local: text(a), remote: text(b) }
+    const at = differing.findIndex((r) => group.fields.includes(r.field))
+    const rest = differing.filter((r) => !group.fields.includes(r.field))
+    rest.splice(Math.min(at, rest.length), 0, row)
+    differing.splice(0, differing.length, ...rest)
+    const keep = equal.filter((r) => !group.fields.includes(r.field))
+    equal.splice(0, equal.length, ...keep)
   }
   const initial: Record<string, Side> = {}
   let timeNote = false
