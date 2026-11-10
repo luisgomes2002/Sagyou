@@ -3,9 +3,8 @@ import { formatDateBR, todayLocalISO } from '@sagyou/core/dates'
 import type { Column, Task } from '@sagyou/core/types'
 import { ListChecks } from 'lucide-react-native'
 import { useState } from 'react'
-import { ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { Skeleton } from '../../components/Skeleton'
-import { SwipeToComplete } from '../../components/SwipeToComplete'
 import { ACTION_ICONS } from '../../components/icons'
 import { Badge, Button, Card, Chip, EmptyState, ListItem, Screen } from '../../components/ui'
 import { awaitingFirstSync, useApp } from '../../store/app'
@@ -19,7 +18,7 @@ import {
   todayText,
   upcomingSections
 } from '../../store/tasks'
-import { FONT, RADIUS, SPACE, useTheme } from '../../theme'
+import { FONT, MIN_TOUCH, RADIUS, SPACE, useTheme } from '../../theme'
 
 export const UPCOMING_TITLE = 'Próximas'
 
@@ -65,33 +64,49 @@ function TaskRow({
   const flagColor =
     task.priority === 'urgent' ? theme.red : task.priority === 'high' ? theme.attention : null
   const tags = task.tags ?? []
+  // The box and the row are siblings, so a screen reader focuses each on its
+  // own; no sideways gesture completes anything (spec 2026-11-10).
   return (
-    <SwipeToComplete enabled={canComplete} onComplete={() => completeFromList(task.id)}>
-      <ListItem
-        title={task.title}
-        a11yLabel={taskA11yLabel(task, today, projectName)}
-        onPress={onOpen}
-        a11yActions={canComplete ? [{ name: 'concluir', label: 'Concluir' }] : undefined}
-        onA11yAction={(e) => {
-          if (e.nativeEvent.actionName === 'concluir') completeFromList(task.id)
-        }}
-        left={flagColor ? <Flag size={18} color={flagColor} /> : undefined}
-        subtitle={
-          task.dueDate || projectName || tags.length ? (
-            <View style={styles.metaRow}>
-              <DueText task={task} today={today} />
-              {projectName ? (
-                <Text style={[styles.meta, { color: theme.muted }]}>{projectName}</Text>
-              ) : null}
-              {tags.slice(0, 2).map((tag) => (
-                <Badge key={tag} text={tag} />
-              ))}
-              {tags.length > 2 ? <Badge text={`+${tags.length - 2}`} /> : null}
-            </View>
-          ) : undefined
-        }
-      />
-    </SwipeToComplete>
+    <View style={styles.taskRow}>
+      {done ? null : (
+        <Pressable
+          accessibilityRole="checkbox"
+          accessibilityLabel={`Concluir ${task.title}`}
+          accessibilityState={{ checked: false, disabled: readOnly }}
+          disabled={readOnly}
+          onPress={() => completeFromList(task.id)}
+          style={styles.check}
+        >
+          <View style={[styles.box, { borderColor: readOnly ? theme.border : theme.muted }]} />
+        </Pressable>
+      )}
+      <View style={styles.rowBody}>
+        <ListItem
+          title={task.title}
+          a11yLabel={taskA11yLabel(task, today, projectName)}
+          onPress={onOpen}
+          a11yActions={canComplete ? [{ name: 'concluir', label: 'Concluir' }] : undefined}
+          onA11yAction={(e) => {
+            if (e.nativeEvent.actionName === 'concluir') completeFromList(task.id)
+          }}
+          left={flagColor ? <Flag size={18} color={flagColor} /> : undefined}
+          subtitle={
+            task.dueDate || projectName || tags.length ? (
+              <View style={styles.metaRow}>
+                <DueText task={task} today={today} />
+                {projectName ? (
+                  <Text style={[styles.meta, { color: theme.muted }]}>{projectName}</Text>
+                ) : null}
+                {tags.slice(0, 2).map((tag) => (
+                  <Badge key={tag} text={tag} />
+                ))}
+                {tags.length > 2 ? <Badge text={`+${tags.length - 2}`} /> : null}
+              </View>
+            ) : undefined
+          }
+        />
+      </View>
+    </View>
   )
 }
 
@@ -299,6 +314,10 @@ const styles = StyleSheet.create({
   chips: { gap: SPACE.sm },
   section: { gap: SPACE.sm },
   sectionTitle: { fontSize: FONT.caption, fontWeight: '600', textTransform: 'uppercase' },
+  taskRow: { flexDirection: 'row', alignItems: 'center', gap: SPACE.xs },
+  check: { width: MIN_TOUCH, minHeight: MIN_TOUCH, alignItems: 'center', justifyContent: 'center' },
+  box: { width: 22, height: 22, borderRadius: RADIUS.control / 2, borderWidth: 2 },
+  rowBody: { flex: 1, minWidth: 0 },
   metaRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: SPACE.sm },
   meta: { fontSize: FONT.caption }
 })

@@ -138,6 +138,49 @@ describe('Tarefas no celular', () => {
     expect(save).toHaveBeenCalledTimes(2)
   })
 
+  it('a caixinha "Concluir <título>" conclui com Desfazer; nada de arrastar', async () => {
+    seed({ tasks: [task('a')] })
+    await render(
+      <ProjectBoard
+        projectId="p1"
+        onOpenTask={jest.fn()}
+        onNewTask={jest.fn()}
+        today="2026-11-04"
+      />
+    )
+    expect(screen.queryByTestId('swipeable')).toBeNull()
+    const box = screen.getByRole('checkbox', { name: 'Concluir a' })
+    expect(box.props.accessibilityState).toMatchObject({ checked: false, disabled: false })
+    expect(Number(StyleSheet.flatten(box.props.style)?.minHeight)).toBeGreaterThanOrEqual(48)
+    await fireEvent.press(box)
+    expect(useApp.getState().state.tasks[0].columnId).toBe('p1-done')
+    expect(useUndo.getState()).toMatchObject({ message: 'Tarefa concluída', canUndo: true })
+  })
+
+  it('somente leitura: a caixinha fica desabilitada e nada é gravado', async () => {
+    const { save } = seed({ tasks: [task('a')] }, true)
+    await render(
+      <ProjectBoard
+        projectId="p1"
+        onOpenTask={jest.fn()}
+        onNewTask={jest.fn()}
+        today="2026-11-04"
+      />
+    )
+    const box = screen.getByRole('checkbox', { name: 'Concluir a' })
+    expect(box.props.accessibilityState).toMatchObject({ disabled: true })
+    await fireEvent.press(box)
+    expect(save).not.toHaveBeenCalled()
+    expect(useApp.getState().state.tasks[0].columnId).toBe('p1-todo')
+  })
+
+  it('Próximas também conclui pela caixinha', async () => {
+    seed({ tasks: [task('vencida', { dueDate: '2026-10-20' })] })
+    await render(<UpcomingList onOpenTask={jest.fn()} today="2026-11-04" />)
+    await fireEvent.press(screen.getByRole('checkbox', { name: 'Concluir vencida' }))
+    expect(useApp.getState().state.tasks[0].columnId).toBe('p1-done')
+  })
+
   it('sem coluna Done, avisa e não grava nem vibra', async () => {
     const p = project('p1', 'Sagyou', [{ id: 'p1-todo', name: 'A fazer', order: 0 }])
     const { save } = seed({ projects: [p], tasks: [task('a')] })
