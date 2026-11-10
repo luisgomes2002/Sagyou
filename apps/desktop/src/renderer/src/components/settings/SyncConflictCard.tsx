@@ -4,13 +4,14 @@ import {
   CONFLICT_TEXTS,
   compareConflict,
   conflictSummary,
+  conflictTitle,
   currentHlcOf,
   type FieldRow,
   type FieldValue,
   type NameLookup,
   type Side
 } from '@sagyou/core/sync/conflict-view'
-import { recordName, syncKindLabel, versionTimeText } from '@sagyou/core/sync/view'
+import { versionTimeText } from '@sagyou/core/sync/view'
 
 interface Props {
   conflict: SyncConflictView
@@ -83,8 +84,7 @@ export function SyncConflictCard({ conflict, names, busy, onResolve }: Props): J
     if (open) region.current?.focus()
   }, [open])
 
-  const name = recordName(conflict.remote.payload) ?? recordName(conflict.local.payload)
-  const title = `${syncKindLabel(conflict.kind)}${name ? `: ${name}` : ''}`
+  const title = conflictTitle(conflict)
 
   if (conflict.type === 'orphan')
     return (

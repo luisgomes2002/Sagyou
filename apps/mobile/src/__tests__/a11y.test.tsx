@@ -1,6 +1,8 @@
 import { render, screen } from '@testing-library/react-native'
 import { type ComponentType, useState } from 'react'
 import { StyleSheet } from 'react-native'
+import { ConflictScreen } from '../screens/ConflictScreen'
+import { ConflictsScreen } from '../screens/ConflictsScreen'
 import { ControlSetupScreen } from '../screens/ControlSetupScreen'
 import { FinanceScreen } from '../screens/FinanceScreen'
 import { HabitsScreen } from '../screens/HabitsScreen'
@@ -17,6 +19,7 @@ import { useRemote } from '../remote/store'
 import { useApp } from '../store/app'
 import { MIN_TOUCH } from '../theme'
 import { T, project, seedApp, table } from './seed'
+import { installEngine, lww, orphan } from './conflicts'
 
 const SYNCED = {
   state: 'ok' as const,
@@ -120,6 +123,18 @@ function PcSample(): React.JSX.Element {
   return <PcScreen now={() => PC_NOW} />
 }
 
+function ConflictListSample(): React.JSX.Element {
+  useState(() => installEngine([lww(), orphan()]))
+  return <ConflictsScreen navigation={{ navigate: jest.fn() }} />
+}
+
+function ConflictSample(): React.JSX.Element {
+  useState(() => installEngine([lww()]))
+  return (
+    <ConflictScreen route={{ params: { id: 'c1' } }} navigation={{ goBack: jest.fn(), navigate: jest.fn() }} />
+  )
+}
+
 const SCREENS: [string, ComponentType][] = [
   ['Tarefas', () => <ProjectList onOpen={jest.fn()} onUpcoming={jest.fn()} today="2026-11-01" />],
   [
@@ -143,6 +158,8 @@ const SCREENS: [string, ComponentType][] = [
   ['Parear outro aparelho', () => <PairDeviceScreen />],
   ['Controlar o PC', () => <ControlSetupScreen />],
   ['PC', PcSample],
+  ['Conflitos', ConflictListSample],
+  ['Conflito', ConflictSample],
   [
     'Entrar com código de recuperação',
     () => <RecoverSync busy={false} error={null} onSubmit={jest.fn()} onBack={jest.fn()} />

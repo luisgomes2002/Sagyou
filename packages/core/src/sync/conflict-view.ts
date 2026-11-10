@@ -1,7 +1,7 @@
 import type { SyncConflictView, SyncVersionView } from './engine'
 import { parseHlc } from './hlc'
 import { extractDataRecords, type SyncKind, type SyncSourceData } from './records'
-import { recordName } from './view'
+import { recordName, syncKindLabel } from './view'
 
 /**
  * The conflict comparison both apps draw: Portuguese field names, readable
@@ -668,4 +668,10 @@ export function conflictNames(data: SyncSourceData): NameLookup {
     if (name) names.set(`${record.kind}:${record.id}`, name)
   }
   return (kind, id) => names.get(`${kind}:${id}`) ?? null
+}
+
+/** "Task: Comprar pão", the heading of a conflict in both apps. */
+export function conflictTitle(c: SyncConflictView): string {
+  const name = recordName(c.remote.payload) ?? recordName(c.local.payload)
+  return `${syncKindLabel(c.kind)}${name ? `: ${name}` : ''}`
 }
