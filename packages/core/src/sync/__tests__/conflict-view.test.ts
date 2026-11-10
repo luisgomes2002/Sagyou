@@ -438,13 +438,26 @@ describe('grupos e exclusões da revisão', () => {
   it('projeto, coluna, sprint e posição viram uma escolha só, "Lugar"', () => {
     const c = taskConflict(false, 1, 1)
     c.local.payload = { ...c.local.payload, projectId: 'p2', columnId: 'c2', order: 0 }
-    c.remote.payload = { ...c.remote.payload, projectId: 'p1', columnId: 'c1', sprintId: 's1', order: 3 }
+    c.remote.payload = {
+      ...c.remote.payload,
+      projectId: 'p1',
+      columnId: 'c1',
+      sprintId: 's1',
+      order: 3
+    }
     const names: NameLookup = (kind, id) =>
-      ({ project: { p1: 'Casa', p2: 'Sagyou' }, project_column: { c1: 'Feito', c2: 'Backlog' }, sprint: { s1: 'Sprint 3' } } as Record<string, Record<string, string>>)[kind]?.[id] ?? null
+      (
+        ({
+          project: { p1: 'Casa', p2: 'Sagyou' },
+          project_column: { c1: 'Feito', c2: 'Backlog' },
+          sprint: { s1: 'Sprint 3' }
+        }) as Record<string, Record<string, string>>
+      )[kind]?.[id] ?? null
     const cmp = compareConflict(c, names)
     const fields = cmp.differing.map((r) => r.field)
     expect(fields).toContain('place')
-    for (const member of ['projectId', 'columnId', 'sprintId', 'order']) expect(fields).not.toContain(member)
+    for (const member of ['projectId', 'columnId', 'sprintId', 'order'])
+      expect(fields).not.toContain(member)
     const place = cmp.differing.find((r) => r.field === 'place')!
     expect(place.label).toBe('Lugar')
     expect(place.local.text).toBe('Sagyou › Backlog › Posição 1')
@@ -472,7 +485,13 @@ describe('grupos e exclusões da revisão', () => {
 
   it('financeiro é só versão inteira; perfil, tabela e fonte de rendimento continuam campo a campo', () => {
     const c = taskConflict(true, 1, 2)
-    for (const kind of ['transaction', 'shopping_item', 'financial_goal', 'yield_entry', 'financial_debt'] as const)
+    for (const kind of [
+      'transaction',
+      'shopping_item',
+      'financial_goal',
+      'yield_entry',
+      'financial_debt'
+    ] as const)
       expect(canChooseFields({ ...c, kind }), kind).toBe(false)
     for (const kind of ['financial_profile', 'financial_table', 'yield_source'] as const)
       expect(canChooseFields({ ...c, kind }), kind).toBe(true)

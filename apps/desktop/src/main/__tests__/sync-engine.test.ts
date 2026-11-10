@@ -1871,7 +1871,10 @@ describe('conflitos campo a campo', () => {
     keys.delete('updatedAt')
     return Object.fromEntries([...keys].map((k) => [k, side]))
   }
-  const orphanRow = (id: string, type: 'orphan' | 'lww'): SyncConflictRow & { resolvedAt: null } => ({
+  const orphanRow = (
+    id: string,
+    type: 'orphan' | 'lww'
+  ): SyncConflictRow & { resolvedAt: null } => ({
     id,
     kind: 'task',
     recordId: 't-nenhuma',
@@ -1935,7 +1938,10 @@ describe('conflitos campo a campo', () => {
   })
 
   it('escolher tudo de um lado segue o caminho da versão inteira', async () => {
-    const { a } = await conflictOn(withFields({ description: 'A' }), withFields({ description: 'B' }))
+    const { a } = await conflictOn(
+      withFields({ description: 'A' }),
+      withFields({ description: 'B' })
+    )
     const [conflict] = a.engine.conflicts()
     const winner = a.store.syncRecordVersion('task', 't1')!.hlc
     const adopt = vi.spyOn(a.store, 'adoptSyncVersion')
@@ -1966,7 +1972,10 @@ describe('conflitos campo a campo', () => {
   })
 
   it('o item mudou depois de abrir a comparação: nada é gravado', async () => {
-    const { a } = await conflictOn(withFields({ description: 'A' }), withFields({ description: 'B' }))
+    const { a } = await conflictOn(
+      withFields({ description: 'A' }),
+      withFields({ description: 'B' })
+    )
     const [conflict] = a.engine.conflicts()
     clock.t += 10
     a.store.save({ ...a.store.state, tasks: [withFields({ description: 'Corrigida' })] })
@@ -1981,7 +1990,10 @@ describe('conflitos campo a campo', () => {
   })
 
   it('conflito que já fechou e id desconhecido', async () => {
-    const { a } = await conflictOn(withFields({ description: 'A' }), withFields({ description: 'B' }))
+    const { a } = await conflictOn(
+      withFields({ description: 'A' }),
+      withFields({ description: 'B' })
+    )
     const [conflict] = a.engine.conflicts()
     a.engine.resolve(conflict.id, 'remote')
     expect(() =>
@@ -2081,7 +2093,10 @@ describe('conflitos campo a campo', () => {
       tasks: [{ ...task('t1', 'p2', 'Original'), columnId: 'p2-col', description: 'A' }]
     })
     clock.t += 10
-    b.store.save({ ...b.store.state, tasks: [{ ...task('t1', 'p1', 'Original'), description: 'B' }] })
+    b.store.save({
+      ...b.store.state,
+      tasks: [{ ...task('t1', 'p1', 'Original'), description: 'B' }]
+    })
     server.mode = 'up'
     await a.engine.syncNow()
     await b.engine.syncNow()
@@ -2117,7 +2132,10 @@ describe('conflitos campo a campo', () => {
     await a.engine.syncNow()
     const conflict = a.engine.conflicts().find((c) => c.kind === 'transaction')!
     expect(() =>
-      a.engine.resolve(conflict.id, { fields: { amount: 'local' }, expectedHlc: currentHlcOf(conflict) })
+      a.engine.resolve(conflict.id, {
+        fields: { amount: 'local' },
+        expectedHlc: currentHlcOf(conflict)
+      })
     ).toThrow('Dados inválidos.')
     expect(a.engine.conflicts()).toHaveLength(1)
   })

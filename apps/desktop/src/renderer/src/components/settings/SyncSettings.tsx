@@ -7,11 +7,7 @@ import type {
 } from '../../../../main/modules/sync/sync-engine'
 import { CONFLICT_TEXTS, conflictNames } from '@sagyou/core/sync/conflict-view'
 import { useKanbanStore } from '../../store/kanban'
-import {
-  hasLocalData,
-  pendingText,
-  syncedAgoText
-} from '../../utils/sync-view'
+import { hasLocalData, pendingText, syncedAgoText } from '../../utils/sync-view'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { SyncConflictCard } from './SyncConflictCard'
 
@@ -655,10 +651,7 @@ export function SyncSettings({ onToast, onOneTimeSecretChange }: Props): JSX.Ele
                   <button
                     type="button"
                     disabled={
-                      busy ||
-                      !recoverCode.trim() ||
-                      !recoverSetup.trim() ||
-                      !recoverFactor.trim()
+                      busy || !recoverCode.trim() || !recoverSetup.trim() || !recoverFactor.trim()
                     }
                     onClick={() => setAskRecover(true)}
                     className={secondaryClass}

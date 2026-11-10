@@ -146,9 +146,7 @@ export interface SyncConflictView {
  * pick carries the HLC of the current version as the screen read it, so an
  * edit made meanwhile is never overwritten.
  */
-export type ConflictChoice =
-  | Side
-  | { fields: Record<string, Side>; expectedHlc: string | null }
+export type ConflictChoice = Side | { fields: Record<string, Side>; expectedHlc: string | null }
 
 /**
  * Extra proof for /setup and revoke (Task 7b: key proof and TOTP). The engine
@@ -1154,8 +1152,7 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
     // A group (a task's project, column, sprint and position) is picked as one:
     // its members never come from different sides.
     const group = FIELD_GROUPS[row.kind]
-    const groupDiffers =
-      !!group && group.fields.some((f) => !sameValue(local[f], remote[f]))
+    const groupDiffers = !!group && group.fields.some((f) => !sameValue(local[f], remote[f]))
     const sideFor = (key: string): Side | undefined => {
       const k = groupDiffers && group!.fields.includes(key) ? group!.key : key
       const side = Object.hasOwn(choice.fields, k) ? choice.fields[k] : undefined
@@ -1190,7 +1187,14 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
     try {
       emitChange(
         store.adoptSyncVersion(
-          { kind: row.kind, id: row.recordId, hlc: '', baseHlc: null, deleted: false, payload: merged },
+          {
+            kind: row.kind,
+            id: row.recordId,
+            hlc: '',
+            baseHlc: null,
+            deleted: false,
+            payload: merged
+          },
           now
         )
       )

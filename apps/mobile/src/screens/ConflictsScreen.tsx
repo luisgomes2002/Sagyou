@@ -135,7 +135,9 @@ export function ConflictsScreen({
                   key={conflict.id}
                   a11yLabel={`${title}, ${summary}`}
                   onPress={
-                    readOnly ? undefined : () => navigation?.navigate('Conflito', { id: conflict.id })
+                    readOnly
+                      ? undefined
+                      : () => navigation?.navigate('Conflito', { id: conflict.id })
                   }
                 >
                   <Text style={[styles.title, { color: theme.text }]}>{title}</Text>

@@ -49,8 +49,7 @@ function hintOf(value: FieldValue): string {
 }
 
 function Value({ value, theme }: { value: FieldValue; theme: Theme }): React.JSX.Element {
-  if (!value.segments)
-    return <Text style={[styles.body, { color: theme.text }]}>{value.text}</Text>
+  if (!value.segments) return <Text style={[styles.body, { color: theme.text }]}>{value.text}</Text>
   return (
     <Text
       accessibilityLabel={`${CONFLICT_TEXTS.diffHint}: ${value.text}`}

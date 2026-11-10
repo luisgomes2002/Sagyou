@@ -231,7 +231,9 @@ describe('Sincronização: conflitos', () => {
       })
     )
     await waitFor(() => expect(onToast).toHaveBeenCalledWith('Versão escolhida.'))
-    expect(screen.queryByRole('button', { name: /Task: Comprar pão integral/ })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: /Task: Comprar pão integral/ })
+    ).not.toBeInTheDocument()
   })
 
   it('o item mudou: relê o conflito, avisa e mantém o cartão', async () => {
@@ -270,7 +272,9 @@ describe('Sincronização: conflitos', () => {
       expect(onToast).toHaveBeenCalledWith('Este conflito já foi resolvido em outro aparelho.')
     )
     await waitFor(() =>
-      expect(screen.queryByRole('button', { name: /Task: Comprar pão integral/ })).not.toBeInTheDocument()
+      expect(
+        screen.queryByRole('button', { name: /Task: Comprar pão integral/ })
+      ).not.toBeInTheDocument()
     )
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })

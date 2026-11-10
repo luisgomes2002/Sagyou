@@ -669,7 +669,10 @@ export function compareConflict(c: SyncConflictView, names: NameLookup): Conflic
       const parts = group.fields
         .filter((f) => !isEmpty(payload[f]))
         .map((f) => formatFieldValue(c.kind, f, payload[f], names))
-      return { text: parts.length ? parts.join(' › ') : CONFLICT_TEXTS.empty, present: parts.length > 0 }
+      return {
+        text: parts.length ? parts.join(' › ') : CONFLICT_TEXTS.empty,
+        present: parts.length > 0
+      }
     }
     const row: FieldRow = { field: group.key, label: group.label, local: text(a), remote: text(b) }
     const at = differing.findIndex((r) => group.fields.includes(r.field))

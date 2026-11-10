@@ -131,7 +131,10 @@ function ConflictListSample(): React.JSX.Element {
 function ConflictSample(): React.JSX.Element {
   useState(() => installEngine([lww()]))
   return (
-    <ConflictScreen route={{ params: { id: 'c1' } }} navigation={{ goBack: jest.fn(), navigate: jest.fn() }} />
+    <ConflictScreen
+      route={{ params: { id: 'c1' } }}
+      navigation={{ goBack: jest.fn(), navigate: jest.fn() }}
+    />
   )
 }
 
