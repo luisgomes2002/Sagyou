@@ -824,6 +824,17 @@ describe('origem autostart', () => {
     expect(view()?.confirmed).toBe(true)
   })
 
+  it('o corte do rastro no meio de uma linha não vale como começo de linha', async () => {
+    const { manager, deps, ptys } = setup({
+      entries: [entry({ autostart: true, confirmedAt: null, path: null })]
+    })
+    await manager.startAutostart()
+    // A folder name shaped like the line, sized so the 512-char cut lands on its "·".
+    const fake = '\u00b7\u2714\ufe0e\u00b7 Ready\r\n'
+    ptys[0].emit('Untrusted folder: E:\\x\\' + fake + 'Z'.repeat(512 - fake.length))
+    expect(deps.saveEntries).not.toHaveBeenCalled()
+  })
+
   it('Ligar no PC que chega a "Ready" confirma na hora e o timer não grava de novo', async () => {
     const { manager, deps, ptys, clock } = setup({
       entries: [entry({ confirmedAt: null, path: null })]

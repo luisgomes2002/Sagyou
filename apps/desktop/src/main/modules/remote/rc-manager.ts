@@ -471,7 +471,13 @@ export function createRcManager(deps: RcManagerDeps): RcManager {
     // This run's tail, not the chunk (the line may arrive in pieces) and not the
     // whole log (a "Connected" from before a restart says nothing about this run).
     if (t.readySeen) return
-    t.runTail = (t.runTail + chunk).slice(-RC_RUN_TAIL)
+    const tail = t.runTail + chunk
+    // A cut lands mid-line: start at the next real line break instead, so the
+    // cut never passes for the start of a line.
+    t.runTail =
+      tail.length <= RC_RUN_TAIL
+        ? tail
+        : tail.slice(-RC_RUN_TAIL).replace(/^[^\r\n]*/, '')
     if (!RC_READY_LINE.test(rcPlainText(t.runTail))) return
     t.readySeen = true
     if (!isConfirmed(entryOf(t.projectId), t.path)) confirm(t, t.gen)
