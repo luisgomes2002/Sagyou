@@ -27,6 +27,15 @@ const textOf = (blocks: SyncGuideBlock[]): string =>
     .join(' ')
 
 describe('guia do sync', () => {
+  // Spec 2026-11-10-sync-conflitos-tela: the choice is now field by field.
+  it('conflitos: detectados pelo item inteiro, escolhidos campo a campo', () => {
+    const text = textOf(SYNC_BEHAVIOR_ARTICLE.blocks)
+    expect(text).toContain('A comparação é do item inteiro')
+    expect(text).toContain('escolher campo a campo')
+    expect(text).not.toContain('Usar esta')
+    expect(text).not.toContain('não campo a campo')
+  })
+
   // Spec 2026-11-07-endurecer-acesso-remoto, items 3 and 6.
   it('celular perdido: Cortar acesso; código de pareamento pede o autenticador', () => {
     const table = SYNC_KEYS_ARTICLE.blocks.find((b) => b.type === 'table')

@@ -84,7 +84,7 @@ export const SYNC_BEHAVIOR_ARTICLE: SyncGuideArticle = {
     },
     {
       type: 'p',
-      text: 'Conflito é o mesmo item alterado em dois aparelhos antes de um receber a mudança do outro. A versão mais recente vale nos dois, e a outra fica guardada por 30 dias em Conflitos para você trocar se quiser. Uma dívida é a exceção: cada aparelho mantém o próprio valor até você escolher. A comparação é do item inteiro, não campo a campo; itens diferentes nunca conflitam.'
+      text: 'Conflito é o mesmo item alterado em dois aparelhos antes de um receber a mudança do outro. A versão mais recente vale nos dois, e a outra fica guardada por 30 dias em Conflitos para você trocar se quiser. Uma dívida é a exceção: cada aparelho mantém o próprio valor até você escolher. A comparação é do item inteiro (itens diferentes nunca conflitam), mas na tela de conflitos dá para escolher campo a campo o que fica: os campos que mudaram aparecem primeiro, com o trecho diferente destacado.'
     },
     {
       type: 'p',
