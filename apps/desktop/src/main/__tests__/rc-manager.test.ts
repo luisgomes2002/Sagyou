@@ -51,6 +51,12 @@ class FakePty implements AgentPty {
   }
 }
 
+/** The bridge status line as `claude remote-control` draws it (icon, state, " · repo"). */
+function statusLine(state: 'Ready' | 'Connected'): string {
+  const colour = state === 'Ready' ? '\x1b[32m' : '\x1b[36m'
+  return `${colour}\u00b7\u2714\ufe0e\u00b7\x1b[39m ${colour}${state}\x1b[39m\x1b[2m \u00b7 \x1b[22m\x1b[2mSagyou\x1b[22m\n`
+}
+
 const flush = (): Promise<void> => new Promise((resolve) => setImmediate(resolve))
 
 // eslint-disable-next-line @typescript-eslint/explicit-function-return-type -- test helper; the inferred shape is the API
@@ -732,6 +738,120 @@ describe('origem autostart', () => {
       projectId: 'p1',
       origin: 'autostart'
     })
+  })
+
+  it('autostart que desenha "Ready" confirma: as perguntas já foram respondidas', async () => {
+    const { manager, ptys, entries, view, clock } = setup({
+      entries: [entry({ autostart: true, confirmedAt: null, path: null })]
+    })
+    await manager.startAutostart()
+    ptys[0].emit('Spawn mode: worktree\r\n')
+    expect(view()).toMatchObject({ state: 'needs-confirm', confirmed: false })
+    ptys[0].emit(statusLine('Ready'))
+    expect(entries()[0]).toMatchObject({
+      confirmedAt: new Date(clock.now()).toISOString(),
+      path: DIR
+    })
+    expect(view()).toMatchObject({ state: 'running', confirmed: true })
+  })
+
+  it('"Connected" (sessão aberta) também confirma, inclusive depois de um redesenho', async () => {
+    const { manager, ptys, view } = setup({
+      entries: [entry({ autostart: true, confirmedAt: null, path: null })]
+    })
+    await manager.startAutostart()
+    ptys[0].emit('\x1b[1A\x1b[2K' + statusLine('Connected'))
+    expect(view()?.confirmed).toBe(true)
+  })
+
+  it('a linha partida entre dois pedaços também confirma', async () => {
+    const { manager, ptys, view } = setup({
+      entries: [entry({ autostart: true, confirmedAt: null, path: null })]
+    })
+    await manager.startAutostart()
+    const line = statusLine('Connected')
+    ptys[0].emit(line.slice(0, 12))
+    expect(view()?.confirmed).toBe(false)
+    ptys[0].emit(line.slice(12))
+    expect(view()?.confirmed).toBe(true)
+  })
+
+  it('o que não é a linha de status do Claude não confirma', async () => {
+    const { manager, deps, ptys, view } = setup({
+      entries: [entry({ autostart: true, confirmedAt: null, path: null })]
+    })
+    await manager.startAutostart()
+    ptys[0].emit(
+      [
+        'Disconnected',
+        'Not Connected',
+        '✓ Connected',
+        '·✔︎· Connectedness',
+        '·✔︎· Disconnected',
+        'pasta ·✔︎· Connected · x',
+        'pasta\x1b[1C·✔︎· Ready',
+        'Enable Remote Control? (y/n) '
+      ].join('\r\n')
+    )
+    expect(deps.saveEntries).not.toHaveBeenCalled()
+    expect(view()?.confirmed).toBe(false)
+  })
+
+  it('a pergunta pendente não confirma nem depois de muito tempo', async () => {
+    const { manager, deps, ptys, clock } = setup({
+      entries: [entry({ autostart: true, confirmedAt: null, path: null })]
+    })
+    await manager.startAutostart()
+    ptys[0].emit('Take this session with you…\r\nEnable Remote Control? (y/n) ')
+    await clock.advance(RC_CONFIRM_MS * 10)
+    expect(deps.saveEntries).not.toHaveBeenCalled()
+  })
+
+  it('a saída de antes de religar não conta para a execução nova', async () => {
+    const { manager, deps, clock, ptys, view } = setup({
+      entries: [entry({ autostart: true, confirmedAt: null, path: null })]
+    })
+    await manager.startAutostart()
+    const line = statusLine('Ready')
+    ptys[0].emit(line.slice(0, 12))
+    ptys[0].exit(1)
+    await clock.advance(RC_BACKOFF_MS[0])
+    expect(deps.spawn).toHaveBeenCalledTimes(2)
+    ptys[1].emit(line.slice(12))
+    expect(deps.saveEntries).not.toHaveBeenCalled()
+    expect(view()?.confirmed).toBe(false)
+    ptys[1].emit(line)
+    expect(view()?.confirmed).toBe(true)
+  })
+
+  it('o corte do rastro no meio de uma linha não vale como começo de linha', async () => {
+    const { manager, deps, ptys } = setup({
+      entries: [entry({ autostart: true, confirmedAt: null, path: null })]
+    })
+    await manager.startAutostart()
+    // A folder name shaped like the line, sized so the 512-char cut lands on its "·".
+    const fake = '\u00b7\u2714\ufe0e\u00b7 Ready\r\n'
+    ptys[0].emit('Untrusted folder: E:\\x\\' + fake + 'Z'.repeat(512 - fake.length))
+    expect(deps.saveEntries).not.toHaveBeenCalled()
+  })
+
+  it('Ligar no PC que chega a "Ready" confirma na hora e o timer não grava de novo', async () => {
+    const { manager, deps, ptys, clock } = setup({
+      entries: [entry({ confirmedAt: null, path: null })]
+    })
+    await manager.start('p1', 'pc')
+    ptys[0].emit(statusLine('Ready'))
+    expect(deps.saveEntries).toHaveBeenCalledTimes(1)
+    await clock.advance(RC_CONFIRM_MS * 2)
+    expect(deps.saveEntries).toHaveBeenCalledTimes(1)
+  })
+
+  it('já confirmado: a linha não grava de novo', async () => {
+    const { manager, deps, ptys } = setup({ entries: [entry({ autostart: true })] })
+    await manager.startAutostart()
+    ptys[0].emit(statusLine('Connected'))
+    ptys[0].emit(statusLine('Ready'))
+    expect(deps.saveEntries).not.toHaveBeenCalled()
   })
 
   it('autostart não liga um servidor desligado', async () => {
