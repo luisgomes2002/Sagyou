@@ -8,6 +8,7 @@ import {
   filterChipLabel,
   filterKey,
   matchesFilter,
+  normalizeFilter,
   openCountText,
   priorityOptions,
   readFilter,
@@ -224,5 +225,33 @@ describe('opções e rótulos', () => {
     expect(openCountText(1)).toBe('1 aberta')
     expect(openCountText(12)).toBe('12 abertas')
     expect(openCountText(0)).toBe('0 abertas')
+  })
+})
+
+// Review: the filter was read once; a sprint closed or deleted on the PC while
+// the board was open kept hiding every task behind a chip that said "Todas".
+describe('filtro em uso acompanha o que chega pela sincronização', () => {
+  it('sprint encerrada ou apagada com a tela aberta volta à padrão; tag sumida vira Todas', () => {
+    const s = state()
+    expect(normalizeFilter(s, 'p1', { sprint: 's0', priority: 'high', tag: 'casa' })).toEqual({
+      sprint: 's2',
+      priority: 'high',
+      tag: 'casa'
+    })
+    expect(normalizeFilter(s, 'p1', { sprint: 'apagada', priority: 'all', tag: 'sumiu' })).toEqual({
+      sprint: 's2',
+      priority: 'all',
+      tag: 'all'
+    })
+    expect(normalizeFilter(s, 'p1', { sprint: 'none', priority: 'all', tag: 'all' })).toEqual({
+      sprint: 'none',
+      priority: 'all',
+      tag: 'all'
+    })
+    expect(normalizeFilter(s, null, { sprint: 's2', priority: 'urgent', tag: 'dev' })).toEqual({
+      sprint: 'all',
+      priority: 'urgent',
+      tag: 'dev'
+    })
   })
 })
