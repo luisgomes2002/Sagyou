@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react-native'
+import { act, fireEvent, render, screen, within } from '@testing-library/react-native'
 import * as Notifications from 'expo-notifications'
 import { Text } from 'react-native'
 import * as RN from 'react-native'
@@ -10,9 +10,9 @@ import { useRemote } from '../remote/store'
 import { LOADING_TEXT } from '../screens/PcScreen'
 import { LOCKED_TITLE } from '../lock/texts'
 import { PAIR_TITLE } from '../screens/PairScreen'
-import { DISCONNECTED_TEXT, OFFLINE_TEXT, useApp } from '../store/app'
+import { type AppServices, DISCONNECTED_TEXT, OFFLINE_TEXT, useApp } from '../store/app'
 import { useUpdate } from '../store/update'
-import { project, seedApp } from './seed'
+import { T, project, seedApp } from './seed'
 import { darkTheme, lightTheme, useTheme } from '../theme'
 
 function Probe(): React.JSX.Element {
@@ -56,14 +56,15 @@ describe('App', () => {
     expect(autoCheck).not.toHaveBeenCalled()
   })
 
-  it('mostra as cinco abas com os rótulos exatos', async () => {
+  it('mostra as quatro abas com os rótulos exatos, sem Busca na barra', async () => {
     await render(
       <SafeAreaProvider>
         <AppShell mode="app" />
       </SafeAreaProvider>
     )
-    expect(TAB_LABELS).toEqual(['Tarefas', 'Hábitos', 'Finanças', 'Notas', 'Busca'])
+    expect(TAB_LABELS).toEqual(['Tarefas', 'Hábitos', 'Finanças', 'Notas'])
     for (const label of TAB_LABELS) expect(screen.getAllByText(label).length).toBeGreaterThan(0)
+    expect(screen.queryByTestId('tab-Busca')).toBeNull()
   })
 
   it('a aba PC só aparece num celular autorizado que pode enviar', async () => {
@@ -189,7 +190,7 @@ describe('App', () => {
     expect(await screen.findByText('Perfil financeiro')).toBeTruthy()
   })
 
-  it('o (+) aparece nas abas de conteúdo e some na Busca', async () => {
+  it('o (+) aparece nas quatro abas de conteúdo', async () => {
     seedApp({ projects: [project('p1', 'Sagyou')] })
     await render(
       <SafeAreaProvider>
@@ -204,8 +205,75 @@ describe('App', () => {
         true
       ])
     }
-    await fireEvent.press(screen.getByTestId('tab-Busca'))
-    expect(screen.queryByRole('button', { name: 'Criar' })).toBeNull()
+  })
+
+  describe('Busca no cabeçalho', () => {
+    const hits = [
+      { kind: 'task' as const, id: 't1', title: 'Comprar pão', parentId: 'p1' },
+      { kind: 'project' as const, id: 'p1', title: 'Sagyou', parentId: null },
+      { kind: 'note' as const, id: 'n1', title: 'Ideia', parentId: 'p1' },
+      { kind: 'habit' as const, id: 'h1', title: 'Ler', parentId: null },
+      { kind: 'transaction' as const, id: 'x1', title: 'Mercado', parentId: 'ft1' }
+    ]
+
+    async function openSearch(): Promise<void> {
+      seedApp({
+        projects: [project('p1', 'Sagyou')],
+        tasks: [
+          {
+            id: 't1',
+            projectId: 'p1',
+            columnId: 'p1-todo',
+            title: 'Comprar pão',
+            priority: 'medium',
+            tags: [],
+            order: 0,
+            createdAt: T,
+            updatedAt: T
+          }
+        ]
+      })
+      const services = useApp.getState().services as AppServices
+      useApp.setState({ services: { ...services, search: () => hits } as AppServices })
+      await render(
+        <SafeAreaProvider>
+          <AppShell mode="app" />
+        </SafeAreaProvider>
+      )
+      await fireEvent.press(screen.getAllByRole('button', { name: 'Buscar' })[0])
+      await fireEvent.changeText(await screen.findByPlaceholderText('Buscar'), 'a')
+    }
+
+    it('a lupa abre a Busca, que não tem (+)', async () => {
+      await openSearch()
+      const search = screen.getByTestId('search-screen')
+      expect(within(search).queryByRole('button', { name: 'Criar' })).toBeNull()
+    })
+
+    it('um resultado de tarefa abre o formulário dela', async () => {
+      await openSearch()
+      await fireEvent.press(screen.getByRole('button', { name: 'Comprar pão' }))
+      expect(await screen.findByDisplayValue('Comprar pão')).toBeTruthy()
+    })
+
+    it('um resultado de projeto abre o projeto', async () => {
+      await openSearch()
+      await fireEvent.press(screen.getByRole('button', { name: 'Sagyou' }))
+      expect(await screen.findByRole('button', { name: /^Sprint:/ })).toBeTruthy()
+    })
+
+    it.each([
+      ['Ideia', 'Notas'],
+      ['Ler', 'Hábitos'],
+      ['Mercado', 'Finanças']
+    ])('%s abre a aba %s', async (title, tab) => {
+      await openSearch()
+      await fireEvent.press(screen.getByRole('button', { name: title }))
+      expect(screen.queryByTestId('search-screen')).toBeNull()
+      expect(screen.getByTestId(`tab-${tab}`).props.accessibilityState).toMatchObject({
+        selected: true
+      })
+    })
   })
 
   // Review: the (+) sat on top of the note editor's "Salvar".

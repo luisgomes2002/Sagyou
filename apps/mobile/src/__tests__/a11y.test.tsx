@@ -13,7 +13,7 @@ import { RecoverSync } from '../screens/RecoverSync'
 import { SearchScreen } from '../screens/SearchScreen'
 import { SettingsScreen } from '../screens/SettingsScreen'
 import { SyncGuideScreen } from '../screens/SyncGuideScreen'
-import { ProjectBoard, ProjectList, UpcomingList } from '../screens/tasks/TaskLists'
+import { AllTasksList, ProjectBoard, ProjectList, UpcomingList } from '../screens/tasks/TaskLists'
 import type { MobileState } from '../data/state'
 import { useRemote } from '../remote/store'
 import { useApp } from '../store/app'
@@ -139,7 +139,12 @@ function ConflictSample(): React.JSX.Element {
 }
 
 const SCREENS: [string, ComponentType][] = [
-  ['Tarefas', () => <ProjectList onOpen={jest.fn()} onUpcoming={jest.fn()} today="2026-11-01" />],
+  [
+    'Tarefas',
+    () => (
+      <ProjectList onOpen={jest.fn()} onUpcoming={jest.fn()} onAll={jest.fn()} today="2026-11-01" />
+    )
+  ],
   [
     'Projeto',
     () => (
@@ -166,7 +171,8 @@ const SCREENS: [string, ComponentType][] = [
   [
     'Entrar com código de recuperação',
     () => <RecoverSync busy={false} error={null} onSubmit={jest.fn()} onBack={jest.fn()} />
-  ]
+  ],
+  ['Todas as tarefas', () => <AllTasksList onOpenTask={jest.fn()} today="2026-11-01" />]
 ]
 
 const INTERACTIVE = ['button', 'checkbox', 'radio', 'tab'] as const

@@ -5,13 +5,21 @@ import {
 import { useEffect } from 'react'
 import { useApp } from '../../store/app'
 import { TaskForm } from './TaskForm'
-import { ProjectBoard, ProjectList, UPCOMING_TITLE, UpcomingList } from './TaskLists'
+import {
+  ALL_TASKS_TITLE,
+  AllTasksList,
+  ProjectBoard,
+  ProjectList,
+  UPCOMING_TITLE,
+  UpcomingList
+} from './TaskLists'
 
 type TasksParams = {
   Projetos: undefined
   Projeto: { projectId: string }
   Tarefa: { projectId: string; taskId?: string; columnId?: string; draftTitle?: string }
   [UPCOMING_TITLE]: undefined
+  [ALL_TASKS_TITLE]: undefined
 }
 
 const Stack = createNativeStackNavigator<TasksParams>()
@@ -23,6 +31,7 @@ function ProjectsRoute({
     <ProjectList
       onOpen={(projectId) => navigation.navigate('Projeto', { projectId })}
       onUpcoming={() => navigation.navigate(UPCOMING_TITLE)}
+      onAll={() => navigation.navigate(ALL_TASKS_TITLE)}
     />
   )
 }
@@ -62,7 +71,17 @@ function UpcomingRoute({
   )
 }
 
-/** The Tarefas tab: projects → board → task form, plus "Próximas". */
+function AllTasksRoute({
+  navigation
+}: NativeStackScreenProps<TasksParams, typeof ALL_TASKS_TITLE>): React.JSX.Element {
+  return (
+    <AllTasksList
+      onOpenTask={(projectId, taskId) => navigation.navigate('Tarefa', { projectId, taskId })}
+    />
+  )
+}
+
+/** The Tarefas tab: projects → board → task form, plus "Próximas" and "Todas as tarefas". */
 export function TasksStack(): React.JSX.Element {
   return (
     <Stack.Navigator>
@@ -74,6 +93,7 @@ export function TasksStack(): React.JSX.Element {
         options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
       />
       <Stack.Screen name={UPCOMING_TITLE} component={UpcomingRoute} />
+      <Stack.Screen name={ALL_TASKS_TITLE} component={AllTasksRoute} />
     </Stack.Navigator>
   )
 }

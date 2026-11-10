@@ -65,7 +65,7 @@ export function SearchScreen({ onOpen }: { onOpen: (hit: SearchHit) => void }): 
   })).filter((g) => g.hits.length > 0)
 
   return (
-    <ScrollView keyboardShouldPersistTaps="handled">
+    <ScrollView testID="search-screen" keyboardShouldPersistTaps="handled">
       <Screen>
         <View style={[styles.box, { backgroundColor: theme.field, borderColor: theme.border }]}>
           <Search size={18} color={theme.onSurfaceIcon} />

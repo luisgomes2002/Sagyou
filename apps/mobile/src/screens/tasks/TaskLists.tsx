@@ -1,15 +1,25 @@
-import { isDoneColumn } from '@sagyou/core/columns'
 import { formatDateBR, todayLocalISO } from '@sagyou/core/dates'
-import type { Column, Task } from '@sagyou/core/types'
+import type { Task } from '@sagyou/core/types'
 import { ListChecks } from 'lucide-react-native'
 import { useState } from 'react'
-import { ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { Skeleton } from '../../components/Skeleton'
-import { SwipeToComplete } from '../../components/SwipeToComplete'
 import { ACTION_ICONS } from '../../components/icons'
-import { Badge, Button, Card, Chip, EmptyState, ListItem, Screen } from '../../components/ui'
+import { Badge, Button, Card, EmptyState, ListItem, Screen } from '../../components/ui'
 import { awaitingFirstSync, useApp } from '../../store/app'
 import { completeFromList } from '../../store/complete'
+import {
+  ALL_FILTER,
+  TASK_FILTER_TEXTS,
+  allTaskSections,
+  boardSections,
+  defaultFilter,
+  openCountText,
+  readFilter,
+  scopeTasks,
+  writeFilter,
+  type TaskFilter
+} from '../../store/taskFilters'
 import {
   UPCOMING_SECTION_TITLES,
   projectA11yLabel,
@@ -19,9 +29,11 @@ import {
   todayText,
   upcomingSections
 } from '../../store/tasks'
-import { FONT, RADIUS, SPACE, useTheme } from '../../theme'
+import { FONT, MIN_TOUCH, RADIUS, SPACE, useTheme } from '../../theme'
+import { FilterBar } from './FilterBar'
 
 export const UPCOMING_TITLE = 'Próximas'
+export const ALL_TASKS_TITLE = TASK_FILTER_TEXTS.allTitle
 
 function DueText({ task, today }: { task: Task; today: string }): React.JSX.Element | null {
   const theme = useTheme()
@@ -65,33 +77,49 @@ function TaskRow({
   const flagColor =
     task.priority === 'urgent' ? theme.red : task.priority === 'high' ? theme.attention : null
   const tags = task.tags ?? []
+  // The box and the row are siblings, so a screen reader focuses each on its
+  // own; no sideways gesture completes anything (spec 2026-11-10).
   return (
-    <SwipeToComplete enabled={canComplete} onComplete={() => completeFromList(task.id)}>
-      <ListItem
-        title={task.title}
-        a11yLabel={taskA11yLabel(task, today, projectName)}
-        onPress={onOpen}
-        a11yActions={canComplete ? [{ name: 'concluir', label: 'Concluir' }] : undefined}
-        onA11yAction={(e) => {
-          if (e.nativeEvent.actionName === 'concluir') completeFromList(task.id)
-        }}
-        left={flagColor ? <Flag size={18} color={flagColor} /> : undefined}
-        subtitle={
-          task.dueDate || projectName || tags.length ? (
-            <View style={styles.metaRow}>
-              <DueText task={task} today={today} />
-              {projectName ? (
-                <Text style={[styles.meta, { color: theme.muted }]}>{projectName}</Text>
-              ) : null}
-              {tags.slice(0, 2).map((tag) => (
-                <Badge key={tag} text={tag} />
-              ))}
-              {tags.length > 2 ? <Badge text={`+${tags.length - 2}`} /> : null}
-            </View>
-          ) : undefined
-        }
-      />
-    </SwipeToComplete>
+    <View style={styles.taskRow}>
+      {done ? null : (
+        <Pressable
+          accessibilityRole="checkbox"
+          accessibilityLabel={`Concluir ${task.title}`}
+          accessibilityState={{ checked: false, disabled: readOnly }}
+          disabled={readOnly}
+          onPress={() => completeFromList(task.id)}
+          style={styles.check}
+        >
+          <View style={[styles.box, { borderColor: readOnly ? theme.border : theme.muted }]} />
+        </Pressable>
+      )}
+      <View style={styles.rowBody}>
+        <ListItem
+          title={task.title}
+          a11yLabel={taskA11yLabel(task, today, projectName)}
+          onPress={onOpen}
+          a11yActions={canComplete ? [{ name: 'concluir', label: 'Concluir' }] : undefined}
+          onA11yAction={(e) => {
+            if (e.nativeEvent.actionName === 'concluir') completeFromList(task.id)
+          }}
+          left={flagColor ? <Flag size={18} color={flagColor} /> : undefined}
+          subtitle={
+            task.dueDate || projectName || tags.length ? (
+              <View style={styles.metaRow}>
+                <DueText task={task} today={today} />
+                {projectName ? (
+                  <Text style={[styles.meta, { color: theme.muted }]}>{projectName}</Text>
+                ) : null}
+                {tags.slice(0, 2).map((tag) => (
+                  <Badge key={tag} text={tag} />
+                ))}
+                {tags.length > 2 ? <Badge text={`+${tags.length - 2}`} /> : null}
+              </View>
+            ) : undefined
+          }
+        />
+      </View>
+    </View>
   )
 }
 
@@ -99,10 +127,12 @@ function TaskRow({
 export function ProjectList({
   onOpen,
   onUpcoming,
+  onAll,
   today = todayLocalISO()
 }: {
   onOpen: (projectId: string) => void
   onUpcoming: () => void
+  onAll: () => void
   today?: string
 }): React.JSX.Element {
   const theme = useTheme()
@@ -113,6 +143,7 @@ export function ProjectList({
   const waiting = useApp((s) => awaitingFirstSync(s.status))
   const summary = todayText(todaySummary(state.tasks, state.projects, today))
   const Chevron = ACTION_ICONS.chevron
+  const openCount = openCountText(scopeTasks(state, null).length)
   return (
     <ScrollView contentContainerStyle={styles.bottomRoom}>
       <Screen>
@@ -121,6 +152,15 @@ export function ProjectList({
             <View style={{ flex: 1, gap: SPACE.xs }}>
               <Text style={[styles.caption, { color: theme.muted }]}>Hoje</Text>
               <Text style={[styles.summary, { color: theme.text }]}>{summary}</Text>
+            </View>
+            <Chevron size={20} color={theme.onSurfaceIcon} />
+          </View>
+        </Card>
+        <Card onPress={onAll} a11yLabel={`${ALL_TASKS_TITLE}: ${openCount}`}>
+          <View style={styles.cardRow}>
+            <View style={{ flex: 1, gap: SPACE.xs }}>
+              <Text style={[styles.caption, { color: theme.muted }]}>{ALL_TASKS_TITLE}</Text>
+              <Text style={[styles.cardValue, { color: theme.text }]}>{openCount}</Text>
             </View>
             <Chevron size={20} color={theme.onSurfaceIcon} />
           </View>
@@ -169,13 +209,38 @@ export function ProjectList({
   )
 }
 
-/** Columns in the desktop's order, with Done ones moved to the end. */
-function boardColumns(columns: Column[]): Column[] {
-  const sorted = [...columns].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-  return [...sorted.filter((c) => !isDoneColumn(c)), ...sorted.filter((c) => isDoneColumn(c))]
+/** A section header that opens and closes its list: "<name> (<n>)". */
+function SectionHeader({
+  label,
+  expanded,
+  onToggle
+}: {
+  label: string
+  expanded: boolean
+  onToggle: () => void
+}): React.JSX.Element {
+  const theme = useTheme()
+  const Chevron = ACTION_ICONS.chevron
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ expanded }}
+      onPress={onToggle}
+      style={styles.sectionHeader}
+    >
+      <Text style={[styles.sectionTitle, { color: theme.muted }]}>{label}</Text>
+      <View style={{ transform: [{ rotate: expanded ? '90deg' : '0deg' }] }}>
+        <Chevron size={18} color={theme.onSurfaceIcon} />
+      </View>
+    </Pressable>
+  )
 }
 
-/** One project: its columns as chips, the chosen column's tasks below. */
+/**
+ * One project: the filter chips, then every column as a section (Done last,
+ * closed). The filter is remembered per project on this phone.
+ */
 export function ProjectBoard({
   projectId,
   onOpenTask,
@@ -187,56 +252,146 @@ export function ProjectBoard({
   onNewTask: (columnId?: string) => void
   today?: string
 }): React.JSX.Element {
+  const theme = useTheme()
   const state = useApp((s) => s.state)
   const readOnly = useApp((s) => s.readOnly)
-  const project = state.projects.find((p) => p.id === projectId)
-  const columns = boardColumns(project?.columns ?? [])
-  const [chosen, setChosen] = useState<string | undefined>(columns[0]?.id)
-  const column = columns.find((c) => c.id === chosen) ?? columns[0]
-  const tasksOf = (columnId: string): Task[] =>
-    state.tasks
-      .filter((t) => t.projectId === projectId && t.columnId === columnId)
-      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-  const tasks = column ? tasksOf(column.id) : []
-  const done = isDoneColumn(column)
+  const repo = useApp((s) => s.services?.repo)
+  const [filter, setFilterState] = useState<TaskFilter>(() =>
+    repo ? readFilter(repo, state, projectId) : defaultFilter(state, projectId)
+  )
+  const setFilter = (next: TaskFilter): void => {
+    setFilterState(next)
+    if (repo) writeFilter(repo, projectId, next)
+  }
+  // Open/closed is not remembered: Done starts closed, the rest open.
+  const [toggled, setToggled] = useState<Record<string, boolean>>({})
+  const sections = boardSections(state, projectId, filter)
+  const scope = { projectId, tasks: state.tasks.filter((t) => t.projectId === projectId) }
+  const nothing = sections.length > 0 && sections.every((section) => section.tasks.length === 0)
   return (
     <ScrollView contentContainerStyle={styles.bottomRoom}>
       <Screen>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chips}
-        >
-          {columns.map((c) => {
-            const label = `${c.name} · ${tasksOf(c.id).length}`
-            return (
-              <Chip
-                key={c.id}
-                label={label}
-                selected={c.id === column?.id}
-                onPress={() => setChosen(c.id)}
-              />
-            )
-          })}
-        </ScrollView>
-        {tasks.length === 0 ? (
+        <FilterBar
+          filter={filter}
+          onChange={setFilter}
+          kinds={['sprint', 'priority', 'tag']}
+          scope={scope}
+        />
+        {sections.length === 0 ? (
           <EmptyState icon={ListChecks} text="Nenhuma tarefa nesta coluna." />
         ) : null}
-        {tasks.map((task) => (
-          <TaskRow
-            key={task.id}
-            task={task}
-            today={today}
-            done={done}
-            onOpen={() => onOpenTask(task.id)}
+        {nothing ? (
+          <View style={styles.section}>
+            <Text style={[styles.meta, { color: theme.muted }]}>{TASK_FILTER_TEXTS.noMatch}</Text>
+            <Button
+              variant="secondary"
+              label={TASK_FILTER_TEXTS.clear}
+              onPress={() => setFilter(ALL_FILTER)}
+            />
+          </View>
+        ) : null}
+        {sections.map(({ column, tasks, done }) => {
+          const expanded = toggled[column.id] ?? !done
+          return (
+            <View key={column.id} style={styles.section}>
+              <SectionHeader
+                label={`${column.name} (${tasks.length})`}
+                expanded={expanded}
+                onToggle={() => setToggled((t) => ({ ...t, [column.id]: !expanded }))}
+              />
+              {expanded ? (
+                <>
+                  {tasks.length === 0 ? (
+                    <Text style={[styles.meta, { color: theme.muted }]}>
+                      {TASK_FILTER_TEXTS.noneHere}
+                    </Text>
+                  ) : null}
+                  {tasks.map((task) => (
+                    <TaskRow
+                      key={task.id}
+                      task={task}
+                      today={today}
+                      done={done}
+                      onOpen={() => onOpenTask(task.id)}
+                    />
+                  ))}
+                  {done ? null : (
+                    <Button
+                      variant="ghost"
+                      label={TASK_FILTER_TEXTS.newIn(column.name)}
+                      icon={ACTION_ICONS.add}
+                      onPress={() => onNewTask(column.id)}
+                      disabled={readOnly}
+                    />
+                  )}
+                </>
+              ) : null}
+            </View>
+          )
+        })}
+      </Screen>
+    </ScrollView>
+  )
+}
+
+/** Open tasks of every active project, grouped by project, with Prioridade and Tag. */
+export function AllTasksList({
+  onOpenTask,
+  today = todayLocalISO()
+}: {
+  onOpenTask: (projectId: string, taskId: string) => void
+  today?: string
+}): React.JSX.Element {
+  const theme = useTheme()
+  const state = useApp((s) => s.state)
+  const repo = useApp((s) => s.services?.repo)
+  const [filter, setFilterState] = useState<TaskFilter>(() =>
+    repo ? readFilter(repo, state, null) : ALL_FILTER
+  )
+  const setFilter = (next: TaskFilter): void => {
+    setFilterState(next)
+    if (repo) writeFilter(repo, null, next)
+  }
+  const open = scopeTasks(state, null)
+  const sections = allTaskSections(state, filter)
+  return (
+    <ScrollView contentContainerStyle={styles.bottomRoom}>
+      <Screen>
+        {open.length === 0 ? (
+          <EmptyState icon={ListChecks} text={TASK_FILTER_TEXTS.noOpen} />
+        ) : (
+          <FilterBar
+            filter={filter}
+            onChange={setFilter}
+            kinds={['priority', 'tag']}
+            scope={{ projectId: null, tasks: open }}
           />
+        )}
+        {open.length > 0 && sections.length === 0 ? (
+          <View style={styles.section}>
+            <Text style={[styles.meta, { color: theme.muted }]}>{TASK_FILTER_TEXTS.noMatch}</Text>
+            <Button
+              variant="secondary"
+              label={TASK_FILTER_TEXTS.clear}
+              onPress={() => setFilter(ALL_FILTER)}
+            />
+          </View>
+        ) : null}
+        {sections.map(({ project, tasks }) => (
+          <View key={project.id} style={styles.section}>
+            <Text accessibilityRole="header" style={[styles.sectionTitle, { color: theme.muted }]}>
+              {`${project.name} (${tasks.length})`}
+            </Text>
+            {tasks.map((task) => (
+              <TaskRow
+                key={task.id}
+                task={task}
+                today={today}
+                onOpen={() => onOpenTask(task.projectId, task.id)}
+              />
+            ))}
+          </View>
         ))}
-        <Button
-          label="Nova tarefa nesta coluna"
-          icon={ACTION_ICONS.add}
-          onPress={() => onNewTask(column?.id)}
-          disabled={readOnly || !column}
-        />
       </Screen>
     </ScrollView>
   )
@@ -293,12 +448,23 @@ const styles = StyleSheet.create({
   cardRow: { flexDirection: 'row', alignItems: 'center', gap: SPACE.md },
   caption: { fontSize: FONT.caption },
   summary: { fontSize: FONT.title, fontWeight: '600' },
+  cardValue: { fontSize: FONT.bodyLg, fontWeight: '600' },
   dot: { width: 12, height: 12, borderRadius: 6 },
   track: { width: 64, height: 6, borderRadius: RADIUS.pill, overflow: 'hidden' },
   fill: { height: 6, borderRadius: RADIUS.pill },
   chips: { gap: SPACE.sm },
   section: { gap: SPACE.sm },
+  sectionHeader: {
+    minHeight: MIN_TOUCH,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between'
+  },
   sectionTitle: { fontSize: FONT.caption, fontWeight: '600', textTransform: 'uppercase' },
+  taskRow: { flexDirection: 'row', alignItems: 'center', gap: SPACE.xs },
+  check: { width: MIN_TOUCH, minHeight: MIN_TOUCH, alignItems: 'center', justifyContent: 'center' },
+  box: { width: 22, height: 22, borderRadius: RADIUS.control / 2, borderWidth: 2 },
+  rowBody: { flex: 1, minWidth: 0 },
   metaRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: SPACE.sm },
   meta: { fontSize: FONT.caption }
 })

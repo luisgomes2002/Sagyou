@@ -12,7 +12,7 @@ import { useEditing } from '../../store/editing'
 import { useUndo } from '../../store/undo'
 import { lightTheme } from '../../theme'
 import { NEW_SPRINT, TaskForm } from '../tasks/TaskForm'
-import { ProjectBoard, ProjectList, UpcomingList } from '../tasks/TaskLists'
+import { AllTasksList, ProjectBoard, ProjectList, UpcomingList } from '../tasks/TaskLists'
 
 type TaskT = MobileState['tasks'][number]
 
@@ -26,6 +26,8 @@ const task = (id: string, extra: Partial<TaskT> = {}): TaskT => ({
   order: 0,
   createdAt: T,
   updatedAt: T,
+  // The board opens on the latest open sprint (Sprint 2); tasks live there unless a test says otherwise.
+  sprintId: 's2',
   ...extra
 })
 
@@ -53,7 +55,14 @@ describe('Tarefas no celular', () => {
   it('o cartão Hoje resume os prazos e abre Próximas', async () => {
     seed({ tasks: [task('a', { dueDate: '2026-11-04' }), task('b', { dueDate: '2026-11-03' })] })
     const onUpcoming = jest.fn()
-    await render(<ProjectList onOpen={jest.fn()} onUpcoming={onUpcoming} today="2026-11-04" />)
+    await render(
+      <ProjectList
+        onOpen={jest.fn()}
+        onUpcoming={onUpcoming}
+        onAll={jest.fn()}
+        today="2026-11-04"
+      />
+    )
     expect(screen.getByText('1 para hoje · 1 atrasada')).toBeTruthy()
     await fireEvent.press(screen.getByRole('button', { name: /^Hoje/ }))
     expect(
@@ -64,8 +73,11 @@ describe('Tarefas no celular', () => {
 
   it('cada projeto mostra as abertas e a barra de progresso', async () => {
     seed({ tasks: [task('a'), task('b'), task('c', { columnId: 'p1-done' })] })
-    await render(<ProjectList onOpen={jest.fn()} onUpcoming={jest.fn()} today="2026-11-04" />)
-    expect(screen.getByText('2 abertas')).toBeTruthy()
+    await render(
+      <ProjectList onOpen={jest.fn()} onUpcoming={jest.fn()} onAll={jest.fn()} today="2026-11-04" />
+    )
+    // The project row and the "Todas as tarefas" card both count 2.
+    expect(screen.getAllByText('2 abertas')).toHaveLength(2)
     expect(screen.getByTestId('progress-p1').props.accessibilityValue).toEqual({
       min: 0,
       max: 3,
@@ -73,13 +85,16 @@ describe('Tarefas no celular', () => {
     })
   })
 
-  it('as colunas viram chips com contagem, e Done fica por último', async () => {
+  it('uma seção por coluna com contagem, Done por último e recolhida', async () => {
     const p = project('p1', 'Sagyou', [
       { id: 'p1-done', name: 'Done', order: 0 },
       { id: 'p1-todo', name: 'A fazer', order: 1 },
       { id: 'p1-doing', name: 'Fazendo', order: 2 }
     ])
-    seed({ projects: [p], tasks: [task('a'), task('b', { columnId: 'p1-doing' })] })
+    seed({
+      projects: [p],
+      tasks: [task('a'), task('b', { columnId: 'p1-doing' }), task('c', { columnId: 'p1-done' })]
+    })
     await render(
       <ProjectBoard
         projectId="p1"
@@ -88,16 +103,136 @@ describe('Tarefas no celular', () => {
         today="2026-11-04"
       />
     )
-    const chips = screen
-      .getAllByRole('button')
-      .map((b) => b.props.accessibilityLabel as string)
-      .filter((l) => / · \d+$/.test(l ?? ''))
-    expect(chips).toEqual(['A fazer · 1', 'Fazendo · 1', 'Done · 0'])
-    expect(screen.getByRole('button', { name: 'A fazer · 1' })).toBeSelected()
+    const headers = ['A fazer (1)', 'Fazendo (1)', 'Done (1)']
+    for (const name of headers) expect(screen.getByRole('button', { name })).toBeTruthy()
+    expect(
+      screen.getByRole('button', { name: 'A fazer (1)' }).props.accessibilityState
+    ).toMatchObject({ expanded: true })
+    const done = screen.getByRole('button', { name: 'Done (1)' })
+    expect(done.props.accessibilityState).toMatchObject({ expanded: false })
     expect(screen.getByRole('button', { name: row('a') })).toBeTruthy()
-    expect(screen.queryByRole('button', { name: row('b') })).toBeNull()
-    await fireEvent.press(screen.getByRole('button', { name: 'Fazendo · 1' }))
     expect(screen.getByRole('button', { name: row('b') })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: row('c') })).toBeNull()
+    await fireEvent.press(done)
+    expect(screen.getByRole('button', { name: row('c') })).toBeTruthy()
+    // A finished task has no box.
+    expect(screen.queryByRole('checkbox', { name: 'Concluir c' })).toBeNull()
+    expect(screen.queryByText(/ · \d+$/)).toBeNull()
+  })
+
+  it('abre na sprint atual, filtra por prioridade e lembra o filtro', async () => {
+    const { prefs } = seed({
+      tasks: [task('atual'), task('antiga', { sprintId: 's1' }), task('alta', { priority: 'high' })]
+    })
+    const board = (): React.JSX.Element => (
+      <ProjectBoard
+        projectId="p1"
+        onOpenTask={jest.fn()}
+        onNewTask={jest.fn()}
+        today="2026-11-04"
+      />
+    )
+    const view = await render(board())
+    expect(screen.getByRole('button', { name: 'Sprint: Sprint 2' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: row('antiga') })).toBeNull()
+    await fireEvent.press(screen.getByRole('button', { name: 'Prioridade: Todas' }))
+    await fireEvent.press(screen.getByRole('radio', { name: 'Alta' }))
+    expect(screen.getByRole('button', { name: 'Prioridade: Alta' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: row('atual') })).toBeNull()
+    expect(screen.getByRole('button', { name: row('alta') })).toBeTruthy()
+    expect(JSON.parse(prefs['tasks.filter.p1'])).toEqual({
+      sprint: 's2',
+      priority: 'high',
+      tag: 'all'
+    })
+    await view.unmount()
+    await render(board())
+    expect(screen.getByRole('button', { name: 'Prioridade: Alta' })).toBeTruthy()
+  })
+
+  it('sem nada nos filtros avisa e "Limpar filtros" volta para Todas', async () => {
+    const { prefs } = seed({ tasks: [task('a', { sprintId: 's1' })] })
+    await render(
+      <ProjectBoard
+        projectId="p1"
+        onOpenTask={jest.fn()}
+        onNewTask={jest.fn()}
+        today="2026-11-04"
+      />
+    )
+    expect(screen.getByText('Nenhuma tarefa com estes filtros.')).toBeTruthy()
+    expect(screen.getAllByText('Nenhuma tarefa aqui.').length).toBeGreaterThan(0)
+    await fireEvent.press(screen.getByRole('button', { name: 'Limpar filtros' }))
+    expect(screen.getByRole('button', { name: 'Sprint: Todas' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: row('a') })).toBeTruthy()
+    expect(JSON.parse(prefs['tasks.filter.p1'])).toEqual({
+      sprint: 'all',
+      priority: 'all',
+      tag: 'all'
+    })
+  })
+
+  it('"Nova tarefa em <coluna>" abre o formulário naquela coluna; Done não tem', async () => {
+    seed({ tasks: [task('a')] })
+    const onNewTask = jest.fn()
+    await render(
+      <ProjectBoard
+        projectId="p1"
+        onOpenTask={jest.fn()}
+        onNewTask={onNewTask}
+        today="2026-11-04"
+      />
+    )
+    await fireEvent.press(screen.getByRole('button', { name: 'Nova tarefa em A fazer' }))
+    expect(onNewTask).toHaveBeenCalledWith('p1-todo')
+    expect(screen.queryByRole('button', { name: 'Nova tarefa em Done' })).toBeNull()
+  })
+
+  it('o cartão "Todas as tarefas" conta as abertas e abre a lista', async () => {
+    seed({ tasks: [task('a'), task('b', { columnId: 'p1-done' })] })
+    const onAll = jest.fn()
+    await render(
+      <ProjectList onOpen={jest.fn()} onUpcoming={jest.fn()} onAll={onAll} today="2026-11-04" />
+    )
+    await fireEvent.press(screen.getByRole('button', { name: 'Todas as tarefas: 1 aberta' }))
+    expect(onAll).toHaveBeenCalled()
+  })
+
+  it('Todas as tarefas: abertas por projeto, sem Sprint, filtro lembrado', async () => {
+    const { prefs } = seed({
+      projects: [
+        project('p1', 'Sagyou'),
+        project('p2', 'Casa'),
+        { ...project('p3', 'Velho'), archivedAt: T }
+      ],
+      tasks: [
+        task('a', { tags: ['dev'] }),
+        task('feita', { columnId: 'p1-done' }),
+        task('b', { projectId: 'p2', columnId: 'p2-todo', priority: 'urgent' }),
+        task('arquivada', { projectId: 'p3', columnId: 'p3-todo' })
+      ]
+    })
+    const onOpenTask = jest.fn()
+    await render(<AllTasksList onOpenTask={onOpenTask} today="2026-11-04" />)
+    expect(screen.getAllByRole('header').map((h) => h.props.children)).toEqual([
+      'Sagyou (1)',
+      'Casa (1)'
+    ])
+    expect(screen.queryByRole('button', { name: row('feita') })).toBeNull()
+    expect(screen.queryByRole('button', { name: row('arquivada') })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Sprint:/ })).toBeNull()
+    await fireEvent.press(screen.getByRole('button', { name: 'Prioridade: Todas' }))
+    await fireEvent.press(screen.getByRole('radio', { name: 'Urgente' }))
+    expect(screen.getAllByRole('header').map((h) => h.props.children)).toEqual(['Casa (1)'])
+    expect(JSON.parse(prefs['tasks.filter.all'])).toMatchObject({ priority: 'urgent' })
+    await fireEvent.press(screen.getByRole('button', { name: row('b') }))
+    expect(onOpenTask).toHaveBeenCalledWith('p2', 'b')
+  })
+
+  it('Todas as tarefas sem nada aberto', async () => {
+    seed({ tasks: [task('feita', { columnId: 'p1-done' })] })
+    await render(<AllTasksList onOpenTask={jest.fn()} today="2026-11-04" />)
+    expect(screen.getByText('Nenhuma tarefa aberta.')).toBeTruthy()
   })
 
   it('prazo atrasado em vermelho e de hoje em atenção', async () => {
@@ -136,6 +271,49 @@ describe('Tarefas no celular', () => {
     expect(useApp.getState().state.tasks[0]).toMatchObject({ columnId: 'p1-todo', order: 0 })
     expect(useApp.getState().state.tasks[0].completedAt).toBeUndefined()
     expect(save).toHaveBeenCalledTimes(2)
+  })
+
+  it('a caixinha "Concluir <título>" conclui com Desfazer; nada de arrastar', async () => {
+    seed({ tasks: [task('a')] })
+    await render(
+      <ProjectBoard
+        projectId="p1"
+        onOpenTask={jest.fn()}
+        onNewTask={jest.fn()}
+        today="2026-11-04"
+      />
+    )
+    expect(screen.queryByTestId('swipeable')).toBeNull()
+    const box = screen.getByRole('checkbox', { name: 'Concluir a' })
+    expect(box.props.accessibilityState).toMatchObject({ checked: false, disabled: false })
+    expect(Number(StyleSheet.flatten(box.props.style)?.minHeight)).toBeGreaterThanOrEqual(48)
+    await fireEvent.press(box)
+    expect(useApp.getState().state.tasks[0].columnId).toBe('p1-done')
+    expect(useUndo.getState()).toMatchObject({ message: 'Tarefa concluída', canUndo: true })
+  })
+
+  it('somente leitura: a caixinha fica desabilitada e nada é gravado', async () => {
+    const { save } = seed({ tasks: [task('a')] }, true)
+    await render(
+      <ProjectBoard
+        projectId="p1"
+        onOpenTask={jest.fn()}
+        onNewTask={jest.fn()}
+        today="2026-11-04"
+      />
+    )
+    const box = screen.getByRole('checkbox', { name: 'Concluir a' })
+    expect(box.props.accessibilityState).toMatchObject({ disabled: true })
+    await fireEvent.press(box)
+    expect(save).not.toHaveBeenCalled()
+    expect(useApp.getState().state.tasks[0].columnId).toBe('p1-todo')
+  })
+
+  it('Próximas também conclui pela caixinha', async () => {
+    seed({ tasks: [task('vencida', { dueDate: '2026-10-20' })] })
+    await render(<UpcomingList onOpenTask={jest.fn()} today="2026-11-04" />)
+    await fireEvent.press(screen.getByRole('checkbox', { name: 'Concluir vencida' }))
+    expect(useApp.getState().state.tasks[0].columnId).toBe('p1-done')
   })
 
   it('sem coluna Done, avisa e não grava nem vibra', async () => {
@@ -254,7 +432,9 @@ describe('Tarefas no celular', () => {
         search: () => []
       } as unknown as AppServices
     })
-    await render(<ProjectList onOpen={jest.fn()} onUpcoming={jest.fn()} today="2026-11-04" />)
+    await render(
+      <ProjectList onOpen={jest.fn()} onUpcoming={jest.fn()} onAll={jest.fn()} today="2026-11-04" />
+    )
     await render(
       <ProjectBoard
         projectId="p1"

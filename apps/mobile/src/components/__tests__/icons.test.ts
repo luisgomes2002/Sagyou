@@ -4,7 +4,7 @@ import { ACTION_ICONS, TAB_ICONS, categoryIcon } from '../icons'
 
 describe('ícones do app', () => {
   it('cada aba tem um ícone', () => {
-    for (const tab of ['Tarefas', 'Hábitos', 'Finanças', 'Notas', 'Busca'] as const)
+    for (const tab of ['Tarefas', 'Hábitos', 'Finanças', 'Notas', 'PC'] as const)
       expect(TAB_ICONS[tab]).toBeTruthy()
     expect(ACTION_ICONS.settings).toBeTruthy()
     expect(ACTION_ICONS.add).toBeTruthy()
