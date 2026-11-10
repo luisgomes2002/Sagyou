@@ -38,7 +38,8 @@ import { PairScreen } from './screens/PairScreen'
 import { SearchScreen } from './screens/SearchScreen'
 import type { SearchHit } from './data/search'
 import { Placeholder } from './screens/Placeholder'
-import { ConflictsScreen } from './screens/ConflictsScreen'
+import { ConflictsScreen, type ConflictsParams } from './screens/ConflictsScreen'
+import { ConflictScreen } from './screens/ConflictScreen'
 import { PAIR_DEVICE_TITLE, PairDeviceScreen } from './screens/PairDeviceScreen'
 import { CONTROL_TITLE, ControlSetupScreen } from './screens/ControlSetupScreen'
 import { SyncGuideScreen } from './screens/SyncGuideScreen'
@@ -89,7 +90,8 @@ const TAB_SCREENS: Partial<Record<TabLabel, ComponentType>> = {
 export type RootStackParams = {
   Abas: NavigatorScreenParams<Record<TabLabel, undefined>> | undefined
   Ajustes: undefined
-  Conflitos: undefined
+  Conflitos: ConflictsParams | undefined
+  Conflito: { id: string }
   ComoFunciona: undefined
   ParearAparelho: undefined
   ControlarPC: undefined
@@ -298,6 +300,7 @@ export function AppShell({ mode }: { mode: AppMode }): React.JSX.Element {
         <Stack.Screen name="Abas" component={TabsScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Ajustes" component={SettingsScreen} />
         <Stack.Screen name="Conflitos" component={ConflictsScreen} />
+        <Stack.Screen name="Conflito" component={ConflictScreen} />
         <Stack.Screen
           name="ComoFunciona"
           component={SyncGuideScreen}

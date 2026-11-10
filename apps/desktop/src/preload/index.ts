@@ -20,6 +20,7 @@ import type {
   GlobalSearchResponse
 } from '../main/modules/search/global-search-query'
 import type {
+  ConflictChoice,
   SyncConflictView,
   SyncDevice,
   SyncResult,
@@ -445,7 +446,7 @@ export const api = {
     conflicts: (): Promise<SyncResult<{ conflicts: SyncConflictView[] }>> =>
       ipcRenderer.invoke('sync:conflicts'),
     // 'local' = the version this device made or holds; 'remote' = the other device's.
-    resolve: (conflictId: string, choice: 'local' | 'remote'): Promise<SyncResult> =>
+    resolve: (conflictId: string, choice: ConflictChoice): Promise<SyncResult> =>
       ipcRenderer.invoke('sync:resolve', conflictId, choice),
     recoveryCode: (password?: string): Promise<SyncResult<{ code: string }>> =>
       ipcRenderer.invoke('sync:recovery-code', password),

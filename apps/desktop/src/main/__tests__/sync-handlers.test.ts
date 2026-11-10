@@ -48,3 +48,54 @@ describe('sync:recover', () => {
     expect(result).toEqual({ ok: false, error: 'Código de recuperação inválido.' })
   })
 })
+
+describe('sync:resolve', () => {
+  function withResolve(): { handlers: Map<string, Handler>; resolve: ReturnType<typeof vi.fn> } {
+    const resolve = vi.fn()
+    const handlers = new Map<string, Handler>()
+    const ipcMain = {
+      handle: (channel: string, fn: Handler) => handlers.set(channel, fn)
+    } as unknown as IpcMain
+    registerSyncHandlers(ipcMain, {
+      engine: { resolve } as unknown as SyncEngine,
+      listFiles: () => [],
+      hasFileBytes: () => false,
+      verifyAppPassword: () => true,
+      defaultDeviceName: () => 'PC'
+    })
+    return { handlers, resolve }
+  }
+
+  it('repassa a escolha por campo ao motor', async () => {
+    const { handlers, resolve } = withResolve()
+    const choice = { fields: { title: 'local', timeSpent: 'remote' }, expectedHlc: 'h1' }
+    expect(await handlers.get('sync:resolve')!({}, 'c1', choice)).toEqual({ ok: true })
+    expect(resolve).toHaveBeenCalledWith('c1', choice)
+    await handlers.get('sync:resolve')!({}, 'c1', { fields: {}, expectedHlc: null })
+    expect(resolve).toHaveBeenLastCalledWith('c1', { fields: {}, expectedHlc: null })
+    await handlers.get('sync:resolve')!({}, 'c1', 'remote')
+    expect(resolve).toHaveBeenLastCalledWith('c1', 'remote')
+  })
+
+  it.each([
+    ['lado fora de local/remote', { fields: { title: 'outro' }, expectedHlc: null }],
+    [
+      'mais de 64 campos',
+      {
+        fields: Object.fromEntries(Array.from({ length: 65 }, (_, i) => [`f${i}`, 'local'])),
+        expectedHlc: null
+      }
+    ],
+    ['nome de campo longo', { fields: { ['x'.repeat(65)]: 'local' }, expectedHlc: null }],
+    ['expectedHlc que não é texto', { fields: {}, expectedHlc: 5 }],
+    ['sem fields', { expectedHlc: null }],
+    ['fields em lista', { fields: ['local'], expectedHlc: null }]
+  ])('recusa %s sem chamar o motor', async (_name, choice) => {
+    const { handlers, resolve } = withResolve()
+    expect(await handlers.get('sync:resolve')!({}, 'c1', choice)).toEqual({
+      ok: false,
+      error: 'Dados inválidos.'
+    })
+    expect(resolve).not.toHaveBeenCalled()
+  })
+})

@@ -28,7 +28,6 @@ const KIND_LABELS: Record<SyncKind, string> = {
 }
 
 const NAME_FIELDS = ['title', 'name', 'description', 'text', 'content'] as const
-const MAX_FIELDS = 6
 const MAX_VALUE = 80
 
 export function syncKindLabel(kind: SyncKind): string {
@@ -61,20 +60,6 @@ export function recordName(payload: Record<string, unknown> | null): string | nu
     if (typeof value === 'string' && value.trim()) return shorten(value.trim())
   }
   return null
-}
-
-/** A short "field: value" preview of a version; ids and nested objects are left out. */
-export function versionLines(payload: Record<string, unknown> | null): string[] {
-  if (!payload) return []
-  const lines: string[] = []
-  for (const [key, value] of Object.entries(payload)) {
-    if (key === 'id' || key.endsWith('Id') || key.endsWith('Ids')) continue
-    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-      lines.push(`${key}: ${shorten(String(value))}`)
-      if (lines.length === MAX_FIELDS) break
-    }
-  }
-  return lines
 }
 
 interface LocalDataState {
