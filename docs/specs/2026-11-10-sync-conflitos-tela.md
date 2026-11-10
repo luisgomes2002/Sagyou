@@ -146,15 +146,15 @@ Ajustes → "N conflitos") é difícil de entender e de decidir. Caso real: a ta
 - Se a versão atual do item mudou desde que a comparação abriu (edição local
   ou recebida), a comparação recarrega com os valores novos e avisa "O item
   mudou enquanto você comparava. Confira de novo." sem gravar.
-- Campos que só um lado tem nunca somem por omissão: um campo não exibido (ex.:
-  `images` de uma versão antiga, `legacyFinancialMetadata`) é sempre copiado da
-  versão atual deste aparelho, nunca descartado.
+- Campos que só um lado tem nunca somem por omissão: todo campo do item (menos
+  `id` e `updatedAt`) aparece na comparação, inclusive `images` ("3 imagens"), e
+  só sai da versão mesclada se o lado "(vazio)" for escolhido de propósito.
 - Uma escolha que falha (pai apagado, validação) mostra a mensagem do engine
   ("Não foi possível usar esta versão.") e o conflito continua aberto.
 - Celular em modo só leitura (`readOnly`) ou bloqueado (`useLockState.hidden`):
   a comparação não abre / fecha, como os outros formulários.
 
-### Nomes e valores (core, `sync/view.ts`)
+### Nomes e valores (core, `sync/conflict-view.ts`)
 
 - Tabela de rótulos em português por tipo e campo (ex.: task: Título,
   Descrição, Prioridade, Prazo, Sprint, Tempo gasto, Posição na coluna, Coluna,
