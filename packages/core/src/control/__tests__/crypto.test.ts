@@ -65,10 +65,10 @@ describe('sealControl / openControl', () => {
 
 describe('assinatura Ed25519', () => {
   /**
-   * A changed signature: one bit of its first byte flipped. Swapping the last
-   * base64url characters is not a change: the last of 86 characters carries 4
-   * unused bits, and "…BA" swapped for "BA" is the same text, so the old
-   * check passed ~0.6% of the time (CI on main, run of b082da7).
+   * A changed signature: one bit of its first byte flipped. The old check
+   * swapped the last two base64url characters for "BA" (or "AA"), which left
+   * a signature already ending in "BA" untouched (1 in 256 runs, CI on main,
+   * run of b082da7); any other swap was refused by the decoder anyway.
    */
   const corrupt = (sig: string): string => {
     const bytes = fromBase64Url(sig)
