@@ -11,9 +11,12 @@ import { completeFromList } from '../../store/complete'
 import {
   ALL_FILTER,
   TASK_FILTER_TEXTS,
+  allTaskSections,
   boardSections,
   defaultFilter,
+  openCountText,
   readFilter,
+  scopeTasks,
   writeFilter,
   type TaskFilter
 } from '../../store/taskFilters'
@@ -30,6 +33,7 @@ import { FONT, MIN_TOUCH, RADIUS, SPACE, useTheme } from '../../theme'
 import { FilterBar } from './FilterBar'
 
 export const UPCOMING_TITLE = 'Próximas'
+export const ALL_TASKS_TITLE = TASK_FILTER_TEXTS.allTitle
 
 function DueText({ task, today }: { task: Task; today: string }): React.JSX.Element | null {
   const theme = useTheme()
@@ -123,10 +127,12 @@ function TaskRow({
 export function ProjectList({
   onOpen,
   onUpcoming,
+  onAll,
   today = todayLocalISO()
 }: {
   onOpen: (projectId: string) => void
   onUpcoming: () => void
+  onAll: () => void
   today?: string
 }): React.JSX.Element {
   const theme = useTheme()
@@ -137,6 +143,7 @@ export function ProjectList({
   const waiting = useApp((s) => awaitingFirstSync(s.status))
   const summary = todayText(todaySummary(state.tasks, state.projects, today))
   const Chevron = ACTION_ICONS.chevron
+  const openCount = openCountText(scopeTasks(state, null).length)
   return (
     <ScrollView contentContainerStyle={styles.bottomRoom}>
       <Screen>
@@ -145,6 +152,15 @@ export function ProjectList({
             <View style={{ flex: 1, gap: SPACE.xs }}>
               <Text style={[styles.caption, { color: theme.muted }]}>Hoje</Text>
               <Text style={[styles.summary, { color: theme.text }]}>{summary}</Text>
+            </View>
+            <Chevron size={20} color={theme.onSurfaceIcon} />
+          </View>
+        </Card>
+        <Card onPress={onAll} a11yLabel={`${ALL_TASKS_TITLE}: ${openCount}`}>
+          <View style={styles.cardRow}>
+            <View style={{ flex: 1, gap: SPACE.xs }}>
+              <Text style={[styles.caption, { color: theme.muted }]}>{ALL_TASKS_TITLE}</Text>
+              <Text style={[styles.cardValue, { color: theme.text }]}>{openCount}</Text>
             </View>
             <Chevron size={20} color={theme.onSurfaceIcon} />
           </View>
@@ -318,6 +334,69 @@ export function ProjectBoard({
   )
 }
 
+/** Open tasks of every active project, grouped by project, with Prioridade and Tag. */
+export function AllTasksList({
+  onOpenTask,
+  today = todayLocalISO()
+}: {
+  onOpenTask: (projectId: string, taskId: string) => void
+  today?: string
+}): React.JSX.Element {
+  const theme = useTheme()
+  const state = useApp((s) => s.state)
+  const repo = useApp((s) => s.services?.repo)
+  const [filter, setFilterState] = useState<TaskFilter>(() =>
+    repo ? readFilter(repo, state, null) : ALL_FILTER
+  )
+  const setFilter = (next: TaskFilter): void => {
+    setFilterState(next)
+    if (repo) writeFilter(repo, null, next)
+  }
+  const open = scopeTasks(state, null)
+  const sections = allTaskSections(state, filter)
+  return (
+    <ScrollView contentContainerStyle={styles.bottomRoom}>
+      <Screen>
+        {open.length === 0 ? (
+          <EmptyState icon={ListChecks} text={TASK_FILTER_TEXTS.noOpen} />
+        ) : (
+          <FilterBar
+            filter={filter}
+            onChange={setFilter}
+            kinds={['priority', 'tag']}
+            scope={{ projectId: null, tasks: open }}
+          />
+        )}
+        {open.length > 0 && sections.length === 0 ? (
+          <View style={styles.section}>
+            <Text style={[styles.meta, { color: theme.muted }]}>{TASK_FILTER_TEXTS.noMatch}</Text>
+            <Button
+              variant="secondary"
+              label={TASK_FILTER_TEXTS.clear}
+              onPress={() => setFilter(ALL_FILTER)}
+            />
+          </View>
+        ) : null}
+        {sections.map(({ project, tasks }) => (
+          <View key={project.id} style={styles.section}>
+            <Text accessibilityRole="header" style={[styles.sectionTitle, { color: theme.muted }]}>
+              {`${project.name} (${tasks.length})`}
+            </Text>
+            {tasks.map((task) => (
+              <TaskRow
+                key={task.id}
+                task={task}
+                today={today}
+                onOpen={() => onOpenTask(task.projectId, task.id)}
+              />
+            ))}
+          </View>
+        ))}
+      </Screen>
+    </ScrollView>
+  )
+}
+
 /** Every unfinished task with a due date, in sections: Atrasadas, Hoje, Amanhã… */
 export function UpcomingList({
   onOpenTask,
@@ -369,6 +448,7 @@ const styles = StyleSheet.create({
   cardRow: { flexDirection: 'row', alignItems: 'center', gap: SPACE.md },
   caption: { fontSize: FONT.caption },
   summary: { fontSize: FONT.title, fontWeight: '600' },
+  cardValue: { fontSize: FONT.bodyLg, fontWeight: '600' },
   dot: { width: 12, height: 12, borderRadius: 6 },
   track: { width: 64, height: 6, borderRadius: RADIUS.pill, overflow: 'hidden' },
   fill: { height: 6, borderRadius: RADIUS.pill },

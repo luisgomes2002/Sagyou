@@ -12,7 +12,7 @@ import { useEditing } from '../../store/editing'
 import { useUndo } from '../../store/undo'
 import { lightTheme } from '../../theme'
 import { NEW_SPRINT, TaskForm } from '../tasks/TaskForm'
-import { ProjectBoard, ProjectList, UpcomingList } from '../tasks/TaskLists'
+import { AllTasksList, ProjectBoard, ProjectList, UpcomingList } from '../tasks/TaskLists'
 
 type TaskT = MobileState['tasks'][number]
 
@@ -55,7 +55,14 @@ describe('Tarefas no celular', () => {
   it('o cartão Hoje resume os prazos e abre Próximas', async () => {
     seed({ tasks: [task('a', { dueDate: '2026-11-04' }), task('b', { dueDate: '2026-11-03' })] })
     const onUpcoming = jest.fn()
-    await render(<ProjectList onOpen={jest.fn()} onUpcoming={onUpcoming} today="2026-11-04" />)
+    await render(
+      <ProjectList
+        onOpen={jest.fn()}
+        onUpcoming={onUpcoming}
+        onAll={jest.fn()}
+        today="2026-11-04"
+      />
+    )
     expect(screen.getByText('1 para hoje · 1 atrasada')).toBeTruthy()
     await fireEvent.press(screen.getByRole('button', { name: /^Hoje/ }))
     expect(
@@ -66,8 +73,11 @@ describe('Tarefas no celular', () => {
 
   it('cada projeto mostra as abertas e a barra de progresso', async () => {
     seed({ tasks: [task('a'), task('b'), task('c', { columnId: 'p1-done' })] })
-    await render(<ProjectList onOpen={jest.fn()} onUpcoming={jest.fn()} today="2026-11-04" />)
-    expect(screen.getByText('2 abertas')).toBeTruthy()
+    await render(
+      <ProjectList onOpen={jest.fn()} onUpcoming={jest.fn()} onAll={jest.fn()} today="2026-11-04" />
+    )
+    // The project row and the "Todas as tarefas" card both count 2.
+    expect(screen.getAllByText('2 abertas')).toHaveLength(2)
     expect(screen.getByTestId('progress-p1').props.accessibilityValue).toEqual({
       min: 0,
       max: 3,
@@ -176,6 +186,53 @@ describe('Tarefas no celular', () => {
     await fireEvent.press(screen.getByRole('button', { name: 'Nova tarefa em A fazer' }))
     expect(onNewTask).toHaveBeenCalledWith('p1-todo')
     expect(screen.queryByRole('button', { name: 'Nova tarefa em Done' })).toBeNull()
+  })
+
+  it('o cartão "Todas as tarefas" conta as abertas e abre a lista', async () => {
+    seed({ tasks: [task('a'), task('b', { columnId: 'p1-done' })] })
+    const onAll = jest.fn()
+    await render(
+      <ProjectList onOpen={jest.fn()} onUpcoming={jest.fn()} onAll={onAll} today="2026-11-04" />
+    )
+    await fireEvent.press(screen.getByRole('button', { name: 'Todas as tarefas: 1 aberta' }))
+    expect(onAll).toHaveBeenCalled()
+  })
+
+  it('Todas as tarefas: abertas por projeto, sem Sprint, filtro lembrado', async () => {
+    const { prefs } = seed({
+      projects: [
+        project('p1', 'Sagyou'),
+        project('p2', 'Casa'),
+        { ...project('p3', 'Velho'), archivedAt: T }
+      ],
+      tasks: [
+        task('a', { tags: ['dev'] }),
+        task('feita', { columnId: 'p1-done' }),
+        task('b', { projectId: 'p2', columnId: 'p2-todo', priority: 'urgent' }),
+        task('arquivada', { projectId: 'p3', columnId: 'p3-todo' })
+      ]
+    })
+    const onOpenTask = jest.fn()
+    await render(<AllTasksList onOpenTask={onOpenTask} today="2026-11-04" />)
+    expect(screen.getAllByRole('header').map((h) => h.props.children)).toEqual([
+      'Sagyou (1)',
+      'Casa (1)'
+    ])
+    expect(screen.queryByRole('button', { name: row('feita') })).toBeNull()
+    expect(screen.queryByRole('button', { name: row('arquivada') })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Sprint:/ })).toBeNull()
+    await fireEvent.press(screen.getByRole('button', { name: 'Prioridade: Todas' }))
+    await fireEvent.press(screen.getByRole('radio', { name: 'Urgente' }))
+    expect(screen.getAllByRole('header').map((h) => h.props.children)).toEqual(['Casa (1)'])
+    expect(JSON.parse(prefs['tasks.filter.all'])).toMatchObject({ priority: 'urgent' })
+    await fireEvent.press(screen.getByRole('button', { name: row('b') }))
+    expect(onOpenTask).toHaveBeenCalledWith('p2', 'b')
+  })
+
+  it('Todas as tarefas sem nada aberto', async () => {
+    seed({ tasks: [task('feita', { columnId: 'p1-done' })] })
+    await render(<AllTasksList onOpenTask={jest.fn()} today="2026-11-04" />)
+    expect(screen.getByText('Nenhuma tarefa aberta.')).toBeTruthy()
   })
 
   it('prazo atrasado em vermelho e de hoje em atenção', async () => {
@@ -375,7 +432,9 @@ describe('Tarefas no celular', () => {
         search: () => []
       } as unknown as AppServices
     })
-    await render(<ProjectList onOpen={jest.fn()} onUpcoming={jest.fn()} today="2026-11-04" />)
+    await render(
+      <ProjectList onOpen={jest.fn()} onUpcoming={jest.fn()} onAll={jest.fn()} today="2026-11-04" />
+    )
     await render(
       <ProjectBoard
         projectId="p1"
