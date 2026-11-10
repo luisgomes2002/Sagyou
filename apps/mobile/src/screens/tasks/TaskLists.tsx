@@ -14,6 +14,7 @@ import {
   allTaskSections,
   boardSections,
   defaultFilter,
+  normalizeFilter,
   openCountText,
   readFilter,
   scopeTasks,
@@ -256,9 +257,11 @@ export function ProjectBoard({
   const state = useApp((s) => s.state)
   const readOnly = useApp((s) => s.readOnly)
   const repo = useApp((s) => s.services?.repo)
-  const [filter, setFilterState] = useState<TaskFilter>(() =>
+  const [chosen, setFilterState] = useState<TaskFilter>(() =>
     repo ? readFilter(repo, state, projectId) : defaultFilter(state, projectId)
   )
+  // What arrives by sync while the board is open may retire the chosen sprint or tag.
+  const filter = normalizeFilter(state, projectId, chosen)
   const setFilter = (next: TaskFilter): void => {
     setFilterState(next)
     if (repo) writeFilter(repo, projectId, next)
@@ -267,7 +270,7 @@ export function ProjectBoard({
   const [toggled, setToggled] = useState<Record<string, boolean>>({})
   const sections = boardSections(state, projectId, filter)
   const scope = { projectId, tasks: state.tasks.filter((t) => t.projectId === projectId) }
-  const nothing = sections.length > 0 && sections.every((section) => section.tasks.length === 0)
+  const nothing = scope.tasks.length > 0 && sections.every((section) => section.tasks.length === 0)
   return (
     <ScrollView contentContainerStyle={styles.bottomRoom}>
       <Screen>
@@ -345,9 +348,10 @@ export function AllTasksList({
   const theme = useTheme()
   const state = useApp((s) => s.state)
   const repo = useApp((s) => s.services?.repo)
-  const [filter, setFilterState] = useState<TaskFilter>(() =>
+  const [chosen, setFilterState] = useState<TaskFilter>(() =>
     repo ? readFilter(repo, state, null) : ALL_FILTER
   )
+  const filter = normalizeFilter(state, null, chosen)
   const setFilter = (next: TaskFilter): void => {
     setFilterState(next)
     if (repo) writeFilter(repo, null, next)

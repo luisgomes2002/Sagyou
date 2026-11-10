@@ -85,6 +85,15 @@ export function FilterBar({
                     }
                   ]}
                 >
+                  {/* The pick is shown by shape too, not only by colour. */}
+                  <View
+                    testID={checked ? 'radio-on' : 'radio-off'}
+                    style={[styles.ring, { borderColor: checked ? theme.primary : theme.muted }]}
+                  >
+                    {checked ? (
+                      <View style={[styles.dot, { backgroundColor: theme.primary }]} />
+                    ) : null}
+                  </View>
                   <Text style={[styles.optionText, { color: theme.text }]}>{option.label}</Text>
                 </Pressable>
               )
@@ -99,11 +108,22 @@ const styles = StyleSheet.create({
   bar: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACE.sm },
   option: {
     minHeight: MIN_TOUCH,
-    justifyContent: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACE.md,
     paddingHorizontal: SPACE.md,
     borderWidth: 1,
     borderRadius: RADIUS.control,
     marginBottom: SPACE.sm
   },
-  optionText: { fontSize: FONT.body }
+  optionText: { fontSize: FONT.body, flexShrink: 1 },
+  ring: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  dot: { width: 10, height: 10, borderRadius: 5 }
 })
