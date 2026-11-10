@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { xchacha20poly1305 } from '@noble/ciphers/chacha'
 import { edwardsToMontgomeryPub, x25519 } from '@noble/curves/ed25519'
-import { fromBase64, hkdfSha256, hmacSha256Hex, toBase64, utf8 } from '../../sync/bytes'
+import {
+  fromBase64,
+  fromBase64Url,
+  hkdfSha256,
+  hmacSha256Hex,
+  toBase64,
+  toBase64Url,
+  utf8
+} from '../../sync/bytes'
 import { deriveKeys } from '../../sync/crypto'
 import {
   ControlDecryptError,
@@ -56,6 +64,26 @@ describe('sealControl / openControl', () => {
 })
 
 describe('assinatura Ed25519', () => {
+  /**
+   * A changed signature: one bit of its first byte flipped. Swapping the last
+   * base64url characters is not a change: the last of 86 characters carries 4
+   * unused bits, and "…BA" swapped for "BA" is the same text, so the old
+   * check passed ~0.6% of the time (CI on main, run of b082da7).
+   */
+  const corrupt = (sig: string): string => {
+    const bytes = fromBase64Url(sig)
+    bytes[0] ^= 1
+    return toBase64Url(bytes)
+  }
+
+  it('a assinatura trocada sempre difere em algum byte', () => {
+    const endsInBA = toBase64Url(Uint8Array.from({ length: 64 }, (_, i) => (i === 63 ? 4 : 0)))
+    expect(endsInBA.slice(-2)).toBe('BA')
+    // The old swap leaves this one untouched.
+    expect(endsInBA.slice(0, -2) + (endsInBA.endsWith('A') ? 'BA' : 'AA')).toBe(endsInBA)
+    expect(fromBase64Url(corrupt(endsInBA))).not.toEqual(fromBase64Url(endsInBA))
+  })
+
   it('verifica a assinatura certa e recusa dado ou assinatura trocados', () => {
     const { privateKey, publicKey } = newSigningKeys()
     expect(publicKey).toHaveLength(32)
@@ -63,8 +91,7 @@ describe('assinatura Ed25519', () => {
     const sig = signBytes(privateKey, data)
     expect(verifyBytes(publicKey, data, sig)).toBe(true)
     expect(verifyBytes(publicKey, utf8('pedidO'), sig)).toBe(false)
-    const flipped = sig.slice(0, -2) + (sig.endsWith('A') ? 'BA' : 'AA')
-    expect(verifyBytes(publicKey, data, flipped)).toBe(false)
+    expect(verifyBytes(publicKey, data, corrupt(sig))).toBe(false)
     expect(verifyBytes(newSigningKeys().publicKey, data, sig)).toBe(false)
     expect(verifyBytes(publicKey, data, 'lixo')).toBe(false)
   })
