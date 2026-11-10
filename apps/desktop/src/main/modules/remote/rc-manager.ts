@@ -9,11 +9,13 @@
 // there for RC_CONFIRM_MS, and only then may the phone start it. A server
 // started on its own (origin 'autostart': "Iniciar com o Sagyou" or a restart)
 // never confirms by time alone: nobody is known to be at the PC, and it may sit
-// on an unanswered question. Any server of ours that prints Claude's
-// "✓ Connected" (RC_CONNECTED) confirms at once, whatever its origin: Claude
-// only gets there past the folder's questions, so someone answered them at this
-// PC already (a migrated server would otherwise wait for a "Ligar" that never
-// comes, and stay "Confirme no Fleet" while connected). A server that falls is started again (only
+// on an unanswered question. Any run of ours that draws Claude's status line
+// ("·✔︎· Ready" or "·✔︎· Connected", RC_READY_LINE) confirms at once, whatever
+// its origin: `claude remote-control` awaits the folder trust and the
+// "Enable Remote Control? (y/n)" question, and exits on a no, before the bridge
+// draws that line, so someone answered them at this PC already (a migrated
+// server would otherwise wait for a "Ligar" that never comes, and stay
+// "Confirme no Fleet" while connected). A server that falls is started again (only
 // with "Iniciar com o Sagyou") after a growing wait; one turned off by the user,
 // by the cut or by the Sagyou closing never is. A server already running outside
 // the Sagyou with the same --name is shown as such and never doubled.
@@ -30,15 +32,34 @@ import { MAX_RC_SERVERS, type RcServerEntry } from './remote-config'
 /** A server started at the PC confirms its project after running this long. */
 export const RC_CONFIRM_MS = 60_000
 /**
- * Claude's "✓ Connected" line, read after the ANSI escapes are taken out: the
- * server got past the folder's questions, so it confirms whatever its origin.
- * The check mark keeps "Disconnected" or a loose "Connected" from counting.
+ * The bridge's status line of `claude remote-control` (its own icon "·✔︎·", then
+ * "Ready" when idle or "Connected" with a session, then " · …" or the line end),
+ * at the start of a line of the plain text (rcPlainText). Claude draws it only
+ * after the folder's questions, so it confirms whatever the origin. Anchoring on
+ * the whole shape keeps "Disconnected", a loose "✓ Connected" in the middle of a
+ * line or one split from its icon from counting.
  */
-export const RC_CONNECTED = /[✓✔]\S*\s*Connected\b/
+export const RC_READY_LINE =
+  /(?:^|[\r\n])·[✓✔]︎?· (?:Ready|Connected)(?= ·|[\r\n]|$)/
 const RC_RUN_TAIL = 512
-// CSI (colours, cursor) and OSC (title) sequences.
-// eslint-disable-next-line no-control-regex -- matching terminal escapes is the point
-const ANSI = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g
+/* eslint-disable no-control-regex -- matching terminal escapes is the point */
+/** Colours (SGR): removed, they sit inside a line. */
+const SGR = /(?:\x1b\[|\x9b)[0-?]*m/g
+/** Cursor forward (CUF): a space, it stays on the line. */
+const FORWARD = /(?:\x1b\[|\x9b)[0-9]*C/g
+/** Every other escape (CSI incl. cursor moves, OSC, DCS, two-byte): a line break. */
+const ESCAPE =
+  /(?:\x1b\[|\x9b)[0-?]*[ -/]*[@-~]|\x1b[\]P^_][^\x07\x1b]*(?:\x07|\x1b\\)?|\x1b[ -/]*[0-~]/g
+/* eslint-enable no-control-regex */
+
+/**
+ * Terminal output as plain text: colours dropped, a cursor forward made a space
+ * and every other escape a line break, so text a cursor move places elsewhere
+ * never joins a line, and nothing earlier on a line can look like its start.
+ */
+export function rcPlainText(output: string): string {
+  return output.replace(SGR, '').replace(FORWARD, ' ').replace(ESCAPE, '\n')
+}
 /** Waits before each restart of a server that fell; the last one is the ceiling. */
 export const RC_BACKOFF_MS: readonly number[] = [30_000, 60_000, 120_000, 240_000, 480_000, 900_000]
 /** A run this long sends the next restart back to the first wait. */
@@ -220,8 +241,10 @@ interface Terminal {
   gotData: boolean
   startedAt: number
   log: string
-  /** The end of this run's output only (reset on each launch), read for RC_CONNECTED. */
+  /** The end of this run's output only (reset on each launch), read for RC_READY_LINE. */
   runTail: string
+  /** This run already drew RC_READY_LINE: one confirmation try per run, not per chunk. */
+  readySeen: boolean
   confirmTimer: unknown
   restartTimer: unknown
   cols?: number
@@ -404,6 +427,7 @@ export function createRcManager(deps: RcManagerDeps): RcManager {
     const gen = t.gen
     t.gotData = false
     t.runTail = ''
+    t.readySeen = false
     t.startedAt = deps.now()
     try {
       t.pty = deps.spawn({
@@ -446,13 +470,11 @@ export function createRcManager(deps: RcManagerDeps): RcManager {
     }
     // This run's tail, not the chunk (the line may arrive in pieces) and not the
     // whole log (a "Connected" from before a restart says nothing about this run).
+    if (t.readySeen) return
     t.runTail = (t.runTail + chunk).slice(-RC_RUN_TAIL)
-    if (
-      !isConfirmed(entryOf(t.projectId), t.path) &&
-      RC_CONNECTED.test(t.runTail.replace(ANSI, ''))
-    ) {
-      confirm(t, t.gen)
-    }
+    if (!RC_READY_LINE.test(rcPlainText(t.runTail))) return
+    t.readySeen = true
+    if (!isConfirmed(entryOf(t.projectId), t.path)) confirm(t, t.gen)
   }
 
   function mayRestart(t: Terminal): boolean {
@@ -554,6 +576,7 @@ export function createRcManager(deps: RcManagerDeps): RcManager {
       startedAt: 0,
       log: '',
       runTail: '',
+      readySeen: false,
       confirmTimer: null,
       restartTimer: null
     }

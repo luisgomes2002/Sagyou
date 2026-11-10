@@ -57,8 +57,10 @@ pronto") e o **encerra** no "Cortar acesso". Longe de casa isso tem dois problem
    `claude` resolvido como no Fleet. Nada de shell intermediário.
 2. **"Confirmado":** um projeto fica confirmado quando o servidor dele, ligado **no PC** pela
    tela (**Ligar**), passa 60 s rodando, ou quando qualquer servidor do Sagyou dele (inclusive
-   o que sobe ao abrir o Sagyou ou religa depois de cair) mostra o `✓ Connected` do Claude: o
-   Claude só chega lá depois de passar pelas perguntas da pasta, então alguém já as respondeu.
+   o que sobe ao abrir o Sagyou ou religa depois de cair) desenha a linha de status do Claude,
+   `·✔︎· Ready` (ocioso) ou `·✔︎· Connected` (com sessão): o `claude remote-control` espera a
+   confiança na pasta e o "Enable Remote Control? (y/n)", e sai num "não", antes de desenhá-la,
+   então alguém já respondeu as perguntas.
    Só os 60 s de um servidor que subiu sozinho não bastam: ele pode estar parado numa pergunta
    sem ninguém no PC (o PC pode ter sido ligado pelo celular). Fica gravado com a data. Trocar
    a pasta do projeto desfaz a confirmação.
