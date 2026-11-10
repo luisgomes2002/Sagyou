@@ -47,24 +47,30 @@ import { TasksStack } from './screens/tasks/TasksStack'
 import { useApp, type AppMode } from './store/app'
 import { useTheme, type Theme } from './theme'
 
-export const TAB_LABELS = ['Tarefas', 'Hábitos', 'Finanças', 'Notas', 'Busca'] as const
+export const TAB_LABELS = ['Tarefas', 'Hábitos', 'Finanças', 'Notas'] as const
 
-/** Opens a search hit in its tab (tasks and projects go straight to the record). */
-function SearchTab(): React.JSX.Element {
+/**
+ * The Busca screen of the root stack (opened by the header's magnifier):
+ * a hit opens in its tab, tasks and projects straight on the record.
+ */
+function SearchRoute(): React.JSX.Element {
   const navigation = useNavigation() as unknown as {
-    navigate(name: string, params?: object): void
+    navigate(name: 'Abas', params: object): void
   }
   const open = (hit: SearchHit): void => {
     if (hit.kind === 'task' && hit.parentId)
-      navigation.navigate('Tarefas', {
-        screen: 'Tarefa',
-        params: { projectId: hit.parentId, taskId: hit.id }
+      navigation.navigate('Abas', {
+        screen: 'Tarefas',
+        params: { screen: 'Tarefa', params: { projectId: hit.parentId, taskId: hit.id } }
       })
     else if (hit.kind === 'project')
-      navigation.navigate('Tarefas', { screen: 'Projeto', params: { projectId: hit.id } })
-    else if (hit.kind === 'note') navigation.navigate('Notas')
-    else if (hit.kind === 'habit') navigation.navigate('Hábitos')
-    else navigation.navigate('Finanças')
+      navigation.navigate('Abas', {
+        screen: 'Tarefas',
+        params: { screen: 'Projeto', params: { projectId: hit.id } }
+      })
+    else if (hit.kind === 'note') navigation.navigate('Abas', { screen: 'Notas' })
+    else if (hit.kind === 'habit') navigation.navigate('Abas', { screen: 'Hábitos' })
+    else navigation.navigate('Abas', { screen: 'Finanças' })
   }
   return <SearchScreen onOpen={open} />
 }
@@ -82,13 +88,13 @@ const TAB_SCREENS: Partial<Record<TabLabel, ComponentType>> = {
   Hábitos: HabitsScreen,
   Finanças: FinanceScreen,
   Notas: NotesScreen,
-  Busca: SearchTab,
   PC: PcTab
 }
 
 export type RootStackParams = {
   Abas: NavigatorScreenParams<Record<TabLabel, undefined>> | undefined
   Ajustes: undefined
+  Busca: undefined
   Conflitos: undefined
   ComoFunciona: undefined
   ParearAparelho: undefined
@@ -167,13 +173,14 @@ function TabsScreen({
   navigation
 }: {
   navigation: {
-    navigate(route: 'Ajustes'): void
+    navigate(route: 'Ajustes' | 'Busca'): void
     navigate(route: 'Abas', params: object): void
   }
 }): React.JSX.Element {
   const theme = useTheme()
   const [creating, setCreating] = useState(false)
   const Gear = ACTION_ICONS.settings
+  const Magnifier = ACTION_ICONS.search
   // The PC tab exists only on an authorized phone that may still send (not read-only).
   const authorized = useRemote((s) => s.authorized)
   const readOnly = useApp((s) => s.readOnly)
@@ -191,14 +198,24 @@ function TabsScreen({
           tabBarButtonTestID: `tab-${route.name}`,
           tabBarIcon: ({ color }) => <TabIcon label={route.name as TabLabel} color={color} />,
           headerRight: () => (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Ajustes"
-              onPress={() => navigation.navigate('Ajustes')}
-              style={styles.gear}
-            >
-              <Gear size={22} color={theme.onSurfaceIcon} />
-            </Pressable>
+            <View style={styles.headerActions}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Buscar"
+                onPress={() => navigation.navigate('Busca')}
+                style={styles.gear}
+              >
+                <Magnifier size={22} color={theme.onSurfaceIcon} />
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Ajustes"
+                onPress={() => navigation.navigate('Ajustes')}
+                style={styles.gear}
+              >
+                <Gear size={22} color={theme.onSurfaceIcon} />
+              </Pressable>
+            </View>
           )
         })}
       >
@@ -297,6 +314,7 @@ export function AppShell({ mode }: { mode: AppMode }): React.JSX.Element {
       <Stack.Navigator>
         <Stack.Screen name="Abas" component={TabsScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Ajustes" component={SettingsScreen} />
+        <Stack.Screen name="Busca" component={SearchRoute} />
         <Stack.Screen name="Conflitos" component={ConflictsScreen} />
         <Stack.Screen
           name="ComoFunciona"
@@ -342,6 +360,7 @@ const styles = StyleSheet.create({
     right: SPACE.lg + 56 + SPACE.md,
     bottom: SPACE.lg
   },
+  headerActions: { flexDirection: 'row', alignItems: 'center' },
   gear: {
     minWidth: MIN_TOUCH,
     minHeight: MIN_TOUCH,

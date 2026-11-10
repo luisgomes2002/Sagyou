@@ -56,14 +56,13 @@ import {
   Zap
 } from 'lucide-react-native'
 
-export type TabLabel = 'Tarefas' | 'Hábitos' | 'Finanças' | 'Notas' | 'Busca' | 'PC'
+export type TabLabel = 'Tarefas' | 'Hábitos' | 'Finanças' | 'Notas' | 'PC'
 
 export const TAB_ICONS: Record<TabLabel, LucideIcon> = {
   Tarefas: ListChecks,
   Hábitos: Repeat,
   Finanças: Wallet,
   Notas: StickyNote,
-  Busca: Search,
   PC: Monitor
 }
 
