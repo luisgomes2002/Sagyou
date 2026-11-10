@@ -34,7 +34,11 @@ export function Chip({
       ]}
     >
       {Icon ? <Icon size={16} color={selected ? theme.purple : theme.onSurfaceIcon} /> : null}
-      <Text style={{ color: selected ? theme.text : theme.muted, fontSize: FONT.body }}>
+      {/* A long sprint or tag name is cut with "…", never past the screen edge. */}
+      <Text
+        numberOfLines={1}
+        style={{ color: selected ? theme.text : theme.muted, fontSize: FONT.body, flexShrink: 1 }}
+      >
         {label}
       </Text>
     </Pressable>
@@ -43,6 +47,7 @@ export function Chip({
 
 const styles = StyleSheet.create({
   chip: {
+    maxWidth: '100%',
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACE.xs,

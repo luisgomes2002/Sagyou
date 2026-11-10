@@ -86,10 +86,17 @@ export function TasksStack(): React.JSX.Element {
   return (
     <Stack.Navigator>
       <Stack.Screen name="Projetos" component={ProjectsRoute} options={{ headerShown: false }} />
-      <Stack.Screen name="Projeto" component={ProjectRoute} />
+      {/* One route per record: opening another project or task (e.g. from Busca)
+          must not reuse the open one's state, or Salvar writes X's fields over Y. */}
+      <Stack.Screen
+        name="Projeto"
+        component={ProjectRoute}
+        getId={({ params }) => params.projectId}
+      />
       <Stack.Screen
         name="Tarefa"
         component={TaskRoute}
+        getId={({ params }) => params.taskId}
         options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
       />
       <Stack.Screen name={UPCOMING_TITLE} component={UpcomingRoute} />

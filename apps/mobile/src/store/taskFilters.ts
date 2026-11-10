@@ -93,21 +93,39 @@ export function readFilter(
   } catch {
     return ALL_FILTER
   }
+  const typed: TaskFilter = {
+    sprint: typeof saved.sprint === 'string' ? saved.sprint : 'all',
+    priority:
+      typeof saved.priority === 'string' ? (saved.priority as TaskFilter['priority']) : 'all',
+    tag: typeof saved.tag === 'string' ? saved.tag : 'all'
+  }
+  return normalizeFilter(state, projectId, typed)
+}
+
+/**
+ * The filter as it can apply to the data now: a sprint that is no longer open
+ * in this project falls back to the default sprint, a tag no task in scope has
+ * and an unknown priority become "Todas". Run on every render, so a sprint
+ * closed or deleted on the PC while the board is open never hides everything.
+ */
+export function normalizeFilter(
+  state: MobileState,
+  projectId: string | null,
+  filter: TaskFilter
+): TaskFilter {
   const open = projectId ? sprintOptions(state, projectId).map((o) => o.value) : ['all']
-  const sprint =
-    typeof saved.sprint !== 'string'
-      ? 'all'
-      : open.includes(saved.sprint)
-        ? saved.sprint
-        : fallback.sprint
+  const sprint = !projectId
+    ? 'all'
+    : open.includes(filter.sprint)
+      ? filter.sprint
+      : defaultFilter(state, projectId).sprint
   const priority =
-    typeof saved.priority === 'string' &&
-    (saved.priority === 'all' || (PRIORITY_ORDER as readonly string[]).includes(saved.priority))
-      ? (saved.priority as TaskFilter['priority'])
+    filter.priority === 'all' || (PRIORITY_ORDER as readonly string[]).includes(filter.priority)
+      ? filter.priority
       : 'all'
   const tags = tagOptions(scopeTasks(state, projectId)).map((o) => o.value)
-  const tag = typeof saved.tag === 'string' && tags.includes(saved.tag) ? saved.tag : 'all'
-  return { sprint: projectId ? sprint : 'all', priority, tag }
+  const tag = tags.includes(filter.tag) ? filter.tag : 'all'
+  return { sprint, priority, tag }
 }
 
 export function writeFilter(repo: PrefRepo, projectId: string | null, filter: TaskFilter): void {
