@@ -1,14 +1,14 @@
 # Sagyou
 
-**Seu espaço de trabalho pessoal, offline e no seu computador.** Tarefas, hábitos, metas, finanças e notas em um só app, com sessões de agentes de código (Codex, Claude Code, OpenCode) rodando ao lado, em terminais isolados.
+**Seu espaço de trabalho pessoal, no seu computador.** Tarefas, hábitos, metas, finanças e notas em um só app, com sessões de agentes de código (Codex, Claude Code, OpenCode) rodando ao lado, em terminais isolados, e um app Android que sincroniza com ele.
 
 ![Electron](https://img.shields.io/badge/Electron-47848F?style=flat&logo=electron&logoColor=white)
 ![React](https://img.shields.io/badge/React-61DAFB?style=flat&logo=react&logoColor=black)
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat&logo=typescript&logoColor=white)
 ![SQLite](https://img.shields.io/badge/SQLite-003B57?style=flat&logo=sqlite&logoColor=white)
-![Offline](https://img.shields.io/badge/100%25-Offline-brightgreen?style=flat)
+![Local-first](https://img.shields.io/badge/Local--first-brightgreen?style=flat)
 
-- **Local de verdade.** Tudo fica em um banco SQLite na sua máquina. Sem conta, sem nuvem, sem telemetria.
+- **Local de verdade.** Tudo fica em um banco SQLite na sua máquina. Sem conta, sem telemetria. A sincronização com outros PCs e com o celular é opcional e passa por um servidor seu, com tudo cifrado antes de sair do aparelho.
 - **Um app, várias áreas.** Kanban, planejamento, hábitos, metas, finanças, canvas, grafo e arquivos compartilham os mesmos projetos.
 - **IA do jeito que você já usa.** Em vez de um chat próprio, o Sagyou abre o CLI que você já tem instalado, numa worktree Git isolada, e dá a ele acesso controlado aos seus dados por MCP.
 
@@ -68,7 +68,7 @@ Não é preciso instalar Python, Node nem nada além do app. Para usar as sessõ
 - **Exportação para Excel** de projetos, tarefas, hábitos, metas e finanças.
 - **Importação via IA**: o botão "Copiar tudo" gera um prompt com schema e tags; cole o JSON que o modelo devolver para criar tarefas.
 - **Backup completo** em um único `.json`, com anexos, imagens e memórias. Snapshots automáticos ao abrir e a cada hora (os sete mais recentes ficam guardados).
-- **Senha opcional** para bloquear o app (menu **Opções → Segurança**), com bloqueio automático depois de um tempo sem usar o computador (5 min a 1 h) e quando o Windows bloqueia a tela ou suspende.
+- **Senha opcional** para bloquear o app (**Configurações → Segurança**), com bloqueio automático depois de um tempo sem usar o computador (5 min a 1 h) e quando o Windows bloqueia a tela ou suspende.
 - **Fica na bandeja**: no Windows, o X esconde a janela e o Sagyou continua rodando (sessões de código, MCP e sincronização); **Sair** no ícone encerra. Opção de **iniciar com o Windows** já escondido na bandeja. Abrir o Sagyou de novo mostra a janela que já está aberta.
 - Tema, escala de texto e opções de acessibilidade.
 
@@ -91,7 +91,7 @@ Ao lançar ou editar uma transação, o agente também preenche os detalhes da f
 | Sem aprovação                                          | Pede sua aprovação                                   | Só você faz                         |
 | ------------------------------------------------------ | ---------------------------------------------------- | ----------------------------------- |
 | criar/editar projetos, colunas, tarefas, notas e metas | qualquer exclusão                                    | definir as pastas de código         |
-| mover, concluir e reabrir tarefas                      | lançamentos de dinheiro                              | trocar a moeda de uma tabela        |
+| mover, concluir e reabrir tarefas, cronômetro          | lançamentos de dinheiro, diminuir o tempo gasto      | trocar a moeda de uma tabela        |
 | editar e arquivar memórias                             | arquivar projeto, criar tabelas e perfis financeiros | escrever em outro perfil financeiro |
 
 Aprovar uma ação de dados não aprova o patch de código.
@@ -120,6 +120,8 @@ Tudo fica no diretório de dados do app (`userData`):
 | `password-security.json` | derivação da senha opcional (não a senha em si); fora dos backups         |
 | `desktop-prefs.json`     | bandeja e bloqueio automático deste computador; fora dos backups e do sync |
 | `remote-control.json`    | controle remoto deste PC (celulares autorizados, chaves cifradas); fora dos backups e do sync |
+| `sync-config.json`       | chave e token da sincronização, cifrados pelo sistema; fora dos backups |
+| `mcp-external.json`      | hash do token MCP externo (nunca o token); fora dos backups e do sync |
 | `logs/`                  | logs de diagnóstico por dia (14 dias), sem conteúdo seu; fora dos backups |
 
 O Sagyou não envia nada a lugar nenhum por conta própria. Os CLIs de código são programas externos, com a própria conta e política de dados.
@@ -128,7 +130,7 @@ O Sagyou não envia nada a lugar nenhum por conta própria. Os CLIs de código s
 
 ## Servidor de sincronização
 
-A sincronização entre dois PCs usa um servidor seu: um Worker da Cloudflare com um banco D1, no plano gratuito. O código fica em [`sync-server/`](sync-server/). O servidor só guarda lotes cifrados antes de sair do seu PC, ids opacos de aparelho e números; a chave nunca sai dos aparelhos.
+A sincronização entre os PCs e o celular usa um servidor seu: um Worker da Cloudflare com um banco D1, no plano gratuito. O código fica em [`sync-server/`](sync-server/). O servidor só guarda lotes cifrados antes de sair do seu PC, ids opacos de aparelho e números; a chave nunca sai dos aparelhos.
 
 Para publicar (precisa de uma conta Cloudflare e do Node):
 
@@ -151,16 +153,16 @@ Para parear, no app, em **Configurações → Sincronização**:
 
 1. No primeiro PC, preencha a URL do Worker e o `SETUP_TOKEN` e clique em **Ativar**. Guarde o código de recuperação que aparece: ele é a única forma de recuperar a chave se você perder todos os aparelhos (em **Configurações → Sincronização → Perdi todos os aparelhos**, que troca os dados do PC pelos da nuvem com um backup antes; no celular, **Entrar com código de recuperação**).
 2. Ainda no primeiro PC, cadastre o autenticador (Google Authenticator ou outro app TOTP) e guarde os códigos reserva. Ele é pedido para apagar os dados de um aparelho perdido.
-3. Clique em **Parear novo aparelho**. Aparecem um texto e um QR que valem por 10 minutos. Um celular já pareado também gera esse código, em **Ajustes → Parear outro aparelho** (útil longe do PC).
+3. Clique em **Parear novo aparelho** e digite o código do autenticador (ou um código reserva). Aparecem um texto e um QR que valem por 10 minutos. Um celular já pareado também gera esse código, em **Ajustes → Parear outro aparelho** (útil longe do PC).
 4. No segundo PC, use **Entrar com código** e cole o texto. Se esse PC já tiver dados, escolha **Juntar** (fica tudo dos dois lados) ou **Substituir** (fica só o que está na nuvem, com um backup antes).
 
-Quando a mesma coisa é editada nos dois PCs sem conexão, a versão mais recente vale e a outra aparece em **Conflitos**, com **Usar esta** para trocar. Escolher num aparelho (inclusive manter a versão atual) avisa os outros, e o mesmo conflito fecha sozinho neles na próxima sincronização. Uma dívida editada nos dois lados nunca muda sozinha: ela fica marcada como "conflito: escolha a versão" até você escolher.
+Quando a mesma coisa é editada em dois aparelhos sem conexão, a versão mais recente vale e a outra aparece em **Conflitos**, com **Usar esta** para trocar. Escolher num aparelho (inclusive manter a versão atual) avisa os outros, e o mesmo conflito fecha sozinho neles na próxima sincronização. Uma dívida editada nos dois lados nunca muda sozinha: ela fica marcada como "conflito: escolha a versão" até você escolher.
 
 ### Controle remoto pelo celular
 
 Com a sincronização ativa e a senha do Sagyou configurada, um celular autorizado controla o PC de casa (Windows): ver se ele está **Pronto**, ligar, desligar (com 60 s para cancelar), desbloquear e bloquear o Sagyou, instalar uma atualização e aprovar os cartões das Sessões de código. No PC, ligue **Configurações → Controle remoto**; no celular, **Ajustes → Controlar o PC → Pedir autorização** e confira o código de 6 dígitos nas duas telas. Longe do PC, **Estou longe do PC** autoriza com a senha do Sagyou e o autenticador (o pedido espera o PC por 1 hora); a senha vai selada para a chave do PC, que ele publica no seu Worker, e nenhum outro aparelho pareado consegue lê-la. A aba **PC** aparece no celular depois da autorização. Os servidores de Remote Control (`claude remote-control`, um por projeto) são do Sagyou: em **Configurações → Controle remoto → Servidores de Remote Control**, marque os projetos e **Iniciar com o Sagyou**; na primeira vez, **Ligar** abre o terminal do servidor nas Sessões de código para você responder às perguntas do Claude. Depois disso o celular liga e desliga cada um pela aba PC. Em caso de emergência, **Cortar acesso** na aba PC para o acesso MCP externo, encerra os servidores de Remote Control e bloqueia o Sagyou, com o PC ligado; **Restaurar acesso** volta, pelo celular (com o autenticador) ou no PC. Parear um aparelho novo também pede o código do autenticador. Os pedidos passam cifrados e assinados pelo seu Worker, valem 60 s e não podem ser repetidos.
 
-Quem já publicou o Worker antes precisa aplicar o `schema.sql` de novo (ele só cria as tabelas novas) e publicar outra vez. Na versão 1.7 (celular 0.4), atualize o Worker **junto** com os dois apps: o convite passa a pedir o autenticador e o pedido "Estou longe do PC" vale 1 hora. Na versão 1.9 (celular 0.5), de novo junto: a senha do "Estou longe do PC" passa a ir selada para a chave do PC, e o PC recusa a de um celular sem a atualização (o celular antigo mostra só que o PC recusou). Sem isso, o app avisa "Atualize o Worker para usar o controle remoto." e a sincronização continua normal:
+Quem já publicou o Worker antes precisa aplicar o `schema.sql` de novo (ele só cria as tabelas novas) e publicar outra vez, sempre a partir de um clone atualizado (`git pull` antes): um `schema.sql` antigo roda sem erro e não cria nada. Na versão 1.7 (celular 0.4), atualize o Worker **junto** com os dois apps: o convite passa a pedir o autenticador e o pedido "Estou longe do PC" vale 1 hora. Na versão 1.9 (celular 0.5), de novo junto: a senha do "Estou longe do PC" passa a ir selada para a chave do PC, e o PC recusa a de um celular sem a atualização (o celular antigo mostra só que o PC recusou). Sem isso, o app avisa "Atualize o Worker para usar o controle remoto." e a sincronização continua normal:
 
 ```bash
 cd sync-server
@@ -171,7 +173,7 @@ npx wrangler deploy
 **Notificações (opcional).** Para o celular receber "PC pronto.", "Aprovação pendente no Sagyou." e "O PC não foi desligado.", crie um projeto no [Firebase](https://console.firebase.google.com/) com um app Android de pacote `com.sagyou.mobile`, e então:
 
 1. Baixe a chave de uma conta de serviço (Configurações do projeto → Contas de serviço → Gerar nova chave privada) e guarde-a no Worker: `npx wrangler secret put FCM_SERVICE_ACCOUNT` (cole o JSON inteiro).
-2. Baixe o `google-services.json` do app Android e cadastre o conteúdo dele como o secret `GOOGLE_SERVICES_JSON` no ambiente `mobile-release` (veja App Android). Gere o APK de novo.
+2. Baixe o `google-services.json` do app Android e cadastre o conteúdo dele como o secret `GOOGLE_SERVICES_JSON` no ambiente `mobile-release` (veja App Android). Gere o APK de novo por uma tag `mobile-v*`.
 
 Sem esses dois, tudo funciona, só sem notificações. As notificações levam só esses textos fixos: o conteúdo dos cartões é lido no app, decifrado no celular.
 
@@ -181,11 +183,9 @@ Sem esses dois, tudo funciona, só sem notificações. As notificações levam s
 
 ## App Android
 
-O app do celular (em [`apps/mobile/`](apps/mobile/)) entra na mesma sincronização como mais um aparelho. Na v1 ele tem tarefas (com **Próximas**), hábitos, gastos e receitas, notas dos projetos e busca. Tudo funciona sem internet e sincroniza quando o app está aberto. Ele abre com biometria, ou com o PIN/padrão/senha do Android, e pede de novo depois de 5 minutos fora. Para usar, o Android precisa ter um bloqueio de tela configurado.
+O app do celular (em [`apps/mobile/`](apps/mobile/)) entra na mesma sincronização como mais um aparelho. Ele tem tarefas (com **Próximas**), hábitos, gastos e receitas, notas dos projetos e busca; também resolve os próprios conflitos, pareia outro aparelho e, autorizado, controla o PC pela aba **PC** (veja Controle remoto pelo celular). Tudo funciona sem internet e sincroniza quando o app está aberto. Ele abre com biometria, ou com o PIN/padrão/senha do Android, e pede de novo depois de 5 minutos fora. Para usar, o Android precisa ter um bloqueio de tela configurado.
 
 O visual segue o do PC (tema escuro ou claro, conforme o sistema). O botão **(+)** cria uma tarefa, um gasto, uma receita ou uma nota com um toque, já no último projeto ou tabela usado. Tarefas mostram primeiro o que vence hoje, e deslizar uma tarefa para a direita a conclui (com **Desfazer** por 5 segundos). Hábitos têm um botão **Hoje**, e Finanças abrem com o saldo, as entradas e as saídas do mês. O app respeita o tamanho de fonte do Android, o TalkBack e a opção **Remover animações**.
-
-> Quem já tem uma versão anterior instalada precisa instalar o APK novo por cima: esta versão traz bibliotecas nativas novas (ícones, gestos e o seletor de data).
 
 O APK é gerado pelo GitHub Actions e assinado com uma chave sua. Prepare uma vez:
 
@@ -195,7 +195,7 @@ keytool -genkeypair -v -keystore sagyou.jks -alias sagyou -keyalg RSA -keysize 2
 base64 -w0 sagyou.jks > sagyou.jks.b64       # no macOS: base64 -i sagyou.jks -o sagyou.jks.b64
 ```
 
-Em **Settings → Environments** do repositório, crie o ambiente **`mobile-release`**. É recomendável limitá-lo às tags `mobile-v*` ou exigir sua aprovação, para que nenhuma execução a partir de outra branch leia a chave. Nesse ambiente, cadastre os secrets:
+Em **Settings → Environments** do repositório, crie o ambiente **`mobile-release`**. É recomendável limitá-lo às tags `mobile-v*`, para que nenhuma execução a partir de outra branch leia a chave. Nesse ambiente, cadastre os secrets:
 
 | Secret                      | Valor                          |
 | --------------------------- | ------------------------------ |
@@ -205,7 +205,7 @@ Em **Settings → Environments** do repositório, crie o ambiente **`mobile-rele
 | `ANDROID_KEY_PASSWORD`      | a senha da chave               |
 | `GOOGLE_SERVICES_JSON`      | opcional: o conteúdo do `google-services.json` do Firebase, para as notificações do controle remoto |
 
-Depois, rode o workflow **Android APK** (aba Actions → Run workflow, ou empurre uma tag `mobile-v*`) e baixe o artefato `sagyou-mobile-apk`. Para instalar, copie o `.apk` para o celular, abra-o e permita a instalação de apps dessa origem quando o Android pedir.
+Depois, empurre uma tag `mobile-v*` (veja abaixo) e baixe o APK do Release rascunho ou o artefato `sagyou-mobile-apk`. Com o ambiente limitado às tags, o **Run workflow** manual não consegue assinar o APK: use a tag. Para instalar, copie o `.apk` para o celular, abra-o e permita a instalação de apps dessa origem quando o Android pedir.
 
 ### Lançar uma versão do celular
 
@@ -217,7 +217,7 @@ O celular procura uma versão nova ao abrir (no máximo uma vez por dia) e mostr
 
 > ⚠️ **Não perca o keystore.** Um APK assinado com outra chave não instala por cima do anterior: seria preciso desinstalar o app (e parear de novo).
 
-Para parear, no PC, abra **Configurações → Sincronização → Parear novo aparelho**. No celular, toque em **Escanear QR** (ou cole o texto em **Colar código**). O celular baixa tudo da nuvem e passa a sincronizar. Conflitos detectados no celular se resolvem nele mesmo: **Ajustes → N conflitos** mostra as duas versões, com **Usar esta** (ou **Dispensar**, quando o item de origem foi apagado). Ao sair do app, o celular envia na hora o que estava esperando, em vez de deixar para a próxima abertura. **Ajustes → Como funciona a sincronização** (também no pareamento) explica quando cada aparelho sincroniza, como evitar conflitos e para que serve cada chave, com o mesmo texto do Como funciona do PC. Em **Ajustes**, **Desconectar este aparelho** apaga os dados do celular, que continuam na nuvem e nos PCs.
+Para parear, no PC, abra **Configurações → Sincronização → Parear novo aparelho** e digite o código do autenticador. No celular, toque em **Escanear QR** (ou cole o texto em **Colar código**). O celular baixa tudo da nuvem e passa a sincronizar. Conflitos detectados no celular se resolvem nele mesmo: **Ajustes → N conflitos** mostra as duas versões, com **Usar esta** (ou **Dispensar**, quando o item de origem foi apagado). Ao sair do app, o celular envia na hora o que estava esperando, em vez de deixar para a próxima abertura. **Ajustes → Como funciona a sincronização** (também no pareamento) explica quando cada aparelho sincroniza, como evitar conflitos e para que serve cada chave, com o mesmo texto do Como funciona do PC. Em **Ajustes**, **Desconectar este aparelho** apaga os dados do celular, que continuam na nuvem e nos PCs.
 
 ---
 
@@ -228,8 +228,8 @@ Requisitos: **Node 24** e **Python 3** (usado só no build para empacotar o leit
 ```bash
 npm install
 npm run dev          # app em modo desenvolvimento, com HMR
-npm test             # testes (Vitest)
-npm run typecheck    # TypeScript do main e do renderer
+npm test             # testes de todos os workspaces
+npm run typecheck    # TypeScript de todos os workspaces
 npm run lint         # ESLint
 
 npm run build:win    # instaladores
@@ -237,9 +237,17 @@ npm run build:mac
 npm run build:linux
 ```
 
-**Estrutura.** `src/main` é o processo principal do Electron (SQLite, IPC, terminais dos agentes, MCP), `src/preload` expõe a ponte IPC tipada e `src/renderer/src` é a interface em React com estado em Zustand.
+**Estrutura.** Monorepo com npm workspaces:
 
-**Stack.** Electron + electron-vite, React, TypeScript, Zustand, better-sqlite3, Tailwind CSS, dnd kit, D3 Force, decimal.js, SheetJS, node-pty + xterm.js e Vitest.
+| Pasta | O que é |
+| --- | --- |
+| `apps/desktop/` | o app Electron: `src/main` (SQLite, IPC, terminais dos agentes, MCP, sync), `src/preload` (ponte IPC tipada) e `src/renderer/src` (React + Zustand) |
+| `apps/mobile/` | o app Android (Expo, React Native) |
+| `packages/core/` | o que os dois apps fazem igual: tipos, dinheiro, normalização e toda a sincronização |
+| `sync-server/` | o Worker da Cloudflare (D1) |
+| `firmware/esp32/` | o firmware do ESP32 (PlatformIO) e o ouvinte do Windows |
+
+**Stack.** Electron + electron-vite, React, TypeScript, Zustand, better-sqlite3, Tailwind CSS, dnd kit, D3 Force, decimal.js, SheetJS, node-pty + xterm.js e Vitest no desktop; Expo, React Native, expo-sqlite e Jest no celular; Cloudflare Workers + D1 no servidor.
 
 ### Contribuindo
 
