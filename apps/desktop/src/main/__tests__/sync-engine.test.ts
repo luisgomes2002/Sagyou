@@ -58,6 +58,7 @@ import {
   type WireRecord
 } from '../modules/sync/sync-batch'
 import { deriveKeys, keyProof, sealBatch } from '../modules/sync/sync-crypto'
+import { compareConflict, currentHlcOf } from '@sagyou/core/sync/conflict-view'
 import {
   buildRebasedRow,
   buildSyncRows,
@@ -1838,5 +1839,241 @@ describe('conflitos', () => {
     expect(debts(b.store)[0].remainingAmount).toBe('90')
     expect(debts(a.store)[0].remainingAmount).toBe('90')
     expect(dataHashes(a.store)).toEqual(dataHashes(b.store))
+  })
+})
+
+describe('conflitos campo a campo', () => {
+  /** A's edit loses to B's newer one: A keeps its own as the stored loser. */
+  async function conflictOn(aTask: Row, bTask: Row): ReturnType<typeof pairedDevices> {
+    const devices = await pairedDevices(
+      withData({ projects: [project('p1', 'Casa')], tasks: [task('t1', 'p1', 'Original')] })
+    )
+    const { a, b } = devices
+    server.mode = 'down'
+    a.store.save({ ...a.store.state, tasks: [aTask] })
+    clock.t += 10
+    b.store.save({ ...b.store.state, tasks: [bTask] })
+    server.mode = 'up'
+    await a.engine.syncNow()
+    await b.engine.syncNow()
+    await a.engine.syncNow()
+    return devices
+  }
+  const withFields = (fields: Row): Row => ({ ...task('t1', 'p1', 'Coletor'), ...fields })
+  const taskOf = (s: FakeStore): Row => s.state.tasks[0] as Row
+  type Sides = { local: { payload: Row | null }; remote: { payload: Row | null } }
+  const everyField = (c: Sides, side: 'local' | 'remote'): Record<string, 'local' | 'remote'> => {
+    const keys = new Set([
+      ...Object.keys(c.local.payload ?? {}),
+      ...Object.keys(c.remote.payload ?? {})
+    ])
+    keys.delete('id')
+    keys.delete('updatedAt')
+    return Object.fromEntries([...keys].map((k) => [k, side]))
+  }
+  const orphanRow = (id: string, type: 'orphan' | 'lww'): SyncConflictRow & { resolvedAt: null } => ({
+    id,
+    kind: 'task',
+    recordId: 't-nenhuma',
+    type,
+    loserCipher: '',
+    winnerHlc: null,
+    loserHlc: '000000000001000-0000-' + 'c'.repeat(32),
+    loserDevice: 'c'.repeat(32),
+    createdAt: clock.now(),
+    resolvedAt: null
+  })
+
+  it('mistura a descrição de um lado e o tempo do outro, e os dois aparelhos convergem', async () => {
+    const { a, b } = await conflictOn(
+      withFields({ description: 'Desc de A', timeSpent: 100 }),
+      withFields({ description: 'Desc de B', timeSpent: 200 })
+    )
+    const [conflict] = a.engine.conflicts()
+    expect(conflict.current).toBe('remote')
+    expect(b.engine.conflicts()[0].current).toBe('local')
+    const before = a.store.syncRecordVersion('task', 't1')!.hlc
+    a.engine.resolve(conflict.id, {
+      fields: { ...everyField(conflict, 'remote'), description: 'local' },
+      expectedHlc: currentHlcOf(conflict)
+    })
+    expect(taskOf(a.store)).toMatchObject({
+      description: 'Desc de A',
+      timeSpent: 200,
+      title: 'Coletor'
+    })
+    expect(a.engine.conflicts()).toEqual([])
+    const after = a.store.syncRecordVersion('task', 't1')!.hlc
+    expect(after > before).toBe(true)
+    expect(after > conflict.local.hlc!).toBe(true)
+
+    await clock.advance(PUSH_DEBOUNCE_MS)
+    await b.engine.syncNow()
+    expect(taskOf(b.store)).toMatchObject({ description: 'Desc de A', timeSpent: 200 })
+    expect(b.engine.conflicts()).toEqual([])
+    expect(b.store.pendingOutgoingCount()).toBe(0)
+    await a.engine.syncNow()
+    expect(a.engine.conflicts()).toEqual([])
+    expect(dataHashes(a.store)).toEqual(dataHashes(b.store))
+  })
+
+  it.each([
+    ['remote', T],
+    ['local', undefined]
+  ] as const)('um campo que só um lado tem: escolhido %s', async (side, expected) => {
+    const { a } = await conflictOn(
+      withFields({ description: 'A' }),
+      withFields({ description: 'B', completedAt: T })
+    )
+    const [conflict] = a.engine.conflicts()
+    a.engine.resolve(conflict.id, {
+      fields: { ...everyField(conflict, 'local'), completedAt: side },
+      expectedHlc: currentHlcOf(conflict)
+    })
+    expect(taskOf(a.store)).toMatchObject({ description: 'A', title: 'Coletor' })
+    expect(taskOf(a.store).completedAt).toBe(expected)
+  })
+
+  it('escolher tudo de um lado segue o caminho da versão inteira', async () => {
+    const { a } = await conflictOn(withFields({ description: 'A' }), withFields({ description: 'B' }))
+    const [conflict] = a.engine.conflicts()
+    const winner = a.store.syncRecordVersion('task', 't1')!.hlc
+    const adopt = vi.spyOn(a.store, 'adoptSyncVersion')
+    const rebase = vi.spyOn(a.store, 'rebaseSyncVersion')
+    a.engine.resolve(conflict.id, {
+      fields: everyField(conflict, 'remote'),
+      expectedHlc: currentHlcOf(conflict)
+    })
+    expect(adopt).not.toHaveBeenCalled()
+    expect(rebase).toHaveBeenCalledWith('task', 't1', winner, clock.now())
+    expect(a.engine.conflicts()).toEqual([])
+  })
+
+  it('campo diferente sem escolha não grava nada', async () => {
+    const { a } = await conflictOn(
+      withFields({ description: 'A', timeSpent: 1 }),
+      withFields({ description: 'B', timeSpent: 2 })
+    )
+    const [conflict] = a.engine.conflicts()
+    expect(() =>
+      a.engine.resolve(conflict.id, {
+        fields: { description: 'local' },
+        expectedHlc: currentHlcOf(conflict)
+      })
+    ).toThrow('Escolha um valor para cada campo diferente.')
+    expect(taskOf(a.store).description).toBe('B')
+    expect(a.engine.conflicts()).toHaveLength(1)
+  })
+
+  it('o item mudou depois de abrir a comparação: nada é gravado', async () => {
+    const { a } = await conflictOn(withFields({ description: 'A' }), withFields({ description: 'B' }))
+    const [conflict] = a.engine.conflicts()
+    clock.t += 10
+    a.store.save({ ...a.store.state, tasks: [withFields({ description: 'Corrigida' })] })
+    expect(() =>
+      a.engine.resolve(conflict.id, {
+        fields: everyField(conflict, 'local'),
+        expectedHlc: currentHlcOf(conflict)
+      })
+    ).toThrow('O item mudou enquanto você comparava. Confira de novo.')
+    expect(taskOf(a.store).description).toBe('Corrigida')
+    expect(a.engine.conflicts()).toHaveLength(1)
+  })
+
+  it('conflito que já fechou e id desconhecido', async () => {
+    const { a } = await conflictOn(withFields({ description: 'A' }), withFields({ description: 'B' }))
+    const [conflict] = a.engine.conflicts()
+    a.engine.resolve(conflict.id, 'remote')
+    expect(() =>
+      a.engine.resolve(conflict.id, { fields: { description: 'local' }, expectedHlc: null })
+    ).toThrow('Este conflito já foi resolvido em outro aparelho.')
+    expect(() => a.engine.resolve('nenhum', 'local')).toThrow('Conflito não encontrado.')
+  })
+
+  it('dívida e órfão não aceitam escolha por campo', async () => {
+    const withDebt = (remaining: string): Row => ({
+      ...table('ft1', '10'),
+      debts: [debt('d1', remaining)]
+    })
+    const { a, b } = await pairedDevices(
+      withData({ lists: [withDebt('100')], financialProfiles: [] })
+    )
+    server.mode = 'down'
+    a.store.save({ ...a.store.state, lists: [withDebt('90')] })
+    clock.t += 10
+    b.store.save({ ...b.store.state, lists: [withDebt('70')] })
+    server.mode = 'up'
+    await a.engine.syncNow()
+    await b.engine.syncNow()
+    await a.engine.syncNow()
+    const [debtConflict] = a.engine.conflicts()
+    expect(debtConflict.type).toBe('pending_choice')
+    expect(() =>
+      a.engine.resolve(debtConflict.id, {
+        fields: { remainingAmount: 'local' },
+        expectedHlc: null
+      })
+    ).toThrow('Dados inválidos.')
+    expect(a.engine.conflicts()).toHaveLength(1)
+
+    a.store.conflicts.push(orphanRow('orfao', 'orphan'))
+    expect(() => a.engine.resolve('orfao', { fields: {}, expectedHlc: null })).toThrow(
+      'Dados inválidos.'
+    )
+  })
+
+  it('falha ao gravar a mescla mantém o conflito aberto', async () => {
+    const { a } = await conflictOn(
+      withFields({ description: 'A', timeSpent: 1 }),
+      withFields({ description: 'B', timeSpent: 2 })
+    )
+    const [conflict] = a.engine.conflicts()
+    vi.spyOn(a.store, 'adoptSyncVersion').mockImplementation(() => {
+      throw new Error('sync record parent missing')
+    })
+    expect(() =>
+      a.engine.resolve(conflict.id, {
+        fields: { ...everyField(conflict, 'remote'), description: 'local' },
+        expectedHlc: currentHlcOf(conflict)
+      })
+    ).toThrow('Não foi possível usar esta versão.')
+    expect(a.engine.conflicts()).toHaveLength(1)
+  })
+
+  it('mescla sobre uma correção à mão ainda não enviada não cria conflito no outro', async () => {
+    const { a, b } = await conflictOn(
+      withFields({ description: 'A', timeSpent: 1 }),
+      withFields({ description: 'B', timeSpent: 2 })
+    )
+    const winner = a.store.syncRecordVersion('task', 't1')!.hlc
+    server.mode = 'down'
+    clock.t += 10
+    a.store.save({
+      ...a.store.state,
+      tasks: [withFields({ description: 'Corrigida', timeSpent: 2 })]
+    })
+    const [conflict] = a.engine.conflicts()
+    const rebase = vi.spyOn(a.store, 'rebaseSyncVersion')
+    a.engine.resolve(conflict.id, {
+      fields: { ...everyField(conflict, 'remote'), timeSpent: 'local' },
+      expectedHlc: currentHlcOf(conflict)
+    })
+    expect(rebase).toHaveBeenCalledWith('task', 't1', winner, clock.now())
+    expect(taskOf(a.store)).toMatchObject({ description: 'Corrigida', timeSpent: 1 })
+
+    server.mode = 'up'
+    await a.engine.syncNow()
+    await b.engine.syncNow()
+    expect(taskOf(b.store)).toMatchObject({ description: 'Corrigida', timeSpent: 1 })
+    expect(b.engine.conflicts()).toEqual([])
+    expect(dataHashes(a.store)).toEqual(dataHashes(b.store))
+  })
+
+  it('uma linha guardada antes da mudança abre com o lado atual certo', async () => {
+    const { a } = await pairedDevices(withData({ projects: [project('p1', 'Casa')] }))
+    a.store.conflicts.push(orphanRow('antiga', 'lww'))
+    const [old] = a.engine.conflicts()
+    expect(old.current).toBe('local')
+    expect(() => compareConflict(old, () => null)).not.toThrow()
   })
 })

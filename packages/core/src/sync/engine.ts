@@ -44,7 +44,8 @@ import {
   sealBatch,
   toRecoveryCode
 } from './crypto'
-import type { SyncKind, SyncRecord } from './records'
+import { canonicalJson, hashPayload, type SyncKind, type SyncRecord } from './records'
+import { canChooseFields, CONFLICT_TEXTS, type Side } from './conflict-view'
 
 export const PUSH_DEBOUNCE_MS = 5000
 export const POLL_MS = 60000
@@ -130,7 +131,18 @@ export interface SyncConflictView {
   local: SyncVersionView
   /** The version from another device. */
   remote: SyncVersionView
+  /** Which side is this device's current version of the record (the other is the kept one). */
+  current: Side
 }
+
+/**
+ * A conflict choice: one whole side, or a pick per differing field. The field
+ * pick carries the HLC of the current version as the screen read it, so an
+ * edit made meanwhile is never overwritten.
+ */
+export type ConflictChoice =
+  | Side
+  | { fields: Record<string, Side>; expectedHlc: string | null }
 
 /**
  * Extra proof for /setup and revoke (Task 7b: key proof and TOTP). The engine
@@ -303,7 +315,7 @@ export interface SyncEngine {
   enrollTotp(factor?: SyncSecondFactor): Promise<string>
   confirmTotp(code: string): Promise<string[]>
   conflicts(): SyncConflictView[]
-  resolve(conflictId: string, choice: 'local' | 'remote'): void
+  resolve(conflictId: string, choice: ConflictChoice): void
   recoveryCode(): string
   disable(): Promise<void>
   resume(choice: 'push-local' | 'take-cloud'): Promise<SyncStatus>
@@ -1112,9 +1124,73 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
     publish()
   }
 
+  /**
+   * Field-by-field choice (spec 2026-11-10): the picked fields become one
+   * merged payload, written through the same adopt path as "Usar esta", so it
+   * is a new local version the other devices receive on top of theirs.
+   */
+  const resolveFields = (
+    conflictId: string,
+    choice: { fields: Record<string, Side>; expectedHlc: string | null }
+  ): void => {
+    const s = requireSession()
+    const now = deps.now()
+    const row = store.listSyncConflicts(now).find((c) => c.id === conflictId)
+    if (!row) throw new SyncUserError(CONFLICT_TEXTS.alreadyResolved)
+    const view = api.conflicts().find((c) => c.id === conflictId)
+    if (!view || !canChooseFields(view)) throw new SyncUserError('Dados inválidos.')
+    const currentHlc = store.syncRecordVersion(row.kind, row.recordId)?.hlc ?? null
+    if (currentHlc !== choice.expectedHlc) throw new SyncUserError(CONFLICT_TEXTS.changed)
+    const local = view.local.payload as Record<string, unknown>
+    const remote = view.remote.payload as Record<string, unknown>
+    const merged: Record<string, unknown> = {}
+    const keys = new Set([...Object.keys(local), ...Object.keys(remote)])
+    for (const key of keys) {
+      if (key === 'id' || key === 'updatedAt') continue
+      let picked: unknown
+      if (canonicalJson(local[key]) === canonicalJson(remote[key])) picked = local[key]
+      else {
+        const side = choice.fields[key]
+        if (side !== 'local' && side !== 'remote') throw new SyncUserError(CONFLICT_TEXTS.chooseAll)
+        picked = side === 'local' ? local[key] : remote[key]
+      }
+      if (picked !== undefined) merged[key] = picked
+    }
+    if ('id' in local || 'id' in remote) merged.id = local.id ?? remote.id
+    if ('updatedAt' in local || 'updatedAt' in remote)
+      merged.updatedAt = new Date(now).toISOString()
+    // The same content as one side is that side's whole-version choice.
+    const hash = hashPayload(merged)
+    if (hash === hashPayload(local)) return api.resolve(conflictId, 'local')
+    if (hash === hashPayload(remote)) return api.resolve(conflictId, 'remote')
+
+    // An unsent edit here would hand the merge a base the other device never
+    // saw; the merge goes out on top of the version the other device holds.
+    const otherHlc = localSide(s, row) === 'kept-is-local' ? row.winnerHlc : row.loserHlc
+    const wasUnsent = store
+      .pendingOutgoing()
+      .some((p) => p.kind === row.kind && p.id === row.recordId)
+    try {
+      emitChange(
+        store.adoptSyncVersion(
+          { kind: row.kind, id: row.recordId, hlc: '', baseHlc: null, deleted: false, payload: merged },
+          now
+        )
+      )
+    } catch (err) {
+      log.warn('sync', 'adopt_failed', { name: err instanceof Error ? err.name : 'unknown' })
+      throw new SyncUserError('Não foi possível usar esta versão.')
+    }
+    if (wasUnsent && otherHlc) store.rebaseSyncVersion(row.kind, row.recordId, otherHlc, now)
+    store.markSyncConflictResolved(conflictId, now)
+    log.info('sync', 'conflict_resolved', { adopted: true, merged: true })
+    notifySaved()
+    publish()
+  }
+
   // ── API ──
 
-  return {
+  const api: SyncEngine = {
     start(): void {
       if (started) return
       started = true
@@ -1384,12 +1460,17 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
           recordId: row.recordId,
           createdAt: row.createdAt,
           local: keptIsLocal ? keptView : currentView,
-          remote: keptIsLocal ? currentView : keptView
+          remote: keptIsLocal ? currentView : keptView,
+          current: keptIsLocal ? 'remote' : 'local'
         }
       })
     },
 
     resolve(conflictId, choice): void {
+      if (typeof choice !== 'string') {
+        resolveFields(conflictId, choice)
+        return
+      }
       const s = requireSession()
       const now = deps.now()
       const row = store.listSyncConflicts(now).find((c) => c.id === conflictId)
@@ -1521,4 +1602,5 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       return out
     }
   }
+  return api
 }

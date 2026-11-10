@@ -31,6 +31,7 @@ const conflict = {
   kind: 'task' as const,
   recordId: 't1',
   createdAt: 0,
+  current: 'remote' as const,
   local: {
     hlc: 'h1',
     at: Date.UTC(2026, 9, 30, 12),

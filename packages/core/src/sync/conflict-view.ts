@@ -540,6 +540,11 @@ export function canChooseFields(c: SyncConflictView): boolean {
   )
 }
 
+/** The HLC of this device's current version, as the screen read it (`expectedHlc`). */
+export function currentHlcOf(c: SyncConflictView): string | null {
+  return c[c.current].hlc
+}
+
 /** The newer of two versions by their clocks; null when unknown or equal. */
 export function newerSide(c: SyncConflictView): Side | null {
   const a = c.local.hlc ? parseHlc(c.local.hlc) : null

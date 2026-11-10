@@ -25,6 +25,7 @@ function lww(id = 'c1'): SyncConflictView {
     kind: 'task',
     recordId: 't1',
     createdAt: AT_REMOTE,
+    current: 'remote',
     local: {
       hlc: 'h1',
       at: AT_LOCAL,
