@@ -10,6 +10,7 @@ import { awaitingFirstSync, useApp } from '../store/app'
 import { lastTablePref, tablesOfProfile } from '../store/finance'
 import { FinanceTabs } from './finance/FinanceTabs'
 import { FinanceTop } from './finance/FinanceTop'
+import { SummaryTab } from './finance/SummaryTab'
 import { TableSheet } from './finance/TableSheet'
 import { TransactionsTab } from './finance/TransactionsTab'
 import type { FinanceTab } from './finance/tabs'
@@ -129,11 +130,10 @@ function TabContent({
         onOpen={onOpenTransaction}
       />
     )
-  if (!table) {
-    // The Consolidado is read-only and has no table areas; its summary arrives in a later task.
-    const note = tab === 'resumo' ? 'O consolidado chega em breve ao celular.' : PICK_TABLE_TEXT
-    return <EmptyState icon={Wallet} text={note} />
-  }
+  if (tab === 'resumo')
+    return <SummaryTab table={table} tables={tables} month={month} today={today} />
+  // The Consolidado is read-only: the table areas ask for a table.
+  if (!table) return <EmptyState icon={Wallet} text={PICK_TABLE_TEXT} />
   return <EmptyState icon={Wallet} text="Esta área chega em breve ao celular." />
 }
 

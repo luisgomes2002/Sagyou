@@ -67,6 +67,8 @@ function seed(
   )
 }
 
+type TableTx = ReturnType<typeof table>['transactions'][number]
+
 const names = (): string[] => useApp.getState().state.lists.map((t) => t.name)
 
 describe('Finanças no celular', () => {
@@ -237,8 +239,14 @@ describe('Finanças no celular', () => {
       'Conta',
       'Cartão'
     ])
-    // Each currency has its own balance: none is shown over a list that mixes tables.
-    expect(screen.queryByText('Saldo atual')).toBeNull()
+    // Each currency has its own balance card at the top; the list below mixes the tables.
+    expect(screen.getByText('Real (BRL)')).toBeTruthy()
+    // 1000 - 50 - 30 in Conta and -400 in Cartão; the JPY table is of another profile.
+    expect(screen.getByTestId('saldo-BRL')).toHaveTextContent('R$ 520,00')
+    expect(screen.getByTestId('entradas-BRL')).toHaveTextContent('R$ 1.000,00')
+    expect(screen.getByTestId('saidas-BRL')).toHaveTextContent('R$ 480,00')
+    expect(screen.queryByText('Iene (JPY)')).toBeNull()
+    expect(screen.queryByTestId('saldo')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Novo gasto' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Nova receita' })).toBeNull()
     await fireEvent.press(screen.getByRole('button', { name: /^Tênis,/ }))
@@ -441,6 +449,187 @@ describe('Finanças no celular', () => {
     await render(<FinanceScreen today="2026-10-31" />)
     const button = screen.getByRole('button', { name: 'Nova tabela' })
     expect(button.props.accessibilityState.disabled).toBe(true)
+  })
+
+  describe('Resumo e Consolidado', () => {
+    // today = 2026-10-15; every figure below is worked out by hand.
+    const tx = (
+      id: string,
+      type: 'income' | 'expense',
+      amount: string,
+      date: string,
+      category?: string
+    ): TableTx => ({ id, description: id, type, amount, date, category })
+
+    function seedSummary(prefs: Record<string, string> = {}): void {
+      seedApp(
+        {
+          lists: [
+            table('conta', 'Conta', 'personal', [
+              tx('antes', 'income', '500', '2026-09-20'),
+              tx('salario', 'income', '1000', '2026-10-01', 'Salário'),
+              tx('mercado', 'expense', '200', '2026-10-10', 'Alimentação'),
+              tx('padaria', 'expense', '50', '2026-10-12', 'Alimentação'),
+              tx('avulso', 'expense', '80', '2026-10-14'),
+              tx('cinema', 'expense', '100', '2026-10-20', 'Lazer'),
+              tx('freela', 'income', '300', '2026-10-25', 'Freela'),
+              tx('depois', 'expense', '40', '2026-11-05', 'Lazer')
+            ])
+          ]
+        },
+        { prefs }
+      )
+    }
+
+    it('a tabela mostra saldo atual, projetado, entradas e saídas do mês', async () => {
+      seedSummary()
+      await render(<FinanceScreen today="2026-10-15" initialTab="resumo" />)
+      // Now (until the 15th): 500 + 1000 - 200 - 50 - 80. Projected adds the 20th and the 25th.
+      expect(screen.getByTestId('saldo')).toHaveTextContent('R$ 1.170,00')
+      expect(screen.getByTestId('projetado')).toHaveTextContent('R$ 1.370,00')
+      // The month: 1000 + 300 in, 200 + 50 + 80 + 100 out (September and November stay out).
+      expect(screen.getByTestId('entradas')).toHaveTextContent('R$ 1.300,00')
+      expect(screen.getByTestId('saidas')).toHaveTextContent('R$ 430,00')
+      expect(screen.getByText('Saldo projetado')).toBeTruthy()
+    })
+
+    it('os gastos por categoria vêm do maior ao menor, com o valor escrito', async () => {
+      seedSummary()
+      await render(<FinanceScreen today="2026-10-15" initialTab="resumo" />)
+      const rows = screen.getAllByTestId('category-row')
+      // The bar is never the only information: each row is named and valued for a screen reader.
+      expect(rows.map((r) => r.props.accessibilityLabel)).toEqual([
+        'Alimentação: R$ 250,00',
+        'Lazer: R$ 100,00',
+        'Sem categoria: R$ 80,00'
+      ])
+      expect(screen.getByText('R$ 250,00')).toBeTruthy()
+      expect(screen.getByText('R$ 80,00')).toBeTruthy()
+      // Income is not a spending category.
+      expect(screen.queryByText('Freela')).toBeNull()
+      const widths = screen
+        .getAllByTestId('category-bar')
+        .map((bar) => StyleSheet.flatten(bar.props.style).width)
+      expect(widths).toEqual(['100%', '40%', '32%'])
+    })
+
+    it('um mês passado para no fim dele e um futuro projeta até o fim dele', async () => {
+      seedSummary()
+      await render(<FinanceScreen today="2026-10-15" initialTab="resumo" />)
+      await fireEvent.press(screen.getByRole('button', { name: 'Mês anterior' }))
+      expect(screen.getByText('setembro de 2026')).toBeTruthy()
+      expect(screen.getByTestId('saldo')).toHaveTextContent('R$ 500,00')
+      expect(screen.getByTestId('projetado')).toHaveTextContent('R$ 500,00')
+      expect(screen.getByTestId('entradas')).toHaveTextContent('R$ 500,00')
+      expect(screen.getByTestId('saidas')).toHaveTextContent('R$ 0,00')
+      expect(screen.getByText('Nenhum gasto neste mês.')).toBeTruthy()
+      expect(screen.queryAllByTestId('category-row')).toHaveLength(0)
+
+      await fireEvent.press(screen.getByRole('button', { name: 'Próximo mês' }))
+      await fireEvent.press(screen.getByRole('button', { name: 'Próximo mês' }))
+      expect(screen.getByText('novembro de 2026')).toBeTruthy()
+      // Now still stops at today (1170); projected also takes the 5th of November (-40) in.
+      expect(screen.getByTestId('saldo')).toHaveTextContent('R$ 1.170,00')
+      expect(screen.getByTestId('projetado')).toHaveTextContent('R$ 1.330,00')
+      expect(screen.getByTestId('entradas')).toHaveTextContent('R$ 0,00')
+      expect(screen.getByTestId('saidas')).toHaveTextContent('R$ 40,00')
+      expect(screen.getAllByTestId('category-row').map((r) => r.props.accessibilityLabel)).toEqual([
+        'Lazer: R$ 40,00'
+      ])
+    })
+
+    it('saldo negativo fica vermelho no resumo', async () => {
+      seedApp({ lists: [table('c', 'C', 'personal', [tx('a', 'expense', '10', '2026-10-01')])] })
+      await render(<FinanceScreen today="2026-10-15" initialTab="resumo" />)
+      for (const id of ['saldo', 'projetado'])
+        expect(StyleSheet.flatten(screen.getByTestId(id).props.style).color).toBe(lightTheme.red)
+    })
+
+    function seedMixed(): void {
+      seedApp(
+        {
+          lists: [
+            table('conta', 'Conta', 'personal', [
+              tx('salario', 'income', '1000', '2026-10-01'),
+              tx('mercado', 'expense', '200', '2026-10-10'),
+              // The mirror of the invoice below (an item points at it): out of every total.
+              tx('espelho', 'expense', '300', '2026-10-06'),
+              tx('bonus', 'income', '100', '2026-10-28')
+            ]),
+            table('cartao', 'Cartão', 'personal', [
+              {
+                ...tx('fatura', 'expense', '300', '2026-10-05'),
+                details: [
+                  { id: 'd1', description: 'Fatura', amount: '300', linkedTransactionId: 'espelho' }
+                ]
+              }
+            ]),
+            table(
+              'iene',
+              'Iene',
+              'personal',
+              [
+                tx('pagamento', 'income', '50000', '2026-10-02'),
+                tx('ramen', 'expense', '12000', '2026-10-07')
+              ],
+              'JPY'
+            )
+          ]
+        },
+        { prefs: { [lastTablePref('personal')]: 'all' } }
+      )
+    }
+
+    it('o Consolidado tem um cartão por moeda, sem somar nem converter', async () => {
+      seedMixed()
+      await render(<FinanceScreen today="2026-10-15" initialTab="resumo" />)
+      expect(screen.getAllByText(/^(Real|Iene) \(/).map((n) => n.props.children)).toEqual([
+        'Real (BRL)',
+        'Iene (JPY)'
+      ])
+      // BRL: 1000 - 200 - 300 (the invoice; the mirror stays out); projected adds the 28th (+100).
+      expect(screen.getByTestId('saldo-BRL')).toHaveTextContent('R$ 500,00')
+      expect(screen.getByTestId('projetado-BRL')).toHaveTextContent('R$ 600,00')
+      expect(screen.getByTestId('entradas-BRL')).toHaveTextContent('R$ 1.100,00')
+      expect(screen.getByTestId('saidas-BRL')).toHaveTextContent('R$ 500,00')
+      // JPY: its own whole-yen numbers, none of them mixed into the BRL ones.
+      expect(screen.getByTestId('saldo-JPY')).toHaveTextContent('¥38.000')
+      expect(screen.getByTestId('projetado-JPY')).toHaveTextContent('¥38.000')
+      expect(screen.getByTestId('entradas-JPY')).toHaveTextContent('¥50.000')
+      expect(screen.getByTestId('saidas-JPY')).toHaveTextContent('¥12.000')
+      expect(screen.queryByTestId('saldo')).toBeNull()
+      expect(screen.queryByText(PICK_TABLE_TEXT)).toBeNull()
+    })
+
+    it('o Consolidado também abre a lista com os cartões por moeda no topo', async () => {
+      seedMixed()
+      await render(<FinanceScreen today="2026-10-15" />)
+      expect(screen.getByTestId('saldo-BRL')).toHaveTextContent('R$ 500,00')
+      expect(screen.getByTestId('saldo-JPY')).toHaveTextContent('¥38.000')
+      // ...and the rest of the tab is still there.
+      expect(screen.getByLabelText('Buscar lançamento')).toBeTruthy()
+      expect(screen.getByText('ramen')).toBeTruthy()
+    })
+
+    it('o Consolidado segue o mês escolhido', async () => {
+      seedMixed()
+      await render(<FinanceScreen today="2026-10-15" initialTab="resumo" />)
+      await fireEvent.press(screen.getByRole('button', { name: 'Mês anterior' }))
+      expect(screen.getByTestId('entradas-BRL')).toHaveTextContent('R$ 0,00')
+      // Nothing happened before October: every balance is zero, still one per currency.
+      expect(screen.getByTestId('saldo-BRL')).toHaveTextContent('R$ 0,00')
+      expect(screen.getByTestId('saldo-JPY')).toHaveTextContent('¥0')
+    })
+
+    it('Dívidas, Metas, Compras e Rendimentos continuam pedindo uma tabela no Consolidado', async () => {
+      seedMixed()
+      await render(<FinanceScreen today="2026-10-15" initialTab="resumo" />)
+      for (const name of ['Dívidas', 'Metas', 'Compras', 'Rendimentos']) {
+        await fireEvent.press(screen.getByRole('tab', { name }))
+        expect([name, screen.queryByText(PICK_TABLE_TEXT) !== null]).toEqual([name, true])
+        expect(screen.queryByTestId('saldo-BRL')).toBeNull()
+      }
+    })
   })
 
   it('salvar um gasto estando no Consolidado não troca a pref da tabela', async () => {

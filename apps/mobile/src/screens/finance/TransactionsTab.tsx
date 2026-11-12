@@ -23,13 +23,14 @@ import {
   type TransactionFilter
 } from '../../store/transactionFilters'
 import { FONT, MIN_TOUCH, RADIUS, SPACE, useTheme } from '../../theme'
+import { ConsolidatedCards } from './ConsolidatedCards'
 
 type Open = 'type' | 'category' | null
 
 /**
  * Lançamentos: the month of one table (its balance and totals at a glance) or, with no `table`, of
- * every table of the profile (the Consolidado, which has no balance here and names each row's
- * table), then the search and the Tipo/Categoria chips, then the days. A row opens its details;
+ * every table of the profile (the Consolidado, which opens on one card per currency and names each
+ * row's table), then the search and the Tipo/Categoria chips, then the days. A row opens its details;
  * nothing is written from the list.
  */
 export function TransactionsTab({
@@ -113,7 +114,9 @@ export function TransactionsTab({
             </View>
           </View>
         </Card>
-      ) : null}
+      ) : (
+        <ConsolidatedCards tables={tables} month={month} today={today} />
+      )}
 
       <Field
         label={TRANSACTION_FILTER_TEXTS.search}

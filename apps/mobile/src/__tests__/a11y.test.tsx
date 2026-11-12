@@ -173,6 +173,12 @@ function ConsolidatedSample(): React.JSX.Element {
   return <FinanceScreen today="2026-11-01" />
 }
 
+/** The Consolidado on its Resumo tab: one card per currency. */
+function ConsolidatedSummarySample(): React.JSX.Element {
+  useState(() => useApp.getState().services?.repo.writePref(lastTablePref('personal'), 'all'))
+  return <FinanceScreen today="2026-11-01" initialTab="resumo" />
+}
+
 function DetailSample({ txId }: { txId: string }): React.JSX.Element {
   return (
     <TransactionDetailScreen
@@ -224,7 +230,8 @@ const SCREENS: [string, ComponentType][] = [
   ['Finanças: Rendimentos', () => <FinanceScreen today="2026-11-01" initialTab="rendimentos" />],
   ['Finanças: Consolidado', ConsolidatedSample],
   ['Lançamento', () => <DetailSample txId="x2" />],
-  ['Lançamento: travado', () => <DetailSample txId="x3" />]
+  ['Lançamento: travado', () => <DetailSample txId="x3" />],
+  ['Finanças: Resumo do Consolidado', ConsolidatedSummarySample]
 ]
 
 const INTERACTIVE = ['button', 'checkbox', 'radio', 'tab'] as const
