@@ -8,8 +8,10 @@ import { Button, EmptyState, Screen } from '../components/ui'
 import { navigationRef } from '../navigation'
 import { awaitingFirstSync, useApp } from '../store/app'
 import { lastTablePref, tablesOfProfile } from '../store/finance'
+import { DebtsTab } from './finance/DebtsTab'
 import { FinanceTabs } from './finance/FinanceTabs'
 import { FinanceTop } from './finance/FinanceTop'
+import { GoalsTab } from './finance/GoalsTab'
 import { SummaryTab } from './finance/SummaryTab'
 import { TableSheet } from './finance/TableSheet'
 import { TransactionsTab } from './finance/TransactionsTab'
@@ -134,6 +136,8 @@ function TabContent({
     return <SummaryTab table={table} tables={tables} month={month} today={today} />
   // The Consolidado is read-only: the table areas ask for a table.
   if (!table) return <EmptyState icon={Wallet} text={PICK_TABLE_TEXT} />
+  if (tab === 'dividas') return <DebtsTab table={table} today={today} />
+  if (tab === 'metas') return <GoalsTab table={table} month={month} today={today} />
   return <EmptyState icon={Wallet} text="Esta área chega em breve ao celular." />
 }
 
