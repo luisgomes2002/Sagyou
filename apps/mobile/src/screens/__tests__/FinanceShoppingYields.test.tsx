@@ -382,6 +382,7 @@ describe('Compras no celular', () => {
         ]
       })
       const openURL = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined)
+      openURL.mockClear() // the spy outlives the test: drop the calls of the previous ones
       await openShopping()
       await fireEvent.press(buttonOf('Abrir link de Arroz'))
       expect(openURL).toHaveBeenLastCalledWith('https://example.com/arroz?x=1')
@@ -406,6 +407,7 @@ describe('Compras no celular', () => {
       ]
       seed({ items: links.map((link, i) => item(`i${i}`, `Item ${i}`, { link })) })
       const openURL = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined)
+      openURL.mockClear() // the spy outlives the test: drop the calls of the previous ones
       await openShopping()
       for (const [i, link] of links.entries()) {
         useUndo.getState().dismiss()

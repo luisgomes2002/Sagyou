@@ -166,7 +166,7 @@ describe('Finanças no celular', () => {
     expect(screen.getByText('Almoço')).toBeTruthy()
     expect(screen.queryByText('Salário')).toBeNull()
     await fireEvent.changeText(screen.getByLabelText('Buscar lançamento'), 'salario')
-    expect(screen.getByText('Salário')).toBeTruthy()
+    expect(screen.getAllByText('Salário').length).toBeGreaterThan(0) // description and category
     expect(screen.queryByText('Almoço')).toBeNull()
   })
 
@@ -181,7 +181,7 @@ describe('Finanças no celular', () => {
     ])
     await fireEvent.press(screen.getByRole('radio', { name: 'Receitas' }))
     expect(screen.getByRole('button', { name: 'Tipo: Receitas' })).toBeTruthy()
-    expect(screen.getByText('Salário')).toBeTruthy()
+    expect(screen.getAllByText('Salário').length).toBeGreaterThan(0) // description and category
     expect(screen.queryByText('Almoço')).toBeNull()
     expect(screen.queryByText('Parcela')).toBeNull()
 
@@ -213,7 +213,7 @@ describe('Finanças no celular', () => {
     expect(screen.getByLabelText('Buscar lançamento').props.value).toBe('')
     expect(screen.getByRole('button', { name: 'Tipo: Todos' })).toBeTruthy()
     expect(screen.getByText('Almoço')).toBeTruthy()
-    expect(screen.getByText('Salário')).toBeTruthy()
+    expect(screen.getAllByText('Salário').length).toBeGreaterThan(0) // description and category
   })
 
   it('um mês sem lançamentos diz isso, mesmo com filtros', async () => {

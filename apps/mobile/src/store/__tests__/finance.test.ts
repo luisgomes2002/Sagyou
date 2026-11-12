@@ -272,7 +272,8 @@ describe('escrita pelo core no celular', () => {
     expect(tx.audit?.at(-1)?.changes.map((c) => c.field)).toEqual([
       'source',
       'counterparty',
-      'bankReference'
+      'bankReference',
+      'reconciledAt' // a new bank reference clears the old reconciliation
     ])
   })
 })
