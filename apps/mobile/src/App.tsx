@@ -43,6 +43,7 @@ import { ConflictScreen } from './screens/ConflictScreen'
 import { PAIR_DEVICE_TITLE, PairDeviceScreen } from './screens/PairDeviceScreen'
 import { CONTROL_TITLE, ControlSetupScreen } from './screens/ControlSetupScreen'
 import { SyncGuideScreen } from './screens/SyncGuideScreen'
+import { DETAIL_TITLE, TransactionDetailScreen } from './screens/finance/TransactionDetailScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
 import { TasksStack } from './screens/tasks/TasksStack'
 import { useApp, type AppMode } from './store/app'
@@ -108,6 +109,7 @@ export type RootStackParams = {
   ComoFunciona: undefined
   ParearAparelho: undefined
   ControlarPC: undefined
+  Lancamento: { tableId: string; txId: string }
 }
 
 const Tabs = createBottomTabNavigator()
@@ -339,6 +341,11 @@ export function AppShell({ mode }: { mode: AppMode }): React.JSX.Element {
           name="ControlarPC"
           component={ControlSetupScreen}
           options={{ title: CONTROL_TITLE }}
+        />
+        <Stack.Screen
+          name="Lancamento"
+          component={TransactionDetailScreen}
+          options={{ title: DETAIL_TITLE }}
         />
       </Stack.Navigator>
     </NavigationContainer>

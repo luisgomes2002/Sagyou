@@ -25,6 +25,7 @@ export const INVALID_AMOUNT_TEXT = 'Valor inválido.'
 export const OVER_REMAINING_TEXT = 'O pagamento passa do valor restante.'
 export const NOT_FOUND_TEXT = 'Este item não existe mais.'
 export const INVALID_NAME_TEXT = 'Informe um nome.'
+export const DETAILS_EXCEED_TEXT = 'O valor não pode ficar abaixo da soma dos itens da fatura.'
 
 /** What the phone says for each refusal of the core. */
 export function financeErrorText(error: ActionError): string {
@@ -73,14 +74,22 @@ export function tablesOfProfile(state: MobileState, profileId: string): Financia
   return state.lists.filter((t) => (t.profileId ?? DEFAULT_FINANCIAL_PROFILE_ID) === profileId)
 }
 
+/** An invoice item points at `tx`: it is the mirror of that invoice, in whichever table it lives. */
+function isInvoiceMirror(tables: FinancialTable[], tx: FinancialTransaction): boolean {
+  return tables.some((t) =>
+    t.transactions.some((x) => x.details?.some((d) => d.linkedTransactionId === tx.id))
+  )
+}
+
 /**
  * Debt payments, invoice mirrors, legacy links and currency transfers carry
- * rules the phone does not implement in v1, so they are read-only here.
+ * rules the phone does not implement in v1, so they are read-only here. An invoice and its mirror
+ * lock each other, so the mirror is looked up through **every** table (it lives in another one).
  */
-export function isLockedTransaction(table: FinancialTable, tx: FinancialTransaction): boolean {
+export function isLockedTransaction(tables: FinancialTable[], tx: FinancialTransaction): boolean {
   if (tx.debtId || tx.linkedTransactionId || tx.currencyTransferId) return true
   if (tx.details?.some((d) => d.linkedTransactionId)) return true
-  return table.transactions.some((t) => t.details?.some((d) => d.linkedTransactionId === tx.id))
+  return isInvoiceMirror(tables, tx)
 }
 
 /** A monthly yield summary the Rendimentos tab generates; it is edited there, never by hand. */
@@ -89,9 +98,9 @@ export function isYieldSummary(tx: FinancialTransaction): boolean {
 }
 
 /** Why a transaction cannot be edited on the phone (the text to show), or null when it can. */
-export function editLock(table: FinancialTable, tx: FinancialTransaction): string | null {
+export function editLock(tables: FinancialTable[], tx: FinancialTransaction): string | null {
   if (isYieldSummary(tx)) return YIELD_LOCKED_TEXT
-  return isLockedTransaction(table, tx) ? LOCKED_TEXT : null
+  return isLockedTransaction(tables, tx) ? LOCKED_TEXT : null
 }
 
 /**
@@ -104,13 +113,10 @@ export function deleteLock(tables: FinancialTable[], tx: FinancialTransaction): 
   if (tx.currencyTransferId || tx.linkedTransactionId) return DELETE_LOCKED_TEXT
   if (tx.details?.some((d) => d.linkedTransactionId)) return DELETE_LOCKED_TEXT
   // The mirror/child of someone else's link lives in another table, so look through all of them.
-  const targeted = tables.some((t) =>
-    t.transactions.some(
-      (x) =>
-        x.linkedTransactionId === tx.id || x.details?.some((d) => d.linkedTransactionId === tx.id)
-    )
+  const legacyChild = tables.some((t) =>
+    t.transactions.some((x) => x.linkedTransactionId === tx.id)
   )
-  return targeted ? DELETE_LOCKED_TEXT : null
+  return legacyChild || isInvoiceMirror(tables, tx) ? DELETE_LOCKED_TEXT : null
 }
 
 /** The month before (-1) or after (+1) a `yyyy-MM`. */
@@ -218,8 +224,13 @@ export function updateTransaction(
   const table = state.lists.find((t) => t.id === tableId)
   const tx = table?.transactions.find((t) => t.id === txId)
   if (!table || !tx) return { error: 'Lançamento não encontrado.' }
-  const locked = editLock(table, tx)
+  const locked = editLock(state.lists, tx)
   if (locked) return { error: locked }
+  // The core drops an edit that leaves the invoice items above the total, and silently: say it.
+  if (patch.amount !== undefined && tx.details?.length) {
+    const items = tx.details.reduce((sum, d) => sum.plus(D(d.amount)), D(0))
+    if (D(patch.amount).lt(items)) return { error: DETAILS_EXCEED_TEXT }
+  }
   const result = updateTransactionCore(state.lists, tableId, txId, patch, now)
   if ('error' in result) return { error: financeErrorText(result.error) }
   return { state: result.tables === state.lists ? state : { ...state, lists: result.tables } }

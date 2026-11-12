@@ -1,4 +1,5 @@
 import { financialCategories, formatAmountInput } from '@sagyou/core/finance'
+import { D } from '@sagyou/core/money'
 import type { FinancialTransaction } from '@sagyou/core/types'
 import * as Haptics from 'expo-haptics'
 import { useState } from 'react'
@@ -12,7 +13,8 @@ import {
   lastTablePref,
   parseAmount,
   tablesOfProfile,
-  updateTransaction
+  updateTransaction,
+  type TransactionPatch
 } from '../store/finance'
 import { FONT, SPACE, useTheme } from '../theme'
 import { BottomSheet } from './BottomSheet'
@@ -72,6 +74,9 @@ function TransactionForm({
   const [date, setDate] = useState<string>(tx?.date ?? dueChoice('today', today))
   const [category, setCategory] = useState(tx?.category ?? '')
   const [description, setDescription] = useState(tx?.description ?? '')
+  const [source, setSource] = useState(tx?.source ?? '')
+  const [counterparty, setCounterparty] = useState(tx?.counterparty ?? '')
+  const [bankReference, setBankReference] = useState(tx?.bankReference ?? '')
   const [error, setError] = useState<string | null>(null)
 
   if (!table)
@@ -91,7 +96,10 @@ function TransactionForm({
     ? amount !== formatAmountInput(tx.amount, table.currency) ||
       category !== (tx.category ?? '') ||
       description !== (tx.description ?? '') ||
-      date !== tx.date
+      date !== tx.date ||
+      source.trim() !== (tx.source ?? '') ||
+      counterparty.trim() !== (tx.counterparty ?? '') ||
+      bankReference.trim() !== (tx.bankReference ?? '')
     : !!amount.trim() || !!description.trim()
 
   const save = (): void => {
@@ -101,13 +109,20 @@ function TransactionForm({
     const now = new Date()
     let next = current
     if (tx) {
-      const result = updateTransaction(
-        current,
-        table.id,
-        tx.id,
-        { amount: value, date, category, description: description.trim() },
-        now
-      )
+      // Only what changed goes to the core, so an untouched field adds nothing to the history
+      // and a field the phone does not show is never rewritten.
+      const patch: TransactionPatch = {}
+      if (!sameAmount(value, tx.amount)) patch.amount = value
+      if (date !== tx.date) patch.date = date
+      if (category !== (tx.category ?? '')) patch.category = category
+      if (description.trim() !== tx.description) patch.description = description.trim()
+      if (source.trim() !== (tx.source ?? '')) patch.source = source.trim() || undefined
+      if (counterparty.trim() !== (tx.counterparty ?? ''))
+        patch.counterparty = counterparty.trim() || undefined
+      if (bankReference.trim() !== (tx.bankReference ?? ''))
+        patch.bankReference = bankReference.trim() || undefined
+      if (Object.keys(patch).length === 0) return onClose()
+      const result = updateTransaction(current, table.id, tx.id, patch, now)
       if ('error' in result) return setError(result.error)
       next = result.state
     } else {
@@ -172,10 +187,26 @@ function TransactionForm({
       </ScrollView>
       <DateField label="Data" value={date} onChange={(d) => d && setDate(d)} today={today} />
       <Field label="Descrição" value={description} onChangeText={setDescription} />
+      {tx ? (
+        <>
+          <Field label="Origem" value={source} onChangeText={setSource} />
+          <Field label="Pessoa" value={counterparty} onChangeText={setCounterparty} />
+          <Field label="Referência" value={bankReference} onChangeText={setBankReference} />
+        </>
+      ) : null}
       <Button variant="primary" label="Salvar" onPress={save} disabled={readOnly} />
       <Button variant="ghost" label="Cancelar" onPress={close} />
     </BottomSheet>
   )
+}
+
+/** The same number, whatever its spelling ("30" and "30.00"). */
+function sameAmount(a: string, b: string): boolean {
+  try {
+    return D(a).eq(D(b))
+  } catch {
+    return false
+  }
 }
 
 const styles = StyleSheet.create({

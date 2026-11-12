@@ -11,6 +11,7 @@ import { useApp } from '../app'
 import { useUndo } from '../undo'
 import {
   DELETE_LOCKED_TEXT,
+  DETAILS_EXCEED_TEXT,
   INVALID_AMOUNT_TEXT,
   LOCKED_TEXT,
   NOT_FOUND_TEXT,
@@ -313,9 +314,8 @@ describe('travas do celular', () => {
 
   const lock = (id: string, kind: 'edit' | 'delete'): string | null => {
     const all = locked().lists
-    const table = all.find((t) => t.transactions.some((x) => x.id === id))!
-    const tx = table.transactions.find((x) => x.id === id)!
-    return kind === 'edit' ? editLock(table, tx) : deleteLock(all, tx)
+    const tx = all.flatMap((t) => t.transactions).find((x) => x.id === id)!
+    return kind === 'edit' ? editLock(all, tx) : deleteLock(all, tx)
   }
 
   it('o resumo de rendimento não se edita nem se exclui, com o texto dos rendimentos', () => {
@@ -326,7 +326,7 @@ describe('travas do celular', () => {
     ])
     // A transaction that only looks like one is not locked.
     const s = state()
-    expect(editLock(s.lists[0], { ...summary, id: 'fake', category: 'Salário' })).toBeNull()
+    expect(editLock(s.lists, { ...summary, id: 'fake', category: 'Salário' })).toBeNull()
   })
 
   it('o pagamento de dívida não se edita, mas se exclui', () => {
@@ -346,6 +346,35 @@ describe('travas do celular', () => {
     for (const id of ['xfer', 'legacyParent', 'invoice'])
       expect([id, lock(id, 'edit')]).toEqual([id, LOCKED_TEXT])
     expect(lock('plain', 'edit')).toBeNull()
+  })
+
+  it('o espelho da fatura, em outra tabela, também não se edita (nos dois sentidos)', () => {
+    // The invoice points at the mirror; the mirror lives in the other table and has no link itself.
+    expect([lock('invoice', 'edit'), lock('mirror', 'edit')]).toEqual([LOCKED_TEXT, LOCKED_TEXT])
+    // Looking only at the mirror's own table would have let it through.
+    const all = locked().lists
+    const mirror = all[1].transactions.find((x) => x.id === 'mirror')!
+    expect(editLock([all[1]], mirror)).toBeNull()
+    expect(editLock(all, mirror)).toBe(LOCKED_TEXT)
+    expect(updateTransaction(locked(), 'jpy', 'mirror', { amount: '1' }, NOW)).toEqual({
+      error: LOCKED_TEXT
+    })
+  })
+
+  it('o valor não desce abaixo da soma dos itens da fatura: o aviso, sem perder a edição calado', () => {
+    const s = state()
+    s.lists[0].transactions.push(
+      plain('fat', { amount: '90', details: [{ id: 'i1', description: 'Item', amount: '60' }] })
+    )
+    expect(updateTransaction(s, 'brl', 'fat', { amount: '50' }, NOW)).toEqual({
+      error: DETAILS_EXCEED_TEXT
+    })
+    const ok = updateTransaction(s, 'brl', 'fat', { amount: '120' }, NOW)
+    if ('error' in ok) throw new Error(ok.error)
+    expect(ok.state.lists[0].transactions.find((x) => x.id === 'fat')).toMatchObject({
+      amount: '120',
+      details: [{ id: 'i1', description: 'Item', amount: '60' }]
+    })
   })
 
   it('updateTransaction recusa o resumo de rendimento com o texto certo', () => {

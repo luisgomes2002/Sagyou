@@ -5,6 +5,7 @@ import { ConflictScreen } from '../screens/ConflictScreen'
 import { ConflictsScreen } from '../screens/ConflictsScreen'
 import { ControlSetupScreen } from '../screens/ControlSetupScreen'
 import { FinanceScreen } from '../screens/FinanceScreen'
+import { TransactionDetailScreen } from '../screens/finance/TransactionDetailScreen'
 import { HabitsScreen } from '../screens/HabitsScreen'
 import { NotesScreen } from '../screens/NotesScreen'
 import { PairDeviceScreen } from '../screens/PairDeviceScreen'
@@ -17,6 +18,7 @@ import { AllTasksList, ProjectBoard, ProjectList, UpcomingList } from '../screen
 import type { MobileState } from '../data/state'
 import { useRemote } from '../remote/store'
 import { useApp } from '../store/app'
+import { lastTablePref } from '../store/finance'
 import { MIN_TOUCH } from '../theme'
 import { T, project, seedApp, table } from './seed'
 import { installEngine, lww, orphan } from './conflicts'
@@ -72,6 +74,33 @@ const FULL: Partial<MobileState> = {
         type: 'expense',
         date: '2026-11-01',
         category: 'Alimentação'
+      },
+      {
+        id: 'x2',
+        description: 'Fatura do cartão',
+        amount: '100',
+        type: 'expense',
+        date: '2026-11-01',
+        source: 'Nubank',
+        counterparty: 'Banco',
+        bankReference: 'E123',
+        createdAt: '2026-11-01T12:00:00.000Z',
+        reconciledAt: '2026-11-02',
+        details: [{ id: 'd1', description: 'Mercado', amount: '60' }],
+        audit: [
+          {
+            at: '2026-11-01T13:00:00.000Z',
+            changes: [{ field: 'amount', before: '90', after: '100' }]
+          }
+        ]
+      },
+      {
+        id: 'x3',
+        description: 'Pagamento de dívida: Carro',
+        amount: '50',
+        type: 'expense',
+        date: '2026-11-01',
+        debtId: 'carro'
       }
     ])
   ],
@@ -138,6 +167,21 @@ function ConflictSample(): React.JSX.Element {
   )
 }
 
+/** The Consolidado: the table pref says "all" before the screen reads it. */
+function ConsolidatedSample(): React.JSX.Element {
+  useState(() => useApp.getState().services?.repo.writePref(lastTablePref('personal'), 'all'))
+  return <FinanceScreen today="2026-11-01" />
+}
+
+function DetailSample({ txId }: { txId: string }): React.JSX.Element {
+  return (
+    <TransactionDetailScreen
+      route={{ params: { tableId: 'conta', txId } }}
+      navigation={{ goBack: jest.fn() }}
+    />
+  )
+}
+
 const SCREENS: [string, ComponentType][] = [
   [
     'Tarefas',
@@ -177,7 +221,10 @@ const SCREENS: [string, ComponentType][] = [
   ['Finanças: Dívidas', () => <FinanceScreen today="2026-11-01" initialTab="dividas" />],
   ['Finanças: Metas', () => <FinanceScreen today="2026-11-01" initialTab="metas" />],
   ['Finanças: Compras', () => <FinanceScreen today="2026-11-01" initialTab="compras" />],
-  ['Finanças: Rendimentos', () => <FinanceScreen today="2026-11-01" initialTab="rendimentos" />]
+  ['Finanças: Rendimentos', () => <FinanceScreen today="2026-11-01" initialTab="rendimentos" />],
+  ['Finanças: Consolidado', ConsolidatedSample],
+  ['Lançamento', () => <DetailSample txId="x2" />],
+  ['Lançamento: travado', () => <DetailSample txId="x3" />]
 ]
 
 const INTERACTIVE = ['button', 'checkbox', 'radio', 'tab'] as const

@@ -4,7 +4,7 @@ import { seedApp, table } from '../../__tests__/seed'
 import { TransactionSheet } from '../../components/TransactionSheet'
 import { useLockState } from '../../lock/lockState'
 import { useApp } from '../../store/app'
-import { LOCKED_TEXT, lastTablePref } from '../../store/finance'
+import { lastTablePref } from '../../store/finance'
 import { useUndo } from '../../store/undo'
 import { lightTheme } from '../../theme'
 import { FinanceScreen, NO_TABLE_TEXT, PICK_TABLE_TEXT } from '../FinanceScreen'
@@ -137,24 +137,120 @@ describe('Finanças no celular', () => {
     expect(screen.queryByRole('button', { name: 'Nova receita' })).toBeNull()
   })
 
-  it('um pagamento de dívida não abre: só um aviso', async () => {
+  it('tocar num lançamento abre os detalhes, qualquer que seja ele', async () => {
     seed()
-    await render(<FinanceScreen today="2026-10-31" />)
+    const open = jest.fn()
+    await render(<FinanceScreen today="2026-10-31" onOpenTransaction={open} />)
+    await fireEvent.press(screen.getByRole('button', { name: /^Almoço,/ }))
+    expect(open).toHaveBeenLastCalledWith('conta', 'e')
+    // A debt payment cannot be edited, but its details open like any other: the lock is told there.
     await fireEvent.press(screen.getByRole('button', { name: /^Parcela,/ }))
-    expect(useUndo.getState()).toMatchObject({ message: LOCKED_TEXT, canUndo: false })
+    expect(open).toHaveBeenLastCalledWith('conta', 'b')
+    expect(useUndo.getState().message).toBeNull()
     expect(screen.queryByRole('button', { name: 'Salvar' })).toBeNull()
   })
 
-  it('editar abre a folha com a data do lançamento e salva com auditoria', async () => {
+  it('abrir um lançamento não grava nada', async () => {
+    const { save } = seed()
+    await render(<FinanceScreen today="2026-10-31" onOpenTransaction={jest.fn()} />)
+    await fireEvent.press(screen.getByRole('button', { name: /^Almoço,/ }))
+    expect(save).not.toHaveBeenCalled()
+  })
+
+  it('a busca acha sem diferenciar acento nem maiúscula', async () => {
     seed()
     await render(<FinanceScreen today="2026-10-31" />)
+    await fireEvent.changeText(screen.getByLabelText('Buscar lançamento'), 'ALMOCO')
+    expect(screen.getByText('Almoço')).toBeTruthy()
+    expect(screen.queryByText('Salário')).toBeNull()
+    await fireEvent.changeText(screen.getByLabelText('Buscar lançamento'), 'salario')
+    expect(screen.getByText('Salário')).toBeTruthy()
+    expect(screen.queryByText('Almoço')).toBeNull()
+  })
+
+  it('os chips Tipo e Categoria filtram o mês, e as categorias são as usadas nele', async () => {
+    seed()
+    await render(<FinanceScreen today="2026-10-31" />)
+    await fireEvent.press(screen.getByRole('button', { name: 'Tipo: Todos' }))
+    expect(screen.getAllByRole('radio').map((r) => r.props.accessibilityLabel)).toEqual([
+      'Todos',
+      'Receitas',
+      'Gastos'
+    ])
+    await fireEvent.press(screen.getByRole('radio', { name: 'Receitas' }))
+    expect(screen.getByRole('button', { name: 'Tipo: Receitas' })).toBeTruthy()
+    expect(screen.getByText('Salário')).toBeTruthy()
+    expect(screen.queryByText('Almoço')).toBeNull()
+    expect(screen.queryByText('Parcela')).toBeNull()
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Tipo: Receitas' }))
+    await fireEvent.press(screen.getByRole('radio', { name: 'Gastos' }))
+    await fireEvent.press(screen.getByRole('button', { name: 'Categoria: Todas' }))
+    // Only what the month uses (Salário, Alimentação), never the whole catalogue.
+    expect(screen.getAllByRole('radio').map((r) => r.props.accessibilityLabel)).toEqual([
+      'Todas',
+      'Alimentação',
+      'Salário'
+    ])
+    await fireEvent.press(screen.getByRole('radio', { name: 'Alimentação' }))
+    expect(screen.getByRole('button', { name: 'Categoria: Alimentação' })).toBeTruthy()
+    expect(screen.getByText('Almoço')).toBeTruthy()
+    expect(screen.queryByText('Parcela')).toBeNull()
+  })
+
+  it('filtros sem resultado mostram o aviso e Limpar filtros devolve tudo', async () => {
+    seed()
+    await render(<FinanceScreen today="2026-10-31" />)
+    await fireEvent.press(screen.getByRole('button', { name: 'Tipo: Todos' }))
+    await fireEvent.press(screen.getByRole('radio', { name: 'Receitas' }))
+    await fireEvent.changeText(screen.getByLabelText('Buscar lançamento'), 'almoco')
+    expect(screen.getByText('Nenhum lançamento com estes filtros.')).toBeTruthy()
+    expect(screen.queryByText('Nenhum lançamento neste mês.')).toBeNull()
+    await fireEvent.press(screen.getByRole('button', { name: 'Limpar filtros' }))
+    expect(screen.queryByText('Nenhum lançamento com estes filtros.')).toBeNull()
+    expect(screen.getByLabelText('Buscar lançamento').props.value).toBe('')
+    expect(screen.getByRole('button', { name: 'Tipo: Todos' })).toBeTruthy()
+    expect(screen.getByText('Almoço')).toBeTruthy()
+    expect(screen.getByText('Salário')).toBeTruthy()
+  })
+
+  it('um mês sem lançamentos diz isso, mesmo com filtros', async () => {
+    seed()
+    await render(<FinanceScreen today="2026-10-31" />)
+    await fireEvent.changeText(screen.getByLabelText('Buscar lançamento'), 'xyz')
+    await fireEvent.press(screen.getByRole('button', { name: 'Mês anterior' }))
+    expect(screen.getByText('Nenhum lançamento neste mês.')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Limpar filtros' })).toBeNull()
+  })
+
+  it('no Consolidado a lista traz as tabelas do perfil com o nome, sem saldo nem criar', async () => {
+    seed({ [lastTablePref('personal')]: 'all' })
+    const open = jest.fn()
+    await render(<FinanceScreen today="2026-10-31" onOpenTransaction={open} />)
+    expect(screen.getByText('Almoço')).toBeTruthy()
+    expect(screen.getByText('Tênis')).toBeTruthy()
+    // The other profile's table never shows.
+    expect(screen.queryByText('Ramen')).toBeNull()
+    expect(screen.getAllByTestId('tx-table').map((n) => n.props.children)).toEqual([
+      'Conta',
+      'Conta',
+      'Conta',
+      'Cartão'
+    ])
+    // Each currency has its own balance: none is shown over a list that mixes tables.
+    expect(screen.queryByText('Saldo atual')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Novo gasto' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Nova receita' })).toBeNull()
+    await fireEvent.press(screen.getByRole('button', { name: /^Tênis,/ }))
+    expect(open).toHaveBeenCalledWith('cartao', 'f')
+  })
+
+  it('só leitura: a lista continua abrindo os detalhes', async () => {
+    seed({}, { readOnly: true })
+    const open = jest.fn()
+    await render(<FinanceScreen today="2026-10-31" onOpenTransaction={open} />)
     await fireEvent.press(screen.getByRole('button', { name: /^Almoço,/ }))
-    expect(screen.getByLabelText('Valor (BRL)').props.value).toBe('30,00')
-    await fireEvent.changeText(screen.getByLabelText('Valor (BRL)'), '1.234,56')
-    await fireEvent.press(screen.getByRole('button', { name: 'Salvar' }))
-    const edited = useApp.getState().state.lists[0].transactions.find((t) => t.id === 'e')
-    expect(edited).toMatchObject({ amount: '1234.56', date: '2026-10-31', type: 'expense' })
-    expect(edited?.audit?.length).toBeGreaterThan(0)
+    expect(open).toHaveBeenCalledWith('conta', 'e')
   })
 
   it('o seletor lista Consolidado, as tabelas do perfil e Nova tabela…', async () => {
