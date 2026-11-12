@@ -185,7 +185,7 @@ export const SYNC_ARTICLES: GuideArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'O app Android entra na mesma sincronização como mais um aparelho. Ele tem tarefas (com Próximas), hábitos, gastos e receitas, notas dos projetos e busca, e funciona sem internet.'
+        text: 'O app Android entra na mesma sincronização como mais um aparelho. Ele tem tarefas (com Próximas), hábitos, o Financeiro (tabelas e Consolidado, lançamentos, resumo do mês, dívidas, metas, compras e rendimentos), notas dos projetos e busca, e funciona sem internet. Comprovantes, faturas e transferências entre moedas ficam só no PC.'
       },
       {
         type: 'steps',
