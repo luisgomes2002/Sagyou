@@ -2,11 +2,11 @@ import {
   DarkTheme,
   DefaultTheme,
   NavigationContainer,
-  createNavigationContainerRef,
   type NavigatorScreenParams,
   useIsFocused,
   useNavigation
 } from '@react-navigation/native'
+import { navigationRef } from './navigation'
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
 import { createNativeStackNavigator } from '@react-navigation/native-stack'
 import * as Notifications from 'expo-notifications'
@@ -55,23 +55,30 @@ export const TAB_LABELS = ['Tarefas', 'Hábitos', 'Finanças', 'Notas'] as const
  * a hit opens in its tab, tasks and projects straight on the record.
  */
 function SearchRoute(): React.JSX.Element {
+  // popTo goes back to the tabs already under Busca: navigate would push a
+  // second copy of them on every hit. initial: false keeps Projetos under the
+  // record, so its Salvar/back lands in Tarefas.
   const navigation = useNavigation() as unknown as {
-    navigate(name: 'Abas', params: object): void
+    popTo(name: 'Abas', params: object): void
   }
   const open = (hit: SearchHit): void => {
     if (hit.kind === 'task' && hit.parentId)
-      navigation.navigate('Abas', {
+      navigation.popTo('Abas', {
         screen: 'Tarefas',
-        params: { screen: 'Tarefa', params: { projectId: hit.parentId, taskId: hit.id } }
+        params: {
+          screen: 'Tarefa',
+          params: { projectId: hit.parentId, taskId: hit.id },
+          initial: false
+        }
       })
     else if (hit.kind === 'project')
-      navigation.navigate('Abas', {
+      navigation.popTo('Abas', {
         screen: 'Tarefas',
-        params: { screen: 'Projeto', params: { projectId: hit.id } }
+        params: { screen: 'Projeto', params: { projectId: hit.id }, initial: false }
       })
-    else if (hit.kind === 'note') navigation.navigate('Abas', { screen: 'Notas' })
-    else if (hit.kind === 'habit') navigation.navigate('Abas', { screen: 'Hábitos' })
-    else navigation.navigate('Abas', { screen: 'Finanças' })
+    else if (hit.kind === 'note') navigation.popTo('Abas', { screen: 'Notas' })
+    else if (hit.kind === 'habit') navigation.popTo('Abas', { screen: 'Hábitos' })
+    else navigation.popTo('Abas', { screen: 'Finanças' })
   }
   return <SearchScreen onOpen={open} />
 }
@@ -105,7 +112,6 @@ export type RootStackParams = {
 
 const Tabs = createBottomTabNavigator()
 const Stack = createNativeStackNavigator<RootStackParams>()
-const navigationRef = createNavigationContainerRef<RootStackParams>()
 
 function navigationTheme(theme: Theme): typeof DefaultTheme {
   const base = theme.dark ? DarkTheme : DefaultTheme
@@ -123,7 +129,7 @@ function navigationTheme(theme: Theme): typeof DefaultTheme {
   }
 }
 
-/** Tabs where the (+) shows; in Busca the keyboard owns the bottom of the screen. */
+/** Tabs where the (+) shows (the content tabs; Busca is a root screen over them). */
 const FAB_TABS: ReadonlySet<string> = new Set(['Tarefas', 'Hábitos', 'Finanças', 'Notas'])
 
 const OpenCreate = createContext<() => void>(() => undefined)

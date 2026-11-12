@@ -4,6 +4,7 @@ import { Text } from 'react-native'
 import * as RN from 'react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { AppShell, TAB_LABELS } from '../App'
+import { navigationRef } from '../navigation'
 import { StatusBanner } from '../components/StatusBanner'
 import { LockGate, type LockDeps } from '../lock/LockGate'
 import { useRemote } from '../remote/store'
@@ -244,10 +245,60 @@ describe('App', () => {
       await fireEvent.changeText(await screen.findByPlaceholderText('Buscar'), 'a')
     }
 
-    it('a lupa abre a Busca, que não tem (+)', async () => {
+    const rootNames = (): string[] =>
+      (navigationRef.getRootState()?.routes ?? []).map((r) => r.name)
+    const tasksStack = (): string[] => {
+      const tabs = navigationRef.getRootState()?.routes[0]?.state
+      const tasks = tabs?.routes.find((r) => r.name === 'Tarefas')
+      return (tasks?.state?.routes ?? []).map((r) => r.name)
+    }
+
+    it('a lupa abre a Busca por cima das abas, e a Busca não tem (+)', async () => {
       await openSearch()
+      expect(rootNames()).toEqual(['Abas', 'Busca'])
       const search = screen.getByTestId('search-screen')
       expect(within(search).queryByRole('button', { name: 'Criar' })).toBeNull()
+    })
+
+    // Review: navigate('Abas') from Busca pushed a second copy of the tabs every time.
+    it('abrir um resultado volta para as abas, sem empilhar outra cópia', async () => {
+      await openSearch()
+      await fireEvent.press(screen.getByRole('button', { name: 'Ideia' }))
+      expect(rootNames()).toEqual(['Abas'])
+      await fireEvent.press(screen.getAllByRole('button', { name: 'Buscar' })[0])
+      await fireEvent.changeText(await screen.findByPlaceholderText('Buscar'), 'a')
+      await fireEvent.press(screen.getByRole('button', { name: 'Comprar pão' }))
+      expect(rootNames()).toEqual(['Abas'])
+      // The form opens over the project list, so "Salvar" goes back into Tarefas.
+      expect(tasksStack()).toEqual(['Projetos', 'Tarefa'])
+    })
+
+    // Review: a reused route kept the previous record's state; "Salvar" wrote X's fields over Y.
+    it('abrir outra tarefa pela Busca com uma aberta mostra a tarefa nova', async () => {
+      await openSearch()
+      useApp.setState((st) => ({
+        state: {
+          ...st.state,
+          tasks: [
+            ...st.state.tasks,
+            { ...st.state.tasks[0], id: 't2', title: 'Pagar luz', order: 1 }
+          ]
+        }
+      }))
+      await fireEvent.press(screen.getByRole('button', { name: 'Comprar pão' }))
+      expect(await screen.findByDisplayValue('Comprar pão')).toBeTruthy()
+      const services = useApp.getState().services as AppServices
+      useApp.setState({
+        services: {
+          ...services,
+          search: () => [{ kind: 'task' as const, id: 't2', title: 'Pagar luz', parentId: 'p1' }]
+        } as AppServices
+      })
+      await fireEvent.press(screen.getAllByRole('button', { name: 'Buscar' })[0])
+      await fireEvent.changeText(await screen.findByPlaceholderText('Buscar'), 'luz')
+      await fireEvent.press(screen.getByRole('button', { name: 'Pagar luz' }))
+      expect(await screen.findByDisplayValue('Pagar luz')).toBeTruthy()
+      expect(screen.queryByDisplayValue('Comprar pão')).toBeNull()
     })
 
     it('um resultado de tarefa abre o formulário dela', async () => {

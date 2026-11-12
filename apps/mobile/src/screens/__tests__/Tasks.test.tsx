@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react-native'
+import { act, fireEvent, render, screen } from '@testing-library/react-native'
 import * as Haptics from 'expo-haptics'
 import { StyleSheet } from 'react-native'
 import { createRecordRepo } from '../../data/records'
@@ -170,6 +170,58 @@ describe('Tarefas no celular', () => {
       priority: 'all',
       tag: 'all'
     })
+  })
+
+  // Review: a new project with no tasks said "Nenhuma tarefa com estes filtros.".
+  it('projeto sem tarefas não fala de filtros', async () => {
+    seed()
+    await render(
+      <ProjectBoard
+        projectId="p1"
+        onOpenTask={jest.fn()}
+        onNewTask={jest.fn()}
+        today="2026-11-04"
+      />
+    )
+    expect(screen.queryByText('Nenhuma tarefa com estes filtros.')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Limpar filtros' })).toBeNull()
+  })
+
+  it('a sprint em uso sumiu pela sincronização: volta à sprint padrão sem reabrir', async () => {
+    seed({ tasks: [task('a'), task('velha', { sprintId: 's1' })] })
+    await render(
+      <ProjectBoard
+        projectId="p1"
+        onOpenTask={jest.fn()}
+        onNewTask={jest.fn()}
+        today="2026-11-04"
+      />
+    )
+    await fireEvent.press(screen.getByRole('button', { name: 'Sprint: Sprint 2' }))
+    await fireEvent.press(screen.getByRole('radio', { name: 'Sprint 1' }))
+    expect(screen.getByRole('button', { name: row('velha') })).toBeTruthy()
+    await act(async () => {
+      useApp.setState((st) => ({
+        state: { ...st.state, sprints: st.state.sprints.filter((x) => x.id !== 's1') }
+      }))
+    })
+    expect(screen.getByRole('button', { name: 'Sprint: Sprint 2' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: row('a') })).toBeTruthy()
+  })
+
+  it('no filtro, a opção marcada tem marca visível além da cor', async () => {
+    seed({ tasks: [task('a')] })
+    await render(
+      <ProjectBoard
+        projectId="p1"
+        onOpenTask={jest.fn()}
+        onNewTask={jest.fn()}
+        today="2026-11-04"
+      />
+    )
+    await fireEvent.press(screen.getByRole('button', { name: 'Sprint: Sprint 2' }))
+    expect(screen.getAllByTestId('radio-on')).toHaveLength(1)
+    expect(screen.getAllByTestId('radio-off').length).toBeGreaterThan(0)
   })
 
   it('"Nova tarefa em <coluna>" abre o formulário naquela coluna; Done não tem', async () => {
