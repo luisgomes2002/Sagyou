@@ -1,5 +1,6 @@
 import {
   addTransaction as addTransactionCore,
+  syncYieldSummary,
   updateTransaction as updateTransactionCore,
   type ActionError,
   type ActionResult
@@ -64,6 +65,30 @@ export function applyFinance(
   if (result.tables === current.lists) return { ok: true }
   if (!app.commit({ ...current, lists: result.tables })) return { ok: false }
   return { ok: true, id: result.id }
+}
+
+/**
+ * A write to the yield entries keeps the monthly summary (`Rendimentos <Mês> <ano>`, day 1) in step
+ * **in the same result**, so entry and summary reach `commit` together (one save). `dates` are the
+ * entries' days the write touched (before and after, for a date that moved): the summary of each
+ * month among them is rebuilt by the core. An error or a date that is not a day is left as it was.
+ */
+export function withYieldSummaries(
+  result: ActionResult,
+  tableId: string,
+  dates: string[],
+  now: Date
+): ActionResult {
+  if ('error' in result) return result
+  let tables = result.tables
+  for (const key of new Set(dates.map((d) => d.slice(0, 7)))) {
+    const [year, month] = key.split('-').map(Number)
+    const table = tables.find((t) => t.id === tableId)
+    if (!table || !year || !month) continue
+    const synced = syncYieldSummary(table, { year, month }, now)
+    if (synced !== table) tables = tables.map((t) => (t.id === tableId ? synced : t))
+  }
+  return tables === result.tables ? result : { ...result, tables }
 }
 
 /** Device-only: the last table used, per financial profile. */

@@ -10,9 +10,10 @@ export const deleteTableTitle = (name: string): string =>
 /**
  * Deleting asks first, as on the desktop, and there is no "Desfazer" afterwards. Only
  * **Excluir** runs `onConfirm`; **Cancelar** and the back button leave everything as it was.
+ * `message` is only for what the title cannot say (e.g. that other records go with it).
  */
-export function confirmDelete(title: string, onConfirm: () => void): void {
-  Alert.alert(title, undefined, [
+export function confirmDelete(title: string, onConfirm: () => void, message?: string): void {
+  Alert.alert(title, message, [
     { text: 'Cancelar', style: 'cancel' },
     { text: 'Excluir', style: 'destructive', onPress: onConfirm }
   ])

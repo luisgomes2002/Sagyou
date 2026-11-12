@@ -12,9 +12,11 @@ import { DebtsTab } from './finance/DebtsTab'
 import { FinanceTabs } from './finance/FinanceTabs'
 import { FinanceTop } from './finance/FinanceTop'
 import { GoalsTab } from './finance/GoalsTab'
+import { ShoppingTab } from './finance/ShoppingTab'
 import { SummaryTab } from './finance/SummaryTab'
 import { TableSheet } from './finance/TableSheet'
 import { TransactionsTab } from './finance/TransactionsTab'
+import { YieldsTab } from './finance/YieldsTab'
 import type { FinanceTab } from './finance/tabs'
 
 export const NO_TABLE_TEXT = 'Nenhuma tabela neste perfil.'
@@ -106,7 +108,7 @@ export function FinanceScreen({
   )
 }
 
-/** Where each tab's own screen goes; the later ones replace these stand-ins. */
+/** Where each tab's own screen goes. */
 function TabContent({
   table,
   tables,
@@ -138,7 +140,8 @@ function TabContent({
   if (!table) return <EmptyState icon={Wallet} text={PICK_TABLE_TEXT} />
   if (tab === 'dividas') return <DebtsTab table={table} today={today} />
   if (tab === 'metas') return <GoalsTab table={table} month={month} today={today} />
-  return <EmptyState icon={Wallet} text="Esta área chega em breve ao celular." />
+  if (tab === 'compras') return <ShoppingTab table={table} today={today} />
+  return <YieldsTab table={table} month={month} today={today} />
 }
 
 const styles = StyleSheet.create({

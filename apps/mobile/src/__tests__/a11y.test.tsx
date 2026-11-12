@@ -7,7 +7,9 @@ import { ControlSetupScreen } from '../screens/ControlSetupScreen'
 import { FinanceScreen } from '../screens/FinanceScreen'
 import { DebtSheet } from '../screens/finance/DebtSheet'
 import { CompleteGoalSheet, GoalSheet } from '../screens/finance/GoalSheet'
+import { ItemSheet } from '../screens/finance/ItemSheet'
 import { TransactionDetailScreen } from '../screens/finance/TransactionDetailScreen'
+import { EntrySheet, SourceSheet } from '../screens/finance/YieldSheet'
 import { HabitsScreen } from '../screens/HabitsScreen'
 import { NotesScreen } from '../screens/NotesScreen'
 import { PairDeviceScreen } from '../screens/PairDeviceScreen'
@@ -236,6 +238,42 @@ function withDebtsAndGoals(): void {
   })
 }
 
+/** The "conta" table with bought and pending items (one with a link) and yield sources and entries of November. */
+const SHOPPING_AND_YIELDS = {
+  items: [
+    { id: 'i1', name: 'Arroz', qty: 2, price: '12.5', done: false, link: 'https://example.com/a' },
+    { id: 'i2', name: 'Feijão', qty: 1, done: true }
+  ],
+  yieldSources: [
+    { id: 'div', name: 'Dividendos', createdAt: T },
+    { id: 'alu', name: 'Aluguel', createdAt: T }
+  ],
+  yieldEntries: [
+    { id: 'y1', sourceId: 'div', date: '2026-11-01', amount: '100', createdAt: T },
+    { id: 'y2', sourceId: 'alu', date: '2026-11-01', amount: '250.5', createdAt: T }
+  ]
+}
+
+function withShoppingAndYields(): void {
+  const current = useApp.getState().state
+  useApp.setState({
+    state: {
+      ...current,
+      lists: current.lists.map((t) => (t.id !== 'conta' ? t : { ...t, ...SHOPPING_AND_YIELDS }))
+    }
+  })
+}
+
+function ShoppingSample(): React.JSX.Element {
+  useState(withShoppingAndYields)
+  return <FinanceScreen today="2026-11-01" initialTab="compras" />
+}
+
+function YieldsSample(): React.JSX.Element {
+  useState(withShoppingAndYields)
+  return <FinanceScreen today="2026-11-01" initialTab="rendimentos" />
+}
+
 function DebtsSample(): React.JSX.Element {
   useState(withDebtsAndGoals)
   return <FinanceScreen today="2026-11-01" initialTab="dividas" />
@@ -255,6 +293,7 @@ const CARRO = {
   createdAt: T,
   updatedAt: T
 }
+const CONTA_FULL = { ...CONTA, ...SHOPPING_AND_YIELDS }
 const VIAGEM = {
   id: 'g1',
   name: 'Viagem',
@@ -343,6 +382,57 @@ const SCREENS: [string, ComponentType][] = [
         table={CONTA}
         goal={VIAGEM}
         today="2026-11-01"
+      />
+    )
+  ],
+  ['Finanças: Compras com dados', ShoppingSample],
+  ['Finanças: Rendimentos com dados', YieldsSample],
+  ['Finanças: Novo item', () => <ItemSheet visible onClose={jest.fn()} table={CONTA_FULL} />],
+  [
+    'Finanças: Editar item',
+    () => (
+      <ItemSheet
+        visible
+        onClose={jest.fn()}
+        table={CONTA_FULL}
+        item={SHOPPING_AND_YIELDS.items[0]}
+      />
+    )
+  ],
+  ['Finanças: Nova fonte', () => <SourceSheet visible onClose={jest.fn()} table={CONTA_FULL} />],
+  [
+    'Finanças: Renomear fonte',
+    () => (
+      <SourceSheet
+        visible
+        onClose={jest.fn()}
+        table={CONTA_FULL}
+        source={SHOPPING_AND_YIELDS.yieldSources[0]}
+      />
+    )
+  ],
+  [
+    'Finanças: Lançar rendimento',
+    () => (
+      <EntrySheet
+        visible
+        onClose={jest.fn()}
+        table={CONTA_FULL}
+        month="2026-11"
+        today="2026-11-01"
+      />
+    )
+  ],
+  [
+    'Finanças: Editar rendimento',
+    () => (
+      <EntrySheet
+        visible
+        onClose={jest.fn()}
+        table={CONTA_FULL}
+        month="2026-11"
+        today="2026-11-01"
+        entry={SHOPPING_AND_YIELDS.yieldEntries[0]}
       />
     )
   ]
