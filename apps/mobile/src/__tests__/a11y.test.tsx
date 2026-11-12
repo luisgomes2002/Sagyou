@@ -172,7 +172,12 @@ const SCREENS: [string, ComponentType][] = [
     'Entrar com código de recuperação',
     () => <RecoverSync busy={false} error={null} onSubmit={jest.fn()} onBack={jest.fn()} />
   ],
-  ['Todas as tarefas', () => <AllTasksList onOpenTask={jest.fn()} today="2026-11-01" />]
+  ['Todas as tarefas', () => <AllTasksList onOpenTask={jest.fn()} today="2026-11-01" />],
+  ['Finanças: Resumo', () => <FinanceScreen today="2026-11-01" initialTab="resumo" />],
+  ['Finanças: Dívidas', () => <FinanceScreen today="2026-11-01" initialTab="dividas" />],
+  ['Finanças: Metas', () => <FinanceScreen today="2026-11-01" initialTab="metas" />],
+  ['Finanças: Compras', () => <FinanceScreen today="2026-11-01" initialTab="compras" />],
+  ['Finanças: Rendimentos', () => <FinanceScreen today="2026-11-01" initialTab="rendimentos" />]
 ]
 
 const INTERACTIVE = ['button', 'checkbox', 'radio', 'tab'] as const
@@ -217,7 +222,7 @@ describe('varredura de acessibilidade', () => {
   const EMPTY: [string, ComponentType, string][] = [
     ['Tarefas', SCREENS[0][1], 'Nenhum projeto ainda. Crie um no Sagyou do PC.'],
     ['Hábitos', SCREENS[3][1], 'Nenhum hábito ainda. Crie um no Sagyou do PC.'],
-    ['Finanças', SCREENS[4][1], 'Nenhuma tabela neste perfil. Crie uma no Sagyou do PC.'],
+    ['Finanças', SCREENS[4][1], 'Nenhuma tabela neste perfil.'],
     ['Notas', SCREENS[5][1], 'Nenhum projeto ainda. Crie um no Sagyou do PC.']
   ]
 

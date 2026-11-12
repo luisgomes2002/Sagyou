@@ -7,6 +7,7 @@ import { useApp } from '../store/app'
 import { dueChoice, quickTable } from '../store/quick'
 import {
   INVALID_AMOUNT_TEXT,
+  NOT_FOUND_TEXT,
   addTransaction,
   lastTablePref,
   parseAmount,
@@ -77,7 +78,7 @@ function TransactionForm({
     return (
       <BottomSheet visible onClose={onClose} title={title}>
         <Text style={{ color: theme.muted, fontSize: FONT.body }}>
-          Nenhuma tabela neste perfil. Crie uma no Sagyou do PC.
+          Nenhuma tabela neste perfil. Crie uma na aba Finanças.
         </Text>
       </BottomSheet>
     )
@@ -110,16 +111,20 @@ function TransactionForm({
       if ('error' in result) return setError(result.error)
       next = result.state
     } else {
-      next = addTransaction(
+      const added = addTransaction(
         current,
         table.id,
         { type, amount: value, date, category, description: description.trim() },
         now
-      ).state
+      )
+      if (!added.id) return setError(NOT_FOUND_TEXT)
+      next = added.state
     }
     if (!commit(next)) return
-    // "Last table used" means the last table a transaction was saved in, too.
-    services?.repo.writePref(lastTablePref(profileId), table.id)
+    // "Last table used" means the last table a transaction was saved in, too — except for someone
+    // looking at the Consolidado, who must not be taken out of it by saving a gasto.
+    const pref = lastTablePref(profileId)
+    if (services?.repo.readPref(pref) !== 'all') services?.repo.writePref(pref, table.id)
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
     onClose()
   }

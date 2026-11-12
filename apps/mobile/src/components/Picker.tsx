@@ -7,6 +7,8 @@ import { ACTION_ICONS } from './icons'
 export interface PickerOption {
   id: string
   label: string
+  /** Shown but not pickable (e.g. "Nova tabela…" while the phone is read-only). */
+  disabled?: boolean
 }
 
 /** "Projeto ▸ Casa": one line that opens a sheet with the options as radios. */
@@ -55,12 +57,17 @@ export function Picker({
                 key={o.id}
                 accessibilityRole="radio"
                 accessibilityLabel={o.label}
-                accessibilityState={{ checked }}
+                accessibilityState={{ checked, disabled: !!o.disabled }}
+                disabled={o.disabled}
                 onPress={() => {
                   setOpen(false)
                   if (!checked) onChange(o.id)
                 }}
-                style={[styles.option, checked && { backgroundColor: theme.selected }]}
+                style={[
+                  styles.option,
+                  checked && { backgroundColor: theme.selected },
+                  o.disabled && { opacity: 0.5 }
+                ]}
               >
                 <View
                   style={[
