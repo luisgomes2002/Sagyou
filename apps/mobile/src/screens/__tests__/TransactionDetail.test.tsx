@@ -78,6 +78,21 @@ const linkedInvoice: Tx = {
   date: '2026-10-10',
   details: [{ id: 'k1', description: 'Item', amount: '90', linkedTransactionId: 'mirror' }]
 }
+const legacyParent: Tx = {
+  id: 'lp',
+  description: 'Pai do vínculo',
+  amount: '20',
+  type: 'expense',
+  date: '2026-10-11',
+  linkedTransactionId: 'lc'
+}
+const legacyChild: Tx = {
+  id: 'lc',
+  description: 'Filho do vínculo',
+  amount: '20',
+  type: 'expense',
+  date: '2026-10-11'
+}
 const mirror: Tx = {
   id: 'mirror',
   description: 'Espelho',
@@ -93,7 +108,9 @@ function seed(options: { readOnly?: boolean } = {}): ReturnType<typeof seedApp> 
     payment,
     summary,
     transfer,
-    linkedInvoice
+    linkedInvoice,
+    legacyParent,
+    legacyChild
   ])
   conta.debts = [
     {
@@ -323,7 +340,9 @@ describe('detalhes do lançamento', () => {
     it.each([
       ['a transferência entre moedas', 'xfer', 'conta'],
       ['a fatura vinculada', 'inv', 'conta'],
-      ['o espelho dela, na outra tabela', 'mirror', 'cartao']
+      ['o espelho dela, na outra tabela', 'mirror', 'cartao'],
+      ['o pai do vínculo legado', 'lp', 'conta'],
+      ['o filho do vínculo legado', 'lc', 'conta']
     ])('%s: sem Editar, e Excluir só avisa', async (_, txId, tableId) => {
       const { save } = seed()
       const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined)

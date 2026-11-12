@@ -165,8 +165,8 @@ export function GoalsTab({
                 ) : null}
               </>
             ) : null}
-            <View style={styles.actions}>
-              <View style={styles.action}>
+            <View testID={`acoes-${goal.id}`} style={styles.actions}>
+              <View testID="acao" style={styles.action}>
                 <Button
                   label="Editar"
                   a11yLabel={`Editar ${goal.name}`}
@@ -174,7 +174,7 @@ export function GoalsTab({
                   disabled={readOnly}
                 />
               </View>
-              <View style={styles.action}>
+              <View testID="acao" style={styles.action}>
                 {progress.manuallyCompleted ? (
                   <Button
                     label="Reabrir"
@@ -193,7 +193,7 @@ export function GoalsTab({
                   />
                 )}
               </View>
-              <View style={styles.action}>
+              <View testID="acao" style={styles.action}>
                 <Button
                   variant="danger"
                   label="Excluir"
@@ -238,6 +238,7 @@ const styles = StyleSheet.create({
   badges: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACE.sm },
   caption: { fontSize: FONT.caption },
   row: { flexDirection: 'row', gap: SPACE.md },
-  actions: { flexDirection: 'row', gap: SPACE.sm },
-  action: { flex: 1 }
+  // Wraps on a 360 dp phone: two or three buttons of 112 dp+ no longer squeeze their labels.
+  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACE.sm },
+  action: { flexGrow: 1, minWidth: 112 }
 })

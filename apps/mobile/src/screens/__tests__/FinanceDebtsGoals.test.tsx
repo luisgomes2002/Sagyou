@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react-native'
 import { format } from 'date-fns'
 import { Alert } from 'react-native'
 import { T, seedApp, table } from '../../__tests__/seed'
+import { expectWrappingActions } from '../../__tests__/wrapping'
 import { useLockState } from '../../lock/lockState'
 import { useApp } from '../../store/app'
 import { OVER_REMAINING_TEXT, lastTablePref } from '../../store/finance'
@@ -63,6 +64,14 @@ describe('Dívidas no celular', () => {
 
   beforeEach(() => useUndo.getState().dismiss())
   afterEach(() => jest.restoreAllMocks())
+
+  // Review: Pagar + "Excluir dívida" broke their labels on a 360 dp phone.
+  it('as ações da dívida quebram de linha em tela estreita; quitada fica só com Excluir', async () => {
+    seed({ debts: [debt('carro', 'Carro', '1000', '1000'), debt('moto', 'Moto', '500', '0')] })
+    await open()
+    expectWrappingActions('acoes-carro', 2)
+    expectWrappingActions('acoes-moto', 1)
+  })
 
   it('Nova dívida cria com o valor canônico e já aparece na lista', async () => {
     const { save } = seed({})
@@ -299,6 +308,22 @@ describe('Metas financeiras no celular', () => {
 
   beforeEach(() => useUndo.getState().dismiss())
   afterEach(() => jest.restoreAllMocks())
+
+  // Review: Editar + Concluir + Excluir (three buttons) broke their labels on a 360 dp phone.
+  it('as ações da meta quebram de linha em tela estreita (3 botões, também ao reabrir)', async () => {
+    seed(
+      {
+        goals: [
+          goal('g1', 'Viagem', '1000', 12, 2026),
+          goal('g4', 'Feita', '100', 6, 2026, { completedAt: '2026-10-10' })
+        ]
+      },
+      { transactions: TXS }
+    )
+    await open()
+    expectWrappingActions('acoes-g1', 3)
+    expectWrappingActions('acoes-g4', 3)
+  })
 
   it('lista nome, valor alvo, prazo e o progresso do mês escolhido', async () => {
     seed(

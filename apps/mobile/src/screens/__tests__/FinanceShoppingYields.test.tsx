@@ -8,6 +8,7 @@ import type {
 import { act, fireEvent, render, screen } from '@testing-library/react-native'
 import { Alert, Linking } from 'react-native'
 import { T, seedApp, table } from '../../__tests__/seed'
+import { expectWrappingActions } from '../../__tests__/wrapping'
 import { useLockState } from '../../lock/lockState'
 import { useApp } from '../../store/app'
 import { lastTablePref } from '../../store/finance'
@@ -346,6 +347,32 @@ describe('Compras no celular', () => {
     })
   })
 
+  // Review: "Abrir link" + Editar + Excluir broke their labels on a 360 dp phone.
+  it('as ações do item quebram de linha em tela estreita (3 botões com link, 2 sem)', async () => {
+    seed({
+      items: [item('a', 'Arroz', { link: 'https://example.com/arroz' }), item('b', 'Feijão')]
+    })
+    await openShopping()
+    expectWrappingActions('acoes-a', 3)
+    expectWrappingActions('acoes-b', 2)
+  })
+
+  // Review: the day came from when the screen drew; the tab stays mounted for days.
+  it('"Marcar comprado" lança o gasto com o dia do toque, não o do desenho da tela', async () => {
+    jest.useFakeTimers({ now: new Date(2026, 9, 31, 23, 0) })
+    try {
+      seed({ items: [item('arroz', 'Arroz', { price: '10' })] })
+      await render(<FinanceScreen initialTab="compras" />)
+      jest.setSystemTime(new Date(2026, 10, 1, 8, 0))
+      await fireEvent.press(screen.getByRole('checkbox', { name: 'Marcar Arroz como comprado' }))
+      expect(current().transactions).toEqual([
+        expect.objectContaining({ description: 'Arroz', date: '2026-11-01', fromShopping: true })
+      ])
+    } finally {
+      jest.useRealTimers()
+    }
+  })
+
   describe('link', () => {
     it('abre por Linking.openURL quando é http ou https', async () => {
       seed({
@@ -474,6 +501,16 @@ describe('Rendimentos no celular', () => {
 
   beforeEach(() => useUndo.getState().dismiss())
   afterEach(() => jest.restoreAllMocks())
+
+  // Review: the entry's text and its two buttons shared one row and broke at 360 dp.
+  it('a entrada fica numa linha e os botões, quebráveis, em outra', async () => {
+    seed(FULL(), { transactions: SUMMARIES() })
+    await openYields()
+    expect(screen.getByTestId('entrada-e1')).toHaveTextContent('05/10/2026 · R$ 100,00')
+    expectWrappingActions('acoes-entrada-e1', 2)
+    expectWrappingActions('acoes-fonte-div', 2)
+    expectWrappingActions('acoes-topo', 2)
+  })
 
   it('mostra as fontes e as entradas do mês escolhido', async () => {
     seed(FULL(), { transactions: SUMMARIES() })

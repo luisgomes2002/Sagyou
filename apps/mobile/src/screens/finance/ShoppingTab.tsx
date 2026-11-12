@@ -1,3 +1,4 @@
+import { todayLocalISO } from '@sagyou/core/dates'
 import { formatCurrency, itemTotal } from '@sagyou/core/finance'
 import { deleteItem, toggleItem } from '@sagyou/core/finance-actions'
 import { D } from '@sagyou/core/money'
@@ -32,7 +33,8 @@ export function ShoppingTab({
   today
 }: {
   table: FinancialTable
-  today: string
+  /** Only tests pin the day; in the app it is read at the tap (the tab can stay open for days). */
+  today?: string
 }): React.JSX.Element {
   const theme = useTheme()
   const readOnly = useApp((s) => s.readOnly)
@@ -48,7 +50,9 @@ export function ShoppingTab({
   const spent = items.filter((i) => i.done).reduce((sum, i) => sum.plus(itemTotal(i)), D(0))
 
   const toggle = (item: ShoppingItem): void => {
-    applyFinance((tables, now) => toggleItem(tables, table.id, item.id, now, today))
+    applyFinance((tables, now) =>
+      toggleItem(tables, table.id, item.id, now, today ?? todayLocalISO())
+    )
   }
   const remove = (item: ShoppingItem): void =>
     confirmDelete(deleteTitle(item.name), () => {
@@ -152,9 +156,9 @@ export function ShoppingTab({
                 </Text>
               ) : null}
             </View>
-            <View style={styles.actions}>
+            <View testID={`acoes-${item.id}`} style={styles.actions}>
               {item.link ? (
-                <View style={styles.action}>
+                <View testID="acao" style={styles.action}>
                   <Button
                     label="Abrir link"
                     a11yLabel={`Abrir link de ${item.name}`}
@@ -162,7 +166,7 @@ export function ShoppingTab({
                   />
                 </View>
               ) : null}
-              <View style={styles.action}>
+              <View testID="acao" style={styles.action}>
                 <Button
                   label="Editar"
                   a11yLabel={`Editar ${item.name}`}
@@ -170,7 +174,7 @@ export function ShoppingTab({
                   disabled={readOnly}
                 />
               </View>
-              <View style={styles.action}>
+              <View testID="acao" style={styles.action}>
                 <Button
                   variant="danger"
                   label="Excluir"
@@ -212,6 +216,7 @@ const styles = StyleSheet.create({
   struck: { textDecorationLine: 'line-through' },
   caption: { fontSize: FONT.caption },
   sum: { fontSize: FONT.bodyLg, fontWeight: '600', fontVariant: ['tabular-nums'] },
-  actions: { flexDirection: 'row', gap: SPACE.sm },
-  action: { flex: 1 }
+  // Wraps on a 360 dp phone: two or three buttons of 112 dp+ no longer squeeze their labels.
+  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACE.sm },
+  action: { flexGrow: 1, minWidth: 112 }
 })

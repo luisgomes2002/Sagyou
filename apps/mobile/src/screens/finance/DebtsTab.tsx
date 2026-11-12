@@ -122,9 +122,9 @@ export function DebtsTab({
                 table.currency
               )}
             </Text>
-            <View style={styles.actions}>
+            <View testID={`acoes-${debt.id}`} style={styles.actions}>
               {settled ? null : (
-                <View style={styles.action}>
+                <View testID="acao" style={styles.action}>
                   <Button
                     variant="primary"
                     label="Pagar"
@@ -134,7 +134,7 @@ export function DebtsTab({
                   />
                 </View>
               )}
-              <View style={styles.action}>
+              <View testID="acao" style={styles.action}>
                 <Button
                   variant="danger"
                   label="Excluir dívida"
@@ -175,6 +175,7 @@ const styles = StyleSheet.create({
   name: { fontSize: FONT.bodyLg, fontWeight: '600', flexShrink: 1 },
   row: { flexDirection: 'row', gap: SPACE.md },
   caption: { fontSize: FONT.caption },
-  actions: { flexDirection: 'row', gap: SPACE.sm },
-  action: { flex: 1 }
+  // Wraps on a 360 dp phone: two or three buttons of 112 dp+ no longer squeeze their labels.
+  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACE.sm },
+  action: { flexGrow: 1, minWidth: 112 }
 })

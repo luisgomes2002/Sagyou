@@ -348,6 +348,27 @@ describe('travas do celular', () => {
     expect(lock('plain', 'edit')).toBeNull()
   })
 
+  // Review: the legacy link locks both sides; the child used to be editable (only delete was locked).
+  it('o filho do vínculo legado também não se edita, em qualquer tabela', () => {
+    expect(lock('legacyChild', 'edit')).toBe(LOCKED_TEXT)
+    expect(updateTransaction(locked(), 'brl', 'legacyChild', { amount: '1' }, NOW)).toEqual({
+      error: LOCKED_TEXT
+    })
+    // The parent is locked as before and an unlinked transaction still edits.
+    expect(lock('legacyParent', 'edit')).toBe(LOCKED_TEXT)
+    const plainEdit = updateTransaction(locked(), 'brl', 'plain', { amount: '9' }, NOW)
+    expect('error' in plainEdit).toBe(false)
+    // The child is found through every table, also when it lives in another table than its parent.
+    const all = locked().lists
+    const child = all[0].transactions.find((x) => x.id === 'legacyChild')!
+    expect(editLock([all[1]], child)).toBeNull()
+    expect(editLock(all, child)).toBe(LOCKED_TEXT)
+    const moved = locked()
+    moved.lists[0].transactions = moved.lists[0].transactions.filter((x) => x.id !== 'legacyChild')
+    moved.lists[1].transactions.push(child)
+    expect(editLock(moved.lists, child)).toBe(LOCKED_TEXT)
+  })
+
   it('o espelho da fatura, em outra tabela, também não se edita (nos dois sentidos)', () => {
     // The invoice points at the mirror; the mirror lives in the other table and has no link itself.
     expect([lock('invoice', 'edit'), lock('mirror', 'edit')]).toEqual([LOCKED_TEXT, LOCKED_TEXT])

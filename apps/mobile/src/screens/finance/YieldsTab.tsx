@@ -89,8 +89,8 @@ export function YieldsTab({
 
   return (
     <>
-      <View style={styles.row}>
-        <View style={styles.action}>
+      <View testID="acoes-topo" style={styles.row}>
+        <View testID="acao" style={styles.action}>
           <Button
             variant="secondary"
             icon={ACTION_ICONS.add}
@@ -99,7 +99,7 @@ export function YieldsTab({
             disabled={readOnly}
           />
         </View>
-        <View style={styles.action}>
+        <View testID="acao" style={styles.action}>
           <Button
             variant="primary"
             label="Lançar rendimento"
@@ -153,23 +153,29 @@ export function YieldsTab({
                 >
                   {toBRDate(entry.date)} · {formatCurrency(entry.amount, table.currency)}
                 </Text>
-                <Button
-                  label="Editar"
-                  a11yLabel={`Editar rendimento de ${entryName(source, entry)}`}
-                  onPress={() => setEditingId(entry.id)}
-                  disabled={readOnly}
-                />
-                <Button
-                  variant="danger"
-                  label="Excluir"
-                  a11yLabel={`Excluir rendimento de ${entryName(source, entry)}`}
-                  onPress={() => removeEntry(entry, source)}
-                  disabled={readOnly}
-                />
+                <View testID={`acoes-entrada-${entry.id}`} style={styles.row}>
+                  <View testID="acao" style={styles.action}>
+                    <Button
+                      label="Editar"
+                      a11yLabel={`Editar rendimento de ${entryName(source, entry)}`}
+                      onPress={() => setEditingId(entry.id)}
+                      disabled={readOnly}
+                    />
+                  </View>
+                  <View testID="acao" style={styles.action}>
+                    <Button
+                      variant="danger"
+                      label="Excluir"
+                      a11yLabel={`Excluir rendimento de ${entryName(source, entry)}`}
+                      onPress={() => removeEntry(entry, source)}
+                      disabled={readOnly}
+                    />
+                  </View>
+                </View>
               </View>
             ))}
-            <View style={styles.row}>
-              <View style={styles.action}>
+            <View testID={`acoes-fonte-${source.id}`} style={styles.row}>
+              <View testID="acao" style={styles.action}>
                 <Button
                   label="Renomear"
                   a11yLabel={`Renomear ${source.name}`}
@@ -177,7 +183,7 @@ export function YieldsTab({
                   disabled={readOnly}
                 />
               </View>
-              <View style={styles.action}>
+              <View testID="acao" style={styles.action}>
                 <Button
                   variant="danger"
                   label="Excluir fonte"
@@ -222,10 +228,11 @@ export function YieldsTab({
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', gap: SPACE.sm },
-  action: { flex: 1 },
+  // Wraps on a 360 dp phone: buttons of 112 dp+ no longer squeeze their labels.
+  row: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACE.sm },
+  action: { flexGrow: 1, minWidth: 112 },
   name: { fontSize: FONT.bodyLg, fontWeight: '600' },
   caption: { fontSize: FONT.caption },
-  entry: { flexDirection: 'row', alignItems: 'center', gap: SPACE.sm },
-  entryText: { flex: 1, fontSize: FONT.body, fontVariant: ['tabular-nums'] }
+  entry: { gap: SPACE.xs },
+  entryText: { fontSize: FONT.body, fontVariant: ['tabular-nums'] }
 })

@@ -33,16 +33,18 @@ function openTransaction(tableId: string, txId: string): void {
  * Consolidado); the month starts at the current one and the tab at Lançamentos, neither remembered.
  */
 export function FinanceScreen({
-  today = todayLocalISO(),
+  today: pinnedToday,
   initialTab = 'lancamentos',
   onOpenTransaction = openTransaction
 }: {
+  /** Only tests pin the day; otherwise it is read from the clock on each render (and at each tap). */
   today?: string
   /** Only tests start elsewhere: in the app the tab always opens on Lançamentos. */
   initialTab?: FinanceTab
   /** Tests pass their own; in the app it goes to the root stack. */
   onOpenTransaction?: (tableId: string, txId: string) => void
 }): React.JSX.Element {
+  const today = pinnedToday ?? todayLocalISO()
   const app = useApp((s) => s.state)
   const profileId = useApp((s) => s.profileId)
   const services = useApp((s) => s.services)
@@ -101,6 +103,7 @@ export function FinanceScreen({
           tab={tab}
           month={month}
           today={today}
+          pinnedToday={pinnedToday}
           onOpenTransaction={onOpenTransaction}
         />
       </Screen>
@@ -115,6 +118,7 @@ function TabContent({
   tab,
   month,
   today,
+  pinnedToday,
   onOpenTransaction
 }: {
   table: FinancialTable | undefined
@@ -122,6 +126,8 @@ function TabContent({
   tab: FinanceTab
   month: string
   today: string
+  /** Set only by tests: the shopping tab otherwise reads the day at the tap. */
+  pinnedToday?: string
   onOpenTransaction: (tableId: string, txId: string) => void
 }): React.JSX.Element {
   if (tab === 'lancamentos')
@@ -140,7 +146,7 @@ function TabContent({
   if (!table) return <EmptyState icon={Wallet} text={PICK_TABLE_TEXT} />
   if (tab === 'dividas') return <DebtsTab table={table} today={today} />
   if (tab === 'metas') return <GoalsTab table={table} month={month} today={today} />
-  if (tab === 'compras') return <ShoppingTab table={table} today={today} />
+  if (tab === 'compras') return <ShoppingTab table={table} today={pinnedToday} />
   return <YieldsTab table={table} month={month} today={today} />
 }
 

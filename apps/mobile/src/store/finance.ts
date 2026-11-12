@@ -106,6 +106,11 @@ function isInvoiceMirror(tables: FinancialTable[], tx: FinancialTransaction): bo
   )
 }
 
+/** Another transaction's legacy `linkedTransactionId` points at `tx`: it is the "child" of that link. */
+function isLegacyChild(tables: FinancialTable[], tx: FinancialTransaction): boolean {
+  return tables.some((t) => t.transactions.some((x) => x.linkedTransactionId === tx.id))
+}
+
 /**
  * Debt payments, invoice mirrors, legacy links and currency transfers carry
  * rules the phone does not implement in v1, so they are read-only here. An invoice and its mirror
@@ -114,7 +119,8 @@ function isInvoiceMirror(tables: FinancialTable[], tx: FinancialTransaction): bo
 export function isLockedTransaction(tables: FinancialTable[], tx: FinancialTransaction): boolean {
   if (tx.debtId || tx.linkedTransactionId || tx.currencyTransferId) return true
   if (tx.details?.some((d) => d.linkedTransactionId)) return true
-  return isInvoiceMirror(tables, tx)
+  // The legacy link locks both sides, and the child may live in another table.
+  return isLegacyChild(tables, tx) || isInvoiceMirror(tables, tx)
 }
 
 /** A monthly yield summary the Rendimentos tab generates; it is edited there, never by hand. */
@@ -138,10 +144,7 @@ export function deleteLock(tables: FinancialTable[], tx: FinancialTransaction): 
   if (tx.currencyTransferId || tx.linkedTransactionId) return DELETE_LOCKED_TEXT
   if (tx.details?.some((d) => d.linkedTransactionId)) return DELETE_LOCKED_TEXT
   // The mirror/child of someone else's link lives in another table, so look through all of them.
-  const legacyChild = tables.some((t) =>
-    t.transactions.some((x) => x.linkedTransactionId === tx.id)
-  )
-  return legacyChild || isInvoiceMirror(tables, tx) ? DELETE_LOCKED_TEXT : null
+  return isLegacyChild(tables, tx) || isInvoiceMirror(tables, tx) ? DELETE_LOCKED_TEXT : null
 }
 
 /** The month before (-1) or after (+1) a `yyyy-MM`. */
