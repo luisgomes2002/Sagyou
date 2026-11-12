@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import Decimal from 'decimal.js'
 import type { FinancialTable, FinancialTransaction, YieldEntry } from '../../types'
 import { CURRENCY_CONFIG } from '../../types'
-import { MONTH_NAMES, formatCurrency, parseDecimalInput, YIELD_SUMMARY_CATEGORY } from './shared'
+import { syncYieldSummary } from '@sagyou/core/finance-actions'
+import { MONTH_NAMES, formatCurrency, parseDecimalInput } from './shared'
 import { todayLocalISO } from '../../utils/dates'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { MonthJump } from './MonthJump'
@@ -81,7 +82,6 @@ export function YieldsTab({
   }
 
   const totalMonth = Object.values(monthTotals).reduce((s, v) => s.plus(v), new Decimal(0))
-  const hasMonthEntries = !totalMonth.isZero()
 
   const summaryDescription = `Rendimentos ${MONTH_NAMES[activeMonth.month - 1]} ${activeMonth.year}`
   const summaryDate = `${activeMonth.year}-${String(activeMonth.month).padStart(2, '0')}-01`
@@ -94,31 +94,32 @@ export function YieldsTab({
     if (syncedRef.current === dedupeKey) return
 
     try {
-      const existing = list.transactions.find(
-        (t) => t.description === summaryDescription && t.type === 'income'
-      )
-
-      if (!hasMonthEntries) {
-        if (existing) onDeleteTransaction(existing.id)
-        syncedRef.current = dedupeKey
-        return
-      }
-
-      if (existing) {
-        if (
-          existing.amount !== amount ||
-          (existing.category === YIELD_SUMMARY_CATEGORY && existing.date !== summaryDate)
-        ) {
-          onUpdateTransaction(existing.id, { amount, date: summaryDate })
+      // The rule (which summary should exist, its amount and its day) lives in the core, shared with
+      // the phone; the result is applied through the store's own actions, as before.
+      const synced = syncYieldSummary(list, activeMonth, new Date())
+      if (synced !== list) {
+        const before = new Map(list.transactions.map((t) => [t.id, t]))
+        const kept = new Set(synced.transactions.map((t) => t.id))
+        const removed = list.transactions.filter((t) => !kept.has(t.id))
+        if (removed.length > 0) {
+          // Deleting also unpairs a currency transfer, which the store does by itself.
+          for (const tx of removed) onDeleteTransaction(tx.id)
+        } else {
+          for (const tx of synced.transactions) {
+            const old = before.get(tx.id)
+            if (!old) {
+              onAddTransaction({
+                description: tx.description,
+                amount: tx.amount,
+                type: tx.type,
+                date: tx.date,
+                category: tx.category
+              })
+            } else if (old !== tx) {
+              onUpdateTransaction(tx.id, { amount: tx.amount, date: tx.date })
+            }
+          }
         }
-      } else {
-        onAddTransaction({
-          description: summaryDescription,
-          amount,
-          type: 'income',
-          date: summaryDate,
-          category: YIELD_SUMMARY_CATEGORY
-        })
       }
       syncedRef.current = dedupeKey
     } catch {
