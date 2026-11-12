@@ -15,6 +15,7 @@ import { GoalModal, FinancialGoalCard } from './FinancialGoalCard'
 import { GoalHistoryModal } from './GoalHistoryModal'
 import { AddTransactionRow, TransactionRow } from './TransactionRow'
 import { MonthJump } from './MonthJump'
+import { monthBounds } from '@sagyou/core/finance-views'
 import type { GlobalSearchHit } from '../../../../main/modules/search/global-search-query'
 import { searchFocusClass, useSearchFocus } from '../../utils/searchFocus'
 
@@ -152,8 +153,10 @@ export function FinanceTab({
   const monthBalance = monthIncome.minus(monthExpense)
 
   const today = todayISO()
-  const selectedMonthEnd = `${activeMonth.year}-${String(activeMonth.month).padStart(2, '0')}-31`
-  const currentCutoff = today < selectedMonthEnd ? today : selectedMonthEnd
+  const { currentCutoff, monthEnd: selectedMonthEnd } = monthBounds(
+    `${activeMonth.year}-${String(activeMonth.month).padStart(2, '0')}`,
+    today
+  )
   const currentBalance = tableBalance(list.transactions, currentCutoff)
   const projectedBalance = tableBalance(list.transactions, selectedMonthEnd)
 

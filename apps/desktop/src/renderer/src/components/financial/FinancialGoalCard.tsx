@@ -11,6 +11,7 @@ import {
   parseDecimalInput
 } from './shared'
 import { ModalBase } from '../ModalBase'
+import { goalProgress } from '@sagyou/core/finance-views'
 
 // ── GoalModal ─────────────────────────────────────────────────────────────────
 
@@ -266,34 +267,25 @@ export function FinancialGoalCard({
   )
 
   const today = todayISO(now)
-  const selectedMonthEnd = `${activeMonth.year}-${String(activeMonth.month).padStart(2, '0')}-31`
-  const viewEnd = selectedMonthEnd.slice(0, 7) === today.slice(0, 7) ? today : selectedMonthEnd
-  const deadlineEnd = `${goal.targetYear}-${String(goal.targetMonth).padStart(2, '0')}-31`
-  const deadlinePast = selectedMonthEnd > deadlineEnd
-  const effectiveCutoff = viewEnd < deadlineEnd ? viewEnd : deadlineEnd
   const target = D(goal.targetAmount)
-  const effectiveBalance = transactions
-    .filter((t) => t.date <= effectiveCutoff)
-    .reduce((s, t) => (t.type === 'income' ? s.plus(t.amount) : s.minus(t.amount)), new Decimal(0))
-  const actualCutoff = today < effectiveCutoff ? today : effectiveCutoff
-  const actualBalance = transactions
-    .filter((t) => t.date <= actualCutoff)
-    .reduce((s, t) => (t.type === 'income' ? s.plus(t.amount) : s.minus(t.amount)), new Decimal(0))
-
-  const manuallyCompleted = !!goal.completedAt && goal.completedAt <= viewEnd
-  const balanceAchieved = effectiveBalance.greaterThanOrEqualTo(target)
-  const achieved = manuallyCompleted || balanceAchieved
-  const projectedAchievement = balanceAchieved && actualBalance.lessThan(target)
-  const progress = manuallyCompleted
-    ? 1
-    : target.greaterThan(0)
-      ? Math.min(Math.max(effectiveBalance.div(target).toNumber(), 0), 1)
-      : 0
-  const percent = Math.round(progress * 100)
+  const {
+    effectiveBalance: effectiveBalanceText,
+    progress,
+    percent,
+    manuallyCompleted,
+    achieved,
+    projected: projectedAchievement,
+    overdue: isOverdue
+  } = goalProgress(
+    goal,
+    transactions,
+    `${activeMonth.year}-${String(activeMonth.month).padStart(2, '0')}`,
+    today
+  )
+  const effectiveBalance = D(effectiveBalanceText)
   const savedAmount = Decimal.min(Decimal.max(effectiveBalance, 0), target)
   const remaining = achieved ? new Decimal(0) : Decimal.max(target.minus(effectiveBalance), 0)
 
-  const isOverdue = !achieved && deadlinePast
   const isUrgent = !achieved && monthsLeft > 0 && monthsLeft <= 2
   const monthlyNeeded = monthsLeft > 0 && !achieved ? remaining.div(monthsLeft) : new Decimal(0)
 
@@ -367,7 +359,7 @@ export function FinancialGoalCard({
                 Concluído
               </span>
             )}
-            {!manuallyCompleted && balanceAchieved && (
+            {!manuallyCompleted && achieved && (
               <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#2a2a30] text-[#69b780] text-[10px] font-semibold shrink-0">
                 <svg
                   width="8"
@@ -447,7 +439,7 @@ export function FinancialGoalCard({
               )}
             </div>
           )}
-          {!manuallyCompleted && balanceAchieved && (
+          {!manuallyCompleted && achieved && (
             <div className="mt-2.5 pt-2.5 border-t border-[#2b2b31]">
               <p className="text-[10px] text-[#69b780] leading-relaxed">
                 {projectedAchievement
