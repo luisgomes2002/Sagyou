@@ -30,7 +30,7 @@ Fatia da sprint "Mobile 2 — Telas, notificações e aprovações" (task-mãe "
 - **Onde fica:** um sino no cabeçalho (ao lado de Buscar e Ajustes), com contador de pendentes; uma tela única Notificações com cartões no topo e histórico abaixo. Nada de aba nova na barra de baixo.
 - **Histórico em melhor esforço:** o Android mostra o push sozinho com o app fechado; o app anota quando está aberto, ao tocar na notificação e ao abrir (lendo as que ainda estão na barra). Limpar a barra com o app fechado pode perder uma entrada; aprovações pendentes nunca se perdem, porque vêm da inbox cifrada do PC.
 - **Push do servidor ligado:** só quando o servidor foi ligado pelo celular. Ligar no PC, autostart (já existe "PC pronto.") e reinício após queda não notificam "ligou".
-- **Tipos incluídos (2026-11-13):** sessão do Fleet terminou ou esperando resposta; segurança (controle remoto suspenso, acesso cortado, aparelho pareado ou revogado); PC sem sinal; servidor caiu ou não subiu.
+- **Tipos incluídos (2026-11-13):** sessão do Fleet terminou (a versão "esperando resposta" saiu na emenda do plano: o fluxo de perguntas do agente não existe mais no Fleet); segurança (controle remoto suspenso, acesso cortado, aparelho pareado ou revogado); PC sem sinal; servidor caiu ou não subiu.
 - **Preferência por tipo:** passa a existir, porque agora são muitos tipos (ver decisão 4 do construtor).
 
 ## Decisões do construtor (o agente decidiu; o humano pode mudar)
@@ -40,13 +40,13 @@ Fatia da sprint "Mobile 2 — Telas, notificações e aprovações" (task-mãe "
 4. **Preferência por categoria = canais do Android**, sem estado no Worker e sem D1: o app cria três canais (`pc`, `sessions`, `security`) ao abrir; o Worker coloca o `channel_id` no push; em Ajustes → "Notificações" há uma linha por categoria que abre a configuração do canal no Android (se o intent falhar, abre as configurações do app). O app não impede silenciar "Segurança": é escolha do Android. Silenciar um canal não afeta o sino nem os cartões (continuam vindo da inbox).
 5. **Quem diz o tipo:** o push leva `data.code` (o código da tabela abaixo) além de `open: 'pc'`. `open` continua igual para não quebrar versões antigas do app. Push sem `code` (Worker antigo) entra no histórico com o texto da própria notificação, ou "Notificação do Sagyou".
 6. **Texto único:** `NOTIFICATION_TEXT` e a categoria de cada código em `packages/core/src/control/` (junto de `NotifyCode`); um teste do `sync-server` confirma que `PUSH_TEXT` e os canais são iguais.
-7. **Histórico:** no máximo 100 entradas e 30 dias, a mais nova primeiro, sem duplicar (chave = identificador da notificação do Android). Entrada de aprovação, se o cartão ainda é válido, mostra "Responder acima"; expirada, "Expirou".
+7. **Histórico:** no máximo 100 entradas e 30 dias, a mais nova primeiro, sem duplicar (chave = identificador da notificação do Android). Entrada de aprovação mostra "Responder acima" enquanto existir algum cartão válido na tela e "Expirou" quando não existir nenhum (a entrada não guarda o id do cartão, por não guardar conteúdo).
 8. **Feedback de ações:** etapas "Enviando pedido…", "Pedido enviado. Aguardando o PC…" e então "Concluído" (some em 3 s) ou erro. O fim de cada espera é observado no estado do PC, não adivinhado: Ligar PC → `ready` (limite 5 min); Desligar PC → `shutting-down` (1 min; depois vale a contagem que já existe); Ligar servidor → `running` (1 min); Desligar servidor → `stopped` (1 min). Esgotado o limite: "O PC não respondeu. Tente de novo." e o botão volta a funcionar. Recusa do PC mostra o motivo que já existe (`REMOTE_TEXT.server*`, `CONTROL_TEXT`).
 9. **Sem animação que pisca:** indicador de progresso padrão do Android dentro do botão; com `useReducedMotion` vira só o texto da etapa.
 10. **A aba PC mantém um aviso:** onde estavam os cartões, um cartão "N aprovações pendentes" com botão "Ver" que abre a tela Notificações. A aba PC deixa de renderizar cartões.
 11. **"PC sem sinal" é detectado no Worker** (o PC caído não consegue avisar e o Worker não abre o estado cifrado). Detalhe em Comportamento e Dados. Limite: 10 min sem heartbeat.
 12. **Detecção de aparelho pareado/revogado no PC** compara a lista de aparelhos a cada `checkDevices` (5 min) com a da verificação anterior, só em memória: a primeira verificação depois de abrir o Sagyou só cria a base. Mudanças com o Sagyou fechado não notificam.
-13. **Limites contra rajada:** `session-done` e `session-waiting` no máximo 1 por sessão; `server-failed` no máximo 1 por servidor até ele voltar a `running`; `suspended` 1 por suspensão; `pc-silent` 1 por queda (reabilita quando o PC volta a mandar heartbeat).
+13. **Limites contra rajada:** `session-done` no máximo 1 por sessão; `server-failed` no máximo 1 por servidor até ele voltar a `running`; `suspended` 1 por suspensão; `pc-silent` 1 por queda (reabilita quando o PC volta a mandar heartbeat).
 
 ## Comportamento
 ### Tipos de notificação
@@ -55,11 +55,10 @@ Fatia da sprint "Mobile 2 — Telas, notificações e aprovações" (task-mãe "
 | `ready` | PC e servidores | PC pronto. | já existe | aba PC |
 | `shutdown-failed` | PC e servidores | O PC não foi desligado. | já existe | aba PC |
 | `server-ready` | PC e servidores | Servidor de Remote Control ligado. | PC, quando um servidor pedido pelo celular fica pronto (`·✔︎· Ready`/`Connected`, origem `phone`) | aba PC |
-| `server-failed` | PC e servidores | O servidor de Remote Control não subiu ou caiu. | PC: pedido do celular que termina em `start-failed` ou sai antes do Ready; ou servidor que estava `running` e saiu sem ser parado | aba PC |
+| `server-failed` | PC e servidores | O servidor de Remote Control não subiu ou caiu. | PC: pedido do celular aceito cujo processo sai antes do Ready (a recusa imediata `start-failed` não gera push: o celular recebe o motivo na própria resposta); ou servidor que estava `running` e saiu sem ser parado | aba PC |
 | `pc-silent` | PC e servidores | O PC parou de responder. | Worker (agendado), ver abaixo | aba PC |
 | `approval` | Sessões de código | Aprovação pendente no Sagyou. | já existe (cartão do Fleet ou do token externo) | tela Notificações |
 | `session-done` | Sessões de código | Uma sessão de código terminou. | PC, na saída de uma sessão do Fleet (não quando o usuário a encerrou no PC) | aba PC |
-| `session-waiting` | Sessões de código | Uma sessão de código está esperando você. | PC, quando a sessão estaciona uma pergunta do agente (`ai:code-agent:question-response`) | aba PC |
 | `suspended` | Segurança | Controle remoto suspenso por tentativas recusadas. | PC, ao suspender (5 recusas, 15 min) | aba PC |
 | `access-cut` | Segurança | Acesso remoto cortado. | PC, ao aceitar um `cut-access` (todos os celulares autorizados recebem, o que cortou também) | aba PC |
 | `device-paired` | Segurança | Um aparelho foi pareado ao seu sync. | PC, ao ver um aparelho novo na lista | aba PC |
@@ -105,8 +104,9 @@ Sem `FCM_SERVICE_ACCOUNT` nada quebra (já é assim). Um Worker antigo responde 
 ## Dados
 - **Celular:** nova preferência do aparelho `notifications.history` na tabela `prefs` (JSON `[{ id, code, at, read }]`, máx. 100, 30 dias). Nunca sincronizada, nunca em backup, apagada pelo wipe/"Desconectar" junto com as demais linhas. Sem tabela nova, sem migração. Nada de conteúdo de cartão, chave ou estado do controle (continuam só no secure store). Três canais de notificação do Android criados no código (`pc`, `sessions`, `security`).
 - **Core:** `NotifyCode` ganha os novos códigos; tabela código → texto e categoria. A mensagem assinada não muda de formato (só o campo `notify` do `/control/send`, que o Worker já aceita só do PC).
+- **Histórico (formato exato):** `[{ id, code, at, read, text? }]`; `code` pode ser `'unknown'` (push sem `data.code`), e só então `text` guarda o corpo da notificação (≤ 200 caracteres).
 - **Worker (`sync-server`):** `NotifyCode`/`PUSH_TEXT` ampliados; o payload do FCM ganha `data.code` e `android.notification.channel_id`.
-- ⚠️ **Mudança de schema do D1 e de deploy do Worker (aditiva):** uma tabela nova `pc_watch` (`watch`, `last_heartbeat_at`, `notified_at`), idempotente (`CREATE TABLE IF NOT EXISTS` em `schema.sql`), e um `[triggers] crons = ["*/5 * * * *"]` no `wrangler.toml`. Exige rodar o comando do README para aplicar a tabela e `wrangler deploy`. Um D1 sem a tabela responde `501 control not deployed` à parte de `watch` e o resto (sync, controle, push) continua; sem o agendamento, só o `pc-silent` deixa de existir. Nenhum dado existente é alterado.
+- ⚠️ **Mudança de schema do D1 e de deploy do Worker (aditiva):** uma tabela nova `pc_watch` (`id`, `watch`, `notified_at`; a hora do último heartbeat é a `control_status.at` que já existe), idempotente (`CREATE TABLE IF NOT EXISTS` em `schema.sql`), e um `[triggers] crons = ["*/5 * * * *"]` no `wrangler.toml`. Exige rodar o comando do README para aplicar a tabela e `wrangler deploy`. Um D1 sem a tabela não quebra nada: o `PUT /control/status` continua respondendo 200 (só ignora o `watch`) e o agendamento não faz nada; o resto (sync, controle, push) continua, e só o `pc-silent` deixa de existir. Nenhum dado existente é alterado.
 - **Desktop:** nenhuma mudança de dados persistidos; o PC só passa a enviar mais códigos e o bit `watch`. (A base de aparelhos de `device-paired/revoked` fica em memória.)
 - Compatibilidade: app novo com Worker antigo funciona (sem `code`, entrada genérica, sem canais); Worker novo com app antigo funciona (`open: 'pc'` continua; `code` desconhecido ignorado; sem os canais o Android usa o canal padrão); PC antigo não manda `watch`, então o Worker nunca emite `pc-silent` por ele.
 
