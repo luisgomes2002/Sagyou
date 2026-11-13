@@ -9,8 +9,10 @@ import {
 } from '@sagyou/core/control/texts'
 import { useEffect, useState } from 'react'
 import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { ActionStatus } from '../components/ActionStatus'
 import { ACTION_ICONS } from '../components/icons'
 import { Button, Card, EmptyState, Field, ListItem, Screen } from '../components/ui'
+import { isPending } from '../remote/progress'
 import { useRemote } from '../remote/store'
 import { REMOTE_TEXT, accessCutText, cardCountdown, serverStateText } from '../remote/texts'
 import { useApp } from '../store/app'
@@ -45,7 +47,13 @@ export function PcScreen({ focused = true, now = Date.now }: PcScreenProps): Rea
   const connection = useRemote((s) => s.connection)
   const busy = useRemote((s) => s.busy)
   const cutUnanswered = useRemote((s) => s.cutUnanswered)
+  const action = useRemote((s) => s.action)
   const readOnly = useApp((s) => s.readOnly)
+  // While an action is sending or waiting for the PC, nothing else starts (spec 2026-11-13).
+  const pendingAction = isPending(action)
+  const wakeActive = pendingAction && action?.kind === 'wake'
+  const shutdownActive = pendingAction && action?.kind === 'shutdown'
+  const locked = busy || pendingAction
   const [clock, setClock] = useState(now)
   const [factor, setFactor] = useState('')
 
@@ -166,30 +174,31 @@ export function PcScreen({ focused = true, now = Date.now }: PcScreenProps): Rea
           </Text>
         ) : null}
 
-        {state === 'off' && !forcing ? (
+        {(state === 'off' && !forcing) || wakeActive ? (
           <Button
             variant="primary"
             label="Ligar"
             icon={ACTION_ICONS.power}
-            disabled={busy}
+            loading={wakeActive}
+            disabled={locked}
             onPress={() => void remote().wake()}
           />
         ) : null}
-        {state === 'ready' || state === 'rc-down' ? (
+        {state === 'ready' || state === 'rc-down' || shutdownActive ? (
           <>
             {status?.locked ? (
               <Button
                 variant="primary"
                 label="Desbloquear"
                 icon={ACTION_ICONS.unlock}
-                disabled={busy}
+                disabled={locked}
                 onPress={() => void remote().unlock()}
               />
             ) : (
               <Button
                 label="Bloquear agora"
                 icon={ACTION_ICONS.lock}
-                disabled={busy}
+                disabled={locked}
                 onPress={() => void remote().lock()}
               />
             )}
@@ -197,7 +206,8 @@ export function PcScreen({ focused = true, now = Date.now }: PcScreenProps): Rea
               variant="danger"
               label="Desligar"
               icon={ACTION_ICONS.powerOff}
-              disabled={busy}
+              loading={shutdownActive}
+              disabled={locked}
               onPress={() => void remote().shutdown()}
             />
           </>
@@ -207,7 +217,7 @@ export function PcScreen({ focused = true, now = Date.now }: PcScreenProps): Rea
             variant="danger"
             label="Forçar pelo ESP32"
             icon={ACTION_ICONS.powerOff}
-            disabled={busy}
+            disabled={locked}
             onPress={confirmForce}
           />
         ) : null}
@@ -215,9 +225,13 @@ export function PcScreen({ focused = true, now = Date.now }: PcScreenProps): Rea
           <Button
             variant="primary"
             label="Cancelar"
-            disabled={busy}
+            disabled={locked}
             onPress={() => void remote().abortShutdown()}
           />
+        ) : null}
+
+        {action && (action.kind === 'wake' || action.kind === 'shutdown') ? (
+          <ActionStatus action={action} />
         ) : null}
 
         {alive && status ? (
@@ -237,7 +251,7 @@ export function PcScreen({ focused = true, now = Date.now }: PcScreenProps): Rea
                 variant="primary"
                 label="Restaurar acesso"
                 icon={ACTION_ICONS.unlock}
-                disabled={busy || factor.trim() === ''}
+                disabled={locked || factor.trim() === ''}
                 onPress={restore}
               />
             </Card>
@@ -246,7 +260,7 @@ export function PcScreen({ focused = true, now = Date.now }: PcScreenProps): Rea
               variant="danger"
               label="Cortar acesso"
               icon={ACTION_ICONS.lock}
-              disabled={busy}
+              disabled={locked}
               onPress={confirmCut}
             />
           )
@@ -257,7 +271,7 @@ export function PcScreen({ focused = true, now = Date.now }: PcScreenProps): Rea
             <Text style={{ color: theme.text, fontSize: FONT.bodyLg }}>
               {updateReadyText(status.updateVersion)}
             </Text>
-            <Button label="Instalar atualização" disabled={busy} onPress={confirmInstall} />
+            <Button label="Instalar atualização" disabled={locked} onPress={confirmInstall} />
           </Card>
         ) : null}
 
@@ -267,32 +281,49 @@ export function PcScreen({ focused = true, now = Date.now }: PcScreenProps): Rea
               {SERVERS_TITLE}
             </Text>
             {status.servers.map((server) => {
-              const action = serverAction(server)
               const projectId = server.projectId
+              // The server this action is about keeps the button of the action, even after
+              // its state changed (starting, running), until the step is over.
+              const mine =
+                action && projectId && action.projectId === projectId && pendingAction
+                  ? action
+                  : null
+              const next = mine
+                ? mine.kind === 'server-start'
+                  ? 'start'
+                  : 'stop'
+                : serverAction(server)
+              const step = action && projectId && action.projectId === projectId ? action : null
               return (
-                <ListItem
-                  key={projectId ?? server.name}
-                  title={server.name}
-                  subtitle={serverStateText(server)}
-                  left={
-                    <ACTION_ICONS.server size={20} color={server.up ? theme.green : theme.muted} />
-                  }
-                  right={
-                    action && projectId ? (
-                      <Button
-                        variant={action === 'start' ? 'secondary' : 'danger'}
-                        label={action === 'start' ? 'Ligar' : 'Desligar'}
-                        a11yLabel={`${action === 'start' ? 'Ligar' : 'Desligar'} o servidor ${server.name}`}
-                        disabled={busy || readOnly}
-                        onPress={() =>
-                          void (action === 'start'
-                            ? remote().startServer(projectId)
-                            : remote().stopServer(projectId))
-                        }
+                <View key={projectId ?? server.name} style={{ gap: SPACE.xs }}>
+                  <ListItem
+                    title={server.name}
+                    subtitle={serverStateText(server)}
+                    left={
+                      <ACTION_ICONS.server
+                        size={20}
+                        color={server.up ? theme.green : theme.muted}
                       />
-                    ) : undefined
-                  }
-                />
+                    }
+                    right={
+                      next && projectId ? (
+                        <Button
+                          variant={next === 'start' ? 'secondary' : 'danger'}
+                          label={next === 'start' ? 'Ligar' : 'Desligar'}
+                          a11yLabel={`${next === 'start' ? 'Ligar' : 'Desligar'} o servidor ${server.name}`}
+                          loading={!!mine}
+                          disabled={locked || readOnly}
+                          onPress={() =>
+                            void (next === 'start'
+                              ? remote().startServer(projectId)
+                              : remote().stopServer(projectId))
+                          }
+                        />
+                      ) : undefined
+                    }
+                  />
+                  {step ? <ActionStatus action={step} /> : null}
+                </View>
               )
             })}
           </View>
