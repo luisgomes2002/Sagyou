@@ -44,7 +44,13 @@ jest.mock('expo-notifications', () => ({
   requestPermissionsAsync: jest.fn(async () => ({ granted: false })),
   getDevicePushTokenAsync: jest.fn(async () => ({ type: 'android', data: '' })),
   getLastNotificationResponseAsync: jest.fn(async () => null),
-  addNotificationResponseReceivedListener: jest.fn(() => ({ remove: jest.fn() }))
+  addNotificationResponseReceivedListener: jest.fn(() => ({ remove: jest.fn() })),
+  // Spec 2026-11-13: notifications received with the app open, the ones still in the bar and
+  // the three Android channels.
+  addNotificationReceivedListener: jest.fn(() => ({ remove: jest.fn() })),
+  getPresentedNotificationsAsync: jest.fn(async () => []),
+  setNotificationChannelAsync: jest.fn(async () => null),
+  AndroidImportance: { HIGH: 4, MAX: 5 }
 }))
 jest.mock('expo-screen-capture', () => ({
   preventScreenCaptureAsync: jest.fn(async () => undefined)
