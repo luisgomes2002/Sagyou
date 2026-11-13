@@ -117,6 +117,16 @@ describe('runtime do sync no celular', () => {
     s.runtime.dispose()
   })
 
+  it('o wipe leva o histórico de notificações junto (a pref some com as outras linhas)', async () => {
+    const s = setup(answer(401, { revoked: true, wipe: true }))
+    s.repo.writePref('notifications.history', '[{"id":"a","code":"ready","at":1,"read":false}]')
+    s.runtime.engine.start()
+    await s.runtime.engine.syncNow().catch(() => undefined)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(s.repo.readPref('notifications.history')).toBeNull()
+    s.runtime.dispose()
+  })
+
   it('revogado sem apagar: os dados ficam e o estado vira desconectado', async () => {
     const s = setup(answer(401, { revoked: true, wipe: false }))
     s.runtime.engine.start()
