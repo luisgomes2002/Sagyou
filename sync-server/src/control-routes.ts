@@ -336,7 +336,7 @@ const putStatus: ControlHandler = async (request, _p, db, deps, h) => {
   }
   const now = deps.now()
   await db.putStatus({ from: me.id, ...sealed, at: now })
-  await db.putWatch(body.watch === true, now)
+  await db.putWatch(body.watch === true)
   return h.reply(200, { ok: true })
 }
 

@@ -364,7 +364,13 @@ describe('mensagens', () => {
     })
     expect(unknown.status).toBe(400)
     // Spec 2026-11-13: os códigos novos passam; um removido da spec (session-waiting) não.
-    for (const code of ['server-ready', 'server-failed', 'session-done', 'suspended', 'access-cut']) {
+    for (const code of [
+      'server-ready',
+      'server-failed',
+      'session-done',
+      'suspended',
+      'access-cut'
+    ]) {
       const res = await call(w, 'POST', '/control/send', {
         token: w.a,
         body: message(DEV_B, { notify: code })

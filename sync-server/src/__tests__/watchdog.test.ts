@@ -13,7 +13,11 @@ const MIN = 60_000
 
 async function world(
   opts: { watch?: boolean; heartbeatAgo?: number; from?: string } = {}
-): Promise<{ db: MemoryControlDb; sent: { ids: string[]; code: NotifyCode }[]; run: () => Promise<string> }> {
+): Promise<{
+  db: MemoryControlDb
+  sent: { ids: string[]; code: NotifyCode }[]
+  run: () => Promise<string>
+}> {
   const db = new MemoryControlDb()
   await db.setPc(PC, 1)
   await db.addController(PHONE, 2)
@@ -23,7 +27,7 @@ async function world(
     ciphertext: 'Y2lmcmFkbw==',
     at: NOW - (opts.heartbeatAgo ?? 11 * MIN)
   })
-  await db.putWatch(opts.watch ?? true, NOW)
+  await db.putWatch(opts.watch ?? true)
   const sent: { ids: string[]; code: NotifyCode }[] = []
   return {
     db,
@@ -51,8 +55,13 @@ describe('runWatchdog', () => {
   it('um novo heartbeat reabilita o aviso para a próxima queda', async () => {
     const w = await world()
     await w.run()
-    await w.db.putWatch(true, NOW)
-    await w.db.putStatus({ from: PC, msgId: 'status-0002', ciphertext: 'Y2lmcmFkbw==', at: NOW - 12 * MIN })
+    await w.db.putWatch(true)
+    await w.db.putStatus({
+      from: PC,
+      msgId: 'status-0002',
+      ciphertext: 'Y2lmcmFkbw==',
+      at: NOW - 12 * MIN
+    })
     expect(await w.run()).toBe('sent')
     expect(w.sent).toHaveLength(2)
   })
@@ -75,13 +84,23 @@ describe('runWatchdog', () => {
 
   it('não avisa depois de um desligamento forçado pelo ESP32 logo após o último heartbeat', async () => {
     const w = await world()
-    await w.db.putPowerCommand({ cmd: 'shutdown', at: NOW - 11 * MIN + 30_000, exp: NOW, mac: 'f'.repeat(64) })
+    await w.db.putPowerCommand({
+      cmd: 'shutdown',
+      at: NOW - 11 * MIN + 30_000,
+      exp: NOW,
+      mac: 'f'.repeat(64)
+    })
     expect(await w.run()).toBe('none')
   })
 
   it('um shutdown antigo (horas antes) não suprime o aviso', async () => {
     const w = await world()
-    await w.db.putPowerCommand({ cmd: 'shutdown', at: NOW - 2 * 60 * MIN, exp: NOW, mac: 'f'.repeat(64) })
+    await w.db.putPowerCommand({
+      cmd: 'shutdown',
+      at: NOW - 2 * 60 * MIN,
+      exp: NOW,
+      mac: 'f'.repeat(64)
+    })
     expect(await w.run()).toBe('sent')
   })
 

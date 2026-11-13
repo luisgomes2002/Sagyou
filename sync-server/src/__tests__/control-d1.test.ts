@@ -214,11 +214,11 @@ describe('D1ControlDb, pc_watch', () => {
   it('guarda o watch, marca o aviso e o heartbeat seguinte limpa a marca', async () => {
     const db = new D1ControlDb(new FakeD1())
     expect(await db.getWatch()).toBeNull()
-    await db.putWatch(true, 1)
+    await db.putWatch(true)
     expect(await db.getWatch()).toEqual({ watch: true, notifiedAt: null })
     await db.markSilentNotified(9)
     expect(await db.getWatch()).toEqual({ watch: true, notifiedAt: 9 })
-    await db.putWatch(true, 10)
+    await db.putWatch(true)
     expect(await db.getWatch()).toEqual({ watch: true, notifiedAt: null })
   })
 
@@ -226,7 +226,7 @@ describe('D1ControlDb, pc_watch', () => {
     const d1 = new FakeD1()
     d1.watchTable = false
     const db = new D1ControlDb(d1)
-    await expect(db.putWatch(true, 1)).resolves.toBeUndefined()
+    await expect(db.putWatch(true)).resolves.toBeUndefined()
     await expect(db.getWatch()).resolves.toBeNull()
     await expect(db.markSilentNotified(2)).resolves.toBeUndefined()
   })

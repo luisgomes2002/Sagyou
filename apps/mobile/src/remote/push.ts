@@ -147,8 +147,8 @@ export function createResponseGate(): (response: unknown) => Tap | null {
   return (response) => {
     const tap = notificationTap(response)
     if (!tap) return null
-    const id = (response as { notification?: { request?: { identifier?: unknown } } })
-      .notification?.request?.identifier
+    const id = (response as { notification?: { request?: { identifier?: unknown } } }).notification
+      ?.request?.identifier
     if (typeof id === 'string') {
       if (id === last) return null
       last = id

@@ -73,7 +73,7 @@ export interface ControlDb {
    * Whether the PC is expected to keep sending heartbeats (spec 2026-11-13). Every heartbeat
    * rewrites it and clears the "already warned" mark. A D1 without pc_watch ignores it.
    */
-  putWatch(watch: boolean, now: number): Promise<void>
+  putWatch(watch: boolean): Promise<void>
   getWatch(): Promise<{ watch: boolean; notifiedAt: number | null } | null>
   markSilentNotified(now: number): Promise<void>
   putEsp32Key(s: SealedSlot): Promise<void>
@@ -280,7 +280,7 @@ export class D1ControlDb implements ControlDb {
     return this.getSlot('control_status')
   }
 
-  async putWatch(watch: boolean, _now: number): Promise<void> {
+  async putWatch(watch: boolean): Promise<void> {
     try {
       await this.db
         .prepare(
@@ -513,7 +513,7 @@ export class MemoryControlDb implements ControlDb {
 
   watchRow: { watch: boolean; notifiedAt: number | null } | null = null
 
-  async putWatch(watch: boolean, _now: number): Promise<void> {
+  async putWatch(watch: boolean): Promise<void> {
     this.watchRow = { watch, notifiedAt: null }
   }
 

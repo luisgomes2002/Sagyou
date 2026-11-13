@@ -39,8 +39,7 @@ export const RC_CONFIRM_MS = 60_000
  * the whole shape keeps "Disconnected", a loose "✓ Connected" in the middle of a
  * line or one split from its icon from counting.
  */
-export const RC_READY_LINE =
-  /(?:^|[\r\n])·[✓✔]︎?· (?:Ready|Connected)(?= ·|[\r\n]|$)/
+export const RC_READY_LINE = /(?:^|[\r\n])·[✓✔]︎?· (?:Ready|Connected)(?= ·|[\r\n]|$)/
 const RC_RUN_TAIL = 512
 /* eslint-disable no-control-regex -- matching terminal escapes is the point */
 /** Colours (SGR): removed, they sit inside a line. */
@@ -487,9 +486,7 @@ export function createRcManager(deps: RcManagerDeps): RcManager {
     // A cut lands mid-line: start at the next real line break instead, so the
     // cut never passes for the start of a line.
     t.runTail =
-      tail.length <= RC_RUN_TAIL
-        ? tail
-        : tail.slice(-RC_RUN_TAIL).replace(/^[^\r\n]*/, '')
+      tail.length <= RC_RUN_TAIL ? tail : tail.slice(-RC_RUN_TAIL).replace(/^[^\r\n]*/, '')
     if (!RC_READY_LINE.test(rcPlainText(t.runTail))) return
     t.readySeen = true
     if (!isConfirmed(entryOf(t.projectId), t.path)) confirm(t, t.gen)

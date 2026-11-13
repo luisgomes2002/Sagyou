@@ -3205,7 +3205,10 @@ app.on('before-quit', (event) => {
       offlineAnnouncedForQuit = true
       // In parallel with the timers; the announce is best effort and capped at 2 s.
       work.push(
-        Promise.race([service.announceOffline(), new Promise((resolve) => setTimeout(resolve, 2000))])
+        Promise.race([
+          service.announceOffline(),
+          new Promise((resolve) => setTimeout(resolve, 2000))
+        ])
       )
     }
     void Promise.all(work).finally(() => app.quit())

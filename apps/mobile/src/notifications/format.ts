@@ -1,7 +1,9 @@
 const two = (n: number): string => String(n).padStart(2, '0')
 
 const sameDay = (a: Date, b: Date): boolean =>
-  a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+  a.getFullYear() === b.getFullYear() &&
+  a.getMonth() === b.getMonth() &&
+  a.getDate() === b.getDate()
 
 /** "hoje 14:32", "ontem 09:10" or "12/11 14:32", in the phone's local time. */
 export function historyTime(at: number, now: number): string {

@@ -251,7 +251,9 @@ describe('putStatus e o bit watch', () => {
     await client.putStatus(env, { watch: true })
     await client.putStatus(env, { watch: false })
     await client.putStatus(env)
-    expect(calls.map((c) => c.url)).toEqual(Array(3).fill('https://sync.example.com/control/status'))
+    expect(calls.map((c) => c.url)).toEqual(
+      Array(3).fill('https://sync.example.com/control/status')
+    )
     expect(body(calls[0]).watch).toBe(true)
     expect(body(calls[1]).watch).toBe(false)
     expect('watch' in body(calls[2])).toBe(false)

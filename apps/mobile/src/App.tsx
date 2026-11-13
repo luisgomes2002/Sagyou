@@ -280,7 +280,7 @@ function PushBridge(): null {
     if (!controls) return
     let live = true
     const open = (response: unknown): void => {
-      if (!live || !navigationRef.isReady() || pushTarget(response) !== 'pc') return
+      if (!live || !navigationRef.isReady() || !pushTarget(response)) return
       navigationRef.navigate('Abas', { screen: 'PC' })
     }
     // The tap that launched the app, then every later one.

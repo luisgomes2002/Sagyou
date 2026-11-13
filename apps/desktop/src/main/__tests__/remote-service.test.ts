@@ -133,7 +133,7 @@ function setup(
       queue = []
       return { messages, dropped: 0 }
     }),
-    putStatus: vi.fn(async (env: SignedEnvelope, _opts?: { watch?: boolean }) => {
+    putStatus: vi.fn(async (env: SignedEnvelope) => {
       statuses.push(env)
     }),
     addController: vi.fn(async () => {}),
@@ -1158,7 +1158,9 @@ describe('remote-service: servidores de Remote Control', () => {
 
 describe('remote-service: avisos e bit watch (spec 2026-11-13)', () => {
   const watchOf = (t: Setup): (boolean | undefined)[] =>
-    t.client.putStatus.mock.calls.map((c) => (c[1] as { watch?: boolean } | undefined)?.watch)
+    t.client.putStatus.mock.calls.map(
+      (c) => ((c as unknown[])[1] as { watch?: boolean } | undefined)?.watch
+    )
   const notifies = (t: Setup): { to: string; notify?: string }[] =>
     t.sent.filter((s) => s.notify && s.notify !== 'ready').map(({ to, notify }) => ({ to, notify }))
   /** Lets the fire-and-forget pushes finish (outside a tick). */

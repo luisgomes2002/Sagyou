@@ -27,10 +27,7 @@ export async function runWatchdog(
     // Another device became the PC since: that heartbeat is not the PC's anymore.
     if (!pc || status.from !== pc || controllers.length === 0) return 'none'
     const command = await control.lastPowerCommand()
-    if (
-      command?.cmd === 'shutdown' &&
-      command.at >= status.at - FORCED_SHUTDOWN_GRACE_MS
-    ) {
+    if (command?.cmd === 'shutdown' && command.at >= status.at - FORCED_SHUTDOWN_GRACE_MS) {
       return 'none'
     }
     await control.markSilentNotified(now)
