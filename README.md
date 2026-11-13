@@ -170,12 +170,14 @@ npx wrangler d1 execute sagyou-sync --remote --file schema.sql
 npx wrangler deploy
 ```
 
-**Notificações (opcional).** Para o celular receber "PC pronto.", "Aprovação pendente no Sagyou." e "O PC não foi desligado.", crie um projeto no [Firebase](https://console.firebase.google.com/) com um app Android de pacote `com.sagyou.mobile`, e então:
+**Notificações (opcional).** Para o celular receber os avisos do controle remoto — "PC pronto.", "Aprovação pendente no Sagyou.", "O PC não foi desligado.", "Servidor de Remote Control ligado.", "O servidor de Remote Control não subiu ou caiu.", "O PC parou de responder.", "Uma sessão de código terminou." e os de segurança ("Controle remoto suspenso por tentativas recusadas.", "Acesso remoto cortado.", "Um aparelho foi pareado ao seu sync.", "Um aparelho do seu sync foi revogado.") —, crie um projeto no [Firebase](https://console.firebase.google.com/) com um app Android de pacote `com.sagyou.mobile`, e então:
 
 1. Baixe a chave de uma conta de serviço (Configurações do projeto → Contas de serviço → Gerar nova chave privada) e guarde-a no Worker: `npx wrangler secret put FCM_SERVICE_ACCOUNT` (cole o JSON inteiro).
 2. Baixe o `google-services.json` do app Android e cadastre o conteúdo dele como o secret `GOOGLE_SERVICES_JSON` no ambiente `mobile-release` (veja App Android). Gere o APK de novo por uma tag `mobile-v*`.
 
-Sem esses dois, tudo funciona, só sem notificações. As notificações levam só esses textos fixos: o conteúdo dos cartões é lido no app, decifrado no celular.
+Sem esses dois, tudo funciona, só sem notificações. As notificações levam só esses textos fixos: o conteúdo dos cartões é lido no app, decifrado no celular. No celular, um sino no cabeçalho abre a tela **Notificações** (os cartões para aprovar e o histórico do aparelho) e **Ajustes → Notificações** leva às configurações do Android de cada categoria (PC e servidores, Sessões de código, Segurança), onde você silencia a que quiser.
+
+Na versão 1.13 (celular 0.10), atualize o Worker **junto** com os dois apps (os mesmos dois comandos abaixo): o `schema.sql` cria a tabela `pc_watch` e o `wrangler deploy` publica o agendamento de 5 minutos que avisa "O PC parou de responder." (o PC desligado de propósito, pelo celular ou fechando o Sagyou, não dispara). Sem isso, só esse aviso deixa de existir.
 
 **Ligar o PC desligado** exige um ESP32 na mesma rede, com Wake-on-LAN configurado no PC. Em **Configurações → Controle remoto → Token do ESP32**, gere o token e a chave para o `secrets.h` do firmware. O firmware está em [`firmware/esp32/`](firmware/esp32/) (PlatformIO; como gravar no README de lá), o contrato em [`docs/esp32-api.md`](docs/esp32-api.md), e `node sync-server/scripts/esp32-sim.mjs --url … --token … --key …` simula o ESP32 para testar sem o hardware.
 

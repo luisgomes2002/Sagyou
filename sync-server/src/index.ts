@@ -3,6 +3,7 @@ import { D1ControlDb } from './control-db'
 import { D1SyncDb, type D1Database } from './db'
 import { sendPush } from './push'
 import { handle } from './routes'
+import { runWatchdog } from './watchdog'
 
 export interface Env {
   DB: D1Database
@@ -12,11 +13,35 @@ export interface Env {
   FCM_SERVICE_ACCOUNT?: string
 }
 
+interface ScheduledEvent {
+  scheduledTime: number
+}
+
 interface ExecutionContext {
   waitUntil(promise: Promise<unknown>): void
 }
 
+function pushDeps(env: Env): { serviceAccount?: string; fetch: typeof fetch; now: () => number } {
+  return {
+    serviceAccount: env.FCM_SERVICE_ACCOUNT,
+    fetch: (u, i) => fetch(u, i),
+    now: () => Date.now()
+  }
+}
+
 export default {
+  // Every 5 minutes (wrangler.toml): "PC sem sinal".
+  scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): void {
+    const control = new D1ControlDb(env.DB)
+    ctx.waitUntil(
+      runWatchdog(
+        control,
+        async (ids, code) => sendPush(pushDeps(env), await control.pushTokens(ids), code),
+        Date.now()
+      )
+    )
+  },
+
   fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const control = new D1ControlDb(env.DB)
     return handle(request, {

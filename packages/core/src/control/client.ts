@@ -10,6 +10,7 @@ import { deriveKeys, keyProof, opaqueDeviceId } from '../sync/crypto'
 import { fromBase64, fromUtf8, randomUUID, toBase64, utf8 } from '../sync/bytes'
 import { ControlDecryptError, controlKey, openControl, sealControl } from './crypto'
 import { isEnvelope, type SignedEnvelope } from './messages'
+import type { NotifyCode } from './notify'
 
 export type ControlErrorCode =
   | 'offline'
@@ -29,7 +30,7 @@ export class ControlError extends Error {
   }
 }
 
-export type NotifyCode = 'ready' | 'approval' | 'shutdown-failed'
+export type { NotifyCode } from './notify'
 
 /** Pseudo-recipients for the two sealed singletons the Worker keeps. */
 export const STATUS_SLOT = 'status'
@@ -69,7 +70,11 @@ export interface ControlClient {
   me(): string
   send(to: string, env: SignedEnvelope, notify?: NotifyCode): Promise<void>
   inbox(): Promise<{ messages: InboxMessage[]; dropped: number }>
-  putStatus(env: SignedEnvelope): Promise<void>
+  /**
+   * `opts.watch` (spec 2026-11-13) is sent in clear: whether the PC is expected to keep
+   * answering. Left out, a Worker treats the PC as not watched.
+   */
+  putStatus(env: SignedEnvelope, opts?: { watch?: boolean }): Promise<void>
   getStatus(): Promise<InboxMessage | null>
   setPc(factor: SyncSecondFactor): Promise<void>
   pcId(): Promise<string | null>
@@ -205,10 +210,14 @@ export function createControlClient(deps: ControlClientDeps): ControlClient {
       return { messages, dropped }
     },
 
-    async putStatus(env) {
+    async putStatus(env, opts) {
       const msgId = randomUUID()
       await call('PUT', '/control/status', {
-        body: { msgId, ciphertext: seal(STATUS_SLOT, msgId, env) }
+        body: {
+          msgId,
+          ciphertext: seal(STATUS_SLOT, msgId, env),
+          ...(typeof opts?.watch === 'boolean' ? { watch: opts.watch } : {})
+        }
       })
     },
 

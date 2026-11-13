@@ -7,6 +7,8 @@ import { AppShell, TAB_LABELS } from '../App'
 import { navigationRef } from '../navigation'
 import { StatusBanner } from '../components/StatusBanner'
 import { LockGate, type LockDeps } from '../lock/LockGate'
+import { useLockState } from '../lock/lockState'
+import { useNotifications } from '../notifications/store'
 import { useRemote } from '../remote/store'
 import { LOADING_TEXT } from '../screens/PcScreen'
 import { LOCKED_TITLE } from '../lock/texts'
@@ -160,6 +162,174 @@ describe('App', () => {
     expect(asked).toBe(true)
     expect(screen.queryByText(LOADING_TEXT)).toBeNull()
     useRemote.setState({ authorized: 'none' })
+  })
+
+  // Spec docs/specs/2026-11-13-mobile-aprovacoes-notificacoes.md.
+  describe('notificações: sino, toque e histórico', () => {
+    const authorize = (over: Record<string, unknown> = {}): void => {
+      useRemote.setState({
+        authorized: 'yes',
+        view: null,
+        status: null,
+        cards: [],
+        connection: null,
+        startPolling: jest.fn(),
+        stopPolling: jest.fn(),
+        putPushToken: jest.fn(async () => undefined),
+        ...over
+      })
+    }
+    const tap = (identifier: string, data: unknown): never =>
+      ({ notification: { request: { identifier, content: { data } } } }) as never
+    const mountApp = async (): Promise<void> => {
+      await render(
+        <SafeAreaProvider>
+          <AppShell mode="app" />
+        </SafeAreaProvider>
+      )
+    }
+    // The history is a global store: earlier tests of this file may have left entries in it.
+    beforeEach(() => useNotifications.setState({ entries: [], unread: 0 }))
+    afterEach(() => {
+      useRemote.setState({ authorized: 'none', cards: [] })
+      useNotifications.setState({ entries: [], unread: 0 })
+    })
+
+    it('tocar numa aprovação abre a tela Notificações e registra no histórico', async () => {
+      seedApp({ projects: [project('p1', 'Sagyou')] })
+      authorize({
+        cards: [
+          {
+            id: 'c1',
+            session: 'claude',
+            tool: 'delete_task',
+            resumo: 'Excluir',
+            expiresAt: Date.now() + 60_000
+          }
+        ]
+      })
+      jest
+        .mocked(Notifications.getLastNotificationResponseAsync)
+        .mockResolvedValueOnce(tap('tap-approval-1', { open: 'pc', code: 'approval' }))
+      await mountApp()
+      expect(await screen.findByText('Aprovações pendentes (1)')).toBeTruthy()
+      expect(useNotifications.getState().entries.map((e) => e.code)).toEqual(['approval'])
+    })
+
+    it('tocar numa notificação de servidor abre a aba PC', async () => {
+      seedApp({ projects: [project('p1', 'Sagyou')] })
+      authorize()
+      jest
+        .mocked(Notifications.getLastNotificationResponseAsync)
+        .mockResolvedValueOnce(tap('tap-server-1', { open: 'pc', code: 'server-ready' }))
+      await mountApp()
+      expect(await screen.findByText(LOADING_TEXT)).toBeTruthy()
+      expect(useNotifications.getState().entries.map((e) => e.code)).toEqual(['server-ready'])
+    })
+
+    it('uma notificação que já estava na barra entra no histórico uma vez só', async () => {
+      seedApp({ projects: [project('p1', 'Sagyou')] })
+      authorize()
+      const presented = [
+        {
+          date: Date.now() - 60_000,
+          request: { identifier: 'bar-1', content: { data: { open: 'pc', code: 'pc-silent' } } }
+        }
+      ]
+      jest
+        .mocked(Notifications.getPresentedNotificationsAsync)
+        .mockResolvedValue(presented as never)
+      try {
+        await mountApp()
+        await act(async () => undefined)
+        expect(useNotifications.getState().entries.map((e) => e.id)).toEqual(['bar-1'])
+        // Tapping that same notification later does not add a second entry.
+        const listener = jest
+          .mocked(Notifications.addNotificationResponseReceivedListener)
+          .mock.calls.at(-1)?.[0]
+        await act(async () => listener?.(tap('bar-1', { open: 'pc', code: 'pc-silent' })))
+        expect(useNotifications.getState().entries).toHaveLength(1)
+      } finally {
+        jest.mocked(Notifications.getPresentedNotificationsAsync).mockResolvedValue([])
+      }
+    })
+
+    it('notificação recebida com o app aberto entra no histórico e lê a inbox uma vez', async () => {
+      seedApp({ projects: [project('p1', 'Sagyou')] })
+      const refreshOnce = jest.fn(async () => undefined)
+      authorize({ refreshOnce })
+      await mountApp()
+      const received = jest
+        .mocked(Notifications.addNotificationReceivedListener)
+        .mock.calls.at(-1)?.[0]
+      await act(async () =>
+        received?.({
+          date: Date.now(),
+          request: { identifier: 'live-1', content: { data: { open: 'pc', code: 'ready' } } }
+        } as never)
+      )
+      expect(useNotifications.getState().entries.map((e) => e.code)).toEqual(['ready'])
+      expect(refreshOnce).toHaveBeenCalledTimes(1)
+    })
+
+    it('com o app bloqueado, o push recebido não lê a caixa do Worker', async () => {
+      seedApp({ projects: [project('p1', 'Sagyou')] })
+      const refreshOnce = jest.fn(async () => undefined)
+      authorize({ refreshOnce })
+      await mountApp()
+      useLockState.setState({ hidden: true })
+      try {
+        const received = jest
+          .mocked(Notifications.addNotificationReceivedListener)
+          .mock.calls.at(-1)?.[0]
+        await act(async () =>
+          received?.({
+            date: Date.now(),
+            request: { identifier: 'locked-1', content: { data: { open: 'pc', code: 'approval' } } }
+          } as never)
+        )
+        expect(refreshOnce).not.toHaveBeenCalled()
+      } finally {
+        useLockState.setState({ hidden: false })
+      }
+    })
+
+    it('cria os três canais num celular autorizado e nenhum sem autorização', async () => {
+      jest.mocked(Notifications.setNotificationChannelAsync).mockClear()
+      seedApp({ projects: [project('p1', 'Sagyou')] })
+      useRemote.setState({ authorized: 'none' })
+      const first = await render(
+        <SafeAreaProvider>
+          <AppShell mode="app" />
+        </SafeAreaProvider>
+      )
+      expect(Notifications.setNotificationChannelAsync).not.toHaveBeenCalled()
+      await first.unmount()
+      authorize()
+      await mountApp()
+      await act(async () => undefined)
+      expect(
+        jest.mocked(Notifications.setNotificationChannelAsync).mock.calls.map((c) => c[0])
+      ).toEqual(['pc', 'sessions', 'security'])
+    })
+
+    it('o sino aparece no cabeçalho antes da lupa e abre Notificações', async () => {
+      seedApp({ projects: [project('p1', 'Sagyou')] })
+      authorize()
+      await mountApp()
+      const header = screen.getAllByRole('button').map((b) => b.props.accessibilityLabel)
+      expect(header.indexOf('Notificações')).toBeGreaterThan(-1)
+      expect(header.indexOf('Notificações')).toBeLessThan(header.indexOf('Buscar'))
+      await fireEvent.press(screen.getByRole('button', { name: 'Notificações' }))
+      expect(await screen.findByText('Nenhuma notificação ainda.')).toBeTruthy()
+    })
+
+    it('sem autorização não há sino', async () => {
+      seedApp({ projects: [project('p1', 'Sagyou')] })
+      useRemote.setState({ authorized: 'none' })
+      await mountApp()
+      expect(screen.queryByRole('button', { name: 'Notificações' })).toBeNull()
+    })
   })
 
   it('sem autorização, nem token nem navegação pela notificação', async () => {

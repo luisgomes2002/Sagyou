@@ -1,8 +1,11 @@
 import { useState, type ReactNode } from 'react'
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { ACTION_ICONS } from '../components/icons'
 import { SYNC_GUIDE_LINK } from '../components/SyncGuideContent'
 import { Button, Card, ListItem, Screen } from '../components/ui'
+import { NOTIFY_CATEGORY_LABEL, type NotifyCategory } from '@sagyou/core/control/notify'
+import { openChannelSettings } from '../notifications/channels-settings'
+import { useRemote } from '../remote/store'
 import { CONTROL_TITLE } from './ControlSetupScreen'
 import { useApp } from '../store/app'
 import { useUpdate } from '../store/update'
@@ -93,6 +96,7 @@ export function SettingsScreen({ navigation }: SettingsScreenProps = {}): React.
   const theme = useTheme()
   const status = useApp((s) => s.status)
   const readOnly = useApp((s) => s.readOnly)
+  const authorized = useRemote((s) => s.authorized)
   const profiles = useApp((s) => s.state.financialProfiles)
   const profileId = useApp((s) => s.profileId)
   const setProfile = useApp((s) => s.setProfile)
@@ -169,6 +173,19 @@ export function SettingsScreen({ navigation }: SettingsScreenProps = {}): React.
             />
           ) : null}
         </Section>
+        {/* Spec 2026-11-13: one row per Android channel, where the person mutes it. */}
+        {authorized === 'yes' && !readOnly ? (
+          <Section title="Notificações" testID="notificacoes">
+            {(['pc', 'sessions', 'security'] as NotifyCategory[]).map((id) => (
+              <ListItem
+                key={id}
+                title={NOTIFY_CATEGORY_LABEL[id]}
+                right={<ACTION_ICONS.chevron size={18} color={theme.muted} />}
+                onPress={() => void openChannelSettings(id, Linking)}
+              />
+            ))}
+          </Section>
+        ) : null}
         <Section title="Perfil financeiro">
           <View accessibilityRole="radiogroup">
             {profiles.map((p) => {

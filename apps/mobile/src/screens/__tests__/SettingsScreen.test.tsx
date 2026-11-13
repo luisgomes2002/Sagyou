@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react-native'
 import { Linking } from 'react-native'
 import { seedApp } from '../../__tests__/seed'
+import { useRemote } from '../../remote/store'
 import { useApp } from '../../store/app'
 import { useUpdate } from '../../store/update'
 import { DOWNLOAD_PREFIX } from '../../update/check'
@@ -144,5 +145,67 @@ describe('SettingsScreen', () => {
       await fireEvent.press(screen.getByLabelText(`Baixar a versão ${NEXT}`))
       expect(open).toHaveBeenCalledWith(URL_NEXT)
     })
+  })
+})
+
+// Spec docs/specs/2026-11-13-mobile-aprovacoes-notificacoes.md: one row per Android channel.
+describe('SettingsScreen: notificações', () => {
+  const ROWS = ['PC e servidores', 'Sessões de código', 'Segurança']
+  afterEach(() => {
+    useRemote.setState({ authorized: 'none' })
+    useApp.setState({ readOnly: false })
+    jest.restoreAllMocks()
+  })
+
+  it('num celular autorizado há uma linha por categoria', async () => {
+    seedApp()
+    useRemote.setState({ authorized: 'yes' })
+    await render(<SettingsScreen />)
+    const group = within(screen.getByTestId('notificacoes'))
+    expect(group.getByText('Notificações')).toBeTruthy()
+    for (const title of ROWS) expect(group.getByText(title)).toBeTruthy()
+  })
+
+  it('sem autorização ou só leitura o grupo não aparece', async () => {
+    for (const [authorized, readOnly] of [
+      ['none', false],
+      ['pending', false],
+      ['yes', true]
+    ] as const) {
+      seedApp({}, { readOnly })
+      useRemote.setState({ authorized })
+      const view = await render(<SettingsScreen />)
+      expect([authorized, readOnly, screen.queryByTestId('notificacoes')]).toEqual([
+        authorized,
+        readOnly,
+        null
+      ])
+      await view.unmount()
+    }
+  })
+
+  it('cada linha abre o canal certo no Android', async () => {
+    const sendIntent = jest.spyOn(Linking, 'sendIntent').mockResolvedValue(undefined)
+    seedApp()
+    useRemote.setState({ authorized: 'yes' })
+    await render(<SettingsScreen />)
+    const ids = ['pc', 'sessions', 'security']
+    for (const [i, title] of ROWS.entries()) {
+      await fireEvent.press(within(screen.getByTestId('notificacoes')).getByText(title))
+      expect(sendIntent).toHaveBeenLastCalledWith(
+        'android.settings.CHANNEL_NOTIFICATION_SETTINGS',
+        expect.arrayContaining([{ key: 'android.provider.extra.CHANNEL_ID', value: ids[i] }])
+      )
+    }
+  })
+
+  it('se o intent falha abre as configurações do app', async () => {
+    jest.spyOn(Linking, 'sendIntent').mockRejectedValue(new Error('no activity'))
+    const settings = jest.spyOn(Linking, 'openSettings').mockResolvedValue(undefined)
+    seedApp()
+    useRemote.setState({ authorized: 'yes' })
+    await render(<SettingsScreen />)
+    await fireEvent.press(within(screen.getByTestId('notificacoes')).getByText('Segurança'))
+    expect(settings).toHaveBeenCalledTimes(1)
   })
 })

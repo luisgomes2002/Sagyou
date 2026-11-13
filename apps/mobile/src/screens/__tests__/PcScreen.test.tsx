@@ -3,18 +3,11 @@ import type { PcStatus } from '@sagyou/core/control/messages'
 import type { PcState, PcView } from '@sagyou/core/control/state'
 import { CONTROL_TEXT, PC_STATE_TEXT } from '@sagyou/core/control/texts'
 import { act, fireEvent, render, screen } from '@testing-library/react-native'
-import { Alert } from 'react-native'
+import { AccessibilityInfo, Alert } from 'react-native'
 import { useRemote } from '../../remote/store'
 import { REMOTE_TEXT, SERVER_STATE_TEXT, accessCutText, cardCountdown } from '../../remote/texts'
 import { useApp } from '../../store/app'
-import {
-  CARDS_TITLE,
-  LOADING_TEXT,
-  LOCKED_TEXT,
-  PcScreen,
-  SERVERS_TITLE,
-  UNLOCKED_TEXT
-} from '../PcScreen'
+import { LOADING_TEXT, LOCKED_TEXT, PcScreen, SERVERS_TITLE, UNLOCKED_TEXT } from '../PcScreen'
 
 const NOW = 1_800_000_000_000
 
@@ -70,6 +63,7 @@ function seed(over: Record<string, unknown>): void {
     connection: null,
     busy: false,
     cutUnanswered: false,
+    action: null,
     ...actions,
     ...over
   })
@@ -307,51 +301,54 @@ describe('PcScreen', () => {
     expect(screen.queryByRole('button', { name: 'Instalar atualização' })).toBeNull()
   })
 
-  describe('cartões de aprovação', () => {
-    const card = (over: Partial<ApprovalCardBody> = {}): ApprovalCardBody => ({
-      id: 'c1',
+  describe('aviso de aprovações (os cartões moraram para a tela Notificações)', () => {
+    const card = (id: string, over: Partial<ApprovalCardBody> = {}): ApprovalCardBody => ({
+      id,
       session: 'claude',
       tool: 'delete_task',
-      resumo: 'Excluir tarefa "Velha"',
+      resumo: `Cartão ${id}`,
       expiresAt: NOW + 299_000,
       ...over
     })
 
-    it('lista com contagem regressiva; Aprovar e Recusar respondem pelo id', async () => {
-      seed({ view: view('ready'), status: status(), cards: [card()] })
+    it('a aba PC não desenha os cartões nem Aprovar/Recusar', async () => {
+      seed({ view: view('ready'), status: status(), cards: [card('c1')] })
       await render(<PcScreen now={clock} />)
-      expect(screen.getByText(CARDS_TITLE)).toBeTruthy()
-      expect(screen.getByText('claude · delete_task · 4:59')).toBeTruthy()
-      await fireEvent.press(screen.getByRole('button', { name: 'Aprovar: Excluir tarefa "Velha"' }))
-      await fireEvent.press(screen.getByRole('button', { name: 'Recusar: Excluir tarefa "Velha"' }))
-      expect(actions.answer).toHaveBeenNthCalledWith(1, 'c1', true)
-      expect(actions.answer).toHaveBeenNthCalledWith(2, 'c1', false)
+      expect(screen.queryByText('Cartão c1')).toBeNull()
+      expect(screen.queryByRole('button', { name: /^Aprovar/ })).toBeNull()
+      expect(screen.queryByRole('button', { name: /^Recusar/ })).toBeNull()
     })
 
-    it('cartão vencido desabilita os botões e diz que expirou', async () => {
-      seed({ view: view('ready'), status: status(), cards: [card({ expiresAt: NOW - 1 })] })
-      await render(<PcScreen now={clock} />)
-      expect(screen.getByText(`claude · delete_task · ${CONTROL_TEXT.cardGone}`)).toBeTruthy()
-      for (const name of ['Aprovar: Excluir tarefa "Velha"', 'Recusar: Excluir tarefa "Velha"']) {
-        const button = screen.getByRole('button', { name })
-        expect(button.props.accessibilityState?.disabled).toBe(true)
-        await fireEvent.press(button)
-      }
-      expect(actions.answer).not.toHaveBeenCalled()
+    it('mostra "N aprovações pendentes" (singular com 1) e o botão Ver abre as Notificações', async () => {
+      const open = jest.fn()
+      seed({ view: view('ready'), status: status(), cards: [card('c1')] })
+      await render(<PcScreen now={clock} onOpenNotifications={open} />)
+      expect(screen.getByText('1 aprovação pendente')).toBeTruthy()
+      seed({ view: view('ready'), status: status(), cards: [card('c1'), card('c2')] })
+      await act(async () => undefined)
+      expect(screen.getByText('2 aprovações pendentes')).toBeTruthy()
+      await fireEvent.press(screen.getByRole('button', { name: 'Ver: 2 aprovações pendentes' }))
+      expect(open).toHaveBeenCalledTimes(1)
     })
 
-    it('a contagem anda a cada segundo e vence o cartão', async () => {
-      jest.useFakeTimers()
-      let t = NOW
-      seed({ view: view('ready'), status: status(), cards: [card({ expiresAt: NOW + 2_000 })] })
-      await render(<PcScreen now={() => t} />)
-      expect(screen.getByText('claude · delete_task · 0:02')).toBeTruthy()
-      t = NOW + 1_000
-      await act(async () => jest.advanceTimersByTime(1_000))
-      expect(screen.getByText('claude · delete_task · 0:01')).toBeTruthy()
-      t = NOW + 2_000
-      await act(async () => jest.advanceTimersByTime(1_000))
-      expect(screen.getByText(`claude · delete_task · ${CONTROL_TEXT.cardGone}`)).toBeTruthy()
+    it('cartão vencido não conta no aviso', async () => {
+      seed({
+        view: view('ready'),
+        status: status(),
+        cards: [card('c1', { expiresAt: NOW - 1 }), card('c2')]
+      })
+      await render(<PcScreen now={clock} />)
+      expect(screen.getByText('1 aprovação pendente')).toBeTruthy()
+      seed({ view: view('ready'), status: status(), cards: [card('c1', { expiresAt: NOW - 1 })] })
+      await act(async () => undefined)
+      expect(screen.queryByText(/aprovaç(ão|ões) pendente/)).toBeNull()
+    })
+
+    it('sem cartões não há aviso', async () => {
+      seed({ view: view('ready'), status: status(), cards: [] })
+      await render(<PcScreen now={clock} />)
+      expect(screen.queryByText(/aprovaç(ão|ões) pendente/)).toBeNull()
+      expect(screen.queryByRole('button', { name: /^Ver/ })).toBeNull()
     })
   })
 
@@ -551,5 +548,120 @@ describe('cardCountdown', () => {
       // The code is not kept on screen after it was sent.
       expect(screen.getByLabelText('Código do autenticador ou reserva').props.value).toBe('')
     })
+  })
+})
+
+// Spec docs/specs/2026-11-13-mobile-aprovacoes-notificacoes.md: the steps of Ligar/Desligar.
+describe('PcScreen: etapas das ações', () => {
+  const progress = (over: Record<string, unknown>): Record<string, unknown> => ({
+    kind: 'wake',
+    step: 'waiting',
+    startedAt: NOW,
+    text: 'Pedido enviado. Aguardando o PC…',
+    ...over
+  })
+  const disabled = (name: string): unknown =>
+    screen.getByRole('button', { name }).props.accessibilityState?.disabled
+  const SERVERS: PcStatus['servers'] = [
+    { name: 'Sagyou', up: false, projectId: 'p1', state: 'starting', autostart: true },
+    { name: 'Murasaki', up: true, projectId: 'p2', state: 'running', autostart: true }
+  ]
+
+  it('Ligar PC esperando: o botão continua na tela, desabilitado, com indicador e o texto', async () => {
+    // The PC already says "Ligando": the button of the action must not vanish with it.
+    seed({
+      view: view('booting'),
+      action: progress({ text: 'Ligando o PC… pode levar alguns minutos.' })
+    })
+    await render(<PcScreen now={clock} />)
+    expect(disabled('Ligar')).toBe(true)
+    expect(screen.getByRole('button', { name: 'Ligar' }).props.accessibilityState?.busy).toBe(true)
+    expect(screen.getByTestId('spinner')).toBeTruthy()
+    expect(screen.getAllByText('Ligando o PC… pode levar alguns minutos.')).toBeTruthy()
+    expect(shownActions()).toEqual(['Ligar'])
+  })
+
+  it('Desligar PC esperando: Desligar fica desabilitado e os outros botões também', async () => {
+    seed({
+      view: view('ready'),
+      status: status(),
+      action: progress({ kind: 'shutdown', text: 'Enviando pedido…', step: 'sending' })
+    })
+    await render(<PcScreen now={clock} />)
+    expect(shownActions()).toEqual(['Desligar', 'Bloquear agora'])
+    expect(disabled('Desligar')).toBe(true)
+    expect(disabled('Bloquear agora')).toBe(true)
+    expect(screen.getByText('Enviando pedido…')).toBeTruthy()
+    // The emergency button stays available while another action waits.
+    expect(disabled('Cortar acesso')).toBe(false)
+  })
+
+  it('Ligar servidor esperando: o botão do servidor fica com Ligar e indicador, mesmo já "Iniciando…"', async () => {
+    seed({
+      view: view('ready'),
+      status: status({ servers: SERVERS }),
+      action: progress({ kind: 'server-start', projectId: 'p1', name: 'Sagyou' })
+    })
+    await render(<PcScreen now={clock} />)
+    const mine = screen.getByRole('button', { name: 'Ligar o servidor Sagyou' })
+    expect(mine.props.accessibilityState?.disabled).toBe(true)
+    expect(mine.props.accessibilityState?.busy).toBe(true)
+    // The other server's button is disabled too, without an indicator of its own.
+    const other = screen.getByRole('button', { name: 'Desligar o servidor Murasaki' })
+    expect(other.props.accessibilityState?.disabled).toBe(true)
+    expect(other.props.accessibilityState?.busy).toBe(false)
+    expect(screen.getAllByText('Pedido enviado. Aguardando o PC…')).toHaveLength(1)
+  })
+
+  it('concluído mostra o texto e libera os botões; falhou também', async () => {
+    seed({
+      view: view('ready'),
+      status: status({ servers: [{ ...SERVERS[0], state: 'running' }, SERVERS[1]] }),
+      action: progress({
+        kind: 'server-start',
+        projectId: 'p1',
+        name: 'Sagyou',
+        step: 'done',
+        text: 'Servidor Sagyou ligado.'
+      })
+    })
+    await render(<PcScreen now={clock} />)
+    expect(screen.getByText('Servidor Sagyou ligado.')).toBeTruthy()
+    expect(screen.queryByTestId('spinner')).toBeNull()
+    expect(
+      screen.getByRole('button', { name: 'Desligar o servidor Sagyou' }).props.accessibilityState
+        ?.disabled
+    ).toBe(false)
+
+    seed({
+      view: view('off'),
+      action: progress({ step: 'failed', text: 'O PC não respondeu. Tente de novo.' })
+    })
+    await act(async () => undefined)
+    expect(screen.getByText('O PC não respondeu. Tente de novo.')).toBeTruthy()
+    expect(disabled('Ligar')).toBe(false)
+  })
+
+  it('sem animações: o texto da etapa fica e o indicador não é desenhado', async () => {
+    const spy = jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(true)
+    try {
+      seed({
+        view: view('booting'),
+        action: progress({ text: 'Ligando o PC… pode levar alguns minutos.' })
+      })
+      await render(<PcScreen now={clock} />)
+      await act(async () => undefined)
+      expect(screen.queryByTestId('spinner')).toBeNull()
+      expect(screen.getByText('Ligando o PC… pode levar alguns minutos.')).toBeTruthy()
+    } finally {
+      // RN's own mock has no original to restore: put its default answer back.
+      spy.mockResolvedValue(false)
+    }
+  })
+
+  it('a etapa é uma região viva para o leitor de tela', async () => {
+    seed({ view: view('booting'), action: progress({}) })
+    await render(<PcScreen now={clock} />)
+    expect(screen.getByTestId('action-status').props.accessibilityLiveRegion).toBe('polite')
   })
 })

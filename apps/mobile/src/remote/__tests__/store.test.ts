@@ -17,6 +17,7 @@ import {
 import { CONTROL_TEXT } from '@sagyou/core/control/texts'
 import { toBase64 } from '@sagyou/core/sync/bytes'
 import {
+  KEY_ESP32,
   KEY_PCPIN,
   KEY_PCPUB,
   KEY_PRIVATE,
@@ -95,23 +96,26 @@ interface Setup {
   pc: FakePc
   secure: FakeSecure
   authenticate: jest.Mock
+  /** Ms added to NOW for the store clock. */
+  clock: { offset: number }
 }
 
 function setup(): Setup {
   const pc = fakePc()
   const secure = fakeSecure()
   const authenticate = jest.fn(async () => true)
+  const clock = { offset: 0 }
   configureRemote({
     client: pc.client,
     keys: createControllerKeys(secure, () => NOW),
-    now: () => NOW,
+    now: () => NOW + clock.offset,
     deviceName: () => 'Pixel 9',
     authenticate,
     setTimer: (fn, ms) => setTimeout(fn, ms),
     clearTimer: (h) => clearTimeout(h as ReturnType<typeof setTimeout>)
   })
   useRemote.getState().reset()
-  return { pc, secure, authenticate }
+  return { pc, secure, authenticate, clock }
 }
 
 /** Asks here at home and lets the simulated PC answer pc-key, then authorized. */
@@ -770,5 +774,225 @@ describe('store do controle remoto', () => {
     it('hora do corte em HH:MM', () => {
       expect(accessCutText(new Date(2026, 10, 7, 9, 5).getTime())).toBe('Acesso cortado em 09:05.')
     })
+  })
+})
+
+// Spec docs/specs/2026-11-13-mobile-aprovacoes-notificacoes.md: the steps of Ligar/Desligar.
+describe('ações com etapas', () => {
+  const heartbeat = (
+    t: Setup,
+    servers: { name: string; up: boolean; projectId?: string; state?: string }[] = []
+  ): void => {
+    t.pc.status = t.pc.msg('status', {
+      v: 1,
+      at: NOW,
+      locked: false,
+      servers,
+      pendingCards: 0,
+      shutdownAt: null,
+      suspendedUntil: null,
+      updateVersion: null,
+      accessCutAt: null
+    })
+  }
+  const stopped = [{ name: 'Sagyou', up: false, projectId: 'p1', state: 'stopped' }]
+  const running = [{ name: 'Sagyou', up: true, projectId: 'p1', state: 'running' }]
+
+  it('Ligar PC: enviando, depois aguardando com o texto de ligar; conclui no ready', async () => {
+    const t = setup()
+    await authorize(t)
+    const done = useRemote.getState().wake()
+    expect(useRemote.getState().action).toMatchObject({
+      kind: 'wake',
+      step: 'sending',
+      text: 'Enviando pedido…'
+    })
+    await done
+    expect(useRemote.getState().action).toMatchObject({
+      step: 'waiting',
+      text: 'Ligando o PC… pode levar alguns minutos.'
+    })
+    heartbeat(t)
+    await useRemote.getState().refresh()
+    expect(useRemote.getState().action).toMatchObject({ step: 'done', text: 'PC ligado.' })
+  })
+
+  it('Ligar PC sem resposta em 5 min: falha com o texto exato; 4 min 59 s ainda espera', async () => {
+    const t = setup()
+    await authorize(t)
+    await useRemote.getState().wake()
+    t.clock.offset = 299_999
+    await useRemote.getState().refresh()
+    expect(useRemote.getState().action?.step).toBe('waiting')
+    t.clock.offset = 300_000
+    await useRemote.getState().refresh()
+    expect(useRemote.getState().action).toMatchObject({
+      step: 'failed',
+      text: 'O PC não respondeu. Tente de novo.'
+    })
+    // Falhou: outra ação já pode começar.
+    await useRemote.getState().wake()
+    expect(useRemote.getState().action?.step).toBe('waiting')
+  })
+
+  it('Ligar PC com a biometria recusada não cria ação nem manda comando', async () => {
+    const t = setup()
+    await authorize(t)
+    t.authenticate.mockResolvedValueOnce(false)
+    await useRemote.getState().wake()
+    expect(useRemote.getState().action).toBeNull()
+    expect(t.pc.power).toHaveLength(0)
+  })
+
+  it('Ligar PC sem a chave do ESP32 deixa o erro de hoje e nenhuma ação', async () => {
+    const t = setup()
+    await authorize(t)
+    t.secure.data.delete(KEY_ESP32)
+    await useRemote.getState().wake()
+    expect(useRemote.getState().action).toBeNull()
+    expect(useRemote.getState().error).toBe(REMOTE_TEXT.noEsp32Key)
+  })
+
+  it('Ligar servidor: aguarda, conclui com o servidor running e o Concluído some em 3 s', async () => {
+    jest.useFakeTimers()
+    try {
+      const t = setup()
+      await authorize(t)
+      heartbeat(t, stopped)
+      await useRemote.getState().refresh()
+      await useRemote.getState().startServer('p1')
+      expect(useRemote.getState().action).toMatchObject({
+        kind: 'server-start',
+        projectId: 'p1',
+        name: 'Sagyou',
+        step: 'waiting',
+        text: 'Pedido enviado. Aguardando o PC…'
+      })
+      heartbeat(t, running)
+      await useRemote.getState().refresh()
+      expect(useRemote.getState().action).toMatchObject({
+        step: 'done',
+        text: 'Servidor Sagyou ligado.'
+      })
+      jest.advanceTimersByTime(2999)
+      expect(useRemote.getState().action?.step).toBe('done')
+      jest.advanceTimersByTime(1)
+      expect(useRemote.getState().action).toBeNull()
+    } finally {
+      jest.useRealTimers()
+    }
+  })
+
+  it('Desligar servidor conclui com stopped, no servidor certo', async () => {
+    const t = setup()
+    await authorize(t)
+    heartbeat(t, running)
+    await useRemote.getState().refresh()
+    await useRemote.getState().stopServer('p1')
+    expect(useRemote.getState().action?.kind).toBe('server-stop')
+    heartbeat(t, [...running, { name: 'Outro', up: false, projectId: 'p2', state: 'stopped' }])
+    await useRemote.getState().refresh()
+    expect(useRemote.getState().action?.step).toBe('waiting')
+    heartbeat(t, stopped)
+    await useRemote.getState().refresh()
+    expect(useRemote.getState().action).toMatchObject({
+      step: 'done',
+      text: 'Servidor Sagyou desligado.'
+    })
+  })
+
+  it('Desligar PC aguarda e conclui quando o PC começa a desligar', async () => {
+    const t = setup()
+    await authorize(t)
+    heartbeat(t)
+    await useRemote.getState().refresh()
+    await useRemote.getState().shutdown()
+    expect(useRemote.getState().action).toMatchObject({ kind: 'shutdown', step: 'waiting' })
+    t.pc.status = t.pc.msg('status', {
+      v: 1,
+      at: NOW,
+      locked: false,
+      servers: [],
+      pendingCards: 0,
+      shutdownAt: NOW + 60_000,
+      suspendedUntil: null,
+      updateVersion: null,
+      accessCutAt: null
+    })
+    await useRemote.getState().refresh()
+    expect(useRemote.getState().action).toMatchObject({
+      step: 'done',
+      text: 'Desligamento iniciado.'
+    })
+  })
+
+  it('a recusa do PC derruba a ação e mantém o erro que já aparecia', async () => {
+    const t = setup()
+    await authorize(t)
+    await useRemote.getState().startServer('p1')
+    const req = t.pc.sent.at(-1)!
+    t.pc.queue.push(
+      t.pc.msg('result', { replyTo: req.env.nonce, ok: false, reason: 'not-confirmed' })
+    )
+    await useRemote.getState().refresh()
+    expect(useRemote.getState().action).toBeNull()
+    expect(useRemote.getState().error).toBe('Confirme este projeto uma vez no PC.')
+  })
+
+  it('o ok do PC não derruba a ação: ela espera o estado', async () => {
+    const t = setup()
+    await authorize(t)
+    await useRemote.getState().startServer('p1')
+    const req = t.pc.sent.at(-1)!
+    t.pc.queue.push(t.pc.msg('result', { replyTo: req.env.nonce, ok: true }))
+    await useRemote.getState().refresh()
+    expect(useRemote.getState().action?.step).toBe('waiting')
+  })
+
+  it('durante a espera, outra ação é recusada sem mandar nada', async () => {
+    const t = setup()
+    await authorize(t)
+    await useRemote.getState().wake()
+    const sent = t.pc.sent.length
+    const power = t.pc.power.length
+    await useRemote.getState().startServer('p1')
+    await useRemote.getState().shutdown()
+    await useRemote.getState().wake()
+    expect(t.pc.sent).toHaveLength(sent)
+    expect(t.pc.power).toHaveLength(power)
+    expect(useRemote.getState().action?.kind).toBe('wake')
+  })
+
+  it('um envio que falha (sem rede) derruba a ação e mostra o erro', async () => {
+    const t = setup()
+    await authorize(t)
+    jest.mocked(t.pc.client.send as jest.Mock).mockRejectedValueOnce(new ControlError('offline'))
+    await useRemote.getState().stopServer('p1')
+    expect(useRemote.getState().action).toBeNull()
+    expect(useRemote.getState().error).toBe(CONTROL_TEXT.offline)
+  })
+
+  it('reset (wipe, desconectar) apaga a ação', async () => {
+    const t = setup()
+    await authorize(t)
+    await useRemote.getState().wake()
+    useRemote.getState().reset()
+    expect(useRemote.getState().action).toBeNull()
+    expect(t.pc.power.length).toBe(1)
+  })
+
+  it('refreshOnce lê uma vez, mas não corre junto do polling', async () => {
+    const t = setup()
+    await authorize(t)
+    jest.mocked(t.pc.client.inbox as jest.Mock).mockClear()
+    await useRemote.getState().refreshOnce()
+    expect(t.pc.client.inbox as jest.Mock).toHaveBeenCalledTimes(1)
+
+    useRemote.getState().startPolling()
+    await flush()
+    const during = (t.pc.client.inbox as jest.Mock).mock.calls.length
+    await useRemote.getState().refreshOnce()
+    expect(t.pc.client.inbox as jest.Mock).toHaveBeenCalledTimes(during)
+    useRemote.getState().stopPolling()
   })
 })

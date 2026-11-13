@@ -114,7 +114,8 @@ describe('schema.sql', () => {
       'power_state',
       'push_tokens',
       'control_factor_checked',
-      'pc_key'
+      'pc_key',
+      'pc_watch'
     ]) {
       expect(sql).toContain(`CREATE TABLE IF NOT EXISTS ${table} (`)
     }

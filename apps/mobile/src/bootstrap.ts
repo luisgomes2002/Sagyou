@@ -10,6 +10,7 @@ import { createRecordRepo } from './data/records'
 import { migrate } from './data/schema'
 import { rebuildSearchIndex, searchRecords } from './data/search'
 import { openExpoDb } from './data/sql'
+import { useNotifications } from './notifications/store'
 import { useApp } from './store/app'
 import { createSyncRuntime } from './sync/runtime'
 
@@ -34,6 +35,7 @@ export function bootstrap(): void {
   migrate(db)
   const repo = createRecordRepo(db, (_change, state) => rebuildSearchIndex(db, state))
   rebuildSearchIndex(db, repo.loadState())
+  useNotifications.getState().load(repo)
   const runtime = createSyncRuntime({
     db,
     repo,
@@ -44,7 +46,13 @@ export function bootstrap(): void {
     getState: () => useApp.getState().state,
     onStatus: (status) => useApp.getState().setStatus(status),
     onRemote: (state) => useApp.getState().receive(state),
-    onWiped: () => useApp.getState().wiped()
+    onWiped: () => {
+      useApp.getState().wiped()
+      // The wipe deletes every row (the history pref too): only the memory is left to drop.
+      useNotifications.getState().reset()
+      // What is still in the bar belongs to the session that was wiped.
+      void Notifications.dismissAllNotificationsAsync().catch(() => undefined)
+    }
   })
   configureRemote({
     client: runtime.control,

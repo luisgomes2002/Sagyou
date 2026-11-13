@@ -12,6 +12,8 @@ import { FONT, MIN_TOUCH, RADIUS, SPACE, useTheme } from '../theme'
 export interface ListItemProps {
   title: string
   subtitle?: ReactNode
+  /** The title in bold (an unread notification). */
+  bold?: boolean
   left?: ReactNode
   right?: ReactNode
   onPress?: () => void
@@ -24,6 +26,7 @@ export interface ListItemProps {
 export function ListItem({
   title,
   subtitle,
+  bold,
   left,
   right,
   onPress,
@@ -36,7 +39,9 @@ export function ListItem({
     <>
       {left ? <View style={styles.left}>{left}</View> : null}
       <View style={styles.body}>
-        <Text style={[styles.title, { color: theme.text }]}>{title}</Text>
+        <Text style={[styles.title, { color: theme.text }, bold ? styles.bold : null]}>
+          {title}
+        </Text>
         {typeof subtitle === 'string' ? (
           <Text style={[styles.subtitle, { color: theme.muted }]}>{subtitle}</Text>
         ) : (
@@ -88,5 +93,6 @@ const styles = StyleSheet.create({
   body: { flex: 1, gap: 2 },
   right: { alignItems: 'flex-end' },
   title: { fontSize: FONT.bodyLg },
+  bold: { fontWeight: '700' },
   subtitle: { fontSize: FONT.caption }
 })

@@ -24,6 +24,8 @@ class FakeD1 implements D1Database {
   marks: { msg_id: string; expires_at: number }[] = []
   marksTable = true
   pcKeyTable = true
+  watchTable = true
+  watch: { watch: number; notified: number | null } | null = null
   pcKey: { device: string; key: string } | null = null
   batches: string[][] = []
 
@@ -34,7 +36,20 @@ class FakeD1 implements D1Database {
       throw new Error('D1_ERROR: no such table: control_factor_checked')
     if (sql.includes('pc_key') && !this.pcKeyTable)
       throw new Error('D1_ERROR: no such table: pc_key')
+    if (sql.includes('pc_watch') && !this.watchTable)
+      throw new Error('D1_ERROR: no such table: pc_watch')
     const [a1, a2, a3, a4, a5, a6, a7] = args
+    if (sql.startsWith('INSERT INTO pc_watch')) {
+      this.watch = { watch: Number(a1), notified: null }
+      return ok([], 1)
+    }
+    if (sql.startsWith('SELECT watch, notified_at FROM pc_watch')) {
+      return ok(this.watch ? [{ watch: this.watch.watch, notified_at: this.watch.notified }] : [])
+    }
+    if (sql.startsWith('UPDATE pc_watch SET notified_at')) {
+      if (this.watch) this.watch.notified = Number(a1)
+      return ok([], 1)
+    }
     if (sql.startsWith("DELETE FROM device_roles WHERE role = 'pc'")) return ok()
     if (sql.startsWith('INSERT INTO device_roles')) return ok([], 1)
     if (sql === 'DELETE FROM pc_key') {
@@ -192,5 +207,27 @@ describe('D1ControlDb, chave do PC', () => {
     const db = new D1ControlDb(d1)
     await expect(db.setPc(PC, 1)).resolves.toBeUndefined()
     await expect(db.getPcKey(PC)).rejects.toThrow(/no such table/)
+  })
+})
+
+describe('D1ControlDb, pc_watch', () => {
+  it('guarda o watch, marca o aviso e o heartbeat seguinte limpa a marca', async () => {
+    const db = new D1ControlDb(new FakeD1())
+    expect(await db.getWatch()).toBeNull()
+    await db.putWatch(true)
+    expect(await db.getWatch()).toEqual({ watch: true, notifiedAt: null })
+    await db.markSilentNotified(9)
+    expect(await db.getWatch()).toEqual({ watch: true, notifiedAt: 9 })
+    await db.putWatch(true)
+    expect(await db.getWatch()).toEqual({ watch: true, notifiedAt: null })
+  })
+
+  it('sem a tabela pc_watch nada lança: só o aviso de PC sem sinal se perde', async () => {
+    const d1 = new FakeD1()
+    d1.watchTable = false
+    const db = new D1ControlDb(d1)
+    await expect(db.putWatch(true)).resolves.toBeUndefined()
+    await expect(db.getWatch()).resolves.toBeNull()
+    await expect(db.markSilentNotified(2)).resolves.toBeUndefined()
   })
 })

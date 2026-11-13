@@ -56,6 +56,7 @@ type FakeClient = ControlClient & {
   controllers: ReturnType<typeof vi.fn>
   pcKey: ReturnType<typeof vi.fn>
   publishPcKey: ReturnType<typeof vi.fn>
+  putStatus: ReturnType<typeof vi.fn>
 }
 
 interface Keys {
@@ -1152,5 +1153,202 @@ describe('remote-service: servidores de Remote Control', () => {
     t.advance(5_000)
     await t.service.tick()
     expect(t.statuses).toHaveLength(2)
+  })
+})
+
+describe('remote-service: avisos e bit watch (spec 2026-11-13)', () => {
+  const watchOf = (t: Setup): (boolean | undefined)[] =>
+    t.client.putStatus.mock.calls.map(
+      (c) => ((c as unknown[])[1] as { watch?: boolean } | undefined)?.watch
+    )
+  const notifies = (t: Setup): { to: string; notify?: string }[] =>
+    t.sent.filter((s) => s.notify && s.notify !== 'ready').map(({ to, notify }) => ({ to, notify }))
+  /** Lets the fire-and-forget pushes finish (outside a tick). */
+  const settle = async (): Promise<void> => {
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+  }
+
+  it('o heartbeat manda watch=true, e watch=false com desligamento marcado', async () => {
+    const t = setup()
+    await t.service.tick()
+    expect(watchOf(t)).toEqual([true])
+    t.deps.shutdownAt = () => T0 + 60_000
+    t.advance(30_000)
+    await t.service.tick()
+    expect(watchOf(t)).toEqual([true, false])
+    t.deps.shutdownAt = () => null
+    t.advance(30_000)
+    await t.service.tick()
+    expect(watchOf(t).at(-1)).toBe(true)
+  })
+
+  it('desligar aceito manda watch=false na hora, com o desligamento marcado no status', async () => {
+    const t = setup()
+    await t.service.tick()
+    // What the real shutdown does once accepted: the countdown is scheduled.
+    t.deps.shutdown = vi.fn(async () => {
+      t.deps.shutdownAt = () => T0 + 60_000
+      return 'ok' as const
+    })
+    await t.deliver(t.request('shutdown'))
+    expect(watchOf(t)).toContain(false)
+    // The re-sent status is not the stale one of the last heartbeat.
+    expect(t.statuses.at(-1)?.body).toMatchObject({ shutdownAt: T0 + 60_000 })
+  })
+
+  it('parar o laço de propósito (sync pausado) e anunciar a saída mandam watch=false', async () => {
+    const t = setup()
+    await t.service.tick()
+    t.service.syncStatusChanged({ ...okSync, state: 'paused', paused: 'restore' })
+    await settle()
+    expect(watchOf(t)).toEqual([true, false])
+    await t.service.announceOffline()
+    expect(watchOf(t)).toEqual([true, false, false])
+    expect(t.statuses.at(-1)?.kind).toBe('status')
+  })
+
+  it('pausar o sync no meio de um ciclo também manda watch=false', async () => {
+    const t = setup()
+    // The inbox read is the first step of a cycle: the sync pauses while it runs.
+    t.client.inbox.mockImplementationOnce(async () => {
+      t.service.syncStatusChanged({ ...okSync, state: 'paused', paused: 'restore' })
+      return { messages: [], dropped: 0 }
+    })
+    await t.service.tick()
+    expect(watchOf(t)).toEqual([true, false])
+  })
+
+  it('um Worker antigo recusando o push não vira erro do ciclo (a tela de Configurações não mostra)', async () => {
+    const t = setup()
+    t.client.send.mockImplementationOnce(async () => {
+      throw new ControlError('forbidden')
+    })
+    await t.service.notifyEvent('session-done')
+    expect(t.service.lastError()).toBeNull()
+    expect(t.deps.log.warn).toHaveBeenCalledWith('remote', 'push_failed', {
+      code: 'session-done',
+      reason: 'forbidden'
+    })
+  })
+
+  it('anunciar a saída sem nenhum heartbeat antes não manda nada nem lança', async () => {
+    const t = setup()
+    await expect(t.service.announceOffline()).resolves.toBeUndefined()
+    expect(t.client.putStatus).not.toHaveBeenCalled()
+  })
+
+  it('suspender manda "suspended" uma vez, e a recusa seguinte não repete', async () => {
+    const t = setup()
+    for (let i = 0; i < 5; i++) await t.deliver(t.request('unlock', {}, { at: T0 - 91_000 }))
+    expect(notifies(t)).toEqual([{ to: PHONE, notify: 'suspended' }])
+    await t.deliver(t.request('unlock'))
+    expect(notifies(t)).toHaveLength(1)
+  })
+
+  it('cortar o acesso avisa "access-cut" depois de responder', async () => {
+    const t = setup()
+    await t.deliver(t.request('cut-access'))
+    expect(notifies(t)).toEqual([{ to: PHONE, notify: 'access-cut' }])
+    const kinds = t.sent.map((s) => s.env.kind)
+    expect(kinds.indexOf('result')).toBeLessThan(kinds.lastIndexOf('status'))
+    // Cortar de novo com o acesso já cortado não avisa outra vez.
+    await t.deliver(t.request('cut-access'))
+    expect(notifies(t)).toHaveLength(1)
+  })
+
+  it('aparelho: a 1ª checagem só cria a base; novo avisa, revogado avisa, novo já revogado não', async () => {
+    const t = setup()
+    t.setRoles([PHONE, OTHER, THIRD])
+    t.setDevices([{ id: PHONE, revoked: false }])
+    await t.service.checkDevices()
+    await settle()
+    expect(notifies(t)).toEqual([])
+
+    t.setDevices([
+      { id: PHONE, revoked: false },
+      { id: OTHER, revoked: false },
+      { id: THIRD, revoked: true }
+    ])
+    await t.service.checkDevices()
+    await settle()
+    expect(notifies(t).map((n) => n.notify)).toEqual(['device-paired'])
+
+    t.setDevices([
+      { id: PHONE, revoked: false },
+      { id: OTHER, revoked: true },
+      { id: THIRD, revoked: true }
+    ])
+    await t.service.checkDevices()
+    await settle()
+    expect(notifies(t).map((n) => n.notify)).toEqual(['device-paired', 'device-revoked'])
+    // Sem mudança, nada.
+    await t.service.checkDevices()
+    await settle()
+    expect(notifies(t)).toHaveLength(2)
+  })
+
+  it('server-ready vai só ao celular que pediu, uma vez, e expira em 10 min', async () => {
+    const t = setup()
+    t.setConfig({
+      ...t.config(),
+      controllers: [
+        ...t.config().controllers,
+        { id: OTHER, name: 'Outro', publicKey: toBase64(t.phone.publicKey), since: 'x' }
+      ]
+    })
+    await t.deliver(t.request('server-start', { projectId: 'p1' }))
+    await t.service.serverReady('p1')
+    expect(notifies(t)).toEqual([{ to: PHONE, notify: 'server-ready' }])
+    await t.service.serverReady('p1')
+    expect(notifies(t)).toHaveLength(1)
+
+    await t.deliver(t.request('server-start', { projectId: 'p1' }))
+    t.advance(10 * 60_000 + 1)
+    await t.service.serverReady('p1')
+    expect(notifies(t)).toHaveLength(1)
+  })
+
+  it('server-failed: "start" só a quem pediu; "crash" a todos; sem pedido, "start" não manda', async () => {
+    const t = setup()
+    await t.service.serverFailed('p1', 'start')
+    expect(notifies(t)).toEqual([])
+    await t.deliver(t.request('server-start', { projectId: 'p1' }))
+    await t.service.serverFailed('p1', 'start')
+    expect(notifies(t)).toEqual([{ to: PHONE, notify: 'server-failed' }])
+    await t.service.serverFailed('p1', 'crash')
+    expect(notifies(t).map((n) => n.notify)).toEqual(['server-failed', 'server-failed'])
+  })
+
+  it('notifyEvent vai a todos os controles; sem controle, ou com o laço parado, não manda', async () => {
+    const t = setup()
+    await t.service.notifyEvent('session-done')
+    expect(notifies(t)).toEqual([{ to: PHONE, notify: 'session-done' }])
+    const none = setup({ controllers: 'none' })
+    await none.service.notifyEvent('session-done')
+    expect(none.sent).toEqual([])
+    t.service.syncStatusChanged({ ...okSync, state: 'paused', paused: 'restore' })
+    await t.service.notifyEvent('session-done')
+    expect(notifies(t)).toHaveLength(1)
+  })
+
+  it('um Worker antigo recusando o código novo não derruba o ciclo nem o push seguinte', async () => {
+    const t = setup()
+    t.client.send.mockImplementationOnce(async () => {
+      throw new ControlError('forbidden')
+    })
+    await expect(t.service.notifyEvent('session-done')).resolves.toBeUndefined()
+    await expect(t.service.tick()).resolves.toBeUndefined()
+    expect(t.statuses.length).toBeGreaterThan(0)
+  })
+
+  it('os pushes não carregam conteúdo: só o status assinado, sem nome de projeto no log', async () => {
+    const t = setup()
+    await t.service.notifyEvent('session-done')
+    const logged = JSON.stringify([
+      ...(t.deps.log.info as ReturnType<typeof vi.fn>).mock.calls,
+      ...(t.deps.log.warn as ReturnType<typeof vi.fn>).mock.calls
+    ])
+    expect(logged).not.toContain('Sagyou')
+    expect(t.sent.at(-1)?.env.kind).toBe('status')
   })
 })

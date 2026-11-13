@@ -542,7 +542,7 @@ const sessoesCodigo: GuideArticle[] = [
       },
       {
         type: 'p',
-        text: 'As notificações no celular (PC pronto, aprovação pendente, PC não desligado) são opcionais: precisam de um projeto no Firebase, do segredo FCM_SERVICE_ACCOUNT no Worker e de um APK gerado com o google-services.json. Sem isso, tudo funciona, só sem notificações.'
+        text: 'As notificações no celular (PC pronto, aprovação pendente, PC não desligado, servidor ligado ou caído, PC sem resposta, sessão de código terminada e avisos de segurança) são opcionais: precisam de um projeto no Firebase, do segredo FCM_SERVICE_ACCOUNT no Worker e de um APK gerado com o google-services.json. Sem isso, tudo funciona, só sem notificações.'
       },
       {
         type: 'callout',

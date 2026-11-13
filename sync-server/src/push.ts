@@ -1,6 +1,6 @@
 // Push notifications through Firebase Cloud Messaging (HTTP v1).
 //
-// The Worker only ever sends one of three fixed texts, chosen by a code; nothing
+// The Worker only ever sends one of a few fixed texts, chosen by a code; nothing
 // the PC writes reaches the notification. The content of an approval card is
 // read in the app, decrypted on the phone. Without FCM_SERVICE_ACCOUNT nothing is
 // sent and the remote control works without push.
@@ -8,8 +8,31 @@ import type { NotifyCode } from './control-routes'
 
 export const PUSH_TEXT: Record<NotifyCode, string> = {
   ready: 'PC pronto.',
+  'shutdown-failed': 'O PC não foi desligado.',
+  'server-ready': 'Servidor de Remote Control ligado.',
+  'server-failed': 'O servidor de Remote Control não subiu ou caiu.',
+  'pc-silent': 'O PC parou de responder.',
   approval: 'Aprovação pendente no Sagyou.',
-  'shutdown-failed': 'O PC não foi desligado.'
+  'session-done': 'Uma sessão de código terminou.',
+  suspended: 'Controle remoto suspenso por tentativas recusadas.',
+  'access-cut': 'Acesso remoto cortado.',
+  'device-paired': 'Um aparelho foi pareado ao seu sync.',
+  'device-revoked': 'Um aparelho do seu sync foi revogado.'
+}
+
+/** The Android channel of each code; the phone creates the three channels (spec 2026-11-13). */
+export const PUSH_CHANNEL: Record<NotifyCode, 'pc' | 'sessions' | 'security'> = {
+  ready: 'pc',
+  'shutdown-failed': 'pc',
+  'server-ready': 'pc',
+  'server-failed': 'pc',
+  'pc-silent': 'pc',
+  approval: 'sessions',
+  'session-done': 'sessions',
+  suspended: 'security',
+  'access-cut': 'security',
+  'device-paired': 'security',
+  'device-revoked': 'security'
 }
 
 const TOKEN_URL = 'https://oauth2.googleapis.com/token'
@@ -114,8 +137,10 @@ export async function sendPush(deps: PushDeps, tokens: string[], code: NotifyCod
               message: {
                 token,
                 notification: { title: 'Sagyou', body: PUSH_TEXT[code] },
-                data: { open: 'pc' },
-                android: { priority: 'high' }
+                // `open` stays 'pc' for every code (older apps only know that one);
+                // `code` lets a newer app tell the notifications apart.
+                data: { open: 'pc', code },
+                android: { priority: 'high', notification: { channel_id: PUSH_CHANNEL[code] } }
               }
             })
           })

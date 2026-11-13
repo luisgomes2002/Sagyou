@@ -22,3 +22,4 @@ firmware/**/.pio/
 *.db-shm
 *.db-wal
 *.db.raw
+apps/desktop/tsconfig.node.tsbuildinfo

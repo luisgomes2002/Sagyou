@@ -1,7 +1,13 @@
 // @vitest-environment node
 import { generateKeyPairSync, createVerify } from 'crypto'
 import { describe, expect, it } from 'vitest'
-import { PUSH_TEXT, sendPush, serviceJwt } from '../push'
+import {
+  NOTIFICATION_TEXT,
+  NOTIFY_CATEGORY,
+  NOTIFY_CODES as CORE_CODES
+} from '../../../packages/core/src/control/notify'
+import { NOTIFY_CODES } from '../control-routes'
+import { PUSH_CHANNEL, PUSH_TEXT, sendPush, serviceJwt } from '../push'
 
 const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 })
 const account = {
@@ -33,6 +39,33 @@ function fakeFetch(opts: { fcmStatus?: number; tokenOk?: boolean } = {}): {
   return { fetch: f, sent }
 }
 
+describe('códigos de push', () => {
+  it('a cópia do Worker é igual à do core (códigos, textos e canais)', () => {
+    expect([...NOTIFY_CODES]).toEqual([...CORE_CODES])
+    expect(Object.keys(PUSH_TEXT).sort()).toEqual([...CORE_CODES].sort())
+    for (const code of CORE_CODES) {
+      expect(PUSH_TEXT[code]).toBe(NOTIFICATION_TEXT[code])
+      expect(PUSH_CHANNEL[code]).toBe(NOTIFY_CATEGORY[code])
+    }
+  })
+
+  it('cada código sai com o próprio code e o canal da categoria', async () => {
+    for (const code of CORE_CODES) {
+      const { fetch, sent } = fakeFetch()
+      await sendPush(
+        { serviceAccount: JSON.stringify(account), fetch, now: () => 1_800_000_000_000 },
+        ['t'],
+        code
+      )
+      const fcm = sent.find((s) => s.url.includes('fcm.googleapis.com'))
+      const message = JSON.parse(fcm?.init.body as string).message
+      expect(message.notification.body).toBe(NOTIFICATION_TEXT[code])
+      expect(message.data).toEqual({ open: 'pc', code })
+      expect(message.android.notification.channel_id).toBe(NOTIFY_CATEGORY[code])
+    }
+  })
+})
+
 describe('sendPush', () => {
   it('sem conta de serviço não chama nada', async () => {
     const { fetch, sent } = fakeFetch()
@@ -56,8 +89,8 @@ describe('sendPush', () => {
     expect(body.message).toEqual({
       token: 'token-1',
       notification: { title: 'Sagyou', body: PUSH_TEXT.approval },
-      data: { open: 'pc' },
-      android: { priority: 'high' }
+      data: { open: 'pc', code: 'approval' },
+      android: { priority: 'high', notification: { channel_id: 'sessions' } }
     })
     expect(PUSH_TEXT.approval).toBe('Aprovação pendente no Sagyou.')
     expect((fcm[0].init.headers as Record<string, string>).authorization).toBe('Bearer ya29.teste')

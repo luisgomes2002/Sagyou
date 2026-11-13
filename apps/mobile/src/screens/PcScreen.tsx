@@ -9,16 +9,23 @@ import {
 } from '@sagyou/core/control/texts'
 import { useEffect, useState } from 'react'
 import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { ActionStatus } from '../components/ActionStatus'
 import { ACTION_ICONS } from '../components/icons'
 import { Button, Card, EmptyState, Field, ListItem, Screen } from '../components/ui'
+import { isPending } from '../remote/progress'
 import { useRemote } from '../remote/store'
-import { REMOTE_TEXT, accessCutText, cardCountdown, serverStateText } from '../remote/texts'
+import {
+  OPEN_NOTIFICATIONS,
+  REMOTE_TEXT,
+  accessCutText,
+  pendingApprovalsText,
+  serverStateText
+} from '../remote/texts'
 import { useApp } from '../store/app'
 import { FONT, SPACE, useTheme } from '../theme'
 
 export const LOCKED_TEXT = 'Sagyou bloqueado'
 export const UNLOCKED_TEXT = 'Sagyou desbloqueado'
-export const CARDS_TITLE = 'Aprovações pendentes'
 export const LOADING_TEXT = 'Buscando o estado do PC…'
 export const SERVERS_TITLE = 'Servidores'
 
@@ -33,19 +40,33 @@ export interface PcScreenProps {
   focused?: boolean
   /** Injected by tests. */
   now?: () => number
+  /** Opens the Notificações screen, where the approval cards are answered. */
+  onOpenNotifications?: () => void
 }
 
 /** The "PC" tab (spec docs/specs/2026-11-03-controle-remoto-app.md). */
-export function PcScreen({ focused = true, now = Date.now }: PcScreenProps): React.JSX.Element {
+export function PcScreen({
+  focused = true,
+  now = Date.now,
+  onOpenNotifications
+}: PcScreenProps): React.JSX.Element {
   const theme = useTheme()
   const view = useRemote((s) => s.view)
   const status = useRemote((s) => s.status)
+  // Spec 2026-11-13: the cards are answered on the Notificações screen; here only the count (the store drops the expired ones on every read).
   const cards = useRemote((s) => s.cards)
+  const pendingCards = cards.filter((c) => c.expiresAt > now()).length
   const error = useRemote((s) => s.error)
   const connection = useRemote((s) => s.connection)
   const busy = useRemote((s) => s.busy)
   const cutUnanswered = useRemote((s) => s.cutUnanswered)
+  const action = useRemote((s) => s.action)
   const readOnly = useApp((s) => s.readOnly)
+  // While an action is sending or waiting for the PC, nothing else starts (spec 2026-11-13).
+  const pendingAction = isPending(action)
+  const wakeActive = pendingAction && action?.kind === 'wake'
+  const shutdownActive = pendingAction && action?.kind === 'shutdown'
+  const locked = busy || pendingAction
   const [clock, setClock] = useState(now)
   const [factor, setFactor] = useState('')
 
@@ -57,11 +78,8 @@ export function PcScreen({ focused = true, now = Date.now }: PcScreenProps): Rea
 
   // A shutdown forced through the ESP32 can still be cancelled until this instant.
   const forcedUntil = view?.forcedShutdownUntil ?? null
-  // Countdowns (shutdown, cards) tick once a second while the tab is open.
-  const ticking =
-    view?.state === 'shutting-down' ||
-    (forcedUntil !== null && forcedUntil > clock) ||
-    cards.length > 0
+  // The shutdown countdown ticks once a second while the tab is open.
+  const ticking = view?.state === 'shutting-down' || (forcedUntil !== null && forcedUntil > clock)
   useEffect(() => {
     if (!focused || !ticking) return
     const id = setInterval(() => setClock(now()), 1000)
@@ -166,30 +184,31 @@ export function PcScreen({ focused = true, now = Date.now }: PcScreenProps): Rea
           </Text>
         ) : null}
 
-        {state === 'off' && !forcing ? (
+        {(state === 'off' && !forcing) || wakeActive ? (
           <Button
             variant="primary"
             label="Ligar"
             icon={ACTION_ICONS.power}
-            disabled={busy}
+            loading={wakeActive}
+            disabled={locked}
             onPress={() => void remote().wake()}
           />
         ) : null}
-        {state === 'ready' || state === 'rc-down' ? (
+        {state === 'ready' || state === 'rc-down' || shutdownActive ? (
           <>
             {status?.locked ? (
               <Button
                 variant="primary"
                 label="Desbloquear"
                 icon={ACTION_ICONS.unlock}
-                disabled={busy}
+                disabled={locked}
                 onPress={() => void remote().unlock()}
               />
             ) : (
               <Button
                 label="Bloquear agora"
                 icon={ACTION_ICONS.lock}
-                disabled={busy}
+                disabled={locked}
                 onPress={() => void remote().lock()}
               />
             )}
@@ -197,7 +216,8 @@ export function PcScreen({ focused = true, now = Date.now }: PcScreenProps): Rea
               variant="danger"
               label="Desligar"
               icon={ACTION_ICONS.powerOff}
-              disabled={busy}
+              loading={shutdownActive}
+              disabled={locked}
               onPress={() => void remote().shutdown()}
             />
           </>
@@ -207,7 +227,7 @@ export function PcScreen({ focused = true, now = Date.now }: PcScreenProps): Rea
             variant="danger"
             label="Forçar pelo ESP32"
             icon={ACTION_ICONS.powerOff}
-            disabled={busy}
+            disabled={locked}
             onPress={confirmForce}
           />
         ) : null}
@@ -215,9 +235,13 @@ export function PcScreen({ focused = true, now = Date.now }: PcScreenProps): Rea
           <Button
             variant="primary"
             label="Cancelar"
-            disabled={busy}
+            disabled={locked}
             onPress={() => void remote().abortShutdown()}
           />
+        ) : null}
+
+        {action && (action.kind === 'wake' || action.kind === 'shutdown') ? (
+          <ActionStatus action={action} />
         ) : null}
 
         {alive && status ? (
@@ -237,7 +261,7 @@ export function PcScreen({ focused = true, now = Date.now }: PcScreenProps): Rea
                 variant="primary"
                 label="Restaurar acesso"
                 icon={ACTION_ICONS.unlock}
-                disabled={busy || factor.trim() === ''}
+                disabled={locked || factor.trim() === ''}
                 onPress={restore}
               />
             </Card>
@@ -257,7 +281,7 @@ export function PcScreen({ focused = true, now = Date.now }: PcScreenProps): Rea
             <Text style={{ color: theme.text, fontSize: FONT.bodyLg }}>
               {updateReadyText(status.updateVersion)}
             </Text>
-            <Button label="Instalar atualização" disabled={busy} onPress={confirmInstall} />
+            <Button label="Instalar atualização" disabled={locked} onPress={confirmInstall} />
           </Card>
         ) : null}
 
@@ -267,70 +291,69 @@ export function PcScreen({ focused = true, now = Date.now }: PcScreenProps): Rea
               {SERVERS_TITLE}
             </Text>
             {status.servers.map((server) => {
-              const action = serverAction(server)
               const projectId = server.projectId
+              // The server this action is about keeps the button of the action, even after
+              // its state changed (starting, running), until the step is over.
+              const mine =
+                action && projectId && action.projectId === projectId && pendingAction
+                  ? action
+                  : null
+              const next = mine
+                ? mine.kind === 'server-start'
+                  ? 'start'
+                  : 'stop'
+                : serverAction(server)
+              const step = action && projectId && action.projectId === projectId ? action : null
               return (
-                <ListItem
-                  key={projectId ?? server.name}
-                  title={server.name}
-                  subtitle={serverStateText(server)}
-                  left={
-                    <ACTION_ICONS.server size={20} color={server.up ? theme.green : theme.muted} />
-                  }
-                  right={
-                    action && projectId ? (
-                      <Button
-                        variant={action === 'start' ? 'secondary' : 'danger'}
-                        label={action === 'start' ? 'Ligar' : 'Desligar'}
-                        a11yLabel={`${action === 'start' ? 'Ligar' : 'Desligar'} o servidor ${server.name}`}
-                        disabled={busy || readOnly}
-                        onPress={() =>
-                          void (action === 'start'
-                            ? remote().startServer(projectId)
-                            : remote().stopServer(projectId))
-                        }
+                <View key={projectId ?? server.name} style={{ gap: SPACE.xs }}>
+                  <ListItem
+                    title={server.name}
+                    subtitle={serverStateText(server)}
+                    left={
+                      <ACTION_ICONS.server
+                        size={20}
+                        color={server.up ? theme.green : theme.muted}
                       />
-                    ) : undefined
-                  }
-                />
+                    }
+                    right={
+                      next && projectId ? (
+                        <Button
+                          variant={next === 'start' ? 'secondary' : 'danger'}
+                          label={next === 'start' ? 'Ligar' : 'Desligar'}
+                          a11yLabel={`${next === 'start' ? 'Ligar' : 'Desligar'} o servidor ${server.name}`}
+                          loading={!!mine}
+                          disabled={locked || readOnly}
+                          onPress={() =>
+                            void (next === 'start'
+                              ? remote().startServer(projectId)
+                              : remote().stopServer(projectId))
+                          }
+                        />
+                      ) : undefined
+                    }
+                  />
+                  {step ? <ActionStatus action={step} /> : null}
+                </View>
               )
             })}
           </View>
         ) : null}
 
-        {cards.length > 0 ? (
-          <View style={{ gap: SPACE.sm }}>
-            <Text accessibilityRole="header" style={[styles.section, { color: theme.muted }]}>
-              {CARDS_TITLE}
+        {pendingCards > 0 ? (
+          <Card>
+            <Text
+              accessibilityLiveRegion="polite"
+              style={{ color: theme.text, fontSize: FONT.bodyLg }}
+            >
+              {pendingApprovalsText(pendingCards)}
             </Text>
-            {cards.map((card) => {
-              const left = card.expiresAt - clock
-              const expired = left <= 0
-              return (
-                <Card key={card.id}>
-                  <Text style={{ color: theme.text, fontSize: FONT.bodyLg }}>{card.resumo}</Text>
-                  <Text style={{ color: theme.muted, fontSize: FONT.caption }}>
-                    {`${card.session} · ${card.tool} · ${expired ? CONTROL_TEXT.cardGone : cardCountdown(left)}`}
-                  </Text>
-                  <View style={styles.actions}>
-                    <Button
-                      variant="primary"
-                      label="Aprovar"
-                      a11yLabel={`Aprovar: ${card.resumo}`}
-                      disabled={busy || expired}
-                      onPress={() => void remote().answer(card.id, true)}
-                    />
-                    <Button
-                      label="Recusar"
-                      a11yLabel={`Recusar: ${card.resumo}`}
-                      disabled={busy || expired}
-                      onPress={() => void remote().answer(card.id, false)}
-                    />
-                  </View>
-                </Card>
-              )
-            })}
-          </View>
+            <Button
+              variant="primary"
+              label={OPEN_NOTIFICATIONS}
+              a11yLabel={`${OPEN_NOTIFICATIONS}: ${pendingApprovalsText(pendingCards)}`}
+              onPress={() => onOpenNotifications?.()}
+            />
+          </Card>
         ) : null}
       </Screen>
     </ScrollView>
@@ -340,6 +363,5 @@ export function PcScreen({ focused = true, now = Date.now }: PcScreenProps): Rea
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: SPACE.md },
   state: { flex: 1, fontSize: FONT.title, fontWeight: '700' },
-  section: { fontSize: FONT.caption, fontWeight: '700' },
-  actions: { flexDirection: 'row', gap: SPACE.sm, flexWrap: 'wrap' }
+  section: { fontSize: FONT.caption, fontWeight: '700' }
 })

@@ -62,6 +62,8 @@ export const MAX_AUTHORIZE_REQUESTS_PER_CYCLE = 3
 /** authorize-remote whose password is checked per inbox read. */
 export const MAX_AUTHORIZE_REMOTE_PER_CYCLE = 1
 const STATUS_TTL_MS = MAX_TTL_MS.status
+/** How long a phone's "Ligar" is remembered to push "server-ready" to it (spec 2026-11-13). */
+const SERVER_REQUEST_MS = 10 * 60_000
 const NOTICE_TTL_MS = 10 * 60_000
 
 /** Sync states in which the remote control runs; anything else stops it. */
@@ -146,6 +148,23 @@ export interface RemoteService {
   checkDevices(): Promise<void>
   /** The next cycle publishes the status (a server changed). */
   statusSoon(): void
+  /**
+   * A push (spec 2026-11-13): a signed status with `notify`, to `only` (a controller) or to
+   * every controller. Does nothing while the controlled mode is not running.
+   */
+  notifyEvent(code: NotifyCode, only?: string): Promise<void>
+  /** The rc-manager says a server asked by a phone is ready: "server-ready" to that phone only. */
+  serverReady(projectId: string): Promise<void>
+  /**
+   * A server failed: before it was ready ('start', only to the phone that asked) or after it
+   * ('crash', to every controller).
+   */
+  serverFailed(projectId: string, phase: 'start' | 'crash'): Promise<void>
+  /**
+   * Tells the Worker this PC stops answering on purpose (quit, update): no "PC sem sinal".
+   * Best effort, never throws.
+   */
+  announceOffline(): Promise<void>
 }
 
 /** What the heartbeat says about one server: only those turned on for a project. */
@@ -187,6 +206,13 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
   let roles: Promise<Set<string>> | null = null
   let authorizeRequests = 0
   let authorizeRemotes = 0
+  // Spec 2026-11-13: the last heartbeat (re-sent with watch=false when this PC stops on
+  // purpose), the pushes started during a cycle, the phone that asked each server to start and
+  // who was known in the last device check (null until the first one).
+  let lastStatus: PcStatus | null = null
+  const background: Promise<void>[] = []
+  const serverRequests = new Map<string, { controllerId: string; at: number }>()
+  let knownDevices: Map<string, boolean> | null = null
 
   const isActive = (): boolean =>
     wanted && syncActive && deps.hasPassword() && deps.config().enabled
@@ -259,12 +285,15 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
 
   const refused = (now: number, reason: ResultReason): void => {
     log.warn('remote', 'refused', { reason })
+    let suspendedNow = false
     updateCounters((c) => {
       const failures = c.failures + 1
       if (failures < REMOTE_FAIL_LIMIT) return { ...c, failures }
       log.warn('remote', 'suspended', { minutes: REMOTE_SUSPEND_MS / 60_000 })
+      suspendedNow = true
       return { ...c, failures: 0, suspendedUntil: now + REMOTE_SUSPEND_MS }
     })
+    if (suspendedNow) queueNotify('suspended')
   }
 
   const sign = (kind: ControlKind, body: object, ttlMs?: number): SignedEnvelope => {
@@ -466,6 +495,8 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
           return reply(from, env.nonce, false)
         }
         log.info('remote', 'shutdown', { result: 'ok' })
+        // From here every heartbeat says watch=false; say it now, before the PC goes down.
+        queueOffline()
         return reply(from, env.nonce, true)
       }
       case 'install-update': {
@@ -524,6 +555,7 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
         }
         if (result !== 'ok') return reply(from, env.nonce, false, { reason: result })
         accepted()
+        serverRequests.set(body.projectId, { controllerId: from, at: now })
         return reply(from, env.nonce, true)
       }
       case 'server-stop': {
@@ -589,6 +621,7 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
     if (cfg().accessCutAt === null) {
       update((c) => ({ ...c, accessCutAt: now }))
       deps.onAccessCut()
+      queueNotify('access-cut')
     }
     log.info('remote', 'cut', { result: 'ok' })
     return reply(from, env.nonce, true)
@@ -603,9 +636,10 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
 
   // ── Cycle ────────────────────────────────────────────────────────────────────
 
-  async function heartbeat(now: number): Promise<void> {
+  /** What the heartbeat and every push say about this PC right now. */
+  async function buildStatus(now: number): Promise<PcStatus> {
     const servers = pcServers(await deps.serverList())
-    const status: PcStatus = {
+    return {
       v: 1,
       at: now,
       locked: deps.isLocked(),
@@ -616,8 +650,15 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
       updateVersion: deps.updateVersion(),
       accessCutAt: cfg().accessCutAt
     }
+  }
+
+  async function heartbeat(now: number): Promise<void> {
+    const status = await buildStatus(now)
+    const servers = status.servers
+    lastStatus = status
     const env = sign('status', status, STATUS_TTL_MS)
-    await client.putStatus(env)
+    // watch=false while a shutdown is scheduled: the PC is going down on purpose.
+    await client.putStatus(env, { watch: deps.shutdownAt() === null })
     await publishKey()
     // "PC pronto" waits only for the servers with "Iniciar com o Sagyou".
     if (!readySent && servers.every((s) => !s.autostart || s.up)) {
@@ -667,6 +708,20 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
     }
     for (const id of [...pending.keys()]) if (!live.has(id)) pending.delete(id)
 
+    // Spec 2026-11-13: tell the phones when a device is paired or revoked. The first check
+    // after the Sagyou opens only makes the base.
+    const current = new Map(list.map((d) => [d.id, d.revoked]))
+    if (knownDevices !== null) {
+      for (const [id, revoked] of current) {
+        if (!knownDevices.has(id)) {
+          if (!revoked) queueNotify('device-paired')
+        } else if (knownDevices.get(id) === false && revoked) {
+          queueNotify('device-revoked')
+        }
+      }
+    }
+    knownDevices = current
+
     // A controller the Worker no longer has (removed there, or replaced by
     // /roles/remote) is not one here either.
     const holders = new Set(await client.controllers())
@@ -675,6 +730,59 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
       update((c) => ({ ...c, controllers: c.controllers.filter((x) => holders.has(x.id)) }))
       log.info('remote', 'revoke', { reason: 'role', count: lost.length })
     }
+  }
+
+  async function pushEvent(code: NotifyCode, only?: string): Promise<void> {
+    if (!isActive() || !deps.pcPrivateKey()) return
+    const targets = only ? controllers().filter((c) => c.id === only) : controllers()
+    if (targets.length === 0) return
+    const env = sign('status', await buildStatus(deps.now()), STATUS_TTL_MS)
+    for (const c of targets) {
+      try {
+        await client.send(c.id, env, code)
+      } catch (error) {
+        // A Worker before this version answers 400 to a new code: not a cycle error (the
+        // settings screen would show it), only a line in the log.
+        log.warn('remote', 'push_failed', {
+          code,
+          reason: error instanceof ControlError ? error.code : 'offline'
+        })
+      }
+    }
+    log.info('remote', 'push', { code, to: targets.length })
+  }
+
+  /** Started during a cycle, awaited at its end (and fine to leave alone outside one). */
+  function queueNotify(code: NotifyCode, only?: string): void {
+    background.push(pushEvent(code, only).catch(() => undefined))
+  }
+
+  async function sendOffline(): Promise<void> {
+    try {
+      const key = deps.pcPrivateKey()
+      if (!key || !lastStatus) return
+      // The last servers list, with everything else as it is now: a scheduled shutdown must
+      // show on the phone, not the stale "pronto" of the last heartbeat.
+      const now = deps.now()
+      const status: PcStatus = {
+        ...lastStatus,
+        at: now,
+        locked: deps.isLocked(),
+        pendingCards: deps.pendingCards(),
+        shutdownAt: deps.shutdownAt(),
+        suspendedUntil: suspendedUntil(now),
+        updateVersion: deps.updateVersion(),
+        accessCutAt: cfg().accessCutAt
+      }
+      const env = sign('status', status, STATUS_TTL_MS)
+      await client.putStatus(env, { watch: false })
+    } catch {
+      // Best effort: without it the Worker only warns later.
+    }
+  }
+
+  function queueOffline(): void {
+    background.push(sendOffline())
   }
 
   async function tick(): Promise<void> {
@@ -742,6 +850,10 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
         log.warn('remote', 'config_save_failed')
       }
       busy = false
+      await Promise.allSettled(background.splice(0))
+      // Paused or turned off while this cycle ran: refreshLoop found no timer to clear (it is
+      // re-armed only after the cycle), so the announce is made here.
+      if (!isActive()) await sendOffline()
       if (dirty) {
         dirty = false
         deps.onChange?.()
@@ -764,6 +876,8 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
     } else if (timer !== null) {
       deps.clearTimer(timer)
       timer = null
+      // The loop stopped on purpose (sync paused, controlled mode off): not a silent PC.
+      void sendOffline()
     }
   }
 
@@ -878,6 +992,31 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
 
     statusSoon() {
       lastStatusAt = Number.NEGATIVE_INFINITY
+    },
+
+    notifyEvent: pushEvent,
+
+    async serverReady(projectId) {
+      const request = serverRequests.get(projectId)
+      if (!request) return
+      serverRequests.delete(projectId)
+      if (deps.now() - request.at > SERVER_REQUEST_MS) return
+      await pushEvent('server-ready', request.controllerId)
+    },
+
+    async serverFailed(projectId, phase) {
+      const request = serverRequests.get(projectId)
+      serverRequests.delete(projectId)
+      if (phase === 'start') {
+        if (!request || deps.now() - request.at > SERVER_REQUEST_MS) return
+        await pushEvent('server-failed', request.controllerId)
+        return
+      }
+      await pushEvent('server-failed')
+    },
+
+    async announceOffline() {
+      await sendOffline()
     }
   }
 }

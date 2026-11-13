@@ -13,8 +13,22 @@
 import type { DeviceRow } from './db'
 import type { ControlDb } from './control-db'
 
-export type NotifyCode = 'ready' | 'approval' | 'shutdown-failed'
-const NOTIFY_CODES: NotifyCode[] = ['ready', 'approval', 'shutdown-failed']
+// A copy of NOTIFY_CODES of @sagyou/core/control/notify (the Worker does not depend on the
+// core); push.test.ts keeps both equal.
+export const NOTIFY_CODES = [
+  'ready',
+  'shutdown-failed',
+  'server-ready',
+  'server-failed',
+  'pc-silent',
+  'approval',
+  'session-done',
+  'suspended',
+  'access-cut',
+  'device-paired',
+  'device-revoked'
+] as const
+export type NotifyCode = (typeof NOTIFY_CODES)[number]
 const POWER_COMMANDS = ['wake', 'shutdown', 'abort-shutdown']
 const POWER_RESULTS = ['ok', 'mac', 'old', 'clock', 'expired', '']
 
@@ -228,7 +242,7 @@ const send: ControlHandler = async (request, _p, db, deps, h) => {
     throw h.fail(400, { error: 'invalid ttlMs' })
   }
   const notify = body.notify
-  if (notify !== undefined && !NOTIFY_CODES.includes(notify as NotifyCode)) {
+  if (notify !== undefined && !(NOTIFY_CODES as readonly unknown[]).includes(notify)) {
     throw h.fail(400, { error: 'invalid notify' })
   }
   const { pc } = await db.getRoles()
@@ -313,8 +327,16 @@ const inbox: ControlHandler = async (request, _p, db, deps, h) => {
 const putStatus: ControlHandler = async (request, _p, db, deps, h) => {
   const me = await h.authenticate(request)
   await requireRole(db, h, me.id, ['pc'])
-  const sealed = sealedSlot(h, await h.readJson(request, CONTROL_MAX_BODY_BYTES))
-  await db.putStatus({ from: me.id, ...sealed, at: deps.now() })
+  const body = await h.readJson(request, CONTROL_MAX_BODY_BYTES)
+  const sealed = sealedSlot(h, body)
+  // Spec 2026-11-13: `watch` says whether this PC is expected to keep answering. Absent
+  // (a PC before this version) counts as false, so it never raises "PC sem sinal".
+  if (body.watch !== undefined && typeof body.watch !== 'boolean') {
+    throw h.fail(400, { error: 'invalid watch' })
+  }
+  const now = deps.now()
+  await db.putStatus({ from: me.id, ...sealed, at: now })
+  await db.putWatch(body.watch === true)
   return h.reply(200, { ok: true })
 }
 

@@ -69,6 +69,13 @@ export interface ControlDb {
   takeMessages(to: string, now: number): Promise<MessageRow[]>
   putStatus(s: SealedSlot): Promise<void>
   getStatus(): Promise<SealedSlot | null>
+  /**
+   * Whether the PC is expected to keep sending heartbeats (spec 2026-11-13). Every heartbeat
+   * rewrites it and clears the "already warned" mark. A D1 without pc_watch ignores it.
+   */
+  putWatch(watch: boolean): Promise<void>
+  getWatch(): Promise<{ watch: boolean; notifiedAt: number | null } | null>
+  markSilentNotified(now: number): Promise<void>
   putEsp32Key(s: SealedSlot): Promise<void>
   getEsp32Key(): Promise<SealedSlot | null>
   setPowerToken(hash: string, now: number): Promise<void>
@@ -273,6 +280,39 @@ export class D1ControlDb implements ControlDb {
     return this.getSlot('control_status')
   }
 
+  async putWatch(watch: boolean): Promise<void> {
+    try {
+      await this.db
+        .prepare(
+          `INSERT INTO pc_watch (id, watch, notified_at) VALUES (1, ?1, NULL)
+           ON CONFLICT(id) DO UPDATE SET watch = excluded.watch, notified_at = NULL`
+        )
+        .bind(watch ? 1 : 0)
+        .run()
+    } catch {
+      // A D1 without pc_watch (schema.sql not applied again): only "PC sem sinal" is lost.
+    }
+  }
+
+  async getWatch(): Promise<{ watch: boolean; notifiedAt: number | null } | null> {
+    try {
+      const row = await this.db
+        .prepare('SELECT watch, notified_at FROM pc_watch WHERE id = 1')
+        .first<{ watch: number; notified_at: number | null }>()
+      return row ? { watch: row.watch === 1, notifiedAt: row.notified_at } : null
+    } catch {
+      return null
+    }
+  }
+
+  async markSilentNotified(now: number): Promise<void> {
+    try {
+      await this.db.prepare('UPDATE pc_watch SET notified_at = ?1 WHERE id = 1').bind(now).run()
+    } catch {
+      // See putWatch.
+    }
+  }
+
   putEsp32Key(s: SealedSlot): Promise<void> {
     return this.putSlot('esp32_key', s)
   }
@@ -469,6 +509,20 @@ export class MemoryControlDb implements ControlDb {
 
   async getStatus(): Promise<SealedSlot | null> {
     return this.status
+  }
+
+  watchRow: { watch: boolean; notifiedAt: number | null } | null = null
+
+  async putWatch(watch: boolean): Promise<void> {
+    this.watchRow = { watch, notifiedAt: null }
+  }
+
+  async getWatch(): Promise<{ watch: boolean; notifiedAt: number | null } | null> {
+    return this.watchRow ? { ...this.watchRow } : null
+  }
+
+  async markSilentNotified(now: number): Promise<void> {
+    if (this.watchRow) this.watchRow.notifiedAt = now
   }
 
   async putEsp32Key(s: SealedSlot): Promise<void> {
