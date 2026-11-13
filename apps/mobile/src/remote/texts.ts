@@ -25,7 +25,12 @@ export const REMOTE_TEXT = {
   serverNotConfirmed: 'Confirme este projeto uma vez no PC.',
   serverCut: 'O acesso está cortado. Restaure antes de ligar um servidor.',
   serverUnknown: 'Este servidor não existe mais no PC.',
-  serverFailed: 'O servidor não subiu. Veja o terminal no PC.'
+  serverFailed: 'O servidor não subiu. Veja o terminal no PC.',
+  // Spec docs/specs/2026-11-13-mobile-aprovacoes-notificacoes.md: the steps of an action.
+  sending: 'Enviando pedido…',
+  waiting: 'Pedido enviado. Aguardando o PC…',
+  wakeWaiting: 'Ligando o PC… pode levar alguns minutos.',
+  noAnswer: 'O PC não respondeu. Tente de novo.'
 } as const
 
 /** A Remote Control server's state on the PC tab; "Confirme no PC", since the phone has no Fleet. */

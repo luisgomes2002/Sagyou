@@ -35,6 +35,15 @@ import {
   type AuthorizationState,
   type ControllerKeys
 } from './keys'
+import {
+  DONE_VISIBLE_MS,
+  isPending,
+  observeAction,
+  sendingAction,
+  waitingAction,
+  type ActionInfo,
+  type ActionProgress
+} from './progress'
 import { REMOTE_TEXT } from './texts'
 
 /** What the store needs from the app; injected so tests run without native modules. */
@@ -72,12 +81,19 @@ export interface RemoteStore {
   /** "Cortar acesso" got no answer in CUT_WAIT_MS: the PC tab offers the ESP32. */
   cutUnanswered: boolean
   busy: boolean
+  /**
+   * The step of the last Ligar/Desligar (PC or server); null when none is on screen (spec
+   * 2026-11-13). While one is sending or waiting, no other one starts.
+   */
+  action: ActionProgress | null
   init(): Promise<void>
   requestAuthorization(): Promise<void>
   requestRemote(password: string, factor: string): Promise<void>
   /** Gives up a request the PC never answered: deletes the keys, back to 'none'. */
   cancelRequest(): Promise<void>
   refresh(): Promise<void>
+  /** One read of the inbox and the PC's state, unless the polling is already doing it. */
+  refreshOnce(): Promise<void>
   startPolling(): void
   stopPolling(): void
   wake(): Promise<void>
@@ -133,7 +149,8 @@ const initial = {
   pairingCode: null,
   requestExpired: false,
   cutUnanswered: false,
-  busy: false
+  busy: false,
+  action: null as ActionProgress | null
 }
 
 function connectionText(error: unknown): string | null {
@@ -249,17 +266,67 @@ export const useRemote = create<RemoteStore>((set, get) => {
     return env.nonce
   }
 
-  const power = async (cmd: PowerCommand): Promise<void> => {
+  /** True when the command was posted; false when the biometrics were refused or the key is missing. */
+  const power = async (cmd: PowerCommand): Promise<boolean> => {
     const d = need()
-    if (!(await d.authenticate())) return
+    if (!(await d.authenticate())) return false
     const key = await d.keys.esp32Key()
     if (!key) {
       set({ error: REMOTE_TEXT.noEsp32Key })
-      return
+      return false
     }
     const at = d.now()
     const exp = at + POWER_TTL_MS
     await d.client.powerCommand(cmd, at, exp, powerCommandMac(key, cmd, at, exp))
+    return true
+  }
+
+  // ── Ligar / Desligar with steps (spec 2026-11-13) ───────────────────────────────
+
+  let doneTimer: unknown = null
+  const clearDoneTimer = (): void => {
+    if (doneTimer !== null && deps) deps.clearTimer(doneTimer)
+    doneTimer = null
+  }
+
+  /**
+   * Runs one of the four actions: "Enviando pedido…" while it is sent, then waiting for the PC.
+   * A refusal (the PC's answer, a failed send, a cancelled biometrics) drops the step and leaves
+   * the error that was already shown.
+   */
+  const act = async (info: ActionInfo, send: () => Promise<boolean>): Promise<void> => {
+    if (get().busy || isPending(get().action)) return
+    clearDoneTimer()
+    set({ action: sendingAction(info, need().now()) })
+    await run(async () => {
+      const sent = await send()
+      const current = get().action
+      if (!sent || !current) {
+        set({ action: null })
+        return
+      }
+      set({ action: waitingAction(current) })
+    })
+    if (get().action?.step === 'sending') set({ action: null })
+  }
+
+  const serverName = (projectId: string): string | undefined =>
+    get().status?.servers.find((s) => s.projectId === projectId)?.name
+
+  /** After the PC's state was read: an action may be done now, or out of time. */
+  const observe = (): void => {
+    const current = get().action
+    if (!current || current.step !== 'waiting') return
+    const next = observeAction(current, get().view, get().status, need().now())
+    if (next === current) return
+    set({ action: next })
+    if (next.step === 'done') {
+      clearDoneTimer()
+      doneTimer = need().setTimer(() => {
+        doneTimer = null
+        if (get().action?.step === 'done') set({ action: null })
+      }, DONE_VISIBLE_MS)
+    }
   }
 
   // ── Messages from the PC ──────────────────────────────────────────────────────
@@ -272,8 +339,13 @@ export const useRemote = create<RemoteStore>((set, get) => {
       return
     }
     if (!requests.has(result.replyTo)) return
+    const kind = requests.get(result.replyTo)
     requests.delete(result.replyTo)
     set({ error: result.ok ? null : resultText(result) })
+    // The PC refused one of the steps' requests: nothing to wait for any more.
+    if (!result.ok && (kind === 'shutdown' || kind === 'server-start' || kind === 'server-stop')) {
+      set({ action: null })
+    }
   }
 
   const handle = async (msg: InboxMessage, pc: string): Promise<void> => {
@@ -390,6 +462,7 @@ export const useRemote = create<RemoteStore>((set, get) => {
       cards: get().cards.filter((c) => c.expiresAt > now),
       ...(espError ? { error: espError } : {})
     })
+    observe()
   }
 
   let polling = false
@@ -514,6 +587,11 @@ export const useRemote = create<RemoteStore>((set, get) => {
       }
     },
 
+    async refreshOnce() {
+      if (polling) return
+      await get().refresh()
+    },
+
     startPolling() {
       if (!deps || polling) return
       polling = true
@@ -527,7 +605,7 @@ export const useRemote = create<RemoteStore>((set, get) => {
       timer = null
     },
 
-    wake: () => run(() => power('wake')),
+    wake: () => act({ kind: 'wake' }, () => power('wake')),
     forceShutdown: () =>
       run(async () => {
         await power('shutdown')
@@ -540,13 +618,25 @@ export const useRemote = create<RemoteStore>((set, get) => {
         if (get().view?.state === 'shutting-down') await sendToPc('abort-shutdown', {})
         else await power('abort-shutdown')
       }),
-    shutdown: () => run(() => sendToPc('shutdown', {})),
+    shutdown: () =>
+      act({ kind: 'shutdown' }, async () => {
+        await sendToPc('shutdown', {})
+        return true
+      }),
     unlock: () => run(() => sendToPc('unlock', {})),
     lock: () => run(() => sendToPc('lock', {})),
     installUpdate: () => run(() => sendToPc('install-update', {})),
     // The Keystore prompt of keys.sign is the biometrics (decision 10): no second prompt.
-    startServer: (projectId) => run(() => sendToPc('server-start', { projectId })),
-    stopServer: (projectId) => run(() => sendToPc('server-stop', { projectId })),
+    startServer: (projectId) =>
+      act({ kind: 'server-start', projectId, name: serverName(projectId) }, async () => {
+        await sendToPc('server-start', { projectId })
+        return true
+      }),
+    stopServer: (projectId) =>
+      act({ kind: 'server-stop', projectId, name: serverName(projectId) }, async () => {
+        await sendToPc('server-stop', { projectId })
+        return true
+      }),
 
     cutAccess: () =>
       run(async () => {
@@ -618,6 +708,7 @@ export const useRemote = create<RemoteStore>((set, get) => {
 
     reset() {
       get().stopPolling()
+      clearDoneTimer()
       pcIdCache = null
       seen.clear()
       requests.clear()
