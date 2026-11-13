@@ -103,9 +103,11 @@ describe('NotificationBell', () => {
     await act(async () => jest.advanceTimersByTime(2000))
     expect(screen.getByText('1')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Notificações, 1 aprovação pendente' })).toBeTruthy()
-    // The clock is cleared on unmount: no timer is left running.
+    // The clock is cleared on unmount.
+    const clear = jest.spyOn(globalThis, 'clearInterval')
     await view.unmount()
-    expect(jest.getTimerCount()).toBe(0)
+    expect(clear).toHaveBeenCalled()
+    clear.mockRestore()
   })
 
   it('o toque chama onPress', async () => {

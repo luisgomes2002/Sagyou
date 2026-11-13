@@ -640,7 +640,8 @@ describe('PcScreen: etapas das ações', () => {
       expect(screen.queryByTestId('spinner')).toBeNull()
       expect(screen.getByText('Ligando o PC… pode levar alguns minutos.')).toBeTruthy()
     } finally {
-      spy.mockRestore()
+      // RN's own mock has no original to restore: put its default answer back.
+      spy.mockResolvedValue(false)
     }
   })
 

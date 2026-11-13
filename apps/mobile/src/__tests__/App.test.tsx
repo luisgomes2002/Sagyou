@@ -187,6 +187,8 @@ describe('App', () => {
         </SafeAreaProvider>
       )
     }
+    // The history is a global store: earlier tests of this file may have left entries in it.
+    beforeEach(() => useNotifications.setState({ entries: [], unread: 0 }))
     afterEach(() => {
       useRemote.setState({ authorized: 'none', cards: [] })
       useNotifications.setState({ entries: [], unread: 0 })
