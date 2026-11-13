@@ -70,7 +70,11 @@ export interface ControlClient {
   me(): string
   send(to: string, env: SignedEnvelope, notify?: NotifyCode): Promise<void>
   inbox(): Promise<{ messages: InboxMessage[]; dropped: number }>
-  putStatus(env: SignedEnvelope): Promise<void>
+  /**
+   * `opts.watch` (spec 2026-11-13) is sent in clear: whether the PC is expected to keep
+   * answering. Left out, a Worker treats the PC as not watched.
+   */
+  putStatus(env: SignedEnvelope, opts?: { watch?: boolean }): Promise<void>
   getStatus(): Promise<InboxMessage | null>
   setPc(factor: SyncSecondFactor): Promise<void>
   pcId(): Promise<string | null>
@@ -206,10 +210,14 @@ export function createControlClient(deps: ControlClientDeps): ControlClient {
       return { messages, dropped }
     },
 
-    async putStatus(env) {
+    async putStatus(env, opts) {
       const msgId = randomUUID()
       await call('PUT', '/control/status', {
-        body: { msgId, ciphertext: seal(STATUS_SLOT, msgId, env) }
+        body: {
+          msgId,
+          ciphertext: seal(STATUS_SLOT, msgId, env),
+          ...(typeof opts?.watch === 'boolean' ? { watch: opts.watch } : {})
+        }
       })
     },
 
