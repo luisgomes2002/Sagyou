@@ -10,6 +10,7 @@ import { deriveKeys, keyProof, opaqueDeviceId } from '../sync/crypto'
 import { fromBase64, fromUtf8, randomUUID, toBase64, utf8 } from '../sync/bytes'
 import { ControlDecryptError, controlKey, openControl, sealControl } from './crypto'
 import { isEnvelope, type SignedEnvelope } from './messages'
+import type { NotifyCode } from './notify'
 
 export type ControlErrorCode =
   | 'offline'
@@ -29,7 +30,7 @@ export class ControlError extends Error {
   }
 }
 
-export type NotifyCode = 'ready' | 'approval' | 'shutdown-failed'
+export type { NotifyCode } from './notify'
 
 /** Pseudo-recipients for the two sealed singletons the Worker keeps. */
 export const STATUS_SLOT = 'status'
