@@ -363,6 +363,27 @@ describe('mensagens', () => {
       body: message(DEV_B, { notify: 'qualquer texto' })
     })
     expect(unknown.status).toBe(400)
+    // Spec 2026-11-13: os códigos novos passam; um removido da spec (session-waiting) não.
+    for (const code of ['server-ready', 'server-failed', 'session-done', 'suspended', 'access-cut']) {
+      const res = await call(w, 'POST', '/control/send', {
+        token: w.a,
+        body: message(DEV_B, { notify: code })
+      })
+      expect(res.status).toBe(200)
+    }
+    expect(w.notified.map((n) => n.code)).toEqual([
+      'approval',
+      'server-ready',
+      'server-failed',
+      'session-done',
+      'suspended',
+      'access-cut'
+    ])
+    const waiting = await call(w, 'POST', '/control/send', {
+      token: w.a,
+      body: message(DEV_B, { notify: 'session-waiting' })
+    })
+    expect(waiting.status).toBe(400)
   })
 
   it('a caixa entrega uma vez', async () => {
@@ -395,6 +416,41 @@ describe('mensagens', () => {
     expect((await call(w, 'GET', '/control/status', { token: w.c })).status).toBe(403)
     const got = await json(await call(w, 'GET', '/control/status', { token: w.b }))
     expect(got).toMatchObject({ from: DEV_A, msgId: 'status-0001', ciphertext: CIPHER })
+  })
+})
+
+describe('status: bit watch', () => {
+  const body = (extra: Record<string, unknown> = {}): Record<string, unknown> => ({
+    msgId: 'status-0001',
+    ciphertext: CIPHER,
+    ...extra
+  })
+
+  it('guarda o watch do heartbeat e o zera quando o corpo não traz (PC antigo)', async () => {
+    const w = await world()
+    await makePc(w)
+    await call(w, 'PUT', '/control/status', { token: w.a, body: body({ watch: true }) })
+    expect(await w.control.getWatch()).toEqual({ watch: true, notifiedAt: null })
+    await call(w, 'PUT', '/control/status', { token: w.a, body: body() })
+    expect(await w.control.getWatch()).toEqual({ watch: false, notifiedAt: null })
+  })
+
+  it('rejeita um watch que não é booleano', async () => {
+    const w = await world()
+    await makePc(w)
+    const res = await call(w, 'PUT', '/control/status', { token: w.a, body: body({ watch: 'x' }) })
+    expect(res.status).toBe(400)
+    expect(await w.control.getStatus()).toBeNull()
+  })
+
+  it('um novo heartbeat limpa o aviso já enviado', async () => {
+    const w = await world()
+    await makePc(w)
+    await call(w, 'PUT', '/control/status', { token: w.a, body: body({ watch: true }) })
+    await w.control.markSilentNotified(5)
+    expect((await w.control.getWatch())?.notifiedAt).toBe(5)
+    await call(w, 'PUT', '/control/status', { token: w.a, body: body({ watch: true }) })
+    expect((await w.control.getWatch())?.notifiedAt).toBeNull()
   })
 })
 

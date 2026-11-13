@@ -148,3 +148,13 @@ CREATE TABLE IF NOT EXISTS pc_key (
   public_key TEXT NOT NULL,
   updated_at INTEGER NOT NULL
 );
+
+-- Whether the PC is expected to keep sending heartbeats (spec docs/specs/2026-11-13-mobile-aprovacoes-notificacoes.md).
+-- The PC says it in clear (the heartbeat itself is sealed): true while it runs in controlled
+-- mode, false when it is shut down or stops on purpose. The scheduled job warns the phones
+-- ("PC sem sinal") once when watch is 1 and the last heartbeat (control_status.at) is old.
+CREATE TABLE IF NOT EXISTS pc_watch (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  watch INTEGER NOT NULL,
+  notified_at INTEGER
+);
