@@ -33,6 +33,29 @@ export const REMOTE_TEXT = {
   noAnswer: 'O PC não respondeu. Tente de novo.'
 } as const
 
+// Spec docs/specs/2026-11-13-mobile-aprovacoes-notificacoes.md: the Notificações screen.
+export const NOTIFICATIONS_TITLE = 'Notificações'
+export const CARDS_TITLE = 'Aprovações pendentes'
+export const HISTORY_TITLE = 'Histórico'
+export const HISTORY_EMPTY = 'Nenhuma notificação ainda.'
+export const CLEAR_HISTORY = 'Limpar histórico'
+/** An approval entry of the history while some card can still be answered above. */
+export const APPROVAL_ANSWER_ABOVE = 'Responder acima'
+export const APPROVAL_EXPIRED = 'Expirou'
+export const OPEN_NOTIFICATIONS = 'Ver'
+
+/** "1 aprovação pendente" / "3 aprovações pendentes". */
+export function pendingApprovalsText(count: number): string {
+  return count === 1 ? '1 aprovação pendente' : `${count} aprovações pendentes`
+}
+
+/** The bell's label: "Notificações" or "Notificações, 3 aprovações pendentes". */
+export function bellLabel(pending: number): string {
+  return pending > 0
+    ? `${NOTIFICATIONS_TITLE}, ${pendingApprovalsText(pending)}`
+    : NOTIFICATIONS_TITLE
+}
+
 /** A Remote Control server's state on the PC tab; "Confirme no PC", since the phone has no Fleet. */
 export const SERVER_STATE_TEXT: Record<ServerState, string> = {
   running: 'Rodando',

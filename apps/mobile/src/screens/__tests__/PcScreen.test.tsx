@@ -7,14 +7,7 @@ import { AccessibilityInfo, Alert } from 'react-native'
 import { useRemote } from '../../remote/store'
 import { REMOTE_TEXT, SERVER_STATE_TEXT, accessCutText, cardCountdown } from '../../remote/texts'
 import { useApp } from '../../store/app'
-import {
-  CARDS_TITLE,
-  LOADING_TEXT,
-  LOCKED_TEXT,
-  PcScreen,
-  SERVERS_TITLE,
-  UNLOCKED_TEXT
-} from '../PcScreen'
+import { LOADING_TEXT, LOCKED_TEXT, PcScreen, SERVERS_TITLE, UNLOCKED_TEXT } from '../PcScreen'
 
 const NOW = 1_800_000_000_000
 
@@ -308,51 +301,41 @@ describe('PcScreen', () => {
     expect(screen.queryByRole('button', { name: 'Instalar atualização' })).toBeNull()
   })
 
-  describe('cartões de aprovação', () => {
-    const card = (over: Partial<ApprovalCardBody> = {}): ApprovalCardBody => ({
-      id: 'c1',
+  describe('aviso de aprovações (os cartões moraram para a tela Notificações)', () => {
+    const card = (id: string, over: Partial<ApprovalCardBody> = {}): ApprovalCardBody => ({
+      id,
       session: 'claude',
       tool: 'delete_task',
-      resumo: 'Excluir tarefa "Velha"',
+      resumo: `Cartão ${id}`,
       expiresAt: NOW + 299_000,
       ...over
     })
 
-    it('lista com contagem regressiva; Aprovar e Recusar respondem pelo id', async () => {
-      seed({ view: view('ready'), status: status(), cards: [card()] })
+    it('a aba PC não desenha os cartões nem Aprovar/Recusar', async () => {
+      seed({ view: view('ready'), status: status(), cards: [card('c1')] })
       await render(<PcScreen now={clock} />)
-      expect(screen.getByText(CARDS_TITLE)).toBeTruthy()
-      expect(screen.getByText('claude · delete_task · 4:59')).toBeTruthy()
-      await fireEvent.press(screen.getByRole('button', { name: 'Aprovar: Excluir tarefa "Velha"' }))
-      await fireEvent.press(screen.getByRole('button', { name: 'Recusar: Excluir tarefa "Velha"' }))
-      expect(actions.answer).toHaveBeenNthCalledWith(1, 'c1', true)
-      expect(actions.answer).toHaveBeenNthCalledWith(2, 'c1', false)
+      expect(screen.queryByText('Cartão c1')).toBeNull()
+      expect(screen.queryByRole('button', { name: /^Aprovar/ })).toBeNull()
+      expect(screen.queryByRole('button', { name: /^Recusar/ })).toBeNull()
     })
 
-    it('cartão vencido desabilita os botões e diz que expirou', async () => {
-      seed({ view: view('ready'), status: status(), cards: [card({ expiresAt: NOW - 1 })] })
-      await render(<PcScreen now={clock} />)
-      expect(screen.getByText(`claude · delete_task · ${CONTROL_TEXT.cardGone}`)).toBeTruthy()
-      for (const name of ['Aprovar: Excluir tarefa "Velha"', 'Recusar: Excluir tarefa "Velha"']) {
-        const button = screen.getByRole('button', { name })
-        expect(button.props.accessibilityState?.disabled).toBe(true)
-        await fireEvent.press(button)
-      }
-      expect(actions.answer).not.toHaveBeenCalled()
+    it('mostra "N aprovações pendentes" (singular com 1) e o botão Ver abre as Notificações', async () => {
+      const open = jest.fn()
+      seed({ view: view('ready'), status: status(), cards: [card('c1')] })
+      await render(<PcScreen now={clock} onOpenNotifications={open} />)
+      expect(screen.getByText('1 aprovação pendente')).toBeTruthy()
+      seed({ view: view('ready'), status: status(), cards: [card('c1'), card('c2')] })
+      await act(async () => undefined)
+      expect(screen.getByText('2 aprovações pendentes')).toBeTruthy()
+      await fireEvent.press(screen.getByRole('button', { name: 'Ver: 2 aprovações pendentes' }))
+      expect(open).toHaveBeenCalledTimes(1)
     })
 
-    it('a contagem anda a cada segundo e vence o cartão', async () => {
-      jest.useFakeTimers()
-      let t = NOW
-      seed({ view: view('ready'), status: status(), cards: [card({ expiresAt: NOW + 2_000 })] })
-      await render(<PcScreen now={() => t} />)
-      expect(screen.getByText('claude · delete_task · 0:02')).toBeTruthy()
-      t = NOW + 1_000
-      await act(async () => jest.advanceTimersByTime(1_000))
-      expect(screen.getByText('claude · delete_task · 0:01')).toBeTruthy()
-      t = NOW + 2_000
-      await act(async () => jest.advanceTimersByTime(1_000))
-      expect(screen.getByText(`claude · delete_task · ${CONTROL_TEXT.cardGone}`)).toBeTruthy()
+    it('sem cartões não há aviso', async () => {
+      seed({ view: view('ready'), status: status(), cards: [] })
+      await render(<PcScreen now={clock} />)
+      expect(screen.queryByText(/aprovaç(ão|ões) pendente/)).toBeNull()
+      expect(screen.queryByRole('button', { name: /^Ver/ })).toBeNull()
     })
   })
 

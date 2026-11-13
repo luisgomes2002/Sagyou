@@ -4,6 +4,7 @@ import {
   ArrowUpCircle,
   Baby,
   Banknote,
+  Bell,
   Briefcase,
   Calendar,
   Car,
@@ -41,6 +42,7 @@ import {
   Search,
   Server,
   Settings,
+  ShieldAlert,
   Shirt,
   ShoppingBag,
   Smartphone,
@@ -48,6 +50,7 @@ import {
   SquareCheck,
   StickyNote,
   Tag,
+  Terminal,
   Tv,
   Undo2,
   Utensils,
@@ -56,6 +59,7 @@ import {
   X,
   Zap
 } from 'lucide-react-native'
+import type { NotifyCategory } from '@sagyou/core/control/notify'
 
 export type TabLabel = 'Tarefas' | 'Hábitos' | 'Finanças' | 'Notas' | 'PC'
 
@@ -91,8 +95,16 @@ export const ACTION_ICONS = {
   lock: Lock,
   unlock: LockOpen,
   pc: Monitor,
-  server: Server
+  server: Server,
+  bell: Bell
 } satisfies Record<string, LucideIcon>
+
+/** One icon per notification category (the three Android channels). */
+export const NOTIFY_ICONS: Record<NotifyCategory, LucideIcon> = {
+  pc: Monitor,
+  sessions: Terminal,
+  security: ShieldAlert
+}
 
 // Exact names from the core's FINANCIAL_CATEGORIES; anything else gets a tag.
 const CATEGORY_ICONS: Record<string, LucideIcon> = {
