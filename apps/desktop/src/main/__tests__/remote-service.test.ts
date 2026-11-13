@@ -1207,6 +1207,30 @@ describe('remote-service: avisos e bit watch (spec 2026-11-13)', () => {
     expect(t.statuses.at(-1)?.kind).toBe('status')
   })
 
+  it('pausar o sync no meio de um ciclo também manda watch=false', async () => {
+    const t = setup()
+    // The inbox read is the first step of a cycle: the sync pauses while it runs.
+    t.client.inbox.mockImplementationOnce(async () => {
+      t.service.syncStatusChanged({ ...okSync, state: 'paused', paused: 'restore' })
+      return { messages: [], dropped: 0 }
+    })
+    await t.service.tick()
+    expect(watchOf(t)).toEqual([true, false])
+  })
+
+  it('um Worker antigo recusando o push não vira erro do ciclo (a tela de Configurações não mostra)', async () => {
+    const t = setup()
+    t.client.send.mockImplementationOnce(async () => {
+      throw new ControlError('forbidden')
+    })
+    await t.service.notifyEvent('session-done')
+    expect(t.service.lastError()).toBeNull()
+    expect(t.deps.log.warn).toHaveBeenCalledWith('remote', 'push_failed', {
+      code: 'session-done',
+      reason: 'forbidden'
+    })
+  })
+
   it('anunciar a saída sem nenhum heartbeat antes não manda nada nem lança', async () => {
     const t = setup()
     await expect(t.service.announceOffline()).resolves.toBeUndefined()

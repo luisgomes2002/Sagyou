@@ -54,7 +54,8 @@ export function PcScreen({
   const view = useRemote((s) => s.view)
   const status = useRemote((s) => s.status)
   // Spec 2026-11-13: the cards are answered on the Notificações screen; here only the count (the store drops the expired ones on every read).
-  const pendingCards = useRemote((s) => s.cards.length)
+  const cards = useRemote((s) => s.cards)
+  const pendingCards = cards.filter((c) => c.expiresAt > now()).length
   const error = useRemote((s) => s.error)
   const connection = useRemote((s) => s.connection)
   const busy = useRemote((s) => s.busy)
@@ -269,7 +270,7 @@ export function PcScreen({
               variant="danger"
               label="Cortar acesso"
               icon={ACTION_ICONS.lock}
-              disabled={locked}
+              disabled={busy}
               onPress={confirmCut}
             />
           )

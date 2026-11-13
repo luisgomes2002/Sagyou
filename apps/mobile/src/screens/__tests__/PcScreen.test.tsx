@@ -331,6 +331,19 @@ describe('PcScreen', () => {
       expect(open).toHaveBeenCalledTimes(1)
     })
 
+    it('cartão vencido não conta no aviso', async () => {
+      seed({
+        view: view('ready'),
+        status: status(),
+        cards: [card('c1', { expiresAt: NOW - 1 }), card('c2')]
+      })
+      await render(<PcScreen now={clock} />)
+      expect(screen.getByText('1 aprovação pendente')).toBeTruthy()
+      seed({ view: view('ready'), status: status(), cards: [card('c1', { expiresAt: NOW - 1 })] })
+      await act(async () => undefined)
+      expect(screen.queryByText(/aprovaç(ão|ões) pendente/)).toBeNull()
+    })
+
     it('sem cartões não há aviso', async () => {
       seed({ view: view('ready'), status: status(), cards: [] })
       await render(<PcScreen now={clock} />)
@@ -579,7 +592,8 @@ describe('PcScreen: etapas das ações', () => {
     expect(disabled('Desligar')).toBe(true)
     expect(disabled('Bloquear agora')).toBe(true)
     expect(screen.getByText('Enviando pedido…')).toBeTruthy()
-    expect(disabled('Cortar acesso')).toBe(true)
+    // The emergency button stays available while another action waits.
+    expect(disabled('Cortar acesso')).toBe(false)
   })
 
   it('Ligar servidor esperando: o botão do servidor fica com Ligar e indicador, mesmo já "Iniciando…"', async () => {

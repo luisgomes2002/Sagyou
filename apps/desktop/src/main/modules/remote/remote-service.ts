@@ -741,8 +741,12 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
       try {
         await client.send(c.id, env, code)
       } catch (error) {
-        // A Worker before this version answers 400 to a new code: the cycle goes on.
-        noteError(error)
+        // A Worker before this version answers 400 to a new code: not a cycle error (the
+        // settings screen would show it), only a line in the log.
+        log.warn('remote', 'push_failed', {
+          code,
+          reason: error instanceof ControlError ? error.code : 'offline'
+        })
       }
     }
     log.info('remote', 'push', { code, to: targets.length })
@@ -847,6 +851,9 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
       }
       busy = false
       await Promise.allSettled(background.splice(0))
+      // Paused or turned off while this cycle ran: refreshLoop found no timer to clear (it is
+      // re-armed only after the cycle), so the announce is made here.
+      if (!isActive()) await sendOffline()
       if (dirty) {
         dirty = false
         deps.onChange?.()

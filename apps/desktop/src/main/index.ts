@@ -2130,6 +2130,8 @@ app.whenReady().then(() => {
         if (origin === 'phone') void remoteService?.serverReady(projectId).catch(() => {})
       },
       onFailed: (projectId, phase) => {
+        // Windows may end the console processes before the Sagyou quits: that is not a crash.
+        if (isQuitting || shutdown.at() !== null) return
         void remoteService?.serverFailed(projectId, phase).catch(() => {})
       }
     })

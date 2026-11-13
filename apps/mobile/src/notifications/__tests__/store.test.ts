@@ -55,6 +55,21 @@ describe('store de notificações', () => {
     expect(r.readPref(HISTORY_PREF)).toBeNull()
   })
 
+  it('depois de limpar, uma notificação antiga que ainda estava na barra não volta', () => {
+    const r = repo()
+    useNotifications.getState().load(r)
+    const before = Date.now() - 60_000
+    useNotifications.getState().add({ id: 'bar-1', code: 'ready', at: before, read: false })
+    useNotifications.getState().clear()
+    useNotifications.getState().add({ id: 'bar-1', code: 'ready', at: before, read: false })
+    expect(useNotifications.getState().entries).toEqual([])
+    // One that arrives after the clearing is kept.
+    useNotifications
+      .getState()
+      .add({ id: 'novo', code: 'access-cut', at: Date.now() + 1000, read: false })
+    expect(useNotifications.getState().entries.map((e) => e.id)).toEqual(['novo'])
+  })
+
   it('valor corrompido na pref abre como lista vazia, sem derrubar nada', () => {
     const r = repo()
     r.writePref(HISTORY_PREF, '{quebrado')

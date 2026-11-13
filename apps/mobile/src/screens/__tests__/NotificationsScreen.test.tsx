@@ -1,6 +1,7 @@
 import type { ApprovalCardBody } from '@sagyou/core/control/bodies'
 import { CONTROL_TEXT } from '@sagyou/core/control/texts'
 import { act, fireEvent, render, screen } from '@testing-library/react-native'
+import * as Notifications from 'expo-notifications'
 import type { HistoryEntry } from '../../notifications/history'
 import { useNotifications } from '../../notifications/store'
 import { useRemote } from '../../remote/store'
@@ -176,6 +177,8 @@ describe('NotificationsScreen', () => {
     expect(useNotifications.getState().entries).toEqual([])
     expect(screen.queryByText('PC pronto.')).toBeNull()
     expect(screen.getByText('Aprovações pendentes (1)')).toBeTruthy()
+    // And what was in the bar goes too, or it would come back when the app returns.
+    expect(Notifications.dismissAllNotificationsAsync).toHaveBeenCalledTimes(1)
   })
 
   it('sem nada: só o estado vazio', async () => {

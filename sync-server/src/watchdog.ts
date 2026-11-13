@@ -27,13 +27,9 @@ export async function runWatchdog(
     // Another device became the PC since: that heartbeat is not the PC's anymore.
     if (!pc || status.from !== pc || controllers.length === 0) return 'none'
     const command = await control.lastPowerCommand()
-    // Only a command the ESP32 fetched counts: any controller token can queue one (the Worker does
-    // not check its MAC), and a forged shutdown must not silence the warning.
-    if (
-      command?.cmd === 'shutdown' &&
-      command.takenAt !== null &&
-      command.at >= status.at - FORCED_SHUTDOWN_GRACE_MS
-    ) {
+    // Only a command the ESP32 fetched counts (any controller token can queue one: the Worker does
+    // not check its MAC): a forced shutdown, or a wake after the PC went quiet, explains the silence.
+    if (command && command.takenAt !== null && command.at >= status.at - FORCED_SHUTDOWN_GRACE_MS) {
       return 'none'
     }
     await control.markSilentNotified(now)

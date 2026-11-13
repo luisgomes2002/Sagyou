@@ -1,4 +1,5 @@
 import { NOTIFY_CATEGORY, NOTIFY_CATEGORY_LABEL } from '@sagyou/core/control/notify'
+import * as Notifications from 'expo-notifications'
 import { useEffect, useState } from 'react'
 import { ScrollView, StyleSheet, Text, View } from 'react-native'
 import { ApprovalCards } from '../components/ApprovalCards'
@@ -128,7 +129,14 @@ export function NotificationsScreen({
                 />
               )
             })}
-            <Button label={CLEAR_HISTORY} onPress={() => useNotifications.getState().clear()} />
+            <Button
+              label={CLEAR_HISTORY}
+              onPress={() => {
+                useNotifications.getState().clear()
+                // And out of the bar too: they would be read again when the app returns.
+                void Notifications.dismissAllNotificationsAsync().catch(() => undefined)
+              }}
+            />
           </View>
         ) : null}
 

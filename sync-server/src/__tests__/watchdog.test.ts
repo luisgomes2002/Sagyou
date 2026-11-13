@@ -106,6 +106,18 @@ describe('runWatchdog', () => {
     expect(await w.run()).toBe('none')
   })
 
+  it('um wake que o ESP32 buscou depois do último heartbeat (o PC está ligando) não avisa', async () => {
+    const w = await world()
+    await w.db.putPowerCommand({
+      cmd: 'wake',
+      at: NOW - 2 * MIN,
+      exp: NOW,
+      mac: 'f'.repeat(64)
+    })
+    await w.db.takePowerCommand(NOW - 3 * MIN)
+    expect(await w.run()).toBe('none')
+  })
+
   it('um shutdown antigo (horas antes) não suprime o aviso', async () => {
     const w = await world()
     await w.db.putPowerCommand({

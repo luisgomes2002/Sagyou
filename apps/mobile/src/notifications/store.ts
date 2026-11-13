@@ -25,6 +25,11 @@ interface NotificationsStore {
 }
 
 let prefs: PrefsRepo | null = null
+/**
+ * When the history was last cleared: a notification still in the bar (or the last tap, which
+ * comes back on every mount) that arrived before it does not come back as an entry.
+ */
+let clearedAt = 0
 
 function save(entries: HistoryEntry[]): void {
   try {
@@ -55,6 +60,7 @@ export const useNotifications = create<NotificationsStore>((set, get) => {
     },
 
     add(entry, now = Date.now()) {
+      if (entry.at <= clearedAt) return
       const next = addEntry(get().entries, entry, now)
       if (next !== get().entries) apply(next)
     },
@@ -65,10 +71,12 @@ export const useNotifications = create<NotificationsStore>((set, get) => {
     },
 
     clear() {
+      clearedAt = Date.now()
       apply([])
     },
 
     reset() {
+      clearedAt = 0
       apply([], false)
     }
   }
