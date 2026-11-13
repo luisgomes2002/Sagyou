@@ -13,7 +13,10 @@ import { EntrySheet, SourceSheet } from '../screens/finance/YieldSheet'
 import { HabitsScreen } from '../screens/HabitsScreen'
 import { NotesScreen } from '../screens/NotesScreen'
 import { PairDeviceScreen } from '../screens/PairDeviceScreen'
+import { NotificationsScreen } from '../screens/NotificationsScreen'
 import { PcScreen } from '../screens/PcScreen'
+import { NotificationBell } from '../components/NotificationBell'
+import { useNotifications } from '../notifications/store'
 import { RecoverSync } from '../screens/RecoverSync'
 import { SearchScreen } from '../screens/SearchScreen'
 import { SettingsScreen } from '../screens/SettingsScreen'
@@ -154,6 +157,57 @@ function PcSample(): React.JSX.Element {
     })
   )
   return <PcScreen now={() => PC_NOW} />
+}
+
+/** Notificações with a card to answer and every kind of history entry. */
+function NotificationsSample(): React.JSX.Element {
+  useState(() => {
+    useRemote.setState({
+      authorized: 'yes',
+      cards: [
+        {
+          id: 'c1',
+          session: 'claude',
+          tool: 'delete_task',
+          resumo: 'Excluir tarefa',
+          expiresAt: PC_NOW + 60_000
+        }
+      ],
+      error: null,
+      connection: null,
+      busy: false,
+      startPolling: jest.fn(),
+      stopPolling: jest.fn()
+    })
+    useNotifications.setState({
+      entries: [
+        { id: 'a', code: 'approval', at: PC_NOW - 1000, read: false },
+        { id: 'b', code: 'server-ready', at: PC_NOW - 2000, read: true },
+        { id: 'c', code: 'unknown', at: PC_NOW - 3000, read: true, text: 'Aviso' }
+      ],
+      unread: 1
+    })
+  })
+  return <NotificationsScreen navigation={{ navigate: jest.fn() }} now={() => PC_NOW} />
+}
+
+/** The bell with a pending card (a red number) on an authorized phone. */
+function BellSample(): React.JSX.Element {
+  useState(() =>
+    useRemote.setState({
+      authorized: 'yes',
+      cards: [
+        {
+          id: 'c1',
+          session: 'claude',
+          tool: 'delete_task',
+          resumo: 'Excluir tarefa',
+          expiresAt: PC_NOW + 60_000
+        }
+      ]
+    })
+  )
+  return <NotificationBell onPress={jest.fn()} now={() => PC_NOW} />
 }
 
 function ConflictListSample(): React.JSX.Element {
@@ -435,7 +489,9 @@ const SCREENS: [string, ComponentType][] = [
         entry={SHOPPING_AND_YIELDS.yieldEntries[0]}
       />
     )
-  ]
+  ],
+  ['Notificações', NotificationsSample],
+  ['Sino das notificações', BellSample]
 ]
 
 const INTERACTIVE = ['button', 'checkbox', 'radio', 'tab'] as const

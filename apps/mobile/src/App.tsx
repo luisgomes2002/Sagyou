@@ -11,19 +11,24 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
 import { createNativeStackNavigator } from '@react-navigation/native-stack'
 import * as Notifications from 'expo-notifications'
 import { createContext, useContext, useEffect, useState, type ComponentType } from 'react'
-import { Pressable, StyleSheet, View } from 'react-native'
+import { AppState, Pressable, StyleSheet, View } from 'react-native'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context'
 import { bootstrap } from './bootstrap'
 import { AppMark } from './components/AppMark'
+import { NotificationBell } from './components/NotificationBell'
 import { QuickCreate } from './components/QuickCreate'
 import { StatusBanner } from './components/StatusBanner'
 import { UpdateBanner } from './components/UpdateBanner'
 import { TabIcon } from './components/TabIcon'
 import { ACTION_ICONS, type TabLabel } from './components/icons'
 import { useLockState } from './lock/lockState'
-import { createResponseGate, registerPush } from './remote/push'
+import { entryFromNotification } from './remote/push'
+import { createResponseGate, registerChannels, registerPush } from './remote/push'
+import { useNotifications } from './notifications/store'
+import { NOTIFICATIONS_TITLE } from './remote/texts'
 import { useRemote } from './remote/store'
+import { NotificationsScreen } from './screens/NotificationsScreen'
 import { PcScreen } from './screens/PcScreen'
 import { Fab, Snackbar } from './components/ui'
 import { useEditing } from './store/editing'
@@ -88,7 +93,25 @@ function SearchRoute(): React.JSX.Element {
 function PcTab(): React.JSX.Element {
   const focused = useIsFocused()
   const hidden = useLockState((s) => s.hidden)
-  return <PcScreen focused={focused && !hidden} />
+  return (
+    <PcScreen
+      focused={focused && !hidden}
+      onOpenNotifications={() => {
+        if (navigationRef.isReady()) navigationRef.navigate('Notificacoes')
+      }}
+    />
+  )
+}
+
+/** Notificações: the cards and the history; asks the Worker only while on screen and unlocked. */
+function NotificationsRoute({
+  navigation
+}: {
+  navigation: { navigate(route: 'Abas', params: { screen: 'PC' }): void }
+}): React.JSX.Element {
+  const focused = useIsFocused()
+  const hidden = useLockState((s) => s.hidden)
+  return <NotificationsScreen navigation={navigation} focused={focused && !hidden} />
 }
 
 /** Each tab's content; a tab without one shows a placeholder until its task lands. */
@@ -104,6 +127,7 @@ export type RootStackParams = {
   Abas: NavigatorScreenParams<Record<TabLabel, undefined>> | undefined
   Ajustes: undefined
   Busca: undefined
+  Notificacoes: undefined
   Conflitos: ConflictsParams | undefined
   Conflito: { id: string }
   ComoFunciona: undefined
@@ -183,7 +207,7 @@ function TabsScreen({
   navigation
 }: {
   navigation: {
-    navigate(route: 'Ajustes' | 'Busca'): void
+    navigate(route: 'Ajustes' | 'Busca' | 'Notificacoes'): void
     navigate(route: 'Abas', params: object): void
   }
 }): React.JSX.Element {
@@ -209,6 +233,7 @@ function TabsScreen({
           tabBarIcon: ({ color }) => <TabIcon label={route.name as TabLabel} color={color} />,
           headerRight: () => (
             <View style={styles.headerActions}>
+              <NotificationBell onPress={() => navigation.navigate('Notificacoes')} />
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Buscar"
@@ -274,23 +299,57 @@ function PushBridge(): null {
       { notifications: Notifications, putPushToken: (t) => useRemote.getState().putPushToken(t) },
       authorized
     )
+    // The three channels the Worker's pushes go to (spec 2026-11-13).
+    void registerChannels(Notifications, Notifications.AndroidImportance)
   }, [controls, authorized])
 
   useEffect(() => {
     if (!controls) return
     let live = true
+    // The history keeps only the code and the time of each notification.
+    const record = (notification: unknown): void => {
+      const entry = entryFromNotification(notification, Date.now())
+      if (entry) useNotifications.getState().add(entry)
+    }
+    // The ones still in the bar: the Android showed them while the app was closed.
+    const syncPresented = (): void => {
+      void Notifications.getPresentedNotificationsAsync()
+        .then((list) => {
+          if (live) list.forEach(record)
+        })
+        .catch(() => undefined)
+    }
     const open = (response: unknown): void => {
-      if (!live || !navigationRef.isReady() || !pushTarget(response)) return
-      navigationRef.navigate('Abas', { screen: 'PC' })
+      if (!live) return
+      record((response as { notification?: unknown } | null)?.notification)
+      if (!navigationRef.isReady()) return
+      const tap = pushTarget(response)
+      if (!tap) return
+      // An approval goes straight to where it is answered; everything else to the PC tab.
+      if (tap.target === 'notifications') navigationRef.navigate('Notificacoes')
+      else navigationRef.navigate('Abas', { screen: 'PC' })
     }
     // The tap that launched the app, then every later one.
     void Notifications.getLastNotificationResponseAsync()
       .then(open)
       .catch(() => undefined)
-    const sub = Notifications.addNotificationResponseReceivedListener(open)
+    const tapSub = Notifications.addNotificationResponseReceivedListener(open)
+    // With the app open: into the history, and the inbox read once so the bell is right.
+    const receivedSub = Notifications.addNotificationReceivedListener((notification) => {
+      record(notification)
+      void useRemote.getState().refreshOnce()
+    })
+    const appSub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') return
+      syncPresented()
+      void useRemote.getState().refreshOnce()
+    })
+    syncPresented()
     return () => {
       live = false
-      sub.remove()
+      tapSub.remove()
+      receivedSub.remove()
+      appSub.remove()
     }
   }, [controls])
   return null
@@ -325,6 +384,11 @@ export function AppShell({ mode }: { mode: AppMode }): React.JSX.Element {
         <Stack.Screen name="Abas" component={TabsScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Ajustes" component={SettingsScreen} />
         <Stack.Screen name="Busca" component={SearchRoute} />
+        <Stack.Screen
+          name="Notificacoes"
+          component={NotificationsRoute}
+          options={{ title: NOTIFICATIONS_TITLE }}
+        />
         <Stack.Screen name="Conflitos" component={ConflictsScreen} />
         <Stack.Screen name="Conflito" component={ConflictScreen} />
         <Stack.Screen
