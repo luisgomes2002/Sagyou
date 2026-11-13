@@ -158,6 +158,16 @@ export interface RcManagerDeps {
   onExit: (id: string) => void
   /** Something list() shows changed. */
   onChange: () => void
+  /**
+   * This run drew the bridge's ready line (spec 2026-11-13). `origin` is the one of this
+   * run: a restart after a fall is 'autostart', so only a phone's own "Ligar" is 'phone'.
+   */
+  onReady?: (projectId: string, origin: RcOrigin) => void
+  /**
+   * A server fell: 'start' = before it was ready (only reported for a run a phone asked),
+   * 'crash' = after it was. At most once per server until it is ready again.
+   */
+  onFailed?: (projectId: string, phase: 'start' | 'crash', origin: RcOrigin) => void
   /** Environment of the server; process.env when absent. */
   env?: () => NodeJS.ProcessEnv
 }
@@ -258,6 +268,8 @@ const key = (name: string): string => name.trim().toLowerCase()
 export function createRcManager(deps: RcManagerDeps): RcManager {
   const supported = deps.platform === 'win32'
   const terminals = new Map<string, Terminal>()
+  /** Servers already reported as failed; cleared when one is ready again or asked to start. */
+  const failedNotified = new Set<string>()
   const attempts = new Map<string, number>()
   const errors = new Map<string, string>()
   const inflight = new Map<string, Promise<RcStartResult>>()
@@ -481,6 +493,8 @@ export function createRcManager(deps: RcManagerDeps): RcManager {
     if (!RC_READY_LINE.test(rcPlainText(t.runTail))) return
     t.readySeen = true
     if (!isConfirmed(entryOf(t.projectId), t.path)) confirm(t, t.gen)
+    failedNotified.delete(t.projectId)
+    deps.onReady?.(t.projectId, t.origin)
   }
 
   function mayRestart(t: Terminal): boolean {
@@ -495,6 +509,15 @@ export function createRcManager(deps: RcManagerDeps): RcManager {
     if (t.confirmTimer !== null) deps.clearTimer(t.confirmTimer)
     t.confirmTimer = null
     deps.log.info('remote', 'server_exit', { projectId: t.projectId, code })
+    if (!failedNotified.has(t.projectId)) {
+      if (t.readySeen) {
+        failedNotified.add(t.projectId)
+        deps.onFailed?.(t.projectId, 'crash', t.origin)
+      } else if (t.origin === 'phone') {
+        failedNotified.add(t.projectId)
+        deps.onFailed?.(t.projectId, 'start', t.origin)
+      }
+    }
     if (!mayRestart(t)) {
       end(t)
       notify()
@@ -554,6 +577,7 @@ export function createRcManager(deps: RcManagerDeps): RcManager {
   }
 
   async function doStart(p: EligibleProject, origin: RcOrigin): Promise<RcStartResult> {
+    failedNotified.delete(p.id)
     const names = await runningNames()
     if (closed) return 'start-failed'
     if (deps.accessCut()) return refused(p.id, 'cut')

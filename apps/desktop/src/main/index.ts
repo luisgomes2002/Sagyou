@@ -218,6 +218,7 @@ import {
   type RemoteConfig
 } from './modules/remote/remote-config'
 import { createRemoteService, type RemoteService } from './modules/remote/remote-service'
+import { shouldNotifySessionDone } from './modules/remote/session-notify'
 import {
   killRemoteControlServerNamed,
   killRemoteControlServers,
@@ -2027,6 +2028,7 @@ app.whenReady().then(() => {
     allowCloseForInstall: (on) => managedWindow?.allowCloseForInstall(on),
     abortInstall: () => {
       runTimersStoppedForQuit = false
+      offlineAnnouncedForQuit = false
       // The current version keeps running: the X hides to the tray again.
       isQuitting = false
       managedWindow?.abortInstall()
@@ -2071,6 +2073,7 @@ app.whenReady().then(() => {
       // A failed shutdown or a cancel: the session goes on, give the screen and the X back.
       restore: () => {
         runTimersStoppedForQuit = false
+        offlineAnnouncedForQuit = false
         managedWindow?.abortInstall()
       },
       now: () => Date.now()
@@ -2120,6 +2123,14 @@ app.whenReady().then(() => {
         // The phone sees the change on the next cycle (≤ 5 s), not in 30 s.
         remoteService?.statusSoon()
         sendToRenderer('rc-server:changed', rcServerList(rcDeps))
+      },
+      // Spec 2026-11-13: only a server the phone itself asked for tells the phone it is ready
+      // (a restart is 'autostart'); the service knows which phone asked.
+      onReady: (projectId, origin) => {
+        if (origin === 'phone') void remoteService?.serverReady(projectId).catch(() => {})
+      },
+      onFailed: (projectId, phase) => {
+        void remoteService?.serverFailed(projectId, phase).catch(() => {})
       }
     })
     const rcDeps = { manager, platform: process.platform }
@@ -2787,6 +2798,9 @@ app.whenReady().then(() => {
             appendAgentLog(runId, '\n' + terminal + '\n')
             const archived = await archiveAgentRun(runId, exitCode)
             persistTerminalHandoff(run, exitCode, archived)
+            if (shouldNotifySessionDone(run)) {
+              void remoteService?.notifyEvent('session-done').catch(() => {})
+            }
             await worktreeManager
               .remove({ originalDir: dir, worktreeDir: externalWorktree })
               .catch(() => {})
@@ -3165,19 +3179,36 @@ app.on('window-all-closed', () => {
 // Don't leave any code agent's loop running when the app closes.
 // Set once the agent-run timers were stopped, so the second quit goes through.
 let runTimersStoppedForQuit = false
+// Same for telling the Worker this PC stops on purpose (no "PC sem sinal", spec 2026-11-13).
+let offlineAnnouncedForQuit = false
 
 app.on('before-quit', (event) => {
   // From here on a window close is part of quitting, never a hide to the tray.
   isQuitting = true
   // Stop the timers agent runs created while the renderer can still save them;
   // otherwise the next launch would credit every hour the app stayed closed.
-  if (!runTimersStoppedForQuit && runTaskTimers.hasRunning()) {
+  const stopTimers = !runTimersStoppedForQuit && runTaskTimers.hasRunning()
+  const service = offlineAnnouncedForQuit ? null : remoteService
+  if (stopTimers || service) {
     event.preventDefault()
-    runTimersStoppedForQuit = true
-    void Promise.race([
-      runTaskTimers.stopEverything(),
-      new Promise((resolve) => setTimeout(resolve, 3000))
-    ]).finally(() => app.quit())
+    const work: Promise<unknown>[] = []
+    if (stopTimers) {
+      runTimersStoppedForQuit = true
+      work.push(
+        Promise.race([
+          runTaskTimers.stopEverything(),
+          new Promise((resolve) => setTimeout(resolve, 3000))
+        ])
+      )
+    }
+    if (service) {
+      offlineAnnouncedForQuit = true
+      // In parallel with the timers; the announce is best effort and capped at 2 s.
+      work.push(
+        Promise.race([service.announceOffline(), new Promise((resolve) => setTimeout(resolve, 2000))])
+      )
+    }
+    void Promise.all(work).finally(() => app.quit())
     return
   }
   rendererMcpTasks.close()
