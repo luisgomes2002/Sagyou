@@ -7,6 +7,7 @@ import { AppShell, TAB_LABELS } from '../App'
 import { navigationRef } from '../navigation'
 import { StatusBanner } from '../components/StatusBanner'
 import { LockGate, type LockDeps } from '../lock/LockGate'
+import { useLockState } from '../lock/lockState'
 import { useNotifications } from '../notifications/store'
 import { useRemote } from '../remote/store'
 import { LOADING_TEXT } from '../screens/PcScreen'
@@ -269,6 +270,28 @@ describe('App', () => {
       )
       expect(useNotifications.getState().entries.map((e) => e.code)).toEqual(['ready'])
       expect(refreshOnce).toHaveBeenCalledTimes(1)
+    })
+
+    it('com o app bloqueado, o push recebido não lê a caixa do Worker', async () => {
+      seedApp({ projects: [project('p1', 'Sagyou')] })
+      const refreshOnce = jest.fn(async () => undefined)
+      authorize({ refreshOnce })
+      await mountApp()
+      useLockState.setState({ hidden: true })
+      try {
+        const received = jest
+          .mocked(Notifications.addNotificationReceivedListener)
+          .mock.calls.at(-1)?.[0]
+        await act(async () =>
+          received?.({
+            date: Date.now(),
+            request: { identifier: 'locked-1', content: { data: { open: 'pc', code: 'approval' } } }
+          } as never)
+        )
+        expect(refreshOnce).not.toHaveBeenCalled()
+      } finally {
+        useLockState.setState({ hidden: false })
+      }
     })
 
     it('cria os três canais num celular autorizado e nenhum sem autorização', async () => {

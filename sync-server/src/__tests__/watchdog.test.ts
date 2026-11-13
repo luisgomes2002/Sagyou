@@ -82,6 +82,17 @@ describe('runWatchdog', () => {
     expect(await w.run()).toBe('none')
   })
 
+  it('um shutdown na fila que o ESP32 nunca buscou não suprime o aviso (comando forjado)', async () => {
+    const w = await world()
+    await w.db.putPowerCommand({
+      cmd: 'shutdown',
+      at: NOW - 11 * MIN + 30_000,
+      exp: NOW,
+      mac: 'f'.repeat(64)
+    })
+    expect(await w.run()).toBe('sent')
+  })
+
   it('não avisa depois de um desligamento forçado pelo ESP32 logo após o último heartbeat', async () => {
     const w = await world()
     await w.db.putPowerCommand({
@@ -90,6 +101,8 @@ describe('runWatchdog', () => {
       exp: NOW,
       mac: 'f'.repeat(64)
     })
+    // The ESP32 fetched it.
+    await w.db.takePowerCommand(NOW - 10 * MIN)
     expect(await w.run()).toBe('none')
   })
 

@@ -3188,7 +3188,8 @@ app.on('before-quit', (event) => {
   // Stop the timers agent runs created while the renderer can still save them;
   // otherwise the next launch would credit every hour the app stayed closed.
   const stopTimers = !runTimersStoppedForQuit && runTaskTimers.hasRunning()
-  const service = offlineAnnouncedForQuit ? null : remoteService
+  // Only a running controlled mode has anything to announce (and a delay to pay for it).
+  const service = !offlineAnnouncedForQuit && remoteService?.running() ? remoteService : null
   if (stopTimers || service) {
     event.preventDefault()
     const work: Promise<unknown>[] = []

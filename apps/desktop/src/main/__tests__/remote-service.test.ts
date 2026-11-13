@@ -1182,11 +1182,18 @@ describe('remote-service: avisos e bit watch (spec 2026-11-13)', () => {
     expect(watchOf(t).at(-1)).toBe(true)
   })
 
-  it('desligar aceito manda watch=false na hora, sem esperar o próximo heartbeat', async () => {
+  it('desligar aceito manda watch=false na hora, com o desligamento marcado no status', async () => {
     const t = setup()
     await t.service.tick()
+    // What the real shutdown does once accepted: the countdown is scheduled.
+    t.deps.shutdown = vi.fn(async () => {
+      t.deps.shutdownAt = () => T0 + 60_000
+      return 'ok' as const
+    })
     await t.deliver(t.request('shutdown'))
     expect(watchOf(t)).toContain(false)
+    // The re-sent status is not the stale one of the last heartbeat.
+    expect(t.statuses.at(-1)?.body).toMatchObject({ shutdownAt: T0 + 60_000 })
   })
 
   it('parar o laço de propósito (sync pausado) e anunciar a saída mandam watch=false', async () => {

@@ -757,7 +757,20 @@ export function createRemoteService(deps: RemoteServiceDeps): RemoteService {
     try {
       const key = deps.pcPrivateKey()
       if (!key || !lastStatus) return
-      const env = sign('status', { ...lastStatus, at: deps.now() }, STATUS_TTL_MS)
+      // The last servers list, with everything else as it is now: a scheduled shutdown must
+      // show on the phone, not the stale "pronto" of the last heartbeat.
+      const now = deps.now()
+      const status: PcStatus = {
+        ...lastStatus,
+        at: now,
+        locked: deps.isLocked(),
+        pendingCards: deps.pendingCards(),
+        shutdownAt: deps.shutdownAt(),
+        suspendedUntil: suspendedUntil(now),
+        updateVersion: deps.updateVersion(),
+        accessCutAt: cfg().accessCutAt
+      }
+      const env = sign('status', status, STATUS_TTL_MS)
       await client.putStatus(env, { watch: false })
     } catch {
       // Best effort: without it the Worker only warns later.

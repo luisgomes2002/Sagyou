@@ -49,6 +49,7 @@ jest.mock('expo-notifications', () => ({
   // the three Android channels.
   addNotificationReceivedListener: jest.fn(() => ({ remove: jest.fn() })),
   getPresentedNotificationsAsync: jest.fn(async () => []),
+  dismissAllNotificationsAsync: jest.fn(async () => undefined),
   setNotificationChannelAsync: jest.fn(async () => null),
   AndroidImportance: { HIGH: 4, MAX: 5 }
 }))

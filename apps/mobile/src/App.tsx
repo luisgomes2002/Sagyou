@@ -335,14 +335,18 @@ function PushBridge(): null {
       .catch(() => undefined)
     const tapSub = Notifications.addNotificationResponseReceivedListener(open)
     // With the app open: into the history, and the inbox read once so the bell is right.
+    // The inbox is only read while the app is unlocked (the cards are decrypted into memory).
+    const readInbox = (): void => {
+      if (!useLockState.getState().hidden) void useRemote.getState().refreshOnce()
+    }
     const receivedSub = Notifications.addNotificationReceivedListener((notification) => {
       record(notification)
-      void useRemote.getState().refreshOnce()
+      readInbox()
     })
     const appSub = AppState.addEventListener('change', (state) => {
       if (state !== 'active') return
       syncPresented()
-      void useRemote.getState().refreshOnce()
+      readInbox()
     })
     syncPresented()
     return () => {

@@ -50,6 +50,8 @@ export function bootstrap(): void {
       useApp.getState().wiped()
       // The wipe deletes every row (the history pref too): only the memory is left to drop.
       useNotifications.getState().reset()
+      // What is still in the bar belongs to the session that was wiped.
+      void Notifications.dismissAllNotificationsAsync().catch(() => undefined)
     }
   })
   configureRemote({
