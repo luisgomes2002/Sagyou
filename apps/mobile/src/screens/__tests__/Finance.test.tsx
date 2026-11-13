@@ -1,13 +1,27 @@
-import { fireEvent, render, screen } from '@testing-library/react-native'
-import { StyleSheet } from 'react-native'
+import { act, fireEvent, render, screen } from '@testing-library/react-native'
+import { Alert, StyleSheet } from 'react-native'
 import { seedApp, table } from '../../__tests__/seed'
+import { TransactionSheet } from '../../components/TransactionSheet'
+import { useLockState } from '../../lock/lockState'
 import { useApp } from '../../store/app'
-import { LOCKED_TEXT, lastTablePref } from '../../store/finance'
+import { lastTablePref } from '../../store/finance'
 import { useUndo } from '../../store/undo'
 import { lightTheme } from '../../theme'
-import { FinanceScreen } from '../FinanceScreen'
+import { FinanceScreen, NO_TABLE_TEXT, PICK_TABLE_TEXT } from '../FinanceScreen'
 
-function seed(prefs: Record<string, string> = {}): ReturnType<typeof seedApp> {
+const SYNCED = {
+  state: 'ok' as const,
+  lastSyncAt: Date.now(),
+  pendingCount: 0,
+  paused: null,
+  deviceName: 'Pixel',
+  conflictCount: 0
+}
+
+function seed(
+  prefs: Record<string, string> = {},
+  options: { readOnly?: boolean } = {}
+): ReturnType<typeof seedApp> {
   return seedApp(
     {
       lists: [
@@ -49,9 +63,13 @@ function seed(prefs: Record<string, string> = {}): ReturnType<typeof seedApp> {
         )
       ]
     },
-    { prefs }
+    { prefs, ...options }
   )
 }
+
+type TableTx = ReturnType<typeof table>['transactions'][number]
+
+const names = (): string[] => useApp.getState().state.lists.map((t) => t.name)
 
 describe('Finanças no celular', () => {
   beforeEach(() => useUndo.getState().dismiss())
@@ -121,23 +139,539 @@ describe('Finanças no celular', () => {
     expect(screen.queryByRole('button', { name: 'Nova receita' })).toBeNull()
   })
 
-  it('um pagamento de dívida não abre: só um aviso', async () => {
+  it('tocar num lançamento abre os detalhes, qualquer que seja ele', async () => {
     seed()
-    await render(<FinanceScreen today="2026-10-31" />)
+    const open = jest.fn()
+    await render(<FinanceScreen today="2026-10-31" onOpenTransaction={open} />)
+    await fireEvent.press(screen.getByRole('button', { name: /^Almoço,/ }))
+    expect(open).toHaveBeenLastCalledWith('conta', 'e')
+    // A debt payment cannot be edited, but its details open like any other: the lock is told there.
     await fireEvent.press(screen.getByRole('button', { name: /^Parcela,/ }))
-    expect(useUndo.getState()).toMatchObject({ message: LOCKED_TEXT, canUndo: false })
+    expect(open).toHaveBeenLastCalledWith('conta', 'b')
+    expect(useUndo.getState().message).toBeNull()
     expect(screen.queryByRole('button', { name: 'Salvar' })).toBeNull()
   })
 
-  it('editar abre a folha com a data do lançamento e salva com auditoria', async () => {
+  it('abrir um lançamento não grava nada', async () => {
+    const { save } = seed()
+    await render(<FinanceScreen today="2026-10-31" onOpenTransaction={jest.fn()} />)
+    await fireEvent.press(screen.getByRole('button', { name: /^Almoço,/ }))
+    expect(save).not.toHaveBeenCalled()
+  })
+
+  it('a busca acha sem diferenciar acento nem maiúscula', async () => {
     seed()
     await render(<FinanceScreen today="2026-10-31" />)
-    await fireEvent.press(screen.getByRole('button', { name: /^Almoço,/ }))
-    expect(screen.getByLabelText('Valor (BRL)').props.value).toBe('30,00')
-    await fireEvent.changeText(screen.getByLabelText('Valor (BRL)'), '1.234,56')
-    await fireEvent.press(screen.getByRole('button', { name: 'Salvar' }))
-    const edited = useApp.getState().state.lists[0].transactions.find((t) => t.id === 'e')
-    expect(edited).toMatchObject({ amount: '1234.56', date: '2026-10-31', type: 'expense' })
-    expect(edited?.audit?.length).toBeGreaterThan(0)
+    await fireEvent.changeText(screen.getByLabelText('Buscar lançamento'), 'ALMOCO')
+    expect(screen.getByText('Almoço')).toBeTruthy()
+    expect(screen.queryByText('Salário')).toBeNull()
+    await fireEvent.changeText(screen.getByLabelText('Buscar lançamento'), 'salario')
+    expect(screen.getAllByText('Salário').length).toBeGreaterThan(0) // description and category
+    expect(screen.queryByText('Almoço')).toBeNull()
   })
+
+  it('os chips Tipo e Categoria filtram o mês, e as categorias são as usadas nele', async () => {
+    seed()
+    await render(<FinanceScreen today="2026-10-31" />)
+    await fireEvent.press(screen.getByRole('button', { name: 'Tipo: Todos' }))
+    expect(screen.getAllByRole('radio').map((r) => r.props.accessibilityLabel)).toEqual([
+      'Todos',
+      'Receitas',
+      'Gastos'
+    ])
+    await fireEvent.press(screen.getByRole('radio', { name: 'Receitas' }))
+    expect(screen.getByRole('button', { name: 'Tipo: Receitas' })).toBeTruthy()
+    expect(screen.getAllByText('Salário').length).toBeGreaterThan(0) // description and category
+    expect(screen.queryByText('Almoço')).toBeNull()
+    expect(screen.queryByText('Parcela')).toBeNull()
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Tipo: Receitas' }))
+    await fireEvent.press(screen.getByRole('radio', { name: 'Gastos' }))
+    await fireEvent.press(screen.getByRole('button', { name: 'Categoria: Todas' }))
+    // Only what the month uses (Salário, Alimentação), never the whole catalogue.
+    expect(screen.getAllByRole('radio').map((r) => r.props.accessibilityLabel)).toEqual([
+      'Todas',
+      'Alimentação',
+      'Salário'
+    ])
+    await fireEvent.press(screen.getByRole('radio', { name: 'Alimentação' }))
+    expect(screen.getByRole('button', { name: 'Categoria: Alimentação' })).toBeTruthy()
+    expect(screen.getByText('Almoço')).toBeTruthy()
+    expect(screen.queryByText('Parcela')).toBeNull()
+  })
+
+  it('filtros sem resultado mostram o aviso e Limpar filtros devolve tudo', async () => {
+    seed()
+    await render(<FinanceScreen today="2026-10-31" />)
+    await fireEvent.press(screen.getByRole('button', { name: 'Tipo: Todos' }))
+    await fireEvent.press(screen.getByRole('radio', { name: 'Receitas' }))
+    await fireEvent.changeText(screen.getByLabelText('Buscar lançamento'), 'almoco')
+    expect(screen.getByText('Nenhum lançamento com estes filtros.')).toBeTruthy()
+    expect(screen.queryByText('Nenhum lançamento neste mês.')).toBeNull()
+    await fireEvent.press(screen.getByRole('button', { name: 'Limpar filtros' }))
+    expect(screen.queryByText('Nenhum lançamento com estes filtros.')).toBeNull()
+    expect(screen.getByLabelText('Buscar lançamento').props.value).toBe('')
+    expect(screen.getByRole('button', { name: 'Tipo: Todos' })).toBeTruthy()
+    expect(screen.getByText('Almoço')).toBeTruthy()
+    expect(screen.getAllByText('Salário').length).toBeGreaterThan(0) // description and category
+  })
+
+  it('um mês sem lançamentos diz isso, mesmo com filtros', async () => {
+    seed()
+    await render(<FinanceScreen today="2026-10-31" />)
+    await fireEvent.changeText(screen.getByLabelText('Buscar lançamento'), 'xyz')
+    await fireEvent.press(screen.getByRole('button', { name: 'Mês anterior' }))
+    expect(screen.getByText('Nenhum lançamento neste mês.')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Limpar filtros' })).toBeNull()
+  })
+
+  it('no Consolidado a lista traz as tabelas do perfil com o nome, sem saldo nem criar', async () => {
+    seed({ [lastTablePref('personal')]: 'all' })
+    const open = jest.fn()
+    await render(<FinanceScreen today="2026-10-31" onOpenTransaction={open} />)
+    expect(screen.getByText('Almoço')).toBeTruthy()
+    expect(screen.getByText('Tênis')).toBeTruthy()
+    // The other profile's table never shows.
+    expect(screen.queryByText('Ramen')).toBeNull()
+    expect(screen.getAllByTestId('tx-table').map((n) => n.props.children)).toEqual([
+      'Conta',
+      'Conta',
+      'Conta',
+      'Cartão'
+    ])
+    // Each currency has its own balance card at the top; the list below mixes the tables.
+    expect(screen.getByText('Real (BRL)')).toBeTruthy()
+    // 1000 - 50 - 30 in Conta and -400 in Cartão; the JPY table is of another profile.
+    expect(screen.getByTestId('saldo-BRL')).toHaveTextContent('R$ 520,00')
+    expect(screen.getByTestId('entradas-BRL')).toHaveTextContent('R$ 1.000,00')
+    expect(screen.getByTestId('saidas-BRL')).toHaveTextContent('R$ 480,00')
+    expect(screen.queryByText('Iene (JPY)')).toBeNull()
+    expect(screen.queryByTestId('saldo')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Novo gasto' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Nova receita' })).toBeNull()
+    await fireEvent.press(screen.getByRole('button', { name: /^Tênis,/ }))
+    expect(open).toHaveBeenCalledWith('cartao', 'f')
+  })
+
+  it('só leitura: a lista continua abrindo os detalhes', async () => {
+    seed({}, { readOnly: true })
+    const open = jest.fn()
+    await render(<FinanceScreen today="2026-10-31" onOpenTransaction={open} />)
+    await fireEvent.press(screen.getByRole('button', { name: /^Almoço,/ }))
+    expect(open).toHaveBeenCalledWith('conta', 'e')
+  })
+
+  it('o seletor lista Consolidado, as tabelas do perfil e Nova tabela…', async () => {
+    seed()
+    await render(<FinanceScreen today="2026-10-31" />)
+    await fireEvent.press(screen.getByRole('button', { name: 'Tabela ▸ Conta' }))
+    expect(screen.getAllByRole('radio').map((r) => r.props.accessibilityLabel)).toEqual([
+      'Consolidado',
+      'Conta',
+      'Cartão',
+      'Nova tabela…'
+    ])
+  })
+
+  it('Consolidado fica lembrado na pref e aparece no seletor', async () => {
+    const { writePref } = seed()
+    await render(<FinanceScreen today="2026-10-31" />)
+    await fireEvent.press(screen.getByRole('button', { name: 'Tabela ▸ Conta' }))
+    await fireEvent.press(screen.getByRole('radio', { name: 'Consolidado' }))
+    expect(screen.getByRole('button', { name: 'Tabela ▸ Consolidado' })).toBeTruthy()
+    expect(writePref).toHaveBeenCalledWith(lastTablePref('personal'), 'all')
+  })
+
+  it('Nova tabela… cria a tabela com nome e moeda no perfil ativo e abre nela', async () => {
+    const { save, writePref } = seed()
+    await render(<FinanceScreen today="2026-10-31" />)
+    await fireEvent.press(screen.getByRole('button', { name: 'Tabela ▸ Conta' }))
+    await fireEvent.press(screen.getByRole('radio', { name: 'Nova tabela…' }))
+    const create = screen.getByRole('button', { name: 'Criar tabela' })
+    expect(create.props.accessibilityState.disabled).toBe(true)
+    await fireEvent.changeText(screen.getByLabelText('Nome da tabela'), '  Poupança ')
+    await fireEvent.press(screen.getByRole('button', { name: 'USD' }))
+    await fireEvent.press(screen.getByRole('button', { name: 'Criar tabela' }))
+    const created = useApp.getState().state.lists.find((t) => t.name === 'Poupança')
+    expect(created).toMatchObject({ currency: 'USD', profileId: 'personal', transactions: [] })
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(writePref).toHaveBeenCalledWith(lastTablePref('personal'), created?.id)
+    expect(screen.getByRole('button', { name: 'Tabela ▸ Poupança' })).toBeTruthy()
+    expect(screen.queryByLabelText('Nome da tabela')).toBeNull()
+  })
+
+  it('Renomear troca só o nome e mantém moeda e lançamentos', async () => {
+    seed()
+    await render(<FinanceScreen today="2026-10-31" />)
+    await fireEvent.press(screen.getByRole('button', { name: 'Ações da tabela' }))
+    await fireEvent.press(screen.getByRole('button', { name: 'Renomear' }))
+    expect(screen.getByLabelText('Nome da tabela').props.value).toBe('Conta')
+    await fireEvent.changeText(screen.getByLabelText('Nome da tabela'), 'Conta corrente')
+    await fireEvent.press(screen.getByRole('button', { name: 'Salvar' }))
+    expect(names()).toEqual(['Conta corrente', 'Cartão', '円 do trabalho'])
+    const renamed = useApp.getState().state.lists[0]
+    expect(renamed.currency).toBe('BRL')
+    expect(renamed.transactions).toHaveLength(3)
+    expect(screen.getByRole('button', { name: 'Tabela ▸ Conta corrente' })).toBeTruthy()
+  })
+
+  it('Excluir pede a confirmação exata e só apaga ao confirmar', async () => {
+    const { save } = seed()
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined)
+    await render(<FinanceScreen today="2026-10-31" />)
+    await fireEvent.press(screen.getByRole('button', { name: 'Ações da tabela' }))
+    await fireEvent.press(screen.getByRole('button', { name: 'Excluir' }))
+    expect(alert).toHaveBeenCalledWith(
+      'Excluir a tabela Conta e todos os lançamentos dela?',
+      undefined,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Excluir', style: 'destructive', onPress: expect.any(Function) }
+      ]
+    )
+    expect(names()).toContain('Conta')
+    expect(save).not.toHaveBeenCalled()
+    const buttons = alert.mock.calls[0][2]!
+    await act(async () => {
+      buttons.find((b) => b.text === 'Excluir')?.onPress?.()
+    })
+    expect(names()).toEqual(['Cartão', '円 do trabalho'])
+    expect(save).toHaveBeenCalledTimes(1)
+    // The screen falls to the profile's first table left.
+    expect(screen.getByRole('button', { name: 'Tabela ▸ Cartão' })).toBeTruthy()
+    alert.mockRestore()
+  })
+
+  it('o mês tem setas, e tocar no nome volta ao atual', async () => {
+    seed()
+    await render(<FinanceScreen today="2026-10-31" />)
+    expect(screen.getByText('outubro de 2026')).toBeTruthy()
+    expect(screen.getByText('Almoço')).toBeTruthy()
+    await fireEvent.press(screen.getByRole('button', { name: 'Mês anterior' }))
+    expect(screen.getByText('setembro de 2026')).toBeTruthy()
+    expect(screen.getByText('Nenhum lançamento neste mês.')).toBeTruthy()
+    await fireEvent.press(screen.getByRole('button', { name: 'Próximo mês' }))
+    await fireEvent.press(screen.getByRole('button', { name: 'Próximo mês' }))
+    expect(screen.getByText('novembro de 2026')).toBeTruthy()
+    await fireEvent.press(screen.getByRole('button', { name: 'novembro de 2026' }))
+    expect(screen.getByText('outubro de 2026')).toBeTruthy()
+    expect(screen.getByText('Almoço')).toBeTruthy()
+  })
+
+  it('a virada de ano anda de dezembro a janeiro', async () => {
+    seed()
+    await render(<FinanceScreen today="2026-12-15" />)
+    await fireEvent.press(screen.getByRole('button', { name: 'Próximo mês' }))
+    expect(screen.getByText('janeiro de 2027')).toBeTruthy()
+    await fireEvent.press(screen.getByRole('button', { name: 'Mês anterior' }))
+    await fireEvent.press(screen.getByRole('button', { name: 'Mês anterior' }))
+    expect(screen.getByText('novembro de 2026')).toBeTruthy()
+  })
+
+  it('as seis abas existem e trocam o conteúdo', async () => {
+    seed()
+    await render(<FinanceScreen today="2026-10-31" />)
+    expect(screen.getAllByRole('tab').map((t) => t.props.accessibilityLabel)).toEqual([
+      'Lançamentos',
+      'Resumo',
+      'Dívidas',
+      'Metas',
+      'Compras',
+      'Rendimentos'
+    ])
+    const selected = (name: string): boolean =>
+      screen.getByRole('tab', { name }).props.accessibilityState.selected
+    expect(selected('Lançamentos')).toBe(true)
+    expect(screen.getByText('Saldo atual')).toBeTruthy()
+    await fireEvent.press(screen.getByRole('tab', { name: 'Dívidas' }))
+    expect([selected('Dívidas'), selected('Lançamentos')]).toEqual([true, false])
+    expect(screen.queryByText('Saldo atual')).toBeNull()
+    await fireEvent.press(screen.getByRole('tab', { name: 'Lançamentos' }))
+    expect(screen.getByText('Saldo atual')).toBeTruthy()
+  })
+
+  it('no Consolidado, as áreas de tabela pedem para escolher uma', async () => {
+    seed({ [lastTablePref('personal')]: 'all' })
+    await render(<FinanceScreen today="2026-10-31" />)
+    expect(screen.getByRole('button', { name: 'Tabela ▸ Consolidado' })).toBeTruthy()
+    for (const tab of ['Dívidas', 'Metas', 'Compras', 'Rendimentos']) {
+      await fireEvent.press(screen.getByRole('tab', { name: tab }))
+      expect([tab, screen.queryByText(PICK_TABLE_TEXT) !== null]).toEqual([tab, true])
+    }
+    // Nothing to rename or delete in the Consolidado.
+    expect(screen.queryByRole('button', { name: 'Ações da tabela' })).toBeNull()
+  })
+
+  it('só leitura: criar, renomear e excluir ficam desabilitados', async () => {
+    seed({}, { readOnly: true })
+    await render(<FinanceScreen today="2026-10-31" />)
+    const more = screen.getByRole('button', { name: 'Ações da tabela' })
+    expect(more.props.accessibilityState.disabled).toBe(true)
+    await fireEvent.press(screen.getByRole('button', { name: 'Tabela ▸ Conta' }))
+    const create = screen.getByRole('radio', { name: 'Nova tabela…' })
+    expect(create.props.accessibilityState.disabled).toBe(true)
+    // Choosing a table is only reading: still allowed.
+    expect(screen.getByRole('radio', { name: 'Cartão' }).props.accessibilityState.disabled).toBe(
+      false
+    )
+  })
+
+  it('o menu da tabela desabilita Renomear e Excluir quando passa a só leitura', async () => {
+    const { save } = seed()
+    await render(<FinanceScreen today="2026-10-31" />)
+    await fireEvent.press(screen.getByRole('button', { name: 'Ações da tabela' }))
+    await act(async () => {
+      useApp.setState({ readOnly: true })
+    })
+    const rename = screen.getByRole('button', { name: 'Renomear' })
+    const remove = screen.getByRole('button', { name: 'Excluir' })
+    expect([rename, remove].map((b) => b.props.accessibilityState.disabled)).toEqual([true, true])
+    expect(save).not.toHaveBeenCalled()
+  })
+
+  it('sem tabela: o aviso e o botão Nova tabela, que cria a primeira', async () => {
+    seedApp({}, {})
+    useApp.setState({ status: SYNCED })
+    await render(<FinanceScreen today="2026-10-31" />)
+    expect(screen.getByText(NO_TABLE_TEXT)).toBeTruthy()
+    await fireEvent.press(screen.getByRole('button', { name: 'Nova tabela' }))
+    await fireEvent.changeText(screen.getByLabelText('Nome da tabela'), 'Conta')
+    await fireEvent.press(screen.getByRole('button', { name: 'Criar tabela' }))
+    expect(useApp.getState().state.lists).toEqual([
+      expect.objectContaining({ name: 'Conta', currency: 'BRL', profileId: 'personal' })
+    ])
+    expect(screen.getByRole('button', { name: 'Tabela ▸ Conta' })).toBeTruthy()
+  })
+
+  it('sem tabela e só leitura: Nova tabela fica desabilitado', async () => {
+    seedApp({}, { readOnly: true })
+    useApp.setState({ status: SYNCED })
+    await render(<FinanceScreen today="2026-10-31" />)
+    const button = screen.getByRole('button', { name: 'Nova tabela' })
+    expect(button.props.accessibilityState.disabled).toBe(true)
+  })
+
+  describe('Resumo e Consolidado', () => {
+    // today = 2026-10-15; every figure below is worked out by hand.
+    const tx = (
+      id: string,
+      type: 'income' | 'expense',
+      amount: string,
+      date: string,
+      category?: string
+    ): TableTx => ({ id, description: id, type, amount, date, category })
+
+    function seedSummary(prefs: Record<string, string> = {}): void {
+      seedApp(
+        {
+          lists: [
+            table('conta', 'Conta', 'personal', [
+              tx('antes', 'income', '500', '2026-09-20'),
+              tx('salario', 'income', '1000', '2026-10-01', 'Salário'),
+              tx('mercado', 'expense', '200', '2026-10-10', 'Alimentação'),
+              tx('padaria', 'expense', '50', '2026-10-12', 'Alimentação'),
+              tx('avulso', 'expense', '80', '2026-10-14'),
+              tx('cinema', 'expense', '100', '2026-10-20', 'Lazer'),
+              tx('freela', 'income', '300', '2026-10-25', 'Freela'),
+              tx('depois', 'expense', '40', '2026-11-05', 'Lazer')
+            ])
+          ]
+        },
+        { prefs }
+      )
+    }
+
+    it('a tabela mostra saldo atual, projetado, entradas e saídas do mês', async () => {
+      seedSummary()
+      await render(<FinanceScreen today="2026-10-15" initialTab="resumo" />)
+      // Now (until the 15th): 500 + 1000 - 200 - 50 - 80. Projected adds the 20th and the 25th.
+      expect(screen.getByTestId('saldo')).toHaveTextContent('R$ 1.170,00')
+      expect(screen.getByTestId('projetado')).toHaveTextContent('R$ 1.370,00')
+      // The month: 1000 + 300 in, 200 + 50 + 80 + 100 out (September and November stay out).
+      expect(screen.getByTestId('entradas')).toHaveTextContent('R$ 1.300,00')
+      expect(screen.getByTestId('saidas')).toHaveTextContent('R$ 430,00')
+      expect(screen.getByText('Saldo projetado')).toBeTruthy()
+    })
+
+    it('os gastos por categoria vêm do maior ao menor, com o valor escrito', async () => {
+      seedSummary()
+      await render(<FinanceScreen today="2026-10-15" initialTab="resumo" />)
+      const rows = screen.getAllByTestId('category-row')
+      // The bar is never the only information: each row is named and valued for a screen reader.
+      expect(rows.map((r) => r.props.accessibilityLabel)).toEqual([
+        'Alimentação: R$ 250,00',
+        'Lazer: R$ 100,00',
+        'Sem categoria: R$ 80,00'
+      ])
+      expect(screen.getByText('R$ 250,00')).toBeTruthy()
+      expect(screen.getByText('R$ 80,00')).toBeTruthy()
+      // Income is not a spending category.
+      expect(screen.queryByText('Freela')).toBeNull()
+      const widths = screen
+        .getAllByTestId('category-bar')
+        .map((bar) => StyleSheet.flatten(bar.props.style).width)
+      expect(widths).toEqual(['100%', '40%', '32%'])
+    })
+
+    it('um mês passado para no fim dele e um futuro projeta até o fim dele', async () => {
+      seedSummary()
+      await render(<FinanceScreen today="2026-10-15" initialTab="resumo" />)
+      await fireEvent.press(screen.getByRole('button', { name: 'Mês anterior' }))
+      expect(screen.getByText('setembro de 2026')).toBeTruthy()
+      expect(screen.getByTestId('saldo')).toHaveTextContent('R$ 500,00')
+      expect(screen.getByTestId('projetado')).toHaveTextContent('R$ 500,00')
+      expect(screen.getByTestId('entradas')).toHaveTextContent('R$ 500,00')
+      expect(screen.getByTestId('saidas')).toHaveTextContent('R$ 0,00')
+      expect(screen.getByText('Nenhum gasto neste mês.')).toBeTruthy()
+      expect(screen.queryAllByTestId('category-row')).toHaveLength(0)
+
+      await fireEvent.press(screen.getByRole('button', { name: 'Próximo mês' }))
+      await fireEvent.press(screen.getByRole('button', { name: 'Próximo mês' }))
+      expect(screen.getByText('novembro de 2026')).toBeTruthy()
+      // Now still stops at today (1170); projected also takes the 5th of November (-40) in.
+      expect(screen.getByTestId('saldo')).toHaveTextContent('R$ 1.170,00')
+      expect(screen.getByTestId('projetado')).toHaveTextContent('R$ 1.330,00')
+      expect(screen.getByTestId('entradas')).toHaveTextContent('R$ 0,00')
+      expect(screen.getByTestId('saidas')).toHaveTextContent('R$ 40,00')
+      expect(screen.getAllByTestId('category-row').map((r) => r.props.accessibilityLabel)).toEqual([
+        'Lazer: R$ 40,00'
+      ])
+    })
+
+    it('saldo negativo fica vermelho no resumo', async () => {
+      seedApp({ lists: [table('c', 'C', 'personal', [tx('a', 'expense', '10', '2026-10-01')])] })
+      await render(<FinanceScreen today="2026-10-15" initialTab="resumo" />)
+      for (const id of ['saldo', 'projetado'])
+        expect(StyleSheet.flatten(screen.getByTestId(id).props.style).color).toBe(lightTheme.red)
+    })
+
+    function seedMixed(): void {
+      seedApp(
+        {
+          lists: [
+            table('conta', 'Conta', 'personal', [
+              tx('salario', 'income', '1000', '2026-10-01'),
+              tx('mercado', 'expense', '200', '2026-10-10'),
+              // The mirror of the invoice below (an item points at it): out of every total.
+              tx('espelho', 'expense', '300', '2026-10-06'),
+              tx('bonus', 'income', '100', '2026-10-28')
+            ]),
+            table('cartao', 'Cartão', 'personal', [
+              {
+                ...tx('fatura', 'expense', '300', '2026-10-05'),
+                details: [
+                  { id: 'd1', description: 'Fatura', amount: '300', linkedTransactionId: 'espelho' }
+                ]
+              }
+            ]),
+            table(
+              'iene',
+              'Iene',
+              'personal',
+              [
+                tx('pagamento', 'income', '50000', '2026-10-02'),
+                tx('ramen', 'expense', '12000', '2026-10-07')
+              ],
+              'JPY'
+            )
+          ]
+        },
+        { prefs: { [lastTablePref('personal')]: 'all' } }
+      )
+    }
+
+    it('o Consolidado tem um cartão por moeda, sem somar nem converter', async () => {
+      seedMixed()
+      await render(<FinanceScreen today="2026-10-15" initialTab="resumo" />)
+      expect(screen.getAllByText(/^(Real|Iene) \(/).map((n) => n.props.children)).toEqual([
+        'Real (BRL)',
+        'Iene (JPY)'
+      ])
+      // BRL: 1000 - 200 - 300 (the invoice; the mirror stays out); projected adds the 28th (+100).
+      expect(screen.getByTestId('saldo-BRL')).toHaveTextContent('R$ 500,00')
+      expect(screen.getByTestId('projetado-BRL')).toHaveTextContent('R$ 600,00')
+      expect(screen.getByTestId('entradas-BRL')).toHaveTextContent('R$ 1.100,00')
+      expect(screen.getByTestId('saidas-BRL')).toHaveTextContent('R$ 500,00')
+      // JPY: its own whole-yen numbers, none of them mixed into the BRL ones.
+      expect(screen.getByTestId('saldo-JPY')).toHaveTextContent('¥38.000')
+      expect(screen.getByTestId('projetado-JPY')).toHaveTextContent('¥38.000')
+      expect(screen.getByTestId('entradas-JPY')).toHaveTextContent('¥50.000')
+      expect(screen.getByTestId('saidas-JPY')).toHaveTextContent('¥12.000')
+      expect(screen.queryByTestId('saldo')).toBeNull()
+      expect(screen.queryByText(PICK_TABLE_TEXT)).toBeNull()
+    })
+
+    it('o Consolidado também abre a lista com os cartões por moeda no topo', async () => {
+      seedMixed()
+      await render(<FinanceScreen today="2026-10-15" />)
+      expect(screen.getByTestId('saldo-BRL')).toHaveTextContent('R$ 500,00')
+      expect(screen.getByTestId('saldo-JPY')).toHaveTextContent('¥38.000')
+      // ...and the rest of the tab is still there.
+      expect(screen.getByLabelText('Buscar lançamento')).toBeTruthy()
+      expect(screen.getByText('ramen')).toBeTruthy()
+    })
+
+    it('o Consolidado segue o mês escolhido', async () => {
+      seedMixed()
+      await render(<FinanceScreen today="2026-10-15" initialTab="resumo" />)
+      await fireEvent.press(screen.getByRole('button', { name: 'Mês anterior' }))
+      expect(screen.getByTestId('entradas-BRL')).toHaveTextContent('R$ 0,00')
+      // Nothing happened before October: every balance is zero, still one per currency.
+      expect(screen.getByTestId('saldo-BRL')).toHaveTextContent('R$ 0,00')
+      expect(screen.getByTestId('saldo-JPY')).toHaveTextContent('¥0')
+    })
+
+    it('Dívidas, Metas, Compras e Rendimentos continuam pedindo uma tabela no Consolidado', async () => {
+      seedMixed()
+      await render(<FinanceScreen today="2026-10-15" initialTab="resumo" />)
+      for (const name of ['Dívidas', 'Metas', 'Compras', 'Rendimentos']) {
+        await fireEvent.press(screen.getByRole('tab', { name }))
+        expect([name, screen.queryByText(PICK_TABLE_TEXT) !== null]).toEqual([name, true])
+        expect(screen.queryByTestId('saldo-BRL')).toBeNull()
+      }
+    })
+  })
+
+  it('salvar um gasto estando no Consolidado não troca a pref da tabela', async () => {
+    const { writePref, prefs } = seed({ [lastTablePref('personal')]: 'all' })
+    await render(
+      <TransactionSheet
+        visible
+        onClose={jest.fn()}
+        type="expense"
+        today={new Date(2026, 9, 31, 12)}
+      />
+    )
+    await fireEvent.changeText(screen.getByLabelText('Valor (BRL)'), '12,50')
+    await fireEvent.press(screen.getByRole('button', { name: 'Salvar' }))
+    // Only "all" is remembered, so the sheet falls to the first table and saves there.
+    expect(useApp.getState().state.lists[0].transactions.at(-1)).toMatchObject({ amount: '12.5' })
+    expect(writePref).not.toHaveBeenCalled()
+    expect(prefs[lastTablePref('personal')]).toBe('all')
+  })
+
+  describe('bloqueio', () => {
+    afterEach(() => useLockState.setState({ hidden: false }))
+
+    it('uma folha aberta fecha atrás da tela de bloqueio e não grava', async () => {
+      const { save } = seed()
+      await render(<FinanceScreen today="2026-10-31" />)
+      await fireEvent.press(screen.getByRole('button', { name: 'Tabela ▸ Conta' }))
+      await fireEvent.press(screen.getByRole('radio', { name: 'Nova tabela…' }))
+      await fireEvent.changeText(screen.getByLabelText('Nome da tabela'), 'Poupança')
+      await act(async () => {
+        useLockState.setState({ hidden: true })
+      })
+      expect(screen.queryByLabelText('Nome da tabela')).toBeNull()
+      expect(names()).not.toContain('Poupança')
+      expect(save).not.toHaveBeenCalled()
+      // Back from the lock: what was typed is still there.
+      await act(async () => {
+        useLockState.setState({ hidden: false })
+      })
+      expect(screen.getByLabelText('Nome da tabela').props.value).toBe('Poupança')
+    })
+  })
+
+  afterEach(() => jest.restoreAllMocks())
 })

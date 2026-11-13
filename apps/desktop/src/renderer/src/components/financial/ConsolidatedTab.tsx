@@ -3,6 +3,7 @@ import Decimal from 'decimal.js'
 import type { FinancialTable, FinancialTransaction, Currency } from '../../types'
 import { CURRENCY_CONFIG } from '../../types'
 import { useKanbanStore } from '../../store/kanban'
+import { consolidatedByCurrency, monthBounds } from '@sagyou/core/finance-views'
 import {
   MONTH_NAMES,
   financialCategories,
@@ -63,8 +64,8 @@ export function ConsolidatedTab({
   )
   const now = new Date()
   const today = todayISO(now)
-  const selectedMonthEnd = `${activeMonth.year}-${String(activeMonth.month).padStart(2, '0')}-31`
-  const currentCutoff = today < selectedMonthEnd ? today : selectedMonthEnd
+  const monthKey = `${activeMonth.year}-${String(activeMonth.month).padStart(2, '0')}`
+  const { monthEnd: selectedMonthEnd } = monthBounds(monthKey, today)
   const [rates, setRates] = useState<Record<string, RateInfo>>({})
   const [linkingTx, setLinkingTx] = useState<{
     tableId: string
@@ -202,47 +203,18 @@ export function ConsolidatedTab({
     }
   }, [monthTxs, detailLinks])
 
-  const byCurrency = useMemo(() => {
-    const map: Record<
-      string,
-      {
-        currency: Currency
-        income: Decimal
-        expense: Decimal
-        current: Decimal
-        projected: Decimal
-      }
-    > = {}
-    for (const currency of allTableCurrencies) {
-      map[currency] = {
-        currency,
-        income: new Decimal(0),
-        expense: new Decimal(0),
-        current: new Decimal(0),
-        projected: new Decimal(0)
-      }
-    }
-    const monthLinkedIds = new Set(
-      monthTxs.filter((t) => t.linkedTransactionId).map((t) => t.linkedTransactionId)
-    )
-    for (const t of monthTxs) {
-      if (monthLinkedIds.has(t.id) || detailLinks.has(t.id)) continue
-      const values = map[t.tableCurrency]
-      if (t.type === 'income') values.income = values.income.plus(t.amount)
-      else values.expense = values.expense.plus(t.amount)
-    }
-    const allLinkedIds = new Set(
-      allTransactions.filter((t) => t.linkedTransactionId).map((t) => t.linkedTransactionId)
-    )
-    for (const t of allTransactions) {
-      if (allLinkedIds.has(t.id) || detailLinks.has(t.id)) continue
-      const values = map[t.tableCurrency]
-      const amount = t.type === 'income' ? D(t.amount) : D(t.amount).negated()
-      if (t.date <= selectedMonthEnd) values.projected = values.projected.plus(amount)
-      if (t.date <= currentCutoff) values.current = values.current.plus(amount)
-    }
-    return Object.values(map).sort((a, b) => a.currency.localeCompare(b.currency))
-  }, [monthTxs, allTransactions, allTableCurrencies, detailLinks, currentCutoff, selectedMonthEnd])
+  // The sums (mirrors left out, currencies never added together) live in the core, shared with the phone.
+  const byCurrency = useMemo(
+    () =>
+      consolidatedByCurrency(lists, monthKey, today, categoryFilter).map((summary) => ({
+        currency: summary.currency,
+        income: D(summary.income),
+        expense: D(summary.expense),
+        current: D(summary.current),
+        projected: D(summary.projected)
+      })),
+    [lists, monthKey, today, categoryFilter]
+  )
 
   const convertedTotal = useMemo(() => {
     let total = new Decimal(0)

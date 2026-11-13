@@ -1,6 +1,13 @@
-import { newTransaction, parseDecimalInput, type NewTransactionInput } from '@sagyou/core/finance'
-import { applyFinancialTransactionEdit } from '@sagyou/core/financialRecord'
-import { D } from '@sagyou/core/money'
+import {
+  addTransaction as addTransactionCore,
+  syncYieldSummary,
+  updateTransaction as updateTransactionCore,
+  type ActionError,
+  type ActionResult
+} from '@sagyou/core/finance-actions'
+import { parseDecimalInput, type NewTransactionInput } from '@sagyou/core/finance'
+import { D, moneyStr } from '@sagyou/core/money'
+import { MONTH_NAMES, YIELD_SUMMARY_CATEGORY } from '@sagyou/core/yieldSummary'
 import { format, parseISO, subDays } from 'date-fns'
 import {
   DEFAULT_FINANCIAL_PROFILE_ID,
@@ -9,9 +16,80 @@ import {
   type FinancialTransaction
 } from '@sagyou/core/types'
 import type { MobileState } from '../data/state'
+import { useApp } from './app'
+import { useUndo } from './undo'
 
 export const LOCKED_TEXT = 'Este lançamento só pode ser editado no PC.'
+export const DELETE_LOCKED_TEXT = 'Este lançamento só pode ser excluído no PC.'
+export const YIELD_LOCKED_TEXT = 'Este lançamento vem dos rendimentos do mês.'
 export const INVALID_AMOUNT_TEXT = 'Valor inválido.'
+export const OVER_REMAINING_TEXT = 'O pagamento passa do valor restante.'
+export const NOT_FOUND_TEXT = 'Este item não existe mais.'
+export const INVALID_NAME_TEXT = 'Informe um nome.'
+export const DETAILS_EXCEED_TEXT = 'O valor não pode ficar abaixo da soma dos itens da fatura.'
+
+/** What the phone says for each refusal of the core. */
+export function financeErrorText(error: ActionError): string {
+  switch (error) {
+    case 'invalid-amount':
+      return INVALID_AMOUNT_TEXT
+    case 'over-remaining':
+      return OVER_REMAINING_TEXT
+    case 'invalid-name':
+      return INVALID_NAME_TEXT
+    default:
+      return NOT_FOUND_TEXT
+  }
+}
+
+/**
+ * Runs a core action on the tables as they are *now* (never a stale render) and writes the result
+ * through `commit`, so a debt and its payment, for one, land in a single save. A refusal of the
+ * core goes to `onError` (default: the bottom notice); a write the store refuses (read-only, behind
+ * the lock) is silent, as every other write of the phone. An action that changed nothing (the core
+ * hands back the same array) is not saved.
+ */
+export type FinanceOutcome = { ok: true; id?: string } | { ok: false }
+
+export function applyFinance(
+  action: (tables: FinancialTable[], now: Date) => ActionResult,
+  onError: (text: string) => void = (text) => useUndo.getState().show(text)
+): FinanceOutcome {
+  const app = useApp.getState()
+  const current = app.state
+  const result = action(current.lists, new Date())
+  if ('error' in result) {
+    onError(financeErrorText(result.error))
+    return { ok: false }
+  }
+  if (result.tables === current.lists) return { ok: true }
+  if (!app.commit({ ...current, lists: result.tables })) return { ok: false }
+  return { ok: true, id: result.id }
+}
+
+/**
+ * A write to the yield entries keeps the monthly summary (`Rendimentos <Mês> <ano>`, day 1) in step
+ * **in the same result**, so entry and summary reach `commit` together (one save). `dates` are the
+ * entries' days the write touched (before and after, for a date that moved): the summary of each
+ * month among them is rebuilt by the core. An error or a date that is not a day is left as it was.
+ */
+export function withYieldSummaries(
+  result: ActionResult,
+  tableId: string,
+  dates: string[],
+  now: Date
+): ActionResult {
+  if ('error' in result) return result
+  let tables = result.tables
+  for (const key of new Set(dates.map((d) => d.slice(0, 7)))) {
+    const [year, month] = key.split('-').map(Number)
+    const table = tables.find((t) => t.id === tableId)
+    if (!table || !year || !month) continue
+    const synced = syncYieldSummary(table, { year, month }, now)
+    if (synced !== table) tables = tables.map((t) => (t.id === tableId ? synced : t))
+  }
+  return tables === result.tables ? result : { ...result, tables }
+}
 
 /** Device-only: the last table used, per financial profile. */
 export const lastTablePref = (profileId: string): string => `finance.lastTable.${profileId}`
@@ -21,14 +99,65 @@ export function tablesOfProfile(state: MobileState, profileId: string): Financia
   return state.lists.filter((t) => (t.profileId ?? DEFAULT_FINANCIAL_PROFILE_ID) === profileId)
 }
 
+/** An invoice item points at `tx`: it is the mirror of that invoice, in whichever table it lives. */
+function isInvoiceMirror(tables: FinancialTable[], tx: FinancialTransaction): boolean {
+  return tables.some((t) =>
+    t.transactions.some((x) => x.details?.some((d) => d.linkedTransactionId === tx.id))
+  )
+}
+
+/** Another transaction's legacy `linkedTransactionId` points at `tx`: it is the "child" of that link. */
+function isLegacyChild(tables: FinancialTable[], tx: FinancialTransaction): boolean {
+  return tables.some((t) => t.transactions.some((x) => x.linkedTransactionId === tx.id))
+}
+
 /**
  * Debt payments, invoice mirrors, legacy links and currency transfers carry
- * rules the phone does not implement in v1, so they are read-only here.
+ * rules the phone does not implement in v1, so they are read-only here. An invoice and its mirror
+ * lock each other, so the mirror is looked up through **every** table (it lives in another one).
  */
-export function isLockedTransaction(table: FinancialTable, tx: FinancialTransaction): boolean {
+export function isLockedTransaction(tables: FinancialTable[], tx: FinancialTransaction): boolean {
   if (tx.debtId || tx.linkedTransactionId || tx.currencyTransferId) return true
   if (tx.details?.some((d) => d.linkedTransactionId)) return true
-  return table.transactions.some((t) => t.details?.some((d) => d.linkedTransactionId === tx.id))
+  // The legacy link locks both sides, and the child may live in another table.
+  return isLegacyChild(tables, tx) || isInvoiceMirror(tables, tx)
+}
+
+/** A monthly yield summary the Rendimentos tab generates; it is edited there, never by hand. */
+export function isYieldSummary(tx: FinancialTransaction): boolean {
+  return tx.category === YIELD_SUMMARY_CATEGORY && tx.description.startsWith('Rendimentos ')
+}
+
+/** Why a transaction cannot be edited on the phone (the text to show), or null when it can. */
+export function editLock(tables: FinancialTable[], tx: FinancialTransaction): string | null {
+  if (isYieldSummary(tx)) return YIELD_LOCKED_TEXT
+  return isLockedTransaction(tables, tx) ? LOCKED_TEXT : null
+}
+
+/**
+ * Why a transaction cannot be deleted on the phone, or null. A debt payment and a purchase from a
+ * shopping list can go (the core gives the value back / the item stays); a currency transfer, an
+ * invoice and its mirror, and a legacy link — in both directions — cannot.
+ */
+export function deleteLock(tables: FinancialTable[], tx: FinancialTransaction): string | null {
+  if (isYieldSummary(tx)) return YIELD_LOCKED_TEXT
+  if (tx.currencyTransferId || tx.linkedTransactionId) return DELETE_LOCKED_TEXT
+  if (tx.details?.some((d) => d.linkedTransactionId)) return DELETE_LOCKED_TEXT
+  // The mirror/child of someone else's link lives in another table, so look through all of them.
+  return isLegacyChild(tables, tx) || isInvoiceMirror(tables, tx) ? DELETE_LOCKED_TEXT : null
+}
+
+/** The month before (-1) or after (+1) a `yyyy-MM`. */
+export function shiftMonth(month: string, delta: number): string {
+  const [year, number] = month.split('-').map(Number)
+  const index = year * 12 + (number - 1) + delta
+  return `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, '0')}`
+}
+
+/** "novembro de 2026". */
+export function monthLabel(month: string): string {
+  const [year, number] = month.split('-').map(Number)
+  return `${MONTH_NAMES[number - 1].toLowerCase()} de ${year}`
 }
 
 /** Parses what the user typed with the table's currency; null unless a positive amount. */
@@ -38,25 +167,28 @@ export function parseAmount(raw: string, currency: Currency): string | null {
   return value.toString()
 }
 
-function withTable(
-  state: MobileState,
-  tableId: string,
-  edit: (table: FinancialTable) => FinancialTable
-): MobileState {
-  return { ...state, lists: state.lists.map((t) => (t.id === tableId ? edit(t) : t)) }
-}
-
+/** The new transaction goes through the core (id, `createdAt`, canonical amount), like the desktop. */
 export function addTransaction(
   state: MobileState,
   tableId: string,
   input: NewTransactionInput,
   now: Date
 ): { state: MobileState; id: string } {
-  const tx = newTransaction(input, now)
-  return {
-    state: withTable(state, tableId, (t) => ({ ...t, transactions: [...t.transactions, tx] })),
-    id: tx.id
-  }
+  const result = addTransactionCore(
+    state.lists,
+    tableId,
+    {
+      description: input.description.trim(),
+      amount: moneyStr(input.amount),
+      type: input.type,
+      date: input.date,
+      category: input.category
+    },
+    now
+  )
+  // The table is gone (removed from another device meanwhile): nothing is added and the id is empty.
+  if ('error' in result) return { state, id: '' }
+  return { state: { ...state, lists: result.tables }, id: result.id ?? '' }
 }
 
 /**
@@ -103,10 +235,13 @@ export function groupByDay(
 }
 
 export type TransactionPatch = Partial<
-  Pick<FinancialTransaction, 'amount' | 'date' | 'category' | 'description'>
+  Pick<
+    FinancialTransaction,
+    'amount' | 'date' | 'category' | 'description' | 'source' | 'counterparty' | 'bankReference'
+  >
 >
 
-/** Audited like the desktop (applyFinancialTransactionEdit); refused for locked kinds. */
+/** Audited like the desktop (core `updateTransaction`); refused for locked kinds. */
 export function updateTransaction(
   state: MobileState,
   tableId: string,
@@ -117,14 +252,14 @@ export function updateTransaction(
   const table = state.lists.find((t) => t.id === tableId)
   const tx = table?.transactions.find((t) => t.id === txId)
   if (!table || !tx) return { error: 'Lançamento não encontrado.' }
-  if (isLockedTransaction(table, tx)) return { error: LOCKED_TEXT }
-  const at = now.toISOString()
-  return {
-    state: withTable(state, tableId, (t) => ({
-      ...t,
-      transactions: t.transactions.map((x) =>
-        x.id === txId ? applyFinancialTransactionEdit(x, patch, at) : x
-      )
-    }))
+  const locked = editLock(state.lists, tx)
+  if (locked) return { error: locked }
+  // The core drops an edit that leaves the invoice items above the total, and silently: say it.
+  if (patch.amount !== undefined && tx.details?.length) {
+    const items = tx.details.reduce((sum, d) => sum.plus(D(d.amount)), D(0))
+    if (D(patch.amount).lt(items)) return { error: DETAILS_EXCEED_TEXT }
   }
+  const result = updateTransactionCore(state.lists, tableId, txId, patch, now)
+  if ('error' in result) return { error: financeErrorText(result.error) }
+  return { state: result.tables === state.lists ? state : { ...state, lists: result.tables } }
 }

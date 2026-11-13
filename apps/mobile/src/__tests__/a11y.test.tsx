@@ -5,6 +5,11 @@ import { ConflictScreen } from '../screens/ConflictScreen'
 import { ConflictsScreen } from '../screens/ConflictsScreen'
 import { ControlSetupScreen } from '../screens/ControlSetupScreen'
 import { FinanceScreen } from '../screens/FinanceScreen'
+import { DebtSheet } from '../screens/finance/DebtSheet'
+import { CompleteGoalSheet, GoalSheet } from '../screens/finance/GoalSheet'
+import { ItemSheet } from '../screens/finance/ItemSheet'
+import { TransactionDetailScreen } from '../screens/finance/TransactionDetailScreen'
+import { EntrySheet, SourceSheet } from '../screens/finance/YieldSheet'
 import { HabitsScreen } from '../screens/HabitsScreen'
 import { NotesScreen } from '../screens/NotesScreen'
 import { PairDeviceScreen } from '../screens/PairDeviceScreen'
@@ -17,6 +22,7 @@ import { AllTasksList, ProjectBoard, ProjectList, UpcomingList } from '../screen
 import type { MobileState } from '../data/state'
 import { useRemote } from '../remote/store'
 import { useApp } from '../store/app'
+import { lastTablePref } from '../store/finance'
 import { MIN_TOUCH } from '../theme'
 import { T, project, seedApp, table } from './seed'
 import { installEngine, lww, orphan } from './conflicts'
@@ -72,6 +78,33 @@ const FULL: Partial<MobileState> = {
         type: 'expense',
         date: '2026-11-01',
         category: 'Alimentação'
+      },
+      {
+        id: 'x2',
+        description: 'Fatura do cartão',
+        amount: '100',
+        type: 'expense',
+        date: '2026-11-01',
+        source: 'Nubank',
+        counterparty: 'Banco',
+        bankReference: 'E123',
+        createdAt: '2026-11-01T12:00:00.000Z',
+        reconciledAt: '2026-11-02',
+        details: [{ id: 'd1', description: 'Mercado', amount: '60' }],
+        audit: [
+          {
+            at: '2026-11-01T13:00:00.000Z',
+            changes: [{ field: 'amount', before: '90', after: '100' }]
+          }
+        ]
+      },
+      {
+        id: 'x3',
+        description: 'Pagamento de dívida: Carro',
+        amount: '50',
+        type: 'expense',
+        date: '2026-11-01',
+        debtId: 'carro'
       }
     ])
   ],
@@ -138,6 +171,146 @@ function ConflictSample(): React.JSX.Element {
   )
 }
 
+/** The Consolidado: the table pref says "all" before the screen reads it. */
+function ConsolidatedSample(): React.JSX.Element {
+  useState(() => useApp.getState().services?.repo.writePref(lastTablePref('personal'), 'all'))
+  return <FinanceScreen today="2026-11-01" />
+}
+
+/** The Consolidado on its Resumo tab: one card per currency. */
+function ConsolidatedSummarySample(): React.JSX.Element {
+  useState(() => useApp.getState().services?.repo.writePref(lastTablePref('personal'), 'all'))
+  return <FinanceScreen today="2026-11-01" initialTab="resumo" />
+}
+
+/** The "conta" table with an open debt, a settled one and goals in every state, before the screen reads it. */
+function withDebtsAndGoals(): void {
+  const current = useApp.getState().state
+  useApp.setState({
+    state: {
+      ...current,
+      lists: current.lists.map((t) =>
+        t.id !== 'conta'
+          ? t
+          : {
+              ...t,
+              debts: [
+                {
+                  id: 'carro',
+                  name: 'Carro',
+                  originalAmount: '1000',
+                  remainingAmount: '700',
+                  createdAt: T,
+                  updatedAt: T
+                },
+                {
+                  id: 'antiga',
+                  name: 'Antiga',
+                  originalAmount: '200',
+                  remainingAmount: '0',
+                  createdAt: T,
+                  updatedAt: T,
+                  completedAt: '2026-10-20T12:00:00.000Z'
+                }
+              ],
+              goals: [
+                {
+                  id: 'g1',
+                  name: 'Viagem',
+                  targetAmount: '1000',
+                  targetMonth: 12,
+                  targetYear: 2026
+                },
+                { id: 'g2', name: 'Curso', targetAmount: '5000', targetMonth: 8, targetYear: 2026 },
+                {
+                  id: 'g3',
+                  name: 'Feita',
+                  targetAmount: '100',
+                  targetMonth: 6,
+                  targetYear: 2026,
+                  completedAt: '2026-10-10',
+                  completionNote: 'Meta batida'
+                }
+              ]
+            }
+      )
+    }
+  })
+}
+
+/** The "conta" table with bought and pending items (one with a link) and yield sources and entries of November. */
+const SHOPPING_AND_YIELDS = {
+  items: [
+    { id: 'i1', name: 'Arroz', qty: 2, price: '12.5', done: false, link: 'https://example.com/a' },
+    { id: 'i2', name: 'Feijão', qty: 1, done: true }
+  ],
+  yieldSources: [
+    { id: 'div', name: 'Dividendos', createdAt: T },
+    { id: 'alu', name: 'Aluguel', createdAt: T }
+  ],
+  yieldEntries: [
+    { id: 'y1', sourceId: 'div', date: '2026-11-01', amount: '100', createdAt: T },
+    { id: 'y2', sourceId: 'alu', date: '2026-11-01', amount: '250.5', createdAt: T }
+  ]
+}
+
+function withShoppingAndYields(): void {
+  const current = useApp.getState().state
+  useApp.setState({
+    state: {
+      ...current,
+      lists: current.lists.map((t) => (t.id !== 'conta' ? t : { ...t, ...SHOPPING_AND_YIELDS }))
+    }
+  })
+}
+
+function ShoppingSample(): React.JSX.Element {
+  useState(withShoppingAndYields)
+  return <FinanceScreen today="2026-11-01" initialTab="compras" />
+}
+
+function YieldsSample(): React.JSX.Element {
+  useState(withShoppingAndYields)
+  return <FinanceScreen today="2026-11-01" initialTab="rendimentos" />
+}
+
+function DebtsSample(): React.JSX.Element {
+  useState(withDebtsAndGoals)
+  return <FinanceScreen today="2026-11-01" initialTab="dividas" />
+}
+
+function GoalsSample(): React.JSX.Element {
+  useState(withDebtsAndGoals)
+  return <FinanceScreen today="2026-11-01" initialTab="metas" />
+}
+
+const CONTA = (FULL.lists ?? [])[0]
+const CARRO = {
+  id: 'carro',
+  name: 'Carro',
+  originalAmount: '1000',
+  remainingAmount: '700',
+  createdAt: T,
+  updatedAt: T
+}
+const CONTA_FULL = { ...CONTA, ...SHOPPING_AND_YIELDS }
+const VIAGEM = {
+  id: 'g1',
+  name: 'Viagem',
+  targetAmount: '1000',
+  targetMonth: 12,
+  targetYear: 2026
+}
+
+function DetailSample({ txId }: { txId: string }): React.JSX.Element {
+  return (
+    <TransactionDetailScreen
+      route={{ params: { tableId: 'conta', txId } }}
+      navigation={{ goBack: jest.fn() }}
+    />
+  )
+}
+
 const SCREENS: [string, ComponentType][] = [
   [
     'Tarefas',
@@ -172,7 +345,97 @@ const SCREENS: [string, ComponentType][] = [
     'Entrar com código de recuperação',
     () => <RecoverSync busy={false} error={null} onSubmit={jest.fn()} onBack={jest.fn()} />
   ],
-  ['Todas as tarefas', () => <AllTasksList onOpenTask={jest.fn()} today="2026-11-01" />]
+  ['Todas as tarefas', () => <AllTasksList onOpenTask={jest.fn()} today="2026-11-01" />],
+  ['Finanças: Resumo', () => <FinanceScreen today="2026-11-01" initialTab="resumo" />],
+  ['Finanças: Dívidas', () => <FinanceScreen today="2026-11-01" initialTab="dividas" />],
+  ['Finanças: Metas', () => <FinanceScreen today="2026-11-01" initialTab="metas" />],
+  ['Finanças: Compras', () => <FinanceScreen today="2026-11-01" initialTab="compras" />],
+  ['Finanças: Rendimentos', () => <FinanceScreen today="2026-11-01" initialTab="rendimentos" />],
+  ['Finanças: Consolidado', ConsolidatedSample],
+  ['Lançamento', () => <DetailSample txId="x2" />],
+  ['Lançamento: travado', () => <DetailSample txId="x3" />],
+  ['Finanças: Resumo do Consolidado', ConsolidatedSummarySample],
+  ['Finanças: Dívidas com dados', DebtsSample],
+  ['Finanças: Metas com dados', GoalsSample],
+  [
+    'Finanças: Nova dívida',
+    () => <DebtSheet visible onClose={jest.fn()} table={CONTA} today="2026-11-01" />
+  ],
+  [
+    'Finanças: Pagar dívida',
+    () => <DebtSheet visible onClose={jest.fn()} table={CONTA} debt={CARRO} today="2026-11-01" />
+  ],
+  [
+    'Finanças: Nova meta',
+    () => <GoalSheet visible onClose={jest.fn()} table={CONTA} today="2026-11-01" />
+  ],
+  [
+    'Finanças: Editar meta',
+    () => <GoalSheet visible onClose={jest.fn()} table={CONTA} goal={VIAGEM} today="2026-11-01" />
+  ],
+  [
+    'Finanças: Concluir meta',
+    () => (
+      <CompleteGoalSheet
+        visible
+        onClose={jest.fn()}
+        table={CONTA}
+        goal={VIAGEM}
+        today="2026-11-01"
+      />
+    )
+  ],
+  ['Finanças: Compras com dados', ShoppingSample],
+  ['Finanças: Rendimentos com dados', YieldsSample],
+  ['Finanças: Novo item', () => <ItemSheet visible onClose={jest.fn()} table={CONTA_FULL} />],
+  [
+    'Finanças: Editar item',
+    () => (
+      <ItemSheet
+        visible
+        onClose={jest.fn()}
+        table={CONTA_FULL}
+        item={SHOPPING_AND_YIELDS.items[0]}
+      />
+    )
+  ],
+  ['Finanças: Nova fonte', () => <SourceSheet visible onClose={jest.fn()} table={CONTA_FULL} />],
+  [
+    'Finanças: Renomear fonte',
+    () => (
+      <SourceSheet
+        visible
+        onClose={jest.fn()}
+        table={CONTA_FULL}
+        source={SHOPPING_AND_YIELDS.yieldSources[0]}
+      />
+    )
+  ],
+  [
+    'Finanças: Lançar rendimento',
+    () => (
+      <EntrySheet
+        visible
+        onClose={jest.fn()}
+        table={CONTA_FULL}
+        month="2026-11"
+        today="2026-11-01"
+      />
+    )
+  ],
+  [
+    'Finanças: Editar rendimento',
+    () => (
+      <EntrySheet
+        visible
+        onClose={jest.fn()}
+        table={CONTA_FULL}
+        month="2026-11"
+        today="2026-11-01"
+        entry={SHOPPING_AND_YIELDS.yieldEntries[0]}
+      />
+    )
+  ]
 ]
 
 const INTERACTIVE = ['button', 'checkbox', 'radio', 'tab'] as const
@@ -189,7 +452,14 @@ describe('varredura de acessibilidade', () => {
       for (const el of screen.queryAllByRole(role)) {
         const label = el.props.accessibilityLabel as string | undefined
         const style = StyleSheet.flatten(el.props.style) ?? {}
-        const height = Number(style.minHeight ?? style.height ?? 0)
+        // A scrim that fills its window (the sheet's "Fechar") is as big as the screen.
+        const fills =
+          style.position === 'absolute' &&
+          style.top === 0 &&
+          style.bottom === 0 &&
+          style.left === 0 &&
+          style.right === 0
+        const height = fills ? MIN_TOUCH : Number(style.minHeight ?? style.height ?? 0)
         expect([role, label, height >= MIN_TOUCH]).toEqual([
           role,
           expect.stringMatching(/\S/),
@@ -217,7 +487,7 @@ describe('varredura de acessibilidade', () => {
   const EMPTY: [string, ComponentType, string][] = [
     ['Tarefas', SCREENS[0][1], 'Nenhum projeto ainda. Crie um no Sagyou do PC.'],
     ['Hábitos', SCREENS[3][1], 'Nenhum hábito ainda. Crie um no Sagyou do PC.'],
-    ['Finanças', SCREENS[4][1], 'Nenhuma tabela neste perfil. Crie uma no Sagyou do PC.'],
+    ['Finanças', SCREENS[4][1], 'Nenhuma tabela neste perfil.'],
     ['Notas', SCREENS[5][1], 'Nenhum projeto ainda. Crie um no Sagyou do PC.']
   ]
 

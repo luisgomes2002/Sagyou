@@ -1,199 +1,155 @@
 import { todayLocalISO } from '@sagyou/core/dates'
-import { formatCurrency, tableBalance } from '@sagyou/core/finance'
-import type { FinancialTransaction } from '@sagyou/core/types'
+import type { FinancialTable } from '@sagyou/core/types'
 import { Wallet } from 'lucide-react-native'
 import { useState } from 'react'
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
-import { Picker } from '../components/Picker'
+import { ScrollView, StyleSheet } from 'react-native'
 import { Skeleton } from '../components/Skeleton'
-import { TransactionSheet } from '../components/TransactionSheet'
-import { categoryIcon } from '../components/icons'
-import { Card, EmptyState, Screen } from '../components/ui'
+import { Button, EmptyState, Screen } from '../components/ui'
+import { navigationRef } from '../navigation'
 import { awaitingFirstSync, useApp } from '../store/app'
-import { toBRDate } from '../store/dates'
-import {
-  LOCKED_TEXT,
-  groupByDay,
-  isLockedTransaction,
-  lastTablePref,
-  monthSummary,
-  tablesOfProfile
-} from '../store/finance'
-import { useUndo } from '../store/undo'
-import { FONT, MIN_TOUCH, RADIUS, SPACE, useTheme } from '../theme'
+import { lastTablePref, tablesOfProfile } from '../store/finance'
+import { DebtsTab } from './finance/DebtsTab'
+import { FinanceTabs } from './finance/FinanceTabs'
+import { FinanceTop } from './finance/FinanceTop'
+import { GoalsTab } from './finance/GoalsTab'
+import { ShoppingTab } from './finance/ShoppingTab'
+import { SummaryTab } from './finance/SummaryTab'
+import { TableSheet } from './finance/TableSheet'
+import { TransactionsTab } from './finance/TransactionsTab'
+import { YieldsTab } from './finance/YieldsTab'
+import type { FinanceTab } from './finance/tabs'
 
-/** One table of the phone's profile at a time: the month at a glance, then its days. */
-export function FinanceScreen({ today = todayLocalISO() }: { today?: string }): React.JSX.Element {
-  const theme = useTheme()
+export const NO_TABLE_TEXT = 'Nenhuma tabela neste perfil.'
+export const PICK_TABLE_TEXT = 'Escolha uma tabela para ver esta área.'
+
+/** A row of the list opens its details: the `Lancamento` screen of the root stack. */
+function openTransaction(tableId: string, txId: string): void {
+  if (navigationRef.isReady()) navigationRef.navigate('Lancamento', { tableId, txId })
+}
+
+/**
+ * Finanças: the top (table, month), the six areas as tabs and the chosen one. The table is
+ * remembered per profile (`finance.lastTable.<perfil>`, which also accepts `'all'`, the
+ * Consolidado); the month starts at the current one and the tab at Lançamentos, neither remembered.
+ */
+export function FinanceScreen({
+  today: pinnedToday,
+  initialTab = 'lancamentos',
+  onOpenTransaction = openTransaction
+}: {
+  /** Only tests pin the day; otherwise it is read from the clock on each render (and at each tap). */
+  today?: string
+  /** Only tests start elsewhere: in the app the tab always opens on Lançamentos. */
+  initialTab?: FinanceTab
+  /** Tests pass their own; in the app it goes to the root stack. */
+  onOpenTransaction?: (tableId: string, txId: string) => void
+}): React.JSX.Element {
+  const today = pinnedToday ?? todayLocalISO()
   const app = useApp((s) => s.state)
   const profileId = useApp((s) => s.profileId)
   const services = useApp((s) => s.services)
+  const readOnly = useApp((s) => s.readOnly)
   const waiting = useApp((s) => awaitingFirstSync(s.status))
   const tables = tablesOfProfile(app, profileId)
   const [chosen, setChosen] = useState<string | null>(
     () => services?.repo.readPref(lastTablePref(profileId)) ?? null
   )
-  const [editing, setEditing] = useState<FinancialTransaction | null>(null)
-  const table = tables.find((t) => t.id === chosen) ?? tables[0]
-
-  if (!table)
-    return (
-      <Screen>
-        {waiting ? (
-          <Skeleton />
-        ) : (
-          <EmptyState icon={Wallet} text="Nenhuma tabela neste perfil. Crie uma no Sagyou do PC." />
-        )}
-      </Screen>
-    )
+  const [month, setMonth] = useState(() => today.slice(0, 7))
+  const [tab, setTab] = useState<FinanceTab>(initialTab)
+  const [creating, setCreating] = useState(false)
 
   const choose = (id: string): void => {
     setChosen(id)
     services?.repo.writePref(lastTablePref(profileId), id)
   }
-  const balance = tableBalance(table.transactions, today)
-  const month = today.slice(0, 7)
-  const monthTxs = table.transactions
-    .filter((t) => t.date.startsWith(month))
-    .sort((a, b) => b.date.localeCompare(a.date))
-  const totals = monthSummary(table.transactions, today)
+
+  if (tables.length === 0)
+    return (
+      <Screen>
+        {waiting ? (
+          <Skeleton />
+        ) : (
+          <>
+            <EmptyState icon={Wallet} text={NO_TABLE_TEXT} />
+            <Button
+              variant="primary"
+              label="Nova tabela"
+              onPress={() => setCreating(true)}
+              disabled={readOnly}
+            />
+            <TableSheet visible={creating} onClose={() => setCreating(false)} onCreated={choose} />
+          </>
+        )}
+      </Screen>
+    )
+
+  const all = chosen === 'all'
+  const table = all ? undefined : (tables.find((t) => t.id === chosen) ?? tables[0])
 
   return (
     <ScrollView contentContainerStyle={styles.bottomRoom}>
       <Screen>
-        <Picker
-          label="Tabela"
-          value={table.id}
-          options={tables.map((t) => ({ id: t.id, label: t.name }))}
-          onChange={choose}
+        <FinanceTop
+          tableId={table?.id ?? 'all'}
+          onTable={choose}
+          month={month}
+          onMonth={setMonth}
+          today={today}
         />
-        <Card>
-          <Text style={[styles.caption, { color: theme.muted }]}>Saldo atual</Text>
-          <Text
-            testID="saldo"
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            minimumFontScale={0.85}
-            style={[styles.balance, { color: balance.gte(0) ? theme.text : theme.red }]}
-          >
-            {formatCurrency(balance, table.currency)}
-          </Text>
-          <View style={styles.totals}>
-            <View style={styles.total}>
-              <Text style={[styles.caption, { color: theme.muted }]}>Entradas do mês</Text>
-              <Text
-                testID="entradas"
-                numberOfLines={1}
-                adjustsFontSizeToFit
-                minimumFontScale={0.85}
-                style={[styles.value, { color: theme.green }]}
-              >
-                {formatCurrency(totals.income, table.currency)}
-              </Text>
-            </View>
-            <View style={styles.total}>
-              <Text style={[styles.caption, { color: theme.muted }]}>Saídas do mês</Text>
-              <Text
-                testID="saidas"
-                numberOfLines={1}
-                adjustsFontSizeToFit
-                minimumFontScale={0.85}
-                style={[styles.value, { color: theme.red }]}
-              >
-                {formatCurrency(totals.expense, table.currency)}
-              </Text>
-            </View>
-          </View>
-        </Card>
-        {monthTxs.length === 0 ? (
-          <EmptyState icon={Wallet} text="Nenhum lançamento neste mês." />
-        ) : null}
-        {groupByDay(monthTxs, today).map((group) => (
-          <View key={group.day} style={styles.group}>
-            <Text accessibilityRole="header" style={[styles.dayTitle, { color: theme.muted }]}>
-              {group.label}
-            </Text>
-            {group.txs.map((tx) => {
-              const Icon = categoryIcon(tx.category)
-              const income = tx.type === 'income'
-              return (
-                <Pressable
-                  key={tx.id}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${tx.description || tx.category || 'Lançamento'}, ${
-                    income ? 'receita' : 'gasto'
-                  } de ${formatCurrency(tx.amount, table.currency)}, ${toBRDate(tx.date)}`}
-                  onPress={() => {
-                    if (isLockedTransaction(table, tx)) return useUndo.getState().show(LOCKED_TEXT)
-                    setEditing(tx)
-                  }}
-                  style={({ pressed }) => [
-                    styles.tx,
-                    {
-                      backgroundColor: pressed ? theme.selected : theme.surface,
-                      borderColor: theme.border
-                    }
-                  ]}
-                >
-                  <View
-                    testID={`cat-${tx.category || 'none'}`}
-                    style={[styles.icon, { backgroundColor: theme.selected }]}
-                  >
-                    <Icon size={18} color={theme.onSurfaceIcon} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ color: theme.text, fontSize: FONT.bodyLg }} numberOfLines={2}>
-                      {tx.description || tx.category || '—'}
-                    </Text>
-                    {tx.category && tx.description ? (
-                      <Text style={[styles.caption, { color: theme.muted }]}>{tx.category}</Text>
-                    ) : null}
-                  </View>
-                  <Text style={[styles.value, { color: income ? theme.green : theme.red }]}>
-                    {income ? '+' : '−'}
-                    {formatCurrency(tx.amount, table.currency)}
-                  </Text>
-                </Pressable>
-              )
-            })}
-          </View>
-        ))}
+        <FinanceTabs value={tab} onChange={setTab} />
+        <TabContent
+          table={table}
+          tables={tables}
+          tab={tab}
+          month={month}
+          today={today}
+          pinnedToday={pinnedToday}
+          onOpenTransaction={onOpenTransaction}
+        />
       </Screen>
-      <TransactionSheet
-        visible={!!editing}
-        type={editing?.type ?? 'expense'}
-        tx={editing ?? undefined}
-        tableId={table.id}
-        onClose={() => setEditing(null)}
-      />
     </ScrollView>
   )
 }
 
+/** Where each tab's own screen goes. */
+function TabContent({
+  table,
+  tables,
+  tab,
+  month,
+  today,
+  pinnedToday,
+  onOpenTransaction
+}: {
+  table: FinancialTable | undefined
+  tables: FinancialTable[]
+  tab: FinanceTab
+  month: string
+  today: string
+  /** Set only by tests: the shopping tab otherwise reads the day at the tap. */
+  pinnedToday?: string
+  onOpenTransaction: (tableId: string, txId: string) => void
+}): React.JSX.Element {
+  if (tab === 'lancamentos')
+    return (
+      <TransactionsTab
+        table={table}
+        tables={tables}
+        month={month}
+        today={today}
+        onOpen={onOpenTransaction}
+      />
+    )
+  if (tab === 'resumo')
+    return <SummaryTab table={table} tables={tables} month={month} today={today} />
+  // The Consolidado is read-only: the table areas ask for a table.
+  if (!table) return <EmptyState icon={Wallet} text={PICK_TABLE_TEXT} />
+  if (tab === 'dividas') return <DebtsTab table={table} today={today} />
+  if (tab === 'metas') return <GoalsTab table={table} month={month} today={today} />
+  if (tab === 'compras') return <ShoppingTab table={table} today={pinnedToday} />
+  return <YieldsTab table={table} month={month} today={today} />
+}
+
 const styles = StyleSheet.create({
-  bottomRoom: { paddingBottom: 96 },
-  caption: { fontSize: FONT.caption },
-  balance: { fontSize: FONT.display, fontWeight: '700', fontVariant: ['tabular-nums'] },
-  totals: { flexDirection: 'row', gap: SPACE.md },
-  total: { flex: 1, gap: 2 },
-  value: { fontSize: FONT.bodyLg, fontWeight: '600', fontVariant: ['tabular-nums'] },
-  group: { gap: SPACE.sm },
-  dayTitle: { fontSize: FONT.caption, fontWeight: '600', textTransform: 'uppercase' },
-  tx: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACE.md,
-    borderWidth: 1,
-    borderRadius: RADIUS.card,
-    paddingHorizontal: SPACE.lg,
-    paddingVertical: SPACE.md,
-    minHeight: MIN_TOUCH
-  },
-  icon: {
-    width: 36,
-    height: 36,
-    borderRadius: RADIUS.pill,
-    alignItems: 'center',
-    justifyContent: 'center'
-  }
+  bottomRoom: { paddingBottom: 96 }
 })

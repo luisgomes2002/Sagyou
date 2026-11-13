@@ -1,10 +1,32 @@
-import { emptyState, type MobileState } from '../../data/state'
 import {
+  createTable,
+  deleteItem,
+  updateTransaction as coreUpdate
+} from '@sagyou/core/finance-actions'
+import { YIELD_SUMMARY_CATEGORY } from '@sagyou/core/yieldSummary'
+import { seedApp } from '../../__tests__/seed'
+import { emptyState, type MobileState } from '../../data/state'
+import { useLockState } from '../../lock/lockState'
+import { useApp } from '../app'
+import { useUndo } from '../undo'
+import {
+  DELETE_LOCKED_TEXT,
+  DETAILS_EXCEED_TEXT,
+  INVALID_AMOUNT_TEXT,
   LOCKED_TEXT,
+  NOT_FOUND_TEXT,
+  OVER_REMAINING_TEXT,
+  YIELD_LOCKED_TEXT,
   addTransaction,
+  applyFinance,
+  deleteLock,
+  editLock,
+  financeErrorText,
   groupByDay,
+  monthLabel,
   monthSummary,
   parseAmount,
+  shiftMonth,
   tablesOfProfile,
   updateTransaction
 } from '../finance'
@@ -147,5 +169,253 @@ describe('lançamentos no celular', () => {
   it('o seletor mostra só as tabelas do perfil ativo', () => {
     expect(tablesOfProfile(state(), 'personal').map((t) => t.id)).toEqual(['brl'])
     expect(tablesOfProfile(state(), 'trabalho').map((t) => t.id)).toEqual(['jpy'])
+  })
+})
+
+describe('escrita pelo core no celular', () => {
+  beforeEach(() => useUndo.getState().dismiss())
+  afterEach(() => useLockState.setState({ hidden: false }))
+
+  it('traduz cada recusa do core', () => {
+    expect([
+      financeErrorText('invalid-amount'),
+      financeErrorText('over-remaining'),
+      financeErrorText('not-found')
+    ]).toEqual([INVALID_AMOUNT_TEXT, OVER_REMAINING_TEXT, NOT_FOUND_TEXT])
+    expect(INVALID_AMOUNT_TEXT).toBe('Valor inválido.')
+    expect(OVER_REMAINING_TEXT).toBe('O pagamento passa do valor restante.')
+    expect(NOT_FOUND_TEXT).toBe('Este item não existe mais.')
+  })
+
+  it('applyFinance grava a lista nova de uma vez só', () => {
+    const { save } = seedApp(state())
+    const outcome = applyFinance((tables, now) =>
+      coreUpdate(tables, 'brl', 'tx1', { description: 'Feira' }, now)
+    )
+    expect(outcome).toEqual({ ok: true })
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(useApp.getState().state.lists[0].transactions[0].description).toBe('Feira')
+    // The rest of the state is carried over untouched.
+    expect(useApp.getState().state.lists[1].id).toBe('jpy')
+  })
+
+  it('applyFinance devolve o id de uma tabela criada', () => {
+    seedApp(state())
+    const outcome = applyFinance((tables, now) =>
+      createTable(tables, 'Nova', 'USD', 'personal', now)
+    )
+    expect(outcome).toEqual({ ok: true, id: expect.any(String) })
+    expect(useApp.getState().state.lists.map((t) => t.name)).toEqual(['Conta', '円', 'Nova'])
+  })
+
+  it('applyFinance mostra o erro traduzido no aviso e não grava', () => {
+    const { save } = seedApp(state())
+    expect(applyFinance((tables, now) => deleteItem(tables, 'brl', 'nada', now))).toEqual({
+      ok: false
+    })
+    expect(useUndo.getState()).toMatchObject({ message: NOT_FOUND_TEXT, canUndo: false })
+    const onError = jest.fn()
+    applyFinance((tables, now) => deleteItem(tables, 'brl', 'nada', now), onError)
+    expect(onError).toHaveBeenCalledWith(NOT_FOUND_TEXT)
+    expect(save).not.toHaveBeenCalled()
+  })
+
+  it('applyFinance não grava quando o core não muda nada', () => {
+    const { save } = seedApp(state())
+    // A debt payment is immutable: the core answers with the very same list.
+    const outcome = applyFinance((tables, now) =>
+      coreUpdate(tables, 'brl', 'pay', { amount: '1' }, now)
+    )
+    expect(outcome).toEqual({ ok: true })
+    expect(save).not.toHaveBeenCalled()
+  })
+
+  it('applyFinance não grava em só leitura nem atrás do bloqueio', () => {
+    const edit = (): ReturnType<typeof applyFinance> =>
+      applyFinance((tables, now) => coreUpdate(tables, 'brl', 'tx1', { description: 'X' }, now))
+    const readOnly = seedApp(state(), { readOnly: true })
+    expect(edit()).toEqual({ ok: false })
+    expect(readOnly.save).not.toHaveBeenCalled()
+    const locked = seedApp(state())
+    useLockState.setState({ hidden: true })
+    expect(edit()).toEqual({ ok: false })
+    expect(locked.save).not.toHaveBeenCalled()
+    expect(useApp.getState().state.lists[0].transactions[0].description).toBe('Mercado')
+  })
+
+  it('addTransaction numa tabela que sumiu não acrescenta nada e devolve id vazio', () => {
+    const before = state()
+    const added = addTransaction(
+      before,
+      'sumiu',
+      { type: 'expense', amount: '1', date: '2026-10-31', category: '', description: 'x' },
+      NOW
+    )
+    expect(added).toEqual({ state: before, id: '' })
+  })
+
+  it('origem, pessoa e referência entram na edição, com auditoria', () => {
+    const result = updateTransaction(
+      state(),
+      'brl',
+      'tx1',
+      { source: 'Nubank', counterparty: 'Mercado Bom', bankReference: 'E123' },
+      NOW
+    )
+    if ('error' in result) throw new Error(result.error)
+    const tx = result.state.lists[0].transactions[0]
+    expect(tx).toMatchObject({
+      source: 'Nubank',
+      counterparty: 'Mercado Bom',
+      bankReference: 'E123'
+    })
+    expect(tx.audit?.at(-1)?.changes.map((c) => c.field)).toEqual([
+      'source',
+      'counterparty',
+      'bankReference',
+      'reconciledAt' // a new bank reference clears the old reconciliation
+    ])
+  })
+})
+
+describe('travas do celular', () => {
+  const summary = {
+    id: 'ys',
+    description: 'Rendimentos Outubro 2026',
+    amount: '10',
+    type: 'income' as const,
+    date: '2026-10-01',
+    category: YIELD_SUMMARY_CATEGORY
+  }
+  const plain = (id: string, extra: Partial<Tx> = {}): Tx => ({
+    id,
+    description: id,
+    amount: '5',
+    type: 'expense',
+    date: '2026-10-12',
+    ...extra
+  })
+
+  function locked(): MobileState {
+    const s = state()
+    s.lists[0].transactions.push(
+      summary,
+      plain('xfer', { currencyTransferId: 'g' }),
+      plain('legacyParent', { linkedTransactionId: 'legacyChild' }),
+      plain('legacyChild'),
+      plain('invoice', {
+        amount: '90',
+        details: [{ id: 'd2', description: 'Item', amount: '90', linkedTransactionId: 'mirror' }]
+      }),
+      plain('plain')
+    )
+    s.lists[1].transactions.push(plain('mirror', { amount: '90' }))
+    return s
+  }
+
+  const lock = (id: string, kind: 'edit' | 'delete'): string | null => {
+    const all = locked().lists
+    const tx = all.flatMap((t) => t.transactions).find((x) => x.id === id)!
+    return kind === 'edit' ? editLock(all, tx) : deleteLock(all, tx)
+  }
+
+  it('o resumo de rendimento não se edita nem se exclui, com o texto dos rendimentos', () => {
+    expect(YIELD_LOCKED_TEXT).toBe('Este lançamento vem dos rendimentos do mês.')
+    expect([lock('ys', 'edit'), lock('ys', 'delete')]).toEqual([
+      YIELD_LOCKED_TEXT,
+      YIELD_LOCKED_TEXT
+    ])
+    // A transaction that only looks like one is not locked.
+    const s = state()
+    expect(editLock(s.lists, { ...summary, id: 'fake', category: 'Salário' })).toBeNull()
+  })
+
+  it('o pagamento de dívida não se edita, mas se exclui', () => {
+    expect(lock('pay', 'edit')).toBe(LOCKED_TEXT)
+    expect(lock('pay', 'delete')).toBeNull()
+  })
+
+  it('transferência, fatura e vínculo legado não se excluem, nos dois sentidos', () => {
+    expect(DELETE_LOCKED_TEXT).toBe('Este lançamento só pode ser excluído no PC.')
+    for (const id of ['xfer', 'legacyParent', 'legacyChild', 'invoice', 'mirror'])
+      expect([id, lock(id, 'delete')]).toEqual([id, DELETE_LOCKED_TEXT])
+    expect(lock('plain', 'delete')).toBeNull()
+    expect(lock('tx1', 'delete')).toBeNull()
+  })
+
+  it('a edição segue a regra de hoje: transferência, vínculo legado e fatura travam', () => {
+    for (const id of ['xfer', 'legacyParent', 'invoice'])
+      expect([id, lock(id, 'edit')]).toEqual([id, LOCKED_TEXT])
+    expect(lock('plain', 'edit')).toBeNull()
+  })
+
+  // Review: the legacy link locks both sides; the child used to be editable (only delete was locked).
+  it('o filho do vínculo legado também não se edita, em qualquer tabela', () => {
+    expect(lock('legacyChild', 'edit')).toBe(LOCKED_TEXT)
+    expect(updateTransaction(locked(), 'brl', 'legacyChild', { amount: '1' }, NOW)).toEqual({
+      error: LOCKED_TEXT
+    })
+    // The parent is locked as before and an unlinked transaction still edits.
+    expect(lock('legacyParent', 'edit')).toBe(LOCKED_TEXT)
+    const plainEdit = updateTransaction(locked(), 'brl', 'plain', { amount: '9' }, NOW)
+    expect('error' in plainEdit).toBe(false)
+    // The child is found through every table, also when it lives in another table than its parent.
+    const all = locked().lists
+    const child = all[0].transactions.find((x) => x.id === 'legacyChild')!
+    expect(editLock([all[1]], child)).toBeNull()
+    expect(editLock(all, child)).toBe(LOCKED_TEXT)
+    const moved = locked()
+    moved.lists[0].transactions = moved.lists[0].transactions.filter((x) => x.id !== 'legacyChild')
+    moved.lists[1].transactions.push(child)
+    expect(editLock(moved.lists, child)).toBe(LOCKED_TEXT)
+  })
+
+  it('o espelho da fatura, em outra tabela, também não se edita (nos dois sentidos)', () => {
+    // The invoice points at the mirror; the mirror lives in the other table and has no link itself.
+    expect([lock('invoice', 'edit'), lock('mirror', 'edit')]).toEqual([LOCKED_TEXT, LOCKED_TEXT])
+    // Looking only at the mirror's own table would have let it through.
+    const all = locked().lists
+    const mirror = all[1].transactions.find((x) => x.id === 'mirror')!
+    expect(editLock([all[1]], mirror)).toBeNull()
+    expect(editLock(all, mirror)).toBe(LOCKED_TEXT)
+    expect(updateTransaction(locked(), 'jpy', 'mirror', { amount: '1' }, NOW)).toEqual({
+      error: LOCKED_TEXT
+    })
+  })
+
+  it('o valor não desce abaixo da soma dos itens da fatura: o aviso, sem perder a edição calado', () => {
+    const s = state()
+    s.lists[0].transactions.push(
+      plain('fat', { amount: '90', details: [{ id: 'i1', description: 'Item', amount: '60' }] })
+    )
+    expect(updateTransaction(s, 'brl', 'fat', { amount: '50' }, NOW)).toEqual({
+      error: DETAILS_EXCEED_TEXT
+    })
+    const ok = updateTransaction(s, 'brl', 'fat', { amount: '120' }, NOW)
+    if ('error' in ok) throw new Error(ok.error)
+    expect(ok.state.lists[0].transactions.find((x) => x.id === 'fat')).toMatchObject({
+      amount: '120',
+      details: [{ id: 'i1', description: 'Item', amount: '60' }]
+    })
+  })
+
+  it('updateTransaction recusa o resumo de rendimento com o texto certo', () => {
+    expect(updateTransaction(locked(), 'brl', 'ys', { amount: '1' }, NOW)).toEqual({
+      error: YIELD_LOCKED_TEXT
+    })
+  })
+})
+
+describe('mês escolhido', () => {
+  it('anda de mês em mês, virando o ano', () => {
+    expect(shiftMonth('2026-10', 1)).toBe('2026-11')
+    expect(shiftMonth('2026-12', 1)).toBe('2027-01')
+    expect(shiftMonth('2027-01', -1)).toBe('2026-12')
+    expect(shiftMonth('2026-03', -14)).toBe('2025-01')
+  })
+
+  it('escreve "novembro de 2026"', () => {
+    expect(monthLabel('2026-11')).toBe('novembro de 2026')
+    expect(monthLabel('2027-03')).toBe('março de 2027')
   })
 })
