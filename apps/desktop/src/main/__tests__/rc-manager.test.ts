@@ -152,6 +152,8 @@ function setup(
     onOutput: vi.fn(),
     onExit: vi.fn(),
     onChange: vi.fn(),
+    onReady: vi.fn(),
+    onFailed: vi.fn(),
     env: () => ({ PATH: 'C:\\bin' })
   } satisfies RcManagerDeps
   const manager = createRcManager(deps)
@@ -984,5 +986,83 @@ describe('reopen', () => {
     manager.reopen()
     await manager.startAutostart()
     expect(deps.spawn).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('ganchos de pronto e queda (spec 2026-11-13)', () => {
+  it('onReady uma vez por execução, com a origem dela', async () => {
+    const { manager, deps, ptys } = setup()
+    await manager.start('p1', 'phone')
+    ptys[0].emit('Spawn mode: worktree\r\n')
+    expect(deps.onReady).not.toHaveBeenCalled()
+    ptys[0].emit(statusLine('Ready'))
+    ptys[0].emit(statusLine('Connected'))
+    expect(deps.onReady).toHaveBeenCalledTimes(1)
+    expect(deps.onReady).toHaveBeenCalledWith('p1', 'phone')
+  })
+
+  it('um reinício depois da queda chama onReady com origem autostart (nunca phone)', async () => {
+    const { manager, deps, clock, ptys } = setup({ entries: [entry({ autostart: true })] })
+    await manager.start('p1', 'phone')
+    ptys[0].emit(statusLine('Ready'))
+    ptys[0].exit(1)
+    await clock.advance(RC_BACKOFF_MS[0])
+    ptys[1].emit(statusLine('Ready'))
+    expect(deps.onReady).toHaveBeenNthCalledWith(1, 'p1', 'phone')
+    expect(deps.onReady).toHaveBeenNthCalledWith(2, 'p1', 'autostart')
+  })
+
+  it('saiu antes do Ready num pedido do celular: onFailed start, uma vez só', async () => {
+    const { manager, deps, ptys } = setup()
+    await manager.start('p1', 'phone')
+    ptys[0].exit(1)
+    expect(deps.onFailed).toHaveBeenCalledTimes(1)
+    expect(deps.onFailed).toHaveBeenCalledWith('p1', 'start', 'phone')
+  })
+
+  it('saiu antes do Ready num Ligar do PC ou autostart: nenhum aviso', async () => {
+    const pc = setup()
+    await pc.manager.start('p1', 'pc')
+    pc.ptys[0].exit(1)
+    const auto = setup({ entries: [entry({ autostart: true })] })
+    await auto.manager.startAutostart()
+    auto.ptys[0].exit(1)
+    expect(pc.deps.onFailed).not.toHaveBeenCalled()
+    expect(auto.deps.onFailed).not.toHaveBeenCalled()
+  })
+
+  it('caiu depois de pronto: onFailed crash, e a queda seguinte sem novo Ready não repete', async () => {
+    const { manager, deps, clock, ptys } = setup({ entries: [entry({ autostart: true })] })
+    await manager.start('p1', 'pc')
+    ptys[0].emit(statusLine('Ready'))
+    ptys[0].exit(1)
+    expect(deps.onFailed).toHaveBeenCalledTimes(1)
+    expect(deps.onFailed).toHaveBeenCalledWith('p1', 'crash', 'pc')
+    await clock.advance(RC_BACKOFF_MS[0])
+    ptys[1].exit(1)
+    expect(deps.onFailed).toHaveBeenCalledTimes(1)
+    // Voltou a ficar pronto e caiu de novo: avisa de novo.
+    await clock.advance(RC_BACKOFF_MS[1])
+    ptys[2].emit(statusLine('Ready'))
+    ptys[2].exit(1)
+    expect(deps.onFailed).toHaveBeenCalledTimes(2)
+  })
+
+  it('parada pelo usuário, stopAll e acesso cortado não chamam onFailed', async () => {
+    const a = setup()
+    await a.manager.start('p1', 'pc')
+    a.ptys[0].emit(statusLine('Ready'))
+    await a.manager.stop('p1')
+    a.ptys[0].exit(0)
+    const b = setup()
+    await b.manager.start('p1', 'pc')
+    b.ptys[0].emit(statusLine('Ready'))
+    b.manager.stopAll('cut')
+    b.ptys[0].exit(0)
+    const c = setup()
+    await c.manager.start('p1', 'phone')
+    c.manager.stopAll('quit')
+    c.ptys[0].exit(0)
+    for (const x of [a, b, c]) expect(x.deps.onFailed).not.toHaveBeenCalled()
   })
 })
