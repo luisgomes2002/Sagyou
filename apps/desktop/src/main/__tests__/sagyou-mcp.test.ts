@@ -2461,3 +2461,328 @@ describe('reading another project needs an approval', () => {
       )
   })
 })
+
+describe('read_memory in pages and check_memories similar pairs', () => {
+  const stored = (over: Partial<AiMemory>): AiMemory => ({
+    id: 'm',
+    projectId: 'project-1',
+    type: 'fato',
+    title: 'título',
+    body: 'corpo',
+    tags: [],
+    pinned: false,
+    source: 'modelo',
+    sourceConversationId: null,
+    createdAt: '2026-10-01T12:00:00.000Z',
+    updatedAt: '2026-10-01T12:00:00.000Z',
+    lastAccessedAt: '2026-10-01T12:00:00.000Z',
+    accessCount: 0,
+    archivedAt: null,
+    ...over
+  })
+
+  async function memoryBroker(memories: AiMemory[]): Promise<{
+    touched: string[]
+    asked: string[]
+    call: (name: string, args: Record<string, unknown>) => Promise<Record<string, unknown>>
+    listed: () => Promise<
+      { name: string; description: string; inputSchema: Record<string, unknown> }[]
+    >
+  }> {
+    const touched: string[] = []
+    const asked: string[] = []
+    const broker = startSagyouMcpBroker({
+      readTasks: () => [],
+      readFinancial: () => [],
+      readProjectData: () => ({}),
+      searchMemory: () => [],
+      readMemory: (id) => memories.find((memory) => memory.id === id) ?? null,
+      touchMemory: (id) => touched.push(id),
+      memoriesForConflict: () => memories,
+      saveMemory: async () => ({ ok: false }),
+      createTask: async () => ({ ok: true }),
+      approveProjectRead: async (_session, projectId) => {
+        asked.push(projectId)
+        return 'approved'
+      }
+    })
+    servers.push(broker.server)
+    await new Promise<void>((resolve) => broker.server.once('listening', resolve))
+    broker.grant({
+      token: 'page-token',
+      runId: 'run-page',
+      projectId: 'project-1',
+      financialProfileId: 'personal',
+      permissions: MCP_PERMISSIONS,
+      expiresAt: Date.now() + 10_000
+    })
+    let id = 0
+    const send = (
+      method: string,
+      params: Record<string, unknown>
+    ): Promise<Record<string, unknown>> =>
+      request(broker.port(), {
+        jsonrpc: '2.0',
+        id: ++id,
+        method,
+        params: { token: 'page-token', ...params }
+      })
+    return {
+      touched,
+      asked,
+      call: (name, args) => send('tools/call', { name, arguments: args }),
+      listed: async () =>
+        (
+          (await send('tools/list', {})).result as {
+            tools: { name: string; description: string; inputSchema: Record<string, unknown> }[]
+          }
+        ).tools
+    }
+  }
+  const body = (reply: Record<string, unknown>): Record<string, unknown> =>
+    JSON.parse((reply.result as { content: { text: string }[] }).content[0].text)
+  const message = (reply: Record<string, unknown>): string | undefined =>
+    (reply.error as { message?: string } | undefined)?.message
+
+  // 14 000 characters with a marker at 0, 6000 and 12000.
+  const big = stored({
+    id: 'big',
+    body: 'A' + 'a'.repeat(5_999) + 'B' + 'a'.repeat(5_999) + 'C' + 'a'.repeat(1_999)
+  })
+
+  it('reads a body in pages, following nextOffset to the end', async () => {
+    const { call } = await memoryBroker([big])
+    const first = body(await call('read_memory', { id: 'big' }))
+    expect(first).toMatchObject({
+      id: 'big',
+      offset: 0,
+      limit: 6_000,
+      totalChars: 14_000,
+      truncated: true,
+      nextOffset: 6_000
+    })
+    expect(String(first.body)).toHaveLength(6_000)
+    expect(String(first.body)[0]).toBe('A')
+    const second = body(await call('read_memory', { id: 'big', offset: 6_000 }))
+    expect(second).toMatchObject({ truncated: true, nextOffset: 12_000 })
+    expect(String(second.body)[0]).toBe('B')
+    const third = body(await call('read_memory', { id: 'big', offset: 12_000 }))
+    expect(third).toMatchObject({ truncated: false, totalChars: 14_000 })
+    expect(third).not.toHaveProperty('nextOffset')
+    expect(String(third.body)).toHaveLength(2_000)
+    expect(String(third.body)[0]).toBe('C')
+    const small = body(await call('read_memory', { id: 'big', limit: 500 }))
+    expect(String(small.body)).toHaveLength(500)
+    expect(small).toMatchObject({ limit: 500, nextOffset: 500 })
+  })
+
+  it('an offset past the end is an empty page, and a small memory answers as before', async () => {
+    const { call } = await memoryBroker([big, stored({ id: 'small', body: 'curto' })])
+    expect(body(await call('read_memory', { id: 'big', offset: 99_999 }))).toMatchObject({
+      body: '',
+      truncated: false,
+      totalChars: 14_000
+    })
+    const small = body(await call('read_memory', { id: 'small' }))
+    expect(small).toMatchObject({
+      id: 'small',
+      title: 'título',
+      type: 'fato',
+      tags: [],
+      projectId: 'project-1',
+      scope: 'project',
+      updatedAt: '2026-10-01T12:00:00.000Z',
+      body: 'curto',
+      truncated: false,
+      totalChars: 5
+    })
+    expect(small.warning).toMatch(/evidência histórica/i)
+    expect(small).not.toHaveProperty('nextOffset')
+  })
+
+  it('counts code points: pages of a body with emoji rebuild it', async () => {
+    const emoji = '😀'.repeat(1_000) + 'x'
+    const { call } = await memoryBroker([stored({ id: 'emoji', body: emoji })])
+    let offset = 0
+    let rebuilt = ''
+    for (let guard = 0; guard < 10; guard++) {
+      const page = body(await call('read_memory', { id: 'emoji', limit: 500, offset }))
+      // counted in code points, and no page ends in half an emoji
+      expect(page.totalChars).toBe(1_001)
+      expect(Array.from(String(page.body)).length).toBeLessThanOrEqual(500)
+      expect(String(page.body)).not.toMatch(
+        /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
+      )
+      rebuilt += String(page.body)
+      if (page.nextOffset === undefined) break
+      offset = Number(page.nextOffset)
+    }
+    expect(rebuilt).toBe(emoji)
+  })
+
+  it('refuses wrong page arguments with the rule, the same for any id, with no card and no touch', async () => {
+    const { call, asked, touched } = await memoryBroker([
+      big,
+      stored({ id: 'other', projectId: 'project-2' })
+    ])
+    const limitText = 'limit precisa ser um inteiro de 500 a 12000.'
+    const offsetText = 'offset precisa ser um inteiro maior ou igual a 0.'
+    for (const id of ['big', 'other', 'missing']) {
+      for (const limit of [499, 12_001, 1.5, 'x', null])
+        expect(message(await call('read_memory', { id, limit }))).toBe(limitText)
+      for (const offset of [-1, 1.5, '0', null])
+        expect(message(await call('read_memory', { id, offset }))).toBe(offsetText)
+    }
+    expect(message(await call('read_memory', { id: 'big', limit: 1, offset: -1 }))).toBe(limitText)
+    expect(asked).toEqual([])
+    expect(touched).toEqual([])
+  })
+
+  it('each valid page touches the memory once and another project still asks', async () => {
+    const { call, touched, asked } = await memoryBroker([
+      big,
+      stored({ id: 'other', projectId: 'project-2', body: 'x' })
+    ])
+    await call('read_memory', { id: 'big' })
+    await call('read_memory', { id: 'big', offset: 6_000 })
+    expect(touched).toEqual(['big', 'big'])
+    await call('read_memory', { id: 'other', offset: 0 })
+    expect(asked).toEqual(['project-2'])
+  })
+
+  it('lists offset and limit in the schema and how to continue in the description', async () => {
+    const { listed } = await memoryBroker([])
+    const tool = (await listed()).find((item) => item.name === 'read_memory')
+    expect(Object.keys(tool?.inputSchema.properties as object)).toEqual(['id', 'offset', 'limit'])
+    expect(tool?.description).toContain('nextOffset')
+  })
+
+  const similarTitle = (id: string, title: string, tags: string[], bodyText: string): AiMemory =>
+    stored({ id, title, tags, body: bodyText })
+
+  it('check_memories points out similar pairs as a signal', async () => {
+    const long = 'palavra '.repeat(80)
+    const { call, touched } = await memoryBroker([
+      similarTitle('m1', 'Usar SQLite no desktop', ['banco', 'desktop'], long),
+      similarTitle('m2', 'Banco SQLite no app desktop', ['banco', 'desktop'], 'outro'),
+      similarTitle('m3', 'Assunto sem relação alguma', [], 'x')
+    ])
+    const result = body(await call('check_memories', {})) as {
+      total: number
+      conflicts: unknown[]
+      similar: {
+        total: number
+        truncated: boolean
+        pairs: {
+          similarity: number
+          a: { id: string; title: string; snippet: string }
+          b: { id: string; title: string; snippet: string }
+        }[]
+      }
+    }
+    expect(result.similar.total).toBe(1)
+    expect(result.similar.truncated).toBe(false)
+    expect(result.similar).not.toHaveProperty('partial')
+    expect((result as unknown as { warning: string }).warning).toMatch(/evidência histórica/i)
+    expect(result.similar.pairs[0]).toMatchObject({
+      similarity: 0.6,
+      a: { id: 'm1', title: 'Usar SQLite no desktop', projectId: 'project-1' },
+      b: { id: 'm2', title: 'Banco SQLite no app desktop', projectId: 'project-1' }
+    })
+    expect(result.similar.pairs[0].a.snippet.length).toBeLessThanOrEqual(241)
+    expect(result.total).toBe(0)
+    expect(result.conflicts).toEqual([])
+    expect(touched).toEqual([])
+  })
+
+  it('with no similar pair, similar is empty', async () => {
+    const { call } = await memoryBroker([
+      similarTitle('m1', 'Alpha beta', [], 'um'),
+      similarTitle('m2', 'Gamma delta', [], 'dois')
+    ])
+    expect(body(await call('check_memories', {})).similar).toEqual({
+      total: 0,
+      truncated: false,
+      pairs: []
+    })
+  })
+
+  it('shows at most 8 pairs, with the real total, in order', async () => {
+    const titles = [
+      'alpha beta gamma delta epsilon',
+      'beta gamma delta epsilon alpha',
+      'gamma delta epsilon alpha beta',
+      'delta epsilon alpha beta gamma',
+      'epsilon alpha beta gamma delta'
+    ]
+    const { call } = await memoryBroker(
+      titles.map((title, index) => similarTitle(`m${index + 1}`, title, [], `corpo ${index}`))
+    )
+    const similar = body(await call('check_memories', {})).similar as {
+      total: number
+      truncated: boolean
+      pairs: { a: { id: string }; b: { id: string } }[]
+    }
+    expect(similar.total).toBe(10)
+    expect(similar.truncated).toBe(true)
+    expect(similar.pairs).toHaveLength(8)
+    expect([similar.pairs[0].a.id, similar.pairs[0].b.id]).toEqual(['m1', 'm2'])
+  })
+
+  it('a same-title contradiction stays in conflicts and is not a similar pair', async () => {
+    const { call } = await memoryBroker([
+      similarTitle('m1', 'Usar SQLite no desktop', ['banco', 'desktop'], 'versão um'),
+      similarTitle('m2', 'usar sqlite no desktop', ['banco', 'desktop'], 'versão dois')
+    ])
+    const result = body(await call('check_memories', {})) as {
+      total: number
+      conflicts: unknown[]
+      similar: { total: number }
+    }
+    expect(result.total).toBe(1)
+    expect(result.conflicts).toHaveLength(1)
+    expect(result.similar.total).toBe(0)
+  })
+
+  it('handoffs and archived memories never form a similar pair', async () => {
+    const { call } = await memoryBroker([
+      stored({
+        id: 'h',
+        type: 'handoff',
+        title: 'Usar SQLite no desktop',
+        tags: ['banco', 'desktop'],
+        body: 'a'
+      }),
+      stored({
+        id: 'z',
+        title: 'Banco SQLite no app desktop',
+        tags: ['banco', 'desktop'],
+        body: 'b',
+        archivedAt: '2026-10-02T00:00:00.000Z'
+      }),
+      similarTitle('m', 'SQLite banco desktop app', ['banco', 'desktop'], 'c')
+    ])
+    expect((body(await call('check_memories', {})).similar as { total: number }).total).toBe(0)
+  })
+
+  it('a secret in a memory body never reaches the snippets', async () => {
+    const { call } = await memoryBroker([
+      similarTitle(
+        'm1',
+        'Usar SQLite no desktop',
+        ['banco', 'desktop'],
+        'chave sk-abcdefghijklmnopqrstuvwxyz0123456789 aqui'
+      ),
+      similarTitle('m2', 'Banco SQLite no app desktop', ['banco', 'desktop'], 'outro')
+    ])
+    const text = JSON.stringify(body(await call('check_memories', {})))
+    expect(text).not.toContain('sk-abcdefghijklmnopqrstuvwxyz0123456789')
+    expect(text).toContain('[REDIGIDO]')
+  })
+
+  it('says similar is only a signal', async () => {
+    const { listed } = await memoryBroker([])
+    const tool = (await listed()).find((item) => item.name === 'check_memories')
+    expect(tool?.description).toContain('não indica qual dos dois deve ficar')
+  })
+})

@@ -658,3 +658,126 @@ export function replaceMemorySection(
     )
   }
 }
+
+// ── Reading a body in pages ──────────────────────────────────────────────────
+
+/** `read_memory` page size: the default (what it always cut at) and the allowed range. */
+export const READ_PAGE_DEFAULT = 6_000
+export const READ_PAGE_MIN = 500
+export const READ_PAGE_MAX = 12_000
+
+export interface MemoryReadPage {
+  body: string
+  /** Size of the whole body. */
+  totalChars: number
+  truncated: boolean
+  /** Where the next page starts; only when there is one. */
+  nextOffset?: number
+}
+
+/**
+ * One page of a memory body. Everything is counted in Unicode code points (an emoji
+ * is one, a decomposed accent is two, nothing is normalized), so another
+ * implementation can reproduce it with `chars()`. `offset` and `limit` come already
+ * validated; an offset past the end is an empty page, not an error.
+ */
+export function readMemoryPage(body: string, offset: number, limit: number): MemoryReadPage {
+  const chars = Array.from(body)
+  const start = Math.min(offset, chars.length)
+  const page = chars.slice(start, start + limit)
+  const end = start + page.length
+  const truncated = end < chars.length
+  return {
+    body: page.join(''),
+    totalChars: chars.length,
+    truncated,
+    ...(truncated ? { nextOffset: end } : {})
+  }
+}
+
+// ── Similar memories ─────────────────────────────────────────────────────────
+
+/** The words that stand for a memory: 3+ letters or digits of its title and tags, accent-free. */
+export function memoryTerms(m: Pick<AiMemory, 'title' | 'tags'>): string[] {
+  const text = titleKey(`${m.title} ${m.tags.join(' ')}`)
+  return [...new Set(text.match(/[\p{L}\p{N}]{3,}/gu) ?? [])].sort()
+}
+
+export interface SimilarMemoryPair {
+  /** Ids, `a` before `b`. */
+  a: string
+  b: string
+  shared: number
+  total: number
+  /** shared / total, to two decimals. */
+  similarity: number
+}
+
+/** At most this many memories (the most recently updated) are compared, and this many terms each. */
+export const SIMILAR_MAX_MEMORIES = 500
+export const SIMILAR_MAX_TERMS = 64
+
+export interface SimilarMemories {
+  /** Every pair that passed, however many are kept. */
+  total: number
+  /** The best `keep` pairs: most similar first, then by `a`, then `b`. */
+  pairs: SimilarMemoryPair[]
+  /** True when there were more than SIMILAR_MAX_MEMORIES candidates and only the newest were compared. */
+  partial: boolean
+}
+
+const comparePairs = (p: SimilarMemoryPair, q: SimilarMemoryPair): number =>
+  q.shared * p.total - p.shared * q.total ||
+  (p.a < q.a ? -1 : p.a > q.a ? 1 : 0) ||
+  (p.b < q.b ? -1 : p.b > q.b ? 1 : 0)
+
+/**
+ * Pairs of active memories that look like the same subject under different titles:
+ * their terms overlap by at least 60% (Jaccard, compared in integers), each with two
+ * or more terms. Only a signal: it does not say which of the two should stay. Handoffs,
+ * archived memories, pairs with the same title (a contradiction, `findConflicts`'s job)
+ * and pairs with the same body are left out. The work is bounded (the comparison is
+ * quadratic): only the `SIMILAR_MAX_MEMORIES` newest candidates are compared, with their
+ * first `SIMILAR_MAX_TERMS` terms, and only the best `keep` pairs are kept, never the
+ * whole list.
+ */
+export function similarMemories(memories: AiMemory[], keep = Infinity): SimilarMemories {
+  const candidates = memories.filter((m) => !m.archivedAt && m.type !== 'handoff')
+  const partial = candidates.length > SIMILAR_MAX_MEMORIES
+  const considered = partial
+    ? [...candidates].sort(compareByRecency).slice(0, SIMILAR_MAX_MEMORIES)
+    : candidates
+  const entries = considered
+    .map((m) => {
+      const terms = memoryTerms(m).slice(0, SIMILAR_MAX_TERMS)
+      return { id: m.id, key: titleKey(m.title), body: m.body.trim(), terms, set: new Set(terms) }
+    })
+    .filter((entry) => entry.terms.length >= 2)
+  let total = 0
+  let best: SimilarMemoryPair[] = []
+  for (let i = 0; i < entries.length; i++) {
+    for (let j = i + 1; j < entries.length; j++) {
+      const [x, y] =
+        entries[i].id < entries[j].id ? [entries[i], entries[j]] : [entries[j], entries[i]]
+      if (x.key === y.key || x.body === y.body) continue
+      let shared = 0
+      for (const term of x.terms) if (y.set.has(term)) shared++
+      const union = x.terms.length + y.terms.length - shared
+      if (shared * 10 < union * 6) continue
+      total++
+      const pair = {
+        a: x.id,
+        b: y.id,
+        shared,
+        total: union,
+        similarity: Math.round((shared * 100) / union) / 100
+      }
+      if (best.length < keep || comparePairs(pair, best[best.length - 1]) < 0) {
+        best.push(pair)
+        best.sort(comparePairs)
+        if (best.length > keep) best = best.slice(0, keep)
+      }
+    }
+  }
+  return { total, pairs: best, partial }
+}

@@ -1,0 +1,392 @@
+{
+  "note": "terms = words (3+ letters or digits, no accents, lowercase) of title + ' ' + tags.join(' '); similar when shared*10 >= total*6, both with >= 2 terms, different titleKey and different trimmed body; only active non-handoff memories; similarity = round(shared*100/total)/100; bounds: only the 500 most recently updated candidates (ties by id) are compared, each with its first 64 terms (sorted), and the caller keeps only the best N pairs",
+  "cases": [
+    {
+      "name": "exemplo da spec: 3 de 5 = 0,6",
+      "memories": [
+        {
+          "id": "m1",
+          "title": "Usar SQLite no desktop",
+          "tags": [
+            "banco",
+            "desktop"
+          ],
+          "body": "um"
+        },
+        {
+          "id": "m2",
+          "title": "Banco SQLite no app desktop",
+          "tags": [
+            "banco",
+            "desktop"
+          ],
+          "body": "dois"
+        }
+      ],
+      "expect": [
+        {
+          "a": "m1",
+          "b": "m2",
+          "shared": 3,
+          "total": 5,
+          "similarity": 0.6
+        }
+      ]
+    },
+    {
+      "name": "2 de 4 = 0,5 fica fora",
+      "memories": [
+        {
+          "id": "m1",
+          "title": "alpha beta gamma",
+          "tags": [],
+          "body": "um"
+        },
+        {
+          "id": "m2",
+          "title": "alpha beta delta",
+          "tags": [],
+          "body": "dois"
+        }
+      ],
+      "expect": []
+    },
+    {
+      "name": "1 termo em comum fica fora",
+      "memories": [
+        {
+          "id": "m1",
+          "title": "alpha beta",
+          "tags": [],
+          "body": "um"
+        },
+        {
+          "id": "m2",
+          "title": "alpha gamma",
+          "tags": [],
+          "body": "dois"
+        }
+      ],
+      "expect": []
+    },
+    {
+      "name": "memória com 1 só termo fica fora, mesmo igual",
+      "memories": [
+        {
+          "id": "m1",
+          "title": "sqlite",
+          "tags": [],
+          "body": "um"
+        },
+        {
+          "id": "m2",
+          "title": "SQLite!",
+          "tags": [],
+          "body": "dois"
+        }
+      ],
+      "expect": []
+    },
+    {
+      "name": "mesmo título é contradição, não par parecido",
+      "memories": [
+        {
+          "id": "m1",
+          "title": "Usar SQLite no desktop",
+          "tags": [
+            "banco",
+            "desktop"
+          ],
+          "body": "um"
+        },
+        {
+          "id": "m2",
+          "title": "usar sqlite no desktop",
+          "tags": [
+            "banco",
+            "desktop"
+          ],
+          "body": "dois"
+        }
+      ],
+      "expect": []
+    },
+    {
+      "name": "corpo igual fica fora",
+      "memories": [
+        {
+          "id": "m1",
+          "title": "Usar SQLite no desktop",
+          "tags": [
+            "banco",
+            "desktop"
+          ],
+          "body": "igual"
+        },
+        {
+          "id": "m2",
+          "title": "Banco SQLite no app desktop",
+          "tags": [
+            "banco",
+            "desktop"
+          ],
+          "body": " igual "
+        }
+      ],
+      "expect": []
+    },
+    {
+      "name": "handoff e arquivada ficam fora",
+      "memories": [
+        {
+          "id": "m1",
+          "title": "Usar SQLite no desktop",
+          "tags": [
+            "banco",
+            "desktop"
+          ],
+          "body": "um",
+          "type": "handoff"
+        },
+        {
+          "id": "m2",
+          "title": "Banco SQLite no app desktop",
+          "tags": [
+            "banco",
+            "desktop"
+          ],
+          "body": "dois"
+        },
+        {
+          "id": "m3",
+          "title": "SQLite banco no desktop app",
+          "tags": [
+            "banco",
+            "desktop"
+          ],
+          "body": "tres",
+          "archived": true
+        }
+      ],
+      "expect": []
+    },
+    {
+      "name": "acento e maiúscula são o mesmo termo",
+      "memories": [
+        {
+          "id": "m1",
+          "title": "Decisão sobre cache",
+          "tags": [],
+          "body": "um"
+        },
+        {
+          "id": "m2",
+          "title": "decisao SOBRE cache dados",
+          "tags": [],
+          "body": "dois"
+        }
+      ],
+      "expect": [
+        {
+          "a": "m1",
+          "b": "m2",
+          "shared": 3,
+          "total": 4,
+          "similarity": 0.75
+        }
+      ]
+    },
+    {
+      "name": "palavras de 1 a 2 letras não contam",
+      "memories": [
+        {
+          "id": "m1",
+          "title": "de no em banco sqlite",
+          "tags": [],
+          "body": "um"
+        },
+        {
+          "id": "m2",
+          "title": "banco sqlite ab",
+          "tags": [],
+          "body": "dois"
+        }
+      ],
+      "expect": [
+        {
+          "a": "m1",
+          "b": "m2",
+          "shared": 2,
+          "total": 2,
+          "similarity": 1.0
+        }
+      ]
+    },
+    {
+      "name": "a tag não funde com a última palavra do título",
+      "memories": [
+        {
+          "id": "m1",
+          "title": "alpha beta",
+          "tags": [
+            "gamma"
+          ],
+          "body": "um"
+        },
+        {
+          "id": "m2",
+          "title": "alpha beta gamma",
+          "tags": [],
+          "body": "dois"
+        }
+      ],
+      "expect": [
+        {
+          "a": "m1",
+          "b": "m2",
+          "shared": 3,
+          "total": 3,
+          "similarity": 1.0
+        }
+      ]
+    },
+    {
+      "name": "três parecidas, do mais para o menos parecido",
+      "memories": [
+        {
+          "id": "m1",
+          "title": "alpha beta gamma delta",
+          "tags": [],
+          "body": "um"
+        },
+        {
+          "id": "m2",
+          "title": "alpha beta gamma delta epsilon",
+          "tags": [],
+          "body": "dois"
+        },
+        {
+          "id": "m3",
+          "title": "alpha beta gamma delta epsilon zeta",
+          "tags": [],
+          "body": "tres"
+        }
+      ],
+      "expect": [
+        {
+          "a": "m2",
+          "b": "m3",
+          "shared": 5,
+          "total": 6,
+          "similarity": 0.83
+        },
+        {
+          "a": "m1",
+          "b": "m2",
+          "shared": 4,
+          "total": 5,
+          "similarity": 0.8
+        },
+        {
+          "a": "m1",
+          "b": "m3",
+          "shared": 4,
+          "total": 6,
+          "similarity": 0.67
+        }
+      ]
+    },
+    {
+      "name": "empate desempata por a e depois por b",
+      "memories": [
+        {
+          "id": "m1",
+          "title": "alpha beta gamma",
+          "tags": [],
+          "body": "um"
+        },
+        {
+          "id": "m2",
+          "title": "beta gamma alpha",
+          "tags": [],
+          "body": "dois"
+        },
+        {
+          "id": "m3",
+          "title": "gamma alpha beta",
+          "tags": [],
+          "body": "tres"
+        }
+      ],
+      "expect": [
+        {
+          "a": "m1",
+          "b": "m2",
+          "shared": 3,
+          "total": 3,
+          "similarity": 1.0
+        },
+        {
+          "a": "m1",
+          "b": "m3",
+          "shared": 3,
+          "total": 3,
+          "similarity": 1.0
+        },
+        {
+          "a": "m2",
+          "b": "m3",
+          "shared": 3,
+          "total": 3,
+          "similarity": 1.0
+        }
+      ]
+    },
+    {
+      "name": "entrada fora de ordem: o resultado não depende da ordem da lista",
+      "memories": [
+        {
+          "id": "m3",
+          "title": "gamma alpha beta",
+          "tags": [],
+          "body": "tres"
+        },
+        {
+          "id": "m1",
+          "title": "alpha beta gamma",
+          "tags": [],
+          "body": "um"
+        },
+        {
+          "id": "m2",
+          "title": "beta gamma alpha",
+          "tags": [],
+          "body": "dois"
+        }
+      ],
+      "expect": [
+        {
+          "a": "m1",
+          "b": "m2",
+          "shared": 3,
+          "total": 3,
+          "similarity": 1.0
+        },
+        {
+          "a": "m1",
+          "b": "m3",
+          "shared": 3,
+          "total": 3,
+          "similarity": 1.0
+        },
+        {
+          "a": "m2",
+          "b": "m3",
+          "shared": 3,
+          "total": 3,
+          "similarity": 1.0
+        }
+      ]
+    }
+  ]
+}
