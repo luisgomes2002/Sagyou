@@ -303,9 +303,9 @@ describe('prepareMemoryWrite', () => {
     })
 
     it('compares the text exactly, not the instant it names', () => {
-      expect(
-        edited({ expectedUpdatedAt: '2026-01-01T00:00:00Z' }, [memory()])
-      ).toMatchObject({ ok: false })
+      expect(edited({ expectedUpdatedAt: '2026-01-01T00:00:00Z' }, [memory()])).toMatchObject({
+        ok: false
+      })
     })
 
     it('edits as before when it is absent', () => {
@@ -323,11 +323,14 @@ describe('prepareMemoryWrite', () => {
       const refusal = { ok: false, error: 'Memória indisponível nesta sessão MCP.' }
       expect(edited({ expectedUpdatedAt: 'qualquer' }, [])).toEqual(refusal)
       expect(
-        edited({ expectedUpdatedAt: 'qualquer' }, [memory({ archivedAt: '2026-05-01T00:00:00.000Z' })])
+        edited({ expectedUpdatedAt: 'qualquer' }, [
+          memory({ archivedAt: '2026-05-01T00:00:00.000Z' })
+        ])
       ).toEqual(refusal)
-      expect(
-        edited({ expectedUpdatedAt: 'qualquer' }, [memory({ type: 'handoff' })])
-      ).toEqual({ ok: false, error: 'Memórias de handoff não podem ser alteradas pelo MCP.' })
+      expect(edited({ expectedUpdatedAt: 'qualquer' }, [memory({ type: 'handoff' })])).toEqual({
+        ok: false,
+        error: 'Memórias de handoff não podem ser alteradas pelo MCP.'
+      })
     })
 
     it('is checked again when the write is applied, against the memory as it is then', () => {

@@ -30,7 +30,10 @@ function memory(over: Partial<AiMemory> & { id: string }): AiMemory {
 // Seven handoffs of one project, r1 the oldest, all recently touched (none is stale by decay).
 const sevenHandoffs = (): AiMemory[] =>
   [1, 2, 3, 4, 5, 6, 7].map((n) =>
-    memory({ id: `handoff:p1:r${n}`, updatedAt: new Date(Date.now() - (8 - n) * DAY).toISOString() })
+    memory({
+      id: `handoff:p1:r${n}`,
+      updatedAt: new Date(Date.now() - (8 - n) * DAY).toISOString()
+    })
   )
 
 interface Harness {

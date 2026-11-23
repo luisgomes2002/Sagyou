@@ -807,7 +807,8 @@ const sessionCheckpoints = createSessionCheckpoints({
   },
   getMemory: (id) => memoryStore.getMemory(id),
   write: (memory) => memoryStore.upsertMemoryLocal(memory),
-  onError: (runId, error) => log.warn('pty', 'handoff_checkpoint_failed', { runId, msg: errorMessage(error) })
+  onError: (runId, error) =>
+    log.warn('pty', 'handoff_checkpoint_failed', { runId, msg: errorMessage(error) })
 })
 
 /**

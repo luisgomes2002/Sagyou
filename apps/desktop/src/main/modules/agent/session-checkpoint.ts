@@ -170,7 +170,6 @@ export function createSessionCheckpoints(deps: SessionCheckpointDeps): {
 
     snapshot: (runId) => states.get(runId)?.snapshot ?? null,
 
-    live: () =>
-      [...states.values()].flatMap((state) => (state.snapshot ? [state.snapshot] : []))
+    live: () => [...states.values()].flatMap((state) => (state.snapshot ? [state.snapshot] : []))
   }
 }

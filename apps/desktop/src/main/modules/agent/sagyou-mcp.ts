@@ -920,7 +920,8 @@ export function startSagyouMcpBroker(deps: McpBrokerDeps): {
             } else if (name === 'list_active_sessions') {
               // Read-only: nothing is stored and no memory is touched.
               const args = request.params?.arguments
-              const input = args && typeof args === 'object' ? (args as Record<string, unknown>) : {}
+              const input =
+                args && typeof args === 'object' ? (args as Record<string, unknown>) : {}
               if (input.projectId !== undefined && typeof input.projectId !== 'string')
                 failure(call, request.id, 'Argumentos inválidos para list_active_sessions.')
               else {
@@ -932,7 +933,9 @@ export function startSagyouMcpBroker(deps: McpBrokerDeps): {
                   }) ?? []
                 ).slice(0, ACTIVE_SESSIONS_LIMIT)
                 reply(call, request.id, {
-                  content: [{ type: 'text', text: JSON.stringify({ total: sessoes.length, sessoes }) }]
+                  content: [
+                    { type: 'text', text: JSON.stringify({ total: sessoes.length, sessoes }) }
+                  ]
                 })
               }
             } else if (name === 'save_memory') {

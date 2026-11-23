@@ -1,9 +1,5 @@
 import { buildMemory, handoffId, HANDOFF_RUNNING_TAG, type AiMemory } from '../ai/memory'
-import {
-  RUNNING_RESULT_LINE,
-  RUNNING_STATUS_LINE,
-  RUNNING_TITLE_PREFIX
-} from '../ai/handoff-state'
+import { RUNNING_RESULT_LINE, RUNNING_STATUS_LINE, RUNNING_TITLE_PREFIX } from '../ai/handoff-state'
 
 export interface TerminalHandoffInput {
   projectId: string | null

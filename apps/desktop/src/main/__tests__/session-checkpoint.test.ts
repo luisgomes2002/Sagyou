@@ -238,7 +238,12 @@ describe('createSessionCheckpoints', () => {
       actions: ['Criar task "A"']
     })
     expect(snapshot?.files).toHaveLength(20)
-    expect(checkpoints.live().map((entry) => entry.runId).sort()).toEqual(['r1', 'r2'])
+    expect(
+      checkpoints
+        .live()
+        .map((entry) => entry.runId)
+        .sort()
+    ).toEqual(['r1', 'r2'])
     checkpoints.stop('r1')
     expect(checkpoints.live().map((entry) => entry.runId)).toEqual(['r2'])
   })

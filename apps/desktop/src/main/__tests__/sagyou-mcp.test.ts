@@ -1837,10 +1837,7 @@ describe('list_active_sessions', () => {
   ): Promise<{
     asked: { projectId?: string; excludeRunId: string }[]
     touchMemory: ReturnType<typeof vi.fn>
-    call: (
-      args: unknown,
-      grant?: Partial<McpSession>
-    ) => Promise<Record<string, unknown>>
+    call: (args: unknown, grant?: Partial<McpSession>) => Promise<Record<string, unknown>>
     listed: () => Promise<Record<string, unknown>>
   }> {
     const asked: { projectId?: string; excludeRunId: string }[] = []
@@ -1920,9 +1917,8 @@ describe('list_active_sessions', () => {
 
   it('says the handoff states in the descriptions of the memory tools', async () => {
     const { listed } = await activeBroker([])
-    const tools = (
-      (await listed()).result as { tools: { name: string; description: string }[] }
-    ).tools
+    const tools = ((await listed()).result as { tools: { name: string; description: string }[] })
+      .tools
     for (const name of ['search_memory', 'list_recent_memories']) {
       const description = tools.find((item) => item.name === name)?.description ?? ''
       expect(description).toContain('[em andamento]')
@@ -2033,12 +2029,14 @@ describe('updatedAt in memory reads', () => {
     const call = async (name: string, args: object): Promise<Record<string, unknown>> =>
       JSON.parse(
         (
-          (await request(broker.port(), {
-            jsonrpc: '2.0',
-            id: 1,
-            method: 'tools/call',
-            params: { token: 'version-token', name, arguments: args }
-          })).result as { content: { text: string }[] }
+          (
+            await request(broker.port(), {
+              jsonrpc: '2.0',
+              id: 1,
+              method: 'tools/call',
+              params: { token: 'version-token', name, arguments: args }
+            })
+          ).result as { content: { text: string }[] }
         ).content[0].text
       )
     expect((await call('read_memory', { id: 'memory-1' })).updatedAt).toBe(UPDATED)
