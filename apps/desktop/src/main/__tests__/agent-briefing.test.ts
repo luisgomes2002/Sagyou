@@ -2,7 +2,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildExternalAgentBrief,
-  EXTERNAL_AGENT_BRIEF_LIMIT
+  EXTERNAL_AGENT_BRIEF_LIMIT,
+  MEMORY_RECALL_ROUTE,
+  withoutRunningHandoffs
 } from '../modules/agent/agent-briefing'
 import type { AiMemory } from '../modules/ai/memory'
 
@@ -155,5 +157,68 @@ describe('buildExternalAgentBrief handoff fallback', () => {
     )
     expect(brief).toContain('diga quando o registro não traz a decisão')
     expect(brief).toContain('save_memory com título e tags específicos')
+  })
+})
+
+describe('active sessions in the briefing', () => {
+  const base = { objective: 'Corrigir o deploy', decisions: [], files: [], memories: [] }
+
+  it('lists the sessions running in the project, at most three', () => {
+    const brief = buildExternalAgentBrief({
+      ...base,
+      activeSessions: [
+        { assunto: 'Criar task "A"', arquivos: ['src/a.ts', 'src/b.ts'] },
+        { assunto: null, arquivos: [] },
+        { assunto: 'Terceira', arquivos: ['src/c.ts'] },
+        { assunto: 'Quarta', arquivos: [] }
+      ]
+    })
+    expect(brief).toContain('## SESSÕES EM ANDAMENTO NESTE PROJETO')
+    expect(brief).toContain('- Criar task "A" — 2 arquivo(s): src/a.ts, src/b.ts')
+    expect(brief).toContain('- Sessão sem assunto — nenhum arquivo alterado ainda')
+    expect(brief).toContain('- Terceira — 1 arquivo(s): src/c.ts')
+    expect(brief).not.toContain('Quarta')
+  })
+
+  it('has no such block without sessions, and shows them even when memories exist', () => {
+    expect(buildExternalAgentBrief(base)).not.toContain('SESSÕES EM ANDAMENTO')
+    expect(buildExternalAgentBrief({ ...base, activeSessions: [] })).not.toContain(
+      'SESSÕES EM ANDAMENTO'
+    )
+    const withMemory = buildExternalAgentBrief({
+      ...base,
+      memories: [memory()],
+      activeSessions: [{ assunto: 'Outra', arquivos: [] }]
+    })
+    expect(withMemory).toContain('MEMÓRIAS RELEVANTES')
+    expect(withMemory).toContain('- Outra — nenhum arquivo alterado ainda')
+  })
+
+  it('redacts a secret in a subject and tells the agent to call the tool', () => {
+    const brief = buildExternalAgentBrief({
+      ...base,
+      activeSessions: [{ assunto: 'API_KEY=super-secret-token-value-123456789', arquivos: [] }]
+    })
+    expect(brief).not.toContain('super-secret-token-value')
+    expect(brief).toContain('Antes de editar arquivos, chame list_active_sessions')
+  })
+
+  it('names the handoff states in the recall route', () => {
+    expect(MEMORY_RECALL_ROUTE).toContain('[em andamento]')
+    expect(MEMORY_RECALL_ROUTE).toContain('[interrompida]')
+  })
+})
+
+describe('withoutRunningHandoffs', () => {
+  it('drops only the running handoffs', () => {
+    const running = memory({ id: 'h1', type: 'handoff', tags: ['handoff', 'em-andamento'] })
+    const interrupted = memory({ id: 'h2', type: 'handoff', tags: ['handoff', 'interrompida'] })
+    const done = memory({ id: 'h3', type: 'handoff', tags: ['handoff', 'completed'] })
+    const other = memory({ id: 'm1', tags: ['em-andamento'] })
+    expect(withoutRunningHandoffs([running, interrupted, done, other]).map((m) => m.id)).toEqual([
+      'h2',
+      'h3',
+      'm1'
+    ])
   })
 })

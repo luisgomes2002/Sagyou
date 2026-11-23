@@ -226,6 +226,22 @@ function parseNumstat(out: string): DiffFile[] {
 }
 
 /**
+ * Only the paths that changed since `base`, tracked and untracked. A handoff
+ * checkpoint needs the list, not the patch: this skips the full `git diff`, so
+ * it stays cheap enough to repeat every couple of minutes. Empty on any failure.
+ */
+export async function changedPathsSince(
+  snapshot: AgentBase,
+  git: GitRunner = realGit
+): Promise<string[]> {
+  const stat = await git(snapshot.dir, ['diff', '--numstat', snapshot.base])
+  if (stat.code !== 0) return []
+  const before = new Set(snapshot.untrackedBefore)
+  const added = (await untracked(snapshot.dir, git)).filter((path) => !before.has(path))
+  return [...new Set([...parseNumstat(stat.stdout).map((file) => file.path), ...added])]
+}
+
+/**
  * Everything that changed since `base`.
  *
  * The agent leaves the tree dirty, and a diff from a base commit to the

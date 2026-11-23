@@ -272,6 +272,78 @@ describe('prepareMemoryWrite', () => {
     })
   })
 
+  describe('update_memory with expectedUpdatedAt', () => {
+    const READ_AT = '2026-01-01T00:00:00.000Z'
+    const edited = (
+      args: Record<string, unknown>,
+      memories: AiMemory[] = [memory()]
+    ): ReturnType<typeof prepareMemoryWrite> =>
+      prepareMemoryWrite(
+        'update_memory',
+        { id: 'm1', body: 'Novo corpo.', ...args },
+        deps(memories)
+      )
+
+    it('edits when the version read is still the current one', () => {
+      const result = edited({ expectedUpdatedAt: READ_AT })
+      expect(result.ok).toBe(true)
+      if (result.ok && result.op.kind === 'upsert') {
+        expect(result.op.memory.body).toBe('Novo corpo.')
+        expect(result.op.memory.updatedAt).toBe(NOW)
+      }
+    })
+
+    it('refuses with the exact text and writes nothing when the memory changed', () => {
+      const changed = memory({ updatedAt: '2026-10-25T11:00:00.000Z' })
+      expect(edited({ expectedUpdatedAt: READ_AT }, [changed])).toEqual({
+        ok: false,
+        error:
+          'A memória foi alterada depois da sua leitura (agora: 2026-10-25T11:00:00.000Z). Leia de novo com read_memory e refaça a edição.'
+      })
+    })
+
+    it('compares the text exactly, not the instant it names', () => {
+      expect(edited({ expectedUpdatedAt: '2026-01-01T00:00:00Z' }, [memory()])).toMatchObject({
+        ok: false
+      })
+    })
+
+    it('edits as before when it is absent', () => {
+      expect(edited({}).ok).toBe(true)
+    })
+
+    it('refuses a value that is not text', () => {
+      expect(edited({ expectedUpdatedAt: 5 })).toEqual({
+        ok: false,
+        error: 'expectedUpdatedAt inválido.'
+      })
+    })
+
+    it('keeps the earlier refusals first: missing, archived and handoff', () => {
+      const refusal = { ok: false, error: 'Memória indisponível nesta sessão MCP.' }
+      expect(edited({ expectedUpdatedAt: 'qualquer' }, [])).toEqual(refusal)
+      expect(
+        edited({ expectedUpdatedAt: 'qualquer' }, [
+          memory({ archivedAt: '2026-05-01T00:00:00.000Z' })
+        ])
+      ).toEqual(refusal)
+      expect(edited({ expectedUpdatedAt: 'qualquer' }, [memory({ type: 'handoff' })])).toEqual({
+        ok: false,
+        error: 'Memórias de handoff não podem ser alteradas pelo MCP.'
+      })
+    })
+
+    it('is checked again when the write is applied, against the memory as it is then', () => {
+      // prepare sees the version that was read; by apply another session has edited it.
+      expect(edited({ expectedUpdatedAt: READ_AT }).ok).toBe(true)
+      const later = memory({ updatedAt: '2026-10-25T11:30:00.000Z' })
+      expect(edited({ expectedUpdatedAt: READ_AT }, [later])).toMatchObject({
+        ok: false,
+        error: expect.stringContaining('2026-10-25T11:30:00.000Z')
+      })
+    })
+  })
+
   it('archive, unarchive and delete produce the matching operations', () => {
     const active = memory()
     const archived = memory({ id: 'm2', archivedAt: '2026-05-01T00:00:00.000Z' })

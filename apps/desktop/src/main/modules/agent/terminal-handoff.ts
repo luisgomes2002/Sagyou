@@ -1,10 +1,11 @@
-import { buildMemory, handoffId, type AiMemory } from '../ai/memory'
+import { buildMemory, handoffId, HANDOFF_RUNNING_TAG, type AiMemory } from '../ai/memory'
+import { RUNNING_RESULT_LINE, RUNNING_STATUS_LINE, RUNNING_TITLE_PREFIX } from '../ai/handoff-state'
 
 export interface TerminalHandoffInput {
   projectId: string | null
   runId: string
   request: string
-  status: 'completed' | 'cancelled' | 'failed' | 'not_applied'
+  status: 'running' | 'completed' | 'cancelled' | 'failed' | 'not_applied'
   result: string
   changedFiles: string[]
   /** What the session was about: its request, or the first MCP write it applied. */
@@ -38,22 +39,30 @@ const items = (values: string[] | undefined): string[] =>
  * archive. Every line comes from a recorded source (the request, the chat's
  * decisions, applied MCP writes), never from the PTY log or an unapplied diff.
  */
-export function buildTerminalHandoff(input: TerminalHandoffInput, now: string): AiMemory {
+export function buildTerminalHandoff(
+  input: TerminalHandoffInput,
+  now: string,
+  existing: AiMemory | null = null
+): AiMemory {
+  const running = input.status === 'running'
   const subject = input.subject?.trim().slice(0, SUBJECT_LIMIT) ?? ''
   const decisions = items(input.decisions)
   const actions = items(input.actions)
   const pending = items(input.pending)
   const files = input.changedFiles.slice(0, FILE_LIMIT).map((file) => `- ${file.slice(0, 180)}`)
-  const filesLabel =
-    input.status === 'not_applied'
+  const filesLabel = running
+    ? 'Arquivos alterados até o último checkpoint'
+    : input.status === 'not_applied'
       ? 'Arquivos alterados na worktree, não aplicados ao projeto'
       : 'Arquivos alterados'
   const reference = `Referências: run=${input.runId}`
   const body = [
     `Pedido: ${input.request.trim().slice(0, REQUEST_LIMIT) || '(não informado)'}`,
     ...(subject ? [`Assunto: ${subject}`] : []),
-    `Resultado: ${input.result.trim().slice(0, RESULT_LIMIT) || '(sem resumo)'}`,
-    `Status: ${input.status}`,
+    running
+      ? RUNNING_RESULT_LINE
+      : `Resultado: ${input.result.trim().slice(0, RESULT_LIMIT) || '(sem resumo)'}`,
+    running ? RUNNING_STATUS_LINE : `Status: ${input.status}`,
     ...(decisions.length ? ['Decisões:', ...decisions.map((item) => `- ${item}`)] : []),
     ...(actions.length
       ? [`Ações pelo MCP (${actions.length}):`, ...actions.map((item) => `- ${item}`)]
@@ -72,21 +81,26 @@ export function buildTerminalHandoff(input: TerminalHandoffInput, now: string): 
     .join('\n')
     // The run reference is how the full record is found, so it survives the cut.
     .slice(0, BODY_LIMIT - reference.length - 1)
+  const title = running
+    ? `${RUNNING_TITLE_PREFIX}${subject ? `Sessão de terminal: ${subject}` : 'Sessão de terminal'}`
+    : subject
+      ? `Sessão de terminal: ${subject}`
+      : 'Última sessão de terminal'
   const built = buildMemory(
-    null,
+    existing,
     {
       projectId: input.projectId,
       type: 'handoff',
-      title: subject
-        ? `Sessão de terminal: ${subject}`.slice(0, TITLE_LIMIT)
-        : 'Última sessão de terminal',
+      title: title.slice(0, TITLE_LIMIT),
       body: `${body}\n${reference}`,
-      tags: ['handoff', 'terminal', input.status],
+      tags: ['handoff', 'terminal', running ? HANDOFF_RUNNING_TAG : input.status],
       source: 'modelo'
     },
-    handoffId(input.projectId),
+    handoffId(input.projectId, input.runId),
     now
   )
   if ('error' in built) throw new Error(built.error)
-  return built.memory
+  // buildMemory reactivates what it edits. A handoff the user archived stays
+  // archived, and writing it still keeps it warm (access count untouched).
+  return { ...built.memory, archivedAt: existing?.archivedAt ?? null, lastAccessedAt: now }
 }

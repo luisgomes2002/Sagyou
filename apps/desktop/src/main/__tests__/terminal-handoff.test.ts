@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { buildTerminalHandoff } from '../modules/agent/terminal-handoff'
+import type { AiMemory } from '../modules/ai/memory'
 
 describe('buildTerminalHandoff', () => {
   it('records a successful run with deterministic project id and references', () => {
@@ -16,7 +17,7 @@ describe('buildTerminalHandoff', () => {
       '2026-10-22T00:00:00.000Z'
     )
     expect(handoff).toMatchObject({
-      id: 'handoff:project-1',
+      id: 'handoff:project-1:run-1',
       type: 'handoff',
       projectId: 'project-1',
       sourceConversationId: null
@@ -38,7 +39,7 @@ describe('buildTerminalHandoff', () => {
       },
       '2026-10-22T00:00:00.000Z'
     )
-    expect(handoff.id).toBe('handoff:global')
+    expect(handoff.id).toBe('handoff:global:run-cancelled')
     expect(handoff.body).toContain('Status: cancelled')
   })
 
@@ -129,6 +130,74 @@ describe('buildTerminalHandoff sources', () => {
     )
     expect(handoff.body).toContain('Status: cancelled')
     expect(handoff.body).toContain('Decisões:\n- manter o fallback')
+  })
+
+  it('records a running session with its own state wording', () => {
+    const handoff = buildTerminalHandoff(
+      {
+        ...base,
+        status: 'running',
+        result: 'xyz',
+        subject: 'Criar task "Handoff"',
+        actions: ['Criar task "Handoff"']
+      },
+      NOW
+    )
+    expect(handoff.title).toBe('[em andamento] Sessão de terminal: Criar task "Handoff"')
+    expect(handoff.tags).toEqual(['handoff', 'terminal', 'em-andamento'])
+    expect(handoff.body).toContain('Status: em andamento')
+    expect(handoff.body).toContain(
+      'Resultado: Sessão em andamento; este registro é do último checkpoint.'
+    )
+    expect(handoff.body).not.toContain('xyz')
+    expect(handoff.body).toContain('Arquivos alterados até o último checkpoint (1):')
+    expect(handoff.body.endsWith('Referências: run=run-7')).toBe(true)
+  })
+
+  it('titles a running session without a subject', () => {
+    expect(buildTerminalHandoff({ ...base, status: 'running' }, NOW).title).toBe(
+      '[em andamento] Sessão de terminal'
+    )
+  })
+
+  it('caps a running title at 120 characters', () => {
+    const handoff = buildTerminalHandoff(
+      { ...base, status: 'running', subject: 'x'.repeat(300) },
+      NOW
+    )
+    expect(handoff.title.length).toBeLessThanOrEqual(120)
+    expect(handoff.title.startsWith('[em andamento] ')).toBe(true)
+  })
+
+  it('gives each session its own row and keeps one row from checkpoint to exit', () => {
+    const a = buildTerminalHandoff({ ...base, runId: 'run-a', status: 'running' }, NOW)
+    const b = buildTerminalHandoff({ ...base, runId: 'run-b', status: 'running' }, NOW)
+    const done = buildTerminalHandoff({ ...base, runId: 'run-a' }, NOW)
+    expect(a.id).toBe('handoff:project-1:run-a')
+    expect(b.id).toBe('handoff:project-1:run-b')
+    expect(done.id).toBe(a.id)
+    expect(done.tags).toEqual(['handoff', 'terminal', 'completed'])
+    expect(done.body).toContain('Status: completed')
+    expect(done.title).not.toContain('[em andamento]')
+  })
+
+  it('keeps pin, creation, access count and archive of the existing row, and stays warm', () => {
+    const existing: AiMemory = {
+      ...buildTerminalHandoff({ ...base, status: 'running' }, '2026-10-01T00:00:00.000Z'),
+      pinned: true,
+      accessCount: 3,
+      archivedAt: '2026-10-02T00:00:00.000Z'
+    }
+    const next = buildTerminalHandoff({ ...base, status: 'running' }, NOW, existing)
+    expect(next.pinned).toBe(true)
+    expect(next.accessCount).toBe(3)
+    expect(next.createdAt).toBe('2026-10-01T00:00:00.000Z')
+    expect(next.archivedAt).toBe('2026-10-02T00:00:00.000Z')
+    expect(next.updatedAt).toBe(NOW)
+    expect(next.lastAccessedAt).toBe(NOW)
+    const fresh = buildTerminalHandoff({ ...base, status: 'running' }, NOW)
+    expect(fresh.pinned).toBe(false)
+    expect(fresh.archivedAt).toBeNull()
   })
 
   it('always keeps the run reference within the body limit', () => {

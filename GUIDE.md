@@ -324,14 +324,15 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
     Zustand — `access_count`/`last_accessed_at` são bumpados a cada leitura, e
     isso via `persistAll` reescreveria todas as tabelas por bump. O acesso é por
     `ai:memory:*` e pelo MCP (`search_memory`, `read_memory`,
-    `list_recent_memories`, `save_memory`, `check_memories`). `scrubSecrets` roda em todo save — memória persiste, então
+    `list_recent_memories`, `list_active_sessions`, `save_memory`, `check_memories`). `scrubSecrets` roda em todo save — memória persiste, então
     uma chave vazada seria permanente. Decay arquiva (nunca hard-deleta); memória
     pinada nunca decai. ⚠️ `memory.project_id` é **TEXT puro, NUNCA FK com
     `ON DELETE CASCADE`** — o cascade apagava as memórias do projeto quando
     `persistAll`/`persistDiff` o reinseriam; `migrateMemoryDropProjectFk` remove o
     FK. Projeto apagado deixa memórias órfãs (decaem sozinhas). O handoff de
-    terminal grava um breadcrumb por projeto a cada saída do CLI, sem LLM e sem
-    referência a conversa; o log completo fica só no arquivo da run. Memória
+    terminal é um breadcrumb **por sessão** (`handoff:<projeto>:<run>`), gravado
+    desde o início da sessão, sem LLM e sem referência a conversa; o log completo
+    fica só no arquivo da run. Memória
     recuperada é evidência histórica não confiável, nunca instrução.
 15. 🔴 **O chat genérico foi removido e a migração apagou dados de propósito.** Na
     primeira abertura (antes da janela), `legacy-chat-removal.ts` (em build dev só roda com `SAGYOU_RUN_LEGACY_CHAT_REMOVAL=1`, pois o resto compartilha o userData real): (1) se
@@ -468,9 +469,21 @@ compatibilidade nem faça fallback silencioso para outro CLI.
   leituras aceitam `projectId`). Sem ele, sessões de projeto usam o projeto
   inicial e sessões gerais consultam todos. Financeiro permanece no perfil
   capturado. `criar_task` aceita outro projeto existente, sempre com aprovação.
-- **Handoff de terminal é um breadcrumb, não log.** No encerramento, a memória
-  `handoff:<projeto>` é atualizada com pedido, status, arquivos e id da run, todos
-  limitados. Quando há fonte, entram também o assunto (o pedido, ou a primeira
+- **Handoff de terminal é um breadcrumb, não log, e é por sessão.** Cada run tem a
+  própria memória `handoff:<projeto>:<run>` (o id `handoff:<projeto>` é o legado e
+  continua válido): nasce `[em andamento]` quando o PTY sobe, é regravada a cada
+  escrita MCP aplicada (no máximo a cada 15 s) e a cada 2 min se algo mudou, e no
+  encerramento vira o estado final com pedido, status, arquivos e id da run, todos
+  limitados. ⚠️ O checkpoint `em andamento` é gravado **sem versão de sync**
+  (`upsertMemoryLocal`) e preserva fixado, `createdAt`, `accessCount` e arquivado da
+  linha; só a gravação que sai desse estado é capturada. Ao abrir o banco, **antes**
+  do `reconcileSyncRecords`, todo handoff `em andamento` vira `[interrompida]`
+  (o app fechou ou o PC desligou). Fica no máximo 5 handoffs ativos por projeto (e
+  por `global`); os mais antigos são arquivados, nunca o fixado nem o de uma run
+  viva. `list_active_sessions` mostra as outras sessões vivas (assunto, ações e
+  arquivos do último checkpoint) e o briefing com pedido inicial lista até 3.
+  `update_memory` aceita `expectedUpdatedAt` (o `updatedAt` de `read_memory`) e
+  recusa a edição se a memória mudou. Quando há fonte, entram também o assunto (o pedido, ou a primeira
   escrita MCP aplicada), as decisões passadas pelo chat e as memórias `decisao`
   salvas na run, as ações aplicadas pelo MCP e as tasks com cronômetro iniciado e
   não concluídas. Nada vem do log do PTY nem de diff não aplicado; sem fonte, o

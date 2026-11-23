@@ -10,6 +10,11 @@ import {
   type AiMemory,
   type MemoryType
 } from './modules/ai/memory'
+import {
+  interruptRunningHandoffs,
+  restoreAsInterrupted,
+  syncableMemories
+} from './modules/ai/handoff-state'
 import { decodeDataUrl } from './modules/files/image-files'
 import { isDocumentExt, parseDocument } from './modules/files/document-parser'
 import {
@@ -413,6 +418,9 @@ function getDb(): Database.Database {
   migrateTaskImagesToDisk(_db)
   migrateNotesTaskIdsGoalIds(_db)
   migrateFromJson(_db)
+  // Before the reconcile below: a handoff a crash left "em andamento" must be
+  // versioned for the first time as "interrompida", never as running.
+  interruptRunningHandoffsOnOpen(_db)
   reconcileSyncRecords(_db)
   trimEventLog(_db)
   createGlobalSearchIndex(_db)
@@ -1405,11 +1413,37 @@ function captureMemoryRows(db: Database.Database, ids: string[], op: 'archive' |
     const row = select.get(id) as Record<string, unknown> | undefined
     return row ? [memRowToMemory(row)] : []
   })
-  return captureSyncVersions(db, () => extractMemoryRecords(rows), memoryCaptureScope(op, ids))
+  return captureSyncVersions(
+    db,
+    () => extractMemoryRecords(syncableMemories(rows)),
+    memoryCaptureScope(op, ids)
+  )
 }
 
 function allMemories(db: Database.Database): AiMemory[] {
   return (db.prepare('SELECT * FROM memory').all() as Record<string, unknown>[]).map(memRowToMemory)
+}
+
+/**
+ * A terminal session that never exited normally (the app was closed, the PC
+ * froze or lost power) leaves its handoff running. Nothing is live at open, so
+ * every such row is marked interrupted. Failing here never blocks opening.
+ */
+function interruptRunningHandoffsOnOpen(db: Database.Database): void {
+  try {
+    const rows = db
+      .prepare(`SELECT * FROM memory WHERE type='handoff' AND tags LIKE '%"em-andamento"%'`)
+      .all() as Record<string, unknown>[]
+    if (!rows.length) return
+    const interrupted = interruptRunningHandoffs(rows.map(memRowToMemory), new Date().toISOString())
+    db.transaction(() => {
+      // memory_fts follows by trigger and the global index is rebuilt right after opening.
+      for (const memory of interrupted) writeMemoryRow(db, memory)
+    })()
+    log.info('store', 'handoffs_interrupted', { count: interrupted.length })
+  } catch (err) {
+    log.error('store', 'interrupt_handoffs_failed', { msg: errorMessage(err) })
+  }
 }
 
 /**
@@ -1437,7 +1471,7 @@ function reconcileSyncRecords(db: Database.Database): void {
   }
   try {
     memory = db.transaction(() =>
-      captureSyncVersions(db, () => extractMemoryRecords(allMemories(db)), {
+      captureSyncVersions(db, () => extractMemoryRecords(syncableMemories(allMemories(db))), {
         kinds: MEMORY_KINDS,
         complete: true
       })
@@ -1874,7 +1908,10 @@ export function markPushed(
 /** Every record as it stands now, keyed by kind:id, for building an outgoing batch. */
 export function currentSyncRecords(): Map<string, SyncRecord> {
   const db = getDb()
-  const records = [...extractDataRecords(loadData(db)), ...extractMemoryRecords(allMemories(db))]
+  const records = [
+    ...extractDataRecords(loadData(db)),
+    ...extractMemoryRecords(syncableMemories(allMemories(db)))
+  ]
   return new Map(records.map((r) => [recordKey(r.kind, r.id), r]))
 }
 
@@ -3448,6 +3485,19 @@ export function upsertMemory(m: AiMemory): void {
   })()
 }
 
+/**
+ * Writes a memory without a sync version. A running handoff is written like this
+ * on every checkpoint: it must never travel to the other devices, which cannot
+ * know whether that session is still alive.
+ */
+export function upsertMemoryLocal(m: AiMemory): void {
+  const db = getDb()
+  db.transaction(() => {
+    writeMemoryRow(db, m)
+    syncMemorySearchRows(db)
+  })()
+}
+
 function writeMemoryRow(db: Database.Database, m: AiMemory): void {
   db.prepare(
     `INSERT INTO memory
@@ -3530,7 +3580,7 @@ export function replaceMemories(memories: AiMemory[]): void {
     db.prepare('DELETE FROM memory').run()
     for (const raw of memories ?? []) {
       if (!raw || typeof raw.id !== 'string') continue
-      const m = normalizeMemory(raw, now)
+      const m = restoreAsInterrupted(normalizeMemory(raw, now), now)
       if (m.projectId && !projectIds.has(m.projectId)) m.projectId = null
       writeMemoryRow(db, m)
     }
@@ -3538,7 +3588,7 @@ export function replaceMemories(memories: AiMemory[]): void {
     captureSafely(db, () =>
       captureSyncVersions(
         db,
-        () => extractMemoryRecords(allMemories(db)),
+        () => extractMemoryRecords(syncableMemories(allMemories(db))),
         memoryCaptureScope('replace', [])
       )
     )
@@ -3570,7 +3620,7 @@ export function scrubMemoryConversationLinks(): number {
     captureSafely(db, () =>
       captureSyncVersions(
         db,
-        () => extractMemoryRecords(rewritten),
+        () => extractMemoryRecords(syncableMemories(rewritten)),
         memoryCaptureScope(
           'scrub',
           rewritten.map((m) => m.id)

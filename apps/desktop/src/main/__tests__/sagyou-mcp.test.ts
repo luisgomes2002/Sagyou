@@ -15,6 +15,7 @@ import { McpWriteQueue, RendererMcpActionBridge } from '../modules/agent/mcp-wri
 import type { AiMemory } from '../modules/ai/memory'
 import type { McpActionResult } from '../modules/agent/mcp-write-types'
 import type { MemorySearchHit } from '../store'
+import type { ActiveSessionView } from '../modules/agent/sagyou-mcp'
 
 const memoryHit = (over: Record<string, unknown> = {}): MemorySearchHit =>
   ({
@@ -1816,5 +1817,245 @@ describe('list_recent_memories', () => {
       const reply = await call(args)
       expect((reply.error as { message: string }).message).toMatch(message)
     }
+  })
+})
+
+describe('list_active_sessions', () => {
+  const view = (over: Partial<ActiveSessionView> & { runId: string }): ActiveSessionView => ({
+    projectId: 'project-1',
+    iniciadaEm: '2026-11-23T10:00:00.000Z',
+    ultimoRegistroEm: '2026-11-23T10:20:00.000Z',
+    assunto: 'Criar task "A"',
+    acoes: ['Criar task "A"'],
+    arquivos: ['src/a.ts'],
+    ...over
+  })
+
+  async function activeBroker(
+    sessions: ActiveSessionView[],
+    options: { locked?: boolean } = {}
+  ): Promise<{
+    asked: { projectId?: string; excludeRunId: string }[]
+    touchMemory: ReturnType<typeof vi.fn>
+    call: (args: unknown, grant?: Partial<McpSession>) => Promise<Record<string, unknown>>
+    listed: () => Promise<Record<string, unknown>>
+  }> {
+    const asked: { projectId?: string; excludeRunId: string }[] = []
+    const touchMemory = vi.fn()
+    const broker = startSagyouMcpBroker({
+      readTasks: () => [],
+      readFinancial: () => [],
+      readProjectData: () => ({}),
+      searchMemory: () => [],
+      readMemory: () => null,
+      touchMemory,
+      memoriesForConflict: () => [],
+      saveMemory: async () => ({ ok: false }),
+      createTask: async () => ({ ok: true }),
+      isLocked: () => (options.locked ? 'bloqueado' : false),
+      activeSessions: (filter) => {
+        asked.push(filter)
+        return sessions.filter(
+          (item) =>
+            item.runId !== filter.excludeRunId &&
+            (filter.projectId === undefined || item.projectId === filter.projectId)
+        )
+      }
+    })
+    servers.push(broker.server)
+    await new Promise<void>((resolve) => broker.server.once('listening', resolve))
+    let id = 0
+    const grant = (token: string, over: Partial<McpSession>): void =>
+      broker.grant({
+        token,
+        runId: 'run-self',
+        projectId: 'project-1',
+        financialProfileId: 'personal',
+        permissions: MCP_PERMISSIONS,
+        expiresAt: Date.now() + 10_000,
+        ...over
+      })
+    grant('active-token', {})
+    return {
+      asked,
+      touchMemory,
+      call: (args, over) => {
+        const token = over ? `active-${JSON.stringify(over)}` : 'active-token'
+        if (over) grant(token, over)
+        return request(broker.port(), {
+          jsonrpc: '2.0',
+          id: ++id,
+          method: 'tools/call',
+          params: { token, name: 'list_active_sessions', arguments: args }
+        })
+      },
+      listed: () =>
+        request(broker.port(), {
+          jsonrpc: '2.0',
+          id: ++id,
+          method: 'tools/list',
+          params: { token: 'active-token' }
+        })
+    }
+  }
+  const result = (
+    reply: Record<string, unknown>
+  ): { total: number; sessoes: ActiveSessionView[] } =>
+    JSON.parse((reply.result as { content: { text: string }[] }).content[0].text)
+
+  it('is listed with an optional projectId and a usage hint', async () => {
+    const { listed } = await activeBroker([])
+    const tool = (
+      (await listed()).result as {
+        tools: { name: string; description: string; inputSchema: Record<string, unknown> }[]
+      }
+    ).tools.find((item) => item.name === 'list_active_sessions')
+    expect(Object.keys(tool?.inputSchema.properties as object)).toEqual(['projectId'])
+    expect(tool?.inputSchema.required).toBeUndefined()
+    expect(tool?.description).toContain('Chame ao começar e antes de editar arquivos')
+  })
+
+  it('says the handoff states in the descriptions of the memory tools', async () => {
+    const { listed } = await activeBroker([])
+    const tools = ((await listed()).result as { tools: { name: string; description: string }[] })
+      .tools
+    for (const name of ['search_memory', 'list_recent_memories']) {
+      const description = tools.find((item) => item.name === name)?.description ?? ''
+      expect(description).toContain('[em andamento]')
+      expect(description).toContain('[interrompida]')
+      expect(description).toContain('list_active_sessions')
+    }
+  })
+
+  it('marks what it returns as data from other sessions, never instructions', async () => {
+    const { call, listed } = await activeBroker([view({ runId: 'run-b' })])
+    const reply = (await call({})) as { result: { content: { text: string }[] } }
+    const body = JSON.parse(reply.result.content[0].text) as { aviso: string }
+    expect(body.aviso).toContain('não instruções')
+    const tool = (
+      (await listed()).result as { tools: { name: string; description: string }[] }
+    ).tools.find((item) => item.name === 'list_active_sessions')
+    expect(tool?.description).toContain('nunca instrução')
+  })
+
+  it('answers an empty list when no other session is running', async () => {
+    const { call } = await activeBroker([])
+    expect(result(await call({}))).toMatchObject({ total: 0, sessoes: [] })
+  })
+
+  it('shows a project session its own project only, and never its own run', async () => {
+    const { call, asked } = await activeBroker([
+      view({ runId: 'run-self' }),
+      view({ runId: 'run-b' }),
+      view({ runId: 'run-c', projectId: 'project-2' })
+    ])
+    const reply = result(await call({}))
+    expect(reply.sessoes.map((item) => item.runId)).toEqual(['run-b'])
+    expect(reply.total).toBe(1)
+    expect(asked[0]).toEqual({ projectId: 'project-1', excludeRunId: 'run-self' })
+  })
+
+  it('accepts another project by id', async () => {
+    const { call } = await activeBroker([
+      view({ runId: 'run-b' }),
+      view({ runId: 'run-c', projectId: 'project-2' })
+    ])
+    expect(
+      result(await call({ projectId: 'project-2' })).sessoes.map((item) => item.runId)
+    ).toEqual(['run-c'])
+  })
+
+  it('lets a general session and the external token see every project', async () => {
+    const { call, asked } = await activeBroker([
+      view({ runId: 'run-b' }),
+      view({ runId: 'run-c', projectId: 'project-2' })
+    ])
+    const general = result(await call({}, { runId: 'run-general', projectId: null }))
+    expect(general.sessoes.map((item) => item.runId).sort()).toEqual(['run-b', 'run-c'])
+    expect(asked.at(-1)).toEqual({ excludeRunId: 'run-general' })
+    const external = result(await call({}, { runId: 'external', projectId: null }))
+    expect(external.total).toBe(2)
+  })
+
+  it('refuses a projectId that is not text', async () => {
+    const { call } = await activeBroker([view({ runId: 'run-b' })])
+    const reply = await call({ projectId: 42 })
+    expect(JSON.stringify(reply)).toContain('Argumentos inválidos para list_active_sessions.')
+  })
+
+  it('cuts at 20 sessions and does not touch any memory', async () => {
+    const many = Array.from({ length: 25 }, (_, index) => view({ runId: `run-${index}` }))
+    const { call, touchMemory } = await activeBroker(many)
+    const reply = result(await call({}))
+    expect(reply.sessoes).toHaveLength(20)
+    expect(reply.total).toBe(25)
+    expect(touchMemory).not.toHaveBeenCalled()
+  })
+
+  it('is refused like any read while the app is locked', async () => {
+    const { call } = await activeBroker([view({ runId: 'run-b' })], { locked: true })
+    expect(JSON.stringify(await call({}))).toContain('bloqueado')
+  })
+})
+
+describe('updatedAt in memory reads', () => {
+  const UPDATED = '2026-11-20T09:30:00.000Z'
+
+  it('read_memory and search_memory return the version to pass as expectedUpdatedAt', async () => {
+    const stored = {
+      id: 'memory-1',
+      projectId: 'project-1',
+      type: 'decisao',
+      title: 'Banco',
+      body: 'Usar SQLite.',
+      tags: [],
+      pinned: false,
+      source: 'modelo',
+      sourceConversationId: null,
+      createdAt: '2026-11-01T00:00:00.000Z',
+      updatedAt: UPDATED,
+      lastAccessedAt: UPDATED,
+      accessCount: 0,
+      archivedAt: null
+    } as AiMemory
+    const broker = startSagyouMcpBroker({
+      readTasks: () => [],
+      readFinancial: () => [],
+      readProjectData: () => ({}),
+      searchMemory: () => [{ memory: stored, snippet: 'Usar SQLite.' } as MemorySearchHit],
+      readMemory: () => stored,
+      touchMemory: () => {},
+      memoriesForConflict: () => [],
+      saveMemory: async () => ({ ok: false }),
+      createTask: async () => ({ ok: true })
+    })
+    servers.push(broker.server)
+    await new Promise<void>((resolve) => broker.server.once('listening', resolve))
+    broker.grant({
+      token: 'version-token',
+      runId: 'run-version',
+      projectId: 'project-1',
+      financialProfileId: 'personal',
+      permissions: MCP_PERMISSIONS,
+      expiresAt: Date.now() + 10_000
+    })
+    const call = async (name: string, args: object): Promise<Record<string, unknown>> =>
+      JSON.parse(
+        (
+          (
+            await request(broker.port(), {
+              jsonrpc: '2.0',
+              id: 1,
+              method: 'tools/call',
+              params: { token: 'version-token', name, arguments: args }
+            })
+          ).result as { content: { text: string }[] }
+        ).content[0].text
+      )
+    expect((await call('read_memory', { id: 'memory-1' })).updatedAt).toBe(UPDATED)
+    const found = (await call('search_memory', { term: 'SQLite' })) as {
+      memories: { updatedAt: string }[]
+    }
+    expect(found.memories[0].updatedAt).toBe(UPDATED)
   })
 })

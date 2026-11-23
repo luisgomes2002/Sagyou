@@ -20,6 +20,19 @@ describe('createRunActivity', () => {
   })
 })
 
+describe('createRunActivity peek', () => {
+  it('reads the entries so far without emptying the run', () => {
+    const activity = createRunActivity()
+    activity.record('run-1', { name: 'create_note', resumo: 'nota' })
+    expect(activity.peek('run-1')).toEqual([{ name: 'create_note', resumo: 'nota' }])
+    expect(activity.peek('run-1')).toEqual([{ name: 'create_note', resumo: 'nota' }])
+    expect(activity.peek('run-2')).toEqual([])
+    activity.peek('run-1').push({ name: 'x', resumo: 'y' }) // a copy: editing it changes nothing
+    expect(activity.take('run-1')).toEqual([{ name: 'create_note', resumo: 'nota' }])
+    expect(activity.peek('run-1')).toEqual([])
+  })
+})
+
 describe('summarizeRunActivity', () => {
   it('derives subject, actions, decisions and pending tasks from what was applied', () => {
     const summary = summarizeRunActivity([
