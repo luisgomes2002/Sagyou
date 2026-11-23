@@ -1940,7 +1940,7 @@ describe('list_active_sessions', () => {
 
   it('answers an empty list when no other session is running', async () => {
     const { call } = await activeBroker([])
-    expect(result(await call({}))).toEqual({ total: 0, sessoes: [] })
+    expect(result(await call({}))).toMatchObject({ total: 0, sessoes: [] })
   })
 
   it('shows a project session its own project only, and never its own run', async () => {

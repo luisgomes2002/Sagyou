@@ -111,7 +111,7 @@ describe('markHandoffInterrupted', () => {
 })
 
 describe('interruptRunningHandoffs', () => {
-  it('transforma só os handoffs ativos em andamento', () => {
+  it('transforma só os handoffs em andamento, arquivados incluídos', () => {
     const finished = running({
       id: 'handoff:p1:r2',
       title: 'Sessão de terminal: pronto',
@@ -121,7 +121,7 @@ describe('interruptRunningHandoffs', () => {
     const archived = running({ id: 'handoff:p1:r3', archivedAt: NOW })
     const other = running({ id: 'fato-1', type: 'fato' })
     const out = interruptRunningHandoffs([running(), finished, legacy, archived, other], NOW)
-    expect(out.map((m) => m.id)).toEqual(['handoff:p1:r1'])
+    expect(out.map((m) => m.id)).toEqual(['handoff:p1:r1', 'handoff:p1:r3'])
     expect(out[0].tags).toContain('interrompida')
   })
 })
