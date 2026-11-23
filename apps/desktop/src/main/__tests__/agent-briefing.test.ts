@@ -222,3 +222,34 @@ describe('withoutRunningHandoffs', () => {
     ])
   })
 })
+
+describe('last handoffs in the briefing', () => {
+  const handoff = (id: string, updatedAt: string): AiMemory =>
+    memory({
+      id,
+      type: 'handoff',
+      title: `Handoff ${id}`,
+      body: `corpo ${id}`,
+      tags: ['handoff'],
+      updatedAt
+    })
+
+  it('picks the two newest by instant, not by text, when date formats are mixed', () => {
+    const brief = buildExternalAgentBrief({
+      objective: 'Retomar',
+      decisions: [],
+      files: [],
+      memories: [],
+      recentHandoffs: [
+        // 14:00+14:00 is 00:00Z: the oldest, though its text looks the newest.
+        handoff('antigo', '2026-11-23T14:00:00+14:00'),
+        handoff('meio', '2026-11-23T10:00:00.000Z'),
+        handoff('novo', '2026-11-23T11:00:00Z')
+      ]
+    })
+    expect(brief).toContain('Handoff novo')
+    expect(brief).toContain('Handoff meio')
+    expect(brief).not.toContain('Handoff antigo')
+    expect(brief.indexOf('Handoff novo')).toBeLessThan(brief.indexOf('Handoff meio'))
+  })
+})
