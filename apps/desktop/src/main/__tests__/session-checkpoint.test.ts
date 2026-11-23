@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import {
   CHECKPOINT_MIN_GAP_MS,
   CHECKPOINT_TICK_MS,
@@ -16,7 +16,17 @@ interface Live {
   files: string[]
 }
 
-function setup(over: { read?: (runId: string) => Promise<unknown>; existing?: AiMemory | null } = {}) {
+interface Harness {
+  checkpoints: ReturnType<typeof createSessionCheckpoints>
+  live: Record<string, Live>
+  writes: AiMemory[]
+  errors: unknown[]
+  read: Mock
+}
+
+function setup(
+  over: { read?: (runId: string) => Promise<unknown>; existing?: AiMemory | null } = {}
+): Harness {
   const live: Record<string, Live> = {
     r1: { projectId: 'p1', actions: [], files: [] },
     r2: { projectId: 'p1', actions: [], files: [] }

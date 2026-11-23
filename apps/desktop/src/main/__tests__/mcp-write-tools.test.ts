@@ -274,8 +274,15 @@ describe('prepareMemoryWrite', () => {
 
   describe('update_memory with expectedUpdatedAt', () => {
     const READ_AT = '2026-01-01T00:00:00.000Z'
-    const edited = (args: Record<string, unknown>, memories: AiMemory[] = [memory()]) =>
-      prepareMemoryWrite('update_memory', { id: 'm1', body: 'Novo corpo.', ...args }, deps(memories))
+    const edited = (
+      args: Record<string, unknown>,
+      memories: AiMemory[] = [memory()]
+    ): ReturnType<typeof prepareMemoryWrite> =>
+      prepareMemoryWrite(
+        'update_memory',
+        { id: 'm1', body: 'Novo corpo.', ...args },
+        deps(memories)
+      )
 
     it('edits when the version read is still the current one', () => {
       const result = edited({ expectedUpdatedAt: READ_AT })

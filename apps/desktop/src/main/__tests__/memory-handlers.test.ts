@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi, type Mock } from 'vitest'
 import type { IpcMain } from 'electron'
 import { registerMemoryHandlers } from '../handlers/memory'
 import * as memoryRules from '../modules/ai/memory'
@@ -33,7 +33,18 @@ const sevenHandoffs = (): AiMemory[] =>
     memory({ id: `handoff:p1:r${n}`, updatedAt: new Date(Date.now() - (8 - n) * DAY).toISOString() })
   )
 
-function setup(list: AiMemory[], extra: { liveRunIds?: Set<string>; replaceFails?: boolean } = {}) {
+interface Harness {
+  handlers: Map<string, (...args: unknown[]) => unknown>
+  archiveMemories: Mock
+  replaceMemories: Mock
+  onReplaced: Mock
+  state: AiMemory[]
+}
+
+function setup(
+  list: AiMemory[],
+  extra: { liveRunIds?: Set<string>; replaceFails?: boolean } = {}
+): Harness {
   const state = list
   const handlers = new Map<string, (...args: unknown[]) => unknown>()
   const ipcMain = {
