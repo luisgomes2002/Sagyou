@@ -2,6 +2,7 @@ import {
   HANDOFF_INTERRUPTED_TAG,
   HANDOFF_RUNNING_TAG,
   isRunningHandoff,
+  selectHandoffOverflow,
   type AiMemory
 } from './memory'
 
@@ -51,4 +52,23 @@ export function markHandoffInterrupted(memory: AiMemory, now: string): AiMemory 
 /** The running handoffs among `memories`, already marked interrupted. */
 export function interruptRunningHandoffs(memories: AiMemory[], now: string): AiMemory[] {
   return memories.filter(isRunningHandoff).map((memory) => markHandoffInterrupted(memory, now))
+}
+
+export interface HandoffOverflowDeps {
+  /** Every active memory. */
+  list: () => AiMemory[]
+  archive: (ids: string[], now: string) => void
+  /** Runs still alive: their running handoff is never archived. */
+  live: () => ReadonlySet<string>
+  now: () => string
+}
+
+/**
+ * Archives the handoffs past the newest five of each project and returns their
+ * ids. One implementation for the prune pass and for a session's exit.
+ */
+export function archiveHandoffOverflow(deps: HandoffOverflowDeps): string[] {
+  const ids = selectHandoffOverflow(deps.list(), deps.live())
+  if (ids.length) deps.archive(ids, deps.now())
+  return ids
 }

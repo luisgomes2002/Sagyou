@@ -10,6 +10,7 @@ import {
   type AiMemory,
   type MemoryType
 } from './modules/ai/memory'
+import { interruptRunningHandoffs } from './modules/ai/handoff-state'
 import { decodeDataUrl } from './modules/files/image-files'
 import { isDocumentExt, parseDocument } from './modules/files/document-parser'
 import {
@@ -413,6 +414,9 @@ function getDb(): Database.Database {
   migrateTaskImagesToDisk(_db)
   migrateNotesTaskIdsGoalIds(_db)
   migrateFromJson(_db)
+  // Before the reconcile below: a handoff a crash left "em andamento" must be
+  // versioned for the first time as "interrompida", never as running.
+  interruptRunningHandoffsOnOpen(_db)
   reconcileSyncRecords(_db)
   trimEventLog(_db)
   createGlobalSearchIndex(_db)
@@ -1410,6 +1414,30 @@ function captureMemoryRows(db: Database.Database, ids: string[], op: 'archive' |
 
 function allMemories(db: Database.Database): AiMemory[] {
   return (db.prepare('SELECT * FROM memory').all() as Record<string, unknown>[]).map(memRowToMemory)
+}
+
+/**
+ * A terminal session that never exited normally (the app was closed, the PC
+ * froze or lost power) leaves its handoff running. Nothing is live at open, so
+ * every such row is marked interrupted. Failing here never blocks opening.
+ */
+function interruptRunningHandoffsOnOpen(db: Database.Database): void {
+  try {
+    const rows = db
+      .prepare(
+        `SELECT * FROM memory WHERE type='handoff' AND archived_at IS NULL AND tags LIKE '%"em-andamento"%'`
+      )
+      .all() as Record<string, unknown>[]
+    if (!rows.length) return
+    const interrupted = interruptRunningHandoffs(rows.map(memRowToMemory), new Date().toISOString())
+    db.transaction(() => {
+      for (const memory of interrupted) writeMemoryRow(db, memory)
+      syncMemorySearchRows(db)
+    })()
+    log.info('store', 'handoffs_interrupted', { count: interrupted.length })
+  } catch (err) {
+    log.error('store', 'interrupt_handoffs_failed', { msg: errorMessage(err) })
+  }
 }
 
 /**
@@ -3445,6 +3473,19 @@ export function upsertMemory(m: AiMemory): void {
     writeMemoryRow(db, m)
     syncMemorySearchRows(db)
     captureSafely(db, () => captureMemoryRows(db, [m.id], 'upsert'))
+  })()
+}
+
+/**
+ * Writes a memory without a sync version. A running handoff is written like this
+ * on every checkpoint: it must never travel to the other devices, which cannot
+ * know whether that session is still alive.
+ */
+export function upsertMemoryLocal(m: AiMemory): void {
+  const db = getDb()
+  db.transaction(() => {
+    writeMemoryRow(db, m)
+    syncMemorySearchRows(db)
   })()
 }
 

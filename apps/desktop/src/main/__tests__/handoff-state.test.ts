@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import {
+  archiveHandoffOverflow,
   INTERRUPTED_STATUS_LINE,
   INTERRUPTED_TITLE_PREFIX,
   RUNNING_STATUS_LINE,
@@ -109,5 +110,46 @@ describe('interruptRunningHandoffs', () => {
     const out = interruptRunningHandoffs([running(), finished, legacy, archived, other], NOW)
     expect(out.map((m) => m.id)).toEqual(['handoff:p1:r1'])
     expect(out[0].tags).toContain('interrompida')
+  })
+})
+
+describe('archiveHandoffOverflow', () => {
+  const handoffs = (): AiMemory[] =>
+    [1, 2, 3, 4, 5, 6, 7].map((n) =>
+      running({
+        id: `handoff:p1:r${n}`,
+        tags: ['handoff', 'terminal', 'completed'],
+        updatedAt: `2026-11-${String(n).padStart(2, '0')}T10:00:00.000Z`
+      })
+    )
+
+  it('archives the two oldest of seven and returns their ids', () => {
+    const archived: { ids: string[]; now: string }[] = []
+    const ids = archiveHandoffOverflow({
+      list: handoffs,
+      archive: (ids, now) => archived.push({ ids, now }),
+      live: () => new Set(),
+      now: () => NOW
+    })
+    expect(ids.sort()).toEqual(['handoff:p1:r1', 'handoff:p1:r2'])
+    expect(archived).toHaveLength(1)
+    expect(archived[0].now).toBe(NOW)
+  })
+
+  it('leaves a live running handoff and a pinned one alone', () => {
+    const list = handoffs()
+    list[0] = { ...list[0], tags: ['handoff', 'terminal', 'em-andamento'] }
+    list[1] = { ...list[1], pinned: true }
+    let called = false
+    const ids = archiveHandoffOverflow({
+      list: () => list,
+      archive: () => {
+        called = true
+      },
+      live: () => new Set(['r1']),
+      now: () => NOW
+    })
+    expect(ids).toEqual([])
+    expect(called).toBe(false)
   })
 })

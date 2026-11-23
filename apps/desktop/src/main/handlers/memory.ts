@@ -1,5 +1,6 @@
 import type { IpcMain } from 'electron'
 import type { MemoryInput } from '../modules/ai/memory'
+import { archiveHandoffOverflow } from '../modules/ai/handoff-state'
 
 interface MemoryHandlerDeps {
   store: Pick<
@@ -27,6 +28,10 @@ interface MemoryHandlerDeps {
     | 'summarizeMemories'
   >
   newId: () => string
+  /** Runs still alive: their running handoff is never archived by the prune pass. */
+  liveRunIds?: () => ReadonlySet<string>
+  /** After a backup import replaced every memory (the running handoffs of live runs are gone). */
+  onReplaced?: () => void
 }
 
 export function registerMemoryHandlers(ipcMain: IpcMain, deps: MemoryHandlerDeps): void {
@@ -36,7 +41,16 @@ export function registerMemoryHandlers(ipcMain: IpcMain, deps: MemoryHandlerDeps
     const now = Date.now()
     const stale = deps.memory.selectStale(deps.store.listMemories({ includeArchived: false }), now)
     deps.store.archiveMemories(stale, new Date(now).toISOString())
-    return stale.length
+    // Past the newest five handoffs of a project the rest are retired too; the
+    // ones just archived above no longer count, so none is counted twice.
+    const archived = new Set(stale)
+    const overflow = archiveHandoffOverflow({
+      list: () => deps.store.listMemories({ includeArchived: false }),
+      archive: (ids, at) => deps.store.archiveMemories(ids, at),
+      live: () => deps.liveRunIds?.() ?? new Set<string>(),
+      now: () => new Date(now).toISOString()
+    }).filter((id) => !archived.has(id))
+    return stale.length + overflow.length
   }
 
   // --- AI memory (durable facts across conversations; kanban.db, outside
@@ -101,9 +115,11 @@ export function registerMemoryHandlers(ipcMain: IpcMain, deps: MemoryHandlerDeps
 
   // Wholesale replace from a backup import (projects are imported first, so FK
   // scoping holds; see replaceMemories).
-  ipcMain.handle('ai:memory:replace', (_, list: unknown) =>
-    deps.store.replaceMemories(Array.isArray(list) ? list : [])
-  )
+  ipcMain.handle('ai:memory:replace', (_, list: unknown) => {
+    const result = deps.store.replaceMemories(Array.isArray(list) ? list : [])
+    deps.onReplaced?.()
+    return result
+  })
 
   ipcMain.handle('ai:memory:touch', (_, ids: string[]) =>
     deps.store.touchMemories(Array.isArray(ids) ? ids : [], new Date().toISOString())
