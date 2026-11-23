@@ -2059,3 +2059,62 @@ describe('updatedAt in memory reads', () => {
     expect(found.memories[0].updatedAt).toBe(UPDATED)
   })
 })
+
+describe('search_memory scope handed to the store', () => {
+  async function searchBroker(grant: Partial<McpSession>): Promise<{
+    asked: (string | null | undefined)[]
+    search: (args: Record<string, unknown>) => Promise<Record<string, unknown>>
+  }> {
+    const asked: (string | null | undefined)[] = []
+    const broker = startSagyouMcpBroker({
+      readTasks: () => [],
+      readFinancial: () => [],
+      readProjectData: () => ({}),
+      searchMemory: (projectId) => {
+        asked.push(projectId)
+        return []
+      },
+      readMemory: () => null,
+      touchMemory: () => {},
+      memoriesForConflict: () => [],
+      saveMemory: async () => ({ ok: false }),
+      createTask: async () => ({ ok: true })
+    })
+    servers.push(broker.server)
+    await new Promise<void>((resolve) => broker.server.once('listening', resolve))
+    broker.grant({
+      token: 'scope-token',
+      runId: 'run-scope',
+      projectId: 'project-1',
+      financialProfileId: 'personal',
+      permissions: MCP_PERMISSIONS,
+      expiresAt: Date.now() + 10_000,
+      ...grant
+    })
+    return {
+      asked,
+      search: (args) =>
+        request(broker.port(), {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/call',
+          params: { token: 'scope-token', name: 'search_memory', arguments: args }
+        })
+    }
+  }
+
+  it('a project session searches its own project unless it names another one', async () => {
+    const { asked, search } = await searchBroker({})
+    await search({ term: 'x' })
+    await search({ term: 'x', projectId: 'project-2' })
+    await search({ term: 'x', projectId: '   ' })
+    expect(asked).toEqual(['project-1', 'project-2', 'project-1'])
+  })
+
+  it('a session with no project (general or external) searches every project', async () => {
+    const { asked, search } = await searchBroker({ projectId: null })
+    await search({ term: 'x' })
+    await search({ term: 'x', projectId: 'project-2' })
+    expect(asked).toEqual([undefined, 'project-2'])
+  })
+})

@@ -10,6 +10,7 @@ import {
   type AiMemory,
   type MemoryType
 } from './modules/ai/memory'
+import { memorySearchWhere } from './modules/ai/memory-scope'
 import {
   interruptRunningHandoffs,
   restoreAsInterrupted,
@@ -3392,21 +3393,9 @@ export function searchMemories(opts: SearchMemoriesOpts): MemorySearchHit[] {
   const db = getDb()
   const limit = Math.max(1, Math.min(Math.floor(opts.limit ?? 8), 30))
   const term = typeof opts.term === 'string' ? opts.term.trim() : ''
-  const where = ['m.archived_at IS NULL']
-  const params: unknown[] = []
-  if (opts.includeArchived) where[0] = '1=1'
   // Explicit global MCP reads may search every project; ordinary chat recall
-  // still uses its project plus global pages.
-  if (!opts.allProjects) {
-    if (opts.projectId) {
-      where.push('(m.project_id=? OR m.project_id IS NULL)')
-      params.push(opts.projectId)
-    } else where.push('m.project_id IS NULL')
-  }
-  if (opts.type) {
-    where.push('m.type=?')
-    params.push(opts.type)
-  }
+  // still uses its project plus global pages (the rule lives in memory-scope.ts).
+  const { where, params } = memorySearchWhere(opts)
 
   if (!term) {
     const rows = db
