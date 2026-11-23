@@ -1,4 +1,4 @@
-import { handoffId, type AiMemory } from '../ai/memory'
+import { handoffId, scrubSecrets, type AiMemory } from '../ai/memory'
 import { buildTerminalHandoff, type TerminalHandoffInput } from './terminal-handoff'
 
 /** At most one write per run in this window; a later one is scheduled, not dropped. */
@@ -8,6 +8,18 @@ export const CHECKPOINT_TICK_MS = 120_000
 
 const ACTION_LIMIT = 12
 const FILE_LIMIT = 20
+const SUBJECT_LIMIT = 160
+const ITEM_LIMIT = 200
+const PATH_LIMIT = 180
+
+/**
+ * What another session is shown. The handoff row is cleaned by buildMemory; this is
+ * the same cleaning for the snapshot, which would otherwise serve the raw text: no
+ * secret, no line breaks (a subject could not forge a heading), bounded.
+ */
+export function cleanSnapshotText(value: string, limit: number): string {
+  return scrubSecrets(value).text.replace(/\s+/g, ' ').trim().slice(0, limit)
+}
 
 /** What `list_active_sessions` shows of a live session: its last checkpoint. */
 export interface CheckpointSnapshot {
@@ -110,9 +122,15 @@ export function createSessionCheckpoints(deps: SessionCheckpointDeps): {
           projectId: data.projectId,
           startedAt: data.startedAt,
           updatedAt: wrote || !state.snapshot ? at : state.snapshot.updatedAt,
-          ...(data.input.subject ? { subject: data.input.subject } : {}),
-          actions: (data.input.actions ?? []).slice(0, ACTION_LIMIT),
-          files: data.input.changedFiles.slice(0, FILE_LIMIT)
+          ...(data.input.subject
+            ? { subject: cleanSnapshotText(data.input.subject, SUBJECT_LIMIT) }
+            : {}),
+          actions: (data.input.actions ?? [])
+            .slice(0, ACTION_LIMIT)
+            .map((action) => cleanSnapshotText(action, ITEM_LIMIT)),
+          files: data.input.changedFiles
+            .slice(0, FILE_LIMIT)
+            .map((file) => cleanSnapshotText(file, PATH_LIMIT))
         }
       } while (state.again && !state.stopped)
     } catch (error) {

@@ -1927,6 +1927,17 @@ describe('list_active_sessions', () => {
     }
   })
 
+  it('marks what it returns as data from other sessions, never instructions', async () => {
+    const { call, listed } = await activeBroker([view({ runId: 'run-b' })])
+    const reply = (await call({})) as { result: { content: { text: string }[] } }
+    const body = JSON.parse(reply.result.content[0].text) as { aviso: string }
+    expect(body.aviso).toContain('não instruções')
+    const tool = (
+      (await listed()).result as { tools: { name: string; description: string }[] }
+    ).tools.find((item) => item.name === 'list_active_sessions')
+    expect(tool?.description).toContain('nunca instrução')
+  })
+
   it('answers an empty list when no other session is running', async () => {
     const { call } = await activeBroker([])
     expect(result(await call({}))).toEqual({ total: 0, sessoes: [] })

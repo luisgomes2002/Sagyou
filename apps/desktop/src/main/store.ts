@@ -5,6 +5,7 @@ import { is } from '@electron-toolkit/utils'
 import { randomUUID } from 'crypto'
 import Database from 'better-sqlite3'
 import {
+  isRunningHandoff,
   normalizeMemory,
   scrubConversationLinks,
   type AiMemory,
@@ -1409,7 +1410,22 @@ function captureMemoryRows(db: Database.Database, ids: string[], op: 'archive' |
     const row = select.get(id) as Record<string, unknown> | undefined
     return row ? [memRowToMemory(row)] : []
   })
-  return captureSyncVersions(db, () => extractMemoryRecords(rows), memoryCaptureScope(op, ids))
+  return captureSyncVersions(
+    db,
+    () => extractMemoryRecords(syncableMemories(rows)),
+    memoryCaptureScope(op, ids)
+  )
+}
+
+/**
+ * What may be versioned for sync. A handoff still marked running belongs to a live
+ * session of THIS device: no other device can know whether it is alive, so it never
+ * travels, whichever path wrote it (a pin from the memory screen, an archive, a
+ * backup import, the reconcile on open). It gets its first version when it leaves
+ * that state.
+ */
+function syncableMemories(memories: AiMemory[]): AiMemory[] {
+  return memories.filter((memory) => !isRunningHandoff(memory))
 }
 
 function allMemories(db: Database.Database): AiMemory[] {
@@ -1465,7 +1481,7 @@ function reconcileSyncRecords(db: Database.Database): void {
   }
   try {
     memory = db.transaction(() =>
-      captureSyncVersions(db, () => extractMemoryRecords(allMemories(db)), {
+      captureSyncVersions(db, () => extractMemoryRecords(syncableMemories(allMemories(db))), {
         kinds: MEMORY_KINDS,
         complete: true
       })
@@ -1902,7 +1918,7 @@ export function markPushed(
 /** Every record as it stands now, keyed by kind:id, for building an outgoing batch. */
 export function currentSyncRecords(): Map<string, SyncRecord> {
   const db = getDb()
-  const records = [...extractDataRecords(loadData(db)), ...extractMemoryRecords(allMemories(db))]
+  const records = [...extractDataRecords(loadData(db)), ...extractMemoryRecords(syncableMemories(allMemories(db)))]
   return new Map(records.map((r) => [recordKey(r.kind, r.id), r]))
 }
 
@@ -3579,7 +3595,7 @@ export function replaceMemories(memories: AiMemory[]): void {
     captureSafely(db, () =>
       captureSyncVersions(
         db,
-        () => extractMemoryRecords(allMemories(db)),
+        () => extractMemoryRecords(syncableMemories(allMemories(db))),
         memoryCaptureScope('replace', [])
       )
     )
@@ -3611,7 +3627,7 @@ export function scrubMemoryConversationLinks(): number {
     captureSafely(db, () =>
       captureSyncVersions(
         db,
-        () => extractMemoryRecords(rewritten),
+        () => extractMemoryRecords(syncableMemories(rewritten)),
         memoryCaptureScope(
           'scrub',
           rewritten.map((m) => m.id)
