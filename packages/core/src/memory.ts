@@ -155,11 +155,71 @@ export function scrubSecrets(text: string): { text: string; redacted: boolean } 
 }
 
 /**
- * Deterministic id for a project's handoff breadcrumb, so each run upserts the
- * one row instead of piling up (one handoff per project; null = global).
+ * Deterministic id of a handoff breadcrumb. With a `runId` it is that session's
+ * own row (`handoff:<project|global>:<run>`), so two terminals of one project
+ * never overwrite each other and a run keeps upserting the same row from its
+ * first checkpoint to its exit. Without one it is the legacy per-project id,
+ * which rows written before sessions had their own handoff still carry.
  */
-export function handoffId(projectId: string | null): string {
-  return `handoff:${projectId ?? 'global'}`
+export function handoffId(projectId: string | null, runId?: string): string {
+  const base = `handoff:${projectId ?? 'global'}`
+  return runId ? `${base}:${runId}` : base
+}
+
+/** The run a per-session handoff id belongs to; null for the legacy id or any other id. */
+export function handoffRunId(id: string): string | null {
+  if (!id.startsWith('handoff:')) return null
+  const rest = id.slice('handoff:'.length)
+  const at = rest.indexOf(':')
+  return at > 0 && at < rest.length - 1 ? rest.slice(at + 1) : null
+}
+
+/** Active handoffs kept per project (and for the global ones); older ones are archived. */
+export const HANDOFF_KEEP = 5
+/** Tag of a handoff whose session is still running (its last checkpoint). */
+export const HANDOFF_RUNNING_TAG = 'em-andamento'
+/** Tag of a handoff whose session ended without a normal exit (app closed, PC off). */
+export const HANDOFF_INTERRUPTED_TAG = 'interrompida'
+
+/** A handoff written while its session was still running. */
+export function isRunningHandoff(m: AiMemory): boolean {
+  return m.type === 'handoff' && !m.archivedAt && m.tags.includes(HANDOFF_RUNNING_TAG)
+}
+
+function timeOf(iso: string): number {
+  const t = Date.parse(iso)
+  return Number.isNaN(t) ? 0 : t
+}
+
+/**
+ * Ids of the handoffs to archive: per project (`null` = global), everything
+ * past the newest `HANDOFF_KEEP` active ones. A pinned handoff and one whose
+ * session is still live never go, though they still take a slot. Ordered by the
+ * real instant, so a date from a backup (`+00:00`, no milliseconds) is not out
+ * of place. Pure: the caller applies the archive.
+ */
+export function selectHandoffOverflow(
+  memories: AiMemory[],
+  liveRunIds: ReadonlySet<string>
+): string[] {
+  const byProject = new Map<string, AiMemory[]>()
+  for (const m of memories) {
+    if (m.type !== 'handoff' || m.archivedAt) continue
+    const key = m.projectId ?? 'global'
+    const bucket = byProject.get(key)
+    if (bucket) bucket.push(m)
+    else byProject.set(key, [m])
+  }
+  const out: string[] = []
+  for (const bucket of byProject.values()) {
+    bucket.sort((a, b) => timeOf(b.updatedAt) - timeOf(a.updatedAt) || a.id.localeCompare(b.id))
+    for (const m of bucket.slice(HANDOFF_KEEP)) {
+      const runId = handoffRunId(m.id)
+      const alive = isRunningHandoff(m) && runId !== null && liveRunIds.has(runId)
+      if (!m.pinned && !alive) out.push(m.id)
+    }
+  }
+  return out
 }
 
 // ── Build / normalise ────────────────────────────────────────────────────────
@@ -452,8 +512,8 @@ export function summarizeMemories(memories: AiMemory[]): MemorySummary {
  * store ("uses number" vs. a later "uses decimal string").
  */
 export function findConflicts(memories: AiMemory[]): MemoryConflict[] {
-  // Handoffs are auto-generated breadcrumbs (one per project, all titled the
-  // same), not durable knowledge — auditing them for contradiction is noise.
+  // Handoffs are auto-generated breadcrumbs (one per terminal session, titled
+  // alike), not durable knowledge — auditing them for contradiction is noise.
   const active = memories.filter((m) => !m.archivedAt && m.type !== 'handoff')
   const byTitle = new Map<string, AiMemory[]>()
   for (const m of active) {
