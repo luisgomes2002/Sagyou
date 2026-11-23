@@ -13,6 +13,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import {
   captureBase,
+  changedPathsSince,
   diffSince,
   realGit,
   lineDiff,
@@ -91,6 +92,27 @@ describe('captureBase', () => {
 
     // Nothing to diff against: HEAD doesn't resolve.
     expect(await captureBase(dir)).toBeNull()
+  })
+})
+
+describe('changedPathsSince', () => {
+  let dir: string
+  beforeEach(async () => {
+    dir = await repo()
+  })
+
+  it('lists tracked and untracked changes, and not what was already untracked', async () => {
+    await write(dir, 'antes.txt', 'ja existia\n')
+    const snap = (await captureBase(dir))!
+    await write(dir, 'a.txt', 'linha um\nlinha dois\nDO AGENTE\n')
+    await write(dir, 'novo.ts', 'export const novo = 1\n')
+    expect((await changedPathsSince(snap)).sort()).toEqual(['a.txt', 'novo.ts'])
+  })
+
+  it('is empty when nothing changed or git fails', async () => {
+    const snap = (await captureBase(dir))!
+    expect(await changedPathsSince(snap)).toEqual([])
+    expect(await changedPathsSince({ ...snap, dir: join(dir, 'nao-existe') })).toEqual([])
   })
 })
 

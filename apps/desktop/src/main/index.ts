@@ -81,6 +81,8 @@ import {
 } from './modules/agent/agent-mcp-session'
 import { buildExternalAgentBrief, scrubExternalBriefSecrets } from './modules/agent/agent-briefing'
 import { buildTerminalHandoff } from './modules/agent/terminal-handoff'
+import { createSessionCheckpoints } from './modules/agent/session-checkpoint'
+import { archiveHandoffOverflow } from './modules/ai/handoff-state'
 import {
   createRunActivity,
   runActivityEntry,
@@ -142,7 +144,13 @@ import { mcpFinancialTables } from './modules/agent/mcp-financial-scope'
 import { dataIpcAllowed, externalRefusal } from './modules/agent/mcp-external-lock'
 import { createExternalCards } from './modules/agent/mcp-external-cards'
 import { configureLog, createLogger, errorMessage, log } from './modules/logs/logger'
-import { captureBase, diffSince, type AgentBase, type DiffLineItem } from './modules/code/code-diff'
+import {
+  captureBase,
+  changedPathsSince,
+  diffSince,
+  type AgentBase,
+  type DiffLineItem
+} from './modules/code/code-diff'
 import { safeAttachmentName } from './modules/files/backup-files'
 import {
   diffFileCount,
@@ -766,10 +774,43 @@ function mcpCardResumo(name: string, args: Record<string, unknown>): string {
 /** Applied MCP writes per run: the handoff's subject, actions and pending tasks. */
 const runActivity = createRunActivity()
 
+/**
+ * Each live terminal session keeps its own running handoff (written locally, never
+ * versioned for sync) so a crash or a power cut still leaves where it was, and
+ * `list_active_sessions` can show it to the other sessions of the project.
+ */
+const sessionCheckpoints = createSessionCheckpoints({
+  now: () => Date.now(),
+  read: async (runId) => {
+    const run = codeRuns.get(runId)
+    if (!run) return null
+    const activity = summarizeRunActivity(runActivity.peek(runId))
+    const files = run.base ? await changedPathsSince(run.base).catch(() => []) : []
+    return {
+      projectId: run.projectId,
+      startedAt: run.startedAt,
+      input: {
+        request: run.task,
+        subject: run.task === BLANK_SESSION_TASK ? activity.subject : run.task,
+        decisions: [...run.decisions, ...activity.decisions],
+        actions: activity.actions,
+        pending: activity.pending,
+        changedFiles: files
+      }
+    }
+  },
+  getMemory: (id) => memoryStore.getMemory(id),
+  write: (memory) => memoryStore.upsertMemoryLocal(memory),
+  onError: (runId, error) => log.warn('pty', 'handoff_checkpoint_failed', { runId, msg: errorMessage(error) })
+})
+
 function recordRunActivity(request: McpWriteRequest, value: unknown): void {
   if (!tracksRunState(request.runId)) return
   const entry = runActivityEntry(request, value, () => mcpCardResumo(request.name, request.args))
-  if (entry) runActivity.record(request.runId, entry)
+  if (entry) {
+    runActivity.record(request.runId, entry)
+    sessionCheckpoints.touch(request.runId)
+  }
 }
 
 /** Routes MCP writes through the exact same approval UI as code-agent actions. */
@@ -1442,9 +1483,17 @@ function persistTerminalHandoff(
           actions: activity.actions,
           pending: activity.pending
         },
-        new Date().toISOString()
+        new Date().toISOString(),
+        memoryStore.getMemory(memoryRules.handoffId(run.projectId, run.id))
       )
     )
+    // The finished session may push an older one past the five a project keeps.
+    archiveHandoffOverflow({
+      list: () => memoryStore.listMemories({ includeArchived: false }),
+      archive: (ids, now) => memoryStore.archiveMemories(ids, now),
+      live: () => new Set(codeRuns.keys()),
+      now: () => new Date().toISOString()
+    })
   } catch {
     /* A continuity note must never turn a completed terminal run into a failure. */
   }
@@ -2287,7 +2336,13 @@ app.whenReady().then(() => {
     getHarnessStatuses(refresh === true)
   )
 
-  registerMemoryHandlers(ipcMain, { store: memoryStore, memory: memoryRules, newId: randomUUID })
+  registerMemoryHandlers(ipcMain, {
+    store: memoryStore,
+    memory: memoryRules,
+    newId: randomUUID,
+    liveRunIds: () => new Set(codeRuns.keys()),
+    onReplaced: () => sessionCheckpoints.resetAll()
+  })
 
   // Entity lineage: query the event log for one entity's history.
   ipcMain.handle('ai:lineage:list', (_, entityType: string, entityId: string) =>
@@ -2790,6 +2845,9 @@ app.whenReady().then(() => {
               '[erro] alterações do worktree não foram aplicadas: ' + run.worktreeMergeError + '\n'
             )
           } finally {
+            // First of all: a checkpoint still in flight must not put "em andamento"
+            // back over the final state written below.
+            sessionCheckpoints.stop(runId)
             await mcpSession.cleanup()
             const secs = ((Date.now() - run.startedAt) / 1000).toFixed(1)
             emit('[' + externalHarness.command + '] duração: ' + secs + 's\n')
@@ -2835,6 +2893,7 @@ app.whenReady().then(() => {
           })
           run.externalChild = terminal
           log.info('pty', 'started', { runId, harness: launch.label })
+          sessionCheckpoints.start(runId)
         } catch (error) {
           log.error('pty', 'start_failed', {
             runId,
