@@ -578,3 +578,83 @@ export function scrubConversationLinks(memories: AiMemory[]): {
   })
   return { memories: scrubbed, changed }
 }
+
+// ── Section edit ─────────────────────────────────────────────────────────────
+
+export type SectionPatchError = 'not-found' | 'ambiguous' | 'heading-in-content' | 'unclosed-fence'
+
+interface MarkdownHeading {
+  line: number
+  level: number
+  text: string
+}
+
+/** Whether the text leaves a fenced code block open at its end (it would swallow what follows). */
+function endsInsideFence(lines: string[]): boolean {
+  let fence: string | null = null
+  for (const raw of lines) {
+    const trimmed = raw.trim()
+    const mark = trimmed.startsWith('```') ? '```' : trimmed.startsWith('~~~') ? '~~~' : null
+    if (mark) fence = fence === null ? mark : fence === mark ? null : fence
+  }
+  return fence !== null
+}
+
+/** Markdown headings (`#`–`######`) outside fenced code blocks. A closing run of `#` needs a space before it. */
+function markdownHeadings(lines: string[]): MarkdownHeading[] {
+  const out: MarkdownHeading[] = []
+  let fence: string | null = null
+  lines.forEach((raw, line) => {
+    const trimmed = raw.trim()
+    const mark = trimmed.startsWith('```') ? '```' : trimmed.startsWith('~~~') ? '~~~' : null
+    if (mark) {
+      fence = fence === null ? mark : fence === mark ? null : fence
+      return
+    }
+    if (fence !== null) return
+    const match = /^(#{1,6})\s+(.*?)(?:\s+#+)?\s*$/.exec(raw)
+    if (match) out.push({ line, level: match[1].length, text: match[2] })
+  })
+  return out
+}
+
+/**
+ * Replaces the content of one section of a memory body, found by its heading.
+ * A section runs from its heading to the next heading of the same or a higher
+ * level (deeper subsections belong to it) or the end. The heading stays; the
+ * blank lines that closed the old section are kept; everything outside the section
+ * is untouched, apart from `\r\n` becoming `\n`. The new content may not carry a
+ * heading of the section's level or higher (it would split or duplicate sections),
+ * nor leave a code fence open (it would swallow the sections after it).
+ */
+export function replaceMemorySection(
+  body: string,
+  section: string,
+  content: string
+): { body: string } | { error: SectionPatchError } {
+  const key = titleKey(section.replace(/^#+\s*/, ''))
+  const lines = body.replace(/\r\n/g, '\n').split('\n')
+  const headings = markdownHeadings(lines)
+  const found = key ? headings.filter((heading) => titleKey(heading.text) === key) : []
+  if (found.length === 0) return { error: 'not-found' }
+  if (found.length > 1) return { error: 'ambiguous' }
+  const heading = found[0]
+  const next = headings.find((other) => other.line > heading.line && other.level <= heading.level)
+  const end = next ? next.line : lines.length
+
+  const newText = content.replace(/\r\n/g, '\n').trim()
+  const newLines = newText ? newText.split('\n') : []
+  if (endsInsideFence(newLines)) return { error: 'unclosed-fence' }
+  if (markdownHeadings(newLines).some((other) => other.level <= heading.level))
+    return { error: 'heading-in-content' }
+
+  const region = lines.slice(heading.line + 1, end)
+  let last = region.length - 1
+  while (last >= 0 && region[last].trim() === '') last--
+  const trailing = region.slice(last + 1)
+  return {
+    body: [...lines.slice(0, heading.line + 1), ...newLines, ...trailing, ...lines.slice(end)].join(
+      '\n'
+    )
+  }
+}

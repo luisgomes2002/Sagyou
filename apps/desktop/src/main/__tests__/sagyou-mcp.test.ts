@@ -6,6 +6,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { spawn } from 'child_process'
 import {
+  MCP_LOCKED_MESSAGE,
   MCP_PERMISSIONS,
   MCP_STDIO_BRIDGE_SOURCE,
   startSagyouMcpBroker,
@@ -16,6 +17,7 @@ import type { AiMemory } from '../modules/ai/memory'
 import type { McpActionResult } from '../modules/agent/mcp-write-types'
 import type { MemorySearchHit } from '../store'
 import type { ActiveSessionView } from '../modules/agent/sagyou-mcp'
+import type { ProjectReadDecision } from '../modules/agent/mcp-project-read'
 
 const memoryHit = (over: Record<string, unknown> = {}): MemorySearchHit =>
   ({
@@ -740,6 +742,7 @@ describe('Sagyou MCP broker', () => {
     )
     let flushes = 0
     const broker = startSagyouMcpBroker({
+      approveProjectRead: async () => 'approved',
       readTasks: () => [],
       readFinancial: () => [],
       readProjectData: () => ({}),
@@ -911,6 +914,7 @@ describe('Sagyou MCP broker', () => {
   it('searches ranked project and global memories without exposing their bodies', async () => {
     let received: { projectId: string | null | undefined; term: string } | null = null
     const broker = startSagyouMcpBroker({
+      approveProjectRead: async () => 'approved',
       readTasks: () => [],
       readFinancial: () => [],
       readProjectData: () => ({}),
@@ -1041,6 +1045,7 @@ describe('Sagyou MCP broker', () => {
       ['archived', archived]
     ])
     const broker = startSagyouMcpBroker({
+      approveProjectRead: async () => 'approved',
       readTasks: () => [],
       readFinancial: () => [],
       readProjectData: () => ({}),
@@ -1674,6 +1679,7 @@ describe('list_recent_memories', () => {
   }> {
     const touchMemory = vi.fn()
     const broker = startSagyouMcpBroker({
+      approveProjectRead: async () => 'approved',
       readTasks: () => [],
       readFinancial: () => [],
       readProjectData: () => ({}),
@@ -1843,6 +1849,7 @@ describe('list_active_sessions', () => {
     const asked: { projectId?: string; excludeRunId: string }[] = []
     const touchMemory = vi.fn()
     const broker = startSagyouMcpBroker({
+      approveProjectRead: async () => 'approved',
       readTasks: () => [],
       readFinancial: () => [],
       readProjectData: () => ({}),
@@ -2067,6 +2074,7 @@ describe('search_memory scope handed to the store', () => {
   }> {
     const asked: (string | null | undefined)[] = []
     const broker = startSagyouMcpBroker({
+      approveProjectRead: async () => 'approved',
       readTasks: () => [],
       readFinancial: () => [],
       readProjectData: () => ({}),
@@ -2116,5 +2124,340 @@ describe('search_memory scope handed to the store', () => {
     await search({ term: 'x' })
     await search({ term: 'x', projectId: 'project-2' })
     expect(asked).toEqual([undefined, 'project-2'])
+  })
+})
+
+describe('reading another project needs an approval', () => {
+  const REFUSED =
+    'Leitura de outro projeto não aprovada. Não insista: só leia outro projeto se o usuário pedir.'
+  const stored = (over: Partial<AiMemory>): AiMemory => ({
+    id: 'm',
+    projectId: 'project-1',
+    type: 'fato',
+    title: 'título',
+    body: 'corpo',
+    tags: [],
+    pinned: false,
+    source: 'modelo',
+    sourceConversationId: null,
+    createdAt: '2026-10-01T12:00:00.000Z',
+    updatedAt: '2026-10-01T12:00:00.000Z',
+    lastAccessedAt: '2026-10-01T12:00:00.000Z',
+    accessCount: 0,
+    archivedAt: null,
+    ...over
+  })
+  const own = stored({ id: 'own-1', title: 'TITULO-DO-PROJETO-1' })
+  const other = stored({ id: 'other-1', projectId: 'project-2', title: 'SEGREDO-DO-PROJETO-2' })
+  const global = stored({ id: 'global-1', projectId: null, title: 'TITULO-GLOBAL' })
+  const archivedOther = stored({
+    id: 'archived-2',
+    projectId: 'project-2',
+    title: 'ARQUIVADA-DO-2',
+    archivedAt: '2026-10-02T00:00:00.000Z'
+  })
+  const orphan = stored({ id: 'orphan-1', projectId: 'project-gone', title: 'ORFA' })
+  const corpus = [own, other, global, archivedOther, orphan]
+
+  interface Harness {
+    asked: { runId: string; projectId: string }[]
+    touched: string[]
+    call: (
+      name: string,
+      args: Record<string, unknown>,
+      token?: string
+    ) => Promise<Record<string, unknown>>
+    grant: (over: Partial<McpSession>) => void
+    revoke: (token: string) => void
+  }
+
+  async function gated(
+    options: {
+      decide?: (projectId: string) => Promise<ProjectReadDecision> | ProjectReadDecision
+      withDep?: boolean
+      session?: Partial<McpSession>
+      locked?: { value: boolean }
+    } = {}
+  ): Promise<Harness> {
+    const asked: { runId: string; projectId: string }[] = []
+    const touched: string[] = []
+    const decide = options.decide ?? (() => 'approved' as const)
+    const broker = startSagyouMcpBroker({
+      readTasks: () => [],
+      readFinancial: () => [],
+      readProjectData: () => ({}),
+      searchMemory: (projectId) =>
+        corpus
+          .filter(
+            (m) =>
+              !m.archivedAt &&
+              (projectId === undefined || m.projectId === projectId || m.projectId === null)
+          )
+          .map((memory) => ({ memory, snippet: memory.body }) as unknown as MemorySearchHit),
+      readMemory: (id) => corpus.find((m) => m.id === id) ?? null,
+      listMemoriesForRecent: () => corpus,
+      touchMemory: (id) => touched.push(id),
+      memoriesForConflict: () => [],
+      saveMemory: async () => ({ ok: false }),
+      createTask: async () => ({ ok: true }),
+      ...(options.locked ? { isLocked: () => options.locked?.value === true } : {}),
+      activeSessions: () => [
+        {
+          runId: 'run-b',
+          projectId: 'project-2',
+          iniciadaEm: '2026-11-23T10:00:00.000Z',
+          ultimoRegistroEm: '2026-11-23T10:20:00.000Z',
+          assunto: 'SESSAO-DO-PROJETO-2',
+          acoes: [],
+          arquivos: []
+        }
+      ],
+      ...(options.withDep === false
+        ? {}
+        : {
+            approveProjectRead: async (session, projectId) => {
+              asked.push({ runId: session.runId, projectId })
+              return decide(projectId)
+            }
+          })
+    })
+    servers.push(broker.server)
+    await new Promise<void>((resolve) => broker.server.once('listening', resolve))
+    const grant = (over: Partial<McpSession>): void =>
+      broker.grant({
+        token: 'gate-token',
+        runId: 'run-self',
+        projectId: 'project-1',
+        financialProfileId: 'personal',
+        permissions: MCP_PERMISSIONS,
+        expiresAt: Date.now() + 10_000,
+        ...over
+      })
+    grant(options.session ?? {})
+    let id = 0
+    return {
+      asked,
+      touched,
+      grant,
+      revoke: (token) => broker.revoke(token),
+      call: (name, args, token = 'gate-token') =>
+        request(broker.port(), {
+          jsonrpc: '2.0',
+          id: ++id,
+          method: 'tools/call',
+          params: { token, name, arguments: args }
+        })
+    }
+  }
+
+  const message = (reply: Record<string, unknown>): string | undefined =>
+    (reply.error as { message?: string } | undefined)?.message
+  const text = (reply: Record<string, unknown>): string =>
+    (reply.result as { content: { text: string }[] } | undefined)?.content[0].text ?? ''
+
+  it('the session project and the globals never ask', async () => {
+    const { call, asked } = await gated()
+    await call('search_memory', { term: 'x' })
+    await call('search_memory', { term: 'x', projectId: 'project-1' })
+    await call('list_recent_memories', {})
+    await call('list_recent_memories', { projectId: 'project-1' })
+    await call('check_memories', {})
+    await call('list_active_sessions', {})
+    await call('read_memory', { id: 'own-1' })
+    await call('read_memory', { id: 'global-1' })
+    expect(asked).toEqual([])
+  })
+
+  it('another project asks once, then reads without asking again for that session', async () => {
+    const { call, asked } = await gated()
+    const first = await call('search_memory', { term: 'x', projectId: 'project-2' })
+    expect(text(first)).toContain('SEGREDO-DO-PROJETO-2')
+    expect(asked).toEqual([{ runId: 'run-self', projectId: 'project-2' }])
+    await call('search_memory', { term: 'x', projectId: 'project-2' })
+    await call('list_recent_memories', { projectId: 'project-2' })
+    await call('read_memory', { id: 'other-1' })
+    expect(asked).toHaveLength(1)
+  })
+
+  it('every covered tool is refused with nothing of the other project when not approved', async () => {
+    const { call, asked, touched } = await gated({ decide: () => 'refused' })
+    const replies = [
+      await call('search_memory', { term: 'x', projectId: 'project-2' }),
+      await call('list_recent_memories', { projectId: 'project-2' }),
+      await call('check_memories', { projectId: 'project-2' }),
+      await call('list_active_sessions', { projectId: 'project-2' }),
+      await call('read_memory', { id: 'other-1' })
+    ]
+    for (const reply of replies) {
+      expect(message(reply)).toBe(REFUSED)
+      expect(JSON.stringify(reply)).not.toMatch(/SEGREDO-DO-PROJETO-2|SESSAO-DO-PROJETO-2|other-1/)
+    }
+    expect(touched).toEqual([])
+    // a refusal is never remembered: the next call asks again
+    expect(asked).toHaveLength(5)
+    await call('search_memory', { term: 'x', projectId: 'project-2' })
+    expect(asked).toHaveLength(6)
+  })
+
+  it('an unknown project answers Projeto não encontrado; an orphan memory looks unavailable', async () => {
+    const { call } = await gated({ decide: () => 'not-found' })
+    expect(message(await call('search_memory', { term: 'x', projectId: 'project-gone' }))).toBe(
+      'Projeto não encontrado.'
+    )
+    expect(message(await call('read_memory', { id: 'orphan-1' }))).toBe(
+      'Memória indisponível nesta sessão MCP.'
+    )
+  })
+
+  it('read_memory of another project reveals nothing before approval; missing and archived never ask', async () => {
+    const { call, asked } = await gated({ decide: () => 'refused' })
+    const reply = await call('read_memory', { id: 'other-1' })
+    expect(message(reply)).toBe(REFUSED)
+    expect(JSON.stringify(reply)).not.toContain('SEGREDO')
+    expect(asked).toEqual([{ runId: 'run-self', projectId: 'project-2' }])
+    for (const id of ['missing', 'archived-2']) {
+      expect(message(await call('read_memory', { id }))).toBe(
+        'Memória indisponível nesta sessão MCP.'
+      )
+    }
+    expect(asked).toHaveLength(1)
+  })
+
+  it('two calls at once for the same project share one question', async () => {
+    let answer: (decision: ProjectReadDecision) => void = () => {}
+    const { call, asked } = await gated({
+      decide: () => new Promise((resolve) => (answer = resolve))
+    })
+    const first = call('search_memory', { term: 'x', projectId: 'project-2' })
+    const second = call('list_recent_memories', { projectId: 'project-2' })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    answer('approved')
+    expect(text(await first)).toContain('SEGREDO-DO-PROJETO-2')
+    expect(text(await second)).toContain('SEGREDO-DO-PROJETO-2')
+    expect(asked).toHaveLength(1)
+  })
+
+  it('approved, but the app got locked while the card was open: the read is refused as locked', async () => {
+    let answer: (decision: ProjectReadDecision) => void = () => {}
+    const locked = { value: false }
+    const { call } = await gated({
+      locked,
+      decide: () => new Promise((resolve) => (answer = resolve))
+    })
+    const pending = call('search_memory', { term: 'x', projectId: 'project-2' })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    locked.value = true
+    answer('approved')
+    const reply = await pending
+    expect(message(reply)).toBe(MCP_LOCKED_MESSAGE)
+    expect(JSON.stringify(reply)).not.toContain('SEGREDO')
+  })
+
+  it('approved after the session was revoked: refused, with no data', async () => {
+    let answer: (decision: ProjectReadDecision) => void = () => {}
+    const { call, revoke, asked } = await gated({
+      decide: () => new Promise((resolve) => (answer = resolve))
+    })
+    const pending = call('read_memory', { id: 'other-1' })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    revoke('gate-token')
+    answer('approved')
+    const reply = await pending
+    expect(message(reply)).toBe(REFUSED)
+    expect(JSON.stringify(reply)).not.toContain('SEGREDO')
+    expect(asked).toHaveLength(1)
+  })
+
+  it('a call that its own arguments refuse asks the user for nothing', async () => {
+    const { call, asked } = await gated()
+    expect(message(await call('search_memory', { projectId: 'project-2' }))).toBeTruthy()
+    expect(
+      message(await call('search_memory', { term: '  ', projectId: 'project-2' }))
+    ).toBeTruthy()
+    expect(
+      message(await call('list_recent_memories', { projectId: 'project-2', limit: 999 }))
+    ).toBeTruthy()
+    expect(asked).toEqual([])
+  })
+
+  it('fails closed when the dep is missing or throws', async () => {
+    const missing = await gated({ withDep: false })
+    expect(
+      message(await missing.call('search_memory', { term: 'x', projectId: 'project-2' }))
+    ).toBe(REFUSED)
+    const throwing = await gated({
+      decide: () => {
+        throw new Error('boom')
+      }
+    })
+    const reply = await throwing.call('read_memory', { id: 'other-1' })
+    expect(message(reply)).toBe(REFUSED)
+    expect(JSON.stringify(reply)).not.toContain('SEGREDO')
+  })
+
+  it('a session with no project and the external token read every project without asking', async () => {
+    const general = await gated({ session: { projectId: null } })
+    expect(
+      text(await general.call('search_memory', { term: 'x', projectId: 'project-2' }))
+    ).toContain('SEGREDO-DO-PROJETO-2')
+    expect(text(await general.call('read_memory', { id: 'other-1' }))).toContain('other-1')
+    expect(general.asked).toEqual([])
+    const external = await gated({ session: { projectId: null, runId: 'external' } })
+    await external.call('list_recent_memories', { projectId: 'project-2' })
+    expect(external.asked).toEqual([])
+  })
+
+  it('an approval belongs to its session: another token, or the same one after revoke, asks again', async () => {
+    const { call, asked, grant, revoke } = await gated()
+    await call('search_memory', { term: 'x', projectId: 'project-2' })
+    expect(asked).toHaveLength(1)
+    grant({ token: 'second-token', runId: 'run-second' })
+    await call('search_memory', { term: 'x', projectId: 'project-2' }, 'second-token')
+    expect(asked).toHaveLength(2)
+    revoke('gate-token')
+    grant({})
+    await call('search_memory', { term: 'x', projectId: 'project-2' })
+    expect(asked).toHaveLength(3)
+  })
+
+  it('says in every covered tool that another project needs the user approval', async () => {
+    const broker = startSagyouMcpBroker({
+      readTasks: () => [],
+      readFinancial: () => [],
+      readProjectData: () => ({}),
+      searchMemory: () => [],
+      readMemory: () => null,
+      touchMemory: () => {},
+      memoriesForConflict: () => [],
+      saveMemory: async () => ({ ok: false }),
+      createTask: async () => ({ ok: true })
+    })
+    servers.push(broker.server)
+    await new Promise<void>((resolve) => broker.server.once('listening', resolve))
+    broker.grant({
+      token: 'hint-token',
+      runId: 'run-hint',
+      projectId: 'project-1',
+      financialProfileId: 'personal',
+      permissions: MCP_PERMISSIONS,
+      expiresAt: Date.now() + 10_000
+    })
+    const listed = await request(broker.port(), {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/list',
+      params: { token: 'hint-token' }
+    })
+    const tools = (listed.result as { tools: { name: string; description: string }[] }).tools
+    for (const name of [
+      'search_memory',
+      'list_recent_memories',
+      'check_memories',
+      'read_memory',
+      'list_active_sessions'
+    ])
+      expect(tools.find((tool) => tool.name === name)?.description).toContain(
+        'outro projeto exige a aprovação do usuário'
+      )
   })
 })

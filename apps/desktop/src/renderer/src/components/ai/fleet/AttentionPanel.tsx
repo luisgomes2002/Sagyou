@@ -64,7 +64,9 @@ export function AttentionPanel({
                     <p className="text-xs text-[#d4d4d4]">{approval.resumo}</p>
                     {approval.name.startsWith('mcp:') && (
                       <p className="mt-0.5 text-[10px] text-[#8a8a92]">
-                        Escrita solicitada pelo MCP desta sessão.
+                        {approval.name === 'mcp:read_other_project_memory'
+                          ? 'Leitura solicitada pelo MCP desta sessão.'
+                          : 'Escrita solicitada pelo MCP desta sessão.'}
                       </p>
                     )}
                     {approval.irreversivel && (

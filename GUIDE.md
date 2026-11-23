@@ -469,6 +469,16 @@ compatibilidade nem faça fallback silencioso para outro CLI.
   leituras aceitam `projectId`). Sem ele, sessões de projeto usam o projeto
   inicial e sessões gerais consultam todos. Financeiro permanece no perfil
   capturado. `criar_task` aceita outro projeto existente, sempre com aprovação.
+  ⚠️ **Exceção: memória.** Uma sessão de projeto lê só as memórias do próprio
+  projeto e as globais; `search_memory`, `list_recent_memories`,
+  `check_memories`, `read_memory` (pelo projeto dono da memória) e
+  `list_active_sessions` com outro projeto abrem um **cartão**
+  (`Ler memórias do projeto "X"?`, `mcp:read_other_project_memory`, `risky`: o modo
+  automático nunca o aprova). Aprovado vale por sessão (token, em memória do broker,
+  apagado no `revoke`); recusa, expiração, app bloqueado e erro **não** são lembrados
+  e a leitura falha fechada (`ProjectReadGrants`, `mcp-project-read.ts`). Sessão
+  geral e acesso externo (`projectId` nulo) leem todos sem cartão. Memória órfã
+  (projeto apagado) parece `Memória indisponível`.
 - **Handoff de terminal é um breadcrumb, não log, e é por sessão.** Cada run tem a
   própria memória `handoff:<projeto>:<run>` (o id `handoff:<projeto>` é o legado e
   continua válido): nasce `[em andamento]` quando o PTY sobe, é regravada a cada
@@ -483,7 +493,9 @@ compatibilidade nem faça fallback silencioso para outro CLI.
   viva. `list_active_sessions` mostra as outras sessões vivas (assunto, ações e
   arquivos do último checkpoint) e o briefing com pedido inicial lista até 3.
   `update_memory` aceita `expectedUpdatedAt` (o `updatedAt` de `read_memory`) e
-  recusa a edição se a memória mudou. Quando há fonte, entram também o assunto (o pedido, ou a primeira
+  recusa a edição se a memória mudou; com `section` (título Markdown, sem `#`)
+  troca só o conteúdo daquela seção (`replaceMemorySection` no core) e exige
+  `expectedUpdatedAt`. Quando há fonte, entram também o assunto (o pedido, ou a primeira
   escrita MCP aplicada), as decisões passadas pelo chat e as memórias `decisao`
   salvas na run, as ações aplicadas pelo MCP e as tasks com cronômetro iniciado e
   não concluídas. Nada vem do log do PTY nem de diff não aplicado; sem fonte, o

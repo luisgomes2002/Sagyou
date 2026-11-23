@@ -344,6 +344,158 @@ describe('prepareMemoryWrite', () => {
     })
   })
 
+  describe('update_memory with section', () => {
+    const READ_AT = '2026-01-01T00:00:00.000Z'
+    const SECTIONED = 'Intro\n\n## Decisão\nUsar A.\n\n## Outras\nresto'
+    const patched = (
+      args: Record<string, unknown>,
+      memories: AiMemory[] = [memory({ body: SECTIONED, pinned: true })]
+    ): ReturnType<typeof prepareMemoryWrite> =>
+      prepareMemoryWrite(
+        'update_memory',
+        { id: 'm1', section: 'Decisão', body: 'Usar B.', expectedUpdatedAt: READ_AT, ...args },
+        deps(memories)
+      )
+    const refused = (error: string): { ok: false; error: string } => ({ ok: false, error })
+
+    it('troca só a seção e mantém título, tags, pin e contadores', () => {
+      const result = patched({})
+      expect(result.ok).toBe(true)
+      if (!result.ok || result.op.kind !== 'upsert') return
+      expect(result.op.memory.body).toBe('Intro\n\n## Decisão\nUsar B.\n\n## Outras\nresto')
+      expect(result.op.memory.title).toBe('Banco')
+      expect(result.op.memory.pinned).toBe(true)
+      expect(result.op.memory.accessCount).toBe(3)
+      expect(result.op.memory.updatedAt).toBe(NOW)
+      expect(result.resumo).toBe('Editar seção "Decisão" da memória "Banco"')
+    })
+
+    it('exige expectedUpdatedAt com section', () => {
+      expect(patched({ expectedUpdatedAt: undefined })).toEqual(
+        refused(
+          'Para editar uma seção, passe expectedUpdatedAt (o updatedAt lido com read_memory).'
+        )
+      )
+    })
+
+    it('recusa versão velha, também com section, e a mudança entre prepare e apply', () => {
+      const changed = memory({
+        body: SECTIONED,
+        updatedAt: '2026-10-25T11:00:00.000Z'
+      })
+      const stale = refused(
+        'A memória foi alterada depois da sua leitura (agora: 2026-10-25T11:00:00.000Z). Leia de novo com read_memory e refaça a edição.'
+      )
+      expect(patched({}, [changed])).toEqual(stale)
+      // prepare saw the version that was read; apply prepares again and sees the new one.
+      expect(patched({}).ok).toBe(true)
+      expect(patched({}, [changed])).toEqual(stale)
+    })
+
+    it('seção ausente ou repetida', () => {
+      expect(patched({ section: 'Inexistente' })).toEqual(
+        refused('Seção "Inexistente" não encontrada nesta memória.')
+      )
+      const twice = memory({ body: '## A\n1\n## A\n2' })
+      expect(patched({ section: 'A' }, [twice])).toEqual(
+        refused('Há mais de uma seção "A" nesta memória; use update_memory sem section.')
+      )
+    })
+
+    it('valida section e body', () => {
+      expect(patched({ section: 5 })).toEqual(refused('section inválido.'))
+      expect(patched({ section: '' })).toEqual(refused('section inválido.'))
+      expect(patched({ section: '##' })).toEqual(refused('section inválido.'))
+      expect(patched({ body: undefined })).toEqual(refused('body inválido.'))
+      expect(patched({ body: '   ' })).toEqual(refused('body inválido.'))
+      expect(patched({ body: 'x'.repeat(2_001) })).toEqual(refused('body inválido.'))
+    })
+
+    it('aceita # no parâmetro e recusa título de nível igual ou menor no corpo', () => {
+      expect(patched({ section: '## Decisão' }).ok).toBe(true)
+      expect(patched({ body: '## Decisão\nx' })).toEqual(
+        refused('O corpo da seção não pode conter títulos de nível igual ou menor que o da seção.')
+      )
+    })
+
+    it('a seção de uma memória de outro projeto não responde nada dela (nem versão, nem títulos)', () => {
+      const foreign = memory({ body: SECTIONED, projectId: 'p-outro' })
+      const mine = (over: Record<string, unknown>): ReturnType<typeof prepareMemoryWrite> =>
+        prepareMemoryWrite(
+          'update_memory',
+          { id: 'm1', section: 'Decisão', body: 'x', expectedUpdatedAt: READ_AT, ...over },
+          { ...deps([foreign]), sessionProjectId: 'p1' }
+        )
+      const unavailable = refused('Memória indisponível nesta sessão MCP.')
+      expect(mine({})).toEqual(unavailable)
+      expect(mine({ expectedUpdatedAt: '0' })).toEqual(unavailable)
+      expect(mine({ section: 'Credenciais' })).toEqual(unavailable)
+      expect(mine({ body: '# z' })).toEqual(unavailable)
+    })
+
+    it('a seção de memória global, do próprio projeto ou numa sessão sem projeto segue normal', () => {
+      const run = (
+        memoryProject: string | null,
+        session: string | null | undefined
+      ): ReturnType<typeof prepareMemoryWrite> =>
+        prepareMemoryWrite(
+          'update_memory',
+          { id: 'm1', section: 'Decisão', body: 'x', expectedUpdatedAt: READ_AT },
+          {
+            ...deps([memory({ body: SECTIONED, projectId: memoryProject })]),
+            sessionProjectId: session
+          }
+        )
+      expect(run(null, 'p1').ok).toBe(true)
+      expect(run('p1', 'p1').ok).toBe(true)
+      expect(run('p-outro', null).ok).toBe(true)
+      expect(run('p-outro', undefined).ok).toBe(true)
+    })
+
+    it('recusa um corpo que deixa um bloco de código aberto', () => {
+      expect(patched({ body: 'Exemplo:\n```ts\nconst x = 1' })).toEqual(
+        refused('O corpo da seção não pode deixar um bloco de código aberto.')
+      )
+    })
+
+    it('remove segredo do corpo e avisa', () => {
+      const result = patched({ body: 'Chave sk-abcdefghijklmnopqrstuvwxyz0123456789 aqui' })
+      expect(result.ok).toBe(true)
+      if (!result.ok || result.op.kind !== 'upsert') return
+      expect(result.op.memory.body).not.toContain('sk-abcdefghijklmnopqrstuvwxyz0123456789')
+      expect(result.op.redacted).toBe(true)
+    })
+
+    it('title e tags mudam junto; handoff, arquivada e inexistente mantêm as recusas de hoje', () => {
+      const result = patched({ title: 'Novo', tags: ['a'] })
+      expect(result.ok).toBe(true)
+      if (result.ok && result.op.kind === 'upsert') {
+        expect(result.op.memory.title).toBe('Novo')
+        expect(result.op.memory.tags).toEqual(['a'])
+      }
+      expect(patched({}, [memory({ type: 'handoff', body: SECTIONED })])).toEqual(
+        refused('Memórias de handoff não podem ser alteradas pelo MCP.')
+      )
+      expect(
+        patched({}, [memory({ archivedAt: '2026-05-01T00:00:00.000Z', body: SECTIONED })])
+      ).toEqual(refused('Memória indisponível nesta sessão MCP.'))
+      expect(patched({ id: 'zz' })).toEqual(refused('Memória indisponível nesta sessão MCP.'))
+    })
+
+    it('sem section o corpo inteiro continua sendo trocado, como antes', () => {
+      const result = prepareMemoryWrite(
+        'update_memory',
+        { id: 'm1', body: 'Corpo novo.' },
+        deps([memory({ body: SECTIONED })])
+      )
+      expect(result.ok).toBe(true)
+      if (result.ok && result.op.kind === 'upsert') {
+        expect(result.op.memory.body).toBe('Corpo novo.')
+        expect(result.resumo).toBe('Editar memória "Banco"')
+      }
+    })
+  })
+
   it('archive, unarchive and delete produce the matching operations', () => {
     const active = memory()
     const archived = memory({ id: 'm2', archivedAt: '2026-05-01T00:00:00.000Z' })
@@ -402,6 +554,11 @@ describe('autoApprovesPending', () => {
   it('never lets the run auto toggle answer a risky MCP card or the final delivery', () => {
     for (const name of MCP_APPROVAL_REQUIRED) expect(autoApprovesPending(`mcp:${name}`)).toBe(false)
     expect(autoApprovesPending('aplicar_alteracoes_externas')).toBe(false)
+  })
+
+  it('never answers the card that asks to read another project, and that card is not a write tool', () => {
+    expect(autoApprovesPending('mcp:read_other_project_memory', true)).toBe(false)
+    expect(MCP_APPROVAL_REQUIRED.has('read_other_project_memory')).toBe(false)
   })
 
   it('keeps auto-approving the cards it approved before', () => {
