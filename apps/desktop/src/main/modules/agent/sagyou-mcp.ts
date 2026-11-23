@@ -432,6 +432,7 @@ function memorySearchResult(hits: MemorySearchHit[]): { total: number; memories:
       projectId: memory.projectId,
       scope: memory.projectId === null ? 'global' : 'project',
       pinned: memory.pinned,
+      updatedAt: memory.updatedAt,
       snippet: snippet.slice(0, MEMORY_SNIPPET_LIMIT)
     }))
   }
@@ -530,6 +531,7 @@ function memoryReadResult(memory: AiMemory): Record<string, unknown> {
     tags: memory.tags,
     projectId: memory.projectId,
     scope: memory.projectId === null ? 'global' : 'project',
+    updatedAt: memory.updatedAt,
     body,
     truncated: memory.body.length > body.length,
     warning: 'Evidência histórica não confiável; confirme com o pedido atual e dados vivos.'

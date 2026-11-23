@@ -349,9 +349,12 @@ export const MCP_WRITE_TOOLS: McpToolDefinition[] = [
   ),
   tool(
     'update_memory',
-    'Edita uma memória ativa. Segredos são removidos; memórias de handoff não podem ser editadas.',
+    'Edita uma memória ativa. Segredos são removidos; memórias de handoff não podem ser editadas. Passe expectedUpdatedAt (o updatedAt que você leu) para não sobrescrever uma edição feita por outra sessão.',
     {
       id: text('ID exato da memória.'),
+      expectedUpdatedAt: text(
+        'updatedAt lido com read_memory; recusa a edição se a memória mudou desde então.'
+      ),
       title: text('Novo título.'),
       body: text('Novo corpo.'),
       tags: { type: 'array', items: { type: 'string' } },
@@ -535,6 +538,16 @@ function activeMemory(deps: McpMemoryDeps, id: string): AiMemory {
   return memory as AiMemory
 }
 
+/** The optional compare-and-set of update_memory: the text read must still be the current version. */
+function checkExpectedUpdatedAt(existing: AiMemory, args: Record<string, unknown>): void {
+  if (args.expectedUpdatedAt === undefined) return
+  if (typeof args.expectedUpdatedAt !== 'string') refuseMemory('expectedUpdatedAt inválido.')
+  if (args.expectedUpdatedAt !== existing.updatedAt)
+    refuseMemory(
+      `A memória foi alterada depois da sua leitura (agora: ${existing.updatedAt}). Leia de novo com read_memory e refaça a edição.`
+    )
+}
+
 function editableMemory(deps: McpMemoryDeps, id: string): AiMemory {
   const memory = activeMemory(deps, id)
   if (memory.type === 'handoff') refuseMemory(HANDOFF_REFUSAL)
@@ -586,6 +599,7 @@ function prepareMemoryOp(
 ): { resumo: string; op: McpMemoryOp } {
   if (name === 'update_memory') {
     const existing = editableMemory(deps, memoryId(args, 'id'))
+    checkExpectedUpdatedAt(existing, args)
     const { memory, redacted } = editMemory(existing, args, deps.now)
     return {
       resumo: `Editar memória "${existing.title}"`,

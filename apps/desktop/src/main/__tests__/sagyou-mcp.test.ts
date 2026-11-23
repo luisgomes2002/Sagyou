@@ -1988,3 +1988,63 @@ describe('list_active_sessions', () => {
     expect(JSON.stringify(await call({}))).toContain('bloqueado')
   })
 })
+
+describe('updatedAt in memory reads', () => {
+  const UPDATED = '2026-11-20T09:30:00.000Z'
+
+  it('read_memory and search_memory return the version to pass as expectedUpdatedAt', async () => {
+    const stored = {
+      id: 'memory-1',
+      projectId: 'project-1',
+      type: 'decisao',
+      title: 'Banco',
+      body: 'Usar SQLite.',
+      tags: [],
+      pinned: false,
+      source: 'modelo',
+      sourceConversationId: null,
+      createdAt: '2026-11-01T00:00:00.000Z',
+      updatedAt: UPDATED,
+      lastAccessedAt: UPDATED,
+      accessCount: 0,
+      archivedAt: null
+    } as AiMemory
+    const broker = startSagyouMcpBroker({
+      readTasks: () => [],
+      readFinancial: () => [],
+      readProjectData: () => ({}),
+      searchMemory: () => [{ memory: stored, snippet: 'Usar SQLite.' } as MemorySearchHit],
+      readMemory: () => stored,
+      touchMemory: () => {},
+      memoriesForConflict: () => [],
+      saveMemory: async () => ({ ok: false }),
+      createTask: async () => ({ ok: true })
+    })
+    servers.push(broker.server)
+    await new Promise<void>((resolve) => broker.server.once('listening', resolve))
+    broker.grant({
+      token: 'version-token',
+      runId: 'run-version',
+      projectId: 'project-1',
+      financialProfileId: 'personal',
+      permissions: MCP_PERMISSIONS,
+      expiresAt: Date.now() + 10_000
+    })
+    const call = async (name: string, args: object): Promise<Record<string, unknown>> =>
+      JSON.parse(
+        (
+          (await request(broker.port(), {
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'tools/call',
+            params: { token: 'version-token', name, arguments: args }
+          })).result as { content: { text: string }[] }
+        ).content[0].text
+      )
+    expect((await call('read_memory', { id: 'memory-1' })).updatedAt).toBe(UPDATED)
+    const found = (await call('search_memory', { term: 'SQLite' })) as {
+      memories: { updatedAt: string }[]
+    }
+    expect(found.memories[0].updatedAt).toBe(UPDATED)
+  })
+})
