@@ -49,6 +49,16 @@ describe('ProjectReadGrants', () => {
     expect(ask).toHaveBeenCalledTimes(3)
   })
 
+  it('isGranted só é verdadeiro depois de aprovado e até o drop', async () => {
+    const { grants: g } = grants(async () => 'approved')
+    expect(g.isGranted('t1', 'B')).toBe(false)
+    await g.check('t1', 'B')
+    expect(g.isGranted('t1', 'B')).toBe(true)
+    expect(g.isGranted('t2', 'B')).toBe(false)
+    g.drop('t1')
+    expect(g.isGranted('t1', 'B')).toBe(false)
+  })
+
   it('recusa nunca é lembrada: a chamada seguinte pergunta de novo', async () => {
     const { grants: g, ask } = grants(async () => 'refused')
     const refused = { ok: false, error: PROJECT_READ_REFUSED, reason: 'refused' }

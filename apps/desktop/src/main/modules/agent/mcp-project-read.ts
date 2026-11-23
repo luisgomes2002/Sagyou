@@ -55,6 +55,11 @@ export class ProjectReadGrants {
     private readonly ask: (token: string, projectId: string) => Promise<ProjectReadDecision>
   ) {}
 
+  /** Already approved for this session: the read needs no question. */
+  isGranted(token: string, projectId: string): boolean {
+    return this.granted.get(token)?.has(projectId) === true
+  }
+
   check(token: string, projectId: string): Promise<ProjectReadCheck> {
     if (this.granted.get(token)?.has(projectId)) return Promise.resolve({ ok: true })
     const key = `${token}\u0000${projectId}`
