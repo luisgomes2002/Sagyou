@@ -1,4 +1,10 @@
-import { buildMemory, findConflicts, type AiMemory, type MemoryType } from '../ai/memory'
+import {
+  buildMemory,
+  findConflicts,
+  replaceMemorySection,
+  type AiMemory,
+  type MemoryType
+} from '../ai/memory'
 import type { McpWriteOutcome } from './mcp-write-queue'
 import {
   MCP_MEMORY_WRITE_TOOLS,
@@ -349,11 +355,14 @@ export const MCP_WRITE_TOOLS: McpToolDefinition[] = [
   ),
   tool(
     'update_memory',
-    'Edita uma memória ativa. Segredos são removidos; memórias de handoff não podem ser editadas. Passe expectedUpdatedAt (o updatedAt que você leu) para não sobrescrever uma edição feita por outra sessão.',
+    'Edita uma memória ativa. Segredos são removidos; memórias de handoff não podem ser editadas. Passe expectedUpdatedAt (o updatedAt que você leu) para não sobrescrever uma edição feita por outra sessão. Com section, body é o novo conteúdo só daquela seção (o título é mantido); exige expectedUpdatedAt.',
     {
       id: text('ID exato da memória.'),
       expectedUpdatedAt: text(
         'updatedAt lido com read_memory; recusa a edição se a memória mudou desde então.'
+      ),
+      section: text(
+        'Título da seção a editar (sem os #). Com ele, body é só o conteúdo novo daquela seção.'
       ),
       title: text('Novo título.'),
       body: text('Novo corpo.'),
@@ -548,6 +557,30 @@ function checkExpectedUpdatedAt(existing: AiMemory, args: Record<string, unknown
     )
 }
 
+/** The `section` of update_memory, without its leading `#`; null when not given. */
+function sectionName(args: Record<string, unknown>): string | null {
+  if (args.section === undefined) return null
+  const name = typeof args.section === 'string' ? args.section.replace(/^#+\s*/, '').trim() : ''
+  if (!name || name.length > 200) refuseMemory('section inválido.')
+  return name
+}
+
+/** The whole new body with `content` swapped into one section of the existing memory. */
+function patchSectionBody(existing: AiMemory, section: string, content: unknown): string {
+  if (typeof content !== 'string' || !content.trim()) refuseMemory('body inválido.')
+  const patched = replaceMemorySection(existing.body, section, content as string)
+  if ('body' in patched) return patched.body
+  if (patched.error === 'not-found')
+    return refuseMemory(`Seção "${section}" não encontrada nesta memória.`)
+  if (patched.error === 'ambiguous')
+    return refuseMemory(
+      `Há mais de uma seção "${section}" nesta memória; use update_memory sem section.`
+    )
+  return refuseMemory(
+    'O corpo da seção não pode conter títulos de nível igual ou menor que o da seção.'
+  )
+}
+
 function editableMemory(deps: McpMemoryDeps, id: string): AiMemory {
   const memory = activeMemory(deps, id)
   if (memory.type === 'handoff') refuseMemory(HANDOFF_REFUSAL)
@@ -599,10 +632,26 @@ function prepareMemoryOp(
 ): { resumo: string; op: McpMemoryOp } {
   if (name === 'update_memory') {
     const existing = editableMemory(deps, memoryId(args, 'id'))
+    const section = sectionName(args)
+    if (section !== null && args.expectedUpdatedAt === undefined)
+      refuseMemory(
+        'Para editar uma seção, passe expectedUpdatedAt (o updatedAt lido com read_memory).'
+      )
     checkExpectedUpdatedAt(existing, args)
-    const { memory, redacted } = editMemory(existing, args, deps.now)
+    if (section === null) {
+      const { memory, redacted } = editMemory(existing, args, deps.now)
+      return {
+        resumo: `Editar memória "${existing.title}"`,
+        op: { kind: 'upsert', memory, redacted }
+      }
+    }
+    const { memory, redacted } = editMemory(
+      existing,
+      { ...args, body: patchSectionBody(existing, section, args.body) },
+      deps.now
+    )
     return {
-      resumo: `Editar memória "${existing.title}"`,
+      resumo: `Editar seção "${section}" da memória "${existing.title}"`,
       op: { kind: 'upsert', memory, redacted }
     }
   }
