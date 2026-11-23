@@ -85,7 +85,7 @@ import {
   withoutRunningHandoffs
 } from './modules/agent/agent-briefing'
 import { buildTerminalHandoff } from './modules/agent/terminal-handoff'
-import { createSessionCheckpoints } from './modules/agent/session-checkpoint'
+import { createSessionCheckpoints, selectActiveSessions } from './modules/agent/session-checkpoint'
 import { archiveHandoffOverflow } from './modules/ai/handoff-state'
 import {
   createRunActivity,
@@ -811,34 +811,12 @@ const sessionCheckpoints = createSessionCheckpoints({
     log.warn('pty', 'handoff_checkpoint_failed', { runId, msg: errorMessage(error) })
 })
 
-/**
- * The other terminal sessions running now, newest first: a checkpoint is shown only
- * while its run is still alive, so a handoff left running by a restored backup
- * never counts. `projectId` absent means every project.
- */
+/** The other terminal sessions running now (see `selectActiveSessions`), not cut. */
 function activeSessionViews(filter: {
   projectId?: string
   excludeRunId: string
 }): ActiveSessionView[] {
-  return sessionCheckpoints
-    .live()
-    .filter(
-      (session) =>
-        session.runId !== filter.excludeRunId &&
-        codeRuns.has(session.runId) &&
-        (filter.projectId === undefined || session.projectId === filter.projectId)
-    )
-    .sort((a, b) => b.startedAt - a.startedAt)
-    .slice(0, 20)
-    .map((session) => ({
-      runId: session.runId,
-      projectId: session.projectId,
-      iniciadaEm: new Date(session.startedAt).toISOString(),
-      ultimoRegistroEm: new Date(session.updatedAt).toISOString(),
-      assunto: session.subject ?? null,
-      acoes: session.actions,
-      arquivos: session.files
-    }))
+  return selectActiveSessions(sessionCheckpoints.live(), new Set(codeRuns.keys()), filter)
 }
 
 function recordRunActivity(request: McpWriteRequest, value: unknown): void {
@@ -1478,7 +1456,7 @@ async function archiveAgentRun(runId: string, exitCode: number): Promise<AgentRu
 
 const BLANK_SESSION_TASK = 'Sessão interativa'
 
-/** Persist one bounded breadcrumb per project without copying a terminal log into memory. */
+/** Persist the session's final handoff (one bounded breadcrumb per session) without copying a terminal log into memory. */
 function persistTerminalHandoff(
   run: CodeRunState,
   exitCode: number,

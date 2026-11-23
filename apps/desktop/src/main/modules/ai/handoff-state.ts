@@ -1,7 +1,7 @@
 import {
   HANDOFF_INTERRUPTED_TAG,
   HANDOFF_RUNNING_TAG,
-  isRunningHandoff,
+  isRunningHandoffState,
   selectHandoffOverflow,
   type AiMemory
 } from './memory'
@@ -22,9 +22,17 @@ export const HANDOFF_STATE_HINT =
 const interruptedResultLine = (lastRecord: string): string =>
   `Resultado: A sessão terminou sem saída normal (o app fechou ou o PC desligou). Último registro: ${lastRecord}.`
 
-function replaceLast(text: string, search: string, replacement: string): string {
-  const at = text.lastIndexOf(search)
-  return at < 0 ? text : text.slice(0, at) + replacement + text.slice(at + search.length)
+/**
+ * Replaces the last line that is exactly `line`. Whole lines only: an action or a
+ * pending task that merely contains the text is written as `- <text>` and is never
+ * mistaken for the state line.
+ */
+function replaceLastLine(text: string, line: string, replacement: string): string {
+  const lines = text.split('\n')
+  const at = lines.lastIndexOf(line)
+  if (at < 0) return text
+  lines[at] = replacement
+  return lines.join('\n')
 }
 
 /**
@@ -38,8 +46,8 @@ export function markHandoffInterrupted(memory: AiMemory, now: string): AiMemory 
     : INTERRUPTED_TITLE_PREFIX + memory.title
   // The request is free text and comes first, so the state lines are matched
   // exactly and from the end: a request that quotes them is left alone.
-  const body = replaceLast(
-    replaceLast(memory.body, RUNNING_STATUS_LINE, INTERRUPTED_STATUS_LINE),
+  const body = replaceLastLine(
+    replaceLastLine(memory.body, RUNNING_STATUS_LINE, INTERRUPTED_STATUS_LINE),
     RUNNING_RESULT_LINE,
     interruptedResultLine(memory.updatedAt)
   )
@@ -53,9 +61,29 @@ export function markHandoffInterrupted(memory: AiMemory, now: string): AiMemory 
   }
 }
 
-/** The running handoffs among `memories`, already marked interrupted. */
+/** The running handoffs among `memories` (archived ones too), already marked interrupted. */
 export function interruptRunningHandoffs(memories: AiMemory[], now: string): AiMemory[] {
-  return memories.filter(isRunningHandoff).map((memory) => markHandoffInterrupted(memory, now))
+  return memories.filter(isRunningHandoffState).map((memory) => markHandoffInterrupted(memory, now))
+}
+
+/**
+ * What may be versioned for sync. A handoff still marked running belongs to a live
+ * session of THIS device: no other device can know whether it is alive, so it never
+ * travels (a pin from the memory screen, an archive and the reconcile all go through
+ * here). It gets its first version when it leaves that state.
+ */
+export function syncableMemories(memories: AiMemory[]): AiMemory[] {
+  return memories.filter((memory) => !isRunningHandoffState(memory))
+}
+
+/**
+ * A restored backup (or any wholesale replace) holds no live session: every running
+ * handoff in it is marked interrupted. Doing it before the complete capture also
+ * stops the capture from tombstoning a handoff whose finished version other devices
+ * already have.
+ */
+export function restoreAsInterrupted(memory: AiMemory, now: string): AiMemory {
+  return isRunningHandoffState(memory) ? markHandoffInterrupted(memory, now) : memory
 }
 
 export interface HandoffOverflowDeps {

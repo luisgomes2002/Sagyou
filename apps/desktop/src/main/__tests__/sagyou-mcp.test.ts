@@ -1986,7 +1986,9 @@ describe('list_active_sessions', () => {
   it('cuts at 20 sessions and does not touch any memory', async () => {
     const many = Array.from({ length: 25 }, (_, index) => view({ runId: `run-${index}` }))
     const { call, touchMemory } = await activeBroker(many)
-    expect(result(await call({})).sessoes).toHaveLength(20)
+    const reply = result(await call({}))
+    expect(reply.sessoes).toHaveLength(20)
+    expect(reply.total).toBe(25)
     expect(touchMemory).not.toHaveBeenCalled()
   })
 

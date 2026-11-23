@@ -3,7 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vite
 import {
   CHECKPOINT_MIN_GAP_MS,
   CHECKPOINT_TICK_MS,
-  createSessionCheckpoints
+  createSessionCheckpoints,
+  selectActiveSessions,
+  type CheckpointSnapshot
 } from '../modules/agent/session-checkpoint'
 import type { AiMemory } from '../modules/ai/memory'
 
@@ -275,5 +277,47 @@ describe('createSessionCheckpoints', () => {
     checkpoints.start('r2')
     await flush()
     expect(writes.map((memory) => memory.id).sort()).toEqual(['handoff:p1:r1', 'handoff:p1:r2'])
+  })
+})
+
+describe('selectActiveSessions', () => {
+  const snap = (runId: string, over: Partial<CheckpointSnapshot> = {}): CheckpointSnapshot => ({
+    runId,
+    projectId: 'p1',
+    startedAt: T0,
+    updatedAt: T0 + 1_000,
+    actions: [],
+    files: [],
+    ...over
+  })
+
+  it('só mostra run viva, nunca a própria, do projeto pedido e da mais nova para a mais velha', () => {
+    const live = [
+      snap('a', { startedAt: T0 }),
+      snap('b', { startedAt: T0 + 5_000 }),
+      snap('self', { startedAt: T0 + 9_000 }),
+      snap('morta', { startedAt: T0 + 7_000 }),
+      snap('outro', { projectId: 'p2', startedAt: T0 + 6_000 })
+    ]
+    const alive = new Set(['a', 'b', 'self', 'outro'])
+    expect(
+      selectActiveSessions(live, alive, { projectId: 'p1', excludeRunId: 'self' }).map(
+        (s) => s.runId
+      )
+    ).toEqual(['b', 'a'])
+    expect(selectActiveSessions(live, alive, { excludeRunId: 'self' }).map((s) => s.runId)).toEqual(
+      ['outro', 'b', 'a']
+    )
+  })
+
+  it('converte as datas para ISO e o assunto ausente para null, sem cortar a lista', () => {
+    const many = Array.from({ length: 25 }, (_, i) => snap(`r${i}`))
+    const out = selectActiveSessions(many, new Set(many.map((s) => s.runId)), { excludeRunId: 'x' })
+    expect(out).toHaveLength(25)
+    expect(out[0]).toMatchObject({
+      iniciadaEm: '2026-11-23T10:00:00.000Z',
+      ultimoRegistroEm: '2026-11-23T10:00:01.000Z',
+      assunto: null
+    })
   })
 })

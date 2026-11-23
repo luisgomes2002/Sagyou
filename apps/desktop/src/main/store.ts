@@ -5,13 +5,16 @@ import { is } from '@electron-toolkit/utils'
 import { randomUUID } from 'crypto'
 import Database from 'better-sqlite3'
 import {
-  isRunningHandoff,
   normalizeMemory,
   scrubConversationLinks,
   type AiMemory,
   type MemoryType
 } from './modules/ai/memory'
-import { interruptRunningHandoffs } from './modules/ai/handoff-state'
+import {
+  interruptRunningHandoffs,
+  restoreAsInterrupted,
+  syncableMemories
+} from './modules/ai/handoff-state'
 import { decodeDataUrl } from './modules/files/image-files'
 import { isDocumentExt, parseDocument } from './modules/files/document-parser'
 import {
@@ -1417,17 +1420,6 @@ function captureMemoryRows(db: Database.Database, ids: string[], op: 'archive' |
   )
 }
 
-/**
- * What may be versioned for sync. A handoff still marked running belongs to a live
- * session of THIS device: no other device can know whether it is alive, so it never
- * travels, whichever path wrote it (a pin from the memory screen, an archive, a
- * backup import, the reconcile on open). It gets its first version when it leaves
- * that state.
- */
-function syncableMemories(memories: AiMemory[]): AiMemory[] {
-  return memories.filter((memory) => !isRunningHandoff(memory))
-}
-
 function allMemories(db: Database.Database): AiMemory[] {
   return (db.prepare('SELECT * FROM memory').all() as Record<string, unknown>[]).map(memRowToMemory)
 }
@@ -1440,15 +1432,13 @@ function allMemories(db: Database.Database): AiMemory[] {
 function interruptRunningHandoffsOnOpen(db: Database.Database): void {
   try {
     const rows = db
-      .prepare(
-        `SELECT * FROM memory WHERE type='handoff' AND archived_at IS NULL AND tags LIKE '%"em-andamento"%'`
-      )
+      .prepare(`SELECT * FROM memory WHERE type='handoff' AND tags LIKE '%"em-andamento"%'`)
       .all() as Record<string, unknown>[]
     if (!rows.length) return
     const interrupted = interruptRunningHandoffs(rows.map(memRowToMemory), new Date().toISOString())
     db.transaction(() => {
+      // memory_fts follows by trigger and the global index is rebuilt right after opening.
       for (const memory of interrupted) writeMemoryRow(db, memory)
-      syncMemorySearchRows(db)
     })()
     log.info('store', 'handoffs_interrupted', { count: interrupted.length })
   } catch (err) {
@@ -1918,7 +1908,10 @@ export function markPushed(
 /** Every record as it stands now, keyed by kind:id, for building an outgoing batch. */
 export function currentSyncRecords(): Map<string, SyncRecord> {
   const db = getDb()
-  const records = [...extractDataRecords(loadData(db)), ...extractMemoryRecords(syncableMemories(allMemories(db)))]
+  const records = [
+    ...extractDataRecords(loadData(db)),
+    ...extractMemoryRecords(syncableMemories(allMemories(db)))
+  ]
   return new Map(records.map((r) => [recordKey(r.kind, r.id), r]))
 }
 
@@ -3587,7 +3580,7 @@ export function replaceMemories(memories: AiMemory[]): void {
     db.prepare('DELETE FROM memory').run()
     for (const raw of memories ?? []) {
       if (!raw || typeof raw.id !== 'string') continue
-      const m = normalizeMemory(raw, now)
+      const m = restoreAsInterrupted(normalizeMemory(raw, now), now)
       if (m.projectId && !projectIds.has(m.projectId)) m.projectId = null
       writeMemoryRow(db, m)
     }

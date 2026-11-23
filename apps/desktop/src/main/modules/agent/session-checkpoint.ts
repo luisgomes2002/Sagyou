@@ -1,5 +1,6 @@
 import { handoffId, scrubSecrets, type AiMemory } from '../ai/memory'
 import { buildTerminalHandoff, type TerminalHandoffInput } from './terminal-handoff'
+import type { ActiveSessionView } from './sagyou-mcp'
 
 /** At most one write per run in this window; a later one is scheduled, not dropped. */
 export const CHECKPOINT_MIN_GAP_MS = 15_000
@@ -31,6 +32,36 @@ export interface CheckpointSnapshot {
   subject?: string
   actions: string[]
   files: string[]
+}
+
+/**
+ * The sessions `list_active_sessions` shows: the checkpoints whose run is still
+ * alive (a handoff left running by a restored backup never counts), without the
+ * caller's own, of one project when `projectId` is given, newest first. Not cut:
+ * the tool cuts at 20 and reports the whole total.
+ */
+export function selectActiveSessions(
+  live: CheckpointSnapshot[],
+  liveRunIds: ReadonlySet<string>,
+  filter: { projectId?: string; excludeRunId: string }
+): ActiveSessionView[] {
+  return live
+    .filter(
+      (session) =>
+        session.runId !== filter.excludeRunId &&
+        liveRunIds.has(session.runId) &&
+        (filter.projectId === undefined || session.projectId === filter.projectId)
+    )
+    .sort((a, b) => b.startedAt - a.startedAt)
+    .map((session) => ({
+      runId: session.runId,
+      projectId: session.projectId,
+      iniciadaEm: new Date(session.startedAt).toISOString(),
+      ultimoRegistroEm: new Date(session.updatedAt).toISOString(),
+      assunto: session.subject ?? null,
+      acoes: session.actions,
+      arquivos: session.files
+    }))
 }
 
 export interface SessionCheckpointDeps {

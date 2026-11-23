@@ -7,7 +7,9 @@ import {
   RUNNING_STATUS_LINE,
   RUNNING_TITLE_PREFIX,
   interruptRunningHandoffs,
-  markHandoffInterrupted
+  markHandoffInterrupted,
+  restoreAsInterrupted,
+  syncableMemories
 } from '../modules/ai/handoff-state'
 import type { AiMemory } from '../modules/ai/memory'
 
@@ -90,6 +92,17 @@ describe('markHandoffInterrupted', () => {
     expect(done.body.match(/^Status: interrompida$/gm)).toHaveLength(1)
   })
 
+  it('não confunde um item de lista com a linha de estado', () => {
+    const body = BODY.replace(
+      '- Handoff (não concluída nesta sessão)',
+      `- ${RUNNING_STATUS_LINE} (não concluída nesta sessão)`
+    )
+    const done = markHandoffInterrupted(running({ body }), NOW)
+    expect(done.body).toContain(`- ${RUNNING_STATUS_LINE} (não concluída nesta sessão)`)
+    expect(done.body.match(/^Status: interrompida$/gm)).toHaveLength(1)
+    expect(done.body.match(/^Status: em andamento$/gm)).toBeNull()
+  })
+
   it('mantém fixado e o id', () => {
     const done = markHandoffInterrupted(running({ pinned: true }), NOW)
     expect(done.pinned).toBe(true)
@@ -110,6 +123,41 @@ describe('interruptRunningHandoffs', () => {
     const out = interruptRunningHandoffs([running(), finished, legacy, archived, other], NOW)
     expect(out.map((m) => m.id)).toEqual(['handoff:p1:r1'])
     expect(out[0].tags).toContain('interrompida')
+  })
+})
+
+describe('interrupção e sync de um handoff em andamento arquivado', () => {
+  it('marca interrompida também o arquivado e mantém o arquivamento', () => {
+    const archived = running({ archivedAt: '2026-11-23T10:30:00.000Z' })
+    const out = interruptRunningHandoffs([archived], NOW)
+    expect(out).toHaveLength(1)
+    expect(out[0].archivedAt).toBe('2026-11-23T10:30:00.000Z')
+    expect(out[0].tags).toContain('interrompida')
+  })
+
+  it('syncableMemories tira todo handoff em andamento, arquivado ou não', () => {
+    const live = running()
+    const archived = running({ id: 'handoff:p1:r2', archivedAt: NOW })
+    const done = running({ id: 'handoff:p1:r3', tags: ['handoff', 'terminal', 'completed'] })
+    const other = running({ id: 'fato-1', type: 'fato' })
+    expect(syncableMemories([live, archived, done, other]).map((m) => m.id)).toEqual([
+      'handoff:p1:r3',
+      'fato-1'
+    ])
+  })
+
+  it('um backup restaurado não deixa nada em andamento a ser tirado do sync (sem tombstone)', () => {
+    const restored = [running(), running({ id: 'handoff:p1:r2', archivedAt: NOW })].map((m) =>
+      restoreAsInterrupted(m, NOW)
+    )
+    expect(restored.every((m) => m.tags.includes('interrompida'))).toBe(true)
+    // Everything restored is still versioned: none is filtered out of a complete capture.
+    expect(syncableMemories(restored)).toHaveLength(2)
+    expect(restoreAsInterrupted(running({ id: 'fato-1', type: 'fato' }), NOW).tags).toEqual([
+      'handoff',
+      'terminal',
+      'em-andamento'
+    ])
   })
 })
 

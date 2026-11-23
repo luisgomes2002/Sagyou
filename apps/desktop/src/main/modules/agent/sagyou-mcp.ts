@@ -928,19 +928,22 @@ export function startSagyouMcpBroker(deps: McpBrokerDeps): {
                 failure(call, request.id, 'Argumentos inválidos para list_active_sessions.')
               else {
                 const projectId = readProjectId(args, session)
-                const sessoes = (
+                const found =
                   deps.activeSessions?.({
                     ...(projectId ? { projectId } : {}),
                     excludeRunId: session.runId
                   }) ?? []
-                ).slice(0, ACTIVE_SESSIONS_LIMIT)
+                const sessoes = found.slice(0, ACTIVE_SESSIONS_LIMIT)
                 reply(call, request.id, {
                   content: [
-                    { type: 'text', text: JSON.stringify({
-                        total: sessoes.length,
+                    {
+                      type: 'text',
+                      text: JSON.stringify({
+                        total: found.length,
                         aviso: ACTIVE_SESSIONS_WARNING,
                         sessoes
-                      }) }
+                      })
+                    }
                   ]
                 })
               }

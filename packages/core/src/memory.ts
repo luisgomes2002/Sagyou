@@ -181,9 +181,14 @@ export const HANDOFF_RUNNING_TAG = 'em-andamento'
 /** Tag of a handoff whose session ended without a normal exit (app closed, PC off). */
 export const HANDOFF_INTERRUPTED_TAG = 'interrompida'
 
-/** A handoff written while its session was still running. */
+/** A handoff in the running state, archived or not (what sync and the interruption look at). */
+export function isRunningHandoffState(m: AiMemory): boolean {
+  return m.type === 'handoff' && m.tags.includes(HANDOFF_RUNNING_TAG)
+}
+
+/** An active handoff written while its session was still running (the limit and the briefing). */
 export function isRunningHandoff(m: AiMemory): boolean {
-  return m.type === 'handoff' && !m.archivedAt && m.tags.includes(HANDOFF_RUNNING_TAG)
+  return !m.archivedAt && isRunningHandoffState(m)
 }
 
 function timeOf(iso: string): number {
