@@ -125,7 +125,8 @@ import { getExchangeRate } from './modules/financial/financial-exchange'
 import {
   EXTERNAL_PERMISSIONS,
   MCP_EXTERNAL_BRIDGE_SOURCE,
-  startSagyouMcpBroker
+  startSagyouMcpBroker,
+  type ActiveSessionView
 } from './modules/agent/sagyou-mcp'
 import {
   MCP_EXTERNAL_FILE,
@@ -417,6 +418,7 @@ const sagyouMcp = startSagyouMcpBroker({
     }),
   readMemory: (id) => memoryStore.getMemory(id),
   listMemoriesForRecent: () => memoryStore.listMemories({ includeArchived: true }),
+  activeSessions: (filter) => activeSessionViews(filter),
   // Keep the existing once-per-hour decay accounting in the store; the broker
   // decides authorization first, so rejected probes never count as a read.
   touchMemory: (id) => memoryStore.touchMemories([id], new Date().toISOString()),
@@ -803,6 +805,36 @@ const sessionCheckpoints = createSessionCheckpoints({
   write: (memory) => memoryStore.upsertMemoryLocal(memory),
   onError: (runId, error) => log.warn('pty', 'handoff_checkpoint_failed', { runId, msg: errorMessage(error) })
 })
+
+/**
+ * The other terminal sessions running now, newest first: a checkpoint is shown only
+ * while its run is still alive, so a handoff left running by a restored backup
+ * never counts. `projectId` absent means every project.
+ */
+function activeSessionViews(filter: {
+  projectId?: string
+  excludeRunId: string
+}): ActiveSessionView[] {
+  return sessionCheckpoints
+    .live()
+    .filter(
+      (session) =>
+        session.runId !== filter.excludeRunId &&
+        codeRuns.has(session.runId) &&
+        (filter.projectId === undefined || session.projectId === filter.projectId)
+    )
+    .sort((a, b) => b.startedAt - a.startedAt)
+    .slice(0, 20)
+    .map((session) => ({
+      runId: session.runId,
+      projectId: session.projectId,
+      iniciadaEm: new Date(session.startedAt).toISOString(),
+      ultimoRegistroEm: new Date(session.updatedAt).toISOString(),
+      assunto: session.subject ?? null,
+      acoes: session.actions,
+      arquivos: session.files
+    }))
+}
 
 function recordRunActivity(request: McpWriteRequest, value: unknown): void {
   if (!tracksRunState(request.runId)) return

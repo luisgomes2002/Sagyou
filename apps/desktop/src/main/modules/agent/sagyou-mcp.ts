@@ -28,6 +28,7 @@ export const MCP_PERMISSIONS = [
   'search_memory',
   'read_memory',
   'list_recent_memories',
+  'list_active_sessions',
   'save_memory',
   'check_memories',
   'ler_tasks',
@@ -66,6 +67,20 @@ export interface McpSession {
   expiresAt?: number
 }
 
+/** Another terminal session that is running now, as `list_active_sessions` shows it. */
+export interface ActiveSessionView {
+  runId: string
+  projectId: string | null
+  /** ISO instants. */
+  iniciadaEm: string
+  ultimoRegistroEm: string
+  assunto: string | null
+  acoes: string[]
+  arquivos: string[]
+}
+
+const ACTIVE_SESSIONS_LIMIT = 20
+
 export interface McpBrokerDeps {
   readScopedData?: (
     domain: 'tasks' | 'project' | 'notes' | 'goals' | 'financial',
@@ -82,6 +97,11 @@ export interface McpBrokerDeps {
   readMemory: (id: string) => AiMemory | null
   /** Every memory, archived included; absent means list_recent_memories finds none. */
   listMemoriesForRecent?: () => AiMemory[]
+  /**
+   * The terminal sessions running now (their last checkpoint), without the caller's
+   * own. `projectId` absent means every project. Absent dep means none.
+   */
+  activeSessions?: (filter: { projectId?: string; excludeRunId: string }) => ActiveSessionView[]
   touchMemory: (id: string) => void
   memoriesForConflict: (projectId: string | null | undefined) => AiMemory[]
   saveMemory: (
@@ -264,6 +284,21 @@ const TOOLS: { name: McpPermission; description: string; inputSchema: Record<str
           },
           limit: { type: 'integer', minimum: 1, maximum: 50, description: 'Padrão 20.' },
           offset: { type: 'integer', minimum: 0 }
+        },
+        additionalProperties: false
+      }
+    },
+    {
+      name: 'list_active_sessions',
+      description:
+        'Lista as outras sessões de terminal em andamento agora (assunto até o momento, ações aplicadas e arquivos já alterados). Chame ao começar e antes de editar arquivos, para não mexer na mesma parte do código que outra sessão. Sem projectId, uma sessão de projeto vê o próprio projeto; sessão geral e o acesso externo veem todos. Não inclui a sua própria sessão.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          projectId: {
+            type: 'string',
+            description: 'ID do projeto; omita para o contexto da sessão.'
+          }
         },
         additionalProperties: false
       }
@@ -877,6 +912,24 @@ export function startSagyouMcpBroker(deps: McpBrokerDeps): {
                     }
                   ]
                 })
+            } else if (name === 'list_active_sessions') {
+              // Read-only: nothing is stored and no memory is touched.
+              const args = request.params?.arguments
+              const input = args && typeof args === 'object' ? (args as Record<string, unknown>) : {}
+              if (input.projectId !== undefined && typeof input.projectId !== 'string')
+                failure(call, request.id, 'Argumentos inválidos para list_active_sessions.')
+              else {
+                const projectId = readProjectId(args, session)
+                const sessoes = (
+                  deps.activeSessions?.({
+                    ...(projectId ? { projectId } : {}),
+                    excludeRunId: session.runId
+                  }) ?? []
+                ).slice(0, ACTIVE_SESSIONS_LIMIT)
+                reply(call, request.id, {
+                  content: [{ type: 'text', text: JSON.stringify({ total: sessoes.length, sessoes }) }]
+                })
+              }
             } else if (name === 'save_memory') {
               const prepared = memorySaveInput(request.params?.arguments, session.projectId)
               if ('error' in prepared) failure(call, request.id, prepared.error)
