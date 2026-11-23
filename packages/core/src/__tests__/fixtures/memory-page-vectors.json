@@ -1,0 +1,108 @@
+{
+  "unit": "unicode code points",
+  "cases": [
+    {
+      "name": "primeira página",
+      "body": "abcdefghij",
+      "offset": 0,
+      "limit": 4,
+      "expect": {
+        "body": "abcd",
+        "totalChars": 10,
+        "truncated": true,
+        "nextOffset": 4
+      }
+    },
+    {
+      "name": "última página, mais curta",
+      "body": "abcdefghij",
+      "offset": 8,
+      "limit": 4,
+      "expect": {
+        "body": "ij",
+        "totalChars": 10,
+        "truncated": false
+      }
+    },
+    {
+      "name": "limite exato no fim",
+      "body": "abcdefghij",
+      "offset": 6,
+      "limit": 4,
+      "expect": {
+        "body": "ghij",
+        "totalChars": 10,
+        "truncated": false
+      }
+    },
+    {
+      "name": "offset igual ao tamanho",
+      "body": "abcdefghij",
+      "offset": 10,
+      "limit": 4,
+      "expect": {
+        "body": "",
+        "totalChars": 10,
+        "truncated": false
+      }
+    },
+    {
+      "name": "offset além do fim",
+      "body": "abcdefghij",
+      "offset": 99,
+      "limit": 4,
+      "expect": {
+        "body": "",
+        "totalChars": 10,
+        "truncated": false
+      }
+    },
+    {
+      "name": "corpo vazio",
+      "body": "",
+      "offset": 0,
+      "limit": 4,
+      "expect": {
+        "body": "",
+        "totalChars": 0,
+        "truncated": false
+      }
+    },
+    {
+      "name": "emoji conta como 1",
+      "body": "a😀b😀c",
+      "offset": 1,
+      "limit": 2,
+      "expect": {
+        "body": "😀b",
+        "totalChars": 5,
+        "truncated": true,
+        "nextOffset": 3
+      }
+    },
+    {
+      "name": "acento decomposto conta 2, sem normalizar",
+      "body": "éx",
+      "offset": 0,
+      "limit": 1,
+      "expect": {
+        "body": "e",
+        "totalChars": 3,
+        "truncated": true,
+        "nextOffset": 1
+      }
+    },
+    {
+      "name": "acento composto conta 1",
+      "body": "éx",
+      "offset": 0,
+      "limit": 1,
+      "expect": {
+        "body": "é",
+        "totalChars": 2,
+        "truncated": true,
+        "nextOffset": 1
+      }
+    }
+  ]
+}
