@@ -1,4 +1,5 @@
 import {
+  compareByRecency,
   formatMemoriesForPrompt,
   isRunningHandoff,
   scrubSecrets,
@@ -55,7 +56,7 @@ function activeSessionsText(sessions: { assunto: string | null; arquivos: string
 
 function handoffsText(handoffs: AiMemory[]): string {
   return [...handoffs]
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    .sort(compareByRecency)
     .slice(0, HANDOFFS_SHOWN)
     .map(
       (memory) => `${memory.title} — atualizado em ${memory.updatedAt.slice(0, 10)}\n${memory.body}`

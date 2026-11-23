@@ -197,6 +197,16 @@ function timeOf(iso: string): number {
 }
 
 /**
+ * Newest-updated first, by the real instant. Comparing the text only works when
+ * every date has the same ISO shape: one from a backup or an import (`+00:00`, no
+ * milliseconds) would land out of place. The same instant in two shapes ties, and
+ * the id breaks the tie.
+ */
+export function compareByRecency(a: AiMemory, b: AiMemory): number {
+  return timeOf(b.updatedAt) - timeOf(a.updatedAt) || a.id.localeCompare(b.id)
+}
+
+/**
  * Ids of the handoffs to archive: per project (`null` = global), everything
  * past the newest `HANDOFF_KEEP` active ones. A pinned handoff and one whose
  * session is still live never go, though they still take a slot. Ordered by the
@@ -217,7 +227,7 @@ export function selectHandoffOverflow(
   }
   const out: string[] = []
   for (const bucket of byProject.values()) {
-    bucket.sort((a, b) => timeOf(b.updatedAt) - timeOf(a.updatedAt) || a.id.localeCompare(b.id))
+    bucket.sort(compareByRecency)
     for (const m of bucket.slice(HANDOFF_KEEP)) {
       const runId = handoffRunId(m.id)
       const alive = isRunningHandoff(m) && runId !== null && liveRunIds.has(runId)
@@ -442,7 +452,7 @@ export function selectRecentMemories(
       const updated = Date.parse(m.updatedAt)
       return updated >= from && updated < before
     })
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id))
+    .sort(compareByRecency)
   return {
     total: matches.length,
     items: matches.slice(filter.offset, filter.offset + filter.limit)
