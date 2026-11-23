@@ -713,25 +713,48 @@ export interface SimilarMemoryPair {
   similarity: number
 }
 
+/** At most this many memories (the most recently updated) are compared, and this many terms each. */
+export const SIMILAR_MAX_MEMORIES = 500
+export const SIMILAR_MAX_TERMS = 64
+
+export interface SimilarMemories {
+  /** Every pair that passed, however many are kept. */
+  total: number
+  /** The best `keep` pairs: most similar first, then by `a`, then `b`. */
+  pairs: SimilarMemoryPair[]
+  /** True when there were more than SIMILAR_MAX_MEMORIES candidates and only the newest were compared. */
+  partial: boolean
+}
+
+const comparePairs = (p: SimilarMemoryPair, q: SimilarMemoryPair): number =>
+  q.shared * p.total - p.shared * q.total ||
+  (p.a < q.a ? -1 : p.a > q.a ? 1 : 0) ||
+  (p.b < q.b ? -1 : p.b > q.b ? 1 : 0)
+
 /**
  * Pairs of active memories that look like the same subject under different titles:
  * their terms overlap by at least 60% (Jaccard, compared in integers), each with two
  * or more terms. Only a signal: it does not say which of the two should stay. Handoffs,
  * archived memories, pairs with the same title (a contradiction, `findConflicts`'s job)
- * and pairs with the same body are left out. Most similar first, then by `a`, then `b`.
+ * and pairs with the same body are left out. The work is bounded (the comparison is
+ * quadratic): only the `SIMILAR_MAX_MEMORIES` newest candidates are compared, with their
+ * first `SIMILAR_MAX_TERMS` terms, and only the best `keep` pairs are kept, never the
+ * whole list.
  */
-export function similarMemories(memories: AiMemory[]): SimilarMemoryPair[] {
-  const entries = memories
-    .filter((m) => !m.archivedAt && m.type !== 'handoff')
-    .map((m) => ({
-      id: m.id,
-      key: titleKey(m.title),
-      body: m.body.trim(),
-      terms: memoryTerms(m)
-    }))
+export function similarMemories(memories: AiMemory[], keep = Infinity): SimilarMemories {
+  const candidates = memories.filter((m) => !m.archivedAt && m.type !== 'handoff')
+  const partial = candidates.length > SIMILAR_MAX_MEMORIES
+  const considered = partial
+    ? [...candidates].sort(compareByRecency).slice(0, SIMILAR_MAX_MEMORIES)
+    : candidates
+  const entries = considered
+    .map((m) => {
+      const terms = memoryTerms(m).slice(0, SIMILAR_MAX_TERMS)
+      return { id: m.id, key: titleKey(m.title), body: m.body.trim(), terms, set: new Set(terms) }
+    })
     .filter((entry) => entry.terms.length >= 2)
-    .map((entry) => ({ ...entry, set: new Set(entry.terms) }))
-  const pairs: SimilarMemoryPair[] = []
+  let total = 0
+  let best: SimilarMemoryPair[] = []
   for (let i = 0; i < entries.length; i++) {
     for (let j = i + 1; j < entries.length; j++) {
       const [x, y] =
@@ -739,21 +762,22 @@ export function similarMemories(memories: AiMemory[]): SimilarMemoryPair[] {
       if (x.key === y.key || x.body === y.body) continue
       let shared = 0
       for (const term of x.terms) if (y.set.has(term)) shared++
-      const total = x.terms.length + y.terms.length - shared
-      if (shared * 10 < total * 6) continue
-      pairs.push({
+      const union = x.terms.length + y.terms.length - shared
+      if (shared * 10 < union * 6) continue
+      total++
+      const pair = {
         a: x.id,
         b: y.id,
         shared,
-        total,
-        similarity: Math.round((shared * 100) / total) / 100
-      })
+        total: union,
+        similarity: Math.round((shared * 100) / union) / 100
+      }
+      if (best.length < keep || comparePairs(pair, best[best.length - 1]) < 0) {
+        best.push(pair)
+        best.sort(comparePairs)
+        if (best.length > keep) best = best.slice(0, keep)
+      }
     }
   }
-  return pairs.sort(
-    (p, q) =>
-      q.shared * p.total - p.shared * q.total ||
-      (p.a < q.a ? -1 : p.a > q.a ? 1 : 0) ||
-      (p.b < q.b ? -1 : p.b > q.b ? 1 : 0)
-  )
+  return { total, pairs: best, partial }
 }

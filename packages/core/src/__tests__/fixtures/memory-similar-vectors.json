@@ -1,5 +1,5 @@
 {
-  "note": "terms = words (3+ letters or digits, no accents, lowercase) of title + ' ' + tags.join(' '); similar when shared*10 >= total*6, both with >= 2 terms, different titleKey and different trimmed body; only active non-handoff memories; similarity = round(shared*100/total)/100",
+  "note": "terms = words (3+ letters or digits, no accents, lowercase) of title + ' ' + tags.join(' '); similar when shared*10 >= total*6, both with >= 2 terms, different titleKey and different trimmed body; only active non-handoff memories; similarity = round(shared*100/total)/100; bounds: only the 500 most recently updated candidates (ties by id) are compared, each with its first 64 terms (sorted), and the caller keeps only the best N pairs",
   "cases": [
     {
       "name": "exemplo da spec: 3 de 5 = 0,6",
@@ -316,6 +316,52 @@
           "title": "gamma alpha beta",
           "tags": [],
           "body": "tres"
+        }
+      ],
+      "expect": [
+        {
+          "a": "m1",
+          "b": "m2",
+          "shared": 3,
+          "total": 3,
+          "similarity": 1.0
+        },
+        {
+          "a": "m1",
+          "b": "m3",
+          "shared": 3,
+          "total": 3,
+          "similarity": 1.0
+        },
+        {
+          "a": "m2",
+          "b": "m3",
+          "shared": 3,
+          "total": 3,
+          "similarity": 1.0
+        }
+      ]
+    },
+    {
+      "name": "entrada fora de ordem: o resultado não depende da ordem da lista",
+      "memories": [
+        {
+          "id": "m3",
+          "title": "gamma alpha beta",
+          "tags": [],
+          "body": "tres"
+        },
+        {
+          "id": "m1",
+          "title": "alpha beta gamma",
+          "tags": [],
+          "body": "um"
+        },
+        {
+          "id": "m2",
+          "title": "beta gamma alpha",
+          "tags": [],
+          "body": "dois"
         }
       ],
       "expect": [

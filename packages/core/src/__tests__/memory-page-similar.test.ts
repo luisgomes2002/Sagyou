@@ -39,6 +39,11 @@ describe('readMemoryPage (fixture memory-page-vectors.json)', () => {
     let rebuilt = ''
     for (let guard = 0; guard < 20; guard++) {
       const page = readMemoryPage(body, offset, 3)
+      // each page on its own: a page that ended in half an emoji would fail here
+      expect(page.body).not.toMatch(
+        /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
+      )
+      expect(Array.from(page.body).length).toBeLessThanOrEqual(3)
       rebuilt += page.body
       if (page.nextOffset === undefined) break
       offset = page.nextOffset
@@ -90,7 +95,10 @@ describe('similarMemories (fixture memory-similar-vectors.json)', () => {
   const { cases } = load<{ cases: SimilarCase[] }>('memory-similar-vectors.json')
   for (const c of cases)
     it(c.name, () => {
-      expect(similarMemories(c.memories.map(memory))).toEqual(c.expect)
+      const result = similarMemories(c.memories.map(memory))
+      expect(result.pairs).toEqual(c.expect)
+      expect(result.total).toBe(c.expect.length)
+      expect(result.partial).toBe(false)
     })
 
   it('500 memórias ativas terminam e devolvem uma lista', () => {
@@ -102,6 +110,52 @@ describe('similarMemories (fixture memory-similar-vectors.json)', () => {
         body: `corpo ${i}`
       })
     )
-    expect(Array.isArray(similarMemories(many))).toBe(true)
+    expect(Array.isArray(similarMemories(many).pairs)).toBe(true)
+  })
+
+  it('keeps only the best pairs but counts them all, in the same order', () => {
+    const titles = [
+      'alpha beta gamma delta epsilon',
+      'beta gamma delta epsilon alpha',
+      'gamma delta epsilon alpha beta',
+      'delta epsilon alpha beta gamma',
+      'epsilon alpha beta gamma delta'
+    ]
+    const list = titles.map((title, i) =>
+      memory({ id: `m${i + 1}`, title, tags: [], body: `corpo ${i}` })
+    )
+    const all = similarMemories(list)
+    const top = similarMemories(list, 3)
+    expect(all.total).toBe(10)
+    expect(top.total).toBe(10)
+    expect(top.pairs).toEqual(all.pairs.slice(0, 3))
+  })
+
+  it('hostile input stays bounded: thousands of memories with the same many terms', () => {
+    const terms = Array.from({ length: 30 }, (_, i) => `termo${i}`).join(' ')
+    const many = Array.from({ length: 2_000 }, (_, i) =>
+      memory({
+        id: `h${String(i).padStart(4, '0')}`,
+        title: `${terms} s${i}`,
+        tags: [],
+        body: `corpo ${i}`
+      })
+    )
+    const started = Date.now()
+    const result = similarMemories(many, 8)
+    expect(Date.now() - started).toBeLessThan(3_000)
+    expect(result.partial).toBe(true)
+    expect(result.pairs).toHaveLength(8)
+    // only the 500 newest (equal dates here: by id) were compared
+    expect(result.total).toBe((500 * 499) / 2)
+  })
+
+  it('a huge title keeps only its first terms', () => {
+    const words = Array.from({ length: 5_000 }, (_, i) => `palavra${i}`).join(' ')
+    const result = similarMemories([
+      memory({ id: 'a', title: words, tags: [], body: 'um' }),
+      memory({ id: 'b', title: `${words} zzzz`, tags: [], body: 'dois' })
+    ])
+    expect(result.pairs[0]).toMatchObject({ shared: 64, total: 64, similarity: 1 })
   })
 })

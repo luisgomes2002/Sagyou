@@ -2607,6 +2607,12 @@ describe('read_memory in pages and check_memories similar pairs', () => {
     let rebuilt = ''
     for (let guard = 0; guard < 10; guard++) {
       const page = body(await call('read_memory', { id: 'emoji', limit: 500, offset }))
+      // counted in code points, and no page ends in half an emoji
+      expect(page.totalChars).toBe(1_001)
+      expect(Array.from(String(page.body)).length).toBeLessThanOrEqual(500)
+      expect(String(page.body)).not.toMatch(
+        /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
+      )
       rebuilt += String(page.body)
       if (page.nextOffset === undefined) break
       offset = Number(page.nextOffset)
@@ -2676,10 +2682,12 @@ describe('read_memory in pages and check_memories similar pairs', () => {
     }
     expect(result.similar.total).toBe(1)
     expect(result.similar.truncated).toBe(false)
+    expect(result.similar).not.toHaveProperty('partial')
+    expect((result as unknown as { warning: string }).warning).toMatch(/evidência histórica/i)
     expect(result.similar.pairs[0]).toMatchObject({
       similarity: 0.6,
-      a: { id: 'm1', title: 'Usar SQLite no desktop' },
-      b: { id: 'm2', title: 'Banco SQLite no app desktop' }
+      a: { id: 'm1', title: 'Usar SQLite no desktop', projectId: 'project-1' },
+      b: { id: 'm2', title: 'Banco SQLite no app desktop', projectId: 'project-1' }
     })
     expect(result.similar.pairs[0].a.snippet.length).toBeLessThanOrEqual(241)
     expect(result.total).toBe(0)
@@ -2755,6 +2763,21 @@ describe('read_memory in pages and check_memories similar pairs', () => {
       similarTitle('m', 'SQLite banco desktop app', ['banco', 'desktop'], 'c')
     ])
     expect((body(await call('check_memories', {})).similar as { total: number }).total).toBe(0)
+  })
+
+  it('a secret in a memory body never reaches the snippets', async () => {
+    const { call } = await memoryBroker([
+      similarTitle(
+        'm1',
+        'Usar SQLite no desktop',
+        ['banco', 'desktop'],
+        'chave sk-abcdefghijklmnopqrstuvwxyz0123456789 aqui'
+      ),
+      similarTitle('m2', 'Banco SQLite no app desktop', ['banco', 'desktop'], 'outro')
+    ])
+    const text = JSON.stringify(body(await call('check_memories', {})))
+    expect(text).not.toContain('sk-abcdefghijklmnopqrstuvwxyz0123456789')
+    expect(text).toContain('[REDIGIDO]')
   })
 
   it('says similar is only a signal', async () => {
