@@ -418,6 +418,46 @@ describe('prepareMemoryWrite', () => {
       )
     })
 
+    it('a seção de uma memória de outro projeto não responde nada dela (nem versão, nem títulos)', () => {
+      const foreign = memory({ body: SECTIONED, projectId: 'p-outro' })
+      const mine = (over: Record<string, unknown>): ReturnType<typeof prepareMemoryWrite> =>
+        prepareMemoryWrite(
+          'update_memory',
+          { id: 'm1', section: 'Decisão', body: 'x', expectedUpdatedAt: READ_AT, ...over },
+          { ...deps([foreign]), sessionProjectId: 'p1' }
+        )
+      const unavailable = refused('Memória indisponível nesta sessão MCP.')
+      expect(mine({})).toEqual(unavailable)
+      expect(mine({ expectedUpdatedAt: '0' })).toEqual(unavailable)
+      expect(mine({ section: 'Credenciais' })).toEqual(unavailable)
+      expect(mine({ body: '# z' })).toEqual(unavailable)
+    })
+
+    it('a seção de memória global, do próprio projeto ou numa sessão sem projeto segue normal', () => {
+      const run = (
+        memoryProject: string | null,
+        session: string | null | undefined
+      ): ReturnType<typeof prepareMemoryWrite> =>
+        prepareMemoryWrite(
+          'update_memory',
+          { id: 'm1', section: 'Decisão', body: 'x', expectedUpdatedAt: READ_AT },
+          {
+            ...deps([memory({ body: SECTIONED, projectId: memoryProject })]),
+            sessionProjectId: session
+          }
+        )
+      expect(run(null, 'p1').ok).toBe(true)
+      expect(run('p1', 'p1').ok).toBe(true)
+      expect(run('p-outro', null).ok).toBe(true)
+      expect(run('p-outro', undefined).ok).toBe(true)
+    })
+
+    it('recusa um corpo que deixa um bloco de código aberto', () => {
+      expect(patched({ body: 'Exemplo:\n```ts\nconst x = 1' })).toEqual(
+        refused('O corpo da seção não pode deixar um bloco de código aberto.')
+      )
+    })
+
     it('remove segredo do corpo e avisa', () => {
       const result = patched({ body: 'Chave sk-abcdefghijklmnopqrstuvwxyz0123456789 aqui' })
       expect(result.ok).toBe(true)

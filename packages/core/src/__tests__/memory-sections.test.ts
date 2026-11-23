@@ -72,6 +72,21 @@ describe('replaceMemorySection', () => {
     })
   })
 
+  it('recusa conteúdo que deixa um bloco de código aberto, que engoliria as outras seções', () => {
+    const body = '## A\n1\n\n## B\n2'
+    expect(replaceMemorySection(body, 'A', 'Exemplo:\n```ts\nconst x = 1')).toEqual({
+      error: 'unclosed-fence'
+    })
+    expect(replaceMemorySection(body, 'A', '```\n## Z')).toEqual({ error: 'unclosed-fence' })
+    expect(replaceMemorySection(body, 'A', '~~~\nx')).toEqual({ error: 'unclosed-fence' })
+    // um bloco fechado é aceito, e a seção seguinte continua achável
+    const ok = replaceMemorySection(body, 'A', '```ts\nconst x = 1\n```') as { body: string }
+    expect(ok.body).toBe('## A\n```ts\nconst x = 1\n```\n\n## B\n2')
+    expect(replaceMemorySection(ok.body, 'B', 'novo')).toEqual({
+      body: '## A\n```ts\nconst x = 1\n```\n\n## B\nnovo'
+    })
+  })
+
   it('o resto do corpo fica igual, linha a linha', () => {
     const out = replaceMemorySection(BODY, 'Outras', 'novo') as { body: string }
     expect(

@@ -6,6 +6,7 @@ import {
   ProjectReadGrants,
   crossProjectTarget,
   projectReadResumo,
+  sameProjectName,
   type ProjectReadDecision
 } from '../modules/agent/mcp-project-read'
 
@@ -26,7 +27,28 @@ describe('projectReadResumo', () => {
     expect(projectReadResumo('Murasaki')).toBe('Ler memórias do projeto "Murasaki"?')
     expect(projectReadResumo('A "B"\nC')).toBe(`Ler memórias do projeto "A 'B' C"?`)
     const long = projectReadResumo('x'.repeat(200))
-    expect(long).toBe(`Ler memórias do projeto "${'x'.repeat(80)}"?`)
+    expect(long).toBe(`Ler memórias do projeto "${'x'.repeat(80)}…"?`)
+    expect(projectReadResumo('x'.repeat(80))).toBe(`Ler memórias do projeto "${'x'.repeat(80)}"?`)
+  })
+
+  it('tira caracteres invisíveis, de controle e de inversão de direção do nome', () => {
+    expect(projectReadResumo('Sagyou\u200b')).toBe('Ler memórias do projeto "Sagyou"?')
+    expect(projectReadResumo('Sagyou\u202e')).toBe('Ler memórias do projeto "Sagyou"?')
+    expect(projectReadResumo('Fin\u0007an\u001b[2Jcas')).toBe(
+      'Ler memórias do projeto "Finan[2Jcas"?'
+    )
+    expect(projectReadResumo('\u200bSagyou\ufeff')).toBe('Ler memórias do projeto "Sagyou"?')
+  })
+})
+
+describe('sameProjectName', () => {
+  it('nomes que parecem iguais para o usuário são iguais', () => {
+    expect(sameProjectName('Sagyou', 'Sagyou\u200b')).toBe(true)
+    expect(sameProjectName('Sagyou', '  sagyou ')).toBe(true)
+    expect(sameProjectName('Sagyou', 'SAGYOU\u202e')).toBe(true)
+    expect(sameProjectName('Ｓagyou', 'Sagyou')).toBe(true) // largura total, NFKC
+    expect(sameProjectName('Sagyou', 'Sagyou 2')).toBe(false)
+    expect(sameProjectName('', '\u200b')).toBe(false)
   })
 })
 
@@ -101,6 +123,12 @@ describe('ProjectReadGrants', () => {
     await g.check('t1', 'B')
     await g.check('t2', 'B')
     expect(ask).toHaveBeenCalledTimes(3)
+  })
+
+  it('drop de um token que nunca perguntou não deixa rastro', () => {
+    const { grants: g } = grants(async () => 'approved')
+    for (let i = 0; i < 50; i++) g.drop(`invalido-${i}`)
+    expect((g as unknown as { generation: Map<string, number> }).generation.size).toBe(0)
   })
 
   it('uma aprovação que chega depois do drop não deixa concessão', async () => {

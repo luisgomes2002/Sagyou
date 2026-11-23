@@ -581,12 +581,23 @@ export function scrubConversationLinks(memories: AiMemory[]): {
 
 // ── Section edit ─────────────────────────────────────────────────────────────
 
-export type SectionPatchError = 'not-found' | 'ambiguous' | 'heading-in-content'
+export type SectionPatchError = 'not-found' | 'ambiguous' | 'heading-in-content' | 'unclosed-fence'
 
 interface MarkdownHeading {
   line: number
   level: number
   text: string
+}
+
+/** Whether the text leaves a fenced code block open at its end (it would swallow what follows). */
+function endsInsideFence(lines: string[]): boolean {
+  let fence: string | null = null
+  for (const raw of lines) {
+    const trimmed = raw.trim()
+    const mark = trimmed.startsWith('```') ? '```' : trimmed.startsWith('~~~') ? '~~~' : null
+    if (mark) fence = fence === null ? mark : fence === mark ? null : fence
+  }
+  return fence !== null
 }
 
 /** Markdown headings (`#`–`######`) outside fenced code blocks. A closing run of `#` needs a space before it. */
@@ -613,7 +624,8 @@ function markdownHeadings(lines: string[]): MarkdownHeading[] {
  * level (deeper subsections belong to it) or the end. The heading stays; the
  * blank lines that closed the old section are kept; everything outside the section
  * is untouched, apart from `\r\n` becoming `\n`. The new content may not carry a
- * heading of the section's level or higher (it would split or duplicate sections).
+ * heading of the section's level or higher (it would split or duplicate sections),
+ * nor leave a code fence open (it would swallow the sections after it).
  */
 export function replaceMemorySection(
   body: string,
@@ -632,6 +644,7 @@ export function replaceMemorySection(
 
   const newText = content.replace(/\r\n/g, '\n').trim()
   const newLines = newText ? newText.split('\n') : []
+  if (endsInsideFence(newLines)) return { error: 'unclosed-fence' }
   if (markdownHeadings(newLines).some((other) => other.level <= heading.level))
     return { error: 'heading-in-content' }
 

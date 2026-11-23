@@ -6,6 +6,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { spawn } from 'child_process'
 import {
+  MCP_LOCKED_MESSAGE,
   MCP_PERMISSIONS,
   MCP_STDIO_BRIDGE_SOURCE,
   startSagyouMcpBroker,
@@ -2175,6 +2176,7 @@ describe('reading another project needs an approval', () => {
       decide?: (projectId: string) => Promise<ProjectReadDecision> | ProjectReadDecision
       withDep?: boolean
       session?: Partial<McpSession>
+      locked?: { value: boolean }
     } = {}
   ): Promise<Harness> {
     const asked: { runId: string; projectId: string }[] = []
@@ -2198,6 +2200,7 @@ describe('reading another project needs an approval', () => {
       memoriesForConflict: () => [],
       saveMemory: async () => ({ ok: false }),
       createTask: async () => ({ ok: true }),
+      ...(options.locked ? { isLocked: () => options.locked?.value === true } : {}),
       activeSessions: () => [
         {
           runId: 'run-b',
@@ -2332,6 +2335,49 @@ describe('reading another project needs an approval', () => {
     expect(text(await first)).toContain('SEGREDO-DO-PROJETO-2')
     expect(text(await second)).toContain('SEGREDO-DO-PROJETO-2')
     expect(asked).toHaveLength(1)
+  })
+
+  it('approved, but the app got locked while the card was open: the read is refused as locked', async () => {
+    let answer: (decision: ProjectReadDecision) => void = () => {}
+    const locked = { value: false }
+    const { call } = await gated({
+      locked,
+      decide: () => new Promise((resolve) => (answer = resolve))
+    })
+    const pending = call('search_memory', { term: 'x', projectId: 'project-2' })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    locked.value = true
+    answer('approved')
+    const reply = await pending
+    expect(message(reply)).toBe(MCP_LOCKED_MESSAGE)
+    expect(JSON.stringify(reply)).not.toContain('SEGREDO')
+  })
+
+  it('approved after the session was revoked: refused, with no data', async () => {
+    let answer: (decision: ProjectReadDecision) => void = () => {}
+    const { call, revoke, asked } = await gated({
+      decide: () => new Promise((resolve) => (answer = resolve))
+    })
+    const pending = call('read_memory', { id: 'other-1' })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    revoke('gate-token')
+    answer('approved')
+    const reply = await pending
+    expect(message(reply)).toBe(REFUSED)
+    expect(JSON.stringify(reply)).not.toContain('SEGREDO')
+    expect(asked).toHaveLength(1)
+  })
+
+  it('a call that its own arguments refuse asks the user for nothing', async () => {
+    const { call, asked } = await gated()
+    expect(message(await call('search_memory', { projectId: 'project-2' }))).toBeTruthy()
+    expect(
+      message(await call('search_memory', { term: '  ', projectId: 'project-2' }))
+    ).toBeTruthy()
+    expect(
+      message(await call('list_recent_memories', { projectId: 'project-2', limit: 999 }))
+    ).toBeTruthy()
+    expect(asked).toEqual([])
   })
 
   it('fails closed when the dep is missing or throws', async () => {

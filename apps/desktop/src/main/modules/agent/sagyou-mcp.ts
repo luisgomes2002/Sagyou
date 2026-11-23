@@ -563,6 +563,12 @@ function memoryReadTarget(
   deps: McpBrokerDeps
 ): string | null {
   if (session.projectId === null) return null
+  // A call that will be refused for its own arguments asks the user for nothing.
+  if (name === 'search_memory') {
+    const term = args && typeof args === 'object' ? (args as { term?: unknown }).term : undefined
+    if (typeof term !== 'string' || !term.trim()) return null
+  }
+  if (name === 'list_recent_memories' && 'error' in recentMemoryFilter(args, session)) return null
   if (PROJECT_MEMORY_READS.has(name))
     return crossProjectTarget(session.projectId, readProjectId(args, session))
   if (name !== 'read_memory') return null

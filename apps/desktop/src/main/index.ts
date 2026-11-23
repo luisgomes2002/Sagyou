@@ -88,7 +88,11 @@ import { buildTerminalHandoff } from './modules/agent/terminal-handoff'
 import { createSessionCheckpoints, selectActiveSessions } from './modules/agent/session-checkpoint'
 import { archiveHandoffOverflow } from './modules/ai/handoff-state'
 import { searchScopeFor } from './modules/ai/memory-scope'
-import { PROJECT_READ_CARD, projectReadResumo } from './modules/agent/mcp-project-read'
+import {
+  PROJECT_READ_CARD,
+  projectReadResumo,
+  sameProjectName
+} from './modules/agent/mcp-project-read'
 import {
   createRunActivity,
   runActivityEntry,
@@ -424,6 +428,13 @@ const sagyouMcp = startSagyouMcpBroker({
   approveProjectRead: async (session, projectId) => {
     const project = loadData().projects.find((candidate) => candidate.id === projectId)
     if (!project) return 'not-found'
+    // A project renamed to look like the session's own would make the card read as if
+    // the agent asked for its own project: refused with no card.
+    const own = loadData().projects.find((candidate) => candidate.id === session.projectId)
+    if (own && sameProjectName(own.name, project.name)) {
+      log.info('mcp', 'cross_project_read', { decision: 'not_approved', reason: 'same_name' })
+      return 'refused'
+    }
     const approved = await requestMcpWriteApproval(
       session.runId,
       PROJECT_READ_CARD,
@@ -504,7 +515,8 @@ const sagyouMcp = startSagyouMcpBroker({
         prepareMemoryWrite(name, args, {
           getMemory: (id) => memoryStore.getMemory(id),
           listMemories: () => memoryStore.listMemories(),
-          now: new Date().toISOString()
+          now: new Date().toISOString(),
+          sessionProjectId: session.projectId
         })
       const outcome = await mcpWriteQueue.enqueue<McpActionResult>(
         { runId: session.runId, name, args, approval: externalApproval(session.runId, name) },

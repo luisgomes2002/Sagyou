@@ -14,10 +14,26 @@ export const PROJECT_READ_CARD = 'read_other_project_memory'
 
 const NAME_LIMIT = 80
 
-/** The approval card's text. The name is one clean line: no quotes, no line breaks, bounded. */
+/** A name made of what the eye sees: no control, zero-width or bidi characters, one line. */
+function visibleName(name: string): string {
+  return name.replace(/\s+/g, ' ').replace(/\p{C}/gu, '').trim()
+}
+
+/**
+ * The approval card's text. The name is one clean line: no quotes, no line breaks, no
+ * invisible or direction-changing characters (a project renamed to look like the
+ * session's own would fool the user), and an ellipsis when it was cut.
+ */
 export function projectReadResumo(name: string): string {
-  const clean = name.replace(/\s+/g, ' ').replace(/"/g, "'").trim().slice(0, NAME_LIMIT)
+  const visible = visibleName(name).replace(/"/g, "'")
+  const clean = visible.length > NAME_LIMIT ? `${visible.slice(0, NAME_LIMIT)}…` : visible
   return `Ler memórias do projeto "${clean}"?`
+}
+
+/** Two project names that look the same to the user (case, spacing, invisible characters). */
+export function sameProjectName(a: string, b: string): boolean {
+  const key = (name: string): string => visibleName(name.normalize('NFKC')).toLowerCase()
+  return key(a) !== '' && key(a) === key(b)
 }
 
 /**
@@ -94,8 +110,14 @@ export class ProjectReadGrants {
   /** The session is gone: forget what it was allowed and ignore any question still open. */
   drop(token: string): void {
     this.granted.delete(token)
+    let open = false
     for (const key of [...this.pending.keys()])
-      if (key.startsWith(`${token}\u0000`)) this.pending.delete(key)
-    this.generation.set(token, (this.generation.get(token) ?? 0) + 1)
+      if (key.startsWith(`${token}\u0000`)) {
+        this.pending.delete(key)
+        open = true
+      }
+    // Only a question still open needs to be told apart from a later one; a token
+    // that asked nothing (any invalid one) leaves no trace, so the map cannot grow.
+    if (open) this.generation.set(token, (this.generation.get(token) ?? 0) + 1)
   }
 }

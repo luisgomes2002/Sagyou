@@ -523,6 +523,8 @@ export interface McpMemoryDeps {
   getMemory: (id: string) => AiMemory | null
   listMemories: () => AiMemory[]
   now: string
+  /** The session's project; null or absent for a session that reads every project. */
+  sessionProjectId?: string | null
 }
 
 type MemoryPrepared = { ok: true; resumo: string; op: McpMemoryOp } | { ok: false; error: string }
@@ -576,6 +578,8 @@ function patchSectionBody(existing: AiMemory, section: string, content: unknown)
     return refuseMemory(
       `Há mais de uma seção "${section}" nesta memória; use update_memory sem section.`
     )
+  if (patched.error === 'unclosed-fence')
+    return refuseMemory('O corpo da seção não pode deixar um bloco de código aberto.')
   return refuseMemory(
     'O corpo da seção não pode conter títulos de nível igual ou menor que o da seção.'
   )
@@ -633,6 +637,15 @@ function prepareMemoryOp(
   if (name === 'update_memory') {
     const existing = editableMemory(deps, memoryId(args, 'id'))
     const section = sectionName(args)
+    // Editing a section answers with the memory's own headings (not found, repeated,
+    // ...). For another project's memory that would read it without the user's card.
+    if (
+      section !== null &&
+      deps.sessionProjectId &&
+      existing.projectId !== null &&
+      existing.projectId !== deps.sessionProjectId
+    )
+      refuseMemory(MEMORY_UNAVAILABLE)
     if (section !== null && args.expectedUpdatedAt === undefined)
       refuseMemory(
         'Para editar uma seção, passe expectedUpdatedAt (o updatedAt lido com read_memory).'
