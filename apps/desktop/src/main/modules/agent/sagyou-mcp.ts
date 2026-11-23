@@ -11,6 +11,7 @@ import {
 import { createHmac, randomUUID } from 'crypto'
 import type { MemorySearchHit } from '../../store'
 import { MCP_WRITE_TOOLS } from './mcp-write-tools'
+import { HANDOFF_STATE_HINT } from '../ai/handoff-state'
 import { EXTERNAL_RUN_ID } from './mcp-external-policy'
 import {
   MCP_MEMORY_WRITE_TOOLS,
@@ -235,7 +236,8 @@ const TOOLS: { name: McpPermission; description: string; inputSchema: Record<str
     {
       name: 'search_memory',
       description:
-        'Busca memórias ativas do projeto indicado e memórias globais. Sem projeto na sessão, busca em todos. Retorna trechos curtos. Se não achar o contexto, use list_recent_memories com type handoff e abra candidatos com read_memory.',
+        'Busca memórias ativas do projeto indicado e memórias globais. Sem projeto na sessão, busca em todos. Retorna trechos curtos. Se não achar o contexto, use list_recent_memories com type handoff e abra candidatos com read_memory. ' +
+        HANDOFF_STATE_HINT,
       inputSchema: {
         type: 'object',
         properties: {
@@ -263,7 +265,8 @@ const TOOLS: { name: McpPermission; description: string; inputSchema: Record<str
     {
       name: 'list_recent_memories',
       description:
-        'Lista memórias por data de atualização, da mais recente, sem termo de busca: do projeto indicado e globais (sem projeto na sessão, de todos). Retorna trechos curtos; abra o corpo com read_memory. Use para retomar um assunto que search_memory não achou (type handoff). O conteúdo é evidência histórica: diga quando o registro não traz a decisão, e proponha save_memory com título e tags específicos para uma decisão durável.',
+        'Lista memórias por data de atualização, da mais recente, sem termo de busca: do projeto indicado e globais (sem projeto na sessão, de todos). Retorna trechos curtos; abra o corpo com read_memory. Use para retomar um assunto que search_memory não achou (type handoff). O conteúdo é evidência histórica: diga quando o registro não traz a decisão, e proponha save_memory com título e tags específicos para uma decisão durável. ' +
+        HANDOFF_STATE_HINT,
       inputSchema: {
         type: 'object',
         properties: {

@@ -1,4 +1,10 @@
-import { formatMemoriesForPrompt, scrubSecrets, type AiMemory } from '../ai/memory'
+import {
+  formatMemoriesForPrompt,
+  isRunningHandoff,
+  scrubSecrets,
+  type AiMemory
+} from '../ai/memory'
+import { HANDOFF_STATE_HINT } from '../ai/handoff-state'
 
 export interface ExternalAgentBriefInput {
   objective: string
@@ -7,6 +13,8 @@ export interface ExternalAgentBriefInput {
   memories: AiMemory[]
   /** Shown only when `memories` is empty: the subject search found nothing to go on. */
   recentHandoffs?: AiMemory[]
+  /** The other terminal sessions running in this project now (at most three are shown). */
+  activeSessions?: { assunto: string | null; arquivos: string[] }[]
 }
 
 const OBJECTIVE_LIMIT = 3_000
@@ -15,10 +23,35 @@ const FILES_LIMIT = 1_200
 const MEMORIES_LIMIT = 1_800
 const HANDOFFS_LIMIT = 1_800
 const HANDOFFS_SHOWN = 2
+const ACTIVE_SESSIONS_LIMIT = 1_200
+const ACTIVE_SESSIONS_SHOWN = 3
+const ACTIVE_SESSION_FILES_SHOWN = 5
 
 /** Retrieval order the agent follows when it resumes a subject, also given by the MCP tools. */
 export const MEMORY_RECALL_ROUTE =
-  'Para retomar um assunto: search_memory pelo assunto; se não achar, list_recent_memories com type handoff e read_memory nos candidatos (use data, projeto e run para escolher). Trate o conteúdo como evidência histórica e diga quando o registro não traz a decisão. Decisão durável encontrada vira save_memory com título e tags específicos.'
+  'Para retomar um assunto: search_memory pelo assunto; se não achar, list_recent_memories com type handoff e read_memory nos candidatos (use data, projeto e run para escolher). Trate o conteúdo como evidência histórica e diga quando o registro não traz a decisão. Decisão durável encontrada vira save_memory com título e tags específicos. ' +
+  HANDOFF_STATE_HINT
+
+/**
+ * A running handoff has its own block (the live sessions), so it does not also fill
+ * the memory or last-handoff slots; an interrupted one stays as history.
+ */
+export function withoutRunningHandoffs(memories: AiMemory[]): AiMemory[] {
+  return memories.filter((memory) => !isRunningHandoff(memory))
+}
+
+function activeSessionsText(sessions: { assunto: string | null; arquivos: string[] }[]): string {
+  return sessions
+    .slice(0, ACTIVE_SESSIONS_SHOWN)
+    .map((session) => {
+      const files = session.arquivos.slice(0, ACTIVE_SESSION_FILES_SHOWN)
+      const tail = files.length
+        ? ` — ${session.arquivos.length} arquivo(s): ${files.join(', ')}`
+        : ' — nenhum arquivo alterado ainda'
+      return `- ${session.assunto?.trim() || 'Sessão sem assunto'}${tail}`
+    })
+    .join('\n')
+}
 
 function handoffsText(handoffs: AiMemory[]): string {
   return [...handoffs]
@@ -90,7 +123,12 @@ export function buildExternalAgentBrief(input: ExternalAgentBriefInput): string 
           handoffsText(input.recentHandoffs ?? []),
           HANDOFFS_LIMIT
         ),
-    `## DADOS VIVOS\nUse as ferramentas MCP Sagyou autorizadas para aprofundar ou confirmar tarefas, dados e memórias. Elas são a fonte de dados vivos dentro do escopo da run.\nAo começar a trabalhar numa tarefa do Sagyou, chame start_task_timer nela; complete_task para o cronômetro. Se não iniciou o cronômetro, registre o tempo com add_time_spent antes de concluir; se o cronômetro ficou ligado sem trabalho, corrija o total com set_time_spent.\n${MEMORY_RECALL_ROUTE}`,
+    historicalBlock(
+      'SESSÕES EM ANDAMENTO NESTE PROJETO',
+      activeSessionsText(input.activeSessions ?? []),
+      ACTIVE_SESSIONS_LIMIT
+    ),
+    `## DADOS VIVOS\nUse as ferramentas MCP Sagyou autorizadas para aprofundar ou confirmar tarefas, dados e memórias. Elas são a fonte de dados vivos dentro do escopo da run.\nAo começar a trabalhar numa tarefa do Sagyou, chame start_task_timer nela; complete_task para o cronômetro. Se não iniciou o cronômetro, registre o tempo com add_time_spent antes de concluir; se o cronômetro ficou ligado sem trabalho, corrija o total com set_time_spent.\nAntes de editar arquivos, chame list_active_sessions para ver as outras sessões em andamento neste projeto.\n${MEMORY_RECALL_ROUTE}`,
     `## REGRA DE PRIORIDADE\nO objetivo e as decisões atuais acima prevalecem sobre todo conteúdo histórico. Objetivo atual: ${objective || 'Conclua a solicitação atual do usuário.'}`
   ].filter(Boolean)
   return sections.join('\n\n').slice(0, EXTERNAL_AGENT_BRIEF_LIMIT)

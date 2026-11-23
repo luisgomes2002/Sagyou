@@ -79,7 +79,11 @@ import {
   CODE_EXECUTOR_MCP_PERMISSIONS,
   prepareAgentMcpSession
 } from './modules/agent/agent-mcp-session'
-import { buildExternalAgentBrief, scrubExternalBriefSecrets } from './modules/agent/agent-briefing'
+import {
+  buildExternalAgentBrief,
+  scrubExternalBriefSecrets,
+  withoutRunningHandoffs
+} from './modules/agent/agent-briefing'
 import { buildTerminalHandoff } from './modules/agent/terminal-handoff'
 import { createSessionCheckpoints } from './modules/agent/session-checkpoint'
 import { archiveHandoffOverflow } from './modules/ai/handoff-state'
@@ -2695,19 +2699,24 @@ app.whenReady().then(() => {
         try {
           // Search is ranking-only and does not touch decay counters. Full data
           // still stays behind MCP once the executor needs to investigate.
-          relevantMemories = memoryStore
-            .searchMemories({ projectId: run.projectId, term: task, limit: 5 })
-            .map((hit) => hit.memory)
+          relevantMemories = withoutRunningHandoffs(
+            memoryStore
+              .searchMemories({ projectId: run.projectId, term: task, limit: 5 })
+              .map((hit) => hit.memory)
+          )
           // Nothing matched the request's words: the last handoffs say what came before.
           if (!relevantMemories.length)
-            recentHandoffs = memoryRules.selectRecentMemories(memoryStore.listMemories(), {
-              projectId: run.projectId,
-              allProjects: false,
-              type: 'handoff',
-              status: 'active',
-              offset: 0,
-              limit: 2
-            }).items
+            recentHandoffs = withoutRunningHandoffs(
+              memoryRules.selectRecentMemories(memoryStore.listMemories(), {
+                projectId: run.projectId,
+                allProjects: false,
+                type: 'handoff',
+                status: 'active',
+                offset: 0,
+                // Running handoffs are dropped below, so ask for more than the two shown.
+                limit: 8
+              }).items
+            )
         } catch {
           /* Briefing context is best-effort; a launch must remain available. */
         }
@@ -2716,7 +2725,13 @@ app.whenReady().then(() => {
           decisions: decisoes,
           files: rel,
           memories: relevantMemories,
-          recentHandoffs
+          recentHandoffs,
+          // Only a run with a project gets the block; a general session uses the tool.
+          activeSessions: run.projectId
+            ? activeSessionViews({ projectId: run.projectId, excludeRunId: run.id }).map(
+                (session) => ({ assunto: session.assunto, arquivos: session.arquivos })
+              )
+            : []
         })
         // A blank session starts the CLI on its normal screen: pasting a briefing
         // (skills, MCP hints) would run a turn nobody asked for.

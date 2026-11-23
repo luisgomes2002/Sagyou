@@ -15,6 +15,10 @@ export const INTERRUPTED_STATUS_LINE = 'Status: interrompida'
 export const RUNNING_RESULT_LINE =
   'Resultado: Sessão em andamento; este registro é do último checkpoint.'
 
+/** Said to the agent wherever it learns how to resume a subject. */
+export const HANDOFF_STATE_HINT =
+  'Handoffs com [em andamento] são de sessões abertas agora (veja list_active_sessions) e os com [interrompida] terminaram sem saída normal.'
+
 const interruptedResultLine = (lastRecord: string): string =>
   `Resultado: A sessão terminou sem saída normal (o app fechou ou o PC desligou). Último registro: ${lastRecord}.`
 

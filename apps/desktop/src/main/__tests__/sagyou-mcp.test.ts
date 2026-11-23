@@ -1918,6 +1918,19 @@ describe('list_active_sessions', () => {
     expect(tool?.description).toContain('Chame ao começar e antes de editar arquivos')
   })
 
+  it('says the handoff states in the descriptions of the memory tools', async () => {
+    const { listed } = await activeBroker([])
+    const tools = (
+      (await listed()).result as { tools: { name: string; description: string }[] }
+    ).tools
+    for (const name of ['search_memory', 'list_recent_memories']) {
+      const description = tools.find((item) => item.name === name)?.description ?? ''
+      expect(description).toContain('[em andamento]')
+      expect(description).toContain('[interrompida]')
+      expect(description).toContain('list_active_sessions')
+    }
+  })
+
   it('answers an empty list when no other session is running', async () => {
     const { call } = await activeBroker([])
     expect(result(await call({}))).toEqual({ total: 0, sessoes: [] })
