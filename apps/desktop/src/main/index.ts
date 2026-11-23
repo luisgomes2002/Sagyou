@@ -87,6 +87,7 @@ import {
 import { buildTerminalHandoff } from './modules/agent/terminal-handoff'
 import { createSessionCheckpoints, selectActiveSessions } from './modules/agent/session-checkpoint'
 import { archiveHandoffOverflow } from './modules/ai/handoff-state'
+import { searchScopeFor } from './modules/ai/memory-scope'
 import {
   createRunActivity,
   runActivityEntry,
@@ -414,12 +415,7 @@ const sagyouMcp = startSagyouMcpBroker({
     }
   },
   searchMemory: (projectId, term) =>
-    memoryStore.searchMemories({
-      projectId: projectId ?? null,
-      allProjects: projectId === undefined,
-      term,
-      limit: 8
-    }),
+    memoryStore.searchMemories({ ...searchScopeFor(projectId), term, limit: 8 }),
   readMemory: (id) => memoryStore.getMemory(id),
   listMemoriesForRecent: () => memoryStore.listMemories({ includeArchived: true }),
   activeSessions: (filter) => activeSessionViews(filter),
