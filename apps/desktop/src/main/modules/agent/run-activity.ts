@@ -67,6 +67,8 @@ const ACTION_LIMIT = 12
  */
 export function createRunActivity(): {
   record: (runId: string, entry: RunActivityEntry) => void
+  /** The run's entries so far, without emptying it: a checkpoint reads them while the run lives. */
+  peek: (runId: string) => RunActivityEntry[]
   take: (runId: string) => RunActivityEntry[]
 } {
   const runs = new Map<string, RunActivityEntry[]>()
@@ -77,6 +79,7 @@ export function createRunActivity(): {
       entries.push(entry)
       runs.set(runId, entries)
     },
+    peek: (runId) => [...(runs.get(runId) ?? [])],
     take: (runId) => {
       const entries = runs.get(runId) ?? []
       runs.delete(runId)
