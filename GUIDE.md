@@ -492,6 +492,13 @@ compatibilidade nem faça fallback silencioso para outro CLI.
   por `global`); os mais antigos são arquivados, nunca o fixado nem o de uma run
   viva. `list_active_sessions` mostra as outras sessões vivas (assunto, ações e
   arquivos do último checkpoint) e o briefing com pedido inicial lista até 3.
+  `read_memory` lê o corpo **em páginas** (`offset`, `limit` de 500 a 12000,
+  padrão 6000, em pontos de código Unicode; a resposta traz `totalChars`,
+  `truncated` e `nextOffset`; argumento errado é recusado antes de procurar a
+  memória e antes do cartão). `check_memories` também devolve `similar`: pares
+  parecidos por termos de título e tags (≥ 60%, 2+ termos, títulos diferentes,
+  corpos diferentes, no máximo 8), só como sinal. As regras vivem no core, com
+  fixtures para a migração para Rust.
   `update_memory` aceita `expectedUpdatedAt` (o `updatedAt` de `read_memory`) e
   recusa a edição se a memória mudou; com `section` (título Markdown, sem `#`)
   troca só o conteúdo daquela seção (`replaceMemorySection` no core) e exige
