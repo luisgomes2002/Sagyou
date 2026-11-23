@@ -4,7 +4,13 @@ import { act, render, screen } from '@testing-library/react'
 import { AttentionPanel } from '../../components/ai/fleet/AttentionPanel'
 import type { CodeAgentRunUI } from '../../components/ai/fleet/useCodeAgentRuns'
 
-function runWith(expiresAt?: string): CodeAgentRunUI {
+function runWith(
+  expiresAt?: string,
+  card: { name: string; resumo: string } = {
+    name: 'mcp:criar_task',
+    resumo: 'Criar task "X" em Sagyou'
+  }
+): CodeAgentRunUI {
   return {
     id: 'run-1',
     questions: [],
@@ -12,14 +18,40 @@ function runWith(expiresAt?: string): CodeAgentRunUI {
     approvals: [
       {
         id: 'a1',
-        name: 'mcp:criar_task',
+        name: card.name,
         args: {},
-        resumo: 'Criar task "X" em Sagyou',
+        resumo: card.resumo,
         ...(expiresAt ? { expiresAt } : {})
       }
     ]
   } as unknown as CodeAgentRunUI
 }
+
+describe('AttentionPanel mcp card label', () => {
+  it('a read card says it is a read; a write card keeps saying write', () => {
+    const { unmount } = render(
+      <AttentionPanel
+        run={runWith(undefined, {
+          name: 'mcp:read_other_project_memory',
+          resumo: 'Ler memórias do projeto "B"?'
+        })}
+        onApprove={vi.fn()}
+      />
+    )
+    expect(screen.getByText('Ler memórias do projeto "B"?')).toBeTruthy()
+    expect(screen.getByText('Leitura solicitada pelo MCP desta sessão.')).toBeTruthy()
+    expect(screen.queryByText('Escrita solicitada pelo MCP desta sessão.')).toBeNull()
+    unmount()
+    render(
+      <AttentionPanel
+        run={runWith(undefined, { name: 'mcp:delete_task', resumo: 'Excluir task' })}
+        onApprove={vi.fn()}
+      />
+    )
+    expect(screen.getByText('Escrita solicitada pelo MCP desta sessão.')).toBeTruthy()
+    expect(screen.queryByText('Leitura solicitada pelo MCP desta sessão.')).toBeNull()
+  })
+})
 
 describe('AttentionPanel approval deadline', () => {
   beforeEach(() => {

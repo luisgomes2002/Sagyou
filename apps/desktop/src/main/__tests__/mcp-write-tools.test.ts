@@ -516,6 +516,11 @@ describe('autoApprovesPending', () => {
     expect(autoApprovesPending('aplicar_alteracoes_externas')).toBe(false)
   })
 
+  it('never answers the card that asks to read another project, and that card is not a write tool', () => {
+    expect(autoApprovesPending('mcp:read_other_project_memory', true)).toBe(false)
+    expect(MCP_APPROVAL_REQUIRED.has('read_other_project_memory')).toBe(false)
+  })
+
   it('keeps auto-approving the cards it approved before', () => {
     expect(autoApprovesPending('mcp:criar_task')).toBe(true)
     expect(autoApprovesPending('mcp:save_memory')).toBe(true)

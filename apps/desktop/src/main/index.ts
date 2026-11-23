@@ -88,6 +88,7 @@ import { buildTerminalHandoff } from './modules/agent/terminal-handoff'
 import { createSessionCheckpoints, selectActiveSessions } from './modules/agent/session-checkpoint'
 import { archiveHandoffOverflow } from './modules/ai/handoff-state'
 import { searchScopeFor } from './modules/ai/memory-scope'
+import { PROJECT_READ_CARD, projectReadResumo } from './modules/agent/mcp-project-read'
 import {
   createRunActivity,
   runActivityEntry,
@@ -419,6 +420,20 @@ const sagyouMcp = startSagyouMcpBroker({
   readMemory: (id) => memoryStore.getMemory(id),
   listMemoriesForRecent: () => memoryStore.listMemories({ includeArchived: true }),
   activeSessions: (filter) => activeSessionViews(filter),
+  // Another project's memories: a card the user answers, never answered by auto mode.
+  approveProjectRead: async (session, projectId) => {
+    const project = loadData().projects.find((candidate) => candidate.id === projectId)
+    if (!project) return 'not-found'
+    const approved = await requestMcpWriteApproval(
+      session.runId,
+      PROJECT_READ_CARD,
+      { projectId },
+      projectReadResumo(project.name),
+      true
+    )
+    log.info('mcp', 'cross_project_read', { decision: approved ? 'approved' : 'not_approved' })
+    return approved ? 'approved' : 'refused'
+  },
   // Keep the existing once-per-hour decay accounting in the store; the broker
   // decides authorization first, so rejected probes never count as a read.
   touchMemory: (id) => memoryStore.touchMemories([id], new Date().toISOString()),
