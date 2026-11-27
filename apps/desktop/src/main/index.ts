@@ -18,7 +18,7 @@ import {
   type IpcMainEvent,
   type IpcMainInvokeEvent
 } from 'electron'
-import { join, relative, resolve, sep } from 'path'
+import { join, relative, sep } from 'path'
 import {
   readFileSync,
   writeFileSync,
@@ -535,7 +535,7 @@ interface CodeRunState {
   localInstructions: string[]
   localSkills: string[]
   task: string
-  /** Scope decisions the chat settled before launch; they go into the handoff. */
+  /** Always empty on new runs; kept because the run archive stores it (the chat no longer passes decisions). */
   decisions: string[]
   startedAt: number
   /** Set by stopCodeAgent; the loop checks this between steps. */
@@ -1354,7 +1354,7 @@ function persistTerminalHandoff(
           status,
           result,
           changedFiles: files,
-          subject: run.task === BLANK_SESSION_TASK ? activity.subject : run.task,
+          subject: activity.subject,
           decisions: [...run.decisions, ...activity.decisions],
           actions: activity.actions,
           pending: activity.pending
@@ -2184,7 +2184,7 @@ app.whenReady().then(() => {
         allowedWritePaths?: string[]
         /** The terminal session that owns the run, so it can be reopened later. */
         sessionId?: string
-        /** The project whose memory to brief the agent with (shared with the chat). */
+        /** The project that scopes the run's MCP capability and its code root. */
         projectId?: string | null
         /** Financial profile captured with the project scope. */
         financialProfileId?: string

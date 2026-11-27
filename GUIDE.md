@@ -468,9 +468,8 @@ compatibilidade nem faça fallback silencioso para outro CLI.
   capturado. `criar_task` aceita outro projeto existente, sempre com aprovação.
 - **Handoff de terminal é um breadcrumb, não log.** No encerramento, a memória
   `handoff:<projeto>` é atualizada com pedido, status, arquivos e id da run, todos
-  limitados. Quando há fonte, entram também o assunto (o pedido, ou a primeira
-  escrita MCP aplicada), as decisões passadas pelo chat e as memórias `decisao`
-  salvas na run, as ações aplicadas pelo MCP e as tasks com cronômetro iniciado e
+  limitados. Quando há fonte, entram também o assunto (a primeira escrita MCP
+  aplicada), as memórias `decisao` salvas na run, as ações aplicadas pelo MCP e as tasks com cronômetro iniciado e
   não concluídas. Nada vem do log do PTY nem de diff não aplicado; sem fonte, o
   handoff manda consultar a run. O terminal completo continua apenas no arquivo
   arquivado da run.
