@@ -80,7 +80,7 @@ npm run typecheck    # checa main e renderer
 npm run lint         # ESLint
 npm test             # roda tudo uma vez
 npm run test:coverage # testes + relatório de cobertura de main e renderer
-npm test -w sagyou -- src/main/__tests__/web-fetch.test.ts   # um arquivo só
+npm test -w sagyou -- src/main/__tests__/external-links.test.ts   # um arquivo só
 npm run build:linux  # (ou :win / :mac) gera o distribuível
 ```
 
@@ -105,7 +105,7 @@ src/
     handlers/    # handlers IPC por domínio (extraídos de index.ts)
       window.ts  # window:minimize/maximize/close/is-maximized
       files.ts   # files:*, excel:export, task:images:*
-      backup.ts, memory.ts, code-files.ts, legacy-chat.ts # IPC por domínio
+      backup.ts, memory.ts, legacy-chat.ts # IPC por domínio
     store.ts     # persistência SQLite (kanban.db)
     modules/     # implementação agrupada por responsabilidade; index.ts e handlers orquestram
       agent/     # sessões, PTY, worktree, diff, entrega, MCP, arquivo de runs e adapters
@@ -309,12 +309,10 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
     `tool_timeout_sec = MCP_CLIENT_TOOL_TIMEOUT_SEC` (`modules/agent/mcp-approval.ts`).
 11. **Ferramenta de leitura que devolve menos do que existe tem que dizer isso**
     (`total`, `truncado`, `proximoInicio`). Sem o número do que ficou de fora, o
-    agente afirma com confiança um total errado. Vale para o MCP e para
-    `ai:code:list`/`:read`, que paginam.
-12. **Leitura de código confina na raiz.** `confineToRoot` em `code-files.ts` é a
-    única barreira entre quem lê e o resto do disco; o walk é assíncrono de
-    propósito (o síncrono travava o event loop do main). Extração por símbolo ou
-    linha é regex best-effort, sem AST.
+    agente afirma com confiança um total errado. Vale para o MCP, que pagina.
+12. **Pastas de código confinam na raiz.** `confineToRoot` em `code-files.ts` é a
+    única barreira entre quem recebe um caminho e o resto do disco (as ferramentas
+    `ai:code:*` de leitura foram removidas junto com o chat).
 13. **Configuração de IA não guarda segredo.** `ai-config.json` não tem mais chave,
     perfil, preço nem modelo de API; `ai:config:set` mescla sobre o arquivo e
     descarta essas chaves nos dois lados, e `ai:config:get` nunca devolve chave.
@@ -545,32 +543,20 @@ tokens de uso único (10 min); a cópia acontece em `files:import`. Um renderer
 comprometido poderia importar qualquer arquivo legível pelo usuário, então não
 dê outro chamador a esse canal nem crie outro que receba caminhos.
 
-`main/modules/web/web-fetch.ts` busca páginas cuja URL **não é confiável** (vem de
-um modelo ou de uma página). Já existe, com testes, e não deve ser afrouxado
-(o canal `ai:web:fetch` segue registrado, sem chamador no renderer hoje):
+`ai:web:fetch` (busca de página por URL não confiável) foi removido: nada no renderer
+o chamava. Quem trouxer a web de volta escreve uma spec nova com a política SSRF
+(só `http`/`https`, redes privadas e metadata bloqueadas, redirects à mão, nada do
+usuário na requisição); o histórico do git guarda a versão antiga.
 
-- só `http`/`https` (allowlist — `file:` leria o disco);
-- redes privadas, loopback, link-local e metadata de nuvem bloqueadas;
-- **redirects seguidos à mão**, com a mesma política reaplicada a cada salto;
-- credenciais embutidas (`user:senha@host`) recusadas;
-- nada do usuário vai junto: sem cookie, sem authorization, sem referer;
-- o parser (`new URL()`) é o único sanitizador — **não** acrescente limpeza de
-  string na frente dele, e não decodifique entidades HTML.
-
-`main/modules/web/web-render.ts` é o irmão que **executa JavaScript** (páginas SPA),
-via `ai:web:fetch` com `render`. Um navegador é uma superfície SSRF muito maior:
-**toda requisição** (documento e sub-recursos) passa pela mesma política `checkUrl`
-via `session.webRequest.onBeforeRequest` — mantenha isso. Sessão efêmera sem
-cookie, sandbox, sem node. A orquestração do `BrowserWindow` **não roda no
-vitest** — verifique no app.
-
-`main/modules/code/code-files.ts` confina todo acesso a arquivo dentro da raiz escolhida
-(`confineToRoot`).
+`main/modules/code/code-files.ts` (`confineToRoot`) confina os caminhos entregues a uma
+sessão de agente (arquivos indicados e caminhos de escrita permitidos).
 
 **Links externos:** `main/modules/web/external-links.ts` só deixa `http:`/`https:` sem
 credenciais chegar a `shell.openExternal`; a janela principal bloqueia
 navegação para fora da página do app. Não abra URLs vindas do renderer
-diretamente no handler do sistema operacional.
+diretamente no handler do sistema operacional. O `new URL()` é o único
+sanitizador: não acrescente limpeza de string nem decodificação de entidades
+HTML na frente dele.
 
 ## Testes
 
@@ -591,8 +577,6 @@ diretamente no handler do sistema operacional.
 
 Não "simplifique" nenhuma destas sem ler o comentário que as acompanha:
 
-- **`await` em série no `main/modules/code/code-files.ts`** — de propósito. A versão síncrona
-  travava o event loop do main (que também serve o IPC) por ~70ms.
 - **O X esconde a janela (bandeja) em vez de fechar.** `hideOnClose` olha
   `closeToTray` e `isQuitting` (ligado no início do `before-quit`): Sair, instalar
   atualização e o fim de sessão do Windows fecham de verdade, com o salvamento.

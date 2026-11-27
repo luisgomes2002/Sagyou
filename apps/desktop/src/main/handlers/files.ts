@@ -1,5 +1,5 @@
 import type { IpcMain } from 'electron'
-import { join, extname } from 'path'
+import { join } from 'path'
 import { existsSync, mkdirSync, copyFileSync, unlinkSync, writeFileSync } from 'fs'
 import { randomUUID } from 'crypto'
 import { attachmentPath, safeAttachmentName } from '../modules/files/backup-files'
@@ -8,7 +8,6 @@ import {
   deleteImageFiles,
   decodeDataUrl
 } from '../modules/files/image-files'
-import { isDocumentExt, parseDocument } from '../modules/files/document-parser'
 import { createFileImportRegistry } from '../modules/files/file-import'
 import { indexProjectFileContent, loadData, removeProjectFileSearchContent } from '../store'
 import type { BrowserWindow, Dialog, Shell } from 'electron'
@@ -169,37 +168,5 @@ export function registerFilesHandlers(
   ipcMain.handle('task:images:delete', (_, items: { id: string; ext: string }[]) => {
     if (!Array.isArray(items)) return
     deleteImageFiles(items.map((it) => taskImagePath(it?.id, it?.ext)))
-  })
-
-  // --- Project file reading (for the ler_documento tool) ---
-
-  ipcMain.handle('ai:project-file:read', async (_, fileId: string) => {
-    if (!safeAttachmentName(fileId, '')) {
-      return { error: 'ID do arquivo inválido' }
-    }
-    // Walk the filesDir to find the file with this id (files are named <id><ext>).
-    let filePath: string | null = null
-    let ext = ''
-    try {
-      const { readdirSync } = await import('fs')
-      const entries = readdirSync(filesDir)
-      for (const entry of entries) {
-        if (entry === fileId || entry.startsWith(`${fileId}.`)) {
-          ext = extname(entry)
-          filePath = join(filesDir, entry)
-          break
-        }
-      }
-    } catch {
-      return { error: 'Não foi possível acessar os arquivos do projeto' }
-    }
-    if (!filePath || !existsSync(filePath)) {
-      return { error: 'Arquivo não encontrado' }
-    }
-    if (!isDocumentExt(ext)) {
-      return { error: `Tipo de arquivo não suportado: ${ext}. A leitura é compatível com PDF, DOCX, XLSX, CSV, TXT, MD, JSON, HTML, XML, YAML, RTF, ODT e ODS.` }
-    }
-    const result = await parseDocument(filePath, ext)
-    return result
   })
 }

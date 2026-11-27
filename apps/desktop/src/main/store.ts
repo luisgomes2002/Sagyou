@@ -3298,16 +3298,6 @@ function appendEventRows(db: Database.Database, events: EntityEvent[]): void {
     })
 }
 
-/** Query the event log for one entity, newest first. */
-export function eventsForEntity(entityType: string, entityId: string): EntityEvent[] {
-  const db = getDb()
-  return db
-    .prepare(
-      `SELECT * FROM entity_events WHERE entity_type=? AND entity_id=? ORDER BY timestamp DESC LIMIT 200`
-    )
-    .all(entityType, entityId) as EntityEvent[]
-}
-
 /** Lazy cap of the event log — best-effort, outside the save transaction. */
 function trimEventLog(db: Database.Database): void {
   const { cnt } = db.prepare('SELECT COUNT(*) as cnt FROM entity_events').get() as { cnt: number }
