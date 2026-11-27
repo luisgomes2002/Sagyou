@@ -78,7 +78,6 @@ import {
   CODE_EXECUTOR_MCP_PERMISSIONS,
   prepareAgentMcpSession
 } from './modules/agent/agent-mcp-session'
-import { buildExternalAgentBrief, scrubExternalBriefSecrets } from './modules/agent/agent-briefing'
 import { buildTerminalHandoff } from './modules/agent/terminal-handoff'
 import {
   createRunActivity,
@@ -147,17 +146,9 @@ import {
   pruneRuns,
   runOwnership,
   runsForSession,
-  taskLabel,
   type AgentRunMeta,
   type AgentRunSnapshot
 } from './modules/agent/agent-runs'
-import {
-  listSkills,
-  saveSkill,
-  deleteSkill,
-  importSkill as importSkillDialog,
-  skillsDir
-} from './modules/ai/skills'
 import { createManagedWindow, registerWindowHandlers, type ManagedWindow } from './handlers/window'
 import { registerFilesHandlers } from './handlers/files'
 import { registerBackupHandlers } from './handlers/backup'
@@ -1023,74 +1014,6 @@ interface ExternalHarnessLaunch {
   args: string[]
 }
 
-/**
- * External CLIs run in an isolated worktree. Their flags either make extra
- * directories writable or differ by harness, so never hand them raw reference
- * paths. A bounded snapshot gives them real project context without expanding
- * their filesystem authority.
- */
-async function readOnlyReferenceBrief(roots: ReadOnlyRoot[]): Promise<string> {
-  const candidates = ['README.md', 'GUIDE.md', 'CLAUDE.md', 'package.json', 'manifest.json']
-  const sections: string[] = []
-  for (const root of roots) {
-    const files: string[] = []
-    for (const name of candidates) {
-      const file = join(root.path, name)
-      if (!existsSync(file) || !statSync(file).isFile()) continue
-      try {
-        const content = await readFile(file, 'utf-8')
-        files.push('### ' + name + '\n' + content.slice(0, 4_000))
-      } catch {
-        /* unreadable references are simply omitted from the bounded briefing */
-      }
-    }
-    sections.push(
-      '## REFERÊNCIA SOMENTE DE LEITURA: ' +
-        root.nome +
-        '\n' +
-        (files.join('\n\n') || 'Sem arquivos-base legíveis.')
-    )
-  }
-  return sections.join('\n\n').slice(0, 18_000)
-}
-
-/**
- * An external harness gets no data snapshot. It must request current data from
- * the run-scoped MCP capability, which retains the financial profile and
- * approves writes while letting the user query other projects explicitly.
- * Passing `loadData()` here would silently bypass those boundaries in the prompt.
- */
-function sagyouContextBrief(projectId: string | null | undefined): string {
-  try {
-    const project = projectId ? loadData().projects.find((item) => item.id === projectId) : null
-    return project
-      ? `## CONTEXTO DO SAGYOU\nProjeto inicial: ${project.name}. Use list_projects no MCP Sagyou para consultar outros projetos por ID.`
-      : '## CONTEXTO DO SAGYOU\nSessão geral. Use list_projects no MCP Sagyou para descobrir projetos e consultar seus dados.'
-  } catch {
-    return ''
-  }
-}
-
-/**
- * Local Sagyou skills are explicit user-authored briefing material, so an
- * external executor can use them without receiving the skills directory (or
- * any extra filesystem authority). Keep the hand-off bounded and sanitize it
- * together with the rest of the external brief.
- */
-function sagyouSkillsBrief(): string {
-  try {
-    const skills = listSkills(skillsPath()).slice(0, 20)
-    if (!skills.length) return ''
-    const body = skills
-      .map((skill) => `### /${skill.name}\n${skill.body.slice(0, 4_000)}`)
-      .join('\n\n')
-      .slice(0, 20_000)
-    return `## SKILLS LOCAIS DO SAGYOU\nUse estas instruções quando forem pertinentes à tarefa.\n\n${body}`
-  } catch {
-    return ''
-  }
-}
-
 /** A persistent terminal uses the harness normal TUI in its isolated worktree. */
 function buildTerminalHarnessLaunch(
   harness: ExternalHarnessId,
@@ -1444,10 +1367,6 @@ function persistTerminalHandoff(
   }
 }
 
-// --- Skills (.md files in userData/skills/) ---
-
-const skillsPath = (): string => skillsDir(app.getPath('userData'))
-
 // This machine's tray and lock preferences (userData/desktop-prefs.json), read in whenReady.
 let desktopPrefs: DesktopPrefs | null = null
 let tray: Tray | null = null
@@ -1604,36 +1523,6 @@ app.whenReady().then(() => {
 
   const filesDir = join(app.getPath('userData'), 'files')
   if (!existsSync(filesDir)) mkdirSync(filesDir)
-
-  // Migrate old ai-templates.json to per-file skills (one .md = one skill).
-  // Templates were a flat JSON array; skills are individual .md files the model
-  // can call with /skill-name.  Run once: after migration the .json is renamed
-  // to .bak so it never runs again.
-  const templatesPath = join(app.getPath('userData'), 'ai-templates.json')
-  if (existsSync(templatesPath)) {
-    try {
-      const raw = readFileSync(templatesPath, 'utf-8')
-      const parsed: unknown = JSON.parse(raw)
-      const entries: { name?: string; body?: string }[] = Array.isArray(parsed) ? parsed : []
-      const dir = skillsDir(app.getPath('userData'))
-      let migrated = 0
-      for (const t of entries) {
-        const name = (t.name ?? '').trim()
-        const body = (t.body ?? '').trim()
-        if (!name || !body) continue
-        const res = saveSkill(dir, { name, body })
-        if ('skill' in res) migrated++
-      }
-      if (migrated > 0) log.info('app', 'skills_migrated', { count: migrated })
-    } catch (_) {
-      /* best-effort — a corrupt json is silently skipped */
-    }
-    try {
-      renameSync(templatesPath, templatesPath + '.bak')
-    } catch (_) {
-      /* if rename fails (e.g. permissions), leave it — worst case it tries next launch */
-    }
-  }
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
@@ -2292,26 +2181,13 @@ app.whenReady().then(() => {
       _,
       request: {
         path: string
-        task: string
-        /**
-         * A session with no initial request: the CLI opens on its own screen and
-         * receives no briefing. Ignored when a task is given.
-         */
-        blank?: boolean
-        files?: string[]
         allowedWritePaths?: string[]
-        /** Absolute directories selected by the user for read-only reference. */
-        readOnlyRoots?: ReadOnlyRoot[]
-        /** Scope decisions already agreed with the user, honoured without re-deciding. */
-        decisoes?: string[]
         /** The terminal session that owns the run, so it can be reopened later. */
         sessionId?: string
         /** The project whose memory to brief the agent with (shared with the chat). */
         projectId?: string | null
         /** Financial profile captured with the project scope. */
         financialProfileId?: string
-        /** Chat-coordinated requests may only hand off to a terminal executor. */
-        coordinated?: boolean
         /** Start in auto-approval mode — approve() returns true without IPC. */
         autoApprove?: boolean
       }
@@ -2417,31 +2293,7 @@ app.whenReady().then(() => {
       }
       const effectiveDir = worktreeDir ?? dir
       const localHarnessContext = discoverHarnessLocalContext(effectiveDir)
-      const task = typeof request.task === 'string' ? request.task.trim() : ''
-      const blankSession = !task && request.blank === true
-      if (!task && !blankSession) {
-        await releaseFailedStart()
-        return { success: false, error: 'Tarefa vazia' }
-      }
-      // Files the caller pinned so the agent skips discovery. Confine each to the
-      // root (`confineToRoot` — a path is the model's, so it may
-      // be `../../etc`), and drop anything that escapes or doesn't exist rather
-      // than handing the agent a bogus target. An empty/all-invalid list falls
-      // back to the discovery path, so this can only speed things up, never break.
-      // Kept alongside the accepted list so the banner below can name what was
-      // dropped. A silently discarded path is the failure mode worth surfacing:
-      // it doesn't error, it just costs the user the slow discovery path.
-      const requestedFiles = Array.isArray(request.files)
-        ? request.files.filter((f): f is string => typeof f === 'string' && f.trim() !== '')
-        : []
-      const files = requestedFiles
-        .map((f) => confineToRoot(effectiveDir, f))
-        .filter((f): f is string => f !== null && existsSync(f) && statSync(f).isFile())
-      const droppedFiles = requestedFiles.filter((f) => {
-        const abs = confineToRoot(effectiveDir, f)
-        return abs === null || !existsSync(abs) || !statSync(abs).isFile()
-      })
-      // Unlike pinned input files, an allowed output may not exist yet. It is
+      // An allowed output may not exist yet. It is
       // still confined to the root and later enforced by writeFileTool.
       const requestedAllowedPaths = Array.isArray(request.allowedWritePaths)
         ? request.allowedWritePaths.filter(
@@ -2460,31 +2312,6 @@ app.whenReady().then(() => {
         })
         .filter((f): f is string => f !== null)
         .filter((f) => f !== '')
-      const requestedReadOnlyRoots = Array.isArray(request.readOnlyRoots)
-        ? request.readOnlyRoots
-        : []
-      const readOnlyRoots = requestedReadOnlyRoots
-        .filter(
-          (item): item is ReadOnlyRoot =>
-            !!item &&
-            typeof item.id === 'string' &&
-            typeof item.nome === 'string' &&
-            typeof item.path === 'string'
-        )
-        .map((item) => ({
-          ...item,
-          id: item.id.trim(),
-          nome: item.nome.trim(),
-          path: resolve(item.path)
-        }))
-        .filter(
-          (item) =>
-            item.id && item.nome && existsSync(item.path) && statSync(item.path).isDirectory()
-        )
-      if (requestedReadOnlyRoots.length !== readOnlyRoots.length) {
-        await releaseFailedStart()
-        return { success: false, error: 'Uma ou mais referências de leitura são inválidas.' }
-      }
       if (
         requestedAllowedPaths.length &&
         allowedWritePaths.length !== requestedAllowedPaths.length
@@ -2495,13 +2322,6 @@ app.whenReady().then(() => {
           error: 'Um ou mais caminhos permitidos estão fora da raiz do projeto.'
         }
       }
-      // Scope decisions the chat already settled with the user — plain strings,
-      // no path involved, so just clean and pass them into the prompt.
-      const decisoes = Array.isArray(request.decisoes)
-        ? request.decisoes
-            .filter((d): d is string => typeof d === 'string' && d.trim() !== '')
-            .map((d) => d.trim())
-        : []
       // Create the run state and register it — a new run starts fresh.
       // (runId foi criado acima, antes do worktree)
       const run: CodeRunState = {
@@ -2515,8 +2335,8 @@ app.whenReady().then(() => {
         harness,
         localInstructions: localHarnessContext.instructions,
         localSkills: localHarnessContext.skills,
-        task: blankSession ? BLANK_SESSION_TASK : taskLabel(task),
-        decisions: decisoes,
+        task: BLANK_SESSION_TASK,
+        decisions: [],
         startedAt: Date.now(),
         abort: false,
         log: '',
@@ -2534,7 +2354,7 @@ app.whenReady().then(() => {
         worktreeDir: worktreeDir,
         worktreeMergeError: null,
         allowedWritePaths: allowedWritePaths.length ? allowedWritePaths : undefined,
-        readOnlyRoots,
+        readOnlyRoots: [],
         externalChild: null,
         interactive,
         terminalCols: 100,
@@ -2553,9 +2373,7 @@ app.whenReady().then(() => {
         send('ai:code-agent:output', { runId, chunk })
       }
 
-      // Opening banner: the REAL model in use (task 11), and which files were
-      // pinned vs left for the agent to discover with buscar_no_codigo.
-      const rel = files.map((f) => relative(effectiveDir, f) || f)
+      // Opening banner: the REAL model in use.
       emit(
         '[' +
           externalHarness.command +
@@ -2568,82 +2386,16 @@ app.whenReady().then(() => {
           externalHarness.command +
           '] permissões do CLI próprio; alterações ficam no worktree até sua aprovação.\n'
       )
-      emit(
-        rel.length
-          ? `[sagyou] ${rel.length} arquivo(s) indicado(s) — busca desativada, conteúdo já no contexto:\n` +
-              rel.map((f) => `  · ${f}\n`).join('')
-          : '[sagyou] nenhum arquivo indicado — o agente vai localizá-los com buscar_no_codigo.\n'
-      )
-      if (droppedFiles.length) {
-        emit(
-          `[sagyou] ${droppedFiles.length} caminho(s) descartado(s) (fora da raiz ou inexistente):\n` +
-            droppedFiles.map((f) => `  · ${f}\n`).join('')
-        )
-      }
-      if (decisoes.length) {
-        emit(
-          `[sagyou] ${decisoes.length} decisão(ões) já tomada(s) — o agente deve respeitá-las:\n` +
-            decisoes.map((d) => `  · ${d}\n`).join('')
-        )
-      }
-
       if (externalHarness.path && worktreeDir) {
-        const launch = buildTerminalHarnessLaunch(harness, task, effectiveDir)
-        const referenceBrief = await readOnlyReferenceBrief(readOnlyRoots)
-        const appBrief = sagyouContextBrief(run.projectId)
-        const localSkillsBrief = sagyouSkillsBrief()
-        let relevantMemories: import('./modules/ai/memory').AiMemory[] = []
-        let recentHandoffs: import('./modules/ai/memory').AiMemory[] = []
-        try {
-          // Search is ranking-only and does not touch decay counters. Full data
-          // still stays behind MCP once the executor needs to investigate.
-          relevantMemories = memoryStore
-            .searchMemories({ projectId: run.projectId, term: task, limit: 5 })
-            .map((hit) => hit.memory)
-          // Nothing matched the request's words: the last handoffs say what came before.
-          if (!relevantMemories.length)
-            recentHandoffs = memoryRules.selectRecentMemories(memoryStore.listMemories(), {
-              projectId: run.projectId,
-              allProjects: false,
-              type: 'handoff',
-              status: 'active',
-              offset: 0,
-              limit: 2
-            }).items
-        } catch {
-          /* Briefing context is best-effort; a launch must remain available. */
-        }
-        const agentBrief = buildExternalAgentBrief({
-          objective: task,
-          decisions: decisoes,
-          files: rel,
-          memories: relevantMemories,
-          recentHandoffs
-        })
-        // A blank session starts the CLI on its normal screen: pasting a briefing
-        // (skills, MCP hints) would run a turn nobody asked for.
-        const scopedTask = blankSession
-          ? ''
-          : scrubExternalBriefSecrets(
-              [
-                agentBrief,
-                referenceBrief,
-                appBrief,
-                localSkillsBrief,
-                localHarnessContext.instructions.length || localHarnessContext.skills.length
-                  ? `## INSTRUÇÕES LOCAIS\nConsulte no worktree as instruções nativas detectadas: ${[...localHarnessContext.instructions, ...localHarnessContext.skills].join(', ')}. Não copie seu conteúdo para logs ou respostas sem necessidade.`
-                  : '',
-                'Use esta worktree para alterações de código. Para dados do Sagyou, use list_projects no MCP e consulte outros projetos quando necessário. Ao terminar, explique brevemente o que fez.'
-              ]
-                .filter(Boolean)
-                .join('\n\n')
-            )
+        // A session always opens blank: the CLI starts on its own screen and learns about
+        // Sagyou through MCP on demand. Nothing is pasted, because that would run a turn nobody asked for.
+        const launch = buildTerminalHarnessLaunch(harness, '', effectiveDir)
         const externalWorktree = worktreeDir
         const externalRuntime = { env: process.env }
         // A capability token is not an identifier: use 256 bits of entropy and
         // keep it only in the spawned executor environment, never in UI/logs.
         const mcpToken = randomBytes(32).toString('base64url')
-        const baseExternalArgs = buildTerminalHarnessLaunch(harness, scopedTask, effectiveDir).args
+        const baseExternalArgs = launch.args
         const mcpSession = await prepareAgentMcpSession({
           broker: sagyouMcp,
           token: mcpToken,
@@ -3069,22 +2821,6 @@ app.whenReady().then(() => {
     } catch (e) {
       return { error: e instanceof Error ? e.message : 'Falha ao buscar cotação' }
     }
-  })
-
-  ipcMain.handle('ai:skills:list', () => listSkills(skillsPath()))
-
-  ipcMain.handle('ai:skills:save', (_, input: { name: string; body: string; oldName?: string }) => {
-    const res = saveSkill(skillsPath(), input)
-    if ('error' in res) return res
-    return { skill: res.skill }
-  })
-
-  ipcMain.handle('ai:skills:delete', (_, name: string) => {
-    deleteSkill(skillsPath(), name)
-  })
-
-  ipcMain.handle('ai:skills:import', async () => {
-    return importSkillDialog(skillsPath())
   })
 
   // Outside SQLite on purpose: persistAll() empties `settings` on a session's first save.

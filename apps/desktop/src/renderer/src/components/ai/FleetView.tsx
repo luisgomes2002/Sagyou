@@ -166,8 +166,6 @@ export function FleetView({
       }
       const result = await window.electronAPI.ai.codeAgent.run({
         path: root?.path ?? '',
-        task: '',
-        blank: true,
         projectId: request.projectId,
         sessionId: uuidv4()
       })

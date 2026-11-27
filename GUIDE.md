@@ -109,7 +109,7 @@ src/
     store.ts     # persistência SQLite (kanban.db)
     modules/     # implementação agrupada por responsabilidade; index.ts e handlers orquestram
       agent/     # sessões, PTY, worktree, diff, entrega, MCP, arquivo de runs e adapters
-      ai/        # memória, skills, migração de remoção do chat, núcleo de avaliação
+      ai/        # memória, migração de remoção do chat, núcleo de avaliação
       conversations/ # só legacy-ai-data.ts (normaliza o ai-config.json)
       files/     # anexos, backup, bytes de imagem, parser e runtime MarkItDown
       code/      # leitura e diff de arquivos de código
@@ -284,7 +284,7 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    `task-images/` (bytes das imagens de task — só metadata no DB, downscale JPEG
    no cliente, `migrateTaskImagesToDisk` migra dados legados), `ai-config.json`
    (**só** configuração de agente: `codeHarness`, `userName`, `reasoningEffort`,
-   chaves desconhecidas; fora de todo backup), `skills/` (`.md`), `agent-runs/`
+   chaves desconhecidas; fora de todo backup), `skills/` (`.md`, não é mais lida nem apagada), `agent-runs/`
    (execuções arquivadas — log + diff congelados, ligadas a `sessionId`/`projectId`),
    `backups/` (snapshots automáticos, de pré-importação e a pasta
    `pre-remocao-chat-*`), `password-security.json`, `general-agent-workspace/` e
@@ -445,10 +445,10 @@ Ausente ou desconhecido sempre aparece como indisponível — nunca simule
 compatibilidade nem faça fallback silencioso para outro CLI.
 
 - **O usuário fala com o CLI, no terminal do Fleet.** A sessão abre em branco
-  (`blank: true`): sem formulário e **sem briefing colado**. Sagyou não coordena
-  por outro modelo. O contexto do app chega só pelo MCP, sob demanda do agente. Se
-  `ai:code-agent:run` receber um pedido inicial, o briefing leva objetivo,
-  decisões, arquivos e memórias — sem trechos de conversa.
+  (sempre em branco): sem formulário e **sem briefing colado**. Sagyou não
+  coordena por outro modelo. O contexto do app chega só pelo MCP, sob demanda do
+  agente. `ai:code-agent:run` não recebe mais pedido inicial; as Skills do Sagyou
+  e o briefing foram removidos.
 - **Cada run usa a CLI escolhida em uma sessão PTY real**, pertencente ao main e
   exibida no Fleet por xterm. O renderer só envia entrada e resize validados;
   nunca cria processos.

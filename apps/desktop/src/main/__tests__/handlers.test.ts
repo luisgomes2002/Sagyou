@@ -366,7 +366,11 @@ describe('main handlers are registered', () => {
       'ai:code:search',
       'ai:project-file:read',
       'ai:lineage:list',
-      'ai:web:fetch'
+      'ai:web:fetch',
+      'ai:skills:list',
+      'ai:skills:save',
+      'ai:skills:delete',
+      'ai:skills:import'
     ]) {
       expect(handlers.has(ch)).toBe(false)
     }
