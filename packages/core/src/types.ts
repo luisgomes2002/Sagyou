@@ -33,11 +33,8 @@ export interface Project {
    */
   activeCodePathIds?: string[]
   /**
-   * @deprecated Legacy single-selection field. Superseded by
-   * `activeCodePathIds`, but kept written and in sync with its first entry so
-   * older app versions (and old backups) keep working. Read
-   * `activeCodePathIds`; never write this directly — the store keeps both in
-   * step.
+   * @deprecated Retired single-selection field. Never written: only an old backup can carry
+   * it, and `normalizeProject` turns it into `activeCodePathIds` and drops it.
    */
   activeCodePathId?: string
   order?: number

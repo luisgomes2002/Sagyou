@@ -120,12 +120,7 @@ export function buildWorkbook(
           Projeto: project.name,
           Nome: codePath.label ?? '',
           Caminho: codePath.path,
-          Ativo: (
-            project.activeCodePathIds ??
-            (project.activeCodePathId ? [project.activeCodePathId] : [])
-          ).includes(codePath.id)
-            ? 'Sim'
-            : 'Não'
+          Ativo: (project.activeCodePathIds ?? []).includes(codePath.id) ? 'Sim' : 'Não'
         }))
       ),
       'Caminhos de código'

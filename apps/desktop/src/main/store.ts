@@ -110,11 +110,8 @@ interface Project {
   color: string
   columns: Column[]
   links?: ProjectLink[]
-  // activeCodePathIds is the selection; activeCodePathId is the legacy singular
-  // form, still read so pre-multi-select databases and backups keep working.
   codePaths?: CodePath[]
   activeCodePathIds?: string[]
-  activeCodePathId?: string
   order?: number
   archivedAt?: string
   createdAt: string
@@ -2308,9 +2305,7 @@ function prepareWrite(db: Database.Database) {
       )
       for (const c of p.columns ?? []) ins.column.run(c.id, p.id, c.name, c.order, c.color ?? null)
       for (const l of p.links ?? []) ins.link.run(l.id, p.id, l.label, l.url)
-      const active = new Set(
-        p.activeCodePathIds ?? (p.activeCodePathId ? [p.activeCodePathId] : [])
-      )
+      const active = new Set(p.activeCodePathIds ?? [])
       for (const cp of p.codePaths ?? [])
         ins.codePath.run(cp.id, p.id, cp.label ?? null, cp.path, active.has(cp.id) ? 1 : 0)
     },
@@ -2752,8 +2747,7 @@ export function loadData(existingDb?: Database.Database): SaveData {
       }))
       const activeCodePathIds = rows.filter((c) => c.active).map((c) => c.id as string)
       if (!activeCodePathIds.length) return { codePaths }
-      // activeCodePathId mirrors the first selection for older readers.
-      return { codePaths, activeCodePathIds, activeCodePathId: activeCodePathIds[0] }
+      return { codePaths, activeCodePathIds }
     })(),
     ...(p.ord != null ? { order: p.ord } : {}),
     ...(p.archived_at != null ? { archivedAt: String(p.archived_at) } : {}),

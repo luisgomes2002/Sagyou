@@ -12,22 +12,26 @@ import { preserveLegacyFinancialMetadata } from './financialLegacy'
 import { D, moneyStr } from './money'
 import { migrateYieldSummaryDates } from './yieldSummary'
 
-/** Keep the legacy singular selection in sync with the current array field. */
+/**
+ * The selected code paths. Only the list is written; a project from an old backup that has
+ * just the retired singular `activeCodePathId` still reads as a one-item list.
+ */
 export function activeCodePathIds(project: Project): string[] {
   if (Array.isArray(project.activeCodePathIds)) return project.activeCodePathIds
   return project.activeCodePathId ? [project.activeCodePathId] : []
 }
 
-export function withActiveCodePaths(
-  ids: string[]
-): Pick<Project, 'activeCodePathIds' | 'activeCodePathId'> {
-  return { activeCodePathIds: ids, activeCodePathId: ids[0] }
+export function withActiveCodePaths(ids: string[]): Pick<Project, 'activeCodePathIds'> {
+  return { activeCodePathIds: ids }
 }
 
 export function normalizeProject(project: Project, index: number): Project {
   const known = new Set((project.codePaths ?? []).map((path) => path.id))
   const ids = activeCodePathIds(project).filter((id) => known.has(id))
-  return { ...project, order: project.order ?? index, ...withActiveCodePaths(ids) }
+  // The retired singular field is read above and never kept.
+  const { activeCodePathId: _retired, ...rest } = project
+  void _retired
+  return { ...rest, order: project.order ?? index, ...withActiveCodePaths(ids) }
 }
 
 export function normalizeNotes(notes: StickyNote[]): StickyNote[] {

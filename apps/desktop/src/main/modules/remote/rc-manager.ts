@@ -210,24 +210,16 @@ export function serverArgs(name: string, hasGit: boolean): string[] {
 
 /**
  * The folder a project's server runs in: the first active code path
- * (`activeCodePathIds`, else the legacy `activeCodePathId`) that exists on this
- * PC, or null.
+ * (`activeCodePathIds`) that exists on this PC, or null.
  */
 export function projectServerPath(
   project: {
     codePaths?: { id: string; path: string }[]
     activeCodePathIds?: string[]
-    activeCodePathId?: string | null
   },
   exists: (p: string) => boolean
 ): string | null {
-  const ids =
-    project.activeCodePathIds && project.activeCodePathIds.length > 0
-      ? project.activeCodePathIds
-      : project.activeCodePathId
-        ? [project.activeCodePathId]
-        : []
-  for (const id of ids) {
+  for (const id of project.activeCodePathIds ?? []) {
     const path = project.codePaths?.find((c) => c.id === id)?.path
     if (path && exists(path)) return path
   }

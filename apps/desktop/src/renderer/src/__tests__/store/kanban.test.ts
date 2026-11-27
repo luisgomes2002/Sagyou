@@ -1443,11 +1443,12 @@ describe('code path actions', () => {
     const id1 = useKanbanStore.getState().addCodePath(pid, 'C:/proj', 'main')
     expect(project().codePaths).toHaveLength(1)
     expect(project().codePaths![0]).toMatchObject({ id: id1, path: 'C:/proj', label: 'main' })
-    expect(project().activeCodePathId).toBe(id1)
+    expect(project().activeCodePathIds).toEqual([id1])
+    expect(project()).not.toHaveProperty('activeCodePathId')
 
     const id2 = useKanbanStore.getState().addCodePath(pid, 'C:/other')
     // Second path does not steal the active selection.
-    expect(project().activeCodePathId).toBe(id1)
+    expect(project().activeCodePathIds).toEqual([id1])
     expect(project().codePaths!.map((c) => c.id)).toEqual([id1, id2])
   })
 
@@ -1455,9 +1456,9 @@ describe('code path actions', () => {
     const id1 = useKanbanStore.getState().addCodePath(pid, 'C:/a')
     const id2 = useKanbanStore.getState().addCodePath(pid, 'C:/b')
     useKanbanStore.getState().setActiveCodePath(pid, id2)
-    expect(project().activeCodePathId).toBe(id2)
+    expect(project().activeCodePathIds).toEqual([id2])
     useKanbanStore.getState().setActiveCodePath(pid, null)
-    expect(project().activeCodePathId).toBeUndefined()
+    expect(project().activeCodePathIds).toEqual([])
     // sanity: ids are distinct
     expect(id1).not.toBe(id2)
   })
@@ -1504,24 +1505,23 @@ describe('code path actions', () => {
     const id1 = useKanbanStore.getState().addCodePath(pid, 'C:/a')
     useKanbanStore.getState().toggleCodePath(pid, id1)
     expect(project().activeCodePathIds).toEqual([])
-    expect(project().activeCodePathId).toBeUndefined()
+    expect(project()).not.toHaveProperty('activeCodePathId')
   })
 
-  it('keeps the legacy activeCodePathId in sync with the first selection', () => {
+  it('writes only the list when the selection changes', () => {
     const id1 = useKanbanStore.getState().addCodePath(pid, 'C:/a')
     const id2 = useKanbanStore.getState().addCodePath(pid, 'C:/b')
     useKanbanStore.getState().toggleCodePath(pid, id2)
-    // Old app versions read the singular field; it must point at a real path.
     expect(project().activeCodePathIds).toEqual([id1, id2])
-    expect(project().activeCodePathId).toBe(id1)
+    expect(project()).not.toHaveProperty('activeCodePathId')
 
-    // Removing the first selection promotes the next one already selected.
+    // Removing the first selection leaves the next one already selected.
     useKanbanStore.getState().removeCodePath(pid, id1)
     expect(project().activeCodePathIds).toEqual([id2])
-    expect(project().activeCodePathId).toBe(id2)
+    expect(project()).not.toHaveProperty('activeCodePathId')
   })
 
-  it('exportBackup carries the multi selection and the legacy mirror', async () => {
+  it('exportBackup carries the multi selection and no singular field', async () => {
     const id1 = useKanbanStore.getState().addCodePath(pid, 'C:/a', 'a')
     const id2 = useKanbanStore.getState().addCodePath(pid, 'C:/b', 'b')
     useKanbanStore.getState().toggleCodePath(pid, id2)
@@ -1534,8 +1534,7 @@ describe('code path actions', () => {
     const backup = storage.exportBackup.mock.calls.at(-1)![0]
     const p = backup.projects.find((x: { id: string }) => x.id === pid)!
     expect(p.activeCodePathIds).toEqual([id1, id2])
-    // Older versions restoring this backup read the singular field.
-    expect(p.activeCodePathId).toBe(id1)
+    expect(p).not.toHaveProperty('activeCodePathId')
   })
 
   it('importBackup migrates a legacy single activeCodePathId', async () => {

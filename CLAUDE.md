@@ -307,9 +307,9 @@ Backup blob export is an asynchronous cooperative job: `handlers/backup.ts` yiel
 - **Never change the shape of persisted arrays or objects** in a breaking way (reordering, nesting, type changes).
 - Adding new optional fields is safe — the store hydrates with `??` defaults and missing keys are silently ignored.
 
-### Code path selection is a two-field pair
+### Code path selection
 
-`Project.activeCodePathIds: string[]` is the source of truth for which code paths the agents may use. An **empty selection is a legitimate state** — never backfill it from the remaining paths, e.g. on remove. Auto-selecting a folder the user didn't pick silently hands an agent a directory to work in. The legacy singular `Project.activeCodePathId` is **still written**, mirroring `activeCodePathIds[0]`, so older app versions and old backups keep resolving a selection. Go through `activeCodePathIds()` / `withActiveCodePaths()` in `store/normalization.ts` — never set either field by hand, or the two drift apart. `normalizeProject` on load migrates legacy singular data and drops ids whose code path no longer exists.
+`Project.activeCodePathIds: string[]` is the source of truth for which code paths the agents may use. An **empty selection is a legitimate state** — never backfill it from the remaining paths, e.g. on remove. Auto-selecting a folder the user didn't pick silently hands an agent a directory to work in. The old singular `Project.activeCodePathId` is **no longer written** (the mirror that served older app versions was removed in 1.15.0; ⚠️ an older version opened on this data does not resolve the selection). Only an old backup can still carry it: `activeCodePathIds()` reads it for a project that has no list, and `normalizeProject` turns it into the list, drops the field and drops ids whose code path no longer exists. Go through `activeCodePathIds()` / `withActiveCodePaths()` in `@sagyou/core` — never set the field by hand.
 
 The `project_code_paths` SQLite table needed no migration: `active` was already a per-row flag, so multiple selected rows just means multiple `1`s. `persistAll` writes every selected id; the loader collects all `active` rows.
 
