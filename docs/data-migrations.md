@@ -97,3 +97,13 @@ ignorado. Qualquer volta do chat exige uma spec nova.
 ## Diário de alterações (`entity_events`), removido na 1.15.0
 
 ⚠️ Esta mudança **apaga dados**: na primeira abertura da 1.15.0 a tabela `entity_events` do `kanban.db` é descartada (`DROP TABLE IF EXISTS`). Era um diário de cada gravação (o que foi criado, atualizado ou removido, com data), que nenhuma tela nem ferramenta lia desde que o canal `ai:lineage:list` saiu, e que o Sagyou deixou de gravar. Ele não entrava em backup nem em sincronização, então a perda é só dele. Nenhuma tarefa, nota, finança ou memória é tocada. **Faça uma cópia do `kanban.db` antes de abrir a versão nova pela primeira vez** se quiser guardar esse diário.
+
+## O que o Sagyou não lê mais e você pode apagar à mão
+
+O Sagyou **nunca apaga** estes itens sozinho (são seus). Depois das limpezas da 1.15.0 ele também não os lê:
+
+- `skills/` em `userData`: as Skills do Sagyou foram removidas; se você tinha arquivos `.md` ali, eles ficam no disco.
+- `ai-templates.json`: o arquivo antigo de modelos, que virava Skills.
+- `legacy-chat-state.json`: o estado da migração do chat, que já rodou.
+- `backups/pre-remocao-chat-*`: as cópias cruas das conversas do chat antigo, das imagens e do `kanban.db` de antes da remoção. **Guarde se quiser reler as conversas**: nada no app as traz de volta.
+- `kanban-data.json.migrated` (se existir): o arquivo da época em que o app não usava SQLite.

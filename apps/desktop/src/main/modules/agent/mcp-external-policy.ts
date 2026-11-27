@@ -19,19 +19,19 @@ export const EXTERNAL_CUT_MESSAGE = 'Acesso externo cortado pelo celular.'
 export const EXTERNAL_LOCKED_WRITE_MESSAGE =
   'O Sagyou está bloqueado: as escritas voltam depois de desbloquear (no PC ou pelo celular, aba PC). Leituras funcionam.'
 
-/** The legacy writes that always show a card in a Fleet session. */
-const LEGACY_CARD_WRITES: ReadonlySet<string> = new Set(['save_memory', 'criar_task'])
+/** The writes that always show a card in a Fleet session, whatever their risk class. */
+const FLEET_CARD_WRITES: ReadonlySet<string> = new Set(['save_memory', 'criar_task'])
 
 /**
  * Whether a queued MCP write waits for an approval card. The external token
  * asks exactly for the risky writes (deletes, money, financial tables and
  * profiles, archiving a project), answered on the PC or on the authorized
  * phone. Its save_memory/criar_task carry no more risk than create_task, so
- * only a Fleet run keeps their legacy cards.
+ * only a Fleet run keeps their cards.
  */
 export function externalApproval(runId: string, name: string): boolean {
   if (runId === EXTERNAL_RUN_ID) return MCP_APPROVAL_REQUIRED.has(name)
-  return MCP_APPROVAL_REQUIRED.has(name) || LEGACY_CARD_WRITES.has(name)
+  return MCP_APPROVAL_REQUIRED.has(name) || FLEET_CARD_WRITES.has(name)
 }
 
 /**
