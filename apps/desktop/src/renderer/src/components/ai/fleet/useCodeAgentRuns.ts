@@ -23,8 +23,6 @@ export interface CodeAgentRunUI {
     completionTokens: number
   } | null
   autoApprove: boolean
-  allowedWritePaths?: string[]
-  readOnlyRoots?: { id: string; nome: string; path: string }[]
   interactive: boolean
   terminalCols?: number
   terminalRows?: number
@@ -95,8 +93,6 @@ export function useCodeAgentRuns(): {
             hint: r.hint,
             progress: r.progress ?? null,
             autoApprove: r.autoApprove ?? false,
-            allowedWritePaths: r.allowedWritePaths,
-            readOnlyRoots: r.readOnlyRoots,
             interactive: r.interactive === true,
             terminalCols: r.terminalCols,
             terminalRows: r.terminalRows,

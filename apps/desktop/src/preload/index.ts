@@ -78,8 +78,6 @@ interface CodeRunSummary {
   interactive: boolean
   terminalCols?: number
   terminalRows?: number
-  allowedWritePaths?: string[]
-  readOnlyRoots?: { id: string; nome: string; path: string }[]
   startedAt: number
   log: string
   model?: string
@@ -534,7 +532,6 @@ export const api = {
     codeAgent: {
       run: (request: {
         path: string
-        allowedWritePaths?: string[]
         sessionId?: string
         projectId?: string | null
         financialProfileId?: string

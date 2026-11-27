@@ -311,9 +311,11 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
 11. **Ferramenta de leitura que devolve menos do que existe tem que dizer isso**
     (`total`, `truncado`, `proximoInicio`). Sem o número do que ficou de fora, o
     agente afirma com confiança um total errado. Vale para o MCP, que pagina.
-12. **Pastas de código confinam na raiz.** `confineToRoot` em `code-files.ts` é a
-    única barreira entre quem recebe um caminho e o resto do disco (as ferramentas
-    `ai:code:*` de leitura foram removidas junto com o chat).
+12. **O renderer não manda caminho de disco para uma sessão de agente.** A raiz da
+    sessão vem de `resolveAgentSessionRoot` (caminho confinado às pastas ativas do
+    projeto capturado); `ai:code-agent:run` não aceita mais lista de arquivos, de
+    escrita permitida nem de pastas só de leitura. O escopo do diff final
+    (`validatePatchScope`: `..`, absoluto, symlink) continua valendo.
 13. **Configuração de IA não guarda segredo.** `ai-config.json` não tem mais chave,
     perfil, preço nem modelo de API; `ai:config:set` mescla sobre o arquivo e
     descarta essas chaves nos dois lados, e `ai:config:get` nunca devolve chave.
@@ -543,9 +545,6 @@ dê outro chamador a esse canal nem crie outro que receba caminhos.
 o chamava. Quem trouxer a web de volta escreve uma spec nova com a política SSRF
 (só `http`/`https`, redes privadas e metadata bloqueadas, redirects à mão, nada do
 usuário na requisição); o histórico do git guarda a versão antiga.
-
-`main/modules/code/code-files.ts` (`confineToRoot`) confina os caminhos entregues a uma
-sessão de agente (arquivos indicados e caminhos de escrita permitidos).
 
 **Links externos:** `main/modules/web/external-links.ts` só deixa `http:`/`https:` sem
 credenciais chegar a `shell.openExternal`; a janela principal bloqueia

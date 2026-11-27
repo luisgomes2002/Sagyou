@@ -18,7 +18,7 @@ import {
   type IpcMainEvent,
   type IpcMainInvokeEvent
 } from 'electron'
-import { join, relative, sep } from 'path'
+import { join, sep } from 'path'
 import {
   readFileSync,
   writeFileSync,
@@ -107,7 +107,6 @@ import { agentOnlyConfig as agentOnlyConfigOf } from './modules/ai/ai-config'
 import * as memoryStore from './store'
 import * as memoryRules from './modules/ai/memory'
 import { registerMemoryHandlers } from './handlers/memory'
-import { confineToRoot } from './modules/code/code-files'
 import { getExchangeRate } from './modules/financial/financial-exchange'
 import {
   EXTERNAL_PERMISSIONS,
@@ -531,12 +530,6 @@ const sagyouMcp = startSagyouMcpBroker({
  * at a time. Now the app can host multiple concurrent runs in different
  * directories, each with its own log, base, approval queue, and usage counter.
  */
-interface ReadOnlyRoot {
-  id: string
-  nome: string
-  path: string
-}
-
 interface CodeRunState {
   id: string
   dir: string
@@ -552,8 +545,6 @@ interface CodeRunState {
   localInstructions: string[]
   localSkills: string[]
   task: string
-  /** Always empty on new runs; kept because the run archive stores it (the chat no longer passes decisions). */
-  decisions: string[]
   startedAt: number
   /** Set by stopCodeAgent; the loop checks this between steps. */
   abort: boolean
@@ -581,10 +572,6 @@ interface CodeRunState {
   /** The isolated run finished, but its patch could not be applied to the original tree. */
   worktreeMergeError: string | null
   /** Child process of an external harness, so Stop can terminate it immediately. */
-  /** Exact relative paths this run may write; absent means the project root. */
-  allowedWritePaths?: string[]
-  /** Read-only references selected for this run; never a write or shell root. */
-  readOnlyRoots: ReadOnlyRoot[]
   externalChild: AgentPty | null
   /** A real TTY session accepts user input until the harness exits. */
   interactive: boolean
@@ -785,8 +772,8 @@ const sessionCheckpoints = createSessionCheckpoints({
       startedAt: run.startedAt,
       input: {
         request: run.task,
-        subject: run.task === BLANK_SESSION_TASK ? activity.subject : run.task,
-        decisions: [...run.decisions, ...activity.decisions],
+        subject: activity.subject,
+        decisions: activity.decisions,
         actions: activity.actions,
         pending: activity.pending,
         changedFiles: files
@@ -1320,8 +1307,6 @@ async function archiveAgentRun(runId: string, exitCode: number): Promise<AgentRu
       projectId: run.projectId,
       agent: run.agent,
       dir: run.dir,
-      allowedWritePaths: run.allowedWritePaths,
-      readOnlyRoots: run.readOnlyRoots,
       task: run.task,
       startedAt: run.startedAt,
       endedAt: Date.now(),
@@ -1413,7 +1398,7 @@ function persistTerminalHandoff(
           result,
           changedFiles: files,
           subject: activity.subject,
-          decisions: [...run.decisions, ...activity.decisions],
+          decisions: activity.decisions,
           actions: activity.actions,
           pending: activity.pending
         },
@@ -2240,7 +2225,6 @@ app.whenReady().then(() => {
       _,
       request: {
         path: string
-        allowedWritePaths?: string[]
         /** The terminal session that owns the run, so it can be reopened later. */
         sessionId?: string
         /** The project that scopes the run's MCP capability and its code root. */
@@ -2352,35 +2336,6 @@ app.whenReady().then(() => {
       }
       const effectiveDir = worktreeDir ?? dir
       const localHarnessContext = discoverHarnessLocalContext(effectiveDir)
-      // An allowed output may not exist yet. It is
-      // still confined to the root and later enforced by writeFileTool.
-      const requestedAllowedPaths = Array.isArray(request.allowedWritePaths)
-        ? request.allowedWritePaths.filter(
-            (f): f is string => typeof f === 'string' && f.trim() !== ''
-          )
-        : []
-      const allowedWritePaths = requestedAllowedPaths
-        .map((requestedPath) => {
-          const absolutePath = confineToRoot(effectiveDir, requestedPath)
-          if (!absolutePath) return null
-          const isRoot =
-            /[\\/]$/.test(requestedPath) ||
-            (existsSync(absolutePath) && statSync(absolutePath).isDirectory())
-          const path = relative(effectiveDir, absolutePath)
-          return isRoot ? path + '/' : path
-        })
-        .filter((f): f is string => f !== null)
-        .filter((f) => f !== '')
-      if (
-        requestedAllowedPaths.length &&
-        allowedWritePaths.length !== requestedAllowedPaths.length
-      ) {
-        await releaseFailedStart()
-        return {
-          success: false,
-          error: 'Um ou mais caminhos permitidos estão fora da raiz do projeto.'
-        }
-      }
       // Create the run state and register it — a new run starts fresh.
       // (runId foi criado acima, antes do worktree)
       const run: CodeRunState = {
@@ -2395,7 +2350,6 @@ app.whenReady().then(() => {
         localInstructions: localHarnessContext.instructions,
         localSkills: localHarnessContext.skills,
         task: BLANK_SESSION_TASK,
-        decisions: [],
         startedAt: Date.now(),
         abort: false,
         log: '',
@@ -2412,8 +2366,6 @@ app.whenReady().then(() => {
         autoApprove: typeof request.autoApprove === 'boolean' ? request.autoApprove : false,
         worktreeDir: worktreeDir,
         worktreeMergeError: null,
-        allowedWritePaths: allowedWritePaths.length ? allowedWritePaths : undefined,
-        readOnlyRoots: [],
         externalChild: null,
         interactive,
         terminalCols: 100,
@@ -2507,11 +2459,7 @@ app.whenReady().then(() => {
               base: run.base?.base
             })
             const fullPatch = changes.patch
-            const scope = await validatePatchScope(
-              externalWorktree,
-              changes.changedPaths,
-              run.allowedWritePaths
-            )
+            const scope = await validatePatchScope(externalWorktree, changes.changedPaths)
             if (!scope.allowed) {
               run.worktreeMergeError =
                 'o agente alterou arquivo fora do escopo permitido: ' +
@@ -2779,8 +2727,6 @@ app.whenReady().then(() => {
         worktreeDir: r.worktreeDir,
         localInstructions: r.localInstructions,
         localSkills: r.localSkills,
-        allowedWritePaths: r.allowedWritePaths,
-        readOnlyRoots: r.readOnlyRoots,
         interactive: r.interactive,
         terminalCols: r.terminalCols,
         terminalRows: r.terminalRows,

@@ -184,6 +184,24 @@ describe('legacy index rows', () => {
     expect(again).not.toHaveProperty('convId')
   })
 
+  it('reads an old row that stored the retired write allowlist, read-only roots and decisions', () => {
+    const [r] = normalizeRuns([
+      {
+        id: uuid(1),
+        sessionId: 's1',
+        task: 'x',
+        allowedWritePaths: ['src/'],
+        readOnlyRoots: [{ id: 'r', nome: 'Ref', path: '/ref' }],
+        decisions: ['usar X']
+      }
+    ])
+    expect(r.id).toBe(uuid(1))
+    expect(r.sessionId).toBe('s1')
+    for (const key of ['allowedWritePaths', 'readOnlyRoots', 'decisions']) {
+      expect(r).not.toHaveProperty(key)
+    }
+  })
+
   it('reads sessionId and projectId from a new row', () => {
     const [r] = normalizeRuns([{ id: uuid(1), sessionId: 's9', projectId: 'p9' }])
     expect(r.sessionId).toBe('s9')
