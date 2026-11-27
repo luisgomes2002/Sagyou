@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { extractDataRecords, hashPayload } from '../records'
+import { extractDataRecords, hashPayload, type SyncRecord } from '../records'
 
 // The sync contract the legacy cleanup must not move: what a record carries and how it hashes.
 const T = '2026-10-30T12:00:00.000Z'
@@ -34,10 +34,10 @@ const table = (extra: Record<string, unknown> = {}): Record<string, unknown> => 
   ...extra
 })
 
-const records = (data: Record<string, unknown>) =>
+const records = (data: Record<string, unknown>): SyncRecord[] =>
   extractDataRecords({ tasks: [], sprints: [], notes: [], goals: [], habits: [], ...data } as never)
 
-const find = (data: Record<string, unknown>, kind: string, id: string) => {
+const find = (data: Record<string, unknown>, kind: string, id: string): SyncRecord => {
   const found = records(data).find((r) => r.kind === kind && r.id === id)
   if (!found) throw new Error(`no ${kind} ${id}`)
   return found

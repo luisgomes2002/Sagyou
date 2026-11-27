@@ -8,7 +8,7 @@
 // Run once, from the repository root:  npx tsx apps/desktop/scripts/gen-sync-vectors.ts
 // Do not regenerate after the move: the point is that the file came from the old code.
 import { mkdirSync, writeFileSync } from 'fs'
-import { dirname, join } from 'path'
+import { join } from 'path'
 import { encodeBatch, type WireRecord } from '@sagyou/core/sync/batch'
 import {
   deriveKeys,

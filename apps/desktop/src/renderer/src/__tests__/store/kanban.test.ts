@@ -31,18 +31,20 @@ import { useKanbanStore } from '../../store/kanban'
 import { ElectronStorage } from '../../services/ElectronStorage'
 import { DEFAULT_COLUMN_NAMES } from '@sagyou/core/types'
 
-function getStorageMock() {
-  return vi.mocked(ElectronStorage).mock.instances[0] as unknown as {
-    load: ReturnType<typeof vi.fn>
-    save: ReturnType<typeof vi.fn>
-    importBackup: ReturnType<typeof vi.fn>
-    exportBackup: ReturnType<typeof vi.fn>
-    autoSaveBackup: ReturnType<typeof vi.fn>
-    commitBackupBlobs: ReturnType<typeof vi.fn>
-    loadMemories: ReturnType<typeof vi.fn>
-    replaceMemories: ReturnType<typeof vi.fn>
-    rebuildSearchIndex: ReturnType<typeof vi.fn>
-  }
+type StorageMock = {
+  load: ReturnType<typeof vi.fn>
+  save: ReturnType<typeof vi.fn>
+  importBackup: ReturnType<typeof vi.fn>
+  exportBackup: ReturnType<typeof vi.fn>
+  autoSaveBackup: ReturnType<typeof vi.fn>
+  commitBackupBlobs: ReturnType<typeof vi.fn>
+  loadMemories: ReturnType<typeof vi.fn>
+  replaceMemories: ReturnType<typeof vi.fn>
+  rebuildSearchIndex: ReturnType<typeof vi.fn>
+}
+
+function getStorageMock(): StorageMock {
+  return vi.mocked(ElectronStorage).mock.instances[0] as unknown as StorageMock
 }
 
 function resetStore() {

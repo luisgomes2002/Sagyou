@@ -27,7 +27,7 @@ import { useKanbanStore } from '../../store/kanban'
 import { DEFAULT_FINANCIAL_PROFILE_ID } from '@sagyou/core/types'
 import { financialCategories } from '@sagyou/core/finance'
 
-function resetStore() {
+function resetStore(): void {
   useKanbanStore.setState({
     projects: [],
     tasks: [],

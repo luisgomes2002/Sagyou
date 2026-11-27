@@ -429,7 +429,7 @@ export default function App() {
     description: string,
     color: string,
     links: import('@sagyou/core/types').ProjectLink[]
-  ) => {
+  ): void => {
     if (projectModal.project) {
       updateProject(projectModal.project.id, { name, description, color, links })
       addToast('Projeto atualizado')

@@ -20,7 +20,7 @@ import type {
 } from '@sagyou/core/types'
 
 export class ElectronStorage implements IStorageAdapter {
-  async load() {
+  async load(): ReturnType<IStorageAdapter['load']> {
     const data = (await window.electronAPI.store.load()) as Record<string, unknown>
     return {
       projects: (data.projects || []) as Project[],

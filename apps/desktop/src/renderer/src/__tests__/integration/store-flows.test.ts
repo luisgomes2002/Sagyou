@@ -23,7 +23,7 @@ vi.mock('../../services/ElectronStorage', () => ({
 import { useKanbanStore } from '../../store/kanban'
 import type { Backup, Habit, Project } from '@sagyou/core/types'
 
-function reset() {
+function reset(): void {
   useKanbanStore.setState({
     projects: [],
     tasks: [],
