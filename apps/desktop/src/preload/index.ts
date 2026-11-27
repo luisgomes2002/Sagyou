@@ -32,13 +32,6 @@ import type { PendingAuthorization } from '../main/modules/remote/remote-service
 import type { RcServerList, RcServerResult } from '../main/handlers/rc-servers'
 import type { RcStartResult, RcStopResult } from '../main/modules/remote/rc-manager'
 
-/** A user-written Skill (.md file in userData/skills/). */
-interface Skill {
-  name: string
-  body: string
-  updatedAt: string
-}
-
 /** A finished code-agent run, as listed in the run picker. */
 interface AgentRunMeta {
   id: string
@@ -549,17 +542,10 @@ export const api = {
     codeAgent: {
       run: (request: {
         path: string
-        task: string
-        /** Open the CLI on its own screen, with no initial request or briefing. */
-        blank?: boolean
-        files?: string[]
         allowedWritePaths?: string[]
-        readOnlyRoots?: { id: string; nome: string; path: string }[]
-        decisoes?: string[]
         sessionId?: string
         projectId?: string | null
         financialProfileId?: string
-        coordinated?: boolean
         autoApprove?: boolean
       }): Promise<{
         success: boolean
@@ -788,20 +774,7 @@ export const api = {
       > => ipcRenderer.invoke('ai:harnesses:status', refresh)
     },
     // Native folder picker for choosing a project's code directory.
-    pickDirectory: (): Promise<{ path: string | null }> => ipcRenderer.invoke('ai:pick-directory'),
-    // User-written Skills (.md files in userData/skills/).
-    skills: {
-      list: (): Promise<Skill[]> => ipcRenderer.invoke('ai:skills:list'),
-      save: (input: {
-        name: string
-        body: string
-        oldName?: string
-      }): Promise<{ skill: Skill } | { error: string }> =>
-        ipcRenderer.invoke('ai:skills:save', input),
-      delete: (name: string): Promise<void> => ipcRenderer.invoke('ai:skills:delete', name),
-      import: (): Promise<{ skill: Skill } | { error: string }> =>
-        ipcRenderer.invoke('ai:skills:import')
-    }
+    pickDirectory: (): Promise<{ path: string | null }> => ipcRenderer.invoke('ai:pick-directory')
   },
   files: {
     // Two-step import: pick/stageDropped return tokens for the chosen files

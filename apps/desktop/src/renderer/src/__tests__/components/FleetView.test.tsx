@@ -190,13 +190,16 @@ describe('FleetView', () => {
     await user.click(screen.getByRole('button', { name: 'Abrir sessão' }))
 
     expect(window.electronAPI.ai.codeAgent.run).toHaveBeenCalledWith(
-      expect.objectContaining({ path: '', projectId: null, task: '', blank: true })
+      expect.objectContaining({ path: '', projectId: null })
     )
     const sent = (window.electronAPI.ai.codeAgent.run as ReturnType<typeof vi.fn>).mock
       .calls[0][0] as Record<string, unknown>
     expect(typeof sent.sessionId).toBe('string')
     expect((sent.sessionId as string).length).toBeGreaterThan(0)
     expect(sent).not.toHaveProperty('convId')
+    // A session always opens blank: no initial request or briefing parameters exist any more.
+    expect(sent).not.toHaveProperty('task')
+    expect(sent).not.toHaveProperty('blank')
   })
 
   it('starts a project terminal in the private workspace when no root is selected', async () => {
@@ -216,7 +219,7 @@ describe('FleetView', () => {
     await user.click(screen.getByRole('button', { name: 'Abrir sessão' }))
 
     expect(window.electronAPI.ai.codeAgent.run).toHaveBeenCalledWith(
-      expect.objectContaining({ path: '', projectId: 'p1', task: '', blank: true })
+      expect.objectContaining({ path: '', projectId: 'p1' })
     )
   })
 
