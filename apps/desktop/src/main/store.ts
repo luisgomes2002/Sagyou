@@ -6,7 +6,6 @@ import { randomUUID } from 'crypto'
 import Database from 'better-sqlite3'
 import {
   normalizeMemory,
-  scrubConversationLinks,
   type AiMemory,
   type MemoryType
 } from './modules/ai/memory'
@@ -3574,38 +3573,3 @@ export function replaceMemories(memories: AiMemory[]): void {
   })()
 }
 
-/** Consistent copy of the live database (safe under WAL), used by the pre-removal snapshot. */
-export async function copyDatabaseTo(dest: string): Promise<void> {
-  await getDb().backup(dest)
-}
-
-/**
- * Chat history is gone, so no memory may point into it. Rewrites only the rows
- * that carry a link; timestamps and access counters are left as they were.
- */
-export function scrubMemoryConversationLinks(): number {
-  const db = getDb()
-  const current = listMemories({ includeArchived: true })
-  const { memories, changed } = scrubConversationLinks(current)
-  db.transaction(() => {
-    // Rows are read as having no link, so the column itself is cleared in SQL.
-    db.prepare(
-      'UPDATE memory SET source_conversation_id=NULL WHERE source_conversation_id IS NOT NULL'
-    ).run()
-    // scrubConversationLinks returns the very same object for an untouched memory.
-    const rewritten = memories.filter((memory, index) => memory !== current[index])
-    for (const memory of rewritten) writeMemoryRow(db, memory)
-    if (changed) syncMemorySearchRows(db)
-    captureSafely(db, () =>
-      captureSyncVersions(
-        db,
-        () => extractMemoryRecords(syncableMemories(rewritten)),
-        memoryCaptureScope(
-          'scrub',
-          rewritten.map((m) => m.id)
-        )
-      )
-    )
-  })()
-  return changed
-}

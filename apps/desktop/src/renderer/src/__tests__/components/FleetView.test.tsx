@@ -79,10 +79,6 @@ beforeEach(() => {
     terminalResize: vi.fn().mockResolvedValue({ success: true }),
     onChanged: vi.fn(() => vi.fn())
   } as never
-  window.electronAPI.legacyChat = {
-    notice: vi.fn().mockResolvedValue(null),
-    dismiss: vi.fn().mockResolvedValue(undefined)
-  } as never
   window.electronAPI.ai.harnesses = {
     status: vi.fn().mockResolvedValue([
       {
@@ -389,30 +385,6 @@ describe('FleetView', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Aprovar' }))
 
     expect(window.electronAPI.ai.codeAgent.approve).toHaveBeenCalledWith('approval-1', true)
-  })
-
-  it('shows the one-time removal notice with the snapshot path and dismisses it', async () => {
-    ;(window.electronAPI.legacyChat.notice as ReturnType<typeof vi.fn>).mockResolvedValue({
-      snapshotDir: 'C:\\dados\\backups\\pre-remocao-chat-1'
-    })
-    render(<FleetView projects={projects} />)
-
-    expect(
-      await screen.findByText(
-        'O histórico de conversas foi removido. Um backup foi salvo em C:\\dados\\backups\\pre-remocao-chat-1.'
-      )
-    ).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Fechar aviso' }))
-
-    expect(window.electronAPI.legacyChat.dismiss).toHaveBeenCalledTimes(1)
-    expect(screen.queryByText(/O histórico de conversas foi removido/)).not.toBeInTheDocument()
-  })
-
-  it('shows no notice when the migration reports nothing', async () => {
-    render(<FleetView projects={projects} />)
-    await screen.findByText('Nenhum agente ativo')
-    expect(window.electronAPI.legacyChat.notice).toHaveBeenCalledTimes(1)
-    expect(screen.queryByText(/O histórico de conversas foi removido/)).not.toBeInTheDocument()
   })
 
   describe('servidores de Remote Control', () => {

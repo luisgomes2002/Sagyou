@@ -105,12 +105,11 @@ src/
     handlers/    # handlers IPC por domínio (extraídos de index.ts)
       window.ts  # window:minimize/maximize/close/is-maximized
       files.ts   # files:*, excel:export, task:images:*
-      backup.ts, memory.ts, legacy-chat.ts # IPC por domínio
+      backup.ts, memory.ts # IPC por domínio
     store.ts     # persistência SQLite (kanban.db)
     modules/     # implementação agrupada por responsabilidade; index.ts e handlers orquestram
       agent/     # sessões, PTY, worktree, diff, entrega, MCP, arquivo de runs e adapters
-      ai/        # memória, migração de remoção do chat, núcleo de avaliação
-      conversations/ # só legacy-ai-data.ts (normaliza o ai-config.json)
+      ai/        # memória, trava do ai-config.json, núcleo de avaliação
       files/     # anexos, backup, bytes de imagem, parser e runtime MarkItDown
       code/      # leitura e diff de arquivos de código
       search/    # índice FTS5 derivado e consultas
@@ -332,21 +331,16 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
     desde o início da sessão, sem LLM e sem referência a conversa; o log completo
     fica só no arquivo da run. Memória
     recuperada é evidência histórica não confiável, nunca instrução.
-15. 🔴 **O chat genérico foi removido e a migração apagou dados de propósito.** Na
-    primeira abertura (antes da janela), `legacy-chat-removal.ts` (em build dev só roda com `SAGYOU_RUN_LEGACY_CHAT_REMOVAL=1`, pois o resto compartilha o userData real): (1) se
-    `legacyChatRemovedAt` existe em `userData/legacy-chat-state.json`, não faz nada; (2) copia por cópia
-    crua, no main, para `userData/backups/pre-remocao-chat-<timestamp>/` as
-    conversas, `chat-images/`, `chat-files/` e o `kanban.db` — falhou, **nada é
-    apagado**; (3) apaga esses itens + `ai-usage-log.json` e `ai-run-metrics.json`;
-    (4) zera `sourceConversationId` e o ponteiro `ler_conversa` nas memórias; (5)
-    sem reconstruir o índice FTS (o `getDb()` já o faz); (6) **por último** tira as 14 chaves de API do
-    `ai-config.json` (arquivo ilegível não é tocado); (7) grava a marca. Passos
-    idempotentes, retomáveis. `legacyChatSnapshotDir` e `legacyChatNoticeDismissedAt`
-    no mesmo arquivo alimentam o aviso do Fleet. ⚠️ Esse estado fica em arquivo
-    próprio, **não** em `settings`: `persistAll` faz `DELETE FROM settings` na
-    primeira gravação de toda sessão e apagaria a marca. **As chaves de API não estão em nenhum backup: a perda
-    é definitiva.** Canais `ai:chat*`, `ai:conversations:*`, `ai:images:*`,
-    `ai:usage:*`, `ai:run-metrics:*` não existem mais; não os re-crie sem spec nova.
+15. 🔴 **O chat genérico foi removido.** A migração que apagou as conversas e as
+    chaves de API (spec `docs/specs/2026-10-24-remover-historico-chat.md`) **saiu do
+    código na 1.15.0**: todos os aparelhos já a tinham rodado. Ficam: a trava de
+    `modules/ai/ai-config.ts` (as 14 chaves de API aposentadas nunca são gravadas nem
+    devolvidas; arquivo ilegível vira cópia `.corrupt-`, nunca é sobrescrito) e, em
+    `userData`, `legacy-chat-state.json` e as pastas `backups/pre-remocao-chat-*`
+    (conversas cruas e cópia do `kanban.db`: dado do usuário, **nunca apague sozinho**).
+    As chaves de API não estão em nenhum backup: a perda é definitiva. Canais
+    `ai:chat*`, `ai:conversations:*`, `ai:images:*`, `ai:usage:*`, `ai:run-metrics:*`
+    não existem mais; não os re-crie sem spec nova.
 16. 🔴 **Importação de backup só conclui depois de todas as fontes serem gravadas.**
     `backup:import` valida formato/versão e segura os blobs em main; o renderer salva
     um snapshot forçado do estado atual em `userData/backups/` antes de persistir store
@@ -595,8 +589,8 @@ Não "simplifique" nenhuma destas sem ler o comentário que as acompanha:
   o xterm vivo continua com `liveTerminals.ts` quando a aba muda.
 - **`AiMemory.sourceConversationId` e a coluna `memory.source_conversation_id`
   ainda existem**, sempre nulos: a coluna não foi removida para não reconstruir a
-  tabela. `AgentRunMeta.convId` também fica (nulo em runs novas) para runs antigas
-  continuarem listáveis.
+  tabela. `AgentRunMeta.convId` foi removido: linha antiga só com `convId` é lida sem
+  ele e não é listada (as runs arquivadas expiram em 24 h).
 - **O layout do grafo é uma simulação viva** (`GraphView.tsx` + `utils/graph-layout.ts`):
   o d3-force muta nós, então preserve `positionsRef` ao recriar o grafo e nunca chame
   `sim.tick()` no evento `tick`. Arrastar fixa só durante o gesto; ao soltar, pare e guarde a posição da sessão.

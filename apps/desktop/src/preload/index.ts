@@ -35,8 +35,6 @@ import type { RcStartResult, RcStopResult } from '../main/modules/remote/rc-mana
 /** A finished code-agent run, as listed in the run picker. */
 interface AgentRunMeta {
   id: string
-  /** Legacy: only on runs archived before chats were removed. */
-  convId: string | null
   sessionId: string | null
   projectId: string | null
   /** codex is the only agent. Kept on the row so the picker can state it. */
@@ -67,7 +65,6 @@ interface CodeRunSummary {
   id: string
   dir: string
   task: string
-  convId: string | null
   sessionId?: string | null
   projectId?: string | null
   financialProfileId?: string
@@ -303,11 +300,6 @@ export const api = {
     }): Promise<DesktopPrefsView> => ipcRenderer.invoke('desktop:prefs:set', patch),
     setOpenAtLogin: (on: boolean): Promise<DesktopPrefsView> =>
       ipcRenderer.invoke('desktop:open-at-login:set', on)
-  },
-  // One-time notice that the retired chat's data was removed (pulled when the Fleet opens).
-  legacyChat: {
-    notice: (): Promise<{ snapshotDir: string } | null> => ipcRenderer.invoke('legacy-chat:notice'),
-    dismiss: (): Promise<void> => ipcRenderer.invoke('legacy-chat:dismiss')
   },
   store: {
     load: (): Promise<{ projects: unknown[]; tasks: unknown[] }> =>

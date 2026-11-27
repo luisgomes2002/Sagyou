@@ -12,6 +12,8 @@ de importação/exportação.
 
 ## Remoção do chat genérico e do histórico de conversas
 
+> **Histórico.** O código desta migração foi **removido na 1.15.0**, porque todos os aparelhos já a tinham rodado. Quem ainda estiver numa versão que tem o chat por API deve abrir antes a **1.14.x**: a 1.15.0 não apaga as conversas nem as chaves de API que encontrar. Continuam no código a trava do `ai-config.json` (nunca grava as chaves de API) e a tolerância a backups antigos com `conversations`/`chatImages`. O que a migração deixou em `userData` (`legacy-chat-state.json` e as pastas `backups/pre-remocao-chat-*`) o Sagyou não lê mais: você pode apagá-los à mão se não quiser guardar as conversas antigas.
+
 ⚠️ Esta migração **apaga dados do usuário de propósito**. Ela roda sozinha, uma única vez, na
 primeira abertura da versão que removeu o chat por API (spec
 `docs/specs/2026-10-24-remover-historico-chat.md`). O app não pergunta antes: tira o snapshot e
@@ -57,8 +59,7 @@ agentes (`codeHarness`, `userName`, `reasoningEffort`) e **qualquer chave descon
 
 ### Como achar o snapshot
 
-Pelo aviso único do painel **Sessões de código**, que mostra o caminho completo e some quando
-dispensado, ou abrindo a pasta de backups pelo menu **Backup**. O Sagyou guarda o caminho em
+Abrindo a pasta de backups pelo menu **Backup** (o aviso único do painel **Sessões de código** saiu na 1.15.0). O Sagyou guarda o caminho em
 `legacy-chat-state.json` (`legacyChatSnapshotDir`, sempre o do **primeiro** snapshot) e a dispensa do aviso em
 `legacyChatNoticeDismissedAt`. Esse arquivo é separado do banco de propósito: o SQLite esvazia a tabela
 `settings` na primeira gravação de cada sessão, e a marca se perderia.

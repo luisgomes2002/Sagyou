@@ -86,7 +86,7 @@ export function useCodeAgentRuns(): {
             worktreeDir: r.worktreeDir,
             localInstructions: r.localInstructions,
             localSkills: r.localSkills,
-            sessionId: r.sessionId ?? r.convId ?? null,
+            sessionId: r.sessionId ?? null,
             projectId: r.projectId ?? null,
             financialProfileId: r.financialProfileId,
             codeRoot: r.codeRoot,

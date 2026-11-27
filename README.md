@@ -102,7 +102,7 @@ Aprovar uma ação de dados não aprova o patch de código.
 
 Decisões, tradeoffs e contexto que os agentes gravam e consultam entre sessões. Na tela **Memória** você lista, fixa, restaura e apaga. Memórias pouco usadas são arquivadas com o tempo (nunca apagadas sozinhas); as fixadas ficam para sempre. Ao fim de cada sessão, um resumo curto do que aconteceu é salvo para a próxima.
 
-> **Vindo de uma versão antiga?** O chat por API foi removido. Na primeira abertura, as conversas são copiadas para `backups/pre-remocao-chat-<data>/` e depois apagadas, junto com as chaves de API, que não podem ser recuperadas. Detalhes em [`docs/data-migrations.md`](docs/data-migrations.md).
+> **Vindo de uma versão antiga?** O chat por API foi removido; a migração que copiava as conversas para `backups/pre-remocao-chat-<data>/` e apagava as chaves de API saiu do código na 1.15.0. Se você ainda está numa versão com o chat, abra antes a 1.14.x para a migração rodar. Detalhes em [`docs/data-migrations.md`](docs/data-migrations.md).
 
 ---
 

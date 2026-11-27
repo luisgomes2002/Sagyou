@@ -29,11 +29,6 @@ export const MAX_RUNS_TOTAL = 100
 /** What the picker needs to draw a row. Small on purpose — this is the index. */
 export interface AgentRunMeta {
   id: string
-  /**
-   * Legacy: the chat that started a run archived before chats were removed.
-   * Read and preserved so old rows stay listable; new runs always write null.
-   */
-  convId: string | null
   /** The terminal session that owns the run. Null on rows from before sessions. */
   sessionId: string | null
   /** The project the run was scoped to; null for a general session or an old row. */
@@ -105,7 +100,6 @@ export function normalizeRuns(raw: unknown): AgentRunMeta[] {
     if (!isRunId(m.id)) continue
     out.push({
       id: m.id,
-      convId: typeof m.convId === 'string' && m.convId ? m.convId : null,
       sessionId: typeof m.sessionId === 'string' && m.sessionId ? m.sessionId : null,
       projectId: typeof m.projectId === 'string' && m.projectId ? m.projectId : null,
       // The model that ran it, preserved; an old row (or a hand-edited one with
@@ -182,7 +176,7 @@ export function pruneRuns(
       drop.push(r)
       continue
     }
-    const key = r.sessionId ?? r.convId ?? '__none__'
+    const key = r.sessionId ?? '__none__'
     const n = (seen.get(key) ?? 0) + 1
     seen.set(key, n)
     if (n > perConv || keep.length >= total) drop.push(r)
@@ -191,23 +185,18 @@ export function pruneRuns(
   return { keep, drop }
 }
 
-/**
- * Runs belonging to one session, newest first. A legacy row has no sessionId,
- * so its old convId is matched too and the row stays reachable.
- */
+/** Runs belonging to one session, newest first. */
 export function runsForSession(runs: AgentRunMeta[], sessionId: unknown): AgentRunMeta[] {
   if (typeof sessionId !== 'string' || !sessionId) return []
-  return sortRuns(runs.filter((r) => r.sessionId === sessionId || (r.sessionId === null && r.convId === sessionId)))
+  return sortRuns(runs.filter((r) => r.sessionId === sessionId))
 }
 
-/** Ownership recorded on a new run. convId is never written for new runs. */
+/** Ownership recorded on a new run. */
 export function runOwnership(input: { sessionId?: unknown; projectId?: unknown }): {
-  convId: null
   sessionId: string | null
   projectId: string | null
 } {
   return {
-    convId: null,
     sessionId: typeof input.sessionId === 'string' && input.sessionId ? input.sessionId : null,
     projectId: typeof input.projectId === 'string' && input.projectId ? input.projectId : null
   }

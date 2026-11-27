@@ -100,23 +100,10 @@ import {
   rebuildSearchIndex,
   searchGlobalIndex,
   getGlobalSearchIndexHit,
-  copyDatabaseTo,
-  scrubMemoryConversationLinks,
   closeDatabase,
   listProjectCodeRoots
 } from './store'
-import {
-  hasLegacyApiConfig,
-  runLegacyChatRemoval,
-  stripAiConfigFile,
-  stripLegacyApiConfig
-} from './modules/ai/legacy-chat-removal'
-import { createLegacyChatState } from './modules/ai/legacy-chat-state'
-import {
-  registerLegacyChatHandlers,
-  shouldRunLegacyChatRemoval,
-  startLegacyChatRemoval
-} from './handlers/legacy-chat'
+import { agentOnlyConfig as agentOnlyConfigOf } from './modules/ai/ai-config'
 import * as memoryStore from './store'
 import * as memoryRules from './modules/ai/memory'
 import { registerMemoryHandlers } from './handlers/memory'
@@ -167,7 +154,6 @@ import {
 import { createManagedWindow, registerWindowHandlers, type ManagedWindow } from './handlers/window'
 import { registerFilesHandlers } from './handlers/files'
 import { registerBackupHandlers } from './handlers/backup'
-import { normalizeLegacyAIConfig } from './modules/conversations/legacy-ai-data'
 import { registerSyncHandlers } from './handlers/sync'
 import { registerUpdateHandlers } from './handlers/update'
 import {
@@ -555,7 +541,6 @@ interface ReadOnlyRoot {
 interface CodeRunState {
   id: string
   dir: string
-  convId: string | null
   sessionId: string | null
   /** Immutable application scope captured when the terminal was created. */
   projectId: string | null
@@ -1113,7 +1098,7 @@ interface AIConfig {
 
 /** The only shape this process ever hands out or writes: no API-chat keys. */
 function agentOnlyConfig(value: unknown): AIConfig {
-  return stripLegacyApiConfig(normalizeLegacyAIConfig(value)).config as AIConfig
+  return agentOnlyConfigOf(value) as AIConfig
 }
 
 const aiConfigPath = (): string => join(app.getPath('userData'), 'ai-config.json')
@@ -1332,7 +1317,6 @@ async function archiveAgentRun(runId: string, exitCode: number): Promise<AgentRu
     const diff = run.base ? await diffSince(run.base) : null
     const snapshot: AgentRunSnapshot = {
       id: run.id,
-      convId: run.convId,
       sessionId: run.sessionId,
       projectId: run.projectId,
       agent: run.agent,
@@ -2800,7 +2784,6 @@ app.whenReady().then(() => {
         id: r.id,
         dir: r.dir,
         task: r.task,
-        convId: r.convId,
         sessionId: r.sessionId,
         projectId: r.projectId,
         financialProfileId: r.financialProfileId,
@@ -2916,68 +2899,21 @@ app.whenReady().then(() => {
     }
   })
 
-  // Outside SQLite on purpose: persistAll() empties `settings` on a session's first save.
-  const legacyState = createLegacyChatState(app.getPath('userData'))
-  registerLegacyChatHandlers(ipcMain, {
-    readSetting: legacyState.read,
-    writeSetting: legacyState.write,
-    now: () => new Date()
+  createWindow()
+  // Always there, even with "close hides" off: "Bloquear agora" and "Sair" live in it.
+  createTray()
+  // In the background: the window never waits for the network.
+  appUpdater?.start()
+  // Sync runs locked too: pushes, pulls, applies remote changes to SQLite and
+  // obeys a remote wipe on the password screen; the renderer reads them on
+  // its first store:load. Started after the update check so the hold applies.
+  syncStarted = true
+  syncEngine?.start()
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    else managedWindow?.show()
   })
-
-  // The chat's data is removed before any window exists. A failure is logged,
-  // never fatal. Dev runs skip it unless opted in: only the database file has a
-  // dev suffix, so the rest of this migration would hit the real user data.
-  const openWindows = (): void => {
-    createWindow()
-    // Always there, even with "close hides" off: "Bloquear agora" and "Sair" live in it.
-    createTray()
-    // In the background: the window never waits for the network.
-    appUpdater?.start()
-    // Sync runs locked too: pushes, pulls, applies remote changes to SQLite and
-    // obeys a remote wipe on the password screen; the renderer reads them on
-    // its first store:load. Started after the update check so the hold applies.
-    syncStarted = true
-    syncEngine?.start()
-
-    app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) createWindow()
-      else managedWindow?.show()
-    })
-  }
-  if (
-    !shouldRunLegacyChatRemoval({
-      isDev: is.dev,
-      optIn: process.env.SAGYOU_RUN_LEGACY_CHAT_REMOVAL
-    })
-  ) {
-    log.warn('app', 'legacy_chat_removal_skipped', {
-      msg: 'dev build: removal skipped (set SAGYOU_RUN_LEGACY_CHAT_REMOVAL=1 to run it)'
-    })
-    openWindows()
-  } else {
-    void startLegacyChatRemoval({
-      run: () =>
-        runLegacyChatRemoval({
-          userDataDir: app.getPath('userData'),
-          getMarker: () => {
-            const marker = legacyState.read('legacyChatRemovedAt')
-            return typeof marker === 'string' && marker ? marker : null
-          },
-          setMarker: (iso) => legacyState.write('legacyChatRemovedAt', iso),
-          copyDatabase: copyDatabaseTo,
-          scrubMemories: scrubMemoryConversationLinks,
-          hasLegacyConfig: () => hasLegacyApiConfig(aiConfigPath()),
-          getSnapshotDir: () => {
-            const dir = legacyState.read('legacyChatSnapshotDir')
-            return typeof dir === 'string' && dir ? dir : null
-          },
-          setSnapshotDir: (dir) => legacyState.write('legacyChatSnapshotDir', dir),
-          stripAiConfig: () => stripAiConfigFile(aiConfigPath()),
-          now: () => new Date()
-        }),
-      warn: (message) => log.warn('app', 'legacy_chat', { msg: message })
-    }).finally(openWindows)
-  }
 })
 
 app.on('window-all-closed', () => {

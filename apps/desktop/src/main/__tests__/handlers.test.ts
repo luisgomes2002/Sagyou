@@ -23,9 +23,6 @@ const handlers = new Map<string, (event: unknown, ...args: never[]) => unknown>(
  */
 const winSent = vi.hoisted(() => [] as { channel: string; payload: unknown }[])
 
-/** Startup milestones in order, to prove the chat data is removed before a window exists. */
-const startupOrder = vi.hoisted(() => [] as string[])
-
 /** Desktop-shell mocks: tray, single-instance lock, login item and power events. */
 const desktop = vi.hoisted(() => ({
   requestSingleInstanceLock: { calls: 0 },
@@ -101,9 +98,6 @@ vi.mock('electron', () => ({
     on: vi.fn()
   },
   BrowserWindow: class {
-    constructor() {
-      startupOrder.push('createWindow')
-    }
     webContents = {
       setWindowOpenHandler: vi.fn(),
       on: vi.fn(),
@@ -138,8 +132,6 @@ vi.mock('../store', () => ({
   loadData: vi.fn(() => ({})),
   saveData: vi.fn(),
   listMemories: vi.fn(() => []),
-  copyDatabaseTo: vi.fn(async () => void startupOrder.push('migration')),
-  scrubMemoryConversationLinks: vi.fn(() => 0),
   rebuildSearchIndex: vi.fn(async () => undefined),
   listProjectCodeRoots: vi.fn(() => [])
 }))
@@ -164,8 +156,6 @@ const fakeEvent = {
 
 beforeAll(async () => {
   userData = await mkdtemp(join(tmpdir(), 'sagyou-main-'))
-  // An old install: a chat history the first launch has to snapshot and remove.
-  await writeFile(join(userData, 'ai-conversations.json'), '[{"id":"c1"}]')
   // Importing the module runs whenReady() and registers everything.
   await import('../index')
   await new Promise((r) => setImmediate(r))
@@ -269,34 +259,6 @@ describe('atualização automática', () => {
     expect(handlers.has('update:install')).toBe(true)
     expect(handlers.has('update:open-release')).toBe(true)
     expect(handlers.has('app:flush-before-install:complete')).toBe(true)
-  })
-})
-
-describe('legacy chat removal on startup', () => {
-  it('snapshots and removes the chat data before the first window is created', async () => {
-    expect(startupOrder.slice(0, 2)).toEqual(['migration', 'createWindow'])
-    const state = JSON.parse(await readFile(join(userData, 'legacy-chat-state.json'), 'utf-8'))
-    // The conversations are in the snapshot and gone from userData.
-    expect(
-      await readFile(join(state.legacyChatSnapshotDir, 'ai-conversations.json'), 'utf-8')
-    ).toBe('[{"id":"c1"}]')
-    await expect(readFile(join(userData, 'ai-conversations.json'), 'utf-8')).rejects.toThrow()
-  })
-
-  it('keeps its state in a file of its own, out of reach of the store', async () => {
-    // persistAll() empties the SQLite `settings` table on a session's first
-    // save; a marker kept there made the migration run on every launch.
-    const state = JSON.parse(await readFile(join(userData, 'legacy-chat-state.json'), 'utf-8'))
-    expect(typeof state.legacyChatRemovedAt).toBe('string')
-    expect(state.legacyChatSnapshotDir).toContain('pre-remocao-chat-')
-  })
-
-  it('offers the snapshot notice once', async () => {
-    const notice = await invoke<{ snapshotDir: string } | null>('legacy-chat:notice')
-    expect(notice?.snapshotDir).toContain('pre-remocao-chat-')
-
-    await invoke('legacy-chat:dismiss')
-    expect(await invoke('legacy-chat:notice')).toBeNull()
   })
 })
 
@@ -483,8 +445,8 @@ describe('ai:config:*', () => {
   })
 
   it('keeps a copy of an unreadable config instead of silently overwriting it', async () => {
-    // The migration leaves an unreadable ai-config.json alone on purpose; the
-    // first executor switch in the Fleet must not be what destroys it.
+    // An unreadable ai-config.json is left alone on purpose; the first executor
+    // switch in the Fleet must not be what destroys it.
     await writeFile(configPath(), '{ not json, mas pode ser recuperável')
 
     await invoke('ai:config:set', { codeHarness: 'claude-code' })
