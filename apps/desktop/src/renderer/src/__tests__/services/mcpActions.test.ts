@@ -129,16 +129,6 @@ describe('MCP writes while the app is locked', () => {
       setDataLocked(false)
     }
   })
-
-  it('before the store loads, nothing is written', () => {
-    const { id } = seedProject()
-    useKanbanStore.setState({ isLoaded: false })
-    expect(applyMcpAction('create_column', { projectId: id, name: 'X' }, external)).toEqual({
-      ok: false,
-      error: 'O Sagyou ainda está carregando ou bloqueado; tente de novo em instantes.'
-    })
-    expect(project(id).columns.map((c) => c.name)).not.toContain('X')
-  })
 })
 
 describe('MCP project and column writes', () => {
@@ -1383,6 +1373,7 @@ describe('MCP review fixes', () => {
   beforeEach(resetStore)
 
   it('refuses every write while the store is not loaded, so an empty store is never saved', () => {
+    const { id } = seedProject()
     useKanbanStore.setState({ isLoaded: false })
     const refusal = {
       ok: false,
@@ -1390,7 +1381,16 @@ describe('MCP review fixes', () => {
     }
     expect(prepareMcpAction('create_project', { name: 'X' }, general)).toEqual(refusal)
     expect(applyMcpAction('create_project', { name: 'X' }, general)).toEqual(refusal)
-    expect(state().projects).toHaveLength(0)
+    // A write on an existing project, from the external token, is refused the same way.
+    expect(
+      applyMcpAction(
+        'create_column',
+        { projectId: id, name: 'X' },
+        { projectId: null, financialProfileId: null }
+      )
+    ).toEqual(refusal)
+    expect(state().projects).toHaveLength(1)
+    expect(project(id).columns.map((c) => c.name)).not.toContain('X')
   })
 
   it('update_transaction refuses an amount below the sum of its details', () => {

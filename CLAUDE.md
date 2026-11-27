@@ -118,7 +118,7 @@ Storage is injected via `IStorageAdapter` (`services/StorageAdapter.ts`): `load/
 
 `loadData` and `importBackup` normalize every incoming `FinancialTable` through `normalizeFinancialTable` in `store/normalization.ts` — this fills missing arrays, defaults the currency, and **migrates monetary fields from legacy `number` to canonical decimal string** (see Data / Schema safety). Do the same for any new load path.
 
-Soft deletes use a `Tombstone[]` array. On `importBackup`, all local state is replaced wholesale by the backup file — no merge.
+Soft deletes use a `Tombstone[]` array. On `importBackup`, local state is replaced by the backup file; the one thing merged is the completed days of a habit that exists on both sides (the union of the two lists).
 
 ### Views
 

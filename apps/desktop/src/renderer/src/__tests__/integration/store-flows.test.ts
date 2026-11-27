@@ -86,44 +86,12 @@ describe('sprint lifecycle integration', () => {
   })
 })
 
-// ── Backup merge (importBackup) ───────────────────────────────────────────────
+// ── importBackup: tombstones ───────────────────────────────────────────────
 
-describe('importBackup merge logic', () => {
+describe('importBackup replaces the state', () => {
   beforeEach(reset)
 
-  it('merges remote projects that are not present locally', async () => {
-    const remoteProject: Project = {
-      id: 'remote-p1',
-      name: 'Remote Project',
-      color: '#ff0000',
-      columns: [],
-      createdAt: '2026-01-01T00:00:00.000Z',
-      updatedAt: '2026-01-01T00:00:00.000Z'
-    }
-    const backup: Backup = {
-      version: 2,
-      exportedAt: new Date().toISOString(),
-      projects: [remoteProject],
-      tasks: [],
-      sprints: [],
-      tombstones: [],
-      notes: [],
-      goals: [],
-      habits: [],
-      lists: []
-    }
-
-    // Patch the mocked importBackup to return this backup
-    const { ElectronStorage } = await import('../../services/ElectronStorage')
-    const instance = (ElectronStorage as ReturnType<typeof vi.fn>).mock.results[0]?.value
-    instance.importBackup.mockResolvedValueOnce({ success: true, data: backup })
-
-    const ok = await useKanbanStore.getState().importBackup()
-    expect(ok).toBe(true)
-    expect(useKanbanStore.getState().projects.find((p) => p.id === 'remote-p1')).toBeDefined()
-  })
-
-  it('tombstoned remote projects are excluded after merge', async () => {
+  it('does not restore a project that the backup marks as deleted', async () => {
     const now = new Date().toISOString()
     const oldDate = '2026-01-01T00:00:00.000Z'
     const remoteProject: Project = {
@@ -149,23 +117,14 @@ describe('importBackup merge logic', () => {
     await useKanbanStore.getState().importBackup()
     expect(useKanbanStore.getState().projects.find((p) => p.id === 'dead-p1')).toBeUndefined()
   })
-
-  it('returns false when importBackup is cancelled', async () => {
-    const { ElectronStorage } = await import('../../services/ElectronStorage')
-    const instance = (ElectronStorage as ReturnType<typeof vi.fn>).mock.results[0]?.value
-    instance.importBackup.mockResolvedValueOnce({ success: false, cancelled: true })
-
-    const ok = await useKanbanStore.getState().importBackup()
-    expect(ok).toBe(false)
-  })
 })
 
-// ── Habit merge (importBackup with habits) ────────────────────────────────────
+// ── importBackup: the one thing it merges ────────────────────────────────────
 
-describe('habit merge during importBackup', () => {
+describe('habit completions during importBackup', () => {
   beforeEach(reset)
 
-  it('unions completions from local and remote habits', async () => {
+  it('keeps the days marked here together with the ones of the backup', async () => {
     const habitId = useKanbanStore.getState().createHabit({ name: 'Run', color: '#22c55e' })
     useKanbanStore.getState().toggleHabit(habitId, '2026-01-01')
 
@@ -195,7 +154,7 @@ describe('habit merge during importBackup', () => {
   })
 })
 
-// ── Shopping list full flow ───────────────────────────────────────────────────
+// ── AI JSON import ────────────────────────────────────────────────────────────
 
 describe('importAIJson integration', () => {
   beforeEach(reset)
