@@ -281,7 +281,7 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
 9. **Nem tudo está no banco.** Em `app.getPath('userData')`: `kanban.db`,
    `files/` (os blobs dos anexos — a tabela só guarda metadados),
    `task-images/` (bytes das imagens de task — só metadata no DB, downscale JPEG
-   no cliente, `migrateTaskImagesToDisk` migra dados legados), `ai-config.json`
+   no cliente), `ai-config.json`
    (**só** configuração de agente: `codeHarness`, `userName`, `reasoningEffort`,
    chaves desconhecidas; fora de todo backup), `skills/` (`.md`, não é mais lida nem apagada), `agent-runs/`
    (execuções arquivadas — log + diff congelados, ligadas a `sessionId`/`projectId`),
@@ -325,8 +325,8 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
     uma chave vazada seria permanente. Decay arquiva (nunca hard-deleta); memória
     pinada nunca decai. ⚠️ `memory.project_id` é **TEXT puro, NUNCA FK com
     `ON DELETE CASCADE`** — o cascade apagava as memórias do projeto quando
-    `persistAll`/`persistDiff` o reinseriam; `migrateMemoryDropProjectFk` remove o
-    FK. Projeto apagado deixa memórias órfãs (decaem sozinhas). O handoff de
+    `persistAll`/`persistDiff` o reinseriam (a migração que removia o FK de bancos
+    antigos saiu na 1.15.0). Projeto apagado deixa memórias órfãs (decaem sozinhas). O handoff de
     terminal é um breadcrumb **por sessão** (`handoff:<projeto>:<run>`), gravado
     desde o início da sessão, sem LLM e sem referência a conversa; o log completo
     fica só no arquivo da run. Memória

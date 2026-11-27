@@ -1,6 +1,5 @@
 import { app } from 'electron'
 import { join } from 'path'
-import { existsSync, writeFileSync, mkdirSync } from 'fs'
 import { is } from '@electron-toolkit/utils'
 import { randomUUID } from 'crypto'
 import Database from 'better-sqlite3'
@@ -15,7 +14,6 @@ import {
   restoreAsInterrupted,
   syncableMemories
 } from './modules/ai/handoff-state'
-import { decodeDataUrl } from './modules/files/image-files'
 import { isDocumentExt, parseDocument } from './modules/files/document-parser'
 import {
   buildMemoryDocuments,
@@ -378,7 +376,6 @@ function getDb(): Database.Database {
   migrateSyncRecordsTable(_db)
   migrateSyncRecordsColumns(_db)
   migrateSyncTables(_db)
-  migrateMoneyColumnsToText(_db)
   migrateTransactionsLinkedColumn(_db)
   migrateFinancialPlanningColumns(_db)
   migrateTransactionDetailsColumn(_db)
@@ -388,10 +385,8 @@ function getDb(): Database.Database {
   migrateRoutineBorderStyleColumn(_db)
   migrateNoteBorderStyleColumn(_db)
   migrateGoalKindColumn(_db)
-  migrateMemoryDropProjectFk(_db)
   migrateMemoryProvenanceColumn(_db)
   ensureMemorySearch(_db)
-  migrateTaskImagesToDisk(_db)
   migrateNotesTaskIdsGoalIds(_db)
   // Before the reconcile below: a handoff a crash left "em andamento" must be
   // versioned for the first time as "interrompida", never as running.
@@ -603,107 +598,6 @@ function parseFinancialProfiles(value: unknown): FinancialProfile[] {
     : defaultFinancialProfiles()
 }
 
-// One-time migration for existing DBs: the money columns (price, amount,
-// target_amount) were originally declared REAL. Rebuild those tables with TEXT
-// columns so amounts are stored as decimal strings on disk, matching the
-// in-memory schema. Idempotent — skips tables already migrated to TEXT.
-function migrateMoneyColumnsToText(db: Database.Database): void {
-  const columnType = (table: string, col: string): string | null => {
-    const info = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string; type: string }[]
-    const c = info.find((r) => r.name === col)
-    return c ? String(c.type).toUpperCase() : null
-  }
-
-  const rebuilds = [
-    {
-      table: 'shopping_items',
-      column: 'price',
-      createNew: `CREATE TABLE shopping_items_new (
-        id TEXT PRIMARY KEY,
-        table_id TEXT NOT NULL REFERENCES financial_tables(id) ON DELETE CASCADE,
-        name TEXT NOT NULL,
-        qty REAL NOT NULL,
-        price TEXT,
-        done INTEGER NOT NULL DEFAULT 0,
-        link TEXT,
-        linked_transaction_id TEXT
-      )`,
-      copy: `INSERT INTO shopping_items_new (id,table_id,name,qty,price,done,link,linked_transaction_id)
-        SELECT id,table_id,name,qty,
-          CASE WHEN price IS NULL THEN NULL ELSE CAST(price AS TEXT) END,
-          done,link,linked_transaction_id FROM shopping_items`
-    },
-    {
-      table: 'transactions',
-      column: 'amount',
-      createNew: `CREATE TABLE transactions_new (
-        id TEXT PRIMARY KEY,
-        table_id TEXT NOT NULL REFERENCES financial_tables(id) ON DELETE CASCADE,
-        description TEXT NOT NULL,
-        amount TEXT NOT NULL,
-        type TEXT NOT NULL,
-        date TEXT NOT NULL,
-        category TEXT,
-        from_shopping INTEGER DEFAULT 0,
-        linked_transaction_id TEXT
-      )`,
-      copy: `INSERT INTO transactions_new (id,table_id,description,amount,type,date,category,from_shopping,linked_transaction_id)
-        SELECT id,table_id,description,CAST(amount AS TEXT),type,date,category,from_shopping,linked_transaction_id FROM transactions`
-    },
-    {
-      table: 'financial_goals',
-      column: 'target_amount',
-      createNew: `CREATE TABLE financial_goals_new (
-        id TEXT PRIMARY KEY,
-        table_id TEXT NOT NULL REFERENCES financial_tables(id) ON DELETE CASCADE,
-        name TEXT NOT NULL,
-        target_amount TEXT NOT NULL,
-        target_month INTEGER NOT NULL,
-        target_year INTEGER NOT NULL,
-        completed_at TEXT,
-        completion_note TEXT
-      )`,
-      copy: `INSERT INTO financial_goals_new (id,table_id,name,target_amount,target_month,target_year,completed_at,completion_note)
-        SELECT id,table_id,name,CAST(target_amount AS TEXT),target_month,target_year,completed_at,completion_note FROM financial_goals`
-    },
-    {
-      table: 'yield_entries',
-      column: 'amount',
-      createNew: `CREATE TABLE yield_entries_new (
-        id TEXT PRIMARY KEY,
-        source_id TEXT NOT NULL REFERENCES yield_sources(id) ON DELETE CASCADE,
-        date TEXT NOT NULL,
-        amount TEXT NOT NULL,
-        created_at TEXT NOT NULL
-      )`,
-      copy: `INSERT INTO yield_entries_new (id,source_id,date,amount,created_at)
-        SELECT id,source_id,date,CAST(amount AS TEXT),created_at FROM yield_entries`
-    }
-  ]
-
-  const pending = rebuilds.filter((r) => columnType(r.table, r.column) === 'REAL')
-  if (pending.length === 0) return
-
-  // foreign_keys cannot be toggled inside a transaction; disable around the rebuild.
-  db.pragma('foreign_keys = OFF')
-  try {
-    db.transaction(() => {
-      for (const r of pending) {
-        db.exec(r.createNew)
-        db.exec(r.copy)
-        db.exec(`DROP TABLE ${r.table}`)
-        db.exec(`ALTER TABLE ${r.table}_new RENAME TO ${r.table}`)
-      }
-    })()
-    log.info('store', 'migration', {
-      name: 'money_columns_to_text',
-      tables: pending.map((r) => r.table).join(', ')
-    })
-  } finally {
-    db.pragma('foreign_keys = ON')
-  }
-}
-
 // One-time migration for existing DBs: add linked_transaction_id column to
 // the transactions table. Uses ALTER TABLE ADD COLUMN (safe, idempotent).
 function migrateTransactionsLinkedColumn(db: Database.Database): void {
@@ -798,54 +692,6 @@ function migrateGoalKindColumn(db: Database.Database): void {
   if (!has) db.prepare('ALTER TABLE goals ADD COLUMN kind TEXT').run()
 }
 
-// One-time migration for existing DBs: the `memory` table originally declared
-// `project_id TEXT REFERENCES projects(id) ON DELETE CASCADE`. That cascade was
-// a data-loss bug — persistAll (first save of a session) and persistDiff (any
-// project edit) delete-and-reinsert the project row, and the cascade hard-deleted
-// every project-scoped memory (pinned included, never archived) while the
-// re-insert path never restored them, since memory is written outside persistAll.
-// Rebuild the table with a plain TEXT project_id (like tasks/notes) so a project
-// re-insert no longer touches memory; a genuinely deleted project just leaves its
-// memories orphaned. Idempotent — skips a table that already has no FK.
-function migrateMemoryDropProjectFk(db: Database.Database): void {
-  const fks = db.prepare(`PRAGMA foreign_key_list(memory)`).all() as { table: string }[]
-  const hasProjectFk = fks.some((r) => r.table === 'projects')
-  if (!hasProjectFk) return
-
-  // foreign_keys cannot be toggled inside a transaction; disable around the rebuild.
-  db.pragma('foreign_keys = OFF')
-  try {
-    db.transaction(() => {
-      db.exec(`CREATE TABLE memory_new (
-        id TEXT PRIMARY KEY,
-        project_id TEXT,
-        type TEXT NOT NULL,
-        title TEXT NOT NULL,
-        body TEXT NOT NULL,
-        tags TEXT NOT NULL DEFAULT '[]',
-        pinned INTEGER NOT NULL DEFAULT 0,
-        source TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        last_accessed_at TEXT NOT NULL,
-        access_count INTEGER NOT NULL DEFAULT 0,
-        archived_at TEXT
-      )`)
-      db.exec(`INSERT INTO memory_new
-        (id,project_id,type,title,body,tags,pinned,source,created_at,updated_at,last_accessed_at,access_count,archived_at)
-        SELECT id,project_id,type,title,body,tags,pinned,source,created_at,updated_at,last_accessed_at,access_count,archived_at FROM memory`)
-      db.exec(`DROP TABLE memory`)
-      db.exec(`ALTER TABLE memory_new RENAME TO memory`)
-      db.exec(
-        `CREATE INDEX IF NOT EXISTS idx_memory_project ON memory(project_id) WHERE archived_at IS NULL`
-      )
-    })()
-    log.info('store', 'migration', { name: 'memory_drop_project_cascade' })
-  } finally {
-    db.pragma('foreign_keys = ON')
-  }
-}
-
 /** Additive provenance migration: old memories remain valid, just unlinked. */
 function migrateMemoryProvenanceColumn(db: Database.Database): void {
   const columns = db.prepare('PRAGMA table_info(memory)').all() as { name: string }[]
@@ -883,68 +729,6 @@ function ensureMemorySearch(db: Database.Database): void {
   // The table is small (capped at 500 active rows); rebuilding gives existing
   // installs an index and repairs an interrupted external-content sync safely.
   db.exec("INSERT INTO memory_fts(memory_fts) VALUES('rebuild')")
-}
-
-// One-time migration for existing DBs: task images used to store their bytes as
-// base64 in `task_images.data_url`, which bloated the DB (loaded whole into the
-// renderer store, reserialized on every save). Move each blob to a file at
-// task-images/<id><ext> — matching chat images and file attachments — and
-// rebuild the table with an `ext` column and no `data_url`. Idempotent: skips a
-// table already migrated (no `data_url` column). A row whose data_url won't
-// decode is dropped from disk but keeps its metadata row (a broken thumbnail,
-// no worse than the un-writable case), so one bad blob can't abort the boot.
-function migrateTaskImagesToDisk(db: Database.Database): void {
-  const info = db.prepare(`PRAGMA table_info(task_images)`).all() as { name: string }[]
-  if (!info.some((c) => c.name === 'data_url')) return
-
-  const dir = join(app.getPath('userData'), 'task-images')
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-
-  // Write the blobs to disk first (outside the schema transaction — file IO
-  // can't roll back with SQL anyway), collecting the ext each row should carry.
-  const rows = db.prepare('SELECT id, data_url FROM task_images').all() as {
-    id: string
-    data_url: string
-  }[]
-  const extById = new Map<string, string>()
-  for (const r of rows) {
-    const decoded = decodeDataUrl(r.data_url)
-    if ('error' in decoded) continue // undecodable blob → metadata stays, no file
-    const ext = `.${decoded.ext}`
-    try {
-      writeFileSync(join(dir, `${r.id}${ext}`), decoded.bytes)
-      extById.set(r.id, ext)
-    } catch {
-      /* unwritable blob is skipped; the row keeps a blank ext */
-    }
-  }
-
-  db.pragma('foreign_keys = OFF')
-  try {
-    db.transaction(() => {
-      db.exec(`CREATE TABLE task_images_new (
-        id TEXT PRIMARY KEY,
-        task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-        name TEXT NOT NULL,
-        ext TEXT NOT NULL DEFAULT '',
-        size INTEGER NOT NULL,
-        added_at TEXT NOT NULL
-      )`)
-      const insert = db.prepare(
-        'INSERT INTO task_images_new (id,task_id,name,ext,size,added_at) SELECT id,task_id,name,?,size,added_at FROM task_images WHERE id=?'
-      )
-      for (const r of rows) insert.run(extById.get(r.id) ?? '', r.id)
-      db.exec(`DROP TABLE task_images`)
-      db.exec(`ALTER TABLE task_images_new RENAME TO task_images`)
-    })()
-    log.info('store', 'migration', {
-      name: 'task_images_to_disk',
-      migrated: extById.size,
-      total: rows.length
-    })
-  } finally {
-    db.pragma('foreign_keys = ON')
-  }
 }
 
 // ── migrateNotesTaskIdsGoalIds ────────────────────────────────────────────
@@ -1022,8 +806,7 @@ function initSchema(db: Database.Database): void {
     -- Task images keep only metadata here; the bytes live on disk at
     -- task-images/<id><ext> (like chat images and file attachments), so a big
     -- photo no longer bloats the DB that's loaded whole into the renderer store
-    -- and reserialized on every save. migrateTaskImagesToDisk moves legacy
-    -- data_url rows out; a fresh DB starts with ext and no data_url.
+    -- and reserialized on every save.
     CREATE TABLE IF NOT EXISTS task_images (
       id TEXT PRIMARY KEY,
       task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
@@ -1184,7 +967,7 @@ function initSchema(db: Database.Database): void {
     -- the re-insert path never restores them — silent, unrecoverable data loss
     -- (pinned included, never archived). project_id NULL = global; a memory whose
     -- project was deleted survives as an orphan (reads as "projeto removido") and
-    -- decays on its own if unused. migrateMemoryDropProjectFk drops the old FK.
+    -- decays on its own if unused.
     CREATE TABLE IF NOT EXISTS memory (
       id TEXT PRIMARY KEY,
       project_id TEXT,

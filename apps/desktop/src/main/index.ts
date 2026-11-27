@@ -197,7 +197,6 @@ import { createControlClient } from '@sagyou/core/control/client'
 import {
   esp32Key as remoteEsp32Key,
   loadRemoteConfig,
-  migrateServerNames,
   pcPrivateKey as remotePcPrivateKey,
   remoteConfigFileName,
   saveRemoteConfig,
@@ -2087,19 +2086,6 @@ app.whenReady().then(() => {
     })
     const rcDeps = { manager, platform: process.platform }
     rcManager = manager
-    // A file from before the Sagyou managed the servers: its names become
-    // entries once, saved right away (spec 2026-11-09, "Dados").
-    if (remoteConfig.legacyServerNames.length > 0) {
-      const count = remoteConfig.legacyServerNames.length
-      try {
-        const projects = listProjectCodeRoots().map((p) => ({ id: p.id, name: p.name }))
-        const { config, dropped } = migrateServerNames(remoteConfig, projects)
-        saveRemote(config)
-        log.info('remote', 'server_migrated', { count, dropped })
-      } catch {
-        log.warn('remote', 'server_migrate_failed')
-      }
-    }
     registerRcServerHandlers(ipcMain, rcDeps)
     let emitRemote: () => void = () => {}
     const service = createRemoteService({
