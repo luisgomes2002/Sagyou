@@ -1,6 +1,6 @@
 # Plano de implementação: Limpeza geral do código morto e dos formatos legados
 
-Status: draft
+Status: approved by Luis on 2026-11-27
 Spec: docs/specs/2026-11-27-limpeza-geral-legado.md
 Branch: feature/limpeza-geral-legado
 

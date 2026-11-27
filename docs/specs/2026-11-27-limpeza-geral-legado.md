@@ -1,7 +1,6 @@
 # Limpeza geral do código morto e dos formatos legados
 
-Status: draft
-<!-- Aprovada em 2026-11-27; voltou a draft porque a Emenda abaixo ampliou o escopo. Precisa de nova aprovação. -->
+Status: approved by Luis on 2026-11-27 (com a Emenda de escopo e a remoção total de `legacyFinancialMetadata`)
 Branch: feature/limpeza-geral-legado
 
 Tasks da sprint "Limpeza de código morto e formatos legados": Limpeza 1 a 9 (ids `b502623d`, `5eb9698e`, `03cd67b0`, `505f005d`, `23d28ed5`, `62e74164`, `48359ea5`, `d998cfa2`, `6b4235a4`). Esta spec **substitui** o rascunho da Limpeza 5 e reúne tudo em **um único PR**. Contexto histórico: `docs/specs/2026-10-24-remover-historico-chat.md`.
