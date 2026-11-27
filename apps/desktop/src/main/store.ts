@@ -358,9 +358,6 @@ interface SaveData {
   timeBlocks?: TimeBlock[]
   routines?: Routine[]
   activeTimers?: { taskId: string; startedAt: number }[]
-  // Legacy single-timer mirror; still written so an older app version reading
-  // this DB resolves one timer. New code reads/writes `activeTimers`.
-  activeTimer?: { taskId: string; startedAt: number } | null
   // The last sync generation the renderer applied (absent = 0). Never persisted:
   // saveData uses it to keep records changed remotely after that generation.
   syncGeneration?: number
@@ -2485,12 +2482,6 @@ function prepareWrite(db: Database.Database) {
     }
   }
 
-  const setTimer = (v: unknown): void => {
-    ins.setting.run('activeTimer', JSON.stringify(v))
-  }
-  const clearTimer = (): void => {
-    del.setting.run('activeTimer')
-  }
   const setTimers = (v: unknown): void => {
     ins.setting.run('activeTimers', JSON.stringify(v))
   }
@@ -2501,15 +2492,9 @@ function prepareWrite(db: Database.Database) {
     del.setting.run('activeTimers')
   }
 
-  return { insert, del, setTimer, clearTimer, setTimers, clearTimers, setSetting }
+  return { insert, del, setTimers, clearTimers, setSetting }
 }
 
-/**
- * Write the running-timer settings: the `activeTimers` array plus the legacy
- * `activeTimer` mirror (first, or null). One place so persistAll and persistDiff
- * agree. An empty array clears both keys, so a stopped timer never lingers to
- * the next boot.
- */
 function writeFinancialProfiles(
   w: ReturnType<typeof prepareWrite>,
   profiles: FinancialProfile[] | undefined,
@@ -2524,17 +2509,16 @@ function writeFinancialProfiles(
   )
 }
 
+/**
+ * Write the running-timer setting (`activeTimers`). One place so persistAll and persistDiff
+ * agree. An empty array clears the key, so a stopped timer never lingers to the next boot.
+ */
 function writeTimers(
   w: ReturnType<typeof prepareWrite>,
-  timers: { taskId: string; startedAt: number }[] | undefined,
-  legacy: { taskId: string; startedAt: number } | null | undefined
+  timers: { taskId: string; startedAt: number }[] | undefined
 ): void {
-  const list = timers ?? (legacy ? [legacy] : [])
-  if (list.length > 0) w.setTimers(list)
+  if (timers && timers.length > 0) w.setTimers(timers)
   else w.clearTimers()
-  const first = list[0] ?? null
-  if (first) w.setTimer(first)
-  else w.clearTimer()
 }
 
 /**
@@ -2593,13 +2577,11 @@ function persistDiff(db: Database.Database, prev: SaveData, next: SaveData): voi
   diffEntities(prev.files, next.files, w.del.file, w.insert.file)
   diffEntities(prev.timeBlocks ?? [], next.timeBlocks ?? [], w.del.timeBlock, w.insert.timeBlock)
   diffEntities(prev.routines ?? [], next.routines ?? [], w.del.routine, w.insert.routine)
-  // Timers live in settings (activeTimers + legacy activeTimer mirror). Rewrite
-  // when either the array or the legacy field changes, so a stopped timer
-  // doesn't linger to the next boot.
+  // Timers live in settings (`activeTimers`). Rewrite when the array changes, so a stopped
+  // timer doesn't linger to the next boot.
   const timersChanged =
-    JSON.stringify(prev.activeTimers ?? null) !== JSON.stringify(next.activeTimers ?? null) ||
-    JSON.stringify(prev.activeTimer ?? null) !== JSON.stringify(next.activeTimer ?? null)
-  if (timersChanged) writeTimers(w, next.activeTimers, next.activeTimer)
+    JSON.stringify(prev.activeTimers ?? null) !== JSON.stringify(next.activeTimers ?? null)
+  if (timersChanged) writeTimers(w, next.activeTimers)
 }
 
 function persistAll(db: Database.Database, data: SaveData): void {
@@ -2653,7 +2635,7 @@ function persistAll(db: Database.Database, data: SaveData): void {
   for (const r of data.routines ?? []) w.insert.routine(r)
   // settings aren't cleared by the DELETE above, so writeTimers must clear the
   // keys when no timer is running, not only set them.
-  writeTimers(w, data.activeTimers, data.activeTimer)
+  writeTimers(w, data.activeTimers)
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -3040,9 +3022,6 @@ export function loadData(existingDb?: Database.Database): SaveData {
     }
   })
 
-  // Prefer the new `activeTimers` array; fall back to the legacy single
-  // `activeTimer` (wrapped) so a DB written by an older app version still
-  // resolves its running timer. The renderer migrates the legacy field too.
   const getSetting = (key: string): unknown => {
     const row = db.prepare('SELECT value FROM settings WHERE key=?').get(key) as
       | { value: string }
@@ -3057,9 +3036,8 @@ export function loadData(existingDb?: Database.Database): SaveData {
     financialProfileIds.has(configuredActiveFinancialProfileId)
       ? configuredActiveFinancialProfileId
       : DEFAULT_FINANCIAL_PROFILE_ID
-  const legacyTimer = getSetting('activeTimer')
   const timersRaw = getSetting('activeTimers')
-  const activeTimers = Array.isArray(timersRaw) ? timersRaw : legacyTimer ? [legacyTimer] : []
+  const activeTimers = Array.isArray(timersRaw) ? timersRaw : []
   const featurePreferences = getSetting('featurePreferences')
   const uiPreferences = getSetting('uiPreferences')
 
@@ -3086,9 +3064,7 @@ export function loadData(existingDb?: Database.Database): SaveData {
     files,
     timeBlocks,
     routines,
-    activeTimers,
-    // Legacy field, still returned for any consumer that reads it directly.
-    activeTimer: legacyTimer ?? activeTimers[0] ?? null
+    activeTimers
   }
 }
 

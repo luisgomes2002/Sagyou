@@ -38,8 +38,6 @@ export class ElectronStorage implements IStorageAdapter {
       activeTimers: (data.activeTimers ?? undefined) as
         | { taskId: string; startedAt: number }[]
         | undefined,
-      // Legacy single-timer field, migrated to the array by the store's loader.
-      activeTimer: (data.activeTimer ?? null) as { taskId: string; startedAt: number } | null,
       files: (data.files || []) as StoredFile[],
       timeBlocks: (data.timeBlocks || []) as TimeBlock[],
       routines: (data.routines || []) as Routine[],

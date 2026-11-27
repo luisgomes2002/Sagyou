@@ -191,7 +191,6 @@ const createCoreSlice: StateCreator<KanbanStore, [], [], CoreSlice> = (set, get)
         files,
         timeBlocks,
         routines,
-        activeTimer: activeTimers[0] ?? null,
         syncGeneration
       })
     } finally {

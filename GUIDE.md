@@ -604,10 +604,10 @@ Não "simplifique" nenhuma destas sem ler o comentário que as acompanha:
   (arestas `tag`, no máximo `MEMORY_TAG_LINK_LIMIT` = 3 por memória, sem handoffs).
 - **Múltiplos cronômetros** (`activeTimers: ActiveTimer[]`, 1 por task) — vários
   timers correm ao mesmo tempo. `startTimer(taskId)` adiciona sem parar os outros;
-  `stopTimer(taskId)` credita só aquele. Espelho legado `activeTimer =
-activeTimers[0]` no `settings` do DB (não viaja no backup); `normalizeTimers`
-  migra o objeto único antigo e faz o commit de tempo em loop no load. ⚠️ Mudança
-  de schema — mantenha a coleção **e** o espelho.
+  `stopTimer(taskId)` credita só aquele. Só `activeTimers` é gravado e lido no
+  `settings` do DB (não viaja no backup); o espelho `activeTimer` saiu na 1.15.0.
+  O load faz o commit de tempo de todos os timers em loop. ⚠️ Versão anterior à
+  1.15.0 aberta sobre um banco gravado por esta não acha o timer rodando.
 - **O diff do agente captura a base _antes_ de rodar** — depois não dá para
   separar o que o agente fez do que o usuário já tinha em andamento.
 - **Runs antigas são snapshots congelados** (`agent-runs.ts`): o log e o diff são

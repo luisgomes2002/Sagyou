@@ -1641,11 +1641,11 @@ describe('code path actions', () => {
     expect(project().activeCodePathIds).toEqual([id1])
   })
 
-  it('loadData migrates a legacy single activeTimer, committing its elapsed time', async () => {
+  it('loadData ignores the retired single activeTimer field', async () => {
     const storage = vi.mocked(ElectronStorage).mock.instances[0] as unknown as {
       load: ReturnType<typeof vi.fn>
     }
-    // A DB written by a pre-multi-timer version: only the singular `activeTimer`.
+    // Only the singular `activeTimer` of a pre-multi-timer version: nothing resolves from it.
     storage.load.mockResolvedValueOnce({
       projects: [],
       sprints: [],
@@ -1670,10 +1670,7 @@ describe('code path actions', () => {
       activeTimer: { taskId: 't1', startedAt: Date.now() - 10_000 }
     })
     await useKanbanStore.getState().loadData()
-    // Elapsed time committed to the task, and no timer left running after load.
-    expect(
-      useKanbanStore.getState().tasks.find((t) => t.id === 't1')!.timeSpent
-    ).toBeGreaterThanOrEqual(9)
+    expect(useKanbanStore.getState().tasks.find((t) => t.id === 't1')!.timeSpent ?? 0).toBe(0)
     expect(useKanbanStore.getState().activeTimers).toEqual([])
   })
 
@@ -1725,7 +1722,7 @@ describe('code path actions', () => {
     expect(useKanbanStore.getState().activeTimers).toEqual([])
   })
 
-  it('_flushPersist writes the legacy activeTimer mirror (activeTimers[0])', async () => {
+  it('_flushPersist writes activeTimers and no singular activeTimer', async () => {
     const storage = vi.mocked(ElectronStorage).mock.instances[0] as unknown as {
       save: ReturnType<typeof vi.fn>
     }
@@ -1741,8 +1738,7 @@ describe('code path actions', () => {
       { taskId: 'a', startedAt: 111 },
       { taskId: 'b', startedAt: 222 }
     ])
-    // Old app versions still resolve a single timer from the mirror.
-    expect(saved.activeTimer).toEqual({ taskId: 'a', startedAt: 111 })
+    expect(saved).not.toHaveProperty('activeTimer')
   })
 
   it('_flushPersist saves the current state once without a later debounced write', async () => {

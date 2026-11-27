@@ -234,7 +234,6 @@ function local(): State {
     ],
     files: [],
     activeTimers: [{ taskId: 't1', startedAt: 1 }],
-    activeTimer: { taskId: 't1', startedAt: 1 },
     uiPreferences: { theme: 'dark', fontSize: 'large' },
     activeFinancialProfileId: 'outro',
     activeProjectId: 'p1'
@@ -269,7 +268,6 @@ describe('applyRecordsToState', () => {
     const a = local()
     const result = applyRecordsToState(a, extractDataRecords(remote()).map(wire)) as State
     expect(result.activeTimers).toEqual(a.activeTimers)
-    expect(result.activeTimer).toEqual(a.activeTimer)
     expect(result.uiPreferences).toEqual(a.uiPreferences)
     expect(result.activeFinancialProfileId).toBe('outro')
     expect(result.activeProjectId).toBe('p1')

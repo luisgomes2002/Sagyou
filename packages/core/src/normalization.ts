@@ -164,14 +164,10 @@ export function normalizeFinancialProfiles(value: unknown): FinancialProfile[] {
     : [{ ...DEFAULT_FINANCIAL_PROFILE }]
 }
 
-export function normalizeTimers(data: {
-  activeTimers?: unknown
-  activeTimer?: unknown
-}): ActiveTimer[] {
+export function normalizeTimers(data: { activeTimers?: unknown }): ActiveTimer[] {
   const valid = (timer: unknown): timer is ActiveTimer =>
     !!timer &&
     typeof (timer as ActiveTimer).taskId === 'string' &&
     typeof (timer as ActiveTimer).startedAt === 'number'
-  if (Array.isArray(data.activeTimers)) return data.activeTimers.filter(valid)
-  return valid(data.activeTimer) ? [data.activeTimer] : []
+  return Array.isArray(data.activeTimers) ? data.activeTimers.filter(valid) : []
 }
