@@ -8,7 +8,6 @@ import type {
   StickyNote
 } from './types'
 import { DEFAULT_FINANCIAL_PROFILE_ID } from './types'
-import { preserveLegacyFinancialMetadata } from './financialLegacy'
 import { D, moneyStr } from './money'
 import { migrateYieldSummaryDates } from './yieldSummary'
 
@@ -46,7 +45,22 @@ export function normalizeNotes(notes: StickyNote[]): StickyNote[] {
 // Load and backup import must apply the exact same money and detail migrations.
 // A display-only conversion here can otherwise overwrite historical amounts.
 export function normalizeFinancialTable(list: FinancialTable): FinancialTable {
-  const table = migrateYieldSummaryDates(preserveLegacyFinancialMetadata(list))
+  // Budgets and recurring transactions were an unfinished feature that no longer exists, and
+  // their hidden `legacyFinancialMetadata` copy is gone too: all three are dropped here.
+  const {
+    budgets: _budgets,
+    recurringTransactions: _recurring,
+    legacyFinancialMetadata: _legacy,
+    ...current
+  } = list as FinancialTable & {
+    budgets?: unknown
+    recurringTransactions?: unknown
+    legacyFinancialMetadata?: unknown
+  }
+  void _budgets
+  void _recurring
+  void _legacy
+  const table = migrateYieldSummaryDates(current as FinancialTable)
   return {
     ...table,
     profileId: list.profileId || DEFAULT_FINANCIAL_PROFILE_ID,

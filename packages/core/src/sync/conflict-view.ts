@@ -123,8 +123,7 @@ export const FIELD_ORDER: Record<SyncKind, readonly string[]> = {
     'profileId',
     'provider',
     'actualBalance',
-    'actualBalanceUpdatedAt',
-    'legacyFinancialMetadata'
+    'actualBalanceUpdatedAt'
   ],
   financial_debt: [
     'tableId',
@@ -284,7 +283,6 @@ const OWN_LABELS: Partial<Record<SyncKind, Record<string, string>>> = {
     provider: 'Banco',
     actualBalance: 'Saldo real',
     actualBalanceUpdatedAt: 'Saldo real conferido em',
-    legacyFinancialMetadata: 'Dados antigos',
     createdAt: 'Criada em'
   },
   financial_debt: {

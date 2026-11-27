@@ -78,7 +78,6 @@ function state(): MobileState {
       name: 'Conta',
       currency: 'BRL',
       profileId: 'personal',
-      legacyFinancialMetadata: { budget: 500 },
       items: [],
       goals: [],
       transactions: [
@@ -157,7 +156,6 @@ describe('lançamentos no celular', () => {
     expect(tx.audit?.[1].changes.map((c) => c.field)).toEqual(['amount', 'reconciledAt'])
     expect(tx.receiptFileIds).toEqual(['f1'])
     expect(tx.details).toEqual([{ id: 'd1', description: 'Arroz', amount: '20' }])
-    expect(table.legacyFinancialMetadata).toEqual({ budget: 500 })
   })
 
   it('pagamento de dívida não é editável no celular', () => {

@@ -236,9 +236,9 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    categoria, descrição e data de último dia no formato automático migram;
    a mudança de data entra no histórico e retira conferência bancária.
    Banco/app e saldo real são metadata opcional da tabela. Orçamentos e recorrências não são
-   funcionalidades do app: valores antigos desses campos são preservados em `legacyFinancialMetadata`
-   ao carregar, salvar e importar backup, mas não aparecem no modelo ativo nem no Excel. Não remova
-   essa ponte sem migração explícita, ou um autosave pode apagar dados de versões antigas.
+   funcionalidades do app: `normalizeFinancialTable` descarta `budgets`, `recurringTransactions` e a
+   antiga cópia oculta `legacyFinancialMetadata` (removida na 1.15.0, inclusive do payload de sync
+   da `financial_table`). Não traga essa ponte de volta sem spec.
    Itens em `FinancialTransaction.details` repartem o lançamento principal: a soma deles não pode
    ultrapassar o total e eles nunca entram uma segunda vez nos totais; a análise usa as categorias
    desses itens. Quando o lançamento pai for `Cartão`, os detalhes são subtraídos e somente o

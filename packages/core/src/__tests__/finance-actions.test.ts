@@ -584,15 +584,10 @@ describe('financial documentation', () => {
     )
   })
 
-  it('keeps legacyFinancialMetadata, receiptFileIds and the audit trail through an edit', () => {
-    const legacy = {
-      budgets: [{ category: 'Casa', limit: 100 }],
-      recurringTransactions: [{ id: 'monthly', amount: 50 }]
-    }
+  it('keeps receiptFileIds and the audit trail through an edit', () => {
     const audit = [{ at: '2026-10-01T00:00:00.000Z', changes: [{ field: 'amount', before: '1' }] }]
     const w = world([
       table({
-        legacyFinancialMetadata: legacy,
         provider: 'Nubank',
         actualBalance: '10',
         transactions: [
@@ -613,7 +608,6 @@ describe('financial documentation', () => {
     w.updateTransaction('t', { amount: '90', source: 'Nubank' })
     const list = w.list()
     const tx = list.transactions[0]
-    expect(list.legacyFinancialMetadata).toEqual(legacy)
     expect(list.provider).toBe('Nubank')
     expect(list.actualBalance).toBe('10')
     expect(tx.receiptFileIds).toEqual(['file-1', 'file-2'])

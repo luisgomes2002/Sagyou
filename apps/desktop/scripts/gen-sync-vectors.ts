@@ -154,7 +154,6 @@ const source = {
       profileId: 'personal',
       provider: 'Banco',
       actualBalance: '1000.10',
-      legacyFinancialMetadata: { budget: 500 },
       createdAt: T,
       updatedAt: T,
       items: [{ id: 'i1', name: 'Pão', qty: 1.5, price: '5.25', done: false }],

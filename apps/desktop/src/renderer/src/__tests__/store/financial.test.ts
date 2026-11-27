@@ -25,7 +25,7 @@ vi.mock('../../services/ElectronStorage', () => {
 
 import { useKanbanStore } from '../../store/kanban'
 import { DEFAULT_FINANCIAL_PROFILE_ID } from '../../types'
-import { preserveLegacyFinancialMetadata } from '../../utils/financialLegacy'
+import { normalizeFinancialTable } from '../../store/normalization'
 import { financialCategories } from '../../components/financial/shared'
 
 function resetStore() {
@@ -150,8 +150,8 @@ describe('financial table creation', () => {
   })
 })
 
-describe('legacy financial metadata', () => {
-  it('retains unsupported old settings without exposing them as active table fields', () => {
+describe('retired financial features', () => {
+  it('drops old budgets, recurring transactions and legacy metadata instead of keeping them', () => {
     const old = {
       id: 'old',
       name: 'Old',
@@ -161,18 +161,17 @@ describe('legacy financial metadata', () => {
       goals: [],
       budgets: [{ category: 'Casa', limit: 100 }],
       recurringTransactions: [{ id: 'monthly', amount: 50 }],
+      legacyFinancialMetadata: { budgets: [{ category: 'Casa', limit: 100 }] },
       createdAt: '2026-01-01',
       updatedAt: '2026-01-01'
     }
-    const normalized = preserveLegacyFinancialMetadata(
+    const normalized = normalizeFinancialTable(
       old as unknown as import('../../types').FinancialTable
     )
-    expect('budgets' in normalized).toBe(false)
-    expect('recurringTransactions' in normalized).toBe(false)
-    expect(normalized.legacyFinancialMetadata).toEqual({
-      budgets: old.budgets,
-      recurringTransactions: old.recurringTransactions
-    })
+    for (const key of ['budgets', 'recurringTransactions', 'legacyFinancialMetadata']) {
+      expect(normalized).not.toHaveProperty(key)
+    }
+    expect(normalized).toMatchObject({ id: 'old', name: 'Old', currency: 'BRL' })
   })
 })
 

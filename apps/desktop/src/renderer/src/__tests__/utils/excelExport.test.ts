@@ -881,10 +881,6 @@ describe('buildWorkbook — tabelas financeiras e rendimentos', () => {
       profileId: 'company',
       provider: 'Banco BR',
       actualBalance: '1234.56',
-      legacyFinancialMetadata: {
-        budgets: [{ category: 'Taxa', limit: '250.5' }],
-        recurringTransactions: [{ id: 'rec1', amount: '300' }]
-      },
       yieldSources: [{ id: 'source1', name: 'Conta', createdAt: '2026-01-01' }],
       yieldEntries: [
         {

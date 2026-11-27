@@ -1141,9 +1141,11 @@ describe('importBackup', () => {
       items: [{ price: '3.75' }],
       transactions: [{ amount: '12.5', details: [{ amount: '12.5' }] }],
       goals: [{ targetAmount: '100' }],
-      actualBalance: '42.25',
-      legacyFinancialMetadata: { budgets: legacyList.budgets }
+      actualBalance: '42.25'
     })
+    // The retired budgets are dropped, not moved into a hidden field.
+    expect(imported).not.toHaveProperty('budgets')
+    expect(imported).not.toHaveProperty('legacyFinancialMetadata')
   })
 
   beforeEach(resetStore)

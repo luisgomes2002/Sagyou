@@ -334,8 +334,7 @@ export function extractDataRecords(data: SyncSourceData): SyncRecord[] {
         profileId: ft.profileId,
         provider: ft.provider,
         actualBalance: optionalMoney(ft.actualBalance),
-        actualBalanceUpdatedAt: ft.actualBalanceUpdatedAt,
-        legacyFinancialMetadata: ft.legacyFinancialMetadata
+        actualBalanceUpdatedAt: ft.actualBalanceUpdatedAt
       })
     )
     for (const d of rows(ft.debts))

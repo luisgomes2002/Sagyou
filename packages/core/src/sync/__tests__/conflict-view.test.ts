@@ -124,7 +124,6 @@ function everyField(): ReturnType<typeof extractDataRecords> {
         provider: 'Banco',
         actualBalance: '10',
         actualBalanceUpdatedAt: ISO,
-        legacyFinancialMetadata: { budget: 1 },
         debts: [
           {
             id: 'd1',

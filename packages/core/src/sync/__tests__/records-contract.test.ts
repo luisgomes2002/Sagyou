@@ -61,13 +61,14 @@ describe('financial_table record', () => {
     expect(rec.payload).toMatchObject({ id: 'ft1', name: 'Conta', currency: 'BRL' })
   })
 
-  it('does not change when an empty legacy value is present or absent', () => {
+  it('no longer carries legacyFinancialMetadata, even when the source still has it', () => {
     const plain = find({ lists: [table()] }, 'financial_table', 'ft1')
-    const withEmpty = find(
-      { lists: [table({ legacyFinancialMetadata: undefined })] },
+    const withLegacy = find(
+      { lists: [table({ legacyFinancialMetadata: { budget: 500 } })] },
       'financial_table',
       'ft1'
     )
-    expect(withEmpty.hash).toBe(plain.hash)
+    expect(withLegacy.payload).not.toHaveProperty('legacyFinancialMetadata')
+    expect(withLegacy.hash).toBe(plain.hash)
   })
 })

@@ -187,9 +187,6 @@
         "profileId": "personal",
         "provider": "Banco",
         "actualBalance": "1000.10",
-        "legacyFinancialMetadata": {
-          "budget": 500
-        },
         "createdAt": "2026-10-30T12:00:00.000Z",
         "updatedAt": "2026-10-30T12:00:00.000Z",
         "items": [
@@ -625,12 +622,9 @@
         "updatedAt": "2026-10-30T12:00:00.000Z",
         "profileId": "personal",
         "provider": "Banco",
-        "actualBalance": "1000.1",
-        "legacyFinancialMetadata": {
-          "budget": 500
-        }
+        "actualBalance": "1000.1"
       },
-      "hash": "25676edf968a925d212595b44633e109f07a1cd82d4c6589add38b55525b6928"
+      "hash": "c32e20c6edad275d9d190441fee538cbbec22dc78ee89bc5b8f9002ead25ea7d"
     },
     {
       "kind": "financial_debt",
@@ -1077,12 +1071,9 @@
         "updatedAt": "2026-10-30T12:00:00.000Z",
         "profileId": "personal",
         "provider": "Banco",
-        "actualBalance": "1000.1",
-        "legacyFinancialMetadata": {
-          "budget": 500
-        }
+        "actualBalance": "1000.1"
       },
-      "hash": "25676edf968a925d212595b44633e109f07a1cd82d4c6589add38b55525b6928"
+      "hash": "c32e20c6edad275d9d190441fee538cbbec22dc78ee89bc5b8f9002ead25ea7d"
     },
     {
       "payload": {
@@ -1321,6 +1312,6 @@
         "deleted": true
       }
     ],
-    "sealed": "pBAO4wOR3UhtPZMMxH5MXH0o54SqC7KdApwDMoOXtoZZlmGgRgfj6HB8cwj/HsKMHC0P7kope9XXH9aeP9F8boNPl3VPJRIFS7FBc6i+NytmuVP+fqUfULe/FzQ/haO7bXKcBG3lZLFGKQ/pRdOYphzABHoVsSprN2TWgGWyWPNtG8lLyuX7sBAlP8UVygbEhzhL5/0weVwpwl8R86Tp3g6XL21yxd9GxbnlI/Qa8z76GEPh492H3rZpGig+e3FgQp/zlByW7R3yynAKk+SGUt2UUY7I0xU0xTYYk+eUR2aU08q1v4vPOQsZiVvhdszJ9TkQT02m/orBA4jZ6n7O7idlrns/l127+CBQQuUUavOA7fdwO0TO2oF3Cgla3B00icjhTCigaP7L2camp8AVz5vo2rkx5tPdxaqDmagk8jvndreLmnLbqtRf6c6J6ch9DkjY60BNjD+KZ9KXPrg98FxWQZ+e1JvrbmKrTG9OLVdfdVFHxkLAKBJ/Zv3k3S9C/iwhgE1U48N8QnLA05e7KvbwC6mIYItcbFnpTnr6ppEqZwYExAXjAglP5853S2y+I++a24rn4LSWvpYwG1Koq4jEtxsmUn9lRmsd4bYlyc+M"
+    "sealed": "WahzfEGpmH2Z2ZUtej70bXwigm5HPtwZ1ra3dqKsOupqgtnjMSFTCdW04ylJTJq1SlWBjStaugUQ0V1vPDAUJVGceraSSMwnIQ2aACm2L21QwccDLA9ly2oPShc9OcpVibrMe7pu6eUvwKJ42zVincI4KtF2vZWV0o49Dpf59YHYm9RA9jjjD8jEDDd4egQolOnGoVf+ifHlvOEPH4NvSzym19OcpHyDfj1QyEdIGRLAz2PWc2ns9/2CZfbOQ8XQ58jLtP1VfwcNPW5MuU/fu2jOkyV28V8rKnNEw/X1ocrkGRvlnzXh2k1E4gaqZ0YHg9deegUTQr6xcnfHSPBk9QGrx+9z+bhz5RlgQXsg23IPItjsB4hRgAgwtLjc50tJ2LgglWA00N/33vbAXtaFOusBQ/GXyvAuF1SWROytseoV+oxs+9ZjHZxklUwF7CP1AYX3//dy91Cwg/LwXAQCq67bZGT/wJMLS9Ni3JH+xoXln1Fcpg+uPR45zgnvB1ZoIPxYPJ9Y8/DIoeWbh/fvSvFR4jydJlrnV5buE0P9YhQT/dLUk4DX5lKLDRFGa347CLqn0Irtqd76js22oc8WS3oonrpoXEKhBfPx9Ovpi23Zrywv"
   }
 }

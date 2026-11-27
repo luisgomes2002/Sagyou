@@ -293,7 +293,6 @@ interface FinancialTable {
   provider?: string
   actualBalance?: number | string
   actualBalanceUpdatedAt?: string
-  legacyFinancialMetadata?: Record<string, unknown>
   createdAt: string
   updatedAt: string
 }
@@ -2161,7 +2160,6 @@ function prepareWrite(db: Database.Database) {
     },
     ftable: (ft: FinancialTable): void => {
       const metadata = JSON.stringify({
-        ...ft.legacyFinancialMetadata,
         provider: ft.provider,
         actualBalance: ft.actualBalance,
         actualBalanceUpdatedAt: ft.actualBalanceUpdatedAt,
@@ -2646,16 +2644,6 @@ export function loadData(existingDb?: Database.Database): SaveData {
         ...(meta.actualBalance != null ? { actualBalance: String(meta.actualBalance) } : {}),
         ...(typeof meta.actualBalanceUpdatedAt === 'string'
           ? { actualBalanceUpdatedAt: meta.actualBalanceUpdatedAt }
-          : {}),
-        ...(Array.isArray(meta.budgets) || Array.isArray(meta.recurringTransactions)
-          ? {
-              legacyFinancialMetadata: {
-                ...(Array.isArray(meta.budgets) ? { budgets: meta.budgets } : {}),
-                ...(Array.isArray(meta.recurringTransactions)
-                  ? { recurringTransactions: meta.recurringTransactions }
-                  : {})
-              }
-            }
           : {}),
         ...(typeof meta.profileId === 'string' ? { profileId: meta.profileId } : {}),
         ...(Array.isArray(meta.debts) ? { debts: meta.debts } : {})

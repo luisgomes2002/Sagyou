@@ -313,7 +313,6 @@ export interface FinancialTable {
   actualBalance?: string
   actualBalanceUpdatedAt?: string
   /** Preserves unsupported keys from older databases and backups without exposing them as app features. */
-  legacyFinancialMetadata?: Record<string, unknown>
   createdAt: string
   updatedAt: string
 }
