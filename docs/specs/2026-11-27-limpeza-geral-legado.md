@@ -1,6 +1,7 @@
 # Limpeza geral do código morto e dos formatos legados
 
-Status: approved by Luis on 2026-11-27
+Status: draft
+<!-- Aprovada em 2026-11-27; voltou a draft porque a Emenda abaixo ampliou o escopo. Precisa de nova aprovação. -->
 Branch: feature/limpeza-geral-legado
 
 Tasks da sprint "Limpeza de código morto e formatos legados": Limpeza 1 a 9 (ids `b502623d`, `5eb9698e`, `03cd67b0`, `505f005d`, `23d28ed5`, `62e74164`, `48359ea5`, `d998cfa2`, `6b4235a4`). Esta spec **substitui** o rascunho da Limpeza 5 e reúne tudo em **um único PR**. Contexto histórico: `docs/specs/2026-10-24-remover-historico-chat.md`.
@@ -15,7 +16,7 @@ O app ainda carrega código que só serve a versões antigas, a uma migração q
 - Entregar tudo num PR só, com uma lista "lê / deixa de ler" revisável item a item.
 
 ## Fora do escopo
-- Mudar o schema SQLite: nenhuma coluna ou tabela é apagada. Colunas e tabelas sem uso ficam no banco.
+- Mudar o schema SQLite além do que a Emenda diz: nenhuma coluna é apagada; a única tabela apagada é `entity_events`.
 - Apagar arquivo do usuário no disco, em qualquer caso.
 - O piso de versão de backup: **fica 1 a 7** (decisão do dono, 2026-11-27).
 - Migrar para Rust.
@@ -30,7 +31,7 @@ O app ainda carrega código que só serve a versões antigas, a uma migração q
 1. **Um PR, vários commits:** um commit por limpeza (1 a 9), para dar para revisar e reverter por partes. O título e o corpo listam as nove.
 2. **Versão:** desktop 1.14.0 → **1.15.0 (MINOR)**, e não PATCH, porque tirar o espelho de escrita (`activeTimer`, `activeCodePathId`) é um caminho só de ida: uma versão antiga do app aberta sobre o banco novo não acharia timer nem pasta. Celular não muda.
 3. **A trava de escrita do `ai-config.json` fica** (as 14 chaves aposentadas nunca são gravadas). A task dizia para remover o corte das chaves, mas esse corte é o que impede `ai:config:set` de gravar uma chave de API no disco. Sai só a parte de migração (`stripAiConfigFile`, `hasLegacyApiConfig`).
-4. **`entity_events`:** para de ser gravada (`diffEvents`, `appendEventRows`, `trimEventLog`); a tabela e as linhas existentes ficam. Apagar a tabela seria uma migração destrutiva sem ganho.
+4. **`entity_events`:** para de ser gravada (`diffEvents`, `appendEventRows`, `trimEventLog`). A tabela só é apagada pela Emenda (item 6), em commit próprio.
 5. **Ordem dos commits:** limpezas independentes primeiro (1, 2, 4, 3), depois a 5, depois a 8, por fim 6, 7 e 9, para o diff da 6 (troca de imports) não esconder as outras.
 6. **Teste de contrato:** `sync-vectors.json` não é regenerado. O campo `activeCodePathId` aparece nele só como dado de projeto de teste; o sync trata `activeCodePathIds`/`activeCodePathId` como campos do aparelho (`DEVICE_PROJECT_FIELDS`), fora do hash. Um teste confirma que o hash e o `plan` de um projeto não mudam sem o campo singular.
 
@@ -43,7 +44,7 @@ O resto é interno: o que o app lê e grava.
 
 ## Dados
 
-⚠️ Breaking schema change — existing data may be affected. Só para **versões antigas do Sagyou**: uma versão anterior à 1.15.0 aberta sobre um banco gravado pela nova deixa de achar o timer rodando e a pasta de código ativa. Nenhuma coluna ou tabela é removida. O único dado que deixa de ser guardado são `budgets` e `recurringTransactions` de backups antigos, recursos que o dono nunca usou (os bancos conferidos neste PC têm zero itens).
+⚠️ Breaking schema change — existing data may be affected. Só para **versões antigas do Sagyou**: uma versão anterior à 1.15.0 aberta sobre um banco gravado pela nova deixa de achar o timer rodando e a pasta de código ativa. Nenhuma coluna ou tabela é removida. O único dado que deixa de ser guardado são `budgets` e `recurringTransactions` de backups antigos, recursos que o dono nunca usou (os bancos conferidos neste PC têm zero itens); o campo `legacyFinancialMetadata` em si fica, por causa do contrato de sync.
 
 ### A. Código morto (sem dado persistido)
 | Item | O que sai |
@@ -67,7 +68,7 @@ O resto é interno: o que o app lê e grava.
 | Espelho de pasta de código | `withActiveCodePaths` não grava mais `activeCodePathId`; a leitura singular de `rc-manager`, `agent-session-root`, `excelExport` e `store.ts` sai | `activeCodePathIds`; **a conversão do singular em lista continua em `normalizeProject`**, porque backups 1 a 7 podem trazer só o singular |
 | Servidores RC | `legacyServerNames`, `migrateServerNames` e o aviso em `index.ts` | entradas por projeto |
 | `mcp-external.json` | leitura de `expiresAt`, `projectId`, `financialProfileId`, `mode` | hash, `createdAt`, `lastUsedAt`, `allowWhileLocked` |
-| Orçamentos e recorrências antigos | `preserveLegacyFinancialMetadata` (`financialLegacy.ts`, no core e no re-export do renderer), a chamada em `normalization.ts` e a escrita/leitura de `legacyFinancialMetadata` em `store.ts` | nada: `budgets` e `recurringTransactions` de um backup antigo passam a ser ignorados e somem no primeiro save; o JSON antigo que já está em `metadata` fica no banco, sem ser lido |
+| Orçamentos e recorrências antigos | `preserveLegacyFinancialMetadata` (`financialLegacy.ts`, no core e no re-export do renderer) e a chamada em `normalizeFinancialTable` | **o campo `legacyFinancialMetadata` fica** no tipo, no sync (`records.ts`, pinado em `sync-vectors.json`), no `store.ts` e no celular; `budgets` e `recurringTransactions` de um backup antigo passam a ser descartados em vez de movidos para ele, e um `legacyFinancialMetadata` que já exista continua passando |
 | Conversões no banco | `migrateMoneyColumnsToText`, `migrateMemoryDropProjectFk`, `migrateTaskImagesToDisk` (só mexem em banco antigo) | os `ALTER TABLE … ADD COLUMN` ficam, porque criam colunas em instalação nova |
 
 ### C. O que fica (protege arquivos antigos ou dado do usuário)
@@ -77,6 +78,25 @@ Fica, e ganha um teste ou um comentário que diz por quê:
 - O vínculo antigo transação→transação, e `isLegacyChild` no celular: é uma relação que existe nos dados, não só compatibilidade.
 - `sourceConversationId` no core (sempre `null`) e a coluna `source_conversation_id`: o celular e o contrato de sync usam o tipo.
 - Arquivos no disco: `userData/skills/`, `ai-templates.json`, `legacy-chat-state.json`, `backups/pre-remocao-chat-*` (nunca lidos nem apagados).
+
+## Emenda (2026-11-27, pedido do Luis): adaptar o que fica e remover a sobra
+Pedido: *"o que não pode ser apagado, adapte para funcionar com as novas features, e remova o que sobrar (lixo)"*. Leitura do construtor (o dono pode corrigir): o que **não** pode ser apagado, por vir de contrato de sync, de arquivo de backup ou de dado do usuário, deixa de se espalhar pelo código vivo e passa a morar **num só lugar**, descrito no modelo atual; todo campo, ramo ou tabela que, depois disso, ninguém lê nem escreve é apagado.
+
+### Adaptar (fica, mas passa a funcionar com o modelo atual)
+1. **Camada única de compatibilidade de backup** (`packages/core/src/backup-compat.ts`, função pura `upgradeLegacyBackup`): concentra o que hoje está espalhado nos normalizadores de carga: `activeCodePathId` singular → lista, `taskId` singular das notas → `taskIds`, `budgets`/`recurringTransactions` descartados, `conversations`/`chatImages` descartados, dinheiro `number` → texto, datas de resumo de rendimento de fim de mês, rastro textual de conversa e `sourceConversationId` nas memórias. **Só a importação de backup chama essa camada.** A carga do banco (`loadData`) e o sync passam a ver apenas o modelo atual, sem ramos de dado antigo.
+2. **Nomes:** `LEGACY_CARD_WRITES` (regra atual dos cartões do Fleet) vira `FLEET_CARD_WRITES`. O que é compatibilidade fica só dentro de `backup-compat.ts` e é chamado assim.
+3. **Documentação:** `docs/data-migrations.md` ganha a lista das pastas e arquivos que o Sagyou não lê mais e que o dono pode apagar à mão (`skills/`, `ai-templates.json`, `legacy-chat-state.json`, `backups/pre-remocao-chat-*`), com o aviso de que `backups/pre-remocao-chat-*` guarda as conversas antigas.
+
+### Remover (a sobra)
+4. **Campos sempre vazios das runs:** `decisions`, `readOnlyRoots` e `allowedWritePaths` em `CodeRunState`, `AgentRunMeta` (main, preload, renderer) e no parâmetro de `ai:code-agent:run`; o leitor de runs arquivadas ignora essas chaves em linhas antigas. Sem `allowedWritePaths`, `confineToRoot` fica sem chamador e `code-files.ts` e o teste saem. O parâmetro equivalente de `validatePatchScope` sai se não tiver outro uso.
+5. **`sourceConversationId`:** sai do tipo `AiMemory` do core, de `memory.ts` e do `INSERT` do `store.ts`; a **coluna** SQLite fica (sem rebuild). Não está na lista de campos do hash de sync.
+6. **Tabela `entity_events`:** ⚠️ `DROP TABLE IF EXISTS entity_events` (e o índice), idempotente, em commit próprio. Perde-se o diário de alterações, que nenhuma tela lê (até 50.000 linhas por banco). Não entra em backup nem em sync.
+
+### O que continua igual
+O que a spec já dizia que fica por contrato: `legacyFinancialMetadata` no sync (`records.ts`, vetores pinados), arquivos do usuário no disco, `IStorageAdapter`, `confineToRoot` só enquanto tiver chamador, a trava das 14 chaves do `ai-config.json`, e o vínculo antigo transação→transação (relação que existe nos dados).
+
+### Dados (emenda)
+⚠️ Breaking schema change — existing data may be affected: (a) o diário `entity_events` é apagado; (b) a carga do banco deixa de converter dado antigo (dinheiro `number`, singular de pasta e de nota, datas de rendimento), que só a importação de backup converte. Todos os aparelhos já estão na última versão, então o banco atual já está no modelo novo.
 
 ## Telas
 Só uma remoção: o aviso do Fleet sobre o chat removido. Sem tela nova nem texto novo.
