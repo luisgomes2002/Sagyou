@@ -1,6 +1,6 @@
 import { app } from 'electron'
 import { join } from 'path'
-import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from 'fs'
+import { existsSync, writeFileSync, mkdirSync } from 'fs'
 import { is } from '@electron-toolkit/utils'
 import { randomUUID } from 'crypto'
 import Database from 'better-sqlite3'
@@ -311,18 +311,6 @@ interface StoredFile {
   projectId?: string
 }
 
-interface EntityEvent {
-  id: string
-  entityType: string
-  entityId: string
-  action: 'created' | 'updated' | 'deleted'
-  summary: string
-  source: 'user' | 'ai'
-  toolName?: string
-  convId?: string
-  timestamp: string
-}
-
 interface TimeBlock {
   id: string
   date: string
@@ -373,8 +361,6 @@ interface SaveData {
   // Legacy single-timer mirror; still written so an older app version reading
   // this DB resolves one timer. New code reads/writes `activeTimers`.
   activeTimer?: { taskId: string; startedAt: number } | null
-  // Entity events to append (set by the AI tool layer; absent on user saves).
-  entityEvents?: EntityEvent[]
   // The last sync generation the renderer applied (absent = 0). Never persisted:
   // saveData uses it to keep records changed remotely after that generation.
   syncGeneration?: number
@@ -383,10 +369,6 @@ interface SaveData {
 // ── DB paths ─────────────────────────────────────────────────────────────────
 
 const DB_PATH = join(app.getPath('userData'), is.dev ? 'kanban-dev.db' : 'kanban.db')
-const LEGACY_PATH = join(
-  app.getPath('userData'),
-  is.dev ? 'kanban-data.dev.json' : 'kanban-data.json'
-)
 
 let _db: Database.Database | null = null
 // Set by closeDatabase() before a remote wipe deletes the file: nothing may reopen it.
@@ -417,12 +399,10 @@ function getDb(): Database.Database {
   ensureMemorySearch(_db)
   migrateTaskImagesToDisk(_db)
   migrateNotesTaskIdsGoalIds(_db)
-  migrateFromJson(_db)
   // Before the reconcile below: a handoff a crash left "em andamento" must be
   // versioned for the first time as "interrompida", never as running.
   interruptRunningHandoffsOnOpen(_db)
   reconcileSyncRecords(_db)
-  trimEventLog(_db)
   createGlobalSearchIndex(_db)
   // FTS is disposable: startup also repairs an index left stale by an older build.
   rebuildSearchIndexFromDb(_db)
@@ -2218,22 +2198,6 @@ export function syncRecordOrigins(kind: string): Map<string, string> {
   return new Map(rows.map((r) => [r.id, r.device_id]))
 }
 
-// ── JSON migration ────────────────────────────────────────────────────────────
-
-function migrateFromJson(db: Database.Database): void {
-  if (!existsSync(LEGACY_PATH)) return
-  const { c } = db.prepare('SELECT COUNT(*) as c FROM projects').get() as { c: number }
-  if (c > 0) return
-  try {
-    const data = JSON.parse(readFileSync(LEGACY_PATH, 'utf-8')) as SaveData
-    db.transaction(() => persistAll(db, data))()
-    renameSync(LEGACY_PATH, LEGACY_PATH + '.migrated')
-    log.info('store', 'migration', { name: 'json_to_sqlite' })
-  } catch (err) {
-    log.error('store', 'migration_failed', { name: 'json_to_sqlite', msg: errorMessage(err) })
-  }
-}
-
 // ── Write (granular diff vs. last snapshot; full rewrite on the first save) ──
 
 // The last full state persisted this session, kept in memory so the next save
@@ -3142,9 +3106,6 @@ export function saveData(data: unknown): void {
     ? guardStaleSave(data as SaveData, prev ?? loadData(db), remoteKeys)
     : (data as SaveData)
   if (remoteKeys.size) log.info('sync', 'stale_save_guarded', { records: remoteKeys.size })
-  // Events the AI tool layer explicitly asked to log (lineage). These ride
-  // alongside the save payload without altering the existing persist path.
-  const aiEvents = next.entityEvents ?? []
   db.transaction(() => {
     if (prev) persistDiff(db, prev, next)
     else persistAll(db, next)
@@ -3154,12 +3115,6 @@ export function saveData(data: unknown): void {
         complete: true
       })
     )
-    // Generate entity events from the diff between prev and next. The source
-    // is 'user' for auto-generated events (the renderer doesn't tag saves by
-    // origin); AI events ride on `entityEvents` and are appended separately.
-    const now = new Date().toISOString()
-    const autoEvents = diffEvents(prev, next, now)
-    appendEventRows(db, [...autoEvents, ...aiEvents])
     db.prepare('DELETE FROM file_search_content WHERE file_id NOT IN (SELECT id FROM files)').run()
     syncGlobalSearchIndex(db, withFileSearchContent(db, next))
     // Memory belongs to a satellite table. Only a project's archive state
@@ -3179,133 +3134,6 @@ export function saveData(data: unknown): void {
   // the next save then re-diffs (or rewrites) from a truthful base.
   lastSnapshot = structuredClone(next)
   forgetRemoteKeysUpTo(seenGeneration)
-}
-
-// ── Entity Event Log ─────────────────────────────────────────────────────────
-//
-// Purely append-only audit trail. Events are generated automatically from the
-// diff between the last snapshot and the current save (source=user), plus any
-// events the AI tool layer explicitly attaches (source=ai). Never pruned within
-// a session; capped to EVENT_LOG_MAX rows on boot via a lazy DELETE outside the
-// save transaction (so it never blocks the save path).
-
-const EVENT_LOG_MAX = 50_000
-
-type EntityWithTitle = { id: string; title?: string; name?: string; description?: string }
-
-function entityLabel(e: EntityWithTitle | undefined): string {
-  if (!e) return '(removido)'
-  const t = e.title ?? e.name ?? e.description ?? ''
-  return t ? `"${t.slice(0, 60)}"` : `#${e.id.slice(0, 8)}`
-}
-
-function entityTypeLabel(type: string): string {
-  const map: Record<string, string> = {
-    project: 'projeto',
-    task: 'task',
-    sprint: 'sprint',
-    note: 'nota',
-    goal: 'meta',
-    habit: 'hábito',
-    financial_table: 'tabela financeira',
-    file: 'arquivo'
-  }
-  return map[type] ?? type
-}
-
-/**
- * Compare two snapshots and produce an event for every created, updated, or
- * deleted top-level entity. Events are stable-ordered within a save batch.
- */
-function diffEvents(prev: SaveData | null, next: SaveData, timestamp: string): EntityEvent[] {
-  const events: EntityEvent[] = []
-  const emit = (type: string, id: string, action: EntityEvent['action'], label: string): void => {
-    const article =
-      action === 'created' ? 'criado' : action === 'updated' ? 'atualizado' : 'removido'
-    events.push({
-      id: randomUUID(),
-      entityType: type,
-      entityId: id,
-      action,
-      summary: `${entityTypeLabel(type)} ${label} ${article}`,
-      source: 'user',
-      timestamp
-    })
-  }
-
-  // Helper: diff a collection by id, returning creates/updates/deletes.
-  const diff = <T extends { id: string }>(
-    type: string,
-    prevArr: T[] | undefined,
-    nextArr: T[] | undefined
-  ): void => {
-    const prevMap = new Map((prevArr ?? []).map((e) => [e.id, e]))
-    const nextIds = new Set((nextArr ?? []).map((e) => e.id))
-    for (const e of nextArr ?? []) {
-      if (!prevMap.has(e.id))
-        emit(type, e.id, 'created', entityLabel(e as unknown as EntityWithTitle))
-      else if (JSON.stringify(prevMap.get(e.id)) !== JSON.stringify(e))
-        emit(type, e.id, 'updated', entityLabel(e as unknown as EntityWithTitle))
-    }
-    for (const e of prevArr ?? [])
-      if (!nextIds.has(e.id))
-        emit(type, e.id, 'deleted', entityLabel(e as unknown as EntityWithTitle))
-  }
-
-  if (prev) {
-    diff('project', prev.projects, next.projects)
-    diff('task', prev.tasks, next.tasks)
-    diff('sprint', prev.sprints, next.sprints)
-    diff('note', prev.notes, next.notes)
-    diff('goal', prev.goals, next.goals)
-    diff('habit', prev.habits, next.habits)
-    diff('financial_table', prev.lists, next.lists)
-    diff('file', prev.files, next.files)
-  } else {
-    for (const e of next.projects ?? []) emit('project', e.id, 'created', entityLabel(e))
-    for (const e of next.tasks ?? []) emit('task', e.id, 'created', entityLabel(e))
-    for (const e of next.sprints ?? []) emit('sprint', e.id, 'created', entityLabel(e))
-    for (const e of next.notes ?? [])
-      emit('note', e.id, 'created', entityLabel(e as unknown as EntityWithTitle))
-    for (const e of next.goals ?? []) emit('goal', e.id, 'created', entityLabel(e))
-    for (const e of next.habits ?? []) emit('habit', e.id, 'created', entityLabel(e))
-    for (const e of next.lists ?? [])
-      emit('financial_table', e.id, 'created', entityLabel(e as unknown as EntityWithTitle))
-    for (const e of next.files ?? [])
-      emit('file', e.id, 'created', entityLabel(e as unknown as EntityWithTitle))
-  }
-  return events
-}
-
-function appendEventRows(db: Database.Database, events: EntityEvent[]): void {
-  if (!events.length) return
-  const stmt = db.prepare(
-    `INSERT INTO entity_events (id, entity_type, entity_id, action, summary, source, tool_name, conv_id, timestamp)
-     VALUES (@id, @entity_type, @entity_id, @action, @summary, @source, @tool_name, @conv_id, @timestamp)`
-  )
-  for (const e of events)
-    stmt.run({
-      id: e.id,
-      entity_type: e.entityType,
-      entity_id: e.entityId,
-      action: e.action,
-      summary: e.summary,
-      source: e.source,
-      tool_name: e.toolName ?? null,
-      conv_id: e.convId ?? null,
-      timestamp: e.timestamp
-    })
-}
-
-/** Lazy cap of the event log — best-effort, outside the save transaction. */
-function trimEventLog(db: Database.Database): void {
-  const { cnt } = db.prepare('SELECT COUNT(*) as cnt FROM entity_events').get() as { cnt: number }
-  if (cnt > EVENT_LOG_MAX) {
-    const excess = cnt - EVENT_LOG_MAX + 1000
-    db.prepare(
-      `DELETE FROM entity_events WHERE id IN (SELECT id FROM entity_events ORDER BY timestamp ASC LIMIT ?)`
-    ).run(excess)
-  }
 }
 
 // ── Memory (satellite table; deliberately OUTSIDE persistAll) ────────────────
