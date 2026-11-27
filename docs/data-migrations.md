@@ -93,3 +93,7 @@ vez de falhar: o resto é restaurado normalmente e o chat não volta.
 Não edite o SQLite, o `ai-config.json` nem os backups à mão para "desfazer" esta migração: o
 formato novo não lê conversas, e um arquivo antigo colocado de volta no diretório de dados será
 ignorado. Qualquer volta do chat exige uma spec nova.
+
+## Diário de alterações (`entity_events`), removido na 1.15.0
+
+⚠️ Esta mudança **apaga dados**: na primeira abertura da 1.15.0 a tabela `entity_events` do `kanban.db` é descartada (`DROP TABLE IF EXISTS`). Era um diário de cada gravação (o que foi criado, atualizado ou removido, com data), que nenhuma tela nem ferramenta lia desde que o canal `ai:lineage:list` saiu, e que o Sagyou deixou de gravar. Ele não entrava em backup nem em sincronização, então a perda é só dele. Nenhuma tarefa, nota, finança ou memória é tocada. **Faça uma cópia do `kanban.db` antes de abrir a versão nova pela primeira vez** se quiser guardar esse diário.

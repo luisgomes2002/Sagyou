@@ -386,6 +386,7 @@ function getDb(): Database.Database {
   migrateGoalKindColumn(_db)
   ensureMemorySearch(_db)
   migrateNotesTaskIdsGoalIds(_db)
+  dropEntityEvents(_db)
   // Before the reconcile below: a handoff a crash left "em andamento" must be
   // versioned for the first time as "interrompida", never as running.
   interruptRunningHandoffsOnOpen(_db)
@@ -721,6 +722,20 @@ function ensureMemorySearch(db: Database.Database): void {
   db.exec("INSERT INTO memory_fts(memory_fts) VALUES('rebuild')")
 }
 
+// ── dropEntityEvents ──────────────────────────────────────────────────────
+// ⚠️ Destructive, on purpose. `entity_events` was an append-only diary of every save that nothing
+// has read since `ai:lineage:list` was removed, and nothing writes it any more. It is in no
+// backup and no sync, so dropping it loses only that unread diary. Idempotent: a new database
+// never has it and an already migrated one has nothing to drop.
+function dropEntityEvents(db: Database.Database): void {
+  const has = db
+    .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='entity_events'")
+    .get()
+  db.exec('DROP INDEX IF EXISTS idx_entity_events_entity')
+  db.exec('DROP TABLE IF EXISTS entity_events')
+  if (has) log.info('store', 'migration', { name: 'drop_entity_events' })
+}
+
 // ── migrateNotesTaskIdsGoalIds ────────────────────────────────────────────
 // Adds task_ids and goal_ids TEXT columns to notes (JSON arrays). Idempotent.
 
@@ -974,21 +989,6 @@ function initSchema(db: Database.Database): void {
       archived_at TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_memory_project ON memory(project_id) WHERE archived_at IS NULL;
-    -- Entity event log: append-only audit trail of every mutation. Purely additive
-    -- (no updates, no deletes), so it can serve as a source of truth for lineage
-    -- and reproducibility without touching the existing save path.
-    CREATE TABLE IF NOT EXISTS entity_events (
-      id TEXT PRIMARY KEY,
-      entity_type TEXT NOT NULL,
-      entity_id TEXT NOT NULL,
-      action TEXT NOT NULL,
-      summary TEXT NOT NULL DEFAULT '',
-      source TEXT NOT NULL DEFAULT 'user',
-      tool_name TEXT,
-      conv_id TEXT,
-      timestamp TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_entity_events_entity ON entity_events(entity_type, entity_id);
     CREATE TABLE IF NOT EXISTS time_blocks (
       id TEXT PRIMARY KEY,
       date TEXT NOT NULL,
