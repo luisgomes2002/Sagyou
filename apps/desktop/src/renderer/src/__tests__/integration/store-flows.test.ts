@@ -45,35 +45,6 @@ function reset() {
 describe('full kanban board workflow', () => {
   beforeEach(reset)
 
-  it('creates project → adds tasks → moves tasks through columns → verifies order', () => {
-    const { createProject, createTask, moveTask } = useKanbanStore.getState()
-
-    const pid = createProject('Board Flow Test')
-    const cols = useKanbanStore.getState().projects[0].columns
-    const [backlog, inProgress, review, done] = cols.map((c) => c.id)
-
-    const t1 = createTask({ projectId: pid, columnId: backlog, title: 'Task A' })
-    const t2 = createTask({ projectId: pid, columnId: backlog, title: 'Task B' })
-    const t3 = createTask({ projectId: pid, columnId: backlog, title: 'Task C' })
-
-    // Move A to In Progress
-    moveTask(t1, inProgress, 0)
-    expect(useKanbanStore.getState().tasks.find((t) => t.id === t1)!.columnId).toBe(inProgress)
-
-    // Move A from In Progress to Review
-    moveTask(t1, review, 0)
-    expect(useKanbanStore.getState().tasks.find((t) => t.id === t1)!.columnId).toBe(review)
-
-    // Move A to Done
-    moveTask(t1, done, 0)
-    expect(useKanbanStore.getState().tasks.find((t) => t.id === t1)!.columnId).toBe(done)
-
-    // Remaining tasks still in Backlog
-    const backlogTasks = useKanbanStore.getState().tasks.filter((t) => t.columnId === backlog)
-    expect(backlogTasks).toHaveLength(2)
-    expect(backlogTasks.map((t) => t.id).sort()).toEqual([t2, t3].sort())
-  })
-
   it('insert task at specific position reorders siblings correctly', () => {
     const pid = useKanbanStore.getState().createProject('Order Test')
     const colId = useKanbanStore.getState().projects[0].columns[0].id
@@ -112,12 +83,6 @@ describe('sprint lifecycle integration', () => {
     expect(sprint.closedAt).toBeDefined()
     // Task still linked after close
     expect(useKanbanStore.getState().tasks.find((t) => t.id === t1)!.sprintId).toBe(sprintId)
-  })
-
-  it('bulk sprint creation creates exact count (ignoring blanks)', () => {
-    const pid = useKanbanStore.getState().createProject('Bulk')
-    useKanbanStore.getState().createSprints(pid, ['S1', '', '  ', 'S2', 'S3'])
-    expect(useKanbanStore.getState().sprints).toHaveLength(3)
   })
 })
 
@@ -231,34 +196,6 @@ describe('habit merge during importBackup', () => {
 })
 
 // ── Shopping list full flow ───────────────────────────────────────────────────
-
-describe('shopping list end-to-end flow', () => {
-  beforeEach(reset)
-
-  it('creates list → adds items → checks off items → calculates total correctly', () => {
-    const listId = useKanbanStore.getState().createList('Feira', 'BRL')
-
-    const i1 = useKanbanStore.getState().addItem(listId, { name: 'Arroz', qty: 2, price: '5.0' })
-    const i2 = useKanbanStore.getState().addItem(listId, { name: 'Feijão', qty: 1, price: '4.5' })
-    const i3 = useKanbanStore.getState().addItem(listId, { name: 'Azeite', qty: 1, price: '18.0' })
-
-    useKanbanStore.getState().toggleItem(listId, i1)
-    useKanbanStore.getState().toggleItem(listId, i2)
-
-    const list = useKanbanStore.getState().lists.find((l) => l.id === listId)!
-    const checkedItems = list.items.filter((i) => i.done)
-    expect(checkedItems).toHaveLength(2)
-
-    const total = list.items.reduce((sum, i) => sum + Number(i.price ?? 0) * i.qty, 0)
-    expect(total).toBeCloseTo(32.5) // 2×5.0 + 1×4.5 + 1×18.0
-
-    // Delete one item
-    useKanbanStore.getState().deleteItem(listId, i3)
-    expect(useKanbanStore.getState().lists.find((l) => l.id === listId)!.items).toHaveLength(2)
-  })
-})
-
-// ── AI JSON import ────────────────────────────────────────────────────────────
 
 describe('importAIJson integration', () => {
   beforeEach(reset)

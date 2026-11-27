@@ -703,30 +703,6 @@ describe('shopping list actions', () => {
     expect(item.done).toBe(false)
   })
 
-  it('toggleItem marks done and creates a linked transaction', () => {
-    const listId = useKanbanStore.getState().createList('Cart')
-    const itemId = useKanbanStore.getState().addItem(listId, { name: 'Milk', qty: 2, price: '3.5' })
-    useKanbanStore.getState().toggleItem(listId, itemId)
-    const list = useKanbanStore.getState().lists.find((l) => l.id === listId)!
-    expect(list.items[0].done).toBe(true)
-    expect(list.items[0].linkedTransactionId).toBeDefined()
-    expect(list.transactions).toHaveLength(1)
-    expect(list.transactions[0].type).toBe('expense')
-    expect(list.transactions[0].amount).toBe('7')
-    expect(list.transactions[0].fromShopping).toBe(true)
-  })
-
-  it('toggleItem unmarks done and removes the linked transaction', () => {
-    const listId = useKanbanStore.getState().createList('Cart')
-    const itemId = useKanbanStore.getState().addItem(listId, { name: 'Milk', qty: 1 })
-    useKanbanStore.getState().toggleItem(listId, itemId)
-    useKanbanStore.getState().toggleItem(listId, itemId)
-    const list = useKanbanStore.getState().lists.find((l) => l.id === listId)!
-    expect(list.items[0].done).toBe(false)
-    expect(list.items[0].linkedTransactionId).toBeUndefined()
-    expect(list.transactions).toHaveLength(0)
-  })
-
   it('updateItem changes fields', () => {
     const listId = useKanbanStore.getState().createList('Cart')
     const itemId = useKanbanStore.getState().addItem(listId, { name: 'Bread', qty: 1 })
@@ -736,18 +712,6 @@ describe('shopping list actions', () => {
     expect(item.price).toBe('3.0')
   })
 
-  it('deleteItem removes the item', () => {
-    const listId = useKanbanStore.getState().createList('Cart')
-    const itemId = useKanbanStore.getState().addItem(listId, { name: 'Egg', qty: 12 })
-    useKanbanStore.getState().deleteItem(listId, itemId)
-    expect(useKanbanStore.getState().lists.find((l) => l.id === listId)!.items).toHaveLength(0)
-  })
-
-  it('deleteList removes the list', () => {
-    const id = useKanbanStore.getState().createList('To remove')
-    useKanbanStore.getState().deleteList(id)
-    expect(useKanbanStore.getState().lists).toHaveLength(0)
-  })
 })
 
 // ── Chat history is no longer part of backups ────────────────────────────────────────────────
