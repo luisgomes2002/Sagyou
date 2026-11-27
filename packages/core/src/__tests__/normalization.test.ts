@@ -64,18 +64,9 @@ describe('withActiveCodePaths', () => {
 })
 
 describe('normalizeProject', () => {
-  it('turns the singular selection of an old project or backup into the list and drops the field', () => {
-    const normalized = normalizeProject(project({ activeCodePathId: 'b' }), 0)
-    expect(normalized.activeCodePathIds).toEqual(['b'])
-    expect(normalized).not.toHaveProperty('activeCodePathId')
-  })
-
-  it('prefers the list when both exist, and never fills an empty list', () => {
-    expect(
-      normalizeProject(project({ activeCodePathIds: ['a'], activeCodePathId: 'b' }), 0)
-        .activeCodePathIds
-    ).toEqual(['a'])
+  it('never fills an empty list, and ignores the retired singular field (backup-compat reads it)', () => {
     expect(normalizeProject(project({ activeCodePathIds: [] }), 0).activeCodePathIds).toEqual([])
+    expect(normalizeProject(project({ activeCodePathId: 'b' }), 0).activeCodePathIds).toEqual([])
   })
 
   it('drops a selected id whose code path no longer exists', () => {
@@ -89,9 +80,9 @@ describe('normalizeProject', () => {
 })
 
 describe('activeCodePathIds', () => {
-  it('reads the list, and the singular only for a project that has no list', () => {
+  it('reads only the list', () => {
     expect(activeCodePathIds(project({ activeCodePathIds: ['a'] }))).toEqual(['a'])
-    expect(activeCodePathIds(project({ activeCodePathId: 'b' }))).toEqual(['b'])
+    expect(activeCodePathIds(project({ activeCodePathId: 'b' }))).toEqual([])
     expect(activeCodePathIds(project())).toEqual([])
   })
 })

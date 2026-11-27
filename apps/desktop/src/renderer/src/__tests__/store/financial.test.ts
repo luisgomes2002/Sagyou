@@ -25,7 +25,6 @@ vi.mock('../../services/ElectronStorage', () => {
 
 import { useKanbanStore } from '../../store/kanban'
 import { DEFAULT_FINANCIAL_PROFILE_ID } from '../../types'
-import { normalizeFinancialTable } from '../../store/normalization'
 import { financialCategories } from '../../components/financial/shared'
 
 function resetStore() {
@@ -147,31 +146,6 @@ describe('financial table creation', () => {
     const id = useKanbanStore.getState().createList('Empresa 1')
     useKanbanStore.getState().deleteList(id)
     expect(useKanbanStore.getState().lists).toHaveLength(0)
-  })
-})
-
-describe('retired financial features', () => {
-  it('drops old budgets, recurring transactions and legacy metadata instead of keeping them', () => {
-    const old = {
-      id: 'old',
-      name: 'Old',
-      currency: 'BRL',
-      items: [],
-      transactions: [],
-      goals: [],
-      budgets: [{ category: 'Casa', limit: 100 }],
-      recurringTransactions: [{ id: 'monthly', amount: 50 }],
-      legacyFinancialMetadata: { budgets: [{ category: 'Casa', limit: 100 }] },
-      createdAt: '2026-01-01',
-      updatedAt: '2026-01-01'
-    }
-    const normalized = normalizeFinancialTable(
-      old as unknown as import('../../types').FinancialTable
-    )
-    for (const key of ['budgets', 'recurringTransactions', 'legacyFinancialMetadata']) {
-      expect(normalized).not.toHaveProperty(key)
-    }
-    expect(normalized).toMatchObject({ id: 'old', name: 'Old', currency: 'BRL' })
   })
 })
 

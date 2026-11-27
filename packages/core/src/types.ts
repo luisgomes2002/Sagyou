@@ -475,7 +475,7 @@ export interface StickyNote {
   y: number
   width: number
   height: number
-  /** @deprecated Use taskIds. Kept for backward compatibility with old data. */
+  /** The first linked task; `taskIds` lists all of them. Both are live (canvas links, sync payload). */
   taskId?: string
   taskIds?: string[]
   connections?: string[]

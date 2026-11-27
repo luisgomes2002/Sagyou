@@ -1109,7 +1109,6 @@ describe('importBackup', () => {
       ],
       goals: [{ id: 'goal', targetAmount: 100 }],
       actualBalance: 42.25,
-      budgets: [{ category: 'Casa', limit: 100 }],
       createdAt: '2026-01-01',
       updatedAt: '2026-01-01'
     }
@@ -1143,9 +1142,6 @@ describe('importBackup', () => {
       goals: [{ targetAmount: '100' }],
       actualBalance: '42.25'
     })
-    // The retired budgets are dropped, not moved into a hidden field.
-    expect(imported).not.toHaveProperty('budgets')
-    expect(imported).not.toHaveProperty('legacyFinancialMetadata')
   })
 
   beforeEach(resetStore)
@@ -1573,7 +1569,7 @@ describe('code path actions', () => {
     expect(p.activeCodePathIds).toEqual(['cp2'])
   })
 
-  it('loadData migrates a legacy single activeCodePathId to the array form', async () => {
+  it('loadData no longer reads the retired singular activeCodePathId (only an import converts it)', async () => {
     const legacy = {
       id: 'p-legacy',
       name: 'Legado',
@@ -1583,7 +1579,7 @@ describe('code path actions', () => {
         { id: 'cp1', path: 'C:/a' },
         { id: 'cp2', path: 'C:/b' }
       ],
-      activeCodePathId: 'cp2', // written by a pre-multi-select version
+      activeCodePathId: 'cp2', // only a backup from before multi-select carries this
       createdAt: '2024-01-01T00:00:00.000Z',
       updatedAt: '2024-01-01T00:00:00.000Z'
     }
@@ -1602,7 +1598,8 @@ describe('code path actions', () => {
     })
     await useKanbanStore.getState().loadData()
     const p = useKanbanStore.getState().projects.find((x) => x.id === 'p-legacy')!
-    expect(p.activeCodePathIds).toEqual(['cp2'])
+    expect(p.activeCodePathIds).toEqual([])
+    expect(p).toEqual(expect.objectContaining({ id: 'p-legacy' }))
   })
 
   it('loadData drops selected ids whose code path no longer exists', async () => {

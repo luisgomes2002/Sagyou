@@ -9,15 +9,13 @@ import type {
 } from './types'
 import { DEFAULT_FINANCIAL_PROFILE_ID } from './types'
 import { D, moneyStr } from './money'
-import { migrateYieldSummaryDates } from './yieldSummary'
 
 /**
- * The selected code paths. Only the list is written; a project from an old backup that has
- * just the retired singular `activeCodePathId` still reads as a one-item list.
+ * The selected code paths: the list, or none. (The retired singular `activeCodePathId` of an
+ * old backup is turned into the list by `upgradeLegacyBackup` before an import gets here.)
  */
 export function activeCodePathIds(project: Project): string[] {
-  if (Array.isArray(project.activeCodePathIds)) return project.activeCodePathIds
-  return project.activeCodePathId ? [project.activeCodePathId] : []
+  return Array.isArray(project.activeCodePathIds) ? project.activeCodePathIds : []
 }
 
 export function withActiveCodePaths(ids: string[]): Pick<Project, 'activeCodePathIds'> {
@@ -27,10 +25,7 @@ export function withActiveCodePaths(ids: string[]): Pick<Project, 'activeCodePat
 export function normalizeProject(project: Project, index: number): Project {
   const known = new Set((project.codePaths ?? []).map((path) => path.id))
   const ids = activeCodePathIds(project).filter((id) => known.has(id))
-  // The retired singular field is read above and never kept.
-  const { activeCodePathId: _retired, ...rest } = project
-  void _retired
-  return { ...rest, order: project.order ?? index, ...withActiveCodePaths(ids) }
+  return { ...project, order: project.order ?? index, ...withActiveCodePaths(ids) }
 }
 
 export function normalizeNotes(notes: StickyNote[]): StickyNote[] {
@@ -42,34 +37,19 @@ export function normalizeNotes(notes: StickyNote[]): StickyNote[] {
   }))
 }
 
-// Load and backup import must apply the exact same money and detail migrations.
-// A display-only conversion here can otherwise overwrite historical amounts.
+// Load and backup import must apply the exact same money and detail rules (every amount a
+// canonical decimal string). A display-only conversion here can otherwise overwrite historical
+// amounts. What only an old backup can carry is in `upgradeLegacyBackup` (backup-compat.ts).
 export function normalizeFinancialTable(list: FinancialTable): FinancialTable {
-  // Budgets and recurring transactions were an unfinished feature that no longer exists, and
-  // their hidden `legacyFinancialMetadata` copy is gone too: all three are dropped here.
-  const {
-    budgets: _budgets,
-    recurringTransactions: _recurring,
-    legacyFinancialMetadata: _legacy,
-    ...current
-  } = list as FinancialTable & {
-    budgets?: unknown
-    recurringTransactions?: unknown
-    legacyFinancialMetadata?: unknown
-  }
-  void _budgets
-  void _recurring
-  void _legacy
-  const table = migrateYieldSummaryDates(current as FinancialTable)
   return {
-    ...table,
+    ...list,
     profileId: list.profileId || DEFAULT_FINANCIAL_PROFILE_ID,
     currency: (list.currency || 'BRL') as Currency,
     items: (list.items ?? []).map((item) => ({
       ...item,
       price: item.price === null || item.price === undefined ? undefined : moneyStr(item.price)
     })),
-    transactions: (table.transactions ?? []).map((transaction) => {
+    transactions: (list.transactions ?? []).map((transaction) => {
       const amount = moneyStr(transaction.amount)
       return {
         ...transaction,

@@ -232,9 +232,11 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    como previsão. No Consolidado, preserve a exclusão de transações espelho e
    a separação por moeda nos dois saldos.
    O resumo mensal automático de Rendimentos usa o dia 1 para entrar no saldo
-   desde o começo do mês. Na carga e na importação, só resumos antigos com
-   categoria, descrição e data de último dia no formato automático migram;
-   a mudança de data entra no histórico e retira conferência bancária.
+   desde o começo do mês. Só a importação de um backup migra resumos antigos com
+   categoria, descrição e data de último dia no formato automático
+   (`upgradeLegacyBackup`, em `packages/core/src/backup-compat.ts`, que concentra
+   tudo que só um backup antigo traz); a mudança de data entra no histórico e
+   retira conferência bancária.
    Banco/app e saldo real são metadata opcional da tabela. Orçamentos e recorrências não são
    funcionalidades do app: `normalizeFinancialTable` descarta `budgets`, `recurringTransactions` e a
    antiga cópia oculta `legacyFinancialMetadata` (removida na 1.15.0, inclusive do payload de sync
