@@ -2424,7 +2424,7 @@ app.whenReady().then(() => {
         return { success: false, error: 'Tarefa vazia' }
       }
       // Files the caller pinned so the agent skips discovery. Confine each to the
-      // root (same barrier as the read tools — a path is the model's, so it may
+      // root (`confineToRoot` — a path is the model's, so it may
       // be `../../etc`), and drop anything that escapes or doesn't exist rather
       // than handing the agent a bogus target. An empty/all-invalid list falls
       // back to the discovery path, so this can only speed things up, never break.

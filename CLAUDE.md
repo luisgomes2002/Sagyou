@@ -76,7 +76,7 @@ diff), `search/` (derived FTS5 index and queries), `security/` (app lock),
 `web/` (external links), and `financial/` (exchange rates). Imports should use the
 domain module path; do not add domain implementation back to the main root.
 
-The main window sends only credential-free `http:`/`https:` URLs through `safeExternalUrl` to `shell.openExternal` and blocks navigation away from its app page. Do not hand renderer-provided URLs directly to OS protocol handlers.
+The main window sends only credential-free `http:`/`https:` URLs through `safeExternalUrl` to `shell.openExternal` and blocks navigation away from its app page. Do not hand renderer-provided URLs directly to OS protocol handlers. ⚠️ **The parser is the only sanitiser:** `new URL()` already strips tab/newline and percent-encodes the rest, so never add a string-cleaning pass or HTML-entity decoding in front of it (the URL checked must be the URL opened).
 
 - `index.ts` — creates the BrowserWindow and registers IPC for `window:*`, `store:*`, `backup:*`, `files:*`, `excel:*`, `search:*`, `security:*`, `legacy-chat:*` and the remaining `ai:*` channels (config, memory, skills, harness status, code-agent/terminal sessions, run archive). It owns the executor launch (`ai:code-agent:run`) and the `ai-config.json` read/write. At startup it runs the one-time legacy-chat removal **before** `createWindow()` (see "Remoção do chat genérico").
 - `ai-config.json` now holds only agent configuration (`codeHarness`, `userName`, `reasoningEffort` and any key a newer build wrote). `normalizeLegacyAIConfig` (`modules/conversations/legacy-ai-data.ts`) reads `codeHarness: 'sagyou'` as `codex`; `saveAIConfig` **merges** over the file and drops the 14 retired chat keys on both sides (`stripLegacyApiConfig`), so an unknown key survives and no API key can come back through `ai:config:set`. `ai:config:get` never returns keys.
@@ -399,7 +399,7 @@ Every bug fix needs a regression test that reproduces the prior failure and
 asserts the corrected behavior. A test that only mirrors the implementation
 doesn't protect against the bug returning.
 
-⚠️ When testing path confinement, the file outside the root **must actually exist**. A test using `../nope.txt` passes whether or not the confinement works, because the handler rejects the missing file anyway — it proves nothing. `handlers.test.ts` puts the root inside a container with a real `secret.txt` sibling for this reason.
+⚠️ When testing path confinement, the file outside the root **must actually exist**. A test using `../nope.txt` passes whether or not the confinement works, because the handler rejects the missing file anyway — it proves nothing. Put the root inside a container with a real `secret.txt` sibling, as the old `ai:code:*` handler test did.
 
 The `coverage/` directory is generated output — do not commit it.
 

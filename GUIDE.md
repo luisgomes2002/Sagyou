@@ -516,13 +516,15 @@ o chamava. Quem trouxer a web de volta escreve uma spec nova com a política SSR
 (só `http`/`https`, redes privadas e metadata bloqueadas, redirects à mão, nada do
 usuário na requisição); o histórico do git guarda a versão antiga.
 
-`main/modules/code/code-files.ts` confina todo acesso a arquivo dentro da raiz escolhida
-(`confineToRoot`).
+`main/modules/code/code-files.ts` (`confineToRoot`) confina os caminhos entregues a uma
+sessão de agente (arquivos indicados e caminhos de escrita permitidos).
 
 **Links externos:** `main/modules/web/external-links.ts` só deixa `http:`/`https:` sem
 credenciais chegar a `shell.openExternal`; a janela principal bloqueia
 navegação para fora da página do app. Não abra URLs vindas do renderer
-diretamente no handler do sistema operacional.
+diretamente no handler do sistema operacional. O `new URL()` é o único
+sanitizador: não acrescente limpeza de string nem decodificação de entidades
+HTML na frente dele.
 
 ## Testes
 
