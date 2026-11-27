@@ -1,6 +1,6 @@
 import { scrubConversationLinks } from './memory'
 import { migrateYieldSummaryDates } from './yieldSummary'
-import type { Backup, FinancialTable, Project } from './types'
+import type { AiMemory, Backup, FinancialTable, Project } from './types'
 
 // Everything an OLD backup file can carry that the current model no longer has lives here, and
 // only the import of a backup calls it. The live paths (loading the database, sync, the phone)
@@ -18,8 +18,17 @@ export function upgradeLegacyBackup(backup: Backup): Backup {
   delete out.chatImages
   if (Array.isArray(backup.projects)) out.projects = backup.projects.map(upgradeProject)
   if (Array.isArray(backup.lists)) out.lists = backup.lists.map(upgradeFinancialTable)
-  if (Array.isArray(backup.memories)) out.memories = scrubConversationLinks(backup.memories).memories
+  if (Array.isArray(backup.memories)) out.memories = backup.memories.map(upgradeMemory)
   return out
+}
+
+/** The chat is gone: a memory loses its link to a conversation and the text that pointed at it. */
+function upgradeMemory(memory: AiMemory): AiMemory {
+  const { sourceConversationId: _gone, ...rest } = memory as AiMemory & {
+    sourceConversationId?: unknown
+  }
+  void _gone
+  return scrubConversationLinks([rest as AiMemory]).memories[0]
 }
 
 /** The single `activeCodePathId` of before multi-select becomes the list, and is dropped. */

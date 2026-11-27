@@ -39,7 +39,6 @@ const running = (over: Partial<AiMemory> = {}): AiMemory => ({
   tags: ['handoff', 'terminal', 'em-andamento'],
   pinned: false,
   source: 'modelo',
-  sourceConversationId: null,
   createdAt: '2026-11-23T10:00:00.000Z',
   updatedAt: LAST,
   lastAccessedAt: LAST,

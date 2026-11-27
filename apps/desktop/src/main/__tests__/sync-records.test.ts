@@ -258,7 +258,6 @@ describe('extractMemoryRecords', () => {
     tags: [],
     pinned: false,
     source: 'modelo',
-    sourceConversationId: null,
     createdAt: T,
     updatedAt: T,
     lastAccessedAt: T,

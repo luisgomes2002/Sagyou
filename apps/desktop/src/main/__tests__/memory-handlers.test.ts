@@ -17,7 +17,6 @@ function memory(over: Partial<AiMemory> & { id: string }): AiMemory {
     tags: ['handoff', 'terminal', 'completed'],
     pinned: false,
     source: 'modelo',
-    sourceConversationId: null,
     createdAt: now,
     updatedAt: now,
     lastAccessedAt: now,

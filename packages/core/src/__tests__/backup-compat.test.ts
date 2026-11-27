@@ -51,7 +51,6 @@ const memory = (extra: Partial<AiMemory> = {}): AiMemory => ({
   tags: [],
   pinned: false,
   source: 'user',
-  sourceConversationId: null,
   createdAt: T,
   updatedAt: T,
   lastAccessedAt: T,
@@ -140,13 +139,14 @@ describe('upgradeLegacyBackup', () => {
     const handoff = memory({
       id: 'm2',
       type: 'handoff',
-      body: 'Feito. (conversa completa: id=abc — use ler_conversa)',
-      sourceConversationId: 'abc'
+      body: 'Feito. (conversa completa: id=abc — use ler_conversa)'
     })
-    const out = upgradeLegacyBackup(backup({ memories: [memory(), handoff] })).memories ?? []
+    const withLink = { ...memory({ id: 'm3' }), sourceConversationId: 'abc' } as unknown as AiMemory
+    const out =
+      upgradeLegacyBackup(backup({ memories: [memory(), handoff, withLink] })).memories ?? []
     expect(out[0]).toEqual(memory())
-    expect(out[1].sourceConversationId).toBeNull()
     expect(out[1].body).toBe('Feito.')
+    expect(out[2]).not.toHaveProperty('sourceConversationId')
   })
 
   it('is idempotent and leaves a current backup as it was', () => {

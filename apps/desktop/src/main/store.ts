@@ -384,7 +384,6 @@ function getDb(): Database.Database {
   migrateRoutineBorderStyleColumn(_db)
   migrateNoteBorderStyleColumn(_db)
   migrateGoalKindColumn(_db)
-  migrateMemoryProvenanceColumn(_db)
   ensureMemorySearch(_db)
   migrateNotesTaskIdsGoalIds(_db)
   // Before the reconcile below: a handoff a crash left "em andamento" must be
@@ -691,14 +690,6 @@ function migrateGoalKindColumn(db: Database.Database): void {
   if (!has) db.prepare('ALTER TABLE goals ADD COLUMN kind TEXT').run()
 }
 
-/** Additive provenance migration: old memories remain valid, just unlinked. */
-function migrateMemoryProvenanceColumn(db: Database.Database): void {
-  const columns = db.prepare('PRAGMA table_info(memory)').all() as { name: string }[]
-  if (!columns.some((column) => column.name === 'source_conversation_id')) {
-    db.prepare('ALTER TABLE memory ADD COLUMN source_conversation_id TEXT').run()
-  }
-}
-
 /**
  * Search is derived data, never another source of truth: FTS indexes the
  * satellite table and is rebuilt on startup, including after the old FK-table
@@ -976,7 +967,6 @@ function initSchema(db: Database.Database): void {
       tags TEXT NOT NULL DEFAULT '[]',
       pinned INTEGER NOT NULL DEFAULT 0,
       source TEXT NOT NULL,
-      source_conversation_id TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       last_accessed_at TEXT NOT NULL,
@@ -2903,7 +2893,6 @@ function memRowToMemory(r: Record<string, unknown>): AiMemory {
     tags,
     pinned: r.pinned === 1,
     source: r.source as AiMemory['source'],
-    sourceConversationId: null,
     createdAt: String(r.created_at),
     updatedAt: String(r.updated_at),
     lastAccessedAt: String(r.last_accessed_at),

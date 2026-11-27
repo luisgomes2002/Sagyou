@@ -10,7 +10,6 @@ const memory = (id: string, updatedAt: string): AiMemory => ({
   tags: [],
   pinned: false,
   source: 'modelo',
-  sourceConversationId: null,
   createdAt: updatedAt,
   updatedAt,
   lastAccessedAt: updatedAt,

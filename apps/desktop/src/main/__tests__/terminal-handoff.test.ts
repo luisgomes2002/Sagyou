@@ -20,7 +20,6 @@ describe('buildTerminalHandoff', () => {
       id: 'handoff:project-1:run-1',
       type: 'handoff',
       projectId: 'project-1',
-      sourceConversationId: null
     })
     expect(handoff.body).toContain('run=run-1')
     expect(handoff.body).not.toContain('conversa=')

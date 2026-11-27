@@ -588,9 +588,9 @@ Não "simplifique" nenhuma destas sem ler o comentário que as acompanha:
   celular mostra o mesmo texto; os exemplos de chave são falsos e nunca copiáveis.
 - **As sessões do Fleet ficam em abas no topo.** `SessionTabs` só navega entre runs;
   o xterm vivo continua com `liveTerminals.ts` quando a aba muda.
-- **`AiMemory.sourceConversationId` e a coluna `memory.source_conversation_id`
-  ainda existem**, sempre nulos: a coluna não foi removida para não reconstruir a
-  tabela. `AgentRunMeta.convId` foi removido: linha antiga só com `convId` é lida sem
+- **`AiMemory.sourceConversationId` foi removido** (1.15.0): bancos existentes
+  mantêm a coluna `memory.source_conversation_id` sem uso, para não reconstruir a
+  tabela, e um banco novo já nasce sem ela. `AgentRunMeta.convId` foi removido: linha antiga só com `convId` é lida sem
   ele e não é listada (as runs arquivadas expiram em 24 h).
 - **O layout do grafo é uma simulação viva** (`GraphView.tsx` + `utils/graph-layout.ts`):
   o d3-force muta nós, então preserve `positionsRef` ao recriar o grafo e nunca chame

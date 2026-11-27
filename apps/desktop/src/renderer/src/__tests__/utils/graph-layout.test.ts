@@ -95,7 +95,6 @@ function makeMemory(overrides: Partial<AiMemory> & { id: string }): AiMemory {
     tags: [],
     pinned: false,
     source: 'usuario',
-    sourceConversationId: null,
     createdAt: NOW,
     updatedAt: NOW,
     lastAccessedAt: NOW,

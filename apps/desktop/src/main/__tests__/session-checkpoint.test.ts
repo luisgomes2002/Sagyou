@@ -186,7 +186,6 @@ describe('createSessionCheckpoints', () => {
       tags: ['handoff'],
       pinned: true,
       source: 'modelo',
-      sourceConversationId: null,
       createdAt: '2026-11-23T09:00:00.000Z',
       updatedAt: '2026-11-23T09:00:00.000Z',
       lastAccessedAt: '2026-11-23T09:00:00.000Z',
