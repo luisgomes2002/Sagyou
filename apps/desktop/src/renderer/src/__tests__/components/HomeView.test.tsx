@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { HomeView } from '../../components/views/HomeView'
-import type { FinancialTransaction } from '../../types'
+import type { FinancialTransaction } from '@sagyou/core/types'
 
 const dashboard = vi.hoisted(() => ({
   tasks: [],

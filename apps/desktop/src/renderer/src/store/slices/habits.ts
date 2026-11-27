@@ -1,6 +1,6 @@
 import type { StateCreator } from 'zustand'
 import { v4 as uuidv4 } from 'uuid'
-import type { Habit, TimeBlock } from '../../types'
+import type { Habit, TimeBlock } from '@sagyou/core/types'
 import { unlinkTimeBlocks } from './planner'
 
 export interface HabitsSlice {

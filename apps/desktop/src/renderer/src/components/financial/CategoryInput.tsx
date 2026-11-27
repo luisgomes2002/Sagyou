@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useKanbanStore } from '../../store/kanban'
-import { financialCategories } from './shared'
+import { financialCategories } from '@sagyou/core/finance'
 
 interface CategoryInputProps {
   value: string

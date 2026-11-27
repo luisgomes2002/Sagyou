@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { FinancialTable } from '../../types'
-import { migrateYieldSummaryDates, YIELD_SUMMARY_CATEGORY } from '../../utils/yieldSummary'
+import type { FinancialTable } from '@sagyou/core/types'
+import { migrateYieldSummaryDates, YIELD_SUMMARY_CATEGORY } from '@sagyou/core/yieldSummary'
 
 const table: FinancialTable = {
   id: 'account',

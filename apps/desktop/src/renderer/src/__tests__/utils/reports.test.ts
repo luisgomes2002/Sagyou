@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { computeSprintVelocity } from '../../utils/reports'
-import type { Sprint, Task } from '../../types'
+import type { Sprint, Task } from '@sagyou/core/types'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 

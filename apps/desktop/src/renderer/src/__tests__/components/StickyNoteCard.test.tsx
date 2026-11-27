@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { StickyNoteCard } from '../../components/StickyNoteCard'
-import type { StickyNote } from '../../types'
+import type { StickyNote } from '@sagyou/core/types'
 
 const textNote: StickyNote = {
   id: 'heading',

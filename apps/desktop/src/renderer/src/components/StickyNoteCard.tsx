@@ -1,7 +1,7 @@
 ﻿import { useRef, useState, useEffect, useCallback } from 'react'
 import { format, parseISO } from 'date-fns'
-import type { StickyNote, Task } from '../types'
-import { PRIORITY_CONFIG } from '../types'
+import type { StickyNote, Task } from '@sagyou/core/types'
+import { PRIORITY_CONFIG } from '@sagyou/core/types'
 import { cardTextColor } from '../utils/cardColor'
 
 interface Props {

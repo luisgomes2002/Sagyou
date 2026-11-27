@@ -10,8 +10,8 @@ import type {
   StoredFile,
   Sprint,
   StickyNote
-} from '../types'
-import { CURRENCY_CONFIG } from '../types'
+} from '@sagyou/core/types'
+import { CURRENCY_CONFIG } from '@sagyou/core/types'
 import { goalKind } from './goals'
 
 export type ExportKey =

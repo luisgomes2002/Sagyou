@@ -1,6 +1,6 @@
 ﻿import { useState } from 'react'
-import type { Goal, GoalEntry } from '../types'
-import { todayLocalISO as todayISO } from '../utils/dates'
+import type { Goal, GoalEntry } from '@sagyou/core/types'
+import { todayLocalISO as todayISO } from '@sagyou/core/dates'
 import { goalCurrent, goalKind, goalProgressPercent, isGoalComplete } from '../utils/goals'
 
 const fmtNum = (n: number): string => parseFloat(n.toFixed(4)).toString()

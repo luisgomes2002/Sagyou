@@ -10,7 +10,7 @@ import {
   minutesToPixels,
   todayString
 } from '../../utils/planner'
-import type { TimeBlock } from '../../types'
+import type { TimeBlock } from '@sagyou/core/types'
 
 function makeBlock(id: string, startTime: string, endTime: string): TimeBlock {
   return {

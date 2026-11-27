@@ -4,7 +4,7 @@
 // counter, so a version minted after another always compares greater even when
 // the system clock moved backwards or two edits land in the same millisecond.
 import { describe, expect, it } from 'vitest'
-import { nextHlc, parseHlc } from '../modules/sync/hlc'
+import { nextHlc, parseHlc } from '@sagyou/core/sync/hlc'
 
 describe('nextHlc', () => {
   it('starts from the wall clock with a zero counter', () => {

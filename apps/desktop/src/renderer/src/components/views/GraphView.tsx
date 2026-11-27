@@ -10,7 +10,7 @@ import {
   type NavigateTarget
 } from '../../utils/graph-layout'
 import type { Simulation } from 'd3-force'
-import type { AiMemory } from '../../types'
+import type { AiMemory } from '@sagyou/core/types'
 
 interface Props {
   onNavigate: (target: NavigateTarget) => void

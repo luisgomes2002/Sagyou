@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import type { Goal } from '../../types'
+import type { Goal } from '@sagyou/core/types'
 
 const mocks = vi.hoisted(() => ({
   state: {

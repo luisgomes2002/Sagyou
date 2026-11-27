@@ -10,7 +10,7 @@ import {
   MEMORY_KINDS,
   extractDataRecords,
   type SyncRecord
-} from '../modules/sync/sync-records'
+} from '@sagyou/core/sync/records'
 import {
   buildRebasedRow,
   buildSyncRows,
@@ -18,7 +18,7 @@ import {
   memoryCaptureScope,
   planSyncChanges,
   type StoredVersion
-} from '../modules/sync/sync-plan'
+} from '@sagyou/core/sync/plan'
 
 const T = '2026-10-30T12:00:00.000Z'
 const ALL_DATA = { kinds: DATA_KINDS, complete: true }

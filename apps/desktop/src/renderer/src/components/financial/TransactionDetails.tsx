@@ -5,9 +5,9 @@ import type {
   FinancialTable,
   FinancialTransaction,
   FinancialTransactionDetail
-} from '../../types'
+} from '@sagyou/core/types'
 import { ConfirmDialog } from '../ConfirmDialog'
-import { formatAmountInput, formatCurrency, formatDateBR, parseDecimalInput, D } from './shared'
+import { formatAmountInput, formatCurrency, formatDateBR, parseDecimalInput, D } from '@sagyou/core/finance'
 import { CategoryInput } from './CategoryInput'
 import { searchFocusClass, useSearchFocus } from '../../utils/searchFocus'
 

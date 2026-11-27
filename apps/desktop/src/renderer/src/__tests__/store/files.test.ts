@@ -13,7 +13,7 @@ vi.mock('../../services/ElectronStorage', () => {
 })
 
 import { useKanbanStore } from '../../store/kanban'
-import type { StoredFile } from '../../types'
+import type { StoredFile } from '@sagyou/core/types'
 
 function makeFile(overrides: Partial<StoredFile> = {}): StoredFile {
   return {

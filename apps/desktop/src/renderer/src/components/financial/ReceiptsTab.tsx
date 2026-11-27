@@ -1,5 +1,5 @@
-import type { FinancialTable, StoredFile } from '../../types'
-import { formatDateBR } from '../../utils/dates'
+import type { FinancialTable, StoredFile } from '@sagyou/core/types'
+import { formatDateBR } from '@sagyou/core/dates'
 
 interface Props {
   lists: FinancialTable[]

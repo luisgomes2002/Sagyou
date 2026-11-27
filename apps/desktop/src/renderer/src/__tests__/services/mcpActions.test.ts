@@ -37,7 +37,7 @@ import {
   type Project,
   type StickyNote,
   type Task
-} from '../../types'
+} from '@sagyou/core/types'
 import {
   MCP_RENDERER_WRITE_TOOLS,
   type McpActionResult,

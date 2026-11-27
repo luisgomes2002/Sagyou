@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import Decimal from 'decimal.js'
-import type { FinancialTable, FinancialTransaction, Currency } from '../../types'
-import { CURRENCY_CONFIG } from '../../types'
+import type { FinancialTable, FinancialTransaction, Currency } from '@sagyou/core/types'
+import { CURRENCY_CONFIG } from '@sagyou/core/types'
 import { useKanbanStore } from '../../store/kanban'
 import { consolidatedByCurrency, monthBounds } from '@sagyou/core/finance-views'
 import {
@@ -11,7 +11,7 @@ import {
   formatDateBR,
   D,
   todayISO
-} from './shared'
+} from '@sagyou/core/finance'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { EmptyState } from '../EmptyState'
 import { MonthJump } from './MonthJump'

@@ -1,6 +1,6 @@
 ﻿import { useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import type { FeatureId, Project } from '../../types'
+import type { FeatureId, Project } from '@sagyou/core/types'
 import type { AppView } from '../../navigation'
 
 type ActiveView = AppView

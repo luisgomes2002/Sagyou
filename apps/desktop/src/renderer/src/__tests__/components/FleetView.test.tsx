@@ -3,7 +3,7 @@ import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import { FleetView } from '../../components/ai/FleetView'
-import type { Project } from '../../types'
+import type { Project } from '@sagyou/core/types'
 import { useKanbanStore } from '../../store/kanban'
 import { retainFleetSelection } from '../../components/ai/fleet/fleetSelection'
 import type { RcServerView } from '../../utils/rcServers'

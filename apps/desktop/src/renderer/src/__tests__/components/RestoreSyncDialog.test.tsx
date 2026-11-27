@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { RestoreSyncDialog } from '../../components/modals/RestoreSyncDialog'
-import { syncAsksAfterRestore } from '../../utils/sync-view'
+import { syncAsksAfterRestore } from '@sagyou/core/sync/view'
 
 const afterRestore = vi.fn()
 

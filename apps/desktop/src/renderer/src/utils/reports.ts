@@ -1,4 +1,4 @@
-import type { Sprint, Task } from '../types'
+import type { Sprint, Task } from '@sagyou/core/types'
 
 export interface SprintVelocityEntry {
   sprint: Sprint

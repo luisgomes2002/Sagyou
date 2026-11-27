@@ -6,16 +6,16 @@
 import { readFileSync } from 'fs'
 import { join } from 'path'
 import { describe, expect, it } from 'vitest'
-import { decodeBatch } from '../modules/sync/sync-batch'
+import { decodeBatch } from '@sagyou/core/sync/batch'
 import {
   deriveKeys,
   keyProof,
   openBatch,
   opaqueDeviceId,
   toRecoveryCode
-} from '../modules/sync/sync-crypto'
+} from '@sagyou/core/sync/crypto'
 import { encodePairCode } from '../modules/sync/sync-engine'
-import { extractDataRecords, extractMemoryRecords, hashPayload } from '../modules/sync/sync-records'
+import { extractDataRecords, extractMemoryRecords, hashPayload } from '@sagyou/core/sync/records'
 
 const vectors = JSON.parse(
   readFileSync(

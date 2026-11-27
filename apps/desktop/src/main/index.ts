@@ -105,7 +105,7 @@ import {
 } from './store'
 import { agentOnlyConfig as agentOnlyConfigOf } from './modules/ai/ai-config'
 import * as memoryStore from './store'
-import * as memoryRules from './modules/ai/memory'
+import * as memoryRules from '@sagyou/core/memory'
 import { registerMemoryHandlers } from './handlers/memory'
 import { getExchangeRate } from './modules/financial/financial-exchange'
 import {

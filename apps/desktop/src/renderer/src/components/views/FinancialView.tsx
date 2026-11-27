@@ -1,6 +1,6 @@
 ﻿import { useEffect, useState } from 'react'
-import type { Currency } from '../../types'
-import { CURRENCY_CONFIG } from '../../types'
+import type { Currency } from '@sagyou/core/types'
+import { CURRENCY_CONFIG } from '@sagyou/core/types'
 import { useKanbanStore } from '../../store/kanban'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { EmptyState } from '../EmptyState'

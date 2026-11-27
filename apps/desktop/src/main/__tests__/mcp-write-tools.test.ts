@@ -15,7 +15,7 @@ import {
 } from '../modules/agent/mcp-write-tools'
 import { MCP_MEMORY_WRITE_TOOLS, MCP_RENDERER_WRITE_TOOLS } from '../modules/agent/mcp-write-types'
 import { MCP_PERMISSIONS } from '../modules/agent/sagyou-mcp'
-import type { AiMemory } from '../modules/ai/memory'
+import type { AiMemory } from '@sagyou/core/memory'
 
 const APPROVAL_LIST = [
   'archive_project',

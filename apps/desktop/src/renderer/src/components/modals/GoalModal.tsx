@@ -1,6 +1,6 @@
 ﻿import { useState } from 'react'
-import type { Goal, Project } from '../../types'
-import { PROJECT_COLORS } from '../../types'
+import type { Goal, Project } from '@sagyou/core/types'
+import { PROJECT_COLORS } from '@sagyou/core/types'
 import type { GoalKind } from '../../utils/goals'
 import { goalKind } from '../../utils/goals'
 import { ModalBase } from '../ModalBase'

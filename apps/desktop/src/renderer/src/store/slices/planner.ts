@@ -1,6 +1,6 @@
 import type { StateCreator } from 'zustand'
 import { v4 as uuidv4 } from 'uuid'
-import type { TimeBlock, Routine } from '../../types'
+import type { TimeBlock, Routine } from '@sagyou/core/types'
 
 export interface PlannerSlice {
   timeBlocks: TimeBlock[]

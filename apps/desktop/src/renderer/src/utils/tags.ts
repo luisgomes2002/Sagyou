@@ -1,4 +1,4 @@
-import type { Task } from '../types'
+import type { Task } from '@sagyou/core/types'
 
 export interface TagCount {
   tag: string

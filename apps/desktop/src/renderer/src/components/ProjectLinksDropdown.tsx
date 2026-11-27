@@ -1,6 +1,6 @@
 ﻿import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import type { ProjectLink } from '../types'
+import type { ProjectLink } from '@sagyou/core/types'
 
 interface Props {
   links: ProjectLink[]

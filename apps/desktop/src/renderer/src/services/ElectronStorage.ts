@@ -17,7 +17,7 @@ import type {
   Routine,
   FeatureId,
   UiPreferences
-} from '../types'
+} from '@sagyou/core/types'
 
 export class ElectronStorage implements IStorageAdapter {
   async load() {

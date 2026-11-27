@@ -11,7 +11,7 @@ import {
   restoreAsInterrupted,
   syncableMemories
 } from '../modules/ai/handoff-state'
-import type { AiMemory } from '../modules/ai/memory'
+import type { AiMemory } from '@sagyou/core/memory'
 
 const LAST = '2026-11-23T10:20:00.000Z'
 const NOW = '2026-11-23T18:00:00.000Z'

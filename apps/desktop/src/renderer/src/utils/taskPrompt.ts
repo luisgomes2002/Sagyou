@@ -1,5 +1,5 @@
-import type { Task } from '../types'
-import { PRIORITY_CONFIG } from '../types'
+import type { Task } from '@sagyou/core/types'
+import { PRIORITY_CONFIG } from '@sagyou/core/types'
 
 // Handing a board task to the assistant, as the text that lands in the composer.
 //

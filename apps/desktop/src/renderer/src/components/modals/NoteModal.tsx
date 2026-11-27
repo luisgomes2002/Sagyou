@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useKanbanStore } from '../../store/kanban'
-import { NOTE_COLORS, PRIORITY_CONFIG, type StickyNote, type Task } from '../../types'
+import { NOTE_COLORS, PRIORITY_CONFIG, type StickyNote, type Task } from '@sagyou/core/types'
 
 interface Props {
   note: StickyNote

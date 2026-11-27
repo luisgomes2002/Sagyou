@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { buildTerminalHandoff } from '../modules/agent/terminal-handoff'
-import type { AiMemory } from '../modules/ai/memory'
+import type { AiMemory } from '@sagyou/core/memory'
 
 describe('buildTerminalHandoff', () => {
   it('records a successful run with deterministic project id and references', () => {

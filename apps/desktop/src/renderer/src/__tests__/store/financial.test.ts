@@ -24,8 +24,8 @@ vi.mock('../../services/ElectronStorage', () => {
 })
 
 import { useKanbanStore } from '../../store/kanban'
-import { DEFAULT_FINANCIAL_PROFILE_ID } from '../../types'
-import { financialCategories } from '../../components/financial/shared'
+import { DEFAULT_FINANCIAL_PROFILE_ID } from '@sagyou/core/types'
+import { financialCategories } from '@sagyou/core/finance'
 
 function resetStore() {
   useKanbanStore.setState({

@@ -1,6 +1,6 @@
 ﻿import { useState, useEffect, useMemo } from 'react'
 import { v4 as uuidv4 } from 'uuid'
-import type { Project } from '../../types'
+import type { Project } from '@sagyou/core/types'
 import { SessionTabs, type SessionItem } from './fleet/SessionTabs'
 import { NewSessionPanel, type Harness, type SessionRequest } from './fleet/NewSessionPanel'
 import { LiveRunWorkspace } from './fleet/Workspaces'

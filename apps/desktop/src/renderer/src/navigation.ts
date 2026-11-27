@@ -1,4 +1,4 @@
-import type { FeatureId } from './types'
+import type { FeatureId } from '@sagyou/core/types'
 
 /** Every top-level screen `App.tsx` can show. */
 export type AppView =

@@ -2,8 +2,8 @@
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { format, isPast, parseISO } from 'date-fns'
-import type { Task } from '../types'
-import { PRIORITY_CONFIG } from '../types'
+import type { Task } from '@sagyou/core/types'
+import { PRIORITY_CONFIG } from '@sagyou/core/types'
 import { useKanbanStore } from '../store/kanban'
 import { formatDuration } from '../utils/time'
 

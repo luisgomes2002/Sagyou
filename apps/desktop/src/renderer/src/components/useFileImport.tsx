@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { useKanbanStore } from '../store/kanban'
-import type { StoredFile } from '../types'
+import type { StoredFile } from '@sagyou/core/types'
 import {
   planImport,
   uniqueCopyName,

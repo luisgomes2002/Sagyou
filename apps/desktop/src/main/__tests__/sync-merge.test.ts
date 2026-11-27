@@ -5,9 +5,9 @@
 // is kept. Debts never resolve on their own, and a child whose parent is
 // missing waits, or becomes a conflict when the parent was deleted.
 import { describe, expect, it } from 'vitest'
-import type { WireRecord } from '../modules/sync/sync-batch'
-import { decideIncoming, parentOf, type LocalVersion } from '../modules/sync/sync-merge'
-import { hashPayload } from '../modules/sync/sync-records'
+import type { WireRecord } from '@sagyou/core/sync/batch'
+import { decideIncoming, parentOf, type LocalVersion } from '@sagyou/core/sync/merge'
+import { hashPayload } from '@sagyou/core/sync/records'
 
 const OLD = '000000000001000-0000-a'
 const MID = '000000000002000-0000-a'

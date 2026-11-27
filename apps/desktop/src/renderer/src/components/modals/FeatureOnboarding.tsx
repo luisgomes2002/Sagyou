@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ALL_FEATURE_IDS, type FeatureId } from '../../types'
+import { ALL_FEATURE_IDS, type FeatureId } from '@sagyou/core/types'
 import { ModalBase } from '../ModalBase'
 
 const FEATURES: { id: FeatureId; title: string; description: string }[] = [

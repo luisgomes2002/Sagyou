@@ -1,8 +1,8 @@
 ﻿import { useMemo } from 'react'
-import type { Project, Task } from '../../types'
-import { PRIORITY_CONFIG } from '../../types'
-import { isDoneColumn } from '../../utils/columns'
-import { formatDateShort } from '../../utils/dates'
+import type { Project, Task } from '@sagyou/core/types'
+import { PRIORITY_CONFIG } from '@sagyou/core/types'
+import { isDoneColumn } from '@sagyou/core/columns'
+import { formatDateShort } from '@sagyou/core/dates'
 
 interface Props {
   projects: Project[]

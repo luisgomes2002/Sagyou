@@ -21,9 +21,9 @@ import {
   type Sprint,
   type StickyNote,
   type Task
-} from '../types'
-import { isDoneColumn } from '../utils/columns'
-import { D } from '../utils/money'
+} from '@sagyou/core/types'
+import { isDoneColumn } from '@sagyou/core/columns'
+import { D } from '@sagyou/core/money'
 import { goalCurrent, goalKind, isGoalComplete, type GoalKind } from '../utils/goals'
 import type { McpActionResult, McpScope } from '../types/mcp-actions'
 

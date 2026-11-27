@@ -1,6 +1,6 @@
 ﻿import { useEffect, useState } from 'react'
 import Decimal from 'decimal.js'
-import type { FinancialGoal, FinancialTransaction, Currency } from '../../types'
+import type { FinancialGoal, FinancialTransaction, Currency } from '@sagyou/core/types'
 import {
   MONTH_NAMES,
   formatCurrency,
@@ -9,7 +9,7 @@ import {
   formatDateBR,
   D,
   parseDecimalInput
-} from './shared'
+} from '@sagyou/core/finance'
 import { ModalBase } from '../ModalBase'
 import { goalProgress } from '@sagyou/core/finance-views'
 

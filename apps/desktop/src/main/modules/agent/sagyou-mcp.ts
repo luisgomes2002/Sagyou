@@ -13,7 +13,7 @@ import {
   type AiMemory,
   type MemoryType,
   type RecentMemoryFilter
-} from '../ai/memory'
+} from '@sagyou/core/memory'
 import { createHmac, randomUUID } from 'crypto'
 import type { MemorySearchHit } from '../../store'
 import { MCP_WRITE_TOOLS } from './mcp-write-tools'

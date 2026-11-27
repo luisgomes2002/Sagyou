@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { HEATMAP_COLORS, heatColor, buildCountMap, buildHeatmapGrid } from '../../utils/heatmap'
-import { isDoneColumn, isTaskDone } from '../../utils/columns'
-import type { Task, Project } from '../../types'
+import { isDoneColumn, isTaskDone } from '@sagyou/core/columns'
+import type { Task, Project } from '@sagyou/core/types'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 

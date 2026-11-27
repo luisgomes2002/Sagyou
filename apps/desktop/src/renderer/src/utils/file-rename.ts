@@ -1,4 +1,4 @@
-import type { StoredFile } from '../types'
+import type { StoredFile } from '@sagyou/core/types'
 
 const STEM_LIMIT = 200
 // "Baixar cópia" saves under this name, so it must be a valid Windows file name.

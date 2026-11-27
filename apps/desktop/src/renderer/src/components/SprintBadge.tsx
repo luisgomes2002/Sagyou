@@ -1,5 +1,5 @@
 ﻿import { useState, useRef, useEffect } from 'react'
-import type { Sprint } from '../types'
+import type { Sprint } from '@sagyou/core/types'
 import { useDeleteConfirm } from './useDeleteConfirm'
 
 interface Props {

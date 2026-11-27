@@ -29,7 +29,7 @@ vi.mock('../../services/ElectronStorage', () => {
 
 import { useKanbanStore } from '../../store/kanban'
 import { ElectronStorage } from '../../services/ElectronStorage'
-import { DEFAULT_COLUMN_NAMES } from '../../types'
+import { DEFAULT_COLUMN_NAMES } from '@sagyou/core/types'
 
 function getStorageMock() {
   return vi.mocked(ElectronStorage).mock.instances[0] as unknown as {

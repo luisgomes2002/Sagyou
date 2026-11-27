@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { computeTagData } from '../../utils/tags'
-import { isDoneColumn } from '../../utils/columns'
-import type { Task, Column } from '../../types'
+import { isDoneColumn } from '@sagyou/core/columns'
+import type { Task, Column } from '@sagyou/core/types'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 

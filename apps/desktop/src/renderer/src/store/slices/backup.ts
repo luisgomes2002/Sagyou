@@ -21,17 +21,17 @@ import type {
   ActiveTimer,
   FeatureId,
   UiPreferences
-} from '../../types'
+} from '@sagyou/core/types'
 import {
   DEFAULT_FINANCIAL_PROFILE_ID,
   normalizeFeaturePreferences,
   normalizeUiPreferences
-} from '../../types'
+} from '@sagyou/core/types'
 import {
   normalizeFinancialProfiles,
   normalizeFinancialTable,
   normalizeProject
-} from '../normalization'
+} from '@sagyou/core/normalization'
 import { upgradeLegacyBackup } from '@sagyou/core/backup-compat'
 
 interface StorageDep {

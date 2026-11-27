@@ -1,6 +1,6 @@
 ﻿import { useState } from 'react'
-import type { Habit } from '../../types'
-import { PROJECT_COLORS } from '../../types'
+import type { Habit } from '@sagyou/core/types'
+import { PROJECT_COLORS } from '@sagyou/core/types'
 import { ModalBase } from '../ModalBase'
 import { CancelButton } from '../CancelButton'
 

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { fileStem, validateFileRename } from '../../utils/file-rename'
-import type { StoredFile } from '../../types'
+import type { StoredFile } from '@sagyou/core/types'
 
 const file = (id: string, name: string, ext = '.pdf'): StoredFile => ({
   id,

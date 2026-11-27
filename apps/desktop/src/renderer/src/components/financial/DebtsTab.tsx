@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import type { FinancialDebt, FinancialTable } from '../../types'
-import { D, formatCurrency, parseDecimalInput, todayISO } from './shared'
+import type { FinancialDebt, FinancialTable } from '@sagyou/core/types'
+import { D, formatCurrency, parseDecimalInput, todayISO } from '@sagyou/core/finance'
 
 interface DebtsTabProps {
   list: FinancialTable

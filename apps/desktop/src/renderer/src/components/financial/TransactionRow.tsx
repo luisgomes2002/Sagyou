@@ -1,6 +1,6 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react'
-import type { FinancialTransaction, FinancialTable, Currency } from '../../types'
-import { CURRENCY_CONFIG } from '../../types'
+import type { FinancialTransaction, FinancialTable, Currency } from '@sagyou/core/types'
+import { CURRENCY_CONFIG } from '@sagyou/core/types'
 import {
   D,
   parseDecimalInput,
@@ -9,7 +9,7 @@ import {
   formatAmountInput,
   formatCurrency,
   YIELD_SUMMARY_CATEGORY
-} from './shared'
+} from '@sagyou/core/finance'
 import { TransactionDetails } from './TransactionDetails'
 import { TransactionRecordPanel } from './TransactionRecordPanel'
 import { CategoryInput } from './CategoryInput'

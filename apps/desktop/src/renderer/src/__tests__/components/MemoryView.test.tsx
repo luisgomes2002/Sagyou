@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryView } from '../../components/ai/MemoryView'
-import type { AiMemory } from '../../types'
+import type { AiMemory } from '@sagyou/core/types'
 
 vi.mock('../../services/ElectronStorage', () => ({
   ElectronStorage: vi.fn(function ElectronStorage(this: Record<string, unknown>) {

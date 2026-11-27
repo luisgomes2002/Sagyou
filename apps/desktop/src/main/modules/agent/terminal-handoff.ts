@@ -1,4 +1,4 @@
-import { buildMemory, handoffId, HANDOFF_RUNNING_TAG, type AiMemory } from '../ai/memory'
+import { buildMemory, handoffId, HANDOFF_RUNNING_TAG, type AiMemory } from '@sagyou/core/memory'
 import { RUNNING_RESULT_LINE, RUNNING_STATUS_LINE, RUNNING_TITLE_PREFIX } from '../ai/handoff-state'
 
 export interface TerminalHandoffInput {

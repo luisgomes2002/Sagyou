@@ -7,7 +7,7 @@ import type {
   MemoryPage,
   MemorySummary,
   MemoryConflict
-} from '../main/modules/ai/memory'
+} from '@sagyou/core/memory'
 import type { McpActionRequest, McpActionResult } from '../main/modules/agent/mcp-write-types'
 import type { UpdateStatus } from '../main/modules/update/app-updater'
 import type { McpExternalStatus } from '../main/modules/agent/mcp-external'

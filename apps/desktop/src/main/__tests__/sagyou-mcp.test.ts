@@ -13,7 +13,7 @@ import {
   type McpSession
 } from '../modules/agent/sagyou-mcp'
 import { McpWriteQueue, RendererMcpActionBridge } from '../modules/agent/mcp-write-queue'
-import type { AiMemory } from '../modules/ai/memory'
+import type { AiMemory } from '@sagyou/core/memory'
 import type { McpActionResult } from '../modules/agent/mcp-write-types'
 import type { MemorySearchHit } from '../store'
 import type { ActiveSessionView } from '../modules/agent/sagyou-mcp'

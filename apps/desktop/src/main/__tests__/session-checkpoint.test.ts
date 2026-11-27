@@ -7,7 +7,7 @@ import {
   selectActiveSessions,
   type CheckpointSnapshot
 } from '../modules/agent/session-checkpoint'
-import type { AiMemory } from '../modules/ai/memory'
+import type { AiMemory } from '@sagyou/core/memory'
 
 const T0 = Date.parse('2026-11-23T10:00:00.000Z')
 

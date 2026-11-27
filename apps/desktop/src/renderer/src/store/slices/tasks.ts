@@ -1,8 +1,8 @@
 import type { StateCreator } from 'zustand'
 import { v4 as uuidv4 } from 'uuid'
-import type { Task, Sprint, Tombstone, ActiveTimer, TimeBlock } from '../../types'
+import type { Task, Sprint, Tombstone, ActiveTimer, TimeBlock } from '@sagyou/core/types'
 import { unlinkTimeBlocks } from './planner'
-import { isDoneColumn } from '../../utils/columns'
+import { isDoneColumn } from '@sagyou/core/columns'
 
 export interface TasksSlice {
   tasks: Task[]

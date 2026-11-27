@@ -1,7 +1,7 @@
 ﻿import { useState } from 'react'
 import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import type { Column as ColumnType, Task, Project } from '../types'
+import type { Column as ColumnType, Task, Project } from '@sagyou/core/types'
 import { TaskCard } from './TaskCard'
 
 interface Props {

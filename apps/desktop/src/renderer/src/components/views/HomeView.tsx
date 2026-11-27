@@ -1,12 +1,12 @@
 ﻿import { useEffect, useMemo, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useKanbanStore } from '../../store/kanban'
-import type { Project, Priority, FinancialTransaction, Currency } from '../../types'
-import { PRIORITY_CONFIG } from '../../types'
-import { isTaskDone } from '../../utils/columns'
-import { computeHabitSummary, todayISO } from '../../utils/habits'
+import type { Project, Priority, FinancialTransaction, Currency } from '@sagyou/core/types'
+import { PRIORITY_CONFIG } from '@sagyou/core/types'
+import { isTaskDone } from '@sagyou/core/columns'
+import { computeHabitSummary, todayISO } from '@sagyou/core/habits'
 import { goalCurrent, goalKind, goalProgressPercent } from '../../utils/goals'
-import { D, formatCurrency } from '../financial/shared'
+import { D, formatCurrency } from '@sagyou/core/finance'
 
 interface Props {
   projects: Project[]

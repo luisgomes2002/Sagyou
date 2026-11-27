@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { computeDueDateData } from '../../utils/dueDates'
-import { isDoneColumn } from '../../utils/columns'
-import type { Task, Project, Column } from '../../types'
+import { computeDueDateData } from '@sagyou/core/dueDates'
+import { isDoneColumn } from '@sagyou/core/columns'
+import type { Task, Project, Column } from '@sagyou/core/types'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 

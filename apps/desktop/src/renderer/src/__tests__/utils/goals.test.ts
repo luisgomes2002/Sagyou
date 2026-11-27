@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { Goal } from '../../types'
+import type { Goal } from '@sagyou/core/types'
 import { goalKind, goalProgressPercent, isGoalComplete } from '../../utils/goals'
 
 const legacyGoal: Goal = {

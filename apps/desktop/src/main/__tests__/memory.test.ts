@@ -19,7 +19,7 @@ import {
   MEMORY_DECAY_BASE_DAYS,
   MEMORY_MAX,
   type AiMemory
-} from '../modules/ai/memory'
+} from '@sagyou/core/memory'
 
 const NOW = '2026-07-21T12:00:00.000Z'
 

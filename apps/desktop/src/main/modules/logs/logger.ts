@@ -1,6 +1,6 @@
 import { appendFileSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync } from 'fs'
 import { join } from 'path'
-import { scrubSecrets } from '../ai/memory'
+import { scrubSecrets } from '@sagyou/core/memory'
 
 export const LOG_RETENTION_DAYS = 14
 /** Past this size a day's file only takes warnings and errors. */

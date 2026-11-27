@@ -1,5 +1,5 @@
 import type { IpcMain } from 'electron'
-import type { MemoryInput } from '../modules/ai/memory'
+import type { MemoryInput } from '@sagyou/core/memory'
 import { archiveHandoffOverflow } from '../modules/ai/handoff-state'
 
 interface MemoryHandlerDeps {
@@ -16,7 +16,7 @@ interface MemoryHandlerDeps {
     | 'upsertMemory'
   >
   memory: Pick<
-    typeof import('../modules/ai/memory'),
+    typeof import('@sagyou/core/memory'),
     | 'buildMemory'
     | 'findConflicts'
     | 'formatMemoriesForPrompt'

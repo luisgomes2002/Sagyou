@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DebtsTab } from '../../components/financial/DebtsTab'
-import type { FinancialTable } from '../../types'
+import type { FinancialTable } from '@sagyou/core/types'
 
 const list: FinancialTable = {
   id: 'account',

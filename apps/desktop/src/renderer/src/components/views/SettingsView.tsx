@@ -1,5 +1,5 @@
 import { useEffect, useState, type JSX, type ReactNode } from 'react'
-import { ALL_FEATURE_IDS, type FeatureId, type UiPreferences } from '../../types'
+import { ALL_FEATURE_IDS, type FeatureId, type UiPreferences } from '@sagyou/core/types'
 import type { SettingsSectionId } from '../../navigation'
 import { SyncSettings } from '../settings/SyncSettings'
 import { McpExternalSettings } from '../settings/McpExternalSettings'

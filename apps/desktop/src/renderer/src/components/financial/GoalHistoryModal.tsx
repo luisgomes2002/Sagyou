@@ -1,6 +1,6 @@
 ﻿import Decimal from 'decimal.js'
-import type { FinancialGoal, FinancialTransaction, Currency } from '../../types'
-import { MONTH_NAMES, formatCurrency, formatDateBR, D, todayISO } from './shared'
+import type { FinancialGoal, FinancialTransaction, Currency } from '@sagyou/core/types'
+import { MONTH_NAMES, formatCurrency, formatDateBR, D, todayISO } from '@sagyou/core/finance'
 import { ModalBase } from '../ModalBase'
 
 interface GoalHistoryModalProps {

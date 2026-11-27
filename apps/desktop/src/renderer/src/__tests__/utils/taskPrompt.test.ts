@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { buildTaskPrompt, MAX_PROMPT_DESCRIPTION } from '../../utils/taskPrompt'
-import type { Task } from '../../types'
+import type { Task } from '@sagyou/core/types'
 
 const task = (over: Partial<Task> = {}): Task => ({
   id: 'task-1',

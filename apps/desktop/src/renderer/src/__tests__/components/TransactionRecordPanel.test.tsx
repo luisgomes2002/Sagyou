@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { TransactionRecordPanel } from '../../components/financial/TransactionRecordPanel'
-import type { FinancialTable, FinancialTransaction } from '../../types'
+import type { FinancialTable, FinancialTransaction } from '@sagyou/core/types'
 import { useKanbanStore } from '../../store/kanban'
 
 // addFiles schedules a debounced store save; keep it off window.electronAPI.store.

@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { TransactionRow } from '../../components/financial/TransactionRow'
-import type { FinancialTable, FinancialTransaction } from '../../types'
+import type { FinancialTable, FinancialTransaction } from '@sagyou/core/types'
 
 describe('TransactionRow', () => {
   it('keeps existing details closed until requested', () => {

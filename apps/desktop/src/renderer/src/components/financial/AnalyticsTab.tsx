@@ -1,7 +1,7 @@
 ﻿import { useMemo } from 'react'
 import Decimal from 'decimal.js'
-import type { FinancialTable, FinancialTransaction } from '../../types'
-import { MONTH_NAMES, CAT_COLORS, formatCurrency } from './shared'
+import type { FinancialTable, FinancialTransaction } from '@sagyou/core/types'
+import { MONTH_NAMES, CAT_COLORS, formatCurrency } from '@sagyou/core/finance'
 import { FinancialCharts } from './FinancialCharts'
 
 const MONTH_ABBR = [

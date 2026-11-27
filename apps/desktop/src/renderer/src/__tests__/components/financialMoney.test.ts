@@ -3,7 +3,7 @@ import {
   formatAmountInput,
   formatCurrency,
   parseDecimalInput
-} from '../../components/financial/shared'
+} from '@sagyou/core/finance'
 
 describe('financial currency formatting', () => {
   it('shows rounded whole yen while edits keep existing fractions', () => {

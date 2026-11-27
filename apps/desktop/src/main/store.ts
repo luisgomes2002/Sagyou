@@ -7,7 +7,7 @@ import {
   normalizeMemory,
   type AiMemory,
   type MemoryType
-} from './modules/ai/memory'
+} from '@sagyou/core/memory'
 import { memorySearchWhere } from './modules/ai/memory-scope'
 import {
   interruptRunningHandoffs,
@@ -29,7 +29,7 @@ import {
   type GlobalSearchResponse
 } from './modules/search/global-search-query'
 import { errorMessage, log } from './modules/logs/logger'
-import { moneyText, transactionDetails } from './modules/financial/money-text'
+import { moneyText, transactionDetails } from '@sagyou/core/money-text'
 import {
   loadOrCreateDeviceId,
   SYNC_DEVICE_FILE,
@@ -42,7 +42,7 @@ import {
   hashPayload,
   MEMORY_KINDS,
   type SyncRecord
-} from './modules/sync/sync-records'
+} from '@sagyou/core/sync/records'
 import {
   CLOSE_SETTLED_CONFLICTS_SQL,
   decodeIncoming,
@@ -60,17 +60,17 @@ import {
   applyRecordsToState,
   settledConflictParams,
   type ConflictType
-} from './modules/sync/sync-apply'
-import { latestVersions, replaceSyncableState } from './modules/sync/sync-replace'
-import { parseHlc } from './modules/sync/hlc'
+} from '@sagyou/core/sync/apply'
+import { latestVersions, replaceSyncableState } from '@sagyou/core/sync/replace'
+import { parseHlc } from '@sagyou/core/sync/hlc'
 import {
   buildOutgoing,
   encodeBatch,
   recordKey,
   type OutgoingRow,
   type WireRecord
-} from './modules/sync/sync-batch'
-import { openBatch, sealBatch } from './modules/sync/sync-crypto'
+} from '@sagyou/core/sync/batch'
+import { openBatch, sealBatch } from '@sagyou/core/sync/crypto'
 import {
   buildRebasedRow,
   buildSyncRows,
@@ -79,7 +79,7 @@ import {
   planSyncChanges,
   type StoredVersion,
   type SyncScope
-} from './modules/sync/sync-plan'
+} from '@sagyou/core/sync/plan'
 
 // ── Inline types (mirrors src/renderer/src/types/index.ts) ──────────────────
 

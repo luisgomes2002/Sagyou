@@ -1,4 +1,4 @@
-import { handoffId, scrubSecrets, type AiMemory } from '../ai/memory'
+import { handoffId, scrubSecrets, type AiMemory } from '@sagyou/core/memory'
 import { buildTerminalHandoff, type TerminalHandoffInput } from './terminal-handoff'
 import type { ActiveSessionView } from './sagyou-mcp'
 
