@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { activeCodePathIds, normalizeProject, normalizeTimers, withActiveCodePaths } from '../normalization'
+import {
+  activeCodePathIds,
+  normalizeProject,
+  normalizeTimers,
+  withActiveCodePaths
+} from '../normalization'
 import type { Project } from '../types'
 
 describe('normalizeTimers', () => {
@@ -70,7 +75,9 @@ describe('normalizeProject', () => {
   })
 
   it('drops a selected id whose code path no longer exists', () => {
-    expect(normalizeProject(project({ activeCodePathIds: ['a', 'gone'] }), 0).activeCodePathIds).toEqual(['a'])
+    expect(
+      normalizeProject(project({ activeCodePathIds: ['a', 'gone'] }), 0).activeCodePathIds
+    ).toEqual(['a'])
   })
 
   it('keeps the order it was given or the index', () => {

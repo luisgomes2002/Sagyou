@@ -312,11 +312,7 @@ describe('controle remoto', () => {
 
 describe('main handlers are registered', () => {
   it('exposes the config and harness channels that remain', () => {
-    for (const ch of [
-      'ai:config:get',
-      'ai:config:set',
-      'ai:harnesses:status'
-    ]) {
+    for (const ch of ['ai:config:get', 'ai:config:set', 'ai:harnesses:status']) {
       expect(handlers.has(ch)).toBe(true)
     }
   })

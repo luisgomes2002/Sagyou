@@ -8,7 +8,15 @@ import {
   type SimulationNodeDatum,
   type SimulationLinkDatum
 } from 'd3-force'
-import type { Project, Task, StickyNote, Goal, Habit, StoredFile, AiMemory } from '@sagyou/core/types'
+import type {
+  Project,
+  Task,
+  StickyNote,
+  Goal,
+  Habit,
+  StoredFile,
+  AiMemory
+} from '@sagyou/core/types'
 import { isDoneColumn } from '@sagyou/core/columns'
 
 export type GraphNodeType =

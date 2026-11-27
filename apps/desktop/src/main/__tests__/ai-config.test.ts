@@ -15,7 +15,9 @@ describe('stripLegacyApiConfig', () => {
     const { config, changed } = stripLegacyApiConfig(input)
     expect(changed).toBe(true)
     expect(config).toEqual({ codeHarness: 'codex', fromANewerBuild: { x: 1 } })
-    expect(Object.keys(config).some((key) => (LEGACY_API_CONFIG_KEYS as readonly string[]).includes(key))).toBe(false)
+    expect(
+      Object.keys(config).some((key) => (LEGACY_API_CONFIG_KEYS as readonly string[]).includes(key))
+    ).toBe(false)
   })
 
   it('reports no change when there is no retired key, and does not mutate its input', () => {
@@ -35,7 +37,9 @@ describe('stripLegacyApiConfig', () => {
 
 describe('agentOnlyConfig', () => {
   it('never hands out or lets through an API key', () => {
-    expect(agentOnlyConfig({ codeHarness: 'codex', apiKey: 'sk-x', providerProfiles: [{}] })).toEqual({
+    expect(
+      agentOnlyConfig({ codeHarness: 'codex', apiKey: 'sk-x', providerProfiles: [{}] })
+    ).toEqual({
       codeHarness: 'codex'
     })
   })

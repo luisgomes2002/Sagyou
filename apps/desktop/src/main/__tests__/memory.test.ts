@@ -91,10 +91,7 @@ describe('buildMemory (create)', () => {
   })
 
   it('reads a legacy row with a conversation reference as having none', () => {
-    const memory = normalizeMemory(
-      { id: 'legacy', sourceConversationId: 'conv-9' } as never,
-      NOW
-    )
+    const memory = normalizeMemory({ id: 'legacy', sourceConversationId: 'conv-9' } as never, NOW)
     expect(memory).not.toHaveProperty('sourceConversationId')
   })
 })

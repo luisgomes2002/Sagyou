@@ -3,11 +3,7 @@ import { join } from 'path'
 import { existsSync, mkdirSync, copyFileSync, unlinkSync, writeFileSync } from 'fs'
 import { randomUUID } from 'crypto'
 import { attachmentPath, safeAttachmentName } from '../modules/files/backup-files'
-import {
-  readImageAsDataUrl,
-  deleteImageFiles,
-  decodeDataUrl
-} from '../modules/files/image-files'
+import { readImageAsDataUrl, deleteImageFiles, decodeDataUrl } from '../modules/files/image-files'
 import { createFileImportRegistry } from '../modules/files/file-import'
 import { indexProjectFileContent, loadData, removeProjectFileSearchContent } from '../store'
 import type { BrowserWindow, Dialog, Shell } from 'electron'

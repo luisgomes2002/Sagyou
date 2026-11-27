@@ -713,7 +713,6 @@ describe('shopping list actions', () => {
     expect(item.qty).toBe(5)
     expect(item.price).toBe('3.0')
   })
-
 })
 
 // ── Chat history is no longer part of backups ────────────────────────────────────────────────

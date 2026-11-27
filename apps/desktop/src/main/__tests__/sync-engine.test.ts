@@ -51,12 +51,7 @@ import {
   type StoredSyncVersion,
   type SyncableState
 } from '@sagyou/core/sync/apply'
-import {
-  encodeBatch,
-  recordKey,
-  type OutgoingRow,
-  type WireRecord
-} from '@sagyou/core/sync/batch'
+import { encodeBatch, recordKey, type OutgoingRow, type WireRecord } from '@sagyou/core/sync/batch'
 import { deriveKeys, keyProof, sealBatch } from '@sagyou/core/sync/crypto'
 import { compareConflict, currentHlcOf } from '@sagyou/core/sync/conflict-view'
 import {

@@ -1,7 +1,15 @@
 import { describe, it, expect } from 'vitest'
 import * as XLSX from 'xlsx'
 import { buildWorkbook, type ExcelExportOptions } from '../../utils/excelExport'
-import type { Project, Task, Habit, Goal, FinancialTable, Sprint, StickyNote } from '@sagyou/core/types'
+import type {
+  Project,
+  Task,
+  Habit,
+  Goal,
+  FinancialTable,
+  Sprint,
+  StickyNote
+} from '@sagyou/core/types'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 

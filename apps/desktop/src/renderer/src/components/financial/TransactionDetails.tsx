@@ -7,7 +7,13 @@ import type {
   FinancialTransactionDetail
 } from '@sagyou/core/types'
 import { ConfirmDialog } from '../ConfirmDialog'
-import { formatAmountInput, formatCurrency, formatDateBR, parseDecimalInput, D } from '@sagyou/core/finance'
+import {
+  formatAmountInput,
+  formatCurrency,
+  formatDateBR,
+  parseDecimalInput,
+  D
+} from '@sagyou/core/finance'
 import { CategoryInput } from './CategoryInput'
 import { searchFocusClass, useSearchFocus } from '../../utils/searchFocus'
 

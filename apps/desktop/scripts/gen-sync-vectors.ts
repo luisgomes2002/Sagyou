@@ -18,11 +18,7 @@ import {
   toRecoveryCode
 } from '@sagyou/core/sync/crypto'
 import { encodePairCode } from '../src/main/modules/sync/sync-engine'
-import {
-  extractDataRecords,
-  extractMemoryRecords,
-  hashPayload
-} from '@sagyou/core/sync/records'
+import { extractDataRecords, extractMemoryRecords, hashPayload } from '@sagyou/core/sync/records'
 import type { AiMemory } from '@sagyou/core/memory'
 
 const T = '2026-10-30T12:00:00.000Z'

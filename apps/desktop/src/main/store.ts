@@ -3,11 +3,7 @@ import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { randomUUID } from 'crypto'
 import Database from 'better-sqlite3'
-import {
-  normalizeMemory,
-  type AiMemory,
-  type MemoryType
-} from '@sagyou/core/memory'
+import { normalizeMemory, type AiMemory, type MemoryType } from '@sagyou/core/memory'
 import { memorySearchWhere } from './modules/ai/memory-scope'
 import {
   interruptRunningHandoffs,
@@ -3130,4 +3126,3 @@ export function replaceMemories(memories: AiMemory[]): void {
     )
   })()
 }
-

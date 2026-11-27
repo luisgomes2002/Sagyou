@@ -1,6 +1,14 @@
 import type { StateCreator } from 'zustand'
 import { v4 as uuidv4 } from 'uuid'
-import type { Project, Column, Tombstone, Sprint, StickyNote, Goal, TimeBlock } from '@sagyou/core/types'
+import type {
+  Project,
+  Column,
+  Tombstone,
+  Sprint,
+  StickyNote,
+  Goal,
+  TimeBlock
+} from '@sagyou/core/types'
 import { DEFAULT_COLUMN_NAMES } from '@sagyou/core/types'
 import { activeCodePathIds, withActiveCodePaths } from '@sagyou/core/normalization'
 import { unlinkTimeBlocks } from './planner'

@@ -61,8 +61,9 @@ const memory = (extra: Partial<AiMemory> = {}): AiMemory => ({
 
 describe('upgradeLegacyBackup', () => {
   it('turns the singular code path of a project into the list and drops the field', () => {
-    const [p] = upgradeLegacyBackup(backup({ projects: [project({ activeCodePathId: 'b' })] }))
-      .projects
+    const [p] = upgradeLegacyBackup(
+      backup({ projects: [project({ activeCodePathId: 'b' })] })
+    ).projects
     expect(p.activeCodePathIds).toEqual(['b'])
     expect(p).not.toHaveProperty('activeCodePathId')
   })
@@ -157,7 +158,10 @@ describe('upgradeLegacyBackup', () => {
       memories: [memory()]
     })
     expect(upgradeLegacyBackup(current)).toEqual(current)
-    const old = backup({ projects: [project({ activeCodePathId: 'a' })], lists: [table({ budgets: [] })] })
+    const old = backup({
+      projects: [project({ activeCodePathId: 'a' })],
+      lists: [table({ budgets: [] })]
+    })
     const once = upgradeLegacyBackup(old)
     expect(upgradeLegacyBackup(once)).toEqual(once)
   })
