@@ -1,18 +1,7 @@
-/**
- * Longest edge kept when a pasted screenshot is downscaled, in px.
- *
- * A vision model bills by tiles: a 4K screenshot costs several times a 1024px
- * one and reads no better for the "what's wrong with this screen?" question
- * this exists for. It also has to survive re-sending — the agent resends the
- * whole conversation on every step.
- */
-export const MAX_IMAGE_EDGE = 1024
-
 /** Below this, downscaling buys nothing and only costs a re-encode. */
 const MIN_USEFUL_EDGE = 320
 
-/** Longest edge kept for a task image — larger than the chat's, since these are
- *  viewed by a person, not billed to a vision model per tile. */
+/** Longest edge kept for a task image: these are viewed by a person. */
 export const MAX_TASK_IMAGE_EDGE = 1600
 
 /**
@@ -49,16 +38,6 @@ async function scaleToDataUrl(
 }
 
 /**
- * Read a pasted or dropped chat image and shrink it to something worth sending.
- *
- * Kept as PNG: these are screenshots, and JPEG artefacts around small text are
- * exactly what makes a screenshot unreadable to a vision model.
- */
-export async function toScaledDataUrl(file: Blob): Promise<string> {
-  return scaleToDataUrl(file, MAX_IMAGE_EDGE, 'image/png')
-}
-
-/**
  * A task attachment image, downscaled for the app to store on disk. JPEG at
  * 1600px: these are looked at by the user (a photo), not read by a model, so a
  * far smaller JPEG beats a big lossless PNG that would bloat the store.
@@ -73,47 +52,5 @@ function blobToDataUrl(blob: Blob): Promise<string> {
     reader.onload = () => resolve(reader.result as string)
     reader.onerror = () => reject(new Error('Falha ao ler a imagem'))
     reader.readAsDataURL(blob)
-  })
-}
-
-/** The image files among a paste or a drop, ignoring the rest. */
-export function imageFilesFrom(data: DataTransfer | null): File[] {
-  if (!data) return []
-  return Array.from(data.files).filter((f) => f.type.startsWith('image/'))
-}
-
-/** Document types the AI chat can parse (by MIME or extension). */
-const DOCUMENT_MIMES = new Set([
-  'application/pdf',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'application/vnd.oasis.opendocument.text',
-  'application/vnd.oasis.opendocument.spreadsheet',
-  'text/csv',
-  'text/plain',
-  'text/markdown',
-  'text/x-markdown',
-  'application/json',
-  'application/xml',
-  'text/xml',
-  'text/html',
-  'text/yaml',
-  'application/rtf'
-])
-
-const DOCUMENT_EXTS = new Set([
-  '.pdf', '.docx', '.xlsx', '.csv', '.txt', '.md', '.json',
-  '.xml', '.html', '.htm', '.yml', '.yaml', '.log', '.rtf',
-  '.odt', '.ods'
-])
-
-/** The document files among a paste or a drop, ignoring images and other files. */
-export function documentFilesFrom(data: DataTransfer | null): File[] {
-  if (!data) return []
-  return Array.from(data.files).filter((f) => {
-    if (DOCUMENT_MIMES.has(f.type)) return true
-    const ext = f.name.split('.').pop()?.toLowerCase()
-    if (ext) return DOCUMENT_EXTS.has('.' + ext)
-    return false
   })
 }

@@ -133,7 +133,7 @@ src/
       layout/     # Sidebar, TitleBar, Toast
       financial/  # componentes financeiros
       (raiz)      # componentes compartilhados (ModalBase, CancelButton, EmptyState, …)
-    utils/       # dates, money (moneyStr, D), immutable, …
+    utils/       # grafo, imagens, exportação Excel, …
     types/, services/
     __tests__/   # espelha a estrutura acima
 ```

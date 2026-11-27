@@ -1,7 +1,5 @@
 import { isValid, parse } from 'date-fns'
 
-export const DATE_FORMAT_ERROR = 'Use uma data válida, no formato DD/MM/AAAA.'
-
 /** YYYY-MM-DD (what is stored and synced) → DD/MM/AAAA (what the person reads and types). */
 export function toBRDate(iso: string | undefined): string {
   if (!iso) return ''
