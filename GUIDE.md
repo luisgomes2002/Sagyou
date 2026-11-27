@@ -238,7 +238,8 @@ Não são preferências. Quebrá-las corrompe dados reais de gente real.
    tudo que só um backup antigo traz); a mudança de data entra no histórico e
    retira conferência bancária.
    Banco/app e saldo real são metadata opcional da tabela. Orçamentos e recorrências não são
-   funcionalidades do app: `normalizeFinancialTable` descarta `budgets`, `recurringTransactions` e a
+   funcionalidades do app: **só a importação de backup** (`upgradeLegacyBackup`; não a carga do banco
+   nem `normalizeFinancialTable`) descarta `budgets`, `recurringTransactions` e a
    antiga cópia oculta `legacyFinancialMetadata` (removida na 1.15.0, inclusive do payload de sync
    da `financial_table`). Não traga essa ponte de volta sem spec.
    Itens em `FinancialTransaction.details` repartem o lançamento principal: a soma deles não pode

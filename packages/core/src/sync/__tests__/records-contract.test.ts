@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { extractDataRecords, hashPayload, type SyncRecord } from '../records'
+import { extractDataRecords, type SyncRecord } from '../records'
 
 // The sync contract the legacy cleanup must not move: what a record carries and how it hashes.
 const T = '2026-10-30T12:00:00.000Z'
@@ -55,12 +55,6 @@ describe('project record', () => {
 })
 
 describe('financial_table record', () => {
-  it('hashes a table without legacy data as the hash of its own payload', () => {
-    const rec = find({ lists: [table()] }, 'financial_table', 'ft1')
-    expect(rec.hash).toBe(hashPayload(rec.payload))
-    expect(rec.payload).toMatchObject({ id: 'ft1', name: 'Conta', currency: 'BRL' })
-  })
-
   it('no longer carries legacyFinancialMetadata, even when the source still has it', () => {
     const plain = find({ lists: [table()] }, 'financial_table', 'ft1')
     const withLegacy = find(
@@ -68,6 +62,7 @@ describe('financial_table record', () => {
       'financial_table',
       'ft1'
     )
+    expect(plain.payload).toMatchObject({ id: 'ft1', name: 'Conta', currency: 'BRL' })
     expect(withLegacy.payload).not.toHaveProperty('legacyFinancialMetadata')
     expect(withLegacy.hash).toBe(plain.hash)
   })

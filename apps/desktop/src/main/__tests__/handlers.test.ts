@@ -328,7 +328,9 @@ describe('main handlers are registered', () => {
       'ai:skills:list',
       'ai:skills:save',
       'ai:skills:delete',
-      'ai:skills:import'
+      'ai:skills:import',
+      'legacy-chat:notice',
+      'legacy-chat:dismiss'
     ]) {
       expect(handlers.has(ch)).toBe(false)
     }

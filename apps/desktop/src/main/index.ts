@@ -1211,8 +1211,7 @@ function saveAIConfig(config: unknown): void {
 /**
  * An unreadable ai-config.json reads as empty, so the next save would replace
  * it with defaults and destroy whatever was recoverable in it. Keep a copy
- * beside it first (the migration leaves such a file untouched for the same
- * reason).
+ * beside it first.
  */
 function keepUnreadableAIConfig(): void {
   const path = aiConfigPath()
@@ -1227,7 +1226,7 @@ function keepUnreadableAIConfig(): void {
 // --- Task images (files under userData/task-images, named <id><ext>) ---
 //
 // Same on-disk shape as file attachments (files/), so safeAttachmentName guards
-// the id/ext. The bytes were moved off the DB (see migrateTaskImagesToDisk).
+// the id/ext. The bytes live on disk, never in the DB.
 
 const taskImagesDir = (): string => join(app.getPath('userData'), 'task-images')
 

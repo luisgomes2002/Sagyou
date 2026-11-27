@@ -28,6 +28,8 @@ function upgradeMemory(memory: AiMemory): AiMemory {
     sourceConversationId?: unknown
   }
   void _gone
+  // Runs on raw file data, before the store normalizes it: only a text body can be scrubbed.
+  if (typeof rest.body !== 'string') return rest as AiMemory
   return scrubConversationLinks([rest as AiMemory]).memories[0]
 }
 

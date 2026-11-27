@@ -738,3 +738,49 @@ describe('importBackup', () => {
     expect(projects[1].order).toBe(1)
   })
 })
+
+describe('importBackup upgrades what only an old backup carries', () => {
+  beforeEach(resetStore)
+
+  it('drops retired budgets and moves a month-end yield summary to the first day', async () => {
+    getStorageMock().importBackup.mockResolvedValueOnce({
+      success: true,
+      data: {
+        version: 2,
+        exportedAt: '2026-11-01T00:00:00.000Z',
+        projects: [],
+        tasks: [],
+        lists: [
+          {
+            id: 'old',
+            name: 'Conta',
+            currency: 'BRL',
+            items: [],
+            goals: [],
+            budgets: [{ category: 'Casa', limit: 100 }],
+            recurringTransactions: [{ id: 'monthly', amount: 50 }],
+            transactions: [
+              {
+                id: 'gen',
+                description: 'Rendimentos Outubro 2026',
+                amount: 12.5,
+                type: 'income',
+                category: 'Rendimento Mensal',
+                date: '2026-10-31'
+              }
+            ],
+            createdAt: '2026-01-01',
+            updatedAt: '2026-01-01'
+          }
+        ]
+      }
+    })
+
+    expect(await useKanbanStore.getState().importBackup()).toBe(true)
+
+    const [table] = useKanbanStore.getState().lists
+    expect(table).not.toHaveProperty('budgets')
+    expect(table).not.toHaveProperty('recurringTransactions')
+    expect(table.transactions[0]).toMatchObject({ date: '2026-10-01', amount: '12.5' })
+  })
+})

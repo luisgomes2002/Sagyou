@@ -34,7 +34,8 @@ export interface Project {
   activeCodePathIds?: string[]
   /**
    * @deprecated Retired single-selection field. Never written: only an old backup can carry
-   * it, and `normalizeProject` turns it into `activeCodePathIds` and drops it.
+   * it, and `upgradeLegacyBackup` (backup-compat.ts) turns it into `activeCodePathIds` and
+   * drops it on import.
    */
   activeCodePathId?: string
   order?: number
@@ -312,7 +313,6 @@ export interface FinancialTable {
   /** Manually reconciled balance, kept separate from the calculated balance. */
   actualBalance?: string
   actualBalanceUpdatedAt?: string
-  /** Preserves unsupported keys from older databases and backups without exposing them as app features. */
   createdAt: string
   updatedAt: string
 }

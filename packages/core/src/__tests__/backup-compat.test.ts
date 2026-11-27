@@ -150,6 +150,14 @@ describe('upgradeLegacyBackup', () => {
     expect(out[2]).not.toHaveProperty('sourceConversationId')
   })
 
+  it('does not throw on a hand-edited memory whose body is not text', () => {
+    // isValidBackup only checks that a memory is an object with a unique id; the store
+    // turns the body into text afterwards, so such a backup used to import.
+    const odd = { ...memory({ id: 'm4', type: 'handoff' }), body: 5 } as unknown as AiMemory
+    const out = upgradeLegacyBackup(backup({ memories: [odd] })).memories ?? []
+    expect(out[0]).toEqual(odd)
+  })
+
   it('is idempotent and leaves a current backup as it was', () => {
     const current = backup({
       version: 7,
