@@ -544,25 +544,6 @@ export const api = {
       }): Promise<{ ok: true } | { error: string }> =>
         ipcRenderer.invoke('ai:memory:handoff', input)
     },
-    // Entity lineage: the event log for one entity (audit trail).
-    lineage: {
-      list: (
-        entityType: string,
-        entityId: string
-      ): Promise<
-        {
-          id: string
-          entityType: string
-          entityId: string
-          action: string
-          summary: string
-          source: string
-          toolName?: string
-          convId?: string
-          timestamp: string
-        }[]
-      > => ipcRenderer.invoke('ai:lineage:list', entityType, entityId)
-    },
     // Native code agent (the loop in ./code-agent). N concurrent runs can be
     // active in different directories.
     codeAgent: {
@@ -808,68 +789,6 @@ export const api = {
     },
     // Native folder picker for choosing a project's code directory.
     pickDirectory: (): Promise<{ path: string | null }> => ipcRenderer.invoke('ai:pick-directory'),
-    // Read-only source access, confined to `root` (a project's code path).
-    code: {
-      list: (
-        root: string,
-        sub?: string,
-        offset?: number,
-        limit?: number
-      ): Promise<{
-        files?: string[]
-        truncated?: boolean
-        offset?: number
-        total?: number
-        nextOffset?: number
-        error?: string
-      }> => ipcRenderer.invoke('ai:code:list', root, sub, offset, limit),
-      read: (
-        root: string,
-        rel: string,
-        offset?: number,
-        maxChars?: number,
-        scope?: { symbol?: string; lineStart?: number; lineEnd?: number }
-      ): Promise<{
-        content?: string
-        truncated?: boolean
-        offset?: number
-        total?: number
-        nextOffset?: number
-        // Set in scoped reads (a symbol or a line range): the 1-based bounds of
-        // the returned slice, and the symbol name when one was requested.
-        simbolo?: string
-        linhaInicio?: number
-        linhaFim?: number
-        // A map of the file's declarations — present on a big file's first page,
-        // or when a requested symbol wasn't found, so the model can jump to one.
-        simbolos?: { nome: string; linha: number; tipo: string }[]
-        error?: string
-      }> => ipcRenderer.invoke('ai:code:read', root, rel, offset, maxChars, scope),
-      search: (
-        root: string,
-        term: string
-      ): Promise<{
-        matches?: { file: string; line: number; text: string }[]
-        truncated?: boolean
-        error?: string
-      }> => ipcRenderer.invoke('ai:code:search', root, term)
-    },
-    // Fetches a web page's text through the main process (native fetch, capped
-    // and vetted there). Resolves with the text or with a reason it didn't.
-    web: {
-      fetch: (
-        url: string,
-        render?: boolean
-      ): Promise<{ content: string; url: string; truncated: boolean } | { error: string }> =>
-        ipcRenderer.invoke('ai:web:fetch', url, render)
-    },
-    // Read a project file (uploaded via FilesView) and return its parsed text.
-    projectFile: {
-      read: (
-        fileId: string
-      ): Promise<{ text: string; truncated: boolean; size?: number } | { error: string }> =>
-        ipcRenderer.invoke('ai:project-file:read', fileId)
-    },
     // User-written Skills (.md files in userData/skills/).
     skills: {
       list: (): Promise<Skill[]> => ipcRenderer.invoke('ai:skills:list'),

@@ -33,7 +33,6 @@ import {
   rmSync,
   constants
 } from 'fs'
-import * as codeFileFs from 'fs'
 import { homedir, hostname } from 'os'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
@@ -91,7 +90,6 @@ import {
   loadData,
   saveData,
   currentSyncGeneration,
-  eventsForEntity,
   rebuildSearchIndex,
   searchGlobalIndex,
   getGlobalSearchIndexHit,
@@ -116,9 +114,6 @@ import * as memoryStore from './store'
 import * as memoryRules from './modules/ai/memory'
 import { registerMemoryHandlers } from './handlers/memory'
 import { confineToRoot } from './modules/code/code-files'
-import * as codeFiles from './modules/code/code-files'
-import { fetchWeb } from './modules/web/web-fetch'
-import { renderWeb } from './modules/web/web-render'
 import { getExchangeRate } from './modules/financial/financial-exchange'
 import {
   EXTERNAL_PERMISSIONS,
@@ -167,7 +162,6 @@ import { createManagedWindow, registerWindowHandlers, type ManagedWindow } from 
 import { registerFilesHandlers } from './handlers/files'
 import { registerBackupHandlers } from './handlers/backup'
 import { normalizeLegacyAIConfig } from './modules/conversations/legacy-ai-data'
-import { registerCodeFilesHandlers } from './handlers/code-files'
 import { registerSyncHandlers } from './handlers/sync'
 import { registerUpdateHandlers } from './handlers/update'
 import {
@@ -2289,11 +2283,6 @@ app.whenReady().then(() => {
 
   registerMemoryHandlers(ipcMain, { store: memoryStore, memory: memoryRules, newId: randomUUID })
 
-  // Entity lineage: query the event log for one entity's history.
-  ipcMain.handle('ai:lineage:list', (_, entityType: string, entityId: string) =>
-    eventsForEntity(entityType, entityId)
-  )
-
   // Launch a native agent in a project root or the private general workspace. The renderer must
   // have obtained user approval before calling this (it writes files / runs
   // commands). Output is streamed back via 'ai:code-agent:output'.
@@ -3069,18 +3058,6 @@ app.whenReady().then(() => {
     if (canceled || filePaths.length === 0) return { path: null }
     return { path: filePaths[0] }
   })
-
-  registerCodeFilesHandlers(ipcMain, { files: codeFiles, fs: codeFileFs })
-
-  // Fetch a page for the assistant. The URL comes from the model, so it is
-  // untrusted input — ./web-fetch does the vetting (http(s) only, no local or
-  // private addresses, re-checked on every redirect), caps the read and bounds
-  // the wait. With `render`, ./web-render loads it in a headless browser instead
-  // (for SPA pages that need JS), applying the SAME policy to every request the
-  // page makes — see web-render.ts for the guard and its residual risks.
-  ipcMain.handle('ai:web:fetch', (_, url: string, render?: boolean) =>
-    render ? renderWeb(url) : fetchWeb(url)
-  )
 
   // Exchange rate from AwesomeAPI (primary) or Frankfurter (fallback).
   // Cached for 24h in userData/financial-rates.json.
