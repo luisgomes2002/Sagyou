@@ -47,7 +47,7 @@ function getStorageMock(): StorageMock {
   return vi.mocked(ElectronStorage).mock.instances[0] as unknown as StorageMock
 }
 
-function resetStore() {
+function resetStore(): void {
   useKanbanStore.setState({
     projects: [],
     tasks: [],
